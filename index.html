@@ -4,15 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0b1a33" />
-    <meta name="description" content="Slingshot – zwei Raumschiffe, ein paar Planeten und viel Gravitation." />
+    <meta name="description" content="Slingshot – bis zu sechs Raumschiffe, ein paar Planeten, ein schwarzes Loch und viel Gravitation." />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Slingshot</title>
   </head>
   <body>
-    <canvas id="stage" aria-label="Spielfeld"></canvas>
+    <canvas id="stage" aria-label="Spielfeld" data-i18n-aria="static.canvas"></canvas>
     <div id="overlay" hidden></div>
     <button id="touch-fire" type="button" hidden>Feuer</button>
-    <p id="rotate-hint" role="status">Dreh dein Gerät ins Querformat – dann wird das Spielfeld größer.</p>
+    <button id="clip-save" type="button" hidden data-i18n="static.clipSave">Clip speichern</button>
+    <p id="rotate-hint" role="status" data-i18n="static.rotate">Dreh dein Gerät ins Querformat – dann wird das Spielfeld größer.</p>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
