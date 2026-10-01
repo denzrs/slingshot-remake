@@ -67,10 +67,13 @@ body {
   backdrop-filter: blur(3px);
 }
 
-/* margin:auto centres the child when it fits and top-aligns it when it overflows;
-   align-items:center would clip the top of tall content out of scroll reach. */
-.screen > .title-col,
-.screen > .panel {
+/* Auto vertical margins centre content when it fits and start it at the top when
+   it overflows, while the title column stays at the screen's left inset. */
+.screen--title > .title-col {
+  margin-block: auto;
+}
+
+.screen--panel > .panel {
   margin: auto;
 }
 
