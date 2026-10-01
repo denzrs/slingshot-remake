@@ -12,22 +12,26 @@ const SHIP_CLEARANCE = 110;
 const PLANET_GAP = 24;
 
 /**
- * Lay out a fresh battlefield: two ships on opposite flanks and a random set of planets
- * in the corridor between them. Same seed → same world.
+ * Lay out a fresh battlefield around ships on an evenly spaced inner orbit.
+ * Same seed and player count → same world.
  */
-export function generateWorld(seed: number, maxPlanets: number): World {
+export function generateWorld(seed: number, maxPlanets: number, playerCount = 2): World {
   const rng = createRng(seed);
   const { width, height } = FIELD;
 
-  const ships: World['ships'] = [
-    { x: range(rng, 70, 190), y: range(rng, 130, height - 130) },
-    { x: range(rng, width - 190, width - 70), y: range(rng, 130, height - 130) },
-  ];
+  const count = Math.max(2, Math.min(6, Math.floor(playerCount)));
+  const cx = width / 2;
+  const cy = height / 2;
+  const orbit = Math.min(width, height) / 2 - 140;
+  const ships: World['ships'] = [];
+  for (let i = 0; i < count; i++) {
+    const angle = Math.PI + (i / count) * Math.PI * 2;
+    ships.push({ x: cx + orbit * Math.cos(angle), y: cy + orbit * Math.sin(angle) });
+  }
 
-  const count = intRange(rng, Math.min(2, maxPlanets), maxPlanets);
+  const planetCount = intRange(rng, Math.min(2, maxPlanets), maxPlanets);
   const planets: Planet[] = [];
-  for (let attempt = 0; planets.length < count && attempt < 600; attempt++) {
-    // Skew towards smaller bodies so big ones stay special.
+  for (let attempt = 0; planets.length < planetCount && attempt < 600; attempt++) {
     const radius = 16 + 44 * Math.pow(rng(), 1.4);
     const x = range(rng, 270, width - 270);
     const y = range(rng, radius + 24, height - radius - 24);
@@ -50,3 +54,4 @@ export function generateWorld(seed: number, maxPlanets: number): World {
 
   return { width, height, planets, ships };
 }
+

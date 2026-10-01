@@ -22,7 +22,7 @@ export interface World {
   width: number;
   height: number;
   planets: Planet[];
-  ships: [Ship, Ship];
+  ships: Ship[];
 }
 
 export interface ShotRules {
@@ -32,7 +32,7 @@ export interface ShotRules {
 }
 
 export type ShotEnd =
-  | { kind: 'ship'; ship: 0 | 1 }
+  | { kind: 'ship'; ship: number }
   | { kind: 'planet'; planet: number }
   | { kind: 'lost' }
   | { kind: 'timeout' };
@@ -62,7 +62,7 @@ export class Shot {
 
   constructor(
     private readonly world: World,
-    readonly shooter: 0 | 1,
+    readonly shooter: number,
     readonly angle: number,
     readonly power: number,
     private readonly rules: ShotRules,
@@ -107,11 +107,11 @@ export class Shot {
     }
 
     const r2 = PHYSICS.SHIP_RADIUS * PHYSICS.SHIP_RADIUS;
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < ships.length; i++) {
       const s = ships[i];
       const dx = s.x - this.x;
       const dy = s.y - this.y;
-      if (dx * dx + dy * dy < r2) return (this.end = { kind: 'ship', ship: i as 0 | 1 });
+      if (dx * dx + dy * dy < r2) return (this.end = { kind: 'ship', ship: i });
     }
     for (let i = 0; i < planets.length; i++) {
       const p = planets[i];
@@ -141,13 +141,24 @@ export interface ShotOutcome {
 /** Fly a shot to completion without rendering (used by the CPU and tests). */
 export function simulateShot(
   world: World,
-  shooter: 0 | 1,
+  shooter: number,
   angle: number,
   power: number,
   rules: ShotRules,
 ): ShotOutcome {
   const shot = new Shot(world, shooter, angle, power, rules);
-  const target = world.ships[shooter === 0 ? 1 : 0];
+  let target = world.ships[shooter === 0 ? 1 : 0];
+  let targetDistance = Infinity;
+  for (let i = 0; i < world.ships.length; i++) {
+    if (i === shooter) continue;
+    const dx = world.ships[i].x - world.ships[shooter].x;
+    const dy = world.ships[i].y - world.ships[shooter].y;
+    const distance = dx * dx + dy * dy;
+    if (distance < targetDistance) {
+      targetDistance = distance;
+      target = world.ships[i];
+    }
+  }
   let closest = Infinity;
   let end: ShotEnd | null = null;
   while (!end) {

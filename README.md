@@ -11,6 +11,24 @@ npm test           # Physik-, Wertungs- und CPU-Tests
 npm run build      # statischer Build in dist/ – läuft auf jedem Webserver
 ```
 
+## Multiplayer
+
+Start the relay server in a second terminal:
+
+```bash
+npm run dev:server
+```
+
+Start the web client with `npm run dev`. Connect to `ws://localhost:8080` in the lobby.
+Create a room, choose FFA or Team, and select a limit from 2 to 6 players.
+Other players join the room. The host starts the game.
+
+The host browser runs the game simulation. The server relays player inputs and game state.
+FFA scores belong to each player. Team rooms assign players alternately to two teams. The team with the highest total score wins.
+For remote players, host the web client and relay server on reachable network addresses. Use the server address field to connect to the relay.
+
+Build the relay server with `npm run build:server`. Start it with `npm run start:server`.
+
 ## Steuerung
 
 | Taste | Aktion |

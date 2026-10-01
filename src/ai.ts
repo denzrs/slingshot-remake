@@ -27,7 +27,7 @@ export interface PlanOptions {
 }
 
 /** Planning cost: 0 or below means a hit, lower power is slightly preferred among hits. */
-function evaluate(world: World, shooter: 0 | 1, aim: Aim, rules: ShotRules): number {
+function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules): number {
   const { end, closest } = simulateShot(world, shooter, aim.angle, aim.power, rules);
   if (end.kind === 'ship') return end.ship === shooter ? 1e6 : -1 + aim.power / 1000;
   return closest;
@@ -37,7 +37,7 @@ function evaluate(world: World, shooter: 0 | 1, aim: Aim, rules: ShotRules): num
  * Searches for a shot that hits the opponent: coarse random sweep, then hill-climbing
  * around the best candidates. It's a generator so the game can spread the work over frames.
  */
-export function* planShot(world: World, shooter: 0 | 1, opts: PlanOptions): Generator<void, Aim> {
+export function* planShot(world: World, shooter: number, opts: PlanOptions): Generator<void, Aim> {
   const { rng, rules, fixedPower } = opts;
   // Planning with a shorter horizon keeps the search cheap; long orbits rarely make good shots anyway.
   const planRules: ShotRules = { ...rules, timeLimit: Math.min(rules.timeLimit, 12) };
@@ -45,7 +45,18 @@ export function* planShot(world: World, shooter: 0 | 1, opts: PlanOptions): Gene
 
   type Candidate = Aim & { cost: number };
   const pool: Candidate[] = [];
-  const target = world.ships[shooter === 0 ? 1 : 0];
+  let target = world.ships[shooter === 0 ? 1 : 0];
+  let targetDistance = Infinity;
+  for (let i = 0; i < world.ships.length; i++) {
+    if (i === shooter) continue;
+    const dx = world.ships[i].x - world.ships[shooter].x;
+    const dy = world.ships[i].y - world.ships[shooter].y;
+    const distance = dx * dx + dy * dy;
+    if (distance < targetDistance) {
+      targetDistance = distance;
+      target = world.ships[i];
+    }
+  }
   const self = world.ships[shooter];
   const direct = normalizeAngle((Math.atan2(-(target.y - self.y), target.x - self.x) * 180) / Math.PI);
 
@@ -89,7 +100,7 @@ function clampPower(p: number): number {
 }
 
 /** Run a planner to completion synchronously (tests, tooling). */
-export function planShotNow(world: World, shooter: 0 | 1, opts: PlanOptions): Aim {
+export function planShotNow(world: World, shooter: number, opts: PlanOptions): Aim {
   const it = planShot(world, shooter, opts);
   for (;;) {
     const r = it.next();

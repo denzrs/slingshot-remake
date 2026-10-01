@@ -10,7 +10,7 @@ import { renderPlanet } from './planets';
 export interface DrawOptions {
   hud: boolean;
   /** Player labels, e.g. "Spieler 1" / "CPU". */
-  names: [string, string];
+  names: string[];
   /** Touch device: hint at dragging instead of keys. */
   touch: boolean;
 }
@@ -31,6 +31,7 @@ export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private backdrop: { canvas: HTMLCanvasElement; walls: boolean } | null = null;
   private layers: WorldLayers | null = null;
+  private trailRank: number[] = [];
   private time = 0;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -134,12 +135,13 @@ export class Renderer {
 
   private drawTrails(game: Game): void {
     const { ctx } = this;
-    const rank: Record<PlayerId, number> = { 0: 0, 1: 0 };
+    this.trailRank.length = game.players.length;
+    this.trailRank.fill(0);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     for (let i = game.trails.length - 1; i >= 0; i--) {
       const t = game.trails[i];
-      const r = rank[t.owner]++;
+      const r = this.trailRank[t.owner]++;
       const color = COLORS.players[t.owner];
       ctx.strokeStyle = rgba(color, r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2);
       ctx.lineWidth = r === 0 ? 1.6 : 1;
@@ -191,8 +193,8 @@ export class Renderer {
 
   private drawShips(game: Game): void {
     const { ctx } = this;
-    const destroyed = game.result ? (game.result.kind === 'self' ? game.result.shooter : ((1 - game.result.shooter) as PlayerId)) : null;
-    for (const id of [0, 1] as const) {
+    const destroyed = game.result?.target ?? null;
+    for (let id = 0; id < game.players.length; id++) {
       if (id === destroyed) continue;
       const ship = game.world.ships[id];
       const player = game.players[id];
@@ -279,8 +281,17 @@ export class Renderer {
     const right = view.offsetX + FIELD.width * view.scale - 24 * k;
     const top = view.offsetY + 22 * k;
 
-    this.drawPlayerBlock(game, 0, opts.names[0], left, top, k, 'left');
-    this.drawPlayerBlock(game, 1, opts.names[1], right, top, k, 'right');
+    if (game.players.length <= 2) {
+      this.drawPlayerBlock(game, 0, opts.names[0], left, top, k, 'left');
+      this.drawPlayerBlock(game, 1, opts.names[1], right, top, k, 'right');
+    } else {
+      const columns = 3;
+      const spacing = (FIELD.width * view.scale) / columns;
+      const start = view.offsetX + spacing / 2;
+      for (let id = 0; id < game.players.length; id++) {
+        this.drawCompactPlayerBlock(game, id, opts.names[id], start + (id % columns) * spacing, top + (32 + Math.floor(id / columns) * 46) * k, k);
+      }
+    }
 
     const cx = view.offsetX + (FIELD.width * view.scale) / 2;
     ctx.textAlign = 'center';
@@ -293,7 +304,26 @@ export class Renderer {
     setSpacing(ctx, 0);
 
     if (game.phase === 'roundOver' && game.result) this.drawBanner(game, opts, cx, k);
-    this.drawHint(game, opts.touch, cx, view.offsetY + FIELD.height * view.scale - 20 * k, k);
+    this.drawHint(game, opts, cx, view.offsetY + FIELD.height * view.scale - 20 * k, k);
+  }
+
+  private drawCompactPlayerBlock(game: Game, id: PlayerId, name: string, x: number, y: number, k: number): void {
+    const { ctx } = this;
+    const player = game.players[id];
+    const color = COLORS.players[id];
+    const active = game.phase === 'aiming' && game.current === id;
+    ctx.globalAlpha = active || game.phase === 'roundOver' ? 1 : 0.68;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = color;
+    ctx.font = `700 ${10 * k}px ${FONTS.body}`;
+    setSpacing(ctx, 1.2 * k);
+    ctx.fillText(`${game.mode === 'team' ? `TEAM ${game.teamOf(id) + 1} · ` : ''}${name.toUpperCase()}`, x, y);
+    setSpacing(ctx, 0);
+    ctx.fillStyle = COLORS.bone;
+    ctx.font = `700 ${18 * k}px ${FONTS.mono}`;
+    ctx.fillText(String(player.score), x, y + 14 * k);
+    ctx.globalAlpha = 1;
   }
 
   private drawPlayerBlock(game: Game, id: PlayerId, name: string, x: number, y: number, k: number, align: 'left' | 'right'): void {
@@ -379,22 +409,25 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 
-  private drawHint(game: Game, touch: boolean, cx: number, y: number, k: number): void {
+  private drawHint(game: Game, opts: DrawOptions, cx: number, y: number, k: number): void {
     const maxWidth = FIELD.width * this.view.scale - 48 * k;
     let items: [string, string][] = [];
     if (game.phase === 'aiming' && game.isHumanTurn) {
-      if (touch) {
+      if (opts.touch) {
         items = [['', 'Zum Zielen auf dem Spielfeld ziehen']];
       } else {
         const power: [string, string] = ['↑ ↓', game.settings.fixedPower ? 'Kraft fix' : 'Kraft'];
         items = [['← →', 'drehen'], power, ['Enter', 'Feuer'], ['Shift · Alt · Strg', 'Schrittweite'], ['Esc', 'Menü']];
-        // Small windows get the essentials only.
         if (this.measureKeyRow(items, k) > maxWidth) items = [['← →', 'drehen'], power, ['Enter', 'Feuer']];
       }
-    } else if (game.phase === 'aiming') {
+    } else if (game.phase === 'aiming' && game.isRemoteTurn) {
+      items = [['', `${opts.names[game.current]} zielt …`]];
+    } else if (game.phase === 'aiming' && game.isCpu(game.current)) {
       items = [['', 'CPU zielt …']];
+    } else if (game.phase === 'aiming') {
+      items = [['', `${opts.names[game.current]} zielt …`]];
     } else if (game.phase === 'roundOver' && game.phaseTime > 0.6) {
-      items = [[touch ? '' : 'Leertaste', game.isLastRound ? 'Endstand' : 'Nächste Runde']];
+      items = [[opts.touch ? '' : 'Leertaste', game.isLastRound ? 'Endstand' : 'Nächste Runde']];
     }
     if (!items.length) return;
     const width = this.measureKeyRow(items, k);

@@ -12,7 +12,9 @@ import { Effects } from './render/effects';
 import { Renderer } from './render/renderer';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { Menu } from './ui/menu';
-import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
+import { NetworkClient, type ClientInput, type ClientMessage, type ServerMessage } from './net';
+import { gameOverScreen, lobbyScreen, pauseScreen, titleScreen, type App } from './ui/screens';
+import type { GameEvent } from './game';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
@@ -34,19 +36,153 @@ const attract = new Game(
 );
 let game: Game | null = null;
 let mode: 'title' | 'play' = 'title';
+let network: NetworkClient | null = null;
+let networkHost = false;
+let networkPlayerId = 0;
+let networkRoomJoined = false;
+let networkNames: string[] | null = null;
+let pendingEvents: GameEvent[] = [];
+let stateSequence = 0;
+let stateElapsed = 0;
 
 const active = (): Game => (mode === 'play' && game ? game : attract);
 
 const LEVEL_NAMES = { easy: 'leicht', medium: 'mittel', hard: 'schwer' } as const;
-function names(g: Game): [string, string] {
+function names(g: Game): string[] {
   if (g === attract) return ['CPU 1', 'CPU 2'];
+  if (g === game && networkNames) {
+    if (g.mode === 'team' && g.players.length <= 2) return networkNames.map((name, id) => `TEAM ${g.teamOf(id) + 1} · ${name}`);
+    return networkNames;
+  }
   return ['Spieler 1', settings.opponent === 'cpu' ? `CPU · ${LEVEL_NAMES[settings.cpuLevel]}` : 'Spieler 2'];
+}
+
+function sendNetwork(message: Parameters<NetworkClient['send']>[0]): void {
+  try {
+    network?.send(message);
+  } catch {
+    // A closed transport is reported by its close event; avoid breaking input handlers.
+  }
+}
+
+function dispatchInput(input: ClientInput): void {
+  if (!game) return;
+  if (!network) {
+    if (input.kind === 'adjust') game.adjust(input.dAngle, input.dPower);
+    else if (input.kind === 'aim') game.setAim(input.angle, input.power);
+    else if (input.kind === 'fire') game.fire();
+  } else if (networkHost) {
+    if (input.kind === 'adjust') game.adjustFor(0, input.dAngle, input.dPower);
+    else if (input.kind === 'aim') game.setAimFor(0, input.angle, input.power);
+    else if (input.kind === 'fire') game.fireFor(0);
+  } else {
+    sendNetwork({ type: 'input', input });
+  }
+}
+
+function advanceNetworkGame(): void {
+  if (!game) return;
+  if (!network || networkHost) game.advance();
+  else sendNetwork({ type: 'input', input: { kind: 'advance' } } as unknown as ClientMessage);
+}
+
+function sendHostState(dt: number): void {
+  if (!network || !networkHost || !game || mode !== 'play') return;
+  stateElapsed += dt;
+  if (stateElapsed < 0.1) return;
+  stateElapsed %= 0.1;
+  const events = pendingEvents;
+  pendingEvents = [];
+  sendNetwork({ type: 'state', seq: ++stateSequence, snapshot: game.snapshot(), events });
+}
+
+
+function appDisconnected(client: NetworkClient, message: string): void {
+  if (network !== client) return;
+  network = null;
+  networkHost = false;
+  networkRoomJoined = false;
+  networkPlayerId = 0;
+  networkNames = null;
+  game = null;
+  mode = 'title';
+  pendingEvents = [];
+  stateSequence = 0;
+  stateElapsed = 0;
+  effects.clear();
+  client.close();
+  menu.open(titleScreen(app));
+  window.alert(`Multiplayer-Verbindung verloren: ${message}`);
+}
+
+function beginNetworkGame(message: Extract<ServerMessage, { type: 'game_start' }>): void {
+  if (!network) return;
+  networkNames = message.players.map((player) => player.name);
+  game = new Game(settings, {
+    playerCount: message.players.length,
+    mode: message.mode,
+    localPlayerId: networkPlayerId,
+    seed: message.seed,
+    network: true,
+  });
+  pendingEvents = [];
+  stateSequence = 0;
+  stateElapsed = 0;
+  wire(game);
+  mode = 'play';
+  effects.clear();
+  menu.close();
+}
+function connectMultiplayer(): void {
+  const client = new NetworkClient('ws://localhost:8080');
+  network = client;
+  networkHost = false;
+  networkPlayerId = 0;
+  networkRoomJoined = false;
+  networkNames = null;
+  client.onMessage((message) => {
+    if (network !== client) return;
+    switch (message.type) {
+      case 'room_update':
+        networkPlayerId = message.you.playerId;
+        networkHost = message.you.host;
+        networkRoomJoined = true;
+        networkNames = message.room.players.map((player) => player.name);
+        break;
+      case 'game_start':
+        beginNetworkGame(message);
+        break;
+      case 'input': {
+        if (!networkHost || !game) break;
+        const input = message.input as ClientInput | { kind: 'advance' };
+        if (input.kind === 'adjust') game.adjustFor(message.from, input.dAngle, input.dPower);
+        else if (input.kind === 'aim') game.setAimFor(message.from, input.angle, input.power);
+        else if (input.kind === 'fire') game.fireFor(message.from);
+        else if (input.kind === 'advance') game.advance();
+        break;
+      }
+      case 'state':
+        if (!networkHost && game && message.seq > stateSequence) {
+          stateSequence = message.seq;
+          game.restoreSnapshot(message.snapshot);
+          for (const event of message.events) game.applyRemoteEvent(event);
+        }
+        break;
+      case 'error':
+        if (mode === 'play') appDisconnected(client, message.message);
+        break;
+      case 'lobby_update':
+        break;
+    }
+  });
+  menu.open(lobbyScreen(app, client));
 }
 
 function wire(g: Game): void {
   const audible = g !== attract;
   g.on((e) => {
     if (active() !== g) return;
+    if (g === game && networkHost) pendingEvents.push(e);
     switch (e.type) {
       case 'round':
         effects.clear();
@@ -75,6 +211,7 @@ function wire(g: Game): void {
 }
 wire(attract);
 
+
 const app: App = {
   menu,
   settings,
@@ -83,24 +220,52 @@ const app: App = {
     sound.enabled = settings.sound;
     effects.particles = settings.particles;
     attract.settings.contours = settings.contours;
-    game?.applySettings(settings);
+    if (game && !network) game.applySettings(settings);
   },
   startGame() {
+    network = null;
+    networkHost = false;
+    networkRoomJoined = false;
+    networkNames = null;
+    pendingEvents = [];
+    stateSequence = 0;
+    stateElapsed = 0;
     game = new Game(settings);
     wire(game);
     mode = 'play';
     effects.clear();
     menu.close();
   },
+  connectMultiplayer,
   resume() {
     menu.close();
   },
   rematch() {
     if (!game) return app.startGame();
+    if (network) {
+      if (networkHost) {
+        pendingEvents = [];
+        game.advance();
+      } else sendNetwork({ type: 'input', input: { kind: 'advance' } } as unknown as ClientMessage);
+      menu.close();
+      return;
+    }
     game.newMatch();
     menu.close();
   },
   toTitle() {
+    if (network) {
+      if (networkRoomJoined) sendNetwork({ type: 'leave_room' });
+      const client = network;
+      network = null;
+      client.close();
+    }
+    networkHost = false;
+    networkRoomJoined = false;
+    networkNames = null;
+    pendingEvents = [];
+    stateSequence = 0;
+    stateElapsed = 0;
     mode = 'title';
     game = null;
     effects.clear();
@@ -139,23 +304,23 @@ window.addEventListener('keydown', (e) => {
   let handled = true;
   switch (e.code) {
     case 'ArrowLeft':
-      game.adjust(dAngle, 0);
+      dispatchInput({ kind: 'adjust', dAngle, dPower: 0 });
       break;
     case 'ArrowRight':
-      game.adjust(-dAngle, 0);
+      dispatchInput({ kind: 'adjust', dAngle: -dAngle, dPower: 0 });
       break;
     case 'ArrowUp':
-      game.adjust(0, dPower);
+      dispatchInput({ kind: 'adjust', dAngle: 0, dPower });
       break;
     case 'ArrowDown':
-      game.adjust(0, -dPower);
+      dispatchInput({ kind: 'adjust', dAngle: 0, dPower: -dPower });
       break;
     case 'Enter':
     case 'NumpadEnter':
     case 'Space':
       if (e.repeat) break;
-      if (game.isHumanTurn) game.fire();
-      else if (game.phase === 'roundOver') game.advance();
+      if (game.isHumanTurn) dispatchInput({ kind: 'fire' });
+      else if (game.phase === 'roundOver') advanceNetworkGame();
       break;
     case 'Escape':
       menu.open(pauseScreen(app));
@@ -177,15 +342,14 @@ function aimAt(clientX: number, clientY: number): void {
   const dx = f.x - ship.x;
   const dy = f.y - ship.y;
   const angle = (Math.atan2(-dy, dx) * 180) / Math.PI;
-  // Map distance so the tip of the drawn aim arrow follows the pointer.
   const reach = Math.hypot(dx, dy) - (PHYSICS.MUZZLE + 26);
-  game.setAim(angle, Math.round((reach / 110) * AIM.MAX_POWER * 100) / 100);
+  dispatchInput({ kind: 'aim', angle, power: Math.round((reach / 110) * AIM.MAX_POWER * 100) / 100 });
 }
 
 canvas.addEventListener('pointerdown', (e) => {
   sound.unlock();
   if (mode !== 'play' || !game || menu.isOpen) return;
-  if (game.phase === 'roundOver') return game.advance();
+  if (game.phase === 'roundOver') return advanceNetworkGame();
   if (!game.isHumanTurn) return;
   dragging = true;
   canvas.setPointerCapture(e.pointerId);
@@ -199,8 +363,8 @@ canvas.addEventListener('pointercancel', endDrag);
 touchFire.addEventListener('click', () => {
   sound.unlock();
   if (!game) return;
-  if (game.isHumanTurn) game.fire();
-  else if (game.phase === 'roundOver') game.advance();
+  if (game.isHumanTurn) dispatchInput({ kind: 'fire' });
+  else if (game.phase === 'roundOver') advanceNetworkGame();
 });
 
 // ————————————————————————————— Loop —————————————————————————————
@@ -213,10 +377,9 @@ function frame(now: number): void {
   last = now;
   const g = active();
   const paused = mode === 'play' && menu.isOpen;
-  if (!paused) {
-    g.update(dt);
-    effects.update(dt);
-  }
+  if (mode !== 'play' || !network || networkHost) g.update(dt);
+  if (!paused) effects.update(dt);
+  if (mode === 'play' && network && networkHost) sendHostState(dt);
   renderer.draw(g, effects, { hud: mode === 'play', names: names(g), touch: coarsePointer.matches }, paused ? 0 : dt);
   document.body.classList.toggle('is-playing', mode === 'play');
 

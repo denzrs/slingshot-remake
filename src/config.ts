@@ -35,7 +35,7 @@ export const SCORING = {
   SELF_HIT: 300,
 } as const;
 
-/** Palette — "astrographic plate": deep prussian ink, bone-white graphite, two signal colours. */
+/** Palette — astrographic plate signal colours, one per supported player. */
 export const COLORS = {
   plate: '#0b1a33',
   plateLift: '#12284d',
@@ -43,7 +43,7 @@ export const COLORS = {
   bone: '#e8e4d8',
   boneDim: '#9aa6bd',
   sodium: '#ffd27a',
-  players: ['#ff8660', '#6fe3c8'] as const,
+  players: ['#ff8660', '#6fe3c8', '#c29bff', '#f3cf63', '#7eb7ff', '#f18fc7'] as const,
 } as const;
 
 export const FONTS = {
