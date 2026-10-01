@@ -58,16 +58,20 @@ body {
 }
 
 .screen--title {
-  align-items: center;
   background: linear-gradient(90deg, rgb(11 26 51 / 0.94) 0%, rgb(11 26 51 / 0.82) 34%, rgb(11 26 51 / 0) 68%);
   padding-left: clamp(16px, 7vw, 120px);
 }
 
 .screen--panel {
-  align-items: center;
-  justify-content: center;
   background: rgb(11 26 51 / 0.62);
   backdrop-filter: blur(3px);
+}
+
+/* margin:auto centres the child when it fits and top-aligns it when it overflows;
+   align-items:center would clip the top of tall content out of scroll reach. */
+.screen > .title-col,
+.screen > .panel {
+  margin: auto;
 }
 
 .title-col {
