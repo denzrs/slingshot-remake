@@ -24,42 +24,62 @@ export interface PlanOptions {
   /** When set, only the angle is searched. */
   fixedPower: number | null;
   rng: Rng;
+  /** Scales the search size (1 = full); lower it when several CPUs plan at once. */
+  effort?: number;
+  /** Seconds of flight the planner looks ahead (default 12). */
+  lookahead?: number;
+  /** Teammates: never targeted, and the planner keeps its shots away from them. */
+  friends?: readonly number[];
 }
 
+/** Below this, a shot passing home or a teammate is too close — aim error could turn it into a friendly hit. */
+const SELF_MARGIN = 45;
+
 /** Planning cost: 0 or below means a hit, lower power is slightly preferred among hits. */
-function evaluate(world: World, shooter: 0 | 1, aim: Aim, rules: ShotRules): number {
-  const { end, closest } = simulateShot(world, shooter, aim.angle, aim.power, rules);
-  if (end.kind === 'ship') return end.ship === shooter ? 1e6 : -1 + aim.power / 1000;
-  return closest;
+function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[]): number {
+  const { end, closest, selfClosest } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends);
+  if (end.kind === 'ship' && (end.ship === shooter || friends.includes(end.ship))) return 1e6;
+  const risk = selfClosest < SELF_MARGIN ? (SELF_MARGIN - selfClosest) * 20 : 0;
+  if (end.kind === 'ship') return -1 + aim.power / 1000 + risk;
+  return closest + risk;
 }
 
 /**
- * Searches for a shot that hits the opponent: coarse random sweep, then hill-climbing
+ * Searches for a shot that hits any opponent: coarse random sweep, then hill-climbing
  * around the best candidates. It's a generator so the game can spread the work over frames.
  */
-export function* planShot(world: World, shooter: 0 | 1, opts: PlanOptions): Generator<void, Aim> {
+export function* planShot(world: World, shooter: number, opts: PlanOptions): Generator<void, Aim> {
   const { rng, rules, fixedPower } = opts;
   // Planning with a shorter horizon keeps the search cheap; long orbits rarely make good shots anyway.
-  const planRules: ShotRules = { ...rules, timeLimit: Math.min(rules.timeLimit, 12) };
+  const planRules: ShotRules = { ...rules, timeLimit: Math.min(rules.timeLimit, opts.lookahead ?? 12) };
   const randomPower = () => fixedPower ?? 15 + rng() * 85;
 
   type Candidate = Aim & { cost: number };
   const pool: Candidate[] = [];
-  const target = world.ships[shooter === 0 ? 1 : 0];
   const self = world.ships[shooter];
-  const direct = normalizeAngle((Math.atan2(-(target.y - self.y), target.x - self.x) * 180) / Math.PI);
+  const friends = opts.friends ?? [];
+  const directs = world.ships
+    .filter((s, i) => i !== shooter && s.alive && !friends.includes(i))
+    .map((t) => normalizeAngle((Math.atan2(-(t.y - self.y), t.x - self.x) * 180) / Math.PI));
+  if (directs.length === 0) return { angle: rng() * 360, power: randomPower() };
+  const effort = opts.effort ?? 1;
+  const samples = Math.round(260 * effort);
 
-  for (let i = 0; i < 260; i++) {
-    // Half the samples fan out around the direct line, half anywhere.
+  for (let i = 0; i < samples; i++) {
+    // Half the samples fan out around the direct line to some enemy, half anywhere.
+    const direct = directs[i % directs.length];
     const angle = i % 2 === 0 ? normalizeAngle(direct + gaussian(rng) * 50) : rng() * 360;
     const aim = { angle, power: randomPower() };
-    pool.push({ ...aim, cost: evaluate(world, shooter, aim, planRules) });
-    if (i % 12 === 11) yield;
+    pool.push({ ...aim, cost: evaluate(world, shooter, aim, planRules, friends) });
+    // Small slices keep each frame's thinking within budget, even with many ships to check.
+    if (i % 4 === 3) yield;
+    // Enough hits found already — no need to keep sweeping.
+    if (i > samples * 0.4 && pool.filter((c) => c.cost < 0).length >= 3) break;
   }
 
   pool.sort((a, b) => a.cost - b.cost);
   let best = pool[0];
-  for (const seed of pool.slice(0, 5)) {
+  for (const seed of pool.slice(0, Math.max(2, Math.round(5 * effort)))) {
     let local = seed;
     let spread = 6;
     for (let i = 0; i < 45 && local.cost > -0.5; i++) {
@@ -67,10 +87,10 @@ export function* planShot(world: World, shooter: 0 | 1, opts: PlanOptions): Gene
         angle: normalizeAngle(local.angle + gaussian(rng) * spread),
         power: fixedPower ?? clampPower(local.power + gaussian(rng) * spread),
       };
-      const cost = evaluate(world, shooter, aim, planRules);
+      const cost = evaluate(world, shooter, aim, planRules, friends);
       if (cost < local.cost) local = { ...aim, cost };
       else spread = Math.max(0.05, spread * 0.93);
-      if (i % 12 === 11) yield;
+      if (i % 4 === 3) yield;
     }
     if (local.cost < best.cost) best = local;
     if (best.cost < 0) break;
@@ -89,7 +109,7 @@ function clampPower(p: number): number {
 }
 
 /** Run a planner to completion synchronously (tests, tooling). */
-export function planShotNow(world: World, shooter: 0 | 1, opts: PlanOptions): Aim {
+export function planShotNow(world: World, shooter: number, opts: PlanOptions): Aim {
   const it = planShot(world, shooter, opts);
   for (;;) {
     const r = it.next();

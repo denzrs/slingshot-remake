@@ -1,54 +1,80 @@
 # Slingshot
 
-Web-Remake des Linux-Klassikers [Slingshot](https://wiki.ubuntuusers.de/Spiele/Slingshot/): Zwei Raumschiffe schießen abwechselnd aufeinander, und jeder Schuss wird von der Schwerkraft der Planeten dazwischen abgelenkt. Anzahl, Größe und Lage der Planeten ändern sich jede Runde. Alte Schussbahnen bleiben stehen, damit man sich an den Treffer herantasten kann.
+A web remake of the Linux classic [Slingshot](https://wiki.ubuntuusers.de/Spiele/Slingshot/): two spaceships take turns firing at each other, and every shot is bent by the gravity of the planets in between. The number, size and position of the planets change every round. Old shot trails stay on screen, so you can feel your way towards a hit.
 
-## Starten
+The UI is available in **German and English**. On the first visit it follows your browser language; switch any time with the *Language* row on the title screen or in the settings.
+
+## Getting started
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # Physik-, Wertungs- und CPU-Tests
-npm run build      # statischer Build in dist/ – läuft auf jedem Webserver
+npm test           # physics, scoring and CPU tests
+npm run build      # static build in dist/ – runs on any web server
 ```
 
-## Steuerung
+## Controls
 
-| Taste | Aktion |
+| Key | Action |
 | --- | --- |
-| ← → | Schiff drehen |
-| ↑ ↓ | Schusskraft |
-| Enter / Leertaste | Feuer |
-| Shift | große Schritte (×10) |
-| Alt | kleine Schritte (×0,1) |
-| Strg oder Alt+Shift | sehr kleine Schritte (×0,01) – auf dem Mac belegt das System Strg+Pfeile |
-| Ziehen (Maus/Touch) | direkt zielen, die Pfeilspitze folgt dem Zeiger |
-| Leertaste | nächste Runde |
-| Esc | Menü |
-| F | Vollbild |
+| ← → | Rotate ship |
+| ↑ ↓ | Shot power |
+| Enter / Space | Fire (Event Horizon: lock in your aim) |
+| Shift | Large steps (×10) |
+| Alt | Small steps (×0.1) |
+| Ctrl or Alt+Shift | Tiny steps (×0.01) – on macOS the system claims Ctrl+arrows |
+| Drag (mouse/touch) | Aim directly, the arrow tip follows the pointer |
+| Space | Next round, skip the killcam |
+| C | Save the last killcam as a video |
+| Esc | Menu |
+| F | Fullscreen |
 
-## Regeln & Wertung
+## Game modes
 
-- Ein Treffer bringt `1000 × Schussfaktor × Kraftfaktor` Punkte (gerundet auf 10).
-  - Schussfaktor: 1,0 beim ersten Schuss der Runde, −0,15 pro weiterem Schuss, mindestens 0,25.
-  - Kraftfaktor: `1,5 − Kraft/100`, also 0,5 bis 1,5. Bei fester Schusskraft immer 1.
-- Wer das eigene Schiff trifft, schenkt dem Gegner 300 Punkte.
-- Nach der letzten Runde gewinnt, wer mehr Punkte hat.
+- **Classic** – the original duel, extended to up to six ships. Players take turns, one shot each. A hit ship is out; the round ends when one ship is left.
+- **Free for all or teams** – with three or more ships, the *Players* menu splits them into two or three teams (Ember, Frost, Nebula). Teams share a colour family, start grouped together and take turns alternately, so a small team shoots as often as a big one. The round ends when one team is left. Works in both modes.
+- **Event Horizon** (*Ereignishorizont*) – gravity royale. Everyone locks in an aim, then all shots fly at once. After every volley the central black hole grows, swallows planets and drags ships inwards. Kills pay base points × a trick-shot combo (swing-by, bank shot, graze, photon ring, airtime) and get a slow-motion killcam, which you can record as a video clip.
 
-Einstellungen wie im Original: unsichtbare Planeten, reflektierende Ränder, feste Schusskraft, maximale Planetenzahl und Runden pro Spiel. Dazu kommen ein CPU-Gegner in drei Stärken, die maximale Flugzeit, Gravitationslinien, Partikel und Ton. Die Einstellungen werden im Browser gespeichert.
+## Rules & scoring (Classic)
 
-## Technik
+- A hit scores `1000 × shot factor × power factor` points (rounded to 10).
+  - Shot factor: 1.0 on the first shot of the round, −0.15 for every further shot, minimum 0.25.
+  - Power factor: `1.5 − power/100`, i.e. 0.5 to 1.5. With fixed shot power it is always 1.
+- Hitting your own ship – or a teammate – costs 300 points.
+- With three or more ships, the last survivor gets 250 points; in team mode every member of the winning team does, fallen ones included.
+- After the last round, whoever (or whichever team) has more points wins.
 
-Vite + TypeScript + Canvas 2D, ohne Engine und ohne Laufzeit-Abhängigkeiten außer drei selbst gehosteten Schriften.
+As in the original, you can toggle invisible planets, reflecting edges, fixed shot power, the maximum number of planets and the number of rounds per game. On top of that there are CPU opponents in three strengths, a maximum flight time, gravity contour lines, particles and sound. Settings are saved in the browser.
 
-| Datei | Aufgabe |
+## Tech
+
+Vite + TypeScript + Canvas 2D, with no engine and no runtime dependencies besides three self-hosted fonts.
+
+| File | Purpose |
 | --- | --- |
-| `src/physics.ts` | Schuss-Integration (semi-implizites Euler, fester Zeitschritt 1/240 s), Kollisionen, Ränder |
-| `src/world.ts` | Zufällige Spielfelder aus einem Seed |
-| `src/game.ts` | Zustandsautomat: Zielen → Flug → Rundenende → Endstand |
-| `src/ai.ts` | CPU: Zufallssuche + Hill-Climbing über dieselbe Physik, Streuung sinkt mit jedem Schuss |
-| `src/scoring.ts` | Punkteformel |
-| `src/render/` | Gestochene Planeten (Schraffur-Shader auf ImageData), Äquipotential-Höhenlinien (Marching Squares), Hintergrund, Partikel, HUD |
-| `src/ui/` | DOM-Menüs mit Tastaturnavigation |
-| `src/audio.ts` | Synthetisierte Soundeffekte über die Web Audio API |
+| `src/physics.ts` | Shot integration (semi-implicit Euler, fixed time step 1/240 s), collisions, edges, trick-shot tracking |
+| `src/world.ts` | Random battlefields from a seed |
+| `src/game/` | Match state machines: aiming → flight → round end → final score (`classic.ts`, `horizon.ts`, shared base in `match.ts`) |
+| `src/volley.ts` | Simultaneous shots for Event Horizon, including projectile clashes |
+| `src/ai.ts` | CPU: random search + hill climbing over the same physics, spread shrinks with every shot |
+| `src/scoring.ts` | Scoring formulas and trick-shot multipliers |
+| `src/render/` | Engraved planets (hatching shader on ImageData), equipotential contour lines (marching squares), black hole lensing, backdrop, particles, HUD |
+| `src/ui/` | DOM menus with keyboard navigation |
+| `src/i18n.ts` | UI translations (`de` / `en`), `t()` lookup with `{placeholders}`, number formatting, runtime language switch |
+| `src/audio.ts` | Synthesized sound effects via the Web Audio API |
+| `src/clip.ts` | Records the killcam canvas to a downloadable video |
 
-Die Physik ist deterministisch, und der CPU-Planer nutzt exakt dieselbe `Shot`-Klasse wie das Spiel. Was die CPU vorausberechnet, fliegt also genau so.
+The physics is deterministic, and the CPU planner uses exactly the same `Shot` class as the game. What the CPU predicts is exactly how the shot flies – and it is also what makes the killcam replays exact.
+
+## Credits & license
+
+🎯 **Special shoutout to [matthias-Q](https://github.com/matthias-Q)**, who gave me the idea for this remake.
+
+Slingshot is a from-scratch remake of the game of the same name, written in Python/Pygame by [Jonathan Musther and Bart Mak](https://libregamewiki.org/Slingshot) (2007, GPL-2.0-or-later). This project reuses none of its code or assets; it only follows the original's game idea and rules.
+
+This program is free software: you can redistribute it and/or modify it under the terms of the [GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but without any warranty; without even the implied warranty of merchantability or fitness for a particular purpose.
+
+Fonts are bundled via [Fontsource](https://fontsource.org/) and licensed under the [SIL Open Font License 1.1](https://openfontlicense.org/):
+
+- [B612 and B612 Mono](https://github.com/polarsys/b612) – © The B612 Project Authors
+- [Big Shoulders Stencil Display](https://github.com/xotypeco/big_shoulders) – © Google Inc. / The Big Shoulders Project Authors

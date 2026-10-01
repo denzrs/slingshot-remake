@@ -1,0 +1,81 @@
+name: Release
+
+# Every push to main (i.e. every merge) that passes the tests is tagged with the
+# next minor version (vX.Y.0 -> vX.(Y+1).0) and released automatically.
+# Major bumps are manual: push a tag such as v2.0.0 and it gets released as-is;
+# the next merge then continues from there (v2.1.0).
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need all tags to find the latest version
+      - name: Determine tag
+        id: tag
+        run: |
+          semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag="$GITHUB_REF_NAME"
+          elif git tag --points-at HEAD | grep -qE "$semver"; then
+            echo "HEAD is already tagged, skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            latest=$(git tag -l 'v*' --sort=-v:refname | grep -E "$semver" | head -n 1 || true)
+            # No release yet: start from the version in package.json.
+            latest=${latest:-v$(node -p "require('./package.json').version")}
+            IFS=. read -r major minor _ <<< "${latest#v}"
+            tag="v$major.$((minor + 1)).0"
+          fi
+          echo "Releasing $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        if: steps.tag.outputs.skip != 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build
+        if: steps.tag.outputs.skip != 'true'
+        run: |
+          npm ci
+          npm run build
+          (cd dist && zip -r "../slingshot-${{ steps.tag.outputs.tag }}.zip" .)
+      - name: Create tag and GitHub release
+        if: steps.tag.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          gh release create "$TAG" "slingshot-$TAG.zip" \
+            --target "$GITHUB_SHA" \
+            --title "Slingshot $TAG" \
+            --generate-notes
