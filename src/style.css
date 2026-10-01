@@ -7,6 +7,7 @@
   --sodium: #ffd27a;
   --p1: #ff8660;
   --p2: #6fe3c8;
+  --danger: #ff5a6e;
   --font-display: 'Big Shoulders Stencil Display', 'Arial Narrow', sans-serif;
   --font-body: 'B612', system-ui, sans-serif;
   --font-mono: 'B612 Mono', ui-monospace, monospace;
@@ -197,6 +198,21 @@ body {
   border-color: var(--p1);
 }
 
+.item--hinted {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.item__hint {
+  font-weight: 400;
+  font-size: 12.5px;
+  letter-spacing: 0;
+  color: var(--bone-dim);
+}
+
 .item__label {
   font-weight: 400;
   font-size: 15px;
@@ -291,6 +307,20 @@ body {
   margin: 0 0 12px;
 }
 
+.help h3 {
+  margin: 20px 0 6px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+
+.help h3:first-child {
+  margin-top: 0;
+}
+
 .keys-table {
   width: 100%;
   margin: 16px 0 18px;
@@ -357,6 +387,61 @@ kbd {
   color: var(--bone-dim);
 }
 
+.ranking {
+  margin: 18px auto 0;
+  padding: 0;
+  max-width: 340px;
+  list-style: none;
+  text-align: left;
+}
+
+.ranking li {
+  display: grid;
+  grid-template-columns: 2.2em 1fr auto;
+  align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 1px solid rgb(91 125 179 / 0.2);
+}
+
+.ranking li:first-child {
+  font-size: 1.15em;
+}
+
+.ranking-label {
+  margin: 18px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+}
+
+.ranking--small {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.ranking--small li:first-child {
+  font-size: inherit;
+}
+
+.ranking--small .ranking__score {
+  font-size: 14px;
+}
+
+.ranking__place {
+  font-family: var(--font-mono);
+  color: var(--bone-dim);
+}
+
+.ranking__name {
+  font-weight: 700;
+}
+
+.ranking__score {
+  font: 700 20px/1 var(--font-mono);
+}
+
 /* ——— Touch ——— */
 
 #touch-fire {
@@ -376,8 +461,42 @@ kbd {
   text-transform: uppercase;
 }
 
-#touch-fire[hidden] {
+#touch-fire[hidden],
+#clip-save[hidden] {
   display: none;
+}
+
+#clip-save {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 5;
+  min-height: 44px;
+  padding: 0 16px 0 34px;
+  border: 1px solid rgb(255 90 110 / 0.7);
+  border-radius: 2px;
+  background: rgb(11 26 51 / 0.85);
+  color: var(--bone);
+  font: 700 14px/1 var(--font-body);
+  cursor: pointer;
+}
+
+#clip-save::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  transform: translateY(-50%);
+}
+
+#clip-save:hover,
+#clip-save:focus-visible {
+  outline: none;
+  background: rgb(255 90 110 / 0.16);
 }
 
 #rotate-hint {

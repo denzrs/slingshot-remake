@@ -8,14 +8,15 @@ const LEVEL_STEP = 0.11;
 
 /**
  * Draw the battlefield's gravity as a topographic map: equipotential lines of the
- * summed planet potential, traced with marching squares. `ps` = device pixels per field unit.
+ * summed potential of planets and black hole, traced with marching squares. `ps` = device pixels per field unit.
  */
 export function renderContours(world: World, ps: number): HTMLCanvasElement {
-  const { width, height, planets } = world;
+  const { width, height, planets, hole } = world;
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(width * ps);
   canvas.height = Math.ceil(height * ps);
-  if (planets.length === 0) return canvas;
+  const bodies = hole ? [...planets, hole] : planets;
+  if (bodies.length === 0) return canvas;
 
   const cols = Math.ceil(width / GRID) + 1;
   const rows = Math.ceil(height / GRID) + 1;
@@ -27,7 +28,7 @@ export function renderContours(world: World, ps: number): HTMLCanvasElement {
       const x = i * GRID;
       const y = j * GRID;
       let phi = 0;
-      for (const p of planets) {
+      for (const p of bodies) {
         const d = Math.max(Math.hypot(p.x - x, p.y - y), p.radius);
         phi += (PHYSICS.G * p.mass) / d;
       }

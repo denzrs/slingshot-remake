@@ -6,7 +6,7 @@ export interface Choice<T> {
 }
 
 export type MenuItem =
-  | { kind: 'action'; label: string; run: () => void; primary?: boolean }
+  | { kind: 'action'; label: string; run: () => void; primary?: boolean; /** Small second line under the label. */ hint?: string }
   | {
       kind: 'choice';
       label: string;
@@ -15,6 +15,9 @@ export type MenuItem =
       set: (v: unknown) => void;
       disabled?: () => boolean;
     };
+
+/** Screens are built from a factory, so a language switch can rebuild them with fresh labels. */
+export type ScreenFactory = () => Screen;
 
 export interface Screen {
   /** Builds the screen's DOM. Items become keyboard-navigable buttons inside `[data-items]`. */
@@ -29,7 +32,7 @@ export interface Screen {
  * Enter/Space activate, Esc goes back. Mouse and touch work as normal buttons.
  */
 export class Menu {
-  private stack: Screen[] = [];
+  private stack: ScreenFactory[] = [];
   private buttons: HTMLButtonElement[] = [];
   private rows = new Map<HTMLButtonElement, { item: Extract<MenuItem, { kind: 'choice' }>; value: HTMLElement }>();
 
@@ -43,14 +46,21 @@ export class Menu {
   }
 
   /** Replace the whole stack with one screen. */
-  open(screen: Screen): void {
+  open(screen: ScreenFactory): void {
     this.stack = [screen];
     this.render();
   }
 
-  push(screen: Screen): void {
+  push(screen: ScreenFactory): void {
     this.stack.push(screen);
     this.render();
+  }
+
+  /** Build the current screen again (e.g. after a language switch), keeping the focused row. */
+  rebuild(): void {
+    if (!this.isOpen) return;
+    const focused = document.activeElement as HTMLButtonElement | null;
+    this.render(Math.max(0, focused ? this.buttons.indexOf(focused) : 0));
   }
 
   back(): void {
@@ -58,7 +68,7 @@ export class Menu {
       this.stack.pop();
       this.render();
     } else {
-      this.stack[0]?.onEscape?.();
+      this.stack[0]?.().onEscape?.();
     }
   }
 
@@ -108,8 +118,8 @@ export class Menu {
     return false;
   }
 
-  private render(): void {
-    const screen = this.stack[this.stack.length - 1];
+  private render(focusIndex = 0): void {
+    const screen = this.stack[this.stack.length - 1]();
     const el = screen.build();
     const list = el.querySelector<HTMLElement>('[data-items]') ?? el;
     this.buttons = [];
@@ -120,7 +130,17 @@ export class Menu {
       b.type = 'button';
       if (item.kind === 'action') {
         b.className = item.primary ? 'item item--primary' : 'item';
-        b.textContent = item.label;
+        if (item.hint) {
+          b.classList.add('item--hinted');
+          const label = document.createElement('span');
+          label.textContent = item.label;
+          const hint = document.createElement('span');
+          hint.className = 'item__hint';
+          hint.textContent = item.hint;
+          b.append(label, hint);
+        } else {
+          b.textContent = item.label;
+        }
         b.addEventListener('click', () => {
           this.sound.select();
           item.run();
@@ -143,7 +163,7 @@ export class Menu {
 
     this.root.replaceChildren(el);
     this.root.hidden = false;
-    this.buttons[0]?.focus({ preventScroll: true });
+    this.buttons[focusIndex]?.focus({ preventScroll: true });
   }
 
   private cycle(item: Extract<MenuItem, { kind: 'choice' }>, dir: 1 | -1): void {

@@ -59,6 +59,45 @@ export class Sound {
     this.tone(880, 880, 0.05, 0.05, 'square', a.t);
   }
 
+  /** Two projectiles annihilating: bright zap. */
+  clash(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(1800, 200, 0.25, 0.12, 'sawtooth', a.t);
+    this.hiss(a.t, 0.25, 0.3, 6000, 800);
+  }
+
+  /** Something falls into the black hole: a falling, filtered whoosh. */
+  devour(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(300, 30, 0.7, 0.18, 'sine', a.t);
+    this.hiss(a.t, 0.7, 0.2, 1200, 60);
+  }
+
+  /** Trick-shot callout: a quick rising chirp. */
+  combo(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(700, 1400, 0.12, 0.06, 'triangle', a.t);
+  }
+
+  /** The horizon swells: deep sub rumble. */
+  rumble(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(48, 28, 1.4, 0.6, 'sine', a.t);
+    this.hiss(a.t, 1.4, 0.18, 300, 40);
+  }
+
+  /** "SALVE!": all guns at once. */
+  volley(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(90, 35, 0.35, 0.7, 'sine', a.t);
+    this.hiss(a.t, 0.4, 0.4, 3500, 300);
+  }
+
   select(): void {
     const a = this.begin();
     if (!a) return;
