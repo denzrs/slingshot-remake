@@ -65,6 +65,19 @@ export const HORIZON = {
   COLLAPSE_TIME: 1.5,
 } as const;
 
+/** Daily challenge: a fixed run of sectors against stationary targets, the same for everyone on a given day. */
+export const CHALLENGE = {
+  SECTORS: 5,
+  /** Seconds a shot may fly before it fizzles out. */
+  FLIGHT_TIME: 15,
+  /** Bonus for clearing every target of a sector. */
+  CLEAR_BONUS: 250,
+  /** Challenge #1 — the calendar day the daily challenge launched. */
+  EPOCH: '2026-10-02',
+  /** Rank ladder: share of the flawless baseline (one first-try hit per target, plus clear bonuses) needed for each rank. */
+  RANKS: [0, 0.3, 0.55, 0.8, 1.05, 1.35],
+} as const;
+
 /** Palette — "astrographic plate": deep prussian ink, bone-white graphite, six signal colours. */
 export const COLORS = {
   plate: '#0b1a33',

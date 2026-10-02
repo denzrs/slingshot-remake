@@ -13,6 +13,8 @@ const PLANET_GAP = 24;
 const HOLE_CLEARANCE = 90;
 
 export interface WorldOptions {
+  /** Lower bound of the planet count (default 2); the count is drawn between this and `maxPlanets`. */
+  minPlanets?: number;
   maxPlanets: number;
   players: number;
   /** Event Horizon: a black hole sits in the middle. */
@@ -42,7 +44,7 @@ export function generateWorld(seed: number, opts: WorldOptions): World {
     : null;
 
   const xMargin = duel ? 270 : 150;
-  const count = intRange(rng, Math.min(2, opts.maxPlanets), opts.maxPlanets);
+  const count = intRange(rng, Math.min(opts.minPlanets ?? 2, opts.maxPlanets), opts.maxPlanets);
   const planets: Planet[] = [];
   for (let attempt = 0; planets.length < count && attempt < 800; attempt++) {
     // Skew towards smaller bodies so big ones stay special.

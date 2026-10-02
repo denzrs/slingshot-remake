@@ -31,6 +31,7 @@ npm run build      # static build in dist/ – runs on any web server
 
 ## Game modes
 
+- **Daily Challenge** (*Tägliche Herausforderung*) – five sectors with stationary targets and a limited number of shots, the same for everyone on a given calendar day. Today's theme (Billiard, Blind flight, Singularity, Heavy load, Precision, Sniper or Classic) decides which twists the sectors carry; difficulty ramps up through the day and with the weekend. Every target is guaranteed to be hittable. At the end you get a result card with your score and rank, made for screenshots, plus a Wordle-style text to copy. Your best run, attempts and streak are kept in the browser. Add `?daily=YYYY-MM-DD` to the URL to fly another day.
 - **Classic** – the original duel, extended to up to six ships. Players take turns, one shot each. A hit ship is out; the round ends when one ship is left.
 - **Free for all or teams** – with three or more ships, the *Players* menu splits them into two or three teams (Ember, Frost, Nebula). Teams share a colour family, start grouped together and take turns alternately, so a small team shoots as often as a big one. The round ends when one team is left. Works in both modes.
 - **Event Horizon** (*Ereignishorizont*) – gravity royale. Everyone locks in an aim, then all shots fly at once. After every volley the central black hole grows, swallows planets and drags ships inwards. Kills pay base points × a trick-shot combo (swing-by, bank shot, graze, photon ring, airtime) and get a slow-motion killcam, which you can record as a video clip.
@@ -43,6 +44,8 @@ npm run build      # static build in dist/ – runs on any web server
 - Hitting your own ship – or a teammate – costs 300 points.
 - With three or more ships, the last survivor gets 250 points; in team mode every member of the winning team does, fallen ones included.
 - After the last round, whoever (or whichever team) has more points wins.
+
+**Daily Challenge scoring:** a hit pays `1000 × shot factor × power factor × trick-shot combo`, where the shot factor counts the shots spent on *that target* (−0.15 per extra shot, minimum 0.25). Clearing a sector adds 250; hitting yourself costs 300 and ends the sector. Ranks (Cadet … Gravity master) are measured against a flawless-but-plain run.
 
 As in the original, you can toggle invisible planets, reflecting edges, fixed shot power, the maximum number of planets and the number of rounds per game. On top of that there are CPU opponents in three strengths, a maximum flight time, gravity contour lines, particles and sound. Settings are saved in the browser.
 
@@ -58,6 +61,9 @@ Vite + TypeScript + Canvas 2D, with no engine and no runtime dependencies beside
 | `src/volley.ts` | Simultaneous shots for Event Horizon, including projectile clashes |
 | `src/ai.ts` | CPU: random search + hill climbing over the same physics, spread shrinks with every shot |
 | `src/scoring.ts` | Scoring formulas and trick-shot multipliers |
+| `src/challenge.ts` | Daily challenge generator: date → seed → theme → sector specs → worlds. Targets sit on the path of a probe shot, so every sector has a known solution (pure and deterministic, no DOM) |
+| `src/game/challenge.ts` | `ChallengeMatch`: one pilot, stationary targets, a shot budget per sector |
+| `src/dailyStore.ts` | Best run per day, attempts and streak in `localStorage` |
 | `src/render/` | Engraved planets (hatching shader on ImageData), equipotential contour lines (marching squares), black hole lensing, backdrop, particles, HUD |
 | `src/ui/` | DOM menus with keyboard navigation |
 | `src/i18n.ts` | UI translations (`de` / `en`), `t()` lookup with `{placeholders}`, number formatting, runtime language switch |
