@@ -1,16 +1,22 @@
-import { HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
-import { teamName, type Match, type Mode } from '../game';
+import { CHALLENGE, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
+import { teamName, type Match, type Mode, type VersusMode } from '../game';
 import { fmtNum, LANGS, t, tn, type Lang } from '../i18n';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
 import type { StyleKind } from '../physics';
 import { activeSeats, seatTeamsFor, type Seat, type Settings } from '../settings';
+import { dailyMenuHint, dailyScreen } from './daily';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
 
 export interface App {
   menu: Menu;
   settings: Settings;
   settingsChanged(): void;
-  start(mode: Mode): void;
+  /** The mode being played right now, null on the title screen. */
+  readonly mode: Mode | null;
+  /** Today's date key — the real one, unless the URL asks for another day. */
+  today(): string;
+  start(mode: VersusMode): void;
+  startDaily(): void;
   resume(): void;
   rematch(): void;
   toTitle(): void;
@@ -77,7 +83,8 @@ export function titleScreen(app: App): Screen {
     // A getter, so the lineup hint is fresh whenever the menu re-renders this screen.
     get items(): MenuItem[] {
       return [
-        { kind: 'action', label: t('mode.classic'), hint: t('mode.classic.hint'), primary: true, run: () => app.start('classic') },
+        { kind: 'action', label: t('mode.daily'), hint: dailyMenuHint(app.today()), primary: true, run: () => app.menu.push(() => dailyScreen(app)) },
+        { kind: 'action', label: t('mode.classic'), hint: t('mode.classic.hint'), run: () => app.start('classic') },
         { kind: 'action', label: t('mode.horizon'), hint: t('mode.horizon.hint'), run: () => app.start('horizon') },
         { kind: 'action', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
         { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
@@ -89,12 +96,14 @@ export function titleScreen(app: App): Screen {
 }
 
 export function pauseScreen(app: App): Screen {
+  const daily = app.mode === 'challenge';
   return {
     build: () => panel(t('pause.title'), null),
     items: [
       { kind: 'action', label: t('pause.resume'), primary: true, run: () => app.resume() },
-      { kind: 'action', label: t('pause.newGame'), run: () => app.rematch() },
-      { kind: 'action', label: t('common.players'), run: () => app.menu.push(() => playersScreen(app)) },
+      { kind: 'action', label: daily ? t('daily.retry') : t('pause.newGame'), run: () => app.rematch() },
+      // Seats make no sense in the daily challenge — it is always you against the targets.
+      ...(daily ? [] : [{ kind: 'action', label: t('common.players'), run: () => app.menu.push(() => playersScreen(app)) } satisfies MenuItem]),
       { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
       { kind: 'action', label: t('common.help'), run: () => app.menu.push(() => helpScreen(app)) },
       { kind: 'action', label: t('common.mainMenu'), run: () => app.toTitle() },
@@ -216,6 +225,8 @@ export function helpScreen(app: App): Screen {
           h('p', null, t('help.teams.body', { penalty: SCORING.SELF_HIT, bonus: SCORING.SURVIVOR })),
           h('h3', null, t('help.horizon.title')),
           h('p', null, t('help.horizon.body', { seconds: HORIZON.SHOT_CLOCK })),
+          h('h3', null, t('help.daily.title')),
+          h('p', null, t('help.daily.body', { base: SCORING.BASE, bonus: CHALLENGE.CLEAR_BONUS, selfHit: SCORING.SELF_HIT })),
           h(
             'table.keys-table',
             null,
