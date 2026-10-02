@@ -8,6 +8,8 @@ import {
   modifiersOf,
   rankOf,
   sectorRules,
+  type Sector,
+  type SectorSpec,
   shiftDate,
   themeFor,
   THEMES,
@@ -107,10 +109,14 @@ describe('daily challenge', () => {
 describe('sector layout', () => {
   // Every day for five weeks, every sector: the whole point is that none of them can be broken.
   const sectors = days(35).flatMap((d) => dailyChallenge(d).sectors.map((spec) => ({ day: d, spec })));
+  // Built once for the two sweeps below — a CI runner needs a few seconds for all 175.
+  let built: { day: string; spec: SectorSpec; sector: Sector }[] | null = null;
+  const buildAll = () => (built ??= sectors.map(({ day, spec }) => ({ day, spec, sector: buildSector(spec) })));
+  const SWEEP_TIMEOUT = 60_000;
 
   it('puts every target on a path the player can actually fly', () => {
-    for (const { day, spec } of sectors) {
-      const { world, solutions } = buildSector(spec);
+    for (const { day, spec, sector } of buildAll()) {
+      const { world, solutions } = sector;
       const rules = sectorRules(spec);
       expect(solutions.length, `${day} sector ${spec.index}`).toBe(spec.targets);
       expect(world.ships).toHaveLength(1 + spec.targets);
@@ -120,11 +126,11 @@ describe('sector layout', () => {
         expect(s.window).toBeGreaterThanOrEqual(0.08);
       }
     }
-  });
+  }, SWEEP_TIMEOUT);
 
   it('keeps targets in the field, away from planets, the hole and each other', () => {
-    for (const { day, spec } of sectors) {
-      const { world } = buildSector(spec);
+    for (const { day, spec, sector } of buildAll()) {
+      const { world } = sector;
       const [me, ...targets] = world.ships;
       targets.forEach((t, i) => {
         const label = `${day} sector ${spec.index} target ${i + 1}`;
@@ -139,7 +145,7 @@ describe('sector layout', () => {
       });
       expect(world.hole !== null).toBe(spec.hole);
     }
-  });
+  }, SWEEP_TIMEOUT);
 
   it('builds a sector fast enough to do between two rounds', () => {
     const t0 = performance.now();
