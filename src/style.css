@@ -449,6 +449,249 @@ kbd {
   font: 700 20px/1 var(--font-mono);
 }
 
+/* ——— Daily challenge ——— */
+
+.sectors {
+  margin: 16px 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.sectors li {
+  display: grid;
+  grid-template-columns: 5.4em auto 1fr;
+  align-items: center;
+  gap: 4px 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgb(91 125 179 / 0.2);
+}
+
+.sectors__n {
+  font: 800 17px/1 var(--font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+
+.sectors__info {
+  font: 400 13px/1.3 var(--font-mono);
+  color: var(--bone-dim);
+}
+
+.pips {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.pip {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: rgb(91 125 179 / 0.32);
+}
+
+.pip--on {
+  background: var(--sodium);
+}
+
+.chips {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chips:empty {
+  display: none;
+}
+
+.chip {
+  padding: 2px 7px;
+  border: 1px solid rgb(255 210 122 / 0.55);
+  border-radius: 2px;
+  font: 700 10.5px/1.4 var(--font-body);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sodium);
+}
+
+.daily-stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+
+.daily-stats div {
+  min-width: 0;
+}
+
+.daily-stats dt {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+}
+
+.daily-stats dd {
+  margin: 4px 0 0;
+  font: 700 19px/1.1 var(--font-body);
+  color: var(--bone);
+}
+
+.daily-stats-none {
+  margin: 0 0 14px;
+}
+
+/* The result card — built to be screenshotted. */
+
+.panel--daily {
+  width: min(500px, 100%);
+  text-align: center;
+}
+
+.panel--daily .eyebrow {
+  color: var(--bone-dim);
+}
+
+.daily__title {
+  margin: 4px 0 2px;
+  font: 800 clamp(26px, 5vw, 34px) / 1 var(--font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.daily__date {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bone-dim);
+}
+
+.daily__score {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  margin: 18px 0 0;
+}
+
+.daily__num {
+  font: 800 clamp(64px, 14vw, 104px) / 0.9 var(--font-display);
+  letter-spacing: 0.01em;
+  color: var(--bone);
+  text-shadow: 3px 3px 0 rgb(111 227 200 / 0.28);
+}
+
+.daily__unit {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bone-dim);
+}
+
+.daily__rank {
+  margin: 6px 0 0;
+  font: 800 clamp(24px, 5vw, 30px) / 1 var(--font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sodium);
+}
+
+.daily__rank[data-rank='5'] {
+  color: var(--p2);
+}
+
+.sectors--result {
+  margin: 20px 0 12px;
+  text-align: left;
+}
+
+.sectors--result li {
+  grid-template-columns: 5.4em 1fr auto;
+}
+
+.sectors--result .is-failed .sectors__n {
+  color: var(--bone-dim);
+}
+
+.sectors__points {
+  font: 700 16px/1 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--bone);
+}
+
+.is-failed .sectors__points {
+  color: var(--danger);
+}
+
+.shots {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.shot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  vertical-align: -2px;
+  background: rgb(91 125 179 / 0.45);
+}
+
+.shot--hit {
+  background: var(--p2);
+}
+
+.shot--trick {
+  background: var(--sodium);
+}
+
+.shot--self {
+  background: var(--danger);
+}
+
+.shot--unused {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgb(91 125 179 / 0.45);
+}
+
+.daily__meta {
+  margin: 0;
+  font: 400 13px/1.5 var(--font-body);
+  color: var(--bone-dim);
+}
+
+.daily__new {
+  color: var(--sodium);
+}
+
+.legend {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--bone-dim);
+}
+
+.legend .shot {
+  width: 9px;
+  height: 9px;
+  vertical-align: -1px;
+}
+
+.daily__status {
+  min-height: 1.4em;
+  margin: 10px 0 -14px;
+  font-size: 12.5px;
+  color: var(--p2);
+}
+
+.panel--daily .items--row {
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
 /* ——— Touch ——— */
 
 #touch-fire {

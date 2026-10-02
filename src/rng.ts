@@ -26,3 +26,28 @@ export function gaussian(rng: Rng): number {
   const v = rng();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
+
+/** Stable 32-bit hash of any mix of strings and numbers — derives per-day, per-sector seeds. */
+export function hashSeed(...parts: (string | number)[]): number {
+  let h = 0x811c9dc5;
+  for (const ch of parts.join('\u241f')) {
+    h ^= ch.charCodeAt(0);
+    h = Math.imul(h, 0x01000193);
+  }
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+/** Fisher–Yates on a copy. */
+export function shuffle<T>(rng: Rng, items: readonly T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
