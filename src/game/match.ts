@@ -7,7 +7,9 @@ import { seatTeamsFor, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
 import { generateWorld } from '../world';
 
-export type Mode = 'classic' | 'horizon';
+export type Mode = 'classic' | 'horizon' | 'challenge';
+/** The modes you play against other ships, picked from the title menu. */
+export type VersusMode = Exclude<Mode, 'challenge'>;
 export type Phase = 'aiming' | 'flying' | 'killcam' | 'collapse' | 'roundOver' | 'gameOver';
 
 export interface PlayerState {
@@ -20,6 +22,8 @@ export interface PlayerState {
   color: string;
   /** Team index in team mode, null in free for all. */
   team: number | null;
+  /** Daily challenge: a stationary target drone rather than a ship that shoots. */
+  target: boolean;
   score: number;
   angle: number;
   power: number;
@@ -55,7 +59,7 @@ export interface KillRecord {
   at: number;
 }
 
-export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin';
+export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots';
 
 export interface RoundSummary {
   title: RoundTitle;
@@ -535,18 +539,20 @@ export abstract class Match {
   }
 }
 
-function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, team: number | null): PlayerState {
+export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, team: number | null, target = false): PlayerState {
   const cpu = kind === 'human' ? null : kind;
   return {
     id,
     seat,
     // A getter, so the name follows the UI language when it is switched mid-match.
     get name() {
+      if (target) return t('daily.target', { n: id });
       return cpu ? `CPU ${seat + 1}` : t('players.player', { n: seat + 1 });
     },
     cpu,
-    color: COLORS.players[seat],
+    color: target ? COLORS.danger : COLORS.players[seat],
     team,
+    target,
     score: 0,
     angle: 0,
     power: AIM.DEFAULT_POWER,

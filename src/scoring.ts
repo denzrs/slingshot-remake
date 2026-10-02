@@ -44,3 +44,14 @@ export function scoreHorizonKill(power: number, kinds: StyleKind[], fixedPower: 
   const combo = comboMultiplier(kinds);
   return { points: Math.round((SCORING.BASE * powerFactor * combo) / 10) * 10, combo };
 }
+
+/**
+ * Daily challenge: a hit pays base × shot factor × power factor × trick-shot combo.
+ * `attempt` counts the shots spent on this target (1 = first try), like the round's shot count in Classic.
+ */
+export function scoreChallengeHit(attempt: number, power: number, fixedPower: boolean, kinds: StyleKind[]): { points: number; multiplier: number } {
+  const shotFactor = Math.max(0.25, 1 - 0.15 * (attempt - 1));
+  const powerFactor = fixedPower ? 1 : 1.5 - power / AIM.MAX_POWER;
+  const multiplier = comboMultiplier(kinds);
+  return { points: Math.round((SCORING.BASE * shotFactor * powerFactor * multiplier) / 10) * 10, multiplier };
+}

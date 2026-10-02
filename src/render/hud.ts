@@ -1,6 +1,7 @@
+import { modifiersOf } from '../challenge';
 import { AIM, COLORS, FIELD, FONTS, TEAMS } from '../config';
-import { HorizonMatch, teamName, type KillRecord, type Match, type PlayerState } from '../game';
-import { fmt, t } from '../i18n';
+import { ChallengeMatch, HorizonMatch, teamName, type KillRecord, type Match, type PlayerState } from '../game';
+import { fmt, fmtInt, t, type Key } from '../i18n';
 import { styleLabel } from '../scoring';
 import type { View } from './backdrop';
 import { rgba } from './color';
@@ -24,10 +25,13 @@ export class Hud {
   private k = 1;
   private field: Box = { x: 0, y: 0, w: 0, h: 0 };
 
+  private shipPos: (i: number) => { x: number; y: number } = () => ({ x: 0, y: 0 });
+
   constructor(private readonly ctx: CanvasRenderingContext2D) {}
 
   draw(match: Match, view: View, opts: DrawOptions, time: number, shipPos: (i: number) => { x: number; y: number }): void {
     this.time = time;
+    this.shipPos = shipPos;
     this.k = Math.min(1.2, Math.max(0.72, view.scale));
     this.field = { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
 
@@ -40,6 +44,11 @@ export class Hud {
     const killcam = match instanceof HorizonMatch ? match.killcamInfo : null;
     if (killcam) {
       this.drawKillcam(match, killcam.clip.record, killcam.recording, killcam.slow, opts);
+      return;
+    }
+
+    if (match instanceof ChallengeMatch) {
+      this.drawChallenge(match, opts);
       return;
     }
 
@@ -245,6 +254,162 @@ export class Hud {
     ctx.fillRect(fromRight ? x + w - fill : x, y, fill, 2 * k);
   }
 
+  // ————————————————————————————— Daily challenge —————————————————————————————
+
+  private drawChallenge(match: ChallengeMatch, opts: DrawOptions): void {
+    const { ctx, k, field } = this;
+    const left = field.x + 24 * k;
+    const right = field.x + field.w - 24 * k;
+    const top = field.y + 18 * k;
+    ctx.textBaseline = 'top';
+
+    // Left: which challenge, which theme.
+    ctx.textAlign = 'left';
+    ctx.fillStyle = COLORS.sodium;
+    ctx.font = `800 ${22 * k}px ${FONTS.display}`;
+    setSpacing(ctx, 2 * k);
+    ctx.fillText(t('daily.hud.label', { n: match.challenge.number }), left, top);
+    ctx.fillStyle = COLORS.boneDim;
+    ctx.font = `700 ${10.5 * k}px ${FONTS.body}`;
+    setSpacing(ctx, 1.8 * k);
+    ctx.fillText(t(`daily.theme.${match.challenge.theme}` as Key).toUpperCase(), left, top + 28 * k);
+
+    // Centre: the sector, and the rules it plays by.
+    ctx.textAlign = 'center';
+    ctx.fillStyle = COLORS.bone;
+    ctx.font = `800 ${24 * k}px ${FONTS.display}`;
+    setSpacing(ctx, 2 * k);
+    ctx.fillText(`${t('daily.hud.sector')} ${match.round} / ${match.totalRounds}`, field.x + field.w / 2, top);
+    setSpacing(ctx, 0);
+    this.drawChips(modifierLabels(match), field.x + field.w / 2, top + 34 * k);
+
+    // Right: points, targets left, shots left.
+    ctx.textAlign = 'right';
+    ctx.fillStyle = COLORS.boneDim;
+    ctx.font = `700 ${10 * k}px ${FONTS.body}`;
+    setSpacing(ctx, 1.8 * k);
+    ctx.fillText(t('daily.hud.score'), right, top);
+    setSpacing(ctx, 0);
+    ctx.fillStyle = COLORS.bone;
+    ctx.font = `800 ${34 * k}px ${FONTS.display}`;
+    setSpacing(ctx, 1 * k);
+    ctx.fillText(fmtInt(match.total), right, top + 11 * k);
+    setSpacing(ctx, 0);
+    this.drawPipRow(t('daily.hud.targets'), right, top + 54 * k, match.targetsTotal, match.targetsLeft, 'diamond', COLORS.danger);
+    this.drawPipRow(t('daily.hud.shots'), right, top + 72 * k, match.spec.shots, match.shotsLeft, 'dot', COLORS.bone);
+
+    if (match.phase === 'aiming' && match.current >= 0) this.drawReadout(match, match.pilot, this.shipPos(match.current));
+    if (match.phase === 'roundOver' && match.summary) this.drawChallengeBanner(match);
+    this.drawHint(match, opts.touch);
+  }
+
+  /** Small outlined tags centred on `cx`, e.g. "BOUNCE". */
+  private drawChips(labels: string[], cx: number, y: number): void {
+    if (!labels.length) return;
+    const { ctx, k } = this;
+    ctx.font = `700 ${9.5 * k}px ${FONTS.body}`;
+    setSpacing(ctx, 1.4 * k);
+    const padX = 7 * k;
+    const gap = 6 * k;
+    const widths = labels.map((l) => ctx.measureText(l.toUpperCase()).width + padX * 2);
+    let x = cx - (widths.reduce((a, b) => a + b, 0) + gap * (labels.length - 1)) / 2;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    labels.forEach((label, i) => {
+      ctx.strokeStyle = rgba(COLORS.sodium, 0.6);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(x + 0.5, y + 0.5, widths[i], 17 * k, 3 * k);
+      ctx.stroke();
+      ctx.fillStyle = COLORS.sodium;
+      ctx.fillText(label.toUpperCase(), x + padX, y + 9.5 * k);
+      x += widths[i] + gap;
+    });
+    setSpacing(ctx, 0);
+    ctx.textBaseline = 'top';
+  }
+
+  /** "TARGETS ◆ ◆ ◇": `left` of `total` pips are filled, the rest hollow. Right-aligned at `right`. */
+  private drawPipRow(label: string, right: number, y: number, total: number, left: number, shape: 'diamond' | 'dot', color: string): void {
+    const { ctx, k } = this;
+    const size = 5.5 * k;
+    const step = size * 2 + 5 * k;
+    for (let i = 0; i < total; i++) {
+      // Spent pips empty from the right, so the filled ones stay on the left.
+      const cx = right - size - (total - 1 - i) * step;
+      const cy = y + 6 * k;
+      const filled = i < left;
+      ctx.beginPath();
+      if (shape === 'diamond') {
+        ctx.moveTo(cx, cy - size);
+        ctx.lineTo(cx + size, cy);
+        ctx.lineTo(cx, cy + size);
+        ctx.lineTo(cx - size, cy);
+        ctx.closePath();
+      } else {
+        ctx.arc(cx, cy, size * 0.85, 0, Math.PI * 2);
+      }
+      if (filled) {
+        ctx.fillStyle = color;
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = rgba(COLORS.boneDim, 0.5);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = COLORS.boneDim;
+    ctx.font = `700 ${9.5 * k}px ${FONTS.body}`;
+    setSpacing(ctx, 1.6 * k);
+    ctx.fillText(label, right - total * step - 4 * k, y + 6.5 * k);
+    setSpacing(ctx, 0);
+    ctx.textBaseline = 'top';
+  }
+
+  private drawChallengeBanner(match: ChallengeMatch): void {
+    const { ctx, k, field } = this;
+    const s = match.summary!;
+    const res = match.results[match.results.length - 1];
+    const fade = Math.min(1, Math.max(0, (match.phaseTime - 0.35) / 0.4));
+    if (fade <= 0 || !res) return;
+    const color = res.cleared ? COLORS.sodium : COLORS.danger;
+    const title = t(`title.${s.title}`);
+    const cx = field.x + field.w / 2;
+    const cy = field.y + field.h / 2;
+    const h = 150 * k;
+
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = rgba(COLORS.plate, 0.8);
+    ctx.fillRect(field.x, cy - h / 2, field.w, h);
+    ctx.fillStyle = rgba(color, 0.8);
+    ctx.fillRect(field.x, cy - h / 2, field.w, 1);
+    ctx.fillRect(field.x, cy + h / 2 - 1, field.w, 1);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = color;
+    ctx.font = `800 ${(title.length > 16 ? 58 : title.length > 10 ? 70 : 84) * k}px ${FONTS.display}`;
+    setSpacing(ctx, 6 * k);
+    ctx.fillText(title, cx + 3 * k, cy + 12 * k);
+    setSpacing(ctx, 0);
+
+    const points = `${res.points >= 0 ? '+' : '−'}${fmtInt(Math.abs(res.points))}`;
+    ctx.fillStyle = COLORS.bone;
+    ctx.font = `700 ${17 * k}px ${FONTS.body}`;
+    ctx.fillText(points, cx, cy + 42 * k);
+
+    const tricks = [...new Set(res.shots.flatMap((x) => x.combo))].map((c) => styleLabel(c));
+    const parts = [t('daily.hud.shotsUsed', { used: res.shots.length, budget: res.budget })];
+    if (res.bonus) parts.push(t('daily.hud.clearBonus', { n: res.bonus }));
+    if (tricks.length) parts.push(tricks.join(' · '));
+    ctx.fillStyle = COLORS.boneDim;
+    ctx.font = `400 ${12.5 * k}px ${FONTS.mono}`;
+    ctx.fillText(parts.join('  ·  '), cx, cy + 62 * k);
+    ctx.globalAlpha = 1;
+  }
+
   // ————————————————————————————— Centre —————————————————————————————
 
   /** "SALVE!" — punches in, then fades. */
@@ -404,7 +569,8 @@ export class Hud {
     } else if (match.phase === 'collapse') {
       items = [['', t('hud.collapse')]];
     } else if (match.phase === 'roundOver' && match.phaseTime > 0.6) {
-      items = [[touch ? '' : t('common.space'), match.isLastRound ? t('hud.finalStandings') : t('hud.nextRound')]];
+      const next = match.isLastRound ? t('hud.finalStandings') : match instanceof ChallengeMatch ? t('daily.hud.nextSector') : t('hud.nextRound');
+      items = [[touch ? '' : t('common.space'), next]];
       if (horizon && match.lastClip && !touch) items.push(['C', t('hud.saveKillcam')]);
     }
     if (!items.length) return;
@@ -475,6 +641,11 @@ function killSegments(match: Match, r: KillRecord): Segment[] {
     out.push([`  ${r.combo.map((c) => styleLabel(c)).join(' · ')}`, COLORS.boneDim], [` ×${fmt(r.multiplier, 2)}`, COLORS.sodium]);
   }
   return out;
+}
+
+/** Rule tags of the current daily sector, e.g. ["Bounce", "Fixed power"]. */
+function modifierLabels(match: ChallengeMatch): string[] {
+  return modifiersOf(match.spec).map((m) => t(`daily.mod.${m}` as Key));
 }
 
 function nameLabel(p: PlayerState): string {

@@ -255,6 +255,7 @@ export class Renderer {
       if (!ship.alive) return;
       const player = match.players[i];
       const color = player.color;
+      if (player.target) return this.drawTarget(ship.x, ship.y, color);
       const current = planning && match.current === i;
 
       if (current) {
@@ -325,6 +326,42 @@ export class Renderer {
       ctx.fill();
       ctx.restore();
     });
+  }
+
+  /** Daily challenge target: a diamond inside a ring the size of the hit box, with slowly turning brackets. */
+  private drawTarget(x: number, y: number, color: string): void {
+    const { ctx } = this;
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 2.4 + x * 0.01);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.strokeStyle = rgba(color, 0.5 + 0.3 * pulse);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, PHYSICS.SHIP_RADIUS, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.rotate(this.time * 0.5);
+    ctx.setLineDash([7, 8]);
+    ctx.strokeStyle = rgba(color, 0.45);
+    ctx.beginPath();
+    ctx.arc(0, 0, 21, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    ctx.setLineDash([]);
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.beginPath();
+    ctx.moveTo(0, -7);
+    ctx.lineTo(7, 0);
+    ctx.lineTo(0, 7);
+    ctx.lineTo(-7, 0);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.plate;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.restore();
   }
 
   private drawAimVector(x: number, y: number, angle: number, power: number, color: string, style: 'full' | 'ghost' | 'thin'): void {

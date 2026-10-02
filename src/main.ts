@@ -6,14 +6,17 @@ import '@fontsource/b612-mono/700';
 import './style.css';
 
 import { Sound } from './audio';
+import { dailyChallenge, dateKey, isDateKey } from './challenge';
 import { ClipRecorder } from './clip';
 import { AIM, COLORS, FONTS, PHYSICS } from './config';
-import { createMatch, HorizonMatch, type Match, type Mode } from './game';
+import { recordRun } from './dailyStore';
+import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
 import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t } from './i18n';
 import { Renderer } from './render/renderer';
 import { STYLE_MULTIPLIER, styleLabel } from './scoring';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
+import { dailyResultScreen } from './ui/daily';
 import { Menu } from './ui/menu';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
 
@@ -42,7 +45,10 @@ const attract = createMatch(
 );
 let match: Match | null = null;
 let screen: 'title' | 'play' = 'title';
-let lastMode: Mode = 'classic';
+let lastMode: VersusMode = 'classic';
+/** `?daily=YYYY-MM-DD` flies another day's challenge — handy for testing and for sharing an old one. */
+const requestedDay = new URLSearchParams(location.search).get('daily');
+const forcedDay = isDateKey(requestedDay) ? requestedDay : null;
 
 const active = (): Match => (screen === 'play' && match ? match : attract);
 
@@ -106,7 +112,12 @@ function wire(m: Match): void {
         if (!e.active && e.recording) void recorder.stopAndSave();
         break;
       case 'gameOver':
-        menu.open(() => gameOverScreen(app, m));
+        if (m instanceof ChallengeMatch) {
+          const outcome = recordRun(m.challenge.dateKey, m.total);
+          menu.open(() => dailyResultScreen(app, m, outcome));
+        } else {
+          menu.open(() => gameOverScreen(app, m));
+        }
         break;
     }
   });
@@ -128,9 +139,20 @@ const app: App = {
       menu.rebuild();
     }
   },
+  get mode() {
+    return screen === 'play' && match ? match.mode : null;
+  },
+  today: () => forcedDay ?? dateKey(),
   start(mode) {
     lastMode = mode;
     match = createMatch(mode, settings);
+    wire(match);
+    screen = 'play';
+    effects.clear();
+    menu.close();
+  },
+  startDaily() {
+    match = createChallenge(settings, dailyChallenge(app.today()));
     wire(match);
     screen = 'play';
     effects.clear();
