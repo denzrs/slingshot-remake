@@ -68,7 +68,7 @@ export class HorizonMatch extends Match {
   private collapse: CollapseState | null = null;
 
   get rules(): ShotRules {
-    return { bounce: true, timeLimit: HORIZON.SHOT_TIME };
+    return { bounce: this.settings.bounce, timeLimit: this.settings.shotTime };
   }
 
   protected get survivorBonus(): number {
