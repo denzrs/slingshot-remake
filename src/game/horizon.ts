@@ -315,7 +315,7 @@ export class HorizonMatch extends Match {
       const drift = pull(p.x, p.y, 0.6, p.radius * 0.6);
       if (drift.lost) {
         toMass += p.mass * HORIZON.FEED;
-        this.emit({ type: 'devour', x: p.x, y: p.y, toX: hole.x, toY: hole.y, color: p.tint });
+        this.emit({ type: 'devour', x: p.x, y: p.y, toX: hole.x, toY: hole.y, color: p.tint, vx: 0, vy: 0 });
       }
       planets.set(p.seed, drift);
     }
@@ -352,7 +352,7 @@ export class HorizonMatch extends Match {
       if (!d.lost) continue;
       this.players[id].alive = false;
       this.world.ships[id].alive = false;
-      this.emit({ type: 'devour', x: hole.x, y: hole.y, toX: hole.x, toY: hole.y, color: this.players[id].color });
+      this.emit({ type: 'devour', x: hole.x, y: hole.y, toX: hole.x, toY: hole.y, color: this.players[id].color, vx: 0, vy: 0 });
       this.recordKill({ killer: null, victim: id, points: 0, self: false, friendly: false, combo: [], multiplier: 1, shots: 0, power: 0, at: this.clock });
     }
     for (const p of this.alive) p.score += SCORING.VOLLEY_SURVIVED;
