@@ -2,7 +2,7 @@ import { HORIZON, PHYSICS, SCORING, COLORS } from '../config';
 import { t } from '../i18n';
 import { cloneWorld, type ShotRules, type StyleKind, type World } from '../physics';
 import { scoreHorizonKill } from '../scoring';
-import { Volley, type VolleyAim, type VolleyShot } from '../volley';
+import { Volley, type VolleyAim, type VolleyShot, type VolleySnapshot } from '../volley';
 import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene } from './match';
 
 /** Everything needed to replay one kill exactly — the physics is deterministic. */
@@ -15,6 +15,43 @@ export interface KillcamClip {
   /** Simulation step at which the kill happened. */
   killStep: number;
   record: KillRecord;
+}
+
+export interface HorizonSnapshot {
+  phase: Phase;
+  phaseTime: number;
+  clock: number;
+  round: number;
+  totalRounds: number;
+  hiddenPlanets: boolean;
+  teamMode: number;
+  players: Match['players'];
+  current: number;
+  world: World;
+  trails: Match['trails'];
+  volley: VolleySnapshot | null;
+  killFeed: Match['killFeed'];
+  lastKill: Match['lastKill'];
+  summary: Match['summary'];
+  notice: Match['notice'];
+  settings: Match['settings'];
+  volleyNo: number;
+  clock_: HorizonMatch['clock_'];
+  queue: number[];
+  snapshot: World | null;
+  aims: VolleyAim[];
+  volleyKills: { record: KillRecord; shotIndex: number; step: number }[];
+  collapse: null | Omit<CollapseState, 'planets' | 'ships'> & { planets: [number, Drift][]; ships: [number, Drift][] };
+  killcam: null | {
+    clip: KillcamClip;
+    replay: VolleySnapshot;
+    simClock: number;
+    hold: number;
+    camera: Camera;
+    returnTo: Phase | null;
+    recording: boolean;
+  };
+  lastClip: KillcamClip | null;
 }
 
 interface KillcamState {
@@ -38,7 +75,7 @@ interface Drift {
   lost: boolean;
 }
 
-interface CollapseState {
+export interface CollapseState {
   fromRadius: number;
   toRadius: number;
   fromMass: number;
@@ -62,13 +99,76 @@ export class HorizonMatch extends Match {
 
   private clock_ = HORIZON.SHOT_CLOCK;
   private queue: number[] = [];
-  private snapshot: World | null = null;
+  private volleySnapshot: World | null = null;
   private aims: VolleyAim[] = [];
   private volleyKills: { record: KillRecord; shotIndex: number; step: number }[] = [];
   private collapse: CollapseState | null = null;
 
   get rules(): ShotRules {
     return { bounce: true, timeLimit: HORIZON.SHOT_TIME };
+  }
+
+  snapshot(): HorizonSnapshot {
+    return {
+      phase: this.phase, phaseTime: this.phaseTime, clock: this.clock, round: this.round,
+      totalRounds: this.totalRounds, hiddenPlanets: this.hiddenPlanets, teamMode: this.teamMode,
+      players: this.players.map((player) => ({ ...player })), current: this.current, world: this.world,
+      trails: this.trails, volley: this.volley?.snapshot() ?? null, killFeed: this.killFeed,
+      lastKill: this.lastKill, summary: this.summary, notice: this.notice, settings: this.settings,
+      volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
+      aims: this.aims, volleyKills: this.volleyKills,
+      collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships] } : null,
+      killcam: this.killcam ? {
+        clip: this.killcam.clip, replay: this.killcam.replay.snapshot(), simClock: this.killcam.simClock,
+        hold: this.killcam.hold, camera: this.killcam.camera, returnTo: this.killcam.returnTo,
+        recording: this.killcam.recording,
+      } : null,
+      lastClip: this.lastClip,
+    };
+  }
+
+  restoreSnapshot(s: HorizonSnapshot): void {
+    if (s.world.ships.length !== s.players.length) return;
+    this.settings = s.settings;
+    this.phase = s.phase; this.phaseTime = s.phaseTime; this.clock = s.clock; this.round = s.round;
+    this.totalRounds = s.totalRounds; this.hiddenPlanets = s.hiddenPlanets; this.teamMode = s.teamMode;
+    this.players = s.players.map((player) => ({ ...player })); this.current = s.current;
+    this.world = s.world; this.trails = s.trails; this.killFeed = s.killFeed; this.lastKill = s.lastKill;
+    this.summary = s.summary; this.notice = s.notice; this.volleyNo = s.volleyNo; this.clock_ = s.clock_;
+    this.queue = [...s.queue]; this.volleySnapshot = s.snapshot; this.aims = s.aims; this.volleyKills = s.volleyKills;
+    this.collapse = s.collapse ? { ...s.collapse, planets: new Map(s.collapse.planets), ships: new Map(s.collapse.ships) } : null;
+    this.volley = null;
+    if (s.volley) {
+      this.volley = new Volley(this.world, s.volley.aims, this.rules, true);
+      this.volley.restore(s.volley);
+    }
+    this.lastClip = s.lastClip;
+    this.killcam = null;
+    if (s.killcam) {
+      const replay = new Volley(cloneWorld(s.killcam.clip.snapshot), s.killcam.clip.aims, this.rules, true);
+      replay.restore(s.killcam.replay);
+      this.killcam = {
+        clip: s.killcam.clip, replay, simClock: s.killcam.simClock, hold: s.killcam.hold,
+        camera: s.killcam.camera, returnTo: s.killcam.returnTo, recording: s.killcam.recording,
+      };
+    }
+  }
+
+  adjustPlayer(id: number, dAngle: number, dPower: number): void {
+    if (this.phase !== 'aiming' || this.current !== id || this.players[id]?.cpu || this.players[id]?.locked) return;
+    const p = this.players[id];
+    this.setPlayerAim(id, p.angle + dAngle, p.power + dPower);
+  }
+
+  setPlayerAim(id: number, angle: number, power: number): void {
+    if (this.phase !== 'aiming' || this.current !== id || this.players[id]?.cpu || this.players[id]?.locked) return;
+    const p = this.players[id];
+    p.angle = ((angle % 360) + 360) % 360;
+    if (!this.settings.fixedPower) p.power = Math.min(100, Math.max(0, power));
+  }
+
+  commitPlayer(id: number): void {
+    if (this.phase === 'aiming' && this.current === id && !this.players[id]?.cpu && !this.players[id]?.locked) this.commit();
   }
 
   protected get survivorBonus(): number {
@@ -182,7 +282,7 @@ export class HorizonMatch extends Match {
   }
 
   private launchVolley(): void {
-    this.snapshot = cloneWorld(this.world);
+    this.volleySnapshot = cloneWorld(this.world);
     this.aims = this.alive.map((p) => ({ player: p.id, angle: p.angle, power: p.power }));
     for (const p of this.alive) p.shots++;
     this.volleyKills = [];
@@ -198,9 +298,9 @@ export class HorizonMatch extends Match {
   protected afterVolley(): void {
     // Replay the volley's best kill (self-hits only if that's all there was).
     const best = [...this.volleyKills].sort((a, b) => Number(own(a.record)) - Number(own(b.record)) || b.record.points - a.record.points)[0];
-    if (best && this.snapshot) {
+    if (best && this.volleySnapshot) {
       this.lastClip = {
-        snapshot: this.snapshot,
+        snapshot: this.volleySnapshot,
         aims: this.aims,
         focus: best.shotIndex,
         victim: best.record.victim,

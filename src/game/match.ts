@@ -175,6 +175,11 @@ export abstract class Match {
     this.listeners.push(listener);
   }
 
+  /** Dispatch authoritative events on clients that do not run the simulation. */
+  applyRemoteEvent(event: GameEvent): void {
+    for (const listener of this.listeners) listener(event);
+  }
+
   get attract(): boolean {
     return !!this.options.attract;
   }
