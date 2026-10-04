@@ -96,12 +96,12 @@ export type GameEvent =
   | { type: 'lock'; player: number }
   | { type: 'volley' }
   | { type: 'fire'; player: number; x: number; y: number; angle: number; power: number }
-  | { type: 'impact'; player: number; x: number; y: number }
-  | { type: 'fizzle'; player: number; x: number; y: number; lost: boolean }
-  | { type: 'clash'; x: number; y: number; players: [number, number] }
-  | { type: 'devour'; x: number; y: number; toX: number; toY: number; color: string }
+  | { type: 'impact'; player: number; x: number; y: number; vx: number; vy: number }
+  | { type: 'fizzle'; player: number; x: number; y: number; vx: number; vy: number; lost: boolean }
+  | { type: 'clash'; x: number; y: number; players: [number, number]; velocities: [{ x: number; y: number }, { x: number; y: number }] }
+  | { type: 'devour'; x: number; y: number; toX: number; toY: number; color: string; vx: number; vy: number }
   | { type: 'style'; player: number; kind: StyleKind; x: number; y: number }
-  | { type: 'explode'; x: number; y: number; ship: number }
+  | { type: 'explode'; x: number; y: number; ship: number; vx: number; vy: number }
   | { type: 'kill'; record: KillRecord }
   | { type: 'collapse'; x: number; y: number }
   | { type: 'killcam'; active: boolean; recording: boolean }
@@ -402,23 +402,39 @@ export abstract class Match {
     switch (end.kind) {
       case 'ship': {
         const ship = volley.world.ships[end.ship];
-        this.emit({ type: 'explode', x: ship.x, y: ship.y, ship: end.ship });
+        this.emit({ type: 'explode', x: ship.x, y: ship.y, ship: end.ship, vx: e.vx, vy: e.vy });
         if (live) this.registerKill(vs, end.ship, volley);
         break;
       }
-      case 'planet':
-        this.emit({ type: 'impact', player, x: e.x, y: e.y });
+      case 'planet': {
+        const planet = volley.world.planets[end.planet];
+        const dx = e.x - planet.x;
+        const dy = e.y - planet.y;
+        const distance = Math.hypot(dx, dy) || 1;
+        const x = planet.x + (dx / distance) * (planet.radius + 2);
+        const y = planet.y + (dy / distance) * (planet.radius + 2);
+        this.emit({ type: 'impact', player, x, y, vx: e.vx, vy: e.vy });
         break;
+      }
       case 'hole': {
         const hole = volley.world.hole!;
-        this.emit({ type: 'devour', x: e.x, y: e.y, toX: hole.x, toY: hole.y, color: COLORS.players[this.players[player].seat] });
+        this.emit({ type: 'devour', x: e.x, y: e.y, toX: hole.x, toY: hole.y, color: COLORS.players[this.players[player].seat], vx: e.vx, vy: e.vy });
         break;
       }
       case 'clash':
-        if (e.index < end.other) this.emit({ type: 'clash', x: e.x, y: e.y, players: [player, volley.shots[end.other].owner] });
+        if (e.index < end.other) {
+          const other = volley.shots[end.other].shot;
+          this.emit({
+            type: 'clash',
+            x: e.x,
+            y: e.y,
+            players: [player, volley.shots[end.other].owner],
+            velocities: [{ x: e.vx, y: e.vy }, { x: other.vx, y: other.vy }],
+          });
+        }
         break;
       default:
-        this.emit({ type: 'fizzle', player, x: e.x, y: e.y, lost: end.kind === 'lost' });
+        this.emit({ type: 'fizzle', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy, lost: end.kind === 'lost' });
     }
   }
 

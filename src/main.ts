@@ -66,23 +66,23 @@ function wire(m: Match): void {
         if (audible) sound.fire(e.power);
         break;
       case 'impact':
-        effects.impact(e.x, e.y, color(e.player));
+        effects.impact(e.x, e.y, color(e.player), e.vx, e.vy);
         if (audible) sound.impact();
         break;
       case 'explode':
-        effects.explode(e.x, e.y, color(e.ship));
+        effects.explode(e.x, e.y, color(e.ship), e.vx, e.vy);
         if (audible) sound.explode();
         break;
       case 'fizzle':
-        if (!e.lost) effects.fizzle(e.x, e.y, color(e.player));
+        if (!e.lost) effects.fizzle(e.x, e.y, color(e.player), e.vx, e.vy);
         if (audible) sound.fizzle();
         break;
       case 'clash':
-        effects.clash(e.x, e.y, color(e.players[0]), color(e.players[1]));
+        effects.clash(e.x, e.y, color(e.players[0]), color(e.players[1]), e.velocities);
         if (audible) sound.clash();
         break;
       case 'devour':
-        effects.devour(e.x, e.y, e.toX, e.toY, e.color);
+        effects.devour(e.x, e.y, e.toX, e.toY, e.color, e.vx, e.vy);
         if (audible) sound.devour();
         break;
       case 'style':
@@ -315,7 +315,7 @@ function frame(now: number): void {
   const paused = screen === 'play' && menu.isOpen;
   if (!paused) {
     m.update(dt);
-    effects.update(dt);
+    effects.update(dt, m.world);
   }
   renderer.draw(m, effects, { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording }, paused ? 0 : dt);
   document.body.classList.toggle('is-playing', screen === 'play');
