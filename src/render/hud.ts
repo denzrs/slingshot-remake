@@ -60,8 +60,8 @@ export class Hud {
     } else {
       this.drawScoreboard(match);
       this.drawKillFeed(match);
-      if (match.phase === 'aiming' && match.current >= 0) this.drawReadout(match, match.players[match.current], shipPos(match.current));
     }
+    if (match.phase === 'aiming' && match.current >= 0) this.drawReadout(match, match.players[match.current], shipPos(match.current));
     this.drawNotice(match);
     if (time - this.turnAt < 1.6 && match.current >= 0) this.drawTurnToast(match.players[match.current]);
     if (match.phase === 'roundOver' && match.summary) this.drawBanner(match, duel);
@@ -216,7 +216,8 @@ export class Hud {
     let x = at.x + towardsCentre * 40 * k - (towardsCentre < 0 ? w : 0);
     let y = at.y - h / 2;
     x = Math.min(field.x + field.w - w - 6, Math.max(field.x + 6, x));
-    y = Math.min(field.y + field.h - h - 30 * k, Math.max(field.y + (match.teamMode ? 114 : 98) * k, y));
+    const top = match.mode === 'classic' && match.players.length === 2 ? 130 : match.teamMode ? 114 : 98;
+    y = Math.min(field.y + field.h - h - 30 * k, Math.max(field.y + top * k, y));
 
     ctx.fillStyle = rgba(COLORS.plate, 0.78);
     ctx.fillRect(x, y, w, h);

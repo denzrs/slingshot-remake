@@ -10,7 +10,10 @@ import { dailyChallenge, dateKey, isDateKey } from './challenge';
 import { ClipRecorder } from './clip';
 import { AIM, COLORS, FONTS, PHYSICS } from './config';
 import { recordRun } from './dailyStore';
-import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
+import { ChallengeMatch, createChallenge, createMatch, type GameEvent, type Match, type VersusMode } from './game';
+import { ClassicMatch } from './game/classic';
+import { HorizonMatch } from './game/horizon';
+import { NetworkClient, type ClientInput, type ClientMessage, type ServerMessage } from './net';
 import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t } from './i18n';
 import { Renderer } from './render/renderer';
@@ -18,7 +21,7 @@ import { STYLE_MULTIPLIER, styleLabel } from './scoring';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
 import { Menu } from './ui/menu';
-import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
+import { gameOverScreen, lobbyScreen, pauseScreen, titleScreen, type App } from './ui/screens';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
@@ -46,6 +49,14 @@ const attract = createMatch(
 let match: Match | null = null;
 let screen: 'title' | 'play' = 'title';
 let lastMode: VersusMode = 'classic';
+let network: NetworkClient | null = null;
+let networkHost = false;
+let networkPlayerId = 0;
+let networkRoomJoined = false;
+let pendingEvents: GameEvent[] = [];
+let stateSequence = 0;
+let stateElapsed = 0;
+let latestRoom: Extract<ServerMessage, { type: 'room_update' }> | null = null;
 /** `?daily=YYYY-MM-DD` flies another day's challenge — handy for testing and for sharing an old one. */
 const requestedDay = new URLSearchParams(location.search).get('daily');
 const forcedDay = isDateKey(requestedDay) ? requestedDay : null;
@@ -57,6 +68,7 @@ function wire(m: Match): void {
   const color = (id: number) => m.players[id].color;
   m.on((e) => {
     if (active() !== m) return;
+    if (m === match && network && networkHost) pendingEvents.push(e);
     switch (e.type) {
       case 'round':
         effects.clear();
@@ -124,6 +136,132 @@ function wire(m: Match): void {
 }
 wire(attract);
 
+function sendNetwork(message: ClientMessage): void {
+  try { network?.send(message); } catch { /* Transport close is handled by its error message. */ }
+}
+
+function dispatchInput(input: ClientInput): void {
+  if (!network || !match) {
+    if (!match) return;
+    if (input.kind === 'adjust') match.adjust(input.dAngle, input.dPower);
+    else if (input.kind === 'aim') match.setAim(input.angle, input.power);
+    else if (input.kind === 'fire') match.commit();
+    return;
+  }
+  if (!networkHost) {
+    sendNetwork({ type: 'input', input });
+    return;
+  }
+  if (input.kind === 'advance') {
+    match.advance();
+    return;
+  }
+  if (match instanceof ClassicMatch || match instanceof HorizonMatch) {
+    if (input.kind === 'adjust') match.adjustPlayer(networkPlayerId, input.dAngle, input.dPower);
+    else if (input.kind === 'aim') match.setPlayerAim(networkPlayerId, input.angle, input.power);
+    else if (input.kind === 'fire') match.commitPlayer(networkPlayerId);
+  }
+}
+
+function advanceMatch(): void {
+  if (!network) match?.advance();
+  else if (networkHost) match?.advance();
+  else sendNetwork({ type: 'input', input: { kind: 'advance' } });
+}
+
+function disconnectNetwork(client: NetworkClient, message: string): void {
+  if (network !== client) return;
+  network = null;
+  networkHost = false;
+  networkRoomJoined = false;
+  latestRoom = null;
+  match = null;
+  screen = 'title';
+  pendingEvents = [];
+  effects.clear();
+  client.close();
+  menu.open(() => titleScreen(app));
+  window.alert(`${t('multiplayer.title')}: ${message}`);
+}
+
+function startNetworkMatch(message: Extract<ServerMessage, { type: 'game_start' }>): void {
+  const room = latestRoom;
+  if (!room) return;
+  const remoteSettings = {
+    ...settings,
+    seats: [...settings.seats],
+    seatTeams: [...settings.seatTeams],
+    teamMode: room.room.mode === 'team' ? 2 : 0,
+    bounce: message.gameMode === 'horizon' ? true : settings.bounce,
+  };
+  remoteSettings.seats.fill('off');
+  for (const player of message.players) {
+    remoteSettings.seats[player.id] = 'human';
+    remoteSettings.seatTeams[player.id] = player.team;
+  }
+  remoteSettings.seats[0] = 'human';
+  match = createMatch(message.gameMode, remoteSettings, { seats: remoteSettings.seats });
+  if (!(match instanceof ClassicMatch || match instanceof HorizonMatch)) return;
+  if (match instanceof ClassicMatch && remoteSettings.teamMode) match.configureNetworkTeams(message.players.map((p) => p.team));
+  for (const player of message.players) {
+    Object.defineProperty(match.players[player.id], 'name', { configurable: true, enumerable: true, value: player.name });
+  }
+  pendingEvents = [];
+  stateSequence = 0;
+  stateElapsed = 0;
+  wire(match);
+  screen = 'play';
+  effects.clear();
+  menu.close();
+}
+
+function connectMultiplayer(): void {
+  const client = new NetworkClient('ws://localhost:8080');
+  network = client;
+  networkHost = false;
+  networkPlayerId = 0;
+  networkRoomJoined = false;
+  latestRoom = null;
+  client.onMessage((message) => {
+    if (network !== client) return;
+    switch (message.type) {
+      case 'room_update':
+        latestRoom = message;
+        networkPlayerId = message.you.playerId;
+        networkHost = message.you.host;
+        networkRoomJoined = true;
+        break;
+      case 'game_start': startNetworkMatch(message); break;
+      case 'input': {
+        if (!networkHost || !(match instanceof ClassicMatch || match instanceof HorizonMatch)) break;
+        const input = message.input;
+        if (input.kind === 'adjust') match.adjustPlayer(message.from, input.dAngle, input.dPower);
+        else if (input.kind === 'aim') match.setPlayerAim(message.from, input.angle, input.power);
+        else if (input.kind === 'fire') match.commitPlayer(message.from);
+        else if (input.kind === 'advance') {
+          match.advance();
+        }
+        break;
+      }
+      case 'state':
+        if (!networkHost && (match instanceof ClassicMatch || match instanceof HorizonMatch) && message.seq > stateSequence) {
+          stateSequence = message.seq;
+          const previousPhase = match.phase;
+          if (match instanceof ClassicMatch && 'teamCursor' in message.snapshot) match.restoreSnapshot(message.snapshot);
+          else if (match instanceof HorizonMatch && 'volleyNo' in message.snapshot) match.restoreSnapshot(message.snapshot);
+          for (const event of message.events) match.applyRemoteEvent(event);
+          if (previousPhase === 'gameOver' && match.phase !== 'gameOver') menu.close();
+        }
+        break;
+      case 'error':
+        if (networkRoomJoined || screen === 'play') disconnectNetwork(client, message.message);
+        break;
+      case 'lobby_update': break;
+    }
+  });
+  menu.open(() => lobbyScreen(app, client));
+}
+
 const app: App = {
   menu,
   settings,
@@ -158,16 +296,36 @@ const app: App = {
     effects.clear();
     menu.close();
   },
+  connectMultiplayer,
+  startMultiplayer(message) {
+    startNetworkMatch(message);
+  },
   resume() {
     menu.close();
   },
   rematch() {
     if (!match) return app.start(lastMode);
+  if (network) {
+    if (networkHost && match.phase === 'gameOver') match.newMatch();
+    else if (networkHost) advanceMatch();
+      else sendNetwork({ type: 'input', input: { kind: 'advance' } });
+      menu.close();
+      return;
+    }
     effects.clear();
     match.newMatch();
     menu.close();
   },
   toTitle() {
+    if (network) {
+      if (networkRoomJoined) sendNetwork({ type: 'leave_room' });
+      const client = network;
+      network = null;
+      client.close();
+    }
+    networkHost = false;
+    networkRoomJoined = false;
+    latestRoom = null;
     screen = 'title';
     match = null;
     effects.clear();
@@ -189,8 +347,14 @@ function saveClip(): void {
 /** Enter / Space / the touch button: fire or lock in, continue, or skip the killcam. */
 function primaryAction(): void {
   if (!match) return;
-  if (match.isHumanTurn) match.commit();
-  else if (match.phase === 'roundOver' || match.phase === 'killcam') match.advance();
+  if (network) {
+    if (match.phase === 'gameOver') app.rematch();
+    else if (match.current === networkPlayerId) dispatchInput({ kind: 'fire' });
+    else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
+    return;
+  }
+  if (match.isHumanTurn) dispatchInput({ kind: 'fire' });
+  else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
 }
 
 // ————————————————————————————— Keyboard —————————————————————————————
@@ -219,16 +383,16 @@ window.addEventListener('keydown', (e) => {
   let handled = true;
   switch (e.code) {
     case 'ArrowLeft':
-      match.adjust(dAngle, 0);
+      dispatchInput({ kind: 'adjust', dAngle, dPower: 0 });
       break;
     case 'ArrowRight':
-      match.adjust(-dAngle, 0);
+      dispatchInput({ kind: 'adjust', dAngle: -dAngle, dPower: 0 });
       break;
     case 'ArrowUp':
-      match.adjust(0, dPower);
+      dispatchInput({ kind: 'adjust', dAngle: 0, dPower });
       break;
     case 'ArrowDown':
-      match.adjust(0, -dPower);
+      dispatchInput({ kind: 'adjust', dAngle: 0, dPower: -dPower });
       break;
     case 'Enter':
     case 'NumpadEnter':
@@ -253,7 +417,7 @@ window.addEventListener('keydown', (e) => {
 let dragging = false;
 
 function aimAt(clientX: number, clientY: number): void {
-  if (!match?.isHumanTurn) return;
+  if (!match || (!network && !match.isHumanTurn) || (network && match.current !== networkPlayerId)) return;
   const f = renderer.toField(clientX, clientY);
   const ship = match.world.ships[match.current];
   const dx = f.x - ship.x;
@@ -261,14 +425,15 @@ function aimAt(clientX: number, clientY: number): void {
   const angle = (Math.atan2(-dy, dx) * 180) / Math.PI;
   // Map distance so the tip of the drawn aim arrow follows the pointer.
   const reach = Math.hypot(dx, dy) - (PHYSICS.MUZZLE + 26);
-  match.setAim(angle, Math.round((reach / 110) * AIM.MAX_POWER * 100) / 100);
+  dispatchInput({ kind: 'aim', angle, power: Math.round((reach / 110) * AIM.MAX_POWER * 100) / 100 });
 }
 
 canvas.addEventListener('pointerdown', (e) => {
   sound.unlock();
   if (screen !== 'play' || !match || menu.isOpen) return;
-  if (match.phase === 'roundOver' || match.phase === 'killcam') return match.advance();
-  if (!match.isHumanTurn) return;
+  if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
+  if (!network && !match.isHumanTurn) return;
+  if (network && match.current !== networkPlayerId) return;
   dragging = true;
   canvas.setPointerCapture(e.pointerId);
   aimAt(e.clientX, e.clientY);
@@ -296,7 +461,7 @@ function syncButtons(): void {
   const m = match;
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
-    if (m.isHumanTurn) touchLabel = m.mode === 'horizon' ? t('common.ready') : t('common.fire');
+    if (network ? m.current === networkPlayerId : m.isHumanTurn) touchLabel = m.mode === 'horizon' ? t('common.ready') : t('common.fire');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
     else if (m.phase === 'killcam' && !recorder.recording) touchLabel = t('common.skip');
   }
@@ -314,8 +479,17 @@ function frame(now: number): void {
   const m = active();
   const paused = screen === 'play' && menu.isOpen;
   if (!paused) {
-    m.update(dt);
+    if (!network || networkHost) m.update(dt);
     effects.update(dt);
+  }
+    if (network && networkHost && (match instanceof ClassicMatch || match instanceof HorizonMatch) && screen === 'play') {
+    stateElapsed += dt;
+    if (stateElapsed >= 0.1) {
+      stateElapsed %= 0.1;
+      const events = pendingEvents;
+      pendingEvents = [];
+      sendNetwork({ type: 'state', seq: ++stateSequence, snapshot: match.snapshot(), events });
+    }
   }
   renderer.draw(m, effects, { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording }, paused ? 0 : dt);
   document.body.classList.toggle('is-playing', screen === 'play');

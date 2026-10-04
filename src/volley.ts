@@ -14,6 +14,12 @@ export interface VolleyShot {
   trail: number[];
 }
 
+export interface VolleySnapshot {
+  aims: VolleyAim[];
+  steps: number;
+  shots: { owner: number; trail: number[]; x: number; y: number; vx: number; vy: number; time: number; end: ShotEnd | null; style: StyleEvent[] | null }[];
+}
+
 export type VolleyEvent =
   | { type: 'end'; index: number; end: ShotEnd; x: number; y: number }
   | { type: 'style'; index: number; event: StyleEvent };
@@ -43,6 +49,28 @@ export class Volley {
 
   get done(): boolean {
     return this.shots.every((s) => s.shot.end);
+  }
+
+  snapshot(): VolleySnapshot {
+    return {
+      aims: this.shots.map(({ owner, shot }) => ({ player: owner, angle: shot.angle, power: shot.power })),
+      steps: this.steps,
+      shots: this.shots.map(({ owner, trail, shot }) => ({
+        owner, trail, x: shot.x, y: shot.y, vx: shot.vx, vy: shot.vy, time: shot.time, end: shot.end,
+        style: shot.style ? [...shot.style] : null,
+      })),
+    };
+  }
+
+  restore(snapshot: VolleySnapshot): void {
+    this.steps = snapshot.steps;
+    snapshot.shots.forEach((saved, i) => {
+      const current = this.shots[i];
+      if (!current) return;
+      Object.assign(current.shot, { x: saved.x, y: saved.y, vx: saved.vx, vy: saved.vy, time: saved.time, end: saved.end });
+      current.trail = saved.trail;
+      if (current.shot.style && saved.style) current.shot.style.splice(0, Infinity, ...saved.style);
+    });
   }
 
   step(): VolleyEvent[] {

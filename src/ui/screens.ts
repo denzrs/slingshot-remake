@@ -1,5 +1,6 @@
 import { CHALLENGE, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
 import { teamName, type Match, type Mode, type VersusMode } from '../game';
+import { NetworkClient, type LobbyRoom, type ServerMessage } from '../net';
 import { fmtNum, LANGS, t, tn, type Lang } from '../i18n';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
 import type { StyleKind } from '../physics';
@@ -17,6 +18,8 @@ export interface App {
   today(): string;
   start(mode: VersusMode): void;
   startDaily(): void;
+  connectMultiplayer(): void;
+  startMultiplayer(message: Extract<ServerMessage, { type: 'game_start' }>): void;
   resume(): void;
   rematch(): void;
   toTitle(): void;
@@ -86,12 +89,169 @@ export function titleScreen(app: App): Screen {
         { kind: 'action', label: t('mode.daily'), hint: dailyMenuHint(app.today()), primary: true, run: () => app.menu.push(() => dailyScreen(app)) },
         { kind: 'action', label: t('mode.classic'), hint: t('mode.classic.hint'), run: () => app.start('classic') },
         { kind: 'action', label: t('mode.horizon'), hint: t('mode.horizon.hint'), run: () => app.start('horizon') },
+        { kind: 'action', label: t('multiplayer.title'), hint: t('multiplayer.hint'), run: () => app.connectMultiplayer() },
         { kind: 'action', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
         { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
         { kind: 'action', label: t('common.help'), run: () => app.menu.push(() => helpScreen(app)) },
         languageItem(app),
       ];
     },
+  };
+}
+
+export function lobbyScreen(app: App, net: NetworkClient): Screen {
+  let rooms: LobbyRoom[] = [];
+  let currentRoom: Extract<ServerMessage, { type: 'room_update' }> | null = null;
+  let connected = false;
+  let feedbackText = t('multiplayer.connectHint');
+  let serverAddress!: HTMLInputElement;
+  let playerName!: HTMLInputElement;
+  let roomMode!: HTMLSelectElement;
+  let gameMode!: HTMLSelectElement;
+  let roomCapacity!: HTMLSelectElement;
+  let roomSelect!: HTMLSelectElement;
+  let connectButton!: HTMLButtonElement;
+  let createButton!: HTMLButtonElement;
+  let joinButton!: HTMLButtonElement;
+  let readyButton!: HTMLButtonElement;
+  let startButton!: HTMLButtonElement;
+  let feedback!: HTMLElement;
+  let roomsList!: HTMLElement;
+  let actions!: HTMLElement;
+  let lobbyRoot!: HTMLElement;
+
+  const render = () => {
+    if (!feedback) return;
+    feedback.textContent = feedbackText;
+    connectButton.disabled = connected;
+    serverAddress.disabled = connected;
+    createButton.disabled = !connected || !!currentRoom;
+    joinButton.disabled = !connected || !!currentRoom || !roomSelect.value;
+    roomSelect.disabled = !connected || !!currentRoom || rooms.length === 0;
+    actions.hidden = !currentRoom;
+    roomsList.replaceChildren();
+    if (currentRoom) {
+      const { room, you } = currentRoom;
+      roomsList.append(h('h3.lobby__section-title', null, `${t('multiplayer.room')} ${room.id}`));
+      const list = h('ul.lobby__players', null);
+      for (const player of room.players) {
+        const team = room.mode === 'team' ? ` · ${t('players.teams', { n: player.team + 1 })}` : '';
+        list.append(h('li', null, `${player.name}${player.id === 0 ? ` · ${t('multiplayer.host')}` : ''}${team} · ${player.ready ? t('multiplayer.ready') : t('multiplayer.notReady')}`));
+      }
+      roomsList.append(list);
+      const self = room.players.find((player) => player.id === you.playerId);
+      readyButton.textContent = self?.ready ? t('multiplayer.unready') : t('multiplayer.ready');
+      startButton.hidden = !you.host || room.status !== 'waiting';
+      startButton.disabled = room.players.length < 2;
+    } else {
+      roomsList.append(h('h3.lobby__section-title', null, t('multiplayer.rooms')));
+      const list = h('ul.lobby__rooms', null);
+      const selected = roomSelect.value;
+      roomSelect.replaceChildren(new Option(rooms.length ? t('multiplayer.selectRoom') : t('multiplayer.noRooms'), ''));
+      for (const room of rooms) {
+        const label = `${room.id} · ${t(room.gameMode === 'classic' ? 'mode.classic' : 'mode.horizon')} · ${room.mode === 'team' ? t('players.teams', { n: 2 }) : t('players.ffa')} · ${room.players}/${room.maxPlayers}`;
+        roomSelect.add(new Option(label, room.id));
+        list.append(h('li', null, label));
+      }
+      roomSelect.value = selected;
+      roomsList.append(list);
+      startButton.hidden = true;
+    }
+  };
+
+  net.onMessage((message) => {
+    switch (message.type) {
+      case 'lobby_update': rooms = message.rooms; break;
+      case 'room_update': currentRoom = message; break;
+      case 'game_start': app.startMultiplayer(message); break;
+      case 'error': feedbackText = message.message; break;
+      case 'input':
+      case 'state': break;
+    }
+    if (lobbyRoot?.isConnected) render();
+  });
+
+  const button = (label: string, primary = false) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `lobby__button${primary ? ' lobby__button--primary' : ''}`;
+    b.textContent = label;
+    return b;
+  };
+  const field = (label: string, input: HTMLElement) => h('label.lobby__field', null, h('span', null, label), input);
+
+  return {
+    build: () => {
+      serverAddress = document.createElement('input');
+      serverAddress.type = 'url';
+      serverAddress.value = 'ws://localhost:8080';
+      playerName = document.createElement('input');
+      playerName.maxLength = 24;
+      playerName.setAttribute('autocomplete', 'nickname');
+      playerName.value = localStorage.getItem('slingshot.player-name') || 'Player';
+      roomMode = document.createElement('select');
+      roomMode.add(new Option(t('players.ffa'), 'ffa'));
+      roomMode.add(new Option(t('players.teams', { n: 2 }), 'team'));
+      gameMode = document.createElement('select');
+      gameMode.add(new Option(t('mode.classic'), 'classic'));
+      gameMode.add(new Option(t('mode.horizon'), 'horizon'));
+      roomCapacity = document.createElement('select');
+      for (let count = 2; count <= MAX_PLAYERS; count++) roomCapacity.add(new Option(String(count), String(count)));
+      roomSelect = document.createElement('select');
+      connectButton = button(t('multiplayer.connect'), true);
+      createButton = button(t('multiplayer.create'));
+      joinButton = button(t('multiplayer.join'));
+      readyButton = button(t('multiplayer.ready'));
+      startButton = button(t('multiplayer.start'), true);
+      feedback = h('p.lobby__feedback', { role: 'status', 'aria-live': 'polite' });
+      roomsList = h('div.lobby__room-list', null);
+      actions = h('div.lobby__actions', null, readyButton, startButton);
+      const form = h('div.lobby__form', null,
+        field(t('multiplayer.server'), serverAddress), field(t('multiplayer.name'), playerName), connectButton,
+        h('div.lobby__create-options', null, field(t('multiplayer.gameMode'), gameMode), field(t('multiplayer.matchType'), roomMode), field(t('multiplayer.capacity'), roomCapacity)),
+        createButton, field(t('multiplayer.room'), roomSelect), joinButton,
+      );
+      connectButton.addEventListener('click', async () => {
+        feedbackText = t('multiplayer.connecting');
+        render();
+        try {
+          net.setAddress(serverAddress.value.trim());
+          await net.connect();
+          net.send({ type: 'lobby' });
+          connected = true;
+          feedbackText = t('multiplayer.connected');
+          connectButton.disabled = true;
+          serverAddress.disabled = true;
+        } catch (error) {
+          feedbackText = error instanceof Error ? error.message : String(error);
+        }
+        render();
+      });
+      createButton.addEventListener('click', () => {
+        const name = playerName.value.trim();
+        if (!name) { feedbackText = t('multiplayer.nameRequired'); render(); return; }
+        localStorage.setItem('slingshot.player-name', name);
+        net.send({ type: 'create_room', name, mode: roomMode.value as 'ffa' | 'team', gameMode: gameMode.value as 'classic' | 'horizon', maxPlayers: Number(roomCapacity.value) });
+      });
+      joinButton.addEventListener('click', () => {
+        const name = playerName.value.trim();
+        if (!name || !roomSelect.value) { feedbackText = t('multiplayer.nameRequired'); render(); return; }
+        localStorage.setItem('slingshot.player-name', name);
+        net.send({ type: 'join_room', roomId: roomSelect.value, name });
+      });
+      roomSelect.addEventListener('change', render);
+      readyButton.addEventListener('click', () => {
+        const self = currentRoom?.room.players.find((p) => p.id === currentRoom?.you.playerId);
+        if (self) net.send({ type: 'ready', ready: !self.ready });
+      });
+      startButton.addEventListener('click', () => net.send({ type: 'start_game' }));
+      lobbyRoot = h('section.screen.screen--panel.screen--lobby', { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('multiplayer.title') },
+        h('div.panel.panel--wide', null, h('h2.panel__title', null, t('multiplayer.title')), h('div.lobby', null, feedback, form, roomsList, actions), h('div.items', { 'data-items': '' })));
+      render();
+      return lobbyRoot;
+    },
+    items: [],
+    onEscape: () => { net.close(); app.toTitle(); },
   };
 }
 

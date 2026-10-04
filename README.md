@@ -13,6 +13,15 @@ npm test           # physics, scoring and CPU tests
 npm run build      # static build in dist/ – runs on any web server
 ```
 
+## Multiplayer
+
+Start the relay server in a second terminal with `npm run dev:server`. In the client, open
+**Multiplayer**, connect to the relay address (default `ws://localhost:8080`), then create or join
+a room. Choose Classic or Event Horizon, plus free-for-all or two-team play; the host starts the
+game. Both modes support up to six players. The host runs the authoritative simulation and relays
+snapshots to the other players. For remote players, host both the web client and relay server at reachable addresses.
+The relay can also be built with `npm run build:server` and started with `npm run start:server`.
+
 ## Controls
 
 | Key | Action |
