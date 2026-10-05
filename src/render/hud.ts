@@ -2,7 +2,9 @@ import { modifiersOf } from '../challenge';
 import { AIM, COLORS, FIELD, FONTS, TEAMS } from '../config';
 import { ChallengeMatch, HorizonMatch, teamName, type KillRecord, type Match, type PlayerState } from '../game';
 import { fmt, fmtInt, t, type Key } from '../i18n';
+import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { styleLabel } from '../scoring';
+import { awards } from '../stats';
 import type { View } from './backdrop';
 import { rgba } from './color';
 import type { DrawOptions } from './renderer';
@@ -65,7 +67,10 @@ export class Hud {
     if (match.phase === 'aiming' && focus >= 0) this.drawReadout(match, match.players[focus], shipPos(focus));
     this.drawNotice(match);
     if (time - this.turnAt < 1.6 && focus >= 0) this.drawTurnToast(match.players[focus]);
-    if (match.phase === 'roundOver' && match.summary) this.drawBanner(match, duel);
+    if (match.phase === 'roundOver' && match.summary) {
+      this.drawBanner(match, duel);
+      this.drawScorecard(match);
+    }
     this.drawHint(match, opts.touch);
     if (opts.recording) this.drawRec();
   }
@@ -450,6 +455,54 @@ export class Hud {
     ctx.globalAlpha = 1;
   }
 
+  /** The round's awards as a row of cards under the banner: longest shot, fastest kill, most swing-bys, … */
+  private drawScorecard(match: Match): void {
+    const { ctx, k, field } = this;
+    const list = awards(match.roundStats);
+    const fade = Math.min(1, Math.max(0, (match.phaseTime - 0.9) / 0.5));
+    if (!list.length || fade <= 0) return;
+
+    const gap = 10 * k;
+    const cardH = 68 * k;
+    const cardW = Math.min(196 * k, (field.w - 48 * k - gap * (list.length - 1)) / list.length);
+    const width = list.length * cardW + gap * (list.length - 1);
+    const x0 = field.x + (field.w - width) / 2;
+    const y = field.y + field.h / 2 + 75 * k + 30 * k;
+
+    ctx.globalAlpha = fade;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = COLORS.boneDim;
+    ctx.font = `700 ${10.5 * k}px ${FONTS.body}`;
+    setSpacing(ctx, 2.4 * k);
+    ctx.fillText(t('scorecard.round').toUpperCase(), field.x + field.w / 2 + 1.2 * k, y - 11 * k);
+    setSpacing(ctx, 0);
+
+    list.forEach((award, i) => {
+      const x = x0 + i * (cardW + gap);
+      const who = awardWho(match, award);
+      ctx.fillStyle = rgba(COLORS.plate, 0.8);
+      ctx.fillRect(x, y, cardW, cardH);
+      ctx.fillStyle = who.color;
+      ctx.fillRect(x, y, 3 * k, cardH);
+
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = COLORS.boneDim;
+      ctx.font = `700 ${9 * k}px ${FONTS.body}`;
+      setSpacing(ctx, 1.4 * k);
+      ctx.fillText(fitText(ctx, awardLabel(award.kind).toUpperCase(), cardW - 18 * k), x + 11 * k, y + 8 * k);
+      setSpacing(ctx, 0);
+      ctx.fillStyle = COLORS.bone;
+      ctx.font = `700 ${20 * k}px ${FONTS.mono}`;
+      ctx.fillText(awardValue(award), x + 11 * k, y + 22 * k);
+      ctx.fillStyle = who.color;
+      ctx.font = `700 ${11.5 * k}px ${FONTS.body}`;
+      ctx.fillText(fitText(ctx, who.name, cardW - 18 * k), x + 11 * k, y + 48 * k);
+    });
+    ctx.globalAlpha = 1;
+  }
+
   private drawBanner(match: Match, duel: boolean): void {
     const { ctx, k, field } = this;
     const s = match.summary!;
@@ -656,6 +709,14 @@ function modifierLabels(match: ChallengeMatch): string[] {
 
 function nameLabel(p: PlayerState): string {
   return p.cpu ? `${p.name} · ${t(`cpu.${p.cpu}`)}` : p.name;
+}
+
+/** The text, cut with an ellipsis if it doesn't fit the width in the current font. */
+function fitText(ctx: CanvasRenderingContext2D, text: string, width: number): string {
+  if (ctx.measureText(text).width <= width) return text;
+  let cut = text.length;
+  while (cut > 1 && ctx.measureText(`${text.slice(0, cut)}…`).width > width) cut--;
+  return `${text.slice(0, cut)}…`;
 }
 
 function setSpacing(ctx: CanvasRenderingContext2D, px: number): void {

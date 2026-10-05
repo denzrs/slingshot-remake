@@ -1,7 +1,9 @@
 import { CHALLENGE, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
 import { teamName, type Match, type Mode, type VersusMode } from '../game';
 import { fmtNum, LANGS, t, tn, type Lang } from '../i18n';
+import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
+import { awards } from '../stats';
 import type { StyleKind } from '../physics';
 import { activeSeats, seatTeamsFor, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
@@ -298,6 +300,14 @@ export function gameOverScreen(app: App, match: Match): Screen {
       } else {
         lists.push(h('ol.ranking', null, ...match.ranking().map((p, i) => entry(i + 1, p.name, p.color, p.score))));
       }
+      // The match's records, e.g. the longest shot of all rounds.
+      const highlights = awards(match.matchStats).map((award) => {
+        const who = awardWho(match, award);
+        const name = h('span.highlights__who', null, who.name);
+        name.style.color = who.color;
+        return h('li', null, h('span.highlights__label', null, awardLabel(award.kind)), name, h('span.highlights__value', null, awardValue(award)));
+      });
+      if (highlights.length) lists.push(h('p.ranking-label', null, t('scorecard.match')), h('ul.highlights', null, ...highlights));
       return h(
         'section.screen.screen--panel',
         { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('over.label') },

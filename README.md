@@ -59,6 +59,8 @@ The relay can also be built with `npm run build:server` and started with `npm ru
 
 **Daily Challenge scoring:** a hit pays `1000 × shot factor × power factor × trick-shot combo`, where the shot factor counts the shots spent on *that target* (−0.15 per extra shot, minimum 0.25). Clearing a sector adds 250; hitting yourself costs 300 and ends the sector. Ranks (Cadet … Gravity master) are measured against a flawless-but-plain run.
 
+**Scorecard:** at the end of every round a row of cards under the banner hands out awards – longest shot, fastest kill (timed from the start of the round), most swing-bys, most grazes, best hit and most kills (two or more). Only awards somebody actually earned show up, and a tie shares the card. The final screen lists the same awards for the whole match. In Classic, swing-bys and grazes are counted even when trick-shot bonuses are off.
+
 **Trick-shot bonuses in Classic** (optional, off by default): swing-bys, grazes, bank shots and airtime multiply a hit's points just like in Event Horizon (`1000 × shot factor × power factor × combo`).
 
 As in the original, you can toggle invisible planets, reflecting edges, fixed shot power, the maximum number of planets and the number of rounds per game. On top of that there are CPU opponents in three strengths and a maximum flight time. These rules (plus the players and teams) live on the **setup screen** that opens when you pick a mode, right before the game starts – also from *New game* in the pause menu. The **settings** screen only keeps what concerns your device: gravity contour lines, particles, sound, fullscreen and language. Everything is saved in the browser.
@@ -75,6 +77,7 @@ Vite + TypeScript + Canvas 2D, with no engine and no runtime dependencies beside
 | `src/volley.ts` | Simultaneous shots for Event Horizon, including projectile clashes |
 | `src/ai.ts` | CPU: random search + hill climbing over the same physics, spread shrinks with every shot |
 | `src/scoring.ts` | Scoring formulas and trick-shot multipliers |
+| `src/stats.ts`, `src/scorecard.ts` | Per-round and per-match records (longest shot, fastest kill, swing-bys, …) and the awards drawn from them |
 | `src/challenge.ts` | Daily challenge generator: date → seed → theme → sector specs → worlds. Targets sit on the path of a probe shot, so every sector has a known solution (pure and deterministic, no DOM) |
 | `src/game/challenge.ts` | `ChallengeMatch`: one pilot, stationary targets, a shot budget per sector |
 | `src/dailyStore.ts` | Best run per day, attempts and streak in `localStorage` |

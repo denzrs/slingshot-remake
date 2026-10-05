@@ -767,6 +767,39 @@ kbd {
   font: 700 20px/1 var(--font-mono);
 }
 
+/* Match highlights on the final screen: label, who, value. */
+.highlights {
+  margin: 6px auto 0;
+  padding: 0;
+  max-width: 340px;
+  list-style: none;
+  text-align: left;
+  font-size: 13px;
+}
+
+.highlights li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid rgb(91 125 179 / 0.2);
+}
+
+.highlights__label {
+  color: var(--bone-dim);
+}
+
+.highlights__who {
+  font-weight: 700;
+}
+
+.highlights__value {
+  min-width: 5.5em;
+  text-align: right;
+  font: 700 14px/1 var(--font-mono);
+}
+
 /* ——— Daily challenge ——— */
 
 .sectors {

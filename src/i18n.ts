@@ -222,6 +222,16 @@ const en = {
   'title.friendlyFire': 'FRIENDLY FIRE',
   'notice.volley': 'VOLLEY!',
 
+  // — scorecard —
+  'scorecard.round': 'Scorecard',
+  'scorecard.match': 'Highlights of the match',
+  'award.longestShot': 'Longest shot',
+  'award.fastestKill': 'Fastest kill',
+  'award.swingbys': 'Most swing-bys',
+  'award.grazes': 'Most grazes',
+  'award.bestHit': 'Best hit',
+  'award.kills': 'Most kills',
+
   // — daily challenge —
   'mode.daily': 'Daily Challenge',
   'mode.daily.hint': 'Five sectors, the same for everyone today',
@@ -508,6 +518,15 @@ const de: Dict = {
   'title.teamWin': 'TEAM {team}',
   'title.friendlyFire': 'TEAMBESCHUSS',
   'notice.volley': 'SALVE!',
+
+  'scorecard.round': 'Spielbilanz',
+  'scorecard.match': 'Highlights des Spiels',
+  'award.longestShot': 'Weitester Schuss',
+  'award.fastestKill': 'Schnellster Abschuss',
+  'award.swingbys': 'Meiste Swing-bys',
+  'award.grazes': 'Meiste Streifschüsse',
+  'award.bestHit': 'Bester Treffer',
+  'award.kills': 'Meiste Abschüsse',
 
   // — daily challenge —
   'mode.daily': 'Tägliche Herausforderung',

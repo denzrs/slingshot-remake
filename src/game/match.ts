@@ -3,6 +3,7 @@ import { AIM, COLORS, FIELD, PHYSICS, SCORING, TEAMS } from '../config';
 import { t } from '../i18n';
 import { normalizeAngle, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
+import { bump, improve, newStatBook, pathLength, type StatBook } from '../stats';
 import { seatTeamsFor, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
 import { generateWorld } from '../world';
@@ -156,6 +157,11 @@ export abstract class Match {
   summary: RoundSummary | null = null;
   /** Big transient announcement, e.g. "SALVE!". */
   notice: { text: string; color: string; at: number } | null = null;
+  /** What happened this round, and in the whole match — for the scorecard. */
+  roundStats: StatBook = newStatBook();
+  matchStats: StatBook = newStatBook();
+  /** Match clock when the current round began, so kills can be timed from the start of the round. */
+  protected roundStartedAt = 0;
   /** Online: the player sitting at this screen. null = hot-seat, where whoever is on turn is at the keyboard. */
   viewer: number | null = null;
 
@@ -177,6 +183,10 @@ export abstract class Match {
   protected abstract afterVolley(): void;
   protected abstract killPoints(vs: VolleyShot): { points: number; combo: StyleKind[]; multiplier: number };
   protected abstract get survivorBonus(): number;
+  /** Whether trick shots multiply a hit's points in this match. */
+  protected get stylePays(): boolean {
+    return true;
+  }
   protected abstract roundTitle(survivor: number | null): RoundTitle;
 
   on(listener: (e: GameEvent) => void): void {
@@ -314,12 +324,15 @@ export abstract class Match {
     this.round = 0;
     this.clock = 0;
     this.killFeed = [];
+    this.matchStats = newStatBook();
     this.totalRounds = this.attract ? 0 : this.settings.rounds;
     this.startRound();
   }
 
   startRound(): void {
     this.round++;
+    this.roundStats = newStatBook();
+    this.roundStartedAt = this.clock;
     this.world = generateWorld(randomSeed(), {
       maxPlanets: this.settings.maxPlanets,
       players: this.players.length,
@@ -416,6 +429,7 @@ export abstract class Match {
       for (const e of volley.step()) this.onVolleyEvent(volley, e, true);
     }
     if (volley.done) {
+      for (const vs of volley.shots) this.record((book) => (book.longestShot = improve(book.longestShot, vs.owner, pathLength(vs.trail), true)));
       this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, volley: this.volleyNumber })));
       this.volley = null;
       this.afterVolley();
@@ -452,7 +466,9 @@ export abstract class Match {
     const vs = volley.shots[e.index];
     const player = vs.owner;
     if (e.type === 'style') {
-      this.emit({ type: 'style', player, kind: e.event.kind, x: e.event.x, y: e.event.y });
+      if (live && (e.event.kind === 'swingby' || e.event.kind === 'graze')) this.record((book) => bump(e.event.kind === 'swingby' ? book.swingbys : book.grazes, player));
+      // The call-out promises a multiplier, so it only shows where trick shots pay.
+      if (this.stylePays) this.emit({ type: 'style', player, kind: e.event.kind, x: e.event.x, y: e.event.y });
       return;
     }
     const end = e.end;
@@ -514,8 +530,22 @@ export abstract class Match {
       power: vs.shot.power,
       at: this.clock,
     };
+    if (!self && !friendly) {
+      const seconds = this.clock - this.roundStartedAt;
+      this.record((book) => {
+        bump(book.kills, killer);
+        book.fastestKill = improve(book.fastestKill, killer, seconds, false);
+        book.bestHit = improve(book.bestHit, killer, score.points, true);
+      });
+    }
     this.recordKill(record);
     this.onKill(record, volley.shots.indexOf(vs), volley.steps);
+  }
+
+  /** Note something for the scorecard, in both the round's and the match's books. */
+  private record(update: (book: StatBook) => void): void {
+    update(this.roundStats);
+    update(this.matchStats);
   }
 
   protected recordKill(record: KillRecord): void {

@@ -35,6 +35,8 @@ export interface HorizonSnapshot {
   summary: Match['summary'];
   notice: Match['notice'];
   settings: Match['settings'];
+  roundStats: Match['roundStats'];
+  matchStats: Match['matchStats'];
   volleyNo: number;
   clock_: HorizonMatch['clock_'];
   queue: number[];
@@ -116,6 +118,7 @@ export class HorizonMatch extends Match {
       players: this.players.map((player) => ({ ...player })), current: this.current, world: this.world,
       trails: this.trails, volley: this.volley?.snapshot() ?? null, killFeed: this.killFeed,
       lastKill: this.lastKill, summary: this.summary, notice: this.notice, settings: this.settings,
+      roundStats: this.roundStats, matchStats: this.matchStats,
       volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
       aims: this.aims, volleyKills: this.volleyKills,
       collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships] } : null,
@@ -136,7 +139,7 @@ export class HorizonMatch extends Match {
     this.totalRounds = s.totalRounds; this.hiddenPlanets = s.hiddenPlanets; this.teamMode = s.teamMode;
     this.players = s.players.map((player) => ({ ...player })); this.current = s.current;
     this.world = s.world; this.trails = s.trails; this.killFeed = s.killFeed; this.lastKill = s.lastKill;
-    this.summary = s.summary; this.notice = s.notice; this.volleyNo = s.volleyNo; this.clock_ = s.clock_;
+    this.summary = s.summary; this.notice = s.notice; this.roundStats = s.roundStats; this.matchStats = s.matchStats; this.volleyNo = s.volleyNo; this.clock_ = s.clock_;
     this.queue = [...s.queue]; this.volleySnapshot = s.snapshot; this.aims = s.aims; this.volleyKills = s.volleyKills;
     this.collapse = s.collapse ? { ...s.collapse, planets: new Map(s.collapse.planets), ships: new Map(s.collapse.ships) } : null;
     this.volley = null;
