@@ -1,5 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { isGameEvent, isInputMessage, isRecord } from './protocol.js';
+import { DEFAULT_RULES, isGameEvent, isInputMessage, isRecord, parseRules, type RoomRules } from './protocol.js';
 
 export type RoomMode = 'ffa' | 'team';
 export type GameMode = 'classic' | 'horizon';
@@ -23,6 +23,7 @@ interface Room {
   id: string;
   mode: RoomMode;
   gameMode: GameMode;
+  rules: RoomRules;
   maxPlayers: number;
   status: RoomStatus;
   players: Player[];
@@ -39,6 +40,8 @@ interface Membership {
 
 interface LobbyRoom {
   id: string;
+  /** Name of the host, so a room is recognisable without its random id. */
+  host: string;
   mode: RoomMode;
   gameMode: GameMode;
   players: number;
@@ -81,6 +84,9 @@ export class RoomManager {
         break;
       case 'ready':
         this.setReady(connection, message);
+        break;
+      case 'set_rules':
+        this.setRules(connection, message);
         break;
       case 'start_game':
         this.startGame(connection);
@@ -132,10 +138,17 @@ export class RoomManager {
       return;
     }
 
+    const rules = message.rules === undefined ? DEFAULT_RULES : parseRules(message.rules);
+    if (!rules) {
+      this.error(connection, 'Malformed game rules');
+      return;
+    }
+
     const room: Room = {
       id: this.newRoomId(),
       mode: message.mode,
       gameMode: message.gameMode,
+      rules,
       maxPlayers: message.maxPlayers as number,
       status: 'waiting',
       players: [],
@@ -214,6 +227,28 @@ export class RoomManager {
     }
   }
 
+  /** The host edits the rules while the room is waiting; everybody has to confirm (ready) again. */
+  private setRules(connection: ClientConnection, message: Record<string, unknown>): void {
+    const membership = this.memberships.get(connection);
+    if (!membership || membership.player.id !== 0) {
+      this.error(connection, 'Only the room host can change the rules');
+      return;
+    }
+    const { room } = membership;
+    if (room.status !== 'waiting') {
+      this.error(connection, 'The rules cannot change while a game is running');
+      return;
+    }
+    const rules = parseRules(message.rules);
+    if (!rules) {
+      this.error(connection, 'Malformed game rules');
+      return;
+    }
+    room.rules = rules;
+    for (const player of room.players) player.ready = false;
+    this.broadcastRoomUpdate(room);
+  }
+
   private startGame(connection: ClientConnection): void {
     const membership = this.memberships.get(connection);
     if (!membership || membership.player.id !== 0) {
@@ -245,6 +280,7 @@ export class RoomManager {
         roomId: room.id,
         mode: room.mode,
         gameMode: room.gameMode,
+        rules: room.rules,
         hostId: 0,
         seed,
         players,
@@ -377,6 +413,7 @@ export class RoomManager {
       id: room.id,
       mode: room.mode,
       gameMode: room.gameMode,
+      rules: room.rules,
       maxPlayers: room.maxPlayers,
       status: room.status,
       locked: room.password !== null,
@@ -407,7 +444,7 @@ export class RoomManager {
   private visibleRooms(): LobbyRoom[] {
     return Array.from(this.rooms.values())
       .filter((room) => room.status === 'waiting')
-      .map((room) => ({ id: room.id, mode: room.mode, gameMode: room.gameMode, players: room.players.length, maxPlayers: room.maxPlayers, locked: room.password !== null }));
+      .map((room) => ({ id: room.id, host: room.players[0]?.name ?? '', mode: room.mode, gameMode: room.gameMode, players: room.players.length, maxPlayers: room.maxPlayers, locked: room.password !== null }));
   }
 
   private newRoomId(): string {

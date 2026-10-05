@@ -2,7 +2,9 @@ import { modifiersOf } from '../challenge';
 import { AIM, COLORS, FIELD, FONTS, TEAMS } from '../config';
 import { ChallengeMatch, HorizonMatch, teamName, type KillRecord, type Match, type PlayerState } from '../game';
 import { fmt, fmtInt, t, type Key } from '../i18n';
+import { awardLabel, awardValue, awardWho, spotlight } from '../scorecard';
 import { styleLabel } from '../scoring';
+import { awards } from '../stats';
 import type { View } from './backdrop';
 import { rgba } from './color';
 import type { DrawOptions } from './renderer';
@@ -35,10 +37,11 @@ export class Hud {
     this.k = Math.min(1.2, Math.max(0.72, view.scale));
     this.field = { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
 
-    if (match.current !== this.lastTurn) {
-      this.lastTurn = match.current;
+    const focus = match.focus;
+    if (focus !== this.lastTurn) {
+      this.lastTurn = focus;
       // In hot-seat games, say whose hands should be on the keyboard.
-      if (match.current >= 0 && !match.players[match.current].cpu && match.humanCount > 1) this.turnAt = time;
+      if (focus >= 0 && !match.players[focus].cpu && match.humanCount > 1 && !match.simultaneous) this.turnAt = time;
     }
 
     const killcam = match instanceof HorizonMatch ? match.killcamInfo : null;
@@ -61,10 +64,13 @@ export class Hud {
       this.drawScoreboard(match);
       this.drawKillFeed(match);
     }
-    if (match.phase === 'aiming' && match.current >= 0) this.drawReadout(match, match.players[match.current], shipPos(match.current));
+    if (match.phase === 'aiming' && focus >= 0) this.drawReadout(match, match.players[focus], shipPos(focus));
     this.drawNotice(match);
-    if (time - this.turnAt < 1.6 && match.current >= 0) this.drawTurnToast(match.players[match.current]);
-    if (match.phase === 'roundOver' && match.summary) this.drawBanner(match, duel);
+    if (time - this.turnAt < 1.6 && focus >= 0) this.drawTurnToast(match.players[focus]);
+    if (match.phase === 'roundOver' && match.summary) {
+      this.drawBanner(match, duel);
+      this.drawScorecard(match);
+    }
     this.drawHint(match, opts.touch);
     if (opts.recording) this.drawRec();
   }
@@ -89,7 +95,7 @@ export class Hud {
     const { ctx, k, field } = this;
     const x = align === 'left' ? field.x + 24 * k : field.x + field.w - 24 * k;
     const y = field.y + 22 * k;
-    const active = (match.phase === 'aiming' || match.phase === 'flying') && match.current === p.id;
+    const active = (match.phase === 'aiming' || match.phase === 'flying') && match.focus === p.id;
     ctx.globalAlpha = active || match.phase === 'roundOver' || match.phase === 'gameOver' ? 1 : 0.55;
     ctx.textAlign = align;
     ctx.textBaseline = 'top';
@@ -151,7 +157,8 @@ export class Hud {
         ctx.fillText(String(team.score), x + width, y - 8 * k);
       }
 
-      const active = planning && match.current === p.id;
+      // Everybody still aiming counts as active when all aim at once.
+      const active = planning && (match.simultaneous ? match.canAim(p.id) : match.current === p.id);
       ctx.globalAlpha = p.alive ? 1 : 0.38;
       ctx.fillStyle = rgba(COLORS.plate, 0.62);
       ctx.fillRect(x, y, w, h);
@@ -448,6 +455,64 @@ export class Hud {
     ctx.globalAlpha = 1;
   }
 
+  /** The round's awards as a row of cards under the banner: longest shot, fastest kill, most swing-bys, … */
+  private drawScorecard(match: Match): void {
+    const { ctx, k, field } = this;
+    const list = awards(match.roundStats);
+    const fade = Math.min(1, Math.max(0, (match.phaseTime - 0.9) / 0.5));
+    if (!list.length || fade <= 0) return;
+
+    const gap = 10 * k;
+    const cardH = 68 * k;
+    // Up to five cards to a row; more wrap into a second row, each row centred.
+    const perRow = list.length > 5 ? Math.ceil(list.length / 2) : list.length;
+    const cardW = Math.min(196 * k, (field.w - 48 * k - gap * (perRow - 1)) / perRow);
+    const y = field.y + field.h / 2 + 75 * k + 30 * k;
+    const lit = spotlight(match);
+
+    ctx.globalAlpha = fade;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = COLORS.boneDim;
+    ctx.font = `700 ${10.5 * k}px ${FONTS.body}`;
+    setSpacing(ctx, 2.4 * k);
+    ctx.fillText(t('scorecard.round').toUpperCase(), field.x + field.w / 2 + 1.2 * k, y - 11 * k);
+    setSpacing(ctx, 0);
+
+    list.forEach((award, i) => {
+      const row = Math.floor(i / perRow);
+      const inRow = Math.min(perRow, list.length - row * perRow);
+      const x = field.x + (field.w - (inRow * cardW + gap * (inRow - 1))) / 2 + (i - row * perRow) * (cardW + gap);
+      const top = y + row * (cardH + gap);
+      const who = awardWho(match, award);
+      ctx.fillStyle = rgba(COLORS.plate, 0.8);
+      ctx.fillRect(x, top, cardW, cardH);
+      ctx.fillStyle = who.color;
+      ctx.fillRect(x, top, 3 * k, cardH);
+      if (lit?.index === i) {
+        // The card whose shot is lit up on the field.
+        ctx.strokeStyle = rgba(COLORS.bone, 0.85);
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(x + 0.5, top + 0.5, cardW - 1, cardH - 1);
+      }
+
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = COLORS.boneDim;
+      ctx.font = `700 ${9 * k}px ${FONTS.body}`;
+      setSpacing(ctx, 1.4 * k);
+      ctx.fillText(fitText(ctx, awardLabel(award.kind).toUpperCase(), cardW - 18 * k), x + 11 * k, top + 8 * k);
+      setSpacing(ctx, 0);
+      ctx.fillStyle = COLORS.bone;
+      ctx.font = `700 ${20 * k}px ${FONTS.mono}`;
+      ctx.fillText(awardValue(award), x + 11 * k, top + 22 * k);
+      ctx.fillStyle = who.color;
+      ctx.font = `700 ${11.5 * k}px ${FONTS.body}`;
+      ctx.fillText(fitText(ctx, who.name, cardW - 18 * k), x + 11 * k, top + 48 * k);
+    });
+    ctx.globalAlpha = 1;
+  }
+
   private drawBanner(match: Match, duel: boolean): void {
     const { ctx, k, field } = this;
     const s = match.summary!;
@@ -555,7 +620,7 @@ export class Hud {
     const maxWidth = field.w - 48 * k;
     const horizon = match instanceof HorizonMatch;
     let items: KeyItem[] = [];
-    if (match.isHumanTurn) {
+    if (match.localCanAim) {
       if (touch) {
         items = [['', horizon ? t('hud.touch.horizon') : t('hud.touch.classic')]];
       } else {
@@ -566,7 +631,10 @@ export class Hud {
       }
     } else if (match.phase === 'aiming') {
       const thinker = match.current >= 0 ? match.players[match.current] : null;
-      items = [['', thinker?.cpu ? t('hud.thinking', { name: thinker.name }) : t('hud.cpusAiming')]];
+      // Online, the others are people: say whom we are waiting for.
+      if (match.viewer !== null && match.simultaneous) items = [['', t('hud.waitingOthers')]];
+      else if (match.viewer !== null && thinker && !thinker.cpu) items = [['', t('hud.waitingFor', { name: thinker.name })]];
+      else items = [['', thinker?.cpu ? t('hud.thinking', { name: thinker.name }) : t('hud.cpusAiming')]];
     } else if (match.phase === 'collapse') {
       items = [['', t('hud.collapse')]];
     } else if (match.phase === 'roundOver' && match.phaseTime > 0.6) {
@@ -651,6 +719,14 @@ function modifierLabels(match: ChallengeMatch): string[] {
 
 function nameLabel(p: PlayerState): string {
   return p.cpu ? `${p.name} · ${t(`cpu.${p.cpu}`)}` : p.name;
+}
+
+/** The text, cut with an ellipsis if it doesn't fit the width in the current font. */
+function fitText(ctx: CanvasRenderingContext2D, text: string, width: number): string {
+  if (ctx.measureText(text).width <= width) return text;
+  let cut = text.length;
+  while (cut > 1 && ctx.measureText(`${text.slice(0, cut)}…`).width > width) cut--;
+  return `${text.slice(0, cut)}…`;
 }
 
 function setSpacing(ctx: CanvasRenderingContext2D, px: number): void {

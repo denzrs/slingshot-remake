@@ -140,3 +140,67 @@ describe('rooms', () => {
     expect(host.last('room_update')!.room.players[0].name).toHaveLength(24);
   });
 });
+
+describe('room rules', () => {
+  const rules = { rounds: 3, maxPlanets: 6, invisiblePlanets: true, bounce: true, fixedPower: false, shotTime: 30, styleBonuses: true };
+
+  it('start with sensible defaults when none are sent', () => {
+    const { manager, client } = setup();
+    const host = client();
+    manager.handle(host, create());
+    expect(host.last('room_update')!.room.rules).toMatchObject({ rounds: 5, maxPlanets: 4, bounce: false, shotTime: 20 });
+  });
+
+  it('are chosen when the room is created and reach everybody at the start', () => {
+    const { manager, client } = setup();
+    const host = client();
+    const guest = client();
+    manager.handle(host, create({ rules }));
+    const id = host.last('room_update')!.room.id;
+    manager.handle(guest, { type: 'join_room', roomId: id, name: 'Gast' });
+    expect(guest.last('room_update')!.room.rules).toEqual(rules);
+    manager.handle(host, { type: 'start_game' });
+    expect(guest.last('game_start')!.rules).toEqual(rules);
+  });
+
+  it('are validated', () => {
+    const { manager, client } = setup();
+    const host = client();
+    for (const bad of [{ ...rules, maxPlanets: 99 }, { ...rules, shotTime: 1 }, { ...rules, bounce: 'yes' }, { ...rules, rounds: 1.5 }, 'nope', null]) {
+      manager.handle(host, create({ rules: bad }));
+      expect(host.last('error')!.message).toMatch(/rules/i);
+    }
+    expect(host.count('room_update')).toBe(0);
+  });
+
+  it('can be changed by the host while waiting, which resets everybody to "not ready"', () => {
+    const { manager, client } = setup();
+    const host = client();
+    const guest = client();
+    manager.handle(host, create({ maxPlayers: 3 }));
+    manager.handle(guest, { type: 'join_room', roomId: host.last('room_update')!.room.id, name: 'Gast' });
+    manager.handle(guest, { type: 'ready', ready: true });
+    manager.handle(host, { type: 'set_rules', rules });
+    expect(guest.last('room_update')!.room.rules).toEqual(rules);
+    expect(guest.last('room_update')!.room.players.every((p: { ready: boolean }) => !p.ready)).toBe(true);
+
+    manager.handle(guest, { type: 'set_rules', rules: { ...rules, rounds: 1 } });
+    expect(guest.last('error')!.message).toMatch(/host/i);
+    manager.handle(host, { type: 'set_rules', rules: { ...rules, maxPlanets: 0 } });
+    expect(host.last('error')!.message).toMatch(/rules/i);
+    expect(host.last('room_update')!.room.rules).toEqual(rules);
+
+    manager.handle(host, { type: 'start_game' });
+    manager.handle(host, { type: 'set_rules', rules: { ...rules, rounds: 7 } });
+    expect(host.last('error')!.message).toMatch(/running/i);
+  });
+
+  it('show the host\'s name in the room list', () => {
+    const { manager, client } = setup();
+    const host = client();
+    const watcher = client();
+    manager.handle(host, create({ name: 'Anna' }));
+    expect(watcher.last('lobby_update')!.rooms[0].host).toBe('Anna');
+  });
+});
+

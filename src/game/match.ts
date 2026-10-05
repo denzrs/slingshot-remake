@@ -3,6 +3,7 @@ import { AIM, COLORS, FIELD, PHYSICS, SCORING, TEAMS } from '../config';
 import { t } from '../i18n';
 import { normalizeAngle, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
+import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
 import { seatTeamsFor, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
 import { generateWorld } from '../world';
@@ -117,6 +118,8 @@ export interface MatchOptions {
   names?: string[];
   /** Fixed team per player index (online matches); `settings.teamMode` is the team count. */
   teams?: number[];
+  /** Event Horizon online: every human aims at the same time instead of one after another at a shared keyboard. */
+  simultaneous?: boolean;
 }
 
 interface CpuJob {
@@ -154,11 +157,20 @@ export abstract class Match {
   summary: RoundSummary | null = null;
   /** Big transient announcement, e.g. "SALVE!". */
   notice: { text: string; color: string; at: number } | null = null;
+  /** What happened this round, and in the whole match — for the scorecard. */
+  roundStats: StatBook = newStatBook();
+  matchStats: StatBook = newStatBook();
+  /** Everybody's score at the start of the match and after every round — for the chart on the final screen. */
+  scoreHistory: number[][] = [];
+  /** Match clock when the current round began, so kills can be timed from the start of the round. */
+  protected roundStartedAt = 0;
+  /** Online: the player sitting at this screen. null = hot-seat, where whoever is on turn is at the keyboard. */
+  viewer: number | null = null;
 
   protected readonly rng: Rng = createRng(randomSeed());
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
-  private simClock = 0;
+  protected simClock = 0;
 
   constructor(
     public settings: Settings,
@@ -173,6 +185,10 @@ export abstract class Match {
   protected abstract afterVolley(): void;
   protected abstract killPoints(vs: VolleyShot): { points: number; combo: StyleKind[]; multiplier: number };
   protected abstract get survivorBonus(): number;
+  /** Whether trick shots multiply a hit's points in this match. */
+  protected get stylePays(): boolean {
+    return true;
+  }
   protected abstract roundTitle(survivor: number | null): RoundTitle;
 
   on(listener: (e: GameEvent) => void): void {
@@ -192,6 +208,27 @@ export abstract class Match {
     if (this.phase !== 'aiming' || this.current < 0) return false;
     const p = this.players[this.current];
     return !p.cpu && !p.locked;
+  }
+
+  /** Whether every human aims at once (online Event Horizon) rather than in turns. */
+  get simultaneous(): boolean {
+    return !!this.options.simultaneous;
+  }
+
+  /** Whether a human may change this player's aim right now. */
+  canAim(id: number): boolean {
+    const p = this.players[id];
+    return this.phase === 'aiming' && this.current === id && !!p && !p.cpu && !p.locked;
+  }
+
+  /** Whether the person at this screen may aim right now. */
+  get localCanAim(): boolean {
+    return this.viewer === null ? this.isHumanTurn : this.canAim(this.viewer);
+  }
+
+  /** Whose aim the screen shows: whoever is on turn — or, while everyone aims at once, the local player. */
+  get focus(): number {
+    return this.simultaneous && this.viewer !== null && this.canAim(this.viewer) ? this.viewer : this.current;
   }
 
   get humanCount(): number {
@@ -289,12 +326,16 @@ export abstract class Match {
     this.round = 0;
     this.clock = 0;
     this.killFeed = [];
+    this.matchStats = newStatBook();
+    this.scoreHistory = [this.players.map(() => 0)];
     this.totalRounds = this.attract ? 0 : this.settings.rounds;
     this.startRound();
   }
 
   startRound(): void {
     this.round++;
+    this.roundStats = newStatBook();
+    this.roundStartedAt = this.clock;
     this.world = generateWorld(randomSeed(), {
       maxPlanets: this.settings.maxPlanets,
       players: this.players.length,
@@ -377,21 +418,46 @@ export abstract class Match {
     });
   }
 
+  /** Long flights speed up so nobody waits for an orbit to decay. */
+  private get flightSpeed(): number {
+    const t = this.phaseTime;
+    return t < 3 ? 1 : Math.min(4, 1 + (t - 3) * 0.75);
+  }
+
   private updateFlight(dt: number): void {
     const volley = this.volley!;
-    // Long flights speed up so nobody waits for an orbit to decay.
-    const t = this.phaseTime;
-    const speed = t < 3 ? 1 : Math.min(4, 1 + (t - 3) * 0.75);
-    this.simClock += dt * speed;
+    this.simClock += dt * this.flightSpeed;
     while (this.simClock >= PHYSICS.DT && !volley.done) {
       this.simClock -= PHYSICS.DT;
       for (const e of volley.step()) this.onVolleyEvent(volley, e, true);
     }
     if (volley.done) {
+      this.recordFlights(volley);
       this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, volley: this.volleyNumber })));
       this.volley = null;
       this.afterVolley();
     }
+  }
+
+  /**
+   * Guests carry a flight on between the host's snapshots, so it moves smoothly instead of in 30 Hz
+   * steps. The physics is deterministic, so this is exactly what the host is about to send; it is
+   * purely visual — hits, events and scores only ever come from the host.
+   */
+  extrapolate(dt: number): void {
+    const volley = this.volley;
+    if (this.phase !== 'flying' || !volley) return;
+    this.phaseTime += dt;
+    this.simClock += dt * this.flightSpeed;
+    while (this.simClock >= PHYSICS.DT && !volley.done) {
+      this.simClock -= PHYSICS.DT;
+      volley.step();
+    }
+  }
+
+  /** A fresh snapshot replaced the state: the extrapolation starts over from it. */
+  protected restarted(): void {
+    this.simClock = 0;
   }
 
   protected get volleyNumber(): number {
@@ -403,7 +469,9 @@ export abstract class Match {
     const vs = volley.shots[e.index];
     const player = vs.owner;
     if (e.type === 'style') {
-      this.emit({ type: 'style', player, kind: e.event.kind, x: e.event.x, y: e.event.y });
+      if (live && (e.event.kind === 'swingby' || e.event.kind === 'graze')) this.record((book) => bump(e.event.kind === 'swingby' ? book.swingbys : book.grazes, player));
+      // The call-out promises a multiplier, so it only shows where trick shots pay.
+      if (this.stylePays) this.emit({ type: 'style', player, kind: e.event.kind, x: e.event.x, y: e.event.y });
       return;
     }
     const end = e.end;
@@ -465,8 +533,44 @@ export abstract class Match {
       power: vs.shot.power,
       at: this.clock,
     };
+    if (self) this.record((book) => bump(book.ownGoals, killer));
+    if (!self && !friendly) {
+      const seconds = this.clock - this.roundStartedAt;
+      const from = volley.world.ships[killer];
+      const target = volley.world.ships[victim];
+      const shot = { trail: vs.trail, at: { x: target.x, y: target.y } };
+      this.record((book) => {
+        bump(book.kills, killer);
+        book.fastestKill = improve(book.fastestKill, killer, seconds, false, shot);
+        book.bestHit = improve(book.bestHit, killer, score.points, true, shot);
+        book.sniper = improve(book.sniper, killer, Math.hypot(target.x - from.x, target.y - from.y), true, shot);
+      });
+    }
     this.recordKill(record);
     this.onKill(record, volley.shots.indexOf(vs), volley.steps);
+  }
+
+  /** What the finished shots tell the scorecard: how far they flew and whom they narrowly missed. */
+  private recordFlights(volley: Volley): void {
+    for (const vs of volley.shots) {
+      const trail = vs.trail;
+      const end = { x: trail[trail.length - 2], y: trail[trail.length - 1] };
+      this.record((book) => (book.longestShot = improve(book.longestShot, vs.owner, pathLength(trail), true, { trail, at: end })));
+      // Enemy ships still flying after the volley — the ones this shot missed.
+      const friends = this.friendsOf(vs.owner);
+      volley.world.ships.forEach((ship, id) => {
+        if (id === vs.owner || friends.includes(id) || !ship.alive) return;
+        const { distance, at } = closestApproach(trail, ship);
+        const gap = distance - PHYSICS.SHIP_RADIUS;
+        if (gap > 0) this.record((book) => (book.closeCall = improve(book.closeCall, vs.owner, gap, false, { trail, at })));
+      });
+    }
+  }
+
+  /** Note something for the scorecard, in both the round's and the match's books. */
+  private record(update: (book: StatBook) => void): void {
+    update(this.roundStats);
+    update(this.matchStats);
   }
 
   protected recordKill(record: KillRecord): void {
@@ -492,6 +596,7 @@ export abstract class Match {
     }
     const title = team !== null ? 'teamWin' : this.roundTitle(survivor);
     this.summary = { title, survivor, team, bonus, lastKill: this.lastKill };
+    this.scoreHistory.push(this.players.map((p) => p.score));
     this.current = -1;
     this.setPhase('roundOver');
     this.emit({ type: 'roundEnd' });
