@@ -11,6 +11,8 @@ import { ClipRecorder } from './clip';
 import { AIM, COLORS, FONTS, PHYSICS } from './config';
 import { recordRun } from './dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
+import { MultiplayerSession } from './multiplayer';
+import type { ClientInput } from './net';
 import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t } from './i18n';
 import { Renderer } from './render/renderer';
@@ -18,7 +20,7 @@ import { STYLE_MULTIPLIER, styleLabel } from './scoring';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
 import { Menu } from './ui/menu';
-import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
+import { gameOverScreen, lobbyScreen, pauseScreen, titleScreen, type App } from './ui/screens';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
@@ -124,6 +126,50 @@ function wire(m: Match): void {
 }
 wire(attract);
 
+/** Created on first use; it outlives single matches, so leaving a game lands you back in the lobby. */
+let session: MultiplayerSession | null = null;
+function multiplayer(): MultiplayerSession {
+  session ??= new MultiplayerSession({
+    settings: () => settings,
+    matchStarted(m) {
+      match = m;
+      wire(m);
+      screen = 'play';
+      effects.clear();
+      menu.close();
+    },
+    matchRestarted: () => menu.close(),
+    matchEnded() {
+      match = null;
+      screen = 'title';
+      effects.clear();
+      menu.open(() => lobbyScreen(app, multiplayer()));
+    },
+  });
+  return session;
+}
+/** The online match on screen, if any. */
+const online = (): MultiplayerSession | null => (session?.match ? session : null);
+
+/** Route a player input: online it goes through the session, offline straight to the match. */
+function dispatchInput(input: ClientInput): void {
+  const net = online();
+  if (net) return net.input(input);
+  if (!match) return;
+  if (input.kind === 'adjust') match.adjust(input.dAngle, input.dPower);
+  else if (input.kind === 'aim') match.setAim(input.angle, input.power);
+  else if (input.kind === 'fire') match.commit();
+}
+
+function advanceMatch(): void {
+  const net = online();
+  if (net) net.advance();
+  else match?.advance();
+}
+
+/** Whether the local player may aim right now. */
+const canAim = (): boolean => (online() ? session!.myTurn : !!match?.isHumanTurn);
+
 const app: App = {
   menu,
   settings,
@@ -132,7 +178,7 @@ const app: App = {
     sound.enabled = settings.sound;
     effects.particles = settings.particles;
     attract.settings.contours = settings.contours;
-    match?.applySettings(settings);
+    if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {
       setLang(settings.language);
       applyStaticTexts();
@@ -158,16 +204,33 @@ const app: App = {
     effects.clear();
     menu.close();
   },
+  get online() {
+    return !!online();
+  },
+  openLobby: () => menu.open(() => lobbyScreen(app, multiplayer())),
+  toLobby() {
+    session?.leaveRoom();
+    match = null;
+    screen = 'title';
+    effects.clear();
+    menu.open(() => lobbyScreen(app, multiplayer()));
+  },
   resume() {
     menu.close();
   },
   rematch() {
     if (!match) return app.start(lastMode);
+    if (online()) {
+      advanceMatch();
+      menu.close();
+      return;
+    }
     effects.clear();
     match.newMatch();
     menu.close();
   },
   toTitle() {
+    session?.disconnect();
     screen = 'title';
     match = null;
     effects.clear();
@@ -189,8 +252,9 @@ function saveClip(): void {
 /** Enter / Space / the touch button: fire or lock in, continue, or skip the killcam. */
 function primaryAction(): void {
   if (!match) return;
-  if (match.isHumanTurn) match.commit();
-  else if (match.phase === 'roundOver' || match.phase === 'killcam') match.advance();
+  if (online() && match.phase === 'gameOver') app.rematch();
+  else if (canAim()) dispatchInput({ kind: 'fire' });
+  else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
 }
 
 // ————————————————————————————— Keyboard —————————————————————————————
@@ -219,16 +283,16 @@ window.addEventListener('keydown', (e) => {
   let handled = true;
   switch (e.code) {
     case 'ArrowLeft':
-      match.adjust(dAngle, 0);
+      dispatchInput({ kind: 'adjust', dAngle, dPower: 0 });
       break;
     case 'ArrowRight':
-      match.adjust(-dAngle, 0);
+      dispatchInput({ kind: 'adjust', dAngle: -dAngle, dPower: 0 });
       break;
     case 'ArrowUp':
-      match.adjust(0, dPower);
+      dispatchInput({ kind: 'adjust', dAngle: 0, dPower });
       break;
     case 'ArrowDown':
-      match.adjust(0, -dPower);
+      dispatchInput({ kind: 'adjust', dAngle: 0, dPower: -dPower });
       break;
     case 'Enter':
     case 'NumpadEnter':
@@ -253,7 +317,7 @@ window.addEventListener('keydown', (e) => {
 let dragging = false;
 
 function aimAt(clientX: number, clientY: number): void {
-  if (!match?.isHumanTurn) return;
+  if (!match || !canAim()) return;
   const f = renderer.toField(clientX, clientY);
   const ship = match.world.ships[match.current];
   const dx = f.x - ship.x;
@@ -261,14 +325,14 @@ function aimAt(clientX: number, clientY: number): void {
   const angle = (Math.atan2(-dy, dx) * 180) / Math.PI;
   // Map distance so the tip of the drawn aim arrow follows the pointer.
   const reach = Math.hypot(dx, dy) - (PHYSICS.MUZZLE + 26);
-  match.setAim(angle, Math.round((reach / 110) * AIM.MAX_POWER * 100) / 100);
+  dispatchInput({ kind: 'aim', angle, power: Math.round((reach / 110) * AIM.MAX_POWER * 100) / 100 });
 }
 
 canvas.addEventListener('pointerdown', (e) => {
   sound.unlock();
   if (screen !== 'play' || !match || menu.isOpen) return;
-  if (match.phase === 'roundOver' || match.phase === 'killcam') return match.advance();
-  if (!match.isHumanTurn) return;
+  if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
+  if (!canAim()) return;
   dragging = true;
   canvas.setPointerCapture(e.pointerId);
   aimAt(e.clientX, e.clientY);
@@ -296,7 +360,7 @@ function syncButtons(): void {
   const m = match;
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
-    if (m.isHumanTurn) touchLabel = m.mode === 'horizon' ? t('common.ready') : t('common.fire');
+    if (canAim()) touchLabel = m.mode === 'horizon' ? t('common.ready') : t('common.fire');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
     else if (m.phase === 'killcam' && !recorder.recording) touchLabel = t('common.skip');
   }
@@ -312,11 +376,14 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const m = active();
-  const paused = screen === 'play' && menu.isOpen;
+  const net = online();
+  // Online the others keep playing, so a menu on top doesn't stop the world.
+  const paused = screen === 'play' && menu.isOpen && !net;
   if (!paused) {
-    m.update(dt);
+    if (!net || net.isHost) m.update(dt);
     effects.update(dt, m.world);
   }
+  net?.update(dt);
   renderer.draw(m, effects, { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording }, paused ? 0 : dt);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();
