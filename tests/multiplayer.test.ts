@@ -199,3 +199,34 @@ describe('online games', () => {
     expect(Math.hypot(gx.x - hx.x, gx.y - hx.y)).toBeLessThan(25);
   });
 });
+
+describe('the scorecard online', () => {
+  it('reaches the guest at the end of a round, through the relay', async () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      const { host, guest } = await startRoom(mode);
+      const hm = host.match();
+      // Straight shots across an empty field: player 0 hits player 1 sooner or later.
+      hm.world.planets = [];
+      Object.assign(hm.world.ships[0], { x: 100, y: 400 });
+      Object.assign(hm.world.ships[1], { x: 1180, y: 400 });
+      for (let i = 0; i < 5; i++) frame(host, guest);
+      // Everybody shoots at the other one whenever they may aim (Classic: in turn; Horizon: all at once).
+      for (let i = 0; i < 60 * 60 && hm.phase !== 'roundOver'; i++) {
+        if (hm.phase === 'killcam') hm.advance();
+        if (hm.phase === 'aiming') {
+          host.session.input({ kind: 'aim', angle: 0, power: 55 });
+          guest.session.input({ kind: 'aim', angle: 180, power: 55 });
+          host.session.input({ kind: 'fire' });
+          guest.session.input({ kind: 'fire' });
+        }
+        frame(host, guest);
+      }
+      for (let i = 0; i < 10; i++) frame(host, guest);
+      expect(hm.phase).toBe('roundOver');
+      expect(guest.match().phase).toBe('roundOver');
+      expect(hm.roundStats.longestShot).not.toBeNull();
+      expect(guest.match().roundStats).toEqual(hm.roundStats);
+      expect(guest.match().matchStats).toEqual(hm.matchStats);
+    }
+  });
+});
