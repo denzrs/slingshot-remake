@@ -76,6 +76,11 @@ describe('event horizon match', () => {
     expect(guest.current).toBe(host.current);
   });
 
+  it('uses the configured bounce and shot timeout settings', () => {
+    const m = createMatch('horizon', { ...DEFAULT_SETTINGS, bounce: true, shotTime: 60 }, { seats: cpus(2) });
+    expect(m.rules).toEqual({ bounce: true, timeLimit: 60 });
+  });
+
   it('always ends: the growing hole guarantees a decision', () => {
     for (let i = 0; i < 3; i++) {
       const m = playRound('horizon', cpus(4));

@@ -21,7 +21,7 @@ export interface VolleySnapshot {
 }
 
 export type VolleyEvent =
-  | { type: 'end'; index: number; end: ShotEnd; x: number; y: number }
+  | { type: 'end'; index: number; end: ShotEnd; x: number; y: number; vx: number; vy: number }
   | { type: 'style'; index: number; event: StyleEvent };
 
 const TRAIL_EVERY = 2;
@@ -88,7 +88,7 @@ export class Volley {
       if (end || this.steps % TRAIL_EVERY === 0) vs.trail.push(shot.x, shot.y);
       if (end) {
         if (end.kind === 'ship') this.world.ships[end.ship].alive = false;
-        events.push({ type: 'end', index: i, end, x: shot.x, y: shot.y });
+        events.push({ type: 'end', index: i, end, x: shot.x, y: shot.y, vx: shot.vx, vy: shot.vy });
       }
     }
 
@@ -107,7 +107,10 @@ export class Volley {
         const endB: ShotEnd = { kind: 'clash', other: i };
         a.terminate(endA);
         b.terminate(endB);
-        events.push({ type: 'end', index: i, end: endA, x: a.x, y: a.y }, { type: 'end', index: j, end: endB, x: b.x, y: b.y });
+        events.push(
+          { type: 'end', index: i, end: endA, x: a.x, y: a.y, vx: a.vx, vy: a.vy },
+          { type: 'end', index: j, end: endB, x: b.x, y: b.y, vx: b.vx, vy: b.vy },
+        );
         break;
       }
     }
