@@ -90,10 +90,9 @@ export function titleScreen(app: App): Screen {
     get items(): MenuItem[] {
       return [
         { kind: 'action', label: t('mode.daily'), hint: dailyMenuHint(app.today()), primary: true, run: () => app.menu.push(() => dailyScreen(app)) },
-        { kind: 'action', label: t('mode.classic'), hint: t('mode.classic.hint'), run: () => app.start('classic') },
-        { kind: 'action', label: t('mode.horizon'), hint: t('mode.horizon.hint'), run: () => app.start('horizon') },
+        { kind: 'action', label: t('mode.classic'), hint: t('mode.classic.hint'), run: () => app.menu.push(() => setupScreen(app, 'classic')) },
+        { kind: 'action', label: t('mode.horizon'), hint: t('mode.horizon.hint'), run: () => app.menu.push(() => setupScreen(app, 'horizon')) },
         { kind: 'action', label: t('multiplayer.title'), hint: t('multiplayer.hint'), run: () => app.openLobby() },
-        { kind: 'action', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
         { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
         { kind: 'action', label: t('common.help'), run: () => app.menu.push(() => helpScreen(app)) },
         languageItem(app),
@@ -298,14 +297,14 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
 
 export function pauseScreen(app: App): Screen {
   const daily = app.mode === 'challenge';
+  const mode = app.mode === 'classic' || app.mode === 'horizon' ? app.mode : null;
   return {
     build: () => panel(t('pause.title'), null),
     items: [
       { kind: 'action', label: t('pause.resume'), primary: true, run: () => app.resume() },
-      // Online, the room decides: no restarts or seat changes from the pause menu.
-      ...(app.online ? [] : [{ kind: 'action', label: daily ? t('daily.retry') : t('pause.newGame'), run: () => app.rematch() } satisfies MenuItem]),
-      // Seats make no sense in the daily challenge — it is always you against the targets.
-      ...(daily || app.online ? [] : [{ kind: 'action', label: t('common.players'), run: () => app.menu.push(() => playersScreen(app)) } satisfies MenuItem]),
+      // Online, the room decides: no restarts from the pause menu. The daily challenge has no setup, only a retry.
+      ...(mode && !app.online ? [{ kind: 'action', label: t('pause.newGame'), run: () => app.menu.push(() => setupScreen(app, mode)) } satisfies MenuItem] : []),
+      ...(daily ? [{ kind: 'action', label: t('daily.retry'), run: () => app.rematch() } satisfies MenuItem] : []),
       { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
       { kind: 'action', label: t('common.help'), run: () => app.menu.push(() => helpScreen(app)) },
       app.online
@@ -371,29 +370,48 @@ export function playersScreen(app: App): Screen {
   };
 }
 
-export function settingsScreen(app: App): Screen {
-  const s = app.settings;
-  const choice = <K extends keyof Settings>(label: string, key: K, options: { value: Settings[K]; label: string }[]): MenuItem => ({
+/** A row that cycles one setting through a list of values. */
+function settingChoice<K extends keyof Settings>(app: App, label: string, key: K, options: { value: Settings[K]; label: string }[]): MenuItem {
+  return {
     kind: 'choice',
     label,
     options,
-    get: () => s[key],
+    get: () => app.settings[key],
     set: (v) => {
-      s[key] = v as Settings[K];
+      app.settings[key] = v as Settings[K];
       app.settingsChanged();
     },
-  });
+  };
+}
 
+/** The rules of a game, shown right before it starts. They are remembered between games. */
+export function setupScreen(app: App, mode: VersusMode): Screen {
+  const s = app.settings;
+  const classic = mode === 'classic';
+  const choice = <K extends keyof Settings>(label: string, key: K, options: { value: Settings[K]; label: string }[]) => settingChoice(app, label, key, options);
   return {
-    build: () =>
-      panel(t('common.settings'), h('p.note', null, t('settings.note')), 'panel--wide'),
+    build: () => panel(t(classic ? 'mode.classic' : 'mode.horizon'), h('p.note', null, t('setup.note')), 'panel--wide'),
     items: [
+      { kind: 'action', label: t('setup.start'), primary: true, run: () => app.start(mode) },
+      { kind: 'action', label: t('common.players'), hint: lineup(s), run: () => app.menu.push(() => playersScreen(app)) },
       choice(t('settings.rounds'), 'rounds', [1, 3, 5, 7, 10, 15, 20, 0].map((n) => ({ value: n, label: n ? String(n) : t('settings.endless') }))),
       choice(t('settings.maxPlanets'), 'maxPlanets', [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ value: n, label: String(n) }))),
-      choice(t('settings.invisible'), 'invisiblePlanets', onOff()),
+      ...(classic ? [choice(t('settings.invisible'), 'invisiblePlanets', onOff())] : []),
       choice(t('settings.bounce'), 'bounce', onOff()),
       choice(t('settings.fixedPower'), 'fixedPower', onOff()),
       choice(t('settings.shotTime'), 'shotTime', [10, 20, 30, 60].map((n) => ({ value: n, label: t('settings.seconds', { n }) }))),
+      ...(classic ? [choice(t('settings.styleBonuses'), 'styleBonuses', onOff())] : []),
+      { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
+    ],
+  };
+}
+
+/** Only what concerns this device; the rules of a game live on the setup screen. */
+export function settingsScreen(app: App): Screen {
+  const choice = <K extends keyof Settings>(label: string, key: K, options: { value: Settings[K]; label: string }[]) => settingChoice(app, label, key, options);
+  return {
+    build: () => panel(t('common.settings'), h('p.note', null, t('settings.note')), 'panel--wide'),
+    items: [
       choice(t('settings.contours'), 'contours', onOff()),
       choice(t('settings.particles'), 'particles', onOff()),
       choice(t('settings.sound'), 'sound', onOff()),

@@ -5,6 +5,11 @@ import { detectLang, isLang, type Lang } from './i18n';
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
 export type Seat = 'human' | CpuLevel | 'off';
 
+/**
+ * One bag of settings, two homes in the UI: the rules of a game (seats, teams, rounds, planets, bounce,
+ * flight time, …) are set on the setup screen right before it starts; the settings screen only keeps
+ * what concerns this device (contours, particles, sound, language).
+ */
 export interface Settings {
   /** Always MAX_PLAYERS long; seats that aren't 'off' take part, keeping their number and colour. */
   seats: Seat[];
@@ -16,6 +21,8 @@ export interface Settings {
   fixedPower: boolean;
   /** Seconds before a shot fizzles out. */
   shotTime: number;
+  /** Classic only: swing-bys, grazes and the like multiply a hit's points, as they always do in Event Horizon. */
+  styleBonuses: boolean;
   contours: boolean;
   particles: boolean;
   sound: boolean;
@@ -34,6 +41,7 @@ export const DEFAULT_SETTINGS: Settings = {
   bounce: false,
   fixedPower: false,
   shotTime: 20,
+  styleBonuses: false,
   contours: true,
   particles: true,
   sound: true,
@@ -70,6 +78,11 @@ export function loadSettings(): Settings {
     // Storage blocked or corrupt — fall back to defaults.
   }
   return { ...DEFAULT_SETTINGS, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams], language: detectLang() };
+}
+
+/** The copy a match plays by, so changing the setup later never alters a game in progress. */
+export function cloneSettings(s: Settings): Settings {
+  return { ...s, seats: [...s.seats], seatTeams: [...s.seatTeams] };
 }
 
 export function saveSettings(s: Settings): void {

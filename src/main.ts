@@ -17,7 +17,7 @@ import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t } from './i18n';
 import { Renderer } from './render/renderer';
 import { STYLE_MULTIPLIER, styleLabel } from './scoring';
-import { DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
+import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
 import { Menu } from './ui/menu';
 import { gameOverScreen, lobbyScreen, pauseScreen, titleScreen, type App } from './ui/screens';
@@ -177,7 +177,7 @@ const app: App = {
     saveSettings(settings);
     sound.enabled = settings.sound;
     effects.particles = settings.particles;
-    attract.settings.contours = settings.contours;
+    attract.applySettings(settings);
     if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {
       setLang(settings.language);
@@ -191,14 +191,14 @@ const app: App = {
   today: () => forcedDay ?? dateKey(),
   start(mode) {
     lastMode = mode;
-    match = createMatch(mode, settings);
+    match = createMatch(mode, cloneSettings(settings));
     wire(match);
     screen = 'play';
     effects.clear();
     menu.close();
   },
   startDaily() {
-    match = createChallenge(settings, dailyChallenge(app.today()));
+    match = createChallenge(cloneSettings(settings), dailyChallenge(app.today()));
     wire(match);
     screen = 'play';
     effects.clear();
