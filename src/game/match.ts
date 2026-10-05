@@ -335,10 +335,9 @@ export abstract class Match {
     if (!this.settings.fixedPower) p.power = Math.min(AIM.MAX_POWER, Math.max(AIM.MIN_POWER, power));
   }
 
-  /** Called when settings change mid-match. */
+  /** Called when settings change mid-match: only display options follow along, the rules stay as the game started. */
   applySettings(settings: Settings): void {
-    this.settings = settings;
-    if (settings.fixedPower) for (const p of this.players) p.power = AIM.FIXED_POWER;
+    this.settings.contours = settings.contours;
   }
 
   /** Space / "continue": next round, final screen, or a new match. */

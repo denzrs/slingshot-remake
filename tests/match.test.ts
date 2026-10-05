@@ -3,7 +3,7 @@ import { createMatch, type Match, type VersusMode } from '../src/game';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
 import { FIELD } from '../src/config';
-import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
+import { cloneSettings, DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
 /** Run a CPU-only match headlessly until the first round is decided. */
 function playRound(mode: VersusMode, seats: Seat[], maxSeconds = 600): Match {
@@ -60,6 +60,54 @@ describe('classic match', () => {
     // In a duel there is no extra survivor bonus: the winner's score is exactly the hit (or the opponent's own goal).
     const winner = m.players[m.summary!.survivor!];
     expect(winner.score).toBe(kill.self ? 0 : kill.points);
+  });
+});
+
+describe('classic trick-shot bonuses', () => {
+  /** One slow, straight shot across an empty field: nothing but the airtime bonus can apply. */
+  function slowHit(styleBonuses: boolean): Match {
+    const seats: Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, styleBonuses }, { seats });
+    m.world.planets = [];
+    Object.assign(m.world.ships[0], { x: 100, y: 400 });
+    Object.assign(m.world.ships[1], { x: 1180, y: 400 });
+    m.setAim(0, 20);
+    m.commit();
+    for (let t = 0; t < 30 && m.phase === 'flying'; t += 1 / 30) m.update(1 / 30);
+    return m;
+  }
+
+  it('are off by default: a hit pays the plain score', () => {
+    const m = slowHit(false);
+    expect(m.lastKill).toMatchObject({ victim: 1, points: 1300, multiplier: 1, combo: [] });
+  });
+
+  it('multiply the hit once switched on', () => {
+    const m = slowHit(true);
+    expect(m.lastKill).toMatchObject({ victim: 1, points: 1560, multiplier: 1.2, combo: ['airtime'] });
+    expect(m.players[0].score).toBe(1560);
+  });
+});
+
+describe('settings', () => {
+  it('a match plays by its own copy, so editing the setup mid-game changes nothing', () => {
+    const live = { ...DEFAULT_SETTINGS, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams] };
+    const m = createMatch('classic', cloneSettings(live));
+    live.bounce = true;
+    live.fixedPower = true;
+    live.seats[2] = 'human';
+    m.applySettings(live);
+    expect(m.settings.bounce).toBe(false);
+    expect(m.settings.fixedPower).toBe(false);
+    expect(m.settings.seats[2]).toBe('off');
+  });
+
+  it('display options follow along live', () => {
+    const live = cloneSettings(DEFAULT_SETTINGS);
+    const m = createMatch('horizon', cloneSettings(live));
+    live.contours = false;
+    m.applySettings(live);
+    expect(m.settings.contours).toBe(false);
   });
 });
 

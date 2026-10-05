@@ -134,7 +134,7 @@ export class ChallengeMatch extends Match {
   }
 
   applySettings(settings: Settings): void {
-    this.user = settings;
+    this.user = { ...this.user, contours: settings.contours };
     this.settings = this.effectiveSettings();
   }
 

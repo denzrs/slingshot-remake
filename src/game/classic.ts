@@ -1,5 +1,5 @@
 import type { ShotRules, StyleKind, World } from '../physics';
-import { scoreHit } from '../scoring';
+import { scoreChallengeHit } from '../scoring';
 import { SCORING } from '../config';
 import { Volley, type VolleyShot } from '../volley';
 import { Match, type RoundTitle } from './match';
@@ -133,7 +133,7 @@ export class ClassicMatch extends Match {
   private fire(): void {
     const p = this.players[this.current];
     p.shots++;
-    this.launch([{ player: p.id, angle: p.angle, power: p.power }], false);
+    this.launch([{ player: p.id, angle: p.angle, power: p.power }], this.settings.styleBonuses);
   }
 
   protected updatePhase(dt: number): void {
@@ -190,7 +190,10 @@ export class ClassicMatch extends Match {
 
   protected killPoints(vs: VolleyShot): { points: number; combo: StyleKind[]; multiplier: number } {
     const shooter = this.players[vs.owner];
-    return { points: scoreHit(shooter.shots, vs.shot.power, this.settings.fixedPower).points, combo: [], multiplier: 1 };
+    // Without the option no trick shots are tracked, so this is the plain hit score.
+    const combo = (vs.shot.style ?? []).map((e) => e.kind);
+    const { points, multiplier } = scoreChallengeHit(shooter.shots, vs.shot.power, this.settings.fixedPower, combo);
+    return { points, combo, multiplier };
   }
 
   protected roundTitle(): RoundTitle {

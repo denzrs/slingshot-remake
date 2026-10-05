@@ -42,7 +42,7 @@ The relay can also be built with `npm run build:server` and started with `npm ru
 
 - **Daily Challenge** (*Tägliche Herausforderung*) – five sectors with stationary targets and a limited number of shots, the same for everyone on a given calendar day. Today's theme (Billiard, Blind flight, Singularity, Heavy load, Precision, Sniper or Classic) decides which twists the sectors carry; difficulty ramps up through the day and with the weekend. Every target is guaranteed to be hittable. At the end you get a result card with your score and rank, made for screenshots, plus a Wordle-style text to copy. Your best run, attempts and streak are kept in the browser. Add `?daily=YYYY-MM-DD` to the URL to fly another day.
 - **Classic** – the original duel, extended to up to six ships. Players take turns, one shot each. A hit ship is out; the round ends when one ship is left.
-- **Free for all or teams** – with three or more ships, the *Players* menu splits them into two or three teams (Ember, Frost, Nebula). Teams share a colour family, start grouped together and take turns alternately, so a small team shoots as often as a big one. The round ends when one team is left. Works in both modes.
+- **Free for all or teams** – with three or more ships, the *Players* row of the game setup splits them into two or three teams (Ember, Frost, Nebula). Teams share a colour family, start grouped together and take turns alternately, so a small team shoots as often as a big one. The round ends when one team is left. Works in both modes.
 - **Event Horizon** (*Ereignishorizont*) – gravity royale. Everyone locks in an aim, then all shots fly at once. After every volley the central black hole grows, swallows planets and drags ships inwards. Kills pay base points × a trick-shot combo (swing-by, bank shot, graze, photon ring, airtime) and get a slow-motion killcam, which you can record as a video clip.
 
 ## Rules & scoring (Classic)
@@ -56,7 +56,9 @@ The relay can also be built with `npm run build:server` and started with `npm ru
 
 **Daily Challenge scoring:** a hit pays `1000 × shot factor × power factor × trick-shot combo`, where the shot factor counts the shots spent on *that target* (−0.15 per extra shot, minimum 0.25). Clearing a sector adds 250; hitting yourself costs 300 and ends the sector. Ranks (Cadet … Gravity master) are measured against a flawless-but-plain run.
 
-As in the original, you can toggle invisible planets, reflecting edges, fixed shot power, the maximum number of planets and the number of rounds per game. On top of that there are CPU opponents in three strengths, a maximum flight time, gravity contour lines, particles and sound. Settings are saved in the browser.
+**Trick-shot bonuses in Classic** (optional, off by default): swing-bys, grazes, bank shots and airtime multiply a hit's points just like in Event Horizon (`1000 × shot factor × power factor × combo`).
+
+As in the original, you can toggle invisible planets, reflecting edges, fixed shot power, the maximum number of planets and the number of rounds per game. On top of that there are CPU opponents in three strengths and a maximum flight time. These rules (plus the players and teams) live on the **setup screen** that opens when you pick a mode, right before the game starts – also from *New game* in the pause menu. The **settings** screen only keeps what concerns your device: gravity contour lines, particles, sound, fullscreen and language. Everything is saved in the browser.
 
 ## Tech
 
