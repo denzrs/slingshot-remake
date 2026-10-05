@@ -61,6 +61,8 @@ export const HORIZON = {
   MIN_DRIFT: 8,
   MAX_DRIFT: 70,
   SHOT_CLOCK: 12,
+  /** Online, everybody aims at once, so the shared clock is a little longer than one hot-seat turn. */
+  SIMULTANEOUS_CLOCK: 15,
   SHOT_TIME: 10,
   COLLAPSE_TIME: 1.5,
 } as const;
