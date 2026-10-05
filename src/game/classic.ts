@@ -1,8 +1,30 @@
-import type { ShotRules, StyleKind } from '../physics';
+import type { ShotRules, StyleKind, World } from '../physics';
 import { scoreHit } from '../scoring';
 import { SCORING } from '../config';
-import type { VolleyShot } from '../volley';
+import { Volley, type VolleyShot } from '../volley';
 import { Match, type RoundTitle } from './match';
+
+export interface ClassicSnapshot {
+  phase: Match['phase'];
+  phaseTime: number;
+  clock: number;
+  round: number;
+  totalRounds: number;
+  hiddenPlanets: boolean;
+  teamMode: number;
+  teamCursor: number;
+  memberCursor: number[];
+  players: Match['players'];
+  current: number;
+  world: World;
+  trails: Match['trails'];
+  volley: ReturnType<Volley['snapshot']> | null;
+  killFeed: Match['killFeed'];
+  lastKill: Match['lastKill'];
+  summary: Match['summary'];
+  notice: Match['notice'];
+  settings: Match['settings'];
+}
 
 /**
  * The original game, extended to any number of ships: players take turns, one shot each.
@@ -10,6 +32,58 @@ import { Match, type RoundTitle } from './match';
  */
 export class ClassicMatch extends Match {
   readonly mode = 'classic';
+
+  snapshot(): ClassicSnapshot {
+    return {
+      phase: this.phase,
+      phaseTime: this.phaseTime,
+      clock: this.clock,
+      round: this.round,
+      totalRounds: this.totalRounds,
+      hiddenPlanets: this.hiddenPlanets,
+      teamMode: this.teamMode,
+      teamCursor: this.teamCursor,
+      memberCursor: this.memberCursor,
+      players: this.players.map((player) => ({ ...player })),
+      current: this.current,
+      world: this.world,
+      trails: this.trails,
+      volley: this.volley?.snapshot() ?? null,
+      killFeed: this.killFeed,
+      lastKill: this.lastKill,
+      summary: this.summary,
+      notice: this.notice,
+      settings: this.settings,
+    };
+  }
+
+  restoreSnapshot(snapshot: ClassicSnapshot): void {
+    if (snapshot.world.ships.length !== snapshot.players.length) return;
+    this.settings = snapshot.settings;
+    this.phase = snapshot.phase;
+    this.phaseTime = snapshot.phaseTime;
+    this.clock = snapshot.clock;
+    this.round = snapshot.round;
+    this.totalRounds = snapshot.totalRounds;
+    this.hiddenPlanets = snapshot.hiddenPlanets;
+    this.teamMode = snapshot.teamMode;
+    this.teamCursor = snapshot.teamCursor;
+    this.memberCursor = [...snapshot.memberCursor];
+    this.players = snapshot.players.map((player) => ({ ...player }));
+    this.current = snapshot.current;
+    this.world = snapshot.world;
+    this.trails = snapshot.trails;
+    this.killFeed = snapshot.killFeed;
+    this.lastKill = snapshot.lastKill;
+    this.summary = snapshot.summary;
+    this.notice = snapshot.notice;
+    this.volley = null;
+    if (snapshot.volley) {
+      const volley = new Volley(snapshot.world, snapshot.volley.aims, this.rules, false);
+      volley.restore(snapshot.volley);
+      this.volley = volley;
+    }
+  }
 
   /** Team mode: which team shoots next, and per team the member who shot last. */
   private teamCursor = 0;
@@ -37,6 +111,23 @@ export class ClassicMatch extends Match {
 
   commit(): void {
     if (this.isHumanTurn) this.fire();
+  }
+
+  adjustPlayer(id: number, dAngle: number, dPower: number): void {
+    if (this.phase !== 'aiming' || this.current !== id || this.players[id]?.cpu) return;
+    const player = this.players[id];
+    this.setPlayerAim(id, player.angle + dAngle, player.power + dPower);
+  }
+
+  setPlayerAim(id: number, angle: number, power: number): void {
+    if (this.phase !== 'aiming' || this.current !== id || this.players[id]?.cpu) return;
+    const player = this.players[id];
+    player.angle = ((angle % 360) + 360) % 360;
+    if (!this.settings.fixedPower) player.power = Math.min(100, Math.max(0, power));
+  }
+
+  commitPlayer(id: number): void {
+    if (this.phase === 'aiming' && this.current === id && !this.players[id]?.cpu) this.fire();
   }
 
   private fire(): void {

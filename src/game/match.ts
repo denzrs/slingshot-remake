@@ -113,6 +113,10 @@ export interface MatchOptions {
   attract?: boolean;
   /** Override the seats from the settings (used by attract mode). */
   seats?: Seat[];
+  /** Fixed player names by player index (online matches) — they survive a rematch. */
+  names?: string[];
+  /** Fixed team per player index (online matches); `settings.teamMode` is the team count. */
+  teams?: number[];
 }
 
 interface CpuJob {
@@ -173,6 +177,11 @@ export abstract class Match {
 
   on(listener: (e: GameEvent) => void): void {
     this.listeners.push(listener);
+  }
+
+  /** Dispatch authoritative events on clients that do not run the simulation. */
+  applyRemoteEvent(event: GameEvent): void {
+    for (const listener of this.listeners) listener(event);
   }
 
   get attract(): boolean {
@@ -265,9 +274,9 @@ export abstract class Match {
   newMatch(): void {
     const seats = this.options.seats ?? this.settings.seats;
     const taken = seats.flatMap((seat, i) => (seat === 'off' ? [] : [{ seat: i, kind: seat }]));
-    const teams = this.attract ? null : seatTeamsFor(this.settings, taken.map((s) => s.seat));
+    const teams = this.attract ? null : (this.options.teams ?? seatTeamsFor(this.settings, taken.map((s) => s.seat)));
     this.teamMode = teams ? this.settings.teamMode : 0;
-    this.players = taken.map(({ seat, kind }, id) => newPlayer(id, seat, kind, teams?.[id] ?? null));
+    this.players = taken.map(({ seat, kind }, id) => newPlayer(id, seat, kind, teams?.[id] ?? null, false, this.options.names?.[id]));
     if (teams) {
       // Each team member gets its own shade of the team colour.
       const seen = new Map<number, number>();
@@ -555,13 +564,14 @@ export abstract class Match {
   }
 }
 
-export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, team: number | null, target = false): PlayerState {
+export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, team: number | null, target = false, fixedName?: string): PlayerState {
   const cpu = kind === 'human' ? null : kind;
   return {
     id,
     seat,
     // A getter, so the name follows the UI language when it is switched mid-match.
     get name() {
+      if (fixedName) return fixedName;
       if (target) return t('daily.target', { n: id });
       return cpu ? `CPU ${seat + 1}` : t('players.player', { n: seat + 1 });
     },

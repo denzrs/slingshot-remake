@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match, type VersusMode } from '../src/game';
+import { ClassicMatch } from '../src/game/classic';
+import { HorizonMatch } from '../src/game/horizon';
+import { FIELD } from '../src/config';
 import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
 /** Run a CPU-only match headlessly until the first round is decided. */
@@ -16,6 +19,31 @@ function playRound(mode: VersusMode, seats: Seat[], maxSeconds = 600): Match {
 const cpus = (n: number, level: Seat = 'medium'): Seat[] => [...Array(n).fill(level), ...Array(6 - n).fill('off')];
 
 describe('classic match', () => {
+  it('restores an authoritative mid-flight snapshot', () => {
+    const host = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 3 }, { seats: ['human', 'human', 'human', 'off', 'off', 'off'] }) as ClassicMatch;
+    const guest = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 3 }, { seats: ['human', 'human', 'human', 'off', 'off', 'off'] }) as ClassicMatch;
+    host.world = {
+      width: FIELD.width,
+      height: FIELD.height,
+      planets: [],
+      ships: [{ x: 100, y: 400, alive: true }, { x: 1100, y: 400, alive: true }, { x: 640, y: 700, alive: true }],
+      hole: null,
+      version: 0,
+    };
+    host.setPlayerAim(host.current, 17, 75);
+    host.commitPlayer(host.current);
+    for (let frame = 0; frame < 5; frame++) host.update(0.01);
+
+    guest.restoreSnapshot(host.snapshot());
+    const authoritative = host.snapshot();
+    guest.restoreSnapshot(authoritative);
+    expect(guest.snapshot()).toEqual(authoritative);
+    expect(guest.snapshot().volley?.shots[0].x).toBe(authoritative.volley?.shots[0].x);
+    expect(guest.phase).toBe('flying');
+    expect(guest.players[0].team).toBe(host.players[0].team);
+    expect(guest.players[1].team).toBe(host.players[1].team);
+  });
+
   it('plays a three-ship round to a single survivor', () => {
     const m = playRound('classic', cpus(3, 'hard'));
     expect(m.phase).toBe('roundOver');
@@ -36,6 +64,18 @@ describe('classic match', () => {
 });
 
 describe('event horizon match', () => {
+  it('restores authoritative planning state and black-hole world', () => {
+    const host = createMatch('horizon', { ...DEFAULT_SETTINGS, rounds: 3 }, { seats: ['human', 'human', 'off', 'off', 'off', 'off'] }) as HorizonMatch;
+    const guest = createMatch('horizon', { ...DEFAULT_SETTINGS, rounds: 3 }, { seats: ['human', 'human', 'off', 'off', 'off', 'off'] }) as HorizonMatch;
+    host.adjustPlayer(host.current, 23, 10);
+    const state = host.snapshot();
+
+    guest.restoreSnapshot(state);
+    expect(guest.snapshot()).toEqual(state);
+    expect(guest.world.hole).not.toBeNull();
+    expect(guest.current).toBe(host.current);
+  });
+
   it('uses the configured bounce and shot timeout settings', () => {
     const m = createMatch('horizon', { ...DEFAULT_SETTINGS, bounce: true, shotTime: 60 }, { seats: cpus(2) });
     expect(m.rules).toEqual({ bounce: true, timeLimit: 60 });
@@ -130,5 +170,26 @@ describe('team mode', () => {
     expect(m.killFeed[0]).toMatchObject({ killer: shooter.id, victim: mate.id, friendly: true, points: -300 });
     expect(shooter.score).toBe(-300);
     expect(m.phase).toBe('aiming');
+  });
+});
+
+describe('online matches', () => {
+  it('keep the players\' names and teams across a rematch', () => {
+    const seats: Seat[] = ['human', 'human', 'human', 'off', 'off', 'off'];
+    for (const mode of ['classic', 'horizon'] as const) {
+      const m = createMatch(mode, { ...DEFAULT_SETTINGS, seats, teamMode: 2 }, { seats, names: ['Anna', 'Ben', 'Cem'], teams: [0, 1, 0] });
+      expect(m.players.map((p) => p.name)).toEqual(['Anna', 'Ben', 'Cem']);
+      m.newMatch();
+      expect(m.players.map((p) => p.name)).toEqual(['Anna', 'Ben', 'Cem']);
+      expect(m.players.map((p) => p.team)).toEqual([0, 1, 0]);
+      expect(m.teamMode).toBe(2);
+    }
+  });
+
+  it('put two players on opposing teams even in a duel', () => {
+    const seats: Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, seats, teamMode: 2 }, { seats, teams: [0, 1] });
+    expect(m.teamMode).toBe(2);
+    expect(m.players.map((p) => p.team)).toEqual([0, 1]);
   });
 });
