@@ -59,3 +59,38 @@ export function isGameEvent(value: unknown): boolean {
       return false;
   }
 }
+
+/** The rules of an online game, chosen by whoever creates (and later edits) the room. */
+export interface RoomRules {
+  /** 0 = endless. */
+  rounds: number;
+  maxPlanets: number;
+  invisiblePlanets: boolean;
+  bounce: boolean;
+  fixedPower: boolean;
+  /** Seconds before a shot fizzles out. */
+  shotTime: number;
+  /** Classic only: trick shots multiply a hit's points. */
+  styleBonuses: boolean;
+}
+
+export const DEFAULT_RULES: RoomRules = {
+  rounds: 5,
+  maxPlanets: 4,
+  invisiblePlanets: false,
+  bounce: false,
+  fixedPower: false,
+  shotTime: 20,
+  styleBonuses: false,
+};
+
+const isIntBetween = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
+
+/** Validates untrusted rules from a client; null when anything is off. */
+export function parseRules(value: unknown): RoomRules | null {
+  if (!isRecord(value)) return null;
+  const { rounds, maxPlanets, invisiblePlanets, bounce, fixedPower, shotTime, styleBonuses } = value;
+  if (!isIntBetween(rounds, 0, 99) || !isIntBetween(maxPlanets, 1, 8) || !isIntBetween(shotTime, 5, 120)) return null;
+  if (![invisiblePlanets, bounce, fixedPower, styleBonuses].every((flag) => typeof flag === 'boolean')) return null;
+  return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, shotTime, styleBonuses: styleBonuses as boolean };
+}

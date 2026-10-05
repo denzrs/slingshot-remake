@@ -256,7 +256,7 @@ export class Renderer {
       const player = match.players[i];
       const color = player.color;
       if (player.target) return this.drawTarget(ship.x, ship.y, color);
-      const current = planning && match.current === i;
+      const current = planning && match.focus === i;
 
       if (current) {
         ctx.save();

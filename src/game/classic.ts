@@ -83,6 +83,7 @@ export class ClassicMatch extends Match {
       volley.restore(snapshot.volley);
       this.volley = volley;
     }
+    this.restarted();
   }
 
   /** Team mode: which team shoots next, and per team the member who shot last. */
@@ -114,20 +115,20 @@ export class ClassicMatch extends Match {
   }
 
   adjustPlayer(id: number, dAngle: number, dPower: number): void {
-    if (this.phase !== 'aiming' || this.current !== id || this.players[id]?.cpu) return;
+    if (!this.canAim(id)) return;
     const player = this.players[id];
     this.setPlayerAim(id, player.angle + dAngle, player.power + dPower);
   }
 
   setPlayerAim(id: number, angle: number, power: number): void {
-    if (this.phase !== 'aiming' || this.current !== id || this.players[id]?.cpu) return;
+    if (!this.canAim(id)) return;
     const player = this.players[id];
     player.angle = ((angle % 360) + 360) % 360;
     if (!this.settings.fixedPower) player.power = Math.min(100, Math.max(0, power));
   }
 
   commitPlayer(id: number): void {
-    if (this.phase === 'aiming' && this.current === id && !this.players[id]?.cpu) this.fire();
+    if (this.canAim(id)) this.fire();
   }
 
   private fire(): void {

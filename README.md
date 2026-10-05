@@ -17,9 +17,12 @@ npm run build      # static build in dist/ – runs on any web server
 
 Start the relay server in a second terminal with `npm run dev:server`. In the client, open
 **Multiplayer**, connect to the relay address (default `ws://localhost:8080`), then create or join
-a room. Choose Classic or Event Horizon, plus free-for-all or two-team play; the host starts the
-game. Both modes support up to six players. The host runs the authoritative simulation and relays
-state patches to the other players (only what changed since the last tick, so a match needs a few KB/s instead of MB/s). Rooms can be protected with a password, and leaving a game puts you back into the lobby. For remote players, host both the web client and relay server at reachable addresses.
+a room. Choose Classic or Event Horizon, free-for-all or two-team play and the rules of the game
+(rounds, planets, reflective edges, fixed power, flight time, …); the host can still change the rules
+while the room is waiting, and the host starts the game. Both modes support up to six players. In
+Event Horizon online everybody aims at the same time against one shared clock. The lobby remembers
+your server, name and room settings and reconnects on its own. The host runs the authoritative simulation and relays
+state patches to the other players (only what changed since the last tick, so a match needs a few KB/s instead of MB/s); guests carry a shot's flight on between patches, so it moves smoothly. Rooms can be protected with a password, and leaving a game puts you back into the lobby. For remote players, host both the web client and relay server at reachable addresses.
 The relay can also be built with `npm run build:server` and started with `npm run start:server` (output in `dist-server/`). Use a `wss://` address behind TLS when the client is served over HTTPS.
 
 ## Controls

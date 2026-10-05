@@ -98,7 +98,7 @@ export class HorizonMatch extends Match {
   lastClip: KillcamClip | null = null;
   killcam: KillcamState | null = null;
 
-  private clock_ = HORIZON.SHOT_CLOCK;
+  private clock_: number = HORIZON.SHOT_CLOCK;
   private queue: number[] = [];
   private volleySnapshot: World | null = null;
   private aims: VolleyAim[] = [];
@@ -155,23 +155,31 @@ export class HorizonMatch extends Match {
         camera: s.killcam.camera, returnTo: s.killcam.returnTo, recording: s.killcam.recording,
       };
     }
+    this.restarted();
+  }
+
+  /** Everyone who hasn't locked in may aim when all aim at once; otherwise only the player on turn. */
+  canAim(id: number): boolean {
+    if (!this.simultaneous) return super.canAim(id);
+    const p = this.players[id];
+    return this.phase === 'aiming' && !!p && p.alive && !p.cpu && !p.locked;
   }
 
   adjustPlayer(id: number, dAngle: number, dPower: number): void {
-    if (this.phase !== 'aiming' || this.current !== id || this.players[id]?.cpu || this.players[id]?.locked) return;
+    if (!this.canAim(id)) return;
     const p = this.players[id];
     this.setPlayerAim(id, p.angle + dAngle, p.power + dPower);
   }
 
   setPlayerAim(id: number, angle: number, power: number): void {
-    if (this.phase !== 'aiming' || this.current !== id || this.players[id]?.cpu || this.players[id]?.locked) return;
+    if (!this.canAim(id)) return;
     const p = this.players[id];
     p.angle = ((angle % 360) + 360) % 360;
     if (!this.settings.fixedPower) p.power = Math.min(100, Math.max(0, power));
   }
 
   commitPlayer(id: number): void {
-    if (this.phase === 'aiming' && this.current === id && !this.players[id]?.cpu && !this.players[id]?.locked) this.commit();
+    if (this.canAim(id)) this.lock(id);
   }
 
   protected get survivorBonus(): number {
@@ -183,7 +191,9 @@ export class HorizonMatch extends Match {
   }
 
   get shotClock(): number | null {
-    return this.phase === 'aiming' && this.isHumanTurn ? Math.max(0, this.clock_) : null;
+    if (this.phase !== 'aiming') return null;
+    const aiming = this.simultaneous ? this.players.some((p) => this.canAim(p.id)) : this.isHumanTurn;
+    return aiming ? Math.max(0, this.clock_) : null;
   }
 
   get nextHoleRadius(): number | null {
@@ -234,10 +244,16 @@ export class HorizonMatch extends Match {
     // Rotate who aims first so nobody always waits last.
     const start = (this.round + this.volleyNo) % alive.length;
     const order = [...alive.slice(start), ...alive.slice(0, start)];
-    this.queue = order.filter((p) => !p.cpu).map((p) => p.id);
+    this.queue = this.simultaneous ? [] : order.filter((p) => !p.cpu).map((p) => p.id);
     this.cpuJobs.clear();
     this.setPhase('aiming');
-    this.nextHuman();
+    if (this.simultaneous) {
+      // No turns: everybody aims against one shared clock.
+      this.current = -1;
+      this.clock_ = HORIZON.SIMULTANEOUS_CLOCK;
+    } else {
+      this.nextHuman();
+    }
   }
 
   private nextHuman(): void {
@@ -247,10 +263,13 @@ export class HorizonMatch extends Match {
   }
 
   commit(): void {
-    if (!this.isHumanTurn) return;
-    this.players[this.current].locked = true;
-    this.emit({ type: 'lock', player: this.current });
-    this.nextHuman();
+    if (this.isHumanTurn) this.lock(this.current);
+  }
+
+  private lock(id: number): void {
+    this.players[id].locked = true;
+    this.emit({ type: 'lock', player: id });
+    if (!this.simultaneous) this.nextHuman();
   }
 
   protected updatePhase(dt: number): void {
@@ -277,7 +296,13 @@ export class HorizonMatch extends Match {
         }
       }
     }
-    if (this.current >= 0) {
+    if (this.simultaneous) {
+      const waiting = this.alive.filter((p) => !p.cpu && !p.locked);
+      if (waiting.length) {
+        this.clock_ -= dt;
+        if (this.clock_ <= 0) for (const p of waiting) this.lock(p.id);
+      }
+    } else if (this.current >= 0) {
       this.clock_ -= dt;
       if (this.clock_ <= 0) this.commit();
     }

@@ -117,6 +117,8 @@ export interface MatchOptions {
   names?: string[];
   /** Fixed team per player index (online matches); `settings.teamMode` is the team count. */
   teams?: number[];
+  /** Event Horizon online: every human aims at the same time instead of one after another at a shared keyboard. */
+  simultaneous?: boolean;
 }
 
 interface CpuJob {
@@ -154,11 +156,13 @@ export abstract class Match {
   summary: RoundSummary | null = null;
   /** Big transient announcement, e.g. "SALVE!". */
   notice: { text: string; color: string; at: number } | null = null;
+  /** Online: the player sitting at this screen. null = hot-seat, where whoever is on turn is at the keyboard. */
+  viewer: number | null = null;
 
   protected readonly rng: Rng = createRng(randomSeed());
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
-  private simClock = 0;
+  protected simClock = 0;
 
   constructor(
     public settings: Settings,
@@ -192,6 +196,27 @@ export abstract class Match {
     if (this.phase !== 'aiming' || this.current < 0) return false;
     const p = this.players[this.current];
     return !p.cpu && !p.locked;
+  }
+
+  /** Whether every human aims at once (online Event Horizon) rather than in turns. */
+  get simultaneous(): boolean {
+    return !!this.options.simultaneous;
+  }
+
+  /** Whether a human may change this player's aim right now. */
+  canAim(id: number): boolean {
+    const p = this.players[id];
+    return this.phase === 'aiming' && this.current === id && !!p && !p.cpu && !p.locked;
+  }
+
+  /** Whether the person at this screen may aim right now. */
+  get localCanAim(): boolean {
+    return this.viewer === null ? this.isHumanTurn : this.canAim(this.viewer);
+  }
+
+  /** Whose aim the screen shows: whoever is on turn — or, while everyone aims at once, the local player. */
+  get focus(): number {
+    return this.simultaneous && this.viewer !== null && this.canAim(this.viewer) ? this.viewer : this.current;
   }
 
   get humanCount(): number {
@@ -377,12 +402,15 @@ export abstract class Match {
     });
   }
 
+  /** Long flights speed up so nobody waits for an orbit to decay. */
+  private get flightSpeed(): number {
+    const t = this.phaseTime;
+    return t < 3 ? 1 : Math.min(4, 1 + (t - 3) * 0.75);
+  }
+
   private updateFlight(dt: number): void {
     const volley = this.volley!;
-    // Long flights speed up so nobody waits for an orbit to decay.
-    const t = this.phaseTime;
-    const speed = t < 3 ? 1 : Math.min(4, 1 + (t - 3) * 0.75);
-    this.simClock += dt * speed;
+    this.simClock += dt * this.flightSpeed;
     while (this.simClock >= PHYSICS.DT && !volley.done) {
       this.simClock -= PHYSICS.DT;
       for (const e of volley.step()) this.onVolleyEvent(volley, e, true);
@@ -392,6 +420,27 @@ export abstract class Match {
       this.volley = null;
       this.afterVolley();
     }
+  }
+
+  /**
+   * Guests carry a flight on between the host's snapshots, so it moves smoothly instead of in 30 Hz
+   * steps. The physics is deterministic, so this is exactly what the host is about to send; it is
+   * purely visual — hits, events and scores only ever come from the host.
+   */
+  extrapolate(dt: number): void {
+    const volley = this.volley;
+    if (this.phase !== 'flying' || !volley) return;
+    this.phaseTime += dt;
+    this.simClock += dt * this.flightSpeed;
+    while (this.simClock >= PHYSICS.DT && !volley.done) {
+      this.simClock -= PHYSICS.DT;
+      volley.step();
+    }
+  }
+
+  /** A fresh snapshot replaced the state: the extrapolation starts over from it. */
+  protected restarted(): void {
+    this.simClock = 0;
   }
 
   protected get volleyNumber(): number {

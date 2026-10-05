@@ -35,10 +35,11 @@ export class Hud {
     this.k = Math.min(1.2, Math.max(0.72, view.scale));
     this.field = { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
 
-    if (match.current !== this.lastTurn) {
-      this.lastTurn = match.current;
+    const focus = match.focus;
+    if (focus !== this.lastTurn) {
+      this.lastTurn = focus;
       // In hot-seat games, say whose hands should be on the keyboard.
-      if (match.current >= 0 && !match.players[match.current].cpu && match.humanCount > 1) this.turnAt = time;
+      if (focus >= 0 && !match.players[focus].cpu && match.humanCount > 1 && !match.simultaneous) this.turnAt = time;
     }
 
     const killcam = match instanceof HorizonMatch ? match.killcamInfo : null;
@@ -61,9 +62,9 @@ export class Hud {
       this.drawScoreboard(match);
       this.drawKillFeed(match);
     }
-    if (match.phase === 'aiming' && match.current >= 0) this.drawReadout(match, match.players[match.current], shipPos(match.current));
+    if (match.phase === 'aiming' && focus >= 0) this.drawReadout(match, match.players[focus], shipPos(focus));
     this.drawNotice(match);
-    if (time - this.turnAt < 1.6 && match.current >= 0) this.drawTurnToast(match.players[match.current]);
+    if (time - this.turnAt < 1.6 && focus >= 0) this.drawTurnToast(match.players[focus]);
     if (match.phase === 'roundOver' && match.summary) this.drawBanner(match, duel);
     this.drawHint(match, opts.touch);
     if (opts.recording) this.drawRec();
@@ -89,7 +90,7 @@ export class Hud {
     const { ctx, k, field } = this;
     const x = align === 'left' ? field.x + 24 * k : field.x + field.w - 24 * k;
     const y = field.y + 22 * k;
-    const active = (match.phase === 'aiming' || match.phase === 'flying') && match.current === p.id;
+    const active = (match.phase === 'aiming' || match.phase === 'flying') && match.focus === p.id;
     ctx.globalAlpha = active || match.phase === 'roundOver' || match.phase === 'gameOver' ? 1 : 0.55;
     ctx.textAlign = align;
     ctx.textBaseline = 'top';
@@ -151,7 +152,8 @@ export class Hud {
         ctx.fillText(String(team.score), x + width, y - 8 * k);
       }
 
-      const active = planning && match.current === p.id;
+      // Everybody still aiming counts as active when all aim at once.
+      const active = planning && (match.simultaneous ? match.canAim(p.id) : match.current === p.id);
       ctx.globalAlpha = p.alive ? 1 : 0.38;
       ctx.fillStyle = rgba(COLORS.plate, 0.62);
       ctx.fillRect(x, y, w, h);
@@ -555,7 +557,7 @@ export class Hud {
     const maxWidth = field.w - 48 * k;
     const horizon = match instanceof HorizonMatch;
     let items: KeyItem[] = [];
-    if (match.isHumanTurn) {
+    if (match.localCanAim) {
       if (touch) {
         items = [['', horizon ? t('hud.touch.horizon') : t('hud.touch.classic')]];
       } else {
@@ -566,7 +568,10 @@ export class Hud {
       }
     } else if (match.phase === 'aiming') {
       const thinker = match.current >= 0 ? match.players[match.current] : null;
-      items = [['', thinker?.cpu ? t('hud.thinking', { name: thinker.name }) : t('hud.cpusAiming')]];
+      // Online, the others are people: say whom we are waiting for.
+      if (match.viewer !== null && match.simultaneous) items = [['', t('hud.waitingOthers')]];
+      else if (match.viewer !== null && thinker && !thinker.cpu) items = [['', t('hud.waitingFor', { name: thinker.name })]];
+      else items = [['', thinker?.cpu ? t('hud.thinking', { name: thinker.name }) : t('hud.cpusAiming')]];
     } else if (match.phase === 'collapse') {
       items = [['', t('hud.collapse')]];
     } else if (match.phase === 'roundOver' && match.phaseTime > 0.6) {

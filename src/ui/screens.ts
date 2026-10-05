@@ -1,12 +1,12 @@
 import { CHALLENGE, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
 import { teamName, type Match, type Mode, type VersusMode } from '../game';
-import { DEFAULT_SERVER, type MultiplayerSession } from '../multiplayer';
 import { fmtNum, LANGS, t, tn, type Lang } from '../i18n';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
 import type { StyleKind } from '../physics';
 import { activeSeats, seatTeamsFor, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
+import { rulesFor } from './rules';
 
 export interface App {
   menu: Menu;
@@ -97,200 +97,6 @@ export function titleScreen(app: App): Screen {
         { kind: 'action', label: t('common.help'), run: () => app.menu.push(() => helpScreen(app)) },
         languageItem(app),
       ];
-    },
-  };
-}
-
-export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
-  let root!: HTMLElement;
-  let serverAddress!: HTMLInputElement;
-  let playerName!: HTMLInputElement;
-  let roomMode!: HTMLSelectElement;
-  let gameMode!: HTMLSelectElement;
-  let roomCapacity!: HTMLSelectElement;
-  let createPassword!: HTMLInputElement;
-  let roomSelect!: HTMLSelectElement;
-  let joinPassword!: HTMLInputElement;
-  let joinPasswordField!: HTMLElement;
-  let connectButton!: HTMLButtonElement;
-  let createButton!: HTMLButtonElement;
-  let joinButton!: HTMLButtonElement;
-  let readyButton!: HTMLButtonElement;
-  let startButton!: HTMLButtonElement;
-  let leaveButton!: HTMLButtonElement;
-  let feedback!: HTMLElement;
-  let roomsList!: HTMLElement;
-  let actions!: HTMLElement;
-  let form!: HTMLElement;
-  /** Connection progress / validation messages that don't come from the session. */
-  let localMessage: string | null = null;
-
-  const roomLabel = (room: { id: string; gameMode: string; mode: string; players: number; maxPlayers: number; locked: boolean }) =>
-    `${room.locked ? '🔒 ' : ''}${room.id} · ${t(room.gameMode === 'classic' ? 'mode.classic' : 'mode.horizon')} · ${room.mode === 'team' ? t('players.teams', { n: 2 }) : t('players.ffa')} · ${room.players}/${room.maxPlayers}`;
-
-  const render = () => {
-    const { connected, room, rooms } = session;
-    feedback.textContent = localMessage ?? session.notice ?? (room ? '' : connected ? t('multiplayer.connected') : t('multiplayer.connectHint'));
-    // The connection and room-creation forms are only needed outside of a room.
-    form.hidden = !!room;
-    connectButton.disabled = connected;
-    serverAddress.disabled = connected;
-    createButton.disabled = !connected;
-    roomsList.replaceChildren();
-    actions.hidden = !room;
-    if (room) {
-      const { you } = session;
-      roomsList.append(h('h3.lobby__section-title', null, `${t('multiplayer.room')} ${room.id}${room.locked ? ' 🔒' : ''}`));
-      const list = h('ul.lobby__players', null);
-      for (const player of room.players) {
-        const team = room.mode === 'team' ? ` · ${t('players.teams', { n: player.team + 1 })}` : '';
-        list.append(h('li', null, `${player.name}${player.id === 0 ? ` · ${t('multiplayer.host')}` : ''}${team} · ${player.ready ? t('multiplayer.ready') : t('multiplayer.notReady')}`));
-      }
-      roomsList.append(list);
-      const self = room.players.find((player) => player.id === you.playerId);
-      readyButton.textContent = self?.ready ? t('multiplayer.unready') : t('multiplayer.ready');
-      startButton.hidden = !you.host;
-      startButton.disabled = room.players.length < 2;
-      return;
-    }
-    roomsList.append(h('h3.lobby__section-title', null, t('multiplayer.rooms')));
-    const list = h('ul.lobby__rooms', null);
-    const selected = roomSelect.value;
-    roomSelect.replaceChildren(new Option(rooms.length ? t('multiplayer.selectRoom') : t('multiplayer.noRooms'), ''));
-    for (const entry of rooms) {
-      roomSelect.add(new Option(roomLabel(entry), entry.id));
-      list.append(h('li', null, roomLabel(entry)));
-    }
-    roomSelect.value = rooms.some((entry) => entry.id === selected) ? selected : '';
-    roomsList.append(list);
-    const chosen = rooms.find((entry) => entry.id === roomSelect.value);
-    joinPasswordField.hidden = !chosen?.locked;
-    roomSelect.disabled = !connected || rooms.length === 0;
-    joinButton.disabled = !connected || !roomSelect.value;
-  };
-
-  const button = (label: string, primary = false) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = `lobby__button${primary ? ' lobby__button--primary' : ''}`;
-    b.textContent = label;
-    return b;
-  };
-  const field = (label: string, input: HTMLElement) => h('label.lobby__field', null, h('span', null, label), input);
-  const passwordInput = () => {
-    const input = document.createElement('input');
-    input.type = 'password';
-    input.maxLength = 64;
-    input.autocomplete = 'off';
-    return input;
-  };
-  /** The trimmed player name, remembered for next time; null (with a message) when empty. */
-  const takeName = (): string | null => {
-    const name = playerName.value.trim();
-    if (!name) {
-      localMessage = t('multiplayer.nameRequired');
-      render();
-      return null;
-    }
-    localStorage.setItem('slingshot.player-name', name);
-    localMessage = null;
-    return name;
-  };
-
-  return {
-    build: () => {
-      localMessage = null;
-      serverAddress = document.createElement('input');
-      serverAddress.type = 'url';
-      serverAddress.value = session.client.address || DEFAULT_SERVER;
-      playerName = document.createElement('input');
-      playerName.maxLength = 24;
-      playerName.setAttribute('autocomplete', 'nickname');
-      playerName.value = localStorage.getItem('slingshot.player-name') || 'Player';
-      roomMode = document.createElement('select');
-      roomMode.add(new Option(t('players.ffa'), 'ffa'));
-      roomMode.add(new Option(t('players.teams', { n: 2 }), 'team'));
-      gameMode = document.createElement('select');
-      gameMode.add(new Option(t('mode.classic'), 'classic'));
-      gameMode.add(new Option(t('mode.horizon'), 'horizon'));
-      roomCapacity = document.createElement('select');
-      for (let count = 2; count <= MAX_PLAYERS; count++) roomCapacity.add(new Option(String(count), String(count)));
-      createPassword = passwordInput();
-      roomSelect = document.createElement('select');
-      joinPassword = passwordInput();
-      joinPasswordField = field(t('multiplayer.password'), joinPassword);
-      connectButton = button(t('multiplayer.connect'), true);
-      createButton = button(t('multiplayer.create'));
-      joinButton = button(t('multiplayer.join'));
-      readyButton = button(t('multiplayer.ready'));
-      startButton = button(t('multiplayer.start'), true);
-      leaveButton = button(t('multiplayer.leave'));
-      feedback = h('p.lobby__feedback', { role: 'status', 'aria-live': 'polite' });
-      roomsList = h('div.lobby__room-list', null);
-      actions = h('div.lobby__actions', null, readyButton, startButton, leaveButton);
-      form = h('div.lobby__form', null,
-        field(t('multiplayer.server'), serverAddress), field(t('multiplayer.name'), playerName), connectButton,
-        h('div.lobby__create-options', null,
-          field(t('multiplayer.gameMode'), gameMode), field(t('multiplayer.matchType'), roomMode), field(t('multiplayer.capacity'), roomCapacity),
-          field(t('multiplayer.passwordOptional'), createPassword)),
-        createButton, field(t('multiplayer.room'), roomSelect), joinButton, joinPasswordField,
-      );
-
-      connectButton.addEventListener('click', async () => {
-        localMessage = t('multiplayer.connecting');
-        render();
-        try {
-          await session.connect(serverAddress.value.trim());
-          localMessage = null;
-        } catch (error) {
-          localMessage = error instanceof Error ? error.message : String(error);
-        }
-        render();
-      });
-      createButton.addEventListener('click', () => {
-        const name = takeName();
-        if (!name) return;
-        session.createRoom({
-          name,
-          mode: roomMode.value as 'ffa' | 'team',
-          gameMode: gameMode.value as 'classic' | 'horizon',
-          maxPlayers: Number(roomCapacity.value),
-          password: createPassword.value,
-        });
-        createPassword.value = '';
-      });
-      joinButton.addEventListener('click', () => {
-        const name = takeName();
-        if (!name || !roomSelect.value) return;
-        session.joinRoom(roomSelect.value, name, joinPassword.value);
-        joinPassword.value = '';
-      });
-      roomSelect.addEventListener('change', render);
-      readyButton.addEventListener('click', () => {
-        const self = session.room?.players.find((p) => p.id === session.you.playerId);
-        if (self) session.setReady(!self.ready);
-      });
-      startButton.addEventListener('click', () => session.startGame());
-      leaveButton.addEventListener('click', () => session.leaveRoom());
-
-      root = h('section.screen.screen--panel.screen--lobby', { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('multiplayer.title') },
-        h('div.panel.panel--wide', null, h('h2.panel__title', null, t('multiplayer.title')), h('div.lobby', null, feedback, form, roomsList, actions), h('div.items', { 'data-items': '' })));
-      // The session outlives this screen: re-render on its changes until the screen is gone.
-      const unsubscribe = session.subscribe(() => {
-        if (!root.isConnected) return unsubscribe();
-        localMessage = null;
-        render();
-      });
-      render();
-      return root;
-    },
-    items: [],
-    onEscape: () => {
-      if (session.room) session.leaveRoom();
-      else {
-        session.disconnect();
-        app.toTitle();
-      }
     },
   };
 }
@@ -386,21 +192,13 @@ function settingChoice<K extends keyof Settings>(app: App, label: string, key: K
 
 /** The rules of a game, shown right before it starts. They are remembered between games. */
 export function setupScreen(app: App, mode: VersusMode): Screen {
-  const s = app.settings;
-  const classic = mode === 'classic';
-  const choice = <K extends keyof Settings>(label: string, key: K, options: { value: Settings[K]; label: string }[]) => settingChoice(app, label, key, options);
+  const rules: MenuItem[] = rulesFor(mode).map((row) => settingChoice(app, row.label, row.key, row.options));
   return {
-    build: () => panel(t(classic ? 'mode.classic' : 'mode.horizon'), h('p.note', null, t('setup.note')), 'panel--wide'),
+    build: () => panel(t(mode === 'classic' ? 'mode.classic' : 'mode.horizon'), h('p.note', null, t('setup.note')), 'panel--wide'),
     items: [
       { kind: 'action', label: t('setup.start'), primary: true, run: () => app.start(mode) },
-      { kind: 'action', label: t('common.players'), hint: lineup(s), run: () => app.menu.push(() => playersScreen(app)) },
-      choice(t('settings.rounds'), 'rounds', [1, 3, 5, 7, 10, 15, 20, 0].map((n) => ({ value: n, label: n ? String(n) : t('settings.endless') }))),
-      choice(t('settings.maxPlanets'), 'maxPlanets', [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ value: n, label: String(n) }))),
-      ...(classic ? [choice(t('settings.invisible'), 'invisiblePlanets', onOff())] : []),
-      choice(t('settings.bounce'), 'bounce', onOff()),
-      choice(t('settings.fixedPower'), 'fixedPower', onOff()),
-      choice(t('settings.shotTime'), 'shotTime', [10, 20, 30, 60].map((n) => ({ value: n, label: t('settings.seconds', { n }) }))),
-      ...(classic ? [choice(t('settings.styleBonuses'), 'styleBonuses', onOff())] : []),
+      { kind: 'action', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
+      ...rules,
       { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
     ],
   };

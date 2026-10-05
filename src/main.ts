@@ -20,7 +20,8 @@ import { STYLE_MULTIPLIER, styleLabel } from './scoring';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
 import { Menu } from './ui/menu';
-import { gameOverScreen, lobbyScreen, pauseScreen, titleScreen, type App } from './ui/screens';
+import { lobbyScreen } from './ui/lobby';
+import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
@@ -168,7 +169,7 @@ function advanceMatch(): void {
 }
 
 /** Whether the local player may aim right now. */
-const canAim = (): boolean => (online() ? session!.myTurn : !!match?.isHumanTurn);
+const canAim = (): boolean => !!match?.localCanAim;
 
 const app: App = {
   menu,
@@ -319,7 +320,7 @@ let dragging = false;
 function aimAt(clientX: number, clientY: number): void {
   if (!match || !canAim()) return;
   const f = renderer.toField(clientX, clientY);
-  const ship = match.world.ships[match.current];
+  const ship = match.world.ships[match.viewer ?? match.current];
   const dx = f.x - ship.x;
   const dy = f.y - ship.y;
   const angle = (Math.atan2(-dy, dx) * 180) / Math.PI;
