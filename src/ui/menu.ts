@@ -85,6 +85,8 @@ export class Menu {
 
   /** Returns true if the key was consumed. */
   handleKey(e: KeyboardEvent): boolean {
+    // Typing into a field (the lobby's name, address, password) is not menu navigation — only Esc still goes back.
+    if (e.key !== 'Escape' && (e.target as HTMLElement | null)?.matches?.('input, select, textarea')) return false;
     const focused = document.activeElement as HTMLButtonElement | null;
     const index = focused ? this.buttons.indexOf(focused) : -1;
     switch (e.key) {

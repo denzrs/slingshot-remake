@@ -91,12 +91,15 @@ playerName.setAttribute('autocomplete', 'nickname');
   const create = h('section.lobby__card', null, h('h3.lobby__section-title', null, t('multiplayer.newRoom')), createDetails, createButton);
 
   const roomView = h('section.lobby__card.lobby__card--room', null);
+  // Out of a room, the way back to the main menu; inside one there is "Leave room".
+  const backButton = button(`← ${t('common.mainMenu')}`);
+  const backBar = h('div.lobby__back', null, backButton);
   const lobbyView = h('div.lobby__columns', null, h('div.lobby__col', null, connection, create), h('div.lobby__col', null, rooms));
 
   const root = h(
     'section.screen.screen--panel.screen--lobby',
     { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('multiplayer.title') },
-    h('div.panel.panel--lobby', null, h('h2.panel__title', null, t('multiplayer.title')), h('div.lobby', null, feedback, lobbyView, roomView), h('div.items', { 'data-items': '' })),
+    h('div.panel.panel--lobby', null, h('h2.panel__title', null, t('multiplayer.title')), h('div.lobby', null, feedback, lobbyView, roomView, backBar), h('div.items', { 'data-items': '' })),
   );
 
   // ————————————————————————————— Create form —————————————————————————————
@@ -223,6 +226,7 @@ playerName.setAttribute('autocomplete', 'nickname');
     feedback.textContent = localMessage ?? session.notice ?? (room ? '' : connected ? t('multiplayer.connected') : connecting ? t('multiplayer.connecting') : t('multiplayer.connectHint'));
     lobbyView.hidden = !!room;
     roomView.hidden = !room;
+    backBar.hidden = !!room;
     if (room) return renderRoom(room);
 
     connectButton.textContent = connected ? t('multiplayer.disconnect') : t('multiplayer.connect');
@@ -261,6 +265,16 @@ playerName.setAttribute('autocomplete', 'nickname');
     save();
   });
 
+  /** Leave the room, or — from the lobby itself — disconnect and go back to the title screen. */
+  const goBack = () => {
+    if (session.room) session.leaveRoom();
+    else {
+      session.disconnect();
+      app.toTitle();
+    }
+  };
+  backButton.addEventListener('click', goBack);
+
   return {
     build: () => {
       buildCreateForm();
@@ -277,12 +291,6 @@ playerName.setAttribute('autocomplete', 'nickname');
       return root;
     },
     items: [],
-    onEscape: () => {
-      if (session.room) session.leaveRoom();
-      else {
-        session.disconnect();
-        app.toTitle();
-      }
-    },
+    onEscape: goBack,
   };
 }

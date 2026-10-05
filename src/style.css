@@ -334,6 +334,7 @@ body {
 
 .lobby[hidden],
 .lobby > [hidden],
+.lobby__back[hidden],
 .lobby__card[hidden],
 .lobby__button[hidden] {
   display: none;
@@ -603,6 +604,10 @@ body {
   margin: 0;
   font-family: var(--font-mono);
   color: var(--p2);
+}
+
+.lobby__back {
+  display: flex;
 }
 
 .lobby__actions {
