@@ -2,7 +2,7 @@ import { MAX_PLAYERS } from './config';
 import { ClassicMatch, createMatch, HorizonMatch, type GameEvent } from './game';
 import type { ClassicSnapshot } from './game/classic';
 import type { HorizonSnapshot } from './game/horizon';
-import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkGameMode, type RoomInfo, type RoomMode, type ServerMessage } from './net';
+import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules, type ServerMessage } from './net';
 import { SnapshotDecoder, SnapshotEncoder } from './netsync';
 import type { Seat, Settings } from './settings';
 
@@ -24,11 +24,15 @@ export interface CreateRoomOptions {
   name: string;
   mode: RoomMode;
   gameMode: NetworkGameMode;
+  rules: RoomRules;
   maxPlayers: number;
   password?: string;
 }
 
 export const DEFAULT_SERVER = 'ws://localhost:8080';
+
+/** What the session needs from a connection — the WebSocket client, or a stand-in in tests. */
+export type Transport = Pick<NetworkClient, 'address' | 'setAddress' | 'connect' | 'onMessage' | 'send' | 'close'>;
 
 /** The host sends the match state this often; the guest sends its aim at the same rate. */
 const SYNC_INTERVAL = 1 / 30;
@@ -39,8 +43,10 @@ const SYNC_INTERVAL = 1 / 30;
  * It outlives individual matches, so leaving a game puts you back into the lobby, still connected.
  */
 export class MultiplayerSession {
-  readonly client = new NetworkClient(DEFAULT_SERVER);
+  readonly client: Transport;
   connected = false;
+  /** A connection attempt is under way. */
+  connecting = false;
   rooms: LobbyRoom[] = [];
   room: RoomInfo | null = null;
   you = { playerId: 0, host: false };
@@ -57,18 +63,16 @@ export class MultiplayerSession {
   private syncElapsed = 0;
   private aimDirty = false;
 
-  constructor(private readonly hooks: SessionHooks) {
+  constructor(
+    private readonly hooks: SessionHooks,
+    client: Transport = new NetworkClient(DEFAULT_SERVER),
+  ) {
+    this.client = client;
     this.client.onMessage((message) => this.receive(message));
   }
 
   get isHost(): boolean {
     return this.you.host;
-  }
-
-  /** Whether the local player is the one aiming right now. */
-  get myTurn(): boolean {
-    const match = this.match;
-    return !!match && match.phase === 'aiming' && match.current === this.you.playerId;
   }
 
   subscribe(listener: () => void): () => void {
@@ -79,8 +83,14 @@ export class MultiplayerSession {
   // ————————————————————————————— Lobby —————————————————————————————
 
   async connect(address: string): Promise<void> {
-    this.client.setAddress(address);
-    await this.client.connect();
+    this.connecting = true;
+    this.emit();
+    try {
+      this.client.setAddress(address);
+      await this.client.connect();
+    } finally {
+      this.connecting = false;
+    }
     this.connected = true;
     this.notice = null;
     this.send({ type: 'lobby' });
@@ -97,6 +107,11 @@ export class MultiplayerSession {
 
   setReady(ready: boolean): void {
     this.send({ type: 'ready', ready });
+  }
+
+  /** Host only: change the rules of the waiting room. */
+  setRules(rules: RoomRules): void {
+    this.send({ type: 'set_rules', rules });
   }
 
   startGame(): void {
@@ -136,7 +151,7 @@ export class MultiplayerSession {
     }
     if (input.kind === 'adjust' || input.kind === 'aim') {
       // Move our own aim at once instead of waiting for the host's round trip; it is sent in the next sync tick.
-      if (!this.myTurn) return;
+      if (!match.canAim(id)) return;
       this.applyInput(match, id, input);
       this.aimDirty = true;
       return;
@@ -155,6 +170,7 @@ export class MultiplayerSession {
   update(dt: number): void {
     const match = this.match;
     if (!match) return;
+    if (!this.isHost) match.extrapolate(dt);
     this.syncElapsed += dt;
     if (this.syncElapsed < SYNC_INTERVAL) return;
     this.syncElapsed %= SYNC_INTERVAL;
@@ -211,19 +227,22 @@ export class MultiplayerSession {
   private startMatch(message: GameStart): void {
     const base = this.hooks.settings();
     const seats: Seat[] = Array.from({ length: MAX_PLAYERS }, (_, i) => (i < message.players.length ? 'human' : 'off'));
+    // The room's rules decide, not whatever this player has set up for offline games.
     const settings: Settings = {
       ...base,
+      ...message.rules,
       seats,
       seatTeams: [...base.seatTeams],
       teamMode: message.mode === 'team' ? 2 : 0,
-      bounce: message.gameMode === 'horizon' ? true : base.bounce,
     };
     const match = createMatch(message.gameMode, settings, {
       seats,
       names: message.players.map((p) => p.name),
       teams: message.mode === 'team' ? message.players.map((p) => p.team) : undefined,
+      simultaneous: message.gameMode === 'horizon',
     });
     if (!(match instanceof ClassicMatch || match instanceof HorizonMatch)) return;
+    match.viewer = this.you.playerId;
 
     this.resetSync();
     this.match = match;
@@ -247,10 +266,10 @@ export class MultiplayerSession {
 
     // Our own aim is ahead of the host's copy; don't let a snapshot drag the crosshair back.
     const id = this.you.playerId;
-    const own = match.phase === 'aiming' && match.current === id ? { angle: match.players[id].angle, power: match.players[id].power } : null;
+    const own = match.canAim(id) ? { angle: match.players[id].angle, power: match.players[id].power } : null;
     const previousPhase = match.phase;
     match.restoreSnapshot(snapshot as unknown as ClassicSnapshot & HorizonSnapshot);
-    if (own && match.phase === 'aiming' && match.current === id) Object.assign(match.players[id], own);
+    if (own && match.canAim(id)) Object.assign(match.players[id], own);
     for (const event of message.events) match.applyRemoteEvent(event);
     if (previousPhase === 'gameOver' && match.phase !== 'gameOver') this.hooks.matchRestarted();
   }
@@ -285,7 +304,7 @@ export class MultiplayerSession {
     this.aimDirty = false;
   }
 
-  private send(message: Parameters<NetworkClient['send']>[0]): void {
+  private send(message: Parameters<Transport['send']>[0]): void {
     try {
       this.client.send(message);
     } catch {

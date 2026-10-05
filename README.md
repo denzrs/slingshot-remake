@@ -17,9 +17,12 @@ npm run build      # static build in dist/ – runs on any web server
 
 Start the relay server in a second terminal with `npm run dev:server`. In the client, open
 **Multiplayer**, connect to the relay address (default `ws://localhost:8080`), then create or join
-a room. Choose Classic or Event Horizon, plus free-for-all or two-team play; the host starts the
-game. Both modes support up to six players. The host runs the authoritative simulation and relays
-state patches to the other players (only what changed since the last tick, so a match needs a few KB/s instead of MB/s). Rooms can be protected with a password, and leaving a game puts you back into the lobby. For remote players, host both the web client and relay server at reachable addresses.
+a room. Choose Classic or Event Horizon, free-for-all or two-team play and the rules of the game
+(rounds, planets, reflective edges, fixed power, flight time, …); the host can still change the rules
+while the room is waiting, and the host starts the game. Both modes support up to six players. In
+Event Horizon online everybody aims at the same time against one shared clock. The lobby remembers
+your server, name and room settings and reconnects on its own. The host runs the authoritative simulation and relays
+state patches to the other players (only what changed since the last tick, so a match needs a few KB/s instead of MB/s); guests carry a shot's flight on between patches, so it moves smoothly. Rooms can be protected with a password, and leaving a game puts you back into the lobby. For remote players, host both the web client and relay server at reachable addresses.
 The relay can also be built with `npm run build:server` and started with `npm run start:server` (output in `dist-server/`). Use a `wss://` address behind TLS when the client is served over HTTPS.
 
 ## Controls
@@ -56,6 +59,8 @@ The relay can also be built with `npm run build:server` and started with `npm ru
 
 **Daily Challenge scoring:** a hit pays `1000 × shot factor × power factor × trick-shot combo`, where the shot factor counts the shots spent on *that target* (−0.15 per extra shot, minimum 0.25). Clearing a sector adds 250; hitting yourself costs 300 and ends the sector. Ranks (Cadet … Gravity master) are measured against a flawless-but-plain run.
 
+**Scorecard:** at the end of every round a row of cards under the banner hands out awards – longest shot, fastest kill (timed from the start of the round), most swing-bys, most grazes, best hit and most kills (two or more). Three more cards appear when they were earned: the **closest call** (the narrowest miss of an enemy ship, under 40 px), the **sniper** (a hit from 500 px or more) and the **own-goal king**. The cards that come with a shot take turns: the card is outlined and its shot is redrawn in bright on the field. Only awards somebody actually earned show up, and a tie shares the card. The final screen lists the same awards for the whole match, plus a chart of everybody's score over the rounds. In Classic, swing-bys and grazes are counted even when trick-shot bonuses are off.
+
 **Trick-shot bonuses in Classic** (optional, off by default): swing-bys, grazes, bank shots and airtime multiply a hit's points just like in Event Horizon (`1000 × shot factor × power factor × combo`).
 
 As in the original, you can toggle invisible planets, reflecting edges, fixed shot power, the maximum number of planets and the number of rounds per game. On top of that there are CPU opponents in three strengths and a maximum flight time. These rules (plus the players and teams) live on the **setup screen** that opens when you pick a mode, right before the game starts – also from *New game* in the pause menu. The **settings** screen only keeps what concerns your device: gravity contour lines, particles, sound, fullscreen and language. Everything is saved in the browser.
@@ -72,6 +77,7 @@ Vite + TypeScript + Canvas 2D, with no engine and no runtime dependencies beside
 | `src/volley.ts` | Simultaneous shots for Event Horizon, including projectile clashes |
 | `src/ai.ts` | CPU: random search + hill climbing over the same physics, spread shrinks with every shot |
 | `src/scoring.ts` | Scoring formulas and trick-shot multipliers |
+| `src/stats.ts`, `src/scorecard.ts` | Per-round and per-match records (longest shot, fastest kill, swing-bys, …) and the awards drawn from them |
 | `src/challenge.ts` | Daily challenge generator: date → seed → theme → sector specs → worlds. Targets sit on the path of a probe shot, so every sector has a known solution (pure and deterministic, no DOM) |
 | `src/game/challenge.ts` | `ChallengeMatch`: one pilot, stationary targets, a shot budget per sector |
 | `src/dailyStore.ts` | Best run per day, attempts and streak in `localStorage` |
