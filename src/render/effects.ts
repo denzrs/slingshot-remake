@@ -1,17 +1,27 @@
-import { COLORS, FONTS } from '../config';
+import { COLORS, FONTS, PHYSICS } from '../config';
+import type { World } from '../physics';
 import { rgba } from './color';
+
+type SparkTier = 'large' | 'medium' | 'small';
 
 interface Spark {
   x: number;
   y: number;
   vx: number;
   vy: number;
-  life: number;
-  max: number;
   size: number;
   color: string;
   drag: number;
+  tier: SparkTier;
 }
+
+interface GravityBody {
+  x: number;
+  y: number;
+  radius: number;
+}
+
+const MAX_SPARKS = 1800;
 
 interface Ring {
   x: number;
@@ -55,20 +65,20 @@ export class Effects {
     this.flash = 0;
   }
 
-  explode(x: number, y: number, color: string): void {
+  explode(x: number, y: number, color: string, vx = 0, vy = 0): void {
     this.ring(x, y, 90, 0.7, color);
     this.ring(x, y, 150, 1.1, COLORS.sodium);
-    this.burst(x, y, 110, 40, 360, color, 1.6);
-    this.burst(x, y, 70, 20, 220, COLORS.sodium, 1.2);
-    this.burst(x, y, 30, 10, 90, COLORS.bone, 2.2);
+    this.burst(x, y, 110, 40, 360, color, 'large', vx, vy);
+    this.burst(x, y, 70, 20, 220, COLORS.sodium, 'medium', vx, vy);
+    this.burst(x, y, 30, 10, 90, COLORS.bone, 'small', vx, vy);
     if (!this.reducedMotion) this.shake = 11;
     this.flash = 1;
   }
 
-  impact(x: number, y: number, color: string): void {
+  impact(x: number, y: number, color: string, vx = 0, vy = 0): void {
     this.ring(x, y, 26, 0.45, COLORS.bone);
-    this.burst(x, y, 26, 20, 140, color, 0.8);
-    this.burst(x, y, 12, 10, 70, COLORS.boneDim, 1.1);
+    this.burst(x, y, 26, 20, 140, color, 'large', vx, vy);
+    this.burst(x, y, 12, 10, 70, COLORS.boneDim, 'medium', vx, vy);
     if (!this.reducedMotion) this.shake = Math.max(this.shake, 2.5);
   }
 
@@ -78,26 +88,26 @@ export class Effects {
     this.cone(x, y, a, 12, color);
   }
 
-  fizzle(x: number, y: number, color: string): void {
-    this.burst(x, y, 10, 10, 60, color, 0.7);
+  fizzle(x: number, y: number, color: string, vx = 0, vy = 0): void {
+    this.burst(x, y, 10, 10, 60, color, 'medium', vx, vy);
   }
 
   /** Two projectiles annihilating each other. */
-  clash(x: number, y: number, a: string, b: string): void {
+  clash(x: number, y: number, a: string, b: string, velocities: [{ x: number; y: number }, { x: number; y: number }] = [{ x: 0, y: 0 }, { x: 0, y: 0 }]): void {
     this.ring(x, y, 46, 0.5, COLORS.bone);
-    this.burst(x, y, 30, 40, 260, a, 0.9);
-    this.burst(x, y, 30, 40, 260, b, 0.9);
+    this.burst(x, y, 30, 40, 260, a, 'large', velocities[0].x, velocities[0].y);
+    this.burst(x, y, 30, 40, 260, b, 'large', velocities[1].x, velocities[1].y);
     this.flash = Math.max(this.flash, 0.45);
     if (!this.reducedMotion) this.shake = Math.max(this.shake, 4);
   }
 
   /** Matter spiralling into the black hole. */
-  devour(x: number, y: number, toX: number, toY: number, color: string): void {
+  devour(x: number, y: number, toX: number, toY: number, color: string, vx = 0, vy = 0): void {
     if (!this.particles) return;
     const d = Math.hypot(toX - x, toY - y) || 1;
     const nx = (toX - x) / d;
     const ny = (toY - y) / d;
-    for (let i = 0; i < 36; i++) {
+    for (let i = 0; i < 36 && this.sparks.length < MAX_SPARKS; i++) {
       const sp = 120 + Math.random() * 260;
       const swirl = (Math.random() - 0.3) * 160;
       const ox = (Math.random() - 0.5) * 30;
@@ -105,13 +115,12 @@ export class Effects {
       this.sparks.push({
         x: x + ox,
         y: y + oy,
-        vx: nx * sp - ny * swirl,
-        vy: ny * sp + nx * swirl,
-        life: 0.5 + Math.random() * 0.6,
-        max: 1.1,
+        vx: nx * sp - ny * swirl + vx,
+        vy: ny * sp + nx * swirl + vy,
         size: 1.2 + Math.random() * 2,
         color: Math.random() < 0.3 ? COLORS.sodium : color,
-        drag: 0.6,
+        drag: 0.24,
+        tier: 'medium',
       });
     }
   }
@@ -127,18 +136,50 @@ export class Effects {
     this.callouts.push({ text, x, y, color, life: big ? 1.8 : 1.4, max: big ? 1.8 : 1.4, big });
   }
 
-  update(dt: number): void {
+  update(dt: number, world: World): void {
     this.shake = Math.max(0, this.shake - dt * 30);
     this.flash = Math.max(0, this.flash - dt * 2.5);
+    const fragments: Spark[] = [];
+    const remaining: Spark[] = [];
+    const steps = Math.max(1, Math.ceil(dt / PHYSICS.DT));
+    const step = dt / steps;
     for (const s of this.sparks) {
-      s.life -= dt;
-      const k = Math.exp(-s.drag * dt);
-      s.vx *= k;
-      s.vy *= k;
-      s.x += s.vx * dt;
-      s.y += s.vy * dt;
+      let collided = false;
+      for (let i = 0; i < steps; i++) {
+        let ax = 0;
+        let ay = 0;
+        for (const body of world.planets) {
+          const dx = body.x - s.x;
+          const dy = body.y - s.y;
+          const d2 = Math.max(64, dx * dx + dy * dy);
+          const a = (PHYSICS.G * body.mass) / (d2 * Math.sqrt(d2));
+          ax += a * dx;
+          ay += a * dy;
+        }
+        if (world.hole) {
+          const dx = world.hole.x - s.x;
+          const dy = world.hole.y - s.y;
+          const d2 = Math.max(64, dx * dx + dy * dy);
+          const a = (PHYSICS.G * world.hole.mass) / (d2 * Math.sqrt(d2));
+          ax += a * dx;
+          ay += a * dy;
+        }
+        const drag = Math.exp(-s.drag * step);
+        s.vx = (s.vx + ax * step) * drag;
+        s.vy = (s.vy + ay * step) * drag;
+        s.x += s.vx * step;
+        s.y += s.vy * step;
+        const body = this.collidingBody(s, world);
+        if (body) {
+          this.fragment(s, fragments, body);
+          collided = true;
+          break;
+        }
+      }
+      if (!collided) remaining.push(s);
     }
-    this.sparks = this.sparks.filter((s) => s.life > 0);
+    this.sparks = remaining;
+    this.sparks.push(...fragments.slice(0, MAX_SPARKS - remaining.length));
     for (const r of this.rings) r.life -= dt;
     this.rings = this.rings.filter((r) => r.life > 0);
     for (const c of this.callouts) c.life -= dt;
@@ -157,10 +198,8 @@ export class Effects {
     }
     ctx.globalCompositeOperation = 'lighter';
     for (const s of this.sparks) {
-      const t = s.life / s.max;
-      ctx.fillStyle = rgba(s.color, Math.min(1, t * 1.4));
-      const size = s.size * (0.4 + 0.6 * t);
-      ctx.fillRect(s.x - size / 2, s.y - size / 2, size, size);
+      ctx.fillStyle = s.color;
+      ctx.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size);
     }
     ctx.globalCompositeOperation = 'source-over';
 
@@ -181,26 +220,64 @@ export class Effects {
     }
   }
 
-  private burst(x: number, y: number, count: number, minSpeed: number, maxSpeed: number, color: string, life: number): void {
+  private burst(x: number, y: number, count: number, minSpeed: number, maxSpeed: number, color: string, tier: SparkTier = 'medium', inheritedVx = 0, inheritedVy = 0): void {
     if (!this.particles) return;
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < count && this.sparks.length < MAX_SPARKS; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = minSpeed + Math.random() * (maxSpeed - minSpeed);
-      this.spark(x, y, Math.cos(a) * sp, Math.sin(a) * sp, life * (0.4 + Math.random() * 0.6), color);
+      this.sparks.push(this.spark(x, y, Math.cos(a) * sp + inheritedVx, Math.sin(a) * sp + inheritedVy, color, tier));
     }
   }
 
   private cone(x: number, y: number, angle: number, count: number, color: string): void {
     if (!this.particles) return;
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < count && this.sparks.length < MAX_SPARKS; i++) {
       const a = angle + (Math.random() - 0.5) * 0.7;
       const sp = 60 + Math.random() * 160;
-      this.spark(x, y, Math.cos(a) * sp, -Math.sin(a) * sp, 0.25 + Math.random() * 0.25, color);
+      this.sparks.push(this.spark(x, y, Math.cos(a) * sp, -Math.sin(a) * sp, color, 'small'));
     }
   }
 
-  private spark(x: number, y: number, vx: number, vy: number, life: number, color: string): void {
-    this.sparks.push({ x, y, vx, vy, life, max: life, size: 1.2 + Math.random() * 2.2, color, drag: 2.2 });
+  private spark(x: number, y: number, vx: number, vy: number, color: string, tier: SparkTier): Spark {
+    const size = tier === 'large' ? 2.4 + Math.random() * 2 : tier === 'medium' ? 1.6 + Math.random() * 1.5 : 0.8 + Math.random() * 1.2;
+    return { x, y, vx, vy, size, color, drag: 0.12, tier };
+  }
+
+  private fragment(spark: Spark, into: Spark[], body: GravityBody): void {
+    if (!this.particles || spark.tier === 'small' || into.length >= MAX_SPARKS) return;
+    let nx = spark.x - body.x;
+    let ny = spark.y - body.y;
+    const distance = Math.hypot(nx, ny);
+    if (distance < 1e-6) {
+      nx = -spark.vx;
+      ny = -spark.vy;
+    }
+    const normalLength = Math.hypot(nx, ny) || 1;
+    nx /= normalLength;
+    ny /= normalLength;
+    const count = 1 + (Math.random() < 0.35 ? 1 : 0);
+    for (let i = 0; i < count && into.length < MAX_SPARKS; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = (30 + Math.random() * 70) * 1.5;
+      const tier: SparkTier = spark.tier === 'large' && Math.random() < 0.65 ? 'medium' : 'small';
+      const child = this.spark(
+        body.x + nx * (body.radius + 3 + spark.size),
+        body.y + ny * (body.radius + 3 + spark.size),
+        Math.cos(angle) * speed,
+        Math.sin(angle) * speed,
+        spark.color,
+        tier,
+      );
+      into.push(child);
+    }
+  }
+
+  private collidingBody(spark: Spark, world: World): GravityBody | null {
+    for (const body of world.planets) {
+      if (Math.hypot(body.x - spark.x, body.y - spark.y) <= body.radius) return body;
+    }
+    const hole = world.hole;
+    return hole && Math.hypot(hole.x - spark.x, hole.y - spark.y) <= hole.radius ? hole : null;
   }
 
   private ring(x: number, y: number, radius: number, life: number, color: string): void {
