@@ -10,10 +10,9 @@ import { dailyChallenge, dateKey, isDateKey } from './challenge';
 import { ClipRecorder } from './clip';
 import { AIM, COLORS, FONTS, PHYSICS } from './config';
 import { recordRun } from './dailyStore';
-import { ChallengeMatch, createChallenge, createMatch, type GameEvent, type Match, type VersusMode } from './game';
-import { ClassicMatch } from './game/classic';
-import { HorizonMatch } from './game/horizon';
-import { NetworkClient, type ClientInput, type ClientMessage, type ServerMessage } from './net';
+import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
+import { MultiplayerSession } from './multiplayer';
+import type { ClientInput } from './net';
 import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t } from './i18n';
 import { Renderer } from './render/renderer';
@@ -49,14 +48,6 @@ const attract = createMatch(
 let match: Match | null = null;
 let screen: 'title' | 'play' = 'title';
 let lastMode: VersusMode = 'classic';
-let network: NetworkClient | null = null;
-let networkHost = false;
-let networkPlayerId = 0;
-let networkRoomJoined = false;
-let pendingEvents: GameEvent[] = [];
-let stateSequence = 0;
-let stateElapsed = 0;
-let latestRoom: Extract<ServerMessage, { type: 'room_update' }> | null = null;
 /** `?daily=YYYY-MM-DD` flies another day's challenge — handy for testing and for sharing an old one. */
 const requestedDay = new URLSearchParams(location.search).get('daily');
 const forcedDay = isDateKey(requestedDay) ? requestedDay : null;
@@ -68,7 +59,6 @@ function wire(m: Match): void {
   const color = (id: number) => m.players[id].color;
   m.on((e) => {
     if (active() !== m) return;
-    if (m === match && network && networkHost) pendingEvents.push(e);
     switch (e.type) {
       case 'round':
         effects.clear();
@@ -136,131 +126,49 @@ function wire(m: Match): void {
 }
 wire(attract);
 
-function sendNetwork(message: ClientMessage): void {
-  try { network?.send(message); } catch { /* Transport close is handled by its error message. */ }
+/** Created on first use; it outlives single matches, so leaving a game lands you back in the lobby. */
+let session: MultiplayerSession | null = null;
+function multiplayer(): MultiplayerSession {
+  session ??= new MultiplayerSession({
+    settings: () => settings,
+    matchStarted(m) {
+      match = m;
+      wire(m);
+      screen = 'play';
+      effects.clear();
+      menu.close();
+    },
+    matchRestarted: () => menu.close(),
+    matchEnded() {
+      match = null;
+      screen = 'title';
+      effects.clear();
+      menu.open(() => lobbyScreen(app, multiplayer()));
+    },
+  });
+  return session;
 }
+/** The online match on screen, if any. */
+const online = (): MultiplayerSession | null => (session?.match ? session : null);
 
+/** Route a player input: online it goes through the session, offline straight to the match. */
 function dispatchInput(input: ClientInput): void {
-  if (!network || !match) {
-    if (!match) return;
-    if (input.kind === 'adjust') match.adjust(input.dAngle, input.dPower);
-    else if (input.kind === 'aim') match.setAim(input.angle, input.power);
-    else if (input.kind === 'fire') match.commit();
-    return;
-  }
-  if (!networkHost) {
-    sendNetwork({ type: 'input', input });
-    return;
-  }
-  if (input.kind === 'advance') {
-    match.advance();
-    return;
-  }
-  if (match instanceof ClassicMatch || match instanceof HorizonMatch) {
-    if (input.kind === 'adjust') match.adjustPlayer(networkPlayerId, input.dAngle, input.dPower);
-    else if (input.kind === 'aim') match.setPlayerAim(networkPlayerId, input.angle, input.power);
-    else if (input.kind === 'fire') match.commitPlayer(networkPlayerId);
-  }
+  const net = online();
+  if (net) return net.input(input);
+  if (!match) return;
+  if (input.kind === 'adjust') match.adjust(input.dAngle, input.dPower);
+  else if (input.kind === 'aim') match.setAim(input.angle, input.power);
+  else if (input.kind === 'fire') match.commit();
 }
 
 function advanceMatch(): void {
-  if (!network) match?.advance();
-  else if (networkHost) match?.advance();
-  else sendNetwork({ type: 'input', input: { kind: 'advance' } });
+  const net = online();
+  if (net) net.advance();
+  else match?.advance();
 }
 
-function disconnectNetwork(client: NetworkClient, message: string): void {
-  if (network !== client) return;
-  network = null;
-  networkHost = false;
-  networkRoomJoined = false;
-  latestRoom = null;
-  match = null;
-  screen = 'title';
-  pendingEvents = [];
-  effects.clear();
-  client.close();
-  menu.open(() => titleScreen(app));
-  window.alert(`${t('multiplayer.title')}: ${message}`);
-}
-
-function startNetworkMatch(message: Extract<ServerMessage, { type: 'game_start' }>): void {
-  const room = latestRoom;
-  if (!room) return;
-  const remoteSettings = {
-    ...settings,
-    seats: [...settings.seats],
-    seatTeams: [...settings.seatTeams],
-    teamMode: room.room.mode === 'team' ? 2 : 0,
-    bounce: message.gameMode === 'horizon' ? true : settings.bounce,
-  };
-  remoteSettings.seats.fill('off');
-  for (const player of message.players) {
-    remoteSettings.seats[player.id] = 'human';
-    remoteSettings.seatTeams[player.id] = player.team;
-  }
-  remoteSettings.seats[0] = 'human';
-  match = createMatch(message.gameMode, remoteSettings, { seats: remoteSettings.seats });
-  if (!(match instanceof ClassicMatch || match instanceof HorizonMatch)) return;
-  if (match instanceof ClassicMatch && remoteSettings.teamMode) match.configureNetworkTeams(message.players.map((p) => p.team));
-  for (const player of message.players) {
-    Object.defineProperty(match.players[player.id], 'name', { configurable: true, enumerable: true, value: player.name });
-  }
-  pendingEvents = [];
-  stateSequence = 0;
-  stateElapsed = 0;
-  wire(match);
-  screen = 'play';
-  effects.clear();
-  menu.close();
-}
-
-function connectMultiplayer(): void {
-  const client = new NetworkClient('ws://localhost:8080');
-  network = client;
-  networkHost = false;
-  networkPlayerId = 0;
-  networkRoomJoined = false;
-  latestRoom = null;
-  client.onMessage((message) => {
-    if (network !== client) return;
-    switch (message.type) {
-      case 'room_update':
-        latestRoom = message;
-        networkPlayerId = message.you.playerId;
-        networkHost = message.you.host;
-        networkRoomJoined = true;
-        break;
-      case 'game_start': startNetworkMatch(message); break;
-      case 'input': {
-        if (!networkHost || !(match instanceof ClassicMatch || match instanceof HorizonMatch)) break;
-        const input = message.input;
-        if (input.kind === 'adjust') match.adjustPlayer(message.from, input.dAngle, input.dPower);
-        else if (input.kind === 'aim') match.setPlayerAim(message.from, input.angle, input.power);
-        else if (input.kind === 'fire') match.commitPlayer(message.from);
-        else if (input.kind === 'advance') {
-          match.advance();
-        }
-        break;
-      }
-      case 'state':
-        if (!networkHost && (match instanceof ClassicMatch || match instanceof HorizonMatch) && message.seq > stateSequence) {
-          stateSequence = message.seq;
-          const previousPhase = match.phase;
-          if (match instanceof ClassicMatch && 'teamCursor' in message.snapshot) match.restoreSnapshot(message.snapshot);
-          else if (match instanceof HorizonMatch && 'volleyNo' in message.snapshot) match.restoreSnapshot(message.snapshot);
-          for (const event of message.events) match.applyRemoteEvent(event);
-          if (previousPhase === 'gameOver' && match.phase !== 'gameOver') menu.close();
-        }
-        break;
-      case 'error':
-        if (networkRoomJoined || screen === 'play') disconnectNetwork(client, message.message);
-        break;
-      case 'lobby_update': break;
-    }
-  });
-  menu.open(() => lobbyScreen(app, client));
-}
+/** Whether the local player may aim right now. */
+const canAim = (): boolean => (online() ? session!.myTurn : !!match?.isHumanTurn);
 
 const app: App = {
   menu,
@@ -270,7 +178,7 @@ const app: App = {
     sound.enabled = settings.sound;
     effects.particles = settings.particles;
     attract.settings.contours = settings.contours;
-    match?.applySettings(settings);
+    if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {
       setLang(settings.language);
       applyStaticTexts();
@@ -296,19 +204,24 @@ const app: App = {
     effects.clear();
     menu.close();
   },
-  connectMultiplayer,
-  startMultiplayer(message) {
-    startNetworkMatch(message);
+  get online() {
+    return !!online();
+  },
+  openLobby: () => menu.open(() => lobbyScreen(app, multiplayer())),
+  toLobby() {
+    session?.leaveRoom();
+    match = null;
+    screen = 'title';
+    effects.clear();
+    menu.open(() => lobbyScreen(app, multiplayer()));
   },
   resume() {
     menu.close();
   },
   rematch() {
     if (!match) return app.start(lastMode);
-  if (network) {
-    if (networkHost && match.phase === 'gameOver') match.newMatch();
-    else if (networkHost) advanceMatch();
-      else sendNetwork({ type: 'input', input: { kind: 'advance' } });
+    if (online()) {
+      advanceMatch();
       menu.close();
       return;
     }
@@ -317,15 +230,7 @@ const app: App = {
     menu.close();
   },
   toTitle() {
-    if (network) {
-      if (networkRoomJoined) sendNetwork({ type: 'leave_room' });
-      const client = network;
-      network = null;
-      client.close();
-    }
-    networkHost = false;
-    networkRoomJoined = false;
-    latestRoom = null;
+    session?.disconnect();
     screen = 'title';
     match = null;
     effects.clear();
@@ -347,13 +252,8 @@ function saveClip(): void {
 /** Enter / Space / the touch button: fire or lock in, continue, or skip the killcam. */
 function primaryAction(): void {
   if (!match) return;
-  if (network) {
-    if (match.phase === 'gameOver') app.rematch();
-    else if (match.current === networkPlayerId) dispatchInput({ kind: 'fire' });
-    else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
-    return;
-  }
-  if (match.isHumanTurn) dispatchInput({ kind: 'fire' });
+  if (online() && match.phase === 'gameOver') app.rematch();
+  else if (canAim()) dispatchInput({ kind: 'fire' });
   else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
 }
 
@@ -417,7 +317,7 @@ window.addEventListener('keydown', (e) => {
 let dragging = false;
 
 function aimAt(clientX: number, clientY: number): void {
-  if (!match || (!network && !match.isHumanTurn) || (network && match.current !== networkPlayerId)) return;
+  if (!match || !canAim()) return;
   const f = renderer.toField(clientX, clientY);
   const ship = match.world.ships[match.current];
   const dx = f.x - ship.x;
@@ -432,8 +332,7 @@ canvas.addEventListener('pointerdown', (e) => {
   sound.unlock();
   if (screen !== 'play' || !match || menu.isOpen) return;
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
-  if (!network && !match.isHumanTurn) return;
-  if (network && match.current !== networkPlayerId) return;
+  if (!canAim()) return;
   dragging = true;
   canvas.setPointerCapture(e.pointerId);
   aimAt(e.clientX, e.clientY);
@@ -461,7 +360,7 @@ function syncButtons(): void {
   const m = match;
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
-    if (network ? m.current === networkPlayerId : m.isHumanTurn) touchLabel = m.mode === 'horizon' ? t('common.ready') : t('common.fire');
+    if (canAim()) touchLabel = m.mode === 'horizon' ? t('common.ready') : t('common.fire');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
     else if (m.phase === 'killcam' && !recorder.recording) touchLabel = t('common.skip');
   }
@@ -477,20 +376,14 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const m = active();
-  const paused = screen === 'play' && menu.isOpen;
+  const net = online();
+  // Online the others keep playing, so a menu on top doesn't stop the world.
+  const paused = screen === 'play' && menu.isOpen && !net;
   if (!paused) {
-    if (!network || networkHost) m.update(dt);
+    if (!net || net.isHost) m.update(dt);
     effects.update(dt, m.world);
   }
-  if (network && networkHost && (match instanceof ClassicMatch || match instanceof HorizonMatch) && screen === 'play') {
-    stateElapsed += dt;
-    if (stateElapsed >= 0.1) {
-      stateElapsed %= 0.1;
-      const events = pendingEvents;
-      pendingEvents = [];
-      sendNetwork({ type: 'state', seq: ++stateSequence, snapshot: match.snapshot(), events });
-    }
-  }
+  net?.update(dt);
   renderer.draw(m, effects, { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording }, paused ? 0 : dt);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();

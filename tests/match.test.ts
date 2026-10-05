@@ -172,3 +172,24 @@ describe('team mode', () => {
     expect(m.phase).toBe('aiming');
   });
 });
+
+describe('online matches', () => {
+  it('keep the players\' names and teams across a rematch', () => {
+    const seats: Seat[] = ['human', 'human', 'human', 'off', 'off', 'off'];
+    for (const mode of ['classic', 'horizon'] as const) {
+      const m = createMatch(mode, { ...DEFAULT_SETTINGS, seats, teamMode: 2 }, { seats, names: ['Anna', 'Ben', 'Cem'], teams: [0, 1, 0] });
+      expect(m.players.map((p) => p.name)).toEqual(['Anna', 'Ben', 'Cem']);
+      m.newMatch();
+      expect(m.players.map((p) => p.name)).toEqual(['Anna', 'Ben', 'Cem']);
+      expect(m.players.map((p) => p.team)).toEqual([0, 1, 0]);
+      expect(m.teamMode).toBe(2);
+    }
+  });
+
+  it('put two players on opposing teams even in a duel', () => {
+    const seats: Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, seats, teamMode: 2 }, { seats, teams: [0, 1] });
+    expect(m.teamMode).toBe(2);
+    expect(m.players.map((p) => p.team)).toEqual([0, 1]);
+  });
+});

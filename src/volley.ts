@@ -15,6 +15,8 @@ export interface VolleyShot {
 }
 
 export interface VolleySnapshot {
+  /** Identifies the Volley instance, so a receiver can tell "same flight, more trail" from "a new flight". */
+  id: number;
   aims: VolleyAim[];
   steps: number;
   shots: { owner: number; trail: number[]; x: number; y: number; vx: number; vy: number; time: number; end: ShotEnd | null; style: StyleEvent[] | null }[];
@@ -25,6 +27,7 @@ export type VolleyEvent =
   | { type: 'style'; index: number; event: StyleEvent };
 
 const TRAIL_EVERY = 2;
+let nextVolleyId = 1;
 
 /**
  * Any number of shots in flight at once, advanced in lockstep. A ship that's hit drops out
@@ -33,6 +36,7 @@ const TRAIL_EVERY = 2;
  */
 export class Volley {
   readonly shots: VolleyShot[];
+  id = nextVolleyId++;
   steps = 0;
 
   constructor(
@@ -53,6 +57,7 @@ export class Volley {
 
   snapshot(): VolleySnapshot {
     return {
+      id: this.id,
       aims: this.shots.map(({ owner, shot }) => ({ player: owner, angle: shot.angle, power: shot.power })),
       steps: this.steps,
       shots: this.shots.map(({ owner, trail, shot }) => ({
@@ -63,6 +68,7 @@ export class Volley {
   }
 
   restore(snapshot: VolleySnapshot): void {
+    this.id = snapshot.id;
     this.steps = snapshot.steps;
     snapshot.shots.forEach((saved, i) => {
       const current = this.shots[i];

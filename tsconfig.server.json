@@ -4,7 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "rootDir": ".",
-    "outDir": "dist",
+    "outDir": "dist-server",
     "types": ["node"],
     "strict": true,
     "noUnusedLocals": true,

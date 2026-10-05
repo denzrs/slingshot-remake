@@ -42,8 +42,9 @@ export interface HorizonSnapshot {
   aims: VolleyAim[];
   volleyKills: { record: KillRecord; shotIndex: number; step: number }[];
   collapse: null | Omit<CollapseState, 'planets' | 'ships'> & { planets: [number, Drift][]; ships: [number, Drift][] };
+  /** The clip being replayed — static for the whole killcam, so it travels as its own (rarely changing) field. */
+  killcamClip: KillcamClip | null;
   killcam: null | {
-    clip: KillcamClip;
     replay: VolleySnapshot;
     simClock: number;
     hold: number;
@@ -118,8 +119,9 @@ export class HorizonMatch extends Match {
       volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
       aims: this.aims, volleyKills: this.volleyKills,
       collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships] } : null,
+      killcamClip: this.killcam?.clip ?? null,
       killcam: this.killcam ? {
-        clip: this.killcam.clip, replay: this.killcam.replay.snapshot(), simClock: this.killcam.simClock,
+        replay: this.killcam.replay.snapshot(), simClock: this.killcam.simClock,
         hold: this.killcam.hold, camera: this.killcam.camera, returnTo: this.killcam.returnTo,
         recording: this.killcam.recording,
       } : null,
@@ -144,11 +146,12 @@ export class HorizonMatch extends Match {
     }
     this.lastClip = s.lastClip;
     this.killcam = null;
-    if (s.killcam) {
-      const replay = new Volley(cloneWorld(s.killcam.clip.snapshot), s.killcam.clip.aims, this.rules, true);
+    if (s.killcam && s.killcamClip) {
+      const clip = s.killcamClip;
+      const replay = new Volley(cloneWorld(clip.snapshot), clip.aims, this.rules, true);
       replay.restore(s.killcam.replay);
       this.killcam = {
-        clip: s.killcam.clip, replay, simClock: s.killcam.simClock, hold: s.killcam.hold,
+        clip, replay, simClock: s.killcam.simClock, hold: s.killcam.hold,
         camera: s.killcam.camera, returnTo: s.killcam.returnTo, recording: s.killcam.recording,
       };
     }

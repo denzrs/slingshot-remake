@@ -403,7 +403,10 @@ body {
   gap: 10px;
 }
 
-.lobby__actions[hidden] {
+.lobby__actions[hidden],
+.lobby__form[hidden],
+.lobby__field[hidden],
+.lobby__button[hidden] {
   display: none;
 }
 

@@ -1,6 +1,6 @@
 import type { ShotRules, StyleKind, World } from '../physics';
 import { scoreHit } from '../scoring';
-import { SCORING, TEAMS } from '../config';
+import { SCORING } from '../config';
 import { Volley, type VolleyShot } from '../volley';
 import { Match, type RoundTitle } from './match';
 
@@ -55,16 +55,6 @@ export class ClassicMatch extends Match {
       notice: this.notice,
       settings: this.settings,
     };
-  }
-
-  configureNetworkTeams(teams: number[]): void {
-    this.teamMode = this.settings.teamMode;
-    this.players.forEach((player, id) => {
-      player.team = this.teamMode ? teams[id] : null;
-      if (player.team === null) return;
-      const members = this.players.slice(0, id).filter((p) => p.team === player.team).length;
-      player.color = this.teamMode ? (TEAMS[player.team] as readonly string[])[members % TEAMS[player.team].length] : player.color;
-    });
   }
 
   restoreSnapshot(snapshot: ClassicSnapshot): void {

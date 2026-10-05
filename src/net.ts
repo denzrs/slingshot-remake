@@ -1,10 +1,8 @@
 import type { GameEvent } from './game';
-import type { ClassicSnapshot } from './game/classic';
-import type { HorizonSnapshot } from './game/horizon';
+import type { StatePatch } from './netsync';
 
 export type RoomMode = 'ffa' | 'team';
 export type NetworkGameMode = 'classic' | 'horizon';
-export type NetworkSnapshot = ClassicSnapshot | HorizonSnapshot;
 
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
@@ -14,12 +12,12 @@ export type ClientInput =
 
 export type ClientMessage =
   | { type: 'lobby' }
-  | { type: 'create_room'; name: string; mode: RoomMode; gameMode: NetworkGameMode; maxPlayers: number }
-  | { type: 'join_room'; roomId: string; name: string }
+  | { type: 'create_room'; name: string; mode: RoomMode; gameMode: NetworkGameMode; maxPlayers: number; password?: string }
+  | { type: 'join_room'; roomId: string; name: string; password?: string }
   | { type: 'ready'; ready: boolean }
   | { type: 'start_game' }
   | { type: 'input'; input: ClientInput }
-  | { type: 'state'; seq: number; snapshot: NetworkSnapshot; events: GameEvent[] }
+  | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }
   | { type: 'leave_room' };
 
 export interface LobbyRoom {
@@ -28,6 +26,7 @@ export interface LobbyRoom {
   gameMode: NetworkGameMode;
   players: number;
   maxPlayers: number;
+  locked: boolean;
 }
 
 export interface RoomPlayer {
@@ -37,19 +36,24 @@ export interface RoomPlayer {
   team: 0 | 1;
 }
 
+export interface RoomInfo {
+  id: string;
+  mode: RoomMode;
+  gameMode: NetworkGameMode;
+  maxPlayers: number;
+  status: 'waiting' | 'playing';
+  locked: boolean;
+  players: RoomPlayer[];
+}
+
 export type ServerMessage =
   | { type: 'lobby_update'; rooms: LobbyRoom[] }
   | {
       type: 'room_update';
-      room: {
-        id: string;
-        mode: RoomMode;
-        gameMode: NetworkGameMode;
-        maxPlayers: number;
-        status: 'waiting' | 'playing';
-        players: RoomPlayer[];
-      };
+      room: RoomInfo;
       you: { playerId: number; host: boolean };
+      /** Why the room changed under you, e.g. a running game was ended. */
+      notice?: string;
     }
   | {
       type: 'game_start';
@@ -61,8 +65,11 @@ export type ServerMessage =
       players: Array<{ id: number; name: string; team: 0 | 1 }>;
     }
   | { type: 'input'; from: number; input: ClientInput }
-  | { type: 'state'; seq: number; snapshot: NetworkSnapshot; events: GameEvent[] }
-  | { type: 'error'; message: string };
+  | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }
+  | { type: 'room_closed'; message: string }
+  | { type: 'error'; message: string }
+  /** Local only: the connection to the server is gone. */
+  | { type: 'closed'; message: string };
 
 const CONNECT_TIMEOUT_MS = 10_000;
 
@@ -74,6 +81,10 @@ export class NetworkClient {
   private closed = false;
 
   constructor(private url: string) {}
+
+  get address(): string {
+    return this.url;
+  }
 
   setAddress(url: string): void {
     this.closed = false;
@@ -136,7 +147,7 @@ export class NetworkClient {
           window.clearTimeout(timeout);
           reject(new Error(`Connection to ${this.url} closed before it was established`));
         } else if (opened && !this.closed) {
-          this.deliver({ type: 'error', message: `Connection to ${this.url} was closed.` });
+          this.deliver({ type: 'closed', message: `Connection to ${this.url} was closed.` });
         }
       });
       socket.addEventListener('message', (event: MessageEvent<unknown>) => this.receive(event.data));

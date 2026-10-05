@@ -1,4 +1,5 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { isGameEvent, isInputMessage, isRecord } from './protocol.js';
 
 export type RoomMode = 'ffa' | 'team';
 export type GameMode = 'classic' | 'horizon';
@@ -6,6 +7,8 @@ export type RoomStatus = 'waiting' | 'playing';
 
 export interface ClientConnection {
   send(message: unknown): void;
+  /** Optional fast path: an already-serialized JSON message (used to fan the host's state out). */
+  sendText?(text: string): void;
 }
 
 interface Player {
@@ -26,6 +29,7 @@ interface Room {
   nextPlayerId: number;
   nextJoinOrder: number;
   lastStateSeq: number;
+  password: { salt: Buffer; hash: Buffer } | null;
 }
 
 interface Membership {
@@ -39,14 +43,19 @@ interface LobbyRoom {
   gameMode: GameMode;
   players: number;
   maxPlayers: number;
+  locked: boolean;
 }
 
 const MAX_ROOM_PLAYERS = 6;
+const MAX_NAME_LENGTH = 24;
+const MAX_PASSWORD_LENGTH = 64;
+const MAX_PASSWORD_ATTEMPTS = 5;
 
 export class RoomManager {
   private readonly rooms = new Map<string, Room>();
   private readonly connections = new Set<ClientConnection>();
   private readonly memberships = new Map<ClientConnection, Membership>();
+  private readonly passwordFailures = new Map<ClientConnection, number>();
 
   connect(connection: ClientConnection): void {
     this.connections.add(connection);
@@ -92,23 +101,8 @@ export class RoomManager {
 
   disconnect(connection: ClientConnection): void {
     this.connections.delete(connection);
-    const membership = this.memberships.get(connection);
-    if (!membership) return;
-    this.memberships.delete(connection);
-
-    const { room, player } = membership;
-    if (player.id === 0 || room.status === 'playing') {
-      this.closeRoom(room, player.id === 0 ? 'Room host disconnected; room closed' : 'A player disconnected; room closed');
-      this.broadcastLobby();
-      return;
-    }
-    this.removePlayer(room, player);
-    if (room.players.length === 0) {
-      this.rooms.delete(room.id);
-    } else {
-      this.broadcastRoomUpdate(room);
-    }
-    this.broadcastLobby();
+    this.passwordFailures.delete(connection);
+    this.removeFromRoom(connection, 'A player disconnected');
   }
 
   private createRoom(connection: ClientConnection, message: Record<string, unknown>): void {
@@ -116,7 +110,8 @@ export class RoomManager {
       this.error(connection, 'Leave your current room before creating another');
       return;
     }
-    if (typeof message.name !== 'string' || !message.name.trim()) {
+    const name = cleanName(message.name);
+    if (!name) {
       this.error(connection, 'A non-empty player name is required');
       return;
     }
@@ -132,6 +127,10 @@ export class RoomManager {
       this.error(connection, 'maxPlayers must be an integer from 2 to 6');
       return;
     }
+    if (message.password !== undefined && (typeof message.password !== 'string' || message.password.length > MAX_PASSWORD_LENGTH)) {
+      this.error(connection, `The password must be at most ${MAX_PASSWORD_LENGTH} characters`);
+      return;
+    }
 
     const room: Room = {
       id: this.newRoomId(),
@@ -143,9 +142,10 @@ export class RoomManager {
       nextPlayerId: 0,
       nextJoinOrder: 0,
       lastStateSeq: -1,
+      password: message.password ? hashPassword(message.password as string) : null,
     };
     this.rooms.set(room.id, room);
-    this.addPlayer(room, connection, message.name);
+    this.addPlayer(room, connection, name);
     this.broadcastRoomUpdate(room);
     this.broadcastLobby();
   }
@@ -155,7 +155,8 @@ export class RoomManager {
       this.error(connection, 'Leave your current room before joining another');
       return;
     }
-    if (typeof message.roomId !== 'string' || typeof message.name !== 'string' || !message.name.trim()) {
+    const name = cleanName(message.name);
+    if (typeof message.roomId !== 'string' || !name) {
       this.error(connection, 'join_room requires a roomId and non-empty player name');
       return;
     }
@@ -168,10 +169,30 @@ export class RoomManager {
       this.error(connection, 'Room is full');
       return;
     }
+    if (room.password && !this.passwordMatches(connection, room.password, message.password)) return;
 
-    this.addPlayer(room, connection, message.name);
+    this.addPlayer(room, connection, name);
     this.broadcastRoomUpdate(room);
     this.broadcastLobby();
+  }
+
+  /** Checks a join password; brute-forcing is cut off after a handful of wrong guesses per connection. */
+  private passwordMatches(connection: ClientConnection, expected: NonNullable<Room['password']>, given: unknown): boolean {
+    const failures = this.passwordFailures.get(connection) ?? 0;
+    if (failures >= MAX_PASSWORD_ATTEMPTS) {
+      this.error(connection, 'Too many wrong passwords – reconnect to try again');
+      return false;
+    }
+    if (typeof given === 'string' && given.length <= MAX_PASSWORD_LENGTH) {
+      const actual = scryptSync(given, expected.salt, expected.hash.length);
+      if (timingSafeEqual(actual, expected.hash)) {
+        this.passwordFailures.delete(connection);
+        return true;
+      }
+    }
+    this.passwordFailures.set(connection, failures + 1);
+    this.error(connection, 'Wrong password');
+    return false;
   }
 
   private setReady(connection: ClientConnection, message: Record<string, unknown>): void {
@@ -261,7 +282,7 @@ export class RoomManager {
       this.error(connection, 'Only the room host can send state');
       return;
     }
-    if (!Number.isSafeInteger(message.seq) || (message.seq as number) < 0 || !Object.hasOwn(message, 'snapshot') || !Array.isArray(message.events) || !message.events.every(isGameEvent)) {
+    if (!Number.isSafeInteger(message.seq) || (message.seq as number) < 0 || !isRecord(message.patch) || !Array.isArray(message.events) || !message.events.every(isGameEvent)) {
       this.error(connection, 'Malformed state message');
       return;
     }
@@ -272,35 +293,64 @@ export class RoomManager {
       return;
     }
     room.lastStateSeq = seq;
-    const relayed = { type: 'state', seq, snapshot: message.snapshot, events: message.events };
+    const text = JSON.stringify({ type: 'state', seq, patch: message.patch, events: message.events });
     for (const player of room.players) {
-      if (player.connection !== connection) player.connection.send(relayed);
+      if (player.connection === connection) continue;
+      if (player.connection.sendText) player.connection.sendText(text);
+      else player.connection.send(JSON.parse(text));
     }
   }
 
   private leaveRoom(connection: ClientConnection): void {
-    const membership = this.memberships.get(connection);
-    if (!membership) {
+    if (!this.memberships.has(connection)) {
       this.error(connection, 'You are not in a room');
       return;
     }
+    this.removeFromRoom(connection, 'A player left');
+    this.sendLobby(connection);
+  }
+
+  /**
+   * Takes a connection out of its room.
+   * - The host leaving closes the room; everybody else is sent back to the lobby.
+   * - Anyone else leaving a running game aborts that game; the remaining players land in the
+   *   waiting room again (the room itself survives).
+   */
+  private removeFromRoom(connection: ClientConnection, reason: string): void {
+    const membership = this.memberships.get(connection);
+    if (!membership) return;
     this.memberships.delete(connection);
     const { room, player } = membership;
-    if (player.id === 0 || room.status === 'playing') {
-      this.closeRoom(room, player.id === 0 ? 'Room host left; room closed' : 'A player left; room closed');
+
+    if (player.id === 0) {
+      this.rooms.delete(room.id);
+      for (const other of room.players) {
+        if (other === player) continue;
+        this.memberships.delete(other.connection);
+        other.connection.send({ type: 'room_closed', message: 'The host left the room' });
+        this.sendLobby(other.connection);
+      }
       this.broadcastLobby();
       return;
     }
+
+    const wasPlaying = room.status === 'playing';
     this.removePlayer(room, player);
-    if (room.players.length === 0) this.rooms.delete(room.id);
-    else this.broadcastRoomUpdate(room);
+    if (wasPlaying) this.resetToWaiting(room);
+    this.broadcastRoomUpdate(room, wasPlaying ? `${reason} – the game was ended` : undefined);
     this.broadcastLobby();
+  }
+
+  private resetToWaiting(room: Room): void {
+    room.status = 'waiting';
+    room.lastStateSeq = -1;
+    for (const player of room.players) player.ready = false;
   }
 
   private addPlayer(room: Room, connection: ClientConnection, name: string): void {
     const player: Player = {
       id: room.nextPlayerId++,
-      name: name.trim(),
+      name,
       ready: false,
       team: room.mode === 'team' ? (room.nextJoinOrder++ % 2) as 0 | 1 : 0,
       connection,
@@ -312,7 +362,7 @@ export class RoomManager {
   private removePlayer(room: Room, player: Player): void {
     const index = room.players.indexOf(player);
     if (index !== -1) room.players.splice(index, 1);
-    // Waiting-room IDs must stay contiguous because they become game player indexes.
+    // Room IDs must stay contiguous because they become game player indexes.
     room.players.forEach((remaining, id) => {
       remaining.id = id;
       remaining.team = room.mode === 'team' ? (id % 2) as 0 | 1 : 0;
@@ -322,21 +372,14 @@ export class RoomManager {
     room.nextJoinOrder = room.players.length;
   }
 
-  private closeRoom(room: Room, message: string): void {
-    this.rooms.delete(room.id);
-    for (const player of room.players) {
-      this.memberships.delete(player.connection);
-      if (player.id !== 0) this.error(player.connection, message);
-    }
-  }
-
-  private broadcastRoomUpdate(room: Room): void {
+  private broadcastRoomUpdate(room: Room, notice?: string): void {
     const roomInfo = {
       id: room.id,
       mode: room.mode,
       gameMode: room.gameMode,
       maxPlayers: room.maxPlayers,
       status: room.status,
+      locked: room.password !== null,
       players: room.players.map(({ id, name, ready, team }) => ({ id, name, ready, team })),
     };
     for (const player of room.players) {
@@ -344,6 +387,7 @@ export class RoomManager {
         type: 'room_update',
         room: roomInfo,
         you: { playerId: player.id, host: player.id === 0 },
+        ...(notice ? { notice } : {}),
       });
     }
   }
@@ -354,13 +398,16 @@ export class RoomManager {
 
   private broadcastLobby(): void {
     const message = { type: 'lobby_update', rooms: this.visibleRooms() };
-    for (const connection of this.connections) connection.send(message);
+    for (const connection of this.connections) {
+      // Players inside a room have no use for the room list.
+      if (!this.memberships.has(connection)) connection.send(message);
+    }
   }
 
   private visibleRooms(): LobbyRoom[] {
     return Array.from(this.rooms.values())
       .filter((room) => room.status === 'waiting')
-      .map((room) => ({ id: room.id, mode: room.mode, gameMode: room.gameMode, players: room.players.length, maxPlayers: room.maxPlayers }));
+      .map((room) => ({ id: room.id, mode: room.mode, gameMode: room.gameMode, players: room.players.length, maxPlayers: room.maxPlayers, locked: room.password !== null }));
   }
 
   private newRoomId(): string {
@@ -376,61 +423,11 @@ export class RoomManager {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function cleanName(value: unknown): string {
+  return typeof value === 'string' ? value.trim().slice(0, MAX_NAME_LENGTH) : '';
 }
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
-function isInputMessage(value: unknown): value is Record<string, unknown> {
-  if (!isRecord(value)) return false;
-  switch (value.kind) {
-    case 'adjust':
-      return isFiniteNumber(value.dAngle) && isFiniteNumber(value.dPower);
-    case 'aim':
-      return isFiniteNumber(value.angle) && isFiniteNumber(value.power);
-    case 'fire':
-    case 'advance':
-      return true;
-    default:
-      return false;
-  }
-}
-
-function isGameEvent(value: unknown): boolean {
-  if (!isRecord(value) || typeof value.type !== 'string') return false;
-  switch (value.type) {
-    case 'round':
-    case 'gameOver':
-    case 'roundEnd':
-    case 'volley':
-    case 'collapse':
-      return true;
-    case 'killcam':
-      return typeof value.active === 'boolean' && typeof value.recording === 'boolean';
-    case 'turn':
-    case 'lock':
-      return Number.isSafeInteger(value.player) && (value.player as number) >= 0;
-    case 'fire':
-      return Number.isSafeInteger(value.player) && (value.player as number) >= 0 &&
-        isFiniteNumber(value.x) && isFiniteNumber(value.y) && isFiniteNumber(value.angle) && isFiniteNumber(value.power);
-    case 'impact':
-      return Number.isSafeInteger(value.player) && (value.player as number) >= 0 && isFiniteNumber(value.x) && isFiniteNumber(value.y);
-    case 'explode':
-      return isFiniteNumber(value.x) && isFiniteNumber(value.y) && Number.isSafeInteger(value.ship) && (value.ship as number) >= 0;
-    case 'fizzle':
-      return Number.isSafeInteger(value.player) && (value.player as number) >= 0 && isFiniteNumber(value.x) && isFiniteNumber(value.y) && typeof value.lost === 'boolean';
-    case 'clash':
-      return isFiniteNumber(value.x) && isFiniteNumber(value.y) && Array.isArray(value.players) && value.players.length === 2 && value.players.every((id) => Number.isSafeInteger(id) && id >= 0);
-    case 'devour':
-      return isFiniteNumber(value.x) && isFiniteNumber(value.y) && isFiniteNumber(value.toX) && isFiniteNumber(value.toY) && typeof value.color === 'string';
-    case 'style':
-      return Number.isSafeInteger(value.player) && (value.player as number) >= 0 && typeof value.kind === 'string' && isFiniteNumber(value.x) && isFiniteNumber(value.y);
-    case 'kill':
-      return isRecord(value.record);
-    default:
-      return false;
-  }
+function hashPassword(password: string): { salt: Buffer; hash: Buffer } {
+  const salt = randomBytes(16);
+  return { salt, hash: scryptSync(password, salt, 32) };
 }
