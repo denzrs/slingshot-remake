@@ -772,6 +772,20 @@ kbd {
   font: 700 20px/1 var(--font-mono);
 }
 
+.score-chart {
+  display: block;
+  width: 100%;
+  max-width: 340px;
+  margin: 8px auto 0;
+}
+
+.score-chart__zero {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  opacity: 0.6;
+}
+
 /* Match highlights on the final screen: label, who, value. */
 .highlights {
   margin: 6px auto 0;

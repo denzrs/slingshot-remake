@@ -231,6 +231,10 @@ const en = {
   'award.grazes': 'Most grazes',
   'award.bestHit': 'Best hit',
   'award.kills': 'Most kills',
+  'award.closeCall': 'Closest call',
+  'award.sniper': 'Sniper',
+  'award.ownGoals': 'Own-goal king',
+  'scorecard.history': 'Score over the rounds',
 
   // — daily challenge —
   'mode.daily': 'Daily Challenge',
@@ -527,6 +531,10 @@ const de: Dict = {
   'award.grazes': 'Meiste Streifschüsse',
   'award.bestHit': 'Bester Treffer',
   'award.kills': 'Meiste Abschüsse',
+  'award.closeCall': 'Knappster Fehlschuss',
+  'award.sniper': 'Scharfschütze',
+  'award.ownGoals': 'Eigentor-König',
+  'scorecard.history': 'Punkteverlauf',
 
   // — daily challenge —
   'mode.daily': 'Tägliche Herausforderung',

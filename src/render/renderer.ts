@@ -1,5 +1,6 @@
 import { AIM, COLORS, FIELD, HORIZON, PHYSICS } from '../config';
 import type { Match, Scene } from '../game';
+import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
 import { aimDirection, type World } from '../physics';
 import { renderBackdrop, type View } from './backdrop';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
@@ -108,6 +109,7 @@ export class Renderer {
     ctx.setTransform(P, 0, 0, P, tx + shakeX * P, ty + shakeY * P);
     this.drawWorld(match, scene, base);
     this.drawTrails(match, scene);
+    this.drawSpotlight(match, scene);
     this.drawShips(match, scene);
     effects.draw(ctx);
     ctx.restore();
@@ -183,6 +185,44 @@ export class Renderer {
       const next = match.nextHoleRadius;
       if (next && !scene.camera) drawDangerRing(ctx, hole, next, this.time);
     }
+  }
+
+  /** Round over: the shot behind the scorecard's current award is drawn in bright, from muzzle to where it counted. */
+  private drawSpotlight(match: Match, scene: Scene): void {
+    if (scene.camera || match.phase !== 'roundOver' || match.mode === 'challenge') return;
+    const lit = spotlight(match);
+    if (!lit || !lit.award.trail) return;
+    const { ctx } = this;
+    const color = match.players[lit.award.players[0]].color;
+    // The path draws itself in, then its marker pulses.
+    const drawn = Math.min(1, lit.age / 0.9);
+    const count = lit.award.trail.length / 2;
+    const part = lit.award.trail.slice(0, Math.max(2, Math.ceil(count * drawn)) * 2);
+    const fade = Math.min(1, (SPOTLIGHT_EVERY - lit.age) / 0.4);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, fade);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = rgba(color, 0.22);
+    ctx.lineWidth = 8;
+    strokePolyline(ctx, part);
+    ctx.strokeStyle = rgba(COLORS.bone, 0.95);
+    ctx.lineWidth = 2.4;
+    strokePolyline(ctx, part);
+    const at = lit.award.at;
+    if (at && drawn >= 1) {
+      const pulse = (lit.age * 1.6) % 1;
+      ctx.strokeStyle = rgba(color, 1 - pulse);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(at.x, at.y, 8 + pulse * 18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = rgba(COLORS.bone, 0.95);
+      ctx.beginPath();
+      ctx.arc(at.x, at.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   private drawTrails(match: Match, scene: Scene): void {

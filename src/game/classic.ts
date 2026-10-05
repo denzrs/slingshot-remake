@@ -26,6 +26,7 @@ export interface ClassicSnapshot {
   settings: Match['settings'];
   roundStats: Match['roundStats'];
   matchStats: Match['matchStats'];
+  scoreHistory: number[][];
 }
 
 /**
@@ -58,6 +59,7 @@ export class ClassicMatch extends Match {
       settings: this.settings,
       roundStats: this.roundStats,
       matchStats: this.matchStats,
+      scoreHistory: this.scoreHistory,
     };
   }
 
@@ -83,6 +85,7 @@ export class ClassicMatch extends Match {
     this.notice = snapshot.notice;
     this.roundStats = snapshot.roundStats;
     this.matchStats = snapshot.matchStats;
+    this.scoreHistory = snapshot.scoreHistory;
     this.volley = null;
     if (snapshot.volley) {
       const volley = new Volley(snapshot.world, snapshot.volley.aims, this.rules, true);

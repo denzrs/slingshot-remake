@@ -2,7 +2,7 @@ import { modifiersOf } from '../challenge';
 import { AIM, COLORS, FIELD, FONTS, TEAMS } from '../config';
 import { ChallengeMatch, HorizonMatch, teamName, type KillRecord, type Match, type PlayerState } from '../game';
 import { fmt, fmtInt, t, type Key } from '../i18n';
-import { awardLabel, awardValue, awardWho } from '../scorecard';
+import { awardLabel, awardValue, awardWho, spotlight } from '../scorecard';
 import { styleLabel } from '../scoring';
 import { awards } from '../stats';
 import type { View } from './backdrop';
@@ -464,10 +464,11 @@ export class Hud {
 
     const gap = 10 * k;
     const cardH = 68 * k;
-    const cardW = Math.min(196 * k, (field.w - 48 * k - gap * (list.length - 1)) / list.length);
-    const width = list.length * cardW + gap * (list.length - 1);
-    const x0 = field.x + (field.w - width) / 2;
+    // Up to five cards to a row; more wrap into a second row, each row centred.
+    const perRow = list.length > 5 ? Math.ceil(list.length / 2) : list.length;
+    const cardW = Math.min(196 * k, (field.w - 48 * k - gap * (perRow - 1)) / perRow);
     const y = field.y + field.h / 2 + 75 * k + 30 * k;
+    const lit = spotlight(match);
 
     ctx.globalAlpha = fade;
     ctx.textAlign = 'center';
@@ -479,26 +480,35 @@ export class Hud {
     setSpacing(ctx, 0);
 
     list.forEach((award, i) => {
-      const x = x0 + i * (cardW + gap);
+      const row = Math.floor(i / perRow);
+      const inRow = Math.min(perRow, list.length - row * perRow);
+      const x = field.x + (field.w - (inRow * cardW + gap * (inRow - 1))) / 2 + (i - row * perRow) * (cardW + gap);
+      const top = y + row * (cardH + gap);
       const who = awardWho(match, award);
       ctx.fillStyle = rgba(COLORS.plate, 0.8);
-      ctx.fillRect(x, y, cardW, cardH);
+      ctx.fillRect(x, top, cardW, cardH);
       ctx.fillStyle = who.color;
-      ctx.fillRect(x, y, 3 * k, cardH);
+      ctx.fillRect(x, top, 3 * k, cardH);
+      if (lit?.index === i) {
+        // The card whose shot is lit up on the field.
+        ctx.strokeStyle = rgba(COLORS.bone, 0.85);
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(x + 0.5, top + 0.5, cardW - 1, cardH - 1);
+      }
 
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillStyle = COLORS.boneDim;
       ctx.font = `700 ${9 * k}px ${FONTS.body}`;
       setSpacing(ctx, 1.4 * k);
-      ctx.fillText(fitText(ctx, awardLabel(award.kind).toUpperCase(), cardW - 18 * k), x + 11 * k, y + 8 * k);
+      ctx.fillText(fitText(ctx, awardLabel(award.kind).toUpperCase(), cardW - 18 * k), x + 11 * k, top + 8 * k);
       setSpacing(ctx, 0);
       ctx.fillStyle = COLORS.bone;
       ctx.font = `700 ${20 * k}px ${FONTS.mono}`;
-      ctx.fillText(awardValue(award), x + 11 * k, y + 22 * k);
+      ctx.fillText(awardValue(award), x + 11 * k, top + 22 * k);
       ctx.fillStyle = who.color;
       ctx.font = `700 ${11.5 * k}px ${FONTS.body}`;
-      ctx.fillText(fitText(ctx, who.name, cardW - 18 * k), x + 11 * k, y + 48 * k);
+      ctx.fillText(fitText(ctx, who.name, cardW - 18 * k), x + 11 * k, top + 48 * k);
     });
     ctx.globalAlpha = 1;
   }

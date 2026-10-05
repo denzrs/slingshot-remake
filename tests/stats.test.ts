@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createMatch, type GameEvent, type Match } from '../src/game';
 import type { ClassicMatch } from '../src/game/classic';
 import type { Planet } from '../src/physics';
-import { awards, bump, improve, newStatBook, pathLength } from '../src/stats';
+import { spotlight } from '../src/scorecard';
+import { awards, bump, closestApproach, improve, newStatBook, pathLength, thinTrail } from '../src/stats';
 import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
 describe('stat book', () => {
@@ -40,6 +41,24 @@ describe('stat book', () => {
   });
 });
 
+describe('shot paths', () => {
+  it('thins a trail but keeps where it ends', () => {
+    const trail = Array.from({ length: 20 }, (_, i) => [i, i * 2]).flat();
+    const thin = thinTrail(trail);
+    expect(thin.length).toBeLessThan(trail.length / 2);
+    expect(thin.slice(0, 2)).toEqual([0, 0]);
+    expect(thin.slice(-2)).toEqual([19, 38]);
+  });
+
+  it('finds where a path comes closest to a point', () => {
+    const { distance, at } = closestApproach([0, 0, 10, 0, 20, 0], { x: 12, y: 5 });
+    expect(distance).toBe(5);
+    expect(at).toEqual({ x: 12, y: 0 });
+    // Beyond the end it is the end that counts.
+    expect(closestApproach([0, 0, 10, 0], { x: 13, y: 4 }).distance).toBe(5);
+  });
+});
+
 describe('scorecard in a match', () => {
   const seats: Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
   /** A tiny planet just under the straight line from ship 0 to ship 1 — the shot grazes it on its way. */
@@ -71,9 +90,9 @@ describe('scorecard in a match', () => {
     expect(book.longestShot!.value).toBeLessThan(1100);
     expect(book.kills).toEqual([1]);
     expect(book.grazes).toEqual([1]);
-    expect(book.fastestKill).toEqual({ player: 0, value: expect.any(Number) });
-    expect(book.bestHit).toEqual({ player: 0, value: m.lastKill!.points });
-    expect(awards(book).map((a) => a.kind)).toEqual(['longestShot', 'fastestKill', 'grazes', 'bestHit']);
+    expect(book.fastestKill).toMatchObject({ player: 0, value: expect.any(Number) });
+    expect(book.bestHit).toMatchObject({ player: 0, value: m.lastKill!.points });
+    expect(awards(book).map((a) => a.kind)).toEqual(['longestShot', 'fastestKill', 'grazes', 'bestHit', 'sniper']);
     // The match keeps the same record (one round).
     expect(m.matchStats).toEqual(book);
   });
@@ -126,5 +145,87 @@ describe('scorecard in a match', () => {
     expect(m.roundStats.bestHit).toBeNull();
     // The shot still counts as a long one.
     expect(m.roundStats.longestShot!.value).toBeGreaterThan(700);
+  });
+
+  it('credits the sniper with the distance of the hit, and keeps the shot to replay it', () => {
+    const { m } = duel(false);
+    shoot(m);
+    const sniper = m.roundStats.sniper!;
+    expect(sniper.player).toBe(0);
+    expect(sniper.value).toBeCloseTo(1000, 0);
+    expect(sniper.at).toEqual({ x: 1100, y: 400 });
+    expect(sniper.trail!.length).toBeGreaterThan(20);
+    // It is lighter than the real trail, yet still reaches the victim.
+    expect(sniper.trail!.slice(-2)[0]).toBeGreaterThan(1050);
+  });
+
+  it('notes the narrowest miss of an enemy ship', () => {
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, fixedPower: true }, { seats }) as ClassicMatch;
+    m.world.planets = [];
+    Object.assign(m.world.ships[0], { x: 100, y: 400 });
+    // 25 units off the line of fire: a 12-unit gap once the ship's radius is taken off.
+    Object.assign(m.world.ships[1], { x: 1100, y: 425 });
+    shoot(m);
+    expect(m.lastKill).toBeNull();
+    const call = m.roundStats.closeCall!;
+    expect(call.player).toBe(0);
+    expect(call.value).toBeCloseTo(12, 0);
+    expect(call.at!.x).toBeCloseTo(1100, -1);
+    expect(awards(m.roundStats).map((a) => a.kind)).toEqual(['longestShot', 'closeCall']);
+  });
+
+  it('ignores near misses of your own ship and of far-off ones', () => {
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, fixedPower: true }, { seats }) as ClassicMatch;
+    m.world.planets = [];
+    Object.assign(m.world.ships[0], { x: 100, y: 400 });
+    Object.assign(m.world.ships[1], { x: 1100, y: 700 });
+    shoot(m);
+    expect(m.roundStats.closeCall!.value).toBeGreaterThan(200);
+    expect(awards(m.roundStats).map((a) => a.kind)).toEqual(['longestShot']);
+  });
+
+  it('counts own goals', () => {
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, bounce: true, fixedPower: true }, { seats }) as ClassicMatch;
+    m.world.planets = [];
+    Object.assign(m.world.ships[0], { x: 100, y: 400 });
+    Object.assign(m.world.ships[1], { x: 1100, y: 700 });
+    m.setAim(90, 55);
+    m.commit();
+    for (let t = 0; t < 30 && m.phase === 'flying'; t += 1 / 30) m.update(1 / 30);
+    expect(m.roundStats.ownGoals).toEqual([1]);
+    expect(awards(m.roundStats).find((a) => a.kind === 'ownGoals')).toMatchObject({ players: [0], value: 1 });
+  });
+
+  it('keeps every score after every round for the chart', () => {
+    const { m } = duel(false);
+    expect(m.scoreHistory).toEqual([[0, 0]]);
+    shoot(m);
+    expect(m.scoreHistory).toEqual([[0, 0], [m.players[0].score, 0]]);
+    m.newMatch();
+    expect(m.scoreHistory).toEqual([[0, 0]]);
+    const guest = createMatch('classic', { ...DEFAULT_SETTINGS, seats }, { seats }) as ClassicMatch;
+    const { m: played } = duel(false);
+    shoot(played);
+    guest.restoreSnapshot(JSON.parse(JSON.stringify(played.snapshot())));
+    expect(guest.scoreHistory).toEqual(played.scoreHistory);
+  });
+
+  it('lights up the shots behind the awards one after another, the same on every screen', () => {
+    const { m } = duel(false);
+    shoot(m);
+    expect(m.phase).toBe('roundOver');
+    m.phaseTime = 0.5;
+    expect(spotlight(m)).toBeNull();
+    m.phaseTime = 1.3;
+    const first = spotlight(m)!;
+    expect(first.award.trail).toBeDefined();
+    expect(first.age).toBeCloseTo(0.1, 5);
+    // The awards that come with a shot here: longest shot, fastest kill, best hit, sniper — each gets its turn.
+    const seen = new Set<string>();
+    for (let t = 1.3; t < 1.3 + 2.4 * 8; t += 0.5) {
+      m.phaseTime = t;
+      seen.add(spotlight(m)!.award.kind);
+    }
+    expect([...seen].sort()).toEqual(['bestHit', 'fastestKill', 'longestShot', 'sniper']);
   });
 });

@@ -3,7 +3,7 @@ import { AIM, COLORS, FIELD, PHYSICS, SCORING, TEAMS } from '../config';
 import { t } from '../i18n';
 import { normalizeAngle, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
-import { bump, improve, newStatBook, pathLength, type StatBook } from '../stats';
+import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
 import { seatTeamsFor, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
 import { generateWorld } from '../world';
@@ -160,6 +160,8 @@ export abstract class Match {
   /** What happened this round, and in the whole match — for the scorecard. */
   roundStats: StatBook = newStatBook();
   matchStats: StatBook = newStatBook();
+  /** Everybody's score at the start of the match and after every round — for the chart on the final screen. */
+  scoreHistory: number[][] = [];
   /** Match clock when the current round began, so kills can be timed from the start of the round. */
   protected roundStartedAt = 0;
   /** Online: the player sitting at this screen. null = hot-seat, where whoever is on turn is at the keyboard. */
@@ -325,6 +327,7 @@ export abstract class Match {
     this.clock = 0;
     this.killFeed = [];
     this.matchStats = newStatBook();
+    this.scoreHistory = [this.players.map(() => 0)];
     this.totalRounds = this.attract ? 0 : this.settings.rounds;
     this.startRound();
   }
@@ -429,7 +432,7 @@ export abstract class Match {
       for (const e of volley.step()) this.onVolleyEvent(volley, e, true);
     }
     if (volley.done) {
-      for (const vs of volley.shots) this.record((book) => (book.longestShot = improve(book.longestShot, vs.owner, pathLength(vs.trail), true)));
+      this.recordFlights(volley);
       this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, volley: this.volleyNumber })));
       this.volley = null;
       this.afterVolley();
@@ -530,16 +533,38 @@ export abstract class Match {
       power: vs.shot.power,
       at: this.clock,
     };
+    if (self) this.record((book) => bump(book.ownGoals, killer));
     if (!self && !friendly) {
       const seconds = this.clock - this.roundStartedAt;
+      const from = volley.world.ships[killer];
+      const target = volley.world.ships[victim];
+      const shot = { trail: vs.trail, at: { x: target.x, y: target.y } };
       this.record((book) => {
         bump(book.kills, killer);
-        book.fastestKill = improve(book.fastestKill, killer, seconds, false);
-        book.bestHit = improve(book.bestHit, killer, score.points, true);
+        book.fastestKill = improve(book.fastestKill, killer, seconds, false, shot);
+        book.bestHit = improve(book.bestHit, killer, score.points, true, shot);
+        book.sniper = improve(book.sniper, killer, Math.hypot(target.x - from.x, target.y - from.y), true, shot);
       });
     }
     this.recordKill(record);
     this.onKill(record, volley.shots.indexOf(vs), volley.steps);
+  }
+
+  /** What the finished shots tell the scorecard: how far they flew and whom they narrowly missed. */
+  private recordFlights(volley: Volley): void {
+    for (const vs of volley.shots) {
+      const trail = vs.trail;
+      const end = { x: trail[trail.length - 2], y: trail[trail.length - 1] };
+      this.record((book) => (book.longestShot = improve(book.longestShot, vs.owner, pathLength(trail), true, { trail, at: end })));
+      // Enemy ships still flying after the volley — the ones this shot missed.
+      const friends = this.friendsOf(vs.owner);
+      volley.world.ships.forEach((ship, id) => {
+        if (id === vs.owner || friends.includes(id) || !ship.alive) return;
+        const { distance, at } = closestApproach(trail, ship);
+        const gap = distance - PHYSICS.SHIP_RADIUS;
+        if (gap > 0) this.record((book) => (book.closeCall = improve(book.closeCall, vs.owner, gap, false, { trail, at })));
+      });
+    }
   }
 
   /** Note something for the scorecard, in both the round's and the match's books. */
@@ -571,6 +596,7 @@ export abstract class Match {
     }
     const title = team !== null ? 'teamWin' : this.roundTitle(survivor);
     this.summary = { title, survivor, team, bonus, lastKill: this.lastKill };
+    this.scoreHistory.push(this.players.map((p) => p.score));
     this.current = -1;
     this.setPhase('roundOver');
     this.emit({ type: 'roundEnd' });

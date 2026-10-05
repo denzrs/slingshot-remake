@@ -291,7 +291,7 @@ export function gameOverScreen(app: App, match: Match): Screen {
     build: () => {
       const title = h('h2.result', null, headline);
       if (winner) title.style.color = winner.color;
-      const lists: HTMLElement[] = [];
+      const lists: Element[] = [];
       if (match.teamMode) {
         // Teams first; the individual standings follow, smaller.
         lists.push(h('ol.ranking', null, ...match.teamRanking().map((r, i) => entry(i + 1, t('team.name', { team: teamName(r.team) }), TEAMS[r.team][0], r.score))));
@@ -300,6 +300,8 @@ export function gameOverScreen(app: App, match: Match): Screen {
       } else {
         lists.push(h('ol.ranking', null, ...match.ranking().map((p, i) => entry(i + 1, p.name, p.color, p.score))));
       }
+      const chart = scoreChart(match);
+      if (chart) lists.push(h('p.ranking-label', null, t('scorecard.history')), chart);
       // The match's records, e.g. the longest shot of all rounds.
       const highlights = awards(match.matchStats).map((award) => {
         const who = awardWho(match, award);
@@ -329,6 +331,36 @@ export function gameOverScreen(app: App, match: Match): Screen {
     ],
     onEscape: () => (app.online ? app.toLobby() : app.toTitle()),
   };
+}
+
+/** Everybody's score after every round as lines, so you can see who caught up when. Needs at least two rounds. */
+function scoreChart(match: Match): SVGElement | null {
+  const history = match.scoreHistory;
+  if (history.length < 3) return null;
+  const W = 340;
+  const H = 96;
+  const pad = 8;
+  const scores = history.flat();
+  const lo = Math.min(0, ...scores);
+  const hi = Math.max(0, ...scores);
+  const x = (round: number) => pad + (round / (history.length - 1)) * (W - 2 * pad);
+  const y = (score: number) => H - pad - ((score - lo) / (hi - lo || 1)) * (H - 2 * pad);
+  const el = (tag: string, attrs: Record<string, string>): SVGElement => {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value);
+    return node as SVGElement;
+  };
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'score-chart', role: 'img', 'aria-label': t('scorecard.history') });
+  svg.append(el('line', { x1: String(pad), x2: String(W - pad), y1: String(y(0)), y2: String(y(0)), class: 'score-chart__zero' }));
+  // Leaders last, so their lines are on top.
+  for (const p of [...match.players].sort((a, b) => a.score - b.score)) {
+    const points = history.map((row, round) => `${x(round).toFixed(1)},${y(row[p.id] ?? 0).toFixed(1)}`);
+    svg.append(
+      el('polyline', { points: points.join(' '), fill: 'none', stroke: p.color, 'stroke-width': '2', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }),
+      el('circle', { cx: String(x(history.length - 1)), cy: String(y(history[history.length - 1][p.id] ?? 0)), r: '3', fill: p.color }),
+    );
+  }
+  return svg;
 }
 
 function panel(title: string, body: HTMLElement | null, extraClass = ''): HTMLElement {
