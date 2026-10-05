@@ -77,7 +77,7 @@ const en = {
 
   // — players —
   'players.player': 'Player {n}',
-  'players.note': 'Up to six ships. All humans take turns at this keyboard. Applies from the next game.',
+  'players.note': 'Up to six ships. All humans take turns at this keyboard.',
   'players.mode': 'Game mode',
   'players.ffa': 'Free for all',
   'players.teams': '{n} teams',
@@ -96,8 +96,9 @@ const en = {
   'cpu.hard': 'hard',
 
   // — settings —
-  'settings.note':
-    'Planet count and invisible planets apply from the next round, the round count from the next game. In Event Horizon, shots always bounce off the edge and planets stay visible.',
+  'setup.start': 'Start game',
+  'setup.note': 'The rules of this game. They are remembered for the next one. In Event Horizon planets always stay visible.',
+  'settings.note': 'Display and sound. The rules of a game are set up right before it starts.',
   'settings.rounds': 'Rounds per game',
   'settings.endless': 'Endless',
   'settings.maxPlanets': 'Max. planets',
@@ -105,6 +106,7 @@ const en = {
   'settings.bounce': 'Reflective edges',
   'settings.fixedPower': 'Fixed shot power',
   'settings.shotTime': 'Max. flight time',
+  'settings.styleBonuses': 'Trick-shot bonuses',
   'settings.contours': 'Gravity lines',
   'settings.particles': 'Particles',
   'settings.sound': 'Sound',
@@ -117,7 +119,7 @@ const en = {
     'You fire at the other ships in turn. Every planet pulls the shot towards it – big ones harder than small ones. A ship that gets hit is out for the round; the round ends when only one ship is left. Your shots stay on screen as trails: the latest one solid, older ones dotted.',
   'help.teams.title': 'Teams',
   'help.teams.body':
-    'With three or more ships you can play in two or three teams (Players menu). Teams share a colour family, start grouped together and take turns alternately. Friendly fire is on and costs {penalty} points. The round ends when only one team is left; every member of the winning team gets {bonus} points, even those already shot down. The team with the highest total wins the match.',
+    'With three or more ships you can play in two or three teams (Players, in the game setup). Teams share a colour family, start grouped together and take turns alternately. Friendly fire is on and costs {penalty} points. The round ends when only one team is left; every member of the winning team gets {bonus} points, even those already shot down. The team with the highest total wins the match.',
   'help.horizon.title': 'Event Horizon',
   'help.horizon.body':
     'Everyone aims in turn – humans get {seconds} seconds each – and then all shots fly at once. Projectiles that meet cancel each other out. After every volley the black hole in the middle grows towards the red ring, eats planets and pulls every ship a little closer. Touch the horizon and you are gone.',
@@ -356,7 +358,7 @@ const de: Dict = {
   'pause.newGame': 'Neues Spiel',
 
   'players.player': 'Spieler {n}',
-  'players.note': 'Bis zu sechs Schiffe. Alle Menschen spielen abwechselnd an dieser Tastatur. Gilt ab dem nächsten Spiel.',
+  'players.note': 'Bis zu sechs Schiffe. Alle Menschen spielen abwechselnd an dieser Tastatur.',
   'players.mode': 'Spielmodus',
   'players.ffa': 'Jeder gegen jeden',
   'players.teams': '{n} Teams',
@@ -374,8 +376,9 @@ const de: Dict = {
   'cpu.medium': 'mittel',
   'cpu.hard': 'schwer',
 
-  'settings.note':
-    'Planetenzahl und unsichtbare Planeten gelten ab der nächsten Runde, die Rundenzahl ab dem nächsten Spiel. Im Ereignishorizont prallen Schüsse immer am Rand ab, und Planeten bleiben sichtbar.',
+  'setup.start': 'Spiel starten',
+  'setup.note': 'Die Regeln für dieses Spiel. Sie werden fürs nächste Mal gemerkt. Im Ereignishorizont bleiben Planeten immer sichtbar.',
+  'settings.note': 'Darstellung und Ton. Die Regeln eines Spiels stellst du direkt vor dem Start ein.',
   'settings.rounds': 'Runden pro Spiel',
   'settings.endless': 'Endlos',
   'settings.maxPlanets': 'Max. Planeten',
@@ -383,6 +386,7 @@ const de: Dict = {
   'settings.bounce': 'Reflektierende Ränder',
   'settings.fixedPower': 'Feste Schusskraft',
   'settings.shotTime': 'Max. Flugzeit',
+  'settings.styleBonuses': 'Trickschuss-Boni',
   'settings.contours': 'Gravitationslinien',
   'settings.particles': 'Partikel',
   'settings.sound': 'Ton',
@@ -394,7 +398,7 @@ const de: Dict = {
     'Ihr schießt reihum auf die anderen Schiffe. Jeder Planet zieht den Schuss an – große stärker als kleine. Wer getroffen wird, ist für die Runde raus; die Runde endet, wenn nur noch ein Schiff übrig ist. Eure Schüsse bleiben als Spur stehen: der letzte durchgezogen, ältere gepunktet.',
   'help.teams.title': 'Teams',
   'help.teams.body':
-    'Ab drei Schiffen könnt ihr in zwei oder drei Teams spielen (Menü „Mitspieler“). Ein Team teilt sich eine Farbfamilie, startet gruppiert und schießt abwechselnd mit den anderen Teams. Teambeschuss ist an und kostet {penalty} Punkte. Die Runde endet, wenn nur noch ein Team übrig ist; jedes Mitglied des Siegerteams bekommt {bonus} Punkte, auch wer schon abgeschossen wurde. Am Ende gewinnt das Team mit der höchsten Summe.',
+    'Ab drei Schiffen könnt ihr in zwei oder drei Teams spielen („Mitspieler“ im Spiel-Setup). Ein Team teilt sich eine Farbfamilie, startet gruppiert und schießt abwechselnd mit den anderen Teams. Teambeschuss ist an und kostet {penalty} Punkte. Die Runde endet, wenn nur noch ein Team übrig ist; jedes Mitglied des Siegerteams bekommt {bonus} Punkte, auch wer schon abgeschossen wurde. Am Ende gewinnt das Team mit der höchsten Summe.',
   'help.horizon.title': 'Ereignishorizont',
   'help.horizon.body':
     'Alle zielen nacheinander – Menschen haben je {seconds} Sekunden – und dann fliegen alle Schüsse gleichzeitig. Geschosse, die sich treffen, löschen sich aus. Nach jeder Salve wächst das schwarze Loch in der Mitte bis zum roten Ring, frisst Planeten und zieht alle Schiffe ein Stück zu sich. Wer den Horizont berührt, ist weg.',
