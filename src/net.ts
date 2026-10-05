@@ -1,8 +1,12 @@
 import type { GameEvent } from './game';
 import type { StatePatch } from './netsync';
+import type { Settings } from './settings';
 
 export type RoomMode = 'ffa' | 'team';
 export type NetworkGameMode = 'classic' | 'horizon';
+
+/** The rules of an online game; a subset of the local `Settings`, so it can be spread straight into them. */
+export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'shotTime' | 'styleBonuses'>;
 
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
@@ -12,9 +16,10 @@ export type ClientInput =
 
 export type ClientMessage =
   | { type: 'lobby' }
-  | { type: 'create_room'; name: string; mode: RoomMode; gameMode: NetworkGameMode; maxPlayers: number; password?: string }
+  | { type: 'create_room'; name: string; mode: RoomMode; gameMode: NetworkGameMode; rules: RoomRules; maxPlayers: number; password?: string }
   | { type: 'join_room'; roomId: string; name: string; password?: string }
   | { type: 'ready'; ready: boolean }
+  | { type: 'set_rules'; rules: RoomRules }
   | { type: 'start_game' }
   | { type: 'input'; input: ClientInput }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }
@@ -22,6 +27,7 @@ export type ClientMessage =
 
 export interface LobbyRoom {
   id: string;
+  host: string;
   mode: RoomMode;
   gameMode: NetworkGameMode;
   players: number;
@@ -40,6 +46,7 @@ export interface RoomInfo {
   id: string;
   mode: RoomMode;
   gameMode: NetworkGameMode;
+  rules: RoomRules;
   maxPlayers: number;
   status: 'waiting' | 'playing';
   locked: boolean;
@@ -60,6 +67,7 @@ export type ServerMessage =
       roomId: string;
       mode: RoomMode;
       gameMode: NetworkGameMode;
+      rules?: RoomRules;
       hostId: 0;
       seed: number;
       players: Array<{ id: number; name: string; team: 0 | 1 }>;

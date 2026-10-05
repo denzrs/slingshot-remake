@@ -1,12 +1,14 @@
 import { CHALLENGE, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
 import { teamName, type Match, type Mode, type VersusMode } from '../game';
-import { DEFAULT_SERVER, type MultiplayerSession } from '../multiplayer';
 import { fmtNum, LANGS, t, tn, type Lang } from '../i18n';
+import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
+import { awards } from '../stats';
 import type { StyleKind } from '../physics';
 import { activeSeats, seatTeamsFor, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
+import { rulesFor } from './rules';
 
 export interface App {
   menu: Menu;
@@ -97,200 +99,6 @@ export function titleScreen(app: App): Screen {
         { kind: 'action', label: t('common.help'), run: () => app.menu.push(() => helpScreen(app)) },
         languageItem(app),
       ];
-    },
-  };
-}
-
-export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
-  let root!: HTMLElement;
-  let serverAddress!: HTMLInputElement;
-  let playerName!: HTMLInputElement;
-  let roomMode!: HTMLSelectElement;
-  let gameMode!: HTMLSelectElement;
-  let roomCapacity!: HTMLSelectElement;
-  let createPassword!: HTMLInputElement;
-  let roomSelect!: HTMLSelectElement;
-  let joinPassword!: HTMLInputElement;
-  let joinPasswordField!: HTMLElement;
-  let connectButton!: HTMLButtonElement;
-  let createButton!: HTMLButtonElement;
-  let joinButton!: HTMLButtonElement;
-  let readyButton!: HTMLButtonElement;
-  let startButton!: HTMLButtonElement;
-  let leaveButton!: HTMLButtonElement;
-  let feedback!: HTMLElement;
-  let roomsList!: HTMLElement;
-  let actions!: HTMLElement;
-  let form!: HTMLElement;
-  /** Connection progress / validation messages that don't come from the session. */
-  let localMessage: string | null = null;
-
-  const roomLabel = (room: { id: string; gameMode: string; mode: string; players: number; maxPlayers: number; locked: boolean }) =>
-    `${room.locked ? '🔒 ' : ''}${room.id} · ${t(room.gameMode === 'classic' ? 'mode.classic' : 'mode.horizon')} · ${room.mode === 'team' ? t('players.teams', { n: 2 }) : t('players.ffa')} · ${room.players}/${room.maxPlayers}`;
-
-  const render = () => {
-    const { connected, room, rooms } = session;
-    feedback.textContent = localMessage ?? session.notice ?? (room ? '' : connected ? t('multiplayer.connected') : t('multiplayer.connectHint'));
-    // The connection and room-creation forms are only needed outside of a room.
-    form.hidden = !!room;
-    connectButton.disabled = connected;
-    serverAddress.disabled = connected;
-    createButton.disabled = !connected;
-    roomsList.replaceChildren();
-    actions.hidden = !room;
-    if (room) {
-      const { you } = session;
-      roomsList.append(h('h3.lobby__section-title', null, `${t('multiplayer.room')} ${room.id}${room.locked ? ' 🔒' : ''}`));
-      const list = h('ul.lobby__players', null);
-      for (const player of room.players) {
-        const team = room.mode === 'team' ? ` · ${t('players.teams', { n: player.team + 1 })}` : '';
-        list.append(h('li', null, `${player.name}${player.id === 0 ? ` · ${t('multiplayer.host')}` : ''}${team} · ${player.ready ? t('multiplayer.ready') : t('multiplayer.notReady')}`));
-      }
-      roomsList.append(list);
-      const self = room.players.find((player) => player.id === you.playerId);
-      readyButton.textContent = self?.ready ? t('multiplayer.unready') : t('multiplayer.ready');
-      startButton.hidden = !you.host;
-      startButton.disabled = room.players.length < 2;
-      return;
-    }
-    roomsList.append(h('h3.lobby__section-title', null, t('multiplayer.rooms')));
-    const list = h('ul.lobby__rooms', null);
-    const selected = roomSelect.value;
-    roomSelect.replaceChildren(new Option(rooms.length ? t('multiplayer.selectRoom') : t('multiplayer.noRooms'), ''));
-    for (const entry of rooms) {
-      roomSelect.add(new Option(roomLabel(entry), entry.id));
-      list.append(h('li', null, roomLabel(entry)));
-    }
-    roomSelect.value = rooms.some((entry) => entry.id === selected) ? selected : '';
-    roomsList.append(list);
-    const chosen = rooms.find((entry) => entry.id === roomSelect.value);
-    joinPasswordField.hidden = !chosen?.locked;
-    roomSelect.disabled = !connected || rooms.length === 0;
-    joinButton.disabled = !connected || !roomSelect.value;
-  };
-
-  const button = (label: string, primary = false) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = `lobby__button${primary ? ' lobby__button--primary' : ''}`;
-    b.textContent = label;
-    return b;
-  };
-  const field = (label: string, input: HTMLElement) => h('label.lobby__field', null, h('span', null, label), input);
-  const passwordInput = () => {
-    const input = document.createElement('input');
-    input.type = 'password';
-    input.maxLength = 64;
-    input.autocomplete = 'off';
-    return input;
-  };
-  /** The trimmed player name, remembered for next time; null (with a message) when empty. */
-  const takeName = (): string | null => {
-    const name = playerName.value.trim();
-    if (!name) {
-      localMessage = t('multiplayer.nameRequired');
-      render();
-      return null;
-    }
-    localStorage.setItem('slingshot.player-name', name);
-    localMessage = null;
-    return name;
-  };
-
-  return {
-    build: () => {
-      localMessage = null;
-      serverAddress = document.createElement('input');
-      serverAddress.type = 'url';
-      serverAddress.value = session.client.address || DEFAULT_SERVER;
-      playerName = document.createElement('input');
-      playerName.maxLength = 24;
-      playerName.setAttribute('autocomplete', 'nickname');
-      playerName.value = localStorage.getItem('slingshot.player-name') || 'Player';
-      roomMode = document.createElement('select');
-      roomMode.add(new Option(t('players.ffa'), 'ffa'));
-      roomMode.add(new Option(t('players.teams', { n: 2 }), 'team'));
-      gameMode = document.createElement('select');
-      gameMode.add(new Option(t('mode.classic'), 'classic'));
-      gameMode.add(new Option(t('mode.horizon'), 'horizon'));
-      roomCapacity = document.createElement('select');
-      for (let count = 2; count <= MAX_PLAYERS; count++) roomCapacity.add(new Option(String(count), String(count)));
-      createPassword = passwordInput();
-      roomSelect = document.createElement('select');
-      joinPassword = passwordInput();
-      joinPasswordField = field(t('multiplayer.password'), joinPassword);
-      connectButton = button(t('multiplayer.connect'), true);
-      createButton = button(t('multiplayer.create'));
-      joinButton = button(t('multiplayer.join'));
-      readyButton = button(t('multiplayer.ready'));
-      startButton = button(t('multiplayer.start'), true);
-      leaveButton = button(t('multiplayer.leave'));
-      feedback = h('p.lobby__feedback', { role: 'status', 'aria-live': 'polite' });
-      roomsList = h('div.lobby__room-list', null);
-      actions = h('div.lobby__actions', null, readyButton, startButton, leaveButton);
-      form = h('div.lobby__form', null,
-        field(t('multiplayer.server'), serverAddress), field(t('multiplayer.name'), playerName), connectButton,
-        h('div.lobby__create-options', null,
-          field(t('multiplayer.gameMode'), gameMode), field(t('multiplayer.matchType'), roomMode), field(t('multiplayer.capacity'), roomCapacity),
-          field(t('multiplayer.passwordOptional'), createPassword)),
-        createButton, field(t('multiplayer.room'), roomSelect), joinButton, joinPasswordField,
-      );
-
-      connectButton.addEventListener('click', async () => {
-        localMessage = t('multiplayer.connecting');
-        render();
-        try {
-          await session.connect(serverAddress.value.trim());
-          localMessage = null;
-        } catch (error) {
-          localMessage = error instanceof Error ? error.message : String(error);
-        }
-        render();
-      });
-      createButton.addEventListener('click', () => {
-        const name = takeName();
-        if (!name) return;
-        session.createRoom({
-          name,
-          mode: roomMode.value as 'ffa' | 'team',
-          gameMode: gameMode.value as 'classic' | 'horizon',
-          maxPlayers: Number(roomCapacity.value),
-          password: createPassword.value,
-        });
-        createPassword.value = '';
-      });
-      joinButton.addEventListener('click', () => {
-        const name = takeName();
-        if (!name || !roomSelect.value) return;
-        session.joinRoom(roomSelect.value, name, joinPassword.value);
-        joinPassword.value = '';
-      });
-      roomSelect.addEventListener('change', render);
-      readyButton.addEventListener('click', () => {
-        const self = session.room?.players.find((p) => p.id === session.you.playerId);
-        if (self) session.setReady(!self.ready);
-      });
-      startButton.addEventListener('click', () => session.startGame());
-      leaveButton.addEventListener('click', () => session.leaveRoom());
-
-      root = h('section.screen.screen--panel.screen--lobby', { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('multiplayer.title') },
-        h('div.panel.panel--wide', null, h('h2.panel__title', null, t('multiplayer.title')), h('div.lobby', null, feedback, form, roomsList, actions), h('div.items', { 'data-items': '' })));
-      // The session outlives this screen: re-render on its changes until the screen is gone.
-      const unsubscribe = session.subscribe(() => {
-        if (!root.isConnected) return unsubscribe();
-        localMessage = null;
-        render();
-      });
-      render();
-      return root;
-    },
-    items: [],
-    onEscape: () => {
-      if (session.room) session.leaveRoom();
-      else {
-        session.disconnect();
-        app.toTitle();
-      }
     },
   };
 }
@@ -386,21 +194,13 @@ function settingChoice<K extends keyof Settings>(app: App, label: string, key: K
 
 /** The rules of a game, shown right before it starts. They are remembered between games. */
 export function setupScreen(app: App, mode: VersusMode): Screen {
-  const s = app.settings;
-  const classic = mode === 'classic';
-  const choice = <K extends keyof Settings>(label: string, key: K, options: { value: Settings[K]; label: string }[]) => settingChoice(app, label, key, options);
+  const rules: MenuItem[] = rulesFor(mode).map((row) => settingChoice(app, row.label, row.key, row.options));
   return {
-    build: () => panel(t(classic ? 'mode.classic' : 'mode.horizon'), h('p.note', null, t('setup.note')), 'panel--wide'),
+    build: () => panel(t(mode === 'classic' ? 'mode.classic' : 'mode.horizon'), h('p.note', null, t('setup.note')), 'panel--wide'),
     items: [
       { kind: 'action', label: t('setup.start'), primary: true, run: () => app.start(mode) },
-      { kind: 'action', label: t('common.players'), hint: lineup(s), run: () => app.menu.push(() => playersScreen(app)) },
-      choice(t('settings.rounds'), 'rounds', [1, 3, 5, 7, 10, 15, 20, 0].map((n) => ({ value: n, label: n ? String(n) : t('settings.endless') }))),
-      choice(t('settings.maxPlanets'), 'maxPlanets', [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ value: n, label: String(n) }))),
-      ...(classic ? [choice(t('settings.invisible'), 'invisiblePlanets', onOff())] : []),
-      choice(t('settings.bounce'), 'bounce', onOff()),
-      choice(t('settings.fixedPower'), 'fixedPower', onOff()),
-      choice(t('settings.shotTime'), 'shotTime', [10, 20, 30, 60].map((n) => ({ value: n, label: t('settings.seconds', { n }) }))),
-      ...(classic ? [choice(t('settings.styleBonuses'), 'styleBonuses', onOff())] : []),
+      { kind: 'action', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
+      ...rules,
       { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
     ],
   };
@@ -491,7 +291,7 @@ export function gameOverScreen(app: App, match: Match): Screen {
     build: () => {
       const title = h('h2.result', null, headline);
       if (winner) title.style.color = winner.color;
-      const lists: HTMLElement[] = [];
+      const lists: Element[] = [];
       if (match.teamMode) {
         // Teams first; the individual standings follow, smaller.
         lists.push(h('ol.ranking', null, ...match.teamRanking().map((r, i) => entry(i + 1, t('team.name', { team: teamName(r.team) }), TEAMS[r.team][0], r.score))));
@@ -500,6 +300,16 @@ export function gameOverScreen(app: App, match: Match): Screen {
       } else {
         lists.push(h('ol.ranking', null, ...match.ranking().map((p, i) => entry(i + 1, p.name, p.color, p.score))));
       }
+      const chart = scoreChart(match);
+      if (chart) lists.push(h('p.ranking-label', null, t('scorecard.history')), chart);
+      // The match's records, e.g. the longest shot of all rounds.
+      const highlights = awards(match.matchStats).map((award) => {
+        const who = awardWho(match, award);
+        const name = h('span.highlights__who', null, who.name);
+        name.style.color = who.color;
+        return h('li', null, h('span.highlights__label', null, awardLabel(award.kind)), name, h('span.highlights__value', null, awardValue(award)));
+      });
+      if (highlights.length) lists.push(h('p.ranking-label', null, t('scorecard.match')), h('ul.highlights', null, ...highlights));
       return h(
         'section.screen.screen--panel',
         { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('over.label') },
@@ -521,6 +331,36 @@ export function gameOverScreen(app: App, match: Match): Screen {
     ],
     onEscape: () => (app.online ? app.toLobby() : app.toTitle()),
   };
+}
+
+/** Everybody's score after every round as lines, so you can see who caught up when. Needs at least two rounds. */
+function scoreChart(match: Match): SVGElement | null {
+  const history = match.scoreHistory;
+  if (history.length < 3) return null;
+  const W = 340;
+  const H = 96;
+  const pad = 8;
+  const scores = history.flat();
+  const lo = Math.min(0, ...scores);
+  const hi = Math.max(0, ...scores);
+  const x = (round: number) => pad + (round / (history.length - 1)) * (W - 2 * pad);
+  const y = (score: number) => H - pad - ((score - lo) / (hi - lo || 1)) * (H - 2 * pad);
+  const el = (tag: string, attrs: Record<string, string>): SVGElement => {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value);
+    return node as SVGElement;
+  };
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'score-chart', role: 'img', 'aria-label': t('scorecard.history') });
+  svg.append(el('line', { x1: String(pad), x2: String(W - pad), y1: String(y(0)), y2: String(y(0)), class: 'score-chart__zero' }));
+  // Leaders last, so their lines are on top.
+  for (const p of [...match.players].sort((a, b) => a.score - b.score)) {
+    const points = history.map((row, round) => `${x(round).toFixed(1)},${y(row[p.id] ?? 0).toFixed(1)}`);
+    svg.append(
+      el('polyline', { points: points.join(' '), fill: 'none', stroke: p.color, 'stroke-width': '2', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }),
+      el('circle', { cx: String(x(history.length - 1)), cy: String(y(history[history.length - 1][p.id] ?? 0)), r: '3', fill: p.color }),
+    );
+  }
+  return svg;
 }
 
 function panel(title: string, body: HTMLElement | null, extraClass = ''): HTMLElement {

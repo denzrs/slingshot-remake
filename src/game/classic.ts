@@ -24,6 +24,9 @@ export interface ClassicSnapshot {
   summary: Match['summary'];
   notice: Match['notice'];
   settings: Match['settings'];
+  roundStats: Match['roundStats'];
+  matchStats: Match['matchStats'];
+  scoreHistory: number[][];
 }
 
 /**
@@ -54,6 +57,9 @@ export class ClassicMatch extends Match {
       summary: this.summary,
       notice: this.notice,
       settings: this.settings,
+      roundStats: this.roundStats,
+      matchStats: this.matchStats,
+      scoreHistory: this.scoreHistory,
     };
   }
 
@@ -77,12 +83,16 @@ export class ClassicMatch extends Match {
     this.lastKill = snapshot.lastKill;
     this.summary = snapshot.summary;
     this.notice = snapshot.notice;
+    this.roundStats = snapshot.roundStats;
+    this.matchStats = snapshot.matchStats;
+    this.scoreHistory = snapshot.scoreHistory;
     this.volley = null;
     if (snapshot.volley) {
-      const volley = new Volley(snapshot.world, snapshot.volley.aims, this.rules, false);
+      const volley = new Volley(snapshot.world, snapshot.volley.aims, this.rules, true);
       volley.restore(snapshot.volley);
       this.volley = volley;
     }
+    this.restarted();
   }
 
   /** Team mode: which team shoots next, and per team the member who shot last. */
@@ -91,6 +101,10 @@ export class ClassicMatch extends Match {
 
   get rules(): ShotRules {
     return { bounce: this.settings.bounce, timeLimit: this.settings.shotTime };
+  }
+
+  protected get stylePays(): boolean {
+    return this.settings.styleBonuses;
   }
 
   protected get survivorBonus(): number {
@@ -114,26 +128,27 @@ export class ClassicMatch extends Match {
   }
 
   adjustPlayer(id: number, dAngle: number, dPower: number): void {
-    if (this.phase !== 'aiming' || this.current !== id || this.players[id]?.cpu) return;
+    if (!this.canAim(id)) return;
     const player = this.players[id];
     this.setPlayerAim(id, player.angle + dAngle, player.power + dPower);
   }
 
   setPlayerAim(id: number, angle: number, power: number): void {
-    if (this.phase !== 'aiming' || this.current !== id || this.players[id]?.cpu) return;
+    if (!this.canAim(id)) return;
     const player = this.players[id];
     player.angle = ((angle % 360) + 360) % 360;
     if (!this.settings.fixedPower) player.power = Math.min(100, Math.max(0, power));
   }
 
   commitPlayer(id: number): void {
-    if (this.phase === 'aiming' && this.current === id && !this.players[id]?.cpu) this.fire();
+    if (this.canAim(id)) this.fire();
   }
 
   private fire(): void {
     const p = this.players[this.current];
     p.shots++;
-    this.launch([{ player: p.id, angle: p.angle, power: p.power }], this.settings.styleBonuses);
+    // Trick shots are always tracked (the scorecard counts them); they only pay points when the option is on.
+    this.launch([{ player: p.id, angle: p.angle, power: p.power }], true);
   }
 
   protected updatePhase(dt: number): void {
@@ -190,8 +205,7 @@ export class ClassicMatch extends Match {
 
   protected killPoints(vs: VolleyShot): { points: number; combo: StyleKind[]; multiplier: number } {
     const shooter = this.players[vs.owner];
-    // Without the option no trick shots are tracked, so this is the plain hit score.
-    const combo = (vs.shot.style ?? []).map((e) => e.kind);
+    const combo = this.settings.styleBonuses ? (vs.shot.style ?? []).map((e) => e.kind) : [];
     const { points, multiplier } = scoreChallengeHit(shooter.shots, vs.shot.power, this.settings.fixedPower, combo);
     return { points, combo, multiplier };
   }
