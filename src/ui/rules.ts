@@ -26,6 +26,7 @@ export function ruleRows(): RuleRow[] {
     { key: 'styleBonuses', label: t('settings.styleBonuses'), options: onOff(), classicOnly: true },
     { key: 'neighborGrace', label: t('settings.neighborGrace'), options: onOff() },
     { key: 'simultaneousShots', label: t('settings.simultaneousShots'), options: onOff(), classicOnly: true },
+    { key: 'hiddenAim', label: t('settings.hiddenAim'), options: onOff() },
   ];
 }
 

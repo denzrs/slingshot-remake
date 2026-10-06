@@ -238,6 +238,16 @@ export abstract class Match {
     return this.simultaneous && this.viewer !== null && this.canAim(this.viewer) ? this.viewer : this.current;
   }
 
+  /**
+   * Whether this player's aim (arrow, angle, ship heading) may be drawn. With hidden aim only the
+   * person at the screen sees it: their own seat online, whoever is on turn at a shared keyboard.
+   */
+  aimVisible(id: number): boolean {
+    if (!this.settings.hiddenAim || this.attract) return true;
+    if (this.viewer !== null) return id === this.viewer;
+    return id === this.focus && !this.players[id]?.cpu;
+  }
+
   get humanCount(): number {
     return this.players.filter((p) => !p.cpu).length;
   }

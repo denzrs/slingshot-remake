@@ -76,6 +76,8 @@ export interface RoomRules {
   neighborGrace: boolean;
   /** Classic only: everybody aims at once and all shots fly together. */
   simultaneousShots: boolean;
+  /** Everybody sees only their own aim, not the opponents'. */
+  hiddenAim: boolean;
 }
 
 export const DEFAULT_RULES: RoomRules = {
@@ -88,6 +90,7 @@ export const DEFAULT_RULES: RoomRules = {
   styleBonuses: false,
   neighborGrace: false,
   simultaneousShots: false,
+  hiddenAim: false,
 };
 
 const isIntBetween = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
@@ -95,8 +98,8 @@ const isIntBetween = (value: unknown, min: number, max: number): value is number
 /** Validates untrusted rules from a client; null when anything is off. */
 export function parseRules(value: unknown): RoomRules | null {
   if (!isRecord(value)) return null;
-  const { rounds, maxPlanets, invisiblePlanets, bounce, fixedPower, shotTime, styleBonuses, neighborGrace, simultaneousShots } = value;
+  const { rounds, maxPlanets, invisiblePlanets, bounce, fixedPower, shotTime, styleBonuses, neighborGrace, simultaneousShots, hiddenAim } = value;
   if (!isIntBetween(rounds, 0, 99) || !isIntBetween(maxPlanets, 1, 8) || !isIntBetween(shotTime, 5, 120)) return null;
-  if (![invisiblePlanets, bounce, fixedPower, styleBonuses, neighborGrace, simultaneousShots].every((flag) => typeof flag === 'boolean')) return null;
-  return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, shotTime, styleBonuses: styleBonuses as boolean, neighborGrace: neighborGrace as boolean, simultaneousShots: simultaneousShots as boolean };
+  if (![invisiblePlanets, bounce, fixedPower, styleBonuses, neighborGrace, simultaneousShots, hiddenAim].every((flag) => typeof flag === 'boolean')) return null;
+  return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, shotTime, styleBonuses: styleBonuses as boolean, neighborGrace: neighborGrace as boolean, simultaneousShots: simultaneousShots as boolean, hiddenAim: hiddenAim as boolean };
 }

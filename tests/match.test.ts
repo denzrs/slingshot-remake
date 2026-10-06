@@ -410,3 +410,30 @@ describe('classic with simultaneous shots', () => {
     expect(m.volley!.snapshot().aims.every((a) => a.spare?.length === 1)).toBe(true);
   });
 });
+
+describe('hidden aim', () => {
+  const seats: Seat[] = ['human', 'human', 'medium', 'off', 'off', 'off'];
+  const make = (hiddenAim: boolean, mode: 'classic' | 'horizon' = 'classic') =>
+    createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 1, seats, hiddenAim }, { seats });
+
+  it('shows everything when the option is off', () => {
+    const m = make(false);
+    expect([0, 1, 2].every((id) => m.aimVisible(id))).toBe(true);
+  });
+
+  it('at a shared keyboard shows only whoever is on turn', () => {
+    const m = make(true);
+    const on = m.focus;
+    expect(m.players[on].cpu).toBeFalsy();
+    expect(m.aimVisible(on)).toBe(true);
+    expect([0, 1, 2].filter((id) => id !== on).some((id) => m.aimVisible(id))).toBe(false);
+  });
+
+  it('online shows only the viewer\'s own aim, also in Event Horizon', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      const m = make(true, mode);
+      m.viewer = 1;
+      expect([0, 1, 2].map((id) => m.aimVisible(id))).toEqual([false, true, false]);
+    }
+  });
+});

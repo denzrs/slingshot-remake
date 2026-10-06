@@ -27,6 +27,8 @@ export interface Settings {
   neighborGrace: boolean;
   /** Classic only: everybody aims, then all shots fly at once — as in Event Horizon — instead of one shot per turn. */
   simultaneousShots: boolean;
+  /** Other players' aim arrows, angles and ship headings stay hidden: you only see your own aim. */
+  hiddenAim: boolean;
   contours: boolean;
   particles: boolean;
   sound: boolean;
@@ -48,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   styleBonuses: false,
   neighborGrace: false,
   simultaneousShots: false,
+  hiddenAim: false,
   contours: true,
   particles: true,
   sound: true,
