@@ -264,6 +264,11 @@ export class RoomManager {
       this.error(connection, 'At least 2 players are required to start');
       return;
     }
+    // The host's click counts as its own "ready"; everybody else has to have confirmed.
+    if (!room.players.every((player) => player === membership.player || player.ready)) {
+      this.error(connection, 'Not everybody is ready yet');
+      return;
+    }
     this.beginGame(room);
   }
 

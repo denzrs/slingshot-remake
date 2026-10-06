@@ -14,7 +14,6 @@ export function isInputMessage(value: unknown): value is Record<string, unknown>
     case 'aim':
       return isFiniteNumber(value.angle) && isFiniteNumber(value.power);
     case 'fire':
-    case 'advance':
       return true;
     default:
       return false;

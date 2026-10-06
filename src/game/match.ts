@@ -166,6 +166,8 @@ export abstract class Match {
   protected roundStartedAt = 0;
   /** Online: the player sitting at this screen. null = hot-seat, where whoever is on turn is at the keyboard. */
   viewer: number | null = null;
+  /** Whether this screen may move the match on (next round, skip the killcam, rematch). Online only the host may. */
+  canAdvance = true;
 
   protected readonly rng: Rng = createRng(randomSeed());
   protected cpuJobs = new Map<number, CpuJob>();

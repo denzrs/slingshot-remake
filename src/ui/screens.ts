@@ -324,7 +324,9 @@ export function gameOverScreen(app: App, match: Match): Screen {
       );
     },
     items: [
-      { kind: 'action', label: t('over.rematch'), primary: true, run: () => app.rematch() },
+      match.canAdvance
+        ? { kind: 'action', label: t('over.rematch'), primary: true, run: () => app.rematch() }
+        : { kind: 'action', label: t('over.rematch'), hint: t('over.hostRematch'), disabled: true, run: () => {} },
       app.online
         ? { kind: 'action', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
         : { kind: 'action', label: t('common.mainMenu'), run: () => app.toTitle() },

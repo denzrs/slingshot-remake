@@ -6,7 +6,7 @@ export interface Choice<T> {
 }
 
 export type MenuItem =
-  | { kind: 'action'; label: string; run: () => void; primary?: boolean; /** Small second line under the label. */ hint?: string }
+  | { kind: 'action'; label: string; run: () => void; primary?: boolean; /** Small second line under the label. */ hint?: string; disabled?: boolean }
   | {
       kind: 'choice';
       label: string;
@@ -143,7 +143,12 @@ export class Menu {
         } else {
           b.textContent = item.label;
         }
+        if (item.disabled) {
+          b.classList.add('is-disabled');
+          b.setAttribute('aria-disabled', 'true');
+        }
         b.addEventListener('click', () => {
+          if (item.disabled) return;
           this.sound.select();
           item.run();
         });

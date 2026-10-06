@@ -94,6 +94,28 @@ describe('online games', () => {
     expect(guest.notice).toMatch(/host/i);
   });
 
+  it('let only the host move on from the scorecard', async () => {
+    const { host, guest } = await startRoom('classic');
+    expect(host.match().canAdvance).toBe(true);
+    expect(guest.match().canAdvance).toBe(false);
+    const m = host.match();
+    for (let i = 0; i < 5; i++) frame(host, guest);
+    m.phase = 'roundOver';
+    m.phaseTime = 1;
+    for (let i = 0; i < 5; i++) frame(host, guest);
+    expect(guest.match().phase).toBe('roundOver');
+
+    guest.session.advance();
+    for (let i = 0; i < 5; i++) frame(host, guest);
+    expect(host.match().phase).toBe('roundOver');
+    expect(guest.match().phase).toBe('roundOver');
+
+    host.session.advance();
+    for (let i = 0; i < 5; i++) frame(host, guest);
+    expect(host.match().phase).not.toBe('roundOver');
+    expect(guest.match().phase).not.toBe('roundOver');
+  });
+
   it('keep the names through a rematch, on the host and on the guest', async () => {
     for (const mode of ['classic', 'horizon'] as const) {
       const { host, guest } = await startRoom(mode, ['Anna', 'Ben']);
@@ -105,7 +127,7 @@ describe('online games', () => {
       for (let i = 0; i < 5; i++) frame(host, guest);
       expect(guest.match().phase).toBe('gameOver');
 
-      guest.session.advance();
+      host.session.advance();
       for (let i = 0; i < 5; i++) frame(host, guest);
       expect(host.match().phase).not.toBe('gameOver');
       expect(guest.match().phase).not.toBe('gameOver');

@@ -596,7 +596,7 @@ export class Hud {
     const width = segments.reduce((s, [t]) => s + ctx.measureText(t).width, 0);
     this.drawSegmentsRight(segments, field.x + field.w / 2 + width / 2, field.y + field.h - bar / 2 - 6 * k);
 
-    if (!recording && !opts.touch) {
+    if (!recording && !opts.touch && match.canAdvance) {
       this.drawKeyRow([[t('common.space'), t('hud.skip')], ['C', t('hud.saveClip')]], field.x + field.w / 2, field.y + field.h - bar - 18 * k, this.k * 0.9);
     }
   }
@@ -639,7 +639,7 @@ export class Hud {
       items = [['', t('hud.collapse')]];
     } else if (match.phase === 'roundOver' && match.phaseTime > 0.6) {
       const next = match.isLastRound ? t('hud.finalStandings') : match instanceof ChallengeMatch ? t('daily.hud.nextSector') : t('hud.nextRound');
-      items = [[touch ? '' : t('common.space'), next]];
+      items = [match.canAdvance ? [touch ? '' : t('common.space'), next] : ['', t('hud.waitingHost')]];
       if (horizon && match.lastClip && !touch) items.push(['C', t('hud.saveKillcam')]);
     }
     if (!items.length) return;

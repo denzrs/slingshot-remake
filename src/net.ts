@@ -11,8 +11,7 @@ export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlane
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
   | { kind: 'aim'; angle: number; power: number }
-  | { kind: 'fire' }
-  | { kind: 'advance' };
+  | { kind: 'fire' };
 
 export type ClientMessage =
   | { type: 'lobby' }
