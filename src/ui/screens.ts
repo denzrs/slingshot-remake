@@ -42,6 +42,7 @@ const seatOptions = (): { value: Seat; label: string }[] => [
   { value: 'easy', label: t('seat.easy') },
   { value: 'medium', label: t('seat.medium') },
   { value: 'hard', label: t('seat.hard') },
+  { value: 'experimental', label: t('seat.experimental') },
   { value: 'off', label: '—' },
 ];
 

@@ -101,9 +101,11 @@ const en = {
   'seat.easy': 'CPU easy',
   'seat.medium': 'CPU medium',
   'seat.hard': 'CPU hard',
+  'seat.experimental': 'CPU experimental',
   'cpu.easy': 'easy',
   'cpu.medium': 'medium',
   'cpu.hard': 'hard',
+  'cpu.experimental': 'experimental',
 
   // — settings —
   'setup.start': 'Start game',
@@ -416,9 +418,11 @@ const de: Dict = {
   'seat.easy': 'CPU leicht',
   'seat.medium': 'CPU mittel',
   'seat.hard': 'CPU schwer',
+  'seat.experimental': 'CPU experimentell',
   'cpu.easy': 'leicht',
   'cpu.medium': 'mittel',
   'cpu.hard': 'schwer',
+  'cpu.experimental': 'experimentell',
 
   'setup.start': 'Spiel starten',
   'setup.note': 'Die Regeln für dieses Spiel. Sie werden fürs nächste Mal gemerkt. Im Ereignishorizont bleiben Planeten immer sichtbar.',

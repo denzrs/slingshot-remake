@@ -62,8 +62,7 @@ The relay can also be built with `npm run build:server` and started with `npm ru
 **Scorecard:** at the end of every round a row of cards under the banner hands out awards – longest shot, fastest kill (timed from the start of the round), most swing-bys, most grazes, best hit and most kills (two or more). Three more cards appear when they were earned: the **closest call** (the narrowest miss of an enemy ship, under 40 px), the **sniper** (a hit from 500 px or more) and the **own-goal king**. The cards that come with a shot take turns: the card is outlined and its shot is redrawn in bright on the field. Only awards somebody actually earned show up, and a tie shares the card. The final screen lists the same awards for the whole match, plus a chart of everybody's score over the rounds. In Classic, swing-bys and grazes are counted even when trick-shot bonuses are off.
 
 **Trick-shot bonuses in Classic** (optional, off by default): swing-bys, grazes, bank shots and airtime multiply a hit's points just like in Event Horizon (`1000 × shot factor × power factor × combo`).
-
-As in the original, you can toggle invisible planets, reflecting edges, fixed shot power, the maximum number of planets and the number of rounds per game. On top of that there are CPU opponents in three strengths and a maximum flight time. These rules (plus the players and teams) live on the **setup screen** that opens when you pick a mode, right before the game starts – also from *New game* in the pause menu. The **settings** screen only keeps what concerns your device: gravity contour lines, particles, sound, fullscreen and language. Everything is saved in the browser.
+As in the original, you can toggle invisible planets, reflecting edges, fixed shot power, the maximum number of planets and the number of rounds per game. On top of that there are CPU opponents in four strengths, including experimental, and a maximum flight time. Experimental estimates gravity from its own past shots. These rules (plus the players and teams) live on the **setup screen** that opens when you pick a mode, right before the game starts – also from *New game* in the pause menu. The **settings** screen only keeps what concerns this device: gravity contour lines, particles, sound, fullscreen and language. Everything is saved in the browser.
 
 ## Tech
 
@@ -75,7 +74,7 @@ Vite + TypeScript + Canvas 2D, with no engine and no runtime dependencies beside
 | `src/world.ts` | Random battlefields from a seed |
 | `src/game/` | Match state machines: aiming → flight → round end → final score (`classic.ts`, `horizon.ts`, shared base in `match.ts`) |
 | `src/volley.ts` | Simultaneous shots for Event Horizon, including projectile clashes |
-| `src/ai.ts` | CPU: random search + hill climbing over the same physics, spread shrinks with every shot |
+| `src/ai.ts`, `src/experimental-ai.ts` | CPU search and trajectory-based experimental gravity fitting |
 | `src/scoring.ts` | Scoring formulas and trick-shot multipliers |
 | `src/stats.ts`, `src/scorecard.ts` | Per-round and per-match records (longest shot, fastest kill, swing-bys, …) and the awards drawn from them |
 | `src/challenge.ts` | Daily challenge generator: date → seed → theme → sector specs → worlds. Targets sit on the path of a probe shot, so every sector has a known solution (pure and deterministic, no DOM) |
@@ -88,6 +87,18 @@ Vite + TypeScript + Canvas 2D, with no engine and no runtime dependencies beside
 | `src/clip.ts` | Records the killcam canvas to a downloadable video |
 
 The physics is deterministic, and the CPU planner uses exactly the same `Shot` class as the game. What the CPU predicts is exactly how the shot flies – and it is also what makes the killcam replays exact.
+
+## AI benchmark
+
+Run `npm run bench:experimental -- --sims 100 --seed 99540653` to compare experimental CPU against easy, medium and hard CPU on repeatable worlds. Add `--mode=horizon`, `--bounce`, `--fixed-power`, or `--planets=1..8` to test one ruleset. Add `--opening-low-probe` only to compare the low-power opening-probe experiment. Results group match win rate and map RMS by total shots. They also show first-shot, second-shot, and later-shot hit rates and held-out error.
+
+Run `npm run bench:team -- --seed 99540653` for 100 seeded Classic 3v3 team matches: experimental CPUs versus medium CPUs. It uses 60-second flight limits and simultaneous shots. Add `--games=1..100` for a smaller run. The result shows wins, draws, mean team scores, and mean shots.
+
+Experimental fits its own launch states and sampled positions through the production Euler step. It uses bounded positive masses and several start points. It keeps distinct plausible maps instead of trusting one fit. A held-out completed trajectory checks prediction quality.
+
+The CPU opens with one safe power-45 coverage probe. Afterward it fires ensemble-stable hits with medium perturbation and low-power preference. `--opening-low-probe` remains a benchmark-only comparison of powers `25`, `35`, `45`, and `55`.
+
+Set `EXPERIMENTAL_AI_LOGS=1` to print each experimental fit during the benchmark. Set `VITE_EXPERIMENTAL_AI_LOGS=1` before `npm run dev` to print logs in the browser. Logs include fit time, held-out RMS, chosen action, map errors, and trajectory-fit RMS. The fitter uses at most 500 trajectory samples.
 
 ## Credits & license
 
