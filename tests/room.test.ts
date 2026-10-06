@@ -87,9 +87,33 @@ describe('rooms', () => {
     const third = client();
     manager.handle(guest, { type: 'join_room', roomId, name: 'Gast' });
     manager.handle(third, { type: 'join_room', roomId, name: 'Dritte' });
+    manager.handle(guest, { type: 'ready', ready: true });
+    manager.handle(third, { type: 'ready', ready: true });
     manager.handle(host, { type: 'start_game' });
     return { manager, host, guest, third, roomId };
   }
+
+  it('lets the host start only once everybody else is ready', () => {
+    const { manager, client } = setup();
+    const host = client();
+    manager.handle(host, create());
+    const roomId = host.last('room_update')!.room.id;
+    const guest = client();
+    const third = client();
+    manager.handle(guest, { type: 'join_room', roomId, name: 'Gast' });
+    manager.handle(third, { type: 'join_room', roomId, name: 'Dritte' });
+    manager.handle(guest, { type: 'ready', ready: true });
+
+    manager.handle(host, { type: 'start_game' });
+    expect(host.last('error')!.message).toMatch(/ready/i);
+    expect(guest.count('game_start')).toBe(0);
+
+    // The host itself need not click "ready": starting is its confirmation.
+    manager.handle(third, { type: 'ready', ready: true });
+    manager.handle(host, { type: 'start_game' });
+    expect(guest.count('game_start')).toBe(1);
+    expect(third.count('game_start')).toBe(1);
+  });
 
   it('relays the host state to the guests only, as one patch message', () => {
     const { manager, host, guest, third } = startedGame();
@@ -159,6 +183,7 @@ describe('room rules', () => {
     const id = host.last('room_update')!.room.id;
     manager.handle(guest, { type: 'join_room', roomId: id, name: 'Gast' });
     expect(guest.last('room_update')!.room.rules).toEqual(rules);
+    manager.handle(guest, { type: 'ready', ready: true });
     manager.handle(host, { type: 'start_game' });
     expect(guest.last('game_start')!.rules).toEqual(rules);
   });
@@ -190,6 +215,7 @@ describe('room rules', () => {
     expect(host.last('error')!.message).toMatch(/rules/i);
     expect(host.last('room_update')!.room.rules).toEqual(rules);
 
+    manager.handle(guest, { type: 'ready', ready: true });
     manager.handle(host, { type: 'start_game' });
     manager.handle(host, { type: 'set_rules', rules: { ...rules, rounds: 7 } });
     expect(host.last('error')!.message).toMatch(/running/i);

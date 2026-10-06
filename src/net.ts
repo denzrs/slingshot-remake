@@ -12,7 +12,8 @@ export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
   | { kind: 'aim'; angle: number; power: number }
   | { kind: 'fire' }
-  | { kind: 'advance' };
+  /** A vote to skip the killcam; it ends once half of the players want that. */
+  | { kind: 'skip' };
 
 export type ClientMessage =
   | { type: 'lobby' }

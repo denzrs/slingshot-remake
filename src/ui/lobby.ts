@@ -205,7 +205,8 @@ playerName.setAttribute('autocomplete', 'nickname');
     ready.addEventListener('click', () => session.setReady(!self?.ready));
     const start = button(t('multiplayer.start'), true);
     start.hidden = !you.host;
-    start.disabled = room.players.length < 2;
+    // Everybody but the host must be ready; the host's click is its own "ready".
+    start.disabled = room.players.length < 2 || !room.players.every((p) => p.id === 0 || p.ready);
     start.addEventListener('click', () => session.startGame());
     const leave = button(t('multiplayer.leave'));
     leave.addEventListener('click', () => session.leaveRoom());
