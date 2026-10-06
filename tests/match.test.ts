@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMatch, type Match, type VersusMode } from '../src/game';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
-import { FIELD } from '../src/config';
+import { FIELD, TRAIL_FADE } from '../src/config';
 import { cloneSettings, DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
 /** Run a CPU-only match headlessly until the first round is decided. */
@@ -285,7 +285,7 @@ describe('skipping the killcam', () => {
 describe('neighbour grace period', () => {
   const seats = (n: number): Seat[] => [...Array(n).fill('human'), ...Array(6 - n).fill('off')];
   /** Four ships in a row: ship 1 is ship 0's nearest enemy, ship 3 the farthest. */
-  function row(mode: 'classic' | 'horizon', neighborGrace: boolean, n = 4): Match {
+  function row(mode: 'classic' | 'horizon', neighborGrace: number, n = 4): Match {
     const m = createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 1, seats: seats(n), neighborGrace }, { seats: seats(n) });
     m.world.planets = [];
     [[100, 400], [300, 400], [700, 400], [1100, 400]].slice(0, n).forEach(([x, y], i) => Object.assign(m.world.ships[i], { x, y }));
@@ -293,12 +293,12 @@ describe('neighbour grace period', () => {
   }
 
   it('is off by default', () => {
-    expect(row('classic', false).sparedFor(0)).toEqual([]);
+    expect(row('classic', 0).sparedFor(0)).toEqual([]);
   });
 
   it('spares the nearest enemy for the first shots of a round only', () => {
     for (const mode of ['classic', 'horizon'] as const) {
-      const m = row(mode, true);
+      const m = row(mode, 2);
       expect(m.sparedFor(0)).toEqual([1]);
       expect(m.sparedFor(3)).toEqual([2]);
       m.players[0].shots = 2;
@@ -307,18 +307,28 @@ describe('neighbour grace period', () => {
     }
   });
 
+  it('can last one shot or two', () => {
+    const one = row('classic', 1);
+    expect(one.sparedFor(0)).toEqual([1]);
+    one.players[0].shots = 1;
+    expect(one.sparedFor(0)).toEqual([]);
+    const two = row('classic', 2);
+    two.players[0].shots = 1;
+    expect(two.sparedFor(0)).toEqual([1]);
+  });
+
   it('needs four ships: in a smaller game the nearest enemy is no shortcut', () => {
-    expect(row('classic', true, 3).sparedFor(0)).toEqual([]);
+    expect(row('classic', 2, 3).sparedFor(0)).toEqual([]);
   });
 
   it('follows the fallen and teammates: the nearest *living enemy* counts', () => {
-    const m = row('classic', true);
+    const m = row('classic', 2);
     m.players[1].alive = false;
     expect(m.sparedFor(0)).toEqual([2]);
   });
 
   it('lets the shot fly through the spared ship and hit the next one', () => {
-    const m = row('classic', true);
+    const m = row('classic', 2);
     m.current = 0;
     m.setAim(0, 40);
     m.commit();
@@ -328,7 +338,7 @@ describe('neighbour grace period', () => {
   });
 
   it('only protects while it is switched on', () => {
-    const m = row('classic', false);
+    const m = row('classic', 0);
     m.current = 0;
     m.setAim(0, 40);
     m.commit();
@@ -405,8 +415,63 @@ describe('classic with simultaneous shots', () => {
 
   it('keeps the neighbour grace period working', () => {
     const s = seats(0, 4);
-    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats: s, simultaneousShots: true, neighborGrace: true }, { seats: s });
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats: s, simultaneousShots: true, neighborGrace: 2 }, { seats: s });
     run(m, (x) => x.phase === 'flying');
     expect(m.volley!.snapshot().aims.every((a) => a.spare?.length === 1)).toBe(true);
+  });
+});
+
+describe('hidden aim', () => {
+  const seats: Seat[] = ['human', 'human', 'medium', 'off', 'off', 'off'];
+  const make = (hiddenAim: boolean, mode: 'classic' | 'horizon' = 'classic') =>
+    createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 1, seats, hiddenAim }, { seats });
+
+  it('shows everything when the option is off', () => {
+    const m = make(false);
+    expect([0, 1, 2].every((id) => m.aimVisible(id))).toBe(true);
+  });
+
+  it('at a shared keyboard shows only whoever is on turn', () => {
+    const m = make(true);
+    const on = m.focus;
+    expect(m.players[on].cpu).toBeFalsy();
+    expect(m.aimVisible(on)).toBe(true);
+    expect([0, 1, 2].filter((id) => id !== on).some((id) => m.aimVisible(id))).toBe(false);
+  });
+
+  it('online shows only the viewer\'s own aim, also in Event Horizon', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      const m = make(true, mode);
+      m.viewer = 1;
+      expect([0, 1, 2].map((id) => m.aimVisible(id))).toEqual([false, true, false]);
+    }
+  });
+});
+
+describe('fading trails', () => {
+  const seats: Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
+  const trail = (at: number) => ({ owner: 0, points: [0, 0, 1, 1], volley: 1, at });
+
+  it('keeps trails for good when the option is off', () => {
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, seats }, { seats });
+    m.clock = 1000;
+    expect(m.trailAlpha(trail(0))).toBe(1);
+  });
+
+  it('holds a fresh trail, fades it, then drops it', () => {
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, seats, fadingTrails: 4 }, { seats });
+    m.clock = 10;
+    expect(m.trailAlpha(trail(10))).toBe(1);
+    // 4 s: 1.6 s fully visible, then 2.4 s of fading.
+    expect(m.trailAlpha(trail(10 - 4 * TRAIL_FADE.HOLD))).toBe(1);
+    expect(m.trailAlpha(trail(10 - 4 * TRAIL_FADE.HOLD - 1.2))).toBeCloseTo(0.5);
+    expect(m.trailAlpha(trail(10 - 4))).toBe(0);
+  });
+
+  it('runs faster with a shorter lifetime', () => {
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, seats, fadingTrails: 1 }, { seats });
+    m.clock = 10;
+    expect(m.trailAlpha(trail(9))).toBe(0);
+    expect(m.trailAlpha(trail(9.5))).toBeGreaterThan(0);
   });
 });

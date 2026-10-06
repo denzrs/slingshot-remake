@@ -64,7 +64,7 @@ export class Hud {
       this.drawScoreboard(match);
       this.drawKillFeed(match);
     }
-    if (match.phase === 'aiming' && focus >= 0) this.drawReadout(match, match.players[focus], shipPos(focus));
+    if (match.phase === 'aiming' && focus >= 0 && match.aimVisible(focus)) this.drawReadout(match, match.players[focus], shipPos(focus));
     this.drawNotice(match);
     if (time - this.turnAt < 1.6 && focus >= 0) this.drawTurnToast(match.players[focus]);
     if (match.phase === 'roundOver' && match.summary) {
@@ -113,9 +113,13 @@ export class Hud {
     ctx.fillText(String(p.score), x, y + 16 * k);
     ctx.font = `400 ${12.5 * k}px ${FONTS.mono}`;
     ctx.fillStyle = COLORS.boneDim;
-    ctx.fillText(`${pad(t('hud.angle'))} ${fmt(p.angle, 2).padStart(6, ' ')}°`, x, y + 52 * k);
-    ctx.fillText(`${pad(t('hud.power'))} ${fmt(p.power, 2).padStart(6, ' ')}${match.settings.fixedPower ? t('hud.fixedSuffix') : ''}`, x, y + 68 * k);
-    this.drawGauge(align === 'left' ? x : x - 128 * k, y + 86 * k, 128 * k, p, align === 'right');
+    // Hidden aim keeps the opponent's numbers (and gauge) off the board while they are aiming.
+    const hidden = match.phase === 'aiming' && !match.aimVisible(p.id);
+    const angleText = hidden ? '—'.padStart(6, ' ') : fmt(p.angle, 2).padStart(6, ' ');
+    const powerText = hidden ? '—'.padStart(6, ' ') : fmt(p.power, 2).padStart(6, ' ');
+    ctx.fillText(`${pad(t('hud.angle'))} ${angleText}${hidden ? '' : '°'}`, x, y + 52 * k);
+    ctx.fillText(`${pad(t('hud.power'))} ${powerText}${!hidden && match.settings.fixedPower ? t('hud.fixedSuffix') : ''}`, x, y + 68 * k);
+    if (!hidden) this.drawGauge(align === 'left' ? x : x - 128 * k, y + 86 * k, 128 * k, p, align === 'right');
     ctx.globalAlpha = 1;
   }
 

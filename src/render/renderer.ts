@@ -234,10 +234,12 @@ export class Renderer {
     ctx.lineCap = 'round';
     for (let i = scene.trails.length - 1; i >= 0; i--) {
       const t = scene.trails[i];
+      const fade = match.trailAlpha(t);
+      if (fade <= 0) continue;
       const r = rank.get(t.owner) ?? firstRank;
       rank.set(t.owner, r + 1);
       const color = match.players[t.owner].color;
-      ctx.strokeStyle = rgba(color, r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2);
+      ctx.strokeStyle = rgba(color, (r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2) * fade);
       ctx.lineWidth = r === 0 ? 1.6 : 1;
       ctx.setLineDash(r === 0 ? [] : [1.5, 4]);
       strokePolyline(ctx, t.points);
@@ -320,7 +322,8 @@ export class Renderer {
         }
       }
 
-      if (planning) {
+      const aimShown = match.aimVisible(i);
+      if (planning && aimShown) {
         if (current) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'full');
         else if (match.salvo && player.locked) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'ghost');
         else if (match.salvo && player.cpu) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'thin');
@@ -356,8 +359,11 @@ export class Renderer {
         ctx.scale((1 + swallow * 2) * shrink, (1 - swallow * 0.6) * shrink);
         ctx.rotate(-Math.atan2(hole.y - ship.y, hole.x - ship.x));
       }
-      ctx.rotate((-player.angle * Math.PI) / 180);
-      if (current) {
+      // Hidden aim: a ship that is aiming must not give its heading away — it keeps pointing at the middle.
+      const hideHeading = planning && !aimShown;
+      const heading = hideHeading ? (Math.atan2(ship.y - scene.world.height / 2, scene.world.width / 2 - ship.x) * 180) / Math.PI : player.angle;
+      ctx.rotate((-heading * Math.PI) / 180);
+      if (current && aimShown) {
         const flicker = 0.6 + 0.4 * Math.sin(this.time * 31) * Math.sin(this.time * 17);
         ctx.fillStyle = rgba(COLORS.sodium, 0.55 * flicker);
         ctx.beginPath();

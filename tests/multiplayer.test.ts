@@ -35,7 +35,7 @@ interface Client {
   match(): NetMatch;
 }
 
-const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, shotTime: 30, styleBonuses: true, neighborGrace: false, simultaneousShots: false };
+const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0 };
 
 async function startRoom(gameMode: 'classic' | 'horizon', names = ['Anna', 'Ben']): Promise<{ host: Client; guest: Client }> {
   const relay = new RoomManager();
