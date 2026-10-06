@@ -51,6 +51,7 @@ jobs:
             tag="v$major.$((minor + 1)).0"
           fi
           echo "VITE_APP_VERSION=$tag" >> "$GITHUB_ENV"
+      - run: npm ci
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
