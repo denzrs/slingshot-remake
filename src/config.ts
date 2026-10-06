@@ -46,6 +46,9 @@ export const SCORING = {
   MAX_COMBO: 12,
 } as const;
 
+/** Fading trails: a finished shot's path stays fully visible for HOLD seconds, then fades out over FADE seconds. */
+export const TRAIL_FADE = { HOLD: 1.5, FADE: 2.5 };
+
 /** "Ereignishorizont" — the gravity royale mode. */
 export const HORIZON = {
   START_RADIUS: 16,

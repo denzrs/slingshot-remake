@@ -29,6 +29,7 @@ export const rulesOf = (s: Settings): RoomRules => ({
   neighborGrace: s.neighborGrace,
   simultaneousShots: s.simultaneousShots,
   hiddenAim: s.hiddenAim,
+  fadingTrails: s.fadingTrails,
 });
 
 export function loadLobbyPrefs(defaultServer: string, settings: Settings): LobbyPrefs {

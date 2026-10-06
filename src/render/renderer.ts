@@ -234,10 +234,12 @@ export class Renderer {
     ctx.lineCap = 'round';
     for (let i = scene.trails.length - 1; i >= 0; i--) {
       const t = scene.trails[i];
+      const fade = match.trailAlpha(t);
+      if (fade <= 0) continue;
       const r = rank.get(t.owner) ?? firstRank;
       rank.set(t.owner, r + 1);
       const color = match.players[t.owner].color;
-      ctx.strokeStyle = rgba(color, r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2);
+      ctx.strokeStyle = rgba(color, (r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2) * fade);
       ctx.lineWidth = r === 0 ? 1.6 : 1;
       ctx.setLineDash(r === 0 ? [] : [1.5, 4]);
       strokePolyline(ctx, t.points);

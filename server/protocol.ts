@@ -78,6 +78,8 @@ export interface RoomRules {
   simultaneousShots: boolean;
   /** Everybody sees only their own aim, not the opponents'. */
   hiddenAim: boolean;
+  /** Flight paths of earlier shots fade away. */
+  fadingTrails: boolean;
 }
 
 export const DEFAULT_RULES: RoomRules = {
@@ -91,6 +93,7 @@ export const DEFAULT_RULES: RoomRules = {
   neighborGrace: false,
   simultaneousShots: false,
   hiddenAim: false,
+  fadingTrails: false,
 };
 
 const isIntBetween = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
@@ -98,8 +101,8 @@ const isIntBetween = (value: unknown, min: number, max: number): value is number
 /** Validates untrusted rules from a client; null when anything is off. */
 export function parseRules(value: unknown): RoomRules | null {
   if (!isRecord(value)) return null;
-  const { rounds, maxPlanets, invisiblePlanets, bounce, fixedPower, shotTime, styleBonuses, neighborGrace, simultaneousShots, hiddenAim } = value;
+  const { rounds, maxPlanets, invisiblePlanets, bounce, fixedPower, shotTime, styleBonuses, neighborGrace, simultaneousShots, hiddenAim, fadingTrails } = value;
   if (!isIntBetween(rounds, 0, 99) || !isIntBetween(maxPlanets, 1, 8) || !isIntBetween(shotTime, 5, 120)) return null;
-  if (![invisiblePlanets, bounce, fixedPower, styleBonuses, neighborGrace, simultaneousShots, hiddenAim].every((flag) => typeof flag === 'boolean')) return null;
-  return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, shotTime, styleBonuses: styleBonuses as boolean, neighborGrace: neighborGrace as boolean, simultaneousShots: simultaneousShots as boolean, hiddenAim: hiddenAim as boolean };
+  if (![invisiblePlanets, bounce, fixedPower, styleBonuses, neighborGrace, simultaneousShots, hiddenAim, fadingTrails].every((flag) => typeof flag === 'boolean')) return null;
+  return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, shotTime, styleBonuses: styleBonuses as boolean, neighborGrace: neighborGrace as boolean, simultaneousShots: simultaneousShots as boolean, hiddenAim: hiddenAim as boolean, fadingTrails: fadingTrails as boolean };
 }

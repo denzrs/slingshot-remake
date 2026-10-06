@@ -1,5 +1,5 @@
 import { planShot, type Aim, type CpuLevel } from '../ai';
-import { AIM, COLORS, FIELD, GRACE, PHYSICS, SCORING, TEAMS } from '../config';
+import { AIM, COLORS, FIELD, GRACE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
 import { normalizeAngle, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
@@ -41,6 +41,8 @@ export interface Trail {
   points: number[];
   /** Volley the shot belonged to (Event Horizon), so old ones can be dropped. */
   volley: number;
+  /** Match clock when the shot ended, for fading trails. */
+  at: number;
 }
 
 export interface KillRecord {
@@ -246,6 +248,13 @@ export abstract class Match {
     if (!this.settings.hiddenAim || this.attract) return true;
     if (this.viewer !== null) return id === this.viewer;
     return id === this.focus && !this.players[id]?.cpu;
+  }
+
+  /** How visible a finished shot's trail still is (1 → 0). Always 1 unless trails fade. */
+  trailAlpha(trail: Trail): number {
+    if (!this.settings.fadingTrails) return 1;
+    const age = this.clock - trail.at;
+    return Math.max(0, Math.min(1, (TRAIL_FADE.HOLD + TRAIL_FADE.FADE - age) / TRAIL_FADE.FADE));
   }
 
   get humanCount(): number {
@@ -476,7 +485,7 @@ export abstract class Match {
     }
     if (volley.done) {
       this.recordFlights(volley);
-      this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, volley: this.volleyNumber })));
+      this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, volley: this.volleyNumber, at: this.clock })));
       this.volley = null;
       this.afterVolley();
     }

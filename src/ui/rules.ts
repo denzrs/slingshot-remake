@@ -27,6 +27,7 @@ export function ruleRows(): RuleRow[] {
     { key: 'neighborGrace', label: t('settings.neighborGrace'), options: onOff() },
     { key: 'simultaneousShots', label: t('settings.simultaneousShots'), options: onOff(), classicOnly: true },
     { key: 'hiddenAim', label: t('settings.hiddenAim'), options: onOff() },
+    { key: 'fadingTrails', label: t('settings.fadingTrails'), options: onOff() },
   ];
 }
 

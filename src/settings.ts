@@ -29,6 +29,8 @@ export interface Settings {
   simultaneousShots: boolean;
   /** Other players' aim arrows, angles and ship headings stay hidden: you only see your own aim. */
   hiddenAim: boolean;
+  /** Flight paths of earlier shots fade away after a few seconds instead of staying on the board. */
+  fadingTrails: boolean;
   contours: boolean;
   particles: boolean;
   sound: boolean;
@@ -51,6 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   neighborGrace: false,
   simultaneousShots: false,
   hiddenAim: false,
+  fadingTrails: false,
   contours: true,
   particles: true,
   sound: true,

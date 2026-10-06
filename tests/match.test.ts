@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMatch, type Match, type VersusMode } from '../src/game';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
-import { FIELD } from '../src/config';
+import { FIELD, TRAIL_FADE } from '../src/config';
 import { cloneSettings, DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
 /** Run a CPU-only match headlessly until the first round is decided. */
@@ -435,5 +435,24 @@ describe('hidden aim', () => {
       m.viewer = 1;
       expect([0, 1, 2].map((id) => m.aimVisible(id))).toEqual([false, true, false]);
     }
+  });
+});
+
+describe('fading trails', () => {
+  const seats: Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
+  const trail = (at: number) => ({ owner: 0, points: [0, 0, 1, 1], volley: 1, at });
+
+  it('keeps trails for good when the option is off', () => {
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, seats }, { seats });
+    m.clock = 1000;
+    expect(m.trailAlpha(trail(0))).toBe(1);
+  });
+
+  it('holds a fresh trail, fades it, then drops it', () => {
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, seats, fadingTrails: true }, { seats });
+    m.clock = 10;
+    expect(m.trailAlpha(trail(10))).toBe(1);
+    expect(m.trailAlpha(trail(10 - TRAIL_FADE.HOLD - TRAIL_FADE.FADE / 2))).toBeCloseTo(0.5);
+    expect(m.trailAlpha(trail(10 - TRAIL_FADE.HOLD - TRAIL_FADE.FADE))).toBe(0);
   });
 });
