@@ -72,8 +72,8 @@ export interface RoomRules {
   shotTime: number;
   /** Classic only: trick shots multiply a hit's points. */
   styleBonuses: boolean;
-  /** Four or more ships: the first shots of a round pass through the shooter's nearest enemy. */
-  neighborGrace: boolean;
+  /** Four or more ships: the shooter's first this many shots of a round (0 = off) pass through its nearest enemy. */
+  neighborGrace: number;
   /** Classic only: everybody aims at once and all shots fly together. */
   simultaneousShots: boolean;
   /** Everybody sees only their own aim, not the opponents'. */
@@ -90,7 +90,7 @@ export const DEFAULT_RULES: RoomRules = {
   fixedPower: false,
   shotTime: 20,
   styleBonuses: false,
-  neighborGrace: false,
+  neighborGrace: 0,
   simultaneousShots: false,
   hiddenAim: false,
   fadingTrails: 0,
@@ -103,7 +103,8 @@ export function parseRules(value: unknown): RoomRules | null {
   if (!isRecord(value)) return null;
   const { rounds, maxPlanets, invisiblePlanets, bounce, fixedPower, shotTime, styleBonuses, neighborGrace, simultaneousShots, hiddenAim, fadingTrails } = value;
   if (!isIntBetween(rounds, 0, 99) || !isIntBetween(maxPlanets, 1, 8) || !isIntBetween(shotTime, 5, 120)) return null;
-  if (![invisiblePlanets, bounce, fixedPower, styleBonuses, neighborGrace, simultaneousShots, hiddenAim].every((flag) => typeof flag === 'boolean')) return null;
+  if (![invisiblePlanets, bounce, fixedPower, styleBonuses, simultaneousShots, hiddenAim].every((flag) => typeof flag === 'boolean')) return null;
+  if (typeof neighborGrace !== 'number' || ![0, 1, 2].includes(neighborGrace)) return null;
   if (typeof fadingTrails !== 'number' || ![0, 1, 2, 4].includes(fadingTrails)) return null;
-  return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, shotTime, styleBonuses: styleBonuses as boolean, neighborGrace: neighborGrace as boolean, simultaneousShots: simultaneousShots as boolean, hiddenAim: hiddenAim as boolean, fadingTrails };
+  return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, shotTime, styleBonuses: styleBonuses as boolean, neighborGrace, simultaneousShots: simultaneousShots as boolean, hiddenAim: hiddenAim as boolean, fadingTrails };
 }

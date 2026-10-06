@@ -308,11 +308,11 @@ export abstract class Match {
 
   /**
    * Neighbour grace period: the ships this player's next shot flies through. While a round is young
-   * (each ship's first GRACE.SHOTS shots) that is the nearest enemy, so nobody can just snipe their neighbour.
+   * (each ship's first `neighborGrace` shots) that is the nearest enemy, so nobody can just snipe their neighbour.
    */
   sparedFor(id: number): number[] {
     const me = this.players[id];
-    if (!this.settings.neighborGrace || !me || this.players.length < GRACE.MIN_SHIPS || me.shots >= GRACE.SHOTS) return [];
+    if (!this.settings.neighborGrace || !me || this.players.length < GRACE.MIN_SHIPS || me.shots >= this.settings.neighborGrace) return [];
     const from = this.world.ships[id];
     const friends = this.friendsOf(id);
     let nearest = -1;

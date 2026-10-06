@@ -1,4 +1,4 @@
-import { TRAIL_FADE } from '../config';
+import { GRACE, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
 import type { RoomRules } from '../net';
 
@@ -25,7 +25,7 @@ export function ruleRows(): RuleRow[] {
     { key: 'fixedPower', label: t('settings.fixedPower'), options: onOff() },
     { key: 'shotTime', label: t('settings.shotTime'), options: [10, 20, 30, 60].map((n) => ({ value: n, label: t('settings.seconds', { n }) })) },
     { key: 'styleBonuses', label: t('settings.styleBonuses'), options: onOff(), classicOnly: true },
-    { key: 'neighborGrace', label: t('settings.neighborGrace'), options: onOff() },
+    { key: 'neighborGrace', label: t('settings.neighborGrace'), options: GRACE.OPTIONS.map((n) => ({ value: n, label: n ? t(n === 1 ? 'settings.oneRound' : 'settings.nRounds', { n }) : t('common.off') })) },
     { key: 'simultaneousShots', label: t('settings.simultaneousShots'), options: onOff(), classicOnly: true },
     { key: 'hiddenAim', label: t('settings.hiddenAim'), options: onOff() },
     { key: 'fadingTrails', label: t('settings.fadingTrails'), options: TRAIL_FADE.OPTIONS.map((n) => ({ value: n, label: n ? t('settings.seconds', { n }) : t('common.off') })) },
