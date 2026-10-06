@@ -119,6 +119,8 @@ export class Shot {
     readonly power: number,
     private readonly rules: ShotRules,
     trackStyle = false,
+    /** Ships this shot flies straight through (the neighbour grace period). */
+    private readonly spare: readonly number[] = [],
   ) {
     const ship = world.ships[shooter];
     const dir = aimDirection(angle);
@@ -184,7 +186,7 @@ export class Shot {
     const r2 = PHYSICS.SHIP_RADIUS * PHYSICS.SHIP_RADIUS;
     for (let i = 0; i < ships.length; i++) {
       const s = ships[i];
-      if (!s.alive) continue;
+      if (!s.alive || this.spare.includes(i)) continue;
       const dx = s.x - this.x;
       const dy = s.y - this.y;
       if (dx * dx + dy * dy < r2) return this.finish({ kind: 'ship', ship: i });

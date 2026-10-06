@@ -1,5 +1,5 @@
 import { planShot, type Aim, type CpuLevel } from '../ai';
-import { AIM, COLORS, FIELD, PHYSICS, SCORING, TEAMS } from '../config';
+import { AIM, COLORS, FIELD, GRACE, PHYSICS, SCORING, TEAMS } from '../config';
 import { t } from '../i18n';
 import { normalizeAngle, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
@@ -279,6 +279,29 @@ export abstract class Match {
     }
     const leader = this.leader;
     return leader === null ? null : { name: this.players[leader].name, color: this.players[leader].color };
+  }
+
+  /**
+   * Neighbour grace period: the ships this player's next shot flies through. While a round is young
+   * (each ship's first GRACE.SHOTS shots) that is the nearest enemy, so nobody can just snipe their neighbour.
+   */
+  sparedFor(id: number): number[] {
+    const me = this.players[id];
+    if (!this.settings.neighborGrace || !me || this.players.length < GRACE.MIN_SHIPS || me.shots >= GRACE.SHOTS) return [];
+    const from = this.world.ships[id];
+    const friends = this.friendsOf(id);
+    let nearest = -1;
+    let best = Infinity;
+    for (const p of this.players) {
+      const ship = this.world.ships[p.id];
+      if (p.id === id || !p.alive || friends.includes(p.id)) continue;
+      const d = Math.hypot(ship.x - from.x, ship.y - from.y);
+      if (d < best) {
+        best = d;
+        nearest = p.id;
+      }
+    }
+    return nearest < 0 ? [] : [nearest];
   }
 
   /** Teammates of a player (empty in free for all). */
@@ -623,7 +646,8 @@ export abstract class Match {
           rng: this.rng,
           effort,
           lookahead,
-          friends: this.friendsOf(id),
+          // Ships the shot would fly through anyway are no targets either: steer clear like around a teammate.
+          friends: [...this.friendsOf(id), ...this.sparedFor(id)],
         }),
         target: null,
         settle: 0,

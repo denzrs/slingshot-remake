@@ -107,3 +107,11 @@ export const FONTS = {
   body: '"B612", system-ui, sans-serif',
   mono: '"B612 Mono", ui-monospace, monospace',
 } as const;
+
+/** Neighbour grace period: in a big game, nobody may snipe their nearest enemy while the round is young. */
+export const GRACE = {
+  /** Fewer ships than this and the nearest enemy is no real shortcut, so nothing is spared. */
+  MIN_SHIPS: 4,
+  /** Each ship's first this many shots of a round pass through its nearest enemy. */
+  SHOTS: 2,
+} as const;

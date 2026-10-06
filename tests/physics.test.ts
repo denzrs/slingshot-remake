@@ -52,6 +52,14 @@ describe('shot physics', () => {
     expect(simulateShot(world, 0, 0, 50, rules).end).toEqual({ kind: 'ship', ship: 2 });
   });
 
+  it('flies straight through the ships it is told to spare', () => {
+    const world = emptyWorld([[100, 400], [600, 400], [1180, 400]]);
+    const shot = new Shot(world, 0, 0, 50, rules, false, [1]);
+    let end = shot.step();
+    while (!end) end = shot.step();
+    expect(end).toEqual({ kind: 'ship', ship: 2 });
+  });
+
   it('swallows shots that cross the event horizon', () => {
     const world = emptyWorld();
     world.hole = { x: 640, y: 400, radius: HORIZON.START_RADIUS, mass: HORIZON.START_MASS };
@@ -89,6 +97,12 @@ describe('volleys', () => {
     while (!volley.done) volley.step();
     expect(volley.shots.map((s) => s.shot.end?.kind)).toEqual(['clash', 'clash']);
     expect(world.ships.every((s) => s.alive)).toBe(true);
+  });
+
+  it('keeps who is spared in its snapshot, so guests and killcams fly the same shots', () => {
+    const world = emptyWorld([[100, 400], [600, 400], [1180, 400]]);
+    const volley = new Volley(world, [{ player: 0, angle: 0, power: 50, spare: [1] }], rules, false);
+    expect(volley.snapshot().aims).toEqual([{ player: 0, angle: 0, power: 50, spare: [1] }]);
   });
 
   it('replays a volley exactly from a snapshot (killcam)', () => {
