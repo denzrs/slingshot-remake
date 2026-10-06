@@ -318,7 +318,7 @@ export class HorizonMatch extends Match {
 
   private launchVolley(): void {
     this.volleySnapshot = cloneWorld(this.world);
-    this.aims = this.alive.map((p) => ({ player: p.id, angle: p.angle, power: p.power }));
+    this.aims = this.alive.map((p) => ({ player: p.id, angle: p.angle, power: p.power, spare: this.sparedFor(p.id) }));
     for (const p of this.alive) p.shots++;
     this.volleyKills = [];
     this.notice = { text: t('notice.volley'), color: COLORS.bone, at: this.clock };

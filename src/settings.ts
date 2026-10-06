@@ -23,6 +23,8 @@ export interface Settings {
   shotTime: number;
   /** Classic only: swing-bys, grazes and the like multiply a hit's points, as they always do in Event Horizon. */
   styleBonuses: boolean;
+  /** With four or more ships, each one's first shots of a round pass through its nearest enemy. */
+  neighborGrace: boolean;
   contours: boolean;
   particles: boolean;
   sound: boolean;
@@ -42,6 +44,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fixedPower: false,
   shotTime: 20,
   styleBonuses: false,
+  neighborGrace: false,
   contours: true,
   particles: true,
   sound: true,

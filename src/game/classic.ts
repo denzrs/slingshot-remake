@@ -146,9 +146,10 @@ export class ClassicMatch extends Match {
 
   private fire(): void {
     const p = this.players[this.current];
+    const spare = this.sparedFor(p.id);
     p.shots++;
     // Trick shots are always tracked (the scorecard counts them); they only pay points when the option is on.
-    this.launch([{ player: p.id, angle: p.angle, power: p.power }], true);
+    this.launch([{ player: p.id, angle: p.angle, power: p.power, spare }], true);
   }
 
   protected updatePhase(dt: number): void {
