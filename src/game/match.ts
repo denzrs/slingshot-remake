@@ -1,5 +1,5 @@
 import { planShot, type Aim, type CpuLevel } from '../ai';
-import { AIM, COLORS, FIELD, GRACE, PHYSICS, SCORING, TEAMS } from '../config';
+import { AIM, COLORS, FIELD, GRACE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
 import { normalizeAngle, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
@@ -41,6 +41,8 @@ export interface Trail {
   points: number[];
   /** Volley the shot belonged to (Event Horizon), so old ones can be dropped. */
   volley: number;
+  /** Match clock when the shot ended, for fading trails. */
+  at: number;
 }
 
 export interface KillRecord {
@@ -238,6 +240,24 @@ export abstract class Match {
     return this.simultaneous && this.viewer !== null && this.canAim(this.viewer) ? this.viewer : this.current;
   }
 
+  /**
+   * Whether this player's aim (arrow, angle, ship heading) may be drawn. With hidden aim only the
+   * person at the screen sees it: their own seat online, whoever is on turn at a shared keyboard.
+   */
+  aimVisible(id: number): boolean {
+    if (!this.settings.hiddenAim || this.attract) return true;
+    if (this.viewer !== null) return id === this.viewer;
+    return id === this.focus && !this.players[id]?.cpu;
+  }
+
+  /** How visible a finished shot's trail still is (1 → 0). Always 1 unless trails fade. */
+  trailAlpha(trail: Trail): number {
+    const life = this.settings.fadingTrails;
+    if (!life) return 1;
+    const hold = life * TRAIL_FADE.HOLD;
+    return Math.max(0, Math.min(1, (life - (this.clock - trail.at)) / (life - hold)));
+  }
+
   get humanCount(): number {
     return this.players.filter((p) => !p.cpu).length;
   }
@@ -288,11 +308,11 @@ export abstract class Match {
 
   /**
    * Neighbour grace period: the ships this player's next shot flies through. While a round is young
-   * (each ship's first GRACE.SHOTS shots) that is the nearest enemy, so nobody can just snipe their neighbour.
+   * (each ship's first `neighborGrace` shots) that is the nearest enemy, so nobody can just snipe their neighbour.
    */
   sparedFor(id: number): number[] {
     const me = this.players[id];
-    if (!this.settings.neighborGrace || !me || this.players.length < GRACE.MIN_SHIPS || me.shots >= GRACE.SHOTS) return [];
+    if (!this.settings.neighborGrace || !me || this.players.length < GRACE.MIN_SHIPS || me.shots >= this.settings.neighborGrace) return [];
     const from = this.world.ships[id];
     const friends = this.friendsOf(id);
     let nearest = -1;
@@ -466,7 +486,7 @@ export abstract class Match {
     }
     if (volley.done) {
       this.recordFlights(volley);
-      this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, volley: this.volleyNumber })));
+      this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, volley: this.volleyNumber, at: this.clock })));
       this.volley = null;
       this.afterVolley();
     }

@@ -46,6 +46,9 @@ export const SCORING = {
   MAX_COMBO: 12,
 } as const;
 
+/** Fading trails: the choices for how long a finished shot's path lasts in seconds (0 = it stays), and the share of that time it stays fully visible before fading. */
+export const TRAIL_FADE = { OPTIONS: [0, 4, 2, 1], HOLD: 0.4 };
+
 /** "Ereignishorizont" — the gravity royale mode. */
 export const HORIZON = {
   START_RADIUS: 16,
@@ -112,6 +115,6 @@ export const FONTS = {
 export const GRACE = {
   /** Fewer ships than this and the nearest enemy is no real shortcut, so nothing is spared. */
   MIN_SHIPS: 4,
-  /** Each ship's first this many shots of a round pass through its nearest enemy. */
-  SHOTS: 2,
+  /** The choices for how many of its first shots of a round each ship's pass through its nearest enemy (0 = off). */
+  OPTIONS: [0, 2, 1] as readonly number[],
 } as const;

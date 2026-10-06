@@ -1,3 +1,4 @@
+import { GRACE, TRAIL_FADE } from './config';
 import type { NetworkGameMode, RoomMode, RoomRules } from './net';
 import type { Settings } from './settings';
 
@@ -28,6 +29,8 @@ export const rulesOf = (s: Settings): RoomRules => ({
   styleBonuses: s.styleBonuses,
   neighborGrace: s.neighborGrace,
   simultaneousShots: s.simultaneousShots,
+  hiddenAim: s.hiddenAim,
+  fadingTrails: s.fadingTrails,
 });
 
 export function loadLobbyPrefs(defaultServer: string, settings: Settings): LobbyPrefs {
@@ -44,7 +47,13 @@ export function loadLobbyPrefs(defaultServer: string, settings: Settings): Lobby
       gameMode: saved.gameMode === 'horizon' ? 'horizon' : 'classic',
       matchType: saved.matchType === 'team' ? 'team' : 'ffa',
       capacity: Number.isInteger(saved.capacity) && saved.capacity! >= 2 && saved.capacity! <= 6 ? saved.capacity! : fresh.capacity,
-      rules: { ...fresh.rules, ...saved.rules },
+      rules: {
+        ...fresh.rules,
+        ...saved.rules,
+        fadingTrails: TRAIL_FADE.OPTIONS.includes(saved.rules?.fadingTrails as number) ? saved.rules!.fadingTrails : fresh.rules.fadingTrails,
+        // It used to be a plain on/off switch, "on" meaning two shots.
+        neighborGrace: (saved.rules?.neighborGrace as unknown) === true ? 2 : GRACE.OPTIONS.includes(saved.rules?.neighborGrace as number) ? saved.rules!.neighborGrace : fresh.rules.neighborGrace,
+      },
     };
   } catch {
     // Storage blocked or corrupt — start from scratch.

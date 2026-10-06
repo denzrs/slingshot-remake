@@ -1,5 +1,5 @@
 import type { CpuLevel } from './ai';
-import { MAX_PLAYERS } from './config';
+import { GRACE, MAX_PLAYERS, TRAIL_FADE } from './config';
 import { detectLang, isLang, type Lang } from './i18n';
 
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
@@ -23,10 +23,14 @@ export interface Settings {
   shotTime: number;
   /** Classic only: swing-bys, grazes and the like multiply a hit's points, as they always do in Event Horizon. */
   styleBonuses: boolean;
-  /** With four or more ships, each one's first shots of a round pass through its nearest enemy. */
-  neighborGrace: boolean;
+  /** With four or more ships, each one's first this many shots of a round (0 = off) pass through its nearest enemy. */
+  neighborGrace: number;
   /** Classic only: everybody aims, then all shots fly at once — as in Event Horizon — instead of one shot per turn. */
   simultaneousShots: boolean;
+  /** Other players' aim arrows, angles and ship headings stay hidden: you only see your own aim. */
+  hiddenAim: boolean;
+  /** Seconds a finished shot's flight path stays on the board before it has faded away; 0 = it stays. */
+  fadingTrails: number;
   contours: boolean;
   particles: boolean;
   sound: boolean;
@@ -46,8 +50,10 @@ export const DEFAULT_SETTINGS: Settings = {
   fixedPower: false,
   shotTime: 20,
   styleBonuses: false,
-  neighborGrace: false,
+  neighborGrace: 0,
   simultaneousShots: false,
+  hiddenAim: false,
+  fadingTrails: 0,
   contours: true,
   particles: true,
   sound: true,
@@ -73,6 +79,10 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
+      if (!TRAIL_FADE.OPTIONS.includes(s.fadingTrails)) s.fadingTrails = 0;
+      // It used to be a plain on/off switch, "on" meaning two shots.
+      if ((s.neighborGrace as unknown) === true) s.neighborGrace = 2;
+      if (!GRACE.OPTIONS.includes(s.neighborGrace)) s.neighborGrace = 0;
       else if (parsed.opponent === 'cpu') s.seats[1] = parsed.cpuLevel ?? 'medium';
       s.language = isLang(parsed.language) ? parsed.language : detectLang();
       delete (s as Settings & LegacySettings).opponent;
