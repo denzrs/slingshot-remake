@@ -241,3 +241,43 @@ describe('online matches', () => {
     expect(m.players.map((p) => p.team)).toEqual([0, 1]);
   });
 });
+
+describe('skipping the killcam', () => {
+  /** A match of four people at the table, run until the first kill starts a killcam. */
+  function inKillcam(humans: number): HorizonMatch {
+    const seats: Seat[] = [...Array(humans).fill('human'), ...Array(6 - humans).fill('off')];
+    const m = createMatch('horizon', { ...DEFAULT_SETTINGS, rounds: 1, seats }, { seats, simultaneous: true }) as HorizonMatch;
+    m.world.planets = [];
+    Object.assign(m.world.ships[0], { x: 100, y: 400 });
+    Object.assign(m.world.ships[1], { x: 300, y: 400 });
+    for (let t = 0; t < 60 && m.phase !== 'aiming'; t += 1 / 30) m.update(1 / 30);
+    m.setPlayerAim(0, 0, 30);
+    m.commitPlayer(0);
+    for (let id = 1; id < humans; id++) {
+      m.setPlayerAim(id, 90, 30);
+      m.commitPlayer(id);
+    }
+    for (let t = 0; t < 60 && m.phase !== 'killcam'; t += 1 / 30) m.update(1 / 30);
+    expect(m.phase).toBe('killcam');
+    m.update(0.5);
+    return m;
+  }
+
+  it('takes at least half of the people at the table', () => {
+    const m = inKillcam(4);
+    expect(m.killcamInfo).toMatchObject({ votes: 0, needed: 2 });
+    m.voteSkip(0);
+    m.voteSkip(0); // the same person voting twice counts once
+    expect(m.phase).toBe('killcam');
+    expect(m.killcamInfo!.votes).toBe(1);
+    m.voteSkip(2);
+    expect(m.phase).not.toBe('killcam');
+  });
+
+  it('is decided by one vote between two', () => {
+    const m = inKillcam(2);
+    expect(m.killcamInfo!.needed).toBe(1);
+    m.voteSkip(1);
+    expect(m.phase).not.toBe('killcam');
+  });
+});

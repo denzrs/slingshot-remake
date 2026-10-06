@@ -222,6 +222,7 @@ const app: App = {
   rematch() {
     if (!match) return app.start(lastMode);
     if (online()) {
+      if (!match.canAdvance) return;
       advanceMatch();
       menu.close();
       return;
@@ -268,9 +269,14 @@ function stepFor(e: KeyboardEvent): readonly [number, number] {
   return AIM.STEPS.normal;
 }
 
+/** A focused text field gets every key, so typing a name can't toggle full screen. */
+function isTyping(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'));
+}
+
 window.addEventListener('keydown', (e) => {
   sound.unlock();
-  if (e.code === 'KeyF' && !e.metaKey && !e.ctrlKey) {
+  if (e.code === 'KeyF' && !e.metaKey && !e.ctrlKey && !isTyping(e.target)) {
     app.toggleFullscreen();
     return;
   }

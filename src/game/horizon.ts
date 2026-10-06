@@ -54,6 +54,7 @@ export interface HorizonSnapshot {
     camera: Camera;
     returnTo: Phase | null;
     recording: boolean;
+    skipVotes: number[];
   };
   lastClip: KillcamClip | null;
 }
@@ -68,6 +69,8 @@ interface KillcamState {
   /** Phase to return to afterwards (replays started from the round summary); null = continue the volley. */
   returnTo: Phase | null;
   recording: boolean;
+  /** Online: the players who voted to skip. */
+  skipVotes: number[];
 }
 
 interface Drift {
@@ -127,7 +130,7 @@ export class HorizonMatch extends Match {
       killcam: this.killcam ? {
         replay: this.killcam.replay.snapshot(), simClock: this.killcam.simClock,
         hold: this.killcam.hold, camera: this.killcam.camera, returnTo: this.killcam.returnTo,
-        recording: this.killcam.recording,
+        recording: this.killcam.recording, skipVotes: [...this.killcam.skipVotes],
       } : null,
       lastClip: this.lastClip,
     };
@@ -156,7 +159,7 @@ export class HorizonMatch extends Match {
       replay.restore(s.killcam.replay);
       this.killcam = {
         clip, replay, simClock: s.killcam.simClock, hold: s.killcam.hold,
-        camera: s.killcam.camera, returnTo: s.killcam.returnTo, recording: s.killcam.recording,
+        camera: s.killcam.camera, returnTo: s.killcam.returnTo, recording: s.killcam.recording, skipVotes: [...s.killcam.skipVotes],
       };
     }
     this.restarted();
@@ -361,16 +364,28 @@ export class HorizonMatch extends Match {
     return true;
   }
 
-  get killcamInfo(): { clip: KillcamClip; recording: boolean; slow: boolean } | null {
+  get killcamInfo(): { clip: KillcamClip; recording: boolean; slow: boolean; votes: number; needed: number } | null {
     const k = this.killcam;
     if (!k) return null;
-    return { clip: k.clip, recording: k.recording, slow: this.killcamRate(k) < 0.5 };
+    return { clip: k.clip, recording: k.recording, slow: this.killcamRate(k) < 0.5, votes: k.skipVotes.length, needed: this.skipsNeeded };
+  }
+
+  /** At least half of the people at the table have to want the killcam gone. */
+  private get skipsNeeded(): number {
+    return Math.ceil(this.players.filter((p) => !p.cpu).length / 2);
+  }
+
+  voteSkip(player: number): void {
+    const k = this.killcam;
+    if (!k || k.recording || this.phaseTime <= 0.3 || k.skipVotes.includes(player)) return;
+    k.skipVotes.push(player);
+    if (k.skipVotes.length >= this.skipsNeeded) this.endKillcam();
   }
 
   private startKillcam(clip: KillcamClip, returnTo: Phase | null, recording: boolean): void {
     const replay = new Volley(cloneWorld(clip.snapshot), clip.aims, this.rules, true);
     const start = replay.shots[clip.focus].shot;
-    this.killcam = { clip, replay, simClock: 0, hold: 0, camera: { x: start.x, y: start.y, zoom: 1.2 }, returnTo, recording };
+    this.killcam = { clip, replay, simClock: 0, hold: 0, camera: { x: start.x, y: start.y, zoom: 1.2 }, returnTo, recording, skipVotes: [] };
     this.setPhase('killcam');
     this.emit({ type: 'killcam', active: true, recording });
   }
