@@ -32,11 +32,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need all tags to work out the version
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Determine version
+        # Mirrors release.yml: the tag on HEAD if the release job got there first,
+        # otherwise the next minor after the latest tag (what the release job will create).
+        run: |
+          semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          tag=$(git tag --points-at HEAD | grep -E "$semver" | head -n 1 || true)
+          if [ -z "$tag" ]; then
+            latest=$(git tag -l 'v*' --sort=-v:refname | grep -E "$semver" | head -n 1 || true)
+            latest=${latest:-v$(node -p "require('./package.json').version")}
+            IFS=. read -r major minor _ <<< "${latest#v}"
+            tag="v$major.$((minor + 1)).0"
+          fi
+          echo "VITE_APP_VERSION=$tag" >> "$GITHUB_ENV"
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
