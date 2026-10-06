@@ -1,5 +1,5 @@
 import type { CpuLevel } from './ai';
-import { MAX_PLAYERS } from './config';
+import { MAX_PLAYERS, TRAIL_FADE } from './config';
 import { detectLang, isLang, type Lang } from './i18n';
 
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
@@ -29,8 +29,8 @@ export interface Settings {
   simultaneousShots: boolean;
   /** Other players' aim arrows, angles and ship headings stay hidden: you only see your own aim. */
   hiddenAim: boolean;
-  /** Flight paths of earlier shots fade away after a few seconds instead of staying on the board. */
-  fadingTrails: boolean;
+  /** Seconds a finished shot's flight path stays on the board before it has faded away; 0 = it stays. */
+  fadingTrails: number;
   contours: boolean;
   particles: boolean;
   sound: boolean;
@@ -53,7 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   neighborGrace: false,
   simultaneousShots: false,
   hiddenAim: false,
-  fadingTrails: false,
+  fadingTrails: 0,
   contours: true,
   particles: true,
   sound: true,
@@ -79,6 +79,7 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
+      if (!TRAIL_FADE.OPTIONS.includes(s.fadingTrails)) s.fadingTrails = 0;
       else if (parsed.opponent === 'cpu') s.seats[1] = parsed.cpuLevel ?? 'medium';
       s.language = isLang(parsed.language) ? parsed.language : detectLang();
       delete (s as Settings & LegacySettings).opponent;

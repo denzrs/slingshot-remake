@@ -252,9 +252,10 @@ export abstract class Match {
 
   /** How visible a finished shot's trail still is (1 → 0). Always 1 unless trails fade. */
   trailAlpha(trail: Trail): number {
-    if (!this.settings.fadingTrails) return 1;
-    const age = this.clock - trail.at;
-    return Math.max(0, Math.min(1, (TRAIL_FADE.HOLD + TRAIL_FADE.FADE - age) / TRAIL_FADE.FADE));
+    const life = this.settings.fadingTrails;
+    if (!life) return 1;
+    const hold = life * TRAIL_FADE.HOLD;
+    return Math.max(0, Math.min(1, (life - (this.clock - trail.at)) / (life - hold)));
   }
 
   get humanCount(): number {

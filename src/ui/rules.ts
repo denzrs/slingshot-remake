@@ -1,3 +1,4 @@
+import { TRAIL_FADE } from '../config';
 import { t } from '../i18n';
 import type { RoomRules } from '../net';
 
@@ -27,7 +28,7 @@ export function ruleRows(): RuleRow[] {
     { key: 'neighborGrace', label: t('settings.neighborGrace'), options: onOff() },
     { key: 'simultaneousShots', label: t('settings.simultaneousShots'), options: onOff(), classicOnly: true },
     { key: 'hiddenAim', label: t('settings.hiddenAim'), options: onOff() },
-    { key: 'fadingTrails', label: t('settings.fadingTrails'), options: onOff() },
+    { key: 'fadingTrails', label: t('settings.fadingTrails'), options: TRAIL_FADE.OPTIONS.map((n) => ({ value: n, label: n ? t('settings.seconds', { n }) : t('common.off') })) },
   ];
 }
 

@@ -449,10 +449,19 @@ describe('fading trails', () => {
   });
 
   it('holds a fresh trail, fades it, then drops it', () => {
-    const m = createMatch('classic', { ...DEFAULT_SETTINGS, seats, fadingTrails: true }, { seats });
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, seats, fadingTrails: 4 }, { seats });
     m.clock = 10;
     expect(m.trailAlpha(trail(10))).toBe(1);
-    expect(m.trailAlpha(trail(10 - TRAIL_FADE.HOLD - TRAIL_FADE.FADE / 2))).toBeCloseTo(0.5);
-    expect(m.trailAlpha(trail(10 - TRAIL_FADE.HOLD - TRAIL_FADE.FADE))).toBe(0);
+    // 4 s: 1.6 s fully visible, then 2.4 s of fading.
+    expect(m.trailAlpha(trail(10 - 4 * TRAIL_FADE.HOLD))).toBe(1);
+    expect(m.trailAlpha(trail(10 - 4 * TRAIL_FADE.HOLD - 1.2))).toBeCloseTo(0.5);
+    expect(m.trailAlpha(trail(10 - 4))).toBe(0);
+  });
+
+  it('runs faster with a shorter lifetime', () => {
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, seats, fadingTrails: 1 }, { seats });
+    m.clock = 10;
+    expect(m.trailAlpha(trail(9))).toBe(0);
+    expect(m.trailAlpha(trail(9.5))).toBeGreaterThan(0);
   });
 });

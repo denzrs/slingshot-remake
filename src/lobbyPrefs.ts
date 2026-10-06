@@ -1,3 +1,4 @@
+import { TRAIL_FADE } from './config';
 import type { NetworkGameMode, RoomMode, RoomRules } from './net';
 import type { Settings } from './settings';
 
@@ -46,7 +47,7 @@ export function loadLobbyPrefs(defaultServer: string, settings: Settings): Lobby
       gameMode: saved.gameMode === 'horizon' ? 'horizon' : 'classic',
       matchType: saved.matchType === 'team' ? 'team' : 'ffa',
       capacity: Number.isInteger(saved.capacity) && saved.capacity! >= 2 && saved.capacity! <= 6 ? saved.capacity! : fresh.capacity,
-      rules: { ...fresh.rules, ...saved.rules },
+      rules: { ...fresh.rules, ...saved.rules, fadingTrails: TRAIL_FADE.OPTIONS.includes(saved.rules?.fadingTrails as number) ? saved.rules!.fadingTrails : fresh.rules.fadingTrails },
     };
   } catch {
     // Storage blocked or corrupt — start from scratch.
