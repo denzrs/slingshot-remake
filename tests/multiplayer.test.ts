@@ -136,6 +136,32 @@ describe('online games', () => {
     }
   });
 
+  it('lets a guest vote to skip the killcam', async () => {
+    const { host, guest } = await startRoom('horizon');
+    const hm = host.match();
+    hm.world.planets = [];
+    Object.assign(hm.world.ships[0], { x: 100, y: 400 });
+    Object.assign(hm.world.ships[1], { x: 300, y: 400 });
+    for (let i = 0; i < 5; i++) frame(host, guest);
+    for (let i = 0; i < 60 * 60 && hm.phase !== 'killcam'; i++) {
+      if (hm.phase === 'aiming') {
+        host.session.input({ kind: 'aim', angle: 0, power: 30 });
+        host.session.input({ kind: 'fire' });
+        guest.session.input({ kind: 'aim', angle: 90, power: 30 });
+        guest.session.input({ kind: 'fire' });
+      }
+      frame(host, guest);
+    }
+    expect(hm.phase).toBe('killcam');
+    for (let i = 0; i < 30; i++) frame(host, guest);
+    expect(guest.match().phase).toBe('killcam');
+
+    guest.session.advance();
+    for (let i = 0; i < 5; i++) frame(host, guest);
+    expect(hm.phase).not.toBe('killcam');
+    expect(guest.match().phase).not.toBe('killcam');
+  });
+
   describe('in Event Horizon', () => {
     it('let everybody aim at once, sharing one clock', async () => {
       const { host, guest } = await startRoom('horizon');
@@ -234,7 +260,7 @@ describe('the scorecard online', () => {
       for (let i = 0; i < 5; i++) frame(host, guest);
       // Everybody shoots at the other one whenever they may aim (Classic: in turn; Horizon: all at once).
       for (let i = 0; i < 60 * 60 && hm.phase !== 'roundOver'; i++) {
-        if (hm.phase === 'killcam') hm.advance();
+        if (hm.phase === 'killcam') hm.voteSkip(0);
         if (hm.phase === 'aiming') {
           host.session.input({ kind: 'aim', angle: 0, power: 55 });
           guest.session.input({ kind: 'aim', angle: 180, power: 55 });

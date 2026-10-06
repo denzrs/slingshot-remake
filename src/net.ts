@@ -11,7 +11,9 @@ export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlane
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
   | { kind: 'aim'; angle: number; power: number }
-  | { kind: 'fire' };
+  | { kind: 'fire' }
+  /** A vote to skip the killcam; it ends once half of the players want that. */
+  | { kind: 'skip' };
 
 export type ClientMessage =
   | { type: 'lobby' }

@@ -160,9 +160,11 @@ export class MultiplayerSession {
     this.send({ type: 'input', input });
   }
 
-  /** Next round, skip the killcam, rematch: the host's call alone, everybody else follows its state. */
+  /** Next round or rematch: the host's call alone, everybody else follows its state. The killcam is put to a vote. */
   advance(): void {
-    if (this.isHost) this.match?.advance();
+    if (!this.match) return;
+    if (this.match.phase === 'killcam') this.input({ kind: 'skip' });
+    else if (this.isHost) this.match.advance();
   }
 
   /** Call every frame while an online match is on screen. */
@@ -253,7 +255,8 @@ export class MultiplayerSession {
   private applyInput(match: NetMatch, id: number, input: ClientInput): void {
     if (input.kind === 'adjust') match.adjustPlayer(id, input.dAngle, input.dPower);
     else if (input.kind === 'aim') match.setPlayerAim(id, input.angle, input.power);
-    else match.commitPlayer(id);
+    else if (input.kind === 'fire') match.commitPlayer(id);
+    else match.voteSkip(id);
   }
 
   private applyState(message: Extract<ServerMessage, { type: 'state' }>): void {

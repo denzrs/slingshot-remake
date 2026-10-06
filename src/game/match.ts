@@ -383,6 +383,9 @@ export abstract class Match {
     this.settings.contours = settings.contours;
   }
 
+  /** Online: one player's vote to skip the killcam. Only Event Horizon has one. */
+  voteSkip(_player: number): void {}
+
   /** Space / "continue": next round, final screen, or a new match. */
   advance(): void {
     if (this.phaseTime < 0.6) return;

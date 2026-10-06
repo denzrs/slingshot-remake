@@ -46,7 +46,7 @@ export class Hud {
 
     const killcam = match instanceof HorizonMatch ? match.killcamInfo : null;
     if (killcam) {
-      this.drawKillcam(match, killcam.clip.record, killcam.recording, killcam.slow, opts);
+      this.drawKillcam(match, killcam, opts);
       return;
     }
 
@@ -564,7 +564,9 @@ export class Hud {
 
   // ————————————————————————————— Killcam —————————————————————————————
 
-  private drawKillcam(match: Match, record: KillRecord, recording: boolean, slow: boolean, opts: DrawOptions): void {
+  private drawKillcam(match: Match, info: NonNullable<HorizonMatch['killcamInfo']>, opts: DrawOptions): void {
+    const { recording, slow } = info;
+    const record = info.clip.record;
     const { ctx, k, field } = this;
     const bar = Math.max(34 * k, field.h * 0.09);
     ctx.fillStyle = rgba(COLORS.plate, 0.88);
@@ -596,8 +598,10 @@ export class Hud {
     const width = segments.reduce((s, [t]) => s + ctx.measureText(t).width, 0);
     this.drawSegmentsRight(segments, field.x + field.w / 2 + width / 2, field.y + field.h - bar / 2 - 6 * k);
 
-    if (!recording && !opts.touch && match.canAdvance) {
-      this.drawKeyRow([[t('common.space'), t('hud.skip')], ['C', t('hud.saveClip')]], field.x + field.w / 2, field.y + field.h - bar - 18 * k, this.k * 0.9);
+    if (!recording && !opts.touch) {
+      // Online, skipping is a vote: show how many are in favour.
+      const skip = match.viewer !== null && info ? `${t('hud.skip')} ${info.votes}/${info.needed}` : t('hud.skip');
+      this.drawKeyRow([[t('common.space'), skip], ['C', t('hud.saveClip')]], field.x + field.w / 2, field.y + field.h - bar - 18 * k, this.k * 0.9);
     }
   }
 
