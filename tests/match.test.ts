@@ -336,3 +336,77 @@ describe('neighbour grace period', () => {
     expect(m.lastKill).toMatchObject({ killer: 0, victim: 1 });
   });
 });
+
+describe('classic with simultaneous shots', () => {
+  const seats = (humans: number, cpu = 0): Seat[] => [...Array(humans).fill('human'), ...Array(cpu).fill('medium'), ...Array(6 - humans - cpu).fill('off')];
+  function duel(): Match {
+    const s = seats(2);
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats: s, simultaneousShots: true }, { seats: s });
+    m.world.planets = [];
+    Object.assign(m.world.ships[0], { x: 100, y: 400 });
+    Object.assign(m.world.ships[1], { x: 1180, y: 400 });
+    return m;
+  }
+  const run = (m: Match, until: (m: Match) => boolean, seconds = 40) => {
+    for (let t = 0; t < seconds && !until(m); t += 1 / 30) m.update(1 / 30);
+  };
+
+  it('has everybody aim first and fires all shots together', () => {
+    const m = duel();
+    expect(m.salvo).toBe(true);
+    // At a shared keyboard the humans lock in one after another.
+    const first = m.current;
+    m.setAim(0, 20);
+    m.commit();
+    expect(m.phase).toBe('aiming');
+    expect(m.current).not.toBe(first);
+    m.setAim(180, 20);
+    m.commit();
+    run(m, (x) => x.phase === 'flying');
+    expect(m.phase).toBe('flying');
+    expect(m.volley!.shots.map((s) => s.owner).sort()).toEqual([0, 1]);
+  });
+
+  it('can take every ship down in the same volley', () => {
+    // A hits B, B hits C, C hits A: three different lines, so no shots annihilate each other.
+    const s = seats(3);
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats: s, simultaneousShots: true }, { seats: s });
+    m.world.planets = [];
+    [[200, 200], [1000, 200], [600, 650]].forEach(([x, y], i) => Object.assign(m.world.ships[i], { x, y }));
+    for (let i = 0; i < 3; i++) {
+      const from = m.world.ships[m.current];
+      const to = m.world.ships[(m.current + 1) % 3];
+      m.setAim((Math.atan2(-(to.y - from.y), to.x - from.x) * 180) / Math.PI, 50);
+      m.commit();
+    }
+    run(m, (x) => x.phase === 'roundOver', 60);
+    expect(m.phase).toBe('roundOver');
+    expect(m.players.every((p) => !p.alive)).toBe(true);
+    expect(m.summary).toMatchObject({ title: 'noneLeft', survivor: null });
+  });
+
+  it('lets CPUs aim in parallel and finishes a whole round', () => {
+    const s = seats(0, 4);
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats: s, simultaneousShots: true }, { seats: s });
+    run(m, (x) => x.phase === 'roundOver', 600);
+    expect(m.phase).toBe('roundOver');
+    expect(m.summary).not.toBeNull();
+  });
+
+  it('is off by default: one shot per turn', () => {
+    const s = seats(2);
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats: s }, { seats: s });
+    expect(m.salvo).toBe(false);
+    m.setAim(0, 20);
+    m.commit();
+    expect(m.phase).toBe('flying');
+    expect(m.volley!.shots).toHaveLength(1);
+  });
+
+  it('keeps the neighbour grace period working', () => {
+    const s = seats(0, 4);
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats: s, simultaneousShots: true, neighborGrace: true }, { seats: s });
+    run(m, (x) => x.phase === 'flying');
+    expect(m.volley!.snapshot().aims.every((a) => a.spare?.length === 1)).toBe(true);
+  });
+});

@@ -240,7 +240,7 @@ export class MultiplayerSession {
       seats,
       names: message.players.map((p) => p.name),
       teams: message.mode === 'team' ? message.players.map((p) => p.team) : undefined,
-      simultaneous: message.gameMode === 'horizon',
+      simultaneous: message.gameMode === 'horizon' || settings.simultaneousShots,
     });
     if (!(match instanceof ClassicMatch || match instanceof HorizonMatch)) return;
     match.viewer = this.you.playerId;
