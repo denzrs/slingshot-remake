@@ -120,6 +120,14 @@ body {
   opacity: 0.8;
 }
 
+.version {
+  margin: 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--bone-dim);
+  opacity: 0.55;
+}
+
 /* ——— Menu items ——— */
 
 .items {
