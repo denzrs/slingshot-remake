@@ -1,3 +1,4 @@
+import { measureReconstruction, planExperimentalShot, type ExperimentalDecision, type GravityFit } from '../experimental-ai';
 import { planShot, type Aim, type CpuLevel } from '../ai';
 import { AIM, COLORS, FIELD, GRACE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
@@ -39,6 +40,9 @@ export interface Trail {
   owner: number;
   /** Flat [x0, y0, x1, y1, …] polyline in field units. */
   points: number[];
+  /** Launch aim, used by the experimental CPU to fit gravity from completed shots. */
+  angle?: number;
+  power?: number;
   /** Volley the shot belonged to (Event Horizon), so old ones can be dropped. */
   volley: number;
   /** Match clock when the shot ended, for fading trails. */
@@ -120,7 +124,11 @@ export interface MatchOptions {
   names?: string[];
   /** Fixed team per player index (online matches); `settings.teamMode` is the team count. */
   teams?: number[];
-  /** Event Horizon online: every human aims at the same time instead of one after another at a shared keyboard. */
+  /** Benchmark-only: start experimental CPUs with a low-power coverage probe. */
+  experimentalOpeningProbe?: boolean;
+  /** Benchmark-only fixed power for the opening coverage probe. */
+  experimentalOpeningProbePower?: number;
+  /** Event Horizon online: every human aims at once instead of one after another at a shared keyboard. */
   simultaneous?: boolean;
 }
 
@@ -486,7 +494,7 @@ export abstract class Match {
     }
     if (volley.done) {
       this.recordFlights(volley);
-      this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, volley: this.volleyNumber, at: this.clock })));
+      this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, angle: vs.shot.angle, power: vs.shot.power, volley: this.volleyNumber, at: this.clock })));
       this.volley = null;
       this.afterVolley();
     }
@@ -662,21 +670,43 @@ export abstract class Match {
     for (const id of ids) {
       if (this.cpuJobs.has(id)) continue;
       const p = this.players[id];
-      this.cpuJobs.set(id, {
-        planner: planShot(this.world, id, {
-          rules: this.rules,
-          level: p.cpu ?? 'medium',
-          attempt: p.shots,
-          fixedPower: this.settings.fixedPower ? AIM.FIXED_POWER : null,
-          rng: this.rng,
-          effort,
-          lookahead,
-          // Ships the shot would fly through anyway are no targets either: steer clear like around a teammate.
-          friends: [...this.friendsOf(id), ...this.sparedFor(id)],
-        }),
-        target: null,
-        settle: 0,
-      });
+      const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
+      const planner = p.cpu === 'experimental'
+        ? planExperimentalShot({
+            width: this.world.width,
+            height: this.world.height,
+            ships: this.world.ships,
+            shooter: id,
+            planetCount: this.world.planets.length,
+            hasHole: this.world.hole !== null,
+            holeRadius: this.world.hole?.radius ?? 0,
+            rules: this.rules,
+            openingProbePowers: this.options.experimentalOpeningProbe
+              ? [25, 35, 45, 55]
+              : [this.options.experimentalOpeningProbePower ?? 45],
+            shots: this.trails
+              .filter((trail): trail is Trail & Required<Pick<Trail, 'angle' | 'power'>> => trail.owner === id && trail.angle !== undefined && trail.power !== undefined)
+              .map(({ points, angle, power }) => ({ points, angle, power })),
+          }, {
+            rules: this.rules,
+            attempt: p.shots,
+            fixedPower: this.settings.fixedPower ? AIM.FIXED_POWER : null,
+            rng: this.rng,
+            effort,
+            lookahead,
+            friends,
+          }, (fit, decision) => this.logGravityFit(id, fit, decision))
+        : planShot(this.world, id, {
+            rules: this.rules,
+            level: p.cpu ?? 'medium',
+            attempt: p.shots,
+            fixedPower: this.settings.fixedPower ? AIM.FIXED_POWER : null,
+            rng: this.rng,
+            effort,
+            lookahead,
+            friends,
+          });
+      this.cpuJobs.set(id, { planner, target: null, settle: 0 });
     }
     const deadline = performance.now() + budgetMs;
     let busy = true;
@@ -697,6 +727,33 @@ export abstract class Match {
 
   protected cpuJob(id: number): CpuJob | undefined {
     return this.cpuJobs.get(id);
+  }
+  private logGravityFit(player: number, fit: GravityFit, decision: ExperimentalDecision): void {
+    const logsEnabled = (typeof process !== 'undefined' && process.env.EXPERIMENTAL_AI_LOGS === '1')
+      || import.meta.env?.VITE_EXPERIMENTAL_AI_LOGS === '1';
+    if (!logsEnabled) return;
+    const reconstruction = measureReconstruction(this.world, fit);
+    console.info('[AI experimental] gravity fit', {
+      realPlanets: this.world.planets.map(({ x, y, mass }) => ({ x, y, mass })),
+      round: this.round,
+      player,
+      shot: this.players[player].shots + 1,
+      estimatedPlanets: fit.planets,
+      planetMatches: reconstruction.planetMatches,
+      realBlackHole: this.world.hole ? { x: this.world.hole.x, y: this.world.hole.y, mass: this.world.hole.mass } : null,
+      estimatedBlackHole: fit.holeMass === null ? null : { x: FIELD.width / 2, y: FIELD.height / 2, mass: fit.holeMass },
+      samples: fit.samples,
+      initialRms: fit.initialRms,
+      rms: fit.rms,
+      improvement: fit.improvement,
+      validationRms: fit.validationRms,
+      validationSamples: fit.validationSamples,
+      condition: fit.condition,
+      fitMs: fit.fitMs,
+      decision,
+      gravityMapRms: reconstruction.gravityRms,
+      relativeGravityMapRms: reconstruction.relativeGravityRms,
+    });
   }
 
   /** Swing a CPU's ship towards its chosen aim like a player would. True once it's there. */

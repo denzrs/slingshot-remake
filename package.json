@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "dev:server": "tsx server/index.ts",
+    "bench:experimental": "tsx benchmarks/experimental-vs-easy.ts",
+    "bench:team": "tsx benchmarks/team-experimental-vs-medium.ts",
     "build:server": "tsc -p tsconfig.server.json",
     "start:server": "node dist-server/server/index.js"
   },

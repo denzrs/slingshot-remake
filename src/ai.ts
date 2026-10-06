@@ -2,7 +2,7 @@ import { AIM } from './config';
 import { normalizeAngle, simulateShot, type ShotRules, type World } from './physics';
 import { gaussian, type Rng } from './rng';
 
-export type CpuLevel = 'easy' | 'medium' | 'hard';
+export type CpuLevel = 'easy' | 'medium' | 'hard' | 'experimental';
 
 export interface Aim {
   angle: number;
@@ -10,7 +10,7 @@ export interface Aim {
 }
 
 /** Aim error (1σ) on the first shot of a round and how fast it shrinks with every further shot. */
-const ERROR: Record<CpuLevel, { angle: number; power: number; decay: number }> = {
+const ERROR: Record<Exclude<CpuLevel, 'experimental'>, { angle: number; power: number; decay: number }> = {
   easy: { angle: 4, power: 4, decay: 0.8 },
   medium: { angle: 1.6, power: 1.6, decay: 0.65 },
   hard: { angle: 0.5, power: 0.5, decay: 0.45 },
@@ -18,7 +18,7 @@ const ERROR: Record<CpuLevel, { angle: number; power: number; decay: number }> =
 
 export interface PlanOptions {
   rules: ShotRules;
-  level: CpuLevel;
+  level: Exclude<CpuLevel, 'experimental'>;
   /** Shots the CPU already fired this round — it "learns" and aims tighter each time. */
   attempt: number;
   /** When set, only the angle is searched. */
@@ -28,8 +28,9 @@ export interface PlanOptions {
   effort?: number;
   /** Seconds of flight the planner looks ahead (default 12). */
   lookahead?: number;
-  /** Teammates: never targeted, and the planner keeps its shots away from them. */
   friends?: readonly number[];
+  /** Keep refining a valid hit to find the lowest hit power. */
+  optimizeHitPower?: boolean;
 }
 
 /** Below this, a shot passing home or a teammate is too close — aim error could turn it into a friendly hit. */
@@ -73,8 +74,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     pool.push({ ...aim, cost: evaluate(world, shooter, aim, planRules, friends) });
     // Small slices keep each frame's thinking within budget, even with many ships to check.
     if (i % 4 === 3) yield;
-    // Enough hits found already — no need to keep sweeping.
-    if (i > samples * 0.4 && pool.filter((c) => c.cost < 0).length >= 3) break;
+    if (!opts.optimizeHitPower && i > samples * 0.4 && pool.filter((c) => c.cost < 0).length >= 3) break;
   }
 
   pool.sort((a, b) => a.cost - b.cost);
@@ -82,7 +82,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   for (const seed of pool.slice(0, Math.max(2, Math.round(5 * effort)))) {
     let local = seed;
     let spread = 6;
-    for (let i = 0; i < 45 && local.cost > -0.5; i++) {
+    for (let i = 0; i < 45 && (local.cost > -0.5 || (opts.optimizeHitPower && local.cost < 0)); i++) {
       const aim = {
         angle: normalizeAngle(local.angle + gaussian(rng) * spread),
         power: fixedPower ?? clampPower(local.power + gaussian(rng) * spread),
@@ -92,8 +92,22 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
       else spread = Math.max(0.05, spread * 0.93);
       if (i % 4 === 3) yield;
     }
-    if (local.cost < best.cost) best = local;
-    if (best.cost < 0) break;
+    if (!opts.optimizeHitPower && best.cost < 0) break;
+    if (opts.optimizeHitPower && fixedPower === null && local.cost < 0) {
+      let lower = 5;
+      let upper = local.power;
+      for (let i = 0; i < 9 && upper - lower > 0.1; i++) {
+        const power = (lower + upper) / 2;
+        const cost = evaluate(world, shooter, { angle: local.angle, power }, planRules, friends);
+        if (cost < 0) {
+          local = { ...local, power, cost };
+          upper = power;
+        } else {
+          lower = power;
+        }
+        if (i % 4 === 3) yield;
+      }
+    }
   }
 
   const err = ERROR[opts.level];
@@ -107,7 +121,6 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
 function clampPower(p: number): number {
   return Math.min(AIM.MAX_POWER, Math.max(5, p));
 }
-
 /** Run a planner to completion synchronously (tests, tooling). */
 export function planShotNow(world: World, shooter: number, opts: PlanOptions): Aim {
   const it = planShot(world, shooter, opts);
