@@ -25,6 +25,8 @@ export interface Settings {
   styleBonuses: boolean;
   /** With four or more ships, each one's first shots of a round pass through its nearest enemy. */
   neighborGrace: boolean;
+  /** Classic only: everybody aims, then all shots fly at once — as in Event Horizon — instead of one shot per turn. */
+  simultaneousShots: boolean;
   contours: boolean;
   particles: boolean;
   sound: boolean;
@@ -45,6 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shotTime: 20,
   styleBonuses: false,
   neighborGrace: false,
+  simultaneousShots: false,
   contours: true,
   particles: true,
   sound: true,

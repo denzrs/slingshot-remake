@@ -212,7 +212,12 @@ export abstract class Match {
     return !p.cpu && !p.locked;
   }
 
-  /** Whether every human aims at once (online Event Horizon) rather than in turns. */
+  /** Whether all shots of a round of aiming fly at once (Event Horizon, or Classic with simultaneous shots), not one per turn. */
+  get salvo(): boolean {
+    return false;
+  }
+
+  /** Whether every human aims at once (online salvos) rather than in turns. */
   get simultaneous(): boolean {
     return !!this.options.simultaneous;
   }

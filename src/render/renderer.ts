@@ -322,10 +322,10 @@ export class Renderer {
 
       if (planning) {
         if (current) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'full');
-        else if (match.mode === 'horizon' && player.locked) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'ghost');
-        else if (match.mode === 'horizon' && player.cpu) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'thin');
+        else if (match.salvo && player.locked) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'ghost');
+        else if (match.salvo && player.cpu) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'thin');
       }
-      if (planning && match.mode === 'horizon' && player.locked) {
+      if (planning && match.salvo && player.locked) {
         ctx.strokeStyle = rgba(color, 0.55);
         ctx.lineWidth = 1.2;
         ctx.beginPath();

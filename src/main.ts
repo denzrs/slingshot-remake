@@ -367,7 +367,7 @@ function syncButtons(): void {
   const m = match;
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
-    if (canAim()) touchLabel = m.mode === 'horizon' ? t('common.ready') : t('common.fire');
+    if (canAim()) touchLabel = m.salvo ? t('common.ready') : t('common.fire');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
     else if (m.phase === 'killcam' && !recorder.recording) touchLabel = t('common.skip');
   }

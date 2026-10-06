@@ -1,6 +1,7 @@
 import type { ShotRules, StyleKind, World } from '../physics';
 import { scoreChallengeHit } from '../scoring';
-import { SCORING } from '../config';
+import { COLORS, HORIZON, SCORING } from '../config';
+import { t } from '../i18n';
 import { Volley, type VolleyShot } from '../volley';
 import { Match, type RoundTitle } from './match';
 
@@ -27,6 +28,8 @@ export interface ClassicSnapshot {
   roundStats: Match['roundStats'];
   matchStats: Match['matchStats'];
   scoreHistory: number[][];
+  /** Simultaneous shots: seconds left to aim. */
+  planClock: number;
 }
 
 /**
@@ -60,6 +63,7 @@ export class ClassicMatch extends Match {
       roundStats: this.roundStats,
       matchStats: this.matchStats,
       scoreHistory: this.scoreHistory,
+      planClock: this.planClock,
     };
   }
 
@@ -86,6 +90,7 @@ export class ClassicMatch extends Match {
     this.roundStats = snapshot.roundStats;
     this.matchStats = snapshot.matchStats;
     this.scoreHistory = snapshot.scoreHistory;
+    this.planClock = snapshot.planClock;
     this.volley = null;
     if (snapshot.volley) {
       const volley = new Volley(snapshot.world, snapshot.volley.aims, this.rules, true);
@@ -98,6 +103,28 @@ export class ClassicMatch extends Match {
   /** Team mode: which team shoots next, and per team the member who shot last. */
   private teamCursor = 0;
   private memberCursor: number[] = [];
+
+  // Simultaneous shots: everybody aims (the humans one after another at a shared keyboard, online all at once), then all fire.
+  private planClock: number = HORIZON.SHOT_CLOCK;
+  private queue: number[] = [];
+  private salvoNo = 0;
+
+  get salvo(): boolean {
+    return this.settings.simultaneousShots;
+  }
+
+  /** Online salvos have no turns: everyone who hasn't locked in may aim. */
+  canAim(id: number): boolean {
+    if (!(this.salvo && this.simultaneous)) return super.canAim(id);
+    const p = this.players[id];
+    return this.phase === 'aiming' && !!p && p.alive && !p.cpu && !p.locked;
+  }
+
+  get shotClock(): number | null {
+    if (!this.salvo || this.phase !== 'aiming') return null;
+    const aiming = this.simultaneous ? this.players.some((p) => this.canAim(p.id)) : this.isHumanTurn;
+    return aiming ? Math.max(0, this.planClock) : null;
+  }
 
   get rules(): ShotRules {
     return { bounce: this.settings.bounce, timeLimit: this.settings.shotTime };
@@ -113,6 +140,10 @@ export class ClassicMatch extends Match {
   }
 
   protected beginRound(): void {
+    if (this.salvo) {
+      this.salvoNo = 0;
+      return this.startPlanning();
+    }
     // Rotate who opens each round.
     if (this.teamMode) {
       this.teamCursor = (this.round - 1) % this.teamMode;
@@ -124,7 +155,9 @@ export class ClassicMatch extends Match {
   }
 
   commit(): void {
-    if (this.isHumanTurn) this.fire();
+    if (!this.isHumanTurn) return;
+    if (this.salvo) this.lock(this.current);
+    else this.fire();
   }
 
   adjustPlayer(id: number, dAngle: number, dPower: number): void {
@@ -141,7 +174,79 @@ export class ClassicMatch extends Match {
   }
 
   commitPlayer(id: number): void {
-    if (this.canAim(id)) this.fire();
+    if (!this.canAim(id)) return;
+    if (this.salvo) this.lock(id);
+    else this.fire();
+  }
+
+  // ————————————————————————————— Simultaneous shots —————————————————————————————
+
+  private startPlanning(): void {
+    this.salvoNo++;
+    const alive = this.alive;
+    for (const p of alive) p.locked = false;
+    // Rotate who aims first so nobody always waits last.
+    const start = (this.round + this.salvoNo) % alive.length;
+    const order = [...alive.slice(start), ...alive.slice(0, start)];
+    this.queue = this.simultaneous ? [] : order.filter((p) => !p.cpu).map((p) => p.id);
+    this.cpuJobs.clear();
+    this.setPhase('aiming');
+    if (this.simultaneous) {
+      this.current = -1;
+      this.planClock = HORIZON.SIMULTANEOUS_CLOCK;
+    } else {
+      this.nextHuman();
+    }
+  }
+
+  private nextHuman(): void {
+    this.current = this.queue.shift() ?? -1;
+    this.planClock = HORIZON.SHOT_CLOCK;
+    if (this.current >= 0) this.emit({ type: 'turn', player: this.current });
+  }
+
+  private lock(id: number): void {
+    this.players[id].locked = true;
+    this.emit({ type: 'lock', player: id });
+    if (!this.simultaneous) this.nextHuman();
+  }
+
+  private updatePlanning(dt: number): void {
+    const cpus = this.alive.filter((p) => p.cpu && !p.locked);
+    if (cpus.length) {
+      // All CPUs think in parallel while the humans aim.
+      this.runCpu(cpus.map((p) => p.id), 8, 0.8);
+      for (const p of cpus) {
+        const job = this.cpuJob(p.id);
+        if (!job?.target || this.phaseTime < 0.5) continue;
+        if (this.swingTowards(p, job.target, dt, 2)) {
+          job.settle += dt;
+          if (job.settle > 0.2) {
+            p.locked = true;
+            this.emit({ type: 'lock', player: p.id });
+          }
+        }
+      }
+    }
+    if (this.simultaneous) {
+      const waiting = this.alive.filter((p) => !p.cpu && !p.locked);
+      if (waiting.length) {
+        this.planClock -= dt;
+        if (this.planClock <= 0) for (const p of waiting) this.lock(p.id);
+      }
+    } else if (this.current >= 0) {
+      this.planClock -= dt;
+      if (this.planClock <= 0) this.commit();
+    }
+    if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6) this.launchVolley();
+  }
+
+  private launchVolley(): void {
+    const aims = this.alive.map((p) => ({ player: p.id, angle: p.angle, power: p.power, spare: this.sparedFor(p.id) }));
+    for (const p of this.alive) p.shots++;
+    this.notice = { text: t('notice.volley'), color: COLORS.bone, at: this.clock };
+    this.emit({ type: 'volley' });
+    this.launch(aims, true);
   }
 
   private fire(): void {
@@ -153,7 +258,9 @@ export class ClassicMatch extends Match {
   }
 
   protected updatePhase(dt: number): void {
-    if (this.phase !== 'aiming' || this.current < 0) return;
+    if (this.phase !== 'aiming') return;
+    if (this.salvo) return this.updatePlanning(dt);
+    if (this.current < 0) return;
     const p = this.players[this.current];
     if (!p.cpu) return;
     this.runCpu([p.id], 6, 1);
@@ -167,6 +274,7 @@ export class ClassicMatch extends Match {
 
   protected afterVolley(): void {
     if (this.decided) return this.endRound();
+    if (this.salvo) return this.startPlanning();
     if (this.teamMode) this.giveTeamTurn();
     else this.giveTurn(this.current + 1);
   }
@@ -211,7 +319,9 @@ export class ClassicMatch extends Match {
     return { points, combo, multiplier };
   }
 
-  protected roundTitle(): RoundTitle {
+  protected roundTitle(survivor: number | null): RoundTitle {
+    // Only a volley can take every ship down at once.
+    if (survivor === null) return 'noneLeft';
     return this.lastKill?.self ? 'selfHit' : 'hit';
   }
 }

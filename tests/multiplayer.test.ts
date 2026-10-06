@@ -35,7 +35,7 @@ interface Client {
   match(): NetMatch;
 }
 
-const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, shotTime: 30, styleBonuses: true, neighborGrace: false };
+const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, shotTime: 30, styleBonuses: true, neighborGrace: false, simultaneousShots: false };
 
 async function startRoom(gameMode: 'classic' | 'horizon', names = ['Anna', 'Ben']): Promise<{ host: Client; guest: Client }> {
   const relay = new RoomManager();
@@ -160,6 +160,44 @@ describe('online games', () => {
     for (let i = 0; i < 5; i++) frame(host, guest);
     expect(hm.phase).not.toBe('killcam');
     expect(guest.match().phase).not.toBe('killcam');
+  });
+
+  it('lets everybody aim at once in Classic with simultaneous shots', async () => {
+    const relay = new RoomManager();
+    const make = async (): Promise<Client> => {
+      let current: NetMatch | null = null;
+      const session = new MultiplayerSession(
+        { settings: () => cloneSettings(DEFAULT_SETTINGS), matchStarted: (m) => (current = m), matchRestarted() {}, matchEnded: () => (current = null) },
+        new Loopback(relay),
+      );
+      await session.connect('loopback');
+      return { session, match: () => current! };
+    };
+    const host = await make();
+    const guest = await make();
+    host.session.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules: { ...rules, simultaneousShots: true }, maxPlayers: 2 });
+    guest.session.joinRoom(guest.session.rooms[0].id, 'Ben');
+    host.session.setReady(true);
+    guest.session.setReady(true);
+    const hm = host.match();
+    expect(hm.salvo).toBe(true);
+    expect(hm.simultaneous).toBe(true);
+    for (let i = 0; i < 5; i++) frame(host, guest);
+    expect(hm.canAim(0)).toBe(true);
+    expect(hm.canAim(1)).toBe(true);
+    expect(guest.match().localCanAim).toBe(true);
+
+    host.session.input({ kind: 'aim', angle: 10, power: 40 });
+    guest.session.input({ kind: 'aim', angle: 170, power: 40 });
+    host.session.input({ kind: 'fire' });
+    for (let i = 0; i < 5; i++) frame(host, guest);
+    // One is locked in and waits for the other: nothing flies yet.
+    expect(hm.phase).toBe('aiming');
+    expect(guest.match().players[0].locked).toBe(true);
+    guest.session.input({ kind: 'fire' });
+    for (let i = 0; i < 60; i++) frame(host, guest);
+    expect(hm.phase).not.toBe('aiming');
+    expect(guest.match().phase).toBe(hm.phase);
   });
 
   describe('in Event Horizon', () => {
