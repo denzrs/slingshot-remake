@@ -189,6 +189,10 @@ export class HorizonMatch extends Match {
     if (this.canAim(id)) this.lock(id);
   }
 
+  get salvo(): boolean {
+    return true;
+  }
+
   protected get survivorBonus(): number {
     return SCORING.LAST_IN_ORBIT;
   }

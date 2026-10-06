@@ -626,10 +626,10 @@ export class Hud {
     let items: KeyItem[] = [];
     if (match.localCanAim) {
       if (touch) {
-        items = [['', horizon ? t('hud.touch.horizon') : t('hud.touch.classic')]];
+        items = [['', match.salvo ? t('hud.touch.horizon') : t('hud.touch.classic')]];
       } else {
         const power: KeyItem = ['↑ ↓', match.settings.fixedPower ? t('hud.powerFixed') : t('hud.powerLabel')];
-        const commit: KeyItem = ['Enter', horizon ? t('common.ready') : t('common.fire')];
+        const commit: KeyItem = ['Enter', match.salvo ? t('common.ready') : t('common.fire')];
         items = [['← →', t('hud.rotate')], power, commit, [`Shift · Alt · ${t('common.ctrl')}`, t('hud.stepSize')], ['Esc', t('hud.menu')]];
         if (this.measureKeyRow(items, k) > maxWidth) items = [['← →', t('hud.rotate')], power, commit];
       }

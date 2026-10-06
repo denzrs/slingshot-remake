@@ -25,6 +25,7 @@ export function ruleRows(): RuleRow[] {
     { key: 'shotTime', label: t('settings.shotTime'), options: [10, 20, 30, 60].map((n) => ({ value: n, label: t('settings.seconds', { n }) })) },
     { key: 'styleBonuses', label: t('settings.styleBonuses'), options: onOff(), classicOnly: true },
     { key: 'neighborGrace', label: t('settings.neighborGrace'), options: onOff() },
+    { key: 'simultaneousShots', label: t('settings.simultaneousShots'), options: onOff(), classicOnly: true },
   ];
 }
 
