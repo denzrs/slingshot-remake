@@ -333,6 +333,20 @@ export class Renderer {
         ctx.stroke();
       }
 
+      // Neighbour grace period: the ship that the aiming player's shot flies through gets a shield.
+      if (planning && match.focus >= 0 && match.sparedFor(match.focus).includes(i)) {
+        ctx.save();
+        ctx.translate(ship.x, ship.y);
+        ctx.rotate(-this.time * 0.5);
+        ctx.setLineDash([2, 4]);
+        ctx.strokeStyle = rgba(COLORS.bone, 0.7);
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(0, 0, 19, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       const swallow = live ? match.swallowProgress(i) : 0;
       ctx.save();
       ctx.translate(ship.x, ship.y);

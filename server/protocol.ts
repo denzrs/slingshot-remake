@@ -72,6 +72,8 @@ export interface RoomRules {
   shotTime: number;
   /** Classic only: trick shots multiply a hit's points. */
   styleBonuses: boolean;
+  /** Four or more ships: the first shots of a round pass through the shooter's nearest enemy. */
+  neighborGrace: boolean;
 }
 
 export const DEFAULT_RULES: RoomRules = {
@@ -82,6 +84,7 @@ export const DEFAULT_RULES: RoomRules = {
   fixedPower: false,
   shotTime: 20,
   styleBonuses: false,
+  neighborGrace: false,
 };
 
 const isIntBetween = (value: unknown, min: number, max: number): value is number => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
@@ -89,8 +92,8 @@ const isIntBetween = (value: unknown, min: number, max: number): value is number
 /** Validates untrusted rules from a client; null when anything is off. */
 export function parseRules(value: unknown): RoomRules | null {
   if (!isRecord(value)) return null;
-  const { rounds, maxPlanets, invisiblePlanets, bounce, fixedPower, shotTime, styleBonuses } = value;
+  const { rounds, maxPlanets, invisiblePlanets, bounce, fixedPower, shotTime, styleBonuses, neighborGrace } = value;
   if (!isIntBetween(rounds, 0, 99) || !isIntBetween(maxPlanets, 1, 8) || !isIntBetween(shotTime, 5, 120)) return null;
-  if (![invisiblePlanets, bounce, fixedPower, styleBonuses].every((flag) => typeof flag === 'boolean')) return null;
-  return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, shotTime, styleBonuses: styleBonuses as boolean };
+  if (![invisiblePlanets, bounce, fixedPower, styleBonuses, neighborGrace].every((flag) => typeof flag === 'boolean')) return null;
+  return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, shotTime, styleBonuses: styleBonuses as boolean, neighborGrace: neighborGrace as boolean };
 }

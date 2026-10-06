@@ -24,6 +24,7 @@ export function ruleRows(): RuleRow[] {
     { key: 'fixedPower', label: t('settings.fixedPower'), options: onOff() },
     { key: 'shotTime', label: t('settings.shotTime'), options: [10, 20, 30, 60].map((n) => ({ value: n, label: t('settings.seconds', { n }) })) },
     { key: 'styleBonuses', label: t('settings.styleBonuses'), options: onOff(), classicOnly: true },
+    { key: 'neighborGrace', label: t('settings.neighborGrace'), options: onOff() },
   ];
 }
 

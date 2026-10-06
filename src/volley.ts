@@ -5,6 +5,8 @@ export interface VolleyAim {
   player: number;
   angle: number;
   power: number;
+  /** Ships this shot passes through unharmed. */
+  spare?: number[];
 }
 
 export interface VolleyShot {
@@ -36,6 +38,7 @@ let nextVolleyId = 1;
  */
 export class Volley {
   readonly shots: VolleyShot[];
+  private readonly aims: VolleyAim[];
   id = nextVolleyId++;
   steps = 0;
 
@@ -45,8 +48,9 @@ export class Volley {
     rules: ShotRules,
     trackStyle: boolean,
   ) {
+    this.aims = aims.map((aim) => ({ ...aim }));
     this.shots = aims.map((a) => {
-      const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle);
+      const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare);
       return { shot, owner: a.player, trail: [shot.x, shot.y] };
     });
   }
@@ -58,7 +62,7 @@ export class Volley {
   snapshot(): VolleySnapshot {
     return {
       id: this.id,
-      aims: this.shots.map(({ owner, shot }) => ({ player: owner, angle: shot.angle, power: shot.power })),
+      aims: this.aims.map((aim) => ({ ...aim })),
       steps: this.steps,
       shots: this.shots.map(({ owner, trail, shot }) => ({
         owner, trail, x: shot.x, y: shot.y, vx: shot.vx, vy: shot.vy, time: shot.time, end: shot.end,

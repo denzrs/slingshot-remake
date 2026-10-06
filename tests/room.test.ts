@@ -166,7 +166,7 @@ describe('rooms', () => {
 });
 
 describe('room rules', () => {
-  const rules = { rounds: 3, maxPlanets: 6, invisiblePlanets: true, bounce: true, fixedPower: false, shotTime: 30, styleBonuses: true };
+  const rules = { rounds: 3, maxPlanets: 6, invisiblePlanets: true, bounce: true, fixedPower: false, shotTime: 30, styleBonuses: true, neighborGrace: true };
 
   it('start with sensible defaults when none are sent', () => {
     const { manager, client } = setup();
@@ -191,7 +191,7 @@ describe('room rules', () => {
   it('are validated', () => {
     const { manager, client } = setup();
     const host = client();
-    for (const bad of [{ ...rules, maxPlanets: 99 }, { ...rules, shotTime: 1 }, { ...rules, bounce: 'yes' }, { ...rules, rounds: 1.5 }, 'nope', null]) {
+    for (const bad of [{ ...rules, maxPlanets: 99 }, { ...rules, shotTime: 1 }, { ...rules, bounce: 'yes' }, { ...rules, neighborGrace: 'yes' }, { ...rules, rounds: 1.5 }, 'nope', null]) {
       manager.handle(host, create({ rules: bad }));
       expect(host.last('error')!.message).toMatch(/rules/i);
     }

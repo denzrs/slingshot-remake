@@ -281,3 +281,58 @@ describe('skipping the killcam', () => {
     expect(m.phase).not.toBe('killcam');
   });
 });
+
+describe('neighbour grace period', () => {
+  const seats = (n: number): Seat[] => [...Array(n).fill('human'), ...Array(6 - n).fill('off')];
+  /** Four ships in a row: ship 1 is ship 0's nearest enemy, ship 3 the farthest. */
+  function row(mode: 'classic' | 'horizon', neighborGrace: boolean, n = 4): Match {
+    const m = createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 1, seats: seats(n), neighborGrace }, { seats: seats(n) });
+    m.world.planets = [];
+    [[100, 400], [300, 400], [700, 400], [1100, 400]].slice(0, n).forEach(([x, y], i) => Object.assign(m.world.ships[i], { x, y }));
+    return m;
+  }
+
+  it('is off by default', () => {
+    expect(row('classic', false).sparedFor(0)).toEqual([]);
+  });
+
+  it('spares the nearest enemy for the first shots of a round only', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      const m = row(mode, true);
+      expect(m.sparedFor(0)).toEqual([1]);
+      expect(m.sparedFor(3)).toEqual([2]);
+      m.players[0].shots = 2;
+      expect(m.sparedFor(0)).toEqual([]);
+      expect(m.sparedFor(1)).toEqual([0]);
+    }
+  });
+
+  it('needs four ships: in a smaller game the nearest enemy is no shortcut', () => {
+    expect(row('classic', true, 3).sparedFor(0)).toEqual([]);
+  });
+
+  it('follows the fallen and teammates: the nearest *living enemy* counts', () => {
+    const m = row('classic', true);
+    m.players[1].alive = false;
+    expect(m.sparedFor(0)).toEqual([2]);
+  });
+
+  it('lets the shot fly through the spared ship and hit the next one', () => {
+    const m = row('classic', true);
+    m.current = 0;
+    m.setAim(0, 40);
+    m.commit();
+    for (let t = 0; t < 30 && m.phase === 'flying'; t += 1 / 30) m.update(1 / 30);
+    expect(m.players[1].alive).toBe(true);
+    expect(m.lastKill).toMatchObject({ killer: 0, victim: 2 });
+  });
+
+  it('only protects while it is switched on', () => {
+    const m = row('classic', false);
+    m.current = 0;
+    m.setAim(0, 40);
+    m.commit();
+    for (let t = 0; t < 30 && m.phase === 'flying'; t += 1 / 30) m.update(1 / 30);
+    expect(m.lastKill).toMatchObject({ killer: 0, victim: 1 });
+  });
+});
