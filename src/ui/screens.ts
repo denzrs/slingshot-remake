@@ -86,6 +86,8 @@ export function titleScreen(app: App): Screen {
           h('p.lede', null, t('title.lede')),
           h('nav.items', { 'data-items': '', 'aria-label': t('title.menuLabel') }),
           h('p.keys', null, t('title.keys')),
+          // Set by the deploy workflow; absent in local dev builds.
+          ...(import.meta.env.VITE_APP_VERSION ? [h('p.version', null, String(import.meta.env.VITE_APP_VERSION))] : []),
         ),
       ),
     // A getter, so the lineup hint is fresh whenever the menu re-renders this screen.
