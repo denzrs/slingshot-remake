@@ -90,13 +90,13 @@ The physics is deterministic, and the CPU planner uses exactly the same `Shot` c
 
 ## AI benchmark
 
-Run `npm run bench:experimental -- --sims 100 --seed 99540653` to compare experimental CPU against easy, medium and hard CPU on repeatable worlds. Add `--mode=horizon`, `--bounce`, `--fixed-power`, or `--planets=1..8` to test one ruleset. Add `--opening-low-probe` only to compare the low-power opening-probe experiment. Results group match win rate and map RMS by total shots. They also show first-shot, second-shot, and later-shot hit rates and held-out error.
+Run `npm run bench:experimental -- --sims 100 --seed 99540653` to compare experimental CPU against easy, medium and hard CPU on repeatable worlds. Add `--mode=horizon`, `--bounce`, `--fixed-power`, or `--planets=1..8` to test one ruleset. Results group match win rate and map RMS by total shots. They also show first-shot, second-shot, and later-shot hit rates and held-out error.
 
-Run `npm run bench:team -- --seed 99540653` for 100 seeded Classic 3v3 team matches: experimental CPUs versus medium CPUs. It uses 60-second flight limits and simultaneous shots. Add `--games=1..100` for a smaller run. The result shows wins, draws, mean team scores, and mean shots.
+Run `npm run bench:team -- --seed 99540653` for 100 paired Classic 3v3 team matches across 50 worlds: experimental CPUs versus medium CPUs. It uses 60-second flight limits and simultaneous shots. Each world runs once with experimental on each team side. Add an even `--games=2..100` value for a smaller run. The result shows wins, draws, side-specific wins, mean team scores, and mean shots.
 
-Experimental fits its own launch states and sampled positions through the production Euler step. It uses bounded positive masses and several start points. It keeps distinct plausible maps instead of trusting one fit. A held-out completed trajectory checks prediction quality.
+Run `npm run bench:team:horizon -- --seed 99540653` for the same paired 3v3 benchmark in Event Horizon. Event Horizon always uses volleys. Add an even `--games=2..100` value for a smaller run.
 
-The CPU opens with one safe power-45 coverage probe. Afterward it fires ensemble-stable hits with medium perturbation and low-power preference. `--opening-low-probe` remains a benchmark-only comparison of powers `25`, `35`, `45`, and `55`.
+Experimental uses visible planet centers, but not masses, on its first fixed-power-45 shot. From its second shot onward, it plans only from its own reconstructed trajectory knowledge. It uses bounded positive masses and several start points. A held-out completed trajectory checks prediction quality.
 
 Set `EXPERIMENTAL_AI_LOGS=1` to print each experimental fit during the benchmark. Set `VITE_EXPERIMENTAL_AI_LOGS=1` before `npm run dev` to print logs in the browser. Logs include fit time, held-out RMS, chosen action, map errors, and trajectory-fit RMS. The fitter uses at most 500 trajectory samples.
 
