@@ -3,8 +3,9 @@ import { FIELD, PHYSICS } from '../src/config';
 import { advanceExperimentalWorld, createExperimentalLearner, experimentalLearnerFit, observeExperimentalShot, type ExperimentalLearner, type ExperimentalShot, type ExperimentalWorld } from '../src/experimental-ai';
 import { ExperimentalWorkerCancelledError, ExperimentalWorkerClient, type ExperimentalWorkerPort } from '../src/experimental-worker-client';
 import { createExperimentalWorkerProcessor } from '../src/experimental-worker';
-import type { ExperimentalWorkerRequest, ExperimentalWorkerResponse } from '../src/experimental-worker-protocol';
+import { EXPERIMENTAL_WORKER_VERSION, type ExperimentalWorkerRequest, type ExperimentalWorkerResponse } from '../src/experimental-worker-protocol';
 import { Shot, type World } from '../src/physics';
+import { RECOVERY_ANGLES, recordRecoveryShot, recoveryVisibleWorld, recoveryWorld } from '../benchmarks/learning-validation';
 
 class ControlledWorker implements ExperimentalWorkerPort {
   onmessage: ExperimentalWorkerPort['onmessage'] = null;
@@ -65,12 +66,42 @@ function fitWithoutTime(learner: ExperimentalLearner, world = visible) {
 }
 
 describe('experimental worker protocol', () => {
+  it('matches synchronous hidden recovery diagnostics while keeping all production trajectories in the worker', async () => {
+    const world = recoveryWorld();
+    const hidden = recoveryVisibleWorld(world);
+    const worker = new ControlledWorker();
+    const client = new ExperimentalWorkerClient(() => worker);
+    const sync = createExperimentalLearner(0.72);
+    let previousLearned = 0;
+    for (let index = 0; index < RECOVERY_ANGLES.length; index++) {
+      const shot = recordRecoveryShot(world, RECOVERY_ANGLES[index], 65, index + 1);
+      observeExperimentalShot(sync, shot, hidden, 0.54);
+      const pending = client.submit(0, shot, hidden, 0.54, 0.72);
+      worker.flush();
+      const replica = await pending;
+      const fit = experimentalLearnerFit(replica, hidden);
+      expect(fitWithoutTime(replica, hidden)).toEqual(fitWithoutTime(sync, hidden));
+      expect(fit.recovery).toEqual(sync.recovery);
+      expect(replica.evidence).toEqual([]);
+      expect(replica.seen.size).toBe(0);
+      expect(replica.recovery.retainedShotIds).toHaveLength(index + 1);
+      expect(replica.recovery.sampleCounts).toHaveLength(index + 1);
+      expect(fit.learnedShots - previousLearned).toBeCloseTo(replica.recovery.effectiveLearningRate, 12);
+      previousLearned = fit.learnedShots;
+      expect(replica.recovery).not.toHaveProperty('points');
+      expect(replica.recovery).not.toHaveProperty('shots');
+      expect(replica.hypotheses.length).toBeLessThanOrEqual(4);
+    }
+    client.dispose();
+  }, 120_000);
+
   it.each([[0, 0], [0.35, 0.5], [0.72, 0.9], [1, 1]])(
     'matches the synchronous learner for 12 long production shots at rate %s and knowledge %s', async (rate, knowledge) => {
       const worker = new ControlledWorker();
       const client = new ExperimentalWorkerClient(() => worker);
       const synchronous = createExperimentalLearner(knowledge);
       let result = createExperimentalLearner(knowledge);
+      let acceptedLearning = 0;
       let longestTrajectory = 0;
       for (let id = 1; id <= 12; id++) {
         const shot = realShot(id);
@@ -81,6 +112,13 @@ describe('experimental worker protocol', () => {
         expect(worker.requests[0]).toMatchObject({ kind: 'observe', player: 0, shot });
         worker.flush();
         result = await pending;
+        const completedFit = experimentalLearnerFit(result, visible);
+        acceptedLearning += result.recovery.effectiveLearningRate;
+        expect(result.recovery.effectiveLearningRate).toBeGreaterThanOrEqual(0);
+        expect(result.recovery.effectiveLearningRate).toBeLessThanOrEqual(rate);
+        expect(completedFit.learnedShots).toBeCloseTo(acceptedLearning, 12);
+        expect(completedFit.learnedShots).toBeCloseTo(synchronous.learnedShots, 12);
+        expect(completedFit.learnedShots).toBeLessThanOrEqual(id * rate);
         expect(fitWithoutTime(result)).toEqual(fitWithoutTime(synchronous));
         expect(result.evidence).toHaveLength(0);
         expect(result.seen.size).toBe(0);
@@ -88,7 +126,8 @@ describe('experimental worker protocol', () => {
       }
       const fit = experimentalLearnerFit(result, visible);
       expect(fit).toMatchObject({ observedShots: 12, retainedShots: rate === 0 ? 0 : 12, startingKnowledge: knowledge });
-      expect(fit.learnedShots).toBeCloseTo(12 * rate);
+      expect(fit.learnedShots).toBeCloseTo(acceptedLearning, 12);
+      expect(fit.learnedShots).toBeLessThanOrEqual(12 * rate);
       expect(longestTrajectory).toBeGreaterThan(10_000);
       expect(fit.predictionSamples).toBe(96);
       expect(fit.samples).toBe(rate === 0 ? 0 : 96);
@@ -102,6 +141,11 @@ describe('experimental worker protocol', () => {
       const overflow = client.submit(0, next, visible, rate, knowledge);
       worker.flush();
       const afterOverflow = await overflow;
+      acceptedLearning += afterOverflow.recovery.effectiveLearningRate;
+      expect(afterOverflow.recovery.effectiveLearningRate).toBeGreaterThanOrEqual(0);
+      expect(afterOverflow.recovery.effectiveLearningRate).toBeLessThanOrEqual(rate);
+      expect(afterOverflow.learnedShots).toBeCloseTo(acceptedLearning, 12);
+      expect(afterOverflow.learnedShots).toBeLessThanOrEqual(13 * rate);
       expect(fitWithoutTime(afterOverflow)).toEqual(fitWithoutTime(synchronous));
       expect(experimentalLearnerFit(afterOverflow, visible)).toMatchObject({ observedShots: 13, retainedShots: rate === 0 ? 0 : 12 });
       client.dispose();
@@ -171,6 +215,77 @@ describe('experimental worker protocol', () => {
     worker.flush();
     await rejected;
     await expect(client.submit(0, realShot(2, 0.25), visible, 1, 0.5)).rejects.toThrow('Unsupported experimental worker protocol version');
+    client.dispose();
+  });
+
+  it.each(['recovery', 'predictionTrend', 'probeHistory', 'lastRecoveryShot'] as const)(
+    'rejects current-version snapshots missing %s and permanently rejects queued and later work', async (field) => {
+      const worker = new ControlledWorker();
+      const client = new ExperimentalWorkerClient(() => worker);
+      const first = client.submit(0, realShot(1, 0.25), visible, 0.35, 0.5);
+      const queued = client.submit(0, realShot(2, 0.25), visible, 0.35, 0.5);
+      const firstRejected = expect(first).rejects.toThrow('Invalid experimental worker recovery snapshot');
+      const queuedRejected = expect(queued).rejects.toThrow('Invalid experimental worker recovery snapshot');
+      worker.processNext();
+      const response = worker.responses[0];
+      expect(response.version).toBe(EXPERIMENTAL_WORKER_VERSION);
+      if (response.kind !== 'result') throw new Error('Expected real processor result');
+      Reflect.deleteProperty(response.snapshot, field);
+      worker.deliverNext();
+      await firstRejected;
+      await queuedRejected;
+      // A subsequent valid reply cannot resume a client that lost required recovery state.
+      worker.flush();
+      await expect(client.submit(0, realShot(3, 0.25), visible, 0.35, 0.5))
+        .rejects.toThrow('Invalid experimental worker recovery snapshot');
+      expect(worker.requests).toHaveLength(0);
+      client.dispose();
+    },
+  );
+
+  it('rejects incomplete recovery diagnostics instead of restoring a falsely healthy planner', async () => {
+    const worker = new ControlledWorker();
+    const client = new ExperimentalWorkerClient(() => worker);
+    const pending = client.submit(0, realShot(1, 0.25), visible, 0.35, 0.5);
+    const rejected = expect(pending).rejects.toThrow('Invalid experimental worker recovery snapshot');
+    worker.processNext();
+    const response = worker.responses[0];
+    if (response.kind !== 'result') throw new Error('Expected real processor result');
+    Reflect.deleteProperty(response.snapshot.recovery, 'stalled');
+    worker.deliverNext();
+    await rejected;
+    client.dispose();
+  });
+
+  it('rejects version-one requests in the real processor without accepting their evidence', () => {
+    const process = createExperimentalWorkerProcessor();
+    const request: ExperimentalWorkerRequest = {
+      version: EXPERIMENTAL_WORKER_VERSION, generation: 0, requestId: 1,
+      kind: 'observe', player: 0, playerGeneration: 0, shot: realShot(1, 0.25),
+      world: visible, learningRate: 0.35, startingKnowledge: 0.5,
+    };
+    const obsolete = structuredClone(request);
+    Object.assign(obsolete, { version: 1 });
+    expect(process(obsolete)).toMatchObject({ version: EXPERIMENTAL_WORKER_VERSION, kind: 'error',
+      message: 'Unsupported experimental worker protocol version' });
+    const accepted = process(request);
+    if (accepted.kind !== 'result') throw new Error('Expected real processor result');
+    expect(accepted.snapshot.observedShots).toBe(1);
+    expect(accepted.snapshot.recovery.retainedShotIds).toEqual([1]);
+  });
+
+  it('rejects version-one responses even when the real processor supplied a complete snapshot', async () => {
+    const worker = new ControlledWorker();
+    const client = new ExperimentalWorkerClient(() => worker);
+    const pending = client.submit(0, realShot(1, 0.25), visible, 0.35, 0.5);
+    const rejected = expect(pending).rejects.toThrow('Unsupported experimental worker response version');
+    worker.processNext();
+    Object.assign(worker.responses[0], { version: 1 });
+    worker.deliverNext();
+    await rejected;
+    await expect(client.submit(0, realShot(2, 0.25), visible, 0.35, 0.5))
+      .rejects.toThrow('Unsupported experimental worker response version');
+    expect(worker.requests).toHaveLength(0);
     client.dispose();
   });
 

@@ -13,7 +13,7 @@ export interface ExperimentalCpuConfig {
 }
 
 export const EXPERIMENTAL_PRESETS: Readonly<Record<NamedExperimentalCpuLevel, Readonly<ExperimentalCpuConfig>>> = {
-  'experimental-easy': { learningRate: 0.35, startingKnowledge: 0.5 },
+  'experimental-easy': { learningRate: 0.45, startingKnowledge: 0.5 },
   'experimental-medium': { learningRate: 0.54, startingKnowledge: 0.72 },
   'experimental-hard': { learningRate: 0.72, startingKnowledge: 0.9 },
 };

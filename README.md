@@ -108,15 +108,15 @@ Named presets use fixed per-seat values, even when a match contains different ex
 
 | CPU name | Learning rate | Starting knowledge |
 | --- | --- | --- |
-| `experimental-easy` | 0.35 | 0.5 |
+| `experimental-easy` | 0.45 | 0.5 |
 | `experimental-medium` | 0.54 | 0.72 |
 | `experimental-hard` | 0.72 | 0.9 |
 
 The browser saves each selected seat by name. Reloading preserves its preset.
 
 - Learning rate `0` freezes evidence updates. Completed shots still count as observations.
-- Learning rate `1` applies each unique own shot's full fitted update when trajectory samples support it.
-- Intermediate learning rates scale evidence updates, not aim noise or search precision.
+- Learning rate `1` requests each unique own shot's full fitted update when trajectory samples support it; guards may reduce or reject that step.
+- Intermediate learning rates scale requested evidence updates, not aim noise or search precision. The accepted effective rate can be less than the configured rate.
 - Starting knowledge `1` uses the public density model and known initial black-hole mass as the opening prior.
 - Starting knowledge `0` starts with minimal gravity knowledge and broad mass uncertainty. Visible collision geometry remains known.
 - Intermediate starting knowledge changes initial mass beliefs and uncertainty, not the evidence update rate.
@@ -131,21 +131,26 @@ The learner receives visible planet centers, radii, stable IDs, and visible blac
 Invisible planets supply only their count. The learner estimates anonymous positions from trajectories when planets are invisible.
 
 The learner keeps evidence separately from displayed trails and resets each round.
-Each unique completed own shot counts once. Sample-free shots add no learned evidence.
-The learner retains up to 12 same-field shots. Each fitting update uses up to 96 samples across those trajectories.
+Each unique completed own shot counts once. Sample-free, frozen, and rejected updates add no learned evidence. `learnedShots` accumulates accepted effective learning-rate steps, not configured rate multiplied by observed shots.
+The learner retains up to 12 representative same-field shots, including the newest, with spatial coverage and trajectory diversity rather than simply the oldest or newest 12. Each fitting update uses a balanced budget of up to 96 samples distributed across usable trajectories; long paths cannot consume the entire budget while shorter informative paths are omitted.
+
+Hidden sources are anonymous. Before interpolating a separately fitted candidate into the current belief, the learner matches estimated sources one-to-one by estimated geometry and mass, never by array order or true-world identities. Local warm-start candidates retain their existing correspondence. Relabeling exchangeable sources is not new evidence or a distinct alternative map.
+Candidate fitting and accepted belief updates are separate stages. A bounded local optimizer starts from the current belief and preserves its source correspondence; it supplies an update direction rather than an unrestricted replacement map. Other candidate maps are matched before interpolation. The previous belief and proposed update are replayed through the production `Shot` integrator on identical balanced samples. A bounded learning-rate backtrack reduces or rejects a worsening interpolation rather than blindly applying the configured rate. This nonworsening guard applies to retained evidence, not every future launch.
+When at least two usable trajectories are available, candidate validation fits exclude the newest trajectory. The candidate and previous belief are compared on that same excluded trajectory, with its own sample denominator. The newest trajectory can enter the final all-evidence refit only after this validation; the final training residual is not held-out error.
+Persistently poor pre-update predictions trigger stagnation diagnostics, broader uncertainty, and safe probes favoring map disagreement and new coverage over repeated speculative attacks. Recovery uses bounded, separated optimizer starts and cooldowns, not unlimited retries. Repeated paths and low training residuals do not create information or certify recovery. Diverse observations may help, but hidden-source identifiability and global recovery are not guaranteed.
 
 In normal browser matches, a worker fits experimental observations outside the rendering thread.
 The worker stores each CPU's retained trajectory history. Each request sends only the new completed shot and public geometry.
 The main thread receives the fitted belief and diagnostics, not the retained trajectory history.
-The fitting algorithm, evidence limits, learning rates, starting knowledge, and CPU difficulty remain unchanged.
+The synchronous path and worker use the same fitting algorithm, evidence limits, guarded learning, and starting-knowledge model. CPU difficulty presets remain unchanged.
 
 The match waits for all completed-shot updates before the next aim or Event Horizon collapse.
 During this wait, rendering continues. The next CPU aim uses the completed update, not stale knowledge.
-Completed-shot reports contain that shot's counters and pre-update prediction diagnostics.
+Completed-shot reports contain that shot's counters, pre-update prediction diagnostics, and optional nested recovery diagnostics.
 Round resets, rematches, and restored snapshots invalidate pending updates. Field transitions update the worker's public geometry in order.
 Deterministic matches and environments without browser workers use the same learner synchronously.
 
-Trajectory sensitivity determines estimated mass uncertainty. Short, low-information shots retain prior-scale uncertainty instead of narrowing it from shot count alone. The planner evaluates up to nine visible-geometry hypotheses with independent planet-density changes. Hidden-position fits add one alternative position estimate, for at most ten hypotheses. An `exploit` decision means the selected aim has positive expected enemy-hit probability across these hypotheses. It does not guarantee a hit in every hypothesis or the true world.
+Trajectory sensitivity determines estimated mass uncertainty. Short, low-information shots retain prior-scale uncertainty instead of narrowing it from shot count alone. The planner evaluates plausible mass and hidden-position hypotheses, including distinct estimated alternatives retained by recovery. An `exploit` decision means the selected aim has positive expected enemy-hit probability across the evaluated hypotheses. It does not guarantee a hit in every hypothesis or the true world; stalled prediction history can instead request an information-seeking probe.
 
 The planner searches safe alternatives before it returns a fallback. `unsafeRate` reports the fraction of evaluated hypotheses where the selected launch hits itself or a teammate. Zero means safe in those hypotheses, not proven safe in the true world.
 
@@ -201,7 +206,7 @@ Neither historical schema is upgraded by guessing missing evidence.
 
 Matrix and learning-validation reports include `codeFingerprint: { algorithm, digest, sources }`.
 Both CLIs print the SHA256 code identity and exact relative source paths.
-The digest covers fixed ordered production learner, planner, physics, world-generation, and match-integration sources, plus `benchmarks/ai-matrix.ts` and `benchmarks/ai-metrics.ts` to identify the executed experiment. It includes paths and byte lengths.
+The digest covers fixed ordered production learner, planner, physics, world-generation, and match-integration sources, including `src/experimental-evidence.ts` for trajectory sampling, anonymous-source matching, and representative-history selection, plus `benchmarks/ai-matrix.ts` and `benchmarks/ai-metrics.ts` to identify the executed experiment. It includes exact relative paths and byte lengths.
 It excludes package metadata, other benchmark harnesses, tests, and research files. It requires no git or network access.
 Identical source bytes give the same identity regardless of checkout path. Selected source edits change the identity.
 Schema `3` reports without this field have unknown code identity, not the current checkout's identity.
@@ -213,12 +218,16 @@ A round reset clears evidence counts. Horizon field changes can clear retained e
 A field transition clears old-field fit and forecast diagnostics from the next launch.
 Completed-shot observations remain immutable history for their original field.
 Browser console decision logs include `fit` and `reconstruction` details when `VITE_EXPERIMENTAL_AI_LOGS=1`.
-`fit.rms` measures retained trajectories after assimilation. `fit.initialRms` is the optimizer's starting residual.
+For learner updates, `fit.initialRms` and `fit.rms` compare the belief before and after assimilation on identical retained samples; `fit.improvement` is their difference, not a mixed optimizer-start/belief-final comparison. Standalone optimizer fits retain their optimizer-stage residual semantics.
+Optional `recovery` objects on launch decisions and completed-shot observations separate `optimizerInitialRms` / `optimizerFinalRms` from `beliefBeforeRms` / `beliefAfterRms`. `candidateValidationRms` and `previousValidationRms` compare the excluded-newest-trajectory candidate and previous belief with `validationSamples` as their common denominator. Missing validation stays `null`, rather than becoming a measured zero.
+`proposedLearningRate`, `effectiveLearningRate`, and `updateStatus` distinguish requested, accepted, reduced, rejected, frozen, and unavailable work. `retainedShotIds` and `sampleCounts` correspond in retained-history order; `matchedSources`, `stagnationCount`, `stalled`, and `recoveryStarts` describe correspondence and recovery activity. Raw schema-3 JSON preserves these additive objects. Historical records without them remain valid and do not acquire invented recovery values.
+`recoveryStarts` counts additional separated starts in that observation (zero or two), not lifetime attempts; total optimizer starts are bounded at four. Frozen or unavailable updates have no optimizer-stage RMS. `predictionRms` remains the actual pre-update forecast error, separate from the excluded-newest candidate validation RMS.
+The console's `fit.diagonalSensitivityProxy` labels the existing sensitivity-diagonal ratio (`GravityFit.condition`). This is a diagonal sensitivity proxy, not a full-matrix condition number or a proof of identifiability.
 `reconstruction.relativeGravityErrorPercent` measures estimated gravity error across the diagnostic grid. Lower values are better, and zero is exact.
 Per-planet entries show true and estimated masses and positions, with absolute and percentage errors. Black-hole estimates and mass errors appear separately.
 True masses are console diagnostics only. They never enter the planner. Missing fit or prediction values remain `null`.
 
-Schema version `3` summarizes prediction RMS and prediction samples from these observations, not later launch diagnostics.
+Schema version `3` summarizes prediction RMS and prediction samples from these observations, not later launch diagnostics. Optional recovery summaries also use completed shots as their denominator and report missing counts; launch recovery remains separate raw pre-launch history.
 
 | Metric | Meaning |
 | --- | --- |
@@ -234,7 +243,7 @@ Schema version `3` summarizes prediction RMS and prediction samples from these o
 | Kills | Offensive kills, self-kills, friendly kills, and black-hole deaths remain separate |
 | Shots per kill | Fired shots divided by offensive kills. No offensive kills means unavailable. |
 | Shot stages | First, second, and third-or-later own shots within each round, each with its own denominator |
-| Observed / learned / retained | Evidence counts recorded after each unique completed own shot, including the final shot |
+| Observed / learned / retained | Unique completed own shots / cumulative accepted effective-rate evidence / representative retained same-field shots, including the final shot |
 | Prediction RMS | New completed-shot position error measured before its fitted update, with pre-collapse observation geometry |
 | Update fit time | Fitted-update time from the completed-shot observation, in milliseconds |
 | Launch fit time / map RMS | Separate launch diagnostics. Map error uses a grid and normalization by true gravity magnitude. |
@@ -345,6 +354,9 @@ Learned and frozen beliefs receive identical observations and predict the same h
 At each starting-knowledge setting, the curated Classic case and fixed-suite aggregate must improve median trail RMS by at least 25%.
 Individual arbitrary worlds need not improve monotonically.
 
+The hidden-source recovery fixture uses seed `7139`, seven invisible planets, starting knowledge `0.72`, and learning rate `0.54`. It assimilates eight own trajectories at power `65` and angles `0.4`, `0.8`, `1.2`, `1.6`, `-30`, `30`, `-50`, and `50` degrees. Four probes at power `70` and angles `-35`, `-10`, `20`, and `45` degrees remain excluded from training. Both observations and probes use production `Shot` physics with no bounce and a 12-second limit; predictions use estimated point sources without hidden true positions or radii.
+Its final prediction error is the square root of summed squared Euclidean position errors divided by the pooled probe sample count, not an unweighted average of per-probe RMS values. The nonregression gate uses the full measured pre-recovery reference `64.12803234206731` pixels from `.scratch/recovery-before.ts` on the same fixture and metric; rounded displays may show `64.13` pixels. It also requires at least 75% improvement over the identical-knowledge frozen prior, unchanged rate-zero predictions, nonworsening retained-evidence updates, and meaningful recovery diagnostics. These comparisons test recovery on this fixture, not universal hidden-map identifiability or match-strength parity.
+
 Short boundary-exit shots check that unusable samples add no learned evidence.
 Tiny remote trajectories check that subpixel fit residuals retain mass uncertainty. Such residuals do not certify future accuracy.
 The CLI prints gate results, the fingerprint, and separate rate/knowledge/history tables with prediction and evidence diagnostics.
@@ -352,7 +364,7 @@ Actual-shot tables compare learned and frozen errors without pooling knowledge s
 Probe distributions describe this fixed suite. They are not match-strength confidence intervals.
 `--json=path` saves raw cells and gate diagnostics. The CLI exits nonzero when any declared gate fails.
 
-This suite covers visible geometry, not global recovery of hidden source positions. Shot termination agreement is not optimal planner-action agreement. Held-out trajectories establish prediction accuracy only for the declared layouts and launches. The independent matrix tests match-level strength.
+The visible-geometry suite and a separately declared deterministic hidden-source recovery fixture test prediction only on their specified layouts and excluded launches, not universal or global recovery of hidden source positions. Shot termination agreement is not optimal planner-action agreement. The independent matrix tests match-level strength.
 
 Set `EXPERIMENTAL_AI_LOGS=1` for benchmark diagnostics. Set `VITE_EXPERIMENTAL_AI_LOGS=1` before `npm run dev` for browser diagnostics. Completed-shot observations include the final shot, evidence counts, pre-update prediction samples, prediction RMS, and update time. Launch decisions retain separate fit-time and map-error diagnostics. Flight-time summaries report p50 and p95 with outcome-specific counts.
 

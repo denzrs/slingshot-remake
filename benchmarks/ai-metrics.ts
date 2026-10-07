@@ -1,6 +1,6 @@
 import type { ExperimentalObservationReport, KillRecord, VersusMode } from '../src/game/match';
 import type { ShotEnd } from '../src/physics';
-import type { ExperimentalDecision } from '../src/experimental-ai';
+import type { ExperimentalDecision, ExperimentalRecoveryDiagnostics } from '../src/experimental-ai';
 
 export type Format = '1v1' | '2v2' | '3v3';
 export type Opponent = 'easy' | 'medium' | 'hard';
@@ -18,6 +18,7 @@ export interface DecisionRecord {
   fitMs: number;
   relativeGravityMapRms: number | null;
   details?: ExperimentalDecision;
+  recovery?: ExperimentalRecoveryDiagnostics;
 }
 export interface ShotRecord {
   round: number;
@@ -71,6 +72,20 @@ export interface OutcomeSummary {
   attempted: number; completed: number; failed: number; wins: number; losses: number;
   draws: number; winPoints: number | null;
 }
+/** Completed-shot denominator, with historical/missing recovery left unavailable. */
+export interface RecoverySummary {
+  observationCount: number;
+  missingObservationCount: number;
+  optimizerInitialRms: Distribution; optimizerFinalRms: Distribution;
+  beliefBeforeRms: Distribution; beliefAfterRms: Distribution;
+  candidateValidationRms: Distribution; previousValidationRms: Distribution;
+  validationSamples: Distribution;
+  proposedLearningRate: Distribution; effectiveLearningRate: Distribution;
+  matchedSources: Distribution; stagnationCount: Distribution; recoveryStarts: Distribution;
+  stalled: number;
+  updateStatuses: Partial<Record<ExperimentalRecoveryDiagnostics['updateStatus'], number>>;
+}
+
 export interface ShotSummary {
   fired: number; completed: number; unfinished: number; shipHits: number; shipHitRate: number | null;
   enemyHits: number; friendlyHits: number; selfHits: number; hitRelationMissing: number;
@@ -82,6 +97,7 @@ export interface ShotSummary {
   predictionRms: Distribution; predictionSamples: Distribution; fitMs: Distribution;
   observedShots: Distribution; learnedShots: Distribution; retainedShots: Distribution;
   trajectorySamples: Distribution; relativeGravityMapRms: Distribution;
+  recovery?: RecoverySummary;
 }
 export interface CellSummary {
   legs: OutcomeSummary;
@@ -177,6 +193,8 @@ function shotSummary(shots: readonly ShotRecord[]): ShotSummary {
   const observed = (value: (observation: ExperimentalObservationReport) => number | null) => distribution(completed.map((shot) => shot.observation ? value(shot.observation) : null));
   const enemyHits = completed.filter((shot) => shot.hitRelation === 'enemy').length;
   const hitRelationMissing = completed.filter((shot) => shot.outcome === 'ship' && !shot.hitRelation).length;
+  const recoveries = completed.flatMap((shot) => shot.observation?.recovery ? [shot.observation.recovery] : []);
+  const recoveryDistribution = (value: (recovery: ExperimentalRecoveryDiagnostics) => number | null) => observed((observation) => observation.recovery ? value(observation.recovery) : null);
   return {
     fired: shots.length, completed: completed.length, unfinished: shots.length - completed.length,
     shipHits: completed.filter((shot) => shot.outcome === 'ship').length,
@@ -202,6 +220,24 @@ function shotSummary(shots: readonly ShotRecord[]): ShotSummary {
     retainedShots: observed((observation) => observation.retainedShots),
     trajectorySamples: observed((observation) => observation.samples),
     relativeGravityMapRms: distribution(shots.map((shot) => shot.decision?.relativeGravityMapRms ?? null)),
+    ...(recoveries.length ? { recovery: {
+      observationCount: recoveries.length,
+      missingObservationCount: completed.length - recoveries.length,
+      optimizerInitialRms: recoveryDistribution((recovery) => recovery.optimizerInitialRms),
+      optimizerFinalRms: recoveryDistribution((recovery) => recovery.optimizerFinalRms),
+      beliefBeforeRms: recoveryDistribution((recovery) => recovery.beliefBeforeRms),
+      beliefAfterRms: recoveryDistribution((recovery) => recovery.beliefAfterRms),
+      candidateValidationRms: recoveryDistribution((recovery) => recovery.candidateValidationRms),
+      previousValidationRms: recoveryDistribution((recovery) => recovery.previousValidationRms),
+      validationSamples: recoveryDistribution((recovery) => recovery.validationSamples),
+      proposedLearningRate: recoveryDistribution((recovery) => recovery.proposedLearningRate),
+      effectiveLearningRate: recoveryDistribution((recovery) => recovery.effectiveLearningRate),
+      matchedSources: recoveryDistribution((recovery) => recovery.matchedSources),
+      stagnationCount: recoveryDistribution((recovery) => recovery.stagnationCount),
+      recoveryStarts: recoveryDistribution((recovery) => recovery.recoveryStarts),
+      stalled: recoveries.filter((recovery) => recovery.stalled).length,
+      updateStatuses: Object.fromEntries([...new Set(recoveries.map((recovery) => recovery.updateStatus))].map((status) => [status, recoveries.filter((recovery) => recovery.updateStatus === status).length])),
+    } } : {}),
   };
 }
 

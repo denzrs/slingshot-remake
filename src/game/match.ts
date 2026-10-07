@@ -1,4 +1,4 @@
-import { advanceExperimentalWorld, createExperimentalLearner, measureReconstruction, observeExperimentalShot, planExperimentalShot, type ExperimentalDecision, type ExperimentalLearner, type ExperimentalWorld, type GravityFit } from '../experimental-ai';
+import { advanceExperimentalWorld, createExperimentalLearner, measureReconstruction, observeExperimentalShot, planExperimentalShot, type ExperimentalDecision, type ExperimentalLearner, type ExperimentalRecoveryDiagnostics, type ExperimentalWorld, type GravityFit } from '../experimental-ai';
 import { ExperimentalWorkerCancelledError, ExperimentalWorkerClient } from '../experimental-worker-client';
 import { EXPERIMENTAL_PRESETS, isExperimentalCpu, planShot, type Aim, type CpuLevel, type ExperimentalCpuConfig } from '../ai';
 import { AIM, COLORS, FIELD, GRACE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
@@ -135,6 +135,8 @@ export interface ExperimentalReport {
   fitMs: number;
   decision: ExperimentalDecision;
   relativeGravityMapRms: number;
+  /** Optional additive diagnostics; absent in historical schema-3 records. */
+  recovery?: ExperimentalRecoveryDiagnostics;
 }
 
 /** Post-ingestion evidence state; prediction validates this shot against the pre-update fit. */
@@ -148,6 +150,7 @@ export interface ExperimentalObservationReport {
   predictionRms: number | null;
   predictionSamples: number;
   fitMs: number;
+  recovery?: ExperimentalRecoveryDiagnostics;
 }
 
 /** Authoritative result of a real shot, never a visual extrapolation or killcam replay. */
@@ -877,6 +880,7 @@ export abstract class Match {
       predictionRms: learner.predictionRms,
       predictionSamples: learner.predictionSamples,
       fitMs: learner.fitMs,
+      ...(learner.recovery ? { recovery: { ...learner.recovery, sampleCounts: [...learner.recovery.sampleCounts], retainedShotIds: [...learner.recovery.retainedShotIds] } } : {}),
     };
   }
 
@@ -987,6 +991,7 @@ export abstract class Match {
     return this.cpuJobs.get(id);
   }
   private logGravityFit(player: number, fit: GravityFit, decision: ExperimentalDecision): void {
+    const recovery = decision.recovery ?? fit.recovery;
     const logsEnabled = (typeof process !== 'undefined' && process.env.EXPERIMENTAL_AI_LOGS === '1')
       || import.meta.env?.VITE_EXPERIMENTAL_AI_LOGS === '1';
     if (!logsEnabled && !this.options.onExperimentalDecision) return;
@@ -1007,6 +1012,7 @@ export abstract class Match {
       fitMs: fit.fitMs,
       decision,
       relativeGravityMapRms: reconstruction.relativeGravityRms,
+      ...(recovery ? { recovery: { ...recovery, sampleCounts: [...recovery.sampleCounts], retainedShotIds: [...recovery.retainedShotIds] } } : {}),
     };
     this.options.onExperimentalDecision?.(report);
     if (logsEnabled) console.info('[AI experimental] decision', {
@@ -1015,9 +1021,10 @@ export abstract class Match {
         initialRms: fit.initialRms,
         rms: fit.rms,
         improvement: fit.improvement,
-        condition: fit.condition,
+        diagonalSensitivityProxy: fit.condition,
         samples: fit.samples,
         retainedShots: decision.retainedShots,
+        ...(report.recovery ? { recovery: report.recovery } : {}),
       },
       reconstruction: {
         gravityRms: reconstruction.gravityRms,

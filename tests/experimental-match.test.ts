@@ -123,7 +123,7 @@ describe('experimental match learning', () => {
     it(`${Game.name} runs three fixed experimental presets alongside every original CPU independently of custom options`, () => {
       const mixedSeats: Seat[] = ['experimental-easy', 'experimental-medium', 'experimental-hard', 'easy', 'medium', 'hard'];
       const configs = [
-        { learningRate: 0.35, startingKnowledge: 0.5 },
+        { learningRate: 0.45, startingKnowledge: 0.5 },
         { learningRate: 0.54, startingKnowledge: 0.72 },
         { learningRate: 0.72, startingKnowledge: 0.9 },
       ];
@@ -521,7 +521,7 @@ describe('experimental worker match learning', () => {
       match.trails = [];
       match.planNow([0, 1]);
       expect(decisions).toHaveLength(2);
-      for (const [player, rate] of [0.35, 0.72].entries()) {
+      for (const [player, rate] of [0.45, 0.72].entries()) {
         expect(decisions.find((report) => report.player === player)).toMatchObject({ observedShots: 1, learnedShots: rate, startingKnowledge: player === 0 ? 0.5 : 0.9 });
       }
       expect(completed).toHaveLength(2);

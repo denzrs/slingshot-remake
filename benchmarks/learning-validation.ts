@@ -8,6 +8,7 @@ import {
 import { Shot, type World } from '../src/physics';
 import { createRng } from '../src/rng';
 import { codeFingerprint } from './ai-matrix';
+import { generateWorld } from '../src/world';
 
 export const VALIDATION_RATES = [0, 0.1, 0.35, 1] as const;
 export const VALIDATION_KNOWLEDGE = [0, 1] as const;
@@ -205,6 +206,115 @@ export function shortShotConfidenceCheck() {
   };
 }
 
+export const RECOVERY_ANGLES = [0.4, 0.8, 1.2, 1.6, -30, 30, -50, 50] as const;
+export const RECOVERY_PROBES = [-35, -10, 20, 45] as const;
+/** Measured pre-recovery reference from .scratch/recovery-before.ts; same seed, observations and pooled Euclidean probes. */
+export const RECOVERY_BASELINE_RMS = 64.12803234206731;
+const RECOVERY_RULES = { bounce: false, timeLimit: 12 };
+
+export function recoveryWorld(): World {
+  const world = generateWorld(7139, { minPlanets: 7, maxPlanets: 7, players: 2, blackHole: false });
+  world.ships[1].alive = false;
+  return world;
+}
+
+export function recoveryVisibleWorld(world: World): ExperimentalWorld {
+  return { ...visibleWorld(world), visiblePlanets: undefined };
+}
+
+export function recordRecoveryShot(world: World, angle: number, power: number, shotId: number): ExperimentalShot {
+  const shot = new Shot(world, 0, angle, power, RECOVERY_RULES);
+  const points = [shot.x, shot.y];
+  for (let step = 1; step <= Math.ceil(RECOVERY_RULES.timeLimit / PHYSICS.DT) && !shot.end; step++) {
+    shot.step();
+    if (step % 2 === 0) points.push(shot.x, shot.y);
+  }
+  return { angle, power, shotId, points };
+}
+
+export interface RecoveryProbeError { angle: number; power: number; squared: number; samples: number; trailRms: number }
+
+/** Hidden predictions use estimated point sources, never true source positions or radii. */
+export function recoveryPredictionErrors(world: World, fit: GravityFit): RecoveryProbeError[] {
+  const belief: World = {
+    width: world.width, height: world.height, version: world.version,
+    ships: world.ships.map((ship) => ({ ...ship })), hole: null,
+    planets: fit.planets.map((planet, index) => ({ ...planet, radius: 0, seed: index, style: 'rocky', tint: '#fff' })),
+  };
+  return RECOVERY_PROBES.map((angle) => {
+    const actual = new Shot(world, 0, angle, 70, RECOVERY_RULES);
+    const predicted = new Shot(belief, 0, angle, 70, RECOVERY_RULES);
+    let squared = 0;
+    let samples = 0;
+    for (let step = 1; step <= Math.ceil(RECOVERY_RULES.timeLimit / PHYSICS.DT) && !actual.end; step++) {
+      actual.step();
+      predicted.step();
+      if (step % 2 === 0) {
+        squared += (actual.x - predicted.x) ** 2 + (actual.y - predicted.y) ** 2;
+        samples++;
+      }
+    }
+    return { angle, power: 70, squared, samples, trailRms: Math.sqrt(squared / Math.max(1, samples)) };
+  });
+}
+
+/** Eight own trajectories and four excluded probes; deliberately not a match matrix. */
+export function runHiddenRecoveryValidation() {
+  const world = recoveryWorld();
+  const visible = recoveryVisibleWorld(world);
+  const learner = createExperimentalLearner(0.72);
+  const frozen = createExperimentalLearner(0.72);
+  const errors = (state: ExperimentalLearner) => recoveryPredictionErrors(world, experimentalLearnerFit(state, visible));
+  const aggregate = (probes: readonly RecoveryProbeError[]) => Math.sqrt(probes.reduce((sum, probe) => sum + probe.squared, 0)
+    / Math.max(1, probes.reduce((sum, probe) => sum + probe.samples, 0)));
+  const priorErrors = errors(learner);
+  const stages = RECOVERY_ANGLES.map((angle, index) => {
+    const observation = recordRecoveryShot(world, angle, 65, index + 1);
+    const before = experimentalLearnerFit(learner, visible);
+    observeExperimentalShot(learner, observation, visible, 0.54);
+    observeExperimentalShot(frozen, observation, visible, 0);
+    const fit = experimentalLearnerFit(learner, visible);
+    const probes = errors(learner);
+    return { shotId: index + 1, angle, power: 65, points: observation.points.length / 2,
+      errors: probes, heldOutRms: aggregate(probes), initialRms: fit.initialRms, beliefRms: fit.rms,
+      improvement: fit.improvement, predictionRms: fit.predictionRms, observedShots: fit.observedShots,
+      learnedShots: fit.learnedShots, learnedIncrement: fit.learnedShots - before.learnedShots,
+      retainedShots: fit.retainedShots, recovery: fit.recovery };
+  });
+  const finalErrors = errors(learner);
+  const frozenErrors = errors(frozen);
+  const priorRms = aggregate(priorErrors);
+  const finalRms = aggregate(finalErrors);
+  const diagnosticsMeaningful = stages.every(({ recovery, initialRms, beliefRms, improvement, learnedIncrement }, index) =>
+    recovery !== undefined && recovery.beliefBeforeRms !== null && recovery.beliefAfterRms !== null
+    && recovery.optimizerInitialRms !== null && Number.isFinite(recovery.optimizerInitialRms)
+    && recovery.optimizerFinalRms !== null && Number.isFinite(recovery.optimizerFinalRms)
+    && initialRms !== null && beliefRms !== null
+    && Number.isFinite(recovery.beliefBeforeRms) && Number.isFinite(recovery.beliefAfterRms)
+    && initialRms === recovery.beliefBeforeRms && beliefRms === recovery.beliefAfterRms
+    && improvement !== null && Math.abs(improvement - (initialRms - beliefRms)) < 1e-9
+    && Math.abs(learnedIncrement - recovery.effectiveLearningRate) < 1e-9
+    && recovery.sampleCounts.reduce((sum, count) => sum + count, 0) > 0
+    && recovery.sampleCounts.every((count) => count > 0)
+    && recovery.retainedShotIds.length === recovery.sampleCounts.length
+    && (recovery.updateStatus === 'accepted' ? recovery.effectiveLearningRate === recovery.proposedLearningRate
+      : recovery.updateStatus === 'reduced' ? recovery.effectiveLearningRate > 0 && recovery.effectiveLearningRate < recovery.proposedLearningRate
+        : recovery.updateStatus === 'rejected' && recovery.effectiveLearningRate === 0)
+    && (index === 0 ? recovery.candidateValidationRms === null && recovery.validationSamples === 0
+      : recovery.candidateValidationRms !== null && Number.isFinite(recovery.candidateValidationRms)
+        && recovery.previousValidationRms !== null && Number.isFinite(recovery.previousValidationRms) && recovery.validationSamples > 0));
+  const updatesNonworsening = stages.every(({ recovery }) => recovery !== undefined
+    && recovery.beliefBeforeRms !== null && recovery.beliefAfterRms !== null
+    && recovery.beliefAfterRms <= recovery.beliefBeforeRms + 1e-7
+    && recovery.effectiveLearningRate >= 0 && recovery.effectiveLearningRate <= recovery.proposedLearningRate);
+  const baselineNonregressing = finalRms <= RECOVERY_BASELINE_RMS;
+  return { seed: 7139, planetCount: 7, startingKnowledge: 0.72, learningRate: 0.54, rules: RECOVERY_RULES,
+    priorErrors, finalErrors, frozenErrors, priorRms, finalRms, improvementFraction: 1 - finalRms / priorRms, stages,
+    baselineRms: RECOVERY_BASELINE_RMS, baselineNonregressing, predictionMetric: 'pooled-sample-weighted-euclidean-trail-rms',
+    diagnosticsMeaningful, updatesNonworsening, frozenUnchanged: JSON.stringify(priorErrors) === JSON.stringify(frozenErrors),
+    probesExcluded: RECOVERY_ANGLES.every((angle: number) => !RECOVERY_PROBES.some((probe) => probe === angle)) };
+}
+
 export function runLearningValidation() {
   const fingerprint = codeFingerprint();
   const cells: ValidationCell[] = [];
@@ -270,7 +380,12 @@ export function runLearningValidation() {
   const zeroKnowledgeActualFrozenMedian = quantile(zeroKnowledgeActualShotSuite.flatMap((cell) => cell.frozenErrors.map((error) => error.trailRms)), 0.5);
   const lowInformation = lowInformationLearningCheck();
   const shortShotConfidence = shortShotConfidenceCheck();
+  const hiddenRecovery = runHiddenRecoveryValidation();
   const gates = [
+    { name: 'hidden-recovery-honest-diagnostics', passed: hiddenRecovery.diagnosticsMeaningful, actual: hiddenRecovery.stages, target: 'finite optimizer and same-stage belief diagnostics, excluded-newest validation, effective accepted evidence' },
+    { name: 'hidden-recovery-safe-updates', passed: hiddenRecovery.updatesNonworsening, actual: hiddenRecovery.stages, target: 'no accepted same-sample belief objective increase' },
+    { name: 'hidden-recovery-held-out-decrease', passed: hiddenRecovery.probesExcluded && hiddenRecovery.frozenUnchanged && hiddenRecovery.finalRms <= hiddenRecovery.priorRms * 0.25, actual: { priorRms: hiddenRecovery.priorRms, finalRms: hiddenRecovery.finalRms, improvementFraction: hiddenRecovery.improvementFraction }, target: 'at least 75% lower excluded seven-hidden-source prediction error with frozen reference unchanged' },
+    { name: 'hidden-recovery-baseline-nonregression', passed: hiddenRecovery.probesExcluded && hiddenRecovery.baselineNonregressing, actual: { finalRms: hiddenRecovery.finalRms, baselineRms: hiddenRecovery.baselineRms, metric: hiddenRecovery.predictionMetric }, target: `final pooled Euclidean trail RMS at most ${RECOVERY_BASELINE_RMS}px, the measured pre-recovery reference on identical observations and probes` },
     { name: 'frozen-rate-zero', passed: frozenUnchanged, actual: frozenUnchanged, target: true },
     { name: 'rate-independent-starting-beliefs', passed: equalStartingBeliefs, actual: equalStartingBeliefs, target: true },
     { name: 'zero-knowledge-evidence-improves-held-out-median', passed: zeroKnowledgeRateMedians[3].trailRms <= zeroKnowledgeRateMedians[0].trailRms * 0.75, actual: zeroKnowledgeRateMedians, target: 'at least 25% improvement at rate1 against frozen rate0 with identical zero starting knowledge' },
@@ -288,7 +403,7 @@ export function runLearningValidation() {
     { name: 'future-trail-median-at-most-two-pixels', passed: median(1, 8) <= 2, actual: median(1, 8), target: 2 },
     { name: 'future-endpoint-p95-within-five-percent-diagonal', passed: quantile(best.map((error) => error.endpointError), 0.95) <= Math.hypot(FIELD.width, FIELD.height) * 0.05, actual: quantile(best.map((error) => error.endpointError), 0.95), target: Math.hypot(FIELD.width, FIELD.height) * 0.05 },
   ];
-  return { suite: 'production-held-out-v3', codeFingerprint: fingerprint, rules: RULES, rates: VALIDATION_RATES, startingKnowledge: VALIDATION_KNOWLEDGE, historyBudgets: HISTORY_BUDGETS, gates, passed: gates.every((gate) => gate.passed), finalRateMedians, zeroKnowledgeRateMedians, cells, transition, actualShots, actualShotSuite, zeroKnowledgeActualShotSuite, lowInformation, shortShotConfidence, limitations: ['Visible geometry suite only. No hidden-position recovery claim.', 'Held-out probes are excluded from all training.', 'Outcome agreement is shot termination agreement, not optimal planner-action agreement.', 'Map identifiability and global gravity recovery are not established by this suite.', 'Rates are compared at identical starting knowledge. Different starting-knowledge settings are never pooled.', 'Match-level strength requires the independent side-swapped benchmark matrix.'] };
+  return { suite: 'production-held-out-v3', codeFingerprint: fingerprint, rules: RULES, rates: VALIDATION_RATES, startingKnowledge: VALIDATION_KNOWLEDGE, historyBudgets: HISTORY_BUDGETS, gates, passed: gates.every((gate) => gate.passed), finalRateMedians, zeroKnowledgeRateMedians, cells, transition, actualShots, actualShotSuite, zeroKnowledgeActualShotSuite, lowInformation, shortShotConfidence, hiddenRecovery, limitations: ['Visible geometry suite and one deterministic seven-hidden-source recovery fixture, not global hidden-map recovery.', 'Held-out probes are excluded from all training.', 'Outcome agreement is shot termination agreement, not optimal planner-action agreement.', 'Map identifiability and global gravity recovery are not established by this suite.', 'Rates are compared at identical starting knowledge. Different starting-knowledge settings are never pooled.', 'Match-level strength requires the independent side-swapped benchmark matrix.'] };
 }
 
 function main() {
@@ -306,14 +421,13 @@ function main() {
     if (!gate.passed && (typeof gate.actual === 'number' || typeof gate.actual === 'boolean')) console.log(`    actual=${gate.actual}; target=${JSON.stringify(gate.target)}`);
   }
   console.log('Held-out predictions (pixels; pooled fixed-layout probes, not independent match evidence):');
-  for (const startingKnowledge of report.startingKnowledge) for (const rate of report.rates) for (const budget of report.historyBudgets) {
-    const cells = report.cells.filter((cell) => cell.rate === rate && cell.budget === budget && cell.startingKnowledge === startingKnowledge);
-    const errors = cells.flatMap((cell) => cell.errors);
-    const trail = errors.map((error) => error.trailRms);
-    const endpoint = errors.map((error) => error.endpointError);
-    const evidence = (key: 'observedShots' | 'learnedShots' | 'retainedShots') => cells.reduce((sum, cell) => sum + cell[key], 0) / cells.length;
-    console.log(`  rate=${rate} knowledge=${startingKnowledge} history=${budget}: layouts=${cells.length}, probes=${errors.length}; trail RMS p50/p95=${quantile(trail, 0.5).toFixed(3)}/${quantile(trail, 0.95).toFixed(3)}; endpoint p50/p95=${quantile(endpoint, 0.5).toFixed(3)}/${quantile(endpoint, 0.95).toFixed(3)}; outcome agreement=${errors.filter((error) => error.outcomeAgreement).length}/${errors.length}; mean evidence observed/learned/retained=${evidence('observedShots').toFixed(1)}/${evidence('learnedShots').toFixed(1)}/${evidence('retainedShots').toFixed(1)}`);
+  for (const startingKnowledge of report.startingKnowledge) for (const rate of report.rates) {
+    const errors = report.cells.filter((cell) => cell.rate === rate && cell.budget === 8 && cell.startingKnowledge === startingKnowledge).flatMap((cell) => cell.errors);
+    console.log(`  rate=${rate} knowledge=${startingKnowledge} history=8: trail RMS p50/p95=${quantile(errors.map((error) => error.trailRms), 0.5).toFixed(3)}/${quantile(errors.map((error) => error.trailRms), 0.95).toFixed(3)}`);
   }
+  const recovery = report.hiddenRecovery;
+  console.log(`Hidden recovery seed=${recovery.seed}, sources=${recovery.planetCount}: independent trail RMS ${recovery.priorRms.toFixed(3)} -> ${recovery.finalRms.toFixed(3)}px; improvement=${(recovery.improvementFraction * 100).toFixed(1)}%; safe updates=${recovery.updatesNonworsening}; baseline=${recovery.baselineRms.toFixed(3)}px (${recovery.baselineNonregressing ? 'nonregressing' : 'REGRESSION'})`);
+  for (const stage of recovery.stages) console.log(`  shot=${stage.shotId} angle=${stage.angle}: held-out=${stage.heldOutRms.toFixed(3)}px; belief=${stage.initialRms?.toFixed(3)} -> ${stage.beliefRms?.toFixed(3)}px; rate=${stage.recovery?.effectiveLearningRate}/${stage.recovery?.proposedLearningRate} ${stage.recovery?.updateStatus}; stalled=${stage.recovery?.stalled}`);
   console.log('Actual AI-chosen shots (same observations and held-out probes for learned/frozen beliefs):');
   for (const suite of [report.actualShotSuite, report.zeroKnowledgeActualShotSuite]) {
     for (const cell of suite) console.log(`  seed=${cell.seed} knowledge=${cell.startingKnowledge}: shots=${cell.shots.length}; observed/learned=${cell.observedShots}/${cell.learnedShots}; prediction samples=${cell.predictionSamples}; learned/frozen trail RMS p50=${cell.learnedMedian.toFixed(3)}/${cell.frozenMedian.toFixed(3)}; improvement=${(cell.improvementFraction * 100).toFixed(1)}%`);

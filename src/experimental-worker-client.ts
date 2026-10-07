@@ -2,7 +2,7 @@ import {
   restoreExperimentalLearnerSnapshot, type ExperimentalLearner, type ExperimentalShot, type ExperimentalWorld,
 } from './experimental-ai';
 import {
-  EXPERIMENTAL_WORKER_VERSION, experimentalWorkerWorld,
+  EXPERIMENTAL_WORKER_VERSION, assertExperimentalWorkerSnapshot, experimentalWorkerWorld,
   type ExperimentalWorkerRequest, type ExperimentalWorkerResponse, type ExperimentalWorldTransition,
 } from './experimental-worker-protocol';
 
@@ -100,7 +100,7 @@ export class ExperimentalWorkerClient {
     }
   }
 
-  private identity(): { version: 1; generation: number; requestId: number } {
+  private identity(): { version: typeof EXPERIMENTAL_WORKER_VERSION; generation: number; requestId: number } {
     return { version: EXPERIMENTAL_WORKER_VERSION, generation: this.generation, requestId: ++this.requestId };
   }
 
@@ -169,8 +169,14 @@ export class ExperimentalWorkerClient {
       this.fail(error);
       return;
     }
-    try { pending.resolve(restoreExperimentalLearnerSnapshot(response.snapshot)); }
-    catch (error) { pending.reject(asError(error)); }
+    try {
+      assertExperimentalWorkerSnapshot(response.snapshot);
+      pending.resolve(restoreExperimentalLearnerSnapshot(response.snapshot));
+    } catch (error) {
+      const failure = asError(error);
+      pending.reject(failure);
+      this.fail(failure);
+    }
   }
 
   private cancelPending(error: Error): void {

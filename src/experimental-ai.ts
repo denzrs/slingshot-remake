@@ -1,6 +1,7 @@
 import { HORIZON, PHYSICS } from './config';
 import { planShot, type Aim, type PlanOptions } from './ai';
 import { Shot, aimDirection, normalizeAngle, simulateShot, type Planet, type ShotOutcome, type ShotRules, type World } from './physics';
+import { balancedObservations, matchEstimatedSources, retainRepresentativeShots } from './experimental-evidence';
 
 export interface ExperimentalShot {
   /** Flat [x0, y0, x1, y1, …] samples from this CPU's completed shot. */
@@ -40,11 +41,38 @@ export interface PlanetEstimate {
   massStandardDeviation?: number;
 }
 
+export interface ExperimentalRecoveryDiagnostics {
+  optimizerInitialRms: number | null;
+  optimizerFinalRms: number | null;
+  beliefBeforeRms: number | null;
+  beliefAfterRms: number | null;
+  candidateValidationRms: number | null;
+  previousValidationRms: number | null;
+  validationSamples: number;
+  proposedLearningRate: number;
+  effectiveLearningRate: number;
+  updateStatus: 'accepted' | 'reduced' | 'rejected' | 'frozen' | 'unavailable';
+  sampleCounts: number[];
+  retainedShotIds: (number | null)[];
+  stagnationCount: number;
+  stalled: boolean;
+  /** Additional separated starts for this observation; total starts are bounded at four. */
+  recoveryStarts: number;
+  matchedSources: number;
+}
+
+function emptyRecovery(): ExperimentalRecoveryDiagnostics {
+  return { optimizerInitialRms: null, optimizerFinalRms: null, beliefBeforeRms: null, beliefAfterRms: null,
+    candidateValidationRms: null, previousValidationRms: null, validationSamples: 0,
+    proposedLearningRate: 0, effectiveLearningRate: 0, updateStatus: 'unavailable', sampleCounts: [],
+    retainedShotIds: [], stagnationCount: 0, stalled: false, recoveryStarts: 0, matchedSources: 0 };
+}
+
 export interface GravityFit {
   planets: PlanetEstimate[];
   holeMass: number | null;
   samples: number;
-  /** Position-residual RMS before forward refinement. */
+  /** Current belief RMS on the same retained samples as rms (optimizer start for standalone fits). */
   initialRms: number | null;
   /** Position-residual RMS after forward refinement. */
   rms: number | null;
@@ -64,6 +92,7 @@ export interface GravityFit {
   learningRate?: number;
   predictionRms?: number | null;
   predictionSamples?: number;
+  recovery?: ExperimentalRecoveryDiagnostics;
 }
 
 export interface PlanetMatch {
@@ -82,7 +111,7 @@ export interface ReconstructionQuality {
 type AccelerationSample = { x: number; y: number; ax: number; ay: number };
 type Observation = { shot: number; point: number };
 type ForwardResult = { params: Float64Array; residuals: Float64Array; rms: number; condition: number | null };
-type FitCandidate = { fit: GravityFit; params: Float64Array };
+type FitCandidate = { fit: GravityFit; params: Float64Array; local?: boolean };
 
 const POINT_INTERVAL = PHYSICS.DT * 2;
 const COORD_SCALE = 100;
@@ -94,7 +123,7 @@ const MAX_FIT_SAMPLES = 500;
 const ACCELERATION_ITERATIONS = 12;
 const FORWARD_ITERATIONS = 6;
 const FORWARD_STARTS = 2;
-const HYPOTHESIS_COUNT = 2;
+const HYPOTHESIS_COUNT = 4;
 const REFINED_FIT_SAMPLES = 96;
 
 /** Compare the fitted map to the actual world for diagnostics only, never planner input. */
@@ -225,6 +254,11 @@ export interface ExperimentalLearner {
   initialRms: number | null;
   condition: number | null;
   fitMs: number;
+  recovery: ExperimentalRecoveryDiagnostics;
+  /** Actual pre-assimilation errors; compact state crosses to the planner worker. */
+  predictionTrend: number[];
+  lastRecoveryShot: number;
+  probeHistory: { angle: number; power: number; x: number; y: number }[];
 }
 
 export function createExperimentalLearner(startingKnowledge = 1): ExperimentalLearner {
@@ -233,6 +267,8 @@ export function createExperimentalLearner(startingKnowledge = 1): ExperimentalLe
     planets: [], hypotheses: [], holeMass: null, evidence: [], seen: new Set(), geometry: null,
     observedShots: 0, learnedShots: 0, learningRate: 1, predictionRms: null,
     predictionSamples: 0, samples: 0, rms: null, initialRms: null, condition: null, fitMs: 0,
+    recovery: emptyRecovery(), predictionTrend: [], lastRecoveryShot: -3,
+    probeHistory: [],
   };
   Object.defineProperty(learner, 'startingKnowledge', { writable: false, configurable: false });
   return learner;
@@ -251,6 +287,9 @@ export function snapshotExperimentalLearner(learner: ExperimentalLearner): Exper
     hole: learner.hole && { ...learner.hole },
     hypotheses: learner.hypotheses.map((fit) => ({ ...fit, planets: fit.planets.map((planet) => ({ ...planet })),
       hole: fit.hole && { ...fit.hole } })),
+    recovery: { ...learner.recovery, sampleCounts: [...learner.recovery.sampleCounts], retainedShotIds: [...learner.recovery.retainedShotIds] },
+    predictionTrend: [...learner.predictionTrend],
+    probeHistory: learner.probeHistory.map((shot) => ({ ...shot })),
     retainedShots: learner.retainedShots ?? evidence.length,
   };
 }
@@ -338,6 +377,10 @@ function syncGeometry(learner: ExperimentalLearner, visible: ExperimentalWorld, 
   learner.predictionRms = null;
   learner.predictionSamples = 0;
   learner.fitMs = 0;
+  learner.recovery = emptyRecovery();
+  learner.predictionTrend = [];
+  learner.probeHistory = [];
+  learner.lastRecoveryShot = learner.observedShots - 3;
   learner.geometry = geometry;
 }
 
@@ -393,10 +436,11 @@ export function experimentalLearnerFit(learner: ExperimentalLearner, visible: Ex
     holeMassStandardDeviation: learner.holeMassStandardDeviation, startingKnowledge: learner.startingKnowledge,
     initialRms: learner.initialRms, rms: learner.rms,
     improvement: learner.rms === null || learner.initialRms === null ? null : learner.initialRms - learner.rms,
-    validationRms: learner.predictionRms, validationSamples: learner.predictionSamples,
+    validationRms: learner.recovery.candidateValidationRms, validationSamples: learner.recovery.validationSamples,
     condition: learner.condition, fitMs: learner.fitMs, observedShots: learner.observedShots,
     learnedShots: learner.learnedShots, retainedShots: learner.retainedShots ?? learner.evidence.length, learningRate: learner.learningRate,
     predictionRms: learner.predictionRms, predictionSamples: learner.predictionSamples,
+    recovery: learner.recovery,
   };
 }
 
@@ -422,58 +466,125 @@ export function observeExperimentalShot(
   const oldFit = experimentalLearnerFit(learner, observedWorld);
   learner.predictionSamples = observations.length;
   learner.predictionRms = observations.length ? rmsOf(observedResiduals(oldFit, [shot], observations, observedWorld)) : null;
-  if (!rate || !observations.length || !shot.points.every(Number.isFinite) || !Number.isFinite(shot.angle) || !Number.isFinite(shot.power)) return;
-  const started = performance.now();
-  learner.evidence.push({ shot: { ...shot, points: [...shot.points] } });
-  if (learner.evidence.length > 12) learner.evidence.shift();
-  const shots = learner.evidence.map((entry) => entry.shot);
-  let evidenceFit: GravityFit;
-  let hypotheses: GravityFit[] = [];
-  if (observedWorld.visiblePlanets === undefined) {
-    hypotheses = fitGravityHypotheses(shots, observedWorld.planetCount, observedWorld.width, observedWorld.height,
-      observedWorld.hasHole, observedWorld.rules, REFINED_FIT_SAMPLES);
-    evidenceFit = hypotheses[0];
-  } else {
-    evidenceFit = fitVisibleMasses(oldFit, shots, observedWorld);
+  const valid = observations.length > 0 && shot.points.every(Number.isFinite)
+    && Number.isFinite(shot.angle) && Number.isFinite(shot.power);
+  if (valid && learner.predictionRms !== null) {
+    learner.predictionTrend.push(learner.predictionRms);
+    if (learner.predictionTrend.length > 4) learner.predictionTrend.shift();
   }
-  learner.initialRms = evidenceFit.initialRms;
-  learner.condition = evidenceFit.condition;
-  learner.samples = evidenceFit.samples;
-  // Missing uncertainty is not a certainty measurement: retain the existing belief.
-  const evidenceHoleDeviation = (evidence: GravityFit): number =>
-    evidence.holeMassStandardDeviation === undefined && evidence.holeMassUncertainty === undefined
-      ? holeDeviation(learner) : holeDeviation(evidence);
-  const assimilate = (evidence: GravityFit): GravityFit => ({
-    ...evidence,
-    planets: learner.planets.map((planet, index) => {
-      const estimate = evidence.planets[index];
-      const mass = estimate ? planet.mass + rate * (estimate.mass - planet.mass) : planet.mass;
-      const deviation = estimate ? (1 - rate) * massDeviation(planet) + rate * massDeviation(estimate)
-        + rate * (1 - rate) * Math.abs(estimate.mass - planet.mass) : massDeviation(planet);
-      return estimate ? {
-        ...planet, x: planet.id === undefined ? planet.x + rate * (estimate.x - planet.x) : planet.x,
-        y: planet.id === undefined ? planet.y + rate * (estimate.y - planet.y) : planet.y,
-        mass, massStandardDeviation: deviation, massUncertainty: deviation / Math.max(mass, 1),
-      } : planet;
-    }),
-    holeMass: learner.holeMass === null || evidence.holeMass === null ? null
-      : learner.holeMass + rate * (evidence.holeMass - learner.holeMass),
-    holeMassStandardDeviation: learner.holeMass === null || evidence.holeMass === null ? undefined
-      : (1 - rate) * holeDeviation(learner) + rate * evidenceHoleDeviation(evidence)
-        + rate * (1 - rate) * Math.abs(evidence.holeMass - learner.holeMass),
-    holeMassUncertainty: learner.holeMass === null || evidence.holeMass === null ? undefined
-      : ((1 - rate) * holeDeviation(learner) + rate * evidenceHoleDeviation(evidence)
-        + rate * (1 - rate) * Math.abs(evidence.holeMass - learner.holeMass))
-        / Math.max(learner.holeMass + rate * (evidence.holeMass - learner.holeMass), 1),
-  });
-  learner.hypotheses = hypotheses.map(assimilate);
-  const updated = assimilate(evidenceFit);
+  const trend = learner.predictionTrend.slice(-3);
+  const stalled = trend.length === 3 && trend.every((rms) => rms > 12)
+    && (trend[2] >= trend[0] * 0.85 || trend.every((rms) => rms > 40));
+  const stagnationCount = stalled ? learner.recovery.stagnationCount + 1 : 0;
+  learner.recovery = { ...emptyRecovery(), proposedLearningRate: rate, stagnationCount, stalled,
+    updateStatus: valid && !rate ? 'frozen' : 'unavailable' };
+  if (valid) {
+    const midpoint = Math.floor(shot.points.length / 4) * 2;
+    learner.probeHistory.push({ angle: shot.angle, power: shot.power, x: shot.points[midpoint], y: shot.points[midpoint + 1] });
+    if (learner.probeHistory.length > 12) learner.probeHistory.shift();
+  }
+  if (!rate || !valid) return;
+  const started = performance.now();
+  const retained = retainRepresentativeShots([...learner.evidence.map((entry) => entry.shot),
+    { ...shot, points: [...shot.points] }], 12);
+  learner.evidence = retained.map((entry) => ({ shot: entry }));
+  const shots = retained;
+  const samples = observationsOf(shots, REFINED_FIT_SAMPLES);
+  const before = rmsOf(observedResiduals(oldFit, shots, samples, observedWorld));
+  const recovery = observedWorld.visiblePlanets === undefined && learner.observedShots - learner.lastRecoveryShot >= 3
+    && (stalled || learner.predictionRms! > 40);
+  if (recovery) learner.lastRecoveryShot = learner.observedShots;
+  const localProposals = new Set<GravityFit>();
+  const fitEvidence = (data: readonly ExperimentalShot[], prior: GravityFit, recover: boolean): GravityFit[] =>
+    observedWorld.visiblePlanets === undefined
+      ? fitCandidates(data, observedWorld.planetCount, observedWorld.width, observedWorld.height,
+        observedWorld.hasHole, observedWorld.rules, REFINED_FIT_SAMPLES, prior, recover).map((candidate) => {
+        if (candidate.local) localProposals.add(candidate.fit);
+        return candidate.fit;
+      })
+      : [fitVisibleMasses(prior, data, observedWorld)];
+  // Validation candidates never see the newest trajectory. Only the subsequent refit may use it.
+  let validationFit: GravityFit | null = null;
+  let validationRms: number | null = null;
+  if (shots.length >= 2) {
+    validationFit = fitEvidence(shots.slice(0, -1), oldFit, false)[0];
+    validationRms = rmsOf(observedResiduals(validationFit, [shot], observations, observedWorld));
+  }
+  const hypotheses = fitEvidence(shots, oldFit, recovery);
+  const evidenceFit = hypotheses[0];
+  let proposedRate = rate;
+  if (validationRms !== null && validationRms > learner.predictionRms! + Math.max(12, learner.predictionRms! * 0.35)) {
+    proposedRate *= 0.25;
+  }
+  // Missing uncertainty is not a certainty measurement. Alignment happens before every interpolation.
+  const assimilate = (evidence: GravityFit, alpha: number): GravityFit => {
+    const matched = localProposals.has(evidence) ? evidence.planets
+      : matchEstimatedSources(oldFit.planets, evidence.planets, observedWorld.width, observedWorld.height);
+    const evidenceDeviation = evidence.holeMassStandardDeviation === undefined && evidence.holeMassUncertainty === undefined
+      ? holeDeviation(oldFit) : holeDeviation(evidence);
+    const holeMass = oldFit.holeMass === null || evidence.holeMass === null ? null
+      : oldFit.holeMass + alpha * (evidence.holeMass - oldFit.holeMass);
+    const holeMassStandardDeviation = holeMass === null ? undefined
+      : (1 - alpha) * holeDeviation(oldFit) + alpha * evidenceDeviation
+        + alpha * (1 - alpha) * Math.abs(evidence.holeMass! - oldFit.holeMass!);
+    return { ...evidence,
+      planets: oldFit.planets.map((planet, index) => {
+        const estimate = matched[index];
+        if (!estimate) return { ...planet };
+        const mass = planet.mass + alpha * (estimate.mass - planet.mass);
+        const deviation = (1 - alpha) * massDeviation(planet) + alpha * massDeviation(estimate)
+          + alpha * (1 - alpha) * Math.abs(estimate.mass - planet.mass);
+        return { ...planet, x: planet.id === undefined ? planet.x + alpha * (estimate.x - planet.x) : planet.x,
+          y: planet.id === undefined ? planet.y + alpha * (estimate.y - planet.y) : planet.y,
+          mass, massStandardDeviation: deviation, massUncertainty: deviation / Math.max(mass, 1) };
+      }), holeMass, holeMassStandardDeviation,
+      holeMassUncertainty: holeMassStandardDeviation === undefined ? undefined : holeMassStandardDeviation / Math.max(holeMass!, 1),
+    };
+  };
+  let updated: GravityFit = oldFit;
+  let after = before;
+  let effectiveRate = 0;
+  let selectedEvidence = evidenceFit;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const alpha = proposedRate / 2 ** attempt;
+    let accepted: GravityFit | null = null;
+    let bestRms = before;
+    for (const hypothesis of hypotheses) {
+      const candidate = assimilate(hypothesis, alpha);
+      const rms = rmsOf(observedResiduals(candidate, shots, samples, observedWorld));
+      if (validationFit) {
+        const newestRms = rmsOf(observedResiduals(candidate, [shot], observations, observedWorld));
+        if (!Number.isFinite(newestRms) || newestRms > learner.predictionRms! + Math.max(12, learner.predictionRms! * 0.35)) continue;
+      }
+      if (Number.isFinite(rms) && rms <= bestRms && (!accepted || rms < bestRms)) {
+        accepted = candidate; bestRms = rms; selectedEvidence = hypothesis;
+      }
+    }
+    if (accepted) { updated = accepted; after = bestRms; effectiveRate = alpha; break; }
+  }
+  // Rejected minima remain alternative hypotheses, never silently replace the selected belief.
+  learner.hypotheses = [{ ...updated }, ...hypotheses.filter((candidate) => !localProposals.has(candidate) &&
+    parameterDistance(parametersFromFit(updated, observedWorld.width, observedWorld.height, observedWorld.hasHole),
+      parametersFromFit(candidate, observedWorld.width, observedWorld.height, observedWorld.hasHole),
+      observedWorld.width, observedWorld.height, observedWorld.hasHole) >= 12)].slice(0, HYPOTHESIS_COUNT);
   learner.planets = updated.planets;
   learner.holeMass = updated.holeMass;
   learner.holeMassUncertainty = updated.holeMassUncertainty;
   learner.holeMassStandardDeviation = updated.holeMassStandardDeviation;
-  learner.learnedShots += rate;
-  learner.rms = rmsOf(observedResiduals(experimentalLearnerFit(learner, observedWorld), shots, observationsOf(shots, REFINED_FIT_SAMPLES), observedWorld));
+  learner.learnedShots += effectiveRate;
+  learner.initialRms = before;
+  learner.rms = after;
+  learner.condition = selectedEvidence.condition;
+  learner.samples = samples.length;
+  const sampleCounts = shots.map(() => 0);
+  for (const sample of samples) sampleCounts[sample.shot]++;
+  learner.recovery = { optimizerInitialRms: selectedEvidence.initialRms, optimizerFinalRms: selectedEvidence.rms,
+    beliefBeforeRms: before, beliefAfterRms: after, candidateValidationRms: validationRms,
+    previousValidationRms: validationFit ? learner.predictionRms : null,
+    validationSamples: validationFit ? observations.length : 0, proposedLearningRate: rate, effectiveLearningRate: effectiveRate,
+    updateStatus: !effectiveRate ? 'rejected' : effectiveRate < rate ? 'reduced' : 'accepted', sampleCounts,
+    retainedShotIds: shots.map((entry) => entry.shotId ?? null), stagnationCount, stalled,
+    recoveryStarts: recovery ? 2 : 0, matchedSources: Math.min(oldFit.planets.length, evidenceFit.planets.length) };
   learner.fitMs = performance.now() - started;
 }
 
@@ -635,7 +746,7 @@ export function* planExperimentalShot(
   learner.learningRate = rate;
   // Densities are independent, bounded public-distribution draws, not a common scale.
   const worlds = [estimatedWorld(visible, fit)];
-  const uncertain = fit.planets.some((planet) => (planet.massUncertainty ?? 0.16) > 1e-5) || (fit.holeMassUncertainty ?? 0) > 1e-5;
+  const uncertain = learner.recovery.stalled || fit.planets.some((planet) => (planet.massUncertainty ?? 0.16) > 1e-5) || (fit.holeMassUncertainty ?? 0) > 1e-5;
   for (let sample = 0; sample < (uncertain ? 8 : 0); sample++) {
     worlds.push(estimatedWorld(visible, {
       ...fit,
@@ -644,7 +755,8 @@ export function* planExperimentalShot(
         const publicLower = planet.radius === undefined ? MIN_PLANET_MASS : Math.max(MIN_PLANET_MASS, planet.radius ** 3 * 0.75);
         const lower = Math.min(planet.mass, publicLower);
         const upper = planet.radius === undefined ? MAX_PLANET_MASS : Math.min(MAX_PLANET_MASS, planet.radius ** 3 * 1.3);
-        return { ...planet, mass: clamp(planet.mass + (quantile - 0.5) * Math.sqrt(12) * massDeviation(planet), lower, upper) };
+        const deviation = learner.recovery.stalled ? Math.max(massDeviation(planet), planet.mass * 0.35) : massDeviation(planet);
+        return { ...planet, mass: clamp(planet.mass + (quantile - 0.5) * Math.sqrt(12) * deviation, lower, upper) };
       }),
       holeMass: fit.holeMass === null ? null : clamp(fit.holeMass + (fract((sample + 0.5) / 8 + 0.27) - 0.5)
         * Math.sqrt(12) * holeDeviation(fit), Math.min(fit.holeMass, 10_000), 4_000_000),
@@ -689,10 +801,26 @@ export function* planExperimentalShot(
     robust = bestRobustAim(neighbours, worlds, visible.shooter, opts, simulateAim) ?? robust;
     yield;
   }
-  // A likely hit also supplies evidence: only probe when no candidate can hit.
-  const probe = !robust || robust.hitRate === 0 ? coverageProbe(worlds, visible, opts, simulateAim) : null;
+  // Repeated actual prediction failures override hypothetical exploit hits, without relaxing safety.
+  let probe = learner.recovery.stalled || !robust || robust.hitRate === 0
+    ? coverageProbe(worlds, visible, opts, simulateAim, undefined, learner.probeHistory, learner.recovery.stalled) : null;
+  let recoverySearch: ExperimentalDecision['recoverySearch'];
+  if (learner.recovery.stalled && !probe) {
+    // Offset the original angle grid and broaden power only when power is not fixed.
+    // Six angles per slice bound uninterrupted production-physics work.
+    const powers = opts.fixedPower === null ? [20, 35, 55, 75, 95] : [opts.fixedPower];
+    let searched = 0;
+    for (let start = 0; start < 72 && !probe; start += 6) {
+      const angles = Array.from({ length: 6 }, (_, index) => (start + index) * 5 + 2.5);
+      probe = coverageProbe(worlds, visible, opts, simulateAim, powers, learner.probeHistory, true, angles);
+      searched += angles.length * powers.length;
+      yield;
+    }
+    recoverySearch = { additionalCandidates: searched,
+      outcome: probe ? 'expanded-probe' : 'no-safe-informative-launch' };
+  }
   const probeResult = probe ? bestRobustAim([probe], worlds, visible.shooter, opts, simulateAim) : null;
-  const useProbe = probeResult !== null && (!robust || probeResult.hitRate > robust.hitRate
+  const useProbe = probeResult !== null && (learner.recovery.stalled || !robust || probeResult.hitRate > robust.hitRate
     || (robust.hitRate === 0 && probeResult.meanMiss < robust.meanMiss));
   if (useProbe) robust = probeResult;
   if (!robust) {
@@ -712,14 +840,16 @@ export function* planExperimentalShot(
     yield;
   }
   const decision: ExperimentalDecision = {
-    kind: robust && robust.unsafeRate === 0 && robust.hitRate > 0 ? 'exploit'
-      : useProbe ? (learner.observedShots ? 'probe' : 'initialProbe') : 'fallback',
+    kind: useProbe ? (learner.observedShots ? 'probe' : 'initialProbe')
+      : !learner.recovery.stalled && robust && robust.unsafeRate === 0 && robust.hitRate > 0 ? 'exploit' : 'fallback',
     hypothesisCount: worlds.length,
     hitRate: robust?.hitRate ?? 0,
     unsafeRate: robust?.unsafeRate ?? 1,
     worstMiss: Number.isFinite(robust?.worstMiss) ? robust!.worstMiss : Math.hypot(visible.width, visible.height),
     observedShots: learner.observedShots, learnedShots: learner.learnedShots, retainedShots: learner.retainedShots ?? learner.evidence.length,
     learningRate: rate, startingKnowledge: learner.startingKnowledge, predictionRms: learner.predictionRms, predictionSamples: learner.predictionSamples,
+    recovery: learner.recovery,
+    recoverySearch,
   };
   report({ ...fit, learningRate: rate }, decision);
   return robust!.aim;
@@ -739,39 +869,64 @@ export interface ExperimentalDecision {
   startingKnowledge: number;
   predictionRms: number | null;
   predictionSamples: number;
+  recovery?: ExperimentalRecoveryDiagnostics;
+  /** Present only after the stalled learner exhausted its standard coverage grid. */
+  recoverySearch?: { additionalCandidates: number; outcome: 'expanded-probe' | 'no-safe-informative-launch' };
 }
 
-function fitCandidates(shots: readonly ExperimentalShot[], count: number, width: number, height: number, hasHole: boolean, rules: Pick<ShotRules, 'bounce'>, sampleCap: number): FitCandidate[] {
+function fitCandidates(shots: readonly ExperimentalShot[], count: number, width: number, height: number, hasHole: boolean, rules: Pick<ShotRules, 'bounce'>, sampleCap: number, prior?: GravityFit, recovery = false): FitCandidate[] {
   const seed = fitAccelerationSeed(shots, count, width, height, hasHole);
   const observations = observationsOf(shots, sampleCap);
   if (observations.length === 0) return [{ fit: seed, params: parametersFromFit(seed, width, height, hasHole) }];
 
   const baseParams = parametersFromFit(seed, width, height, hasHole);
-  const initialRms = rmsOf(forwardResiduals(baseParams, shots, observations, count, width, height, hasHole, rules.bounce));
+  const starts = prior
+    ? [parametersFromFit(prior, width, height, hasHole), baseParams]
+    : Array.from({ length: FORWARD_STARTS }, (_, index) => perturbStart(baseParams, count, hasHole, index));
+  if (recovery) for (let index = 2; index < 4; index++) {
+    const separated = perturbStart(baseParams, count, hasHole, index);
+    for (let source = 0; source < count; source++) {
+      separated[source * 3] = fract(index * 0.61803398875 + source * 0.38196601125);
+      separated[source * 3 + 1] = fract(index * 0.41421356237 + source * 0.75487766625);
+    }
+    starts.push(separated);
+  }
   const candidates: FitCandidate[] = [];
-  for (let start = 0; start < FORWARD_STARTS; start++) {
-    const optimized = optimizeForward(perturbStart(baseParams, count, hasHole, start), shots, observations, count, width, height, hasHole, rules.bounce);
+  for (const [index, start] of starts.entries()) {
+    const initialRms = rmsOf(forwardResiduals(start, shots, observations, count, width, height, hasHole, rules.bounce, prior?.hole));
+    const optimized = optimizeForward(start, shots, observations, count, width, height, hasHole, rules.bounce, prior?.hole, prior !== undefined && index === 0);
     const fit = fitFromParameters(optimized.params, count, width, height, hasHole);
+    const local = prior !== undefined && index === 0;
+    // Keep warm-start source correspondence: rematching masses can swap nearby sources.
+    if (local) {
+      const ordered = [...prior.planets].sort((a, b) => a.x - b.x || a.y - b.y || a.mass - b.mass);
+      fit.planets = prior.planets.map((planet) => fit.planets[ordered.indexOf(planet)]);
+    }
     const holeMassStandardDeviation = hasHole
-      ? hiddenHoleDeviation(optimized, shots, observations, count, width, height, rules.bounce) : undefined;
+      ? hiddenHoleDeviation(optimized, shots, observations, count, width, height, rules.bounce, prior?.hole) : undefined;
     candidates.push({
       params: optimized.params,
+      local,
       fit: {
-        ...fit, samples: observations.length, initialRms, rms: optimized.rms, improvement: initialRms - optimized.rms,
+        ...fit, hole: prior?.hole, samples: observations.length, initialRms, rms: optimized.rms, improvement: initialRms - optimized.rms,
         holeMassStandardDeviation,
         holeMassUncertainty: holeMassStandardDeviation === undefined ? undefined : holeMassStandardDeviation / Math.max(fit.holeMass!, 1),
         validationRms: null, validationSamples: 0, condition: optimized.condition, fitMs: 0,
       },
     });
   }
+  const local = candidates.find((candidate) => candidate.local);
   candidates.sort((a, b) => a.fit.rms! - b.fit.rms!);
-  return diverseCandidates(candidates, width, height, hasHole);
+  const diverse = diverseCandidates(candidates.filter((candidate) => !candidate.local), width, height, hasHole);
+  // Local interpolation proposals need not qualify as near-optimal uncertainty alternatives.
+  return local ? [...diverse, local] : diverse;
 }
 
 /** Marginalize hidden positions and planet masses instead of reading one sensitivity diagonal. */
 function hiddenHoleDeviation(
   optimized: ForwardResult, shots: readonly ExperimentalShot[], observations: readonly Observation[],
   count: number, width: number, height: number, bounce: boolean,
+  holePosition?: { x: number; y: number },
 ): number | undefined {
   const { params, rms } = optimized;
   const size = params.length;
@@ -784,8 +939,8 @@ function hiddenHoleDeviation(
     const minus = new Float64Array(params);
     plus[i] += 1e-4;
     minus[i] -= 1e-4;
-    const a = forwardResiduals(plus, shots, observations, count, width, height, true, bounce);
-    const b = forwardResiduals(minus, shots, observations, count, width, height, true, bounce);
+    const a = forwardResiduals(plus, shots, observations, count, width, height, true, bounce, holePosition);
+    const b = forwardResiduals(minus, shots, observations, count, width, height, true, bounce, holePosition);
     // Coordinates span the field, planet log-masses have a broad unit prior,
     // and hole mass uses the same absolute public prior as starting knowledge.
     const scale = i === hole ? HORIZON.START_MASS / mass : 1;
@@ -830,16 +985,23 @@ function diverseCandidates(candidates: readonly FitCandidate[], width: number, h
   const kept: FitCandidate[] = [];
   for (const candidate of candidates) {
     const duplicate = kept.some(({ params }) => parameterDistance(params, candidate.params, width, height, hasHole) < 12);
-    if (!duplicate || kept.length < 2) kept.push(candidate);
+    if (!duplicate && candidate.fit.rms! <= candidates[0].fit.rms! + Math.max(4, candidates[0].fit.rms! * 0.35)) kept.push(candidate);
     if (kept.length === HYPOTHESIS_COUNT) break;
   }
   return kept.length ? kept : [candidates[0]];
 }
 
 function parameterDistance(a: Float64Array, b: Float64Array, width: number, height: number, hasHole: boolean): number {
+  const count = Math.floor(a.length / 3);
+  const previous = fitFromParameters(a, count, width, height, hasHole).planets;
+  const matched = matchEstimatedSources(previous, fitFromParameters(b, count, width, height, hasHole).planets, width, height);
   let sum = 0;
-  const end = hasHole ? a.length - 1 : a.length;
-  for (let i = 0; i < end; i += 3) sum += Math.hypot((a[i] - b[i]) * width, (a[i + 1] - b[i + 1]) * height) + Math.abs(a[i + 2] - b[i + 2]) * 30;
+  for (let i = 0; i < previous.length; i++) {
+    const candidate = matched[i];
+    if (!candidate) return Infinity;
+    sum += Math.hypot(previous[i].x - candidate.x, previous[i].y - candidate.y)
+      + Math.abs(Math.log(Math.max(previous[i].mass, 1) / Math.max(candidate.mass, 1))) * 30;
+  }
   if (hasHole) sum += Math.abs(a[a.length - 1] - b[b.length - 1]) * 30;
   return sum;
 }
@@ -860,35 +1022,20 @@ function fract(value: number): number {
 }
 
 function observationsOf(shots: readonly ExperimentalShot[], sampleCap = MAX_FIT_SAMPLES): Observation[] {
-  const all: Observation[] = [];
-  for (let shot = 0; shot < shots.length; shot++) {
-    const count = Math.floor(shots[shot].points.length / 2);
-    for (let point = 1; point < count - 2; point++) all.push({ shot, point });
-  }
-  if (all.length <= sampleCap) return all;
-  const selected: Observation[] = [];
-  for (let i = 0; i < sampleCap; i++) selected.push(all[Math.floor((i * all.length) / sampleCap)]);
-  return selected;
+  return balancedObservations(shots, sampleCap);
 }
 
 function fitAccelerationSeed(shots: readonly ExperimentalShot[], count: number, width: number, height: number, hasHole: boolean): GravityFit {
   const samples: AccelerationSample[] = [];
-  for (const shot of shots) {
-    const length = Math.floor(shot.points.length / 2);
-    for (let i = 2; i < length - 2; i++) {
-      const j = i * 2;
-      samples.push({
-        x: shot.points[j],
-        y: shot.points[j + 1],
-        ax: (shot.points[j + 2] - 2 * shot.points[j] + shot.points[j - 2]) / (POINT_INTERVAL * POINT_INTERVAL),
-        ay: (shot.points[j + 3] - 2 * shot.points[j + 1] + shot.points[j - 1]) / (POINT_INTERVAL * POINT_INTERVAL),
-      });
-    }
-  }
-  if (samples.length > MAX_FIT_SAMPLES) {
-    const reduced: AccelerationSample[] = [];
-    for (let i = 0; i < MAX_FIT_SAMPLES; i++) reduced.push(samples[Math.floor((i * samples.length) / MAX_FIT_SAMPLES)]);
-    samples.splice(0, samples.length, ...reduced);
+  for (const observation of observationsOf(shots, MAX_FIT_SAMPLES)) {
+    if (observation.point < 2) continue;
+    const shot = shots[observation.shot];
+    const j = observation.point * 2;
+    samples.push({
+      x: shot.points[j], y: shot.points[j + 1],
+      ax: (shot.points[j + 2] - 2 * shot.points[j] + shot.points[j - 2]) / (POINT_INTERVAL * POINT_INTERVAL),
+      ay: (shot.points[j + 3] - 2 * shot.points[j + 1] + shot.points[j - 1]) / (POINT_INTERVAL * POINT_INTERVAL),
+    });
   }
 
   const planetCount = Math.max(0, Math.floor(count));
@@ -986,9 +1133,11 @@ function fitAccelerationSeed(shots: readonly ExperimentalShot[], count: number, 
 }
 
 function parametersFromFit(fit: GravityFit, width: number, height: number, hasHole: boolean): Float64Array {
-  const params = new Float64Array(fit.planets.length * 3 + (hasHole ? 1 : 0));
-  for (let i = 0; i < fit.planets.length; i++) {
-    const planet = fit.planets[i];
+  // A hidden map is an unordered set; canonical coordinates also make finite differences permutation invariant.
+  const planets = [...fit.planets].sort((a, b) => a.x - b.x || a.y - b.y || a.mass - b.mass);
+  const params = new Float64Array(planets.length * 3 + (hasHole ? 1 : 0));
+  for (let i = 0; i < planets.length; i++) {
+    const planet = planets[i];
     params[i * 3] = clamp(planet.x / width, 0, 1);
     params[i * 3 + 1] = clamp(planet.y / height, 0, 1);
     params[i * 3 + 2] = Math.log(Math.max(MIN_PLANET_MASS, planet.mass));
@@ -1006,9 +1155,11 @@ function optimizeForward(
   height: number,
   hasHole: boolean,
   bounce: boolean,
+  holePosition?: { x: number; y: number },
+  local = false,
 ): ForwardResult {
   const params = new Float64Array(start);
-  let residuals = forwardResiduals(params, shots, observations, count, width, height, hasHole, bounce);
+  let residuals = forwardResiduals(params, shots, observations, count, width, height, hasHole, bounce, holePosition);
   let rms = rmsOf(residuals);
   let damping = 1e-3;
   let condition: number | null = null;
@@ -1016,15 +1167,16 @@ function optimizeForward(
     const parameterCount = params.length;
     const derivatives: Float64Array[] = [];
     for (let parameter = 0; parameter < parameterCount; parameter++) {
-      const step = parameter % 3 === 2 ? 0.04 : 0.004;
+      const massParameter = parameter >= count * 3 || parameter % 3 === 2;
+      const step = local ? (massParameter ? 0.001 : 0.0001) : (massParameter ? 0.04 : 0.004);
       const plus = new Float64Array(params);
       const minus = new Float64Array(params);
       plus[parameter] += step;
       minus[parameter] -= step;
       clampForwardParameters(plus, count, hasHole);
       clampForwardParameters(minus, count, hasHole);
-      const plusResiduals = forwardResiduals(plus, shots, observations, count, width, height, hasHole, bounce);
-      const minusResiduals = forwardResiduals(minus, shots, observations, count, width, height, hasHole, bounce);
+      const plusResiduals = forwardResiduals(plus, shots, observations, count, width, height, hasHole, bounce, holePosition);
+      const minusResiduals = forwardResiduals(minus, shots, observations, count, width, height, hasHole, bounce, holePosition);
       const derivative = new Float64Array(residuals.length);
       for (let i = 0; i < derivative.length; i++) derivative[i] = (plusResiduals[i] - minusResiduals[i]) / (2 * step);
       derivatives.push(derivative);
@@ -1049,19 +1201,28 @@ function optimizeForward(
     condition = smallest > 0 ? largest / smallest : Infinity;
     const delta = solve(normal, gradient, parameterCount);
     if (!delta) break;
-    const candidate = new Float64Array(params);
-    for (let i = 0; i < candidate.length; i++) candidate[i] += delta[i];
-    clampForwardParameters(candidate, count, hasHole);
-    const candidateResiduals = forwardResiduals(candidate, shots, observations, count, width, height, hasHole, bounce);
-    const candidateRms = rmsOf(candidateResiduals);
-    if (candidateRms < rms) {
-      params.set(candidate);
-      residuals = candidateResiduals;
-      rms = candidateRms;
-      damping = Math.max(1e-8, damping * 0.3);
-    } else {
-      damping = Math.min(1e8, damping * 10);
+    // A nearby warm start is an update direction, not a license to cross the field.
+    let scale = 1;
+    if (local) for (let i = 0; i < delta.length; i++) {
+      const limit = i >= count * 3 || i % 3 === 2 ? 0.25 : 0.025;
+      scale = Math.min(scale, limit / Math.max(limit, Math.abs(delta[i])));
     }
+    const candidate = new Float64Array(params);
+    let improved = false;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      for (let i = 0; i < candidate.length; i++) candidate[i] = params[i] + delta[i] * scale / 2 ** attempt;
+      clampForwardParameters(candidate, count, hasHole);
+      const candidateResiduals = forwardResiduals(candidate, shots, observations, count, width, height, hasHole, bounce, holePosition);
+      const candidateRms = rmsOf(candidateResiduals);
+      if (Number.isFinite(candidateRms) && candidateRms < rms) {
+        params.set(candidate);
+        residuals = candidateResiduals;
+        rms = candidateRms;
+        improved = true;
+        break;
+      }
+    }
+    damping = improved ? Math.max(1e-8, damping * 0.3) : Math.min(1e8, damping * 10);
   }
   return { params, residuals, rms, condition };
 }
@@ -1075,6 +1236,7 @@ function forwardResiduals(
   height: number,
   hasHole: boolean,
   bounce: boolean,
+  holePosition?: { x: number; y: number },
 ): Float64Array {
   const residuals = new Float64Array(observations.length * 2);
   let output = 0;
@@ -1092,7 +1254,7 @@ function forwardResiduals(
     const lastPoint = observations[observation - 1].point;
     let wanted = first;
     for (let step = 1; step <= lastPoint * 2; step++) {
-      const field = fieldFromParameters(params, count, width, height, hasHole, x, y);
+      const field = fieldFromParameters(params, count, width, height, hasHole, x, y, holePosition);
       vx += field.ax * PHYSICS.DT;
       vy += field.ay * PHYSICS.DT;
       x += vx * PHYSICS.DT;
@@ -1105,8 +1267,8 @@ function forwardResiduals(
         const point = step / 2;
         while (wanted < observation && observations[wanted].point === point) {
           const offset = observations[wanted].point * 2;
-          residuals[output++] = x - shot.points[offset];
-          residuals[output++] = y - shot.points[offset + 1];
+          residuals[output++] = Number.isFinite(x) ? clamp(x - shot.points[offset], -1e6, 1e6) : 1e6;
+          residuals[output++] = Number.isFinite(y) ? clamp(y - shot.points[offset + 1], -1e6, 1e6) : 1e6;
           wanted++;
         }
       }
@@ -1155,20 +1317,25 @@ function coverageProbe(
   opts: Omit<PlanOptions, 'level'>,
   simulateAim: SimulateAim,
   probePowers?: readonly number[],
+  history: readonly { angle: number; power: number; x: number; y: number }[] = [],
+  stalled = false,
+  probeAngles?: readonly number[],
 ): Aim | null {
   const self = worlds[0].ships[visible.shooter];
   const friends = opts.friends ?? [];
   const targets = worlds[0].ships.filter((ship, id) => id !== visible.shooter && ship.alive && !friends.includes(id));
   if (!targets.length) return null;
-  const history = visible.shots.flatMap((shot) => shot.points);
   const powers = probePowers ?? (opts.fixedPower === null ? [35, 55, 75] : [opts.fixedPower]);
   let best: Aim | null = null;
   let bestScore = -Infinity;
-  for (let turn = 0; turn < 20; turn++) {
+  for (let turn = 0; turn < (probeAngles?.length ?? 20); turn++) {
     const target = targets[turn % targets.length];
     const direct = normalizeAngle((Math.atan2(-(target.y - self.y), target.x - self.x) * 180) / Math.PI);
-    const angle = turn < 16 ? normalizeAngle(direct + (turn - 7.5) * 15) : turn * 22.5;
+    const angle = probeAngles?.[turn] ?? (turn < 16 ? normalizeAngle(direct + (turn - 7.5) * 15) : turn * 22.5);
     for (const power of powers) {
+      const aimNovelty = history.length ? Math.min(...history.map((shot) =>
+        Math.abs(((angle - shot.angle + 540) % 360) - 180) + Math.abs(power - shot.power) * 0.5)) : 90;
+      if (stalled && aimNovelty < 8) continue;
       let unsafe = false;
       for (const world of worlds) {
         const outcome = simulateAim(world, angle, power);
@@ -1187,9 +1354,10 @@ function coverageProbe(
       }
       meanX /= paths.length;
       meanY /= paths.length;
-      let score = Math.max(0, 900 - Math.hypot(meanX - target.x, meanY - target.y));
+      let score = stalled ? aimNovelty * 3 : Math.max(0, 900 - Math.hypot(meanX - target.x, meanY - target.y));
       for (const path of paths) score += Math.hypot(path[middle][0] - meanX, path[middle][1] - meanY) * 4;
-      for (let i = 0; i < history.length; i += 20) score += Math.min(80, Math.hypot(meanX - history[i], meanY - history[i + 1])) * 0.02;
+      if (history.length) score += Math.min(240, Math.min(...history.map((shot) =>
+        Math.hypot(meanX - shot.x, meanY - shot.y)))) * 2;
       if (score > bestScore) {
         bestScore = score;
         best = { angle, power };
@@ -1210,21 +1378,21 @@ function probePath(world: World, shooter: number, angle: number, power: number, 
 }
 
 
-function fieldFromParameters(params: Float64Array, count: number, width: number, height: number, hasHole: boolean, x: number, y: number): { ax: number; ay: number } {
+function fieldFromParameters(params: Float64Array, count: number, width: number, height: number, hasHole: boolean, x: number, y: number, holePosition?: { x: number; y: number }): { ax: number; ay: number } {
   let ax = 0;
   let ay = 0;
   for (let i = 0; i < count; i++) {
     const dx = params[i * 3] * width - x;
     const dy = params[i * 3 + 1] * height - y;
-    const d2 = Math.max(25, dx * dx + dy * dy);
+    const d2 = dx * dx + dy * dy;
     const force = PHYSICS.G * Math.exp(params[i * 3 + 2]) / (d2 * Math.sqrt(d2));
     ax += force * dx;
     ay += force * dy;
   }
   if (hasHole) {
-    const dx = width / 2 - x;
-    const dy = height / 2 - y;
-    const d2 = Math.max(25, dx * dx + dy * dy);
+    const dx = (holePosition?.x ?? width / 2) - x;
+    const dy = (holePosition?.y ?? height / 2) - y;
+    const d2 = dx * dx + dy * dy;
     const force = PHYSICS.G * Math.exp(params[params.length - 1]) / (d2 * Math.sqrt(d2));
     ax += force * dx;
     ay += force * dy;
