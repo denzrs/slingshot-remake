@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { FIELD, HORIZON } from '../src/config';
-import { fitGravity, fitGravityHypotheses, measureReconstruction } from '../src/experimental-ai';
+import { fitGravity, fitGravityHypotheses, measureReconstruction, planExperimentalShot, type ExperimentalWorld } from '../src/experimental-ai';
 import { Shot, type World } from '../src/physics';
+import { createRng } from '../src/rng';
 
+
+function planExperimental(world: ExperimentalWorld) {
+  const planner = planExperimentalShot(world, {
+    rules: { bounce: false, timeLimit: 12 },
+    attempt: world.shots.length,
+    fixedPower: null,
+    rng: createRng(1),
+  }, () => {});
+  for (;;) {
+    const result = planner.next();
+    if (result.done) return result.value;
+  }
+}
 describe('experimental gravity fitting', () => {
   it('uses at most 500 trajectory samples', () => {
     const points = Array.from({ length: 1_020 }, (_, index) => index % 2 === 0 ? index : 400);
@@ -36,6 +50,55 @@ describe('experimental gravity fitting', () => {
       gravityRms: 0,
       relativeGravityRms: 0,
     });
+  });
+
+  it('uses visible planet centers and fixed power 45 for the opening shot', () => {
+    const aim = planExperimental({
+      width: FIELD.width,
+      height: FIELD.height,
+      ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: true }],
+      shooter: 0,
+      planetCount: 1,
+      visiblePlanetPositions: [{ x: 640, y: 520 }],
+      hasHole: false,
+      holeRadius: 0,
+      rules: { bounce: false },
+      shots: [],
+    });
+
+    expect(aim.power).toBe(45);
+  });
+
+  it('uses only reconstructed trajectories after the opening shot', () => {
+    const world: World = {
+      width: FIELD.width,
+      height: FIELD.height,
+      ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: true }],
+      planets: [{ x: 640, y: 520, radius: 25, mass: 15_625, seed: 1, style: 'rocky', tint: '#fff' }],
+      hole: null,
+      version: 0,
+    };
+    const shot = new Shot(world, 0, 0, 45, { bounce: false, timeLimit: 12 });
+    const points = [shot.x, shot.y];
+    for (let step = 0; step < 2_000 && !shot.end; step++) {
+      shot.step();
+      if (step % 2 === 1) points.push(shot.x, shot.y);
+    }
+    const base: Omit<ExperimentalWorld, 'visiblePlanetPositions'> = {
+      width: FIELD.width,
+      height: FIELD.height,
+      ships: world.ships,
+      shooter: 0,
+      planetCount: 1,
+      hasHole: false,
+      holeRadius: 0,
+      rules: { bounce: false },
+      shots: [{ points, angle: 0, power: 45 }],
+    };
+
+    expect(planExperimental({ ...base, visiblePlanetPositions: [{ x: 640, y: 520 }] })).toEqual(
+      planExperimental({ ...base, visiblePlanetPositions: [{ x: 200, y: 200 }] }),
+    );
   });
 
   it('reduces gravity residual on a known one-planet trajectory', () => {

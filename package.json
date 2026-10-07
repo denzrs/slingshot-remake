@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "bench:experimental": "tsx benchmarks/experimental-vs-easy.ts",
     "bench:team": "tsx benchmarks/team-experimental-vs-medium.ts",
-    "build:server": "tsc -p tsconfig.server.json",
+    "bench:team:horizon": "tsx benchmarks/team-experimental-vs-medium-horizon.ts",
     "start:server": "node dist-server/server/index.js"
   },
   "keywords": [],

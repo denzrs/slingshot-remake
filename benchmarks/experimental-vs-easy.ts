@@ -25,7 +25,7 @@ type FitStats = {
 };
 
 type LengthBucket = { games: number; wins: number; draws: number; experimentalScore: number; opponentScore: number; mapRmsTotal: number; fitCount: number };
-type Scenario = { mode: 'classic' | 'horizon'; bounce: boolean; fixedPower: boolean; maxPlanets: number; openingLowProbe: boolean; openingProbePower: number | null };
+type Scenario = { mode: 'classic' | 'horizon'; bounce: boolean; fixedPower: boolean; maxPlanets: number };
 
 type MatchupStats = {
   wins: number;
@@ -57,10 +57,7 @@ function scenarioFrom(args: string[]): Scenario {
   if (mode !== 'classic' && mode !== 'horizon') throw new Error('--mode must be classic or horizon');
   const maxPlanets = Number(args.find((value) => value.startsWith('--planets='))?.slice('--planets='.length) ?? 4);
   if (!Number.isSafeInteger(maxPlanets) || maxPlanets < 1 || maxPlanets > 8) throw new Error('--planets must be an integer from 1 to 8');
-  const openingProbePowerArg = args.find((value) => value.startsWith('--opening-probe-power='))?.slice('--opening-probe-power='.length);
-  const openingProbePower = openingProbePowerArg === undefined ? null : Number(openingProbePowerArg);
-  if (openingProbePower !== null && (!Number.isFinite(openingProbePower) || openingProbePower < 0 || openingProbePower > 100)) throw new Error('--opening-probe-power must be 0 through 100');
-  return { mode, bounce: args.includes('--bounce'), fixedPower: args.includes('--fixed-power'), maxPlanets, openingLowProbe: args.includes('--opening-low-probe'), openingProbePower };
+  return { mode, bounce: args.includes('--bounce'), fixedPower: args.includes('--fixed-power'), maxPlanets };
 }
 
 function opponentsFrom(args: string[]): readonly Exclude<CpuLevel, 'experimental'>[] {
@@ -126,7 +123,7 @@ function runMatchup(opponent: Exclude<CpuLevel, 'experimental'>, sims: number, s
           invisiblePlanets: false,
           bounce: scenario.bounce,
           fixedPower: scenario.fixedPower,
-        }, { seats, experimentalOpeningProbe: scenario.openingLowProbe || scenario.openingProbePower !== null, experimentalOpeningProbePower: scenario.openingProbePower ?? undefined });
+        }, { seats });
       } finally {
         Math.random = previousRandom;
       }
@@ -169,7 +166,7 @@ function runMatchup(opponent: Exclude<CpuLevel, 'experimental'>, sims: number, s
 }
 
 function reportMatchup(opponent: Exclude<CpuLevel, 'experimental'>, sims: number, scenario: Scenario, stats: MatchupStats): void {
-  console.log(`Experimental vs ${opponent}: ${sims} ${scenario.mode} matches, planets ${scenario.maxPlanets}, bounce ${scenario.bounce}, fixed power ${scenario.fixedPower}, opening probe power ${scenario.openingProbePower ?? (scenario.openingLowProbe ? '25/35/45/55' : '45 (default)')}`);
+  console.log(`Experimental vs ${opponent}: ${sims} ${scenario.mode} matches, planets ${scenario.maxPlanets}, bounce ${scenario.bounce}, fixed power ${scenario.fixedPower}, first-shot power ${scenario.fixedPower ? '55 (fixed)' : '45'}`);
   console.log(`Experimental win rate: ${((stats.wins / sims) * 100).toFixed(1)}% (${stats.wins} wins, ${stats.draws} draws)`);
   console.log('Total shots | Matches | Experimental wins | Win rate | Map RMS | Score E/O');
   for (const [start, result] of [...stats.buckets].sort(([a], [b]) => a - b)) {

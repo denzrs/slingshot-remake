@@ -15,11 +15,11 @@ export interface ExperimentalWorld {
   ships: World['ships'];
   shooter: number;
   planetCount: number;
+  /** Planet centers visible before the experimental CPU fires its first shot. */
+  visiblePlanetPositions?: readonly { x: number; y: number }[];
   hasHole: boolean;
   holeRadius: number;
   rules: Pick<ShotRules, 'bounce'>;
-  /** Set only by the benchmark low-power opening-probe experiment. */
-  openingProbePowers?: readonly number[];
   /** This CPU's completed shots only. */
   shots: readonly ExperimentalShot[];
 }
@@ -178,27 +178,26 @@ export function fitGravityHypotheses(
   }));
 }
 
-/** Fit own trajectories, use medium perturbation, and allow one coverage probe only after a miss. */
+/** First shot uses visible planet centers with unknown masses. Later shots fit own trajectories only. */
 export function* planExperimentalShot(
   visible: ExperimentalWorld,
   opts: Omit<PlanOptions, 'level'>,
   report: (fit: GravityFit, decision: ExperimentalDecision) => void,
 ): Generator<void, Aim> {
+  if (visible.shots.length === 0) {
+    const worlds = openingWorlds(visible);
+    const candidates: Aim[] = [];
+    for (const world of worlds) candidates.push(yield* planShot(world, visible.shooter, { ...opts, effort: (opts.effort ?? 1) / worlds.length, level: 'medium', fixedPower: opts.fixedPower ?? 45 }));
+    const robust = bestRobustAim(candidates, worlds, visible.shooter, opts);
+    const aim = robust?.aim ?? candidates[0];
+    const fit = fitGravity([], visible.planetCount, visible.width, visible.height, visible.hasHole, visible.rules);
+    report(fit, { kind: 'initialProbe', hypothesisCount: worlds.length, hitRate: robust?.hitRate ?? 0, worstMiss: robust?.worstMiss ?? Infinity });
+    return { angle: aim.angle, power: opts.fixedPower ?? 45 };
+  }
+
   const sampleCap = interactiveSampleCap(visible.shots);
   const fits = fitGravityHypotheses(visible.shots, visible.planetCount, visible.width, visible.height, visible.hasHole, visible.rules, sampleCap);
   const worlds = fits.map((fit) => estimatedWorld(visible, fit));
-  if (visible.shots.length === 0) {
-    if (visible.openingProbePowers) {
-      const probe = coverageProbe(worlds, visible, opts, visible.openingProbePowers);
-      if (probe) {
-        report(fits[0], { kind: 'initialProbe', hypothesisCount: fits.length, hitRate: 0, worstMiss: Infinity });
-        return probe;
-      }
-    }
-    const aim = yield* planShot(worlds[0], visible.shooter, { ...opts, level: 'medium', optimizeHitPower: true });
-    report(fits[0], { kind: 'exploit', hypothesisCount: fits.length, hitRate: 0, worstMiss: Infinity });
-    return aim;
-  }
 
   const candidates: Aim[] = [];
   for (const world of worlds) candidates.push(yield* planShot(world, visible.shooter, { ...opts, effort: (opts.effort ?? 1) / worlds.length, level: 'medium', optimizeHitPower: true }));
@@ -717,6 +716,20 @@ function estimatedWorld(visible: ExperimentalWorld, fit: GravityFit): World {
     hole: fit.holeMass === null ? null : { x: visible.width / 2, y: visible.height / 2, radius: visible.holeRadius, mass: fit.holeMass },
     version: 0,
   };
+}
+
+/** First shot sees planet centers but brackets their unknown masses. Later shots use only fitted trajectories. */
+function openingWorlds(visible: ExperimentalWorld): World[] {
+  const positions = visible.visiblePlanetPositions ?? [];
+  const masses = [8_000, 24_000, 72_000];
+  return masses.map((mass, hypothesis) => ({
+    width: visible.width,
+    height: visible.height,
+    ships: visible.ships,
+    planets: positions.map((planet, index) => ({ ...planet, mass, radius: 0, seed: index, style: 'rocky' as const, tint: '#ffffff' })),
+    hole: visible.hasHole ? { x: visible.width / 2, y: visible.height / 2, radius: visible.holeRadius, mass: HORIZON.START_MASS } : null,
+    version: hypothesis,
+  }));
 }
 
 function clampForwardParameters(params: Float64Array, count: number, hasHole: boolean): void {

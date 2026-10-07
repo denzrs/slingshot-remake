@@ -124,10 +124,6 @@ export interface MatchOptions {
   names?: string[];
   /** Fixed team per player index (online matches); `settings.teamMode` is the team count. */
   teams?: number[];
-  /** Benchmark-only: start experimental CPUs with a low-power coverage probe. */
-  experimentalOpeningProbe?: boolean;
-  /** Benchmark-only fixed power for the opening coverage probe. */
-  experimentalOpeningProbePower?: number;
   /** Event Horizon online: every human aims at once instead of one after another at a shared keyboard. */
   simultaneous?: boolean;
 }
@@ -678,12 +674,10 @@ export abstract class Match {
             ships: this.world.ships,
             shooter: id,
             planetCount: this.world.planets.length,
+            visiblePlanetPositions: this.world.planets.map(({ x, y }) => ({ x, y })),
             hasHole: this.world.hole !== null,
             holeRadius: this.world.hole?.radius ?? 0,
             rules: this.rules,
-            openingProbePowers: this.options.experimentalOpeningProbe
-              ? [25, 35, 45, 55]
-              : [this.options.experimentalOpeningProbePower ?? 45],
             shots: this.trails
               .filter((trail): trail is Trail & Required<Pick<Trail, 'angle' | 'power'>> => trail.owner === id && trail.angle !== undefined && trail.power !== undefined)
               .map(({ points, angle, power }) => ({ points, angle, power })),
