@@ -25,7 +25,7 @@ export const AIM = {
   DEFAULT_POWER: 50,
   FIXED_POWER: 55,
   /** The choices for capping a shot's power (the highest is no cap). */
-  CAP_OPTIONS: [100, 90, 80, 70, 60, 50] as readonly number[],
+  CAP_OPTIONS: [100, 90, 80, 70, 60, 50, 40, 30, 20, 10] as readonly number[],
   /** [angle step in degrees, power step] per modifier. */
   STEPS: {
     normal: [1, 1],

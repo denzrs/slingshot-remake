@@ -130,6 +130,7 @@ describe('max power', () => {
     expect(capped('classic', 50).players[0].power).toBe(50);
     expect(capped('classic', 100).players[0].power).toBe(50);
     expect(capped('classic', 50, true).players[0].power).toBe(50);
+    expect(capped('classic', 10).players[0].power).toBe(10);
     expect(capped('classic', 100, true).players[0].power).toBe(55);
   });
 

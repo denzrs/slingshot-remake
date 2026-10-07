@@ -199,7 +199,7 @@ describe('room rules', () => {
   it('are validated', () => {
     const { manager, client } = setup();
     const host = client();
-    for (const bad of [{ ...rules, maxPlanets: 99 }, { ...rules, shotTime: 1 }, { ...rules, bounce: 'yes' }, { ...rules, neighborGrace: 'yes' }, { ...rules, neighborGrace: true }, { ...rules, neighborGrace: 3 }, { ...rules, simultaneousShots: 1 }, { ...rules, hiddenAim: 'yes' }, { ...rules, fadingTrails: true }, { ...rules, fadingTrails: 3 }, { ...rules, maxPower: 75 }, { ...rules, maxPower: '70' }, { ...rules, maxPower: 40 }, { ...rules, rounds: 1.5 }, 'nope', null]) {
+    for (const bad of [{ ...rules, maxPlanets: 99 }, { ...rules, shotTime: 1 }, { ...rules, bounce: 'yes' }, { ...rules, neighborGrace: 'yes' }, { ...rules, neighborGrace: true }, { ...rules, neighborGrace: 3 }, { ...rules, simultaneousShots: 1 }, { ...rules, hiddenAim: 'yes' }, { ...rules, fadingTrails: true }, { ...rules, fadingTrails: 3 }, { ...rules, maxPower: 75 }, { ...rules, maxPower: '70' }, { ...rules, maxPower: 0 }, { ...rules, maxPower: 110 }, { ...rules, rounds: 1.5 }, 'nope', null]) {
       manager.handle(host, create({ rules: bad }));
       expect(host.last('error')!.message).toMatch(/rules/i);
     }

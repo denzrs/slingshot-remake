@@ -110,7 +110,7 @@ export function parseRules(value: unknown): RoomRules | null {
   if (!isIntBetween(rounds, 0, 99) || !isIntBetween(maxPlanets, 1, 8) || !isIntBetween(shotTime, 5, 120)) return null;
   if (![invisiblePlanets, bounce, fixedPower, styleBonuses, simultaneousShots, hiddenAim].every((flag) => typeof flag === 'boolean')) return null;
   if (typeof neighborGrace !== 'number' || ![0, 1, 2].includes(neighborGrace)) return null;
-  if (typeof maxPower !== 'number' || ![50, 60, 70, 80, 90, 100].includes(maxPower)) return null;
+  if (typeof maxPower !== 'number' || ![10, 20, 30, 40, 50, 60, 70, 80, 90, 100].includes(maxPower)) return null;
   if (typeof fadingTrails !== 'number' || ![0, 1, 2, 4].includes(fadingTrails)) return null;
   return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, maxPower, shotTime, styleBonuses: styleBonuses as boolean, neighborGrace, simultaneousShots: simultaneousShots as boolean, hiddenAim: hiddenAim as boolean, fadingTrails };
 }
