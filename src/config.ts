@@ -24,8 +24,10 @@ export const AIM = {
   MAX_POWER: 100,
   DEFAULT_POWER: 50,
   FIXED_POWER: 55,
-  /** The choices for capping a shot's power (the highest is no cap). */
-  CAP_OPTIONS: [100, 90, 80, 70, 60, 50, 40, 30, 20, 10] as readonly number[],
+  /** The choices for capping a shot's power, lowest first (the highest is no cap). */
+  CAP_OPTIONS: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100] as readonly number[],
+  /** The choices for the power every shot has when it is fixed: finer than the cap, so the classic 55 is one of them. */
+  FIXED_OPTIONS: Array.from({ length: 19 }, (_, i) => 10 + i * 5) as readonly number[],
   /** [angle step in degrees, power step] per modifier. */
   STEPS: {
     normal: [1, 1],
@@ -49,7 +51,7 @@ export const SCORING = {
 } as const;
 
 /** Fading trails: the choices for how long a finished shot's path lasts in seconds (0 = it stays), and the share of that time it stays fully visible before fading. */
-export const TRAIL_FADE = { OPTIONS: [0, 4, 2, 1], HOLD: 0.4 };
+export const TRAIL_FADE = { OPTIONS: [0, 1, 2, 4], HOLD: 0.4 };
 
 /** "Ereignishorizont" — the gravity royale mode. */
 export const HORIZON = {
@@ -118,5 +120,5 @@ export const GRACE = {
   /** Fewer ships than this and the nearest enemy is no real shortcut, so nothing is spared. */
   MIN_SHIPS: 4,
   /** The choices for how many of its first shots of a round each ship's pass through its nearest enemy (0 = off). */
-  OPTIONS: [0, 2, 1] as readonly number[],
+  OPTIONS: [0, 1, 2] as readonly number[],
 } as const;

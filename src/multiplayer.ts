@@ -3,6 +3,7 @@ import { ClassicMatch, createMatch, HorizonMatch, type GameEvent } from './game'
 import type { ClassicSnapshot } from './game/classic';
 import type { HorizonSnapshot } from './game/horizon';
 import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules, type ServerMessage } from './net';
+import { defaultRoomRules } from './lobbyPrefs';
 import { SnapshotDecoder, SnapshotEncoder } from './netsync';
 import type { Seat, Settings } from './settings';
 
@@ -112,6 +113,16 @@ export class MultiplayerSession {
   /** Host only: change the rules of the waiting room. */
   setRules(rules: RoomRules): void {
     this.send({ type: 'set_rules', rules });
+  }
+
+  /** Pick your own team while the team room waits. */
+  setTeam(team: 0 | 1): void {
+    this.send({ type: 'set_team', team });
+  }
+
+  /** Host only: deal everybody back out to the two teams. */
+  resetTeams(): void {
+    this.send({ type: 'reset_teams' });
   }
 
   startGame(): void {
@@ -228,9 +239,11 @@ export class MultiplayerSession {
   private startMatch(message: GameStart): void {
     const base = this.hooks.settings();
     const seats: Seat[] = Array.from({ length: MAX_PLAYERS }, (_, i) => (i < message.players.length ? 'human' : 'off'));
-    // The room's rules decide, not whatever this player has set up for offline games.
+    // The room's rules decide, not whatever this player has set up for offline games: from this device only
+    // the display settings (lines, particles, sound, language) carry over.
     const settings: Settings = {
       ...base,
+      ...defaultRoomRules(),
       ...message.rules,
       seats,
       seatTeams: [...base.seatTeams],
