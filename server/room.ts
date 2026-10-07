@@ -28,7 +28,6 @@ interface Room {
   status: RoomStatus;
   players: Player[];
   nextPlayerId: number;
-  nextJoinOrder: number;
   lastStateSeq: number;
   password: { salt: Buffer; hash: Buffer } | null;
 }
@@ -53,6 +52,17 @@ const MAX_ROOM_PLAYERS = 6;
 const MAX_NAME_LENGTH = 24;
 const MAX_PASSWORD_LENGTH = 64;
 const MAX_PASSWORD_ATTEMPTS = 5;
+
+/** The team with fewer players, team 0 when they are even: where a newcomer goes. */
+function smallestTeam(room: Room): 0 | 1 {
+  const inFirst = room.players.filter((p) => p.team === 0).length;
+  return inFirst <= room.players.length - inFirst ? 0 : 1;
+}
+
+/** A team game needs somebody in each team. */
+function teamsPlayable(room: Room): boolean {
+  return room.mode !== 'team' || new Set(room.players.map((p) => p.team)).size === 2;
+}
 
 export class RoomManager {
   private readonly rooms = new Map<string, Room>();
@@ -87,6 +97,12 @@ export class RoomManager {
         break;
       case 'set_rules':
         this.setRules(connection, message);
+        break;
+      case 'set_team':
+        this.setTeam(connection, message);
+        break;
+      case 'reset_teams':
+        this.resetTeams(connection);
         break;
       case 'start_game':
         this.startGame(connection);
@@ -153,7 +169,6 @@ export class RoomManager {
       status: 'waiting',
       players: [],
       nextPlayerId: 0,
-      nextJoinOrder: 0,
       lastStateSeq: -1,
       password: message.password ? hashPassword(message.password as string) : null,
     };
@@ -222,7 +237,7 @@ export class RoomManager {
     membership.player.ready = message.ready;
     const { room } = membership;
     this.broadcastRoomUpdate(room);
-    if (room.players.length >= 2 && room.players.every((player) => player.ready)) {
+    if (room.players.length >= 2 && room.players.every((player) => player.ready) && teamsPlayable(room)) {
       this.beginGame(room);
     }
   }
@@ -249,6 +264,51 @@ export class RoomManager {
     this.broadcastRoomUpdate(room);
   }
 
+  /** A player picks their own team; they have to confirm (ready) again, everybody else's choice stands. */
+  private setTeam(connection: ClientConnection, message: Record<string, unknown>): void {
+    const membership = this.memberships.get(connection);
+    if (!membership || membership.room.status !== 'waiting') {
+      this.error(connection, 'You are not in a waiting room');
+      return;
+    }
+    const { room, player } = membership;
+    if (room.mode !== 'team') {
+      this.error(connection, 'Teams only exist in team rooms');
+      return;
+    }
+    if (message.team !== 0 && message.team !== 1) {
+      this.error(connection, 'team must be 0 or 1');
+      return;
+    }
+    if (player.team === message.team) return;
+    player.team = message.team;
+    player.ready = false;
+    this.broadcastRoomUpdate(room);
+  }
+
+  /** The host deals everybody back out to the teams, one after the other, in the order they joined. */
+  private resetTeams(connection: ClientConnection): void {
+    const membership = this.memberships.get(connection);
+    if (!membership || membership.player.id !== 0) {
+      this.error(connection, 'Only the room host can reset the teams');
+      return;
+    }
+    const { room } = membership;
+    if (room.status !== 'waiting') {
+      this.error(connection, 'The teams cannot change while a game is running');
+      return;
+    }
+    if (room.mode !== 'team') {
+      this.error(connection, 'Teams only exist in team rooms');
+      return;
+    }
+    room.players.forEach((player, i) => {
+      player.team = (i % 2) as 0 | 1;
+      player.ready = false;
+    });
+    this.broadcastRoomUpdate(room);
+  }
+
   private startGame(connection: ClientConnection): void {
     const membership = this.memberships.get(connection);
     if (!membership || membership.player.id !== 0) {
@@ -267,6 +327,10 @@ export class RoomManager {
     // The host's click counts as its own "ready"; everybody else has to have confirmed.
     if (!room.players.every((player) => player === membership.player || player.ready)) {
       this.error(connection, 'Not everybody is ready yet');
+      return;
+    }
+    if (!teamsPlayable(room)) {
+      this.error(connection, 'Both teams need at least one player');
       return;
     }
     this.beginGame(room);
@@ -393,7 +457,7 @@ export class RoomManager {
       id: room.nextPlayerId++,
       name,
       ready: false,
-      team: room.mode === 'team' ? (room.nextJoinOrder++ % 2) as 0 | 1 : 0,
+      team: room.mode === 'team' ? smallestTeam(room) : 0,
       connection,
     };
     room.players.push(player);
@@ -404,13 +468,12 @@ export class RoomManager {
     const index = room.players.indexOf(player);
     if (index !== -1) room.players.splice(index, 1);
     // Room IDs must stay contiguous because they become game player indexes.
+    // Everybody stays in the team they picked.
     room.players.forEach((remaining, id) => {
       remaining.id = id;
-      remaining.team = room.mode === 'team' ? (id % 2) as 0 | 1 : 0;
       this.memberships.set(remaining.connection, { room, player: remaining });
     });
     room.nextPlayerId = room.players.length;
-    room.nextJoinOrder = room.players.length;
   }
 
   private broadcastRoomUpdate(room: Room, notice?: string): void {

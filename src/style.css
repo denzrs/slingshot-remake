@@ -234,25 +234,204 @@ body {
 }
 
 .item__value {
+  min-width: 4.4em;
   font-family: var(--font-mono);
   font-size: 14px;
   color: var(--p2);
+  text-align: center;
   white-space: nowrap;
-}
-
-.item__value::before {
-  content: '‹ ';
-  color: var(--bone-dim);
-}
-
-.item__value::after {
-  content: ' ›';
-  color: var(--bone-dim);
 }
 
 .item.is-disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* Choice rows: ‹ value › — the arrows are real targets, one for each way. */
+
+.item__name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.item__swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.item__picker {
+  display: inline-flex;
+  align-items: center;
+  margin: -8px -6px -8px 0;
+}
+
+.item__arrow {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 2px;
+  color: var(--bone-dim);
+  font: 400 22px/1 var(--font-mono);
+  transition: color 120ms, background 120ms;
+}
+
+.item__arrow:hover {
+  color: var(--p1);
+  background: rgb(91 125 179 / 0.22);
+}
+
+.item__arrow:active {
+  background: rgb(255 134 96 / 0.2);
+}
+
+/* Slider rows: label and value on top, a track with a stop for every value below. */
+
+.item--slider {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 16px;
+  padding-top: 9px;
+  padding-bottom: 5px;
+  cursor: default;
+}
+
+.slider__value {
+  justify-self: end;
+  min-width: 4.4em;
+  font: 700 14px/1.2 var(--font-mono);
+  color: var(--p2);
+  text-align: right;
+  transform-origin: right center;
+  white-space: nowrap;
+}
+
+.slider__track {
+  grid-column: 1 / -1;
+  position: relative;
+  display: block;
+  height: 26px;
+  margin: 0 -8px;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+
+.slider__rail {
+  position: absolute;
+  inset: 0 11px;
+}
+
+.slider__rail::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: rgb(91 125 179 / 0.3);
+}
+
+.slider__fill {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: calc(var(--pos, 0) * 100%);
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgb(111 227 200 / 0.55), var(--p2));
+  box-shadow: 0 0 10px rgb(111 227 200 / 0.35);
+  transition: width 110ms ease-out;
+}
+
+.slider__tick {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--at) * 100%);
+  width: 2px;
+  height: 10px;
+  margin: -5px 0 0 -1px;
+  border-radius: 1px;
+  background: rgb(91 125 179 / 0.6);
+  transition: background 120ms;
+}
+
+.slider__tick.is-on {
+  background: rgb(232 228 216 / 0.55);
+}
+
+.slider__thumb {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--pos, 0) * 100%);
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  background: var(--bone);
+  box-shadow: 0 0 0 0 rgb(111 227 200 / 0.28), 0 2px 6px rgb(0 0 0 / 0.5);
+  transition: left 110ms cubic-bezier(0.3, 1.4, 0.5, 1), transform 140ms, box-shadow 160ms;
+}
+
+.item--slider:hover .slider__thumb,
+.item--slider:focus .slider__thumb {
+  box-shadow: 0 0 0 5px rgb(111 227 200 / 0.24), 0 2px 6px rgb(0 0 0 / 0.5);
+}
+
+.item--slider.is-dragging .slider__thumb {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 8px rgb(111 227 200 / 0.3), 0 2px 8px rgb(0 0 0 / 0.55);
+}
+
+.item--slider.is-dragging .slider__fill,
+.item--slider.is-dragging .slider__thumb {
+  transition-duration: 50ms;
+}
+
+/* Toggle rows: the whole row flips a switch. */
+
+.item--toggle {
+  cursor: pointer;
+}
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 24px;
+  border: 1px solid rgb(91 125 179 / 0.7);
+  border-radius: 12px;
+  background: rgb(6 15 31 / 0.6);
+  transition: background 160ms, border-color 160ms, box-shadow 220ms;
+}
+
+.switch__knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bone-dim);
+  transition: transform 240ms cubic-bezier(0.3, 1.6, 0.5, 1), background 160ms;
+}
+
+.item--toggle.is-on .switch {
+  border-color: var(--p2);
+  background: rgb(111 227 200 / 0.2);
+  box-shadow: 0 0 12px rgb(111 227 200 / 0.32);
+}
+
+.item--toggle.is-on .switch__knob {
+  transform: translateX(18px);
+  background: var(--p2);
 }
 
 /* ——— Panels ——— */
@@ -268,6 +447,419 @@ body {
 
 .panel--wide {
   width: min(600px, 100%);
+}
+
+.panel--medium {
+  width: min(460px, 100%);
+}
+
+/* Rows can hide (a cap's slider while nothing is capped) or only show a value (the rules of somebody else's room). */
+
+.item[hidden] {
+  display: none !important;
+}
+
+.item.is-readonly {
+  cursor: default;
+  pointer-events: none;
+}
+
+.item.is-readonly::before {
+  display: none;
+}
+
+/* Rebuilding a screen in place (a new row, another language) shouldn't replay its entrance. */
+.screen[data-rebuild] .panel,
+.screen[data-rebuild] .title-col {
+  animation: none;
+}
+
+/* The rules of somebody else's room: no track, switch or bar to suggest they can be moved — just what is set. */
+
+.item__readout {
+  display: none;
+  font: 700 14px/1.2 var(--font-mono);
+  white-space: nowrap;
+}
+
+.item.is-readonly {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 0;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgb(91 125 179 / 0.16);
+  border-radius: 0;
+}
+
+.item.is-readonly .item__label {
+  color: var(--bone-dim);
+  font-size: 14px;
+}
+
+.item.is-readonly .item__readout {
+  display: inline;
+  color: var(--bone);
+}
+
+.item.is-readonly .slider__value {
+  color: var(--bone);
+}
+
+.item.is-readonly .slider__track,
+.item.is-readonly .switch,
+.item.is-readonly .segmented {
+  display: none;
+}
+
+.item--toggle.is-readonly .item__readout {
+  color: var(--bone-dim);
+}
+
+.item--toggle.is-readonly.is-on .item__readout {
+  color: var(--p2);
+}
+
+/* Segmented rows: a bar with a segment per option and a marker that slides to the chosen one. */
+
+.item--segmented {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 7px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  cursor: default;
+}
+
+.segmented {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr));
+  padding: 2px;
+  border: 1px solid rgb(91 125 179 / 0.55);
+  border-radius: 3px;
+  background: rgb(6 15 31 / 0.55);
+  transition: border-color 140ms;
+}
+
+.item--segmented:focus .segmented {
+  border-color: var(--p1);
+}
+
+.segmented__marker {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / var(--n, 2));
+  border-radius: 2px;
+  background: rgb(111 227 200 / 0.16);
+  box-shadow: inset 0 0 0 1px var(--p2), 0 0 12px rgb(111 227 200 / 0.28);
+  transform: translateX(calc(var(--i, 0) * 100%));
+  transition: transform 280ms cubic-bezier(0.3, 1.45, 0.5, 1);
+}
+
+.segmented__option {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  padding: 4px 8px;
+  color: var(--bone-dim);
+  font: 700 13px/1.2 var(--font-body);
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  transition: color 160ms;
+}
+
+.segmented__option:hover {
+  color: var(--bone);
+}
+
+.segmented__option.is-on {
+  color: var(--p2);
+}
+
+/* Pills: the buttons of a line-up row. */
+
+.pill {
+  display: inline-grid;
+  place-items: center;
+  min-height: 30px;
+  padding: 4px 11px;
+  border: 1px solid rgb(91 125 179 / 0.45);
+  border-radius: 3px;
+  background: rgb(6 15 31 / 0.4);
+  color: var(--bone-dim);
+  font: 700 13px/1.2 var(--font-body);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: color 140ms, border-color 140ms, background 140ms, box-shadow 200ms;
+}
+
+.pill:hover {
+  border-color: rgb(91 125 179 / 0.95);
+  color: var(--bone);
+}
+
+.pill.is-on {
+  border-color: var(--p2);
+  background: rgb(111 227 200 / 0.16);
+  color: var(--p2);
+  box-shadow: 0 0 10px rgb(111 227 200 / 0.2);
+}
+
+.pill--tone {
+  border-color: color-mix(in srgb, var(--tone) 45%, transparent);
+}
+
+.pill--tone:hover {
+  border-color: var(--tone);
+  color: var(--tone);
+}
+
+.pill--tone.is-on {
+  border-color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 20%, transparent);
+  color: var(--tone);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--tone) 32%, transparent);
+}
+
+.pill--remove {
+  width: 30px;
+  padding: 0;
+  font-size: 12px;
+}
+
+.pill--remove:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.pill.is-disabled {
+  opacity: 0.32;
+  pointer-events: none;
+}
+
+/* Where ←/→ have taken the keyboard inside a row. */
+.item--seat:focus .pill.is-cursor {
+  outline: 2px solid var(--p1);
+  outline-offset: 2px;
+}
+
+/* Line-up rows: the ship, who flies it, its team, a way out. */
+
+.item--seat {
+  display: grid;
+  grid-template-columns: 8.2em minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 14px;
+  padding: 8px 12px 8px 22px;
+  border: 1px solid rgb(91 125 179 / 0.22);
+  background: rgb(19 39 70 / 0.3);
+  cursor: default;
+}
+
+.seat__name .item__label {
+  font-weight: 700;
+}
+
+.seat__cells {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 14px;
+}
+
+.seat__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.seat__caption {
+  margin: 0 3px 0 10px;
+  color: var(--bone-dim);
+  font: 700 10px/1 var(--font-body);
+  letter-spacing: 0.16em;
+}
+
+.seat__remove {
+  display: inline-flex;
+}
+
+.panel--players {
+  width: min(780px, 100%);
+}
+
+.setup__rows--seats {
+  gap: 5px;
+}
+
+.team-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 0 0 4px;
+  color: var(--bone-dim);
+}
+
+.team-summary[hidden] {
+  display: none;
+}
+
+.team-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--bone);
+  font: 700 12.5px/1.2 var(--font-mono);
+}
+
+.team-warning {
+  color: var(--sodium);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+@media (max-width: 560px) {
+  .item--seat {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 8px 10px 8px 16px;
+  }
+
+  .seat__cells {
+    justify-content: flex-start;
+  }
+
+  .seat__group {
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    padding: 4px 8px;
+    font-size: 12.5px;
+  }
+
+  .seat__caption {
+    margin: 0 2px 0 4px;
+  }
+
+  .segmented__option {
+    padding: 4px;
+    font-size: 12px;
+  }
+}
+
+/* The rules of a game: a few blocks side by side instead of one long list. */
+
+.panel--setup {
+  width: min(880px, 100%);
+}
+
+.setup {
+  columns: 2;
+  column-gap: 44px;
+}
+
+.setup__group {
+  break-inside: avoid;
+  margin: 0 0 14px;
+}
+
+.setup__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 4px;
+  color: var(--p1);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.setup__title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgb(91 125 179 / 0.35);
+}
+
+.setup__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.items--actions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+
+.items--actions .item--hinted {
+  align-items: center;
+}
+
+.items--actions .item--primary {
+  background: rgb(255 134 96 / 0.12);
+}
+
+.items--actions .item--primary:hover,
+.items--actions .item--primary:focus {
+  background: rgb(255 134 96 / 0.24);
+}
+
+.keys--menu {
+  margin-top: 16px;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .setup {
+    columns: 1;
+  }
+
+  /* One long column: keep the buttons in reach instead of at the very end. */
+  .screen--setup {
+    padding-bottom: 0;
+  }
+
+  .items--actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    gap: 8px;
+    margin: 6px -16px 0;
+    padding: 10px 16px max(14px, env(safe-area-inset-bottom));
+    border-top: 1px solid rgb(91 125 179 / 0.35);
+    background: var(--plate);
+  }
+
+  .items--actions .item {
+    flex: 1 1 auto;
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .items--actions .item--primary {
+    flex-basis: 100%;
+  }
+}
+
+@media (pointer: coarse) {
+  .keys--menu {
+    display: none;
+  }
 }
 
 /* Registration marks on the panel corners, echoing the play field frame. */
@@ -318,6 +910,8 @@ body {
   margin-bottom: 14px;
 }
 
+/* ——— Multiplayer lobby ——— */
+
 .screen--lobby {
   align-items: center;
   justify-content: center;
@@ -326,17 +920,16 @@ body {
 }
 
 .panel--lobby {
-  width: min(880px, 100%);
+  width: min(980px, 100%);
 }
 
 .panel--lobby .panel__title {
-  font-size: 36px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .lobby {
   display: grid;
-  gap: 14px;
+  gap: 16px;
   color: var(--bone);
 }
 
@@ -348,141 +941,303 @@ body {
   display: none;
 }
 
-.lobby__columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-}
-
-.lobby__col {
-  display: grid;
-  gap: 14px;
-  min-width: 0;
-}
-
-.lobby__card {
-  display: grid;
+/* A line that says how the connection is: a dot that is lit while it is up. */
+.lobby__status {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  padding: 14px;
-  border: 1px solid rgb(91 125 179 / 0.3);
-  background: rgb(6 15 31 / 0.5);
-}
-
-.lobby__card--room {
-  max-width: 560px;
-  width: 100%;
-  justify-self: center;
-}
-
-.lobby__create {
-  display: grid;
-  gap: 10px;
-}
-
-.lobby__pair {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
-}
-
-.lobby__rules {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px 10px;
-}
-
-.lobby__field {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  color: var(--bone-dim);
-  font-size: 12px;
-}
-
-.lobby__field input,
-.lobby__field select {
-  width: 100%;
-  min-height: 38px;
-  padding: 7px 9px;
-  border: 1px solid rgb(91 125 179 / 0.6);
-  border-radius: 2px;
-  background: rgb(6 15 31 / 0.92);
-  color: var(--bone);
-  font: 14px var(--font-body);
-}
-
-.lobby__field input:focus-visible,
-.lobby__field select:focus-visible,
-.lobby-room input:focus-visible,
-.lobby__button:focus-visible {
-  outline: none;
-  border-color: var(--p1);
-  box-shadow: 0 0 0 1px var(--p1);
-}
-
-.lobby__button {
-  min-height: 40px;
-  padding: 8px 14px;
-  border: 1px solid rgb(91 125 179 / 0.55);
-  border-radius: 2px;
-  background: rgb(19 39 70 / 0.8);
-  color: var(--bone);
-  font: 700 13px var(--font-body);
-  cursor: pointer;
-}
-
-.lobby__button:hover:not(:disabled) {
-  background: rgb(91 125 179 / 0.24);
-}
-
-.lobby__button--primary {
-  border-color: var(--p1);
-  color: var(--p1);
-}
-
-.lobby__button:disabled,
-.lobby__field input:disabled,
-.lobby__field select:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.lobby__feedback {
-  margin: 0;
   min-height: 1.5em;
+  margin: 0;
   color: var(--bone-dim);
   font-size: 13px;
   line-height: 1.5;
 }
 
-.lobby__section-title {
+.lobby__status::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bone-dim);
+  opacity: 0.55;
+}
+
+.lobby__status.is-busy::before {
+  background: var(--sodium);
+  opacity: 1;
+  animation: pulse 900ms ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+  to {
+    opacity: 0.25;
+  }
+}
+
+.lobby__card {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border: 1px solid rgb(91 125 179 / 0.28);
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgb(19 39 70 / 0.5), rgb(6 15 31 / 0.5));
+}
+
+.lobby__card .setup__title {
   margin: 0;
-  color: var(--p1);
+}
+
+.lobby__card--wide {
+  width: 100%;
+  max-width: 860px;
+  justify-self: center;
+}
+
+.lobby__card--narrow {
+  width: 100%;
+  max-width: 460px;
+  justify-self: center;
+}
+
+.lobby__fields {
+  display: grid;
+  gap: 12px;
+}
+
+/* Once connected: who with, under what name, and the way out. */
+.lobby__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  padding: 10px 14px;
+  border: 1px solid rgb(91 125 179 / 0.28);
+  border-radius: 3px;
+  background: rgb(19 39 70 / 0.4);
+}
+
+.lobby__bar[hidden] {
+  display: none;
+}
+
+.lobby__link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-right: auto;
+  color: var(--bone-dim);
+  font: 12.5px var(--font-mono);
+}
+
+.lobby__link::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--p2);
+  box-shadow: 0 0 10px var(--p2);
+}
+
+.lobby__link-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lobby__name .lobby__field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lobby__name .lobby__field input {
+  width: 170px;
+  min-height: 34px;
+  padding: 5px 10px;
+}
+
+.lobby__bar .lobby__button {
+  min-height: 34px;
+  padding: 5px 14px;
+  font-size: 13px;
+}
+
+/* A block's title with its main action beside it. */
+.lobby__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.lobby__head .setup__title,
+.lobby__head .lobby__note {
+  flex: 1;
+}
+
+.lobby__head .lobby__button[hidden] {
+  display: none;
+}
+
+.lobby__head .lobby__button {
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+/* The basics of a new room, side by side above its rules. */
+.lobby__basics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px 36px;
+  align-items: start;
+}
+
+.lobby__basics > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lobby__basics .item,
+.lobby__card--wide .item {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.lobby__basics .item::before,
+.lobby__card--wide .item::before {
+  display: none;
+}
+
+.lobby__field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--bone-dim);
   font-size: 12px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+}
+
+.lobby__field input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid rgb(91 125 179 / 0.55);
+  border-radius: 3px;
+  background: rgb(6 15 31 / 0.85);
+  color: var(--bone);
+  font: 14px var(--font-body);
+  transition: border-color 140ms, box-shadow 160ms;
+}
+
+.lobby__field input:focus-visible,
+.lobby-room input:focus-visible {
+  outline: none;
+  border-color: var(--p1);
+  box-shadow: 0 0 0 3px rgb(255 134 96 / 0.2);
+}
+
+.lobby__button {
+  min-height: 42px;
+  padding: 9px 18px;
+  border: 1px solid rgb(91 125 179 / 0.6);
+  border-radius: 3px;
+  background: rgb(19 39 70 / 0.7);
+  color: var(--bone);
+  font: 700 14px var(--font-body);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 140ms, border-color 140ms, box-shadow 160ms, transform 80ms;
+}
+
+.lobby__button:hover:not(:disabled) {
+  border-color: var(--line);
+  background: rgb(91 125 179 / 0.28);
+}
+
+.lobby__button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.lobby__button:focus-visible {
+  outline: none;
+  border-color: var(--p1);
+  box-shadow: 0 0 0 3px rgb(255 134 96 / 0.25);
+}
+
+.lobby__button--primary {
+  border-color: var(--p1);
+  background: rgb(255 134 96 / 0.12);
+  color: var(--p1);
+}
+
+.lobby__button--primary:hover:not(:disabled) {
+  border-color: var(--p1);
+  background: rgb(255 134 96 / 0.24);
+}
+
+.lobby__button:disabled,
+.lobby__field input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .lobby__subtitle {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   color: var(--bone-dim);
   font-size: 11px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
 }
 
 .lobby__note {
   margin: 0;
   color: var(--bone-dim);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.5;
+}
+
+.lobby__note[hidden] {
+  display: none;
+}
+
+/* Said once, above the rules. For everybody but the host it is a lock: these are not yours to change. */
+.lobby__rules-note {
+  margin: 0;
+  color: var(--bone-dim);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.lobby__rules-note[hidden] {
+  display: none;
+}
+
+.lobby__rules-note.is-locked {
+  padding: 9px 12px;
+  border: 1px solid rgb(255 210 122 / 0.4);
+  border-radius: 3px;
+  background: rgb(255 210 122 / 0.07);
+  color: var(--sodium);
+  font-weight: 700;
+}
+
+/* The rules, as in the setup screen — in a narrow card they stand in one column. */
+.setup--lobby {
+  columns: 1;
+}
+
+.lobby__card--wide .setup--lobby {
+  columns: 2;
+  column-gap: 36px;
 }
 
 .lobby__rooms,
 .lobby__players {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -491,18 +1246,25 @@ body {
 .lobby-room {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: 8px 12px;
   align-items: center;
-  padding: 9px 10px;
-  border: 1px solid rgb(91 125 179 / 0.3);
-  background: rgb(19 39 70 / 0.45);
+  padding: 11px 12px;
+  border: 1px solid rgb(91 125 179 / 0.28);
+  border-radius: 3px;
+  background: rgb(19 39 70 / 0.4);
+  transition: border-color 140ms, background 140ms;
+}
+
+.lobby-room:hover {
+  border-color: rgb(91 125 179 / 0.7);
+  background: rgb(19 39 70 / 0.65);
 }
 
 .lobby-room__info {
   display: grid;
-  gap: 2px;
+  gap: 6px;
   min-width: 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .lobby-room__info strong {
@@ -511,18 +1273,24 @@ body {
   white-space: nowrap;
 }
 
-.lobby-room__info span {
-  color: var(--bone-dim);
-  font-size: 12px;
+.lobby-room__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.pips--room {
+  margin-left: 2px;
 }
 
 .lobby-room input {
   grid-column: 1;
-  min-height: 34px;
-  padding: 5px 8px;
-  border: 1px solid rgb(91 125 179 / 0.6);
-  border-radius: 2px;
-  background: rgb(6 15 31 / 0.92);
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid rgb(91 125 179 / 0.55);
+  border-radius: 3px;
+  background: rgb(6 15 31 / 0.85);
   color: var(--bone);
   font: 13px var(--font-body);
 }
@@ -538,22 +1306,34 @@ body {
 }
 
 .lobby__empty {
+  display: grid;
+  gap: 6px;
+  padding: 26px 8px;
   color: var(--bone-dim);
   font-size: 13px;
+  text-align: center;
+}
+
+.lobby__empty strong {
+  color: var(--bone);
+  font-size: 15px;
 }
 
 .lobby__players li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid rgb(91 125 179 / 0.3);
-  background: rgb(19 39 70 / 0.45);
+  gap: 8px 9px;
+  padding: 9px 12px;
+  border: 1px solid rgb(91 125 179 / 0.28);
+  border-radius: 3px;
+  background: rgb(19 39 70 / 0.4);
   font-size: 14px;
 }
 
 .lobby__player-name {
   overflow: hidden;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -572,11 +1352,13 @@ body {
 
 .lobby__tag {
   flex: none;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border: 1px solid rgb(91 125 179 / 0.5);
+  border-radius: 2px;
   color: var(--bone-dim);
   font-size: 10.5px;
-  letter-spacing: 0.06em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -586,32 +1368,15 @@ body {
 }
 
 .lobby__ready {
-  margin-left: auto;
   flex: none;
+  margin-left: auto;
   color: var(--bone-dim);
   font: 12px var(--font-mono);
 }
 
 .lobby__ready--on {
   color: var(--p2);
-}
-
-.lobby__summary {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 16px;
-  margin: 0;
-  font-size: 13px;
-}
-
-.lobby__summary dt {
-  color: var(--bone-dim);
-}
-
-.lobby__summary dd {
-  margin: 0;
-  font-family: var(--font-mono);
-  color: var(--p2);
+  text-shadow: 0 0 10px rgb(111 227 200 / 0.5);
 }
 
 .lobby__back {
@@ -622,22 +1387,34 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  margin-top: 4px;
 }
 
 .lobby__actions .lobby__button {
   flex: 1 1 120px;
 }
 
-@media (max-width: 720px) {
-  .lobby__columns {
-    grid-template-columns: 1fr;
+@media (max-width: 560px) {
+  .panel--lobby .panel__title {
+    font-size: 34px;
   }
 }
 
-@media (max-width: 420px) {
-  .lobby__pair,
-  .lobby__rules {
+@media (max-width: 760px) {
+  .lobby__basics {
     grid-template-columns: 1fr;
+  }
+
+  .lobby__card--wide .setup--lobby {
+    columns: 1;
+  }
+
+  .lobby__name .lobby__field {
+    display: grid;
+  }
+
+  .lobby__name .lobby__field input {
+    width: 100%;
   }
 }
 
@@ -1145,7 +1922,8 @@ kbd {
   pointer-events: none;
 }
 
-@media (orientation: portrait) and (max-width: 700px) {
+/* Only a phone is asked to turn: a narrow desktop window can't be rotated. */
+@media (orientation: portrait) and (max-width: 700px) and (pointer: coarse) {
   body.is-playing #rotate-hint {
     display: block;
   }
@@ -1163,7 +1941,15 @@ kbd {
   .panel {
     animation: none;
   }
-  .item::before {
+  .item::before,
+  .item__arrow,
+  .slider__fill,
+  .slider__tick,
+  .slider__thumb,
+  .switch,
+  .switch__knob,
+  .segmented__marker,
+  .pill {
     transition: none;
   }
 }

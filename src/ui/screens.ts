@@ -1,14 +1,15 @@
-import { CHALLENGE, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
+import { CHALLENGE, COLORS, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
 import { teamName, type Match, type Mode, type VersusMode } from '../game';
 import { fmtNum, LANGS, t, tn, type Lang } from '../i18n';
+import { rulesOf } from '../lobbyPrefs';
 import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
 import { awards } from '../stats';
 import type { StyleKind } from '../physics';
-import { activeSeats, seatTeamsFor, type Seat, type Settings } from '../settings';
+import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, freeSeat, MIN_SEATS, removeSeat, seatTeamsFor, teamCounts, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
-import { rulesFor } from './rules';
+import { groupTitle, RULE_GROUPS, ruleItems } from './rules';
 
 export interface App {
   menu: Menu;
@@ -31,19 +32,6 @@ export interface App {
   toggleFullscreen(): void;
   isFullscreen(): boolean;
 }
-
-const onOff = () => [
-  { value: true, label: t('common.on') },
-  { value: false, label: t('common.off') },
-];
-
-const seatOptions = (): { value: Seat; label: string }[] => [
-  { value: 'human', label: t('seat.human') },
-  { value: 'easy', label: t('seat.easy') },
-  { value: 'medium', label: t('seat.medium') },
-  { value: 'hard', label: t('seat.hard') },
-  { value: 'off', label: '—' },
-];
 
 const LANG_NAMES: Record<Lang, string> = { de: 'Deutsch', en: 'English' };
 
@@ -127,8 +115,18 @@ export function pauseScreen(app: App): Screen {
 
 export function playersScreen(app: App): Screen {
   const s = app.settings;
+  const seats = activeSeats(s);
+  const fliers = [
+    { value: 'human', label: t('seat.human') },
+    { value: 'easy', label: t('cpu.easy') },
+    { value: 'medium', label: t('cpu.medium') },
+    { value: 'hard', label: t('cpu.hard') },
+  ];
+  const teams = Array.from({ length: s.teamMode }, (_, k) => k);
+
   const mode: MenuItem = {
-    kind: 'choice',
+    kind: 'segmented',
+    section: 'mode',
     label: t('players.mode'),
     options: [
       { value: 0, label: t('players.ffa') },
@@ -139,56 +137,129 @@ export function playersScreen(app: App): Screen {
     set: (v) => {
       s.teamMode = v as number;
       app.settingsChanged();
-      // Team rows appear or disappear.
+      // The seats gain or lose their team buttons.
       app.menu.rebuild();
     },
   };
   const seat = (i: number): MenuItem => ({
-    kind: 'choice',
+    kind: 'seat',
+    section: 'seats',
     label: t('players.player', { n: i + 1 }),
-    options: seatOptions(),
+    swatch: COLORS.players[i],
+    fliers,
+    cpuCaption: t('players.cpu'),
     get: () => s.seats[i],
     set: (v) => {
-      let next = v as Seat;
-      // At least two seats must stay taken: skip "—" in whichever direction we were cycling.
-      if (next === 'off' && activeSeats(s).length <= 2 && s.seats[i] !== 'off') next = s.seats[i] === 'human' ? 'hard' : 'human';
-      const joinedOrLeft = (s.seats[i] === 'off') !== (next === 'off');
-      s.seats[i] = next;
-      app.settingsChanged();
-      if (s.teamMode && joinedOrLeft) app.menu.rebuild();
-    },
-  });
-  const team = (i: number): MenuItem => ({
-    kind: 'choice',
-    label: t('players.teamOf', { n: i + 1 }),
-    options: Array.from({ length: s.teamMode }, (_, k) => ({ value: k, label: teamName(k) })),
-    get: () => s.seatTeams[i] % s.teamMode,
-    set: (v) => {
-      s.seatTeams[i] = v as number;
+      s.seats[i] = v as Seat;
       app.settingsChanged();
     },
+    teams: s.teamMode
+      ? {
+          options: teams.map((k) => ({ value: k, label: teamName(k) })),
+          tones: teams.map((k) => TEAMS[k][0]),
+          get: () => s.seatTeams[i] % s.teamMode,
+          set: (v) => {
+            s.seatTeams[i] = v as number;
+            app.settingsChanged();
+          },
+        }
+      : undefined,
+    remove: {
+      label: t('players.remove', { n: i + 1 }),
+      disabled: () => activeSeats(s).length <= MIN_SEATS,
+      run: () => {
+        const at = seats.indexOf(i);
+        if (!removeSeat(s, i)) return;
+        app.settingsChanged();
+        // The focus stays where the ship was: on whoever moved up, or on the last one.
+        app.menu.rebuild(1 + Math.min(at, seats.length - 2));
+      },
+    },
   });
-  const note = s.teamMode ? `${t('players.note')} ${t('players.teamNote')}` : t('players.note');
+
+  const add = (label: string, flier: 'human' | 'medium'): MenuItem => ({
+    kind: 'action',
+    section: 'actions',
+    label,
+    disabled: freeSeat(s) === null,
+    run: () => {
+      if (addSeat(s, flier) === null) return;
+      app.settingsChanged();
+      // The newcomer is the row after the last one (the mode bar comes first).
+      app.menu.rebuild(1 + seats.length);
+    },
+  });
+
+  /** In team play: how many ships each team has, and a warning when that is no match. */
+  const summary = h('p.team-summary', { 'aria-live': 'polite' });
+  const update = (): void => {
+    summary.hidden = !s.teamMode;
+    if (!s.teamMode) return;
+    const valid = seatTeamsFor(s, activeSeats(s)) !== null;
+    summary.classList.toggle('is-warning', !valid);
+    summary.replaceChildren(
+      ...teamCounts(s).map((n, k) => {
+        const dot = h('span.item__swatch', null);
+        dot.style.background = TEAMS[k][0];
+        return h('span.team-chip', null, dot, `${teamName(k)} ${n}`);
+      }),
+      ...(valid ? [] : [h('span.team-warning', null, t('players.teamNote'))]),
+    );
+  };
+
+  const block = (title: string, section: string, extra = '') => h('section.setup__group', null, h('h3.setup__title', null, title), h(`div.setup__rows${extra}`, { 'data-section': section }));
   return {
-    build: () => panel(t('common.players'), h('p.note', null, note), 'panel--wide'),
+    build: () =>
+      h(
+        'section.screen.screen--panel.screen--setup',
+        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('common.players') },
+        h(
+          'div.panel.panel--players',
+          null,
+          h('h2.panel__title', null, t('common.players')),
+          h('p.note', null, t('players.note')),
+          block(t('players.group.mode'), 'mode'),
+          block(t('players.group.crew', { n: seats.length, max: MAX_PLAYERS }), 'seats'),
+          summary,
+          h('div.items.items--row.items--actions', { 'data-section': 'actions' }),
+        ),
+      ),
     items: [
       mode,
-      ...Array.from({ length: MAX_PLAYERS }, (_, i) => seat(i)),
-      ...(s.teamMode ? activeSeats(s).map(team) : []),
-      { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
+      ...seats.map(seat),
+      add(t('players.add.human'), 'human'),
+      add(t('players.add.cpu'), 'medium'),
+      ...(s.teamMode
+        ? [
+            {
+              kind: 'action',
+              section: 'actions',
+              label: t('players.balance'),
+              run: () => {
+                balanceTeams(s);
+                app.settingsChanged();
+                app.menu.refresh();
+              },
+            } satisfies MenuItem,
+          ]
+        : []),
+      { kind: 'action', section: 'actions', label: t('players.done'), primary: true, run: () => app.menu.back() },
     ],
+    update,
   };
 }
 
-/** A row that cycles one setting through a list of values. */
-function settingChoice<K extends keyof Settings>(app: App, label: string, key: K, options: { value: Settings[K]; label: string }[]): MenuItem {
+/** The settings that are plain on/off switches. */
+type BooleanSetting = { [P in keyof Settings]: Settings[P] extends boolean ? P : never }[keyof Settings];
+
+/** A switch for one on/off setting. */
+function settingToggle(app: App, label: string, key: BooleanSetting): MenuItem {
   return {
-    kind: 'choice',
+    kind: 'toggle',
     label,
-    options,
     get: () => app.settings[key],
     set: (v) => {
-      app.settings[key] = v as Settings[K];
+      app.settings[key] = v;
       app.settingsChanged();
     },
   };
@@ -196,31 +267,64 @@ function settingChoice<K extends keyof Settings>(app: App, label: string, key: K
 
 /** The rules of a game, shown right before it starts. They are remembered between games. */
 export function setupScreen(app: App, mode: VersusMode): Screen {
-  const rules: MenuItem[] = rulesFor(mode).map((row) => settingChoice(app, row.label, row.key, row.options));
+  const rules = ruleItems(mode, {
+    get: () => rulesOf(app.settings),
+    patch: (values) => {
+      Object.assign(app.settings, values);
+      app.settingsChanged();
+    },
+  });
+  const actions: MenuItem[] = [
+    { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(mode) },
+    { kind: 'action', section: 'actions', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
+    {
+      kind: 'action',
+      section: 'actions',
+      label: t('setup.reset'),
+      run: () => {
+        Object.assign(app.settings, rulesOf(DEFAULT_SETTINGS));
+        app.settingsChanged();
+        app.menu.refresh();
+      },
+    },
+    { kind: 'action', section: 'actions', label: t('common.back'), run: () => app.menu.back() },
+  ];
   return {
-    build: () => panel(t(mode === 'classic' ? 'mode.classic' : 'mode.horizon'), h('p.note', null, t('setup.note')), 'panel--wide'),
-    items: [
-      { kind: 'action', label: t('setup.start'), primary: true, run: () => app.start(mode) },
-      { kind: 'action', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
-      ...rules,
-      { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
-    ],
+    build: () =>
+      h(
+        'section.screen.screen--panel.screen--setup',
+        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t(mode === 'classic' ? 'mode.classic' : 'mode.horizon') },
+        h(
+          'div.panel.panel--setup',
+          null,
+          h('h2.panel__title', null, t(mode === 'classic' ? 'mode.classic' : 'mode.horizon')),
+          h('p.note', null, t('setup.note')),
+          h(
+            'div.setup',
+            null,
+            ...RULE_GROUPS.filter((group) => rules.some((r) => r.group === group)).map((group) => h('section.setup__group', null, h('h3.setup__title', null, groupTitle(group)), h('div.setup__rows', { 'data-section': group }))),
+          ),
+          h('div.items.items--row.items--actions', { 'data-section': 'actions' }),
+          h('p.keys.keys--menu', null, t('setup.keys')),
+        ),
+      ),
+    items: [...rules.map(({ group, item }) => ({ ...item, section: group })), ...actions],
+    // Enter starts the game straight away, as it always did.
+    focus: rules.length,
   };
 }
 
 /** Only what concerns this device; the rules of a game live on the setup screen. */
 export function settingsScreen(app: App): Screen {
-  const choice = <K extends keyof Settings>(label: string, key: K, options: { value: Settings[K]; label: string }[]) => settingChoice(app, label, key, options);
   return {
-    build: () => panel(t('common.settings'), h('p.note', null, t('settings.note')), 'panel--wide'),
+    build: () => panel(t('common.settings'), h('p.note', null, t('settings.note')), 'panel--medium'),
     items: [
-      choice(t('settings.contours'), 'contours', onOff()),
-      choice(t('settings.particles'), 'particles', onOff()),
-      choice(t('settings.sound'), 'sound', onOff()),
+      settingToggle(app, t('settings.contours'), 'contours'),
+      settingToggle(app, t('settings.particles'), 'particles'),
+      settingToggle(app, t('settings.sound'), 'sound'),
       {
-        kind: 'choice',
+        kind: 'toggle',
         label: t('settings.fullscreen'),
-        options: onOff(),
         get: () => app.isFullscreen(),
         set: () => app.toggleFullscreen(),
       },

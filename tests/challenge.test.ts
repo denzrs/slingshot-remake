@@ -15,7 +15,7 @@ import {
   THEMES,
   weekday,
 } from '../src/challenge';
-import { CHALLENGE, FIELD, PHYSICS, SCORING } from '../src/config';
+import { AIM, CHALLENGE, FIELD, PHYSICS, SCORING } from '../src/config';
 import { loadDay, loadStreak, recordRun } from '../src/dailyStore';
 import { createChallenge, type ChallengeMatch } from '../src/game';
 import { cloneWorld, simulateShot } from '../src/physics';
@@ -339,5 +339,17 @@ describe('share text', () => {
     const lines = shareText(m).split('\n');
     expect(lines[0]).toContain(`#${ch.number}`);
     expect(lines.some((l) => /^1 [🟩🟨⬛🟥]+/u.test(l))).toBe(true);
+  });
+});
+
+describe('the daily challenge and a fixed power level', () => {
+  it('keeps its own fixed power, whatever level is set up for normal games', () => {
+    // A precision day: fixed power from the second sector on.
+    let day = '2026-10-02';
+    while (dailyChallenge(day).theme !== 'precision') day = shiftDate(day, 1);
+    const m = createChallenge({ ...DEFAULT_SETTINGS, fixedPower: true, fixedPowerLevel: 90 }, dailyChallenge(day));
+    m.startRound();
+    expect(m.spec.fixedPower).toBe(true);
+    expect(m.pilot.power).toBe(AIM.FIXED_POWER);
   });
 });

@@ -6,7 +6,7 @@ export type RoomMode = 'ffa' | 'team';
 export type NetworkGameMode = 'classic' | 'horizon';
 
 /** The rules of an online game; a subset of the local `Settings`, so it can be spread straight into them. */
-export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails'>;
+export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails'>;
 
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
@@ -21,6 +21,10 @@ export type ClientMessage =
   | { type: 'join_room'; roomId: string; name: string; password?: string }
   | { type: 'ready'; ready: boolean }
   | { type: 'set_rules'; rules: RoomRules }
+  /** Pick your own team (team rooms, while waiting); you have to be ready again afterwards. */
+  | { type: 'set_team'; team: 0 | 1 }
+  /** Host only: deal everybody back out to the two teams in the order they joined. */
+  | { type: 'reset_teams' }
   | { type: 'start_game' }
   | { type: 'input'; input: ClientInput }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }
