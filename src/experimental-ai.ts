@@ -1,12 +1,13 @@
 import { HORIZON, PHYSICS } from './config';
 import { planShot, type Aim, type PlanOptions } from './ai';
-import { aimDirection, normalizeAngle, simulateShot, type Planet, type ShotRules, type World } from './physics';
+import { Shot, aimDirection, normalizeAngle, simulateShot, type Planet, type ShotOutcome, type ShotRules, type World } from './physics';
 
 export interface ExperimentalShot {
   /** Flat [x0, y0, x1, y1, …] samples from this CPU's completed shot. */
   points: readonly number[];
   angle: number;
   power: number;
+  shotId?: number;
 }
 
 export interface ExperimentalWorld {
@@ -15,8 +16,11 @@ export interface ExperimentalWorld {
   ships: World['ships'];
   shooter: number;
   planetCount: number;
-  /** Planet centers visible before the experimental CPU fires its first shot. */
-  visiblePlanetPositions?: readonly { x: number; y: number }[];
+  /** Public geometry only; stable IDs survive Horizon drift. */
+  visiblePlanets?: readonly { id: number; x: number; y: number; radius: number }[];
+  visibleHole?: { x: number; y: number; radius: number };
+  mode?: 'classic' | 'horizon';
+  epoch?: number;
   hasHole: boolean;
   holeRadius: number;
   rules: Pick<ShotRules, 'bounce'>;
@@ -28,6 +32,12 @@ export interface PlanetEstimate {
   x: number;
   y: number;
   mass: number;
+  id?: number;
+  radius?: number;
+  /** Relative posterior standard deviation; independent planet densities are not pooled. */
+  massUncertainty?: number;
+  /** Absolute mass standard deviation, defined even for a gravity-free belief. */
+  massStandardDeviation?: number;
 }
 
 export interface GravityFit {
@@ -44,6 +54,16 @@ export interface GravityFit {
   validationSamples: number;
   condition: number | null;
   fitMs: number;
+  hole?: { x: number; y: number; radius: number };
+  holeMassUncertainty?: number;
+  holeMassStandardDeviation?: number;
+  startingKnowledge?: number;
+  observedShots?: number;
+  learnedShots?: number;
+  retainedShots?: number;
+  learningRate?: number;
+  predictionRms?: number | null;
+  predictionSamples?: number;
 }
 
 export interface PlanetMatch {
@@ -75,11 +95,7 @@ const ACCELERATION_ITERATIONS = 12;
 const FORWARD_ITERATIONS = 6;
 const FORWARD_STARTS = 2;
 const HYPOTHESIS_COUNT = 2;
-const INTERACTIVE_FIT_SAMPLES = 24;
 const REFINED_FIT_SAMPLES = 96;
-const LONG_TRAIL_POINTS = 240;
-const USABLE_VALIDATION_RMS = 30;
-const MAX_PLANET_RADIUS = 60;
 
 /** Compare the fitted map to the actual world for diagnostics only, never planner input. */
 export function measureReconstruction(world: World, fit: GravityFit): ReconstructionQuality {
@@ -137,7 +153,7 @@ export function measureReconstruction(world: World, fit: GravityFit): Reconstruc
     for (let col = 1; col <= 7; col++) {
       const x = (world.width * col) / 8;
       const actual = fieldAt(world.planets, world.hole, x, y);
-      const estimatedHole = fit.holeMass === null ? null : { x: world.width / 2, y: world.height / 2, mass: fit.holeMass };
+      const estimatedHole = fit.holeMass === null ? null : { x: fit.hole?.x ?? world.width / 2, y: fit.hole?.y ?? world.height / 2, mass: fit.holeMass };
       const predicted = fieldAt(fit.planets, estimatedHole, x, y);
       error2 += (actual.ax - predicted.ax) ** 2 + (actual.ay - predicted.ay) ** 2;
       actual2 += actual.ax ** 2 + actual.ay ** 2;
@@ -178,56 +194,551 @@ export function fitGravityHypotheses(
   }));
 }
 
-/** First shot uses visible planet centers with unknown masses. Later shots fit own trajectories only. */
+type RetainedEvidence = { shot: ExperimentalShot };
+export type ExperimentalLearnerFit = GravityFit & Required<Pick<GravityFit,
+  'observedShots' | 'learnedShots' | 'retainedShots' | 'learningRate' | 'startingKnowledge' | 'predictionRms' | 'predictionSamples'>>;
+
+/** Each CPU owns this state for one round, independently of rendering trails. */
+export interface ExperimentalLearner {
+  readonly startingKnowledge: number;
+  planets: PlanetEstimate[];
+  /** Assimilated alternatives from the hidden-position fitter, never true sources. */
+  hypotheses: GravityFit[];
+  holeMass: number | null;
+  hole?: { x: number; y: number; radius: number };
+  holeMassUncertainty?: number;
+  holeMassStandardDeviation?: number;
+  evidence: RetainedEvidence[];
+  /** Actual evidence count when trajectories are retained exclusively by the fit worker. */
+  retainedShots?: number;
+  /** Planner-only replica: observations must be assimilated by its owning worker. */
+  evidenceOwnedByWorker?: true;
+  seen: Set<string>;
+  geometry: string | null;
+  observedShots: number;
+  learnedShots: number;
+  learningRate: number;
+  predictionRms: number | null;
+  predictionSamples: number;
+  samples: number;
+  rms: number | null;
+  initialRms: number | null;
+  condition: number | null;
+  fitMs: number;
+}
+
+export function createExperimentalLearner(startingKnowledge = 1): ExperimentalLearner {
+  const learner: ExperimentalLearner = {
+    startingKnowledge: boundedRate(startingKnowledge),
+    planets: [], hypotheses: [], holeMass: null, evidence: [], seen: new Set(), geometry: null,
+    observedShots: 0, learnedShots: 0, learningRate: 1, predictionRms: null,
+    predictionSamples: 0, samples: 0, rms: null, initialRms: null, condition: null, fitMs: 0,
+  };
+  Object.defineProperty(learner, 'startingKnowledge', { writable: false, configurable: false });
+  return learner;
+}
+
+/** Compact planner state; no trajectory history or deduplication strings cross threads. */
+export type ExperimentalLearnerSnapshot = Omit<ExperimentalLearner, 'evidence' | 'seen' | 'evidenceOwnedByWorker' | 'retainedShots'> & {
+  retainedShots: number;
+};
+
+export function snapshotExperimentalLearner(learner: ExperimentalLearner): ExperimentalLearnerSnapshot {
+  const { evidence, seen: _seen, evidenceOwnedByWorker: _owner, retainedShots: _retained, ...belief } = learner;
+  return {
+    ...belief,
+    planets: learner.planets.map((planet) => ({ ...planet })),
+    hole: learner.hole && { ...learner.hole },
+    hypotheses: learner.hypotheses.map((fit) => ({ ...fit, planets: fit.planets.map((planet) => ({ ...planet })),
+      hole: fit.hole && { ...fit.hole } })),
+    retainedShots: learner.retainedShots ?? evidence.length,
+  };
+}
+
+export function restoreExperimentalLearnerSnapshot(snapshot: ExperimentalLearnerSnapshot): ExperimentalLearner {
+  const { startingKnowledge, ...belief } = snapshot;
+  const learner = createExperimentalLearner(startingKnowledge);
+  Object.assign(learner, belief);
+  learner.evidenceOwnedByWorker = true;
+  return learner;
+}
+
+function boundedRate(rate: number): number {
+  return Number.isFinite(rate) ? clamp(rate, 0, 1) : 0;
+}
+
+function massDeviation(planet: PlanetEstimate): number {
+  return planet.massStandardDeviation ?? planet.mass * (planet.massUncertainty ?? 0.16);
+}
+
+function holeDeviation(fit: Pick<GravityFit, 'holeMass' | 'holeMassUncertainty' | 'holeMassStandardDeviation'>): number {
+  return fit.holeMassStandardDeviation ?? (fit.holeMass ?? 0) * (fit.holeMassUncertainty ?? 0);
+}
+
+/** Mixture of weak gravity knowledge and the public density prior, not aim error. */
+function startingMass(knownMass: number, knownRelativeDeviation: number, knowledge: number): { mass: number; deviation: number } {
+  return {
+    mass: knowledge * knownMass,
+    deviation: Math.sqrt(knowledge * (knownMass * knownRelativeDeviation) ** 2
+      + (1 - knowledge) * knownMass ** 2 + knowledge * (1 - knowledge) * knownMass ** 2),
+  };
+}
+
+function syncGeometry(learner: ExperimentalLearner, visible: ExperimentalWorld, inferLostMass = true): void {
+  const geometry = JSON.stringify([visible.width, visible.height, visible.visiblePlanets, visible.visibleHole,
+    visible.planetCount, visible.hasHole, visible.holeRadius, visible.mode, visible.epoch]);
+  if (geometry === learner.geometry) return;
+  const known = new Map(learner.planets.map((planet) => [planet.id, planet]));
+  if (visible.visiblePlanets !== undefined) {
+    learner.planets = visible.visiblePlanets.map((planet) => {
+      const previous = known.get(planet.id);
+      const prior = startingMass(clamp(planet.radius ** 3 * 1.025, MIN_PLANET_MASS, MAX_PLANET_MASS),
+        0.55 / Math.sqrt(12) / 1.025, learner.startingKnowledge);
+      const mass = previous?.mass ?? prior.mass;
+      const deviation = previous ? massDeviation(previous) : prior.deviation;
+      return { ...planet, mass, massStandardDeviation: deviation, massUncertainty: deviation / Math.max(mass, 1) };
+    });
+  } else {
+    const previous = learner.planets;
+    const lost = Math.max(0, previous.length - visible.planetCount);
+    if (inferLostMass && lost && visible.mode === 'horizon' && visible.hasHole) {
+      transferAnonymousMass(learner, lost, HORIZON.FEED);
+    }
+    // Anonymous sources cannot be matched across drift or a changing source count.
+    // Keep their exchangeable mass belief, not invented survivor identities/positions.
+    const mean = previous.length ? previous.reduce((sum, planet) => sum + planet.mass, 0) / previous.length : null;
+    const deviation = previous.length ? Math.sqrt(previous.reduce((sum, planet) => sum
+      + (planet.mass - mean!) ** 2 + massDeviation(planet) ** 2, 0) / previous.length) : null;
+    // Integrate the public radius draw r=16+44*u^1.4 and independent mean density.
+    const expectedMass = 1.025 * (16 ** 3 + 3 * 16 ** 2 * 44 / 2.4 + 3 * 16 * 44 ** 2 / 3.8 + 44 ** 3 / 5.2);
+    const prior = startingMass(expectedMass, 1, learner.startingKnowledge);
+    learner.planets = fitGravity([], visible.planetCount, visible.width, visible.height, false).planets
+      .map((planet) => ({ ...planet, mass: mean ?? prior.mass, massStandardDeviation: deviation ?? prior.deviation,
+        massUncertainty: (deviation ?? prior.deviation) / Math.max(mean ?? prior.mass, 1) }));
+  }
+  learner.hypotheses = [];
+  learner.hole = visible.hasHole ? { ...(visible.visibleHole ?? { x: visible.width / 2, y: visible.height / 2, radius: visible.holeRadius }) } : undefined;
+  if (visible.hasHole && learner.holeMass === null) {
+    const prior = startingMass(HORIZON.START_MASS, 0, learner.startingKnowledge);
+    learner.holeMass = prior.mass;
+    learner.holeMassStandardDeviation = prior.deviation;
+    learner.holeMassUncertainty = prior.deviation / Math.max(prior.mass, 1);
+  } else if (!visible.hasHole) {
+    learner.holeMass = null;
+    learner.holeMassUncertainty = undefined;
+    learner.holeMassStandardDeviation = undefined;
+  }
+  // Historical paths belonged to the previous field; keep mass beliefs, not stale residuals.
+  learner.evidence = [];
+  if (learner.evidenceOwnedByWorker) learner.retainedShots = 0;
+  learner.samples = 0;
+  learner.rms = null;
+  learner.initialRms = null;
+  learner.condition = null;
+  learner.predictionRms = null;
+  learner.predictionSamples = 0;
+  learner.fitMs = 0;
+  learner.geometry = geometry;
+}
+
+/** A hidden count loss gives exchangeable mass evidence, not survivor IDs. */
+function transferAnonymousMass(learner: ExperimentalLearner, lost: number, feed: number): void {
+  const planets = learner.planets.filter((planet) => planet.id === undefined);
+  if (!planets.length || learner.holeMass === null) return;
+  const count = Math.min(lost, planets.length);
+  const mean = planets.reduce((sum, planet) => sum + planet.mass, 0) / planets.length;
+  const subsetVariance = planets.reduce((sum, planet) => sum + (planet.mass - mean) ** 2, 0) / planets.length;
+  const measurementVariance = planets.reduce((sum, planet) => sum + massDeviation(planet) ** 2, 0) / planets.length;
+  const variance = holeDeviation(learner) ** 2 + feed ** 2 * count
+    * (measurementVariance + subsetVariance * (planets.length - count) / Math.max(1, planets.length - 1));
+  learner.holeMass = clamp(learner.holeMass + count * mean * feed, 0, 4_000_000);
+  learner.holeMassStandardDeviation = Math.sqrt(variance);
+  learner.holeMassUncertainty = Math.sqrt(variance) / Math.max(learner.holeMass, 1);
+}
+
+/** Apply public collapse rules to estimated masses, then observe the new geometry. */
+export function advanceExperimentalWorld(
+  learner: ExperimentalLearner,
+  observedWorld: ExperimentalWorld,
+  transition: { holeMassGain: number; swallowedPlanetIds: readonly number[]; feed: number },
+): void {
+  const swallowed = new Set(transition.swallowedPlanetIds);
+  let gain = transition.holeMassGain;
+  let variance = holeDeviation(learner) ** 2;
+  for (const planet of learner.planets) {
+    if (planet.id !== undefined && swallowed.has(planet.id)) {
+      gain += planet.mass * transition.feed;
+      variance += (massDeviation(planet) * transition.feed) ** 2;
+    }
+  }
+  if (learner.holeMass !== null) {
+    learner.holeMass = clamp(learner.holeMass + gain, 0, 4_000_000);
+    learner.holeMassStandardDeviation = Math.sqrt(variance);
+    learner.holeMassUncertainty = Math.sqrt(variance) / Math.max(learner.holeMass, 1);
+  }
+  if (observedWorld.visiblePlanets === undefined) {
+    transferAnonymousMass(learner, Math.max(0, learner.planets.length - observedWorld.planetCount), transition.feed);
+  }
+  learner.geometry = null;
+  syncGeometry(learner, observedWorld, false);
+}
+
+/** Retrieve the current belief without searching an aim or assimilating a trajectory. */
+export function experimentalLearnerFit(learner: ExperimentalLearner, visible: ExperimentalWorld): ExperimentalLearnerFit {
+  syncGeometry(learner, visible);
+  return {
+    planets: learner.planets.map((planet) => ({ ...planet })), holeMass: learner.holeMass,
+    hole: learner.hole && { ...learner.hole }, samples: learner.samples,
+    holeMassUncertainty: learner.holeMassUncertainty,
+    holeMassStandardDeviation: learner.holeMassStandardDeviation, startingKnowledge: learner.startingKnowledge,
+    initialRms: learner.initialRms, rms: learner.rms,
+    improvement: learner.rms === null || learner.initialRms === null ? null : learner.initialRms - learner.rms,
+    validationRms: learner.predictionRms, validationSamples: learner.predictionSamples,
+    condition: learner.condition, fitMs: learner.fitMs, observedShots: learner.observedShots,
+    learnedShots: learner.learnedShots, retainedShots: learner.retainedShots ?? learner.evidence.length, learningRate: learner.learningRate,
+    predictionRms: learner.predictionRms, predictionSamples: learner.predictionSamples,
+  };
+}
+
+function shotKey(shot: ExperimentalShot): string {
+  if (shot.shotId !== undefined) return `id:${shot.shotId}`;
+  // Full observed content prevents double-consumption after callers clone/prune trails.
+  return `${shot.angle}:${shot.power}:${shot.points.join(',')}`;
+}
+
+export function observeExperimentalShot(
+  learner: ExperimentalLearner, shot: ExperimentalShot, observedWorld: ExperimentalWorld, learningRate: number,
+): void {
+  if (learner.evidenceOwnedByWorker) throw new Error('Worker-owned evidence must be observed through ExperimentalWorkerClient');
+  syncGeometry(learner, observedWorld);
+  const key = shotKey(shot);
+  if (learner.seen.has(key)) return;
+  learner.seen.add(key);
+  learner.observedShots++;
+  const rate = boundedRate(learningRate);
+  learner.learningRate = rate;
+  learner.fitMs = 0;
+  const observations = observationsOf([shot], REFINED_FIT_SAMPLES);
+  const oldFit = experimentalLearnerFit(learner, observedWorld);
+  learner.predictionSamples = observations.length;
+  learner.predictionRms = observations.length ? rmsOf(observedResiduals(oldFit, [shot], observations, observedWorld)) : null;
+  if (!rate || !observations.length || !shot.points.every(Number.isFinite) || !Number.isFinite(shot.angle) || !Number.isFinite(shot.power)) return;
+  const started = performance.now();
+  learner.evidence.push({ shot: { ...shot, points: [...shot.points] } });
+  if (learner.evidence.length > 12) learner.evidence.shift();
+  const shots = learner.evidence.map((entry) => entry.shot);
+  let evidenceFit: GravityFit;
+  let hypotheses: GravityFit[] = [];
+  if (observedWorld.visiblePlanets === undefined) {
+    hypotheses = fitGravityHypotheses(shots, observedWorld.planetCount, observedWorld.width, observedWorld.height,
+      observedWorld.hasHole, observedWorld.rules, REFINED_FIT_SAMPLES);
+    evidenceFit = hypotheses[0];
+  } else {
+    evidenceFit = fitVisibleMasses(oldFit, shots, observedWorld);
+  }
+  learner.initialRms = evidenceFit.initialRms;
+  learner.condition = evidenceFit.condition;
+  learner.samples = evidenceFit.samples;
+  // Missing uncertainty is not a certainty measurement: retain the existing belief.
+  const evidenceHoleDeviation = (evidence: GravityFit): number =>
+    evidence.holeMassStandardDeviation === undefined && evidence.holeMassUncertainty === undefined
+      ? holeDeviation(learner) : holeDeviation(evidence);
+  const assimilate = (evidence: GravityFit): GravityFit => ({
+    ...evidence,
+    planets: learner.planets.map((planet, index) => {
+      const estimate = evidence.planets[index];
+      const mass = estimate ? planet.mass + rate * (estimate.mass - planet.mass) : planet.mass;
+      const deviation = estimate ? (1 - rate) * massDeviation(planet) + rate * massDeviation(estimate)
+        + rate * (1 - rate) * Math.abs(estimate.mass - planet.mass) : massDeviation(planet);
+      return estimate ? {
+        ...planet, x: planet.id === undefined ? planet.x + rate * (estimate.x - planet.x) : planet.x,
+        y: planet.id === undefined ? planet.y + rate * (estimate.y - planet.y) : planet.y,
+        mass, massStandardDeviation: deviation, massUncertainty: deviation / Math.max(mass, 1),
+      } : planet;
+    }),
+    holeMass: learner.holeMass === null || evidence.holeMass === null ? null
+      : learner.holeMass + rate * (evidence.holeMass - learner.holeMass),
+    holeMassStandardDeviation: learner.holeMass === null || evidence.holeMass === null ? undefined
+      : (1 - rate) * holeDeviation(learner) + rate * evidenceHoleDeviation(evidence)
+        + rate * (1 - rate) * Math.abs(evidence.holeMass - learner.holeMass),
+    holeMassUncertainty: learner.holeMass === null || evidence.holeMass === null ? undefined
+      : ((1 - rate) * holeDeviation(learner) + rate * evidenceHoleDeviation(evidence)
+        + rate * (1 - rate) * Math.abs(evidence.holeMass - learner.holeMass))
+        / Math.max(learner.holeMass + rate * (evidence.holeMass - learner.holeMass), 1),
+  });
+  learner.hypotheses = hypotheses.map(assimilate);
+  const updated = assimilate(evidenceFit);
+  learner.planets = updated.planets;
+  learner.holeMass = updated.holeMass;
+  learner.holeMassUncertainty = updated.holeMassUncertainty;
+  learner.holeMassStandardDeviation = updated.holeMassStandardDeviation;
+  learner.learnedShots += rate;
+  learner.rms = rmsOf(observedResiduals(experimentalLearnerFit(learner, observedWorld), shots, observationsOf(shots, REFINED_FIT_SAMPLES), observedWorld));
+  learner.fitMs = performance.now() - started;
+}
+
+/** Replays through Shot itself: inference and game share gravity, bounce and Euler rules. */
+function observedResiduals(fit: GravityFit, shots: readonly ExperimentalShot[], observations: readonly Observation[], visible: ExperimentalWorld): Float64Array {
+  const residuals = new Float64Array(observations.length * 2);
+  const world = estimatedWorld(visible, fit);
+  // End collisions are excluded from observations; candidate fields must not truncate a replay.
+  world.planets = world.planets.map((planet) => ({ ...planet, radius: 0 }));
+  if (world.hole) world.hole = { ...world.hole, radius: 0 };
+  let observation = 0;
+  for (let index = 0; index < shots.length; index++) {
+    const first = observation;
+    while (observation < observations.length && observations[observation].shot === index) observation++;
+    if (first === observation) continue;
+    const data = shots[index];
+    const dir = aimDirection(data.angle);
+    world.ships = [{ x: data.points[0] - dir.x * PHYSICS.MUZZLE, y: data.points[1] - dir.y * PHYSICS.MUZZLE, alive: false }];
+    const last = observations[observation - 1].point;
+    const replay = new Shot(world, 0, data.angle, data.power, { bounce: visible.rules.bounce, timeLimit: (last * 2 + 1) * PHYSICS.DT });
+    let wanted = first;
+    for (let step = 1; step <= last * 2; step++) {
+      replay.step();
+      // Lost shots must still integrate until the observed last sample.
+      replay.end = null;
+      if (step % 2 === 0 && wanted < observation && observations[wanted].point === step / 2) {
+        const offset = observations[wanted].point * 2;
+        residuals[wanted * 2] = clamp(replay.x - data.points[offset], -1e6, 1e6);
+        residuals[wanted * 2 + 1] = clamp(replay.y - data.points[offset + 1], -1e6, 1e6);
+        if (!Number.isFinite(residuals[wanted * 2])) residuals[wanted * 2] = 1e6;
+        if (!Number.isFinite(residuals[wanted * 2 + 1])) residuals[wanted * 2 + 1] = 1e6;
+        wanted++;
+      }
+    }
+  }
+  return residuals;
+}
+
+/** Known visible positions remove 2K ill-conditioned coordinates from the inverse problem. */
+function fitVisibleMasses(prior: GravityFit, shots: readonly ExperimentalShot[], visible: ExperimentalWorld): GravityFit {
+  const count = prior.planets.length;
+  const size = count + (prior.holeMass === null ? 0 : 1);
+  const observations = observationsOf(shots, REFINED_FIT_SAMPLES);
+  if (!size || !observations.length) {
+    const rms = observations.length ? rmsOf(observedResiduals(prior, shots, observations, visible)) : null;
+    return { ...prior, samples: observations.length, initialRms: rms, rms };
+  }
+  const lower = new Float64Array(size);
+  const upper = new Float64Array(size);
+  const start = new Float64Array(size);
+  for (let i = 0; i < size; i++) {
+    const radius = prior.planets[i]?.radius;
+    lower[i] = Math.log(i < count ? Math.max(MIN_PLANET_MASS, radius === undefined ? MIN_PLANET_MASS : radius ** 3 * 0.75) : 10_000);
+    upper[i] = Math.log(i < count ? Math.min(MAX_PLANET_MASS, radius === undefined ? MAX_PLANET_MASS : radius ** 3 * 1.3) : 4_000_000);
+    start[i] = clamp(Math.log(Math.max(1, i < count ? prior.planets[i].mass : prior.holeMass!)), lower[i], upper[i]);
+  }
+  const map = (params: Float64Array): GravityFit => ({ ...prior,
+    planets: prior.planets.map((planet, i) => ({ ...planet, mass: Math.exp(params[i]) })),
+    holeMass: prior.holeMass === null ? null : Math.exp(params[count]),
+  });
+  const residual = (params: Float64Array) => observedResiduals(map(params), shots, observations, visible);
+  const initialRms = rmsOf(observedResiduals(prior, shots, observations, visible));
+  let best = start;
+  let bestRms = rmsOf(residual(start));
+  let condition: number | null = null;
+  for (let seed = 0; seed < 3; seed++) {
+    const params = new Float64Array(start);
+    if (seed) for (let i = 0; i < size; i++) params[i] = lower[i] + (upper[i] - lower[i]) * (seed === 1 ? 0.25 : 0.75);
+    let errors = residual(params);
+    let rms = rmsOf(errors);
+    let damping = 1e-4;
+    for (let iteration = 0; iteration < 14; iteration++) {
+      const derivatives: Float64Array[] = [];
+      for (let i = 0; i < size; i++) {
+        const plus = new Float64Array(params);
+        const minus = new Float64Array(params);
+        plus[i] += 1e-4;
+        minus[i] -= 1e-4;
+        const a = residual(plus);
+        const b = residual(minus);
+        for (let row = 0; row < a.length; row++) a[row] = (a[row] - b[row]) / 2e-4;
+        derivatives.push(a);
+      }
+      const normal = new Float64Array(size * size);
+      const gradient = new Float64Array(size);
+      let smallest = Infinity;
+      let largest = 0;
+      for (let i = 0; i < size; i++) {
+        for (let row = 0; row < errors.length; row++) gradient[i] -= derivatives[i][row] * errors[row];
+        for (let j = 0; j < size; j++) for (let row = 0; row < errors.length; row++) normal[i * size + j] += derivatives[i][row] * derivatives[j][row];
+        const diagonal = normal[i * size + i];
+        smallest = Math.min(smallest, diagonal);
+        largest = Math.max(largest, diagonal);
+        normal[i * size + i] += damping * Math.max(diagonal, 1e-8);
+      }
+      condition = smallest > 0 ? Math.min(1e15, largest / smallest) : 1e15;
+      const delta = solve(normal, gradient, size);
+      if (!delta) break;
+      const candidate = new Float64Array(params);
+      for (let i = 0; i < size; i++) candidate[i] = clamp(params[i] + clamp(delta[i], -0.4, 0.4), lower[i], upper[i]);
+      const nextErrors = residual(candidate);
+      const nextRms = rmsOf(nextErrors);
+      if (nextRms < rms) {
+        params.set(candidate); errors = nextErrors; rms = nextRms; damping = Math.max(1e-9, damping * 0.25);
+        if (rms < 1e-5) break;
+      } else damping = Math.min(1e8, damping * 10);
+    }
+    if (rms < bestRms) { best = params; bestRms = rms; }
+    if (bestRms < 1e-5) break;
+  }
+  // Invert the full sensitivity matrix: nearby planets can trade mass and are not
+  // independently identified merely because every diagonal is large.
+  const errors = residual(best);
+  const variance = Math.max(0.25, bestRms * bestRms);
+  const derivatives: Float64Array[] = [];
+  for (let i = 0; i < size; i++) {
+    const plus = new Float64Array(best);
+    const minus = new Float64Array(best);
+    plus[i] += 1e-4;
+    minus[i] -= 1e-4;
+    const a = residual(plus);
+    const b = residual(minus);
+    for (let row = 0; row < a.length; row++) a[row] = (a[row] - b[row]) / 2e-4;
+    derivatives.push(a);
+  }
+  const precision = new Float64Array(size * size);
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      for (let row = 0; row < errors.length; row++) precision[i * size + j] += derivatives[i][row] * derivatives[j][row] / variance;
+    }
+    const relativeDeviation = i < count ? Math.max(0.16, massDeviation(prior.planets[i]) / Math.exp(best[i])) : 1;
+    precision[i * size + i] += 1 / (relativeDeviation * relativeDeviation);
+  }
+  const uncertainty = Array.from({ length: size }, (_, i) => {
+    const unit = new Float64Array(size);
+    unit[i] = 1;
+    const inverseColumn = solve(precision, unit, size);
+    return Math.sqrt(Math.max(0, inverseColumn?.[i] ?? (i < count ? 0.16 ** 2 : 1)));
+  });
+  const fitted = map(best);
+  fitted.planets = fitted.planets.map((planet, i) => ({ ...planet, massUncertainty: uncertainty[i], massStandardDeviation: planet.mass * uncertainty[i] }));
+  return { ...fitted, holeMassUncertainty: prior.holeMass === null ? undefined : uncertainty[count],
+    holeMassStandardDeviation: fitted.holeMass === null ? undefined : fitted.holeMass * uncertainty[count],
+    initialRms, rms: bestRms, samples: observations.length, condition };
+}
+
+/** Search precision is independent of the rate; only the retained gravity belief changes. */
 export function* planExperimentalShot(
   visible: ExperimentalWorld,
-  opts: Omit<PlanOptions, 'level'>,
+  opts: Omit<PlanOptions, 'level'> & { learner?: ExperimentalLearner; learningRate?: number; startingKnowledge?: number },
   report: (fit: GravityFit, decision: ExperimentalDecision) => void,
 ): Generator<void, Aim> {
-  if (visible.shots.length === 0) {
-    const worlds = openingWorlds(visible);
-    const candidates: Aim[] = [];
-    for (const world of worlds) candidates.push(yield* planShot(world, visible.shooter, { ...opts, effort: (opts.effort ?? 1) / worlds.length, level: 'medium', fixedPower: opts.fixedPower ?? 45 }));
-    const robust = bestRobustAim(candidates, worlds, visible.shooter, opts);
-    const aim = robust?.aim ?? candidates[0];
-    const fit = fitGravity([], visible.planetCount, visible.width, visible.height, visible.hasHole, visible.rules);
-    report(fit, { kind: 'initialProbe', hypothesisCount: worlds.length, hitRate: robust?.hitRate ?? 0, worstMiss: robust?.worstMiss ?? Infinity });
-    return { angle: aim.angle, power: opts.fixedPower ?? 45 };
+  const learner = opts.learner ?? createExperimentalLearner(opts.startingKnowledge);
+  const rate = boundedRate(opts.learningRate ?? 1);
+  if (!learner.evidenceOwnedByWorker) {
+    for (const shot of visible.shots) observeExperimentalShot(learner, shot, visible, rate);
   }
-
-  const sampleCap = interactiveSampleCap(visible.shots);
-  const fits = fitGravityHypotheses(visible.shots, visible.planetCount, visible.width, visible.height, visible.hasHole, visible.rules, sampleCap);
-  const worlds = fits.map((fit) => estimatedWorld(visible, fit));
-
+  const fit = experimentalLearnerFit(learner, visible);
+  learner.learningRate = rate;
+  // Densities are independent, bounded public-distribution draws, not a common scale.
+  const worlds = [estimatedWorld(visible, fit)];
+  const uncertain = fit.planets.some((planet) => (planet.massUncertainty ?? 0.16) > 1e-5) || (fit.holeMassUncertainty ?? 0) > 1e-5;
+  for (let sample = 0; sample < (uncertain ? 8 : 0); sample++) {
+    worlds.push(estimatedWorld(visible, {
+      ...fit,
+      planets: fit.planets.map((planet, i) => {
+        const quantile = fract((sample + 1) * (0.75487766625 + i * 0.38196601125));
+        const publicLower = planet.radius === undefined ? MIN_PLANET_MASS : Math.max(MIN_PLANET_MASS, planet.radius ** 3 * 0.75);
+        const lower = Math.min(planet.mass, publicLower);
+        const upper = planet.radius === undefined ? MAX_PLANET_MASS : Math.min(MAX_PLANET_MASS, planet.radius ** 3 * 1.3);
+        return { ...planet, mass: clamp(planet.mass + (quantile - 0.5) * Math.sqrt(12) * massDeviation(planet), lower, upper) };
+      }),
+      holeMass: fit.holeMass === null ? null : clamp(fit.holeMass + (fract((sample + 0.5) / 8 + 0.27) - 0.5)
+        * Math.sqrt(12) * holeDeviation(fit), Math.min(fit.holeMass, 10_000), 4_000_000),
+    }));
+  }
+  const alternativeStart = worlds.length;
+  for (const hypothesis of learner.hypotheses.slice(1)) worlds.push(estimatedWorld(visible, hypothesis));
+  // Exact launch outcomes are immutable for these belief worlds and rules.
+  // Keep the cache inside one shot plan: never reuse it after new evidence.
+  const outcomes = new Map<World, Map<number, Map<number, ShotOutcome>>>();
+  const friends = opts.friends ?? [];
+  const simulateAim = (world: World, angle: number, power: number): ShotOutcome => {
+    let angles = outcomes.get(world);
+    let powers = angles?.get(angle);
+    const cached = powers?.get(power);
+    if (cached) return cached;
+    const outcome = simulateShot(world, visible.shooter, angle, power, opts.rules, friends);
+    if (!angles) outcomes.set(world, angles = new Map());
+    if (!powers) angles.set(angle, powers = new Map());
+    powers.set(power, outcome);
+    return outcome;
+  };
   const candidates: Aim[] = [];
-  for (const world of worlds) candidates.push(yield* planShot(world, visible.shooter, { ...opts, effort: (opts.effort ?? 1) / worlds.length, level: 'medium', optimizeHitPower: true }));
-  const robust = bestRobustAim(candidates, worlds, visible.shooter, opts);
-  const validationAcceptsHit = fits[0].validationRms === null || fits[0].validationRms < USABLE_VALIDATION_RMS;
-  const stableHit = robust !== null && validationAcceptsHit && robust.worstMiss < PHYSICS.SHIP_RADIUS * 2;
-  if (stableHit) {
-    const decision = { kind: 'exploit', hypothesisCount: fits.length, hitRate: robust.hitRate, worstMiss: robust.worstMiss } as const;
-    report(fits[0], decision);
-    return robust.aim;
+  // Preserve a full MAP search irrespective of uncertainty or assimilation rate.
+  const searchIndices = [...(uncertain ? [0, 1, 3, 5, 7] : [0]),
+    ...worlds.slice(alternativeStart).map((_, index) => alternativeStart + index)];
+  for (const index of searchIndices) candidates.push(yield* planShot(worlds[index], visible.shooter, {
+    ...opts, effort: Math.max(1, opts.effort ?? 1) * (index === 0 ? 1.5 : 0.5),
+    level: 'hard', noiseFree: true, optimizeHitPower: true,
+  }));
+  let robust = bestRobustAim(candidates, worlds, visible.shooter, opts, simulateAim);
+  for (const angleStep of [1, 0.25, 0.06]) {
+    if (!robust) break;
+    const center = robust.aim;
+    const neighbours: Aim[] = [center];
+    for (const angleOffset of [-2, -1, 0, 1, 2]) {
+      for (const powerOffset of opts.fixedPower === null ? [-2, 0, 2] : [0]) {
+        neighbours.push({ angle: normalizeAngle(center.angle + angleOffset * angleStep),
+          power: opts.fixedPower ?? clamp(center.power + powerOffset * angleStep, 5, 100) });
+      }
+    }
+    robust = bestRobustAim(neighbours, worlds, visible.shooter, opts, simulateAim) ?? robust;
+    yield;
   }
-
-  const probe = visible.shots.length === 1 ? coverageProbe(worlds, visible, opts) : null;
-  const decision = {
-    kind: probe ? 'probe' : 'fallback',
-    hypothesisCount: fits.length,
+  // A likely hit also supplies evidence: only probe when no candidate can hit.
+  const probe = !robust || robust.hitRate === 0 ? coverageProbe(worlds, visible, opts, simulateAim) : null;
+  const probeResult = probe ? bestRobustAim([probe], worlds, visible.shooter, opts, simulateAim) : null;
+  const useProbe = probeResult !== null && (!robust || probeResult.hitRate > robust.hitRate
+    || (robust.hitRate === 0 && probeResult.meanMiss < robust.meanMiss));
+  if (useProbe) robust = probeResult;
+  if (!robust) {
+    const self = visible.ships[visible.shooter];
+    const angles = Array.from({ length: 72 }, (_, index) => index * 5);
+    for (const ship of visible.ships) {
+      if (ship === self || !ship.alive) continue;
+      angles.push(normalizeAngle(Math.atan2(ship.y - self.y, self.x - ship.x) * 180 / Math.PI));
+    }
+    const powers = opts.fixedPower === null ? [5, 20, 50, 100] : [opts.fixedPower];
+    const escapes = angles.flatMap((angle) => powers.map((power) => ({ angle, power })));
+    candidates.push(...escapes);
+    robust = bestRobustAim(escapes, worlds, visible.shooter, opts, simulateAim);
+    // If the searched launches all collide with self/friends, expose the least-risk
+    // outcome rather than relabeling a previously rejected launch as safe.
+    if (!robust) robust = bestRobustAim(candidates, worlds, visible.shooter, opts, simulateAim, true);
+    yield;
+  }
+  const decision: ExperimentalDecision = {
+    kind: robust && robust.unsafeRate === 0 && robust.hitRate > 0 ? 'exploit'
+      : useProbe ? (learner.observedShots ? 'probe' : 'initialProbe') : 'fallback',
+    hypothesisCount: worlds.length,
     hitRate: robust?.hitRate ?? 0,
-    worstMiss: robust?.worstMiss ?? Infinity,
-  } as const;
-  report(fits[0], decision);
-  return probe ?? robust?.aim ?? candidates[0];
+    unsafeRate: robust?.unsafeRate ?? 1,
+    worstMiss: Number.isFinite(robust?.worstMiss) ? robust!.worstMiss : Math.hypot(visible.width, visible.height),
+    observedShots: learner.observedShots, learnedShots: learner.learnedShots, retainedShots: learner.retainedShots ?? learner.evidence.length,
+    learningRate: rate, startingKnowledge: learner.startingKnowledge, predictionRms: learner.predictionRms, predictionSamples: learner.predictionSamples,
+  };
+  report({ ...fit, learningRate: rate }, decision);
+  return robust!.aim;
 }
 
 export interface ExperimentalDecision {
   kind: 'exploit' | 'initialProbe' | 'probe' | 'fallback';
   hypothesisCount: number;
-  /** Fraction of plausible maps that predict an enemy hit. */
   hitRate: number;
-  /** Worst predicted enemy miss distance across plausible maps. */
+  /** Fraction of plausible worlds where the selected shot hits self or a friend. */
+  unsafeRate: number;
   worstMiss: number;
+  observedShots: number;
+  learnedShots: number;
+  retainedShots: number;
+  learningRate: number;
+  startingKnowledge: number;
+  predictionRms: number | null;
+  predictionSamples: number;
 }
 
 function fitCandidates(shots: readonly ExperimentalShot[], count: number, width: number, height: number, hasHole: boolean, rules: Pick<ShotRules, 'bounce'>, sampleCap: number): FitCandidate[] {
@@ -241,16 +752,62 @@ function fitCandidates(shots: readonly ExperimentalShot[], count: number, width:
   for (let start = 0; start < FORWARD_STARTS; start++) {
     const optimized = optimizeForward(perturbStart(baseParams, count, hasHole, start), shots, observations, count, width, height, hasHole, rules.bounce);
     const fit = fitFromParameters(optimized.params, count, width, height, hasHole);
+    const holeMassStandardDeviation = hasHole
+      ? hiddenHoleDeviation(optimized, shots, observations, count, width, height, rules.bounce) : undefined;
     candidates.push({
       params: optimized.params,
       fit: {
         ...fit, samples: observations.length, initialRms, rms: optimized.rms, improvement: initialRms - optimized.rms,
+        holeMassStandardDeviation,
+        holeMassUncertainty: holeMassStandardDeviation === undefined ? undefined : holeMassStandardDeviation / Math.max(fit.holeMass!, 1),
         validationRms: null, validationSamples: 0, condition: optimized.condition, fitMs: 0,
       },
     });
   }
   candidates.sort((a, b) => a.fit.rms! - b.fit.rms!);
   return diverseCandidates(candidates, width, height, hasHole);
+}
+
+/** Marginalize hidden positions and planet masses instead of reading one sensitivity diagonal. */
+function hiddenHoleDeviation(
+  optimized: ForwardResult, shots: readonly ExperimentalShot[], observations: readonly Observation[],
+  count: number, width: number, height: number, bounce: boolean,
+): number | undefined {
+  const { params, rms } = optimized;
+  const size = params.length;
+  const hole = size - 1;
+  const mass = Math.exp(params[hole]);
+  const variance = Math.max(0.25, rms * rms);
+  const derivatives: Float64Array[] = [];
+  for (let i = 0; i < size; i++) {
+    const plus = new Float64Array(params);
+    const minus = new Float64Array(params);
+    plus[i] += 1e-4;
+    minus[i] -= 1e-4;
+    const a = forwardResiduals(plus, shots, observations, count, width, height, true, bounce);
+    const b = forwardResiduals(minus, shots, observations, count, width, height, true, bounce);
+    // Coordinates span the field, planet log-masses have a broad unit prior,
+    // and hole mass uses the same absolute public prior as starting knowledge.
+    const scale = i === hole ? HORIZON.START_MASS / mass : 1;
+    for (let row = 0; row < a.length; row++) a[row] = (a[row] - b[row]) * scale / 2e-4;
+    derivatives.push(a);
+  }
+  const precision = new Float64Array(size * size);
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      for (let row = 0; row < optimized.residuals.length; row++) {
+        precision[i * size + j] += derivatives[i][row] * derivatives[j][row] / variance;
+      }
+    }
+    // Prior regularization retains uncertainty when the trail cannot identify a source.
+    precision[i * size + i] += 1;
+  }
+  const unit = new Float64Array(size);
+  unit[hole] = 1;
+  const inverseColumn = solve(precision, unit, size);
+  const marginalVariance = inverseColumn?.[hole];
+  return marginalVariance !== undefined && Number.isFinite(marginalVariance) && marginalVariance > 0
+    ? HORIZON.START_MASS * Math.sqrt(Math.min(1, marginalVariance)) : undefined;
 }
 
 function perturbStart(base: Float64Array, count: number, hasHole: boolean, start: number): Float64Array {
@@ -297,10 +854,6 @@ function validateNewestShot(shots: readonly ExperimentalShot[], count: number, w
   return { rms: rmsOf(forwardResiduals(candidate.params, [heldOut], observations, count, width, height, hasHole, rules.bounce)), samples: observations.length };
 }
 
-function interactiveSampleCap(shots: readonly ExperimentalShot[]): number {
-  const informativeTrails = shots.filter((shot) => shot.points.length / 2 >= LONG_TRAIL_POINTS).length;
-  return informativeTrails >= 2 ? REFINED_FIT_SAMPLES : INTERACTIVE_FIT_SAMPLES;
-}
 
 function fract(value: number): number {
   return value - Math.floor(value);
@@ -562,25 +1115,35 @@ function forwardResiduals(
   return residuals;
 }
 
-type RobustAim = { aim: Aim; hitRate: number; worstMiss: number };
+type RobustAim = { aim: Aim; hitRate: number; unsafeRate: number; worstMiss: number; meanMiss: number; centralHit: boolean };
+type SimulateAim = (world: World, angle: number, power: number) => ShotOutcome;
 
-function bestRobustAim(candidates: readonly Aim[], worlds: readonly World[], shooter: number, opts: Omit<PlanOptions, 'level'>): RobustAim | null {
+function bestRobustAim(candidates: readonly Aim[], worlds: readonly World[], shooter: number,
+  opts: Omit<PlanOptions, 'level'>, simulateAim: SimulateAim, allowUnsafe = false): RobustAim | null {
   const friends = opts.friends ?? [];
   let best: RobustAim | null = null;
   for (const aim of candidates) {
     let hits = 0;
     let worstMiss = 0;
-    let unsafe = false;
+    let meanMiss = 0;
+    let centralHit = false;
+    let unsafe = 0;
     for (const world of worlds) {
-      const outcome = simulateShot(world, shooter, aim.angle, aim.power, opts.rules, friends);
-      if (outcome.end.kind === 'ship' && outcome.end.ship !== shooter && !friends.includes(outcome.end.ship)) hits++;
-      if (outcome.end.kind === 'ship' && (outcome.end.ship === shooter || friends.includes(outcome.end.ship))) unsafe = true;
+      const outcome = simulateAim(world, aim.angle, aim.power);
+      const hit = outcome.end.kind === 'ship' && outcome.end.ship !== shooter && !friends.includes(outcome.end.ship);
+      if (hit) hits++;
+      if (world === worlds[0]) centralHit = hit;
+      if (outcome.end.kind === 'ship' && (outcome.end.ship === shooter || friends.includes(outcome.end.ship))) unsafe++;
       worstMiss = Math.max(worstMiss, outcome.closest);
-      if (crossesEstimatedBody(world, shooter, aim, opts.rules)) unsafe = true;
+      meanMiss += hit ? 0 : Math.min(outcome.closest, Math.hypot(world.width, world.height));
     }
-    if (unsafe) continue;
-    const candidate = { aim, hitRate: hits / worlds.length, worstMiss };
-    if (!best || candidate.worstMiss < best.worstMiss || (candidate.worstMiss === best.worstMiss && candidate.hitRate > best.hitRate)) best = candidate;
+    if (unsafe && !allowUnsafe) continue;
+    const candidate = { aim, hitRate: hits / worlds.length, unsafeRate: unsafe / worlds.length,
+      worstMiss, meanMiss: meanMiss / worlds.length, centralHit };
+    if (!best || candidate.unsafeRate < best.unsafeRate
+      || (candidate.unsafeRate === best.unsafeRate && (candidate.hitRate > best.hitRate
+        || (candidate.hitRate === best.hitRate && candidate.centralHit && !best.centralHit)
+        || (candidate.hitRate === best.hitRate && candidate.centralHit === best.centralHit && candidate.meanMiss < best.meanMiss)))) best = candidate;
   }
   return best;
 }
@@ -590,6 +1153,7 @@ function coverageProbe(
   worlds: readonly World[],
   visible: ExperimentalWorld,
   opts: Omit<PlanOptions, 'level'>,
+  simulateAim: SimulateAim,
   probePowers?: readonly number[],
 ): Aim | null {
   const self = worlds[0].ships[visible.shooter];
@@ -607,9 +1171,8 @@ function coverageProbe(
     for (const power of powers) {
       let unsafe = false;
       for (const world of worlds) {
-        const outcome = simulateShot(world, visible.shooter, angle, power, opts.rules, friends);
+        const outcome = simulateAim(world, angle, power);
         if (outcome.end.kind === 'ship' && (outcome.end.ship === visible.shooter || friends.includes(outcome.end.ship))) unsafe = true;
-        if (crossesEstimatedBody(world, visible.shooter, { angle, power }, opts.rules)) unsafe = true;
       }
       if (unsafe) continue;
       const paths = worlds.map((world) => probePath(world, visible.shooter, angle, power, opts.rules));
@@ -637,46 +1200,15 @@ function coverageProbe(
 }
 
 function probePath(world: World, shooter: number, angle: number, power: number, rules: ShotRules): [number, number][] {
-  const direction = aimDirection(angle);
-  let x = world.ships[shooter].x + direction.x * PHYSICS.MUZZLE;
-  let y = world.ships[shooter].y + direction.y * PHYSICS.MUZZLE;
-  let vx = direction.x * power * PHYSICS.SPEED_PER_POWER;
-  let vy = direction.y * power * PHYSICS.SPEED_PER_POWER;
+  const shot = new Shot(world, shooter, angle, power, { ...rules, timeLimit: Math.min(rules.timeLimit, 5) });
   const path: [number, number][] = [];
-  for (let step = 0; step < Math.round(Math.min(rules.timeLimit, 5) / PHYSICS.DT); step++) {
-    const field = fieldAt(world.planets, world.hole, x, y);
-    vx += field.ax * PHYSICS.DT;
-    vy += field.ay * PHYSICS.DT;
-    x += vx * PHYSICS.DT;
-    y += vy * PHYSICS.DT;
-    if (rules.bounce) {
-      if (x < 0) { x = -x; vx = -vx; }
-      else if (x > world.width) { x = 2 * world.width - x; vx = -vx; }
-      if (y < 0) { y = -y; vy = -vy; }
-      else if (y > world.height) { y = 2 * world.height - y; vy = -vy; }
-    }
-    if (step % 20 === 19) path.push([x, y]);
+  for (let step = 0; step < Math.round(Math.min(rules.timeLimit, 5) / PHYSICS.DT) && !shot.end; step++) {
+    shot.step();
+    if (step % 20 === 19 && !shot.end) path.push([shot.x, shot.y]);
   }
   return path;
 }
 
-function crossesEstimatedBody(world: World, shooter: number, aim: Aim, rules: ShotRules): boolean {
-  const direction = aimDirection(aim.angle);
-  let x = world.ships[shooter].x + direction.x * PHYSICS.MUZZLE;
-  let y = world.ships[shooter].y + direction.y * PHYSICS.MUZZLE;
-  let vx = direction.x * aim.power * PHYSICS.SPEED_PER_POWER;
-  let vy = direction.y * aim.power * PHYSICS.SPEED_PER_POWER;
-  for (let step = 0; step < Math.round(Math.min(rules.timeLimit, 8) / PHYSICS.DT); step++) {
-    const field = fieldAt(world.planets, world.hole, x, y);
-    vx += field.ax * PHYSICS.DT;
-    vy += field.ay * PHYSICS.DT;
-    x += vx * PHYSICS.DT;
-    y += vy * PHYSICS.DT;
-    for (const planet of world.planets) if (Math.hypot(x - planet.x, y - planet.y) < MAX_PLANET_RADIUS + PHYSICS.SHIP_RADIUS) return true;
-    if (!rules.bounce && (x < -PHYSICS.OUT_MARGIN || x > world.width + PHYSICS.OUT_MARGIN || y < -PHYSICS.OUT_MARGIN || y > world.height + PHYSICS.OUT_MARGIN)) break;
-  }
-  return false;
-}
 
 function fieldFromParameters(params: Float64Array, count: number, width: number, height: number, hasHole: boolean, x: number, y: number): { ax: number; ay: number } {
   let ax = 0;
@@ -711,26 +1243,13 @@ function estimatedWorld(visible: ExperimentalWorld, fit: GravityFit): World {
     width: visible.width,
     height: visible.height,
     ships: visible.ships,
-    // Position and mass are inferred; radius is not. Do not turn mass into a fake collision disk.
-    planets: fit.planets.map((planet, i) => ({ ...planet, radius: 0, seed: i, style: 'rocky', tint: '#ffffff' })),
-    hole: fit.holeMass === null ? null : { x: visible.width / 2, y: visible.height / 2, radius: visible.holeRadius, mass: fit.holeMass },
+    // Collision disks are observed geometry, never derived from inferred mass.
+    planets: fit.planets.map((planet, i) => ({ ...planet, radius: planet.radius ?? 0, seed: planet.id ?? i, style: 'rocky', tint: '#ffffff' })),
+    hole: fit.holeMass === null ? null : { x: fit.hole?.x ?? visible.visibleHole?.x ?? visible.width / 2, y: fit.hole?.y ?? visible.visibleHole?.y ?? visible.height / 2, radius: fit.hole?.radius ?? visible.holeRadius, mass: fit.holeMass },
     version: 0,
   };
 }
 
-/** First shot sees planet centers but brackets their unknown masses. Later shots use only fitted trajectories. */
-function openingWorlds(visible: ExperimentalWorld): World[] {
-  const positions = visible.visiblePlanetPositions ?? [];
-  const masses = [8_000, 24_000, 72_000];
-  return masses.map((mass, hypothesis) => ({
-    width: visible.width,
-    height: visible.height,
-    ships: visible.ships,
-    planets: positions.map((planet, index) => ({ ...planet, mass, radius: 0, seed: index, style: 'rocky' as const, tint: '#ffffff' })),
-    hole: visible.hasHole ? { x: visible.width / 2, y: visible.height / 2, radius: visible.holeRadius, mass: HORIZON.START_MASS } : null,
-    version: hypothesis,
-  }));
-}
 
 function clampForwardParameters(params: Float64Array, count: number, hasHole: boolean): void {
   for (let i = 0; i < count; i++) {

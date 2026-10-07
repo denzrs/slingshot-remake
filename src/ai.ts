@@ -2,7 +2,25 @@ import { AIM } from './config';
 import { normalizeAngle, simulateShot, type ShotRules, type World } from './physics';
 import { gaussian, type Rng } from './rng';
 
-export type CpuLevel = 'easy' | 'medium' | 'hard' | 'experimental';
+export type NormalCpuLevel = 'easy' | 'medium' | 'hard';
+export type NamedExperimentalCpuLevel = 'experimental-easy' | 'experimental-medium' | 'experimental-hard';
+export type ExperimentalCpuLevel = 'experimental' | NamedExperimentalCpuLevel;
+export type CpuLevel = NormalCpuLevel | ExperimentalCpuLevel;
+
+export interface ExperimentalCpuConfig {
+  learningRate: number;
+  startingKnowledge: number;
+}
+
+export const EXPERIMENTAL_PRESETS: Readonly<Record<NamedExperimentalCpuLevel, Readonly<ExperimentalCpuConfig>>> = {
+  'experimental-easy': { learningRate: 0.35, startingKnowledge: 0.5 },
+  'experimental-medium': { learningRate: 0.54, startingKnowledge: 0.72 },
+  'experimental-hard': { learningRate: 0.72, startingKnowledge: 0.9 },
+};
+
+export function isExperimentalCpu(level: CpuLevel | null): level is ExperimentalCpuLevel {
+  return level === 'experimental' || level === 'experimental-easy' || level === 'experimental-medium' || level === 'experimental-hard';
+}
 
 export interface Aim {
   angle: number;
@@ -10,7 +28,7 @@ export interface Aim {
 }
 
 /** Aim error (1σ) on the first shot of a round and how fast it shrinks with every further shot. */
-const ERROR: Record<Exclude<CpuLevel, 'experimental'>, { angle: number; power: number; decay: number }> = {
+const ERROR: Record<NormalCpuLevel, { angle: number; power: number; decay: number }> = {
   easy: { angle: 4, power: 4, decay: 0.8 },
   medium: { angle: 1.6, power: 1.6, decay: 0.65 },
   hard: { angle: 0.5, power: 0.5, decay: 0.45 },
@@ -18,7 +36,7 @@ const ERROR: Record<Exclude<CpuLevel, 'experimental'>, { angle: number; power: n
 
 export interface PlanOptions {
   rules: ShotRules;
-  level: Exclude<CpuLevel, 'experimental'>;
+  level: NormalCpuLevel;
   /** Shots the CPU already fired this round — it "learns" and aims tighter each time. */
   attempt: number;
   /** When set, only the angle is searched. */
@@ -31,6 +49,8 @@ export interface PlanOptions {
   friends?: readonly number[];
   /** Keep refining a valid hit to find the lowest hit power. */
   optimizeHitPower?: boolean;
+  /** Return the searched aim without execution error (experimental belief planning). */
+  noiseFree?: boolean;
 }
 
 /** Below this, a shot passing home or a teammate is too close — aim error could turn it into a friendly hit. */
@@ -59,19 +79,45 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const pool: Candidate[] = [];
   const self = world.ships[shooter];
   const friends = opts.friends ?? [];
+  // Belief searches revisit grid centres and clamped powers. Cache exact launches
+  // only for this generator; ordinary CPU planning retains its existing path.
+  const costs = opts.noiseFree ? new Map<number, Map<number, number>>() : null;
+  const evaluateAim = (aim: Aim): number => {
+    if (!costs) return evaluate(world, shooter, aim, planRules, friends);
+    let powers = costs.get(aim.angle);
+    const cached = powers?.get(aim.power);
+    if (cached !== undefined) return cached;
+    const cost = evaluate(world, shooter, aim, planRules, friends);
+    if (!powers) costs.set(aim.angle, powers = new Map());
+    powers.set(aim.power, cost);
+    return cost;
+  };
   const directs = world.ships
     .filter((s, i) => i !== shooter && s.alive && !friends.includes(i))
     .map((t) => normalizeAngle((Math.atan2(-(t.y - self.y), t.x - self.x) * 180) / Math.PI));
   if (directs.length === 0) return { angle: rng() * 360, power: randomPower() };
   const effort = opts.effort ?? 1;
   const samples = Math.round(260 * effort);
+  // Precise belief planning gets target-centred seeds rather than depending on
+  // random draws landing inside a narrow hit basin. Ordinary levels are unchanged.
+  if (opts.noiseFree) {
+    for (const direct of directs) {
+      for (const power of fixedPower === null ? [30, 50, 70, 90, 100] : [fixedPower]) {
+        for (const offset of [-16, -8, -4, 0, 4, 8, 16]) {
+          const aim = { angle: normalizeAngle(direct + offset), power };
+          pool.push({ ...aim, cost: evaluateAim(aim) });
+        }
+        yield;
+      }
+    }
+  }
 
   for (let i = 0; i < samples; i++) {
     // Half the samples fan out around the direct line to some enemy, half anywhere.
     const direct = directs[i % directs.length];
     const angle = i % 2 === 0 ? normalizeAngle(direct + gaussian(rng) * 50) : rng() * 360;
     const aim = { angle, power: randomPower() };
-    pool.push({ ...aim, cost: evaluate(world, shooter, aim, planRules, friends) });
+    pool.push({ ...aim, cost: evaluateAim(aim) });
     // Small slices keep each frame's thinking within budget, even with many ships to check.
     if (i % 4 === 3) yield;
     if (!opts.optimizeHitPower && i > samples * 0.4 && pool.filter((c) => c.cost < 0).length >= 3) break;
@@ -87,7 +133,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
         angle: normalizeAngle(local.angle + gaussian(rng) * spread),
         power: fixedPower ?? clampPower(local.power + gaussian(rng) * spread),
       };
-      const cost = evaluate(world, shooter, aim, planRules, friends);
+      const cost = evaluateAim(aim);
       if (cost < local.cost) local = { ...aim, cost };
       else spread = Math.max(0.05, spread * 0.93);
       if (i % 4 === 3) yield;
@@ -98,7 +144,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
       let upper = local.power;
       for (let i = 0; i < 9 && upper - lower > 0.1; i++) {
         const power = (lower + upper) / 2;
-        const cost = evaluate(world, shooter, { angle: local.angle, power }, planRules, friends);
+        const cost = evaluateAim({ angle: local.angle, power });
         if (cost < 0) {
           local = { ...local, power, cost };
           upper = power;
@@ -108,8 +154,27 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
         if (i % 4 === 3) yield;
       }
     }
+    if (opts.noiseFree && local.cost < best.cost) best = local;
+    if (opts.noiseFree) {
+      for (const step of [2, 0.5, 0.12, 0.03]) {
+        for (let pass = 0; pass < 4; pass++) {
+          const center = local;
+          for (const da of [-step, 0, step]) {
+            for (const dp of fixedPower === null ? [-step * 2, 0, step * 2] : [0]) {
+              const aim = { angle: normalizeAngle(center.angle + da), power: fixedPower ?? clampPower(center.power + dp) };
+              const cost = evaluateAim(aim);
+              if (cost < local.cost) local = { ...aim, cost };
+            }
+          }
+          yield;
+          if (center === local) break;
+        }
+      }
+      if (local.cost < best.cost) best = local;
+    }
   }
 
+  if (opts.noiseFree) return { angle: best.angle, power: fixedPower ?? best.power };
   const err = ERROR[opts.level];
   const scale = Math.pow(err.decay, opts.attempt);
   return {

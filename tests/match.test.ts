@@ -176,6 +176,7 @@ describe('team mode', () => {
     // Seats 1+2 in team A, seat 3 alone in team B: B must shoot every other turn.
     const m = createMatch('classic', teamSettings(['human', 'human', 'human', 'off', 'off', 'off'], [0, 0, 1, 0, 0, 0]));
     m.world.planets = [];
+    m.world.ships = [{ x: 100, y: 400, alive: true }, { x: 200, y: 400, alive: true }, { x: 1100, y: 400, alive: true }];
     const order: number[] = [];
     for (let turn = 0; turn < 4; turn++) {
       order.push(m.current);
