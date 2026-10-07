@@ -266,17 +266,23 @@ export class Renderer {
     }
   }
 
-  /** Chevron on the field edge pointing at a shot that has left the plate. */
+  /**
+   * Chevron on the field edge pointing at a shot that has left the plate. It shrinks and pulses faster
+   * the closer the shot gets to the point where it counts as lost.
+   */
   private drawOffscreenMarker(x: number, y: number, color: string): void {
     const { ctx } = this;
     const inset = 14;
     const cx = Math.min(FIELD.width - inset, Math.max(inset, x));
     const cy = Math.min(FIELD.height - inset, Math.max(inset, y));
     const a = Math.atan2(y - cy, x - cx);
-    const pulse = 0.6 + 0.4 * Math.sin(this.time * 10);
+    const beyond = Math.max(-x, x - FIELD.width, -y, y - FIELD.height, 0);
+    const left = Math.max(0, 1 - beyond / PHYSICS.OUT_MARGIN);
+    const pulse = 0.6 + 0.4 * Math.sin(this.time * (8 + 22 * (1 - left)));
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(a);
+    ctx.scale(0.5 + 0.5 * left, 0.5 + 0.5 * left);
     ctx.beginPath();
     ctx.moveTo(8, 0);
     ctx.lineTo(-5, -6);
