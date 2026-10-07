@@ -1,5 +1,5 @@
 import type { CpuLevel } from './ai';
-import { GRACE, MAX_PLAYERS, TRAIL_FADE } from './config';
+import { AIM, GRACE, MAX_PLAYERS, TRAIL_FADE } from './config';
 import { detectLang, isLang, type Lang } from './i18n';
 
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
@@ -19,6 +19,8 @@ export interface Settings {
   invisiblePlanets: boolean;
   bounce: boolean;
   fixedPower: boolean;
+  /** Shots can't be fired harder than this: a low cap favours trick shots over power shots. */
+  maxPower: number;
   /** Seconds before a shot fizzles out. */
   shotTime: number;
   /** Classic only: swing-bys, grazes and the like multiply a hit's points, as they always do in Event Horizon. */
@@ -48,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   invisiblePlanets: false,
   bounce: false,
   fixedPower: false,
+  maxPower: AIM.MAX_POWER,
   shotTime: 20,
   styleBonuses: false,
   neighborGrace: 0,
@@ -80,6 +83,7 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
       if (!TRAIL_FADE.OPTIONS.includes(s.fadingTrails)) s.fadingTrails = 0;
+      if (!AIM.CAP_OPTIONS.includes(s.maxPower)) s.maxPower = AIM.MAX_POWER;
       // It used to be a plain on/off switch, "on" meaning two shots.
       if ((s.neighborGrace as unknown) === true) s.neighborGrace = 2;
       if (!GRACE.OPTIONS.includes(s.neighborGrace)) s.neighborGrace = 0;
@@ -95,6 +99,9 @@ export function loadSettings(): Settings {
   }
   return { ...DEFAULT_SETTINGS, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams], language: detectLang() };
 }
+
+/** The power a ship starts a round with — or shoots with when it is fixed — never above the cap. */
+export const startPower = (s: Pick<Settings, 'fixedPower' | 'maxPower'>): number => Math.min(s.fixedPower ? AIM.FIXED_POWER : AIM.DEFAULT_POWER, s.maxPower);
 
 /** The copy a match plays by, so changing the setup later never alters a game in progress. */
 export function cloneSettings(s: Settings): Settings {
