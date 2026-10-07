@@ -267,8 +267,8 @@ export class Renderer {
   }
 
   /**
-   * Chevron on the field edge pointing at a shot that has left the plate, with the distance it still has
-   * before it counts as lost. The chevron flashes in the last stretch.
+   * Chevron on the field edge pointing at a shot that has left the plate, with how far outside the field it is (0 at the edge,
+   * counting up until it counts as lost). The chevron flashes in the last stretch.
    */
   private drawOffscreenMarker(x: number, y: number, color: string): void {
     const { ctx } = this;
@@ -297,7 +297,7 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = rgba(danger ? COLORS.bone : color, 0.9);
-    ctx.fillText(String(Math.round(PHYSICS.OUT_MARGIN - beyond)), -Math.cos(a) * 30, -Math.sin(a) * 30);
+    ctx.fillText(String(Math.round(beyond)), -Math.cos(a) * 30, -Math.sin(a) * 30);
     ctx.restore();
   }
 
