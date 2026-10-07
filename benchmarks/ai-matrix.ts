@@ -26,7 +26,7 @@ export interface MatrixRow extends MatrixCell { summary: CellSummary }
 export interface CodeFingerprint { algorithm: 'sha256'; digest: string; sources: readonly string[] }
 // Fixed production and experiment sources. Tests and package metadata do not define execution.
 const FINGERPRINT_SOURCES = [
-  'src/ai.ts', 'src/config.ts', 'src/experimental-ai.ts',
+  'src/ai.ts', 'src/config.ts', 'src/experimental-ai.ts', 'src/experimental-evidence.ts',
   'src/game/classic.ts', 'src/game/horizon.ts', 'src/game/index.ts', 'src/game/match.ts',
   'src/physics.ts', 'src/rng.ts', 'src/scoring.ts', 'src/settings.ts', 'src/volley.ts', 'src/world.ts',
   'benchmarks/ai-matrix.ts', 'benchmarks/ai-metrics.ts',
@@ -118,6 +118,7 @@ function decisionRecord(report: ExperimentalReport): DecisionRecord {
     predictionSamples: report.predictionSamples, fitMs: report.fitMs,
     relativeGravityMapRms: Number.isFinite(report.relativeGravityMapRms) ? report.relativeGravityMapRms : null,
     details: { ...report.decision },
+    ...(report.recovery ? { recovery: report.recovery } : {}),
   };
 }
 
@@ -220,11 +221,18 @@ function printRow(row: MatrixRow): void {
   console.log(`  average leg win points ${number(s.pairs.winPoints.mean)} bounded Hoeffding CI95 ${interval(s.pairs.winPoints.ci95)} n=${s.pairs.winPoints.n} pairs; combined-score win points ${number(s.pairs.scoreWinPoints.mean)} CI95 ${interval(s.pairs.scoreWinPoints.ci95)}; paired score delta ${number(s.pairs.scoreDelta.mean)} Student-t CI95 ${interval(s.pairs.scoreDelta.ci95)}; strict combined-score pair wins ${s.pairs.wins}/${s.pairs.completed} Wilson ${interval(s.pairs.winRateCi95)}`);
   console.log(`  side0 W/L/D ${s.sides.side0.wins}/${s.sides.side0.losses}/${s.sides.side0.draws}; side1 ${s.sides.side1.wins}/${s.sides.side1.losses}/${s.sides.side1.draws}; real shots fired/completed ${s.shots.fired}/${s.shots.completed}; E ship hits ${s.experimental.shipHits}/${s.experimental.completed} (enemy/friendly/self ${s.experimental.enemyHits}/${s.experimental.friendlyHits}/${s.experimental.selfHits}); kills offensive/self/friendly ${s.kills.experimentalOffensive}/${s.kills.experimentalSelf}/${s.kills.experimentalFriendly}; shots/kill ${number(s.experimental.shotsPerKill)}`);
   console.log(`  completed-shot prediction RMS n=${s.experimental.predictionRms.n}, missing=${s.experimental.predictionRms.missing}, p50/p95 ${number(s.experimental.predictionRms.p50)}/${number(s.experimental.predictionRms.p95)}; observations ${s.experimental.observationCount}/${s.experimental.completed}; launch fit ms n=${s.experimental.fitMs.n}, missing=${s.experimental.fitMs.missing}, p50/p95 ${number(s.experimental.fitMs.p50)}/${number(s.experimental.fitMs.p95)}; observation fit ms n=${s.experimental.observationFitMs.n}, missing=${s.experimental.observationFitMs.missing}, p50/p95 ${number(s.experimental.observationFitMs.p50)}/${number(s.experimental.observationFitMs.p95)}`);
+  if (s.experimental.recovery) {
+    const recovery = s.experimental.recovery;
+    console.log(`  completed-shot recovery ${recovery.observationCount}/${s.experimental.completed}, missing=${recovery.missingObservationCount}; update statuses ${JSON.stringify(recovery.updateStatuses)}; stalled ${recovery.stalled}/${recovery.observationCount}`);
+    for (const [label, metric] of Object.entries({ optimizerInitialRms: recovery.optimizerInitialRms, optimizerFinalRms: recovery.optimizerFinalRms, beliefBeforeRms: recovery.beliefBeforeRms, beliefAfterRms: recovery.beliefAfterRms, candidateHeldoutRms: recovery.candidateValidationRms, previousHeldoutRms: recovery.previousValidationRms, heldoutSamples: recovery.validationSamples, requestedLearningRate: recovery.proposedLearningRate, effectiveLearningRate: recovery.effectiveLearningRate, matchedSources: recovery.matchedSources, stagnationCount: recovery.stagnationCount, recoveryStarts: recovery.recoveryStarts })) {
+      console.log(`    ${label} n=${metric.n}, missing=${metric.missing}, p50/p95 ${number(metric.p50)}/${number(metric.p95)}`);
+    }
+  }
   for (const [side, stats] of Object.entries({ experimental: s.experimental, opponent: s.opponent })) {
     console.log(`  ${side} outcomes ${JSON.stringify(stats.outcomes)}; completed flight seconds n=${stats.elapsed.n}, missing=${stats.elapsed.missing}, p50/p95 ${number(stats.elapsed.p50)}/${number(stats.elapsed.p95)}`);
     for (const [outcome, elapsed] of Object.entries(stats.outcomeElapsed)) console.log(`    ${outcome} seconds n=${elapsed.n}, missing=${elapsed.missing}, p50/p95 ${number(elapsed.p50)}/${number(elapsed.p95)}`);
   }
-  for (const [stage, stats] of Object.entries(s.stages)) console.log(`  shot ${stage}: fired/completed ${stats.fired}/${stats.completed}; ship hits ${stats.shipHits}/${stats.completed}; decisions ${stats.decisionCount}/${stats.fired}; observations ${stats.observationCount}/${stats.completed}; post-completion evidence observed/learned/retained ${number(stats.observedShots.mean)}/${number(stats.learnedShots.mean)}/${number(stats.retainedShots.mean)}; prediction n=${stats.predictionRms.n}, missing=${stats.predictionRms.missing}, p50/p95=${number(stats.predictionRms.p50)}/${number(stats.predictionRms.p95)}`);
+  for (const [stage, stats] of Object.entries(s.stages)) console.log(`  shot ${stage}: fired/completed ${stats.fired}/${stats.completed}; ship hits ${stats.shipHits}/${stats.completed}; decisions ${stats.decisionCount}/${stats.fired}; observations ${stats.observationCount}/${stats.completed}; post-completion observed/accepted-step-equivalent/retained evidence ${number(stats.observedShots.mean)}/${number(stats.learnedShots.mean)}/${number(stats.retainedShots.mean)}; prediction n=${stats.predictionRms.n}, missing=${stats.predictionRms.missing}, p50/p95=${number(stats.predictionRms.p50)}/${number(stats.predictionRms.p95)}`);
 }
 
 async function persist(report: MatrixReport): Promise<void> {

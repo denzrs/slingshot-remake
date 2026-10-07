@@ -13,7 +13,7 @@ export function createExperimentalWorkerProcessor(): (request: ExperimentalWorke
   let generation = 0;
   let lastRequest = 0;
   return (request) => {
-    const identity: { version: 1; generation: number; requestId: number } = {
+    const identity: { version: typeof EXPERIMENTAL_WORKER_VERSION; generation: number; requestId: number } = {
       version: EXPERIMENTAL_WORKER_VERSION, generation: request.generation, requestId: request.requestId,
     };
     try {

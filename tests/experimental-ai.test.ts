@@ -3,6 +3,7 @@ import { FIELD, HORIZON } from '../src/config';
 import { advanceExperimentalWorld, createExperimentalLearner, experimentalLearnerFit, fitGravity, fitGravityHypotheses, measureReconstruction, observeExperimentalShot, planExperimentalShot, type ExperimentalWorld } from '../src/experimental-ai';
 import { Shot, simulateShot, type World } from '../src/physics';
 import { createRng } from '../src/rng';
+import { generateWorld } from '../src/world';
 
 
 function planExperimental(world: ExperimentalWorld) {
@@ -79,6 +80,8 @@ describe('experimental starting knowledge', () => {
     expect(fit.retainedShots).toBe(0);
     expect(fit.learnedShots).toBe(0);
     expect(fit.predictionRms).toBeGreaterThan(1);
+    expect(fit.recovery).toMatchObject({ updateStatus: 'frozen', effectiveLearningRate: 0,
+      optimizerInitialRms: null, optimizerFinalRms: null });
     const moved = { ...visible, epoch: 1, visiblePlanets: visible.visiblePlanets!.map((planet) => ({ ...planet, x: planet.x + 10 })) };
     const updated = experimentalLearnerFit(learner, moved);
     expect(updated.planets[0].mass).toBe(0);
@@ -105,6 +108,11 @@ describe('experimental starting knowledge', () => {
     expect(recoveryFit.predictionRms).toBeLessThan(frozenFit.predictionRms! / 10);
     expect(recoveryFit.startingKnowledge).toBe(0);
     expect(recoveryFit.learnedShots).toBe(1);
+    expect(learned.recovery).toMatchObject({ updateStatus: 'accepted', effectiveLearningRate: 1,
+      candidateValidationRms: null, validationSamples: 0 });
+    expect(learned.initialRms).toBe(learned.recovery!.beliefBeforeRms);
+    expect(learned.rms).toBe(learned.recovery!.beliefAfterRms);
+    expect(learned.improvement).toBeGreaterThan(0);
     expect(recoveryFit.planets).toEqual(learned.planets);
   });
 
@@ -297,6 +305,73 @@ describe('experimental gravity fitting', () => {
     expect(fullFit.learnedShots).toBe(1);
     observeExperimentalShot(full, { ...evidence, points: [...points] }, visible, 1);
     expect(experimentalLearnerFit(full, visible)).toEqual(fullFit);
+    expect(fullFit.recovery!.sampleCounts.reduce((sum, count) => sum + count, 0)).toBe(fullFit.samples);
+    expect(fullFit.recovery!.retainedShotIds).toEqual([1]);
+    expect(fullFit.recovery!.beliefAfterRms).toBeLessThanOrEqual(fullFit.recovery!.beliefBeforeRms!);
+    expect(gradualFit.recovery!.effectiveLearningRate).toBe(0.25);
+  });
+
+  it('keeps a useful local update when a nearly exact clustered-shot minimum cannot be safely interpolated', () => {
+    const world = generateWorld(7139, { minPlanets: 7, maxPlanets: 7, players: 2, blackHole: false });
+    world.ships[1].alive = false;
+    const hidden = { ...visibleWorld(world), visiblePlanets: undefined };
+    const learner = createExperimentalLearner(0.72);
+    let learned = 0;
+    for (let index = 1; index <= 4; index++) {
+      observeExperimentalShot(learner, observedShot(world, index * 0.4, index, 2_880), hidden, 0.54);
+      const fit = experimentalLearnerFit(learner, hidden);
+      expect(fit.recovery!.beliefAfterRms).toBeLessThanOrEqual(fit.recovery!.beliefBeforeRms!);
+      expect(fit.recovery!.effectiveLearningRate).toBeLessThanOrEqual(0.54);
+      learned += fit.recovery!.effectiveLearningRate;
+    }
+    expect(learned).toBeGreaterThan(0);
+  });
+
+  it('fits a hidden field using the observed off-center hole rather than an invented board-center source', () => {
+    const world: World = {
+      width: FIELD.width, height: FIELD.height,
+      ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
+      planets: [], hole: { x: 800, y: 650, radius: 30, mass: 200_000 }, version: 0,
+    };
+    const hidden = { ...visibleWorld(world), visiblePlanets: undefined, mode: 'horizon' as const };
+    const learner = createExperimentalLearner(0.7);
+    observeExperimentalShot(learner, observedShot(world, 0, 1, 300), hidden, 0.5);
+    const fit = experimentalLearnerFit(learner, hidden);
+    expect(fit.hole).toEqual({ x: 800, y: 650, radius: 30 });
+    expect(fit.recovery!.beliefAfterRms).toBeLessThan(fit.recovery!.beliefBeforeRms!);
+    expect(fit.recovery!.effectiveLearningRate).toBeGreaterThan(0);
+    expect(fit.recovery!.effectiveLearningRate).toBeLessThanOrEqual(0.5);
+  });
+
+  it('keeps same-sample belief errors nonworsening across diverse hidden evidence at fractional rates', () => {
+    const world: World = {
+      width: FIELD.width, height: FIELD.height,
+      ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
+      planets: [
+        { x: 550, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' },
+        { x: 820, y: 280, radius: 30, mass: 30_000, seed: 2, style: 'rocky', tint: '#fff' },
+      ], hole: null, version: 0,
+    };
+    const hidden = { ...visibleWorld(world), visiblePlanets: undefined };
+    const learner = createExperimentalLearner(0.5);
+    let acceptedEvidence = 0;
+    for (const [index, angle] of [0, 20, -20, 40].entries()) {
+      observeExperimentalShot(learner, observedShot(world, angle, index + 1, 300), hidden, 0.5);
+      const fit = experimentalLearnerFit(learner, hidden);
+      const recovery = fit.recovery!;
+      expect(recovery.beliefAfterRms).toBeLessThanOrEqual(recovery.beliefBeforeRms! + 1e-8);
+      expect(fit.initialRms).toBe(recovery.beliefBeforeRms);
+      expect(fit.rms).toBe(recovery.beliefAfterRms);
+      expect(recovery.effectiveLearningRate).toBeGreaterThanOrEqual(0);
+      expect(recovery.effectiveLearningRate).toBeLessThanOrEqual(0.5);
+      acceptedEvidence += recovery.effectiveLearningRate;
+      expect(fit.learnedShots).toBe(acceptedEvidence);
+      expect(recovery.validationSamples > 0).toBe(index > 0);
+      expect(recovery.candidateValidationRms === null).toBe(index === 0);
+      expect(recovery.sampleCounts).toHaveLength(index + 1);
+      expect(recovery.sampleCounts.every((count) => count > 0)).toBe(true);
+    }
+    expect(acceptedEvidence).toBeGreaterThan(0);
   });
 
   it.each(['planet', 'hole'] as const)('approaches the frozen %s belief continuously at tiny positive rates', (source) => {
@@ -572,6 +647,11 @@ describe('experimental gravity fitting', () => {
     expect(fits.length).toBeGreaterThan(0);
     expect(fits.length).toBeLessThanOrEqual(4);
     expect(fits.every((fit) => fit.rms !== null && fit.fitMs >= 0)).toBe(true);
+    for (let first = 0; first < fits.length; first++) for (let second = first + 1; second < fits.length; second++) {
+      const a = fits[first].planets[0];
+      const b = fits[second].planets[0];
+      expect(Math.hypot(a.x - b.x, a.y - b.y) + Math.abs(Math.log(a.mass / b.mass)) * 30).toBeGreaterThanOrEqual(12);
+    }
 
     const learner = createExperimentalLearner();
     const visible: ExperimentalWorld = { ...visibleWorld(world), visiblePlanets: undefined };
@@ -583,9 +663,10 @@ describe('experimental gravity fitting', () => {
     }, (_, decision) => { plannedHypotheses = decision.hypothesisCount; });
     let result = planner.next();
     while (!result.done) result = planner.next();
-    // The central fit and its density samples do not replace positional alternatives.
-    expect(plannedHypotheses).toBe(8 + fits.length);
-    expect(plannedHypotheses).toBeGreaterThan(9);
+    // MAP density samples supplement only genuinely distinct retained positional alternatives.
+    expect(plannedHypotheses).toBe(8 + learner.hypotheses.length);
+    expect(learner.hypotheses.length).toBeGreaterThan(0);
+    expect(learner.hypotheses.length).toBeLessThanOrEqual(4);
   });
 
 });

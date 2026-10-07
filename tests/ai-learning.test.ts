@@ -15,6 +15,7 @@ describe('production trajectory learning', () => {
     expect(fit.learnedShots).toBe(0);
     expect(fit.retainedShots).toBe(0);
     expect(fit.observedShots).toBe(8);
+    expect(fit.recovery).toMatchObject({ updateStatus: 'frozen', proposedLearningRate: 0, effectiveLearningRate: 0 });
   });
 
   for (const startingKnowledge of [0, 0.5, 1]) {
@@ -77,6 +78,16 @@ describe('production trajectory learning', () => {
     expect(partialFit.planets[0].mass).not.toBe(fullFit.planets[0].mass);
     expect(fullFit.predictionSamples).toBeGreaterThan(20);
     expect(fullFit.predictionRms).not.toBeNull();
+    expect(partialFit.recovery).toMatchObject({ proposedLearningRate: 0.35, effectiveLearningRate: 0.35, updateStatus: 'accepted' });
+    expect(fullFit.recovery).toMatchObject({ proposedLearningRate: 1, effectiveLearningRate: 1, updateStatus: 'accepted' });
+    for (const fit of [partialFit, fullFit]) {
+      expect(fit.initialRms).toBe(fit.recovery!.beliefBeforeRms);
+      expect(fit.rms).toBe(fit.recovery!.beliefAfterRms);
+      expect(fit.rms!).toBeLessThanOrEqual(fit.initialRms! + 1e-7);
+      expect(fit.recovery!.validationSamples).toBeGreaterThan(0);
+      expect(fit.recovery!.candidateValidationRms).not.toBeNull();
+      expect(fit.recovery!.sampleCounts.every((count) => count > 0)).toBe(true);
+    }
     expect(Number.isFinite(fullFit.predictionRms)).toBe(true);
   });
 

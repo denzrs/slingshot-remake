@@ -1,13 +1,14 @@
 import type { ExperimentalLearnerSnapshot, ExperimentalShot, ExperimentalWorld } from './experimental-ai';
 
-export const EXPERIMENTAL_WORKER_VERSION = 1;
+/** Version 2 requires the recovery state used by the planner replica. */
+export const EXPERIMENTAL_WORKER_VERSION = 2;
 export type ExperimentalWorldTransition = {
   holeMassGain: number;
   swallowedPlanetIds: readonly number[];
   feed: number;
 };
 
-type RequestIdentity = { version: 1; generation: number; requestId: number };
+type RequestIdentity = { version: typeof EXPERIMENTAL_WORKER_VERSION; generation: number; requestId: number };
 type PlayerIdentity = { player: number; playerGeneration: number };
 export type ExperimentalWorkerRequest = RequestIdentity & (
   | ({ kind: 'observe'; shot: ExperimentalShot; world: ExperimentalWorld; learningRate: number;
@@ -21,6 +22,43 @@ export type ExperimentalWorkerResponse = RequestIdentity & (
   | { kind: 'reset' }
   | { kind: 'error'; message: string }
 );
+
+/** Reject stale recovery schemas before restore can fill missing state with defaults. */
+export function assertExperimentalWorkerSnapshot(snapshot: unknown): asserts snapshot is ExperimentalLearnerSnapshot {
+  const invalid = () => { throw new Error('Invalid experimental worker recovery snapshot'); };
+  if (snapshot === null || typeof snapshot !== 'object' || Array.isArray(snapshot)) invalid();
+  const state = snapshot as ExperimentalLearnerSnapshot;
+  if (!('recovery' in state) || !('predictionTrend' in state)
+    || !('probeHistory' in state) || !('lastRecoveryShot' in state)) invalid();
+  const diagnostics = state.recovery;
+  if (diagnostics === null || typeof diagnostics !== 'object' || Array.isArray(diagnostics)) invalid();
+  for (const key of ['optimizerInitialRms', 'optimizerFinalRms', 'beliefBeforeRms', 'beliefAfterRms',
+    'candidateValidationRms', 'previousValidationRms'] as const) {
+    if (diagnostics[key] !== null && !isNonnegativeNumber(diagnostics[key])) invalid();
+  }
+  for (const key of ['validationSamples', 'stagnationCount', 'recoveryStarts', 'matchedSources'] as const) {
+    if (!Number.isSafeInteger(diagnostics[key]) || diagnostics[key] < 0) invalid();
+  }
+  for (const key of ['proposedLearningRate', 'effectiveLearningRate'] as const) {
+    if (!isNonnegativeNumber(diagnostics[key]) || diagnostics[key] > 1) invalid();
+  }
+  if (typeof diagnostics.stalled !== 'boolean'
+    || !['accepted', 'reduced', 'rejected', 'frozen', 'unavailable'].includes(diagnostics.updateStatus)
+    || !Array.isArray(diagnostics.sampleCounts)
+    || !diagnostics.sampleCounts.every((count) => Number.isSafeInteger(count) && count >= 0)
+    || !Array.isArray(diagnostics.retainedShotIds)
+    || !diagnostics.retainedShotIds.every((id) => id === null || typeof id === 'number' && Number.isFinite(id))
+    || diagnostics.sampleCounts.length !== diagnostics.retainedShotIds.length) invalid();
+  if (!Array.isArray(state.predictionTrend) || !state.predictionTrend.every(isNonnegativeNumber)
+    || !Number.isSafeInteger(state.lastRecoveryShot)
+    || !Array.isArray(state.probeHistory)
+    || !state.probeHistory.every((probe) => probe !== null && typeof probe === 'object' && !Array.isArray(probe)
+      && (['angle', 'power', 'x', 'y'] as const).every((key) => typeof probe[key] === 'number' && Number.isFinite(probe[key])))) invalid();
+}
+
+function isNonnegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
 
 /** Explicit whitelist prevents hidden masses and retained trails from reaching the worker. */
 export function experimentalWorkerWorld(world: ExperimentalWorld): ExperimentalWorld {
