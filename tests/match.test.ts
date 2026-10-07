@@ -176,6 +176,8 @@ describe('team mode', () => {
     // Seats 1+2 in team A, seat 3 alone in team B: B must shoot every other turn.
     const m = createMatch('classic', teamSettings(['human', 'human', 'human', 'off', 'off', 'off'], [0, 0, 1, 0, 0, 0]));
     m.world.planets = [];
+    // The world is random: a ship straight above another would turn the "harmless miss" into a kill and change the order.
+    [[100, 400], [1100, 400], [640, 700]].forEach(([x, y], i) => Object.assign(m.world.ships[i], { x, y }));
     const order: number[] = [];
     for (let turn = 0; turn < 4; turn++) {
       order.push(m.current);
