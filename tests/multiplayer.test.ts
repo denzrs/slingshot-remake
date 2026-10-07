@@ -9,10 +9,14 @@ class Loopback implements Transport {
   address = 'loopback';
   private listener: ((message: ServerMessage) => void) | null = null;
   private readonly connection: ClientConnection = {
-    send: (message) => this.listener?.(JSON.parse(JSON.stringify(message))),
+    send: (message) => this.listener?.(this.edit(JSON.parse(JSON.stringify(message)))),
   };
 
-  constructor(private readonly relay: RoomManager) {}
+  constructor(
+    private readonly relay: RoomManager,
+    /** Lets a test change what the relay says, e.g. to play an older server. */
+    private readonly edit: (message: ServerMessage) => ServerMessage = (m) => m,
+  ) {}
 
   setAddress(): void {}
   async connect(): Promise<void> {
@@ -35,7 +39,7 @@ interface Client {
   match(): NetMatch;
 }
 
-const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0 };
+const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0 };
 
 async function startRoom(gameMode: 'classic' | 'horizon', names = ['Anna', 'Ben']): Promise<{ host: Client; guest: Client }> {
   const relay = new RoomManager();
@@ -71,6 +75,35 @@ describe('online games', () => {
       const settings = client.match().settings;
       expect(settings).toMatchObject(rules);
     }
+  });
+
+  it("never fill a rule the room leaves out from the player's own settings", async () => {
+    // An older relay that doesn't know the newest rules doesn't send them.
+    const forget = (m: ServerMessage): ServerMessage => {
+      if (m.type === 'game_start' && m.rules) {
+        const { fixedPowerLevel: _a, hiddenAim: _b, ...rest } = m.rules;
+        return { ...m, rules: rest as RoomRules };
+      }
+      return m;
+    };
+    const own = { ...cloneSettings(DEFAULT_SETTINGS), fixedPowerLevel: 80, hiddenAim: true, rounds: 20, contours: false };
+    const relay = new RoomManager();
+    let match: NetMatch | null = null;
+    const connect = async (hooks: Partial<ConstructorParameters<typeof MultiplayerSession>[0]> = {}) => {
+      const session = new MultiplayerSession({ settings: () => cloneSettings(own), matchStarted() {}, matchRestarted() {}, matchEnded() {}, ...hooks }, new Loopback(relay, forget));
+      await session.connect('loopback');
+      return session;
+    };
+    const host = await connect();
+    const guest = await connect({ matchStarted: (m) => (match = m) });
+    host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2 });
+    guest.joinRoom(guest.rooms[0].id, 'Ben');
+    host.setReady(true);
+    guest.setReady(true);
+    host.startGame();
+    expect(match!.settings).toMatchObject({ rounds: 2, fixedPowerLevel: 55, hiddenAim: false });
+    // What belongs to this device still does.
+    expect(match!.settings.contours).toBe(false);
   });
 
   it('lets the host change the rules while the room waits, and everyone must confirm again', async () => {

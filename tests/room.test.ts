@@ -166,7 +166,7 @@ describe('rooms', () => {
 });
 
 describe('room rules', () => {
-  const rules = { rounds: 3, maxPlanets: 6, invisiblePlanets: true, bounce: true, fixedPower: false, maxPower: 70, shotTime: 30, styleBonuses: true, neighborGrace: 2, simultaneousShots: true, hiddenAim: true, fadingTrails: 2 };
+  const rules = { rounds: 3, maxPlanets: 6, invisiblePlanets: true, bounce: true, fixedPower: false, fixedPowerLevel: 40, maxPower: 70, shotTime: 30, styleBonuses: true, neighborGrace: 2, simultaneousShots: true, hiddenAim: true, fadingTrails: 2 };
 
   it('start with sensible defaults when none are sent', () => {
     const { manager, client } = setup();
@@ -196,10 +196,29 @@ describe('room rules', () => {
     expect(host.last('room_update')!.room.rules.maxPower).toBe(100);
   });
 
+  it('accept rules from clients that predate the fixed power level', () => {
+    const { manager, client } = setup();
+    const host = client();
+    const { fixedPowerLevel: _level, ...old } = rules;
+    manager.handle(host, create({ rules: old }));
+    expect(host.last('room_update')!.room.rules).toMatchObject({ fixedPowerLevel: 55, maxPower: 70 });
+  });
+
+  it('carry the fixed power level to everybody', () => {
+    const { manager, client } = setup();
+    const host = client();
+    const guest = client();
+    manager.handle(host, create({ rules: { ...rules, fixedPower: true, fixedPowerLevel: 85, maxPower: 100 } }));
+    manager.handle(guest, { type: 'join_room', roomId: host.last('room_update')!.room.id, name: 'Gast' });
+    expect(guest.last('room_update')!.room.rules).toMatchObject({ fixedPower: true, fixedPowerLevel: 85 });
+    manager.handle(host, { type: 'set_rules', rules: { ...rules, fixedPower: true, fixedPowerLevel: 20, maxPower: 100 } });
+    expect(guest.last('room_update')!.room.rules.fixedPowerLevel).toBe(20);
+  });
+
   it('are validated', () => {
     const { manager, client } = setup();
     const host = client();
-    for (const bad of [{ ...rules, maxPlanets: 99 }, { ...rules, shotTime: 1 }, { ...rules, bounce: 'yes' }, { ...rules, neighborGrace: 'yes' }, { ...rules, neighborGrace: true }, { ...rules, neighborGrace: 3 }, { ...rules, simultaneousShots: 1 }, { ...rules, hiddenAim: 'yes' }, { ...rules, fadingTrails: true }, { ...rules, fadingTrails: 3 }, { ...rules, maxPower: 75 }, { ...rules, maxPower: '70' }, { ...rules, maxPower: 0 }, { ...rules, maxPower: 110 }, { ...rules, rounds: 1.5 }, 'nope', null]) {
+    for (const bad of [{ ...rules, maxPlanets: 99 }, { ...rules, shotTime: 1 }, { ...rules, bounce: 'yes' }, { ...rules, neighborGrace: 'yes' }, { ...rules, neighborGrace: true }, { ...rules, neighborGrace: 3 }, { ...rules, simultaneousShots: 1 }, { ...rules, hiddenAim: 'yes' }, { ...rules, fadingTrails: true }, { ...rules, fadingTrails: 3 }, { ...rules, maxPower: 75 }, { ...rules, maxPower: '70' }, { ...rules, maxPower: 0 }, { ...rules, maxPower: 110 }, { ...rules, fixedPowerLevel: 57 }, { ...rules, fixedPowerLevel: 5 }, { ...rules, fixedPowerLevel: 105 }, { ...rules, fixedPowerLevel: '55' }, { ...rules, rounds: 1.5 }, 'nope', null]) {
       manager.handle(host, create({ rules: bad }));
       expect(host.last('error')!.message).toMatch(/rules/i);
     }

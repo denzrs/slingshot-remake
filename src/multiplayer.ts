@@ -3,6 +3,7 @@ import { ClassicMatch, createMatch, HorizonMatch, type GameEvent } from './game'
 import type { ClassicSnapshot } from './game/classic';
 import type { HorizonSnapshot } from './game/horizon';
 import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules, type ServerMessage } from './net';
+import { defaultRoomRules } from './lobbyPrefs';
 import { SnapshotDecoder, SnapshotEncoder } from './netsync';
 import type { Seat, Settings } from './settings';
 
@@ -228,9 +229,11 @@ export class MultiplayerSession {
   private startMatch(message: GameStart): void {
     const base = this.hooks.settings();
     const seats: Seat[] = Array.from({ length: MAX_PLAYERS }, (_, i) => (i < message.players.length ? 'human' : 'off'));
-    // The room's rules decide, not whatever this player has set up for offline games.
+    // The room's rules decide, not whatever this player has set up for offline games: from this device only
+    // the display settings (lines, particles, sound, language) carry over.
     const settings: Settings = {
       ...base,
+      ...defaultRoomRules(),
       ...message.rules,
       seats,
       seatTeams: [...base.seatTeams],
