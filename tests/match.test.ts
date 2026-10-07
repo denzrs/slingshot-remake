@@ -111,6 +111,43 @@ describe('settings', () => {
   });
 });
 
+describe('max power', () => {
+  const capped = (mode: 'classic' | 'horizon', maxPower: number, fixedPower = false) => createMatch(mode, { ...DEFAULT_SETTINGS, maxPower, fixedPower }, { seats: ['human', 'human', 'off', 'off', 'off', 'off'] });
+
+  it('caps what a human can aim for, in classic and event horizon', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      const m = capped(mode, 70) as ClassicMatch | HorizonMatch;
+      m.setPlayerAim(0, 10, 100);
+      expect(m.players[0].power).toBe(70);
+      m.adjustPlayer(0, 0, -200);
+      expect(m.players[0].power).toBe(0);
+      m.adjustPlayer(0, 0, 55);
+      expect(m.players[0].power).toBe(55);
+    }
+  });
+
+  it('starts a round at most at the cap, also with fixed power', () => {
+    expect(capped('classic', 50).players[0].power).toBe(50);
+    expect(capped('classic', 100).players[0].power).toBe(50);
+    expect(capped('classic', 50, true).players[0].power).toBe(50);
+    expect(capped('classic', 100, true).players[0].power).toBe(55);
+  });
+
+  it('keeps every CPU shot under the cap', () => {
+    const seats: Seat[] = ['hard', 'hard', 'off', 'off', 'off', 'off'];
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, maxPower: 60 }, { seats }) as ClassicMatch;
+    const dt = 1 / 30;
+    let fired = 0;
+    for (let t = 0; t < 300 && m.phase !== 'roundOver'; t += dt) {
+      m.update(dt);
+      if (m.phase === 'killcam') m.advance();
+      if (m.phase === 'flying') fired++;
+      for (const p of m.players) expect(p.power).toBeLessThanOrEqual(60);
+    }
+    expect(fired).toBeGreaterThan(0);
+  });
+});
+
 describe('event horizon match', () => {
   it('restores authoritative planning state and black-hole world', () => {
     const host = createMatch('horizon', { ...DEFAULT_SETTINGS, rounds: 3 }, { seats: ['human', 'human', 'off', 'off', 'off', 'off'] }) as HorizonMatch;

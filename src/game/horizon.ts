@@ -1,4 +1,4 @@
-import { HORIZON, PHYSICS, SCORING, COLORS } from '../config';
+import { AIM, HORIZON, PHYSICS, SCORING, COLORS } from '../config';
 import { t } from '../i18n';
 import { cloneWorld, type ShotRules, type StyleKind, type World } from '../physics';
 import { scoreHorizonKill } from '../scoring';
@@ -182,7 +182,7 @@ export class HorizonMatch extends Match {
     if (!this.canAim(id)) return;
     const p = this.players[id];
     p.angle = ((angle % 360) + 360) % 360;
-    if (!this.settings.fixedPower) p.power = Math.min(100, Math.max(0, power));
+    if (!this.settings.fixedPower) p.power = Math.min(this.settings.maxPower, Math.max(AIM.MIN_POWER, power));
   }
 
   commitPlayer(id: number): void {

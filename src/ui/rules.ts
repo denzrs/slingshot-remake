@@ -1,4 +1,4 @@
-import { GRACE, TRAIL_FADE } from '../config';
+import { AIM, GRACE, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
 import type { RoomRules } from '../net';
 
@@ -23,6 +23,7 @@ export function ruleRows(): RuleRow[] {
     { key: 'invisiblePlanets', label: t('settings.invisible'), options: onOff(), classicOnly: true },
     { key: 'bounce', label: t('settings.bounce'), options: onOff() },
     { key: 'fixedPower', label: t('settings.fixedPower'), options: onOff() },
+    { key: 'maxPower', label: t('settings.maxPower'), options: AIM.CAP_OPTIONS.map((n) => ({ value: n, label: String(n) })) },
     { key: 'shotTime', label: t('settings.shotTime'), options: [10, 20, 30, 60].map((n) => ({ value: n, label: t('settings.seconds', { n }) })) },
     { key: 'styleBonuses', label: t('settings.styleBonuses'), options: onOff(), classicOnly: true },
     { key: 'neighborGrace', label: t('settings.neighborGrace'), options: GRACE.OPTIONS.map((n) => ({ value: n, label: n ? t(n === 1 ? 'settings.oneRound' : 'settings.nRounds', { n }) : t('common.off') })) },

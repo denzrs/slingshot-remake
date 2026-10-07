@@ -23,6 +23,8 @@ export interface PlanOptions {
   attempt: number;
   /** When set, only the angle is searched. */
   fixedPower: number | null;
+  /** The highest power the CPU may choose (default: no cap). */
+  maxPower?: number;
   rng: Rng;
   /** Scales the search size (1 = full); lower it when several CPUs plan at once. */
   effort?: number;
@@ -50,9 +52,10 @@ function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, fri
  */
 export function* planShot(world: World, shooter: number, opts: PlanOptions): Generator<void, Aim> {
   const { rng, rules, fixedPower } = opts;
+  const maxPower = opts.maxPower ?? AIM.MAX_POWER;
   // Planning with a shorter horizon keeps the search cheap; long orbits rarely make good shots anyway.
   const planRules: ShotRules = { ...rules, timeLimit: Math.min(rules.timeLimit, opts.lookahead ?? 12) };
-  const randomPower = () => fixedPower ?? 15 + rng() * 85;
+  const randomPower = () => fixedPower ?? Math.min(maxPower, 15 + rng() * 85);
 
   type Candidate = Aim & { cost: number };
   const pool: Candidate[] = [];
@@ -85,7 +88,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     for (let i = 0; i < 45 && local.cost > -0.5; i++) {
       const aim = {
         angle: normalizeAngle(local.angle + gaussian(rng) * spread),
-        power: fixedPower ?? clampPower(local.power + gaussian(rng) * spread),
+        power: fixedPower ?? clampPower(local.power + gaussian(rng) * spread, maxPower),
       };
       const cost = evaluate(world, shooter, aim, planRules, friends);
       if (cost < local.cost) local = { ...aim, cost };
@@ -100,12 +103,12 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const scale = Math.pow(err.decay, opts.attempt);
   return {
     angle: normalizeAngle(best.angle + gaussian(rng) * err.angle * scale),
-    power: fixedPower ?? clampPower(best.power + gaussian(rng) * err.power * scale),
+    power: fixedPower ?? clampPower(best.power + gaussian(rng) * err.power * scale, maxPower),
   };
 }
 
-function clampPower(p: number): number {
-  return Math.min(AIM.MAX_POWER, Math.max(5, p));
+function clampPower(p: number, max: number): number {
+  return Math.min(max, Math.max(5, p));
 }
 
 /** Run a planner to completion synchronously (tests, tooling). */

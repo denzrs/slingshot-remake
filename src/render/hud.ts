@@ -119,7 +119,7 @@ export class Hud {
     const powerText = hidden ? '—'.padStart(6, ' ') : fmt(p.power, 2).padStart(6, ' ');
     ctx.fillText(`${pad(t('hud.angle'))} ${angleText}${hidden ? '' : '°'}`, x, y + 52 * k);
     ctx.fillText(`${pad(t('hud.power'))} ${powerText}${!hidden && match.settings.fixedPower ? t('hud.fixedSuffix') : ''}`, x, y + 68 * k);
-    if (!hidden) this.drawGauge(align === 'left' ? x : x - 128 * k, y + 86 * k, 128 * k, p, align === 'right');
+    if (!hidden) this.drawGauge(align === 'left' ? x : x - 128 * k, y + 86 * k, 128 * k, p, align === 'right', match.settings.maxPower);
     ctx.globalAlpha = 1;
   }
 
@@ -245,7 +245,7 @@ export class Hud {
     ctx.textAlign = 'right';
     ctx.fillText(t('hud.angle'), x + w - 8 * k, y + 8 * k);
     ctx.fillText(t('hud.power'), x + w - 8 * k, y + 24 * k);
-    this.drawGauge(x + 9 * k, y + h - 6 * k, w - 18 * k, p, false);
+    this.drawGauge(x + 9 * k, y + h - 6 * k, w - 18 * k, p, false, match.settings.maxPower);
 
     const clock = match.shotClock;
     if (clock !== null) {
@@ -257,13 +257,19 @@ export class Hud {
     }
   }
 
-  private drawGauge(x: number, y: number, w: number, p: PlayerState, fromRight: boolean): void {
+  private drawGauge(x: number, y: number, w: number, p: PlayerState, fromRight: boolean, cap: number): void {
     const { ctx, k } = this;
     ctx.fillStyle = rgba(COLORS.line, 0.35);
     ctx.fillRect(x, y, w, 2 * k);
     ctx.fillStyle = p.color;
     const fill = (p.power / AIM.MAX_POWER) * w;
     ctx.fillRect(fromRight ? x + w - fill : x, y, fill, 2 * k);
+    if (cap < AIM.MAX_POWER) {
+      // A tick where the power cap ends.
+      const at = (cap / AIM.MAX_POWER) * w;
+      ctx.fillStyle = rgba(COLORS.bone, 0.7);
+      ctx.fillRect((fromRight ? x + w - at : x + at) - k / 2, y - 2 * k, k, 6 * k);
+    }
   }
 
   // ————————————————————————————— Daily challenge —————————————————————————————
