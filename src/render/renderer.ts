@@ -268,7 +268,7 @@ export class Renderer {
 
   /**
    * Chevron on the field edge pointing at a shot that has left the plate, with how far outside the field it is (0 at the edge,
-   * counting up until it counts as lost). The chevron flashes in the last stretch.
+   * counting up in steps of 10 until it counts as lost). The chevron turns white in the last stretch.
    */
   private drawOffscreenMarker(x: number, y: number, color: string): void {
     const { ctx } = this;
@@ -278,7 +278,6 @@ export class Renderer {
     const a = Math.atan2(y - cy, x - cx);
     const beyond = Math.max(-x, x - FIELD.width, -y, y - FIELD.height, 0);
     const left = Math.max(0, 1 - beyond / PHYSICS.OUT_MARGIN);
-    const pulse = 0.65 + 0.35 * Math.sin(this.time * (8 + 22 * (1 - left)));
     const danger = left < 0.25;
     ctx.save();
     ctx.translate(cx, cy);
@@ -290,14 +289,14 @@ export class Renderer {
     ctx.lineTo(-5, -6);
     ctx.lineTo(-5, 6);
     ctx.closePath();
-    ctx.fillStyle = rgba(danger ? COLORS.bone : color, pulse);
+    ctx.fillStyle = rgba(danger ? COLORS.bone : color, 0.9);
     ctx.fill();
     ctx.restore();
     ctx.font = `600 15px ${FONTS.mono}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = rgba(danger ? COLORS.bone : color, 0.9);
-    ctx.fillText(String(Math.round(beyond)), -Math.cos(a) * 30, -Math.sin(a) * 30);
+    ctx.fillText(String(Math.round(beyond / 10) * 10), -Math.cos(a) * 30, -Math.sin(a) * 30);
     ctx.restore();
   }
 
