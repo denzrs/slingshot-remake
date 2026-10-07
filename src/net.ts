@@ -21,6 +21,10 @@ export type ClientMessage =
   | { type: 'join_room'; roomId: string; name: string; password?: string }
   | { type: 'ready'; ready: boolean }
   | { type: 'set_rules'; rules: RoomRules }
+  /** Pick your own team (team rooms, while waiting); you have to be ready again afterwards. */
+  | { type: 'set_team'; team: 0 | 1 }
+  /** Host only: deal everybody back out to the two teams in the order they joined. */
+  | { type: 'reset_teams' }
   | { type: 'start_game' }
   | { type: 'input'; input: ClientInput }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }

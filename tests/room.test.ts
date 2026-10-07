@@ -257,3 +257,104 @@ describe('room rules', () => {
   });
 });
 
+describe('teams', () => {
+  const teamsOf = (c: FakeClient) => c.last('room_update')!.room.players.map((p: { team: number }) => p.team);
+
+  /** A team room with `names` in it, in join order. */
+  function teamRoom(names: string[], extra: Message = {}) {
+    const { manager, client } = setup();
+    const clients = names.map(() => client());
+    manager.handle(clients[0], create({ mode: 'team', name: names[0], maxPlayers: 6, ...extra }));
+    const roomId = clients[0].last('room_update')!.room.id;
+    names.slice(1).forEach((name, i) => manager.handle(clients[i + 1], { type: 'join_room', roomId, name }));
+    return { manager, clients };
+  }
+
+  it('send each newcomer to the smaller team', () => {
+    const { clients } = teamRoom(['A', 'B', 'C', 'D', 'E']);
+    expect(teamsOf(clients[0])).toEqual([0, 1, 0, 1, 0]);
+  });
+
+  it('let everybody pick their own, which only un-readies them', () => {
+    const { manager, clients } = teamRoom(['A', 'B', 'C']);
+    const [a, b, c] = clients;
+    manager.handle(b, { type: 'ready', ready: true });
+    manager.handle(c, { type: 'ready', ready: true });
+    manager.handle(c, { type: 'set_team', team: 1 });
+    expect(teamsOf(a)).toEqual([0, 1, 1]);
+    const ready = a.last('room_update')!.room.players.map((p: { ready: boolean }) => p.ready);
+    expect(ready).toEqual([false, true, false]);
+    // Picking the team you are in is no change at all: nobody is told, nobody is un-readied.
+    manager.handle(c, { type: 'ready', ready: true });
+    const updates = a.count('room_update');
+    manager.handle(c, { type: 'set_team', team: 1 });
+    expect(a.count('room_update')).toBe(updates);
+    expect(a.last('room_update')!.room.players[2].ready).toBe(true);
+  });
+
+  it('stay as picked when somebody leaves', () => {
+    const { manager, clients } = teamRoom(['A', 'B', 'C']);
+    const [a, b, c] = clients;
+    manager.handle(c, { type: 'set_team', team: 1 });
+    manager.handle(b, { type: 'leave_room' });
+    expect(teamsOf(a)).toEqual([0, 1]);
+    expect(a.last('room_update')!.room.players.map((p: { id: number }) => p.id)).toEqual([0, 1]);
+    expect(c.last('room_update')!.you.playerId).toBe(1);
+  });
+
+  it('only exist in team rooms and only as team 0 or 1', () => {
+    const { manager, clients } = teamRoom(['A', 'B']);
+    for (const team of [2, -1, '1', null, undefined]) {
+      manager.handle(clients[1], { type: 'set_team', team });
+      expect(clients[1].last('error')!.message).toMatch(/team must be 0 or 1/);
+    }
+    const ffa = setup();
+    const host = ffa.client();
+    ffa.manager.handle(host, create());
+    ffa.manager.handle(host, { type: 'set_team', team: 1 });
+    expect(host.last('error')!.message).toMatch(/only exist in team rooms/i);
+    ffa.manager.handle(host, { type: 'reset_teams' });
+    expect(host.last('error')!.message).toMatch(/only exist in team rooms/i);
+  });
+
+  it('are reset by the host alone, dealt out one after the other, everybody unready', () => {
+    const { manager, clients } = teamRoom(['A', 'B', 'C', 'D']);
+    const [a, b, c, d] = clients;
+    manager.handle(b, { type: 'set_team', team: 0 });
+    manager.handle(c, { type: 'set_team', team: 0 });
+    manager.handle(d, { type: 'set_team', team: 0 });
+    for (const client of clients) manager.handle(client, { type: 'ready', ready: true });
+    manager.handle(b, { type: 'reset_teams' });
+    expect(b.last('error')!.message).toMatch(/only the room host/i);
+    manager.handle(a, { type: 'reset_teams' });
+    expect(teamsOf(a)).toEqual([0, 1, 0, 1]);
+    expect(a.last('room_update')!.room.players.every((p: { ready: boolean }) => !p.ready)).toBe(true);
+  });
+
+  it('cannot start a game with one team empty, not even when everybody is ready', () => {
+    const { manager, clients } = teamRoom(['A', 'B']);
+    const [a, b] = clients;
+    manager.handle(b, { type: 'set_team', team: 0 });
+    manager.handle(b, { type: 'ready', ready: true });
+    manager.handle(a, { type: 'ready', ready: true });
+    expect(a.count('game_start')).toBe(0);
+    manager.handle(a, { type: 'start_game' });
+    expect(a.last('error')!.message).toMatch(/both teams/i);
+    // Once somebody changes sides, the game can begin.
+    manager.handle(b, { type: 'set_team', team: 1 });
+    manager.handle(b, { type: 'ready', ready: true });
+    manager.handle(a, { type: 'start_game' });
+    expect(a.last('game_start')!.players.map((p: { team: number }) => p.team)).toEqual([0, 1]);
+  });
+
+  it('cannot be changed once the game is running', () => {
+    const { manager, clients } = teamRoom(['A', 'B']);
+    const [a, b] = clients;
+    manager.handle(b, { type: 'ready', ready: true });
+    manager.handle(a, { type: 'start_game' });
+    manager.handle(b, { type: 'set_team', team: 0 });
+    expect(b.last('error')!.message).toMatch(/waiting room/i);
+    manager.handle(a, { type: 'reset_teams' });
+    expect(a.last('error')!.message).toMatch(/running/i);
+  });
+});

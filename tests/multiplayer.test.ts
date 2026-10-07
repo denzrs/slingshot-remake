@@ -127,6 +127,33 @@ describe('online games', () => {
     expect(guest.notice).toMatch(/host/i);
   });
 
+  it('lets everybody pick their own team, and the host deal them out again', async () => {
+    const relay = new RoomManager();
+    const connect = async () => {
+      const session = new MultiplayerSession({ settings: () => cloneSettings(DEFAULT_SETTINGS), matchStarted() {}, matchRestarted() {}, matchEnded() {} }, new Loopback(relay));
+      await session.connect('loopback');
+      return session;
+    };
+    const teams = (s: MultiplayerSession) => s.room!.players.map((p) => p.team);
+    const host = await connect();
+    const guest = await connect();
+    host.createRoom({ name: 'Anna', mode: 'team', gameMode: 'classic', rules, maxPlayers: 4 });
+    guest.joinRoom(guest.rooms[0].id, 'Ben');
+    expect(teams(guest)).toEqual([0, 1]);
+
+    guest.setTeam(0);
+    expect(teams(host)).toEqual([0, 0]);
+    host.setTeam(1);
+    expect(teams(guest)).toEqual([1, 0]);
+
+    // Only the host deals the teams out again.
+    guest.resetTeams();
+    expect(guest.notice).toMatch(/host/i);
+    expect(teams(host)).toEqual([1, 0]);
+    host.resetTeams();
+    expect(teams(guest)).toEqual([0, 1]);
+  });
+
   it('let only the host move on from the scorecard', async () => {
     const { host, guest } = await startRoom('classic');
     expect(host.match().canAdvance).toBe(true);

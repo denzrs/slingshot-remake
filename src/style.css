@@ -1072,8 +1072,13 @@ body {
   gap: 14px;
 }
 
-.lobby__head .setup__title {
+.lobby__head .setup__title,
+.lobby__head .lobby__note {
   flex: 1;
+}
+
+.lobby__head .lobby__button[hidden] {
+  display: none;
 }
 
 .lobby__head .lobby__button {
@@ -1206,6 +1211,10 @@ body {
   line-height: 1.5;
 }
 
+.lobby__rules-note[hidden] {
+  display: none;
+}
+
 .lobby__rules-note.is-locked {
   padding: 9px 12px;
   border: 1px solid rgb(255 210 122 / 0.4);
@@ -1312,8 +1321,9 @@ body {
 
 .lobby__players li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 9px;
+  gap: 8px 9px;
   padding: 9px 12px;
   border: 1px solid rgb(91 125 179 / 0.28);
   border-radius: 3px;

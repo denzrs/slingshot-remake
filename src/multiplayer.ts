@@ -115,6 +115,16 @@ export class MultiplayerSession {
     this.send({ type: 'set_rules', rules });
   }
 
+  /** Pick your own team while the team room waits. */
+  setTeam(team: 0 | 1): void {
+    this.send({ type: 'set_team', team });
+  }
+
+  /** Host only: deal everybody back out to the two teams. */
+  resetTeams(): void {
+    this.send({ type: 'reset_teams' });
+  }
+
   startGame(): void {
     this.send({ type: 'start_game' });
   }

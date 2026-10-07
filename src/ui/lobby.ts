@@ -241,7 +241,12 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
 
   const roomTitle = h('h3.setup__title', null);
   const roomCount = h('p.lobby__note', null);
+  /** Host only, in team rooms: deal everybody back out to the teams. */
+  const resetTeams = button(t('multiplayer.resetTeams'));
+  resetTeams.addEventListener('click', () => session.resetTeams());
   const players = h('ul.lobby__players', null);
+  /** In team rooms, while a team has nobody in it. */
+  const teamWarning = h('p.lobby__rules-note.is-locked', null, t('multiplayer.teamsNeedPlayers'));
   /** Where the rules of the room are: sliders for the host, the same, locked, for everybody else. */
   const roomRules = h('div', null);
   /** Above the rules: that they reset everybody's "ready" (host), or that they are not yours to change (everyone else). */
@@ -254,7 +259,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   ready.addEventListener('click', () => session.setReady(!selfReady));
   start.addEventListener('click', () => session.startGame());
   leave.addEventListener('click', () => session.leaveRoom());
-  const roomView = h('section.lobby__card.lobby__card--wide', null, roomTitle, roomCount, players, rulesNote, roomRules, roomNote, h('div.lobby__actions', null, ready, start, leave));
+  const roomView = h('section.lobby__card.lobby__card--wide', null, roomTitle, h('div.lobby__head', null, roomCount, resetTeams), players, teamWarning, rulesNote, roomRules, roomNote, h('div.lobby__actions', null, ready, start, leave));
 
   /** The rules as the host is editing them; the room's own once nobody is. */
   let draft: RoomRules | null = null;
@@ -279,29 +284,56 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     },
   });
 
+  /** Your own team: one button per team, in its colour. */
+  const teamPicker = (current: number) =>
+    h(
+      'span.seat__group.lobby__teams',
+      { role: 'radiogroup', 'aria-label': t('multiplayer.yourTeam') },
+      ...[0, 1].map((k) => {
+        const pick = h(`button.pill.pill--tone${k === current ? '.is-on' : ''}`, { type: 'button', role: 'radio', 'aria-checked': String(k === current), 'data-pick-team': String(k) }, teamName(k));
+        pick.style.setProperty('--tone', TEAMS[k][0]);
+        pick.addEventListener('click', () => {
+          sound.blip();
+          session.setTeam(k as 0 | 1);
+        });
+        return pick;
+      }),
+    );
+
   const renderRoom = (room: RoomInfo) => {
     const { you } = session;
     const self = room.players.find((p) => p.id === you.playerId);
     selfReady = !!self?.ready;
     roomTitle.textContent = `${t('multiplayer.room')} · ${modeName(room.gameMode)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`;
-    roomCount.textContent = `${room.players.length}/${room.maxPlayers} ${t('multiplayer.players')}`;
+    const teamGame = room.mode === 'team';
+    const inTeam = (k: number) => room.players.filter((p) => p.team === k).length;
+    const teamsReady = !teamGame || (inTeam(0) > 0 && inTeam(1) > 0);
+    roomCount.textContent = [`${room.players.length}/${room.maxPlayers} ${t('multiplayer.players')}`, ...(teamGame ? [0, 1].map((k) => `${teamName(k)} ${inTeam(k)}`) : [])].join(' · ');
+    resetTeams.hidden = !(teamGame && you.host);
+    teamWarning.hidden = teamsReady;
+
+    // The list is rebuilt at every update, so the team button that has the keyboard has to get it back.
+    const picking = (document.activeElement as HTMLElement | null)?.dataset.pickTeam;
     players.replaceChildren(
       ...room.players.map((player) => {
         const dot = h('span.lobby__dot', null);
-        if (room.mode === 'team') dot.style.background = TEAMS[player.team][0];
+        if (teamGame) dot.style.background = TEAMS[player.team][0];
         else dot.classList.add('lobby__dot--none');
+        const mine = player.id === you.playerId;
         return h(
           'li',
           null,
           dot,
           h('span.lobby__player-name', null, player.name),
-          ...(player.id === you.playerId ? [h('span.lobby__tag', null, t('multiplayer.you'))] : []),
+          ...(mine ? [h('span.lobby__tag', null, t('multiplayer.you'))] : []),
           ...(player.id === 0 ? [h('span.lobby__tag.lobby__tag--host', null, t('multiplayer.host'))] : []),
-          ...(room.mode === 'team' ? [h('span.lobby__tag', null, teamName(player.team))] : []),
+          // Everybody picks their own team; what the others picked is shown, not editable.
+          ...(teamGame ? [mine ? teamPicker(player.team) : h('span.lobby__tag', null, teamName(player.team))] : []),
           h(player.ready ? 'span.lobby__ready.lobby__ready--on' : 'span.lobby__ready', null, player.ready ? `✓ ${t('multiplayer.ready')}` : t('multiplayer.notReady')),
         );
       }),
     );
+    if (picking) players.querySelector<HTMLElement>(`[data-pick-team="${picking}"]`)?.focus();
 
     // The sliders live as long as the room does: rebuilding them at every update would drop the one being dragged.
     const key = `${room.id}|${room.gameMode}|${you.host}`;
@@ -323,7 +355,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     ready.classList.toggle('lobby__button--primary', !self?.ready);
     start.hidden = !you.host;
     // Everybody but the host must be ready; the host's click is its own "ready".
-    start.disabled = room.players.length < 2 || !room.players.every((p) => p.id === 0 || p.ready);
+    start.disabled = room.players.length < 2 || !room.players.every((p) => p.id === 0 || p.ready) || !teamsReady;
   };
 
   // ————————————————————————————— Rendering —————————————————————————————
