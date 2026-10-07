@@ -1,4 +1,4 @@
-import { GRACE, TRAIL_FADE } from './config';
+import { AIM, GRACE, TRAIL_FADE } from './config';
 import type { NetworkGameMode, RoomMode, RoomRules } from './net';
 import type { Settings } from './settings';
 
@@ -25,6 +25,7 @@ export const rulesOf = (s: Settings): RoomRules => ({
   invisiblePlanets: s.invisiblePlanets,
   bounce: s.bounce,
   fixedPower: s.fixedPower,
+  maxPower: s.maxPower,
   shotTime: s.shotTime,
   styleBonuses: s.styleBonuses,
   neighborGrace: s.neighborGrace,
@@ -50,6 +51,7 @@ export function loadLobbyPrefs(defaultServer: string, settings: Settings): Lobby
       rules: {
         ...fresh.rules,
         ...saved.rules,
+        maxPower: AIM.CAP_OPTIONS.includes(saved.rules?.maxPower as number) ? saved.rules!.maxPower : fresh.rules.maxPower,
         fadingTrails: TRAIL_FADE.OPTIONS.includes(saved.rules?.fadingTrails as number) ? saved.rules!.fadingTrails : fresh.rules.fadingTrails,
         // It used to be a plain on/off switch, "on" meaning two shots.
         neighborGrace: (saved.rules?.neighborGrace as unknown) === true ? 2 : GRACE.OPTIONS.includes(saved.rules?.neighborGrace as number) ? saved.rules!.neighborGrace : fresh.rules.neighborGrace,

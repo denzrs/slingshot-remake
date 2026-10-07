@@ -166,7 +166,7 @@ describe('rooms', () => {
 });
 
 describe('room rules', () => {
-  const rules = { rounds: 3, maxPlanets: 6, invisiblePlanets: true, bounce: true, fixedPower: false, shotTime: 30, styleBonuses: true, neighborGrace: 2, simultaneousShots: true, hiddenAim: true, fadingTrails: 2 };
+  const rules = { rounds: 3, maxPlanets: 6, invisiblePlanets: true, bounce: true, fixedPower: false, maxPower: 70, shotTime: 30, styleBonuses: true, neighborGrace: 2, simultaneousShots: true, hiddenAim: true, fadingTrails: 2 };
 
   it('start with sensible defaults when none are sent', () => {
     const { manager, client } = setup();
@@ -188,10 +188,18 @@ describe('room rules', () => {
     expect(guest.last('game_start')!.rules).toEqual(rules);
   });
 
+  it('accept rules from clients that predate the power cap', () => {
+    const { manager, client } = setup();
+    const host = client();
+    const { maxPower: _cap, ...old } = rules;
+    manager.handle(host, create({ rules: old }));
+    expect(host.last('room_update')!.room.rules.maxPower).toBe(100);
+  });
+
   it('are validated', () => {
     const { manager, client } = setup();
     const host = client();
-    for (const bad of [{ ...rules, maxPlanets: 99 }, { ...rules, shotTime: 1 }, { ...rules, bounce: 'yes' }, { ...rules, neighborGrace: 'yes' }, { ...rules, neighborGrace: true }, { ...rules, neighborGrace: 3 }, { ...rules, simultaneousShots: 1 }, { ...rules, hiddenAim: 'yes' }, { ...rules, fadingTrails: true }, { ...rules, fadingTrails: 3 }, { ...rules, rounds: 1.5 }, 'nope', null]) {
+    for (const bad of [{ ...rules, maxPlanets: 99 }, { ...rules, shotTime: 1 }, { ...rules, bounce: 'yes' }, { ...rules, neighborGrace: 'yes' }, { ...rules, neighborGrace: true }, { ...rules, neighborGrace: 3 }, { ...rules, simultaneousShots: 1 }, { ...rules, hiddenAim: 'yes' }, { ...rules, fadingTrails: true }, { ...rules, fadingTrails: 3 }, { ...rules, maxPower: 75 }, { ...rules, maxPower: '70' }, { ...rules, maxPower: 0 }, { ...rules, maxPower: 110 }, { ...rules, rounds: 1.5 }, 'nope', null]) {
       manager.handle(host, create({ rules: bad }));
       expect(host.last('error')!.message).toMatch(/rules/i);
     }

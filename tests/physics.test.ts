@@ -172,6 +172,14 @@ describe('cpu planner', () => {
     expect(hits).toBeGreaterThanOrEqual(seeds * 0.8);
   });
 
+  it('never plans a shot above the power cap', () => {
+    for (let seed = 1; seed <= 8; seed++) {
+      const world = generateWorld(seed * 7919, { maxPlanets: 5, players: 2, blackHole: false });
+      const aim = planShotNow(world, 0, { rules, level: 'hard', attempt: 0, fixedPower: null, maxPower: 50, rng: createRng(seed) });
+      expect(aim.power).toBeLessThanOrEqual(50);
+    }
+  });
+
   it('hits some enemy in a crowded black-hole arena', () => {
     const horizonRules = { bounce: true, timeLimit: HORIZON.SHOT_TIME };
     let hits = 0;
