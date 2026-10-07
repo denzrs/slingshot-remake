@@ -14,7 +14,7 @@ export const PHYSICS = {
   /** Distance from ship centre where the projectile spawns. */
   MUZZLE: 20,
   /** How far a shot may leave the field before it counts as lost (without reflecting edges). */
-  OUT_MARGIN: 300,
+  OUT_MARGIN: 400,
   /** Two projectiles closer than this annihilate each other. */
   CLASH_RADIUS: 7,
 } as const;
