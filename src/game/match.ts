@@ -1,8 +1,9 @@
-import { measureReconstruction, planExperimentalShot, type ExperimentalDecision, type GravityFit } from '../experimental-ai';
-import { planShot, type Aim, type CpuLevel } from '../ai';
+import { advanceExperimentalWorld, createExperimentalLearner, measureReconstruction, observeExperimentalShot, planExperimentalShot, type ExperimentalDecision, type ExperimentalLearner, type ExperimentalWorld, type GravityFit } from '../experimental-ai';
+import { ExperimentalWorkerCancelledError, ExperimentalWorkerClient } from '../experimental-worker-client';
+import { EXPERIMENTAL_PRESETS, isExperimentalCpu, planShot, type Aim, type CpuLevel, type ExperimentalCpuConfig } from '../ai';
 import { AIM, COLORS, FIELD, GRACE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
-import { normalizeAngle, type ShotRules, type StyleKind, type World } from '../physics';
+import { normalizeAngle, type ShotEnd, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
 import { seatTeamsFor, type Seat, type Settings } from '../settings';
@@ -115,6 +116,57 @@ export type GameEvent =
   | { type: 'roundEnd' }
   | { type: 'gameOver' };
 
+/** Diagnostics from planning; actual gravity is used only to score reconstruction after planning. */
+export interface ExperimentalReport {
+  mode: Mode;
+  round: number;
+  player: number;
+  shot: number;
+  learningRate: number;
+  /** Public initial belief, independent of evidence assimilated at learningRate. */
+  startingKnowledge: number;
+  observedShots: number;
+  learnedShots: number;
+  retainedShots: number;
+  samples: number;
+  /** Previous completed shot's pre-update validation; not a forecast of this launch. */
+  predictionRms: number | null;
+  predictionSamples: number;
+  fitMs: number;
+  decision: ExperimentalDecision;
+  relativeGravityMapRms: number;
+}
+
+/** Post-ingestion evidence state; prediction validates this shot against the pre-update fit. */
+export interface ExperimentalObservationReport {
+  learningRate: number;
+  startingKnowledge: number;
+  observedShots: number;
+  learnedShots: number;
+  retainedShots: number;
+  samples: number;
+  predictionRms: number | null;
+  predictionSamples: number;
+  fitMs: number;
+}
+
+/** Authoritative result of a real shot, never a visual extrapolation or killcam replay. */
+export interface CompletedShotReport {
+  mode: Mode;
+  round: number;
+  player: number;
+  shot: number;
+  /** Index within the launched volley, distinct from the player's round shot ordinal. */
+  volleyShot: number;
+  hitRelation: 'enemy' | 'friendly' | 'self' | null;
+  outcome: ShotEnd['kind'];
+  end: ShotEnd;
+  hitShip: number | null;
+  elapsed: number;
+  /** Own real-flight observation, captured before any following planning or field transition. */
+  experimentalObservation: ExperimentalObservationReport | null;
+}
+
 export interface MatchOptions {
   /** Attract mode (title screen): rounds continue on their own, forever. */
   attract?: boolean;
@@ -126,6 +178,18 @@ export interface MatchOptions {
   teams?: number[];
   /** Event Horizon online: every human aims at once instead of one after another at a shared keyboard. */
   simultaneous?: boolean;
+  /** Reproducible multi-round worlds, independent of planner random consumption. */
+  seed?: number;
+  /** Custom experimental evidence rate only: finite values clamp to [0, 1], nonfinite values use 0, omitted uses 1. */
+  experimentalLearningRate?: number;
+  /** Custom experimental public prior only: finite values clamp to [0, 1], nonfinite values use 0, omitted uses 1. */
+  experimentalStartingKnowledge?: number;
+  /** Finish CPU generators without a wall-clock budget, for deterministic simulation. */
+  deterministicCpu?: boolean;
+  /** Inject a worker client for hosts that provide their own Worker implementation. */
+  experimentalWorkerClient?: () => ExperimentalWorkerClient;
+  onExperimentalDecision?: (report: ExperimentalReport) => void;
+  onShotComplete?: (report: CompletedShotReport) => void;
 }
 
 interface CpuJob {
@@ -175,7 +239,19 @@ export abstract class Match {
   /** Whether this screen may move the match on (next round, skip the killcam, rematch). Online only the host may. */
   canAdvance = true;
 
-  protected readonly rng: Rng = createRng(randomSeed());
+  protected rng: Rng;
+  private readonly matchSeed: number;
+  private worldRng: Rng;
+  private plannerRngs = new Map<number, Rng>();
+  private experimentalLearners = new Map<number, ExperimentalLearner>();
+  private experimentalWorlds = new Map<number, ExperimentalWorld>();
+  private flightObservation: ExperimentalWorld | null = null;
+  private experimentalWorker: ExperimentalWorkerClient | null = null;
+  private experimentalGeneration = 0;
+  private experimentalPending = new Set<number>();
+  private experimentalError: Error | null = null;
+  private flightPending = false;
+  private disposed = false;
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
   protected simClock = 0;
@@ -183,7 +259,11 @@ export abstract class Match {
   constructor(
     public settings: Settings,
     protected readonly options: MatchOptions = {},
-  ) {}
+  ) {
+    this.matchSeed = options.seed ?? randomSeed();
+    this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
+    this.worldRng = createRng(this.matchSeed);
+  }
 
   abstract get rules(): ShotRules;
   /** Enter / "ready": classic fires, Event Horizon locks the aim in. */
@@ -201,6 +281,41 @@ export abstract class Match {
 
   on(listener: (e: GameEvent) => void): void {
     this.listeners.push(listener);
+  }
+
+  /** Release the fitting worker when this match leaves the application. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.resetExperimentalState();
+    this.experimentalWorker?.dispose();
+    this.experimentalWorker = null;
+    this.listeners.length = 0;
+  }
+
+  private resetExperimentalState(): void {
+    this.experimentalGeneration++;
+    this.experimentalWorker?.reset();
+    this.experimentalPending.clear();
+    this.experimentalLearners.clear();
+    this.experimentalWorlds.clear();
+    this.experimentalError = null;
+    this.flightPending = false;
+    this.flightObservation = null;
+    this.cpuJobs.clear();
+  }
+
+  private workerForFitting(): ExperimentalWorkerClient | null {
+    if (this.options.deterministicCpu || this.disposed) return null;
+    if (!this.experimentalWorker && (this.options.experimentalWorkerClient || typeof Worker !== 'undefined')) {
+      this.experimentalWorker = this.options.experimentalWorkerClient?.() ?? new ExperimentalWorkerClient();
+    }
+    return this.experimentalWorker;
+  }
+
+  private failExperimental(error: unknown, generation: number): void {
+    if (generation !== this.experimentalGeneration || error instanceof ExperimentalWorkerCancelledError) return;
+    this.experimentalError = error instanceof Error ? error : new Error(String(error));
   }
 
   /** Dispatch authoritative events on clients that do not run the simulation. */
@@ -363,6 +478,10 @@ export abstract class Match {
   }
 
   newMatch(): void {
+    this.worldRng = createRng(this.options.seed ?? randomSeed());
+    this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
+    this.plannerRngs.clear();
+    this.experimentalLearners.clear();
     const seats = this.options.seats ?? this.settings.seats;
     const taken = seats.flatMap((seat, i) => (seat === 'off' ? [] : [{ seat: i, kind: seat }]));
     const teams = this.attract ? null : (this.options.teams ?? seatTeamsFor(this.settings, taken.map((s) => s.seat)));
@@ -387,10 +506,11 @@ export abstract class Match {
   }
 
   startRound(): void {
+    this.resetExperimentalState();
     this.round++;
     this.roundStats = newStatBook();
     this.roundStartedAt = this.clock;
-    this.world = generateWorld(randomSeed(), {
+    this.world = generateWorld(Math.floor(this.worldRng() * 2 ** 32), {
       maxPlanets: this.settings.maxPlanets,
       players: this.players.length,
       blackHole: this.mode === 'horizon',
@@ -454,6 +574,8 @@ export abstract class Match {
   }
 
   update(dt: number): void {
+    if (this.disposed) return;
+    if (this.experimentalError) throw this.experimentalError;
     this.clock += dt;
     this.phaseTime += dt;
     if (this.notice && this.clock - this.notice.at > 1.4) this.notice = null;
@@ -465,6 +587,7 @@ export abstract class Match {
   // ————————————————————————————— Flight —————————————————————————————
 
   protected launch(aims: VolleyAim[], trackStyle: boolean): void {
+    this.flightObservation = this.observedWorld(aims[0]?.player ?? 0);
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
     this.simClock = 0;
     this.cpuJobs.clear();
@@ -482,18 +605,26 @@ export abstract class Match {
   }
 
   private updateFlight(dt: number): void {
-    const volley = this.volley!;
+    if (this.flightPending || !this.volley) return;
+    const volley = this.volley;
     this.simClock += dt * this.flightSpeed;
     while (this.simClock >= PHYSICS.DT && !volley.done) {
       this.simClock -= PHYSICS.DT;
       for (const e of volley.step()) this.onVolleyEvent(volley, e, true);
     }
-    if (volley.done) {
-      this.recordFlights(volley);
+    if (!volley.done) return;
+    this.flightPending = true;
+    const generation = this.experimentalGeneration;
+    const finish = (): void => {
+      if (generation !== this.experimentalGeneration || this.volley !== volley || this.disposed) return;
       this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, angle: vs.shot.angle, power: vs.shot.power, volley: this.volleyNumber, at: this.clock })));
       this.volley = null;
+      this.flightPending = false;
       this.afterVolley();
-    }
+    };
+    const completion = this.completeShots(volley);
+    if (completion) completion.then(finish, (error: unknown) => this.failExperimental(error, generation));
+    else finish();
   }
 
   /**
@@ -514,6 +645,7 @@ export abstract class Match {
 
   /** A fresh snapshot replaced the state: the extrapolation starts over from it. */
   protected restarted(): void {
+    this.resetExperimentalState();
     this.simClock = 0;
   }
 
@@ -661,54 +793,186 @@ export abstract class Match {
 
   // ————————————————————————————— CPU —————————————————————————————
 
+  private experimentalConfigFor(id: number): Readonly<ExperimentalCpuConfig> {
+    const level = this.players[id].cpu;
+    if (!isExperimentalCpu(level)) throw new Error('Experimental configuration requires an experimental CPU');
+    if (level !== 'experimental') return EXPERIMENTAL_PRESETS[level];
+    const rate = this.options.experimentalLearningRate ?? 1;
+    const knowledge = this.options.experimentalStartingKnowledge ?? 1;
+    return {
+      learningRate: Number.isFinite(rate) ? Math.min(1, Math.max(0, rate)) : 0,
+      startingKnowledge: Number.isFinite(knowledge) ? Math.min(1, Math.max(0, knowledge)) : 0,
+    };
+  }
+
+  private learnerFor(id: number): ExperimentalLearner {
+    let learner = this.experimentalLearners.get(id);
+    if (!learner) {
+      learner = createExperimentalLearner(this.experimentalConfigFor(id).startingKnowledge);
+      this.experimentalLearners.set(id, learner);
+      this.experimentalWorlds.set(id, this.observedWorld(id));
+    }
+    return learner;
+  }
+
+  private plannerRngFor(id: number): Rng {
+    let rng = this.plannerRngs.get(id);
+    if (!rng) {
+      rng = createRng(this.matchSeed ^ Math.imul(this.players[id].seat + 1, 0x9e3779b9));
+      this.plannerRngs.set(id, rng);
+    }
+    return rng;
+  }
+
+  /** Only public geometry, never density, mass, or render-history dependent evidence. */
+  protected observedWorld(shooter: number): ExperimentalWorld {
+    const hole = this.world.hole;
+    return {
+      width: this.world.width,
+      height: this.world.height,
+      ships: this.world.ships.map((ship) => ({ ...ship })),
+      shooter,
+      planetCount: this.world.planets.length,
+      visiblePlanets: this.hiddenPlanets ? undefined : this.world.planets.map(({ seed, x, y, radius }) => ({ id: seed, x, y, radius })),
+      visibleHole: hole ? { x: hole.x, y: hole.y, radius: hole.radius } : undefined,
+      hasHole: hole !== null,
+      holeRadius: hole?.radius ?? 0,
+      mode: this.mode === 'horizon' ? 'horizon' : 'classic',
+      epoch: this.world.version,
+      rules: { bounce: this.rules.bounce },
+      shots: [],
+    };
+  }
+
+  protected advanceExperimentalField(swallowedPlanetIds: readonly number[], holeMassGain: number, feed: number): void {
+    const worker = this.experimentalLearners.size ? this.workerForFitting() : null;
+    const generation = this.experimentalGeneration;
+    for (const [id, learner] of this.experimentalLearners) {
+      const world = this.observedWorld(id);
+      const transition = { swallowedPlanetIds, holeMassGain, feed };
+      if (!worker) {
+        advanceExperimentalWorld(learner, world, transition);
+        this.experimentalWorlds.set(id, world);
+        continue;
+      }
+      this.experimentalPending.add(id);
+      const previousWorld = this.experimentalWorlds.get(id);
+      this.experimentalWorlds.set(id, world);
+      worker.advance(id, world, transition, this.experimentalConfigFor(id).startingKnowledge, previousWorld).then((updated) => {
+        if (generation !== this.experimentalGeneration || this.disposed) return;
+        this.experimentalLearners.set(id, updated);
+        this.experimentalPending.delete(id);
+      }, (error: unknown) => this.failExperimental(error, generation));
+    }
+  }
+
+  private observationReport(learner: ExperimentalLearner): ExperimentalObservationReport {
+    return {
+      learningRate: learner.learningRate,
+      startingKnowledge: learner.startingKnowledge,
+      observedShots: learner.observedShots,
+      learnedShots: learner.learnedShots,
+      retainedShots: learner.retainedShots ?? learner.evidence.length,
+      samples: learner.samples,
+      predictionRms: learner.predictionRms,
+      predictionSamples: learner.predictionSamples,
+      fitMs: learner.fitMs,
+    };
+  }
+
+  private completeShots(volley: Volley): Promise<void> | null {
+    const worker = volley.shots.some((vs) => isExperimentalCpu(this.players[vs.owner].cpu)) ? this.workerForFitting() : null;
+    const generation = this.experimentalGeneration;
+    const reports: CompletedShotReport[] = [];
+    const fits: Promise<void>[] = [];
+    for (const [index, vs] of volley.shots.entries()) {
+      const end = vs.shot.end;
+      if (!end) continue;
+      const player = this.players[vs.owner];
+      const report: CompletedShotReport = {
+        mode: this.mode,
+        round: this.round,
+        player: vs.owner,
+        shot: player.shots,
+        volleyShot: index,
+        hitRelation: end.kind !== 'ship' ? null : end.ship === vs.owner ? 'self' : this.friendsOf(vs.owner).includes(end.ship) ? 'friendly' : 'enemy',
+        outcome: end.kind,
+        end: { ...end },
+        hitShip: end.kind === 'ship' ? end.ship : null,
+        elapsed: vs.shot.time,
+        experimentalObservation: null,
+      };
+      reports.push(report);
+      if (!isExperimentalCpu(player.cpu) || !this.flightObservation) continue;
+      const shot = { shotId: player.shots, points: vs.trail, angle: vs.shot.angle, power: vs.shot.power };
+      const world = { ...this.flightObservation, shooter: vs.owner };
+      const config = this.experimentalConfigFor(vs.owner);
+      if (worker) {
+        this.experimentalPending.add(vs.owner);
+        this.experimentalWorlds.set(vs.owner, world);
+        fits.push(worker.submit(vs.owner, shot, world, config.learningRate, config.startingKnowledge).then((learner) => {
+          if (generation !== this.experimentalGeneration || this.disposed) return;
+          this.experimentalLearners.set(vs.owner, learner);
+          this.experimentalPending.delete(vs.owner);
+          report.experimentalObservation = this.observationReport(learner);
+        }));
+      } else {
+        const learner = this.learnerFor(vs.owner);
+        observeExperimentalShot(learner, shot, world, config.learningRate);
+        report.experimentalObservation = this.observationReport(learner);
+      }
+    }
+    const publish = (): void => {
+      if (generation !== this.experimentalGeneration || this.disposed) return;
+      this.recordFlights(volley);
+      this.flightObservation = null;
+      for (const report of reports) {
+        if (generation !== this.experimentalGeneration || this.disposed) return;
+        this.options.onShotComplete?.(report);
+      }
+    };
+    if (fits.length) return Promise.all(fits).then(publish);
+    publish();
+    return null;
+  }
+
   /** Think for the given CPU players, sharing a per-frame time budget round-robin. */
   protected runCpu(ids: number[], budgetMs: number, effort: number, lookahead?: number): void {
     for (const id of ids) {
-      if (this.cpuJobs.has(id)) continue;
+      if (this.cpuJobs.has(id) || this.experimentalPending.has(id)) continue;
       const p = this.players[id];
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
-      const planner = p.cpu === 'experimental'
-        ? planExperimentalShot({
-            width: this.world.width,
-            height: this.world.height,
-            ships: this.world.ships,
-            shooter: id,
-            planetCount: this.world.planets.length,
-            visiblePlanetPositions: this.world.planets.map(({ x, y }) => ({ x, y })),
-            hasHole: this.world.hole !== null,
-            holeRadius: this.world.hole?.radius ?? 0,
-            rules: this.rules,
-            shots: this.trails
-              .filter((trail): trail is Trail & Required<Pick<Trail, 'angle' | 'power'>> => trail.owner === id && trail.angle !== undefined && trail.power !== undefined)
-              .map(({ points, angle, power }) => ({ points, angle, power })),
-          }, {
+      const planner = isExperimentalCpu(p.cpu)
+        ? planExperimentalShot(this.observedWorld(id), {
             rules: this.rules,
             attempt: p.shots,
             fixedPower: this.settings.fixedPower ? AIM.FIXED_POWER : null,
-            rng: this.rng,
+            rng: this.plannerRngFor(id),
             effort,
             lookahead,
             friends,
+            learner: this.learnerFor(id),
+            learningRate: this.experimentalConfigFor(id).learningRate,
           }, (fit, decision) => this.logGravityFit(id, fit, decision))
         : planShot(this.world, id, {
             rules: this.rules,
             level: p.cpu ?? 'medium',
             attempt: p.shots,
             fixedPower: this.settings.fixedPower ? AIM.FIXED_POWER : null,
-            rng: this.rng,
+            rng: this.plannerRngFor(id),
             effort,
             lookahead,
             friends,
           });
       this.cpuJobs.set(id, { planner, target: null, settle: 0 });
     }
-    const deadline = performance.now() + budgetMs;
+    const deadline = this.options.deterministicCpu ? 0 : performance.now() + budgetMs;
     let busy = true;
-    while (busy && performance.now() < deadline) {
+    while (busy && (this.options.deterministicCpu || performance.now() < deadline)) {
       busy = false;
       for (const id of ids) {
-        const job = this.cpuJobs.get(id)!;
-        if (!job.planner) continue;
+        const job = this.cpuJobs.get(id);
+        if (!job?.planner) continue;
         busy = true;
         const r = job.planner.next();
         if (r.done) {
@@ -725,28 +989,58 @@ export abstract class Match {
   private logGravityFit(player: number, fit: GravityFit, decision: ExperimentalDecision): void {
     const logsEnabled = (typeof process !== 'undefined' && process.env.EXPERIMENTAL_AI_LOGS === '1')
       || import.meta.env?.VITE_EXPERIMENTAL_AI_LOGS === '1';
-    if (!logsEnabled) return;
+    if (!logsEnabled && !this.options.onExperimentalDecision) return;
     const reconstruction = measureReconstruction(this.world, fit);
-    console.info('[AI experimental] gravity fit', {
-      realPlanets: this.world.planets.map(({ x, y, mass }) => ({ x, y, mass })),
+    const report: ExperimentalReport = {
+      mode: this.mode,
       round: this.round,
       player,
       shot: this.players[player].shots + 1,
-      estimatedPlanets: fit.planets,
-      planetMatches: reconstruction.planetMatches,
-      realBlackHole: this.world.hole ? { x: this.world.hole.x, y: this.world.hole.y, mass: this.world.hole.mass } : null,
-      estimatedBlackHole: fit.holeMass === null ? null : { x: FIELD.width / 2, y: FIELD.height / 2, mass: fit.holeMass },
+      learningRate: decision.learningRate,
+      startingKnowledge: decision.startingKnowledge,
+      observedShots: decision.observedShots,
+      learnedShots: decision.learnedShots,
+      retainedShots: decision.retainedShots,
       samples: fit.samples,
-      initialRms: fit.initialRms,
-      rms: fit.rms,
-      improvement: fit.improvement,
-      validationRms: fit.validationRms,
-      validationSamples: fit.validationSamples,
-      condition: fit.condition,
+      predictionRms: decision.predictionRms,
+      predictionSamples: decision.predictionSamples,
       fitMs: fit.fitMs,
       decision,
-      gravityMapRms: reconstruction.gravityRms,
       relativeGravityMapRms: reconstruction.relativeGravityRms,
+    };
+    this.options.onExperimentalDecision?.(report);
+    if (logsEnabled) console.info('[AI experimental] decision', {
+      ...report,
+      fit: {
+        initialRms: fit.initialRms,
+        rms: fit.rms,
+        improvement: fit.improvement,
+        condition: fit.condition,
+        samples: fit.samples,
+        retainedShots: decision.retainedShots,
+      },
+      reconstruction: {
+        gravityRms: reconstruction.gravityRms,
+        relativeGravityErrorPercent: reconstruction.relativeGravityRms * 100,
+        realPlanetCount: this.world.planets.length,
+        estimatedPlanetCount: fit.planets.length,
+        planets: reconstruction.planetMatches.map(({ real, estimated, positionError, massError }) => ({
+          real: { x: real.x, y: real.y, mass: real.mass },
+          estimated: { ...estimated },
+          positionError,
+          massError,
+          massErrorPercent: real.mass === 0 ? null : massError / Math.abs(real.mass) * 100,
+        })),
+        realBlackHole: this.world.hole ? { x: this.world.hole.x, y: this.world.hole.y, mass: this.world.hole.mass } : null,
+        estimatedBlackHole: fit.holeMass === null ? null : {
+          x: fit.hole?.x ?? this.world.width / 2,
+          y: fit.hole?.y ?? this.world.height / 2,
+          mass: fit.holeMass,
+          massStandardDeviation: fit.holeMassStandardDeviation ?? null,
+        },
+        blackHoleMassErrorPercent: this.world.hole && fit.holeMass !== null && this.world.hole.mass !== 0
+          ? Math.abs(fit.holeMass - this.world.hole.mass) / Math.abs(this.world.hole.mass) * 100 : null,
+      },
     });
   }
 

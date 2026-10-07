@@ -8,9 +8,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "bench:experimental": "tsx benchmarks/experimental-vs-easy.ts",
-    "bench:team": "tsx benchmarks/team-experimental-vs-medium.ts",
-    "bench:team:horizon": "tsx benchmarks/team-experimental-vs-medium-horizon.ts",
+    "bench:experimental": "tsx benchmarks/ai-matrix.ts",
+    "bench:calibration": "tsx benchmarks/ai-calibration.ts",
+    "bench:learning": "tsx benchmarks/learning-validation.ts",
     "start:server": "node dist-server/server/index.js"
   },
   "keywords": [],
