@@ -156,6 +156,7 @@ export function playersScreen(app: App): Screen {
     },
     teams: s.teamMode
       ? {
+          caption: t('players.team'),
           options: teams.map((k) => ({ value: k, label: teamName(k) })),
           tones: teams.map((k) => TEAMS[k][0]),
           get: () => s.seatTeams[i] % s.teamMode,
