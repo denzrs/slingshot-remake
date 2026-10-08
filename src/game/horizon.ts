@@ -6,7 +6,7 @@ import { Volley, type VolleyAim, type VolleyShot, type VolleySnapshot } from '..
 import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene } from './match';
 
 /** Everything needed to replay one kill exactly — the physics is deterministic. */
-export interface KillcamClip {
+interface KillcamClip {
   snapshot: World;
   aims: VolleyAim[];
   /** Index of the killing shot within the volley. */
@@ -82,7 +82,7 @@ interface Drift {
   lost: boolean;
 }
 
-export interface CollapseState {
+interface CollapseState {
   fromRadius: number;
   toRadius: number;
   fromMass: number;

@@ -31,7 +31,6 @@ const en = {
   'multiplayer.connection': 'Connection',
   'multiplayer.disconnect': 'Disconnect',
   'multiplayer.newRoom': 'New room',
-  'multiplayer.rules': 'Rules',
   'multiplayer.roomOf': "{name}'s room",
   'multiplayer.players': 'players',
   'multiplayer.you': 'you',
@@ -41,13 +40,11 @@ const en = {
   'multiplayer.connectHint': 'Connect to a relay server to browse or create rooms.',
   'multiplayer.room': 'Room',
   'multiplayer.rooms': 'Available rooms',
-  'multiplayer.selectRoom': 'Select a room',
   'multiplayer.noRooms': 'No rooms available',
   'multiplayer.host': 'Host',
   'multiplayer.ready': 'Ready',
   'multiplayer.notReady': 'Not ready',
   'multiplayer.unready': 'Cancel ready',
-  'multiplayer.starting': 'The host is starting the game.',
   'multiplayer.connect': 'Connect',
   'multiplayer.create': 'Create room',
   'multiplayer.join': 'Join room',
@@ -98,7 +95,6 @@ const en = {
   'players.mode': 'Game mode',
   'players.ffa': 'Free for all',
   'players.teams': '{n} teams',
-  'players.teamOf': 'Player {n} · team',
   'players.teamNote': 'Teams need at least three ships spread over two teams – otherwise it is free for all.',
   'players.cpu': 'CPU',
   'players.team': 'TEAM',
@@ -114,14 +110,6 @@ const en = {
   'team.2': 'Nebula',
   'team.name': 'Team {team}',
   'seat.human': 'Human',
-  'seat.easy': 'CPU Kepler',
-  'seat.medium': 'CPU Newton',
-  'seat.hard': 'CPU Einstein',
-  'seat.hawking': 'CPU Hawking',
-  'seat.experimental': 'CPU experimental',
-  'seat.experimental-easy': 'CPU Kepler',
-  'seat.experimental-medium': 'CPU Newton',
-  'seat.experimental-hard': 'CPU Einstein',
   'cpu.easy': 'Kepler',
   'cpu.medium': 'Newton',
   'cpu.hard': 'Einstein',
@@ -216,7 +204,6 @@ const en = {
   'over.rematch': 'Rematch',
   'over.hostRematch': 'The host decides',
   'over.teamWins': 'Team {team} wins',
-  'over.teams': 'Teams',
   'over.players': 'Players',
 
   // — HUD —
@@ -283,7 +270,6 @@ const en = {
 
   // — daily challenge —
   'mode.daily': 'Daily Challenge',
-  'mode.daily.hint': 'Five sectors, the same for everyone today',
   'daily.menuHint': 'No. {n} · {theme}',
   'daily.menuHintBest': 'No. {n} · {theme} · best {score}',
   'daily.eyebrow': 'Daily Challenge · No. {n}',
@@ -386,7 +372,6 @@ const de: Dict = {
   'multiplayer.connection': 'Verbindung',
   'multiplayer.disconnect': 'Trennen',
   'multiplayer.newRoom': 'Neuer Raum',
-  'multiplayer.rules': 'Regeln',
   'multiplayer.roomOf': 'Raum von {name}',
   'multiplayer.players': 'Spieler',
   'multiplayer.you': 'du',
@@ -396,13 +381,11 @@ const de: Dict = {
   'multiplayer.connectHint': 'Verbinde dich mit einem Relay-Server, um Räume zu sehen oder zu erstellen.',
   'multiplayer.room': 'Raum',
   'multiplayer.rooms': 'Verfügbare Räume',
-  'multiplayer.selectRoom': 'Raum auswählen',
   'multiplayer.noRooms': 'Keine Räume verfügbar',
   'multiplayer.host': 'Host',
   'multiplayer.ready': 'Bereit',
   'multiplayer.notReady': 'Nicht bereit',
   'multiplayer.unready': 'Bereitschaft zurücknehmen',
-  'multiplayer.starting': 'Der Host startet das Spiel.',
   'multiplayer.connect': 'Verbinden',
   'multiplayer.create': 'Raum erstellen',
   'multiplayer.join': 'Raum beitreten',
@@ -450,7 +433,6 @@ const de: Dict = {
   'players.mode': 'Spielmodus',
   'players.ffa': 'Jeder gegen jeden',
   'players.teams': '{n} Teams',
-  'players.teamOf': 'Spieler {n} · Team',
   'players.teamNote': 'Teams brauchen mindestens drei Schiffe in zwei verschiedenen Teams – sonst heißt es jeder gegen jeden.',
   'players.cpu': 'CPU',
   'players.team': 'TEAM',
@@ -466,14 +448,6 @@ const de: Dict = {
   'team.2': 'Nebel',
   'team.name': 'Team {team}',
   'seat.human': 'Mensch',
-  'seat.easy': 'CPU Kepler',
-  'seat.medium': 'CPU Newton',
-  'seat.hard': 'CPU Einstein',
-  'seat.hawking': 'CPU Hawking',
-  'seat.experimental': 'CPU experimentell',
-  'seat.experimental-easy': 'CPU Kepler',
-  'seat.experimental-medium': 'CPU Newton',
-  'seat.experimental-hard': 'CPU Einstein',
   'cpu.easy': 'Kepler',
   'cpu.medium': 'Newton',
   'cpu.hard': 'Einstein',
@@ -564,7 +538,6 @@ const de: Dict = {
   'over.rematch': 'Revanche',
   'over.hostRematch': 'Entscheidet der Host',
   'over.teamWins': 'Team {team} gewinnt',
-  'over.teams': 'Teams',
   'over.players': 'Spieler',
 
   'hud.round': 'RUNDE',
@@ -628,7 +601,6 @@ const de: Dict = {
 
   // — daily challenge —
   'mode.daily': 'Tägliche Herausforderung',
-  'mode.daily.hint': 'Fünf Sektoren, heute für alle gleich',
   'daily.menuHint': 'Nr. {n} · {theme}',
   'daily.menuHintBest': 'Nr. {n} · {theme} · Bestwert {score}',
   'daily.eyebrow': 'Tägliche Herausforderung · Nr. {n}',
@@ -705,7 +677,7 @@ const de: Dict = {
 const DICTS: Record<Lang, Dict> = { de, en };
 
 /** Keys that come in a `.one` / `.other` pair. */
-export type PluralKey = 'lineup.human' | 'lineup.cpu' | 'over.after' | 'daily.targets' | 'daily.shots' | 'daily.days';
+type PluralKey = 'lineup.human' | 'lineup.cpu' | 'over.after' | 'daily.targets' | 'daily.shots' | 'daily.days';
 
 let current: Lang = 'de';
 

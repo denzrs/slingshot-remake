@@ -102,8 +102,8 @@ function cycleOrder(cycle: number): ThemeId[] {
 
 // ————————————————————————————— Sector specs —————————————————————————————
 
-export type Difficulty = 1 | 2 | 3 | 4 | 5;
-export type Modifier = 'bounce' | 'invisible' | 'fixedPower' | 'hole' | 'heavy';
+type Difficulty = 1 | 2 | 3 | 4 | 5;
+type Modifier = 'bounce' | 'invisible' | 'fixedPower' | 'hole' | 'heavy';
 
 export interface SectorSpec {
   index: number;
@@ -212,7 +212,7 @@ export function rankOf(score: number, challenge: Challenge): number {
 // ————————————————————————————— Building a sector —————————————————————————————
 
 /** A known way to hit one target: proof that the sector can be solved. */
-export interface Solution {
+interface Solution {
   /** Index into `world.ships`. */
   target: number;
   angle: number;

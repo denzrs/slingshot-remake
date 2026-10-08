@@ -4,7 +4,7 @@ import type { RoomRules } from '../net';
 import type { MenuItem } from './menu';
 
 /** The blocks the setup screen and the lobby sort the rules into. */
-export type RuleGroup = 'match' | 'field' | 'shots' | 'twists';
+type RuleGroup = 'match' | 'field' | 'shots' | 'twists';
 
 export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists'];
 
@@ -15,7 +15,7 @@ export const groupTitle = (group: RuleGroup): string => t(`setup.group.${group}`
 /** How a game limits shot power: not at all, with a cap, or by giving every shot the same power. */
 export type PowerMode = 'free' | 'cap' | 'fixed';
 
-export const POWER_MODES: readonly PowerMode[] = ['free', 'cap', 'fixed'];
+const POWER_MODES: readonly PowerMode[] = ['free', 'cap', 'fixed'];
 
 /** The cap a game gets when it is first limited. */
 export const DEFAULT_CAP = 70;
@@ -44,7 +44,7 @@ export function powerModePatch(mode: PowerMode, cap: number = DEFAULT_CAP): Pick
 
 // ————————————————————————————— The rules —————————————————————————————
 
-export interface RuleRow {
+interface RuleRow {
   key: keyof RoomRules;
   label: string;
   /** Every value the rule can take — for a slider, its stops from lowest to highest. */
@@ -102,7 +102,7 @@ export interface RuleSource {
   commit?(): void;
 }
 
-export type RuleItem = Extract<MenuItem, { kind: 'slider' | 'toggle' | 'segmented' }>;
+type RuleItem = Extract<MenuItem, { kind: 'slider' | 'toggle' | 'segmented' }>;
 
 /** The controls for the rules of a game mode, each with the block it belongs to. */
 export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource): { group: RuleGroup; item: RuleItem }[] {

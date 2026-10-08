@@ -209,7 +209,7 @@ export function sliderControl(item: Item<'slider'>, env: Env): Control {
 // ————————————————————————————— Toggle —————————————————————————————
 
 /** An on/off switch: the whole row is the button. */
-export function toggleControl(item: Item<'toggle'>, env: Env): Control {
+function toggleControl(item: Item<'toggle'>, env: Env): Control {
   const readout = h('span.item__readout', null);
   const el = h('div.item.item--toggle', { role: 'switch', 'aria-label': item.label }, h('span.item__label', null, item.label), h('span.switch', { 'aria-hidden': 'true' }, h('span.switch__knob', null)), readout);
   focusable(el, env);
@@ -324,7 +324,7 @@ export function segmentedControl(item: Item<'segmented'>, env: Env): Control {
 // ————————————————————————————— Choice —————————————————————————————
 
 /** A row that cycles through a list of values: click it to go on, or use the arrows at its sides to go either way. */
-export function choiceControl(item: Item<'choice'>, env: Env): Control {
+function choiceControl(item: Item<'choice'>, env: Env): Control {
   const value = h('span.item__value', null);
   const arrow = (dir: 1 | -1) => {
     const a = h('span.item__arrow', { 'aria-hidden': 'true' }, dir === 1 ? '›' : '‹');
@@ -381,7 +381,7 @@ export function choiceControl(item: Item<'choice'>, env: Env): Control {
  * One ship of the line-up: who flies it, which team it is in, and a way to take it out. The row is
  * one stop for ↑/↓; ←/→ move a cursor over its buttons and Enter presses the one it is on.
  */
-export function seatControl(item: Item<'seat'>, env: Env): Control {
+function seatControl(item: Item<'seat'>, env: Env): Control {
   /** What each button does, in the order the cursor visits them. */
   const buttons: { el: HTMLElement; skip(): boolean; press(): void; draw(): void }[] = [];
 

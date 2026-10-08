@@ -2,8 +2,8 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { DEFAULT_RULES, isGameEvent, isInputMessage, isRecord, parseRules, type RoomRules } from './protocol.js';
 
 export type RoomMode = 'ffa' | 'team';
-export type GameMode = 'classic' | 'horizon';
-export type RoomStatus = 'waiting' | 'playing';
+type GameMode = 'classic' | 'horizon';
+type RoomStatus = 'waiting' | 'playing';
 
 export interface ClientConnection {
   send(message: unknown): void;

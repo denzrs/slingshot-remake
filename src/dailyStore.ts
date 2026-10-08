@@ -1,7 +1,7 @@
 import { shiftDate } from './challenge';
 
 /** What the browser remembers about the daily challenge: your best run per day, and how often you flew it. */
-export interface DayRecord {
+interface DayRecord {
   best: number;
   attempts: number;
 }
@@ -54,7 +54,7 @@ export function loadDay(day: string): DayRecord | null {
 }
 
 /** Days in a row flown up to `day`. A streak is still alive on a day you haven't flown yet. */
-export function streakAt(day: string, store: Store = read()): number {
+function streakAt(day: string, store: Store = read()): number {
   let cursor = store[day] ? day : shiftDate(day, -1);
   let streak = 0;
   while (store[cursor]) {

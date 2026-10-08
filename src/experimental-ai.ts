@@ -95,14 +95,14 @@ export interface GravityFit {
   recovery?: ExperimentalRecoveryDiagnostics;
 }
 
-export interface PlanetMatch {
+interface PlanetMatch {
   real: Planet;
   estimated: PlanetEstimate;
   positionError: number;
   massError: number;
 }
 
-export interface ReconstructionQuality {
+interface ReconstructionQuality {
   planetMatches: PlanetMatch[];
   gravityRms: number;
   relativeGravityRms: number;
@@ -224,7 +224,7 @@ export function fitGravityHypotheses(
 }
 
 type RetainedEvidence = { shot: ExperimentalShot };
-export type ExperimentalLearnerFit = GravityFit & Required<Pick<GravityFit,
+type ExperimentalLearnerFit = GravityFit & Required<Pick<GravityFit,
   'observedShots' | 'learnedShots' | 'retainedShots' | 'learningRate' | 'startingKnowledge' | 'predictionRms' | 'predictionSamples'>>;
 
 /** Each CPU owns this state for one round, independently of rendering trails. */

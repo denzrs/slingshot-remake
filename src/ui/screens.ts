@@ -113,7 +113,7 @@ export function pauseScreen(app: App): Screen {
   };
 }
 
-export function playersScreen(app: App): Screen {
+function playersScreen(app: App): Screen {
   const s = app.settings;
   const seats = activeSeats(s);
   const fliers = [
@@ -209,7 +209,7 @@ export function playersScreen(app: App): Screen {
     );
   };
 
-  const block = (title: string, section: string, extra = '') => h('section.setup__group', null, h('h3.setup__title', null, title), h(`div.setup__rows${extra}`, { 'data-section': section }));
+  const block = (title: string, section: string) => h('section.setup__group', null, h('h3.setup__title', null, title), h('div.setup__rows', { 'data-section': section }));
   return {
     build: () =>
       h(
@@ -268,7 +268,7 @@ function settingToggle(app: App, label: string, key: BooleanSetting): MenuItem {
 }
 
 /** The rules of a game, shown right before it starts. They are remembered between games. */
-export function setupScreen(app: App, mode: VersusMode): Screen {
+function setupScreen(app: App, mode: VersusMode): Screen {
   const rules = ruleItems(mode, {
     get: () => rulesOf(app.settings),
     patch: (values) => {
@@ -317,7 +317,7 @@ export function setupScreen(app: App, mode: VersusMode): Screen {
 }
 
 /** Only what concerns this device; the rules of a game live on the setup screen. */
-export function settingsScreen(app: App): Screen {
+function settingsScreen(app: App): Screen {
   return {
     build: () => panel(t('common.settings'), h('p.note', null, t('settings.note')), 'panel--medium'),
     items: [
@@ -336,7 +336,7 @@ export function settingsScreen(app: App): Screen {
   };
 }
 
-export function helpScreen(app: App): Screen {
+function helpScreen(app: App): Screen {
   const key = (k: string) => h('kbd', null, k);
   const row = (keys: (Node | string)[], text: string) => h('tr', null, h('th', { scope: 'row' }, ...keys), h('td', null, text));
   const combos = (Object.keys(STYLE_MULTIPLIER) as StyleKind[]).map((k) =>

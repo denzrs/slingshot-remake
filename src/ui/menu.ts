@@ -75,7 +75,7 @@ export type MenuItem =
       });
 
 /** Screens are built from a factory, so a language switch can rebuild them with fresh labels. */
-export type ScreenFactory = () => Screen;
+type ScreenFactory = () => Screen;
 
 export interface Screen {
   /** Builds the screen's DOM. Items become keyboard-navigable rows inside `[data-items]`, or inside the `[data-section]` they name. */
