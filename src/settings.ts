@@ -40,6 +40,8 @@ export interface Settings {
   sound: boolean;
   /** Eliminated players tip on what the others' shots do (online). */
   oracle: boolean;
+  /** Eliminated players may shoot on the ghost lane while they wait (online, this device only). */
+  ghostLane: boolean;
   language: Lang;
   /** 0 = free for all, otherwise the number of teams (2 or 3). */
   teamMode: number;
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: Settings = {
   particles: true,
   sound: true,
   oracle: true,
+  ghostLane: true,
   language: 'de',
   teamMode: 0,
   seatTeams: [0, 1, 0, 1, 0, 1],

@@ -18,6 +18,8 @@ export interface DrawOptions {
   recording: boolean;
   /** Show the oracle to eliminated players. */
   oracle: boolean;
+  /** Eliminated and waiting: point at the ghost lane. */
+  ghostTeaser: boolean;
 }
 
 const SHIP_HULL: [number, number][] = [
@@ -68,6 +70,16 @@ export class Renderer {
   oracleHit(clientX: number, clientY: number): number | null {
     const rect = this.canvas.getBoundingClientRect();
     return this.hud.oracleHit(clientX - rect.left, clientY - rect.top);
+  }
+
+  /** Pixels from the window's bottom edge up to above everything the oracle can draw there. */
+  oracleClearance(touch: boolean): number {
+    return this.hud.oracleClearance(this.view, touch);
+  }
+
+  /** Pixels from the window's top edge down to below the scoreboard. */
+  clearanceTop(): number {
+    return this.hud.clearanceTop(this.view);
   }
 
   /** Convert a pointer position (client px) into field coordinates. */

@@ -30,6 +30,15 @@ interface Chip {
   color?: string;
 }
 
+/**
+ * Height (in HUD units, times `k`) from the field's bottom edge up to above everything the oracle can
+ * have on screen there at once: the bar, the line of the others' tips and the verdict. Keep in step with
+ * `drawBar`, `drawLiveTips` and `drawToast`.
+ */
+export function oracleReserve(k: number, touch: boolean): number {
+  return ((touch ? 52 : 40) + 16 + 12 + 30 + 44) * k;
+}
+
 /** Every phase in which a question can be on screen. */
 const ASKING = new Set(['aiming', 'flying']);
 
@@ -49,6 +58,8 @@ export class OracleHud {
   private hits: Hit[] = [];
   /** Height the live tips line takes above the bar this frame, so the verdict toast can sit above it. */
   private lift = 0;
+  /** Top edge of everything the oracle has drawn at the bottom this frame (bar, live tips, verdict), so a hint can stack above it. */
+  private top = Infinity;
   /** The verdict on show and since when. A verdict that falls during the killcam waits for it to end. */
   private shown: { match: Match | null; id: number; since: number } = { match: null, id: 0, since: 0 };
 
@@ -62,6 +73,12 @@ export class OracleHud {
   begin(): void {
     this.hits = [];
     this.lift = 0;
+    this.top = Infinity;
+  }
+
+  /** Where the oracle's stack at the bottom edge ends at the top this frame; Infinity when nothing was drawn. */
+  get stackTop(): number {
+    return this.top;
   }
 
   /** Whether a question is on screen for this person. */
@@ -80,6 +97,7 @@ export class OracleHud {
     const x = field.x + (field.w - w) / 2;
     const y = field.y + field.h - 16 * k - h;
     const mid = y + h / 2;
+    this.top = Math.min(this.top, y);
 
     ctx.fillStyle = rgba(COLORS.plate, 0.9);
     ctx.fillRect(x, y, w, h);
@@ -287,6 +305,7 @@ export class OracleHud {
     const w = this.segmentsWidth(ctx, segments) + 32 * k;
     const x = field.x + (field.w - w) / 2;
     const y = barTop - 8 * k - h;
+    this.top = Math.min(this.top, y);
     ctx.fillStyle = rgba(COLORS.plate, 0.85);
     ctx.fillRect(x, y, w, h);
     ctx.fillStyle = rgba(COLORS.sodium, 0.6);
@@ -371,6 +390,7 @@ export class OracleHud {
       ? field.y + Math.max(34 * k, field.h * 0.09) + 14 * k
       : field.y + field.h - 16 * k - (touch ? 52 : 40) * k - 12 * k - this.lift - h;
     const accent = mine.right ? COLORS.sodium : COLORS.boneDim;
+    if (!killcam) this.top = Math.min(this.top, y);
 
     ctx.globalAlpha = alpha;
     ctx.fillStyle = rgba(COLORS.plate, 0.9);
