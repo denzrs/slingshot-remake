@@ -27,6 +27,8 @@ Tests, the multiplayer relay and the AI benchmarks are covered under [Developmen
 | Drag (mouse/touch) | Aim directly, the arrow tip follows the pointer |
 | Space | Next round, skip the killcam |
 | C | Save the last killcam as a video |
+| ← → / 1–5, 0 | Oracle, once you are shot down online: tip hit or miss (turn by turn) / name the ship that gets hit, or 0 for nobody. You can also tap the choices or the ships |
+| O | Show or hide the oracle |
 | Esc | Menu |
 | F | Fullscreen |
 | ↑ ↓ ← → Enter (in menus) | Pick a row, change its value (sliders, switches and lists alike), confirm. Home / End jump a slider to its ends; Esc goes back to the row you came from |
@@ -83,40 +85,9 @@ Start the relay server in a second terminal with `npm run dev:server`. In the cl
 - **Rooms:** choose Classic or Event Horizon, free-for-all or two-team play (everybody picks their own team in the room, the host can deal everybody out again with *Reset teams*) and the rules of the game (rounds, planets, reflective edges, shot power, flight time, …). Both modes support up to six players. Rooms can be protected with a password.
 - **Host:** the host can change the rules while the room is waiting and starts the game. The host runs the authoritative simulation and relays state patches to the other players – only what changed since the last tick, so a match needs a few KB/s instead of MB/s. Guests carry a shot's flight on between patches, so it moves smoothly.
 - **Event Horizon online:** everybody aims at the same time against one shared clock.
+- **Oracle:** whoever is shot down does not just wait. Turn by turn the oracle asks "Will Lena hit?", with simultaneous shots (Event Horizon, or Classic with *Simultaneous shots*) "Who gets hit?". A bar at the bottom edge takes the tip until the shots are away; right tips pay 100 / 150 (a named ship) / 75 (nobody), and every right tip in a row raises the multiplier up to ×3. The other shot-down players' tips appear live above the bar, and after the shot the verdict lists who was right; the round's standings show up for everybody. It is a side standing – it never counts towards winning – and can be switched off in the settings. The host judges the tips, so a relay older than this feature rejects them.
 - **Lobby:** it remembers your server, name and room settings (separate from the settings of offline games) and reconnects on its own. Leaving a game puts you back into the lobby.
 - **Hosting:** for remote players, host both the web client and the relay at reachable addresses. Use a `wss://` address behind TLS when the client is served over HTTPS.
-
-## Tech
-
-Vite + TypeScript + Canvas 2D, with no engine and no runtime dependencies besides three self-hosted fonts (the multiplayer relay uses `ws`).
-
-| File | Purpose |
-| --- | --- |
-| `src/main.ts` | Boot, game loop, keyboard and pointer input |
-| `src/config.ts`, `src/settings.ts`, `src/lobbyPrefs.ts` | Constants, persisted rules and device settings (seats, teams), remembered lobby preferences |
-| `src/physics.ts` | Shot integration (semi-implicit Euler, fixed time step 1/240 s), collisions, edges, trick-shot tracking |
-| `src/world.ts`, `src/rng.ts` | Random battlefields from a seed, seeded random numbers |
-| `src/game/` | Match state machines: aiming → flight → round end → final score (`classic.ts`, `horizon.ts`, shared base in `match.ts`) |
-| `src/volley.ts` | Simultaneous shots for Event Horizon, including projectile clashes |
-| `src/ai.ts` | CPU search and the Kepler, Newton, Einstein and Hawking profiles |
-| `src/experimental-ai.ts`, `src/experimental-evidence.ts` | Gravity-learning CPU: trajectory-based gravity fitting and evidence selection |
-| `src/experimental-worker.ts`, `src/experimental-worker-client.ts`, `src/experimental-worker-protocol.ts` | Background observation fitting and worker lifecycle |
-| `src/scoring.ts` | Scoring formulas and trick-shot multipliers |
-| `src/stats.ts`, `src/scorecard.ts` | Per-round and per-match records (longest shot, fastest kill, swing-bys, …) and the awards drawn from them |
-| `src/challenge.ts` | Daily challenge generator: date → seed → theme → sector specs → worlds. Targets sit on the path of a probe shot, so every sector has a known solution (pure and deterministic, no DOM) |
-| `src/game/challenge.ts` | `ChallengeMatch`: one pilot, stationary targets, a shot budget per sector |
-| `src/dailyStore.ts` | Best run per day, attempts and streak in `localStorage` |
-| `src/multiplayer.ts`, `src/net.ts`, `src/netsync.ts` | Online sessions: lobby and room client, WebSocket transport, state patch encoding and decoding |
-| `server/` | Multiplayer relay: rooms, passwords, message validation (`index.ts`, `room.ts`, `protocol.ts`) |
-| `src/render/` | Engraved planets (hatching shader on ImageData), equipotential contour lines (marching squares), black hole lensing, backdrop, particles, HUD |
-| `src/ui/` | DOM menus with keyboard navigation |
-| `src/i18n.ts` | UI translations (`de` / `en`), `t()` lookup with `{placeholders}`, number formatting, runtime language switch |
-| `src/audio.ts` | Synthesized sound effects via the Web Audio API |
-| `src/clip.ts` | Records the killcam canvas to a downloadable video |
-| `benchmarks/` | AI benchmark and learning validation tools, see [benchmarks/README.md](benchmarks/README.md) |
-| `tests/` | Vitest suites |
-
-The physics is deterministic. The CPU planner and killcam use the same production `Shot` integrator as the game.
 
 ## Development
 

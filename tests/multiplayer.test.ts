@@ -376,3 +376,134 @@ describe('the scorecard online', () => {
     }
   });
 });
+
+describe('the oracle online', () => {
+  async function startTable(names: string[]): Promise<Client[]> {
+    const relay = new RoomManager();
+    const clients: Client[] = [];
+    for (let i = 0; i < names.length; i++) {
+      let current: NetMatch | null = null;
+      const session = new MultiplayerSession(
+        { settings: () => cloneSettings(DEFAULT_SETTINGS), matchStarted: (m) => (current = m), matchRestarted() {}, matchEnded: () => (current = null) },
+        new Loopback(relay),
+      );
+      await session.connect('loopback');
+      clients.push({ session, match: () => current! });
+    }
+    clients[0].session.createRoom({ name: names[0], mode: 'ffa', gameMode: 'classic', rules: { ...rules, fixedPower: false, bounce: false }, maxPlayers: names.length });
+    for (let i = 1; i < names.length; i++) clients[i].session.joinRoom(clients[i].session.rooms[0].id, names[i]);
+    for (const client of clients) client.session.setReady(true);
+    return clients;
+  }
+
+  const tick = (clients: Client[], frames = 1): void => {
+    for (let i = 0; i < frames; i++) {
+      clients[0].match().update(1 / 30);
+      for (const client of clients) client.session.update(1 / 30);
+    }
+  };
+
+  it('lets a shot-down guest tip, judges it on the host, and shows everybody the verdict', async () => {
+    const [host, ghost, shooter] = await startTable(['Anna', 'Ben', 'Cleo']);
+    const hm = host.match();
+    hm.world.planets = [];
+    Object.assign(hm.world.ships[0], { x: 100, y: 400 });
+    Object.assign(hm.world.ships[1], { x: 500, y: 400 });
+    Object.assign(hm.world.ships[2], { x: 300, y: 100 });
+    tick([host, ghost, shooter], 5);
+
+    // Anna shoots Ben out of the game.
+    host.session.input({ kind: 'aim', angle: 0, power: 50 });
+    host.session.input({ kind: 'fire' });
+    for (let i = 0; i < 600 && !(hm.phase === 'aiming' && hm.current === 2); i++) tick([host, ghost, shooter]);
+    expect(hm.players[1].alive).toBe(false);
+    tick([host, ghost, shooter], 5);
+    expect(ghost.match().ghost).toBe(true);
+    expect(ghost.match().oracle.question).toMatchObject({ kind: 'shot', shooter: 2, locked: false });
+
+    // Only the shot-down may tip; Cleo is on turn and alive, so her tip never leaves her screen.
+    shooter.session.input({ kind: 'bet', pick: 1 });
+    expect(shooter.match().oracle.mine).toBeNull();
+    ghost.session.input({ kind: 'bet', pick: 1 });
+    expect(ghost.match().oracle.mine).toMatchObject({ pick: 1 });
+    tick([host, ghost, shooter], 5);
+    // The tip travels to every screen (only the eliminated get it drawn).
+    expect(shooter.match().oracle.picks.get(1)).toBe(1);
+
+    // Cleo hits Anna.
+    const a = hm.world.ships[2];
+    const b = hm.world.ships[0];
+    shooter.session.input({ kind: 'aim', angle: (Math.atan2(-(b.y - a.y), b.x - a.x) * 180) / Math.PI, power: Math.hypot(b.x - a.x, b.y - a.y) / 8 });
+    shooter.session.input({ kind: 'fire' });
+    for (let i = 0; i < 600 && hm.oracle.result?.shooter !== 2; i++) tick([host, ghost, shooter]);
+    tick([host, ghost, shooter], 5);
+
+    for (const client of [host, ghost, shooter]) {
+      expect(client.match().oracle.result).toMatchObject({ shooter: 2, hit: true, victims: [0] });
+      expect(client.match().oracle.result!.tips).toEqual([{ player: 1, pick: 1, right: true, points: 100 }]);
+      expect(client.match().oracle.scores[1].points).toBe(100);
+    }
+  });
+
+  it('refuses a tip from a player who is still alive, whatever their client claims', async () => {
+    const [host, ghost, shooter] = await startTable(['Anna', 'Ben', 'Cleo']);
+    const hm = host.match();
+    hm.world.planets = [];
+    Object.assign(hm.world.ships[0], { x: 100, y: 400 });
+    Object.assign(hm.world.ships[1], { x: 500, y: 400 });
+    tick([host, ghost, shooter], 5);
+    host.session.input({ kind: 'aim', angle: 0, power: 50 });
+    host.session.input({ kind: 'fire' });
+    for (let i = 0; i < 600 && !(hm.phase === 'aiming' && hm.current === 2); i++) tick([host, ghost, shooter]);
+
+    // A tampered client skips its own check and sends the tip anyway.
+    shooter.session.client.send({ type: 'input', input: { kind: 'bet', pick: 1 } });
+    tick([host, ghost, shooter], 5);
+    expect(hm.canBet(2)).toBe(false);
+
+    shooter.session.input({ kind: 'aim', angle: 90, power: 20 });
+    shooter.session.input({ kind: 'fire' });
+    for (let i = 0; i < 900 && !hm.oracle.result; i++) tick([host, ghost, shooter]);
+    expect(hm.oracle.result?.tips).toEqual([]);
+  });
+
+  it('shows the eliminated players each other\'s tips while the question is open, and the verdict to both', async () => {
+    const [host, ben, cleo, dora] = await startTable(['Anna', 'Ben', 'Cleo', 'Dora']);
+    const hm = host.match();
+    const everybody = [host, ben, cleo, dora];
+    hm.world.planets = [];
+    [[100, 400], [500, 400], [900, 200], [900, 600]].forEach(([x, y], i) => Object.assign(hm.world.ships[i], { x, y }));
+    tick(everybody, 5);
+
+    // Anna shoots Ben, Cleo shoots Dora: two are out and watch Anna's shot.
+    host.session.input({ kind: 'aim', angle: 0, power: 50 });
+    host.session.input({ kind: 'fire' });
+    for (let i = 0; i < 600 && !(hm.phase === 'aiming' && hm.current === 2); i++) tick(everybody);
+    cleo.session.input({ kind: 'aim', angle: 270, power: 50 });
+    cleo.session.input({ kind: 'fire' });
+    for (let i = 0; i < 600 && !(hm.phase === 'aiming' && hm.current === 0 && !hm.players[3].alive); i++) tick(everybody);
+    tick(everybody, 5);
+    expect(hm.oracle.question).toMatchObject({ kind: 'shot', shooter: 0 });
+
+    ben.session.input({ kind: 'bet', pick: 1 });
+    tick(everybody, 5);
+    expect(dora.match().oracle.picks.get(1)).toBe(1);
+    dora.session.input({ kind: 'bet', pick: 0 });
+    tick(everybody, 5);
+    expect(ben.match().oracle.picks.get(3)).toBe(0);
+    expect([...ben.match().oracle.picks]).toEqual([[1, 1], [3, 0]]);
+
+    // Anna hits Cleo: Ben was right, Dora wasn't, and both screens know.
+    host.session.input({ kind: 'aim', angle: 14.04, power: 100 });
+    host.session.input({ kind: 'fire' });
+    for (let i = 0; i < 900 && hm.oracle.result?.shooter !== 0; i++) tick(everybody);
+    tick(everybody, 5);
+    for (const client of [ben, dora]) {
+      expect(client.match().oracle.result!.tips).toEqual([
+        { player: 1, pick: 1, right: true, points: 100 },
+        { player: 3, pick: 0, right: false, points: 0 },
+      ]);
+      expect(client.match().oracle.picks.size).toBe(0);
+    }
+  });
+});

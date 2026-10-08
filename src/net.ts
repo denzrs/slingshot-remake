@@ -13,7 +13,9 @@ export type ClientInput =
   | { kind: 'aim'; angle: number; power: number }
   | { kind: 'fire' }
   /** A vote to skip the killcam; it ends once half of the players want that. */
-  | { kind: 'skip' };
+  | { kind: 'skip' }
+  /** An eliminated player's oracle tip: a ship's index, -1 for nobody, or 1/0 for hit/miss. */
+  | { kind: 'bet'; pick: number };
 
 type ClientMessage =
   | { type: 'lobby' }

@@ -4,6 +4,7 @@ import { cloneWorld, type ShotRules, type StyleKind, type World } from '../physi
 import { scoreHorizonKill } from '../scoring';
 import { Volley, type VolleyAim, type VolleyShot, type VolleySnapshot } from '../volley';
 import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene } from './match';
+import type { OracleSnapshot } from './oracle';
 
 /** Everything needed to replay one kill exactly — the physics is deterministic. */
 interface KillcamClip {
@@ -57,6 +58,7 @@ export interface HorizonSnapshot {
     skipVotes: number[];
   };
   lastClip: KillcamClip | null;
+  oracle: OracleSnapshot;
 }
 
 interface KillcamState {
@@ -133,6 +135,7 @@ export class HorizonMatch extends Match {
         recording: this.killcam.recording, skipVotes: [...this.killcam.skipVotes],
       } : null,
       lastClip: this.lastClip,
+      oracle: this.oracle.snapshot(),
     };
   }
 
@@ -152,6 +155,8 @@ export class HorizonMatch extends Match {
       this.volley.restore(s.volley);
     }
     this.lastClip = s.lastClip;
+    // Hosts from before the oracle send none.
+    if (s.oracle) this.oracle.restore(s.oracle);
     this.killcam = null;
     if (s.killcam && s.killcamClip) {
       const clip = s.killcamClip;
@@ -258,6 +263,7 @@ export class HorizonMatch extends Match {
     this.queue = this.simultaneous ? [] : order.filter((p) => !p.cpu).map((p) => p.id);
     this.cpuJobs.clear();
     this.setPhase('aiming');
+    this.openOracle('salvo');
     if (this.simultaneous) {
       // No turns: everybody aims against one shared clock.
       this.current = -1;
