@@ -69,7 +69,7 @@ export type MenuItem =
         get: () => unknown;
         set: (v: unknown) => void;
         /** In team play: the teams it can be in, each with its colour. */
-        teams?: { options: Choice<unknown>[]; tones: string[]; get: () => unknown; set: (v: unknown) => void };
+        teams?: { caption: string; options: Choice<unknown>[]; tones: string[]; get: () => unknown; set: (v: unknown) => void };
         /** A button that takes the ship out. */
         remove?: { label: string; disabled: () => boolean; run: () => void };
       });
