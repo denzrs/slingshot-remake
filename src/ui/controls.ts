@@ -414,7 +414,7 @@ export function seatControl(item: Item<'seat'>, env: Env): Control {
   const cells: HTMLElement[] = [fliers];
   if (item.teams) {
     const { teams } = item;
-    const group = h('span.seat__group.seat__group--teams', { role: 'radiogroup' });
+    const group = h('span.seat__group.seat__group--teams', { role: 'radiogroup' }, h('span.seat__caption', null, teams.caption));
     teams.options.forEach((team, i) => {
       const el = pill(team.label, teams.tones[i]);
       el.setAttribute('role', 'radio');
@@ -458,6 +458,13 @@ export function seatControl(item: Item<'seat'>, env: Env): Control {
   let cursor = Math.max(0, item.fliers.findIndex((f) => f.value === item.get()));
   const draw = (): void => {
     syncHidden(el, item.hidden?.() ?? false, true);
+    if (item.teams) {
+      // In team play the ship flies in its team's colour: the row, its dot and its team bar all say so.
+      const tone = item.teams.tones[item.teams.options.findIndex((o) => o.value === item.teams!.get())];
+      el.classList.add('item--teamed');
+      el.style.setProperty('--team', tone);
+      swatch.style.background = tone;
+    }
     buttons.forEach((b, i) => {
       b.draw();
       b.el.classList.toggle('is-cursor', i === cursor);

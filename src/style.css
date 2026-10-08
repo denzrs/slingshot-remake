@@ -696,7 +696,45 @@ body {
 }
 
 .panel--players {
-  width: min(780px, 100%);
+  width: min(860px, 100%);
+}
+
+/* Team play: the row wears its team's colour, and the team is picked from one joined bar of solid colour blocks. */
+
+.item--teamed {
+  border-left: 3px solid var(--team);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--team) 13%, transparent), rgb(19 39 70 / 0.3) 55%);
+  transition: border-color 160ms, background 160ms;
+}
+
+.seat__group--teams {
+  gap: 0;
+}
+
+.seat__group--teams .seat__caption {
+  margin: 0 10px 0 0;
+}
+
+.seat__group--teams .pill {
+  min-width: 62px;
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.seat__group--teams .pill:first-child {
+  margin-left: 0;
+  border-radius: 3px 0 0 3px;
+}
+
+.seat__group--teams .pill:last-child {
+  border-radius: 0 3px 3px 0;
+}
+
+.seat__group--teams .pill.is-on {
+  position: relative;
+  background: var(--tone);
+  color: var(--plate);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--tone) 45%, transparent);
 }
 
 .setup__rows--seats {
