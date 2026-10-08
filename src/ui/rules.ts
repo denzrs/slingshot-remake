@@ -56,6 +56,8 @@ export interface RuleRow {
   classicOnly?: boolean;
   /** Shown only while this holds, e.g. the cap's slider while shot power is capped. */
   when?: (rules: RoomRules) => boolean;
+  /** While hidden and this holds, the row keeps its space, so the block doesn't grow and shrink. */
+  reserve?: (rules: RoomRules) => boolean;
 }
 
 const numbers = (values: readonly number[], label: (n: number) => string = String) => values.map((n) => ({ value: n, label: label(n) }));
@@ -76,7 +78,7 @@ export function ruleRows(): RuleRow[] {
       label: t('settings.power'),
       options: POWER_MODES.map((value) => ({ value, label: t(`settings.power.${value}` as Key) })),
     },
-    { key: 'maxPower', group: 'shots', control: 'slider', label: t('settings.maxPower'), options: numbers(CAP_STOPS), when: (r) => powerModeOf(r) === 'cap' },
+    { key: 'maxPower', group: 'shots', control: 'slider', label: t('settings.maxPower'), options: numbers(CAP_STOPS), when: (r) => powerModeOf(r) === 'cap', reserve: (r) => powerModeOf(r) === 'free' },
     { key: 'fixedPowerLevel', group: 'shots', control: 'slider', label: t('settings.fixedPower'), options: numbers(AIM.FIXED_OPTIONS), when: (r) => powerModeOf(r) === 'fixed' },
     { key: 'styleBonuses', group: 'shots', control: 'toggle', label: t('settings.styleBonuses'), options: [], classicOnly: true },
     { key: 'simultaneousShots', group: 'shots', control: 'toggle', label: t('settings.simultaneousShots'), options: [], classicOnly: true },
@@ -109,6 +111,7 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource): { gr
   const commit = source.commit;
   return rulesFor(mode).map((row): { group: RuleGroup; item: RuleItem } => {
     const hidden = row.when ? () => !row.when!(source.get()) : undefined;
+    const reserve = row.reserve ? () => row.reserve!(source.get()) : undefined;
     if (row.control === 'toggle') {
       return {
         group: row.group,
@@ -136,6 +139,7 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource): { gr
         label: row.label,
         steps: row.options,
         hidden,
+        reserve,
         commit,
         get: () => source.get()[row.key],
         set: (v) => {

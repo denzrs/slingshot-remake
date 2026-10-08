@@ -17,6 +17,8 @@ interface Placed {
 interface Live {
   /** The row is out of sight while this holds, e.g. a cap's slider while shot power isn't capped. */
   hidden?: () => boolean;
+  /** While the row is hidden and this holds, it still takes up its space (unseen), so the screen doesn't change size. */
+  reserve?: () => boolean;
   /** An edit is over (a slider let go of, a switch flipped): save it, send it on. */
   commit?: () => void;
 }
