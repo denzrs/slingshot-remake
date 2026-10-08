@@ -260,6 +260,7 @@ export class MultiplayerSession {
     match.canAdvance = this.isHost;
 
     this.resetSync();
+    this.match?.dispose();
     this.match = match;
     if (this.isHost) match.on((event) => this.pendingEvents.push(event));
     this.hooks.matchStarted(match);
@@ -305,6 +306,7 @@ export class MultiplayerSession {
   }
 
   private dropMatch(): void {
+    this.match?.dispose();
     this.match = null;
     this.resetSync();
   }

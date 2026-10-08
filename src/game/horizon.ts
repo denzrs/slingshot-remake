@@ -248,7 +248,7 @@ export class HorizonMatch extends Match {
 
   private startPlanning(): void {
     this.volleyNo++;
-    // Keep only the previous volley's trails — they're what you correct against.
+    // Render only the previous volley; each CPU's learner survives this visual pruning.
     this.trails = this.trails.filter((t) => t.volley >= this.volleyNo - 1);
     const alive = this.alive;
     for (const p of alive) p.locked = false;
@@ -498,6 +498,11 @@ export class HorizonMatch extends Match {
     this.collapse = null;
     this.world.planets = this.world.planets.filter((p) => !c.planets.get(p.seed)?.lost);
     this.world.version++;
+    this.advanceExperimentalField(
+      [...c.planets].filter(([, drift]) => drift.lost).map(([id]) => id),
+      HORIZON.MASS_PER_VOLLEY,
+      HORIZON.FEED,
+    );
 
     for (const [id, d] of c.ships) {
       if (!d.lost) continue;

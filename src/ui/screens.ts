@@ -121,6 +121,7 @@ export function playersScreen(app: App): Screen {
     { value: 'easy', label: t('cpu.easy') },
     { value: 'medium', label: t('cpu.medium') },
     { value: 'hard', label: t('cpu.hard') },
+    { value: 'hawking', label: t('cpu.hawking') },
   ];
   const teams = Array.from({ length: s.teamMode }, (_, k) => k);
 
