@@ -178,7 +178,7 @@ export function boundedMeanConfidenceInterval(values: readonly number[]): MeanEs
   return { n, mean, ci95: [Math.max(0, mean - half), Math.min(1, mean + half)] };
 }
 
-function outcomes(records: readonly MatchRecord[]): OutcomeSummary {
+function outcomes(records: readonly Pick<MatchRecord, 'status' | 'winner'>[]): OutcomeSummary {
   const completed = records.filter((record) => record.status === 'completed');
   const wins = completed.filter((record) => record.winner === 'experimental').length;
   const losses = completed.filter((record) => record.winner === 'opponent').length;
@@ -241,10 +241,10 @@ function shotSummary(shots: readonly ShotRecord[]): ShotSummary {
   };
 }
 
-export function summarizeCell(records: readonly MatchRecord[]): CellSummary {
-  const first = records[0];
-  if (first && records.some((record) => record.mode !== first.mode || record.format !== first.format || record.opponent !== first.opponent || record.learningRate !== first.learningRate || record.startingKnowledge !== first.startingKnowledge)) throw new Error('Cannot summarize records from different matrix cells');
-  const pairs = new Map<number, MatchRecord[]>();
+export function summarizeCell<T extends Omit<Partial<MatchRecord>, 'opponent' | 'learningRate' | 'startingKnowledge'> & Pick<MatchRecord, 'mode' | 'format' | 'pair' | 'leg' | 'status' | 'winner' | 'shots' | 'kills' | 'roundResults' | 'experimentalScore' | 'opponentScore'>>(records: readonly T[]): CellSummary {
+  const identity = (record: T): string => [record.mode, record.format, 'opponent' in record ? String(record.opponent) : '', 'challenger' in record ? String((record as Record<string, unknown>).challenger) : '', 'learningRate' in record ? String((record as Partial<MatchRecord>).learningRate) : '', 'startingKnowledge' in record ? String((record as Partial<MatchRecord>).startingKnowledge) : ''].join('/');
+  if (records.length && records.some((record) => identity(record) !== identity(records[0]))) throw new Error('Cannot summarize records from different matrix cells');
+  const pairs = new Map<number, T[]>();
   for (const record of records) pairs.set(record.pair, [...(pairs.get(record.pair) ?? []), record]);
   const completePairs = [...pairs.values()].filter((legs) => legs.length === 2 && new Set(legs.map((leg) => leg.leg)).size === 2 && legs.every((leg) => leg.status === 'completed'));
   const deltas = completePairs.map((legs) => legs.reduce((sum, leg) => sum + leg.experimentalScore - leg.opponentScore, 0));
