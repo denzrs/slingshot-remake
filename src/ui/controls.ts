@@ -127,7 +127,9 @@ export function sliderControl(item: Item<'slider'>, env: Env): Control {
 
   let shown = -1;
   const draw = (): void => {
-    syncHidden(el, item.hidden?.() ?? false, shown >= 0);
+    const hidden = item.hidden?.() ?? false;
+    syncHidden(el, hidden, shown >= 0);
+    el.classList.toggle('is-reserved', hidden && (item.reserve?.() ?? false));
     const i = indexOf(steps, item.get());
     el.style.setProperty('--pos', String(positionOf(i, steps.length)));
     ticks.forEach((tick, k) => tick.classList.toggle('is-on', k <= i));

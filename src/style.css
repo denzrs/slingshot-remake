@@ -459,6 +459,13 @@ body {
   display: none !important;
 }
 
+/* A slider that is hidden but reserved keeps its space, unseen and out of reach: the settings don't change size. */
+.item--slider[hidden].is-reserved:not(.is-readonly) {
+  display: grid !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .item.is-readonly {
   cursor: default;
   pointer-events: none;
