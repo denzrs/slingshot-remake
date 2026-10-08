@@ -69,7 +69,7 @@ export interface KillRecord {
 
 export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots';
 
-export interface RoundSummary {
+interface RoundSummary {
   title: RoundTitle;
   survivor: number | null;
   /** Winning team in team mode. */

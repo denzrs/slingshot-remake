@@ -10,7 +10,7 @@ import type { KillRecord } from '../src/game/match';
 import type { CpuLevel } from '../src/ai';
 
 /** One leg of a matched world pair: challenger level against opponent level, seat parity decides the side. */
-export interface LevelMatchRecord {
+interface LevelMatchRecord {
   mode: VersusMode;
   format: Format;
   challenger: string;
@@ -29,13 +29,13 @@ export interface LevelMatchRecord {
   roundResults: RoundRecord[];
   updates: number;
 }
-export interface LevelSpec {
+interface LevelSpec {
   level: CpuLevel;
   /** Short label for tables. */
   label: string;
 }
 
-export const LEVELS: readonly LevelSpec[] = [
+const LEVELS: readonly LevelSpec[] = [
   { level: 'easy', label: 'Kepler' },
   { level: 'medium', label: 'Newton' },
   { level: 'hard', label: 'Einstein' },
@@ -74,14 +74,14 @@ const LABELS = LEVELS.map((spec) => spec.label);
 const SEAT_TEAMS = [0, 1, 0, 1, 0, 1];
 const FRAME_TIME = 1 / 60;
 const HELP = `Seeded level-vs-level CPU matrix (matched side swaps, complete final-score matches).
-  --modes=classic,horizon --formats=1v1,2v2,3v3 --challengers=easy,medium,hard --opponents=easy,medium,hard
+  --modes=classic,horizon --formats=1v1,2v2,3v3 --challengers=Kepler,Newton,Einstein --opponents=Kepler,Newton,Einstein
   --pairs=10 --rounds=5 --seed=99540717 --json=results/level-matrix.json --deterministic=true
 Level labels: ${LABELS.join(',')}
 Singular --mode, --format, --challenger, --opponent are also accepted.
 60-second PHYSICS shot limit; bounce/fixed power/grace off; visible planets.
 Classic team volleys and Horizon volleys; deterministic per-seat planner streams.
 Every challenger/opponent pairing runs on matched worlds with both seat assignments.
-Smoke: npm run bench:levels -- --mode=classic --format=1v1 --challengers=hard --opponents=easy --pairs=1 --rounds=1 --json=results/level-smoke.json`;
+Smoke: npm run bench:levels -- --mode=classic --format=1v1 --challengers=Einstein --opponents=Kepler --pairs=1 --rounds=1 --json=results/level-smoke.json`;
 
 function levelOf(label: string): LevelSpec {
   const spec = LEVELS.find((entry) => entry.label === label);

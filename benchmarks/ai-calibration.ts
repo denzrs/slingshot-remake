@@ -6,8 +6,8 @@ import type { MatrixCell, MatrixReport } from './ai-matrix';
 
 interface Fingerprint { algorithm: 'sha256'; digest: string; sources: readonly string[] }
 export type CalibrationInput = Omit<MatrixReport, 'codeFingerprint'> & { codeFingerprint?: Fingerprint | null };
-export interface CalibrationOptions { paths: string[]; json: string | null }
-export interface CalibrationCell extends MatrixCell {
+interface CalibrationOptions { paths: string[]; json: string | null }
+interface CalibrationCell extends MatrixCell {
   key: string;
   expectedPairs: number;
   missingLegs: number;
@@ -53,7 +53,7 @@ interface Recommendation {
   status: 'unmatched' | 'exploratory' | 'outside-target' | 'confirmation-required' | 'confirmed-target' | 'mixed-code-blocked';
   confirmationSeeds: number[];
 }
-export interface CalibrationGroup {
+interface CalibrationGroup {
   id: string;
   codeFingerprint: Fingerprint | null;
   seed: number;
@@ -65,7 +65,7 @@ export interface CalibrationGroup {
   pairedSettingDeltas: { cell: string; baseline: { learningRate: number; startingKnowledge: number }; setting: { learningRate: number; startingKnowledge: number }; matchedPairs: number; unmatchedBaselinePairs: string[]; unmatchedCandidatePairs: string[]; winPointDelta: MeanEstimate; scoreDelta: MeanEstimate }[];
   recommendations: Recommendation[];
 }
-export interface CalibrationReport {
+interface CalibrationReport {
   schemaVersion: 1;
   target: [number, number];
   minimumConfirmationPairs: 50;

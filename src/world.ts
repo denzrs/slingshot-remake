@@ -12,7 +12,7 @@ const SHIP_CLEARANCE = 110;
 const PLANET_GAP = 24;
 const HOLE_CLEARANCE = 90;
 
-export interface WorldOptions {
+interface WorldOptions {
   /** Lower bound of the planet count (default 2); the count is drawn between this and `maxPlanets`. */
   minPlanets?: number;
   maxPlanets: number;

@@ -9,7 +9,7 @@ function hash(x: number, y: number, z: number, seed: number): number {
 const fade = (t: number) => t * t * (3 - 2 * t);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-export function noise3(x: number, y: number, z: number, seed: number): number {
+function noise3(x: number, y: number, z: number, seed: number): number {
   const xi = Math.floor(x);
   const yi = Math.floor(y);
   const zi = Math.floor(z);

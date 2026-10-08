@@ -3,7 +3,7 @@ import type { NetworkGameMode, RoomMode, RoomRules } from './net';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
 
 /** What the multiplayer lobby remembers between visits, so it needn't be filled in again. */
-export interface LobbyPrefs {
+interface LobbyPrefs {
   server: string;
   name: string;
   /** Connect on opening the lobby: set once a connection worked. */

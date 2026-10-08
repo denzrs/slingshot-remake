@@ -2,9 +2,9 @@ import { AIM } from './config';
 import { normalizeAngle, simulateShot, simulateStyledShot, type ShotEnd, type ShotRules, type StyledShotOutcome, type World } from './physics';
 import { gaussian, type Rng } from './rng';
 
-export type NormalCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
-export type NamedExperimentalCpuLevel = 'experimental-easy' | 'experimental-medium' | 'experimental-hard';
-export type ExperimentalCpuLevel = 'experimental' | NamedExperimentalCpuLevel;
+type NormalCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
+type NamedExperimentalCpuLevel = 'experimental-easy' | 'experimental-medium' | 'experimental-hard';
+type ExperimentalCpuLevel = 'experimental' | NamedExperimentalCpuLevel;
 export type CpuLevel = NormalCpuLevel | ExperimentalCpuLevel;
 
 export interface ExperimentalCpuConfig {
@@ -28,7 +28,7 @@ export interface Aim {
 }
 
 /** How a CPU level aims, learns and picks its victims. */
-export interface CpuProfile {
+interface CpuProfile {
   /** Aim error (1σ, in degrees / power units) on the first shot of a round. */
   angle: number;
   power: number;
@@ -67,7 +67,7 @@ export interface CpuDecision {
   predicted: { end: ShotEnd; closest: number; selfClosest: number };
 }
 
-export type CpuDecisionReporter = (decision: CpuDecision) => void;
+type CpuDecisionReporter = (decision: CpuDecision) => void;
 
 
 export interface PlanOptions {
@@ -297,13 +297,4 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
 
 function clampPower(p: number, max: number): number {
   return Math.min(max, Math.max(5, p));
-}
-
-/** Run a planner to completion synchronously (tests, tooling). */
-export function planShotNow(world: World, shooter: number, opts: PlanOptions): Aim {
-  const it = planShot(world, shooter, opts);
-  for (;;) {
-    const r = it.next();
-    if (r.done) return r.value;
-  }
 }

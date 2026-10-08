@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { planShot, planShotNow, type CpuLevel } from '../src/ai';
+import { planShot, type CpuLevel } from '../src/ai';
 import { FIELD, PHYSICS } from '../src/config';
 import { normalizeAngle, Shot, simulateShot, simulateStyledShot, type StyledShotOutcome, type World } from '../src/physics';
 import * as physics from '../src/physics';
 import { createRng, gaussian, type Rng } from '../src/rng';
+import { planShotNow } from './helpers';
 
 const rules = { bounce: false, timeLimit: 12 };
 const emptyWorld = (): World => ({

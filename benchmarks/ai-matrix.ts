@@ -23,7 +23,7 @@ export interface MatrixOptions {
 }
 export interface MatrixCell { mode: VersusMode; format: Format; opponent: Opponent; learningRate: number; startingKnowledge: number }
 export interface MatrixRow extends MatrixCell { summary: CellSummary }
-export interface CodeFingerprint { algorithm: 'sha256'; digest: string; sources: readonly string[] }
+interface CodeFingerprint { algorithm: 'sha256'; digest: string; sources: readonly string[] }
 // Fixed production and experiment sources. Tests and package metadata do not define execution.
 const FINGERPRINT_SOURCES = [
   'src/ai.ts', 'src/config.ts', 'src/experimental-ai.ts', 'src/experimental-evidence.ts',

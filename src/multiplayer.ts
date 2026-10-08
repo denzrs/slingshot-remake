@@ -11,7 +11,7 @@ export type NetMatch = ClassicMatch | HorizonMatch;
 
 type GameStart = Extract<ServerMessage, { type: 'game_start' }>;
 
-export interface SessionHooks {
+interface SessionHooks {
   settings(): Settings;
   /** A match began (as host or guest): show the play screen. */
   matchStarted(match: NetMatch): void;
@@ -21,7 +21,7 @@ export interface SessionHooks {
   matchEnded(): void;
 }
 
-export interface CreateRoomOptions {
+interface CreateRoomOptions {
   name: string;
   mode: RoomMode;
   gameMode: NetworkGameMode;
