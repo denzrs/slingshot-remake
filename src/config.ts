@@ -74,6 +74,19 @@ export const HORIZON = {
   COLLAPSE_TIME: 1.5,
 } as const;
 
+/** The oracle: eliminated players tip on what the others' shots do. A side standing — it never counts towards winning. */
+export const ORACLE = {
+  /** Base points for a right tip: "will it hit?" (turn by turn), a named ship, and "nobody" (salvos). */
+  SHOT: 100,
+  SHIP: 150,
+  NOBODY: 75,
+  /** Every right tip in a row raises the multiplier by this much, up to the cap. */
+  STREAK_STEP: 0.5,
+  MAX_MULTIPLIER: 3,
+  /** Seconds the verdict stays on screen. */
+  RESULT_SECONDS: 3.5,
+} as const;
+
 /** Daily challenge: a fixed run of sectors against stationary targets, the same for everyone on a given day. */
 export const CHALLENGE = {
   SECTORS: 5,

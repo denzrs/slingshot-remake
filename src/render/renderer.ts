@@ -16,6 +16,8 @@ export interface DrawOptions {
   touch: boolean;
   /** A clip is being recorded right now. */
   recording: boolean;
+  /** Show the oracle to eliminated players. */
+  oracle: boolean;
 }
 
 const SHIP_HULL: [number, number][] = [
@@ -60,6 +62,12 @@ export class Renderer {
     this.canvas.style.height = `${cssHeight}px`;
     this.backdrop = null;
     this.contours = new WeakMap();
+  }
+
+  /** The oracle choice under a pointer position (client px), if it is over one. */
+  oracleHit(clientX: number, clientY: number): number | null {
+    const rect = this.canvas.getBoundingClientRect();
+    return this.hud.oracleHit(clientX - rect.left, clientY - rect.top);
   }
 
   /** Convert a pointer position (client px) into field coordinates. */

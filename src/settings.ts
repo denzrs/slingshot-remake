@@ -38,6 +38,8 @@ export interface Settings {
   contours: boolean;
   particles: boolean;
   sound: boolean;
+  /** Eliminated players tip on what the others' shots do (online). */
+  oracle: boolean;
   language: Lang;
   /** 0 = free for all, otherwise the number of teams (2 or 3). */
   teamMode: number;
@@ -63,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   contours: true,
   particles: true,
   sound: true,
+  oracle: true,
   language: 'de',
   teamMode: 0,
   seatTeams: [0, 1, 0, 1, 0, 1],

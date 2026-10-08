@@ -9,6 +9,7 @@ import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook 
 import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
 import { generateWorld } from '../world';
+import { Oracle, type OracleKind } from './oracle';
 
 export type Mode = 'classic' | 'horizon' | 'challenge';
 /** The modes you play against other ships, picked from the title menu. */
@@ -189,6 +190,8 @@ export interface MatchOptions {
   teams?: number[];
   /** Event Horizon online: every human aims at once instead of one after another at a shared keyboard. */
   simultaneous?: boolean;
+  /** Online: eliminated players may tip on what the others' shots do. */
+  oracle?: boolean;
   /** Reproducible multi-round worlds, independent of planner random consumption. */
   seed?: number;
   /** Custom experimental evidence rate only: finite values clamp to [0, 1], nonfinite values use 0, omitted uses 1. */
@@ -245,6 +248,8 @@ export abstract class Match {
   matchStats: StatBook = newStatBook();
   /** Everybody's score at the start of the match and after every round — for the chart on the final screen. */
   scoreHistory: number[][] = [];
+  /** The tipping game for eliminated players (online only). */
+  readonly oracle = new Oracle();
   /** Match clock when the current round began, so kills can be timed from the start of the round. */
   protected roundStartedAt = 0;
   /** Online: the player sitting at this screen. null = hot-seat, where whoever is on turn is at the keyboard. */
@@ -266,6 +271,8 @@ export abstract class Match {
   /** Who hit each player last — CPUs with a grudge aim back at them. */
   private lastHitBy = new Map<number, number>();
   private flightPending = false;
+  /** What the volley in the air has destroyed so far — the oracle's verdict is read from it. */
+  private oracleKills: { killer: number; victim: number; self: boolean; friendly: boolean }[] = [];
   private disposed = false;
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
@@ -362,6 +369,42 @@ export abstract class Match {
   canAim(id: number): boolean {
     const p = this.players[id];
     return this.phase === 'aiming' && this.current === id && !!p && !p.cpu && !p.locked;
+  }
+
+  /** Whether the person at this screen has been shot down and may tip in the oracle. */
+  get ghost(): boolean {
+    const me = this.viewer === null ? undefined : this.players[this.viewer];
+    return !!this.options.oracle && !!me && !me.alive && !me.cpu;
+  }
+
+  /** Whether this player may tip right now: shot down, and a question is open. */
+  canBet(id: number): boolean {
+    const p = this.players[id];
+    return !!this.options.oracle && !!p && !p.alive && !p.cpu && !!this.oracle.question && !this.oracle.question.locked;
+  }
+
+  /** An eliminated player's tip. The host keeps it until the verdict; a screen also remembers its own to show it. */
+  placeBet(id: number, pick: number): boolean {
+    if (!this.canBet(id) || !this.oracle.bet(id, pick)) return false;
+    if (id === this.viewer) this.oracle.mine = { id: this.oracle.question!.id, pick };
+    return true;
+  }
+
+  /** Subclasses call this when a shot (`shot`, by `shooter`) or a salvo is about to be aimed. */
+  protected openOracle(kind: OracleKind, shooter = -1): void {
+    const ghosts = this.players.some((p) => !p.alive && !p.cpu);
+    if (!this.options.oracle || this.attract || !ghosts) return this.oracle.close();
+    this.oracle.open(kind, shooter, kind === 'salvo' ? this.alive.map((p) => p.id) : []);
+  }
+
+  private judgeOracle(): void {
+    const q = this.oracle.question;
+    if (q) {
+      const victims = [...new Set(this.oracleKills.map((k) => k.victim))];
+      const hit = this.oracleKills.some((k) => k.killer === q.shooter && !k.self && !k.friendly);
+      this.oracle.resolve(victims, hit, this.clock);
+    }
+    this.oracleKills = [];
   }
 
   /** Whether the person at this screen may aim right now. */
@@ -517,6 +560,7 @@ export abstract class Match {
     this.killFeed = [];
     this.matchStats = newStatBook();
     this.scoreHistory = [this.players.map(() => 0)];
+    this.oracle.reset(this.players.length);
     this.totalRounds = this.attract ? 0 : this.settings.rounds;
     this.startRound();
   }
@@ -524,6 +568,8 @@ export abstract class Match {
   startRound(): void {
     this.resetExperimentalState();
     this.round++;
+    this.oracle.startRound();
+    this.oracleKills = [];
     this.roundStats = newStatBook();
     this.roundStartedAt = this.clock;
     this.world = generateWorld(Math.floor(this.worldRng() * 2 ** 32), {
@@ -606,6 +652,8 @@ export abstract class Match {
 
   protected launch(aims: VolleyAim[], trackStyle: boolean): void {
     this.flightObservation = this.observedWorld(aims[0]?.player ?? 0);
+    this.oracle.lock();
+    this.oracleKills = [];
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
     this.simClock = 0;
     this.cpuJobs.clear();
@@ -638,6 +686,7 @@ export abstract class Match {
       this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, angle: vs.shot.angle, power: vs.shot.power, volley: this.volleyNumber, at: this.clock })));
       this.volley = null;
       this.flightPending = false;
+      this.judgeOracle();
       this.afterVolley();
     };
     const completion = this.completeShots(volley);
@@ -727,6 +776,7 @@ export abstract class Match {
     const friendly = !self && this.players[killer].team !== null && this.players[killer].team === this.players[victim].team;
     const score = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : this.killPoints(vs);
     this.players[victim].alive = false;
+    this.oracleKills.push({ killer, victim, self, friendly });
     this.players[killer].score += score.points;
     // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
     if (!self && !friendly) this.lastHitBy.set(victim, killer);

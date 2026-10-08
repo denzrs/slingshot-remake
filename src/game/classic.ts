@@ -4,6 +4,7 @@ import { AIM, COLORS, HORIZON, SCORING } from '../config';
 import { t } from '../i18n';
 import { Volley, type VolleyShot } from '../volley';
 import { Match, type RoundTitle } from './match';
+import type { OracleSnapshot } from './oracle';
 
 export interface ClassicSnapshot {
   phase: Match['phase'];
@@ -30,6 +31,7 @@ export interface ClassicSnapshot {
   scoreHistory: number[][];
   /** Simultaneous shots: seconds left to aim. */
   planClock: number;
+  oracle: OracleSnapshot;
 }
 
 /**
@@ -64,6 +66,7 @@ export class ClassicMatch extends Match {
       matchStats: this.matchStats,
       scoreHistory: this.scoreHistory,
       planClock: this.planClock,
+      oracle: this.oracle.snapshot(),
     };
   }
 
@@ -91,6 +94,8 @@ export class ClassicMatch extends Match {
     this.matchStats = snapshot.matchStats;
     this.scoreHistory = snapshot.scoreHistory;
     this.planClock = snapshot.planClock;
+    // Hosts from before the oracle send none.
+    if (snapshot.oracle) this.oracle.restore(snapshot.oracle);
     this.volley = null;
     if (snapshot.volley) {
       const volley = new Volley(snapshot.world, snapshot.volley.aims, this.rules, true);
@@ -191,6 +196,7 @@ export class ClassicMatch extends Match {
     this.queue = this.simultaneous ? [] : order.filter((p) => !p.cpu).map((p) => p.id);
     this.cpuJobs.clear();
     this.setPhase('aiming');
+    this.openOracle('salvo');
     if (this.simultaneous) {
       this.current = -1;
       this.planClock = HORIZON.SIMULTANEOUS_CLOCK;
@@ -309,6 +315,9 @@ export class ClassicMatch extends Match {
   private setTurn(id: number): void {
     this.current = id;
     this.setPhase('aiming');
+    // A CPU shoots within a second or two — too quick to tip on.
+    if (this.players[id].cpu) this.oracle.close();
+    else this.openOracle('shot', id);
     this.emit({ type: 'turn', player: id });
   }
 
