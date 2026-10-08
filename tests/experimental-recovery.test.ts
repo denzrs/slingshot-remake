@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { advanceExperimentalWorld, createExperimentalLearner, experimentalLearnerFit, observeExperimentalShot, planExperimentalShot, type ExperimentalDecision } from '../src/experimental-ai';
-import { RECOVERY_BASELINE_RMS, recoveryPredictionErrors, recoveryVisibleWorld, recoveryWorld, recordRecoveryShot, recordShot, runHiddenRecoveryValidation, validationWorld, visibleWorld } from '../benchmarks/learning-validation';
+import { RECOVERY_BASELINE_RMS, RECOVERY_STUDY_EXIT_BOUNDARY, recoveryPredictionErrors, recoveryVisibleWorld, recoveryWorld, recordRecoveryShot, recordShot, runHiddenRecoveryValidation, validationWorld, visibleWorld } from '../benchmarks/learning-validation';
 import { PHYSICS } from '../src/config';
 import { balancedObservations } from '../src/experimental-evidence';
 import { Shot, aimDirection, simulateShot, type World } from '../src/physics';
 import { createRng } from '../src/rng';
 
 describe('experimental gravity recovery', () => {
-  it('improves excluded seven-source probes after repeated then diverse production trajectories without unsafe updates', () => {
+  it('preserves the historical 300px seven-source study and its excluded-probe reference without unsafe updates', () => {
     const report = runHiddenRecoveryValidation();
+    expect(report.rules.exitBoundary).toBe(RECOVERY_STUDY_EXIT_BOUNDARY);
+    expect(report.scenario).toBe('historical-300px-study');
+    expect(report.predictionMetric).toBe('pooled-sample-weighted-euclidean-trail-rms');
     expect(report.frozenUnchanged).toBe(true);
     expect(report.probesExcluded).toBe(true);
     expect(report.diagnosticsMeaningful).toBe(true);
@@ -19,6 +22,22 @@ describe('experimental gravity recovery', () => {
     expect(report.stages).toHaveLength(8);
     expect(report.stages.every((stage) => stage.recovery!.recoveryStarts <= 4)).toBe(true);
     expect(report.stages.some((stage) => stage.recovery!.effectiveLearningRate > 0)).toBe(true);
+  }, 120_000);
+
+  it('improves excluded seven-source probes with the current production boundary without claiming a historical baseline', () => {
+    const report = runHiddenRecoveryValidation(PHYSICS.OUT_MARGIN);
+    expect(report.rules.exitBoundary).toBe(PHYSICS.OUT_MARGIN);
+    expect(report.frozenUnchanged).toBe(true);
+    expect(report.probesExcluded).toBe(true);
+    expect(report.diagnosticsMeaningful).toBe(true);
+    expect(report.updatesNonworsening).toBe(true);
+    expect(report.finalRms).toBeLessThanOrEqual(report.priorRms * 0.5);
+    expect(report.baselineRms).toBeNull();
+    expect(report.baselineNonregressing).toBeNull();
+    expect(report.stages).toHaveLength(8);
+    expect(report.stages.every((stage) => stage.recovery!.recoveryStarts <= 4)).toBe(true);
+    expect(report.stages.some((stage) => stage.recovery!.effectiveLearningRate > 0)).toBe(true);
+    expect(report.priorErrors.map((probe) => probe.samples)).toEqual(report.finalErrors.map((probe) => probe.samples));
   }, 120_000);
 
   it('rejects an interpolation that worsens an already correct gravity-free prior', () => {

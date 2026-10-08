@@ -41,6 +41,8 @@ export interface PlanOptions {
   attempt: number;
   /** When set, only the angle is searched. */
   fixedPower: number | null;
+  /** The highest power the CPU may choose (default: no cap). */
+  maxPower?: number;
   rng: Rng;
   /** Scales the search size (1 = full); lower it when several CPUs plan at once. */
   effort?: number;
@@ -70,11 +72,13 @@ function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, fri
  * around the best candidates. It's a generator so the game can spread the work over frames.
  */
 export function* planShot(world: World, shooter: number, opts: PlanOptions): Generator<void, Aim> {
-  const { rng, rules, fixedPower } = opts;
+  const { rng, rules } = opts;
+  const maxPower = opts.maxPower ?? AIM.MAX_POWER;
+  const fixedPower = opts.fixedPower === null ? null : Math.min(opts.fixedPower, maxPower);
   const hawking = opts.level === 'hawking';
   // Ordinary CPUs retain their cheap horizon; Hawking searches full-length trick shots.
   const planRules: ShotRules = { ...rules, timeLimit: hawking ? rules.timeLimit : Math.min(rules.timeLimit, opts.lookahead ?? 12) };
-  const randomPower = () => fixedPower ?? 15 + rng() * 85;
+  const randomPower = () => fixedPower ?? Math.min(maxPower, 15 + rng() * 85);
 
   type Candidate = Aim & { cost: number; style?: StyledShotOutcome };
   const pool: Candidate[] = [];
@@ -125,7 +129,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   // random draws landing inside a narrow hit basin. Ordinary levels are unchanged.
   if (opts.noiseFree) {
     for (const direct of directs) {
-      for (const power of fixedPower === null ? [30, 50, 70, 90, 100] : [fixedPower]) {
+      for (const power of fixedPower === null ? [...new Set([30, 50, 70, 90, 100].map((p) => Math.min(p, maxPower)))] : [fixedPower]) {
         for (const offset of [-16, -8, -4, 0, 4, 8, 16]) {
           const aim = { angle: normalizeAngle(direct + offset), power };
           pool.push(yield* candidate(aim));
@@ -154,7 +158,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     for (let i = 0; i < 45 && (hawking || local.cost > -0.5 || (opts.optimizeHitPower && local.cost < 0)); i++) {
       const aim = {
         angle: normalizeAngle(local.angle + gaussian(rng) * spread),
-        power: fixedPower ?? clampPower(local.power + gaussian(rng) * spread),
+        power: fixedPower ?? clampPower(local.power + gaussian(rng) * spread, maxPower),
       };
       const proposed = yield* candidate(aim);
       if (compare(proposed, local) < 0) local = proposed;
@@ -163,7 +167,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     }
     if (!hawking && !opts.optimizeHitPower && best.cost < 0) break;
     if (!hawking && opts.optimizeHitPower && fixedPower === null && local.cost < 0) {
-      let lower = 5;
+      let lower = Math.min(5, maxPower);
       let upper = local.power;
       for (let i = 0; i < 9 && upper - lower > 0.1; i++) {
         const power = (lower + upper) / 2;
@@ -184,7 +188,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
           const center = local;
           for (const da of [-step, 0, step]) {
             for (const dp of fixedPower === null ? [-step * 2, 0, step * 2] : [0]) {
-              const aim = { angle: normalizeAngle(center.angle + da), power: fixedPower ?? clampPower(center.power + dp) };
+              const aim = { angle: normalizeAngle(center.angle + da), power: fixedPower ?? clampPower(center.power + dp, maxPower) };
               const proposed = yield* candidate(aim);
               if (compare(proposed, local) < 0) local = proposed;
             }
@@ -202,12 +206,12 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const scale = Math.pow(err.decay, opts.attempt);
   return {
     angle: normalizeAngle(best.angle + gaussian(rng) * err.angle * scale),
-    power: fixedPower ?? clampPower(best.power + gaussian(rng) * err.power * scale),
+    power: fixedPower ?? clampPower(best.power + gaussian(rng) * err.power * scale, maxPower),
   };
 }
 
-function clampPower(p: number): number {
-  return Math.min(AIM.MAX_POWER, Math.max(5, p));
+function clampPower(p: number, max: number): number {
+  return Math.min(max, Math.max(5, p));
 }
 /** Run a planner to completion synchronously (tests, tooling). */
 export function planShotNow(world: World, shooter: number, opts: PlanOptions): Aim {

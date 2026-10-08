@@ -1,6 +1,6 @@
-import { GRACE, TRAIL_FADE } from './config';
+import { AIM, GRACE, TRAIL_FADE } from './config';
 import type { NetworkGameMode, RoomMode, RoomRules } from './net';
-import type { Settings } from './settings';
+import { DEFAULT_SETTINGS, type Settings } from './settings';
 
 /** What the multiplayer lobby remembers between visits, so it needn't be filled in again. */
 export interface LobbyPrefs {
@@ -18,13 +18,15 @@ const KEY = 'slingshot.lobby.v1';
 /** Where the player name used to live on its own. */
 const LEGACY_NAME_KEY = 'slingshot.player-name';
 
-/** The rules a new room starts with: whatever the player last set up for offline games. */
+/** The rules out of a set of settings. */
 export const rulesOf = (s: Settings): RoomRules => ({
   rounds: s.rounds,
   maxPlanets: s.maxPlanets,
   invisiblePlanets: s.invisiblePlanets,
   bounce: s.bounce,
   fixedPower: s.fixedPower,
+  fixedPowerLevel: s.fixedPowerLevel,
+  maxPower: s.maxPower,
   shotTime: s.shotTime,
   styleBonuses: s.styleBonuses,
   neighborGrace: s.neighborGrace,
@@ -33,8 +35,14 @@ export const rulesOf = (s: Settings): RoomRules => ({
   fadingTrails: s.fadingTrails,
 });
 
-export function loadLobbyPrefs(defaultServer: string, settings: Settings): LobbyPrefs {
-  const fresh: LobbyPrefs = { server: defaultServer, name: 'Player', autoConnect: false, gameMode: 'classic', matchType: 'ffa', capacity: 4, rules: rulesOf(settings) };
+/**
+ * The rules a new room starts with: the standard ones. Online play keeps its own state — whatever
+ * a player has set up for offline games stays out of it, and the other way round.
+ */
+export const defaultRoomRules = (): RoomRules => rulesOf(DEFAULT_SETTINGS);
+
+export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
+  const fresh: LobbyPrefs = { server: defaultServer, name: 'Player', autoConnect: false, gameMode: 'classic', matchType: 'ffa', capacity: 4, rules: defaultRoomRules() };
   try {
     fresh.name = localStorage.getItem(LEGACY_NAME_KEY) || fresh.name;
     const raw = localStorage.getItem(KEY);
@@ -50,6 +58,8 @@ export function loadLobbyPrefs(defaultServer: string, settings: Settings): Lobby
       rules: {
         ...fresh.rules,
         ...saved.rules,
+        maxPower: AIM.CAP_OPTIONS.includes(saved.rules?.maxPower as number) ? saved.rules!.maxPower : fresh.rules.maxPower,
+        fixedPowerLevel: AIM.FIXED_OPTIONS.includes(saved.rules?.fixedPowerLevel as number) ? saved.rules!.fixedPowerLevel : fresh.rules.fixedPowerLevel,
         fadingTrails: TRAIL_FADE.OPTIONS.includes(saved.rules?.fadingTrails as number) ? saved.rules!.fadingTrails : fresh.rules.fadingTrails,
         // It used to be a plain on/off switch, "on" meaning two shots.
         neighborGrace: (saved.rules?.neighborGrace as unknown) === true ? 2 : GRACE.OPTIONS.includes(saved.rules?.neighborGrace as number) ? saved.rules!.neighborGrace : fresh.rules.neighborGrace,

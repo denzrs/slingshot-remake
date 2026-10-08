@@ -1,5 +1,5 @@
 import type { CpuLevel } from './ai';
-import { GRACE, MAX_PLAYERS, TRAIL_FADE } from './config';
+import { AIM, GRACE, MAX_PLAYERS, TRAIL_FADE } from './config';
 import { detectLang, isLang, type Lang } from './i18n';
 
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
@@ -18,7 +18,11 @@ export interface Settings {
   maxPlanets: number;
   invisiblePlanets: boolean;
   bounce: boolean;
+  /** Every shot has the same power, `fixedPowerLevel`: only the angle can be aimed. Mutually exclusive with a cap in the menus. */
   fixedPower: boolean;
+  fixedPowerLevel: number;
+  /** Shots can't be fired harder than this: a low cap favours trick shots over power shots. */
+  maxPower: number;
   /** Seconds before a shot fizzles out. */
   shotTime: number;
   /** Classic only: swing-bys, grazes and the like multiply a hit's points, as they always do in Event Horizon. */
@@ -48,6 +52,8 @@ export const DEFAULT_SETTINGS: Settings = {
   invisiblePlanets: false,
   bounce: false,
   fixedPower: false,
+  fixedPowerLevel: AIM.FIXED_POWER,
+  maxPower: AIM.MAX_POWER,
   shotTime: 20,
   styleBonuses: false,
   neighborGrace: 0,
@@ -80,6 +86,8 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
       if (!TRAIL_FADE.OPTIONS.includes(s.fadingTrails)) s.fadingTrails = 0;
+      if (!AIM.CAP_OPTIONS.includes(s.maxPower)) s.maxPower = AIM.MAX_POWER;
+      if (!AIM.FIXED_OPTIONS.includes(s.fixedPowerLevel)) s.fixedPowerLevel = AIM.FIXED_POWER;
       // It used to be a plain on/off switch, "on" meaning two shots.
       if ((s.neighborGrace as unknown) === true) s.neighborGrace = 2;
       if (!GRACE.OPTIONS.includes(s.neighborGrace)) s.neighborGrace = 0;
@@ -95,6 +103,9 @@ export function loadSettings(): Settings {
   }
   return { ...DEFAULT_SETTINGS, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams], language: detectLang() };
 }
+
+/** The power a ship starts a round with — or shoots with when it is fixed — never above the cap. */
+export const startPower = (s: Pick<Settings, 'fixedPower' | 'fixedPowerLevel' | 'maxPower'>): number => Math.min(s.fixedPower ? s.fixedPowerLevel : AIM.DEFAULT_POWER, s.maxPower);
 
 /** The copy a match plays by, so changing the setup later never alters a game in progress. */
 export function cloneSettings(s: Settings): Settings {
@@ -112,6 +123,48 @@ export function saveSettings(s: Settings): void {
 /** Seat numbers (0-based) that take part. */
 export function activeSeats(s: Settings): number[] {
   return s.seats.flatMap((seat, i) => (seat === 'off' ? [] : [i]));
+}
+
+/** A match needs at least this many ships. */
+export const MIN_SEATS = 2;
+
+/** The seat a new ship would take: the first free one, or null when all six are taken. */
+export function freeSeat(s: Settings): number | null {
+  const i = s.seats.indexOf('off');
+  return i < 0 ? null : i;
+}
+
+/** How many ships each team has among the seats that take part; empty in free for all. */
+export function teamCounts(s: Settings): number[] {
+  if (!s.teamMode) return [];
+  const counts: number[] = Array.from({ length: s.teamMode }, () => 0);
+  for (const i of activeSeats(s)) counts[s.seatTeams[i] % s.teamMode]++;
+  return counts;
+}
+
+/** Puts a ship (who flies it: a human or a CPU) into the first free seat — in team mode, into the smallest team. Returns the seat, or null when there is none. */
+export function addSeat(s: Settings, flier: Exclude<Seat, 'off'>): number | null {
+  const i = freeSeat(s);
+  if (i === null) return null;
+  if (s.teamMode) {
+    const counts = teamCounts(s);
+    s.seatTeams[i] = counts.indexOf(Math.min(...counts));
+  }
+  s.seats[i] = flier;
+  return i;
+}
+
+/** Takes a ship out of the match; false when that would leave fewer than the two a match needs. */
+export function removeSeat(s: Settings, i: number): boolean {
+  if (s.seats[i] === 'off' || activeSeats(s).length <= MIN_SEATS) return false;
+  s.seats[i] = 'off';
+  return true;
+}
+
+/** Deals the ships out to the teams one after the other, so the teams are as even as they can be. */
+export function balanceTeams(s: Settings): void {
+  if (!s.teamMode) return;
+  activeSeats(s).forEach((seat, k) => (s.seatTeams[seat] = k % s.teamMode));
 }
 
 /**

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { HORIZON } from '../src/config';
+import { HORIZON, PHYSICS } from '../src/config';
 import { advanceExperimentalWorld, createExperimentalLearner, experimentalLearnerFit, observeExperimentalShot, planExperimentalShot, type ExperimentalDecision } from '../src/experimental-ai';
 import { heldOutErrors, independentDensityWorld, lowInformationLearningCheck, quantile, recordShot, runLearningValidation, shortShotConfidenceCheck, trainLearner, validationWorld, visibleWorld } from '../benchmarks/learning-validation';
-import { simulateShot } from '../src/physics';
+import { Shot, simulateShot } from '../src/physics';
 import { createRng } from '../src/rng';
 
 describe('production trajectory learning', () => {
@@ -251,6 +251,21 @@ describe('production trajectory learning', () => {
   it('retains uncertainty after short low-information shots with tiny fit residuals', () => {
     const report = shortShotConfidenceCheck();
     expect(report.observedShots).toBe(4);
+    expect(report.observationSteps).toBe(6);
+    expect(report.observationSeconds).toBe(6 * PHYSICS.DT);
+    const world = independentDensityWorld(1);
+    world.ships[0] = { x: -245, y: 400, alive: true };
+    for (const observation of report.observations) {
+      const shot = new Shot(world, 0, observation.angle, observation.power, { bounce: false, timeLimit: 1 });
+      const physicalPoints = [shot.x, shot.y];
+      for (let step = 1; step <= report.observationSteps; step++) {
+        expect(shot.end).toBeNull();
+        shot.step();
+        if (step % 2 === 0) physicalPoints.push(shot.x, shot.y);
+      }
+      expect(observation.points).toEqual(physicalPoints);
+      expect(Math.hypot(physicalPoints[6] - physicalPoints[0], physicalPoints[7] - physicalPoints[1])).toBeGreaterThan(10);
+    }
     expect(report.predictionSamples).toBeGreaterThan(0);
     expect(report.predictionSamples).toBeLessThanOrEqual(16);
     expect(report.trainingRms).not.toBeNull();

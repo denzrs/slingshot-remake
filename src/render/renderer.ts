@@ -1,4 +1,4 @@
-import { AIM, COLORS, FIELD, HORIZON, PHYSICS } from '../config';
+import { AIM, COLORS, FIELD, FONTS, HORIZON, PHYSICS } from '../config';
 import type { Match, Scene } from '../game';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
 import { aimDirection, type World } from '../physics';
@@ -266,24 +266,37 @@ export class Renderer {
     }
   }
 
-  /** Chevron on the field edge pointing at a shot that has left the plate. */
+  /**
+   * Chevron on the field edge pointing at a shot that has left the plate, with how far outside the field it is (0 at the edge,
+   * counting up until it counts as lost). The chevron turns white in the last stretch.
+   */
   private drawOffscreenMarker(x: number, y: number, color: string): void {
     const { ctx } = this;
-    const inset = 14;
+    const inset = 18;
     const cx = Math.min(FIELD.width - inset, Math.max(inset, x));
     const cy = Math.min(FIELD.height - inset, Math.max(inset, y));
     const a = Math.atan2(y - cy, x - cx);
-    const pulse = 0.6 + 0.4 * Math.sin(this.time * 10);
+    const beyond = Math.max(-x, x - FIELD.width, -y, y - FIELD.height, 0);
+    const left = Math.max(0, 1 - beyond / PHYSICS.OUT_MARGIN);
+    const danger = left < 0.25;
     ctx.save();
     ctx.translate(cx, cy);
+    ctx.save();
     ctx.rotate(a);
+    ctx.scale(1.5, 1.5);
     ctx.beginPath();
     ctx.moveTo(8, 0);
     ctx.lineTo(-5, -6);
     ctx.lineTo(-5, 6);
     ctx.closePath();
-    ctx.fillStyle = rgba(color, pulse);
+    ctx.fillStyle = rgba(danger ? COLORS.bone : color, 0.9);
     ctx.fill();
+    ctx.restore();
+    ctx.font = `600 15px ${FONTS.mono}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = rgba(danger ? COLORS.bone : color, 0.9);
+    ctx.fillText(String(Math.round(beyond)), -Math.cos(a) * 30, -Math.sin(a) * 30);
     ctx.restore();
   }
 

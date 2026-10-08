@@ -6,7 +6,7 @@ import { t } from '../i18n';
 import { normalizeAngle, type ShotEnd, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
-import { seatTeamsFor, type Seat, type Settings } from '../settings';
+import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
 import { generateWorld } from '../world';
 
@@ -533,7 +533,7 @@ export abstract class Match {
       p.locked = false;
       // Face the middle of the field; the classic duel keeps the original's straight 0° / 180°.
       p.angle = duel ? (p.id === 0 ? 0 : 180) : normalizeAngle(Math.round((Math.atan2(ship.y - FIELD.height / 2, FIELD.width / 2 - ship.x) * 180) / Math.PI));
-      p.power = this.settings.fixedPower ? AIM.FIXED_POWER : AIM.DEFAULT_POWER;
+      p.power = startPower(this.settings);
     }
     this.emit({ type: 'round' });
     this.beginRound();
@@ -550,7 +550,7 @@ export abstract class Match {
     if (!this.isHumanTurn) return;
     const p = this.players[this.current];
     p.angle = normalizeAngle(angle);
-    if (!this.settings.fixedPower) p.power = Math.min(AIM.MAX_POWER, Math.max(AIM.MIN_POWER, power));
+    if (!this.settings.fixedPower) p.power = Math.min(this.settings.maxPower, Math.max(AIM.MIN_POWER, power));
   }
 
   /** Called when settings change mid-match: only display options follow along, the rules stay as the game started. */
@@ -950,7 +950,8 @@ export abstract class Match {
         ? planExperimentalShot(this.observedWorld(id), {
             rules: this.rules,
             attempt: p.shots,
-            fixedPower: this.settings.fixedPower ? AIM.FIXED_POWER : null,
+            fixedPower: this.settings.fixedPower ? startPower(this.settings) : null,
+            maxPower: this.settings.maxPower,
             rng: this.plannerRngFor(id),
             effort,
             lookahead,
@@ -962,7 +963,8 @@ export abstract class Match {
             rules: this.rules,
             level: p.cpu ?? 'medium',
             attempt: p.shots,
-            fixedPower: this.settings.fixedPower ? AIM.FIXED_POWER : null,
+            fixedPower: this.settings.fixedPower ? startPower(this.settings) : null,
+            maxPower: this.settings.maxPower,
             rng: this.plannerRngFor(id),
             effort,
             lookahead,

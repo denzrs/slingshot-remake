@@ -6,6 +6,11 @@ import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
 import { ExperimentalWorkerClient, type ExperimentalWorkerPort } from '../src/experimental-worker-client';
 import { createExperimentalWorkerProcessor } from '../src/experimental-worker';
 import type { ExperimentalWorkerRequest, ExperimentalWorkerResponse } from '../src/experimental-worker-protocol';
+import { createExperimentalLearner, observeExperimentalShot, planExperimentalShot, type ExperimentalDecision } from '../src/experimental-ai';
+import * as physics from '../src/physics';
+import { createRng } from '../src/rng';
+import { PHYSICS } from '../src/config';
+import { recordRecoveryShot, validationWorld, visibleWorld } from '../benchmarks/learning-validation';
 
 const seats: Seat[] = ['experimental', 'human', 'off', 'off', 'off', 'off'];
 const settings = { ...DEFAULT_SETTINGS, seats, rounds: 3, maxPlanets: 0, shotTime: 0.15, bounce: false, fixedPower: false };
@@ -20,6 +25,15 @@ class LearningClassic extends ClassicMatch {
   fireOwn(angle = 90, power = 20): void {
     this.players[0].shots++;
     this.launch([{ player: 0, angle, power }], false);
+  }
+  firePlanned(ids = [0]): void {
+    const aims = ids.map((id) => {
+      const target = this.cpuJob(id)?.target;
+      if (!target) throw new Error(`CPU ${id} has no planned shot`);
+      this.players[id].shots++;
+      return { player: id, ...target };
+    });
+    this.launch(aims, false);
   }
   firePlayers(): void {
     const aims = this.players.map((player) => {
@@ -40,6 +54,15 @@ class LearningHorizon extends HorizonMatch {
   fireOwn(angle = 90, power = 20): void {
     this.players[0].shots++;
     this.launch([{ player: 0, angle, power }], false);
+  }
+  firePlanned(ids = [0]): void {
+    const aims = ids.map((id) => {
+      const target = this.cpuJob(id)?.target;
+      if (!target) throw new Error(`CPU ${id} has no planned shot`);
+      this.players[id].shots++;
+      return { player: id, ...target };
+    });
+    this.launch(aims, false);
   }
   firePlayers(): void {
     const aims = this.players.map((player) => {
@@ -119,7 +142,76 @@ function finishFlight(match: ClassicMatch | HorizonMatch): void {
 }
 
 describe('experimental match learning', () => {
+  for (const [fixedPower, expectedPower] of [[null, null], [55, 10], [5, 5]] as const) {
+    it(`launches a safe capped recovery trajectory with fixed power ${String(fixedPower)}`, () => {
+      const world = validationWorld(2);
+      world.ships = [{ x: 100, y: 400, alive: true }, { x: 160, y: 400, alive: true }, { x: 1100, y: 400, alive: true }];
+      const visible = visibleWorld(world);
+      const learner = createExperimentalLearner(0);
+      // This slow pass between unequal sources produces real failed forecasts, not injected recovery state.
+      const repeated = recordRecoveryShot({ ...world,
+        ships: world.ships.map((ship) => ({ ...ship, alive: false })) }, 0, 35, 1);
+      for (let shotId = 1; shotId <= 4; shotId++) {
+        observeExperimentalShot(learner, { ...repeated, shotId }, visible, 0);
+      }
+      expect(learner.predictionTrend).toHaveLength(4);
+      expect(learner.predictionTrend.every((rms) => rms > 12)).toBe(true);
+      expect(learner.recovery.stalled).toBe(true);
+      expect(learner.probeHistory).toHaveLength(4);
+      let decision: ExperimentalDecision | undefined;
+      const rules = { bounce: false, timeLimit: 12 };
+      const planner = planExperimentalShot(visible, {
+        learner, learningRate: 0.12, rules, friends: [1],
+        attempt: 0, fixedPower, maxPower: 10, rng: createRng(7139),
+      }, (_, report) => { decision = report; });
+      let result = planner.next();
+      while (!result.done) result = planner.next();
+      expect(result.value.power).toBeGreaterThanOrEqual(0);
+      expect(result.value.power).toBeLessThanOrEqual(10);
+      if (expectedPower !== null) expect(result.value.power).toBe(expectedPower);
+      const shot = new physics.Shot(world, 0, result.value.angle, result.value.power, rules);
+      expect(Math.hypot(shot.vx, shot.vy)).toBeLessThanOrEqual(10 * PHYSICS.SPEED_PER_POWER + 1e-10);
+      for (let step = 0; step <= Math.ceil(rules.timeLimit / PHYSICS.DT) && !shot.end; step++) shot.step();
+      expect(shot.end).not.toBeNull();
+      expect(shot.end!.kind !== 'ship' || shot.end!.ship === 2).toBe(true);
+      expect(decision).toMatchObject({ kind: 'probe', unsafeRate: 0, learningRate: 0.12, startingKnowledge: 0,
+        observedShots: 4, recovery: { stalled: true } });
+    });
+  }
+
   for (const Game of [LearningClassic, LearningHorizon]) {
+    for (const [fixedPower, fixedPowerLevel, expectedPower] of [
+      [false, 55, null], [true, 55, 10], [true, 5, 5],
+    ] as const) {
+      it(`${Game.name} launches every CPU within a low cap with fixed power ${String(expectedPower)}`, () => {
+        const mixedSeats: Seat[] = ['experimental', 'experimental-hard', 'easy', 'medium', 'hard', 'hawking'];
+        const decisions: ExperimentalReport[] = [];
+        const match = new Game({ ...settings, seats: mixedSeats, maxPower: 10, fixedPower, fixedPowerLevel }, {
+          seed: 7129, deterministicCpu: true,
+          experimentalLearningRate: 0.12, experimentalStartingKnowledge: 0.23,
+          onExperimentalDecision: (report) => decisions.push(report),
+        });
+        match.newMatch();
+        for (const player of match.players) {
+          Object.assign(match.world.ships[player.id], { x: 100 + player.id * 200, y: 100 });
+          expect(player.power).toBe(expectedPower ?? 10);
+        }
+        const ids = match.players.map((player) => player.id);
+        match.think(ids);
+        expect(decisions).toHaveLength(2);
+        expect(decisions.find((report) => report.player === 0)).toMatchObject({ learningRate: 0.12, startingKnowledge: 0.23 });
+        expect(decisions.find((report) => report.player === 1)).toMatchObject({ learningRate: 0.72, startingKnowledge: 0.9 });
+        match.firePlanned(ids);
+        expect(match.volley!.shots).toHaveLength(6);
+        for (const { shot } of match.volley!.shots) {
+          expect(shot.power).toBeGreaterThanOrEqual(0);
+          expect(shot.power).toBeLessThanOrEqual(10);
+          if (expectedPower !== null) expect(shot.power).toBe(expectedPower);
+        }
+        finishFlight(match);
+      });
+    }
+
     it(`${Game.name} runs three fixed experimental presets alongside every original CPU independently of custom options`, () => {
       const mixedSeats: Seat[] = ['experimental-easy', 'experimental-medium', 'experimental-hard', 'easy', 'medium', 'hard'];
       const configs = [
@@ -409,9 +501,10 @@ describe('experimental match learning', () => {
     const fitted = completed[0].experimentalObservation!;
     expect(fitted.predictionSamples).toBeGreaterThan(0);
     expect(fitted.learnedShots).toBe(1);
-    Object.assign(match.world.ships[0], { x: -295, y: 400 });
+    Object.assign(match.world.ships[0], { x: -PHYSICS.OUT_MARGIN - PHYSICS.MUZZLE, y: 400 });
     match.fireOwn(180, 100);
     finishFlight(match);
+    expect(completed[1].outcome).toBe('lost');
     expect(completed).toHaveLength(2);
     expect(completed[1].experimentalObservation).toMatchObject({
       observedShots: 2, learnedShots: 1, retainedShots: 1,

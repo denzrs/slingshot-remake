@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createMatch, type Match, type VersusMode } from '../src/game';
+import { createMatch, type GameEvent, type Match, type VersusMode } from '../src/game';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
-import { FIELD, TRAIL_FADE } from '../src/config';
+import { AIM, FIELD, TRAIL_FADE } from '../src/config';
 import { cloneSettings, DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
 /** Run a CPU-only match headlessly until the first round is decided. */
@@ -146,6 +146,110 @@ describe('settings', () => {
   });
 });
 
+describe('max power', () => {
+  const capped = (mode: 'classic' | 'horizon', maxPower: number, fixedPower = false) => createMatch(mode, { ...DEFAULT_SETTINGS, maxPower, fixedPower }, { seats: ['human', 'human', 'off', 'off', 'off', 'off'] });
+
+  it('caps what a human can aim for, in classic and event horizon', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      const m = capped(mode, 70) as ClassicMatch | HorizonMatch;
+      m.setPlayerAim(0, 10, 100);
+      expect(m.players[0].power).toBe(70);
+      m.adjustPlayer(0, 0, -200);
+      expect(m.players[0].power).toBe(0);
+      m.adjustPlayer(0, 0, 55);
+      expect(m.players[0].power).toBe(55);
+    }
+  });
+
+  it('starts a round at most at the cap, also with fixed power', () => {
+    expect(capped('classic', 50).players[0].power).toBe(50);
+    expect(capped('classic', 100).players[0].power).toBe(50);
+    expect(capped('classic', 50, true).players[0].power).toBe(50);
+    expect(capped('classic', 10).players[0].power).toBe(10);
+    expect(capped('classic', 100, true).players[0].power).toBe(55);
+  });
+
+  it('keeps every CPU shot under the cap', () => {
+    const seats: Seat[] = ['hard', 'hard', 'off', 'off', 'off', 'off'];
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, maxPower: 60 }, { seats }) as ClassicMatch;
+    const dt = 1 / 30;
+    let fired = 0;
+    for (let t = 0; t < 300 && m.phase !== 'roundOver'; t += dt) {
+      m.update(dt);
+      if (m.phase === 'killcam') m.advance();
+      if (m.phase === 'flying') fired++;
+      for (const p of m.players) expect(p.power).toBeLessThanOrEqual(60);
+    }
+    expect(fired).toBeGreaterThan(0);
+  });
+});
+
+describe('fixed shot power', () => {
+  const duel: Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
+  const fixed = (mode: 'classic' | 'horizon', level: number, maxPower: number = AIM.MAX_POWER) =>
+    createMatch(mode, { ...DEFAULT_SETTINGS, fixedPower: true, fixedPowerLevel: level, maxPower }, { seats: duel }) as ClassicMatch | HorizonMatch;
+  const fires = (m: Match): number[] => {
+    const powers: number[] = [];
+    m.on((e: GameEvent) => e.type === 'fire' && powers.push(e.power));
+    return powers;
+  };
+
+  it('starts every ship at the chosen level, in both modes', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      for (const level of AIM.FIXED_OPTIONS) {
+        const m = fixed(mode, level);
+        expect(m.players.map((p) => p.power), `${mode} ${level}`).toEqual([level, level]);
+      }
+    }
+  });
+
+  it('cannot be aimed away from', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      const m = fixed(mode, 80);
+      m.setPlayerAim(0, 10, 20);
+      expect(m.players[0].power).toBe(80);
+      m.adjustPlayer(0, 0, -50);
+      expect(m.players[0].power).toBe(80);
+      // The angle is still the player's to aim.
+      expect(m.players[0].angle).toBe(10);
+    }
+  });
+
+  it('is the power a human shot flies with', () => {
+    const m = fixed('classic', 35) as ClassicMatch;
+    const powers = fires(m);
+    m.setPlayerAim(m.current, 20, 99);
+    m.commit();
+    expect(powers).toEqual([35]);
+  });
+
+  it('is the power every CPU shot flies with', () => {
+    for (const level of [20, 80]) {
+      const seats: Seat[] = ['hard', 'hard', 'off', 'off', 'off', 'off'];
+      const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, fixedPower: true, fixedPowerLevel: level }, { seats }) as ClassicMatch;
+      const powers = fires(m);
+      const dt = 1 / 30;
+      for (let t = 0; t < 300 && m.phase !== 'roundOver'; t += dt) {
+        m.update(dt);
+        if (m.phase === 'killcam') m.advance();
+      }
+      expect(powers.length).toBeGreaterThan(0);
+      expect(new Set(powers), `level ${level}`).toEqual(new Set([level]));
+    }
+  });
+
+  it('is held back by a leftover cap, as in games saved before the two were kept apart', () => {
+    expect(fixed('classic', 80, 40).players[0].power).toBe(40);
+  });
+
+  it('does not touch a game that is not fixed, whatever level is stored', () => {
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, fixedPower: false, fixedPowerLevel: 90 }, { seats: duel }) as ClassicMatch;
+    expect(m.players[0].power).toBe(AIM.DEFAULT_POWER);
+    m.adjustPlayer(0, 0, 10);
+    expect(m.players[0].power).toBe(AIM.DEFAULT_POWER + 10);
+  });
+});
+
 describe('event horizon match', () => {
   it('restores authoritative planning state and black-hole world', () => {
     const host = createMatch('horizon', { ...DEFAULT_SETTINGS, rounds: 3 }, { seats: ['human', 'human', 'off', 'off', 'off', 'off'] }) as HorizonMatch;
@@ -211,7 +315,8 @@ describe('team mode', () => {
     // Seats 1+2 in team A, seat 3 alone in team B: B must shoot every other turn.
     const m = createMatch('classic', teamSettings(['human', 'human', 'human', 'off', 'off', 'off'], [0, 0, 1, 0, 0, 0]));
     m.world.planets = [];
-    m.world.ships = [{ x: 100, y: 400, alive: true }, { x: 200, y: 400, alive: true }, { x: 1100, y: 400, alive: true }];
+    // The world is random: a ship straight above another would turn the "harmless miss" into a kill and change the order.
+    [[100, 400], [1100, 400], [640, 700]].forEach(([x, y], i) => Object.assign(m.world.ships[i], { x, y }));
     const order: number[] = [];
     for (let turn = 0; turn < 4; turn++) {
       order.push(m.current);
