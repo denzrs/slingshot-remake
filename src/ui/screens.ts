@@ -118,9 +118,9 @@ export function playersScreen(app: App): Screen {
   const seats = activeSeats(s);
   const fliers = [
     { value: 'human', label: t('seat.human') },
-    { value: 'experimental-easy', label: t('cpu.experimental-easy') },
-    { value: 'experimental-medium', label: t('cpu.experimental-medium') },
-    { value: 'experimental-hard', label: t('cpu.experimental-hard') },
+    { value: 'easy', label: t('cpu.easy') },
+    { value: 'medium', label: t('cpu.medium') },
+    { value: 'hard', label: t('cpu.hard') },
     { value: 'hawking', label: t('cpu.hawking') },
   ];
   const teams = Array.from({ length: s.teamMode }, (_, k) => k);
@@ -178,7 +178,7 @@ export function playersScreen(app: App): Screen {
     },
   });
 
-  const add = (label: string, flier: 'human' | 'experimental-medium'): MenuItem => ({
+  const add = (label: string, flier: 'human' | 'medium'): MenuItem => ({
     kind: 'action',
     section: 'actions',
     label,
@@ -229,7 +229,7 @@ export function playersScreen(app: App): Screen {
       mode,
       ...seats.map(seat),
       add(t('players.add.human'), 'human'),
-      add(t('players.add.cpu'), 'experimental-medium'),
+      add(t('players.add.cpu'), 'medium'),
       ...(s.teamMode
         ? [
             {

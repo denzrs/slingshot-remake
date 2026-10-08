@@ -1,5 +1,5 @@
 import { AIM } from './config';
-import { normalizeAngle, simulateShot, simulateStyledShot, type ShotRules, type StyledShotOutcome, type World } from './physics';
+import { normalizeAngle, simulateShot, simulateStyledShot, type ShotEnd, type ShotRules, type StyledShotOutcome, type World } from './physics';
 import { gaussian, type Rng } from './rng';
 
 export type NormalCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
@@ -27,12 +27,46 @@ export interface Aim {
   power: number;
 }
 
-/** Aim error (1σ) on the first shot of a round and how fast it shrinks with every further shot. */
-const ERROR: Record<Exclude<NormalCpuLevel, 'hawking'>, { angle: number; power: number; decay: number }> = {
-  easy: { angle: 4, power: 4, decay: 0.8 },
-  medium: { angle: 1.6, power: 1.6, decay: 0.65 },
-  hard: { angle: 0.5, power: 0.5, decay: 0.45 },
+/** How a CPU level aims, learns and picks its victims. */
+export interface CpuProfile {
+  /** Aim error (1σ, in degrees / power units) on the first shot of a round. */
+  angle: number;
+  power: number;
+  /** Every further shot of a round shrinks the aim error by this factor. */
+  decay: number;
+  /** Below this, a shot passing home or a teammate is too close — aim error could turn it into a friendly hit. */
+  selfMargin: number;
+  /** How much a hit's power is resented, in cost per unit of power. */
+  powerFrugality: number;
+  /** Preference for the nearest enemy: distance in px added to a far enemy's miss cost. */
+  distanceBias: number;
+  /** Extra pull towards whoever hit this CPU most recently. */
+  grudge: number;
+}
+
+export const CPU_PROFILES: Readonly<Record<Exclude<NormalCpuLevel, 'hawking'>, Readonly<CpuProfile>>> = {
+  // Kepler: lazy and lucky. Goes for whoever is nearest, tolerates risk, learns slowly.
+  easy: { angle: 4.5, power: 4.5, decay: 0.8, selfMargin: 20, powerFrugality: 0, distanceBias: 0.25, grudge: 0 },
+  // Newton: efficient. Wastes no power, keeps a level head.
+  medium: { angle: 1.6, power: 1.6, decay: 0.6, selfMargin: 45, powerFrugality: 0.01, distanceBias: 0, grudge: 0 },
+  // Einstein: careful and precise, with a long memory for being shot at.
+  hard: { angle: 0.5, power: 0.5, decay: 0.45, selfMargin: 60, powerFrugality: 0.002, distanceBias: 0, grudge: 3 },
 };
+/** Planner result emitted for each menu CPU launch when AI decision logging is enabled. */
+export interface CpuDecision {
+  level: NormalCpuLevel;
+  attempt: number;
+  profile: Readonly<CpuProfile>;
+  grudgeTarget: number | null;
+  considered: number;
+  hitCandidates: number;
+  searched: (Aim & { cost: number }) | null;
+  launch: Aim;
+  predicted: { end: ShotEnd; closest: number; selfClosest: number };
+}
+
+export type CpuDecisionReporter = (decision: CpuDecision) => void;
+
 
 export interface PlanOptions {
   rules: ShotRules;
@@ -53,17 +87,18 @@ export interface PlanOptions {
   optimizeHitPower?: boolean;
   /** Return the searched aim without execution error (experimental belief planning). */
   noiseFree?: boolean;
+  /** Enemy this CPU would like to see dead: whoever hit it most recently. */
+  grudgeTarget?: number | null;
+  /** Receives the selected candidate, launch perturbation, and predicted outcome. */
+  onDecision?: CpuDecisionReporter;
 }
 
-/** Below this, a shot passing home or a teammate is too close — aim error could turn it into a friendly hit. */
-const SELF_MARGIN = 45;
-
 /** Planning cost: 0 or below means a hit, lower power is slightly preferred among hits. */
-function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[]): number {
+function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[], profile: Readonly<CpuProfile>): number {
   const { end, closest, selfClosest } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends);
   if (end.kind === 'ship' && (end.ship === shooter || friends.includes(end.ship))) return 1e6;
-  const risk = selfClosest < SELF_MARGIN ? (SELF_MARGIN - selfClosest) * 20 : 0;
-  if (end.kind === 'ship') return -1 + aim.power / 1000 + risk;
+  const risk = selfClosest < profile.selfMargin ? (profile.selfMargin - selfClosest) * 20 : 0;
+  if (end.kind === 'ship') return -1 + aim.power * (1 / 1000 + profile.powerFrugality) + risk;
   return closest + risk;
 }
 
@@ -76,6 +111,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const maxPower = opts.maxPower ?? AIM.MAX_POWER;
   const fixedPower = opts.fixedPower === null ? null : Math.min(opts.fixedPower, maxPower);
   const hawking = opts.level === 'hawking';
+  const profile = CPU_PROFILES[opts.level === 'hawking' ? 'hard' : opts.level];
   // Ordinary CPUs retain their cheap horizon; Hawking searches full-length trick shots.
   const planRules: ShotRules = { ...rules, timeLimit: hawking ? rules.timeLimit : Math.min(rules.timeLimit, opts.lookahead ?? 12) };
   const randomPower = () => fixedPower ?? Math.min(maxPower, 15 + rng() * 85);
@@ -83,16 +119,32 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   type Candidate = Aim & { cost: number; style?: StyledShotOutcome };
   const pool: Candidate[] = [];
   const self = world.ships[shooter];
+  function reportDecision(searched: Candidate | null, launch: Aim): void {
+    if (!opts.onDecision) return;
+    const predicted = simulateShot(world, shooter, launch.angle, launch.power, rules, friends);
+    opts.onDecision({
+      level: opts.level,
+      attempt: opts.attempt,
+      profile,
+      grudgeTarget,
+      considered: pool.length,
+      hitCandidates: pool.filter((candidate) => candidate.cost < 0).length,
+      searched: searched && { angle: searched.angle, power: searched.power, cost: searched.cost },
+      launch,
+      predicted,
+    });
+  }
   const friends = opts.friends ?? [];
+  const grudgeTarget = opts.grudgeTarget ?? null;
   // Belief searches revisit grid centres and clamped powers. Cache exact launches
   // only for this generator; ordinary CPU planning retains its existing path.
   const costs = opts.noiseFree ? new Map<number, Map<number, number>>() : null;
   const evaluateAim = (aim: Aim): number => {
-    if (!costs) return evaluate(world, shooter, aim, planRules, friends);
+    if (!costs) return evaluate(world, shooter, aim, planRules, friends, profile);
     let powers = costs.get(aim.angle);
     const cached = powers?.get(aim.power);
     if (cached !== undefined) return cached;
-    const cost = evaluate(world, shooter, aim, planRules, friends);
+    const cost = evaluate(world, shooter, aim, planRules, friends, profile);
     if (!powers) costs.set(aim.angle, powers = new Map());
     powers.set(aim.power, cost);
     return cost;
@@ -101,8 +153,8 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     if (!hawking) return { ...aim, cost: evaluateAim(aim) };
     const style = yield* simulateStyledShot(world, shooter, aim.angle, aim.power, planRules, friends);
     const friendlyHit = style.end.kind === 'ship' && (style.end.ship === shooter || friends.includes(style.end.ship));
-    const risk = style.selfClosest < SELF_MARGIN ? (SELF_MARGIN - style.selfClosest) * 20 : 0;
-    const cost = friendlyHit ? 1e6 : style.end.kind === 'ship' ? -1 + aim.power / 1000 + risk : style.closest + risk;
+    const risk = style.selfClosest < profile.selfMargin ? (profile.selfMargin - style.selfClosest) * 20 : 0;
+    const cost = friendlyHit ? 1e6 : style.end.kind === 'ship' ? -1 + aim.power * (1 / 1000 + profile.powerFrugality) + risk : style.closest + risk;
     return { ...aim, cost, style };
   }
   const compare = (a: Candidate, b: Candidate): number => {
@@ -110,7 +162,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     const sa = a.style!;
     const sb = b.style!;
     const safety = (s: StyledShotOutcome): number =>
-      s.end.kind === 'ship' && (s.end.ship === shooter || friends.includes(s.end.ship)) ? 2 : s.selfClosest < SELF_MARGIN ? 1 : 0;
+      s.end.kind === 'ship' && (s.end.ship === shooter || friends.includes(s.end.ship)) ? 2 : s.selfClosest < profile.selfMargin ? 1 : 0;
     const safetyDifference = safety(sa) - safety(sb);
     if (safetyDifference) return safetyDifference;
     // No amount of style can outweigh safety or an enemy hit.
@@ -120,9 +172,18 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     return sb.swingbys - sa.swingbys || sb.flightTime - sa.flightTime || sb.pathLength - sa.pathLength || a.cost - b.cost;
   };
   const directs = world.ships
-    .filter((s, i) => i !== shooter && s.alive && !friends.includes(i))
-    .map((t) => normalizeAngle((Math.atan2(-(t.y - self.y), t.x - self.x) * 180) / Math.PI));
-  if (directs.length === 0) return { angle: rng() * 360, power: randomPower() };
+    .flatMap((t, i) => (i === shooter || !t.alive || friends.includes(i)) ? [] : [{
+      angle: normalizeAngle((Math.atan2(-(t.y - self.y), t.x - self.x) * 180) / Math.PI),
+      // Personality weight for the sweep: 1 for a plain enemy, less the farther away (Kepler
+      // is lazy), and a fixed premium for whoever hit this CPU last (Einstein holds grudges).
+      weight: Math.max(0.1, 1 - profile.distanceBias * Math.hypot(t.x - self.x, t.y - self.y) / 100)
+        + (grudgeTarget === i ? profile.grudge : 0),
+    }])
+  if (directs.length === 0) {
+    const launch = { angle: rng() * 360, power: randomPower() };
+    reportDecision(null, launch);
+    return launch;
+  }
   const effort = opts.effort ?? 1;
   const samples = Math.round(260 * effort);
   // Precise belief planning gets target-centred seeds rather than depending on
@@ -131,7 +192,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     for (const direct of directs) {
       for (const power of fixedPower === null ? [...new Set([30, 50, 70, 90, 100].map((p) => Math.min(p, maxPower)))] : [fixedPower]) {
         for (const offset of [-16, -8, -4, 0, 4, 8, 16]) {
-          const aim = { angle: normalizeAngle(direct + offset), power };
+          const aim = { angle: normalizeAngle(direct.angle + offset), power };
           pool.push(yield* candidate(aim));
         }
         yield;
@@ -139,9 +200,24 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     }
   }
 
+  // The sweep picks its targets by personality: near ones for Kepler, grudged ones for Einstein.
+  // Uniform weights cycle through the enemies exactly like the original sweep, keeping the
+  // planner's random stream — and thus its seeded results — unchanged when nobody stands out.
+  const uniform = directs.every((d) => d.weight === directs[0].weight);
+  const totalWeight = uniform ? 0 : directs.reduce((sum, d) => sum + Math.max(d.weight, 0), 0);
+  const pickDirect = (i: number): number => {
+    if (uniform) return i % directs.length;
+    if (totalWeight <= 0) return Math.floor(rng() * directs.length);
+    let draw = rng() * totalWeight;
+    for (let k = 0; k < directs.length; k++) {
+      draw -= Math.max(directs[k].weight, 0);
+      if (draw < 0) return k;
+    }
+    return directs.length - 1;
+  };
   for (let i = 0; i < samples; i++) {
     // Half the samples fan out around the direct line to some enemy, half anywhere.
-    const direct = directs[i % directs.length];
+    const direct = directs[pickDirect(i)].angle;
     const angle = i % 2 === 0 ? normalizeAngle(direct + gaussian(rng) * 50) : rng() * 360;
     const aim = { angle, power: randomPower() };
     pool.push(yield* candidate(aim));
@@ -201,18 +277,25 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     }
   }
 
-  if (opts.noiseFree) return { angle: best.angle, power: fixedPower ?? best.power };
-  const err = ERROR[opts.level === 'hawking' ? 'hard' : opts.level];
+  if (opts.noiseFree) {
+    const launch = { angle: best.angle, power: fixedPower ?? best.power };
+    reportDecision(best, launch);
+    return launch;
+  }
+  const err = CPU_PROFILES[opts.level === 'hawking' ? 'hard' : opts.level];
   const scale = Math.pow(err.decay, opts.attempt);
-  return {
+  const launch = {
     angle: normalizeAngle(best.angle + gaussian(rng) * err.angle * scale),
     power: fixedPower ?? clampPower(best.power + gaussian(rng) * err.power * scale, maxPower),
   };
+  reportDecision(best, launch);
+  return launch;
 }
 
 function clampPower(p: number, max: number): number {
   return Math.min(max, Math.max(5, p));
 }
+
 /** Run a planner to completion synchronously (tests, tooling). */
 export function planShotNow(world: World, shooter: number, opts: PlanOptions): Aim {
   const it = planShot(world, shooter, opts);

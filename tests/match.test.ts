@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createMatch, type GameEvent, type Match, type VersusMode } from '../src/game';
+import { createMatch, type CpuDecisionReport, type GameEvent, type Match, type VersusMode } from '../src/game';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
 import { AIM, FIELD, TRAIL_FADE } from '../src/config';
@@ -47,6 +47,26 @@ describe('Hawking CPU', () => {
       expect(experimentalObservations).toBe(0);
       expect(experimentalDecisions).toBe(0);
       expect(match.players.every((player) => Number.isFinite(player.score))).toBe(true);
+    } finally {
+      match.dispose();
+    }
+  });
+});
+
+describe('normal CPU decision diagnostics', () => {
+  it('emits contextual planner decisions through MatchOptions', () => {
+    const seats: Seat[] = ['medium', 'human', 'off', 'off', 'off', 'off'];
+    const reports: CpuDecisionReport[] = [];
+    const match = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats }, {
+      seats, seed: 31, deterministicCpu: true, onCpuDecision: (report) => reports.push(report),
+    });
+    try {
+      for (let frame = 0; frame < 120 && reports.length === 0; frame++) match.update(1 / 30);
+      expect(reports).toHaveLength(1);
+      const [report] = reports;
+      expect(report).toMatchObject({ mode: 'classic', round: 1, player: 0, shot: 1, level: 'medium' });
+      expect(report.considered).toBeGreaterThan(0);
+      expect(report.predicted.end.kind).toBeDefined();
     } finally {
       match.dispose();
     }

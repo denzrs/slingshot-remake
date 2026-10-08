@@ -1,6 +1,6 @@
 import { advanceExperimentalWorld, createExperimentalLearner, measureReconstruction, observeExperimentalShot, planExperimentalShot, type ExperimentalDecision, type ExperimentalLearner, type ExperimentalRecoveryDiagnostics, type ExperimentalWorld, type GravityFit } from '../experimental-ai';
 import { ExperimentalWorkerCancelledError, ExperimentalWorkerClient } from '../experimental-worker-client';
-import { EXPERIMENTAL_PRESETS, isExperimentalCpu, planShot, type Aim, type CpuLevel, type ExperimentalCpuConfig } from '../ai';
+import { EXPERIMENTAL_PRESETS, isExperimentalCpu, planShot, type Aim, type CpuDecision, type CpuLevel, type ExperimentalCpuConfig } from '../ai';
 import { AIM, COLORS, FIELD, GRACE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
 import { normalizeAngle, type ShotEnd, type ShotRules, type StyleKind, type World } from '../physics';
@@ -138,6 +138,14 @@ export interface ExperimentalReport {
   /** Optional additive diagnostics; absent in historical schema-3 records. */
   recovery?: ExperimentalRecoveryDiagnostics;
 }
+/** Selected launch and simulated outcome for one normal CPU decision. */
+export interface CpuDecisionReport extends CpuDecision {
+  mode: Mode;
+  round: number;
+  player: number;
+  shot: number;
+}
+
 
 /** Post-ingestion evidence state; prediction validates this shot against the pre-update fit. */
 export interface ExperimentalObservationReport {
@@ -192,6 +200,8 @@ export interface MatchOptions {
   /** Inject a worker client for hosts that provide their own Worker implementation. */
   experimentalWorkerClient?: () => ExperimentalWorkerClient;
   onExperimentalDecision?: (report: ExperimentalReport) => void;
+  /** Receives normal CPU planner decisions; console logging can also enable this path. */
+  onCpuDecision?: (report: CpuDecisionReport) => void;
   onShotComplete?: (report: CompletedShotReport) => void;
 }
 
@@ -253,6 +263,8 @@ export abstract class Match {
   private experimentalGeneration = 0;
   private experimentalPending = new Set<number>();
   private experimentalError: Error | null = null;
+  /** Who hit each player last — CPUs with a grudge aim back at them. */
+  private lastHitBy = new Map<number, number>();
   private flightPending = false;
   private disposed = false;
   protected cpuJobs = new Map<number, CpuJob>();
@@ -484,6 +496,7 @@ export abstract class Match {
     this.worldRng = createRng(this.options.seed ?? randomSeed());
     this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
     this.plannerRngs.clear();
+    this.lastHitBy.clear();
     this.experimentalLearners.clear();
     const seats = this.options.seats ?? this.settings.seats;
     const taken = seats.flatMap((seat, i) => (seat === 'off' ? [] : [{ seat: i, kind: seat }]));
@@ -524,6 +537,8 @@ export abstract class Match {
     this.volley = null;
     this.summary = null;
     this.lastKill = null;
+    // A grudge lasts one round — whoever survived it starts the next one clean.
+    this.lastHitBy.clear();
     this.cpuJobs.clear();
     const duel = this.mode === 'classic' && this.players.length === 2;
     for (const p of this.players) {
@@ -713,6 +728,8 @@ export abstract class Match {
     const score = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : this.killPoints(vs);
     this.players[victim].alive = false;
     this.players[killer].score += score.points;
+    // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
+    if (!self && !friendly) this.lastHitBy.set(victim, killer);
     const record: KillRecord = {
       killer,
       victim,
@@ -942,6 +959,8 @@ export abstract class Match {
 
   /** Think for the given CPU players, sharing a per-frame time budget round-robin. */
   protected runCpu(ids: number[], budgetMs: number, effort: number, lookahead?: number): void {
+    const logDecisions = (typeof process !== 'undefined' && process.env.AI_DECISION_LOGS === '1')
+      || import.meta.env?.VITE_AI_DECISION_LOGS === '1';
     for (const id of ids) {
       if (this.cpuJobs.has(id) || this.experimentalPending.has(id)) continue;
       const p = this.players[id];
@@ -969,6 +988,8 @@ export abstract class Match {
             effort,
             lookahead,
             friends,
+            grudgeTarget: this.lastHitBy.get(id) ?? null,
+            ...(logDecisions || this.options.onCpuDecision ? { onDecision: (decision) => this.logCpuDecision(id, decision, logDecisions) } : {}),
           });
       this.cpuJobs.set(id, { planner, target: null, settle: 0 });
     }
@@ -988,6 +1009,18 @@ export abstract class Match {
       }
     }
   }
+  private logCpuDecision(player: number, decision: CpuDecision, logsEnabled: boolean): void {
+    const report: CpuDecisionReport = {
+      mode: this.mode,
+      round: this.round,
+      player,
+      shot: this.players[player].shots + 1,
+      ...decision,
+    };
+    this.options.onCpuDecision?.(report);
+    if (logsEnabled) console.info('[AI] decision', report);
+  }
+
 
   protected cpuJob(id: number): CpuJob | undefined {
     return this.cpuJobs.get(id);
