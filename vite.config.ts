@@ -4,4 +4,7 @@ import { defineConfig } from 'vite';
 // (e.g. https://<user>.github.io/<repo>/).
 export default defineConfig({
   base: './',
+  server: {
+    allowedHosts: ['ok-broker.sit.unite.services'],
+  },
 });

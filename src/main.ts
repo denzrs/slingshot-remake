@@ -133,6 +133,7 @@ function multiplayer(): MultiplayerSession {
   session ??= new MultiplayerSession({
     settings: () => settings,
     matchStarted(m) {
+      if (match !== m) match?.dispose();
       match = m;
       wire(m);
       screen = 'play';
@@ -141,6 +142,7 @@ function multiplayer(): MultiplayerSession {
     },
     matchRestarted: () => menu.close(),
     matchEnded() {
+      match?.dispose();
       match = null;
       screen = 'title';
       effects.clear();
@@ -192,6 +194,7 @@ const app: App = {
   today: () => forcedDay ?? dateKey(),
   start(mode) {
     lastMode = mode;
+    match?.dispose();
     match = createMatch(mode, cloneSettings(settings));
     wire(match);
     screen = 'play';
@@ -199,6 +202,7 @@ const app: App = {
     menu.close();
   },
   startDaily() {
+    match?.dispose();
     match = createChallenge(cloneSettings(settings), dailyChallenge(app.today()));
     wire(match);
     screen = 'play';
@@ -211,6 +215,7 @@ const app: App = {
   openLobby: () => menu.open(() => lobbyScreen(app, multiplayer())),
   toLobby() {
     session?.leaveRoom();
+    match?.dispose();
     match = null;
     screen = 'title';
     effects.clear();
@@ -233,6 +238,7 @@ const app: App = {
   },
   toTitle() {
     session?.disconnect();
+    match?.dispose();
     screen = 'title';
     match = null;
     effects.clear();

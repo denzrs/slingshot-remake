@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createMatch, type GameEvent, type Match, type VersusMode } from '../src/game';
+import { createMatch, type CpuDecisionReport, type GameEvent, type Match, type VersusMode } from '../src/game';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
 import { AIM, FIELD, TRAIL_FADE } from '../src/config';
@@ -17,6 +17,61 @@ function playRound(mode: VersusMode, seats: Seat[], maxSeconds = 600): Match {
 }
 
 const cpus = (n: number, level: Seat = 'medium'): Seat[] => [...Array(n).fill(level), ...Array(6 - n).fill('off')];
+
+describe('Hawking CPU', () => {
+  it.each<VersusMode>(['classic', 'horizon'])('finishes a seeded %s match without experimental learning', (mode) => {
+    const seats = cpus(2, 'hawking');
+    let completedShots = 0;
+    let experimentalObservations = 0;
+    let experimentalDecisions = 0;
+    const match = createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 1, maxPlanets: 0, seats }, {
+      seats,
+      seed: 29,
+      deterministicCpu: true,
+      onShotComplete: (report) => {
+        completedShots++;
+        if (report.experimentalObservation !== null) experimentalObservations++;
+      },
+      onExperimentalDecision: () => { experimentalDecisions++; },
+    });
+    try {
+      expect(match.players.map((player) => player.cpu)).toEqual(['hawking', 'hawking']);
+      const dt = 1 / 30;
+      for (let elapsed = 0; elapsed < 300 && match.phase !== 'gameOver'; elapsed += dt) {
+        match.update(dt);
+        if (match.phase === 'killcam' || match.phase === 'roundOver') match.advance();
+      }
+      expect(match.phase).toBe('gameOver');
+      expect(match.alive.length).toBeLessThanOrEqual(1);
+      expect(completedShots).toBeGreaterThan(0);
+      expect(experimentalObservations).toBe(0);
+      expect(experimentalDecisions).toBe(0);
+      expect(match.players.every((player) => Number.isFinite(player.score))).toBe(true);
+    } finally {
+      match.dispose();
+    }
+  });
+});
+
+describe('normal CPU decision diagnostics', () => {
+  it('emits contextual planner decisions through MatchOptions', () => {
+    const seats: Seat[] = ['medium', 'human', 'off', 'off', 'off', 'off'];
+    const reports: CpuDecisionReport[] = [];
+    const match = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats }, {
+      seats, seed: 31, deterministicCpu: true, onCpuDecision: (report) => reports.push(report),
+    });
+    try {
+      for (let frame = 0; frame < 120 && reports.length === 0; frame++) match.update(1 / 30);
+      expect(reports).toHaveLength(1);
+      const [report] = reports;
+      expect(report).toMatchObject({ mode: 'classic', round: 1, player: 0, shot: 1, level: 'medium' });
+      expect(report.considered).toBeGreaterThan(0);
+      expect(report.predicted.end.kind).toBeDefined();
+    } finally {
+      match.dispose();
+    }
+  });
+});
 
 describe('classic match', () => {
   it('restores an authoritative mid-flight snapshot', () => {
