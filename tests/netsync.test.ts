@@ -14,7 +14,7 @@ const seats = (n: number): Seat[] => [...Array(n).fill('hard'), ...Array(6 - n).
 
 /** Host and guest: every patch the host encodes must rebuild exactly the host's snapshot on the guest. */
 function sync(mode: 'classic' | 'horizon') {
-  const host = createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 2, seats: seats(4) }, { seats: seats(4) }) as ClassicMatch | HorizonMatch;
+  const host = createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 2, seats: seats(4) }, { seats: seats(4), seed: 7, deterministicCpu: true }) as ClassicMatch | HorizonMatch;
   const encoder = new SnapshotEncoder();
   const decoder = new SnapshotDecoder();
   for (let i = 0; i < 60 * 40 && host.phase !== 'gameOver'; i++) {

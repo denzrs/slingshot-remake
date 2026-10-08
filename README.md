@@ -17,11 +17,11 @@ npm run build      # static build in dist/ – runs on any web server
 
 Start the relay server in a second terminal with `npm run dev:server`. In the client, open
 **Multiplayer**, connect to the relay address (default `ws://localhost:8080`), then create or join
-a room. Choose Classic or Event Horizon, free-for-all or two-team play and the rules of the game
-(rounds, planets, reflective edges, fixed power, flight time, …); the host can still change the rules
+a room. Choose Classic or Event Horizon, free-for-all or two-team play (everybody picks their own team in the room, the host can deal everybody out again with *Reset teams*) and the rules of the game
+(rounds, planets, reflective edges, shot power, flight time, …); the host can still change the rules
 while the room is waiting, and the host starts the game. Both modes support up to six players. In
 Event Horizon online everybody aims at the same time against one shared clock. The lobby remembers
-your server, name and room settings and reconnects on its own. The host runs the authoritative simulation and relays
+your server, name and room settings (separate from the settings of offline games) and reconnects on its own. The host runs the authoritative simulation and relays
 state patches to the other players (only what changed since the last tick, so a match needs a few KB/s instead of MB/s); guests carry a shot's flight on between patches, so it moves smoothly. Rooms can be protected with a password, and leaving a game puts you back into the lobby. For remote players, host both the web client and relay server at reachable addresses.
 The relay can also be built with `npm run build:server` and started with `npm run start:server` (output in `dist-server/`). Use a `wss://` address behind TLS when the client is served over HTTPS.
 
@@ -40,6 +40,7 @@ The relay can also be built with `npm run build:server` and started with `npm ru
 | C | Save the last killcam as a video |
 | Esc | Menu |
 | F | Fullscreen |
+| ↑ ↓ ← → Enter (in menus) | Pick a row, change its value (sliders, switches and lists alike), confirm. Home / End jump a slider to its ends; Esc goes back to the row you came from |
 
 ## Game modes
 
@@ -47,6 +48,14 @@ The relay can also be built with `npm run build:server` and started with `npm ru
 - **Classic** – the original duel, extended to up to six ships. Players take turns, one shot each. A hit ship is out; the round ends when one ship is left.
 - **Free for all or teams** – with three or more ships, the *Players* row of the game setup splits them into two or three teams (Ember, Frost, Nebula). Teams share a colour family, start grouped together and take turns alternately, so a small team shoots as often as a big one. The round ends when one team is left. Works in both modes.
 - **Event Horizon** (*Ereignishorizont*) – gravity royale. Everyone locks in an aim, then all shots fly at once. After every volley the central black hole grows, swallows planets and drags ships inwards. Kills pay base points × a trick-shot combo (swing-by, bank shot, graze, photon ring, airtime) and get a slow-motion killcam, which you can record as a video clip.
+
+## Game setup
+
+Before a game starts — and for the room in the multiplayer lobby, where only the host can edit it — the rules are sliders and switches in four blocks (match, battlefield, shots, extras). Drag a slider, click its track or use ← →; everything is remembered for the next game, and *Reset rules* puts the defaults back.
+
+**Shot power** is one choice of three: *Free* (0–100), *Capped* (a maximum from 10 to 90, a low one favours trick shots) or *Fixed* (every shot flies with the same power, 10 to 100 in steps of 5 – only the angle counts). The slider next to the choice appears only for *Capped* and *Fixed*.
+
+The **Players** screen lists the ships (two to six): add a human or a CPU (Kepler, Newton, Einstein, Hawking, in that order), take a ship out with ✕ and switch between free for all and two or three teams. New CPU seats start as Newton. In team mode every ship picks its team, and *Balance teams* deals them out evenly.
 
 ## Rules & scoring (Classic)
 

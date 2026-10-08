@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { planShot, planShotNow, type CpuLevel } from '../src/ai';
 import { FIELD, PHYSICS } from '../src/config';
 import { normalizeAngle, Shot, simulateShot, simulateStyledShot, type StyledShotOutcome, type World } from '../src/physics';
+import * as physics from '../src/physics';
 import { createRng, gaussian, type Rng } from '../src/rng';
 
 const rules = { bounce: false, timeLimit: 12 };
@@ -84,6 +85,51 @@ describe('Hawking production flight metrics', () => {
 });
 
 describe('Hawking classic search', () => {
+  for (const level of ['easy', 'medium', 'hard', 'hawking'] as const) {
+    for (const noiseFree of [false, true]) {
+      it(`${level} keeps searched and live power capped with noiseFree=${noiseFree}`, () => {
+        const world = emptyWorld();
+        world.ships[1] = { x: 170, y: 400, alive: true };
+        const ordinary = vi.spyOn(physics, 'simulateShot');
+        const styledFlight = vi.spyOn(physics, 'simulateStyledShot');
+        try {
+          for (const fixedPower of [null, 55, 5]) {
+            const aim = planShotNow(world, 0, {
+              level, rules: { ...rules, timeLimit: 0.3 }, attempt: 0,
+              fixedPower, maxPower: 10, effort: 0.03, noiseFree, optimizeHitPower: true, rng: createRng(90210),
+            });
+            const shot = new Shot(world, 0, aim.angle, aim.power, rules, true);
+            expect(shot.power).toBeLessThanOrEqual(10);
+            expect(shot.power).toBeGreaterThanOrEqual(0);
+            if (fixedPower !== null) expect(shot.power).toBe(Math.min(fixedPower, 10));
+          }
+          const calls = [...ordinary.mock.calls, ...styledFlight.mock.calls];
+          expect(calls.length).toBeGreaterThan(0);
+          for (const [, , , power] of calls) expect(power).toBeLessThanOrEqual(10);
+        } finally {
+          ordinary.mockRestore();
+          styledFlight.mockRestore();
+        }
+      });
+    }
+  }
+
+  it('keeps Hawking full-length style flights within a low power cap', () => {
+    const world = emptyWorld();
+    world.width = 100_000;
+    world.height = 100_000;
+    world.ships[1] = { x: 90_000, y: 90_000, alive: true };
+    const aim = planShotNow(world, 0, {
+      level: 'hawking', rules: { bounce: false, timeLimit: 20 }, lookahead: 0.1,
+      attempt: 0, fixedPower: 55, maxPower: 10, effort: 0.01, rng: createRng(42),
+    });
+    expect(aim.power).toBe(10);
+    const result = styled(world, aim.angle, aim.power, 20);
+    expect(result.end.kind).toBe('timeout');
+    expect(result.flightTime).toBeGreaterThanOrEqual(20);
+    expect(result.pathLength).toBeCloseTo(result.flightTime * 10 * PHYSICS.SPEED_PER_POWER, 5);
+  });
+
   it('selects a longer swing-by hit over the available cheaper direct hit', () => {
     const { world, power } = orbitWorld();
     const scouting = new Shot(world, 0, 270, power, rules, true);

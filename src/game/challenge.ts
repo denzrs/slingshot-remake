@@ -140,7 +140,7 @@ export class ChallengeMatch extends Match {
 
   /** The sector's own rules win over whatever the player has set up for free play. */
   private effectiveSettings(): Settings {
-    return { ...this.user, fixedPower: this.spec.fixedPower, bounce: this.spec.bounce, invisiblePlanets: this.spec.invisible };
+    return { ...this.user, maxPower: AIM.MAX_POWER, fixedPower: this.spec.fixedPower, bounce: this.spec.bounce, invisiblePlanets: this.spec.invisible };
   }
 
   private sector(index: number): Sector {

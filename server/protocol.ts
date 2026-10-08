@@ -67,7 +67,12 @@ export interface RoomRules {
   maxPlanets: number;
   invisiblePlanets: boolean;
   bounce: boolean;
+  /** Every shot flies with `fixedPowerLevel`. */
   fixedPower: boolean;
+  /** The power of a fixed shot, 10 to 100 in steps of 5. */
+  fixedPowerLevel: number;
+  /** Highest power a shot may be fired with (100 = no cap). */
+  maxPower: number;
   /** Seconds before a shot fizzles out. */
   shotTime: number;
   /** Classic only: trick shots multiply a hit's points. */
@@ -88,6 +93,8 @@ export const DEFAULT_RULES: RoomRules = {
   invisiblePlanets: false,
   bounce: false,
   fixedPower: false,
+  fixedPowerLevel: 55,
+  maxPower: 100,
   shotTime: 20,
   styleBonuses: false,
   neighborGrace: 0,
@@ -102,9 +109,14 @@ const isIntBetween = (value: unknown, min: number, max: number): value is number
 export function parseRules(value: unknown): RoomRules | null {
   if (!isRecord(value)) return null;
   const { rounds, maxPlanets, invisiblePlanets, bounce, fixedPower, shotTime, styleBonuses, neighborGrace, simultaneousShots, hiddenAim, fadingTrails } = value;
+  // Clients from before the cap, or the fixed level, existed don't send them.
+  const maxPower = value.maxPower ?? 100;
+  const fixedPowerLevel = value.fixedPowerLevel ?? DEFAULT_RULES.fixedPowerLevel;
   if (!isIntBetween(rounds, 0, 99) || !isIntBetween(maxPlanets, 1, 8) || !isIntBetween(shotTime, 5, 120)) return null;
   if (![invisiblePlanets, bounce, fixedPower, styleBonuses, simultaneousShots, hiddenAim].every((flag) => typeof flag === 'boolean')) return null;
   if (typeof neighborGrace !== 'number' || ![0, 1, 2].includes(neighborGrace)) return null;
+  if (typeof maxPower !== 'number' || ![10, 20, 30, 40, 50, 60, 70, 80, 90, 100].includes(maxPower)) return null;
+  if (!isIntBetween(fixedPowerLevel, 10, 100) || fixedPowerLevel % 5 !== 0) return null;
   if (typeof fadingTrails !== 'number' || ![0, 1, 2, 4].includes(fadingTrails)) return null;
-  return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, shotTime, styleBonuses: styleBonuses as boolean, neighborGrace, simultaneousShots: simultaneousShots as boolean, hiddenAim: hiddenAim as boolean, fadingTrails };
+  return { rounds, maxPlanets, invisiblePlanets: invisiblePlanets as boolean, bounce: bounce as boolean, fixedPower: fixedPower as boolean, fixedPowerLevel, maxPower, shotTime, styleBonuses: styleBonuses as boolean, neighborGrace, simultaneousShots: simultaneousShots as boolean, hiddenAim: hiddenAim as boolean, fadingTrails };
 }

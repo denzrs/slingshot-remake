@@ -1,6 +1,6 @@
 import type { ShotRules, StyleKind, World } from '../physics';
 import { scoreChallengeHit } from '../scoring';
-import { COLORS, HORIZON, SCORING } from '../config';
+import { AIM, COLORS, HORIZON, SCORING } from '../config';
 import { t } from '../i18n';
 import { Volley, type VolleyShot } from '../volley';
 import { Match, type RoundTitle } from './match';
@@ -170,7 +170,7 @@ export class ClassicMatch extends Match {
     if (!this.canAim(id)) return;
     const player = this.players[id];
     player.angle = ((angle % 360) + 360) % 360;
-    if (!this.settings.fixedPower) player.power = Math.min(100, Math.max(0, power));
+    if (!this.settings.fixedPower) player.power = Math.min(this.settings.maxPower, Math.max(AIM.MIN_POWER, power));
   }
 
   commitPlayer(id: number): void {

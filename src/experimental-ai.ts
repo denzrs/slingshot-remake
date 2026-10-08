@@ -1,4 +1,4 @@
-import { HORIZON, PHYSICS } from './config';
+import { AIM, HORIZON, PHYSICS } from './config';
 import { planShot, type Aim, type PlanOptions } from './ai';
 import { Shot, aimDirection, normalizeAngle, simulateShot, type Planet, type ShotOutcome, type ShotRules, type World } from './physics';
 import { balancedObservations, matchEstimatedSources, retainRepresentativeShots } from './experimental-evidence';
@@ -737,6 +737,8 @@ export function* planExperimentalShot(
   opts: Omit<PlanOptions, 'level'> & { learner?: ExperimentalLearner; learningRate?: number; startingKnowledge?: number },
   report: (fit: GravityFit, decision: ExperimentalDecision) => void,
 ): Generator<void, Aim> {
+  const maxPower = opts.maxPower ?? AIM.MAX_POWER;
+  opts = { ...opts, maxPower, fixedPower: opts.fixedPower === null ? null : Math.min(opts.fixedPower, maxPower) };
   const learner = opts.learner ?? createExperimentalLearner(opts.startingKnowledge);
   const rate = boundedRate(opts.learningRate ?? 1);
   if (!learner.evidenceOwnedByWorker) {
@@ -795,7 +797,7 @@ export function* planExperimentalShot(
     for (const angleOffset of [-2, -1, 0, 1, 2]) {
       for (const powerOffset of opts.fixedPower === null ? [-2, 0, 2] : [0]) {
         neighbours.push({ angle: normalizeAngle(center.angle + angleOffset * angleStep),
-          power: opts.fixedPower ?? clamp(center.power + powerOffset * angleStep, 5, 100) });
+          power: opts.fixedPower ?? Math.min(maxPower, Math.max(5, center.power + powerOffset * angleStep)) });
       }
     }
     robust = bestRobustAim(neighbours, worlds, visible.shooter, opts, simulateAim) ?? robust;
@@ -808,7 +810,7 @@ export function* planExperimentalShot(
   if (learner.recovery.stalled && !probe) {
     // Offset the original angle grid and broaden power only when power is not fixed.
     // Six angles per slice bound uninterrupted production-physics work.
-    const powers = opts.fixedPower === null ? [20, 35, 55, 75, 95] : [opts.fixedPower];
+    const powers = opts.fixedPower === null ? [...new Set([20, 35, 55, 75, 95].map((power) => Math.min(power, maxPower)))] : [opts.fixedPower];
     let searched = 0;
     for (let start = 0; start < 72 && !probe; start += 6) {
       const angles = Array.from({ length: 6 }, (_, index) => (start + index) * 5 + 2.5);
@@ -830,7 +832,7 @@ export function* planExperimentalShot(
       if (ship === self || !ship.alive) continue;
       angles.push(normalizeAngle(Math.atan2(ship.y - self.y, self.x - ship.x) * 180 / Math.PI));
     }
-    const powers = opts.fixedPower === null ? [5, 20, 50, 100] : [opts.fixedPower];
+    const powers = opts.fixedPower === null ? [...new Set([5, 20, 50, 100].map((power) => Math.min(power, maxPower)))] : [opts.fixedPower];
     const escapes = angles.flatMap((angle) => powers.map((power) => ({ angle, power })));
     candidates.push(...escapes);
     robust = bestRobustAim(escapes, worlds, visible.shooter, opts, simulateAim);
@@ -1325,7 +1327,10 @@ function coverageProbe(
   const friends = opts.friends ?? [];
   const targets = worlds[0].ships.filter((ship, id) => id !== visible.shooter && ship.alive && !friends.includes(id));
   if (!targets.length) return null;
-  const powers = probePowers ?? (opts.fixedPower === null ? [35, 55, 75] : [opts.fixedPower]);
+  const maxPower = opts.maxPower ?? AIM.MAX_POWER;
+  const powers = opts.fixedPower === null
+    ? [...new Set((probePowers ?? [35, 55, 75]).map((power) => Math.min(power, maxPower)))]
+    : [Math.min(opts.fixedPower, maxPower)];
   let best: Aim | null = null;
   let bestScore = -Infinity;
   for (let turn = 0; turn < (probeAngles?.length ?? 20); turn++) {

@@ -168,7 +168,7 @@ export function actualShotLearningSmoke(world = validationWorld(), seed = 995407
 /** Complete boundary exits are real shots, but contain no usable interior observations. */
 export function lowInformationLearningCheck() {
   const world = independentDensityWorld(1);
-  world.ships[0] = { x: -295, y: 400, alive: true };
+  world.ships[0] = { x: -PHYSICS.OUT_MARGIN + 5, y: 400, alive: true };
   const visible = visibleWorld(world);
   const learner = createExperimentalLearner();
   const initialErrors = heldOutErrors(world, learner);
@@ -190,17 +190,30 @@ export function lowInformationLearningCheck() {
 export function shortShotConfidenceCheck() {
   const world = independentDensityWorld(1);
   const remoteWorld = { ...world, ships: [{ x: -245, y: 400, alive: true }, world.ships[1]] };
+  // The deadline lies between steps five and six, avoiding floating-point deadline ambiguity.
+  const shortRules = { bounce: false, timeLimit: 5.5 * PHYSICS.DT };
   const learner = createExperimentalLearner();
   const visible = visibleWorld(remoteWorld);
   const lengths: number[] = [];
+  const observations: ExperimentalShot[] = [];
   for (let attempt = 0; attempt < 4; attempt++) {
-    const observation = recordShot(remoteWorld, 180, 100, attempt + 1);
-    lengths.push(observation.points.length / 2);
+    const shot = new Shot(remoteWorld, 0, 180, 100, shortRules);
+    const points = [shot.x, shot.y];
+    for (let step = 1; step <= 6; step++) {
+      if (shot.end) throw new Error('Short confidence fixture ended before its six physical steps');
+      shot.step();
+      if (step % 2 === 0) points.push(shot.x, shot.y);
+    }
+    if (shot.end?.kind !== 'timeout') throw new Error('Short confidence fixture did not complete its controlled observation window');
+    const observation = { points, angle: 180, power: 100, shotId: attempt + 1 };
+    observations.push(observation);
+    lengths.push(points.length / 2);
     observeExperimentalShot(learner, observation, visible, 1);
   }
   const fit = experimentalLearnerFit(learner, visible);
   return {
-    lengths, observedShots: fit.observedShots, predictionSamples: fit.predictionSamples, trainingRms: fit.rms,
+    lengths, observations, observationSteps: 6, observationSeconds: 6 * PHYSICS.DT,
+    observedShots: fit.observedShots, predictionSamples: fit.predictionSamples, trainingRms: fit.rms,
     massUncertainty: fit.planets.map((planet) => planet.massUncertainty ?? null),
     heldOutMedian: quantile(heldOutErrors(world, learner).map((error) => error.trailRms), 0.5),
   };
@@ -208,8 +221,10 @@ export function shortShotConfidenceCheck() {
 
 export const RECOVERY_ANGLES = [0.4, 0.8, 1.2, 1.6, -30, 30, -50, 50] as const;
 export const RECOVERY_PROBES = [-35, -10, 20, 45] as const;
-/** Measured pre-recovery reference from .scratch/recovery-before.ts; same seed, observations and pooled Euclidean probes. */
+/** Measured pre-recovery reference from .scratch/recovery-before.ts: same seed, 12s maximum,
+ * declared 300px exit boundary and pooled Euclidean probes; not today's match boundary. */
 export const RECOVERY_BASELINE_RMS = 64.12803234206731;
+export const RECOVERY_STUDY_EXIT_BOUNDARY = 300;
 const RECOVERY_RULES = { bounce: false, timeLimit: 12 };
 
 export function recoveryWorld(): World {
@@ -222,11 +237,18 @@ export function recoveryVisibleWorld(world: World): ExperimentalWorld {
   return { ...visibleWorld(world), visiblePlanets: undefined };
 }
 
-export function recordRecoveryShot(world: World, angle: number, power: number, shotId: number): ExperimentalShot {
+/** Stop the historical study at its declared boundary without changing production physics. */
+function stepRecoveryShot(shot: Shot, world: World, exitBoundary: number): void {
+  shot.step();
+  if (!shot.end && (shot.x < -exitBoundary || shot.x > world.width + exitBoundary
+    || shot.y < -exitBoundary || shot.y > world.height + exitBoundary)) shot.terminate({ kind: 'lost' });
+}
+
+export function recordRecoveryShot(world: World, angle: number, power: number, shotId: number, exitBoundary: number = PHYSICS.OUT_MARGIN): ExperimentalShot {
   const shot = new Shot(world, 0, angle, power, RECOVERY_RULES);
   const points = [shot.x, shot.y];
   for (let step = 1; step <= Math.ceil(RECOVERY_RULES.timeLimit / PHYSICS.DT) && !shot.end; step++) {
-    shot.step();
+    stepRecoveryShot(shot, world, exitBoundary);
     if (step % 2 === 0) points.push(shot.x, shot.y);
   }
   return { angle, power, shotId, points };
@@ -235,7 +257,7 @@ export function recordRecoveryShot(world: World, angle: number, power: number, s
 export interface RecoveryProbeError { angle: number; power: number; squared: number; samples: number; trailRms: number }
 
 /** Hidden predictions use estimated point sources, never true source positions or radii. */
-export function recoveryPredictionErrors(world: World, fit: GravityFit): RecoveryProbeError[] {
+export function recoveryPredictionErrors(world: World, fit: GravityFit, exitBoundary: number = PHYSICS.OUT_MARGIN): RecoveryProbeError[] {
   const belief: World = {
     width: world.width, height: world.height, version: world.version,
     ships: world.ships.map((ship) => ({ ...ship })), hole: null,
@@ -247,8 +269,8 @@ export function recoveryPredictionErrors(world: World, fit: GravityFit): Recover
     let squared = 0;
     let samples = 0;
     for (let step = 1; step <= Math.ceil(RECOVERY_RULES.timeLimit / PHYSICS.DT) && !actual.end; step++) {
-      actual.step();
-      predicted.step();
+      stepRecoveryShot(actual, world, exitBoundary);
+      stepRecoveryShot(predicted, belief, exitBoundary);
       if (step % 2 === 0) {
         squared += (actual.x - predicted.x) ** 2 + (actual.y - predicted.y) ** 2;
         samples++;
@@ -258,18 +280,18 @@ export function recoveryPredictionErrors(world: World, fit: GravityFit): Recover
   });
 }
 
-/** Eight own trajectories and four excluded probes; deliberately not a match matrix. */
-export function runHiddenRecoveryValidation() {
+/** Historical 300px study by default; pass the current margin for the production-boundary proof. */
+export function runHiddenRecoveryValidation(exitBoundary = RECOVERY_STUDY_EXIT_BOUNDARY) {
   const world = recoveryWorld();
   const visible = recoveryVisibleWorld(world);
   const learner = createExperimentalLearner(0.72);
   const frozen = createExperimentalLearner(0.72);
-  const errors = (state: ExperimentalLearner) => recoveryPredictionErrors(world, experimentalLearnerFit(state, visible));
+  const errors = (state: ExperimentalLearner) => recoveryPredictionErrors(world, experimentalLearnerFit(state, visible), exitBoundary);
   const aggregate = (probes: readonly RecoveryProbeError[]) => Math.sqrt(probes.reduce((sum, probe) => sum + probe.squared, 0)
     / Math.max(1, probes.reduce((sum, probe) => sum + probe.samples, 0)));
   const priorErrors = errors(learner);
   const stages = RECOVERY_ANGLES.map((angle, index) => {
-    const observation = recordRecoveryShot(world, angle, 65, index + 1);
+    const observation = recordRecoveryShot(world, angle, 65, index + 1, exitBoundary);
     const before = experimentalLearnerFit(learner, visible);
     observeExperimentalShot(learner, observation, visible, 0.54);
     observeExperimentalShot(frozen, observation, visible, 0);
@@ -307,10 +329,14 @@ export function runHiddenRecoveryValidation() {
     && recovery.beliefBeforeRms !== null && recovery.beliefAfterRms !== null
     && recovery.beliefAfterRms <= recovery.beliefBeforeRms + 1e-7
     && recovery.effectiveLearningRate >= 0 && recovery.effectiveLearningRate <= recovery.proposedLearningRate);
-  const baselineNonregressing = finalRms <= RECOVERY_BASELINE_RMS;
-  return { seed: 7139, planetCount: 7, startingKnowledge: 0.72, learningRate: 0.54, rules: RECOVERY_RULES,
+  const baselineRms = exitBoundary === RECOVERY_STUDY_EXIT_BOUNDARY ? RECOVERY_BASELINE_RMS : null;
+  const baselineNonregressing = baselineRms === null ? null : finalRms <= baselineRms;
+  return { seed: 7139, planetCount: 7, startingKnowledge: 0.72, learningRate: 0.54,
+    rules: { ...RECOVERY_RULES, exitBoundary },
+    scenario: exitBoundary === RECOVERY_STUDY_EXIT_BOUNDARY ? 'historical-300px-study' : 'current-production-boundary',
     priorErrors, finalErrors, frozenErrors, priorRms, finalRms, improvementFraction: 1 - finalRms / priorRms, stages,
-    baselineRms: RECOVERY_BASELINE_RMS, baselineNonregressing, predictionMetric: 'pooled-sample-weighted-euclidean-trail-rms',
+    baselineRms, baselineNonregressing, predictionMetric: 'pooled-sample-weighted-euclidean-trail-rms',
+    baselineComparability: baselineRms === null ? 'The 64.128px historical reference used a 300px exit boundary; different truth and stopped-prediction sample horizons are not comparable.' : 'Identical 300px exit boundary, 12s maximum, seed, observations and excluded probes.',
     diagnosticsMeaningful, updatesNonworsening, frozenUnchanged: JSON.stringify(priorErrors) === JSON.stringify(frozenErrors),
     probesExcluded: RECOVERY_ANGLES.every((angle: number) => !RECOVERY_PROBES.some((probe) => probe === angle)) };
 }
@@ -381,11 +407,13 @@ export function runLearningValidation() {
   const lowInformation = lowInformationLearningCheck();
   const shortShotConfidence = shortShotConfidenceCheck();
   const hiddenRecovery = runHiddenRecoveryValidation();
+  const productionRecovery = runHiddenRecoveryValidation(PHYSICS.OUT_MARGIN);
   const gates = [
     { name: 'hidden-recovery-honest-diagnostics', passed: hiddenRecovery.diagnosticsMeaningful, actual: hiddenRecovery.stages, target: 'finite optimizer and same-stage belief diagnostics, excluded-newest validation, effective accepted evidence' },
     { name: 'hidden-recovery-safe-updates', passed: hiddenRecovery.updatesNonworsening, actual: hiddenRecovery.stages, target: 'no accepted same-sample belief objective increase' },
     { name: 'hidden-recovery-held-out-decrease', passed: hiddenRecovery.probesExcluded && hiddenRecovery.frozenUnchanged && hiddenRecovery.finalRms <= hiddenRecovery.priorRms * 0.25, actual: { priorRms: hiddenRecovery.priorRms, finalRms: hiddenRecovery.finalRms, improvementFraction: hiddenRecovery.improvementFraction }, target: 'at least 75% lower excluded seven-hidden-source prediction error with frozen reference unchanged' },
-    { name: 'hidden-recovery-baseline-nonregression', passed: hiddenRecovery.probesExcluded && hiddenRecovery.baselineNonregressing, actual: { finalRms: hiddenRecovery.finalRms, baselineRms: hiddenRecovery.baselineRms, metric: hiddenRecovery.predictionMetric }, target: `final pooled Euclidean trail RMS at most ${RECOVERY_BASELINE_RMS}px, the measured pre-recovery reference on identical observations and probes` },
+    { name: 'hidden-recovery-baseline-nonregression', passed: hiddenRecovery.probesExcluded && hiddenRecovery.baselineNonregressing === true, actual: { finalRms: hiddenRecovery.finalRms, baselineRms: hiddenRecovery.baselineRms, exitBoundary: hiddenRecovery.rules.exitBoundary, metric: hiddenRecovery.predictionMetric }, target: `final pooled Euclidean trail RMS at most ${RECOVERY_BASELINE_RMS}px, the measured pre-recovery reference with identical 300px study boundary, observations and probes` },
+    { name: 'production-hidden-recovery-held-out-decrease', passed: productionRecovery.probesExcluded && productionRecovery.frozenUnchanged && productionRecovery.diagnosticsMeaningful && productionRecovery.updatesNonworsening && productionRecovery.finalRms <= productionRecovery.priorRms * 0.5, actual: productionRecovery, target: 'at least 50% lower excluded seven-hidden-source pooled Euclidean trail RMS with current production boundary, frozen reference unchanged and nonworsening identical-sample updates' },
     { name: 'frozen-rate-zero', passed: frozenUnchanged, actual: frozenUnchanged, target: true },
     { name: 'rate-independent-starting-beliefs', passed: equalStartingBeliefs, actual: equalStartingBeliefs, target: true },
     { name: 'zero-knowledge-evidence-improves-held-out-median', passed: zeroKnowledgeRateMedians[3].trailRms <= zeroKnowledgeRateMedians[0].trailRms * 0.75, actual: zeroKnowledgeRateMedians, target: 'at least 25% improvement at rate1 against frozen rate0 with identical zero starting knowledge' },
@@ -403,7 +431,7 @@ export function runLearningValidation() {
     { name: 'future-trail-median-at-most-two-pixels', passed: median(1, 8) <= 2, actual: median(1, 8), target: 2 },
     { name: 'future-endpoint-p95-within-five-percent-diagonal', passed: quantile(best.map((error) => error.endpointError), 0.95) <= Math.hypot(FIELD.width, FIELD.height) * 0.05, actual: quantile(best.map((error) => error.endpointError), 0.95), target: Math.hypot(FIELD.width, FIELD.height) * 0.05 },
   ];
-  return { suite: 'production-held-out-v3', codeFingerprint: fingerprint, rules: RULES, rates: VALIDATION_RATES, startingKnowledge: VALIDATION_KNOWLEDGE, historyBudgets: HISTORY_BUDGETS, gates, passed: gates.every((gate) => gate.passed), finalRateMedians, zeroKnowledgeRateMedians, cells, transition, actualShots, actualShotSuite, zeroKnowledgeActualShotSuite, lowInformation, shortShotConfidence, hiddenRecovery, limitations: ['Visible geometry suite and one deterministic seven-hidden-source recovery fixture, not global hidden-map recovery.', 'Held-out probes are excluded from all training.', 'Outcome agreement is shot termination agreement, not optimal planner-action agreement.', 'Map identifiability and global gravity recovery are not established by this suite.', 'Rates are compared at identical starting knowledge. Different starting-knowledge settings are never pooled.', 'Match-level strength requires the independent side-swapped benchmark matrix.'] };
+  return { suite: 'production-held-out-v3', codeFingerprint: fingerprint, rules: RULES, rates: VALIDATION_RATES, startingKnowledge: VALIDATION_KNOWLEDGE, historyBudgets: HISTORY_BUDGETS, gates, passed: gates.every((gate) => gate.passed), finalRateMedians, zeroKnowledgeRateMedians, cells, transition, actualShots, actualShotSuite, zeroKnowledgeActualShotSuite, lowInformation, shortShotConfidence, hiddenRecovery, productionRecovery, limitations: ['Visible geometry suite and one deterministic seven-hidden-source world studied at historical and production boundaries, not global hidden-map recovery.', 'Historical 64.128px reference applies only to the declared 300px study boundary; production-boundary samples have no comparable historical reference.', 'Held-out probes are excluded from all training.', 'Outcome agreement is shot termination agreement, not optimal planner-action agreement.', 'Map identifiability and global gravity recovery are not established by this suite.', 'Rates are compared at identical starting knowledge. Different starting-knowledge settings are never pooled.', 'Match-level strength requires the independent side-swapped benchmark matrix.'] };
 }
 
 function main() {
@@ -426,8 +454,10 @@ function main() {
     console.log(`  rate=${rate} knowledge=${startingKnowledge} history=8: trail RMS p50/p95=${quantile(errors.map((error) => error.trailRms), 0.5).toFixed(3)}/${quantile(errors.map((error) => error.trailRms), 0.95).toFixed(3)}`);
   }
   const recovery = report.hiddenRecovery;
-  console.log(`Hidden recovery seed=${recovery.seed}, sources=${recovery.planetCount}: independent trail RMS ${recovery.priorRms.toFixed(3)} -> ${recovery.finalRms.toFixed(3)}px; improvement=${(recovery.improvementFraction * 100).toFixed(1)}%; safe updates=${recovery.updatesNonworsening}; baseline=${recovery.baselineRms.toFixed(3)}px (${recovery.baselineNonregressing ? 'nonregressing' : 'REGRESSION'})`);
+  console.log(`Hidden recovery ${recovery.scenario} seed=${recovery.seed}, sources=${recovery.planetCount}, exit boundary=${recovery.rules.exitBoundary}px: independent trail RMS ${recovery.priorRms.toFixed(3)} -> ${recovery.finalRms.toFixed(3)}px; improvement=${(recovery.improvementFraction * 100).toFixed(1)}%; safe updates=${recovery.updatesNonworsening}; baseline=${recovery.baselineRms?.toFixed(3)}px (${recovery.baselineNonregressing ? 'nonregressing' : 'REGRESSION'})`);
   for (const stage of recovery.stages) console.log(`  shot=${stage.shotId} angle=${stage.angle}: held-out=${stage.heldOutRms.toFixed(3)}px; belief=${stage.initialRms?.toFixed(3)} -> ${stage.beliefRms?.toFixed(3)}px; rate=${stage.recovery?.effectiveLearningRate}/${stage.recovery?.proposedLearningRate} ${stage.recovery?.updateStatus}; stalled=${stage.recovery?.stalled}`);
+  const productionRecovery = report.productionRecovery;
+  console.log(`Hidden recovery ${productionRecovery.scenario}, exit boundary=${productionRecovery.rules.exitBoundary}px: pooled Euclidean trail RMS ${productionRecovery.priorRms.toFixed(3)} -> ${productionRecovery.finalRms.toFixed(3)}px; improvement=${(productionRecovery.improvementFraction * 100).toFixed(1)}%; safe updates=${productionRecovery.updatesNonworsening}. ${productionRecovery.baselineComparability}`);
   console.log('Actual AI-chosen shots (same observations and held-out probes for learned/frozen beliefs):');
   for (const suite of [report.actualShotSuite, report.zeroKnowledgeActualShotSuite]) {
     for (const cell of suite) console.log(`  seed=${cell.seed} knowledge=${cell.startingKnowledge}: shots=${cell.shots.length}; observed/learned=${cell.observedShots}/${cell.learnedShots}; prediction samples=${cell.predictionSamples}; learned/frozen trail RMS p50=${cell.learnedMedian.toFixed(3)}/${cell.frozenMedian.toFixed(3)}; improvement=${(cell.improvementFraction * 100).toFixed(1)}%`);
