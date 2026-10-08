@@ -7,7 +7,9 @@ import { styleLabel } from '../scoring';
 import { awards } from '../stats';
 import type { View } from './backdrop';
 import { rgba } from './color';
+import { OracleHud, type OracleFrame } from './oracle';
 import type { DrawOptions } from './renderer';
+import { fitText, setSpacing } from './text';
 
 type KeyItem = [key: string, label: string];
 type Segment = [text: string, color: string];
@@ -26,10 +28,16 @@ export class Hud {
   private time = 0;
   private k = 1;
   private field: Box = { x: 0, y: 0, w: 0, h: 0 };
+  private readonly oracle = new OracleHud();
 
   private shipPos: (i: number) => { x: number; y: number } = () => ({ x: 0, y: 0 });
 
   constructor(private readonly ctx: CanvasRenderingContext2D) {}
+
+  /** The oracle choice under a pointer (CSS pixels on the canvas), if there is one. */
+  oracleHit(x: number, y: number): number | null {
+    return this.oracle.hit(x, y);
+  }
 
   draw(match: Match, view: View, opts: DrawOptions, time: number, shipPos: (i: number) => { x: number; y: number }): void {
     this.time = time;
@@ -44,9 +52,14 @@ export class Hud {
       if (focus >= 0 && !match.players[focus].cpu && match.humanCount > 1 && !match.simultaneous) this.turnAt = time;
     }
 
+    this.oracle.begin();
+    const frame: OracleFrame = { ctx: this.ctx, k: this.k, field: this.field, time, shipPos };
+    const ghost = opts.oracle && match.ghost;
+
     const killcam = match instanceof HorizonMatch ? match.killcamInfo : null;
     if (killcam) {
       this.drawKillcam(match, killcam, opts);
+      if (ghost) this.oracle.drawToast(frame, match, opts.touch, true);
       return;
     }
 
@@ -66,12 +79,20 @@ export class Hud {
     }
     if (match.phase === 'aiming' && focus >= 0 && match.aimVisible(focus)) this.drawReadout(match, match.players[focus], shipPos(focus));
     this.drawNotice(match);
-    if (time - this.turnAt < 1.6 && focus >= 0) this.drawTurnToast(match.players[focus]);
+    // The oracle's question already names whose shot it is.
+    const asking = ghost && this.oracle.asking(match);
+    if (ghost) {
+      this.oracle.drawMarks(frame, match);
+      if (asking) this.oracle.drawBar(frame, match, opts.touch);
+      this.oracle.drawToast(frame, match, opts.touch, false);
+    }
+    if (time - this.turnAt < 1.6 && focus >= 0 && !asking) this.drawTurnToast(match.players[focus]);
     if (match.phase === 'roundOver' && match.summary) {
       this.drawBanner(match, duel);
       this.drawScorecard(match);
+      if (opts.oracle) this.oracle.drawStrip(frame, match);
     }
-    this.drawHint(match, opts.touch);
+    if (!asking) this.drawHint(match, opts.touch);
     if (opts.recording) this.drawRec();
   }
 
@@ -733,18 +754,6 @@ function modifierLabels(match: ChallengeMatch): string[] {
 
 function nameLabel(p: PlayerState): string {
   return p.cpu ? `${p.name} · ${t(`cpu.${p.cpu}`)}` : p.name;
-}
-
-/** The text, cut with an ellipsis if it doesn't fit the width in the current font. */
-function fitText(ctx: CanvasRenderingContext2D, text: string, width: number): string {
-  if (ctx.measureText(text).width <= width) return text;
-  let cut = text.length;
-  while (cut > 1 && ctx.measureText(`${text.slice(0, cut)}…`).width > width) cut--;
-  return `${text.slice(0, cut)}…`;
-}
-
-function setSpacing(ctx: CanvasRenderingContext2D, px: number): void {
-  if ('letterSpacing' in ctx) (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${px}px`;
 }
 
 /** Left-aligned label padded to the width of the longer readout label, so the numbers line up. */

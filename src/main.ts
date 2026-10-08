@@ -8,9 +8,10 @@ import './style.css';
 import { Sound } from './audio';
 import { dailyChallenge, dateKey, isDateKey } from './challenge';
 import { ClipRecorder } from './clip';
-import { AIM, COLORS, FONTS, PHYSICS } from './config';
+import { AIM, COLORS, FIELD, FONTS, PHYSICS } from './config';
 import { recordRun } from './dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
+import { TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
 import { MultiplayerSession } from './multiplayer';
 import type { ClientInput } from './net';
 import { Effects } from './render/effects';
@@ -280,6 +281,27 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'));
 }
 
+/** The oracle tip a key stands for while an eliminated player has a question open: ← → for a shot, 1–5 and 0 for a salvo. */
+function oracleKey(e: KeyboardEvent): number | null {
+  const q = match?.oracle.question;
+  if (!match || !settings.oracle || !match.ghost || !q || q.locked || e.ctrlKey || e.metaKey || e.altKey) return null;
+  if (q.kind === 'shot') return e.code === 'ArrowLeft' ? TIP_HIT : e.code === 'ArrowRight' ? TIP_MISS : null;
+  const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code);
+  if (!digit) return null;
+  const n = Number(digit[1]);
+  return n === 0 ? TIP_NOBODY : q.choices[n - 1] ?? null;
+}
+
+/** The oracle tip under a pointer: one of the bar's choices, or — for a salvo — the ship itself. */
+function oracleTap(clientX: number, clientY: number): number | null {
+  const q = match?.oracle.question;
+  if (!match || !settings.oracle || !match.ghost || !q || q.locked) return null;
+  const chip = renderer.oracleHit(clientX, clientY);
+  if (chip !== null || q.kind !== 'salvo') return chip;
+  const at = renderer.toField(clientX, clientY);
+  return q.choices.find((id) => Math.hypot(match!.world.ships[id].x - at.x, match!.world.ships[id].y - at.y) < 30) ?? null;
+}
+
 window.addEventListener('keydown', (e) => {
   sound.unlock();
   if (e.code === 'KeyF' && !e.metaKey && !e.ctrlKey && !isTyping(e.target)) {
@@ -291,6 +313,19 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (screen !== 'play' || !match) return;
+
+  if (e.code === 'KeyO' && online() && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    settings.oracle = !settings.oracle;
+    app.settingsChanged();
+    e.preventDefault();
+    return;
+  }
+  const tip = oracleKey(e);
+  if (tip !== null) {
+    if (!e.repeat) dispatchInput({ kind: 'bet', pick: tip });
+    e.preventDefault();
+    return;
+  }
 
   const [dAngle, dPower] = stepFor(e);
   let handled = true;
@@ -344,6 +379,8 @@ function aimAt(clientX: number, clientY: number): void {
 canvas.addEventListener('pointerdown', (e) => {
   sound.unlock();
   if (screen !== 'play' || !match || menu.isOpen) return;
+  const tip = oracleTap(e.clientX, e.clientY);
+  if (tip !== null) return dispatchInput({ kind: 'bet', pick: tip });
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
   if (!canAim()) return;
   dragging = true;
@@ -384,6 +421,23 @@ function syncButtons(): void {
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;
 }
 
+/** The oracle's last verdict per match, so each one is announced on the field once. */
+const judged = new WeakMap<Match, number>();
+
+/** Right or wrong, floating over the ship that was tipped — once the killcam is out of the way. */
+function announceOracle(m: Match): void {
+  const r = m.oracle.result;
+  if (!judged.has(m)) judged.set(m, r?.id ?? 0);
+  if (!r || m.phase === 'killcam') return;
+  const before = judged.get(m)!;
+  judged.set(m, Math.max(before, r.id));
+  const tip = r.tips.find((x) => x.player === m.viewer);
+  if (!settings.oracle || !m.ghost || r.id <= before || !tip) return;
+  const at = r.kind === 'shot' ? m.world.ships[r.shooter] : tip.pick >= 0 ? m.world.ships[tip.pick] : { x: FIELD.width / 2, y: FIELD.height / 2 };
+  effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), at.x, at.y - 34, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right);
+  if (tip.right) sound.combo();
+}
+
 let last = performance.now();
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -397,7 +451,8 @@ function frame(now: number): void {
     effects.update(dt, m.world);
   }
   net?.update(dt);
-  renderer.draw(m, effects, { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording }, paused ? 0 : dt);
+  renderer.draw(m, effects, { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, oracle: settings.oracle }, paused ? 0 : dt);
+  if (screen === 'play' && m === match) announceOracle(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();
   requestAnimationFrame(frame);

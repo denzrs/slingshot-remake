@@ -167,7 +167,12 @@ export class MultiplayerSession {
       this.aimDirty = true;
       return;
     }
-    this.flushAim();
+    if (input.kind === 'bet') {
+      // Remember the tip on this screen at once; the host judges it from its own copy.
+      if (!match.placeBet(id, input.pick)) return;
+    } else {
+      this.flushAim();
+    }
     this.send({ type: 'input', input });
   }
 
@@ -254,6 +259,7 @@ export class MultiplayerSession {
       names: message.players.map((p) => p.name),
       teams: message.mode === 'team' ? message.players.map((p) => p.team) : undefined,
       simultaneous: message.gameMode === 'horizon' || settings.simultaneousShots,
+      oracle: true,
     });
     if (!(match instanceof ClassicMatch || match instanceof HorizonMatch)) return;
     match.viewer = this.you.playerId;
@@ -270,6 +276,7 @@ export class MultiplayerSession {
     if (input.kind === 'adjust') match.adjustPlayer(id, input.dAngle, input.dPower);
     else if (input.kind === 'aim') match.setPlayerAim(id, input.angle, input.power);
     else if (input.kind === 'fire') match.commitPlayer(id);
+    else if (input.kind === 'bet') match.placeBet(id, input.pick);
     else match.voteSkip(id);
   }
 

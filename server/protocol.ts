@@ -3,6 +3,8 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+/** Tips name a ship; there are at most six. */
+const MAX_TIP = 6;
 const isIndex = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
 
 /** A client's aim/fire request, as the host will apply it. */
@@ -16,6 +18,9 @@ export function isInputMessage(value: unknown): value is Record<string, unknown>
     case 'fire':
     case 'skip':
       return true;
+    case 'bet':
+      // A ship's index (or -1 for "nobody", 0/1 for a miss/hit); whether it makes sense is the host's call.
+      return Number.isSafeInteger(value.pick) && (value.pick as number) >= -1 && (value.pick as number) < MAX_TIP;
     default:
       return false;
   }

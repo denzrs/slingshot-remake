@@ -1,6 +1,6 @@
 import { CHALLENGE, COLORS, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
 import { teamName, type Match, type Mode, type VersusMode } from '../game';
-import { fmtNum, LANGS, t, tn, type Lang } from '../i18n';
+import { fmtInt, fmtNum, LANGS, t, tn, type Lang } from '../i18n';
 import { rulesOf } from '../lobbyPrefs';
 import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
@@ -324,6 +324,7 @@ function settingsScreen(app: App): Screen {
       settingToggle(app, t('settings.contours'), 'contours'),
       settingToggle(app, t('settings.particles'), 'particles'),
       settingToggle(app, t('settings.sound'), 'sound'),
+      settingToggle(app, t('settings.oracle'), 'oracle'),
       {
         kind: 'toggle',
         label: t('settings.fullscreen'),
@@ -390,7 +391,7 @@ function helpScreen(app: App): Screen {
 export function gameOverScreen(app: App, match: Match): Screen {
   const winner = match.winner();
   const headline = !winner ? t('over.draw') : match.teamMode ? t('over.teamWins', { team: winner.name }) : t('over.wins', { name: winner.name });
-  const entry = (place: number, name: string, color: string, score: number) => {
+  const entry = (place: number, name: string, color: string, score: number | string) => {
     const label = h('span.ranking__name', null, name);
     label.style.color = color;
     return h('li', null, h('span.ranking__place', null, `${place}.`), label, h('span.ranking__score', null, String(score)));
@@ -418,6 +419,12 @@ export function gameOverScreen(app: App, match: Match): Screen {
         return h('li', null, h('span.highlights__label', null, awardLabel(award.kind)), name, h('span.highlights__value', null, awardValue(award)));
       });
       if (highlights.length) lists.push(h('p.ranking-label', null, t('scorecard.match')), h('ul.highlights', null, ...highlights));
+      // The eliminated players' side standings.
+      const tipsters = match.oracle.ranking();
+      if (tipsters.length) {
+        const rows = tipsters.map(({ player, score }, i) => entry(i + 1, match.players[player].name, match.players[player].color, `${fmtInt(score.points)}  ·  ${score.right}/${score.total}`));
+        lists.push(h('p.ranking-label', null, t('oracle.match')), h('ol.ranking.ranking--small', null, ...rows));
+      }
       return h(
         'section.screen.screen--panel',
         { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('over.label') },
