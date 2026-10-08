@@ -8,6 +8,7 @@ const en = {
   // — static page (index.html) —
   'static.description': 'Slingshot – up to six spaceships, a few planets, a black hole and lots of gravity.',
   'static.canvas': 'Playfield',
+  'static.ghostLane': 'Ghost lane',
   'static.clipSave': 'Save clip',
   'static.rotate': 'Rotate your device to landscape – the playfield gets bigger.',
 
@@ -176,6 +177,7 @@ const en = {
   'help.key.clip': 'save the last killcam as a video',
   'help.key.menu': 'Menu',
   'help.key.fullscreen': 'Fullscreen',
+  'help.key.ghost': 'Ghost lane, once you are shot down online: open or close it',
   'help.key.or': ' or ',
   'help.scoring.title': 'Scoring',
   'help.scoring.classic':
@@ -239,6 +241,7 @@ const en = {
   'hud.waitingFor': 'Waiting for {name} …',
   'hud.waitingOthers': 'Waiting for the others …',
   'hud.waitingHost': 'Waiting for the host …',
+  'hud.ghostLane': 'Ghost lane',
   'hud.collapse': 'The horizon is growing …',
   'hud.finalStandings': 'Final standings',
   'hud.nextRound': 'Next round',
@@ -262,6 +265,25 @@ const en = {
   'oracle.out.victims': 'Hit: {names}',
   'oracle.out.nobody': 'Nobody was hit',
   'oracle.match': 'Oracle — side standings, not counted towards the win',
+
+  // — ghost lane —
+  'settings.ghostLane': 'Ghost lane for eliminated players',
+  'title.ghostEgg': 'Boo!',
+  'ghost.name': 'Ghost lane',
+  'ghost.lane': 'Lane {n}',
+  'ghost.shot': 'Shot {n}/{max}',
+  'ghost.streak': 'Streak',
+  'ghost.paused': 'Paused',
+  'ghost.keys': '← → angle · ↑ ↓ power · Enter fire · G close',
+  'ghost.hit.0': 'Boo!',
+  'ghost.hit.1': 'Spooky!',
+  'ghost.hit.2': 'Gotcha!',
+  'ghost.near.0': 'Almost haunted',
+  'ghost.near.1': 'So close …',
+  'ghost.miss.0': 'Haunted thin air',
+  'ghost.miss.1': 'Into the void',
+  'ghost.out.0': 'Lane forsaken',
+  'ghost.out.1': 'The ghost gives up',
 
   // — round titles —
   'title.hit': 'HIT',
@@ -369,6 +391,7 @@ type Params = Record<string, string | number>;
 const de: Dict = {
   'static.description': 'Slingshot – bis zu sechs Raumschiffe, ein paar Planeten, ein schwarzes Loch und viel Gravitation.',
   'static.canvas': 'Spielfeld',
+  'static.ghostLane': 'Geisterbahn',
   'static.clipSave': 'Clip speichern',
   'static.rotate': 'Dreh dein Gerät ins Querformat – dann wird das Spielfeld größer.',
 
@@ -531,6 +554,7 @@ const de: Dict = {
   'help.key.clip': 'letzte Killcam als Video speichern',
   'help.key.menu': 'Menü',
   'help.key.fullscreen': 'Vollbild',
+  'help.key.ghost': 'Geisterbahn, wenn du online ausgeschieden bist: öffnen und schließen',
   'help.key.or': ' oder ',
   'help.scoring.title': 'Punkte',
   'help.scoring.classic':
@@ -591,6 +615,7 @@ const de: Dict = {
   'hud.waitingFor': 'Warte auf {name} …',
   'hud.waitingOthers': 'Warte auf die anderen …',
   'hud.waitingHost': 'Warte auf den Host …',
+  'hud.ghostLane': 'Geisterbahn',
   'hud.collapse': 'Der Horizont wächst …',
   'hud.finalStandings': 'Endstand',
   'hud.nextRound': 'Nächste Runde',
@@ -614,6 +639,25 @@ const de: Dict = {
   'oracle.out.victims': 'Getroffen: {names}',
   'oracle.out.nobody': 'Niemand getroffen',
   'oracle.match': 'Orakel – Nebenwertung, zählt nicht für den Sieg',
+
+  // — ghost lane —
+  'settings.ghostLane': 'Geisterbahn für Ausgeschiedene',
+  'title.ghostEgg': 'Buuh!',
+  'ghost.name': 'Geisterbahn',
+  'ghost.lane': 'Bahn {n}',
+  'ghost.shot': 'Schuss {n}/{max}',
+  'ghost.streak': 'Serie',
+  'ghost.paused': 'Pause',
+  'ghost.keys': '← → Winkel · ↑ ↓ Power · Enter Feuer · G zu',
+  'ghost.hit.0': 'Buuh!',
+  'ghost.hit.1': 'Gespenstisch!',
+  'ghost.hit.2': 'Erwischt!',
+  'ghost.near.0': 'Fast gespukt',
+  'ghost.near.1': 'Knapp vorbeigegeistert',
+  'ghost.miss.0': 'Ins Leere gespukt',
+  'ghost.miss.1': 'Nur Luft erwischt',
+  'ghost.out.0': 'Bahn verwaist',
+  'ghost.out.1': 'Der Geist gibt auf',
 
   'title.hit': 'TREFFER',
   'title.selfHit': 'EIGENTREFFER',

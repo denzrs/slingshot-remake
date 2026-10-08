@@ -87,6 +87,30 @@ export const ORACLE = {
   RESULT_SECONDS: 3.5,
 } as const;
 
+/** The ghost lane: a small shooting range for eliminated players while the others play on. A side game — it never counts towards winning. */
+export const GHOST = {
+  /** Shots per lane. */
+  SHOTS: 3,
+  /** Base points for a hit, by the shot it took (first, second, third). */
+  HIT: 100,
+  SHOT_FACTOR: [1, 0.7, 0.45] as readonly number[],
+  /** Extra base points per swing-by on the way to a hit. */
+  SWINGBY: 50,
+  /** Every lane cleared in a row raises the multiplier by this much, up to the cap. */
+  STREAK_STEP: 0.5,
+  MAX_MULTIPLIER: 3,
+  /** Seconds a shot may fly, and how much faster than real time it does. */
+  FLIGHT_TIME: 8,
+  SPEED: 3,
+  /** A miss closer than this to the target is "nearly haunted". */
+  NEAR: 70,
+  /** Seconds the lane rests after a cleared / failed lane before the next one appears. */
+  PAUSE_CLEARED: 1.2,
+  PAUSE_FAILED: 1.6,
+  /** Seconds after being shot down before the hint to the lane appears. */
+  TEASER_DELAY: 3,
+} as const;
+
 /** Daily challenge: a fixed run of sectors against stationary targets, the same for everyone on a given day. */
 export const CHALLENGE = {
   SECTORS: 5,

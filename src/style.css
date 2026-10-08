@@ -119,6 +119,46 @@ body {
   opacity: 0.8;
 }
 
+.title-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.title-foot .version {
+  margin: 0;
+}
+
+.ghost-egg {
+  width: 20px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--bone-dim);
+  opacity: 0.5;
+  cursor: pointer;
+  animation: ghost-bob 3.4s ease-in-out infinite;
+}
+
+.ghost-egg:hover {
+  color: #b99cff;
+  opacity: 1;
+}
+
+@keyframes ghost-bob {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghost-egg {
+    animation: none;
+  }
+}
+
 .version {
   margin: 6px 0 0;
   font-family: var(--font-mono);
@@ -1885,6 +1925,11 @@ kbd {
   text-transform: uppercase;
 }
 
+/* The title screen's Easter egg needs its fire button above the menu. */
+body.egg-open #touch-fire {
+  z-index: 12;
+}
+
 #touch-fire[hidden],
 #clip-save[hidden] {
   display: none;
@@ -1921,6 +1966,30 @@ kbd {
 #clip-save:focus-visible {
   outline: none;
   background: rgb(255 90 110 / 0.16);
+}
+
+#ghost-lane {
+  --ghost-bottom: max(16px, env(safe-area-inset-bottom));
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: var(--ghost-bottom);
+  /* Above the menu overlay, so the title screen's Easter egg can show it. */
+  z-index: 11;
+  width: clamp(240px, 24vw, 360px);
+  aspect-ratio: 5 / 4;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+#ghost-lane[hidden] {
+  display: none;
+}
+
+/* The touch button sits in the same corner: the lane makes room above it. */
+@media (pointer: coarse) {
+  #ghost-lane {
+    --ghost-bottom: calc(max(16px, env(safe-area-inset-bottom)) + 72px);
+  }
 }
 
 #rotate-hint {

@@ -66,3 +66,18 @@ describe('power settings', () => {
     expect(startPower(settings)).toBe(expected);
   });
 });
+
+describe('ghost lane setting', () => {
+  it('is on by default, also for settings saved before it existed', () => {
+    storage({ sound: false });
+    expect(loadSettings().ghostLane).toBe(true);
+  });
+
+  it('keeps the choice after saving and reloading', () => {
+    storage();
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.ghostLane = false;
+    saveSettings(settings);
+    expect(loadSettings().ghostLane).toBe(false);
+  });
+});

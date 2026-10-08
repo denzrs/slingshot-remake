@@ -31,6 +31,8 @@ export interface App {
   toTitle(): void;
   toggleFullscreen(): void;
   isFullscreen(): boolean;
+  /** The Easter egg on the title screen: opens or closes a ghost lane. */
+  ghostEgg(): void;
 }
 
 const LANG_NAMES: Record<Lang, string> = { de: 'Deutsch', en: 'English' };
@@ -60,6 +62,20 @@ function lineup(s: Settings): string {
   return parts.join(' · ');
 }
 
+/** A small ghost beside the version: whoever finds it can play the ghost lane from the title screen. */
+function ghostEgg(app: App): HTMLElement {
+  const button = h('button.ghost-egg', { type: 'button', tabindex: '-1', title: t('title.ghostEgg'), 'aria-label': t('title.ghostEgg') });
+  button.innerHTML =
+    '<svg viewBox="0 0 20 22" width="20" height="22" aria-hidden="true"><path fill="currentColor" d="M3 19V10a7 7 0 0 1 14 0v9l-2.33-2-2.34 2-2.33-2-2.33 2-2.34-2-2.33 2z"/>' +
+    '<circle cx="7.6" cy="10" r="1.4" fill="#0b1a33"/><circle cx="12.4" cy="10" r="1.4" fill="#0b1a33"/><ellipse cx="10" cy="13.6" rx="1.1" ry="1.5" fill="#0b1a33"/></svg>';
+  button.addEventListener('click', () => {
+    // Keep Enter and Space for the lane, not for this button.
+    button.blur();
+    app.ghostEgg();
+  });
+  return button;
+}
+
 export function titleScreen(app: App): Screen {
   return {
     build: () =>
@@ -74,8 +90,8 @@ export function titleScreen(app: App): Screen {
           h('p.lede', null, t('title.lede')),
           h('nav.items', { 'data-items': '', 'aria-label': t('title.menuLabel') }),
           h('p.keys', null, t('title.keys')),
-          // Set by the deploy workflow; absent in local dev builds.
-          ...(import.meta.env.VITE_APP_VERSION ? [h('p.version', null, String(import.meta.env.VITE_APP_VERSION))] : []),
+          // Set by the deploy workflow; local builds say so.
+          h('div.title-foot', null, h('p.version', null, String(import.meta.env.VITE_APP_VERSION || 'Local-Dev')), ghostEgg(app)),
         ),
       ),
     // A getter, so the lineup hint is fresh whenever the menu re-renders this screen.
@@ -325,6 +341,7 @@ function settingsScreen(app: App): Screen {
       settingToggle(app, t('settings.particles'), 'particles'),
       settingToggle(app, t('settings.sound'), 'sound'),
       settingToggle(app, t('settings.oracle'), 'oracle'),
+      settingToggle(app, t('settings.ghostLane'), 'ghostLane'),
       {
         kind: 'toggle',
         label: t('settings.fullscreen'),
@@ -374,6 +391,7 @@ function helpScreen(app: App): Screen {
               row([key(t('common.space'))], t('help.key.next')),
               row([key('C')], t('help.key.clip')),
               row([key('Esc')], t('help.key.menu')),
+              row([key('G')], t('help.key.ghost')),
               row([key('F')], t('help.key.fullscreen')),
             ),
           ),
