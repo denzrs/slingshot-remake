@@ -38,6 +38,8 @@ export interface CpuProfile {
   selfMargin: number;
   /** How much a hit's power is resented, in cost per unit of power. */
   powerFrugality: number;
+  /** Keep refining a hit until its power is as low as the trajectory permits. */
+  optimizeHitPower: boolean;
   /** Preference for the nearest enemy: distance in px added to a far enemy's miss cost. */
   distanceBias: number;
   /** Extra pull towards whoever hit this CPU most recently. */
@@ -46,11 +48,11 @@ export interface CpuProfile {
 
 export const CPU_PROFILES: Readonly<Record<Exclude<NormalCpuLevel, 'hawking'>, Readonly<CpuProfile>>> = {
   // Kepler: lazy and lucky. Goes for whoever is nearest, tolerates risk, learns slowly.
-  easy: { angle: 4.5, power: 4.5, decay: 0.8, selfMargin: 20, powerFrugality: 0, distanceBias: 0.25, grudge: 0 },
+  easy: { angle: 4.5, power: 4.5, decay: 0.8, selfMargin: 20, powerFrugality: 0, optimizeHitPower: false, distanceBias: 0.25, grudge: 0 },
   // Newton: efficient. Wastes no power, keeps a level head.
-  medium: { angle: 1.6, power: 1.6, decay: 0.6, selfMargin: 45, powerFrugality: 0.01, distanceBias: 0, grudge: 0 },
+  medium: { angle: 1.6, power: 1.6, decay: 0.6, selfMargin: 45, powerFrugality: 0.01, optimizeHitPower: true, distanceBias: 0, grudge: 0 },
   // Einstein: careful and precise, with a long memory for being shot at.
-  hard: { angle: 0.5, power: 0.5, decay: 0.45, selfMargin: 60, powerFrugality: 0.002, distanceBias: 0, grudge: 3 },
+  hard: { angle: 0.5, power: 0.5, decay: 0.45, selfMargin: 60, powerFrugality: 0.002, optimizeHitPower: false, distanceBias: 0, grudge: 3 },
 };
 /** Planner result emitted for each menu CPU launch when AI decision logging is enabled. */
 export interface CpuDecision {
@@ -112,6 +114,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const fixedPower = opts.fixedPower === null ? null : Math.min(opts.fixedPower, maxPower);
   const hawking = opts.level === 'hawking';
   const profile = CPU_PROFILES[opts.level === 'hawking' ? 'hard' : opts.level];
+  const optimizeHitPower = opts.optimizeHitPower ?? profile.optimizeHitPower;
   // Ordinary CPUs retain their cheap horizon; Hawking searches full-length trick shots.
   const planRules: ShotRules = { ...rules, timeLimit: hawking ? rules.timeLimit : Math.min(rules.timeLimit, opts.lookahead ?? 12) };
   const randomPower = () => fixedPower ?? Math.min(maxPower, 15 + rng() * 85);
@@ -223,7 +226,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     pool.push(yield* candidate(aim));
     // Small slices keep each frame's thinking within budget, even with many ships to check.
     if (i % 4 === 3) yield;
-    if (!hawking && !opts.optimizeHitPower && i > samples * 0.4 && pool.filter((c) => c.cost < 0).length >= 3) break;
+    if (!hawking && !optimizeHitPower && i > samples * 0.4 && pool.filter((c) => c.cost < 0).length >= 3) break;
   }
 
   pool.sort(compare);
@@ -231,7 +234,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   for (const seed of pool.slice(0, Math.max(2, Math.round(5 * effort)))) {
     let local = seed;
     let spread = 6;
-    for (let i = 0; i < 45 && (hawking || local.cost > -0.5 || (opts.optimizeHitPower && local.cost < 0)); i++) {
+    for (let i = 0; i < 45 && (hawking || local.cost > -0.5 || (optimizeHitPower && local.cost < 0)); i++) {
       const aim = {
         angle: normalizeAngle(local.angle + gaussian(rng) * spread),
         power: fixedPower ?? clampPower(local.power + gaussian(rng) * spread, maxPower),
@@ -241,8 +244,8 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
       else spread = Math.max(0.05, spread * 0.93);
       if (i % 4 === 3) yield;
     }
-    if (!hawking && !opts.optimizeHitPower && best.cost < 0) break;
-    if (!hawking && opts.optimizeHitPower && fixedPower === null && local.cost < 0) {
+    if (!hawking && !optimizeHitPower && best.cost < 0) break;
+    if (!hawking && optimizeHitPower && fixedPower === null && local.cost < 0) {
       let lower = Math.min(5, maxPower);
       let upper = local.power;
       for (let i = 0; i < 9 && upper - lower > 0.1; i++) {

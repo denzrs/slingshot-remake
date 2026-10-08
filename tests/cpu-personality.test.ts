@@ -57,9 +57,11 @@ describe('CPU personalities', () => {
     });
     expect(simulateShot(world, 0, frugal.angle, frugal.power, rules).end.kind).toBe('ship');
     expect(simulateShot(world, 0, lazy.angle, lazy.power, rules).end.kind).toBe('ship');
-    // Newton's power frugality is real: the profile is set and positive.
+    // Newton's profile combines a power penalty with full hit-power refinement.
     expect(CPU_PROFILES.medium.powerFrugality).toBeGreaterThan(0);
+    expect(CPU_PROFILES.medium.optimizeHitPower).toBe(true);
     expect(CPU_PROFILES.easy.powerFrugality).toBe(0);
+    expect(CPU_PROFILES.easy.optimizeHitPower).toBe(false);
   });
 
   it('keeps aim error decaying per shot, steeper for harder levels', () => {
