@@ -39,12 +39,10 @@ const onOff = () => [
 
 const seatOptions = (): { value: Seat; label: string }[] => [
   { value: 'human', label: t('seat.human') },
-  { value: 'easy', label: t('seat.easy') },
-  { value: 'medium', label: t('seat.medium') },
-  { value: 'hard', label: t('seat.hard') },
   { value: 'experimental-easy', label: t('seat.experimental-easy') },
   { value: 'experimental-medium', label: t('seat.experimental-medium') },
   { value: 'experimental-hard', label: t('seat.experimental-hard') },
+  { value: 'hawking', label: t('seat.hawking') },
   { value: 'off', label: '—' },
 ];
 
@@ -154,7 +152,7 @@ export function playersScreen(app: App): Screen {
     set: (v) => {
       let next = v as Seat;
       // At least two seats must stay taken: skip "—" in whichever direction we were cycling.
-      if (next === 'off' && activeSeats(s).length <= 2 && s.seats[i] !== 'off') next = s.seats[i] === 'human' ? 'experimental-hard' : 'human';
+      if (next === 'off' && activeSeats(s).length <= 2 && s.seats[i] !== 'off') next = s.seats[i] === 'human' ? 'hawking' : 'human';
       const joinedOrLeft = (s.seats[i] === 'off') !== (next === 'off');
       s.seats[i] = next;
       app.settingsChanged();

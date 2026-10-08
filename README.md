@@ -64,10 +64,16 @@ The relay can also be built with `npm run build:server` and started with `npm ru
 **Trick-shot bonuses in Classic** (optional, off by default): swing-bys, grazes, bank shots and airtime multiply a hit's points just like in Event Horizon (`1000 × shot factor × power factor × combo`).
 As in the original, you can toggle invisible planets, reflecting edges, fixed power, planet count, rounds, and flight time.
 The setup screen contains these rules, players, teams, and CPU choices.
-The setup offers the original easy, medium, and hard AIs plus `experimental-easy`, `experimental-medium`, and `experimental-hard`.
-The original AIs remain unchanged. Experimental AIs learn gravity from their own completed shots.
+The setup offers Kepler, Newton, Einstein, and Hawking, in that order.
+The original easy, medium, and hard AIs remain available in code and benchmarks, but not in the setup menu.
+Kepler, Newton, and Einstein learn gravity from their own completed shots.
 The settings screen contains device options, such as sound, fullscreen, particles, language, and gravity contours.
 The browser saves these settings.
+
+Most players will probably have a good time against Newton or Hawking. Start with either one.
+Newton learns gravity from its shots. Hawking favors long shots with swing-bys.
+
+Hawking is a nonlearning CPU for Classic and Event Horizon. It uses the hard AI's search and aim error. Enemy hits come first, with self-hit and friendly-hit safety preserved. Among comparable safe shots, it prefers more swing-by passes, then longer flights and paths within the full configured flight limit. It keeps these preferences in Classic when trick-shot bonuses are off. The original and experimental AIs remain unchanged.
 
 ## Tech
 
@@ -106,11 +112,11 @@ Explicit `NaN`, `Infinity`, and `-Infinity` values become `0`.
 The browser has no sliders for these controls. They apply only to the custom `experimental` CPU.
 Named presets use fixed per-seat values, even when a match contains different experimental presets:
 
-| CPU name | Learning rate | Starting knowledge |
-| --- | --- | --- |
-| `experimental-easy` | 0.45 | 0.5 |
-| `experimental-medium` | 0.54 | 0.72 |
-| `experimental-hard` | 0.72 | 0.9 |
+| CPU name | Stored preset ID | Learning rate | Starting knowledge |
+| --- | --- | --- | --- |
+| Kepler | `experimental-easy` | 0.45 | 0.5 |
+| Newton | `experimental-medium` | 0.54 | 0.72 |
+| Einstein | `experimental-hard` | 0.72 | 0.9 |
 
 The browser saves each selected seat by name. Reloading preserves its preset.
 

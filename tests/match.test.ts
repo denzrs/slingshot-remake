@@ -18,6 +18,41 @@ function playRound(mode: VersusMode, seats: Seat[], maxSeconds = 600): Match {
 
 const cpus = (n: number, level: Seat = 'medium'): Seat[] => [...Array(n).fill(level), ...Array(6 - n).fill('off')];
 
+describe('Hawking CPU', () => {
+  it.each<VersusMode>(['classic', 'horizon'])('finishes a seeded %s match without experimental learning', (mode) => {
+    const seats = cpus(2, 'hawking');
+    let completedShots = 0;
+    let experimentalObservations = 0;
+    let experimentalDecisions = 0;
+    const match = createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 1, maxPlanets: 0, seats }, {
+      seats,
+      seed: 29,
+      deterministicCpu: true,
+      onShotComplete: (report) => {
+        completedShots++;
+        if (report.experimentalObservation !== null) experimentalObservations++;
+      },
+      onExperimentalDecision: () => { experimentalDecisions++; },
+    });
+    try {
+      expect(match.players.map((player) => player.cpu)).toEqual(['hawking', 'hawking']);
+      const dt = 1 / 30;
+      for (let elapsed = 0; elapsed < 300 && match.phase !== 'gameOver'; elapsed += dt) {
+        match.update(dt);
+        if (match.phase === 'killcam' || match.phase === 'roundOver') match.advance();
+      }
+      expect(match.phase).toBe('gameOver');
+      expect(match.alive.length).toBeLessThanOrEqual(1);
+      expect(completedShots).toBeGreaterThan(0);
+      expect(experimentalObservations).toBe(0);
+      expect(experimentalDecisions).toBe(0);
+      expect(match.players.every((player) => Number.isFinite(player.score))).toBe(true);
+    } finally {
+      match.dispose();
+    }
+  });
+});
+
 describe('classic match', () => {
   it('restores an authoritative mid-flight snapshot', () => {
     const host = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 3 }, { seats: ['human', 'human', 'human', 'off', 'off', 'off'] }) as ClassicMatch;

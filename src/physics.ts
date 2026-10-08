@@ -107,8 +107,10 @@ export class Shot {
   vy: number;
   time = 0;
   end: ShotEnd | null = null;
-  /** Trick-shot log; null when not tracked (CPU planning skips it for speed). */
+  /** Trick-shot log; null when not recorded (CPU planning skips event storage). */
   readonly style: StyleEvent[] | null;
+  /** Production swing-by events, including repeated passes of the same body. */
+  swingbys = 0;
   /** One per planet, plus one for the black hole at the end. */
   private readonly encounters: Encounter[] | null;
 
@@ -118,7 +120,7 @@ export class Shot {
     readonly angle: number,
     readonly power: number,
     private readonly rules: ShotRules,
-    trackStyle = false,
+    trackStyle: boolean | 'metrics' = false,
     /** Ships this shot flies straight through (the neighbour grace period). */
     private readonly spare: readonly number[] = [],
   ) {
@@ -129,7 +131,7 @@ export class Shot {
     this.y = ship.y + dir.y * PHYSICS.MUZZLE;
     this.vx = dir.x * speed;
     this.vy = dir.y * speed;
-    this.style = trackStyle ? [] : null;
+    this.style = trackStyle === true ? [] : null;
     this.encounters = trackStyle
       ? Array.from({ length: world.planets.length + 1 }, () => ({ inside: false, turn: 0, minGap: Infinity, photons: 0 }))
       : null;
@@ -181,7 +183,7 @@ export class Shot {
       if (this.y < 0) { this.y = -this.y; this.vy = -this.vy; bounced = true; }
       else if (this.y > height) { this.y = 2 * height - this.y; this.vy = -this.vy; bounced = true; }
     }
-    if (this.style) this.trackStyle(hx, hy, bounced);
+    if (this.encounters) this.trackStyle(hx, hy, bounced);
 
     const r2 = PHYSICS.SHIP_RADIUS * PHYSICS.SHIP_RADIUS;
     for (let i = 0; i < ships.length; i++) {
@@ -214,18 +216,17 @@ export class Shot {
 
   private finish(end: ShotEnd): ShotEnd {
     this.end = end;
-    if (this.style && end.kind === 'ship') {
+    if (this.encounters && end.kind === 'ship') {
       // Encounters still open at impact count too — e.g. a target parked right next to a planet.
       this.encounters!.forEach((e, i) => e.inside && this.closeEncounter(i));
-      if (this.time >= AIRTIME) this.style.push({ kind: 'airtime', x: this.x, y: this.y });
+      if (this.time >= AIRTIME) this.recordStyle('airtime');
     }
     return end;
   }
 
   private trackStyle(hx: number, hy: number, bounced: boolean): void {
-    const style = this.style!;
     const encs = this.encounters!;
-    if (bounced) style.push({ kind: 'bank', x: this.x, y: this.y });
+    if (bounced) this.recordStyle('bank');
     // How far gravity turned the velocity this step (a bounce is not a turn).
     const turn = bounced ? 0 : Math.atan2(hx * this.vy - hy * this.vx, hx * this.vx + hy * this.vy);
     const { planets, hole } = this.world;
@@ -253,7 +254,7 @@ export class Shot {
         // Every full loop around the hole is a photon ring.
         if (Math.abs(e.turn) >= 2 * Math.PI * (e.photons + 1)) {
           e.photons++;
-          style.push({ kind: 'photon', x: this.x, y: this.y });
+          this.recordStyle('photon');
         }
       } else if (e.inside) {
         this.closeEncounter(i);
@@ -265,8 +266,13 @@ export class Shot {
     const e = this.encounters![i];
     e.inside = false;
     const isHole = i === this.world.planets.length;
-    if (Math.abs(e.turn) >= SWING_TURN && e.photons === 0) this.style!.push({ kind: 'swingby', x: this.x, y: this.y });
-    if (!isHole && e.minGap < GRAZE_GAP) this.style!.push({ kind: 'graze', x: this.x, y: this.y });
+    if (Math.abs(e.turn) >= SWING_TURN && e.photons === 0) this.recordStyle('swingby');
+    if (!isHole && e.minGap < GRAZE_GAP) this.recordStyle('graze');
+  }
+
+  private recordStyle(kind: StyleKind): void {
+    if (kind === 'swingby') this.swingbys++;
+    this.style?.push({ kind, x: this.x, y: this.y });
   }
 }
 
@@ -312,4 +318,57 @@ export function simulateShot(
     }
   }
   return { end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2) };
+}
+
+export interface StyledShotOutcome extends ShotOutcome {
+  swingbys: number;
+  flightTime: number;
+  pathLength: number;
+}
+
+/** Full production flight/style evaluation, sliced so long orbits do not block a frame. */
+export function* simulateStyledShot(
+  world: World,
+  shooter: number,
+  angle: number,
+  power: number,
+  rules: ShotRules,
+  friends: readonly number[] = [],
+): Generator<void, StyledShotOutcome> {
+  const shot = new Shot(world, shooter, angle, power, rules, 'metrics');
+  const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
+  const own = world.ships[shooter];
+  const mates = friends.map((i) => world.ships[i]).filter((s) => s.alive);
+  let closest2 = Infinity;
+  let self2 = Infinity;
+  let pathLength = 0;
+  let steps = 0;
+  let end: ShotEnd | null = null;
+  while (!end) {
+    const x = shot.x;
+    const y = shot.y;
+    end = shot.step();
+    pathLength += Math.hypot(shot.x - x, shot.y - y);
+    for (const t of targets) {
+      const dx = t.x - shot.x;
+      const dy = t.y - shot.y;
+      closest2 = Math.min(closest2, dx * dx + dy * dy);
+    }
+    // Identical muzzle grace and teammate proximity rules to simulateShot.
+    if (shot.time > 0.25) {
+      const dx = own.x - shot.x;
+      const dy = own.y - shot.y;
+      self2 = Math.min(self2, dx * dx + dy * dy);
+    }
+    for (const mate of mates) {
+      const dx = mate.x - shot.x;
+      const dy = mate.y - shot.y;
+      self2 = Math.min(self2, dx * dx + dy * dy);
+    }
+    if (!end && ++steps % 240 === 0) yield;
+  }
+  return {
+    end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2),
+    swingbys: shot.swingbys, flightTime: shot.time, pathLength,
+  };
 }
