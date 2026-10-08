@@ -1,17 +1,25 @@
-name: Test & Deploy
+name: Test, Deploy & Release
+
+# Every push to main (i.e. every merge) that passes the tests is built once, deployed to GitHub Pages
+# and released under the next minor version (vX.Y.0 -> vX.(Y+1).0).
+# Major bumps are manual: push a tag such as v2.0.0 and it gets released as-is (not deployed);
+# the next merge then continues from there (v2.1.0).
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Runs on main and for tags queue up one after another, so every merge gets its own consecutive version.
+# Only a superseded run of the same pull request is cancelled.
 concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'main-line' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -30,6 +38,9 @@ jobs:
     needs: test
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      release: ${{ steps.version.outputs.release }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,27 +50,53 @@ jobs:
           node-version: 22
           cache: npm
       - name: Determine version
-        # Mirrors release.yml: the tag on HEAD if the release job got there first,
-        # otherwise the next minor after the latest tag (what the release job will create).
+        id: version
+        # A pushed tag is released as it is. Otherwise: the tag on HEAD if there is one (already released,
+        # nothing to do), else the next minor after the latest tag, which the release job will create.
         run: |
           semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
-          tag=$(git tag --points-at HEAD | grep -E "$semver" | head -n 1 || true)
-          if [ -z "$tag" ]; then
-            latest=$(git tag -l 'v*' --sort=-v:refname | grep -E "$semver" | head -n 1 || true)
-            latest=${latest:-v$(node -p "require('./package.json').version")}
-            IFS=. read -r major minor _ <<< "${latest#v}"
-            tag="v$major.$((minor + 1)).0"
+          release=false
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag="$GITHUB_REF_NAME"
+            release=true
+          else
+            tag=$(git tag --points-at HEAD | grep -E "$semver" | head -n 1 || true)
+            if [ -z "$tag" ]; then
+              latest=$(git tag -l 'v*' --sort=-v:refname | grep -E "$semver" | head -n 1 || true)
+              # No release yet: start from the version in package.json.
+              latest=${latest:-v$(node -p "require('./package.json').version")}
+              IFS=. read -r major minor _ <<< "${latest#v}"
+              tag="v$major.$((minor + 1)).0"
+              if [ "$GITHUB_EVENT_NAME" = push ]; then release=true; fi
+            fi
           fi
+          echo "Version $tag (release: $release)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
           echo "VITE_APP_VERSION=$tag" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run build
+      - name: Zip the build for the release
+        if: steps.version.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: (cd dist && zip -r "../slingshot-$TAG.zip" .)
+      - uses: actions/upload-artifact@v4
+        if: steps.version.outputs.release == 'true'
+        with:
+          name: release-zip
+          path: slingshot-*.zip
+          if-no-files-found: error
       - uses: actions/configure-pages@v5
+        if: github.ref_type != 'tag'
       - uses: actions/upload-pages-artifact@v3
+        if: github.ref_type != 'tag'
         with:
           path: dist
 
   deploy:
     needs: build
+    if: github.ref_type != 'tag'
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -70,3 +107,24 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  release:
+    needs: build
+    if: needs.build.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-zip
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          gh release create "$TAG" "slingshot-$TAG.zip" \
+            --target "$GITHUB_SHA" \
+            --title "Slingshot $TAG" \
+            --generate-notes
