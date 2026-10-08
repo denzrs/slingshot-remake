@@ -15,7 +15,7 @@ export type ClientInput =
   /** A vote to skip the killcam; it ends once half of the players want that. */
   | { kind: 'skip' };
 
-export type ClientMessage =
+type ClientMessage =
   | { type: 'lobby' }
   | { type: 'create_room'; name: string; mode: RoomMode; gameMode: NetworkGameMode; rules: RoomRules; maxPlayers: number; password?: string }
   | { type: 'join_room'; roomId: string; name: string; password?: string }
@@ -40,7 +40,7 @@ export interface LobbyRoom {
   locked: boolean;
 }
 
-export interface RoomPlayer {
+interface RoomPlayer {
   id: number;
   name: string;
   ready: boolean;

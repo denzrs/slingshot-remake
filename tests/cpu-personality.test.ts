@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CPU_PROFILES, planShotNow, type CpuDecision } from '../src/ai';
+import { CPU_PROFILES, type CpuDecision } from '../src/ai';
 import { simulateShot, type World } from '../src/physics';
 import { createRng } from '../src/rng';
+import { planShotNow } from './helpers';
 
 const rules = { bounce: false, timeLimit: 20 };
 

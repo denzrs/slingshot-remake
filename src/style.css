@@ -1,6 +1,5 @@
 :root {
   --plate: #0b1a33;
-  --plate-lift: #12284d;
   --line: #5b7db3;
   --bone: #e8e4d8;
   --bone-dim: #9aa6bd;
@@ -744,10 +743,6 @@ body {
   box-shadow: 0 0 12px color-mix(in srgb, var(--tone) 45%, transparent);
 }
 
-.setup__rows--seats {
-  gap: 5px;
-}
-
 .team-summary {
   display: flex;
   flex-wrap: wrap;
@@ -1229,14 +1224,6 @@ body {
   cursor: not-allowed;
 }
 
-.lobby__subtitle {
-  margin: 6px 0 0;
-  color: var(--bone-dim);
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-
 .lobby__note {
   margin: 0;
   color: var(--bone-dim);
@@ -1532,19 +1519,6 @@ kbd {
   font-size: clamp(44px, 9vw, 72px);
   line-height: 0.95;
   text-transform: uppercase;
-}
-
-.scoreline {
-  display: flex;
-  justify-content: center;
-  align-items: baseline;
-  gap: 16px;
-  margin: 10px 0 0;
-  font: 700 34px/1 var(--font-mono);
-}
-
-.scoreline__sep {
-  color: var(--bone-dim);
 }
 
 .ranking {

@@ -10,9 +10,9 @@ import { createRng } from '../src/rng';
 import { codeFingerprint } from './ai-matrix';
 import { generateWorld } from '../src/world';
 
-export const VALIDATION_RATES = [0, 0.1, 0.35, 1] as const;
-export const VALIDATION_KNOWLEDGE = [0, 1] as const;
-export const HISTORY_BUDGETS = [0, 1, 2, 4, 8] as const;
+const VALIDATION_RATES = [0, 0.1, 0.35, 1] as const;
+const VALIDATION_KNOWLEDGE = [0, 1] as const;
+const HISTORY_BUDGETS = [0, 1, 2, 4, 8] as const;
 const RULES = { bounce: false, timeLimit: 60 };
 const TRAINING_ANGLES = [-6, 6, -14, 14, -22, 22, -32, 32];
 const PROBES = [{ angle: -10, power: 72 }, { angle: 10, power: 68 }, { angle: -26, power: 76 }, { angle: 26, power: 74 }, { angle: -42, power: 78 }, { angle: 42, power: 70 }];
@@ -52,7 +52,7 @@ export function recordShot(world: World, angle: number, power: number, shotId: n
   return { points, angle, power, shotId };
 }
 
-export function predictionWorld(world: World, fit: GravityFit): World {
+function predictionWorld(world: World, fit: GravityFit): World {
   return {
     width: world.width, height: world.height, version: world.version,
     ships: world.ships.map((ship) => ({ ...ship })),
@@ -65,10 +65,10 @@ export function predictionWorld(world: World, fit: GravityFit): World {
   };
 }
 
-export interface PredictionError { angle: number; power: number; trailRms: number; endpointError: number; samples: number; outcomeAgreement: boolean }
+interface PredictionError { angle: number; power: number; trailRms: number; endpointError: number; samples: number; outcomeAgreement: boolean }
 
 /** Compare equal simulation times, including early predicted collisions as a stopped path. */
-export function predictionError(world: World, fit: GravityFit, angle: number, power: number): PredictionError {
+function predictionError(world: World, fit: GravityFit, angle: number, power: number): PredictionError {
   const actual = new Shot(world, 0, angle, power, RULES);
   const predicted = new Shot(predictionWorld(world, fit), 0, angle, power, RULES);
   let squared = 0;
@@ -105,7 +105,7 @@ export function trainLearner(world: World, rate: number, budget: number, startin
   return learner;
 }
 
-export interface ValidationCell {
+interface ValidationCell {
   scenario: number; rate: number; startingKnowledge: number; budget: number; errors: PredictionError[];
   observedShots: number; learnedShots: number; retainedShots: number;
 }
@@ -132,7 +132,7 @@ export function independentDensityWorld(index = 0): World {
   return world;
 }
 
-export function actualShotLearningSmoke(world = validationWorld(), seed = 99540717, startingKnowledge = 1) {
+function actualShotLearningSmoke(world = validationWorld(), seed = 99540717, startingKnowledge = 1) {
   world = { ...world, ships: world.ships.map((ship) => ({ ...ship, alive: true })) };
   const visible = visibleWorld(world);
   const learner = createExperimentalLearner(startingKnowledge);
@@ -220,7 +220,7 @@ export function shortShotConfidenceCheck() {
 }
 
 export const RECOVERY_ANGLES = [0.4, 0.8, 1.2, 1.6, -30, 30, -50, 50] as const;
-export const RECOVERY_PROBES = [-35, -10, 20, 45] as const;
+const RECOVERY_PROBES = [-35, -10, 20, 45] as const;
 /** Measured pre-recovery reference from .scratch/recovery-before.ts: same seed, 12s maximum,
  * declared 300px exit boundary and pooled Euclidean probes; not today's match boundary. */
 export const RECOVERY_BASELINE_RMS = 64.12803234206731;
@@ -254,7 +254,7 @@ export function recordRecoveryShot(world: World, angle: number, power: number, s
   return { angle, power, shotId, points };
 }
 
-export interface RecoveryProbeError { angle: number; power: number; squared: number; samples: number; trailRms: number }
+interface RecoveryProbeError { angle: number; power: number; squared: number; samples: number; trailRms: number }
 
 /** Hidden predictions use estimated point sources, never true source positions or radii. */
 export function recoveryPredictionErrors(world: World, fit: GravityFit, exitBoundary: number = PHYSICS.OUT_MARGIN): RecoveryProbeError[] {

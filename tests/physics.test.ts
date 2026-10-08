@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { planShotNow } from '../src/ai';
 import { FIELD, HORIZON, PHYSICS } from '../src/config';
 import { cloneWorld, Shot, simulateShot, type Planet, type World } from '../src/physics';
 import { createRng } from '../src/rng';
-import { comboMultiplier, scoreHit, scoreHorizonKill } from '../src/scoring';
+import { comboMultiplier, scoreChallengeHit, scoreHorizonKill } from '../src/scoring';
 import { Volley } from '../src/volley';
 import { generateWorld } from '../src/world';
+import { planShotNow } from './helpers';
 
 const rules = { bounce: false, timeLimit: 20 };
 
@@ -151,11 +151,12 @@ describe('world generation', () => {
 
 describe('scoring', () => {
   it('rewards fewer shots and less power', () => {
-    expect(scoreHit(1, 50, false).points).toBe(1000);
-    expect(scoreHit(1, 20, false).points).toBeGreaterThan(scoreHit(1, 80, false).points);
-    expect(scoreHit(2, 50, false).points).toBeGreaterThan(scoreHit(5, 50, false).points);
-    expect(scoreHit(20, 100, false).points).toBeGreaterThan(0);
-    expect(scoreHit(1, 90, true).points).toBe(1000);
+    const points = (shots: number, power: number, fixedPower: boolean) => scoreChallengeHit(shots, power, fixedPower, []).points;
+    expect(points(1, 50, false)).toBe(1000);
+    expect(points(1, 20, false)).toBeGreaterThan(points(1, 80, false));
+    expect(points(2, 50, false)).toBeGreaterThan(points(5, 50, false));
+    expect(points(20, 100, false)).toBeGreaterThan(0);
+    expect(points(1, 90, true)).toBe(1000);
   });
 });
 

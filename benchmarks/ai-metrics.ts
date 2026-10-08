@@ -4,7 +4,7 @@ import type { ExperimentalDecision, ExperimentalRecoveryDiagnostics } from '../s
 
 export type Format = '1v1' | '2v2' | '3v3';
 export type Opponent = 'easy' | 'medium' | 'hard';
-export type Side = 'experimental' | 'opponent';
+type Side = 'experimental' | 'opponent';
 export interface DecisionRecord {
   kind: string;
   startingKnowledge: number;
@@ -63,17 +63,17 @@ export interface MatchRecord {
   roundResults: RoundRecord[];
   updates: number;
 }
-export interface Distribution {
+interface Distribution {
   n: number; missing: number; mean: number | null; p50: number | null;
   p90: number | null; p95: number | null; min: number | null; max: number | null;
 }
 export interface MeanEstimate { n: number; mean: number | null; ci95: [number, number] | null }
-export interface OutcomeSummary {
+interface OutcomeSummary {
   attempted: number; completed: number; failed: number; wins: number; losses: number;
   draws: number; winPoints: number | null;
 }
 /** Completed-shot denominator, with historical/missing recovery left unavailable. */
-export interface RecoverySummary {
+interface RecoverySummary {
   observationCount: number;
   missingObservationCount: number;
   optimizerInitialRms: Distribution; optimizerFinalRms: Distribution;
@@ -86,7 +86,7 @@ export interface RecoverySummary {
   updateStatuses: Partial<Record<ExperimentalRecoveryDiagnostics['updateStatus'], number>>;
 }
 
-export interface ShotSummary {
+interface ShotSummary {
   fired: number; completed: number; unfinished: number; shipHits: number; shipHitRate: number | null;
   enemyHits: number; friendlyHits: number; selfHits: number; hitRelationMissing: number;
   enemyHitRate: number | null;
@@ -114,7 +114,7 @@ export interface CellSummary {
   stages: Record<string, ShotSummary>;
   inference: string;
 }
-export interface ScoreOutcome { experimentalScore: number; opponentScore: number; winner: Side | 'draw' }
+interface ScoreOutcome { experimentalScore: number; opponentScore: number; winner: Side | 'draw' }
 
 export function scoreOutcome(scores: readonly number[], experimentalPlayers: ReadonlySet<number>): ScoreOutcome {
   const experimentalScore = scores.reduce((sum, score, player) => sum + (experimentalPlayers.has(player) ? score : 0), 0);

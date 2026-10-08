@@ -1,5 +1,8 @@
 import { PHYSICS } from './config';
 
+// Read once: Shot.step is the innermost loop of every CPU search and killcam, and an imported binding is slower to read than a local one.
+const { DT, G, SHIP_RADIUS, OUT_MARGIN } = PHYSICS;
+
 export type PlanetStyle = 'rocky' | 'gas' | 'ice';
 
 export interface Planet {
@@ -145,7 +148,7 @@ export class Shot {
   /** Advance one physics step. Returns the end state once the shot is over. */
   step(): ShotEnd | null {
     if (this.end) return this.end;
-    const dt = PHYSICS.DT;
+    const dt = DT;
     const { planets, ships, hole, width, height } = this.world;
     const hx = this.vx;
     const hy = this.vy;
@@ -157,7 +160,7 @@ export class Shot {
       const dy = p.y - this.y;
       const d2 = dx * dx + dy * dy;
       const d = Math.sqrt(d2);
-      const a = (PHYSICS.G * p.mass) / d2;
+      const a = (G * p.mass) / d2;
       ax += (a * dx) / d;
       ay += (a * dy) / d;
     }
@@ -166,7 +169,7 @@ export class Shot {
       const dy = hole.y - this.y;
       const d2 = dx * dx + dy * dy;
       const d = Math.sqrt(d2);
-      const a = (PHYSICS.G * hole.mass) / d2;
+      const a = (G * hole.mass) / d2;
       ax += (a * dx) / d;
       ay += (a * dy) / d;
     }
@@ -185,7 +188,7 @@ export class Shot {
     }
     if (this.encounters) this.trackStyle(hx, hy, bounced);
 
-    const r2 = PHYSICS.SHIP_RADIUS * PHYSICS.SHIP_RADIUS;
+    const r2 = SHIP_RADIUS * SHIP_RADIUS;
     for (let i = 0; i < ships.length; i++) {
       const s = ships[i];
       if (!s.alive || this.spare.includes(i)) continue;
@@ -204,7 +207,7 @@ export class Shot {
       const dy = hole.y - this.y;
       if (dx * dx + dy * dy < hole.radius * hole.radius) return this.finish({ kind: 'hole' });
     }
-    const m = PHYSICS.OUT_MARGIN;
+    const m = OUT_MARGIN;
     if (this.x < -m || this.x > width + m || this.y < -m || this.y > height + m) return this.finish({ kind: 'lost' });
     if (this.time >= this.rules.timeLimit) return this.finish({ kind: 'timeout' });
     return null;

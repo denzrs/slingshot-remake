@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { createMatch } from '../src/game';
 import type { ClassicMatch } from '../src/game/classic';
@@ -7,7 +8,17 @@ import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
 /** Trail points are rounded on the wire; round the expected side the same way before comparing. */
 function normalized(value: unknown): unknown {
-  return JSON.parse(JSON.stringify(value), (key, v) => (key === 'trail' || key === 'points') && Array.isArray(v) ? v.map((n: number) => Math.round(n * 10) / 10 + 0) : v);
+  const round = (n: number) => Math.round(n * 10) / 10 + 0;
+  // A reviver would run once per trail coordinate, which is slow for the thousands of points a snapshot carries.
+  const walk = (node: unknown, key?: string): unknown => {
+    if (Array.isArray(node)) return key === 'trail' || key === 'points' ? node.map(round) : node.map((item) => walk(item));
+    if (node && typeof node === 'object') {
+      const record = node as Record<string, unknown>;
+      for (const k of Object.keys(record)) record[k] = walk(record[k], k);
+    }
+    return node;
+  };
+  return walk(JSON.parse(JSON.stringify(value)));
 }
 
 const seats = (n: number): Seat[] => [...Array(n).fill('hard'), ...Array(6 - n).fill('off')];
@@ -24,7 +35,10 @@ function sync(mode: 'classic' | 'horizon') {
     const patch = JSON.parse(JSON.stringify(encoder.encode(host.snapshot())));
     const rebuilt = decoder.apply(patch);
     expect(rebuilt).not.toBeNull();
-    expect(normalized(rebuilt)).toEqual(normalized(host.snapshot()));
+    // toEqual on snapshots with thousands of trail points is slow; only reach for it to explain a mismatch.
+    const actual = normalized(rebuilt);
+    const expected = normalized(host.snapshot());
+    if (!isDeepStrictEqual(actual, expected)) expect(actual).toEqual(expected);
   }
 }
 

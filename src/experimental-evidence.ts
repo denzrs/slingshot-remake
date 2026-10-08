@@ -1,6 +1,6 @@
 import type { ExperimentalShot, PlanetEstimate } from './experimental-ai';
 
-export type TrajectoryObservation = { shot: number; point: number };
+type TrajectoryObservation = { shot: number; point: number };
 
 /** Budget trajectories first, then spread each quota over its collision-free samples. */
 export function balancedObservations(shots: readonly ExperimentalShot[], sampleCap: number): TrajectoryObservation[] {

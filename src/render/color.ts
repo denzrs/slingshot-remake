@@ -1,4 +1,4 @@
-export type Rgb = [number, number, number];
+type Rgb = [number, number, number];
 
 export function hexToRgb(hex: string): Rgb {
   const n = parseInt(hex.slice(1), 16);

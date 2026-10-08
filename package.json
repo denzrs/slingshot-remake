@@ -8,10 +8,13 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "dev:server": "tsx server/index.ts",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start:server": "node dist-server/server/index.js",
     "bench:experimental": "tsx benchmarks/ai-matrix.ts",
     "bench:levels": "tsx benchmarks/level-matrix.ts",
     "bench:learning": "tsx benchmarks/learning-validation.ts",
-    "start:server": "node dist-server/server/index.js"
+    "bench:calibration": "tsx benchmarks/ai-calibration.ts"
   },
   "keywords": [],
   "author": "",

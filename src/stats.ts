@@ -5,7 +5,7 @@
 
 export type AwardKind = 'longestShot' | 'fastestKill' | 'swingbys' | 'grazes' | 'bestHit' | 'kills' | 'closeCall' | 'sniper' | 'ownGoals';
 
-export interface Point {
+interface Point {
   x: number;
   y: number;
 }
@@ -50,8 +50,8 @@ export interface Award {
 }
 
 /** A miss counts as a close call within this gap (field units), a hit as a sniper shot from this distance. */
-export const CLOSE_CALL = 40;
-export const SNIPER = 500;
+const CLOSE_CALL = 40;
+const SNIPER = 500;
 
 export const newStatBook = (): StatBook => ({
   swingbys: [],
