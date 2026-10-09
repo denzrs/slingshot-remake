@@ -1,5 +1,4 @@
-//! Validation helpers, ported 1:1 from `server/protocol.ts`: untrusted wire input is checked here
-//! before the room logic sees it. Every predicate answers like its TypeScript counterpart.
+//! Validation helpers for untrusted wire input, checked before the room logic sees it.
 
 use serde_json::Value;
 
@@ -245,7 +244,7 @@ pub const DEFAULT_RULES: RoomRules = RoomRules {
     fading_trails: 0,
 };
 
-/// The rules as they leave the server, keyed like the TypeScript object.
+/// The rules as they leave the relay, keyed like the client-side `RoomRules` object.
 pub fn rules_to_value(rules: &RoomRules) -> Value {
     serde_json::json!({
         "rounds": rules.rounds,
@@ -333,4 +332,88 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
         hidden_aim: value.get("hiddenAim").unwrap().as_bool().unwrap(),
         fading_trails: i64_of(fading_trails),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn input_validation_matches_wire_contract() {
+        assert!(is_input_message(&json!({"kind":"bet","pick":-1})));
+        assert!(is_input_message(&json!({"kind":"bet","pick":0})));
+        assert!(is_input_message(&json!({"kind":"bet","pick":5})));
+        for invalid in [
+            json!({"kind":"bet"}),
+            json!({"kind":"bet","pick":-2}),
+            json!({"kind":"bet","pick":6}),
+            json!({"kind":"bet","pick":1.5}),
+            json!({"kind":"bet","pick":"1"}),
+        ] {
+            assert!(!is_input_message(&invalid), "rejected input: {invalid}");
+        }
+        assert!(is_input_message(&json!({"kind":"aim","angle":0,"power":55})));
+        assert!(!is_input_message(&json!({"kind":"aim","angle":"0","power":55})));
+    }
+
+    fn valid_rules() -> Value {
+        json!({
+            "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"bounce":true,
+            "fixedPower":true,"fixedPowerLevel":70,"maxPower":80,"shotTime":20,
+            "styleBonuses":true,"neighborGrace":1,"simultaneousShots":true,
+            "hiddenAim":false,"fadingTrails":2
+        })
+    }
+
+    #[test]
+    fn rules_accept_complete_values_and_legacy_omissions() {
+        let parsed = parse_rules(&valid_rules()).expect("complete rules accepted");
+        assert_eq!(parsed.rounds, 5);
+        assert_eq!(parsed.fixed_power_level, 70);
+        assert_eq!(parsed.max_power, 80);
+        assert!(parsed.bounce && parsed.fixed_power && parsed.style_bonuses);
+        assert!(parsed.simultaneous_shots);
+
+        let mut legacy = valid_rules();
+        legacy.as_object_mut().unwrap().remove("maxPower");
+        legacy.as_object_mut().unwrap().remove("fixedPowerLevel");
+        let parsed = parse_rules(&legacy).expect("legacy omissions accepted");
+        assert_eq!(parsed.max_power, 100);
+        assert_eq!(parsed.fixed_power_level, 55);
+    }
+
+    #[test]
+    fn rules_reject_out_of_range_values_and_invalid_booleans() {
+        for (key, value) in [
+            ("rounds", json!(100)),
+            ("maxPlanets", json!(0)),
+            ("shotTime", json!(121)),
+            ("maxPower", json!(95)),
+            ("fixedPowerLevel", json!(56)),
+            ("neighborGrace", json!(3)),
+            ("fadingTrails", json!(3)),
+        ] {
+            let mut rules = valid_rules();
+            rules[key] = value;
+            assert!(parse_rules(&rules).is_none(), "accepted invalid {key}: {rules}");
+        }
+        for key in ["invisiblePlanets", "bounce", "fixedPower", "styleBonuses", "simultaneousShots", "hiddenAim"] {
+            let mut rules = valid_rules();
+            rules[key] = json!("true");
+            assert!(parse_rules(&rules).is_none(), "accepted invalid boolean {key}");
+        }
+    }
+
+    #[test]
+    fn event_validation_checks_required_fields_and_values() {
+        assert!(is_game_event(&json!({"type":"turn","player":0})));
+        assert!(is_game_event(&json!({"type":"fire","player":1,"x":1,"y":2,"angle":45,"power":55})));
+        assert!(is_game_event(&json!({"type":"killcam","active":true,"recording":false})));
+        assert!(!is_game_event(&json!({"type":"turn"})));
+        assert!(!is_game_event(&json!({"type":"turn","player":-1})));
+        assert!(!is_game_event(&json!({"type":"fire","player":1,"x":1,"y":2,"angle":45})));
+        assert!(!is_game_event(&json!({"type":"killcam","active":true})));
+        assert!(!is_game_event(&json!({"type":"unknown"})));
+    }
 }

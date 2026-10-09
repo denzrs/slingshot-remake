@@ -1,6 +1,7 @@
-//! The room logic, ported 1:1 from `server/room.ts` (`RoomManager`). Each connection is identified
+//! Room and player lifecycle management for the multiplayer relay. Each connection is identified
 //! by an opaque id; outbound messages go into a per-connection channel the writer task drains.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
@@ -9,7 +10,6 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use rand::Rng;
 use serde_json::{json, Value};
-use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
 use crate::codec::{frame, Outbound};
@@ -21,12 +21,8 @@ use crate::protocol::{
 const MAX_ROOM_PLAYERS: i64 = 6;
 pub const MAX_PASSWORD_LENGTH: usize = 64;
 const MAX_PASSWORD_ATTEMPTS: u32 = 5;
-/// Wrong password guesses from one IP within IP_FAILURE_WINDOW before joins from that IP
-/// are refused outright. The per-connection counter resets on reconnect; this one does not.
 const MAX_IP_PASSWORD_FAILURES: usize = 20;
-const IP_FAILURE_WINDOW: Duration = Duration::from_secs(300);
-/// Global cap on scrypt derivations per second (room creation + join verification). One
-/// derivation at N=2^14 costs ~50 ms CPU, so 10/s keeps a flood from saturating every core.
+const IP_PASSWORD_WINDOW: Duration = Duration::from_secs(300);
 const MAX_SCRYPT_PER_SECOND: usize = 10;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -47,11 +43,7 @@ impl RoomStatus {
 struct Conn {
     ip: IpAddr,
     tx: Outbound,
-    compressed: bool,
-    /// Set when the bounded queue fills; the connection task disconnects the peer on the
-    /// next heartbeat tick. `Cell` because `send_fast` only has `&self` (room logic is
-    /// single-threaded under the manager lock).
-    slow: std::cell::Cell<bool>,
+    slow: Cell<bool>,
 }
 
 struct Player {
@@ -87,12 +79,10 @@ pub struct RoomManager {
     outbounds: HashMap<u64, Conn>,
     memberships: HashMap<u64, Membership>,
     password_failures: HashMap<u64, u32>,
-    /// Per-IP wrong-password timestamps; survives reconnects so rotating connections
-    /// cannot reset the lockout.
     ip_password_failures: HashMap<IpAddr, VecDeque<Instant>>,
-    /// Sliding window of scrypt derivation timestamps, for the global rate cap.
     scrypt_window: VecDeque<Instant>,
 }
+
 impl RoomManager {
     pub fn new() -> Self {
         Self {
@@ -106,16 +96,62 @@ impl RoomManager {
         }
     }
 
-    pub fn connect(&mut self, conn: u64, ip: IpAddr, tx: Outbound, compressed: bool) {
+    pub fn connect(&mut self, conn: u64, ip: IpAddr, tx: Outbound) {
         self.connections.insert(conn);
-        self.outbounds.insert(conn, Conn { ip, tx, compressed, slow: std::cell::Cell::new(false) });
+        self.outbounds.insert(conn, Conn { ip, tx, slow: Cell::new(false) });
+        info!(conn, %ip, "connection opened");
         self.send_lobby(conn);
     }
 
-    /// True when the connection's outbound queue overflowed — the connection task should
-    /// disconnect the peer instead of letting it lag the room behind.
     pub fn is_slow(&self, conn: u64) -> bool {
-        self.outbounds.get(&conn).is_some_and(|c| c.slow.get())
+        self.outbounds.get(&conn).is_some_and(|out| out.slow.get())
+    }
+
+    /// Prune expired password and scrypt timestamps without disturbing active lockouts.
+    pub fn sweep(&mut self) {
+        let now = Instant::now();
+        self.scrypt_window.retain(|at| now.duration_since(*at) < Duration::from_secs(1));
+        self.ip_password_failures.retain(|_, attempts| {
+            while attempts.front().is_some_and(|at| now.duration_since(*at) >= IP_PASSWORD_WINDOW) {
+                attempts.pop_front();
+            }
+            !attempts.is_empty()
+        });
+    }
+
+    pub fn scrypt_budget_available(&mut self) -> bool {
+        let now = Instant::now();
+        while self.scrypt_window.front().is_some_and(|at| now.duration_since(*at) >= Duration::from_secs(1)) {
+            self.scrypt_window.pop_front();
+        }
+        if self.scrypt_window.len() >= MAX_SCRYPT_PER_SECOND {
+            return false;
+        }
+        self.scrypt_window.push_back(now);
+        true
+    }
+
+    pub fn ip_password_locked_out(&mut self, conn: u64) -> bool {
+        let Some(ip) = self.outbounds.get(&conn).map(|out| out.ip) else { return false; };
+        self.ip_failures_recent(ip) >= MAX_IP_PASSWORD_FAILURES
+    }
+
+    pub fn join_password_salt(&self, conn: u64, room_id: &str) -> Option<(Vec<u8>, Vec<u8>)> {
+        if !self.connections.contains(&conn) || self.memberships.contains_key(&conn) { return None; }
+        let room = self.rooms.get(room_id)?;
+        if room.status != RoomStatus::Waiting || room.players.len() >= room.max_players as usize { return None; }
+        room.password.clone()
+    }
+
+    fn ip_failures_recent(&mut self, ip: IpAddr) -> usize {
+        let now = Instant::now();
+        let Some(attempts) = self.ip_password_failures.get_mut(&ip) else { return 0; };
+        while attempts.front().is_some_and(|at| now.duration_since(*at) >= IP_PASSWORD_WINDOW) {
+            attempts.pop_front();
+        }
+        let count = attempts.len();
+        if count == 0 { self.ip_password_failures.remove(&ip); }
+        count
     }
 
     pub fn handle(&mut self, conn: u64, message: &Value) {
@@ -143,6 +179,8 @@ impl RoomManager {
     }
 
     pub fn disconnect(&mut self, conn: u64) {
+        let ip = self.outbounds.get(&conn).map(|out| out.ip);
+        if let Some(ip) = ip { info!(conn, %ip, "connection closed"); }
         self.connections.remove(&conn);
         self.outbounds.remove(&conn);
         self.password_failures.remove(&conn);
@@ -160,23 +198,15 @@ impl RoomManager {
 
     /// The fast path: an already-serialized frame that may be fanned out to several players.
     fn send_fast(&self, conn: u64, text: &str) {
-        let Some(out) = self.outbounds.get(&conn) else {
-            return;
-        };
-        let wire = frame(text, out.compressed);
-        match out.tx.try_send(wire) {
-            Ok(()) => {}
-            Err(mpsc::error::TrySendError::Full(_)) => {
-                // Peer is not draining; flag it so the connection task drops it on the next
-                // heartbeat instead of queuing unboundedly.
-                out.slow.set(true);
-            }
-            Err(mpsc::error::TrySendError::Closed(_)) => {}
+        let Some(out) = self.outbounds.get(&conn) else { return; };
+        let wire = frame(text);
+        if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) = out.tx.try_send(wire) {
+            out.slow.set(true);
+            warn!(conn, "outbound queue full; connection marked slow");
         }
     }
 
     pub fn error(&mut self, conn: u64, message: &str) {
-        debug!(%message, "protocol error sent to client");
         self.send_value(conn, &json!({ "type": "error", "message": message }));
     }
 
@@ -264,14 +294,16 @@ impl RoomManager {
             },
         };
         let id = self.new_room_id();
-        let max_players = max_players_num.unwrap() as i64;
-        let password = match message.get("password").and_then(Value::as_str) {
-            // The connection layer precomputes the scrypt off the lock; the inline fallback only
-            // fires for callers that never precompute (there are none in production).
-            Some(pw) if !pw.is_empty() => Some(prehashed.unwrap_or_else(|| hash_password(pw))),
-            _ => None,
-        };
-        let locked = password.is_some();
+        let password_text = message.get("password").and_then(Value::as_str).filter(|pw| !pw.is_empty());
+        let password = if password_text.is_some() {
+            match prehashed {
+                Some(hash) => Some(hash),
+                None => {
+                    self.error(conn, "Server busy – try again shortly");
+                    return;
+                }
+            }
+        } else { None };
         self.rooms.insert(
             id.clone(),
             Room {
@@ -279,7 +311,7 @@ impl RoomManager {
                 mode: mode.to_string(),
                 game_mode: game_mode.to_string(),
                 rules,
-                max_players,
+                max_players: max_players_num.unwrap() as i64,
                 status: RoomStatus::Waiting,
                 players: Vec::new(),
                 next_player_id: 0,
@@ -288,7 +320,6 @@ impl RoomManager {
             },
         );
         self.add_player(&id, conn, name);
-        info!(room_id = %id, %mode, %game_mode, max_players, locked, "room created");
         self.broadcast_room_update(&id, None);
         self.broadcast_lobby();
     }
@@ -322,28 +353,17 @@ impl RoomManager {
             return;
         }
         let locked = self.rooms.get(room_id).is_some_and(|room| room.password.is_some());
-        if locked && !self.password_attempt_ok(conn, room_id, message.get("password"), preverified) {
+        if locked && !self.password_attempt_ok(conn, room_id, preverified) {
             return;
         }
         self.add_player(room_id, conn, name.unwrap());
-        debug!(room_id = %room_id, players = self.rooms[room_id].players.len(), "player joined room");
         self.broadcast_room_update(room_id, None);
         self.broadcast_lobby();
     }
 
-    /**
-     * Checks a join password; brute-forcing is cut off after a handful of wrong guesses per
-     * connection. `preverified` carries the connection layer's off-lock scrypt result when it
-     * computed one; None falls back to an inline check.
-     */
-    fn password_attempt_ok(
-        &mut self,
-        conn: u64,
-        room_id: &str,
-        given: Option<&Value>,
-        preverified: Option<bool>,
-    ) -> bool {
-        let ip = self.outbounds.get(&conn).map(|c| c.ip);
+    /// Applies the verification result computed off-lock by the transport layer.
+    fn password_attempt_ok(&mut self, conn: u64, room_id: &str, preverified: Option<bool>) -> bool {
+        let ip = self.outbounds.get(&conn).map(|out| out.ip);
         if let Some(ip) = ip {
             if self.ip_failures_recent(ip) >= MAX_IP_PASSWORD_FAILURES {
                 warn!(room_id = %room_id, %ip, "IP password lockout active");
@@ -351,106 +371,24 @@ impl RoomManager {
                 return false;
             }
         }
-
         if self.password_failures.get(&conn).copied().unwrap_or(0) >= MAX_PASSWORD_ATTEMPTS {
-            // Per-connection cap hit: record it against the IP too, so reconnecting to
-            // reset this counter cannot also reset the IP budget.
-            if let Some(ip) = ip {
-                self.ip_password_failures
-                    .entry(ip)
-                    .or_default()
-                    .push_back(Instant::now());
-            }
             warn!(room_id = %room_id, "password attempts exhausted");
             self.error(conn, "Too many wrong passwords – reconnect to try again");
             return false;
         }
-        let correct = match preverified {
-            Some(result) => result,
-            None => {
-                let expected = self.rooms.get(room_id).and_then(|room| room.password.clone());
-                let Some((salt, hash)) = expected else {
-                    return false;
-                };
-                match given.and_then(Value::as_str) {
-                    Some(g) if g.len() <= MAX_PASSWORD_LENGTH => check_password(g, &salt, &hash),
-                    _ => false,
-                }
-            }
-        };
+        let correct = preverified.unwrap_or(false);
         if correct {
             debug!(room_id = %room_id, "password accepted");
             self.password_failures.remove(&conn);
-            if let Some(ip) = ip {
-                self.ip_password_failures.remove(&ip);
-            }
+            if let Some(ip) = ip { self.ip_password_failures.remove(&ip); }
             true
         } else {
             *self.password_failures.entry(conn).or_insert(0) += 1;
-            if let Some(ip) = ip {
-                self.ip_password_failures
-                    .entry(ip)
-                    .or_default()
-                    .push_back(Instant::now());
-            }
+            if let Some(ip) = ip { self.ip_password_failures.entry(ip).or_default().push_back(Instant::now()); }
             debug!(room_id = %room_id, "password rejected");
             self.error(conn, "Wrong password");
             false
         }
-    }
-
-    /// True when this connection's source IP is inside the password lockout window.
-    /// Checked before any scrypt is spent, so a locked-out IP cannot burn CPU either.
-    pub fn ip_password_locked_out(&mut self, conn: u64) -> bool {
-        let Some(ip) = self.outbounds.get(&conn).map(|c| c.ip) else {
-            return false;
-        };
-        self.ip_failures_recent(ip) >= MAX_IP_PASSWORD_FAILURES
-    }
-
-    /// Wrong-password attempts from `ip` inside the lockout window.
-    fn ip_failures_recent(&mut self, ip: IpAddr) -> usize {
-        let now = Instant::now();
-        let entry = self.ip_password_failures.entry(ip).or_default();
-        while entry.front().is_some_and(|t| now.duration_since(*t) >= IP_FAILURE_WINDOW) {
-            entry.pop_front();
-        }
-        if entry.is_empty() {
-            self.ip_password_failures.remove(&ip);
-            0
-        } else {
-            entry.len()
-        }
-    }
-
-    /// Global scrypt rate gate: true when one more derivation fits the per-second budget.
-    pub fn scrypt_budget_available(&mut self) -> bool {
-        let now = Instant::now();
-        while self
-            .scrypt_window
-            .front()
-            .is_some_and(|t| now.duration_since(*t) >= Duration::from_secs(1))
-        {
-            self.scrypt_window.pop_front();
-        }
-        if self.scrypt_window.len() >= MAX_SCRYPT_PER_SECOND {
-            return false;
-        }
-        self.scrypt_window.push_back(now);
-        true
-    }
-    /// Cheap, lock-friendly help for the connection task: the stored salt/hash of a join target
-    /// that is waiting, not full, and locked — i.e. exactly when `join_room` would check a
-    /// password. None otherwise, so the connection layer can skip the scrypt entirely.
-    pub fn join_password_salt(&self, conn: u64, room_id: &str) -> Option<(Vec<u8>, Vec<u8>)> {
-        if self.memberships.contains_key(&conn) {
-            return None;
-        }
-        let room = self.rooms.get(room_id).filter(|r| r.status == RoomStatus::Waiting)?;
-        if room.players.len() >= room.max_players as usize {
-            return None;
-        }
-        room.password.clone()
     }
 
     fn set_ready(&mut self, conn: u64, message: &Value) {
@@ -652,9 +590,7 @@ impl RoomManager {
         room.status = RoomStatus::Playing;
         room.last_state_seq = -1;
         let seed: u32 = rand::thread_rng().gen();
-        let players_count = room.players.len();
         room.players.iter_mut().enumerate().for_each(|(id, player)| player.id = id);
-        info!(room_id = %room_id, players = players_count, mode = %room.mode, %seed, "game started");
         let room_clone = (
             room.id.clone(),
             room.mode.clone(),
@@ -687,12 +623,14 @@ impl RoomManager {
     }
 
     fn relay_input(&mut self, conn: u64, message: &Value) {
-        let (my_id, host_conn) = {
+        let (room_id, my_id, host_conn) = {
             let Some(membership) = self.memberships.get(&conn) else {
                 self.error(conn, "You are not in a running game");
                 return;
             };
-            let Some(room) = self.rooms.get(&membership.room_id) else {
+            let room_id = membership.room_id.clone();
+            let my_id = membership.player_id;
+            let Some(room) = self.rooms.get(&room_id) else {
                 self.error(conn, "You are not in a running game");
                 return;
             };
@@ -701,7 +639,7 @@ impl RoomManager {
                 return;
             }
             let host_conn = room.players.iter().find(|p| p.id == 0).map(|p| p.conn);
-            (membership.player_id, host_conn)
+            (room_id, my_id, host_conn)
         };
         if my_id == 0 {
             self.error(conn, "Host input is not accepted");
@@ -713,6 +651,7 @@ impl RoomManager {
         };
         if let Some(host_conn) = host_conn {
             let from = my_id;
+            let _ = room_id;
             self.send_value(host_conn, &json!({ "type": "input", "from": from, "input": input }));
         }
     }
@@ -796,20 +735,13 @@ impl RoomManager {
         let player_id = membership.player_id;
 
         if player_id == 0 {
-            let others: Vec<u64> = self
-                .rooms
-                .get(&room_id)
-                .map(|room| room.players.iter().filter(|p| p.conn != conn).map(|p| p.conn).collect())
+            let others: Vec<u64> = self.rooms.get(&room_id)
+                .map(|room| room.players.iter().filter(|player| player.conn != conn).map(|player| player.conn).collect())
                 .unwrap_or_default();
             self.rooms.remove(&room_id);
-            info!(room_id = %room_id, "room closed: host left");
-            for other in others {
-                self.memberships.remove(&other);
-                self.send_value(
-                    other,
-                    &json!({ "type": "room_closed", "message": "The host left the room" }),
-                );
-                self.send_lobby(other);
+            for other in &others {
+                self.memberships.remove(other);
+                self.send_value(*other, &json!({ "type": "room_closed", "message": "The host left the room" }));
             }
             self.broadcast_lobby();
             return;
@@ -823,7 +755,6 @@ impl RoomManager {
         if was_playing {
             self.reset_to_waiting(&room_id);
         }
-        debug!(room_id = %room_id, player = player_id, %reason, "player left room");
         let notice = was_playing.then(|| format!("{reason} – the game was ended"));
         self.broadcast_room_update(&room_id, notice.as_deref());
         self.broadcast_lobby();
@@ -942,28 +873,11 @@ fn teams_playable(room: &Room) -> bool {
     }
 }
 
-/// Constant-time byte equality. Length differences fold into the accumulator instead of
-/// returning early, so the comparison time does not reveal which input was longer.
-/// (Hashes here are always 32 bytes, so this is defense-in-depth, not a live oracle.)
-fn timing_safe_eq(a: &[u8], b: &[u8]) -> bool {
-    let mut diff = (a.len() ^ b.len()) as u8;
-    for i in 0..a.len().max(b.len()) {
-        let x = a.get(i).copied().unwrap_or(0);
-        let y = b.get(i).copied().unwrap_or(0);
-        diff |= x ^ y;
-    }
-    diff == 0
-}
 
-/// The plaintext a `create_room` wants hashed: a present, non-empty, in-bounds string.
 pub fn create_password_plaintext(message: &Value) -> Option<&str> {
-    match message.get("password").and_then(Value::as_str) {
-        Some(pw) if !pw.is_empty() && pw.len() <= MAX_PASSWORD_LENGTH => Some(pw),
-        _ => None,
-    }
+    message.get("password").and_then(Value::as_str).filter(|password| !password.is_empty() && password.len() <= MAX_PASSWORD_LENGTH)
 }
 
-/// The plaintext a `join_room` wants verified, if any (empty counts: it is a wrong attempt).
 pub fn join_password_plaintext(message: &Value) -> Option<&str> {
     message.get("password").and_then(Value::as_str)
 }
@@ -972,21 +886,152 @@ pub fn hash_password(password: &str) -> (Vec<u8>, Vec<u8>) {
     let mut salt = [0u8; 16];
     rand::thread_rng().fill(&mut salt);
     let mut hash = vec![0u8; 32];
-    derive_scrypt(password.as_bytes(), &salt, &mut hash);
+    scrypt::scrypt(password.as_bytes(), &salt, &scrypt::Params::new(14, 8, 1, 32).unwrap(), &mut hash)
+        .expect("scrypt derivation");
     (salt.to_vec(), hash)
 }
 
-/// Verify a plaintext against a stored (salt, hash); locked-room joins route through here on a
-/// blocking thread, never on the room lock.
-pub fn check_password(password: &str, salt: &[u8], hash: &[u8]) -> bool {
-    let mut actual = vec![0u8; hash.len()];
-    if derive_scrypt(password.as_bytes(), salt, &mut actual) {
-        timing_safe_eq(&actual, hash)
-    } else {
-        false
+pub fn check_password(password: &str, salt: &[u8], expected: &[u8]) -> bool {
+    let mut actual = vec![0u8; expected.len()];
+    if scrypt::scrypt(password.as_bytes(), salt, &scrypt::Params::new(14, 8, 1, 32).unwrap(), &mut actual).is_err() {
+        return false;
     }
+    timing_safe_eq(&actual, expected)
 }
 
-fn derive_scrypt(password: &[u8], salt: &[u8], output: &mut [u8]) -> bool {
-    scrypt::scrypt(password, salt, &scrypt::Params::new(14, 8, 1, 32).unwrap(), output).is_ok()
+fn timing_safe_eq(left: &[u8], right: &[u8]) -> bool {
+    let mut difference = (left.len() ^ right.len()) as u8;
+    let max_len = left.len().max(right.len());
+    for index in 0..max_len {
+        difference |= left.get(index).copied().unwrap_or(0) ^ right.get(index).copied().unwrap_or(0);
+    }
+    difference == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+    use std::net::{IpAddr, Ipv4Addr};
+    use tokio::sync::mpsc;
+
+    fn connect(manager: &mut RoomManager, id: u64) -> mpsc::Receiver<crate::codec::WireMessage> {
+        let (tx, rx) = mpsc::channel(128);
+        manager.connect(id, IpAddr::V4(Ipv4Addr::LOCALHOST), tx);
+        rx
+    }
+
+    fn drain_json(rx: &mut mpsc::Receiver<crate::codec::WireMessage>) -> Vec<Value> {
+        let mut messages = Vec::new();
+        while let Ok(crate::codec::WireMessage::Text(text)) = rx.try_recv() {
+            messages.push(serde_json::from_str(&text).unwrap());
+        }
+        messages
+    }
+
+    fn take_type(messages: &[Value], ty: &str) -> Value {
+        messages.iter().rev().find(|message| message["type"] == ty).unwrap().clone()
+    }
+
+    fn create(name: &str, password: Option<&str>) -> Value {
+        let mut message = json!({
+            "type":"create_room","name":name,"mode":"ffa","gameMode":"classic","maxPlayers":4
+        });
+        if let Some(password) = password { message["password"] = json!(password); }
+        message
+    }
+
+    #[test]
+    fn room_flow_authorizes_host_and_relays_guest_input_and_host_state() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        drain_json(&mut host_rx);
+        rooms.handle(1, &create("Host", None));
+        let room_update = take_type(&drain_json(&mut host_rx), "room_update");
+        let room_id = room_update["room"]["id"].as_str().unwrap().to_owned();
+
+        let mut guest_rx = connect(&mut rooms, 2);
+        drain_json(&mut guest_rx);
+        rooms.handle(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest"}));
+        let guest_update = take_type(&drain_json(&mut guest_rx), "room_update");
+        assert_eq!(guest_update["you"]["playerId"], 1);
+        assert_eq!(guest_update["room"]["players"].as_array().unwrap().len(), 2);
+
+        rooms.handle(1, &json!({"type":"start_game"}));
+        let not_ready = drain_json(&mut host_rx);
+        assert_eq!(take_type(&not_ready, "error")["message"], "Not everybody is ready yet");
+        assert!(!not_ready.iter().any(|message| message["type"] == "game_start"));
+
+        rooms.handle(2, &json!({"type":"ready","ready":true}));
+        drain_json(&mut host_rx);
+        rooms.handle(1, &json!({"type":"start_game"}));
+        assert_eq!(take_type(&drain_json(&mut host_rx), "game_start")["hostId"], 0);
+        assert_eq!(take_type(&drain_json(&mut guest_rx), "game_start")["players"].as_array().unwrap().len(), 2);
+
+        rooms.handle(2, &json!({"type":"input","input":{"kind":"aim","angle":15,"power":55}}));
+        let input = take_type(&drain_json(&mut host_rx), "input");
+        assert_eq!(input["from"], 1);
+        assert_eq!(input["input"]["angle"], 15);
+
+        let state = json!({"type":"state","seq":1,"patch":{"phase":"aiming"},"events":[]});
+        rooms.handle(1, &state);
+        let relayed = take_type(&drain_json(&mut guest_rx), "state");
+        assert_eq!(relayed["seq"], 1);
+        assert_eq!(relayed["patch"]["phase"], "aiming");
+
+        rooms.handle(2, &json!({"type":"state","seq":2,"patch":{},"events":[]}));
+        assert_eq!(take_type(&drain_json(&mut guest_rx), "error")["message"], "Only the room host can send state");
+        rooms.handle(1, &state);
+        assert_eq!(take_type(&drain_json(&mut host_rx), "error")["message"], "State sequence must increase monotonically");
+
+        rooms.disconnect(1);
+        assert_eq!(take_type(&drain_json(&mut guest_rx), "room_closed")["message"], "The host left the room");
+    }
+
+    #[test]
+    fn password_attempts_lock_out_after_five_failures() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        drain_json(&mut host_rx);
+        let create = create("Host", Some("secret"));
+        rooms.create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
+        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"].as_str().unwrap().to_owned();
+
+        let mut guest_rx = connect(&mut rooms, 2);
+        drain_json(&mut guest_rx);
+        for _ in 0..5 {
+            rooms.join_room(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"}), Some(false));
+            assert_eq!(take_type(&drain_json(&mut guest_rx), "error")["message"], "Wrong password");
+        }
+        rooms.join_room(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"secret"}), Some(true));
+        assert_eq!(take_type(&drain_json(&mut guest_rx), "error")["message"], "Too many wrong passwords – reconnect to try again");
+        assert_eq!(drain_json(&mut guest_rx).iter().filter(|m| m["type"] == "room_update").count(), 0);
+    }
+
+    #[test]
+    fn leaving_running_game_returns_room_to_waiting_and_reindexes_players() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        let mut guest_rx = connect(&mut rooms, 2);
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        rooms.handle(1, &create("Host", None));
+        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"].as_str().unwrap().to_owned();
+        rooms.handle(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest"}));
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        rooms.handle(2, &json!({"type":"ready","ready":true}));
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        rooms.handle(1, &json!({"type":"start_game"}));
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        rooms.disconnect(2);
+        let update = take_type(&drain_json(&mut host_rx), "room_update");
+        assert_eq!(update["room"]["status"], "waiting");
+        assert_eq!(update["room"]["players"].as_array().unwrap().len(), 1);
+        assert_eq!(update["room"]["players"][0]["id"], 0);
+        assert_eq!(update["you"]["playerId"], 0);
+        assert!(update["room"]["players"][0]["ready"] == false);
+    }
 }

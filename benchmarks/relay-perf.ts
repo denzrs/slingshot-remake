@@ -1,16 +1,13 @@
-// Comparative load test for the multiplayer relay: run it against the TypeScript server
-// (node dist-server/server/index.js) and the Rust server (cargo run --release), then compare.
+// Load test for the Rust multiplayer relay. Start it with:
 //
-//   npm run build:server && PORT=8080 node dist-server/server/index.js   # TS, in one terminal
-//   cargo run --release --manifest-path server/Cargo.toml                # Rust, in another
+//   ALLOW_ALL_ORIGINS=1 npm run dev:server  # local benchmark only
 //   npm run bench:relay -- ws://localhost:8080
 //
-// The client offers `slingshot-flate-v1`. The Rust relay sends a capability ack; only after that
-// ack does the client compress payloads > 10 KiB. The TS relay sends no ack, so the client keeps
-// its traffic in text frames even though node's `ws` mirrors the offered subprotocol. Every figure
-// below is host-send → guest-received, i.e. it includes the relay plus (en)decompression.
+// The client offers `slingshot-flate-v1`. The relay sends a capability ack before the client
+// compresses payloads > 10 KiB. Every figure below is host-send → guest-received, including relay
+// work and decompression.
 //
-// Note: both relays cap inbound messages per connection at 300/s (the anti-flood limit), so all
+// The relay caps inbound messages per connection at 300/s (the anti-flood limit), so all
 // measurements here stay under that rate; aggregate load is created with several rooms instead.
 
 import WebSocket from 'ws';

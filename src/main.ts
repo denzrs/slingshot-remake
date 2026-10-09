@@ -655,6 +655,7 @@ function announceOracle(m: Match): void {
 }
 
 let last = performance.now();
+let lastRaw = last;
 function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -666,7 +667,11 @@ function frame(now: number): void {
     if (!net || net.isHost) m.update(dt);
     effects.update(dt, m.world);
   }
-  net?.update(dt);
+  // Guests re-simulate the flight from wall time, so dropped frames must not make them fall
+  // behind the host: their dt keeps the raw elapsed time (wide cap only against tab-throttled
+  // catch-up floods). The host uses its own capped dt and can't diverge from itself.
+  net?.update(Math.min(0.25, (now - lastRaw) / 1000));
+  lastRaw = now;
   updateGhost(dt);
   renderer.draw(
     m,

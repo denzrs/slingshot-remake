@@ -1,9 +1,7 @@
-//! The WebSocket relay, ported 1:1 from `server/index.ts`.
+//! The WebSocket relay for online games.
 //!
-//! Beyond the TypeScript original it also:
-//! - negotiates the `slingshot-flate-v1` subprotocol and flate-compresses anything >= 10 KiB;
-//! - caps concurrent connections and throttles fresh connections per IP, so it is not an easy
-//!   flood target (the per-connection 300 msg/s limit was already in the original).
+//! It also caps concurrent connections and throttles fresh connections per IP, alongside the
+//! per-connection 300 msg/s limit.
 
 mod codec;
 mod protocol;
@@ -11,7 +9,7 @@ mod room;
 
 use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -19,17 +17,20 @@ use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
-use tokio_tungstenite::tungstenite::http::header::HeaderValue;
+use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::{CloseFrame, Message, WebSocketConfig};
 use tokio_tungstenite::tungstenite::Error as WsError;
 use tokio_tungstenite::{accept_hdr_async_with_config, WebSocketStream};
 use tracing::{debug, error, info, instrument, warn, Instrument};
 
-use crate::codec::{decompress, WireMessage, SUBPROTOCOL};
+use crate::codec::WireMessage;
 use crate::room::RoomManager;
 
 const DEFAULT_PORT: u16 = 8080;
@@ -59,16 +60,39 @@ async fn main() {
     let max_connections = env_parse("MAX_CONNECTIONS", DEFAULT_MAX_CONNECTIONS);
     let max_per_ip = env_parse("MAX_CONNECTIONS_PER_IP", DEFAULT_MAX_CONNECTIONS_PER_IP);
     let per_ip_per_second = env_parse("CONNECTIONS_PER_IP_PER_SECOND", DEFAULT_CONNECTIONS_PER_IP_PER_SECOND);
-    // Comma-separated allowlist of Origin header values (e.g. "https://game.example.com").
-    // Empty (the default) skips the check — suitable only behind a proxy that strips Origin
-    // or for non-browser deployments. Browsers always send Origin on cross-site WS
-    // handshakes, so a configured allowlist blocks cross-site WebSocket hijacking.
+    let max_messages_per_second = env_parse("MAX_MESSAGES_PER_SECOND", MAX_MESSAGES_PER_SECOND);
+    // Comma-separated allowlist of Origin header values (e.g. "https://game.example.com"),
+    // required unless ALLOW_ALL_ORIGINS=1. Browsers always send Origin on WS handshakes,
+    // so the allowlist blocks cross-site WebSocket hijacking; handshakes with no Origin
+    // header are rejected too, so scripts cannot bypass the check by omitting it.
     let allowed_origins: Vec<String> = std::env::var("ALLOWED_ORIGINS")
         .unwrap_or_default()
         .split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
+    // Fail closed: without an allowlist every cross-site page may open a WebSocket from a
+    // victim's browser (WS handshakes are not same-origin protected). The explicit opt-out
+    // is for LAN/dev deployments that know browsers never reach the relay.
+    if allowed_origins.is_empty() && !env_flag("ALLOW_ALL_ORIGINS") {
+        error!("ALLOWED_ORIGINS is not set; refusing to start (set ALLOW_ALL_ORIGINS=1 for an open relay)");
+        std::process::exit(1);
+    }
+    if allowed_origins.is_empty() {
+        warn!("no origin allowlist — cross-site browser connections are NOT restricted");
+    } else {
+        info!(origins = ?allowed_origins, "origin allowlist active");
+    }
+
+    // TLS_CERT/TLS_KEY: PEM certificate chain and private key. When both are set the relay
+    // serves wss; otherwise it stays plaintext (acceptable only behind a TLS proxy).
+    let tls = match (std::env::var("TLS_CERT"), std::env::var("TLS_KEY")) {
+        (Ok(cert), Ok(key)) => Some(load_tls(&cert, &key)),
+        _ => {
+            warn!("TLS_CERT/TLS_KEY not set — serving plaintext ws; room passwords travel unencrypted");
+            None
+        }
+    };
 
     let listener = match TcpListener::bind(("0.0.0.0", port)).await {
         Ok(listener) => listener,
@@ -87,7 +111,10 @@ async fn main() {
 
     loop {
         tokio::select! {
-            _ = sweep.tick() => guard.sweep(),
+            _ = sweep.tick() => {
+                guard.sweep();
+                manager.lock().sweep();
+            }
             accepted = listener.accept() => {
                 let (stream, peer) = match accepted {
                     Ok(accepted) => accepted,
@@ -111,9 +138,30 @@ async fn main() {
                 let guard = guard.clone();
                 let next_id = next_id.clone();
                 let allowed_origins = allowed_origins.clone();
+                let tls = tls.clone();
                 tokio::spawn(async move {
                     let conn_id = next_id.fetch_add(1, Ordering::Relaxed) as u64;
-                    handle_connection(stream, peer, manager, guard, conn_id, &allowed_origins).await;
+                    match tls {
+                        Some(acceptor) => {
+                            let accepted = tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await;
+                            match accepted {
+                                Ok(Ok(tls_stream)) => {
+                                    handle_connection(tls_stream, peer, manager, guard, conn_id, &allowed_origins, max_messages_per_second).await;
+                                }
+                                Ok(Err(err)) => {
+                                    warn!(%err, "TLS handshake failed");
+                                    guard.release(peer.ip());
+                                }
+                                Err(_) => {
+                                    warn!("TLS handshake timed out");
+                                    guard.release(peer.ip());
+                                }
+                            }
+                        }
+                        None => {
+                            handle_connection(stream, peer, manager, guard, conn_id, &allowed_origins, max_messages_per_second).await;
+                        }
+                    }
                 });
             }
         }
@@ -123,14 +171,17 @@ async fn main() {
 /// One TCP connection: handshake, then the inbound loop (rate limit + heartbeat) next to a writer
 /// task that drains the room's outbound channel.
 #[instrument(skip_all, fields(conn = conn_id, %peer))]
-async fn handle_connection(
-    stream: TcpStream,
+async fn handle_connection<S>(
+    stream: S,
     peer: SocketAddr,
     manager: Arc<Mutex<RoomManager>>,
     guard: Arc<AdmissionGuard>,
     conn_id: u64,
     allowed_origins: &[String],
-) {
+    max_messages_per_second: u32,
+) where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
     let config = WebSocketConfig {
         max_message_size: Some(MAX_PAYLOAD),
         max_frame_size: Some(MAX_PAYLOAD),
@@ -141,8 +192,8 @@ async fn handle_connection(
         accept_with_negotiation(stream, Some(config), allowed_origins),
     )
     .await;
-    let (ws, compressed) = match handshake {
-        Ok(Ok(negotiated)) => negotiated,
+    let ws = match handshake {
+        Ok(Ok(ws)) => ws,
         Ok(Err(error)) => {
             warn!(%error, "websocket handshake rejected");
             guard.release(peer.ip());
@@ -159,12 +210,9 @@ async fn handle_connection(
     let (tx, rx) = mpsc::channel::<WireMessage>(crate::codec::OUTBOUND_QUEUE);
     {
         let mut manager = manager.lock();
-        manager.connect(conn_id, peer.ip(), tx.clone(), compressed);
+        manager.connect(conn_id, peer.ip(), tx.clone());
     }
-    // Tell the client that flate is understood before any large payload can fly; the client only
-    // compresses its own sends after seeing this ack. (Text, so every client parses it.)
-    let _ = tx.try_send(WireMessage::Text("{\"type\":\"capabilities\",\"compression\":\"flate\"}".to_string()));
-    debug!(compressed, "connection opened");
+    debug!("connection opened");
     let connection = tracing::Span::current();
     let writer_task = tokio::spawn(writer_task(rx, writer).instrument(connection));
 
@@ -202,32 +250,18 @@ async fn handle_connection(
                             break;
                         }
                         Message::Text(_) | Message::Binary(_) => {
-                            if !within_rate_limit(&mut window_start, &mut window_count) {
+                            if !within_rate_limit(&mut window_start, &mut window_count, max_messages_per_second) {
                                 warn!("rate limit exceeded; closing with 1008");
                                 drain_flood(&mut reader, &tx).await;
                                 let _ = tx.try_send(WireMessage::CloseWith { code: 1008, reason: "Rate limit exceeded" });
                                 break;
                             }
-                            let decoded = match message {
-                                Message::Text(text) => Some(text.into_bytes()),
-                                Message::Binary(bytes) => {
-                                    if !compressed {
-                                        manager.lock().error(conn_id, "Only text JSON messages are accepted");
-                                        None
-                                    } else {
-                                        match decompress(&bytes, MAX_PAYLOAD) {
-                                            Ok(plain) => Some(plain),
-                                            Err(()) => {
-                                                manager.lock().error(conn_id, "Invalid JSON message");
-                                                None
-                                            }
-                                        }
-                                    }
+                            match message {
+                                Message::Text(text) => deliver(&manager, conn_id, text.as_bytes()).await,
+                                Message::Binary(_) => {
+                                    manager.lock().error(conn_id, "Only text JSON messages are accepted");
                                 }
                                 _ => unreachable!(),
-                            };
-                            if let Some(bytes) = decoded {
-                                deliver(&manager, conn_id, &bytes).await;
                             }
                         }
                         _ => {}
@@ -251,62 +285,53 @@ async fn handle_connection(
     info!("connection closed");
 }
 
-fn within_rate_limit(window_start: &mut Instant, window_count: &mut u32) -> bool {
+fn within_rate_limit(window_start: &mut Instant, window_count: &mut u32, limit: u32) -> bool {
     let now = Instant::now();
     if now.duration_since(*window_start) >= Duration::from_secs(1) {
         *window_start = now;
         *window_count = 0;
     }
     *window_count += 1;
-    *window_count <= MAX_MESSAGES_PER_SECOND
+    *window_count <= limit
 }
 
-/// Handshake with the compression subprotocol; reports what the client ended up with.
-/// When `allowed_origins` is non-empty, handshakes whose `Origin` header is not in the list
-/// are rejected with 403 before the upgrade completes.
+/// Handshake with optional origin enforcement. When `allowed_origins` is non-empty,
+/// handshakes whose `Origin` header is not in the list are rejected with 403 before the
+/// upgrade completes.
 async fn accept_with_negotiation<S>(
     stream: S,
     config: Option<WebSocketConfig>,
     allowed_origins: &[String],
-) -> Result<(WebSocketStream<S>, bool), WsError>
+) -> Result<WebSocketStream<S>, WsError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let negotiated = Arc::new(AtomicBool::new(false));
-    let probe = negotiated.clone();
     let origins: Vec<String> = allowed_origins.to_vec();
     let ws = accept_hdr_async_with_config(
         stream,
-        move |request: &Request, mut response: Response| {
+        move |request: &Request, response: Response| {
             if !origins.is_empty() {
                 let origin = request
                     .headers()
                     .get("origin")
                     .and_then(|value| value.to_str().ok())
                     .unwrap_or("");
-                // No Origin header (non-browser client) passes; browsers always send one
-                // on WS handshakes, so this check only bites cross-site pages.
-                if !origin.is_empty() && !origins.iter().any(|o| o == origin) {
-                    return Err(ErrorResponse::new(Some("403 Forbidden".to_string())));
+                // A missing Origin also fails: otherwise any script simply omits the header
+                // and walks past the allowlist. Strict mode is the point of configuring one.
+                if !origins.iter().any(|o| o == origin) {
+                    // ErrorResponse::new defaults to 200 OK, which tungstenite refuses to
+                    // send ("custom response must not be successful") — build a real 403.
+                    let mut forbidden = ErrorResponse::new(Some("Forbidden".to_string()));
+                    *forbidden.status_mut() = StatusCode::FORBIDDEN;
+                    return Err(forbidden);
                 }
-            }
-            let offers = request
-                .headers()
-                .get("sec-websocket-protocol")
-                .and_then(|value| value.to_str().ok())
-                .unwrap_or("");
-            if offers.split(',').any(|part| part.trim() == SUBPROTOCOL) {
-                response
-                    .headers_mut()
-                    .insert("sec-websocket-protocol", HeaderValue::from_static(SUBPROTOCOL));
-                probe.store(true, Ordering::Relaxed);
             }
             Ok::<Response, ErrorResponse>(response)
         },
         config,
     )
     .await?;
-    Ok((ws, negotiated.load(Ordering::Relaxed)))
+    Ok(ws)
 }
 
 /// Parse one decoded inbound frame and pass it to the room logic.
@@ -393,10 +418,12 @@ async fn route(manager: &Mutex<RoomManager>, conn_id: u64, message: &Value) {
 /// after that leaves the tail unread, and closing with unread data sends a RST that masks the
 /// close code the peer should see). Stops once the stream has been quiet briefly or a hard cap
 /// hits, whichever comes first.
-async fn drain_flood(
-    reader: &mut futures_util::stream::SplitStream<WebSocketStream<TcpStream>>,
+async fn drain_flood<S>(
+    reader: &mut futures_util::stream::SplitStream<WebSocketStream<S>>,
     tx: &mpsc::Sender<WireMessage>,
-) {
+) where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let quiet_window = Duration::from_millis(100);
     let hard_cap = Instant::now() + Duration::from_millis(500);
     let mut quiet_until = Instant::now() + quiet_window;
@@ -417,11 +444,13 @@ async fn drain_flood(
     }
 }
 
-async fn writer_task(mut rx: mpsc::Receiver<WireMessage>, mut sink: SplitSink) {
+async fn writer_task<S: AsyncRead + AsyncWrite + Unpin>(
+    mut rx: mpsc::Receiver<WireMessage>,
+    mut sink: SplitSink<S>,
+) {
     while let Some(frame) = rx.recv().await {
         let message = match frame {
             WireMessage::Text(text) => Message::Text(text),
-            WireMessage::Binary(bytes) => Message::Binary(bytes),
             WireMessage::Ping(payload) => Message::Ping(payload),
             WireMessage::Pong(payload) => Message::Pong(payload),
             WireMessage::CloseWith { code, reason } => Message::Close(Some(CloseFrame {
@@ -527,4 +556,48 @@ fn env_parse<T: std::str::FromStr>(name: &str, default: T) -> T {
 }
 
 /// The split sink type the writer drains (kept concrete to stay out of the room logic).
-type SplitSink = futures_util::stream::SplitSink<WebSocketStream<TcpStream>, Message>;
+type SplitSink<S> = futures_util::stream::SplitSink<WebSocketStream<S>, Message>;
+
+fn env_flag(name: &str) -> bool {
+    std::env::var(name).is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+}
+
+/// Load a PEM certificate chain and private key into a TLS acceptor, or die trying —
+/// a half-configured TLS deployment must fail loudly at boot, not at 3 a.m.
+fn load_tls(cert_path: &str, key_path: &str) -> TlsAcceptor {
+    let cert_file = std::fs::File::open(cert_path).unwrap_or_else(|err| {
+        error!(%cert_path, %err, "cannot open TLS_CERT");
+        std::process::exit(1);
+    });
+    let certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut std::io::BufReader::new(cert_file))
+        .collect::<Result<_, _>>()
+        .unwrap_or_else(|err| {
+            error!(%cert_path, %err, "cannot parse TLS_CERT");
+            std::process::exit(1);
+        });
+    if certs.is_empty() {
+        error!(%cert_path, "TLS_CERT contains no certificates");
+        std::process::exit(1);
+    }
+    let key_file = std::fs::File::open(key_path).unwrap_or_else(|err| {
+        error!(%key_path, %err, "cannot open TLS_KEY");
+        std::process::exit(1);
+    });
+    let key: PrivateKeyDer<'static> = rustls_pemfile::private_key(&mut std::io::BufReader::new(key_file))
+        .unwrap_or_else(|err| {
+            error!(%key_path, %err, "cannot parse TLS_KEY");
+            std::process::exit(1);
+        })
+        .unwrap_or_else(|| {
+            error!(%key_path, "TLS_KEY contains no private key");
+            std::process::exit(1);
+        });
+    let config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .unwrap_or_else(|err| {
+            error!(%err, "TLS certificate/key do not match or are unusable");
+            std::process::exit(1);
+        });
+    TlsAcceptor::from(Arc::new(config))
+}
