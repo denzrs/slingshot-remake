@@ -2,6 +2,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { RoomManager, type ClientConnection } from './room.js';
 
 const port = Number(process.env.PORT ?? 8080);
+console.warn('Deprecated: the TypeScript relay is retained for comparison. Use `npm run dev:server:rust`.');
 /** The host's full state can be large once; everything after that is small patches. */
 const MAX_PAYLOAD = 1024 * 1024;
 const MAX_MESSAGES_PER_SECOND = 300;

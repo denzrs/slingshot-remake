@@ -1,0 +1,18 @@
+[package]
+name = "slingshot-server"
+version = "0.1.0"
+edition = "2021"
+description = "Slingshot multiplayer relay — drop-in Rust replacement of server/index.ts"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+serde_json = { version = "1", features = ["float_roundtrip"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+flate2 = "1"
+parking_lot = "0.12"
+rand = "0.8"
+base64 = "0.22"
+scrypt = "0.11"

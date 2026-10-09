@@ -9,12 +9,15 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "dev:server": "tsx server/index.ts",
+    "dev:server:rust": "cargo run --release --manifest-path server/Cargo.toml",
     "build:server": "tsc -p tsconfig.server.json",
+    "build:server:rust": "cargo build --release --manifest-path server/Cargo.toml",
     "start:server": "node dist-server/server/index.js",
     "bench:experimental": "tsx benchmarks/ai-matrix.ts",
     "bench:levels": "tsx benchmarks/level-matrix.ts",
     "bench:learning": "tsx benchmarks/learning-validation.ts",
-    "bench:calibration": "tsx benchmarks/ai-calibration.ts"
+    "bench:calibration": "tsx benchmarks/ai-calibration.ts",
+    "bench:relay": "tsx benchmarks/relay-perf.ts"
   },
   "keywords": [],
   "author": "",

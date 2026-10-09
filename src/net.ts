@@ -88,12 +88,32 @@ export type ServerMessage =
 
 const CONNECT_TIMEOUT_MS = 10_000;
 
+/** WebSocket subprotocol offered/expected when both peers support transport compression. */
+const FLATE_SUBPROTOCOL = 'slingshot-flate-v1';
+/** Only compress payloads larger than this; small messages stay plain text. */
+const COMPRESS_THRESHOLD = 10 * 1024;
+
+/** zlib/DEFLATE (RFC 1950) compress a payload via the native CompressionStream. */
+async function compressDeflate(bytes: Uint8Array): Promise<ArrayBuffer> {
+  const stream = new Blob([bytes.buffer as ArrayBuffer]).stream().pipeThrough(new CompressionStream('deflate'));
+  return new Response(stream).arrayBuffer();
+}
+
+/** zlib/DEFLATE (RFC 1950) inflate a received binary frame back to text. */
+async function inflateDeflate(blob: Blob): Promise<string> {
+  const stream = blob.stream().pipeThrough(new DecompressionStream('deflate'));
+  return new Response(stream).text();
+}
+
 /** A thin, non-reconnecting WebSocket transport for the lobby and game relay protocol. */
 export class NetworkClient {
   private socket: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
   private listeners = new Set<(message: ServerMessage) => void>();
   private closed = false;
+  private compressed = false;
+  /** Serializes async compressed writes so frames keep arrival order. */
+  private writeChain: Promise<void> = Promise.resolve();
 
   constructor(private url: string) {}
 
@@ -116,7 +136,7 @@ export class NetworkClient {
 
     let socket: WebSocket;
     try {
-      socket = new WebSocket(this.url);
+      socket = new WebSocket(this.url, [FLATE_SUBPROTOCOL]);
     } catch (error) {
       return Promise.reject(error instanceof Error ? error : new Error(String(error)));
     }
@@ -140,6 +160,11 @@ export class NetworkClient {
         if (settled) return;
         settled = true;
         opened = true;
+        // Whether the relay supports flate is learned from its `capabilities` message, not from the
+        // negotiated subprotocol: node's `ws` (the TS relay) mirrors back the first offered
+        // protocol but cannot decompress, so only the Rust relay's explicit ack counts.
+        this.compressed = false;
+        this.writeChain = Promise.resolve();
         window.clearTimeout(timeout);
         this.connectPromise = null;
         resolve();
@@ -165,7 +190,9 @@ export class NetworkClient {
           this.deliver({ type: 'closed', message: `Connection to ${this.url} was closed.` });
         }
       });
-      socket.addEventListener('message', (event: MessageEvent<unknown>) => this.receive(event.data));
+      socket.addEventListener('message', (event: MessageEvent<unknown>) => {
+        this.receive(event.data).catch(() => {});
+      });
     });
 
     return this.connectPromise;
@@ -176,10 +203,24 @@ export class NetworkClient {
   }
 
   send(message: ClientMessage): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
       throw new Error('Cannot send: WebSocket is not connected');
     }
-    this.socket.send(JSON.stringify(message));
+    const text = JSON.stringify(message);
+    const bytes = new TextEncoder().encode(text);
+    if (!this.compressed || bytes.byteLength <= COMPRESS_THRESHOLD) {
+      socket.send(text);
+      return;
+    }
+    // Large payload while compressed: compress asynchronously, but keep frames
+    // in call order by chaining; errors must never surface as unhandled rejects.
+    const write = this.writeChain.then(async () => {
+      if (this.socket === socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(await compressDeflate(bytes));
+      }
+    });
+    this.writeChain = write.catch(() => {});
   }
 
   close(): void {
@@ -192,11 +233,26 @@ export class NetworkClient {
     }
   }
 
-  private receive(data: unknown): void {
+  private async receive(data: unknown): Promise<void> {
+    let text: string;
+    try {
+      if (typeof data === 'string') {
+        text = data;
+      } else if (typeof data === 'object' && data !== null && this.compressed) {
+        // Binary frame (ArrayBuffer or Blob) only when compression is negotiated.
+        const blob = data instanceof Blob ? data : new Blob([data as BlobPart]);
+        text = await inflateDeflate(blob);
+      } else {
+        throw new Error('Expected text JSON');
+      }
+    } catch {
+      this.deliver({ type: 'error', message: 'Received malformed response from the server (expected a JSON object).' });
+      return;
+    }
+
     let parsed: unknown;
     try {
-      if (typeof data !== 'string') throw new Error('Expected text JSON');
-      parsed = JSON.parse(data);
+      parsed = JSON.parse(text);
     } catch {
       this.deliver({ type: 'error', message: 'Received malformed response from the server (expected a JSON object).' });
       return;
@@ -204,6 +260,11 @@ export class NetworkClient {
 
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       this.deliver({ type: 'error', message: 'Received malformed response from the server (expected a JSON object).' });
+      return;
+    }
+    // The Rust relay announces that it can decompress; only then may we compress our own sends.
+    if ('type' in parsed && parsed.type === 'capabilities') {
+      this.compressed = 'compression' in parsed && parsed.compression === 'flate';
       return;
     }
     this.deliver(parsed as ServerMessage);
