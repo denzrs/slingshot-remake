@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_RULES, parseRules } from '../server/protocol';
 import { DEFAULT_SETTINGS, loadSettings } from '../src/settings';
 import { AIM } from '../src/config';
 import type { RoomRules } from '../src/net';
@@ -60,21 +59,13 @@ describe('game rules in the menu', () => {
   const all = ruleRows();
   const valued = all.filter((row) => row.control !== 'toggle');
 
-  it('lists every rule an online room has, once — the shot power one in three parts', () => {
-    expect(all.map((row) => row.key).sort()).toEqual(Object.keys(DEFAULT_RULES).sort());
+  it('lists every rule the setup and online lobby share, once — the shot power one in three parts', () => {
+    expect(all.map((row) => row.key).sort()).toEqual(Object.keys(rulesOf(DEFAULT_SETTINGS)).sort());
   });
 
   it('sorts every rule into a block of the setup screen', () => {
     for (const row of all) expect(RULE_GROUPS).toContain(row.group);
     for (const group of RULE_GROUPS) expect(all.some((row) => row.group === group)).toBe(true);
-  });
-
-  it('offers only values the relay accepts — a slider never lands on one it would refuse', () => {
-    for (const row of all.filter((r) => r.control === 'slider')) {
-      for (const option of row.options) {
-        expect(parseRules({ ...DEFAULT_RULES, [row.key]: option.value }), `${row.key} = ${String(option.value)}`).not.toBeNull();
-      }
-    }
   });
 
   it('starts every slider on one of its stops', () => {
@@ -179,7 +170,6 @@ describe('shot power: free, capped or fixed', () => {
     expect(AIM.FIXED_OPTIONS[0]).toBe(10);
     expect(AIM.FIXED_OPTIONS.at(-1)).toBe(100);
     expect(AIM.FIXED_OPTIONS).toContain(AIM.FIXED_POWER);
-    for (const n of AIM.FIXED_OPTIONS) expect(parseRules({ ...DEFAULT_RULES, fixedPowerLevel: n }), String(n)).not.toBeNull();
   });
 
   describe('in the menu', () => {

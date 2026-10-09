@@ -81,7 +81,9 @@ New CPU seats start as Newton. A further CPU that fits gravity from its own comp
 
 ## Multiplayer
 
-Start the relay server in a second terminal with `npm run dev:server`. In the client, open **Multiplayer**, connect to the relay address (default `ws://localhost:8080`), then create or join a room.
+Set `ALLOWED_ORIGINS` to the frontend's exact origin before startup. For Vite, run `ALLOWED_ORIGINS=http://localhost:5173 npm run dev:server`. The relay refuses to start without an allowlist unless `ALLOW_ALL_ORIGINS=1`.
+The Rust relay logs through `tracing`. Set `RUST_LOG=debug` to show each message and room event. The default level (`info`) shows lifecycle events.
+In the client, open **Multiplayer**, connect to the relay address (default `ws://localhost:8080`), then create or join a room.
 
 - **Rooms:** choose Classic or Event Horizon, free-for-all or two-team play (everybody picks their own team in the room, the host can deal everybody out again with *Reset teams*) and the rules of the game (rounds, planets, reflective edges, shot power, flight time, …). Both modes support up to six players. Rooms can be protected with a password.
 - **Host:** the host can change the rules while the room is waiting and starts the game. The host runs the authoritative simulation and relays state patches to the other players – only what changed since the last tick, so a match needs a few KB/s instead of MB/s. Guests carry a shot's flight on between patches, so it moves smoothly.
@@ -97,11 +99,11 @@ Start the relay server in a second terminal with `npm run dev:server`. In the cl
 | --- | --- |
 | `npm run dev` | Dev server at http://localhost:5173 |
 | `npm run build` | Typecheck and build the client into `dist/` |
-| `npm run typecheck` | Typecheck `src`, `server`, `tests` and `benchmarks` |
+| `npm run typecheck` | Typecheck the client, tests and benchmarks |
 | `npm test` | Run all tests |
-| `npm run dev:server` | Multiplayer relay with live TypeScript (port `8080`, override with `PORT`) |
-| `npm run build:server`, `npm run start:server` | Compile the relay to `dist-server/` and run it from there |
-| `npm run bench:experimental`, `bench:levels`, `bench:calibration`, `bench:learning` | AI benchmarks, see [benchmarks/README.md](benchmarks/README.md) |
+| `npm run dev:server` | Rust multiplayer relay (port `8080`, override with `PORT`) |
+| `npm run build:server` | Build the Rust relay in release mode |
+| `npm run bench:relay -- ws://localhost:8080` | Measure Rust relay latency, fan-out, real 30 Hz snapshots and synthetic large payloads |
 
 **Tests.** The suites take roughly 20 seconds on 8 cores. Vitest runs test files in parallel but the tests inside one file one after the other, so put a long-running test in a file of its own (see `tests/experimental-worker-long-*.test.ts`) instead of adding it to a big one. Under Vitest every read of an imported binding goes through a getter, which doubled the cost of `Shot.step` until it read its `PHYSICS` constants once into locals; do the same in other hot loops. Comparing huge snapshots with `toEqual` is slow too, so `tests/netsync.test.ts` only falls back to it to explain a mismatch.
 

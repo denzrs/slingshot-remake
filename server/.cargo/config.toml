@@ -1,0 +1,6 @@
+[target.aarch64-unknown-linux-musl]
+linker = "./zig-cc-aarch64-musl.sh"
+rustflags = ["-C", "link-self-contained=no"]
+
+[env]
+CC_aarch64-unknown-linux-musl = { value = "zig-cc-aarch64-musl.sh", relative = true }
