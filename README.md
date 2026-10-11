@@ -12,6 +12,16 @@ npm run dev        # http://localhost:5173
 npm run build      # static build in dist/ – runs on any web server
 ```
 
+The production build can bake in public links with `VITE_COFFEE_URL` (main-screen support link) and `VITE_MULTIPLAYER_SERVER` (default WebSocket relay address, e.g. `wss://relay.example.com`). For example:
+
+```bash
+VITE_COFFEE_URL=https://buymeacoffee.com/yourname \
+VITE_MULTIPLAYER_SERVER=wss://relay.example.com \
+npm run build
+```
+
+These values are embedded in the generated client at build time; changing them requires rebuilding. If unset, the app uses `https://example.com/coffee` and `ws://localhost:8080` respectively. The relay field remains editable in the lobby.
+
 Tests, the multiplayer relay and the AI benchmarks are covered under [Development](#development).
 
 ## Controls

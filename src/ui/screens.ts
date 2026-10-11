@@ -91,7 +91,18 @@ export function titleScreen(app: App): Screen {
           h('nav.items', { 'data-items': '', 'aria-label': t('title.menuLabel') }),
           h('p.keys', null, t('title.keys')),
           // Set by the deploy workflow; local builds say so.
-          h('div.title-foot', null, h('p.version', null, String(import.meta.env.VITE_APP_VERSION || 'Local-Dev')), ghostEgg(app)),
+          h(
+            'div.title-foot',
+            null,
+            h('p.version', null, String(import.meta.env.VITE_APP_VERSION || 'Local-Dev')),
+            h('a.coffee-link', {
+              href: import.meta.env.VITE_COFFEE_URL || 'https://example.com/coffee',
+              target: '_blank',
+              rel: 'noopener noreferrer',
+              'aria-label': t('title.coffee'),
+            }, t('title.coffee')),
+            ghostEgg(app),
+          ),
         ),
       ),
     // A getter, so the lineup hint is fresh whenever the menu re-renders this screen.
