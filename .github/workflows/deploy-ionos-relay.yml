@@ -1,0 +1,169 @@
+name: Deploy multiplayer relay to IONOS VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'deploy/ionos/**'
+      - '.github/workflows/deploy-ionos-relay.yml'
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ionos-relay-production
+  cancel-in-progress: false
+
+jobs:
+  detect-rust-backend:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.detect.outputs.ready }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - id: detect
+        name: Wait for the Rust relay branch to be merged
+        run: |
+          if [ -f server/Cargo.toml ] && [ -f server/src/main.rs ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'Rust relay sources are not present yet; deployment is intentionally skipped.'
+          fi
+
+  deploy:
+    needs: detect-rust-backend
+    if: needs.detect-rust-backend.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
+        with:
+          cache-workspaces: server
+
+      - name: Build relay
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+          rustup target add x86_64-unknown-linux-musl
+          cargo build --locked --release --target x86_64-unknown-linux-musl --manifest-path server/Cargo.toml
+
+      - name: Prepare SSH credentials
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.IONOS_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.IONOS_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -m 0700 -d "$RUNNER_TEMP/ionos-ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/ionos-ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/ionos-ssh/known_hosts"
+          chmod 0600 "$RUNNER_TEMP/ionos-ssh/id_ed25519" "$RUNNER_TEMP/ionos-ssh/known_hosts"
+
+      - name: Copy relay and service installer
+        env:
+          DEPLOY_HOST: ${{ vars.IONOS_SERVER_IP }}
+          DEPLOY_USER: ${{ vars.IONOS_DEPLOY_USER }}
+          RELAY_PORT: ${{ vars.RELAY_PORT }}
+          RELAY_ALLOWED_ORIGINS: ${{ vars.RELAY_ALLOWED_ORIGINS }}
+          RELAY_MAX_CONNECTIONS: ${{ vars.RELAY_MAX_CONNECTIONS }}
+          RELAY_MAX_CONNECTIONS_PER_IP: ${{ vars.RELAY_MAX_CONNECTIONS_PER_IP }}
+          RELAY_CONNECTIONS_PER_IP_PER_SECOND: ${{ vars.RELAY_CONNECTIONS_PER_IP_PER_SECOND }}
+          RELAY_MAX_MESSAGES_PER_SECOND: ${{ vars.RELAY_MAX_MESSAGES_PER_SECOND }}
+          RELAY_TLS_CERT: ${{ vars.RELAY_TLS_CERT }}
+          RELAY_TLS_KEY: ${{ vars.RELAY_TLS_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          : "${RELAY_PORT:=8080}"
+          : "${RELAY_MAX_CONNECTIONS:=1000}"
+          : "${RELAY_MAX_CONNECTIONS_PER_IP:=64}"
+          : "${RELAY_CONNECTIONS_PER_IP_PER_SECOND:=20}"
+          : "${RELAY_MAX_MESSAGES_PER_SECOND:=300}"
+          test -n "$RELAY_ALLOWED_ORIGINS"
+          for value in "$RELAY_PORT" "$RELAY_ALLOWED_ORIGINS" "$RELAY_MAX_CONNECTIONS" "$RELAY_MAX_CONNECTIONS_PER_IP" "$RELAY_CONNECTIONS_PER_IP_PER_SECOND" "$RELAY_MAX_MESSAGES_PER_SECOND" "$RELAY_TLS_CERT" "$RELAY_TLS_KEY"; do
+            case "$value" in *$'\n'*|*$'\r'*) echo 'Multiline relay settings are not supported' >&2; exit 1;; esac
+          done
+          if [[ -n "$RELAY_TLS_CERT" && -z "$RELAY_TLS_KEY" || -z "$RELAY_TLS_CERT" && -n "$RELAY_TLS_KEY" ]]; then
+            echo 'Set RELAY_TLS_CERT and RELAY_TLS_KEY together' >&2
+            exit 1
+          fi
+          config="$RUNNER_TEMP/relay.env"
+          {
+            printf 'PORT=%s\n' "$RELAY_PORT"
+            printf 'ALLOWED_ORIGINS=%s\n' "$RELAY_ALLOWED_ORIGINS"
+            printf 'MAX_CONNECTIONS=%s\n' "$RELAY_MAX_CONNECTIONS"
+            printf 'MAX_CONNECTIONS_PER_IP=%s\n' "$RELAY_MAX_CONNECTIONS_PER_IP"
+            printf 'CONNECTIONS_PER_IP_PER_SECOND=%s\n' "$RELAY_CONNECTIONS_PER_IP_PER_SECOND"
+            printf 'MAX_MESSAGES_PER_SECOND=%s\n' "$RELAY_MAX_MESSAGES_PER_SECOND"
+            [[ -z "$RELAY_TLS_CERT" ]] || printf 'TLS_CERT=%s\n' "$RELAY_TLS_CERT"
+            [[ -z "$RELAY_TLS_KEY" ]] || printf 'TLS_KEY=%s\n' "$RELAY_TLS_KEY"
+          } > "$config"
+          ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
+          scp "${ssh_options[@]}" \
+            server/target/x86_64-unknown-linux-musl/release/slingshot-server \
+            deploy/ionos/install-relay.sh \
+            deploy/ionos/slingshot-relay.service \
+            "$config" \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/"
+
+      - name: Install and restart relay service
+        env:
+          DEPLOY_HOST: ${{ vars.IONOS_SERVER_IP }}
+          DEPLOY_USER: ${{ vars.IONOS_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" 'sudo bash /tmp/install-relay.sh'
+
+      - name: Check service status
+        env:
+          DEPLOY_HOST: ${{ vars.IONOS_SERVER_IP }}
+          DEPLOY_USER: ${{ vars.IONOS_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            'sudo systemctl --no-pager --full status slingshot-relay.service'
+
+      - name: Verify relay WebSocket handshake
+        env:
+          RELAY_URL: ${{ vars.RELAY_HEALTHCHECK_URL }}
+          RELAY_ALLOWED_ORIGINS: ${{ vars.RELAY_ALLOWED_ORIGINS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$RELAY_URL" ]]; then
+            echo 'RELAY_HEALTHCHECK_URL not configured; service status is the deployment health check.'
+            exit 0
+          fi
+          python3 - <<'PY'
+          import os, socket, ssl, base64, hashlib, urllib.parse
+          url = urllib.parse.urlparse(os.environ['RELAY_URL'])
+          if url.scheme not in ('ws', 'wss') or not url.hostname:
+              raise SystemExit('RELAY_HEALTHCHECK_URL must be a ws:// or wss:// URL')
+          port = url.port or (443 if url.scheme == 'wss' else 80)
+          raw = socket.create_connection((url.hostname, port), timeout=10)
+          conn = ssl.create_default_context().wrap_socket(raw, server_hostname=url.hostname) if url.scheme == 'wss' else raw
+          key = base64.b64encode(os.urandom(16)).decode()
+          path = url.path or '/'
+          if url.query: path += '?' + url.query
+          request = (f'GET {path} HTTP/1.1\r\nHost: {url.hostname}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nOrigin: {os.environ["RELAY_ALLOWED_ORIGINS"].split(",")[0]}\r\n\r\n')
+          conn.sendall(request.encode())
+          response = conn.recv(4096).decode('latin1')
+          expected = base64.b64encode(hashlib.sha1((key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
+          if not response.startswith('HTTP/1.1 101') or f'Sec-WebSocket-Accept: {expected}' not in response:
+              raise SystemExit(f'WebSocket handshake failed: {response.splitlines()[0] if response else "no response"}')
+          print('Relay WebSocket handshake succeeded')
+          conn.close()
+          PY

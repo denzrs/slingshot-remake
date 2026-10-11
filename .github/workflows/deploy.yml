@@ -99,6 +99,9 @@ jobs:
           echo "VITE_APP_VERSION=$tag" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run build
+        env:
+          VITE_COFFEE_URL: ${{ vars.VITE_COFFEE_URL }}
+          VITE_MULTIPLAYER_SERVER: ${{ vars.VITE_MULTIPLAYER_SERVER }}
       - name: Zip the build for the release
         if: steps.version.outputs.release == 'true'
         env:
