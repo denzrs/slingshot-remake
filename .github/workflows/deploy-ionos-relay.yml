@@ -92,6 +92,10 @@ jobs:
           : "${RELAY_CONNECTIONS_PER_IP_PER_SECOND:=20}"
           : "${RELAY_MAX_MESSAGES_PER_SECOND:=300}"
           test -n "$RELAY_ALLOWED_ORIGINS"
+          if ! [[ "$RELAY_PORT" =~ ^[0-9]{1,5}$ ]] || (( 10#$RELAY_PORT < 1 || 10#$RELAY_PORT > 65535 )); then
+            echo 'RELAY_PORT must be an integer from 1 to 65535' >&2
+            exit 1
+          fi
           for value in "$RELAY_PORT" "$RELAY_ALLOWED_ORIGINS" "$RELAY_MAX_CONNECTIONS" "$RELAY_MAX_CONNECTIONS_PER_IP" "$RELAY_CONNECTIONS_PER_IP_PER_SECOND" "$RELAY_MAX_MESSAGES_PER_SECOND" "$RELAY_TLS_CERT" "$RELAY_TLS_KEY"; do
             case "$value" in *$'\n'*|*$'\r'*) echo 'Multiline relay settings are not supported' >&2; exit 1;; esac
           done
