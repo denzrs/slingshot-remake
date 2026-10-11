@@ -81,7 +81,7 @@ New CPU seats start as Newton. A further CPU that fits gravity from its own comp
 
 ## Multiplayer
 
-Set `ALLOWED_ORIGINS` to the frontend's exact origin before startup. For Vite, run `ALLOWED_ORIGINS=http://localhost:5173 npm run dev:server`. The relay refuses to start without an allowlist unless `ALLOW_ALL_ORIGINS=1`.
+Set `ALLOWED_ORIGINS` to the frontend's exact origin before startup. For Vite, run `ALLOWED_ORIGINS=http://localhost:5173 npm run dev:server`; `npm run dev:server` defaults to localhost origins on ports 5173 and 4173 for development. Other deployments must configure an allowlist; the relay refuses to start without one unless `ALLOW_ALL_ORIGINS=1`.
 The Rust relay logs through `tracing`. Set `RUST_LOG=debug` to show each message and room event. The default level (`info`) shows lifecycle events.
 In the client, open **Multiplayer**, connect to the relay address (default `ws://localhost:8080`), then create or join a room.
 
@@ -92,6 +92,8 @@ In the client, open **Multiplayer**, connect to the relay address (default `ws:/
 - **Ghost lane:** a second way to pass the time once you are shot down, and the round is not yet decided. About three seconds after your exit the hint *Ghost lane [G]* appears where "Waiting for the others" stood; **G** opens a small, semi-transparent panel in the bottom right corner with a mini field – two or three planets and a target – and your ship as a shadow in your colour. Aim and fire as usual, three shots per lane; a hit brings up the next lane at once. A hit pays 100 (70 % on the second shot, 45 % on the third) plus 50 per swing-by, and every lane cleared in a row raises the multiplier by 0.5 up to ×3; a lane lost ends the series. Everyone flies the same lanes: the seed comes from the round number and the world the round was dealt, which every screen has, so nothing extra travels over the network. The panel closes when the next round starts and rests during the killcam and between rounds, so Enter and Space still skip it. Nothing counts towards the match; it can be switched off in the settings, per device.
 - **Lobby:** it remembers your server, name and room settings (separate from the settings of offline games) and reconnects on its own. Leaving a game puts you back into the lobby.
 - **Hosting:** for remote players, host both the web client and the relay at reachable addresses. Use a `wss://` address behind TLS when the client is served over HTTPS.
+
+**Relay environment.** `PORT` selects the listening port (default `8080`). `ALLOWED_ORIGINS` is a comma-separated exact-origin allowlist; `ALLOW_ALL_ORIGINS=1` disables origin checks. Set both `TLS_CERT` and `TLS_KEY` to PEM file paths to serve WSS directly; if TLS terminates at a reverse proxy, leave both unset and forward to the relay over a trusted network. `MAX_CONNECTIONS` (8192), `MAX_CONNECTIONS_PER_IP` (64), `CONNECTIONS_PER_IP_PER_SECOND` (20), and `MAX_MESSAGES_PER_SECOND` (300) tune admission and per-connection rate limits. These limits use the TCP peer address; configure proxy/network limits accordingly. `RUST_LOG` controls log filtering. `npm run bench:relay -- ws://localhost:8080` sends the localhost Vite origin by default; override it with `BENCH_ORIGIN` when benchmarking another allowlisted origin.
 
 ## Development
 
@@ -104,8 +106,9 @@ In the client, open **Multiplayer**, connect to the relay address (default `ws:/
 | `npm run dev:server` | Rust multiplayer relay (port `8080`, override with `PORT`) |
 | `npm run build:server` | Build the Rust relay in release mode |
 | `npm run bench:relay -- ws://localhost:8080` | Measure Rust relay latency, fan-out, real 30 Hz snapshots and synthetic large payloads |
+| `npm run bench:experimental`, `npm run bench:levels`, `npm run bench:calibration`, `npm run bench:learning` | Run the experimental AI, level, calibration and learning benchmarks |
 
-**Tests.** The suites take roughly 20 seconds on 8 cores. Vitest runs test files in parallel but the tests inside one file one after the other, so put a long-running test in a file of its own (see `tests/experimental-worker-long-*.test.ts`) instead of adding it to a big one. Under Vitest every read of an imported binding goes through a getter, which doubled the cost of `Shot.step` until it read its `PHYSICS` constants once into locals; do the same in other hot loops. Comparing huge snapshots with `toEqual` is slow too, so `tests/netsync.test.ts` only falls back to it to explain a mismatch.
+**Tests.** `npm test` builds and tests the Rust relay, so install the stable Rust toolchain (including Cargo) first; `npx vitest` runs only the TypeScript tests and expects the Rust test binary to have been built. The suites take roughly one minute on 8 cores. Vitest runs test files in parallel but the tests inside one file one after the other, so put a long-running test in a file of its own (see `tests/experimental-worker-long-*.test.ts`) instead of adding it to a big one. Under Vitest every read of an imported binding goes through a getter, which doubled the cost of `Shot.step` until it read its `PHYSICS` constants once into locals; do the same in other hot loops. Comparing huge snapshots with `toEqual` is slow too, so `tests/netsync.test.ts` only falls back to it to explain a mismatch.
 
 **Releases.** Every merge to `main` that passes typecheck and tests is tagged with the next minor version (`vX.Y.0` → `vX.(Y+1).0`), released on GitHub and deployed to GitHub Pages. Push a tag such as `v2.0.0` for a major bump.
 

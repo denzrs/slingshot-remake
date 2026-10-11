@@ -3,15 +3,12 @@
 //   ALLOW_ALL_ORIGINS=1 npm run dev:server  # local benchmark only
 //   npm run bench:relay -- ws://localhost:8080
 //
-// The client offers `slingshot-flate-v1`. The relay sends a capability ack before the client
-// compresses payloads > 10 KiB. Every figure below is host-send → guest-received, including relay
-// work and decompression.
+// Every figure below is host-send → guest-received, including relay work.
 //
 // The relay caps inbound messages per connection at 300/s (the anti-flood limit), so all
 // measurements here stay under that rate; aggregate load is created with several rooms instead.
 
 import WebSocket from 'ws';
-import zlib from 'node:zlib';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
 import { createMatch, type GameEvent } from '../src/game';
@@ -19,9 +16,7 @@ import { SnapshotEncoder } from '../src/netsync';
 import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
 const URL = process.argv[2] ?? 'ws://localhost:8080';
-const SUB = 'slingshot-flate-v1';
 const BENCH_ORIGIN = process.env.BENCH_ORIGIN;
-const COMPRESS_THRESHOLD = 10 * 1024;
 
 // The window of the wire message we actually read (never the raw client input).
 interface WireState {
@@ -38,59 +33,28 @@ const fmtLat = (lats: number[], p: number) => lats.length ? fmt(pct(lats, p), 2)
 
 interface Client {
   ws: WebSocket;
-  negotiated: boolean;
 }
 
 interface FrameSize {
   jsonBytes: number;
   frameBytes: number;
-  compressed: boolean;
 }
 
-/** Send the way the real frontend does: text, or flate when the peer negotiated it and payload > 10 KiB. */
+/** Send the plain JSON text frames supported by the relay. */
 function send(client: Client, message: unknown): FrameSize {
   const text = JSON.stringify(message);
   const jsonBytes = Buffer.byteLength(text);
-  if (client.negotiated && jsonBytes > COMPRESS_THRESHOLD) {
-    const frame = zlib.deflateSync(text);
-    client.ws.send(frame, { binary: true });
-    return { jsonBytes, frameBytes: frame.byteLength, compressed: true };
-  }
   client.ws.send(text);
-  return { jsonBytes, frameBytes: jsonBytes, compressed: false };
+  return { jsonBytes, frameBytes: jsonBytes };
 }
 
 function connect(url: string): Promise<Client> {
   const { promise, resolve, reject } = Promise.withResolvers<Client>();
-  const ws = new WebSocket(url, [SUB], BENCH_ORIGIN ? { origin: BENCH_ORIGIN } : {});
-  const client: Client = { ws, negotiated: false };
-  let probeTimer: NodeJS.Timeout;
-  const onCapability = (d: WebSocket.RawData, binary: boolean) => {
-    if (binary) return;
-    try {
-      const m = JSON.parse(d.toString());
-      if (m.type === 'capabilities' && m.compression === 'flate') {
-        client.negotiated = true;
-        clearTimeout(probeTimer);
-        ws.removeListener('message', onCapability);
-      }
-    } catch { /* ignore non-capability messages */ }
-  };
-  probeTimer = setTimeout(() => ws.removeListener('message', onCapability), 250);
-  ws.on('message', onCapability);
+  const ws = new WebSocket(url, { origin: BENCH_ORIGIN ?? 'http://localhost:5173' });
+  const client: Client = { ws };
   ws.on('open', () => resolve(client));
   ws.on('error', reject);
-  ws.on('close', () => clearTimeout(probeTimer));
   return promise;
-}
-
-/** Connect just to learn whether this server supports flate. */
-async function supportsFlate(url: string): Promise<boolean> {
-  const c = await connect(url);
-  await sleep(100);
-  const value = c.negotiated;
-  c.ws.close();
-  return value;
 }
 
 // The relays cap fresh connections at 20/s per IP (anti-flood). The bench opens many sockets
@@ -106,18 +70,14 @@ async function pacedConnect(url: string): Promise<Client> {
 /** One parsed state message, typed at this single parse boundary. */
 function decodeState(data: WebSocket.RawData, binary: boolean): WireState {
   if (binary) {
-    // ws delivers binary frames as a Buffer.
-    const buf = data as Buffer;
-    return JSON.parse(zlib.inflateSync(buf).toString()) as WireState;
+    throw new Error('Rust relay returned an unexpected binary frame');
   }
   return JSON.parse(data.toString()) as WireState;
 }
 
 function wireBytes(data: WebSocket.RawData, binary: boolean): number {
   if (binary) {
-    // ws delivers binary frames as a Buffer.
-    const buf = data as Buffer;
-    return buf.byteLength;
+    throw new Error('Rust relay returned an unexpected binary frame');
   }
   return Buffer.byteLength(data.toString());
 }
@@ -325,7 +285,6 @@ async function realSnapshotRun(url: string, mode: 'classic' | 'horizon', duratio
     firstWireBytes: frames[0]?.frameBytes ?? 0,
     jsonSizes,
     wireSizes,
-    compressedFrames: frames.filter((frame) => frame.compressed).length,
     guestFrameBytes: deliveredFrameBytes.reduce((sum, size) => sum + size, 0),
   };
   await closeRoom(host, guests);
@@ -340,7 +299,7 @@ async function reportRealSnapshots(url: string, mode: 'classic' | 'horizon') {
   console.log(`  ticks ${result.ticks}, guest deliveries ${result.delivered}`);
   console.log(`  first/full frame ${fmt(result.firstJsonBytes)} B JSON → ${fmt(result.firstWireBytes)} B WebSocket payload`);
   console.log(`  all ticks mean ${fmt(logicalMean)} B JSON → ${fmt(wireMean)} B WebSocket payload`);
-  console.log(`  largest patch ${fmt(result.jsonSizes.at(-1) ?? 0)} B JSON → ${fmt(result.wireSizes.at(-1) ?? 0)} B WebSocket payload; compressed ${result.compressedFrames}/${result.ticks} ticks`);
+  console.log(`  largest patch ${fmt(result.jsonSizes.at(-1) ?? 0)} B JSON → ${fmt(result.wireSizes.at(-1) ?? 0)} B WebSocket payload`);
   console.log(`  host→guest latency p50 ${fmtLat(result.latency, 0.5)} ms, p95 ${fmtLat(result.latency, 0.95)} ms, max ${fmtLat(result.latency, 1)} ms`);
 }
 
@@ -373,8 +332,7 @@ async function lobbyThroughput(url: string, durationMs: number, rate: number) {
 }
 
 async function run(url: string) {
-  const negotiated = await supportsFlate(url);
-  console.log(`\n## relay at ${url}${negotiated ? '  (Rust: compression negotiated)' : ''}`);
+  console.log(`\n## relay at ${url}`);
   const smallBytes = Buffer.byteLength(JSON.stringify({ type: 'state', seq: 1, patch: smallPatch, events: [] }));
   const largeBytes = Buffer.byteLength(JSON.stringify({ type: 'state', seq: 1, patch: largePatch, events: [] }));
   const mediumBytes = Buffer.byteLength(JSON.stringify({ type: 'state', seq: 1, patch: mediumPatch, events: [] }));
@@ -400,7 +358,7 @@ async function run(url: string) {
     await closeRoom(host, guests);
   }
 
-  console.log(`\n### 3 guests, large state (${fmt(largeBytes)} B, paced 20/s) — compressed on the wire for the Rust server`);
+  console.log(`\n### 3 guests, large state (${fmt(largeBytes)} B, paced 20/s)`);
   {
     const { host, guests } = await startRoom(url, 3);
     const r = await latencyTest(host, guests, largePatch, 20, 60);

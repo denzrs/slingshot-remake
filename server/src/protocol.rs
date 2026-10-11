@@ -14,22 +14,28 @@ pub const MAX_NAME_LENGTH: usize = 24;
 pub fn clean_name_checked(value: Option<&Value>) -> Option<String> {
     let s = value.and_then(Value::as_str)?;
     let stripped: String = s
-        .trim()
         .chars()
         .filter(|c| {
             let u = *c as u32;
             !matches!(u, 0x00..=0x1F | 0x7F..=0x9F)
-                && !matches!(u, 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0xFEFF)
+                && !matches!(u, 0x200B | 0x200E..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0xFEFF)
         })
         .collect();
+    let stripped = stripped.trim();
     if stripped.is_empty() {
         return None;
     }
-    let cut = stripped
-        .char_indices()
-        .nth(MAX_NAME_LENGTH)
-        .map_or(stripped.len(), |(index, _)| index);
-    Some(stripped[..cut].to_string())
+    let mut units = 0;
+    let mut end = stripped.len();
+    for (index, character) in stripped.char_indices() {
+        let width = character.len_utf16();
+        if units + width > MAX_NAME_LENGTH {
+            end = index;
+            break;
+        }
+        units += width;
+    }
+    Some(stripped[..end].to_string())
 }
 
 /// Largest double-precision integer (`Number.isSafeInteger`).
@@ -104,11 +110,18 @@ pub fn is_input_message(value: &Value) -> bool {
         return false;
     }
     match value.get("kind").and_then(Value::as_str) {
-        Some("adjust") => is_finite_number(value.get("dAngle")) && is_finite_number(value.get("dPower")),
+        Some("adjust") => {
+            is_finite_number(value.get("dAngle")) && is_finite_number(value.get("dPower"))
+        }
         Some("aim") => is_finite_number(value.get("angle")) && is_finite_number(value.get("power")),
         Some("fire") | Some("skip") => true,
         Some("bet") => match value.get("pick") {
-            Some(pick) => is_safe_integer(pick) && pick.as_f64().is_some_and(|f| f >= -1.0 && f < MAX_TIP as f64),
+            Some(pick) => {
+                is_safe_integer(pick)
+                    && pick
+                        .as_f64()
+                        .is_some_and(|f| f >= -1.0 && f < MAX_TIP as f64)
+            }
             None => false,
         },
         _ => false,
@@ -126,7 +139,9 @@ fn is_clash_velocities(value: Option<&Value>) -> bool {
     match value.and_then(Value::as_array) {
         Some(list) => {
             list.len() == 2
-                && list.iter().all(|v| is_record(v) && is_finite_number(v.get("x")) && is_finite_number(v.get("y")))
+                && list.iter().all(|v| {
+                    is_record(v) && is_finite_number(v.get("x")) && is_finite_number(v.get("y"))
+                })
         }
         None => false,
     }
@@ -274,7 +289,10 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
     let rounds = field("rounds")?;
     let max_planets = field("maxPlanets")?;
     let shot_time = field("shotTime")?;
-    if !is_int_between(rounds, 0, 99) || !is_int_between(max_planets, 1, 8) || !is_int_between(shot_time, 5, 120) {
+    if !is_int_between(rounds, 0, 99)
+        || !is_int_between(max_planets, 1, 8)
+        || !is_int_between(shot_time, 5, 120)
+    {
         return None;
     }
     for key in [
@@ -323,8 +341,12 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
         invisible_planets: value.get("invisiblePlanets").unwrap().as_bool().unwrap(),
         bounce: value.get("bounce").unwrap().as_bool().unwrap(),
         fixed_power: value.get("fixedPower").unwrap().as_bool().unwrap(),
-        fixed_power_level: field("fixedPowerLevel").map(i64_of).unwrap_or(DEFAULT_RULES.fixed_power_level),
-        max_power: field("maxPower").map(i64_of).unwrap_or(DEFAULT_RULES.max_power),
+        fixed_power_level: field("fixedPowerLevel")
+            .map(i64_of)
+            .unwrap_or(DEFAULT_RULES.fixed_power_level),
+        max_power: field("maxPower")
+            .map(i64_of)
+            .unwrap_or(DEFAULT_RULES.max_power),
         shot_time: i64_of(shot_time),
         style_bonuses: value.get("styleBonuses").unwrap().as_bool().unwrap(),
         neighbor_grace: i64_of(neighbor_grace),
@@ -353,8 +375,39 @@ mod tests {
         ] {
             assert!(!is_input_message(&invalid), "rejected input: {invalid}");
         }
-        assert!(is_input_message(&json!({"kind":"aim","angle":0,"power":55})));
-        assert!(!is_input_message(&json!({"kind":"aim","angle":"0","power":55})));
+        assert!(is_input_message(
+            &json!({"kind":"aim","angle":0,"power":55})
+        ));
+        assert!(!is_input_message(
+            &json!({"kind":"aim","angle":"0","power":55})
+        ));
+    }
+
+    #[test]
+    fn clean_names_trim_after_stripping_controls_and_preserve_joiners() {
+        assert_eq!(
+            clean_name_checked(Some(&json!("\u{200b} Bob\u{200b}"))).as_deref(),
+            Some("Bob")
+        );
+        assert_eq!(
+            clean_name_checked(Some(&json!("👩‍🚀"))).as_deref(),
+            Some("👩‍🚀")
+        );
+        assert_eq!(
+            clean_name_checked(Some(&json!("می‌خواهم"))).as_deref(),
+            Some("می‌خواهم")
+        );
+        assert_eq!(
+            clean_name_checked(Some(&json!("  \u{0007}  Ada  "))).as_deref(),
+            Some("Ada")
+        );
+        assert_eq!(
+            clean_name_checked(Some(&json!("😀".repeat(13))))
+                .unwrap()
+                .encode_utf16()
+                .count(),
+            24
+        );
     }
 
     fn valid_rules() -> Value {
@@ -364,6 +417,23 @@ mod tests {
             "styleBonuses":true,"neighborGrace":1,"simultaneousShots":true,
             "hiddenAim":false,"fadingTrails":2
         })
+    }
+
+    #[test]
+    fn shared_menu_contract_matches_relay_defaults_and_slider_options() {
+        let contract: Value =
+            serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
+        assert_eq!(rules_to_value(&DEFAULT_RULES), contract["defaults"]);
+        for (key, options) in contract["options"].as_object().unwrap() {
+            for option in options.as_array().unwrap() {
+                let mut rules = valid_rules();
+                rules[key] = option.clone();
+                assert!(
+                    parse_rules(&rules).is_some(),
+                    "relay rejected {key}={option}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -396,23 +466,42 @@ mod tests {
         ] {
             let mut rules = valid_rules();
             rules[key] = value;
-            assert!(parse_rules(&rules).is_none(), "accepted invalid {key}: {rules}");
+            assert!(
+                parse_rules(&rules).is_none(),
+                "accepted invalid {key}: {rules}"
+            );
         }
-        for key in ["invisiblePlanets", "bounce", "fixedPower", "styleBonuses", "simultaneousShots", "hiddenAim"] {
+        for key in [
+            "invisiblePlanets",
+            "bounce",
+            "fixedPower",
+            "styleBonuses",
+            "simultaneousShots",
+            "hiddenAim",
+        ] {
             let mut rules = valid_rules();
             rules[key] = json!("true");
-            assert!(parse_rules(&rules).is_none(), "accepted invalid boolean {key}");
+            assert!(
+                parse_rules(&rules).is_none(),
+                "accepted invalid boolean {key}"
+            );
         }
     }
 
     #[test]
     fn event_validation_checks_required_fields_and_values() {
         assert!(is_game_event(&json!({"type":"turn","player":0})));
-        assert!(is_game_event(&json!({"type":"fire","player":1,"x":1,"y":2,"angle":45,"power":55})));
-        assert!(is_game_event(&json!({"type":"killcam","active":true,"recording":false})));
+        assert!(is_game_event(
+            &json!({"type":"fire","player":1,"x":1,"y":2,"angle":45,"power":55})
+        ));
+        assert!(is_game_event(
+            &json!({"type":"killcam","active":true,"recording":false})
+        ));
         assert!(!is_game_event(&json!({"type":"turn"})));
         assert!(!is_game_event(&json!({"type":"turn","player":-1})));
-        assert!(!is_game_event(&json!({"type":"fire","player":1,"x":1,"y":2,"angle":45})));
+        assert!(!is_game_event(
+            &json!({"type":"fire","player":1,"x":1,"y":2,"angle":45})
+        ));
         assert!(!is_game_event(&json!({"type":"killcam","active":true})));
         assert!(!is_game_event(&json!({"type":"unknown"})));
     }

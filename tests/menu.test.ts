@@ -6,6 +6,13 @@ import { rulesOf } from '../src/lobbyPrefs';
 import { indexAtFraction, positionOf, stepIndex } from '../src/ui/controls';
 import { CAP_STOPS, DEFAULT_CAP, powerModeOf, powerModePatch, RULE_GROUPS, ruleItems, ruleRows, rulesFor, type PowerMode, type RuleSource } from '../src/ui/rules';
 import { startPower } from '../src/settings';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const relayContract = JSON.parse(readFileSync(fileURLToPath(new URL('../server/protocol-contract.json', import.meta.url)), 'utf8')) as {
+  defaults: RoomRules;
+  options: Partial<Record<keyof RoomRules, readonly number[]>>;
+};
 
 describe('stepping through values', () => {
   it('wraps around when asked to, in both directions', () => {
@@ -60,7 +67,7 @@ describe('game rules in the menu', () => {
   const valued = all.filter((row) => row.control !== 'toggle');
 
   it('lists every rule the setup and online lobby share, once — the shot power one in three parts', () => {
-    expect(all.map((row) => row.key).sort()).toEqual(Object.keys(rulesOf(DEFAULT_SETTINGS)).sort());
+    expect(all.map((row) => row.key).sort()).toEqual(Object.keys(relayContract.defaults).sort());
   });
 
   it('sorts every rule into a block of the setup screen', () => {
@@ -75,6 +82,20 @@ describe('game rules in the menu', () => {
       if (row.key === 'maxPower') continue;
       expect(row.options.map((o) => o.value), row.key).toContain(defaults[row.key]);
     }
+  });
+
+  it('offers only numeric values accepted by the relay contract', () => {
+    for (const row of all.filter((r) => r.control === 'slider')) {
+      for (const option of row.options) {
+        if (row.key === 'maxPower') expect(option.value).toBeLessThan(relayContract.defaults.maxPower);
+        else expect(relayContract.options[row.key], row.key).toContain(option.value);
+      }
+    }
+  });
+
+  it('keeps the fixed power slider on the relay-compatible five-point steps', () => {
+    const fixed = all.find((row) => row.key === 'fixedPowerLevel')!;
+    expect(fixed.options.map((option) => option.value)).toEqual(relayContract.options.fixedPowerLevel);
   });
 
   it('makes switches of the on/off rules, a bar of the power mode and sliders of the rest', () => {
@@ -170,6 +191,7 @@ describe('shot power: free, capped or fixed', () => {
     expect(AIM.FIXED_OPTIONS[0]).toBe(10);
     expect(AIM.FIXED_OPTIONS.at(-1)).toBe(100);
     expect(AIM.FIXED_OPTIONS).toContain(AIM.FIXED_POWER);
+    expect(AIM.FIXED_OPTIONS).toEqual(Array.from({ length: 19 }, (_, i) => 10 + i * 5));
   });
 
   describe('in the menu', () => {

@@ -1,7 +1,6 @@
 //! Room and player lifecycle management for the multiplayer relay. Each connection is identified
 //! by an opaque id; outbound messages go into a per-connection channel the writer task drains.
 
-use std::cell::Cell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
@@ -21,8 +20,6 @@ use crate::protocol::{
 const MAX_ROOM_PLAYERS: i64 = 6;
 pub const MAX_PASSWORD_LENGTH: usize = 64;
 const MAX_PASSWORD_ATTEMPTS: u32 = 5;
-const MAX_IP_PASSWORD_FAILURES: usize = 20;
-const IP_PASSWORD_WINDOW: Duration = Duration::from_secs(300);
 const MAX_SCRYPT_PER_SECOND: usize = 10;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -41,9 +38,9 @@ impl RoomStatus {
 }
 
 struct Conn {
-    ip: IpAddr,
     tx: Outbound,
-    slow: Cell<bool>,
+    bytes: std::sync::Arc<tokio::sync::Semaphore>,
+    slow: tokio::sync::watch::Sender<bool>,
 }
 
 struct Player {
@@ -66,6 +63,7 @@ struct Room {
     last_state_seq: i64,
     /// (salt, hash) — the plaintext never leaves the server.
     password: Option<(Vec<u8>, Vec<u8>)>,
+    created_order: u64,
 }
 
 struct Membership {
@@ -75,83 +73,89 @@ struct Membership {
 
 pub struct RoomManager {
     rooms: HashMap<String, Room>,
+    next_room_order: u64,
     connections: HashSet<u64>,
     outbounds: HashMap<u64, Conn>,
     memberships: HashMap<u64, Membership>,
     password_failures: HashMap<u64, u32>,
-    ip_password_failures: HashMap<IpAddr, VecDeque<Instant>>,
-    scrypt_window: VecDeque<Instant>,
+    scrypt_windows: HashMap<u64, VecDeque<Instant>>,
 }
 
 impl RoomManager {
     pub fn new() -> Self {
         Self {
             rooms: HashMap::new(),
+            next_room_order: 0,
             connections: HashSet::new(),
             outbounds: HashMap::new(),
             memberships: HashMap::new(),
             password_failures: HashMap::new(),
-            ip_password_failures: HashMap::new(),
-            scrypt_window: VecDeque::new(),
+            scrypt_windows: HashMap::new(),
         }
     }
 
-    pub fn connect(&mut self, conn: u64, ip: IpAddr, tx: Outbound) {
+    pub fn connect(
+        &mut self,
+        conn: u64,
+        _ip: IpAddr,
+        tx: Outbound,
+        slow: tokio::sync::watch::Sender<bool>,
+    ) {
         self.connections.insert(conn);
-        self.outbounds.insert(conn, Conn { ip, tx, slow: Cell::new(false) });
-        info!(conn, %ip, "connection opened");
+        self.outbounds.insert(
+            conn,
+            Conn {
+                tx,
+                bytes: std::sync::Arc::new(tokio::sync::Semaphore::new(
+                    crate::codec::OUTBOUND_BYTES,
+                )),
+                slow,
+            },
+        );
+        info!(conn, "connection opened");
         self.send_lobby(conn);
-    }
-
-    pub fn is_slow(&self, conn: u64) -> bool {
-        self.outbounds.get(&conn).is_some_and(|out| out.slow.get())
     }
 
     /// Prune expired password and scrypt timestamps without disturbing active lockouts.
     pub fn sweep(&mut self) {
         let now = Instant::now();
-        self.scrypt_window.retain(|at| now.duration_since(*at) < Duration::from_secs(1));
-        self.ip_password_failures.retain(|_, attempts| {
-            while attempts.front().is_some_and(|at| now.duration_since(*at) >= IP_PASSWORD_WINDOW) {
-                attempts.pop_front();
-            }
-            !attempts.is_empty()
+        self.scrypt_windows.retain(|_, window| {
+            window.retain(|at| now.duration_since(*at) < Duration::from_secs(1));
+            !window.is_empty()
         });
+        self.password_failures
+            .retain(|conn, _| self.connections.contains(conn));
     }
 
-    pub fn scrypt_budget_available(&mut self) -> bool {
+    pub fn scrypt_budget_available(&mut self, conn: u64) -> bool {
         let now = Instant::now();
-        while self.scrypt_window.front().is_some_and(|at| now.duration_since(*at) >= Duration::from_secs(1)) {
-            self.scrypt_window.pop_front();
+        let window = self.scrypt_windows.entry(conn).or_default();
+        while window
+            .front()
+            .is_some_and(|at| now.duration_since(*at) >= Duration::from_secs(1))
+        {
+            window.pop_front();
         }
-        if self.scrypt_window.len() >= MAX_SCRYPT_PER_SECOND {
+        if window.len() >= MAX_SCRYPT_PER_SECOND {
             return false;
         }
-        self.scrypt_window.push_back(now);
+        window.push_back(now);
         true
     }
 
-    pub fn ip_password_locked_out(&mut self, conn: u64) -> bool {
-        let Some(ip) = self.outbounds.get(&conn).map(|out| out.ip) else { return false; };
-        self.ip_failures_recent(ip) >= MAX_IP_PASSWORD_FAILURES
+    pub fn can_create_room(&self, conn: u64) -> bool {
+        self.connections.contains(&conn) && !self.memberships.contains_key(&conn)
     }
 
     pub fn join_password_salt(&self, conn: u64, room_id: &str) -> Option<(Vec<u8>, Vec<u8>)> {
-        if !self.connections.contains(&conn) || self.memberships.contains_key(&conn) { return None; }
-        let room = self.rooms.get(room_id)?;
-        if room.status != RoomStatus::Waiting || room.players.len() >= room.max_players as usize { return None; }
-        room.password.clone()
-    }
-
-    fn ip_failures_recent(&mut self, ip: IpAddr) -> usize {
-        let now = Instant::now();
-        let Some(attempts) = self.ip_password_failures.get_mut(&ip) else { return 0; };
-        while attempts.front().is_some_and(|at| now.duration_since(*at) >= IP_PASSWORD_WINDOW) {
-            attempts.pop_front();
+        if !self.connections.contains(&conn) || self.memberships.contains_key(&conn) {
+            return None;
         }
-        let count = attempts.len();
-        if count == 0 { self.ip_password_failures.remove(&ip); }
-        count
+        let room = self.rooms.get(room_id)?;
+        if room.status != RoomStatus::Waiting || room.players.len() >= room.max_players as usize {
+            return None;
+        }
+        room.password.clone()
     }
 
     pub fn handle(&mut self, conn: u64, message: &Value) {
@@ -179,11 +183,11 @@ impl RoomManager {
     }
 
     pub fn disconnect(&mut self, conn: u64) {
-        let ip = self.outbounds.get(&conn).map(|out| out.ip);
-        if let Some(ip) = ip { info!(conn, %ip, "connection closed"); }
+        info!(conn, "connection closed");
         self.connections.remove(&conn);
         self.outbounds.remove(&conn);
         self.password_failures.remove(&conn);
+        self.scrypt_windows.remove(&conn);
         self.remove_from_room(conn, "A player disconnected");
     }
 
@@ -198,11 +202,29 @@ impl RoomManager {
 
     /// The fast path: an already-serialized frame that may be fanned out to several players.
     fn send_fast(&self, conn: u64, text: &str) {
-        let Some(out) = self.outbounds.get(&conn) else { return; };
-        let wire = frame(text);
-        if let Err(tokio::sync::mpsc::error::TrySendError::Full(_)) = out.tx.try_send(wire) {
-            out.slow.set(true);
-            warn!(conn, "outbound queue full; connection marked slow");
+        let Some(out) = self.outbounds.get(&conn) else {
+            return;
+        };
+        if text.len() > crate::codec::OUTBOUND_BYTES {
+            let _ = out.slow.send(true);
+            warn!(
+                conn,
+                "outbound frame exceeds byte budget; closing connection"
+            );
+            return;
+        }
+        let permits = text.len();
+        let Ok(permit) = out.bytes.clone().try_acquire_many_owned(permits as u32) else {
+            let _ = out.slow.send(true);
+            warn!(conn, "outbound byte budget exhausted; closing connection");
+            return;
+        };
+        if out.tx.try_send(frame(text, Some(permit))).is_err() {
+            let _ = out.slow.send(true);
+            warn!(
+                conn,
+                "outbound writer unavailable or queue full; closing connection"
+            );
         }
     }
 
@@ -211,7 +233,10 @@ impl RoomManager {
     }
 
     fn send_lobby(&mut self, conn: u64) {
-        self.send_value(conn, &json!({ "type": "lobby_update", "rooms": self.visible_rooms() }));
+        self.send_value(
+            conn,
+            &json!({ "type": "lobby_update", "rooms": self.visible_rooms() }),
+        );
     }
 
     fn broadcast_lobby(&mut self) {
@@ -226,9 +251,14 @@ impl RoomManager {
     }
 
     fn visible_rooms(&self) -> Vec<Value> {
-        self.rooms
+        let mut rooms: Vec<_> = self
+            .rooms
             .values()
             .filter(|room| room.status == RoomStatus::Waiting)
+            .collect();
+        rooms.sort_by_key(|room| room.created_order);
+        rooms
+            .into_iter()
             .map(|room| {
                 json!({
                     "id": room.id,
@@ -245,7 +275,12 @@ impl RoomManager {
 
     // ————————————————————————————— Rooms —————————————————————————————
 
-    pub fn create_room(&mut self, conn: u64, message: &Value, prehashed: Option<(Vec<u8>, Vec<u8>)>) {
+    pub fn create_room(
+        &mut self,
+        conn: u64,
+        message: &Value,
+        prehashed: Option<(Vec<u8>, Vec<u8>)>,
+    ) {
         if self.memberships.contains_key(&conn) {
             self.error(conn, "Leave your current room before creating another");
             return;
@@ -277,7 +312,12 @@ impl RoomManager {
             return;
         }
         match message.get("password") {
-            Some(pw) if pw.as_str().is_none() || pw.as_str().is_some_and(|s| s.len() > MAX_PASSWORD_LENGTH) => {
+            Some(pw)
+                if pw.as_str().is_none()
+                    || pw
+                        .as_str()
+                        .is_some_and(|s| password_length(s) > MAX_PASSWORD_LENGTH) =>
+            {
                 self.error(conn, "The password must be at most 64 characters");
                 return;
             }
@@ -294,7 +334,12 @@ impl RoomManager {
             },
         };
         let id = self.new_room_id();
-        let password_text = message.get("password").and_then(Value::as_str).filter(|pw| !pw.is_empty());
+        let created_order = self.next_room_order;
+        self.next_room_order += 1;
+        let password_text = message
+            .get("password")
+            .and_then(Value::as_str)
+            .filter(|pw| !pw.is_empty());
         let password = if password_text.is_some() {
             match prehashed {
                 Some(hash) => Some(hash),
@@ -303,7 +348,9 @@ impl RoomManager {
                     return;
                 }
             }
-        } else { None };
+        } else {
+            None
+        };
         self.rooms.insert(
             id.clone(),
             Room {
@@ -317,6 +364,7 @@ impl RoomManager {
                 next_player_id: 0,
                 last_state_seq: -1,
                 password,
+                created_order,
             },
         );
         self.add_player(&id, conn, name);
@@ -332,7 +380,10 @@ impl RoomManager {
         let name = clean_name_checked(message.get("name"));
         let room_id = message.get("roomId").and_then(Value::as_str);
         if room_id.is_none() || name.is_none() {
-            self.error(conn, "join_room requires a roomId and non-empty player name");
+            self.error(
+                conn,
+                "join_room requires a roomId and non-empty player name",
+            );
             return;
         }
         let room_id = room_id.unwrap();
@@ -352,7 +403,10 @@ impl RoomManager {
             self.error(conn, "Room is full");
             return;
         }
-        let locked = self.rooms.get(room_id).is_some_and(|room| room.password.is_some());
+        let locked = self
+            .rooms
+            .get(room_id)
+            .is_some_and(|room| room.password.is_some());
         if locked && !self.password_attempt_ok(conn, room_id, preverified) {
             return;
         }
@@ -363,14 +417,6 @@ impl RoomManager {
 
     /// Applies the verification result computed off-lock by the transport layer.
     fn password_attempt_ok(&mut self, conn: u64, room_id: &str, preverified: Option<bool>) -> bool {
-        let ip = self.outbounds.get(&conn).map(|out| out.ip);
-        if let Some(ip) = ip {
-            if self.ip_failures_recent(ip) >= MAX_IP_PASSWORD_FAILURES {
-                warn!(room_id = %room_id, %ip, "IP password lockout active");
-                self.error(conn, "Too many wrong passwords – try again later");
-                return false;
-            }
-        }
         if self.password_failures.get(&conn).copied().unwrap_or(0) >= MAX_PASSWORD_ATTEMPTS {
             warn!(room_id = %room_id, "password attempts exhausted");
             self.error(conn, "Too many wrong passwords – reconnect to try again");
@@ -379,12 +425,9 @@ impl RoomManager {
         let correct = preverified.unwrap_or(false);
         if correct {
             debug!(room_id = %room_id, "password accepted");
-            self.password_failures.remove(&conn);
-            if let Some(ip) = ip { self.ip_password_failures.remove(&ip); }
             true
         } else {
             *self.password_failures.entry(conn).or_insert(0) += 1;
-            if let Some(ip) = ip { self.ip_password_failures.entry(ip).or_default().push_back(Instant::now()); }
             debug!(room_id = %room_id, "password rejected");
             self.error(conn, "Wrong password");
             false
@@ -477,7 +520,10 @@ impl RoomManager {
             self.error(conn, "You are not in a waiting room");
             return;
         }
-        let team_room = self.rooms.get(&room_id).is_some_and(|room| room.mode == "team");
+        let team_room = self
+            .rooms
+            .get(&room_id)
+            .is_some_and(|room| room.mode == "team");
         if !team_room {
             self.error(conn, "Teams only exist in team rooms");
             return;
@@ -525,7 +571,10 @@ impl RoomManager {
             self.error(conn, "The teams cannot change while a game is running");
             return;
         }
-        let team_room = self.rooms.get(&room_id).is_some_and(|room| room.mode == "team");
+        let team_room = self
+            .rooms
+            .get(&room_id)
+            .is_some_and(|room| room.mode == "team");
         if !team_room {
             self.error(conn, "Teams only exist in team rooms");
             return;
@@ -559,7 +608,11 @@ impl RoomManager {
             self.error(conn, "Game has already started");
             return;
         }
-        if self.rooms.get(&room_id).is_some_and(|room| room.players.len() < 2) {
+        if self
+            .rooms
+            .get(&room_id)
+            .is_some_and(|room| room.players.len() < 2)
+        {
             self.error(conn, "At least 2 players are required to start");
             return;
         }
@@ -590,7 +643,10 @@ impl RoomManager {
         room.status = RoomStatus::Playing;
         room.last_state_seq = -1;
         let seed: u32 = rand::thread_rng().gen();
-        room.players.iter_mut().enumerate().for_each(|(id, player)| player.id = id);
+        room.players
+            .iter_mut()
+            .enumerate()
+            .for_each(|(id, player)| player.id = id);
         let room_clone = (
             room.id.clone(),
             room.mode.clone(),
@@ -652,7 +708,10 @@ impl RoomManager {
         if let Some(host_conn) = host_conn {
             let from = my_id;
             let _ = room_id;
-            self.send_value(host_conn, &json!({ "type": "input", "from": from, "input": input }));
+            self.send_value(
+                host_conn,
+                &json!({ "type": "input", "from": from, "input": input }),
+            );
         }
     }
 
@@ -677,7 +736,10 @@ impl RoomManager {
             self.error(conn, "Only the room host can send state");
             return;
         }
-        let seq = message.get("seq").and_then(Value::as_f64).map(|f| f as i64);
+        let seq = message
+            .get("seq")
+            .filter(|value| is_safe_integer(value))
+            .and_then(Value::as_i64);
         let patch_ok = message.get("patch").is_some_and(is_record);
         let events_ok = message
             .get("events")
@@ -688,7 +750,11 @@ impl RoomManager {
             return;
         }
         let seq = seq.unwrap();
-        let last_seq = self.rooms.get(&room_id).map(|room| room.last_state_seq).unwrap_or(0);
+        let last_seq = self
+            .rooms
+            .get(&room_id)
+            .map(|room| room.last_state_seq)
+            .unwrap_or(0);
         if seq <= last_seq {
             self.error(conn, "State sequence must increase monotonically");
             return;
@@ -705,7 +771,13 @@ impl RoomManager {
         let recipients: Vec<u64> = self
             .rooms
             .get(&room_id)
-            .map(|room| room.players.iter().filter(|p| p.conn != conn).map(|p| p.conn).collect())
+            .map(|room| {
+                room.players
+                    .iter()
+                    .filter(|p| p.conn != conn)
+                    .map(|p| p.conn)
+                    .collect()
+            })
             .unwrap_or_default();
         for recipient in recipients {
             self.send_fast(recipient, &text);
@@ -735,13 +807,24 @@ impl RoomManager {
         let player_id = membership.player_id;
 
         if player_id == 0 {
-            let others: Vec<u64> = self.rooms.get(&room_id)
-                .map(|room| room.players.iter().filter(|player| player.conn != conn).map(|player| player.conn).collect())
+            let others: Vec<u64> = self
+                .rooms
+                .get(&room_id)
+                .map(|room| {
+                    room.players
+                        .iter()
+                        .filter(|player| player.conn != conn)
+                        .map(|player| player.conn)
+                        .collect()
+                })
                 .unwrap_or_default();
             self.rooms.remove(&room_id);
             for other in &others {
                 self.memberships.remove(other);
-                self.send_value(*other, &json!({ "type": "room_closed", "message": "The host left the room" }));
+                self.send_value(
+                    *other,
+                    &json!({ "type": "room_closed", "message": "The host left the room" }),
+                );
             }
             self.broadcast_lobby();
             return;
@@ -786,8 +869,13 @@ impl RoomManager {
             team,
             conn,
         });
-        self.memberships
-            .insert(conn, Membership { room_id: room_id.to_string(), player_id: id });
+        self.memberships.insert(
+            conn,
+            Membership {
+                room_id: room_id.to_string(),
+                player_id: id,
+            },
+        );
     }
 
     fn remove_player(&mut self, room_id: &str, player_id: usize) {
@@ -802,7 +890,10 @@ impl RoomManager {
             let conn = remaining.conn;
             self.memberships.insert(
                 conn,
-                Membership { room_id: room_id.to_string(), player_id: id },
+                Membership {
+                    room_id: room_id.to_string(),
+                    player_id: id,
+                },
             );
         }
         room.next_player_id = room.players.len();
@@ -873,9 +964,53 @@ fn teams_playable(room: &Room) -> bool {
     }
 }
 
+pub fn password_length(password: &str) -> usize {
+    password.encode_utf16().count()
+}
+
+pub fn valid_create_room_message(message: &Value) -> bool {
+    let Some(name) = clean_name_checked(message.get("name")) else {
+        return false;
+    };
+    let _ = name;
+    let mode_ok = matches!(
+        message.get("mode").and_then(Value::as_str),
+        Some("ffa" | "team")
+    );
+    let game_mode_ok = matches!(
+        message.get("gameMode").and_then(Value::as_str),
+        Some("classic" | "horizon")
+    );
+    let max_players_ok = message.get("maxPlayers").is_some_and(|value| {
+        is_safe_integer(value)
+            && value
+                .as_f64()
+                .is_some_and(|n| (2.0..=MAX_ROOM_PLAYERS as f64).contains(&n))
+    });
+    let password_ok = message.get("password").is_none_or(|value| {
+        value
+            .as_str()
+            .is_some_and(|password| password_length(password) <= MAX_PASSWORD_LENGTH)
+    });
+    let rules_ok = message
+        .get("rules")
+        .is_none_or(|value| parse_rules(value).is_some());
+    mode_ok && game_mode_ok && max_players_ok && password_ok && rules_ok
+}
+
+pub fn valid_join_room_message(message: &Value) -> bool {
+    clean_name_checked(message.get("name")).is_some()
+        && message
+            .get("roomId")
+            .and_then(Value::as_str)
+            .is_some_and(|room_id| !room_id.is_empty())
+}
 
 pub fn create_password_plaintext(message: &Value) -> Option<&str> {
-    message.get("password").and_then(Value::as_str).filter(|password| !password.is_empty() && password.len() <= MAX_PASSWORD_LENGTH)
+    message
+        .get("password")
+        .and_then(Value::as_str)
+        .filter(|password| !password.is_empty() && password_length(password) <= MAX_PASSWORD_LENGTH)
 }
 
 pub fn join_password_plaintext(message: &Value) -> Option<&str> {
@@ -886,14 +1021,26 @@ pub fn hash_password(password: &str) -> (Vec<u8>, Vec<u8>) {
     let mut salt = [0u8; 16];
     rand::thread_rng().fill(&mut salt);
     let mut hash = vec![0u8; 32];
-    scrypt::scrypt(password.as_bytes(), &salt, &scrypt::Params::new(14, 8, 1, 32).unwrap(), &mut hash)
-        .expect("scrypt derivation");
+    scrypt::scrypt(
+        password.as_bytes(),
+        &salt,
+        &scrypt::Params::new(14, 8, 1, 32).unwrap(),
+        &mut hash,
+    )
+    .expect("scrypt derivation");
     (salt.to_vec(), hash)
 }
 
 pub fn check_password(password: &str, salt: &[u8], expected: &[u8]) -> bool {
     let mut actual = vec![0u8; expected.len()];
-    if scrypt::scrypt(password.as_bytes(), salt, &scrypt::Params::new(14, 8, 1, 32).unwrap(), &mut actual).is_err() {
+    if scrypt::scrypt(
+        password.as_bytes(),
+        salt,
+        &scrypt::Params::new(14, 8, 1, 32).unwrap(),
+        &mut actual,
+    )
+    .is_err()
+    {
         return false;
     }
     timing_safe_eq(&actual, expected)
@@ -903,7 +1050,8 @@ fn timing_safe_eq(left: &[u8], right: &[u8]) -> bool {
     let mut difference = (left.len() ^ right.len()) as u8;
     let max_len = left.len().max(right.len());
     for index in 0..max_len {
-        difference |= left.get(index).copied().unwrap_or(0) ^ right.get(index).copied().unwrap_or(0);
+        difference |=
+            left.get(index).copied().unwrap_or(0) ^ right.get(index).copied().unwrap_or(0);
     }
     difference == 0
 }
@@ -917,27 +1065,35 @@ mod tests {
 
     fn connect(manager: &mut RoomManager, id: u64) -> mpsc::Receiver<crate::codec::WireMessage> {
         let (tx, rx) = mpsc::channel(128);
-        manager.connect(id, IpAddr::V4(Ipv4Addr::LOCALHOST), tx);
+        let (slow, _) = tokio::sync::watch::channel(false);
+        manager.connect(id, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow);
         rx
     }
 
     fn drain_json(rx: &mut mpsc::Receiver<crate::codec::WireMessage>) -> Vec<Value> {
         let mut messages = Vec::new();
-        while let Ok(crate::codec::WireMessage::Text(text)) = rx.try_recv() {
+        while let Ok(crate::codec::WireMessage::Text(text, _permit)) = rx.try_recv() {
             messages.push(serde_json::from_str(&text).unwrap());
         }
         messages
     }
 
     fn take_type(messages: &[Value], ty: &str) -> Value {
-        messages.iter().rev().find(|message| message["type"] == ty).unwrap().clone()
+        messages
+            .iter()
+            .rev()
+            .find(|message| message["type"] == ty)
+            .unwrap()
+            .clone()
     }
 
     fn create(name: &str, password: Option<&str>) -> Value {
         let mut message = json!({
             "type":"create_room","name":name,"mode":"ffa","gameMode":"classic","maxPlayers":4
         });
-        if let Some(password) = password { message["password"] = json!(password); }
+        if let Some(password) = password {
+            message["password"] = json!(password);
+        }
         message
     }
 
@@ -952,23 +1108,43 @@ mod tests {
 
         let mut guest_rx = connect(&mut rooms, 2);
         drain_json(&mut guest_rx);
-        rooms.handle(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest"}));
+        rooms.handle(
+            2,
+            &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+        );
         let guest_update = take_type(&drain_json(&mut guest_rx), "room_update");
         assert_eq!(guest_update["you"]["playerId"], 1);
         assert_eq!(guest_update["room"]["players"].as_array().unwrap().len(), 2);
 
         rooms.handle(1, &json!({"type":"start_game"}));
         let not_ready = drain_json(&mut host_rx);
-        assert_eq!(take_type(&not_ready, "error")["message"], "Not everybody is ready yet");
-        assert!(!not_ready.iter().any(|message| message["type"] == "game_start"));
+        assert_eq!(
+            take_type(&not_ready, "error")["message"],
+            "Not everybody is ready yet"
+        );
+        assert!(!not_ready
+            .iter()
+            .any(|message| message["type"] == "game_start"));
 
         rooms.handle(2, &json!({"type":"ready","ready":true}));
         drain_json(&mut host_rx);
         rooms.handle(1, &json!({"type":"start_game"}));
-        assert_eq!(take_type(&drain_json(&mut host_rx), "game_start")["hostId"], 0);
-        assert_eq!(take_type(&drain_json(&mut guest_rx), "game_start")["players"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "game_start")["hostId"],
+            0
+        );
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "game_start")["players"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
 
-        rooms.handle(2, &json!({"type":"input","input":{"kind":"aim","angle":15,"power":55}}));
+        rooms.handle(
+            2,
+            &json!({"type":"input","input":{"kind":"aim","angle":15,"power":55}}),
+        );
         let input = take_type(&drain_json(&mut host_rx), "input");
         assert_eq!(input["from"], 1);
         assert_eq!(input["input"]["angle"], 15);
@@ -980,12 +1156,21 @@ mod tests {
         assert_eq!(relayed["patch"]["phase"], "aiming");
 
         rooms.handle(2, &json!({"type":"state","seq":2,"patch":{},"events":[]}));
-        assert_eq!(take_type(&drain_json(&mut guest_rx), "error")["message"], "Only the room host can send state");
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "error")["message"],
+            "Only the room host can send state"
+        );
         rooms.handle(1, &state);
-        assert_eq!(take_type(&drain_json(&mut host_rx), "error")["message"], "State sequence must increase monotonically");
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "State sequence must increase monotonically"
+        );
 
         rooms.disconnect(1);
-        assert_eq!(take_type(&drain_json(&mut guest_rx), "room_closed")["message"], "The host left the room");
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "room_closed")["message"],
+            "The host left the room"
+        );
     }
 
     #[test]
@@ -995,17 +1180,360 @@ mod tests {
         drain_json(&mut host_rx);
         let create = create("Host", Some("secret"));
         rooms.create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
-        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"].as_str().unwrap().to_owned();
+        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
 
         let mut guest_rx = connect(&mut rooms, 2);
         drain_json(&mut guest_rx);
         for _ in 0..5 {
-            rooms.join_room(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"}), Some(false));
-            assert_eq!(take_type(&drain_json(&mut guest_rx), "error")["message"], "Wrong password");
+            rooms.join_room(
+                2,
+                &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"}),
+                Some(false),
+            );
+            assert_eq!(
+                take_type(&drain_json(&mut guest_rx), "error")["message"],
+                "Wrong password"
+            );
         }
-        rooms.join_room(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"secret"}), Some(true));
-        assert_eq!(take_type(&drain_json(&mut guest_rx), "error")["message"], "Too many wrong passwords – reconnect to try again");
-        assert_eq!(drain_json(&mut guest_rx).iter().filter(|m| m["type"] == "room_update").count(), 0);
+        rooms.join_room(
+            2,
+            &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"secret"}),
+            Some(true),
+        );
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "error")["message"],
+            "Too many wrong passwords – reconnect to try again"
+        );
+        assert_eq!(
+            drain_json(&mut guest_rx)
+                .iter()
+                .filter(|m| m["type"] == "room_update")
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn password_hash_round_trip_uses_the_real_scrypt_path() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        drain_json(&mut host_rx);
+        let (salt, hash) = hash_password("secret");
+        rooms.create_room(
+            1,
+            &create("Host", Some("secret")),
+            Some((salt.clone(), hash.clone())),
+        );
+        let created = take_type(&drain_json(&mut host_rx), "room_update");
+        assert_eq!(created["you"]["host"], true);
+        assert_eq!(created["room"]["locked"], true);
+        let room_id = created["room"]["id"].as_str().unwrap().to_owned();
+
+        let mut guest_rx = connect(&mut rooms, 2);
+        drain_json(&mut guest_rx);
+        let join = |password: &str| json!({"type":"join_room","roomId":room_id,"name":"Guest","password":password});
+        rooms.join_room(
+            2,
+            &join("incorrect"),
+            Some(check_password("incorrect", &salt, &hash)),
+        );
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "error")["message"],
+            "Wrong password"
+        );
+        rooms.join_room(
+            2,
+            &join("secret"),
+            Some(check_password("secret", &salt, &hash)),
+        );
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "room_update")["room"]["players"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn lobby_rooms_keep_creation_order_and_password_lock_flags() {
+        let mut rooms = RoomManager::new();
+        let mut host = connect(&mut rooms, 1);
+        let mut watcher = connect(&mut rooms, 2);
+        let mut second_host = connect(&mut rooms, 3);
+        drain_json(&mut host);
+        drain_json(&mut watcher);
+        drain_json(&mut second_host);
+        rooms.create_room(
+            1,
+            &create("First", Some("secret")),
+            Some((vec![1; 16], vec![2; 32])),
+        );
+        rooms.handle(3, &create("Second", None));
+        let lobby = take_type(&drain_json(&mut watcher), "lobby_update");
+        let listed = lobby["rooms"].as_array().unwrap();
+        assert_eq!(listed[0]["host"], "First");
+        assert_eq!(listed[0]["locked"], true);
+        assert_eq!(listed[1]["host"], "Second");
+        assert_eq!(listed[1]["locked"], false);
+    }
+
+    #[test]
+    fn password_limits_match_javascript_utf16_lengths() {
+        assert_eq!(password_length(&"ü".repeat(64)), 64);
+        assert_eq!(password_length(&"😀".repeat(32)), 64);
+        assert_eq!(password_length(&"😀".repeat(33)), 66);
+        assert!(valid_create_room_message(&create(
+            "Host",
+            Some(&"ü".repeat(64))
+        )));
+        assert!(!valid_create_room_message(&create(
+            "Host",
+            Some(&"😀".repeat(33))
+        )));
+    }
+
+    #[test]
+    fn open_rooms_ignore_password_failures_and_password_success_does_not_reset_them() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        drain_json(&mut host_rx);
+        rooms.create_room(
+            1,
+            &create("Host", Some("secret")),
+            Some((vec![1; 16], vec![2; 32])),
+        );
+        let locked_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let mut open_host_rx = connect(&mut rooms, 3);
+        drain_json(&mut open_host_rx);
+        rooms.create_room(3, &create("Open", None), None);
+        let open_id = take_type(&drain_json(&mut open_host_rx), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let mut guest_rx = connect(&mut rooms, 2);
+        drain_json(&mut guest_rx);
+        for _ in 0..MAX_PASSWORD_ATTEMPTS - 1 {
+            rooms.join_room(
+                2,
+                &json!({"type":"join_room","roomId":locked_id,"name":"Guest","password":"wrong"}),
+                Some(false),
+            );
+            assert_eq!(
+                take_type(&drain_json(&mut guest_rx), "error")["message"],
+                "Wrong password"
+            );
+        }
+        // The fifth miss cannot be cleared by successfully joining a different open room.
+        rooms.join_room(
+            2,
+            &json!({"type":"join_room","roomId":open_id,"name":"Guest"}),
+            None,
+        );
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "room_update")["room"]["locked"],
+            false
+        );
+        rooms.leave_room(2);
+        drain_json(&mut guest_rx);
+        rooms.join_room(
+            2,
+            &json!({"type":"join_room","roomId":locked_id,"name":"Guest","password":"wrong"}),
+            Some(false),
+        );
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "error")["message"],
+            "Wrong password"
+        );
+        rooms.join_room(
+            2,
+            &json!({"type":"join_room","roomId":locked_id,"name":"Guest","password":"secret"}),
+            Some(true),
+        );
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "error")["message"],
+            "Too many wrong passwords – reconnect to try again"
+        );
+    }
+
+    #[test]
+    fn sequences_must_be_safe_integers() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        let mut guest_rx = connect(&mut rooms, 2);
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        rooms.handle(1, &create("Host", None));
+        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        rooms.handle(
+            2,
+            &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+        );
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        rooms.handle(2, &json!({"type":"ready","ready":true}));
+        drain_json(&mut host_rx);
+        rooms.handle(1, &json!({"type":"start_game"}));
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        for seq in [1.5, -0.5, 9_007_199_254_740_992.0] {
+            rooms.handle(1, &json!({"type":"state","seq":seq,"patch":{},"events":[]}));
+            assert_eq!(
+                take_type(&drain_json(&mut host_rx), "error")["message"],
+                "Malformed state message"
+            );
+        }
+    }
+
+    #[test]
+    fn create_room_validates_before_hashing_and_password_budget_is_per_connection() {
+        let mut rooms = RoomManager::new();
+        let mut rx = connect(&mut rooms, 1);
+        drain_json(&mut rx);
+        assert!(!valid_create_room_message(
+            &json!({"type":"create_room","password":"secret"})
+        ));
+        assert!(rooms.scrypt_budget_available(1));
+        for _ in 1..MAX_SCRYPT_PER_SECOND {
+            assert!(rooms.scrypt_budget_available(1));
+        }
+        assert!(!rooms.scrypt_budget_available(1));
+        assert!(rooms.scrypt_budget_available(2));
+    }
+
+    #[test]
+    fn outbound_queue_overflow_signals_immediate_disconnect_without_dropping_silently() {
+        let mut rooms = RoomManager::new();
+        let (tx, mut rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (slow_tx, slow_rx) = tokio::sync::watch::channel(false);
+        rooms.connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow_tx);
+        let _ = rx.try_recv(); // initial lobby update
+        for _ in 0..=crate::codec::OUTBOUND_QUEUE {
+            rooms.handle(1, &json!({"type":"lobby"}));
+        }
+        assert!(*slow_rx.borrow());
+        let mut queued = 0;
+        while rx.try_recv().is_ok() {
+            queued += 1;
+        }
+        assert_eq!(queued, crate::codec::OUTBOUND_QUEUE);
+    }
+
+    #[test]
+    fn oversized_outbound_payload_signals_immediate_disconnect() {
+        let mut rooms = RoomManager::new();
+        let (tx, _rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (slow_tx, slow_rx) = tokio::sync::watch::channel(false);
+        rooms.connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow_tx);
+        rooms.send_fast(1, &"x".repeat(crate::codec::OUTBOUND_BYTES + 1));
+        assert!(*slow_rx.borrow());
+    }
+
+    #[test]
+    fn team_assignment_balances_and_empty_teams_block_start_even_when_ready() {
+        let mut rooms = RoomManager::new();
+        let mut receivers: Vec<_> = (1..=5).map(|id| connect(&mut rooms, id)).collect();
+        for receiver in &mut receivers {
+            drain_json(receiver);
+        }
+        let mut team_create = create("A", None);
+        team_create["mode"] = json!("team");
+        team_create["maxPlayers"] = json!(6);
+        rooms.handle(1, &team_create);
+        let room_id = take_type(&drain_json(&mut receivers[0]), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        for (index, name) in ["B", "C", "D", "E"].iter().enumerate() {
+            rooms.handle(
+                2 + index as u64,
+                &json!({"type":"join_room","roomId":room_id,"name":name}),
+            );
+            let _ = drain_json(&mut receivers[0]);
+        }
+        let players = rooms
+            .rooms
+            .get(&room_id)
+            .unwrap()
+            .players
+            .iter()
+            .map(|player| player.team)
+            .collect::<Vec<_>>();
+        assert_eq!(players, [0, 1, 0, 1, 0]);
+
+        let mut small = RoomManager::new();
+        let mut host_rx = connect(&mut small, 10);
+        let mut guest_rx = connect(&mut small, 11);
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        small.handle(10, &team_create);
+        let id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        small.handle(11, &json!({"type":"join_room","roomId":id,"name":"B"}));
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        small.handle(11, &json!({"type":"set_team","team":0}));
+        small.handle(11, &json!({"type":"ready","ready":true}));
+        small.handle(10, &json!({"type":"ready","ready":true}));
+        assert!(!drain_json(&mut host_rx)
+            .iter()
+            .any(|message| message["type"] == "game_start"));
+        small.handle(10, &json!({"type":"start_game"}));
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "Both teams need at least one player"
+        );
+    }
+
+    #[test]
+    fn host_cannot_change_rules_after_start_and_invalid_rule_types_are_rejected() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        let mut guest_rx = connect(&mut rooms, 2);
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        let mut invalid = create("Host", None);
+        invalid["rules"] = json!({"rounds":1.5});
+        rooms.handle(1, &invalid);
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "Malformed game rules"
+        );
+
+        rooms.handle(1, &create("Host", None));
+        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        rooms.handle(
+            2,
+            &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+        );
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        let host_update = rooms.rooms.get(&room_id).unwrap();
+        assert_eq!(host_update.rules.rounds, DEFAULT_RULES.rounds);
+        assert_eq!(host_update.rules.max_planets, DEFAULT_RULES.max_planets);
+        rooms.handle(2, &json!({"type":"ready","ready":true}));
+        rooms.handle(1, &json!({"type":"start_game"}));
+        drain_json(&mut host_rx);
+        rooms.handle(1, &json!({"type":"set_rules","rules":{}}));
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "The rules cannot change while a game is running"
+        );
     }
 
     #[test]
@@ -1016,8 +1544,14 @@ mod tests {
         drain_json(&mut host_rx);
         drain_json(&mut guest_rx);
         rooms.handle(1, &create("Host", None));
-        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"].as_str().unwrap().to_owned();
-        rooms.handle(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest"}));
+        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        rooms.handle(
+            2,
+            &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+        );
         drain_json(&mut host_rx);
         drain_json(&mut guest_rx);
         rooms.handle(2, &json!({"type":"ready","ready":true}));

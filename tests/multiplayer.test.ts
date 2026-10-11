@@ -15,6 +15,7 @@ let serverUrl: string;
 class RustTransport implements Transport {
   private url = '';
   private socket: WebSocket | null = null;
+  get rawSocket(): WebSocket | null { return this.socket; }
   private edit: (message: ServerMessage) => ServerMessage;
   private listener: ((message: ServerMessage) => void) | null = null;
   private messageWaiters = new Set<{ predicate: (message: ServerMessage) => boolean; resolve: () => void }>();
@@ -92,24 +93,23 @@ async function freePort(): Promise<number> {
 }
 
 async function waitForServer(url: string): Promise<void> {
-  while (serverProcess.exitCode === null) {
+  const deadline = Date.now() + 15_000;
+  while (serverProcess.exitCode === null && Date.now() < deadline) {
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     const socket = new WebSocket(url);
     socket.once('open', () => { socket.close(); resolve(); });
     socket.once('error', reject);
     try { await promise; return; } catch {
-      const nextTurn = Promise.withResolvers<void>();
-      setImmediate(nextTurn.resolve);
-      await nextTurn.promise;
+      await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }
-  throw new Error('Rust relay exited before becoming ready');
+  throw new Error(serverProcess.exitCode === null ? 'Rust relay did not become ready within 15 seconds' : 'Rust relay exited before becoming ready');
 }
 
 beforeAll(async () => {
   const port = await freePort();
   serverUrl = `ws://127.0.0.1:${port}`;
-  const binary = fileURLToPath(new URL('../server/target/release/slingshot-server', import.meta.url));
+  const binary = fileURLToPath(new URL('../server/target/debug/slingshot-server', import.meta.url));
   serverProcess = spawn(binary, [], {
     env: { ...process.env, PORT: String(port), ALLOW_ALL_ORIGINS: '1', ALLOWED_ORIGINS: '', CONNECTIONS_PER_IP_PER_SECOND: '1000', MAX_MESSAGES_PER_SECOND: '100000', RUST_LOG: process.env.RUST_LOG ?? 'info' },
     stdio: process.env.RELAY_LOG ? 'inherit' : 'ignore',
@@ -191,6 +191,27 @@ async function frame(host: Client, guest: Client, dt = 1 / 60): Promise<void> {
 }
 
 describe('online games', () => {
+  it('rejects fractional and unsafe state sequence numbers', async () => {
+    const host = await connectSession();
+    const guest = await connectSession();
+    host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2 });
+    await waitForSession(host, () => host.room !== null);
+    await waitForSession(guest, () => guest.rooms.some((room) => room.id === host.room!.id));
+    guest.joinRoom(host.room!.id, 'Ben');
+    await waitForSession(host, () => host.room?.players.length === 2);
+    guest.setReady(true);
+    await waitForSession(host, () => host.room!.players[1].ready);
+    host.startGame();
+    await waitForSession(host, () => host.match !== null);
+
+    const transport = host.client as RustTransport;
+    for (const seq of [1.5, -0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      const response = transport.waitForMessage((message) => message.type === 'error' && message.message === 'Malformed state message');
+      transport.rawSocket!.send(JSON.stringify({ type: 'state', seq, patch: {}, events: [] }));
+      await response;
+    }
+  });
+
   it("play by the room's rules, not by the players' own settings", async () => {
     const { host, guest } = await startRoom('classic');
     for (const client of [host, guest]) {

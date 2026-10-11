@@ -59,14 +59,23 @@ async fn main() {
     let port = env_parse("PORT", DEFAULT_PORT);
     let max_connections = env_parse("MAX_CONNECTIONS", DEFAULT_MAX_CONNECTIONS);
     let max_per_ip = env_parse("MAX_CONNECTIONS_PER_IP", DEFAULT_MAX_CONNECTIONS_PER_IP);
-    let per_ip_per_second = env_parse("CONNECTIONS_PER_IP_PER_SECOND", DEFAULT_CONNECTIONS_PER_IP_PER_SECOND);
+    let per_ip_per_second = env_parse(
+        "CONNECTIONS_PER_IP_PER_SECOND",
+        DEFAULT_CONNECTIONS_PER_IP_PER_SECOND,
+    );
     let max_messages_per_second = env_parse("MAX_MESSAGES_PER_SECOND", MAX_MESSAGES_PER_SECOND);
     // Comma-separated allowlist of Origin header values (e.g. "https://game.example.com"),
     // required unless ALLOW_ALL_ORIGINS=1. Browsers always send Origin on WS handshakes,
     // so the allowlist blocks cross-site WebSocket hijacking; handshakes with no Origin
     // header are rejected too, so scripts cannot bypass the check by omitting it.
+    let default_origins = if env_flag("DEV_SERVER") {
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173"
+            .to_string()
+    } else {
+        String::new()
+    };
     let allowed_origins: Vec<String> = std::env::var("ALLOWED_ORIGINS")
-        .unwrap_or_default()
+        .unwrap_or(default_origins)
         .split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -84,17 +93,20 @@ async fn main() {
         info!(origins = ?allowed_origins, "origin allowlist active");
     }
 
-    // TLS_CERT/TLS_KEY: PEM certificate chain and private key. When both are set the relay
-    // serves wss; otherwise it stays plaintext (acceptable only behind a TLS proxy).
+    // TLS_CERT/TLS_KEY: PEM certificate chain and private key. They must be set together.
     let tls = match (std::env::var("TLS_CERT"), std::env::var("TLS_KEY")) {
         (Ok(cert), Ok(key)) => Some(load_tls(&cert, &key)),
-        _ => {
+        (Err(_), Err(_)) => {
             warn!("TLS_CERT/TLS_KEY not set — serving plaintext ws; room passwords travel unencrypted");
             None
         }
+        _ => {
+            error!("TLS_CERT and TLS_KEY must either both be set or both be unset");
+            std::process::exit(1);
+        }
     };
 
-    let listener = match TcpListener::bind(("0.0.0.0", port)).await {
+    let listener = match TcpListener::bind(("::", port)).await {
         Ok(listener) => listener,
         Err(err) => {
             error!(%port, %err, "failed to bind");
@@ -104,7 +116,11 @@ async fn main() {
     info!(%port, "relay listening");
 
     let manager = Arc::new(Mutex::new(RoomManager::new()));
-    let guard = Arc::new(AdmissionGuard::new(max_connections, max_per_ip, per_ip_per_second));
+    let guard = Arc::new(AdmissionGuard::new(
+        max_connections,
+        max_per_ip,
+        per_ip_per_second,
+    ));
     let next_id = Arc::new(AtomicUsize::new(1));
     let mut sweep = tokio::time::interval(Duration::from_secs(60));
     sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -127,12 +143,12 @@ async fn main() {
                     }
                 };
                 if !guard.try_admit(peer.ip()) {
-                    warn!(%peer, "connection refused: at the connection limit");
+                    warn!("connection refused: at the connection limit");
                     drop(stream);
                     continue;
                 }
                 if let Err(err) = stream.set_nodelay(true) {
-                    warn!(%peer, %err, "failed to enable TCP_NODELAY");
+                    warn!(%err, "failed to enable TCP_NODELAY");
                 }
                 let manager = manager.clone();
                 let guard = guard.clone();
@@ -170,7 +186,7 @@ async fn main() {
 
 /// One TCP connection: handshake, then the inbound loop (rate limit + heartbeat) next to a writer
 /// task that drains the room's outbound channel.
-#[instrument(skip_all, fields(conn = conn_id, %peer))]
+#[instrument(skip_all, fields(conn = conn_id))]
 async fn handle_connection<S>(
     stream: S,
     peer: SocketAddr,
@@ -208,9 +224,10 @@ async fn handle_connection<S>(
 
     let (writer, mut reader) = ws.split();
     let (tx, rx) = mpsc::channel::<WireMessage>(crate::codec::OUTBOUND_QUEUE);
+    let (slow_tx, mut slow_rx) = tokio::sync::watch::channel(false);
     {
         let mut manager = manager.lock();
-        manager.connect(conn_id, peer.ip(), tx.clone());
+        manager.connect(conn_id, peer.ip(), tx.clone(), slow_tx);
     }
     debug!("connection opened");
     let connection = tracing::Span::current();
@@ -225,13 +242,15 @@ async fn handle_connection<S>(
 
     loop {
         tokio::select! {
+            changed = slow_rx.changed() => {
+                if changed.is_ok() && *slow_rx.borrow() {
+                    warn!("outbound backlog limit exceeded; dropping slow client");
+                    break;
+                }
+            }
             _ = heartbeat.tick() => {
                 if !alive {
                     break; // no pong since the last ping — dead peer
-                }
-                if manager.lock().is_slow(conn_id) {
-                    warn!("outbound queue full; dropping slow client");
-                    break;
                 }
                 alive = false;
                 let _ = tx.try_send(WireMessage::Ping(Vec::new()));
@@ -276,12 +295,18 @@ async fn handle_connection<S>(
         let mut manager = manager.lock();
         manager.disconnect(conn_id);
     }
-    guard.release(peer.ip());
-
     // Every exit path already sent a close (peer-close echo in the loop, the rate-limit frame),
     // so the writer just drains whatever is queued.
     drop(tx);
-    let _ = tokio::time::timeout(Duration::from_millis(250), writer_task).await;
+    let mut writer_task = writer_task;
+    if tokio::time::timeout(Duration::from_millis(250), &mut writer_task)
+        .await
+        .is_err()
+    {
+        writer_task.abort();
+        let _ = writer_task.await;
+    }
+    guard.release(peer.ip());
     info!("connection closed");
 }
 
@@ -298,6 +323,7 @@ fn within_rate_limit(window_start: &mut Instant, window_count: &mut u32, limit: 
 /// Handshake with optional origin enforcement. When `allowed_origins` is non-empty,
 /// handshakes whose `Origin` header is not in the list are rejected with 403 before the
 /// upgrade completes.
+#[allow(clippy::result_large_err)]
 async fn accept_with_negotiation<S>(
     stream: S,
     config: Option<WebSocketConfig>,
@@ -357,10 +383,17 @@ async fn route(manager: &Mutex<RoomManager>, conn_id: u64, message: &Value) {
     };
     match ty {
         "create_room" => {
+            let can_create = manager.lock().can_create_room(conn_id);
+            if !can_create || !crate::room::valid_create_room_message(message) {
+                manager.lock().handle(conn_id, message);
+                return;
+            }
             let prehashed = match crate::room::create_password_plaintext(message) {
                 Some(plaintext) => {
-                    if !manager.lock().scrypt_budget_available() {
-                        manager.lock().error(conn_id, "Server busy – try again shortly");
+                    if !manager.lock().scrypt_budget_available(conn_id) {
+                        manager
+                            .lock()
+                            .error(conn_id, "Server busy – try again shortly");
                         return;
                     }
                     let plaintext = plaintext.to_owned();
@@ -375,21 +408,26 @@ async fn route(manager: &Mutex<RoomManager>, conn_id: u64, message: &Value) {
             manager.lock().create_room(conn_id, message, prehashed);
         }
         "join_room" => {
-            let room_id = message.get("roomId").and_then(Value::as_str).unwrap_or("").to_owned();
-            // Per-IP lockout check happens before any scrypt is spent on this attempt.
-            if manager.lock().ip_password_locked_out(conn_id) {
-                manager.lock().error(conn_id, "Too many wrong passwords – try again later");
+            if !crate::room::valid_join_room_message(message) {
+                manager.lock().handle(conn_id, message);
                 return;
             }
+            let room_id = message
+                .get("roomId")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_owned();
             let preverified = match crate::room::join_password_plaintext(message) {
                 Some(plaintext) => {
-                    if plaintext.len() > crate::room::MAX_PASSWORD_LENGTH {
+                    if crate::room::password_length(plaintext) > crate::room::MAX_PASSWORD_LENGTH {
                         // Never worth a scrypt; `password_attempt_ok` counts this as a miss.
                         Some(false)
                     } else {
                         let salt = manager.lock().join_password_salt(conn_id, &room_id);
                         match salt {
-                            Some((salt, hash)) if manager.lock().scrypt_budget_available() => {
+                            Some((salt, hash))
+                                if manager.lock().scrypt_budget_available(conn_id) =>
+                            {
                                 let plaintext = plaintext.to_owned();
                                 Some(
                                     tokio::task::spawn_blocking(move || {
@@ -399,9 +437,13 @@ async fn route(manager: &Mutex<RoomManager>, conn_id: u64, message: &Value) {
                                     .expect("scrypt task panicked"),
                                 )
                             }
-                            // Budget spent: count the attempt as a miss without paying for a
-                            // derivation; the client sees "Wrong password".
-                            _ => Some(false),
+                            Some(_) => {
+                                manager
+                                    .lock()
+                                    .error(conn_id, "Server busy – try again shortly");
+                                return;
+                            }
+                            None => None,
                         }
                     }
                 }
@@ -450,7 +492,14 @@ async fn writer_task<S: AsyncRead + AsyncWrite + Unpin>(
 ) {
     while let Some(frame) = rx.recv().await {
         let message = match frame {
-            WireMessage::Text(text) => Message::Text(text),
+            WireMessage::Text(text, permit) => {
+                let result = sink.send(Message::Text(text)).await;
+                drop(permit);
+                if result.is_err() {
+                    break;
+                }
+                continue;
+            }
             WireMessage::Ping(payload) => Message::Ping(payload),
             WireMessage::Pong(payload) => Message::Pong(payload),
             WireMessage::CloseWith { code, reason } => Message::Close(Some(CloseFrame {
@@ -503,7 +552,9 @@ impl AdmissionGuard {
         let now = Instant::now();
         let (count, recent_len) = match map.get_mut(&ip) {
             Some(state) => {
-                state.recent.retain(|t| now.duration_since(*t) < Duration::from_secs(1));
+                state
+                    .recent
+                    .retain(|t| now.duration_since(*t) < Duration::from_secs(1));
                 (state.count, state.recent.len())
             }
             None => (0, 0),
@@ -530,7 +581,9 @@ impl AdmissionGuard {
         if let Some(state) = map.get_mut(&ip) {
             state.count = state.count.saturating_sub(1);
             let now = Instant::now();
-            state.recent.retain(|t| now.duration_since(*t) < Duration::from_secs(1));
+            state
+                .recent
+                .retain(|t| now.duration_since(*t) < Duration::from_secs(1));
             if state.count == 0 && state.recent.is_empty() {
                 map.remove(&ip);
             }
@@ -542,7 +595,9 @@ impl AdmissionGuard {
         let mut map = self.per_ip.lock();
         let now = Instant::now();
         map.retain(|_, state| {
-            state.recent.retain(|t| now.duration_since(*t) < Duration::from_secs(1));
+            state
+                .recent
+                .retain(|t| now.duration_since(*t) < Duration::from_secs(1));
             state.count > 0 || !state.recent.is_empty()
         });
     }
@@ -569,12 +624,13 @@ fn load_tls(cert_path: &str, key_path: &str) -> TlsAcceptor {
         error!(%cert_path, %err, "cannot open TLS_CERT");
         std::process::exit(1);
     });
-    let certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut std::io::BufReader::new(cert_file))
-        .collect::<Result<_, _>>()
-        .unwrap_or_else(|err| {
-            error!(%cert_path, %err, "cannot parse TLS_CERT");
-            std::process::exit(1);
-        });
+    let certs: Vec<CertificateDer<'static>> =
+        rustls_pemfile::certs(&mut std::io::BufReader::new(cert_file))
+            .collect::<Result<_, _>>()
+            .unwrap_or_else(|err| {
+                error!(%cert_path, %err, "cannot parse TLS_CERT");
+                std::process::exit(1);
+            });
     if certs.is_empty() {
         error!(%cert_path, "TLS_CERT contains no certificates");
         std::process::exit(1);
@@ -583,15 +639,16 @@ fn load_tls(cert_path: &str, key_path: &str) -> TlsAcceptor {
         error!(%key_path, %err, "cannot open TLS_KEY");
         std::process::exit(1);
     });
-    let key: PrivateKeyDer<'static> = rustls_pemfile::private_key(&mut std::io::BufReader::new(key_file))
-        .unwrap_or_else(|err| {
-            error!(%key_path, %err, "cannot parse TLS_KEY");
-            std::process::exit(1);
-        })
-        .unwrap_or_else(|| {
-            error!(%key_path, "TLS_KEY contains no private key");
-            std::process::exit(1);
-        });
+    let key: PrivateKeyDer<'static> =
+        rustls_pemfile::private_key(&mut std::io::BufReader::new(key_file))
+            .unwrap_or_else(|err| {
+                error!(%key_path, %err, "cannot parse TLS_KEY");
+                std::process::exit(1);
+            })
+            .unwrap_or_else(|| {
+                error!(%key_path, "TLS_KEY contains no private key");
+                std::process::exit(1);
+            });
     let config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key)
@@ -600,4 +657,81 @@ fn load_tls(cert_path: &str, key_path: &str) -> TlsAcceptor {
             std::process::exit(1);
         });
     TlsAcceptor::from(Arc::new(config))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+    use tokio::sync::mpsc;
+
+    async fn take_type(rx: &mut mpsc::Receiver<WireMessage>, kind: &str) -> Value {
+        loop {
+            let Some(WireMessage::Text(text, _permit)) = rx.recv().await else {
+                panic!("outbound channel closed before {kind}");
+            };
+            let message: Value = serde_json::from_str(&text).unwrap();
+            if message["type"] == kind {
+                return message;
+            }
+        }
+    }
+
+    #[test]
+    fn websocket_queues_have_both_message_and_byte_limits() {
+        assert_eq!(crate::codec::OUTBOUND_QUEUE, 128);
+        assert_eq!(crate::codec::OUTBOUND_BYTES, 4 * 1024 * 1024);
+        let pool = Arc::new(tokio::sync::Semaphore::new(crate::codec::OUTBOUND_BYTES));
+        let held = pool
+            .clone()
+            .try_acquire_many_owned(3 * 1024 * 1024)
+            .unwrap();
+        assert!(pool
+            .clone()
+            .try_acquire_many_owned(2 * 1024 * 1024)
+            .is_err());
+        drop(held);
+    }
+
+    #[tokio::test]
+    async fn password_create_and_join_use_real_scrypt_hashing() {
+        let manager = Mutex::new(RoomManager::new());
+        let (host_tx, mut host_rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (host_slow, _) = tokio::sync::watch::channel(false);
+        manager
+            .lock()
+            .connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), host_tx, host_slow);
+        let _ = take_type(&mut host_rx, "lobby_update").await;
+        let create = serde_json::json!({
+            "type":"create_room","name":"Host","mode":"ffa","gameMode":"classic",
+            "maxPlayers":4,"password":"secret"
+        });
+        route(&manager, 1, &create).await;
+        let room_id = take_type(&mut host_rx, "room_update").await["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let (guest_tx, mut guest_rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (guest_slow, _) = tokio::sync::watch::channel(false);
+        manager
+            .lock()
+            .connect(2, IpAddr::V4(Ipv4Addr::LOCALHOST), guest_tx, guest_slow);
+        let _ = take_type(&mut guest_rx, "lobby_update").await;
+        let bad = serde_json::json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"});
+        route(&manager, 2, &bad).await;
+        assert_eq!(
+            take_type(&mut guest_rx, "error").await["message"],
+            "Wrong password"
+        );
+        let good = serde_json::json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"secret"});
+        route(&manager, 2, &good).await;
+        assert_eq!(
+            take_type(&mut guest_rx, "room_update").await["room"]["players"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
 }
