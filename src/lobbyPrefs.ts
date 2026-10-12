@@ -49,7 +49,7 @@ export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
     if (!raw) return fresh;
     const saved = JSON.parse(raw) as Partial<LobbyPrefs>;
     return {
-      server: typeof saved.server === 'string' && saved.server ? saved.server : fresh.server,
+      server: typeof saved.server === 'string' && saved.server && saved.server !== 'ws://localhost:8080' ? saved.server : fresh.server,
       name: typeof saved.name === 'string' && saved.name ? saved.name : fresh.name,
       autoConnect: saved.autoConnect === true,
       gameMode: saved.gameMode === 'horizon' ? 'horizon' : 'classic',

@@ -12,16 +12,6 @@ npm run dev        # http://localhost:5173
 npm run build      # static build in dist/ – runs on any web server
 ```
 
-The production build can bake in public links with `VITE_COFFEE_URL` (main-screen support link) and `VITE_MULTIPLAYER_SERVER` (default WebSocket relay address, e.g. `wss://relay.example.com`). For example:
-
-```bash
-VITE_COFFEE_URL=https://buymeacoffee.com/yourname \
-VITE_MULTIPLAYER_SERVER=wss://relay.example.com \
-npm run build
-```
-
-These values are embedded in the generated client at build time; changing them requires rebuilding. If unset, the app uses `https://example.com/coffee` and `ws://localhost:8080` respectively. The relay field remains editable in the lobby.
-
 Tests, the multiplayer relay and the AI benchmarks are covered under [Development](#development).
 
 ## Controls
@@ -101,10 +91,6 @@ In the client, open **Multiplayer**, connect to the relay address (default `ws:/
 - **Oracle:** whoever is shot down does not just wait. Turn by turn the oracle asks "Will Lena hit?", with simultaneous shots (Event Horizon, or Classic with *Simultaneous shots*) "Who gets hit?". A bar at the bottom edge takes the tip until the shots are away; right tips pay 100 / 150 (a named ship) / 75 (nobody), and every right tip in a row raises the multiplier up to ×3. The other shot-down players' tips appear live above the bar, and after the shot the verdict lists who was right; the round's standings show up for everybody. It is a side standing – it never counts towards winning – and can be switched off in the settings. The host judges the tips, so a relay older than this feature rejects them.
 - **Ghost lane (planet smasher):** a second way to pass the time once you are shot down, and the round is not yet decided. About three seconds after your exit the hint *Ghost lane [G]* appears where "Waiting for the others" stood; **G** opens a semi-transparent panel in the bottom right corner (**E** or the button in its header makes it bigger) with a small field of rocks, a few planets and your ship as a shadow in your colour. Aim and fire as usual, five shots per lane, and a dotted line shows the first stretch of the flight – long in the first lanes, shorter with every one. A shot blows up every rock it touches, and every blast sets off the rocks within its reach a moment later, so a whole cluster goes up in a chain; **bombs** (red) have a much wider blast, a shot that ends on a **planet** blows the planet up – and with it the gravity that bent your shots – and a **golden rock** is worth a lot. The n-th thing one shot blows up pays more than the one before (up to ×4), long chains pay a bonus, and every swing-by raises the shot's total by half. The lane is cleared when every **glowing core** is gone: that pays a bonus plus a reward for every shot left (and for blowing up everything), and brings up the next lane at once. Every lane cleared in a row raises the multiplier by 0.5 up to ×3; a lane lost ends the series. Every fourth lane has a black hole, which swallows shots and feeds on rocks that go up near it. Every lane has a known way through each cluster, so none is out of reach. Everyone flies the same lanes: the seed comes from the round number and the world the round was dealt, which every screen has, so nothing extra travels over the network. The panel closes when the next round starts and rests during the killcam and between rounds, so Enter and Space still skip it. Nothing counts towards the match; it can be switched off in the settings, per device.
 - **Lobby:** it remembers your server, name and room settings (separate from the settings of offline games) and reconnects on its own. Leaving a game puts you back into the lobby.
-- **Hosting:** for remote players, host both the web client and the relay at reachable addresses. Use a `wss://` address behind TLS when the client is served over HTTPS.
-
-**Relay environment.** `PORT` selects the listening port (default `8080`). `ALLOWED_ORIGINS` is a comma-separated exact-origin allowlist; `ALLOW_ALL_ORIGINS=1` disables origin checks. Set both `TLS_CERT` and `TLS_KEY` to PEM file paths to serve WSS directly; if TLS terminates at a reverse proxy, leave both unset and forward to the relay over a trusted network. `MAX_CONNECTIONS` (8192), `MAX_CONNECTIONS_PER_IP` (64), `CONNECTIONS_PER_IP_PER_SECOND` (20), and `MAX_MESSAGES_PER_SECOND` (300) tune admission and per-connection rate limits. These limits use the TCP peer address; configure proxy/network limits accordingly. `RUST_LOG` controls log filtering. `npm run bench:relay -- ws://localhost:8080` sends the localhost Vite origin by default; override it with `BENCH_ORIGIN` when benchmarking another allowlisted origin.
-
 ## Development
 
 | Command | Purpose |

@@ -95,12 +95,14 @@ export function titleScreen(app: App): Screen {
             'div.title-foot',
             null,
             h('p.version', null, String(import.meta.env.VITE_APP_VERSION || 'Local-Dev')),
-            h('a.coffee-link', {
-              href: import.meta.env.VITE_COFFEE_URL || 'https://example.com/coffee',
-              target: '_blank',
-              rel: 'noopener noreferrer',
-              'aria-label': t('title.coffee'),
-            }, t('title.coffee')),
+            ...(import.meta.env.VITE_COFFEE_URL
+              ? [h('a.coffee-link', {
+                  href: import.meta.env.VITE_COFFEE_URL,
+                  target: '_blank',
+                  rel: 'noopener noreferrer',
+                  'aria-label': t('title.coffee'),
+                }, t('title.coffee'))]
+              : []),
             ghostEgg(app),
           ),
         ),

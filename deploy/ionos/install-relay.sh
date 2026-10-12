@@ -9,9 +9,9 @@ readonly SERVICE_DEST=/etc/systemd/system/slingshot-relay.service
 readonly ENV_SOURCE=/tmp/relay.env
 readonly ENV_DEST=/etc/slingshot/relay.env
 
-test -x "$BINARY_SOURCE"
-test -f "$SERVICE_SOURCE"
-test -f "$ENV_SOURCE"
+test -x "$BINARY_SOURCE" || { printf 'Missing executable relay binary: %s\n' "$BINARY_SOURCE" >&2; exit 1; }
+test -f "$SERVICE_SOURCE" || { printf 'Missing systemd unit: %s\n' "$SERVICE_SOURCE" >&2; exit 1; }
+test -f "$ENV_SOURCE" || { printf 'Missing relay environment file: %s\n' "$ENV_SOURCE" >&2; exit 1; }
 
 declare -A settings=()
 while IFS='=' read -r key value; do
@@ -44,6 +44,9 @@ id slingshot >/dev/null 2>&1 || { printf 'Expected existing service user slingsh
 test -d /srv/slingshot || { printf 'Expected service home /srv/slingshot\n' >&2; exit 1; }
 
 install -d -o root -g root -m 0755 /etc/slingshot
+if [[ -x "$BINARY_DEST" ]]; then
+  install -o root -g root -m 0755 "$BINARY_DEST" "${BINARY_DEST}.previous"
+fi
 install -o root -g root -m 0755 "$BINARY_SOURCE" "${BINARY_DEST}.new"
 mv -f "${BINARY_DEST}.new" "$BINARY_DEST"
 install -o root -g root -m 0644 "$SERVICE_SOURCE" "$SERVICE_DEST"

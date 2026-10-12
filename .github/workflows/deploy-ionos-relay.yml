@@ -7,8 +7,13 @@ on:
       - 'server/**'
       - 'deploy/ionos/**'
       - '.github/workflows/deploy-ionos-relay.yml'
-      - 'README.md'
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy to the production VPS (disable to build and upload an artifact only)
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -34,7 +39,7 @@ jobs:
             echo 'Rust relay sources are not present yet; deployment is intentionally skipped.'
           fi
 
-  deploy:
+  build-relay:
     needs: detect-rust-backend
     if: needs.detect-rust-backend.outputs.ready == 'true'
     runs-on: ubuntu-latest
@@ -56,6 +61,31 @@ jobs:
           sudo apt-get install --yes musl-tools
           rustup target add x86_64-unknown-linux-musl
           cargo build --locked --release --target x86_64-unknown-linux-musl --manifest-path server/Cargo.toml
+
+      - name: Upload x86_64 Linux artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: slingshot-server-linux-x86_64
+          path: server/target/x86_64-unknown-linux-musl/release/slingshot-server
+          if-no-files-found: error
+
+  deploy:
+    needs: build-relay
+    if: github.ref == 'refs/heads/main' && github.event_name != 'push' || github.ref == 'refs/heads/main' && inputs.deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: ionos-production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: slingshot-server-linux-x86_64
+          path: server/target/x86_64-unknown-linux-musl/release
+
+      - name: Mark relay binary executable
+        run: chmod 0755 server/target/x86_64-unknown-linux-musl/release/slingshot-server
 
       - name: Prepare SSH credentials
         env:
@@ -123,6 +153,7 @@ jobs:
             "$DEPLOY_USER@$DEPLOY_HOST:/tmp/"
 
       - name: Install and restart relay service
+        id: install
         env:
           DEPLOY_HOST: ${{ vars.IONOS_SERVER_IP }}
           DEPLOY_USER: ${{ vars.IONOS_DEPLOY_USER }}
@@ -132,6 +163,7 @@ jobs:
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" 'sudo bash /tmp/install-relay.sh'
 
       - name: Check service status
+        id: status
         env:
           DEPLOY_HOST: ${{ vars.IONOS_SERVER_IP }}
           DEPLOY_USER: ${{ vars.IONOS_DEPLOY_USER }}
@@ -142,32 +174,57 @@ jobs:
             'sudo systemctl --no-pager --full status slingshot-relay.service'
 
       - name: Verify relay WebSocket handshake
+        id: healthcheck
         env:
           RELAY_URL: ${{ vars.RELAY_HEALTHCHECK_URL }}
           RELAY_ALLOWED_ORIGINS: ${{ vars.RELAY_ALLOWED_ORIGINS }}
         run: |
           set -euo pipefail
-          if [[ -z "$RELAY_URL" ]]; then
-            echo 'RELAY_HEALTHCHECK_URL not configured; service status is the deployment health check.'
-            exit 0
-          fi
+          test -n "$RELAY_URL" || { echo 'RELAY_HEALTHCHECK_URL is required for production deploys' >&2; exit 1; }
           python3 - <<'PY'
           import os, socket, ssl, base64, hashlib, urllib.parse
           url = urllib.parse.urlparse(os.environ['RELAY_URL'])
           if url.scheme not in ('ws', 'wss') or not url.hostname:
               raise SystemExit('RELAY_HEALTHCHECK_URL must be a ws:// or wss:// URL')
           port = url.port or (443 if url.scheme == 'wss' else 80)
-          raw = socket.create_connection((url.hostname, port), timeout=10)
-          conn = ssl.create_default_context().wrap_socket(raw, server_hostname=url.hostname) if url.scheme == 'wss' else raw
-          key = base64.b64encode(os.urandom(16)).decode()
+          expected_origin = os.environ['RELAY_ALLOWED_ORIGINS'].split(',')[0]
           path = url.path or '/'
           if url.query: path += '?' + url.query
-          request = (f'GET {path} HTTP/1.1\r\nHost: {url.hostname}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nOrigin: {os.environ["RELAY_ALLOWED_ORIGINS"].split(",")[0]}\r\n\r\n')
-          conn.sendall(request.encode())
-          response = conn.recv(4096).decode('latin1')
-          expected = base64.b64encode(hashlib.sha1((key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
-          if not response.startswith('HTTP/1.1 101') or f'Sec-WebSocket-Accept: {expected}' not in response:
-              raise SystemExit(f'WebSocket handshake failed: {response.splitlines()[0] if response else "no response"}')
-          print('Relay WebSocket handshake succeeded')
-          conn.close()
+          import time
+          for attempt in range(1, 6):
+              try:
+                  raw = socket.create_connection((url.hostname, port), timeout=10)
+                  conn = ssl.create_default_context().wrap_socket(raw, server_hostname=url.hostname) if url.scheme == 'wss' else raw
+                  key = base64.b64encode(os.urandom(16)).decode()
+                  request = (f'GET {path} HTTP/1.1\r\nHost: {url.hostname}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nOrigin: {expected_origin}\r\n\r\n')
+                  conn.sendall(request.encode())
+                  response = conn.recv(4096).decode('latin1')
+                  expected = base64.b64encode(hashlib.sha1((key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
+                  lines = response.split('\r\n')
+                  headers = {}
+                  for line in lines[1:]:
+                      if ':' in line:
+                          name, value = line.split(':', 1)
+                          headers[name.strip().lower()] = value.strip()
+                  if lines[0].startswith('HTTP/1.1 101') and headers.get('sec-websocket-accept') == expected:
+                      print('Relay WebSocket handshake succeeded')
+                      conn.close()
+                      break
+                  raise RuntimeError(f'WebSocket handshake failed: {lines[0] if lines and lines[0] else "no response"}')
+              except Exception as error:
+                  if attempt == 5:
+                      raise SystemExit(f'WebSocket handshake failed after {attempt} attempts: {error}')
+                  print(f'WebSocket handshake attempt {attempt} failed: {error}; retrying in 3 seconds')
+                  time.sleep(3)
           PY
+
+      - name: Restore previous relay binary after failed health check
+        if: failure() && (steps.install.outcome == 'failure' || steps.status.outcome == 'failure' || steps.healthcheck.outcome == 'failure')
+        env:
+          DEPLOY_HOST: ${{ vars.IONOS_SERVER_IP }}
+          DEPLOY_USER: ${{ vars.IONOS_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            'sudo test -x /usr/local/bin/slingshot-server.previous && sudo install -o root -g root -m 0755 /usr/local/bin/slingshot-server.previous /usr/local/bin/slingshot-server && sudo systemctl restart slingshot-relay.service && sudo systemctl is-active --quiet slingshot-relay.service'

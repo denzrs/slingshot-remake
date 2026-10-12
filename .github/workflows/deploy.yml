@@ -48,15 +48,22 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
         with:
+          target: x86_64-unknown-linux-musl
           cache-workspaces: server
           components: rustfmt, clippy
-      - name: Build the relay for x86_64
+      - name: Build the relay for x86_64 (static musl)
         working-directory: server
-        run: cargo build --locked --release
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+          CC_x86_64_unknown_linux_musl: musl-gcc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes musl-tools
+          cargo build --locked --release --target x86_64-unknown-linux-musl
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: server-x86_64
-          path: server/target/release/slingshot-server
+          path: server/target/x86_64-unknown-linux-musl/release/slingshot-server
 
   build:
     needs: test
@@ -101,7 +108,7 @@ jobs:
       - run: npm run build
         env:
           VITE_COFFEE_URL: ${{ vars.VITE_COFFEE_URL }}
-          VITE_MULTIPLAYER_SERVER: ${{ secrets.VITE_MULTIPLAYER_SERVER }}
+          VITE_MULTIPLAYER_SERVER: ${{ vars.VITE_MULTIPLAYER_SERVER }}
       - name: Zip the build for the release
         if: steps.version.outputs.release == 'true'
         env:

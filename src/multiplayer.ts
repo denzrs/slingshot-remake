@@ -30,7 +30,7 @@ interface CreateRoomOptions {
   password?: string;
 }
 
-export const DEFAULT_SERVER = import.meta.env.VITE_MULTIPLAYER_SERVER || 'ws://localhost:8080';
+export const DEFAULT_SERVER: string = String(import.meta.env.VITE_MULTIPLAYER_SERVER || 'ws://localhost:8080');
 
 /** What the session needs from a connection — the WebSocket client, or a stand-in in tests. */
 export type Transport = Pick<NetworkClient, 'address' | 'setAddress' | 'connect' | 'onMessage' | 'send' | 'close'>;

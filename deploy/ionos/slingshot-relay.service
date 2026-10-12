@@ -15,6 +15,7 @@ Restart=on-failure
 RestartSec=3
 TimeoutStartSec=30
 TimeoutStopSec=15
+LimitNOFILE=65536
 KillSignal=SIGTERM
 NoNewPrivileges=true
 PrivateTmp=true
