@@ -43,7 +43,6 @@ jobs:
 
   server-x86_64:
     needs: test
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -61,7 +60,6 @@ jobs:
 
   build:
     needs: test
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -119,9 +117,11 @@ jobs:
         with:
           path: dist
 
+  # Waits for server-arm64 as well: the site shows the version the release job is about to create,
+  # so it must not go live when the release can't follow.
   deploy:
-    needs: build
-    if: github.ref_type != 'tag'
+    needs: [build, server-arm64]
+    if: github.event_name != 'pull_request' && github.ref_type != 'tag'
     runs-on: ubuntu-latest
     permissions:
       pages: write

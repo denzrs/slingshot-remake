@@ -316,8 +316,25 @@ function hear(slot: { lane: GhostLane | null; heard: number }): void {
   const result = slot.lane?.result;
   if (!result || result.id === slot.heard) return;
   slot.heard = result.id;
-  if (result.kind === 'hit') sound.combo();
+  if (result.kind === 'cleared' || result.kind === 'chain') sound.combo();
   else if (result.kind === 'out') sound.fizzle();
+}
+
+/** Whether the ghost panel is in its big size (a preference of this device, for the session). */
+let ghostBig = false;
+/** When the last blast made a sound, so a chain of rocks going up does not turn into one long buzz. */
+let lastPop = 0;
+
+/** The bangs of what blew up in the lane since the last frame: a pop for rocks, the real thing for bombs and planets. */
+function hearBlasts(events: readonly { kind: string }[]): void {
+  if (!events.length) return;
+  if (events.some((e) => e.kind === 'planet' || e.kind === 'bomb')) {
+    sound.explode();
+    lastPop = performance.now();
+  } else if (performance.now() - lastPop > 70) {
+    sound.impact();
+    lastPop = performance.now();
+  }
 }
 
 /** Whether the person at this screen is a human who has been shot down. */
@@ -382,15 +399,17 @@ function updateGhost(dt: number): void {
   // The oracle owns the bottom edge: the panel sits above its bar, tips and verdict — and shrinks rather than reach up under the scoreboard.
   const bottom = !eggOn && settings.oracle && g!.match.ghost ? Math.ceil(renderer.oracleClearance(coarsePointer.matches)) + 10 : 0;
   const room = innerHeight - Math.max(bottom, 16) - renderer.clearanceTop();
-  const wanted = Math.max(240, Math.min(360, innerWidth * 0.24));
+  const wanted = ghostBig ? Math.max(420, Math.min(900, innerWidth * 0.62)) : Math.max(300, Math.min(520, innerWidth * 0.32));
+  // It shrinks rather than reach up under the scoreboard — and the big size never takes more than the room allows.
+  const squeezed = room < wanted * 0.8;
   const css = {
     bottom: bottom ? `max(${bottom}px, var(--ghost-bottom))` : '',
-    width: !eggOn && room < wanted * 0.8 ? `${Math.max(160, Math.floor(room * 1.25))}px` : '',
+    width: squeezed ? `${Math.max(160, Math.floor(room * 1.25))}px` : ghostBig ? `${Math.floor(wanted)}px` : '',
   };
   if (ghostCanvas.style.bottom !== css.bottom) ghostCanvas.style.bottom = css.bottom;
   if (ghostCanvas.style.width !== css.width) ghostCanvas.style.width = css.width;
-  if (eggOn) ghostPanel.draw(egg!.lane, { color: COLORS.players[2], paused: false, touch: coarsePointer.matches, reducedMotion }, dt);
-  else ghostPanel.draw(g!.lane!, { color: g!.match.players[g!.match.viewer!].color, paused: !ghostActive(), touch: coarsePointer.matches, reducedMotion }, running ? dt : 0);
+  if (eggOn) hearBlasts(ghostPanel.draw(egg!.lane, { color: COLORS.players[2], paused: false, touch: coarsePointer.matches, big: ghostBig, reducedMotion }, dt));
+  else hearBlasts(ghostPanel.draw(g!.lane!, { color: g!.match.players[g!.match.viewer!].color, paused: !ghostActive(), touch: coarsePointer.matches, big: ghostBig, reducedMotion }, running ? dt : 0));
 }
 
 function fireGhost(): void {
@@ -422,6 +441,10 @@ function ghostKey(e: KeyboardEvent): boolean {
     case 'Space':
       if (!e.repeat) fireGhost();
       return true;
+    case 'KeyE':
+      if (e.ctrlKey || e.metaKey || e.altKey) return false;
+      if (!e.repeat) ghostBig = !ghostBig;
+      return true;
     default:
       return false;
   }
@@ -443,6 +466,10 @@ ghostCanvas.addEventListener('pointerdown', (e) => {
   sound.unlock();
   // The cross closes the panel, also while it rests.
   if ((eggActive() || ghost?.open) && ghostPanel.isClose(e.clientX, e.clientY)) return eggActive() ? toggleEgg() : toggleGhost();
+  if (ghostPanel.isBig(e.clientX, e.clientY)) {
+    ghostBig = !ghostBig;
+    return;
+  }
   if (!steered()) return;
   ghostDragging = true;
   ghostCanvas.setPointerCapture(e.pointerId);
@@ -450,7 +477,7 @@ ghostCanvas.addEventListener('pointerdown', (e) => {
 });
 ghostCanvas.addEventListener('pointermove', (e) => {
   if (ghostDragging) ghostAim(e.clientX, e.clientY);
-  else ghostCanvas.style.cursor = ghostPanel.isClose(e.clientX, e.clientY) ? 'pointer' : '';
+  else ghostCanvas.style.cursor = ghostPanel.isClose(e.clientX, e.clientY) || ghostPanel.isBig(e.clientX, e.clientY) ? 'pointer' : '';
 });
 const endGhostDrag = () => (ghostDragging = false);
 ghostCanvas.addEventListener('pointerup', endGhostDrag);
@@ -682,7 +709,7 @@ function frame(now: number): void {
 
 if (import.meta.env.DEV) {
   // Handle for poking at the running game from the dev console.
-  Object.assign(window, { slingshot: { app, attract, settings, get match() { return match; }, get ghost() { return ghost; } } });
+  Object.assign(window, { slingshot: { app, attract, settings, get match() { return match; }, get ghost() { return ghost; }, get egg() { return egg; } } });
 }
 
 async function boot(): Promise<void> {

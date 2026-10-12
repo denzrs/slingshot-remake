@@ -1975,7 +1975,7 @@ body.egg-open #touch-fire {
   bottom: var(--ghost-bottom);
   /* Above the menu overlay, so the title screen's Easter egg can show it. */
   z-index: 11;
-  width: clamp(240px, 24vw, 360px);
+  width: clamp(300px, 32vw, 520px);
   aspect-ratio: 5 / 4;
   touch-action: none;
   cursor: crosshair;
