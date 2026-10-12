@@ -147,6 +147,10 @@ impl RoomManager {
         self.connections.contains(&conn) && !self.memberships.contains_key(&conn)
     }
 
+    pub fn password_attempts_exhausted(&self, conn: u64) -> bool {
+        self.password_failures.get(&conn).copied().unwrap_or(0) >= MAX_PASSWORD_ATTEMPTS
+    }
+
     pub fn join_password_salt(&self, conn: u64, room_id: &str) -> Option<(Vec<u8>, Vec<u8>)> {
         if !self.connections.contains(&conn) || self.memberships.contains_key(&conn) {
             return None;

@@ -42,6 +42,10 @@ const HEARTBEAT_MS: u64 = 30_000;
 const DEFAULT_MAX_CONNECTIONS: usize = 8192;
 const DEFAULT_MAX_CONNECTIONS_PER_IP: usize = 64;
 const DEFAULT_CONNECTIONS_PER_IP_PER_SECOND: usize = 20;
+/// Bound memory and CPU use even when many clients request password checks at once.
+const MAX_CONCURRENT_SCRYPTS: usize = 4;
+/// Password derivations can queue briefly behind the shared concurrency limit.
+const SCRYPT_QUEUE_TIMEOUT: Duration = Duration::from_secs(1);
 /// A handshake that does not finish in time is dropped (slow-open probes hold a task otherwise).
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -276,7 +280,7 @@ async fn handle_connection<S>(
                                 break;
                             }
                             match message {
-                                Message::Text(text) => deliver(&manager, conn_id, text.as_bytes()).await,
+                                Message::Text(text) => deliver(&manager, &guard.scrypt_slots, conn_id, text.as_bytes()).await,
                                 Message::Binary(_) => {
                                     manager.lock().error(conn_id, "Only text JSON messages are accepted");
                                 }
@@ -361,7 +365,12 @@ where
 }
 
 /// Parse one decoded inbound frame and pass it to the room logic.
-async fn deliver(manager: &Mutex<RoomManager>, conn_id: u64, bytes: &[u8]) {
+async fn deliver(
+    manager: &Mutex<RoomManager>,
+    scrypt_slots: &Arc<tokio::sync::Semaphore>,
+    conn_id: u64,
+    bytes: &[u8],
+) {
     let message = match serde_json::from_slice::<serde_json::Value>(bytes) {
         Ok(message) => message,
         Err(_) => {
@@ -371,12 +380,17 @@ async fn deliver(manager: &Mutex<RoomManager>, conn_id: u64, bytes: &[u8]) {
     };
     let kind = message.get("type").and_then(Value::as_str).unwrap_or("?");
     debug!(bytes = bytes.len(), %kind, "inbound message");
-    route(manager, conn_id, &message).await;
+    route(manager, scrypt_slots, conn_id, &message).await;
 }
 
 /// Dispatch a parsed message to the room logic. Password work is done off the room lock (and off
 /// the async reactor) via `spawn_blocking`, so a scrypt can never stall every other connection.
-async fn route(manager: &Mutex<RoomManager>, conn_id: u64, message: &Value) {
+async fn route(
+    manager: &Mutex<RoomManager>,
+    scrypt_slots: &Arc<tokio::sync::Semaphore>,
+    conn_id: u64,
+    message: &Value,
+) {
     let Some(ty) = message.get("type").and_then(Value::as_str) else {
         manager.lock().handle(conn_id, message);
         return;
@@ -396,11 +410,20 @@ async fn route(manager: &Mutex<RoomManager>, conn_id: u64, message: &Value) {
                             .error(conn_id, "Server busy – try again shortly");
                         return;
                     }
+                    let Some(permit) = acquire_scrypt_slot(scrypt_slots).await else {
+                        manager
+                            .lock()
+                            .error(conn_id, "Server busy – try again shortly");
+                        return;
+                    };
                     let plaintext = plaintext.to_owned();
                     Some(
-                        tokio::task::spawn_blocking(move || crate::room::hash_password(&plaintext))
-                            .await
-                            .expect("scrypt task panicked"),
+                        tokio::task::spawn_blocking(move || {
+                            let _permit = permit;
+                            crate::room::hash_password(&plaintext)
+                        })
+                        .await
+                        .expect("scrypt task panicked"),
                     )
                 }
                 None => None,
@@ -423,14 +446,28 @@ async fn route(manager: &Mutex<RoomManager>, conn_id: u64, message: &Value) {
                         // Never worth a scrypt; `password_attempt_ok` counts this as a miss.
                         Some(false)
                     } else {
+                        if manager.lock().password_attempts_exhausted(conn_id) {
+                            manager.lock().error(
+                                conn_id,
+                                "Too many wrong passwords – reconnect to try again",
+                            );
+                            return;
+                        }
                         let salt = manager.lock().join_password_salt(conn_id, &room_id);
                         match salt {
                             Some((salt, hash))
                                 if manager.lock().scrypt_budget_available(conn_id) =>
                             {
+                                let Some(permit) = acquire_scrypt_slot(scrypt_slots).await else {
+                                    manager
+                                        .lock()
+                                        .error(conn_id, "Server busy – try again shortly");
+                                    return;
+                                };
                                 let plaintext = plaintext.to_owned();
                                 Some(
                                     tokio::task::spawn_blocking(move || {
+                                        let _permit = permit;
                                         crate::room::check_password(&plaintext, &salt, &hash)
                                     })
                                     .await
@@ -453,6 +490,15 @@ async fn route(manager: &Mutex<RoomManager>, conn_id: u64, message: &Value) {
         }
         _ => manager.lock().handle(conn_id, message),
     }
+}
+
+async fn acquire_scrypt_slot(
+    slots: &Arc<tokio::sync::Semaphore>,
+) -> Option<tokio::sync::OwnedSemaphorePermit> {
+    tokio::time::timeout(SCRYPT_QUEUE_TIMEOUT, slots.clone().acquire_owned())
+        .await
+        .ok()?
+        .ok()
 }
 
 /// Consume a rate-limited peer's still-arriving flood while the connection is still ACTIVE
@@ -531,6 +577,7 @@ struct AdmissionGuard {
     per_ip: Mutex<HashMap<IpAddr, IpState>>,
     max_per_ip: usize,
     per_ip_per_second: usize,
+    scrypt_slots: Arc<tokio::sync::Semaphore>,
 }
 
 impl AdmissionGuard {
@@ -541,6 +588,7 @@ impl AdmissionGuard {
             per_ip: Mutex::new(HashMap::new()),
             max_per_ip,
             per_ip_per_second,
+            scrypt_slots: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SCRYPTS)),
         }
     }
 
@@ -696,6 +744,7 @@ mod tests {
     #[tokio::test]
     async fn password_create_and_join_use_real_scrypt_hashing() {
         let manager = Mutex::new(RoomManager::new());
+        let scrypt_slots = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SCRYPTS));
         let (host_tx, mut host_rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
         let (host_slow, _) = tokio::sync::watch::channel(false);
         manager
@@ -706,7 +755,7 @@ mod tests {
             "type":"create_room","name":"Host","mode":"ffa","gameMode":"classic",
             "maxPlayers":4,"password":"secret"
         });
-        route(&manager, 1, &create).await;
+        route(&manager, &scrypt_slots, 1, &create).await;
         let room_id = take_type(&mut host_rx, "room_update").await["room"]["id"]
             .as_str()
             .unwrap()
@@ -719,19 +768,120 @@ mod tests {
             .connect(2, IpAddr::V4(Ipv4Addr::LOCALHOST), guest_tx, guest_slow);
         let _ = take_type(&mut guest_rx, "lobby_update").await;
         let bad = serde_json::json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"});
-        route(&manager, 2, &bad).await;
+        route(&manager, &scrypt_slots, 2, &bad).await;
         assert_eq!(
             take_type(&mut guest_rx, "error").await["message"],
             "Wrong password"
         );
         let good = serde_json::json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"secret"});
-        route(&manager, 2, &good).await;
+        route(&manager, &scrypt_slots, 2, &good).await;
         assert_eq!(
             take_type(&mut guest_rx, "room_update").await["room"]["players"]
                 .as_array()
                 .unwrap()
                 .len(),
             2
+        );
+    }
+
+    #[tokio::test]
+    async fn exhausted_password_attempts_are_rejected_before_hashing() {
+        let manager = Mutex::new(RoomManager::new());
+        let scrypt_slots = Arc::new(tokio::sync::Semaphore::new(0));
+        let (host_tx, mut host_rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (host_slow, _) = tokio::sync::watch::channel(false);
+        manager
+            .lock()
+            .connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), host_tx, host_slow);
+        let _ = take_type(&mut host_rx, "lobby_update").await;
+        let create = serde_json::json!({
+            "type":"create_room","name":"Host","mode":"ffa","gameMode":"classic",
+            "maxPlayers":4,"password":"secret"
+        });
+        manager
+            .lock()
+            .create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
+        let room_id = take_type(&mut host_rx, "room_update").await["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let (guest_tx, mut guest_rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (guest_slow, _) = tokio::sync::watch::channel(false);
+        manager
+            .lock()
+            .connect(2, IpAddr::V4(Ipv4Addr::LOCALHOST), guest_tx, guest_slow);
+        let _ = take_type(&mut guest_rx, "lobby_update").await;
+
+        // Establish five failures. The exhausted attempt must not wait on the unavailable
+        // derivation permit (nor consume a per-connection scrypt budget).
+        for _ in 0..5 {
+            manager.lock().join_room(
+                2,
+                &serde_json::json!({
+                    "type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"
+                }),
+                Some(false),
+            );
+            assert_eq!(
+                take_type(&mut guest_rx, "error").await["message"],
+                "Wrong password"
+            );
+        }
+        let attempt = serde_json::json!({
+            "type":"join_room","roomId":room_id,"name":"Guest","password":"secret"
+        });
+        route(&manager, &scrypt_slots, 2, &attempt).await;
+        assert_eq!(
+            take_type(&mut guest_rx, "error").await["message"],
+            "Too many wrong passwords – reconnect to try again"
+        );
+    }
+
+    #[tokio::test]
+    async fn queued_scrypt_timeout_is_busy_and_does_not_count_as_a_password_miss() {
+        let manager = Mutex::new(RoomManager::new());
+        let scrypt_slots = Arc::new(tokio::sync::Semaphore::new(0));
+        let (host_tx, mut host_rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (host_slow, _) = tokio::sync::watch::channel(false);
+        manager
+            .lock()
+            .connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), host_tx, host_slow);
+        let _ = take_type(&mut host_rx, "lobby_update").await;
+        let create = serde_json::json!({
+            "type":"create_room","name":"Host","mode":"ffa","gameMode":"classic",
+            "maxPlayers":4,"password":"secret"
+        });
+        manager
+            .lock()
+            .create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
+        let room_id = take_type(&mut host_rx, "room_update").await["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let (guest_tx, mut guest_rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (guest_slow, _) = tokio::sync::watch::channel(false);
+        manager
+            .lock()
+            .connect(2, IpAddr::V4(Ipv4Addr::LOCALHOST), guest_tx, guest_slow);
+        let _ = take_type(&mut guest_rx, "lobby_update").await;
+        let attempt = serde_json::json!({
+            "type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"
+        });
+
+        route(&manager, &scrypt_slots, 2, &attempt).await;
+        assert_eq!(
+            take_type(&mut guest_rx, "error").await["message"],
+            "Server busy – try again shortly"
+        );
+
+        // Once capacity is available, the same incorrect password is still the first miss.
+        scrypt_slots.add_permits(1);
+        route(&manager, &scrypt_slots, 2, &attempt).await;
+        assert_eq!(
+            take_type(&mut guest_rx, "error").await["message"],
+            "Wrong password"
         );
     }
 }
