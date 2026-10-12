@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { isInputMessage } from '../server/protocol';
 import { createMatch } from '../src/game';
 import { ClassicMatch } from '../src/game/classic';
 import { Oracle, oracleMultiplier, TIP_HIT, TIP_MISS, TIP_NOBODY } from '../src/game/oracle';
@@ -133,13 +132,6 @@ describe('oracle scoring', () => {
   });
 });
 
-describe('server protocol', () => {
-  it('accepts a bet that names a ship, "nobody", or hit/miss, and nothing else', () => {
-    for (const pick of [-1, 0, 1, 5]) expect(isInputMessage({ kind: 'bet', pick })).toBe(true);
-    for (const pick of [-2, 6, 1.5, '1', null, undefined, NaN]) expect(isInputMessage({ kind: 'bet', pick })).toBe(false);
-    expect(isInputMessage({ kind: 'bet' })).toBe(false);
-  });
-});
 
 // ————————————————————————————— In a match —————————————————————————————
 

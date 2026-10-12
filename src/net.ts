@@ -165,7 +165,9 @@ export class NetworkClient {
           this.deliver({ type: 'closed', message: `Connection to ${this.url} was closed.` });
         }
       });
-      socket.addEventListener('message', (event: MessageEvent<unknown>) => this.receive(event.data));
+      socket.addEventListener('message', (event: MessageEvent<unknown>) => {
+        this.receive(event.data);
+      });
     });
 
     return this.connectPromise;
@@ -176,10 +178,11 @@ export class NetworkClient {
   }
 
   send(message: ClientMessage): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
       throw new Error('Cannot send: WebSocket is not connected');
     }
-    this.socket.send(JSON.stringify(message));
+    socket.send(JSON.stringify(message));
   }
 
   close(): void {
