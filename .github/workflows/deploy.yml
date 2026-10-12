@@ -41,28 +41,22 @@ jobs:
       - run: cargo test --locked --manifest-path server/Cargo.toml
       - run: npm test
 
-  server-arm64:
+  server-x86_64:
     needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
         with:
-          target: aarch64-unknown-linux-musl
           cache-workspaces: server
           components: rustfmt, clippy
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.15.2
-      - name: Build the relay for arm64 (static musl, zig cc as linker/CC)
+      - name: Build the relay for x86_64
         working-directory: server
-        env:
-          RUSTFLAGS: -D warnings -C link-self-contained=no -C target-feature=+fix-cortex-a53-835769
-        run: cargo build --locked --release --target aarch64-unknown-linux-musl
+        run: cargo build --locked --release
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: server-arm64
-          path: server/target/aarch64-unknown-linux-musl/release/slingshot-server
+          name: server-x86_64
+          path: server/target/release/slingshot-server
 
   build:
     needs: test
@@ -123,10 +117,10 @@ jobs:
         with:
           path: dist
 
-  # Waits for server-arm64 as well: the site shows the version the release job is about to create,
+  # Waits for server-x86_64 as well: the site shows the version the release job is about to create,
   # so it must not go live when the release can't follow.
   deploy:
-    needs: [build, server-arm64]
+    needs: [build, server-x86_64]
     if: github.event_name != 'pull_request' && github.ref_type != 'tag'
     runs-on: ubuntu-latest
     permissions:
@@ -140,7 +134,7 @@ jobs:
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
 
   release:
-    needs: [build, server-arm64]
+    needs: [build, server-x86_64]
     if: needs.build.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -151,17 +145,17 @@ jobs:
           name: release-zip
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: server-arm64
+          name: server-x86_64
       - name: Create tag and GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.build.outputs.tag }}
         run: |
-          mv slingshot-server slingshot-server-linux-arm64
-          sha256sum slingshot-server-linux-arm64 > slingshot-server-linux-arm64.sha256
-          gh release create "$TAG" "slingshot-$TAG.zip" slingshot-server-linux-arm64 \
-            slingshot-server-linux-arm64.sha256 \
+          mv slingshot-server slingshot-server-linux-x86_64
+          sha256sum slingshot-server-linux-x86_64 > slingshot-server-linux-x86_64.sha256
+          gh release create "$TAG" "slingshot-$TAG.zip" slingshot-server-linux-x86_64 \
+            slingshot-server-linux-x86_64.sha256 \
             --target "$GITHUB_SHA" \
             --title "Slingshot $TAG" \
             --generate-notes
