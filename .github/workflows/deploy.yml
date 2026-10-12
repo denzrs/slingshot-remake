@@ -1,22 +1,24 @@
 name: Test, Deploy & Release
 
-# Every push to main (i.e. every merge) that passes the tests is built once, deployed to GitHub Pages
-# and released under the next minor version (vX.Y.0 -> vX.(Y+1).0).
-# Major bumps are manual: push a tag such as v2.0.0 and it gets released as-is (not deployed);
-# the next merge then continues from there (v2.1.0).
+# Tagged v* releases that pass the tests are built, deployed to GitHub Pages and released as-is.
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      initial_deploy:
+        description: One-time Pages deployment check from ionos_coffee_deplyoment (remove after success)
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# Runs on main and for tags queue up one after another, so every merge gets its own consecutive version.
-# Only a superseded run of the same pull request is cancelled.
+# Release and production-deployment runs queue up one after another. Only a superseded run of the
+# same pull request is cancelled.
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'main-line' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -121,9 +123,9 @@ jobs:
           path: slingshot-*.zip
           if-no-files-found: error
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
-        if: github.ref_type != 'tag'
+        if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ionos_coffee_deplyoment' && inputs.initial_deploy)
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
-        if: github.ref_type != 'tag'
+        if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ionos_coffee_deplyoment' && inputs.initial_deploy)
         with:
           path: dist
 
@@ -131,7 +133,7 @@ jobs:
   # so it must not go live when the release can't follow.
   deploy:
     needs: [build, server-x86_64]
-    if: github.event_name != 'pull_request' && github.ref_type != 'tag'
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ionos_coffee_deplyoment' && inputs.initial_deploy)
     runs-on: ubuntu-latest
     permissions:
       pages: write

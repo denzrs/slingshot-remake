@@ -2,18 +2,14 @@ name: Deploy multiplayer relay to IONOS VPS
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'server/**'
-      - 'deploy/ionos/**'
-      - '.github/workflows/deploy-ionos-relay.yml'
+    tags: ['v*']
   workflow_dispatch:
     inputs:
-      deploy:
-        description: Deploy to the production VPS (disable to build and upload an artifact only)
+      initial_deploy:
+        description: One-time deployment check from ionos_coffee_deplyoment (remove after success)
         required: true
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -71,11 +67,9 @@ jobs:
 
   deploy:
     needs: build-relay
-    if: github.ref == 'refs/heads/main' && github.event_name != 'push' || github.ref == 'refs/heads/main' && inputs.deploy
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ionos_coffee_deplyoment' && inputs.initial_deploy)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment:
-      name: ionos-production
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
