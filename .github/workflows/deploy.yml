@@ -52,7 +52,7 @@ jobs:
           target: aarch64-unknown-linux-musl
           cache-workspaces: server
           components: rustfmt, clippy
-      - uses: mlugg/setup-zig@53fc45b17fe98b52f92ee5ea08ff48a85a3e7eb7 # v1
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.15.2
       - name: Build the relay for arm64 (static musl, zig cc as linker/CC)
