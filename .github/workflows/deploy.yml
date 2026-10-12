@@ -143,7 +143,7 @@ jobs:
             deploy/ionos/install-relay.sh deploy/ionos/slingshot-relay.service \
             "$RUNNER_TEMP/relay.env" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/"
 
-      - name: Install and restart relay service
+      - name: Deploy relay files and restart slingshot service
         id: install
         run: |
           set -euo pipefail
@@ -151,21 +151,20 @@ jobs:
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" 'bash /tmp/install-relay.sh'
 
       - name: Verify relay service is active
-        id: verify
         if: steps.install.outcome == 'success'
         run: |
           set -euo pipefail
           ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
-            'sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service'
+            'sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service && sudo -n /usr/bin/systemctl --no-pager --full status slingshot-relay.service'
 
-      - name: Restore previous relay binary if the PR deployment fails
+      - name: Restore previous relay release if deployment fails
         if: failure() && steps.install.outcome != 'skipped'
         run: |
           set -euo pipefail
           ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
-            'set -euo pipefail; previous=$(readlink -f /srv/slingshot/releases/previous); test -x "$previous/slingshot-server"; ln -sfn "$previous" /srv/slingshot/current.rollback; mv -Tf /srv/slingshot/current.rollback /srv/slingshot/current; sudo -n /usr/bin/systemctl restart slingshot-relay.service; sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service'
+            'set -euo pipefail; previous=$(readlink -f /srv/slingshot/releases/previous); case "$previous" in /srv/slingshot/releases/*) ;; *) exit 1;; esac; test -x "$previous/slingshot-server"; ln -sfn "$previous" /srv/slingshot/current.rollback; mv -Tf /srv/slingshot/current.rollback /srv/slingshot/current; restorecon -h /srv/slingshot/current; sudo -n /usr/bin/systemctl restart slingshot-relay.service; sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service'
 
   build:
     needs: test
