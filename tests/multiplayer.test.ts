@@ -364,8 +364,12 @@ describe('online games', () => {
     expect(guest.match().phase).toBe('killcam');
 
     guest.session.advance();
-    for (let i = 0; i < 5; i++) await frame(host, guest);
+    for (let i = 0; i < 120 && (hm.phase === 'killcam' || guest.match().phase === 'killcam'); i++) {
+      await frame(host, guest);
+    }
     expect(hm.phase).not.toBe('killcam');
+    // The vote is delivered asynchronously, so keep pumping simulated frames until the next
+    // authoritative state reaches the guest rather than assuming five frames is enough.
     expect(guest.match().phase).not.toBe('killcam');
   }, 60_000);
 
