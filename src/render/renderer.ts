@@ -8,6 +8,7 @@ import { rgba } from './color';
 import { renderContours } from './contours';
 import type { Effects } from './effects';
 import { Hud } from './hud';
+import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
 
 export interface DrawOptions {
@@ -16,10 +17,10 @@ export interface DrawOptions {
   touch: boolean;
   /** A clip is being recorded right now. */
   recording: boolean;
-  /** Show the oracle to eliminated players. */
-  oracle: boolean;
   /** Eliminated and waiting: point at the ghost lane. */
   ghostTeaser: boolean;
+  /** Show the key caps in the oracle's choices. */
+  keyHints: boolean;
 }
 
 const SHIP_HULL: [number, number][] = [
@@ -67,7 +68,7 @@ export class Renderer {
   }
 
   /** The oracle choice under a pointer position (client px), if it is over one. */
-  oracleHit(clientX: number, clientY: number): number | null {
+  oracleHit(clientX: number, clientY: number): OracleTap | null {
     const rect = this.canvas.getBoundingClientRect();
     return this.hud.oracleHit(clientX - rect.left, clientY - rect.top);
   }

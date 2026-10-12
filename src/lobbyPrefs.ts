@@ -33,6 +33,7 @@ export const rulesOf = (s: Settings): RoomRules => ({
   simultaneousShots: s.simultaneousShots,
   hiddenAim: s.hiddenAim,
   fadingTrails: s.fadingTrails,
+  betting: s.betting,
 });
 
 /**
@@ -58,6 +59,7 @@ export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
       rules: {
         ...fresh.rules,
         ...saved.rules,
+        betting: saved.rules?.betting === true,
         maxPower: AIM.CAP_OPTIONS.includes(saved.rules?.maxPower as number) ? saved.rules!.maxPower : fresh.rules.maxPower,
         fixedPowerLevel: AIM.FIXED_OPTIONS.includes(saved.rules?.fixedPowerLevel as number) ? saved.rules!.fixedPowerLevel : fresh.rules.fixedPowerLevel,
         fadingTrails: TRAIL_FADE.OPTIONS.includes(saved.rules?.fadingTrails as number) ? saved.rules!.fadingTrails : fresh.rules.fadingTrails,

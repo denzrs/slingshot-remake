@@ -83,8 +83,25 @@ export const ORACLE = {
   /** Every right tip in a row raises the multiplier by this much, up to the cap. */
   STREAK_STEP: 0.5,
   MAX_MULTIPLIER: 3,
-  /** Seconds the verdict stays on screen. */
-  RESULT_SECONDS: 3.5,
+  /** Seconds the verdict stays on the card before the next question takes its place. */
+  RESULT_SECONDS: 3,
+  /** "Who wins the round?": base points per rival the winner had to beat when the tip was made (two ships left pay 1×, five pay 4×). */
+  WINNER: 100,
+  /** …and the base for tipping "nobody" when a round ends in a draw. */
+  DRAW: 200,
+  /** Flat bonus for a right tip against the crowd: with at least three tipsters, fewer than half named the same. */
+  UNDERDOG: 50,
+  UNDERDOG_MIN_TIPS: 3,
+  /** Seconds between two tips turning over when the shots are away. */
+  REVEAL_STEP: 0.28,
+  /**
+   * Betting on the round question with points of the match: a ghost may stake up to this share of their
+   * score (in steps of `STAKE_STEP`, at least `STAKE_MIN`). The stakes of a round make one pot; whoever tipped
+   * right shares it in proportion to their stakes, whoever tipped wrong loses theirs.
+   */
+  STAKE_SHARE: 0.5,
+  STAKE_MIN: 20,
+  STAKE_STEP: 10,
 } as const;
 
 /**

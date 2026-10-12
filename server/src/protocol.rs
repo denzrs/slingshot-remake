@@ -4,6 +4,8 @@ use serde_json::Value;
 
 /// Tips name a ship; there are at most six.
 pub const MAX_TIP: i64 = 6;
+/// The most points one stake may name on the wire; the host holds a player to what they actually have.
+const MAX_STAKE: f64 = 1_000_000.0;
 
 /// The longest a player name may be.
 pub const MAX_NAME_LENGTH: usize = 24;
@@ -121,11 +123,22 @@ pub fn is_input_message(value: &Value) -> bool {
                     && pick
                         .as_f64()
                         .is_some_and(|f| f >= -1.0 && f < MAX_TIP as f64)
+                    // `round` says the tip is about the winner of the round, `stake` bets points on it.
+                    && matches!(value.get("round"), None | Some(Value::Bool(_)))
+                    && value.get("stake").is_none_or(is_stake)
             }
             None => false,
         },
         _ => false,
     }
+}
+
+/// A stake on the round question: a whole number of points, not absurdly many (whether the player has them is the host's call).
+fn is_stake(value: &Value) -> bool {
+    is_safe_integer(value)
+        && value
+            .as_f64()
+            .is_some_and(|f| (0.0..=MAX_STAKE).contains(&f))
 }
 
 fn is_clash_players(value: Option<&Value>) -> bool {
@@ -241,6 +254,8 @@ pub struct RoomRules {
     pub hidden_aim: bool,
     /// Seconds a finished shot's flight path stays on the board (0 = for good).
     pub fading_trails: i64,
+    /// Online: eliminated players may bet points of the match on who wins the round.
+    pub betting: bool,
 }
 
 pub const DEFAULT_RULES: RoomRules = RoomRules {
@@ -257,6 +272,7 @@ pub const DEFAULT_RULES: RoomRules = RoomRules {
     simultaneous_shots: false,
     hidden_aim: false,
     fading_trails: 0,
+    betting: false,
 };
 
 /// The rules as they leave the relay, keyed like the client-side `RoomRules` object.
@@ -275,6 +291,7 @@ pub fn rules_to_value(rules: &RoomRules) -> Value {
         "simultaneousShots": rules.simultaneous_shots,
         "hiddenAim": rules.hidden_aim,
         "fadingTrails": rules.fading_trails,
+        "betting": rules.betting,
     })
 }
 
@@ -327,6 +344,10 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
     if !fixed_power_level_ok {
         return None;
     }
+    // Clients from before betting existed don't send it: no betting, the default. A present value has to be a boolean.
+    if field("betting").is_some_and(|v| !v.is_boolean()) {
+        return None;
+    }
     let fading_trails = field("fadingTrails")?;
     if !is_number_in(fading_trails, &[0, 1, 2, 4]) {
         return None;
@@ -353,6 +374,9 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
         simultaneous_shots: value.get("simultaneousShots").unwrap().as_bool().unwrap(),
         hidden_aim: value.get("hiddenAim").unwrap().as_bool().unwrap(),
         fading_trails: i64_of(fading_trails),
+        betting: field("betting")
+            .and_then(Value::as_bool)
+            .unwrap_or(DEFAULT_RULES.betting),
     })
 }
 
@@ -366,12 +390,26 @@ mod tests {
         assert!(is_input_message(&json!({"kind":"bet","pick":-1})));
         assert!(is_input_message(&json!({"kind":"bet","pick":0})));
         assert!(is_input_message(&json!({"kind":"bet","pick":5})));
+        assert!(is_input_message(
+            &json!({"kind":"bet","pick":2,"round":true})
+        ));
+        assert!(is_input_message(
+            &json!({"kind":"bet","pick":2,"round":false})
+        ));
+        assert!(is_input_message(
+            &json!({"kind":"bet","pick":2,"round":true,"stake":200})
+        ));
         for invalid in [
             json!({"kind":"bet"}),
             json!({"kind":"bet","pick":-2}),
             json!({"kind":"bet","pick":6}),
             json!({"kind":"bet","pick":1.5}),
             json!({"kind":"bet","pick":"1"}),
+            json!({"kind":"bet","pick":2,"round":"yes"}),
+            json!({"kind":"bet","pick":2,"round":true,"stake":-10}),
+            json!({"kind":"bet","pick":2,"round":true,"stake":2.5}),
+            json!({"kind":"bet","pick":2,"round":true,"stake":"100"}),
+            json!({"kind":"bet","pick":2,"round":true,"stake":10000000}),
         ] {
             assert!(!is_input_message(&invalid), "rejected input: {invalid}");
         }
@@ -415,7 +453,7 @@ mod tests {
             "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"bounce":true,
             "fixedPower":true,"fixedPowerLevel":70,"maxPower":80,"shotTime":20,
             "styleBonuses":true,"neighborGrace":1,"simultaneousShots":true,
-            "hiddenAim":false,"fadingTrails":2
+            "hiddenAim":false,"fadingTrails":2,"betting":true
         })
     }
 
@@ -444,13 +482,16 @@ mod tests {
         assert_eq!(parsed.max_power, 80);
         assert!(parsed.bounce && parsed.fixed_power && parsed.style_bonuses);
         assert!(parsed.simultaneous_shots);
+        assert!(parsed.betting);
 
         let mut legacy = valid_rules();
         legacy.as_object_mut().unwrap().remove("maxPower");
         legacy.as_object_mut().unwrap().remove("fixedPowerLevel");
+        legacy.as_object_mut().unwrap().remove("betting");
         let parsed = parse_rules(&legacy).expect("legacy omissions accepted");
         assert_eq!(parsed.max_power, 100);
         assert_eq!(parsed.fixed_power_level, 55);
+        assert!(!parsed.betting);
     }
 
     #[test]
@@ -478,6 +519,7 @@ mod tests {
             "styleBonuses",
             "simultaneousShots",
             "hiddenAim",
+            "betting",
         ] {
             let mut rules = valid_rules();
             rules[key] = json!("true");

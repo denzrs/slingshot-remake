@@ -6,7 +6,7 @@ export type RoomMode = 'ffa' | 'team';
 export type NetworkGameMode = 'classic' | 'horizon';
 
 /** The rules of an online game; a subset of the local `Settings`, so it can be spread straight into them. */
-export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails'>;
+export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails' | 'betting'>;
 
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
@@ -14,8 +14,8 @@ export type ClientInput =
   | { kind: 'fire' }
   /** A vote to skip the killcam; it ends once half of the players want that. */
   | { kind: 'skip' }
-  /** An eliminated player's oracle tip: a ship's index, -1 for nobody, or 1/0 for hit/miss. */
-  | { kind: 'bet'; pick: number };
+  /** An eliminated player's oracle tip: a ship's index, -1 for nobody, or 1/0 for hit/miss. With `round` it names the winner of the round instead, and `stake` bets that many of the player's points on it. */
+  | { kind: 'bet'; pick: number; round?: boolean; stake?: number };
 
 type ClientMessage =
   | { type: 'lobby' }

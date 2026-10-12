@@ -169,7 +169,7 @@ export class MultiplayerSession {
     }
     if (input.kind === 'bet') {
       // Remember the tip on this screen at once; the host judges it from its own copy.
-      if (!match.placeBet(id, input.pick)) return;
+      if (!match.placeBet(id, input.pick, !!input.round, input.stake ?? 0)) return;
     } else {
       this.flushAim();
     }
@@ -276,7 +276,7 @@ export class MultiplayerSession {
     if (input.kind === 'adjust') match.adjustPlayer(id, input.dAngle, input.dPower);
     else if (input.kind === 'aim') match.setPlayerAim(id, input.angle, input.power);
     else if (input.kind === 'fire') match.commitPlayer(id);
-    else if (input.kind === 'bet') match.placeBet(id, input.pick);
+    else if (input.kind === 'bet') match.placeBet(id, input.pick, !!input.round, input.stake ?? 0);
     else match.voteSkip(id);
   }
 

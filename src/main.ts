@@ -11,7 +11,8 @@ import { ClipRecorder } from './clip';
 import { AIM, COLORS, FIELD, FONTS, GHOST, PHYSICS } from './config';
 import { recordRun } from './dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
-import { TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
+import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
+import type { OracleTap } from './render/oracle';
 import { GhostLane, ghostSeed } from './ghost';
 import { MultiplayerSession } from './multiplayer';
 import type { ClientInput } from './net';
@@ -397,7 +398,7 @@ function updateGhost(dt: number): void {
   if (ghostCanvas.hidden === visible) ghostCanvas.hidden = !visible;
   if (!visible) return;
   // The oracle owns the bottom edge: the panel sits above its bar, tips and verdict — and shrinks rather than reach up under the scoreboard.
-  const bottom = !eggOn && settings.oracle && g!.match.ghost ? Math.ceil(renderer.oracleClearance(coarsePointer.matches)) + 10 : 0;
+  const bottom = !eggOn && g!.match.ghost ? Math.ceil(renderer.oracleClearance(coarsePointer.matches)) + 10 : 0;
   const room = innerHeight - Math.max(bottom, 16) - renderer.clearanceTop();
   const wanted = ghostBig ? Math.max(420, Math.min(900, innerWidth * 0.62)) : Math.max(300, Math.min(520, innerWidth * 0.32));
   // It shrinks rather than reach up under the scoreboard — and the big size never takes more than the room allows.
@@ -498,25 +499,54 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'));
 }
 
-/** The oracle tip a key stands for while an eliminated player has a question open: ← → for a shot, 1–5 and 0 for a salvo. */
-function oracleKey(e: KeyboardEvent): number | null {
+/**
+ * The oracle tip a key stands for while an eliminated player has a question open: ← → for a shot, 1–5 and
+ * 0 for a salvo — and Shift with 1–5 (0 for a draw) for who wins the round.
+ */
+function oracleKey(e: KeyboardEvent): OracleTap | null {
   const q = match?.oracle.question;
-  if (!match || !settings.oracle || !match.ghost || !q || q.locked || e.ctrlKey || e.metaKey || e.altKey) return null;
-  if (q.kind === 'shot') return e.code === 'ArrowLeft' ? TIP_HIT : e.code === 'ArrowRight' ? TIP_MISS : null;
+  if (!match || !match.ghost || e.ctrlKey || e.metaKey || e.altKey) return null;
   const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code);
+  const rq = match.oracle.roundQuestion;
+  // B puts the smaller stake on the tip on the round, Shift + B the larger one: points of the match, once.
+  if (e.code === 'KeyB' && rq && match.viewer !== null) {
+    const mine = match.oracle.roundMine;
+    const options = stakeOptions(match.players[match.viewer].score);
+    if (!mine || mine.id !== rq.id || !match.maxStake(match.viewer) || !options.length) return null;
+    return { pick: mine.pick, round: true, stake: e.shiftKey ? options[options.length - 1] : options[0] };
+  }
+  if (e.shiftKey && digit && rq) {
+    if (match.phase !== 'aiming') return null;
+    const n = Number(digit[1]);
+    const pick = n === 0 ? (rq.draw ? TIP_NOBODY : null) : match.roundChoices[n - 1] ?? null;
+    return pick === null ? null : { pick, round: true };
+  }
+  if (!q || q.locked) return null;
+  if (q.kind === 'shot') return e.code === 'ArrowLeft' ? { pick: TIP_HIT, round: false } : e.code === 'ArrowRight' ? { pick: TIP_MISS, round: false } : null;
   if (!digit) return null;
   const n = Number(digit[1]);
-  return n === 0 ? TIP_NOBODY : q.choices[n - 1] ?? null;
+  const pick = n === 0 ? TIP_NOBODY : q.choices[n - 1] ?? null;
+  return pick === null ? null : { pick, round: false };
 }
 
-/** The oracle tip under a pointer: one of the bar's choices, or — for a salvo — the ship itself. */
-function oracleTap(clientX: number, clientY: number): number | null {
+/** The oracle tip under a pointer: one of the bar's or the round row's choices, or — for a salvo — the ship itself. */
+function oracleTap(clientX: number, clientY: number): OracleTap | null {
   const q = match?.oracle.question;
-  if (!match || !settings.oracle || !match.ghost || !q || q.locked) return null;
+  if (!match || !match.ghost) return null;
   const chip = renderer.oracleHit(clientX, clientY);
-  if (chip !== null || q.kind !== 'salvo') return chip;
+  if (chip) return chip.round ? (match.canBetRound(match.viewer ?? -1) ? chip : null) : q && !q.locked ? chip : null;
+  if (!q || q.locked || q.kind !== 'salvo') return null;
   const at = renderer.toField(clientX, clientY);
-  return q.choices.find((id) => Math.hypot(match!.world.ships[id].x - at.x, match!.world.ships[id].y - at.y) < 30) ?? null;
+  const ship = q.choices.find((id) => Math.hypot(match!.world.ships[id].x - at.x, match!.world.ships[id].y - at.y) < 30);
+  return ship === undefined ? null : { pick: ship, round: false };
+}
+
+/** Whether the oracle was last answered with the pointer: then the choices lose their key caps, which only add noise. */
+let oraclePointer = false;
+
+/** Sends an oracle tip to wherever the match is judged. */
+function placeTip(tip: OracleTap): void {
+  dispatchInput({ kind: 'bet', pick: tip.pick, ...(tip.round ? { round: true } : {}), ...(tip.stake ? { stake: tip.stake } : {}) });
 }
 
 window.addEventListener('keydown', (e) => {
@@ -551,15 +581,12 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (e.code === 'KeyO' && online() && !e.metaKey && !e.ctrlKey && !e.altKey) {
-    settings.oracle = !settings.oracle;
-    app.settingsChanged();
-    e.preventDefault();
-    return;
-  }
   const tip = oracleKey(e);
-  if (tip !== null) {
-    if (!e.repeat) dispatchInput({ kind: 'bet', pick: tip });
+  if (tip) {
+    if (!e.repeat) {
+      oraclePointer = false;
+      placeTip(tip);
+    }
     e.preventDefault();
     return;
   }
@@ -617,7 +644,10 @@ canvas.addEventListener('pointerdown', (e) => {
   sound.unlock();
   if (screen !== 'play' || !match || menu.isOpen) return;
   const tip = oracleTap(e.clientX, e.clientY);
-  if (tip !== null) return dispatchInput({ kind: 'bet', pick: tip });
+  if (tip) {
+    oraclePointer = true;
+    return placeTip(tip);
+  }
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
   if (!canAim()) return;
   dragging = true;
@@ -664,21 +694,50 @@ function syncButtons(): void {
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;
 }
 
-/** The oracle's last verdict per match, so each one is announced on the field once. */
-const judged = new WeakMap<Match, number>();
+/** The oracle's last verdicts per match (shot or salvo, and the round's), so each one is announced on the field once. */
+const judged = new WeakMap<Match, { shot: number; round: number }>();
 
-/** Right or wrong, floating over the ship that was tipped — once the killcam is out of the way. */
+/**
+ * Right or wrong, floating over the ship that was tipped — once the killcam is out of the way — and, for
+ * everybody at the table, the moment the ghosts' majority turned out wrong ("Oracle fooled!") or knew it all.
+ */
 function announceOracle(m: Match): void {
+  if (!judged.has(m)) judged.set(m, { shot: m.oracle.result?.id ?? 0, round: m.oracle.roundResult?.id ?? 0 });
+  const seen = judged.get(m)!;
+  const crowd = (verdict: 'wrong' | 'right' | undefined, at: { x: number; y: number }, lift: number) => {
+    if (!verdict || m.viewer === null) return;
+    effects.callout(t(verdict === 'wrong' ? 'oracle.crowd.wrong' : 'oracle.crowd.right'), at.x, at.y - lift, COLORS.sodium, true);
+  };
+
   const r = m.oracle.result;
-  if (!judged.has(m)) judged.set(m, r?.id ?? 0);
-  if (!r || m.phase === 'killcam') return;
-  const before = judged.get(m)!;
-  judged.set(m, Math.max(before, r.id));
-  const tip = r.tips.find((x) => x.player === m.viewer);
-  if (!settings.oracle || !m.ghost || r.id <= before || !tip) return;
-  const at = r.kind === 'shot' ? m.world.ships[r.shooter] : tip.pick >= 0 ? m.world.ships[tip.pick] : { x: FIELD.width / 2, y: FIELD.height / 2 };
-  effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), at.x, at.y - 34, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right);
-  if (tip.right) sound.combo();
+  if (r && m.phase !== 'killcam' && r.id > seen.shot) {
+    seen.shot = r.id;
+    const tip = m.ghost ? r.tips.find((x) => x.player === m.viewer) : undefined;
+    const at = r.kind === 'shot' ? m.world.ships[r.shooter] : tip && tip.pick >= 0 ? m.world.ships[tip.pick] : { x: FIELD.width / 2, y: FIELD.height / 2 };
+    if (tip) {
+      effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), at.x, at.y - 34, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right);
+      if (tip.right) sound.combo();
+    }
+    crowd(r.crowd, at, tip ? 72 : 40);
+  }
+
+  const round = m.oracle.roundResult;
+  if (round && m.phase === 'roundOver' && round.id > seen.round) {
+    seen.round = round.id;
+    const tip = m.ghost ? round.tips.find((x) => x.player === m.viewer) : undefined;
+    const winner = round.winners.length ? m.world.ships[round.winners[0]] : { x: FIELD.width / 2, y: FIELD.height / 2 };
+    if (tip) {
+      // Below the ship: the shot's own verdict may be floating above it.
+      effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), winner.x, winner.y + 48, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right);
+      if (tip.right) sound.combo();
+    }
+    // What the bet on it came to, below that.
+    if (tip?.stake) {
+      const net = (tip.payout ?? 0) - tip.stake;
+      effects.callout(`${t('oracle.stake')} ${net > 0 ? '+' : net < 0 ? '−' : '±'}${Math.abs(net)}`, winner.x, winner.y + 84, net > 0 ? COLORS.sodium : COLORS.boneDim, net > 0);
+    }
+    crowd(round.crowd, winner, tip ? -86 : -54);
+  }
 }
 
 let last = performance.now();
@@ -698,7 +757,7 @@ function frame(now: number): void {
   renderer.draw(
     m,
     effects,
-    { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, oracle: settings.oracle, ghostTeaser: ghostTeaser() },
+    { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, ghostTeaser: ghostTeaser(), keyHints: !oraclePointer },
     paused ? 0 : dt,
   );
   if (screen === 'play' && m === match) announceOracle(m);

@@ -35,6 +35,16 @@ describe('the lobby has its own state', () => {
     expect(prefs.rules).toMatchObject({ maxPower: 40, fixedPowerLevel: 75, hiddenAim: true });
   });
 
+  it('plays without bets until the host switches them on, and remembers it', () => {
+    stored({});
+    expect(loadLobbyPrefs('ws://x').rules.betting).toBe(false);
+    stored({ 'slingshot.lobby.v1': { rules: { betting: true } } });
+    expect(loadLobbyPrefs('ws://x').rules.betting).toBe(true);
+    // Anything but a plain "true" is no.
+    stored({ 'slingshot.lobby.v1': { rules: { betting: 'yes' } } });
+    expect(loadLobbyPrefs('ws://x').rules.betting).toBe(false);
+  });
+
   it('puts a value no slider has back to the standard one', () => {
     stored({ 'slingshot.lobby.v1': { rules: { maxPower: 75, fixedPowerLevel: 57, fadingTrails: 3, neighborGrace: 9 } } });
     expect(loadLobbyPrefs('ws://x').rules).toMatchObject({ maxPower: AIM.MAX_POWER, fixedPowerLevel: AIM.FIXED_POWER, fadingTrails: 0, neighborGrace: 0 });

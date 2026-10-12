@@ -54,6 +54,8 @@ interface RuleRow {
   group: RuleGroup;
   /** Only meaningful in Classic (Event Horizon always shows its planets and scores trick shots anyway). */
   classicOnly?: boolean;
+  /** Only meaningful in an online game (there is nobody to wait for offline). */
+  onlineOnly?: boolean;
   /** Shown only while this holds, e.g. the cap's slider while shot power is capped. */
   when?: (rules: RoomRules) => boolean;
   /** While hidden and this holds, the row keeps its space, so the block doesn't grow and shrink. */
@@ -85,11 +87,12 @@ export function ruleRows(): RuleRow[] {
     { key: 'neighborGrace', group: 'twists', control: 'slider', label: t('settings.neighborGrace'), options: numbers(GRACE.OPTIONS, (n) => (n ? t(n === 1 ? 'settings.oneRound' : 'settings.nRounds', { n }) : t('common.off'))) },
     { key: 'hiddenAim', group: 'twists', control: 'toggle', label: t('settings.hiddenAim'), options: [] },
     { key: 'fadingTrails', group: 'twists', control: 'slider', label: t('settings.fadingTrails'), options: numbers(TRAIL_FADE.OPTIONS, (n) => (n ? seconds(n) : t('common.off'))) },
+    { key: 'betting', group: 'twists', control: 'toggle', label: t('settings.betting'), options: [], onlineOnly: true },
   ];
 }
 
-/** The rows that apply to a game mode. */
-export const rulesFor = (mode: 'classic' | 'horizon'): RuleRow[] => ruleRows().filter((row) => mode === 'classic' || !row.classicOnly);
+/** The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has. */
+export const rulesFor = (mode: 'classic' | 'horizon', online = false): RuleRow[] => ruleRows().filter((row) => (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly));
 
 // ————————————————————————————— As controls —————————————————————————————
 
@@ -105,11 +108,11 @@ export interface RuleSource {
 type RuleItem = Extract<MenuItem, { kind: 'slider' | 'toggle' | 'segmented' }>;
 
 /** The controls for the rules of a game mode, each with the block it belongs to. */
-export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource): { group: RuleGroup; item: RuleItem }[] {
+export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, online = false): { group: RuleGroup; item: RuleItem }[] {
   /** The cap to come back to after trying another power mode. */
   let lastCap = source.get().maxPower < AIM.MAX_POWER ? source.get().maxPower : DEFAULT_CAP;
   const commit = source.commit;
-  return rulesFor(mode).map((row): { group: RuleGroup; item: RuleItem } => {
+  return rulesFor(mode, online).map((row): { group: RuleGroup; item: RuleItem } => {
     const hidden = row.when ? () => !row.when!(source.get()) : undefined;
     const reserve = row.reserve ? () => row.reserve!(source.get()) : undefined;
     if (row.control === 'toggle') {

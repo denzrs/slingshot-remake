@@ -8,7 +8,7 @@ import { awards } from '../stats';
 import type { View } from './backdrop';
 import { rgba } from './color';
 import { GHOST_BODY } from './ghost';
-import { OracleHud, oracleReserve, type OracleFrame } from './oracle';
+import { OracleHud, oracleReserve, type OracleFrame, type OracleTap } from './oracle';
 import type { DrawOptions } from './renderer';
 import { fitText, setSpacing } from './text';
 
@@ -36,7 +36,7 @@ export class Hud {
   constructor(private readonly ctx: CanvasRenderingContext2D) {}
 
   /** The oracle choice under a pointer (CSS pixels on the canvas), if there is one. */
-  oracleHit(x: number, y: number): number | null {
+  oracleHit(x: number, y: number): OracleTap | null {
     return this.oracle.hit(x, y);
   }
 
@@ -65,13 +65,13 @@ export class Hud {
     }
 
     this.oracle.begin();
-    const frame: OracleFrame = { ctx: this.ctx, k: this.k, field: this.field, time, shipPos };
-    const ghost = opts.oracle && match.ghost;
+    const frame: OracleFrame = { ctx: this.ctx, k: this.k, field: this.field, time, shipPos, keyHints: opts.keyHints && !opts.touch };
+    const ghost = match.ghost;
 
     const killcam = match instanceof HorizonMatch ? match.killcamInfo : null;
     if (killcam) {
       this.drawKillcam(match, killcam, opts);
-      if (ghost) this.oracle.drawToast(frame, match, opts.touch, true);
+      if (ghost) this.oracle.drawKillcamVerdict(frame, match, opts.touch);
       return;
     }
 
@@ -91,19 +91,18 @@ export class Hud {
     }
     if (match.phase === 'aiming' && focus >= 0 && match.aimVisible(focus)) this.drawReadout(match, match.players[focus], shipPos(focus));
     this.drawNotice(match);
-    // The oracle's question already names whose shot it is.
-    const asking = ghost && this.oracle.asking(match);
-    if (ghost) {
-      this.oracle.drawMarks(frame, match);
-      if (asking) this.oracle.drawBar(frame, match, opts.touch);
-      this.oracle.drawToast(frame, match, opts.touch, false);
-    }
+    // The oracle's card holds the question — or the round's summary — at the bottom edge; it already names whose shot it is.
+    this.oracle.plan(frame, match, opts.touch, ghost);
+    const asking = this.oracle.asking;
+    // The living feel the ghosts' mood over the shooter's ship.
+    if (!ghost) this.oracle.drawMood(frame, match);
+    if (ghost) this.oracle.drawMarks(frame, match);
     if (time - this.turnAt < 1.6 && focus >= 0 && !asking) this.drawTurnToast(match.players[focus]);
     if (match.phase === 'roundOver' && match.summary) {
       this.drawBanner(match, duel);
       this.drawScorecard(match);
-      if (opts.oracle) this.oracle.drawStrip(frame, match);
     }
+    this.oracle.drawCard(frame, match, opts.touch);
     if (!asking) this.drawHint(match, opts.touch, opts.ghostTeaser);
     // The oracle's bar has the bottom edge: the hint to the ghost lane stacks above whatever it has drawn there.
     else if (opts.ghostTeaser) this.drawGhostTeaser(match, this.field.x + this.field.w / 2, this.oracle.stackTop - 16 * this.k, opts.touch);
