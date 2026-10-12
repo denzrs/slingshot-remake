@@ -117,10 +117,10 @@ jobs:
         with:
           path: dist
 
-  # Waits for server-arm64 as well: the site shows the version the release job is about to create,
+  # Waits for server-x86_64 as well: the site shows the version the release job is about to create,
   # so it must not go live when the release can't follow.
   deploy:
-    needs: [build, server-arm64]
+    needs: [build, server-x86_64]
     if: github.event_name != 'pull_request' && github.ref_type != 'tag'
     runs-on: ubuntu-latest
     permissions:
