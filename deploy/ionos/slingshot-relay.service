@@ -5,7 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-UMask=0077
+User=slingshot
+Group=slingshot
+SupplementaryGroups=ssl-cert
 WorkingDirectory=/srv/slingshot/current
 EnvironmentFile=/srv/slingshot/relay.env
 ExecStart=/srv/slingshot/current/slingshot-server
@@ -26,4 +28,4 @@ RestrictSUIDSGID=true
 LockPersonality=true
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target

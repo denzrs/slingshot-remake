@@ -157,7 +157,7 @@ jobs:
           set -euo pipefail
           ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
-            'export XDG_RUNTIME_DIR="/run/user/$(id -u)"; export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"; systemctl --user is-active --quiet slingshot-relay.service && systemctl --user --no-pager --full status slingshot-relay.service'
+            'sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service'
 
       - name: Restore previous relay binary if the PR deployment fails
         if: failure() && steps.install.outcome != 'skipped'
@@ -165,7 +165,7 @@ jobs:
           set -euo pipefail
           ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
-            'set -euo pipefail; export XDG_RUNTIME_DIR="/run/user/$(id -u)"; export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"; previous=$(readlink -f /srv/slingshot/releases/previous); test -x "$previous/slingshot-server"; ln -sfn "$previous" /srv/slingshot/current.rollback; mv -Tf /srv/slingshot/current.rollback /srv/slingshot/current; systemctl --user restart slingshot-relay.service; systemctl --user is-active --quiet slingshot-relay.service'
+            'set -euo pipefail; previous=$(readlink -f /srv/slingshot/releases/previous); test -x "$previous/slingshot-server"; ln -sfn "$previous" /srv/slingshot/current.rollback; mv -Tf /srv/slingshot/current.rollback /srv/slingshot/current; sudo -n /usr/bin/systemctl restart slingshot-relay.service; sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service'
 
   build:
     needs: test
