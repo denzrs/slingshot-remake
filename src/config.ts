@@ -87,26 +87,59 @@ export const ORACLE = {
   RESULT_SECONDS: 3.5,
 } as const;
 
-/** The ghost lane: a small shooting range for eliminated players while the others play on. A side game — it never counts towards winning. */
+/**
+ * The ghost lane: planet smasher. A small field of rocks, bombs and a few planets for eliminated
+ * players while the others play on. One shot blows up whatever it touches, and every blast sets off
+ * its neighbours; the lane is cleared when every glowing core is gone. A side game — it never counts
+ * towards winning.
+ */
 export const GHOST = {
+  /** The lane's own field: smaller than the game's, so its rocks stay big in a small panel. */
+  WIDTH: 900,
+  HEIGHT: 560,
   /** Shots per lane. */
-  SHOTS: 3,
-  /** Base points for a hit, by the shot it took (first, second, third). */
-  HIT: 100,
-  SHOT_FACTOR: [1, 0.7, 0.45] as readonly number[],
-  /** Extra base points per swing-by on the way to a hit. */
-  SWINGBY: 50,
+  SHOTS: 5,
+  /** Seconds a shot may fly, and how much faster than real time it does. */
+  FLIGHT_TIME: 9,
+  SPEED: 3,
+  /** Radii of rocks, bombs and the golden rock, and how close a shot has to pass to set one off. */
+  ROCK_R: 15,
+  BOMB_R: 18,
+  GOLD_R: 20,
+  SHOT_R: 7,
+  /** Blast radius of a rock, a bomb and the golden rock; a planet blows up with `PLANET_BLAST × radius + PLANET_BLAST_FLAT`. */
+  BLAST: { rock: 44, bomb: 104, gold: 80 },
+  PLANET_BLAST: 1.2,
+  PLANET_BLAST_FLAT: 90,
+  /** Base points per thing blown up. */
+  BASE: { rock: 10, bomb: 40, gold: 250, planet: 150 },
+  /** Extra base points for a rock that goes up close to the black hole: "fed to the hole". */
+  FEED: 40,
+  FEED_RADIUS: 140,
+  /** A blast reaches its neighbours after this many seconds plus `FUSE_PER_PX` per pixel, so a chain rolls outwards. */
+  FUSE: 0.09,
+  FUSE_PER_PX: 0.0012,
+  /** The n-th thing blown up by one shot pays base × (1 + `COMBO_STEP` × (n − 1)), at most `COMBO_MAX`. */
+  COMBO_STEP: 0.15,
+  COMBO_MAX: 4,
+  /** Every swing-by on the way raises the shot's total by this much. */
+  SWINGBY: 0.5,
+  /** Flat bonus for a chain of at least [things blown up by one shot, points]. */
+  CHAINS: [[15, 500], [10, 250], [6, 100]] as readonly (readonly [number, number])[],
+  /** Clearing a lane: a flat bonus, plus a bonus for every shot left and for blowing up everything. */
+  CLEAR: 100,
+  SPARE_SHOT: 50,
+  PERFECT: 200,
   /** Every lane cleared in a row raises the multiplier by this much, up to the cap. */
   STREAK_STEP: 0.5,
   MAX_MULTIPLIER: 3,
-  /** Seconds a shot may fly, and how much faster than real time it does. */
-  FLIGHT_TIME: 8,
-  SPEED: 3,
-  /** A miss closer than this to the target is "nearly haunted". */
-  NEAR: 70,
+  /** The aim shows this many seconds of the flight at first, and a little less with every lane, down to the minimum. */
+  PREVIEW_START: 2.6,
+  PREVIEW_STEP: 0.35,
+  PREVIEW_MIN: 0.9,
   /** Seconds the lane rests after a cleared / failed lane before the next one appears. */
-  PAUSE_CLEARED: 1.2,
-  PAUSE_FAILED: 1.6,
+  PAUSE_CLEARED: 1.8,
+  PAUSE_FAILED: 1.8,
   /** Seconds after being shot down before the hint to the lane appears. */
   TEASER_DELAY: 3,
 } as const;
