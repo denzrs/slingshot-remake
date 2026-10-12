@@ -5,12 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=slingshot
-Group=slingshot
-SupplementaryGroups=ssl-cert
-WorkingDirectory=/srv/slingshot
-EnvironmentFile=/etc/slingshot/relay.env
-ExecStart=/usr/local/bin/slingshot-server
+UMask=0077
+WorkingDirectory=/srv/slingshot/current
+EnvironmentFile=/srv/slingshot/relay.env
+ExecStart=/srv/slingshot/current/slingshot-server
 Restart=on-failure
 RestartSec=3
 TimeoutStartSec=30
@@ -28,4 +26,4 @@ RestrictSUIDSGID=true
 LockPersonality=true
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
