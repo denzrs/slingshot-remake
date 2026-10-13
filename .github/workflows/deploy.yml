@@ -142,10 +142,6 @@ jobs:
             mv relay.env.new relay.env
             chmod 0755 slingshot-server
             chmod 0640 relay.env
-            # The unit runs as ops and systemd hands the env file only to a user
-            # that can read it; the file just scp'"'"'d here is owned by the deploy
-            # user, so chown it to ops or the relay starts with no env.
-            sudo -n chown ops:ops relay.env
             sudo -n /usr/bin/systemctl reset-failed slingshot-relay.service 2>/dev/null || true
             if ! sudo -n /usr/bin/systemctl restart slingshot-relay.service \
                || ! sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service; then
