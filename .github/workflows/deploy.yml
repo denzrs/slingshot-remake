@@ -61,14 +61,15 @@ jobs:
           name: server-x86_64
           path: server/target/x86_64-unknown-linux-musl/release/slingshot-server
 
-  deploy-relay-pr:
-    name: Deploy relay to IONOS (deployment PR only)
+  deploy-relay:
+    name: Deploy relay to IONOS
     needs: [test, server-x86_64]
+    # Deployed on a v* tag push (same release as Pages) or on demand from the
+    # Actions tab. Never on a pull request. The relay runs as a systemd USER
+    # service owned by the `ops` user, so this job needs no sudo on the server.
     if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'ionos_coffee_deplyoment' &&
-      github.event.pull_request.base.ref == 'main'
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -79,7 +80,7 @@ jobs:
           name: server-x86_64
           path: server/target/x86_64-unknown-linux-musl/release
 
-      - name: Copy relay files to VPS and restart the service
+      - name: Copy relay files over SSH and restart the user service
         env:
           DEPLOY_SSH_KEY: ${{ secrets.IONOS_DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.IONOS_DEPLOY_KNOWN_HOSTS }}
@@ -138,17 +139,35 @@ jobs:
             "$RUNNER_TEMP/relay.env" "$DEPLOY_USER@$DEPLOY_HOST:/srv/slingshot/relay.env.new"
           remote='
             set -e
+            export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+            # Keep the previous binary so a bad deploy can be rolled back.
+            [ ! -e slingshot-server ] || mv slingshot-server slingshot-server.prev
             mv slingshot-server.new slingshot-server
             mv relay.env.new relay.env
             chmod 0755 slingshot-server
             chmod 0640 relay.env
-            sudo -n /usr/bin/systemctl reset-failed slingshot-relay.service 2>/dev/null || true
-            if ! sudo -n /usr/bin/systemctl restart slingshot-relay.service \
-               || ! sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service; then
-              sudo -n /usr/bin/systemctl status slingshot-relay.service --no-pager || true
-              sudo -n /usr/bin/journalctl -u slingshot-relay.service -n 50 --no-pager || true
-              exit 1
+            systemctl --user daemon-reload
+            systemctl --user reset-failed slingshot-relay.service 2>/dev/null || true
+            if systemctl --user restart slingshot-relay.service && sleep 2 \
+               && systemctl --user is-active --quiet slingshot-relay.service; then
+              echo "Relay is active."
+            else
+              if [ -e slingshot-server.prev ]; then
+                echo "Restart failed - rolling back to the previous binary."
+                mv slingshot-server slingshot-server.failed
+                mv slingshot-server.prev slingshot-server
+                systemctl --user reset-failed slingshot-relay.service 2>/dev/null || true
+                systemctl --user restart slingshot-relay.service || true
+                sleep 2
+              fi
+              if ! systemctl --user is-active --quiet slingshot-relay.service; then
+                echo "Deploy failed: the relay is not active." >&2
+                systemctl --user status slingshot-relay.service --no-pager || true
+                journalctl --user -u slingshot-relay.service -n 50 --no-pager || true
+                exit 1
+              fi
             fi
+            journalctl --user -u slingshot-relay.service -n 10 --no-pager || true
           '
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "cd /srv/slingshot && $remote"
 
