@@ -135,8 +135,8 @@ jobs:
           RELAY_MAX_CONNECTIONS_PER_IP: ${{ vars.RELAY_MAX_CONNECTIONS_PER_IP }}
           RELAY_CONNECTIONS_PER_IP_PER_SECOND: ${{ vars.RELAY_CONNECTIONS_PER_IP_PER_SECOND }}
           RELAY_MAX_MESSAGES_PER_SECOND: ${{ vars.RELAY_MAX_MESSAGES_PER_SECOND }}
-          RELAY_TLS_CERT: ${{ vars.RELAY_TLS_CERT }}
-          RELAY_TLS_KEY: ${{ vars.RELAY_TLS_KEY }}
+          RELAY_TLS_CERT: /etc/letsencrypt/live/slingshot-relay.eu/fullchain.pem
+          RELAY_TLS_KEY: /etc/letsencrypt/live/slingshot-relay.eu/privkey.pem
         run: |
           set -euo pipefail
           missing=()
