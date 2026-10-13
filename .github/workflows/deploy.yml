@@ -79,7 +79,7 @@ jobs:
           name: server-x86_64
           path: server/target/x86_64-unknown-linux-musl/release
 
-      - name: Prepare relay and SSH credentials
+      - name: Copy relay files to VPS and restart the service
         env:
           DEPLOY_SSH_KEY: ${{ secrets.IONOS_DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.IONOS_DEPLOY_KNOWN_HOSTS }}
@@ -95,17 +95,17 @@ jobs:
           RELAY_TLS_KEY: ${{ vars.RELAY_TLS_KEY }}
         run: |
           set -euo pipefail
-          test -n "$DEPLOY_SSH_KEY" || { echo 'IONOS_DEPLOY_SSH_KEY is required' >&2; exit 1; }
-          test -n "$DEPLOY_KNOWN_HOSTS" || { echo 'IONOS_DEPLOY_KNOWN_HOSTS is required' >&2; exit 1; }
-          test -n "$DEPLOY_HOST" || { echo 'IONOS_SERVER_IP is required' >&2; exit 1; }
-          test -n "$DEPLOY_USER" || { echo 'IONOS_DEPLOY_USER is required' >&2; exit 1; }
-          test -n "$RELAY_ALLOWED_ORIGINS" || { echo 'RELAY_ALLOWED_ORIGINS is required' >&2; exit 1; }
+          missing=()
+          for name in DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS DEPLOY_HOST DEPLOY_USER RELAY_ALLOWED_ORIGINS; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          ((${#missing[@]} == 0)) || { printf 'Missing required settings: %s\n' "${missing[*]}" >&2; exit 1; }
           : "${RELAY_PORT:=8080}"
           : "${RELAY_MAX_CONNECTIONS:=1000}"
           : "${RELAY_MAX_CONNECTIONS_PER_IP:=64}"
           : "${RELAY_CONNECTIONS_PER_IP_PER_SECOND:=20}"
           : "${RELAY_MAX_MESSAGES_PER_SECOND:=300}"
-          if ! [[ "$RELAY_PORT" =~ ^[0-9]{1,5}$ ]] || (( 10#$RELAY_PORT < 1 || 10#$RELAY_PORT > 65535 )); then
+          if ! [[ "$RELAY_PORT" =~ ^[1-9][0-9]{0,4}$ ]] || (( RELAY_PORT > 65535 )); then
             echo 'RELAY_PORT must be an integer from 1 to 65535' >&2
             exit 1
           fi
@@ -113,14 +113,13 @@ jobs:
             echo 'Set RELAY_TLS_CERT and RELAY_TLS_KEY together' >&2
             exit 1
           fi
-          for value in "$RELAY_ALLOWED_ORIGINS" "$RELAY_TLS_CERT" "$RELAY_TLS_KEY"; do
-            case "$value" in *$'\n'*|*$'\r'*) echo 'Multiline relay settings are unsupported' >&2; exit 1;; esac
+          for value in "$RELAY_PORT" "$RELAY_ALLOWED_ORIGINS" "$RELAY_MAX_CONNECTIONS" "$RELAY_MAX_CONNECTIONS_PER_IP" "$RELAY_CONNECTIONS_PER_IP_PER_SECOND" "$RELAY_MAX_MESSAGES_PER_SECOND" "$RELAY_TLS_CERT" "$RELAY_TLS_KEY"; do
+            case "$value" in *$'\n'*|*$'\r'*) echo 'Multiline relay settings are not supported' >&2; exit 1;; esac
           done
           install -m 0700 -d "$RUNNER_TEMP/ionos-ssh"
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/ionos-ssh/id_ed25519"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$RUNNER_TEMP/ionos-ssh/known_hosts"
           chmod 0600 "$RUNNER_TEMP/ionos-ssh/id_ed25519" "$RUNNER_TEMP/ionos-ssh/known_hosts"
-          chmod 0755 server/target/x86_64-unknown-linux-musl/release/slingshot-server
           {
             printf 'PORT=%s\n' "$RELAY_PORT"
             printf 'ALLOWED_ORIGINS=%s\n' "$RELAY_ALLOWED_ORIGINS"
@@ -131,34 +130,27 @@ jobs:
             [[ -z "$RELAY_TLS_CERT" ]] || printf 'TLS_CERT=%s\n' "$RELAY_TLS_CERT"
             [[ -z "$RELAY_TLS_KEY" ]] || printf 'TLS_KEY=%s\n' "$RELAY_TLS_KEY"
           } > "$RUNNER_TEMP/relay.env"
-          echo "DEPLOY_HOST=$DEPLOY_HOST" >> "$GITHUB_ENV"
-          echo "DEPLOY_USER=$DEPLOY_USER" >> "$GITHUB_ENV"
-
-      - name: Copy relay files to VPS
-        run: |
-          set -euo pipefail
           ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
           scp "${ssh_options[@]}" \
             server/target/x86_64-unknown-linux-musl/release/slingshot-server \
             "$DEPLOY_USER@$DEPLOY_HOST:/srv/slingshot/slingshot-server.new"
           scp "${ssh_options[@]}" \
             "$RUNNER_TEMP/relay.env" "$DEPLOY_USER@$DEPLOY_HOST:/srv/slingshot/relay.env.new"
-
-      - name: Install relay files and restart service
-        id: install
-        run: |
-          set -euo pipefail
-          ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
-          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
-            'mv /srv/slingshot/slingshot-server.new /srv/slingshot/slingshot-server && mv /srv/slingshot/relay.env.new /srv/slingshot/relay.env && chmod 0755 /srv/slingshot/slingshot-server && chmod 0640 /srv/slingshot/relay.env && sudo -n /usr/bin/systemctl restart slingshot-relay.service'
-
-      - name: Verify relay service is active
-        if: steps.install.outcome == 'success'
-        run: |
-          set -euo pipefail
-          ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
-          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
-            'sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service'
+          remote='
+            set -e
+            mv slingshot-server.new slingshot-server
+            mv relay.env.new relay.env
+            chmod 0755 slingshot-server
+            chmod 0640 relay.env
+            sudo -n /usr/bin/systemctl reset-failed slingshot-relay.service 2>/dev/null || true
+            if ! sudo -n /usr/bin/systemctl restart slingshot-relay.service \
+               || ! sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service; then
+              sudo -n /usr/bin/systemctl status slingshot-relay.service --no-pager || true
+              sudo -n /usr/bin/journalctl -u slingshot-relay.service -n 50 --no-pager || true
+              exit 1
+            fi
+          '
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "cd /srv/slingshot && $remote"
 
   build:
     needs: test
