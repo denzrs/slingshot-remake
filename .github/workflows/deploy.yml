@@ -7,6 +7,12 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: 'Bootstrap the IONOS relay server (run once; ops needs passwordless sudo)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -19,6 +25,8 @@ concurrency:
 
 jobs:
   test:
+    # A bootstrap-only dispatch provisions the server without running the whole suite.
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.bootstrap == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -61,6 +69,41 @@ jobs:
           name: server-x86_64
           path: server/target/x86_64-unknown-linux-musl/release/slingshot-server
 
+  push-server-setup:
+    name: Push server setup files to IONOS
+    # From the Actions tab with the bootstrap checkbox: copies the setup script and the
+    # unit file to /tmp/ionos/ on the box (the files you would otherwise rsync over).
+    # No root, no sudo: this only stages the files as `ops`. Run them yourself on the
+    # server afterwards:  sudo bash /tmp/ionos/setup-server.sh
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.bootstrap == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Copy deploy/ionos/ to the server
+        env:
+          SSH_KEY: ${{ secrets.IONOS_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.IONOS_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ vars.IONOS_SERVER_IP }}
+          DEPLOY_USER: ${{ vars.IONOS_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          DEPLOY_USER="${DEPLOY_USER:-ops}"
+          missing=()
+          for name in SSH_KEY KNOWN_HOSTS HOST; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          ((${#missing[@]} == 0)) || { printf 'Missing settings: %s\n' "${missing[*]}" >&2; exit 1; }
+          install -m 0700 -d "$RUNNER_TEMP/ionos-ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ionos-ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ionos-ssh/known_hosts"
+          chmod 0600 "$RUNNER_TEMP/ionos-ssh/id_ed25519" "$RUNNER_TEMP/ionos-ssh/known_hosts"
+          ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$HOST" "mkdir -p /tmp/ionos"
+          scp "${ssh_options[@]}" deploy/ionos/setup-server.sh deploy/ionos/slingshot-relay.service \
+            "$DEPLOY_USER@$HOST:/tmp/ionos/"
+
   deploy-relay:
     name: Deploy relay to IONOS
     needs: [test, server-x86_64]
@@ -69,7 +112,7 @@ jobs:
     # service owned by the `ops` user, so this job needs no sudo on the server.
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      github.event_name == 'workflow_dispatch'
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.bootstrap != 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
