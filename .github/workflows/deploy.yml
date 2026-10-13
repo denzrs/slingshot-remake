@@ -140,15 +140,17 @@ jobs:
           ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
           scp "${ssh_options[@]}" \
             server/target/x86_64-unknown-linux-musl/release/slingshot-server \
-            deploy/ionos/install-relay.sh deploy/ionos/slingshot-relay.service \
-            "$RUNNER_TEMP/relay.env" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/"
+            "$DEPLOY_USER@$DEPLOY_HOST:/srv/slingshot/slingshot-server.new"
+          scp "${ssh_options[@]}" \
+            "$RUNNER_TEMP/relay.env" "$DEPLOY_USER@$DEPLOY_HOST:/srv/slingshot/relay.env.new"
 
-      - name: Deploy relay files and restart slingshot service
+      - name: Install relay files and restart service
         id: install
         run: |
           set -euo pipefail
           ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
-          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" 'bash /tmp/install-relay.sh'
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
+            'mv /srv/slingshot/slingshot-server.new /srv/slingshot/slingshot-server && mv /srv/slingshot/relay.env.new /srv/slingshot/relay.env && chmod 0755 /srv/slingshot/slingshot-server && chmod 0640 /srv/slingshot/relay.env && sudo -n /usr/bin/systemctl restart slingshot-relay.service'
 
       - name: Verify relay service is active
         if: steps.install.outcome == 'success'
@@ -156,15 +158,7 @@ jobs:
           set -euo pipefail
           ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
-            'sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service && sudo -n /usr/bin/systemctl --no-pager --full status slingshot-relay.service'
-
-      - name: Restore previous relay release if deployment fails
-        if: failure() && steps.install.outcome != 'skipped'
-        run: |
-          set -euo pipefail
-          ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
-          ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" \
-            'set -euo pipefail; previous=$(readlink -f /srv/slingshot/releases/previous); case "$previous" in /srv/slingshot/releases/*) ;; *) exit 1;; esac; test -x "$previous/slingshot-server"; ln -sfn "$previous" /srv/slingshot/current.rollback; mv -Tf /srv/slingshot/current.rollback /srv/slingshot/current; restorecon -h /srv/slingshot/current; sudo -n /usr/bin/systemctl restart slingshot-relay.service; sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service'
+            'sudo -n /usr/bin/systemctl is-active --quiet slingshot-relay.service'
 
   build:
     needs: test

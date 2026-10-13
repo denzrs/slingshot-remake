@@ -5,12 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=slingshot
-Group=slingshot
-SupplementaryGroups=ssl-cert
-WorkingDirectory=/srv/slingshot/current
-EnvironmentFile=/srv/slingshot/current/relay.env
-ExecStart=/srv/slingshot/current/slingshot-server
+User=ops
+Group=ops
+WorkingDirectory=/srv/slingshot
+EnvironmentFile=/srv/slingshot/relay.env
+ExecStart=/srv/slingshot/slingshot-server
 Restart=on-failure
 RestartSec=3
 TimeoutStartSec=30
