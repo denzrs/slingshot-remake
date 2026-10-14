@@ -23,5 +23,21 @@
     "shotTime": [10, 20, 30, 60],
     "neighborGrace": [0, 1, 2],
     "fadingTrails": [0, 1, 2, 4]
+  },
+  "room": {
+    "defaults": {
+      "visibility": "public",
+      "symbol": "planet",
+      "color": "#ff8660"
+    },
+    "options": {
+      "visibility": ["public", "private"],
+      "symbol": ["planet", "moon", "star", "sun", "comet", "blackhole", "ufo", "asteroid"],
+      "color": ["#ff8660", "#ffd27a", "#c6e86a", "#6fe3c8", "#62b6ff", "#b99cff", "#ff6f9f", "#e8e4d8"]
+    }
+  },
+  "avatar": {
+    "default": "rocket",
+    "options": ["rocket", "satellite", "alien", "robot", "astronaut", "crosshair", "bolt", "gem"]
   }
 }

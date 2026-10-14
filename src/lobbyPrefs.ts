@@ -1,5 +1,7 @@
 import { AIM, GRACE, TRAIL_FADE } from './config';
 import type { NetworkGameMode, RoomMode, RoomRules } from './net';
+import { avatarFrom, DEFAULT_AVATAR, type Avatar } from './avatars';
+import { DEFAULT_ROOM_LOOK, roomLookFrom, type RoomLook } from './roomLook';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
 
 /** What the multiplayer lobby remembers between visits, so it needn't be filled in again. */
@@ -11,6 +13,10 @@ interface LobbyPrefs {
   gameMode: NetworkGameMode;
   matchType: RoomMode;
   capacity: number;
+  /** The name, listing, symbol and colour the next room starts with. */
+  look: RoomLook;
+  /** The symbol the player shows in online games. */
+  avatar: Avatar;
   rules: RoomRules;
 }
 
@@ -43,7 +49,7 @@ export const rulesOf = (s: Settings): RoomRules => ({
 export const defaultRoomRules = (): RoomRules => rulesOf(DEFAULT_SETTINGS);
 
 export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
-  const fresh: LobbyPrefs = { server: defaultServer, name: 'Player', autoConnect: false, gameMode: 'classic', matchType: 'ffa', capacity: 4, rules: defaultRoomRules() };
+  const fresh: LobbyPrefs = { server: defaultServer, name: 'Player', autoConnect: false, gameMode: 'classic', matchType: 'ffa', capacity: 4, look: { ...DEFAULT_ROOM_LOOK }, avatar: DEFAULT_AVATAR, rules: defaultRoomRules() };
   try {
     fresh.name = localStorage.getItem(LEGACY_NAME_KEY) || fresh.name;
     const raw = localStorage.getItem(KEY);
@@ -56,6 +62,8 @@ export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
       gameMode: saved.gameMode === 'horizon' ? 'horizon' : 'classic',
       matchType: saved.matchType === 'team' ? 'team' : 'ffa',
       capacity: Number.isInteger(saved.capacity) && saved.capacity! >= 2 && saved.capacity! <= 6 ? saved.capacity! : fresh.capacity,
+      look: roomLookFrom(saved.look),
+      avatar: avatarFrom(saved.avatar),
       rules: {
         ...fresh.rules,
         ...saved.rules,

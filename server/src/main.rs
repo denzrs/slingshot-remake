@@ -73,7 +73,7 @@ async fn main() {
     // so the allowlist blocks cross-site WebSocket hijacking; handshakes with no Origin
     // header are rejected too, so scripts cannot bypass the check by omitting it.
     let default_origins = if env_flag("DEV_SERVER") {
-        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173"
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:4173,http://127.0.0.1:4173"
             .to_string()
     } else {
         String::new()

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AIM } from '../src/config';
 import { defaultRoomRules, loadLobbyPrefs, rulesOf } from '../src/lobbyPrefs';
+import { DEFAULT_ROOM_LOOK } from '../src/roomLook';
 import { DEFAULT_SETTINGS } from '../src/settings';
 
 const stored = (values: Record<string, unknown>) =>
@@ -59,6 +60,24 @@ describe('the lobby has its own state', () => {
       stored({ 'slingshot.lobby.v1': { capacity } });
       expect(loadLobbyPrefs('ws://x').capacity).toBe(capacity);
     }
+  });
+
+  it('remembers the look of the next room, and starts over from the default when it is not a known choice', () => {
+    stored({});
+    expect(loadLobbyPrefs('ws://x').look).toEqual(DEFAULT_ROOM_LOOK);
+    stored({ 'slingshot.lobby.v1': { look: { visibility: 'private', symbol: 'moon', color: '#c6e86a' } } });
+    expect(loadLobbyPrefs('ws://x').look).toEqual({ visibility: 'private', symbol: 'moon', color: '#c6e86a' });
+    stored({ 'slingshot.lobby.v1': { look: { visibility: 'secret', symbol: 'dragon', color: '#000000' } } });
+    expect(loadLobbyPrefs('ws://x').look).toEqual(DEFAULT_ROOM_LOOK);
+  });
+
+  it('remembers the symbol the player shows in games, and starts over from the default when it is not a choice', () => {
+    stored({});
+    expect(loadLobbyPrefs('ws://x').avatar).toBe('rocket');
+    stored({ 'slingshot.lobby.v1': { avatar: 'bolt' } });
+    expect(loadLobbyPrefs('ws://x').avatar).toBe('bolt');
+    stored({ 'slingshot.lobby.v1': { avatar: 'dragon' } });
+    expect(loadLobbyPrefs('ws://x').avatar).toBe('rocket');
   });
 
   it('survives storage that is broken or blocked', () => {

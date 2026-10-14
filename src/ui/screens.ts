@@ -169,7 +169,7 @@ export function titleScreen(app: App): Screen {
         { kind: 'action', label: t('mode.horizon'), hint: t('mode.horizon.hint'), run: () => app.menu.push(() => setupScreen(app, 'horizon')) },
         { kind: 'action', label: t('multiplayer.title'), hint: t('multiplayer.hint'), run: () => app.openLobby() },
         { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
-        { kind: 'action', label: t('common.help'), run: () => app.menu.push(() => helpScreen(app)) },
+        { kind: 'action', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
         languageItem(app),
       ];
     },
@@ -187,7 +187,7 @@ export function pauseScreen(app: App): Screen {
       ...(mode && !app.online ? [{ kind: 'action', label: t('pause.newGame'), run: () => app.menu.push(() => setupScreen(app, mode)) } satisfies MenuItem] : []),
       ...(daily ? [{ kind: 'action', label: t('daily.retry'), run: () => app.rematch() } satisfies MenuItem] : []),
       { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
-      { kind: 'action', label: t('common.help'), run: () => app.menu.push(() => helpScreen(app)) },
+      { kind: 'action', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
       app.online
         ? { kind: 'action', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
         : { kind: 'action', label: t('common.mainMenu'), run: () => app.toTitle() },
@@ -420,55 +420,176 @@ function settingsScreen(app: App): Screen {
   };
 }
 
-function helpScreen(app: App): Screen {
-  const key = (k: string) => h('kbd', null, k);
-  const row = (keys: (Node | string)[], text: string) => h('tr', null, h('th', { scope: 'row' }, ...keys), h('td', null, text));
-  const combos = (Object.keys(STYLE_MULTIPLIER) as StyleKind[]).map((k) =>
-    row([styleLabel(k)], `×${fmtNum(STYLE_MULTIPLIER[k])} – ${t(`style.${k}.text`)}`),
-  );
-  return {
-    build: () =>
-      panel(
-        t('common.help'),
-        h(
-          'div.help',
-          null,
-          h('h3', null, t('help.classic.title')),
-          h('p', null, t('help.classic.body')),
-          h('h3', null, t('help.teams.title')),
-          h('p', null, t('help.teams.body', { penalty: SCORING.SELF_HIT, bonus: SCORING.SURVIVOR })),
-          h('h3', null, t('help.horizon.title')),
-          h('p', null, t('help.horizon.body', { seconds: HORIZON.SHOT_CLOCK })),
-          h('h3', null, t('help.daily.title')),
-          h('p', null, t('help.daily.body', { base: SCORING.BASE, bonus: CHALLENGE.CLEAR_BONUS, selfHit: SCORING.SELF_HIT })),
-          h(
-            'table.keys-table',
-            null,
-            h(
-              'tbody',
-              null,
-              row([key('←'), ' ', key('→')], t('help.key.rotate')),
-              row([key('↑'), ' ', key('↓')], t('help.key.power')),
-              row([key('Enter')], t('help.key.fire')),
-              row([key('Shift')], t('help.key.large')),
-              row([key('Alt')], t('help.key.small')),
-              row([key(t('common.ctrl')), t('help.key.or'), key('Alt'), '+', key('Shift')], t('help.key.tiny')),
-              row([t('help.key.dragName')], t('help.key.drag')),
-              row([key(t('common.space'))], t('help.key.next')),
-              row([key('C')], t('help.key.clip')),
-              row([key('Esc')], t('help.key.menu')),
-              row([key('G')], t('help.key.ghost')),
-              row([key('F')], t('help.key.fullscreen')),
-            ),
-          ),
-          h('h3', null, t('help.scoring.title')),
-          h('p', null, t('help.scoring.classic', { survivor: SCORING.SURVIVOR, selfHit: SCORING.SELF_HIT })),
-          h('p', null, t('help.scoring.horizon', { volley: SCORING.VOLLEY_SURVIVED, orbit: SCORING.LAST_IN_ORBIT })),
-          h('table.keys-table', null, h('tbody', null, ...combos)),
-        ),
-        'panel--wide',
+/** One page of the tutorial: a heading and what goes under it. */
+interface Lesson {
+  title: string;
+  body: (Node | string)[];
+}
+
+const kbd = (k: string) => h('kbd', null, k);
+const para = (text: string) => h('p', null, text);
+const keyRow = (keys: (Node | string)[], text: string) => h('tr', null, h('th', { scope: 'row' }, ...keys), h('td', null, text));
+const keysTable = (...rows: HTMLElement[]) => h('table.keys-table', null, h('tbody', null, ...rows));
+
+/** A shot bent around a planet onto its target: the swing-by, as a picture. */
+function gravityFigure(): HTMLElement {
+  const figure = h('figure.tutorial__figure', { role: 'img', 'aria-label': t('tutorial.gravity.figure') });
+  figure.innerHTML =
+    '<svg viewBox="0 0 480 160" aria-hidden="true">' +
+    '<circle cx="300" cy="100" r="62" fill="none" stroke="#5b7db3" stroke-opacity="0.4" stroke-dasharray="2 6"/>' +
+    '<circle cx="300" cy="100" r="30" fill="#1d3a6b" stroke="#5b7db3" stroke-width="2"/>' +
+    '<path d="M62 124 C150 112 190 34 268 42 C320 48 344 26 390 22" fill="none" stroke="#e8e4d8" stroke-width="2" stroke-dasharray="5 6" stroke-linecap="round"/>' +
+    '<path d="M60 112 L72 138 L60 132 L48 138 Z" fill="#ff8660" transform="rotate(80 60 125)"/>' +
+    '<circle cx="400" cy="22" r="11" fill="none" stroke="#ffd27a" stroke-width="2"/>' +
+    '<circle cx="400" cy="22" r="3.5" fill="#ffd27a"/>' +
+    '</svg>';
+  return figure;
+}
+
+/** The pages of the tutorial, in order. Each one is built when it is shown, so its texts follow the language. */
+const TUTORIAL: (() => Lesson)[] = [
+  () => ({
+    title: t('tutorial.welcome.title'),
+    body: [para(t('tutorial.welcome.1')), para(t('tutorial.welcome.2')), para(t('tutorial.welcome.3'))],
+  }),
+  () => ({
+    title: t('tutorial.aim.title'),
+    body: [
+      para(t('tutorial.aim.1')),
+      keysTable(
+        keyRow([kbd('←'), ' ', kbd('→')], t('tutorial.aim.rotate')),
+        keyRow([kbd('↑'), ' ', kbd('↓')], t('tutorial.aim.power')),
+        keyRow([kbd('Enter')], t('tutorial.aim.fire')),
       ),
-    items: [{ kind: 'action', label: t('common.back'), primary: true, run: () => app.menu.back() }],
+      para(t('tutorial.aim.2')),
+    ],
+  }),
+  () => ({
+    title: t('tutorial.gravity.title'),
+    body: [para(t('tutorial.gravity.1')), gravityFigure(), para(t('tutorial.gravity.2')), para(t('tutorial.gravity.3')), h('p.tutorial__tip', null, t('tutorial.gravity.tip'))],
+  }),
+  () => ({
+    title: t('tutorial.round.title'),
+    body: [
+      para(t('tutorial.round.1')),
+      para(t('tutorial.round.2')),
+      para(t('tutorial.round.3', { selfHit: SCORING.SELF_HIT, survivor: SCORING.SURVIVOR })),
+      para(t('tutorial.round.4')),
+    ],
+  }),
+  () => ({
+    title: t('tutorial.horizon.title'),
+    body: [
+      para(t('tutorial.horizon.1', { seconds: HORIZON.SHOT_CLOCK })),
+      para(t('tutorial.horizon.2')),
+      para(t('tutorial.horizon.3')),
+      para(t('tutorial.horizon.4', { volley: SCORING.VOLLEY_SURVIVED, orbit: SCORING.LAST_IN_ORBIT })),
+    ],
+  }),
+  () => ({
+    title: t('tutorial.tricks.title'),
+    body: [
+      para(t('tutorial.tricks.1')),
+      keysTable(...(Object.keys(STYLE_MULTIPLIER) as StyleKind[]).map((k) => keyRow([styleLabel(k)], `×${fmtNum(STYLE_MULTIPLIER[k])} – ${t(`style.${k}.text`)}`))),
+    ],
+  }),
+  () => ({
+    title: t('tutorial.daily.title'),
+    body: [
+      para(t('tutorial.daily.1')),
+      para(t('tutorial.daily.2')),
+      para(t('tutorial.daily.3', { bonus: CHALLENGE.CLEAR_BONUS, selfHit: SCORING.SELF_HIT })),
+      para(t('tutorial.daily.4')),
+    ],
+  }),
+  () => ({
+    title: t('tutorial.keys.title'),
+    body: [
+      para(t('tutorial.keys.1')),
+      keysTable(
+        keyRow([kbd(t('common.space'))], t('tutorial.keys.space')),
+        keyRow([kbd('C')], t('tutorial.keys.clip')),
+        keyRow([kbd('G')], t('tutorial.keys.ghost')),
+        keyRow([kbd('Esc')], t('tutorial.keys.menu')),
+        keyRow([kbd('F')], t('tutorial.keys.fullscreen')),
+      ),
+      para(t('tutorial.keys.2')),
+    ],
+  }),
+];
+
+/**
+ * How to play: a short tutorial, one page at a time, turned with the buttons (← → and Enter work too).
+ * The page is kept in this closure, so a rebuild (say, after a language switch) stays on the same page.
+ */
+function tutorialScreen(app: App): () => Screen {
+  let page = 0;
+  return (): Screen => {
+    const last = page === TUTORIAL.length - 1;
+    return {
+      // Every page is in the DOM, only the current one is seen: the pages share one grid cell, so the
+      // dialog is as tall as the longest page and the buttons stay in place while you turn them.
+      build: () =>
+        h(
+          'section.screen.screen--panel',
+          { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('common.help') },
+          h(
+            'div.panel.panel--wide',
+            null,
+            h('h2.panel__title', null, t('common.help')),
+            h(
+              'div.tutorial',
+              null,
+              h('div.tutorial__progress', { 'aria-hidden': 'true' }, ...TUTORIAL.map((_, i) => h(i === page ? 'span.is-current' : i < page ? 'span.is-done' : 'span', null))),
+              h(
+                'div.tutorial__pages',
+                null,
+                ...TUTORIAL.map((lessonOf, i) => {
+                  const lesson = lessonOf();
+                  return h(
+                    i === page ? 'div.tutorial__page.is-current' : 'div.tutorial__page',
+                    null,
+                    h('p.eyebrow', null, t('tutorial.step', { n: i + 1, total: TUTORIAL.length })),
+                    h('h3.tutorial__title', null, lesson.title),
+                    ...lesson.body,
+                  );
+                }),
+              ),
+            ),
+            h('div.items.items--row', { 'data-section': 'pager' }),
+          ),
+        ),
+      items: [
+        {
+          kind: 'action',
+          section: 'pager',
+          label: t('common.back'),
+          run: () => {
+            // On the first page, back leaves the tutorial.
+            if (page === 0) {
+              app.menu.back();
+              return;
+            }
+            page -= 1;
+            app.menu.rebuild();
+          },
+        },
+        last
+          ? { kind: 'action', section: 'pager', label: t('tutorial.done'), primary: true, run: () => app.menu.back() }
+          : {
+              kind: 'action',
+              section: 'pager',
+              label: t('common.next'),
+              primary: true,
+              run: () => {
+                page += 1;
+                app.menu.rebuild();
+              },
+            },
+      ],
+      // "Next" has the focus, so Enter turns the pages.
+      focus: 1,
+    };
   };
 }
 

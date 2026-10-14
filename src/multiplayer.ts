@@ -4,6 +4,8 @@ import type { ClassicSnapshot } from './game/classic';
 import type { HorizonSnapshot } from './game/horizon';
 import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules, type ServerMessage } from './net';
 import { defaultRoomRules } from './lobbyPrefs';
+import type { RoomLook } from './roomLook';
+import type { Avatar } from './avatars';
 import { SnapshotDecoder, SnapshotEncoder } from './netsync';
 import type { Seat, Settings } from './settings';
 
@@ -28,9 +30,22 @@ interface CreateRoomOptions {
   rules: RoomRules;
   maxPlayers: number;
   password?: string;
+  /** How the room shows up in the lobby; what is left out takes the default. */
+  look?: Partial<RoomLook>;
+  /** The symbol the player shows in the game. */
+  avatar?: Avatar;
 }
 
 export const DEFAULT_SERVER: string = String(import.meta.env.VITE_MULTIPLAYER_SERVER || 'ws://localhost:8080');
+
+/** Whether an address is a secure relay (`wss://`): the hosted one, which the build connects to on its own. */
+export function isSecureRelay(address: string): boolean {
+  try {
+    return new URL(address).protocol === 'wss:';
+  } catch {
+    return false;
+  }
+}
 
 /** What the session needs from a connection — the WebSocket client, or a stand-in in tests. */
 export type Transport = Pick<NetworkClient, 'address' | 'setAddress' | 'connect' | 'onMessage' | 'send' | 'close'>;
@@ -99,11 +114,22 @@ export class MultiplayerSession {
   }
 
   createRoom(options: CreateRoomOptions): void {
-    this.send({ type: 'create_room', ...options, password: options.password || undefined });
+    const { look = {}, ...room } = options;
+    this.send({ type: 'create_room', ...room, ...look, password: options.password || undefined });
   }
 
-  joinRoom(roomId: string, name: string, password?: string): void {
-    this.send({ type: 'join_room', roomId, name, password: password || undefined });
+  /** Host only: how the waiting room shows up in the lobby. Nobody has to confirm again. */
+  setRoomLook(look: RoomLook): void {
+    this.send({ type: 'set_room', look });
+  }
+
+  joinRoom(roomId: string, name: string, password?: string, avatar?: Avatar): void {
+    this.send({ type: 'join_room', roomId, name, password: password || undefined, avatar });
+  }
+
+  /** Your symbol in the game, while the room waits. Nobody has to confirm again. */
+  setAvatar(avatar: Avatar): void {
+    this.send({ type: 'set_avatar', avatar });
   }
 
   setReady(ready: boolean): void {
@@ -257,6 +283,7 @@ export class MultiplayerSession {
     const match = createMatch(message.gameMode, settings, {
       seats,
       names: message.players.map((p) => p.name),
+      avatars: message.players.map((p) => p.avatar),
       teams: message.mode === 'team' ? message.players.map((p) => p.team) : undefined,
       simultaneous: message.gameMode === 'horizon' || settings.simultaneousShots,
       oracle: true,

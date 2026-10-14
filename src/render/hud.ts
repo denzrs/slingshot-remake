@@ -6,6 +6,7 @@ import { awardLabel, awardValue, awardWho, spotlight } from '../scorecard';
 import { styleLabel } from '../scoring';
 import { awards } from '../stats';
 import type { View } from './backdrop';
+import { drawAvatar } from './avatar';
 import { rgba } from './color';
 import { GHOST_BODY } from './ghost';
 import { OracleHud, oracleReserve, type OracleFrame, type OracleTap } from './oracle';
@@ -140,7 +141,13 @@ export class Hud {
     ctx.fillStyle = p.color;
     ctx.font = `700 ${11.5 * k}px ${FONTS.body}`;
     setSpacing(ctx, 2.2 * k);
-    ctx.fillText(nameLabel(p).toUpperCase(), x, y);
+    const label = nameLabel(p).toUpperCase();
+    ctx.fillText(label, x, y);
+    if (p.avatar) {
+      // An online player's symbol follows the name, on the inside of the block.
+      const width = ctx.measureText(label).width;
+      drawAvatar(ctx, p.avatar, align === 'left' ? x + width + 16 * k : x - width - 16 * k, y + 7 * k, 17 * k, p.color);
+    }
     setSpacing(ctx, 0);
     ctx.fillStyle = COLORS.bone;
     ctx.font = `700 ${30 * k}px ${FONTS.mono}`;
@@ -204,15 +211,18 @@ export class Hud {
       ctx.fillRect(x, y, 3 * k, h);
       if (active) ctx.fillRect(x, y + h - 2 * k, w, 2 * k);
 
+      // An online player's symbol leads the card, in the player's colour; the name and score sit beside it.
+      const textX = p.avatar ? x + 26 * k : x + 10 * k;
+      if (p.avatar) drawAvatar(ctx, p.avatar, x + 17 * k, y + h / 2, 16 * k, p.color);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.font = `700 ${10 * k}px ${FONTS.body}`;
       setSpacing(ctx, 1.6 * k);
-      ctx.fillText(p.name.toUpperCase(), x + 10 * k, y + 6 * k);
+      ctx.fillText(p.name.toUpperCase(), textX, y + 6 * k);
       setSpacing(ctx, 0);
       ctx.fillStyle = COLORS.bone;
       ctx.font = `700 ${17 * k}px ${FONTS.mono}`;
-      ctx.fillText(String(p.score), x + 10 * k, y + 19 * k);
+      ctx.fillText(String(p.score), textX, y + 19 * k);
 
       ctx.textAlign = 'right';
       ctx.font = `700 ${9.5 * k}px ${FONTS.mono}`;

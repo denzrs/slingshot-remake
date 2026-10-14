@@ -1004,11 +1004,47 @@ body {
   color: var(--bone-dim);
 }
 
-.help {
+/* How to play: a short tutorial, one page at a time. */
+.tutorial {
   font-size: 14px;
   line-height: 1.6;
   color: var(--bone-dim);
-  margin-bottom: 14px;
+  margin-bottom: 8px;
+}
+
+.tutorial__progress {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 18px;
+}
+
+.tutorial__progress span {
+  flex: 1;
+  height: 3px;
+  background: rgb(91 125 179 / 0.25);
+}
+
+.tutorial__progress .is-done {
+  background: var(--line);
+}
+
+.tutorial__progress .is-current {
+  background: var(--p1);
+}
+
+/* All pages share one grid cell, so the dialog keeps the height of its longest page; the others are only hidden. */
+.tutorial__pages {
+  display: grid;
+}
+
+.tutorial__page {
+  grid-area: 1 / 1;
+  min-width: 0;
+  visibility: hidden;
+}
+
+.tutorial__page.is-current {
+  visibility: visible;
 }
 
 /* ——— Multiplayer lobby ——— */
@@ -1025,12 +1061,18 @@ body {
 }
 
 .panel--lobby .panel__title {
-  margin-bottom: 12px;
+  width: min(860px, 100%);
+  margin: 0 auto 12px;
 }
 
+/* One column for the whole lobby: the title, the bar and every card share its edges. */
 .lobby {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
   color: var(--bone);
 }
 
@@ -1388,6 +1430,10 @@ body {
   font: 13px var(--font-body);
 }
 
+.lobby-room .lobby__secret {
+  grid-column: 1;
+}
+
 .lobby-room .lobby__button {
   grid-column: 2;
   grid-row: 1 / span 2;
@@ -1487,6 +1533,320 @@ body {
   flex: 1 1 120px;
 }
 
+/* A password field with its buttons beside it: the eye, and for the host the copy. */
+.lobby__secret {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lobby__secret input {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.lobby__icon-button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  padding: 0;
+  border: 1px solid rgb(91 125 179 / 0.55);
+  border-radius: 3px;
+  background: rgb(6 15 31 / 0.85);
+  color: var(--bone-dim);
+  cursor: pointer;
+  transition: border-color 140ms, color 140ms, background 140ms, transform 80ms;
+}
+
+.lobby__icon-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.lobby__icon-button:hover {
+  border-color: var(--line);
+  color: var(--bone);
+}
+
+.lobby__icon-button[aria-pressed='true'] {
+  border-color: var(--sodium);
+  color: var(--sodium);
+}
+
+.lobby__icon-button:active {
+  transform: translateY(1px);
+}
+
+.lobby__icon-button:focus-visible {
+  outline: none;
+  border-color: var(--p1);
+  box-shadow: 0 0 0 3px rgb(255 134 96 / 0.25);
+}
+
+/* A room's symbol, in the room's colour (--tone). */
+.room-icon {
+  display: inline-grid;
+  flex: none;
+  width: 1.4em;
+  height: 1.4em;
+  margin-right: 0.5em;
+  color: var(--tone, var(--bone));
+  vertical-align: -0.3em;
+}
+
+.room-icon svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* A player's symbol in the player's colour (--tone), as the room lists it. */
+.player-icon {
+  display: inline-grid;
+  flex: none;
+  width: 1.3em;
+  height: 1.3em;
+  color: var(--tone, var(--bone));
+}
+
+.player-icon svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* Your own symbol: a row of the choices, in the bar and under the players. */
+.lobby__avatar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  --tone: var(--bone);
+}
+
+.lobby__avatar .room-pick {
+  grid-template-columns: repeat(8, 30px);
+  gap: 5px;
+}
+
+.lobby__avatar .room-pick__option {
+  width: 30px;
+  height: 30px;
+  aspect-ratio: auto;
+}
+
+.lobby-room__host {
+  color: var(--bone-dim);
+  font-size: 12px;
+}
+
+/* The room's code: shown in the room, and typed in to join a private one. */
+.lobby__code {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.lobby__code-label {
+  color: var(--bone-dim);
+  font-size: 12px;
+}
+
+.lobby__code-value {
+  color: var(--bone);
+  font: 600 13px var(--font-mono);
+  letter-spacing: 0.08em;
+  user-select: all;
+}
+
+.lobby__code .lobby__button {
+  min-height: 30px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+}
+
+.lobby__code-join {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px 10px;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid rgb(91 125 179 / 0.22);
+}
+
+.lobby__code-join input {
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid rgb(91 125 179 / 0.55);
+  border-radius: 3px;
+  background: rgb(6 15 31 / 0.85);
+  color: var(--bone);
+  font: 13px var(--font-body);
+}
+
+.lobby__code-join input:focus-visible {
+  outline: none;
+  border-color: var(--p1);
+  box-shadow: 0 0 0 3px rgb(255 134 96 / 0.2);
+}
+
+.lobby__code-join .lobby__button {
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+/* The room's look at a glance: the symbol in its colour, its names, and a button to change it. */
+.look-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgb(91 125 179 / 0.28);
+  border-radius: 3px;
+  background: rgb(19 39 70 / 0.4);
+}
+
+.look-summary__icon {
+  flex: none;
+  font-size: 22px;
+}
+
+.look-summary__icon .room-icon {
+  font-size: 1em;
+}
+
+.look-summary__body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.look-summary__text {
+  color: var(--bone);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.look-caption {
+  color: var(--bone-dim);
+  font-size: 12px;
+}
+
+.look-visibility {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Where the room's look sits in the room: the switch and the summary, side by side. */
+.lobby__look-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 12px 20px;
+  align-items: start;
+}
+
+/* Symbol and colour, over the screen: a card in the lobby's own style, on a dimmed screen. */
+.look-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(6 15 31 / 0.78);
+  backdrop-filter: blur(2px);
+}
+
+.look-dialog[hidden] {
+  display: none;
+}
+
+.look-dialog__card {
+  width: min(440px, 100%);
+}
+
+.look-dialog .room-pick {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
+.room-pick {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.room-pick__option {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid rgb(91 125 179 / 0.45);
+  border-radius: 3px;
+  background: rgb(6 15 31 / 0.6);
+  color: var(--bone-dim);
+  cursor: pointer;
+  transition: border-color 140ms, background 140ms, color 140ms, box-shadow 160ms;
+}
+
+.room-pick__option svg {
+  width: 62%;
+  height: 62%;
+}
+
+.room-pick__option:hover:not(:disabled) {
+  border-color: var(--line);
+  color: var(--bone);
+}
+
+.room-pick__option:focus-visible {
+  outline: none;
+  border-color: var(--p1);
+  box-shadow: 0 0 0 3px rgb(255 134 96 / 0.25);
+}
+
+.room-pick__option.is-on {
+  border-color: var(--tone, var(--p1));
+  background: color-mix(in srgb, var(--tone, var(--p1)) 16%, transparent);
+  color: var(--tone, var(--p1));
+  box-shadow: inset 0 0 0 1px var(--tone, var(--p1));
+}
+
+.room-pick__option:disabled {
+  cursor: default;
+}
+
+.room-swatch {
+  width: 58%;
+  height: 58%;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgb(0 0 0 / 0.35);
+}
+
+@media (max-width: 760px) {
+  .lobby__code-join {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .lobby__code-join .lobby__code-label {
+    grid-column: 1 / -1;
+  }
+
+  .lobby__code-join .lobby__button {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 560px) {
   .panel--lobby .panel__title {
     font-size: 34px;
@@ -1495,6 +1855,10 @@ body {
 
 @media (max-width: 760px) {
   .lobby__basics {
+    grid-template-columns: 1fr;
+  }
+
+  .lobby__look-row {
     grid-template-columns: 1fr;
   }
 
@@ -1511,22 +1875,34 @@ body {
   }
 }
 
-.help p {
+.tutorial p {
   margin: 0 0 12px;
 }
 
-.help h3 {
-  margin: 20px 0 6px;
+.tutorial__title {
+  margin: 0 0 14px;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 22px;
+  font-size: 28px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--bone);
 }
 
-.help h3:first-child {
-  margin-top: 0;
+.tutorial__figure {
+  margin: 4px 0 16px;
+}
+
+.tutorial__figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.tutorial__tip {
+  padding-left: 12px;
+  border-left: 2px solid var(--sodium);
+  color: var(--bone);
 }
 
 .keys-table {
@@ -2010,31 +2386,6 @@ body.egg-open #touch-fire {
 @media (pointer: coarse) {
   #ghost-lane {
     --ghost-bottom: calc(max(16px, env(safe-area-inset-bottom)) + 72px);
-  }
-}
-
-#rotate-hint {
-  display: none;
-  position: fixed;
-  left: 16px;
-  right: 16px;
-  top: max(16px, env(safe-area-inset-top));
-  z-index: 5;
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid rgb(91 125 179 / 0.5);
-  background: rgb(11 26 51 / 0.9);
-  color: var(--bone-dim);
-  font-size: 14px;
-  line-height: 1.45;
-  text-align: center;
-  pointer-events: none;
-}
-
-/* Only a phone is asked to turn: a narrow desktop window can't be rotated. */
-@media (orientation: portrait) and (max-width: 700px) and (pointer: coarse) {
-  body.is-playing #rotate-hint {
-    display: block;
   }
 }
 
