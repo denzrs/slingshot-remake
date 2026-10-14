@@ -76,6 +76,7 @@ type View = 'rooms' | 'create';
  */
 export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const prefs = loadLobbyPrefs(DEFAULT_SERVER);
+  const configuredServer = Boolean(import.meta.env.VITE_MULTIPLAYER_SERVER);
   const save = () => saveLobbyPrefs(prefs);
   const sound = app.menu.sound;
   /** Connection progress / validation messages that don't come from the session. */
@@ -94,14 +95,16 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   /** The name belongs to the connection card until there is a connection, and to the bar after it. */
   const nameField = field(t('multiplayer.name'), playerName);
   const connectButton = button(t('multiplayer.connect'), true);
-  const connectFields = h('div.lobby__fields', null, field(t('multiplayer.server'), serverAddress));
+  const connectFields = h('div.lobby__fields', null, ...(configuredServer ? [] : [field(t('multiplayer.server'), serverAddress)]));
   const connectView = h('section.lobby__card.lobby__card--narrow', null, h('h3.setup__title', null, t('multiplayer.connection')), connectFields, connectButton);
 
   /** Once connected: who you are connected to, your name, a way out. */
   const linkText = h('span.lobby__link-text', null);
+  const serverLink = h('span.lobby__link', null, linkText);
+  serverLink.hidden = configuredServer;
   const barName = h('div.lobby__name', null);
   const disconnectButton = button(t('multiplayer.disconnect'));
-  const bar = h('div.lobby__bar', null, h('span.lobby__link', null, linkText), barName, disconnectButton);
+  const bar = h('div.lobby__bar', null, serverLink, barName, disconnectButton);
 
   // ————————————————————————————— The open rooms —————————————————————————————
 
@@ -391,23 +394,24 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     formKey = '';
 
     (connected ? barName : connectFields).append(nameField);
-    linkText.textContent = t('multiplayer.connectedTo', { server: session.client.address || prefs.server });
+    if (!configuredServer) linkText.textContent = t('multiplayer.connectedTo', { server: session.client.address || prefs.server });
     connectButton.disabled = connecting;
     serverAddress.disabled = connecting;
     renderRooms(open);
   };
 
   const connect = async (silent: boolean) => {
+    const address = configuredServer ? DEFAULT_SERVER : serverAddress.value.trim();
     localMessage = silent ? null : t('multiplayer.connecting');
     render();
     try {
-      await session.connect(serverAddress.value.trim());
-      prefs.server = serverAddress.value.trim();
+      await session.connect(address);
+      if (!configuredServer) prefs.server = address;
       prefs.autoConnect = true;
       localMessage = null;
     } catch (error) {
       prefs.autoConnect = false;
-      localMessage = error instanceof Error ? error.message : String(error);
+      localMessage = configuredServer ? t('multiplayer.connectFailed') : error instanceof Error ? error.message : String(error);
     }
     save();
     render();
@@ -461,7 +465,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       render();
       // Came back to a lobby that worked before: reconnect without making the player press anything.
       // Deferred until the screen is in the DOM — the session's updates only reach a mounted screen.
-      if (!session.connected && !session.connecting && !session.room && prefs.autoConnect) setTimeout(() => void connect(true), 0);
+      if (!session.connected && !session.connecting && !session.room && (configuredServer || prefs.autoConnect)) setTimeout(() => void connect(true), 0);
       return root;
     },
     items: [],
