@@ -1,5 +1,5 @@
 /**
- * Cheat/debug aim predictor — dev page (`debug-aim.html`), not part of the game.
+ * Debug aim predictor — dev page (`debug-aim.html`), not part of the game.
  *
  * Sample a stratified angle × power grid through the production `Shot` integrator with the TRUE
  * world (real planet masses, no AI belief): 500 aim cells, three trajectories each ("3x"), so
@@ -7,8 +7,8 @@
  * enemy's colour; everything else (planet, lost, timeout, clash) is a dim dot. The chart renders
  * on a canvas and can be downloaded as a PNG.
  */
-import { AIM, COLORS } from '../config';
-import { Shot, type ShotEnd, type ShotRules, type World } from '../physics';
+import { AIM, COLORS, HORIZON } from '../config';
+import { cloneWorld, Shot, type ShotEnd, type ShotRules, type World } from '../physics';
 import { generateWorld } from '../world';
 import { createRng, randomSeed, type Rng } from '../rng';
 
@@ -51,6 +51,9 @@ style.textContent = `
   .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .stats { margin: 0 0 14px; color: ${bone}; font: 12px/1.7 "B612 Mono", monospace; }
   .stats span { color: ${boneDim}; }
+  .outcome-filters { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 4px 0 10px; color: ${boneDim}; }
+  .outcome-filters label { display: inline-flex; align-items: center; gap: 4px; }
+  .outcome-filters input { accent-color: ${sodium}; margin: 0; }
 `;
 document.head.append(style);
 
@@ -58,6 +61,8 @@ document.head.append(style);
 
 const elements = {
   seed: document.createElement('input'),
+  horizon: document.createElement('input'),
+  collapses: document.createElement('select'),
   ships: document.createElement('select'),
   flights: document.createElement('input'),
   minPower: document.createElement('input'),
@@ -69,6 +74,7 @@ const elements = {
   map: document.createElement('canvas'),
   note: document.createElement('p'),
   legend: document.createElement('div'),
+  outcomeFilters: document.createElement('div'),
   stats: document.createElement('div'),
   status: document.createElement('span'),
 };
@@ -76,19 +82,40 @@ const elements = {
 let world: World | null = null;
 let shooter = 0;
 let shipCount = 2;
+let horizonMode = false;
+let lastSamples: readonly Sample[] = [];
+
+type FilterableOutcome = Exclude<ShotEnd['kind'], 'ship'>;
+const filterableOutcomes: readonly [FilterableOutcome, string][] = [
+  ['lost', 'lost'],
+  ['timeout', 'timeout'],
+  ['planet', 'planet hit'],
+  ['hole', 'black-hole hit'],
+  ['clash', 'clash'],
+];
+const excludedOutcomes = new Set<FilterableOutcome>();
+
+function visibleSamples(samples: readonly Sample[]): Sample[] {
+  return samples.filter((s) => s.end.kind === 'ship' || !excludedOutcomes.has(s.end.kind));
+}
 
 function refreshShips(): void {
   const ships = world?.ships ?? [];
-  if (shooter >= ships.length) shooter = 0;
+  if (!ships[shooter]?.alive) shooter = ships.findIndex((ship) => ship.alive);
+  if (shooter < 0) shooter = 0;
   elements.shooter.replaceChildren(
-    ...ships.map((_, i) => new Option(`Ship ${i}${i === shooter ? ' (self)' : ''}`, String(i))),
+    ...ships.map((ship, i) => {
+      const option = new Option(`Ship ${i}${i === shooter ? ' (self)' : ''}${ship.alive ? '' : ' (swallowed)'}`, String(i));
+      option.disabled = !ship.alive;
+      return option;
+    }),
   );
   elements.shooter.value = String(shooter);
 }
 
 // ————————————————————————————— Sampling —————————————————————————————
 
-const rules: ShotRules = { bounce: false, timeLimit: FLIGHT_TIME };
+let rules: ShotRules = { bounce: false, timeLimit: FLIGHT_TIME };
 
 export interface Sample {
   angle: number;
@@ -123,6 +150,46 @@ export function sampleAims(source: World, from: number, rng: Rng, flights = DEFA
     }
   }
   return out;
+}
+
+/** Project consecutive EH collapses from the initial generated world, assuming no shot kills. */
+function projectHorizonWorld(initial: World, collapses: number): World {
+  const projected = cloneWorld(initial);
+  const hole = projected.hole;
+  if (!hole) return projected;
+  for (let volleyNo = 1; volleyNo <= collapses; volleyNo++) {
+    const toRadius = hole.radius + HORIZON.GROWTH + HORIZON.GROWTH_ACCEL * volleyNo;
+    let toMass = hole.mass + HORIZON.MASS_PER_VOLLEY;
+    const pull = (x: number, y: number, factor: number, margin: number): { x: number; y: number; lost: boolean } => {
+      const d = Math.hypot(x - hole.x, y - hole.y);
+      const drift = Math.min(HORIZON.MAX_DRIFT, Math.max(HORIZON.MIN_DRIFT, (HORIZON.DRIFT * hole.mass) / (d * d))) * factor;
+      const lost = d - drift < toRadius + margin;
+      const k = lost ? 1 : drift / d;
+      return { x: x + (hole.x - x) * k, y: y + (hole.y - y) * k, lost };
+    };
+    const planetLosses = new Set<number>();
+    projected.planets.forEach((planet, i) => {
+      const drift = pull(planet.x, planet.y, 0.6, planet.radius * 0.6);
+      planet.x = drift.x;
+      planet.y = drift.y;
+      if (drift.lost) {
+        planetLosses.add(i);
+        toMass += planet.mass * HORIZON.FEED;
+      }
+    });
+    projected.planets = projected.planets.filter((_, i) => !planetLosses.has(i));
+    for (const ship of projected.ships) {
+      if (!ship.alive) continue;
+      const drift = pull(ship.x, ship.y, 1, 14);
+      ship.x = drift.x;
+      ship.y = drift.y;
+      if (drift.lost) ship.alive = false;
+    }
+    hole.radius = toRadius;
+    hole.mass = toMass;
+    projected.version++;
+  }
+  return projected;
 }
 
 // ————————————————————————————— Chart —————————————————————————————
@@ -311,6 +378,27 @@ function drawMap(path: readonly number[] | null, pathColor: string | null): void
     ctx.globalAlpha = 1;
   }
 
+  if (world.hole) {
+    const hole = world.hole;
+    const glow = ctx.createRadialGradient(hole.x, hole.y, Math.max(1, hole.radius * 0.35), hole.x, hole.y, hole.radius * 2.6);
+    glow.addColorStop(0, 'rgba(185, 156, 255, 0.55)');
+    glow.addColorStop(0.42, 'rgba(98, 182, 255, 0.2)');
+    glow.addColorStop(1, 'rgba(98, 182, 255, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(hole.x, hole.y, hole.radius * 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#030711';
+    ctx.beginPath();
+    ctx.arc(hole.x, hole.y, hole.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = COLORS.sodium;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(hole.x, hole.y, hole.radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
   for (const [i, s] of world.ships.entries()) {
     const own = i === shooter;
     ctx.fillStyle = own ? bone : COLORS.players[i % COLORS.players.length];
@@ -385,7 +473,12 @@ async function run(): Promise<void> {
   elements.flights.value = String(flights);
   const minPower = Math.min(AIM.MAX_POWER - 1, Math.max(0, Math.round(Number(elements.minPower.value) || 0)));
   elements.minPower.value = String(minPower);
-  world = generateWorld(seed, { players: shipCount, maxPlanets: MAX_PLANETS, blackHole: false });
+  horizonMode = elements.horizon.checked;
+  rules = { bounce: false, timeLimit: horizonMode ? HORIZON.SHOT_TIME : FLIGHT_TIME };
+  const generated = generateWorld(seed, { players: shipCount, maxPlanets: MAX_PLANETS, blackHole: horizonMode });
+  const collapses = Math.max(0, Math.round(Number(elements.collapses.value) || 0));
+  elements.collapses.value = String(collapses);
+  world = horizonMode ? projectHorizonWorld(generated, collapses) : generated;
   refreshShips();
   const from = shooter;
   elements.run.disabled = true;
@@ -397,13 +490,15 @@ async function run(): Promise<void> {
   await painted;
   const started = performance.now();
   const samples = sampleAims(world, from, createRng(seed ^ 0x61696d), flights, minPower);
-  draw(samples);
+  lastSamples = samples;
+  draw(visibleSamples(samples));
   drawMap(null, null);
   elements.note.textContent = 'Click a dot on the chart to replay its trajectory here.';
   legend();
   updateStats(samples);
   const seconds = ((performance.now() - started) / 1000).toFixed(1);
-  elements.status.textContent = `${samples.length} trajectories in ${seconds}s (seed ${seed}, ship ${from}, ${shipCount} ships, ${world.planets.length} planets, ${FLIGHT_TIME}s flight limit, min power ${minPower})`;
+  const holeState = world.hole ? `, black hole r=${world.hole.radius.toFixed(1)} m=${Math.round(world.hole.mass)}` : '';
+  elements.status.textContent = `${samples.length} trajectories in ${seconds}s (seed ${seed}, ${horizonMode ? 'Event Horizon snapshot' : 'classic'}, ship ${from}, ${shipCount} ships, ${world.planets.length} planets${holeState}, ${rules.timeLimit}s flight limit, min power ${minPower})`;
   elements.run.disabled = false;
   elements.png.disabled = false;
 }
@@ -412,13 +507,19 @@ async function run(): Promise<void> {
 /** Hit probability per enemy and self-hit risk over the sampled flights. */
 function updateStats(samples: readonly Sample[]): void {
   const ships = world?.ships ?? [];
-  const total = samples.length || 1;
+  const included = visibleSamples(samples);
+  const total = included.length;
   const hits = new Array(ships.length).fill(0);
-  for (const s of samples) if (s.end.kind === 'ship') hits[s.end.ship]++;
-  const pct = (n: number) => `${((100 * n) / total).toFixed(1)}%`;
-  const rows: string[] = [];
+  for (const s of included) if (s.end.kind === 'ship') hits[s.end.ship]++;
+  const shipHits = hits.reduce((sum, count) => sum + count, 0);
+  const pct = (n: number, denominator: number) => (denominator ? `${((100 * n) / denominator).toFixed(1)}%` : 'n/a');
+  const rows: string[] = [`<span>included outcomes</span> ${total.toLocaleString()} / ${samples.length.toLocaleString()}`];
   ships.forEach((_, i) => {
-    rows.push(i === shooter ? `<span>self-hit risk</span> ${pct(hits[i])}` : `<span>P(hit ship ${i})</span> ${pct(hits[i])}`);
+    rows.push(
+      i === shooter
+        ? `<span>self-hit risk</span> ${pct(hits[i], total)} (${pct(hits[i], shipHits)})`
+        : `<span>P(hit ship ${i})</span> ${pct(hits[i], total)} (${pct(hits[i], shipHits)})`,
+    );
   });
   elements.stats.innerHTML = rows.join('<br>');
 }
@@ -432,7 +533,7 @@ function download(): void {
 // ————————————————————————————— Page —————————————————————————————
 
 const title = document.createElement('h1');
-title.textContent = 'Slingshot — Aim Predictor (debug/cheat)';
+title.textContent = 'Slingshot — Aim Predictor (debug)';
 document.body.append(title);
 
 const bar = document.createElement('div');
@@ -442,6 +543,25 @@ elements.seed.type = 'number';
 elements.seed.value = String(randomSeed());
 elements.seed.title = 'World seed';
 elements.seed.addEventListener('change', run);
+elements.horizon.type = 'checkbox';
+elements.horizon.title = 'Analyze one fixed Event Horizon volley state';
+elements.horizon.addEventListener('change', () => {
+  if (elements.horizon.checked) {
+    elements.collapses.value = '0';
+  }
+  elements.collapses.disabled = !elements.horizon.checked;
+  void run();
+});
+elements.collapses.replaceChildren(
+  ...Array.from({ length: 11 }, (_, collapses) => {
+    const radius = HORIZON.START_RADIUS + collapses * HORIZON.GROWTH + HORIZON.GROWTH_ACCEL * (collapses * (collapses + 1)) / 2;
+    return new Option(`${collapses === 0 ? 'Initial' : `After ${collapses} collapses`} (r ${radius.toFixed(1)})`, String(collapses));
+  }),
+);
+elements.collapses.value = '0';
+elements.collapses.title = 'Select the number of completed Event Horizon collapses';
+elements.collapses.disabled = true;
+elements.collapses.addEventListener('change', run);
 elements.ships.title = 'Ships in the world';
 elements.ships.replaceChildren(...[2, 3, 4, 5, 6].map((n) => new Option(String(n), String(n))));
 elements.ships.value = '2';
@@ -480,6 +600,12 @@ const label = (text: string): HTMLElement => {
 };
 bar.append(
   label('seed'), elements.seed,
+  (() => {
+    const wrapper = document.createElement('label');
+    wrapper.append(elements.horizon, document.createTextNode('Event Horizon'));
+    return wrapper;
+  })(),
+  label('BH size'), elements.collapses,
   label('ships'), elements.ships,
   label('flights'), elements.flights,
   label('min power'), elements.minPower,
@@ -487,7 +613,26 @@ bar.append(
   elements.reroll, elements.run, elements.png, elements.status,
 );
 elements.stats.className = 'stats';
-document.body.append(bar, elements.stats);
+elements.outcomeFilters.className = 'outcome-filters';
+const filterTitle = document.createElement('span');
+filterTitle.textContent = 'Ignore outcomes:';
+elements.outcomeFilters.append(filterTitle);
+for (const [kind, labelText] of filterableOutcomes) {
+  const labelElement = document.createElement('label');
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.addEventListener('change', () => {
+    if (checkbox.checked) excludedOutcomes.add(kind);
+    else excludedOutcomes.delete(kind);
+    draw(visibleSamples(lastSamples));
+    updateStats(lastSamples);
+  });
+  const text = document.createElement('span');
+  text.textContent = labelText;
+  labelElement.append(checkbox, text);
+  elements.outcomeFilters.append(labelElement);
+}
+document.body.append(bar, elements.outcomeFilters, elements.stats);
 
 document.body.append(
   (() => {
