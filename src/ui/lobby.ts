@@ -384,7 +384,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
 
     const browsing = connected && !room;
     bar.hidden = !browsing;
-    connectView.hidden = connected || configuredServer;
+    connectView.hidden = connected;
     roomsView.hidden = !(browsing && view === 'rooms');
     createView.hidden = !(browsing && view === 'create');
     roomView.hidden = !room;
