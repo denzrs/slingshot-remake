@@ -1,5 +1,7 @@
+import type { Avatar } from './avatars';
 import type { GameEvent } from './game';
 import type { StatePatch } from './netsync';
+import type { RoomColor, RoomLook, RoomSymbol } from './roomLook';
 import type { Settings } from './settings';
 
 export type RoomMode = 'ffa' | 'team';
@@ -19,10 +21,14 @@ export type ClientInput =
 
 type ClientMessage =
   | { type: 'lobby' }
-  | { type: 'create_room'; name: string; mode: RoomMode; gameMode: NetworkGameMode; rules: RoomRules; maxPlayers: number; password?: string }
-  | { type: 'join_room'; roomId: string; name: string; password?: string }
+  | ({ type: 'create_room'; name: string; mode: RoomMode; gameMode: NetworkGameMode; rules: RoomRules; maxPlayers: number; password?: string; avatar?: Avatar } & Partial<RoomLook>)
+  | { type: 'join_room'; roomId: string; name: string; password?: string; avatar?: Avatar }
+  /** Your symbol in the game, while the room waits. */
+  | { type: 'set_avatar'; avatar: Avatar }
   | { type: 'ready'; ready: boolean }
   | { type: 'set_rules'; rules: RoomRules }
+  /** Host only, while waiting: how the room shows up in the lobby. */
+  | { type: 'set_room'; look: RoomLook }
   /** Pick your own team (team rooms, while waiting); you have to be ready again afterwards. */
   | { type: 'set_team'; team: 0 | 1 }
   /** Host only: deal everybody back out to the two teams in the order they joined. */
@@ -35,6 +41,10 @@ type ClientMessage =
 export interface LobbyRoom {
   id: string;
   host: string;
+  /** The room's number: rooms are told apart by it. */
+  number: number;
+  symbol: RoomSymbol;
+  color: RoomColor;
   mode: RoomMode;
   gameMode: NetworkGameMode;
   players: number;
@@ -45,12 +55,15 @@ export interface LobbyRoom {
 interface RoomPlayer {
   id: number;
   name: string;
+  avatar: Avatar;
   ready: boolean;
   team: 0 | 1;
 }
 
-export interface RoomInfo {
+export interface RoomInfo extends RoomLook {
   id: string;
+  /** The room's number, as the lobby lists it. */
+  number: number;
   mode: RoomMode;
   gameMode: NetworkGameMode;
   rules: RoomRules;
@@ -77,7 +90,7 @@ export type ServerMessage =
       rules?: RoomRules;
       hostId: 0;
       seed: number;
-      players: Array<{ id: number; name: string; team: 0 | 1 }>;
+      players: Array<{ id: number; name: string; avatar: Avatar; team: 0 | 1 }>;
     }
   | { type: 'input'; from: number; input: ClientInput }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }

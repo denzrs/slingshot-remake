@@ -818,3 +818,93 @@ describe('the oracle online', () => {
     }
   }, 60_000);
 });
+
+describe('the lobby look online', () => {
+  it('lists public rooms by number with their symbol and colour, and keeps private ones out of the list until the host opens them', async () => {
+    const host = await connectSession();
+    const watcher = await connectSession();
+    host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2, look: { visibility: 'public', symbol: 'comet', color: '#62b6ff' } });
+    await waitForSession(host, () => host.room !== null);
+    await waitForSession(watcher, () => watcher.rooms.length === 1);
+    expect(watcher.rooms[0]).toMatchObject({ host: 'Anna', symbol: 'comet', color: '#62b6ff' });
+    expect(watcher.rooms[0].number).toBe(host.room!.number);
+    const publicId = watcher.rooms[0].id;
+
+    const secret = await connectSession();
+    secret.createRoom({ name: 'Ben', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2, look: { visibility: 'private' } });
+    await waitForSession(secret, () => secret.room !== null);
+    expect(secret.room).toMatchObject({ visibility: 'private', symbol: 'planet' });
+    const privateId = secret.room!.id;
+    // The watcher hears about the public room only.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(watcher.rooms.map((room) => room.id)).toEqual([publicId]);
+
+    // Opening the room puts it in the list; the host's change reaches the watcher.
+    secret.setRoomLook({ visibility: 'public', symbol: 'ufo', color: '#ff6f9f' });
+    await waitForSession(watcher, () => watcher.rooms.length === 2);
+    expect(watcher.rooms.find((room) => room.id === privateId)).toMatchObject({ symbol: 'ufo', color: '#ff6f9f' });
+  });
+
+  it('lets anybody who has the code join a private room', async () => {
+    const host = await connectSession();
+    const guest = await connectSession();
+    host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2, look: { visibility: 'private' } });
+    await waitForSession(host, () => host.room !== null);
+    guest.joinRoom(host.room!.id, 'Ben');
+    await waitForSession(guest, () => guest.room?.players.length === 2);
+    expect(guest.room).toMatchObject({ id: host.room!.id, visibility: 'private' });
+  });
+
+  it('lets only the host change how the room shows up, and only while it waits', async () => {
+    const host = await connectSession();
+    const guest = await connectSession();
+    host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2 });
+    await waitForSession(host, () => host.room !== null);
+    guest.joinRoom(host.room!.id, 'Ben');
+    await waitForSession(guest, () => guest.room?.players.length === 2);
+
+    guest.setRoomLook({ visibility: 'public', symbol: 'ufo', color: '#ff6f9f' });
+    await waitForSession(guest, () => guest.notice !== null);
+    expect(guest.notice).toMatch(/host/i);
+    expect(guest.room!.symbol).toBe('planet');
+
+    host.setRoomLook({ visibility: 'public', symbol: 'moon', color: '#c6e86a' });
+    await waitForSession(guest, () => guest.room?.symbol === 'moon');
+    expect(guest.room).toMatchObject({ color: '#c6e86a' });
+
+    guest.setReady(true);
+    await waitForSession(host, () => host.room!.players[1].ready);
+    host.startGame();
+    await waitForSession(guest, () => guest.match !== null);
+    host.setRoomLook({ visibility: 'public', symbol: 'star', color: '#ffd27a' });
+    await waitForSession(host, () => host.notice !== null);
+    expect(host.notice).toMatch(/running/i);
+    expect(host.room!.symbol).toBe('moon');
+  });
+});
+
+describe('the player symbols online', () => {
+  it('shows each player the symbol they picked, in the lobby and in the game on both screens', async () => {
+    const hostMatches: NetMatch[] = [];
+    const guestMatches: NetMatch[] = [];
+    const host = await connectSession({ matchStarted: (match) => { hostMatches.push(match); } });
+    const guest = await connectSession({ matchStarted: (match) => { guestMatches.push(match); } });
+    host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2, avatar: 'gem' });
+    await waitForSession(host, () => host.room !== null);
+    guest.joinRoom(host.room!.id, 'Ben', undefined, 'alien');
+    await waitForSession(host, () => host.room?.players.length === 2);
+    expect(host.room!.players.map((player) => player.avatar)).toEqual(['gem', 'alien']);
+
+    guest.setAvatar('bolt');
+    await waitForSession(host, () => host.room!.players[1].avatar === 'bolt');
+    await waitForSession(guest, () => guest.room!.players[1].avatar === 'bolt');
+
+    guest.setReady(true);
+    await waitForSession(host, () => host.room!.players[1].ready);
+    host.startGame();
+    await waitForSession(host, () => hostMatches.length === 1);
+    await waitForSession(guest, () => guestMatches.length === 1);
+    expect(hostMatches[0].players.map((player) => player.avatar)).toEqual(['gem', 'bolt']);
+    expect(guestMatches[0].players.map((player) => player.avatar)).toEqual(['gem', 'bolt']);
+  }, 60_000);
+});

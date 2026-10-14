@@ -11,10 +11,16 @@ const MAX_STAKE: f64 = 1_000_000.0;
 pub const MAX_NAME_LENGTH: usize = 24;
 
 /// `name.trim().slice(0, 24)`; None when the value is not a non-empty trimmed string.
-/// Control characters (C0/C1, DEL, zero-width/bidi chars) are stripped so a name cannot
-/// smuggle terminal escapes or invisible directionality into other clients' UIs.
 pub fn clean_name_checked(value: Option<&Value>) -> Option<String> {
     let s = value.and_then(Value::as_str)?;
+    let cleaned = clean_text(s);
+    (!cleaned.is_empty()).then_some(cleaned)
+}
+
+/// Control characters (C0/C1, DEL, zero-width/bidi chars) are stripped so a name cannot smuggle
+/// terminal escapes or invisible directionality into other clients' UIs; then the text is trimmed
+/// and cut to `MAX_NAME_LENGTH` UTF-16 units. May come out empty.
+fn clean_text(s: &str) -> String {
     let stripped: String = s
         .chars()
         .filter(|c| {
@@ -24,9 +30,6 @@ pub fn clean_name_checked(value: Option<&Value>) -> Option<String> {
         })
         .collect();
     let stripped = stripped.trim();
-    if stripped.is_empty() {
-        return None;
-    }
     let mut units = 0;
     let mut end = stripped.len();
     for (index, character) in stripped.char_indices() {
@@ -37,7 +40,82 @@ pub fn clean_name_checked(value: Option<&Value>) -> Option<String> {
         }
         units += width;
     }
-    Some(stripped[..end].to_string())
+    stripped[..end].to_string()
+}
+
+/// The symbols a room can wear in the lobby, and the colours it can take. The client offers exactly these
+/// (see `protocol-contract.json`).
+pub const ROOM_SYMBOLS: [&str; 8] = [
+    "planet",
+    "moon",
+    "star",
+    "sun",
+    "comet",
+    "blackhole",
+    "ufo",
+    "asteroid",
+];
+pub const ROOM_COLORS: [&str; 8] = [
+    "#ff8660", "#ffd27a", "#c6e86a", "#6fe3c8", "#62b6ff", "#b99cff", "#ff6f9f", "#e8e4d8",
+];
+/// Public rooms are listed in the lobby; a private room is joined with its code only.
+pub const ROOM_VISIBILITIES: [&str; 2] = ["public", "private"];
+
+/// The symbols a player shows in an online game. Players pick their own; they are not the room's symbols.
+pub const AVATARS: [&str; 8] = [
+    "rocket",
+    "satellite",
+    "alien",
+    "robot",
+    "astronaut",
+    "crosshair",
+    "bolt",
+    "gem",
+];
+pub const DEFAULT_AVATAR: &str = "rocket";
+
+/// How a room presents itself: whether it is listed, and its symbol and colour.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomLook {
+    pub visibility: String,
+    pub symbol: String,
+    pub color: String,
+}
+
+impl RoomLook {
+    pub fn is_private(&self) -> bool {
+        self.visibility == "private"
+    }
+}
+
+/// A room's look from a client, read from an object that holds the keys (a `create_room` message,
+/// or the `look` of a `set_room`). A missing key takes its default; a value that is not one of the
+/// choices makes the whole look invalid.
+pub fn parse_room_look(value: &Value) -> Option<RoomLook> {
+    if !is_record(value) {
+        return None;
+    }
+    Some(RoomLook {
+        visibility: choice_of(value.get("visibility"), &ROOM_VISIBILITIES, "public")?,
+        symbol: choice_of(value.get("symbol"), &ROOM_SYMBOLS, "planet")?,
+        color: choice_of(value.get("color"), &ROOM_COLORS, ROOM_COLORS[0])?,
+    })
+}
+
+/// A player's symbol from a client; a missing one is the default, anything that is not a choice is None.
+pub fn parse_avatar(value: Option<&Value>) -> Option<String> {
+    choice_of(value, &AVATARS, DEFAULT_AVATAR)
+}
+
+/// One of `allowed`; a missing (or null) value is `default`.
+fn choice_of(value: Option<&Value>, allowed: &[&str], default: &str) -> Option<String> {
+    match value.filter(|v| !v.is_null()) {
+        None => Some(default.to_owned()),
+        Some(v) => v
+            .as_str()
+            .filter(|s| allowed.contains(s))
+            .map(str::to_owned),
+    }
 }
 
 /// Largest double-precision integer (`Number.isSafeInteger`).
@@ -546,5 +624,61 @@ mod tests {
         ));
         assert!(!is_game_event(&json!({"type":"killcam","active":true})));
         assert!(!is_game_event(&json!({"type":"unknown"})));
+    }
+
+    #[test]
+    fn room_look_takes_defaults_and_refuses_unknown_choices() {
+        assert_eq!(
+            parse_room_look(&json!({})),
+            Some(RoomLook {
+                visibility: "public".into(),
+                symbol: "planet".into(),
+                color: "#ff8660".into(),
+            })
+        );
+        let custom = parse_room_look(&json!({
+            "visibility":"private","symbol":"blackhole","color":"#6fe3c8"
+        }))
+        .expect("a complete look is accepted");
+        assert!(custom.is_private());
+        assert_eq!(custom.symbol, "blackhole");
+        assert_eq!(custom.color, "#6fe3c8");
+        for invalid in [
+            json!({"visibility": "secret"}),
+            json!({"symbol": "<svg onload=alert(1)>"}),
+            json!({"symbol": 3}),
+            json!({"color": "#000000"}),
+        ] {
+            assert!(parse_room_look(&invalid).is_none(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn player_symbols_default_and_refuse_room_symbols_and_junk() {
+        assert_eq!(parse_avatar(None).as_deref(), Some("rocket"));
+        assert_eq!(parse_avatar(Some(&json!("gem"))).as_deref(), Some("gem"));
+        assert!(parse_avatar(Some(&json!("planet"))).is_none());
+        assert!(parse_avatar(Some(&json!(3))).is_none());
+    }
+
+    #[test]
+    fn shared_avatar_contract_matches_relay_choices() {
+        let contract: Value =
+            serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
+        assert_eq!(contract["avatar"]["options"], json!(AVATARS));
+        assert_eq!(contract["avatar"]["default"], DEFAULT_AVATAR);
+    }
+
+    #[test]
+    fn shared_room_contract_matches_relay_choices() {
+        let contract: Value =
+            serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
+        let room = &contract["room"];
+        assert_eq!(room["options"]["visibility"], json!(ROOM_VISIBILITIES));
+        assert_eq!(room["options"]["symbol"], json!(ROOM_SYMBOLS));
+        assert_eq!(room["options"]["color"], json!(ROOM_COLORS));
+        assert_eq!(room["defaults"]["visibility"], "public");
+        assert_eq!(room["defaults"]["symbol"], "planet");
+        assert_eq!(room["defaults"]["color"], ROOM_COLORS[0]);
     }
 }

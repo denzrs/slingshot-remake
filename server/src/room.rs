@@ -13,8 +13,8 @@ use tracing::{debug, info, warn};
 
 use crate::codec::{frame, Outbound};
 use crate::protocol::{
-    clean_name_checked, is_game_event, is_input_message, is_record, is_safe_integer, parse_rules,
-    rules_to_value, RoomRules, DEFAULT_RULES,
+    clean_name_checked, is_game_event, is_input_message, is_record, is_safe_integer, parse_avatar,
+    parse_room_look, parse_rules, rules_to_value, RoomLook, RoomRules, DEFAULT_RULES,
 };
 
 const MAX_ROOM_PLAYERS: i64 = 6;
@@ -46,6 +46,8 @@ struct Conn {
 struct Player {
     id: usize,
     name: String,
+    /// The symbol the player shows in an online game.
+    avatar: String,
     ready: bool,
     team: u8,
     conn: u64,
@@ -56,6 +58,7 @@ struct Room {
     mode: String,
     game_mode: String,
     rules: RoomRules,
+    look: RoomLook,
     max_players: i64,
     status: RoomStatus,
     players: Vec<Player>,
@@ -176,6 +179,8 @@ impl RoomManager {
             "join_room" => self.join_room(conn, message, None),
             "ready" => self.set_ready(conn, message),
             "set_rules" => self.set_rules(conn, message),
+            "set_room" => self.set_room(conn, message),
+            "set_avatar" => self.set_avatar(conn, message),
             "set_team" => self.set_team(conn, message),
             "reset_teams" => self.reset_teams(conn),
             "start_game" => self.start_game(conn),
@@ -258,7 +263,7 @@ impl RoomManager {
         let mut rooms: Vec<_> = self
             .rooms
             .values()
-            .filter(|room| room.status == RoomStatus::Waiting)
+            .filter(|room| room.status == RoomStatus::Waiting && !room.look.is_private())
             .collect();
         rooms.sort_by_key(|room| room.created_order);
         rooms
@@ -267,6 +272,9 @@ impl RoomManager {
                 json!({
                     "id": room.id,
                     "host": room.players.first().map(|p| p.name.clone()).unwrap_or_default(),
+                    "number": room.created_order + 1,
+                    "symbol": room.look.symbol,
+                    "color": room.look.color,
                     "mode": room.mode,
                     "gameMode": room.game_mode,
                     "players": room.players.len(),
@@ -337,6 +345,14 @@ impl RoomManager {
                 }
             },
         };
+        let Some(look) = parse_room_look(message) else {
+            self.error(conn, "Malformed room settings");
+            return;
+        };
+        let Some(avatar) = parse_avatar(message.get("avatar")) else {
+            self.error(conn, "Malformed player symbol");
+            return;
+        };
         let id = self.new_room_id();
         let created_order = self.next_room_order;
         self.next_room_order += 1;
@@ -362,6 +378,7 @@ impl RoomManager {
                 mode: mode.to_string(),
                 game_mode: game_mode.to_string(),
                 rules,
+                look,
                 max_players: max_players_num.unwrap() as i64,
                 status: RoomStatus::Waiting,
                 players: Vec::new(),
@@ -371,7 +388,7 @@ impl RoomManager {
                 created_order,
             },
         );
-        self.add_player(&id, conn, name);
+        self.add_player(&id, conn, name, avatar);
         self.broadcast_room_update(&id, None);
         self.broadcast_lobby();
     }
@@ -407,6 +424,10 @@ impl RoomManager {
             self.error(conn, "Room is full");
             return;
         }
+        let Some(avatar) = parse_avatar(message.get("avatar")) else {
+            self.error(conn, "Malformed player symbol");
+            return;
+        };
         let locked = self
             .rooms
             .get(room_id)
@@ -414,7 +435,7 @@ impl RoomManager {
         if locked && !self.password_attempt_ok(conn, room_id, preverified) {
             return;
         }
-        self.add_player(room_id, conn, name.unwrap());
+        self.add_player(room_id, conn, name.unwrap(), avatar);
         self.broadcast_room_update(room_id, None);
         self.broadcast_lobby();
     }
@@ -501,6 +522,69 @@ impl RoomManager {
         room.rules = rules;
         for player in room.players.iter_mut() {
             player.ready = false;
+        }
+        self.broadcast_room_update(&room_id, None);
+    }
+
+    /// The host changes how the room shows up while it waits: name, listing, symbol and colour. None of
+    /// it changes the game, so nobody has to confirm again.
+    fn set_room(&mut self, conn: u64, message: &Value) {
+        let Some((room_id, is_host)) = self
+            .memberships
+            .get(&conn)
+            .map(|mb| (mb.room_id.clone(), mb.player_id == 0))
+        else {
+            self.error(conn, "Only the room host can change the lobby");
+            return;
+        };
+        if !is_host {
+            self.error(conn, "Only the room host can change the lobby");
+            return;
+        }
+        let waiting = self
+            .rooms
+            .get(&room_id)
+            .is_some_and(|room| room.status == RoomStatus::Waiting);
+        if !waiting {
+            self.error(conn, "The lobby cannot change while a game is running");
+            return;
+        }
+        let Some(look) = message.get("look").and_then(parse_room_look) else {
+            self.error(conn, "Malformed room settings");
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        room.look = look;
+        self.broadcast_room_update(&room_id, None);
+        // A room that went private leaves the list, and one that went public joins it.
+        self.broadcast_lobby();
+    }
+
+    /// A player picks the symbol they show in the game, while the room waits. Nobody has to confirm again.
+    fn set_avatar(&mut self, conn: u64, message: &Value) {
+        let Some((room_id, player_id)) = self
+            .memberships
+            .get(&conn)
+            .map(|mb| (mb.room_id.clone(), mb.player_id))
+        else {
+            self.error(conn, "You are not in a waiting room");
+            return;
+        };
+        let waiting = self
+            .rooms
+            .get(&room_id)
+            .is_some_and(|room| room.status == RoomStatus::Waiting);
+        if !waiting {
+            self.error(conn, "The symbol cannot change while a game is running");
+            return;
+        }
+        let Some(avatar) = parse_avatar(message.get("avatar")) else {
+            self.error(conn, "Malformed player symbol");
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        if let Some(player) = room.players.iter_mut().find(|p| p.id == player_id) {
+            player.avatar = avatar;
         }
         self.broadcast_room_update(&room_id, None);
     }
@@ -658,7 +742,7 @@ impl RoomManager {
             rules_to_value(&room.rules),
             room.players
                 .iter()
-                .map(|p| json!({ "id": p.id, "name": p.name, "team": p.team }))
+                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar, "team": p.team }))
                 .collect::<Vec<_>>(),
             room.players.iter().map(|p| p.conn).collect::<Vec<_>>(),
         );
@@ -858,7 +942,7 @@ impl RoomManager {
         }
     }
 
-    fn add_player(&mut self, room_id: &str, conn: u64, name: String) {
+    fn add_player(&mut self, room_id: &str, conn: u64, name: String, avatar: String) {
         let team = match self.rooms.get(room_id) {
             Some(room) if room.mode == "team" => smallest_team(room),
             _ => 0,
@@ -869,6 +953,7 @@ impl RoomManager {
         room.players.push(Player {
             id,
             name,
+            avatar,
             ready: false,
             team,
             conn,
@@ -912,13 +997,17 @@ impl RoomManager {
             "mode": room.mode,
             "gameMode": room.game_mode,
             "rules": rules_to_value(&room.rules),
+            "number": room.created_order + 1,
+            "visibility": room.look.visibility,
+            "symbol": room.look.symbol,
+            "color": room.look.color,
             "maxPlayers": room.max_players,
             "status": room.status.as_str(),
             "locked": room.password.is_some(),
             "players": room
                 .players
                 .iter()
-                .map(|p| json!({ "id": p.id, "name": p.name, "ready": p.ready, "team": p.team }))
+                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar, "ready": p.ready, "team": p.team }))
                 .collect::<Vec<_>>(),
         });
         let recipients: Vec<(u64, usize)> = room.players.iter().map(|p| (p.conn, p.id)).collect();
@@ -999,11 +1088,14 @@ pub fn valid_create_room_message(message: &Value) -> bool {
     let rules_ok = message
         .get("rules")
         .is_none_or(|value| parse_rules(value).is_some());
-    mode_ok && game_mode_ok && max_players_ok && password_ok && rules_ok
+    let look_ok = parse_room_look(message).is_some();
+    let avatar_ok = parse_avatar(message.get("avatar")).is_some();
+    mode_ok && game_mode_ok && max_players_ok && password_ok && rules_ok && look_ok && avatar_ok
 }
 
 pub fn valid_join_room_message(message: &Value) -> bool {
     clean_name_checked(message.get("name")).is_some()
+        && parse_avatar(message.get("avatar")).is_some()
         && message
             .get("roomId")
             .and_then(Value::as_str)
@@ -1571,5 +1663,162 @@ mod tests {
         assert_eq!(update["room"]["players"][0]["id"], 0);
         assert_eq!(update["you"]["playerId"], 0);
         assert!(update["room"]["players"][0]["ready"] == false);
+    }
+
+    #[test]
+    fn private_rooms_stay_out_of_the_lobby_but_open_with_their_code() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        drain_json(&mut host_rx);
+        let mut message = create("Host", None);
+        message["visibility"] = json!("private");
+        message["symbol"] = json!("ufo");
+        message["color"] = json!("#ff6f9f");
+        rooms.handle(1, &message);
+        let created = take_type(&drain_json(&mut host_rx), "room_update")["room"].clone();
+        assert_eq!(created["number"], 1);
+        assert_eq!(created["visibility"], "private");
+        assert_eq!(created["symbol"], "ufo");
+        assert_eq!(created["color"], "#ff6f9f");
+        let room_id = created["id"].as_str().unwrap().to_owned();
+
+        let mut watcher = connect(&mut rooms, 2);
+        drain_json(&mut watcher);
+        rooms.handle(2, &json!({"type":"lobby"}));
+        let lobby = take_type(&drain_json(&mut watcher), "lobby_update");
+        assert!(lobby["rooms"].as_array().unwrap().is_empty());
+
+        let mut guest_rx = connect(&mut rooms, 3);
+        drain_json(&mut guest_rx);
+        rooms.handle(
+            3,
+            &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+        );
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "room_update")["room"]["players"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn rooms_name_their_symbol_and_colour_in_the_lobby_and_refuse_unknown_ones() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        let mut watcher = connect(&mut rooms, 2);
+        drain_json(&mut host_rx);
+        drain_json(&mut watcher);
+        let mut message = create("Host", None);
+        message["symbol"] = json!("comet");
+        rooms.handle(1, &message);
+        let listed = take_type(&drain_json(&mut watcher), "lobby_update")["rooms"][0].clone();
+        assert_eq!(listed["symbol"], "comet");
+        assert_eq!(listed["color"], "#ff8660");
+        assert_eq!(listed["number"], 1);
+
+        let mut bad = create("Second", None);
+        bad["symbol"] = json!("dragon");
+        rooms.handle(2, &bad);
+        assert_eq!(
+            take_type(&drain_json(&mut watcher), "error")["message"],
+            "Malformed room settings"
+        );
+    }
+
+    #[test]
+    fn only_the_host_changes_the_lobby_and_only_while_waiting() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        drain_json(&mut host_rx);
+        rooms.handle(1, &create("Host", None));
+        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let mut guest_rx = connect(&mut rooms, 2);
+        drain_json(&mut guest_rx);
+        rooms.handle(
+            2,
+            &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+        );
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+
+        let change = json!({"type":"set_room","look":{"visibility":"private","symbol":"moon","color":"#c6e86a"}});
+        rooms.handle(2, &change);
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "error")["message"],
+            "Only the room host can change the lobby"
+        );
+
+        rooms.handle(1, &change);
+        let update = take_type(&drain_json(&mut guest_rx), "room_update")["room"].clone();
+        assert_eq!(update["visibility"], "private");
+        assert_eq!(update["symbol"], "moon");
+        assert_eq!(update["color"], "#c6e86a");
+
+        rooms.handle(1, &json!({"type":"set_room","look":{"symbol":"dragon"}}));
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "Malformed room settings"
+        );
+
+        rooms.handle(2, &json!({"type":"ready","ready":true}));
+        rooms.handle(1, &json!({"type":"start_game"}));
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        rooms.handle(1, &change);
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "The lobby cannot change while a game is running"
+        );
+    }
+
+    #[test]
+    fn players_pick_a_symbol_that_the_game_and_the_room_both_see() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        drain_json(&mut host_rx);
+        let mut message = create("Host", None);
+        message["avatar"] = json!("gem");
+        rooms.handle(1, &message);
+        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let mut guest_rx = connect(&mut rooms, 2);
+        drain_json(&mut guest_rx);
+        rooms.handle(
+            2,
+            &json!({"type":"join_room","roomId":room_id,"name":"Guest","avatar":"alien"}),
+        );
+        let update = take_type(&drain_json(&mut guest_rx), "room_update");
+        assert_eq!(update["room"]["players"][0]["avatar"], "gem");
+        assert_eq!(update["room"]["players"][1]["avatar"], "alien");
+
+        // A room symbol is not a player symbol.
+        rooms.handle(2, &json!({"type":"set_avatar","avatar":"planet"}));
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "error")["message"],
+            "Malformed player symbol"
+        );
+        rooms.handle(2, &json!({"type":"set_avatar","avatar":"bolt"}));
+        let changed = take_type(&drain_json(&mut host_rx), "room_update");
+        assert_eq!(changed["room"]["players"][1]["avatar"], "bolt");
+
+        rooms.handle(2, &json!({"type":"ready","ready":true}));
+        rooms.handle(1, &json!({"type":"start_game"}));
+        let start = take_type(&drain_json(&mut guest_rx), "game_start");
+        assert_eq!(start["players"][0]["avatar"], "gem");
+        assert_eq!(start["players"][1]["avatar"], "bolt");
+
+        rooms.handle(2, &json!({"type":"set_avatar","avatar":"robot"}));
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "error")["message"],
+            "The symbol cannot change while a game is running"
+        );
     }
 }

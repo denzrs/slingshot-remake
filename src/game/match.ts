@@ -1,6 +1,7 @@
 import { advanceExperimentalWorld, createExperimentalLearner, measureReconstruction, observeExperimentalShot, planExperimentalShot, type ExperimentalDecision, type ExperimentalLearner, type ExperimentalRecoveryDiagnostics, type ExperimentalWorld, type GravityFit } from '../experimental-ai';
 import { ExperimentalWorkerCancelledError, ExperimentalWorkerClient } from '../experimental-worker-client';
 import { EXPERIMENTAL_PRESETS, isExperimentalCpu, planShot, type Aim, type CpuDecision, type CpuLevel, type ExperimentalCpuConfig } from '../ai';
+import type { Avatar } from '../avatars';
 import { AIM, COLORS, FIELD, GRACE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
 import { normalizeAngle, type ShotEnd, type ShotRules, type StyleKind, type World } from '../physics';
@@ -22,6 +23,8 @@ export interface PlayerState {
   /** Seat (0-based) — fixes name and colour for the whole match. */
   seat: number;
   name: string;
+  /** The symbol the player picked for an online game; null offline. */
+  avatar: Avatar | null;
   cpu: CpuLevel | null;
   color: string;
   /** Team index in team mode, null in free for all. */
@@ -186,6 +189,8 @@ export interface MatchOptions {
   seats?: Seat[];
   /** Fixed player names by player index (online matches) — they survive a rematch. */
   names?: string[];
+  /** The symbol each player picked, by player index (online matches). */
+  avatars?: Avatar[];
   /** Fixed team per player index (online matches); `settings.teamMode` is the team count. */
   teams?: number[];
   /** Event Horizon online: every human aims at once instead of one after another at a shared keyboard. */
@@ -594,7 +599,7 @@ export abstract class Match {
     const taken = seats.flatMap((seat, i) => (seat === 'off' ? [] : [{ seat: i, kind: seat }]));
     const teams = this.attract ? null : (this.options.teams ?? seatTeamsFor(this.settings, taken.map((s) => s.seat)));
     this.teamMode = teams ? this.settings.teamMode : 0;
-    this.players = taken.map(({ seat, kind }, id) => newPlayer(id, seat, kind, teams?.[id] ?? null, false, this.options.names?.[id]));
+    this.players = taken.map(({ seat, kind }, id) => newPlayer(id, seat, kind, teams?.[id] ?? null, false, this.options.names?.[id], this.options.avatars?.[id] ?? null));
     if (teams) {
       // Each team member gets its own shade of the team colour.
       const seen = new Map<number, number>();
@@ -1215,11 +1220,12 @@ export abstract class Match {
   }
 }
 
-export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, team: number | null, target = false, fixedName?: string): PlayerState {
+export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, team: number | null, target = false, fixedName?: string, avatar: Avatar | null = null): PlayerState {
   const cpu = kind === 'human' ? null : kind;
   return {
     id,
     seat,
+    avatar,
     // A getter, so the name follows the UI language when it is switched mid-match.
     get name() {
       if (fixedName) return fixedName;

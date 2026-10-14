@@ -1,16 +1,23 @@
-import { MAX_PLAYERS, TEAMS } from '../config';
+import { AVATARS, type Avatar } from '../avatars';
+import { COLORS, MAX_PLAYERS, TEAMS } from '../config';
 import { teamName } from '../game';
 import { t } from '../i18n';
 import { loadLobbyPrefs, saveLobbyPrefs } from '../lobbyPrefs';
-import { DEFAULT_SERVER, type MultiplayerSession } from '../multiplayer';
+import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multiplayer';
 import type { LobbyRoom, NetworkGameMode, RoomInfo, RoomMode, RoomRules } from '../net';
+import type { RoomLook } from '../roomLook';
 import { buildControl, segmentedControl, sliderControl, type Control, type Env } from './controls';
 import { h, type Screen } from './menu';
 import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
 import type { App } from './screens';
+import { AVATAR_LABEL, avatarSvg, playerIcon } from './avatars';
+import { lookDialog, lookSummary, picker, roomIcon, visibilityControl, type LookControl, type LookDialog } from './roomLook';
 
 const modeName = (mode: NetworkGameMode) => t(mode === 'classic' ? 'mode.classic' : 'mode.horizon');
 const matchTypeName = (mode: RoomMode) => (mode === 'team' ? t('players.teams', { n: 2 }) : t('players.ffa'));
+/** The symbols a player can pick, as the choices of a picker. */
+const avatarOptions = () => AVATARS.map((avatar) => ({ value: avatar, label: t(AVATAR_LABEL[avatar]), face: avatarSvg(avatar) }));
+const lookOf = (room: RoomInfo): RoomLook => ({ visibility: room.visibility, symbol: room.symbol, color: room.color });
 
 function button(label: string, primary = false): HTMLButtonElement {
   const b = document.createElement('button');
@@ -28,6 +35,58 @@ function textInput(value: string, attrs: Partial<HTMLInputElement> = {}): HTMLIn
 
 function passwordInput(placeholder = ''): HTMLInputElement {
   return textInput('', { type: 'password', maxLength: 64, autocomplete: 'off', placeholder });
+}
+
+/** Stroke icons for the password fields: an eye, the same with a slash, and a copy sheet. */
+const ICON_EYE = '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>';
+const ICON_EYE_OFF = '<path d="M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6A16.5 16.5 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M3 3l18 18"/>';
+const ICON_COPY = '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>';
+
+/** A square button with one of the icons above. */
+function iconButton(label: string, icon: string): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'lobby__icon-button';
+  b.title = label;
+  b.setAttribute('aria-label', label);
+  // Only our own constants go in here.
+  b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>`;
+  return b;
+}
+
+/**
+ * A password field with an eye that shows or hides what is typed. With `onCopy`, a button beside it
+ * copies the password.
+ */
+function secretField(input: HTMLInputElement, onCopy?: () => void): HTMLElement {
+  const eye = iconButton('', ICON_EYE);
+  const paintEye = (): void => {
+    const shown = input.type === 'text';
+    const label = t(shown ? 'multiplayer.hidePassword' : 'multiplayer.showPassword');
+    eye.title = label;
+    eye.setAttribute('aria-label', label);
+    eye.setAttribute('aria-pressed', String(shown));
+    eye.querySelector('svg')?.replaceChildren(...svgChildren(shown ? ICON_EYE_OFF : ICON_EYE));
+  };
+  eye.addEventListener('click', () => {
+    input.type = input.type === 'text' ? 'password' : 'text';
+    paintEye();
+  });
+  paintEye();
+  const parts: Node[] = [input, eye];
+  if (onCopy) {
+    const copy = iconButton(t('multiplayer.copyPassword'), ICON_COPY);
+    copy.addEventListener('click', onCopy);
+    parts.push(copy);
+  }
+  return h('span.lobby__secret', null, ...parts);
+}
+
+/** The children of an SVG, parsed from a constant. */
+function svgChildren(markup: string): Node[] {
+  const holder = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  holder.innerHTML = markup;
+  return [...holder.childNodes];
 }
 
 const field = (label: string, input: HTMLElement) => h('label.lobby__field', null, h('span', null, label), input);
@@ -73,17 +132,37 @@ type View = 'rooms' | 'create';
  * and wait for the others inside it. The lobby has its own settings, apart from the offline ones;
  * everything the player fills in is remembered, and the host can still change the rules while the
  * room is waiting.
+ *
+ * A build that was given a secure relay (`wss://`) is hosted: it connects as soon as the lobby opens,
+ * with no connection screen. Every other build (self-hosted or local dev) keeps the connection card.
  */
 export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const prefs = loadLobbyPrefs(DEFAULT_SERVER);
   const configuredServer = Boolean(import.meta.env.VITE_MULTIPLAYER_SERVER);
+  const hosted = configuredServer && isSecureRelay(DEFAULT_SERVER);
   const save = () => saveLobbyPrefs(prefs);
   const sound = app.menu.sound;
   /** Connection progress / validation messages that don't come from the session. */
   let localMessage: string | null = null;
+  /** The last connection attempt failed; the hosted build then offers the connect card again. */
+  let connectFailed = false;
   let view: View = 'rooms';
   /** Join passwords typed so far, per room — the room list is rebuilt whenever it changes. */
   const joinPasswords = new Map<string, string>();
+  /** The password the player set for the room they opened; it is shown to the host to share, until they leave. */
+  let hostPassword = '';
+
+  /** Copies a text to the clipboard and says so, or says that it could not. Nothing happens for an empty text. */
+  const copyText = async (text: string, done: string): Promise<void> => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      localMessage = done;
+    } catch {
+      localMessage = t('multiplayer.copyFailed');
+    }
+    render();
+  };
 
   const status = h('p.lobby__status', { role: 'status', 'aria-live': 'polite' });
 
@@ -92,9 +171,9 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const serverAddress = textInput(session.client.address && session.connected ? session.client.address : prefs.server, { type: 'url', spellcheck: false });
   const playerName = textInput(prefs.name, { maxLength: 24 });
   playerName.setAttribute('autocomplete', 'nickname');
-  /** The name belongs to the connection card until there is a connection, and to the bar after it. */
+  /** The name belongs to the connection card until there is a connection, and to the bar after it (in the hosted build: always the bar). */
   const nameField = field(t('multiplayer.name'), playerName);
-  const connectButton = button(t('multiplayer.connect'), true);
+  const connectButton = button(hosted ? t('multiplayer.retry') : t('multiplayer.connect'), true);
   const connectFields = h('div.lobby__fields', null, ...(configuredServer ? [] : [field(t('multiplayer.server'), serverAddress)]));
   const connectView = h('section.lobby__card.lobby__card--narrow', null, h('h3.setup__title', null, t('multiplayer.connection')), connectFields, connectButton);
 
@@ -103,14 +182,47 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const serverLink = h('span.lobby__link', null, linkText);
   serverLink.hidden = configuredServer;
   const barName = h('div.lobby__name', null);
+  /** The symbol the player shows in online games: picked here before a room, and inside one (below the players). */
+  const avatarBar = picker<Avatar>(t('multiplayer.yourSymbol'), avatarOptions(), false, (avatar) => {
+    sound.blip();
+    prefs.avatar = avatar;
+    save();
+    avatarBar.show(avatar);
+  });
+  const avatarRow = h('div.lobby__avatar', null, h('span.lobby__code-label', null, t('multiplayer.yourSymbol')), avatarBar.el);
   const disconnectButton = button(t('multiplayer.disconnect'));
-  const bar = h('div.lobby__bar', null, serverLink, barName, disconnectButton);
+  // The hosted build is connected as of now: there is nothing to disconnect from.
+  disconnectButton.hidden = hosted;
+  const bar = h('div.lobby__bar', null, serverLink, barName, avatarRow, disconnectButton);
 
   // ————————————————————————————— The open rooms —————————————————————————————
 
   const openCreate = button(t('multiplayer.openCreate'), true);
   const roomsList = h('ul.lobby__rooms', null);
-  const roomsView = h('section.lobby__card', null, h('div.lobby__head', null, h('h3.setup__title', null, t('multiplayer.rooms')), openCreate), roomsList);
+  // A private room is not listed: its code gets you in.
+  const codeInput = textInput('', { maxLength: 16, autocomplete: 'off', spellcheck: false, placeholder: t('multiplayer.codePlaceholder') });
+  const codePassword = passwordInput(t('multiplayer.password'));
+  const codeJoin = button(t('multiplayer.join'), true);
+  const joinByCode = () => {
+    const roomId = codeInput.value.trim();
+    if (!roomId) {
+      localMessage = t('multiplayer.codeRequired');
+      render();
+      codeInput.focus();
+      return;
+    }
+    const name = takeName();
+    if (!name) return;
+    session.joinRoom(roomId, name, codePassword.value, prefs.avatar);
+  };
+  codeJoin.addEventListener('click', joinByCode);
+  for (const input of [codeInput, codePassword]) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') joinByCode();
+    });
+  }
+  const codeRow = h('div.lobby__code-join', null, h('span.lobby__code-label', null, t('multiplayer.joinCode')), codeInput, secretField(codePassword), codeJoin);
+  const roomsView = h('section.lobby__card', null, h('div.lobby__head', null, h('h3.setup__title', null, t('multiplayer.rooms')), openCreate), roomsList, codeRow);
 
   /** The trimmed player name, remembered for next time; null (with a message) when empty. */
   const takeName = (): string | null => {
@@ -137,7 +249,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     const doJoin = () => {
       const name = takeName();
       if (!name) return;
-      session.joinRoom(room.id, name, pass.value);
+      session.joinRoom(room.id, name, pass.value, prefs.avatar);
       joinPasswords.delete(room.id);
     };
     join.addEventListener('click', doJoin);
@@ -150,10 +262,11 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       h(
         'div.lobby-room__info',
         null,
-        h('strong', null, `${room.locked ? '🔒 ' : ''}${t('multiplayer.roomOf', { name: room.host || room.id })}`),
+        h('strong', null, roomIcon(room.symbol, room.color), `${room.locked ? '🔒 ' : ''}${t('multiplayer.roomNumber', { n: room.number })}`),
+        h('span.lobby-room__host', null, t('multiplayer.hostedBy', { name: room.host })),
         h('span.lobby-room__tags', null, h('span.lobby__tag', null, modeName(room.gameMode)), h('span.lobby__tag', null, matchTypeName(room.mode)), pips(room.players, room.maxPlayers)),
       ),
-      room.locked ? pass : '',
+      room.locked ? secretField(pass) : '',
       join,
     );
   };
@@ -220,13 +333,23 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     env,
   );
 
+  /** The listing, symbol and colour of the room to come; remembered, and sent when the room is made. */
+  const lookSave = (patch: Partial<RoomLook>) => {
+    prefs.look = { ...prefs.look, ...patch };
+    save();
+    createSummary.refresh(prefs.look);
+    createDialog.refresh(prefs.look);
+  };
+  const createVisibility = visibilityControl(prefs.look, lookSave, { sound });
+  const createDialog = lookDialog(prefs.look, lookSave, { sound });
+  const createSummary = lookSummary(prefs.look, () => createDialog.open());
   const backToRooms = button(t('multiplayer.backToRooms'));
   const createButton = button(t('multiplayer.create'), true);
   const createView = h(
     'section.lobby__card.lobby__card--wide',
     null,
     h('h3.setup__title', null, t('multiplayer.newRoom')),
-    h('div.lobby__basics', null, h('div', null, gameMode.el, matchType.el), h('div', null, capacity.el, field(t('multiplayer.passwordOptional'), password))),
+    h('div.lobby__basics', null, h('div', null, createVisibility.el, gameMode.el, matchType.el), h('div', null, createSummary.el, capacity.el, field(t('multiplayer.passwordOptional'), secretField(password, () => void copyText(password.value, t('multiplayer.passwordCopied')))))),
     createRules,
     horizonNote,
     h('div.lobby__actions', null, backToRooms, createButton),
@@ -236,7 +359,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   createButton.addEventListener('click', () => {
     const name = takeName();
     if (!name) return;
-    session.createRoom({ name, mode: prefs.matchType, gameMode: prefs.gameMode, rules: prefs.rules, maxPlayers: prefs.capacity, password: password.value });
+    session.createRoom({ name, mode: prefs.matchType, gameMode: prefs.gameMode, rules: prefs.rules, maxPlayers: prefs.capacity, password: password.value, look: prefs.look, avatar: prefs.avatar });
+    hostPassword = password.value;
     password.value = '';
   });
 
@@ -247,9 +371,27 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   /** Host only, in team rooms: deal everybody back out to the teams. */
   const resetTeams = button(t('multiplayer.resetTeams'));
   resetTeams.addEventListener('click', () => session.resetTeams());
+  /** The code others join the room with; a private room can only be found this way. */
+  const roomCode = h('span.lobby__code-value', null);
+  const privateTag = h('span.lobby__tag', null, t('multiplayer.private'));
+  const copyCode = button(t('multiplayer.copyCode'));
+  copyCode.addEventListener('click', () => void copyText(session.room?.id ?? '', t('multiplayer.codeCopied')));
+  const copyPassword = button(t('multiplayer.copyPassword'));
+  copyPassword.addEventListener('click', () => void copyText(hostPassword, t('multiplayer.passwordCopied')));
   const players = h('ul.lobby__players', null);
+  /** Your own symbol, as the game shows it: picked here while the room waits. */
+  const roomAvatarPicker = picker<Avatar>(t('multiplayer.yourSymbol'), avatarOptions(), false, (avatar) => {
+    sound.blip();
+    prefs.avatar = avatar;
+    save();
+    roomAvatarPicker.show(avatar);
+    session.setAvatar(avatar);
+  });
+  const roomAvatar = h('div.lobby__avatar', null, h('span.lobby__code-label', null, t('multiplayer.yourSymbol')), roomAvatarPicker.el);
   /** In team rooms, while a team has nobody in it. */
   const teamWarning = h('p.lobby__rules-note.is-locked', null, t('multiplayer.teamsNeedPlayers'));
+  /** The room's look: editable by the host, shown to everybody else. */
+  const roomLookSlot = h('div', null);
   /** Where the rules of the room are: sliders for the host, the same, locked, for everybody else. */
   const roomRules = h('div', null);
   /** Above the rules: that they reset everybody's "ready" (host), or that they are not yours to change (everyone else). */
@@ -262,7 +404,30 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   ready.addEventListener('click', () => session.setReady(!selfReady));
   start.addEventListener('click', () => session.startGame());
   leave.addEventListener('click', () => session.leaveRoom());
-  const roomView = h('section.lobby__card.lobby__card--wide', null, roomTitle, h('div.lobby__head', null, roomCount, resetTeams), players, teamWarning, rulesNote, roomRules, roomNote, h('div.lobby__actions', null, ready, start, leave));
+  const roomView = h(
+    'section.lobby__card.lobby__card--wide',
+    null,
+    roomTitle,
+    h('div.lobby__head', null, roomCount, resetTeams),
+    h('div.lobby__code', null, h('span.lobby__code-label', null, t('multiplayer.code')), roomCode, copyCode, copyPassword, privateTag),
+    players,
+    roomAvatar,
+    teamWarning,
+    roomLookSlot,
+    rulesNote,
+    roomRules,
+    roomNote,
+    h('div.lobby__actions', null, ready, start, leave),
+  );
+
+  /** The host's change to the look of the room: sent as the whole look, so nothing else gets lost. */
+  const changeRoomLook = (patch: Partial<RoomLook>) => {
+    if (session.room) session.setRoomLook({ ...lookOf(session.room), ...patch });
+  };
+  let roomVisibility: LookControl | null = null;
+  let roomSummary: LookControl | null = null;
+  let roomDialog: LookDialog | null = null;
+  let roomLookKey = '';
 
   /** The rules as the host is editing them; the room's own once nobody is. */
   let draft: RoomRules | null = null;
@@ -307,7 +472,10 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     const { you } = session;
     const self = room.players.find((p) => p.id === you.playerId);
     selfReady = !!self?.ready;
-    roomTitle.textContent = `${t('multiplayer.room')} · ${modeName(room.gameMode)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`;
+    roomTitle.replaceChildren(roomIcon(room.symbol, room.color), `${t('multiplayer.roomNumber', { n: room.number })} · ${modeName(room.gameMode)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`);
+    roomCode.textContent = room.id;
+    privateTag.hidden = room.visibility !== 'private';
+    copyPassword.hidden = !(you.host && room.locked && hostPassword);
     const teamGame = room.mode === 'team';
     const inTeam = (k: number) => room.players.filter((p) => p.team === k).length;
     const teamsReady = !teamGame || (inTeam(0) > 0 && inTeam(1) > 0);
@@ -327,6 +495,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
           'li',
           null,
           dot,
+          playerIcon(player.avatar, COLORS.players[player.id]),
           h('span.lobby__player-name', null, player.name),
           ...(mine ? [h('span.lobby__tag', null, t('multiplayer.you'))] : []),
           ...(player.id === 0 ? [h('span.lobby__tag.lobby__tag--host', null, t('multiplayer.host'))] : []),
@@ -337,6 +506,23 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       }),
     );
     if (picking) players.querySelector<HTMLElement>(`[data-pick-team="${picking}"]`)?.focus();
+    roomAvatarPicker.show(self?.avatar ?? prefs.avatar);
+    roomAvatarPicker.el.style.setProperty('--tone', COLORS.players[you.playerId]);
+
+    // The look is rebuilt only when the room or the host changes, so an open dialog keeps its state between updates.
+    const lookId = `${room.id}|${you.host}`;
+    if (lookId !== roomLookKey) {
+      roomLookKey = lookId;
+      roomVisibility = visibilityControl(lookOf(room), changeRoomLook, { readonly: !you.host, sound });
+      // Only the host changes the look. The others see the room's colour and symbol in its title, so they get no summary.
+      roomSummary = you.host ? lookSummary(lookOf(room), () => roomDialog?.open()) : null;
+      roomDialog?.close();
+      roomDialog = you.host ? lookDialog(lookOf(room), changeRoomLook, { sound }) : null;
+      roomLookSlot.replaceChildren(roomSummary ? h('div.lobby__look-row', null, roomVisibility.el, roomSummary.el) : roomVisibility.el);
+    }
+    roomVisibility?.refresh(lookOf(room));
+    roomSummary?.refresh(lookOf(room));
+    roomDialog?.refresh(lookOf(room));
 
     // The sliders live as long as the room does: rebuilding them at every update would drop the one being dragged.
     const key = `${room.id}|${room.gameMode}|${you.host}`;
@@ -375,16 +561,20 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
 
   const render = () => {
     const { connected, connecting, room, rooms: open } = session;
+    avatarBar.show(prefs.avatar);
     // A room, once left, leaves you at the list of rooms.
     if (room) view = 'rooms';
-    const message = localMessage ?? session.notice ?? (connecting ? t('multiplayer.connecting') : !connected ? t('multiplayer.connectHint') : '');
+    // The hosted build says nothing about connecting or being connected; its connect card returns only when that failed.
+    const retry = hosted && !connected && !connecting && (connectFailed || session.notice !== null);
+    const idle = hosted ? '' : t('multiplayer.connectHint');
+    const message = localMessage ?? session.notice ?? (connecting ? (hosted ? '' : t('multiplayer.connecting')) : !connected ? idle : '');
     status.textContent = message;
     status.classList.toggle('is-busy', connecting);
     status.hidden = !message;
 
     const browsing = connected && !room;
     bar.hidden = !browsing;
-    connectView.hidden = connected;
+    connectView.hidden = hosted ? !retry : connected;
     roomsView.hidden = !(browsing && view === 'rooms');
     createView.hidden = !(browsing && view === 'create');
     roomView.hidden = !room;
@@ -392,8 +582,12 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     if (room) return renderRoom(room);
     // Out of the room the next one starts from scratch.
     formKey = '';
+    hostPassword = '';
+    roomLookKey = '';
+    roomDialog?.close();
+    roomDialog = null;
 
-    (connected ? barName : connectFields).append(nameField);
+    (connected || hosted ? barName : connectFields).append(nameField);
     if (!configuredServer) linkText.textContent = t('multiplayer.connectedTo', { server: session.client.address || prefs.server });
     connectButton.disabled = connecting;
     serverAddress.disabled = connecting;
@@ -403,6 +597,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const connect = async (silent: boolean) => {
     const address = configuredServer ? DEFAULT_SERVER : serverAddress.value.trim();
     localMessage = silent ? null : t('multiplayer.connecting');
+    connectFailed = false;
     render();
     try {
       await session.connect(address);
@@ -410,6 +605,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       prefs.autoConnect = true;
       localMessage = null;
     } catch (error) {
+      connectFailed = true;
       prefs.autoConnect = false;
       localMessage = configuredServer ? t('multiplayer.connectFailed') : error instanceof Error ? error.message : String(error);
     }
@@ -469,6 +665,11 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       return root;
     },
     items: [],
-    onEscape: goBack,
+    // Escape closes an open look dialog first, and only then leaves the lobby.
+    onEscape: () => {
+      if (createDialog.isOpen()) createDialog.close();
+      else if (roomDialog?.isOpen()) roomDialog.close();
+      else goBack();
+    },
   };
 }
