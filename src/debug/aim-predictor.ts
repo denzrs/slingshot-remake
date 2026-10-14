@@ -49,6 +49,8 @@ style.textContent = `
   .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 0; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; color: ${boneDim}; }
   .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .stats { margin: 0 0 14px; color: ${bone}; font: 12px/1.7 "B612 Mono", monospace; }
+  .stats span { color: ${boneDim}; }
 `;
 document.head.append(style);
 
@@ -58,6 +60,7 @@ const elements = {
   seed: document.createElement('input'),
   ships: document.createElement('select'),
   flights: document.createElement('input'),
+  minPower: document.createElement('input'),
   shooter: document.createElement('select'),
   reroll: document.createElement('button'),
   run: document.createElement('button'),
@@ -66,6 +69,7 @@ const elements = {
   map: document.createElement('canvas'),
   note: document.createElement('p'),
   legend: document.createElement('div'),
+  stats: document.createElement('div'),
   status: document.createElement('span'),
 };
 
@@ -98,7 +102,7 @@ export interface Sample {
  * lands near `flights`; each bin is sampled FACTOR times, jittered within the bin, seeded
  * so the same world always yields the same chart.
  */
-export function sampleAims(source: World, from: number, rng: Rng, flights = DEFAULT_FLIGHTS): Sample[] {
+export function sampleAims(source: World, from: number, rng: Rng, flights = DEFAULT_FLIGHTS, minPower = 0): Sample[] {
   const out: Sample[] = [];
   const cells = Math.max(1, Math.round(flights / FACTOR));
   const angleBins = Math.max(1, Math.round(Math.sqrt(cells * 1.25)));
@@ -110,6 +114,7 @@ export function sampleAims(source: World, from: number, rng: Rng, flights = DEFA
       for (let sub = 0; sub < FACTOR; sub++) {
         const angle = -180 + (angleBin + rng()) * angleWidth;
         const power = (powerBin + rng()) * powerWidth;
+        if (power < minPower) continue;
         const shot = new Shot(source, from, angle, power, rules);
         let end: ShotEnd | null = null;
         while (!end) end = shot.step();
@@ -378,6 +383,8 @@ async function run(): Promise<void> {
   shipCount = Number(elements.ships.value) || 2;
   const flights = Math.min(MAX_FLIGHTS, Math.max(MIN_FLIGHTS, Math.round(Number(elements.flights.value) || DEFAULT_FLIGHTS)));
   elements.flights.value = String(flights);
+  const minPower = Math.min(AIM.MAX_POWER - 1, Math.max(0, Math.round(Number(elements.minPower.value) || 0)));
+  elements.minPower.value = String(minPower);
   world = generateWorld(seed, { players: shipCount, maxPlanets: MAX_PLANETS, blackHole: false });
   refreshShips();
   const from = shooter;
@@ -389,17 +396,32 @@ async function run(): Promise<void> {
   setTimeout(resolve, 20);
   await painted;
   const started = performance.now();
-  const samples = sampleAims(world, from, createRng(seed ^ 0x61696d), flights);
+  const samples = sampleAims(world, from, createRng(seed ^ 0x61696d), flights, minPower);
   draw(samples);
   drawMap(null, null);
   elements.note.textContent = 'Click a dot on the chart to replay its trajectory here.';
   legend();
+  updateStats(samples);
   const seconds = ((performance.now() - started) / 1000).toFixed(1);
-  elements.status.textContent = `${samples.length} trajectories in ${seconds}s (seed ${seed}, ship ${from}, ${shipCount} ships, ${world.planets.length} planets, ${FLIGHT_TIME}s flight limit)`;
+  elements.status.textContent = `${samples.length} trajectories in ${seconds}s (seed ${seed}, ship ${from}, ${shipCount} ships, ${world.planets.length} planets, ${FLIGHT_TIME}s flight limit, min power ${minPower})`;
   elements.run.disabled = false;
   elements.png.disabled = false;
 }
 
+
+/** Hit probability per enemy and self-hit risk over the sampled flights. */
+function updateStats(samples: readonly Sample[]): void {
+  const ships = world?.ships ?? [];
+  const total = samples.length || 1;
+  const hits = new Array(ships.length).fill(0);
+  for (const s of samples) if (s.end.kind === 'ship') hits[s.end.ship]++;
+  const pct = (n: number) => `${((100 * n) / total).toFixed(1)}%`;
+  const rows: string[] = [];
+  ships.forEach((_, i) => {
+    rows.push(i === shooter ? `<span>self-hit risk</span> ${pct(hits[i])}` : `<span>P(hit ship ${i})</span> ${pct(hits[i])}`);
+  });
+  elements.stats.innerHTML = rows.join('<br>');
+}
 function download(): void {
   const a = document.createElement('a');
   a.href = elements.canvas.toDataURL('image/png');
@@ -431,6 +453,12 @@ elements.flights.max = String(MAX_FLIGHTS);
 elements.flights.step = '150';
 elements.flights.title = `Total trajectories (${MIN_FLIGHTS}–${MAX_FLIGHTS})`;
 elements.flights.addEventListener('change', run);
+elements.minPower.type = 'number';
+elements.minPower.value = '10';
+elements.minPower.min = '0';
+elements.minPower.max = '99';
+elements.minPower.title = 'Ignore sampled aims below this power';
+elements.minPower.addEventListener('change', run);
 elements.shooter.addEventListener('change', () => {
   shooter = Number(elements.shooter.value);
   void run();
@@ -454,10 +482,12 @@ bar.append(
   label('seed'), elements.seed,
   label('ships'), elements.ships,
   label('flights'), elements.flights,
+  label('min power'), elements.minPower,
   label('shooter'), elements.shooter,
   elements.reroll, elements.run, elements.png, elements.status,
 );
-document.body.append(bar);
+elements.stats.className = 'stats';
+document.body.append(bar, elements.stats);
 
 document.body.append(
   (() => {
