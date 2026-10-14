@@ -1,0 +1,30 @@
+# Slingshot multiplayer relay — systemd USER unit.
+#
+# Lives at ~/.config/systemd/user/slingshot-relay.service for the `ops` user, so a
+# deploy never needs root: the binary and relay.env stay ops-owned under /srv/slingshot
+# and are flipped with `systemctl --user`. Run the one-time root bootstrap once:
+#
+#   deploy/ionos/setup-server.sh
+#
+# In a user unit there is no User=/Group=: the manager already runs as `ops`.
+
+[Unit]
+Description=Slingshot multiplayer relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/slingshot
+EnvironmentFile=/srv/slingshot/relay.env
+ExecStart=/srv/slingshot/slingshot-server
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=30
+TimeoutStopSec=15
+LimitNOFILE=65536
+KillSignal=SIGTERM
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
