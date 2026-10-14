@@ -37,6 +37,64 @@ export interface App {
 
 const LANG_NAMES: Record<Lang, string> = { de: 'Deutsch', en: 'English' };
 
+type BmcButtonWidget = (text: string, slug: string, color: string, emoji: string, font: string, fontColor: string, outlineColor: string, coffeeColor: string) => string;
+
+let bmcWidget: Promise<BmcButtonWidget | null> | null = null;
+let bmcStylesInstalled = false;
+
+function loadBmcWidget(): Promise<BmcButtonWidget | null> {
+  if (bmcWidget) return bmcWidget;
+  bmcWidget = new Promise((resolve) => {
+    const existing = (window as Window & { bmcBtnWidget?: BmcButtonWidget }).bmcBtnWidget;
+    if (existing) {
+      resolve(existing);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js';
+    script.async = true;
+    script.onload = () => resolve((window as Window & { bmcBtnWidget?: BmcButtonWidget }).bmcBtnWidget ?? null);
+    script.onerror = () => resolve(null);
+    document.head.append(script);
+  });
+  return bmcWidget;
+}
+
+/** The official BMC widget uses document.write when initialized from its data-name embed.
+ * Load its renderer without that attribute, then mount its generated button into the title UI. */
+function coffeeButton(): HTMLElement {
+  const fallback = h('a.coffee-link', {
+    href: import.meta.env.VITE_COFFEE_URL,
+    target: '_blank',
+    rel: 'noopener noreferrer',
+    'aria-label': t('title.coffee'),
+  }, t('title.coffee'));
+  const container = h('div.coffee-button', null, fallback);
+
+  void loadBmcWidget().then((renderWidget) => {
+    if (!renderWidget || !container.isConnected) return;
+    const html = renderWidget('Buy me a coffee', 'slingshot.remake', '#132746', '🚀', 'Bree', '#ffffff', '#5B7DB3', '#FFDD00');
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    template.content.querySelector('link[rel="stylesheet"]')?.remove();
+    const styles = template.content.querySelector('style');
+    const button = template.content.querySelector<HTMLAnchorElement>('.bmc-btn');
+    const widget = template.content.querySelector<HTMLElement>('.bmc-btn-container');
+    if (!styles || !button || !widget) return;
+
+    button.rel = 'noopener noreferrer';
+    if (!bmcStylesInstalled) {
+      styles.textContent += `\n.bmc-btn, .bmc-btn-text { font-family: var(--font-body) !important; }\n.bmc-btn { min-width: 0; height: 40px; padding: 0 12px; border: 1px solid var(--line) !important; border-radius: 3px; font-size: 13px; }\n.bmc-btn svg { height: 25px !important; }\n`;
+      document.head.append(styles);
+      bmcStylesInstalled = true;
+    }
+    fallback.hidden = true;
+    container.append(widget);
+  });
+
+  return container;
+}
+
 /** Language picker; the names stay in their own language so it is findable from any UI language. */
 function languageItem(app: App): MenuItem {
   return {
@@ -96,12 +154,7 @@ export function titleScreen(app: App): Screen {
             null,
             h('p.version', null, String(import.meta.env.VITE_APP_VERSION || 'Local-Dev')),
             ...(import.meta.env.VITE_COFFEE_URL
-              ? [h('a.coffee-link', {
-                  href: import.meta.env.VITE_COFFEE_URL,
-                  target: '_blank',
-                  rel: 'noopener noreferrer',
-                  'aria-label': t('title.coffee'),
-                }, t('title.coffee'))]
+              ? [coffeeButton()]
               : []),
             ghostEgg(app),
           ),

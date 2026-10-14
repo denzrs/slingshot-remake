@@ -130,6 +130,11 @@ body {
   margin: 0;
 }
 
+.coffee-button {
+  display: flex;
+  align-items: center;
+}
+
 .coffee-link {
   color: var(--bone-dim);
   font-size: 11px;
