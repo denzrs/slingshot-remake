@@ -999,11 +999,47 @@ body {
   color: var(--bone-dim);
 }
 
-.help {
+/* How to play: a short tutorial, one page at a time. */
+.tutorial {
   font-size: 14px;
   line-height: 1.6;
   color: var(--bone-dim);
-  margin-bottom: 14px;
+  margin-bottom: 8px;
+}
+
+.tutorial__progress {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 18px;
+}
+
+.tutorial__progress span {
+  flex: 1;
+  height: 3px;
+  background: rgb(91 125 179 / 0.25);
+}
+
+.tutorial__progress .is-done {
+  background: var(--line);
+}
+
+.tutorial__progress .is-current {
+  background: var(--p1);
+}
+
+/* All pages share one grid cell, so the dialog keeps the height of its longest page; the others are only hidden. */
+.tutorial__pages {
+  display: grid;
+}
+
+.tutorial__page {
+  grid-area: 1 / 1;
+  min-width: 0;
+  visibility: hidden;
+}
+
+.tutorial__page.is-current {
+  visibility: visible;
 }
 
 /* ——— Multiplayer lobby ——— */
@@ -1834,22 +1870,34 @@ body {
   }
 }
 
-.help p {
+.tutorial p {
   margin: 0 0 12px;
 }
 
-.help h3 {
-  margin: 20px 0 6px;
+.tutorial__title {
+  margin: 0 0 14px;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 22px;
+  font-size: 28px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--bone);
 }
 
-.help h3:first-child {
-  margin-top: 0;
+.tutorial__figure {
+  margin: 4px 0 16px;
+}
+
+.tutorial__figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.tutorial__tip {
+  padding-left: 12px;
+  border-left: 2px solid var(--sodium);
+  color: var(--bone);
 }
 
 .keys-table {
@@ -2333,31 +2381,6 @@ body.egg-open #touch-fire {
 @media (pointer: coarse) {
   #ghost-lane {
     --ghost-bottom: calc(max(16px, env(safe-area-inset-bottom)) + 72px);
-  }
-}
-
-#rotate-hint {
-  display: none;
-  position: fixed;
-  left: 16px;
-  right: 16px;
-  top: max(16px, env(safe-area-inset-top));
-  z-index: 5;
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px solid rgb(91 125 179 / 0.5);
-  background: rgb(11 26 51 / 0.9);
-  color: var(--bone-dim);
-  font-size: 14px;
-  line-height: 1.45;
-  text-align: center;
-  pointer-events: none;
-}
-
-/* Only a phone is asked to turn: a narrow desktop window can't be rotated. */
-@media (orientation: portrait) and (max-width: 700px) and (pointer: coarse) {
-  body.is-playing #rotate-hint {
-    display: block;
   }
 }
 
