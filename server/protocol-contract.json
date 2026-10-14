@@ -12,7 +12,8 @@
     "neighborGrace": 0,
     "simultaneousShots": false,
     "hiddenAim": false,
-    "fadingTrails": 0
+    "fadingTrails": 0,
+    "betting": false
   },
   "options": {
     "rounds": [0, 1, 3, 5, 7, 10, 15, 20],

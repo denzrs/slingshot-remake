@@ -38,8 +38,8 @@ export interface Settings {
   contours: boolean;
   particles: boolean;
   sound: boolean;
-  /** Eliminated players tip on what the others' shots do (online). */
-  oracle: boolean;
+  /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
+  betting: boolean;
   /** Eliminated players may shoot on the ghost lane while they wait (online, this device only). */
   ghostLane: boolean;
   language: Lang;
@@ -64,10 +64,10 @@ export const DEFAULT_SETTINGS: Settings = {
   simultaneousShots: false,
   hiddenAim: false,
   fadingTrails: 0,
+  betting: false,
   contours: true,
   particles: true,
   sound: true,
-  oracle: true,
   ghostLane: true,
   language: 'de',
   teamMode: 0,

@@ -49,7 +49,7 @@ function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly
   const controls: Control[] = [];
   const refresh = () => controls.forEach((c) => c.refresh());
   const env: Env = { sound: app.menu.sound, readonly, changed: refresh };
-  const items = ruleItems(mode, source);
+  const items = ruleItems(mode, source, true);
   const groups = RULE_GROUPS.filter((group) => items.some((i) => i.group === group)).map((group) => {
     const rows = h('div.setup__rows', null);
     for (const { group: g, item } of items) {

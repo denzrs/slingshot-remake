@@ -4,6 +4,7 @@ import { AIM } from '../src/config';
 import type { RoomRules } from '../src/net';
 import { rulesOf } from '../src/lobbyPrefs';
 import { indexAtFraction, positionOf, stepIndex } from '../src/ui/controls';
+import { defaultRoomRules } from '../src/lobbyPrefs';
 import { CAP_STOPS, DEFAULT_CAP, powerModeOf, powerModePatch, RULE_GROUPS, ruleItems, ruleRows, rulesFor, type PowerMode, type RuleSource } from '../src/ui/rules';
 import { startPower } from '../src/settings';
 import { readFileSync } from 'node:fs';
@@ -121,6 +122,19 @@ describe('game rules in the menu', () => {
       expect(horizon).not.toContain(row.key);
       expect(rulesFor('classic').map((r) => r.key)).toContain(row.key);
     }
+  });
+
+  it('keeps the rules that only make sense online — betting — off the offline setup screen, in both modes', () => {
+    const online = all.filter((r) => r.onlineOnly);
+    expect(online.map((r) => r.key)).toEqual(['betting']);
+    for (const mode of ['classic', 'horizon'] as const) {
+      expect(rulesFor(mode).map((r) => r.key)).not.toContain('betting');
+      expect(rulesFor(mode, true).map((r) => r.key)).toContain('betting');
+    }
+    // As a switch in the lobby, and not on a screen for a game against the computer.
+    const source: RuleSource = { get: () => ({ ...defaultRoomRules(), betting: true }), patch: () => {} };
+    expect(ruleItems('classic', source).some((i) => /bet|wett/i.test(i.item.label))).toBe(false);
+    expect(ruleItems('classic', source, true).some((i) => /bet|wett/i.test(i.item.label))).toBe(true);
   });
 
   describe('saved settings', () => {

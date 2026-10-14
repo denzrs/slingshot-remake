@@ -7,6 +7,8 @@ export type OracleKind = 'shot' | 'salvo';
 export const TIP_MISS = 0;
 export const TIP_HIT = 1;
 export const TIP_NOBODY = -1;
+/** What a tip looks like to everybody else until the shots are away: face down. */
+export const TIP_HIDDEN = -2;
 
 export interface OracleQuestion {
   /** Rises with every question, so a screen can tell a new verdict from one it already showed. */
@@ -20,11 +22,29 @@ export interface OracleQuestion {
   locked: boolean;
 }
 
+/** "Who wins the round?" — opens once somebody is out, stays open for the rest of the round, and is judged when it ends. */
+export interface RoundQuestion {
+  id: number;
+  kind: 'winner';
+  /** The ships that were still in when the question opened; a tip names one that still is. */
+  choices: number[];
+  /** A round can end in a draw (everybody aims at once), so "nobody" is an answer too. */
+  draw: boolean;
+}
+
+/** How the tipsters were split, when it is worth a remark: the majority was wrong ("fooled"), or everybody agreed and was right. */
+export type Crowd = 'wrong' | 'right';
+
 export interface OracleTip {
   player: number;
   pick: number;
   right: boolean;
   points: number;
+  /** Right against the crowd: fewer than half of the tipsters named the same, and it was this one. */
+  underdog?: boolean;
+  /** A bet on the round question: what was staked, and what comes back (the stake itself included; 0 when it is lost). */
+  stake?: number;
+  payout?: number;
 }
 
 export interface OracleResult {
@@ -37,8 +57,33 @@ export interface OracleResult {
   /** `shot`: the shooter hit an enemy. */
   hit: boolean;
   tips: OracleTip[];
+  crowd?: Crowd;
   /** Match clock when the verdict fell. */
   at: number;
+}
+
+export interface RoundResult {
+  id: number;
+  kind: 'winner';
+  round: number;
+  /** The ships that won: a lone survivor, a whole team, or nobody in a draw. */
+  winners: number[];
+  tips: OracleTip[];
+  crowd?: Crowd;
+  at: number;
+}
+
+/** The little things the awards are made of. Kept for the whole match and, separately, for the round. */
+export interface OracleTally {
+  /** The longest run of right tips. */
+  bestStreak: number;
+  /** The longest run of wrong tips. */
+  worstRun: number;
+  /** Tips on single shots: "hit" and "miss". */
+  hitTips: number;
+  missTips: number;
+  /** Right tips against the crowd. */
+  underdogs: number;
 }
 
 export interface OracleScore {
@@ -48,73 +93,136 @@ export interface OracleScore {
   total: number;
   /** Right tips in a row; a wrong one ends it, no tip leaves it alone. */
   streak: number;
+  /** Wrong tips in a row. */
+  wrongRun: number;
   /** This round only — for the scorecard. */
   roundPoints: number;
   roundRight: number;
   roundTotal: number;
+  stats: OracleTally;
+  roundStats: OracleTally;
 }
 
-/** What travels to the guests. The open tips come along, so the eliminated players see each other's tips as they are made. */
+/**
+ * What travels to the guests. The open tips come along face down — who has tipped, not what — so the
+ * eliminated players cannot copy each other; they are turned over when the shots are away.
+ */
 export interface OracleSnapshot {
   question: OracleQuestion | null;
   result: OracleResult | null;
   scores: OracleScore[];
-  /** Who tipped what on the open question, as [player, pick] pairs. Hosts from before live tips send none. */
+  /** Who tipped on the open question, as [player, pick] pairs. Picks are `TIP_HIDDEN` until the question is locked. Hosts from before live tips send none. */
   tips?: [player: number, pick: number][];
+  /** How the eliminated lean on an open shot: [hit, miss] tips. The living feel it as the ghosts' mood. */
+  mood?: [hit: number, miss: number] | null;
+  round?: RoundQuestion | null;
+  roundResult?: RoundResult | null;
+  /** Who tipped on the round question; picks stay `TIP_HIDDEN` until the round is over. */
+  roundTips?: [player: number, pick: number][];
+  /** What the eliminated have staked on the round question, as [player, stake] pairs. */
+  roundStakes?: [player: number, stake: number][];
 }
 
-const emptyScore = (): OracleScore => ({ points: 0, right: 0, total: 0, streak: 0, roundPoints: 0, roundRight: 0, roundTotal: 0 });
+/** What a ghost with `score` points may stake on the round question: half of the allowed most, and the most; none if it is not worth it. */
+export function stakeOptions(score: number): number[] {
+  const most = Math.floor((Math.max(0, score) * ORACLE.STAKE_SHARE) / ORACLE.STAKE_STEP) * ORACLE.STAKE_STEP;
+  if (most < ORACLE.STAKE_MIN) return [];
+  const half = Math.floor(most / 2 / ORACLE.STAKE_STEP) * ORACLE.STAKE_STEP;
+  return half >= ORACLE.STAKE_MIN && half < most ? [half, most] : [most];
+}
+
+const emptyTally = (): OracleTally => ({ bestStreak: 0, worstRun: 0, hitTips: 0, missTips: 0, underdogs: 0 });
+const emptyScore = (): OracleScore => ({ points: 0, right: 0, total: 0, streak: 0, wrongRun: 0, roundPoints: 0, roundRight: 0, roundTotal: 0, stats: emptyTally(), roundStats: emptyTally() });
+/** A score as a host of any age sent it: whatever is missing starts from zero. */
+const scoreFrom = (score: Partial<OracleScore>): OracleScore => ({ ...emptyScore(), ...score, stats: { ...emptyTally(), ...score.stats }, roundStats: { ...emptyTally(), ...score.roundStats } });
 
 /** The multiplier a right tip earns as the `streak`-th in a row. */
 export function oracleMultiplier(streak: number): number {
   return Math.min(ORACLE.MAX_MULTIPLIER, 1 + ORACLE.STREAK_STEP * Math.max(0, streak - 1));
 }
 
+/** One tip, as the judging sees it. */
+interface Entry {
+  player: number;
+  pick: number;
+  right: boolean;
+  /** Points before the streak multiplier. */
+  base: number;
+  /** A single shot's hit/miss tip, which the awards count. */
+  shot: boolean;
+}
+
 /**
  * The tipping game for eliminated players. It only watches the match — questions open when a shot or
  * a salvo is about to be aimed, close when it is fired, and are judged from what the shots did.
+ * One more question runs alongside for the whole round: who wins it.
  * The host judges; every screen mirrors the verdict and the standings from its snapshots.
  */
 export class Oracle {
   question: OracleQuestion | null = null;
   result: OracleResult | null = null;
   scores: OracleScore[] = [];
+  roundQuestion: RoundQuestion | null = null;
+  roundResult: RoundResult | null = null;
   /** This screen's own tip on the open question. Display only: it never leaves the screen. */
   mine: { id: number; pick: number } | null = null;
+  /** …and on the round question. */
+  roundMine: { id: number; pick: number } | null = null;
 
   private serial = 0;
-  /** Who tipped what on the open question: the host's book, mirrored on every screen for the live view. */
+  /** Who tipped what on the open question: the host's book. Guests only ever hold the faces-down copy. */
   private tips = new Map<number, number>();
+  /** Who tipped what on the round question, and how many ships were still in at that moment (the more, the better the odds against). */
+  private roundTips = new Map<number, { pick: number; alive: number }>();
+  /** What every bettor has staked on the round question. The stake is out of the player's score until the round is over. */
+  private roundStakes = new Map<number, number>();
+  /** [hit, miss] on the open shot question. */
+  private heard: [number, number] = [0, 0];
 
   /** A new match: fresh standings for `players` ships (the question counter keeps running). */
   reset(players: number): void {
     this.question = null;
     this.result = null;
+    this.roundQuestion = null;
+    this.roundResult = null;
     this.mine = null;
+    this.roundMine = null;
     this.tips.clear();
+    this.roundTips.clear();
+    this.roundStakes.clear();
+    this.recount();
     this.scores = Array.from({ length: players }, emptyScore);
   }
 
   startRound(): void {
     this.question = null;
+    this.roundQuestion = null;
+    this.roundResult = null;
     this.mine = null;
+    this.roundMine = null;
     this.tips.clear();
+    this.roundTips.clear();
+    this.roundStakes.clear();
+    this.recount();
     for (const score of this.scores) {
       score.roundPoints = 0;
       score.roundRight = 0;
       score.roundTotal = 0;
+      score.roundStats = emptyTally();
     }
   }
 
   open(kind: OracleKind, shooter: number, choices: number[]): void {
     this.question = { id: ++this.serial, kind, shooter, choices, locked: false };
     this.tips.clear();
+    this.recount();
   }
 
   /** Nothing to tip on right now. */
   close(): void {
     this.question = null;
     this.tips.clear();
+    this.recount();
   }
 
   /** The shots are away: the tips are in. */
@@ -133,6 +241,7 @@ export class Oracle {
   bet(player: number, pick: number): boolean {
     if (!this.accepts(pick)) return false;
     this.tips.set(player, pick);
+    this.recount();
     return true;
   }
 
@@ -140,31 +249,146 @@ export class Oracle {
   resolve(victims: number[], hit: boolean, at: number): void {
     const q = this.question;
     if (!q) return;
-    const tips: OracleTip[] = [];
-    for (const [player, pick] of this.tips) {
+    const entries: Entry[] = [...this.tips].map(([player, pick]) => {
       const right = q.kind === 'shot' ? (pick === TIP_HIT) === hit : pick === TIP_NOBODY ? victims.length === 0 : victims.includes(pick);
+      const base = q.kind === 'shot' ? ORACLE.SHOT : pick === TIP_NOBODY ? ORACLE.NOBODY : ORACLE.SHIP;
+      return { player, pick, right, base, shot: q.kind === 'shot' };
+    });
+    this.result = { id: q.id, kind: q.kind, shooter: q.shooter, victims, hit, ...this.settle(entries), at };
+    this.close();
+  }
+
+  // ————————————————————————————— The round question —————————————————————————————
+
+  /** Opens "who wins the round?" for the ships `choices`. A round has one; a second call changes nothing. */
+  openRound(choices: number[], draw: boolean): void {
+    if (this.roundQuestion) return;
+    this.roundQuestion = { id: ++this.serial, kind: 'winner', choices: [...choices], draw };
+  }
+
+  /** Whether `pick` answers the round question, with `alive` the ships still in. */
+  acceptsRound(pick: number, alive: readonly number[]): boolean {
+    const q = this.roundQuestion;
+    if (!q || !Number.isInteger(pick)) return false;
+    return pick === TIP_NOBODY ? q.draw : q.choices.includes(pick) && alive.includes(pick);
+  }
+
+  /** Records a tip on the round question, replacing the player's earlier one; what it pays depends on how many ships are in now. */
+  betRound(player: number, pick: number, alive: readonly number[]): boolean {
+    if (!this.acceptsRound(pick, alive)) return false;
+    this.roundTips.set(player, { pick, alive: alive.length });
+    return true;
+  }
+
+  /** Whether this player has a tip on the round question and has not staked on it yet: a stake is made once. */
+  canStake(player: number): boolean {
+    return !!this.roundQuestion && this.roundTips.has(player) && !this.roundStakes.has(player);
+  }
+
+  /** Records a stake on the player's tip on the round question. Whether the player has the points is the match's call. */
+  setStake(player: number, stake: number): boolean {
+    if (!this.canStake(player) || !Number.isSafeInteger(stake) || stake < ORACLE.STAKE_MIN || stake % ORACLE.STAKE_STEP !== 0) return false;
+    this.roundStakes.set(player, stake);
+    return true;
+  }
+
+  /** What a player has staked on the round question; 0 for no bet. */
+  stakeOf(player: number): number {
+    return this.roundStakes.get(player) ?? 0;
+  }
+
+  /** All the stakes on the round question: the pot. */
+  get pot(): number {
+    let sum = 0;
+    for (const stake of this.roundStakes.values()) sum += stake;
+    return sum;
+  }
+
+  /** Stakes taken and not yet paid out, for a round that is cut short. */
+  get stakes(): ReadonlyMap<number, number> {
+    return this.roundStakes;
+  }
+
+  /** The round is over: judges the round question. `winners` are the ships that won — none in a draw. */
+  resolveRound(winners: number[], round: number, at: number): void {
+    const q = this.roundQuestion;
+    if (!q) return;
+    const entries: Entry[] = [...this.roundTips].map(([player, { pick, alive }]) => {
+      const right = pick === TIP_NOBODY ? winners.length === 0 : winners.includes(pick);
+      const base = pick === TIP_NOBODY ? ORACLE.DRAW : ORACLE.WINNER * Math.max(1, alive - 1);
+      return { player, pick, right, base, shot: false };
+    });
+    const settled = this.settle(entries);
+    this.shareThePot(settled.tips);
+    this.roundResult = { id: q.id, kind: 'winner', round, winners, ...settled, at };
+    this.roundQuestion = null;
+    this.roundTips.clear();
+    this.roundStakes.clear();
+  }
+
+  /**
+   * The stakes of the round make one pot; whoever tipped right shares it in proportion to their stakes,
+   * the rest lose theirs. With nobody right, or only right tips, there is nothing to share and everybody
+   * gets their stake back. Pays in steps of `STAKE_STEP`; what is left over stays in the pot.
+   */
+  private shareThePot(tips: OracleTip[]): void {
+    const pot = this.pot;
+    const right = tips.filter((tip) => tip.right && this.stakeOf(tip.player) > 0).reduce((sum, tip) => sum + this.stakeOf(tip.player), 0);
+    const refund = right === 0 || right === pot;
+    for (const tip of tips) {
+      const stake = this.stakeOf(tip.player);
+      if (!stake) continue;
+      tip.stake = stake;
+      tip.payout = refund ? stake : tip.right ? Math.floor((pot * stake) / right / ORACLE.STAKE_STEP) * ORACLE.STAKE_STEP : 0;
+    }
+  }
+
+  /** Books a question's tips: the points, the streaks, the tallies the awards come from. */
+  private settle(entries: Entry[]): { tips: OracleTip[]; crowd?: Crowd } {
+    const sameAs = (pick: number) => entries.filter((e) => e.pick === pick).length;
+    const tips = entries.map((entry): OracleTip => {
+      const { player, pick, right } = entry;
+      // Right while fewer than half of the others agreed: not a lucky guess with the herd.
+      const underdog = right && entries.length >= ORACLE.UNDERDOG_MIN_TIPS && sameAs(pick) * 2 < entries.length;
       const score = this.scores[player];
       let points = 0;
       if (score) {
+        const tallies = [score.stats, score.roundStats];
         score.total++;
         score.roundTotal++;
+        if (entry.shot) for (const tally of tallies) (pick === TIP_HIT ? tally.hitTips++ : tally.missTips++);
         if (right) {
           score.streak++;
+          score.wrongRun = 0;
           score.right++;
           score.roundRight++;
-          const base = q.kind === 'shot' ? ORACLE.SHOT : pick === TIP_NOBODY ? ORACLE.NOBODY : ORACLE.SHIP;
-          points = Math.round((base * oracleMultiplier(score.streak)) / 5) * 5;
+          points = Math.round((entry.base * oracleMultiplier(score.streak)) / 5) * 5 + (underdog ? ORACLE.UNDERDOG : 0);
           score.points += points;
           score.roundPoints += points;
+          for (const tally of tallies) {
+            tally.bestStreak = Math.max(tally.bestStreak, score.streak);
+            if (underdog) tally.underdogs++;
+          }
         } else {
           score.streak = 0;
+          score.wrongRun++;
+          for (const tally of tallies) tally.worstRun = Math.max(tally.worstRun, score.wrongRun);
         }
       }
-      tips.push({ player, pick, right, points });
+      return { player, pick, right, points, ...(underdog ? { underdog } : {}) };
+    });
+
+    // The biggest group of tipsters, if it holds more than half of them.
+    const lead = entries.find((e) => sameAs(e.pick) * 2 > entries.length);
+    let crowd: Crowd | undefined;
+    if (lead && entries.length >= 2) {
+      if (!lead.right) crowd = 'wrong';
+      else if (entries.length >= ORACLE.UNDERDOG_MIN_TIPS && sameAs(lead.pick) === entries.length) crowd = 'right';
     }
-    this.result = { id: q.id, kind: q.kind, shooter: q.shooter, victims, hit, tips, at };
-    this.close();
+    return crowd ? { tips, crowd } : { tips };
   }
+
+  // ————————————————————————————— Standings —————————————————————————————
 
   /** Players with at least one tip in the match, best first. */
   ranking(): { player: number; score: OracleScore }[] {
@@ -182,24 +406,109 @@ export class Oracle {
       .sort((a, b) => b.score.roundPoints - a.score.roundPoints || b.score.roundRight - a.score.roundRight || a.player - b.player);
   }
 
-  /** The open tips, for the live view. */
+  // ————————————————————————————— What the screens see —————————————————————————————
+
+  /** The open tips as everybody sees them: who has tipped, and — once the shots are away — what. */
   get picks(): ReadonlyMap<number, number> {
-    return this.tips;
+    if (this.question?.locked) return this.tips;
+    return new Map([...this.tips.keys()].map((player) => [player, TIP_HIDDEN]));
+  }
+
+  /** Who has tipped on the round question. What they tipped stays face down until the round is over. */
+  get roundTippers(): ReadonlySet<number> {
+    return new Set(this.roundTips.keys());
+  }
+
+  /** How the eliminated lean on the open shot — null while none of them has tipped. */
+  get mood(): { hit: number; miss: number } | null {
+    const [hit, miss] = this.heard;
+    return this.question?.kind === 'shot' && hit + miss > 0 ? { hit, miss } : null;
+  }
+
+  private recount(): void {
+    const q = this.question;
+    let hit = 0;
+    let miss = 0;
+    if (q?.kind === 'shot') for (const pick of this.tips.values()) (pick === TIP_HIT ? hit++ : miss++);
+    this.heard = [hit, miss];
   }
 
   snapshot(): OracleSnapshot {
     return {
       question: this.question && { ...this.question, choices: [...this.question.choices] },
       result: this.result,
-      scores: this.scores.map((score) => ({ ...score })),
-      tips: [...this.tips],
+      scores: this.scores.map((score) => scoreFrom(score)),
+      tips: [...this.picks],
+      mood: this.mood && [this.mood.hit, this.mood.miss],
+      round: this.roundQuestion && { ...this.roundQuestion, choices: [...this.roundQuestion.choices] },
+      roundResult: this.roundResult,
+      roundTips: [...this.roundTips.keys()].map((player) => [player, TIP_HIDDEN]),
+      roundStakes: [...this.roundStakes],
     };
   }
 
   restore(snapshot: OracleSnapshot): void {
     this.question = snapshot.question && { ...snapshot.question, choices: [...snapshot.question.choices] };
     this.result = snapshot.result;
-    this.scores = snapshot.scores.map((score) => ({ ...score }));
+    this.scores = snapshot.scores.map(scoreFrom);
     this.tips = new Map(snapshot.tips ?? []);
+    this.heard = snapshot.mood ?? [0, 0];
+    this.roundQuestion = snapshot.round ? { ...snapshot.round, choices: [...snapshot.round.choices] } : null;
+    this.roundResult = snapshot.roundResult ?? null;
+    this.roundTips = new Map((snapshot.roundTips ?? []).map(([player, pick]) => [player, { pick, alive: 0 }]));
+    this.roundStakes = new Map(snapshot.roundStakes ?? []);
   }
+}
+
+// ————————————————————————————— Awards —————————————————————————————
+
+export type OracleAwardKind = 'prophet' | 'seer' | 'wolf' | 'optimist' | 'pessimist' | 'unlucky';
+
+export interface OracleAward {
+  kind: OracleAwardKind;
+  player: number;
+  /** Points, a run of tips, or a count of tips — whatever the award is for. */
+  value: number;
+}
+
+/** The least an award takes, in the round and in the match. */
+const AWARD_MIN = {
+  seer: { round: 2, match: 3 },
+  wolf: { round: 1, match: 2 },
+  lean: { round: 3, match: 5 },
+  unlucky: { round: 3, match: 4 },
+} as const;
+
+/** How one-sided a player's hit/miss tips must be to make an optimist or a pessimist. */
+const LEAN_SHARE = 0.75;
+
+/** The index of the one clear best value, if it reaches `min`; a tie for the top gives nobody the award. */
+function clearBest(values: number[], min: number): number {
+  const top = Math.max(...values);
+  if (!(top >= min) || values.filter((v) => v === top).length > 1) return -1;
+  return values.indexOf(top);
+}
+
+/**
+ * The tipsters' honours for the round or the match: the prophet (most points), the seer (longest run of
+ * right tips), the lone wolf (right against the crowd), the optimist and the pessimist (always "hit",
+ * always "miss") and the unlucky one (longest run of wrong tips). Only a clear winner gets one.
+ */
+export function oracleAwards(scores: readonly OracleScore[], scope: 'round' | 'match'): OracleAward[] {
+  const tallies = scores.map((score) => (scope === 'round' ? score.roundStats : score.stats));
+  const points = scores.map((score) => (scope === 'round' ? score.roundPoints : score.points));
+  const out: OracleAward[] = [];
+  const give = (kind: OracleAwardKind, values: number[], min: number) => {
+    const player = clearBest(values, min);
+    if (player >= 0) out.push({ kind, player, value: values[player] });
+  };
+  give('prophet', points, 1);
+  give('seer', tallies.map((t) => t.bestStreak), AWARD_MIN.seer[scope]);
+  give('wolf', tallies.map((t) => t.underdogs), AWARD_MIN.wolf[scope]);
+  const lean = AWARD_MIN.lean[scope];
+  const leaning = (pick: 'hitTips' | 'missTips') => tallies.map((t) => (t[pick] >= lean && t[pick] / (t.hitTips + t.missTips) >= LEAN_SHARE ? t[pick] : 0));
+  give('optimist', leaning('hitTips'), lean);
+  give('pessimist', leaning('missTips'), lean);
+  give('unlucky', tallies.map((t) => t.worstRun), AWARD_MIN.unlucky[scope]);
+  return out;
 }

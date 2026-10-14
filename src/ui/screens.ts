@@ -1,5 +1,6 @@
 import { CHALLENGE, COLORS, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
 import { teamName, type Match, type Mode, type VersusMode } from '../game';
+import { oracleAwards } from '../game/oracle';
 import { fmtInt, fmtNum, LANGS, t, tn, type Lang } from '../i18n';
 import { rulesOf } from '../lobbyPrefs';
 import { awardLabel, awardValue, awardWho } from '../scorecard';
@@ -353,7 +354,6 @@ function settingsScreen(app: App): Screen {
       settingToggle(app, t('settings.contours'), 'contours'),
       settingToggle(app, t('settings.particles'), 'particles'),
       settingToggle(app, t('settings.sound'), 'sound'),
-      settingToggle(app, t('settings.oracle'), 'oracle'),
       settingToggle(app, t('settings.ghostLane'), 'ghostLane'),
       {
         kind: 'toggle',
@@ -455,6 +455,15 @@ export function gameOverScreen(app: App, match: Match): Screen {
       if (tipsters.length) {
         const rows = tipsters.map(({ player, score }, i) => entry(i + 1, match.players[player].name, match.players[player].color, `${fmtInt(score.points)}  ·  ${score.right}/${score.total}`));
         lists.push(h('p.ranking-label', null, t('oracle.match')), h('ol.ranking.ranking--small', null, ...rows));
+        // Their honours: the prophet, the seer, the lone wolf …
+        const honours = oracleAwards(match.oracle.scores, 'match').flatMap((award) => {
+          const who = match.players[award.player];
+          if (!who) return [];
+          const name = h('span.highlights__who', null, who.name);
+          name.style.color = who.color;
+          return [h('li', null, h('span.highlights__label', null, t(`oracle.award.${award.kind}`)), name, h('span.highlights__value', null, t(`oracle.awardValue.${award.kind}`, { n: award.value })))];
+        });
+        if (honours.length) lists.push(h('p.ranking-label', null, t('oracle.awards')), h('ul.highlights', null, ...honours));
       }
       return h(
         'section.screen.screen--panel',
