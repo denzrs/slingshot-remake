@@ -6,8 +6,7 @@
 # needs no root: GitHub Actions copies the binary into /srv/slingshot and flips the
 # relay with `systemctl --user`.
 #
-#   rsync -a deploy/ionos/ root@<server>:/tmp/ionos/
-#   ssh root@<server> /tmp/ionos/setup-server.sh
+#   sudo bash /srv/slingshot/ionos-setup/setup-server.sh
 set -euo pipefail
 
 OPS_USER="${OPS_USER:-ops}"
@@ -37,6 +36,13 @@ UNIT_SRC="$(cd "$(dirname "$0")" && pwd)/$UNIT_NAME"
 USER_UNIT_DIR="/home/$OPS_USER/.config/systemd/user"
 install -d -o "$OPS_USER" -g "$OPS_USER" -m 0700 "$USER_UNIT_DIR"
 install -o "$OPS_USER" -g "$OPS_USER" -m 0644 "$UNIT_SRC" "$USER_UNIT_DIR/$UNIT_NAME"
+
+# Install Certbot's deploy hook to restore ops' certificate access after renewal
+# and restart the relay so it loads the renewed certificate.
+RENEWAL_HOOK_DIR=/etc/letsencrypt/renewal-hooks/deploy
+install -d -o root -g root -m 0755 "$RENEWAL_HOOK_DIR"
+install -o root -g root -m 0750 "$(dirname "$0")/renewal-deploy.sh" \
+  "$RENEWAL_HOOK_DIR/slingshot-relay"
 
 # Remove the old root-owned system unit from before the rethink, if it is still there.
 if systemctl list-unit-files --type=service --plain --no-legend "$UNIT_NAME" | grep -q .; then
@@ -74,12 +80,12 @@ cat <<'EOF'
 
 Bootstrap done. Next, on GitHub:
 
-  - repository variables:
+  - ionos-production environment variables:
       IONOS_SERVER_IP, IONOS_DEPLOY_USER (ops),
       RELAY_PORT, RELAY_ALLOWED_ORIGINS, RELAY_MAX_CONNECTIONS,
       RELAY_MAX_CONNECTIONS_PER_IP, RELAY_CONNECTIONS_PER_IP_PER_SECOND,
-      RELAY_MAX_MESSAGES_PER_SECOND, RELAY_TLS_CERT, RELAY_TLS_KEY
-  - repository secrets:
+      RELAY_MAX_MESSAGES_PER_SECOND, RELAY_HEALTHCHECK_URL
+  - ionos-production environment secrets:
       IONOS_DEPLOY_SSH_KEY (private key), IONOS_DEPLOY_KNOWN_HOSTS
   - put the matching public key in /home/ops/.ssh/authorized_keys
 
