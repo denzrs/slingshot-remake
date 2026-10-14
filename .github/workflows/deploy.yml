@@ -74,7 +74,7 @@ jobs:
   relay-changes:
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ionos_coffee_deplyoment'))
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.detect.outputs.changed }}
@@ -129,11 +129,11 @@ jobs:
 
   deploy-relay:
     name: Deploy multiplayer relay
-    # Deploy relay changes on main; allow an explicit dispatch from the deployment
-    # branch for operational testing. Never restart on a tag or frontend-only push.
+    # Deploy relay changes on main or by explicit dispatch from main only.
+    # Never restart on feature branches, tags, or frontend-only pushes.
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.relay-changes.outputs.changed == 'true') ||
-      (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ionos_coffee_deplyoment') && github.event.inputs.bootstrap != 'true')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.event.inputs.bootstrap != 'true')
     needs: [test, server-x86_64, relay-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 15
