@@ -1,4 +1,4 @@
-name: Test, Deploy & Release
+name: Slingshot CI, Deploy & Release
 
 # Merges to main are tested, deployed to Pages, and released automatically. v* tags are
 # released as-is without restarting the multiplayer relay.
@@ -94,7 +94,7 @@ jobs:
           fi
 
   push-server-setup:
-    name: Push server setup files to IONOS
+    name: Stage server setup files
     # From the Actions tab with the bootstrap checkbox: stages setup files in a private
     # directory under /srv/slingshot. Review them and run the script manually as root.
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.bootstrap == 'true'
@@ -128,7 +128,7 @@ jobs:
             "$DEPLOY_USER@$HOST:/srv/slingshot/ionos-setup/"
 
   deploy-relay:
-    name: Deploy relay to IONOS
+    name: Deploy multiplayer relay
     # Deploy only when relay/deployment sources change on main, or explicitly from main.
     # Never restart the relay for a frontend-only change or a tag release.
     if: >-
