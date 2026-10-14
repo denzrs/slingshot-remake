@@ -939,6 +939,7 @@ describe('CPU seats online', () => {
 
     host.removeCpu(2);
     await waitForSession(guest, () => guest.room!.players.length === 2);
+    await waitForSession(host, () => host.room!.players.length === 2);
     expect(host.room!.players.map((player) => player.cpu)).toEqual([null, null]);
   });
 
