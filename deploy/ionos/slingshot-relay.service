@@ -24,15 +24,7 @@ TimeoutStartSec=30
 TimeoutStopSec=15
 LimitNOFILE=65536
 KillSignal=SIGTERM
-NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=read-only
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictSUIDSGID=true
-LockPersonality=true
 
 [Install]
 WantedBy=default.target
