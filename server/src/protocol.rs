@@ -74,6 +74,28 @@ pub const AVATARS: [&str; 8] = [
 ];
 pub const DEFAULT_AVATAR: &str = "rocket";
 
+/// The levels a CPU seat in an online room can take: the ones the offline game offers.
+pub const CPU_LEVELS: [&str; 4] = ["easy", "medium", "hard", "hawking"];
+
+/// The name a CPU seat starts with, by level: the offline game's names.
+pub fn cpu_name(level: &str) -> &'static str {
+    match level {
+        "easy" => "Kepler",
+        "medium" => "Newton",
+        "hard" => "Einstein",
+        "hawking" => "Hawking",
+        _ => "CPU",
+    }
+}
+
+/// A CPU seat's level from a client. There is no default: anything but a level is None.
+pub fn parse_cpu_level(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .filter(|level| CPU_LEVELS.contains(level))
+        .map(str::to_owned)
+}
+
 /// How a room presents itself: whether it is listed, and its symbol and colour.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RoomLook {
@@ -667,6 +689,20 @@ mod tests {
             serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
         assert_eq!(contract["avatar"]["options"], json!(AVATARS));
         assert_eq!(contract["avatar"]["default"], DEFAULT_AVATAR);
+    }
+
+    #[test]
+    fn cpu_levels_are_the_offline_ones_and_the_contract_shares_them() {
+        let contract: Value =
+            serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
+        assert_eq!(contract["cpu"]["levels"], json!(CPU_LEVELS));
+        assert_eq!(
+            parse_cpu_level(Some(&json!("hawking"))).as_deref(),
+            Some("hawking")
+        );
+        assert!(parse_cpu_level(None).is_none());
+        assert!(parse_cpu_level(Some(&json!("experimental"))).is_none());
+        assert!(parse_cpu_level(Some(&json!(2))).is_none());
     }
 
     #[test]

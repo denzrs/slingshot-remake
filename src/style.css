@@ -1080,7 +1080,8 @@ body {
 .lobby > [hidden],
 .lobby__back[hidden],
 .lobby__card[hidden],
-.lobby__button[hidden] {
+.lobby__button[hidden],
+.lobby__cpu-add[hidden] {
   display: none;
 }
 
@@ -1520,6 +1521,23 @@ body {
 
 .lobby__back {
   display: flex;
+}
+
+.lobby__cpu-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 10px;
+}
+
+.lobby__cpu-select {
+  font: 12px var(--font-mono);
+  color: var(--bone);
+  background: rgb(19 39 70 / 0.6);
+  border: 1px solid rgb(91 125 179 / 0.4);
+  border-radius: 3px;
+  padding: 4px 6px;
 }
 
 .lobby__actions {

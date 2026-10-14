@@ -6,6 +6,8 @@ import type { Settings } from './settings';
 
 export type RoomMode = 'ffa' | 'team';
 export type NetworkGameMode = 'classic' | 'horizon';
+/** The level of a CPU seat in an online room: the offline CPUs (the experimental ones are not offered online). */
+export type NetworkCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
 
 /** The rules of an online game; a subset of the local `Settings`, so it can be spread straight into them. */
 export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails' | 'betting'>;
@@ -33,6 +35,12 @@ type ClientMessage =
   | { type: 'set_team'; team: 0 | 1 }
   /** Host only: deal everybody back out to the two teams in the order they joined. */
   | { type: 'reset_teams' }
+  /** Host only, while waiting: seat a CPU, in the team given (team rooms; the smaller team if none). */
+  | { type: 'add_cpu'; level: NetworkCpuLevel; team?: 0 | 1 }
+  /** Host only, while waiting: change a CPU seat's level (and with it its name) or its team. */
+  | { type: 'set_cpu'; playerId: number; level?: NetworkCpuLevel; team?: 0 | 1 }
+  /** Host only, while waiting: take a CPU seat away. */
+  | { type: 'remove_cpu'; playerId: number }
   | { type: 'start_game' }
   | { type: 'input'; input: ClientInput }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }
@@ -47,7 +55,10 @@ export interface LobbyRoom {
   color: RoomColor;
   mode: RoomMode;
   gameMode: NetworkGameMode;
+  /** Seats taken, CPUs included. */
   players: number;
+  /** How many of those seats are CPUs: a human can take one of them when the room is full. */
+  cpus: number;
   maxPlayers: number;
   locked: boolean;
 }
@@ -56,8 +67,11 @@ interface RoomPlayer {
   id: number;
   name: string;
   avatar: Avatar;
+  /** A CPU is always ready. */
   ready: boolean;
   team: 0 | 1;
+  /** The level of a CPU seat; null for a person. */
+  cpu: NetworkCpuLevel | null;
 }
 
 export interface RoomInfo extends RoomLook {
@@ -90,7 +104,7 @@ export type ServerMessage =
       rules?: RoomRules;
       hostId: 0;
       seed: number;
-      players: Array<{ id: number; name: string; avatar: Avatar; team: 0 | 1 }>;
+      players: Array<{ id: number; name: string; avatar: Avatar; team: 0 | 1; cpu: NetworkCpuLevel | null }>;
     }
   | { type: 'input'; from: number; input: ClientInput }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }
