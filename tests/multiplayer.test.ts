@@ -908,3 +908,94 @@ describe('the player symbols online', () => {
     expect(guestMatches[0].players.map((player) => player.avatar)).toEqual(['gem', 'bolt']);
   }, 60_000);
 });
+
+describe('CPU seats online', () => {
+  it('lets the host seat, change and remove CPUs that everybody sees, and makes the humans confirm again', async () => {
+    const host = await connectSession();
+    const guest = await connectSession();
+    host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 4 });
+    await waitForSession(host, () => host.room !== null);
+    await waitForSession(guest, () => guest.rooms.some((room) => room.id === host.room!.id));
+    guest.joinRoom(host.room!.id, 'Ben');
+    await waitForSession(host, () => host.room?.players.length === 2);
+    guest.setReady(true);
+    await waitForSession(host, () => host.room!.players[1].ready);
+
+    host.addCpu('hawking');
+    await waitForSession(guest, () => guest.room?.players.length === 3);
+    expect(guest.room!.players[2]).toMatchObject({ cpu: 'hawking', name: 'Hawking', ready: true });
+    // A CPU changes the game, so Ben has to confirm again.
+    expect(guest.room!.players[1].ready).toBe(false);
+
+    // Guests have no say over the CPUs.
+    guest.addCpu('easy');
+    await waitForSession(guest, () => guest.notice !== null);
+    expect(guest.notice).toMatch(/host/i);
+    expect(guest.room!.players).toHaveLength(3);
+
+    host.setCpu(2, { level: 'easy' });
+    await waitForSession(guest, () => guest.room!.players[2].cpu === 'easy');
+    expect(guest.room!.players[2].name).toBe('Kepler');
+
+    host.removeCpu(2);
+    await waitForSession(guest, () => guest.room!.players.length === 2);
+    await waitForSession(host, () => host.room!.players.length === 2);
+    expect(host.room!.players.map((player) => player.cpu)).toEqual([null, null]);
+  });
+
+  it('refuses a game against CPUs alone, and gives the newest CPU seat to a person who joins a full room', async () => {
+    const hostMatches: NetMatch[] = [];
+    const guestMatches: NetMatch[] = [];
+    const host = await connectSession({ matchStarted: (match) => { hostMatches.push(match); } });
+    const guest = await connectSession({ matchStarted: (match) => { guestMatches.push(match); } });
+    host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 3 });
+    await waitForSession(host, () => host.room !== null);
+    host.addCpu('medium');
+    host.addCpu('hard');
+    await waitForSession(host, () => host.room?.players.length === 3);
+
+    host.startGame();
+    await waitForSession(host, () => host.notice !== null);
+    expect(host.notice).toMatch(/singleplayer/i);
+    expect(hostMatches).toHaveLength(0);
+
+    // The room is full, but its newest CPU (the hard one) gives its seat to Ben.
+    await waitForSession(guest, () => guest.rooms.some((room) => room.id === host.room!.id));
+    guest.joinRoom(host.room!.id, 'Ben');
+    await waitForSession(host, () => host.room?.players.some((player) => player.name === 'Ben') === true);
+    expect(host.room!.players.map((player) => player.cpu)).toEqual([null, 'medium', null]);
+
+    guest.setReady(true);
+    await waitForSession(host, () => host.room!.players[2].ready);
+    host.startGame();
+    await waitForSession(host, () => hostMatches.length === 1);
+    await waitForSession(guest, () => guestMatches.length === 1);
+    expect(hostMatches[0].players.map((player) => player.cpu)).toEqual([null, 'medium', null]);
+    expect(guestMatches[0].players.map((player) => player.cpu)).toEqual([null, 'medium', null]);
+    // The host's copy runs the CPU's turns; a few seconds of game are enough to see it work.
+    for (let i = 0; i < 300; i++) hostMatches[0].update(1 / 60);
+    expect(hostMatches[0].players[1].cpu).toBe('medium');
+  }, 60_000);
+
+  it('seats a CPU in the team the host names, and the teams have to be real', async () => {
+    const host = await connectSession();
+    const guest = await connectSession();
+    host.createRoom({ name: 'Anna', mode: 'team', gameMode: 'classic', rules, maxPlayers: 4 });
+    await waitForSession(host, () => host.room !== null);
+    await waitForSession(guest, () => guest.rooms.some((room) => room.id === host.room!.id));
+    guest.joinRoom(host.room!.id, 'Ben');
+    await waitForSession(host, () => host.room?.players.length === 2);
+
+    host.addCpu('easy', 1);
+    await waitForSession(guest, () => guest.room?.players.length === 3);
+    expect(guest.room!.players[2].team).toBe(1);
+
+    host.setCpu(2, { team: 0 });
+    await waitForSession(guest, () => guest.room!.players[2].team === 0);
+
+    // Only team rooms have teams, and a team is 0 or 1.
+    host.setCpu(2, { team: 2 as 0 });
+    await waitForSession(host, () => host.notice !== null);
+    expect(host.notice).toMatch(/team must be 0 or 1/i);
+  });
+});

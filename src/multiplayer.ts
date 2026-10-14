@@ -2,7 +2,7 @@ import { MAX_PLAYERS } from './config';
 import { ClassicMatch, createMatch, HorizonMatch, type GameEvent } from './game';
 import type { ClassicSnapshot } from './game/classic';
 import type { HorizonSnapshot } from './game/horizon';
-import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules, type ServerMessage } from './net';
+import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkCpuLevel, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules, type ServerMessage } from './net';
 import { defaultRoomRules } from './lobbyPrefs';
 import type { RoomLook } from './roomLook';
 import type { Avatar } from './avatars';
@@ -151,6 +151,21 @@ export class MultiplayerSession {
     this.send({ type: 'reset_teams' });
   }
 
+  /** Host only, while the room waits: seat a CPU. Everybody confirms again. */
+  addCpu(level: NetworkCpuLevel, team?: 0 | 1): void {
+    this.send({ type: 'add_cpu', level, team });
+  }
+
+  /** Host only, while the room waits: change a CPU seat's level or team. */
+  setCpu(playerId: number, change: { level?: NetworkCpuLevel; team?: 0 | 1 }): void {
+    this.send({ type: 'set_cpu', playerId, ...change });
+  }
+
+  /** Host only, while the room waits: take a CPU seat away. */
+  removeCpu(playerId: number): void {
+    this.send({ type: 'remove_cpu', playerId });
+  }
+
   startGame(): void {
     this.send({ type: 'start_game' });
   }
@@ -269,7 +284,8 @@ export class MultiplayerSession {
 
   private startMatch(message: GameStart): void {
     const base = this.hooks.settings();
-    const seats: Seat[] = Array.from({ length: MAX_PLAYERS }, (_, i) => (i < message.players.length ? 'human' : 'off'));
+    // A CPU seat plays the level the host gave it; the host's simulation runs it for everybody.
+    const seats: Seat[] = Array.from({ length: MAX_PLAYERS }, (_, i) => (i < message.players.length ? (message.players[i].cpu ?? 'human') : 'off'));
     // The room's rules decide, not whatever this player has set up for offline games: from this device only
     // the display settings (lines, particles, sound, language) carry over.
     const settings: Settings = {

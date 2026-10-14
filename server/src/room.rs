@@ -13,8 +13,9 @@ use tracing::{debug, info, warn};
 
 use crate::codec::{frame, Outbound};
 use crate::protocol::{
-    clean_name_checked, is_game_event, is_input_message, is_record, is_safe_integer, parse_avatar,
-    parse_room_look, parse_rules, rules_to_value, RoomLook, RoomRules, DEFAULT_RULES,
+    clean_name_checked, cpu_name, is_game_event, is_input_message, is_record, is_safe_integer,
+    parse_avatar, parse_cpu_level, parse_room_look, parse_rules, rules_to_value, RoomLook,
+    RoomRules, AVATARS, DEFAULT_AVATAR, DEFAULT_RULES,
 };
 
 const MAX_ROOM_PLAYERS: i64 = 6;
@@ -50,7 +51,21 @@ struct Player {
     avatar: String,
     ready: bool,
     team: u8,
-    conn: u64,
+    /// The connection of a human. A CPU seat has none: the host's game runs it.
+    conn: Option<u64>,
+    /// The level of a CPU seat.
+    cpu: Option<String>,
+}
+
+impl Player {
+    fn is_cpu(&self) -> bool {
+        self.cpu.is_some()
+    }
+
+    /// A human has to confirm (ready); a CPU is always ready.
+    fn confirmed(&self) -> bool {
+        self.ready || self.is_cpu()
+    }
 }
 
 struct Room {
@@ -159,7 +174,7 @@ impl RoomManager {
             return None;
         }
         let room = self.rooms.get(room_id)?;
-        if room.status != RoomStatus::Waiting || room.players.len() >= room.max_players as usize {
+        if room.status != RoomStatus::Waiting || !can_take_human(room) {
             return None;
         }
         room.password.clone()
@@ -183,6 +198,9 @@ impl RoomManager {
             "set_avatar" => self.set_avatar(conn, message),
             "set_team" => self.set_team(conn, message),
             "reset_teams" => self.reset_teams(conn),
+            "add_cpu" => self.add_cpu(conn, message),
+            "set_cpu" => self.set_cpu(conn, message),
+            "remove_cpu" => self.remove_cpu(conn, message),
             "start_game" => self.start_game(conn),
             "input" => self.relay_input(conn, message),
             "state" => self.relay_state(conn, message),
@@ -278,6 +296,7 @@ impl RoomManager {
                     "mode": room.mode,
                     "gameMode": room.game_mode,
                     "players": room.players.len(),
+                    "cpus": room.players.iter().filter(|p| p.is_cpu()).count(),
                     "maxPlayers": room.max_players,
                     "locked": room.password.is_some(),
                 })
@@ -416,11 +435,8 @@ impl RoomManager {
             self.error(conn, "Room not found or no longer accepting players");
             return;
         }
-        let full = self
-            .rooms
-            .get(room_id)
-            .is_some_and(|room| room.players.len() >= room.max_players as usize);
-        if full {
+        let open = self.rooms.get(room_id).is_some_and(can_take_human);
+        if !open {
             self.error(conn, "Room is full");
             return;
         }
@@ -434,6 +450,24 @@ impl RoomManager {
             .is_some_and(|room| room.password.is_some());
         if locked && !self.password_attempt_ok(conn, room_id, preverified) {
             return;
+        }
+        // A full room gives its newest CPU seat to the human who joins.
+        let full = self
+            .rooms
+            .get(room_id)
+            .is_some_and(|room| room.players.len() >= room.max_players as usize);
+        if full {
+            let newest_cpu = self
+                .rooms
+                .get(room_id)
+                .and_then(|room| room.players.iter().rev().find(|p| p.is_cpu()))
+                .map(|p| p.id);
+            if let Some(cpu_id) = newest_cpu {
+                self.remove_player(room_id, cpu_id);
+                if let Some(room) = self.rooms.get_mut(room_id) {
+                    unready_humans(room);
+                }
+            }
         }
         self.add_player(room_id, conn, name.unwrap(), avatar);
         self.broadcast_room_update(room_id, None);
@@ -481,10 +515,10 @@ impl RoomManager {
             let player = room
                 .players
                 .iter_mut()
-                .find(|p| p.conn == conn)
+                .find(|p| p.conn == Some(conn))
                 .expect("member's player is in the room");
             player.ready = ready;
-            room.players.len() >= 2 && room.players.iter().all(|p| p.ready) && teams_playable(room)
+            humans(room) >= 2 && room.players.iter().all(Player::confirmed) && teams_playable(room)
         };
         self.broadcast_room_update(&room_id, None);
         if should_start {
@@ -675,6 +709,157 @@ impl RoomManager {
         self.broadcast_room_update(&room_id, None);
     }
 
+    /// The room a connection hosts while it waits, or why it may not change the CPU seats.
+    fn host_of_waiting_room(&self, conn: u64) -> Result<String, &'static str> {
+        let Some((room_id, is_host)) = self
+            .memberships
+            .get(&conn)
+            .map(|mb| (mb.room_id.clone(), mb.player_id == 0))
+        else {
+            return Err("Only the room host can change the CPU seats");
+        };
+        if !is_host {
+            return Err("Only the room host can change the CPU seats");
+        }
+        let waiting = self
+            .rooms
+            .get(&room_id)
+            .is_some_and(|room| room.status == RoomStatus::Waiting);
+        if !waiting {
+            return Err("The CPU seats cannot change while a game is running");
+        }
+        Ok(room_id)
+    }
+
+    /// The host seats a CPU while the room waits. It is always ready; the humans confirm again.
+    fn add_cpu(&mut self, conn: u64, message: &Value) {
+        let room_id = match self.host_of_waiting_room(conn) {
+            Ok(room_id) => room_id,
+            Err(reason) => return self.error(conn, reason),
+        };
+        let Some(level) = parse_cpu_level(message.get("level")) else {
+            self.error(conn, "Malformed CPU level");
+            return;
+        };
+        let requested_team = match named_team(message) {
+            Ok(team) => team,
+            Err(reason) => return self.error(conn, reason),
+        };
+        let (full, team, name, avatar) = {
+            let room = self.rooms.get(&room_id).unwrap();
+            let team = if room.mode == "team" {
+                requested_team.unwrap_or_else(|| smallest_team(room))
+            } else {
+                0
+            };
+            (
+                room.players.len() >= room.max_players as usize,
+                team,
+                free_cpu_name(room, &level),
+                free_avatar(room),
+            )
+        };
+        if full {
+            self.error(conn, "Room is full");
+            return;
+        }
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        let id = room.next_player_id;
+        room.next_player_id += 1;
+        room.players.push(Player {
+            id,
+            name,
+            avatar,
+            ready: false,
+            team,
+            conn: None,
+            cpu: Some(level),
+        });
+        unready_humans(room);
+        self.broadcast_room_update(&room_id, None);
+        self.broadcast_lobby();
+    }
+
+    /// The host changes a CPU seat's level or team while the room waits. A new level brings a new name.
+    fn set_cpu(&mut self, conn: u64, message: &Value) {
+        let room_id = match self.host_of_waiting_room(conn) {
+            Ok(room_id) => room_id,
+            Err(reason) => return self.error(conn, reason),
+        };
+        let Some(player_id) = cpu_seat_id(message) else {
+            self.error(conn, "Malformed CPU seat");
+            return;
+        };
+        let level = match named_cpu_level(message) {
+            Ok(level) => level,
+            Err(reason) => return self.error(conn, reason),
+        };
+        let team = match named_team(message) {
+            Ok(team) => team,
+            Err(reason) => return self.error(conn, reason),
+        };
+        let room = self.rooms.get(&room_id).unwrap();
+        let Some(seat) = room
+            .players
+            .iter()
+            .find(|p| p.id == player_id && p.is_cpu())
+        else {
+            self.error(conn, "No CPU sits in that seat");
+            return;
+        };
+        if team.is_some() && room.mode != "team" {
+            self.error(conn, "Teams only exist in team rooms");
+            return;
+        }
+        let renamed = level
+            .as_deref()
+            .filter(|level| seat.cpu.as_deref() != Some(*level))
+            .map(|level| free_cpu_name(room, level));
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        let seat = room
+            .players
+            .iter_mut()
+            .find(|p| p.id == player_id)
+            .expect("the CPU seat is in the room");
+        if let Some(level) = level {
+            seat.cpu = Some(level);
+        }
+        if let Some(name) = renamed {
+            seat.name = name;
+        }
+        if let Some(team) = team {
+            seat.team = team;
+        }
+        unready_humans(room);
+        self.broadcast_room_update(&room_id, None);
+    }
+
+    /// The host takes a CPU seat away while the room waits.
+    fn remove_cpu(&mut self, conn: u64, message: &Value) {
+        let room_id = match self.host_of_waiting_room(conn) {
+            Ok(room_id) => room_id,
+            Err(reason) => return self.error(conn, reason),
+        };
+        let Some(player_id) = cpu_seat_id(message) else {
+            self.error(conn, "Malformed CPU seat");
+            return;
+        };
+        let is_cpu = self
+            .rooms
+            .get(&room_id)
+            .is_some_and(|room| room.players.iter().any(|p| p.id == player_id && p.is_cpu()));
+        if !is_cpu {
+            self.error(conn, "No CPU sits in that seat");
+            return;
+        }
+        self.remove_player(&room_id, player_id);
+        if let Some(room) = self.rooms.get_mut(&room_id) {
+            unready_humans(room);
+        }
+        self.broadcast_room_update(&room_id, None);
+        self.broadcast_lobby();
+    }
+
     fn start_game(&mut self, conn: u64) {
         let Some((room_id, is_host)) = self
             .memberships
@@ -696,18 +881,27 @@ impl RoomManager {
             self.error(conn, "Game has already started");
             return;
         }
-        if self
+        let (seats, people) = self
             .rooms
             .get(&room_id)
-            .is_some_and(|room| room.players.len() < 2)
-        {
+            .map(|room| (room.players.len(), humans(room)))
+            .unwrap_or_default();
+        if seats < 2 {
             self.error(conn, "At least 2 players are required to start");
+            return;
+        }
+        // A game against CPUs alone is played offline, not on the relay.
+        if people < 2 {
+            self.error(conn, "Play against CPUs alone in the singleplayer lobby");
             return;
         }
         // The host's click counts as its own "ready"; everybody else has to have confirmed.
         let (all_ready, teams_ok) = {
             let room = self.rooms.get(&room_id).unwrap();
-            let all_ready = room.players.iter().all(|p| p.conn == conn || p.ready);
+            let all_ready = room
+                .players
+                .iter()
+                .all(|p| p.conn == Some(conn) || p.confirmed());
             (all_ready, teams_playable(room))
         };
         if !all_ready {
@@ -725,7 +919,7 @@ impl RoomManager {
         let Some(room) = self.rooms.get_mut(room_id) else {
             return;
         };
-        if room.status != RoomStatus::Waiting || room.players.len() < 2 {
+        if room.status != RoomStatus::Waiting || humans(room) < 2 {
             return;
         }
         room.status = RoomStatus::Playing;
@@ -742,9 +936,9 @@ impl RoomManager {
             rules_to_value(&room.rules),
             room.players
                 .iter()
-                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar, "team": p.team }))
+                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar, "team": p.team, "cpu": p.cpu }))
                 .collect::<Vec<_>>(),
-            room.players.iter().map(|p| p.conn).collect::<Vec<_>>(),
+            room.players.iter().filter_map(|p| p.conn).collect::<Vec<_>>(),
         );
         let (id, mode, game_mode, rules, players, recipients) = room_clone;
         for recipient in recipients {
@@ -782,7 +976,7 @@ impl RoomManager {
                 self.error(conn, "You are not in a running game");
                 return;
             }
-            let host_conn = room.players.iter().find(|p| p.id == 0).map(|p| p.conn);
+            let host_conn = room.players.iter().find(|p| p.id == 0).and_then(|p| p.conn);
             (room_id, my_id, host_conn)
         };
         if my_id == 0 {
@@ -862,8 +1056,8 @@ impl RoomManager {
             .map(|room| {
                 room.players
                     .iter()
-                    .filter(|p| p.conn != conn)
-                    .map(|p| p.conn)
+                    .filter_map(|p| p.conn)
+                    .filter(|other| *other != conn)
                     .collect()
             })
             .unwrap_or_default();
@@ -901,8 +1095,8 @@ impl RoomManager {
                 .map(|room| {
                     room.players
                         .iter()
-                        .filter(|player| player.conn != conn)
-                        .map(|player| player.conn)
+                        .filter_map(|player| player.conn)
+                        .filter(|other| *other != conn)
                         .collect()
                 })
                 .unwrap_or_default();
@@ -956,7 +1150,8 @@ impl RoomManager {
             avatar,
             ready: false,
             team,
-            conn,
+            conn: Some(conn),
+            cpu: None,
         });
         self.memberships.insert(
             conn,
@@ -976,7 +1171,10 @@ impl RoomManager {
         // Everybody stays in the team they picked.
         for (id, remaining) in room.players.iter_mut().enumerate() {
             remaining.id = id;
-            let conn = remaining.conn;
+            // A CPU seat has no connection to remember.
+            let Some(conn) = remaining.conn else {
+                continue;
+            };
             self.memberships.insert(
                 conn,
                 Membership {
@@ -1007,10 +1205,14 @@ impl RoomManager {
             "players": room
                 .players
                 .iter()
-                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar, "ready": p.ready, "team": p.team }))
+                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar, "ready": p.confirmed(), "team": p.team, "cpu": p.cpu }))
                 .collect::<Vec<_>>(),
         });
-        let recipients: Vec<(u64, usize)> = room.players.iter().map(|p| (p.conn, p.id)).collect();
+        let recipients: Vec<(u64, usize)> = room
+            .players
+            .iter()
+            .filter_map(|p| p.conn.map(|conn| (conn, p.id)))
+            .collect();
         for (conn, player_id) in recipients {
             let mut message = json!({
                 "type": "room_update",
@@ -1054,6 +1256,76 @@ fn teams_playable(room: &Room) -> bool {
             present[p.team as usize] = true;
         }
         present[0] && present[1]
+    }
+}
+
+/// The seats with a person in them. A game needs two of them; CPUs alone are played offline.
+fn humans(room: &Room) -> usize {
+    room.players.iter().filter(|p| !p.is_cpu()).count()
+}
+
+/// A human may join when a seat is free, or when a CPU seat can give way to them.
+fn can_take_human(room: &Room) -> bool {
+    room.players.len() < room.max_players as usize || room.players.iter().any(Player::is_cpu)
+}
+
+/// Whenever the seats change, every human confirms again: the game they agreed to is not the same.
+fn unready_humans(room: &mut Room) {
+    for player in room.players.iter_mut().filter(|p| !p.is_cpu()) {
+        player.ready = false;
+    }
+}
+
+/// The name for a new CPU of this level: the offline name, or the next free number after it.
+fn free_cpu_name(room: &Room, level: &str) -> String {
+    let base = cpu_name(level);
+    let taken = |name: &str| room.players.iter().any(|p| p.name == name);
+    if !taken(base) {
+        return base.to_owned();
+    }
+    (2..)
+        .map(|n| format!("{base} {n}"))
+        .find(|name| !taken(name))
+        .expect("an unbounded range has a free name")
+}
+
+/// A symbol nobody in the room shows yet, so the seats can be told apart.
+fn free_avatar(room: &Room) -> String {
+    AVATARS
+        .into_iter()
+        .find(|avatar| room.players.iter().all(|p| p.avatar != *avatar))
+        .unwrap_or(DEFAULT_AVATAR)
+        .to_owned()
+}
+
+/// The seat a CPU message names. It has to be a whole number.
+fn cpu_seat_id(message: &Value) -> Option<usize> {
+    message
+        .get("playerId")
+        .filter(|value| is_safe_integer(value))
+        .and_then(Value::as_i64)
+        .and_then(|id| usize::try_from(id).ok())
+}
+
+/// The team a message names, if it names one. Only 0 and 1 exist.
+fn named_team(message: &Value) -> Result<Option<u8>, &'static str> {
+    match message.get("team") {
+        None => Ok(None),
+        Some(value) => value
+            .as_f64()
+            .filter(|team| *team == 0.0 || *team == 1.0)
+            .map(|team| Some(team as u8))
+            .ok_or("team must be 0 or 1"),
+    }
+}
+
+/// The CPU level a message names, if it names one.
+fn named_cpu_level(message: &Value) -> Result<Option<String>, &'static str> {
+    match message.get("level") {
+        None => Ok(None),
+        Some(_) => parse_cpu_level(message.get("level"))
+            .map(Some)
+            .ok_or("Malformed CPU level"),
     }
 }
 
@@ -1819,6 +2091,205 @@ mod tests {
         assert_eq!(
             take_type(&drain_json(&mut guest_rx), "error")["message"],
             "The symbol cannot change while a game is running"
+        );
+    }
+
+    type Inbox = mpsc::Receiver<crate::codec::WireMessage>;
+
+    /// A room with its host on connection 1, and the room's id.
+    fn host_room(mode: &str, max_players: i64) -> (RoomManager, Inbox, String) {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        drain_json(&mut host_rx);
+        rooms.handle(
+            1,
+            &json!({"type":"create_room","name":"Host","mode":mode,"gameMode":"classic","maxPlayers":max_players}),
+        );
+        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        (rooms, host_rx, room_id)
+    }
+
+    fn join(rooms: &mut RoomManager, conn: u64, room_id: &str, name: &str) -> Inbox {
+        let mut rx = connect(rooms, conn);
+        drain_json(&mut rx);
+        rooms.handle(
+            conn,
+            &json!({"type":"join_room","roomId":room_id,"name":name}),
+        );
+        rx
+    }
+
+    fn add_cpu(level: &str) -> Value {
+        json!({"type":"add_cpu","level":level})
+    }
+
+    #[test]
+    fn cpu_seats_have_no_connection_are_always_ready_and_get_their_own_names_and_symbols() {
+        let (mut rooms, mut host_rx, _room_id) = host_room("ffa", 4);
+        rooms.handle(1, &add_cpu("easy"));
+        rooms.handle(1, &add_cpu("easy"));
+        let update = take_type(&drain_json(&mut host_rx), "room_update");
+        let players = update["room"]["players"].as_array().unwrap();
+        assert_eq!(players.len(), 3);
+        assert!(players[0]["cpu"].is_null());
+        assert_eq!(players[1]["cpu"], "easy");
+        assert_eq!(players[1]["name"], "Kepler");
+        assert_eq!(players[2]["name"], "Kepler 2");
+        assert_eq!(players[1]["ready"], true);
+        assert_ne!(players[1]["avatar"], players[0]["avatar"]);
+        assert_ne!(players[2]["avatar"], players[1]["avatar"]);
+
+        // The lobby counts the seats, CPUs included, and tells them apart.
+        let mut lobby_rx = connect(&mut rooms, 9);
+        drain_json(&mut lobby_rx);
+        rooms.handle(9, &json!({"type":"lobby"}));
+        let lobby = take_type(&drain_json(&mut lobby_rx), "lobby_update");
+        assert_eq!(lobby["rooms"][0]["players"], 3);
+        assert_eq!(lobby["rooms"][0]["cpus"], 2);
+    }
+
+    #[test]
+    fn only_the_host_seats_and_changes_cpus_and_a_change_makes_the_humans_confirm_again() {
+        let (mut rooms, mut host_rx, room_id) = host_room("team", 4);
+        let mut guest_rx = join(&mut rooms, 2, &room_id, "Ben");
+        drain_json(&mut host_rx);
+        rooms.handle(2, &json!({"type":"ready","ready":true}));
+        drain_json(&mut guest_rx);
+
+        // A CPU changes the game, so Ben has to confirm again. The smaller team takes it: team 0.
+        rooms.handle(1, &add_cpu("medium"));
+        let update = take_type(&drain_json(&mut guest_rx), "room_update");
+        assert_eq!(update["room"]["players"][1]["ready"], false);
+        assert_eq!(update["room"]["players"][2]["cpu"], "medium");
+        assert_eq!(update["room"]["players"][2]["team"], 0);
+
+        // Guests have no say over the CPUs.
+        rooms.handle(2, &add_cpu("easy"));
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "error")["message"],
+            "Only the room host can change the CPU seats"
+        );
+
+        // The host changes a CPU's level (and with it the name) and its team.
+        rooms.handle(
+            1,
+            &json!({"type":"set_cpu","playerId":2,"level":"hawking","team":1}),
+        );
+        let update = take_type(&drain_json(&mut host_rx), "room_update");
+        assert_eq!(update["room"]["players"][2]["cpu"], "hawking");
+        assert_eq!(update["room"]["players"][2]["name"], "Hawking");
+        assert_eq!(update["room"]["players"][2]["team"], 1);
+
+        rooms.handle(1, &json!({"type":"remove_cpu","playerId":2}));
+        let update = take_type(&drain_json(&mut host_rx), "room_update");
+        assert_eq!(update["room"]["players"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn cpu_seat_changes_refuse_malformed_levels_seats_and_teams() {
+        let (mut rooms, mut host_rx, _room_id) = host_room("ffa", 2);
+        rooms.handle(1, &json!({"type":"add_cpu"}));
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "Malformed CPU level"
+        );
+        rooms.handle(1, &add_cpu("experimental"));
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "Malformed CPU level"
+        );
+
+        rooms.handle(1, &add_cpu("easy"));
+        drain_json(&mut host_rx);
+        // Full: host and one CPU.
+        rooms.handle(1, &add_cpu("hard"));
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "Room is full"
+        );
+
+        // The host's own seat is not a CPU, and free-for-all rooms have no teams.
+        rooms.handle(1, &json!({"type":"set_cpu","playerId":0,"level":"easy"}));
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "No CPU sits in that seat"
+        );
+        rooms.handle(1, &json!({"type":"set_cpu","playerId":1,"team":1}));
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "Teams only exist in team rooms"
+        );
+    }
+
+    #[test]
+    fn a_team_name_is_0_or_1() {
+        let (mut rooms, mut host_rx, _room_id) = host_room("team", 4);
+        rooms.handle(1, &json!({"type":"add_cpu","level":"easy","team":2}));
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "team must be 0 or 1"
+        );
+    }
+
+    #[test]
+    fn a_cpu_alone_with_the_host_is_refused_and_two_people_with_a_cpu_play() {
+        let (mut rooms, mut host_rx, room_id) = host_room("ffa", 4);
+        rooms.handle(1, &add_cpu("hawking"));
+        drain_json(&mut host_rx);
+        rooms.handle(1, &json!({"type":"start_game"}));
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "Play against CPUs alone in the singleplayer lobby"
+        );
+
+        let mut guest_rx = join(&mut rooms, 2, &room_id, "Ben");
+        drain_json(&mut host_rx);
+        rooms.handle(2, &json!({"type":"ready","ready":true}));
+        rooms.handle(1, &json!({"type":"start_game"}));
+        let start = take_type(&drain_json(&mut host_rx), "game_start");
+        assert_eq!(start["players"].as_array().unwrap().len(), 3);
+        assert_eq!(start["players"][1]["cpu"], "hawking");
+        assert_eq!(start["players"][1]["name"], "Hawking");
+        assert!(start["players"][2]["cpu"].is_null());
+        // Only the people are sent the game, a CPU has nobody to send it to.
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "game_start")["players"][1]["cpu"],
+            "hawking"
+        );
+    }
+
+    #[test]
+    fn a_full_room_gives_its_newest_cpu_seat_to_a_joining_human_and_refuses_when_there_is_none() {
+        let (mut rooms, mut host_rx, room_id) = host_room("ffa", 3);
+        rooms.handle(1, &add_cpu("easy"));
+        rooms.handle(1, &add_cpu("hard"));
+        drain_json(&mut host_rx);
+
+        let mut guest_rx = join(&mut rooms, 2, &room_id, "Ben");
+        let update = take_type(&drain_json(&mut guest_rx), "room_update");
+        let players = update["room"]["players"].as_array().unwrap();
+        assert_eq!(players.len(), 3);
+        assert_eq!(players[1]["cpu"], "easy", "the older CPU keeps its seat");
+        assert_eq!(players[2]["name"], "Ben");
+        assert_eq!(players[2]["id"], 2);
+
+        // The older CPU gives its seat up next, and once the room is all people there is none left.
+        let mut third_rx = join(&mut rooms, 3, &room_id, "Cy");
+        let update = take_type(&drain_json(&mut third_rx), "room_update");
+        let names: Vec<&str> = update["room"]["players"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["Host", "Ben", "Cy"]);
+        let mut fourth_rx = join(&mut rooms, 4, &room_id, "Di");
+        assert_eq!(
+            take_type(&drain_json(&mut fourth_rx), "error")["message"],
+            "Room is full"
         );
     }
 }

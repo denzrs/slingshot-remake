@@ -39,5 +39,8 @@
   "avatar": {
     "default": "rocket",
     "options": ["rocket", "satellite", "alien", "robot", "astronaut", "crosshair", "bolt", "gem"]
+  },
+  "cpu": {
+    "levels": ["easy", "medium", "hard", "hawking"]
   }
 }

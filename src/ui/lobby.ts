@@ -4,7 +4,7 @@ import { teamName } from '../game';
 import { t } from '../i18n';
 import { loadLobbyPrefs, saveLobbyPrefs } from '../lobbyPrefs';
 import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multiplayer';
-import type { LobbyRoom, NetworkGameMode, RoomInfo, RoomMode, RoomRules } from '../net';
+import type { LobbyRoom, NetworkCpuLevel, NetworkGameMode, RoomInfo, RoomMode, RoomRules } from '../net';
 import type { RoomLook } from '../roomLook';
 import { buildControl, segmentedControl, sliderControl, type Control, type Env } from './controls';
 import { h, type Screen } from './menu';
@@ -41,8 +41,28 @@ function passwordInput(placeholder = ''): HTMLInputElement {
 const ICON_EYE = '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>';
 const ICON_EYE_OFF = '<path d="M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6A16.5 16.5 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M3 3l18 18"/>';
 const ICON_COPY = '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>';
+const ICON_CLOSE = '<path d="M6 6l12 12M18 6L6 18"/>';
 
 /** A square button with one of the icons above. */
+/** The levels a CPU seat can take online, in the order the offline game lists them. */
+const CPU_LEVELS: NetworkCpuLevel[] = ['easy', 'medium', 'hard', 'hawking'];
+
+/** A native picker from a list of [value, label] choices. */
+function choicePicker(label: string, choices: Array<[string, string]>, current: string, onChange: (value: string) => void): HTMLSelectElement {
+  const el = document.createElement('select');
+  el.className = 'lobby__cpu-select';
+  el.setAttribute('aria-label', label);
+  for (const [value, text] of choices) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    option.selected = value === current;
+    el.append(option);
+  }
+  el.addEventListener('change', () => onChange(el.value));
+  return el;
+}
+
 function iconButton(label: string, icon: string): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
@@ -240,7 +260,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   };
 
   const roomRow = (room: LobbyRoom) => {
-    const full = room.players >= room.maxPlayers;
+    // A room whose seats are CPUs still has room for a person: the newest CPU gives its seat up.
+    const full = room.players >= room.maxPlayers && room.cpus === 0;
     const join = button(full ? t('multiplayer.full') : t('multiplayer.join'), true);
     join.disabled = full;
     const pass = passwordInput(t('multiplayer.password'));
@@ -379,6 +400,20 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const copyPassword = button(t('multiplayer.copyPassword'));
   copyPassword.addEventListener('click', () => void copyText(hostPassword, t('multiplayer.passwordCopied')));
   const players = h('ul.lobby__players', null);
+  /** Host only, while the room waits: seat a CPU of the chosen level. */
+  let cpuLevel: NetworkCpuLevel = 'medium';
+  const cpuAdd = button(t('multiplayer.addCpu'));
+  cpuAdd.addEventListener('click', () => session.addCpu(cpuLevel));
+  const cpuAddRow = h(
+    'div.lobby__cpu-add',
+    null,
+    choicePicker(t('multiplayer.cpuLevel'), CPU_LEVELS.map((level) => [level, t(`cpu.${level}`)]), cpuLevel, (level) => {
+      cpuLevel = level as NetworkCpuLevel;
+    }),
+    cpuAdd,
+  );
+  /** When only CPUs share the room with the host: such a game is played offline, not here. */
+  const cpuOnlyNote = h('p.lobby__rules-note.is-locked', null, t('multiplayer.cpuOnlyNote'));
   /** Your own symbol, as the game shows it: picked here while the room waits. */
   const roomAvatarPicker = picker<Avatar>(t('multiplayer.yourSymbol'), avatarOptions(), false, (avatar) => {
     sound.blip();
@@ -411,6 +446,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     h('div.lobby__head', null, roomCount, resetTeams),
     h('div.lobby__code', null, h('span.lobby__code-label', null, t('multiplayer.code')), roomCode, copyCode, copyPassword, privateTag),
     players,
+    cpuAddRow,
+    cpuOnlyNote,
     roomAvatar,
     teamWarning,
     roomLookSlot,
@@ -482,6 +519,11 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     roomCount.textContent = [`${room.players.length}/${room.maxPlayers} ${t('multiplayer.players')}`, ...(teamGame ? [0, 1].map((k) => `${teamName(k)} ${inTeam(k)}`) : [])].join(' · ');
     resetTeams.hidden = !(teamGame && you.host);
     teamWarning.hidden = teamsReady;
+    const people = room.players.filter((p) => p.cpu === null).length;
+    const cpus = room.players.length - people;
+    cpuAddRow.hidden = !(you.host && room.status === 'waiting');
+    cpuAdd.disabled = room.players.length >= room.maxPlayers;
+    cpuOnlyNote.hidden = !(cpus > 0 && people < 2);
 
     // The list is rebuilt at every update, so the team button that has the keyboard has to get it back.
     const picking = (document.activeElement as HTMLElement | null)?.dataset.pickTeam;
@@ -491,6 +533,20 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
         if (teamGame) dot.style.background = TEAMS[player.team][0];
         else dot.classList.add('lobby__dot--none');
         const mine = player.id === you.playerId;
+        const cpu = player.cpu;
+        // A CPU seat is the host's to change; the others only see what it is.
+        const cpuTag = cpu === null ? [] : [h('span.lobby__tag', null, t('multiplayer.cpuTag'))];
+        const levelPick = cpu === null || !you.host ? [] : [choicePicker(t('multiplayer.cpuLevel'), CPU_LEVELS.map((level) => [level, t(`cpu.${level}`)]), cpu, (level) => session.setCpu(player.id, { level: level as NetworkCpuLevel }))];
+        // Everybody picks their own team; what the others picked is shown, not editable (a CPU's the host's to move).
+        const team = !teamGame
+          ? []
+          : mine
+            ? [teamPicker(player.team)]
+            : cpu !== null && you.host
+              ? [choicePicker(t('multiplayer.cpuTeam'), [['0', teamName(0)], ['1', teamName(1)]], String(player.team), (value) => session.setCpu(player.id, { team: Number(value) as 0 | 1 }))]
+              : [h('span.lobby__tag', null, teamName(player.team))];
+        const removeButton = cpu === null || !you.host ? null : iconButton(t('multiplayer.removeCpu'), ICON_CLOSE);
+        removeButton?.addEventListener('click', () => session.removeCpu(player.id));
         return h(
           'li',
           null,
@@ -499,9 +555,11 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
           h('span.lobby__player-name', null, player.name),
           ...(mine ? [h('span.lobby__tag', null, t('multiplayer.you'))] : []),
           ...(player.id === 0 ? [h('span.lobby__tag.lobby__tag--host', null, t('multiplayer.host'))] : []),
-          // Everybody picks their own team; what the others picked is shown, not editable.
-          ...(teamGame ? [mine ? teamPicker(player.team) : h('span.lobby__tag', null, teamName(player.team))] : []),
+          ...cpuTag,
+          ...team,
+          ...levelPick,
           h(player.ready ? 'span.lobby__ready.lobby__ready--on' : 'span.lobby__ready', null, player.ready ? `✓ ${t('multiplayer.ready')}` : t('multiplayer.notReady')),
+          ...(removeButton ? [removeButton] : []),
         );
       }),
     );
@@ -543,8 +601,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     ready.textContent = self?.ready ? t('multiplayer.unready') : t('multiplayer.ready');
     ready.classList.toggle('lobby__button--primary', !self?.ready);
     start.hidden = !you.host;
-    // Everybody but the host must be ready; the host's click is its own "ready".
-    start.disabled = room.players.length < 2 || !room.players.every((p) => p.id === 0 || p.ready) || !teamsReady;
+    // Everybody but the host must be ready; the host's click is its own "ready". CPUs are always ready, but a game needs a second person.
+    start.disabled = people < 2 || !room.players.every((p) => p.id === 0 || p.ready) || !teamsReady;
   };
 
   // ————————————————————————————— Rendering —————————————————————————————
