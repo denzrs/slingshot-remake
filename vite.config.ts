@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 
 /**
- * The cheat/debug aim predictor (`/debug-aim.html`) answers 404 unless the server was
+ * The debug aim predictor (`/debug-aim.html`) answers 404 unless the server was
  * started with `DEBUG_AIM` set to any non-empty value. It gates the dev and preview
  * servers; `vite build` bundles only `index.html`, so the page never ships in a build.
  */
