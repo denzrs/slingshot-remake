@@ -582,6 +582,71 @@ describe('classic with simultaneous shots', () => {
   });
 });
 
+describe('high-five scoring', () => {
+  const run = (m: Match, until: (m: Match) => boolean, seconds = 40): void => {
+    for (let t = 0; t < seconds && !until(m); t += 1 / 30) m.update(1 / 30);
+  };
+  const fights = (m: Match): GameEvent[] => {
+    const clashes: GameEvent[] = [];
+    m.on((e) => { if (e.type === 'clash') clashes.push(e); });
+    return clashes;
+  };
+
+  /** Two ships firing straight at each other, so their shots meet in the middle and cancel out. */
+  function duel(styleBonuses: boolean): Match {
+    const s: Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats: s, simultaneousShots: true, styleBonuses }, { seats: s });
+    m.world.planets = [];
+    Object.assign(m.world.ships[0], { x: 100, y: 400 });
+    Object.assign(m.world.ships[1], { x: 1180, y: 400 });
+    return m;
+  }
+
+  it('pays both shooters 50 for an enemy missile — when trick-shot bonuses are on', () => {
+    const m = duel(true);
+    const clashes = fights(m);
+    m.setAim(0, 50); m.commit();
+    m.setAim(180, 50); m.commit();
+    run(m, (x) => x.phase === 'flying');
+    run(m, (x) => x.phase !== 'flying');
+    expect(clashes).toHaveLength(1);
+    expect(clashes[0]).toMatchObject({ players: [0, 1], points: 50 });
+    expect(m.players[0].score).toBe(50);
+    expect(m.players[1].score).toBe(50);
+  });
+
+  it('pays nothing when trick-shot bonuses are off', () => {
+    const m = duel(false);
+    const clashes = fights(m);
+    m.setAim(0, 50); m.commit();
+    m.setAim(180, 50); m.commit();
+    run(m, (x) => x.phase === 'flying');
+    run(m, (x) => x.phase !== 'flying');
+    expect(clashes).toHaveLength(1);
+    expect(clashes[0]).toMatchObject({ points: 0 });
+    expect(m.players.map((p) => p.score)).toEqual([0, 0]);
+  });
+
+  it('pays both teammates 100', () => {
+    const s: Seat[] = ['human', 'human', 'human', 'off', 'off', 'off'];
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats: s, simultaneousShots: true, styleBonuses: true, teamMode: 2 }, { seats: s, teams: [0, 1, 0] });
+    m.world.planets = [];
+    Object.assign(m.world.ships[0], { x: 100, y: 200 });
+    Object.assign(m.world.ships[1], { x: 1180, y: 200 });
+    Object.assign(m.world.ships[2], { x: 100, y: 600 });
+    const clashes = fights(m);
+    const aim: Record<number, number> = { 0: 270, 1: 0, 2: 90 };
+    for (let i = 0; i < 3; i++) { m.setAim(aim[m.current], 50); m.commit(); }
+    run(m, (x) => x.phase === 'flying');
+    run(m, (x) => x.phase !== 'flying');
+    expect(clashes).toHaveLength(1);
+    expect(clashes[0]).toMatchObject({ players: [0, 2], points: 100 });
+    expect(m.players[0].score).toBe(100);
+    expect(m.players[2].score).toBe(100);
+    expect(m.players[1].score).toBe(0);
+  });
+});
+
 describe('hidden aim', () => {
   const seats: Seat[] = ['human', 'human', 'medium', 'off', 'off', 'off'];
   const make = (hiddenAim: boolean, mode: 'classic' | 'horizon' = 'classic') =>
