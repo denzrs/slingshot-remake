@@ -9,6 +9,7 @@
 // measurements here stay under that rate; aggregate load is created with several rooms instead.
 
 import WebSocket from 'ws';
+import { packMessage, unpackMessage } from '../src/messagepack';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
 import { createMatch, type GameEvent } from '../src/game';
@@ -30,6 +31,15 @@ const pct = (sorted: number[], p: number) => sorted[Math.max(0, Math.min(sorted.
 const fmt = (v: number, digits = 0) => v.toLocaleString('en-US', { maximumFractionDigits: digits });
 /** Format a percentile from a sorted sample, or "n/a" when nothing was delivered. */
 const fmtLat = (lats: number[], p: number) => lats.length ? fmt(pct(lats, p), 2) : 'n/a';
+const sizeStats = (values: number[]) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return {
+    p50: pct(sorted, 0.50),
+    p95: pct(sorted, 0.95),
+    p99: pct(sorted, 0.99),
+    max: sorted.at(-1) ?? 0,
+  };
+};
 
 interface Client {
   ws: WebSocket;
@@ -40,12 +50,12 @@ interface FrameSize {
   frameBytes: number;
 }
 
-/** Send the plain JSON text frames supported by the relay. */
+/** Send MessagePack binary frames to the relay. */
 function send(client: Client, message: unknown): FrameSize {
-  const text = JSON.stringify(message);
-  const jsonBytes = Buffer.byteLength(text);
-  client.ws.send(text);
-  return { jsonBytes, frameBytes: jsonBytes };
+  const bytes = packMessage(message);
+  const jsonBytes = Buffer.byteLength(JSON.stringify(message));
+  client.ws.send(bytes);
+  return { jsonBytes, frameBytes: bytes.byteLength };
 }
 
 function connect(url: string): Promise<Client> {
@@ -70,16 +80,16 @@ async function pacedConnect(url: string): Promise<Client> {
 /** One parsed state message, typed at this single parse boundary. */
 function decodeState(data: WebSocket.RawData, binary: boolean): WireState {
   if (binary) {
-    throw new Error('Rust relay returned an unexpected binary frame');
+    return unpackMessage(data as Buffer) as WireState;
   }
-  return JSON.parse(data.toString()) as WireState;
+  throw new Error('Rust relay returned an unexpected text frame');
 }
 
 function wireBytes(data: WebSocket.RawData, binary: boolean): number {
   if (binary) {
-    throw new Error('Rust relay returned an unexpected binary frame');
+    return (data as Buffer).byteLength;
   }
-  return Buffer.byteLength(data.toString());
+  throw new Error('Rust relay returned an unexpected text frame');
 }
 
 /** Host + `count` guests in a started game. */
@@ -91,8 +101,8 @@ async function startRoom(url: string, count: number) {
   const { promise: roomReady, resolve: roomResolve, reject: roomReject } = Promise.withResolvers<string>();
   const timer = setTimeout(() => roomReject(new Error('no room_update')), 3000);
   host.ws.on('message', (d) => {
-    const m = JSON.parse(d.toString());
-    if (m.type === 'room_update') { clearTimeout(timer); roomResolve(m.room.id); }
+    const m = unpackMessage(d as Buffer) as { type?: string; room?: { id: string } };
+    if (m.type === 'room_update' && m.room) { clearTimeout(timer); roomResolve(m.room.id); }
   });
   host.ws.on('error', roomReject);
   send(host, { type: 'create_room', name: 'Host', mode: 'ffa', gameMode: 'classic', maxPlayers: 6 });
@@ -274,8 +284,8 @@ async function realSnapshotRun(url: string, mode: 'classic' | 'horizon', duratio
   await sleep(500);
   for (let i = 0; i < guests.length; i++) guests[i].ws.removeListener('message', listeners[i]);
   const sort = (values: number[]) => [...values].sort((a, b) => a - b);
-  const jsonSizes = sort(frames.map((frame) => frame.jsonBytes));
-  const wireSizes = sort(frames.map((frame) => frame.frameBytes));
+  const jsonSizes = frames.map((frame) => frame.jsonBytes);
+  const wireSizes = frames.map((frame) => frame.frameBytes);
   const latencies = sort(latency);
   const result = {
     ticks: frames.length,
@@ -295,11 +305,16 @@ async function reportRealSnapshots(url: string, mode: 'classic' | 'horizon') {
   const result = await realSnapshotRun(url, mode, 8000);
   const logicalMean = result.jsonSizes.reduce((sum, size) => sum + size, 0) / result.jsonSizes.length;
   const wireMean = result.wireSizes.reduce((sum, size) => sum + size, 0) / result.wireSizes.length;
+  const json = sizeStats(result.jsonSizes);
+  const msgpack = sizeStats(result.wireSizes);
+  const p99Change = (1 - msgpack.p99 / json.p99) * 100;
   console.log(`\n### real ${mode} snapshots, 30 Hz (4 human players, 8 s)`);
   console.log(`  ticks ${result.ticks}, guest deliveries ${result.delivered}`);
-  console.log(`  first/full frame ${fmt(result.firstJsonBytes)} B JSON → ${fmt(result.firstWireBytes)} B WebSocket payload`);
-  console.log(`  all ticks mean ${fmt(logicalMean)} B JSON → ${fmt(wireMean)} B WebSocket payload`);
-  console.log(`  largest patch ${fmt(result.jsonSizes.at(-1) ?? 0)} B JSON → ${fmt(result.wireSizes.at(-1) ?? 0)} B WebSocket payload`);
+  console.log(`  first/full frame ${fmt(result.firstJsonBytes)} B JSON reference → ${fmt(result.firstWireBytes)} B MessagePack payload`);
+  console.log(`  mean frame ${fmt(logicalMean)} B JSON reference → ${fmt(wireMean)} B MessagePack payload`);
+  console.log(`  frame size percentiles (JSON reference → MessagePack)`);
+  console.log(`    p50 ${fmt(json.p50)} → ${fmt(msgpack.p50)} B; p95 ${fmt(json.p95)} → ${fmt(msgpack.p95)} B`);
+  console.log(`    p99 ${fmt(json.p99)} → ${fmt(msgpack.p99)} B (${p99Change >= 0 ? `${fmt(p99Change, 1)}% smaller` : `${fmt(-p99Change, 1)}% larger`}); max ${fmt(json.max)} → ${fmt(msgpack.max)} B`);
   console.log(`  host→guest latency p50 ${fmtLat(result.latency, 0.5)} ms, p95 ${fmtLat(result.latency, 0.95)} ms, max ${fmtLat(result.latency, 1)} ms`);
 }
 
@@ -312,7 +327,7 @@ async function lobbyThroughput(url: string, durationMs: number, rate: number) {
   let replies = 0;
   let counting = false;
   c.ws.on('message', (d) => {
-    if (counting && d.toString().includes('"lobby_update"')) replies++;
+    if (counting && (unpackMessage(d as Buffer) as { type?: string }).type === 'lobby_update') replies++;
   });
   await sleep(50); // discard the initial lobby_update sent on connect
   counting = true;
@@ -320,7 +335,7 @@ async function lobbyThroughput(url: string, durationMs: number, rate: number) {
   const interval = 1000 / rate;
   let sent = 0;
   while (performance.now() - t0 < durationMs) {
-    c.ws.send('{"type":"lobby"}');
+    c.ws.send(packMessage({ type: 'lobby' }));
     sent++;
     const remaining = t0 + sent * interval - performance.now();
     if (remaining > 0) await sleep(remaining);
@@ -333,9 +348,9 @@ async function lobbyThroughput(url: string, durationMs: number, rate: number) {
 
 async function run(url: string) {
   console.log(`\n## relay at ${url}`);
-  const smallBytes = Buffer.byteLength(JSON.stringify({ type: 'state', seq: 1, patch: smallPatch, events: [] }));
-  const largeBytes = Buffer.byteLength(JSON.stringify({ type: 'state', seq: 1, patch: largePatch, events: [] }));
-  const mediumBytes = Buffer.byteLength(JSON.stringify({ type: 'state', seq: 1, patch: mediumPatch, events: [] }));
+  const smallBytes = packMessage({ type: 'state', seq: 1, patch: smallPatch, events: [] }).byteLength;
+  const largeBytes = packMessage({ type: 'state', seq: 1, patch: largePatch, events: [] }).byteLength;
+  const mediumBytes = packMessage({ type: 'state', seq: 1, patch: mediumPatch, events: [] }).byteLength;
 
   const lobby = await lobbyThroughput(url, 2000, 200);
   console.log(`\n### lobby request/response (1 client, paced 200/s)`);
@@ -353,8 +368,7 @@ async function run(url: string) {
     const { host, guests } = await startRoom(url, 3);
     const r = await latencyTest(host, guests, mediumPatch, 50, 100);
     console.log(`  latency  p50 ${fmtLat(r.lats, 0.5)} ms  p95 ${fmtLat(r.lats, 0.95)} ms  (${r.n}/${r.sent} delivered)`);
-    const savings = 1 - r.wireBytes / mediumBytes;
-    console.log(`  WebSocket frame payload avg ${fmt(r.wireBytes)} B/state${savings > 0.01 ? ` (${fmt(savings * 100, 0)}% smaller)` : ' (no compression)'}`);
+    console.log(`  MessagePack frame payload avg ${fmt(r.wireBytes)} B/state (reference encoding ${fmt(mediumBytes)} B)`);
     await closeRoom(host, guests);
   }
 
@@ -363,8 +377,7 @@ async function run(url: string) {
     const { host, guests } = await startRoom(url, 3);
     const r = await latencyTest(host, guests, largePatch, 20, 60);
     console.log(`  latency  p50 ${fmtLat(r.lats, 0.5)} ms  p95 ${fmtLat(r.lats, 0.95)} ms  max ${r.lats.length ? fmt(r.lats.at(-1)!, 2) : 'n/a'} ms  (${r.n}/${r.sent} delivered)`);
-    const savings = 1 - r.wireBytes / largeBytes;
-    console.log(`  WebSocket frame payload avg ${fmt(r.wireBytes)} B/state${savings > 0.01 ? ` (${fmt(savings * 100, 0)}% smaller)` : ' (no compression)'}`);
+    console.log(`  MessagePack frame payload avg ${fmt(r.wireBytes)} B/state (reference encoding ${fmt(largeBytes)} B)`);
     await closeRoom(host, guests);
   }
 

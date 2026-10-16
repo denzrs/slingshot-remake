@@ -280,10 +280,8 @@ async fn handle_connection<S>(
                                 break;
                             }
                             match message {
-                                Message::Text(text) => deliver(&manager, &guard.scrypt_slots, conn_id, text.as_bytes()).await,
-                                Message::Binary(_) => {
-                                    manager.lock().error(conn_id, "Only text JSON messages are accepted");
-                                }
+                                Message::Binary(bytes) => deliver(&manager, &guard.scrypt_slots, conn_id, &bytes).await,
+                                Message::Text(_) => manager.lock().error(conn_id, "Only binary MessagePack messages are accepted"),
                                 _ => unreachable!(),
                             }
                         }
@@ -371,10 +369,10 @@ async fn deliver(
     conn_id: u64,
     bytes: &[u8],
 ) {
-    let message = match serde_json::from_slice::<serde_json::Value>(bytes) {
+    let message = match rmp_serde::from_slice::<serde_json::Value>(bytes) {
         Ok(message) => message,
         Err(_) => {
-            manager.lock().error(conn_id, "Invalid JSON message");
+            manager.lock().error(conn_id, "Invalid MessagePack message");
             return;
         }
     };
@@ -538,8 +536,8 @@ async fn writer_task<S: AsyncRead + AsyncWrite + Unpin>(
 ) {
     while let Some(frame) = rx.recv().await {
         let message = match frame {
-            WireMessage::Text(text, permit) => {
-                let result = sink.send(Message::Text(text)).await;
+            WireMessage::Binary(bytes, permit) => {
+                let result = sink.send(Message::Binary(bytes.into())).await;
                 drop(permit);
                 if result.is_err() {
                     break;
@@ -715,10 +713,10 @@ mod tests {
 
     async fn take_type(rx: &mut mpsc::Receiver<WireMessage>, kind: &str) -> Value {
         loop {
-            let Some(WireMessage::Text(text, _permit)) = rx.recv().await else {
+            let Some(WireMessage::Binary(bytes, _permit)) = rx.recv().await else {
                 panic!("outbound channel closed before {kind}");
             };
-            let message: Value = serde_json::from_str(&text).unwrap();
+            let message: Value = rmp_serde::from_slice(&bytes).unwrap();
             if message["type"] == kind {
                 return message;
             }

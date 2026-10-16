@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
+import { packMessage, unpackMessage } from '../src/messagepack';
 import { MultiplayerSession, type NetMatch, type Transport } from '../src/multiplayer';
 import type { RoomRules, ServerMessage } from '../src/net';
 import { TIP_HIDDEN } from '../src/game/oracle';
@@ -46,7 +47,7 @@ class RustTransport implements Transport {
     socket.on('error', (error) => { if (!opened) reject(error); });
     socket.on('message', (data) => {
       try {
-        const message = JSON.parse(data.toString()) as ServerMessage;
+        const message = unpackMessage(data as Buffer) as ServerMessage;
         const edited = this.edit(message);
         this.listener?.(edited);
         for (const waiter of this.messageWaiters) {
@@ -67,7 +68,7 @@ class RustTransport implements Transport {
 
   send(message: Parameters<Transport['send']>[0]): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) throw new Error('WebSocket is not open');
-    this.socket.send(JSON.stringify(message));
+    this.socket.send(packMessage(JSON.parse(JSON.stringify(message))));
   }
 
   async close(): Promise<void> {
@@ -208,9 +209,18 @@ describe('online games', () => {
     const transport = host.client as RustTransport;
     for (const seq of [1.5, -0.5, Number.MAX_SAFE_INTEGER + 1]) {
       const response = transport.waitForMessage((message) => message.type === 'error' && message.message === 'Malformed state message');
-      transport.rawSocket!.send(JSON.stringify({ type: 'state', seq, patch: {}, events: [] }));
+      transport.rawSocket!.send(packMessage({ type: 'state', seq, patch: {}, events: [] }));
       await response;
     }
+  });
+
+  it('rejects legacy text frames and replies with MessagePack', async () => {
+    const transport = await connectSession();
+    const response = (transport.client as RustTransport).waitForMessage(
+      (message) => message.type === 'error' && message.message === 'Only binary MessagePack messages are accepted',
+    );
+    (transport.client as RustTransport).rawSocket!.send('{"type":"lobby"}');
+    await response;
   });
 
   it("play by the room's rules, not by the players' own settings", async () => {
@@ -729,14 +739,14 @@ describe('the oracle online', () => {
     const guest = ben.session.client as RustTransport;
     for (const bad of [{ round: 'yes' }, { round: true, stake: -10 }, { round: true, stake: '100' }, { round: true, stake: 2.5 }]) {
       const rejected = guest.waitForMessage((message) => message.type === 'error' && message.message === 'Malformed input message');
-      guest.rawSocket!.send(JSON.stringify({ type: 'input', input: { kind: 'bet', pick: 1, ...bad } }));
+      guest.rawSocket!.send(packMessage({ type: 'input', input: { kind: 'bet', pick: 1, ...bad } }));
       await rejected;
     }
 
     const relayed = (host.session.client as RustTransport).waitForMessage(
       (message) => message.type === 'input' && message.from === 1 && message.input.kind === 'bet' && message.input.round === true && message.input.stake === 100,
     );
-    guest.rawSocket!.send(JSON.stringify({ type: 'input', input: { kind: 'bet', pick: 1, round: true, stake: 100 } }));
+    guest.rawSocket!.send(packMessage({ type: 'input', input: { kind: 'bet', pick: 1, round: true, stake: 100 } }));
     await relayed;
   }, 60_000);
 

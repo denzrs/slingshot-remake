@@ -221,18 +221,18 @@ impl RoomManager {
     // ————————————————————————————— Outbound —————————————————————————————
 
     fn send_value(&mut self, conn: u64, value: &Value) {
-        let Ok(text) = serde_json::to_string(value) else {
+        let Ok(bytes) = rmp_serde::to_vec_named(value) else {
             return;
         };
-        self.send_fast(conn, &text);
+        self.send_fast(conn, &bytes);
     }
 
-    /// The fast path: an already-serialized frame that may be fanned out to several players.
-    fn send_fast(&self, conn: u64, text: &str) {
+    /// The fast path: an already-serialized MessagePack frame that may be fanned out to several players.
+    fn send_fast(&self, conn: u64, bytes: &[u8]) {
         let Some(out) = self.outbounds.get(&conn) else {
             return;
         };
-        if text.len() > crate::codec::OUTBOUND_BYTES {
+        if bytes.len() > crate::codec::OUTBOUND_BYTES {
             let _ = out.slow.send(true);
             warn!(
                 conn,
@@ -240,13 +240,13 @@ impl RoomManager {
             );
             return;
         }
-        let permits = text.len();
+        let permits = bytes.len();
         let Ok(permit) = out.bytes.clone().try_acquire_many_owned(permits as u32) else {
             let _ = out.slow.send(true);
             warn!(conn, "outbound byte budget exhausted; closing connection");
             return;
         };
-        if out.tx.try_send(frame(text, Some(permit))).is_err() {
+        if out.tx.try_send(frame(bytes, Some(permit))).is_err() {
             let _ = out.slow.send(true);
             warn!(
                 conn,
@@ -1043,7 +1043,7 @@ impl RoomManager {
         }
         self.rooms.get_mut(&room_id).unwrap().last_state_seq = seq;
 
-        let text = serde_json::to_string(&json!({
+        let bytes = rmp_serde::to_vec_named(&json!({
             "type": "state",
             "seq": seq,
             "patch": message.get("patch"),
@@ -1062,7 +1062,7 @@ impl RoomManager {
             })
             .unwrap_or_default();
         for recipient in recipients {
-            self.send_fast(recipient, &text);
+            self.send_fast(recipient, &bytes);
         }
     }
 
@@ -1440,8 +1440,8 @@ mod tests {
 
     fn drain_json(rx: &mut mpsc::Receiver<crate::codec::WireMessage>) -> Vec<Value> {
         let mut messages = Vec::new();
-        while let Ok(crate::codec::WireMessage::Text(text, _permit)) = rx.try_recv() {
-            messages.push(serde_json::from_str(&text).unwrap());
+        while let Ok(crate::codec::WireMessage::Binary(bytes, _permit)) = rx.try_recv() {
+            messages.push(rmp_serde::from_slice(&bytes).unwrap());
         }
         messages
     }
@@ -1803,7 +1803,7 @@ mod tests {
         let (tx, _rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
         let (slow_tx, slow_rx) = tokio::sync::watch::channel(false);
         rooms.connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow_tx);
-        rooms.send_fast(1, &"x".repeat(crate::codec::OUTBOUND_BYTES + 1));
+        rooms.send_fast(1, &vec![b'x'; crate::codec::OUTBOUND_BYTES + 1]);
         assert!(*slow_rx.borrow());
     }
 
