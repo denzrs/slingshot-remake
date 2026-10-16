@@ -537,7 +537,7 @@ async fn writer_task<S: AsyncRead + AsyncWrite + Unpin>(
     while let Some(frame) = rx.recv().await {
         let message = match frame {
             WireMessage::Binary(bytes, permit) => {
-                let result = sink.send(Message::Binary(bytes.into())).await;
+                let result = sink.send(Message::Binary(bytes)).await;
                 drop(permit);
                 if result.is_err() {
                     break;
