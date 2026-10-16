@@ -161,7 +161,7 @@ export class ClassicMatch extends Match {
 
   commit(): void {
     if (!this.isHumanTurn) return;
-    if (this.salvo) this.lock(this.current);
+    if (this.salvo || !this.betWindowDone) this.lock(this.current);
     else this.fire();
   }
 
@@ -180,7 +180,7 @@ export class ClassicMatch extends Match {
 
   commitPlayer(id: number): void {
     if (!this.canAim(id)) return;
-    if (this.salvo) this.lock(id);
+    if (this.salvo || !this.betWindowDone) this.lock(id);
     else this.fire();
   }
 
@@ -214,7 +214,7 @@ export class ClassicMatch extends Match {
   private lock(id: number): void {
     this.players[id].locked = true;
     this.emit({ type: 'lock', player: id });
-    if (!this.simultaneous) this.nextHuman();
+    if (this.salvo && !this.simultaneous) this.nextHuman();
   }
 
   private updatePlanning(dt: number): void {
@@ -244,7 +244,7 @@ export class ClassicMatch extends Match {
       this.planClock -= dt;
       if (this.planClock <= 0) this.commit();
     }
-    if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6) this.launchVolley();
+    if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6 && this.betWindowDone) this.launchVolley();
   }
 
   private launchVolley(): void {
@@ -257,6 +257,7 @@ export class ClassicMatch extends Match {
 
   private fire(): void {
     const p = this.players[this.current];
+    p.locked = false;
     const spare = this.sparedFor(p.id);
     p.shots++;
     // Trick shots are always tracked (the scorecard counts them); they only pay points when the option is on.
@@ -268,6 +269,10 @@ export class ClassicMatch extends Match {
     if (this.salvo) return this.updatePlanning(dt);
     if (this.current < 0) return;
     const p = this.players[this.current];
+    if (p.locked) {
+      if (this.betWindowDone) this.fire();
+      return;
+    }
     if (!p.cpu) return;
     this.runCpu([p.id], 6, 1);
     const job = this.cpuJob(p.id);
@@ -313,6 +318,7 @@ export class ClassicMatch extends Match {
   }
 
   private setTurn(id: number): void {
+    this.players[id].locked = false;
     this.current = id;
     this.setPhase('aiming');
     // A CPU shoots within a second or two — too quick to tip on.

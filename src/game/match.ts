@@ -2,7 +2,7 @@ import { advanceExperimentalWorld, createExperimentalLearner, measureReconstruct
 import { ExperimentalWorkerCancelledError, ExperimentalWorkerClient } from '../experimental-worker-client';
 import { EXPERIMENTAL_PRESETS, isExperimentalCpu, planShot, type Aim, type CpuDecision, type CpuLevel, type ExperimentalCpuConfig } from '../ai';
 import type { Avatar } from '../avatars';
-import { AIM, COLORS, FIELD, GRACE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
+import { AIM, COLORS, FIELD, GRACE, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
 import { normalizeAngle, type ShotEnd, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
@@ -276,6 +276,7 @@ export abstract class Match {
   /** Who hit each player last — CPUs with a grudge aim back at them. */
   private lastHitBy = new Map<number, number>();
   private flightPending = false;
+  private flightDoneAt: number | null = null;
   /** What the volley in the air has destroyed so far — the oracle's verdict is read from it. */
   private oracleKills: { killer: number; victim: number; self: boolean; friendly: boolean }[] = [];
   private disposed = false;
@@ -328,6 +329,7 @@ export abstract class Match {
     this.experimentalWorlds.clear();
     this.experimentalError = null;
     this.flightPending = false;
+    this.flightDoneAt = null;
     this.flightObservation = null;
     this.cpuJobs.clear();
   }
@@ -388,6 +390,10 @@ export abstract class Match {
     return !!this.options.oracle && !!p && !p.alive && !p.cpu && !!this.oracle.question && !this.oracle.question.locked;
   }
 
+  /** Whether the oracle's minimum window for tipping and betting on this aiming phase has passed. */
+  protected get betWindowDone(): boolean {
+    return (!this.oracle.question && !this.oracle.roundQuestion) || this.phaseTime >= ORACLE.MIN_BET_TIME;
+  }
   /**
    * Puts a stake on the player's tip on the round question, once. The points leave their score at once —
    * they come back with a share of the pot if the tip was right, or when there is nobody to share with.
@@ -712,6 +718,7 @@ export abstract class Match {
     this.oracleKills = [];
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
     this.simClock = 0;
+    this.flightDoneAt = null;
     this.cpuJobs.clear();
     this.setPhase('flying');
     this.volley.shots.forEach((vs, i) => {
@@ -735,6 +742,8 @@ export abstract class Match {
       for (const e of volley.step()) this.onVolleyEvent(volley, e, true);
     }
     if (!volley.done) return;
+    this.flightDoneAt ??= this.phaseTime;
+    if (this.phaseTime - this.flightDoneAt < this.afterVolleyDelay) return;
     this.flightPending = true;
     const generation = this.experimentalGeneration;
     const finish = (): void => {
@@ -770,6 +779,11 @@ export abstract class Match {
   protected restarted(): void {
     this.resetExperimentalState();
     this.simClock = 0;
+  }
+
+  /** Seconds to keep a finished volley on screen before moving on (e.g. before a killcam). */
+  protected get afterVolleyDelay(): number {
+    return 0;
   }
 
   protected get volleyNumber(): number {

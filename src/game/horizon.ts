@@ -198,6 +198,10 @@ export class HorizonMatch extends Match {
     return true;
   }
 
+  protected get afterVolleyDelay(): number {
+    return this.volleyKills.length ? HORIZON.KILLCAM_DELAY : 0;
+  }
+
   protected get survivorBonus(): number {
     return SCORING.LAST_IN_ORBIT;
   }
@@ -323,7 +327,7 @@ export class HorizonMatch extends Match {
       this.clock_ -= dt;
       if (this.clock_ <= 0) this.commit();
     }
-    if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6) this.launchVolley();
+    if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6 && this.betWindowDone) this.launchVolley();
   }
 
   private launchVolley(): void {

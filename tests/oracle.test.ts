@@ -508,17 +508,22 @@ describe('the oracle in a match', () => {
     expect(match.oracle.mine).toEqual({ id: match.oracle.question!.id, pick: TIP_HIT });
   });
 
-  it('closes the question when the shot is fired and judges it when it lands', () => {
+  it('keeps the question open for at least 3 s when the shooter locks in early, then locks and judges it when it flies', () => {
     const match = table(3);
     match.viewer = 1;
     place(match, [[100, 400], [700, 400], [400, 100]]);
     aimAt(match, 0, 1);
     match.commitPlayer(0);
     run(match, () => match.phase === 'aiming' && match.current === 2);
-    match.placeBet(1, TIP_HIT);
 
     aimAt(match, 2, 0);
     match.commitPlayer(2);
+    expect(match.phase).toBe('aiming');
+    expect(match.players[2].locked).toBe(true);
+    expect(match.oracle.question!.locked).toBe(false);
+    expect(match.placeBet(1, TIP_HIT)).toBe(true);
+
+    run(match, () => match.phase === 'flying');
     expect(match.oracle.question!.locked).toBe(true);
     expect(match.placeBet(1, TIP_MISS)).toBe(false);
     run(match, () => match.phase !== 'flying');
@@ -540,8 +545,8 @@ describe('the oracle in a match', () => {
 
     aimAway(match, 2, 90);
     match.commitPlayer(2);
+    run(match, () => match.phase === 'flying');
     run(match, () => match.phase !== 'flying');
-
     expect(match.oracle.result).toMatchObject({ hit: false, victims: [] });
     expect(match.oracle.result!.tips).toEqual([{ player: 1, pick: TIP_HIT, right: false, points: 0 }]);
     // The next shooter gets a fresh question.
@@ -561,8 +566,8 @@ describe('the oracle in a match', () => {
 
     aimAt(match, 2, 3);
     match.commitPlayer(2);
+    run(match, () => match.phase === 'flying');
     run(match, () => match.phase !== 'flying');
-
     expect(match.players[3].alive).toBe(false);
     expect(match.oracle.result).toMatchObject({ hit: false, victims: [3] });
     expect(match.oracle.result!.tips[0]).toMatchObject({ right: true });
@@ -677,6 +682,9 @@ describe('the oracle in a match', () => {
     // Once the shots fly, the tips on the round stay as they are.
     aimAway(match, 2, 90);
     match.commitPlayer(2);
+    expect(match.placeBet(1, 0, true)).toBe(true);
+    expect(match.placeBet(1, 3, true)).toBe(true);
+    run(match, () => match.phase === 'flying');
     expect(match.placeBet(1, 0, true)).toBe(false);
     run(match, () => match.phase === 'aiming' && match.current === 3);
 
@@ -888,5 +896,28 @@ describe('the oracle in a match', () => {
     match.newMatch();
     expect(match.oracle.scores[1]).toMatchObject({ points: 0, total: 0, streak: 0 });
     expect(match.oracle.result).toBeNull();
+  });
+
+  it('holds a salvo back for at least 3 s when all players lock in early so ghosts can bet', () => {
+    const match = table(4, { salvo: true, betting: true });
+    match.viewer = 1;
+    place(match, [[100, 400], [500, 400], [900, 200], [900, 600]]);
+    aimAt(match, 0, 1);
+    aimAway(match, 1, 90);
+    aimAway(match, 2, 0);
+    aimAway(match, 3, 270);
+    for (const p of match.alive) match.commitPlayer(p.id);
+    run(match, () => match.phase === 'aiming' && match.players[1].alive === false);
+    match.players[1].score = 400;
+
+    // All living players lock in immediately (at phaseTime = 0).
+    for (const p of match.alive) match.commitPlayer(p.id);
+    match.update(2.5);
+    expect(match.phase).toBe('aiming');
+    expect(match.placeBet(1, 2)).toBe(true);
+    expect(match.placeBet(1, 3, true, 200)).toBe(true);
+    expect(match.oracle.stakeOf(1)).toBe(200);
+    match.update(0.6);
+    expect(match.phase).toBe('flying');
   });
 });
