@@ -2,6 +2,7 @@ import { AVATARS, type Avatar } from '../avatars';
 import { COLORS, MAX_PLAYERS, TEAMS } from '../config';
 import { teamName } from '../game';
 import { t } from '../i18n';
+import { inviteLink, readInvite, withoutInvite } from '../invite';
 import { loadLobbyPrefs, saveLobbyPrefs } from '../lobbyPrefs';
 import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multiplayer';
 import type { LobbyRoom, NetworkCpuLevel, NetworkGameMode, RoomInfo, RoomMode, RoomRules } from '../net';
@@ -160,6 +161,13 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const prefs = loadLobbyPrefs(DEFAULT_SERVER);
   const configuredServer = Boolean(import.meta.env.VITE_MULTIPLAYER_SERVER);
   const hosted = configuredServer && isSecureRelay(DEFAULT_SERVER);
+  /** The invite this page was opened with; it stays until the room is joined or the lobby is left. */
+  const invited = readInvite(location.search);
+  let inviteNote: string | null = invited ? t('multiplayer.invited', { code: invited.roomId }) : null;
+  /** The invited guest is joined to the room on arrival — the link is all they were given. */
+  let invitePending = !!invited;
+  /** The invite is still in the address bar; the code, the relay and the password have been read out of it. */
+  let inviteInUrl = !!invited;
   const save = () => saveLobbyPrefs(prefs);
   const sound = app.menu.sound;
   /** Connection progress / validation messages that don't come from the session. */
@@ -188,7 +196,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
 
   // ————————————————————————————— Connecting —————————————————————————————
 
-  const serverAddress = textInput(session.client.address && session.connected ? session.client.address : prefs.server, { type: 'url', spellcheck: false });
+  const serverAddress = textInput(session.client.address && session.connected ? session.client.address : invited?.server ?? prefs.server, { type: 'url', spellcheck: false });
   const playerName = textInput(prefs.name, { maxLength: 24 });
   playerName.setAttribute('autocomplete', 'nickname');
   /** The name belongs to the connection card until there is a connection, and to the bar after it (in the hosted build: always the bar). */
@@ -219,9 +227,11 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
 
   const openCreate = button(t('multiplayer.openCreate'), true);
   const roomsList = h('ul.lobby__rooms', null);
-  // A private room is not listed: its code gets you in.
-  const codeInput = textInput('', { maxLength: 16, autocomplete: 'off', spellcheck: false, placeholder: t('multiplayer.codePlaceholder') });
+  // A private room is not listed: its code gets you in — or the invite link, which carries it.
+  const codeInput = textInput(invited?.roomId ?? '', { maxLength: 16, autocomplete: 'off', spellcheck: false, placeholder: t('multiplayer.codePlaceholder') });
   const codePassword = passwordInput(t('multiplayer.password'));
+  // A link made by somebody in a locked room carries its password, so the guest needs no second paste.
+  codePassword.value = invited?.password ?? '';
   const codeJoin = button(t('multiplayer.join'), true);
   const joinByCode = () => {
     const roomId = codeInput.value.trim();
@@ -395,6 +405,11 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   /** The code others join the room with; a private room can only be found this way. */
   const roomCode = h('span.lobby__code-value', null);
   const privateTag = h('span.lobby__tag', null, t('multiplayer.private'));
+  /** The invite link: one link that opens the client and puts the guest straight into this room. */
+  const copyInvite = button(t('multiplayer.copyInvite'), true);
+  copyInvite.addEventListener('click', () =>
+    void copyText(inviteLink(`${location.origin}${location.pathname}`, session.room?.id ?? '', configuredServer ? undefined : session.client.address, hostPassword), t('multiplayer.inviteCopied')),
+  );
   const copyCode = button(t('multiplayer.copyCode'));
   copyCode.addEventListener('click', () => void copyText(session.room?.id ?? '', t('multiplayer.codeCopied')));
   const copyPassword = button(t('multiplayer.copyPassword'));
@@ -444,7 +459,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     null,
     roomTitle,
     h('div.lobby__head', null, roomCount, resetTeams),
-    h('div.lobby__code', null, h('span.lobby__code-label', null, t('multiplayer.code')), roomCode, copyCode, copyPassword, privateTag),
+    h('div.lobby__code', null, h('span.lobby__code-label', null, t('multiplayer.code')), roomCode, copyInvite, copyCode, copyPassword, privateTag),
     players,
     cpuAddRow,
     cpuOnlyNote,
@@ -617,20 +632,46 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     h('div.panel.panel--lobby', null, h('h2.panel__title', null, t('multiplayer.title')), h('div.lobby', null, status, bar, connectView, roomsView, createView, roomView, backBar), h('div.items', { 'data-items': '' })),
   );
 
+  /** An invite is a one-shot: once a room is entered, or the lobby is left, it is out of the URL again. */
+  const dropInvite = () => {
+    if (inviteInUrl) history.replaceState(null, '', withoutInvite(location.href));
+    inviteInUrl = false;
+    inviteNote = null;
+    invitePending = false;
+  };
+
   const render = () => {
     const { connected, connecting, room, rooms: open } = session;
     avatarBar.show(prefs.avatar);
-    // A room, once left, leaves you at the list of rooms.
-    if (room) view = 'rooms';
+    const browsing = connected && !room;
+    // A room, once left, leaves you at the list of rooms; and it takes the invitation out of the address bar.
+    if (room) {
+      view = 'rooms';
+      dropInvite();
+    }
+    // Whoever followed an invite came here to get into that room, so it is joined for them — no second click.
+    // Only a missing player name stops it: then the lobby asks for one and shows the join row as usual.
+    if (invited && invitePending && browsing) {
+      invitePending = false;
+      const name = playerName.value.trim();
+      if (name) {
+        prefs.name = name;
+        save();
+        session.joinRoom(invited.roomId, name, codePassword.value || undefined, prefs.avatar);
+        inviteNote = null;
+      } else {
+        inviteNote = t('multiplayer.nameRequired');
+        playerName.focus();
+      }
+    }
     // The hosted build says nothing about connecting or being connected; its connect card returns only when that failed.
     const retry = hosted && !connected && !connecting && (connectFailed || session.notice !== null);
     const idle = hosted ? '' : t('multiplayer.connectHint');
-    const message = localMessage ?? session.notice ?? (connecting ? (hosted ? '' : t('multiplayer.connecting')) : !connected ? idle : '');
+    const message = localMessage ?? session.notice ?? inviteNote ?? (connecting ? (hosted ? '' : t('multiplayer.connecting')) : !connected ? idle : '');
     status.textContent = message;
     status.classList.toggle('is-busy', connecting);
     status.hidden = !message;
 
-    const browsing = connected && !room;
     bar.hidden = !browsing;
     connectView.hidden = hosted ? !retry : connected;
     roomsView.hidden = !(browsing && view === 'rooms');
@@ -696,6 +737,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
 
   /** One step back: out of the room, out of the form, and from the list of rooms out of the lobby. */
   const goBack = () => {
+    dropInvite();
     if (session.room) session.leaveRoom();
     else if (session.connected && view === 'create') show('rooms');
     else {
@@ -717,9 +759,10 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
         render();
       });
       render();
-      // Came back to a lobby that worked before: reconnect without making the player press anything.
+      // Came back to a lobby that worked before: reconnect without making the player press anything. An invite
+      // counts as that too — it names the room to join, so the guest only has to press "Join".
       // Deferred until the screen is in the DOM — the session's updates only reach a mounted screen.
-      if (!session.connected && !session.connecting && !session.room && (configuredServer || prefs.autoConnect)) setTimeout(() => void connect(true), 0);
+      if (!session.connected && !session.connecting && !session.room && (configuredServer || prefs.autoConnect || inviteNote)) setTimeout(() => void connect(true), 0);
       return root;
     },
     items: [],

@@ -14,6 +14,7 @@ import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match,
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
 import type { OracleTap } from './render/oracle';
 import { GhostLane, ghostSeed } from './ghost';
+import { readInvite } from './invite';
 import { MultiplayerSession } from './multiplayer';
 import type { ClientInput } from './net';
 import { randomSeed } from './rng';
@@ -775,7 +776,9 @@ async function boot(): Promise<void> {
   // Canvas text needs the web fonts loaded before the first draw.
   const fonts = [`800 32px ${FONTS.display}`, `400 16px ${FONTS.body}`, `700 16px ${FONTS.body}`, `400 16px ${FONTS.mono}`, `700 16px ${FONTS.mono}`];
   await Promise.race([Promise.all(fonts.map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 1500))]);
-  app.toTitle();
+  // An invite link opens the lobby by itself, with the room already in the join field: one "Join room" and the guest is in.
+  if (readInvite(location.search)) app.openLobby();
+  else app.toTitle();
   requestAnimationFrame(frame);
 }
 void boot();
