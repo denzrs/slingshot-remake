@@ -9,7 +9,7 @@
 // measurements here stay under that rate; aggregate load is created with several rooms instead.
 
 import WebSocket from 'ws';
-import { packMessage, unpackMessage } from '../src/messagepack';
+import { packMessage, packWireMessage, unpackMessage, unpackWireMessage } from '../src/messagepack';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
 import { createMatch, type GameEvent } from '../src/game';
@@ -18,6 +18,7 @@ import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
 const URL = process.argv[2] ?? 'ws://localhost:8080';
 const BENCH_ORIGIN = process.env.BENCH_ORIGIN;
+const WIRE_FORMAT = process.argv[3] ?? process.env.RELAY_WIRE ?? 'envelope';
 
 // The window of the wire message we actually read (never the raw client input).
 interface WireState {
@@ -50,12 +51,26 @@ interface FrameSize {
   frameBytes: number;
 }
 
-/** Send MessagePack binary frames to the relay. */
+function encodeWireMessage(message: unknown): Uint8Array | string {
+  if (WIRE_FORMAT === 'json') return JSON.stringify(message);
+  return WIRE_FORMAT === 'msgpack' ? packMessage(message) : packWireMessage(message);
+}
+
+function decodeWireMessage(data: WebSocket.RawData, binary: boolean): unknown {
+  if (WIRE_FORMAT === 'json') {
+    if (binary) throw new Error('JSON relay returned an unexpected binary frame');
+    return JSON.parse(data.toString());
+  }
+  if (!binary) throw new Error('MessagePack relay returned an unexpected text frame');
+  return WIRE_FORMAT === 'msgpack' ? unpackMessage(data as Buffer) : unpackWireMessage(data as Buffer);
+}
+
+/** Send a state/control frame using the selected wire format. */
 function send(client: Client, message: unknown): FrameSize {
-  const bytes = packMessage(message);
+  const bytes = encodeWireMessage(message);
   const jsonBytes = Buffer.byteLength(JSON.stringify(message));
   client.ws.send(bytes);
-  return { jsonBytes, frameBytes: bytes.byteLength };
+  return { jsonBytes, frameBytes: typeof bytes === 'string' ? Buffer.byteLength(bytes) : bytes.byteLength };
 }
 
 function connect(url: string): Promise<Client> {
@@ -79,17 +94,11 @@ async function pacedConnect(url: string): Promise<Client> {
 
 /** One parsed state message, typed at this single parse boundary. */
 function decodeState(data: WebSocket.RawData, binary: boolean): WireState {
-  if (binary) {
-    return unpackMessage(data as Buffer) as WireState;
-  }
-  throw new Error('Rust relay returned an unexpected text frame');
+  return decodeWireMessage(data, binary) as WireState;
 }
 
 function wireBytes(data: WebSocket.RawData, binary: boolean): number {
-  if (binary) {
-    return (data as Buffer).byteLength;
-  }
-  throw new Error('Rust relay returned an unexpected text frame');
+  return binary ? (data as Buffer).byteLength : Buffer.byteLength(data.toString());
 }
 
 /** Host + `count` guests in a started game. */
@@ -100,8 +109,8 @@ async function startRoom(url: string, count: number) {
 
   const { promise: roomReady, resolve: roomResolve, reject: roomReject } = Promise.withResolvers<string>();
   const timer = setTimeout(() => roomReject(new Error('no room_update')), 3000);
-  host.ws.on('message', (d) => {
-    const m = unpackMessage(d as Buffer) as { type?: string; room?: { id: string } };
+  host.ws.on('message', (d, binary) => {
+    const m = decodeWireMessage(d, binary) as { type?: string; room?: { id: string } };
     if (m.type === 'room_update' && m.room) { clearTimeout(timer); roomResolve(m.room.id); }
   });
   host.ws.on('error', roomReject);
@@ -308,11 +317,13 @@ async function reportRealSnapshots(url: string, mode: 'classic' | 'horizon') {
   const json = sizeStats(result.jsonSizes);
   const msgpack = sizeStats(result.wireSizes);
   const p99Change = (1 - msgpack.p99 / json.p99) * 100;
+  const envelopeBytes = WIRE_FORMAT === 'envelope' ? 14 : 0;
+  const payloadMean = wireMean - envelopeBytes;
   console.log(`\n### real ${mode} snapshots, 30 Hz (4 human players, 8 s)`);
   console.log(`  ticks ${result.ticks}, guest deliveries ${result.delivered}`);
-  console.log(`  first/full frame ${fmt(result.firstJsonBytes)} B JSON reference → ${fmt(result.firstWireBytes)} B MessagePack payload`);
-  console.log(`  mean frame ${fmt(logicalMean)} B JSON reference → ${fmt(wireMean)} B MessagePack payload`);
-  console.log(`  frame size percentiles (JSON reference → MessagePack)`);
+  console.log(`  first/full frame ${fmt(result.firstJsonBytes)} B JSON reference → ${fmt(result.firstWireBytes)} B ${WIRE_FORMAT} wire frame`);
+  console.log(`  mean frame ${fmt(logicalMean)} B JSON reference → ${fmt(wireMean)} B wire (${fmt(payloadMean)} B payload + ${envelopeBytes} B envelope)`);
+  console.log(`  frame size percentiles (JSON reference → ${WIRE_FORMAT} wire frame)`);
   console.log(`    p50 ${fmt(json.p50)} → ${fmt(msgpack.p50)} B; p95 ${fmt(json.p95)} → ${fmt(msgpack.p95)} B`);
   console.log(`    p99 ${fmt(json.p99)} → ${fmt(msgpack.p99)} B (${p99Change >= 0 ? `${fmt(p99Change, 1)}% smaller` : `${fmt(-p99Change, 1)}% larger`}); max ${fmt(json.max)} → ${fmt(msgpack.max)} B`);
   console.log(`  host→guest latency p50 ${fmtLat(result.latency, 0.5)} ms, p95 ${fmtLat(result.latency, 0.95)} ms, max ${fmtLat(result.latency, 1)} ms`);
@@ -326,8 +337,8 @@ async function lobbyThroughput(url: string, durationMs: number, rate: number) {
   const c = await connect(url);
   let replies = 0;
   let counting = false;
-  c.ws.on('message', (d) => {
-    if (counting && (unpackMessage(d as Buffer) as { type?: string }).type === 'lobby_update') replies++;
+  c.ws.on('message', (d, binary) => {
+    if (counting && (decodeWireMessage(d, binary) as { type?: string }).type === 'lobby_update') replies++;
   });
   await sleep(50); // discard the initial lobby_update sent on connect
   counting = true;
@@ -335,7 +346,7 @@ async function lobbyThroughput(url: string, durationMs: number, rate: number) {
   const interval = 1000 / rate;
   let sent = 0;
   while (performance.now() - t0 < durationMs) {
-    c.ws.send(packMessage({ type: 'lobby' }));
+    c.ws.send(encodeWireMessage({ type: 'lobby' }));
     sent++;
     const remaining = t0 + sent * interval - performance.now();
     if (remaining > 0) await sleep(remaining);
@@ -347,10 +358,14 @@ async function lobbyThroughput(url: string, durationMs: number, rate: number) {
 }
 
 async function run(url: string) {
-  console.log(`\n## relay at ${url}`);
-  const smallBytes = packMessage({ type: 'state', seq: 1, patch: smallPatch, events: [] }).byteLength;
-  const largeBytes = packMessage({ type: 'state', seq: 1, patch: largePatch, events: [] }).byteLength;
-  const mediumBytes = packMessage({ type: 'state', seq: 1, patch: mediumPatch, events: [] }).byteLength;
+  console.log(`\n## relay at ${url} (${WIRE_FORMAT})`);
+  const size = (value: unknown) => {
+    const encoded = encodeWireMessage(value);
+    return typeof encoded === 'string' ? Buffer.byteLength(encoded) : encoded.byteLength;
+  };
+  const smallBytes = size({ type: 'state', seq: 1, patch: smallPatch, events: [] });
+  const largeBytes = size({ type: 'state', seq: 1, patch: largePatch, events: [] });
+  const mediumBytes = size({ type: 'state', seq: 1, patch: mediumPatch, events: [] });
 
   const lobby = await lobbyThroughput(url, 2000, 200);
   console.log(`\n### lobby request/response (1 client, paced 200/s)`);
@@ -368,7 +383,7 @@ async function run(url: string) {
     const { host, guests } = await startRoom(url, 3);
     const r = await latencyTest(host, guests, mediumPatch, 50, 100);
     console.log(`  latency  p50 ${fmtLat(r.lats, 0.5)} ms  p95 ${fmtLat(r.lats, 0.95)} ms  (${r.n}/${r.sent} delivered)`);
-    console.log(`  MessagePack frame payload avg ${fmt(r.wireBytes)} B/state (reference encoding ${fmt(mediumBytes)} B)`);
+    console.log(`  wire frame avg ${fmt(r.wireBytes)} B/state (benchmark encoding ${fmt(mediumBytes)} B)`);
     await closeRoom(host, guests);
   }
 
@@ -377,7 +392,7 @@ async function run(url: string) {
     const { host, guests } = await startRoom(url, 3);
     const r = await latencyTest(host, guests, largePatch, 20, 60);
     console.log(`  latency  p50 ${fmtLat(r.lats, 0.5)} ms  p95 ${fmtLat(r.lats, 0.95)} ms  max ${r.lats.length ? fmt(r.lats.at(-1)!, 2) : 'n/a'} ms  (${r.n}/${r.sent} delivered)`);
-    console.log(`  MessagePack frame payload avg ${fmt(r.wireBytes)} B/state (reference encoding ${fmt(largeBytes)} B)`);
+    console.log(`  wire frame avg ${fmt(r.wireBytes)} B/state (benchmark encoding ${fmt(largeBytes)} B)`);
     await closeRoom(host, guests);
   }
 

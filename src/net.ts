@@ -3,7 +3,7 @@ import type { GameEvent } from './game';
 import type { StatePatch } from './netsync';
 import type { RoomColor, RoomLook, RoomSymbol } from './roomLook';
 import type { Settings } from './settings';
-import { packMessage, unpackMessage } from './messagepack';
+import { packWireMessage, unpackWireMessage } from './messagepack';
 
 export type RoomMode = 'ffa' | 'team';
 export type NetworkGameMode = 'classic' | 'horizon';
@@ -211,7 +211,7 @@ export class NetworkClient {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       throw new Error('Cannot send: WebSocket is not connected');
     }
-    const bytes = packMessage(message);
+    const bytes = packWireMessage(message);
     // msgpackr returns a Uint8Array backed by an ArrayBuffer; the assertion narrows
     // its broad library type without copying the encoded frame.
     socket.send(bytes as Uint8Array<ArrayBuffer>);
@@ -230,8 +230,8 @@ export class NetworkClient {
   private receive(data: unknown): void {
     let parsed: unknown;
     try {
-      if (data instanceof ArrayBuffer) parsed = unpackMessage(new Uint8Array(data));
-      else if (ArrayBuffer.isView(data)) parsed = unpackMessage(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+      if (data instanceof ArrayBuffer) parsed = unpackWireMessage(new Uint8Array(data));
+      else if (ArrayBuffer.isView(data)) parsed = unpackWireMessage(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
       else if (data instanceof Blob) throw new Error('Expected binary MessagePack');
       else throw new Error('Expected binary MessagePack');
     } catch {

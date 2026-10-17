@@ -1043,13 +1043,12 @@ impl RoomManager {
         }
         self.rooms.get_mut(&room_id).unwrap().last_state_seq = seq;
 
-        let bytes = rmp_serde::to_vec_named(&json!({
-            "type": "state",
-            "seq": seq,
+        let payload = rmp_serde::to_vec_named(&json!({
             "patch": message.get("patch"),
             "events": message.get("events"),
         }))
-        .expect("serialize state frame");
+        .expect("serialize state payload");
+        let bytes = crate::codec::state_frame(seq as u64, &payload);
         let recipients: Vec<u64> = self
             .rooms
             .get(&room_id)
@@ -1063,6 +1062,58 @@ impl RoomManager {
             .unwrap_or_default();
         for recipient in recipients {
             self.send_fast(recipient, &bytes);
+        }
+    }
+
+    /// Relay a client-encoded state frame after validating its readable envelope header.
+    pub fn handle_state_envelope(&mut self, conn: u64, seq: i64, bytes: &[u8]) {
+        let Some((room_id, my_id)) = self
+            .memberships
+            .get(&conn)
+            .map(|mb| (mb.room_id.clone(), mb.player_id))
+        else {
+            self.error(conn, "You are not in a running game");
+            return;
+        };
+        if !self
+            .rooms
+            .get(&room_id)
+            .is_some_and(|room| room.status == RoomStatus::Playing)
+        {
+            self.error(conn, "You are not in a running game");
+            return;
+        }
+        if my_id != 0 {
+            self.error(conn, "Only the room host can send state");
+            return;
+        }
+        if seq < 0 {
+            self.error(conn, "Malformed state message");
+            return;
+        }
+        let last_seq = self
+            .rooms
+            .get(&room_id)
+            .map(|room| room.last_state_seq)
+            .unwrap_or(0);
+        if seq <= last_seq {
+            self.error(conn, "State sequence must increase monotonically");
+            return;
+        }
+        self.rooms.get_mut(&room_id).unwrap().last_state_seq = seq;
+        let recipients: Vec<u64> = self
+            .rooms
+            .get(&room_id)
+            .map(|room| {
+                room.players
+                    .iter()
+                    .filter_map(|p| p.conn)
+                    .filter(|other| *other != conn)
+                    .collect()
+            })
+            .unwrap_or_default();
+        for recipient in recipients {
+            self.send_fast(recipient, bytes);
         }
     }
 
@@ -1441,7 +1492,14 @@ mod tests {
     fn drain_json(rx: &mut mpsc::Receiver<crate::codec::WireMessage>) -> Vec<Value> {
         let mut messages = Vec::new();
         while let Ok(crate::codec::WireMessage::Binary(bytes, _permit)) = rx.try_recv() {
-            messages.push(rmp_serde::from_slice(&bytes).unwrap());
+            if let Some((seq, payload)) = crate::codec::state_header(&bytes) {
+                let mut message: Value = rmp_serde::from_slice(payload).unwrap();
+                message["type"] = json!("state");
+                message["seq"] = json!(seq);
+                messages.push(message);
+            } else {
+                messages.push(rmp_serde::from_slice(&bytes).unwrap());
+            }
         }
         messages
     }
