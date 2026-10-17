@@ -4,7 +4,7 @@
  * Sample a stratified angle × power grid through the production `Shot` integrator with the TRUE
  * world (real planet masses, no AI belief): 500 aim cells, three trajectories each ("3x"), so
  * 1500 flights total. Hits on the own ship show up in danger red, hits on each enemy in that
- * enemy's colour; everything else (planet, lost, timeout, clash) is a dim dot. The chart renders
+ * enemy's colour; everything else (planet, lost, timeout) is a dim dot. The chart renders
  * on a canvas and can be downloaded as a PNG.
  */
 import { AIM, COLORS, HORIZON } from '../config';
@@ -24,7 +24,6 @@ const DEFAULT_FLIGHTS = ANGLE_BINS * POWER_BINS * FACTOR;
 const MIN_FLIGHTS = 150;
 const MAX_FLIGHTS = 15000;
 const MAX_PLANETS = 4;
-const FLIGHT_TIME = 60;
 
 const { plate, plateLift, line, bone, boneDim, sodium, danger } = COLORS;
 const html = document.documentElement;
@@ -63,6 +62,8 @@ const elements = {
   seed: document.createElement('input'),
   horizon: document.createElement('input'),
   collapses: document.createElement('select'),
+  shotTime: document.createElement('select'),
+  bounce: document.createElement('input'),
   ships: document.createElement('select'),
   flights: document.createElement('input'),
   minPower: document.createElement('input'),
@@ -91,7 +92,6 @@ const filterableOutcomes: readonly [FilterableOutcome, string][] = [
   ['timeout', 'timeout'],
   ['planet', 'planet hit'],
   ['hole', 'black-hole hit'],
-  ['clash', 'clash'],
 ];
 const excludedOutcomes = new Set<FilterableOutcome>();
 
@@ -115,7 +115,7 @@ function refreshShips(): void {
 
 // ————————————————————————————— Sampling —————————————————————————————
 
-let rules: ShotRules = { bounce: false, timeLimit: FLIGHT_TIME };
+let rules: ShotRules = { bounce: false, timeLimit: 20 };
 
 export interface Sample {
   angle: number;
@@ -197,14 +197,17 @@ function projectHorizonWorld(initial: World, collapses: number): World {
 /** Geometry and samples of the last drawn chart, so clicks can be mapped back to aims. */
 const chart = {
   samples: [] as Sample[],
-  left: 0,
-  top: 0,
-  width: 0,
-  height: 0,
-  /** Logical chart width in px (canvas may be displayed smaller). */
-  logicalWidth: 0,
-  displayedWidth: 0,
+  centerX: 0,
+  centerY: 0,
+  radius: 0,
 };
+
+/** Game angles use 0° to the right and positive angles counter-clockwise. */
+function polarPoint(angle: number, power: number, centerX: number, centerY: number, radius: number): { x: number; y: number } {
+  const radians = (angle * Math.PI) / 180;
+  const distance = (power / AIM.MAX_POWER) * radius;
+  return { x: centerX + Math.cos(radians) * distance, y: centerY - Math.sin(radians) * distance };
+}
 
 const tooltip = document.createElement('div');
 tooltip.style.cssText = `position: fixed; pointer-events: none; z-index: 10; display: none;
@@ -227,9 +230,8 @@ function pick(event: MouseEvent): void {
   // Nearest sample within a few pixels of the click.
   let best: { sample: Sample; dist: number } | null = null;
   for (const s of chart.samples) {
-    const x = chart.left + ((s.angle + 180) / 360) * chart.width;
-    const y = chart.top + chart.height - (s.power / 100) * chart.height;
-    const dist = Math.hypot(x - chartX, y - chartY);
+    const point = polarPoint(s.angle, s.power, chart.centerX, chart.centerY, chart.radius);
+    const dist = Math.hypot(point.x - chartX, point.y - chartY);
     if (dist <= 8 && (!best || dist < best.dist)) best = { sample: s, dist };
   }
   if (!best) {
@@ -262,63 +264,61 @@ function draw(samples: readonly Sample[]): void {
   ctx.scale(scale, scale);
 
 
-  // Plot area
-  const left = 64;
-  const top = 40;
-  const plotWidth = width - left - 32;
-  const plotHeight = height - top - 64;
+  // Polar plot: angle wraps around the circumference; power is radial distance.
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = 290;
 
   // Remember geometry so click-picking can map canvas pixels back to aims.
   chart.samples = [...samples];
-  chart.left = left;
-  chart.top = top;
-  chart.width = plotWidth;
-  chart.height = plotHeight;
-  chart.logicalWidth = width;
+  chart.centerX = centerX;
+  chart.centerY = centerY;
+  chart.radius = radius;
   ctx.fillStyle = plate;
-  ctx.fillRect(left, top, plotWidth, plotHeight);
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.fill();
 
-  // Grid + axes
+  // Concentric power rings and angular spokes.
   ctx.strokeStyle = line;
   ctx.globalAlpha = 0.25;
   ctx.lineWidth = 1;
-  for (let a = -180; a <= 180; a += 45) {
-    const x = left + ((a + 180) / 360) * plotWidth;
+  for (let p = 20; p <= AIM.MAX_POWER; p += 20) {
     ctx.beginPath();
-    ctx.moveTo(x, top);
-    ctx.lineTo(x, top + plotHeight);
+    ctx.arc(centerX, centerY, (p / AIM.MAX_POWER) * radius, 0, Math.PI * 2);
     ctx.stroke();
   }
-  for (let p = 0; p <= 100; p += 20) {
-    const y = top + plotHeight - (p / 100) * plotHeight;
+  for (let a = -180; a < 180; a += 45) {
+    const end = polarPoint(a, AIM.MAX_POWER, centerX, centerY, radius);
     ctx.beginPath();
-    ctx.moveTo(left, y);
-    ctx.lineTo(left + plotWidth, y);
+    ctx.moveTo(centerX, centerY);
+    ctx.lineTo(end.x, end.y);
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
 
+  // Angle labels sit just outside the rim; positive angles rise counter-clockwise.
   ctx.fillStyle = boneDim;
   ctx.font = '12px "B612 Mono", monospace';
-  ctx.textAlign = 'center';
-  for (let a = -180; a <= 180; a += 45) {
-    const x = left + ((a + 180) / 360) * plotWidth;
-    ctx.fillText(`${a}°`, x, top + plotHeight + 18);
+  for (let a = -180; a < 180; a += 45) {
+    const label = polarPoint(a, AIM.MAX_POWER, centerX, centerY, radius + 24);
+    const cosine = Math.cos((a * Math.PI) / 180);
+    const sine = Math.sin((a * Math.PI) / 180);
+    ctx.textAlign = Math.abs(cosine) < 0.25 ? 'center' : cosine > 0 ? 'left' : 'right';
+    ctx.textBaseline = Math.abs(sine) < 0.25 ? 'middle' : sine > 0 ? 'bottom' : 'top';
+    ctx.fillText(`${a}°`, label.x, label.y);
   }
+  // Power values label the rings along the left-hand radius.
   ctx.textAlign = 'right';
-  for (let p = 0; p <= 100; p += 20) {
-    const y = top + plotHeight - (p / 100) * plotHeight;
-    ctx.fillText(String(p), left - 8, y + 4);
+  ctx.textBaseline = 'middle';
+  for (let p = 20; p <= AIM.MAX_POWER; p += 20) {
+    const y = centerY - (p / AIM.MAX_POWER) * radius;
+    ctx.fillText(String(p), centerX - radius - 12, y);
   }
   ctx.textAlign = 'center';
   ctx.fillStyle = bone;
   ctx.font = '700 14px "B612", sans-serif';
-  ctx.fillText('Angle (°)', left + plotWidth / 2, height - 12);
-  ctx.save();
-  ctx.translate(16, top + plotHeight / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText('Power', 0, 0);
-  ctx.restore();
+  ctx.fillText('POWER → RADIUS  ·  ANGLE → DIRECTION  ·  POSITIVE COUNTER-CLOCKWISE', centerX, height - 12);
 
   // Dots: self-hit danger, per-enemy colour, everything else dim.
   for (const s of samples) {
@@ -328,8 +328,7 @@ function draw(samples: readonly Sample[]): void {
       color = s.end.ship === shooter ? danger : COLORS.players[s.end.ship % COLORS.players.length];
       size = s.end.ship === shooter ? 3.4 : 3;
     }
-    const x = left + ((s.angle + 180) / 360) * plotWidth;
-    const y = top + plotHeight - (s.power / 100) * plotHeight;
+    const { x, y } = polarPoint(s.angle, s.power, centerX, centerY, radius);
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(x, y, size, 0, Math.PI * 2);
@@ -339,7 +338,7 @@ function draw(samples: readonly Sample[]): void {
   ctx.fillStyle = bone;
   ctx.font = '700 14px "B612", sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText(`Aim predictor — truth physics, ${samples.length} trajectories`, left, 24);
+  ctx.fillText(`Aim predictor — truth physics, ${samples.length} trajectories`, 32, 24);
 }
 
 
@@ -450,7 +449,7 @@ function legend(): void {
     ...ships
       .map((_, i): [string, string] | null => (i === shooter ? null : [`hit ship ${i}`, COLORS.players[i % COLORS.players.length]]))
       .filter((e): e is [string, string] => e !== null),
-    ['planet / lost / timeout / clash', boneDim],
+    ['planet / lost / timeout', boneDim],
   ];
   elements.legend.replaceChildren(
     ...entries.map(([label, color]) => {
@@ -474,7 +473,7 @@ async function run(): Promise<void> {
   const minPower = Math.min(AIM.MAX_POWER - 1, Math.max(0, Math.round(Number(elements.minPower.value) || 0)));
   elements.minPower.value = String(minPower);
   horizonMode = elements.horizon.checked;
-  rules = { bounce: false, timeLimit: horizonMode ? HORIZON.SHOT_TIME : FLIGHT_TIME };
+  rules = { bounce: elements.bounce.checked, timeLimit: Number(elements.shotTime.value) };
   const generated = generateWorld(seed, { players: shipCount, maxPlanets: MAX_PLANETS, blackHole: horizonMode });
   const collapses = Math.max(0, Math.round(Number(elements.collapses.value) || 0));
   elements.collapses.value = String(collapses);
@@ -498,7 +497,7 @@ async function run(): Promise<void> {
   updateStats(samples);
   const seconds = ((performance.now() - started) / 1000).toFixed(1);
   const holeState = world.hole ? `, black hole r=${world.hole.radius.toFixed(1)} m=${Math.round(world.hole.mass)}` : '';
-  elements.status.textContent = `${samples.length} trajectories in ${seconds}s (seed ${seed}, ${horizonMode ? 'Event Horizon snapshot' : 'classic'}, ship ${from}, ${shipCount} ships, ${world.planets.length} planets${holeState}, ${rules.timeLimit}s flight limit, min power ${minPower})`;
+  elements.status.textContent = `${samples.length} trajectories in ${seconds}s (seed ${seed}, ${horizonMode ? 'Event Horizon snapshot' : 'classic'}, ship ${from}, ${shipCount} ships, ${world.planets.length} planets${holeState}, ${rules.timeLimit}s shot timeout, edges ${rules.bounce ? 'reflective' : 'open'}, min power ${minPower})`;
   elements.run.disabled = false;
   elements.png.disabled = false;
 }
@@ -562,6 +561,13 @@ elements.collapses.value = '0';
 elements.collapses.title = 'Select the number of completed Event Horizon collapses';
 elements.collapses.disabled = true;
 elements.collapses.addEventListener('change', run);
+elements.shotTime.replaceChildren(...[10, 20, 30, 60].map((seconds) => new Option(`${seconds}s`, String(seconds))));
+elements.shotTime.value = '20';
+elements.shotTime.title = 'Seconds before a shot fizzles out';
+elements.shotTime.addEventListener('change', run);
+elements.bounce.type = 'checkbox';
+elements.bounce.title = 'Reflect shots off the field edges';
+elements.bounce.addEventListener('change', run);
 elements.ships.title = 'Ships in the world';
 elements.ships.replaceChildren(...[2, 3, 4, 5, 6].map((n) => new Option(String(n), String(n))));
 elements.ships.value = '2';
@@ -606,6 +612,12 @@ bar.append(
     return wrapper;
   })(),
   label('BH size'), elements.collapses,
+  label('timeout'), elements.shotTime,
+  (() => {
+    const wrapper = document.createElement('label');
+    wrapper.append(elements.bounce, document.createTextNode('Reflective edges'));
+    return wrapper;
+  })(),
   label('ships'), elements.ships,
   label('flights'), elements.flights,
   label('min power'), elements.minPower,
