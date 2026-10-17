@@ -212,8 +212,9 @@ export class NetworkClient {
       throw new Error('Cannot send: WebSocket is not connected');
     }
     const bytes = packMessage(message);
-    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    socket.send(buffer);
+    // msgpackr returns a Uint8Array backed by an ArrayBuffer; the assertion narrows
+    // its broad library type without copying the encoded frame.
+    socket.send(bytes as Uint8Array<ArrayBuffer>);
   }
 
   close(): void {
