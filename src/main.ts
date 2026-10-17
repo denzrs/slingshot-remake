@@ -776,8 +776,8 @@ async function boot(): Promise<void> {
   // Canvas text needs the web fonts loaded before the first draw.
   const fonts = [`800 32px ${FONTS.display}`, `400 16px ${FONTS.body}`, `700 16px ${FONTS.body}`, `400 16px ${FONTS.mono}`, `700 16px ${FONTS.mono}`];
   await Promise.race([Promise.all(fonts.map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 1500))]);
-  // An invite link opens the lobby by itself, with the room already in the join field: one "Join room" and the guest is in.
-  if (readInvite(location.search)) app.openLobby();
+  // An invite link opens the lobby by itself and joins the named room after connecting.
+  if (readInvite(location.search, location.hash)) app.openLobby();
   else app.toTitle();
   requestAnimationFrame(frame);
 }

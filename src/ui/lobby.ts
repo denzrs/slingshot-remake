@@ -2,7 +2,7 @@ import { AVATARS, type Avatar } from '../avatars';
 import { COLORS, MAX_PLAYERS, TEAMS } from '../config';
 import { teamName } from '../game';
 import { t } from '../i18n';
-import { inviteLink, readInvite, withoutInvite } from '../invite';
+import { canCopyInvite, inviteJoinAttempt, inviteLink, readInvite, shouldAutoConnectInvite, withoutInvite, withoutInvitePassword } from '../invite';
 import { loadLobbyPrefs, saveLobbyPrefs } from '../lobbyPrefs';
 import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multiplayer';
 import type { LobbyRoom, NetworkCpuLevel, NetworkGameMode, RoomInfo, RoomMode, RoomRules } from '../net';
@@ -162,8 +162,14 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const configuredServer = Boolean(import.meta.env.VITE_MULTIPLAYER_SERVER);
   const hosted = configuredServer && isSecureRelay(DEFAULT_SERVER);
   /** The invite this page was opened with; it stays until the room is joined or the lobby is left. */
-  const invited = readInvite(location.search);
-  let inviteNote: string | null = invited ? t('multiplayer.invited', { code: invited.roomId }) : null;
+  const invited = readInvite(location.search, location.hash);
+  // Remove the secret from history immediately; keep the room and relay until the invite is consumed.
+  if (invited?.password) history.replaceState(null, '', withoutInvitePassword(location.href));
+  let inviteNote: string | null = invited
+    ? invited.server && invited.server !== prefs.server
+      ? t('multiplayer.inviteServerConfirm', { server: invited.server })
+      : t('multiplayer.invited', { code: invited.roomId })
+    : null;
   /** The invited guest is joined to the room on arrival — the link is all they were given. */
   let invitePending = !!invited;
   /** The invite is still in the address bar; the code, the relay and the password have been read out of it. */
@@ -527,6 +533,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     roomTitle.replaceChildren(roomIcon(room.symbol, room.color), `${t('multiplayer.roomNumber', { n: room.number })} · ${modeName(room.gameMode)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`);
     roomCode.textContent = room.id;
     privateTag.hidden = room.visibility !== 'private';
+    copyInvite.hidden = !canCopyInvite(room.locked, you.host);
     copyPassword.hidden = !(you.host && room.locked && hostPassword);
     const teamGame = room.mode === 'team';
     const inTeam = (k: number) => room.players.filter((p) => p.team === k).length;
@@ -651,18 +658,16 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     }
     // Whoever followed an invite came here to get into that room, so it is joined for them — no second click.
     // Only a missing player name stops it: then the lobby asks for one and shows the join row as usual.
-    if (invited && invitePending && browsing) {
-      invitePending = false;
-      const name = playerName.value.trim();
-      if (name) {
-        prefs.name = name;
-        save();
-        session.joinRoom(invited.roomId, name, codePassword.value || undefined, prefs.avatar);
-        inviteNote = null;
-      } else {
-        inviteNote = t('multiplayer.nameRequired');
-        playerName.focus();
-      }
+    const inviteAttempt = inviteJoinAttempt(invited, invitePending, browsing, playerName.value);
+    invitePending = inviteAttempt.pending;
+    if (inviteAttempt.kind === 'join') {
+      prefs.name = inviteAttempt.name!;
+      save();
+      session.joinRoom(inviteAttempt.roomId!, inviteAttempt.name!, inviteAttempt.password, prefs.avatar);
+      inviteNote = null;
+    } else if (inviteAttempt.kind === 'name-required') {
+      inviteNote = t('multiplayer.nameRequired');
+      playerName.focus();
     }
     // The hosted build says nothing about connecting or being connected; its connect card returns only when that failed.
     const retry = hosted && !connected && !connecting && (connectFailed || session.notice !== null);
@@ -759,10 +764,10 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
         render();
       });
       render();
-      // Came back to a lobby that worked before: reconnect without making the player press anything. An invite
-      // counts as that too — it names the room to join, so the guest only has to press "Join".
+      // Reconnect to a previously used relay. A different relay named by an invite requires an explicit click.
       // Deferred until the screen is in the DOM — the session's updates only reach a mounted screen.
-      if (!session.connected && !session.connecting && !session.room && (configuredServer || prefs.autoConnect || inviteNote)) setTimeout(() => void connect(true), 0);
+      const mayAutoConnect = shouldAutoConnectInvite(invited, prefs.server) && (prefs.autoConnect || !!invited);
+      if (!session.connected && !session.connecting && !session.room && (configuredServer || mayAutoConnect)) setTimeout(() => void connect(true), 0);
       return root;
     },
     items: [],

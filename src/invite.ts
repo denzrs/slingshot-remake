@@ -1,10 +1,10 @@
 /**
  * Invite links: instead of passing a room code around, the host copies one link that opens the client
  * and puts the guest straight into the room. The link carries the room code and, for a room the host
- * locked, its password — plus the relay the room runs on when the build has none of its own.
+ * locked, its password in the URL fragment — plus the relay the room runs on when the build has none of its own.
  */
 
-/** Where the room code, the password and the relay ride in the URL. */
+/** Where the room code and relay ride in the URL. */
 const ROOM_PARAM = 'join';
 const PASSWORD_PARAM = 'pw';
 const SERVER_PARAM = 'server';
@@ -31,17 +31,22 @@ export function inviteLink(client: string, roomId: string, server?: string, pass
   const url = new URL(client);
   url.searchParams.set(ROOM_PARAM, roomId);
   if (server && RELAY_ADDRESS.test(server)) url.searchParams.set(SERVER_PARAM, server);
-  if (password) url.searchParams.set(PASSWORD_PARAM, password);
+  if (password) {
+    const fragment = new URLSearchParams(url.hash.slice(1));
+    fragment.set(PASSWORD_PARAM, password);
+    url.hash = fragment.toString();
+  }
   return url.toString();
 }
 
 /** The invite a page was opened with, or null for a plain visit. */
-export function readInvite(search: string): Invite | null {
+export function readInvite(search: string, hash = ''): Invite | null {
   const params = new URLSearchParams(search);
   const roomId = params.get(ROOM_PARAM)?.trim() ?? '';
   if (!ROOM_CODE.test(roomId)) return null;
   const server = params.get(SERVER_PARAM)?.trim() ?? '';
-  const password = params.get(PASSWORD_PARAM) ?? '';
+  // Accept the old query parameter for links already shared, but new links keep secrets in the fragment.
+  const password = new URLSearchParams(hash.replace(/^#/, '')).get(PASSWORD_PARAM) ?? params.get(PASSWORD_PARAM) ?? '';
   return {
     roomId,
     ...(RELAY_ADDRESS.test(server) ? { server } : {}),
@@ -49,9 +54,44 @@ export function readInvite(search: string): Invite | null {
   };
 }
 
+/** Whether an invite may connect on arrival without switching the player's saved relay. */
+export function shouldAutoConnectInvite(invite: Invite | null, savedServer: string): boolean {
+  return !invite || !invite.server || invite.server === savedServer;
+}
+
+/** Guests in a locked room don't know its password, so only its host can copy a join-ready link. */
+export function canCopyInvite(roomLocked: boolean, isHost: boolean): boolean {
+  return !roomLocked || isHost;
+}
+
+/** The auto-join decision made once the invite's relay is connected. */
+export function inviteJoinAttempt(
+  invite: Invite | null,
+  pending: boolean,
+  connected: boolean,
+  playerName: string,
+): { kind: 'wait' | 'name-required' | 'join'; pending: boolean; roomId?: string; name?: string; password?: string } {
+  if (!invite || !pending || !connected) return { kind: 'wait', pending };
+  const name = playerName.trim();
+  if (!name) return { kind: 'name-required', pending: false };
+  return { kind: 'join', pending: false, roomId: invite.roomId, name, password: invite.password };
+}
+
+/** Remove just the invite secret after reading it, leaving a failed invite available for retry. */
+export function withoutInvitePassword(href: string): string {
+  const url = new URL(href);
+  url.searchParams.delete(PASSWORD_PARAM);
+  const fragment = new URLSearchParams(url.hash.slice(1));
+  if (fragment.has(PASSWORD_PARAM)) {
+    fragment.delete(PASSWORD_PARAM);
+    url.hash = fragment.size ? fragment.toString() : '';
+  }
+  return url.toString();
+}
+
 /** The same URL with the invite parameters taken out, so a reload doesn't bring the invitation up again. */
 export function withoutInvite(href: string): string {
-  const url = new URL(href);
-  for (const param of [ROOM_PARAM, PASSWORD_PARAM, SERVER_PARAM]) url.searchParams.delete(param);
+  const url = new URL(withoutInvitePassword(href));
+  for (const param of [ROOM_PARAM, SERVER_PARAM]) url.searchParams.delete(param);
   return url.toString();
 }
