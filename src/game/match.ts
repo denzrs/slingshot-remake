@@ -276,7 +276,8 @@ export abstract class Match {
   /** Who hit each player last — CPUs with a grudge aim back at them. */
   private lastHitBy = new Map<number, number>();
   private flightPending = false;
-  private flightDoneAt: number | null = null;
+  /** Phase time when the current volley finished, replicated so online guests keep the same post-flight delay. */
+  protected flightDoneAt: number | null = null;
   /** What the volley in the air has destroyed so far — the oracle's verdict is read from it. */
   private oracleKills: { killer: number; victim: number; self: boolean; friendly: boolean }[] = [];
   private disposed = false;

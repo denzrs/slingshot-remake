@@ -31,6 +31,8 @@ export interface ClassicSnapshot {
   scoreHistory: number[][];
   /** Simultaneous shots: seconds left to aim. */
   planClock: number;
+  /** Phase time when a finished volley began waiting for its post-flight delay. */
+  flightDoneAt?: number | null;
   oracle: OracleSnapshot;
 }
 
@@ -66,6 +68,7 @@ export class ClassicMatch extends Match {
       matchStats: this.matchStats,
       scoreHistory: this.scoreHistory,
       planClock: this.planClock,
+      flightDoneAt: this.flightDoneAt,
       oracle: this.oracle.snapshot(),
     };
   }
@@ -103,6 +106,7 @@ export class ClassicMatch extends Match {
       this.volley = volley;
     }
     this.restarted();
+    this.flightDoneAt = snapshot.flightDoneAt ?? null;
   }
 
   /** Team mode: which team shoots next, and per team the member who shot last. */
