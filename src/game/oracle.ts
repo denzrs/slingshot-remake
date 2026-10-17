@@ -172,8 +172,8 @@ export class Oracle {
   private serial = 0;
   /** Who tipped what on the open question: the host's book. Guests only ever hold the faces-down copy. */
   private tips = new Map<number, number>();
-  /** Who tipped what on the round question, and how many ships were still in at that moment (the more, the better the odds against). */
-  private roundTips = new Map<number, { pick: number; alive: number }>();
+  /** Who tipped what on the round question, and how many sides — lone ships or whole teams — were still in at that moment (the more, the better the odds against). */
+  private roundTips = new Map<number, { pick: number; sides: number }>();
   /** What every bettor has staked on the round question. The stake is out of the player's score until the round is over. */
   private roundStakes = new Map<number, number>();
   /** [hit, miss] on the open shot question. */
@@ -273,10 +273,15 @@ export class Oracle {
     return pick === TIP_NOBODY ? q.draw : q.choices.includes(pick) && alive.includes(pick);
   }
 
-  /** Records a tip on the round question, replacing the player's earlier one; what it pays depends on how many ships are in now. */
-  betRound(player: number, pick: number, alive: readonly number[]): boolean {
+  /**
+   * Records a tip on the round question, replacing the player's earlier one — until a stake rides on it.
+   * What it pays depends on how many sides are in now: ships in a free for all, teams in a team match
+   * (`sides`; the ships still in when it is left out).
+   */
+  betRound(player: number, pick: number, alive: readonly number[], sides = alive.length): boolean {
     if (!this.acceptsRound(pick, alive)) return false;
-    this.roundTips.set(player, { pick, alive: alive.length });
+    if (this.roundStakes.has(player)) return this.roundTips.get(player)?.pick === pick;
+    this.roundTips.set(player, { pick, sides });
     return true;
   }
 
@@ -313,9 +318,9 @@ export class Oracle {
   resolveRound(winners: number[], round: number, at: number): void {
     const q = this.roundQuestion;
     if (!q) return;
-    const entries: Entry[] = [...this.roundTips].map(([player, { pick, alive }]) => {
+    const entries: Entry[] = [...this.roundTips].map(([player, { pick, sides }]) => {
       const right = pick === TIP_NOBODY ? winners.length === 0 : winners.includes(pick);
-      const base = pick === TIP_NOBODY ? ORACLE.DRAW : ORACLE.WINNER * Math.max(1, alive - 1);
+      const base = pick === TIP_NOBODY ? ORACLE.DRAW : ORACLE.WINNER * Math.max(1, sides - 1);
       return { player, pick, right, base, shot: false };
     });
     const settled = this.settle(entries);
@@ -329,17 +334,31 @@ export class Oracle {
   /**
    * The stakes of the round make one pot; whoever tipped right shares it in proportion to their stakes,
    * the rest lose theirs. With nobody right, or only right tips, there is nothing to share and everybody
-   * gets their stake back. Pays in steps of `STAKE_STEP`; what is left over stays in the pot.
+   * gets their stake back. Pays in steps of `STAKE_STEP`; the steps that do not divide evenly go, one
+   * each, to the largest shares first — the whole pot is paid out, none of it is lost on the way.
    */
   private shareThePot(tips: OracleTip[]): void {
     const pot = this.pot;
-    const right = tips.filter((tip) => tip.right && this.stakeOf(tip.player) > 0).reduce((sum, tip) => sum + this.stakeOf(tip.player), 0);
+    const winners = tips.filter((tip) => tip.right && this.stakeOf(tip.player) > 0);
+    const right = winners.reduce((sum, tip) => sum + this.stakeOf(tip.player), 0);
     const refund = right === 0 || right === pot;
+    const steps = pot / ORACLE.STAKE_STEP;
+    // Whole steps of the pot per winner, and what is left of each share after them.
+    const shares = winners.map((tip) => {
+      const exact = (steps * this.stakeOf(tip.player)) / right;
+      return { tip, whole: Math.floor(exact), rest: exact - Math.floor(exact) };
+    });
+    let left = steps - shares.reduce((sum, share) => sum + share.whole, 0);
+    for (const share of [...shares].sort((a, b) => b.rest - a.rest)) {
+      if (left <= 0) break;
+      share.whole++;
+      left--;
+    }
     for (const tip of tips) {
       const stake = this.stakeOf(tip.player);
       if (!stake) continue;
       tip.stake = stake;
-      tip.payout = refund ? stake : tip.right ? Math.floor((pot * stake) / right / ORACLE.STAKE_STEP) * ORACLE.STAKE_STEP : 0;
+      tip.payout = refund ? stake : (shares.find((share) => share.tip === tip)?.whole ?? 0) * ORACLE.STAKE_STEP;
     }
   }
 
@@ -455,7 +474,7 @@ export class Oracle {
     this.heard = snapshot.mood ?? [0, 0];
     this.roundQuestion = snapshot.round ? { ...snapshot.round, choices: [...snapshot.round.choices] } : null;
     this.roundResult = snapshot.roundResult ?? null;
-    this.roundTips = new Map((snapshot.roundTips ?? []).map(([player, pick]) => [player, { pick, alive: 0 }]));
+    this.roundTips = new Map((snapshot.roundTips ?? []).map(([player, pick]) => [player, { pick, sides: 0 }]));
     this.roundStakes = new Map(snapshot.roundStakes ?? []);
   }
 }

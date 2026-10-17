@@ -325,8 +325,8 @@ describe('betting points on the round', () => {
     expect(oracle.setStake(2, 100)).toBe(true);
     expect(oracle.setStake(2, 200)).toBe(false);
     expect(oracle.stakeOf(2)).toBe(100);
-    // Changing the tip does not touch the stake.
-    oracle.betRound(2, 1, [0, 1]);
+    // The tip is kept once the stake rides on it.
+    expect(oracle.betRound(2, 1, [0, 1])).toBe(false);
     expect(oracle.stakeOf(2)).toBe(100);
     expect(oracle.pot).toBe(100);
   });
@@ -361,7 +361,7 @@ describe('betting points on the round', () => {
     expect(alone.roundResult!.tips[1].stake).toBeUndefined();
   });
 
-  it('pays in steps of ten and leaves the rest in the pot', () => {
+  it('pays in steps of ten and hands the odd steps to the largest shares, so the whole pot is paid out', () => {
     const oracle = bets([
       { player: 2, pick: 0, stake: 20 },
       { player: 3, pick: 0, stake: 20 },
@@ -373,8 +373,42 @@ describe('betting points on the round', () => {
     expect(oracle.roundResult!.tips.filter((t) => t.right).map((t) => t.payout)).toEqual([30, 30, 30]);
     const odd = bets([{ player: 2, pick: 0, stake: 20 }, { player: 3, pick: 0, stake: 30 }, { player: 4, pick: 1, stake: 20 }]);
     odd.resolveRound([0], 1, 5);
-    // Pot 70 over 20:30 → 28 and 42 → 20 and 40.
-    expect(odd.roundResult!.tips.filter((t) => t.right).map((t) => t.payout)).toEqual([20, 40]);
+    // Pot 70 over 20:30 → 28 and 42 → 20 and 40 in whole steps, and the step left over goes to the larger remainder: 30 and 40.
+    expect(odd.roundResult!.tips.filter((t) => t.right).map((t) => t.payout)).toEqual([30, 40]);
+
+    // Whatever the stakes, the winners get exactly what was in the pot.
+    const uneven = bets([
+      { player: 2, pick: 0, stake: 20 },
+      { player: 3, pick: 0, stake: 20 },
+      { player: 4, pick: 0, stake: 20 },
+      { player: 5, pick: 1, stake: 20 },
+    ]);
+    uneven.resolveRound([0], 1, 5);
+    const paid = uneven.roundResult!.tips.reduce((sum, t) => sum + (t.payout ?? 0), 0);
+    expect(paid).toBe(80);
+  });
+
+  it('keeps the tip once points ride on it, though it may be repeated', () => {
+    const oracle = bets([{ player: 2, pick: 0, stake: 100 }]);
+    expect(oracle.betRound(2, 1, [0, 1])).toBe(false);
+    expect(oracle.betRound(2, 0, [0, 1])).toBe(true);
+    // Without a stake the tip is still free to change.
+    oracle.betRound(3, 0, [0, 1]);
+    expect(oracle.betRound(3, 1, [0, 1])).toBe(true);
+    oracle.resolveRound([0], 1, 5);
+    expect(oracle.roundResult!.tips).toMatchObject([{ player: 2, pick: 0, right: true, stake: 100, payout: 100 }, { player: 3, pick: 1, right: false }]);
+  });
+
+  it('counts the sides in, not the ships, for the odds: a team match has two', () => {
+    const oracle = new Oracle();
+    oracle.reset(4);
+    oracle.openRound([0, 1, 2, 3], false);
+    // Four ships in, but two teams: the same odds as a duel.
+    oracle.betRound(2, 0, [0, 1, 2, 3], 2);
+    // Four ships in a free for all: three to beat.
+    oracle.betRound(3, 1, [0, 1, 2, 3]);
+    oracle.resolveRound([0, 1], 1, 5);
+    expect(oracle.roundResult!.tips).toMatchObject([{ player: 2, right: true, points: 100 }, { player: 3, right: true, points: 300 }]);
   });
 
   it('shares the stakes on the wire, without telling what was tipped', () => {
@@ -861,6 +895,46 @@ describe('the oracle in a match', () => {
     expect(match.players[2].score).toBe(before[2] + 450);
     expect(match.scoreHistory.at(-1)![2]).toBe(match.players[2].score);
     expect(match.oracle.pot).toBe(0);
+  });
+
+  it('pays the pot of a team match to the ghosts who tipped the winning team, whichever ship of it they named', () => {
+    const match = table(4, { teams: [0, 0, 1, 1], betting: true });
+    match.viewer = 2;
+    place(match, [[100, 300], [100, 600], [800, 300], [800, 600]]);
+    // Team 0 is A and B, team 1 is C and D. A shoots C: three ships but two teams are in.
+    aimAt(match, 0, 2);
+    match.commitPlayer(0);
+    run(match, () => match.phase === 'aiming' && match.current === 3);
+    expect(match.sidesIn).toBe(2);
+    expect(match.oracle.roundQuestion).toMatchObject({ kind: 'winner', choices: [0, 1, 3] });
+    // C is out with 400 and puts 200 on B: team 0 wins, whoever of it is named.
+    match.players[2].score = 400;
+    expect(match.placeBet(2, 1, true, 200)).toBe(true);
+
+    // D shoots A, who joins the ghosts and puts 200 of 400 on D — for the team that is about to lose.
+    aimAt(match, 3, 0);
+    match.commitPlayer(3);
+    run(match, () => match.phase === 'aiming' && match.current === 1);
+    match.viewer = 0;
+    match.players[0].score = 400;
+    expect(match.placeBet(0, 3, true, 200)).toBe(true);
+    expect(match.oracle.pot).toBe(400);
+    const before = match.players.map((p) => p.score);
+
+    // B shoots D: team 0 wins the round, the fallen A and C included.
+    aimAt(match, 1, 3);
+    match.commitPlayer(1);
+    run(match, () => match.phase === 'roundOver');
+    expect(match.oracle.roundResult).toMatchObject({ winners: [0, 1] });
+    expect(match.oracle.roundResult!.tips).toMatchObject([
+      { player: 2, pick: 1, right: true, points: 100, stake: 200, payout: 400 },
+      { player: 0, pick: 3, right: false, points: 0, stake: 200, payout: 0 },
+    ]);
+    // C gets the pot, A loses the stake — and both teams' scores show it.
+    expect(match.players[2].score).toBe(before[2] + 400);
+    expect(match.players[0].score).toBe(before[0] + match.summary!.bonus);
+    expect(match.oracle.pot).toBe(0);
+    expect(match.scoreHistory.at(-1)).toEqual(match.players.map((p) => p.score));
   });
 
   it('gives the stakes back when a round is cut short', () => {

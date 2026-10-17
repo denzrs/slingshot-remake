@@ -431,7 +431,7 @@ export abstract class Match {
    */
   placeBet(id: number, pick: number, round = false, stake = 0): boolean {
     if (round) {
-      if (!this.canBetRound(id) || !this.oracle.betRound(id, pick, this.alive.map((p) => p.id))) return false;
+      if (!this.canBetRound(id) || !this.oracle.betRound(id, pick, this.alive.map((p) => p.id), this.sidesIn)) return false;
       if (id === this.viewer) this.oracle.roundMine = { id: this.oracle.roundQuestion!.id, pick };
       if (stake > 0) this.placeStake(id, stake);
       return true;
@@ -575,7 +575,12 @@ export abstract class Match {
 
   /** The round is decided once at most one side — a team, or a lone player — has ships left. */
   get decided(): boolean {
-    return new Set(this.alive.map((p) => (p.team === null ? `p${p.id}` : `t${p.team}`))).size <= 1;
+    return this.sidesIn <= 1;
+  }
+
+  /** How many sides still have ships in the round: lone players in a free for all, whole teams in a team match. */
+  get sidesIn(): number {
+    return new Set(this.alive.map((p) => (p.team === null ? `p${p.id}` : `t${p.team}`))).size;
   }
 
   scene(): Scene {
