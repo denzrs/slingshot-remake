@@ -3,6 +3,7 @@ import type { GameEvent } from './game';
 import type { StatePatch } from './netsync';
 import type { RoomColor, RoomLook, RoomSymbol } from './roomLook';
 import type { Settings } from './settings';
+import { packMessage, unpackMessage } from './messagepack';
 
 export type RoomMode = 'ffa' | 'team';
 export type NetworkGameMode = 'classic' | 'horizon';
@@ -144,6 +145,7 @@ export class NetworkClient {
     let socket: WebSocket;
     try {
       socket = new WebSocket(this.url);
+      socket.binaryType = 'arraybuffer';
     } catch (error) {
       return Promise.reject(error instanceof Error ? error : new Error(String(error)));
     }
@@ -209,7 +211,10 @@ export class NetworkClient {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       throw new Error('Cannot send: WebSocket is not connected');
     }
-    socket.send(JSON.stringify(message));
+    const bytes = packMessage(message);
+    // msgpackr returns a Uint8Array backed by an ArrayBuffer; the assertion narrows
+    // its broad library type without copying the encoded frame.
+    socket.send(bytes as Uint8Array<ArrayBuffer>);
   }
 
   close(): void {
@@ -225,15 +230,17 @@ export class NetworkClient {
   private receive(data: unknown): void {
     let parsed: unknown;
     try {
-      if (typeof data !== 'string') throw new Error('Expected text JSON');
-      parsed = JSON.parse(data);
+      if (data instanceof ArrayBuffer) parsed = unpackMessage(new Uint8Array(data));
+      else if (ArrayBuffer.isView(data)) parsed = unpackMessage(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+      else if (data instanceof Blob) throw new Error('Expected binary MessagePack');
+      else throw new Error('Expected binary MessagePack');
     } catch {
-      this.deliver({ type: 'error', message: 'Received malformed response from the server (expected a JSON object).' });
+      this.deliver({ type: 'error', message: 'Received malformed response from the server (expected a MessagePack object).' });
       return;
     }
 
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      this.deliver({ type: 'error', message: 'Received malformed response from the server (expected a JSON object).' });
+      this.deliver({ type: 'error', message: 'Received malformed response from the server (expected a MessagePack object).' });
       return;
     }
     this.deliver(parsed as ServerMessage);
