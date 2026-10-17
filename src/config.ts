@@ -72,6 +72,8 @@ export const HORIZON = {
   SIMULTANEOUS_CLOCK: 15,
   SHOT_TIME: 10,
   COLLAPSE_TIME: 1.5,
+  /** Seconds the finished volley stays on screen before a killcam cuts in, so the last hit lands first. */
+  KILLCAM_DELAY: 1,
 } as const;
 
 /** The oracle: eliminated players tip on what the others' shots do. A side standing — it never counts towards winning. */
@@ -102,6 +104,8 @@ export const ORACLE = {
   STAKE_SHARE: 0.5,
   STAKE_MIN: 20,
   STAKE_STEP: 10,
+  /** Seconds a question stays open before a shot or salvo may fly, so ghosts have time to tip and bet. */
+  MIN_BET_TIME: 3,
 } as const;
 
 /**

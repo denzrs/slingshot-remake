@@ -441,6 +441,49 @@ describe('skipping the killcam', () => {
     m.voteSkip(1);
     expect(m.phase).not.toBe('killcam');
   });
+
+  it('pauses for about a second after the last projectile lands before the killcam starts', () => {
+    const seats: Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
+    const m = createMatch('horizon', { ...DEFAULT_SETTINGS, rounds: 1, seats }, { seats, simultaneous: true }) as HorizonMatch;
+    m.world.planets = [];
+    Object.assign(m.world.ships[0], { x: 100, y: 400 });
+    Object.assign(m.world.ships[1], { x: 300, y: 400 });
+    m.setPlayerAim(0, 0, 50);
+    m.commitPlayer(0);
+    m.setPlayerAim(1, 0, 50);
+    m.commitPlayer(1);
+    for (let t = 0; t < 2 && m.phase !== 'flying'; t += 1 / 30) m.update(1 / 30);
+    for (let t = 0; t < 5 && !m.volley?.done; t += 1 / 30) m.update(1 / 30);
+    expect(m.volley?.done).toBe(true);
+    expect(m.phase).toBe('flying');
+    m.update(0.8);
+    expect(m.phase).toBe('flying');
+    m.update(0.3);
+    expect(m.phase).toBe('killcam');
+  });
+
+  it('preserves the remaining killcam delay when restoring a snapshot', () => {
+    const seats: Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
+    const settings = { ...DEFAULT_SETTINGS, rounds: 1, seats };
+    const m = createMatch('horizon', settings, { seats, simultaneous: true }) as HorizonMatch;
+    m.world.planets = [];
+    Object.assign(m.world.ships[0], { x: 100, y: 400 });
+    Object.assign(m.world.ships[1], { x: 300, y: 400 });
+    m.setPlayerAim(0, 0, 50);
+    m.commitPlayer(0);
+    m.setPlayerAim(1, 0, 50);
+    m.commitPlayer(1);
+    for (let t = 0; t < 2 && m.phase !== 'flying'; t += 1 / 30) m.update(1 / 30);
+    for (let t = 0; t < 5 && !m.volley?.done; t += 1 / 30) m.update(1 / 30);
+    expect(m.volley?.done).toBe(true);
+
+    m.update(0.8);
+    const guest = createMatch('horizon', settings, { seats, simultaneous: true }) as HorizonMatch;
+    guest.restoreSnapshot(JSON.parse(JSON.stringify(m.snapshot())));
+    guest.update(0.3);
+
+    expect(guest.phase).toBe('killcam');
+  });
 });
 
 describe('neighbour grace period', () => {

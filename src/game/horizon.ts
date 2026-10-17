@@ -31,6 +31,8 @@ export interface HorizonSnapshot {
   world: World;
   trails: Match['trails'];
   volley: VolleySnapshot | null;
+  /** Phase time when a finished volley began waiting for its post-flight delay. */
+  flightDoneAt?: number | null;
   killFeed: Match['killFeed'];
   lastKill: Match['lastKill'];
   summary: Match['summary'];
@@ -122,7 +124,7 @@ export class HorizonMatch extends Match {
       phase: this.phase, phaseTime: this.phaseTime, clock: this.clock, round: this.round,
       totalRounds: this.totalRounds, hiddenPlanets: this.hiddenPlanets, teamMode: this.teamMode,
       players: this.players.map((player) => ({ ...player })), current: this.current, world: this.world,
-      trails: this.trails, volley: this.volley?.snapshot() ?? null, killFeed: this.killFeed,
+      trails: this.trails, volley: this.volley?.snapshot() ?? null, flightDoneAt: this.flightDoneAt, killFeed: this.killFeed,
       lastKill: this.lastKill, summary: this.summary, notice: this.notice, settings: this.settings,
       roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory,
       volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
@@ -168,6 +170,7 @@ export class HorizonMatch extends Match {
       };
     }
     this.restarted();
+    this.flightDoneAt = s.flightDoneAt ?? null;
   }
 
   /** Everyone who hasn't locked in may aim when all aim at once; otherwise only the player on turn. */
@@ -196,6 +199,10 @@ export class HorizonMatch extends Match {
 
   get salvo(): boolean {
     return true;
+  }
+
+  protected get afterVolleyDelay(): number {
+    return this.volleyKills.length ? HORIZON.KILLCAM_DELAY : 0;
   }
 
   protected get survivorBonus(): number {
@@ -323,7 +330,7 @@ export class HorizonMatch extends Match {
       this.clock_ -= dt;
       if (this.clock_ <= 0) this.commit();
     }
-    if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6) this.launchVolley();
+    if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6 && this.betWindowDone) this.launchVolley();
   }
 
   private launchVolley(): void {

@@ -249,8 +249,8 @@ export class Renderer {
   private drawTrails(match: Match, scene: Scene): void {
     const { ctx } = this;
     const rank = new Map<number, number>();
-    // While a whole volley is in the air, last volley's trails step back so the live ones read clearly.
-    const firstRank = (scene.volley?.shots.length ?? 0) > 1 ? 1 : 0;
+    // In salvo modes, and while aiming, previous trails step back as dashed lines so the next or live shots read clearly.
+    const firstRank = match.salvo || match.phase === 'aiming' ? 1 : 0;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     for (let i = scene.trails.length - 1; i >= 0; i--) {
