@@ -14,10 +14,11 @@ describe('state wire envelope', () => {
     expect(unpackWireMessage(frame)).toEqual(state);
   });
 
-  it('continues to accept legacy MessagePack control and state messages', () => {
+  it('continues to accept legacy MessagePack control messages', () => {
     const message = { type: 'state', seq: 3, patch: {}, events: [] };
-    expect(unpackWireMessage(packMessage(message))).toEqual(message);
     expect(unpackWireMessage(packWireMessage({ type: 'lobby' }))).toEqual({ type: 'lobby' });
+    expect(unpackWireMessage(packMessage({ type: 'lobby' }))).toEqual({ type: 'lobby' });
+    expect(() => unpackWireMessage(packMessage(message))).toThrow('State messages require a versioned envelope');
   });
 
   it('rejects an unsupported envelope version', () => {
@@ -41,9 +42,23 @@ describe('state wire envelope', () => {
 
   it('rejects missing state fields and invalid sequence numbers on both wire forms', () => {
     expect(() => packWireMessage({ type: 'state', seq: -1, patch: {}, events: [] })).toThrow('Invalid state sequence');
-    expect(() => unpackWireMessage(packMessage({ type: 'state', seq: 1.5, patch: {}, events: [] }))).toThrow('Invalid state sequence');
-    expect(() => unpackWireMessage(packMessage({ type: 'state', seq: 1, patch: [], events: [] }))).toThrow('Invalid state patch');
-    expect(() => unpackWireMessage(packMessage({ type: 'state', seq: 1, patch: {}, events: {} }))).toThrow('Invalid state events');
+    const invalidSeq = packWireMessage({ type: 'state', seq: 1, patch: {}, events: [] });
+    new DataView(invalidSeq.buffer).setBigUint64(6, BigInt(Number.MAX_SAFE_INTEGER) + 1n, false);
+    expect(() => unpackWireMessage(invalidSeq)).toThrow('Invalid state sequence');
+    expect(() => packWireMessage({ type: 'state', seq: 1, patch: [], events: [] })).toThrow('Invalid state patch');
+    expect(() => packWireMessage({ type: 'state', seq: 1, patch: {}, events: {} })).toThrow('Invalid state events');
+  });
+
+  it('rejects malformed game events in state frames', () => {
+    expect(() => packWireMessage({
+      type: 'state', seq: 1, patch: {}, events: [{ type: 'turn', player: -1 }],
+    })).toThrow('Invalid state events');
+    const malformedPayload = packMessage({ patch: {}, events: [{ type: 'unknown' }] });
+    const frame = new Uint8Array(14 + malformedPayload.length);
+    frame.set([0x53, 0x4c, 0x4e, 0x47, 1, 1]);
+    new DataView(frame.buffer).setBigUint64(6, 1n, false);
+    frame.set(malformedPayload, 14);
+    expect(() => unpackWireMessage(frame)).toThrow('Invalid state events');
   });
 
   it('rejects malformed and non-map envelope payloads', () => {

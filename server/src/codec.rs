@@ -24,6 +24,7 @@ pub fn state_header(bytes: &[u8]) -> Option<(u64, &[u8])> {
     Some((seq, &bytes[STATE_HEADER_BYTES..]))
 }
 
+#[cfg(test)]
 pub fn state_frame(seq: u64, payload: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(STATE_HEADER_BYTES + payload.len());
     bytes.extend_from_slice(&STATE_MAGIC);

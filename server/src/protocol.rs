@@ -169,21 +169,8 @@ pub fn is_safe_integer(value: &Value) -> bool {
     false
 }
 
-/// A finite non-negative safe integer (a ship index).
-fn is_index(value: &Value) -> bool {
-    is_safe_integer(value) && value.as_f64().is_some_and(|f| f >= 0.0)
-}
-
 fn is_bool_field(value: &Value, key: &str) -> bool {
     value.get(key).and_then(Value::as_bool).is_some()
-}
-
-fn is_index_of(value: &Value, key: &str) -> bool {
-    value.get(key).is_some_and(is_index)
-}
-
-fn is_record_of(value: &Value, key: &str) -> bool {
-    value.get(key).is_some_and(is_record)
 }
 
 /// `Number.isInteger(v) && v >= min && v <= max`.
@@ -200,10 +187,6 @@ fn is_number_in(value: &Value, allowed: &[i64]) -> bool {
         return false;
     };
     allowed.iter().any(|&a| f == a as f64)
-}
-
-fn is_bool(value: Option<&Value>) -> bool {
-    value.and_then(Value::as_bool).is_some()
 }
 
 /// A client's aim/fire request, as the host will apply it.
@@ -239,92 +222,6 @@ fn is_stake(value: &Value) -> bool {
         && value
             .as_f64()
             .is_some_and(|f| (0.0..=MAX_STAKE).contains(&f))
-}
-
-fn is_clash_players(value: Option<&Value>) -> bool {
-    match value.and_then(Value::as_array) {
-        Some(list) => list.len() == 2 && list.iter().all(is_index),
-        None => false,
-    }
-}
-
-fn is_clash_velocities(value: Option<&Value>) -> bool {
-    match value.and_then(Value::as_array) {
-        Some(list) => {
-            list.len() == 2
-                && list.iter().all(|v| {
-                    is_record(v) && is_finite_number(v.get("x")) && is_finite_number(v.get("y"))
-                })
-        }
-        None => false,
-    }
-}
-
-/// A game event the host relays to the guests (sounds and effects are driven from these).
-pub fn is_game_event(value: &Value) -> bool {
-    if !is_record(value) {
-        return false;
-    }
-    let Some(ty) = value.get("type").and_then(Value::as_str) else {
-        return false;
-    };
-    match ty {
-        "round" | "gameOver" | "roundEnd" | "volley" | "collapse" => true,
-        "killcam" => is_bool(value.get("active")) && is_bool(value.get("recording")),
-        "turn" | "lock" => is_index_of(value, "player"),
-        "fire" => {
-            is_index_of(value, "player")
-                && is_finite_number(value.get("x"))
-                && is_finite_number(value.get("y"))
-                && is_finite_number(value.get("angle"))
-                && is_finite_number(value.get("power"))
-        }
-        "impact" => {
-            is_index_of(value, "player")
-                && is_finite_number(value.get("x"))
-                && is_finite_number(value.get("y"))
-                && is_finite_number(value.get("vx"))
-                && is_finite_number(value.get("vy"))
-        }
-        "explode" => {
-            is_finite_number(value.get("x"))
-                && is_finite_number(value.get("y"))
-                && is_index_of(value, "ship")
-                && is_finite_number(value.get("vx"))
-                && is_finite_number(value.get("vy"))
-        }
-        "fizzle" => {
-            is_index_of(value, "player")
-                && is_finite_number(value.get("x"))
-                && is_finite_number(value.get("y"))
-                && is_finite_number(value.get("vx"))
-                && is_finite_number(value.get("vy"))
-                && is_bool(value.get("lost"))
-        }
-        "clash" => {
-            is_finite_number(value.get("x"))
-                && is_finite_number(value.get("y"))
-                && is_clash_players(value.get("players"))
-                && is_clash_velocities(value.get("velocities"))
-        }
-        "devour" => {
-            is_finite_number(value.get("x"))
-                && is_finite_number(value.get("y"))
-                && is_finite_number(value.get("toX"))
-                && is_finite_number(value.get("toY"))
-                && value.get("color").and_then(Value::as_str).is_some()
-                && is_finite_number(value.get("vx"))
-                && is_finite_number(value.get("vy"))
-        }
-        "style" => {
-            is_index_of(value, "player")
-                && value.get("kind").and_then(Value::as_str).is_some()
-                && is_finite_number(value.get("x"))
-                && is_finite_number(value.get("y"))
-        }
-        "kill" => is_record_of(value, "record"),
-        _ => false,
-    }
 }
 
 /// The rules of an online game, chosen by whoever creates (and later edits) the room.
@@ -628,24 +525,6 @@ mod tests {
                 "accepted invalid boolean {key}"
             );
         }
-    }
-
-    #[test]
-    fn event_validation_checks_required_fields_and_values() {
-        assert!(is_game_event(&json!({"type":"turn","player":0})));
-        assert!(is_game_event(
-            &json!({"type":"fire","player":1,"x":1,"y":2,"angle":45,"power":55})
-        ));
-        assert!(is_game_event(
-            &json!({"type":"killcam","active":true,"recording":false})
-        ));
-        assert!(!is_game_event(&json!({"type":"turn"})));
-        assert!(!is_game_event(&json!({"type":"turn","player":-1})));
-        assert!(!is_game_event(
-            &json!({"type":"fire","player":1,"x":1,"y":2,"angle":45})
-        ));
-        assert!(!is_game_event(&json!({"type":"killcam","active":true})));
-        assert!(!is_game_event(&json!({"type":"unknown"})));
     }
 
     #[test]

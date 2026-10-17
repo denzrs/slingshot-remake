@@ -234,7 +234,16 @@ export class MultiplayerSession {
     this.syncElapsed %= SYNC_INTERVAL;
     if (this.isHost) {
       const events = this.pendingEvents.splice(0);
-      this.send({ type: 'state', seq: ++this.seq, patch: this.encoder.encode(match.snapshot()), events });
+      const seq = this.seq + 1;
+      try {
+        this.send({ type: 'state', seq, patch: this.encoder.encode(match.snapshot()), events });
+        this.seq = seq;
+      } catch (error) {
+        // A failed patch may have advanced the encoder's deltas; restart from a full snapshot.
+        this.encoder = new SnapshotEncoder();
+        this.pendingEvents.unshift(...events);
+        console.error('Could not encode game state', error);
+      }
     } else {
       this.flushAim();
     }
@@ -336,7 +345,14 @@ export class MultiplayerSession {
     const previousPhase = match.phase;
     match.restoreSnapshot(snapshot as unknown as ClassicSnapshot & HorizonSnapshot);
     if (own && match.canAim(id)) Object.assign(match.players[id], own);
-    for (const event of message.events) match.applyRemoteEvent(event);
+    for (const event of message.events) {
+      if (!isEventForMatch(event, match.players.length)) continue;
+      try {
+        match.applyRemoteEvent(event);
+      } catch {
+        // A malformed remote event must not break the client's render/update loop.
+      }
+    }
     if (previousPhase === 'gameOver' && match.phase !== 'gameOver') this.hooks.matchRestarted();
   }
 
@@ -381,5 +397,21 @@ export class MultiplayerSession {
 
   private emit(): void {
     for (const listener of [...this.listeners]) listener();
+  }
+}
+
+function isEventForMatch(event: import('./game').GameEvent, playerCount: number): boolean {
+  const inRange = (id: number) => Number.isSafeInteger(id) && id >= 0 && id < playerCount;
+  switch (event.type) {
+    case 'turn': case 'lock': case 'fire': case 'impact': case 'fizzle': case 'style':
+      return inRange(event.player);
+    case 'explode':
+      return inRange(event.ship);
+    case 'clash':
+      return event.players.every(inRange);
+    case 'kill':
+      return inRange(event.record.victim) && (event.record.killer === null || inRange(event.record.killer));
+    default:
+      return true;
   }
 }

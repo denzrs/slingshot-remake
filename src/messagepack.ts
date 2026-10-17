@@ -57,9 +57,7 @@ export function unpackWireMessage(bytes: Uint8Array): unknown {
   if (!isStateEnvelope(bytes)) {
     const value = unpackMessage(bytes);
     if (value && typeof value === 'object' && !Array.isArray(value) && (value as { type?: unknown }).type === 'state') {
-      const message = value as { type: string; seq?: unknown; patch?: unknown; events?: unknown };
-      validateStateMessage(message);
-      return message;
+      throw new Error('State messages require a versioned envelope');
     }
     return value;
   }
@@ -94,7 +92,57 @@ function validateStateMessage(message: { seq?: unknown; patch?: unknown; events?
   if (!message.patch || typeof message.patch !== 'object' || Array.isArray(message.patch)) {
     throw new Error('Invalid state patch');
   }
-  if (!Array.isArray(message.events)) throw new Error('Invalid state events');
+  if (!Array.isArray(message.events) || !message.events.every(isGameEvent)) throw new Error('Invalid state events');
+}
+
+function isGameEvent(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const event = value as Record<string, unknown>;
+  const finite = (key: string) => typeof event[key] === 'number' && Number.isFinite(event[key]);
+  const index = (key: string) => Number.isSafeInteger(event[key]) && (event[key] as number) >= 0;
+  const record = (candidate: unknown): candidate is Record<string, unknown> =>
+    !!candidate && typeof candidate === 'object' && !Array.isArray(candidate);
+  switch (event.type) {
+    case 'round': case 'gameOver': case 'roundEnd': case 'volley': case 'collapse':
+      return true;
+    case 'killcam':
+      return typeof event.active === 'boolean' && typeof event.recording === 'boolean';
+    case 'turn': case 'lock':
+      return index('player');
+    case 'fire':
+      return index('player') && finite('x') && finite('y') && finite('angle') && finite('power');
+    case 'impact':
+      return index('player') && finite('x') && finite('y') && finite('vx') && finite('vy');
+    case 'explode':
+      return index('ship') && finite('x') && finite('y') && finite('vx') && finite('vy');
+    case 'fizzle':
+      return index('player') && finite('x') && finite('y') && finite('vx') && finite('vy') && typeof event.lost === 'boolean';
+    case 'clash':
+      return finite('x') && finite('y') && finite('points')
+        && Array.isArray(event.players) && event.players.length === 2 && event.players.every((id) => Number.isSafeInteger(id) && (id as number) >= 0)
+        && Array.isArray(event.velocities) && event.velocities.length === 2
+        && event.velocities.every((velocity) => record(velocity) && typeof velocity.x === 'number' && Number.isFinite(velocity.x)
+          && typeof velocity.y === 'number' && Number.isFinite(velocity.y));
+    case 'devour':
+      return finite('x') && finite('y') && finite('toX') && finite('toY') && typeof event.color === 'string'
+        && finite('vx') && finite('vy');
+    case 'style':
+      return index('player') && ['swingby', 'bank', 'graze', 'photon', 'airtime'].includes(String(event.kind))
+        && finite('x') && finite('y');
+    case 'kill': {
+      const kill = event.record;
+      return record(kill) && (kill.killer === null || (Number.isSafeInteger(kill.killer) && (kill.killer as number) >= 0))
+        && Number.isSafeInteger(kill.victim) && (kill.victim as number) >= 0
+        && typeof kill.points === 'number' && Number.isFinite(kill.points)
+        && typeof kill.self === 'boolean' && typeof kill.friendly === 'boolean'
+        && Array.isArray(kill.combo) && kill.combo.every((kind) => ['swingby', 'bank', 'graze', 'photon', 'airtime'].includes(String(kind)))
+        && typeof kill.multiplier === 'number' && Number.isFinite(kill.multiplier)
+        && Number.isSafeInteger(kill.shots) && typeof kill.power === 'number' && Number.isFinite(kill.power)
+        && typeof kill.at === 'number' && Number.isFinite(kill.at);
+    }
+    default:
+      return false;
+  }
 }
 
 function isStateEnvelope(bytes: Uint8Array): boolean {

@@ -10,7 +10,7 @@ mod room;
 use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
@@ -48,7 +48,6 @@ const MAX_CONCURRENT_SCRYPTS: usize = 4;
 const SCRYPT_QUEUE_TIMEOUT: Duration = Duration::from_secs(1);
 /// A handshake that does not finish in time is dropped (slow-open probes hold a task otherwise).
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-static BENCH_FRAME_TIMES: OnceLock<bool> = OnceLock::new();
 
 #[tokio::main]
 async fn main() {
@@ -370,22 +369,14 @@ async fn deliver(
     conn_id: u64,
     bytes: &[u8],
 ) {
-    let started = Instant::now();
     if crate::codec::is_state_frame(bytes) {
         let Some((seq, _payload)) = crate::codec::state_header(bytes) else {
             manager.lock().error(conn_id, "Invalid state envelope");
             return;
         };
-        if seq > 9_007_199_254_740_991 {
-            manager.lock().error(conn_id, "Invalid state sequence");
-            return;
-        }
         // The room checks sender, status, and sequence before relaying the original frame.
         debug!(bytes = bytes.len(), kind = "state", "inbound message");
-        manager
-            .lock()
-            .handle_state_envelope(conn_id, seq as i64, bytes);
-        report_state_frame_time(started, bytes.len());
+        manager.lock().handle_state_envelope(conn_id, seq, bytes);
         return;
     }
     let message = match rmp_serde::from_slice::<serde_json::Value>(bytes) {
@@ -398,19 +389,6 @@ async fn deliver(
     let kind = message.get("type").and_then(Value::as_str).unwrap_or("?");
     debug!(bytes = bytes.len(), %kind, "inbound message");
     route(manager, scrypt_slots, conn_id, &message).await;
-    if kind == "state" {
-        report_state_frame_time(started, bytes.len());
-    }
-}
-
-fn report_state_frame_time(started: Instant, bytes: usize) {
-    if *BENCH_FRAME_TIMES.get_or_init(|| env_flag("BENCH_FRAME_TIMES")) {
-        info!(
-            server_frame_us = started.elapsed().as_secs_f64() * 1_000_000.0,
-            frame_bytes = bytes,
-            "state frame processed"
-        );
-    }
 }
 
 /// Dispatch a parsed message to the room logic. Password work is done off the room lock (and off

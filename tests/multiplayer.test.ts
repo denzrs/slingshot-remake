@@ -223,7 +223,7 @@ describe('online games', () => {
     expect(await received).toEqual(Buffer.from(frame));
   });
 
-  it('rejects fractional and unsafe state sequence numbers', async () => {
+  it('rejects unsafe state envelope sequence numbers', async () => {
     const host = await connectSession();
     const guest = await connectSession();
     host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2 });
@@ -237,11 +237,14 @@ describe('online games', () => {
     await waitForSession(host, () => host.match !== null);
 
     const transport = host.client as RustTransport;
-    for (const seq of [1.5, -0.5, Number.MAX_SAFE_INTEGER + 1]) {
-      const response = transport.waitForMessage((message) => message.type === 'error' && message.message === 'Malformed state message');
-      transport.rawSocket!.send(packMessage({ type: 'state', seq, patch: {}, events: [] }));
-      await response;
-    }
+    const seq = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
+    const frame = new Uint8Array(15);
+    frame.set([0x53, 0x4c, 0x4e, 0x47, 1, 1]);
+    new DataView(frame.buffer).setBigUint64(6, seq, false);
+    frame[14] = 0x80; // Empty MessagePack map payload.
+    const response = transport.waitForMessage((message) => message.type === 'error' && message.message === 'Invalid state sequence');
+    transport.rawSocket!.send(frame);
+    await response;
   });
 
   it('rejects legacy text frames and replies with MessagePack', async () => {
