@@ -110,6 +110,7 @@ export class ChallengeMatch extends Match {
     this.round++;
     const sector = this.sector(this.round - 1);
     this.spec = sector.spec;
+    this.worldSeed = this.spec.seed;
     this.world = cloneWorld(sector.world);
     const carried = this.players[0]?.score ?? 0;
     // A retry starts from zero, not from the last run's score.

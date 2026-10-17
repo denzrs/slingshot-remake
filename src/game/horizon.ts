@@ -27,6 +27,7 @@ export interface HorizonSnapshot {
   phaseTime: number;
   clock: number;
   round: number;
+  worldSeed?: number;
   totalRounds: number;
   hiddenPlanets: boolean;
   teamMode: number;
@@ -131,7 +132,7 @@ export class HorizonMatch extends Match {
 
   snapshot(): HorizonSnapshot {
     return {
-      phase: this.phase, phaseTime: this.phaseTime, clock: this.clock, round: this.round,
+      phase: this.phase, phaseTime: this.phaseTime, clock: this.clock, round: this.round, worldSeed: this.worldSeed,
       totalRounds: this.totalRounds, hiddenPlanets: this.hiddenPlanets, teamMode: this.teamMode,
       players: this.players.map((player) => ({ ...player })), current: this.current, world: this.world,
       trails: this.trails, volley: this.volley?.snapshot() ?? null, flightDoneAt: this.flightDoneAt, killFeed: this.killFeed,
@@ -157,6 +158,7 @@ export class HorizonMatch extends Match {
     if (s.world.ships.length !== s.players.length) return;
     this.settings = s.settings;
     this.phase = s.phase; this.phaseTime = s.phaseTime; this.clock = s.clock; this.round = s.round;
+    this.worldSeed = s.worldSeed ?? 0;
     this.totalRounds = s.totalRounds; this.hiddenPlanets = s.hiddenPlanets; this.teamMode = s.teamMode;
     this.players = s.players.map((player) => ({ ...player })); this.current = s.current;
     this.world = s.world; this.trails = s.trails; this.killFeed = s.killFeed; this.lastKill = s.lastKill;
