@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
-import { packMessage, unpackMessage } from '../src/messagepack';
+import { packMessage, packWireMessage, unpackWireMessage } from '../src/messagepack';
 import { MultiplayerSession, type NetMatch, type Transport } from '../src/multiplayer';
 import type { RoomRules, ServerMessage } from '../src/net';
 import { TIP_HIDDEN } from '../src/game/oracle';
@@ -47,7 +47,7 @@ class RustTransport implements Transport {
     socket.on('error', (error) => { if (!opened) reject(error); });
     socket.on('message', (data) => {
       try {
-        const message = unpackMessage(data as Buffer) as ServerMessage;
+        const message = unpackWireMessage(data as Buffer) as ServerMessage;
         const edited = this.edit(message);
         this.listener?.(edited);
         for (const waiter of this.messageWaiters) {
@@ -68,7 +68,7 @@ class RustTransport implements Transport {
 
   send(message: Parameters<Transport['send']>[0]): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) throw new Error('WebSocket is not open');
-    this.socket.send(packMessage(JSON.parse(JSON.stringify(message))));
+    this.socket.send(packWireMessage(JSON.parse(JSON.stringify(message))));
   }
 
   async close(): Promise<void> {
@@ -193,7 +193,37 @@ async function frame(host: Client, guest: Client, dt = 1 / 60): Promise<void> {
 }
 
 describe('online games', () => {
-  it('rejects fractional and unsafe state sequence numbers', async () => {
+  it('rejects unsupported state envelope versions', async () => {
+    const { host } = await startRoom('classic');
+    const transport = host.session.client as RustTransport;
+    const response = transport.waitForMessage(
+      (message) => message.type === 'error' && message.message === 'Invalid state envelope',
+    );
+    const frame = packWireMessage({ type: 'state', seq: 1, patch: {}, events: [] });
+    frame[4] += 1;
+    transport.rawSocket!.send(frame);
+    await response;
+  });
+
+  it('forwards the envelope frame byte-for-byte to guests', async () => {
+    const { host, guest } = await startRoom('classic');
+    const hostSocket = (host.session.client as RustTransport).rawSocket!;
+    const guestSocket = (guest.session.client as RustTransport).rawSocket!;
+    const frame = packWireMessage({ type: 'state', seq: 1, patch: { phase: 'aiming' }, events: [] });
+    const received = new Promise<Buffer>((resolve) => {
+      const listener = (data: WebSocket.RawData) => {
+        const bytes = Buffer.from(data as Buffer);
+        if (bytes.subarray(0, 4).toString() !== 'SLNG') return;
+        guestSocket.off('message', listener);
+        resolve(bytes);
+      };
+      guestSocket.on('message', listener);
+    });
+    hostSocket.send(frame);
+    expect(await received).toEqual(Buffer.from(frame));
+  });
+
+  it('rejects unsafe state envelope sequence numbers', async () => {
     const host = await connectSession();
     const guest = await connectSession();
     host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2 });
@@ -207,11 +237,14 @@ describe('online games', () => {
     await waitForSession(host, () => host.match !== null);
 
     const transport = host.client as RustTransport;
-    for (const seq of [1.5, -0.5, Number.MAX_SAFE_INTEGER + 1]) {
-      const response = transport.waitForMessage((message) => message.type === 'error' && message.message === 'Malformed state message');
-      transport.rawSocket!.send(packMessage({ type: 'state', seq, patch: {}, events: [] }));
-      await response;
-    }
+    const seq = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
+    const frame = new Uint8Array(15);
+    frame.set([0x53, 0x4c, 0x4e, 0x47, 1, 1]);
+    new DataView(frame.buffer).setBigUint64(6, seq, false);
+    frame[14] = 0x80; // Empty MessagePack map payload.
+    const response = transport.waitForMessage((message) => message.type === 'error' && message.message === 'Invalid state sequence');
+    transport.rawSocket!.send(frame);
+    await response;
   });
 
   it('rejects legacy text frames and replies with MessagePack', async () => {

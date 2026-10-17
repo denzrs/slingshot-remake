@@ -369,6 +369,16 @@ async fn deliver(
     conn_id: u64,
     bytes: &[u8],
 ) {
+    if crate::codec::is_state_frame(bytes) {
+        let Some((seq, _payload)) = crate::codec::state_header(bytes) else {
+            manager.lock().error(conn_id, "Invalid state envelope");
+            return;
+        };
+        // The room checks sender, status, and sequence before relaying the original frame.
+        debug!(bytes = bytes.len(), kind = "state", "inbound message");
+        manager.lock().handle_state_envelope(conn_id, seq, bytes);
+        return;
+    }
     let message = match rmp_serde::from_slice::<serde_json::Value>(bytes) {
         Ok(message) => message,
         Err(_) => {

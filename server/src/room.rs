@@ -13,9 +13,9 @@ use tracing::{debug, info, warn};
 
 use crate::codec::{frame, Outbound};
 use crate::protocol::{
-    clean_name_checked, cpu_name, is_game_event, is_input_message, is_record, is_safe_integer,
-    parse_avatar, parse_cpu_level, parse_room_look, parse_rules, rules_to_value, RoomLook,
-    RoomRules, AVATARS, DEFAULT_AVATAR, DEFAULT_RULES,
+    clean_name_checked, cpu_name, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level,
+    parse_room_look, parse_rules, rules_to_value, RoomLook, RoomRules, AVATARS, DEFAULT_AVATAR,
+    DEFAULT_RULES,
 };
 
 const MAX_ROOM_PLAYERS: i64 = 6;
@@ -203,7 +203,6 @@ impl RoomManager {
             "remove_cpu" => self.remove_cpu(conn, message),
             "start_game" => self.start_game(conn),
             "input" => self.relay_input(conn, message),
-            "state" => self.relay_state(conn, message),
             "leave_room" => self.leave_room(conn),
             other => self.error(conn, &format!("Unknown message type: {other}")),
         }
@@ -997,7 +996,8 @@ impl RoomManager {
         }
     }
 
-    fn relay_state(&mut self, conn: u64, message: &Value) {
+    /// Relay a client-encoded state frame after validating its readable envelope header.
+    pub fn handle_state_envelope(&mut self, conn: u64, seq: u64, bytes: &[u8]) {
         let Some((room_id, my_id)) = self
             .memberships
             .get(&conn)
@@ -1006,11 +1006,11 @@ impl RoomManager {
             self.error(conn, "You are not in a running game");
             return;
         };
-        let playing = self
+        if !self
             .rooms
             .get(&room_id)
-            .is_some_and(|room| room.status == RoomStatus::Playing);
-        if !playing {
+            .is_some_and(|room| room.status == RoomStatus::Playing)
+        {
             self.error(conn, "You are not in a running game");
             return;
         }
@@ -1018,20 +1018,11 @@ impl RoomManager {
             self.error(conn, "Only the room host can send state");
             return;
         }
-        let seq = message
-            .get("seq")
-            .filter(|value| is_safe_integer(value))
-            .and_then(Value::as_i64);
-        let patch_ok = message.get("patch").is_some_and(is_record);
-        let events_ok = message
-            .get("events")
-            .and_then(Value::as_array)
-            .is_some_and(|events| events.iter().all(is_game_event));
-        if seq.is_none() || seq.unwrap() < 0 || !patch_ok || !events_ok {
-            self.error(conn, "Malformed state message");
+        if seq > 9_007_199_254_740_991 {
+            self.error(conn, "Invalid state sequence");
             return;
         }
-        let seq = seq.unwrap();
+        let seq = seq as i64;
         let last_seq = self
             .rooms
             .get(&room_id)
@@ -1042,14 +1033,6 @@ impl RoomManager {
             return;
         }
         self.rooms.get_mut(&room_id).unwrap().last_state_seq = seq;
-
-        let bytes = rmp_serde::to_vec_named(&json!({
-            "type": "state",
-            "seq": seq,
-            "patch": message.get("patch"),
-            "events": message.get("events"),
-        }))
-        .expect("serialize state frame");
         let recipients: Vec<u64> = self
             .rooms
             .get(&room_id)
@@ -1062,7 +1045,7 @@ impl RoomManager {
             })
             .unwrap_or_default();
         for recipient in recipients {
-            self.send_fast(recipient, &bytes);
+            self.send_fast(recipient, bytes);
         }
     }
 
@@ -1441,7 +1424,14 @@ mod tests {
     fn drain_json(rx: &mut mpsc::Receiver<crate::codec::WireMessage>) -> Vec<Value> {
         let mut messages = Vec::new();
         while let Ok(crate::codec::WireMessage::Binary(bytes, _permit)) = rx.try_recv() {
-            messages.push(rmp_serde::from_slice(&bytes).unwrap());
+            if let Some((seq, payload)) = crate::codec::state_header(&bytes) {
+                let mut message: Value = rmp_serde::from_slice(payload).unwrap();
+                message["type"] = json!("state");
+                message["seq"] = json!(seq);
+                messages.push(message);
+            } else {
+                messages.push(rmp_serde::from_slice(&bytes).unwrap());
+            }
         }
         messages
     }
@@ -1517,18 +1507,21 @@ mod tests {
         assert_eq!(input["from"], 1);
         assert_eq!(input["input"]["angle"], 15);
 
-        let state = json!({"type":"state","seq":1,"patch":{"phase":"aiming"},"events":[]});
-        rooms.handle(1, &state);
+        let payload =
+            rmp_serde::to_vec_named(&json!({"patch":{"phase":"aiming"},"events":[]})).unwrap();
+        let state = crate::codec::state_frame(1, &payload);
+        rooms.handle_state_envelope(1, 1, &state);
         let relayed = take_type(&drain_json(&mut guest_rx), "state");
         assert_eq!(relayed["seq"], 1);
         assert_eq!(relayed["patch"]["phase"], "aiming");
 
-        rooms.handle(2, &json!({"type":"state","seq":2,"patch":{},"events":[]}));
+        let guest_state = crate::codec::state_frame(2, &payload);
+        rooms.handle_state_envelope(2, 2, &guest_state);
         assert_eq!(
             take_type(&drain_json(&mut guest_rx), "error")["message"],
             "Only the room host can send state"
         );
-        rooms.handle(1, &state);
+        rooms.handle_state_envelope(1, 1, &state);
         assert_eq!(
             take_type(&drain_json(&mut host_rx), "error")["message"],
             "State sequence must increase monotonically"
@@ -1732,7 +1725,7 @@ mod tests {
     }
 
     #[test]
-    fn sequences_must_be_safe_integers() {
+    fn state_envelope_sequence_must_be_a_safe_integer() {
         let mut rooms = RoomManager::new();
         let mut host_rx = connect(&mut rooms, 1);
         let mut guest_rx = connect(&mut rooms, 2);
@@ -1754,13 +1747,60 @@ mod tests {
         rooms.handle(1, &json!({"type":"start_game"}));
         drain_json(&mut host_rx);
         drain_json(&mut guest_rx);
-        for seq in [1.5, -0.5, 9_007_199_254_740_992.0] {
-            rooms.handle(1, &json!({"type":"state","seq":seq,"patch":{},"events":[]}));
-            assert_eq!(
-                take_type(&drain_json(&mut host_rx), "error")["message"],
-                "Malformed state message"
-            );
-        }
+        let oversized_seq = 9_007_199_254_740_992_u64;
+        rooms.handle_state_envelope(1, oversized_seq, &[]);
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "Invalid state sequence"
+        );
+    }
+
+    #[test]
+    fn state_envelopes_require_a_playing_room_host_and_monotonic_sequence() {
+        let mut rooms = RoomManager::new();
+        let mut host_rx = connect(&mut rooms, 1);
+        let mut guest_rx = connect(&mut rooms, 2);
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+        rooms.handle(1, &create("Host", None));
+        let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        rooms.handle(
+            2,
+            &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+        );
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+
+        let payload = rmp_serde::to_vec_named(&json!({"patch":{},"events":[]})).unwrap();
+        let seq1 = crate::codec::state_frame(1, &payload);
+        rooms.handle_state_envelope(1, 1, &seq1);
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "You are not in a running game"
+        );
+
+        rooms.handle(2, &json!({"type":"ready","ready":true}));
+        drain_json(&mut host_rx);
+        rooms.handle(1, &json!({"type":"start_game"}));
+        drain_json(&mut host_rx);
+        drain_json(&mut guest_rx);
+
+        rooms.handle_state_envelope(2, 1, &seq1);
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "error")["message"],
+            "Only the room host can send state"
+        );
+
+        rooms.handle_state_envelope(1, 1, &seq1);
+        assert_eq!(take_type(&drain_json(&mut guest_rx), "state")["seq"], 1);
+        rooms.handle_state_envelope(1, 1, &seq1);
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "State sequence must increase monotonically"
+        );
     }
 
     #[test]
