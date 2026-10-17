@@ -90,6 +90,7 @@ function wire(m: Match): void {
       case 'clash':
         effects.clash(e.x, e.y, color(e.players[0]), color(e.players[1]), e.velocities);
         if (audible) sound.clash();
+        if (e.points > 0) effects.callout(`${t('hud.highFive')} +${e.points}`, e.x, e.y, COLORS.sodium, true);
         break;
       case 'devour':
         effects.devour(e.x, e.y, e.toX, e.toY, e.color, e.vx, e.vy);

@@ -46,6 +46,9 @@ export const SCORING = {
   /** Event Horizon: bonus per volley survived, and for the last ship in orbit. */
   VOLLEY_SURVIVED: 50,
   LAST_IN_ORBIT: 500,
+  /** High-five: two shots meet in mid-air. Both shooters get the points — a teammate's missile pays more. Like the trick shots it only pays where they do. */
+  HIGH_FIVE_ENEMY: 50,
+  HIGH_FIVE_TEAMMATE: 100,
   /** Combo multipliers can't run away completely. */
   MAX_COMBO: 12,
 } as const;

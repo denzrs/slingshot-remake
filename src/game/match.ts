@@ -110,7 +110,7 @@ export type GameEvent =
   | { type: 'fire'; player: number; x: number; y: number; angle: number; power: number }
   | { type: 'impact'; player: number; x: number; y: number; vx: number; vy: number }
   | { type: 'fizzle'; player: number; x: number; y: number; vx: number; vy: number; lost: boolean }
-  | { type: 'clash'; x: number; y: number; players: [number, number]; velocities: [{ x: number; y: number }, { x: number; y: number }] }
+  | { type: 'clash'; x: number; y: number; players: [number, number]; velocities: [{ x: number; y: number }, { x: number; y: number }]; points: number }
   | { type: 'devour'; x: number; y: number; toX: number; toY: number; color: string; vx: number; vy: number }
   | { type: 'style'; player: number; kind: StyleKind; x: number; y: number }
   | { type: 'explode'; x: number; y: number; ship: number; vx: number; vy: number }
@@ -824,18 +824,28 @@ export abstract class Match {
         this.emit({ type: 'devour', x: e.x, y: e.y, toX: hole.x, toY: hole.y, color: COLORS.players[this.players[player].seat], vx: e.vx, vy: e.vy });
         break;
       }
-      case 'clash':
-        if (e.index < end.other) {
-          const other = volley.shots[end.other].shot;
-          this.emit({
-            type: 'clash',
-            x: e.x,
-            y: e.y,
-            players: [player, volley.shots[end.other].owner],
-            velocities: [{ x: e.vx, y: e.vy }, { x: other.vx, y: other.vy }],
-          });
+      case 'clash': {
+        if (e.index >= end.other) break;
+        const otherOwner = volley.shots[end.other].owner;
+        const other = volley.shots[end.other].shot;
+        const team = this.players[player].team;
+        const friendly = team !== null && team === this.players[otherOwner].team;
+        // A high-five pays both shooters whose shots cancelled each other — and only where trick shots pay.
+        const points = this.stylePays ? (friendly ? SCORING.HIGH_FIVE_TEAMMATE : SCORING.HIGH_FIVE_ENEMY) : 0;
+        if (live && points > 0) {
+          this.players[player].score += points;
+          this.players[otherOwner].score += points;
         }
+        this.emit({
+          type: 'clash',
+          x: e.x,
+          y: e.y,
+          players: [player, otherOwner],
+          velocities: [{ x: e.vx, y: e.vy }, { x: other.vx, y: other.vy }],
+          points,
+        });
         break;
+      }
       default:
         this.emit({ type: 'fizzle', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy, lost: end.kind === 'lost' });
     }

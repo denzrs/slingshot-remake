@@ -67,6 +67,7 @@ New CPU seats start as Newton. In an online room the host seats CPUs in the same
 - With three or more ships, the last survivor gets 250 points; in team mode every member of the winning team does, fallen ones included.
 - After the last round, whoever (or whichever team) has more points wins.
 - **Trick-shot bonuses** (optional, off by default): swing-bys, grazes, bank shots and airtime multiply a hit's points just like in Event Horizon (`1000 × shot factor × power factor × combo`).
+- **High-five:** two shots that meet in mid-air cancel each other out. With trick-shot bonuses on, both shooters score for it – 50 points for an enemy missile, 100 for a teammate's. Event Horizon always pays it.
 
 **Daily Challenge:** a hit pays `1000 × shot factor × power factor × trick-shot combo`, where the shot factor counts the shots spent on *that target* (−0.15 per extra shot, minimum 0.25). Clearing a sector adds 250; hitting yourself costs 300 and ends the sector. Ranks (Cadet … Gravity master) are measured against a flawless-but-plain run.
 
