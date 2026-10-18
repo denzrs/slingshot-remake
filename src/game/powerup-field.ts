@@ -78,7 +78,7 @@ export class PowerUpField {
     return this.host.enabled();
   }
 
-  /** How many pickups lie on the field: a round starts with that many and a taken one is replaced; one more may be laid. */
+  /** How many pickups lie on the field: a round starts with that many, and a taken or faded one is replaced. Never more. */
   private get amount(): number {
     return Math.max(1, this.host.amount());
   }
@@ -99,7 +99,7 @@ export class PowerUpField {
    * Round start and refills are silent; the caller announces the others.
    */
   private spawn(): Pickup | null {
-    if (this.pickups.length > this.amount) return null;
+    if (this.pickups.length >= this.amount) return null;
     const host = this.host;
     const alive = host.players().filter((p) => p.alive);
     if (!alive.length) return null;
@@ -115,8 +115,9 @@ export class PowerUpField {
   }
 
   /**
-   * A volley is over. Once a whole pass has gone by, old pickups fade and a new one appears; and the field is
-   * never left short of pickups, so a taken one is replaced at once.
+   * A volley is over. Once a whole pass has gone by, old pickups fade. The field is then topped up to the amount,
+   * so a new pickup only comes once there is room: a taken or faded one is replaced at once, and nothing is laid
+   * on top of one that is still lying there.
    */
   onVolleyEnd(): void {
     if (!this.enabled) return;
@@ -126,7 +127,6 @@ export class PowerUpField {
       const kept = this.pickups.filter((p) => this.pass - p.born < POWER_UP.LIFETIME_PASSES);
       for (const gone of this.pickups.filter((p) => !kept.includes(p))) this.host.emit({ type: 'pickupFade', kind: gone.kind, x: gone.x, y: gone.y });
       this.pickups = kept;
-      this.announce(this.spawn());
     }
     while (this.pickups.length < this.amount) {
       const fresh = this.spawn();

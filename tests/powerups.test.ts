@@ -471,7 +471,7 @@ describe('power-ups: round 2', () => {
   it('never lays more than the field holds', () => {
     const match = duel();
     for (let i = 0; i < 12; i++) match.power.onVolleyEnd();
-    expect(match.pickups.length).toBeLessThanOrEqual(POWER_UP.DEFAULT_AMOUNT + 1);
+    expect(match.pickups.length).toBeLessThanOrEqual(POWER_UP.DEFAULT_AMOUNT);
   });
 
   it('offers spots that are spread apart and a real jump from the ship', () => {
@@ -668,7 +668,7 @@ describe('power-up choices in a match', () => {
     }
   });
 
-  it('lays as many pickups as the amount says, and one more at most', () => {
+  it('lays as many pickups as the amount says, and never more', () => {
     for (const amount of POWER_UP.AMOUNTS) {
       const match = choose({ powerUpAmount: amount });
       expect(match.pickups.length).toBeLessThanOrEqual(amount);
@@ -676,9 +676,25 @@ describe('power-up choices in a match', () => {
       match.pickups = [];
       match.power.onVolleyEnd();
       expect(match.pickups.length).toBeGreaterThanOrEqual(Math.min(amount, 1));
-      for (let i = 0; i < 20; i++) match.power.onVolleyEnd();
-      expect(match.pickups.length).toBeLessThanOrEqual(amount + 1);
+      for (let i = 0; i < 20; i++) {
+        match.power.onVolleyEnd();
+        expect(match.pickups.length).toBeLessThanOrEqual(amount);
+      }
     }
+  });
+
+  it('with one pickup on the field, the next one is laid only after the old one has faded', () => {
+    const match = choose({ powerUpAmount: 1 });
+    const events: string[] = [];
+    match.on((e) => events.push(e.type));
+    const first = match.pickups[0];
+    for (let volley = 0; volley < 20; volley++) {
+      match.power.onVolleyEnd();
+      expect(match.pickups.length).toBeLessThanOrEqual(1);
+    }
+    expect(match.pickups.some((p) => p.id === first.id)).toBe(false);
+    expect(events.indexOf('pickupFade')).toBeGreaterThanOrEqual(0);
+    expect(events.indexOf('pickupFade')).toBeLessThan(events.indexOf('pickupSpawn'));
   });
 
   it('refills a taken pickup up to the amount', () => {

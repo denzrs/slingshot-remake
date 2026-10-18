@@ -31,8 +31,8 @@ export const CPU_IGNORES: ReadonlySet<PowerUpKind> = new Set<PowerUpKind>(['prev
 
 export const POWER_UP = {
   /**
-   * The amount setting is how many pickups lie on the field: a round starts with that many, a taken one is
-   * replaced at once, and the field may hold one more.
+   * The amount setting is how many pickups lie on the field, and never more: a round starts with that many, a
+   * taken one is replaced at once, and a faded one only once it is gone.
    */
   DEFAULT_AMOUNT: 2,
   AMOUNTS: [1, 2, 3, 4] as readonly number[],
