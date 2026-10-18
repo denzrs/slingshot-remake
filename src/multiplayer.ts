@@ -301,6 +301,8 @@ export class MultiplayerSession {
       ...base,
       ...defaultRoomRules(),
       ...message.rules,
+      // Power-ups are an offline experiment: an online game never plays with them, whatever this device is set to.
+      powerUps: false,
       seats,
       seatTeams: [...base.seatTeams],
       teamMode: message.mode === 'team' ? 2 : 0,

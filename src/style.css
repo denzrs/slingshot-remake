@@ -2345,7 +2345,25 @@ body.egg-open #touch-fire {
   z-index: 12;
 }
 
+/* The power-up button sits above the fire button, in the colour of the power-up it uses. */
+#touch-power {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 72px);
+  z-index: 5;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--power, var(--p1));
+  border-radius: 2px;
+  background: rgb(11 26 51 / 0.85);
+  color: var(--power, var(--p1));
+  font: 800 17px/1 var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 #touch-fire[hidden],
+#touch-power[hidden],
 #clip-save[hidden] {
   display: none;
 }

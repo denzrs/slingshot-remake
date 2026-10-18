@@ -1,7 +1,9 @@
 import { AIM, COLORS, FIELD, FONTS, HORIZON, PHYSICS } from '../config';
 import type { Match, Scene } from '../game';
+import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
 import { aimDirection, type World } from '../physics';
+import { POWER_UP } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
@@ -10,6 +12,7 @@ import type { Effects } from './effects';
 import { Hud } from './hud';
 import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
+import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
   hud: boolean;
@@ -38,6 +41,8 @@ export class Renderer {
   private sprites = new Map<number, HTMLCanvasElement>();
   private spritePs = 0;
   private time = 0;
+  /** When each power-up pickup was first drawn, for its pop-in. */
+  private readonly pickupSeen = new Map<number, number>();
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -132,6 +137,7 @@ export class Renderer {
     this.drawTrails(match, scene);
     this.drawSpotlight(match, scene);
     this.drawShips(match, scene);
+    this.drawPowerUps(match, scene);
     effects.draw(ctx);
     ctx.restore();
 
@@ -253,12 +259,16 @@ export class Renderer {
     const firstRank = match.salvo || match.phase === 'aiming' ? 1 : 0;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
+    // The shots of one splitter fan count as one flight: they share a rank.
+    const lastFan = new Map<number, number | undefined>();
     for (let i = scene.trails.length - 1; i >= 0; i--) {
       const t = scene.trails[i];
       const fade = match.trailAlpha(t);
       if (fade <= 0) continue;
-      const r = rank.get(t.owner) ?? firstRank;
-      rank.set(t.owner, r + 1);
+      let r = rank.get(t.owner) ?? firstRank;
+      if (t.fan !== undefined && lastFan.get(t.owner) === t.fan) r -= 1;
+      else rank.set(t.owner, r + 1);
+      lastFan.set(t.owner, t.fan);
       const color = match.players[t.owner].color;
       ctx.strokeStyle = rgba(color, (r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2) * fade);
       ctx.lineWidth = r === 0 ? 1.6 : 1;
@@ -275,6 +285,18 @@ export class Renderer {
       strokePolyline(ctx, vs.trail);
       if (shot.end) continue;
       if (shot.inField) {
+        // A shot that can still be split carries a gold ring.
+        const owner = match.players[vs.owner];
+        if (match.powerUps && owner.armed && owner.powerUp === 'splitter') {
+          ctx.save();
+          ctx.strokeStyle = POWER_UP_COLORS.splitter;
+          ctx.lineWidth = 1.5;
+          ctx.globalAlpha = 0.55 + 0.45 * Math.sin(this.time * 8);
+          ctx.beginPath();
+          ctx.arc(shot.x, shot.y, 12, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
         const glow = ctx.createRadialGradient(shot.x, shot.y, 0, shot.x, shot.y, 9);
         glow.addColorStop(0, rgba(COLORS.bone, 0.95));
         glow.addColorStop(0.3, rgba(color, 0.6));
@@ -285,6 +307,77 @@ export class Renderer {
         this.drawOffscreenMarker(shot.x, shot.y, color);
       }
     }
+  }
+
+  /** Experimental power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */
+  private drawPowerUps(match: Match, scene: Scene): void {
+    const { ctx } = this;
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 5);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const present = new Set<number>();
+    for (const pick of scene.pickups ?? []) {
+      present.add(pick.id);
+      let born = this.pickupSeen.get(pick.id);
+      if (born === undefined) {
+        born = this.time;
+        this.pickupSeen.set(pick.id, born);
+      }
+      // Pops in with a little overshoot; blinks in its last pass before it fades.
+      const age = this.time - born;
+      const pop = age < 0.4 ? easeOutBack(age / 0.4) : 1;
+      const expiring = (scene.pass ?? 0) - pick.born >= POWER_UP.LIFETIME_PASSES - 1;
+      const alpha = Math.min(1, age / 0.15) * (expiring ? (Math.sin(this.time * 9) > 0 ? 1 : 0.35) : 1);
+      const color = POWER_UP_COLORS[pick.kind];
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(pick.x, pick.y);
+      ctx.scale(pop, pop);
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14 + 8 * pulse;
+      ctx.fillStyle = COLORS.plate;
+      ctx.beginPath();
+      ctx.arc(0, 0, 15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, 15, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      drawPowerUpSymbol(ctx, pick.kind, 0, 0, 8);
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = alpha * Math.min(1, pop);
+      ctx.font = `700 11px ${FONTS.mono}`;
+      ctx.fillStyle = color;
+      ctx.fillText(t(`powerup.${pick.kind}` as Key).toUpperCase(), pick.x, pick.y + 20);
+      ctx.restore();
+    }
+    for (const id of this.pickupSeen.keys()) if (!present.has(id)) this.pickupSeen.delete(id);
+    if (scene.preview && scene.preview.length >= 4) {
+      ctx.strokeStyle = POWER_UP_COLORS.preview;
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([3, 5]);
+      strokePolyline(ctx, scene.preview);
+      ctx.setLineDash([]);
+    }
+    // The symbol of what each ship holds, small above the ship. Activation is shown in the HUD strip.
+    for (const p of match.players) {
+      if (!p.powerUp || !p.alive) continue;
+      const ship = match.world.ships[p.id];
+      ctx.save();
+      ctx.strokeStyle = POWER_UP_COLORS[p.powerUp];
+      ctx.fillStyle = POWER_UP_COLORS[p.powerUp];
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      drawPowerUpSymbol(ctx, p.powerUp, ship.x, ship.y - 30, 5);
+      ctx.restore();
+    }
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'start';
   }
 
   /**
@@ -487,6 +580,13 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
   }
+}
+
+/** Ease that overshoots a little before settling, 0 → 1. */
+function easeOutBack(t: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
 }
 
 function strokePolyline(ctx: CanvasRenderingContext2D, pts: number[]): void {

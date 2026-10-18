@@ -24,6 +24,7 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 | B / Shift + B | Oracle, bet points of the match on your tip on the round: the smaller / the larger stake. You can also tap the stake |
 | G | Open or close the ghost lane, once you are shot down online. While it is open ← → ↑ ↓ aim and Enter / Space fire (or drag on the panel), E makes the panel bigger or smaller (or the button in its header); the oracle's ← → tips wait until you close it |
 | Esc | Menu |
+| P | Use your power-up (experimental, offline Classic only): teleport now, or arm a preview or splitter for your next shot |
 | F | Fullscreen |
 | ↑ ↓ ← → Enter (in menus) | Pick a row, change its value (sliders, switches and lists alike), confirm. Home / End jump a slider to its ends; Esc goes back to the row you came from |
 
@@ -55,6 +56,22 @@ The Players screen offers four CPUs, in this order:
 | Hawking | Searches like Einstein, with the same aim error, but prefers swing-bys. Enemy hits come first, and self-hit and friendly-hit safety is preserved. Among comparable safe shots it prefers more swing-by passes, then longer flights and paths within the full configured flight limit – also in Classic when trick-shot bonuses are off. |
 
 New CPU seats start as Newton. In an online room the host seats CPUs in the same way (see [multiplayer.md](multiplayer.md)). A further CPU that fits gravity from its own completed shots exists for benchmarks and programmatic matches; it is not offered in the game (see the [AI benchmark](benchmarks/README.md)).
+
+### Power-ups (experimental)
+
+Switch on *Power-ups (experimental)* in the twists block. It works in offline Classic only: online rooms don't offer it, and Event Horizon, the daily challenge and the menu background never use it.
+
+- **Pickups** float on the field, each with its own symbol and a bright colour: a cyan eye for the preview, a magenta portal for the teleport, a gold fork for the splitter. A shot that flies close to one takes it, and keeps flying.
+- **One held at a time.** Taking another one swaps it: the old one is lost.
+- **Preview** shows the first two seconds of your current shot as a dotted line while you aim. Armed, it is spent by the next shot.
+- **Teleport** puts your ship on a random free spot at once, far from planets and the other ships.
+- **Splitter** is a two-step move: fire as usual, then press fire again while the shot is flying. The shot forks into three, fanned a few degrees. Armed, it stays until you use it, so you can keep it across turns.
+- **P** uses the held power-up: teleport happens at once, preview and splitter are armed (press P again to disarm).
+- **Spawns:** two pickups at the start of a round, then one more after every pass (every ship still in has shot once), up to three on the field. A pickup blinks in its last pass and fades after three. Pickups pop in with a ring, burst into particles that fly to the ship that takes them, and a ship that swaps drops its old power-up as sparks.
+- **CPUs** collect and use them too, except previews, which they leave lying. A CPU holding a teleport that finds no hitting shot jumps and plans again, and a CPU with a splitter forks its shot once it flies close to an enemy.
+- The strip under each duel score shows the power-up a ship holds and the key that uses it. With three or more ships the scoreboard chip carries the symbol, and the key for the ship on turn. A shot that can still be split wears a gold ring.
+- Teleports, splits and pickups come with their own sounds and effects.
+- **Touch:** a power-up button appears above the fire button while a ship holds a teleport or a preview. With a splitter in the air the fire button reads *Split*.
 
 ## Rules & scoring
 

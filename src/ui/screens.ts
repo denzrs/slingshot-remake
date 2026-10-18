@@ -350,10 +350,13 @@ function settingToggle(app: App, label: string, key: BooleanSetting): MenuItem {
   };
 }
 
+/** The rules a game is set up with on this device: the room's rules, plus the ones only offline games have. */
+const localRulesOf = (s: Settings) => ({ ...rulesOf(s), powerUps: s.powerUps });
+
 /** The rules of a game, shown right before it starts. They are remembered between games. */
 function setupScreen(app: App, mode: VersusMode): Screen {
   const rules = ruleItems(mode, {
-    get: () => rulesOf(app.settings),
+    get: () => localRulesOf(app.settings),
     patch: (values) => {
       Object.assign(app.settings, values);
       app.settingsChanged();
@@ -367,7 +370,7 @@ function setupScreen(app: App, mode: VersusMode): Screen {
       section: 'actions',
       label: t('setup.reset'),
       run: () => {
-        Object.assign(app.settings, rulesOf(DEFAULT_SETTINGS));
+        Object.assign(app.settings, localRulesOf(DEFAULT_SETTINGS));
         app.settingsChanged();
         app.menu.refresh();
       },

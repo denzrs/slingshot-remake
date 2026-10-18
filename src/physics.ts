@@ -145,6 +145,24 @@ export class Shot {
     if (!this.end) this.end = end;
   }
 
+  /**
+   * A copy of this shot that flies on from the same point, its velocity turned by `turn` radians:
+   * how a splitter forks a shot in mid-flight. The original keeps flying as it was.
+   */
+  fork(turn: number): Shot {
+    const copy = new Shot(this.world, this.shooter, this.angle, this.power, this.rules, this.style !== null, this.spare);
+    copy.x = this.x;
+    copy.y = this.y;
+    copy.time = this.time;
+    copy.swingbys = this.swingbys;
+    const c = Math.cos(turn);
+    const s = Math.sin(turn);
+    copy.vx = this.vx * c - this.vy * s;
+    copy.vy = this.vx * s + this.vy * c;
+    if (this.style && copy.style) copy.style.push(...this.style);
+    return copy;
+  }
+
   /** Advance one physics step. Returns the end state once the shot is over. */
   step(): ShotEnd | null {
     if (this.end) return this.end;

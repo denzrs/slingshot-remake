@@ -1,6 +1,7 @@
 import { AIM, GRACE, TRAIL_FADE } from '../config';
 import { t, type Key } from '../i18n';
 import type { RoomRules } from '../net';
+import type { Settings } from '../settings';
 import type { MenuItem } from './menu';
 
 /** The blocks the setup screen and the lobby sort the rules into. */
@@ -91,16 +92,32 @@ export function ruleRows(): RuleRow[] {
   ];
 }
 
+/**
+ * Rules only an offline game has. They are not part of an online room's rules (the relay contract), so an
+ * online room never lists them.
+ */
+interface LocalRuleRow extends Omit<RuleRow, 'key'> {
+  key: 'powerUps';
+}
+
+function localRuleRows(): LocalRuleRow[] {
+  return [{ key: 'powerUps', group: 'twists', control: 'toggle', label: t('settings.powerUps'), options: [], classicOnly: true }];
+}
+
 /** The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has. */
-export const rulesFor = (mode: 'classic' | 'horizon', online = false): RuleRow[] => ruleRows().filter((row) => (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly));
+export const rulesFor = (mode: 'classic' | 'horizon', online = false): (RuleRow | LocalRuleRow)[] =>
+  [...ruleRows(), ...(online ? [] : localRuleRows())].filter((row) => (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly));
 
 // ————————————————————————————— As controls —————————————————————————————
 
+/** Every rule a row can change: an online room's rules, plus the ones only an offline game has. */
+export type RuleValues = RoomRules & Partial<Pick<Settings, 'powerUps'>>;
+
 /** Where a set of rules lives: the settings of this device, or the draft of an online room. */
 export interface RuleSource {
-  get(): RoomRules;
+  get(): RuleValues;
   /** Change some of the rules. */
-  patch(values: Partial<RoomRules>): void;
+  patch(values: Partial<RuleValues>): void;
   /** An edit is over (a slider let go of, a switch flipped): save it, send it on. */
   commit?(): void;
 }

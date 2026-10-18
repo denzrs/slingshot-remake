@@ -7,11 +7,15 @@ export interface VolleyAim {
   power: number;
   /** Ships this shot passes through unharmed. */
   spare?: number[];
+  /** Shots of one splitter share a fan id: they start from the same muzzle and never cancel each other. */
+  fan?: number;
 }
 
 export interface VolleyShot {
   shot: Shot;
   owner: number;
+  /** The splitter fan the shot belongs to, if any: the shots of one fan draw as one. */
+  fan?: number;
   /** Flat [x0, y0, x1, y1, …] polyline in field units. */
   trail: number[];
 }
@@ -51,7 +55,7 @@ export class Volley {
     this.aims = aims.map((aim) => ({ ...aim }));
     this.shots = aims.map((a) => {
       const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare);
-      return { shot, owner: a.player, trail: [shot.x, shot.y] };
+      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan };
     });
   }
 
@@ -83,6 +87,22 @@ export class Volley {
     });
   }
 
+  /**
+   * Splits a shot in flight: the shot keeps flying, and one copy per turn in `turns` (radians) branches off
+   * from the same point. All of them join `fan`, so they never cancel each other out. False if there is nothing to split.
+   */
+  split(index: number, turns: readonly number[], fan: number): boolean {
+    const vs = this.shots[index];
+    if (!vs || vs.shot.end) return false;
+    this.aims[index] = { ...this.aims[index], fan };
+    vs.fan = fan;
+    for (const turn of turns) {
+      this.shots.push({ shot: vs.shot.fork(turn), owner: vs.owner, trail: [...vs.trail], fan });
+      this.aims.push({ ...this.aims[index] });
+    }
+    return true;
+  }
+
   step(): VolleyEvent[] {
     const events: VolleyEvent[] = [];
     this.steps++;
@@ -110,6 +130,8 @@ export class Volley {
       for (let j = i + 1; j < this.shots.length; j++) {
         const b = this.shots[j].shot;
         if (b.end) continue;
+        const fan = this.aims[i].fan;
+        if (fan !== undefined && fan === this.aims[j].fan) continue;
         const dx = a.x - b.x;
         const dy = a.y - b.y;
         if (dx * dx + dy * dy >= r2) continue;

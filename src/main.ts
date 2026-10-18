@@ -20,8 +20,9 @@ import type { ClientInput } from './net';
 import { randomSeed } from './rng';
 import { Effects } from './render/effects';
 import { GhostPanel } from './render/ghost';
-import { applyStaticTexts, fmt, getLang, setLang, t } from './i18n';
+import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './i18n';
 import { Renderer } from './render/renderer';
+import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './scoring';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
@@ -32,6 +33,7 @@ import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
+const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 const ghostCanvas = document.querySelector<HTMLCanvasElement>('#ghost-lane')!;
 
@@ -79,6 +81,27 @@ function wire(m: Match): void {
       case 'impact':
         effects.impact(e.x, e.y, color(e.player), e.vx, e.vy);
         if (audible) sound.impact();
+        break;
+      case 'pickup':
+        effects.pickup(e.x, e.y, POWER_UP_COLORS[e.kind], m.world.ships[e.player]);
+        if (e.dropped) effects.drop(m.world.ships[e.player].x, m.world.ships[e.player].y, POWER_UP_COLORS[e.dropped]);
+        if (audible) sound.pickup();
+        break;
+      case 'pickupSpawn':
+        effects.spawn(e.x, e.y, POWER_UP_COLORS[e.kind]);
+        if (audible) sound.spawn();
+        break;
+      case 'pickupFade':
+        effects.fade(e.x, e.y, POWER_UP_COLORS[e.kind]);
+        if (audible) sound.fade();
+        break;
+      case 'teleport':
+        effects.teleport(e.fromX, e.fromY, e.toX, e.toY, color(e.player));
+        if (audible) sound.teleport();
+        break;
+      case 'split':
+        effects.split(e.x, e.y, POWER_UP_COLORS.splitter);
+        if (audible) sound.split();
         break;
       case 'explode':
         effects.explode(e.x, e.y, color(e.ship), e.vx, e.vy);
@@ -272,6 +295,8 @@ function primaryAction(): void {
   if (!match) return;
   if (online() && match.phase === 'gameOver') app.rematch();
   else if (canAim()) dispatchInput({ kind: 'fire' });
+  // While a shot flies, the fire key only matters for a splitter.
+  else if (!online() && match.phase === 'flying' && match.powerUps) dispatchInput({ kind: 'fire' });
   else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
 }
 
@@ -616,6 +641,10 @@ window.addEventListener('keydown', (e) => {
     case 'KeyC':
       saveClip();
       break;
+    case 'KeyP':
+      // Power-ups are offline only, so the key goes straight to the local match.
+      if (!online() && !e.repeat) match?.usePowerUp();
+      break;
     case 'Escape':
       // A clip records whatever is on screen — don't freeze it behind the menu.
       if (!recorder.recording) menu.open(() => pauseScreen(app));
@@ -667,6 +696,10 @@ touchFire.addEventListener('click', () => {
   else if (ghostTeaser()) toggleGhost();
   else primaryAction();
 });
+touchPower.addEventListener('click', () => {
+  sound.unlock();
+  if (!online()) match?.usePowerUp();
+});
 clipButton.addEventListener('click', () => {
   sound.unlock();
   saveClip();
@@ -684,6 +717,8 @@ function syncButtons(): void {
     if (ghostActive()) touchLabel = ghost!.lane!.canAim ? t('common.fire') : null;
     else if (ghostTeaser()) touchLabel = t('hud.ghostLane');
     else if (canAim()) touchLabel = m.salvo ? t('common.ready') : t('common.fire');
+    // A splitter in the air: the fire button splits the shot.
+    else if (!online() && m.phase === 'flying' && m.powerUps && m.players.some((p) => !p.cpu && p.armed && p.powerUp === 'splitter')) touchLabel = t('powerup.splitNow');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
     else if (m.phase === 'killcam' && !recorder.recording) touchLabel = t('common.skip');
   }
@@ -691,6 +726,16 @@ function syncButtons(): void {
   if (eggActive() && coarsePointer.matches) touchLabel = egg!.lane.canAim ? t('common.fire') : null;
   if (touchFire.hidden !== !touchLabel) touchFire.hidden = !touchLabel;
   if (touchLabel && touchFire.textContent !== touchLabel) touchFire.textContent = touchLabel;
+
+  // Power-ups on touch: a teleport or preview has a button of its own while its ship is aiming.
+  const holder = playing && coarsePointer.matches && m?.powerUps && !online() && canAim() ? m.players[m.viewer ?? m.current] : null;
+  const power = holder && (holder.powerUp === 'teleport' || holder.powerUp === 'preview') ? holder : null;
+  if (touchPower.hidden !== !power) touchPower.hidden = !power;
+  if (power) {
+    const label = `${power.armed ? '● ' : ''}${t(`powerup.${power.powerUp}` as Key).toUpperCase()}`;
+    if (touchPower.textContent !== label) touchPower.textContent = label;
+    touchPower.style.setProperty('--power', POWER_UP_COLORS[power.powerUp!]);
+  }
 
   const canClip = playing && m instanceof HorizonMatch && m.canReplay && ClipRecorder.supported && !recorder.recording;
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;

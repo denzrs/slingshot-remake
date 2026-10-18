@@ -31,6 +31,8 @@ export interface Settings {
   neighborGrace: number;
   /** Classic only: everybody aims, then all shots fly at once — as in Event Horizon — instead of one shot per turn. */
   simultaneousShots: boolean;
+  /** Experimental, Classic offline only: pickups float on the field, and a shot that flies past one takes it (preview, teleport or splitter). */
+  powerUps: boolean;
   /** Other players' aim arrows, angles and ship headings stay hidden: you only see your own aim. */
   hiddenAim: boolean;
   /** Seconds a finished shot's flight path stays on the board before it has faded away; 0 = it stays. */
@@ -62,6 +64,7 @@ export const DEFAULT_SETTINGS: Settings = {
   styleBonuses: false,
   neighborGrace: 0,
   simultaneousShots: false,
+  powerUps: false,
   hiddenAim: false,
   fadingTrails: 0,
   betting: false,

@@ -22,6 +22,24 @@ interface GravityBody {
 }
 
 const MAX_SPARKS = 1800;
+const MAX_MOTES = 240;
+/** The fastest a power-up's pieces fly on their way to the ship. */
+const MOTE_SPEED = 900;
+
+/** A piece of a power-up that burst open, on its way to the ship that took it. */
+interface Mote {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  speed: number;
+  size: number;
+  color: string;
+  /** Seconds of free flight before the piece turns towards the ship. */
+  burst: number;
+  age: number;
+  target: { x: number; y: number };
+}
 
 interface Ring {
   x: number;
@@ -32,6 +50,17 @@ interface Ring {
   color: string;
   /** Contracting instead of expanding. */
   inward: boolean;
+}
+
+/** A bright line that fades: the streak of a teleport. */
+interface Beam {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  life: number;
+  max: number;
+  color: string;
 }
 
 interface Callout {
@@ -49,6 +78,8 @@ export class Effects {
   private sparks: Spark[] = [];
   private rings: Ring[] = [];
   private callouts: Callout[] = [];
+  private motes: Mote[] = [];
+  private beams: Beam[] = [];
   shake = 0;
   flash = 0;
 
@@ -61,6 +92,8 @@ export class Effects {
     this.sparks = [];
     this.rings = [];
     this.callouts = [];
+    this.motes = [];
+    this.beams = [];
     this.shake = 0;
     this.flash = 0;
   }
@@ -99,6 +132,71 @@ export class Effects {
     this.burst(x, y, 30, 40, 260, b, 'large', velocities[1].x, velocities[1].y);
     this.flash = Math.max(this.flash, 0.45);
     if (!this.reducedMotion) this.shake = Math.max(this.shake, 4);
+  }
+
+  /**
+   * A power-up taken from the field: it bursts open, and its pieces stream to the ship that took it.
+   * The burst is always shown; the pieces only with particles on.
+   */
+  pickup(x: number, y: number, color: string, target: { x: number; y: number }): void {
+    this.ring(x, y, 70, 0.5, color);
+    this.burst(x, y, 26, 60, 240, color, 'large');
+    this.burst(x, y, 10, 40, 140, COLORS.bone, 'small');
+    if (!this.particles) return;
+    for (let i = 0; i < 44 && this.motes.length < MAX_MOTES; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 90 + Math.random() * 180;
+      this.motes.push({
+        x,
+        y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        speed: 0,
+        size: 1.8 + Math.random() * 2.2,
+        color: Math.random() < 0.25 ? COLORS.bone : color,
+        burst: 0.16 + Math.random() * 0.16,
+        age: 0,
+        target,
+      });
+    }
+  }
+
+  /** A power-up appearing on the field: a ring closes in on it, with a few sparks. */
+  spawn(x: number, y: number, color: string): void {
+    this.rings.push({ x, y, radius: 40, life: 0.4, max: 0.4, color, inward: true });
+    this.burst(x, y, 8, 20, 90, color, 'small');
+  }
+
+  /** A power-up that ran out before anybody took it: it pops into dim sparks. */
+  fade(x: number, y: number, color: string): void {
+    this.ring(x, y, 26, 0.35, color);
+    this.burst(x, y, 14, 20, 110, color, 'medium');
+  }
+
+  /** The power-up a ship lost by taking another one: it bursts away from the ship. */
+  drop(x: number, y: number, color: string): void {
+    this.ring(x, y, 24, 0.3, color);
+    this.burst(x, y, 12, 50, 170, color, 'medium');
+  }
+
+  /** A ship leaving one spot and arriving at another: it collapses where it was, a streak joins the two, and it bursts out. */
+  teleport(fromX: number, fromY: number, toX: number, toY: number, color: string): void {
+    this.rings.push({ x: fromX, y: fromY, radius: 46, life: 0.4, max: 0.4, color, inward: true });
+    this.burst(fromX, fromY, 16, 30, 140, color, 'medium');
+    this.beams.push({ x1: fromX, y1: fromY, x2: toX, y2: toY, life: 0.4, max: 0.4, color });
+    this.ring(toX, toY, 70, 0.5, color);
+    this.ring(toX, toY, 36, 0.35, COLORS.bone);
+    this.burst(toX, toY, 36, 40, 260, color, 'large');
+    this.burst(toX, toY, 14, 20, 120, COLORS.bone, 'small');
+    this.flash = Math.max(this.flash, 0.3);
+  }
+
+  /** A shot forking into three: a ring and a spray of sparks at the fork. */
+  split(x: number, y: number, color: string): void {
+    this.ring(x, y, 34, 0.35, color);
+    this.ring(x, y, 18, 0.25, COLORS.bone);
+    this.burst(x, y, 22, 60, 220, color, 'large');
+    this.flash = Math.max(this.flash, 0.2);
   }
 
   /** Matter spiralling into the black hole. */
@@ -184,6 +282,40 @@ export class Effects {
     this.rings = this.rings.filter((r) => r.life > 0);
     for (const c of this.callouts) c.life -= dt;
     this.callouts = this.callouts.filter((c) => c.life > 0);
+    for (const b of this.beams) b.life -= dt;
+    this.beams = this.beams.filter((b) => b.life > 0);
+    this.updateMotes(dt);
+  }
+
+  /** Pieces drift out for a moment, then steer at their ship and pulse on arrival. */
+  private updateMotes(dt: number): void {
+    const arrived: Mote[] = [];
+    this.motes = this.motes.filter((m) => {
+      m.age += dt;
+      if (m.age < m.burst) {
+        const drag = Math.exp(-5 * dt);
+        m.vx *= drag;
+        m.vy *= drag;
+        m.x += m.vx * dt;
+        m.y += m.vy * dt;
+        return true;
+      }
+      const dx = m.target.x - m.x;
+      const dy = m.target.y - m.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 12) {
+        arrived.push(m);
+        return false;
+      }
+      m.speed = Math.min(MOTE_SPEED, m.speed + 2400 * dt);
+      const blend = Math.min(1, 8 * dt);
+      m.vx += ((dx / d) * m.speed - m.vx) * blend;
+      m.vy += ((dy / d) * m.speed - m.vy) * blend;
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+      return true;
+    });
+    for (const m of arrived) this.ring(m.target.x, m.target.y, 16, 0.28, m.color);
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
@@ -196,10 +328,25 @@ export class Effects {
       ctx.lineWidth = 1.5 + 2 * (1 - t);
       ctx.stroke();
     }
+    for (const b of this.beams) {
+      const t = 1 - b.life / b.max;
+      ctx.beginPath();
+      ctx.moveTo(b.x1, b.y1);
+      ctx.lineTo(b.x2, b.y2);
+      ctx.strokeStyle = rgba(b.color, 0.7 * (1 - t));
+      ctx.lineWidth = 3 * (1 - t) + 0.5;
+      ctx.stroke();
+    }
     ctx.globalCompositeOperation = 'lighter';
     for (const s of this.sparks) {
       ctx.fillStyle = s.color;
       ctx.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size);
+    }
+    for (const m of this.motes) {
+      ctx.fillStyle = m.color;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.size, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.globalCompositeOperation = 'source-over';
 
