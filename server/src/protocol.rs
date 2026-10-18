@@ -327,7 +327,9 @@ fn parse_power_up_kinds(value: &Value) -> Option<u8> {
     let list = value.as_array()?;
     let mut mask = 0u8;
     for kind in list {
-        let bit = POWER_UP_KINDS.iter().position(|k| Some(*k) == kind.as_str())?;
+        let bit = POWER_UP_KINDS
+            .iter()
+            .position(|k| Some(*k) == kind.as_str())?;
         if mask & (1 << bit) != 0 {
             return None;
         }
@@ -585,7 +587,10 @@ mod tests {
         ] {
             let mut rules = valid_rules();
             rules[key] = value;
-            assert!(parse_rules(&rules).is_none(), "accepted invalid {key}: {rules}");
+            assert!(
+                parse_rules(&rules).is_none(),
+                "accepted invalid {key}: {rules}"
+            );
         }
     }
 
