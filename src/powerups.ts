@@ -8,15 +8,34 @@ import type { Rng } from './rng';
  * own rng and the tests can call it directly.
  */
 
-export type PowerUpKind = 'preview' | 'teleport' | 'splitter';
+export type PowerUpKind = 'preview' | 'teleport' | 'splitter' | 'repulse' | 'shield';
 
-export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter'];
+export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter', 'repulse', 'shield'];
+
+/** How often each kind turns up, relative to the others: the stronger ones are scarcer. */
+export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 1, teleport: 1, splitter: 1, repulse: 0.8, shield: 0.6 };
+
+/** The kind of a new pickup, drawn by weight from the kinds in play (all of them when the list is empty). */
+export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KINDS): PowerUpKind {
+  const pool = kinds.length ? kinds : POWER_UP_KINDS;
+  let roll = rng() * pool.reduce((sum, kind) => sum + POWER_UP_WEIGHTS[kind], 0);
+  for (const kind of pool) {
+    roll -= POWER_UP_WEIGHTS[kind];
+    if (roll <= 0) return kind;
+  }
+  return pool[pool.length - 1];
+}
+
+/** Kinds a CPU has no use for: it leaves them lying. */
+export const CPU_IGNORES: ReadonlySet<PowerUpKind> = new Set<PowerUpKind>(['preview', 'repulse']);
 
 export const POWER_UP = {
-  /** Pickups on the field at the same time. */
-  MAX_ON_FIELD: 3,
-  /** Pickups a round starts with. */
-  START_COUNT: 2,
+  /**
+   * The amount setting is how many pickups lie on the field: a round starts with that many, a taken one is
+   * replaced at once, and the field may hold one more.
+   */
+  DEFAULT_AMOUNT: 2,
+  AMOUNTS: [1, 2, 3, 4] as readonly number[],
   /** A pickup fades once this many passes (every ship has shot once) have gone by. */
   LIFETIME_PASSES: 3,
   /** A shot that passes this close to a pickup takes it. */
@@ -37,10 +56,10 @@ export const POWER_UP = {
   TELEPORT_PLANET_GAP: 50,
   TELEPORT_SHIP_GAP: 110,
   TELEPORT_PICKUP_GAP: 50,
+  /** Spots keep this far from the black hole's edge (it grows every volley): it would swallow them. */
+  HOLE_GAP: 90,
   /** Random spots tried before giving up. */
   ATTEMPTS: 200,
-  /** The field never runs dry: a pickup is set down whenever fewer than this many lie around. */
-  MIN_ON_FIELD: 2,
   /** Lane placement: shots flown from a ship to find a spot on one of its paths, and how far along each. */
   LANE_SHOTS: 14,
   LANE_SECONDS: 6,
@@ -57,8 +76,6 @@ export const POWER_UP = {
   TELEPORT_MIN_JUMP: 140,
   /** Clicking this close to an offered spot picks it. */
   TELEPORT_PICK_RADIUS: 32,
-  /** Seconds of flight each branch of a split shows in advance. */
-  FORK_PREVIEW_SECONDS: 1,
 } as const;
 
 export interface Pickup {
@@ -77,6 +94,7 @@ function isClear(world: World, x: number, y: number, planetGap: number, shipGap:
   if (x < edge || x > world.width - edge || y < edge || y > world.height - edge) return false;
   if (world.planets.some((p) => distance(x, y, p.x, p.y) < p.radius + planetGap)) return false;
   if (world.ships.some((s) => distance(x, y, s.x, s.y) < shipGap)) return false;
+  if (world.hole && distance(x, y, world.hole.x, world.hole.y) < world.hole.radius + POWER_UP.HOLE_GAP) return false;
   return !pickups.some((q) => distance(x, y, q.x, q.y) < pickupGap);
 }
 
@@ -182,19 +200,4 @@ export function touchedPickups(pickups: readonly Pickup[], x: number, y: number)
     if (distance(x, y, p.x, p.y) < POWER_UP.PICKUP_RADIUS) hits.push(i);
   });
   return hits;
-}
-
-/** Where the two new branches of a shot would fly if it split now: the first second or so of each, as flat polylines. */
-export function forkPreview(shot: Shot, seconds: number = POWER_UP.FORK_PREVIEW_SECONDS): number[][] {
-  const steps = Math.round(seconds / PHYSICS.DT);
-  return SPLIT_TURNS.map((turn) => {
-    const copy = shot.fork(turn);
-    const points = [copy.x, copy.y];
-    for (let i = 0; i < steps; i++) {
-      if (copy.step()) break;
-      if (i % 4 === 3) points.push(copy.x, copy.y);
-    }
-    points.push(copy.x, copy.y);
-    return points;
-  });
 }

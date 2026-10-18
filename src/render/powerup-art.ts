@@ -8,6 +8,8 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   preview: '#3ff0ff',
   teleport: '#ff4fd8',
   splitter: '#ffd21f',
+  repulse: '#ff7a1a',
+  shield: '#4dffb0',
 };
 
 /** Draws a power-up's symbol centred on (x, y), about `r` in size, in the current stroke and fill style. */
@@ -22,6 +24,25 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.beginPath();
     ctx.arc(x, y, r * 0.34, 0, Math.PI * 2);
     ctx.fill();
+  } else if (kind === 'repulse') {
+    // A planet with its pull reversed: a small disc, and rays pushing outward.
+    ctx.arc(x, y, r * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    for (const angle of [0.25, 0.75, 1.25, 1.75]) {
+      const dx = Math.cos(angle * Math.PI);
+      const dy = Math.sin(angle * Math.PI);
+      ctx.moveTo(x + dx * r * 0.55, y + dy * r * 0.55);
+      ctx.lineTo(x + dx * r, y + dy * r);
+    }
+    ctx.stroke();
+  } else if (kind === 'shield') {
+    // A shield: flat top, sides curving to a point.
+    ctx.moveTo(x - r * 0.8, y - r * 0.8);
+    ctx.lineTo(x + r * 0.8, y - r * 0.8);
+    ctx.quadraticCurveTo(x + r * 0.85, y + r * 0.3, x, y + r);
+    ctx.quadraticCurveTo(x - r * 0.85, y + r * 0.3, x - r * 0.8, y - r * 0.8);
+    ctx.stroke();
   } else if (kind === 'teleport') {
     // A portal: a ring with a bright core.
     ctx.arc(x, y, r * 0.8, 0, Math.PI * 2);

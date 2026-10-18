@@ -101,7 +101,7 @@ interface LocalRuleRow extends Omit<RuleRow, 'key'> {
 }
 
 function localRuleRows(): LocalRuleRow[] {
-  return [{ key: 'powerUps', group: 'twists', control: 'toggle', label: t('settings.powerUps'), options: [], classicOnly: true }];
+  return [{ key: 'powerUps', group: 'twists', control: 'toggle', label: t('settings.powerUps'), options: [] }];
 }
 
 /** The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has. */
@@ -125,21 +125,23 @@ export interface RuleSource {
 type RuleItem = Extract<MenuItem, { kind: 'slider' | 'toggle' | 'segmented' }>;
 
 /** The controls for the rules of a game mode, each with the block it belongs to. */
-export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, online = false): { group: RuleGroup; item: RuleItem }[] {
+export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, online = false): { key: keyof RuleValues; group: RuleGroup; item: RuleItem }[] {
   /** The cap to come back to after trying another power mode. */
   let lastCap = source.get().maxPower < AIM.MAX_POWER ? source.get().maxPower : DEFAULT_CAP;
   const commit = source.commit;
-  return rulesFor(mode, online).map((row): { group: RuleGroup; item: RuleItem } => {
+  return rulesFor(mode, online).map((row): { key: keyof RuleValues; group: RuleGroup; item: RuleItem } => {
     const hidden = row.when ? () => !row.when!(source.get()) : undefined;
     const reserve = row.reserve ? () => row.reserve!(source.get()) : undefined;
     if (row.control === 'toggle') {
       return {
+        key: row.key,
         group: row.group,
         item: { kind: 'toggle', label: row.label, hidden, commit, get: () => source.get()[row.key] as boolean, set: (v) => source.patch({ [row.key]: v }) },
       };
     }
     if (row.control === 'segmented') {
       return {
+        key: row.key,
         group: row.group,
         item: {
           kind: 'segmented',
@@ -153,6 +155,7 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, onlin
       };
     }
     return {
+      key: row.key,
       group: row.group,
       item: {
         kind: 'slider',

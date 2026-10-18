@@ -520,7 +520,9 @@ body {
 }
 
 /* A slider that is hidden but reserved keeps its space, unseen and out of reach: the settings don't change size. */
-.item--slider[hidden].is-reserved:not(.is-readonly) {
+.item--slider[hidden].is-reserved:not(.is-readonly),
+.item--segmented[hidden].is-reserved:not(.is-readonly),
+.item--tiles[hidden].is-reserved:not(.is-readonly) {
   display: grid !important;
   visibility: hidden;
   pointer-events: none;
@@ -650,6 +652,75 @@ body {
 
 .segmented__option.is-on {
   color: var(--p2);
+}
+
+/* Tiles: a row of symbols, each one on or off. */
+
+.item--tiles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  cursor: default;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr));
+  gap: 6px;
+}
+
+.tile {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px 2px 5px;
+  border: 1px solid rgb(91 125 179 / 0.4);
+  border-radius: 3px;
+  background: rgb(6 15 31 / 0.45);
+  color: var(--bone-dim);
+  font: 700 11px/1.2 var(--font-body);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 140ms, background 140ms, color 140ms, box-shadow 200ms;
+}
+
+.tile__icon {
+  width: 30px;
+  height: 30px;
+}
+
+.tile__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile.is-on {
+  border-color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  color: var(--bone);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--tone) 28%, transparent);
+}
+
+@media (max-width: 520px) {
+  .tiles {
+    gap: 4px;
+  }
+
+  .tile {
+    padding-inline: 0;
+    font-size: 9.5px;
+    letter-spacing: 0;
+  }
+}
+
+.item--tiles:focus .tile.is-cursor {
+  outline: 2px solid var(--p1);
+  outline-offset: 1px;
 }
 
 /* Pills: the buttons of a line-up row. */

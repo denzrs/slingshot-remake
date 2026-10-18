@@ -20,6 +20,8 @@ export interface Ship {
   x: number;
   y: number;
   alive: boolean;
+  /** Power-ups: a shield soaks up the next shot that would hit the ship (it is used up doing so). */
+  shield?: boolean;
 }
 
 export interface BlackHole {
@@ -49,6 +51,8 @@ export interface ShotRules {
 
 export type ShotEnd =
   | { kind: 'ship'; ship: number }
+  /** The shot hit a shielded ship: it ends there, and the ship lives. */
+  | { kind: 'shield'; ship: number }
   | { kind: 'planet'; planet: number }
   | { kind: 'hole' }
   | { kind: 'clash'; other: number }
@@ -126,6 +130,8 @@ export class Shot {
     trackStyle: boolean | 'metrics' = false,
     /** Ships this shot flies straight through (the neighbour grace period). */
     private readonly spare: readonly number[] = [],
+    /** Gravity's sign for this shot: 1 pulls it towards planets, -1 (a power-up) pushes it away. */
+    private readonly pull = 1,
   ) {
     const ship = world.ships[shooter];
     const dir = aimDirection(angle);
@@ -150,7 +156,7 @@ export class Shot {
    * how a splitter forks a shot in mid-flight. The original keeps flying as it was.
    */
   fork(turn: number): Shot {
-    const copy = new Shot(this.world, this.shooter, this.angle, this.power, this.rules, this.style !== null, this.spare);
+    const copy = new Shot(this.world, this.shooter, this.angle, this.power, this.rules, this.style !== null, this.spare, this.pull);
     copy.x = this.x;
     copy.y = this.y;
     copy.time = this.time;
@@ -168,6 +174,7 @@ export class Shot {
     if (this.end) return this.end;
     const dt = DT;
     const { planets, ships, hole, width, height } = this.world;
+    const pull = this.pull;
     const hx = this.vx;
     const hy = this.vy;
 
@@ -178,7 +185,7 @@ export class Shot {
       const dy = p.y - this.y;
       const d2 = dx * dx + dy * dy;
       const d = Math.sqrt(d2);
-      const a = (G * p.mass) / d2;
+      const a = (pull * G * p.mass) / d2;
       ax += (a * dx) / d;
       ay += (a * dy) / d;
     }
@@ -187,7 +194,7 @@ export class Shot {
       const dy = hole.y - this.y;
       const d2 = dx * dx + dy * dy;
       const d = Math.sqrt(d2);
-      const a = (G * hole.mass) / d2;
+      const a = (pull * G * hole.mass) / d2;
       ax += (a * dx) / d;
       ay += (a * dy) / d;
     }
@@ -212,7 +219,7 @@ export class Shot {
       if (!s.alive || this.spare.includes(i)) continue;
       const dx = s.x - this.x;
       const dy = s.y - this.y;
-      if (dx * dx + dy * dy < r2) return this.finish({ kind: 'ship', ship: i });
+      if (dx * dx + dy * dy < r2) return this.finish({ kind: s.shield ? 'shield' : 'ship', ship: i });
     }
     for (let i = 0; i < planets.length; i++) {
       const p = planets[i];

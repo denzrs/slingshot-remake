@@ -134,6 +134,7 @@ export type GameEvent =
   | { type: 'pickupFade'; kind: PowerUpKind; x: number; y: number }
   | { type: 'teleport'; player: number; fromX: number; fromY: number; toX: number; toY: number }
   | { type: 'split'; player: number; x: number; y: number }
+  | { type: 'shield'; ship: number; x: number; y: number }
   | { type: 'kill'; record: KillRecord }
   | { type: 'collapse'; x: number; y: number }
   | { type: 'killcam'; active: boolean; recording: boolean }
@@ -323,8 +324,11 @@ export abstract class Match {
     friendsOf: (id) => this.friendsOf(id),
     sparedFor: (id) => this.sparedFor(id),
     volleysPerPass: () => this.volleysPerPass,
+    kinds: () => this.settings.powerUpKinds,
+    amount: () => this.settings.powerUpAmount,
     emit: (event) => this.emit(event),
     clearCpuJobs: () => this.cpuJobs.clear(),
+    record: (update) => this.record(update),
   });
 
   constructor(
@@ -631,14 +635,24 @@ export abstract class Match {
 
   // ————————————————————————————— Experimental power-ups —————————————————————————————
 
-  /** Power-ups are an offline experiment: Classic only, never on the attract screen, never online. */
+  /** Power-ups are an offline experiment: Classic and Event Horizon, never on the attract screen, never online. */
   get powerUps(): boolean {
-    return this.settings.powerUps && this.mode === 'classic' && !this.attract;
+    return this.settings.powerUps && (this.mode === 'classic' || this.mode === 'horizon') && !this.attract;
   }
 
   /** Volleys that make up one pass: the shot of every ship still in, or one salvo at a time. */
   protected get volleysPerPass(): number {
-    return Math.max(1, this.alive.length);
+    return this.salvo ? 1 : Math.max(1, this.alive.length);
+  }
+
+  /**
+   * A CPU holding a teleport that planned and found no hitting shot jumps to a new spot, once, and plans again
+   * from there. Returns true when it did, so the caller leaves this tick to the new position.
+   */
+  protected cpuTeleportIfBlind(p: PlayerState, job: CpuJob | undefined): boolean {
+    if (p.powerUp !== 'teleport' || !job?.target || !job.blind || job.teleportTried) return false;
+    job.teleportTried = true;
+    return this.power.teleport(p.id);
   }
 
   get pickups(): Pickup[] {
@@ -666,6 +680,11 @@ export abstract class Match {
 
   cancelTeleport(): boolean {
     return this.power.cancelTeleport();
+  }
+
+  /** A number key (0-based index) while choosing: the ship jumps to that spot. */
+  chooseTeleportIndex(index: number): boolean {
+    return this.power.chooseTeleportIndex(index);
   }
 
   /** A click at a point of the field: on an offered teleport spot it jumps there. */
@@ -912,6 +931,17 @@ export abstract class Match {
         const ship = volley.world.ships[end.ship];
         this.emit({ type: 'explode', x: ship.x, y: ship.y, ship: end.ship, vx: e.vx, vy: e.vy });
         if (live) this.registerKill(vs, end.ship, volley);
+        break;
+      }
+      case 'shield': {
+        // The shield took the hit: it is gone, and so is the power-up it came from.
+        this.emit({ type: 'shield', ship: end.ship, x: e.x, y: e.y });
+        if (live) {
+          const holder = this.players[end.ship];
+          holder.powerUp = null;
+          holder.armed = false;
+          this.record((book) => bump(book.saves, end.ship));
+        }
         break;
       }
       case 'planet': {

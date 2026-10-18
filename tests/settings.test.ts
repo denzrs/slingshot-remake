@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CpuLevel } from '../src/ai';
 import { AIM } from '../src/config';
+import { POWER_UP, POWER_UP_KINDS } from '../src/powerups';
 import { activeSeats, addSeat, cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings, startPower } from '../src/settings';
 
 const CPU_LEVELS: CpuLevel[] = ['easy', 'medium', 'hard', 'hawking', 'experimental', 'experimental-easy', 'experimental-medium', 'experimental-hard'];
@@ -64,6 +65,43 @@ describe('power settings', () => {
     { fixedPower: true, fixedPowerLevel: 10, maxPower: 100, expected: 10 },
   ])('starts shots at $expected with fixed=$fixedPower, level=$fixedPowerLevel and cap=$maxPower', ({ expected, ...settings }) => {
     expect(startPower(settings)).toBe(expected);
+  });
+});
+
+describe('power-up choices', () => {
+  it('start with every kind and the usual amount, also for settings saved before they existed', () => {
+    storage({ sound: false });
+    const loaded = loadSettings();
+    expect(loaded.powerUpKinds).toEqual(POWER_UP_KINDS);
+    expect(loaded.powerUpAmount).toBe(POWER_UP.DEFAULT_AMOUNT);
+  });
+
+  it('keep the kinds and the amount after saving and reloading', () => {
+    storage();
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.powerUpKinds = ['splitter', 'shield'];
+    settings.powerUpAmount = 4;
+    saveSettings(settings);
+    const loaded = loadSettings();
+    expect(loaded.powerUpKinds).toEqual(['splitter', 'shield']);
+    expect(loaded.powerUpAmount).toBe(4);
+  });
+
+  it('drop unknown kinds, keep the usual order, and never end up with none', () => {
+    storage({ powerUpKinds: ['shield', 'warp', 'preview'], powerUpAmount: 9 });
+    const loaded = loadSettings();
+    expect(loaded.powerUpKinds).toEqual(['preview', 'shield']);
+    expect(loaded.powerUpAmount).toBe(POWER_UP.DEFAULT_AMOUNT);
+    storage({ powerUpKinds: [] });
+    expect(loadSettings().powerUpKinds).toEqual(POWER_UP_KINDS);
+    storage({ powerUpKinds: 'preview' });
+    expect(loadSettings().powerUpKinds).toEqual(POWER_UP_KINDS);
+  });
+
+  it('are copied with the settings, so a running match keeps its own', () => {
+    const copy = cloneSettings(DEFAULT_SETTINGS);
+    copy.powerUpKinds.pop();
+    expect(DEFAULT_SETTINGS.powerUpKinds).toEqual(POWER_UP_KINDS);
   });
 });
 

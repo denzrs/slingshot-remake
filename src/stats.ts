@@ -3,7 +3,7 @@
  * Pure data and pure functions — the matches feed it, the HUD and the final screen read it.
  */
 
-export type AwardKind = 'longestShot' | 'fastestKill' | 'swingbys' | 'grazes' | 'bestHit' | 'kills' | 'closeCall' | 'sniper' | 'ownGoals';
+export type AwardKind = 'longestShot' | 'fastestKill' | 'swingbys' | 'grazes' | 'bestHit' | 'kills' | 'closeCall' | 'sniper' | 'ownGoals' | 'pickups' | 'saves';
 
 interface Point {
   x: number;
@@ -37,6 +37,10 @@ export interface StatBook {
   closeCall: Best | null;
   /** The hit from the greatest distance, in field units. */
   sniper: Best | null;
+  /** Power-ups taken per player (an offline experiment; empty otherwise). */
+  pickups: number[];
+  /** Hits a player's shield soaked up. */
+  saves: number[];
 }
 
 export interface Award {
@@ -63,6 +67,8 @@ export const newStatBook = (): StatBook => ({
   ownGoals: [],
   closeCall: null,
   sniper: null,
+  pickups: [],
+  saves: [],
 });
 
 /** Add one to a player's counter; the list grows as new players show up. */
@@ -135,5 +141,7 @@ export function awards(book: StatBook): Award[] {
     record('closeCall', book.closeCall, (book.closeCall?.value ?? Infinity) <= CLOSE_CALL),
     record('sniper', book.sniper, (book.sniper?.value ?? 0) >= SNIPER),
     mostOf('ownGoals', book.ownGoals, 1),
+    mostOf('pickups', book.pickups ?? [], 1),
+    mostOf('saves', book.saves ?? [], 1),
   ].filter((a): a is Award => a !== null);
 }

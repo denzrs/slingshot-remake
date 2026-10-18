@@ -31,6 +31,8 @@ export function buildControl(item: Exclude<MenuItem, { kind: 'action' }>, env: E
       return toggleControl(item, env);
     case 'segmented':
       return segmentedControl(item, env);
+    case 'tiles':
+      return tilesControl(item, env);
     case 'seat':
       return seatControl(item, env);
     case 'choice':
@@ -276,7 +278,9 @@ export function segmentedControl(item: Item<'segmented'>, env: Env): Control {
 
   let drawn = false;
   const draw = (): void => {
-    syncHidden(el, item.hidden?.() ?? false, drawn);
+    const hidden = item.hidden?.() ?? false;
+    syncHidden(el, hidden, drawn);
+    el.classList.toggle('is-reserved', hidden && (item.reserve?.() ?? false));
     drawn = true;
     const i = indexOf(options, item.get());
     readout.textContent = options[i].label;
@@ -314,6 +318,108 @@ export function segmentedControl(item: Item<'segmented'>, env: Env): Control {
           return true;
       }
       return false;
+    });
+  }
+
+  draw();
+  return { el, refresh: draw };
+}
+
+// ————————————————————————————— Tiles —————————————————————————————
+
+const TILE_ICON = 30;
+
+/**
+ * A row of tiles with a symbol each, every one on or off on its own: click or tap a tile, or move the cursor
+ * with ←/→ and press Enter. The last tile that is on stays on.
+ */
+function tilesControl(item: Item<'tiles'>, env: Env): Control {
+  const { tiles } = item;
+  let cursor = 0;
+  const dpr = typeof devicePixelRatio === 'number' ? Math.max(1, devicePixelRatio) : 1;
+  const cells = tiles.map((tile, i) => {
+    const icon = h('canvas.tile__icon', { width: String(Math.round(TILE_ICON * dpr)), height: String(Math.round(TILE_ICON * dpr)), 'aria-hidden': 'true' }) as HTMLCanvasElement;
+    const cell = h('span.tile', { role: 'checkbox', 'aria-label': tile.label }, icon, h('span.tile__name', null, tile.label));
+    cell.style.setProperty('--tone', tile.color);
+    if (!env.readonly) cell.addEventListener('click', () => {
+      el.focus({ preventScroll: true });
+      cursor = i;
+      toggle(i);
+    });
+    return { cell, icon };
+  });
+  const row = h('span.tiles', null, ...cells.map((c) => c.cell));
+  row.style.setProperty('--n', String(tiles.length));
+  const el = h('div.item.item--tiles', { role: 'group', 'aria-label': item.label }, h('span.item__label', null, item.label), row);
+  focusable(el, env);
+
+  const isOn = (i: number): boolean => item.get().includes(tiles[i].value);
+  let drawn = false;
+  const draw = (): void => {
+    const hidden = item.hidden?.() ?? false;
+    syncHidden(el, hidden, drawn);
+    el.classList.toggle('is-reserved', hidden && (item.reserve?.() ?? false));
+    drawn = true;
+    cells.forEach(({ cell, icon }, i) => {
+      const on = isOn(i);
+      cell.classList.toggle('is-on', on);
+      cell.classList.toggle('is-cursor', !env.readonly && i === cursor);
+      cell.setAttribute('aria-checked', String(on));
+      const ctx = icon.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, icon.width, icon.height);
+      ctx.translate(icon.width / 2, icon.height / 2);
+      ctx.scale(dpr, dpr);
+      ctx.globalAlpha = on ? 1 : 0.4;
+      ctx.strokeStyle = ctx.fillStyle = on ? tiles[i].color : '#8fa3c4';
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = ctx.lineJoin = 'round';
+      tiles[i].draw(ctx, TILE_ICON * 0.36);
+    });
+  };
+  function toggle(i: number): void {
+    const wasOn = isOn(i);
+    const next = tiles.filter((_, k) => (k === i ? !wasOn : isOn(k))).map((tile) => tile.value);
+    // The last tile cannot be switched off: something has to be in play.
+    if (!next.length) {
+      draw();
+      env.sound?.blip();
+      return;
+    }
+    item.set(next);
+    draw();
+    env.sound?.toggle(!wasOn);
+    env.changed();
+    item.commit?.();
+  }
+
+  if (!env.readonly) {
+    el.addEventListener('focus', draw);
+    keys(el, (e) => {
+      switch (e.key) {
+        case 'ArrowLeft':
+          cursor = stepIndex(cursor, -1, tiles.length, false);
+          break;
+        case 'ArrowRight':
+          cursor = stepIndex(cursor, 1, tiles.length, false);
+          break;
+        case 'Home':
+          cursor = 0;
+          break;
+        case 'End':
+          cursor = tiles.length - 1;
+          break;
+        case 'Enter':
+        case ' ':
+          if (!e.repeat) toggle(cursor);
+          return true;
+        default:
+          return false;
+      }
+      draw();
+      env.sound?.tick(positionOf(cursor, tiles.length));
+      return true;
     });
   }
 

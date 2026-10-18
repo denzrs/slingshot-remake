@@ -8,6 +8,16 @@ export interface Choice<T> {
   label: string;
 }
 
+/** One tile of a `tiles` row. */
+export interface Tile {
+  value: unknown;
+  label: string;
+  /** The tile's colour while it is on. */
+  color: string;
+  /** Draws its symbol centred on the origin, about `r` in size, in the colour the tile is drawn with. */
+  draw: (ctx: CanvasRenderingContext2D, r: number) => void;
+}
+
 interface Placed {
   /** The `[data-section]` of the screen this row goes into; the screen's main list when left out. */
   section?: string;
@@ -55,6 +65,16 @@ export type MenuItem =
         options: Choice<unknown>[];
         get: () => unknown;
         set: (v: unknown) => void;
+      })
+  | (Placed &
+      Live & {
+        /** A row of tiles, each one on or off on its own; at least one stays on. */
+        kind: 'tiles';
+        label: string;
+        tiles: Tile[];
+        /** The values of the tiles that are on. */
+        get: () => unknown[];
+        set: (v: unknown[]) => void;
       })
   | (Placed &
       Live & {

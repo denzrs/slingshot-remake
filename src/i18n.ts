@@ -205,7 +205,11 @@ const en = {
   'powerup.preview': 'preview',
   'powerup.teleport': 'teleport',
   'powerup.splitter': 'splitter',
+  'powerup.repulse': 'repulse',
+  'powerup.shield': 'shield',
   'powerup.splitNow': 'Split',
+  'powerups.kinds': 'Which ones',
+  'powerups.amount': 'Pickups on the field',
   'powerup.jump': 'Jump',
   'settings.hiddenAim': 'Hidden aim',
   'settings.betting': 'Betting on the round (online)',
@@ -433,6 +437,8 @@ const en = {
   'award.closeCall': 'Closest call',
   'award.sniper': 'Sniper',
   'award.ownGoals': 'Own-goal king',
+  'award.pickups': 'Most power-ups',
+  'award.saves': 'Lifesaver',
   'scorecard.history': 'Score over the rounds',
 
   // — daily challenge —
@@ -707,7 +713,11 @@ const de: Dict = {
   'powerup.preview': 'Vorschau',
   'powerup.teleport': 'Teleport',
   'powerup.splitter': 'Splitter',
+  'powerup.repulse': 'Umpolung',
+  'powerup.shield': 'Schild',
   'powerup.splitNow': 'Teilen',
+  'powerups.kinds': 'Welche',
+  'powerups.amount': 'Pickups auf dem Feld',
   'powerup.jump': 'Springen',
   'settings.hiddenAim': 'Versteckte Zielpfeile',
   'settings.betting': 'Wetten auf die Runde (online)',
@@ -930,6 +940,8 @@ const de: Dict = {
   'award.closeCall': 'Knappster Fehlschuss',
   'award.sniper': 'Scharfschütze',
   'award.ownGoals': 'Eigentor-König',
+  'award.pickups': 'Meiste Power-ups',
+  'award.saves': 'Lebensretter',
   'scorecard.history': 'Punkteverlauf',
 
   // — daily challenge —

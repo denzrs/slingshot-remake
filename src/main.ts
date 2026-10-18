@@ -103,6 +103,10 @@ function wire(m: Match): void {
         effects.split(e.x, e.y, POWER_UP_COLORS.splitter);
         if (audible) sound.split();
         break;
+      case 'shield':
+        effects.shieldHit(e.x, e.y, POWER_UP_COLORS.shield);
+        if (audible) sound.shield();
+        break;
       case 'explode':
         effects.explode(e.x, e.y, color(e.ship), e.vx, e.vy);
         if (audible) sound.explode();
@@ -618,6 +622,13 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Choosing a teleport spot: 1, 2 or 3 picks that spot and jumps.
+  const spotKey = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
+  if (spotKey && !online() && match.teleporting && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (match.chooseTeleportIndex(Number(spotKey[1]) - 1)) e.preventDefault();
+    return;
+  }
+
   const [dAngle, dPower] = stepFor(e);
   let handled = true;
   switch (e.code) {
@@ -736,7 +747,7 @@ function syncButtons(): void {
 
   // Power-ups on touch: a teleport or preview has a button of its own while its ship is aiming.
   const holder = playing && coarsePointer.matches && m?.powerUps && !online() && canAim() ? m.players[m.viewer ?? m.current] : null;
-  const power = holder && (holder.powerUp === 'teleport' || holder.powerUp === 'preview') ? holder : null;
+  const power = holder && (holder.powerUp === 'teleport' || holder.powerUp === 'preview' || holder.powerUp === 'repulse') ? holder : null;
   if (touchPower.hidden !== !power) touchPower.hidden = !power;
   if (power) {
     const label = `${power.armed || m!.teleporting ? '● ' : ''}${t(`powerup.${power.powerUp}` as Key).toUpperCase()}`;

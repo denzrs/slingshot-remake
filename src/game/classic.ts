@@ -3,7 +3,7 @@ import { scoreChallengeHit } from '../scoring';
 import { AIM, COLORS, HORIZON, SCORING } from '../config';
 import { t } from '../i18n';
 import { Volley, type VolleyShot } from '../volley';
-import { Match, type CpuJob, type PlayerState, type RoundTitle } from './match';
+import { Match, type RoundTitle } from './match';
 import type { Pickup } from '../powerups';
 import type { OracleSnapshot } from './oracle';
 
@@ -124,11 +124,6 @@ export class ClassicMatch extends Match {
 
   get salvo(): boolean {
     return this.settings.simultaneousShots;
-  }
-
-  /** A salvo is one volley per pass; in turns the shot of every ship still in makes up a pass. */
-  protected get volleysPerPass(): number {
-    return this.salvo ? 1 : super.volleysPerPass;
   }
 
   /** Online salvos have no turns: everyone who hasn't locked in may aim. */
@@ -303,16 +298,6 @@ export class ClassicMatch extends Match {
       job.settle += dt;
       if (job.settle > 0.35) this.fire();
     }
-  }
-
-  /**
-   * A CPU holding a teleport that planned and found no hitting shot jumps to a new spot, once, and plans again
-   * from there. Returns true when it did, so the caller leaves this tick to the new position.
-   */
-  private cpuTeleportIfBlind(p: PlayerState, job: CpuJob | undefined): boolean {
-    if (p.powerUp !== 'teleport' || !job?.target || !job.blind || job.teleportTried) return false;
-    job.teleportTried = true;
-    return this.power.teleport(p.id);
   }
 
   protected afterVolley(): void {

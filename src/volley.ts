@@ -9,6 +9,8 @@ export interface VolleyAim {
   spare?: number[];
   /** Shots of one splitter share a fan id: they start from the same muzzle and never cancel each other. */
   fan?: number;
+  /** Gravity's sign for this shot; -1 pushes it away from planets (the repulse power-up). */
+  pull?: number;
 }
 
 export interface VolleyShot {
@@ -16,6 +18,8 @@ export interface VolleyShot {
   owner: number;
   /** The splitter fan the shot belongs to, if any: the shots of one fan draw as one. */
   fan?: number;
+  /** -1 for a shot gravity pushes away from planets. */
+  pull?: number;
   /** Flat [x0, y0, x1, y1, …] polyline in field units. */
   trail: number[];
 }
@@ -25,7 +29,27 @@ export interface VolleySnapshot {
   id: number;
   aims: VolleyAim[];
   steps: number;
+  script?: VolleyScript[];
   shots: { owner: number; trail: number[]; x: number; y: number; vx: number; vy: number; time: number; end: ShotEnd | null; style: StyleEvent[] | null }[];
+}
+
+/** Something done to a flight after it started, so a replay can do it at the same step: a split, or a shield put on or taken off. */
+export type VolleyScript =
+  | { at: number; kind: 'split'; index: number; fan: number; turns: number[] }
+  | { at: number; kind: 'shield'; ship: number; on: boolean };
+
+/**
+ * The shot of the original aims that shot `index` branched off from, through any number of splits (the shot itself
+ * if it is one of them). A replay has not made the forks yet at its start, so this is who it follows until then.
+ */
+export function shotSource(aims: number, script: readonly VolleyScript[], index: number): number {
+  let next = aims;
+  for (const entry of script) {
+    if (entry.kind !== 'split') continue;
+    if (index >= next && index < next + entry.turns.length) return shotSource(aims, script, entry.index);
+    next += entry.turns.length;
+  }
+  return index;
 }
 
 export type VolleyEvent =
@@ -43,19 +67,26 @@ let nextVolleyId = 1;
 export class Volley {
   readonly shots: VolleyShot[];
   private readonly aims: VolleyAim[];
+  private readonly replaying: boolean;
   id = nextVolleyId++;
   steps = 0;
+  /** What was done to the flight along the way. A volley built with the same script flies the same flight. */
+  readonly script: VolleyScript[];
 
   constructor(
     readonly world: World,
     aims: VolleyAim[],
     rules: ShotRules,
     trackStyle: boolean,
+    script: readonly VolleyScript[] = [],
   ) {
+    // A replay carries the script it is to follow; a live flight starts empty and writes its own.
+    this.replaying = script.length > 0;
+    this.script = script.map((entry) => ({ ...entry }));
     this.aims = aims.map((aim) => ({ ...aim }));
     this.shots = aims.map((a) => {
-      const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare);
-      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan };
+      const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare, a.pull);
+      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan, pull: a.pull };
     });
   }
 
@@ -68,6 +99,7 @@ export class Volley {
       id: this.id,
       aims: this.aims.map((aim) => ({ ...aim })),
       steps: this.steps,
+      script: this.script.map((entry) => ({ ...entry })),
       shots: this.shots.map(({ owner, trail, shot }) => ({
         owner, trail, x: shot.x, y: shot.y, vx: shot.vx, vy: shot.vy, time: shot.time, end: shot.end,
         style: shot.style ? [...shot.style] : null,
@@ -78,6 +110,7 @@ export class Volley {
   restore(snapshot: VolleySnapshot): void {
     this.id = snapshot.id;
     this.steps = snapshot.steps;
+    this.script.splice(0, Infinity, ...(snapshot.script ?? []));
     snapshot.shots.forEach((saved, i) => {
       const current = this.shots[i];
       if (!current) return;
@@ -94,17 +127,35 @@ export class Volley {
   split(index: number, turns: readonly number[], fan: number): boolean {
     const vs = this.shots[index];
     if (!vs || vs.shot.end) return false;
+    if (!this.replaying) this.script.push({ at: this.steps, kind: 'split', index, fan, turns: [...turns] });
     this.aims[index] = { ...this.aims[index], fan };
     vs.fan = fan;
     for (const turn of turns) {
-      this.shots.push({ shot: vs.shot.fork(turn), owner: vs.owner, trail: [...vs.trail], fan });
+      this.shots.push({ shot: vs.shot.fork(turn), owner: vs.owner, trail: [...vs.trail], fan, pull: vs.pull });
       this.aims.push({ ...this.aims[index] });
     }
     return true;
   }
 
+  /** Puts a shield on a ship, or takes it off, in the middle of the flight. */
+  setShield(ship: number, on: boolean): void {
+    if (!this.replaying) this.script.push({ at: this.steps, kind: 'shield', ship, on });
+    this.world.ships[ship].shield = on;
+  }
+
+  /** A replay does what was done to the original flight, right before the step it was done after. */
+  private runScript(): void {
+    if (!this.replaying) return;
+    for (const entry of this.script) {
+      if (entry.at !== this.steps) continue;
+      if (entry.kind === 'split') this.split(entry.index, entry.turns, entry.fan);
+      else this.world.ships[entry.ship].shield = entry.on;
+    }
+  }
+
   step(): VolleyEvent[] {
     const events: VolleyEvent[] = [];
+    this.runScript();
     this.steps++;
     for (let i = 0; i < this.shots.length; i++) {
       const vs = this.shots[i];
@@ -118,6 +169,8 @@ export class Volley {
       if (end || this.steps % TRAIL_EVERY === 0) vs.trail.push(shot.x, shot.y);
       if (end) {
         if (end.kind === 'ship') this.world.ships[end.ship].alive = false;
+        // A shield takes exactly one shot.
+        else if (end.kind === 'shield') this.world.ships[end.ship].shield = false;
         events.push({ type: 'end', index: i, end, x: shot.x, y: shot.y, vx: shot.vx, vy: shot.vy });
       }
     }

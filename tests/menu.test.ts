@@ -124,6 +124,13 @@ describe('game rules in the menu', () => {
     }
   });
 
+  it('offers power-ups on the offline setup of both modes, and never in an online room', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      expect(rulesFor(mode).map((r) => r.key)).toContain('powerUps');
+      expect(rulesFor(mode, true).map((r) => r.key)).not.toContain('powerUps');
+    }
+  });
+
   it('keeps the rules that only make sense online — betting — off the offline setup screen, in both modes', () => {
     const online = all.filter((r) => r.onlineOnly);
     expect(online.map((r) => r.key)).toEqual(['betting']);

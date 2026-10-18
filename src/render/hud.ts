@@ -177,7 +177,8 @@ export class Hud {
     const left = align === 'left' ? x : x - w;
     const held = p.powerUp;
     const color = held ? POWER_UP_COLORS[held] : COLORS.line;
-    const key = held === 'splitter' ? 'SPACE' : held ? 'P' : null;
+    // A splitter is used with fire, a shield needs no key; the rest with P.
+    const key = held === 'splitter' ? 'SPACE' : held === 'shield' ? null : held ? 'P' : null;
     const cy = y + h / 2;
 
     ctx.save();
@@ -216,7 +217,13 @@ export class Hud {
       ctx.strokeStyle = color;
       ctx.lineWidth = 1 * k;
       ctx.strokeRect(capX, capY, capW, capH);
-      ctx.fillStyle = color;
+      // An armed preview or repulse has its key filled in: it is on.
+      const on = p.armed && (held === 'preview' || held === 'repulse');
+      if (on) {
+        ctx.fillStyle = color;
+        ctx.fillRect(capX, capY, capW, capH);
+      }
+      ctx.fillStyle = on ? COLORS.plate : color;
       ctx.font = `700 ${7.5 * k}px ${FONTS.mono}`;
       ctx.textAlign = 'center';
       ctx.fillText(key, capX + capW / 2, cy + 0.5 * k);
@@ -318,6 +325,10 @@ export class Hud {
     ctx.lineCap = 'round';
     drawPowerUpSymbol(ctx, held, cx, cy, 6 * k);
     if (p.id === match.focus && (match.phase === 'aiming' || match.phase === 'flying')) {
+      if (held === 'shield') {
+        ctx.restore();
+        return;
+      }
       const key = held === 'splitter' ? 'SPACE' : 'P';
       const capW = (key.length > 1 ? 32 : 14) * k;
       const capH = 12 * k;

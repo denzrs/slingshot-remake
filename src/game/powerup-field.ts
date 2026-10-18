@@ -1,6 +1,7 @@
 import type { ShotRules, World } from '../physics';
-import { POWER_UP, POWER_UP_KINDS, previewPath, SPLIT_TURNS, spawnPickup, teleportCandidates, teleportSpot, touchedPickups, type Pickup } from '../powerups';
+import { CPU_IGNORES, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportCandidates, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
 import type { Rng } from '../rng';
+import { bump, type StatBook } from '../stats';
 import type { Volley, VolleyAim } from '../volley';
 import type { GameEvent, Phase, PlayerState } from './match';
 
@@ -24,8 +25,13 @@ export interface PowerUpHost {
   sparedFor(id: number): number[];
   /** Volleys that make up one pass. */
   volleysPerPass(): number;
+  /** The kinds of power-up in play, and how many pickups lie on the field (the settings). */
+  kinds(): readonly PowerUpKind[];
+  amount(): number;
   emit(event: GameEvent): void;
   clearCpuJobs(): void;
+  /** Writes into the round's and the match's stat book, for the scorecard. */
+  record(update: (book: StatBook) => void): void;
 }
 
 /** A spot a ship may teleport to, as the renderer and the pointer see it. */
@@ -65,6 +71,11 @@ export class PowerUpField {
     return this.host.enabled();
   }
 
+  /** How many pickups lie on the field: a round starts with that many and a taken one is replaced; one more may be laid. */
+  private get amount(): number {
+    return Math.max(1, this.host.amount());
+  }
+
   // ————————————————————————————— Pickups —————————————————————————————
 
   /** A new round: the old pickups and choices are gone, and the first pickups are laid. */
@@ -73,7 +84,7 @@ export class PowerUpField {
     this.pass = 0;
     this.volleysThisPass = 0;
     this.choosing = null;
-    if (this.enabled) for (let i = 0; i < POWER_UP.START_COUNT; i++) this.spawn();
+    if (this.enabled) for (let i = 0; i < this.amount; i++) this.spawn();
   }
 
   /**
@@ -81,7 +92,7 @@ export class PowerUpField {
    * Round start and refills are silent; the caller announces the others.
    */
   private spawn(): Pickup | null {
-    if (this.pickups.length >= POWER_UP.MAX_ON_FIELD) return null;
+    if (this.pickups.length > this.amount) return null;
     const host = this.host;
     const alive = host.players().filter((p) => p.alive);
     if (!alive.length) return null;
@@ -90,7 +101,7 @@ export class PowerUpField {
     const rng = host.rng();
     // When everybody is level there is nobody to help, and every ship's paths are fair game.
     const sources = trailing.length < alive.length && rng() < POWER_UP.CATCH_UP_CHANCE ? [trailing[Math.floor(rng() * trailing.length)].id] : alive.map((p) => p.id);
-    const kind = POWER_UP_KINDS[Math.floor(rng() * POWER_UP_KINDS.length)];
+    const kind = pickKind(rng, host.kinds());
     const pickup = spawnPickup(host.world(), rng, this.pickups, kind, ++this.ids, this.pass, { rules: host.rules(), sources });
     if (pickup) this.pickups.push(pickup);
     return pickup;
@@ -110,7 +121,21 @@ export class PowerUpField {
       this.pickups = kept;
       this.announce(this.spawn());
     }
-    while (this.pickups.length < POWER_UP.MIN_ON_FIELD) {
+    while (this.pickups.length < this.amount) {
+      const fresh = this.spawn();
+      if (!fresh) break;
+      this.announce(fresh);
+    }
+  }
+
+  /** The black hole has grown: pickups it has swallowed are gone, and the field is filled up again. */
+  sweep(): void {
+    const hole = this.host.world().hole;
+    if (!this.enabled || !hole) return;
+    const swallowed = this.pickups.filter((p) => Math.hypot(p.x - hole.x, p.y - hole.y) < hole.radius + POWER_UP.PICKUP_RADIUS);
+    for (const gone of swallowed) this.host.emit({ type: 'pickupFade', kind: gone.kind, x: gone.x, y: gone.y });
+    this.pickups = this.pickups.filter((p) => !swallowed.includes(p));
+    while (this.pickups.length < this.amount) {
       const fresh = this.spawn();
       if (!fresh) break;
       this.announce(fresh);
@@ -137,14 +162,18 @@ export class PowerUpField {
     const players = this.host.players();
     for (const vs of volley.shots) {
       const p = players[vs.owner];
-      // A CPU has no use for a preview, so it leaves those lying.
-      const hit = touchedPickups(this.pickups, vs.shot.x, vs.shot.y).find((i) => !(p.cpu && this.pickups[i].kind === 'preview'));
+      // A CPU has no use for a preview or a repulse, so it leaves those lying.
+      const hit = touchedPickups(this.pickups, vs.shot.x, vs.shot.y).find((i) => !(p.cpu && CPU_IGNORES.has(this.pickups[i].kind)));
       if (hit === undefined) continue;
       const [pickup] = this.pickups.splice(hit, 1);
       const dropped = p.powerUp;
       p.powerUp = pickup.kind;
-      p.armed = p.cpu !== null || pickup.kind === 'splitter';
+      // A splitter and a shield need no key: they are ready from the start. A CPU holds everything armed.
+      p.armed = p.cpu !== null || pickup.kind === 'splitter' || pickup.kind === 'shield';
+      // The shield is on the ship itself, so every shot in the volley meets it. Swapping it away takes it off.
+      volley.setShield(p.id, pickup.kind === 'shield');
       this.host.emit({ type: 'pickup', player: p.id, kind: pickup.kind, x: pickup.x, y: pickup.y, dropped });
+      this.host.record((book) => bump(book.pickups, p.id));
     }
   }
 
@@ -159,8 +188,8 @@ export class PowerUpField {
     const host = this.host;
     if (!this.enabled || !host.canAim(id)) return;
     const p = host.players()[id];
-    if (!p.powerUp || p.powerUp === 'splitter') return;
-    if (p.powerUp === 'preview') {
+    if (!p.powerUp || p.powerUp === 'splitter' || p.powerUp === 'shield') return;
+    if (p.powerUp === 'preview' || p.powerUp === 'repulse') {
       p.armed = !p.armed;
       this.previewKey = '';
       return;
@@ -203,6 +232,14 @@ export class PowerUpField {
     const had = !!this.teleportSpots();
     this.choosing = null;
     return had;
+  }
+
+  /** A number key while choosing: spot `index` (0-based) is picked and the ship jumps there. False if there is no such spot. */
+  chooseTeleportIndex(index: number): boolean {
+    const c = this.teleportSpots();
+    if (!c || index < 0 || index >= c.spots.length) return false;
+    c.choice = index;
+    return this.confirmTeleport();
   }
 
   /** A click or tap at a point of the field: on an offered spot it jumps there. */
@@ -271,15 +308,18 @@ export class PowerUpField {
   }
 
   /**
-   * The aims a player's shot launches with. An armed preview is used up by the shot; a splitter waits for
-   * the fire press during the flight.
+   * The aims a player's shot launches with. An armed preview is used up by the shot, an armed repulse is used up
+   * by pushing the shot away from the planets; a splitter waits for the fire press during the flight, a shield
+   * for a hit.
    */
   aimsFor(p: PlayerState): VolleyAim[] {
-    if (this.enabled && p.armed && p.powerUp === 'preview') {
+    const aim: VolleyAim = { player: p.id, angle: p.angle, power: p.power, spare: this.host.sparedFor(p.id) };
+    if (this.enabled && p.armed && (p.powerUp === 'preview' || p.powerUp === 'repulse')) {
+      if (p.powerUp === 'repulse') aim.pull = -1;
       p.powerUp = null;
       p.armed = false;
     }
-    return [{ player: p.id, angle: p.angle, power: p.power, spare: this.host.sparedFor(p.id) }];
+    return [aim];
   }
 
   // ————————————————————————————— Drawing —————————————————————————————

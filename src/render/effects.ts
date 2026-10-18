@@ -193,6 +193,16 @@ export class Effects {
     this.flash = Math.max(this.flash, 0.3);
   }
 
+  /** A shield soaking up a hit: a bright ring where the shot arrived, and sparks scattering off it. */
+  shieldHit(x: number, y: number, color: string): void {
+    this.ring(x, y, 44, 0.45, color);
+    this.ring(x, y, 24, 0.3, COLORS.bone);
+    this.burst(x, y, 24, 50, 220, color, 'large', 0, 0, 0.8);
+    this.burst(x, y, 10, 30, 120, COLORS.bone, 'small', 0, 0, 0.6);
+    this.flash = Math.max(this.flash, 0.25);
+    if (!this.reducedMotion) this.shake = Math.max(this.shake, 3);
+  }
+
   /** A shot forking into three: a ring and a spray of sparks at the fork. */
   split(x: number, y: number, color: string): void {
     this.ring(x, y, 34, 0.35, color);

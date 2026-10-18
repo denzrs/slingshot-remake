@@ -1,5 +1,6 @@
 import type { CpuLevel } from './ai';
 import { AIM, GRACE, MAX_PLAYERS, TRAIL_FADE } from './config';
+import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from './powerups';
 import { detectLang, isLang, type Lang } from './i18n';
 
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
@@ -33,6 +34,9 @@ export interface Settings {
   simultaneousShots: boolean;
   /** Experimental, Classic offline only: pickups float on the field, and a shot that flies past one takes it (preview, teleport or splitter). */
   powerUps: boolean;
+  /** Power-ups: the kinds that may turn up (never empty), and how many pickups lie on the field at once. */
+  powerUpKinds: PowerUpKind[];
+  powerUpAmount: number;
   /** Other players' aim arrows, angles and ship headings stay hidden: you only see your own aim. */
   hiddenAim: boolean;
   /** Seconds a finished shot's flight path stays on the board before it has faded away; 0 = it stays. */
@@ -65,6 +69,8 @@ export const DEFAULT_SETTINGS: Settings = {
   neighborGrace: 0,
   simultaneousShots: false,
   powerUps: false,
+  powerUpKinds: [...POWER_UP_KINDS],
+  powerUpAmount: POWER_UP.DEFAULT_AMOUNT,
   hiddenAim: false,
   fadingTrails: 0,
   betting: false,
@@ -94,6 +100,10 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
+      // Power-up choices: only known kinds, in their usual order, and never none at all.
+      const kinds = POWER_UP_KINDS.filter((kind) => Array.isArray(parsed.powerUpKinds) && parsed.powerUpKinds.includes(kind));
+      s.powerUpKinds = kinds.length ? kinds : [...POWER_UP_KINDS];
+      if (!POWER_UP.AMOUNTS.includes(s.powerUpAmount)) s.powerUpAmount = POWER_UP.DEFAULT_AMOUNT;
       if (!TRAIL_FADE.OPTIONS.includes(s.fadingTrails)) s.fadingTrails = 0;
       if (!AIM.CAP_OPTIONS.includes(s.maxPower)) s.maxPower = AIM.MAX_POWER;
       if (!AIM.FIXED_OPTIONS.includes(s.fixedPowerLevel)) s.fixedPowerLevel = AIM.FIXED_POWER;
@@ -110,7 +120,7 @@ export function loadSettings(): Settings {
   } catch {
     // Storage blocked or corrupt — fall back to defaults.
   }
-  return { ...DEFAULT_SETTINGS, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams], language: detectLang() };
+  return { ...DEFAULT_SETTINGS, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams], powerUpKinds: [...DEFAULT_SETTINGS.powerUpKinds], language: detectLang() };
 }
 
 /** The power a ship starts a round with — or shoots with when it is fixed — never above the cap. */
@@ -118,7 +128,7 @@ export const startPower = (s: Pick<Settings, 'fixedPower' | 'fixedPowerLevel' | 
 
 /** The copy a match plays by, so changing the setup later never alters a game in progress. */
 export function cloneSettings(s: Settings): Settings {
-  return { ...s, seats: [...s.seats], seatTeams: [...s.seatTeams] };
+  return { ...s, seats: [...s.seats], seatTeams: [...s.seatTeams], powerUpKinds: [...s.powerUpKinds] };
 }
 
 export function saveSettings(s: Settings): void {

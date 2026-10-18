@@ -13,6 +13,8 @@ const LABELS: Record<AwardKind, Key> = {
   closeCall: 'award.closeCall',
   sniper: 'award.sniper',
   ownGoals: 'award.ownGoals',
+  pickups: 'award.pickups',
+  saves: 'award.saves',
 };
 
 export const awardLabel = (kind: AwardKind): string => t(LABELS[kind]);
