@@ -235,24 +235,25 @@ describe('shot power: free, capped or fixed', () => {
       return { source, current: () => current };
     };
     /** The control with that label, seen through what every kind of control can do. */
-    type Any = { get(): unknown; set(v: unknown): void; hidden?: () => boolean };
+    type Any = { get(): unknown; set(v: unknown): void; hidden?: () => boolean; inactive?: () => boolean };
     const find = (items: ReturnType<typeof ruleItems>, label: RegExp) => items.find((i) => label.test(i.item.label))!.item as Any;
 
-    it('shows the slider that belongs to the mode, and only that one', () => {
+    it('shows one limit slot that never empties: the cap, dimmed while free, or the fixed level', () => {
       const { source } = sourceOf(rules());
       const items = ruleItems('classic', source);
       const mode = find(items, /^(Schusskraft|Shot power)$/);
       const cap = find(items, /^Max\. (Schusskraft|shot power)$/);
       const fixed = find(items, /^(Feste Schusskraft|Fixed shot power)$/);
-      const hiddenOf = (item: typeof cap) => item.hidden!();
+      // [cap shown, cap dimmed, fixed shown]
+      const state = () => [!cap.hidden!(), cap.inactive?.() ?? false, !fixed.hidden!()];
 
-      expect([hiddenOf(cap), hiddenOf(fixed)]).toEqual([true, true]);
+      expect(state()).toEqual([true, true, false]);
       mode.set('cap');
-      expect([hiddenOf(cap), hiddenOf(fixed)]).toEqual([false, true]);
+      expect(state()).toEqual([true, false, false]);
       mode.set('fixed');
-      expect([hiddenOf(cap), hiddenOf(fixed)]).toEqual([true, false]);
+      expect(state()).toEqual([false, false, true]);
       mode.set('free');
-      expect([hiddenOf(cap), hiddenOf(fixed)]).toEqual([true, true]);
+      expect(state()).toEqual([true, true, false]);
     });
 
     it('moves the right setting with each slider', () => {

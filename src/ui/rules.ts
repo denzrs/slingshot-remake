@@ -62,6 +62,8 @@ interface RuleRow {
   when?: (rules: RoomRules) => boolean;
   /** While hidden and this holds, the row keeps its space, so the block doesn't grow and shrink. */
   reserve?: (rules: RoomRules) => boolean;
+  /** Shown but dimmed and unchangeable while this holds, e.g. the cap's slider while shot power is free. */
+  inactive?: (rules: RoomRules) => boolean;
 }
 
 const numbers = (values: readonly number[], label: (n: number) => string = String) => values.map((n) => ({ value: n, label: label(n) }));
@@ -82,7 +84,8 @@ export function ruleRows(): RuleRow[] {
       label: t('settings.power'),
       options: POWER_MODES.map((value) => ({ value, label: t(`settings.power.${value}` as Key) })),
     },
-    { key: 'maxPower', group: 'shots', control: 'slider', label: t('settings.maxPower'), options: numbers(CAP_STOPS), when: (r) => powerModeOf(r) === 'cap', reserve: (r) => powerModeOf(r) === 'free' },
+    // One slot for the limit: the cap, or (with fixed power) the fixed level's row. Free shows the cap dimmed, so nothing moves.
+    { key: 'maxPower', group: 'shots', control: 'slider', label: t('settings.maxPower'), options: numbers(CAP_STOPS), when: (r) => powerModeOf(r) !== 'fixed', inactive: (r) => powerModeOf(r) === 'free' },
     { key: 'fixedPowerLevel', group: 'shots', control: 'slider', label: t('settings.fixedPower'), options: numbers(AIM.FIXED_OPTIONS), when: (r) => powerModeOf(r) === 'fixed' },
     { key: 'styleBonuses', group: 'shots', control: 'toggle', label: t('settings.styleBonuses'), options: [], classicOnly: true },
     { key: 'simultaneousShots', group: 'shots', control: 'toggle', label: t('settings.simultaneousShots'), options: [], classicOnly: true },
@@ -127,6 +130,7 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, onlin
   return rulesFor(mode, online).map((row): { key: keyof RuleValues; group: RuleGroup; item: RuleItem } => {
     const hidden = row.when ? () => !row.when!(source.get()) : undefined;
     const reserve = row.reserve ? () => row.reserve!(source.get()) : undefined;
+    const inactive = row.inactive ? () => row.inactive!(source.get()) : undefined;
     if (row.control === 'toggle') {
       return {
         key: row.key,
@@ -182,6 +186,7 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, onlin
         steps: row.options,
         hidden,
         reserve,
+        inactive,
         commit,
         get: () => source.get()[row.key],
         set: (v) => {

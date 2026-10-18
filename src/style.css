@@ -533,6 +533,12 @@ body {
   pointer-events: none;
 }
 
+/* A slider with nothing to limit right now: still there (so nothing moves), dimmed and out of reach. */
+.item--slider.is-inactive {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 .item.is-readonly::before {
   display: none;
 }

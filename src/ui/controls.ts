@@ -126,24 +126,29 @@ export function sliderControl(item: Item<'slider'>, env: Env): Control {
   const track = h('span.slider__track', null, rail);
   const el = h('div.item.item--slider', { role: 'slider', 'aria-valuemin': '0', 'aria-valuemax': String(last), 'aria-label': item.label }, h('span.item__label', null, item.label), value, track);
   focusable(el, env);
+  const inactive = (): boolean => item.inactive?.() ?? false;
 
   let shown = -1;
   const draw = (): void => {
     const hidden = item.hidden?.() ?? false;
     syncHidden(el, hidden, shown >= 0);
     el.classList.toggle('is-reserved', hidden && (item.reserve?.() ?? false));
-    const i = indexOf(steps, item.get());
+    const off = inactive();
+    el.classList.toggle('is-inactive', off);
+    el.setAttribute('aria-disabled', String(off));
+    const i = off ? 0 : indexOf(steps, item.get());
     el.style.setProperty('--pos', String(positionOf(i, steps.length)));
-    ticks.forEach((tick, k) => tick.classList.toggle('is-on', k <= i));
-    value.textContent = steps[i].label;
+    ticks.forEach((tick, k) => tick.classList.toggle('is-on', !off && k <= i));
+    value.textContent = off ? t('common.off') : steps[i].label;
     el.setAttribute('aria-valuenow', String(i));
-    el.setAttribute('aria-valuetext', steps[i].label);
+    el.setAttribute('aria-valuetext', value.textContent);
     if (shown >= 0 && shown !== i) pop(value);
     shown = i;
   };
 
   /** Moves to a stop; true when that was a change. */
   const goTo = (i: number): boolean => {
+    if (inactive()) return false;
     const next = Math.min(last, Math.max(0, i));
     if (next === indexOf(steps, item.get())) return false;
     item.set(steps[next].value);
@@ -161,7 +166,7 @@ export function sliderControl(item: Item<'slider'>, env: Env): Control {
       if (goTo(indexAtFraction(box.width ? (e.clientX - box.left) / box.width : 0, steps.length))) moved = true;
     };
     track.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || inactive()) return;
       dragging = true;
       moved = false;
       el.classList.add('is-dragging');
@@ -182,6 +187,7 @@ export function sliderControl(item: Item<'slider'>, env: Env): Control {
 
     const at = () => indexOf(steps, item.get());
     keys(el, (e) => {
+      if (inactive()) return false;
       let target: number;
       switch (e.key) {
         case 'ArrowLeft':

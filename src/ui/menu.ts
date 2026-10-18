@@ -29,6 +29,8 @@ interface Live {
   hidden?: () => boolean;
   /** While the row is hidden and this holds, it still takes up its space (unseen), so the screen doesn't change size. */
   reserve?: () => boolean;
+  /** Shown, but dimmed and not changeable while this holds: a slider that has nothing to limit right now. */
+  inactive?: () => boolean;
   /** An edit is over (a slider let go of, a switch flipped): save it, send it on. */
   commit?: () => void;
 }
