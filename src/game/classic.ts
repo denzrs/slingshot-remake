@@ -4,6 +4,8 @@ import { AIM, COLORS, HORIZON, SCORING } from '../config';
 import { t } from '../i18n';
 import { Volley, type VolleyShot } from '../volley';
 import { Match, type RoundTitle } from './match';
+import type { Pickup } from '../powerups';
+import type { PowerUpState } from './powerup-field';
 import type { OracleSnapshot } from './oracle';
 
 export interface ClassicSnapshot {
@@ -21,6 +23,8 @@ export interface ClassicSnapshot {
   world: World;
   trails: Match['trails'];
   volley: ReturnType<Volley['snapshot']> | null;
+  pickups?: Pickup[];
+  power?: PowerUpState;
   killFeed: Match['killFeed'];
   lastKill: Match['lastKill'];
   summary: Match['summary'];
@@ -59,6 +63,8 @@ export class ClassicMatch extends Match {
       world: this.world,
       trails: this.trails,
       volley: this.volley?.snapshot() ?? null,
+      pickups: this.pickups,
+      power: this.powerState,
       killFeed: this.killFeed,
       lastKill: this.lastKill,
       summary: this.summary,
@@ -89,6 +95,8 @@ export class ClassicMatch extends Match {
     this.current = snapshot.current;
     this.world = snapshot.world;
     this.trails = snapshot.trails;
+    this.pickups = snapshot.pickups ?? [];
+    this.power.restoreState(snapshot.power);
     this.killFeed = snapshot.killFeed;
     this.lastKill = snapshot.lastKill;
     this.summary = snapshot.summary;
@@ -164,6 +172,13 @@ export class ClassicMatch extends Match {
   }
 
   commit(): void {
+    // The fire key during a flight: an armed splitter forks the shot.
+    if (this.phase === 'flying') {
+      this.splitInFlight(this.viewer ?? this.current);
+      return;
+    }
+    // While a ship chooses where to teleport, fire jumps instead of shooting.
+    if (this.confirmTeleport()) return;
     if (!this.isHumanTurn) return;
     if (this.salvo || !this.betWindowDone) this.lock(this.current);
     else this.fire();
@@ -183,7 +198,14 @@ export class ClassicMatch extends Match {
   }
 
   commitPlayer(id: number): void {
+    // The fire key during a flight: an armed splitter forks the shot.
+    if (this.phase === 'flying') {
+      this.splitInFlight(id);
+      return;
+    }
     if (!this.canAim(id)) return;
+    // While a ship chooses where to teleport, fire jumps instead of shooting.
+    if (this.confirmTeleport(id)) return;
     if (this.salvo || !this.betWindowDone) this.lock(id);
     else this.fire();
   }
@@ -228,6 +250,7 @@ export class ClassicMatch extends Match {
       this.runCpu(cpus.map((p) => p.id), 8, 0.8);
       for (const p of cpus) {
         const job = this.cpuJob(p.id);
+        if (this.cpuTeleportIfBlind(p, job)) continue;
         if (!job?.target || this.phaseTime < 0.5) continue;
         if (this.swingTowards(p, job.target, dt, 2)) {
           job.settle += dt;
@@ -252,7 +275,7 @@ export class ClassicMatch extends Match {
   }
 
   private launchVolley(): void {
-    const aims = this.alive.map((p) => ({ player: p.id, angle: p.angle, power: p.power, spare: this.sparedFor(p.id) }));
+    const aims = this.alive.flatMap((p) => this.aimsFor(p));
     for (const p of this.alive) p.shots++;
     this.notice = { text: t('notice.volley'), color: COLORS.bone, at: this.clock };
     this.emit({ type: 'volley' });
@@ -262,10 +285,10 @@ export class ClassicMatch extends Match {
   private fire(): void {
     const p = this.players[this.current];
     p.locked = false;
-    const spare = this.sparedFor(p.id);
+    const aims = this.aimsFor(p);
     p.shots++;
     // Trick shots are always tracked (the scorecard counts them); they only pay points when the option is on.
-    this.launch([{ player: p.id, angle: p.angle, power: p.power, spare }], true);
+    this.launch(aims, true);
   }
 
   protected updatePhase(dt: number): void {
@@ -280,6 +303,7 @@ export class ClassicMatch extends Match {
     if (!p.cpu) return;
     this.runCpu([p.id], 6, 1);
     const job = this.cpuJob(p.id);
+    if (this.cpuTeleportIfBlind(p, job)) return;
     if (!job?.target || this.phaseTime < 0.7) return;
     if (this.swingTowards(p, job.target, dt)) {
       job.settle += dt;

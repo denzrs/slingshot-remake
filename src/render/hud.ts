@@ -10,6 +10,7 @@ import { drawAvatar } from './avatar';
 import { rgba } from './color';
 import { GHOST_BODY } from './ghost';
 import { OracleHud, oracleReserve, type OracleFrame, type OracleTap } from './oracle';
+import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
 import type { DrawOptions } from './renderer';
 import { fitText, setSpacing } from './text';
 
@@ -162,6 +163,78 @@ export class Hud {
     ctx.fillText(`${pad(t('hud.power'))} ${powerText}${!hidden && match.settings.fixedPower ? t('hud.fixedSuffix') : ''}`, x, y + 68 * k);
     if (!hidden) this.drawGauge(align === 'left' ? x : x - 128 * k, y + 86 * k, 128 * k, p, align === 'right', match.settings.maxPower);
     ctx.globalAlpha = 1;
+    if (match.powerUps) this.drawPowerUpSlot(p, x, y + 104 * k, align, match.teleporting && match.focus === p.id);
+  }
+
+  /**
+   * Experimental power-ups: the one a ship holds and the key that uses it, on one line as wide as the gauge
+   * above. No state words: an armed power-up shows its ring on the ship instead.
+   */
+  private drawPowerUpSlot(p: PlayerState, x: number, y: number, align: 'left' | 'right', choosing: boolean): void {
+    const { ctx, k } = this;
+    const w = 128 * k;
+    const h = 22 * k;
+    const left = align === 'left' ? x : x - w;
+    const held = p.powerUp;
+    const color = held ? POWER_UP_COLORS[held] : COLORS.line;
+    // A splitter is used with fire, a shield needs no key; the rest with P.
+    const key = held === 'splitter' ? 'SPACE' : held === 'shield' ? null : held ? 'P' : null;
+    const cy = y + h / 2;
+
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = 'rgba(7, 14, 32, 0.6)';
+    ctx.fillRect(left, y, w, h);
+    ctx.fillStyle = color;
+    ctx.fillRect(left, y, 2 * k, h);
+
+    // Symbol and name in the power-up's colour; nothing held shows a dim dash and the slot's name.
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    if (held) {
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 1.6 * k;
+      ctx.lineCap = 'round';
+      drawPowerUpSymbol(ctx, held, left + 13 * k, cy, 5.5 * k);
+    } else {
+      ctx.fillStyle = COLORS.line;
+      ctx.font = `400 ${12 * k}px ${FONTS.mono}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('—', left + 13 * k, cy);
+      ctx.textAlign = 'left';
+    }
+    ctx.fillStyle = held ? color : COLORS.boneDim;
+    ctx.font = `700 ${10 * k}px ${FONTS.body}`;
+    ctx.fillText(held ? t(`powerup.${held}` as Key).toUpperCase() : t('hud.powerUp.title').toUpperCase(), left + 24 * k, cy + 0.5 * k);
+
+    // The key that uses it, at the right edge.
+    if (key) {
+      const capW = (key === 'SPACE' ? 36 : 16) * k;
+      const capH = 13 * k;
+      const capX = left + w - capW - 5 * k;
+      const capY = cy - capH / 2;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1 * k;
+      ctx.strokeRect(capX, capY, capW, capH);
+      // An armed preview or repulse has its key filled in: it is on.
+      const on = p.armed && (held === 'preview' || held === 'repulse');
+      if (on) {
+        ctx.fillStyle = color;
+        ctx.fillRect(capX, capY, capW, capH);
+      }
+      ctx.fillStyle = on ? COLORS.plate : color;
+      ctx.font = `700 ${7.5 * k}px ${FONTS.mono}`;
+      ctx.textAlign = 'center';
+      ctx.fillText(key, capX + capW / 2, cy + 0.5 * k);
+      // Choosing a teleport spot: fire jumps, so its key joins the strip.
+      if (choosing) {
+        const jumpX = capX - capW - 4 * k;
+        ctx.strokeRect(jumpX, capY, capW, capH);
+        ctx.fillText('↵', jumpX + capW / 2, cy + 0.5 * k);
+      }
+    }
+    ctx.restore();
   }
 
   /**
@@ -231,9 +304,43 @@ export class Hud {
         ctx.fillStyle = status[1];
         ctx.fillText(status[0], x + w - 8 * k, y + 7 * k);
       }
+      if (match.powerUps && p.powerUp && p.alive) this.drawPowerUpChip(match, p, x + w - 14 * k, y + h - 12 * k);
       ctx.globalAlpha = 1;
       x += w + gap;
     });
+  }
+
+  /**
+   * Experimental power-ups in the scoreboard: the symbol of what a ship holds, bottom right on its chip, and for
+   * the ship on turn the key that uses it.
+   */
+  private drawPowerUpChip(match: Match, p: PlayerState, cx: number, cy: number): void {
+    const { ctx, k } = this;
+    const held = p.powerUp!;
+    const color = POWER_UP_COLORS[held];
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.6 * k;
+    ctx.lineCap = 'round';
+    drawPowerUpSymbol(ctx, held, cx, cy, 6 * k);
+    if (p.id === match.focus && (match.phase === 'aiming' || match.phase === 'flying')) {
+      if (held === 'shield') {
+        ctx.restore();
+        return;
+      }
+      const key = held === 'splitter' ? 'SPACE' : 'P';
+      const capW = (key.length > 1 ? 32 : 14) * k;
+      const capH = 12 * k;
+      const capX = cx - 10 * k - capW;
+      ctx.lineWidth = 1 * k;
+      ctx.strokeRect(capX, cy - capH / 2, capW, capH);
+      ctx.font = `700 ${7 * k}px ${FONTS.mono}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(key, capX + capW / 2, cy + 0.5 * k);
+    }
+    ctx.restore();
   }
 
   private drawKillFeed(match: Match): void {

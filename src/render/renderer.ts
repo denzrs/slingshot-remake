@@ -1,7 +1,9 @@
 import { AIM, COLORS, FIELD, FONTS, HORIZON, PHYSICS } from '../config';
 import type { Match, Scene } from '../game';
+import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
 import { aimDirection, type World } from '../physics';
+import { POWER_UP } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
@@ -10,6 +12,7 @@ import type { Effects } from './effects';
 import { Hud } from './hud';
 import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
+import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
   hud: boolean;
@@ -38,6 +41,8 @@ export class Renderer {
   private sprites = new Map<number, HTMLCanvasElement>();
   private spritePs = 0;
   private time = 0;
+  /** When each power-up pickup was first drawn, for its pop-in. */
+  private readonly pickupSeen = new Map<number, number>();
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -132,6 +137,7 @@ export class Renderer {
     this.drawTrails(match, scene);
     this.drawSpotlight(match, scene);
     this.drawShips(match, scene);
+    this.drawPowerUps(match, scene);
     effects.draw(ctx);
     ctx.restore();
 
@@ -253,12 +259,16 @@ export class Renderer {
     const firstRank = match.salvo || match.phase === 'aiming' ? 1 : 0;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
+    // The shots of one splitter fan count as one flight: they share a rank.
+    const lastFan = new Map<number, number | undefined>();
     for (let i = scene.trails.length - 1; i >= 0; i--) {
       const t = scene.trails[i];
       const fade = match.trailAlpha(t);
       if (fade <= 0) continue;
-      const r = rank.get(t.owner) ?? firstRank;
-      rank.set(t.owner, r + 1);
+      let r = rank.get(t.owner) ?? firstRank;
+      if (t.fan !== undefined && lastFan.get(t.owner) === t.fan) r -= 1;
+      else rank.set(t.owner, r + 1);
+      lastFan.set(t.owner, t.fan);
       const color = match.players[t.owner].color;
       ctx.strokeStyle = rgba(color, (r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2) * fade);
       ctx.lineWidth = r === 0 ? 1.6 : 1;
@@ -268,13 +278,37 @@ export class Renderer {
     ctx.setLineDash([]);
 
     for (const vs of scene.volley?.shots ?? []) {
-      const color = match.players[vs.owner].color;
+      // A shot gravity pushes away from the planets flies in the repulse colour.
+      const color = vs.pull && vs.pull < 0 ? POWER_UP_COLORS.repulse : match.players[vs.owner].color;
       const shot = vs.shot;
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       strokePolyline(ctx, vs.trail);
       if (shot.end) continue;
       if (shot.inField) {
+        const owner = match.players[vs.owner];
+        // A shot pushed away from the planets carries an orange ring.
+        if (vs.pull && vs.pull < 0) {
+          ctx.save();
+          ctx.strokeStyle = POWER_UP_COLORS.repulse;
+          ctx.lineWidth = 1.5;
+          ctx.globalAlpha = 0.55 + 0.45 * Math.sin(this.time * 8);
+          ctx.beginPath();
+          ctx.arc(shot.x, shot.y, 10, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+        // A shot that can still be split carries a gold ring.
+        if (match.powerUps && owner.armed && owner.powerUp === 'splitter') {
+          ctx.save();
+          ctx.strokeStyle = POWER_UP_COLORS.splitter;
+          ctx.lineWidth = 1.5;
+          ctx.globalAlpha = 0.55 + 0.45 * Math.sin(this.time * 8);
+          ctx.beginPath();
+          ctx.arc(shot.x, shot.y, 12, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
         const glow = ctx.createRadialGradient(shot.x, shot.y, 0, shot.x, shot.y, 9);
         glow.addColorStop(0, rgba(COLORS.bone, 0.95));
         glow.addColorStop(0.3, rgba(color, 0.6));
@@ -285,6 +319,170 @@ export class Renderer {
         this.drawOffscreenMarker(shot.x, shot.y, color);
       }
     }
+  }
+
+  /** Experimental power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */
+  private drawPowerUps(match: Match, scene: Scene): void {
+    const { ctx } = this;
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 5);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    this.drawRepelWaves(match, scene);
+    const present = new Set<number>();
+    for (const pick of scene.pickups ?? []) {
+      present.add(pick.id);
+      let born = this.pickupSeen.get(pick.id);
+      if (born === undefined) {
+        born = this.time;
+        this.pickupSeen.set(pick.id, born);
+      }
+      // Pops in with a little overshoot; blinks in its last pass before it fades.
+      const age = this.time - born;
+      const pop = age < 0.4 ? easeOutBack(age / 0.4) : 1;
+      const expiring = (scene.pass ?? 0) - pick.born >= POWER_UP.LIFETIME_PASSES - 1;
+      const alpha = Math.min(1, age / 0.15) * (expiring ? (Math.sin(this.time * 9) > 0 ? 1 : 0.35) : 1);
+      const color = POWER_UP_COLORS[pick.kind];
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(pick.x, pick.y);
+      ctx.scale(pop, pop);
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14 + 8 * pulse;
+      ctx.fillStyle = COLORS.plate;
+      ctx.beginPath();
+      ctx.arc(0, 0, 15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, 15, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      drawPowerUpSymbol(ctx, pick.kind, 0, 0, 8);
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = alpha * Math.min(1, pop);
+      ctx.font = `700 11px ${FONTS.mono}`;
+      ctx.fillStyle = color;
+      ctx.fillText(t(`powerup.${pick.kind}` as Key).toUpperCase(), pick.x, pick.y + 20);
+      ctx.restore();
+    }
+    for (const id of this.pickupSeen.keys()) if (!present.has(id)) this.pickupSeen.delete(id);
+    if (scene.preview && scene.preview.length >= 4) {
+      ctx.strokeStyle = POWER_UP_COLORS.preview;
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([3, 5]);
+      strokePolyline(ctx, scene.preview);
+      ctx.setLineDash([]);
+    }
+    // A ship choosing where to teleport: the offered spots, the picked one solid, with a line from the ship.
+    if (scene.teleport) {
+      const { owner, spots, choice } = scene.teleport;
+      const from = match.world.ships[owner];
+      spots.forEach((spot, i) => {
+        const picked = i === choice;
+        const color = match.players[owner].color;
+        ctx.save();
+        // Every spot is an open door: all pulse alike, with its number on a solid disc. The pick has a second ring and a line from the ship.
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.85 + 0.15 * pulse;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(spot.x, spot.y, 17 + 2.5 * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(spot.x, spot.y, 11, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = COLORS.plate;
+        ctx.font = `800 14px ${FONTS.mono}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(i + 1), spot.x, spot.y + 1);
+        if (picked) {
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.arc(spot.x, spot.y, 26 + 3 * pulse, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 0.6;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 6]);
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(spot.x, spot.y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      });
+    }
+    // The symbol of what each ship holds, small above the ship. Activation is shown in the HUD strip.
+    for (const p of match.players) {
+      if (!p.powerUp || !p.alive) continue;
+      const ship = match.world.ships[p.id];
+      ctx.save();
+      ctx.strokeStyle = POWER_UP_COLORS[p.powerUp];
+      ctx.fillStyle = POWER_UP_COLORS[p.powerUp];
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      drawPowerUpSymbol(ctx, p.powerUp, ship.x, ship.y - 30, 5);
+      ctx.restore();
+      // An armed repulse rings the ship in its colour.
+      if (p.powerUp === 'repulse' && p.armed) {
+        ctx.save();
+        ctx.strokeStyle = POWER_UP_COLORS.repulse;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.5 + 0.5 * pulse;
+        ctx.beginPath();
+        ctx.arc(ship.x, ship.y, 19 + 3 * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      // A shield is a bubble round the ship.
+      if (p.powerUp === 'shield') {
+        ctx.save();
+        ctx.strokeStyle = POWER_UP_COLORS.shield;
+        ctx.fillStyle = POWER_UP_COLORS.shield;
+        ctx.lineWidth = 1.6;
+        ctx.globalAlpha = 0.5 + 0.2 * pulse;
+        ctx.beginPath();
+        ctx.arc(ship.x, ship.y, 21, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 0.07 + 0.05 * pulse;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'start';
+  }
+
+  /**
+   * While a repulse is armed, and while a pushed shot is in the air, every planet sends out rings that spread
+   * away from it: gravity is turned round, and the whole field says so.
+   */
+  private drawRepelWaves(match: Match, scene: Scene): void {
+    if (!match.powerUps) return;
+    const id = match.viewer ?? match.current;
+    const aiming = match.phase === 'aiming' && !!match.players[id] && match.players[id].armed && match.players[id].powerUp === 'repulse' && match.localCanAim;
+    const flying = (scene.volley?.shots ?? []).some((vs) => !!vs.pull && vs.pull < 0 && !vs.shot.end);
+    if (!aiming && !flying) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = POWER_UP_COLORS.repulse;
+    ctx.lineWidth = 1.6;
+    for (const planet of scene.world.planets) {
+      for (let k = 0; k < 3; k++) {
+        const phase = (this.time * 0.7 + k / 3) % 1;
+        ctx.globalAlpha = 0.6 * (1 - phase);
+        ctx.beginPath();
+        ctx.arc(planet.x, planet.y, planet.radius + 6 + phase * 80, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
 
   /**
@@ -358,7 +556,8 @@ export class Renderer {
 
       const aimShown = match.aimVisible(i);
       if (planning && aimShown) {
-        if (current) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'full');
+        // An armed repulse turns the aim arrow orange, so it is plain that this shot is pushed, not pulled.
+        if (current) this.drawAimVector(ship.x, ship.y, player.angle, player.power, match.powerUps && player.armed && player.powerUp === 'repulse' ? POWER_UP_COLORS.repulse : color, 'full');
         else if (match.salvo && player.locked) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'ghost');
         else if (match.salvo && player.cpu) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'thin');
       }
@@ -487,6 +686,13 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
   }
+}
+
+/** Ease that overshoots a little before settling, 0 → 1. */
+function easeOutBack(t: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
 }
 
 function strokePolyline(ctx: CanvasRenderingContext2D, pts: number[]): void {

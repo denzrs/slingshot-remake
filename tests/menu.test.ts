@@ -101,7 +101,8 @@ describe('game rules in the menu', () => {
 
   it('makes switches of the on/off rules, a bar of the power mode and sliders of the rest', () => {
     for (const row of all) {
-      if (row.key === 'fixedPower') expect(row.control).toBe('segmented');
+      if (row.key === 'fixedPower' || row.key === 'powerUpAmount') expect(row.control, row.key).toBe('segmented');
+      else if (row.key === 'powerUpKinds') expect(row.control).toBe('tiles');
       else if (row.options.length === 0) expect(row.control, row.key).toBe('toggle');
       else expect(row.control, row.key).toBe('slider');
     }
@@ -122,6 +123,25 @@ describe('game rules in the menu', () => {
       expect(horizon).not.toContain(row.key);
       expect(rulesFor('classic').map((r) => r.key)).toContain(row.key);
     }
+  });
+
+  it('offers the power-ups, their kinds and their amount in both modes, offline and in an online room', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      for (const online of [false, true]) expect(rulesFor(mode, online).map((r) => r.key)).toEqual(expect.arrayContaining(['powerUps', 'powerUpKinds', 'powerUpAmount']));
+    }
+  });
+
+  it('keeps the kinds and the amount hidden but in place while power-ups are off', () => {
+    const source = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), powerUps: false }), patch() {} };
+    for (const { key, item } of ruleItems('classic', source).filter((r) => r.key === 'powerUpKinds' || r.key === 'powerUpAmount')) {
+      expect(item.hidden?.(), key).toBe(true);
+      expect(item.reserve?.(), key).toBe(true);
+    }
+  });
+
+  it('offers exactly the power-up amounts and kinds the relay accepts', () => {
+    expect(all.find((r) => r.key === 'powerUpAmount')!.options.map((o) => o.value)).toEqual(relayContract.options.powerUpAmount);
+    expect(all.find((r) => r.key === 'powerUpKinds')!.options.map((o) => o.value)).toEqual(relayContract.defaults.powerUpKinds);
   });
 
   it('keeps the rules that only make sense online — betting — off the offline setup screen, in both modes', () => {
@@ -215,24 +235,25 @@ describe('shot power: free, capped or fixed', () => {
       return { source, current: () => current };
     };
     /** The control with that label, seen through what every kind of control can do. */
-    type Any = { get(): unknown; set(v: unknown): void; hidden?: () => boolean };
+    type Any = { get(): unknown; set(v: unknown): void; hidden?: () => boolean; inactive?: () => boolean };
     const find = (items: ReturnType<typeof ruleItems>, label: RegExp) => items.find((i) => label.test(i.item.label))!.item as Any;
 
-    it('shows the slider that belongs to the mode, and only that one', () => {
+    it('shows one limit slot that never empties: the cap, dimmed while free, or the fixed level', () => {
       const { source } = sourceOf(rules());
       const items = ruleItems('classic', source);
       const mode = find(items, /^(Schusskraft|Shot power)$/);
       const cap = find(items, /^Max\. (Schusskraft|shot power)$/);
       const fixed = find(items, /^(Feste Schusskraft|Fixed shot power)$/);
-      const hiddenOf = (item: typeof cap) => item.hidden!();
+      // [cap shown, cap dimmed, fixed shown]
+      const state = () => [!cap.hidden!(), cap.inactive?.() ?? false, !fixed.hidden!()];
 
-      expect([hiddenOf(cap), hiddenOf(fixed)]).toEqual([true, true]);
+      expect(state()).toEqual([true, true, false]);
       mode.set('cap');
-      expect([hiddenOf(cap), hiddenOf(fixed)]).toEqual([false, true]);
+      expect(state()).toEqual([true, false, false]);
       mode.set('fixed');
-      expect([hiddenOf(cap), hiddenOf(fixed)]).toEqual([true, false]);
+      expect(state()).toEqual([false, false, true]);
       mode.set('free');
-      expect([hiddenOf(cap), hiddenOf(fixed)]).toEqual([true, true]);
+      expect(state()).toEqual([true, true, false]);
     });
 
     it('moves the right setting with each slider', () => {

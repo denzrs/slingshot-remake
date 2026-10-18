@@ -82,6 +82,55 @@ export class Sound {
     this.tone(700, 1400, 0.12, 0.06, 'triangle', a.t);
   }
 
+  /** A power-up taken: a bright two-note rise. */
+  pickup(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(520, 1040, 0.12, 0.07, 'triangle', a.t);
+    this.tone(780, 1560, 0.18, 0.06, 'sine', a.t + 0.06);
+  }
+
+  /** A power-up appearing on the field: a soft blip. */
+  spawn(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(900, 1200, 0.08, 0.035, 'sine', a.t);
+  }
+
+  /** A power-up running out: a short falling blip. */
+  fade(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(520, 240, 0.14, 0.04, 'triangle', a.t);
+  }
+
+  /** A shield taking a hit: a ringing clang. */
+  shield(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(1200, 600, 0.22, 0.09, 'triangle', a.t);
+    this.tone(1800, 900, 0.18, 0.05, 'sine', a.t + 0.02);
+    this.hiss(a.t, 0.12, 0.15, 6000, 1500);
+  }
+
+  /** The ship vanishes and arrives somewhere else: a sweep down, then a flash up. */
+  teleport(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(1300, 160, 0.22, 0.09, 'sine', a.t);
+    this.hiss(a.t, 0.2, 0.12, 4000, 400);
+    this.tone(260, 1700, 0.2, 0.08, 'triangle', a.t + 0.14);
+  }
+
+  /** A shot forking into three: a sharp zap with a crackle. */
+  split(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(900, 1900, 0.1, 0.08, 'sawtooth', a.t);
+    this.tone(1300, 2600, 0.14, 0.06, 'square', a.t + 0.04);
+    this.hiss(a.t, 0.14, 0.18, 7000, 1200);
+  }
+
   /** The horizon swells: deep sub rumble. */
   rumble(): void {
     const a = this.begin();

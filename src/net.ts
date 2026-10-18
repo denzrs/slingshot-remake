@@ -11,12 +11,18 @@ export type NetworkGameMode = 'classic' | 'horizon';
 export type NetworkCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
 
 /** The rules of an online game; a subset of the local `Settings`, so it can be spread straight into them. */
-export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails' | 'betting'>;
+export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails' | 'betting' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'>;
 
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
   | { kind: 'aim'; angle: number; power: number }
   | { kind: 'fire' }
+  /** The power-up key: opens a teleport's choice (or the next spot of it), or arms a preview or a repulse. */
+  | { kind: 'power' }
+  /** A number key or a tap on a teleport spot: the ship jumps to the spot at this place in the offered list. */
+  | { kind: 'spot'; index: number }
+  /** Esc while a teleport is being chosen. */
+  | { kind: 'cancel' }
   /** A vote to skip the killcam; it ends once half of the players want that. */
   | { kind: 'skip' }
   /** An eliminated player's oracle tip: a ship's index, -1 for nobody, or 1/0 for hit/miss. With `round` it names the winner of the round instead, and `stake` bets that many of the player's points on it. */

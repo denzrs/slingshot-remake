@@ -1,6 +1,8 @@
 import { AIM, GRACE, TRAIL_FADE } from '../config';
 import { t, type Key } from '../i18n';
 import type { RoomRules } from '../net';
+import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from '../powerups';
+import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import type { MenuItem } from './menu';
 
 /** The blocks the setup screen and the lobby sort the rules into. */
@@ -48,9 +50,9 @@ interface RuleRow {
   key: keyof RoomRules;
   label: string;
   /** Every value the rule can take — for a slider, its stops from lowest to highest. */
-  options: { value: number | boolean | PowerMode; label: string }[];
-  /** Switches for on/off rules, sliders for numbers, a segmented bar for a choice between a few words. */
-  control: 'toggle' | 'slider' | 'segmented';
+  options: { value: number | boolean | PowerMode | PowerUpKind; label: string }[];
+  /** Switches for on/off rules, sliders for numbers, a segmented bar for a choice between a few words, tiles for several that can each be on or off. */
+  control: 'toggle' | 'slider' | 'segmented' | 'tiles';
   group: RuleGroup;
   /** Only meaningful in Classic (Event Horizon always shows its planets and scores trick shots anyway). */
   classicOnly?: boolean;
@@ -60,6 +62,8 @@ interface RuleRow {
   when?: (rules: RoomRules) => boolean;
   /** While hidden and this holds, the row keeps its space, so the block doesn't grow and shrink. */
   reserve?: (rules: RoomRules) => boolean;
+  /** Shown but dimmed and unchangeable while this holds, e.g. the cap's slider while shot power is free. */
+  inactive?: (rules: RoomRules) => boolean;
 }
 
 const numbers = (values: readonly number[], label: (n: number) => string = String) => values.map((n) => ({ value: n, label: label(n) }));
@@ -80,7 +84,8 @@ export function ruleRows(): RuleRow[] {
       label: t('settings.power'),
       options: POWER_MODES.map((value) => ({ value, label: t(`settings.power.${value}` as Key) })),
     },
-    { key: 'maxPower', group: 'shots', control: 'slider', label: t('settings.maxPower'), options: numbers(CAP_STOPS), when: (r) => powerModeOf(r) === 'cap', reserve: (r) => powerModeOf(r) === 'free' },
+    // One slot for the limit: the cap, or (with fixed power) the fixed level's row. Free shows the cap dimmed, so nothing moves.
+    { key: 'maxPower', group: 'shots', control: 'slider', label: t('settings.maxPower'), options: numbers(CAP_STOPS), when: (r) => powerModeOf(r) !== 'fixed', inactive: (r) => powerModeOf(r) === 'free' },
     { key: 'fixedPowerLevel', group: 'shots', control: 'slider', label: t('settings.fixedPower'), options: numbers(AIM.FIXED_OPTIONS), when: (r) => powerModeOf(r) === 'fixed' },
     { key: 'styleBonuses', group: 'shots', control: 'toggle', label: t('settings.styleBonuses'), options: [], classicOnly: true },
     { key: 'simultaneousShots', group: 'shots', control: 'toggle', label: t('settings.simultaneousShots'), options: [], classicOnly: true },
@@ -88,54 +93,92 @@ export function ruleRows(): RuleRow[] {
     { key: 'hiddenAim', group: 'twists', control: 'toggle', label: t('settings.hiddenAim'), options: [] },
     { key: 'fadingTrails', group: 'twists', control: 'slider', label: t('settings.fadingTrails'), options: numbers(TRAIL_FADE.OPTIONS, (n) => (n ? seconds(n) : t('common.off'))) },
     { key: 'betting', group: 'twists', control: 'toggle', label: t('settings.betting'), options: [], onlineOnly: true },
+    { key: 'powerUps', group: 'twists', control: 'toggle', label: t('settings.powerUps'), options: [] },
+    // The kinds and the amount are the last rows of the block and keep their space while the switch is off, so nothing moves.
+    { key: 'powerUpKinds', group: 'twists', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}` as Key)) })), when: (r) => r.powerUps, reserve: () => true },
+    { key: 'powerUpAmount', group: 'twists', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps, reserve: () => true },
   ];
 }
 
+const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
 /** The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has. */
-export const rulesFor = (mode: 'classic' | 'horizon', online = false): RuleRow[] => ruleRows().filter((row) => (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly));
+export const rulesFor = (mode: 'classic' | 'horizon', online = false): RuleRow[] =>
+  ruleRows().filter((row) => (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly));
 
 // ————————————————————————————— As controls —————————————————————————————
 
+/** Every rule a row can change. */
+export type RuleValues = RoomRules;
+
 /** Where a set of rules lives: the settings of this device, or the draft of an online room. */
 export interface RuleSource {
-  get(): RoomRules;
+  get(): RuleValues;
   /** Change some of the rules. */
-  patch(values: Partial<RoomRules>): void;
+  patch(values: Partial<RuleValues>): void;
   /** An edit is over (a slider let go of, a switch flipped): save it, send it on. */
   commit?(): void;
 }
 
-type RuleItem = Extract<MenuItem, { kind: 'slider' | 'toggle' | 'segmented' }>;
+type RuleItem = Extract<MenuItem, { kind: 'slider' | 'toggle' | 'segmented' | 'tiles' }>;
 
 /** The controls for the rules of a game mode, each with the block it belongs to. */
-export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, online = false): { group: RuleGroup; item: RuleItem }[] {
+export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, online = false): { key: keyof RuleValues; group: RuleGroup; item: RuleItem }[] {
   /** The cap to come back to after trying another power mode. */
   let lastCap = source.get().maxPower < AIM.MAX_POWER ? source.get().maxPower : DEFAULT_CAP;
   const commit = source.commit;
-  return rulesFor(mode, online).map((row): { group: RuleGroup; item: RuleItem } => {
+  return rulesFor(mode, online).map((row): { key: keyof RuleValues; group: RuleGroup; item: RuleItem } => {
     const hidden = row.when ? () => !row.when!(source.get()) : undefined;
     const reserve = row.reserve ? () => row.reserve!(source.get()) : undefined;
+    const inactive = row.inactive ? () => row.inactive!(source.get()) : undefined;
     if (row.control === 'toggle') {
       return {
+        key: row.key,
         group: row.group,
         item: { kind: 'toggle', label: row.label, hidden, commit, get: () => source.get()[row.key] as boolean, set: (v) => source.patch({ [row.key]: v }) },
       };
     }
-    if (row.control === 'segmented') {
+    if (row.control === 'tiles') {
       return {
+        key: row.key,
+        group: row.group,
+        item: {
+          kind: 'tiles',
+          label: row.label,
+          hidden,
+          reserve,
+          commit,
+          tiles: (row.options as { value: PowerUpKind; label: string }[]).map((o) => ({
+            value: o.value,
+            label: o.label,
+            color: POWER_UP_COLORS[o.value],
+            draw: (ctx, r) => drawPowerUpSymbol(ctx, o.value, 0, 0, r),
+          })),
+          get: () => source.get().powerUpKinds,
+          set: (kinds) => source.patch({ powerUpKinds: POWER_UP_KINDS.filter((k) => kinds.includes(k)) }),
+        },
+      };
+    }
+    if (row.control === 'segmented') {
+      // The shot power mode is three rules at once; any other bar is one rule with the options it lists.
+      const mode = row.key === 'fixedPower';
+      return {
+        key: row.key,
         group: row.group,
         item: {
           kind: 'segmented',
           label: row.label,
           options: row.options,
           hidden,
+          reserve,
           commit,
-          get: () => powerModeOf(source.get()),
-          set: (v) => source.patch(powerModePatch(v as PowerMode, lastCap)),
+          get: () => (mode ? powerModeOf(source.get()) : source.get()[row.key]),
+          set: (v) => source.patch(mode ? powerModePatch(v as PowerMode, lastCap) : { [row.key]: v }),
         },
       };
     }
     return {
+      key: row.key,
       group: row.group,
       item: {
         kind: 'slider',
@@ -143,6 +186,7 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, onlin
         steps: row.options,
         hidden,
         reserve,
+        inactive,
         commit,
         get: () => source.get()[row.key],
         set: (v) => {

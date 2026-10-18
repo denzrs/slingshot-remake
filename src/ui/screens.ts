@@ -359,6 +359,7 @@ function setupScreen(app: App, mode: VersusMode): Screen {
       app.settingsChanged();
     },
   });
+  const rows: MenuItem[] = rules.map(({ group, item }): MenuItem => ({ ...item, section: group }));
   const actions: MenuItem[] = [
     { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(mode) },
     { kind: 'action', section: 'actions', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
@@ -393,9 +394,9 @@ function setupScreen(app: App, mode: VersusMode): Screen {
           h('p.keys.keys--menu', null, t('setup.keys')),
         ),
       ),
-    items: [...rules.map(({ group, item }) => ({ ...item, section: group })), ...actions],
+    items: [...rows, ...actions],
     // Enter starts the game straight away, as it always did.
-    focus: rules.length,
+    focus: rows.length,
   };
 }
 

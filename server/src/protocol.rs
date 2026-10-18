@@ -4,6 +4,15 @@ use serde_json::Value;
 
 /// Tips name a ship; there are at most six.
 pub const MAX_TIP: i64 = 6;
+/// A teleport offers a few spots to choose from; a pick names one by its place in the list.
+const MAX_SPOT: usize = 8;
+/// The power-ups a room can lay, in the order the client lists them. A room's kinds are kept as a bitmask over this list.
+pub const POWER_UP_KINDS: [&str; 5] = ["preview", "teleport", "splitter", "repulse", "shield"];
+/// Every kind switched on.
+pub const ALL_POWER_UP_KINDS: u8 = (1 << POWER_UP_KINDS.len()) - 1;
+/// How many pickups may lie on the field.
+const POWER_UP_AMOUNTS: [i64; 4] = [1, 2, 3, 4];
+
 /// The most points one stake may name on the wire; the host holds a player to what they actually have.
 const MAX_STAKE: f64 = 1_000_000.0;
 
@@ -199,7 +208,11 @@ pub fn is_input_message(value: &Value) -> bool {
             is_finite_number(value.get("dAngle")) && is_finite_number(value.get("dPower"))
         }
         Some("aim") => is_finite_number(value.get("angle")) && is_finite_number(value.get("power")),
-        Some("fire") | Some("skip") => true,
+        Some("fire") | Some("skip") | Some("power") | Some("cancel") => true,
+        // A teleport spot picked by number: there are only a few.
+        Some("spot") => value
+            .get("index")
+            .is_some_and(|index| is_int_between(index, 0, MAX_SPOT as i64 - 1)),
         Some("bet") => match value.get("pick") {
             Some(pick) => {
                 is_safe_integer(pick)
@@ -253,6 +266,12 @@ pub struct RoomRules {
     pub fading_trails: i64,
     /// Online: eliminated players may bet points of the match on who wins the round.
     pub betting: bool,
+    /// Experimental power-ups: pickups on the field, one held at a time.
+    pub power_ups: bool,
+    /// Which kinds may turn up: a bitmask over `POWER_UP_KINDS`, never empty.
+    pub power_up_kinds: u8,
+    /// How many pickups lie on the field.
+    pub power_up_amount: i64,
 }
 
 pub const DEFAULT_RULES: RoomRules = RoomRules {
@@ -270,6 +289,9 @@ pub const DEFAULT_RULES: RoomRules = RoomRules {
     hidden_aim: false,
     fading_trails: 0,
     betting: false,
+    power_ups: false,
+    power_up_kinds: ALL_POWER_UP_KINDS,
+    power_up_amount: 2,
 };
 
 /// The rules as they leave the relay, keyed like the client-side `RoomRules` object.
@@ -289,7 +311,31 @@ pub fn rules_to_value(rules: &RoomRules) -> Value {
         "hiddenAim": rules.hidden_aim,
         "fadingTrails": rules.fading_trails,
         "betting": rules.betting,
+        "powerUps": rules.power_ups,
+        "powerUpKinds": POWER_UP_KINDS
+            .iter()
+            .enumerate()
+            .filter(|(bit, _)| rules.power_up_kinds & (1 << bit) != 0)
+            .map(|(_, kind)| *kind)
+            .collect::<Vec<_>>(),
+        "powerUpAmount": rules.power_up_amount,
     })
+}
+
+/// The kinds of a client's `powerUpKinds`: a non-empty list of distinct known kinds, as a bitmask.
+fn parse_power_up_kinds(value: &Value) -> Option<u8> {
+    let list = value.as_array()?;
+    let mut mask = 0u8;
+    for kind in list {
+        let bit = POWER_UP_KINDS
+            .iter()
+            .position(|k| Some(*k) == kind.as_str())?;
+        if mask & (1 << bit) != 0 {
+            return None;
+        }
+        mask |= 1 << bit;
+    }
+    (mask != 0).then_some(mask)
 }
 
 /// Validates untrusted rules from a client; None when anything is off.
@@ -349,6 +395,17 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
     if !is_number_in(fading_trails, &[0, 1, 2, 4]) {
         return None;
     }
+    // Power-ups came later: a client that doesn't send them plays without. A present value has to be valid.
+    if field("powerUps").is_some_and(|v| !v.is_boolean()) {
+        return None;
+    }
+    let power_up_kinds = match field("powerUpKinds") {
+        Some(v) => parse_power_up_kinds(v)?,
+        None => DEFAULT_RULES.power_up_kinds,
+    };
+    if field("powerUpAmount").is_some_and(|v| !is_number_in(v, &POWER_UP_AMOUNTS)) {
+        return None;
+    }
 
     fn i64_of(value: &Value) -> i64 {
         value.as_f64().unwrap() as i64
@@ -374,6 +431,13 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
         betting: field("betting")
             .and_then(Value::as_bool)
             .unwrap_or(DEFAULT_RULES.betting),
+        power_ups: field("powerUps")
+            .and_then(Value::as_bool)
+            .unwrap_or(DEFAULT_RULES.power_ups),
+        power_up_kinds,
+        power_up_amount: field("powerUpAmount")
+            .map(i64_of)
+            .unwrap_or(DEFAULT_RULES.power_up_amount),
     })
 }
 
@@ -450,7 +514,8 @@ mod tests {
             "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"bounce":true,
             "fixedPower":true,"fixedPowerLevel":70,"maxPower":80,"shotTime":20,
             "styleBonuses":true,"neighborGrace":1,"simultaneousShots":true,
-            "hiddenAim":false,"fadingTrails":2,"betting":true
+            "hiddenAim":false,"fadingTrails":2,"betting":true,
+            "powerUps":true,"powerUpKinds":["teleport","shield"],"powerUpAmount":3
         })
     }
 
@@ -489,6 +554,61 @@ mod tests {
         assert_eq!(parsed.max_power, 100);
         assert_eq!(parsed.fixed_power_level, 55);
         assert!(!parsed.betting);
+    }
+
+    #[test]
+    fn power_up_rules_default_off_and_take_a_list_of_known_kinds() {
+        let parsed = parse_rules(&valid_rules()).expect("complete rules accepted");
+        assert!(parsed.power_ups);
+        assert_eq!(parsed.power_up_kinds, 0b10010);
+        assert_eq!(parsed.power_up_amount, 3);
+        assert_eq!(
+            rules_to_value(&parsed)["powerUpKinds"],
+            json!(["teleport", "shield"])
+        );
+
+        let mut legacy = valid_rules();
+        for key in ["powerUps", "powerUpKinds", "powerUpAmount"] {
+            legacy.as_object_mut().unwrap().remove(key);
+        }
+        let parsed = parse_rules(&legacy).expect("legacy omissions accepted");
+        assert!(!parsed.power_ups);
+        assert_eq!(parsed.power_up_kinds, ALL_POWER_UP_KINDS);
+        assert_eq!(parsed.power_up_amount, 2);
+
+        for (key, value) in [
+            ("powerUps", json!("yes")),
+            ("powerUpKinds", json!([])),
+            ("powerUpKinds", json!("shield")),
+            ("powerUpKinds", json!(["shield", "shield"])),
+            ("powerUpKinds", json!(["laser"])),
+            ("powerUpAmount", json!(0)),
+            ("powerUpAmount", json!(5)),
+        ] {
+            let mut rules = valid_rules();
+            rules[key] = value;
+            assert!(
+                parse_rules(&rules).is_none(),
+                "accepted invalid {key}: {rules}"
+            );
+        }
+    }
+
+    #[test]
+    fn power_up_inputs_are_accepted_and_spots_stay_in_range() {
+        assert!(is_input_message(&json!({"kind":"power"})));
+        assert!(is_input_message(&json!({"kind":"cancel"})));
+        assert!(is_input_message(&json!({"kind":"spot","index":0})));
+        assert!(is_input_message(&json!({"kind":"spot","index":7})));
+        for invalid in [
+            json!({"kind":"spot"}),
+            json!({"kind":"spot","index":-1}),
+            json!({"kind":"spot","index":8}),
+            json!({"kind":"spot","index":1.5}),
+            json!({"kind":"spot","index":"1"}),
+        ] {
+            assert!(!is_input_message(&invalid), "accepted input: {invalid}");
+        }
     }
 
     #[test]

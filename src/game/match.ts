@@ -9,8 +9,10 @@ import { createRng, randomSeed, type Rng } from '../rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
 import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
+import type { Pickup, PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
+import { PowerUpField, type TeleportSpots } from './powerup-field';
 
 export type Mode = 'classic' | 'horizon' | 'challenge';
 /** The modes you play against other ships, picked from the title menu. */
@@ -39,10 +41,16 @@ export interface PlayerState {
   alive: boolean;
   /** Event Horizon: aim is locked in for the coming volley. */
   locked: boolean;
+  /** Experimental power-up held (one at a time), null for none. */
+  powerUp: PowerUpKind | null;
+  /** The held preview or splitter is set to go off with the next shot. */
+  armed: boolean;
 }
 
 export interface Trail {
   owner: number;
+  /** The splitter fan the shot belonged to: its shots share one look. */
+  fan?: number;
   /** Flat [x0, y0, x1, y1, …] polyline in field units. */
   points: number[];
   /** Launch aim, used by the experimental CPU to fit gravity from completed shots. */
@@ -100,6 +108,13 @@ export interface Scene {
   trails: Trail[];
   volley: Volley | null;
   camera: Camera | null;
+  /** Experimental power-ups on the field, and the armed preview's path while aiming. */
+  pickups?: readonly Pickup[];
+  /** The pass the round is in, so the renderer can tell which pickups are about to fade. */
+  pass?: number;
+  preview?: number[] | null;
+  /** The spots a ship may teleport to while it is choosing. */
+  teleport?: TeleportSpots | null;
 }
 
 export type GameEvent =
@@ -114,6 +129,12 @@ export type GameEvent =
   | { type: 'devour'; x: number; y: number; toX: number; toY: number; color: string; vx: number; vy: number }
   | { type: 'style'; player: number; kind: StyleKind; x: number; y: number }
   | { type: 'explode'; x: number; y: number; ship: number; vx: number; vy: number }
+  | { type: 'pickup'; player: number; kind: PowerUpKind; x: number; y: number; dropped: PowerUpKind | null }
+  | { type: 'pickupSpawn'; kind: PowerUpKind; x: number; y: number }
+  | { type: 'pickupFade'; kind: PowerUpKind; x: number; y: number }
+  | { type: 'teleport'; player: number; fromX: number; fromY: number; toX: number; toY: number }
+  | { type: 'split'; player: number; x: number; y: number }
+  | { type: 'shield'; ship: number; x: number; y: number }
   | { type: 'kill'; record: KillRecord }
   | { type: 'collapse'; x: number; y: number }
   | { type: 'killcam'; active: boolean; recording: boolean }
@@ -213,10 +234,13 @@ export interface MatchOptions {
   onShotComplete?: (report: CompletedShotReport) => void;
 }
 
-interface CpuJob {
+export interface CpuJob {
   planner: Generator<void, Aim> | null;
   target: Aim | null;
   settle: number;
+  /** Power-ups: the planner found no hitting shot. Only known while the CPU holds a teleport. */
+  blind?: boolean;
+  teleportTried?: boolean;
 }
 
 /**
@@ -284,6 +308,28 @@ export abstract class Match {
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
   protected simClock = 0;
+  /** Experimental power-ups: the pickups on the field, who holds what, and what each one does. */
+  readonly power = new PowerUpField({
+    enabled: () => this.powerUps,
+    world: () => this.world,
+    players: () => this.players,
+    rng: () => this.rng,
+    rules: () => this.rules,
+    volley: () => this.volley,
+    phase: () => this.phase,
+    viewer: () => this.viewer,
+    current: () => this.current,
+    localCanAim: () => this.localCanAim,
+    canAim: (id) => this.canAim(id),
+    friendsOf: (id) => this.friendsOf(id),
+    sparedFor: (id) => this.sparedFor(id),
+    volleysPerPass: () => this.volleysPerPass,
+    kinds: () => this.settings.powerUpKinds,
+    amount: () => this.settings.powerUpAmount,
+    emit: (event) => this.emit(event),
+    clearCpuJobs: () => this.cpuJobs.clear(),
+    record: (update) => this.record(update),
+  });
 
   constructor(
     public settings: Settings,
@@ -584,7 +630,85 @@ export abstract class Match {
   }
 
   scene(): Scene {
-    return { world: this.world, trails: this.trails, volley: this.volley, camera: null };
+    return { world: this.world, trails: this.trails, volley: this.volley, camera: null, ...this.power.scene() };
+  }
+
+  // ————————————————————————————— Experimental power-ups —————————————————————————————
+
+  /** Power-ups are an offline experiment: Classic and Event Horizon, never on the attract screen, never online. */
+  get powerUps(): boolean {
+    return this.settings.powerUps && (this.mode === 'classic' || this.mode === 'horizon') && !this.attract;
+  }
+
+  /** Volleys that make up one pass: the shot of every ship still in, or one salvo at a time. */
+  protected get volleysPerPass(): number {
+    return this.salvo ? 1 : Math.max(1, this.alive.length);
+  }
+
+  /**
+   * A CPU holding a teleport that planned and found no hitting shot jumps to a new spot, once, and plans again
+   * from there. Returns true when it did, so the caller leaves this tick to the new position.
+   */
+  protected cpuTeleportIfBlind(p: PlayerState, job: CpuJob | undefined): boolean {
+    if (p.powerUp !== 'teleport' || !job?.target || !job.blind || job.teleportTried) return false;
+    job.teleportTried = true;
+    return this.power.teleport(p.id);
+  }
+
+  get pickups(): Pickup[] {
+    return this.power.pickups;
+  }
+
+  set pickups(pickups: Pickup[]) {
+    this.power.pickups = pickups;
+  }
+
+  /** The power-up key: teleport (choose a spot), or arm a preview. */
+  usePowerUp(id: number = this.viewer ?? this.current): void {
+    this.power.use(id);
+  }
+
+  /** Whether the ship on turn is choosing where to teleport. */
+  get teleporting(): boolean {
+    return this.power.teleporting;
+  }
+
+  /** Fire, while choosing: the jump happens. Returns whether it did. */
+  confirmTeleport(by?: number): boolean {
+    return this.power.confirmTeleport(by);
+  }
+
+  cancelTeleport(by?: number): boolean {
+    return this.power.cancelTeleport(by);
+  }
+
+  /** A number key (0-based index) while choosing: the ship jumps to that spot. */
+  chooseTeleportIndex(index: number, by?: number): boolean {
+    return this.power.chooseTeleportIndex(index, by);
+  }
+
+  /** A click at a point of the field: on an offered teleport spot it jumps there. */
+  chooseTeleportAt(x: number, y: number): boolean {
+    return this.power.chooseTeleportAt(x, y);
+  }
+
+  /** The place of the offered teleport spot at a point of the field, or -1 (what a guest sends to the host). */
+  teleportSpotAt(x: number, y: number): number {
+    return this.power.teleportSpotAt(x, y);
+  }
+
+  /** The power-up state a snapshot carries besides the pickups, and its restoring. */
+  protected get powerState() {
+    return this.power.state();
+  }
+
+  /** Fire while the shot is flying: an armed splitter forks it into three. */
+  protected splitInFlight(id = -1): boolean {
+    return this.power.splitInFlight(id);
+  }
+
+  protected aimsFor(p: PlayerState): VolleyAim[] {
+    return this.power.aimsFor(p);
   }
 
   // Event Horizon hooks the renderer asks about; classic answers "nothing".
@@ -660,10 +784,13 @@ export abstract class Match {
       p.shots = 0;
       p.alive = true;
       p.locked = false;
+      p.powerUp = null;
+      p.armed = false;
       // Face the middle of the field; the classic duel keeps the original's straight 0° / 180°.
       p.angle = duel ? (p.id === 0 ? 0 : 180) : normalizeAngle(Math.round((Math.atan2(ship.y - FIELD.height / 2, FIELD.width / 2 - ship.x) * 180) / Math.PI));
       p.power = startPower(this.settings);
     }
+    this.power.startRound();
     this.emit({ type: 'round' });
     this.beginRound();
   }
@@ -746,6 +873,7 @@ export abstract class Match {
     while (this.simClock >= PHYSICS.DT && !volley.done) {
       this.simClock -= PHYSICS.DT;
       for (const e of volley.step()) this.onVolleyEvent(volley, e, true);
+      this.power.onStep(volley);
     }
     if (!volley.done) return;
     this.flightDoneAt ??= this.phaseTime;
@@ -754,9 +882,10 @@ export abstract class Match {
     const generation = this.experimentalGeneration;
     const finish = (): void => {
       if (generation !== this.experimentalGeneration || this.volley !== volley || this.disposed) return;
-      this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, points: vs.trail, angle: vs.shot.angle, power: vs.shot.power, volley: this.volleyNumber, at: this.clock })));
+      this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, fan: vs.fan, points: vs.trail, angle: vs.shot.angle, power: vs.shot.power, volley: this.volleyNumber, at: this.clock })));
       this.volley = null;
       this.flightPending = false;
+      this.power.onVolleyEnd();
       this.judgeOracle();
       this.afterVolley();
     };
@@ -812,6 +941,17 @@ export abstract class Match {
         const ship = volley.world.ships[end.ship];
         this.emit({ type: 'explode', x: ship.x, y: ship.y, ship: end.ship, vx: e.vx, vy: e.vy });
         if (live) this.registerKill(vs, end.ship, volley);
+        break;
+      }
+      case 'shield': {
+        // The shield took the hit: it is gone, and so is the power-up it came from.
+        this.emit({ type: 'shield', ship: end.ship, x: e.x, y: e.y });
+        if (live) {
+          const holder = this.players[end.ship];
+          holder.powerUp = null;
+          holder.armed = false;
+          this.record((book) => bump(book.saves, end.ship));
+        }
         break;
       }
       case 'planet': {
@@ -1129,7 +1269,16 @@ export abstract class Match {
             lookahead,
             friends,
             grudgeTarget: this.lastHitBy.get(id) ?? null,
-            ...(logDecisions || this.options.onCpuDecision ? { onDecision: (decision) => this.logCpuDecision(id, decision, logDecisions) } : {}),
+            // A CPU holding a teleport also wants to know whether it found a hitting shot at all.
+            ...(logDecisions || this.options.onCpuDecision || (this.powerUps && p.powerUp === 'teleport')
+              ? {
+                  onDecision: (decision) => {
+                    const job = this.cpuJobs.get(id);
+                    if (job) job.blind = decision.hitCandidates === 0;
+                    if (logDecisions || this.options.onCpuDecision) this.logCpuDecision(id, decision, logDecisions);
+                  },
+                }
+              : {}),
           });
       this.cpuJobs.set(id, { planner, target: null, settle: 0 });
     }
@@ -1272,5 +1421,7 @@ export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, 
     shots: 0,
     alive: true,
     locked: false,
+    powerUp: null,
+    armed: false,
   };
 }

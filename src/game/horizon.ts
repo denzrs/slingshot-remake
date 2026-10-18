@@ -1,8 +1,10 @@
 import { AIM, HORIZON, PHYSICS, SCORING, COLORS } from '../config';
 import { t } from '../i18n';
 import { cloneWorld, type ShotRules, type StyleKind, type World } from '../physics';
+import { POWER_UP, type Pickup } from '../powerups';
+import type { PowerUpState } from './powerup-field';
 import { scoreHorizonKill } from '../scoring';
-import { Volley, type VolleyAim, type VolleyShot, type VolleySnapshot } from '../volley';
+import { shotSource, Volley, type VolleyAim, type VolleyScript, type VolleyShot, type VolleySnapshot } from '../volley';
 import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene } from './match';
 import type { OracleSnapshot } from './oracle';
 
@@ -10,6 +12,8 @@ import type { OracleSnapshot } from './oracle';
 interface KillcamClip {
   snapshot: World;
   aims: VolleyAim[];
+  /** What was done to the flight on the way (splits, shields), so the replay flies the same flight. */
+  script?: VolleyScript[];
   /** Index of the killing shot within the volley. */
   focus: number;
   victim: number;
@@ -47,7 +51,7 @@ export interface HorizonSnapshot {
   snapshot: World | null;
   aims: VolleyAim[];
   volleyKills: { record: KillRecord; shotIndex: number; step: number }[];
-  collapse: null | Omit<CollapseState, 'planets' | 'ships'> & { planets: [number, Drift][]; ships: [number, Drift][] };
+  collapse: null | Omit<CollapseState, 'planets' | 'ships' | 'pickups'> & { planets: [number, Drift][]; ships: [number, Drift][]; pickups?: [number, Drift][] };
   /** The clip being replayed — static for the whole killcam, so it travels as its own (rarely changing) field. */
   killcamClip: KillcamClip | null;
   killcam: null | {
@@ -61,6 +65,8 @@ export interface HorizonSnapshot {
   };
   lastClip: KillcamClip | null;
   oracle: OracleSnapshot;
+  pickups?: Pickup[];
+  power?: PowerUpState;
 }
 
 interface KillcamState {
@@ -93,6 +99,8 @@ interface CollapseState {
   toMass: number;
   planets: Map<number, Drift>;
   ships: Map<number, Drift>;
+  /** The power-up pickups, by id: the hole pulls them in like planets. */
+  pickups: Map<number, Drift>;
 }
 
 const SWALLOW_MARGIN = 14;
@@ -112,6 +120,8 @@ export class HorizonMatch extends Match {
   private queue: number[] = [];
   private volleySnapshot: World | null = null;
   private aims: VolleyAim[] = [];
+  /** What was done to the volley in the air; the killcam's clip keeps it. */
+  private volleyScript: VolleyScript[] = [];
   private volleyKills: { record: KillRecord; shotIndex: number; step: number }[] = [];
   private collapse: CollapseState | null = null;
 
@@ -129,7 +139,7 @@ export class HorizonMatch extends Match {
       roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory,
       volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
       aims: this.aims, volleyKills: this.volleyKills,
-      collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships] } : null,
+      collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships], pickups: [...this.collapse.pickups] } : null,
       killcamClip: this.killcam?.clip ?? null,
       killcam: this.killcam ? {
         replay: this.killcam.replay.snapshot(), simClock: this.killcam.simClock,
@@ -138,6 +148,8 @@ export class HorizonMatch extends Match {
       } : null,
       lastClip: this.lastClip,
       oracle: this.oracle.snapshot(),
+      pickups: this.pickups,
+      power: this.powerState,
     };
   }
 
@@ -150,7 +162,7 @@ export class HorizonMatch extends Match {
     this.world = s.world; this.trails = s.trails; this.killFeed = s.killFeed; this.lastKill = s.lastKill;
     this.summary = s.summary; this.notice = s.notice; this.roundStats = s.roundStats; this.matchStats = s.matchStats; this.scoreHistory = s.scoreHistory; this.volleyNo = s.volleyNo; this.clock_ = s.clock_;
     this.queue = [...s.queue]; this.volleySnapshot = s.snapshot; this.aims = s.aims; this.volleyKills = s.volleyKills;
-    this.collapse = s.collapse ? { ...s.collapse, planets: new Map(s.collapse.planets), ships: new Map(s.collapse.ships) } : null;
+    this.collapse = s.collapse ? { ...s.collapse, planets: new Map(s.collapse.planets), ships: new Map(s.collapse.ships), pickups: new Map(s.collapse.pickups ?? []) } : null;
     this.volley = null;
     if (s.volley) {
       this.volley = new Volley(this.world, s.volley.aims, this.rules, true);
@@ -159,10 +171,12 @@ export class HorizonMatch extends Match {
     this.lastClip = s.lastClip;
     // Hosts from before the oracle send none.
     if (s.oracle) this.oracle.restore(s.oracle);
+    this.pickups = s.pickups ?? [];
+    this.power.restoreState(s.power);
     this.killcam = null;
     if (s.killcam && s.killcamClip) {
       const clip = s.killcamClip;
-      const replay = new Volley(cloneWorld(clip.snapshot), clip.aims, this.rules, true);
+      const replay = new Volley(cloneWorld(clip.snapshot), clip.aims, this.rules, true, clip.script);
       replay.restore(s.killcam.replay);
       this.killcam = {
         clip, replay, simClock: s.killcam.simClock, hold: s.killcam.hold,
@@ -194,7 +208,13 @@ export class HorizonMatch extends Match {
   }
 
   commitPlayer(id: number): void {
-    if (this.canAim(id)) this.lock(id);
+    // The fire key during a flight: an armed splitter forks the shot.
+    if (this.phase === 'flying') {
+      this.splitInFlight(id);
+      return;
+    }
+    // While a ship chooses where to teleport, fire jumps instead of locking in.
+    if (this.canAim(id) && !this.confirmTeleport(id)) this.lock(id);
   }
 
   get salvo(): boolean {
@@ -287,6 +307,13 @@ export class HorizonMatch extends Match {
   }
 
   commit(): void {
+    // The fire key during a flight: an armed splitter forks the shot.
+    if (this.phase === 'flying') {
+      this.splitInFlight(this.viewer ?? this.current);
+      return;
+    }
+    // While a ship chooses where to teleport, fire jumps instead of locking in.
+    if (this.confirmTeleport()) return;
     if (this.isHumanTurn) this.lock(this.current);
   }
 
@@ -310,6 +337,7 @@ export class HorizonMatch extends Match {
       this.runCpu(cpus.map((p) => p.id), 8, 0.6, 7);
       for (const p of cpus) {
         const job = this.cpuJob(p.id);
+        if (this.cpuTeleportIfBlind(p, job)) continue;
         if (!job?.target || this.phaseTime < 0.5) continue;
         if (this.swingTowards(p, job.target, dt, 2)) {
           job.settle += dt;
@@ -335,12 +363,13 @@ export class HorizonMatch extends Match {
 
   private launchVolley(): void {
     this.volleySnapshot = cloneWorld(this.world);
-    this.aims = this.alive.map((p) => ({ player: p.id, angle: p.angle, power: p.power, spare: this.sparedFor(p.id) }));
+    this.aims = this.alive.flatMap((p) => this.aimsFor(p));
     for (const p of this.alive) p.shots++;
     this.volleyKills = [];
     this.notice = { text: t('notice.volley'), color: COLORS.bone, at: this.clock };
     this.emit({ type: 'volley' });
     this.launch(this.aims, true);
+    this.volleyScript = this.volley?.script ?? [];
   }
 
   protected onKill(record: KillRecord, shotIndex: number, step: number): void {
@@ -354,6 +383,7 @@ export class HorizonMatch extends Match {
       this.lastClip = {
         snapshot: this.volleySnapshot,
         aims: this.aims,
+        script: this.volleyScript,
         focus: best.shotIndex,
         victim: best.record.victim,
         killStep: best.step,
@@ -400,11 +430,16 @@ export class HorizonMatch extends Match {
   }
 
   private startKillcam(clip: KillcamClip, returnTo: Phase | null, recording: boolean): void {
-    const replay = new Volley(cloneWorld(clip.snapshot), clip.aims, this.rules, true);
-    const start = replay.shots[clip.focus].shot;
+    const replay = new Volley(cloneWorld(clip.snapshot), clip.aims, this.rules, true, clip.script);
+    const start = this.focusShot(replay, clip).shot;
     this.killcam = { clip, replay, simClock: 0, hold: 0, camera: { x: start.x, y: start.y, zoom: 1.2 }, returnTo, recording, skipVotes: [] };
     this.setPhase('killcam');
     this.emit({ type: 'killcam', active: true, recording });
+  }
+
+  /** The shot the killcam follows: the killing one, or — until a split has made it — the shot it will branch off from. */
+  private focusShot(replay: Volley, clip: KillcamClip): VolleyShot {
+    return replay.shots[clip.focus] ?? replay.shots[shotSource(clip.aims.length, clip.script ?? [], clip.focus)];
   }
 
   private killcamRate(k: KillcamState): number {
@@ -425,7 +460,7 @@ export class HorizonMatch extends Match {
     if (afterKill || k.replay.done) k.hold += dt;
 
     // Follow the killing shot, then settle on the wreck.
-    const focus = k.replay.shots[k.clip.focus].shot;
+    const focus = this.focusShot(k.replay, k.clip).shot;
     const victim = k.replay.world.ships[k.clip.victim];
     const tx = afterKill ? victim.x : focus.x;
     const ty = afterKill ? victim.y : focus.y;
@@ -488,7 +523,10 @@ export class HorizonMatch extends Match {
       const s = this.world.ships[p.id];
       ships.set(p.id, pull(s.x, s.y, 1, SWALLOW_MARGIN));
     }
-    this.collapse = { fromRadius: hole.radius, toRadius, fromMass: hole.mass, toMass, planets, ships };
+    // Pickups drift in like planets (a little faster), and the hole eats those that come too close.
+    const pickups = new Map<number, Drift>();
+    if (this.powerUps) for (const pickup of this.pickups) pickups.set(pickup.id, pull(pickup.x, pickup.y, 0.8, POWER_UP.PICKUP_RADIUS));
+    this.collapse = { fromRadius: hole.radius, toRadius, fromMass: hole.mass, toMass, planets, ships, pickups };
     this.setPhase('collapse');
     this.emit({ type: 'collapse', x: hole.x, y: hole.y });
   }
@@ -502,6 +540,10 @@ export class HorizonMatch extends Match {
     hole.mass = c.fromMass + (c.toMass - c.fromMass) * e;
     for (const p of this.world.planets) move(p, c.planets.get(p.seed)!, e, t);
     for (const [id, d] of c.ships) move(this.world.ships[id], d, e, t);
+    for (const pickup of this.pickups) {
+      const d = c.pickups.get(pickup.id);
+      if (d) move(pickup, d, e, t);
+    }
     if (t >= 1) this.finishCollapse();
   }
 
@@ -511,6 +553,11 @@ export class HorizonMatch extends Match {
     this.collapse = null;
     this.world.planets = this.world.planets.filter((p) => !c.planets.get(p.seed)?.lost);
     this.world.version++;
+    // What the hole swallowed is gone from the field; what drifted stays where it landed.
+    const eaten = this.pickups.filter((pickup) => c.pickups.get(pickup.id)?.lost);
+    for (const gone of eaten) this.emit({ type: 'pickupFade', kind: gone.kind, x: hole.x, y: hole.y });
+    this.pickups = this.pickups.filter((pickup) => !eaten.includes(pickup));
+    this.power.sweep();
     this.advanceExperimentalField(
       [...c.planets].filter(([, drift]) => drift.lost).map(([id]) => id),
       HORIZON.MASS_PER_VOLLEY,

@@ -1,3 +1,4 @@
+import { POWER_UP_KINDS } from './powerups';
 import { Packr, Unpackr } from 'msgpackr';
 
 // Records are a msgpackr extension, not plain MessagePack, and rmp-serde cannot decode them.
@@ -100,6 +101,7 @@ function isGameEvent(value: unknown): boolean {
   const event = value as Record<string, unknown>;
   const finite = (key: string) => typeof event[key] === 'number' && Number.isFinite(event[key]);
   const index = (key: string) => Number.isSafeInteger(event[key]) && (event[key] as number) >= 0;
+  const kindOf = (kind: unknown): boolean => typeof kind === 'string' && (POWER_UP_KINDS as readonly string[]).includes(kind);
   const record = (candidate: unknown): candidate is Record<string, unknown> =>
     !!candidate && typeof candidate === 'object' && !Array.isArray(candidate);
   switch (event.type) {
@@ -140,6 +142,16 @@ function isGameEvent(value: unknown): boolean {
         && Number.isSafeInteger(kill.shots) && typeof kill.power === 'number' && Number.isFinite(kill.power)
         && typeof kill.at === 'number' && Number.isFinite(kill.at);
     }
+    case 'pickup':
+      return index('player') && kindOf(event.kind) && (event.dropped === null || kindOf(event.dropped)) && finite('x') && finite('y');
+    case 'pickupSpawn': case 'pickupFade':
+      return kindOf(event.kind) && finite('x') && finite('y');
+    case 'teleport':
+      return index('player') && finite('fromX') && finite('fromY') && finite('toX') && finite('toY');
+    case 'split':
+      return index('player') && finite('x') && finite('y');
+    case 'shield':
+      return index('ship') && finite('x') && finite('y');
     default:
       return false;
   }
