@@ -5,6 +5,7 @@ import { t } from '../i18n';
 import { Volley, type VolleyShot } from '../volley';
 import { Match, type RoundTitle } from './match';
 import type { Pickup } from '../powerups';
+import type { PowerUpState } from './powerup-field';
 import type { OracleSnapshot } from './oracle';
 
 export interface ClassicSnapshot {
@@ -23,6 +24,7 @@ export interface ClassicSnapshot {
   trails: Match['trails'];
   volley: ReturnType<Volley['snapshot']> | null;
   pickups?: Pickup[];
+  power?: PowerUpState;
   killFeed: Match['killFeed'];
   lastKill: Match['lastKill'];
   summary: Match['summary'];
@@ -62,6 +64,7 @@ export class ClassicMatch extends Match {
       trails: this.trails,
       volley: this.volley?.snapshot() ?? null,
       pickups: this.pickups,
+      power: this.powerState,
       killFeed: this.killFeed,
       lastKill: this.lastKill,
       summary: this.summary,
@@ -93,6 +96,7 @@ export class ClassicMatch extends Match {
     this.world = snapshot.world;
     this.trails = snapshot.trails;
     this.pickups = snapshot.pickups ?? [];
+    this.power.restoreState(snapshot.power);
     this.killFeed = snapshot.killFeed;
     this.lastKill = snapshot.lastKill;
     this.summary = snapshot.summary;
@@ -194,7 +198,14 @@ export class ClassicMatch extends Match {
   }
 
   commitPlayer(id: number): void {
+    // The fire key during a flight: an armed splitter forks the shot.
+    if (this.phase === 'flying') {
+      this.splitInFlight(id);
+      return;
+    }
     if (!this.canAim(id)) return;
+    // While a ship chooses where to teleport, fire jumps instead of shooting.
+    if (this.confirmTeleport(id)) return;
     if (this.salvo || !this.betWindowDone) this.lock(id);
     else this.fire();
   }

@@ -198,7 +198,13 @@ function dispatchInput(input: ClientInput): void {
   if (input.kind === 'adjust') match.adjust(input.dAngle, input.dPower);
   else if (input.kind === 'aim') match.setAim(input.angle, input.power);
   else if (input.kind === 'fire') match.commit();
+  else if (input.kind === 'power') match.usePowerUp();
+  else if (input.kind === 'spot') match.chooseTeleportIndex(input.index);
+  else if (input.kind === 'cancel') match.cancelTeleport();
 }
+
+/** Whether a splitter is armed in a shot the person at this screen has in the air. */
+const splitterInAir = (m: Match): boolean => m.powerUps && m.phase === 'flying' && m.players.some((p) => (m.viewer === null ? !p.cpu : p.id === m.viewer) && p.armed && p.powerUp === 'splitter');
 
 function advanceMatch(): void {
   const net = online();
@@ -300,7 +306,7 @@ function primaryAction(): void {
   if (online() && match.phase === 'gameOver') app.rematch();
   else if (canAim()) dispatchInput({ kind: 'fire' });
   // While a shot flies, the fire key only matters for a splitter.
-  else if (!online() && match.phase === 'flying' && match.powerUps) dispatchInput({ kind: 'fire' });
+  else if (splitterInAir(match)) dispatchInput({ kind: 'fire' });
   else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
 }
 
@@ -624,8 +630,12 @@ window.addEventListener('keydown', (e) => {
 
   // Choosing a teleport spot: 1, 2 or 3 picks that spot and jumps.
   const spotKey = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
-  if (spotKey && !online() && match.teleporting && !e.metaKey && !e.ctrlKey && !e.altKey) {
-    if (match.chooseTeleportIndex(Number(spotKey[1]) - 1)) e.preventDefault();
+  if (spotKey && match.teleporting && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const index = Number(spotKey[1]) - 1;
+    if (index < (match.scene().teleport?.spots.length ?? 0)) {
+      dispatchInput({ kind: 'spot', index });
+      e.preventDefault();
+    }
     return;
   }
 
@@ -653,12 +663,14 @@ window.addEventListener('keydown', (e) => {
       saveClip();
       break;
     case 'KeyP':
-      // Power-ups are offline only, so the key goes straight to the local match.
-      if (!online() && !e.repeat) match?.usePowerUp();
+      if (match?.powerUps && !e.repeat) dispatchInput({ kind: 'power' });
       break;
     case 'Escape':
       // Choosing a teleport spot: Esc thinks again, it does not open the menu.
-      if (!online() && match?.cancelTeleport()) break;
+      if (match?.teleporting) {
+        dispatchInput({ kind: 'cancel' });
+        break;
+      }
       // A clip records whatever is on screen — don't freeze it behind the menu.
       if (!recorder.recording) menu.open(() => pauseScreen(app));
       break;
@@ -694,9 +706,10 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
   // Choosing a teleport spot: a tap on one of them jumps there.
-  if (!online() && match.teleporting) {
+  if (match.teleporting) {
     const at = renderer.toField(e.clientX, e.clientY);
-    if (match.chooseTeleportAt(at.x, at.y)) return;
+    const index = match.teleportSpotAt(at.x, at.y);
+    if (index >= 0) return dispatchInput({ kind: 'spot', index });
   }
   if (!canAim()) return;
   dragging = true;
@@ -716,7 +729,7 @@ touchFire.addEventListener('click', () => {
 });
 touchPower.addEventListener('click', () => {
   sound.unlock();
-  if (!online()) match?.usePowerUp();
+  if (match?.powerUps) dispatchInput({ kind: 'power' });
 });
 clipButton.addEventListener('click', () => {
   sound.unlock();
@@ -736,7 +749,7 @@ function syncButtons(): void {
     else if (ghostTeaser()) touchLabel = t('hud.ghostLane');
     else if (canAim()) touchLabel = m.teleporting ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
     // A splitter in the air: the fire button splits the shot.
-    else if (!online() && m.phase === 'flying' && m.powerUps && m.players.some((p) => !p.cpu && p.armed && p.powerUp === 'splitter')) touchLabel = t('powerup.splitNow');
+    else if (splitterInAir(m)) touchLabel = t('powerup.splitNow');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
     else if (m.phase === 'killcam' && !recorder.recording) touchLabel = t('common.skip');
   }
@@ -746,7 +759,7 @@ function syncButtons(): void {
   if (touchLabel && touchFire.textContent !== touchLabel) touchFire.textContent = touchLabel;
 
   // Power-ups on touch: a teleport or preview has a button of its own while its ship is aiming.
-  const holder = playing && coarsePointer.matches && m?.powerUps && !online() && canAim() ? m.players[m.viewer ?? m.current] : null;
+  const holder = playing && coarsePointer.matches && m?.powerUps && canAim() ? m.players[m.viewer ?? m.current] : null;
   const power = holder && (holder.powerUp === 'teleport' || holder.powerUp === 'preview' || holder.powerUp === 'repulse') ? holder : null;
   if (touchPower.hidden !== !power) touchPower.hidden = !power;
   if (power) {

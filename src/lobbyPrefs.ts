@@ -1,4 +1,5 @@
 import { AIM, GRACE, TRAIL_FADE } from './config';
+import { POWER_UP, POWER_UP_KINDS } from './powerups';
 import type { NetworkGameMode, RoomMode, RoomRules } from './net';
 import { avatarFrom, DEFAULT_AVATAR, type Avatar } from './avatars';
 import { DEFAULT_ROOM_LOOK, roomLookFrom, type RoomLook } from './roomLook';
@@ -40,6 +41,9 @@ export const rulesOf = (s: Settings): RoomRules => ({
   hiddenAim: s.hiddenAim,
   fadingTrails: s.fadingTrails,
   betting: s.betting,
+  powerUps: s.powerUps,
+  powerUpKinds: [...s.powerUpKinds],
+  powerUpAmount: s.powerUpAmount,
 });
 
 /**
@@ -47,6 +51,13 @@ export const rulesOf = (s: Settings): RoomRules => ({
  * a player has set up for offline games stays out of it, and the other way round.
  */
 export const defaultRoomRules = (): RoomRules => rulesOf(DEFAULT_SETTINGS);
+
+/** A saved list of power-up kinds: only known kinds, in the usual order, and never none. */
+function powerUpKindsFrom(value: unknown): RoomRules['powerUpKinds'] | null {
+  if (!Array.isArray(value)) return null;
+  const kinds = POWER_UP_KINDS.filter((kind) => value.includes(kind));
+  return kinds.length ? kinds : null;
+}
 
 export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
   const fresh: LobbyPrefs = { server: defaultServer, name: 'Player', autoConnect: false, gameMode: 'classic', matchType: 'ffa', capacity: 4, look: { ...DEFAULT_ROOM_LOOK }, avatar: DEFAULT_AVATAR, rules: defaultRoomRules() };
@@ -68,6 +79,9 @@ export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
         ...fresh.rules,
         ...saved.rules,
         betting: saved.rules?.betting === true,
+        powerUps: saved.rules?.powerUps === true,
+        powerUpKinds: powerUpKindsFrom(saved.rules?.powerUpKinds) ?? fresh.rules.powerUpKinds,
+        powerUpAmount: POWER_UP.AMOUNTS.includes(saved.rules?.powerUpAmount as number) ? saved.rules!.powerUpAmount : fresh.rules.powerUpAmount,
         maxPower: AIM.CAP_OPTIONS.includes(saved.rules?.maxPower as number) ? saved.rules!.maxPower : fresh.rules.maxPower,
         fixedPowerLevel: AIM.FIXED_OPTIONS.includes(saved.rules?.fixedPowerLevel as number) ? saved.rules!.fixedPowerLevel : fresh.rules.fixedPowerLevel,
         fadingTrails: TRAIL_FADE.OPTIONS.includes(saved.rules?.fadingTrails as number) ? saved.rules!.fadingTrails : fresh.rules.fadingTrails,

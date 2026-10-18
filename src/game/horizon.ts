@@ -2,6 +2,7 @@ import { AIM, HORIZON, PHYSICS, SCORING, COLORS } from '../config';
 import { t } from '../i18n';
 import { cloneWorld, type ShotRules, type StyleKind, type World } from '../physics';
 import type { Pickup } from '../powerups';
+import type { PowerUpState } from './powerup-field';
 import { scoreHorizonKill } from '../scoring';
 import { shotSource, Volley, type VolleyAim, type VolleyScript, type VolleyShot, type VolleySnapshot } from '../volley';
 import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene } from './match';
@@ -65,6 +66,7 @@ export interface HorizonSnapshot {
   lastClip: KillcamClip | null;
   oracle: OracleSnapshot;
   pickups?: Pickup[];
+  power?: PowerUpState;
 }
 
 interface KillcamState {
@@ -145,6 +147,7 @@ export class HorizonMatch extends Match {
       lastClip: this.lastClip,
       oracle: this.oracle.snapshot(),
       pickups: this.pickups,
+      power: this.powerState,
     };
   }
 
@@ -167,6 +170,7 @@ export class HorizonMatch extends Match {
     // Hosts from before the oracle send none.
     if (s.oracle) this.oracle.restore(s.oracle);
     this.pickups = s.pickups ?? [];
+    this.power.restoreState(s.power);
     this.killcam = null;
     if (s.killcam && s.killcamClip) {
       const clip = s.killcamClip;
@@ -202,7 +206,13 @@ export class HorizonMatch extends Match {
   }
 
   commitPlayer(id: number): void {
-    if (this.canAim(id)) this.lock(id);
+    // The fire key during a flight: an armed splitter forks the shot.
+    if (this.phase === 'flying') {
+      this.splitInFlight(id);
+      return;
+    }
+    // While a ship chooses where to teleport, fire jumps instead of locking in.
+    if (this.canAim(id) && !this.confirmTeleport(id)) this.lock(id);
   }
 
   get salvo(): boolean {

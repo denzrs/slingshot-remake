@@ -101,7 +101,8 @@ describe('game rules in the menu', () => {
 
   it('makes switches of the on/off rules, a bar of the power mode and sliders of the rest', () => {
     for (const row of all) {
-      if (row.key === 'fixedPower') expect(row.control).toBe('segmented');
+      if (row.key === 'fixedPower' || row.key === 'powerUpAmount') expect(row.control, row.key).toBe('segmented');
+      else if (row.key === 'powerUpKinds') expect(row.control).toBe('tiles');
       else if (row.options.length === 0) expect(row.control, row.key).toBe('toggle');
       else expect(row.control, row.key).toBe('slider');
     }
@@ -124,11 +125,23 @@ describe('game rules in the menu', () => {
     }
   });
 
-  it('offers power-ups on the offline setup of both modes, and never in an online room', () => {
+  it('offers the power-ups, their kinds and their amount in both modes, offline and in an online room', () => {
     for (const mode of ['classic', 'horizon'] as const) {
-      expect(rulesFor(mode).map((r) => r.key)).toContain('powerUps');
-      expect(rulesFor(mode, true).map((r) => r.key)).not.toContain('powerUps');
+      for (const online of [false, true]) expect(rulesFor(mode, online).map((r) => r.key)).toEqual(expect.arrayContaining(['powerUps', 'powerUpKinds', 'powerUpAmount']));
     }
+  });
+
+  it('keeps the kinds and the amount hidden but in place while power-ups are off', () => {
+    const source = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), powerUps: false }), patch() {} };
+    for (const { key, item } of ruleItems('classic', source).filter((r) => r.key === 'powerUpKinds' || r.key === 'powerUpAmount')) {
+      expect(item.hidden?.(), key).toBe(true);
+      expect(item.reserve?.(), key).toBe(true);
+    }
+  });
+
+  it('offers exactly the power-up amounts and kinds the relay accepts', () => {
+    expect(all.find((r) => r.key === 'powerUpAmount')!.options.map((o) => o.value)).toEqual(relayContract.options.powerUpAmount);
+    expect(all.find((r) => r.key === 'powerUpKinds')!.options.map((o) => o.value)).toEqual(relayContract.defaults.powerUpKinds);
   });
 
   it('keeps the rules that only make sense online — betting — off the offline setup screen, in both modes', () => {

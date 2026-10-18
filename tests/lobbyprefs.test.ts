@@ -36,6 +36,13 @@ describe('the lobby has its own state', () => {
     expect(prefs.rules).toMatchObject({ maxPower: 40, fixedPowerLevel: 75, hiddenAim: true });
   });
 
+  it('remembers the power-ups of a room, and cleans up what a saved lobby got wrong', () => {
+    stored({ 'slingshot.lobby.v1': { rules: { powerUps: true, powerUpKinds: ['shield', 'laser', 'teleport'], powerUpAmount: 3 } } });
+    expect(loadLobbyPrefs('ws://x').rules).toMatchObject({ powerUps: true, powerUpKinds: ['teleport', 'shield'], powerUpAmount: 3 });
+    stored({ 'slingshot.lobby.v1': { rules: { powerUps: 'yes', powerUpKinds: [], powerUpAmount: 9 } } });
+    expect(loadLobbyPrefs('ws://x').rules).toMatchObject({ powerUps: false, powerUpKinds: defaultRoomRules().powerUpKinds, powerUpAmount: defaultRoomRules().powerUpAmount });
+  });
+
   it('plays without bets until the host switches them on, and remembers it', () => {
     stored({});
     expect(loadLobbyPrefs('ws://x').rules.betting).toBe(false);

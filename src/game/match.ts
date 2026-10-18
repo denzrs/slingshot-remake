@@ -674,22 +674,32 @@ export abstract class Match {
   }
 
   /** Fire, while choosing: the jump happens. Returns whether it did. */
-  confirmTeleport(): boolean {
-    return this.power.confirmTeleport();
+  confirmTeleport(by?: number): boolean {
+    return this.power.confirmTeleport(by);
   }
 
-  cancelTeleport(): boolean {
-    return this.power.cancelTeleport();
+  cancelTeleport(by?: number): boolean {
+    return this.power.cancelTeleport(by);
   }
 
   /** A number key (0-based index) while choosing: the ship jumps to that spot. */
-  chooseTeleportIndex(index: number): boolean {
-    return this.power.chooseTeleportIndex(index);
+  chooseTeleportIndex(index: number, by?: number): boolean {
+    return this.power.chooseTeleportIndex(index, by);
   }
 
   /** A click at a point of the field: on an offered teleport spot it jumps there. */
   chooseTeleportAt(x: number, y: number): boolean {
     return this.power.chooseTeleportAt(x, y);
+  }
+
+  /** The place of the offered teleport spot at a point of the field, or -1 (what a guest sends to the host). */
+  teleportSpotAt(x: number, y: number): number {
+    return this.power.teleportSpotAt(x, y);
+  }
+
+  /** The power-up state a snapshot carries besides the pickups, and its restoring. */
+  protected get powerState() {
+    return this.power.state();
   }
 
   /** Fire while the shot is flying: an armed splitter forks it into three. */

@@ -139,7 +139,7 @@ interface Client {
   syncElapsed: number;
 }
 
-const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, betting: false };
+const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, betting: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'repulse', 'shield'], powerUpAmount: 2 };
 
 async function connectSession(hooks: Partial<ConstructorParameters<typeof MultiplayerSession>[0]> = {}, settings = DEFAULT_SETTINGS, edit?: (message: ServerMessage) => ServerMessage): Promise<MultiplayerSession> {
   const session = new MultiplayerSession({ settings: () => cloneSettings(settings), matchStarted() {}, matchRestarted() {}, matchEnded() {}, ...hooks }, new RustTransport(edit));
@@ -159,12 +159,12 @@ function waitForSession(session: MultiplayerSession, predicate: () => boolean): 
   return promise;
 }
 
-async function startRoom(gameMode: 'classic' | 'horizon', names = ['Anna', 'Ben']): Promise<{ host: Client; guest: Client }> {
+async function startRoom(gameMode: 'classic' | 'horizon', names = ['Anna', 'Ben'], roomRules: RoomRules = rules): Promise<{ host: Client; guest: Client }> {
   let hostMatch: NetMatch | null = null;
   let guestMatch: NetMatch | null = null;
   const hostSession = await connectSession({ matchStarted: (match) => { hostMatch = match; } });
   const guestSession = await connectSession({ matchStarted: (match) => { guestMatch = match; } });
-  hostSession.createRoom({ name: names[0], mode: 'ffa', gameMode, rules, maxPlayers: 2 });
+  hostSession.createRoom({ name: names[0], mode: 'ffa', gameMode, rules: roomRules, maxPlayers: 2 });
   await waitForSession(hostSession, () => hostSession.room !== null);
   await waitForSession(guestSession, () => guestSession.rooms.some((room) => room.id === hostSession.room!.id));
   guestSession.joinRoom(hostSession.room!.id, names[1]);
@@ -1040,5 +1040,75 @@ describe('CPU seats online', () => {
     host.setCpu(2, { team: 2 as 0 });
     await waitForSession(host, () => host.notice !== null);
     expect(host.notice).toMatch(/team must be 0 or 1/i);
+  });
+
+  describe('power-ups', () => {
+    const powerRules: RoomRules = { ...rules, simultaneousShots: true, powerUps: true, powerUpKinds: ['teleport', 'splitter'], powerUpAmount: 3 };
+    type Inner = { power: { scene(): { teleport: { owner: number; spots: unknown[] } | null } } };
+
+    it("plays them by the room's rules, in Classic and Event Horizon, and shows the guest the same pickups", async () => {
+      for (const mode of ['classic', 'horizon'] as const) {
+        const { host, guest } = await startRoom(mode, ['Anna', 'Ben'], { ...powerRules, simultaneousShots: false });
+        expect(host.match().settings).toMatchObject({ powerUps: true, powerUpKinds: ['teleport', 'splitter'], powerUpAmount: 3 });
+        expect(guest.match().settings).toMatchObject({ powerUps: true, powerUpKinds: ['teleport', 'splitter'], powerUpAmount: 3 });
+        expect(host.match().pickups).toHaveLength(3);
+        for (let i = 0; i < 12; i++) await frame(host, guest);
+        expect(guest.match().pickups).toEqual(host.match().pickups);
+        for (const pickup of host.match().pickups) expect(['teleport', 'splitter']).toContain(pickup.kind);
+      }
+    }, 30_000);
+
+    it('lets a guest open a teleport, jump by number, and everybody sees the ship move', async () => {
+      const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], powerRules);
+      const before = { ...host.match().world.ships[1] };
+      host.match().players[1].powerUp = 'teleport';
+      const events: string[] = [];
+      guest.match().on((e) => events.push(e.type));
+
+      guest.session.input({ kind: 'power' });
+      for (let i = 0; i < 12; i++) await frame(host, guest);
+      const open = (host.match() as unknown as Inner).power.scene();
+      // Only the ship choosing sees its spots: the host's own screen is the other player's.
+      expect((host.match() as unknown as Inner).power.scene().teleport).toBeNull();
+      const spots = (guest.match() as unknown as Inner).power.scene().teleport;
+      expect(open).toBeDefined();
+      expect(spots?.owner).toBe(1);
+      expect(spots?.spots.length).toBeGreaterThan(0);
+
+      guest.session.input({ kind: 'spot', index: 0 });
+      for (let i = 0; i < 12; i++) await frame(host, guest);
+      const after = host.match().world.ships[1];
+      expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeGreaterThan(0);
+      expect(host.match().players[1].powerUp).toBeNull();
+      expect(guest.match().world.ships[1].x).toBeCloseTo(after.x, 5);
+      expect(events).toContain('teleport');
+    }, 30_000);
+
+    it('keeps a guest from using somebody else\'s power-up or a spot that is not offered', async () => {
+      const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], powerRules);
+      host.match().players[0].powerUp = 'teleport';
+      const start = { ...host.match().world.ships[0] };
+      guest.session.input({ kind: 'power' });
+      guest.session.input({ kind: 'spot', index: 0 });
+      for (let i = 0; i < 12; i++) await frame(host, guest);
+      expect(host.match().players[0].powerUp).toBe('teleport');
+      expect(host.match().world.ships[0]).toMatchObject({ x: start.x, y: start.y });
+    }, 30_000);
+
+    it('splits a guest\'s shot in the air when the guest presses fire again', async () => {
+      const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], powerRules);
+      host.match().players[1].powerUp = 'splitter';
+      host.match().players[1].armed = true;
+      guest.session.input({ kind: 'aim', angle: 90, power: 40 });
+      guest.session.input({ kind: 'fire' });
+      host.session.input({ kind: 'aim', angle: 270, power: 40 });
+      host.session.input({ kind: 'fire' });
+      for (let i = 0; i < 240 && host.match().phase !== 'flying'; i++) await frame(host, guest);
+      expect(host.match().phase).toBe('flying');
+      guest.session.input({ kind: 'fire' });
+      for (let i = 0; i < 6; i++) await frame(host, guest);
+      expect(host.match().volley!.shots.length).toBe(4);
+      expect(host.match().players[1].powerUp).toBeNull();
+    }, 30_000);
   });
 });

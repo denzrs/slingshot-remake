@@ -41,6 +41,12 @@ export interface TeleportSpots {
   choice: number;
 }
 
+/** What a guest needs besides the pickups to draw the power-ups: the pass the round is in, and the teleport choices open. */
+export interface PowerUpState {
+  pass: number;
+  teleports: TeleportSpots[];
+}
+
 /** What the renderer draws of the power-ups. */
 export interface PowerUpScene {
   pickups: readonly Pickup[];
@@ -63,7 +69,8 @@ export class PowerUpField {
   private ids = 0;
   private previewKey = '';
   private previewCache: number[] | null = null;
-  private choosing: TeleportSpots | null = null;
+  /** The teleport choices that are open, by the ship choosing: online, several can choose at once. */
+  private choosing = new Map<number, TeleportSpots>();
 
   constructor(private readonly host: PowerUpHost) {}
 
@@ -83,7 +90,7 @@ export class PowerUpField {
     this.pickups = [];
     this.pass = 0;
     this.volleysThisPass = 0;
-    this.choosing = null;
+    this.choosing.clear();
     if (this.enabled) for (let i = 0; i < this.amount; i++) this.spawn();
   }
 
@@ -194,62 +201,69 @@ export class PowerUpField {
       this.previewKey = '';
       return;
     }
-    const open = this.teleportSpots();
-    if (open && open.owner === id) {
+    const open = this.teleportSpots(id);
+    if (open) {
       // One stop past the last spot means "stay": the next fire press just closes the choice.
       open.choice = (open.choice + 1) % (open.spots.length + 1);
       return;
     }
     const world = host.world();
     const spots = teleportCandidates(world, host.rng(), this.pickups, POWER_UP.TELEPORT_CHOICES, world.ships[id]);
-    if (spots.length) this.choosing = { owner: id, spots, choice: 0 };
+    if (spots.length) this.choosing.set(id, { owner: id, spots, choice: 0 });
     else this.teleport(id);
   }
 
-  /** The offered teleport spots (`choice` past the last one means "stay"), while the ship that is choosing can still jump. */
-  private teleportSpots(): TeleportSpots | null {
-    const c = this.choosing;
-    if (c && this.host.phase() === 'aiming' && this.host.players()[c.owner]?.powerUp === 'teleport' && this.host.canAim(c.owner)) return c;
-    this.choosing = null;
+  /** The ship whose screen this is, or whose turn it is. */
+  private get aimer(): number {
+    return this.host.viewer() ?? this.host.current();
+  }
+
+  /** The offered teleport spots of a ship (`choice` past the last one means "stay"), while it can still jump. */
+  private teleportSpots(owner: number = this.aimer): TeleportSpots | null {
+    const c = this.choosing.get(owner);
+    if (c && this.host.phase() === 'aiming' && this.host.players()[owner]?.powerUp === 'teleport' && this.host.canAim(owner)) return c;
+    this.choosing.delete(owner);
     return null;
   }
 
-  /** Whether the ship on turn is choosing where to jump. */
+  /** Whether the ship at this screen (or on turn) is choosing where to jump. */
   get teleporting(): boolean {
     return !!this.teleportSpots();
   }
 
   /** Fire while choosing: the ship jumps to the spot picked — or, on the "stay" stop, nobody jumps and the choice closes. */
-  confirmTeleport(): boolean {
-    const c = this.teleportSpots();
+  confirmTeleport(by: number = this.aimer): boolean {
+    const c = this.teleportSpots(by);
     if (!c) return false;
-    this.choosing = null;
+    this.choosing.delete(by);
     if (c.choice < c.spots.length) this.teleport(c.owner, c.spots[c.choice]);
     return true;
   }
 
-  cancelTeleport(): boolean {
-    const had = !!this.teleportSpots();
-    this.choosing = null;
+  cancelTeleport(by: number = this.aimer): boolean {
+    const had = !!this.teleportSpots(by);
+    this.choosing.delete(by);
     return had;
   }
 
   /** A number key while choosing: spot `index` (0-based) is picked and the ship jumps there. False if there is no such spot. */
-  chooseTeleportIndex(index: number): boolean {
-    const c = this.teleportSpots();
-    if (!c || index < 0 || index >= c.spots.length) return false;
+  chooseTeleportIndex(index: number, by: number = this.aimer): boolean {
+    const c = this.teleportSpots(by);
+    if (!c || !Number.isInteger(index) || index < 0 || index >= c.spots.length) return false;
     c.choice = index;
-    return this.confirmTeleport();
+    return this.confirmTeleport(by);
+  }
+
+  /** The place in the offered list of the spot at a point of the field (a click or a tap), or -1 if there is none. */
+  teleportSpotAt(x: number, y: number): number {
+    const c = this.teleportSpots();
+    return c ? c.spots.findIndex((s) => Math.hypot(s.x - x, s.y - y) <= POWER_UP.TELEPORT_PICK_RADIUS) : -1;
   }
 
   /** A click or tap at a point of the field: on an offered spot it jumps there. */
   chooseTeleportAt(x: number, y: number): boolean {
-    const c = this.teleportSpots();
-    if (!c) return false;
-    const index = c.spots.findIndex((s) => Math.hypot(s.x - x, s.y - y) <= POWER_UP.TELEPORT_PICK_RADIUS);
-    if (index < 0) return false;
-    c.choice = index;
-    return this.confirmTeleport();
+    const index = this.teleportSpotAt(x, y);
+    return index >= 0 && this.chooseTeleportIndex(index);
   }
 
   /** Teleports a ship to `spot`, or to a random free one; false when there is none. */
@@ -325,6 +339,17 @@ export class PowerUpField {
   // ————————————————————————————— Drawing —————————————————————————————
 
   /** What the renderer draws of the power-ups. */
+  /** What a guest needs on top of the pickups. */
+  state(): PowerUpState {
+    return { pass: this.pass, teleports: [...this.choosing.values()].map((c) => ({ ...c, spots: c.spots.map((spot) => ({ ...spot })) })) };
+  }
+
+  /** The host's pass and open choices, as a guest has them. */
+  restoreState(state: PowerUpState | undefined): void {
+    this.pass = state?.pass ?? 0;
+    this.choosing = new Map((state?.teleports ?? []).map((c) => [c.owner, c]));
+  }
+
   scene(): PowerUpScene {
     return { pickups: this.pickups, pass: this.pass, preview: this.armedPreview(), teleport: this.teleportSpots() };
   }

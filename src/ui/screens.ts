@@ -1,14 +1,12 @@
 import { CHALLENGE, COLORS, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
 import { teamName, type Match, type Mode, type VersusMode } from '../game';
 import { oracleAwards } from '../game/oracle';
-import { fmtInt, fmtNum, LANGS, t, tn, type Key, type Lang } from '../i18n';
+import { fmtInt, fmtNum, LANGS, t, tn, type Lang } from '../i18n';
 import { rulesOf } from '../lobbyPrefs';
 import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
 import { awards } from '../stats';
 import type { StyleKind } from '../physics';
-import { POWER_UP, POWER_UP_KINDS } from '../powerups';
-import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, freeSeat, MIN_SEATS, removeSeat, seatTeamsFor, teamCounts, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
@@ -352,22 +350,16 @@ function settingToggle(app: App, label: string, key: BooleanSetting): MenuItem {
   };
 }
 
-/** The rules a game is set up with on this device: the room's rules, plus the ones only offline games have. */
-const localRulesOf = (s: Settings) => ({ ...rulesOf(s), powerUps: s.powerUps, powerUpKinds: [...s.powerUpKinds], powerUpAmount: s.powerUpAmount });
-
 /** The rules of a game, shown right before it starts. They are remembered between games. */
 function setupScreen(app: App, mode: VersusMode): Screen {
   const rules = ruleItems(mode, {
-    get: () => localRulesOf(app.settings),
+    get: () => rulesOf(app.settings),
     patch: (values) => {
       Object.assign(app.settings, values);
       app.settingsChanged();
     },
   });
-  // Under the power-ups switch sit the kinds and the amount, open only while it is on.
-  const rows: MenuItem[] = rules.flatMap(({ key, group, item }): MenuItem[] =>
-    key === 'powerUps' ? [{ ...item, section: group }, ...powerUpRows(app).map((row): MenuItem => ({ ...row, section: group }))] : [{ ...item, section: group }],
-  );
+  const rows: MenuItem[] = rules.map(({ group, item }): MenuItem => ({ ...item, section: group }));
   const actions: MenuItem[] = [
     { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(mode) },
     { kind: 'action', section: 'actions', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
@@ -376,7 +368,7 @@ function setupScreen(app: App, mode: VersusMode): Screen {
       section: 'actions',
       label: t('setup.reset'),
       run: () => {
-        Object.assign(app.settings, localRulesOf(DEFAULT_SETTINGS));
+        Object.assign(app.settings, rulesOf(DEFAULT_SETTINGS));
         app.settingsChanged();
         app.menu.refresh();
       },
@@ -406,46 +398,6 @@ function setupScreen(app: App, mode: VersusMode): Screen {
     // Enter starts the game straight away, as it always did.
     focus: rows.length,
   };
-}
-
-/** Which power-ups may turn up, and how many pickups lie on the field: two rows under the power-ups switch. */
-function powerUpRows(app: App): Extract<MenuItem, { kind: 'tiles' | 'segmented' }>[] {
-  const s = app.settings;
-  const hidden = () => !s.powerUps;
-  // The rows are the last of their block: keeping their space means the screen doesn't change size with the switch.
-  const reserve = () => true;
-  const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
-  return [
-    {
-      kind: 'tiles',
-      label: t('powerups.kinds'),
-      hidden,
-      reserve,
-      tiles: POWER_UP_KINDS.map((power) => ({
-        value: power,
-        label: capital(t(`powerup.${power}` as Key)),
-        color: POWER_UP_COLORS[power],
-        draw: (ctx, r) => drawPowerUpSymbol(ctx, power, 0, 0, r),
-      })),
-      get: () => s.powerUpKinds,
-      set: (kinds) => {
-        s.powerUpKinds = POWER_UP_KINDS.filter((k) => kinds.includes(k));
-        app.settingsChanged();
-      },
-    },
-    {
-      kind: 'segmented',
-      label: t('powerups.amount'),
-      hidden,
-      reserve,
-      options: POWER_UP.AMOUNTS.map((n) => ({ value: n, label: String(n) })),
-      get: () => s.powerUpAmount,
-      set: (n) => {
-        s.powerUpAmount = n as number;
-        app.settingsChanged();
-      },
-    },
-  ];
 }
 
 /** Only what concerns this device; the rules of a game live on the setup screen. */

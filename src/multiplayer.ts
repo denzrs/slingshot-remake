@@ -301,8 +301,6 @@ export class MultiplayerSession {
       ...base,
       ...defaultRoomRules(),
       ...message.rules,
-      // Power-ups are an offline experiment: an online game never plays with them, whatever this device is set to.
-      powerUps: false,
       seats,
       seatTeams: [...base.seatTeams],
       teamMode: message.mode === 'team' ? 2 : 0,
@@ -330,6 +328,9 @@ export class MultiplayerSession {
     if (input.kind === 'adjust') match.adjustPlayer(id, input.dAngle, input.dPower);
     else if (input.kind === 'aim') match.setPlayerAim(id, input.angle, input.power);
     else if (input.kind === 'fire') match.commitPlayer(id);
+    else if (input.kind === 'power') match.usePowerUp(id);
+    else if (input.kind === 'spot') match.chooseTeleportIndex(input.index, id);
+    else if (input.kind === 'cancel') match.cancelTeleport(id);
     else if (input.kind === 'bet') match.placeBet(id, input.pick, !!input.round, input.stake ?? 0);
     else match.voteSkip(id);
   }
@@ -405,9 +406,9 @@ export class MultiplayerSession {
 function isEventForMatch(event: import('./game').GameEvent, playerCount: number): boolean {
   const inRange = (id: number) => Number.isSafeInteger(id) && id >= 0 && id < playerCount;
   switch (event.type) {
-    case 'turn': case 'lock': case 'fire': case 'impact': case 'fizzle': case 'style':
+    case 'turn': case 'lock': case 'fire': case 'impact': case 'fizzle': case 'style': case 'pickup': case 'teleport': case 'split':
       return inRange(event.player);
-    case 'explode':
+    case 'explode': case 'shield':
       return inRange(event.ship);
     case 'clash':
       return event.players.every(inRange);

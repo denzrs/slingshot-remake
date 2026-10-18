@@ -13,7 +13,10 @@
     "simultaneousShots": false,
     "hiddenAim": false,
     "fadingTrails": 0,
-    "betting": false
+    "betting": false,
+    "powerUps": false,
+    "powerUpKinds": ["preview", "teleport", "splitter", "repulse", "shield"],
+    "powerUpAmount": 2
   },
   "options": {
     "rounds": [0, 1, 3, 5, 7, 10, 15, 20],
@@ -22,7 +25,8 @@
     "maxPower": [10, 20, 30, 40, 50, 60, 70, 80, 90],
     "shotTime": [10, 20, 30, 60],
     "neighborGrace": [0, 1, 2],
-    "fadingTrails": [0, 1, 2, 4]
+    "fadingTrails": [0, 1, 2, 4],
+    "powerUpAmount": [1, 2, 3, 4]
   },
   "room": {
     "defaults": {

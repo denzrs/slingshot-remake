@@ -59,7 +59,7 @@ New CPU seats start as Newton. In an online room the host seats CPUs in the same
 
 ### Power-ups (experimental)
 
-Switch on *Power-ups (experimental)* in the twists block. It works in offline Classic and Event Horizon: online rooms don't offer it, and the daily challenge and the menu background never use it. In Event Horizon a salvo counts as one pass, pickups keep clear of the black hole (and one it swallows is replaced), the fire key during the flight splits, and the killcam replays splits and shields exactly.
+Switch on *Power-ups (experimental)* in the twists block. It works in Classic and Event Horizon, offline and in online rooms (the host sets it with the room's rules); the daily challenge and the menu background never use it. Online, the host's copy of the match runs everything and the guests send the keys: the power-up key, a spot number (or a tap on a spot) and fire. Only the ship choosing a teleport sees its spots. In Event Horizon a salvo counts as one pass, pickups keep clear of the black hole (and one it swallows is replaced), the fire key during the flight splits, and the killcam replays splits and shields exactly.
 
 Under the switch, two rows open while it is on: a tile per kind (click or tap it, or ←/→ and Enter; at least one stays on) and *Pickups on the field* (1–4, usually 2). There is no submenu. A round starts with that many, a taken pickup is replaced, and the field may hold one more. *Reset rules* puts the choices back too.
 
