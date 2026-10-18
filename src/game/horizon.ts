@@ -1,7 +1,7 @@
 import { AIM, HORIZON, PHYSICS, SCORING, COLORS } from '../config';
 import { t } from '../i18n';
 import { cloneWorld, type ShotRules, type StyleKind, type World } from '../physics';
-import type { Pickup } from '../powerups';
+import { POWER_UP, type Pickup } from '../powerups';
 import type { PowerUpState } from './powerup-field';
 import { scoreHorizonKill } from '../scoring';
 import { shotSource, Volley, type VolleyAim, type VolleyScript, type VolleyShot, type VolleySnapshot } from '../volley';
@@ -51,7 +51,7 @@ export interface HorizonSnapshot {
   snapshot: World | null;
   aims: VolleyAim[];
   volleyKills: { record: KillRecord; shotIndex: number; step: number }[];
-  collapse: null | Omit<CollapseState, 'planets' | 'ships'> & { planets: [number, Drift][]; ships: [number, Drift][] };
+  collapse: null | Omit<CollapseState, 'planets' | 'ships' | 'pickups'> & { planets: [number, Drift][]; ships: [number, Drift][]; pickups?: [number, Drift][] };
   /** The clip being replayed — static for the whole killcam, so it travels as its own (rarely changing) field. */
   killcamClip: KillcamClip | null;
   killcam: null | {
@@ -99,6 +99,8 @@ interface CollapseState {
   toMass: number;
   planets: Map<number, Drift>;
   ships: Map<number, Drift>;
+  /** The power-up pickups, by id: the hole pulls them in like planets. */
+  pickups: Map<number, Drift>;
 }
 
 const SWALLOW_MARGIN = 14;
@@ -137,7 +139,7 @@ export class HorizonMatch extends Match {
       roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory,
       volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
       aims: this.aims, volleyKills: this.volleyKills,
-      collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships] } : null,
+      collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships], pickups: [...this.collapse.pickups] } : null,
       killcamClip: this.killcam?.clip ?? null,
       killcam: this.killcam ? {
         replay: this.killcam.replay.snapshot(), simClock: this.killcam.simClock,
@@ -160,7 +162,7 @@ export class HorizonMatch extends Match {
     this.world = s.world; this.trails = s.trails; this.killFeed = s.killFeed; this.lastKill = s.lastKill;
     this.summary = s.summary; this.notice = s.notice; this.roundStats = s.roundStats; this.matchStats = s.matchStats; this.scoreHistory = s.scoreHistory; this.volleyNo = s.volleyNo; this.clock_ = s.clock_;
     this.queue = [...s.queue]; this.volleySnapshot = s.snapshot; this.aims = s.aims; this.volleyKills = s.volleyKills;
-    this.collapse = s.collapse ? { ...s.collapse, planets: new Map(s.collapse.planets), ships: new Map(s.collapse.ships) } : null;
+    this.collapse = s.collapse ? { ...s.collapse, planets: new Map(s.collapse.planets), ships: new Map(s.collapse.ships), pickups: new Map(s.collapse.pickups ?? []) } : null;
     this.volley = null;
     if (s.volley) {
       this.volley = new Volley(this.world, s.volley.aims, this.rules, true);
@@ -521,7 +523,10 @@ export class HorizonMatch extends Match {
       const s = this.world.ships[p.id];
       ships.set(p.id, pull(s.x, s.y, 1, SWALLOW_MARGIN));
     }
-    this.collapse = { fromRadius: hole.radius, toRadius, fromMass: hole.mass, toMass, planets, ships };
+    // Pickups drift in like planets (a little faster), and the hole eats those that come too close.
+    const pickups = new Map<number, Drift>();
+    if (this.powerUps) for (const pickup of this.pickups) pickups.set(pickup.id, pull(pickup.x, pickup.y, 0.8, POWER_UP.PICKUP_RADIUS));
+    this.collapse = { fromRadius: hole.radius, toRadius, fromMass: hole.mass, toMass, planets, ships, pickups };
     this.setPhase('collapse');
     this.emit({ type: 'collapse', x: hole.x, y: hole.y });
   }
@@ -535,6 +540,10 @@ export class HorizonMatch extends Match {
     hole.mass = c.fromMass + (c.toMass - c.fromMass) * e;
     for (const p of this.world.planets) move(p, c.planets.get(p.seed)!, e, t);
     for (const [id, d] of c.ships) move(this.world.ships[id], d, e, t);
+    for (const pickup of this.pickups) {
+      const d = c.pickups.get(pickup.id);
+      if (d) move(pickup, d, e, t);
+    }
     if (t >= 1) this.finishCollapse();
   }
 
@@ -544,6 +553,10 @@ export class HorizonMatch extends Match {
     this.collapse = null;
     this.world.planets = this.world.planets.filter((p) => !c.planets.get(p.seed)?.lost);
     this.world.version++;
+    // What the hole swallowed is gone from the field; what drifted stays where it landed.
+    const eaten = this.pickups.filter((pickup) => c.pickups.get(pickup.id)?.lost);
+    for (const gone of eaten) this.emit({ type: 'pickupFade', kind: gone.kind, x: hole.x, y: hole.y });
+    this.pickups = this.pickups.filter((pickup) => !eaten.includes(pickup));
     this.power.sweep();
     this.advanceExperimentalField(
       [...c.planets].filter(([, drift]) => drift.lost).map(([id]) => id),

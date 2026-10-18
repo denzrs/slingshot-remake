@@ -96,6 +96,34 @@ describe('power-ups in Event Horizon', () => {
     expect(who.powerUp).toBeNull();
   });
 
+  it('pulls the pickups towards the hole as it grows, and eats the ones too close to it', () => {
+    const match = duel();
+    const hole = match.world.hole!;
+    // Keep the pickups out of the way of the shots: both ships shoot straight away from the middle.
+    const far = { id: 71, kind: 'splitter' as const, x: hole.x + 260, y: hole.y + 20, born: 0 };
+    const near = { id: 72, kind: 'preview' as const, x: hole.x + hole.radius + 12, y: hole.y, born: 0 };
+    match.pickups = [far, near];
+    const farStart = Math.hypot(far.x - hole.x, far.y - hole.y);
+    const faded: string[] = [];
+    match.on((e) => e.type === 'pickupFade' && faded.push(e.kind));
+    const [a, b] = match.players;
+    const [shipA, shipB] = match.world.ships;
+    a.angle = shipA.y < hole.y ? 270 : 90;
+    b.angle = shipB.y < hole.y ? 270 : 90;
+    lockAll(match);
+    finishFlight(match);
+    expect(match.phase).toBe('collapse');
+    for (let t = 0; t < 5 && match.phase === 'collapse'; t += 1 / 30) match.update(1 / 30);
+    expect(match.phase).not.toBe('collapse');
+    const kept = match.pickups.find((p) => p.id === 71);
+    expect(kept).toBeDefined();
+    expect(Math.hypot(kept!.x - hole.x, kept!.y - hole.y)).toBeLessThan(farStart);
+    expect(match.pickups.some((p) => p.id === 72)).toBe(false);
+    expect(faded).toContain('preview');
+    // The field is filled up again.
+    expect(match.pickups.length).toBeGreaterThanOrEqual(POWER_UP.DEFAULT_AMOUNT);
+  });
+
   it('clears pickups the grown hole has swallowed and fills the field again', () => {
     const match = duel();
     const hole = match.world.hole!;
