@@ -323,8 +323,9 @@ export function simulateShot(
   power: number,
   rules: ShotRules,
   friends: readonly number[] = [],
+  pull = 1,
 ): ShotOutcome {
-  const shot = new Shot(world, shooter, angle, power, rules);
+  const shot = new Shot(world, shooter, angle, power, rules, false, [], pull);
   const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
   const own = world.ships[shooter];
   const mates = friends.map((i) => world.ships[i]).filter((s) => s.alive);
@@ -362,8 +363,9 @@ export function* simulateStyledShot(
   power: number,
   rules: ShotRules,
   friends: readonly number[] = [],
+  pull = 1,
 ): Generator<void, StyledShotOutcome> {
-  const shot = new Shot(world, shooter, angle, power, rules, 'metrics');
+  const shot = new Shot(world, shooter, angle, power, rules, 'metrics', [], pull);
   const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
   const own = world.ships[shooter];
   const mates = friends.map((i) => world.ships[i]).filter((s) => s.alive);

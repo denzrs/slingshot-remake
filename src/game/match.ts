@@ -1245,6 +1245,8 @@ export abstract class Match {
       if (this.cpuJobs.has(id) || this.experimentalPending.has(id)) continue;
       const p = this.players[id];
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
+      // An armed repulse pushes this CPU's shot away from the planets, so the plan has to fly it that way.
+      const pull = p.armed && p.powerUp === 'repulse' ? -1 : 1;
       const planner = isExperimentalCpu(p.cpu)
         ? planExperimentalShot(this.observedWorld(id), {
             rules: this.rules,
@@ -1257,6 +1259,7 @@ export abstract class Match {
             friends,
             learner: this.learnerFor(id),
             learningRate: this.experimentalConfigFor(id).learningRate,
+            pull,
           }, (fit, decision) => this.logGravityFit(id, fit, decision))
         : planShot(this.world, id, {
             rules: this.rules,
@@ -1268,6 +1271,7 @@ export abstract class Match {
             effort,
             lookahead,
             friends,
+            pull,
             grudgeTarget: this.lastHitBy.get(id) ?? null,
             // A CPU holding a teleport also wants to know whether it found a hitting shot at all.
             ...(logDecisions || this.options.onCpuDecision || (this.powerUps && p.powerUp === 'teleport')
