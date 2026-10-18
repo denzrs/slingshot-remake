@@ -169,7 +169,7 @@ export class PowerUpField {
     const players = this.host.players();
     for (const vs of volley.shots) {
       const p = players[vs.owner];
-      // A CPU has no use for a preview or a repulse, so it leaves those lying.
+      // A CPU has no use for a preview, so it leaves that lying.
       const hit = touchedPickups(this.pickups, vs.shot.x, vs.shot.y).find((i) => !(p.cpu && CPU_IGNORES.has(this.pickups[i].kind)));
       if (hit === undefined) continue;
       const [pickup] = this.pickups.splice(hit, 1);
@@ -179,6 +179,8 @@ export class PowerUpField {
       p.armed = p.cpu !== null || pickup.kind === 'splitter' || pickup.kind === 'shield';
       // The shield is on the ship itself, so every shot in the volley meets it. Swapping it away takes it off.
       volley.setShield(p.id, pickup.kind === 'shield');
+      // A CPU that has just taken a repulse must plan its next shot pushed, so its plan made before is dropped.
+      if (p.cpu !== null && pickup.kind === 'repulse') this.host.clearCpuJobs();
       this.host.emit({ type: 'pickup', player: p.id, kind: pickup.kind, x: pickup.x, y: pickup.y, dropped });
       this.host.record((book) => bump(book.pickups, p.id));
     }

@@ -775,7 +775,7 @@ export function* planExperimentalShot(
     let powers = angles?.get(angle);
     const cached = powers?.get(power);
     if (cached) return cached;
-    const outcome = simulateShot(world, visible.shooter, angle, power, opts.rules, friends);
+    const outcome = simulateShot(world, visible.shooter, angle, power, opts.rules, friends, opts.pull ?? 1);
     if (!angles) outcomes.set(world, angles = new Map());
     if (!powers) angles.set(angle, powers = new Map());
     powers.set(power, outcome);

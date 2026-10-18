@@ -26,8 +26,8 @@ export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KIND
   return pool[pool.length - 1];
 }
 
-/** Kinds a CPU has no use for: it leaves them lying. */
-export const CPU_IGNORES: ReadonlySet<PowerUpKind> = new Set<PowerUpKind>(['preview', 'repulse']);
+/** Kinds a CPU has no use for: it leaves them lying. A repulse it does use, so it plans its shot pushed away. */
+export const CPU_IGNORES: ReadonlySet<PowerUpKind> = new Set<PowerUpKind>(['preview']);
 
 export const POWER_UP = {
   /**

@@ -608,19 +608,32 @@ describe('power-ups: round 3', () => {
     expect(shooter.powerUp).toBe('repulse');
   });
 
-  it('leaves a repulse lying for the CPUs, and takes a shield', () => {
+  it('lets a CPU take a repulse, and leaves a preview lying', () => {
     const seats = ['hard', 'human', 'off', 'off', 'off', 'off'] as const;
     const match = createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed: 7 });
     const ship = match.world.ships[0];
     match.pickups = [
       { id: 80, kind: 'repulse', x: ship.x + 40, y: ship.y, born: 0 },
-      { id: 81, kind: 'shield', x: ship.x + 90, y: ship.y, born: 0 },
+      { id: 81, kind: 'preview', x: ship.x + 90, y: ship.y, born: 0 },
     ];
     (match as unknown as { launch: (a: unknown[], t: boolean) => void }).launch([{ player: 0, angle: 0, power: 60 }], true);
     for (let t = 0; t < 2 && match.phase === 'flying'; t += 1 / 240) match.update(1 / 240);
-    expect(match.players[0].powerUp).toBe('shield');
-    expect(ship.shield).toBe(true);
-    expect(match.pickups.some((p) => p.id === 80)).toBe(true);
+    expect(match.players[0].powerUp).toBe('repulse');
+    expect(match.players[0].armed).toBe(true);
+    expect(match.pickups.some((p) => p.id === 80)).toBe(false);
+    expect(match.pickups.some((p) => p.id === 81)).toBe(true);
+  });
+
+  it('plans a shot pushed away from the planets when the CPU holds an armed repulse', () => {
+    // A planet above the line of fire: pulled, the shot bends up towards it; pushed, it bends down, away from it.
+    const world = { ...emptyWorld([[200, 400], [1000, 400]]), planets: [{ x: 640, y: 300, radius: 60, mass: 1, seed: 1, style: 'rocky' as const, tint: '#fff' }] };
+    const drift = (pull: number): number => {
+      const shot = new Shot(world, 0, 0, 60, rules, false, [], pull);
+      for (let i = 0; i < 20 && !shot.end; i++) shot.step();
+      return shot.y - 400;
+    };
+    expect(Math.sign(drift(1))).toBe(-1);
+    expect(Math.sign(drift(-1))).toBe(1);
   });
 
   it('draws the kinds by weight, the stronger ones scarcer, and every kind turns up', () => {

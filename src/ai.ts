@@ -93,11 +93,13 @@ export interface PlanOptions {
   grudgeTarget?: number | null;
   /** Receives the selected candidate, launch perturbation, and predicted outcome. */
   onDecision?: CpuDecisionReporter;
+  /** Gravity's sign for the shot: -1 when the CPU holds an armed repulse, which pushes the shot away from the planets. */
+  pull?: number;
 }
 
 /** Planning cost: 0 or below means a hit, lower power is slightly preferred among hits. */
-function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[], profile: Readonly<CpuProfile>): number {
-  const { end, closest, selfClosest } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends);
+function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[], profile: Readonly<CpuProfile>, pull: number): number {
+  const { end, closest, selfClosest } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends, pull);
   if (end.kind === 'ship' && (end.ship === shooter || friends.includes(end.ship))) return 1e6;
   const risk = selfClosest < profile.selfMargin ? (profile.selfMargin - selfClosest) * 20 : 0;
   if (end.kind === 'ship') return -1 + aim.power * (1 / 1000 + profile.powerFrugality) + risk;
@@ -124,7 +126,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const self = world.ships[shooter];
   function reportDecision(searched: Candidate | null, launch: Aim): void {
     if (!opts.onDecision) return;
-    const predicted = simulateShot(world, shooter, launch.angle, launch.power, rules, friends);
+    const predicted = simulateShot(world, shooter, launch.angle, launch.power, rules, friends, opts.pull ?? 1);
     opts.onDecision({
       level: opts.level,
       attempt: opts.attempt,
@@ -138,23 +140,24 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     });
   }
   const friends = opts.friends ?? [];
+  const pull = opts.pull ?? 1;
   const grudgeTarget = opts.grudgeTarget ?? null;
   // Belief searches revisit grid centres and clamped powers. Cache exact launches
   // only for this generator; ordinary CPU planning retains its existing path.
   const costs = opts.noiseFree ? new Map<number, Map<number, number>>() : null;
   const evaluateAim = (aim: Aim): number => {
-    if (!costs) return evaluate(world, shooter, aim, planRules, friends, profile);
+    if (!costs) return evaluate(world, shooter, aim, planRules, friends, profile, pull);
     let powers = costs.get(aim.angle);
     const cached = powers?.get(aim.power);
     if (cached !== undefined) return cached;
-    const cost = evaluate(world, shooter, aim, planRules, friends, profile);
+    const cost = evaluate(world, shooter, aim, planRules, friends, profile, pull);
     if (!powers) costs.set(aim.angle, powers = new Map());
     powers.set(aim.power, cost);
     return cost;
   };
   function* candidate(aim: Aim): Generator<void, Candidate> {
     if (!hawking) return { ...aim, cost: evaluateAim(aim) };
-    const style = yield* simulateStyledShot(world, shooter, aim.angle, aim.power, planRules, friends);
+    const style = yield* simulateStyledShot(world, shooter, aim.angle, aim.power, planRules, friends, pull);
     const friendlyHit = style.end.kind === 'ship' && (style.end.ship === shooter || friends.includes(style.end.ship));
     const risk = style.selfClosest < profile.selfMargin ? (profile.selfMargin - style.selfClosest) * 20 : 0;
     const cost = friendlyHit ? 1e6 : style.end.kind === 'ship' ? -1 + aim.power * (1 / 1000 + profile.powerFrugality) + risk : style.closest + risk;

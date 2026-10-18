@@ -168,11 +168,12 @@ export class Hud {
 
   /**
    * Experimental power-ups: the one a ship holds and the key that uses it, on one line as wide as the gauge
-   * above. No state words: an armed power-up shows its ring on the ship instead.
+   * above (or as the card it sits under, in the scoreboard). No state words: an armed power-up shows its ring on
+   * the ship instead.
    */
-  private drawPowerUpSlot(p: PlayerState, x: number, y: number, align: 'left' | 'right', choosing: boolean): void {
+  private drawPowerUpSlot(p: PlayerState, x: number, y: number, align: 'left' | 'right', choosing: boolean, width = 128 * this.k): void {
     const { ctx, k } = this;
-    const w = 128 * k;
+    const w = width;
     const h = 22 * k;
     const left = align === 'left' ? x : x - w;
     const held = p.powerUp;
@@ -182,7 +183,7 @@ export class Hud {
     const cy = y + h / 2;
 
     ctx.save();
-    ctx.globalAlpha = 0.85;
+    ctx.globalAlpha *= 0.85;
     ctx.fillStyle = 'rgba(7, 14, 32, 0.6)';
     ctx.fillRect(left, y, w, h);
     ctx.fillStyle = color;
@@ -206,7 +207,8 @@ export class Hud {
     }
     ctx.fillStyle = held ? color : COLORS.boneDim;
     ctx.font = `700 ${10 * k}px ${FONTS.body}`;
-    ctx.fillText(held ? t(`powerup.${held}` as Key).toUpperCase() : t('hud.powerUp.title').toUpperCase(), left + 24 * k, cy + 0.5 * k);
+    const name = held ? t(`powerup.${held}` as Key).toUpperCase() : t('hud.powerUp.title').toUpperCase();
+    ctx.fillText(fitText(ctx, name, w - 24 * k - 42 * k), left + 24 * k, cy + 0.5 * k);
 
     // The key that uses it, at the right edge.
     if (key) {
@@ -304,49 +306,18 @@ export class Hud {
         ctx.fillStyle = status[1];
         ctx.fillText(status[0], x + w - 8 * k, y + 7 * k);
       }
-      if (match.powerUps && p.powerUp && p.alive) this.drawPowerUpChip(match, p, x + w - 14 * k, y + h - 12 * k);
+      // The power-up area under the card: what the ship holds, and its key. Dead ships keep theirs out of sight.
+      if (match.powerUps && p.alive) this.drawPowerUpSlot(p, x, y + h + 4 * k, 'left', match.teleporting && match.focus === p.id, w);
       ctx.globalAlpha = 1;
       x += w + gap;
     });
   }
 
-  /**
-   * Experimental power-ups in the scoreboard: the symbol of what a ship holds, bottom right on its chip, and for
-   * the ship on turn the key that uses it.
-   */
-  private drawPowerUpChip(match: Match, p: PlayerState, cx: number, cy: number): void {
-    const { ctx, k } = this;
-    const held = p.powerUp!;
-    const color = POWER_UP_COLORS[held];
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 1.6 * k;
-    ctx.lineCap = 'round';
-    drawPowerUpSymbol(ctx, held, cx, cy, 6 * k);
-    if (p.id === match.focus && (match.phase === 'aiming' || match.phase === 'flying')) {
-      if (held === 'shield') {
-        ctx.restore();
-        return;
-      }
-      const key = held === 'splitter' ? 'SPACE' : 'P';
-      const capW = (key.length > 1 ? 32 : 14) * k;
-      const capH = 12 * k;
-      const capX = cx - 10 * k - capW;
-      ctx.lineWidth = 1 * k;
-      ctx.strokeRect(capX, cy - capH / 2, capW, capH);
-      ctx.font = `700 ${7 * k}px ${FONTS.mono}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(key, capX + capW / 2, cy + 0.5 * k);
-    }
-    ctx.restore();
-  }
-
   private drawKillFeed(match: Match): void {
     const { ctx, k, field } = this;
     const entries = match.killFeed.filter((r) => match.clock - r.at < 6).slice(-4);
-    let y = field.y + (match.teamMode ? 118 : 102) * k;
+    // Under the scoreboard's cards the power-up areas take a line, so the feed starts below them.
+    let y = field.y + (match.teamMode ? 118 : 102) * k + (match.powerUps ? 30 * k : 0);
     ctx.textBaseline = 'top';
     ctx.font = `700 ${11.5 * k}px ${FONTS.mono}`;
     for (const r of entries) {
