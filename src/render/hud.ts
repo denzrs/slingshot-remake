@@ -163,14 +163,14 @@ export class Hud {
     ctx.fillText(`${pad(t('hud.power'))} ${powerText}${!hidden && match.settings.fixedPower ? t('hud.fixedSuffix') : ''}`, x, y + 68 * k);
     if (!hidden) this.drawGauge(align === 'left' ? x : x - 128 * k, y + 86 * k, 128 * k, p, align === 'right', match.settings.maxPower);
     ctx.globalAlpha = 1;
-    if (match.powerUps) this.drawPowerUpSlot(p, x, y + 104 * k, align);
+    if (match.powerUps) this.drawPowerUpSlot(p, x, y + 104 * k, align, match.teleporting && match.focus === p.id);
   }
 
   /**
    * Experimental power-ups: the one a ship holds and the key that uses it, on one line as wide as the gauge
    * above. No state words: an armed power-up shows its ring on the ship instead.
    */
-  private drawPowerUpSlot(p: PlayerState, x: number, y: number, align: 'left' | 'right'): void {
+  private drawPowerUpSlot(p: PlayerState, x: number, y: number, align: 'left' | 'right', choosing: boolean): void {
     const { ctx, k } = this;
     const w = 128 * k;
     const h = 22 * k;
@@ -220,6 +220,12 @@ export class Hud {
       ctx.font = `700 ${7.5 * k}px ${FONTS.mono}`;
       ctx.textAlign = 'center';
       ctx.fillText(key, capX + capW / 2, cy + 0.5 * k);
+      // Choosing a teleport spot: fire jumps, so its key joins the strip.
+      if (choosing) {
+        const jumpX = capX - capW - 4 * k;
+        ctx.strokeRect(jumpX, capY, capW, capH);
+        ctx.fillText('↵', jumpX + capW / 2, cy + 0.5 * k);
+      }
     }
     ctx.restore();
   }

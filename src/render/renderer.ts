@@ -3,7 +3,7 @@ import type { Match, Scene } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
 import { aimDirection, type World } from '../physics';
-import { POWER_UP } from '../powerups';
+import { forkPreview, POWER_UP } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
@@ -295,6 +295,13 @@ export class Renderer {
           ctx.beginPath();
           ctx.arc(shot.x, shot.y, 12, 0, Math.PI * 2);
           ctx.stroke();
+          // And it shows where the two new branches would fly, so the moment to press can be judged.
+          if (!owner.cpu) {
+            ctx.globalAlpha = 0.5;
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([3, 5]);
+            for (const branch of forkPreview(shot)) strokePolyline(ctx, branch);
+          }
           ctx.restore();
         }
         const glow = ctx.createRadialGradient(shot.x, shot.y, 0, shot.x, shot.y, 9);
@@ -363,6 +370,38 @@ export class Renderer {
       ctx.setLineDash([3, 5]);
       strokePolyline(ctx, scene.preview);
       ctx.setLineDash([]);
+    }
+    // A ship choosing where to teleport: the offered spots, the picked one solid, with a line from the ship.
+    if (scene.teleport) {
+      const { owner, spots, choice } = scene.teleport;
+      const from = match.world.ships[owner];
+      spots.forEach((spot, i) => {
+        const picked = i === choice;
+        ctx.save();
+        ctx.strokeStyle = match.players[owner].color;
+        ctx.fillStyle = match.players[owner].color;
+        ctx.globalAlpha = picked ? 1 : 0.5;
+        ctx.lineWidth = picked ? 2.2 : 1.2;
+        ctx.setLineDash(picked ? [] : [4, 4]);
+        ctx.beginPath();
+        ctx.arc(spot.x, spot.y, picked ? 20 + 2 * pulse : 17, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = `800 13px ${FONTS.mono}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(i + 1), spot.x, spot.y + 1);
+        if (picked) {
+          ctx.globalAlpha = 0.6;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 6]);
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(spot.x, spot.y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      });
     }
     // The symbol of what each ship holds, small above the ship. Activation is shown in the HUD strip.
     for (const p of match.players) {

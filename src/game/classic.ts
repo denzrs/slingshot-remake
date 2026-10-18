@@ -178,6 +178,8 @@ export class ClassicMatch extends Match {
       this.splitInFlight(this.viewer ?? this.current);
       return;
     }
+    // While a ship chooses where to teleport, fire jumps instead of shooting.
+    if (this.confirmTeleport()) return;
     if (!this.isHumanTurn) return;
     if (this.salvo || !this.betWindowDone) this.lock(this.current);
     else this.fire();
@@ -310,7 +312,7 @@ export class ClassicMatch extends Match {
   private cpuTeleportIfBlind(p: PlayerState, job: CpuJob | undefined): boolean {
     if (p.powerUp !== 'teleport' || !job?.target || !job.blind || job.teleportTried) return false;
     job.teleportTried = true;
-    return this.teleportShip(p.id);
+    return this.power.teleport(p.id);
   }
 
   protected afterVolley(): void {

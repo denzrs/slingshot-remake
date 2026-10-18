@@ -9,9 +9,10 @@ import { createRng, randomSeed, type Rng } from '../rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
 import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
-import { POWER_UP, POWER_UP_KINDS, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
+import type { Pickup, PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
+import { PowerUpField, type TeleportSpots } from './powerup-field';
 
 export type Mode = 'classic' | 'horizon' | 'challenge';
 /** The modes you play against other ships, picked from the title menu. */
@@ -112,6 +113,8 @@ export interface Scene {
   /** The pass the round is in, so the renderer can tell which pickups are about to fade. */
   pass?: number;
   preview?: number[] | null;
+  /** The spots a ship may teleport to while it is choosing. */
+  teleport?: TeleportSpots | null;
 }
 
 export type GameEvent =
@@ -304,13 +307,25 @@ export abstract class Match {
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
   protected simClock = 0;
-  /** Experimental power-ups: the pickups on the field, the passes gone by this round, and ids for pickups and splitters. */
-  pickups: Pickup[] = [];
-  private pass = 0;
-  private volleysThisPass = 0;
-  private pickupIds = 0;
-  private previewKey = '';
-  private previewCache: number[] | null = null;
+  /** Experimental power-ups: the pickups on the field, who holds what, and what each one does. */
+  readonly power = new PowerUpField({
+    enabled: () => this.powerUps,
+    world: () => this.world,
+    players: () => this.players,
+    rng: () => this.rng,
+    rules: () => this.rules,
+    volley: () => this.volley,
+    phase: () => this.phase,
+    viewer: () => this.viewer,
+    current: () => this.current,
+    localCanAim: () => this.localCanAim,
+    canAim: (id) => this.canAim(id),
+    friendsOf: (id) => this.friendsOf(id),
+    sparedFor: (id) => this.sparedFor(id),
+    volleysPerPass: () => this.volleysPerPass,
+    emit: (event) => this.emit(event),
+    clearCpuJobs: () => this.cpuJobs.clear(),
+  });
 
   constructor(
     public settings: Settings,
@@ -611,7 +626,7 @@ export abstract class Match {
   }
 
   scene(): Scene {
-    return { world: this.world, trails: this.trails, volley: this.volley, camera: null, pickups: this.pickups, pass: this.pass, preview: this.armedPreview() };
+    return { world: this.world, trails: this.trails, volley: this.volley, camera: null, ...this.power.scene() };
   }
 
   // ————————————————————————————— Experimental power-ups —————————————————————————————
@@ -626,138 +641,45 @@ export abstract class Match {
     return Math.max(1, this.alive.length);
   }
 
-  private spawnPickup(): Pickup | null {
-    if (this.pickups.length >= POWER_UP.MAX_ON_FIELD) return null;
-    const kind = POWER_UP_KINDS[Math.floor(this.rng() * POWER_UP_KINDS.length)];
-    const pickup = spawnPickup(this.world, this.rng, this.pickups, kind, ++this.pickupIds, this.pass);
-    if (pickup) this.pickups.push(pickup);
-    return pickup;
+  get pickups(): Pickup[] {
+    return this.power.pickups;
   }
 
-  /** A volley is over: once a whole pass has gone by, old pickups fade and a new one appears. */
-  private countVolley(): void {
-    if (!this.powerUps || ++this.volleysThisPass < this.volleysPerPass) return;
-    this.volleysThisPass = 0;
-    this.pass++;
-    const kept = this.pickups.filter((p) => this.pass - p.born < POWER_UP.LIFETIME_PASSES);
-    for (const gone of this.pickups.filter((p) => !kept.includes(p))) this.emit({ type: 'pickupFade', kind: gone.kind, x: gone.x, y: gone.y });
-    this.pickups = kept;
-    const fresh = this.spawnPickup();
-    if (fresh) this.emit({ type: 'pickupSpawn', kind: fresh.kind, x: fresh.x, y: fresh.y });
+  set pickups(pickups: Pickup[]) {
+    this.power.pickups = pickups;
   }
 
-  /**
-   * Shots in flight take the pickups they pass close to. A ship holding one that takes another swaps it:
-   * the old power-up is lost. A splitter is armed from the start: its fire press comes mid-flight, so there is
-   * nothing to arm first. CPUs hold their power-up armed, since they use it on their own.
-   */
-  private collectPickups(volley: Volley): void {
-    if (!this.pickups.length) return;
-    for (const vs of volley.shots) {
-      const p = this.players[vs.owner];
-      // A CPU has no use for a preview, so it leaves those lying.
-      const hit = touchedPickups(this.pickups, vs.shot.x, vs.shot.y).find((i) => !(p.cpu && this.pickups[i].kind === 'preview'));
-      if (hit === undefined) continue;
-      const [pickup] = this.pickups.splice(hit, 1);
-      const dropped = p.powerUp;
-      p.powerUp = pickup.kind;
-      p.armed = p.cpu !== null || pickup.kind === 'splitter';
-      this.emit({ type: 'pickup', player: p.id, kind: pickup.kind, x: pickup.x, y: pickup.y, dropped });
-    }
-  }
-
-  /** Teleports a ship to a random free spot, if there is one. */
-  protected teleportShip(id: number): boolean {
-    const spot = teleportSpot(this.world, this.rng, this.pickups);
-    if (!spot) return false;
-    const ship = this.world.ships[id];
-    const [fromX, fromY] = [ship.x, ship.y];
-    ship.x = spot.x;
-    ship.y = spot.y;
-    this.players[id].powerUp = null;
-    this.cpuJobs.clear();
-    this.emit({ type: 'teleport', player: id, fromX, fromY, toX: spot.x, toY: spot.y });
-    return true;
-  }
-
-  /**
-   * The power-up key. A teleport happens at once: the ship lands on a random free spot. A preview is armed
-   * instead (press again to disarm) and spent by the next shot. A splitter needs no key: it is armed, and
-   * the fire press during the flight splits the shot.
-   */
+  /** The power-up key: teleport (choose a spot), or arm a preview. */
   usePowerUp(id: number = this.viewer ?? this.current): void {
-    if (!this.powerUps || !this.canAim(id)) return;
-    const p = this.players[id];
-    if (!p.powerUp || p.powerUp === 'splitter') return;
-    if (p.powerUp === 'teleport') this.teleportShip(id);
-    else {
-      p.armed = !p.armed;
-      this.previewKey = '';
-    }
+    this.power.use(id);
   }
 
-  /**
-   * Fire while the shot is flying: an armed splitter forks it into three. Without a player (-1, as in a salvo,
-   * where nobody is on turn) the first human whose shot is in the air and who holds a splitter splits it.
-   */
+  /** Whether the ship on turn is choosing where to teleport. */
+  get teleporting(): boolean {
+    return this.power.teleporting;
+  }
+
+  /** Fire, while choosing: the jump happens. Returns whether it did. */
+  confirmTeleport(): boolean {
+    return this.power.confirmTeleport();
+  }
+
+  cancelTeleport(): boolean {
+    return this.power.cancelTeleport();
+  }
+
+  /** A click at a point of the field: on an offered teleport spot it jumps there. */
+  chooseTeleportAt(x: number, y: number): boolean {
+    return this.power.chooseTeleportAt(x, y);
+  }
+
+  /** Fire while the shot is flying: an armed splitter forks it into three. */
   protected splitInFlight(id = -1): boolean {
-    if (!this.powerUps || !this.volley) return false;
-    for (const who of id >= 0 ? [id] : this.players.filter((q) => !q.cpu).map((q) => q.id)) {
-      const p = this.players[who];
-      if (!p || !p.armed || p.powerUp !== 'splitter') continue;
-      const index = this.volley.shots.findIndex((vs) => vs.owner === who && !vs.shot.end);
-      if (index < 0 || !this.volley.split(index, SPLIT_TURNS, ++this.pickupIds)) continue;
-      p.powerUp = null;
-      p.armed = false;
-      const { x, y } = this.volley.shots[index].shot;
-      this.emit({ type: 'split', player: who, x, y });
-      return true;
-    }
-    return false;
+    return this.power.splitInFlight(id);
   }
 
-  /** CPUs with an armed splitter fork their shot once it is close to an enemy ship. */
-  private cpuSplits(volley: Volley): void {
-    const shots = volley.shots.length;
-    for (let index = 0; index < shots; index++) {
-      const vs = volley.shots[index];
-      const p = this.players[vs.owner];
-      if (!p.cpu || !p.armed || p.powerUp !== 'splitter' || vs.shot.end || vs.shot.time < POWER_UP.CPU_SPLIT_MIN_TIME) continue;
-      const friends = this.friendsOf(p.id);
-      const near = this.alive.some((e) => e.id !== p.id && !friends.includes(e.id) && Math.hypot(this.world.ships[e.id].x - vs.shot.x, this.world.ships[e.id].y - vs.shot.y) < POWER_UP.CPU_SPLIT_RANGE);
-      if (near && volley.split(index, SPLIT_TURNS, ++this.pickupIds)) {
-        p.powerUp = null;
-        p.armed = false;
-        this.emit({ type: 'split', player: p.id, x: vs.shot.x, y: vs.shot.y });
-      }
-    }
-  }
-
-  /**
-   * The aims a player's shot launches with. An armed preview is used up by the shot; a splitter waits for
-   * the fire press during the flight.
-   */
   protected aimsFor(p: PlayerState): VolleyAim[] {
-    if (this.powerUps && p.armed && p.powerUp === 'preview') {
-      p.powerUp = null;
-      p.armed = false;
-    }
-    return [{ player: p.id, angle: p.angle, power: p.power, spare: this.sparedFor(p.id) }];
-  }
-
-  /** The path an armed preview shows for the aimer, cached until the aim or the ship moves. */
-  private armedPreview(): number[] | null {
-    if (!this.powerUps || this.phase !== 'aiming') return null;
-    const id = this.viewer ?? this.current;
-    const p = this.players[id];
-    if (!p || !p.armed || p.powerUp !== 'preview' || !this.localCanAim) return null;
-    const ship = this.world.ships[id];
-    const key = `${id}|${p.angle}|${p.power}|${ship.x}|${ship.y}`;
-    if (key !== this.previewKey) {
-      this.previewKey = key;
-      this.previewCache = previewPath(this.world, id, p.angle, p.power, this.rules);
-    }
-    return this.previewCache;
+    return this.power.aimsFor(p);
   }
 
   // Event Horizon hooks the renderer asks about; classic answers "nothing".
@@ -820,9 +742,6 @@ export abstract class Match {
       teams: this.teamMode ? this.players.map((p) => p.team!) : null,
     });
     this.hiddenPlanets = this.mode === 'classic' && this.settings.invisiblePlanets;
-    this.pickups = [];
-    this.pass = 0;
-    this.volleysThisPass = 0;
     this.trails = [];
     this.volley = null;
     this.summary = null;
@@ -842,7 +761,7 @@ export abstract class Match {
       p.angle = duel ? (p.id === 0 ? 0 : 180) : normalizeAngle(Math.round((Math.atan2(ship.y - FIELD.height / 2, FIELD.width / 2 - ship.x) * 180) / Math.PI));
       p.power = startPower(this.settings);
     }
-    if (this.powerUps) for (let i = 0; i < POWER_UP.START_COUNT; i++) this.spawnPickup();
+    this.power.startRound();
     this.emit({ type: 'round' });
     this.beginRound();
   }
@@ -925,8 +844,7 @@ export abstract class Match {
     while (this.simClock >= PHYSICS.DT && !volley.done) {
       this.simClock -= PHYSICS.DT;
       for (const e of volley.step()) this.onVolleyEvent(volley, e, true);
-      this.collectPickups(volley);
-      this.cpuSplits(volley);
+      this.power.onStep(volley);
     }
     if (!volley.done) return;
     this.flightDoneAt ??= this.phaseTime;
@@ -938,7 +856,7 @@ export abstract class Match {
       this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, fan: vs.fan, points: vs.trail, angle: vs.shot.angle, power: vs.shot.power, volley: this.volleyNumber, at: this.clock })));
       this.volley = null;
       this.flightPending = false;
-      this.countVolley();
+      this.power.onVolleyEnd();
       this.judgeOracle();
       this.afterVolley();
     };

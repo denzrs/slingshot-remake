@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
 import { PHYSICS } from '../src/config';
-import { POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup } from '../src/powerups';
+import { forkPreview, laneSpot, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportCandidates, teleportSpot, touchedPickups, type Pickup } from '../src/powerups';
 import { createRng } from '../src/rng';
-import type { World } from '../src/physics';
+import { Shot, type World } from '../src/physics';
 import { DEFAULT_SETTINGS } from '../src/settings';
 import { Volley } from '../src/volley';
 
@@ -152,15 +152,64 @@ describe('power-ups in a match', () => {
     expect(shooter.armed).toBe(true);
   });
 
-  it('teleports the ship at once and spends the power-up', () => {
+  it('offers a few teleport spots, and jumps to the one picked when fire is pressed', () => {
     const match = duel();
     const shooter = match.players[match.current];
     shooter.powerUp = 'teleport';
     const before = { x: match.world.ships[shooter.id].x, y: match.world.ships[shooter.id].y };
     match.usePowerUp();
+    expect(match.teleporting).toBe(true);
+    const offered = match.scene().teleport!;
+    expect(offered.spots.length).toBeGreaterThan(1);
+    // Nothing has moved yet, and the power-up is still in hand.
+    expect(match.world.ships[shooter.id].x).toBe(before.x);
+    expect(shooter.powerUp).toBe('teleport');
+    match.usePowerUp();
+    expect(match.scene().teleport!.choice).toBe(1);
+    match.commit();
     const after = match.world.ships[shooter.id];
+    expect(after.x).toBeCloseTo(offered.spots[1].x, 5);
+    expect(after.y).toBeCloseTo(offered.spots[1].y, 5);
     expect(shooter.powerUp).toBeNull();
-    expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeGreaterThan(0);
+    expect(match.teleporting).toBe(false);
+    // Fire jumped; it did not also shoot.
+    expect(match.phase).toBe('aiming');
+  });
+
+  it('lets a ship think again: cancelling keeps the teleport and the position', () => {
+    const match = duel();
+    const shooter = match.players[match.current];
+    shooter.powerUp = 'teleport';
+    const before = { x: match.world.ships[shooter.id].x, y: match.world.ships[shooter.id].y };
+    match.usePowerUp();
+    expect(match.cancelTeleport()).toBe(true);
+    expect(match.teleporting).toBe(false);
+    expect(match.cancelTeleport()).toBe(false);
+    expect(shooter.powerUp).toBe('teleport');
+    expect(match.world.ships[shooter.id].x).toBe(before.x);
+  });
+
+  it('jumps to an offered spot that is clicked, and ignores a click elsewhere', () => {
+    const match = duel();
+    const shooter = match.players[match.current];
+    shooter.powerUp = 'teleport';
+    match.usePowerUp();
+    const spots = match.scene().teleport!.spots;
+    expect(match.chooseTeleportAt(spots[0].x + 500, spots[0].y + 500)).toBe(false);
+    expect(match.teleporting).toBe(true);
+    expect(match.chooseTeleportAt(spots[2]?.x ?? spots[0].x, spots[2]?.y ?? spots[0].y)).toBe(true);
+    expect(shooter.powerUp).toBeNull();
+  });
+
+  it('drops the choice when the turn moves on', () => {
+    const match = duel();
+    const shooter = match.players[match.current];
+    shooter.powerUp = 'teleport';
+    match.usePowerUp();
+    expect(match.teleporting).toBe(true);
+    shooter.powerUp = null;
+    expect(match.teleporting).toBe(false);
+    expect(match.scene().teleport).toBeNull();
   });
 
   it('keeps a splitter for the fire press during the flight, then forks the shot and uses it up', () => {
@@ -339,6 +388,7 @@ describe('power-up events', () => {
     match.on((e) => events.push(e.type));
     shooter.powerUp = 'teleport';
     match.usePowerUp();
+    match.commit();
     expect(events).toContain('teleport');
     const ship = match.world.ships[shooter.id];
     shooter.angle = 0;
@@ -356,15 +406,114 @@ describe('power-up events', () => {
     const match = duel();
     const events: string[] = [];
     match.on((e) => events.push(e.type));
-    const count = () => (match as unknown as { countVolley: () => void });
     const old = match.pickups[0];
     old.born = -POWER_UP.LIFETIME_PASSES;
     // Two ships: two volleys make a pass.
-    count().countVolley();
-    count().countVolley();
+    match.power.onVolleyEnd();
+    match.power.onVolleyEnd();
     expect(events).toContain('pickupFade');
     expect(events).toContain('pickupSpawn');
     expect(match.pickups.some((p) => p.id === old.id)).toBe(false);
+  });
+});
+
+describe('power-ups: round 2', () => {
+  const planet = (x: number, y: number, radius = 40) => ({ x, y, radius, mass: 4000, seed: 1, style: 'rocky' as const, tint: '#fff' });
+
+  it('puts a lane pickup on a shot path, clear of everything and well away from the ship it is for', () => {
+    const world = { ...emptyWorld([[120, 400], [1160, 400]]), planets: [planet(640, 400), planet(640, 150, 30)] };
+    for (let seed = 1; seed <= 40; seed++) {
+      const spot = laneSpot(world, createRng(seed), rules, [0], []);
+      expect(spot).not.toBeNull();
+      expect(Math.hypot(spot!.x - 120, spot!.y - 400)).toBeGreaterThanOrEqual(POWER_UP.LANE_MIN_RANGE);
+      for (const p of world.planets) expect(Math.hypot(spot!.x - p.x, spot!.y - p.y)).toBeGreaterThan(p.radius + POWER_UP.PLANET_GAP);
+      for (const sh of world.ships) expect(Math.hypot(spot!.x - sh.x, spot!.y - sh.y)).toBeGreaterThanOrEqual(POWER_UP.SHIP_GAP);
+      expect(spot!.x).toBeGreaterThanOrEqual(POWER_UP.EDGE);
+      expect(spot!.x).toBeLessThanOrEqual(world.width - POWER_UP.EDGE);
+    }
+  });
+
+  it('is reachable by construction: a shot from the ship passes through a lane pickup', () => {
+    // Without planets a shot flies straight, so the spot is on a line the ship can fire along.
+    const flat = { ...emptyWorld([[120, 400], [1160, 400]]) };
+    for (let seed = 1; seed <= 20; seed++) {
+      const spot = laneSpot(flat, createRng(seed), rules, [0], [])!;
+      const angle = (Math.atan2(-(spot.y - 400), spot.x - 120) * 180) / Math.PI;
+      const shot = new Shot(flat, 0, angle, 100, rules);
+      let nearest = Infinity;
+      while (!shot.end && shot.time < POWER_UP.LANE_SECONDS) {
+        shot.step();
+        nearest = Math.min(nearest, Math.hypot(shot.x - spot.x, shot.y - spot.y));
+      }
+      // The angle is only rebuilt from the spot, so the power may differ: the line, not the speed, must fit.
+      expect(nearest).toBeLessThan(POWER_UP.PICKUP_RADIUS + 20);
+    }
+  });
+
+  it('falls back to open space when no path offers a lane spot', () => {
+    const world = emptyWorld([[640, 400], [700, 400]]);
+    // Both ships sit so close together and the sources list is empty: no lane, but a pickup still appears.
+    const pickup = spawnPickup(world, createRng(5), [], 'teleport', 1, 0, { rules, sources: [] });
+    expect(pickup).not.toBeNull();
+  });
+
+  it('lays a replacement at once when the field runs short', () => {
+    const match = duel();
+    const events: string[] = [];
+    match.on((e) => events.push(e.type));
+    match.pickups = [];
+    match.power.onVolleyEnd();
+    expect(match.pickups.length).toBe(POWER_UP.MIN_ON_FIELD);
+    expect(events.filter((e) => e === 'pickupSpawn').length).toBe(POWER_UP.MIN_ON_FIELD);
+  });
+
+  it('never lays more than the field holds', () => {
+    const match = duel();
+    for (let i = 0; i < 12; i++) match.power.onVolleyEnd();
+    expect(match.pickups.length).toBeLessThanOrEqual(POWER_UP.MAX_ON_FIELD);
+  });
+
+  it('offers spots that are spread apart and a real jump from the ship', () => {
+    const world = { ...emptyWorld(), planets: [planet(640, 400)] };
+    for (let seed = 1; seed <= 20; seed++) {
+      const from = world.ships[0];
+      const spots = teleportCandidates(world, createRng(seed), [], POWER_UP.TELEPORT_CHOICES, from);
+      expect(spots.length).toBeGreaterThan(0);
+      for (const a of spots) {
+        expect(Math.hypot(a.x - from.x, a.y - from.y)).toBeGreaterThanOrEqual(POWER_UP.TELEPORT_MIN_JUMP);
+        for (const b of spots) if (a !== b) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(POWER_UP.TELEPORT_SPREAD);
+      }
+    }
+  });
+
+  it('has a stay stop after the last spot: fire then closes the choice without a jump', () => {
+    const match = duel();
+    const shooter = match.players[match.current];
+    shooter.powerUp = 'teleport';
+    const before = { x: match.world.ships[shooter.id].x, y: match.world.ships[shooter.id].y };
+    match.usePowerUp();
+    const count = match.scene().teleport!.spots.length;
+    for (let i = 0; i < count; i++) match.usePowerUp();
+    expect(match.scene().teleport!.choice).toBe(count);
+    match.commit();
+    expect(match.teleporting).toBe(false);
+    expect(shooter.powerUp).toBe('teleport');
+    expect(match.world.ships[shooter.id].x).toBe(before.x);
+    expect(match.phase).toBe('aiming');
+  });
+
+  it('previews the two branches of a split from where the shot is', () => {
+    const world = emptyWorld([[100, 400], [1200, 100]]);
+    const shot = new Shot(world, 0, 0, 60, rules);
+    for (let i = 0; i < 100; i++) shot.step();
+    const [left, right] = forkPreview(shot);
+    for (const branch of [left, right]) {
+      expect(branch[0]).toBeCloseTo(shot.x, 5);
+      expect(branch[1]).toBeCloseTo(shot.y, 5);
+      expect(branch.length).toBeGreaterThan(4);
+    }
+    // One branch bends up, the other down.
+    expect(left[left.length - 1]).not.toBeCloseTo(right[right.length - 1], 0);
   });
 });
 

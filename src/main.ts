@@ -646,6 +646,8 @@ window.addEventListener('keydown', (e) => {
       if (!online() && !e.repeat) match?.usePowerUp();
       break;
     case 'Escape':
+      // Choosing a teleport spot: Esc thinks again, it does not open the menu.
+      if (!online() && match?.cancelTeleport()) break;
       // A clip records whatever is on screen — don't freeze it behind the menu.
       if (!recorder.recording) menu.open(() => pauseScreen(app));
       break;
@@ -680,6 +682,11 @@ canvas.addEventListener('pointerdown', (e) => {
     return placeTip(tip);
   }
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
+  // Choosing a teleport spot: a tap on one of them jumps there.
+  if (!online() && match.teleporting) {
+    const at = renderer.toField(e.clientX, e.clientY);
+    if (match.chooseTeleportAt(at.x, at.y)) return;
+  }
   if (!canAim()) return;
   dragging = true;
   canvas.setPointerCapture(e.pointerId);
@@ -716,7 +723,7 @@ function syncButtons(): void {
   if (playing && coarsePointer.matches && m) {
     if (ghostActive()) touchLabel = ghost!.lane!.canAim ? t('common.fire') : null;
     else if (ghostTeaser()) touchLabel = t('hud.ghostLane');
-    else if (canAim()) touchLabel = m.salvo ? t('common.ready') : t('common.fire');
+    else if (canAim()) touchLabel = m.teleporting ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
     // A splitter in the air: the fire button splits the shot.
     else if (!online() && m.phase === 'flying' && m.powerUps && m.players.some((p) => !p.cpu && p.armed && p.powerUp === 'splitter')) touchLabel = t('powerup.splitNow');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
@@ -732,7 +739,7 @@ function syncButtons(): void {
   const power = holder && (holder.powerUp === 'teleport' || holder.powerUp === 'preview') ? holder : null;
   if (touchPower.hidden !== !power) touchPower.hidden = !power;
   if (power) {
-    const label = `${power.armed ? '● ' : ''}${t(`powerup.${power.powerUp}` as Key).toUpperCase()}`;
+    const label = `${power.armed || m!.teleporting ? '● ' : ''}${t(`powerup.${power.powerUp}` as Key).toUpperCase()}`;
     if (touchPower.textContent !== label) touchPower.textContent = label;
     touchPower.style.setProperty('--power', POWER_UP_COLORS[power.powerUp!]);
   }

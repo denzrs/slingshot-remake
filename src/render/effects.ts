@@ -13,6 +13,8 @@ interface Spark {
   color: string;
   drag: number;
   tier: SparkTier;
+  /** Seconds left before the spark is gone; sparks without one drift on until the round ends. */
+  life?: number;
 }
 
 interface GravityBody {
@@ -140,8 +142,8 @@ export class Effects {
    */
   pickup(x: number, y: number, color: string, target: { x: number; y: number }): void {
     this.ring(x, y, 70, 0.5, color);
-    this.burst(x, y, 26, 60, 240, color, 'large');
-    this.burst(x, y, 10, 40, 140, COLORS.bone, 'small');
+    this.burst(x, y, 26, 60, 240, color, 'large', 0, 0, 0.9);
+    this.burst(x, y, 10, 40, 140, COLORS.bone, 'small', 0, 0, 0.7);
     if (!this.particles) return;
     for (let i = 0; i < 44 && this.motes.length < MAX_MOTES; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -164,30 +166,30 @@ export class Effects {
   /** A power-up appearing on the field: a ring closes in on it, with a few sparks. */
   spawn(x: number, y: number, color: string): void {
     this.rings.push({ x, y, radius: 40, life: 0.4, max: 0.4, color, inward: true });
-    this.burst(x, y, 8, 20, 90, color, 'small');
+    this.burst(x, y, 8, 20, 90, color, 'small', 0, 0, 0.6);
   }
 
   /** A power-up that ran out before anybody took it: it pops into dim sparks. */
   fade(x: number, y: number, color: string): void {
     this.ring(x, y, 26, 0.35, color);
-    this.burst(x, y, 14, 20, 110, color, 'medium');
+    this.burst(x, y, 14, 20, 110, color, 'medium', 0, 0, 0.7);
   }
 
   /** The power-up a ship lost by taking another one: it bursts away from the ship. */
   drop(x: number, y: number, color: string): void {
     this.ring(x, y, 24, 0.3, color);
-    this.burst(x, y, 12, 50, 170, color, 'medium');
+    this.burst(x, y, 12, 50, 170, color, 'medium', 0, 0, 0.8);
   }
 
   /** A ship leaving one spot and arriving at another: it collapses where it was, a streak joins the two, and it bursts out. */
   teleport(fromX: number, fromY: number, toX: number, toY: number, color: string): void {
     this.rings.push({ x: fromX, y: fromY, radius: 46, life: 0.4, max: 0.4, color, inward: true });
-    this.burst(fromX, fromY, 16, 30, 140, color, 'medium');
+    this.burst(fromX, fromY, 16, 30, 140, color, 'medium', 0, 0, 0.7);
     this.beams.push({ x1: fromX, y1: fromY, x2: toX, y2: toY, life: 0.4, max: 0.4, color });
     this.ring(toX, toY, 70, 0.5, color);
     this.ring(toX, toY, 36, 0.35, COLORS.bone);
-    this.burst(toX, toY, 36, 40, 260, color, 'large');
-    this.burst(toX, toY, 14, 20, 120, COLORS.bone, 'small');
+    this.burst(toX, toY, 36, 40, 260, color, 'large', 0, 0, 0.9);
+    this.burst(toX, toY, 14, 20, 120, COLORS.bone, 'small', 0, 0, 0.7);
     this.flash = Math.max(this.flash, 0.3);
   }
 
@@ -195,7 +197,7 @@ export class Effects {
   split(x: number, y: number, color: string): void {
     this.ring(x, y, 34, 0.35, color);
     this.ring(x, y, 18, 0.25, COLORS.bone);
-    this.burst(x, y, 22, 60, 220, color, 'large');
+    this.burst(x, y, 22, 60, 220, color, 'large', 0, 0, 0.8);
     this.flash = Math.max(this.flash, 0.2);
   }
 
@@ -242,6 +244,7 @@ export class Effects {
     const steps = Math.max(1, Math.ceil(dt / PHYSICS.DT));
     const step = dt / steps;
     for (const s of this.sparks) {
+      if (s.life !== undefined && (s.life -= dt) <= 0) continue;
       let collided = false;
       for (let i = 0; i < steps; i++) {
         let ax = 0;
@@ -339,9 +342,11 @@ export class Effects {
     }
     ctx.globalCompositeOperation = 'lighter';
     for (const s of this.sparks) {
+      ctx.globalAlpha = s.life !== undefined ? Math.min(1, s.life / 0.35) : 1;
       ctx.fillStyle = s.color;
       ctx.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size);
     }
+    ctx.globalAlpha = 1;
     for (const m of this.motes) {
       ctx.fillStyle = m.color;
       ctx.beginPath();
@@ -367,12 +372,14 @@ export class Effects {
     }
   }
 
-  private burst(x: number, y: number, count: number, minSpeed: number, maxSpeed: number, color: string, tier: SparkTier = 'medium', inheritedVx = 0, inheritedVy = 0): void {
+  private burst(x: number, y: number, count: number, minSpeed: number, maxSpeed: number, color: string, tier: SparkTier = 'medium', inheritedVx = 0, inheritedVy = 0, life?: number): void {
     if (!this.particles) return;
     for (let i = 0; i < count && this.sparks.length < MAX_SPARKS; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = minSpeed + Math.random() * (maxSpeed - minSpeed);
-      this.sparks.push(this.spark(x, y, Math.cos(a) * sp + inheritedVx, Math.sin(a) * sp + inheritedVy, color, tier));
+      const spark = this.spark(x, y, Math.cos(a) * sp + inheritedVx, Math.sin(a) * sp + inheritedVy, color, tier);
+      if (life !== undefined) spark.life = life * (0.7 + Math.random() * 0.3);
+      this.sparks.push(spark);
     }
   }
 

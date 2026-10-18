@@ -25,7 +25,7 @@ export const POWER_UP = {
   EDGE: 60,
   PLANET_GAP: 40,
   SHIP_GAP: 70,
-  PICKUP_GAP: 90,
+  PICKUP_GAP: 160,
   /** Seconds of flight the preview draws: just the first stretch, so it hints at the shot without giving it away. */
   PREVIEW_SECONDS: 2,
   /** Angle a split adds on either side of the shot, in degrees. */
@@ -39,6 +39,26 @@ export const POWER_UP = {
   TELEPORT_PICKUP_GAP: 50,
   /** Random spots tried before giving up. */
   ATTEMPTS: 200,
+  /** The field never runs dry: a pickup is set down whenever fewer than this many lie around. */
+  MIN_ON_FIELD: 2,
+  /** Lane placement: shots flown from a ship to find a spot on one of its paths, and how far along each. */
+  LANE_SHOTS: 14,
+  LANE_SECONDS: 6,
+  /** A lane spot is at least this far from the ship whose path it is on, so it is never a free pickup. */
+  LANE_MIN_RANGE: 160,
+  /** Spots this far above a planet's surface (a swing-by lane) are preferred over open space. */
+  LANE_BAND_FROM: 45,
+  LANE_BAND_TO: 150,
+  /** Chance that a new pickup is laid on the path of the ship that is behind. */
+  CATCH_UP_CHANCE: 0.6,
+  /** A teleport offers this many spots to choose from, at least this far apart and from the ship. */
+  TELEPORT_CHOICES: 3,
+  TELEPORT_SPREAD: 160,
+  TELEPORT_MIN_JUMP: 140,
+  /** Clicking this close to an offered spot picks it. */
+  TELEPORT_PICK_RADIUS: 32,
+  /** Seconds of flight each branch of a split shows in advance. */
+  FORK_PREVIEW_SECONDS: 1,
 } as const;
 
 export interface Pickup {
@@ -52,28 +72,88 @@ export interface Pickup {
 
 const distance = (ax: number, ay: number, bx: number, by: number): number => Math.hypot(ax - bx, ay - by);
 
+/** Whether a point is clear of planets, ships, other pickups and the edges of the field. */
+function isClear(world: World, x: number, y: number, planetGap: number, shipGap: number, pickups: readonly Pickup[], pickupGap: number, edge: number): boolean {
+  if (x < edge || x > world.width - edge || y < edge || y > world.height - edge) return false;
+  if (world.planets.some((p) => distance(x, y, p.x, p.y) < p.radius + planetGap)) return false;
+  if (world.ships.some((s) => distance(x, y, s.x, s.y) < shipGap)) return false;
+  return !pickups.some((q) => distance(x, y, q.x, q.y) < pickupGap);
+}
+
 /** A random spot on the field that is clear of planets, ships and the other pickups. */
 function clearSpot(world: World, rng: Rng, planetGap: number, shipGap: number, pickups: readonly Pickup[], pickupGap: number, edge: number): { x: number; y: number } | null {
   for (let attempt = 0; attempt < POWER_UP.ATTEMPTS; attempt++) {
     const x = edge + rng() * (world.width - 2 * edge);
     const y = edge + rng() * (world.height - 2 * edge);
-    if (world.planets.some((p) => distance(x, y, p.x, p.y) < p.radius + planetGap)) continue;
-    if (world.ships.some((s) => distance(x, y, s.x, s.y) < shipGap)) continue;
-    if (pickups.some((q) => distance(x, y, q.x, q.y) < pickupGap)) continue;
-    return { x, y };
+    if (isClear(world, x, y, planetGap, shipGap, pickups, pickupGap, edge)) return { x, y };
   }
   return null;
 }
 
-/** A new pickup of `kind` somewhere clear, or null when the field has no room left for one. */
-export function spawnPickup(world: World, rng: Rng, pickups: readonly Pickup[], kind: PowerUpKind, id: number, pass: number): Pickup | null {
-  const spot = clearSpot(world, rng, POWER_UP.PLANET_GAP, POWER_UP.SHIP_GAP, pickups, POWER_UP.PICKUP_GAP, POWER_UP.EDGE);
+/**
+ * A spot on the path of a shot some ship could fire, far enough from that ship that taking it costs a real shot,
+ * and so a pickup that can be reached by construction. Spots in a swing-by lane (close above a planet) count triple.
+ * Null when no sampled path offers a clear spot.
+ */
+export function laneSpot(world: World, rng: Rng, rules: ShotRules, sources: readonly number[], pickups: readonly Pickup[]): { x: number; y: number } | null {
+  const spots: { x: number; y: number; weight: number }[] = [];
+  for (let attempt = 0; attempt < POWER_UP.LANE_SHOTS && sources.length; attempt++) {
+    const source = sources[Math.floor(rng() * sources.length)];
+    const from = world.ships[source];
+    const shot = new Shot(world, source, rng() * 360, 25 + rng() * 75, rules);
+    let steps = 0;
+    while (!shot.end && shot.time < POWER_UP.LANE_SECONDS) {
+      shot.step();
+      if (++steps % 12 !== 0 || distance(shot.x, shot.y, from.x, from.y) < POWER_UP.LANE_MIN_RANGE) continue;
+      if (!isClear(world, shot.x, shot.y, POWER_UP.PLANET_GAP, POWER_UP.SHIP_GAP, pickups, POWER_UP.PICKUP_GAP, POWER_UP.EDGE)) continue;
+      const lane = world.planets.some((p) => {
+        const gap = distance(shot.x, shot.y, p.x, p.y) - p.radius;
+        return gap >= POWER_UP.LANE_BAND_FROM && gap <= POWER_UP.LANE_BAND_TO;
+      });
+      spots.push({ x: shot.x, y: shot.y, weight: lane ? 3 : 1 });
+    }
+  }
+  if (!spots.length) return null;
+  let roll = rng() * spots.reduce((sum, spot) => sum + spot.weight, 0);
+  for (const spot of spots) {
+    roll -= spot.weight;
+    if (roll <= 0) return { x: spot.x, y: spot.y };
+  }
+  return spots[spots.length - 1];
+}
+
+/**
+ * A new pickup of `kind`. With `sources` (the ships whose paths it may lie on) it goes on one of those paths;
+ * without, or when that finds nothing, anywhere clear. Null when the field has no room left for one.
+ */
+export function spawnPickup(
+  world: World,
+  rng: Rng,
+  pickups: readonly Pickup[],
+  kind: PowerUpKind,
+  id: number,
+  pass: number,
+  lane?: { rules: ShotRules; sources: readonly number[] },
+): Pickup | null {
+  const spot = (lane && laneSpot(world, rng, lane.rules, lane.sources, pickups)) || clearSpot(world, rng, POWER_UP.PLANET_GAP, POWER_UP.SHIP_GAP, pickups, POWER_UP.PICKUP_GAP, POWER_UP.EDGE);
   return spot ? { id, kind, x: spot.x, y: spot.y, born: pass } : null;
 }
 
 /** A random place for a ship to land: well clear of planets, the other ships and the pickups. */
 export function teleportSpot(world: World, rng: Rng, pickups: readonly Pickup[] = []): { x: number; y: number } | null {
   return clearSpot(world, rng, POWER_UP.TELEPORT_PLANET_GAP, POWER_UP.TELEPORT_SHIP_GAP, pickups, POWER_UP.TELEPORT_PICKUP_GAP, POWER_UP.EDGE);
+}
+
+/** Up to `count` places to teleport to, spread apart and a real jump away from `from`. */
+export function teleportCandidates(world: World, rng: Rng, pickups: readonly Pickup[], count: number, from: { x: number; y: number }): { x: number; y: number }[] {
+  const spots: { x: number; y: number }[] = [];
+  for (let attempt = 0; attempt < 60 && spots.length < count; attempt++) {
+    const spot = teleportSpot(world, rng, pickups);
+    if (!spot || distance(spot.x, spot.y, from.x, from.y) < POWER_UP.TELEPORT_MIN_JUMP) continue;
+    if (spots.some((q) => distance(spot.x, spot.y, q.x, q.y) < POWER_UP.TELEPORT_SPREAD)) continue;
+    spots.push(spot);
+  }
+  return spots;
 }
 
 /**
@@ -102,4 +182,19 @@ export function touchedPickups(pickups: readonly Pickup[], x: number, y: number)
     if (distance(x, y, p.x, p.y) < POWER_UP.PICKUP_RADIUS) hits.push(i);
   });
   return hits;
+}
+
+/** Where the two new branches of a shot would fly if it split now: the first second or so of each, as flat polylines. */
+export function forkPreview(shot: Shot, seconds: number = POWER_UP.FORK_PREVIEW_SECONDS): number[][] {
+  const steps = Math.round(seconds / PHYSICS.DT);
+  return SPLIT_TURNS.map((turn) => {
+    const copy = shot.fork(turn);
+    const points = [copy.x, copy.y];
+    for (let i = 0; i < steps; i++) {
+      if (copy.step()) break;
+      if (i % 4 === 3) points.push(copy.x, copy.y);
+    }
+    points.push(copy.x, copy.y);
+    return points;
+  });
 }
