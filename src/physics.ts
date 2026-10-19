@@ -63,8 +63,6 @@ export interface ShotRules {
 
 export type ShotEnd =
   | { kind: 'ship'; ship: number }
-  /** The shot hit a shielded ship: it ends there, and the ship lives. */
-  | { kind: 'shield'; ship: number }
   | { kind: 'planet'; planet: number }
   /** Which black hole swallowed it, as an index into `world.holes`. */
   | { kind: 'hole'; hole: number }
@@ -132,7 +130,12 @@ export class Shot {
   readonly style: StyleEvent[] | null;
   /** Production swing-by events, including repeated passes of the same body. */
   swingbys = 0;
-  /** One per planet, plus one for the black hole at the end. */
+  /**
+   * The shields this shot has bounced off, in order: the volley consumes each shield and turns these
+   * into events. Cleared by the caller, never by the shot, so a live volley and a replay see the same.
+   */
+  readonly reflects: { ship: number; x: number; y: number }[] = [];
+  /** One per planet, then one per black hole. */
   private readonly encounters: Encounter[] | null;
 
   constructor(
@@ -256,7 +259,10 @@ export class Shot {
       if (!s.alive || this.spare.includes(i)) continue;
       const dx = s.x - this.x;
       const dy = s.y - this.y;
-      if (dx * dx + dy * dy < r2) return this.finish({ kind: s.shield ? 'shield' : 'ship', ship: i });
+      if (dx * dx + dy * dy >= r2) continue;
+      // A shield bounces the shot off instead of letting it through: the shot flies on, and the shield is spent.
+      if (s.shield) this.reflect(i, s.x, s.y);
+      else return this.finish({ kind: 'ship', ship: i });
     }
     for (let i = 0; i < planets.length; i++) {
       const p = planets[i];
@@ -278,6 +284,27 @@ export class Shot {
 
   get inField(): boolean {
     return this.x >= 0 && this.x <= this.world.width && this.y >= 0 && this.y <= this.world.height;
+  }
+
+  /**
+   * Bounce the shot off a shielded ship: mirror the velocity about the hull's normal and set the shot just
+   * outside the hull, so it leaves along the reflection instead of hitting the same shield again next step.
+   * The ship is not touched here — the volley reads `reflects` and spends the shield, so a CPU search that
+   * only samples the world does not consume anything.
+   */
+  private reflect(ship: number, cx: number, cy: number): void {
+    const dx = this.x - cx;
+    const dy = this.y - cy;
+    const d = Math.hypot(dx, dy);
+    const nx = d > 0 ? dx / d : 1;
+    const ny = d > 0 ? dy / d : 0;
+    const dot = this.vx * nx + this.vy * ny;
+    this.vx -= 2 * dot * nx;
+    this.vy -= 2 * dot * ny;
+    const out = SHIP_RADIUS + 0.5;
+    this.x = cx + nx * out;
+    this.y = cy + ny * out;
+    this.reflects.push({ ship, x: this.x, y: this.y });
   }
 
   private finish(end: ShotEnd): ShotEnd {

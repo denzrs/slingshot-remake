@@ -934,23 +934,23 @@ export abstract class Match {
       if (this.stylePays) this.emit({ type: 'style', player, kind: e.event.kind, x: e.event.x, y: e.event.y });
       return;
     }
+    if (e.type === 'reflect') {
+      // The shield bounced the shot off: it is spent, and so is the power-up it came from.
+      this.emit({ type: 'shield', ship: e.ship, x: e.x, y: e.y });
+      if (live) {
+        const holder = this.players[e.ship];
+        holder.powerUp = null;
+        holder.armed = false;
+        this.record((book) => bump(book.saves, e.ship));
+      }
+      return;
+    }
     const end = e.end;
     switch (end.kind) {
       case 'ship': {
         const ship = volley.world.ships[end.ship];
         this.emit({ type: 'explode', x: ship.x, y: ship.y, ship: end.ship, vx: e.vx, vy: e.vy });
         if (live) this.registerKill(vs, end.ship, volley);
-        break;
-      }
-      case 'shield': {
-        // The shield took the hit: it is gone, and so is the power-up it came from.
-        this.emit({ type: 'shield', ship: end.ship, x: e.x, y: e.y });
-        if (live) {
-          const holder = this.players[end.ship];
-          holder.powerUp = null;
-          holder.armed = false;
-          this.record((book) => bump(book.saves, end.ship));
-        }
         break;
       }
       case 'planet': {

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
 import { CPU_IGNORES, POWER_UP_KINDS, POWER_UP_WEIGHTS, aimedPlanet, nebulaSpot } from '../src/powerups';
 import { NEBULA } from '../src/config';
-import { Shot, type World } from '../src/physics';
+import { cloneWorld, Shot, type World } from '../src/physics';
+import { Volley } from '../src/volley';
 import { DEFAULT_SETTINGS } from '../src/settings';
 
 const rules = { bounce: false, timeLimit: 20 };
@@ -206,5 +207,24 @@ describe('a CPU and the placements', () => {
     expect(match.world.nebulae).toHaveLength(1);
     expect(cpu.powerUp).toBeNull();
     expect(cpu.passed).toBe(true);
+  });
+});
+
+describe('a shield bounce on the wire', () => {
+  it('replays the same bounce from the volley script', () => {
+    const world: World = {
+      width: 1280, height: 800, planets: [],
+      ships: [{ x: 100, y: 400, alive: true }, { x: 500, y: 400, alive: true }], holes: [], nebulae: [], version: 0,
+    };
+    world.ships[1].shield = true;
+    const live = new Volley(world, [{ player: 0, angle: 0, power: 100 }], rules, true);
+    while (!live.done) live.step();
+    const snapshot = live.snapshot();
+    expect((snapshot.script ?? []).some((entry) => entry.kind === 'shield')).toBe(true);
+
+    const replay = new Volley(cloneWorld(world), snapshot.aims, rules, true, snapshot.script ?? []);
+    replay.restore(snapshot);
+    while (!replay.done) replay.step();
+    expect(replay.shots.map((vs) => [vs.shot.x, vs.shot.y])).toEqual(live.shots.map((vs) => [vs.shot.x, vs.shot.y]));
   });
 });

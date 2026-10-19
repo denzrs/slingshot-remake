@@ -122,7 +122,7 @@ describe('volleys', () => {
     const run = () => {
       const v = new Volley(cloneWorld(world), aims, { bounce: true, timeLimit: HORIZON.SHOT_TIME }, true);
       const log: string[] = [];
-      while (!v.done) for (const e of v.step()) log.push(`${v.steps}:${e.index}:${e.type === 'end' ? e.end.kind : e.event.kind}`);
+      while (!v.done) for (const e of v.step()) log.push(`${v.steps}:${e.index}:${e.type === 'end' ? e.end.kind : e.type === 'style' ? e.event.kind : e.type}`);
       return { log, ends: v.shots.map((s) => [s.shot.x, s.shot.y]), alive: v.world.ships.map((s) => s.alive) };
     };
     expect(run()).toEqual(run());

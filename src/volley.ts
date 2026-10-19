@@ -54,6 +54,7 @@ export function shotSource(aims: number, script: readonly VolleyScript[], index:
 
 export type VolleyEvent =
   | { type: 'end'; index: number; end: ShotEnd; x: number; y: number; vx: number; vy: number }
+  | { type: 'reflect'; index: number; ship: number; x: number; y: number }
   | { type: 'style'; index: number; event: StyleEvent };
 
 const TRAIL_EVERY = 2;
@@ -167,10 +168,15 @@ export class Volley {
         for (let k = styleBefore; k < shot.style.length; k++) events.push({ type: 'style', index: i, event: shot.style[k] });
       }
       if (end || this.steps % TRAIL_EVERY === 0) vs.trail.push(shot.x, shot.y);
+      // A shield bounces the shot off: it is spent doing so, here where a live flight and a replay agree.
+      for (const r of shot.reflects) {
+        this.world.ships[r.ship].shield = false;
+        if (!this.replaying) this.script.push({ at: this.steps, kind: 'shield', ship: r.ship, on: false });
+        events.push({ type: 'reflect', index: i, ship: r.ship, x: r.x, y: r.y });
+      }
+      shot.reflects.length = 0;
       if (end) {
         if (end.kind === 'ship') this.world.ships[end.ship].alive = false;
-        // A shield takes exactly one shot.
-        else if (end.kind === 'shield') this.world.ships[end.ship].shield = false;
         events.push({ type: 'end', index: i, end, x: shot.x, y: shot.y, vx: shot.vx, vy: shot.vy });
       }
     }

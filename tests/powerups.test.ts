@@ -586,13 +586,13 @@ describe('power-ups: round 3', () => {
     expect(volley.shots.every((vs) => vs.pull === -1)).toBe(true);
   });
 
-  it('lets a shield take exactly one shot, and the ship lives', () => {
+  it('bounces a shot off a shield, spent by that one hit, and the ship lives', () => {
     const world = emptyWorld([[100, 400], [500, 400]]);
     world.ships[1].shield = true;
     const volley = new Volley(world, [{ player: 0, angle: 0, power: 100 }], rules, false);
-    const ends = [];
-    while (!volley.done) ends.push(...volley.step().flatMap((e) => (e.type === 'end' ? [e.end.kind] : [])));
-    expect(ends).toContain('shield');
+    const bounced: number[] = [];
+    while (!volley.done) bounced.push(...volley.step().flatMap((e) => (e.type === 'reflect' ? [e.ship] : [])));
+    expect(bounced).toEqual([1]);
     expect(world.ships[1].alive).toBe(true);
     expect(world.ships[1].shield).toBe(false);
     // The second shot finds the ship bare.
@@ -620,7 +620,7 @@ describe('power-ups: round 3', () => {
     expect(ship.shield).toBe(false);
   });
 
-  it('announces a soaked hit, spends the shield, counts the save and plays on', () => {
+  it('announces a bounced shot, spends the shield, counts the save and plays on', () => {
     const match = duel();
     const holder = match.players[1 - match.current];
     const shooter = match.players[match.current];
@@ -637,8 +637,8 @@ describe('power-ups: round 3', () => {
     shooter.power = 100;
     match.commit();
     finishFlight(match);
+    // The shot bounced off: it flies on and may still kill someone, but the holder lives and the shield is spent.
     expect(events).toContain('shield');
-    expect(events).not.toContain('kill');
     expect(holder.alive).toBe(true);
     expect(holder.powerUp).toBeNull();
     expect(match.roundStats.saves[holder.id]).toBe(1);
