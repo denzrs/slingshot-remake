@@ -9,6 +9,10 @@ The relay runs as the unprivileged `ops` account in a systemd user unit. The Git
 - `slingshot-relay.eu` resolves to the VPS, inbound TCP 8080 is allowed, and Certbot has issued `/etc/letsencrypt/live/slingshot-relay.eu/{fullchain.pem,privkey.pem}`.
 - `ops` can traverse the Let's Encrypt directories and read the current certificate and key. The setup script installs a Certbot deploy hook that reapplies narrow ACLs to renewed archive files and restarts the relay.
 
+## The daily board
+
+The relay keeps the daily-challenge leaderboard in `/srv/slingshot/leaderboard.db` (a SQLite-compatible file written through `turso`, created on first start, `LEADERBOARD_DB` overrides the path). It is a data file next to the binary, so a deploy leaves it alone: the deployment only flips `slingshot-server` and `relay.env`, and the relay prunes the days past `LEADERBOARD_KEEP_DAYS` (default `7`) itself. It holds nothing but the day, the hashed poster, the name they chose and the score, so it needs no backup — and the relay will not start if it cannot open it, which fails the deploy's health check and rolls back rather than serving on without a board. A name the board will not carry (checked with `rustrict`) is refused with a message the player can act on; the scores themselves are taken at face value.
+
 ## Bootstrap the unit and renewal hook
 
 Stage the files through the `Test, Deploy & Release` workflow's **bootstrap** dispatch input, review them under `/srv/slingshot/ionos-setup`, then run on the VPS:

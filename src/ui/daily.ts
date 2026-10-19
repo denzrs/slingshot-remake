@@ -3,6 +3,7 @@ import { loadDay, loadStreak, type RunOutcome } from '../dailyStore';
 import type { ChallengeMatch, SectorResult, ShotLog } from '../game';
 import { fmtInt, getLang, t, tn, type Key } from '../i18n';
 import { h, type MenuItem, type Screen } from './menu';
+import { leaderboardAvailable, leaderboardScreen } from './leaderboard';
 import type { App } from './screens';
 
 /** "Fri, 2 October 2026" in the UI language. */
@@ -79,6 +80,10 @@ export function dailyScreen(app: App): Screen {
     },
     items: [
       { kind: 'action', label: t('daily.start'), primary: true, run: () => app.startDaily() },
+      // The day's standing, before or without flying it: nothing is posted from here.
+      ...(leaderboardAvailable()
+        ? [{ kind: 'action', label: t('daily.board.view'), run: () => app.menu.push(() => leaderboardScreen(app, key, formatDay(key), null)) } satisfies MenuItem]
+        : []),
       { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
     ],
   };
@@ -172,6 +177,16 @@ export function dailyResultScreen(app: App, match: ChallengeMatch, outcome: RunO
     },
     items: [
       { kind: 'action', label: t('daily.result.copy'), primary: true, run: () => void copy() },
+      // The board is opt-in: the run goes up only if the player asks for it, and then under a name.
+      ...(leaderboardAvailable()
+        ? [
+            {
+              kind: 'action',
+              label: t('daily.board.add'),
+              run: () => app.menu.push(() => leaderboardScreen(app, result.dateKey, t('daily.board.yourRun', { score: fmtInt(result.total) }), result.total)),
+            } satisfies MenuItem,
+          ]
+        : []),
       { kind: 'action', label: t('daily.retry'), run: () => app.rematch() },
       { kind: 'action', label: t('common.mainMenu'), run: () => app.toTitle() },
     ] satisfies MenuItem[],
