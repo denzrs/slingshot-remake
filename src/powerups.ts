@@ -13,7 +13,7 @@ export type PowerUpKind = 'preview' | 'teleport' | 'splitter' | 'repulse' | 'shi
 export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter', 'repulse', 'shield'];
 
 /** How often each kind turns up, relative to the others: the stronger ones are scarcer. */
-export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 1, teleport: 1, splitter: 1, repulse: 0.8, shield: 0.6 };
+export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 0.6, teleport: 1, splitter: 1, repulse: 0.8, shield: 0.6 };
 
 /** The kind of a new pickup, drawn by weight from the kinds in play (all of them when the list is empty). */
 export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KINDS): PowerUpKind {
@@ -47,6 +47,11 @@ export const POWER_UP = {
   PICKUP_GAP: 160,
   /** Seconds of flight the preview draws: just the first stretch, so it hints at the shot without giving it away. */
   PREVIEW_SECONDS: 2,
+  /**
+   * Where along the preview the hint is spent. The path is drawn no further than this share of it and
+   * fades out on the way, so an armed preview shows where the shot sets off rather than where it goes.
+   */
+  PREVIEW_FADE_AT: 0.6,
   /** Angle a split adds on either side of the shot, in degrees. */
   SPLIT_SPREAD: 5,
   /** A CPU splits its shot once it is this close to an enemy ship, and not before it has flown this long. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
 import { PHYSICS } from '../src/config';
-import { laneSpot, pickKind, POWER_UP, POWER_UP_KINDS, previewPath, SPLIT_TURNS, spawnPickup, teleportAimTarget, teleportSpot, touchedPickups, type Pickup } from '../src/powerups';
+import { laneSpot, pickKind, POWER_UP, POWER_UP_KINDS, POWER_UP_WEIGHTS, previewPath, SPLIT_TURNS, spawnPickup, teleportAimTarget, teleportSpot, touchedPickups, type Pickup } from '../src/powerups';
 import { awards, newStatBook } from '../src/stats';
 import { createRng } from '../src/rng';
 import { Shot, type World } from '../src/physics';
@@ -667,19 +667,26 @@ describe('power-ups: round 3', () => {
     expect(Math.sign(drift(-1))).toBe(1);
   });
 
-  it('draws the kinds by weight, the stronger ones scarcer, and every kind turns up', () => {
+  it('draws the kinds by their weights, and every kind turns up', () => {
     const rng = createRng(11);
     const counts = new Map<string, number>();
     for (let i = 0; i < 4000; i++) counts.set(pickKind(rng), (counts.get(pickKind(rng)) ?? 0) + 1);
     for (const kind of POWER_UP_KINDS) expect(counts.get(kind) ?? 0).toBeGreaterThan(0);
+
+    // Each kind comes up its share of the time, which is what the weights are for: which ones are
+    // scarcer is a matter of the weights themselves, not of this test.
+    const draws = 20_000;
+    const total = POWER_UP_KINDS.reduce((sum, kind) => sum + POWER_UP_WEIGHTS[kind], 0);
     const rng2 = createRng(12);
     const drawn: Record<string, number> = {};
-    for (let i = 0; i < 6000; i++) {
+    for (let i = 0; i < draws; i++) {
       const kind = pickKind(rng2);
       drawn[kind] = (drawn[kind] ?? 0) + 1;
     }
-    expect(drawn.shield).toBeLessThan(drawn.preview);
-    expect(drawn.repulse).toBeLessThan(drawn.preview);
+    for (const kind of POWER_UP_KINDS) {
+      const expected = (draws * POWER_UP_WEIGHTS[kind]) / total;
+      expect(Math.abs(drawn[kind] - expected)).toBeLessThan(expected * 0.1);
+    }
   });
 
   it('counts the power-ups taken, for the scorecard', () => {

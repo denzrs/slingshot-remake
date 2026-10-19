@@ -371,10 +371,17 @@ export class Renderer {
     }
     for (const id of this.pickupSeen.keys()) if (!present.has(id)) this.pickupSeen.delete(id);
     if (scene.preview && scene.preview.length >= 4) {
-      ctx.strokeStyle = POWER_UP_COLORS.preview;
+      // An armed preview is a hint, not the answer: it is drawn only over the first share of the
+      // path and fades out along it, instead of running its whole two seconds at full strength.
+      const kept = scene.preview.slice(0, Math.max(2, Math.ceil((scene.preview.length / 2) * POWER_UP.PREVIEW_FADE_AT)) * 2);
+      const end = kept.length - 2;
+      const fade = ctx.createLinearGradient(kept[0], kept[1], kept[end], kept[end + 1]);
+      fade.addColorStop(0, rgba(POWER_UP_COLORS.preview, 0.9));
+      fade.addColorStop(1, rgba(POWER_UP_COLORS.preview, 0));
+      ctx.strokeStyle = fade;
       ctx.lineWidth = 1.6;
       ctx.setLineDash([3, 5]);
-      strokePolyline(ctx, scene.preview);
+      strokePolyline(ctx, kept);
       ctx.setLineDash([]);
     }
     // A ship aiming its teleport: one door at the spot the aim lands on, with a line from the ship.
