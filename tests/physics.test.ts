@@ -32,6 +32,16 @@ describe('shot physics', () => {
     expect(simulateShot(world, 0, 17.25, 63.5, rules)).toEqual(simulateShot(world, 0, 17.25, 63.5, rules));
   });
 
+  it('reports the gates (pickups) a shot flies through', () => {
+    const world = emptyWorld();
+    // A straight shot to the enemy crosses the gate on the way, and is counted once.
+    const onPath = simulateShot(world, 0, 0, 60, rules, [], 1, [{ x: 400, y: 400, r: 16 }]);
+    expect(onPath.gates).toEqual([0]);
+    // A gate the shot never approaches is left out.
+    const offPath = simulateShot(world, 0, 0, 60, rules, [], 1, [{ x: 400, y: 100, r: 16 }]);
+    expect(offPath.gates).toEqual([]);
+  });
+
   it('bends towards a planet', () => {
     const world = emptyWorld();
     world.planets.push(planet(640, 520, 40));

@@ -1,5 +1,5 @@
 import { AIM } from './config';
-import { normalizeAngle, simulateShot, simulateStyledShot, type ShotEnd, type ShotRules, type StyledShotOutcome, type World } from './physics';
+import { normalizeAngle, simulateShot, simulateStyledShot, type ShotEnd, type ShotGate, type ShotRules, type StyledShotOutcome, type World } from './physics';
 import { gaussian, type Rng } from './rng';
 
 type NormalCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
@@ -44,15 +44,25 @@ interface CpuProfile {
   distanceBias: number;
   /** Extra pull towards whoever hit this CPU most recently. */
   grudge: number;
+  /** Miss distance (px) this CPU will trade for flying through a power-up pickup; 0 to ignore them. */
+  pickupAppetite: number;
 }
 
 export const CPU_PROFILES: Readonly<Record<Exclude<NormalCpuLevel, 'hawking'>, Readonly<CpuProfile>>> = {
   // Kepler: lazy and lucky. Goes for whoever is nearest, tolerates risk, learns slowly.
-  easy: { angle: 4.5, power: 4.5, decay: 0.8, selfMargin: 20, powerFrugality: 0, optimizeHitPower: false, distanceBias: 0.25, grudge: 0 },
-  // Newton: efficient. Wastes no power, keeps a level head.
-  medium: { angle: 1.6, power: 1.6, decay: 0.6, selfMargin: 45, powerFrugality: 0.01, optimizeHitPower: true, distanceBias: 0, grudge: 0 },
-  // Einstein: careful and precise, with a long memory for being shot at.
-  hard: { angle: 0.5, power: 0.5, decay: 0.45, selfMargin: 60, powerFrugality: 0.002, optimizeHitPower: false, distanceBias: 0, grudge: 3 },
+  easy: { angle: 4.5, power: 4.5, decay: 0.8, selfMargin: 20, powerFrugality: 0, optimizeHitPower: false, distanceBias: 0.25, grudge: 0, pickupAppetite: 0 },
+  // Newton: efficient and the sorest loser. Wastes no power, keeps a level head, remembers every hit longest.
+  medium: { angle: 1.6, power: 1.6, decay: 0.6, selfMargin: 45, powerFrugality: 0.01, optimizeHitPower: true, distanceBias: 0, grudge: 5, pickupAppetite: 0 },
+  // Einstein: careful and precise, and always angling to scoop up a power-up.
+  hard: { angle: 0.5, power: 0.5, decay: 0.45, selfMargin: 60, powerFrugality: 0.002, optimizeHitPower: false, distanceBias: 0, grudge: 1, pickupAppetite: 350 },
+};
+
+/**
+ * Hawking searches like Einstein (same aim error, safety and precision) but prefers swing-bys. It keeps
+ * Einstein's original numbers, including the long memory for being shot at, unchanged by the newer profiles.
+ */
+const HAWKING_PROFILE: Readonly<CpuProfile> = {
+  angle: 0.5, power: 0.5, decay: 0.45, selfMargin: 60, powerFrugality: 0.002, optimizeHitPower: false, distanceBias: 0, grudge: 3, pickupAppetite: 0,
 };
 /** Planner result emitted for each menu CPU launch when AI decision logging is enabled. */
 export interface CpuDecision {
@@ -85,6 +95,8 @@ export interface PlanOptions {
   /** Seconds of flight the planner looks ahead (default 12; Hawking always uses the full shot limit). */
   lookahead?: number;
   friends?: readonly number[];
+  /** Power-up pickups in play: a CPU with a `pickupAppetite` prefers shots that fly through them. */
+  pickups?: readonly ShotGate[];
   /** Keep refining a valid hit to find the lowest hit power. */
   optimizeHitPower?: boolean;
   /** Return the searched aim without execution error (experimental belief planning). */
@@ -98,12 +110,15 @@ export interface PlanOptions {
 }
 
 /** Planning cost: 0 or below means a hit, lower power is slightly preferred among hits. */
-function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[], profile: Readonly<CpuProfile>, pull: number): number {
-  const { end, closest, selfClosest } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends, pull);
+function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[], profile: Readonly<CpuProfile>, pull: number, gates: readonly ShotGate[]): number {
+  const { end, closest, selfClosest, gates: passed } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends, pull, gates);
   if (end.kind === 'ship' && (end.ship === shooter || friends.includes(end.ship))) return 1e6;
   const risk = selfClosest < profile.selfMargin ? (profile.selfMargin - selfClosest) * 20 : 0;
   if (end.kind === 'ship') return -1 + aim.power * (1 / 1000 + profile.powerFrugality) + risk;
-  return closest + risk;
+  // A shot that would collect a pickup is worth some extra miss distance. The bounty is capped at the
+  // current miss, so a non-hit can never beat a hit — it only reorders shots that miss either way.
+  const bounty = passed.length && profile.pickupAppetite > 0 ? Math.min(profile.pickupAppetite, closest) : 0;
+  return closest - bounty + risk;
 }
 
 /**
@@ -115,7 +130,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const maxPower = opts.maxPower ?? AIM.MAX_POWER;
   const fixedPower = opts.fixedPower === null ? null : Math.min(opts.fixedPower, maxPower);
   const hawking = opts.level === 'hawking';
-  const profile = CPU_PROFILES[opts.level === 'hawking' ? 'hard' : opts.level];
+  const profile = opts.level === 'hawking' ? HAWKING_PROFILE : CPU_PROFILES[opts.level];
   const optimizeHitPower = opts.optimizeHitPower ?? profile.optimizeHitPower;
   // Ordinary CPUs retain their cheap horizon; Hawking searches full-length trick shots.
   const planRules: ShotRules = { ...rules, timeLimit: hawking ? rules.timeLimit : Math.min(rules.timeLimit, opts.lookahead ?? 12) };
@@ -142,15 +157,17 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const friends = opts.friends ?? [];
   const pull = opts.pull ?? 1;
   const grudgeTarget = opts.grudgeTarget ?? null;
+  // A pickup the CPU ignores (a preview) is not worth aiming at, so the caller filters those out.
+  const gates = opts.pickups ?? [];
   // Belief searches revisit grid centres and clamped powers. Cache exact launches
   // only for this generator; ordinary CPU planning retains its existing path.
   const costs = opts.noiseFree ? new Map<number, Map<number, number>>() : null;
   const evaluateAim = (aim: Aim): number => {
-    if (!costs) return evaluate(world, shooter, aim, planRules, friends, profile, pull);
+    if (!costs) return evaluate(world, shooter, aim, planRules, friends, profile, pull, gates);
     let powers = costs.get(aim.angle);
     const cached = powers?.get(aim.power);
     if (cached !== undefined) return cached;
-    const cost = evaluate(world, shooter, aim, planRules, friends, profile, pull);
+    const cost = evaluate(world, shooter, aim, planRules, friends, profile, pull, gates);
     if (!powers) costs.set(aim.angle, powers = new Map());
     powers.set(aim.power, cost);
     return cost;
@@ -181,7 +198,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     .flatMap((t, i) => (i === shooter || !t.alive || friends.includes(i)) ? [] : [{
       angle: normalizeAngle((Math.atan2(-(t.y - self.y), t.x - self.x) * 180) / Math.PI),
       // Personality weight for the sweep: 1 for a plain enemy, less the farther away (Kepler
-      // is lazy), and a fixed premium for whoever hit this CPU last (Einstein holds grudges).
+      // is lazy), and a fixed premium for whoever hit this CPU last (Newton holds grudges).
       weight: Math.max(0.1, 1 - profile.distanceBias * Math.hypot(t.x - self.x, t.y - self.y) / 100)
         + (grudgeTarget === i ? profile.grudge : 0),
     }])
@@ -206,7 +223,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     }
   }
 
-  // The sweep picks its targets by personality: near ones for Kepler, grudged ones for Einstein.
+  // The sweep picks its targets by personality: near ones for Kepler, grudged ones for Newton.
   // Uniform weights cycle through the enemies exactly like the original sweep, keeping the
   // planner's random stream — and thus its seeded results — unchanged when nobody stands out.
   const uniform = directs.every((d) => d.weight === directs[0].weight);
@@ -288,7 +305,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
     reportDecision(best, launch);
     return launch;
   }
-  const err = CPU_PROFILES[opts.level === 'hawking' ? 'hard' : opts.level];
+  const err = opts.level === 'hawking' ? HAWKING_PROFILE : CPU_PROFILES[opts.level];
   const scale = Math.pow(err.decay, opts.attempt);
   const launch = {
     angle: normalizeAngle(best.angle + gaussian(rng) * err.angle * scale),

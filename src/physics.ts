@@ -304,17 +304,27 @@ export class Shot {
   }
 }
 
+/** A circular point of interest a shot can pass through — the planner uses it to value power-up pickups. */
+export interface ShotGate {
+  x: number;
+  y: number;
+  r: number;
+}
+
 export interface ShotOutcome {
   end: ShotEnd;
   /** Closest approach to any living enemy ship's centre. */
   closest: number;
   /** Closest the shot came to its own ship (once it had left the muzzle) or to a teammate. */
   selfClosest: number;
+  /** Indices of the `gates` circles this shot passed through, in the order it met them. */
+  gates: number[];
 }
 
 /**
  * Fly a shot to completion without rendering (used by the CPU and tests).
  * `friends` are teammates: not targets, and passing close to them counts as risky.
+ * `gates` are circles of interest (power-up pickups): the outcome lists the ones the shot passed through.
  */
 export function simulateShot(
   world: World,
@@ -324,6 +334,7 @@ export function simulateShot(
   rules: ShotRules,
   friends: readonly number[] = [],
   pull = 1,
+  gates: readonly ShotGate[] = [],
 ): ShotOutcome {
   const shot = new Shot(world, shooter, angle, power, rules, false, [], pull);
   const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
@@ -332,6 +343,8 @@ export function simulateShot(
   let closest2 = Infinity;
   let self2 = Infinity;
   let end: ShotEnd | null = null;
+  const passed: number[] = [];
+  const taken = new Set<number>();
   while (!end) {
     end = shot.step();
     for (const t of targets) {
@@ -345,8 +358,17 @@ export function simulateShot(
       const dy = m.y - shot.y;
       self2 = Math.min(self2, dx * dx + dy * dy);
     }
+    gates.forEach((gate, i) => {
+      if (taken.has(i)) return;
+      const dx = gate.x - shot.x;
+      const dy = gate.y - shot.y;
+      if (dx * dx + dy * dy < gate.r * gate.r) {
+        taken.add(i);
+        passed.push(i);
+      }
+    });
   }
-  return { end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2) };
+  return { end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: passed };
 }
 
 export interface StyledShotOutcome extends ShotOutcome {
@@ -398,7 +420,7 @@ export function* simulateStyledShot(
     if (!end && ++steps % 240 === 0) yield;
   }
   return {
-    end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2),
+    end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: [],
     swingbys: shot.swingbys, flightTime: shot.time, pathLength,
   };
 }

@@ -52,7 +52,7 @@ The Players screen offers four CPUs, in this order:
 
 | CPU | Style |
 | --- | --- |
-| Kepler, Newton, Einstein | Easy, medium and hard. They search for a hitting shot and aim with an error that shrinks with every shot of a round. |
+| Kepler, Newton, Einstein | Easy, medium and hard. They search for a hitting shot and aim with an error that shrinks with every shot of a round. Kepler favours whoever is nearest; Newton wastes no power and holds the longest grudge, aiming back at whoever shot it last; Einstein is the most precise and, with power-ups on, angles its shot to sweep up a pickup on the way even when it misses. |
 | Hawking | Searches like Einstein, with the same aim error, but prefers swing-bys. Enemy hits come first, and self-hit and friendly-hit safety is preserved. Among comparable safe shots it prefers more swing-by passes, then longer flights and paths within the full configured flight limit – also in Classic when trick-shot bonuses are off. |
 
 New CPU seats start as Newton. In an online room the host seats CPUs in the same way (see [multiplayer.md](multiplayer.md)). A further CPU that fits gravity from its own completed shots exists for benchmarks and programmatic matches; it is not offered in the game (see the [AI benchmark](benchmarks/README.md)).
