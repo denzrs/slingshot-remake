@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
 import { PHYSICS } from '../src/config';
-import { laneSpot, pickKind, POWER_UP, POWER_UP_KINDS, previewPath, SPLIT_TURNS, spawnPickup, teleportAimTarget, teleportSpot, touchedPickups, type Pickup } from '../src/powerups';
+import { laneSpot, pickKind, POWER_UP, POWER_UP_KINDS, POWER_UP_WEIGHTS, PREVIEW_POINTS, previewPath, SPLIT_TURNS, spawnPickup, teleportAimTarget, teleportSpot, touchedPickups, type Pickup } from '../src/powerups';
 import { awards, newStatBook } from '../src/stats';
 import { createRng } from '../src/rng';
 import { Shot, type World } from '../src/physics';
@@ -86,6 +86,33 @@ describe('preview path', () => {
     const steps = POWER_UP.PREVIEW_SECONDS / PHYSICS.DT;
     expect(path.length / 2).toBeLessThanOrEqual(steps / 4 + 3);
     expect(path.length).toBeGreaterThan(4);
+    // A window that is flown out in full has exactly the count the fade is measured against.
+    expect(path.length / 2).toBe(PREVIEW_POINTS);
+  });
+
+  it('samples every fourth step, which is what puts a fade on the clock and not on the path', () => {
+    const world = emptyWorld([[100, 400], [1200, 100]]);
+    const path = previewPath(world, 0, 0, 40, rules);
+    const shot = new Shot(world, 0, 0, 40, rules);
+    // Sample `i` is where the shot is after 4i steps, whether or not the path carries on that far.
+    for (let i = 0; i < 4; i++) shot.step();
+    expect(path[2]).toBeCloseTo(shot.x, 6);
+    expect(path[3]).toBeCloseTo(shot.y, 6);
+    for (let i = 4; i < 8; i++) shot.step();
+    expect(path[4]).toBeCloseTo(shot.x, 6);
+    expect(path[5]).toBeCloseTo(shot.y, 6);
+  });
+
+  it('hands back fewer samples when the shot ends early, so a fade cannot be measured by its length', () => {
+    const clear = emptyWorld([[100, 400], [1200, 100]]);
+    const blocked = { ...emptyWorld([[100, 400], [1200, 100]]), planets: [{ x: 260, y: 400, radius: 40, mass: 1, seed: 1, style: 'rocky' as const, tint: '#fff' }] };
+    const full = previewPath(clear, 0, 0, 40, rules);
+    const hit = previewPath(blocked, 0, 0, 40, rules);
+
+    expect(hit.length).toBeLessThan(full.length);
+    // Which is the tell this guards: a fade drawn along the path would be shorter for the shot that
+    // connects, so the renderer fades against PREVIEW_POINTS — the window — instead.
+    expect(hit.length / 2).toBeLessThan(PREVIEW_POINTS);
   });
 });
 
@@ -667,19 +694,26 @@ describe('power-ups: round 3', () => {
     expect(Math.sign(drift(-1))).toBe(1);
   });
 
-  it('draws the kinds by weight, the stronger ones scarcer, and every kind turns up', () => {
+  it('draws the kinds by their weights, and every kind turns up', () => {
     const rng = createRng(11);
     const counts = new Map<string, number>();
     for (let i = 0; i < 4000; i++) counts.set(pickKind(rng), (counts.get(pickKind(rng)) ?? 0) + 1);
     for (const kind of POWER_UP_KINDS) expect(counts.get(kind) ?? 0).toBeGreaterThan(0);
+
+    // Each kind comes up its share of the time, which is what the weights are for: which ones are
+    // scarcer is a matter of the weights themselves, not of this test.
+    const draws = 20_000;
+    const total = POWER_UP_KINDS.reduce((sum, kind) => sum + POWER_UP_WEIGHTS[kind], 0);
     const rng2 = createRng(12);
     const drawn: Record<string, number> = {};
-    for (let i = 0; i < 6000; i++) {
+    for (let i = 0; i < draws; i++) {
       const kind = pickKind(rng2);
       drawn[kind] = (drawn[kind] ?? 0) + 1;
     }
-    expect(drawn.shield).toBeLessThan(drawn.preview);
-    expect(drawn.repulse).toBeLessThan(drawn.preview);
+    for (const kind of POWER_UP_KINDS) {
+      const expected = (draws * POWER_UP_WEIGHTS[kind]) / total;
+      expect(Math.abs(drawn[kind] - expected)).toBeLessThan(expected * 0.1);
+    }
   });
 
   it('counts the power-ups taken, for the scorecard', () => {

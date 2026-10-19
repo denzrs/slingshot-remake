@@ -13,7 +13,7 @@ export type PowerUpKind = 'preview' | 'teleport' | 'splitter' | 'repulse' | 'shi
 export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter', 'repulse', 'shield'];
 
 /** How often each kind turns up, relative to the others: the stronger ones are scarcer. */
-export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 1, teleport: 1, splitter: 1, repulse: 0.8, shield: 0.6 };
+export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 0.6, teleport: 1, splitter: 1, repulse: 0.8, shield: 0.6 };
 
 /** The kind of a new pickup, drawn by weight from the kinds in play (all of them when the list is empty). */
 export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KINDS): PowerUpKind {
@@ -47,6 +47,11 @@ export const POWER_UP = {
   PICKUP_GAP: 160,
   /** Seconds of flight the preview draws: just the first stretch, so it hints at the shot without giving it away. */
   PREVIEW_SECONDS: 2,
+  /**
+   * Where along the preview the hint is spent. The path is drawn no further than this share of it and
+   * fades out on the way, so an armed preview shows where the shot sets off rather than where it goes.
+   */
+  PREVIEW_FADE_AT: 0.6,
   /** Angle a split adds on either side of the shot, in degrees. */
   SPLIT_SPREAD: 5,
   /** A CPU splits its shot once it is this close to an enemy ship, and not before it has flown this long. */
@@ -185,8 +190,22 @@ export function teleportAimTarget(world: World, from: { x: number; y: number }, 
 }
 
 /**
+ * Every fourth physics step is sampled into the preview polyline, plus the muzzle and the last one.
+ */
+const PREVIEW_STRIDE = 4;
+
+/**
+ * How many point pairs a full preview window yields. The renderer fades a path against this, and not
+ * against the path it was handed, so a shot that ends early — it hit something — cannot be told from
+ * a shot that flies on by where or how its preview fades.
+ */
+export const PREVIEW_POINTS = 2 + Math.floor(Math.round(POWER_UP.PREVIEW_SECONDS / PHYSICS.DT) / PREVIEW_STRIDE);
+
+/**
  * The first seconds of the flight a shot would make from the current aim, as a flat [x0, y0, x1, y1, …]
- * polyline. Stops early when the shot ends (it hits something) or leaves the field.
+ * polyline. Stops early when the shot ends (it hits something) or leaves the field, so a short path is a
+ * prefix of a full one: sample `i` is the same moment either way, which is what lets a fade be measured
+ * in the window rather than along the path.
  */
 export function previewPath(world: World, shooter: number, angle: number, power: number, rules: ShotRules): number[] {
   const shot = new Shot(world, shooter, angle, power, rules);
@@ -194,7 +213,7 @@ export function previewPath(world: World, shooter: number, angle: number, power:
   const steps = Math.round(POWER_UP.PREVIEW_SECONDS / PHYSICS.DT);
   for (let i = 0; i < steps; i++) {
     if (shot.step()) break;
-    if (i % 4 === 3) points.push(shot.x, shot.y);
+    if (i % PREVIEW_STRIDE === PREVIEW_STRIDE - 1) points.push(shot.x, shot.y);
   }
   points.push(shot.x, shot.y);
   return points;
