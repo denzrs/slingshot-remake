@@ -11,6 +11,7 @@ use rand::Rng;
 use serde_json::{json, Value};
 use tracing::{debug, info, warn};
 
+use crate::auth::{password_length, MAX_PASSWORD_LENGTH};
 use crate::codec::{frame, Outbound};
 use crate::leaderboard::Board;
 use crate::protocol::{
@@ -20,7 +21,6 @@ use crate::protocol::{
 };
 
 const MAX_ROOM_PLAYERS: i64 = 6;
-pub const MAX_PASSWORD_LENGTH: usize = 64;
 const MAX_PASSWORD_ATTEMPTS: u32 = 5;
 const MAX_SCRYPT_PER_SECOND: usize = 10;
 
@@ -1342,10 +1342,6 @@ fn named_cpu_level(message: &Value) -> Result<Option<String>, &'static str> {
     }
 }
 
-pub fn password_length(password: &str) -> usize {
-    password.encode_utf16().count()
-}
-
 pub fn valid_create_room_message(message: &Value) -> bool {
     let Some(name) = clean_name_checked(message.get("name")) else {
         return false;
@@ -1387,59 +1383,10 @@ pub fn valid_join_room_message(message: &Value) -> bool {
             .is_some_and(|room_id| !room_id.is_empty())
 }
 
-pub fn create_password_plaintext(message: &Value) -> Option<&str> {
-    message
-        .get("password")
-        .and_then(Value::as_str)
-        .filter(|password| !password.is_empty() && password_length(password) <= MAX_PASSWORD_LENGTH)
-}
-
-pub fn join_password_plaintext(message: &Value) -> Option<&str> {
-    message.get("password").and_then(Value::as_str)
-}
-
-pub fn hash_password(password: &str) -> (Vec<u8>, Vec<u8>) {
-    let mut salt = [0u8; 16];
-    rand::thread_rng().fill(&mut salt);
-    let mut hash = vec![0u8; 32];
-    scrypt::scrypt(
-        password.as_bytes(),
-        &salt,
-        &scrypt::Params::new(14, 8, 1, 32).unwrap(),
-        &mut hash,
-    )
-    .expect("scrypt derivation");
-    (salt.to_vec(), hash)
-}
-
-pub fn check_password(password: &str, salt: &[u8], expected: &[u8]) -> bool {
-    let mut actual = vec![0u8; expected.len()];
-    if scrypt::scrypt(
-        password.as_bytes(),
-        salt,
-        &scrypt::Params::new(14, 8, 1, 32).unwrap(),
-        &mut actual,
-    )
-    .is_err()
-    {
-        return false;
-    }
-    timing_safe_eq(&actual, expected)
-}
-
-fn timing_safe_eq(left: &[u8], right: &[u8]) -> bool {
-    let mut difference = (left.len() ^ right.len()) as u8;
-    let max_len = left.len().max(right.len());
-    for index in 0..max_len {
-        difference |=
-            left.get(index).copied().unwrap_or(0) ^ right.get(index).copied().unwrap_or(0);
-    }
-    difference == 0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth::{check_password, hash_password};
     use serde_json::{json, Value};
     use std::net::{IpAddr, Ipv4Addr};
     use tokio::sync::mpsc;

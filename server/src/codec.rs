@@ -94,4 +94,20 @@ mod tests {
         wrong_kind[5] = STATE_KIND + 1;
         assert!(state_header(&wrong_kind).is_none());
     }
+
+    #[test]
+    fn websocket_queues_have_both_message_and_byte_limits() {
+        assert_eq!(crate::codec::OUTBOUND_QUEUE, 128);
+        assert_eq!(crate::codec::OUTBOUND_BYTES, 4 * 1024 * 1024);
+        let pool = std::sync::Arc::new(tokio::sync::Semaphore::new(crate::codec::OUTBOUND_BYTES));
+        let held = pool
+            .clone()
+            .try_acquire_many_owned(3 * 1024 * 1024)
+            .unwrap();
+        assert!(pool
+            .clone()
+            .try_acquire_many_owned(2 * 1024 * 1024)
+            .is_err());
+        drop(held);
+    }
 }
