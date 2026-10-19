@@ -1044,7 +1044,7 @@ describe('CPU seats online', () => {
 
   describe('power-ups', () => {
     const powerRules: RoomRules = { ...rules, simultaneousShots: true, powerUps: true, powerUpKinds: ['teleport', 'splitter'], powerUpAmount: 3 };
-    type Inner = { power: { scene(): { teleport: { owner: number; spots: unknown[] } | null } } };
+    type Inner = { power: { scene(): { teleport: { owner: number; target: unknown } | null } } };
 
     it("plays them by the room's rules, in Classic and Event Horizon, and shows the guest the same pickups", async () => {
       for (const mode of ['classic', 'horizon'] as const) {
@@ -1058,24 +1058,23 @@ describe('CPU seats online', () => {
       }
     }, 30_000);
 
-    it('lets a guest open a teleport, jump by number, and everybody sees the ship move', async () => {
+    it('lets a guest aim a teleport, jump with fire, and everybody sees the ship move', async () => {
       const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], powerRules);
       const before = { ...host.match().world.ships[1] };
       host.match().players[1].powerUp = 'teleport';
       const events: string[] = [];
       guest.match().on((e) => events.push(e.type));
 
+      guest.session.input({ kind: 'aim', angle: 0, power: 50 });
       guest.session.input({ kind: 'power' });
       for (let i = 0; i < 12; i++) await frame(host, guest);
-      const open = (host.match() as unknown as Inner).power.scene();
-      // Only the ship choosing sees its spots: the host's own screen is the other player's.
+      // Only the ship aiming sees its spot: the host's own screen is the other player's.
       expect((host.match() as unknown as Inner).power.scene().teleport).toBeNull();
-      const spots = (guest.match() as unknown as Inner).power.scene().teleport;
-      expect(open).toBeDefined();
-      expect(spots?.owner).toBe(1);
-      expect(spots?.spots.length).toBeGreaterThan(0);
+      const aimed = (guest.match() as unknown as Inner).power.scene().teleport;
+      expect(aimed?.owner).toBe(1);
+      expect(aimed?.target).not.toBeNull();
 
-      guest.session.input({ kind: 'spot', index: 0 });
+      guest.session.input({ kind: 'fire' });
       for (let i = 0; i < 12; i++) await frame(host, guest);
       const after = host.match().world.ships[1];
       expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeGreaterThan(0);
@@ -1084,12 +1083,11 @@ describe('CPU seats online', () => {
       expect(events).toContain('teleport');
     }, 30_000);
 
-    it('keeps a guest from using somebody else\'s power-up or a spot that is not offered', async () => {
+    it("keeps a guest from aiming somebody else's teleport", async () => {
       const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], powerRules);
       host.match().players[0].powerUp = 'teleport';
       const start = { ...host.match().world.ships[0] };
       guest.session.input({ kind: 'power' });
-      guest.session.input({ kind: 'spot', index: 0 });
       for (let i = 0; i < 12; i++) await frame(host, guest);
       expect(host.match().players[0].powerUp).toBe('teleport');
       expect(host.match().world.ships[0]).toMatchObject({ x: start.x, y: start.y });

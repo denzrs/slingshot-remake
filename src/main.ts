@@ -18,6 +18,7 @@ import { readInvite } from './invite';
 import { MultiplayerSession } from './multiplayer';
 import type { ClientInput } from './net';
 import { randomSeed } from './rng';
+import { POWER_UP } from './powerups';
 import { Effects } from './render/effects';
 import { GhostPanel } from './render/ghost';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './i18n';
@@ -200,7 +201,6 @@ function dispatchInput(input: ClientInput): void {
   else if (input.kind === 'aim') match.setAim(input.angle, input.power);
   else if (input.kind === 'fire') match.commit();
   else if (input.kind === 'power') match.usePowerUp();
-  else if (input.kind === 'spot') match.chooseTeleportIndex(input.index);
   else if (input.kind === 'cancel') match.cancelTeleport();
 }
 
@@ -629,17 +629,6 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Choosing a teleport spot: 1, 2 or 3 picks that spot and jumps.
-  const spotKey = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
-  if (spotKey && match.teleporting && !e.metaKey && !e.ctrlKey && !e.altKey) {
-    const index = Number(spotKey[1]) - 1;
-    if (index < (match.scene().teleport?.spots.length ?? 0)) {
-      dispatchInput({ kind: 'spot', index });
-      e.preventDefault();
-    }
-    return;
-  }
-
   const [dAngle, dPower] = stepFor(e);
   let handled = true;
   switch (e.code) {
@@ -667,7 +656,7 @@ window.addEventListener('keydown', (e) => {
       if (match?.powerUps && !e.repeat) dispatchInput({ kind: 'power' });
       break;
     case 'Escape':
-      // Choosing a teleport spot: Esc thinks again, it does not open the menu.
+      // Aiming a teleport: Esc thinks again, it does not open the menu.
       if (match?.teleporting) {
         dispatchInput({ kind: 'cancel' });
         break;
@@ -692,9 +681,10 @@ function aimAt(clientX: number, clientY: number): void {
   const dx = f.x - ship.x;
   const dy = f.y - ship.y;
   const angle = (Math.atan2(-dy, dx) * 180) / Math.PI;
-  // Map distance so the tip of the drawn aim arrow follows the pointer.
-  const reach = Math.hypot(dx, dy) - (PHYSICS.MUZZLE + 26);
-  dispatchInput({ kind: 'aim', angle, power: Math.round((reach / 110) * AIM.MAX_POWER * 100) / 100 });
+  const distance = Math.hypot(dx, dy);
+  // A teleport puts its spot under the pointer; a shot's arrow tip follows the pointer.
+  const reach = match.teleporting ? distance / POWER_UP.TELEPORT_RANGE : (distance - (PHYSICS.MUZZLE + 26)) / 110;
+  dispatchInput({ kind: 'aim', angle, power: Math.round(reach * AIM.MAX_POWER * 100) / 100 });
 }
 
 canvas.addEventListener('pointerdown', (e) => {
@@ -706,12 +696,6 @@ canvas.addEventListener('pointerdown', (e) => {
     return placeTip(tip);
   }
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
-  // Choosing a teleport spot: a tap on one of them jumps there.
-  if (match.teleporting) {
-    const at = renderer.toField(e.clientX, e.clientY);
-    const index = match.teleportSpotAt(at.x, at.y);
-    if (index >= 0) return dispatchInput({ kind: 'spot', index });
-  }
   if (!canAim()) return;
   dragging = true;
   canvas.setPointerCapture(e.pointerId);
@@ -824,7 +808,8 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const m = active();
-  debugSeedBadge.hidden = !import.meta.env.DEV || screen !== 'play' || !match;
+  // The seed badge (a shortcut into debug-aim.html) follows the same switch that serves the page.
+  debugSeedBadge.hidden = !import.meta.env.DEBUG_AIM || screen !== 'play' || !match;
   if (!debugSeedBadge.hidden) {
     const current = match!;
     const shooterId = current.current >= 0 ? current.current : Math.max(0, current.viewer ?? 0);

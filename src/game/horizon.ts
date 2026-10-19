@@ -215,8 +215,13 @@ export class HorizonMatch extends Match {
       this.splitInFlight(id);
       return;
     }
-    // While a ship chooses where to teleport, fire jumps instead of locking in.
-    if (this.canAim(id) && !this.confirmTeleport(id)) this.lock(id);
+    if (!this.canAim(id)) return;
+    // While a ship aims a teleport, fire jumps; the jump spends its shot, so it fires nothing this volley.
+    if (this.teleportingFor(id)) {
+      if (this.confirmTeleport(id)) this.spend(id);
+      return;
+    }
+    this.lock(id);
   }
 
   get salvo(): boolean {
@@ -285,7 +290,10 @@ export class HorizonMatch extends Match {
     // Render only the previous volley; each CPU's learner survives this visual pruning.
     this.trails = this.trails.filter((t) => t.volley >= this.volleyNo - 1);
     const alive = this.alive;
-    for (const p of alive) p.locked = false;
+    for (const p of alive) {
+      p.locked = false;
+      p.passed = false;
+    }
     // Rotate who aims first so nobody always waits last.
     const start = (this.round + this.volleyNo) % alive.length;
     const order = [...alive.slice(start), ...alive.slice(0, start)];
@@ -314,9 +322,19 @@ export class HorizonMatch extends Match {
       this.splitInFlight(this.viewer ?? this.current);
       return;
     }
-    // While a ship chooses where to teleport, fire jumps instead of locking in.
-    if (this.confirmTeleport()) return;
+    // While a ship aims a teleport, fire jumps; the jump spends its shot, so it fires nothing this volley.
+    const by = this.viewer ?? this.current;
+    if (this.teleportingFor(by)) {
+      if (this.confirmTeleport(by)) this.spend(by);
+      return;
+    }
     if (this.isHumanTurn) this.lock(this.current);
+  }
+
+  /** The ship spent its shot on a teleport: it fires nothing this volley, and the turn moves on. */
+  private spend(id: number): void {
+    this.players[id].passed = true;
+    this.lock(id);
   }
 
   private lock(id: number): void {
@@ -365,8 +383,8 @@ export class HorizonMatch extends Match {
 
   private launchVolley(): void {
     this.volleySnapshot = cloneWorld(this.world);
-    this.aims = this.alive.flatMap((p) => this.aimsFor(p));
-    for (const p of this.alive) p.shots++;
+    this.aims = this.alive.filter((p) => !p.passed).flatMap((p) => this.aimsFor(p));
+    for (const p of this.alive) if (!p.passed) p.shots++;
     this.volleyKills = [];
     this.notice = { text: t('notice.volley'), color: COLORS.bone, at: this.clock };
     this.emit({ type: 'volley' });

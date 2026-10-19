@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
 import type { HorizonMatch } from '../src/game/horizon';
-import { POWER_UP, SPLIT_TURNS, spawnPickup, teleportCandidates } from '../src/powerups';
+import { POWER_UP, SPLIT_TURNS, spawnPickup, teleportAimTarget } from '../src/powerups';
 import { createRng } from '../src/rng';
 import { cloneWorld, type World } from '../src/physics';
 import { DEFAULT_SETTINGS } from '../src/settings';
@@ -33,16 +33,19 @@ describe('power-ups in Event Horizon', () => {
     expect(off.pickups.length).toBe(0);
   });
 
-  it('keeps pickups and teleport spots away from the black hole', () => {
+  it('keeps pickups and an aimed teleport away from the black hole', () => {
     const match = duel();
     const world = match.world;
     expect(world.hole).not.toBeNull();
     const hole = world.hole!;
     for (const p of match.pickups) expect(Math.hypot(p.x - hole.x, p.y - hole.y)).toBeGreaterThanOrEqual(hole.radius + POWER_UP.HOLE_GAP);
+    // Aiming straight at the hole: the landing stops short of the event horizon, or lands beyond it.
+    const from = world.ships[0];
+    const atHole = (Math.atan2(-(hole.y - from.y), hole.x - from.x) * 180) / Math.PI;
+    const aimed = teleportAimTarget(world, from, atHole, 100);
+    expect(aimed).not.toBeNull();
+    expect(Math.hypot(aimed!.x - hole.x, aimed!.y - hole.y)).toBeGreaterThanOrEqual(hole.radius + POWER_UP.HOLE_GAP);
     const rng = createRng(5);
-    for (const spot of teleportCandidates(world, rng, [], 3, world.ships[0])) {
-      expect(Math.hypot(spot.x - hole.x, spot.y - hole.y)).toBeGreaterThanOrEqual(hole.radius + POWER_UP.HOLE_GAP);
-    }
     for (let i = 0; i < 20; i++) {
       const p = spawnPickup(world, rng, [], 'shield', i, 0);
       expect(Math.hypot(p!.x - hole.x, p!.y - hole.y)).toBeGreaterThanOrEqual(hole.radius + POWER_UP.HOLE_GAP);
@@ -81,7 +84,7 @@ describe('power-ups in Event Horizon', () => {
     expect(a.powerUp).toBeNull();
   });
 
-  it('jumps to a teleport spot while aiming, and fire confirms instead of locking in', () => {
+  it('jumps to the aimed spot, and the jump spends the shot instead of locking in for it', () => {
     const match = duel();
     const who = match.players[match.current];
     who.powerUp = 'teleport';
@@ -90,10 +93,23 @@ describe('power-ups in Event Horizon', () => {
     expect(match.teleporting).toBe(true);
     match.commit();
     expect(match.teleporting).toBe(false);
-    expect(who.locked).toBe(false);
+    // The jump spent the shot: the ship is in for the volley, but fires nothing.
+    expect(who.locked).toBe(true);
+    expect(who.passed).toBe(true);
     const after = match.world.ships[who.id];
     expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeGreaterThan(0);
     expect(who.powerUp).toBeNull();
+  });
+
+  it('leaves a ship that spent its shot on a teleport out of the volley', () => {
+    const match = duel();
+    const who = match.players[match.current];
+    who.powerUp = 'teleport';
+    match.usePowerUp();
+    match.commit();
+    lockAll(match);
+    expect(match.phase).toBe('flying');
+    expect(match.volley!.shots.some((vs) => vs.owner === who.id)).toBe(false);
   });
 
   it('pulls the pickups towards the hole as it grows, and eats the ones too close to it', () => {

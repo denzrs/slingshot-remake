@@ -180,8 +180,12 @@ export class ClassicMatch extends Match {
       this.splitInFlight(this.viewer ?? this.current);
       return;
     }
-    // While a ship chooses where to teleport, fire jumps instead of shooting.
-    if (this.confirmTeleport()) return;
+    // While a ship aims a teleport, fire jumps; the jump spends its shot, so it shoots nothing after.
+    const by = this.viewer ?? this.current;
+    if (this.teleportingFor(by)) {
+      if (this.confirmTeleport(by)) this.spend(by);
+      return;
+    }
     if (!this.isHumanTurn) return;
     if (this.salvo || !this.betWindowDone) this.lock(this.current);
     else this.fire();
@@ -207,10 +211,19 @@ export class ClassicMatch extends Match {
       return;
     }
     if (!this.canAim(id)) return;
-    // While a ship chooses where to teleport, fire jumps instead of shooting.
-    if (this.confirmTeleport(id)) return;
+    // While a ship aims a teleport, fire jumps; the jump spends its shot, so it shoots nothing after.
+    if (this.teleportingFor(id)) {
+      if (this.confirmTeleport(id)) this.spend(id);
+      return;
+    }
     if (this.salvo || !this.betWindowDone) this.lock(id);
     else this.fire();
+  }
+
+  /** The ship spent its shot on a teleport: it fires nothing, and the turn moves on. */
+  private spend(id: number): void {
+    this.players[id].passed = true;
+    this.lock(id);
   }
 
   // ————————————————————————————— Simultaneous shots —————————————————————————————
@@ -218,7 +231,10 @@ export class ClassicMatch extends Match {
   private startPlanning(): void {
     this.salvoNo++;
     const alive = this.alive;
-    for (const p of alive) p.locked = false;
+    for (const p of alive) {
+      p.locked = false;
+      p.passed = false;
+    }
     // Rotate who aims first so nobody always waits last.
     const start = (this.round + this.salvoNo) % alive.length;
     const order = [...alive.slice(start), ...alive.slice(0, start)];
@@ -278,8 +294,8 @@ export class ClassicMatch extends Match {
   }
 
   private launchVolley(): void {
-    const aims = this.alive.flatMap((p) => this.aimsFor(p));
-    for (const p of this.alive) p.shots++;
+    const aims = this.alive.filter((p) => !p.passed).flatMap((p) => this.aimsFor(p));
+    for (const p of this.alive) if (!p.passed) p.shots++;
     this.notice = { text: t('notice.volley'), color: COLORS.bone, at: this.clock };
     this.emit({ type: 'volley' });
     this.launch(aims, true);
@@ -288,8 +304,10 @@ export class ClassicMatch extends Match {
   private fire(): void {
     const p = this.players[this.current];
     p.locked = false;
-    const aims = this.aimsFor(p);
-    p.shots++;
+    // A ship that spent its shot on a teleport fires nothing; the turn still moves on.
+    const aims = p.passed ? [] : this.aimsFor(p);
+    if (!p.passed) p.shots++;
+    p.passed = false;
     // Trick shots are always tracked (the scorecard counts them); they only pay points when the option is on.
     this.launch(aims, true);
   }
