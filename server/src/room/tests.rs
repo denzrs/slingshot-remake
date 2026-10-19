@@ -929,3 +929,71 @@ fn a_full_room_gives_its_newest_cpu_seat_to_a_joining_human_and_refuses_when_the
         "Room is full"
     );
 }
+#[test]
+fn a_room_is_called_what_its_host_typed_or_after_the_host() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    drain_json(&mut host_rx);
+    let mut message = create("Ada", None);
+    message["roomName"] = json!("  Friday night  ");
+    rooms.handle(1, &message);
+    let created = take_type(&drain_json(&mut host_rx), "room_update")["room"].clone();
+    assert_eq!(created["name"], "Friday night");
+
+    let mut other_rx = connect(&mut rooms, 2);
+    drain_json(&mut other_rx);
+    let mut blank = create("Bob", None);
+    blank["roomName"] = json!("   ");
+    rooms.handle(2, &blank);
+    let created = take_type(&drain_json(&mut other_rx), "room_update")["room"].clone();
+    assert_eq!(created["name"], "Bob's room");
+
+    let mut third_rx = connect(&mut rooms, 3);
+    drain_json(&mut third_rx);
+    rooms.handle(3, &create("Cy", None));
+    let created = take_type(&drain_json(&mut third_rx), "room_update")["room"].clone();
+    assert_eq!(created["name"], "Cy's room");
+
+    let mut watcher = connect(&mut rooms, 4);
+    drain_json(&mut watcher);
+    rooms.handle(4, &json!({"type":"lobby"}));
+    let lobby = take_type(&drain_json(&mut watcher), "lobby_update");
+    let names: Vec<_> = lobby["rooms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].clone())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            json!("Friday night"),
+            json!("Bob's room"),
+            json!("Cy's room")
+        ]
+    );
+}
+
+#[test]
+fn a_profane_room_name_is_refused_and_no_room_is_made() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    drain_json(&mut host_rx);
+    let mut message = create("Ada", None);
+    message["roomName"] = json!("fuck this");
+    assert!(!valid_create_room_message(&message));
+    rooms.handle(1, &message);
+    let sent = drain_json(&mut host_rx);
+    assert_eq!(
+        take_type(&sent, "error")["message"],
+        "That room name is not allowed"
+    );
+    assert!(rooms.rooms.is_empty());
+
+    // A host name that would make the default profane gets a numbered room instead.
+    let mut other_rx = connect(&mut rooms, 2);
+    drain_json(&mut other_rx);
+    rooms.handle(2, &create("shit", None));
+    let created = take_type(&drain_json(&mut other_rx), "room_update")["room"].clone();
+    assert_eq!(created["name"], "Room 1");
+}

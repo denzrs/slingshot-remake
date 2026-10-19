@@ -25,6 +25,8 @@ interface SessionHooks {
 
 interface CreateRoomOptions {
   name: string;
+  /** Blank: the server calls the room "<name>'s room". It refuses profane ones. */
+  roomName?: string;
   mode: RoomMode;
   gameMode: NetworkGameMode;
   rules: RoomRules;
@@ -115,7 +117,7 @@ export class MultiplayerSession {
 
   createRoom(options: CreateRoomOptions): void {
     const { look = {}, ...room } = options;
-    this.send({ type: 'create_room', ...room, ...look, password: options.password || undefined });
+    this.send({ type: 'create_room', ...room, ...look, password: options.password || undefined, roomName: options.roomName?.trim() || undefined });
   }
 
   /** Host only: how the waiting room shows up in the lobby. Nobody has to confirm again. */

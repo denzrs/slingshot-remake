@@ -299,7 +299,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       h(
         'div.lobby-room__info',
         null,
-        h('strong', null, roomIcon(room.symbol, room.color), `${room.locked ? '🔒 ' : ''}${t('multiplayer.roomNumber', { n: room.number })}`),
+        h('strong', null, roomIcon(room.symbol, room.color), `${room.locked ? '🔒 ' : ''}${room.name}`),
         h('span.lobby-room__host', null, t('multiplayer.hostedBy', { name: room.host })),
         h('span.lobby-room__tags', null, h('span.lobby__tag', null, modeName(room.gameMode)), h('span.lobby__tag', null, matchTypeName(room.mode)), pips(room.players, room.maxPlayers)),
       ),
@@ -320,6 +320,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   // ————————————————————————————— Opening a room —————————————————————————————
 
   const password = passwordInput();
+  const roomName = textInput('', { maxLength: 40, autocomplete: 'off', placeholder: t('multiplayer.roomNamePlaceholder', { name: playerName.value.trim() || t('multiplayer.host') }) });
+  playerName.addEventListener('input', () => (roomName.placeholder = t('multiplayer.roomNamePlaceholder', { name: playerName.value.trim() || t('multiplayer.host') })));
   const horizonNote = h('p.lobby__note', null, t('multiplayer.horizonNote'));
   /** Where the rules of the room to create go; rebuilt when the game mode changes the list. */
   const createRules = h('div', null);
@@ -386,7 +388,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     'section.lobby__card.lobby__card--wide',
     null,
     h('h3.setup__title', null, t('multiplayer.newRoom')),
-    h('div.lobby__basics', null, h('div', null, createVisibility.el, gameMode.el, matchType.el), h('div', null, createSummary.el, capacity.el, field(t('multiplayer.passwordOptional'), secretField(password, () => void copyText(password.value, t('multiplayer.passwordCopied')))))),
+    h('div.lobby__basics', null, h('div', null, createVisibility.el, gameMode.el, matchType.el), h('div', null, field(t('multiplayer.roomName'), roomName), createSummary.el, capacity.el, field(t('multiplayer.passwordOptional'), secretField(password, () => void copyText(password.value, t('multiplayer.passwordCopied')))))),
     createRules,
     horizonNote,
     h('div.lobby__actions', null, backToRooms, createButton),
@@ -396,7 +398,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   createButton.addEventListener('click', () => {
     const name = takeName();
     if (!name) return;
-    session.createRoom({ name, mode: prefs.matchType, gameMode: prefs.gameMode, rules: prefs.rules, maxPlayers: prefs.capacity, password: password.value, look: prefs.look, avatar: prefs.avatar });
+    session.createRoom({ name, roomName: roomName.value, mode: prefs.matchType, gameMode: prefs.gameMode, rules: prefs.rules, maxPlayers: prefs.capacity, password: password.value, look: prefs.look, avatar: prefs.avatar });
     hostPassword = password.value;
     password.value = '';
   });
@@ -530,7 +532,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     const { you } = session;
     const self = room.players.find((p) => p.id === you.playerId);
     selfReady = !!self?.ready;
-    roomTitle.replaceChildren(roomIcon(room.symbol, room.color), `${t('multiplayer.roomNumber', { n: room.number })} · ${modeName(room.gameMode)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`);
+    roomTitle.replaceChildren(roomIcon(room.symbol, room.color), `${room.name} · ${modeName(room.gameMode)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`);
     roomCode.textContent = room.id;
     privateTag.hidden = room.visibility !== 'private';
     copyInvite.hidden = !canCopyInvite(room.locked, you.host);

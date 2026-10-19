@@ -9,8 +9,8 @@ use serde_json::Value;
 use crate::auth::{password_length, MAX_PASSWORD_LENGTH};
 use crate::protocol::{
     clean_name_checked, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level,
-    parse_daily_day, parse_daily_submit, parse_room_look, parse_rules, DailyScore, RoomLook,
-    RoomRules,
+    parse_daily_day, parse_daily_submit, parse_room_look, parse_room_name, parse_rules, DailyScore,
+    RoomLook, RoomName, RoomRules,
 };
 use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
 
@@ -67,6 +67,8 @@ pub enum RoomCommand<'a> {
 /// A `create_room` message.
 pub struct CreateRoom {
     pub name: Parsed<String>,
+    /// What the lobby calls the room; None when nothing usable was typed (the room is named after its host).
+    pub room_name: Parsed<Option<String>>,
     pub mode: Parsed<RoomMode>,
     pub game_mode: Parsed<GameMode>,
     pub max_players: Parsed<i64>,
@@ -81,6 +83,7 @@ impl CreateRoom {
     /// Whether every field is usable, so it is worth hashing the password for.
     pub fn is_valid(&self) -> bool {
         self.name.is_ok()
+            && self.room_name.is_ok()
             && self.mode.is_ok()
             && self.game_mode.is_ok()
             && self.max_players.is_ok()
@@ -216,6 +219,11 @@ impl CreateRoom {
         Self {
             name: clean_name_checked(message.get("name"))
                 .ok_or("A non-empty player name is required"),
+            room_name: match parse_room_name(message.get("roomName")) {
+                RoomName::Default => Ok(None),
+                RoomName::Named(name) => Ok(Some(name)),
+                RoomName::Refused => Err("That room name is not allowed"),
+            },
             mode: message
                 .get("mode")
                 .and_then(Value::as_str)
