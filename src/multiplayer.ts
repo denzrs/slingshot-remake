@@ -329,7 +329,6 @@ export class MultiplayerSession {
     else if (input.kind === 'aim') match.setPlayerAim(id, input.angle, input.power);
     else if (input.kind === 'fire') match.commitPlayer(id);
     else if (input.kind === 'power') match.usePowerUp(id);
-    else if (input.kind === 'spot') match.chooseTeleportIndex(input.index, id);
     else if (input.kind === 'cancel') match.cancelTeleport(id);
     else if (input.kind === 'bet') match.placeBet(id, input.pick, !!input.round, input.stake ?? 0);
     else match.voteSkip(id);

@@ -1,5 +1,5 @@
-import { PHYSICS } from './config';
-import { Shot, type ShotRules, type World } from './physics';
+import { AIM, PHYSICS } from './config';
+import { aimDirection, Shot, type ShotRules, type World } from './physics';
 import type { Rng } from './rng';
 
 /**
@@ -52,7 +52,7 @@ export const POWER_UP = {
   /** A CPU splits its shot once it is this close to an enemy ship, and not before it has flown this long. */
   CPU_SPLIT_RANGE: 150,
   CPU_SPLIT_MIN_TIME: 0.3,
-  /** A teleport lands at least this far from planets, other ships and pickups. */
+  /** How far a random teleport lands from planets, other ships and pickups. An aimed teleport keeps the planet gap only. */
   TELEPORT_PLANET_GAP: 50,
   TELEPORT_SHIP_GAP: 110,
   TELEPORT_PICKUP_GAP: 50,
@@ -70,12 +70,10 @@ export const POWER_UP = {
   LANE_BAND_TO: 150,
   /** Chance that a new pickup is laid on the path of the ship that is behind. */
   CATCH_UP_CHANCE: 0.6,
-  /** A teleport offers this many spots to choose from, at least this far apart and from the ship. */
-  TELEPORT_CHOICES: 3,
-  TELEPORT_SPREAD: 160,
-  TELEPORT_MIN_JUMP: 140,
-  /** Clicking this close to an offered spot picks it. */
-  TELEPORT_PICK_RADIUS: 32,
+  /** The reach of an aimed teleport at full aim power, how finely the ray is stepped back off an obstacle, and the most power it may use. */
+  TELEPORT_RANGE: 1200,
+  TELEPORT_AIM_STEP: 4,
+  TELEPORT_MAX_POWER: 50,
 } as const;
 
 export interface Pickup {
@@ -162,16 +160,28 @@ export function teleportSpot(world: World, rng: Rng, pickups: readonly Pickup[] 
   return clearSpot(world, rng, POWER_UP.TELEPORT_PLANET_GAP, POWER_UP.TELEPORT_SHIP_GAP, pickups, POWER_UP.TELEPORT_PICKUP_GAP, POWER_UP.EDGE);
 }
 
-/** Up to `count` places to teleport to, spread apart and a real jump away from `from`. */
-export function teleportCandidates(world: World, rng: Rng, pickups: readonly Pickup[], count: number, from: { x: number; y: number }): { x: number; y: number }[] {
-  const spots: { x: number; y: number }[] = [];
-  for (let attempt = 0; attempt < 60 && spots.length < count; attempt++) {
-    const spot = teleportSpot(world, rng, pickups);
-    if (!spot || distance(spot.x, spot.y, from.x, from.y) < POWER_UP.TELEPORT_MIN_JUMP) continue;
-    if (spots.some((q) => distance(spot.x, spot.y, q.x, q.y) < POWER_UP.TELEPORT_SPREAD)) continue;
-    spots.push(spot);
+/** Whether a spot is somewhere a ship may come to rest: inside the field, clear of every planet and the hole. */
+function isLanded(world: World, x: number, y: number): boolean {
+  if (x < POWER_UP.EDGE || x > world.width - POWER_UP.EDGE || y < POWER_UP.EDGE || y > world.height - POWER_UP.EDGE) return false;
+  if (world.planets.some((p) => distance(x, y, p.x, p.y) < p.radius + POWER_UP.TELEPORT_PLANET_GAP)) return false;
+  return !(world.hole && distance(x, y, world.hole.x, world.hole.y) < world.hole.radius + POWER_UP.HOLE_GAP);
+}
+
+/**
+ * Where an aimed teleport lands: the point `power` puts along `angle` from the ship, walked back along the ray
+ * until it is somewhere a ship may come to rest. So it never lands inside a planet or the hole, or off the field.
+ * Null when the ray offers no such spot.
+ */
+export function teleportAimTarget(world: World, from: { x: number; y: number }, angle: number, power: number): { x: number; y: number } | null {
+  const dir = aimDirection(angle);
+  // A power from 0 to TELEPORT_MAX_POWER reaches nothing to half the field across; more power changes nothing.
+  const full = (Math.min(POWER_UP.TELEPORT_MAX_POWER, Math.max(0, power)) / AIM.MAX_POWER) * POWER_UP.TELEPORT_RANGE;
+  for (let reach = full; reach > 0; reach -= POWER_UP.TELEPORT_AIM_STEP) {
+    const x = from.x + dir.x * reach;
+    const y = from.y + dir.y * reach;
+    if (isLanded(world, x, y)) return { x, y };
   }
-  return spots;
+  return null;
 }
 
 /**

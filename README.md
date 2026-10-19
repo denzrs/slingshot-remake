@@ -43,6 +43,8 @@ Hosting, TLS, the relay's environment variables and how online play works are co
 | `npm run bench:relay -- ws://localhost:8080` | Measure Rust relay latency, fan-out, real 30 Hz snapshots and synthetic large payloads |
 | `npm run bench:experimental`, `npm run bench:levels`, `npm run bench:calibration`, `npm run bench:learning` | Run the experimental AI, level, calibration and learning benchmarks |
 
+**Debug aim.** `DEBUG_AIM=1 npm run dev` serves the aim-predictor page at `/debug-aim.html`, and shows the in-game seed badge that links to it with the seed, mode and aim of the round on screen. Without the variable the page 404s and the badge stays hidden.
+
 **Tests.** `npm test` builds and tests the Rust relay, so install the stable Rust toolchain (including Cargo) first; `npx vitest` runs only the TypeScript tests and expects the Rust test binary to have been built. The suites take roughly one minute on 8 cores. Vitest runs test files in parallel but the tests inside one file one after the other, so put a long-running test in a file of its own (see `tests/experimental-worker-long-*.test.ts`) instead of adding it to a big one. Under Vitest every read of an imported binding goes through a getter, which doubled the cost of `Shot.step` until it read its `PHYSICS` constants once into locals; do the same in other hot loops. Comparing huge snapshots with `toEqual` is slow too, so `tests/netsync.test.ts` only falls back to it to explain a mismatch.
 
 **Releases.** Every merge to `main` that passes typecheck and tests is tagged with the next minor version (`vX.Y.0` → `vX.(Y+1).0`), released on GitHub and deployed to GitHub Pages. Push a tag such as `v2.0.0` for a major bump.

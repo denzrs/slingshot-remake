@@ -377,46 +377,41 @@ export class Renderer {
       strokePolyline(ctx, scene.preview);
       ctx.setLineDash([]);
     }
-    // A ship choosing where to teleport: the offered spots, the picked one solid, with a line from the ship.
-    if (scene.teleport) {
-      const { owner, spots, choice } = scene.teleport;
+    // A ship aiming its teleport: one door at the spot the aim lands on, with a line from the ship.
+    if (scene.teleport?.target) {
+      const { owner, target } = scene.teleport;
       const from = match.world.ships[owner];
-      spots.forEach((spot, i) => {
-        const picked = i === choice;
-        const color = match.players[owner].color;
-        ctx.save();
-        // Every spot is an open door: all pulse alike, with its number on a solid disc. The pick has a second ring and a line from the ship.
-        ctx.strokeStyle = color;
-        ctx.fillStyle = color;
-        ctx.globalAlpha = 0.85 + 0.15 * pulse;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(spot.x, spot.y, 17 + 2.5 * pulse, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-        ctx.beginPath();
-        ctx.arc(spot.x, spot.y, 11, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = COLORS.plate;
-        ctx.font = `800 14px ${FONTS.mono}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(String(i + 1), spot.x, spot.y + 1);
-        if (picked) {
-          ctx.lineWidth = 1.6;
-          ctx.beginPath();
-          ctx.arc(spot.x, spot.y, 26 + 3 * pulse, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.globalAlpha = 0.6;
-          ctx.lineWidth = 1;
-          ctx.setLineDash([2, 6]);
-          ctx.beginPath();
-          ctx.moveTo(from.x, from.y);
-          ctx.lineTo(spot.x, spot.y);
-          ctx.stroke();
-        }
-        ctx.restore();
-      });
+      const color = match.players[owner].color;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.6;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 6]);
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(target.x, target.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // The door: a ring with a solid core and a crosshair.
+      ctx.globalAlpha = 0.85 + 0.15 * pulse;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(target.x, target.y, 17 + 2.5 * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(target.x, target.y, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = COLORS.plate;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(target.x - 4, target.y);
+      ctx.lineTo(target.x + 4, target.y);
+      ctx.moveTo(target.x, target.y - 4);
+      ctx.lineTo(target.x, target.y + 4);
+      ctx.stroke();
+      ctx.restore();
     }
     // The symbol of what each ship holds, small above the ship. Activation is shown in the HUD strip.
     for (const p of match.players) {

@@ -12,7 +12,7 @@ import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../vo
 import type { Pickup, PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
-import { PowerUpField, type TeleportSpots } from './powerup-field';
+import { PowerUpField, type TeleportAim } from './powerup-field';
 
 export type Mode = 'classic' | 'horizon' | 'challenge';
 /** The modes you play against other ships, picked from the title menu. */
@@ -41,6 +41,8 @@ export interface PlayerState {
   alive: boolean;
   /** Event Horizon: aim is locked in for the coming volley. */
   locked: boolean;
+  /** The ship spent its shot on a teleport: it fires nothing this turn or volley. */
+  passed: boolean;
   /** Experimental power-up held (one at a time), null for none. */
   powerUp: PowerUpKind | null;
   /** The held preview or splitter is set to go off with the next shot. */
@@ -113,8 +115,8 @@ export interface Scene {
   /** The pass the round is in, so the renderer can tell which pickups are about to fade. */
   pass?: number;
   preview?: number[] | null;
-  /** The spots a ship may teleport to while it is choosing. */
-  teleport?: TeleportSpots | null;
+  /** Where the aiming ship's teleport would land. */
+  teleport?: TeleportAim | null;
 }
 
 export type GameEvent =
@@ -665,38 +667,28 @@ export abstract class Match {
     this.power.pickups = pickups;
   }
 
-  /** The power-up key: teleport (choose a spot), or arm a preview. */
+  /** The power-up key: opens a teleport's aim, or arms a preview. */
   usePowerUp(id: number = this.viewer ?? this.current): void {
     this.power.use(id);
   }
 
-  /** Whether the ship on turn is choosing where to teleport. */
+  /** Whether the ship on turn is aiming where to teleport. */
   get teleporting(): boolean {
     return this.power.teleporting;
   }
 
-  /** Fire, while choosing: the jump happens. Returns whether it did. */
+  /** Whether a given ship is aiming where to teleport. */
+  teleportingFor(id: number): boolean {
+    return this.power.teleportingFor(id);
+  }
+
+  /** Fire, while aiming: the jump happens. False when there is no aim, or it lands nowhere the ship may rest. */
   confirmTeleport(by?: number): boolean {
     return this.power.confirmTeleport(by);
   }
 
   cancelTeleport(by?: number): boolean {
     return this.power.cancelTeleport(by);
-  }
-
-  /** A number key (0-based index) while choosing: the ship jumps to that spot. */
-  chooseTeleportIndex(index: number, by?: number): boolean {
-    return this.power.chooseTeleportIndex(index, by);
-  }
-
-  /** A click at a point of the field: on an offered teleport spot it jumps there. */
-  chooseTeleportAt(x: number, y: number): boolean {
-    return this.power.chooseTeleportAt(x, y);
-  }
-
-  /** The place of the offered teleport spot at a point of the field, or -1 (what a guest sends to the host). */
-  teleportSpotAt(x: number, y: number): number {
-    return this.power.teleportSpotAt(x, y);
   }
 
   /** The power-up state a snapshot carries besides the pickups, and its restoring. */
@@ -787,6 +779,7 @@ export abstract class Match {
       p.shots = 0;
       p.alive = true;
       p.locked = false;
+      p.passed = false;
       p.powerUp = null;
       p.armed = false;
       // Face the middle of the field; the classic duel keeps the original's straight 0° / 180°.
@@ -1428,6 +1421,7 @@ export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, 
     shots: 0,
     alive: true,
     locked: false,
+    passed: false,
     powerUp: null,
     armed: false,
   };

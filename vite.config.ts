@@ -34,5 +34,7 @@ function blockDebugAim(server: { middlewares: { use: (fn: (req: { url?: string }
 // (e.g. https://<user>.github.io/<repo>/).
 export default defineConfig({
   base: './',
+  // `DEBUG_AIM` (which serves /debug-aim.html) also reaches the client, so the in-game seed badge can follow it.
+  envPrefix: ['VITE_', 'DEBUG_'],
   plugins: [debugAimGate()],
 });

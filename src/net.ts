@@ -17,11 +17,9 @@ export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
   | { kind: 'aim'; angle: number; power: number }
   | { kind: 'fire' }
-  /** The power-up key: opens a teleport's choice (or the next spot of it), or arms a preview or a repulse. */
+  /** The power-up key: opens or closes a teleport's aim, or arms a preview or a repulse. */
   | { kind: 'power' }
-  /** A number key or a tap on a teleport spot: the ship jumps to the spot at this place in the offered list. */
-  | { kind: 'spot'; index: number }
-  /** Esc while a teleport is being chosen. */
+  /** Esc while a teleport is being aimed. */
   | { kind: 'cancel' }
   /** A vote to skip the killcam; it ends once half of the players want that. */
   | { kind: 'skip' }
