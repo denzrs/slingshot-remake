@@ -40,6 +40,7 @@ style.textContent = `
   :root { color-scheme: dark; --plate: ${plate}; --lift: ${plateLift}; --line: ${line}; --bone: ${bone};
     --muted: ${boneDim}; --accent: ${COLORS.players[0]}; --mint: ${COLORS.players[1]}; --gold: ${sodium};
     --body: ${FONTS.body}; --display: ${FONTS.display}; --mono: ${FONTS.mono}; }
+  *, *::before, *::after { box-sizing: border-box; }
   html { min-height: 100%; background: radial-gradient(ellipse at 50% -25%, #1c3967 0%, var(--plate) 58%); }
   body { min-height: 100vh; margin: 0; padding: 34px clamp(16px, 3vw, 48px) 48px; color: var(--bone);
     font: 14px/1.5 var(--body); }
@@ -76,15 +77,16 @@ style.textContent = `
   .actions .button--primary { border-color: var(--accent); background: rgb(255 134 96 / .12); color: var(--accent); }
   .actions .button--primary:hover:not(:disabled) { background: rgb(255 134 96 / .24); }
   .status { flex: 1 1 360px; min-width: 0; margin-left: 6px; color: var(--muted); font: 11px/1.5 var(--mono); }
-  .analysis { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; margin: 14px 0; }
-  .outcome-filters { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; color: var(--muted); }
+  .analysis { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; width: 100%; min-width: 0; margin: 14px 0; }
+  .analysis > * { min-width: 0; max-width: 100%; }
+  .outcome-filters { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; width: 100%; min-width: 0; color: var(--muted); }
   .filter-title { margin-right: 4px; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
   .outcome-filters label { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid rgb(91 125 179 / .25); border-radius: 3px; font-size: 11px; }
   .outcome-filters input { margin: 0; accent-color: var(--gold); }
-  .stats { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-  .stat { display: grid; gap: 2px; min-width: 100px; padding: 6px 10px; border-left: 2px solid var(--mint); background: rgb(19 39 70 / .46); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 8px; width: 100%; min-width: 0; }
+  .stat { display: grid; gap: 2px; min-width: 0; padding: 6px 10px; border-left: 2px solid var(--mint); background: rgb(19 39 70 / .46); }
   .stat__label { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-  .stat__value { color: var(--bone); font: 700 15px var(--mono); }
+  .stat__value { min-width: 0; color: var(--bone); font: 700 15px var(--mono); overflow-wrap: anywhere; }
   .panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(480px, .9fr); gap: 14px; align-items: start; }
   .pane { min-width: 0; padding: 12px; border: 1px solid rgb(91 125 179 / .28); background: rgb(6 15 31 / .38); }
   .pane--map { position: sticky; top: 14px; }
@@ -109,6 +111,7 @@ style.textContent = `
     background: var(--plate); color: var(--bone); font: 11px/1.5 var(--mono); white-space: pre; pointer-events: none; }
   .heat-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 12px; color: var(--muted); font-size: 10px; }
   .heat-ramp { width: 110px; height: 8px; border: 1px solid rgb(91 125 179 / .4); background: linear-gradient(90deg, ${danger}, ${plate}, ${COLORS.players[1]}); }
+  .time-ramp { width: 110px; height: 8px; border: 1px solid rgb(91 125 179 / .4); background: linear-gradient(90deg, #62b6ff, #6fe3c8, #ffd27a, #ff5a6e); }
   .heat-note { color: var(--muted); font: 10px var(--mono); }
   .top-shots { margin-top: 14px; padding: 12px; border: 1px solid rgb(91 125 179 / .28); background: rgb(11 26 51 / .65); }
   .top-shots__title { margin: 0 0 8px; color: var(--accent); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
@@ -122,8 +125,8 @@ style.textContent = `
   .top-shot__styles { grid-column: 2 / -1; color: var(--gold); font: 9px var(--body); }
   .top-shots__empty, .top-shots__note { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
   .top-shots__note { margin-top: 8px; }
-  @media (max-width: 1180px) { .bar { grid-template-columns: repeat(3, minmax(110px, 1fr)); } .analysis { grid-template-columns: 1fr; }
-    .stats { justify-content: flex-start; } .panes { grid-template-columns: minmax(0, 1fr); } .pane--map { position: static; } }
+  @media (max-width: 1180px) { .bar { grid-template-columns: repeat(3, minmax(110px, 1fr)); }
+    .panes { grid-template-columns: minmax(0, 1fr); } .pane--map { position: static; } }
   @media (max-width: 560px) { body { padding: 22px 12px 30px; } .hero { align-items: flex-start; } .debug-tag { font-size: 9px; }
     .bar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .panel { padding: 13px; } .pane { padding: 8px; } }
 `;
@@ -151,6 +154,7 @@ const elements = {
   minPower: document.createElement('input'),
   grace: document.createElement('select'),
   styleBonuses: document.createElement('input'),
+  colorFlightTime: document.createElement('input'),
   shooter: document.createElement('select'),
   reroll: document.createElement('button'),
   run: document.createElement('button'),
@@ -179,6 +183,7 @@ let styleBonuses = true;
 let currentSpared: number[] = [];
 let currentFixedPower = false;
 let currentFixedPowerLevel: number = AIM.FIXED_POWER;
+let colorByFlightTime = false;
 let lastSamples: readonly Sample[] = [];
 
 type FilterableOutcome = Exclude<ShotEnd['kind'], 'ship'>;
@@ -218,6 +223,7 @@ export interface Sample {
   end: ShotEnd;
   styles: StyleKind[];
   points: number;
+  flightTime: number;
 }
 
 /**
@@ -259,7 +265,7 @@ export function sampleAims(
               ? scoreHorizonKill(power, paidStyles, false).points
               : scoreChallengeHit(1, power, false, paidStyles).points
           : 0;
-        out.push({ angle, power, end, styles, points });
+        out.push({ angle, power, end, styles, points, flightTime: shot.time });
       }
     }
   }
@@ -494,11 +500,18 @@ function draw(samples: readonly Sample[], scoredSamples: readonly Sample[] = sam
   ctx.font = '700 14px "B612", sans-serif';
   ctx.fillText('POWER → RADIUS  ·  ANGLE → DIRECTION  ·  POSITIVE COUNTER-CLOCKWISE', centerX, height - 12);
 
-  // Dots: self-hit danger, per-enemy colour, everything else dim.
+  const times = samples.map((sample) => sample.flightTime);
+  const minTime = Math.min(...times, 0);
+  const maxTime = Math.max(...times, 1);
+  // Dots: outcome colors, or a blue-to-red flight-time scale.
   for (const s of samples) {
     let color: string = boneDim;
     let size = 1.8;
-    if (s.end.kind === 'ship') {
+    if (colorByFlightTime) {
+      const t = Math.max(0, Math.min(1, (s.flightTime - minTime) / Math.max(0.001, maxTime - minTime)));
+      color = flightTimeColor(t);
+      if (s.end.kind === 'ship') size = s.end.ship === shooter ? 3.4 : 3;
+    } else if (s.end.kind === 'ship') {
       color = s.end.ship === shooter ? danger : COLORS.players[s.end.ship % COLORS.players.length];
       size = s.end.ship === shooter ? 3.4 : 3;
     }
@@ -513,6 +526,22 @@ function draw(samples: readonly Sample[], scoredSamples: readonly Sample[] = sam
   ctx.font = '700 14px "B612", sans-serif';
   ctx.textAlign = 'left';
   ctx.fillText(`Aim predictor — truth physics, ${samples.length} trajectories`, 32, 24);
+}
+
+function flightTimeColor(t: number): string {
+  const stops = [
+    { at: 0, rgb: [98, 182, 255] },
+    { at: 0.35, rgb: [111, 227, 200] },
+    { at: 0.68, rgb: [255, 210, 122] },
+    { at: 1, rgb: [255, 90, 110] },
+  ];
+  const right = stops.findIndex((stop) => stop.at >= t);
+  const index = right <= 0 ? 0 : right;
+  const a = stops[index - 1] ?? stops[0];
+  const b = stops[index] ?? stops[stops.length - 1];
+  const f = Math.max(0, Math.min(1, (t - a.at) / (b.at - a.at)));
+  const rgb = a.rgb.map((value, i) => Math.round(value + (b.rgb[i] - value) * f));
+  return `rgb(${rgb.join(', ')})`;
 }
 
 
@@ -637,9 +666,9 @@ function testExactAim(): void {
         : scoreChallengeHit(1, currentFixedPower ? currentFixedPowerLevel : power, currentFixedPower, paidStyles).points
       : -SCORING.SELF_HIT
     : 0;
-  const sample: Sample = { angle, power, end, styles, points };
+  const sample: Sample = { angle, power, end, styles, points, flightTime: shot.time };
   showTrajectory(sample);
-  tooltip.textContent = `EXACT AIM · ${points > 0 ? '+' : ''}${points} points\nangle  ${angle.toFixed(2)}°\npower  ${power.toFixed(1)}\n${outcomeLabel(sample)}${styles.length && styleBonuses ? `\n${styles.join(' · ')}` : ''}`;
+  tooltip.textContent = `EXACT AIM · ${points > 0 ? '+' : ''}${points} points\nangle  ${angle.toFixed(2)}°\npower  ${power.toFixed(1)}\nflight ${shot.time.toFixed(2)}s\n${outcomeLabel(sample)}${styles.length && styleBonuses ? `\n${styles.join(' · ')}` : ''}`;
   tooltip.style.display = 'block';
   const rect = elements.exactAim.getBoundingClientRect();
   tooltip.style.left = `${Math.min(rect.left, window.innerWidth - tooltip.offsetWidth - 12)}px`;
@@ -715,6 +744,19 @@ window.addEventListener('resize', () => {
 });
 
 function legend(): void {
+  if (colorByFlightTime) {
+    const fastest = Math.min(...lastSamples.map((sample) => sample.flightTime));
+    const slowest = Math.max(...lastSamples.map((sample) => sample.flightTime));
+    const entry = document.createElement('span');
+    const dot = document.createElement('i');
+    dot.className = 'dot';
+    dot.style.background = flightTimeColor(0.55);
+    const ramp = document.createElement('i');
+    ramp.className = 'time-ramp';
+    entry.append(`${fastest.toFixed(2)}s`, ramp, `${slowest.toFixed(2)}s flight time`);
+    elements.legend.replaceChildren(entry);
+    return;
+  }
   const ships = world?.ships ?? [];
   const entries: [string, string][] = [
     ['self-hit', danger],
@@ -974,6 +1016,14 @@ elements.styleBonuses.type = 'checkbox';
 elements.styleBonuses.checked = params.has('style') ? params.get('style') === 'true' : true;
 elements.styleBonuses.title = 'Include Classic trick-shot multipliers in first-shot point estimates';
 elements.styleBonuses.addEventListener('change', () => void run());
+elements.colorFlightTime.type = 'checkbox';
+elements.colorFlightTime.checked = false;
+elements.colorFlightTime.title = 'Color aim samples by trajectory flight time instead of outcome';
+elements.colorFlightTime.addEventListener('change', () => {
+  colorByFlightTime = elements.colorFlightTime.checked;
+  draw(visibleSamples(lastSamples), visibleSamples(lastSamples));
+  legend();
+});
 elements.grace.replaceChildren(...GRACE.OPTIONS.map((shots) => new Option(shots ? `${shots} shot${shots === 1 ? '' : 's'}` : 'Off', String(shots))));
 elements.grace.value = params.get('grace') ?? '0';
 elements.grace.title = 'For 4+ ships, opening shots pass through the nearest enemy';
@@ -1087,6 +1137,7 @@ bar.append(
   checkField('Event Horizon', elements.horizon),
   checkField('Reflective edges', elements.bounce),
   checkField('Pay trick-shot bonuses', elements.styleBonuses),
+  checkField('Color by flight time', elements.colorFlightTime),
 );
 const actions = document.createElement('div');
 actions.className = 'actions';
