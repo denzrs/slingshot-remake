@@ -49,7 +49,19 @@ type ClientMessage =
   | { type: 'start_game' }
   | { type: 'input'; input: ClientInput }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }
+  /** Post a daily-challenge run to the day's leaderboard; the board comes back either way. */
+  | { type: 'daily_submit'; day: string; name: string; score: number }
+  /** Look at a day's leaderboard without posting anything. */
+  | { type: 'daily_top'; day: string }
   | { type: 'leave_room' };
+
+/** One run on a daily leaderboard, as the relay ranks it. */
+export interface DailyEntry {
+  /** Place on the board, 1 = best. */
+  rank: number;
+  name: string;
+  score: number;
+}
 
 export interface LobbyRoom {
   id: string;
@@ -113,6 +125,15 @@ export type ServerMessage =
     }
   | { type: 'input'; from: number; input: ClientInput }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }
+  | {
+      type: 'daily_board';
+      /** The day the board is for. */
+      day: string;
+      /** The best runs of that day, best first. */
+      entries: DailyEntry[];
+      /** Your own run, wherever it sits — null when you have not posted one for that day. */
+      you: DailyEntry | null;
+    }
   | { type: 'room_closed'; message: string }
   | { type: 'error'; message: string }
   /** Local only: the connection to the server is gone. */

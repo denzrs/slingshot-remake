@@ -1,5 +1,6 @@
 //! Validation helpers for untrusted wire input, checked before the room logic sees it.
 
+use rustrict::CensorStr;
 use serde_json::Value;
 
 /// Tips name a ship; there are at most six.
@@ -235,6 +236,102 @@ fn is_stake(value: &Value) -> bool {
         && value
             .as_f64()
             .is_some_and(|f| (0.0..=MAX_STAKE).contains(&f))
+}
+
+/// The highest daily-challenge total the relay takes. Not a proof of anything — a run that scores
+/// more than this is not a run — the board has no way to fly the challenge again (`leaderboard`).
+pub const MAX_DAILY_SCORE: i64 = 10_000_000;
+/// The four-digit years a submitted day may carry. The client only ever sends the days the daily
+/// challenge has been played on, and `?daily=…` goes back no further than the game has existed.
+const DAY_YEAR_RANGE: std::ops::RangeInclusive<i32> = 2000..=2999;
+
+/// A `YYYY-MM-DD` calendar day from a client: the shape *and* a date that exists (the same rule as
+/// the client's `isDateKey`).
+pub fn is_date_key(value: &Value) -> bool {
+    let Some(text) = value.as_str() else {
+        return false;
+    };
+    let bytes = text.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return false;
+    }
+    if !bytes
+        .iter()
+        .enumerate()
+        .all(|(at, byte)| at == 4 || at == 7 || byte.is_ascii_digit())
+    {
+        return false;
+    }
+    let year = text[0..4].parse::<i32>().unwrap();
+    let month = text[5..7].parse::<u32>().unwrap();
+    let day = text[8..10].parse::<u32>().unwrap();
+    DAY_YEAR_RANGE.contains(&year)
+        && (1..=12).contains(&month)
+        && day >= 1
+        && day <= days_in_month(year, month)
+}
+
+/// The days of a month in the proleptic Gregorian calendar, February included.
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        _ => {
+            let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+            if leap {
+                29
+            } else {
+                28
+            }
+        }
+    }
+}
+
+/// A daily run a client wants on the board: the day it was flown, the name to post it under, and
+/// the total. The name is cleaned like any other player name, and the day has to be a real one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DailyScore {
+    pub day: String,
+    pub name: String,
+    pub score: i64,
+}
+
+/// The `day` of a `daily_top`: which day's board is wanted.
+pub fn parse_daily_day(value: &Value) -> Option<String> {
+    value
+        .get("day")
+        .filter(|day| is_date_key(day))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+/// A `daily_submit`, or None when the day, the name or the score will not do.
+pub fn parse_daily_submit(value: &Value) -> Option<DailyScore> {
+    if !is_record(value) {
+        return None;
+    }
+    let day = parse_daily_day(value)?;
+    let name = clean_name_checked(value.get("name"))?;
+    let score = value
+        .get("score")
+        .filter(|score| is_safe_integer(score))?
+        .as_f64()? as i64;
+    (0..=MAX_DAILY_SCORE)
+        .contains(&score)
+        .then_some(DailyScore { day, name, score })
+}
+
+/// Whether a name may stand on a public board. `clean_name_checked` has already dropped the control
+/// characters and cut the length; this is about the words themselves.
+///
+/// It is `rustrict` at its "inappropriate" threshold: an English dictionary with the usual simple
+/// evasions folded in (`f4ck`, `sh1t` and `a55hole` are all caught). Two honest limits come with it,
+/// and neither is a reason not to have it: the dictionary is English, so German profanity is covered
+/// only in part — `Arsch` and `Hurensohn` are, `Fick` is not — and it reads no context, so a few
+/// real surnames come out unacceptable (`Hancock`, `Dick`). A name that is refused can simply be
+/// typed again.
+pub fn is_acceptable_name(name: &str) -> bool {
+    !name.is_inappropriate()
 }
 
 /// The rules of an online game, chosen by whoever creates (and later edits) the room.
@@ -715,5 +812,135 @@ mod tests {
         assert_eq!(room["defaults"]["visibility"], "public");
         assert_eq!(room["defaults"]["symbol"], "planet");
         assert_eq!(room["defaults"]["color"], ROOM_COLORS[0]);
+    }
+
+    #[test]
+    fn a_day_key_is_a_shape_and_a_date_that_exists() {
+        assert!(is_date_key(&json!("2026-10-19")));
+        assert!(is_date_key(&json!("2024-02-29")));
+        for invalid in [
+            json!("2026-2-19"),
+            json!("26-10-19"),
+            json!("2026/10/19"),
+            json!("2026-13-01"),
+            json!("2026-00-10"),
+            json!("2026-10-00"),
+            json!("2026-10-32"),
+            json!("2026-04-31"),
+            json!("2023-02-29"),
+            json!("0999-01-01"),
+            json!(20261019),
+            json!(null),
+        ] {
+            assert!(!is_date_key(&invalid), "accepted day: {invalid}");
+        }
+    }
+
+    #[test]
+    fn a_daily_run_needs_a_real_day_a_clean_name_and_a_sane_score() {
+        let run = parse_daily_submit(&json!({"day":"2026-10-19","name":" Ada ","score":4200}))
+            .expect("a complete run is accepted");
+        assert_eq!(
+            run,
+            DailyScore {
+                day: "2026-10-19".into(),
+                name: "Ada".into(),
+                score: 4200,
+            }
+        );
+        assert_eq!(
+            parse_daily_submit(&json!({"day":"2026-10-19","name":"Ada","score":0}))
+                .unwrap()
+                .score,
+            0
+        );
+        assert_eq!(
+            parse_daily_submit(&json!({"day":"2026-10-19","name":"Ada","score":MAX_DAILY_SCORE}))
+                .unwrap()
+                .score,
+            MAX_DAILY_SCORE
+        );
+        assert_eq!(
+            parse_daily_day(&json!({"day":"2026-10-19","name":"Ada","score":1})).as_deref(),
+            Some("2026-10-19")
+        );
+
+        for invalid in [
+            // no day, an impossible day
+            json!({"name":"Ada","score":10}),
+            json!({"day":"today","name":"Ada","score":10}),
+            // no name, a name that is only control characters
+            json!({"day":"2026-10-19","score":10}),
+            json!({"day":"2026-10-19","name":"  ","score":10}),
+            json!({"day":"2026-10-19","name":"\u{200b}","score":10}),
+            // no score, a fraction, a negative one, one past the cap, one that is not a number
+            json!({"day":"2026-10-19","name":"Ada"}),
+            json!({"day":"2026-10-19","name":"Ada","score":1.5}),
+            json!({"day":"2026-10-19","name":"Ada","score":-1}),
+            json!({"day":"2026-10-19","name":"Ada","score":MAX_DAILY_SCORE + 1}),
+            json!({"day":"2026-10-19","name":"Ada","score":"4200"}),
+        ] {
+            assert!(
+                parse_daily_submit(&invalid).is_none(),
+                "accepted run: {invalid}"
+            );
+        }
+        assert!(parse_daily_submit(&json!([])).is_none());
+    }
+
+    #[test]
+    fn a_submitted_name_is_cut_to_the_player_name_length() {
+        let long = "x".repeat(MAX_NAME_LENGTH + 20);
+        let run = parse_daily_submit(&json!({"day":"2026-10-19","name":long,"score":1})).unwrap();
+        assert_eq!(run.name.chars().count(), MAX_NAME_LENGTH);
+    }
+
+    #[test]
+    fn a_board_name_is_refused_when_it_is_profane() {
+        // The gate is the words themselves: a profane name is a well-formed run, and only the
+        // board refuses it. Ordinary names — the game's own CPU names among them — pass.
+        for profane in [
+            "fuck", "shit", "bitch", "asshole", "cunt", "nigger", "faggot", "f4ck", "sh1t",
+            "a55hole",
+        ] {
+            assert!(!is_acceptable_name(profane), "accepted {profane}");
+        }
+        // Three or more x's is the adult-content marker, not a name; a pair of them is fine.
+        assert!(!is_acceptable_name("xxx"));
+        assert!(!is_acceptable_name("Xxxxx"));
+        assert!(is_acceptable_name("xx"));
+        for fine in [
+            "Ada",
+            "Grace",
+            "Alan",
+            "Kepler",
+            "Newton",
+            "Einstein",
+            "Hawking",
+            "Scunthorpe",
+            "Assassin",
+            "Michelle",
+            "Precision",
+            "Admiral",
+            "Navigator",
+        ] {
+            assert!(is_acceptable_name(fine), "refused {fine}");
+        }
+
+        let run = parse_daily_submit(&json!({"day":"2026-10-19","name":"fuck","score":1}))
+            .expect("the shape is fine");
+        assert_eq!(run.name, "fuck");
+        assert!(!is_acceptable_name(&run.name));
+    }
+
+    #[test]
+    fn shared_daily_contract_matches_relay_limits() {
+        let contract: Value =
+            serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
+        let daily = &contract["daily"];
+        assert_eq!(daily["boardSize"], crate::leaderboard::BOARD_SIZE);
+        assert_eq!(daily["maxScore"], MAX_DAILY_SCORE);
+        assert_eq!(daily["nameLength"], MAX_NAME_LENGTH);
+        assert_eq!(daily["keepDays"], crate::leaderboard::DEFAULT_KEEP_DAYS);
     }
 }

@@ -2429,6 +2429,84 @@ kbd {
   margin-top: 24px;
 }
 
+/* ——— Daily leaderboard ——— */
+
+.lb {
+  display: grid;
+  gap: 10px;
+  margin: 22px 0 0;
+  text-align: left;
+}
+
+.lb__hint {
+  margin: 0;
+}
+
+/* The rows here sit right under the line that says what happened, not at the card's foot. */
+.lb .items--row {
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.lb__status {
+  min-height: 1.4em;
+  margin: -6px 0 0;
+  color: var(--p2);
+  font-size: 12.5px;
+}
+
+/* The relay refused the run (a name it will not carry): a thing to correct, not a result. */
+.lb__status.is-refused {
+  color: var(--danger);
+}
+
+.lb__rows {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lb__rows[hidden] {
+  display: none;
+}
+
+.lb__row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid rgb(91 125 179 / 0.22);
+  border-radius: 3px;
+  background: rgb(19 39 70 / 0.35);
+}
+
+/* Your own run, wherever it sits. */
+.lb__row.is-you {
+  border-color: rgb(255 210 122 / 0.65);
+  background: rgb(255 210 122 / 0.09);
+}
+
+.lb__rank {
+  font: 700 12px/1 var(--font-mono);
+  color: var(--bone-dim);
+}
+
+.lb__name {
+  overflow: hidden;
+  color: var(--bone);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lb__score {
+  color: var(--bone);
+  font: 700 15px/1 var(--font-body);
+}
+
 /* ——— Touch ——— */
 
 #touch-fire {

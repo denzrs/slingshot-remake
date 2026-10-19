@@ -18,3 +18,5 @@ scrypt = "0.11"
 tokio-rustls = "0.26"
 rustls-pemfile = "2"
 rmp-serde = "1"
+turso = { version = "0.8.3", default-features = false }
+rustrict = "0.7"

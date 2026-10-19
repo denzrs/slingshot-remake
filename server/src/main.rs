@@ -4,6 +4,7 @@
 //! per-connection 300 msg/s limit.
 
 mod codec;
+mod leaderboard;
 mod protocol;
 mod room;
 
@@ -31,6 +32,7 @@ use tokio_tungstenite::{accept_hdr_async_with_config, WebSocketStream};
 use tracing::{debug, error, info, instrument, warn, Instrument};
 
 use crate::codec::WireMessage;
+use crate::leaderboard::{Leaderboard, DEFAULT_KEEP_DAYS};
 use crate::room::RoomManager;
 
 const DEFAULT_PORT: u16 = 8080;
@@ -110,6 +112,21 @@ async fn main() {
         }
     };
 
+    // LEADERBOARD_DB: the daily-challenge board's file. It sits beside the binary and the
+    // environment file, which a deploy never replaces — only the binary is flipped.
+    let db_path = std::env::var("LEADERBOARD_DB").unwrap_or_else(|_| "leaderboard.db".to_string());
+    let keep_days = env_parse("LEADERBOARD_KEEP_DAYS", DEFAULT_KEEP_DAYS);
+    // A board that cannot be opened is a deployment mistake (a bad path, a read-only directory);
+    // the relay refusing to start says so, where serving on without one would not.
+    let boards = match Leaderboard::open(&db_path, keep_days).await {
+        Ok(boards) => Arc::new(boards),
+        Err(err) => {
+            error!(%db_path, %err, "failed to open the leaderboard");
+            std::process::exit(1);
+        }
+    };
+    info!(%db_path, keep_days, "leaderboard open");
+
     let listener = match TcpListener::bind(("::", port)).await {
         Ok(listener) => listener,
         Err(err) => {
@@ -126,14 +143,22 @@ async fn main() {
         per_ip_per_second,
     ));
     let next_id = Arc::new(AtomicUsize::new(1));
+    let shared = Arc::new(Shared {
+        manager,
+        guard,
+        boards,
+        allowed_origins: Arc::new(allowed_origins),
+        max_messages_per_second,
+    });
     let mut sweep = tokio::time::interval(Duration::from_secs(60));
     sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {
             _ = sweep.tick() => {
-                guard.sweep();
-                manager.lock().sweep();
+                shared.guard.sweep();
+                shared.manager.lock().sweep();
+                shared.boards.prune_if_due().await;
             }
             accepted = listener.accept() => {
                 let (stream, peer) = match accepted {
@@ -146,7 +171,7 @@ async fn main() {
                         continue;
                     }
                 };
-                if !guard.try_admit(peer.ip()) {
+                if !shared.guard.try_admit(peer.ip()) {
                     warn!("connection refused: at the connection limit");
                     drop(stream);
                     continue;
@@ -154,10 +179,8 @@ async fn main() {
                 if let Err(err) = stream.set_nodelay(true) {
                     warn!(%err, "failed to enable TCP_NODELAY");
                 }
-                let manager = manager.clone();
-                let guard = guard.clone();
+                let shared = shared.clone();
                 let next_id = next_id.clone();
-                let allowed_origins = allowed_origins.clone();
                 let tls = tls.clone();
                 tokio::spawn(async move {
                     let conn_id = next_id.fetch_add(1, Ordering::Relaxed) as u64;
@@ -166,20 +189,20 @@ async fn main() {
                             let accepted = tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await;
                             match accepted {
                                 Ok(Ok(tls_stream)) => {
-                                    handle_connection(tls_stream, peer, manager, guard, conn_id, &allowed_origins, max_messages_per_second).await;
+                                    handle_connection(tls_stream, peer, shared.as_ref().clone(), conn_id).await;
                                 }
                                 Ok(Err(err)) => {
                                     warn!(%err, "TLS handshake failed");
-                                    guard.release(peer.ip());
+                                    shared.guard.release(peer.ip());
                                 }
                                 Err(_) => {
                                     warn!("TLS handshake timed out");
-                                    guard.release(peer.ip());
+                                    shared.guard.release(peer.ip());
                                 }
                             }
                         }
                         None => {
-                            handle_connection(stream, peer, manager, guard, conn_id, &allowed_origins, max_messages_per_second).await;
+                            handle_connection(stream, peer, shared.as_ref().clone(), conn_id).await;
                         }
                     }
                 });
@@ -188,20 +211,32 @@ async fn main() {
     }
 }
 
+/// What every connection task shares with the relay: handed over once when it is spawned, rather
+/// than threaded through the accept loop as its own argument. Cloning it copies handles, not state.
+#[derive(Clone)]
+struct Shared {
+    manager: Arc<Mutex<RoomManager>>,
+    guard: Arc<AdmissionGuard>,
+    boards: Arc<Leaderboard>,
+    /// The origin allowlist the handshake enforces, and the per-connection message limit.
+    allowed_origins: Arc<Vec<String>>,
+    max_messages_per_second: u32,
+}
+
 /// One TCP connection: handshake, then the inbound loop (rate limit + heartbeat) next to a writer
 /// task that drains the room's outbound channel.
 #[instrument(skip_all, fields(conn = conn_id))]
-async fn handle_connection<S>(
-    stream: S,
-    peer: SocketAddr,
-    manager: Arc<Mutex<RoomManager>>,
-    guard: Arc<AdmissionGuard>,
-    conn_id: u64,
-    allowed_origins: &[String],
-    max_messages_per_second: u32,
-) where
+async fn handle_connection<S>(stream: S, peer: SocketAddr, shared: Shared, conn_id: u64)
+where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    let Shared {
+        manager,
+        guard,
+        boards,
+        allowed_origins,
+        max_messages_per_second,
+    } = shared;
     let config = WebSocketConfig {
         max_message_size: Some(MAX_PAYLOAD),
         max_frame_size: Some(MAX_PAYLOAD),
@@ -209,7 +244,7 @@ async fn handle_connection<S>(
     };
     let handshake = tokio::time::timeout(
         HANDSHAKE_TIMEOUT,
-        accept_with_negotiation(stream, Some(config), allowed_origins),
+        accept_with_negotiation(stream, Some(config), &allowed_origins),
     )
     .await;
     let ws = match handshake {
@@ -280,7 +315,7 @@ async fn handle_connection<S>(
                                 break;
                             }
                             match message {
-                                Message::Binary(bytes) => deliver(&manager, &guard.scrypt_slots, conn_id, &bytes).await,
+                                Message::Binary(bytes) => deliver(&manager, &guard.scrypt_slots, &boards, conn_id, &bytes).await,
                                 Message::Text(_) => manager.lock().error(conn_id, "Only binary MessagePack messages are accepted"),
                                 _ => unreachable!(),
                             }
@@ -366,6 +401,7 @@ where
 async fn deliver(
     manager: &Mutex<RoomManager>,
     scrypt_slots: &Arc<tokio::sync::Semaphore>,
+    boards: &Leaderboard,
     conn_id: u64,
     bytes: &[u8],
 ) {
@@ -388,14 +424,16 @@ async fn deliver(
     };
     let kind = message.get("type").and_then(Value::as_str).unwrap_or("?");
     debug!(bytes = bytes.len(), %kind, "inbound message");
-    route(manager, scrypt_slots, conn_id, &message).await;
+    route(manager, scrypt_slots, boards, conn_id, &message).await;
 }
 
 /// Dispatch a parsed message to the room logic. Password work is done off the room lock (and off
 /// the async reactor) via `spawn_blocking`, so a scrypt can never stall every other connection.
+/// The daily board is awaited here too: it is reached from this task, never from the room lock.
 async fn route(
     manager: &Mutex<RoomManager>,
     scrypt_slots: &Arc<tokio::sync::Semaphore>,
+    boards: &Leaderboard,
     conn_id: u64,
     message: &Value,
 ) {
@@ -495,6 +533,48 @@ async fn route(
                 None => None,
             };
             manager.lock().join_room(conn_id, message, preverified);
+        }
+        "daily_submit" => {
+            let Some(ip) = manager.lock().peer_ip(conn_id) else {
+                return;
+            };
+            let Some(run) = crate::protocol::parse_daily_submit(message) else {
+                manager.lock().error(conn_id, "Invalid daily run");
+                return;
+            };
+            // The board is the one place a name is kept and shown to everyone, so it is the one
+            // place worth refusing one.
+            if !crate::protocol::is_acceptable_name(&run.name) {
+                manager.lock().error(conn_id, "That name is not allowed");
+                return;
+            }
+            match boards.submit(&run.day, &run.name, run.score, ip).await {
+                Ok(board) => manager.lock().daily_board(conn_id, &run.day, &board),
+                Err(err) => {
+                    warn!(%err, "leaderboard write failed");
+                    manager
+                        .lock()
+                        .error(conn_id, "The leaderboard is unavailable");
+                }
+            }
+        }
+        "daily_top" => {
+            let Some(ip) = manager.lock().peer_ip(conn_id) else {
+                return;
+            };
+            let Some(day) = crate::protocol::parse_daily_day(message) else {
+                manager.lock().error(conn_id, "Invalid day");
+                return;
+            };
+            match boards.board(&day, ip).await {
+                Ok(board) => manager.lock().daily_board(conn_id, &day, &board),
+                Err(err) => {
+                    warn!(%err, "leaderboard read failed");
+                    manager
+                        .lock()
+                        .error(conn_id, "The leaderboard is unavailable");
+                }
+            }
         }
         _ => manager.lock().handle(conn_id, message),
     }
@@ -753,6 +833,7 @@ mod tests {
     async fn password_create_and_join_use_real_scrypt_hashing() {
         let manager = Mutex::new(RoomManager::new());
         let scrypt_slots = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SCRYPTS));
+        let boards = Leaderboard::in_memory().await;
         let (host_tx, mut host_rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
         let (host_slow, _) = tokio::sync::watch::channel(false);
         manager
@@ -763,7 +844,7 @@ mod tests {
             "type":"create_room","name":"Host","mode":"ffa","gameMode":"classic",
             "maxPlayers":4,"password":"secret"
         });
-        route(&manager, &scrypt_slots, 1, &create).await;
+        route(&manager, &scrypt_slots, &boards, 1, &create).await;
         let room_id = take_type(&mut host_rx, "room_update").await["room"]["id"]
             .as_str()
             .unwrap()
@@ -776,13 +857,13 @@ mod tests {
             .connect(2, IpAddr::V4(Ipv4Addr::LOCALHOST), guest_tx, guest_slow);
         let _ = take_type(&mut guest_rx, "lobby_update").await;
         let bad = serde_json::json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"});
-        route(&manager, &scrypt_slots, 2, &bad).await;
+        route(&manager, &scrypt_slots, &boards, 2, &bad).await;
         assert_eq!(
             take_type(&mut guest_rx, "error").await["message"],
             "Wrong password"
         );
         let good = serde_json::json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"secret"});
-        route(&manager, &scrypt_slots, 2, &good).await;
+        route(&manager, &scrypt_slots, &boards, 2, &good).await;
         assert_eq!(
             take_type(&mut guest_rx, "room_update").await["room"]["players"]
                 .as_array()
@@ -796,6 +877,7 @@ mod tests {
     async fn exhausted_password_attempts_are_rejected_before_hashing() {
         let manager = Mutex::new(RoomManager::new());
         let scrypt_slots = Arc::new(tokio::sync::Semaphore::new(0));
+        let boards = Leaderboard::in_memory().await;
         let (host_tx, mut host_rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
         let (host_slow, _) = tokio::sync::watch::channel(false);
         manager
@@ -839,7 +921,7 @@ mod tests {
         let attempt = serde_json::json!({
             "type":"join_room","roomId":room_id,"name":"Guest","password":"secret"
         });
-        route(&manager, &scrypt_slots, 2, &attempt).await;
+        route(&manager, &scrypt_slots, &boards, 2, &attempt).await;
         assert_eq!(
             take_type(&mut guest_rx, "error").await["message"],
             "Too many wrong passwords – reconnect to try again"
@@ -850,6 +932,7 @@ mod tests {
     async fn queued_scrypt_timeout_is_busy_and_does_not_count_as_a_password_miss() {
         let manager = Mutex::new(RoomManager::new());
         let scrypt_slots = Arc::new(tokio::sync::Semaphore::new(0));
+        let boards = Leaderboard::in_memory().await;
         let (host_tx, mut host_rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
         let (host_slow, _) = tokio::sync::watch::channel(false);
         manager
@@ -878,7 +961,7 @@ mod tests {
             "type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"
         });
 
-        route(&manager, &scrypt_slots, 2, &attempt).await;
+        route(&manager, &scrypt_slots, &boards, 2, &attempt).await;
         assert_eq!(
             take_type(&mut guest_rx, "error").await["message"],
             "Server busy – try again shortly"
@@ -886,10 +969,94 @@ mod tests {
 
         // Once capacity is available, the same incorrect password is still the first miss.
         scrypt_slots.add_permits(1);
-        route(&manager, &scrypt_slots, 2, &attempt).await;
+        route(&manager, &scrypt_slots, &boards, 2, &attempt).await;
         assert_eq!(
             take_type(&mut guest_rx, "error").await["message"],
             "Wrong password"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_daily_run_reaches_the_board_and_a_refused_name_comes_back_with_a_reason() {
+        let manager = Mutex::new(RoomManager::new());
+        let scrypt_slots = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SCRYPTS));
+        let boards = Leaderboard::in_memory().await;
+        let (tx, mut rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (slow, _) = tokio::sync::watch::channel(false);
+        manager
+            .lock()
+            .connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow);
+        let _ = take_type(&mut rx, "lobby_update").await;
+
+        route(
+            &manager,
+            &scrypt_slots,
+            &boards,
+            1,
+            &serde_json::json!({"type":"daily_submit","day":"2026-10-19","name":"Ada","score":4200}),
+        )
+        .await;
+        let board = take_type(&mut rx, "daily_board").await;
+        assert_eq!(board["day"], "2026-10-19");
+        assert_eq!(
+            board["entries"],
+            serde_json::json!([{"rank":1,"name":"Ada","score":4200}])
+        );
+        assert_eq!(
+            board["you"],
+            serde_json::json!({"rank":1,"name":"Ada","score":4200}),
+            "the poster is told where their run landed"
+        );
+
+        // A name the board will not carry comes back with words the player can act on.
+        route(
+            &manager,
+            &scrypt_slots,
+            &boards,
+            1,
+            &serde_json::json!({"type":"daily_submit","day":"2026-10-19","name":"fuck","score":9000}),
+        )
+        .await;
+        assert_eq!(
+            take_type(&mut rx, "error").await["message"],
+            "That name is not allowed"
+        );
+
+        // A run that will not do is refused the same way, and neither touched the board.
+        route(
+            &manager,
+            &scrypt_slots,
+            &boards,
+            1,
+            &serde_json::json!({"type":"daily_submit","day":"2026-10-19","name":"  ","score":10}),
+        )
+        .await;
+        assert_eq!(
+            take_type(&mut rx, "error").await["message"],
+            "Invalid daily run"
+        );
+        route(
+            &manager,
+            &scrypt_slots,
+            &boards,
+            1,
+            &serde_json::json!({"type":"daily_top","day":"today"}),
+        )
+        .await;
+        assert_eq!(take_type(&mut rx, "error").await["message"], "Invalid day");
+
+        // Looking at the board posts nothing, and shows the run that was already there.
+        route(
+            &manager,
+            &scrypt_slots,
+            &boards,
+            1,
+            &serde_json::json!({"type":"daily_top","day":"2026-10-19"}),
+        )
+        .await;
+        assert_eq!(
+            take_type(&mut rx, "daily_board").await["entries"],
+            serde_json::json!([{"rank":1,"name":"Ada","score":4200}])
         );
     }
 }

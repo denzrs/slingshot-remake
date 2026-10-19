@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use tracing::{debug, info, warn};
 
 use crate::codec::{frame, Outbound};
+use crate::leaderboard::Board;
 use crate::protocol::{
     clean_name_checked, cpu_name, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level,
     parse_room_look, parse_rules, rules_to_value, RoomLook, RoomRules, AVATARS, DEFAULT_AVATAR,
@@ -97,6 +98,8 @@ pub struct RoomManager {
     memberships: HashMap<u64, Membership>,
     password_failures: HashMap<u64, u32>,
     scrypt_windows: HashMap<u64, VecDeque<Instant>>,
+    /// Where each connection came from. The leaderboard is told apart by it; nothing else uses it.
+    ips: HashMap<u64, IpAddr>,
 }
 
 impl RoomManager {
@@ -109,17 +112,19 @@ impl RoomManager {
             memberships: HashMap::new(),
             password_failures: HashMap::new(),
             scrypt_windows: HashMap::new(),
+            ips: HashMap::new(),
         }
     }
 
     pub fn connect(
         &mut self,
         conn: u64,
-        _ip: IpAddr,
+        ip: IpAddr,
         tx: Outbound,
         slow: tokio::sync::watch::Sender<bool>,
     ) {
         self.connections.insert(conn);
+        self.ips.insert(conn, ip);
         self.outbounds.insert(
             conn,
             Conn {
@@ -214,7 +219,32 @@ impl RoomManager {
         self.outbounds.remove(&conn);
         self.password_failures.remove(&conn);
         self.scrypt_windows.remove(&conn);
+        self.ips.remove(&conn);
         self.remove_from_room(conn, "A player disconnected");
+    }
+
+    // ————————————————————————————— Daily challenge —————————————————————————————
+
+    /// Where a connection came from, so the board can tell one player from another. The board
+    /// itself is reached from the async dispatch, which can await it; the room dispatch cannot.
+    pub fn peer_ip(&self, conn: u64) -> Option<IpAddr> {
+        self.ips.get(&conn).copied()
+    }
+
+    /// One day's board as it goes on the wire: the top runs, and the caller's own run if it posted one.
+    pub fn daily_board(&mut self, conn: u64, day: &str, board: &Board) {
+        fn entry(e: &crate::leaderboard::Entry) -> Value {
+            json!({ "rank": e.rank, "name": e.name, "score": e.score })
+        }
+        self.send_value(
+            conn,
+            &json!({
+                "type": "daily_board",
+                "day": day,
+                "entries": board.entries.iter().map(entry).collect::<Vec<_>>(),
+                "you": board.you.as_ref().map(entry),
+            }),
+        );
     }
 
     // ————————————————————————————— Outbound —————————————————————————————

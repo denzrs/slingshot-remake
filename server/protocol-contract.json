@@ -44,6 +44,12 @@
     "default": "rocket",
     "options": ["rocket", "satellite", "alien", "robot", "astronaut", "crosshair", "bolt", "gem"]
   },
+  "daily": {
+    "boardSize": 50,
+    "maxScore": 10000000,
+    "nameLength": 24,
+    "keepDays": 7
+  },
   "cpu": {
     "levels": ["easy", "medium", "hard", "hawking"]
   }

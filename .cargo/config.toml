@@ -1,0 +1,11 @@
+# The relay ships as a single static file, so the deployment needs nothing installed on the host.
+#
+# Without these flags the musl target links as a *static-PIE*, which carries a PT_INTERP pointing at
+# /lib/ld-musl-x86_64.so.1: the host then has to provide the musl loader, and Debian's musl-gcc does
+# not tell you that. The loader also gives up on an image this size — the binary dies with SIGSEGV
+# (si_code SI_KERNEL) before a line of `main` runs, which a small test program does not reproduce.
+#
+# `relocation-model=static` drops the interpreter and the load-time relocations for good; the cost is
+# no ASLR for the binary, which is the ordinary trade for a statically linked musl deployment.
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "relocation-model=static", "-C", "target-feature=+crt-static"]
