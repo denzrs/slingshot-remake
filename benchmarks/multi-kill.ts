@@ -28,6 +28,8 @@ const NAMES = ['', '', 'DOUBLE KILL', 'MULTI KILL', 'MEGA KILL', 'MONSTER KILL']
 const seats = Array<Seat>(6).fill(LEVEL);
 const tiers = new Map<number, number>();
 const sources = new Map<string, number>();
+/** Enemy kills per player per round, keyed `seed:round:player`: the raw material of the chain. */
+const playerRoundKills = new Map<string, number>();
 let rounds = 0;
 let turns = 0;
 let kills = 0;
@@ -42,7 +44,13 @@ for (let seed = SEED_FROM; seed <= SEED_TO; seed++) {
   const chainedRounds = new Set<number>();
   match.on((event) => {
     if (event.type === 'fire') turns++;
-    if (event.type === 'kill' && !event.record.self && !event.record.friendly) kills++;
+    if (event.type === 'kill' && !event.record.self && !event.record.friendly) {
+      kills++;
+      if (event.record.killer !== null) {
+        const key = `${seed}:${match.round}:${event.record.killer}`;
+        playerRoundKills.set(key, (playerRoundKills.get(key) ?? 0) + 1);
+      }
+    }
     if (event.type === 'multiKill') {
       tiers.set(event.kills, (tiers.get(event.kills) ?? 0) + 1);
       // What made it a chain: a piercing round through hulls, a splitter's fan, or neither (a riddle).
@@ -66,19 +74,44 @@ for (let seed = SEED_FROM; seed <= SEED_TO; seed++) {
   if (seenInMatch) matchesWithChain++;
 }
 
-const share = (part: number, whole: number): string => (whole ? `${((100 * part) / whole).toFixed(1)}%` : 'n/a');
+// How many kills a player took in a round, and how many rounds had somebody reach each tier: the chain's
+// own arithmetic, independent of the events, so the two can be checked against each other.
+const perPlayer = new Map<number, number>();
+const roundsReaching = new Map<number, Set<string>>();
+for (const [key, count] of playerRoundKills) {
+  perPlayer.set(count, (perPlayer.get(count) ?? 0) + 1);
+  const roundKey = key.split(':').slice(0, 2).join(':');
+  for (let tier = 2; tier <= 5; tier++) {
+    if (count < tier) continue;
+    let set = roundsReaching.get(tier);
+    if (!set) roundsReaching.set(tier, set = new Set());
+    set.add(roundKey);
+  }
+}
 const played = SEED_TO - SEED_FROM + 1;
+const report = {
+  played, rounds, turns, kills, chains, points, matchesWithChain, roundsWithChain,
+  tiers: Object.fromEntries(tiers), sources: Object.fromEntries(sources),
+  playerRoundKillsByCount: Object.fromEntries([...perPlayer].map(([n, pairCount]) => [n, pairCount])),
+  roundsReaching: Object.fromEntries([...roundsReaching].map(([tier, set]) => [tier, set.size])),
+};
+const share = (part: number, whole: number): string => (whole ? `${((100 * part) / whole).toFixed(1)}%` : 'n/a');
 console.log(`\n=== multi-kill chain over ${played} matches x ${ROUNDS} rounds, six ${LEVEL} CPUs, ${PLANETS} planets, ${SHOT_TIME}s shots, ${AMOUNT} pickups`);
 console.log(`turns fired ${turns}, enemies killed ${kills}, rounds played ${rounds}`);
-console.log(`chain awards ${chains}: ${(chains / rounds).toFixed(3)} per round, ${(chains / MATCHES).toFixed(2)} per match`);
+console.log(`chain awards ${chains}: ${(chains / rounds).toFixed(2)} per round, ${(chains / played).toFixed(2)} per match`);
 console.log(`matches with at least one chain ${share(matchesWithChain, played)}, rounds with one ${share(roundsWithChain, rounds)}`);
 console.log(`bonus points paid ${points} (mean ${(points / Math.max(1, chains)).toFixed(0)} per award)`);
 console.log(`chains by source: ${JSON.stringify(Object.fromEntries(sources))}`);
-const report = { played, rounds, turns, kills, chains, points, matchesWithChain, roundsWithChain, tiers: Object.fromEntries(tiers), sources: Object.fromEntries(sources) };
+console.log(`players taking n enemies in one round: ${JSON.stringify(Object.fromEntries([...perPlayer].sort((a, b) => a[0] - b[0])))}`);
+for (let tier = 2; tier <= 5; tier++) {
+  const roundCount = roundsReaching.get(tier)?.size ?? 0;
+  console.log(`  rounds with a player at ${tier}+ kills: ${String(roundCount).padStart(5)}  ${share(roundCount, rounds).padStart(6)} — 1 in ${roundCount ? Math.round(rounds / roundCount) : '—'}`);
+}
+
 writeFileSync(JSON_OUT ?? '/tmp/multi-kill.json', JSON.stringify(report));
 for (let kills = 2; kills <= 5; kills++) {
   const count = tiers.get(kills) ?? 0;
   console.log(
-    `  ${String(kills)} in one turn — ${NAMES[kills].padEnd(12)} ${String(count).padStart(5)}  ${share(count, chains).padStart(6)} of awards, 1 in ${count ? Math.round(rounds / count) : '—'} rounds, pays ${SCORING.MULTI_KILL[kills]}`,
+    `  ${String(kills)} enemies in one round — ${NAMES[kills].padEnd(12)} ${String(count).padStart(5)}  ${share(count, chains).padStart(6)} of awards, 1 in ${count ? Math.round(rounds / count) : '—'} rounds, pays ${SCORING.MULTI_KILL[kills]}`,
   );
 }

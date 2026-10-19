@@ -313,7 +313,7 @@ export abstract class Match {
   protected flightDoneAt: number | null = null;
   /** What the volley in the air has destroyed so far — the oracle's verdict is read from it. */
   private oracleKills: { killer: number; victim: number; self: boolean; friendly: boolean }[] = [];
-  /** The ships each player has taken in the turn now in the air, for the multi-kill chain. */
+  /** The enemies each player has taken in the round being played, for the multi-kill chain. */
   private killChain = new Map<number, number>();
   private disposed = false;
   protected cpuJobs = new Map<number, CpuJob>();
@@ -362,6 +362,13 @@ export abstract class Match {
   /** Whether trick shots multiply a hit's points in this match. */
   protected get stylePays(): boolean {
     return true;
+  }
+  /**
+   * Whether back-to-back kills pay the multi-kill chain. The daily challenge keeps a score of its own and
+   * runs a target per round rather than a round per volley, so the chain has no meaning there.
+   */
+  protected get paysKillChain(): boolean {
+    return this.mode !== 'challenge';
   }
   protected abstract roundTitle(survivor: number | null): RoundTitle;
 
@@ -758,6 +765,9 @@ export abstract class Match {
 
   startRound(): void {
     this.resetExperimentalState();
+    // The chain counts a round's kills: several in one turn (a splitter's forks, an armor-piercing round) or
+    // one per turn adding up. A new round starts everyone over, so no round opens with a chain carried in.
+    this.killChain.clear();
     this.round++;
     // Stakes that were never paid out (a round cut short) go back to their owners.
     for (const [id, stake] of this.oracle.stakes) if (this.players[id]) this.players[id].score += stake;
@@ -852,8 +862,6 @@ export abstract class Match {
     this.flightObservation = this.observedWorld(aims[0]?.player ?? 0);
     this.oracle.lock();
     this.oracleKills = [];
-    // A turn counts on its own: what one turn took is the chain, and nothing carries over from the last.
-    this.killChain.clear();
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
     this.simClock = 0;
     this.flightDoneAt = null;
@@ -1043,9 +1051,8 @@ export abstract class Match {
       });
     }
     this.recordKill(record);
-    // The kill chain: a second enemy in the same turn pays extra. Nothing carries over: the map is
-    // emptied when the next volley launches.
-    if (!self && !friendly) {
+    // The kill chain: a second enemy in the round pays extra, whether it came in this turn or an earlier one.
+    if (!self && !friendly && this.paysKillChain) {
       const kills = (this.killChain.get(killer) ?? 0) + 1;
       this.killChain.set(killer, kills);
       const bonus = SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)];

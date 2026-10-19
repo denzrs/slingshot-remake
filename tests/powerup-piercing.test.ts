@@ -104,12 +104,14 @@ describe('the multi-kill chain', () => {
     expect(shooter.powerUp).toBeNull();
   });
 
-  it('never carries a chain over: one kill in each of three turns pays nothing', () => {
-    const seats = ['human', 'human', 'human', 'human', 'off', 'off'] as const;
-    const match = createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed: 13 });
-    const kills: number[] = [];
+  it('counts a round\'s kills: one per turn walks the whole chain, and the next round starts over', () => {
+    const seats = ['human', 'human', 'human', 'human', 'human', 'human'] as const;
+    const match = createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 2, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed: 13 });
+    const awarded: number[] = [];
+    let kills = 0;
     match.on((e) => {
-      if (e.type === 'multiKill') kills.push(e.kills);
+      if (e.type === 'multiKill') awarded.push(e.kills);
+      if (e.type === 'kill') kills++;
     });
     /** One turn: the shooter on the left, its victim straight ahead, everybody else clear of the line. */
     const act = (who: number, victim: number | null): void => {
@@ -125,19 +127,30 @@ describe('the multi-kill chain', () => {
       match.commit();
       for (let t = 0; t < 4000 && match.phase === 'flying'; t += 1 / 30) match.update(1 / 30);
     };
-    // Player 0 kills on three of their turns in a row. Each turn stands alone, so the chain never grows.
-    const plan: Record<number, (number | null)[]> = { 0: [3, 1, 2], 1: [null, null, null], 2: [null, null, null] };
-    for (let turns = 0; turns < 12; turns++) {
-      for (let t = 0; t < 4000 && !(match.phase === 'aiming' && match.current >= 0); t += 1 / 30) {
-        match.update(1 / 30);
-        if (match.phase === 'roundOver' || match.phase === 'killcam') match.advance();
+    const nextVictim = (): number | null => match.players.find((q) => q.id !== 0 && q.alive)?.id ?? null;
+    /** Play on until `stop` says the round is over. Player 0 kills whoever stands in front of it; the rest miss. */
+    const play = (stop: () => boolean): void => {
+      for (let turns = 0; turns < 60 && !stop(); turns++) {
+        for (let t = 0; t < 4000 && !(match.phase === 'aiming' && match.current >= 0); t += 1 / 30) {
+          match.update(1 / 30);
+          if (match.phase === 'roundOver' || match.phase === 'killcam') match.advance();
+        }
+        if (match.current < 0) return;
+        const who = match.current;
+        act(who, who === 0 ? nextVictim() : null);
       }
-      const who = match.current;
-      const next = who >= 0 ? plan[who]?.shift() : undefined;
-      if (who < 0 || next === undefined) break;
-      act(who, next);
+    };
+    // Round 1: one enemy per turn, five turns, so the chain walks 2, 3, 4, 5 without any power-up fan.
+    play(() => match.alive.length <= 1);
+    expect(awarded).toEqual([2, 3, 4, 5]);
+    // Round 2: the same killer's first kill of the new round is just that — a fresh chain.
+    while (match.round < 2) {
+      match.update(1 / 30);
+      if (match.phase === 'roundOver' || match.phase === 'killcam') match.advance();
     }
-    expect(kills).toEqual([]);
-    expect(match.players.slice(1, 4).every((p) => !p.alive)).toBe(true);
+    const beforeRoundTwo = kills;
+    play(() => kills > beforeRoundTwo);
+    expect(kills).toBe(beforeRoundTwo + 1);
+    expect(awarded).toEqual([2, 3, 4, 5]);
   });
 });
