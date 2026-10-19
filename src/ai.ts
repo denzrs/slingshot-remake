@@ -107,14 +107,18 @@ export interface PlanOptions {
   onDecision?: CpuDecisionReporter;
   /** Gravity's sign for the shot: -1 when the CPU holds an armed repulse, which pushes the shot away from the planets. */
   pull?: number;
+  /** Armor piercing: the CPU's shot goes through ships, so a pass-through counts as a hit. */
+  pierce?: boolean;
 }
 
 /** Planning cost: 0 or below means a hit, lower power is slightly preferred among hits. */
-function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[], profile: Readonly<CpuProfile>, pull: number, gates: readonly ShotGate[]): number {
-  const { end, closest, selfClosest, gates: passed } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends, pull, gates);
-  if (end.kind === 'ship' && (end.ship === shooter || friends.includes(end.ship))) return 1e6;
+function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[], profile: Readonly<CpuProfile>, pull: number, gates: readonly ShotGate[], pierce: boolean): number {
+  const { end, closest, selfClosest, gates: passed, pierced } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends, pull, gates, pierce);
+  // An armor-piercing shot kills what it goes through and flies on, so its end state alone would read as a miss.
+  const onFriend = (ship: number): boolean => ship === shooter || friends.includes(ship);
+  if ((end.kind === 'ship' && onFriend(end.ship)) || pierced.some(onFriend)) return 1e6;
   const risk = selfClosest < profile.selfMargin ? (profile.selfMargin - selfClosest) * 20 : 0;
-  if (end.kind === 'ship') return -1 + aim.power * (1 / 1000 + profile.powerFrugality) + risk;
+  if (end.kind === 'ship' || pierced.length) return -1 + aim.power * (1 / 1000 + profile.powerFrugality) + risk;
   // A shot that would collect a pickup is worth some extra miss distance. The bounty is capped at the
   // current miss, so a non-hit can never beat a hit — it only reorders shots that miss either way.
   const bounty = passed.length && profile.pickupAppetite > 0 ? Math.min(profile.pickupAppetite, closest) : 0;
@@ -141,7 +145,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const self = world.ships[shooter];
   function reportDecision(searched: Candidate | null, launch: Aim): void {
     if (!opts.onDecision) return;
-    const predicted = simulateShot(world, shooter, launch.angle, launch.power, rules, friends, opts.pull ?? 1);
+    const predicted = simulateShot(world, shooter, launch.angle, launch.power, rules, friends, opts.pull ?? 1, [], opts.pierce ?? false);
     opts.onDecision({
       level: opts.level,
       attempt: opts.attempt,
@@ -156,6 +160,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   }
   const friends = opts.friends ?? [];
   const pull = opts.pull ?? 1;
+  const pierce = opts.pierce ?? false;
   const grudgeTarget = opts.grudgeTarget ?? null;
   // A pickup the CPU ignores (a preview) is not worth aiming at, so the caller filters those out.
   const gates = opts.pickups ?? [];
@@ -163,34 +168,38 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   // only for this generator; ordinary CPU planning retains its existing path.
   const costs = opts.noiseFree ? new Map<number, Map<number, number>>() : null;
   const evaluateAim = (aim: Aim): number => {
-    if (!costs) return evaluate(world, shooter, aim, planRules, friends, profile, pull, gates);
+    if (!costs) return evaluate(world, shooter, aim, planRules, friends, profile, pull, gates, pierce);
     let powers = costs.get(aim.angle);
     const cached = powers?.get(aim.power);
     if (cached !== undefined) return cached;
-    const cost = evaluate(world, shooter, aim, planRules, friends, profile, pull, gates);
+    const cost = evaluate(world, shooter, aim, planRules, friends, profile, pull, gates, pierce);
     if (!powers) costs.set(aim.angle, powers = new Map());
     powers.set(aim.power, cost);
     return cost;
   };
+  /** Whether one of these ships is the shooter or a teammate: a hit on one of them is a blunder to avoid. */
+  const onFriend = (ship: number): boolean => ship === shooter || friends.includes(ship);
+  /** Whether a styled flight killed anybody (a plain hit, or a hull it went through with armor piercing). */
+  const killed = (s: StyledShotOutcome): boolean => s.end.kind === 'ship' || s.pierced.length > 0;
+  /** Whether that killing stroke landed on the shooter or a teammate. */
+  const blundered = (s: StyledShotOutcome): boolean => (s.end.kind === 'ship' && onFriend(s.end.ship)) || s.pierced.some(onFriend);
   function* candidate(aim: Aim): Generator<void, Candidate> {
     if (!hawking) return { ...aim, cost: evaluateAim(aim) };
-    const style = yield* simulateStyledShot(world, shooter, aim.angle, aim.power, planRules, friends, pull);
-    const friendlyHit = style.end.kind === 'ship' && (style.end.ship === shooter || friends.includes(style.end.ship));
+    const style = yield* simulateStyledShot(world, shooter, aim.angle, aim.power, planRules, friends, pull, pierce);
     const risk = style.selfClosest < profile.selfMargin ? (profile.selfMargin - style.selfClosest) * 20 : 0;
-    const cost = friendlyHit ? 1e6 : style.end.kind === 'ship' ? -1 + aim.power * (1 / 1000 + profile.powerFrugality) + risk : style.closest + risk;
+    const cost = blundered(style) ? 1e6 : killed(style) ? -1 + aim.power * (1 / 1000 + profile.powerFrugality) + risk : style.closest + risk;
     return { ...aim, cost, style };
   }
   const compare = (a: Candidate, b: Candidate): number => {
     if (!hawking) return a.cost - b.cost;
     const sa = a.style!;
     const sb = b.style!;
-    const safety = (s: StyledShotOutcome): number =>
-      s.end.kind === 'ship' && (s.end.ship === shooter || friends.includes(s.end.ship)) ? 2 : s.selfClosest < profile.selfMargin ? 1 : 0;
+    const safety = (s: StyledShotOutcome): number => (blundered(s) ? 2 : s.selfClosest < profile.selfMargin ? 1 : 0);
     const safetyDifference = safety(sa) - safety(sb);
     if (safetyDifference) return safetyDifference;
     // No amount of style can outweigh safety or an enemy hit.
     if (safety(sa) !== 0 && sa.selfClosest !== sb.selfClosest) return sb.selfClosest - sa.selfClosest;
-    const hitDifference = Number(sb.end.kind === 'ship') - Number(sa.end.kind === 'ship');
+    const hitDifference = Number(killed(sb)) - Number(killed(sa));
     if (hitDifference) return hitDifference;
     return sb.swingbys - sa.swingbys || sb.flightTime - sa.flightTime || sb.pathLength - sa.pathLength || a.cost - b.cost;
   };

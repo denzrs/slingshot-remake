@@ -13,6 +13,7 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   blackhole: '#b99cff',
   planetkiller: '#ff5c5c',
   nebula: '#9be7ff',
+  piercing: '#dfe7f5',
 };
 
 /** Draws a power-up's symbol centred on (x, y), about `r` in size, in the current stroke and fill style. */
@@ -80,6 +81,26 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.beginPath();
     ctx.arc(x + r * 0.6, y + r * 0.3, r * 0.4, 0, Math.PI * 2);
     ctx.stroke();
+  } else if (kind === 'piercing') {
+    // A missile through broken armor: a shaft with an arrowhead, and a wall split by the gap it made.
+    ctx.beginPath();
+    ctx.moveTo(x - r * 0.95, y);
+    ctx.lineTo(x + r * 0.1, y);
+    ctx.moveTo(x - r * 0.05, y - r * 0.5);
+    ctx.lineTo(x - r * 0.05, y - r * 0.95);
+    ctx.moveTo(x - r * 0.05, y + r * 0.5);
+    ctx.lineTo(x - r * 0.05, y + r * 0.95);
+    ctx.moveTo(x + r * 0.3, y - r * 0.55);
+    ctx.lineTo(x + r * 0.3, y - r * 0.95);
+    ctx.moveTo(x + r * 0.3, y + r * 0.55);
+    ctx.lineTo(x + r * 0.3, y + r * 0.95);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + r * 0.2, y - r * 0.5);
+    ctx.lineTo(x + r, y);
+    ctx.lineTo(x + r * 0.2, y + r * 0.5);
+    ctx.closePath();
+    ctx.fill();
   } else if (kind === 'splitter') {
     ctx.moveTo(x, y + r);
     ctx.lineTo(x, y);

@@ -141,6 +141,8 @@ export type GameEvent =
   | { type: 'split'; player: number; x: number; y: number }
   | { type: 'shield'; ship: number; x: number; y: number }
   | { type: 'kill'; record: KillRecord }
+  /** One shot took more than one ship in this volley: the chain number and what it paid. */
+  | { type: 'multiKill'; player: number; kills: number; points: number; x: number; y: number }
   | { type: 'collapse'; x: number; y: number }
   | { type: 'killcam'; active: boolean; recording: boolean }
   | { type: 'roundEnd' }
@@ -311,6 +313,8 @@ export abstract class Match {
   protected flightDoneAt: number | null = null;
   /** What the volley in the air has destroyed so far — the oracle's verdict is read from it. */
   private oracleKills: { killer: number; victim: number; self: boolean; friendly: boolean }[] = [];
+  /** The ships each player has taken in the turn now in the air, for the multi-kill chain. */
+  private killChain = new Map<number, number>();
   private disposed = false;
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
@@ -848,6 +852,8 @@ export abstract class Match {
     this.flightObservation = this.observedWorld(aims[0]?.player ?? 0);
     this.oracle.lock();
     this.oracleKills = [];
+    // A turn counts on its own: what one turn took is the chain, and nothing carries over from the last.
+    this.killChain.clear();
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
     this.simClock = 0;
     this.flightDoneAt = null;
@@ -945,6 +951,12 @@ export abstract class Match {
       }
       return;
     }
+    if (e.type === 'pierce') {
+      // Armor piercing went through the hull: the ship is out, and the shot flies on.
+      this.emit({ type: 'explode', x: e.x, y: e.y, ship: e.ship, vx: e.vx, vy: e.vy });
+      if (live) this.registerKill(vs, e.ship, volley);
+      return;
+    }
     const end = e.end;
     switch (end.kind) {
       case 'ship': {
@@ -1031,6 +1043,17 @@ export abstract class Match {
       });
     }
     this.recordKill(record);
+    // The kill chain: a second enemy in the same turn pays extra. Nothing carries over: the map is
+    // emptied when the next volley launches.
+    if (!self && !friendly) {
+      const kills = (this.killChain.get(killer) ?? 0) + 1;
+      this.killChain.set(killer, kills);
+      const bonus = SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)];
+      if (bonus > 0) {
+        this.players[killer].score += bonus;
+        this.emit({ type: 'multiKill', player: killer, kills, points: bonus, x: volley.world.ships[victim].x, y: volley.world.ships[victim].y });
+      }
+    }
     this.onKill(record, volley.shots.indexOf(vs), volley.steps);
   }
 
@@ -1295,6 +1318,7 @@ export abstract class Match {
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
       // An armed repulse pushes this CPU's shot away from the planets, so the plan has to fly it that way.
       const pull = p.armed && p.powerUp === 'repulse' ? -1 : 1;
+      const pierce = !!p.armed && p.powerUp === 'piercing';
       // The pickups a CPU would actually keep (a preview is of no use to it): the planner steers its
       // search through them, so a power-up-hungry level like Einstein collects more.
       const pickups: ShotGate[] = this.powerUps
@@ -1327,6 +1351,7 @@ export abstract class Match {
             lookahead,
             friends,
             pull,
+            pierce,
             pickups,
             grudgeTarget: this.lastHitBy.get(id) ?? null,
             // A CPU holding a teleport also wants to know whether it found a hitting shot at all.

@@ -64,6 +64,11 @@ export const SCORING = {
   /** High-five: two shots meet in mid-air. Both shooters get the points — a teammate's missile pays more. Like the trick shots it only pays where they do. */
   HIGH_FIVE_ENEMY: 50,
   HIGH_FIVE_TEAMMATE: 100,
+  /**
+   * The kill chain: one shot that takes more than one ship in a volley (a splitter's forks, an armor-piercing
+   * round going through hulls) pays a bonus for every enemy after the first. Indexed by the kill it pays for.
+   */
+  MULTI_KILL: [0, 0, 250, 500, 750, 1000] as readonly number[],
   /** Combo multipliers can't run away completely. */
   MAX_COMBO: 12,
 } as const;

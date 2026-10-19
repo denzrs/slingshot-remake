@@ -185,8 +185,8 @@ export class PowerUpField {
       const [pickup] = this.pickups.splice(hit, 1);
       const dropped = p.powerUp;
       p.powerUp = pickup.kind;
-      // A splitter and a shield need no key: they are ready from the start. A CPU holds everything armed.
-      p.armed = p.cpu !== null || pickup.kind === 'splitter' || pickup.kind === 'shield';
+      // A splitter, a shield and armor piercing need no key: they are ready from the start. A CPU holds everything armed.
+      p.armed = p.cpu !== null || pickup.kind === 'splitter' || pickup.kind === 'shield' || pickup.kind === 'piercing';
       // The shield is on the ship itself, so every shot in the volley meets it. Swapping it away takes it off.
       volley.setShield(p.id, pickup.kind === 'shield');
       // A CPU that has just taken a repulse must plan its next shot pushed, so its plan made before is dropped.
@@ -208,7 +208,7 @@ export class PowerUpField {
     const host = this.host;
     if (!this.enabled || !host.canAim(id)) return;
     const p = host.players()[id];
-    if (!p.powerUp || p.powerUp === 'splitter' || p.powerUp === 'shield') return;
+    if (!p.powerUp || p.powerUp === 'splitter' || p.powerUp === 'shield' || p.powerUp === 'piercing') return;
     if (p.powerUp === 'preview' || p.powerUp === 'repulse') {
       p.armed = !p.armed;
       this.previewKey = '';
@@ -411,12 +411,19 @@ export class PowerUpField {
 
   /**
    * The aims a player's shot launches with. An armed preview is used up by the shot, an armed repulse is used up
-   * by pushing the shot away from the planets; a splitter waits for the fire press during the flight, a shield
-   * for a hit.
+   * by pushing the shot away from the planets, and armor piercing rides the next shot through its targets; a
+   * splitter waits for the fire press during the flight, a shield for a hit.
    */
   aimsFor(p: PlayerState): VolleyAim[] {
     const aim: VolleyAim = { player: p.id, angle: p.angle, power: p.power, spare: this.host.sparedFor(p.id) };
-    if (this.enabled && p.armed && (p.powerUp === 'preview' || p.powerUp === 'repulse')) {
+    if (!this.enabled || !p.armed) return [aim];
+    if (p.powerUp === 'piercing') {
+      aim.pierce = true;
+      p.powerUp = null;
+      p.armed = false;
+      return [aim];
+    }
+    if (p.powerUp === 'preview' || p.powerUp === 'repulse') {
       if (p.powerUp === 'repulse') aim.pull = -1;
       p.powerUp = null;
       p.armed = false;

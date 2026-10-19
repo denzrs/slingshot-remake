@@ -15,7 +15,7 @@
     "fadingTrails": 0,
     "betting": false,
     "powerUps": false,
-    "powerUpKinds": ["preview", "teleport", "splitter", "repulse", "shield", "blackhole", "planetkiller", "nebula"],
+    "powerUpKinds": ["preview", "teleport", "splitter", "repulse", "shield", "blackhole", "planetkiller", "nebula", "piercing"],
     "powerUpAmount": 2
   },
   "options": {

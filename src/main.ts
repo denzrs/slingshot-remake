@@ -151,6 +151,12 @@ function wire(m: Match): void {
         else if (r.killer !== null && !r.self) effects.callout(`+${r.points}`, ship.x, ship.y - 10, color(r.killer), true);
         break;
       }
+      case 'multiKill': {
+        const name = t(`multiKill.${Math.min(e.kills, 5)}` as Key);
+        effects.callout(`${name} ×${e.kills}  +${e.points}`, e.x, e.y - 46, COLORS.sodium, true);
+        if (audible) sound.combo();
+        break;
+      }
       case 'collapse':
         effects.collapse(e.x, e.y);
         if (audible) sound.rumble();
@@ -759,7 +765,7 @@ function syncButtons(): void {
 
   // Power-ups on touch: a placement or a preview has a button of its own while its ship is aiming.
   const holder = playing && coarsePointer.matches && m?.powerUps && canAim() ? m.players[m.viewer ?? m.current] : null;
-  const power = holder && holder.powerUp && holder.powerUp !== 'splitter' && holder.powerUp !== 'shield' ? holder : null;
+  const power = holder && holder.powerUp && holder.powerUp !== 'splitter' && holder.powerUp !== 'shield' && holder.powerUp !== 'piercing' ? holder : null;
   if (touchPower.hidden !== !power) touchPower.hidden = !power;
   if (power) {
     const label = `${power.armed || m!.placing ? '● ' : ''}${t(`powerup.${power.powerUp}` as Key).toUpperCase()}`;

@@ -715,7 +715,7 @@ body {
   display: grid;
   justify-items: center;
   gap: 5px;
-  flex: 0 0 calc(25% - 6px);
+  flex: 0 0 calc(20% - 6px);
   min-width: 0;
   padding: 10px 6px 8px;
   border: 1px solid rgb(91 125 179 / 0.4);
@@ -756,7 +756,7 @@ body {
   }
 
   .tile {
-    flex-basis: calc(25% - 4px);
+    flex-basis: calc(20% - 4px);
     padding-inline: 2px;
     font-size: 9.5px;
     letter-spacing: 0;

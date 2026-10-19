@@ -8,12 +8,12 @@ import type { Rng } from './rng';
  * own rng and the tests can call it directly.
  */
 
-export type PowerUpKind = 'preview' | 'teleport' | 'splitter' | 'repulse' | 'shield' | 'blackhole' | 'planetkiller' | 'nebula';
+export type PowerUpKind = 'preview' | 'teleport' | 'splitter' | 'repulse' | 'shield' | 'blackhole' | 'planetkiller' | 'nebula' | 'piercing';
 
-export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter', 'repulse', 'shield', 'blackhole', 'planetkiller', 'nebula'];
+export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter', 'repulse', 'shield', 'blackhole', 'planetkiller', 'nebula', 'piercing'];
 
 /** How often each kind turns up, relative to the others: the stronger ones are scarcer. */
-export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 0.6, teleport: 1, splitter: 1, repulse: 0.8, shield: 0.6, blackhole: 0.1, planetkiller: 0.1, nebula: 0.4 };
+export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 0.6, teleport: 1, splitter: 1, repulse: 0.8, shield: 0.6, blackhole: 0.1, planetkiller: 0.1, nebula: 0.4, piercing: 0.25 };
 
 /** The kind of a new pickup, drawn by weight from the kinds in play (all of them when the list is empty). */
 export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KINDS): PowerUpKind {

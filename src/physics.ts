@@ -135,8 +135,15 @@ export class Shot {
    * into events. Cleared by the caller, never by the shot, so a live volley and a replay see the same.
    */
   readonly reflects: { ship: number; x: number; y: number }[] = [];
+  /**
+   * The ships this shot has passed through (armor piercing), each once, in order. The volley kills them;
+   * the shot itself only records them, so a planner's sample never mutates the world.
+   */
+  readonly hits: { ship: number; x: number; y: number }[] = [];
   /** One per planet, then one per black hole. */
   private readonly encounters: Encounter[] | null;
+  /** Ships already passed through, so one hull is only ever reported once. */
+  private readonly pierced = new Set<number>();
 
   constructor(
     private readonly world: World,
@@ -149,6 +156,8 @@ export class Shot {
     private readonly spare: readonly number[] = [],
     /** Gravity's sign for this shot: 1 pulls it towards planets, -1 (a power-up) pushes it away. */
     private readonly pull = 1,
+    /** Armor piercing: the shot goes through ships — shields and all — instead of stopping on them. */
+    private readonly pierce = false,
   ) {
     const ship = world.ships[shooter];
     const dir = aimDirection(angle);
@@ -173,7 +182,7 @@ export class Shot {
    * how a splitter forks a shot in mid-flight. The original keeps flying as it was.
    */
   fork(turn: number): Shot {
-    const copy = new Shot(this.world, this.shooter, this.angle, this.power, this.rules, this.style !== null, this.spare, this.pull);
+    const copy = new Shot(this.world, this.shooter, this.angle, this.power, this.rules, this.style !== null, this.spare, this.pull, this.pierce);
     copy.x = this.x;
     copy.y = this.y;
     copy.time = this.time;
@@ -260,6 +269,15 @@ export class Shot {
       const dx = s.x - this.x;
       const dy = s.y - this.y;
       if (dx * dx + dy * dy >= r2) continue;
+      // Armor piercing runs through a ship, shield or not: the hull is reported and the shot flies on. A
+      // planet or a black hole still stops it, they are not hulls.
+      if (this.pierce) {
+        if (!this.pierced.has(i)) {
+          this.pierced.add(i);
+          this.hits.push({ ship: i, x: this.x, y: this.y });
+        }
+        continue;
+      }
       // A shield bounces the shot off instead of letting it through: the shot flies on, and the shield is spent.
       if (s.shield) this.reflect(i, s.x, s.y);
       else return this.finish({ kind: 'ship', ship: i });
@@ -384,6 +402,8 @@ export interface ShotOutcome {
   selfClosest: number;
   /** Indices of the `gates` circles this shot passed through, in the order it met them. */
   gates: number[];
+  /** Ships an armor-piercing shot went through (they would be killed), in the order it met them. */
+  pierced: number[];
 }
 
 /**
@@ -400,8 +420,9 @@ export function simulateShot(
   friends: readonly number[] = [],
   pull = 1,
   gates: readonly ShotGate[] = [],
+  pierce = false,
 ): ShotOutcome {
-  const shot = new Shot(world, shooter, angle, power, rules, false, [], pull);
+  const shot = new Shot(world, shooter, angle, power, rules, false, [], pull, pierce);
   const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
   const own = world.ships[shooter];
   const mates = friends.map((i) => world.ships[i]).filter((s) => s.alive);
@@ -433,7 +454,7 @@ export function simulateShot(
       }
     });
   }
-  return { end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: passed };
+  return { end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: passed, pierced: shot.hits.map((hit) => hit.ship) };
 }
 
 export interface StyledShotOutcome extends ShotOutcome {
@@ -451,8 +472,9 @@ export function* simulateStyledShot(
   rules: ShotRules,
   friends: readonly number[] = [],
   pull = 1,
+  pierce = false,
 ): Generator<void, StyledShotOutcome> {
-  const shot = new Shot(world, shooter, angle, power, rules, 'metrics', [], pull);
+  const shot = new Shot(world, shooter, angle, power, rules, 'metrics', [], pull, pierce);
   const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
   const own = world.ships[shooter];
   const mates = friends.map((i) => world.ships[i]).filter((s) => s.alive);
@@ -485,7 +507,7 @@ export function* simulateStyledShot(
     if (!end && ++steps % 240 === 0) yield;
   }
   return {
-    end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: [],
+    end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: [], pierced: shot.hits.map((hit) => hit.ship),
     swingbys: shot.swingbys, flightTime: shot.time, pathLength,
   };
 }

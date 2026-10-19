@@ -154,6 +154,8 @@ function isGameEvent(value: unknown): boolean {
       return index('player') && finite('x') && finite('y') && finite('radius');
     case 'nebula':
       return index('player') && finite('x') && finite('y');
+    case 'multiKill':
+      return index('player') && finite('kills') && finite('points') && finite('x') && finite('y');
     case 'split':
       return index('player') && finite('x') && finite('y');
     case 'shield':
