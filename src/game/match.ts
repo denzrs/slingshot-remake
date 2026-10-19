@@ -1262,8 +1262,8 @@ export abstract class Match {
   /**
    * Where a CPU lays the placement it holds, as an aim: a rough spot, never a searched one. A black hole or
    * a nebula goes part way along the line to the nearest enemy, so that enemy's next shot runs into it; the
-   * planet killer shoots the planet lying most in the way of that line, among those its aim can reach. Null
-   * when the CPU holds no placement, or no planet is in reach of it.
+   * planet killer shoots the planet lying most in the way of that line. Null when the CPU holds no placement,
+   * or there is no planet left.
    */
   protected cpuPlacementAim(p: PlayerState): Aim | null {
     const kind = p.powerUp;
@@ -1287,9 +1287,9 @@ export abstract class Match {
     };
     let spot: { x: number; y: number };
     if (kind === 'planetkiller') {
-      const inReach = world.planets.filter((planet) => Math.hypot(planet.x - from.x, planet.y - from.y) <= reach).sort((a, b) => laneGap(a) - laneGap(b));
-      if (!inReach.length) return null;
-      spot = { x: inReach[0].x, y: inReach[0].y };
+      const byGap = [...world.planets].sort((a, b) => laneGap(a) - laneGap(b));
+      if (!byGap.length) return null;
+      spot = { x: byGap[0].x, y: byGap[0].y };
     } else {
       // A little ahead of its own ship, on the way in: near enough for the enemy's shot to meet it.
       const d = Math.hypot(dx, dy) || 1;

@@ -225,12 +225,13 @@ export function nebulaSpot(world: World, from: { x: number; y: number }, angle: 
 }
 
 /**
- * The planet an aimed planet killer would remove: the first one the aim ray enters, out to the aim's reach.
- * Null when the ray meets no planet, so a miss spends nothing.
+ * The planet an aimed planet killer would remove: the first one the aim ray enters, however far off. Only the
+ * angle aims it: the power plays no part, so no planet is ever out of reach. Null when the ray meets no
+ * planet, so a miss spends nothing.
  */
-export function aimedPlanet(world: World, from: { x: number; y: number }, angle: number, power: number): { index: number; x: number; y: number } | null {
+export function aimedPlanet(world: World, from: { x: number; y: number }, angle: number): { index: number; x: number; y: number } | null {
   const dir = aimDirection(angle);
-  const full = (Math.min(POWER_UP.TELEPORT_MAX_POWER, Math.max(0, power)) / AIM.MAX_POWER) * POWER_UP.TELEPORT_RANGE;
+  const full = Math.hypot(world.width, world.height);
   for (let reach = POWER_UP.TELEPORT_AIM_STEP; reach <= full; reach += POWER_UP.TELEPORT_AIM_STEP) {
     const x = from.x + dir.x * reach;
     const y = from.y + dir.y * reach;

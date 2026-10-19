@@ -241,7 +241,7 @@ export class PowerUpField {
     const from = world.ships[owner];
     let target: { x: number; y: number } | null;
     if (kind === 'planetkiller') {
-      const planet = aimedPlanet(world, from, p.angle, p.power);
+      const planet = aimedPlanet(world, from, p.angle);
       target = planet ? { x: planet.x, y: planet.y } : null;
     } else if (kind === 'nebula') {
       target = nebulaSpot(world, from, p.angle, p.power);
@@ -271,7 +271,7 @@ export class PowerUpField {
     if (aim.kind === 'planetkiller') {
       const world = this.host.world();
       const p = this.host.players()[aim.owner];
-      const planet = aimedPlanet(world, world.ships[aim.owner], p.angle, p.power);
+      const planet = aimedPlanet(world, world.ships[aim.owner], p.angle);
       return planet ? this.killPlanet(aim.owner, planet.index) : false;
     }
     return this.teleport(aim.owner, aim.target);
@@ -346,7 +346,7 @@ export class PowerUpField {
     const world = this.host.world();
     const from = world.ships[id];
     if (kind === 'planetkiller') {
-      const planet = aimedPlanet(world, from, p.angle, p.power);
+      const planet = aimedPlanet(world, from, p.angle);
       return planet ? this.killPlanet(id, planet.index) : false;
     }
     const spot = kind === 'nebula' ? nebulaSpot(world, from, p.angle, p.power) : aimedSpot(world, from, p.angle, p.power);

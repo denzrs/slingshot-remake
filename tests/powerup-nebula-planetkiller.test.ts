@@ -62,7 +62,16 @@ describe('planet killer power-up', () => {
       width: 1280, height: 800, planets: [near, far],
       ships: [{ x: 200, y: 400, alive: true }], holes: [], nebulae: [], version: 0,
     };
-    expect(aimedPlanet(world, { x: 200, y: 400 }, 0, 100)).toEqual({ index: 0, x: near.x, y: near.y });
+    expect(aimedPlanet(world, { x: 200, y: 400 }, 0)).toEqual({ index: 0, x: near.x, y: near.y });
+  });
+
+  it('reaches a planet however far off, whatever the power', () => {
+    const far = planet(1200, 400);
+    const world: World = {
+      width: 1280, height: 800, planets: [far],
+      ships: [{ x: 60, y: 400, alive: true }], holes: [], nebulae: [], version: 0,
+    };
+    expect(aimedPlanet(world, { x: 60, y: 400 }, 0)).toEqual({ index: 0, x: far.x, y: far.y });
   });
 });
 

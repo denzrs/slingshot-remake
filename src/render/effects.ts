@@ -272,8 +272,41 @@ export class Effects {
     this.burst(toX, toY, 70, 90, radius * 12, COLORS.sodium, 'large', 0, 0, 1);
     this.burst(toX, toY, 44, 60, radius * 9, color, 'large', 0, 0, 0.9);
     this.burst(toX, toY, 22, 30, radius * 5, COLORS.bone, 'small', 0, 0, 0.7);
-    this.flash = Math.max(this.flash, 0.85);
-    if (!this.reducedMotion) this.shake = Math.max(this.shake, 8);
+    // The rock itself comes apart: a second, wider shockwave, and a great spray of ordinary sparks born across
+    // the whole disc and thrown outwards. They have no lifetime, so like any other spark they stay on the field,
+    // fall into the gravity of what is left, circle the planets and the holes and break up on the rocks they hit.
+    this.ring(toX, toY, radius * 6, 1.1, COLORS.sodium);
+    const scale = Math.max(0.6, Math.min(1.5, radius / 30));
+    this.debris(toX, toY, radius, Math.round(220 * scale), 40, radius * 10, color, 'large');
+    this.debris(toX, toY, radius, Math.round(260 * scale), 60, radius * 14, COLORS.sodium, 'medium');
+    this.debris(toX, toY, radius, Math.round(180 * scale), 30, radius * 18, COLORS.boneDim, 'medium');
+    this.debris(toX, toY, radius, Math.round(220 * scale), 80, radius * 22, COLORS.bone, 'small');
+    this.flash = Math.max(this.flash, 1);
+    if (!this.reducedMotion) this.shake = Math.max(this.shake, 14);
+  }
+
+  /**
+   * A shot flying through a nebula: the gas it drags against. Wisps are shed from it and hang where they were
+   * left while the shot goes on, so a slowed shot trails a cloud of its own and the drag can be seen.
+   */
+  nebulaDrag(x: number, y: number, vx: number, vy: number, dt: number, color: string): void {
+    if (!this.particles) return;
+    const want = dt * 55;
+    const count = Math.floor(want) + (Math.random() < want % 1 ? 1 : 0);
+    for (let i = 0; i < count && this.sparks.length < MAX_SPARKS; i++) {
+      const spark = this.spark(
+        x + (Math.random() - 0.5) * 5,
+        y + (Math.random() - 0.5) * 5,
+        vx * 0.1 + (Math.random() - 0.5) * 36,
+        vy * 0.1 + (Math.random() - 0.5) * 36,
+        Math.random() < 0.3 ? COLORS.bone : color,
+        'medium',
+      );
+      // Strong drag so the wisp is left behind almost where the shot shed it, and gone within a second.
+      spark.drag = 2.4;
+      spark.life = 0.55 + Math.random() * 0.5;
+      this.sparks.push(spark);
+    }
   }
 
   /** Floating text, e.g. "SWING-BY ×1,5" or "+820". */
@@ -447,6 +480,17 @@ export class Effects {
       const spark = this.spark(x, y, Math.cos(a) * sp + inheritedVx, Math.sin(a) * sp + inheritedVy, color, tier);
       if (life !== undefined) spark.life = life * (0.7 + Math.random() * 0.3);
       this.sparks.push(spark);
+    }
+  }
+
+  /** Sparks born at random places across a disc of `radius` and thrown straight out from its centre. They live on until the round ends. */
+  private debris(x: number, y: number, radius: number, count: number, minSpeed: number, maxSpeed: number, color: string, tier: SparkTier): void {
+    if (!this.particles) return;
+    for (let i = 0; i < count && this.sparks.length < MAX_SPARKS; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * radius;
+      const sp = minSpeed + Math.random() * (maxSpeed - minSpeed);
+      this.sparks.push(this.spark(x + Math.cos(a) * r, y + Math.sin(a) * r, Math.cos(a) * sp, Math.sin(a) * sp, color, tier));
     }
   }
 

@@ -2,7 +2,7 @@ import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS } from '../config';
 import type { Match, Scene } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
-import { aimDirection, type World } from '../physics';
+import { aimDirection, inNebula, type World } from '../physics';
 import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
@@ -183,7 +183,7 @@ export class Renderer {
     // Nebula clouds sit behind the planets and the ships, so nothing hides inside them.
     if (world.nebulae.length) {
       ctx.globalAlpha = alpha;
-      for (const n of world.nebulae) drawNebula(ctx, n, POWER_UP_COLORS.nebula);
+      for (const n of world.nebulae) drawNebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
       ctx.globalAlpha = 1;
     }
 
@@ -315,6 +315,18 @@ export class Renderer {
           ctx.stroke();
           ctx.restore();
         }
+        // A shot in a nebula pushes against the gas: a ring spreads from it (the wisps it sheds are the Effects').
+        if (inNebula(match.world.nebulae, shot.x, shot.y)) {
+          ctx.save();
+          ctx.strokeStyle = POWER_UP_COLORS.nebula;
+          const ripple = (this.time * 1.6) % 1;
+          ctx.globalAlpha = 0.5 * (1 - ripple);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(shot.x, shot.y, 6 + ripple * 18, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
         const glow = ctx.createRadialGradient(shot.x, shot.y, 0, shot.x, shot.y, 9);
         glow.addColorStop(0, rgba(COLORS.bone, 0.95));
         glow.addColorStop(0.3, rgba(color, 0.6));
@@ -396,7 +408,55 @@ export class Renderer {
       ctx.restore();
     }
     // A ship aiming a placement: a marker at the spot — a teleport door, or where a black hole, nebula or planet killer would land — with a line from the ship.
-    if (scene.placement?.target) {
+    if (scene.placement?.kind === 'planetkiller') {
+      // Only the angle aims a planet killer, and the power plays no part. So the whole ray is drawn: out to the
+      // planet it will take when there is one — locked on with brackets round it — or dimly to the edge when there is not.
+      const { owner, target } = scene.placement;
+      const from = match.world.ships[owner];
+      const dir = aimDirection(match.players[owner].angle);
+      const color = POWER_UP_COLORS.planetkiller;
+      const planet = target ? match.world.planets.find((p) => p.x === target.x && p.y === target.y) : undefined;
+      const length = planet ? Math.hypot(planet.x - from.x, planet.y - from.y) - planet.radius : Math.hypot(FIELD.width, FIELD.height);
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineCap = 'round';
+      ctx.setLineDash(planet ? [10, 7] : [3, 9]);
+      ctx.lineDashOffset = -this.time * (planet ? 70 : 20);
+      ctx.globalAlpha = planet ? 0.9 : 0.35;
+      ctx.lineWidth = planet ? 2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(from.x + dir.x * 22, from.y + dir.y * 22);
+      ctx.lineTo(from.x + dir.x * length, from.y + dir.y * length);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (planet) {
+        const r = planet.radius + 9 + 3 * pulse;
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.12 + 0.1 * pulse;
+        ctx.beginPath();
+        ctx.arc(planet.x, planet.y, planet.radius, 0, Math.PI * 2);
+        ctx.fill();
+        // Four brackets turning slowly round the planet: it is locked.
+        ctx.globalAlpha = 0.95;
+        ctx.lineWidth = 2.5;
+        for (let k = 0; k < 4; k++) {
+          const a = this.time * 0.8 + (k * Math.PI) / 2;
+          ctx.beginPath();
+          ctx.arc(planet.x, planet.y, r, a - 0.32, a + 0.32);
+          ctx.stroke();
+        }
+        // The crack that will split it.
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(planet.x - planet.radius * 0.45, planet.y - planet.radius * 0.5);
+        ctx.lineTo(planet.x - planet.radius * 0.1, planet.y - planet.radius * 0.05);
+        ctx.lineTo(planet.x + planet.radius * 0.18, planet.y + planet.radius * 0.12);
+        ctx.lineTo(planet.x + planet.radius * 0.45, planet.y + planet.radius * 0.5);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (scene.placement?.target && scene.placement.kind !== 'planetkiller') {
       const { owner, kind, target } = scene.placement;
       const from = match.world.ships[owner];
       const color = kind === 'teleport' ? match.players[owner].color : POWER_UP_COLORS[kind];
@@ -433,17 +493,6 @@ export class Renderer {
         ctx.globalAlpha *= 0.45;
         ctx.beginPath();
         ctx.arc(target.x, target.y, NEBULA.RADIUS * 0.55, 0, Math.PI * 2);
-        ctx.stroke();
-      } else if (kind === 'planetkiller') {
-        // The planet that is about to go: a ring around it and a crack across it.
-        ctx.beginPath();
-        ctx.arc(target.x, target.y, 20 + 2.5 * pulse, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(target.x - 9, target.y - 9);
-        ctx.lineTo(target.x - 3, target.y - 1);
-        ctx.lineTo(target.x + 4, target.y + 3);
-        ctx.lineTo(target.x + 9, target.y + 9);
         ctx.stroke();
       } else {
         // The door: a ring with a solid core and a crosshair.

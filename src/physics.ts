@@ -100,6 +100,15 @@ export function aimDirection(angleDeg: number): { x: number; y: number } {
   return { x: Math.cos(a), y: -Math.sin(a) };
 }
 
+/** Whether a point is inside any nebula cloud: where a shot is slowed, and where the renderer shows it. */
+export function inNebula(nebulae: readonly Nebula[], x: number, y: number): boolean {
+  return nebulae.some((n) => {
+    const dx = n.x - x;
+    const dy = n.y - y;
+    return dx * dx + dy * dy < n.radius * n.radius;
+  });
+}
+
 export function normalizeAngle(deg: number): number {
   const a = deg % 360;
   return a < 0 ? a + 360 : a;
@@ -225,11 +234,7 @@ export class Shot {
       ay += (a * dy) / d;
     }
     // A cloud deepens the gravity and drags on the shot, so it both bends into the cloud and slows inside it.
-    const clouded = nebulae.some((n) => {
-      const dx = n.x - this.x;
-      const dy = n.y - this.y;
-      return dx * dx + dy * dy < n.radius * n.radius;
-    });
+    const clouded = inNebula(nebulae, this.x, this.y);
     if (clouded) {
       ax *= NEBULA.GRAVITY;
       ay *= NEBULA.GRAVITY;

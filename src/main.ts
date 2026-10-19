@@ -18,6 +18,7 @@ import { readInvite } from './invite';
 import { MultiplayerSession } from './multiplayer';
 import type { ClientInput } from './net';
 import { randomSeed } from './rng';
+import { inNebula } from './physics';
 import { POWER_UP } from './powerups';
 import { Effects } from './render/effects';
 import { GhostPanel } from './render/ghost';
@@ -864,6 +865,13 @@ function frame(now: number): void {
   if (!paused) {
     if (!net || net.isHost) m.update(dt);
     effects.update(dt, m.world);
+    // A shot flying through a nebula sheds wisps of gas, so its slowing down shows.
+    if (m.world.nebulae.length) {
+      for (const vs of m.scene().volley?.shots ?? []) {
+        const s = vs.shot;
+        if (!s.end && s.inField && inNebula(m.world.nebulae, s.x, s.y)) effects.nebulaDrag(s.x, s.y, s.vx, s.vy, dt, POWER_UP_COLORS.nebula);
+      }
+    }
   }
   net?.update(dt);
   updateGhost(dt);
