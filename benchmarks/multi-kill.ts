@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 import { createMatch } from '../src/game';
 import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
 import { SCORING } from '../src/config';
@@ -15,7 +16,13 @@ process.argv.slice(2).forEach((arg, i, all) => {
 const MATCHES = Number(args.get('matches') ?? 40);
 const ROUNDS = Number(args.get('rounds') ?? 3);
 const AMOUNT = Number(args.get('amount') ?? 4);
+const PLANETS = Number(args.get('planets') ?? 4);
+const SHOT_TIME = Number(args.get('shotTime') ?? 20);
 const LEVEL = String(args.get('level') ?? 'medium') as Seat;
+/** Seed range, so a long run can be split over parallel shards and its reports summed. */
+const SEED_FROM = Number(args.get('seedFrom') ?? 1);
+const SEED_TO = Number(args.get('seedTo') ?? SEED_FROM + MATCHES - 1);
+const JSON_OUT = typeof args.get('json') === 'string' ? String(args.get('json')) : null;
 const NAMES = ['', '', 'DOUBLE KILL', 'MULTI KILL', 'MEGA KILL', 'MONSTER KILL'];
 
 const seats = Array<Seat>(6).fill(LEVEL);
@@ -29,12 +36,11 @@ let matchesWithChain = 0;
 let chains = 0;
 let roundsWithChain = 0;
 
-for (let seed = 1; seed <= MATCHES; seed++) {
-  const match = createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, powerUpAmount: AMOUNT, rounds: ROUNDS, maxPlanets: 4, seats }, { seats, seed, deterministicCpu: true });
+for (let seed = SEED_FROM; seed <= SEED_TO; seed++) {
+  const match = createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, powerUpAmount: AMOUNT, rounds: ROUNDS, maxPlanets: PLANETS, shotTime: SHOT_TIME, seats }, { seats, seed, deterministicCpu: true });
   let seenInMatch = 0;
   const chainedRounds = new Set<number>();
   match.on((event) => {
-    if (event.type === 'round') rounds++;
     if (event.type === 'fire') turns++;
     if (event.type === 'kill' && !event.record.self && !event.record.friendly) kills++;
     if (event.type === 'multiKill') {
@@ -53,17 +59,23 @@ for (let seed = 1; seed <= MATCHES; seed++) {
     match.update(1 / 30);
     if (match.phase === 'roundOver' || match.phase === 'killcam') match.advance();
   }
+  // The match has already started its first round when the listener is hooked up, so its own counter is the
+  // authority on how many rounds were played.
+  rounds += match.round;
   roundsWithChain += chainedRounds.size;
   if (seenInMatch) matchesWithChain++;
 }
 
 const share = (part: number, whole: number): string => (whole ? `${((100 * part) / whole).toFixed(1)}%` : 'n/a');
-console.log(`\n=== multi-kill chain over ${MATCHES} matches x ${ROUNDS} rounds, six ${LEVEL} CPUs, ${AMOUNT} pickups`);
+const played = SEED_TO - SEED_FROM + 1;
+console.log(`\n=== multi-kill chain over ${played} matches x ${ROUNDS} rounds, six ${LEVEL} CPUs, ${PLANETS} planets, ${SHOT_TIME}s shots, ${AMOUNT} pickups`);
 console.log(`turns fired ${turns}, enemies killed ${kills}, rounds played ${rounds}`);
 console.log(`chain awards ${chains}: ${(chains / rounds).toFixed(3)} per round, ${(chains / MATCHES).toFixed(2)} per match`);
-console.log(`matches with at least one chain ${share(matchesWithChain, MATCHES)}, rounds with one ${share(roundsWithChain, rounds)}`);
+console.log(`matches with at least one chain ${share(matchesWithChain, played)}, rounds with one ${share(roundsWithChain, rounds)}`);
 console.log(`bonus points paid ${points} (mean ${(points / Math.max(1, chains)).toFixed(0)} per award)`);
 console.log(`chains by source: ${JSON.stringify(Object.fromEntries(sources))}`);
+const report = { played, rounds, turns, kills, chains, points, matchesWithChain, roundsWithChain, tiers: Object.fromEntries(tiers), sources: Object.fromEntries(sources) };
+writeFileSync(JSON_OUT ?? '/tmp/multi-kill.json', JSON.stringify(report));
 for (let kills = 2; kills <= 5; kills++) {
   const count = tiers.get(kills) ?? 0;
   console.log(
