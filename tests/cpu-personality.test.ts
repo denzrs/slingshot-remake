@@ -37,14 +37,43 @@ describe('CPU personalities', () => {
     expect(nearWeight).toBeGreaterThan(farWeight * 3);
   });
 
-  it('Einstein holds a grudge against whoever hit it last', () => {
+  it('Newton holds the highest grudge against whoever hit it last', () => {
+    // Newton (medium) remembers being shot at hardest; Einstein (hard) is only mildly sore.
+    expect(CPU_PROFILES.medium.grudge).toBeGreaterThan(CPU_PROFILES.hard.grudge);
+    expect(CPU_PROFILES.medium.grudge).toBeGreaterThan(CPU_PROFILES.easy.grudge);
     const world = emptyWorld([[100, 400], [260, 400], [1180, 400]]);
     const grudged = planShotNow(world, 0, {
-      rules, level: 'hard', attempt: 30, fixedPower: null, rng: createRng(7), grudgeTarget: 2,
+      rules, level: 'medium', attempt: 30, fixedPower: null, rng: createRng(7), grudgeTarget: 2,
     });
-    // The grudge premium (hard.grudge) makes the far enemy's sweep weight exceed the near one's.
-    expect(CPU_PROFILES.hard.grudge).toBeGreaterThan(1);
     expect(grudged).toBeInstanceOf(Object);
+  });
+
+  it('Einstein alone goes out of its way for power-ups', () => {
+    expect(CPU_PROFILES.hard.pickupAppetite).toBeGreaterThan(0);
+    expect(CPU_PROFILES.medium.pickupAppetite).toBe(0);
+    expect(CPU_PROFILES.easy.pickupAppetite).toBe(0);
+
+    // Enemy far out of reach within the horizon, so every shot is a miss; a pickup sits off the
+    // direct line where only an appetite for it will bend the shot. Everything else aims straight.
+    const world = emptyWorld([[100, 400], [1180, 400]]);
+    const shortRules = { bounce: false, timeLimit: 1 };
+    const gate = { x: 250, y: 300, r: 16 };
+    const passes = (level: 'easy' | 'medium' | 'hard', offered: boolean): number => {
+      let hits = 0;
+      for (let seed = 1; seed <= 10; seed++) {
+        const aim = planShotNow(world, 0, {
+          rules: shortRules, level, attempt: 0, fixedPower: null, rng: createRng(seed), pickups: offered ? [gate] : [],
+        });
+        if (simulateShot(world, 0, aim.angle, aim.power, shortRules, [], 1, [gate]).gates.includes(0)) hits++;
+      }
+      return hits;
+    };
+    // Einstein flies through the pickup for most seeds; an appetite-free pass (no pickup offered,
+    // or a level that ignores them) almost never does.
+    expect(passes('hard', true)).toBeGreaterThanOrEqual(8);
+    expect(passes('hard', false)).toBe(0);
+    expect(passes('medium', true)).toBe(0);
+    expect(passes('easy', true)).toBe(0);
   });
 
   it('Newton resents wasted power on a hit', () => {

@@ -4,12 +4,12 @@ import { EXPERIMENTAL_PRESETS, isExperimentalCpu, planShot, type Aim, type CpuDe
 import type { Avatar } from '../avatars';
 import { AIM, COLORS, FIELD, GRACE, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
-import { normalizeAngle, type ShotEnd, type ShotRules, type StyleKind, type World } from '../physics';
+import { normalizeAngle, type ShotEnd, type ShotGate, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
 import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
-import type { Pickup, PowerUpKind } from '../powerups';
+import { CPU_IGNORES, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField, type TeleportAim } from './powerup-field';
@@ -1243,6 +1243,13 @@ export abstract class Match {
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
       // An armed repulse pushes this CPU's shot away from the planets, so the plan has to fly it that way.
       const pull = p.armed && p.powerUp === 'repulse' ? -1 : 1;
+      // The pickups a CPU would actually keep (a preview is of no use to it): the planner steers its
+      // search through them, so a power-up-hungry level like Einstein collects more.
+      const pickups: ShotGate[] = this.powerUps
+        ? this.power.pickups
+            .filter((pickup) => !CPU_IGNORES.has(pickup.kind))
+            .map((pickup) => ({ x: pickup.x, y: pickup.y, r: POWER_UP.PICKUP_RADIUS }))
+        : [];
       const planner = isExperimentalCpu(p.cpu)
         ? planExperimentalShot(this.observedWorld(id), {
             rules: this.rules,
@@ -1268,6 +1275,7 @@ export abstract class Match {
             lookahead,
             friends,
             pull,
+            pickups,
             grudgeTarget: this.lastHitBy.get(id) ?? null,
             // A CPU holding a teleport also wants to know whether it found a hitting shot at all.
             ...(logDecisions || this.options.onCpuDecision || (this.powerUps && p.powerUp === 'teleport')
