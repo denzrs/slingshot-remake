@@ -1,0 +1,155 @@
+//! What the people in a waiting room change: ready, the rules, the lobby look, symbols and teams.
+
+use crate::command::Parsed;
+use crate::protocol::{RoomLook, RoomRules};
+use crate::wire::Avatar;
+
+use super::model::*;
+use super::RoomManager;
+
+impl RoomManager {
+    pub(super) fn set_ready(&mut self, conn: u64, ready: Parsed<bool>) {
+        let Some(ready) = self.accept(conn, ready) else {
+            return;
+        };
+        let guard = self.member_of_waiting_room(
+            conn,
+            "You are not in a waiting room",
+            "You are not in a waiting room",
+        );
+        let Some((room_id, _)) = self.accept(conn, guard) else {
+            return;
+        };
+        let should_start = {
+            let room = self.rooms.get_mut(&room_id).unwrap();
+            let player = room
+                .players
+                .iter_mut()
+                .find(|p| p.conn == Some(conn))
+                .expect("member's player is in the room");
+            player.ready = ready;
+            humans(room) >= 2 && room.players.iter().all(Player::confirmed) && teams_playable(room)
+        };
+        self.broadcast_room_update(&room_id, None);
+        if should_start {
+            self.begin_game(&room_id);
+        }
+    }
+
+    /// The host edits the rules while the room is waiting; everybody has to confirm (ready) again.
+    pub(super) fn set_rules(&mut self, conn: u64, rules: Parsed<RoomRules>) {
+        let guard = self.host_of_waiting_room(
+            conn,
+            "Only the room host can change the rules",
+            "The rules cannot change while a game is running",
+        );
+        let Some(room_id) = self.accept(conn, guard) else {
+            return;
+        };
+        let Some(rules) = self.accept(conn, rules) else {
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        room.rules = rules;
+        for player in room.players.iter_mut() {
+            player.ready = false;
+        }
+        self.broadcast_room_update(&room_id, None);
+    }
+
+    /// The host changes how the room shows up while it waits: name, listing, symbol and colour. None of
+    /// it changes the game, so nobody has to confirm again.
+    pub(super) fn set_room(&mut self, conn: u64, look: Parsed<RoomLook>) {
+        let guard = self.host_of_waiting_room(
+            conn,
+            "Only the room host can change the lobby",
+            "The lobby cannot change while a game is running",
+        );
+        let Some(room_id) = self.accept(conn, guard) else {
+            return;
+        };
+        let Some(look) = self.accept(conn, look) else {
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        room.look = look;
+        self.broadcast_room_update(&room_id, None);
+        // A room that went private leaves the list, and one that went public joins it.
+        self.broadcast_lobby();
+    }
+
+    /// A player picks the symbol they show in the game, while the room waits. Nobody has to confirm again.
+    pub(super) fn set_avatar(&mut self, conn: u64, avatar: Parsed<Avatar>) {
+        let guard = self.member_of_waiting_room(
+            conn,
+            "You are not in a waiting room",
+            "The symbol cannot change while a game is running",
+        );
+        let Some((room_id, player_id)) = self.accept(conn, guard) else {
+            return;
+        };
+        let Some(avatar) = self.accept(conn, avatar) else {
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        if let Some(player) = room.players.iter_mut().find(|p| p.id == player_id) {
+            player.avatar = avatar;
+        }
+        self.broadcast_room_update(&room_id, None);
+    }
+
+    /// A player picks their own team; they have to confirm (ready) again, everybody else's choice
+    /// stands.
+    pub(super) fn set_team(&mut self, conn: u64, team: Parsed<u8>) {
+        let guard = self.member_of_waiting_room(
+            conn,
+            "You are not in a waiting room",
+            "You are not in a waiting room",
+        );
+        let Some((room_id, player_id)) = self.accept(conn, guard) else {
+            return;
+        };
+        let guard = self.require_team_room(&room_id);
+        if self.accept(conn, guard).is_none() {
+            return;
+        }
+        let Some(team) = self.accept(conn, team) else {
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        let player = room
+            .players
+            .iter_mut()
+            .find(|p| p.id == player_id)
+            .expect("member's player is in the room");
+        if player.team == team {
+            return;
+        }
+        player.team = team;
+        player.ready = false;
+        self.broadcast_room_update(&room_id, None);
+    }
+
+    /// The host deals everybody back out to the teams, one after the other, in the order they
+    /// joined.
+    pub(super) fn reset_teams(&mut self, conn: u64) {
+        let guard = self.host_of_waiting_room(
+            conn,
+            "Only the room host can reset the teams",
+            "The teams cannot change while a game is running",
+        );
+        let Some(room_id) = self.accept(conn, guard) else {
+            return;
+        };
+        let guard = self.require_team_room(&room_id);
+        if self.accept(conn, guard).is_none() {
+            return;
+        }
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        for (i, player) in room.players.iter_mut().enumerate() {
+            player.team = (i % 2) as u8;
+            player.ready = false;
+        }
+        self.broadcast_room_update(&room_id, None);
+    }
+}
