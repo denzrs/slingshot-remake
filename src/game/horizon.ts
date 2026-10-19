@@ -216,9 +216,9 @@ export class HorizonMatch extends Match {
       return;
     }
     if (!this.canAim(id)) return;
-    // While a ship aims a teleport, fire jumps; the jump spends its shot, so it fires nothing this volley.
-    if (this.teleportingFor(id)) {
-      if (this.confirmTeleport(id)) this.spend(id);
+    // While a ship aims a teleport or a black hole, fire places it; the placement spends its shot, so it fires nothing this volley.
+    if (this.placingFor(id)) {
+      if (this.confirmPlacement(id)) this.spend(id);
       return;
     }
     this.lock(id);
@@ -247,7 +247,7 @@ export class HorizonMatch extends Match {
   }
 
   get nextHoleRadius(): number | null {
-    const hole = this.world.hole;
+    const hole = this.world.holes[0];
     if (!hole || this.phase === 'roundOver' || this.phase === 'gameOver') return null;
     if (this.collapse) return this.collapse.toRadius;
     return hole.radius + HORIZON.GROWTH + HORIZON.GROWTH_ACCEL * this.volleyNo;
@@ -322,10 +322,10 @@ export class HorizonMatch extends Match {
       this.splitInFlight(this.viewer ?? this.current);
       return;
     }
-    // While a ship aims a teleport, fire jumps; the jump spends its shot, so it fires nothing this volley.
+    // While a ship aims a teleport or a black hole, fire places it; the placement spends its shot, so it fires nothing this volley.
     const by = this.viewer ?? this.current;
-    if (this.teleportingFor(by)) {
-      if (this.confirmTeleport(by)) this.spend(by);
+    if (this.placingFor(by)) {
+      if (this.confirmPlacement(by)) this.spend(by);
       return;
     }
     if (this.isHumanTurn) this.lock(this.current);
@@ -358,6 +358,18 @@ export class HorizonMatch extends Match {
       for (const p of cpus) {
         const job = this.cpuJob(p.id);
         if (this.cpuTeleportIfBlind(p, job)) continue;
+        const place = this.cpuPlacementAim(p);
+        if (place && this.phaseTime >= 0.5) {
+          // It lays the placement once its aim is on the spot; the placement spends its shot, so it fires nothing this volley.
+          if (!this.swingTowards(p, place, dt, 2)) continue;
+          if (this.placeForCpu(p.id)) {
+            p.passed = true;
+            p.locked = true;
+            this.emit({ type: 'lock', player: p.id });
+            continue;
+          }
+          // Nowhere to lay it this volley: it keeps the power-up and aims a shot instead.
+        }
         if (!job?.target || this.phaseTime < 0.5) continue;
         if (this.swingTowards(p, job.target, dt, 2)) {
           job.settle += dt;
@@ -518,7 +530,7 @@ export class HorizonMatch extends Match {
 
   /** The black hole grows, eats what comes too close and pulls everything else inwards. */
   private startCollapse(): void {
-    const hole = this.world.hole!;
+    const hole = this.world.holes[0];
     const toRadius = hole.radius + HORIZON.GROWTH + HORIZON.GROWTH_ACCEL * this.volleyNo;
     let toMass = hole.mass + HORIZON.MASS_PER_VOLLEY;
     const pull = (x: number, y: number, factor: number, margin: number): Drift => {
@@ -555,7 +567,7 @@ export class HorizonMatch extends Match {
     const c = this.collapse!;
     const t = this.collapseT;
     const e = t * t * (3 - 2 * t);
-    const hole = this.world.hole!;
+    const hole = this.world.holes[0];
     hole.radius = c.fromRadius + (c.toRadius - c.fromRadius) * e;
     hole.mass = c.fromMass + (c.toMass - c.fromMass) * e;
     for (const p of this.world.planets) move(p, c.planets.get(p.seed)!, e, t);
@@ -569,7 +581,7 @@ export class HorizonMatch extends Match {
 
   private finishCollapse(): void {
     const c = this.collapse!;
-    const hole = this.world.hole!;
+    const hole = this.world.holes[0];
     this.collapse = null;
     this.world.planets = this.world.planets.filter((p) => !c.planets.get(p.seed)?.lost);
     this.world.version++;

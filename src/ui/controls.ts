@@ -333,7 +333,7 @@ export function segmentedControl(item: Item<'segmented'>, env: Env): Control {
 
 // ————————————————————————————— Tiles —————————————————————————————
 
-const TILE_ICON = 30;
+const TILE_ICON = 34;
 
 /**
  * A row of tiles with a symbol each, every one on or off on its own: click or tap a tile, or move the cursor
@@ -355,7 +355,6 @@ function tilesControl(item: Item<'tiles'>, env: Env): Control {
     return { cell, icon };
   });
   const row = h('span.tiles', null, ...cells.map((c) => c.cell));
-  row.style.setProperty('--n', String(tiles.length));
   const el = h('div.item.item--tiles', { role: 'group', 'aria-label': item.label }, h('span.item__label', null, item.label), row);
   focusable(el, env);
 

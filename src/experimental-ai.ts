@@ -181,7 +181,7 @@ export function measureReconstruction(world: World, fit: GravityFit): Reconstruc
     const y = (world.height * row) / 6;
     for (let col = 1; col <= 7; col++) {
       const x = (world.width * col) / 8;
-      const actual = fieldAt(world.planets, world.hole, x, y);
+      const actual = fieldAt(world.planets, world.holes[0] ?? null, x, y);
       const estimatedHole = fit.holeMass === null ? null : { x: fit.hole?.x ?? world.width / 2, y: fit.hole?.y ?? world.height / 2, mass: fit.holeMass };
       const predicted = fieldAt(fit.planets, estimatedHole, x, y);
       error2 += (actual.ax - predicted.ax) ** 2 + (actual.ay - predicted.ay) ** 2;
@@ -594,7 +594,7 @@ function observedResiduals(fit: GravityFit, shots: readonly ExperimentalShot[], 
   const world = estimatedWorld(visible, fit);
   // End collisions are excluded from observations; candidate fields must not truncate a replay.
   world.planets = world.planets.map((planet) => ({ ...planet, radius: 0 }));
-  if (world.hole) world.hole = { ...world.hole, radius: 0 };
+  if (world.holes.length) world.holes = world.holes.map((hole) => ({ ...hole, radius: 0 }));
   let observation = 0;
   for (let index = 0; index < shots.length; index++) {
     const first = observation;
@@ -1418,7 +1418,10 @@ function estimatedWorld(visible: ExperimentalWorld, fit: GravityFit): World {
     ships: visible.ships,
     // Collision disks are observed geometry, never derived from inferred mass.
     planets: fit.planets.map((planet, i) => ({ ...planet, radius: planet.radius ?? 0, seed: planet.id ?? i, style: 'rocky', tint: '#ffffff' })),
-    hole: fit.holeMass === null ? null : { x: fit.hole?.x ?? visible.visibleHole?.x ?? visible.width / 2, y: fit.hole?.y ?? visible.visibleHole?.y ?? visible.height / 2, radius: fit.hole?.radius ?? visible.holeRadius, mass: fit.holeMass },
+    holes: fit.holeMass === null ? [] : [{ x: fit.hole?.x ?? visible.visibleHole?.x ?? visible.width / 2, y: fit.hole?.y ?? visible.visibleHole?.y ?? visible.height / 2, radius: fit.hole?.radius ?? visible.holeRadius, mass: fit.holeMass }],
+    // Nebulae are not part of the experimental model, like extra black holes: a cloud is an unmodelled
+    // gravity source the fit treats as noise.
+    nebulae: [],
     version: 0,
   };
 }

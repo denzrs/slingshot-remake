@@ -703,37 +703,44 @@ body {
 }
 
 .tiles {
-  display: grid;
-  grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr));
+  /* Four to a row, so the eight power-up kinds fall into a fixed 4 × 2 block whatever the width; a short
+     last row centres, which staggers it against the full one above. */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 6px;
 }
 
 .tile {
   display: grid;
   justify-items: center;
-  gap: 3px;
+  gap: 5px;
+  flex: 0 0 calc(25% - 6px);
   min-width: 0;
-  padding: 7px 2px 5px;
+  padding: 10px 6px 8px;
   border: 1px solid rgb(91 125 179 / 0.4);
   border-radius: 3px;
   background: rgb(6 15 31 / 0.45);
   color: var(--bone-dim);
-  font: 700 11px/1.2 var(--font-body);
+  font: 700 11px/1.15 var(--font-body);
   cursor: pointer;
   user-select: none;
   transition: border-color 140ms, background 140ms, color 140ms, box-shadow 200ms;
 }
 
 .tile__icon {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
 }
 
 .tile__name {
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: center;
+  /* A longer name takes a second line ("Planet killer") instead of being cut off, and the room is always
+     reserved, so both rows of the picker are the same height. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-height: 2.3em;
 }
 
 .tile.is-on {
@@ -749,7 +756,8 @@ body {
   }
 
   .tile {
-    padding-inline: 0;
+    flex-basis: calc(25% - 4px);
+    padding-inline: 2px;
     font-size: 9.5px;
     letter-spacing: 0;
   }
@@ -2051,6 +2059,11 @@ body {
   padding-right: 14px;
   color: var(--bone);
   white-space: nowrap;
+}
+
+/* The power-up legend's symbol, drawn on a canvas beside the kind's name. */
+.power-icon {
+  vertical-align: middle;
 }
 
 kbd {

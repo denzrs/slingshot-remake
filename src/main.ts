@@ -101,6 +101,20 @@ function wire(m: Match): void {
         effects.teleport(e.fromX, e.fromY, e.toX, e.toY, color(e.player));
         if (audible) sound.teleport();
         break;
+      case 'blackhole':
+        effects.collapse(e.x, e.y);
+        if (audible) sound.devour();
+        break;
+      case 'planetKiller': {
+        const ship = m.world.ships[e.player];
+        effects.laser(ship.x, ship.y, e.x, e.y, POWER_UP_COLORS.planetkiller, e.radius);
+        if (audible) sound.explode();
+        break;
+      }
+      case 'nebula':
+        effects.spawn(e.x, e.y, POWER_UP_COLORS.nebula);
+        if (audible) sound.spawn();
+        break;
       case 'split':
         effects.split(e.x, e.y, POWER_UP_COLORS.splitter);
         if (audible) sound.split();
@@ -201,7 +215,7 @@ function dispatchInput(input: ClientInput): void {
   else if (input.kind === 'aim') match.setAim(input.angle, input.power);
   else if (input.kind === 'fire') match.commit();
   else if (input.kind === 'power') match.usePowerUp();
-  else if (input.kind === 'cancel') match.cancelTeleport();
+  else if (input.kind === 'cancel') match.cancelPlacement();
 }
 
 /** Whether a splitter is armed in a shot the person at this screen has in the air. */
@@ -656,8 +670,8 @@ window.addEventListener('keydown', (e) => {
       if (match?.powerUps && !e.repeat) dispatchInput({ kind: 'power' });
       break;
     case 'Escape':
-      // Aiming a teleport: Esc thinks again, it does not open the menu.
-      if (match?.teleporting) {
+      // Aiming a placement: Esc thinks again, it does not open the menu.
+      if (match?.placing) {
         dispatchInput({ kind: 'cancel' });
         break;
       }
@@ -683,7 +697,7 @@ function aimAt(clientX: number, clientY: number): void {
   const angle = (Math.atan2(-dy, dx) * 180) / Math.PI;
   const distance = Math.hypot(dx, dy);
   // A teleport puts its spot under the pointer; a shot's arrow tip follows the pointer.
-  const reach = match.teleporting ? distance / POWER_UP.TELEPORT_RANGE : (distance - (PHYSICS.MUZZLE + 26)) / 110;
+  const reach = match.placing ? distance / POWER_UP.TELEPORT_RANGE : (distance - (PHYSICS.MUZZLE + 26)) / 110;
   dispatchInput({ kind: 'aim', angle, power: Math.round(reach * AIM.MAX_POWER * 100) / 100 });
 }
 
@@ -732,7 +746,7 @@ function syncButtons(): void {
   if (playing && coarsePointer.matches && m) {
     if (ghostActive()) touchLabel = ghost!.lane!.canAim ? t('common.fire') : null;
     else if (ghostTeaser()) touchLabel = t('hud.ghostLane');
-    else if (canAim()) touchLabel = m.teleporting ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
+    else if (canAim()) touchLabel = m.placing ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
     // A splitter in the air: the fire button splits the shot.
     else if (splitterInAir(m)) touchLabel = t('powerup.splitNow');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
@@ -743,12 +757,12 @@ function syncButtons(): void {
   if (touchFire.hidden !== !touchLabel) touchFire.hidden = !touchLabel;
   if (touchLabel && touchFire.textContent !== touchLabel) touchFire.textContent = touchLabel;
 
-  // Power-ups on touch: a teleport or preview has a button of its own while its ship is aiming.
+  // Power-ups on touch: a placement or a preview has a button of its own while its ship is aiming.
   const holder = playing && coarsePointer.matches && m?.powerUps && canAim() ? m.players[m.viewer ?? m.current] : null;
-  const power = holder && (holder.powerUp === 'teleport' || holder.powerUp === 'preview' || holder.powerUp === 'repulse') ? holder : null;
+  const power = holder && holder.powerUp && holder.powerUp !== 'splitter' && holder.powerUp !== 'shield' ? holder : null;
   if (touchPower.hidden !== !power) touchPower.hidden = !power;
   if (power) {
-    const label = `${power.armed || m!.teleporting ? '● ' : ''}${t(`powerup.${power.powerUp}` as Key).toUpperCase()}`;
+    const label = `${power.armed || m!.placing ? '● ' : ''}${t(`powerup.${power.powerUp}` as Key).toUpperCase()}`;
     if (touchPower.textContent !== label) touchPower.textContent = label;
     touchPower.style.setProperty('--power', POWER_UP_COLORS[power.powerUp!]);
   }

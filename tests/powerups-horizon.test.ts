@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
 import type { HorizonMatch } from '../src/game/horizon';
-import { POWER_UP, SPLIT_TURNS, spawnPickup, teleportAimTarget } from '../src/powerups';
+import { POWER_UP, SPLIT_TURNS, spawnPickup, aimedSpot } from '../src/powerups';
 import { createRng } from '../src/rng';
 import { cloneWorld, type World } from '../src/physics';
 import { DEFAULT_SETTINGS } from '../src/settings';
@@ -36,13 +36,13 @@ describe('power-ups in Event Horizon', () => {
   it('keeps pickups and an aimed teleport away from the black hole', () => {
     const match = duel();
     const world = match.world;
-    expect(world.hole).not.toBeNull();
-    const hole = world.hole!;
+    expect(world.holes.length).toBeGreaterThan(0);
+    const hole = world.holes[0];
     for (const p of match.pickups) expect(Math.hypot(p.x - hole.x, p.y - hole.y)).toBeGreaterThanOrEqual(hole.radius + POWER_UP.HOLE_GAP);
     // Aiming straight at the hole: the landing stops short of the event horizon, or lands beyond it.
     const from = world.ships[0];
     const atHole = (Math.atan2(-(hole.y - from.y), hole.x - from.x) * 180) / Math.PI;
-    const aimed = teleportAimTarget(world, from, atHole, 100);
+    const aimed = aimedSpot(world, from, atHole, 100);
     expect(aimed).not.toBeNull();
     expect(Math.hypot(aimed!.x - hole.x, aimed!.y - hole.y)).toBeGreaterThanOrEqual(hole.radius + POWER_UP.HOLE_GAP);
     const rng = createRng(5);
@@ -90,9 +90,9 @@ describe('power-ups in Event Horizon', () => {
     who.powerUp = 'teleport';
     const before = { ...match.world.ships[who.id] };
     match.usePowerUp();
-    expect(match.teleporting).toBe(true);
+    expect(match.placing).toBe(true);
     match.commit();
-    expect(match.teleporting).toBe(false);
+    expect(match.placing).toBe(false);
     // The jump spent the shot: the ship is in for the volley, but fires nothing.
     expect(who.locked).toBe(true);
     expect(who.passed).toBe(true);
@@ -114,7 +114,7 @@ describe('power-ups in Event Horizon', () => {
 
   it('pulls the pickups towards the hole as it grows, and eats the ones too close to it', () => {
     const match = duel();
-    const hole = match.world.hole!;
+    const hole = match.world.holes[0];
     // Keep the pickups out of the way of the shots: both ships shoot straight away from the middle.
     const far = { id: 71, kind: 'splitter' as const, x: hole.x + 260, y: hole.y + 20, born: 0 };
     const near = { id: 72, kind: 'preview' as const, x: hole.x + hole.radius + 12, y: hole.y, born: 0 };
@@ -142,7 +142,7 @@ describe('power-ups in Event Horizon', () => {
 
   it('clears pickups the grown hole has swallowed and fills the field again', () => {
     const match = duel();
-    const hole = match.world.hole!;
+    const hole = match.world.holes[0];
     match.pickups = [{ id: 70, kind: 'preview', x: hole.x + hole.radius * 0.5, y: hole.y, born: 0 }];
     const faded: string[] = [];
     match.on((e) => e.type === 'pickupFade' && faded.push(e.kind));
@@ -155,7 +155,7 @@ describe('power-ups in Event Horizon', () => {
 
 describe('a flight that was changed on the way', () => {
   function straight(): World {
-    return { width: 1280, height: 800, planets: [], ships: [{ x: 300, y: 400, alive: true }, { x: 900, y: 420, alive: true }], hole: null, version: 0 };
+    return { width: 1280, height: 800, planets: [], ships: [{ x: 300, y: 400, alive: true }, { x: 900, y: 420, alive: true }], holes: [], nebulae: [], version: 0 };
   }
 
   it('replays the same flight from its script: the split and the shield happen at the same step', () => {

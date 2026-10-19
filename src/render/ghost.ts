@@ -232,7 +232,7 @@ export class GhostPanel {
       this.shake = Math.min(1.4, this.shake + 0.35);
     }
     if (reduced) return;
-    const hole = lane.world.hole;
+    const hole = lane.world.holes[0];
     const count = big ? 70 : e.kind === 'bomb' ? 22 : e.kind === 'gold' ? 26 : 10;
     for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -275,7 +275,7 @@ export class GhostPanel {
 
   private step(lane: GhostLane, dt: number): void {
     this.shake = Math.max(0, this.shake - dt * 2.4);
-    const hole = lane.world.hole;
+    const hole = lane.world.holes[0];
     for (const s of this.sparks) {
       s.age += dt;
       if (s.fed && hole) {
@@ -312,7 +312,7 @@ export class GhostPanel {
     const { world } = lane;
     ctx.lineJoin = 'round';
 
-    if (world.hole) this.drawHole(world.hole);
+    for (const hole of world.holes) this.drawHole(hole);
     for (const p of world.planets) {
       if (p.radius <= 0) continue;
       const g = ctx.createRadialGradient(p.x - p.radius * 0.35, p.y - p.radius * 0.35, p.radius * 0.1, p.x, p.y, p.radius);

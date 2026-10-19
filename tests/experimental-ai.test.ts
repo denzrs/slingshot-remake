@@ -24,8 +24,8 @@ function visibleWorld(world: World): ExperimentalWorld {
     width: world.width, height: world.height, ships: world.ships, shooter: 0,
     planetCount: world.planets.length,
     visiblePlanets: world.planets.map(({ seed, x, y, radius }) => ({ id: seed, x, y, radius })),
-    visibleHole: world.hole ? { x: world.hole.x, y: world.hole.y, radius: world.hole.radius } : undefined,
-    hasHole: world.hole !== null, holeRadius: world.hole?.radius ?? 0, rules: { bounce: false }, shots: [],
+    visibleHole: world.holes[0] ? { x: world.holes[0].x, y: world.holes[0].y, radius: world.holes[0].radius } : undefined,
+    hasHole: world.holes.length > 0, holeRadius: world.holes[0]?.radius ?? 0, rules: { bounce: false }, shots: [],
   };
 }
 
@@ -44,7 +44,7 @@ describe('experimental starting knowledge', () => {
     width: FIELD.width, height: FIELD.height,
     ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
     planets: [{ x: 640, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' }],
-    hole: null, version: 0,
+    holes: [], nebulae: [], version: 0,
   };
 
   it.each([[undefined, 1], [-1, 0], [2, 1], [NaN, 0], [Infinity, 0], [0.35, 0.35]])(
@@ -185,19 +185,19 @@ describe('experimental starting knowledge', () => {
   });
 
   it('recovers unknown Horizon hole mass from a real own shot', () => {
-    const horizonWorld = { ...world, planets: [], hole: { x: 800, y: 650, radius: 30, mass: 200_000 } };
+    const horizonWorld = { ...world, planets: [], holes: [{ x: 800, y: 650, radius: 30, mass: 200_000 }] };
     const visible = { ...visibleWorld(horizonWorld), mode: 'horizon' as const };
     const learner = createExperimentalLearner(0);
     observeExperimentalShot(learner, observedShot(horizonWorld, 0, 1, 300), visible, 1);
     const fit = experimentalLearnerFit(learner, visible);
-    expect(fit.holeMass).toBeCloseTo(horizonWorld.hole.mass, -1);
+    expect(fit.holeMass).toBeCloseTo(horizonWorld.holes[0].mass, -1);
     expect(fit.holeMassStandardDeviation).toBeLessThan(HORIZON.START_MASS);
     expect(fit.predictionRms).toBeGreaterThan(fit.rms!);
   });
 
   it.each([0, 1])('retains uncertainty after a sparse hidden Horizon shot with %i planets', (planetCount) => {
     const horizonWorld = { ...world, planets: world.planets.slice(0, planetCount),
-      hole: { x: FIELD.width / 2, y: FIELD.height / 2, radius: 30, mass: 200_000 } };
+      holes: [{ x: FIELD.width / 2, y: FIELD.height / 2, radius: 30, mass: 200_000 }] };
     const hidden = { ...visibleWorld(horizonWorld), mode: 'horizon' as const, visiblePlanets: undefined };
     const learner = createExperimentalLearner(0);
     const prior = experimentalLearnerFit(learner, hidden);
@@ -216,7 +216,7 @@ describe('experimental starting knowledge', () => {
 
   it('reduces hidden hole uncertainty when a real trajectory supplies informative evidence', () => {
     const horizonWorld = { ...world, planets: [],
-      hole: { x: FIELD.width / 2, y: FIELD.height / 2, radius: 30, mass: 200_000 } };
+      holes: [{ x: FIELD.width / 2, y: FIELD.height / 2, radius: 30, mass: 200_000 }] };
     const hidden = { ...visibleWorld(horizonWorld), mode: 'horizon' as const, visiblePlanets: undefined };
     const learner = createExperimentalLearner(0);
     const prior = experimentalLearnerFit(learner, hidden);
@@ -277,7 +277,8 @@ describe('experimental gravity fitting', () => {
       width: FIELD.width, height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' }],
-      hole: null, version: 0,
+      holes: [],       nebulae: [],
+      version: 0,
     };
     const visible = visibleWorld(world);
     const shot = new Shot(world, 0, 0, 65, { bounce: false, timeLimit: 12 });
@@ -331,7 +332,8 @@ describe('experimental gravity fitting', () => {
     const world: World = {
       width: FIELD.width, height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
-      planets: [], hole: { x: 800, y: 650, radius: 30, mass: 200_000 }, version: 0,
+      planets: [], holes: [{ x: 800, y: 650, radius: 30, mass: 200_000 }],     nebulae: [],
+    version: 0,
     };
     const hidden = { ...visibleWorld(world), visiblePlanets: undefined, mode: 'horizon' as const };
     const learner = createExperimentalLearner(0.7);
@@ -350,7 +352,7 @@ describe('experimental gravity fitting', () => {
       planets: [
         { x: 550, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' },
         { x: 820, y: 280, radius: 30, mass: 30_000, seed: 2, style: 'rocky', tint: '#fff' },
-      ], hole: null, version: 0,
+      ], holes: [], nebulae: [], version: 0,
     };
     const hidden = { ...visibleWorld(world), visiblePlanets: undefined };
     const learner = createExperimentalLearner(0.5);
@@ -379,7 +381,8 @@ describe('experimental gravity fitting', () => {
       width: FIELD.width, height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: source === 'planet' ? [{ x: 640, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' }] : [],
-      hole: source === 'hole' ? { x: 800, y: 650, radius: 30, mass: 200_000 } : null,
+      holes: source === 'hole' ? [{ x: 800, y: 650, radius: 30, mass: 200_000 }] : [],
+  nebulae: [],
       version: 0,
     };
     const visible = visibleWorld(world);
@@ -408,7 +411,7 @@ describe('experimental gravity fitting', () => {
       width: FIELD.width, height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' }],
-      hole: null, version: 0,
+      holes: [], nebulae: [], version: 0,
     };
     const visible = visibleWorld(world);
     const learner = createExperimentalLearner();
@@ -439,7 +442,7 @@ describe('experimental gravity fitting', () => {
       planets: [
         { x: 640, y: 520, radius: 25, mass: 25 ** 3 * 0.76, seed: 1, style: 'rocky', tint: '#fff' },
         { x: 930, y: 640, radius: 30, mass: 30 ** 3 * 1.29, seed: 2, style: 'rocky', tint: '#fff' },
-      ], hole: null, version: 0,
+      ], holes: [], nebulae: [], version: 0,
     };
     const visible = visibleWorld(world);
     const learner = createExperimentalLearner();
@@ -463,7 +466,7 @@ describe('experimental gravity fitting', () => {
       width: FIELD.width, height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' }],
-      hole: null, version: 0,
+      holes: [], nebulae: [], version: 0,
     };
     const visible = visibleWorld(world);
     const learner = createExperimentalLearner();
@@ -484,7 +487,7 @@ describe('experimental gravity fitting', () => {
     const world: World = {
       width: FIELD.width, height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: true }],
-      planets: [], hole: null, version: 0,
+      planets: [], holes: [], nebulae: [], version: 0,
     };
     const aims: { angle: number; power: number }[] = [];
     const decisions: { kind: string; hypothesisCount: number; hitRate: number; unsafeRate: number }[] = [];
@@ -541,7 +544,8 @@ describe('experimental gravity fitting', () => {
       height: FIELD.height,
       ships: [],
       planets: [planet],
-      hole: null,
+      holes: [],
+      nebulae: [],
       version: 0,
     };
     const fit = fitGravity([], 1, FIELD.width, FIELD.height, false);
@@ -561,7 +565,8 @@ describe('experimental gravity fitting', () => {
       height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 15_625, seed: 1, style: 'rocky', tint: '#fff' }],
-      hole: null,
+      holes: [],
+      nebulae: [],
       version: 0,
     };
     const shot = new Shot(world, 0, 0, 50, { bounce: false, timeLimit: 12 });
@@ -584,7 +589,8 @@ describe('experimental gravity fitting', () => {
       height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [],
-      hole: { x: FIELD.width / 2, y: FIELD.height / 2, radius: 16, mass: HORIZON.START_MASS },
+      holes: [{ x: FIELD.width / 2, y: FIELD.height / 2, radius: 16, mass: HORIZON.START_MASS }],
+      nebulae: [],
       version: 0,
     };
     const shot = new Shot(world, 0, 0, 50, { bounce: true, timeLimit: 12 });
@@ -596,7 +602,7 @@ describe('experimental gravity fitting', () => {
     const fit = fitGravity([{ points: trail, angle: 0, power: 50 }], 0, FIELD.width, FIELD.height, true, { bounce: true });
 
     expect(fit.samples).toBeGreaterThan(100);
-    expect(fit.holeMass).toBeCloseTo(world.hole!.mass, -4);
+    expect(fit.holeMass).toBeCloseTo(world.holes[0]!.mass, -4);
   });
 
   it('validates a fit against the newest completed trajectory', () => {
@@ -605,7 +611,8 @@ describe('experimental gravity fitting', () => {
       height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 15_625, seed: 1, style: 'rocky', tint: '#fff' }],
-      hole: null,
+      holes: [],
+      nebulae: [],
       version: 0,
     };
     const trails: { points: number[]; angle: number; power: number }[] = [];
@@ -632,7 +639,8 @@ describe('experimental gravity fitting', () => {
       height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 15_625, seed: 1, style: 'rocky', tint: '#fff' }],
-      hole: null,
+      holes: [],
+      nebulae: [],
       version: 0,
     };
     const shot = new Shot(world, 0, 0, 50, { bounce: false, timeLimit: 12 });

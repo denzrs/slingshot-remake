@@ -1048,7 +1048,7 @@ describe('CPU seats online', () => {
 
   describe('power-ups', () => {
     const powerRules: RoomRules = { ...rules, simultaneousShots: true, powerUps: true, powerUpKinds: ['teleport', 'splitter'], powerUpAmount: 3 };
-    type Inner = { power: { scene(): { teleport: { owner: number; target: unknown } | null } } };
+    type Inner = { power: { scene(): { placement: { owner: number; target: unknown } | null } } };
 
     it("plays them by the room's rules, in Classic and Event Horizon, and shows the guest the same pickups", async () => {
       for (const mode of ['classic', 'horizon'] as const) {
@@ -1073,8 +1073,8 @@ describe('CPU seats online', () => {
       guest.session.input({ kind: 'power' });
       for (let i = 0; i < 12; i++) await frame(host, guest);
       // Only the ship aiming sees its spot: the host's own screen is the other player's.
-      expect((host.match() as unknown as Inner).power.scene().teleport).toBeNull();
-      const aimed = (guest.match() as unknown as Inner).power.scene().teleport;
+      expect((host.match() as unknown as Inner).power.scene().placement).toBeNull();
+      const aimed = (guest.match() as unknown as Inner).power.scene().placement;
       expect(aimed?.owner).toBe(1);
       expect(aimed?.target).not.toBeNull();
 

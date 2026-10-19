@@ -10,6 +10,9 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   splitter: '#ffd21f',
   repulse: '#ff7a1a',
   shield: '#4dffb0',
+  blackhole: '#b99cff',
+  planetkiller: '#ff5c5c',
+  nebula: '#9be7ff',
 };
 
 /** Draws a power-up's symbol centred on (x, y), about `r` in size, in the current stroke and fill style. */
@@ -50,8 +53,34 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.beginPath();
     ctx.arc(x, y, r * 0.3, 0, Math.PI * 2);
     ctx.fill();
-  } else {
-    // A fork: one shot splitting into three.
+  } else if (kind === 'blackhole') {
+    // A black hole: a dark core inside a bright accretion ring.
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (kind === 'planetkiller') {
+    // A planet split open: a disc with a jagged crack through it.
+    ctx.arc(x, y, r * 0.85, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - r * 0.2, y - r * 0.9);
+    ctx.lineTo(x + r * 0.15, y - r * 0.2);
+    ctx.lineTo(x - r * 0.35, y + r * 0.15);
+    ctx.lineTo(x + r * 0.25, y + r * 0.9);
+    ctx.stroke();
+  } else if (kind === 'nebula') {
+    // A cloud: overlapping arcs, heavier on one side.
+    ctx.arc(x - r * 0.45, y + r * 0.15, r * 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x + r * 0.15, y - r * 0.1, r * 0.65, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x + r * 0.6, y + r * 0.3, r * 0.4, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (kind === 'splitter') {
     ctx.moveTo(x, y + r);
     ctx.lineTo(x, y);
     ctx.moveTo(x, y);

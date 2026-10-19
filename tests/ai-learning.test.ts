@@ -159,7 +159,7 @@ describe('production trajectory learning', () => {
 
   it('transfers estimated hidden swallowed mass without survivor IDs or old-field evidence', () => {
     const world = validationWorld();
-    world.hole = { x: 667, y: 382, radius: 16, mass: HORIZON.START_MASS };
+    world.holes = [{ x: 667, y: 382, radius: 16, mass: HORIZON.START_MASS }];
     const hidden = { ...visibleWorld(world), visiblePlanets: undefined };
     const learner = createExperimentalLearner();
     observeExperimentalShot(learner, recordShot(world, -6, 65, 1), hidden, 1);
@@ -287,7 +287,7 @@ describe('production trajectory learning', () => {
       const frozen = trainLearner(world, 0, 8);
       const fit = experimentalLearnerFit(learner, visibleWorld(world));
       expect(fit.observedShots).toBe(8);
-      expect(fit.hole).toEqual(world.hole ? { x: world.hole.x, y: world.hole.y, radius: world.hole.radius } : undefined);
+      expect(fit.hole).toEqual(world.holes[0] ? { x: world.holes[0].x, y: world.holes[0].y, radius: world.holes[0].radius } : undefined);
       learnedErrors.push(...heldOutErrors(world, learner).map((error) => error.trailRms));
       frozenErrors.push(...heldOutErrors(world, frozen).map((error) => error.trailRms));
     }
@@ -298,7 +298,7 @@ describe('production trajectory learning', () => {
     const world = independentDensityWorld(1);
     const visible = visibleWorld(world);
     expect(Object.keys(visible.visiblePlanets![0]).sort()).toEqual(['id', 'radius', 'x', 'y']);
-    const changedTruth = { ...world, planets: world.planets.map((planet) => ({ ...planet, mass: planet.mass * 10 })), hole: { ...world.hole!, mass: world.hole!.mass * 10 } };
+    const changedTruth = { ...world, planets: world.planets.map((planet) => ({ ...planet, mass: planet.mass * 10 })), holes: [{ ...world.holes[0], mass: world.holes[0].mass * 10 }] };
     const first = experimentalLearnerFit(createExperimentalLearner(), visible);
     const second = experimentalLearnerFit(createExperimentalLearner(), visibleWorld(changedTruth));
     expect(second.planets).toEqual(first.planets);
@@ -318,7 +318,7 @@ describe('production trajectory learning', () => {
 
   it('carries surviving estimates through Horizon changes without pooling obsolete trails', () => {
     const world = validationWorld(2);
-    world.hole = { x: 667, y: 382, radius: 16, mass: HORIZON.START_MASS };
+    world.holes = [{ x: 667, y: 382, radius: 16, mass: HORIZON.START_MASS }];
     const learner = trainLearner(world, 1, 4);
     const frozen = trainLearner(world, 0, 4);
     const prior = experimentalLearnerFit(learner, visibleWorld(world));
@@ -327,7 +327,7 @@ describe('production trajectory learning', () => {
     const next = {
       ...world, version: 1,
       planets: [{ ...survivor, x: survivor.x - 18, y: survivor.y + 12 }],
-      hole: { ...world.hole, radius: 23, mass: world.hole.mass + HORIZON.MASS_PER_VOLLEY + HORIZON.FEED * swallowed.mass },
+      holes: [{ ...world.holes[0], radius: 23, mass: world.holes[0].mass + HORIZON.MASS_PER_VOLLEY + HORIZON.FEED * swallowed.mass }],
     };
     advanceExperimentalWorld(learner, visibleWorld(next), { holeMassGain: HORIZON.MASS_PER_VOLLEY, swallowedPlanetIds: [swallowed.seed], feed: HORIZON.FEED });
     advanceExperimentalWorld(frozen, visibleWorld(next), { holeMassGain: HORIZON.MASS_PER_VOLLEY, swallowedPlanetIds: [swallowed.seed], feed: HORIZON.FEED });

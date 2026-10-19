@@ -148,6 +148,12 @@ function isGameEvent(value: unknown): boolean {
       return kindOf(event.kind) && finite('x') && finite('y');
     case 'teleport':
       return index('player') && finite('fromX') && finite('fromY') && finite('toX') && finite('toY');
+    case 'blackhole':
+      return index('player') && finite('x') && finite('y');
+    case 'planetKiller':
+      return index('player') && finite('x') && finite('y') && finite('radius');
+    case 'nebula':
+      return index('player') && finite('x') && finite('y');
     case 'split':
       return index('player') && finite('x') && finite('y');
     case 'shield':

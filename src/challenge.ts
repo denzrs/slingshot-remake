@@ -343,14 +343,14 @@ function tracePath(world: World, angle: number, power: number, rules: ShotRules)
 /** Points along a probe path where a target would be fair: in the field, clear of everything, not right next door. */
 function candidateSpots(world: World, ships: Ship[], path: Path): { x: number; y: number; curve: number }[] {
   const out: { x: number; y: number; curve: number }[] = [];
-  const { planets, hole } = world;
+  const { planets, holes } = world;
   // Skip the first ~0.9 s of flight: a target that close is a straight shot at best.
   for (let i = 216; i < path.curve.length; i += 6) {
     const x = path.points[i * 2];
     const y = path.points[i * 2 + 1];
     if (x < EDGE || x > FIELD.width - EDGE || y < TOP || y > FIELD.height - EDGE) continue;
     if (planets.some((p) => Math.hypot(p.x - x, p.y - y) < p.radius + 28)) continue;
-    if (hole && Math.hypot(hole.x - x, hole.y - y) < hole.radius + 70) continue;
+    if (holes.some((h) => Math.hypot(h.x - x, h.y - y) < h.radius + 70)) continue;
     if (ships.some((s, k) => Math.hypot(s.x - x, s.y - y) < (k === 0 ? 170 : 110))) continue;
     out.push({ x, y, curve: path.curve[i] });
   }

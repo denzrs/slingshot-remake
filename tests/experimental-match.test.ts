@@ -519,7 +519,7 @@ describe('experimental match learning', () => {
       match.newMatch();
       const planet = match.world.planets[0];
       Object.defineProperty(planet, 'mass', { get() { throw new Error('private planet mass read'); } });
-      const hole = match.world.hole;
+      const hole = match.world.holes[0];
       if (hole) Object.defineProperty(hole, 'mass', { get() { throw new Error('private hole mass read'); } });
       const observation = match.observation();
       expect(observation.visiblePlanets).toEqual([{ id: planet.seed, x: planet.x, y: planet.y, radius: planet.radius }]);

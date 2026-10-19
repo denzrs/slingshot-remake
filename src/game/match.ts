@@ -12,7 +12,7 @@ import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../vo
 import { CPU_IGNORES, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
-import { PowerUpField, type TeleportAim } from './powerup-field';
+import { PowerUpField, type PlacementAim } from './powerup-field';
 
 export type Mode = 'classic' | 'horizon' | 'challenge';
 /** The modes you play against other ships, picked from the title menu. */
@@ -115,8 +115,8 @@ export interface Scene {
   /** The pass the round is in, so the renderer can tell which pickups are about to fade. */
   pass?: number;
   preview?: number[] | null;
-  /** Where the aiming ship's teleport would land. */
-  teleport?: TeleportAim | null;
+  /** Where the aiming ship's teleport or black hole would go. */
+  placement?: PlacementAim | null;
 }
 
 export type GameEvent =
@@ -135,6 +135,9 @@ export type GameEvent =
   | { type: 'pickupSpawn'; kind: PowerUpKind; x: number; y: number }
   | { type: 'pickupFade'; kind: PowerUpKind; x: number; y: number }
   | { type: 'teleport'; player: number; fromX: number; fromY: number; toX: number; toY: number }
+  | { type: 'blackhole'; player: number; x: number; y: number }
+  | { type: 'planetKiller'; player: number; x: number; y: number; radius: number }
+  | { type: 'nebula'; player: number; x: number; y: number }
   | { type: 'split'; player: number; x: number; y: number }
   | { type: 'shield'; ship: number; x: number; y: number }
   | { type: 'kill'; record: KillRecord }
@@ -672,23 +675,23 @@ export abstract class Match {
     this.power.use(id);
   }
 
-  /** Whether the ship on turn is aiming where to teleport. */
-  get teleporting(): boolean {
-    return this.power.teleporting;
+  /** Whether the ship on turn is aiming a teleport or a black hole. */
+  get placing(): boolean {
+    return this.power.placing;
   }
 
-  /** Whether a given ship is aiming where to teleport. */
-  teleportingFor(id: number): boolean {
-    return this.power.teleportingFor(id);
+  /** Whether a given ship is aiming a placement. */
+  placingFor(id: number): boolean {
+    return this.power.placingFor(id);
   }
 
-  /** Fire, while aiming: the jump happens. False when there is no aim, or it lands nowhere the ship may rest. */
-  confirmTeleport(by?: number): boolean {
-    return this.power.confirmTeleport(by);
+  /** Fire, while aiming: the jump happens, or the black hole is planted. False when there is no aim, or it lands nowhere the ship may rest. */
+  confirmPlacement(by?: number): boolean {
+    return this.power.confirmPlacement(by);
   }
 
-  cancelTeleport(by?: number): boolean {
-    return this.power.cancelTeleport(by);
+  cancelPlacement(by?: number): boolean {
+    return this.power.cancelPlacement(by);
   }
 
   /** The power-up state a snapshot carries besides the pickups, and its restoring. */
@@ -961,7 +964,7 @@ export abstract class Match {
         break;
       }
       case 'hole': {
-        const hole = volley.world.hole!;
+        const hole = volley.world.holes[end.hole];
         this.emit({ type: 'devour', x: e.x, y: e.y, toX: hole.x, toY: hole.y, color: COLORS.players[this.players[player].seat], vx: e.vx, vy: e.vy });
         break;
       }
@@ -1122,7 +1125,7 @@ export abstract class Match {
 
   /** Only public geometry, never density, mass, or render-history dependent evidence. */
   protected observedWorld(shooter: number): ExperimentalWorld {
-    const hole = this.world.hole;
+    const hole = this.world.holes[0] ?? null;
     return {
       width: this.world.width,
       height: this.world.height,
@@ -1233,6 +1236,55 @@ export abstract class Match {
     return null;
   }
 
+  /**
+   * Where a CPU lays the placement it holds, as an aim: a rough spot, never a searched one. A black hole or
+   * a nebula goes part way along the line to the nearest enemy, so that enemy's next shot runs into it; the
+   * planet killer shoots the planet lying most in the way of that line, among those its aim can reach. Null
+   * when the CPU holds no placement, or no planet is in reach of it.
+   */
+  protected cpuPlacementAim(p: PlayerState): Aim | null {
+    const kind = p.powerUp;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller') return null;
+    const world = this.world;
+    const from = world.ships[p.id];
+    const friends = this.friendsOf(p.id);
+    const enemies = this.players
+      .filter((q) => q.alive && q.id !== p.id && !friends.includes(q.id))
+      .map((q) => world.ships[q.id])
+      .sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y));
+    const reach = (POWER_UP.TELEPORT_MAX_POWER / AIM.MAX_POWER) * POWER_UP.TELEPORT_RANGE;
+    const to = enemies[0] ?? from;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const span = dx * dx + dy * dy;
+    /** How far a planet sits off the line the CPU shoots along — small means it is in the way. */
+    const laneGap = (planet: { x: number; y: number }): number => {
+      const t = span ? Math.max(0, Math.min(1, ((planet.x - from.x) * dx + (planet.y - from.y) * dy) / span)) : 0;
+      return Math.hypot(from.x + t * dx - planet.x, from.y + t * dy - planet.y);
+    };
+    let spot: { x: number; y: number };
+    if (kind === 'planetkiller') {
+      const inReach = world.planets.filter((planet) => Math.hypot(planet.x - from.x, planet.y - from.y) <= reach).sort((a, b) => laneGap(a) - laneGap(b));
+      if (!inReach.length) return null;
+      spot = { x: inReach[0].x, y: inReach[0].y };
+    } else {
+      // A little ahead of its own ship, on the way in: near enough for the enemy's shot to meet it.
+      const d = Math.hypot(dx, dy) || 1;
+      const along = Math.min(0.45 * d, reach);
+      spot = { x: from.x + (dx / d) * along, y: from.y + (dy / d) * along };
+    }
+    const distance = Math.hypot(spot.x - from.x, spot.y - from.y);
+    return {
+      angle: normalizeAngle((Math.atan2(-(spot.y - from.y), spot.x - from.x) * 180) / Math.PI),
+      power: Math.min(POWER_UP.TELEPORT_MAX_POWER, (distance / POWER_UP.TELEPORT_RANGE) * AIM.MAX_POWER),
+    };
+  }
+
+  /** A CPU lays the placement it holds, at the spot its aim points at. False when it cannot lay it now. */
+  protected placeForCpu(id: number): boolean {
+    return this.power.placeForCpu(id);
+  }
+
   /** Think for the given CPU players, sharing a per-frame time budget round-robin. */
   protected runCpu(ids: number[], budgetMs: number, effort: number, lookahead?: number): void {
     const logDecisions = (typeof process !== 'undefined' && process.env.AI_DECISION_LOGS === '1')
@@ -1247,7 +1299,7 @@ export abstract class Match {
       // search through them, so a power-up-hungry level like Einstein collects more.
       const pickups: ShotGate[] = this.powerUps
         ? this.power.pickups
-            .filter((pickup) => !CPU_IGNORES.has(pickup.kind))
+            .filter((pickup) => !CPU_IGNORES[pickup.kind])
             .map((pickup) => ({ x: pickup.x, y: pickup.y, r: POWER_UP.PICKUP_RADIUS }))
         : [];
       const planner = isExperimentalCpu(p.cpu)
@@ -1347,6 +1399,7 @@ export abstract class Match {
       ...(recovery ? { recovery: { ...recovery, sampleCounts: [...recovery.sampleCounts], retainedShotIds: [...recovery.retainedShotIds] } } : {}),
     };
     this.options.onExperimentalDecision?.(report);
+    const primaryHole = this.world.holes[0] ?? null;
     if (logsEnabled) console.info('[AI experimental] decision', {
       ...report,
       fit: {
@@ -1370,15 +1423,15 @@ export abstract class Match {
           massError,
           massErrorPercent: real.mass === 0 ? null : massError / Math.abs(real.mass) * 100,
         })),
-        realBlackHole: this.world.hole ? { x: this.world.hole.x, y: this.world.hole.y, mass: this.world.hole.mass } : null,
+        realBlackHole: primaryHole ? { x: primaryHole.x, y: primaryHole.y, mass: primaryHole.mass } : null,
         estimatedBlackHole: fit.holeMass === null ? null : {
           x: fit.hole?.x ?? this.world.width / 2,
           y: fit.hole?.y ?? this.world.height / 2,
           mass: fit.holeMass,
           massStandardDeviation: fit.holeMassStandardDeviation ?? null,
         },
-        blackHoleMassErrorPercent: this.world.hole && fit.holeMass !== null && this.world.hole.mass !== 0
-          ? Math.abs(fit.holeMass - this.world.hole.mass) / Math.abs(this.world.hole.mass) * 100 : null,
+        blackHoleMassErrorPercent: primaryHole && fit.holeMass !== null && primaryHole.mass !== 0
+          ? Math.abs(fit.holeMass - primaryHole.mass) / Math.abs(primaryHole.mass) * 100 : null,
       },
     });
   }

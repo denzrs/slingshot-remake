@@ -1,4 +1,4 @@
-import { AIM, PHYSICS } from './config';
+import { AIM, NEBULA, PHYSICS } from './config';
 import { aimDirection, Shot, type ShotRules, type World } from './physics';
 import type { Rng } from './rng';
 
@@ -8,12 +8,12 @@ import type { Rng } from './rng';
  * own rng and the tests can call it directly.
  */
 
-export type PowerUpKind = 'preview' | 'teleport' | 'splitter' | 'repulse' | 'shield';
+export type PowerUpKind = 'preview' | 'teleport' | 'splitter' | 'repulse' | 'shield' | 'blackhole' | 'planetkiller' | 'nebula';
 
-export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter', 'repulse', 'shield'];
+export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter', 'repulse', 'shield', 'blackhole', 'planetkiller', 'nebula'];
 
 /** How often each kind turns up, relative to the others: the stronger ones are scarcer. */
-export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 0.6, teleport: 1, splitter: 1, repulse: 0.8, shield: 0.6 };
+export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 0.6, teleport: 1, splitter: 1, repulse: 0.8, shield: 0.6, blackhole: 0.1, planetkiller: 0.1, nebula: 0.4 };
 
 /** The kind of a new pickup, drawn by weight from the kinds in play (all of them when the list is empty). */
 export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KINDS): PowerUpKind {
@@ -26,8 +26,12 @@ export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KIND
   return pool[pool.length - 1];
 }
 
-/** Kinds a CPU has no use for: it leaves them lying. A repulse it does use, so it plans its shot pushed away. */
-export const CPU_IGNORES: ReadonlySet<PowerUpKind> = new Set<PowerUpKind>(['preview']);
+/**
+ * Kinds a CPU has no use for: it leaves them lying. Only the preview, which shows a shot's path and means
+ * nothing to a planner that already knows it. A placement (black hole, planet killer, nebula) it does take,
+ * and lays it at a rough spot of its own.
+ */
+export const CPU_IGNORES: Readonly<Partial<Record<PowerUpKind, true>>> = { preview: true };
 
 export const POWER_UP = {
   /**
@@ -61,7 +65,7 @@ export const POWER_UP = {
   TELEPORT_PLANET_GAP: 50,
   TELEPORT_SHIP_GAP: 110,
   TELEPORT_PICKUP_GAP: 50,
-  /** Spots keep this far from the black hole's edge (it grows every volley): it would swallow them. */
+  /** Spots keep this far from a black hole's edge (the Event Horizon one grows every volley): it would swallow them. */
   HOLE_GAP: 90,
   /** Random spots tried before giving up. */
   ATTEMPTS: 200,
@@ -79,6 +83,14 @@ export const POWER_UP = {
   TELEPORT_RANGE: 1200,
   TELEPORT_AIM_STEP: 4,
   TELEPORT_MAX_POWER: 50,
+  /** A black hole the power-up plants: a modest, fixed horizon. It lasts the round and never grows. */
+  BLACKHOLE_RADIUS: 18,
+  BLACKHOLE_MASS: 260_000,
+  /**
+   * The reach of an aimed nebula: like the teleport aim, the angle and power put one cloud down. A cloud
+   * keeps this far from the field edge, so its aim spot is drawn whole.
+   */
+  NEBULA_EDGE_GAP: NEBULA.RADIUS,
 } as const;
 
 export interface Pickup {
@@ -97,7 +109,7 @@ function isClear(world: World, x: number, y: number, planetGap: number, shipGap:
   if (x < edge || x > world.width - edge || y < edge || y > world.height - edge) return false;
   if (world.planets.some((p) => distance(x, y, p.x, p.y) < p.radius + planetGap)) return false;
   if (world.ships.some((s) => distance(x, y, s.x, s.y) < shipGap)) return false;
-  if (world.hole && distance(x, y, world.hole.x, world.hole.y) < world.hole.radius + POWER_UP.HOLE_GAP) return false;
+  if (world.holes.some((h) => distance(x, y, h.x, h.y) < h.radius + POWER_UP.HOLE_GAP)) return false;
   return !pickups.some((q) => distance(x, y, q.x, q.y) < pickupGap);
 }
 
@@ -165,19 +177,22 @@ export function teleportSpot(world: World, rng: Rng, pickups: readonly Pickup[] 
   return clearSpot(world, rng, POWER_UP.TELEPORT_PLANET_GAP, POWER_UP.TELEPORT_SHIP_GAP, pickups, POWER_UP.TELEPORT_PICKUP_GAP, POWER_UP.EDGE);
 }
 
-/** Whether a spot is somewhere a ship may come to rest: inside the field, clear of every planet and the hole. */
+/**
+ * Whether a spot is somewhere a ship may come to rest — and so somewhere an aimed black hole may be planted:
+ * inside the field, clear of every planet and of every hole already there.
+ */
 function isLanded(world: World, x: number, y: number): boolean {
   if (x < POWER_UP.EDGE || x > world.width - POWER_UP.EDGE || y < POWER_UP.EDGE || y > world.height - POWER_UP.EDGE) return false;
   if (world.planets.some((p) => distance(x, y, p.x, p.y) < p.radius + POWER_UP.TELEPORT_PLANET_GAP)) return false;
-  return !(world.hole && distance(x, y, world.hole.x, world.hole.y) < world.hole.radius + POWER_UP.HOLE_GAP);
+  return !world.holes.some((h) => distance(x, y, h.x, h.y) < h.radius + POWER_UP.HOLE_GAP);
 }
 
 /**
- * Where an aimed teleport lands: the point `power` puts along `angle` from the ship, walked back along the ray
- * until it is somewhere a ship may come to rest. So it never lands inside a planet or the hole, or off the field.
- * Null when the ray offers no such spot.
+ * The point `power` puts along `angle` from the ship, walked back along the ray until it is somewhere
+ * a ship may rest and a black hole may be planted. So it never lands inside a planet or an existing hole,
+ * or off the field. Null when the ray offers no such spot. Used by both the teleport and the black hole.
  */
-export function teleportAimTarget(world: World, from: { x: number; y: number }, angle: number, power: number): { x: number; y: number } | null {
+export function aimedSpot(world: World, from: { x: number; y: number }, angle: number, power: number): { x: number; y: number } | null {
   const dir = aimDirection(angle);
   // A power from 0 to TELEPORT_MAX_POWER reaches nothing to half the field across; more power changes nothing.
   const full = (Math.min(POWER_UP.TELEPORT_MAX_POWER, Math.max(0, power)) / AIM.MAX_POWER) * POWER_UP.TELEPORT_RANGE;
@@ -185,6 +200,40 @@ export function teleportAimTarget(world: World, from: { x: number; y: number }, 
     const x = from.x + dir.x * reach;
     const y = from.y + dir.y * reach;
     if (isLanded(world, x, y)) return { x, y };
+  }
+  return null;
+}
+
+/**
+ * Where an aimed nebula lands: the point `power` puts along `angle`, walked back only until the whole cloud
+ * fits inside the field. A cloud may cover a planet or a hole, so nothing else blocks it. Null at no reach.
+ */
+export function nebulaSpot(world: World, from: { x: number; y: number }, angle: number, power: number): { x: number; y: number } | null {
+  const dir = aimDirection(angle);
+  const full = (Math.min(POWER_UP.TELEPORT_MAX_POWER, Math.max(0, power)) / AIM.MAX_POWER) * POWER_UP.TELEPORT_RANGE;
+  const gap = POWER_UP.NEBULA_EDGE_GAP;
+  for (let reach = full; reach > 0; reach -= POWER_UP.TELEPORT_AIM_STEP) {
+    const x = from.x + dir.x * reach;
+    const y = from.y + dir.y * reach;
+    if (x >= gap && x <= world.width - gap && y >= gap && y <= world.height - gap) return { x, y };
+  }
+  return null;
+}
+
+/**
+ * The planet an aimed planet killer would remove: the first one the aim ray enters, out to the aim's reach.
+ * Null when the ray meets no planet, so a miss spends nothing.
+ */
+export function aimedPlanet(world: World, from: { x: number; y: number }, angle: number, power: number): { index: number; x: number; y: number } | null {
+  const dir = aimDirection(angle);
+  const full = (Math.min(POWER_UP.TELEPORT_MAX_POWER, Math.max(0, power)) / AIM.MAX_POWER) * POWER_UP.TELEPORT_RANGE;
+  for (let reach = POWER_UP.TELEPORT_AIM_STEP; reach <= full; reach += POWER_UP.TELEPORT_AIM_STEP) {
+    const x = from.x + dir.x * reach;
+    const y = from.y + dir.y * reach;
+    for (let i = 0; i < world.planets.length; i++) {
+      const p = world.planets[i];
+      if (distance(x, y, p.x, p.y) < p.radius) return { index: i, x: p.x, y: p.y };
+    }
   }
   return null;
 }

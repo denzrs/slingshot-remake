@@ -24,7 +24,8 @@ export function validationWorld(index = 0): World {
     [{ x: 480, y: 550, radius: 30, density: 1.27 }, { x: 830, y: 250, radius: 35, density: 0.77 }],
   ];
   return {
-    ...FIELD, version: 0, hole: null,
+    ...FIELD, version: 0, holes: [],
+    nebulae: [],
     ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
     planets: layouts[index].map((p, id) => ({ x: p.x, y: p.y, radius: p.radius, mass: p.density * p.radius ** 3, seed: id + 1, style: 'rocky' as const, tint: '#fff' })),
   };
@@ -36,9 +37,9 @@ export function visibleWorld(world: World, epoch = world.version): ExperimentalW
     width: world.width, height: world.height, ships: world.ships.map((ship) => ({ ...ship })), shooter: 0,
     planetCount: world.planets.length,
     visiblePlanets: world.planets.map(({ seed, x, y, radius }) => ({ id: seed, x, y, radius })),
-    hasHole: world.hole !== null, holeRadius: world.hole?.radius ?? 0,
-    visibleHole: world.hole ? { x: world.hole.x, y: world.hole.y, radius: world.hole.radius } : undefined,
-    mode: world.hole ? 'horizon' : 'classic', epoch, rules: { bounce: false }, shots: [],
+    hasHole: world.holes.length > 0, holeRadius: world.holes[0]?.radius ?? 0,
+    visibleHole: world.holes[0] ? { x: world.holes[0].x, y: world.holes[0].y, radius: world.holes[0].radius } : undefined,
+    mode: world.holes.length > 0 ? 'horizon' : 'classic', epoch, rules: { bounce: false }, shots: [],
   };
 }
 
@@ -54,14 +55,15 @@ export function recordShot(world: World, angle: number, power: number, shotId: n
 
 function predictionWorld(world: World, fit: GravityFit): World {
   return {
-    width: world.width, height: world.height, version: world.version,
+    width: world.width, height: world.height,     nebulae: [],
+    version: world.version,
     ships: world.ships.map((ship) => ({ ...ship })),
     planets: fit.planets.map((p, index) => {
       const geometry = world.planets.find((planet) => planet.seed === p.id) ?? world.planets[index];
       if (p.radius === undefined && !geometry) throw new Error('Missing public planet geometry for prediction');
       return { ...p, radius: p.radius ?? geometry.radius, seed: p.id ?? index + 1, style: 'rocky' as const, tint: '#fff' };
     }),
-    hole: fit.hole && fit.holeMass !== null ? { ...fit.hole, mass: fit.holeMass } : null,
+    holes: fit.hole && fit.holeMass !== null ? [{ ...fit.hole, mass: fit.holeMass }] : [],
   };
 }
 
@@ -128,7 +130,7 @@ export function independentDensityWorld(index = 0): World {
     x: planet.x, y: planet.y, radius: planet.radius, mass: planet.density * planet.radius ** 3,
     seed: id + 1, style: 'rocky', tint: '#fff',
   }));
-  if (index > 0) world.hole = { x: 643, y: 427, radius: HORIZON.START_RADIUS, mass: HORIZON.START_MASS };
+  if (index > 0) world.holes = [{ x: 643, y: 427, radius: HORIZON.START_RADIUS, mass: HORIZON.START_MASS }];
   return world;
 }
 
@@ -259,8 +261,9 @@ interface RecoveryProbeError { angle: number; power: number; squared: number; sa
 /** Hidden predictions use estimated point sources, never true source positions or radii. */
 export function recoveryPredictionErrors(world: World, fit: GravityFit, exitBoundary: number = PHYSICS.OUT_MARGIN): RecoveryProbeError[] {
   const belief: World = {
-    width: world.width, height: world.height, version: world.version,
-    ships: world.ships.map((ship) => ({ ...ship })), hole: null,
+    width: world.width, height: world.height,   nebulae: [],
+  version: world.version,
+    ships: world.ships.map((ship) => ({ ...ship })), holes: [],
     planets: fit.planets.map((planet, index) => ({ ...planet, radius: 0, seed: index, style: 'rocky', tint: '#fff' })),
   };
   return RECOVERY_PROBES.map((angle) => {
@@ -377,7 +380,7 @@ export function runLearningValidation() {
   const idempotent = duplicateAfter.observedShots === duplicateBefore.observedShots && duplicateAfter.learnedShots === duplicateBefore.learnedShots
     && JSON.stringify(heldOutErrors(duplicateWorld, duplicateLearner)) === JSON.stringify(duplicatePredictions);
   const horizonWorld = validationWorld(2);
-  horizonWorld.hole = { x: 667, y: 382, radius: 16, mass: HORIZON.START_MASS };
+  horizonWorld.holes = [{ x: 667, y: 382, radius: 16, mass: HORIZON.START_MASS }];
   const horizonLearner = trainLearner(horizonWorld, 1, 4);
   const horizonFrozen = trainLearner(horizonWorld, 0, 4);
   const horizonBefore = experimentalLearnerFit(horizonLearner, visibleWorld(horizonWorld));
@@ -385,7 +388,7 @@ export function runLearningValidation() {
   const nextWorld: World = {
     ...horizonWorld, version: 1,
     planets: [{ ...horizonWorld.planets[1], x: horizonWorld.planets[1].x - 18, y: horizonWorld.planets[1].y + 12 }],
-    hole: { ...horizonWorld.hole, radius: 23, mass: horizonWorld.hole.mass + HORIZON.MASS_PER_VOLLEY + HORIZON.FEED * swallowed.mass },
+    holes: [{ ...horizonWorld.holes[0], radius: 23, mass: horizonWorld.holes[0].mass + HORIZON.MASS_PER_VOLLEY + HORIZON.FEED * swallowed.mass }],
   };
   advanceExperimentalWorld(horizonLearner, visibleWorld(nextWorld), { holeMassGain: HORIZON.MASS_PER_VOLLEY, swallowedPlanetIds: [swallowed.seed], feed: HORIZON.FEED });
   advanceExperimentalWorld(horizonFrozen, visibleWorld(nextWorld), { holeMassGain: HORIZON.MASS_PER_VOLLEY, swallowedPlanetIds: [swallowed.seed], feed: HORIZON.FEED });

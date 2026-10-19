@@ -180,10 +180,10 @@ export class ClassicMatch extends Match {
       this.splitInFlight(this.viewer ?? this.current);
       return;
     }
-    // While a ship aims a teleport, fire jumps; the jump spends its shot, so it shoots nothing after.
+    // While a ship aims a teleport or a black hole, fire places it; the placement spends its shot, so it shoots nothing after.
     const by = this.viewer ?? this.current;
-    if (this.teleportingFor(by)) {
-      if (this.confirmTeleport(by)) this.spend(by);
+    if (this.placingFor(by)) {
+      if (this.confirmPlacement(by)) this.spend(by);
       return;
     }
     if (!this.isHumanTurn) return;
@@ -211,9 +211,9 @@ export class ClassicMatch extends Match {
       return;
     }
     if (!this.canAim(id)) return;
-    // While a ship aims a teleport, fire jumps; the jump spends its shot, so it shoots nothing after.
-    if (this.teleportingFor(id)) {
-      if (this.confirmTeleport(id)) this.spend(id);
+    // While a ship aims a teleport or a black hole, fire places it; the placement spends its shot, so it shoots nothing after.
+    if (this.placingFor(id)) {
+      if (this.confirmPlacement(id)) this.spend(id);
       return;
     }
     if (this.salvo || !this.betWindowDone) this.lock(id);
@@ -270,6 +270,18 @@ export class ClassicMatch extends Match {
       for (const p of cpus) {
         const job = this.cpuJob(p.id);
         if (this.cpuTeleportIfBlind(p, job)) continue;
+        const place = this.cpuPlacementAim(p);
+        if (place && this.phaseTime >= 0.5) {
+          // It lays the placement once its aim is on the spot; the placement spends its shot, so it fires nothing.
+          if (!this.swingTowards(p, place, dt, 2)) continue;
+          if (this.placeForCpu(p.id)) {
+            p.passed = true;
+            p.locked = true;
+            this.emit({ type: 'lock', player: p.id });
+            continue;
+          }
+          // Nowhere to lay it this volley: it keeps the power-up and aims a shot instead.
+        }
         if (!job?.target || this.phaseTime < 0.5) continue;
         if (this.swingTowards(p, job.target, dt, 2)) {
           job.settle += dt;
@@ -325,6 +337,16 @@ export class ClassicMatch extends Match {
     this.runCpu([p.id], 6, 1);
     const job = this.cpuJob(p.id);
     if (this.cpuTeleportIfBlind(p, job)) return;
+    const place = this.cpuPlacementAim(p);
+    if (place && this.phaseTime >= 0.7) {
+      // It lays the placement once its aim is on the spot; the placement spends its shot, so the turn moves on.
+      if (!this.swingTowards(p, place, dt)) return;
+      if (this.placeForCpu(p.id)) {
+        this.spend(p.id);
+        return;
+      }
+      // Nowhere to lay it this turn: it keeps the power-up and shoots instead.
+    }
     if (!job?.target || this.phaseTime < 0.7) return;
     if (this.swingTowards(p, job.target, dt)) {
       job.settle += dt;

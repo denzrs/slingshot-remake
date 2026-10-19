@@ -139,11 +139,11 @@ describe('sector layout', () => {
         expect(t.y, label).toBeGreaterThan(0);
         expect(t.y, label).toBeLessThan(FIELD.height);
         for (const p of world.planets) expect(Math.hypot(p.x - t.x, p.y - t.y), label).toBeGreaterThan(p.radius + PHYSICS.SHIP_RADIUS);
-        if (world.hole) expect(Math.hypot(world.hole.x - t.x, world.hole.y - t.y), label).toBeGreaterThan(world.hole.radius + PHYSICS.SHIP_RADIUS);
+        if (world.holes.length > 0) expect(Math.hypot(world.holes[0].x - t.x, world.holes[0].y - t.y), label).toBeGreaterThan(world.holes[0].radius + PHYSICS.SHIP_RADIUS);
         expect(Math.hypot(me.x - t.x, me.y - t.y), label).toBeGreaterThan(100);
         targets.slice(i + 1).forEach((o) => expect(Math.hypot(o.x - t.x, o.y - t.y), label).toBeGreaterThan(60));
       });
-      expect(world.hole !== null).toBe(spec.hole);
+      expect(world.holes.length > 0).toBe(spec.hole);
     }
   }, SWEEP_TIMEOUT);
 

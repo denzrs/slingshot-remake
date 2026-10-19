@@ -19,6 +19,21 @@ export const PHYSICS = {
   CLASH_RADIUS: 7,
 } as const;
 
+/** Physics constants that only the nebula power-up uses. */
+export const NEBULA = {
+  /** Half a field across at most: a cloud big enough to fly through, small enough to miss. */
+  RADIUS: 150,
+  /** Velocity kept per physics step inside a cloud (compounding drag), so a shot slows hard without stopping. */
+  DRAG: 0.995,
+  /**
+   * The slowest a shot may go inside a cloud (px/s). The drag may not take it below this, so a cloud can
+   * never trap a shot: it always crawls out (or ends on something) instead of hanging there until it times out.
+   */
+  MIN_SPEED: 60,
+  /** Gravity felt inside a cloud is this many times stronger, so shots bend into it. */
+  GRAVITY: 1.7,
+} as const;
+
 export const AIM = {
   MIN_POWER: 0,
   MAX_POWER: 100,

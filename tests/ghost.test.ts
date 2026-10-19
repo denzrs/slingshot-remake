@@ -51,7 +51,7 @@ describe('lanes', () => {
         expect(solutions.length).toBe(clusterCount(n));
         expect(world.planets.length).toBeGreaterThanOrEqual(1);
         expect(world.planets.length).toBeLessThanOrEqual(3);
-        expect(!!world.hole).toBe(hasHole(n));
+        expect(world.holes.length > 0).toBe(hasHole(n));
         expect(world.ships).toHaveLength(1);
         expect(rocks.filter((r) => r.core).length).toBeGreaterThanOrEqual(solutions.length);
         for (const r of rocks) {

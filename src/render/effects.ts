@@ -65,6 +65,19 @@ interface Beam {
   color: string;
 }
 
+/** A heavy beam that burns for a moment: the planet killer's laser, drawn far wider than a teleport streak. */
+interface Laser {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  life: number;
+  max: number;
+  color: string;
+  /** Half-width in field units at full strength. */
+  width: number;
+}
+
 interface Callout {
   text: string;
   x: number;
@@ -82,6 +95,7 @@ export class Effects {
   private callouts: Callout[] = [];
   private motes: Mote[] = [];
   private beams: Beam[] = [];
+  private lasers: Laser[] = [];
   shake = 0;
   flash = 0;
 
@@ -96,6 +110,7 @@ export class Effects {
     this.callouts = [];
     this.motes = [];
     this.beams = [];
+    this.lasers = [];
     this.shake = 0;
     this.flash = 0;
   }
@@ -241,6 +256,26 @@ export class Effects {
     if (!this.reducedMotion) this.shake = Math.max(this.shake, 3);
   }
 
+  /**
+   * The planet killer's shot: a heavy laser from the ship to the rock, then the rock blows apart. The planet
+   * is already off the field by the time this plays, so the beam and the blast are what is left of it.
+   */
+  laser(fromX: number, fromY: number, toX: number, toY: number, color: string, radius = 30): void {
+    this.lasers.push({ x1: fromX, y1: fromY, x2: toX, y2: toY, life: 0.6, max: 0.6, color, width: 9 });
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const d = Math.hypot(dx, dy) || 1;
+    this.burst(fromX, fromY, 16, 60, 260, color, 'medium', (dx / d) * 90, (dy / d) * 90, 0.45);
+    // The rock breaking up: a wide shockwave, a bright core, and debris thrown in every direction.
+    this.ring(toX, toY, radius * 3.2, 0.75, color);
+    this.ring(toX, toY, radius * 1.6, 0.5, COLORS.bone);
+    this.burst(toX, toY, 70, 90, radius * 12, COLORS.sodium, 'large', 0, 0, 1);
+    this.burst(toX, toY, 44, 60, radius * 9, color, 'large', 0, 0, 0.9);
+    this.burst(toX, toY, 22, 30, radius * 5, COLORS.bone, 'small', 0, 0, 0.7);
+    this.flash = Math.max(this.flash, 0.85);
+    if (!this.reducedMotion) this.shake = Math.max(this.shake, 8);
+  }
+
   /** Floating text, e.g. "SWING-BY ×1,5" or "+820". */
   callout(text: string, x: number, y: number, color: string, big = false): void {
     this.callouts.push({ text, x, y, color, life: big ? 1.8 : 1.4, max: big ? 1.8 : 1.4, big });
@@ -267,11 +302,11 @@ export class Effects {
           ax += a * dx;
           ay += a * dy;
         }
-        if (world.hole) {
-          const dx = world.hole.x - s.x;
-          const dy = world.hole.y - s.y;
+        for (const hole of world.holes) {
+          const dx = hole.x - s.x;
+          const dy = hole.y - s.y;
           const d2 = Math.max(64, dx * dx + dy * dy);
-          const a = (PHYSICS.G * world.hole.mass) / (d2 * Math.sqrt(d2));
+          const a = (PHYSICS.G * hole.mass) / (d2 * Math.sqrt(d2));
           ax += a * dx;
           ay += a * dy;
         }
@@ -297,6 +332,8 @@ export class Effects {
     this.callouts = this.callouts.filter((c) => c.life > 0);
     for (const b of this.beams) b.life -= dt;
     this.beams = this.beams.filter((b) => b.life > 0);
+    for (const l of this.lasers) l.life -= dt;
+    this.lasers = this.lasers.filter((l) => l.life > 0);
     this.updateMotes(dt);
   }
 
@@ -351,6 +388,26 @@ export class Effects {
       ctx.stroke();
     }
     ctx.globalCompositeOperation = 'lighter';
+    for (const l of this.lasers) {
+      const t = 1 - l.life / l.max;
+      // It snaps on, holds, then thins and fades out.
+      const on = Math.min(1, t / 0.1);
+      const fade = 1 - Math.max(0, (t - 0.5) / 0.5);
+      const a = on * fade;
+      const w = l.width * (0.4 + 0.6 * on) * (0.45 + 0.55 * fade);
+      ctx.lineCap = 'round';
+      const line = (width: number, style: string): void => {
+        ctx.beginPath();
+        ctx.moveTo(l.x1, l.y1);
+        ctx.lineTo(l.x2, l.y2);
+        ctx.lineWidth = width;
+        ctx.strokeStyle = style;
+        ctx.stroke();
+      };
+      line(w * 2.6, rgba(l.color, 0.28 * a));
+      line(w, rgba(l.color, 0.85 * a));
+      line(Math.max(1, w * 0.34), rgba(COLORS.bone, 0.95 * a));
+    }
     for (const s of this.sparks) {
       ctx.globalAlpha = s.life !== undefined ? Math.min(1, s.life / 0.35) : 1;
       ctx.fillStyle = s.color;
@@ -440,8 +497,7 @@ export class Effects {
     for (const body of world.planets) {
       if (Math.hypot(body.x - spark.x, body.y - spark.y) <= body.radius) return body;
     }
-    const hole = world.hole;
-    return hole && Math.hypot(hole.x - spark.x, hole.y - spark.y) <= hole.radius ? hole : null;
+    return world.holes.find((hole) => Math.hypot(hole.x - spark.x, hole.y - spark.y) <= hole.radius) ?? null;
   }
 
   private ring(x: number, y: number, radius: number, life: number, color: string): void {

@@ -275,7 +275,7 @@ export function sampleAims(
 /** Project consecutive EH collapses from the initial generated world, assuming no shot kills. */
 function projectHorizonWorld(initial: World, collapses: number): World {
   const projected = cloneWorld(initial);
-  const hole = projected.hole;
+  const hole = projected.holes[0];
   if (!hole) return projected;
   for (let volleyNo = 1; volleyNo <= collapses; volleyNo++) {
     const toRadius = hole.radius + HORIZON.GROWTH + HORIZON.GROWTH_ACCEL * volleyNo;
@@ -580,8 +580,7 @@ function drawMap(path: readonly number[] | null, pathColor: string | null): void
     ctx.globalAlpha = 1;
   }
 
-  if (world.hole) {
-    const hole = world.hole;
+  for (const hole of world.holes) {
     const glow = ctx.createRadialGradient(hole.x, hole.y, Math.max(1, hole.radius * 0.35), hole.x, hole.y, hole.radius * 2.6);
     glow.addColorStop(0, 'rgba(185, 156, 255, 0.55)');
     glow.addColorStop(0.42, 'rgba(98, 182, 255, 0.2)');
@@ -844,7 +843,7 @@ async function run(): Promise<void> {
   legend();
   updateStats(scoringSamples);
   const seconds = ((performance.now() - started) / 1000).toFixed(1);
-  const holeState = world.hole ? `, black hole r=${world.hole.radius.toFixed(1)} m=${Math.round(world.hole.mass)}` : '';
+  const holeState = world.holes[0] ? `, black hole r=${world.holes[0].radius.toFixed(1)} m=${Math.round(world.holes[0].mass)}` : '';
   elements.status.textContent = `${samples.length} trajectories in ${seconds}s (seed ${seed}, ${horizonMode ? 'Event Horizon snapshot' : 'classic'}, ship ${from}, ${shipCount} ships, max ${maxPlanets} planets${teamSeats ? `, team IDs ${teamSeats.join('-')}` : ''}, power ${fixedPower ? `fixed ${fixedPowerLevel}` : `0-${powerCap}`}${holeState}, ${rules.timeLimit}s shot timeout, edges ${rules.bounce ? 'reflective' : 'open'}, first-shot grace ${spared.length ? `through ship ${spared[0]}` : 'off'}, style bonuses ${styleBonuses ? 'on' : 'off'}, min power ${minPower})`;
   elements.run.disabled = false;
   elements.png.disabled = false;
