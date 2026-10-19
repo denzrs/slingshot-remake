@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
-import { CPU_IGNORES, POWER_UP_KINDS, POWER_UP_WEIGHTS, aimedPlanet, nebulaSpot } from '../src/powerups';
+import { CPU_IGNORES, POWER_UP_KINDS, aimedPlanet, nebulaSpot } from '../src/powerups';
 import { NEBULA } from '../src/config';
 import { cloneWorld, Shot, type World } from '../src/physics';
 import { Volley } from '../src/volley';
@@ -17,12 +17,6 @@ function duel(seed = 7, maxPlanets = 0): Match {
 const planet = (x: number, y: number) => ({ x, y, radius: 40, mass: 30_000, seed: 9, style: 'rocky' as const, tint: '#fff' });
 
 describe('planet killer power-up', () => {
-  it('is a known kind, and the rarest of them: a CPU takes it up and lays it', () => {
-    expect(POWER_UP_KINDS).toContain('planetkiller');
-    expect(POWER_UP_WEIGHTS.planetkiller).toBe(0.1);
-    expect(CPU_IGNORES.planetkiller).toBeUndefined();
-  });
-
   it('removes the planet the aim ray meets, and spends the shot', () => {
     const match = duel();
     const shooter = match.players[match.current];

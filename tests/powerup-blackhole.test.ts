@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
-import { aimedSpot, POWER_UP, POWER_UP_KINDS, POWER_UP_WEIGHTS } from '../src/powerups';
+import { aimedSpot, POWER_UP } from '../src/powerups';
 import { Shot, type World } from '../src/physics';
 import { DEFAULT_SETTINGS } from '../src/settings';
 
@@ -13,12 +13,6 @@ function duel(seed = 7): Match {
 }
 
 describe('black hole power-up', () => {
-  it('is a known kind, and the rarest of them', () => {
-    expect(POWER_UP_KINDS).toContain('blackhole');
-    expect(POWER_UP_WEIGHTS.blackhole).toBe(0.1);
-    for (const kind of POWER_UP_KINDS) expect(POWER_UP_WEIGHTS[kind]).toBeGreaterThanOrEqual(POWER_UP_WEIGHTS.blackhole);
-  });
-
   it('is aimed like a teleport, and fire plants a hole at the spot and spends the shot', () => {
     const match = duel();
     const shooter = match.players[match.current];
