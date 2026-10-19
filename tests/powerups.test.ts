@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
 import { PHYSICS } from '../src/config';
-import { laneSpot, pickKind, POWER_UP, POWER_UP_KINDS, POWER_UP_WEIGHTS, previewPath, SPLIT_TURNS, spawnPickup, teleportAimTarget, teleportSpot, touchedPickups, type Pickup } from '../src/powerups';
+import { laneSpot, pickKind, POWER_UP, POWER_UP_KINDS, POWER_UP_WEIGHTS, PREVIEW_POINTS, previewPath, SPLIT_TURNS, spawnPickup, teleportAimTarget, teleportSpot, touchedPickups, type Pickup } from '../src/powerups';
 import { awards, newStatBook } from '../src/stats';
 import { createRng } from '../src/rng';
 import { Shot, type World } from '../src/physics';
@@ -86,6 +86,33 @@ describe('preview path', () => {
     const steps = POWER_UP.PREVIEW_SECONDS / PHYSICS.DT;
     expect(path.length / 2).toBeLessThanOrEqual(steps / 4 + 3);
     expect(path.length).toBeGreaterThan(4);
+    // A window that is flown out in full has exactly the count the fade is measured against.
+    expect(path.length / 2).toBe(PREVIEW_POINTS);
+  });
+
+  it('samples every fourth step, which is what puts a fade on the clock and not on the path', () => {
+    const world = emptyWorld([[100, 400], [1200, 100]]);
+    const path = previewPath(world, 0, 0, 40, rules);
+    const shot = new Shot(world, 0, 0, 40, rules);
+    // Sample `i` is where the shot is after 4i steps, whether or not the path carries on that far.
+    for (let i = 0; i < 4; i++) shot.step();
+    expect(path[2]).toBeCloseTo(shot.x, 6);
+    expect(path[3]).toBeCloseTo(shot.y, 6);
+    for (let i = 4; i < 8; i++) shot.step();
+    expect(path[4]).toBeCloseTo(shot.x, 6);
+    expect(path[5]).toBeCloseTo(shot.y, 6);
+  });
+
+  it('hands back fewer samples when the shot ends early, so a fade cannot be measured by its length', () => {
+    const clear = emptyWorld([[100, 400], [1200, 100]]);
+    const blocked = { ...emptyWorld([[100, 400], [1200, 100]]), planets: [{ x: 260, y: 400, radius: 40, mass: 1, seed: 1, style: 'rocky' as const, tint: '#fff' }] };
+    const full = previewPath(clear, 0, 0, 40, rules);
+    const hit = previewPath(blocked, 0, 0, 40, rules);
+
+    expect(hit.length).toBeLessThan(full.length);
+    // Which is the tell this guards: a fade drawn along the path would be shorter for the shot that
+    // connects, so the renderer fades against PREVIEW_POINTS — the window — instead.
+    expect(hit.length / 2).toBeLessThan(PREVIEW_POINTS);
   });
 });
 

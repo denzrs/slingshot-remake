@@ -3,7 +3,7 @@ import type { Match, Scene } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
 import { aimDirection, type World } from '../physics';
-import { POWER_UP } from '../powerups';
+import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
@@ -371,18 +371,23 @@ export class Renderer {
     }
     for (const id of this.pickupSeen.keys()) if (!present.has(id)) this.pickupSeen.delete(id);
     if (scene.preview && scene.preview.length >= 4) {
-      // An armed preview is a hint, not the answer: it is drawn only over the first share of the
-      // path and fades out along it, instead of running its whole two seconds at full strength.
-      const kept = scene.preview.slice(0, Math.max(2, Math.ceil((scene.preview.length / 2) * POWER_UP.PREVIEW_FADE_AT)) * 2);
-      const end = kept.length - 2;
-      const fade = ctx.createLinearGradient(kept[0], kept[1], kept[end], kept[end + 1]);
-      fade.addColorStop(0, rgba(POWER_UP_COLORS.preview, 0.9));
-      fade.addColorStop(1, rgba(POWER_UP_COLORS.preview, 0));
-      ctx.strokeStyle = fade;
+      // Faded by its place in the preview window, not by how far the path happened to get: a shot
+      // that hits something ends its path early, and a fade measured against that end would give
+      // the impact away before it happens.
+      const span = POWER_UP.PREVIEW_FADE_AT * (PREVIEW_POINTS - 1);
+      const last = Math.min(scene.preview.length / 2 - 1, Math.ceil(span));
+      ctx.save();
+      ctx.strokeStyle = POWER_UP_COLORS.preview;
       ctx.lineWidth = 1.6;
       ctx.setLineDash([3, 5]);
-      strokePolyline(ctx, kept);
-      ctx.setLineDash([]);
+      for (let i = 0; i < last; i++) {
+        ctx.globalAlpha = 0.9 * Math.max(0, 1 - i / span);
+        ctx.beginPath();
+        ctx.moveTo(scene.preview[i * 2], scene.preview[i * 2 + 1]);
+        ctx.lineTo(scene.preview[i * 2 + 2], scene.preview[i * 2 + 3]);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
     // A ship aiming its teleport: one door at the spot the aim lands on, with a line from the ship.
     if (scene.teleport?.target) {

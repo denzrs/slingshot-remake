@@ -190,8 +190,22 @@ export function teleportAimTarget(world: World, from: { x: number; y: number }, 
 }
 
 /**
+ * Every fourth physics step is sampled into the preview polyline, plus the muzzle and the last one.
+ */
+const PREVIEW_STRIDE = 4;
+
+/**
+ * How many point pairs a full preview window yields. The renderer fades a path against this, and not
+ * against the path it was handed, so a shot that ends early — it hit something — cannot be told from
+ * a shot that flies on by where or how its preview fades.
+ */
+export const PREVIEW_POINTS = 2 + Math.floor(Math.round(POWER_UP.PREVIEW_SECONDS / PHYSICS.DT) / PREVIEW_STRIDE);
+
+/**
  * The first seconds of the flight a shot would make from the current aim, as a flat [x0, y0, x1, y1, …]
- * polyline. Stops early when the shot ends (it hits something) or leaves the field.
+ * polyline. Stops early when the shot ends (it hits something) or leaves the field, so a short path is a
+ * prefix of a full one: sample `i` is the same moment either way, which is what lets a fade be measured
+ * in the window rather than along the path.
  */
 export function previewPath(world: World, shooter: number, angle: number, power: number, rules: ShotRules): number[] {
   const shot = new Shot(world, shooter, angle, power, rules);
@@ -199,7 +213,7 @@ export function previewPath(world: World, shooter: number, angle: number, power:
   const steps = Math.round(POWER_UP.PREVIEW_SECONDS / PHYSICS.DT);
   for (let i = 0; i < steps; i++) {
     if (shot.step()) break;
-    if (i % 4 === 3) points.push(shot.x, shot.y);
+    if (i % PREVIEW_STRIDE === PREVIEW_STRIDE - 1) points.push(shot.x, shot.y);
   }
   points.push(shot.x, shot.y);
   return points;
