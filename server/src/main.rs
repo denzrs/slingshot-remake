@@ -13,6 +13,7 @@ mod protocol;
 mod room;
 mod router;
 mod tls;
+mod wire;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

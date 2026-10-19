@@ -3,6 +3,8 @@
 use rustrict::CensorStr;
 use serde_json::Value;
 
+use crate::wire::{Avatar, CpuLevel, RoomColor, RoomSymbol, Visibility, Wire};
+
 /// Tips name a ship; there are at most six.
 pub const MAX_TIP: i64 = 6;
 /// A teleport offers a few spots to choose from; a pick names one by its place in the list.
@@ -53,70 +55,22 @@ fn clean_text(s: &str) -> String {
     stripped[..end].to_string()
 }
 
-/// The symbols a room can wear in the lobby, and the colours it can take. The client offers exactly these
-/// (see `protocol-contract.json`).
-pub const ROOM_SYMBOLS: [&str; 8] = [
-    "planet",
-    "moon",
-    "star",
-    "sun",
-    "comet",
-    "blackhole",
-    "ufo",
-    "asteroid",
-];
-pub const ROOM_COLORS: [&str; 8] = [
-    "#ff8660", "#ffd27a", "#c6e86a", "#6fe3c8", "#62b6ff", "#b99cff", "#ff6f9f", "#e8e4d8",
-];
-/// Public rooms are listed in the lobby; a private room is joined with its code only.
-pub const ROOM_VISIBILITIES: [&str; 2] = ["public", "private"];
-
-/// The symbols a player shows in an online game. Players pick their own; they are not the room's symbols.
-pub const AVATARS: [&str; 8] = [
-    "rocket",
-    "satellite",
-    "alien",
-    "robot",
-    "astronaut",
-    "crosshair",
-    "bolt",
-    "gem",
-];
-pub const DEFAULT_AVATAR: &str = "rocket";
-
-/// The levels a CPU seat in an online room can take: the ones the offline game offers.
-pub const CPU_LEVELS: [&str; 4] = ["easy", "medium", "hard", "hawking"];
-
-/// The name a CPU seat starts with, by level: the offline game's names.
-pub fn cpu_name(level: &str) -> &'static str {
-    match level {
-        "easy" => "Kepler",
-        "medium" => "Newton",
-        "hard" => "Einstein",
-        "hawking" => "Hawking",
-        _ => "CPU",
-    }
-}
-
 /// A CPU seat's level from a client. There is no default: anything but a level is None.
-pub fn parse_cpu_level(value: Option<&Value>) -> Option<String> {
-    value
-        .and_then(Value::as_str)
-        .filter(|level| CPU_LEVELS.contains(level))
-        .map(str::to_owned)
+pub fn parse_cpu_level(value: Option<&Value>) -> Option<CpuLevel> {
+    value.and_then(Value::as_str).and_then(CpuLevel::parse)
 }
 
 /// How a room presents itself: whether it is listed, and its symbol and colour.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RoomLook {
-    pub visibility: String,
-    pub symbol: String,
-    pub color: String,
+    pub visibility: Visibility,
+    pub symbol: RoomSymbol,
+    pub color: RoomColor,
 }
 
 impl RoomLook {
     pub fn is_private(&self) -> bool {
-        self.visibility == "private"
+        self.visibility == Visibility::Private
     }
 }
 
@@ -128,25 +82,22 @@ pub fn parse_room_look(value: &Value) -> Option<RoomLook> {
         return None;
     }
     Some(RoomLook {
-        visibility: choice_of(value.get("visibility"), &ROOM_VISIBILITIES, "public")?,
-        symbol: choice_of(value.get("symbol"), &ROOM_SYMBOLS, "planet")?,
-        color: choice_of(value.get("color"), &ROOM_COLORS, ROOM_COLORS[0])?,
+        visibility: choice_of(value.get("visibility"))?,
+        symbol: choice_of(value.get("symbol"))?,
+        color: choice_of(value.get("color"))?,
     })
 }
 
 /// A player's symbol from a client; a missing one is the default, anything that is not a choice is None.
-pub fn parse_avatar(value: Option<&Value>) -> Option<String> {
-    choice_of(value, &AVATARS, DEFAULT_AVATAR)
+pub fn parse_avatar(value: Option<&Value>) -> Option<Avatar> {
+    choice_of(value)
 }
 
-/// One of `allowed`; a missing (or null) value is `default`.
-fn choice_of(value: Option<&Value>, allowed: &[&str], default: &str) -> Option<String> {
+/// One of the choices; a missing (or null) value is the default.
+fn choice_of<T: Wire + Default>(value: Option<&Value>) -> Option<T> {
     match value.filter(|v| !v.is_null()) {
-        None => Some(default.to_owned()),
-        Some(v) => v
-            .as_str()
-            .filter(|s| allowed.contains(s))
-            .map(str::to_owned),
+        None => Some(T::default()),
+        Some(v) => v.as_str().and_then(T::parse),
     }
 }
 
@@ -749,9 +700,9 @@ mod tests {
         assert_eq!(
             parse_room_look(&json!({})),
             Some(RoomLook {
-                visibility: "public".into(),
-                symbol: "planet".into(),
-                color: "#ff8660".into(),
+                visibility: Visibility::Public,
+                symbol: RoomSymbol::Planet,
+                color: RoomColor::Coral,
             })
         );
         let custom = parse_room_look(&json!({
@@ -759,8 +710,8 @@ mod tests {
         }))
         .expect("a complete look is accepted");
         assert!(custom.is_private());
-        assert_eq!(custom.symbol, "blackhole");
-        assert_eq!(custom.color, "#6fe3c8");
+        assert_eq!(custom.symbol, RoomSymbol::Blackhole);
+        assert_eq!(custom.color, RoomColor::Mint);
         for invalid in [
             json!({"visibility": "secret"}),
             json!({"symbol": "<svg onload=alert(1)>"}),
@@ -773,8 +724,8 @@ mod tests {
 
     #[test]
     fn player_symbols_default_and_refuse_room_symbols_and_junk() {
-        assert_eq!(parse_avatar(None).as_deref(), Some("rocket"));
-        assert_eq!(parse_avatar(Some(&json!("gem"))).as_deref(), Some("gem"));
+        assert_eq!(parse_avatar(None), Some(Avatar::Rocket));
+        assert_eq!(parse_avatar(Some(&json!("gem"))), Some(Avatar::Gem));
         assert!(parse_avatar(Some(&json!("planet"))).is_none());
         assert!(parse_avatar(Some(&json!(3))).is_none());
     }
@@ -783,18 +734,18 @@ mod tests {
     fn shared_avatar_contract_matches_relay_choices() {
         let contract: Value =
             serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
-        assert_eq!(contract["avatar"]["options"], json!(AVATARS));
-        assert_eq!(contract["avatar"]["default"], DEFAULT_AVATAR);
+        assert_eq!(contract["avatar"]["options"], json!(Avatar::NAMES));
+        assert_eq!(contract["avatar"]["default"], Avatar::default().as_str());
     }
 
     #[test]
     fn cpu_levels_are_the_offline_ones_and_the_contract_shares_them() {
         let contract: Value =
             serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
-        assert_eq!(contract["cpu"]["levels"], json!(CPU_LEVELS));
+        assert_eq!(contract["cpu"]["levels"], json!(CpuLevel::NAMES));
         assert_eq!(
-            parse_cpu_level(Some(&json!("hawking"))).as_deref(),
-            Some("hawking")
+            parse_cpu_level(Some(&json!("hawking"))),
+            Some(CpuLevel::Hawking)
         );
         assert!(parse_cpu_level(None).is_none());
         assert!(parse_cpu_level(Some(&json!("experimental"))).is_none());
@@ -806,12 +757,12 @@ mod tests {
         let contract: Value =
             serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
         let room = &contract["room"];
-        assert_eq!(room["options"]["visibility"], json!(ROOM_VISIBILITIES));
-        assert_eq!(room["options"]["symbol"], json!(ROOM_SYMBOLS));
-        assert_eq!(room["options"]["color"], json!(ROOM_COLORS));
+        assert_eq!(room["options"]["visibility"], json!(Visibility::NAMES));
+        assert_eq!(room["options"]["symbol"], json!(RoomSymbol::NAMES));
+        assert_eq!(room["options"]["color"], json!(RoomColor::NAMES));
         assert_eq!(room["defaults"]["visibility"], "public");
         assert_eq!(room["defaults"]["symbol"], "planet");
-        assert_eq!(room["defaults"]["color"], ROOM_COLORS[0]);
+        assert_eq!(room["defaults"]["color"], RoomColor::NAMES[0]);
     }
 
     #[test]

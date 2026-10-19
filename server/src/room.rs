@@ -15,10 +15,10 @@ use crate::auth::{password_length, MAX_PASSWORD_LENGTH};
 use crate::codec::{frame, Outbound};
 use crate::leaderboard::Board;
 use crate::protocol::{
-    clean_name_checked, cpu_name, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level,
-    parse_room_look, parse_rules, rules_to_value, RoomLook, RoomRules, AVATARS, DEFAULT_AVATAR,
-    DEFAULT_RULES,
+    clean_name_checked, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level,
+    parse_room_look, parse_rules, rules_to_value, RoomLook, RoomRules, DEFAULT_RULES,
 };
+use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
 
 const MAX_ROOM_PLAYERS: i64 = 6;
 const MAX_PASSWORD_ATTEMPTS: u32 = 5;
@@ -49,13 +49,13 @@ struct Player {
     id: usize,
     name: String,
     /// The symbol the player shows in an online game.
-    avatar: String,
+    avatar: Avatar,
     ready: bool,
     team: u8,
     /// The connection of a human. A CPU seat has none: the host's game runs it.
     conn: Option<u64>,
     /// The level of a CPU seat.
-    cpu: Option<String>,
+    cpu: Option<CpuLevel>,
 }
 
 impl Player {
@@ -71,8 +71,8 @@ impl Player {
 
 struct Room {
     id: String,
-    mode: String,
-    game_mode: String,
+    mode: RoomMode,
+    game_mode: GameMode,
     rules: RoomRules,
     look: RoomLook,
     max_players: i64,
@@ -320,10 +320,10 @@ impl RoomManager {
                     "id": room.id,
                     "host": room.players.first().map(|p| p.name.clone()).unwrap_or_default(),
                     "number": room.created_order + 1,
-                    "symbol": room.look.symbol,
-                    "color": room.look.color,
-                    "mode": room.mode,
-                    "gameMode": room.game_mode,
+                    "symbol": room.look.symbol.as_str(),
+                    "color": room.look.color.as_str(),
+                    "mode": room.mode.as_str(),
+                    "gameMode": room.game_mode.as_str(),
                     "players": room.players.len(),
                     "cpus": room.players.iter().filter(|p| p.is_cpu()).count(),
                     "maxPlayers": room.max_players,
@@ -349,16 +349,24 @@ impl RoomManager {
             self.error(conn, "A non-empty player name is required");
             return;
         };
-        let mode = match message.get("mode").and_then(Value::as_str) {
-            Some(m) if m == "ffa" || m == "team" => m,
-            _ => {
+        let mode = match message
+            .get("mode")
+            .and_then(Value::as_str)
+            .and_then(RoomMode::parse)
+        {
+            Some(mode) => mode,
+            None => {
                 self.error(conn, "Mode must be ffa or team");
                 return;
             }
         };
-        let game_mode = match message.get("gameMode").and_then(Value::as_str) {
-            Some(g) if g == "classic" || g == "horizon" => g,
-            _ => {
+        let game_mode = match message
+            .get("gameMode")
+            .and_then(Value::as_str)
+            .and_then(GameMode::parse)
+        {
+            Some(game_mode) => game_mode,
+            None => {
                 self.error(conn, "gameMode must be classic or horizon");
                 return;
             }
@@ -423,8 +431,8 @@ impl RoomManager {
             id.clone(),
             Room {
                 id: id.clone(),
-                mode: mode.to_string(),
-                game_mode: game_mode.to_string(),
+                mode,
+                game_mode,
                 rules,
                 look,
                 max_players: max_players_num.unwrap() as i64,
@@ -674,7 +682,7 @@ impl RoomManager {
         let team_room = self
             .rooms
             .get(&room_id)
-            .is_some_and(|room| room.mode == "team");
+            .is_some_and(|room| room.mode == RoomMode::Team);
         if !team_room {
             self.error(conn, "Teams only exist in team rooms");
             return;
@@ -725,7 +733,7 @@ impl RoomManager {
         let team_room = self
             .rooms
             .get(&room_id)
-            .is_some_and(|room| room.mode == "team");
+            .is_some_and(|room| room.mode == RoomMode::Team);
         if !team_room {
             self.error(conn, "Teams only exist in team rooms");
             return;
@@ -776,7 +784,7 @@ impl RoomManager {
         };
         let (full, team, name, avatar) = {
             let room = self.rooms.get(&room_id).unwrap();
-            let team = if room.mode == "team" {
+            let team = if room.mode == RoomMode::Team {
                 requested_team.unwrap_or_else(|| smallest_team(room))
             } else {
                 0
@@ -784,7 +792,7 @@ impl RoomManager {
             (
                 room.players.len() >= room.max_players as usize,
                 team,
-                free_cpu_name(room, &level),
+                free_cpu_name(room, level),
                 free_avatar(room),
             )
         };
@@ -836,13 +844,12 @@ impl RoomManager {
             self.error(conn, "No CPU sits in that seat");
             return;
         };
-        if team.is_some() && room.mode != "team" {
+        if team.is_some() && room.mode != RoomMode::Team {
             self.error(conn, "Teams only exist in team rooms");
             return;
         }
         let renamed = level
-            .as_deref()
-            .filter(|level| seat.cpu.as_deref() != Some(*level))
+            .filter(|level| seat.cpu != Some(*level))
             .map(|level| free_cpu_name(room, level));
         let room = self.rooms.get_mut(&room_id).unwrap();
         let seat = room
@@ -960,12 +967,12 @@ impl RoomManager {
             .for_each(|(id, player)| player.id = id);
         let room_clone = (
             room.id.clone(),
-            room.mode.clone(),
-            room.game_mode.clone(),
+            room.mode.as_str(),
+            room.game_mode.as_str(),
             rules_to_value(&room.rules),
             room.players
                 .iter()
-                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar, "team": p.team, "cpu": p.cpu }))
+                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str) }))
                 .collect::<Vec<_>>(),
             room.players.iter().filter_map(|p| p.conn).collect::<Vec<_>>(),
         );
@@ -1149,9 +1156,9 @@ impl RoomManager {
         }
     }
 
-    fn add_player(&mut self, room_id: &str, conn: u64, name: String, avatar: String) {
+    fn add_player(&mut self, room_id: &str, conn: u64, name: String, avatar: Avatar) {
         let team = match self.rooms.get(room_id) {
-            Some(room) if room.mode == "team" => smallest_team(room),
+            Some(room) if room.mode == RoomMode::Team => smallest_team(room),
             _ => 0,
         };
         let room = self.rooms.get_mut(room_id).unwrap();
@@ -1205,20 +1212,20 @@ impl RoomManager {
         };
         let room_info = json!({
             "id": room.id,
-            "mode": room.mode,
-            "gameMode": room.game_mode,
+            "mode": room.mode.as_str(),
+            "gameMode": room.game_mode.as_str(),
             "rules": rules_to_value(&room.rules),
             "number": room.created_order + 1,
-            "visibility": room.look.visibility,
-            "symbol": room.look.symbol,
-            "color": room.look.color,
+            "visibility": room.look.visibility.as_str(),
+            "symbol": room.look.symbol.as_str(),
+            "color": room.look.color.as_str(),
             "maxPlayers": room.max_players,
             "status": room.status.as_str(),
             "locked": room.password.is_some(),
             "players": room
                 .players
                 .iter()
-                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar, "ready": p.confirmed(), "team": p.team, "cpu": p.cpu }))
+                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "ready": p.confirmed(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str) }))
                 .collect::<Vec<_>>(),
         });
         let recipients: Vec<(u64, usize)> = room
@@ -1263,7 +1270,7 @@ fn smallest_team(room: &Room) -> u8 {
 
 /// A team game needs somebody in each team.
 fn teams_playable(room: &Room) -> bool {
-    room.mode != "team" || {
+    room.mode != RoomMode::Team || {
         let mut present = [false; 2];
         for p in &room.players {
             present[p.team as usize] = true;
@@ -1290,8 +1297,8 @@ fn unready_humans(room: &mut Room) {
 }
 
 /// The name for a new CPU of this level: the offline name, or the next free number after it.
-fn free_cpu_name(room: &Room, level: &str) -> String {
-    let base = cpu_name(level);
+fn free_cpu_name(room: &Room, level: CpuLevel) -> String {
+    let base = level.name();
     let taken = |name: &str| room.players.iter().any(|p| p.name == name);
     if !taken(base) {
         return base.to_owned();
@@ -1303,12 +1310,12 @@ fn free_cpu_name(room: &Room, level: &str) -> String {
 }
 
 /// A symbol nobody in the room shows yet, so the seats can be told apart.
-fn free_avatar(room: &Room) -> String {
-    AVATARS
-        .into_iter()
+fn free_avatar(room: &Room) -> Avatar {
+    Avatar::ALL
+        .iter()
+        .copied()
         .find(|avatar| room.players.iter().all(|p| p.avatar != *avatar))
-        .unwrap_or(DEFAULT_AVATAR)
-        .to_owned()
+        .unwrap_or_default()
 }
 
 /// The seat a CPU message names. It has to be a whole number.
@@ -1333,7 +1340,7 @@ fn named_team(message: &Value) -> Result<Option<u8>, &'static str> {
 }
 
 /// The CPU level a message names, if it names one.
-fn named_cpu_level(message: &Value) -> Result<Option<String>, &'static str> {
+fn named_cpu_level(message: &Value) -> Result<Option<CpuLevel>, &'static str> {
     match message.get("level") {
         None => Ok(None),
         Some(_) => parse_cpu_level(message.get("level"))
