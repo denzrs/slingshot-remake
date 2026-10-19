@@ -36,6 +36,37 @@ body {
   cursor: crosshair;
 }
 
+#debug-seed {
+  display: block;
+  position: fixed;
+  z-index: 5;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  padding: 5px 9px;
+  border: 1px solid rgb(91 125 179 / 0.55);
+  background: rgb(11 26 51 / 0.82);
+  color: var(--sodium);
+  font: 11px/1.3 var(--font-mono);
+  letter-spacing: 0.08em;
+  transform: translateX(-50%);
+  color: var(--sodium);
+  text-decoration: none;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+#debug-seed[hidden] {
+  display: none;
+}
+
+#debug-seed:hover,
+#debug-seed:focus-visible {
+  border-color: var(--sodium);
+  background: rgb(11 26 51 / 0.96);
+  outline: 2px solid var(--sodium);
+  outline-offset: 2px;
+}
+
 #overlay {
   position: fixed;
   inset: 0;

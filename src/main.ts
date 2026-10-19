@@ -31,6 +31,7 @@ import { lobbyScreen } from './ui/lobby';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
+const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
 const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
@@ -823,6 +824,35 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const m = active();
+  debugSeedBadge.hidden = !import.meta.env.DEV || screen !== 'play' || !match;
+  if (!debugSeedBadge.hidden) {
+    const current = match!;
+    const shooterId = current.current >= 0 ? current.current : Math.max(0, current.viewer ?? 0);
+    const shooter = current.players[shooterId];
+    const activeGrace = shooter && shooter.shots < current.settings.neighborGrace ? current.settings.neighborGrace : 0;
+    const teams = current.teamMode ? ` · TEAMS ${current.teamMode} [${current.players.map((p) => p.team).join(',')}]` : ' · FFA';
+    debugSeedBadge.textContent = `SEED ${current.worldSeed} · ${current.mode.toUpperCase()} · ${current.players.length} SHIPS · ${current.settings.maxPlanets} MAX PLANETS${teams}`;
+    const query = new URLSearchParams({
+      seed: String(current.worldSeed),
+      mode: current.mode,
+      ships: String(current.players.length),
+      planets: String(current.settings.maxPlanets),
+      teams: String(current.teamMode),
+      teamIds: current.players.map((p) => p.team ?? 0).join(','),
+      shooter: String(shooterId),
+      angle: String(shooter?.angle ?? 0),
+      power: String(shooter?.power ?? 50),
+      aimPower: String(shooter?.power ?? 50),
+      bounce: String(current.rules.bounce),
+      shotTime: String(current.rules.timeLimit),
+      grace: String(activeGrace),
+      style: String(current.settings.styleBonuses),
+      fixed: String(current.settings.fixedPower),
+      fixedPower: String(current.settings.fixedPowerLevel),
+      maxPower: String(current.settings.maxPower),
+    });
+    debugSeedBadge.href = `/debug-aim.html?${query}`;
+  }
   const net = online();
   // Online the others keep playing, so a menu on top doesn't stop the world.
   const paused = screen === 'play' && menu.isOpen && !net;

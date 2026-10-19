@@ -281,6 +281,8 @@ export abstract class Match {
   readonly oracle = new Oracle();
   /** Match clock when the current round began, so kills can be timed from the start of the round. */
   protected roundStartedAt = 0;
+  /** Seed used to generate the current round's battlefield. */
+  worldSeed = 0;
   /** Online: the player sitting at this screen. null = hot-seat, where whoever is on turn is at the keyboard. */
   viewer: number | null = null;
   /** Whether this screen may move the match on (next round, skip the killcam, rematch). Online only the host may. */
@@ -764,7 +766,8 @@ export abstract class Match {
     this.oracleKills = [];
     this.roundStats = newStatBook();
     this.roundStartedAt = this.clock;
-    this.world = generateWorld(Math.floor(this.worldRng() * 2 ** 32), {
+    this.worldSeed = Math.floor(this.worldRng() * 2 ** 32);
+    this.world = generateWorld(this.worldSeed, {
       maxPlanets: this.settings.maxPlanets,
       players: this.players.length,
       blackHole: this.mode === 'horizon',

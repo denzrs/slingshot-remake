@@ -13,6 +13,7 @@ export interface ClassicSnapshot {
   phaseTime: number;
   clock: number;
   round: number;
+  worldSeed?: number;
   totalRounds: number;
   hiddenPlanets: boolean;
   teamMode: number;
@@ -53,6 +54,7 @@ export class ClassicMatch extends Match {
       phaseTime: this.phaseTime,
       clock: this.clock,
       round: this.round,
+      worldSeed: this.worldSeed,
       totalRounds: this.totalRounds,
       hiddenPlanets: this.hiddenPlanets,
       teamMode: this.teamMode,
@@ -86,6 +88,7 @@ export class ClassicMatch extends Match {
     this.phaseTime = snapshot.phaseTime;
     this.clock = snapshot.clock;
     this.round = snapshot.round;
+    this.worldSeed = snapshot.worldSeed ?? 0;
     this.totalRounds = snapshot.totalRounds;
     this.hiddenPlanets = snapshot.hiddenPlanets;
     this.teamMode = snapshot.teamMode;
