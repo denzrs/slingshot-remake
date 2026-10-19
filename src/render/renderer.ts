@@ -1,8 +1,8 @@
-import { AIM, COLORS, FIELD, FONTS, HORIZON, PHYSICS } from '../config';
+import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS } from '../config';
 import type { Match, Scene } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
-import { aimDirection, type World } from '../physics';
+import { aimDirection, inNebula, type World } from '../physics';
 import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
@@ -12,6 +12,7 @@ import type { Effects } from './effects';
 import { Hud } from './hud';
 import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
+import { drawNebula } from './nebula';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
@@ -159,8 +160,8 @@ export class Renderer {
   private drawWorld(match: Match, scene: Scene, ps: number): void {
     const { ctx } = this;
     const world = scene.world;
-    const hole = world.hole;
-    if (hole) drawLens(ctx, hole, this.backdrop!.canvas);
+    const primary = world.holes[0];
+    if (primary) drawLens(ctx, primary, this.backdrop!.canvas);
 
     let alpha = 1;
     if (match.hiddenPlanets) {
@@ -179,6 +180,13 @@ export class Renderer {
       ctx.drawImage(layer.canvas, 0, 0, FIELD.width, FIELD.height);
     }
 
+    // Nebula clouds sit behind the planets and the ships, so nothing hides inside them.
+    if (world.nebulae.length) {
+      ctx.globalAlpha = alpha;
+      for (const n of world.nebulae) drawNebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
+      ctx.globalAlpha = 1;
+    }
+
     if (this.spritePs !== ps || this.sprites.size > 64) {
       this.sprites.clear();
       this.spritePs = ps;
@@ -192,11 +200,11 @@ export class Renderer {
       const size = sprite.width / ps;
       const eaten = scene.camera ? 0 : match.devourProgress(p.seed);
       ctx.globalAlpha = alpha * (1 - eaten * 0.4);
-      if (eaten > 0 && hole) {
+      if (eaten > 0 && primary) {
         // Spaghettification: stretched towards the hole, squeezed across, shrinking.
         ctx.save();
         ctx.translate(p.x, p.y);
-        ctx.rotate(Math.atan2(hole.y - p.y, hole.x - p.x));
+        ctx.rotate(Math.atan2(primary.y - p.y, primary.x - p.x));
         const shrink = 1 - eaten * 0.85;
         ctx.scale((1 + eaten * 1.8) * shrink, (1 - eaten * 0.6) * shrink);
         ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
@@ -207,11 +215,9 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
-    if (hole) {
-      drawBlackHole(ctx, hole, this.time);
-      const next = match.nextHoleRadius;
-      if (next && !scene.camera) drawDangerRing(ctx, hole, next, this.time);
-    }
+    for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
+    const next = match.nextHoleRadius;
+    if (next && primary && !scene.camera) drawDangerRing(ctx, primary, next, this.time);
   }
 
   /** Round over: the shot behind the scorecard's current award is drawn in bright, from muzzle to where it counted. */
@@ -309,6 +315,18 @@ export class Renderer {
           ctx.stroke();
           ctx.restore();
         }
+        // A shot in a nebula pushes against the gas: a ring spreads from it (the wisps it sheds are the Effects').
+        if (inNebula(match.world.nebulae, shot.x, shot.y)) {
+          ctx.save();
+          ctx.strokeStyle = POWER_UP_COLORS.nebula;
+          const ripple = (this.time * 1.6) % 1;
+          ctx.globalAlpha = 0.5 * (1 - ripple);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(shot.x, shot.y, 6 + ripple * 18, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
         const glow = ctx.createRadialGradient(shot.x, shot.y, 0, shot.x, shot.y, 9);
         glow.addColorStop(0, rgba(COLORS.bone, 0.95));
         glow.addColorStop(0.3, rgba(color, 0.6));
@@ -389,11 +407,59 @@ export class Renderer {
       }
       ctx.restore();
     }
-    // A ship aiming its teleport: one door at the spot the aim lands on, with a line from the ship.
-    if (scene.teleport?.target) {
-      const { owner, target } = scene.teleport;
+    // A ship aiming a placement: a marker at the spot — a teleport door, or where a black hole, nebula or planet killer would land — with a line from the ship.
+    if (scene.placement?.kind === 'planetkiller') {
+      // Only the angle aims a planet killer, and the power plays no part. So the whole ray is drawn: out to the
+      // planet it will take when there is one — locked on with brackets round it — or dimly to the edge when there is not.
+      const { owner, target } = scene.placement;
       const from = match.world.ships[owner];
-      const color = match.players[owner].color;
+      const dir = aimDirection(match.players[owner].angle);
+      const color = POWER_UP_COLORS.planetkiller;
+      const planet = target ? match.world.planets.find((p) => p.x === target.x && p.y === target.y) : undefined;
+      const length = planet ? Math.hypot(planet.x - from.x, planet.y - from.y) - planet.radius : Math.hypot(FIELD.width, FIELD.height);
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineCap = 'round';
+      ctx.setLineDash(planet ? [10, 7] : [3, 9]);
+      ctx.lineDashOffset = -this.time * (planet ? 70 : 20);
+      ctx.globalAlpha = planet ? 0.9 : 0.35;
+      ctx.lineWidth = planet ? 2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(from.x + dir.x * 22, from.y + dir.y * 22);
+      ctx.lineTo(from.x + dir.x * length, from.y + dir.y * length);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (planet) {
+        const r = planet.radius + 9 + 3 * pulse;
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.12 + 0.1 * pulse;
+        ctx.beginPath();
+        ctx.arc(planet.x, planet.y, planet.radius, 0, Math.PI * 2);
+        ctx.fill();
+        // Four brackets turning slowly round the planet: it is locked.
+        ctx.globalAlpha = 0.95;
+        ctx.lineWidth = 2.5;
+        for (let k = 0; k < 4; k++) {
+          const a = this.time * 0.8 + (k * Math.PI) / 2;
+          ctx.beginPath();
+          ctx.arc(planet.x, planet.y, r, a - 0.32, a + 0.32);
+          ctx.stroke();
+        }
+        // The crack that will split it.
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(planet.x - planet.radius * 0.45, planet.y - planet.radius * 0.5);
+        ctx.lineTo(planet.x - planet.radius * 0.1, planet.y - planet.radius * 0.05);
+        ctx.lineTo(planet.x + planet.radius * 0.18, planet.y + planet.radius * 0.12);
+        ctx.lineTo(planet.x + planet.radius * 0.45, planet.y + planet.radius * 0.5);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (scene.placement?.target && scene.placement.kind !== 'planetkiller') {
+      const { owner, kind, target } = scene.placement;
+      const from = match.world.ships[owner];
+      const color = kind === 'teleport' ? match.players[owner].color : POWER_UP_COLORS[kind];
       ctx.save();
       ctx.strokeStyle = color;
       ctx.globalAlpha = 0.6;
@@ -404,25 +470,49 @@ export class Renderer {
       ctx.lineTo(target.x, target.y);
       ctx.stroke();
       ctx.setLineDash([]);
-      // The door: a ring with a solid core and a crosshair.
       ctx.globalAlpha = 0.85 + 0.15 * pulse;
       ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(target.x, target.y, 17 + 2.5 * pulse, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(target.x, target.y, 11, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = COLORS.plate;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(target.x - 4, target.y);
-      ctx.lineTo(target.x + 4, target.y);
-      ctx.moveTo(target.x, target.y - 4);
-      ctx.lineTo(target.x, target.y + 4);
-      ctx.stroke();
+      if (kind === 'blackhole') {
+        // The would-be horizon: a dark core inside a bright accretion ring.
+        const r = POWER_UP.BLACKHOLE_RADIUS;
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, r + 4 + 2.5 * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = COLORS.plate;
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (kind === 'nebula') {
+        // The reach of the cloud as a plain ring: it must not wobble while the aim moves. The cloud that
+        // lands gets its own random outline (its seed is drawn when it is laid).
+        ctx.setLineDash([6, 5]);
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, NEBULA.RADIUS, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha *= 0.45;
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, NEBULA.RADIUS * 0.55, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        // The door: a ring with a solid core and a crosshair.
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, 17 + 2.5 * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, 11, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = COLORS.plate;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(target.x - 4, target.y);
+        ctx.lineTo(target.x + 4, target.y);
+        ctx.moveTo(target.x, target.y - 4);
+        ctx.lineTo(target.x, target.y + 4);
+        ctx.stroke();
+      }
       ctx.restore();
     }
     // The symbol of what each ship holds, small above the ship. Activation is shown in the HUD strip.
@@ -530,7 +620,7 @@ export class Renderer {
     const { ctx } = this;
     const live = !scene.camera;
     const planning = live && match.phase === 'aiming';
-    const hole = scene.world.hole;
+    const hole = scene.world.holes[0];
 
     scene.world.ships.forEach((ship, i) => {
       if (!ship.alive) return;

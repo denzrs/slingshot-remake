@@ -82,7 +82,8 @@ describe('classic match', () => {
       height: FIELD.height,
       planets: [],
       ships: [{ x: 100, y: 400, alive: true }, { x: 1100, y: 400, alive: true }, { x: 640, y: 700, alive: true }],
-      hole: null,
+      holes: [],
+      nebulae: [],
       version: 0,
     };
     host.setPlayerAim(host.current, 17, 75);
@@ -279,7 +280,7 @@ describe('event horizon match', () => {
 
     guest.restoreSnapshot(state);
     expect(guest.snapshot()).toEqual(state);
-    expect(guest.world.hole).not.toBeNull();
+    expect(guest.world.holes.length).toBeGreaterThan(0);
     expect(guest.current).toBe(host.current);
   });
 

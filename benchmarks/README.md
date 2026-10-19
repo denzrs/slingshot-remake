@@ -12,6 +12,7 @@ planners and the learner live in `src/ai.ts`, `src/experimental-ai.ts` and `src/
 | `npm run bench:calibration` | `ai-calibration.ts` | Reads matrix reports and recommends a rate and starting knowledge per level ([calibration](#consolidated-setting-calibration)) |
 | `npm run bench:learning` | `learning-validation.ts` | Held-out learning validation with pass/fail gates ([learning validation](#held-out-learning-validation)) |
 | `npm run bench:powerups` | `powerups.ts` | The experimental power-ups: pickups laid, taken and used by CPUs per round, and how easy a pickup is to reach compared with a ship (`--matches`, `--rounds`, `--worlds`) |
+| `npm run bench:multikill` | `multi-kill.ts` | How often the multi-kill chain fires in six-CPU rounds: awards per tier, per round and per match, and whether a piercer or a splitter did it (`--matches`, `--rounds`, `--level`, `--amount`) |
 | – | `ai-metrics.ts` | Shared record types, distributions and confidence intervals |
 
 Reports are written to the paths you pass with `--json` (the examples use `results/`, which is not

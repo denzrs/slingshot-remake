@@ -12,7 +12,7 @@ import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../vo
 import { CPU_IGNORES, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
-import { PowerUpField, type TeleportAim } from './powerup-field';
+import { PowerUpField, type PlacementAim } from './powerup-field';
 
 export type Mode = 'classic' | 'horizon' | 'challenge';
 /** The modes you play against other ships, picked from the title menu. */
@@ -115,8 +115,8 @@ export interface Scene {
   /** The pass the round is in, so the renderer can tell which pickups are about to fade. */
   pass?: number;
   preview?: number[] | null;
-  /** Where the aiming ship's teleport would land. */
-  teleport?: TeleportAim | null;
+  /** Where the aiming ship's teleport or black hole would go. */
+  placement?: PlacementAim | null;
 }
 
 export type GameEvent =
@@ -135,9 +135,14 @@ export type GameEvent =
   | { type: 'pickupSpawn'; kind: PowerUpKind; x: number; y: number }
   | { type: 'pickupFade'; kind: PowerUpKind; x: number; y: number }
   | { type: 'teleport'; player: number; fromX: number; fromY: number; toX: number; toY: number }
+  | { type: 'blackhole'; player: number; x: number; y: number }
+  | { type: 'planetKiller'; player: number; x: number; y: number; radius: number }
+  | { type: 'nebula'; player: number; x: number; y: number }
   | { type: 'split'; player: number; x: number; y: number }
   | { type: 'shield'; ship: number; x: number; y: number }
   | { type: 'kill'; record: KillRecord }
+  /** One shot took more than one ship in this volley: the chain number and what it paid. */
+  | { type: 'multiKill'; player: number; kills: number; points: number; x: number; y: number }
   | { type: 'collapse'; x: number; y: number }
   | { type: 'killcam'; active: boolean; recording: boolean }
   | { type: 'roundEnd' }
@@ -308,6 +313,8 @@ export abstract class Match {
   protected flightDoneAt: number | null = null;
   /** What the volley in the air has destroyed so far — the oracle's verdict is read from it. */
   private oracleKills: { killer: number; victim: number; self: boolean; friendly: boolean }[] = [];
+  /** The enemies each player has taken in the round being played, for the multi-kill chain. */
+  private killChain = new Map<number, number>();
   private disposed = false;
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
@@ -355,6 +362,13 @@ export abstract class Match {
   /** Whether trick shots multiply a hit's points in this match. */
   protected get stylePays(): boolean {
     return true;
+  }
+  /**
+   * Whether back-to-back kills pay the multi-kill chain. The daily challenge keeps a score of its own and
+   * runs a target per round rather than a round per volley, so the chain has no meaning there.
+   */
+  protected get paysKillChain(): boolean {
+    return this.mode !== 'challenge';
   }
   protected abstract roundTitle(survivor: number | null): RoundTitle;
 
@@ -672,23 +686,23 @@ export abstract class Match {
     this.power.use(id);
   }
 
-  /** Whether the ship on turn is aiming where to teleport. */
-  get teleporting(): boolean {
-    return this.power.teleporting;
+  /** Whether the ship on turn is aiming a teleport or a black hole. */
+  get placing(): boolean {
+    return this.power.placing;
   }
 
-  /** Whether a given ship is aiming where to teleport. */
-  teleportingFor(id: number): boolean {
-    return this.power.teleportingFor(id);
+  /** Whether a given ship is aiming a placement. */
+  placingFor(id: number): boolean {
+    return this.power.placingFor(id);
   }
 
-  /** Fire, while aiming: the jump happens. False when there is no aim, or it lands nowhere the ship may rest. */
-  confirmTeleport(by?: number): boolean {
-    return this.power.confirmTeleport(by);
+  /** Fire, while aiming: the jump happens, or the black hole is planted. False when there is no aim, or it lands nowhere the ship may rest. */
+  confirmPlacement(by?: number): boolean {
+    return this.power.confirmPlacement(by);
   }
 
-  cancelTeleport(by?: number): boolean {
-    return this.power.cancelTeleport(by);
+  cancelPlacement(by?: number): boolean {
+    return this.power.cancelPlacement(by);
   }
 
   /** The power-up state a snapshot carries besides the pickups, and its restoring. */
@@ -751,6 +765,9 @@ export abstract class Match {
 
   startRound(): void {
     this.resetExperimentalState();
+    // The chain counts a round's kills: several in one turn (a splitter's forks, an armor-piercing round) or
+    // one per turn adding up. A new round starts everyone over, so no round opens with a chain carried in.
+    this.killChain.clear();
     this.round++;
     // Stakes that were never paid out (a round cut short) go back to their owners.
     for (const [id, stake] of this.oracle.stakes) if (this.players[id]) this.players[id].score += stake;
@@ -931,23 +948,29 @@ export abstract class Match {
       if (this.stylePays) this.emit({ type: 'style', player, kind: e.event.kind, x: e.event.x, y: e.event.y });
       return;
     }
+    if (e.type === 'reflect') {
+      // The shield bounced the shot off: it is spent, and so is the power-up it came from.
+      this.emit({ type: 'shield', ship: e.ship, x: e.x, y: e.y });
+      if (live) {
+        const holder = this.players[e.ship];
+        holder.powerUp = null;
+        holder.armed = false;
+        this.record((book) => bump(book.saves, e.ship));
+      }
+      return;
+    }
+    if (e.type === 'pierce') {
+      // Armor piercing went through the hull: the ship is out, and the shot flies on.
+      this.emit({ type: 'explode', x: e.x, y: e.y, ship: e.ship, vx: e.vx, vy: e.vy });
+      if (live) this.registerKill(vs, e.ship, volley);
+      return;
+    }
     const end = e.end;
     switch (end.kind) {
       case 'ship': {
         const ship = volley.world.ships[end.ship];
         this.emit({ type: 'explode', x: ship.x, y: ship.y, ship: end.ship, vx: e.vx, vy: e.vy });
         if (live) this.registerKill(vs, end.ship, volley);
-        break;
-      }
-      case 'shield': {
-        // The shield took the hit: it is gone, and so is the power-up it came from.
-        this.emit({ type: 'shield', ship: end.ship, x: e.x, y: e.y });
-        if (live) {
-          const holder = this.players[end.ship];
-          holder.powerUp = null;
-          holder.armed = false;
-          this.record((book) => bump(book.saves, end.ship));
-        }
         break;
       }
       case 'planet': {
@@ -961,7 +984,7 @@ export abstract class Match {
         break;
       }
       case 'hole': {
-        const hole = volley.world.hole!;
+        const hole = volley.world.holes[end.hole];
         this.emit({ type: 'devour', x: e.x, y: e.y, toX: hole.x, toY: hole.y, color: COLORS.players[this.players[player].seat], vx: e.vx, vy: e.vy });
         break;
       }
@@ -1028,6 +1051,16 @@ export abstract class Match {
       });
     }
     this.recordKill(record);
+    // The kill chain: a second enemy in the round pays extra, whether it came in this turn or an earlier one.
+    if (!self && !friendly && this.paysKillChain) {
+      const kills = (this.killChain.get(killer) ?? 0) + 1;
+      this.killChain.set(killer, kills);
+      const bonus = SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)];
+      if (bonus > 0) {
+        this.players[killer].score += bonus;
+        this.emit({ type: 'multiKill', player: killer, kills, points: bonus, x: volley.world.ships[victim].x, y: volley.world.ships[victim].y });
+      }
+    }
     this.onKill(record, volley.shots.indexOf(vs), volley.steps);
   }
 
@@ -1122,7 +1155,7 @@ export abstract class Match {
 
   /** Only public geometry, never density, mass, or render-history dependent evidence. */
   protected observedWorld(shooter: number): ExperimentalWorld {
-    const hole = this.world.hole;
+    const hole = this.world.holes[0] ?? null;
     return {
       width: this.world.width,
       height: this.world.height,
@@ -1233,6 +1266,55 @@ export abstract class Match {
     return null;
   }
 
+  /**
+   * Where a CPU lays the placement it holds, as an aim: a rough spot, never a searched one. A black hole or
+   * a nebula goes part way along the line to the nearest enemy, so that enemy's next shot runs into it; the
+   * planet killer shoots the planet lying most in the way of that line. Null when the CPU holds no placement,
+   * or there is no planet left.
+   */
+  protected cpuPlacementAim(p: PlayerState): Aim | null {
+    const kind = p.powerUp;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller') return null;
+    const world = this.world;
+    const from = world.ships[p.id];
+    const friends = this.friendsOf(p.id);
+    const enemies = this.players
+      .filter((q) => q.alive && q.id !== p.id && !friends.includes(q.id))
+      .map((q) => world.ships[q.id])
+      .sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y));
+    const reach = (POWER_UP.TELEPORT_MAX_POWER / AIM.MAX_POWER) * POWER_UP.TELEPORT_RANGE;
+    const to = enemies[0] ?? from;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const span = dx * dx + dy * dy;
+    /** How far a planet sits off the line the CPU shoots along — small means it is in the way. */
+    const laneGap = (planet: { x: number; y: number }): number => {
+      const t = span ? Math.max(0, Math.min(1, ((planet.x - from.x) * dx + (planet.y - from.y) * dy) / span)) : 0;
+      return Math.hypot(from.x + t * dx - planet.x, from.y + t * dy - planet.y);
+    };
+    let spot: { x: number; y: number };
+    if (kind === 'planetkiller') {
+      const byGap = [...world.planets].sort((a, b) => laneGap(a) - laneGap(b));
+      if (!byGap.length) return null;
+      spot = { x: byGap[0].x, y: byGap[0].y };
+    } else {
+      // A little ahead of its own ship, on the way in: near enough for the enemy's shot to meet it.
+      const d = Math.hypot(dx, dy) || 1;
+      const along = Math.min(0.45 * d, reach);
+      spot = { x: from.x + (dx / d) * along, y: from.y + (dy / d) * along };
+    }
+    const distance = Math.hypot(spot.x - from.x, spot.y - from.y);
+    return {
+      angle: normalizeAngle((Math.atan2(-(spot.y - from.y), spot.x - from.x) * 180) / Math.PI),
+      power: Math.min(POWER_UP.TELEPORT_MAX_POWER, (distance / POWER_UP.TELEPORT_RANGE) * AIM.MAX_POWER),
+    };
+  }
+
+  /** A CPU lays the placement it holds, at the spot its aim points at. False when it cannot lay it now. */
+  protected placeForCpu(id: number): boolean {
+    return this.power.placeForCpu(id);
+  }
+
   /** Think for the given CPU players, sharing a per-frame time budget round-robin. */
   protected runCpu(ids: number[], budgetMs: number, effort: number, lookahead?: number): void {
     const logDecisions = (typeof process !== 'undefined' && process.env.AI_DECISION_LOGS === '1')
@@ -1243,11 +1325,12 @@ export abstract class Match {
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
       // An armed repulse pushes this CPU's shot away from the planets, so the plan has to fly it that way.
       const pull = p.armed && p.powerUp === 'repulse' ? -1 : 1;
+      const pierce = !!p.armed && p.powerUp === 'piercing';
       // The pickups a CPU would actually keep (a preview is of no use to it): the planner steers its
       // search through them, so a power-up-hungry level like Einstein collects more.
       const pickups: ShotGate[] = this.powerUps
         ? this.power.pickups
-            .filter((pickup) => !CPU_IGNORES.has(pickup.kind))
+            .filter((pickup) => !CPU_IGNORES[pickup.kind])
             .map((pickup) => ({ x: pickup.x, y: pickup.y, r: POWER_UP.PICKUP_RADIUS }))
         : [];
       const planner = isExperimentalCpu(p.cpu)
@@ -1275,6 +1358,7 @@ export abstract class Match {
             lookahead,
             friends,
             pull,
+            pierce,
             pickups,
             grudgeTarget: this.lastHitBy.get(id) ?? null,
             // A CPU holding a teleport also wants to know whether it found a hitting shot at all.
@@ -1347,6 +1431,7 @@ export abstract class Match {
       ...(recovery ? { recovery: { ...recovery, sampleCounts: [...recovery.sampleCounts], retainedShotIds: [...recovery.retainedShotIds] } } : {}),
     };
     this.options.onExperimentalDecision?.(report);
+    const primaryHole = this.world.holes[0] ?? null;
     if (logsEnabled) console.info('[AI experimental] decision', {
       ...report,
       fit: {
@@ -1370,15 +1455,15 @@ export abstract class Match {
           massError,
           massErrorPercent: real.mass === 0 ? null : massError / Math.abs(real.mass) * 100,
         })),
-        realBlackHole: this.world.hole ? { x: this.world.hole.x, y: this.world.hole.y, mass: this.world.hole.mass } : null,
+        realBlackHole: primaryHole ? { x: primaryHole.x, y: primaryHole.y, mass: primaryHole.mass } : null,
         estimatedBlackHole: fit.holeMass === null ? null : {
           x: fit.hole?.x ?? this.world.width / 2,
           y: fit.hole?.y ?? this.world.height / 2,
           mass: fit.holeMass,
           massStandardDeviation: fit.holeMassStandardDeviation ?? null,
         },
-        blackHoleMassErrorPercent: this.world.hole && fit.holeMass !== null && this.world.hole.mass !== 0
-          ? Math.abs(fit.holeMass - this.world.hole.mass) / Math.abs(this.world.hole.mass) * 100 : null,
+        blackHoleMassErrorPercent: primaryHole && fit.holeMass !== null && primaryHole.mass !== 0
+          ? Math.abs(fit.holeMass - primaryHole.mass) / Math.abs(primaryHole.mass) * 100 : null,
       },
     });
   }

@@ -8,9 +8,19 @@ pub const MAX_TIP: i64 = 6;
 /// A teleport offers a few spots to choose from; a pick names one by its place in the list.
 const MAX_SPOT: usize = 8;
 /// The power-ups a room can lay, in the order the client lists them. A room's kinds are kept as a bitmask over this list.
-pub const POWER_UP_KINDS: [&str; 5] = ["preview", "teleport", "splitter", "repulse", "shield"];
-/// Every kind switched on.
-pub const ALL_POWER_UP_KINDS: u8 = (1 << POWER_UP_KINDS.len()) - 1;
+pub const POWER_UP_KINDS: [&str; 9] = [
+    "preview",
+    "teleport",
+    "splitter",
+    "repulse",
+    "shield",
+    "blackhole",
+    "planetkiller",
+    "nebula",
+    "piercing",
+];
+/// Every kind switched on: one bit per kind, so the mask fills from the top down and never shifts past the type.
+pub const ALL_POWER_UP_KINDS: u16 = u16::MAX >> (16 - POWER_UP_KINDS.len());
 /// How many pickups may lie on the field.
 const POWER_UP_AMOUNTS: [i64; 4] = [1, 2, 3, 4];
 
@@ -366,7 +376,7 @@ pub struct RoomRules {
     /// Experimental power-ups: pickups on the field, one held at a time.
     pub power_ups: bool,
     /// Which kinds may turn up: a bitmask over `POWER_UP_KINDS`, never empty.
-    pub power_up_kinds: u8,
+    pub power_up_kinds: u16,
     /// How many pickups lie on the field.
     pub power_up_amount: i64,
 }
@@ -412,7 +422,7 @@ pub fn rules_to_value(rules: &RoomRules) -> Value {
         "powerUpKinds": POWER_UP_KINDS
             .iter()
             .enumerate()
-            .filter(|(bit, _)| rules.power_up_kinds & (1 << bit) != 0)
+            .filter(|(bit, _)| rules.power_up_kinds & (1u16 << bit) != 0)
             .map(|(_, kind)| *kind)
             .collect::<Vec<_>>(),
         "powerUpAmount": rules.power_up_amount,
@@ -420,17 +430,17 @@ pub fn rules_to_value(rules: &RoomRules) -> Value {
 }
 
 /// The kinds of a client's `powerUpKinds`: a non-empty list of distinct known kinds, as a bitmask.
-fn parse_power_up_kinds(value: &Value) -> Option<u8> {
+fn parse_power_up_kinds(value: &Value) -> Option<u16> {
     let list = value.as_array()?;
-    let mut mask = 0u8;
+    let mut mask = 0u16;
     for kind in list {
         let bit = POWER_UP_KINDS
             .iter()
             .position(|k| Some(*k) == kind.as_str())?;
-        if mask & (1 << bit) != 0 {
+        if mask & (1u16 << bit) != 0 {
             return None;
         }
-        mask |= 1 << bit;
+        mask |= 1u16 << bit;
     }
     (mask != 0).then_some(mask)
 }

@@ -1,4 +1,4 @@
-import { PHYSICS } from './config';
+import { NEBULA, PHYSICS } from './config';
 
 // Read once: Shot.step is the innermost loop of every CPU search and killcam, and an imported binding is slower to read than a local one.
 const { DT, G, SHIP_RADIUS, OUT_MARGIN } = PHYSICS;
@@ -32,14 +32,26 @@ export interface BlackHole {
   mass: number;
 }
 
+/** A cloud the nebula power-up has placed: shots inside it are slowed and feel the gravity harder. */
+export interface Nebula {
+  x: number;
+  y: number;
+  radius: number;
+  /** Fixes the cloud's uneven outline, so it is drawn the same everywhere and never changes once laid. */
+  seed: number;
+}
+
 export interface World {
   width: number;
   height: number;
   planets: Planet[];
   /** One ship per player, indexed like the players. */
   ships: Ship[];
-  hole: BlackHole | null;
-  /** Bumped whenever planets or the hole change, so cached render layers know to rebuild. */
+  /** Every black hole on the field: the Event Horizon one (if any) first, then any the black-hole power-up has spawned. */
+  holes: BlackHole[];
+  /** Every nebula cloud the nebula power-up has placed. */
+  nebulae: Nebula[];
+  /** Bumped whenever planets, the holes or the nebulae change, so cached render layers know to rebuild. */
   version: number;
 }
 
@@ -51,10 +63,9 @@ export interface ShotRules {
 
 export type ShotEnd =
   | { kind: 'ship'; ship: number }
-  /** The shot hit a shielded ship: it ends there, and the ship lives. */
-  | { kind: 'shield'; ship: number }
   | { kind: 'planet'; planet: number }
-  | { kind: 'hole' }
+  /** Which black hole swallowed it, as an index into `world.holes`. */
+  | { kind: 'hole'; hole: number }
   | { kind: 'clash'; other: number }
   | { kind: 'lost' }
   | { kind: 'timeout' };
@@ -89,6 +100,15 @@ export function aimDirection(angleDeg: number): { x: number; y: number } {
   return { x: Math.cos(a), y: -Math.sin(a) };
 }
 
+/** Whether a point is inside any nebula cloud: where a shot is slowed, and where the renderer shows it. */
+export function inNebula(nebulae: readonly Nebula[], x: number, y: number): boolean {
+  return nebulae.some((n) => {
+    const dx = n.x - x;
+    const dy = n.y - y;
+    return dx * dx + dy * dy < n.radius * n.radius;
+  });
+}
+
 export function normalizeAngle(deg: number): number {
   const a = deg % 360;
   return a < 0 ? a + 360 : a;
@@ -99,7 +119,8 @@ export function cloneWorld(w: World): World {
     ...w,
     planets: w.planets.map((p) => ({ ...p })),
     ships: w.ships.map((s) => ({ ...s })),
-    hole: w.hole ? { ...w.hole } : null,
+    holes: w.holes.map((h) => ({ ...h })),
+    nebulae: w.nebulae.map((n) => ({ ...n })),
   };
 }
 
@@ -118,8 +139,20 @@ export class Shot {
   readonly style: StyleEvent[] | null;
   /** Production swing-by events, including repeated passes of the same body. */
   swingbys = 0;
-  /** One per planet, plus one for the black hole at the end. */
+  /**
+   * The shields this shot has bounced off, in order: the volley consumes each shield and turns these
+   * into events. Cleared by the caller, never by the shot, so a live volley and a replay see the same.
+   */
+  readonly reflects: { ship: number; x: number; y: number }[] = [];
+  /**
+   * The ships this shot has passed through (armor piercing), each once, in order. The volley kills them;
+   * the shot itself only records them, so a planner's sample never mutates the world.
+   */
+  readonly hits: { ship: number; x: number; y: number }[] = [];
+  /** One per planet, then one per black hole. */
   private readonly encounters: Encounter[] | null;
+  /** Ships already passed through, so one hull is only ever reported once. */
+  private readonly pierced = new Set<number>();
 
   constructor(
     private readonly world: World,
@@ -132,6 +165,8 @@ export class Shot {
     private readonly spare: readonly number[] = [],
     /** Gravity's sign for this shot: 1 pulls it towards planets, -1 (a power-up) pushes it away. */
     private readonly pull = 1,
+    /** Armor piercing: the shot goes through ships — shields and all — instead of stopping on them. */
+    private readonly pierce = false,
   ) {
     const ship = world.ships[shooter];
     const dir = aimDirection(angle);
@@ -142,7 +177,7 @@ export class Shot {
     this.vy = dir.y * speed;
     this.style = trackStyle === true ? [] : null;
     this.encounters = trackStyle
-      ? Array.from({ length: world.planets.length + 1 }, () => ({ inside: false, turn: 0, minGap: Infinity, photons: 0 }))
+      ? Array.from({ length: world.planets.length + world.holes.length }, () => ({ inside: false, turn: 0, minGap: Infinity, photons: 0 }))
       : null;
   }
 
@@ -156,7 +191,7 @@ export class Shot {
    * how a splitter forks a shot in mid-flight. The original keeps flying as it was.
    */
   fork(turn: number): Shot {
-    const copy = new Shot(this.world, this.shooter, this.angle, this.power, this.rules, this.style !== null, this.spare, this.pull);
+    const copy = new Shot(this.world, this.shooter, this.angle, this.power, this.rules, this.style !== null, this.spare, this.pull, this.pierce);
     copy.x = this.x;
     copy.y = this.y;
     copy.time = this.time;
@@ -173,7 +208,7 @@ export class Shot {
   step(): ShotEnd | null {
     if (this.end) return this.end;
     const dt = DT;
-    const { planets, ships, hole, width, height } = this.world;
+    const { planets, ships, holes, nebulae, width, height } = this.world;
     const pull = this.pull;
     const hx = this.vx;
     const hy = this.vy;
@@ -189,7 +224,7 @@ export class Shot {
       ax += (a * dx) / d;
       ay += (a * dy) / d;
     }
-    if (hole) {
+    for (const hole of holes) {
       const dx = hole.x - this.x;
       const dy = hole.y - this.y;
       const d2 = dx * dx + dy * dy;
@@ -198,8 +233,27 @@ export class Shot {
       ax += (a * dx) / d;
       ay += (a * dy) / d;
     }
+    // A cloud deepens the gravity and drags on the shot, so it both bends into the cloud and slows inside it.
+    const clouded = inNebula(nebulae, this.x, this.y);
+    if (clouded) {
+      ax *= NEBULA.GRAVITY;
+      ay *= NEBULA.GRAVITY;
+    }
     this.vx += ax * dt;
     this.vy += ay * dt;
+    if (clouded) {
+      this.vx *= NEBULA.DRAG;
+      this.vy *= NEBULA.DRAG;
+      // The cloud may slow a shot, never stop it: below the floor the drag lets go entirely, so the shot
+      // always crawls out of the cloud rather than hanging in it until the clock runs out.
+      const speed2 = this.vx * this.vx + this.vy * this.vy;
+      const floor = NEBULA.MIN_SPEED;
+      if (speed2 > 0 && speed2 < floor * floor) {
+        const k = floor / Math.sqrt(speed2);
+        this.vx *= k;
+        this.vy *= k;
+      }
+    }
     this.x += this.vx * dt;
     this.y += this.vy * dt;
     this.time += dt;
@@ -219,7 +273,19 @@ export class Shot {
       if (!s.alive || this.spare.includes(i)) continue;
       const dx = s.x - this.x;
       const dy = s.y - this.y;
-      if (dx * dx + dy * dy < r2) return this.finish({ kind: s.shield ? 'shield' : 'ship', ship: i });
+      if (dx * dx + dy * dy >= r2) continue;
+      // Armor piercing runs through a ship, shield or not: the hull is reported and the shot flies on. A
+      // planet or a black hole still stops it, they are not hulls.
+      if (this.pierce) {
+        if (!this.pierced.has(i)) {
+          this.pierced.add(i);
+          this.hits.push({ ship: i, x: this.x, y: this.y });
+        }
+        continue;
+      }
+      // A shield bounces the shot off instead of letting it through: the shot flies on, and the shield is spent.
+      if (s.shield) this.reflect(i, s.x, s.y);
+      else return this.finish({ kind: 'ship', ship: i });
     }
     for (let i = 0; i < planets.length; i++) {
       const p = planets[i];
@@ -227,10 +293,11 @@ export class Shot {
       const dy = p.y - this.y;
       if (dx * dx + dy * dy < p.radius * p.radius) return this.finish({ kind: 'planet', planet: i });
     }
-    if (hole) {
+    for (let i = 0; i < holes.length; i++) {
+      const hole = holes[i];
       const dx = hole.x - this.x;
       const dy = hole.y - this.y;
-      if (dx * dx + dy * dy < hole.radius * hole.radius) return this.finish({ kind: 'hole' });
+      if (dx * dx + dy * dy < hole.radius * hole.radius) return this.finish({ kind: 'hole', hole: i });
     }
     const m = OUT_MARGIN;
     if (this.x < -m || this.x > width + m || this.y < -m || this.y > height + m) return this.finish({ kind: 'lost' });
@@ -240,6 +307,27 @@ export class Shot {
 
   get inField(): boolean {
     return this.x >= 0 && this.x <= this.world.width && this.y >= 0 && this.y <= this.world.height;
+  }
+
+  /**
+   * Bounce the shot off a shielded ship: mirror the velocity about the hull's normal and set the shot just
+   * outside the hull, so it leaves along the reflection instead of hitting the same shield again next step.
+   * The ship is not touched here — the volley reads `reflects` and spends the shield, so a CPU search that
+   * only samples the world does not consume anything.
+   */
+  private reflect(ship: number, cx: number, cy: number): void {
+    const dx = this.x - cx;
+    const dy = this.y - cy;
+    const d = Math.hypot(dx, dy);
+    const nx = d > 0 ? dx / d : 1;
+    const ny = d > 0 ? dy / d : 0;
+    const dot = this.vx * nx + this.vy * ny;
+    this.vx -= 2 * dot * nx;
+    this.vy -= 2 * dot * ny;
+    const out = SHIP_RADIUS + 0.5;
+    this.x = cx + nx * out;
+    this.y = cy + ny * out;
+    this.reflects.push({ ship, x: this.x, y: this.y });
   }
 
   private finish(end: ShotEnd): ShotEnd {
@@ -257,7 +345,7 @@ export class Shot {
     if (bounced) this.recordStyle('bank');
     // How far gravity turned the velocity this step (a bounce is not a turn).
     const turn = bounced ? 0 : Math.atan2(hx * this.vy - hy * this.vx, hx * this.vx + hy * this.vy);
-    const { planets, hole } = this.world;
+    const { planets, holes } = this.world;
 
     for (let i = 0; i < planets.length; i++) {
       const p = planets[i];
@@ -272,9 +360,9 @@ export class Shot {
       }
     }
 
-    if (hole) {
-      const i = planets.length;
-      const e = encs[i];
+    for (let i = 0; i < holes.length; i++) {
+      const hole = holes[i];
+      const e = encs[planets.length + i];
       const d = Math.hypot(hole.x - this.x, hole.y - this.y);
       if (d < hole.radius * 6 + 40) {
         if (!e.inside) Object.assign(e, { inside: true, turn: 0, minGap: Infinity, photons: 0 });
@@ -285,7 +373,7 @@ export class Shot {
           this.recordStyle('photon');
         }
       } else if (e.inside) {
-        this.closeEncounter(i);
+        this.closeEncounter(planets.length + i);
       }
     }
   }
@@ -293,7 +381,7 @@ export class Shot {
   private closeEncounter(i: number): void {
     const e = this.encounters![i];
     e.inside = false;
-    const isHole = i === this.world.planets.length;
+    const isHole = i >= this.world.planets.length;
     if (Math.abs(e.turn) >= SWING_TURN && e.photons === 0) this.recordStyle('swingby');
     if (!isHole && e.minGap < GRAZE_GAP) this.recordStyle('graze');
   }
@@ -319,6 +407,8 @@ export interface ShotOutcome {
   selfClosest: number;
   /** Indices of the `gates` circles this shot passed through, in the order it met them. */
   gates: number[];
+  /** Ships an armor-piercing shot went through (they would be killed), in the order it met them. */
+  pierced: number[];
 }
 
 /**
@@ -335,8 +425,9 @@ export function simulateShot(
   friends: readonly number[] = [],
   pull = 1,
   gates: readonly ShotGate[] = [],
+  pierce = false,
 ): ShotOutcome {
-  const shot = new Shot(world, shooter, angle, power, rules, false, [], pull);
+  const shot = new Shot(world, shooter, angle, power, rules, false, [], pull, pierce);
   const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
   const own = world.ships[shooter];
   const mates = friends.map((i) => world.ships[i]).filter((s) => s.alive);
@@ -368,7 +459,7 @@ export function simulateShot(
       }
     });
   }
-  return { end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: passed };
+  return { end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: passed, pierced: shot.hits.map((hit) => hit.ship) };
 }
 
 export interface StyledShotOutcome extends ShotOutcome {
@@ -386,8 +477,9 @@ export function* simulateStyledShot(
   rules: ShotRules,
   friends: readonly number[] = [],
   pull = 1,
+  pierce = false,
 ): Generator<void, StyledShotOutcome> {
-  const shot = new Shot(world, shooter, angle, power, rules, 'metrics', [], pull);
+  const shot = new Shot(world, shooter, angle, power, rules, 'metrics', [], pull, pierce);
   const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
   const own = world.ships[shooter];
   const mates = friends.map((i) => world.ships[i]).filter((s) => s.alive);
@@ -420,7 +512,7 @@ export function* simulateStyledShot(
     if (!end && ++steps % 240 === 0) yield;
   }
   return {
-    end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: [],
+    end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: [], pierced: shot.hits.map((hit) => hit.ship),
     swingbys: shot.swingbys, flightTime: shot.time, pathLength,
   };
 }

@@ -8,7 +8,8 @@ import { planShotNow } from './helpers';
 
 const rules = { bounce: false, timeLimit: 12 };
 const emptyWorld = (): World => ({
-  ...FIELD, planets: [], hole: null, version: 0,
+  ...FIELD, planets: [], holes: [], version: 0,
+  nebulae: [],
   ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: true }],
 });
 function finish<T>(it: Generator<void, T>): { result: T; yields: number } {
@@ -26,7 +27,8 @@ function orbitWorld(): { world: World; power: number } {
   const mass = 45 ** 3;
   return {
     world: {
-      ...FIELD, version: 0, hole: null,
+      ...FIELD,       nebulae: [],
+      version: 0, holes: [],
       planets: [{ x: 640, y: 400, radius: 45, mass, seed: 1, style: 'rocky', tint: '#fff' }],
       ships: [{ x: 790, y: 380, alive: false }],
     },

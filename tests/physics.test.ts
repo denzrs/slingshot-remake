@@ -15,7 +15,8 @@ function emptyWorld(ships: [number, number][] = [[100, 400], [1180, 400]]): Worl
     height: FIELD.height,
     planets: [],
     ships: ships.map(([x, y]) => ({ x, y, alive: true })),
-    hole: null,
+    holes: [],
+    nebulae: [],
     version: 0,
   };
 }
@@ -72,7 +73,7 @@ describe('shot physics', () => {
 
   it('swallows shots that cross the event horizon', () => {
     const world = emptyWorld();
-    world.hole = { x: 640, y: 400, radius: HORIZON.START_RADIUS, mass: HORIZON.START_MASS };
+    world.holes = [{ x: 640, y: 400, radius: HORIZON.START_RADIUS, mass: HORIZON.START_MASS }];
     expect(simulateShot(world, 0, 0, 40, rules).end.kind).toBe('hole');
   });
 });
@@ -121,7 +122,7 @@ describe('volleys', () => {
     const run = () => {
       const v = new Volley(cloneWorld(world), aims, { bounce: true, timeLimit: HORIZON.SHOT_TIME }, true);
       const log: string[] = [];
-      while (!v.done) for (const e of v.step()) log.push(`${v.steps}:${e.index}:${e.type === 'end' ? e.end.kind : e.event.kind}`);
+      while (!v.done) for (const e of v.step()) log.push(`${v.steps}:${e.index}:${e.type === 'end' ? e.end.kind : e.type === 'style' ? e.event.kind : e.type}`);
       return { log, ends: v.shots.map((s) => [s.shot.x, s.shot.y]), alive: v.world.ships.map((s) => s.alive) };
     };
     expect(run()).toEqual(run());
@@ -146,7 +147,7 @@ describe('world generation', () => {
             if (players > 2 || blackHole) expect(p.y - p.radius).toBeGreaterThan(110); // clear of the scoreboard
             for (const s of w.ships) expect(Math.hypot(p.x - s.x, p.y - s.y)).toBeGreaterThan(p.radius + PHYSICS.SHIP_RADIUS + 50);
             for (const q of w.planets) if (q !== p) expect(Math.hypot(p.x - q.x, p.y - q.y)).toBeGreaterThan(p.radius + q.radius);
-            if (w.hole) expect(Math.hypot(p.x - w.hole.x, p.y - w.hole.y)).toBeGreaterThan(p.radius + w.hole.radius + 50);
+            if (w.holes.length > 0) expect(Math.hypot(p.x - w.holes[0].x, p.y - w.holes[0].y)).toBeGreaterThan(p.radius + w.holes[0].radius + 50);
           }
         }
       }

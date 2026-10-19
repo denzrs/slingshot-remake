@@ -68,7 +68,7 @@ describe('experimental gravity recovery', () => {
     const novel = recordRecoveryShot(changed, 20, 65, 2);
     const samples = balancedObservations([novel], 96);
     const direction = aimDirection(novel.angle);
-    const replayWorld: World = { ...world, hole: null,
+    const replayWorld: World = { ...world, holes: [],
       ships: [{ x: novel.points[0] - direction.x * PHYSICS.MUZZLE, y: novel.points[1] - direction.y * PHYSICS.MUZZLE, alive: false }],
       planets: trained.planets.map((planet, index) => ({ ...planet, radius: 0, seed: index, style: 'rocky', tint: '#fff' })),
     };

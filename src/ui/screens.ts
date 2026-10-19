@@ -1,12 +1,14 @@
 import { CHALLENGE, COLORS, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
 import { teamName, type Match, type Mode, type VersusMode } from '../game';
 import { oracleAwards } from '../game/oracle';
-import { fmtInt, fmtNum, LANGS, t, tn, type Lang } from '../i18n';
+import { fmtInt, fmtNum, LANGS, t, tn, type Key, type Lang } from '../i18n';
 import { rulesOf } from '../lobbyPrefs';
 import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
 import { awards } from '../stats';
 import type { StyleKind } from '../physics';
+import type { PowerUpKind } from '../powerups';
+import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, freeSeat, MIN_SEATS, removeSeat, seatTeamsFor, teamCounts, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
@@ -432,6 +434,33 @@ const para = (text: string) => h('p', null, text);
 const keyRow = (keys: (Node | string)[], text: string) => h('tr', null, h('th', { scope: 'row' }, ...keys), h('td', null, text));
 const keysTable = (...rows: HTMLElement[]) => h('table.keys-table', null, h('tbody', null, ...rows));
 
+/** The kind's symbol, drawn small on a canvas in its own colour, for the power-up legend. */
+function powerIcon(kind: PowerUpKind): HTMLCanvasElement {
+  const dpr = typeof devicePixelRatio === 'number' ? Math.max(1, devicePixelRatio) : 1;
+  const size = 22;
+  const icon = h('canvas.power-icon', { width: String(Math.round(size * dpr)), height: String(Math.round(size * dpr)), 'aria-hidden': 'true' }) as HTMLCanvasElement;
+  const ctx = icon.getContext('2d');
+  if (ctx) {
+    ctx.scale(dpr, dpr);
+    ctx.translate(size / 2, size / 2);
+    ctx.strokeStyle = ctx.fillStyle = POWER_UP_COLORS[kind];
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = ctx.lineJoin = 'round';
+    drawPowerUpSymbol(ctx, kind, 0, 0, size * 0.34);
+  }
+  return icon;
+}
+
+/** A row of the power-up legend: the kind's symbol and its name in its own colour, and what it does. */
+const powerRow = (kind: PowerUpKind) =>
+  keyRow([powerIcon(kind), ' ', h('span.tutorial__power', { style: `color: ${POWER_UP_COLORS[kind]}` }, t(`powerup.${kind}` as Key))], t(`tutorial.powerups.${kind}` as Key));
+
+/** The kinds each power-up page lists: first the ones for your own shot, then the ones that go on the field. */
+const POWER_PAGES: readonly [readonly PowerUpKind[], readonly PowerUpKind[]] = [
+  ['preview', 'teleport', 'splitter', 'repulse', 'piercing'],
+  ['shield', 'blackhole', 'planetkiller', 'nebula'],
+];
+
 /** A shot bent around a planet onto its target: the swing-by, as a picture. */
 function gravityFigure(): HTMLElement {
   const figure = h('figure.tutorial__figure', { role: 'img', 'aria-label': t('tutorial.gravity.figure') });
@@ -486,6 +515,14 @@ const TUTORIAL: (() => Lesson)[] = [
       para(t('tutorial.horizon.3')),
       para(t('tutorial.horizon.4', { volley: SCORING.VOLLEY_SURVIVED, orbit: SCORING.LAST_IN_ORBIT })),
     ],
+  }),
+  () => ({
+    title: t('tutorial.powerups.title'),
+    body: [para(t('tutorial.powerups.1')), keysTable(...POWER_PAGES[0].map(powerRow))],
+  }),
+  () => ({
+    title: t('tutorial.powerups.title2'),
+    body: [keysTable(...POWER_PAGES[1].map(powerRow)), para(t('tutorial.powerups.2'))],
   }),
   () => ({
     title: t('tutorial.tricks.title'),

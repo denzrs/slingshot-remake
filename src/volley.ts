@@ -11,6 +11,8 @@ export interface VolleyAim {
   fan?: number;
   /** Gravity's sign for this shot; -1 pushes it away from planets (the repulse power-up). */
   pull?: number;
+  /** Armor piercing: the shot goes through ships instead of stopping on them (the armor-piercing power-up). */
+  pierce?: boolean;
 }
 
 export interface VolleyShot {
@@ -20,6 +22,8 @@ export interface VolleyShot {
   fan?: number;
   /** -1 for a shot gravity pushes away from planets. */
   pull?: number;
+  /** True for a shot that keeps travelling after it goes through a ship. */
+  pierce?: boolean;
   /** Flat [x0, y0, x1, y1, …] polyline in field units. */
   trail: number[];
 }
@@ -54,6 +58,9 @@ export function shotSource(aims: number, script: readonly VolleyScript[], index:
 
 export type VolleyEvent =
   | { type: 'end'; index: number; end: ShotEnd; x: number; y: number; vx: number; vy: number }
+  | { type: 'reflect'; index: number; ship: number; x: number; y: number }
+  /** An armor-piercing shot went through a ship: the ship is out, and the shot flies on. */
+  | { type: 'pierce'; index: number; ship: number; x: number; y: number; vx: number; vy: number }
   | { type: 'style'; index: number; event: StyleEvent };
 
 const TRAIL_EVERY = 2;
@@ -85,8 +92,8 @@ export class Volley {
     this.script = script.map((entry) => ({ ...entry }));
     this.aims = aims.map((aim) => ({ ...aim }));
     this.shots = aims.map((a) => {
-      const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare, a.pull);
-      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan, pull: a.pull };
+      const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare, a.pull, a.pierce);
+      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan, pull: a.pull, pierce: a.pierce };
     });
   }
 
@@ -131,7 +138,7 @@ export class Volley {
     this.aims[index] = { ...this.aims[index], fan };
     vs.fan = fan;
     for (const turn of turns) {
-      this.shots.push({ shot: vs.shot.fork(turn), owner: vs.owner, trail: [...vs.trail], fan, pull: vs.pull });
+      this.shots.push({ shot: vs.shot.fork(turn), owner: vs.owner, trail: [...vs.trail], fan, pull: vs.pull, pierce: vs.pierce });
       this.aims.push({ ...this.aims[index] });
     }
     return true;
@@ -167,10 +174,21 @@ export class Volley {
         for (let k = styleBefore; k < shot.style.length; k++) events.push({ type: 'style', index: i, event: shot.style[k] });
       }
       if (end || this.steps % TRAIL_EVERY === 0) vs.trail.push(shot.x, shot.y);
+      // A shield bounces the shot off: it is spent doing so, here where a live flight and a replay agree.
+      for (const r of shot.reflects) {
+        this.world.ships[r.ship].shield = false;
+        if (!this.replaying) this.script.push({ at: this.steps, kind: 'shield', ship: r.ship, on: false });
+        events.push({ type: 'reflect', index: i, ship: r.ship, x: r.x, y: r.y });
+      }
+      shot.reflects.length = 0;
+      // An armor-piercing shot went through a hull: that ship is out, and the shot is still flying.
+      for (const hit of shot.hits) {
+        this.world.ships[hit.ship].alive = false;
+        events.push({ type: 'pierce', index: i, ship: hit.ship, x: hit.x, y: hit.y, vx: shot.vx, vy: shot.vy });
+      }
+      shot.hits.length = 0;
       if (end) {
         if (end.kind === 'ship') this.world.ships[end.ship].alive = false;
-        // A shield takes exactly one shot.
-        else if (end.kind === 'shield') this.world.ships[end.ship].shield = false;
         events.push({ type: 'end', index: i, end, x: shot.x, y: shot.y, vx: shot.vx, vy: shot.vy });
       }
     }

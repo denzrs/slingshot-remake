@@ -39,7 +39,7 @@ export interface StatBook {
   sniper: Best | null;
   /** Power-ups taken per player (an offline experiment; empty otherwise). */
   pickups: number[];
-  /** Hits a player's shield soaked up. */
+  /** Shots a player's shield bounced off. */
   saves: number[];
 }
 

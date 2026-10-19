@@ -34,14 +34,14 @@ export function generateWorld(seed: number, opts: WorldOptions): World {
   const duel = opts.players === 2 && !opts.blackHole;
   const ships = duel ? duelShips(rng) : ringShips(rng, opts.players, opts.teams ?? null);
 
-  const hole: BlackHole | null = opts.blackHole
-    ? {
+  const holes: BlackHole[] = opts.blackHole
+    ? [{
         x: width / 2 + range(rng, -40, 40),
         y: height / 2 + range(rng, -30, 30),
         radius: HORIZON.START_RADIUS,
         mass: HORIZON.START_MASS,
-      }
-    : null;
+      }]
+    : [];
 
   const xMargin = duel ? 270 : 150;
   const count = intRange(rng, Math.min(opts.minPlanets ?? 2, opts.maxPlanets), opts.maxPlanets);
@@ -54,8 +54,8 @@ export function generateWorld(seed: number, opts: WorldOptions): World {
     const y = range(rng, radius + (duel ? 24 : 120), height - radius - 24);
     const clearOfShips = ships.every((s) => Math.hypot(s.x - x, s.y - y) > radius + SHIP_CLEARANCE);
     const clearOfPlanets = planets.every((p) => Math.hypot(p.x - x, p.y - y) > p.radius + radius + PLANET_GAP);
-    const clearOfHole = !hole || Math.hypot(hole.x - x, hole.y - y) > radius + hole.radius + HOLE_CLEARANCE;
-    if (!clearOfShips || !clearOfPlanets || !clearOfHole) continue;
+    const clearOfHoles = holes.every((h) => Math.hypot(h.x - x, h.y - y) > radius + h.radius + HOLE_CLEARANCE);
+    if (!clearOfShips || !clearOfPlanets || !clearOfHoles) continue;
 
     const style: PlanetStyle = radius > 40 ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
     const density = range(rng, 0.75, 1.3);
@@ -70,7 +70,7 @@ export function generateWorld(seed: number, opts: WorldOptions): World {
     });
   }
 
-  return { width, height, planets, ships, hole, version: 0 };
+  return { width, height, planets, ships, holes, nebulae: [], version: 0 };
 }
 
 function duelShips(rng: Rng): Ship[] {

@@ -163,7 +163,7 @@ export class Hud {
     ctx.fillText(`${pad(t('hud.power'))} ${powerText}${!hidden && match.settings.fixedPower ? t('hud.fixedSuffix') : ''}`, x, y + 68 * k);
     if (!hidden) this.drawGauge(align === 'left' ? x : x - 128 * k, y + 86 * k, 128 * k, p, align === 'right', match.settings.maxPower);
     ctx.globalAlpha = 1;
-    if (match.powerUps) this.drawPowerUpSlot(p, x, y + 104 * k, align, match.teleporting && match.focus === p.id);
+    if (match.powerUps) this.drawPowerUpSlot(p, x, y + 104 * k, align, match.placing && match.focus === p.id);
   }
 
   /**
@@ -178,8 +178,8 @@ export class Hud {
     const left = align === 'left' ? x : x - w;
     const held = p.powerUp;
     const color = held ? POWER_UP_COLORS[held] : COLORS.line;
-    // A splitter is used with fire, a shield needs no key; the rest with P.
-    const key = held === 'splitter' ? 'SPACE' : held === 'shield' ? null : held ? 'P' : null;
+    // A splitter is used with fire, a shield and armor piercing need no key; the rest with P.
+    const key = held === 'splitter' ? 'SPACE' : held === 'shield' || held === 'piercing' ? null : held ? 'P' : null;
     const cy = y + h / 2;
 
     ctx.save();
@@ -229,7 +229,7 @@ export class Hud {
       ctx.font = `700 ${7.5 * k}px ${FONTS.mono}`;
       ctx.textAlign = 'center';
       ctx.fillText(key, capX + capW / 2, cy + 0.5 * k);
-      // Choosing a teleport spot: fire jumps, so its key joins the strip.
+      // Choosing a placement spot: fire places it, so its key joins the strip.
       if (choosing) {
         const jumpX = capX - capW - 4 * k;
         ctx.strokeRect(jumpX, capY, capW, capH);
@@ -307,7 +307,7 @@ export class Hud {
         ctx.fillText(status[0], x + w - 8 * k, y + 7 * k);
       }
       // The power-up area under the card: what the ship holds, and its key. Dead ships keep theirs out of sight.
-      if (match.powerUps && p.alive) this.drawPowerUpSlot(p, x, y + h + 4 * k, 'left', match.teleporting && match.focus === p.id, w);
+      if (match.powerUps && p.alive) this.drawPowerUpSlot(p, x, y + h + 4 * k, 'left', match.placing && match.focus === p.id, w);
       ctx.globalAlpha = 1;
       x += w + gap;
     });

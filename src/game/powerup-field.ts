@@ -1,5 +1,6 @@
 import type { ShotRules, World } from '../physics';
-import { CPU_IGNORES, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportAimTarget, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
+import { aimedPlanet, aimedSpot, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
+import { NEBULA } from '../config';
 import type { Rng } from '../rng';
 import { bump, type StatBook } from '../stats';
 import type { Volley, VolleyAim } from '../volley';
@@ -34,17 +35,26 @@ export interface PowerUpHost {
   record(update: (book: StatBook) => void): void;
 }
 
-/** Where an aimed teleport lands, as the renderer sees it. */
-export interface TeleportAim {
+/** The power-ups a player aims at a spot on the field, rather than firing: a teleport, a black hole, a planet killer or a nebula. */
+export type PlacementKind = 'teleport' | 'blackhole' | 'planetkiller' | 'nebula';
+
+/** Whether this power-up is aimed at a spot and then confirmed, instead of armed and spent by a shot. */
+export const isPlacement = (kind: PowerUpKind | null): kind is PlacementKind => kind === 'teleport' || kind === 'blackhole' || kind === 'planetkiller' || kind === 'nebula';
+
+/** Where an aimed power-up would land or be planted, as the renderer sees it. */
+export interface PlacementAim {
   owner: number;
-  /** The landing spot, or null while the aim lands nowhere a ship may come to rest. */
+  /** A teleport moves the ship there; a black hole, a nebula or a removed planet is targeted there. */
+  kind: PlacementKind;
+  /** The landing or planting spot, or null while the aim lands nowhere. */
   target: { x: number; y: number } | null;
 }
 
-/** What a guest needs besides the pickups to draw the power-ups: the pass the round is in, and who is aiming a teleport. */
+/** What a guest needs besides the pickups to draw the power-ups: the pass the round is in, and who is aiming a placement. */
 export interface PowerUpState {
   pass: number;
-  teleports: number[];
+  /** The ships aiming a teleport or a black hole right now (their kind is on the player). */
+  placing: number[];
 }
 
 /** What the renderer draws of the power-ups. */
@@ -54,8 +64,8 @@ export interface PowerUpScene {
   pass: number;
   /** The armed preview's path while aiming. */
   preview: number[] | null;
-  /** Where the aiming ship's teleport would land. */
-  teleport: TeleportAim | null;
+  /** Where the aiming ship's teleport or black hole would go. */
+  placement: PlacementAim | null;
 }
 
 /**
@@ -135,11 +145,11 @@ export class PowerUpField {
     }
   }
 
-  /** The black hole has grown: pickups it has swallowed are gone, and the field is filled up again. */
+  /** A black hole has grown — or a new one was planted: pickups it has swallowed are gone, and the field is filled up again. */
   sweep(): void {
-    const hole = this.host.world().hole;
-    if (!this.enabled || !hole) return;
-    const swallowed = this.pickups.filter((p) => Math.hypot(p.x - hole.x, p.y - hole.y) < hole.radius + POWER_UP.PICKUP_RADIUS);
+    const holes = this.host.world().holes;
+    if (!this.enabled || !holes.length) return;
+    const swallowed = this.pickups.filter((p) => holes.some((hole) => Math.hypot(p.x - hole.x, p.y - hole.y) < hole.radius + POWER_UP.PICKUP_RADIUS));
     for (const gone of swallowed) this.host.emit({ type: 'pickupFade', kind: gone.kind, x: gone.x, y: gone.y });
     this.pickups = this.pickups.filter((p) => !swallowed.includes(p));
     while (this.pickups.length < this.amount) {
@@ -170,13 +180,13 @@ export class PowerUpField {
     for (const vs of volley.shots) {
       const p = players[vs.owner];
       // A CPU has no use for a preview, so it leaves that lying.
-      const hit = touchedPickups(this.pickups, vs.shot.x, vs.shot.y).find((i) => !(p.cpu && CPU_IGNORES.has(this.pickups[i].kind)));
+      const hit = touchedPickups(this.pickups, vs.shot.x, vs.shot.y).find((i) => !(p.cpu && CPU_IGNORES[this.pickups[i].kind]));
       if (hit === undefined) continue;
       const [pickup] = this.pickups.splice(hit, 1);
       const dropped = p.powerUp;
       p.powerUp = pickup.kind;
-      // A splitter and a shield need no key: they are ready from the start. A CPU holds everything armed.
-      p.armed = p.cpu !== null || pickup.kind === 'splitter' || pickup.kind === 'shield';
+      // A splitter, a shield and armor piercing need no key: they are ready from the start. A CPU holds everything armed.
+      p.armed = p.cpu !== null || pickup.kind === 'splitter' || pickup.kind === 'shield' || pickup.kind === 'piercing';
       // The shield is on the ship itself, so every shot in the volley meets it. Swapping it away takes it off.
       volley.setShield(p.id, pickup.kind === 'shield');
       // A CPU that has just taken a repulse must plan its next shot pushed, so its plan made before is dropped.
@@ -189,15 +199,16 @@ export class PowerUpField {
   // ————————————————————————————— Using them —————————————————————————————
 
   /**
-   * The power-up key. A teleport opens its aim: the angle and power set one spot, fire jumps there, the key
-   * again or Esc thinks again. A preview is armed instead (press again to disarm) and spent by the next shot.
-   * A splitter needs no key: it is armed, and the fire press during the flight splits the shot.
+   * The power-up key. A teleport or a black hole opens its aim: the angle and power set one spot, fire goes
+   * there (jumps, or plants the hole), the key again or Esc thinks again. A preview is armed instead (press
+   * again to disarm) and spent by the next shot. A splitter needs no key: it is armed, and the fire press
+   * during the flight splits the shot.
    */
   use(id: number): void {
     const host = this.host;
     if (!this.enabled || !host.canAim(id)) return;
     const p = host.players()[id];
-    if (!p.powerUp || p.powerUp === 'splitter' || p.powerUp === 'shield') return;
+    if (!p.powerUp || p.powerUp === 'splitter' || p.powerUp === 'shield' || p.powerUp === 'piercing') return;
     if (p.powerUp === 'preview' || p.powerUp === 'repulse') {
       p.armed = !p.armed;
       this.previewKey = '';
@@ -212,44 +223,135 @@ export class PowerUpField {
     return this.host.viewer() ?? this.host.current();
   }
 
-  /** Whether a ship is aiming its teleport: it cleans the aim up once the ship may no longer jump. */
+  /** Whether a ship is aiming a placement: it cleans the aim up once the ship may no longer place. */
   private aiming(owner: number): boolean {
     if (!this.choosing.has(owner)) return false;
-    if (this.host.phase() === 'aiming' && this.host.players()[owner]?.powerUp === 'teleport' && this.host.canAim(owner)) return true;
+    const kind = this.host.players()[owner]?.powerUp ?? null;
+    if (this.host.phase() === 'aiming' && isPlacement(kind) && this.host.canAim(owner)) return true;
     this.choosing.delete(owner);
     return false;
   }
 
-  /** Where a ship's aim would put its jump, or null when it is not aiming one. */
-  private teleportAim(owner: number = this.aimer): TeleportAim | null {
+  /** Where a ship's aim would put its placement, or null when it is not aiming one. */
+  private placementAim(owner: number = this.aimer): PlacementAim | null {
     if (!this.aiming(owner)) return null;
     const p = this.host.players()[owner];
-    return { owner, target: teleportAimTarget(this.host.world(), this.host.world().ships[owner], p.angle, p.power) };
+    const kind = p.powerUp as PlacementKind;
+    const world = this.host.world();
+    const from = world.ships[owner];
+    let target: { x: number; y: number } | null;
+    if (kind === 'planetkiller') {
+      const planet = aimedPlanet(world, from, p.angle);
+      target = planet ? { x: planet.x, y: planet.y } : null;
+    } else if (kind === 'nebula') {
+      target = nebulaSpot(world, from, p.angle, p.power);
+    } else {
+      target = aimedSpot(world, from, p.angle, p.power);
+    }
+    return { owner, kind, target };
   }
 
-  /** Whether the ship at this screen (or on turn) is aiming where to jump. */
-  get teleporting(): boolean {
-    return !!this.teleportAim();
+  /** Whether the ship at this screen (or on turn) is aiming a placement. */
+  get placing(): boolean {
+    return !!this.placementAim();
   }
 
-  /** Whether a given ship is aiming where to jump. */
-  teleportingFor(owner: number): boolean {
-    return !!this.teleportAim(owner);
+  /** Whether a given ship is aiming a placement. */
+  placingFor(owner: number): boolean {
+    return !!this.placementAim(owner);
   }
 
-  /** Fire while aiming: the ship jumps to the aimed spot. False when there is no aim, or it lands nowhere it may rest. */
-  confirmTeleport(by: number = this.aimer): boolean {
-    const aim = this.teleportAim(by);
+  /** Fire while aiming: the ship jumps, or the placement happens. False when there is no aim, or it lands nowhere. */
+  confirmPlacement(by: number = this.aimer): boolean {
+    const aim = this.placementAim(by);
     if (!aim?.target) return false;
     this.choosing.delete(by);
-    this.teleport(aim.owner, aim.target);
-    return true;
+    if (aim.kind === 'blackhole') return this.plantBlackHole(aim.owner, aim.target);
+    if (aim.kind === 'nebula') return this.plantNebula(aim.owner, aim.target);
+    if (aim.kind === 'planetkiller') {
+      const world = this.host.world();
+      const p = this.host.players()[aim.owner];
+      const planet = aimedPlanet(world, world.ships[aim.owner], p.angle);
+      return planet ? this.killPlanet(aim.owner, planet.index) : false;
+    }
+    return this.teleport(aim.owner, aim.target);
   }
 
-  cancelTeleport(by: number = this.aimer): boolean {
+  cancelPlacement(by: number = this.aimer): boolean {
     const had = this.choosing.has(by);
     this.choosing.delete(by);
     return had;
+  }
+
+  /**
+   * Plants a black hole at `spot`. It stays for the rest of the round: a fixed horizon that bends and
+   * swallows shots, on top of the Event Horizon one when there is one.
+   */
+  private plantBlackHole(id: number, spot: { x: number; y: number }): boolean {
+    const world = this.host.world();
+    world.holes.push({ x: spot.x, y: spot.y, radius: POWER_UP.BLACKHOLE_RADIUS, mass: POWER_UP.BLACKHOLE_MASS });
+    world.version++;
+    this.host.players()[id].powerUp = null;
+    this.host.players()[id].armed = false;
+    this.host.clearCpuJobs();
+    this.host.emit({ type: 'blackhole', player: id, x: spot.x, y: spot.y });
+    // A pickup sitting where the hole now opens is swallowed, and the field is filled up again.
+    this.sweep();
+    return true;
+  }
+
+  /**
+   * Removes a planet from the field: its rock and its gravity are gone for the rest of the round, and any
+   * shot already planned around it is now wrong. The pickups that lay near it stay where they are.
+   */
+  private killPlanet(id: number, index: number): boolean {
+    const world = this.host.world();
+    const planet = world.planets[index];
+    if (!planet) return false;
+    world.planets.splice(index, 1);
+    world.version++;
+    this.host.players()[id].powerUp = null;
+    this.host.players()[id].armed = false;
+    this.host.clearCpuJobs();
+    this.host.emit({ type: 'planetKiller', player: id, x: planet.x, y: planet.y, radius: planet.radius });
+    return true;
+  }
+
+  /**
+   * Puts a nebula cloud on the field: a shot flying through it is slowed and the gravity it feels is
+   * stronger, so it both lingers and bends inside the cloud. It lasts the round, like a planted black hole.
+   */
+  private plantNebula(id: number, spot: { x: number; y: number }): boolean {
+    const world = this.host.world();
+    const rng = this.host.rng();
+    // The seed comes from the match rng, so a guest draws the very cloud the host laid.
+    world.nebulae.push({ x: spot.x, y: spot.y, radius: NEBULA.RADIUS, seed: rng() });
+    world.version++;
+    this.host.players()[id].powerUp = null;
+    this.host.players()[id].armed = false;
+    this.host.clearCpuJobs();
+    this.host.emit({ type: 'nebula', player: id, x: spot.x, y: spot.y });
+    return true;
+  }
+
+  /**
+   * A CPU lays the placement it holds at the spot its own aim points at: no aim key, no confirm, and the
+   * shot is the caller's to spend. It handles only the three placements a CPU lays; a teleport it plans
+   * with, like a shot. False when it holds none of them, or the aim lands nowhere.
+   */
+  placeForCpu(id: number): boolean {
+    const p = this.host.players()[id];
+    const kind = p.powerUp;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller') return false;
+    const world = this.host.world();
+    const from = world.ships[id];
+    if (kind === 'planetkiller') {
+      const planet = aimedPlanet(world, from, p.angle);
+      return planet ? this.killPlanet(id, planet.index) : false;
+    }
+    const spot = kind === 'nebula' ? nebulaSpot(world, from, p.angle, p.power) : aimedSpot(world, from, p.angle, p.power);
+    if (!spot) return false;
+    return kind === 'nebula' ? this.plantNebula(id, spot) : this.plantBlackHole(id, spot);
   }
 
   /** Teleports a ship to `spot`, or to a random free one; false when there is none. */
@@ -309,12 +411,19 @@ export class PowerUpField {
 
   /**
    * The aims a player's shot launches with. An armed preview is used up by the shot, an armed repulse is used up
-   * by pushing the shot away from the planets; a splitter waits for the fire press during the flight, a shield
-   * for a hit.
+   * by pushing the shot away from the planets, and armor piercing rides the next shot through its targets; a
+   * splitter waits for the fire press during the flight, a shield for a hit.
    */
   aimsFor(p: PlayerState): VolleyAim[] {
     const aim: VolleyAim = { player: p.id, angle: p.angle, power: p.power, spare: this.host.sparedFor(p.id) };
-    if (this.enabled && p.armed && (p.powerUp === 'preview' || p.powerUp === 'repulse')) {
+    if (!this.enabled || !p.armed) return [aim];
+    if (p.powerUp === 'piercing') {
+      aim.pierce = true;
+      p.powerUp = null;
+      p.armed = false;
+      return [aim];
+    }
+    if (p.powerUp === 'preview' || p.powerUp === 'repulse') {
       if (p.powerUp === 'repulse') aim.pull = -1;
       p.powerUp = null;
       p.armed = false;
@@ -327,17 +436,17 @@ export class PowerUpField {
   /** What the renderer draws of the power-ups. */
   /** What a guest needs on top of the pickups. */
   state(): PowerUpState {
-    return { pass: this.pass, teleports: [...this.choosing] };
+    return { pass: this.pass, placing: [...this.choosing] };
   }
 
-  /** The host's pass and aimed teleports, as a guest has them. */
+  /** The host's pass and aimed placements, as a guest has them. */
   restoreState(state: PowerUpState | undefined): void {
     this.pass = state?.pass ?? 0;
-    this.choosing = new Set(state?.teleports ?? []);
+    this.choosing = new Set(state?.placing ?? []);
   }
 
   scene(): PowerUpScene {
-    return { pickups: this.pickups, pass: this.pass, preview: this.armedPreview(), teleport: this.teleportAim() };
+    return { pickups: this.pickups, pass: this.pass, preview: this.armedPreview(), placement: this.placementAim() };
   }
 
   /** The path an armed preview shows for the aimer, cached until the aim or the ship moves. */

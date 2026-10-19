@@ -12,7 +12,8 @@ function emptyWorld(ships: [number, number][]): World {
     height: 800,
     planets: [],
     ships: ships.map(([x, y]) => ({ x, y, alive: true })),
-    hole: null,
+    holes: [],
+    nebulae: [],
     version: 0,
   };
 }

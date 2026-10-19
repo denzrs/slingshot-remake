@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
 import { PHYSICS } from '../src/config';
-import { laneSpot, pickKind, POWER_UP, POWER_UP_KINDS, POWER_UP_WEIGHTS, PREVIEW_POINTS, previewPath, SPLIT_TURNS, spawnPickup, teleportAimTarget, teleportSpot, touchedPickups, type Pickup } from '../src/powerups';
+import { laneSpot, pickKind, POWER_UP, POWER_UP_KINDS, POWER_UP_WEIGHTS, PREVIEW_POINTS, previewPath, SPLIT_TURNS, spawnPickup, aimedSpot, teleportSpot, touchedPickups, type Pickup } from '../src/powerups';
 import { awards, newStatBook } from '../src/stats';
 import { createRng } from '../src/rng';
 import { Shot, type World } from '../src/physics';
@@ -11,7 +11,7 @@ import { Volley } from '../src/volley';
 const rules = { bounce: false, timeLimit: 20 };
 
 function emptyWorld(ships: [number, number][] = [[300, 400], [900, 400]]): World {
-  return { width: 1280, height: 800, planets: [], ships: ships.map(([x, y]) => ({ x, y, alive: true })), hole: null, version: 0 };
+  return { width: 1280, height: 800, planets: [], ships: ships.map(([x, y]) => ({ x, y, alive: true })), holes: [], nebulae: [], version: 0 };
 }
 
 /** A human duel with power-ups on, no planets, so flights are straight and predictable. */
@@ -60,15 +60,15 @@ describe('power-up placement', () => {
   it('aims a teleport at the point the angle and power name, inside the field', () => {
     const bare = emptyWorld();
     const half = POWER_UP.TELEPORT_RANGE / 2;
-    expect(teleportAimTarget(bare, { x: 300, y: 400 }, 0, 50)).toEqual({ x: 300 + half, y: 400 });
+    expect(aimedSpot(bare, { x: 300, y: 400 }, 0, 50)).toEqual({ x: 300 + half, y: 400 });
     // Full power from a corner would leave the field, so it stops at the edge margin.
-    const out = teleportAimTarget(bare, { x: 1200, y: 400 }, 0, 100)!;
+    const out = aimedSpot(bare, { x: 1200, y: 400 }, 0, 100)!;
     expect(out!.x).toBeLessThanOrEqual(bare.width - POWER_UP.EDGE);
   });
 
   it('pulls the aimed spot back so it never lands inside a planet', () => {
     const world = { ...emptyWorld(), planets: [{ x: 700, y: 400, radius: 60, mass: 1, seed: 1, style: 'rocky' as const, tint: '#fff' }] };
-    const aimed = teleportAimTarget(world, { x: 100, y: 400 }, 0, 50)!;
+    const aimed = aimedSpot(world, { x: 100, y: 400 }, 0, 50)!;
     expect(aimed).not.toBeNull();
     expect(aimed.y).toBeCloseTo(400, 3);
     expect(aimed.x).toBeLessThan(700 - 60);
@@ -204,8 +204,8 @@ describe('power-ups in a match', () => {
     shooter.powerUp = 'teleport';
     const before = { x: match.world.ships[shooter.id].x, y: match.world.ships[shooter.id].y };
     match.usePowerUp();
-    expect(match.teleporting).toBe(true);
-    const aimed = match.scene().teleport!.target!;
+    expect(match.placing).toBe(true);
+    const aimed = match.scene().placement!.target!;
     // Nothing has moved yet, and the power-up is still in hand.
     expect(match.world.ships[shooter.id].x).toBe(before.x);
     expect(shooter.powerUp).toBe('teleport');
@@ -214,7 +214,7 @@ describe('power-ups in a match', () => {
     expect(after.x).toBeCloseTo(aimed.x, 5);
     expect(after.y).toBeCloseTo(aimed.y, 5);
     expect(shooter.powerUp).toBeNull();
-    expect(match.teleporting).toBe(false);
+    expect(match.placing).toBe(false);
     // Fire jumped; it did not also shoot.
     expect(match.phase).toBe('aiming');
   });
@@ -229,12 +229,12 @@ describe('power-ups in a match', () => {
     // Due east at half power, then due north at a quarter: inside the field, so nothing pulls the spot back.
     shooter.angle = 0;
     shooter.power = 50;
-    expect(match.scene().teleport!.target!.x).toBeCloseTo(ship.x + half, 3);
-    expect(match.scene().teleport!.target!.y).toBeCloseTo(ship.y, 3);
+    expect(match.scene().placement!.target!.x).toBeCloseTo(ship.x + half, 3);
+    expect(match.scene().placement!.target!.y).toBeCloseTo(ship.y, 3);
     shooter.angle = 90;
     shooter.power = 25;
-    expect(match.scene().teleport!.target!.x).toBeCloseTo(ship.x, 3);
-    expect(match.scene().teleport!.target!.y).toBeCloseTo(ship.y - half / 2, 3);
+    expect(match.scene().placement!.target!.x).toBeCloseTo(ship.x, 3);
+    expect(match.scene().placement!.target!.y).toBeCloseTo(ship.y - half / 2, 3);
   });
 
   it('lets a ship think again: the power key again closes the aim, and cancelling keeps the teleport and the position', () => {
@@ -243,13 +243,13 @@ describe('power-ups in a match', () => {
     shooter.powerUp = 'teleport';
     const before = { x: match.world.ships[shooter.id].x, y: match.world.ships[shooter.id].y };
     match.usePowerUp();
-    expect(match.teleporting).toBe(true);
+    expect(match.placing).toBe(true);
     match.usePowerUp();
-    expect(match.teleporting).toBe(false);
+    expect(match.placing).toBe(false);
     match.usePowerUp();
-    expect(match.cancelTeleport()).toBe(true);
-    expect(match.teleporting).toBe(false);
-    expect(match.cancelTeleport()).toBe(false);
+    expect(match.cancelPlacement()).toBe(true);
+    expect(match.placing).toBe(false);
+    expect(match.cancelPlacement()).toBe(false);
     expect(shooter.powerUp).toBe('teleport');
     expect(match.world.ships[shooter.id].x).toBe(before.x);
   });
@@ -275,10 +275,10 @@ describe('power-ups in a match', () => {
     const shooter = match.players[match.current];
     shooter.powerUp = 'teleport';
     match.usePowerUp();
-    expect(match.teleporting).toBe(true);
+    expect(match.placing).toBe(true);
     shooter.powerUp = null;
-    expect(match.teleporting).toBe(false);
-    expect(match.scene().teleport).toBeNull();
+    expect(match.placing).toBe(false);
+    expect(match.scene().placement).toBeNull();
   });
 
   it('keeps a splitter for the fire press during the flight, then forks the shot and uses it up', () => {
@@ -553,11 +553,11 @@ describe('power-ups: round 2', () => {
     // A planet that swallows the field: no spot along the aim is safe to rest on.
     match.world.planets.push({ x: 640, y: 400, radius: 700, mass: 1, seed: 1, style: 'rocky', tint: '#fff' });
     match.usePowerUp();
-    expect(match.teleporting).toBe(true);
-    expect(match.scene().teleport).toMatchObject({ owner: shooter.id, target: null });
+    expect(match.placing).toBe(true);
+    expect(match.scene().placement).toMatchObject({ owner: shooter.id, target: null });
     match.commit();
     expect(shooter.powerUp).toBe('teleport');
-    expect(match.teleporting).toBe(true);
+    expect(match.placing).toBe(true);
     expect(match.phase).toBe('aiming');
   });
 });
@@ -586,13 +586,13 @@ describe('power-ups: round 3', () => {
     expect(volley.shots.every((vs) => vs.pull === -1)).toBe(true);
   });
 
-  it('lets a shield take exactly one shot, and the ship lives', () => {
+  it('bounces a shot off a shield, spent by that one hit, and the ship lives', () => {
     const world = emptyWorld([[100, 400], [500, 400]]);
     world.ships[1].shield = true;
     const volley = new Volley(world, [{ player: 0, angle: 0, power: 100 }], rules, false);
-    const ends = [];
-    while (!volley.done) ends.push(...volley.step().flatMap((e) => (e.type === 'end' ? [e.end.kind] : [])));
-    expect(ends).toContain('shield');
+    const bounced: number[] = [];
+    while (!volley.done) bounced.push(...volley.step().flatMap((e) => (e.type === 'reflect' ? [e.ship] : [])));
+    expect(bounced).toEqual([1]);
     expect(world.ships[1].alive).toBe(true);
     expect(world.ships[1].shield).toBe(false);
     // The second shot finds the ship bare.
@@ -620,7 +620,7 @@ describe('power-ups: round 3', () => {
     expect(ship.shield).toBe(false);
   });
 
-  it('announces a soaked hit, spends the shield, counts the save and plays on', () => {
+  it('announces a bounced shot, spends the shield, counts the save and plays on', () => {
     const match = duel();
     const holder = match.players[1 - match.current];
     const shooter = match.players[match.current];
@@ -637,8 +637,8 @@ describe('power-ups: round 3', () => {
     shooter.power = 100;
     match.commit();
     finishFlight(match);
+    // The shot bounced off: it flies on and may still kill someone, but the holder lives and the shield is spent.
     expect(events).toContain('shield');
-    expect(events).not.toContain('kill');
     expect(holder.alive).toBe(true);
     expect(holder.powerUp).toBeNull();
     expect(match.roundStats.saves[holder.id]).toBe(1);
@@ -792,7 +792,7 @@ describe('power-ups: teleport aiming', () => {
   it('jumps nowhere and keeps the power-up when fire is pressed with nobody aiming', () => {
     const match = duel();
     const before = { ...match.world.ships[match.current] };
-    expect(match.confirmTeleport()).toBe(false);
+    expect(match.confirmPlacement()).toBe(false);
     expect(match.world.ships[match.current]).toMatchObject({ x: before.x, y: before.y });
   });
 });

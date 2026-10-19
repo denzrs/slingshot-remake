@@ -11,11 +11,11 @@ const LEVEL_STEP = 0.11;
  * summed potential of planets and black hole, traced with marching squares. `ps` = device pixels per field unit.
  */
 export function renderContours(world: World, ps: number): HTMLCanvasElement {
-  const { width, height, planets, hole } = world;
+  const { width, height, planets, holes } = world;
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(width * ps);
   canvas.height = Math.ceil(height * ps);
-  const bodies = hole ? [...planets, hole] : planets;
+  const bodies = [...planets, ...holes];
   if (bodies.length === 0) return canvas;
 
   const cols = Math.ceil(width / GRID) + 1;

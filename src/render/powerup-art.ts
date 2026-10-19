@@ -10,6 +10,10 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   splitter: '#ffd21f',
   repulse: '#ff7a1a',
   shield: '#4dffb0',
+  blackhole: '#b99cff',
+  planetkiller: '#ff5c5c',
+  nebula: '#9be7ff',
+  piercing: '#dfe7f5',
 };
 
 /** Draws a power-up's symbol centred on (x, y), about `r` in size, in the current stroke and fill style. */
@@ -37,11 +41,25 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     }
     ctx.stroke();
   } else if (kind === 'shield') {
-    // A shield: flat top, sides curving to a point.
-    ctx.moveTo(x - r * 0.8, y - r * 0.8);
-    ctx.lineTo(x + r * 0.8, y - r * 0.8);
-    ctx.quadraticCurveTo(x + r * 0.85, y + r * 0.3, x, y + r);
-    ctx.quadraticCurveTo(x - r * 0.85, y + r * 0.3, x - r * 0.8, y - r * 0.8);
+    // A shield that turns shots away: flat top, sides curving to a point, a faint plate behind and a chevron on it.
+    const shield = (): void => {
+      ctx.moveTo(x - r * 0.8, y - r * 0.8);
+      ctx.lineTo(x + r * 0.8, y - r * 0.8);
+      ctx.quadraticCurveTo(x + r * 0.85, y + r * 0.3, x, y + r);
+      ctx.quadraticCurveTo(x - r * 0.85, y + r * 0.3, x - r * 0.8, y - r * 0.8);
+    };
+    const alpha = ctx.globalAlpha;
+    shield();
+    ctx.globalAlpha = alpha * 0.28;
+    ctx.fill();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    shield();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - r * 0.42, y + r * 0.12);
+    ctx.lineTo(x, y - r * 0.32);
+    ctx.lineTo(x + r * 0.42, y + r * 0.12);
     ctx.stroke();
   } else if (kind === 'teleport') {
     // A portal: a ring with a bright core.
@@ -50,8 +68,93 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.beginPath();
     ctx.arc(x, y, r * 0.3, 0, Math.PI * 2);
     ctx.fill();
-  } else {
-    // A fork: one shot splitting into three.
+  } else if (kind === 'blackhole') {
+    // A black hole: a solid core and three arms of matter winding in, each one closer and fainter than the last.
+    const alpha = ctx.globalAlpha;
+    ctx.arc(x, y, r * 0.26, 0, Math.PI * 2);
+    ctx.fill();
+    for (const [radius, from, fade] of [[0.52, 0.1, 1], [0.76, 0.85, 0.8], [1, 1.6, 0.6]] as const) {
+      ctx.globalAlpha = alpha * fade;
+      ctx.beginPath();
+      ctx.arc(x, y, r * radius, Math.PI * from, Math.PI * (from + 1.25));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = alpha;
+  } else if (kind === 'planetkiller') {
+    // A planet broken in two: the halves drawn apart along a jagged crack, with debris in the gap.
+    const rock = r * 0.85;
+    const crack: Array<[number, number]> = [
+      [0.25, -0.8],
+      [-0.05, -0.3],
+      [0.2, 0.05],
+      [-0.1, 0.4],
+      [-0.25, 0.8],
+    ];
+    const top = Math.atan2(-0.8, 0.25);
+    const bottom = Math.atan2(0.8, -0.25);
+    for (const side of [-1, 1]) {
+      const dx = side * r * 0.14;
+      ctx.beginPath();
+      if (side < 0) ctx.arc(x + dx, y, rock, bottom, top + Math.PI * 2);
+      else ctx.arc(x + dx, y, rock, top, bottom);
+      const points = side < 0 ? crack : [...crack].reverse();
+      for (const [px, py] of points) ctx.lineTo(x + dx + px * r, y + py * r);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    for (const [px, py] of [[0.02, -0.55], [-0.04, 0.08], [0.03, 0.62]]) {
+      ctx.moveTo(x + px * r + r * 0.09, y + py * r);
+      ctx.arc(x + px * r, y + py * r, r * 0.09, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  } else if (kind === 'nebula') {
+    // A cloud: one scalloped outline, filled faintly, with points of light inside it.
+    const alpha = ctx.globalAlpha;
+    const cloud = (): void => {
+      ctx.moveTo(x - r * 0.72, y + r * 0.5);
+      ctx.bezierCurveTo(x - r * 1.08, y + r * 0.5, x - r * 1.08, y - r * 0.12, x - r * 0.62, y - r * 0.1);
+      ctx.bezierCurveTo(x - r * 0.68, y - r * 0.68, x + r * 0.16, y - r * 0.82, x + r * 0.3, y - r * 0.34);
+      ctx.bezierCurveTo(x + r * 0.58, y - r * 0.62, x + r * 1.08, y - r * 0.3, x + r * 0.86, y + r * 0.12);
+      ctx.bezierCurveTo(x + r * 1.12, y + r * 0.26, x + r * 1.02, y + r * 0.5, x + r * 0.74, y + r * 0.5);
+      ctx.closePath();
+    };
+    cloud();
+    ctx.globalAlpha = alpha * 0.25;
+    ctx.fill();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    cloud();
+    ctx.stroke();
+    ctx.beginPath();
+    for (const [px, py] of [[-0.12, -0.18], [0.4, 0.05], [-0.42, 0.22], [0.1, 0.28]]) {
+      ctx.moveTo(x + px * r + r * 0.07, y + py * r);
+      ctx.arc(x + px * r, y + py * r, r * 0.07, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  } else if (kind === 'piercing') {
+    // A round through armor plate: the plate broken where it went, splinters flying, the head out the far side.
+    ctx.beginPath();
+    ctx.moveTo(x, y - r * 0.95);
+    ctx.lineTo(x, y - r * 0.34);
+    ctx.moveTo(x, y + r * 0.34);
+    ctx.lineTo(x, y + r * 0.95);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - r, y);
+    ctx.lineTo(x + r * 0.45, y);
+    ctx.moveTo(x + r * 0.3, y - r * 0.5);
+    ctx.lineTo(x + r * 0.55, y - r * 0.75);
+    ctx.moveTo(x + r * 0.3, y + r * 0.5);
+    ctx.lineTo(x + r * 0.55, y + r * 0.75);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + r * 0.35, y - r * 0.28);
+    ctx.lineTo(x + r * 1.02, y);
+    ctx.lineTo(x + r * 0.35, y + r * 0.28);
+    ctx.closePath();
+    ctx.fill();
+  } else if (kind === 'splitter') {
     ctx.moveTo(x, y + r);
     ctx.lineTo(x, y);
     ctx.moveTo(x, y);

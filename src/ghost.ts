@@ -80,10 +80,10 @@ export function buildLane(seed: number, n: number): Layout {
   const rng = createRng(hashSeed('slingshot-ghost-lane', seed, n));
   const { WIDTH: width, HEIGHT: height } = GHOST;
   const ship = { x: range(rng, 70, 140), y: range(rng, 110, height - 110), alive: true };
-  const world: World = { width, height, planets: [], ships: [ship], hole: null, version: 0 };
+  const world: World = { width, height, planets: [], ships: [ship], holes: [], nebulae: [], version: 0 };
 
   if (hasHole(n)) {
-    world.hole = { x: range(rng, width * 0.45, width * 0.7), y: range(rng, height * 0.3, height * 0.7), radius: HORIZON.START_RADIUS + 6, mass: HORIZON.START_MASS };
+    world.holes.push({ x: range(rng, width * 0.45, width * 0.7), y: range(rng, height * 0.3, height * 0.7), radius: HORIZON.START_RADIUS + 6, mass: HORIZON.START_MASS });
   }
   const planetCount = n === 0 ? intRange(rng, 1, 2) : n < 3 ? 2 : intRange(rng, 2, 3);
   const big = Math.min(n, 6) * 3;
@@ -93,7 +93,7 @@ export function buildLane(seed: number, n: number): Layout {
     const y = range(rng, radius + 40, height - radius - 40);
     if (Math.hypot(x - ship.x, y - ship.y) < radius + 120) continue;
     if (world.planets.some((p) => Math.hypot(p.x - x, p.y - y) < p.radius + radius + 40)) continue;
-    if (world.hole && Math.hypot(world.hole.x - x, world.hole.y - y) < radius + world.hole.radius + 110) continue;
+    if (world.holes.some((h) => Math.hypot(h.x - x, h.y - y) < radius + h.radius + 110)) continue;
     const style: PlanetStyle = radius > 38 ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
     world.planets.push({ x, y, radius, mass: range(rng, 0.75, 1.3) * radius ** 3, seed: Math.floor(rng() * 2 ** 31), style, tint: pick(rng, TINTS[style]) });
   }
@@ -112,7 +112,7 @@ export function buildLane(seed: number, n: number): Layout {
     const y = path[i * 2 + 1];
     if (x < 90 || x > width - 70 || y < 60 || y > height - 60 || Math.hypot(x - ship.x, y - ship.y) < 170) continue;
     if (world.planets.some((p) => Math.hypot(p.x - x, p.y - y) < p.radius + 62)) continue;
-    if (world.hole && Math.hypot(world.hole.x - x, world.hole.y - y) < world.hole.radius + 90) continue;
+    if (world.holes.some((h) => Math.hypot(h.x - x, h.y - y) < h.radius + 90)) continue;
     if (centers.some((c) => Math.hypot(c.x - x, c.y - y) < 190)) continue;
     centers.push({ x, y });
     solutions.push(aim);
@@ -128,7 +128,7 @@ function growCluster(rng: Rng, world: World, rocks: Rock[], at: { x: number; y: 
     x > 40 + r && x < world.width - 40 - r && y > 40 + r && y < world.height - 40 - r &&
     Math.hypot(x - world.ships[0].x, y - world.ships[0].y) > 100 &&
     world.planets.every((p) => Math.hypot(p.x - x, p.y - y) > p.radius + r + 8) &&
-    (!world.hole || Math.hypot(world.hole.x - x, world.hole.y - y) > world.hole.radius + r + 40) &&
+    world.holes.every((h) => Math.hypot(h.x - x, h.y - y) > h.radius + r + 40) &&
     rocks.every((o) => Math.hypot(o.x - x, o.y - y) > o.r + r + 4);
   const add = (x: number, y: number, kind: RockKind): Rock => {
     const rock: Rock = { id: rocks.length, x: ROUND(x), y: ROUND(y), r: radiusOf(kind), kind, core: false, alive: true };
@@ -417,8 +417,7 @@ export class GhostLane {
 
   private blowRock(rock: Rock): void {
     rock.alive = false;
-    const hole = this.world.hole;
-    const fed = !!hole && Math.hypot(hole.x - rock.x, hole.y - rock.y) < GHOST.FEED_RADIUS;
+    const fed = this.world.holes.some((hole) => Math.hypot(hole.x - rock.x, hole.y - rock.y) < GHOST.FEED_RADIUS);
     const blast = GHOST.BLAST[rock.kind];
     this.pay(GHOST.BASE[rock.kind] + (fed ? GHOST.FEED : 0));
     this.events.push({ id: ++this.eventId, kind: rock.kind, x: rock.x, y: rock.y, blast, n: this.combo, radius: rock.r, tint: '', fed });

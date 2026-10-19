@@ -16,7 +16,8 @@
     "bench:learning": "tsx benchmarks/learning-validation.ts",
     "bench:calibration": "tsx benchmarks/ai-calibration.ts",
     "bench:relay": "tsx benchmarks/relay-perf.ts",
-    "bench:powerups": "tsx benchmarks/powerups.ts"
+    "bench:powerups": "tsx benchmarks/powerups.ts",
+    "bench:multikill": "tsx benchmarks/multi-kill.ts"
   },
   "keywords": [],
   "author": "",
