@@ -6,7 +6,9 @@ use serde_json::Value;
 use tracing::{debug, warn};
 
 use crate::auth::{self, ScryptSlots};
+use crate::command::{Command, DailyCommand, Parsed, RoomCommand};
 use crate::leaderboard::Leaderboard;
+use crate::protocol::DailyScore;
 use crate::room::RoomManager;
 
 /// Parse one decoded inbound frame and pass it to the room logic.
@@ -49,37 +51,39 @@ pub async fn route(
     conn_id: u64,
     message: &Value,
 ) {
-    let Some(ty) = message.get("type").and_then(Value::as_str) else {
-        manager.lock().handle(conn_id, message);
-        return;
-    };
-    match ty {
-        "create_room" => {
+    match Command::parse(message) {
+        Command::Daily(DailyCommand::Submit(run)) => {
+            daily_submit(manager, boards, conn_id, run).await
+        }
+        Command::Daily(DailyCommand::Top(day)) => daily_top(manager, boards, conn_id, day).await,
+        Command::Room(RoomCommand::CreateRoom(create)) => {
             let can_create = manager.lock().can_create_room(conn_id);
-            if !can_create || !crate::room::valid_create_room_message(message) {
-                manager.lock().handle(conn_id, message);
+            if !can_create || !create.is_valid() {
+                // Nothing worth hashing: the room logic says what is wrong.
+                manager
+                    .lock()
+                    .dispatch(conn_id, RoomCommand::CreateRoom(create));
                 return;
             }
             if let Ok(prehashed) =
-                auth::prepare_create(manager, scrypt_slots, conn_id, message).await
+                auth::prepare_create(manager, scrypt_slots, conn_id, &create).await
             {
-                manager.lock().create_room(conn_id, message, prehashed);
+                manager.lock().create_room(conn_id, create, prehashed);
             }
         }
-        "join_room" => {
-            if !crate::room::valid_join_room_message(message) {
-                manager.lock().handle(conn_id, message);
+        Command::Room(RoomCommand::JoinRoom(join)) => {
+            if !join.is_valid() {
+                manager
+                    .lock()
+                    .dispatch(conn_id, RoomCommand::JoinRoom(join));
                 return;
             }
-            if let Ok(preverified) =
-                auth::prepare_join(manager, scrypt_slots, conn_id, message).await
+            if let Ok(preverified) = auth::prepare_join(manager, scrypt_slots, conn_id, &join).await
             {
-                manager.lock().join_room(conn_id, message, preverified);
+                manager.lock().join_room(conn_id, join, preverified);
             }
         }
-        "daily_submit" => daily_submit(manager, boards, conn_id, message).await,
-        "daily_top" => daily_top(manager, boards, conn_id, message).await,
-        _ => manager.lock().handle(conn_id, message),
+        Command::Room(command) => manager.lock().dispatch(conn_id, command),
     }
 }
 
@@ -87,14 +91,17 @@ async fn daily_submit(
     manager: &Mutex<RoomManager>,
     boards: &Leaderboard,
     conn_id: u64,
-    message: &Value,
+    run: Parsed<DailyScore>,
 ) {
     let Some(ip) = manager.lock().peer_ip(conn_id) else {
         return;
     };
-    let Some(run) = crate::protocol::parse_daily_submit(message) else {
-        manager.lock().error(conn_id, "Invalid daily run");
-        return;
+    let run = match run {
+        Ok(run) => run,
+        Err(reason) => {
+            manager.lock().error(conn_id, reason);
+            return;
+        }
     };
     // The board is the one place a name is kept and shown to everyone, so it is the one
     // place worth refusing one.
@@ -117,14 +124,17 @@ async fn daily_top(
     manager: &Mutex<RoomManager>,
     boards: &Leaderboard,
     conn_id: u64,
-    message: &Value,
+    day: Parsed<String>,
 ) {
     let Some(ip) = manager.lock().peer_ip(conn_id) else {
         return;
     };
-    let Some(day) = crate::protocol::parse_daily_day(message) else {
-        manager.lock().error(conn_id, "Invalid day");
-        return;
+    let day = match day {
+        Ok(day) => day,
+        Err(reason) => {
+            manager.lock().error(conn_id, reason);
+            return;
+        }
     };
     match boards.board(&day, ip).await {
         Ok(board) => manager.lock().daily_board(conn_id, &day, &board),
@@ -219,7 +229,7 @@ mod tests {
         });
         manager
             .lock()
-            .create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
+            .handle_create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
         let room_id = take_type(&mut host_rx, "room_update").await["room"]["id"]
             .as_str()
             .unwrap()
@@ -235,7 +245,7 @@ mod tests {
         // Establish five failures. The exhausted attempt must not wait on the unavailable
         // derivation permit (nor consume a per-connection scrypt budget).
         for _ in 0..5 {
-            manager.lock().join_room(
+            manager.lock().handle_join_room(
                 2,
                 &serde_json::json!({
                     "type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"
@@ -274,7 +284,7 @@ mod tests {
         });
         manager
             .lock()
-            .create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
+            .handle_create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
         let room_id = take_type(&mut host_rx, "room_update").await["room"]["id"]
             .as_str()
             .unwrap()

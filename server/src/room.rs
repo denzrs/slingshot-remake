@@ -11,16 +11,13 @@ use rand::Rng;
 use serde_json::{json, Value};
 use tracing::{debug, info, warn};
 
-use crate::auth::{password_length, MAX_PASSWORD_LENGTH};
+use crate::auth::Hashed;
 use crate::codec::{frame, Outbound};
+use crate::command::{CreateRoom, JoinRoom, JoinTarget, Parsed, RoomCommand};
 use crate::leaderboard::Board;
-use crate::protocol::{
-    clean_name_checked, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level,
-    parse_room_look, parse_rules, rules_to_value, RoomLook, RoomRules, DEFAULT_RULES,
-};
-use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
+use crate::protocol::{rules_to_value, RoomLook, RoomRules};
+use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode};
 
-const MAX_ROOM_PLAYERS: i64 = 6;
 const MAX_PASSWORD_ATTEMPTS: u32 = 5;
 const MAX_SCRYPT_PER_SECOND: usize = 10;
 
@@ -185,31 +182,37 @@ impl RoomManager {
         room.password.clone()
     }
 
+    /// Read a raw message and carry it out, for the tests that speak the wire format.
+    #[cfg(test)]
     pub fn handle(&mut self, conn: u64, message: &Value) {
+        self.dispatch(conn, RoomCommand::parse(message));
+    }
+
+    /// Carry out a command. Password work and the daily board are done first, by the router.
+    pub fn dispatch(&mut self, conn: u64, command: RoomCommand<'_>) {
         if !self.connections.contains(&conn) {
             return;
         }
-        let Some(ty) = message.get("type").and_then(Value::as_str) else {
-            self.error(conn, "Malformed message");
-            return;
-        };
-        match ty {
-            "lobby" => self.send_lobby(conn),
-            "create_room" => self.create_room(conn, message, None),
-            "join_room" => self.join_room(conn, message, None),
-            "ready" => self.set_ready(conn, message),
-            "set_rules" => self.set_rules(conn, message),
-            "set_room" => self.set_room(conn, message),
-            "set_avatar" => self.set_avatar(conn, message),
-            "set_team" => self.set_team(conn, message),
-            "reset_teams" => self.reset_teams(conn),
-            "add_cpu" => self.add_cpu(conn, message),
-            "set_cpu" => self.set_cpu(conn, message),
-            "remove_cpu" => self.remove_cpu(conn, message),
-            "start_game" => self.start_game(conn),
-            "input" => self.relay_input(conn, message),
-            "leave_room" => self.leave_room(conn),
-            other => self.error(conn, &format!("Unknown message type: {other}")),
+        match command {
+            RoomCommand::Malformed => self.error(conn, "Malformed message"),
+            RoomCommand::Unknown(other) => {
+                self.error(conn, &format!("Unknown message type: {other}"))
+            }
+            RoomCommand::Lobby => self.send_lobby(conn),
+            RoomCommand::CreateRoom(create) => self.create_room(conn, create, None),
+            RoomCommand::JoinRoom(join) => self.join_room(conn, join, None),
+            RoomCommand::Ready(ready) => self.set_ready(conn, ready),
+            RoomCommand::SetRules(rules) => self.set_rules(conn, rules),
+            RoomCommand::SetRoom(look) => self.set_room(conn, look),
+            RoomCommand::SetAvatar(avatar) => self.set_avatar(conn, avatar),
+            RoomCommand::SetTeam(team) => self.set_team(conn, team),
+            RoomCommand::ResetTeams => self.reset_teams(conn),
+            RoomCommand::AddCpu { level, team } => self.add_cpu(conn, level, team),
+            RoomCommand::SetCpu { seat, level, team } => self.set_cpu(conn, seat, level, team),
+            RoomCommand::RemoveCpu { seat } => self.remove_cpu(conn, seat),
+            RoomCommand::StartGame => self.start_game(conn),
+            RoomCommand::Input(input) => self.relay_input(conn, input),
+            RoomCommand::LeaveRoom => self.leave_room(conn),
         }
     }
 
@@ -335,87 +338,48 @@ impl RoomManager {
 
     // ————————————————————————————— Rooms —————————————————————————————
 
-    pub fn create_room(
-        &mut self,
-        conn: u64,
-        message: &Value,
-        prehashed: Option<(Vec<u8>, Vec<u8>)>,
-    ) {
+    pub fn create_room(&mut self, conn: u64, create: CreateRoom, prehashed: Option<Hashed>) {
         if self.memberships.contains_key(&conn) {
             self.error(conn, "Leave your current room before creating another");
             return;
         }
-        let Some(name) = clean_name_checked(message.get("name")) else {
-            self.error(conn, "A non-empty player name is required");
+        let CreateRoom {
+            name,
+            mode,
+            game_mode,
+            max_players,
+            password,
+            rules,
+            look,
+            avatar,
+        } = create;
+        let Some(name) = self.accept(conn, name) else {
             return;
         };
-        let mode = match message
-            .get("mode")
-            .and_then(Value::as_str)
-            .and_then(RoomMode::parse)
-        {
-            Some(mode) => mode,
-            None => {
-                self.error(conn, "Mode must be ffa or team");
-                return;
-            }
-        };
-        let game_mode = match message
-            .get("gameMode")
-            .and_then(Value::as_str)
-            .and_then(GameMode::parse)
-        {
-            Some(game_mode) => game_mode,
-            None => {
-                self.error(conn, "gameMode must be classic or horizon");
-                return;
-            }
-        };
-        let max_players = message.get("maxPlayers");
-        let max_players_num = max_players.and_then(Value::as_f64);
-        if !max_players.is_some_and(is_safe_integer)
-            || !matches!(max_players_num, Some(v) if (2.0..=MAX_ROOM_PLAYERS as f64).contains(&v))
-        {
-            self.error(conn, "maxPlayers must be an integer from 2 to 6");
-            return;
-        }
-        match message.get("password") {
-            Some(pw)
-                if pw.as_str().is_none()
-                    || pw
-                        .as_str()
-                        .is_some_and(|s| password_length(s) > MAX_PASSWORD_LENGTH) =>
-            {
-                self.error(conn, "The password must be at most 64 characters");
-                return;
-            }
-            _ => {}
-        }
-        let rules = match message.get("rules") {
-            None => DEFAULT_RULES.clone(),
-            Some(value) => match parse_rules(value) {
-                Some(rules) => rules,
-                None => {
-                    self.error(conn, "Malformed game rules");
-                    return;
-                }
-            },
-        };
-        let Some(look) = parse_room_look(message) else {
-            self.error(conn, "Malformed room settings");
+        let Some(mode) = self.accept(conn, mode) else {
             return;
         };
-        let Some(avatar) = parse_avatar(message.get("avatar")) else {
-            self.error(conn, "Malformed player symbol");
+        let Some(game_mode) = self.accept(conn, game_mode) else {
+            return;
+        };
+        let Some(max_players) = self.accept(conn, max_players) else {
+            return;
+        };
+        let Some(password_text) = self.accept(conn, password) else {
+            return;
+        };
+        let Some(rules) = self.accept(conn, rules) else {
+            return;
+        };
+        let Some(look) = self.accept(conn, look) else {
+            return;
+        };
+        let Some(avatar) = self.accept(conn, avatar) else {
             return;
         };
         let id = self.new_room_id();
         let created_order = self.next_room_order;
         self.next_room_order += 1;
-        let password_text = message
-            .get("password")
-            .and_then(Value::as_str)
-            .filter(|pw| !pw.is_empty());
         let password = if password_text.is_some() {
             match prehashed {
                 Some(hash) => Some(hash),
@@ -435,7 +399,7 @@ impl RoomManager {
                 game_mode,
                 rules,
                 look,
-                max_players: max_players_num.unwrap() as i64,
+                max_players,
                 status: RoomStatus::Waiting,
                 players: Vec::new(),
                 next_player_id: 0,
@@ -449,26 +413,16 @@ impl RoomManager {
         self.broadcast_lobby();
     }
 
-    pub fn join_room(&mut self, conn: u64, message: &Value, preverified: Option<bool>) {
+    pub fn join_room(&mut self, conn: u64, join: JoinRoom, preverified: Option<bool>) {
         if self.memberships.contains_key(&conn) {
             self.error(conn, "Leave your current room before joining another");
             return;
         }
-        let name = clean_name_checked(message.get("name"));
-        let room_id = message.get("roomId").and_then(Value::as_str);
-        if room_id.is_none() || name.is_none() {
-            self.error(
-                conn,
-                "join_room requires a roomId and non-empty player name",
-            );
+        let Some(JoinTarget { room_id, name }) = self.accept(conn, join.target) else {
             return;
-        }
-        let room_id = room_id.unwrap();
-        let waiting = self
-            .rooms
-            .get(room_id)
-            .is_some_and(|room| room.status == RoomStatus::Waiting);
-        if !waiting {
+        };
+        let room_id = room_id.as_str();
+        if !self.is_waiting(room_id) {
             self.error(conn, "Room not found or no longer accepting players");
             return;
         }
@@ -477,8 +431,7 @@ impl RoomManager {
             self.error(conn, "Room is full");
             return;
         }
-        let Some(avatar) = parse_avatar(message.get("avatar")) else {
-            self.error(conn, "Malformed player symbol");
+        let Some(avatar) = self.accept(conn, join.avatar) else {
             return;
         };
         let locked = self
@@ -506,7 +459,7 @@ impl RoomManager {
                 }
             }
         }
-        self.add_player(room_id, conn, name.unwrap(), avatar);
+        self.add_player(room_id, conn, name, avatar);
         self.broadcast_room_update(room_id, None);
         self.broadcast_lobby();
     }
@@ -530,23 +483,74 @@ impl RoomManager {
         }
     }
 
-    fn set_ready(&mut self, conn: u64, message: &Value) {
-        let Some(ready) = message.get("ready").and_then(Value::as_bool) else {
-            self.error(conn, "ready must be a boolean");
-            return;
-        };
-        let Some(room_id) = self.memberships.get(&conn).map(|mb| mb.room_id.clone()) else {
-            self.error(conn, "You are not in a waiting room");
-            return;
-        };
-        let waiting = self
-            .rooms
-            .get(&room_id)
-            .is_some_and(|room| room.status == RoomStatus::Waiting);
-        if !waiting {
-            self.error(conn, "You are not in a waiting room");
-            return;
+    fn is_waiting(&self, room_id: &str) -> bool {
+        self.rooms
+            .get(room_id)
+            .is_some_and(|room| room.status == RoomStatus::Waiting)
+    }
+
+    /// A parsed field, or the client told why not.
+    fn accept<T>(&mut self, conn: u64, parsed: Parsed<T>) -> Option<T> {
+        match parsed {
+            Ok(value) => Some(value),
+            Err(reason) => {
+                self.error(conn, reason);
+                None
+            }
         }
+    }
+
+    /// The room and seat of a connection whose room is waiting, or the reason it is not.
+    fn member_of_waiting_room(
+        &self,
+        conn: u64,
+        not_in_room: &'static str,
+        running: &'static str,
+    ) -> Result<(String, usize), &'static str> {
+        let membership = self.memberships.get(&conn).ok_or(not_in_room)?;
+        if !self.is_waiting(&membership.room_id) {
+            return Err(running);
+        }
+        Ok((membership.room_id.clone(), membership.player_id))
+    }
+
+    /// The room a connection hosts while it waits, or the reason it may not change it.
+    fn host_of_waiting_room(
+        &self,
+        conn: u64,
+        not_host: &'static str,
+        running: &'static str,
+    ) -> Result<String, &'static str> {
+        let membership = self
+            .memberships
+            .get(&conn)
+            .filter(|membership| membership.player_id == 0)
+            .ok_or(not_host)?;
+        if !self.is_waiting(&membership.room_id) {
+            return Err(running);
+        }
+        Ok(membership.room_id.clone())
+    }
+
+    fn require_team_room(&self, room_id: &str) -> Result<(), &'static str> {
+        match self.rooms.get(room_id) {
+            Some(room) if room.mode == RoomMode::Team => Ok(()),
+            _ => Err("Teams only exist in team rooms"),
+        }
+    }
+
+    fn set_ready(&mut self, conn: u64, ready: Parsed<bool>) {
+        let Some(ready) = self.accept(conn, ready) else {
+            return;
+        };
+        let guard = self.member_of_waiting_room(
+            conn,
+            "You are not in a waiting room",
+            "You are not in a waiting room",
+        );
+        let Some((room_id, _)) = self.accept(conn, guard) else {
+            return;
+        };
         let should_start = {
             let room = self.rooms.get_mut(&room_id).unwrap();
             let player = room
@@ -564,29 +568,16 @@ impl RoomManager {
     }
 
     /// The host edits the rules while the room is waiting; everybody has to confirm (ready) again.
-    fn set_rules(&mut self, conn: u64, message: &Value) {
-        let Some((room_id, is_host)) = self
-            .memberships
-            .get(&conn)
-            .map(|mb| (mb.room_id.clone(), mb.player_id == 0))
-        else {
-            self.error(conn, "Only the room host can change the rules");
+    fn set_rules(&mut self, conn: u64, rules: Parsed<RoomRules>) {
+        let guard = self.host_of_waiting_room(
+            conn,
+            "Only the room host can change the rules",
+            "The rules cannot change while a game is running",
+        );
+        let Some(room_id) = self.accept(conn, guard) else {
             return;
         };
-        if !is_host {
-            self.error(conn, "Only the room host can change the rules");
-            return;
-        }
-        let waiting = self
-            .rooms
-            .get(&room_id)
-            .is_some_and(|room| room.status == RoomStatus::Waiting);
-        if !waiting {
-            self.error(conn, "The rules cannot change while a game is running");
-            return;
-        }
-        let Some(rules) = message.get("rules").and_then(parse_rules) else {
-            self.error(conn, "Malformed game rules");
+        let Some(rules) = self.accept(conn, rules) else {
             return;
         };
         let room = self.rooms.get_mut(&room_id).unwrap();
@@ -599,29 +590,16 @@ impl RoomManager {
 
     /// The host changes how the room shows up while it waits: name, listing, symbol and colour. None of
     /// it changes the game, so nobody has to confirm again.
-    fn set_room(&mut self, conn: u64, message: &Value) {
-        let Some((room_id, is_host)) = self
-            .memberships
-            .get(&conn)
-            .map(|mb| (mb.room_id.clone(), mb.player_id == 0))
-        else {
-            self.error(conn, "Only the room host can change the lobby");
+    fn set_room(&mut self, conn: u64, look: Parsed<RoomLook>) {
+        let guard = self.host_of_waiting_room(
+            conn,
+            "Only the room host can change the lobby",
+            "The lobby cannot change while a game is running",
+        );
+        let Some(room_id) = self.accept(conn, guard) else {
             return;
         };
-        if !is_host {
-            self.error(conn, "Only the room host can change the lobby");
-            return;
-        }
-        let waiting = self
-            .rooms
-            .get(&room_id)
-            .is_some_and(|room| room.status == RoomStatus::Waiting);
-        if !waiting {
-            self.error(conn, "The lobby cannot change while a game is running");
-            return;
-        }
-        let Some(look) = message.get("look").and_then(parse_room_look) else {
-            self.error(conn, "Malformed room settings");
+        let Some(look) = self.accept(conn, look) else {
             return;
         };
         let room = self.rooms.get_mut(&room_id).unwrap();
@@ -632,25 +610,16 @@ impl RoomManager {
     }
 
     /// A player picks the symbol they show in the game, while the room waits. Nobody has to confirm again.
-    fn set_avatar(&mut self, conn: u64, message: &Value) {
-        let Some((room_id, player_id)) = self
-            .memberships
-            .get(&conn)
-            .map(|mb| (mb.room_id.clone(), mb.player_id))
-        else {
-            self.error(conn, "You are not in a waiting room");
+    fn set_avatar(&mut self, conn: u64, avatar: Parsed<Avatar>) {
+        let guard = self.member_of_waiting_room(
+            conn,
+            "You are not in a waiting room",
+            "The symbol cannot change while a game is running",
+        );
+        let Some((room_id, player_id)) = self.accept(conn, guard) else {
             return;
         };
-        let waiting = self
-            .rooms
-            .get(&room_id)
-            .is_some_and(|room| room.status == RoomStatus::Waiting);
-        if !waiting {
-            self.error(conn, "The symbol cannot change while a game is running");
-            return;
-        }
-        let Some(avatar) = parse_avatar(message.get("avatar")) else {
-            self.error(conn, "Malformed player symbol");
+        let Some(avatar) = self.accept(conn, avatar) else {
             return;
         };
         let room = self.rooms.get_mut(&room_id).unwrap();
@@ -662,37 +631,22 @@ impl RoomManager {
 
     /// A player picks their own team; they have to confirm (ready) again, everybody else's choice
     /// stands.
-    fn set_team(&mut self, conn: u64, message: &Value) {
-        let Some((room_id, player_id)) = self
-            .memberships
-            .get(&conn)
-            .map(|mb| (mb.room_id.clone(), mb.player_id))
-        else {
-            self.error(conn, "You are not in a waiting room");
+    fn set_team(&mut self, conn: u64, team: Parsed<u8>) {
+        let guard = self.member_of_waiting_room(
+            conn,
+            "You are not in a waiting room",
+            "You are not in a waiting room",
+        );
+        let Some((room_id, player_id)) = self.accept(conn, guard) else {
             return;
         };
-        let waiting = self
-            .rooms
-            .get(&room_id)
-            .is_some_and(|room| room.status == RoomStatus::Waiting);
-        if !waiting {
-            self.error(conn, "You are not in a waiting room");
+        let guard = self.require_team_room(&room_id);
+        if self.accept(conn, guard).is_none() {
             return;
         }
-        let team_room = self
-            .rooms
-            .get(&room_id)
-            .is_some_and(|room| room.mode == RoomMode::Team);
-        if !team_room {
-            self.error(conn, "Teams only exist in team rooms");
+        let Some(team) = self.accept(conn, team) else {
             return;
-        }
-        let team = message.get("team").and_then(Value::as_f64);
-        if !matches!(team, Some(v) if v == 0.0 || v == 1.0) {
-            self.error(conn, "team must be 0 or 1");
-            return;
-        }
-        let team = team.unwrap() as u8;
+        };
         let room = self.rooms.get_mut(&room_id).unwrap();
         let player = room
             .players
@@ -710,32 +664,16 @@ impl RoomManager {
     /// The host deals everybody back out to the teams, one after the other, in the order they
     /// joined.
     fn reset_teams(&mut self, conn: u64) {
-        let Some((room_id, is_host)) = self
-            .memberships
-            .get(&conn)
-            .map(|mb| (mb.room_id.clone(), mb.player_id == 0))
-        else {
-            self.error(conn, "Only the room host can reset the teams");
+        let guard = self.host_of_waiting_room(
+            conn,
+            "Only the room host can reset the teams",
+            "The teams cannot change while a game is running",
+        );
+        let Some(room_id) = self.accept(conn, guard) else {
             return;
         };
-        if !is_host {
-            self.error(conn, "Only the room host can reset the teams");
-            return;
-        }
-        let waiting = self
-            .rooms
-            .get(&room_id)
-            .is_some_and(|room| room.status == RoomStatus::Waiting);
-        if !waiting {
-            self.error(conn, "The teams cannot change while a game is running");
-            return;
-        }
-        let team_room = self
-            .rooms
-            .get(&room_id)
-            .is_some_and(|room| room.mode == RoomMode::Team);
-        if !team_room {
-            self.error(conn, "Teams only exist in team rooms");
+        let guard = self.require_team_room(&room_id);
+        if self.accept(conn, guard).is_none() {
             return;
         }
         let room = self.rooms.get_mut(&room_id).unwrap();
@@ -747,40 +685,25 @@ impl RoomManager {
     }
 
     /// The room a connection hosts while it waits, or why it may not change the CPU seats.
-    fn host_of_waiting_room(&self, conn: u64) -> Result<String, &'static str> {
-        let Some((room_id, is_host)) = self
-            .memberships
-            .get(&conn)
-            .map(|mb| (mb.room_id.clone(), mb.player_id == 0))
-        else {
-            return Err("Only the room host can change the CPU seats");
-        };
-        if !is_host {
-            return Err("Only the room host can change the CPU seats");
-        }
-        let waiting = self
-            .rooms
-            .get(&room_id)
-            .is_some_and(|room| room.status == RoomStatus::Waiting);
-        if !waiting {
-            return Err("The CPU seats cannot change while a game is running");
-        }
-        Ok(room_id)
+    fn host_of_cpu_seats(&self, conn: u64) -> Result<String, &'static str> {
+        self.host_of_waiting_room(
+            conn,
+            "Only the room host can change the CPU seats",
+            "The CPU seats cannot change while a game is running",
+        )
     }
 
     /// The host seats a CPU while the room waits. It is always ready; the humans confirm again.
-    fn add_cpu(&mut self, conn: u64, message: &Value) {
-        let room_id = match self.host_of_waiting_room(conn) {
-            Ok(room_id) => room_id,
-            Err(reason) => return self.error(conn, reason),
-        };
-        let Some(level) = parse_cpu_level(message.get("level")) else {
-            self.error(conn, "Malformed CPU level");
+    fn add_cpu(&mut self, conn: u64, level: Parsed<CpuLevel>, team: Parsed<Option<u8>>) {
+        let guard = self.host_of_cpu_seats(conn);
+        let Some(room_id) = self.accept(conn, guard) else {
             return;
         };
-        let requested_team = match named_team(message) {
-            Ok(team) => team,
-            Err(reason) => return self.error(conn, reason),
+        let Some(level) = self.accept(conn, level) else {
+            return;
+        };
+        let Some(requested_team) = self.accept(conn, team) else {
+            return;
         };
         let (full, team, name, avatar) = {
             let room = self.rooms.get(&room_id).unwrap();
@@ -818,22 +741,25 @@ impl RoomManager {
     }
 
     /// The host changes a CPU seat's level or team while the room waits. A new level brings a new name.
-    fn set_cpu(&mut self, conn: u64, message: &Value) {
-        let room_id = match self.host_of_waiting_room(conn) {
-            Ok(room_id) => room_id,
-            Err(reason) => return self.error(conn, reason),
-        };
-        let Some(player_id) = cpu_seat_id(message) else {
-            self.error(conn, "Malformed CPU seat");
+    fn set_cpu(
+        &mut self,
+        conn: u64,
+        seat: Parsed<usize>,
+        level: Parsed<Option<CpuLevel>>,
+        team: Parsed<Option<u8>>,
+    ) {
+        let guard = self.host_of_cpu_seats(conn);
+        let Some(room_id) = self.accept(conn, guard) else {
             return;
         };
-        let level = match named_cpu_level(message) {
-            Ok(level) => level,
-            Err(reason) => return self.error(conn, reason),
+        let Some(player_id) = self.accept(conn, seat) else {
+            return;
         };
-        let team = match named_team(message) {
-            Ok(team) => team,
-            Err(reason) => return self.error(conn, reason),
+        let Some(level) = self.accept(conn, level) else {
+            return;
+        };
+        let Some(team) = self.accept(conn, team) else {
+            return;
         };
         let room = self.rooms.get(&room_id).unwrap();
         let Some(seat) = room
@@ -871,13 +797,12 @@ impl RoomManager {
     }
 
     /// The host takes a CPU seat away while the room waits.
-    fn remove_cpu(&mut self, conn: u64, message: &Value) {
-        let room_id = match self.host_of_waiting_room(conn) {
-            Ok(room_id) => room_id,
-            Err(reason) => return self.error(conn, reason),
+    fn remove_cpu(&mut self, conn: u64, seat: Parsed<usize>) {
+        let guard = self.host_of_cpu_seats(conn);
+        let Some(room_id) = self.accept(conn, guard) else {
+            return;
         };
-        let Some(player_id) = cpu_seat_id(message) else {
-            self.error(conn, "Malformed CPU seat");
+        let Some(player_id) = self.accept(conn, seat) else {
             return;
         };
         let is_cpu = self
@@ -996,7 +921,7 @@ impl RoomManager {
         self.broadcast_lobby();
     }
 
-    fn relay_input(&mut self, conn: u64, message: &Value) {
+    fn relay_input(&mut self, conn: u64, input: Parsed<&Value>) {
         let (room_id, my_id, host_conn) = {
             let Some(membership) = self.memberships.get(&conn) else {
                 self.error(conn, "You are not in a running game");
@@ -1019,8 +944,7 @@ impl RoomManager {
             self.error(conn, "Host input is not accepted");
             return;
         }
-        let Some(input) = message.get("input").filter(|v| is_input_message(v)) else {
-            self.error(conn, "Malformed input message");
+        let Some(input) = self.accept(conn, input) else {
             return;
         };
         if let Some(host_conn) = host_conn {
@@ -1318,82 +1242,34 @@ fn free_avatar(room: &Room) -> Avatar {
         .unwrap_or_default()
 }
 
-/// The seat a CPU message names. It has to be a whole number.
-fn cpu_seat_id(message: &Value) -> Option<usize> {
-    message
-        .get("playerId")
-        .filter(|value| is_safe_integer(value))
-        .and_then(Value::as_i64)
-        .and_then(|id| usize::try_from(id).ok())
-}
-
-/// The team a message names, if it names one. Only 0 and 1 exist.
-fn named_team(message: &Value) -> Result<Option<u8>, &'static str> {
-    match message.get("team") {
-        None => Ok(None),
-        Some(value) => value
-            .as_f64()
-            .filter(|team| *team == 0.0 || *team == 1.0)
-            .map(|team| Some(team as u8))
-            .ok_or("team must be 0 or 1"),
+/// The raw-message entry points the tests use to give a room a prehashed password or a verdict.
+#[cfg(test)]
+impl RoomManager {
+    pub fn handle_create_room(&mut self, conn: u64, message: &Value, prehashed: Option<Hashed>) {
+        let RoomCommand::CreateRoom(create) = RoomCommand::parse(message) else {
+            panic!("not a create_room message: {message}");
+        };
+        self.create_room(conn, create, prehashed);
     }
-}
 
-/// The CPU level a message names, if it names one.
-fn named_cpu_level(message: &Value) -> Result<Option<CpuLevel>, &'static str> {
-    match message.get("level") {
-        None => Ok(None),
-        Some(_) => parse_cpu_level(message.get("level"))
-            .map(Some)
-            .ok_or("Malformed CPU level"),
+    pub fn handle_join_room(&mut self, conn: u64, message: &Value, preverified: Option<bool>) {
+        let RoomCommand::JoinRoom(join) = RoomCommand::parse(message) else {
+            panic!("not a join_room message: {message}");
+        };
+        self.join_room(conn, join, preverified);
     }
-}
-
-pub fn valid_create_room_message(message: &Value) -> bool {
-    let Some(name) = clean_name_checked(message.get("name")) else {
-        return false;
-    };
-    let _ = name;
-    let mode_ok = matches!(
-        message.get("mode").and_then(Value::as_str),
-        Some("ffa" | "team")
-    );
-    let game_mode_ok = matches!(
-        message.get("gameMode").and_then(Value::as_str),
-        Some("classic" | "horizon")
-    );
-    let max_players_ok = message.get("maxPlayers").is_some_and(|value| {
-        is_safe_integer(value)
-            && value
-                .as_f64()
-                .is_some_and(|n| (2.0..=MAX_ROOM_PLAYERS as f64).contains(&n))
-    });
-    let password_ok = message.get("password").is_none_or(|value| {
-        value
-            .as_str()
-            .is_some_and(|password| password_length(password) <= MAX_PASSWORD_LENGTH)
-    });
-    let rules_ok = message
-        .get("rules")
-        .is_none_or(|value| parse_rules(value).is_some());
-    let look_ok = parse_room_look(message).is_some();
-    let avatar_ok = parse_avatar(message.get("avatar")).is_some();
-    mode_ok && game_mode_ok && max_players_ok && password_ok && rules_ok && look_ok && avatar_ok
-}
-
-pub fn valid_join_room_message(message: &Value) -> bool {
-    clean_name_checked(message.get("name")).is_some()
-        && parse_avatar(message.get("avatar")).is_some()
-        && message
-            .get("roomId")
-            .and_then(Value::as_str)
-            .is_some_and(|room_id| !room_id.is_empty())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::{check_password, hash_password};
+    use crate::auth::{check_password, hash_password, password_length};
+    use crate::command::RoomCommand;
+    use crate::protocol::DEFAULT_RULES;
+
+    fn valid_create_room_message(message: &Value) -> bool {
+        matches!(RoomCommand::parse(message), RoomCommand::CreateRoom(create) if create.is_valid())
+    }
     use serde_json::{json, Value};
     use std::net::{IpAddr, Ipv4Addr};
     use tokio::sync::mpsc;
@@ -1524,7 +1400,7 @@ mod tests {
         let mut host_rx = connect(&mut rooms, 1);
         drain_json(&mut host_rx);
         let create = create("Host", Some("secret"));
-        rooms.create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
+        rooms.handle_create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
         let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
             .as_str()
             .unwrap()
@@ -1533,7 +1409,7 @@ mod tests {
         let mut guest_rx = connect(&mut rooms, 2);
         drain_json(&mut guest_rx);
         for _ in 0..5 {
-            rooms.join_room(
+            rooms.handle_join_room(
                 2,
                 &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"}),
                 Some(false),
@@ -1543,7 +1419,7 @@ mod tests {
                 "Wrong password"
             );
         }
-        rooms.join_room(
+        rooms.handle_join_room(
             2,
             &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"secret"}),
             Some(true),
@@ -1567,7 +1443,7 @@ mod tests {
         let mut host_rx = connect(&mut rooms, 1);
         drain_json(&mut host_rx);
         let (salt, hash) = hash_password("secret");
-        rooms.create_room(
+        rooms.handle_create_room(
             1,
             &create("Host", Some("secret")),
             Some((salt.clone(), hash.clone())),
@@ -1580,7 +1456,7 @@ mod tests {
         let mut guest_rx = connect(&mut rooms, 2);
         drain_json(&mut guest_rx);
         let join = |password: &str| json!({"type":"join_room","roomId":room_id,"name":"Guest","password":password});
-        rooms.join_room(
+        rooms.handle_join_room(
             2,
             &join("incorrect"),
             Some(check_password("incorrect", &salt, &hash)),
@@ -1589,7 +1465,7 @@ mod tests {
             take_type(&drain_json(&mut guest_rx), "error")["message"],
             "Wrong password"
         );
-        rooms.join_room(
+        rooms.handle_join_room(
             2,
             &join("secret"),
             Some(check_password("secret", &salt, &hash)),
@@ -1612,7 +1488,7 @@ mod tests {
         drain_json(&mut host);
         drain_json(&mut watcher);
         drain_json(&mut second_host);
-        rooms.create_room(
+        rooms.handle_create_room(
             1,
             &create("First", Some("secret")),
             Some((vec![1; 16], vec![2; 32])),
@@ -1646,7 +1522,7 @@ mod tests {
         let mut rooms = RoomManager::new();
         let mut host_rx = connect(&mut rooms, 1);
         drain_json(&mut host_rx);
-        rooms.create_room(
+        rooms.handle_create_room(
             1,
             &create("Host", Some("secret")),
             Some((vec![1; 16], vec![2; 32])),
@@ -1657,7 +1533,7 @@ mod tests {
             .to_owned();
         let mut open_host_rx = connect(&mut rooms, 3);
         drain_json(&mut open_host_rx);
-        rooms.create_room(3, &create("Open", None), None);
+        rooms.handle_create_room(3, &create("Open", None), None);
         let open_id = take_type(&drain_json(&mut open_host_rx), "room_update")["room"]["id"]
             .as_str()
             .unwrap()
@@ -1666,7 +1542,7 @@ mod tests {
         let mut guest_rx = connect(&mut rooms, 2);
         drain_json(&mut guest_rx);
         for _ in 0..MAX_PASSWORD_ATTEMPTS - 1 {
-            rooms.join_room(
+            rooms.handle_join_room(
                 2,
                 &json!({"type":"join_room","roomId":locked_id,"name":"Guest","password":"wrong"}),
                 Some(false),
@@ -1677,7 +1553,7 @@ mod tests {
             );
         }
         // The fifth miss cannot be cleared by successfully joining a different open room.
-        rooms.join_room(
+        rooms.handle_join_room(
             2,
             &json!({"type":"join_room","roomId":open_id,"name":"Guest"}),
             None,
@@ -1688,7 +1564,7 @@ mod tests {
         );
         rooms.leave_room(2);
         drain_json(&mut guest_rx);
-        rooms.join_room(
+        rooms.handle_join_room(
             2,
             &json!({"type":"join_room","roomId":locked_id,"name":"Guest","password":"wrong"}),
             Some(false),
@@ -1697,7 +1573,7 @@ mod tests {
             take_type(&drain_json(&mut guest_rx), "error")["message"],
             "Wrong password"
         );
-        rooms.join_room(
+        rooms.handle_join_room(
             2,
             &json!({"type":"join_room","roomId":locked_id,"name":"Guest","password":"secret"}),
             Some(true),

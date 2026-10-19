@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use parking_lot::Mutex;
 use rand::Rng;
-use serde_json::Value;
 
+use crate::command::{CreateRoom, JoinRoom};
 use crate::room::RoomManager;
 
 pub const MAX_PASSWORD_LENGTH: usize = 64;
@@ -54,9 +54,9 @@ pub async fn prepare_create(
     manager: &Mutex<RoomManager>,
     slots: &ScryptSlots,
     conn: u64,
-    message: &Value,
+    create: &CreateRoom,
 ) -> Result<Option<Hashed>, Handled> {
-    let Some(plaintext) = create_password_plaintext(message) else {
+    let Some(plaintext) = create.password_plaintext() else {
         return Ok(None);
     };
     let plaintext = plaintext.to_owned();
@@ -72,9 +72,9 @@ pub async fn prepare_join(
     manager: &Mutex<RoomManager>,
     slots: &ScryptSlots,
     conn: u64,
-    message: &Value,
+    join: &JoinRoom,
 ) -> Result<Option<bool>, Handled> {
-    let Some(plaintext) = join_password_plaintext(message) else {
+    let Some(plaintext) = join.password.as_deref() else {
         return Ok(None);
     };
     if password_length(plaintext) > MAX_PASSWORD_LENGTH {
@@ -87,12 +87,7 @@ pub async fn prepare_join(
             .error(conn, "Too many wrong passwords – reconnect to try again");
         return Err(Handled);
     }
-    let room_id = message
-        .get("roomId")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_owned();
-    let salt = manager.lock().join_password_salt(conn, &room_id);
+    let salt = manager.lock().join_password_salt(conn, join.room_id());
     let Some((salt, hash)) = salt else {
         return Ok(None);
     };
@@ -130,17 +125,6 @@ async fn derive<T: Send + 'static>(
 
 pub fn password_length(password: &str) -> usize {
     password.encode_utf16().count()
-}
-
-pub fn create_password_plaintext(message: &Value) -> Option<&str> {
-    message
-        .get("password")
-        .and_then(Value::as_str)
-        .filter(|password| !password.is_empty() && password_length(password) <= MAX_PASSWORD_LENGTH)
-}
-
-pub fn join_password_plaintext(message: &Value) -> Option<&str> {
-    message.get("password").and_then(Value::as_str)
 }
 
 pub fn hash_password(password: &str) -> (Vec<u8>, Vec<u8>) {

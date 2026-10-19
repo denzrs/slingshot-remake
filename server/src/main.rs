@@ -6,6 +6,7 @@
 mod admission;
 mod auth;
 mod codec;
+mod command;
 mod config;
 mod connection;
 mod leaderboard;
