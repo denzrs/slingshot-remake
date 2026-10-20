@@ -50,6 +50,19 @@ export interface Wormhole {
   radius: number;
 }
 
+/** How far a trail point may sit from a mouth and still be that mouth: the wire rounds points to a tenth. */
+const MOUTH_TOLERANCE = 0.06;
+
+/**
+ * Whether the trail segment ending at point `i` (an index into the flat x, y list) is a wormhole jump from one
+ * mouth to the other rather than flight. Compared with a tolerance, because a guest's trail arrives rounded.
+ */
+export function isWormholeJump(points: readonly number[], i: number, wormholes: readonly Wormhole[]): boolean {
+  const near = (x: number, y: number, mx: number, my: number): boolean => Math.abs(x - mx) <= MOUTH_TOLERANCE && Math.abs(y - my) <= MOUTH_TOLERANCE;
+  const [x0, y0, x1, y1] = [points[i - 2], points[i - 1], points[i], points[i + 1]];
+  return wormholes.some((w) => (near(x0, y0, w.ax, w.ay) && near(x1, y1, w.bx, w.by)) || (near(x0, y0, w.bx, w.by) && near(x1, y1, w.ax, w.ay)));
+}
+
 export interface World {
   width: number;
   height: number;
@@ -328,8 +341,11 @@ export class Shot {
     const { wormholes } = this.world;
     if (this.portal >= 0) {
       const w = wormholes[this.portal >> 1];
-      const [mx, my] = this.portal & 1 ? [w.bx, w.by] : [w.ax, w.ay];
-      if (!w || Math.hypot(this.x - mx, this.y - my) > w.radius) this.portal = -1;
+      if (!w) this.portal = -1;
+      else {
+        const [mx, my] = this.portal & 1 ? [w.bx, w.by] : [w.ax, w.ay];
+        if (Math.hypot(this.x - mx, this.y - my) > w.radius) this.portal = -1;
+      }
     }
     for (let i = 0; i < wormholes.length; i++) {
       const w = wormholes[i];

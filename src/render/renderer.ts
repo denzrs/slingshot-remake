@@ -2,7 +2,7 @@ import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, WORMHOLE } from '.
 import type { Match, Scene } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
-import { aimDirection, inNebula, type Wormhole, type World } from '../physics';
+import { aimDirection, inNebula, isWormholeJump, type Wormhole, type World } from '../physics';
 import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
@@ -833,8 +833,7 @@ function strokePolyline(ctx: CanvasRenderingContext2D, pts: number[], wormholes:
   ctx.moveTo(pts[0], pts[1]);
   for (let i = 2; i < pts.length; i += 2) {
     // The segment between the two mouths of a wormhole is no flight: the line breaks there.
-    const jump = wormholes.some((w) => (pts[i - 2] === w.ax && pts[i - 1] === w.ay && pts[i] === w.bx && pts[i + 1] === w.by) || (pts[i - 2] === w.bx && pts[i - 1] === w.by && pts[i] === w.ax && pts[i + 1] === w.ay));
-    if (jump) ctx.moveTo(pts[i], pts[i + 1]);
+    if (wormholes.length && isWormholeJump(pts, i, wormholes)) ctx.moveTo(pts[i], pts[i + 1]);
     else ctx.lineTo(pts[i], pts[i + 1]);
   }
   ctx.stroke();

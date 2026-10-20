@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FIELD, WORMHOLE } from '../src/config';
-import { Shot, type World } from '../src/physics';
+import { isWormholeJump, Shot, type World } from '../src/physics';
 
 const rules = { bounce: false, timeLimit: 20 };
 
@@ -36,5 +36,35 @@ describe('wormhole', () => {
     const shot = new Shot(w, 0, 180, 50, rules);
     while (!shot.end) shot.step();
     expect(shot.end).toEqual({ kind: 'ship', ship: 1 });
+  });
+
+  it('does not trip over the mouth it last left when that wormhole is gone', () => {
+    const w = world();
+    w.wormholes.push({ ax: 400, ay: 100, bx: 700, by: 100, radius: WORMHOLE.RADIUS });
+    w.wormholes = [w.wormholes[1], w.wormholes[0]];
+    const shot = new Shot(w, 0, 0, 50, rules);
+    for (let i = 0; i < 4000 && !shot.end && !shot.warps.length; i++) shot.step();
+    expect(shot.warps.length).toBe(1);
+    // The pair the shot just left by is removed while the other stays: the stale mouth must not be read.
+    w.wormholes.shift();
+    expect(() => { for (let i = 0; i < 50 && !shot.end; i++) shot.step(); }).not.toThrow();
+  });
+});
+
+describe('wormhole trail jump', () => {
+  const wormholes = [{ ax: 401.23, ay: 399.87, bx: 902.46, by: 700.04, radius: WORMHOLE.RADIUS }];
+  const rounded = (n: number): number => Math.round(n * 10) / 10;
+
+  it('is found in a trail the wire has rounded to a tenth', () => {
+    const exact = [380, 395, 401.23, 399.87, 902.46, 700.04, 920, 702];
+    const wire = exact.map(rounded);
+    expect(isWormholeJump(wire, 4, wormholes)).toBe(true);
+    expect(isWormholeJump(wire, 2, wormholes)).toBe(false);
+    expect(isWormholeJump(wire, 6, wormholes)).toBe(false);
+  });
+
+  it('is found in both directions, and not for flight that merely passes a mouth', () => {
+    expect(isWormholeJump([902.46, 700.04, 401.23, 399.87], 2, wormholes)).toBe(true);
+    expect(isWormholeJump([400, 400, 403, 401], 2, wormholes)).toBe(false);
   });
 });

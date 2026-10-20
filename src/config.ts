@@ -19,7 +19,6 @@ export const PHYSICS = {
   CLASH_RADIUS: 7,
 } as const;
 
-/** Physics constants that only the nebula power-up uses. */
 /** The wormhole power-up: two mouths that carry a shot from one to the other, in both directions. */
 export const WORMHOLE = {
   /** A shot whose centre comes this close to a mouth is carried through. */
@@ -28,6 +27,7 @@ export const WORMHOLE = {
   MIN_SEPARATION: 120,
 } as const;
 
+/** Physics constants that only the nebula power-up uses. */
 export const NEBULA = {
   /** Half a field across at most: a cloud big enough to fly through, small enough to miss. */
   RADIUS: 150,
