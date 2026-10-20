@@ -135,6 +135,8 @@ export type GameEvent =
   | { type: 'nebula'; player: number; x: number; y: number }
   | { type: 'wormhole'; player: number; x: number; y: number; toX: number; toY: number }
   | { type: 'defense'; player: number; x: number; y: number }
+  /** A planet's gravity was turned round (`reversed`) or back. */
+  | { type: 'polarity'; player: number; x: number; y: number; radius: number; reversed: boolean }
   /** A planetary defense fired a missile at a shot: from its turret to where the shot is. */
   | { type: 'defenseFire'; player: number; x: number; y: number; toX: number; toY: number }
   /** A defense's missile lost its shot at (x, y). */
@@ -1112,8 +1114,6 @@ export abstract class Match {
       if (this.cpuJobs.has(id)) continue;
       const p = this.players[id];
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
-      // An armed repulse pushes this CPU's shot away from the planets, so the plan has to fly it that way.
-      const pull = p.armed && p.powerUp === 'repulse' ? -1 : 1;
       const pierce = !!p.armed && p.powerUp === 'piercing';
       // The pickups a CPU would actually keep (a preview is of no use to it): the planner steers its
       // search through them, so a power-up-hungry level like Einstein collects more.
@@ -1132,7 +1132,6 @@ export abstract class Match {
         effort,
         lookahead,
         friends,
-        pull,
         pierce,
         pickups,
         grudgeTarget: this.lastHitBy.get(id) ?? null,

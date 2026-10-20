@@ -220,7 +220,7 @@ describe('planetary defense power-up', () => {
 
   it('goes for a piercing shot like any other', () => {
     const world = overhead([1]);
-    const shot = new Shot(world, 0, 0, 60, rules, false, [], 1, true);
+    const shot = new Shot(world, 0, 0, 60, rules, false, [], true);
     let launched = false;
     while (!shot.end && shot.x < 1000) {
       shot.step();

@@ -158,6 +158,8 @@ function isGameEvent(value: unknown): boolean {
       return index('player') && finite('x') && finite('y');
     case 'defense':
       return index('player') && finite('x') && finite('y');
+    case 'polarity':
+      return index('player') && finite('x') && finite('y') && finite('radius') && typeof event.reversed === 'boolean';
     case 'defenseFire':
       return index('player') && finite('x') && finite('y') && finite('toX') && finite('toY');
     case 'defenseMiss':

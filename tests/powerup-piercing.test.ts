@@ -91,10 +91,10 @@ describe('armor piercing power-up', () => {
   });
 
   it('reports the hulls it would go through to the planner', () => {
-    const outcome = simulateShot(world3(), 0, 0, 100, rules, [], 1, [], true);
+    const outcome = simulateShot(world3(), 0, 0, 100, rules, [], [], true);
     expect(outcome.pierced).toEqual([1, 2]);
     // Without armor piercing the same aim stops on the first hull, and reports no pass-through.
-    expect(simulateShot(world3(), 0, 0, 100, rules, [], 1, [], false).pierced).toEqual([]);
+    expect(simulateShot(world3(), 0, 0, 100, rules, [], [], false).pierced).toEqual([]);
   });
 });
 

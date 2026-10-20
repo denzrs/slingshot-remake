@@ -15,7 +15,8 @@ export function renderContours(world: World, ps: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(width * ps);
   canvas.height = Math.ceil(height * ps);
-  const bodies = [...planets, ...holes];
+  // A planet turned round pulls nothing in: it has no well on the map.
+  const bodies = [...planets.filter((p) => !p.reversed), ...holes];
   if (bodies.length === 0) return canvas;
 
   const cols = Math.ceil(width / GRID) + 1;
