@@ -1,5 +1,5 @@
 import { nextWormholeId, portalFits, type ShotRules, type World } from '../physics';
-import { aimedPlanet, aimedSpot, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
+import { aimedPlanet, aimedSpot, aimedSurface, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
 import { NEBULA, WORMHOLE } from '../config';
 import type { Rng } from '../rng';
 import { bump, type StatBook } from '../stats';
@@ -35,11 +35,11 @@ export interface PowerUpHost {
   record(update: (book: StatBook) => void): void;
 }
 
-/** The power-ups a player aims at a spot on the field, rather than firing: a teleport, a black hole, a planet killer or a nebula. */
-export type PlacementKind = 'teleport' | 'blackhole' | 'planetkiller' | 'nebula' | 'wormhole';
+/** The power-ups a player aims at a spot on the field, rather than firing: a teleport, a black hole, a planet killer, a nebula, a wormhole or a planetary defense. */
+export type PlacementKind = 'teleport' | 'blackhole' | 'planetkiller' | 'nebula' | 'wormhole' | 'defense';
 
 /** Whether this power-up is aimed at a spot and then confirmed, instead of armed and spent by a shot. */
-export const isPlacement = (kind: PowerUpKind | null): kind is PlacementKind => kind === 'teleport' || kind === 'blackhole' || kind === 'planetkiller' || kind === 'nebula' || kind === 'wormhole';
+export const isPlacement = (kind: PowerUpKind | null): kind is PlacementKind => kind === 'teleport' || kind === 'blackhole' || kind === 'planetkiller' || kind === 'nebula' || kind === 'wormhole' || kind === 'defense';
 
 /** Where an aimed power-up would land or be planted, as the renderer sees it. */
 export interface PlacementAim {
@@ -255,6 +255,8 @@ export class PowerUpField {
     if (kind === 'planetkiller') {
       const planet = aimedPlanet(world, from, p.angle);
       target = planet ? { x: planet.x, y: planet.y } : null;
+    } else if (kind === 'defense') {
+      target = aimedSurface(world, from, p.angle);
     } else if (kind === 'nebula') {
       target = nebulaSpot(world, from, p.angle, p.power);
     } else {
@@ -295,6 +297,7 @@ export class PowerUpField {
     this.choosing.delete(by);
     if (aim.kind === 'blackhole') return this.plantBlackHole(aim.owner, aim.target);
     if (aim.kind === 'nebula') return this.plantNebula(aim.owner, aim.target);
+    if (aim.kind === 'defense') return this.plantDefense(aim.owner, aim.target);
     if (aim.kind === 'planetkiller') {
       const world = this.host.world();
       const p = this.host.players()[aim.owner];
@@ -349,11 +352,33 @@ export class PowerUpField {
     const planet = world.planets[index];
     if (!planet) return false;
     world.planets.splice(index, 1);
+    // A defense stood on the rock: it goes with it.
+    world.defenses = world.defenses.filter((d) => d.planet !== planet.seed);
     world.version++;
     this.host.players()[id].powerUp = null;
     this.host.players()[id].armed = false;
     this.host.clearCpuJobs();
     this.host.emit({ type: 'planetKiller', player: id, x: planet.x, y: planet.y, radius: planet.radius });
+    return true;
+  }
+
+  /**
+   * Sets a planetary defense on a planet's surface: it lasts the round and fires a missile at every enemy
+   * shot that flies into its area, except those of the player who set it and their team. A planet has only one: a
+   * defense set on a planet that already has one replaces it, whoever's it was. `spot.planet` is the planet's
+   * place in `world.planets`, as `aimedSurface` gives it; without it the planet is found by the spot.
+   */
+  private plantDefense(id: number, spot: { x: number; y: number; planet?: number }): boolean {
+    const world = this.host.world();
+    const planet = spot.planet !== undefined ? world.planets[spot.planet] : world.planets.find((p) => Math.abs(Math.hypot(spot.x - p.x, spot.y - p.y) - p.radius) < 1);
+    if (!planet) return false;
+    world.defenses = world.defenses.filter((d) => d.planet !== planet.seed);
+    world.defenses.push({ x: spot.x, y: spot.y, radius: planet.radius * POWER_UP.DEFENSE_RADIUS_SHARE, planet: planet.seed, owner: id, protects: [id, ...this.host.friendsOf(id)] });
+    world.version++;
+    this.host.players()[id].powerUp = null;
+    this.host.players()[id].armed = false;
+    this.host.clearCpuJobs();
+    this.host.emit({ type: 'defense', player: id, x: spot.x, y: spot.y });
     return true;
   }
 
@@ -376,15 +401,19 @@ export class PowerUpField {
 
   /**
    * A CPU lays the placement it holds at the spot its own aim points at: no aim key, no confirm, and the
-   * shot is the caller's to spend. It handles only the three placements a CPU lays; a teleport it plans
+   * shot is the caller's to spend. It handles only the four placements a CPU lays; a teleport it plans
    * with, like a shot. False when it holds none of them, or the aim lands nowhere.
    */
   placeForCpu(id: number): boolean {
     const p = this.host.players()[id];
     const kind = p.powerUp;
-    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller') return false;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense') return false;
     const world = this.host.world();
     const from = world.ships[id];
+    if (kind === 'defense') {
+      const surface = aimedSurface(world, from, p.angle);
+      return surface ? this.plantDefense(id, surface) : false;
+    }
     if (kind === 'planetkiller') {
       const planet = aimedPlanet(world, from, p.angle);
       return planet ? this.killPlanet(id, planet.index) : false;

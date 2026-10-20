@@ -13,7 +13,7 @@ const world3 = (shields = false): World => ({
   height: 800,
   planets: [],
   holes: [],
-  nebulae: [], wormholes: [],
+  nebulae: [], wormholes: [], defenses: [],
   version: 0,
   ships: [
     { x: 200, y: 400, alive: true },

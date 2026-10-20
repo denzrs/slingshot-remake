@@ -101,6 +101,33 @@ describe('power-ups in Event Horizon', () => {
     expect(who.powerUp).toBeNull();
   });
 
+  it('takes a defense along with its planet: it drifts with a planet the hole pulls in, and is gone when the planet is', () => {
+    const match = duel();
+    const hole = match.world.holes[0];
+    const rock = (seed: number, x: number, y: number) => ({ x, y, radius: 20, mass: 8_000, seed, style: 'rocky' as const, tint: '#fff' });
+    const eaten = rock(1, hole.x + hole.radius + 20, hole.y);
+    const drifting = rock(2, hole.x - 330, hole.y + 20);
+    match.world.planets = [eaten, drifting];
+    match.world.defenses = [
+      { x: eaten.x + 20, y: eaten.y, radius: 30, planet: 1, owner: 0, protects: [0] },
+      { x: drifting.x, y: drifting.y - 20, radius: 30, planet: 2, owner: 0, protects: [0] },
+    ];
+    const [a, b] = match.players;
+    const [shipA, shipB] = match.world.ships;
+    a.angle = shipA.y < hole.y ? 270 : 90;
+    b.angle = shipB.y < hole.y ? 270 : 90;
+    lockAll(match);
+    finishFlight(match);
+    expect(match.phase).toBe('collapse');
+    for (let t = 0; t < 5 && match.phase === 'collapse'; t += 1 / 30) match.update(1 / 30);
+    expect(match.world.planets.map((p) => p.seed)).toEqual([2]);
+    expect(match.world.defenses).toHaveLength(1);
+    const [d] = match.world.defenses;
+    // Still standing on the rim of the planet it came with.
+    expect(Math.hypot(d.x - drifting.x, d.y - drifting.y)).toBeCloseTo(20, 3);
+    expect(drifting.x).not.toBe(hole.x - 330);
+  });
+
   it('leaves a ship that spent its shot on a teleport out of the volley', () => {
     const match = duel();
     const who = match.players[match.current];
@@ -216,7 +243,7 @@ describe('wormholes in Event Horizon', () => {
 
 describe('a flight that was changed on the way', () => {
   function straight(): World {
-    return { width: 1280, height: 800, planets: [], ships: [{ x: 300, y: 400, alive: true }, { x: 900, y: 420, alive: true }], holes: [], nebulae: [], wormholes: [], version: 0 };
+    return { width: 1280, height: 800, planets: [], ships: [{ x: 300, y: 400, alive: true }, { x: 900, y: 420, alive: true }], holes: [], nebulae: [], wormholes: [], defenses: [], version: 0 };
   }
 
   it('replays the same flight from its script: the split and the shield happen at the same step', () => {

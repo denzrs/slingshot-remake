@@ -703,7 +703,7 @@ body {
 }
 
 .tiles {
-  /* Four to a row, so the ten power-up kinds fall into a fixed 4 + 4 + 2 block whatever the width; a short
+  /* Four to a row, so the kinds stack in tidy rows (ten make 4 + 4 + 2) whatever the width; a short
      last row centres, which staggers it against the full one above. */
   display: flex;
   flex-wrap: wrap;
@@ -715,7 +715,7 @@ body {
   display: grid;
   justify-items: center;
   gap: 5px;
-  flex: 0 0 calc(25% - 6px);
+  flex: 0 0 calc(25% - 4.5px);
   min-width: 0;
   padding: 10px 6px 8px;
   border: 1px solid rgb(91 125 179 / 0.4);
@@ -758,7 +758,7 @@ body {
   }
 
   .tile {
-    flex-basis: calc(25% - 4px);
+    flex-basis: calc(25% - 3px);
     padding-inline: 2px;
     font-size: 9.5px;
     letter-spacing: 0;

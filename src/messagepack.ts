@@ -156,6 +156,14 @@ function isGameEvent(value: unknown): boolean {
       return index('player') && finite('x') && finite('y') && finite('toX') && finite('toY');
     case 'nebula':
       return index('player') && finite('x') && finite('y');
+    case 'defense':
+      return index('player') && finite('x') && finite('y');
+    case 'defenseFire':
+      return index('player') && finite('x') && finite('y') && finite('toX') && finite('toY');
+    case 'defenseMiss':
+      return index('player') && finite('x') && finite('y');
+    case 'shotdown':
+      return index('player') && finite('x') && finite('y') && finite('vx') && finite('vy');
     case 'multiKill':
       return index('player') && finite('kills') && finite('points') && finite('x') && finite('y');
     case 'split':

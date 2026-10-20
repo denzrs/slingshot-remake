@@ -16,6 +16,7 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   nebula: '#9be7ff',
   piercing: '#dfe7f5',
   wormhole: '#4db8ff',
+  defense: '#b4ff3c',
 };
 
 /** The colour of the portals of the wormhole with this id (the palette starts over after the last colour). */
@@ -176,6 +177,40 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.lineTo(x + r * 0.35, y + r * 0.28);
     ctx.closePath();
     ctx.fill();
+  } else if (kind === 'defense') {
+    // Three zones round a turret, the nearer ones bolder, and a missile climbing out through them. Everything
+    // stays within a radius r of the middle, so the tile and the pickup ring never clip it.
+    const alpha = ctx.globalAlpha;
+    const lineWidth = ctx.lineWidth;
+    const base = y + r * 0.62;
+    ctx.lineWidth = lineWidth * 0.75;
+    for (const [reach, fade] of [[0.9, 0.4], [0.62, 0.65], [0.34, 1]] as const) {
+      ctx.globalAlpha = alpha * fade;
+      ctx.beginPath();
+      ctx.arc(x - r * 0.12, base, r * reach, Math.PI, 0);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = lineWidth;
+    // The turret on the ground, and the ground.
+    ctx.beginPath();
+    ctx.arc(x - r * 0.12, base, r * 0.14, Math.PI, 0);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x - r * 0.95, base);
+    ctx.lineTo(x + r * 0.75, base);
+    ctx.stroke();
+    // The missile: a dart climbing away to the upper right.
+    ctx.beginPath();
+    ctx.moveTo(x + r * 0.62, y - r * 0.5);
+    ctx.lineTo(x + r * 0.26, y - r * 0.4);
+    ctx.lineTo(x + r * 0.4, y - r * 0.16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + r * 0.34, y - r * 0.28);
+    ctx.lineTo(x - r * 0.04, y + r * 0.2);
+    ctx.stroke();
   } else if (kind === 'splitter') {
     ctx.moveTo(x, y + r);
     ctx.lineTo(x, y);

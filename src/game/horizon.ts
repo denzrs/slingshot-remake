@@ -595,7 +595,17 @@ export class HorizonMatch extends Match {
     const hole = this.world.holes[0];
     hole.radius = c.fromRadius + (c.toRadius - c.fromRadius) * e;
     hole.mass = c.fromMass + (c.toMass - c.fromMass) * e;
-    for (const p of this.world.planets) move(p, c.planets.get(p.seed)!, e, t);
+    for (const p of this.world.planets) {
+      // A defense stands on its planet and drifts with it.
+      const ox = p.x;
+      const oy = p.y;
+      move(p, c.planets.get(p.seed)!, e, t);
+      for (const d of this.world.defenses) {
+        if (d.planet !== p.seed) continue;
+        d.x += p.x - ox;
+        d.y += p.y - oy;
+      }
+    }
     for (const fate of c.wormholes) {
       // Both portals fall in, quickening like anything the hole eats.
       const w = this.world.wormholes.find((o) => o.id === fate.id);
@@ -619,6 +629,8 @@ export class HorizonMatch extends Match {
     this.collapse = null;
     this.world.planets = this.world.planets.filter((p) => !c.planets.get(p.seed)?.lost);
     this.world.wormholes = this.world.wormholes.filter((w) => !c.wormholes.some((fate) => fate.id === w.id));
+    // A defense does not outlive the planet it stood on.
+    this.world.defenses = this.world.defenses.filter((d) => this.world.planets.some((p) => p.seed === d.planet));
     this.world.version++;
     // What the hole swallowed is gone from the field; what drifted stays where it landed.
     const eaten = this.pickups.filter((pickup) => c.pickups.get(pickup.id)?.lost);

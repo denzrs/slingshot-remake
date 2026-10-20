@@ -8,16 +8,16 @@ import type { Rng } from './rng';
  * own rng and the tests can call it directly.
  */
 
-export type PowerUpKind = 'preview' | 'teleport' | 'splitter' | 'repulse' | 'shield' | 'blackhole' | 'planetkiller' | 'nebula' | 'piercing' | 'wormhole';
+export type PowerUpKind = 'preview' | 'teleport' | 'splitter' | 'repulse' | 'shield' | 'blackhole' | 'planetkiller' | 'nebula' | 'piercing' | 'wormhole' | 'defense';
 
-export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter', 'repulse', 'shield', 'blackhole', 'planetkiller', 'nebula', 'piercing', 'wormhole'];
+export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter', 'repulse', 'shield', 'blackhole', 'planetkiller', 'nebula', 'piercing', 'wormhole', 'defense'];
 
 /**
  * How often each kind turns up, relative to the others, and the same in every mode: the stronger the kind,
  * the scarcer it is. So the preview is the rarest find, then the planet killer and the black hole, up to the
  * teleport and the shield, which are the commonest.
  */
-export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 0.2, planetkiller: 0.3, blackhole: 0.3, splitter: 0.5, piercing: 0.5, repulse: 0.8, nebula: 0.8, teleport: 0.8, shield: 0.8, wormhole: 0.3 };
+export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 0.2, planetkiller: 0.3, blackhole: 0.3, splitter: 0.5, piercing: 0.5, repulse: 0.8, nebula: 0.8, teleport: 0.8, shield: 0.8, wormhole: 0.3, defense: 0.5 };
 
 /** The kind of a new pickup, drawn by weight from the kinds in play (all of them when the list is empty). */
 export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KINDS): PowerUpKind {
@@ -32,7 +32,7 @@ export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KIND
 
 /**
  * Kinds a CPU has no use for: it leaves them lying. Only the preview, which shows a shot's path and means
- * nothing to a planner that already knows it, and the wormhole, which a CPU does not use yet. A placement (black hole, planet killer, nebula) it does take,
+ * nothing to a planner that already knows it, and the wormhole, which a CPU does not use yet. A placement (black hole, planet killer, nebula, defense) it does take,
  * and lays it at a rough spot of its own.
  */
 export const CPU_IGNORES: Readonly<Partial<Record<PowerUpKind, true>>> = { preview: true, wormhole: true };
@@ -95,6 +95,8 @@ export const POWER_UP = {
    * keeps this far from the field edge, so its aim spot is drawn whole.
    */
   NEBULA_EDGE_GAP: NEBULA.RADIUS,
+  /** A planetary defense covers an area of this many times its planet's radius round the turret, in three zones. */
+  DEFENSE_RADIUS_SHARE: 4,
 } as const;
 
 export interface Pickup {
@@ -241,6 +243,23 @@ export function aimedPlanet(world: World, from: { x: number; y: number }, angle:
     }
   }
   return null;
+}
+
+/**
+ * Where an aimed planetary defense would stand: the surface point of the first planet the aim ray enters,
+ * however far off. Like the planet killer only the angle aims it. Null when the ray meets no planet.
+ */
+export function aimedSurface(world: World, from: { x: number; y: number }, angle: number): { x: number; y: number; planet: number; radius: number } | null {
+  const hit = aimedPlanet(world, from, angle);
+  if (!hit) return null;
+  const planet = world.planets[hit.index];
+  const dx = from.x - planet.x;
+  const dy = from.y - planet.y;
+  // The ray enters the planet from the ship's side: walk back along it to the rim.
+  const dir = aimDirection(angle);
+  const b = dx * dir.x + dy * dir.y;
+  const t = -b - Math.sqrt(Math.max(0, b * b - (dx * dx + dy * dy - planet.radius * planet.radius)));
+  return { x: from.x + dir.x * t, y: from.y + dir.y * t, planet: hit.index, radius: planet.radius * POWER_UP.DEFENSE_RADIUS_SHARE };
 }
 
 /**

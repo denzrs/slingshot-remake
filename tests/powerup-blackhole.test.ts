@@ -65,7 +65,7 @@ describe('a second black hole on the field', () => {
       { x: 1200, y: 720, radius: 5, mass: 1 },
       { x: 700, y: 400, radius: 30, mass: 220_000 },
     ],
-    nebulae: [], wormholes: [],
+    nebulae: [], wormholes: [], defenses: [],
     version: 0,
   };
 

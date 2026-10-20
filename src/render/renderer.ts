@@ -14,6 +14,7 @@ import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
 import { drawNebula } from './nebula';
 import { drawPortal, drawWormhole } from './wormhole';
+import { defensePlanet, defenseView, drawDefense, drawInterception } from './defense';
 import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
@@ -216,6 +217,7 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
+    world.defenses.forEach((d, i) => drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, alpha, defenseView(scene.volley?.shots ?? [], d, i)));
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
@@ -360,6 +362,8 @@ export class Renderer {
         this.drawOffscreenMarker(shot.x, shot.y, color);
       }
     }
+    // What the planetary defenses do to the shots they track: the lock-on and the interceptor, over the shots.
+    match.world.defenses.forEach((d, i) => drawInterception(ctx, match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, defenseView(scene.volley?.shots ?? [], d, i), this.time));
   }
 
   /** Experimental power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */
@@ -483,7 +487,7 @@ export class Renderer {
       const { owner, kind, target } = scene.placement;
       const from = match.world.ships[owner];
       const nextWormhole = nextWormholeId(match.world);
-      const color = kind === 'teleport' ? match.players[owner].color : kind === 'wormhole' ? portalColor(nextWormhole) : POWER_UP_COLORS[kind];
+      const color = kind === 'teleport' || kind === 'defense' ? match.players[owner].color : kind === 'wormhole' ? portalColor(nextWormhole) : POWER_UP_COLORS[kind];
       ctx.save();
       ctx.strokeStyle = color;
       ctx.globalAlpha = 0.6;
@@ -496,7 +500,27 @@ export class Renderer {
       ctx.setLineDash([]);
       ctx.globalAlpha = 0.85 + 0.15 * pulse;
       ctx.lineWidth = 2;
-      if (kind === 'blackhole') {
+      if (kind === 'defense') {
+        // In the colour of whoever is aiming it, like the ring that will stay on the field.
+        ctx.strokeStyle = color;
+        // The turret as it would stand, with its three zones and the chance of a hit in each. A planet has only
+        // one defense, so one already there is marked: this one will replace it.
+        const planet = defensePlanet(match.world.planets, target);
+        if (planet) {
+          drawDefense(ctx, { x: target.x, y: target.y, radius: planet.radius * POWER_UP.DEFENSE_RADIUS_SHARE }, planet, color, this.time, 1, undefined, true);
+          const standing = match.world.defenses.find((o) => o.planet === planet.seed);
+          if (standing) {
+            ctx.globalAlpha = 1;
+            ctx.font = `700 11px ${FONTS.mono}`;
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#ff5c5c';
+            ctx.fillText(t('powerup.defenseReplaces').toUpperCase(), standing.x, standing.y + (standing.y > planet.y ? 22 : -16));
+          }
+        }
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, 7 + 2 * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (kind === 'blackhole') {
         // The would-be horizon: a dark core inside a bright accretion ring.
         const r = POWER_UP.BLACKHOLE_RADIUS;
         ctx.beginPath();

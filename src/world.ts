@@ -70,7 +70,7 @@ export function generateWorld(seed: number, opts: WorldOptions): World {
     });
   }
 
-  return { width, height, planets, ships, holes, nebulae: [], wormholes: [], version: 0 };
+  return { width, height, planets, ships, holes, nebulae: [], wormholes: [], defenses: [], version: 0 };
 }
 
 function duelShips(rng: Rng): Ship[] {

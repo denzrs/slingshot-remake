@@ -15,6 +15,7 @@ const world = (): World => ({
   holes: [],
   nebulae: [],
   wormholes: [{ id: 0, ax: 400, ay: 400, bx: 900, by: 700, radius: WORMHOLE.RADIUS }],
+  defenses: [],
   version: 0,
 });
 
