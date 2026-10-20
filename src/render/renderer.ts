@@ -14,7 +14,7 @@ import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
 import { drawNebula } from './nebula';
 import { drawPortal, drawWormhole } from './wormhole';
-import { drawPowerUpSymbol, portalPair, POWER_UP_COLORS } from './powerup-art';
+import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
   hud: boolean;
@@ -217,8 +217,8 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
-    // With more than one wormhole each pair has its own colours and a number besides.
-    for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, world.wormholes.length > 1 ? String(w.id + 1) : undefined, scene.camera ? 0 : match.devourWormhole(w.id));
+    // Each wormhole has a colour of its own, shared by its two portals.
+    for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
     const next = match.nextHoleRadius;
     if (next && primary && !scene.camera) drawDangerRing(ctx, primary, next, this.time);
   }
@@ -483,7 +483,7 @@ export class Renderer {
       const { owner, kind, target } = scene.placement;
       const from = match.world.ships[owner];
       const nextWormhole = nextWormholeId(match.world);
-      const color = kind === 'teleport' ? match.players[owner].color : kind === 'wormhole' ? (scene.placement.entry ? portalPair(nextWormhole).exit : portalPair(nextWormhole).entry) : POWER_UP_COLORS[kind];
+      const color = kind === 'teleport' ? match.players[owner].color : kind === 'wormhole' ? portalColor(nextWormhole) : POWER_UP_COLORS[kind];
       ctx.save();
       ctx.strokeStyle = color;
       ctx.globalAlpha = 0.6;
@@ -507,40 +507,37 @@ export class Renderer {
         ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
         ctx.fill();
       } else if (kind === 'wormhole') {
-        // The portal being set is a ghost of itself. Once the entry is set it stays on the field, solid, with a
-        // thread to the exit being aimed. A portal cannot overlap another: the ghost then turns red and says so,
-        // because the click would do nothing.
-        const entry = scene.placement.entry;
-        // The pair being set is the next one on the field: its colours, and its number when there are others.
-        const pair = portalPair(nextWormhole);
-        const mark = match.world.wormholes.length ? String(nextWormhole + 1) : undefined;
-        const facing = entry ? Math.atan2(target.y - entry.y, target.x - entry.x) : Math.atan2(target.y - from.y, target.x - from.x);
+        // The portal being set is a ghost of itself. Once the first is set it stays on the field, solid, with a
+        // thread to the second being aimed, in the colour the pair will have. A portal cannot overlap another:
+        // the ghost then turns red and says so, because the click would do nothing.
+        const first = scene.placement.first;
+        const facing = first ? Math.atan2(target.y - first.y, target.x - first.x) : Math.atan2(target.y - from.y, target.x - from.x);
         const blocked = !!scene.placement.blocked;
-        if (entry) {
+        if (first) {
           ctx.save();
-          ctx.globalAlpha = blocked ? 0.5 : 0.18;
-          ctx.strokeStyle = blocked ? '#ff5c5c' : '#ffffff';
+          ctx.globalAlpha = blocked ? 0.5 : 0.25;
+          ctx.strokeStyle = blocked ? '#ff5c5c' : color;
           ctx.lineWidth = 1;
           ctx.setLineDash([3, 6]);
           ctx.beginPath();
-          ctx.moveTo(entry.x, entry.y);
+          ctx.moveTo(first.x, first.y);
           ctx.lineTo(target.x, target.y);
           ctx.stroke();
           ctx.restore();
-          drawPortal(ctx, entry.x, entry.y, facing, WORMHOLE.RADIUS, pair.entry, this.time, false, 1, 0, mark);
+          drawPortal(ctx, first.x, first.y, facing, WORMHOLE.RADIUS, color, this.time);
         }
-        drawPortal(ctx, target.x, target.y, entry ? facing + Math.PI : facing, WORMHOLE.RADIUS, color, this.time, !!entry, blocked ? 0.3 : 0.7, 1, mark);
+        drawPortal(ctx, target.x, target.y, first ? facing + Math.PI : facing, WORMHOLE.RADIUS, color, this.time, blocked ? 0.3 : 0.7, 1);
         ctx.globalAlpha = 1;
         ctx.font = `700 11px ${FONTS.mono}`;
         ctx.textAlign = 'center';
         ctx.fillStyle = blocked ? '#ff5c5c' : color;
         // The labels sit on the far side of each portal from the other, so two close ones do not overprint.
-        const side = entry && target.y >= entry.y ? 1 : -1;
+        const side = first && target.y >= first.y ? 1 : -1;
         const reach = WORMHOLE.RADIUS * 1.12 + 10;
-        ctx.fillText(t(blocked ? 'powerup.wormholeClose' : entry ? 'powerup.wormholeExit' : 'powerup.wormholeEntry').toUpperCase(), target.x, target.y + side * reach);
-        if (entry) {
-          ctx.fillStyle = pair.entry;
-          ctx.fillText(t('powerup.wormholeEntry').toUpperCase(), entry.x, entry.y - side * reach);
+        ctx.fillText(t(blocked ? 'powerup.wormholeClose' : first ? 'powerup.wormholeSecond' : 'powerup.wormholeFirst').toUpperCase(), target.x, target.y + side * reach);
+        if (first) {
+          ctx.fillStyle = color;
+          ctx.fillText(t('powerup.wormholeFirst').toUpperCase(), first.x, first.y - side * reach);
         }
       } else if (kind === 'nebula') {
         // The reach of the cloud as a plain ring: it must not wobble while the aim moves. The cloud that

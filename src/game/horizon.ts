@@ -580,8 +580,8 @@ export class HorizonMatch extends Match {
       const inside = (x: number, y: number): boolean => Math.hypot(x - hole.x, y - hole.y) < toRadius + margin;
       if (!inside(w.ax, w.ay) && !inside(w.bx, w.by)) continue;
       wormholes.push({ id: w.id, ax: w.ax, ay: w.ay, bx: w.bx, by: w.by });
-      this.emit({ type: 'devour', x: w.ax, y: w.ay, toX: hole.x, toY: hole.y, color: WORMHOLE.PAIRS[w.id % WORMHOLE.PAIRS.length].entry, vx: 0, vy: 0 });
-      this.emit({ type: 'devour', x: w.bx, y: w.by, toX: hole.x, toY: hole.y, color: WORMHOLE.PAIRS[w.id % WORMHOLE.PAIRS.length].exit, vx: 0, vy: 0 });
+      this.emit({ type: 'devour', x: w.ax, y: w.ay, toX: hole.x, toY: hole.y, color: WORMHOLE.COLORS[w.id % WORMHOLE.COLORS.length], vx: 0, vy: 0 });
+      this.emit({ type: 'devour', x: w.bx, y: w.by, toX: hole.x, toY: hole.y, color: WORMHOLE.COLORS[w.id % WORMHOLE.COLORS.length], vx: 0, vy: 0 });
     }
     this.collapse = { fromRadius: hole.radius, toRadius, fromMass: hole.mass, toMass, planets, ships, pickups, wormholes };
     this.setPhase('collapse');

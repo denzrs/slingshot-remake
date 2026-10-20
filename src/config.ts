@@ -26,16 +26,10 @@ export const WORMHOLE = {
   /** Two portals closer than this overlap, and cannot be placed: centre to centre, the ovals' full height. */
   GAP: 50,
   /**
-   * The colours of the portals, one pair per wormhole on the field: the entry set first, the exit set second.
-   * The first pair is blue and orange; later pairs differ in both colours, so a wormhole can be told from the
-   * others (a number on each portal says so too, for those who cannot tell the colours apart).
+   * The colour of a wormhole's portals: both portals of one wormhole share it, and each wormhole on the field has
+   * its own, so which portals belong together can be seen at once. The palette starts over after the last.
    */
-  PAIRS: [
-    { entry: '#4db8ff', exit: '#ff9d3a' },
-    { entry: '#5cf08a', exit: '#ff5cd0' },
-    { entry: '#ffe14d', exit: '#a98bff' },
-    { entry: '#f2f6ff', exit: '#ff3d5a' },
-  ],
+  COLORS: ['#4db8ff', '#ff9d3a', '#5cf08a', '#ff5cd0', '#ffe14d', '#a98bff'],
 } as const;
 
 /** Physics constants that only the nebula power-up uses. */

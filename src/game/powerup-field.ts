@@ -48,8 +48,8 @@ export interface PlacementAim {
   kind: PlacementKind;
   /** The landing or planting spot, or null while the aim lands nowhere. */
   target: { x: number; y: number } | null;
-  /** A wormhole's mouth already set: the aim now picks the other one. */
-  entry?: { x: number; y: number } | null;
+  /** A wormhole's first portal, already set: the aim now picks the second. */
+  first?: { x: number; y: number } | null;
   /** A wormhole's aim that would overlap another portal, so the click does nothing. */
   blocked?: boolean;
 }
@@ -59,8 +59,8 @@ export interface PowerUpState {
   pass: number;
   /** The ships aiming a teleport or a black hole right now (their kind is on the player). */
   placing: number[];
-  /** The first portal each aiming ship has set, by ship: a guest draws it while the exit is aimed. */
-  entries?: [number, { x: number; y: number }][];
+  /** The first portal each aiming ship has set, by ship: a guest draws it while the second is aimed. */
+  firsts?: [number, { x: number; y: number }][];
 }
 
 /** What the renderer draws of the power-ups. */
@@ -88,7 +88,7 @@ export class PowerUpField {
   /** The ships aiming a teleport right now, by their id: online, several can aim at once. */
   private choosing = new Set<number>();
   /** The first mouth of a wormhole a ship has set, by ship: the second click sets the other and plants the pair. */
-  private wormEntry = new Map<number, { x: number; y: number }>();
+  private wormFirst = new Map<number, { x: number; y: number }>();
 
   constructor(private readonly host: PowerUpHost) {}
 
@@ -109,7 +109,7 @@ export class PowerUpField {
     this.pass = 0;
     this.volleysThisPass = 0;
     this.choosing.clear();
-    this.wormEntry.clear();
+    this.wormFirst.clear();
     if (this.enabled) for (let i = 0; i < this.amount; i++) this.spawn();
   }
 
@@ -225,7 +225,7 @@ export class PowerUpField {
     }
     if (this.aiming(id)) {
       this.choosing.delete(id);
-      this.wormEntry.delete(id);
+      this.wormFirst.delete(id);
     } else this.choosing.add(id);
   }
 
@@ -240,7 +240,7 @@ export class PowerUpField {
     const kind = this.host.players()[owner]?.powerUp ?? null;
     if (this.host.phase() === 'aiming' && isPlacement(kind) && this.host.canAim(owner)) return true;
     this.choosing.delete(owner);
-    this.wormEntry.delete(owner);
+    this.wormFirst.delete(owner);
     return false;
   }
 
@@ -261,8 +261,8 @@ export class PowerUpField {
       target = aimedSpot(world, from, p.angle, p.power);
     }
     if (kind !== 'wormhole') return { owner, kind, target };
-    const entry = this.wormEntry.get(owner) ?? null;
-    return { owner, kind, target, entry, blocked: !!target && !portalFits(world, target, entry ? [entry] : []) };
+    const first = this.wormFirst.get(owner) ?? null;
+    return { owner, kind, target, first, blocked: !!target && !portalFits(world, target, first ? [first] : []) };
   }
 
   /** Whether the ship at this screen (or on turn) is aiming a placement. */
@@ -282,15 +282,15 @@ export class PowerUpField {
     if (aim.kind === 'wormhole') {
       // A portal cannot overlap another, whatever the distance otherwise.
       if (aim.blocked) return false;
-      const entry = this.wormEntry.get(by);
+      const first = this.wormFirst.get(by);
       // The first click sets one portal and spends nothing; the second sets the other and plants the pair.
-      if (!entry) {
-        this.wormEntry.set(by, aim.target);
+      if (!first) {
+        this.wormFirst.set(by, aim.target);
         return false;
       }
       this.choosing.delete(by);
-      this.wormEntry.delete(by);
-      return this.plantWormhole(aim.owner, entry, aim.target);
+      this.wormFirst.delete(by);
+      return this.plantWormhole(aim.owner, first, aim.target);
     }
     this.choosing.delete(by);
     if (aim.kind === 'blackhole') return this.plantBlackHole(aim.owner, aim.target);
@@ -307,7 +307,7 @@ export class PowerUpField {
   cancelPlacement(by: number = this.aimer): boolean {
     const had = this.choosing.has(by);
     this.choosing.delete(by);
-    this.wormEntry.delete(by);
+    this.wormFirst.delete(by);
     return had;
   }
 
@@ -476,14 +476,14 @@ export class PowerUpField {
   /** What the renderer draws of the power-ups. */
   /** What a guest needs on top of the pickups. */
   state(): PowerUpState {
-    return { pass: this.pass, placing: [...this.choosing], entries: [...this.wormEntry] };
+    return { pass: this.pass, placing: [...this.choosing], firsts: [...this.wormFirst] };
   }
 
   /** The host's pass and aimed placements, as a guest has them. */
   restoreState(state: PowerUpState | undefined): void {
     this.pass = state?.pass ?? 0;
     this.choosing = new Set(state?.placing ?? []);
-    this.wormEntry = new Map(state?.entries ?? []);
+    this.wormFirst = new Map(state?.firsts ?? []);
   }
 
   scene(): PowerUpScene {

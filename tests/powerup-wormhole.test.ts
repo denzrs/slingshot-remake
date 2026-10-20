@@ -3,7 +3,7 @@ import { FIELD, WORMHOLE } from '../src/config';
 import { createMatch, type Match } from '../src/game';
 import { isWormholeJump, portalFits, Shot, type World } from '../src/physics';
 import { DEFAULT_SETTINGS } from '../src/settings';
-import { PORTAL_PAIRS, portalPair } from '../src/render/powerup-art';
+import { portalColor } from '../src/render/powerup-art';
 
 const rules = { bounce: false, timeLimit: 20 };
 
@@ -73,15 +73,14 @@ describe('wormhole trail jump', () => {
 });
 
 describe('wormhole portal colours', () => {
-  it('gives every portal on the field a colour of its own, until the palette is used up', () => {
-    const colours = PORTAL_PAIRS.flatMap((pair) => [pair.entry, pair.exit]);
-    expect(new Set(colours).size).toBe(colours.length);
+  it('gives every wormhole on the field a colour of its own, until the palette is used up', () => {
+    const colours = WORMHOLE.COLORS.map((_, id) => portalColor(id));
+    expect(new Set(colours).size).toBe(WORMHOLE.COLORS.length);
   });
 
-  it('starts over with the first pair after the last', () => {
-    expect(portalPair(0)).toBe(PORTAL_PAIRS[0]);
-    expect(portalPair(PORTAL_PAIRS.length)).toBe(PORTAL_PAIRS[0]);
-    expect(portalPair(PORTAL_PAIRS.length + 2)).toBe(PORTAL_PAIRS[2]);
+  it('starts over with the first colour after the last', () => {
+    expect(portalColor(WORMHOLE.COLORS.length)).toBe(portalColor(0));
+    expect(portalColor(WORMHOLE.COLORS.length + 2)).toBe(portalColor(2));
   });
 });
 
@@ -110,17 +109,17 @@ describe('wormhole placement', () => {
     shooter.power = 30;
     match.usePowerUp();
     match.commit();
-    const entry = match.scene().placement!.entry!;
-    expect(entry).toBeTruthy();
+    const first = match.scene().placement!.first!;
+    expect(first).toBeTruthy();
 
-    // The aim has not moved, so it sits on the entry: blocked, and the click plants nothing.
+    // The aim has not moved, so it sits on the first portal: blocked, and the click plants nothing.
     expect(match.scene().placement!.blocked).toBe(true);
     match.commit();
     expect(match.world.wormholes).toHaveLength(0);
 
     shooter.power = 70;
     const aim = match.scene().placement!;
-    expect(Math.hypot(aim.target!.x - entry.x, aim.target!.y - entry.y)).toBeGreaterThanOrEqual(WORMHOLE.GAP);
+    expect(Math.hypot(aim.target!.x - first.x, aim.target!.y - first.y)).toBeGreaterThanOrEqual(WORMHOLE.GAP);
     expect(aim.blocked).toBe(false);
     match.commit();
     expect(match.world.wormholes).toHaveLength(1);
@@ -139,7 +138,7 @@ describe('wormhole placement', () => {
     match.world.wormholes.push({ id: 0, ax: target.x + 10, ay: target.y, bx: 50, by: 50, radius: WORMHOLE.RADIUS });
     expect(match.scene().placement!.blocked).toBe(true);
     match.commit();
-    expect(match.scene().placement!.entry).toBeNull();
+    expect(match.scene().placement!.first).toBeNull();
   });
 
   it('shows a guest the first portal the host has set', () => {
@@ -154,7 +153,7 @@ describe('wormhole placement', () => {
     const guest = duel();
     guest.players[host.current].powerUp = 'wormhole';
     guest.power.restoreState(host.power.state());
-    const entry = guest.scene().placement?.entry;
-    expect(entry).toMatchObject(host.scene().placement!.entry!);
+    const first = guest.scene().placement?.first;
+    expect(first).toMatchObject(host.scene().placement!.first!);
   });
 });

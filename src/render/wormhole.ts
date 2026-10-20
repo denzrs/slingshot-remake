@@ -1,6 +1,5 @@
-import { FONTS } from '../config';
 import { rgba } from './color';
-import { portalPair } from './powerup-art';
+import { portalColor } from './powerup-art';
 
 /** The half-axes of a portal as shares of the wormhole's radius: a tall oval seen edge-on, like a doorway. */
 const WIDTH = 0.7;
@@ -78,9 +77,9 @@ function sprite(color: string, radius: number): Sprite {
 }
 
 /**
- * One portal: an oval doorway turned to face its partner, floating a little, its mouth alive with rings that
- * run inwards on the entry and outwards on the exit. The sprite does the heavy drawing; this adds only the
- * motion, a few strokes per frame.
+ * One portal: an oval doorway turned to face its partner, floating a little, a swirl turning in its mouth. The
+ * sprite does the heavy drawing; this adds only the motion, a few strokes per frame. Both portals of a
+ * wormhole are drawn alike, because a shot goes through either one the same way.
  */
 export function drawPortal(
   ctx: CanvasRenderingContext2D,
@@ -90,10 +89,8 @@ export function drawPortal(
   radius: number,
   color: string,
   time: number,
-  exit: boolean,
   alpha = 1,
   phase = 0,
-  mark?: string,
   size = 1,
 ): void {
   const { image, half } = sprite(color, radius);
@@ -107,58 +104,43 @@ export function drawPortal(
   ctx.globalAlpha = alpha;
   ctx.drawImage(image, -half, -half, half * 2, half * 2);
 
-  // Rings crossing the mouth: shrinking into the entry, growing out of the exit.
-  ctx.lineWidth = 1.2;
+  // A swirl in the mouth: three arcs of different size turning together.
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.3;
+  ctx.lineCap = 'round';
   for (let k = 0; k < 3; k++) {
-    const t = (time * 0.7 + k / 3 + phase) % 1;
-    const size = exit ? t : 1 - t;
-    ctx.globalAlpha = alpha * 0.7 * Math.sin(size * Math.PI);
-    ctx.strokeStyle = color;
+    const a = time * 1.6 + phase + (k * Math.PI * 2) / 3;
+    const scale = 0.85 - k * 0.2;
+    ctx.globalAlpha = alpha * (0.8 - k * 0.15);
     ctx.beginPath();
-    ctx.ellipse(0, 0, rx * 0.85 * size, ry * 0.85 * size, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, rx * scale, ry * scale, 0, a, a + 1.5);
     ctx.stroke();
   }
 
   // Sparks drifting around the rim.
   ctx.fillStyle = '#ffffff';
   for (let k = 0; k < 5; k++) {
-    const a = (exit ? -1 : 1) * time * 1.4 + (k / 5) * Math.PI * 2 + phase;
+    const a = time * 1.4 + (k / 5) * Math.PI * 2 + phase;
     ctx.globalAlpha = alpha * (0.4 + 0.4 * Math.sin(time * 3 + k * 2));
     ctx.beginPath();
     ctx.arc(Math.cos(a) * rx * 1.12, Math.sin(a) * ry * 1.12, 1.1, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
-
-  // The number of its wormhole, upright in the mouth.
-  if (mark) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.font = `700 ${Math.round(radius * 0.7 * size)}px ${FONTS.mono}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(4, 8, 16, 0.85)';
-    ctx.strokeText(mark, x, y + 1);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(mark, x, y + 1);
-    ctx.restore();
-  }
 }
 
 /**
- * Both portals of a wormhole, the entry and the exit, turned to face each other, in the colours of the
- * wormhole's own pair. `mark` (its number) goes on both when there is more than one wormhole to tell apart.
- * `eaten` (0 to 1) is how far the black hole has taken it: the portals shrink and fade as they fall in.
+ * Both portals of a wormhole, turned to face each other, in the wormhole's own colour. `eaten` (0 to 1) is how
+ * far the black hole has taken it: the portals shrink and fade as they fall in.
  */
-export function drawWormhole(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, radius: number, time: number, id: number, mark?: string, eaten = 0): void {
-  const colors = portalPair(id);
+export function drawWormhole(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, radius: number, time: number, id: number, eaten = 0): void {
+  const color = portalColor(id);
   const fade = 1 - eaten;
   const toB = Math.atan2(by - ay, bx - ax);
   ctx.save();
-  // A faint thread between the pair, so two wormholes on one field can be told apart.
-  ctx.globalAlpha = 0.1 * fade;
-  ctx.strokeStyle = '#ffffff';
+  // A faint thread between the pair, in their colour, so which portals belong together can be followed.
+  ctx.globalAlpha = 0.22 * fade;
+  ctx.strokeStyle = color;
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 8]);
   ctx.beginPath();
@@ -166,6 +148,6 @@ export function drawWormhole(ctx: CanvasRenderingContext2D, ax: number, ay: numb
   ctx.lineTo(bx, by);
   ctx.stroke();
   ctx.restore();
-  drawPortal(ctx, ax, ay, toB, radius, colors.entry, time, false, fade, 0, mark, 1 - eaten * 0.7);
-  drawPortal(ctx, bx, by, toB + Math.PI, radius, colors.exit, time, true, fade, 0.5, mark, 1 - eaten * 0.7);
+  drawPortal(ctx, ax, ay, toB, radius, color, time, fade, 0, 1 - eaten * 0.7);
+  drawPortal(ctx, bx, by, toB + Math.PI, radius, color, time, fade, 0.5, 1 - eaten * 0.7);
 }

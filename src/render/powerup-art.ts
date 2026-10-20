@@ -1,6 +1,5 @@
 import { WORMHOLE } from '../config';
 import type { PowerUpKind } from '../powerups';
-import { rgba } from './color';
 
 /**
  * Each power-up has a colour and a symbol of its own, so it reads at a glance on the field and in the HUD.
@@ -19,14 +18,8 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   wormhole: '#4db8ff',
 };
 
-/** The colours of a wormhole's portals, see `WORMHOLE.PAIRS`. */
-export const PORTAL_PAIRS = WORMHOLE.PAIRS;
-
-/** The portal colours of the wormhole with this id (the palette starts over after the last pair). */
-export const portalPair = (id: number): (typeof PORTAL_PAIRS)[number] => PORTAL_PAIRS[id % PORTAL_PAIRS.length];
-
-/** The first pair: the one on the power-up's symbol. */
-export const PORTAL_COLORS = PORTAL_PAIRS[0];
+/** The colour of the portals of the wormhole with this id (the palette starts over after the last colour). */
+export const portalColor = (id: number): string => WORMHOLE.COLORS[id % WORMHOLE.COLORS.length];
 
 /** Draws a power-up's symbol centred on (x, y), about `r` in size, in the current stroke and fill style. */
 export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKind, x: number, y: number, r: number): void {
@@ -145,16 +138,21 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     }
     ctx.fill();
   } else if (kind === 'wormhole') {
-    // Two portals, the blue one and the orange one, tilted to face each other: the doorway pair.
+    // Two portals, alike, tilted to face each other, a dashed path jumping across between them.
     ctx.save();
-    for (const [dx, dy, color] of [[-0.58, 0.24, PORTAL_COLORS.entry], [0.58, -0.24, PORTAL_COLORS.exit]] as const) {
+    for (const [dx, dy] of [[-0.62, 0.3], [0.62, -0.3]] as const) {
       ctx.beginPath();
-      ctx.ellipse(x + dx * r, y + dy * r, r * 0.3, r * 0.7, -0.4, 0, Math.PI * 2);
-      ctx.fillStyle = rgba(color, 0.3);
-      ctx.fill();
-      ctx.strokeStyle = color;
+      ctx.ellipse(x + dx * r, y + dy * r, r * 0.27, r * 0.66, -0.45, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.globalAlpha *= 0.35;
+      ctx.fill();
+      ctx.globalAlpha /= 0.35;
     }
+    ctx.setLineDash([r * 0.14, r * 0.2]);
+    ctx.beginPath();
+    ctx.moveTo(x - 0.28 * r, y + 0.13 * r);
+    ctx.lineTo(x + 0.28 * r, y - 0.13 * r);
+    ctx.stroke();
     ctx.restore();
   } else if (kind === 'piercing') {
     // A round through armor plate: the plate broken where it went, splinters flying, the head out the far side.
