@@ -14,7 +14,7 @@ pub const POWER_UP_KINDS: [&str; 11] = [
     "preview",
     "teleport",
     "splitter",
-    "repulse",
+    "polarity",
     "shield",
     "blackhole",
     "planetkiller",

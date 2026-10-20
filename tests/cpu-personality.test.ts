@@ -65,7 +65,7 @@ describe('CPU personalities', () => {
         const aim = planShotNow(world, 0, {
           rules: shortRules, level, attempt: 0, fixedPower: null, rng: createRng(seed), pickups: offered ? [gate] : [],
         });
-        if (simulateShot(world, 0, aim.angle, aim.power, shortRules, [], 1, [gate]).gates.includes(0)) hits++;
+        if (simulateShot(world, 0, aim.angle, aim.power, shortRules, [], [gate]).gates.includes(0)) hits++;
       }
       return hits;
     };

@@ -97,6 +97,13 @@ export class Sound {
     this.tone(900, 1200, 0.08, 0.035, 'sine', a.t);
   }
 
+  /** A planet's gravity turned round: a sweep that falls as the push starts, and rises when it is turned back. */
+  polarity(reversed: boolean): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(reversed ? 700 : 260, reversed ? 240 : 720, 0.22, 0.05, 'triangle', a.t);
+  }
+
   /** A power-up running out: a short falling blip. */
   fade(): void {
     const a = this.begin();

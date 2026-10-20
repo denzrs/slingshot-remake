@@ -14,6 +14,8 @@ export interface Planet {
   seed: number;
   style: PlanetStyle;
   tint: string;
+  /** The polarity power-up has turned this planet's gravity round: it pushes shots away instead of pulling them in. */
+  reversed?: boolean;
 }
 
 export interface Ship {
@@ -270,8 +272,6 @@ export class Shot {
     trackStyle: boolean | 'metrics' = false,
     /** Ships this shot flies straight through (the neighbour grace period). */
     private readonly spare: readonly number[] = [],
-    /** Gravity's sign for this shot: 1 pulls it towards planets, -1 (a power-up) pushes it away. */
-    private readonly pull = 1,
     /** Armor piercing: the shot goes through ships — shields and all — instead of stopping on them. */
     private readonly pierce = false,
   ) {
@@ -283,7 +283,7 @@ export class Shot {
     this.vx = dir.x * speed;
     this.vy = dir.y * speed;
     let seed = 0x811c9dc5;
-    for (const n of [shooter, Math.round(angle * 1000), Math.round(power * 1000), pull]) seed = Math.imul(seed ^ (n | 0), 16777619);
+    for (const n of [shooter, Math.round(angle * 1000), Math.round(power * 1000)]) seed = Math.imul(seed ^ (n | 0), 16777619);
     this.seed = seed >>> 0;
     this.style = trackStyle === true ? [] : null;
     this.encounters = trackStyle
@@ -301,7 +301,7 @@ export class Shot {
    * how a splitter forks a shot in mid-flight. The original keeps flying as it was.
    */
   fork(turn: number): Shot {
-    const copy = new Shot(this.world, this.shooter, this.angle, this.power, this.rules, this.style !== null, this.spare, this.pull, this.pierce);
+    const copy = new Shot(this.world, this.shooter, this.angle, this.power, this.rules, this.style !== null, this.spare, this.pierce);
     copy.x = this.x;
     copy.y = this.y;
     copy.time = this.time;
@@ -323,7 +323,6 @@ export class Shot {
     if (this.end) return this.end;
     const dt = DT;
     const { planets, ships, holes, nebulae, defenses, width, height } = this.world;
-    const pull = this.pull;
     const hx = this.vx;
     const hy = this.vy;
 
@@ -334,7 +333,7 @@ export class Shot {
       const dy = p.y - this.y;
       const d2 = dx * dx + dy * dy;
       const d = Math.sqrt(d2);
-      const a = (pull * G * p.mass) / d2;
+      const a = ((p.reversed ? -G : G) * p.mass) / d2;
       ax += (a * dx) / d;
       ay += (a * dy) / d;
     }
@@ -343,7 +342,7 @@ export class Shot {
       const dy = hole.y - this.y;
       const d2 = dx * dx + dy * dy;
       const d = Math.sqrt(d2);
-      const a = (pull * G * hole.mass) / d2;
+      const a = (G * hole.mass) / d2;
       ax += (a * dx) / d;
       ay += (a * dy) / d;
     }
@@ -610,11 +609,10 @@ export function simulateShot(
   power: number,
   rules: ShotRules,
   friends: readonly number[] = [],
-  pull = 1,
   gates: readonly ShotGate[] = [],
   pierce = false,
 ): ShotOutcome {
-  const shot = new Shot(world, shooter, angle, power, rules, false, [], pull, pierce);
+  const shot = new Shot(world, shooter, angle, power, rules, false, [], pierce);
   const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
   const own = world.ships[shooter];
   const mates = friends.map((i) => world.ships[i]).filter((s) => s.alive);
@@ -663,10 +661,9 @@ export function* simulateStyledShot(
   power: number,
   rules: ShotRules,
   friends: readonly number[] = [],
-  pull = 1,
   pierce = false,
 ): Generator<void, StyledShotOutcome> {
-  const shot = new Shot(world, shooter, angle, power, rules, 'metrics', [], pull, pierce);
+  const shot = new Shot(world, shooter, angle, power, rules, 'metrics', [], pierce);
   const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
   const own = world.ships[shooter];
   const mates = friends.map((i) => world.ships[i]).filter((s) => s.alive);

@@ -218,6 +218,16 @@ export class Effects {
     if (!this.reducedMotion) this.shake = Math.max(this.shake, 3);
   }
 
+  /** A planet's gravity turned round: rings pushed outward from the rock, or drawn back in when it is turned back. */
+  polarity(x: number, y: number, radius: number, reversed: boolean, color: string): void {
+    for (let i = 0; i < 3; i++) {
+      const ring = { x, y, radius: radius * (1.8 + i * 0.9), life: 0.7 + i * 0.12, max: 0.7 + i * 0.12, color, inward: !reversed };
+      this.rings.push(ring);
+    }
+    this.burst(x, y, 18, 40, 160, color, 'large', 0, 0, 0.7);
+    this.flash = Math.max(this.flash, 0.15);
+  }
+
   /** A planetary defense firing: a flash at the turret, thrown towards the shot it has locked on to. */
   defenseFire(fromX: number, fromY: number, toX: number, toY: number, color: string): void {
     const angle = Math.atan2(toY - fromY, toX - fromX);
@@ -356,7 +366,7 @@ export class Effects {
           const dx = body.x - s.x;
           const dy = body.y - s.y;
           const d2 = Math.max(64, dx * dx + dy * dy);
-          const a = (PHYSICS.G * body.mass) / (d2 * Math.sqrt(d2));
+          const a = ((body.reversed ? -PHYSICS.G : PHYSICS.G) * body.mass) / (d2 * Math.sqrt(d2));
           ax += a * dx;
           ay += a * dy;
         }

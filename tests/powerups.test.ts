@@ -563,29 +563,6 @@ describe('power-ups: round 2', () => {
 });
 
 describe('power-ups: round 3', () => {
-  const planet = (x: number, y: number) => ({ x, y, radius: 30, mass: 6000, seed: 1, style: 'rocky' as const, tint: '#fff' });
-
-  it('pushes a shot away from a planet it would otherwise bend towards', () => {
-    const world = { ...emptyWorld([[100, 400], [1200, 100]]), planets: [planet(500, 300)] };
-    // Straight along y = 400 with the planet above: gravity bends the shot up, the repulse down.
-    const pulled = new Shot(world, 0, 0, 60, rules);
-    const pushed = new Shot(world, 0, 0, 60, rules, false, [], -1);
-    for (let i = 0; i < 600; i++) {
-      pulled.step();
-      pushed.step();
-    }
-    expect(pulled.y).toBeLessThan(400);
-    expect(pushed.y).toBeGreaterThan(400);
-  });
-
-  it('keeps the push when a shot forks', () => {
-    const world = { ...emptyWorld([[100, 400], [1200, 100]]), planets: [planet(500, 300)] };
-    const volley = new Volley(world, [{ player: 0, angle: 0, power: 60, pull: -1 }], rules, false);
-    for (let i = 0; i < 30; i++) volley.step();
-    volley.split(0, SPLIT_TURNS, 3);
-    expect(volley.shots.every((vs) => vs.pull === -1)).toBe(true);
-  });
-
   it('bounces a shot off a shield, spent by that one hit, and the ship lives', () => {
     const world = emptyWorld([[100, 400], [500, 400]]);
     world.ships[1].shield = true;
@@ -643,55 +620,6 @@ describe('power-ups: round 3', () => {
     expect(holder.powerUp).toBeNull();
     expect(match.roundStats.saves[holder.id]).toBe(1);
     expect(match.matchStats.saves[holder.id]).toBe(1);
-  });
-
-  it('arms a repulse like a preview and spends it pushing the next shot away from the planets', () => {
-    const match = duel();
-    const shooter = match.players[match.current];
-    shooter.powerUp = 'repulse';
-    match.usePowerUp();
-    expect(shooter.armed).toBe(true);
-    match.commit();
-    expect(match.volley!.shots[0].pull).toBe(-1);
-    expect(shooter.powerUp).toBeNull();
-    expect(shooter.armed).toBe(false);
-  });
-
-  it('shoots normally with an unarmed repulse still in hand', () => {
-    const match = duel();
-    const shooter = match.players[match.current];
-    shooter.powerUp = 'repulse';
-    match.commit();
-    expect(match.volley!.shots[0].pull).toBeUndefined();
-    expect(shooter.powerUp).toBe('repulse');
-  });
-
-  it('lets a CPU take a repulse, and leaves a preview lying', () => {
-    const seats = ['hard', 'human', 'off', 'off', 'off', 'off'] as const;
-    const match = createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed: 7 });
-    const ship = match.world.ships[0];
-    match.pickups = [
-      { id: 80, kind: 'repulse', x: ship.x + 40, y: ship.y, born: 0 },
-      { id: 81, kind: 'preview', x: ship.x + 90, y: ship.y, born: 0 },
-    ];
-    (match as unknown as { launch: (a: unknown[], t: boolean) => void }).launch([{ player: 0, angle: 0, power: 60 }], true);
-    for (let t = 0; t < 2 && match.phase === 'flying'; t += 1 / 240) match.update(1 / 240);
-    expect(match.players[0].powerUp).toBe('repulse');
-    expect(match.players[0].armed).toBe(true);
-    expect(match.pickups.some((p) => p.id === 80)).toBe(false);
-    expect(match.pickups.some((p) => p.id === 81)).toBe(true);
-  });
-
-  it('plans a shot pushed away from the planets when the CPU holds an armed repulse', () => {
-    // A planet above the line of fire: pulled, the shot bends up towards it; pushed, it bends down, away from it.
-    const world = { ...emptyWorld([[200, 400], [1000, 400]]), planets: [{ x: 640, y: 300, radius: 60, mass: 1, seed: 1, style: 'rocky' as const, tint: '#fff' }] };
-    const drift = (pull: number): number => {
-      const shot = new Shot(world, 0, 0, 60, rules, false, [], pull);
-      for (let i = 0; i < 20 && !shot.end; i++) shot.step();
-      return shot.y - 400;
-    };
-    expect(Math.sign(drift(1))).toBe(-1);
-    expect(Math.sign(drift(-1))).toBe(1);
   });
 
   it('draws the kinds by their weights, and every kind turns up', () => {

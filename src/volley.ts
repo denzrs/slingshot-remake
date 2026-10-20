@@ -9,8 +9,6 @@ export interface VolleyAim {
   spare?: number[];
   /** Shots of one splitter share a fan id: they start from the same muzzle and never cancel each other. */
   fan?: number;
-  /** Gravity's sign for this shot; -1 pushes it away from planets (the repulse power-up). */
-  pull?: number;
   /** Armor piercing: the shot goes through ships instead of stopping on them (the armor-piercing power-up). */
   pierce?: boolean;
 }
@@ -20,8 +18,6 @@ export interface VolleyShot {
   owner: number;
   /** The splitter fan the shot belongs to, if any: the shots of one fan draw as one. */
   fan?: number;
-  /** -1 for a shot gravity pushes away from planets. */
-  pull?: number;
   /** True for a shot that keeps travelling after it goes through a ship. */
   pierce?: boolean;
   /** Flat [x0, y0, x1, y1, …] polyline in field units. */
@@ -96,8 +92,8 @@ export class Volley {
     this.script = script.map((entry) => ({ ...entry }));
     this.aims = aims.map((aim) => ({ ...aim }));
     this.shots = aims.map((a) => {
-      const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare, a.pull, a.pierce);
-      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan, pull: a.pull, pierce: a.pierce };
+      const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare, a.pierce);
+      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan, pierce: a.pierce };
     });
   }
 
@@ -148,7 +144,7 @@ export class Volley {
     this.aims[index] = { ...this.aims[index], fan };
     vs.fan = fan;
     for (const turn of turns) {
-      this.shots.push({ shot: vs.shot.fork(turn), owner: vs.owner, trail: [...vs.trail], fan, pull: vs.pull, pierce: vs.pierce });
+      this.shots.push({ shot: vs.shot.fork(turn), owner: vs.owner, trail: [...vs.trail], fan, pierce: vs.pierce });
       this.aims.push({ ...this.aims[index] });
     }
     return true;

@@ -36,10 +36,10 @@ describe('shot physics', () => {
   it('reports the gates (pickups) a shot flies through', () => {
     const world = emptyWorld();
     // A straight shot to the enemy crosses the gate on the way, and is counted once.
-    const onPath = simulateShot(world, 0, 0, 60, rules, [], 1, [{ x: 400, y: 400, r: 16 }]);
+    const onPath = simulateShot(world, 0, 0, 60, rules, [], [{ x: 400, y: 400, r: 16 }]);
     expect(onPath.gates).toEqual([0]);
     // A gate the shot never approaches is left out.
-    const offPath = simulateShot(world, 0, 0, 60, rules, [], 1, [{ x: 400, y: 100, r: 16 }]);
+    const offPath = simulateShot(world, 0, 0, 60, rules, [], [{ x: 400, y: 100, r: 16 }]);
     expect(offPath.gates).toEqual([]);
   });
 

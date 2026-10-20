@@ -7,7 +7,7 @@ import { createRng, randomSeed, type Rng } from '../rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
 import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
-import { CPU_IGNORES, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
+import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField, type PlacementAim } from './powerup-field';
@@ -135,6 +135,8 @@ export type GameEvent =
   | { type: 'nebula'; player: number; x: number; y: number }
   | { type: 'wormhole'; player: number; x: number; y: number; toX: number; toY: number }
   | { type: 'defense'; player: number; x: number; y: number }
+  /** A planet's gravity was turned round (`reversed`) or back. */
+  | { type: 'polarity'; player: number; x: number; y: number; radius: number; reversed: boolean }
   /** A planetary defense fired a missile at a shot: from its turret to where the shot is. */
   | { type: 'defenseFire'; player: number; x: number; y: number; toX: number; toY: number }
   /** A defense's missile lost its shot at (x, y). */
@@ -1052,12 +1054,13 @@ export abstract class Match {
    * Where a CPU lays the placement it holds, as an aim: a rough spot, never a searched one. A black hole or
    * a nebula goes part way along the line to the nearest enemy, so that enemy's next shot runs into it; a defense
    * stands on the planet nearest the CPU, on the side that faces it; the
-   * planet killer shoots the planet lying most in the way of that line. Null when the CPU holds no placement,
-   * or there is no planet left.
+   * planet killer shoots the planet lying most in the way of that line; a polarity turns the planet nearest the CPU
+   * that still pulls (so the shots coming at it are pushed away); a wormhole aims at its first portal, the second
+   * lying near the enemy. Null when the CPU holds no placement, or there is nothing to lay it on.
    */
   protected cpuPlacementAim(p: PlayerState): Aim | null {
     const kind = p.powerUp;
-    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense') return null;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'polarity') return null;
     const world = this.world;
     const from = world.ships[p.id];
     const friends = this.friendsOf(p.id);
@@ -1082,7 +1085,21 @@ export abstract class Match {
       if (!near) return null;
       return { angle: normalizeAngle((Math.atan2(-(near.y - from.y), near.x - from.x) * 180) / Math.PI), power: 0 };
     }
-    if (kind === 'planetkiller') {
+    if (kind === 'polarity') {
+      // The nearest planet that pulls and that the aim would really meet first, so the placement lands on it.
+      const angleTo = (planet: { x: number; y: number }): number => normalizeAngle((Math.atan2(-(planet.y - from.y), planet.x - from.x) * 180) / Math.PI);
+      const near = world.planets
+        .map((planet, index) => ({ planet, index }))
+        .filter(({ planet, index }) => !planet.reversed && aimedPlanet(world, from, angleTo(planet))?.index === index)
+        .sort((a, b) => Math.hypot(a.planet.x - from.x, a.planet.y - from.y) - Math.hypot(b.planet.x - from.x, b.planet.y - from.y))[0];
+      if (!near) return null;
+      return { angle: angleTo(near.planet), power: 0 };
+    }
+    if (kind === 'wormhole') {
+      const spots = enemies[0] && cpuWormholeSpots(world, from, enemies[0]);
+      if (!spots) return null;
+      spot = spots[0];
+    } else if (kind === 'planetkiller') {
       const byGap = [...world.planets].sort((a, b) => laneGap(a) - laneGap(b));
       if (!byGap.length) return null;
       spot = { x: byGap[0].x, y: byGap[0].y };
@@ -1112,8 +1129,6 @@ export abstract class Match {
       if (this.cpuJobs.has(id)) continue;
       const p = this.players[id];
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
-      // An armed repulse pushes this CPU's shot away from the planets, so the plan has to fly it that way.
-      const pull = p.armed && p.powerUp === 'repulse' ? -1 : 1;
       const pierce = !!p.armed && p.powerUp === 'piercing';
       // The pickups a CPU would actually keep (a preview is of no use to it): the planner steers its
       // search through them, so a power-up-hungry level like Einstein collects more.
@@ -1132,7 +1147,6 @@ export abstract class Match {
         effort,
         lookahead,
         friends,
-        pull,
         pierce,
         pickups,
         grudgeTarget: this.lastHitBy.get(id) ?? null,

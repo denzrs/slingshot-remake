@@ -119,6 +119,10 @@ function wire(m: Match): void {
         effects.spawn(e.x, e.y, color(e.player));
         if (audible) sound.spawn();
         break;
+      case 'polarity':
+        effects.polarity(e.x, e.y, e.radius, e.reversed, POWER_UP_COLORS.polarity);
+        if (audible) sound.polarity(e.reversed);
+        break;
       case 'defenseFire':
         effects.defenseFire(e.x, e.y, e.toX, e.toY, POWER_UP_COLORS.defense);
         if (audible) sound.defenseFire();

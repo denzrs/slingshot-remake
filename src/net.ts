@@ -17,7 +17,7 @@ export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
   | { kind: 'aim'; angle: number; power: number }
   | { kind: 'fire' }
-  /** The power-up key: opens or closes a teleport's aim, or arms a preview or a repulse. */
+  /** The power-up key: opens or closes a teleport's aim, or arms a preview or armor piercing. */
   | { kind: 'power' }
   /** Esc while a teleport is being aimed. */
   | { kind: 'cancel' }

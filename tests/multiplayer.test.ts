@@ -143,7 +143,7 @@ interface Client {
   syncElapsed: number;
 }
 
-const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, betting: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'repulse', 'shield'], powerUpAmount: 2 };
+const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, betting: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'polarity', 'shield'], powerUpAmount: 2 };
 
 async function connectSession(hooks: Partial<ConstructorParameters<typeof MultiplayerSession>[0]> = {}, settings = DEFAULT_SETTINGS, edit?: (message: ServerMessage) => ServerMessage): Promise<MultiplayerSession> {
   const session = new MultiplayerSession({ settings: () => cloneSettings(settings), matchStarted() {}, matchRestarted() {}, matchEnded() {}, ...hooks }, new RustTransport(edit));

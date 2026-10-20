@@ -277,8 +277,7 @@ export class Renderer {
     ctx.setLineDash([]);
 
     for (const vs of scene.volley?.shots ?? []) {
-      // A shot gravity pushes away from the planets flies in the repulse colour.
-      const color = vs.pull && vs.pull < 0 ? POWER_UP_COLORS.repulse : match.players[vs.owner].color;
+      const color = match.players[vs.owner].color;
       const shot = vs.shot;
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
@@ -286,17 +285,6 @@ export class Renderer {
       if (shot.end) continue;
       if (shot.inField) {
         const owner = match.players[vs.owner];
-        // A shot pushed away from the planets carries an orange ring.
-        if (vs.pull && vs.pull < 0) {
-          ctx.save();
-          ctx.strokeStyle = POWER_UP_COLORS.repulse;
-          ctx.lineWidth = 1.5;
-          ctx.globalAlpha = 0.55 + 0.45 * Math.sin(this.time * 8);
-          ctx.beginPath();
-          ctx.arc(shot.x, shot.y, 10, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.restore();
-        }
         // A shot that can still be split carries a gold ring.
         if (match.powerUps && owner.armed && owner.powerUp === 'splitter') {
           ctx.save();
@@ -423,13 +411,13 @@ export class Renderer {
       ctx.restore();
     }
     // A ship aiming a placement: a marker at the spot — a teleport door, or where a black hole, nebula or planet killer would land — with a line from the ship.
-    if (scene.placement?.kind === 'planetkiller') {
-      // Only the angle aims a planet killer, and the power plays no part. So the whole ray is drawn: out to the
-      // planet it will take when there is one — locked on with brackets round it — or dimly to the edge when there is not.
-      const { owner, target } = scene.placement;
+    if (scene.placement?.kind === 'planetkiller' || scene.placement?.kind === 'polarity') {
+      // Only the angle aims a planet killer or a polarity, and the power plays no part. So the whole ray is drawn: out to the
+      // planet it will take (or turn) when there is one — locked on with brackets round it — or dimly to the edge when there is not.
+      const { owner, target, kind } = scene.placement;
       const from = match.world.ships[owner];
       const dir = aimDirection(match.players[owner].angle);
-      const color = POWER_UP_COLORS.planetkiller;
+      const color = POWER_UP_COLORS[kind];
       const planet = target ? match.world.planets.find((p) => p.x === target.x && p.y === target.y) : undefined;
       const length = planet ? Math.hypot(planet.x - from.x, planet.y - from.y) - planet.radius : Math.hypot(FIELD.width, FIELD.height);
       ctx.save();
@@ -460,18 +448,38 @@ export class Renderer {
           ctx.arc(planet.x, planet.y, r, a - 0.32, a + 0.32);
           ctx.stroke();
         }
-        // The crack that will split it.
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(planet.x - planet.radius * 0.45, planet.y - planet.radius * 0.5);
-        ctx.lineTo(planet.x - planet.radius * 0.1, planet.y - planet.radius * 0.05);
-        ctx.lineTo(planet.x + planet.radius * 0.18, planet.y + planet.radius * 0.12);
-        ctx.lineTo(planet.x + planet.radius * 0.45, planet.y + planet.radius * 0.5);
-        ctx.stroke();
+        if (kind === 'polarity') {
+          // Rays pushing out, or pulling in when the planet is turned already: what the planet will do to shots.
+          const back = !!planet.reversed;
+          ctx.lineWidth = 2;
+          ctx.globalAlpha = 0.85;
+          for (let k = 0; k < 8; k++) {
+            const a = (k * Math.PI) / 4 + Math.PI / 8;
+            const [inner, outer] = back ? [planet.radius + 30, planet.radius + 14] : [planet.radius + 14, planet.radius + 30];
+            ctx.beginPath();
+            ctx.moveTo(planet.x + Math.cos(a) * inner, planet.y + Math.sin(a) * inner);
+            ctx.lineTo(planet.x + Math.cos(a) * outer, planet.y + Math.sin(a) * outer);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+          ctx.font = `700 11px ${FONTS.mono}`;
+          ctx.textAlign = 'center';
+          ctx.fillStyle = color;
+          ctx.fillText(t(back ? 'powerup.polarityBack' : 'powerup.polarityTurn').toUpperCase(), planet.x, planet.y - planet.radius - 38);
+        } else {
+          // The crack that will split it.
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(planet.x - planet.radius * 0.45, planet.y - planet.radius * 0.5);
+          ctx.lineTo(planet.x - planet.radius * 0.1, planet.y - planet.radius * 0.05);
+          ctx.lineTo(planet.x + planet.radius * 0.18, planet.y + planet.radius * 0.12);
+          ctx.lineTo(planet.x + planet.radius * 0.45, planet.y + planet.radius * 0.5);
+          ctx.stroke();
+        }
       }
       ctx.restore();
     }
-    if (scene.placement?.target && scene.placement.kind !== 'planetkiller') {
+    if (scene.placement?.target && scene.placement.kind !== 'planetkiller' && scene.placement.kind !== 'polarity') {
       const { owner, kind, target } = scene.placement;
       const from = match.world.ships[owner];
       const nextWormhole = nextWormholeId(match.world);
@@ -595,17 +603,6 @@ export class Renderer {
       ctx.lineCap = 'round';
       drawPowerUpSymbol(ctx, p.powerUp, ship.x, ship.y - 30, 5);
       ctx.restore();
-      // An armed repulse rings the ship in its colour.
-      if (p.powerUp === 'repulse' && p.armed) {
-        ctx.save();
-        ctx.strokeStyle = POWER_UP_COLORS.repulse;
-        ctx.lineWidth = 2;
-        ctx.globalAlpha = 0.5 + 0.5 * pulse;
-        ctx.beginPath();
-        ctx.arc(ship.x, ship.y, 19 + 3 * pulse, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
       // A shield is a bubble round the ship.
       if (p.powerUp === 'shield') {
         ctx.save();
@@ -625,21 +622,20 @@ export class Renderer {
     ctx.textAlign = 'start';
   }
 
-  /**
-   * While a repulse is armed, and while a pushed shot is in the air, every planet sends out rings that spread
-   * away from it: gravity is turned round, and the whole field says so.
-   */
+  /** A planet whose gravity is turned round sends out rings that spread away from it, for as long as it pushes. */
   private drawRepelWaves(match: Match, scene: Scene): void {
     if (!match.powerUps) return;
-    const id = match.viewer ?? match.current;
-    const aiming = match.phase === 'aiming' && !!match.players[id] && match.players[id].armed && match.players[id].powerUp === 'repulse' && match.localCanAim;
-    const flying = (scene.volley?.shots ?? []).some((vs) => !!vs.pull && vs.pull < 0 && !vs.shot.end);
-    if (!aiming && !flying) return;
     const { ctx } = this;
     ctx.save();
-    ctx.strokeStyle = POWER_UP_COLORS.repulse;
+    ctx.strokeStyle = POWER_UP_COLORS.polarity;
     ctx.lineWidth = 1.6;
     for (const planet of scene.world.planets) {
+      if (!planet.reversed) continue;
+      // A faint rim in the polarity colour marks the planet that pushes.
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.arc(planet.x, planet.y, planet.radius + 2, 0, Math.PI * 2);
+      ctx.stroke();
       for (let k = 0; k < 3; k++) {
         const phase = (this.time * 0.7 + k / 3) % 1;
         ctx.globalAlpha = 0.6 * (1 - phase);
@@ -722,8 +718,7 @@ export class Renderer {
 
       const aimShown = match.aimVisible(i);
       if (planning && aimShown) {
-        // An armed repulse turns the aim arrow orange, so it is plain that this shot is pushed, not pulled.
-        if (current) this.drawAimVector(ship.x, ship.y, player.angle, player.power, match.powerUps && player.armed && player.powerUp === 'repulse' ? POWER_UP_COLORS.repulse : color, 'full');
+        if (current) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'full');
         else if (match.salvo && player.locked) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'ghost');
         else if (match.salvo && player.cpu) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'thin');
       }
