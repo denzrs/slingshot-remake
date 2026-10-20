@@ -23,19 +23,18 @@ export type TwistId =
   | 'heavyweights'
   | 'gravityParty'
   | 'fortress'
-  | 'teleportChaos'
-  | 'trickFever';
+  | 'teleportChaos';
 
 /** The rules a twist may change. */
 export type TwistRules = Pick<
   Settings,
-  'maxPlanets' | 'bounce' | 'invisiblePlanets' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'hiddenAim' | 'fadingTrails' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount' | 'styleBonuses'
+  'maxPlanets' | 'bounce' | 'invisiblePlanets' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'hiddenAim' | 'fadingTrails' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'
 >;
 
-const TWIST_RULE_KEYS: readonly (keyof TwistRules)[] = ['maxPlanets', 'bounce', 'invisiblePlanets', 'fixedPower', 'fixedPowerLevel', 'maxPower', 'hiddenAim', 'fadingTrails', 'powerUps', 'powerUpKinds', 'powerUpAmount', 'styleBonuses'];
+const TWIST_RULE_KEYS: readonly (keyof TwistRules)[] = ['maxPlanets', 'bounce', 'invisiblePlanets', 'fixedPower', 'fixedPowerLevel', 'maxPower', 'hiddenAim', 'fadingTrails', 'powerUps', 'powerUpKinds', 'powerUpAmount'];
 
 /** What a twist takes hold of: two twists that share a slot never come together in one round. */
-type Slot = 'planets' | 'bounce' | 'power' | 'sight' | 'pickups' | 'style';
+type Slot = 'planets' | 'bounce' | 'power' | 'sight' | 'pickups';
 
 interface TwistDef {
   slots: readonly Slot[];
@@ -63,7 +62,6 @@ const TWISTS: Record<TwistId, TwistDef> = {
   gravityParty: { slots: ['pickups'], apply: () => pickups(['blackhole', 'polarity', 'planetkiller', 'nebula', 'wormhole'], 3) },
   fortress: { slots: ['pickups'], apply: () => pickups(['shield', 'defense'], 3) },
   teleportChaos: { slots: ['pickups'], apply: () => pickups(['teleport', 'wormhole', 'splitter'], 3) },
-  trickFever: { slots: ['bounce', 'style'], classicOnly: true, apply: () => ({ bounce: true, styleBonuses: true }) },
 };
 
 export const TWIST_IDS = Object.keys(TWISTS) as TwistId[];

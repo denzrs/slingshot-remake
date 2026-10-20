@@ -420,7 +420,8 @@ function setupScreen(app: App, mode: VersusMode): Screen {
 function mayhemScreen(app: App): Screen {
   // The strength is never "off" here: a Mayhem game always has twists.
   if (!app.settings.mayhem) app.settings.mayhem = 2;
-  const rules = ruleItems(app.settings.mayhemBase, {
+  // Every rule of the mode is built, and the Classic-only one hides while Event Horizon is picked.
+  const rules = ruleItems('classic', {
     get: () => rulesOf(app.settings),
     patch: (values) => {
       Object.assign(app.settings, values);
@@ -438,7 +439,10 @@ function mayhemScreen(app: App): Screen {
       app.settingsChanged();
     },
   };
-  const rows: MenuItem[] = [base, ...rules.map(({ group, item }): MenuItem => ({ ...item, section: group }))];
+  const rows: MenuItem[] = [
+    base,
+    ...rules.map(({ key, group, item }): MenuItem => ({ ...item, section: group, ...(key === 'simultaneousShots' ? { hidden: () => app.settings.mayhemBase === 'horizon' } : {}) })),
+  ];
   const actions: MenuItem[] = [
     { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(app.settings.mayhemBase, true) },
     { kind: 'action', section: 'actions', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },

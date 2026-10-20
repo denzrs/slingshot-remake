@@ -144,15 +144,16 @@ describe('game rules in the menu', () => {
     expect(all.find((r) => r.key === 'powerUpKinds')!.options.map((o) => o.value)).toEqual(relayContract.defaults.powerUpKinds);
   });
 
-  it('gives a Mayhem game only its rounds and its chaos strength, and every other game neither the strength nor a way to switch it on', () => {
+  it('gives a Mayhem game only its rounds, its chaos strength and the flight time and (in Classic) simultaneous shots, and every other game neither the strength nor a way to switch it on', () => {
     for (const mode of ['classic', 'horizon'] as const) {
       for (const online of [false, true]) {
-        expect(rulesFor(mode, online, true).map((r) => r.key)).toEqual(['rounds', 'mayhem']);
+        expect(rulesFor(mode, online, true).map((r) => r.key)).toEqual(mode === 'classic' ? ['rounds', 'mayhem', 'shotTime', 'simultaneousShots'] : ['rounds', 'mayhem', 'shotTime']);
         expect(rulesFor(mode, online).map((r) => r.key)).not.toContain('mayhem');
       }
     }
     const source = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 }), patch() {} };
-    expect(ruleItems('classic', source, false, true).map((i) => i.key)).toEqual(['rounds', 'mayhem']);
+    expect(ruleItems('classic', source, false, true).map((i) => i.key)).toEqual(['rounds', 'mayhem', 'shotTime', 'simultaneousShots']);
+    expect(new Set(ruleItems('classic', source, false, true).map((i) => i.group))).toEqual(new Set(['match']));
     expect(ruleItems('classic', source).map((i) => i.key)).not.toContain('mayhem');
   });
 

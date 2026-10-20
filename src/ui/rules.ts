@@ -104,15 +104,17 @@ export function ruleRows(): RuleRow[] {
 
 const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** The rules a Mayhem game has: how many rounds, how wild — everything else is the plain rules, plus the round's twists. */
-const MAYHEM_RULES: readonly (keyof RoomRules)[] = ['rounds', 'mayhem'];
+/** The rules a Mayhem game has: how many rounds, how wild, how long a shot may fly, and in Classic whether everybody shoots at once — everything else is the plain rules, plus the round's twists. */
+const MAYHEM_RULES: readonly (keyof RoomRules)[] = ['rounds', 'mayhem', 'shotTime', 'simultaneousShots'];
 
 /**
  * The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has.
- * A Mayhem game has only its own two.
+ * A Mayhem game has only its own, all in one block.
  */
 export const rulesFor = (mode: 'classic' | 'horizon', online = false, mayhem = false): RuleRow[] =>
-  ruleRows().filter((row) => (mayhem ? MAYHEM_RULES.includes(row.key) : row.key !== 'mayhem' && (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly)));
+  mayhem
+    ? ruleRows().filter((row) => MAYHEM_RULES.includes(row.key) && (mode === 'classic' || !row.classicOnly)).map((row): RuleRow => ({ ...row, group: 'match' }))
+    : ruleRows().filter((row) => row.key !== 'mayhem' && (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly));
 
 // ————————————————————————————— As controls —————————————————————————————
 

@@ -424,7 +424,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   createButton.addEventListener('click', () => {
     const name = takeName();
     if (!name) return;
-    session.createRoom({ name, roomName: roomName.value, mode: prefs.matchType, gameMode: prefs.gameMode, rules: prefs.rules.mayhem > 0 ? mayhemRules(prefs.rules.mayhem, prefs.rules.rounds) : prefs.rules, maxPlayers: prefs.capacity, password: password.value, look: prefs.look, avatar: prefs.avatar });
+    session.createRoom({ name, roomName: roomName.value, mode: prefs.matchType, gameMode: prefs.gameMode, rules: prefs.rules.mayhem > 0 ? mayhemRules(prefs.rules, prefs.gameMode) : prefs.rules, maxPlayers: prefs.capacity, password: password.value, look: prefs.look, avatar: prefs.avatar });
     hostPassword = password.value;
     password.value = '';
   });

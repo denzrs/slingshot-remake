@@ -48,7 +48,7 @@ describe('mayhem deck', () => {
   it('leaves out Classic-only twists in Event Horizon', () => {
     for (let seed = 1; seed <= 30; seed++) {
       for (const round of play(seed, rules({ mayhem: 3 }), 'horizon', 15)) {
-        for (const { id } of round.twists) expect(['blind', 'trickFever']).not.toContain(id);
+        for (const { id } of round.twists) expect(id).not.toBe('blind');
       }
     }
   });

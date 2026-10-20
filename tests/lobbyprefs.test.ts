@@ -14,7 +14,11 @@ const OFFLINE = { rounds: 20, maxPlanets: 8, bounce: true, fixedPower: true, fix
 
 describe('Mayhem rules', () => {
   it('are the plain rules with only the rounds and the chaos strength of the room', () => {
-    expect(mayhemRules(3, 7)).toEqual({ ...defaultRoomRules(), rounds: 7, mayhem: 3 });
+    const chosen = { mayhem: 3, rounds: 7, shotTime: 30, simultaneousShots: true };
+    expect(mayhemRules(chosen, 'classic')).toEqual({ ...defaultRoomRules(), rounds: 7, mayhem: 3, shotTime: 30, simultaneousShots: true, styleBonuses: true });
+    // Event Horizon has its own salvos; simultaneous shots are a Classic rule.
+    expect(mayhemRules(chosen, 'horizon').simultaneousShots).toBe(false);
+    expect(mayhemRules({ ...chosen, mayhem: 0 }, 'classic').mayhem).toBe(2);
   });
 
   it('keep a saved chaos strength, and fall back to off for one nobody offers', () => {

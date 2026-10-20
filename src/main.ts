@@ -289,7 +289,7 @@ const app: App = {
     match?.dispose();
     // Mayhem is a game of its own: it plays by its two rules over the plain ones, whatever the other setups say.
     const rules = cloneSettings(settings);
-    match = createMatch(mode, mayhem ? { ...rules, ...mayhemRules(rules.mayhem || 2, rules.rounds) } : { ...rules, mayhem: 0 });
+    match = createMatch(mode, mayhem ? { ...rules, ...mayhemRules(rules, mode) } : { ...rules, mayhem: 0 });
     wire(match);
     screen = 'play';
     effects.clear();

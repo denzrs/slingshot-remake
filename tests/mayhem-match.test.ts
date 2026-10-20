@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAYHEM } from '../src/config';
+import { mayhemRules } from '../src/lobbyPrefs';
 import { createMatch, type Match, type VersusMode } from '../src/game';
 import type { ClassicMatch } from '../src/game/classic';
 import type { HorizonMatch } from '../src/game/horizon';
@@ -100,6 +101,30 @@ describe('a match with Mayhem', () => {
       return out;
     };
     expect(rounds(21)).toEqual(rounds(21));
+  });
+
+  it('keeps the room\'s choice of simultaneous shots in every round, since no twist touches it', () => {
+    const match = createMatch('classic', room({ rounds: 4, simultaneousShots: true }), { seats: humans, seed: 6 });
+    for (let round = 1; round <= 4; round++) {
+      expect(match.salvo).toBe(true);
+      expect(match.settings.simultaneousShots).toBe(true);
+      (match as unknown as { endRound(): void }).endRound();
+      match.update(1);
+      match.advance();
+    }
+  });
+
+  it('pays for trick shots in every round of a Mayhem game, in Classic too', () => {
+    const settings = { ...cloneSettings(DEFAULT_SETTINGS), ...mayhemRules({ mayhem: 3, rounds: 4, shotTime: 10, simultaneousShots: false }, 'classic'), seats: humans };
+    const match = createMatch('classic', settings, { seats: humans, seed: 12 });
+    for (let round = 1; round <= 4; round++) {
+      expect(match.settings.styleBonuses).toBe(true);
+      expect(match.settings.shotTime).toBe(10);
+      expect((match as unknown as { stylePays: boolean }).stylePays).toBe(true);
+      (match as unknown as { endRound(): void }).endRound();
+      match.update(1);
+      match.advance();
+    }
   });
 
   it('does not twist the title screen', () => {
