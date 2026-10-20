@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
+import type { ClassicMatch } from '../src/game/classic';
 import type { HorizonMatch } from '../src/game/horizon';
 import { POWER_UP, SPLIT_TURNS, spawnPickup, aimedSpot } from '../src/powerups';
 import { createRng } from '../src/rng';
@@ -13,6 +14,12 @@ const rules = { bounce: false, timeLimit: 20 };
 function duel(seed = 7): HorizonMatch {
   const seats = ['human', 'human', 'off', 'off', 'off', 'off'] as const;
   return createMatch('horizon', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed }) as HorizonMatch;
+}
+
+/** The same duel online: no turns, both aim at once. */
+function onlineDuel(seed = 7): HorizonMatch {
+  const seats = ['human', 'human', 'off', 'off', 'off', 'off'] as const;
+  return createMatch('horizon', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed, simultaneous: true }) as HorizonMatch;
 }
 
 /** Both humans lock in; the salvo takes off once the match lets it. */
@@ -96,9 +103,61 @@ describe('power-ups in Event Horizon', () => {
     // The jump spent the shot: the ship is in for the volley, but fires nothing.
     expect(who.locked).toBe(true);
     expect(who.passed).toBe(true);
+    // The others are still aiming at the field as it is, so the ship stays put until the volley takes off.
+    expect(match.world.ships[who.id]).toMatchObject(before);
+    expect(who.powerUp).toBe('teleport');
+    lockAll(match);
     const after = match.world.ships[who.id];
     expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeGreaterThan(0);
     expect(who.powerUp).toBeNull();
+  });
+
+  it('holds a jump back until every ship has locked in', () => {
+    const match = onlineDuel();
+    const [a, b] = match.players;
+    a.powerUp = 'teleport';
+    const before = { ...match.world.ships[a.id] };
+    const jumps: number[] = [];
+    match.on((e) => e.type === 'teleport' && jumps.push(e.player));
+    match.usePowerUp(a.id);
+    match.commitPlayer(a.id);
+    for (let t = 0; t < 2; t += 1 / 30) match.update(1 / 30);
+    // B has not locked in: nothing has happened, and the volley has not taken off.
+    expect(b.locked).toBe(false);
+    expect(match.phase).toBe('aiming');
+    expect(jumps).toEqual([]);
+    expect(match.world.ships[a.id]).toMatchObject(before);
+    match.commitPlayer(b.id);
+    for (let t = 0; t < 2 && match.phase === 'aiming'; t += 1 / 30) match.update(1 / 30);
+    expect(match.phase).toBe('flying');
+    expect(jumps).toEqual([a.id]);
+    expect(match.world.ships[a.id]).not.toMatchObject(before);
+  });
+
+  it('makes a planet killer when the volley takes off, and a planet another killer took meanwhile fizzles', () => {
+    const match = onlineDuel();
+    const [a, b] = match.players;
+    const rock = (seed: number, x: number, y: number) => ({ x, y, radius: 20, mass: 8_000, seed, style: 'rocky' as const, tint: '#fff' });
+    const [shipA, shipB] = match.world.ships;
+    // Both ships aim at the very same planet, straight ahead of each.
+    const mid = { x: (shipA.x + shipB.x) / 2, y: (shipA.y + shipB.y) / 2 };
+    const planet = rock(5, mid.x, mid.y);
+    match.world.planets = [planet];
+    a.powerUp = 'planetkiller';
+    b.powerUp = 'planetkiller';
+    a.angle = (Math.atan2(shipA.y - mid.y, mid.x - shipA.x) * 180) / Math.PI;
+    b.angle = (Math.atan2(shipB.y - mid.y, mid.x - shipB.x) * 180) / Math.PI;
+    match.usePowerUp(a.id);
+    match.usePowerUp(b.id);
+    match.commitPlayer(a.id);
+    match.commitPlayer(b.id);
+    // Locked in, but the planet still stands for whoever is aiming.
+    expect(match.world.planets).toHaveLength(1);
+    for (let t = 0; t < 2 && match.phase === 'aiming'; t += 1 / 30) match.update(1 / 30);
+    expect(match.world.planets).toHaveLength(0);
+    // The second killer found nothing to kill: it keeps its power-up.
+    expect(a.powerUp).toBeNull();
+    expect(b.powerUp).toBe('planetkiller');
   });
 
   it('takes a defense along with its planet: it drifts with a planet the hole pulls in, and is gone when the planet is', () => {
@@ -289,5 +348,38 @@ describe('which shot a forked one branched off from', () => {
     expect(shotSource(2, script, 3)).toBe(1);
     expect(shotSource(2, script, 4)).toBe(1);
     expect(shotSource(2, script, 5)).toBe(1);
+  });
+});
+
+describe('placements in a Classic salvo', () => {
+  it('holds a jump back until every ship has locked in', () => {
+    const seats = ['human', 'human', 'off', 'off', 'off', 'off'] as const;
+    const match = createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, simultaneousShots: true, seats: [...seats] }, { seats: [...seats], seed: 7, simultaneous: true }) as ClassicMatch;
+    const [a, b] = match.players;
+    a.powerUp = 'teleport';
+    const before = { ...match.world.ships[a.id] };
+    match.usePowerUp(a.id);
+    match.commitPlayer(a.id);
+    for (let t = 0; t < 2; t += 1 / 30) match.update(1 / 30);
+    expect(a.locked).toBe(true);
+    expect(match.phase).toBe('aiming');
+    expect(match.world.ships[a.id]).toMatchObject(before);
+    match.commitPlayer(b.id);
+    for (let t = 0; t < 2 && match.phase === 'aiming'; t += 1 / 30) match.update(1 / 30);
+    expect(match.phase).toBe('flying');
+    expect(match.world.ships[a.id]).not.toMatchObject(before);
+    expect(a.powerUp).toBeNull();
+  });
+
+  it('still jumps at once when the shots are fired one turn at a time', () => {
+    const seats = ['human', 'human', 'off', 'off', 'off', 'off'] as const;
+    const match = createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed: 7 });
+    const who = match.players[match.current];
+    who.powerUp = 'teleport';
+    const before = { ...match.world.ships[who.id] };
+    match.usePowerUp();
+    match.commit();
+    expect(match.world.ships[who.id]).not.toMatchObject(before);
+    expect(who.powerUp).toBeNull();
   });
 });

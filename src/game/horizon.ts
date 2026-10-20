@@ -409,6 +409,7 @@ export class HorizonMatch extends Match {
   }
 
   private launchVolley(): void {
+    this.makeHeldPlacements();
     this.volleySnapshot = cloneWorld(this.world);
     this.aims = this.alive.filter((p) => !p.passed).flatMap((p) => this.aimsFor(p));
     for (const p of this.alive) if (!p.passed) p.shots++;
