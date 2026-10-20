@@ -363,13 +363,16 @@ export class PowerUpField {
   }
 
   /**
-   * Sets a planetary defense on a planet's surface: it lasts the round and shoots down every shot that
-   * enters its ring, except those of the player who set it and their team. The ring is a bit over a planet's size across.
+   * Sets a planetary defense on a planet's surface: it lasts the round and fires a missile at every enemy
+   * shot that flies into its area, except those of the player who set it and their team. A planet has only one: a
+   * defense set on a planet that already has one replaces it, whoever's it was. `spot.planet` is the planet's
+   * place in `world.planets`, as `aimedSurface` gives it; without it the planet is found by the spot.
    */
-  private plantDefense(id: number, spot: { x: number; y: number }): boolean {
+  private plantDefense(id: number, spot: { x: number; y: number; planet?: number }): boolean {
     const world = this.host.world();
-    const planet = world.planets.find((p) => Math.abs(Math.hypot(spot.x - p.x, spot.y - p.y) - p.radius) < 1);
+    const planet = spot.planet !== undefined ? world.planets[spot.planet] : world.planets.find((p) => Math.abs(Math.hypot(spot.x - p.x, spot.y - p.y) - p.radius) < 1);
     if (!planet) return false;
+    world.defenses = world.defenses.filter((d) => d.planet !== planet.seed);
     world.defenses.push({ x: spot.x, y: spot.y, radius: planet.radius * POWER_UP.DEFENSE_RADIUS_SHARE, planet: planet.seed, owner: id, protects: [id, ...this.host.friendsOf(id)] });
     world.version++;
     this.host.players()[id].powerUp = null;

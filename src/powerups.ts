@@ -95,8 +95,8 @@ export const POWER_UP = {
    * keeps this far from the field edge, so its aim spot is drawn whole.
    */
   NEBULA_EDGE_GAP: NEBULA.RADIUS,
-  /** A planetary defense covers a ring of this share of its planet's radius, centred on the surface. */
-  DEFENSE_RADIUS_SHARE: 1.7,
+  /** A planetary defense covers an area of this many times its planet's radius round the turret, in three zones. */
+  DEFENSE_RADIUS_SHARE: 4,
 } as const;
 
 export interface Pickup {

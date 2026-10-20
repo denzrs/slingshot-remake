@@ -140,10 +140,12 @@ export type GameEvent =
   | { type: 'nebula'; player: number; x: number; y: number }
   | { type: 'wormhole'; player: number; x: number; y: number; toX: number; toY: number }
   | { type: 'defense'; player: number; x: number; y: number }
-  /** A planetary defense locked on to a shot and fired: from its turret to where the shot is. */
+  /** A planetary defense fired a missile at a shot: from its turret to where the shot is. */
   | { type: 'defenseFire'; player: number; x: number; y: number; toX: number; toY: number }
+  /** A defense's missile lost its shot at (x, y). */
+  | { type: 'defenseMiss'; player: number; x: number; y: number }
   /** A planetary defense shot a flying shot down. */
-  | { type: 'shotdown'; player: number; x: number; y: number; vx: number; vy: number; fromX: number; fromY: number }
+  | { type: 'shotdown'; player: number; x: number; y: number; vx: number; vy: number }
   | { type: 'split'; player: number; x: number; y: number }
   | { type: 'shield'; ship: number; x: number; y: number }
   | { type: 'kill'; record: KillRecord }
@@ -963,6 +965,11 @@ export abstract class Match {
       if (d) this.emit({ type: 'defenseFire', player: d.owner, x: d.x, y: d.y, toX: e.x, toY: e.y });
       return;
     }
+    if (e.type === 'interceptMiss') {
+      const d = volley.world.defenses[e.defense];
+      if (d) this.emit({ type: 'defenseMiss', player: d.owner, x: e.x, y: e.y });
+      return;
+    }
     if (e.type === 'reflect') {
       // The shield bounced the shot off: it is spent, and so is the power-up it came from.
       this.emit({ type: 'shield', ship: e.ship, x: e.x, y: e.y });
@@ -1003,12 +1010,9 @@ export abstract class Match {
         this.emit({ type: 'devour', x: e.x, y: e.y, toX: hole.x, toY: hole.y, color: COLORS.players[this.players[player].seat], vx: e.vx, vy: e.vy });
         break;
       }
-      case 'shotdown': {
-        // From the turret that fired, so the hit can leave a beam behind.
-        const turret = volley.world.defenses[end.defense];
-        this.emit({ type: 'shotdown', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy, fromX: turret?.x ?? e.x, fromY: turret?.y ?? e.y });
+      case 'shotdown':
+        this.emit({ type: 'shotdown', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy });
         break;
-      }
       case 'clash': {
         if (e.index >= end.other) break;
         const otherOwner = volley.shots[end.other].owner;

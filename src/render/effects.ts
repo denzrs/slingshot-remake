@@ -226,17 +226,21 @@ export class Effects {
     this.burst(fromX, fromY, 6, 20, 90, COLORS.bone, 'small', Math.cos(angle) * 80, Math.sin(angle) * 80, 0.4);
   }
 
-  /** The interceptor landing: a ring in the defense's colour, a white one inside it, and sparks of both colours. */
-  intercepted(x: number, y: number, defenseColor: string, shotColor: string, vx = 0, vy = 0, fromX = x, fromY = y): void {
-    // The interceptor's path stays on the field a moment after the hit, a thin white beam from the turret.
-    this.lasers.push({ x1: fromX, y1: fromY, x2: x, y2: y, life: 0.25, max: 0.25, color: COLORS.bone, width: 3 });
-    this.ring(x, y, 38, 0.4, defenseColor);
+  /** The missile catching its shot: a ring in the defense's colour, a white one inside it, and sparks of both colours. */
+  intercepted(x: number, y: number, defenseColor: string, shotColor: string, vx = 0, vy = 0): void {
+    this.ring(x, y, 40, 0.42, defenseColor);
     this.ring(x, y, 20, 0.28, COLORS.bone);
-    this.burst(x, y, 20, 40, 190, defenseColor, 'large', 0, 0, 0.75);
+    this.burst(x, y, 22, 40, 200, defenseColor, 'large', 0, 0, 0.75);
     this.burst(x, y, 14, 30, 130, shotColor, 'medium', vx * 0.2, vy * 0.2, 0.7);
     this.burst(x, y, 8, 20, 90, COLORS.bone, 'small', 0, 0, 0.5);
     this.flash = Math.max(this.flash, 0.2);
     if (!this.reducedMotion) this.shake = Math.max(this.shake, 2);
+  }
+
+  /** A missile that lost its shot: a small burst where it gave up. */
+  missileLost(x: number, y: number, color: string): void {
+    this.ring(x, y, 12, 0.25, color);
+    this.burst(x, y, 8, 20, 80, color, 'small', 0, 0, 0.45);
   }
 
   /** A shot forking into three: a ring and a spray of sparks at the fork. */

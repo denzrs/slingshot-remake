@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
 import { CPU_IGNORES, POWER_UP, POWER_UP_KINDS, aimedSurface } from '../src/powerups';
-import { DEFENSE, PHYSICS } from '../src/config';
-import { cloneWorld, Shot, simulateShot, type World } from '../src/physics';
+import { cloneWorld, defenseChance, Shot, simulateShot, type World } from '../src/physics';
 import { Volley } from '../src/volley';
 import { DEFAULT_SETTINGS } from '../src/settings';
 
@@ -28,7 +27,7 @@ function guarded(protects: number[]): World {
 
 /**
  * A planet with a defense on its top rim, and the ship on the left firing along a line `above` units over the
- * turret, so the shot crosses the dome high over the rock.
+ * turret, so the shot crosses the area high over the rock.
  */
 function overhead(protects: number[], above = 30): World {
   const rock = planet(640, 400);
@@ -56,99 +55,161 @@ describe('planetary defense power-up', () => {
     expect(aimedSurface(world, world.ships[0], 90)).toBeNull();
   });
 
-  it('lets an enemy shot fly on into the dome, locks on to it and shoots it down inside', () => {
+  it('fires one missile as an enemy shot flies into the area, and none before', () => {
     const world = overhead([1]);
     const d = world.defenses[0];
     const shot = new Shot(world, 0, 0, 60, rules);
-    let enteredAt: number | null = null;
-    let locked = false;
+    let fired = 0;
     let end = null;
+    while (!end && shot.x < 1000) {
+      const inside = Math.hypot(shot.x - d.x, shot.y - d.y) < d.radius;
+      end = shot.step();
+      if (shot.launches.length) {
+        fired += shot.launches.length;
+        // The step that fired was the one that took the shot into the area.
+        expect(inside || Math.hypot(shot.x - d.x, shot.y - d.y) < d.radius).toBe(true);
+        shot.launches.length = 0;
+      }
+      if (fired === 0) expect(shot.missiles).toHaveLength(0);
+    }
+    expect(fired).toBe(1);
+  });
+
+  it('hits only as surely as the zone the missile catches the shot in', () => {
+    const d = overhead([1]).defenses[0];
+    expect(defenseChance(d, d.radius * 0.2)).toBe(1);
+    expect(defenseChance(d, d.radius * 0.5)).toBe(0.5);
+    expect(defenseChance(d, d.radius * 0.9)).toBe(0.25);
+    expect(defenseChance(d, d.radius * 1.1)).toBe(0);
+    // Whatever the dice say, a hit means they said less than the chance where the shot was caught.
+    for (const roll of [0.01, 0.2, 0.4, 0.6, 0.999]) {
+      const world = overhead([1]);
+      const shot = new Shot(world, 0, 0, 60, rules);
+      let end = null;
+      let caught: number | null = null;
+      let launched = false;
+      while (!end && shot.x < 1000) {
+        const misses = shot.misses.length;
+        end = shot.step();
+        if (shot.missiles.length && !launched) {
+          launched = true;
+          shot.missiles[0].roll = roll;
+        }
+        if (shot.misses.length > misses) caught = Math.hypot(shot.x - d.x, shot.y - d.y);
+      }
+      expect(launched).toBe(true);
+      if (end?.kind === 'shotdown') {
+        expect(roll).toBeLessThan(defenseChance(d, Math.hypot(shot.x - d.x, shot.y - d.y)));
+      } else if (caught !== null) {
+        expect(roll).toBeGreaterThanOrEqual(defenseChance(d, caught));
+      }
+    }
+  });
+
+  it('shoots a shot down in the area, not at its edge, when the dice are kind', () => {
+    const world = overhead([1]);
+    const d = world.defenses[0];
+    const shot = new Shot(world, 0, 0, 60, rules);
+    let entered: number | null = null;
+    let end = null;
+    let launched = false;
     while (!end) {
       end = shot.step();
-      if (enteredAt === null && Math.hypot(shot.x - d.x, shot.y - d.y) < d.radius) enteredAt = shot.x;
-      if (shot.intercepts.length) locked = true;
+      if (shot.missiles.length && !launched) {
+        launched = true;
+        shot.missiles[0].roll = 0.01;
+      }
+      if (entered === null && Math.hypot(shot.x - d.x, shot.y - d.y) < d.radius) entered = shot.x;
     }
     expect(end).toEqual({ kind: 'shotdown', defense: 0 });
-    expect(locked).toBe(true);
-    // It went on into the dome after entering: it was not struck down at the edge.
-    expect(shot.x - enteredAt!).toBeGreaterThan(20);
-    // And it was hit inside the dome, short of the far edge.
+    // It flew on into the area after entering: it was not struck down at the edge.
+    expect(shot.x - entered!).toBeGreaterThan(20);
     expect(Math.hypot(shot.x - d.x, shot.y - d.y)).toBeLessThan(d.radius);
   });
 
-  it('fires only once the shot has stayed long enough, and the hit is sure after that', () => {
+  it('lets a shot through when the dice are unkind, and the missile that lost it flies on and is gone', () => {
     const world = overhead([1]);
+    world.width = 6000;
     const shot = new Shot(world, 0, 0, 60, rules);
-    const fires: number[] = [];
-    let steps = 0;
-    let end = null;
-    while (!end) {
-      end = shot.step();
-      steps++;
-      if (shot.intercepts.length) {
-        fires.push(steps);
-        shot.intercepts.length = 0;
+    let launched = false;
+    let lostAt = -1;
+    let gone = false;
+    for (let step = 0; step < 4000 && !shot.end; step++) {
+      shot.step();
+      if (shot.missiles.length && !launched) {
+        launched = true;
+        shot.missiles[0].roll = 0.999;
+      }
+      if (lostAt < 0 && shot.misses.length) lostAt = step;
+      if (lostAt >= 0 && !shot.missiles.length) {
+        gone = true;
+        break;
       }
     }
-    expect(fires).toHaveLength(1);
-    const dt = PHYSICS.DT;
-    expect(fires[0] * dt).toBeGreaterThanOrEqual(DEFENSE.LOCK_TIME);
-    // From the turret's fire to the hit it is TRAVEL_TIME.
-    expect((steps - fires[0]) * dt).toBeGreaterThan(DEFENSE.TRAVEL_TIME - 2 * dt);
-    expect((steps - fires[0]) * dt).toBeLessThan(DEFENSE.TRAVEL_TIME + 2 * dt);
+    // A 0.999 roll beats only a sure hit: caught outside the inner zone, it misses.
+    expect(lostAt).toBeGreaterThanOrEqual(0);
+    expect(shot.end?.kind).not.toBe('shotdown');
+    expect(gone).toBe(true);
   });
 
-  it('lets a fast shot that only clips the dome get through without a lock', () => {
-    // The dome's top is 68 above the turret: a shot skimming just under it is inside for a few steps only.
-    const world = overhead([1], 70);
-    const shot = new Shot(world, 0, 0, 100, rules);
+  it('meets the same luck for the same aim, and other luck for another', () => {
+    const a = new Shot(overhead([1]), 0, 0, 60, rules);
+    const b = new Shot(overhead([1]), 0, 0, 60, rules);
+    const c = new Shot(overhead([1]), 0, 0.2, 60, rules);
+    expect(a.seed).toBe(b.seed);
+    expect(a.seed).not.toBe(c.seed);
+    expect(a.fork(0.1).seed).not.toBe(a.seed);
+  });
+
+  it('fires from every defense that covers the shot, once each', () => {
+    const world = overhead([1]);
+    world.defenses.push({ ...world.defenses[0], x: 700, y: 365 });
+    const shot = new Shot(world, 0, 0, 60, rules);
+    const fired = new Set<number>();
     let end = null;
-    let locked = false;
-    while (!end) {
+    while (!end && shot.x < 900) {
       end = shot.step();
-      if (shot.intercepts.length) locked = true;
+      for (const launch of shot.launches) {
+        expect(fired.has(launch.defense)).toBe(false);
+        fired.add(launch.defense);
+      }
+      shot.launches.length = 0;
     }
-    expect(locked).toBe(false);
-    expect(end.kind).not.toBe('shotdown');
+    expect(fired.size).toBeGreaterThan(0);
+    expect(fired.size).toBeLessThanOrEqual(2);
   });
 
-  it('forgets a half-made lock when the shot leaves the dome', () => {
+  it('carries its missiles through a fork and through a volley snapshot', () => {
     const world = overhead([1]);
     const shot = new Shot(world, 0, 0, 60, rules);
-    // Put it inside for a little while, then well outside.
-    shot.x = world.defenses[0].x - 30;
-    shot.y = world.defenses[0].y - 20;
-    for (let i = 0; i < 5; i++) shot.step();
-    expect(shot.locks[0]).toBeGreaterThan(0);
-    shot.x = 10;
-    shot.y = 10;
-    shot.step();
-    expect(shot.locks[0]).toBe(0);
-  });
-
-  it('carries the lock through a fork and through a volley snapshot', () => {
-    const world = overhead([1]);
-    const shot = new Shot(world, 0, 0, 60, rules);
-    shot.x = world.defenses[0].x - 30;
-    shot.y = world.defenses[0].y - 20;
-    for (let i = 0; i < 5; i++) shot.step();
-    expect(shot.fork(0.1).locks).toEqual(shot.locks);
+    for (let i = 0; i < 400 && !shot.missiles.length; i++) shot.step();
+    for (let i = 0; i < 20; i++) shot.step();
+    expect(shot.missiles.length).toBe(1);
+    const fork = shot.fork(0.1);
+    expect(fork.fired).toEqual(shot.fired);
+    expect(fork.missiles).toEqual(shot.missiles);
+    expect(fork.missiles[0]).not.toBe(shot.missiles[0]);
 
     const volley = new Volley(world, [{ player: 0, angle: 0, power: 60 }], rules, false);
-    volley.shots[0].shot.locks[0] = 0.04;
-    const saved = volley.snapshot();
+    const live = volley.shots[0].shot;
+    for (let i = 0; i < 400 && !live.missiles.length; i++) volley.step();
+    for (let i = 0; i < 20; i++) volley.step();
+    const saved = JSON.parse(JSON.stringify(volley.snapshot()));
     const other = new Volley(world, [{ player: 0, angle: 0, power: 60 }], rules, false);
     other.restore(saved);
-    expect(other.shots[0].shot.locks).toEqual([0.04]);
+    expect(other.shots[0].shot.missiles).toEqual(live.missiles);
+    expect(other.shots[0].shot.fired).toEqual(live.fired);
   });
 
-  it('tells the match when the turret fires, from the turret to the shot', () => {
+  it('tells the match when a missile is fired, and how it ended', () => {
     const world = overhead([1]);
     const volley = new Volley(world, [{ player: 0, angle: 0, power: 60 }], rules, false);
     const events: { type: string; defense?: number }[] = [];
     while (!volley.done) events.push(...volley.step());
     expect(events.filter((e) => e.type === 'intercept')).toEqual([expect.objectContaining({ defense: 0 })]);
     expect(events.filter((e) => e.type === 'end')).toHaveLength(1);
+    const outcome = events.filter((e) => e.type === 'interceptMiss').length + (events.some((e) => e.type === 'end' && (e as { end?: { kind: string } }).end?.kind === 'shotdown') ? 1 : 0);
+    expect(outcome).toBeGreaterThanOrEqual(1);
   });
 
   it('lets the shots of the side it protects fly on', () => {
@@ -157,17 +218,19 @@ describe('planetary defense power-up', () => {
     expect(outcome.end.kind).toBe('planet');
   });
 
-  it('only guards the side above the surface: a shot passing the far side is not touched', () => {
-    const world = guarded([1]);
-    // From the right ship, flying left, the planet is in the way first.
-    const outcome = simulateShot(world, 1, 180, 60, rules);
-    expect(outcome.end.kind).toBe('planet');
-  });
-
-  it('shoots down a piercing shot too', () => {
+  it('goes for a piercing shot like any other', () => {
     const world = overhead([1]);
-    const outcome = simulateShot(world, 0, 0, 60, rules, [], 1, [], true);
-    expect(outcome.end.kind).toBe('shotdown');
+    const shot = new Shot(world, 0, 0, 60, rules, false, [], 1, true);
+    let launched = false;
+    while (!shot.end && shot.x < 1000) {
+      shot.step();
+      if (shot.missiles.length && !launched) {
+        launched = true;
+        shot.missiles[0].roll = 0.01;
+      }
+    }
+    expect(launched).toBe(true);
+    expect(shot.end?.kind).toBe('shotdown');
   });
 
   it('is aimed with the power-up key, fire sets it, and it spends the shot', () => {
@@ -227,5 +290,29 @@ describe('planetary defense power-up', () => {
     const copy = cloneWorld(world);
     copy.defenses[0].protects.push(2);
     expect(world.defenses[0].protects).toEqual([0, 1]);
+  });
+
+  it('has one defense to a planet: a second set on it replaces the first, whoever set it', () => {
+    const match = duel();
+    const [a, b] = [match.players[match.current], match.players[1 - match.current]];
+    const [shipA, shipB] = [match.world.ships[a.id], match.world.ships[b.id]];
+    const rock = planet((shipA.x + shipB.x) / 2, (shipA.y + shipB.y) / 2);
+    match.world.planets = [rock];
+    const toward = (from: { x: number; y: number }): number => (Math.atan2(-(rock.y - from.y), rock.x - from.x) * 180) / Math.PI;
+
+    a.powerUp = 'defense';
+    a.angle = toward(shipA);
+    match.usePowerUp();
+    match.commit();
+    expect(match.world.defenses).toHaveLength(1);
+    expect(match.world.defenses[0].owner).toBe(a.id);
+
+    // The other player sets theirs on the same rock, from their side.
+    const spot = aimedSurface(match.world, shipB, toward(shipB))!;
+    (match.power as unknown as { plantDefense(id: number, spot: object): boolean }).plantDefense(b.id, spot);
+    expect(match.world.defenses).toHaveLength(1);
+    expect(match.world.defenses[0].owner).toBe(b.id);
+    expect(match.world.defenses[0].protects).toContain(b.id);
+    expect(match.world.defenses[0].protects).not.toContain(a.id);
   });
 });

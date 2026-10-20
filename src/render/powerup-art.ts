@@ -178,29 +178,39 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.closePath();
     ctx.fill();
   } else if (kind === 'defense') {
-    // A dome standing on the ground, a turret inside it with its barrel raised, and the interceptor leaving it.
+    // Three zones round a turret, the nearer ones bolder, and a missile climbing out through them. Everything
+    // stays within a radius r of the middle, so the tile and the pickup ring never clip it.
     const alpha = ctx.globalAlpha;
-    const base = y + r * 0.6;
-    ctx.moveTo(x - r * 1.05, base);
-    ctx.lineTo(x + r * 1.05, base);
-    ctx.moveTo(x + r * 0.95, base);
-    ctx.arc(x, base, r * 0.95, 0, Math.PI, true);
-    ctx.stroke();
-    // The turret: a head on the ground and a barrel raised at the sky.
+    const lineWidth = ctx.lineWidth;
+    const base = y + r * 0.62;
+    ctx.lineWidth = lineWidth * 0.75;
+    for (const [reach, fade] of [[0.9, 0.4], [0.62, 0.65], [0.34, 1]] as const) {
+      ctx.globalAlpha = alpha * fade;
+      ctx.beginPath();
+      ctx.arc(x - r * 0.12, base, r * reach, Math.PI, 0);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = lineWidth;
+    // The turret on the ground, and the ground.
     ctx.beginPath();
-    ctx.arc(x - r * 0.18, base - r * 0.02, r * 0.2, Math.PI, 0);
+    ctx.arc(x - r * 0.12, base, r * 0.14, Math.PI, 0);
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(x - r * 0.18, base - r * 0.16);
-    ctx.lineTo(x + r * 0.2, base - r * 0.5);
+    ctx.moveTo(x - r * 0.95, base);
+    ctx.lineTo(x + r * 0.75, base);
     ctx.stroke();
-    // The interceptor: a short dash flying on from the barrel.
-    ctx.globalAlpha = alpha * 0.85;
+    // The missile: a dart climbing away to the upper right.
     ctx.beginPath();
-    ctx.moveTo(x + r * 0.38, base - r * 0.68);
-    ctx.lineTo(x + r * 0.62, base - r * 0.9);
+    ctx.moveTo(x + r * 0.62, y - r * 0.5);
+    ctx.lineTo(x + r * 0.26, y - r * 0.4);
+    ctx.lineTo(x + r * 0.4, y - r * 0.16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + r * 0.34, y - r * 0.28);
+    ctx.lineTo(x - r * 0.04, y + r * 0.2);
     ctx.stroke();
-    ctx.globalAlpha = alpha;
   } else if (kind === 'splitter') {
     ctx.moveTo(x, y + r);
     ctx.lineTo(x, y);

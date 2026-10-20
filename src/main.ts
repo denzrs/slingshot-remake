@@ -128,8 +128,12 @@ function wire(m: Match): void {
         effects.defenseFire(e.x, e.y, e.toX, e.toY, POWER_UP_COLORS.defense);
         if (audible) sound.defenseFire();
         break;
+      case 'defenseMiss':
+        effects.missileLost(e.x, e.y, POWER_UP_COLORS.defense);
+        if (audible) sound.fizzle();
+        break;
       case 'shotdown':
-        effects.intercepted(e.x, e.y, POWER_UP_COLORS.defense, color(e.player), e.vx, e.vy, e.fromX, e.fromY);
+        effects.intercepted(e.x, e.y, POWER_UP_COLORS.defense, color(e.player), e.vx, e.vy);
         if (audible) sound.intercepted();
         break;
       case 'split':

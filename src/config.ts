@@ -32,12 +32,28 @@ export const WORMHOLE = {
   COLORS: ['#4db8ff', '#ff9d3a', '#5cf08a', '#ff5cd0', '#ffe14d', '#a98bff'],
 } as const;
 
-/** The planetary defense: a shot is not struck down on entering the dome but tracked, locked and then hit. */
+/**
+ * The planetary defense, in the manner of the Iron Dome: it covers a wide area round its turret, split into
+ * three zones, and fires a missile at every enemy shot that flies into the area. The missile homes in on the
+ * shot; where it catches it decides whether it hits: surely near the turret, by chance further out.
+ */
 export const DEFENSE = {
-  /** A shot must stay this long (s) in the dome for the turret to lock on, or it flies through unharmed. */
-  LOCK_TIME: 0.04,
-  /** Once locked, the interceptor takes this long (s) to arrive, and the hit is sure even if the shot has left the dome by then. */
-  TRAVEL_TIME: 0.05,
+  /**
+   * The zones, nearest the turret first. A zone reaches `reach` of the whole radius, and a missile that catches
+   * its shot inside it hits with probability `chance`.
+   */
+  ZONES: [
+    { reach: 0.4, chance: 1 },
+    { reach: 0.65, chance: 0.5 },
+    { reach: 1, chance: 0.25 },
+  ],
+  /** The missile: it flies at this speed (px/s) and turns at most this fast (rad/s), so a shot that cuts across can lose it. */
+  MISSILE_SPEED: 1000,
+  MISSILE_TURN: 9,
+  /** It has caught the shot when it comes this close. */
+  HIT_RADIUS: 9,
+  /** It gives up after this long (s), or once it has strayed a good way past the area. */
+  MISSILE_LIFE: 1.4,
 } as const;
 
 /** Physics constants that only the nebula power-up uses. */

@@ -1,5 +1,5 @@
 import { PHYSICS } from './config';
-import { Shot, type ShotEnd, type ShotRules, type StyleEvent, type World } from './physics';
+import { Shot, type Missile, type ShotEnd, type ShotRules, type StyleEvent, type World } from './physics';
 
 export interface VolleyAim {
   player: number;
@@ -34,7 +34,7 @@ export interface VolleySnapshot {
   aims: VolleyAim[];
   steps: number;
   script?: VolleyScript[];
-  shots: { owner: number; trail: number[]; x: number; y: number; vx: number; vy: number; time: number; end: ShotEnd | null; style: StyleEvent[] | null; locks?: number[] }[];
+  shots: { owner: number; trail: number[]; x: number; y: number; vx: number; vy: number; time: number; end: ShotEnd | null; style: StyleEvent[] | null; fired?: boolean[]; missiles?: Missile[]; seed?: number }[];
 }
 
 /** Something done to a flight after it started, so a replay can do it at the same step: a split, or a shield put on or taken off. */
@@ -62,8 +62,10 @@ export type VolleyEvent =
   /** An armor-piercing shot went through a ship: the ship is out, and the shot flies on. */
   | { type: 'pierce'; index: number; ship: number; x: number; y: number; vx: number; vy: number }
   | { type: 'style'; index: number; event: StyleEvent }
-  /** A planetary defense locked on to the shot and fired: the interceptor is on its way. */
-  | { type: 'intercept'; index: number; defense: number; x: number; y: number };
+  /** A planetary defense fired a missile at the shot, which is at (x, y). */
+  | { type: 'intercept'; index: number; defense: number; x: number; y: number }
+  /** A defense's missile lost its shot at (x, y) and flies on. */
+  | { type: 'interceptMiss'; index: number; defense: number; x: number; y: number };
 
 const TRAIL_EVERY = 2;
 let nextVolleyId = 1;
@@ -112,7 +114,9 @@ export class Volley {
       shots: this.shots.map(({ owner, trail, shot }) => ({
         owner, trail, x: shot.x, y: shot.y, vx: shot.vx, vy: shot.vy, time: shot.time, end: shot.end,
         style: shot.style ? [...shot.style] : null,
-        locks: [...shot.locks],
+        fired: [...shot.fired],
+        missiles: shot.missiles.map((m) => ({ ...m, trail: [...m.trail] })),
+        seed: shot.seed,
       })),
     };
   }
@@ -127,7 +131,9 @@ export class Volley {
       Object.assign(current.shot, { x: saved.x, y: saved.y, vx: saved.vx, vy: saved.vy, time: saved.time, end: saved.end });
       current.trail = saved.trail;
       if (current.shot.style && saved.style) current.shot.style.splice(0, Infinity, ...saved.style);
-      current.shot.locks.splice(0, Infinity, ...(saved.locks ?? []));
+      current.shot.fired.splice(0, Infinity, ...(saved.fired ?? []));
+      current.shot.missiles.splice(0, Infinity, ...(saved.missiles ?? []).map((m) => ({ ...m, trail: [...m.trail] })));
+      if (saved.seed !== undefined) current.shot.seed = saved.seed;
     });
   }
 
@@ -180,8 +186,10 @@ export class Volley {
       // A wormhole jump puts both mouths in the trail, back to back: the drawing breaks the line there.
       for (const w of shot.warps) vs.trail.push(w.fromX, w.fromY, w.toX, w.toY);
       shot.warps.length = 0;
-      for (const lock of shot.intercepts) events.push({ type: 'intercept', index: i, defense: lock.defense, x: shot.x, y: shot.y });
-      shot.intercepts.length = 0;
+      for (const launch of shot.launches) events.push({ type: 'intercept', index: i, defense: launch.defense, x: shot.x, y: shot.y });
+      shot.launches.length = 0;
+      for (const miss of shot.misses) events.push({ type: 'interceptMiss', index: i, defense: miss.defense, x: miss.x, y: miss.y });
+      shot.misses.length = 0;
       if (end || this.steps % TRAIL_EVERY === 0) vs.trail.push(shot.x, shot.y);
       // A shield bounces the shot off: it is spent doing so, here where a live flight and a replay agree.
       for (const r of shot.reflects) {

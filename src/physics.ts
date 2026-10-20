@@ -94,6 +94,38 @@ export interface Defense {
   protects: number[];
 }
 
+/** A missile a planetary defense has fired at a shot. It lives with the shot it chases (`Shot.missiles`). */
+export interface Missile {
+  /** The defense it came from, an index into `world.defenses`. */
+  defense: number;
+  x: number;
+  y: number;
+  heading: number;
+  /** Seconds in the air. */
+  age: number;
+  /** The throw of the dice for this missile, 0 to 1, made when it was fired: it hits if this is below the chance where it catches the shot. */
+  roll: number;
+  /** Still after its shot; false once it has hit, or lost it and flies on. */
+  chasing: boolean;
+  /** Where it has been, [x0, y0, x1, y1, …], newest last: its exhaust. */
+  trail: number[];
+}
+
+/** How surely a missile of this defense hits a shot it catches at `distance` from the turret: 0 beyond the area. */
+export function defenseChance(d: Pick<Defense, 'radius'>, distance: number): number {
+  for (const zone of DEFENSE.ZONES) if (distance < d.radius * zone.reach) return zone.chance;
+  return 0;
+}
+
+/** A number from 0 to 1 that is the same for the same seed and salt, and unlike for another: the dice of a replay. */
+function dice(seed: number, salt: number): number {
+  let h = (seed ^ Math.imul(salt + 1, 0x9e3779b1)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
 export interface World {
   width: number;
   height: number;
@@ -214,13 +246,16 @@ export class Shot {
   private readonly encounters: Encounter[] | null;
   /** The wormhole jumps this shot has made since the caller last cleared them: the volley puts both mouths in the trail, so a drawn trail can break between them. */
   readonly warps: { fromX: number; fromY: number; toX: number; toY: number }[] = [];
-  /**
-   * Seconds this shot has spent in the dome of each defense (an index into `world.defenses`), carried on through
-   * the interceptor's flight once the turret has locked on. Past lock plus travel the shot is struck down.
-   */
-  readonly locks: number[] = [];
-  /** The defenses that locked on and fired at this shot since the caller last cleared this. */
-  readonly intercepts: { defense: number }[] = [];
+  /** Which defenses have fired at this shot already (an index into `world.defenses`): each fires once. */
+  readonly fired: boolean[] = [];
+  /** The missiles chasing this shot, and those that lost it and are still flying out. */
+  readonly missiles: Missile[] = [];
+  /** The dice of this shot, the same on every replay: it is made from the aim, so identical shots meet identical luck. */
+  seed: number;
+  /** The defenses that fired at this shot since the caller last cleared this. */
+  readonly launches: { defense: number }[] = [];
+  /** The missiles that lost the shot since the caller last cleared this. */
+  readonly misses: { defense: number; x: number; y: number }[] = [];
   /** The mouth (wormhole index * 2 + end) this shot last left by: it is ignored until the shot is clear of it, so it is not carried back at once. */
   private portal = -1;
   /** Ships already passed through, so one hull is only ever reported once. */
@@ -247,6 +282,9 @@ export class Shot {
     this.y = ship.y + dir.y * PHYSICS.MUZZLE;
     this.vx = dir.x * speed;
     this.vy = dir.y * speed;
+    let seed = 0x811c9dc5;
+    for (const n of [shooter, Math.round(angle * 1000), Math.round(power * 1000), pull]) seed = Math.imul(seed ^ (n | 0), 16777619);
+    this.seed = seed >>> 0;
     this.style = trackStyle === true ? [] : null;
     this.encounters = trackStyle
       ? Array.from({ length: world.planets.length + world.holes.length }, () => ({ inside: false, turn: 0, minGap: Infinity, photons: 0 }))
@@ -269,7 +307,9 @@ export class Shot {
     copy.time = this.time;
     copy.swingbys = this.swingbys;
     copy.portal = this.portal;
-    copy.locks.push(...this.locks);
+    copy.fired.push(...this.fired);
+    copy.missiles.push(...this.missiles.map((m) => ({ ...m, trail: [...m.trail] })));
+    copy.seed = Math.imul(this.seed ^ Math.round(turn * 1e6), 16777619) >>> 0;
     const c = Math.cos(turn);
     const s = Math.sin(turn);
     copy.vx = this.vx * c - this.vy * s;
@@ -374,24 +414,49 @@ export class Shot {
       const dy = hole.y - this.y;
       if (dx * dx + dy * dy < hole.radius * hole.radius) return this.finish({ kind: 'hole', hole: i });
     }
-    // A defense tracks what flies through its dome, unless the shot is its own side's: once the shot has stayed
-    // in long enough the turret locks on and fires, and the interceptor lands a moment later, wherever the shot is
-    // by then. A shot that is out of the dome before the lock is made has got through.
+    // Planetary defenses: a shot that flies into a defense's area (bar its own side's) gets a missile after it,
+    // once per defense. The missile homes in, and where it catches the shot decides whether it hits.
     for (let i = 0; i < defenses.length; i++) {
       const d = defenses[i];
-      if (d.protects.includes(this.shooter)) continue;
-      const dx = d.x - this.x;
-      const dy = d.y - this.y;
-      const before = this.locks[i] ?? 0;
-      const inside = dx * dx + dy * dy < d.radius * d.radius;
-      if (!inside && before < DEFENSE.LOCK_TIME) {
-        this.locks[i] = 0;
-        continue;
+      if (this.fired[i] || d.protects.includes(this.shooter)) continue;
+      if ((d.x - this.x) ** 2 + (d.y - this.y) ** 2 >= d.radius * d.radius) continue;
+      this.fired[i] = true;
+      this.missiles.push({ defense: i, x: d.x, y: d.y, heading: Math.atan2(this.y - d.y, this.x - d.x), age: 0, roll: dice(this.seed, i), chasing: true, trail: [d.x, d.y] });
+      this.launches.push({ defense: i });
+    }
+    for (let k = this.missiles.length - 1; k >= 0; k--) {
+      const missile = this.missiles[k];
+      const d = defenses[missile.defense];
+      missile.age += dt;
+      if (missile.chasing) {
+        // Pure pursuit with a limited turn: it follows a shot that bends, and loses one that cuts across too fast.
+        let turn = Math.atan2(this.y - missile.y, this.x - missile.x) - missile.heading;
+        turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+        const most = DEFENSE.MISSILE_TURN * dt;
+        missile.heading += Math.max(-most, Math.min(most, turn));
       }
-      const held = before + dt;
-      this.locks[i] = held;
-      if (before < DEFENSE.LOCK_TIME && held >= DEFENSE.LOCK_TIME) this.intercepts.push({ defense: i });
-      if (held >= DEFENSE.LOCK_TIME + DEFENSE.TRAVEL_TIME) return this.finish({ kind: 'shotdown', defense: i });
+      missile.x += Math.cos(missile.heading) * DEFENSE.MISSILE_SPEED * dt;
+      missile.y += Math.sin(missile.heading) * DEFENSE.MISSILE_SPEED * dt;
+      const last = missile.trail.length;
+      if (Math.hypot(missile.x - missile.trail[last - 2], missile.y - missile.trail[last - 1]) >= 6) {
+        missile.trail.push(missile.x, missile.y);
+        if (missile.trail.length > 36) missile.trail.splice(0, 2);
+      }
+      if (missile.chasing) {
+        if (Math.hypot(this.x - missile.x, this.y - missile.y) < DEFENSE.HIT_RADIUS) {
+          if (missile.roll < defenseChance(d, Math.hypot(this.x - d.x, this.y - d.y))) {
+            this.missiles.splice(k, 1);
+            return this.finish({ kind: 'shotdown', defense: missile.defense });
+          }
+          missile.chasing = false;
+          this.misses.push({ defense: missile.defense, x: missile.x, y: missile.y });
+        } else if (missile.age > DEFENSE.MISSILE_LIFE || Math.hypot(missile.x - d.x, missile.y - d.y) > d.radius * 1.5) {
+          missile.chasing = false;
+          this.misses.push({ defense: missile.defense, x: missile.x, y: missile.y });
+        }
+      }
+      // One that has lost its shot flies on a little longer, then is gone.
+      if (!missile.chasing && missile.age > DEFENSE.MISSILE_LIFE + 0.4) this.missiles.splice(k, 1);
     }
     const m = OUT_MARGIN;
     if (this.x < -m || this.x > width + m || this.y < -m || this.y > height + m) return this.finish({ kind: 'lost' });
