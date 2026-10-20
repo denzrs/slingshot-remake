@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { packMessage, packWireMessage, unpackWireMessage } from '../src/messagepack';
+import { mayhemRules } from '../src/lobbyPrefs';
 import { MultiplayerSession, type NetMatch, type Transport } from '../src/multiplayer';
 import type { RoomRules, ServerMessage } from '../src/net';
 import { TIP_HIDDEN } from '../src/game/oracle';
@@ -1079,6 +1080,18 @@ describe('CPU seats online', () => {
       await waitForSession(watcher, () => watcher.rooms.length === 2);
       expect(watcher.rooms.find((room) => room.host === 'Anna')).toMatchObject({ gameMode: 'horizon', mayhem: 3 });
       expect(watcher.rooms.find((room) => room.host === 'Ben')).toMatchObject({ gameMode: 'classic', mayhem: 0 });
+    }, 30_000);
+
+    it('plays a Mayhem room by the rules it was made with: trick shots always on, its flight time, and simultaneous shots in Classic only', async () => {
+      const chosen = { mayhem: 2, rounds: 3, shotTime: 30, simultaneousShots: true };
+      for (const mode of ['classic', 'horizon'] as const) {
+        const { host, guest } = await startRoom(mode, ['Anna', 'Ben'], mayhemRules(chosen, mode));
+        for (const side of [host, guest]) {
+          expect(side.match().settings).toMatchObject({ mayhem: 2, rounds: 3, shotTime: 30, styleBonuses: true, betting: false });
+          expect(side.match().settings.simultaneousShots).toBe(mode === 'classic');
+        }
+        expect(host.match().salvo).toBe(true);
+      }
     }, 30_000);
 
     it('plays without twists when it is off', async () => {
