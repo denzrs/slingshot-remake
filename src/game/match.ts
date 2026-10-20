@@ -138,6 +138,7 @@ export type GameEvent =
   | { type: 'blackhole'; player: number; x: number; y: number }
   | { type: 'planetKiller'; player: number; x: number; y: number; radius: number }
   | { type: 'nebula'; player: number; x: number; y: number }
+  | { type: 'wormhole'; player: number; x: number; y: number; toX: number; toY: number }
   | { type: 'split'; player: number; x: number; y: number }
   | { type: 'shield'; ship: number; x: number; y: number }
   | { type: 'kill'; record: KillRecord }
@@ -724,6 +725,10 @@ export abstract class Match {
     return 0;
   }
   swallowProgress(_ship: number): number {
+    return 0;
+  }
+  /** How far the wormhole with this id has fallen into the hole (0 to 1). */
+  devourWormhole(_id: number): number {
     return 0;
   }
   get nextHoleRadius(): number | null {

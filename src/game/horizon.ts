@@ -1,4 +1,4 @@
-import { AIM, HORIZON, PHYSICS, SCORING, COLORS } from '../config';
+import { AIM, HORIZON, PHYSICS, SCORING, COLORS, WORMHOLE } from '../config';
 import { t } from '../i18n';
 import { cloneWorld, type ShotRules, type StyleKind, type World } from '../physics';
 import { POWER_UP, type Pickup } from '../powerups';
@@ -102,6 +102,17 @@ interface CollapseState {
   ships: Map<number, Drift>;
   /** The power-up pickups, by id: the hole pulls them in like planets. */
   pickups: Map<number, Drift>;
+  /** The wormholes the hole takes this collapse, by id, with where their portals stood. Portals do not drift. */
+  wormholes: WormholeFate[];
+}
+
+/** A wormhole the hole swallows: both portals fall in together, from where they stood. */
+interface WormholeFate {
+  id: number;
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
 }
 
 const SWALLOW_MARGIN = 14;
@@ -140,7 +151,7 @@ export class HorizonMatch extends Match {
       roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory,
       volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
       aims: this.aims, volleyKills: this.volleyKills,
-      collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships], pickups: [...this.collapse.pickups] } : null,
+      collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships], pickups: [...this.collapse.pickups], wormholes: this.collapse.wormholes.map((w) => ({ ...w })) } : null,
       killcamClip: this.killcam?.clip ?? null,
       killcam: this.killcam ? {
         replay: this.killcam.replay.snapshot(), simClock: this.killcam.simClock,
@@ -164,7 +175,7 @@ export class HorizonMatch extends Match {
     this.world = s.world; this.trails = s.trails; this.killFeed = s.killFeed; this.lastKill = s.lastKill;
     this.summary = s.summary; this.notice = s.notice; this.roundStats = s.roundStats; this.matchStats = s.matchStats; this.scoreHistory = s.scoreHistory; this.volleyNo = s.volleyNo; this.clock_ = s.clock_;
     this.queue = [...s.queue]; this.volleySnapshot = s.snapshot; this.aims = s.aims; this.volleyKills = s.volleyKills;
-    this.collapse = s.collapse ? { ...s.collapse, planets: new Map(s.collapse.planets), ships: new Map(s.collapse.ships), pickups: new Map(s.collapse.pickups ?? []) } : null;
+    this.collapse = s.collapse ? { ...s.collapse, planets: new Map(s.collapse.planets), ships: new Map(s.collapse.ships), pickups: new Map(s.collapse.pickups ?? []), wormholes: s.collapse.wormholes ?? [] } : null;
     this.volley = null;
     if (s.volley) {
       this.volley = new Volley(this.world, s.volley.aims, this.rules, true);
@@ -269,6 +280,10 @@ export class HorizonMatch extends Match {
 
   swallowProgress(ship: number): number {
     return this.collapse?.ships.get(ship)?.lost ? this.collapseT : 0;
+  }
+
+  devourWormhole(id: number): number {
+    return this.collapse?.wormholes.some((w) => w.id === id) ? this.collapseT : 0;
   }
 
   private get collapseT(): number {
@@ -558,7 +573,17 @@ export class HorizonMatch extends Match {
     // Pickups drift in like planets (a little faster), and the hole eats those that come too close.
     const pickups = new Map<number, Drift>();
     if (this.powerUps) for (const pickup of this.pickups) pickups.set(pickup.id, pull(pickup.x, pickup.y, 0.8, POWER_UP.PICKUP_RADIUS));
-    this.collapse = { fromRadius: hole.radius, toRadius, fromMass: hole.mass, toMass, planets, ships, pickups };
+    // Portals stay where they are, but the growing hole takes one that ends up inside it, and its partner goes too.
+    const wormholes: WormholeFate[] = [];
+    for (const w of this.world.wormholes) {
+      const margin = w.radius * 0.5;
+      const inside = (x: number, y: number): boolean => Math.hypot(x - hole.x, y - hole.y) < toRadius + margin;
+      if (!inside(w.ax, w.ay) && !inside(w.bx, w.by)) continue;
+      wormholes.push({ id: w.id, ax: w.ax, ay: w.ay, bx: w.bx, by: w.by });
+      this.emit({ type: 'devour', x: w.ax, y: w.ay, toX: hole.x, toY: hole.y, color: WORMHOLE.COLORS[w.id % WORMHOLE.COLORS.length], vx: 0, vy: 0 });
+      this.emit({ type: 'devour', x: w.bx, y: w.by, toX: hole.x, toY: hole.y, color: WORMHOLE.COLORS[w.id % WORMHOLE.COLORS.length], vx: 0, vy: 0 });
+    }
+    this.collapse = { fromRadius: hole.radius, toRadius, fromMass: hole.mass, toMass, planets, ships, pickups, wormholes };
     this.setPhase('collapse');
     this.emit({ type: 'collapse', x: hole.x, y: hole.y });
   }
@@ -571,6 +596,15 @@ export class HorizonMatch extends Match {
     hole.radius = c.fromRadius + (c.toRadius - c.fromRadius) * e;
     hole.mass = c.fromMass + (c.toMass - c.fromMass) * e;
     for (const p of this.world.planets) move(p, c.planets.get(p.seed)!, e, t);
+    for (const fate of c.wormholes) {
+      // Both portals fall in, quickening like anything the hole eats.
+      const w = this.world.wormholes.find((o) => o.id === fate.id);
+      if (!w) continue;
+      w.ax = fate.ax + (hole.x - fate.ax) * t * t;
+      w.ay = fate.ay + (hole.y - fate.ay) * t * t;
+      w.bx = fate.bx + (hole.x - fate.bx) * t * t;
+      w.by = fate.by + (hole.y - fate.by) * t * t;
+    }
     for (const [id, d] of c.ships) move(this.world.ships[id], d, e, t);
     for (const pickup of this.pickups) {
       const d = c.pickups.get(pickup.id);
@@ -584,6 +618,7 @@ export class HorizonMatch extends Match {
     const hole = this.world.holes[0];
     this.collapse = null;
     this.world.planets = this.world.planets.filter((p) => !c.planets.get(p.seed)?.lost);
+    this.world.wormholes = this.world.wormholes.filter((w) => !c.wormholes.some((fate) => fate.id === w.id));
     this.world.version++;
     // What the hole swallowed is gone from the field; what drifted stays where it landed.
     const eaten = this.pickups.filter((pickup) => c.pickups.get(pickup.id)?.lost);

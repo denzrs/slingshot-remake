@@ -16,7 +16,7 @@ function emptyWorld(ships: [number, number][] = [[100, 400], [1180, 400]]): Worl
     planets: [],
     ships: ships.map(([x, y]) => ({ x, y, alive: true })),
     holes: [],
-    nebulae: [],
+    nebulae: [], wormholes: [],
     version: 0,
   };
 }

@@ -173,6 +173,9 @@ export class Volley {
       if (shot.style) {
         for (let k = styleBefore; k < shot.style.length; k++) events.push({ type: 'style', index: i, event: shot.style[k] });
       }
+      // A wormhole jump puts both mouths in the trail, back to back: the drawing breaks the line there.
+      for (const w of shot.warps) vs.trail.push(w.fromX, w.fromY, w.toX, w.toY);
+      shot.warps.length = 0;
       if (end || this.steps % TRAIL_EVERY === 0) vs.trail.push(shot.x, shot.y);
       // A shield bounces the shot off: it is spent doing so, here where a live flight and a replay agree.
       for (const r of shot.reflects) {

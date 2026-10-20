@@ -1,4 +1,4 @@
-import { NEBULA, PHYSICS } from './config';
+import { NEBULA, PHYSICS, WORMHOLE } from './config';
 
 // Read once: Shot.step is the innermost loop of every CPU search and killcam, and an imported binding is slower to read than a local one.
 const { DT, G, SHIP_RADIUS, OUT_MARGIN } = PHYSICS;
@@ -41,6 +41,44 @@ export interface Nebula {
   seed: number;
 }
 
+/** A pair of mouths the wormhole power-up has placed: a shot entering one leaves by the other. No gravity, no kill. */
+export interface Wormhole {
+  /** Which wormhole this is, for its colours and number: it keeps them when another is swallowed. */
+  id: number;
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  radius: number;
+}
+
+/** The id the next wormhole gets: one past the highest on the field, so a swallowed one never renumbers the rest. */
+export function nextWormholeId(world: Pick<World, 'wormholes'>): number {
+  return world.wormholes.reduce((next, w) => Math.max(next, w.id + 1), 0);
+}
+
+/**
+ * Whether a portal can be set at this spot: clear of every portal on the field and of the `others` (the entry
+ * of the pair being set), so that no two portals overlap. Any distance is fine beyond that.
+ */
+export function portalFits(world: Pick<World, 'wormholes'>, spot: { x: number; y: number }, others: readonly { x: number; y: number }[] = []): boolean {
+  const clear = (x: number, y: number): boolean => Math.hypot(spot.x - x, spot.y - y) >= WORMHOLE.GAP;
+  return world.wormholes.every((w) => clear(w.ax, w.ay) && clear(w.bx, w.by)) && others.every((o) => clear(o.x, o.y));
+}
+
+/** How far a trail point may sit from a mouth and still be that mouth: the wire rounds points to a tenth. */
+const MOUTH_TOLERANCE = 0.06;
+
+/**
+ * Whether the trail segment ending at point `i` (an index into the flat x, y list) is a wormhole jump from one
+ * mouth to the other rather than flight. Compared with a tolerance, because a guest's trail arrives rounded.
+ */
+export function isWormholeJump(points: readonly number[], i: number, wormholes: readonly Wormhole[]): boolean {
+  const near = (x: number, y: number, mx: number, my: number): boolean => Math.abs(x - mx) <= MOUTH_TOLERANCE && Math.abs(y - my) <= MOUTH_TOLERANCE;
+  const [x0, y0, x1, y1] = [points[i - 2], points[i - 1], points[i], points[i + 1]];
+  return wormholes.some((w) => (near(x0, y0, w.ax, w.ay) && near(x1, y1, w.bx, w.by)) || (near(x0, y0, w.bx, w.by) && near(x1, y1, w.ax, w.ay)));
+}
+
 export interface World {
   width: number;
   height: number;
@@ -51,6 +89,8 @@ export interface World {
   holes: BlackHole[];
   /** Every nebula cloud the nebula power-up has placed. */
   nebulae: Nebula[];
+  /** Every wormhole the wormhole power-up has placed. */
+  wormholes: Wormhole[];
   /** Bumped whenever planets, the holes or the nebulae change, so cached render layers know to rebuild. */
   version: number;
 }
@@ -121,6 +161,7 @@ export function cloneWorld(w: World): World {
     ships: w.ships.map((s) => ({ ...s })),
     holes: w.holes.map((h) => ({ ...h })),
     nebulae: w.nebulae.map((n) => ({ ...n })),
+    wormholes: w.wormholes.map((o) => ({ ...o })),
   };
 }
 
@@ -151,6 +192,10 @@ export class Shot {
   readonly hits: { ship: number; x: number; y: number }[] = [];
   /** One per planet, then one per black hole. */
   private readonly encounters: Encounter[] | null;
+  /** The wormhole jumps this shot has made since the caller last cleared them: the volley puts both mouths in the trail, so a drawn trail can break between them. */
+  readonly warps: { fromX: number; fromY: number; toX: number; toY: number }[] = [];
+  /** The mouth (wormhole index * 2 + end) this shot last left by: it is ignored until the shot is clear of it, so it is not carried back at once. */
+  private portal = -1;
   /** Ships already passed through, so one hull is only ever reported once. */
   private readonly pierced = new Set<number>();
 
@@ -196,6 +241,7 @@ export class Shot {
     copy.y = this.y;
     copy.time = this.time;
     copy.swingbys = this.swingbys;
+    copy.portal = this.portal;
     const c = Math.cos(turn);
     const s = Math.sin(turn);
     copy.vx = this.vx * c - this.vy * s;
@@ -266,6 +312,7 @@ export class Shot {
       else if (this.y > height) { this.y = 2 * height - this.y; this.vy = -this.vy; bounced = true; }
     }
     if (this.encounters) this.trackStyle(hx, hy, bounced);
+    if (this.world.wormholes.length) this.warp();
 
     const r2 = SHIP_RADIUS * SHIP_RADIUS;
     for (let i = 0; i < ships.length; i++) {
@@ -303,6 +350,34 @@ export class Shot {
     if (this.x < -m || this.x > width + m || this.y < -m || this.y > height + m) return this.finish({ kind: 'lost' });
     if (this.time >= this.rules.timeLimit) return this.finish({ kind: 'timeout' });
     return null;
+  }
+
+  /** Wormholes: a shot that reaches a mouth comes out of the other one with its velocity unchanged. Gravity never touches it. */
+  private warp(): void {
+    const { wormholes } = this.world;
+    if (this.portal >= 0) {
+      const w = wormholes[this.portal >> 1];
+      if (!w) this.portal = -1;
+      else {
+        const [mx, my] = this.portal & 1 ? [w.bx, w.by] : [w.ax, w.ay];
+        if (Math.hypot(this.x - mx, this.y - my) > w.radius) this.portal = -1;
+      }
+    }
+    for (let i = 0; i < wormholes.length; i++) {
+      const w = wormholes[i];
+      for (let end = 0; end < 2; end++) {
+        const id = i * 2 + end;
+        if (id === this.portal) continue;
+        const [mx, my] = end ? [w.bx, w.by] : [w.ax, w.ay];
+        if (Math.hypot(this.x - mx, this.y - my) >= w.radius) continue;
+        const [tx, ty] = end ? [w.ax, w.ay] : [w.bx, w.by];
+        this.warps.push({ fromX: mx, fromY: my, toX: tx, toY: ty });
+        this.x = tx;
+        this.y = ty;
+        this.portal = id ^ 1;
+        return;
+      }
+    }
   }
 
   get inField(): boolean {

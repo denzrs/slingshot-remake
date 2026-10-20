@@ -39,7 +39,7 @@ export const truth: World = {
   ships: [{ x: 100, y: 400, alive: false }],
   planets: [{ x: 640, y: 520, radius: 25, mass: 18_000, seed: 1, style: 'rocky', tint: '#fff' }],
   holes: [],
-  nebulae: [],
+  nebulae: [], wormholes: [],
 };
 export const visible: ExperimentalWorld = {
   ...FIELD, ships: truth.ships, shooter: 0, planetCount: 1,

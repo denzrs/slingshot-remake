@@ -19,6 +19,19 @@ export const PHYSICS = {
   CLASH_RADIUS: 7,
 } as const;
 
+/** The wormhole power-up: two mouths that carry a shot from one to the other, in both directions. */
+export const WORMHOLE = {
+  /** A shot whose centre comes this close to a mouth is carried through. */
+  RADIUS: 22,
+  /** Two portals closer than this overlap, and cannot be placed: centre to centre, the ovals' full height. */
+  GAP: 50,
+  /**
+   * The colour of a wormhole's portals: both portals of one wormhole share it, and each wormhole on the field has
+   * its own, so which portals belong together can be seen at once. The palette starts over after the last.
+   */
+  COLORS: ['#4db8ff', '#ff9d3a', '#5cf08a', '#ff5cd0', '#ffe14d', '#a98bff'],
+} as const;
+
 /** Physics constants that only the nebula power-up uses. */
 export const NEBULA = {
   /** Half a field across at most: a cloud big enough to fly through, small enough to miss. */

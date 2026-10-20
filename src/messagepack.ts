@@ -152,6 +152,8 @@ function isGameEvent(value: unknown): boolean {
       return index('player') && finite('x') && finite('y');
     case 'planetKiller':
       return index('player') && finite('x') && finite('y') && finite('radius');
+    case 'wormhole':
+      return index('player') && finite('x') && finite('y') && finite('toX') && finite('toY');
     case 'nebula':
       return index('player') && finite('x') && finite('y');
     case 'multiKill':

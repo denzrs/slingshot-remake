@@ -1,8 +1,8 @@
-import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS } from '../config';
+import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, WORMHOLE } from '../config';
 import type { Match, Scene } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
-import { aimDirection, inNebula, type World } from '../physics';
+import { aimDirection, inNebula, isWormholeJump, nextWormholeId, type Wormhole, type World } from '../physics';
 import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
@@ -13,7 +13,8 @@ import { Hud } from './hud';
 import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
 import { drawNebula } from './nebula';
-import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
+import { drawPortal, drawWormhole } from './wormhole';
+import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
   hud: boolean;
@@ -216,6 +217,8 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
+    // Each wormhole has a colour of its own, shared by its two portals.
+    for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
     const next = match.nextHoleRadius;
     if (next && primary && !scene.camera) drawDangerRing(ctx, primary, next, this.time);
   }
@@ -279,7 +282,7 @@ export class Renderer {
       ctx.strokeStyle = rgba(color, (r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2) * fade);
       ctx.lineWidth = r === 0 ? 1.6 : 1;
       ctx.setLineDash(r === 0 ? [] : [1.5, 4]);
-      strokePolyline(ctx, t.points);
+      strokePolyline(ctx, t.points, match.world.wormholes);
     }
     ctx.setLineDash([]);
 
@@ -289,7 +292,7 @@ export class Renderer {
       const shot = vs.shot;
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
-      strokePolyline(ctx, vs.trail);
+      strokePolyline(ctx, vs.trail, match.world.wormholes);
       if (shot.end) continue;
       if (shot.inField) {
         const owner = match.players[vs.owner];
@@ -479,7 +482,8 @@ export class Renderer {
     if (scene.placement?.target && scene.placement.kind !== 'planetkiller') {
       const { owner, kind, target } = scene.placement;
       const from = match.world.ships[owner];
-      const color = kind === 'teleport' ? match.players[owner].color : POWER_UP_COLORS[kind];
+      const nextWormhole = nextWormholeId(match.world);
+      const color = kind === 'teleport' ? match.players[owner].color : kind === 'wormhole' ? portalColor(nextWormhole) : POWER_UP_COLORS[kind];
       ctx.save();
       ctx.strokeStyle = color;
       ctx.globalAlpha = 0.6;
@@ -502,6 +506,39 @@ export class Renderer {
         ctx.beginPath();
         ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
         ctx.fill();
+      } else if (kind === 'wormhole') {
+        // The portal being set is a ghost of itself. Once the first is set it stays on the field, solid, with a
+        // thread to the second being aimed, in the colour the pair will have. A portal cannot overlap another:
+        // the ghost then turns red and says so, because the click would do nothing.
+        const first = scene.placement.first;
+        const facing = first ? Math.atan2(target.y - first.y, target.x - first.x) : Math.atan2(target.y - from.y, target.x - from.x);
+        const blocked = !!scene.placement.blocked;
+        if (first) {
+          ctx.save();
+          ctx.globalAlpha = blocked ? 0.5 : 0.25;
+          ctx.strokeStyle = blocked ? '#ff5c5c' : color;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 6]);
+          ctx.beginPath();
+          ctx.moveTo(first.x, first.y);
+          ctx.lineTo(target.x, target.y);
+          ctx.stroke();
+          ctx.restore();
+          drawPortal(ctx, first.x, first.y, facing, WORMHOLE.RADIUS, color, this.time);
+        }
+        drawPortal(ctx, target.x, target.y, first ? facing + Math.PI : facing, WORMHOLE.RADIUS, color, this.time, blocked ? 0.3 : 0.7, 1);
+        ctx.globalAlpha = 1;
+        ctx.font = `700 11px ${FONTS.mono}`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = blocked ? '#ff5c5c' : color;
+        // The labels sit on the far side of each portal from the other, so two close ones do not overprint.
+        const side = first && target.y >= first.y ? 1 : -1;
+        const reach = WORMHOLE.RADIUS * 1.12 + 10;
+        ctx.fillText(t(blocked ? 'powerup.wormholeClose' : first ? 'powerup.wormholeSecond' : 'powerup.wormholeFirst').toUpperCase(), target.x, target.y + side * reach);
+        if (first) {
+          ctx.fillStyle = color;
+          ctx.fillText(t('powerup.wormholeFirst').toUpperCase(), first.x, first.y - side * reach);
+        }
       } else if (kind === 'nebula') {
         // The reach of the cloud as a plain ring: it must not wobble while the aim moves. The cloud that
         // lands gets its own random outline (its seed is drawn when it is laid).
@@ -812,10 +849,14 @@ function easeOutBack(t: number): number {
   return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
 }
 
-function strokePolyline(ctx: CanvasRenderingContext2D, pts: number[]): void {
+function strokePolyline(ctx: CanvasRenderingContext2D, pts: number[], wormholes: readonly Wormhole[] = []): void {
   if (pts.length < 4) return;
   ctx.beginPath();
   ctx.moveTo(pts[0], pts[1]);
-  for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+  for (let i = 2; i < pts.length; i += 2) {
+    // The segment between the two mouths of a wormhole is no flight: the line breaks there.
+    if (wormholes.length && isWormholeJump(pts, i, wormholes)) ctx.moveTo(pts[i], pts[i + 1]);
+    else ctx.lineTo(pts[i], pts[i + 1]);
+  }
   ctx.stroke();
 }

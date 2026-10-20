@@ -1,3 +1,4 @@
+import { WORMHOLE } from '../config';
 import type { PowerUpKind } from '../powerups';
 
 /**
@@ -14,7 +15,11 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   planetkiller: '#ff5c5c',
   nebula: '#9be7ff',
   piercing: '#dfe7f5',
+  wormhole: '#4db8ff',
 };
+
+/** The colour of the portals of the wormhole with this id (the palette starts over after the last colour). */
+export const portalColor = (id: number): string => WORMHOLE.COLORS[id % WORMHOLE.COLORS.length];
 
 /** Draws a power-up's symbol centred on (x, y), about `r` in size, in the current stroke and fill style. */
 export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKind, x: number, y: number, r: number): void {
@@ -132,6 +137,23 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
       ctx.arc(x + px * r, y + py * r, r * 0.07, 0, Math.PI * 2);
     }
     ctx.fill();
+  } else if (kind === 'wormhole') {
+    // Two portals, alike, set diagonally and tilted to face each other: each a doorway ring with a second ring
+    // inside it, like looking down a tunnel.
+    ctx.save();
+    for (const [dx, dy] of [[-0.52, 0.4], [0.52, -0.4]] as const) {
+      const cx = x + dx * r;
+      const cy = y + dy * r;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r * 0.36, r * 0.78, -0.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha *= 0.55;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r * 0.16, r * 0.42, -0.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha /= 0.55;
+    }
+    ctx.restore();
   } else if (kind === 'piercing') {
     // A round through armor plate: the plate broken where it went, splinters flying, the head out the far side.
     ctx.beginPath();

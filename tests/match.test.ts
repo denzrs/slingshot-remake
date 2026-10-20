@@ -83,7 +83,7 @@ describe('classic match', () => {
       planets: [],
       ships: [{ x: 100, y: 400, alive: true }, { x: 1100, y: 400, alive: true }, { x: 640, y: 700, alive: true }],
       holes: [],
-      nebulae: [],
+      nebulae: [], wormholes: [],
       version: 0,
     };
     host.setPlayerAim(host.current, 17, 75);
