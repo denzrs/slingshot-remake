@@ -74,15 +74,6 @@ function sizes(touch: boolean) {
 const MIN_SCALE = 0.9;
 const scaleOf = (f: OracleFrame) => Math.max(f.k, MIN_SCALE);
 
-/**
- * Height (in HUD units, times the scale) from the field's bottom edge up to above the tallest card the
- * oracle can have on screen there. Keep in step with `plan`.
- */
-export function oracleReserve(k: number, touch: boolean): number {
-  const z = sizes(touch);
-  return (z.gap + z.pad * 2 + z.head + z.choice + z.round + z.stake + 12) * Math.max(k, MIN_SCALE);
-}
-
 /** Every phase in which a question can be on screen. */
 const ASKING = new Set(['aiming', 'flying']);
 
@@ -105,7 +96,6 @@ export class OracleHud {
   /** Where the choices were drawn last frame, for taps. */
   private hits: Hit[] = [];
   /** Top edge of the card this frame, so a hint can stack above it. */
-  private top = Infinity;
   private mode: Mode = 'none';
   /** The round's card is a single row: there is no room under the scorecard for two. */
   private compact = false;
@@ -124,13 +114,7 @@ export class OracleHud {
   /** Called once per frame before anything is drawn. */
   begin(): void {
     this.hits = [];
-    this.top = Infinity;
     this.mode = 'none';
-  }
-
-  /** Where the card ends up at the top this frame; Infinity when nothing was drawn. */
-  get stackTop(): number {
-    return this.top;
   }
 
   /** Whether the card holds a question or a verdict: it has the bottom edge, so the usual hint steps aside. */
@@ -181,7 +165,6 @@ export class OracleHud {
     const w = Math.min(field.w - 32 * k, z.width * k);
     const h = height * k;
     this.card = { x: field.x + (field.w - w) / 2, y: field.y + field.h - (over ? z.gapOver : z.gap) * k - h, w, h };
-    this.top = this.card.y;
   }
 
   /** Draws the card `plan` has laid out. */

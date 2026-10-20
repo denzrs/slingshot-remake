@@ -32,7 +32,7 @@ export interface Settings {
   neighborGrace: number;
   /** Classic only: everybody aims, then all shots fly at once — as in Event Horizon — instead of one shot per turn. */
   simultaneousShots: boolean;
-  /** Experimental, Classic offline only: pickups float on the field, and a shot that flies past one takes it (preview, teleport or splitter). */
+  /** Pickups float on the field, and a shot that flies past one takes it (preview, teleport or splitter). */
   powerUps: boolean;
   /** Power-ups: the kinds that may turn up (never empty), and how many pickups lie on the field at once. */
   powerUpKinds: PowerUpKind[];
@@ -46,8 +46,6 @@ export interface Settings {
   sound: boolean;
   /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
   betting: boolean;
-  /** Eliminated players may shoot on the ghost lane while they wait (online, this device only). */
-  ghostLane: boolean;
   language: Lang;
   /** 0 = free for all, otherwise the number of teams (2 or 3). */
   teamMode: number;
@@ -77,7 +75,6 @@ export const DEFAULT_SETTINGS: Settings = {
   contours: true,
   particles: true,
   sound: true,
-  ghostLane: true,
   language: 'de',
   teamMode: 0,
   seatTeams: [0, 1, 0, 1, 0, 1],

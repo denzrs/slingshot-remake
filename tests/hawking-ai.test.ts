@@ -89,32 +89,30 @@ describe('Hawking production flight metrics', () => {
 
 describe('Hawking classic search', () => {
   for (const level of ['easy', 'medium', 'hard', 'hawking'] as const) {
-    for (const noiseFree of [false, true]) {
-      it(`${level} keeps searched and live power capped with noiseFree=${noiseFree}`, () => {
-        const world = emptyWorld();
-        world.ships[1] = { x: 170, y: 400, alive: true };
-        const ordinary = vi.spyOn(physics, 'simulateShot');
-        const styledFlight = vi.spyOn(physics, 'simulateStyledShot');
-        try {
-          for (const fixedPower of [null, 55, 5]) {
-            const aim = planShotNow(world, 0, {
-              level, rules: { ...rules, timeLimit: 0.3 }, attempt: 0,
-              fixedPower, maxPower: 10, effort: 0.03, noiseFree, optimizeHitPower: true, rng: createRng(90210),
-            });
-            const shot = new Shot(world, 0, aim.angle, aim.power, rules, true);
-            expect(shot.power).toBeLessThanOrEqual(10);
-            expect(shot.power).toBeGreaterThanOrEqual(0);
-            if (fixedPower !== null) expect(shot.power).toBe(Math.min(fixedPower, 10));
-          }
-          const calls = [...ordinary.mock.calls, ...styledFlight.mock.calls];
-          expect(calls.length).toBeGreaterThan(0);
-          for (const [, , , power] of calls) expect(power).toBeLessThanOrEqual(10);
-        } finally {
-          ordinary.mockRestore();
-          styledFlight.mockRestore();
+    it(`${level} keeps searched and live power capped`, () => {
+      const world = emptyWorld();
+      world.ships[1] = { x: 170, y: 400, alive: true };
+      const ordinary = vi.spyOn(physics, 'simulateShot');
+      const styledFlight = vi.spyOn(physics, 'simulateStyledShot');
+      try {
+        for (const fixedPower of [null, 55, 5]) {
+          const aim = planShotNow(world, 0, {
+            level, rules: { ...rules, timeLimit: 0.3 }, attempt: 0,
+            fixedPower, maxPower: 10, effort: 0.03, optimizeHitPower: true, rng: createRng(90210),
+          });
+          const shot = new Shot(world, 0, aim.angle, aim.power, rules, true);
+          expect(shot.power).toBeLessThanOrEqual(10);
+          expect(shot.power).toBeGreaterThanOrEqual(0);
+          if (fixedPower !== null) expect(shot.power).toBe(Math.min(fixedPower, 10));
         }
-      });
-    }
+        const calls = [...ordinary.mock.calls, ...styledFlight.mock.calls];
+        expect(calls.length).toBeGreaterThan(0);
+        for (const [, , , power] of calls) expect(power).toBeLessThanOrEqual(10);
+      } finally {
+        ordinary.mockRestore();
+        styledFlight.mockRestore();
+      }
+    });
   }
 
   it('keeps Hawking full-length style flights within a low power cap', () => {

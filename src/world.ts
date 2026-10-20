@@ -2,7 +2,7 @@ import { FIELD, HORIZON } from './config';
 import type { BlackHole, Planet, PlanetStyle, Ship, World } from './physics';
 import { createRng, intRange, pick, range, type Rng } from './rng';
 
-export const TINTS: Record<PlanetStyle, readonly string[]> = {
+const TINTS: Record<PlanetStyle, readonly string[]> = {
   rocky: ['#c9a77c', '#b8664a', '#a39a8a', '#c78f6d'],
   gas: ['#d8b98a', '#9c8bb5', '#c9a0a0', '#b7c28f'],
   ice: ['#9fc3d6', '#bcd3dc', '#8fb3b0'],

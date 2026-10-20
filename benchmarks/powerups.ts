@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
 import { Volley } from '../src/volley';
 
 /**
- * Measures the experimental power-ups: how many pickups a round sees, how many get taken and used by CPUs,
+ * Measures the power-ups: how many pickups a round sees, how many get taken and used by CPUs,
  * and how easy a pickup is to reach compared with hitting a ship. Run it before and after tuning the
  * constants in `src/powerups.ts`:
  *

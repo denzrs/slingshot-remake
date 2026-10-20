@@ -22,9 +22,8 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 | ← → / 1–5, 0 | Oracle, once you are shot down online: tip hit or miss (turn by turn) / name the ship that gets hit, or 0 for nobody. You can also tap the choices or the ships |
 | Shift + 1–5, 0 | Oracle, who wins the round: the ship still in (0 for a draw, where one is possible). You can also tap it |
 | B / Shift + B | Oracle, bet points of the match on your tip on the round: the smaller / the larger stake. You can also tap the stake |
-| G | Open or close the ghost lane, once you are shot down online. While it is open ← → ↑ ↓ aim and Enter / Space fire (or drag on the panel), E makes the panel bigger or smaller (or the button in its header); the oracle's ← → tips wait until you close it |
 | Esc | Menu |
-| P | Use your power-up (experimental, offline Classic and Event Horizon): open or close the aim of a teleport, a black hole, a planet killer or a nebula, or arm a preview or a repulse for your next shot |
+| P | Use your power-up (Classic and Event Horizon): open or close the aim of a teleport, a black hole, a planet killer or a nebula, or arm a preview or a repulse for your next shot |
 | F | Fullscreen |
 | ↑ ↓ ← → Enter (in menus) | Pick a row, change its value (sliders, switches and lists alike), confirm. Home / End jump a slider to its ends; Esc goes back to the row you came from |
 
@@ -55,7 +54,7 @@ The Players screen offers four CPUs, in this order:
 | Kepler, Newton, Einstein | Easy, medium and hard. They search for a hitting shot and aim with an error that shrinks with every shot of a round. Kepler favours whoever is nearest; Newton wastes no power and holds the longest grudge, aiming back at whoever shot it last; Einstein is the most precise and, with power-ups on, angles its shot to sweep up a pickup on the way even when it misses. |
 | Hawking | Searches like Einstein, with the same aim error, but prefers swing-bys. Enemy hits come first, and self-hit and friendly-hit safety is preserved. Among comparable safe shots it prefers more swing-by passes, then longer flights and paths within the full configured flight limit – also in Classic when trick-shot bonuses are off. |
 
-New CPU seats start as Newton. In an online room the host seats CPUs in the same way (see [multiplayer.md](multiplayer.md)). A further CPU that fits gravity from its own completed shots exists for benchmarks and programmatic matches; it is not offered in the game (see the [AI benchmark](benchmarks/README.md)).
+New CPU seats start as Newton. In an online room the host seats CPUs in the same way (see [multiplayer.md](multiplayer.md)).
 
 ### Power-ups
 

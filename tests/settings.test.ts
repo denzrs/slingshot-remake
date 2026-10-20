@@ -4,7 +4,7 @@ import { AIM } from '../src/config';
 import { POWER_UP, POWER_UP_KINDS } from '../src/powerups';
 import { activeSeats, addSeat, cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings, startPower } from '../src/settings';
 
-const CPU_LEVELS: CpuLevel[] = ['easy', 'medium', 'hard', 'hawking', 'experimental', 'experimental-easy', 'experimental-medium', 'experimental-hard'];
+const CPU_LEVELS: CpuLevel[] = ['easy', 'medium', 'hard', 'hawking'];
 
 function storage(initial?: Record<string, unknown>): void {
   const values = new Map<string, string>();
@@ -102,20 +102,5 @@ describe('power-up choices', () => {
     const copy = cloneSettings(DEFAULT_SETTINGS);
     copy.powerUpKinds.pop();
     expect(DEFAULT_SETTINGS.powerUpKinds).toEqual(POWER_UP_KINDS);
-  });
-});
-
-describe('ghost lane setting', () => {
-  it('is on by default, also for settings saved before it existed', () => {
-    storage({ sound: false });
-    expect(loadSettings().ghostLane).toBe(true);
-  });
-
-  it('keeps the choice after saving and reloading', () => {
-    storage();
-    const settings = cloneSettings(DEFAULT_SETTINGS);
-    settings.ghostLane = false;
-    saveSettings(settings);
-    expect(loadSettings().ghostLane).toBe(false);
   });
 });

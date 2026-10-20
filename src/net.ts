@@ -7,7 +7,7 @@ import { packWireMessage, unpackWireMessage } from './messagepack';
 
 export type RoomMode = 'ffa' | 'team';
 export type NetworkGameMode = 'classic' | 'horizon';
-/** The level of a CPU seat in an online room: the offline CPUs (the experimental ones are not offered online). */
+/** The level of a CPU seat in an online room: the same CPUs as offline. */
 export type NetworkCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
 
 /** The rules of an online game; a subset of the local `Settings`, so it can be spread straight into them. */

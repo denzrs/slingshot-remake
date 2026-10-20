@@ -23,8 +23,6 @@ export interface DrawOptions {
   touch: boolean;
   /** A clip is being recorded right now. */
   recording: boolean;
-  /** Eliminated and waiting: point at the ghost lane. */
-  ghostTeaser: boolean;
   /** Show the key caps in the oracle's choices. */
   keyHints: boolean;
 }
@@ -79,16 +77,6 @@ export class Renderer {
   oracleHit(clientX: number, clientY: number): OracleTap | null {
     const rect = this.canvas.getBoundingClientRect();
     return this.hud.oracleHit(clientX - rect.left, clientY - rect.top);
-  }
-
-  /** Pixels from the window's bottom edge up to above everything the oracle can draw there. */
-  oracleClearance(touch: boolean): number {
-    return this.hud.oracleClearance(this.view, touch);
-  }
-
-  /** Pixels from the window's top edge down to below the scoreboard. */
-  clearanceTop(): number {
-    return this.hud.clearanceTop(this.view);
   }
 
   /** Convert a pointer position (client px) into field coordinates. */
@@ -366,7 +354,7 @@ export class Renderer {
     match.world.defenses.forEach((d, i) => drawInterception(ctx, match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, defenseView(scene.volley?.shots ?? [], d, i), this.time));
   }
 
-  /** Experimental power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */
+  /** Power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */
   private drawPowerUps(match: Match, scene: Scene): void {
     const { ctx } = this;
     const pulse = 0.5 + 0.5 * Math.sin(this.time * 5);
