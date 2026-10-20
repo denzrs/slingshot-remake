@@ -637,11 +637,6 @@ export class HorizonMatch extends Match {
     for (const gone of eaten) this.emit({ type: 'pickupFade', kind: gone.kind, x: hole.x, y: hole.y });
     this.pickups = this.pickups.filter((pickup) => !eaten.includes(pickup));
     this.power.sweep();
-    this.advanceExperimentalField(
-      [...c.planets].filter(([, drift]) => drift.lost).map(([id]) => id),
-      HORIZON.MASS_PER_VOLLEY,
-      HORIZON.FEED,
-    );
 
     for (const [id, d] of c.ships) {
       if (!d.lost) continue;

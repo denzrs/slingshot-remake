@@ -11,10 +11,6 @@
     "typecheck": "tsc --noEmit",
     "dev:server": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml",
     "build:server": "cargo build --locked --release --manifest-path server/Cargo.toml",
-    "bench:experimental": "tsx benchmarks/ai-matrix.ts",
-    "bench:levels": "tsx benchmarks/level-matrix.ts",
-    "bench:learning": "tsx benchmarks/learning-validation.ts",
-    "bench:calibration": "tsx benchmarks/ai-calibration.ts",
     "bench:relay": "tsx benchmarks/relay-perf.ts",
     "bench:powerups": "tsx benchmarks/powerups.ts",
     "bench:multikill": "tsx benchmarks/multi-kill.ts"

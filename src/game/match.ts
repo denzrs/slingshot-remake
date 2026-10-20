@@ -1,10 +1,8 @@
-import { advanceExperimentalWorld, createExperimentalLearner, measureReconstruction, observeExperimentalShot, planExperimentalShot, type ExperimentalDecision, type ExperimentalLearner, type ExperimentalRecoveryDiagnostics, type ExperimentalWorld, type GravityFit } from '../experimental-ai';
-import { ExperimentalWorkerCancelledError, ExperimentalWorkerClient } from '../experimental-worker-client';
-import { EXPERIMENTAL_PRESETS, isExperimentalCpu, planShot, type Aim, type CpuDecision, type CpuLevel, type ExperimentalCpuConfig } from '../ai';
+import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../ai';
 import type { Avatar } from '../avatars';
 import { AIM, COLORS, FIELD, GRACE, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
-import { normalizeAngle, type ShotEnd, type ShotGate, type ShotRules, type StyleKind, type World } from '../physics';
+import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
 import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings';
@@ -55,9 +53,6 @@ export interface Trail {
   fan?: number;
   /** Flat [x0, y0, x1, y1, …] polyline in field units. */
   points: number[];
-  /** Launch aim, used by the experimental CPU to fit gravity from completed shots. */
-  angle?: number;
-  power?: number;
   /** Volley the shot belonged to (Event Horizon), so old ones can be dropped. */
   volley: number;
   /** Match clock when the shot ended, for fading trails. */
@@ -156,28 +151,6 @@ export type GameEvent =
   | { type: 'roundEnd' }
   | { type: 'gameOver' };
 
-/** Diagnostics from planning; actual gravity is used only to score reconstruction after planning. */
-export interface ExperimentalReport {
-  mode: Mode;
-  round: number;
-  player: number;
-  shot: number;
-  learningRate: number;
-  /** Public initial belief, independent of evidence assimilated at learningRate. */
-  startingKnowledge: number;
-  observedShots: number;
-  learnedShots: number;
-  retainedShots: number;
-  samples: number;
-  /** Previous completed shot's pre-update validation; not a forecast of this launch. */
-  predictionRms: number | null;
-  predictionSamples: number;
-  fitMs: number;
-  decision: ExperimentalDecision;
-  relativeGravityMapRms: number;
-  /** Optional additive diagnostics; absent in historical schema-3 records. */
-  recovery?: ExperimentalRecoveryDiagnostics;
-}
 /** Selected launch and simulated outcome for one normal CPU decision. */
 export interface CpuDecisionReport extends CpuDecision {
   mode: Mode;
@@ -186,37 +159,6 @@ export interface CpuDecisionReport extends CpuDecision {
   shot: number;
 }
 
-
-/** Post-ingestion evidence state; prediction validates this shot against the pre-update fit. */
-export interface ExperimentalObservationReport {
-  learningRate: number;
-  startingKnowledge: number;
-  observedShots: number;
-  learnedShots: number;
-  retainedShots: number;
-  samples: number;
-  predictionRms: number | null;
-  predictionSamples: number;
-  fitMs: number;
-  recovery?: ExperimentalRecoveryDiagnostics;
-}
-
-/** Authoritative result of a real shot, never a visual extrapolation or killcam replay. */
-export interface CompletedShotReport {
-  mode: Mode;
-  round: number;
-  player: number;
-  shot: number;
-  /** Index within the launched volley, distinct from the player's round shot ordinal. */
-  volleyShot: number;
-  hitRelation: 'enemy' | 'friendly' | 'self' | null;
-  outcome: ShotEnd['kind'];
-  end: ShotEnd;
-  hitShip: number | null;
-  elapsed: number;
-  /** Own real-flight observation, captured before any following planning or field transition. */
-  experimentalObservation: ExperimentalObservationReport | null;
-}
 
 export interface MatchOptions {
   /** Attract mode (title screen): rounds continue on their own, forever. */
@@ -235,18 +177,10 @@ export interface MatchOptions {
   oracle?: boolean;
   /** Reproducible multi-round worlds, independent of planner random consumption. */
   seed?: number;
-  /** Custom experimental evidence rate only: finite values clamp to [0, 1], nonfinite values use 0, omitted uses 1. */
-  experimentalLearningRate?: number;
-  /** Custom experimental public prior only: finite values clamp to [0, 1], nonfinite values use 0, omitted uses 1. */
-  experimentalStartingKnowledge?: number;
   /** Finish CPU generators without a wall-clock budget, for deterministic simulation. */
   deterministicCpu?: boolean;
-  /** Inject a worker client for hosts that provide their own Worker implementation. */
-  experimentalWorkerClient?: () => ExperimentalWorkerClient;
-  onExperimentalDecision?: (report: ExperimentalReport) => void;
   /** Receives normal CPU planner decisions; console logging can also enable this path. */
   onCpuDecision?: (report: CpuDecisionReport) => void;
-  onShotComplete?: (report: CompletedShotReport) => void;
 }
 
 export interface CpuJob {
@@ -307,16 +241,8 @@ export abstract class Match {
   private readonly matchSeed: number;
   private worldRng: Rng;
   private plannerRngs = new Map<number, Rng>();
-  private experimentalLearners = new Map<number, ExperimentalLearner>();
-  private experimentalWorlds = new Map<number, ExperimentalWorld>();
-  private flightObservation: ExperimentalWorld | null = null;
-  private experimentalWorker: ExperimentalWorkerClient | null = null;
-  private experimentalGeneration = 0;
-  private experimentalPending = new Set<number>();
-  private experimentalError: Error | null = null;
   /** Who hit each player last — CPUs with a grudge aim back at them. */
   private lastHitBy = new Map<number, number>();
-  private flightPending = false;
   /** Phase time when the current volley finished, replicated so online guests keep the same post-flight delay. */
   protected flightDoneAt: number | null = null;
   /** What the volley in the air has destroyed so far — the oracle's verdict is read from it. */
@@ -384,40 +310,17 @@ export abstract class Match {
     this.listeners.push(listener);
   }
 
-  /** Release the fitting worker when this match leaves the application. */
+  /** Stop this match for good when it leaves the application. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.resetExperimentalState();
-    this.experimentalWorker?.dispose();
-    this.experimentalWorker = null;
+    this.resetFlight();
     this.listeners.length = 0;
   }
 
-  private resetExperimentalState(): void {
-    this.experimentalGeneration++;
-    this.experimentalWorker?.reset();
-    this.experimentalPending.clear();
-    this.experimentalLearners.clear();
-    this.experimentalWorlds.clear();
-    this.experimentalError = null;
-    this.flightPending = false;
+  private resetFlight(): void {
     this.flightDoneAt = null;
-    this.flightObservation = null;
     this.cpuJobs.clear();
-  }
-
-  private workerForFitting(): ExperimentalWorkerClient | null {
-    if (this.options.deterministicCpu || this.disposed) return null;
-    if (!this.experimentalWorker && (this.options.experimentalWorkerClient || typeof Worker !== 'undefined')) {
-      this.experimentalWorker = this.options.experimentalWorkerClient?.() ?? new ExperimentalWorkerClient();
-    }
-    return this.experimentalWorker;
-  }
-
-  private failExperimental(error: unknown, generation: number): void {
-    if (generation !== this.experimentalGeneration || error instanceof ExperimentalWorkerCancelledError) return;
-    this.experimentalError = error instanceof Error ? error : new Error(String(error));
   }
 
   /** Dispatch authoritative events on clients that do not run the simulation. */
@@ -750,7 +653,6 @@ export abstract class Match {
     this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
     this.plannerRngs.clear();
     this.lastHitBy.clear();
-    this.experimentalLearners.clear();
     const seats = this.options.seats ?? this.settings.seats;
     const taken = seats.flatMap((seat, i) => (seat === 'off' ? [] : [{ seat: i, kind: seat }]));
     const teams = this.attract ? null : (this.options.teams ?? seatTeamsFor(this.settings, taken.map((s) => s.seat)));
@@ -776,7 +678,7 @@ export abstract class Match {
   }
 
   startRound(): void {
-    this.resetExperimentalState();
+    this.resetFlight();
     // The chain counts a round's kills: several in one turn (a splitter's forks, an armor-piercing round) or
     // one per turn adding up. A new round starts everyone over, so no round opens with a chain carried in.
     this.killChain.clear();
@@ -859,7 +761,6 @@ export abstract class Match {
 
   update(dt: number): void {
     if (this.disposed) return;
-    if (this.experimentalError) throw this.experimentalError;
     this.clock += dt;
     this.phaseTime += dt;
     if (this.notice && this.clock - this.notice.at > 1.4) this.notice = null;
@@ -871,7 +772,6 @@ export abstract class Match {
   // ————————————————————————————— Flight —————————————————————————————
 
   protected launch(aims: VolleyAim[], trackStyle: boolean): void {
-    this.flightObservation = this.observedWorld(aims[0]?.player ?? 0);
     this.oracle.lock();
     this.oracleKills = [];
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
@@ -892,7 +792,7 @@ export abstract class Match {
   }
 
   private updateFlight(dt: number): void {
-    if (this.flightPending || !this.volley) return;
+    if (!this.volley) return;
     const volley = this.volley;
     this.simClock += dt * this.flightSpeed;
     while (this.simClock >= PHYSICS.DT && !volley.done) {
@@ -903,20 +803,12 @@ export abstract class Match {
     if (!volley.done) return;
     this.flightDoneAt ??= this.phaseTime;
     if (this.phaseTime - this.flightDoneAt < this.afterVolleyDelay) return;
-    this.flightPending = true;
-    const generation = this.experimentalGeneration;
-    const finish = (): void => {
-      if (generation !== this.experimentalGeneration || this.volley !== volley || this.disposed) return;
-      this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, fan: vs.fan, points: vs.trail, angle: vs.shot.angle, power: vs.shot.power, volley: this.volleyNumber, at: this.clock })));
-      this.volley = null;
-      this.flightPending = false;
-      this.power.onVolleyEnd();
-      this.judgeOracle();
-      this.afterVolley();
-    };
-    const completion = this.completeShots(volley);
-    if (completion) completion.then(finish, (error: unknown) => this.failExperimental(error, generation));
-    else finish();
+    this.recordFlights(volley);
+    this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, fan: vs.fan, points: vs.trail, volley: this.volleyNumber, at: this.clock })));
+    this.volley = null;
+    this.power.onVolleyEnd();
+    this.judgeOracle();
+    this.afterVolley();
   }
 
   /**
@@ -937,7 +829,7 @@ export abstract class Match {
 
   /** A fresh snapshot replaced the state: the extrapolation starts over from it. */
   protected restarted(): void {
-    this.resetExperimentalState();
+    this.resetFlight();
     this.simClock = 0;
   }
 
@@ -1147,28 +1039,6 @@ export abstract class Match {
 
   // ————————————————————————————— CPU —————————————————————————————
 
-  private experimentalConfigFor(id: number): Readonly<ExperimentalCpuConfig> {
-    const level = this.players[id].cpu;
-    if (!isExperimentalCpu(level)) throw new Error('Experimental configuration requires an experimental CPU');
-    if (level !== 'experimental') return EXPERIMENTAL_PRESETS[level];
-    const rate = this.options.experimentalLearningRate ?? 1;
-    const knowledge = this.options.experimentalStartingKnowledge ?? 1;
-    return {
-      learningRate: Number.isFinite(rate) ? Math.min(1, Math.max(0, rate)) : 0,
-      startingKnowledge: Number.isFinite(knowledge) ? Math.min(1, Math.max(0, knowledge)) : 0,
-    };
-  }
-
-  private learnerFor(id: number): ExperimentalLearner {
-    let learner = this.experimentalLearners.get(id);
-    if (!learner) {
-      learner = createExperimentalLearner(this.experimentalConfigFor(id).startingKnowledge);
-      this.experimentalLearners.set(id, learner);
-      this.experimentalWorlds.set(id, this.observedWorld(id));
-    }
-    return learner;
-  }
-
   private plannerRngFor(id: number): Rng {
     let rng = this.plannerRngs.get(id);
     if (!rng) {
@@ -1176,119 +1046,6 @@ export abstract class Match {
       this.plannerRngs.set(id, rng);
     }
     return rng;
-  }
-
-  /** Only public geometry, never density, mass, or render-history dependent evidence. */
-  protected observedWorld(shooter: number): ExperimentalWorld {
-    const hole = this.world.holes[0] ?? null;
-    return {
-      width: this.world.width,
-      height: this.world.height,
-      ships: this.world.ships.map((ship) => ({ ...ship })),
-      shooter,
-      planetCount: this.world.planets.length,
-      visiblePlanets: this.hiddenPlanets ? undefined : this.world.planets.map(({ seed, x, y, radius }) => ({ id: seed, x, y, radius })),
-      visibleHole: hole ? { x: hole.x, y: hole.y, radius: hole.radius } : undefined,
-      hasHole: hole !== null,
-      holeRadius: hole?.radius ?? 0,
-      mode: this.mode === 'horizon' ? 'horizon' : 'classic',
-      epoch: this.world.version,
-      rules: { bounce: this.rules.bounce },
-      shots: [],
-    };
-  }
-
-  protected advanceExperimentalField(swallowedPlanetIds: readonly number[], holeMassGain: number, feed: number): void {
-    const worker = this.experimentalLearners.size ? this.workerForFitting() : null;
-    const generation = this.experimentalGeneration;
-    for (const [id, learner] of this.experimentalLearners) {
-      const world = this.observedWorld(id);
-      const transition = { swallowedPlanetIds, holeMassGain, feed };
-      if (!worker) {
-        advanceExperimentalWorld(learner, world, transition);
-        this.experimentalWorlds.set(id, world);
-        continue;
-      }
-      this.experimentalPending.add(id);
-      const previousWorld = this.experimentalWorlds.get(id);
-      this.experimentalWorlds.set(id, world);
-      worker.advance(id, world, transition, this.experimentalConfigFor(id).startingKnowledge, previousWorld).then((updated) => {
-        if (generation !== this.experimentalGeneration || this.disposed) return;
-        this.experimentalLearners.set(id, updated);
-        this.experimentalPending.delete(id);
-      }, (error: unknown) => this.failExperimental(error, generation));
-    }
-  }
-
-  private observationReport(learner: ExperimentalLearner): ExperimentalObservationReport {
-    return {
-      learningRate: learner.learningRate,
-      startingKnowledge: learner.startingKnowledge,
-      observedShots: learner.observedShots,
-      learnedShots: learner.learnedShots,
-      retainedShots: learner.retainedShots ?? learner.evidence.length,
-      samples: learner.samples,
-      predictionRms: learner.predictionRms,
-      predictionSamples: learner.predictionSamples,
-      fitMs: learner.fitMs,
-      ...(learner.recovery ? { recovery: { ...learner.recovery, sampleCounts: [...learner.recovery.sampleCounts], retainedShotIds: [...learner.recovery.retainedShotIds] } } : {}),
-    };
-  }
-
-  private completeShots(volley: Volley): Promise<void> | null {
-    const worker = volley.shots.some((vs) => isExperimentalCpu(this.players[vs.owner].cpu)) ? this.workerForFitting() : null;
-    const generation = this.experimentalGeneration;
-    const reports: CompletedShotReport[] = [];
-    const fits: Promise<void>[] = [];
-    for (const [index, vs] of volley.shots.entries()) {
-      const end = vs.shot.end;
-      if (!end) continue;
-      const player = this.players[vs.owner];
-      const report: CompletedShotReport = {
-        mode: this.mode,
-        round: this.round,
-        player: vs.owner,
-        shot: player.shots,
-        volleyShot: index,
-        hitRelation: end.kind !== 'ship' ? null : end.ship === vs.owner ? 'self' : this.friendsOf(vs.owner).includes(end.ship) ? 'friendly' : 'enemy',
-        outcome: end.kind,
-        end: { ...end },
-        hitShip: end.kind === 'ship' ? end.ship : null,
-        elapsed: vs.shot.time,
-        experimentalObservation: null,
-      };
-      reports.push(report);
-      if (!isExperimentalCpu(player.cpu) || !this.flightObservation) continue;
-      const shot = { shotId: player.shots, points: vs.trail, angle: vs.shot.angle, power: vs.shot.power };
-      const world = { ...this.flightObservation, shooter: vs.owner };
-      const config = this.experimentalConfigFor(vs.owner);
-      if (worker) {
-        this.experimentalPending.add(vs.owner);
-        this.experimentalWorlds.set(vs.owner, world);
-        fits.push(worker.submit(vs.owner, shot, world, config.learningRate, config.startingKnowledge).then((learner) => {
-          if (generation !== this.experimentalGeneration || this.disposed) return;
-          this.experimentalLearners.set(vs.owner, learner);
-          this.experimentalPending.delete(vs.owner);
-          report.experimentalObservation = this.observationReport(learner);
-        }));
-      } else {
-        const learner = this.learnerFor(vs.owner);
-        observeExperimentalShot(learner, shot, world, config.learningRate);
-        report.experimentalObservation = this.observationReport(learner);
-      }
-    }
-    const publish = (): void => {
-      if (generation !== this.experimentalGeneration || this.disposed) return;
-      this.recordFlights(volley);
-      this.flightObservation = null;
-      for (const report of reports) {
-        if (generation !== this.experimentalGeneration || this.disposed) return;
-        this.options.onShotComplete?.(report);
-      }
-    };
-    if (fits.length) return Promise.all(fits).then(publish);
-    publish();
-    return null;
   }
 
   /**
@@ -1352,7 +1109,7 @@ export abstract class Match {
     const logDecisions = (typeof process !== 'undefined' && process.env.AI_DECISION_LOGS === '1')
       || import.meta.env?.VITE_AI_DECISION_LOGS === '1';
     for (const id of ids) {
-      if (this.cpuJobs.has(id) || this.experimentalPending.has(id)) continue;
+      if (this.cpuJobs.has(id)) continue;
       const p = this.players[id];
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
       // An armed repulse pushes this CPU's shot away from the planets, so the plan has to fly it that way.
@@ -1365,45 +1122,31 @@ export abstract class Match {
             .filter((pickup) => !CPU_IGNORES[pickup.kind])
             .map((pickup) => ({ x: pickup.x, y: pickup.y, r: POWER_UP.PICKUP_RADIUS }))
         : [];
-      const planner = isExperimentalCpu(p.cpu)
-        ? planExperimentalShot(this.observedWorld(id), {
-            rules: this.rules,
-            attempt: p.shots,
-            fixedPower: this.settings.fixedPower ? startPower(this.settings) : null,
-            maxPower: this.settings.maxPower,
-            rng: this.plannerRngFor(id),
-            effort,
-            lookahead,
-            friends,
-            learner: this.learnerFor(id),
-            learningRate: this.experimentalConfigFor(id).learningRate,
-            pull,
-          }, (fit, decision) => this.logGravityFit(id, fit, decision))
-        : planShot(this.world, id, {
-            rules: this.rules,
-            level: p.cpu ?? 'medium',
-            attempt: p.shots,
-            fixedPower: this.settings.fixedPower ? startPower(this.settings) : null,
-            maxPower: this.settings.maxPower,
-            rng: this.plannerRngFor(id),
-            effort,
-            lookahead,
-            friends,
-            pull,
-            pierce,
-            pickups,
-            grudgeTarget: this.lastHitBy.get(id) ?? null,
-            // A CPU holding a teleport also wants to know whether it found a hitting shot at all.
-            ...(logDecisions || this.options.onCpuDecision || (this.powerUps && p.powerUp === 'teleport')
-              ? {
-                  onDecision: (decision) => {
-                    const job = this.cpuJobs.get(id);
-                    if (job) job.blind = decision.hitCandidates === 0;
-                    if (logDecisions || this.options.onCpuDecision) this.logCpuDecision(id, decision, logDecisions);
-                  },
-                }
-              : {}),
-          });
+      const planner = planShot(this.world, id, {
+        rules: this.rules,
+        level: p.cpu ?? 'medium',
+        attempt: p.shots,
+        fixedPower: this.settings.fixedPower ? startPower(this.settings) : null,
+        maxPower: this.settings.maxPower,
+        rng: this.plannerRngFor(id),
+        effort,
+        lookahead,
+        friends,
+        pull,
+        pierce,
+        pickups,
+        grudgeTarget: this.lastHitBy.get(id) ?? null,
+        // A CPU holding a teleport also wants to know whether it found a hitting shot at all.
+        ...(logDecisions || this.options.onCpuDecision || (this.powerUps && p.powerUp === 'teleport')
+          ? {
+              onDecision: (decision) => {
+                const job = this.cpuJobs.get(id);
+                if (job) job.blind = decision.hitCandidates === 0;
+                if (logDecisions || this.options.onCpuDecision) this.logCpuDecision(id, decision, logDecisions);
+              },
+            }
+          : {}),
+      });
       this.cpuJobs.set(id, { planner, target: null, settle: 0 });
     }
     const deadline = this.options.deterministicCpu ? 0 : performance.now() + budgetMs;
@@ -1438,68 +1181,6 @@ export abstract class Match {
   protected cpuJob(id: number): CpuJob | undefined {
     return this.cpuJobs.get(id);
   }
-  private logGravityFit(player: number, fit: GravityFit, decision: ExperimentalDecision): void {
-    const recovery = decision.recovery ?? fit.recovery;
-    const logsEnabled = (typeof process !== 'undefined' && process.env.EXPERIMENTAL_AI_LOGS === '1')
-      || import.meta.env?.VITE_EXPERIMENTAL_AI_LOGS === '1';
-    if (!logsEnabled && !this.options.onExperimentalDecision) return;
-    const reconstruction = measureReconstruction(this.world, fit);
-    const report: ExperimentalReport = {
-      mode: this.mode,
-      round: this.round,
-      player,
-      shot: this.players[player].shots + 1,
-      learningRate: decision.learningRate,
-      startingKnowledge: decision.startingKnowledge,
-      observedShots: decision.observedShots,
-      learnedShots: decision.learnedShots,
-      retainedShots: decision.retainedShots,
-      samples: fit.samples,
-      predictionRms: decision.predictionRms,
-      predictionSamples: decision.predictionSamples,
-      fitMs: fit.fitMs,
-      decision,
-      relativeGravityMapRms: reconstruction.relativeGravityRms,
-      ...(recovery ? { recovery: { ...recovery, sampleCounts: [...recovery.sampleCounts], retainedShotIds: [...recovery.retainedShotIds] } } : {}),
-    };
-    this.options.onExperimentalDecision?.(report);
-    const primaryHole = this.world.holes[0] ?? null;
-    if (logsEnabled) console.info('[AI experimental] decision', {
-      ...report,
-      fit: {
-        initialRms: fit.initialRms,
-        rms: fit.rms,
-        improvement: fit.improvement,
-        diagonalSensitivityProxy: fit.condition,
-        samples: fit.samples,
-        retainedShots: decision.retainedShots,
-        ...(report.recovery ? { recovery: report.recovery } : {}),
-      },
-      reconstruction: {
-        gravityRms: reconstruction.gravityRms,
-        relativeGravityErrorPercent: reconstruction.relativeGravityRms * 100,
-        realPlanetCount: this.world.planets.length,
-        estimatedPlanetCount: fit.planets.length,
-        planets: reconstruction.planetMatches.map(({ real, estimated, positionError, massError }) => ({
-          real: { x: real.x, y: real.y, mass: real.mass },
-          estimated: { ...estimated },
-          positionError,
-          massError,
-          massErrorPercent: real.mass === 0 ? null : massError / Math.abs(real.mass) * 100,
-        })),
-        realBlackHole: primaryHole ? { x: primaryHole.x, y: primaryHole.y, mass: primaryHole.mass } : null,
-        estimatedBlackHole: fit.holeMass === null ? null : {
-          x: fit.hole?.x ?? this.world.width / 2,
-          y: fit.hole?.y ?? this.world.height / 2,
-          mass: fit.holeMass,
-          massStandardDeviation: fit.holeMassStandardDeviation ?? null,
-        },
-        blackHoleMassErrorPercent: primaryHole && fit.holeMass !== null && primaryHole.mass !== 0
-          ? Math.abs(fit.holeMass - primaryHole.mass) / Math.abs(primaryHole.mass) * 100 : null,
-      },
-    });
-  }
-
   /** Swing a CPU's ship towards its chosen aim like a player would. True once it's there. */
   protected swingTowards(p: PlayerState, target: Aim, dt: number, speed = 1): boolean {
     const dA = ((target.angle - p.angle + 540) % 360) - 180;

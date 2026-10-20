@@ -8,20 +8,17 @@ import './style.css';
 import { Sound } from './audio';
 import { dailyChallenge, dateKey, isDateKey } from './challenge';
 import { ClipRecorder } from './clip';
-import { AIM, COLORS, FIELD, FONTS, GHOST, PHYSICS } from './config';
+import { AIM, COLORS, FIELD, FONTS, PHYSICS } from './config';
 import { recordRun } from './dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
 import type { OracleTap } from './render/oracle';
-import { GhostLane, ghostSeed } from './ghost';
 import { readInvite } from './invite';
 import { MultiplayerSession } from './multiplayer';
 import type { ClientInput } from './net';
-import { randomSeed } from './rng';
 import { inNebula } from './physics';
 import { POWER_UP } from './powerups';
 import { Effects } from './render/effects';
-import { GhostPanel } from './render/ghost';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './i18n';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
@@ -38,7 +35,6 @@ const overlay = document.querySelector<HTMLElement>('#overlay')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
 const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
-const ghostCanvas = document.querySelector<HTMLCanvasElement>('#ghost-lane')!;
 
 const settings = loadSettings();
 setLang(settings.language);
@@ -51,7 +47,6 @@ const effects = new Effects(settings.particles, reducedMotion);
 const renderer = new Renderer(canvas);
 const menu = new Menu(overlay, sound);
 const recorder = new ClipRecorder();
-const ghostPanel = new GhostPanel(ghostCanvas);
 
 /** The title screen plays an Event Horizon match between four CPUs behind the menu. */
 const attract = createMatch(
@@ -333,7 +328,6 @@ const app: App = {
     else void document.documentElement.requestFullscreen?.().catch(() => {});
   },
   isFullscreen: () => !!document.fullscreenElement,
-  ghostEgg: toggleEgg,
 };
 
 /** Replay the last killcam while recording the canvas, then download the video. */
@@ -351,217 +345,6 @@ function primaryAction(): void {
   else if (splitterInAir(match)) dispatchInput({ kind: 'fire' });
   else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
 }
-
-// ————————————————————————————— Ghost lane —————————————————————————————
-
-/**
- * The shooting range for a player who has been shot down online. One per round: its lanes are drawn
- * from a seed every screen derives from the round's world, so all ghosts fly the same ones.
- */
-interface GhostState {
-  match: Match;
-  round: number;
-  seed: number;
-  /** Built when the panel is first opened. */
-  lane: GhostLane | null;
-  open: boolean;
-  /** Seconds spent shot down and waiting, for the hint. */
-  waited: number;
-  /** The last result whose sound has played. */
-  heard: number;
-}
-let ghost: GhostState | null = null;
-/** The seed of the round on screen, taken the first frame a round is seen — before anything moves. */
-let roundSeed: { match: Match; round: number; seed: number } | null = null;
-
-/** While the match is in a killcam or between rounds, the lane waits: Enter and Space belong to the match then. */
-const GHOST_PAUSED: ReadonlySet<string> = new Set(['killcam', 'roundOver', 'gameOver']);
-
-/** The Easter egg: the same lane, played from the title screen (a little ghost next to the version). */
-let egg: { lane: GhostLane; heard: number } | null = null;
-/** The egg lives only while the title screen itself is showing: a sub-menu or the lobby gets its arrow keys back. */
-const eggActive = (): boolean => !!egg && screen === 'title' && !!overlay.querySelector('.screen--title');
-
-function toggleEgg(): void {
-  egg = egg ? null : { lane: new GhostLane(randomSeed()), heard: 0 };
-}
-
-/** The lane the keys and the pointer steer right now: the egg's, or the match's while its panel is up. */
-function steered(): GhostLane | null {
-  return eggActive() ? egg!.lane : ghostActive() ? ghost!.lane : null;
-}
-
-/** Plays the sound of a lane's latest result, once. */
-function hear(slot: { lane: GhostLane | null; heard: number }): void {
-  const result = slot.lane?.result;
-  if (!result || result.id === slot.heard) return;
-  slot.heard = result.id;
-  if (result.kind === 'cleared' || result.kind === 'chain') sound.combo();
-  else if (result.kind === 'out') sound.fizzle();
-}
-
-/** Whether the ghost panel is in its big size (a preference of this device, for the session). */
-let ghostBig = false;
-/** When the last blast made a sound, so a chain of rocks going up does not turn into one long buzz. */
-let lastPop = 0;
-
-/** The bangs of what blew up in the lane since the last frame: a pop for rocks, the real thing for bombs and planets. */
-function hearBlasts(events: readonly { kind: string }[]): void {
-  if (!events.length) return;
-  if (events.some((e) => e.kind === 'planet' || e.kind === 'bomb')) {
-    sound.explode();
-    lastPop = performance.now();
-  } else if (performance.now() - lastPop > 70) {
-    sound.impact();
-    lastPop = performance.now();
-  }
-}
-
-/** Whether the person at this screen is a human who has been shot down. */
-function shotDown(m: Match): boolean {
-  const me = m.viewer === null ? undefined : m.players[m.viewer];
-  return !!me && !me.alive && !me.cpu;
-}
-
-/** The panel is up, and the match leaves the keys to it. */
-function ghostActive(): boolean {
-  return !!ghost?.open && !!ghost.lane && !menu.isOpen && !GHOST_PAUSED.has(ghost.match.phase);
-}
-
-/** Shot down for a few seconds, the round still undecided and the panel closed: time to point at it. */
-function ghostTeaser(): boolean {
-  return !!ghost && !ghost.open && ghost.waited >= GHOST.TEASER_DELAY && !ghost.match.decided && !menu.isOpen && !GHOST_PAUSED.has(ghost.match.phase);
-}
-
-/** Opens or closes the panel. It only opens while the round is undecided. */
-function toggleGhost(): void {
-  if (!ghost) return;
-  if (ghost.open) ghost.open = false;
-  else if (!ghost.match.decided && !GHOST_PAUSED.has(ghost.match.phase)) {
-    ghost.lane ??= new GhostLane(ghost.seed);
-    ghost.open = true;
-  }
-}
-
-/** Once per frame: who gets a lane, when the round changes, and the clock of the lane itself. */
-function updateGhost(dt: number): void {
-  const m = match;
-  if (m && screen === 'play' && online()) {
-    if (roundSeed?.match !== m || roundSeed.round !== m.round) roundSeed = { match: m, round: m.round, seed: ghostSeed(m.round, m.world) };
-  } else {
-    roundSeed = null;
-  }
-  // A new round, or being back among the living, closes the panel.
-  if (!m || !roundSeed || !settings.ghostLane || !shotDown(m)) {
-    ghost = null;
-  } else if (ghost?.match !== m || ghost.round !== m.round) {
-    ghost = { match: m, round: m.round, seed: roundSeed.seed, lane: null, open: false, waited: 0, heard: 0 };
-  }
-
-  const g = ghost;
-  const running = !!g && !menu.isOpen && !GHOST_PAUSED.has(g.match.phase);
-  if (g && running) g.waited += dt;
-  if (g?.lane && g.open && running) {
-    g.lane.update(dt);
-    hear(g);
-  }
-  if (egg && !eggActive()) egg = null;
-  if (egg) {
-    egg.lane.update(dt);
-    hear(egg);
-  }
-  document.body.classList.toggle('egg-open', eggActive());
-
-  const eggOn = eggActive();
-  const visible = eggOn || (!!g?.open && !!g.lane && !menu.isOpen);
-  if (ghostCanvas.hidden === visible) ghostCanvas.hidden = !visible;
-  if (!visible) return;
-  // The oracle owns the bottom edge: the panel sits above its bar, tips and verdict — and shrinks rather than reach up under the scoreboard.
-  const bottom = !eggOn && g!.match.ghost ? Math.ceil(renderer.oracleClearance(coarsePointer.matches)) + 10 : 0;
-  const room = innerHeight - Math.max(bottom, 16) - renderer.clearanceTop();
-  const wanted = ghostBig ? Math.max(420, Math.min(900, innerWidth * 0.62)) : Math.max(300, Math.min(520, innerWidth * 0.32));
-  // It shrinks rather than reach up under the scoreboard — and the big size never takes more than the room allows.
-  const squeezed = room < wanted * 0.8;
-  const css = {
-    bottom: bottom ? `max(${bottom}px, var(--ghost-bottom))` : '',
-    width: squeezed ? `${Math.max(160, Math.floor(room * 1.25))}px` : ghostBig ? `${Math.floor(wanted)}px` : '',
-  };
-  if (ghostCanvas.style.bottom !== css.bottom) ghostCanvas.style.bottom = css.bottom;
-  if (ghostCanvas.style.width !== css.width) ghostCanvas.style.width = css.width;
-  if (eggOn) hearBlasts(ghostPanel.draw(egg!.lane, { color: COLORS.players[2], paused: false, touch: coarsePointer.matches, big: ghostBig, reducedMotion }, dt));
-  else hearBlasts(ghostPanel.draw(g!.lane!, { color: g!.match.players[g!.match.viewer!].color, paused: !ghostActive(), touch: coarsePointer.matches, big: ghostBig, reducedMotion }, running ? dt : 0));
-}
-
-function fireGhost(): void {
-  const lane = steered();
-  if (!lane?.fire()) return;
-  sound.fire(lane.power);
-}
-
-/** The lane's keys: arrows aim, Enter and Space fire. Returns whether the key was one of them. */
-function ghostKey(e: KeyboardEvent): boolean {
-  const lane = steered();
-  if (!lane) return false;
-  const [dAngle, dPower] = stepFor(e);
-  switch (e.code) {
-    case 'ArrowLeft':
-      lane.adjust(dAngle, 0);
-      return true;
-    case 'ArrowRight':
-      lane.adjust(-dAngle, 0);
-      return true;
-    case 'ArrowUp':
-      lane.adjust(0, dPower);
-      return true;
-    case 'ArrowDown':
-      lane.adjust(0, -dPower);
-      return true;
-    case 'Enter':
-    case 'NumpadEnter':
-    case 'Space':
-      if (!e.repeat) fireGhost();
-      return true;
-    case 'KeyE':
-      if (e.ctrlKey || e.metaKey || e.altKey) return false;
-      if (!e.repeat) ghostBig = !ghostBig;
-      return true;
-    default:
-      return false;
-  }
-}
-
-function ghostAim(clientX: number, clientY: number): void {
-  const lane = steered();
-  if (!lane) return;
-  const f = ghostPanel.toField(clientX, clientY);
-  const ship = lane.world.ships[0];
-  const dx = f.x - ship.x;
-  const dy = f.y - ship.y;
-  // The tip of the drawn aim arrow follows the pointer.
-  lane.setAim((Math.atan2(-dy, dx) * 180) / Math.PI, Math.round(((Math.hypot(dx, dy) - 40) / 130) * AIM.MAX_POWER * 100) / 100);
-}
-
-let ghostDragging = false;
-ghostCanvas.addEventListener('pointerdown', (e) => {
-  sound.unlock();
-  // The cross closes the panel, also while it rests.
-  if ((eggActive() || ghost?.open) && ghostPanel.isClose(e.clientX, e.clientY)) return eggActive() ? toggleEgg() : toggleGhost();
-  if (ghostPanel.isBig(e.clientX, e.clientY)) {
-    ghostBig = !ghostBig;
-    return;
-  }
-  if (!steered()) return;
-  ghostDragging = true;
-  ghostCanvas.setPointerCapture(e.pointerId);
-  ghostAim(e.clientX, e.clientY);
-});
-ghostCanvas.addEventListener('pointermove', (e) => {
-  if (ghostDragging) ghostAim(e.clientX, e.clientY);
-  else ghostCanvas.style.cursor = ghostPanel.isClose(e.clientX, e.clientY) || ghostPanel.isBig(e.clientX, e.clientY) ? 'pointer' : '';
-});
-const endGhostDrag = () => (ghostDragging = false);
-ghostCanvas.addEventListener('pointerup', endGhostDrag);
-ghostCanvas.addEventListener('pointercancel', endGhostDrag);
 
 // ————————————————————————————— Keyboard —————————————————————————————
 
@@ -634,31 +417,11 @@ window.addEventListener('keydown', (e) => {
     app.toggleFullscreen();
     return;
   }
-  // The Easter egg on the title screen takes the aiming keys from the menu; G or Esc puts it away.
-  if (eggActive()) {
-    const away = (e.code === 'KeyG' || e.code === 'Escape') && !e.metaKey && !e.ctrlKey && !e.altKey;
-    if (away) toggleEgg();
-    if (away || ghostKey(e)) {
-      e.preventDefault();
-      return;
-    }
-  }
   if (menu.isOpen) {
     if (menu.handleKey(e)) e.preventDefault();
     return;
   }
   if (screen !== 'play' || !match) return;
-
-  if (e.code === 'KeyG' && ghost && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping(e.target)) {
-    if (!e.repeat) toggleGhost();
-    e.preventDefault();
-    return;
-  }
-  // The open lane takes the aiming keys — a paused one leaves Enter and Space to the match (killcam, next round).
-  if (ghostActive() && ghostKey(e)) {
-    e.preventDefault();
-    return;
-  }
 
   const tip = oracleKey(e);
   if (tip) {
@@ -749,9 +512,7 @@ canvas.addEventListener('pointercancel', endDrag);
 
 touchFire.addEventListener('click', () => {
   sound.unlock();
-  if (eggActive() || ghostActive()) fireGhost();
-  else if (ghostTeaser()) toggleGhost();
-  else primaryAction();
+  primaryAction();
 });
 touchPower.addEventListener('click', () => {
   sound.unlock();
@@ -771,16 +532,12 @@ function syncButtons(): void {
   const m = match;
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
-    if (ghostActive()) touchLabel = ghost!.lane!.canAim ? t('common.fire') : null;
-    else if (ghostTeaser()) touchLabel = t('hud.ghostLane');
-    else if (canAim()) touchLabel = m.placing ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
+    if (canAim()) touchLabel = m.placing ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
     // A splitter in the air: the fire button splits the shot.
     else if (splitterInAir(m)) touchLabel = t('powerup.splitNow');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
     else if (m.phase === 'killcam' && !recorder.recording) touchLabel = t('common.skip');
   }
-  // The Easter egg on the title screen needs a fire button too.
-  if (eggActive() && coarsePointer.matches) touchLabel = egg!.lane.canAim ? t('common.fire') : null;
   if (touchFire.hidden !== !touchLabel) touchFire.hidden = !touchLabel;
   if (touchLabel && touchFire.textContent !== touchLabel) touchFire.textContent = touchLabel;
 
@@ -894,11 +651,10 @@ function frame(now: number): void {
     }
   }
   net?.update(dt);
-  updateGhost(dt);
   renderer.draw(
     m,
     effects,
-    { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, ghostTeaser: ghostTeaser(), keyHints: !oraclePointer },
+    { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
     paused ? 0 : dt,
   );
   if (screen === 'play' && m === match) announceOracle(m);
@@ -909,7 +665,7 @@ function frame(now: number): void {
 
 if (import.meta.env.DEV) {
   // Handle for poking at the running game from the dev console.
-  Object.assign(window, { slingshot: { app, attract, settings, get match() { return match; }, get ghost() { return ghost; }, get egg() { return egg; } } });
+  Object.assign(window, { slingshot: { app, attract, settings, get match() { return match; } } });
 }
 
 async function boot(): Promise<void> {

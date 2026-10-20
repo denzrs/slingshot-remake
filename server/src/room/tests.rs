@@ -833,7 +833,7 @@ fn cpu_seat_changes_refuse_malformed_levels_seats_and_teams() {
         take_type(&drain_json(&mut host_rx), "error")["message"],
         "Malformed CPU level"
     );
-    rooms.handle(1, &add_cpu("experimental"));
+    rooms.handle(1, &add_cpu("einstein"));
     assert_eq!(
         take_type(&drain_json(&mut host_rx), "error")["message"],
         "Malformed CPU level"

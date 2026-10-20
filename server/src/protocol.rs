@@ -803,7 +803,7 @@ mod tests {
             Some(CpuLevel::Hawking)
         );
         assert!(parse_cpu_level(None).is_none());
-        assert!(parse_cpu_level(Some(&json!("experimental"))).is_none());
+        assert!(parse_cpu_level(Some(&json!("einstein"))).is_none());
         assert!(parse_cpu_level(Some(&json!(2))).is_none());
     }
 

@@ -8,8 +8,7 @@ import { awards } from '../stats';
 import type { View } from './backdrop';
 import { drawAvatar } from './avatar';
 import { rgba } from './color';
-import { GHOST_BODY } from './ghost';
-import { OracleHud, oracleReserve, type OracleFrame, type OracleTap } from './oracle';
+import { OracleHud, type OracleFrame, type OracleTap } from './oracle';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
 import type { DrawOptions } from './renderer';
 import { fitText, setSpacing } from './text';
@@ -40,17 +39,6 @@ export class Hud {
   /** The oracle choice under a pointer (CSS pixels on the canvas), if there is one. */
   oracleHit(x: number, y: number): OracleTap | null {
     return this.oracle.hit(x, y);
-  }
-
-  /** Pixels from the window's bottom edge up to above everything the oracle can draw there (for a panel that must stay clear of it). */
-  oracleClearance(view: View, touch: boolean): number {
-    const k = Math.min(1.2, Math.max(0.72, view.scale));
-    return view.cssHeight - (view.offsetY + FIELD.height * view.scale) + oracleReserve(k, touch);
-  }
-
-  /** Pixels from the window's top edge down to below the scoreboard, where a panel may start. */
-  clearanceTop(view: View): number {
-    return view.offsetY + 100 * Math.min(1.2, Math.max(0.72, view.scale));
   }
 
   draw(match: Match, view: View, opts: DrawOptions, time: number, shipPos: (i: number) => { x: number; y: number }): void {
@@ -105,9 +93,7 @@ export class Hud {
       this.drawScorecard(match);
     }
     this.oracle.drawCard(frame, match, opts.touch);
-    if (!asking) this.drawHint(match, opts.touch, opts.ghostTeaser);
-    // The oracle's bar has the bottom edge: the hint to the ghost lane stacks above whatever it has drawn there.
-    else if (opts.ghostTeaser) this.drawGhostTeaser(match, this.field.x + this.field.w / 2, this.oracle.stackTop - 16 * this.k, opts.touch);
+    if (!asking) this.drawHint(match, opts.touch);
     if (opts.recording) this.drawRec();
   }
 
@@ -440,7 +426,7 @@ export class Hud {
 
     if (match.phase === 'aiming' && match.current >= 0) this.drawReadout(match, match.pilot, this.shipPos(match.current));
     if (match.phase === 'roundOver' && match.summary) this.drawChallengeBanner(match);
-    this.drawHint(match, opts.touch, false);
+    this.drawHint(match, opts.touch);
   }
 
   /** Small outlined tags centred on `cx`, e.g. "BOUNCE". */
@@ -751,7 +737,7 @@ export class Hud {
 
   // ————————————————————————————— Hints —————————————————————————————
 
-  private drawHint(match: Match, touch: boolean, ghostTeaser: boolean): void {
+  private drawHint(match: Match, touch: boolean): void {
     const { k, field } = this;
     const maxWidth = field.w - 48 * k;
     const horizon = match instanceof HorizonMatch;
@@ -778,63 +764,9 @@ export class Hud {
       items = [match.canAdvance ? [touch ? '' : t('common.space'), next] : ['', t('hud.waitingHost')]];
       if (horizon && match.lastClip && !touch) items.push(['C', t('hud.saveKillcam')]);
     }
-    // Shot down and waiting for the others: point at the ghost lane where "waiting" would stand.
-    if (ghostTeaser) return this.drawGhostTeaser(match, field.x + field.w / 2, field.y + field.h - 20 * k, touch);
     if (!items.length) return;
     const width = this.measureKeyRow(items, k);
     this.drawKeyRow(items, field.x + field.w / 2, field.y + field.h - 20 * k, width > maxWidth ? (k * maxWidth) / width : k);
-  }
-
-  /** The hint to the ghost lane: a little ghost in the player's colour, with the key to press next to it. */
-  private drawGhostTeaser(match: Match, cx: number, y: number, touch: boolean): void {
-    const { ctx, k } = this;
-    const color = match.viewer === null ? COLORS.bone : match.players[match.viewer].color;
-    const s = 1.15 * k;
-    const ghostW = 14 * s;
-    const keyFont = `700 ${11 * k}px ${FONTS.mono}`;
-    const padX = 6 * k;
-    ctx.font = keyFont;
-    const keyW = touch ? 0 : ctx.measureText('G').width + padX * 2;
-    const gap = 8 * k;
-    const x = cx - (ghostW + (touch ? 0 : gap + keyW)) / 2;
-    const bob = Math.sin(this.time * 3) * 1.5 * k;
-
-    ctx.save();
-    // The ghost's path sits in a 20 × 22 box; its middle goes on the row's centre line.
-    ctx.translate(x - 3 * s, y - 11 * s + bob);
-    ctx.scale(s, s);
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 8 * k;
-    ctx.fillStyle = rgba(color, 0.5);
-    ctx.fill(GHOST_BODY);
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = rgba(color, 0.95);
-    ctx.lineWidth = 0.8;
-    ctx.stroke(GHOST_BODY);
-    for (const ex of [7.4, 12.6]) {
-      ctx.fillStyle = COLORS.bone;
-      ctx.beginPath();
-      ctx.arc(ex, 10, 1.7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = COLORS.plate;
-      ctx.beginPath();
-      ctx.arc(ex, 10.2, 0.85, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-    if (touch) return;
-
-    const kx = x + ghostW + gap;
-    ctx.strokeStyle = rgba(COLORS.bone, 0.35);
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(kx + 0.5, y - 9 * k + 0.5, keyW, 18 * k, 3 * k);
-    ctx.stroke();
-    ctx.fillStyle = COLORS.bone;
-    ctx.font = keyFont;
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    ctx.fillText('G', kx + padX, y + 0.5 * k);
   }
 
   private keyRowMetrics(items: KeyItem[], k: number) {

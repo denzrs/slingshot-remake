@@ -2,25 +2,7 @@ import { AIM } from './config';
 import { normalizeAngle, simulateShot, simulateStyledShot, type ShotEnd, type ShotGate, type ShotRules, type StyledShotOutcome, type World } from './physics';
 import { gaussian, type Rng } from './rng';
 
-type NormalCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
-type NamedExperimentalCpuLevel = 'experimental-easy' | 'experimental-medium' | 'experimental-hard';
-type ExperimentalCpuLevel = 'experimental' | NamedExperimentalCpuLevel;
-export type CpuLevel = NormalCpuLevel | ExperimentalCpuLevel;
-
-export interface ExperimentalCpuConfig {
-  learningRate: number;
-  startingKnowledge: number;
-}
-
-export const EXPERIMENTAL_PRESETS: Readonly<Record<NamedExperimentalCpuLevel, Readonly<ExperimentalCpuConfig>>> = {
-  'experimental-easy': { learningRate: 0.45, startingKnowledge: 0.5 },
-  'experimental-medium': { learningRate: 0.54, startingKnowledge: 0.72 },
-  'experimental-hard': { learningRate: 0.72, startingKnowledge: 0.9 },
-};
-
-export function isExperimentalCpu(level: CpuLevel | null): level is ExperimentalCpuLevel {
-  return level === 'experimental' || level === 'experimental-easy' || level === 'experimental-medium' || level === 'experimental-hard';
-}
+export type CpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
 
 export interface Aim {
   angle: number;
@@ -48,7 +30,7 @@ interface CpuProfile {
   pickupAppetite: number;
 }
 
-export const CPU_PROFILES: Readonly<Record<Exclude<NormalCpuLevel, 'hawking'>, Readonly<CpuProfile>>> = {
+export const CPU_PROFILES: Readonly<Record<Exclude<CpuLevel, 'hawking'>, Readonly<CpuProfile>>> = {
   // Kepler: lazy and lucky. Goes for whoever is nearest, tolerates risk, learns slowly.
   easy: { angle: 4.5, power: 4.5, decay: 0.8, selfMargin: 20, powerFrugality: 0, optimizeHitPower: false, distanceBias: 0.25, grudge: 0, pickupAppetite: 0 },
   // Newton: efficient and the sorest loser. Wastes no power, keeps a level head, remembers every hit longest.
@@ -66,7 +48,7 @@ const HAWKING_PROFILE: Readonly<CpuProfile> = {
 };
 /** Planner result emitted for each menu CPU launch when AI decision logging is enabled. */
 export interface CpuDecision {
-  level: NormalCpuLevel;
+  level: CpuLevel;
   attempt: number;
   profile: Readonly<CpuProfile>;
   grudgeTarget: number | null;
@@ -82,7 +64,7 @@ type CpuDecisionReporter = (decision: CpuDecision) => void;
 
 export interface PlanOptions {
   rules: ShotRules;
-  level: NormalCpuLevel;
+  level: CpuLevel;
   /** Shots the CPU already fired this round — it "learns" and aims tighter each time. */
   attempt: number;
   /** When set, only the angle is searched. */
@@ -99,8 +81,6 @@ export interface PlanOptions {
   pickups?: readonly ShotGate[];
   /** Keep refining a valid hit to find the lowest hit power. */
   optimizeHitPower?: boolean;
-  /** Return the searched aim without execution error (experimental belief planning). */
-  noiseFree?: boolean;
   /** Enemy this CPU would like to see dead: whoever hit it most recently. */
   grudgeTarget?: number | null;
   /** Receives the selected candidate, launch perturbation, and predicted outcome. */
@@ -164,19 +144,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const grudgeTarget = opts.grudgeTarget ?? null;
   // A pickup the CPU ignores (a preview) is not worth aiming at, so the caller filters those out.
   const gates = opts.pickups ?? [];
-  // Belief searches revisit grid centres and clamped powers. Cache exact launches
-  // only for this generator; ordinary CPU planning retains its existing path.
-  const costs = opts.noiseFree ? new Map<number, Map<number, number>>() : null;
-  const evaluateAim = (aim: Aim): number => {
-    if (!costs) return evaluate(world, shooter, aim, planRules, friends, profile, pull, gates, pierce);
-    let powers = costs.get(aim.angle);
-    const cached = powers?.get(aim.power);
-    if (cached !== undefined) return cached;
-    const cost = evaluate(world, shooter, aim, planRules, friends, profile, pull, gates, pierce);
-    if (!powers) costs.set(aim.angle, powers = new Map());
-    powers.set(aim.power, cost);
-    return cost;
-  };
+  const evaluateAim = (aim: Aim): number => evaluate(world, shooter, aim, planRules, friends, profile, pull, gates, pierce);
   /** Whether one of these ships is the shooter or a teammate: a hit on one of them is a blunder to avoid. */
   const onFriend = (ship: number): boolean => ship === shooter || friends.includes(ship);
   /** Whether a styled flight killed anybody (a plain hit, or a hull it went through with armor piercing). */
@@ -218,20 +186,6 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   }
   const effort = opts.effort ?? 1;
   const samples = Math.round(260 * effort);
-  // Precise belief planning gets target-centred seeds rather than depending on
-  // random draws landing inside a narrow hit basin. Ordinary levels are unchanged.
-  if (opts.noiseFree) {
-    for (const direct of directs) {
-      for (const power of fixedPower === null ? [...new Set([30, 50, 70, 90, 100].map((p) => Math.min(p, maxPower)))] : [fixedPower]) {
-        for (const offset of [-16, -8, -4, 0, 4, 8, 16]) {
-          const aim = { angle: normalizeAngle(direct.angle + offset), power };
-          pool.push(yield* candidate(aim));
-        }
-        yield;
-      }
-    }
-  }
-
   // The sweep picks its targets by personality: near ones for Kepler, grudged ones for Newton.
   // Uniform weights cycle through the enemies exactly like the original sweep, keeping the
   // planner's random stream — and thus its seeded results — unchanged when nobody stands out.
@@ -289,31 +243,9 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
         if (i % 4 === 3) yield;
       }
     }
-    if ((opts.noiseFree || hawking) && compare(local, best) < 0) best = local;
-    if (opts.noiseFree) {
-      for (const step of [2, 0.5, 0.12, 0.03]) {
-        for (let pass = 0; pass < 4; pass++) {
-          const center = local;
-          for (const da of [-step, 0, step]) {
-            for (const dp of fixedPower === null ? [-step * 2, 0, step * 2] : [0]) {
-              const aim = { angle: normalizeAngle(center.angle + da), power: fixedPower ?? clampPower(center.power + dp, maxPower) };
-              const proposed = yield* candidate(aim);
-              if (compare(proposed, local) < 0) local = proposed;
-            }
-          }
-          yield;
-          if (center === local) break;
-        }
-      }
-      if (compare(local, best) < 0) best = local;
-    }
+    if (hawking && compare(local, best) < 0) best = local;
   }
 
-  if (opts.noiseFree) {
-    const launch = { angle: best.angle, power: fixedPower ?? best.power };
-    reportDecision(best, launch);
-    return launch;
-  }
   const err = opts.level === 'hawking' ? HAWKING_PROFILE : CPU_PROFILES[opts.level];
   const scale = Math.pow(err.decay, opts.attempt);
   const launch = {
