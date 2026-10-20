@@ -507,38 +507,37 @@ export class Renderer {
         ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
         ctx.fill();
       } else if (kind === 'wormhole') {
-        // The portal being set is a ghost of itself. Once the entry is set it stays on the field, solid; the
-        // exit is then aimed relative to it: a thread to it, the ring it must stay out of, and a warning
-        // while the aim is too close for the click to take.
+        // The portal being set is a ghost of itself. Once the entry is set it stays on the field, solid, with a
+        // thread to the exit being aimed. A portal cannot overlap another: the ghost then turns red and says so,
+        // because the click would do nothing.
         const entry = scene.placement.entry;
         // The pair being set is the next one on the field: its colours, and its number when there are others.
         const pair = portalPair(nextWormhole);
         const mark = match.world.wormholes.length ? String(nextWormhole + 1) : undefined;
         const facing = entry ? Math.atan2(target.y - entry.y, target.x - entry.x) : Math.atan2(target.y - from.y, target.x - from.x);
-        const tooClose = !!entry && Math.hypot(target.x - entry.x, target.y - entry.y) < WORMHOLE.MIN_SEPARATION;
+        const blocked = !!scene.placement.blocked;
         if (entry) {
           ctx.save();
-          ctx.globalAlpha = tooClose ? 0.5 : 0.18;
-          ctx.strokeStyle = tooClose ? '#ff5c5c' : '#ffffff';
+          ctx.globalAlpha = blocked ? 0.5 : 0.18;
+          ctx.strokeStyle = blocked ? '#ff5c5c' : '#ffffff';
           ctx.lineWidth = 1;
           ctx.setLineDash([3, 6]);
           ctx.beginPath();
-          ctx.arc(entry.x, entry.y, WORMHOLE.MIN_SEPARATION, 0, Math.PI * 2);
           ctx.moveTo(entry.x, entry.y);
           ctx.lineTo(target.x, target.y);
           ctx.stroke();
           ctx.restore();
           drawPortal(ctx, entry.x, entry.y, facing, WORMHOLE.RADIUS, pair.entry, this.time, false, 1, 0, mark);
         }
-        drawPortal(ctx, target.x, target.y, entry ? facing + Math.PI : facing, WORMHOLE.RADIUS, color, this.time, !!entry, tooClose ? 0.3 : 0.7, 1, mark);
+        drawPortal(ctx, target.x, target.y, entry ? facing + Math.PI : facing, WORMHOLE.RADIUS, color, this.time, !!entry, blocked ? 0.3 : 0.7, 1, mark);
         ctx.globalAlpha = 1;
         ctx.font = `700 11px ${FONTS.mono}`;
         ctx.textAlign = 'center';
-        ctx.fillStyle = tooClose ? '#ff5c5c' : color;
+        ctx.fillStyle = blocked ? '#ff5c5c' : color;
         // The labels sit on the far side of each portal from the other, so two close ones do not overprint.
         const side = entry && target.y >= entry.y ? 1 : -1;
         const reach = WORMHOLE.RADIUS * 1.12 + 10;
-        ctx.fillText(t(tooClose ? 'powerup.wormholeClose' : entry ? 'powerup.wormholeExit' : 'powerup.wormholeEntry').toUpperCase(), target.x, target.y + side * reach);
+        ctx.fillText(t(blocked ? 'powerup.wormholeClose' : entry ? 'powerup.wormholeExit' : 'powerup.wormholeEntry').toUpperCase(), target.x, target.y + side * reach);
         if (entry) {
           ctx.fillStyle = pair.entry;
           ctx.fillText(t('powerup.wormholeEntry').toUpperCase(), entry.x, entry.y - side * reach);

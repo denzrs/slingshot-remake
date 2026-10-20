@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FIELD, WORMHOLE } from '../src/config';
-import { isWormholeJump, Shot, type World } from '../src/physics';
+import { createMatch, type Match } from '../src/game';
+import { isWormholeJump, portalFits, Shot, type World } from '../src/physics';
+import { DEFAULT_SETTINGS } from '../src/settings';
 import { PORTAL_PAIRS, portalPair } from '../src/render/powerup-art';
 
 const rules = { bounce: false, timeLimit: 20 };
@@ -80,5 +82,79 @@ describe('wormhole portal colours', () => {
     expect(portalPair(0)).toBe(PORTAL_PAIRS[0]);
     expect(portalPair(PORTAL_PAIRS.length)).toBe(PORTAL_PAIRS[0]);
     expect(portalPair(PORTAL_PAIRS.length + 2)).toBe(PORTAL_PAIRS[2]);
+  });
+});
+
+/** A human duel with power-ups on and no planets: the aim lands where the angle and power say. */
+function duel(seed = 7): Match {
+  const seats = ['human', 'human', 'off', 'off', 'off', 'off'] as const;
+  return createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed });
+}
+
+describe('wormhole placement', () => {
+  it('lets two portals sit at any distance, as long as they do not overlap', () => {
+    const w = world();
+    expect(portalFits(w, { x: 400 + WORMHOLE.GAP - 1, y: 400 })).toBe(false);
+    expect(portalFits(w, { x: 400 + WORMHOLE.GAP, y: 400 })).toBe(true);
+    expect(portalFits(w, { x: 900, y: 700 + 10 })).toBe(false);
+    // The first portal of the pair being set counts as well.
+    expect(portalFits(w, { x: 200, y: 200 }, [{ x: 200 + WORMHOLE.GAP - 1, y: 200 }])).toBe(false);
+    expect(portalFits(w, { x: 200, y: 200 }, [{ x: 200 + WORMHOLE.GAP, y: 200 }])).toBe(true);
+  });
+
+  it('does not take a second click on top of the first portal, but takes one a little way off it', () => {
+    const match = duel();
+    const shooter = match.players[match.current];
+    shooter.powerUp = 'wormhole';
+    shooter.angle = 0;
+    shooter.power = 30;
+    match.usePowerUp();
+    match.commit();
+    const entry = match.scene().placement!.entry!;
+    expect(entry).toBeTruthy();
+
+    // The aim has not moved, so it sits on the entry: blocked, and the click plants nothing.
+    expect(match.scene().placement!.blocked).toBe(true);
+    match.commit();
+    expect(match.world.wormholes).toHaveLength(0);
+
+    shooter.power = 70;
+    const aim = match.scene().placement!;
+    expect(Math.hypot(aim.target!.x - entry.x, aim.target!.y - entry.y)).toBeGreaterThanOrEqual(WORMHOLE.GAP);
+    expect(aim.blocked).toBe(false);
+    match.commit();
+    expect(match.world.wormholes).toHaveLength(1);
+    expect(match.world.wormholes[0].id).toBe(0);
+    expect(shooter.powerUp).toBeNull();
+  });
+
+  it('does not set the first portal on one already on the field', () => {
+    const match = duel();
+    const shooter = match.players[match.current];
+    shooter.powerUp = 'wormhole';
+    shooter.angle = 0;
+    shooter.power = 100;
+    match.usePowerUp();
+    const target = match.scene().placement!.target!;
+    match.world.wormholes.push({ id: 0, ax: target.x + 10, ay: target.y, bx: 50, by: 50, radius: WORMHOLE.RADIUS });
+    expect(match.scene().placement!.blocked).toBe(true);
+    match.commit();
+    expect(match.scene().placement!.entry).toBeNull();
+  });
+
+  it('shows a guest the first portal the host has set', () => {
+    const host = duel();
+    const shooter = host.players[host.current];
+    shooter.powerUp = 'wormhole';
+    shooter.angle = 0;
+    shooter.power = 100;
+    host.usePowerUp();
+    host.commit();
+
+    const guest = duel();
+    guest.players[host.current].powerUp = 'wormhole';
+    guest.power.restoreState(host.power.state());
+    const entry = guest.scene().placement?.entry;
+    expect(entry).toMatchObject(host.scene().placement!.entry!);
   });
 });

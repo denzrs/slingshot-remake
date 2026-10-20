@@ -1,4 +1,4 @@
-import { NEBULA, PHYSICS } from './config';
+import { NEBULA, PHYSICS, WORMHOLE } from './config';
 
 // Read once: Shot.step is the innermost loop of every CPU search and killcam, and an imported binding is slower to read than a local one.
 const { DT, G, SHIP_RADIUS, OUT_MARGIN } = PHYSICS;
@@ -55,6 +55,15 @@ export interface Wormhole {
 /** The id the next wormhole gets: one past the highest on the field, so a swallowed one never renumbers the rest. */
 export function nextWormholeId(world: Pick<World, 'wormholes'>): number {
   return world.wormholes.reduce((next, w) => Math.max(next, w.id + 1), 0);
+}
+
+/**
+ * Whether a portal can be set at this spot: clear of every portal on the field and of the `others` (the entry
+ * of the pair being set), so that no two portals overlap. Any distance is fine beyond that.
+ */
+export function portalFits(world: Pick<World, 'wormholes'>, spot: { x: number; y: number }, others: readonly { x: number; y: number }[] = []): boolean {
+  const clear = (x: number, y: number): boolean => Math.hypot(spot.x - x, spot.y - y) >= WORMHOLE.GAP;
+  return world.wormholes.every((w) => clear(w.ax, w.ay) && clear(w.bx, w.by)) && others.every((o) => clear(o.x, o.y));
 }
 
 /** How far a trail point may sit from a mouth and still be that mouth: the wire rounds points to a tenth. */

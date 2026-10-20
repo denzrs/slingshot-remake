@@ -23,8 +23,8 @@ export const PHYSICS = {
 export const WORMHOLE = {
   /** A shot whose centre comes this close to a mouth is carried through. */
   RADIUS: 22,
-  /** The two mouths keep at least this far apart. */
-  MIN_SEPARATION: 120,
+  /** Two portals closer than this overlap, and cannot be placed: centre to centre, the ovals' full height. */
+  GAP: 50,
   /**
    * The colours of the portals, one pair per wormhole on the field: the entry set first, the exit set second.
    * The first pair is blue and orange; later pairs differ in both colours, so a wormhole can be told from the

@@ -1,4 +1,4 @@
-import { nextWormholeId, type ShotRules, type World } from '../physics';
+import { nextWormholeId, portalFits, type ShotRules, type World } from '../physics';
 import { aimedPlanet, aimedSpot, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
 import { NEBULA, WORMHOLE } from '../config';
 import type { Rng } from '../rng';
@@ -50,6 +50,8 @@ export interface PlacementAim {
   target: { x: number; y: number } | null;
   /** A wormhole's mouth already set: the aim now picks the other one. */
   entry?: { x: number; y: number } | null;
+  /** A wormhole's aim that would overlap another portal, so the click does nothing. */
+  blocked?: boolean;
 }
 
 /** What a guest needs besides the pickups to draw the power-ups: the pass the round is in, and who is aiming a placement. */
@@ -57,6 +59,8 @@ export interface PowerUpState {
   pass: number;
   /** The ships aiming a teleport or a black hole right now (their kind is on the player). */
   placing: number[];
+  /** The first portal each aiming ship has set, by ship: a guest draws it while the exit is aimed. */
+  entries?: [number, { x: number; y: number }][];
 }
 
 /** What the renderer draws of the power-ups. */
@@ -256,7 +260,9 @@ export class PowerUpField {
     } else {
       target = aimedSpot(world, from, p.angle, p.power);
     }
-    return kind === 'wormhole' ? { owner, kind, target, entry: this.wormEntry.get(owner) ?? null } : { owner, kind, target };
+    if (kind !== 'wormhole') return { owner, kind, target };
+    const entry = this.wormEntry.get(owner) ?? null;
+    return { owner, kind, target, entry, blocked: !!target && !portalFits(world, target, entry ? [entry] : []) };
   }
 
   /** Whether the ship at this screen (or on turn) is aiming a placement. */
@@ -274,13 +280,14 @@ export class PowerUpField {
     const aim = this.placementAim(by);
     if (!aim?.target) return false;
     if (aim.kind === 'wormhole') {
+      // A portal cannot overlap another, whatever the distance otherwise.
+      if (aim.blocked) return false;
       const entry = this.wormEntry.get(by);
-      // The first click sets one mouth and spends nothing; the second sets the other, far enough from the first, and plants the pair.
+      // The first click sets one portal and spends nothing; the second sets the other and plants the pair.
       if (!entry) {
         this.wormEntry.set(by, aim.target);
         return false;
       }
-      if (Math.hypot(aim.target.x - entry.x, aim.target.y - entry.y) < WORMHOLE.MIN_SEPARATION) return false;
       this.choosing.delete(by);
       this.wormEntry.delete(by);
       return this.plantWormhole(aim.owner, entry, aim.target);
@@ -469,13 +476,14 @@ export class PowerUpField {
   /** What the renderer draws of the power-ups. */
   /** What a guest needs on top of the pickups. */
   state(): PowerUpState {
-    return { pass: this.pass, placing: [...this.choosing] };
+    return { pass: this.pass, placing: [...this.choosing], entries: [...this.wormEntry] };
   }
 
   /** The host's pass and aimed placements, as a guest has them. */
   restoreState(state: PowerUpState | undefined): void {
     this.pass = state?.pass ?? 0;
     this.choosing = new Set(state?.placing ?? []);
+    this.wormEntry = new Map(state?.entries ?? []);
   }
 
   scene(): PowerUpScene {
