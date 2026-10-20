@@ -17,6 +17,7 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   piercing: '#dfe7f5',
   wormhole: '#4db8ff',
   defense: '#b4ff3c',
+  heavy: '#d9a066',
 };
 
 /** The colour of the portals of the wormhole with this id (the palette starts over after the last colour). */
@@ -215,6 +216,19 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.beginPath();
     ctx.moveTo(x + r * 0.34, y - r * 0.28);
     ctx.lineTo(x - r * 0.04, y + r * 0.2);
+    ctx.stroke();
+  } else if (kind === 'heavy') {
+    // A heavy round on a straight line: a solid ball in a ring, and the path running through it unbent.
+    ctx.arc(x, y, r * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - r, y);
+    ctx.lineTo(x - r * 0.7, y);
+    ctx.moveTo(x + r * 0.7, y);
+    ctx.lineTo(x + r, y);
     ctx.stroke();
   } else if (kind === 'splitter') {
     ctx.moveTo(x, y + r);

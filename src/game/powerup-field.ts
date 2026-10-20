@@ -194,8 +194,9 @@ export class PowerUpField {
       const [pickup] = this.pickups.splice(hit, 1);
       const dropped = p.powerUp;
       p.powerUp = pickup.kind;
-      // A splitter and a shield need no key: they are ready from the start. A CPU holds everything armed.
-      p.armed = p.cpu !== null || pickup.kind === 'splitter' || pickup.kind === 'shield';
+      // A splitter and a shield need no key: they are ready from the start. A CPU holds everything armed, but a
+      // heavy shot, which it keeps back until a plain one finds nothing to hit.
+      p.armed = (p.cpu !== null && pickup.kind !== 'heavy') || pickup.kind === 'splitter' || pickup.kind === 'shield';
       // The shield is on the ship itself, so every shot in the volley meets it. Swapping it away takes it off.
       volley.setShield(p.id, pickup.kind === 'shield');
       this.host.emit({ type: 'pickup', player: p.id, kind: pickup.kind, x: pickup.x, y: pickup.y, dropped });
@@ -207,8 +208,8 @@ export class PowerUpField {
 
   /**
    * The power-up key. A teleport or a black hole opens its aim: the angle and power set one spot, fire goes
-   * there (jumps, or plants the hole), the key again or Esc thinks again. A preview or armor piercing is armed instead (press
-   * again to disarm) and spent by the next shot. A splitter needs no key: it is armed, and the fire press
+   * there (jumps, or plants the hole), the key again or Esc thinks again. A preview, armor piercing or a heavy shot is armed
+   * instead (press again to disarm) and spent by the next shot. A splitter needs no key: it is armed, and the fire press
    * during the flight splits the shot.
    */
   use(id: number): void {
@@ -216,7 +217,7 @@ export class PowerUpField {
     if (!this.enabled || !host.canAim(id)) return;
     const p = host.players()[id];
     if (!p.powerUp || p.powerUp === 'splitter' || p.powerUp === 'shield') return;
-    if (p.powerUp === 'preview' || p.powerUp === 'piercing') {
+    if (p.powerUp === 'preview' || p.powerUp === 'piercing' || p.powerUp === 'heavy') {
       p.armed = !p.armed;
       this.previewKey = '';
       return;
@@ -514,14 +515,20 @@ export class PowerUpField {
   }
 
   /**
-   * The aims a player's shot launches with. An armed preview is used up by the shot, and an armed armor piercing
-   * rides the next shot through its targets; a splitter waits for the fire press during the flight, a shield for a hit.
+   * The aims a player's shot launches with. An armed preview is used up by the shot, an armed armor piercing
+   * rides the next shot through its targets, and an armed heavy shot makes it hard to bend; a splitter waits for the fire press during the flight, a shield for a hit.
    */
   aimsFor(p: PlayerState): VolleyAim[] {
     const aim: VolleyAim = { player: p.id, angle: p.angle, power: p.power, spare: this.host.sparedFor(p.id) };
     if (!this.enabled || !p.armed) return [aim];
     if (p.powerUp === 'piercing') {
       aim.pierce = true;
+      p.powerUp = null;
+      p.armed = false;
+      return [aim];
+    }
+    if (p.powerUp === 'heavy') {
+      aim.heavy = true;
       p.powerUp = null;
       p.armed = false;
       return [aim];

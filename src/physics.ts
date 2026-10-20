@@ -1,4 +1,4 @@
-import { DEFENSE, NEBULA, PHYSICS, WORMHOLE } from './config';
+import { DEFENSE, HEAVY, NEBULA, PHYSICS, WORMHOLE } from './config';
 
 // Read once: Shot.step is the innermost loop of every CPU search and killcam, and an imported binding is slower to read than a local one.
 const { DT, G, SHIP_RADIUS, OUT_MARGIN } = PHYSICS;
@@ -274,6 +274,8 @@ export class Shot {
     private readonly spare: readonly number[] = [],
     /** Armor piercing: the shot goes through ships — shields and all — instead of stopping on them. */
     private readonly pierce = false,
+    /** Heavy: the shot is hard to bend, and the clouds leave it alone. */
+    private readonly heavy = false,
   ) {
     const ship = world.ships[shooter];
     const dir = aimDirection(angle);
@@ -301,7 +303,7 @@ export class Shot {
    * how a splitter forks a shot in mid-flight. The original keeps flying as it was.
    */
   fork(turn: number): Shot {
-    const copy = new Shot(this.world, this.shooter, this.angle, this.power, this.rules, this.style !== null, this.spare, this.pierce);
+    const copy = new Shot(this.world, this.shooter, this.angle, this.power, this.rules, this.style !== null, this.spare, this.pierce, this.heavy);
     copy.x = this.x;
     copy.y = this.y;
     copy.time = this.time;
@@ -346,8 +348,13 @@ export class Shot {
       ax += (a * dx) / d;
       ay += (a * dy) / d;
     }
+    // A heavy shot feels only a share of every pull, and a cloud neither deepens it nor drags on it.
+    if (this.heavy) {
+      ax *= HEAVY.GRAVITY;
+      ay *= HEAVY.GRAVITY;
+    }
     // A cloud deepens the gravity and drags on the shot, so it both bends into the cloud and slows inside it.
-    const clouded = inNebula(nebulae, this.x, this.y);
+    const clouded = !this.heavy && inNebula(nebulae, this.x, this.y);
     if (clouded) {
       ax *= NEBULA.GRAVITY;
       ay *= NEBULA.GRAVITY;
@@ -611,8 +618,9 @@ export function simulateShot(
   friends: readonly number[] = [],
   gates: readonly ShotGate[] = [],
   pierce = false,
+  heavy = false,
 ): ShotOutcome {
-  const shot = new Shot(world, shooter, angle, power, rules, false, [], pierce);
+  const shot = new Shot(world, shooter, angle, power, rules, false, [], pierce, heavy);
   const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
   const own = world.ships[shooter];
   const mates = friends.map((i) => world.ships[i]).filter((s) => s.alive);
@@ -662,8 +670,9 @@ export function* simulateStyledShot(
   rules: ShotRules,
   friends: readonly number[] = [],
   pierce = false,
+  heavy = false,
 ): Generator<void, StyledShotOutcome> {
-  const shot = new Shot(world, shooter, angle, power, rules, 'metrics', [], pierce);
+  const shot = new Shot(world, shooter, angle, power, rules, 'metrics', [], pierce, heavy);
   const targets = world.ships.filter((s, i) => i !== shooter && s.alive && !friends.includes(i));
   const own = world.ships[shooter];
   const mates = friends.map((i) => world.ships[i]).filter((s) => s.alive);

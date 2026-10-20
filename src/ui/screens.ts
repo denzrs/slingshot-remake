@@ -439,7 +439,7 @@ const powerRow = (kind: PowerUpKind) =>
 
 /** The kinds each power-up page lists: first the ones for your own shot, then the ones that go on the field. */
 const POWER_PAGES: readonly [readonly PowerUpKind[], readonly PowerUpKind[]] = [
-  ['preview', 'teleport', 'splitter', 'polarity', 'piercing'],
+  ['preview', 'teleport', 'splitter', 'polarity', 'piercing', 'heavy'],
   ['shield', 'blackhole', 'planetkiller', 'nebula', 'wormhole', 'defense'],
 ];
 

@@ -71,6 +71,11 @@ export const NEBULA = {
   GRAVITY: 1.7,
 } as const;
 
+export const HEAVY = {
+  /** Share of every pull (planets and black holes) a heavy shot feels: it is hard to bend. A cloud neither deepens nor drags it. */
+  GRAVITY: 0.4,
+} as const;
+
 export const AIM = {
   MIN_POWER: 0,
   MAX_POWER: 100,

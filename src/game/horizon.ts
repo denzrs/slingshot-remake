@@ -372,7 +372,7 @@ export class HorizonMatch extends Match {
       this.runCpu(cpus.map((p) => p.id), 8, 0.6, 7);
       for (const p of cpus) {
         const job = this.cpuJob(p.id);
-        if (this.cpuTeleportIfBlind(p, job)) continue;
+        if (this.cpuRescueIfBlind(p, job)) continue;
         const place = this.cpuPlacementAim(p);
         if (place && this.phaseTime >= 0.5) {
           // It lays the placement once its aim is on the spot; the placement spends its shot, so it fires nothing this volley.
