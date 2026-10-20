@@ -766,7 +766,7 @@ function syncButtons(): void {
 
   // Power-ups on touch: a placement or a preview has a button of its own while its ship is aiming.
   const holder = playing && coarsePointer.matches && m?.powerUps && canAim() ? m.players[m.viewer ?? m.current] : null;
-  const power = holder && holder.powerUp && holder.powerUp !== 'splitter' && holder.powerUp !== 'shield' && holder.powerUp !== 'piercing' ? holder : null;
+  const power = holder && holder.powerUp && holder.powerUp !== 'splitter' && holder.powerUp !== 'shield' ? holder : null;
   if (touchPower.hidden !== !power) touchPower.hidden = !power;
   if (power) {
     const label = `${power.armed || m!.placing ? '● ' : ''}${t(`powerup.${power.powerUp}` as Key).toUpperCase()}`;

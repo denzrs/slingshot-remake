@@ -178,8 +178,8 @@ export class Hud {
     const left = align === 'left' ? x : x - w;
     const held = p.powerUp;
     const color = held ? POWER_UP_COLORS[held] : COLORS.line;
-    // A splitter is used with fire, a shield and armor piercing need no key; the rest with P.
-    const key = held === 'splitter' ? 'SPACE' : held === 'shield' || held === 'piercing' ? null : held ? 'P' : null;
+    // A splitter is used with fire, a shield needs no key; the rest with P.
+    const key = held === 'splitter' ? 'SPACE' : held === 'shield' ? null : held ? 'P' : null;
     const cy = y + h / 2;
 
     ctx.save();
@@ -219,8 +219,8 @@ export class Hud {
       ctx.strokeStyle = color;
       ctx.lineWidth = 1 * k;
       ctx.strokeRect(capX, capY, capW, capH);
-      // An armed preview or repulse has its key filled in: it is on.
-      const on = p.armed && (held === 'preview' || held === 'repulse');
+      // An armed preview, repulse or piercing round has its key filled in: it is on.
+      const on = p.armed && (held === 'preview' || held === 'repulse' || held === 'piercing');
       if (on) {
         ctx.fillStyle = color;
         ctx.fillRect(capX, capY, capW, capH);

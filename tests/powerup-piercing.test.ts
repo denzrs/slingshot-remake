@@ -34,6 +34,28 @@ describe('armor piercing power-up', () => {
     expect(POWER_UP_WEIGHTS.piercing).toBeGreaterThan(0);
   });
 
+  it('needs P to arm: a held round is not armed until the key, and the key again disarms it', () => {
+    const match = triple();
+    const shooter = match.players[0];
+    shooter.powerUp = 'piercing';
+    shooter.armed = false;
+    match.usePowerUp(0);
+    expect(shooter.armed).toBe(true);
+    match.usePowerUp(0);
+    expect(shooter.armed).toBe(false);
+  });
+
+  it('an unarmed round is not spent by a shot', () => {
+    const match = triple();
+    const shooter = match.players[0];
+    shooter.powerUp = 'piercing';
+    shooter.armed = false;
+    shooter.angle = 270;
+    shooter.power = 100;
+    match.commit();
+    expect(shooter.powerUp).toBe('piercing');
+  });
+
   it('flies through ship after ship where a plain shot stops on the first', () => {
     const plain = new Volley(world3(), [{ player: 0, angle: 0, power: 100 }], rules, false);
     while (!plain.done) plain.step();
