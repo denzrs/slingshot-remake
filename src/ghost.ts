@@ -80,7 +80,7 @@ export function buildLane(seed: number, n: number): Layout {
   const rng = createRng(hashSeed('slingshot-ghost-lane', seed, n));
   const { WIDTH: width, HEIGHT: height } = GHOST;
   const ship = { x: range(rng, 70, 140), y: range(rng, 110, height - 110), alive: true };
-  const world: World = { width, height, planets: [], ships: [ship], holes: [], nebulae: [], version: 0 };
+  const world: World = { width, height, planets: [], ships: [ship], holes: [], nebulae: [], wormholes: [], version: 0 };
 
   if (hasHole(n)) {
     world.holes.push({ x: range(rng, width * 0.45, width * 0.7), y: range(rng, height * 0.3, height * 0.7), radius: HORIZON.START_RADIUS + 6, mass: HORIZON.START_MASS });

@@ -1,8 +1,8 @@
-import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS } from '../config';
+import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, WORMHOLE } from '../config';
 import type { Match, Scene } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
-import { aimDirection, inNebula, type World } from '../physics';
+import { aimDirection, inNebula, type Wormhole, type World } from '../physics';
 import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
@@ -13,6 +13,7 @@ import { Hud } from './hud';
 import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
 import { drawNebula } from './nebula';
+import { drawWormhole } from './wormhole';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
@@ -216,6 +217,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
+    for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, POWER_UP_COLORS.wormhole, this.time);
     const next = match.nextHoleRadius;
     if (next && primary && !scene.camera) drawDangerRing(ctx, primary, next, this.time);
   }
@@ -279,7 +281,7 @@ export class Renderer {
       ctx.strokeStyle = rgba(color, (r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2) * fade);
       ctx.lineWidth = r === 0 ? 1.6 : 1;
       ctx.setLineDash(r === 0 ? [] : [1.5, 4]);
-      strokePolyline(ctx, t.points);
+      strokePolyline(ctx, t.points, match.world.wormholes);
     }
     ctx.setLineDash([]);
 
@@ -289,7 +291,7 @@ export class Renderer {
       const shot = vs.shot;
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
-      strokePolyline(ctx, vs.trail);
+      strokePolyline(ctx, vs.trail, match.world.wormholes);
       if (shot.end) continue;
       if (shot.inField) {
         const owner = match.players[vs.owner];
@@ -502,6 +504,19 @@ export class Renderer {
         ctx.beginPath();
         ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
         ctx.fill();
+      } else if (kind === 'wormhole') {
+        // The mouth being set: a ring. Once the first is set it stays on the field, drawn solid.
+        const entry = scene.placement.entry;
+        if (entry) {
+          ctx.beginPath();
+          ctx.arc(entry.x, entry.y, WORMHOLE.RADIUS, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, WORMHOLE.RADIUS, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
       } else if (kind === 'nebula') {
         // The reach of the cloud as a plain ring: it must not wobble while the aim moves. The cloud that
         // lands gets its own random outline (its seed is drawn when it is laid).
@@ -812,10 +827,15 @@ function easeOutBack(t: number): number {
   return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
 }
 
-function strokePolyline(ctx: CanvasRenderingContext2D, pts: number[]): void {
+function strokePolyline(ctx: CanvasRenderingContext2D, pts: number[], wormholes: readonly Wormhole[] = []): void {
   if (pts.length < 4) return;
   ctx.beginPath();
   ctx.moveTo(pts[0], pts[1]);
-  for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+  for (let i = 2; i < pts.length; i += 2) {
+    // The segment between the two mouths of a wormhole is no flight: the line breaks there.
+    const jump = wormholes.some((w) => (pts[i - 2] === w.ax && pts[i - 1] === w.ay && pts[i] === w.bx && pts[i + 1] === w.by) || (pts[i - 2] === w.bx && pts[i - 1] === w.by && pts[i] === w.ax && pts[i + 1] === w.ay));
+    if (jump) ctx.moveTo(pts[i], pts[i + 1]);
+    else ctx.lineTo(pts[i], pts[i + 1]);
+  }
   ctx.stroke();
 }

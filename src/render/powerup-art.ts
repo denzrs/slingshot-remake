@@ -14,6 +14,7 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   planetkiller: '#ff5c5c',
   nebula: '#9be7ff',
   piercing: '#dfe7f5',
+  wormhole: '#5cf2c4',
 };
 
 /** Draws a power-up's symbol centred on (x, y), about `r` in size, in the current stroke and fill style. */
@@ -132,6 +133,16 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
       ctx.arc(x + px * r, y + py * r, r * 0.07, 0, Math.PI * 2);
     }
     ctx.fill();
+  } else if (kind === 'wormhole') {
+    // Two mouths joined by a bridge: a small ring at each end.
+    ctx.arc(x - r * 0.62, y + r * 0.3, r * 0.34, 0, Math.PI * 2);
+    ctx.moveTo(x + r * 0.96, y - r * 0.3);
+    ctx.arc(x + r * 0.62, y - r * 0.3, r * 0.34, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - r * 0.3, y + r * 0.18);
+    ctx.lineTo(x + r * 0.3, y - r * 0.18);
+    ctx.stroke();
   } else if (kind === 'piercing') {
     // A round through armor plate: the plate broken where it went, splinters flying, the head out the far side.
     ctx.beginPath();

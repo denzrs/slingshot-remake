@@ -138,6 +138,7 @@ export type GameEvent =
   | { type: 'blackhole'; player: number; x: number; y: number }
   | { type: 'planetKiller'; player: number; x: number; y: number; radius: number }
   | { type: 'nebula'; player: number; x: number; y: number }
+  | { type: 'wormhole'; player: number; x: number; y: number; toX: number; toY: number }
   | { type: 'split'; player: number; x: number; y: number }
   | { type: 'shield'; ship: number; x: number; y: number }
   | { type: 'kill'; record: KillRecord }

@@ -25,7 +25,7 @@ export function validationWorld(index = 0): World {
   ];
   return {
     ...FIELD, version: 0, holes: [],
-    nebulae: [],
+    nebulae: [], wormholes: [],
     ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
     planets: layouts[index].map((p, id) => ({ x: p.x, y: p.y, radius: p.radius, mass: p.density * p.radius ** 3, seed: id + 1, style: 'rocky' as const, tint: '#fff' })),
   };
@@ -55,7 +55,7 @@ export function recordShot(world: World, angle: number, power: number, shotId: n
 
 function predictionWorld(world: World, fit: GravityFit): World {
   return {
-    width: world.width, height: world.height,     nebulae: [],
+    width: world.width, height: world.height,     nebulae: [], wormholes: [],
     version: world.version,
     ships: world.ships.map((ship) => ({ ...ship })),
     planets: fit.planets.map((p, index) => {
@@ -261,7 +261,7 @@ interface RecoveryProbeError { angle: number; power: number; squared: number; sa
 /** Hidden predictions use estimated point sources, never true source positions or radii. */
 export function recoveryPredictionErrors(world: World, fit: GravityFit, exitBoundary: number = PHYSICS.OUT_MARGIN): RecoveryProbeError[] {
   const belief: World = {
-    width: world.width, height: world.height,   nebulae: [],
+    width: world.width, height: world.height,   nebulae: [], wormholes: [],
   version: world.version,
     ships: world.ships.map((ship) => ({ ...ship })), holes: [],
     planets: fit.planets.map((planet, index) => ({ ...planet, radius: 0, seed: index, style: 'rocky', tint: '#fff' })),

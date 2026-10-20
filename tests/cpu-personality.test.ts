@@ -13,7 +13,7 @@ function emptyWorld(ships: [number, number][]): World {
     planets: [],
     ships: ships.map(([x, y]) => ({ x, y, alive: true })),
     holes: [],
-    nebulae: [],
+    nebulae: [], wormholes: [],
     version: 0,
   };
 }

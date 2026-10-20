@@ -458,7 +458,7 @@ const powerRow = (kind: PowerUpKind) =>
 /** The kinds each power-up page lists: first the ones for your own shot, then the ones that go on the field. */
 const POWER_PAGES: readonly [readonly PowerUpKind[], readonly PowerUpKind[]] = [
   ['preview', 'teleport', 'splitter', 'repulse', 'piercing'],
-  ['shield', 'blackhole', 'planetkiller', 'nebula'],
+  ['shield', 'blackhole', 'planetkiller', 'nebula', 'wormhole'],
 ];
 
 /** A shot bent around a planet onto its target: the swing-by, as a picture. */

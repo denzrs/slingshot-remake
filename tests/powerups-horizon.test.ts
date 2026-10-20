@@ -155,7 +155,7 @@ describe('power-ups in Event Horizon', () => {
 
 describe('a flight that was changed on the way', () => {
   function straight(): World {
-    return { width: 1280, height: 800, planets: [], ships: [{ x: 300, y: 400, alive: true }, { x: 900, y: 420, alive: true }], holes: [], nebulae: [], version: 0 };
+    return { width: 1280, height: 800, planets: [], ships: [{ x: 300, y: 400, alive: true }, { x: 900, y: 420, alive: true }], holes: [], nebulae: [], wormholes: [], version: 0 };
   }
 
   it('replays the same flight from its script: the split and the shield happen at the same step', () => {

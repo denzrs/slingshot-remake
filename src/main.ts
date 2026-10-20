@@ -112,6 +112,10 @@ function wire(m: Match): void {
         if (audible) sound.explode();
         break;
       }
+      case 'wormhole':
+        effects.teleport(e.x, e.y, e.toX, e.toY, POWER_UP_COLORS.wormhole);
+        if (audible) sound.teleport();
+        break;
       case 'nebula':
         effects.spawn(e.x, e.y, POWER_UP_COLORS.nebula);
         if (audible) sound.spawn();

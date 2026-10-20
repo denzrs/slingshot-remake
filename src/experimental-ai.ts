@@ -1422,6 +1422,7 @@ function estimatedWorld(visible: ExperimentalWorld, fit: GravityFit): World {
     // Nebulae are not part of the experimental model, like extra black holes: a cloud is an unmodelled
     // gravity source the fit treats as noise.
     nebulae: [],
+    wormholes: [],
     version: 0,
   };
 }

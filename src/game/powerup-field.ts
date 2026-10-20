@@ -1,6 +1,6 @@
 import type { ShotRules, World } from '../physics';
 import { aimedPlanet, aimedSpot, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
-import { NEBULA } from '../config';
+import { NEBULA, WORMHOLE } from '../config';
 import type { Rng } from '../rng';
 import { bump, type StatBook } from '../stats';
 import type { Volley, VolleyAim } from '../volley';
@@ -36,10 +36,10 @@ export interface PowerUpHost {
 }
 
 /** The power-ups a player aims at a spot on the field, rather than firing: a teleport, a black hole, a planet killer or a nebula. */
-export type PlacementKind = 'teleport' | 'blackhole' | 'planetkiller' | 'nebula';
+export type PlacementKind = 'teleport' | 'blackhole' | 'planetkiller' | 'nebula' | 'wormhole';
 
 /** Whether this power-up is aimed at a spot and then confirmed, instead of armed and spent by a shot. */
-export const isPlacement = (kind: PowerUpKind | null): kind is PlacementKind => kind === 'teleport' || kind === 'blackhole' || kind === 'planetkiller' || kind === 'nebula';
+export const isPlacement = (kind: PowerUpKind | null): kind is PlacementKind => kind === 'teleport' || kind === 'blackhole' || kind === 'planetkiller' || kind === 'nebula' || kind === 'wormhole';
 
 /** Where an aimed power-up would land or be planted, as the renderer sees it. */
 export interface PlacementAim {
@@ -48,6 +48,8 @@ export interface PlacementAim {
   kind: PlacementKind;
   /** The landing or planting spot, or null while the aim lands nowhere. */
   target: { x: number; y: number } | null;
+  /** A wormhole's mouth already set: the aim now picks the other one. */
+  entry?: { x: number; y: number } | null;
 }
 
 /** What a guest needs besides the pickups to draw the power-ups: the pass the round is in, and who is aiming a placement. */
@@ -81,6 +83,8 @@ export class PowerUpField {
   private previewCache: number[] | null = null;
   /** The ships aiming a teleport right now, by their id: online, several can aim at once. */
   private choosing = new Set<number>();
+  /** The first mouth of a wormhole a ship has set, by ship: the second click sets the other and plants the pair. */
+  private wormEntry = new Map<number, { x: number; y: number }>();
 
   constructor(private readonly host: PowerUpHost) {}
 
@@ -101,6 +105,7 @@ export class PowerUpField {
     this.pass = 0;
     this.volleysThisPass = 0;
     this.choosing.clear();
+    this.wormEntry.clear();
     if (this.enabled) for (let i = 0; i < this.amount; i++) this.spawn();
   }
 
@@ -214,8 +219,10 @@ export class PowerUpField {
       this.previewKey = '';
       return;
     }
-    if (this.aiming(id)) this.choosing.delete(id);
-    else this.choosing.add(id);
+    if (this.aiming(id)) {
+      this.choosing.delete(id);
+      this.wormEntry.delete(id);
+    } else this.choosing.add(id);
   }
 
   /** The ship whose screen this is, or whose turn it is. */
@@ -229,6 +236,7 @@ export class PowerUpField {
     const kind = this.host.players()[owner]?.powerUp ?? null;
     if (this.host.phase() === 'aiming' && isPlacement(kind) && this.host.canAim(owner)) return true;
     this.choosing.delete(owner);
+    this.wormEntry.delete(owner);
     return false;
   }
 
@@ -248,7 +256,7 @@ export class PowerUpField {
     } else {
       target = aimedSpot(world, from, p.angle, p.power);
     }
-    return { owner, kind, target };
+    return kind === 'wormhole' ? { owner, kind, target, entry: this.wormEntry.get(owner) ?? null } : { owner, kind, target };
   }
 
   /** Whether the ship at this screen (or on turn) is aiming a placement. */
@@ -265,6 +273,18 @@ export class PowerUpField {
   confirmPlacement(by: number = this.aimer): boolean {
     const aim = this.placementAim(by);
     if (!aim?.target) return false;
+    if (aim.kind === 'wormhole') {
+      const entry = this.wormEntry.get(by);
+      // The first click sets one mouth and spends nothing; the second sets the other, far enough from the first, and plants the pair.
+      if (!entry) {
+        this.wormEntry.set(by, aim.target);
+        return false;
+      }
+      if (Math.hypot(aim.target.x - entry.x, aim.target.y - entry.y) < WORMHOLE.MIN_SEPARATION) return false;
+      this.choosing.delete(by);
+      this.wormEntry.delete(by);
+      return this.plantWormhole(aim.owner, entry, aim.target);
+    }
     this.choosing.delete(by);
     if (aim.kind === 'blackhole') return this.plantBlackHole(aim.owner, aim.target);
     if (aim.kind === 'nebula') return this.plantNebula(aim.owner, aim.target);
@@ -280,6 +300,7 @@ export class PowerUpField {
   cancelPlacement(by: number = this.aimer): boolean {
     const had = this.choosing.has(by);
     this.choosing.delete(by);
+    this.wormEntry.delete(by);
     return had;
   }
 
@@ -297,6 +318,18 @@ export class PowerUpField {
     this.host.emit({ type: 'blackhole', player: id, x: spot.x, y: spot.y });
     // A pickup sitting where the hole now opens is swallowed, and the field is filled up again.
     this.sweep();
+    return true;
+  }
+
+  /** Plants a wormhole: two mouths that carry a shot from one to the other, for the rest of the round. */
+  private plantWormhole(id: number, a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+    const world = this.host.world();
+    world.wormholes.push({ ax: a.x, ay: a.y, bx: b.x, by: b.y, radius: WORMHOLE.RADIUS });
+    world.version++;
+    this.host.players()[id].powerUp = null;
+    this.host.players()[id].armed = false;
+    this.host.clearCpuJobs();
+    this.host.emit({ type: 'wormhole', player: id, x: a.x, y: a.y, toX: b.x, toY: b.y });
     return true;
   }
 
