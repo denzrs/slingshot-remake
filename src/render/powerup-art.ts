@@ -138,21 +138,21 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     }
     ctx.fill();
   } else if (kind === 'wormhole') {
-    // Two portals, alike, tilted to face each other, a dashed path jumping across between them.
+    // Two portals, alike, set diagonally and tilted to face each other: each a doorway ring with a second ring
+    // inside it, like looking down a tunnel.
     ctx.save();
-    for (const [dx, dy] of [[-0.62, 0.3], [0.62, -0.3]] as const) {
+    for (const [dx, dy] of [[-0.52, 0.4], [0.52, -0.4]] as const) {
+      const cx = x + dx * r;
+      const cy = y + dy * r;
       ctx.beginPath();
-      ctx.ellipse(x + dx * r, y + dy * r, r * 0.27, r * 0.66, -0.45, 0, Math.PI * 2);
+      ctx.ellipse(cx, cy, r * 0.36, r * 0.78, -0.5, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.globalAlpha *= 0.35;
-      ctx.fill();
-      ctx.globalAlpha /= 0.35;
+      ctx.globalAlpha *= 0.55;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r * 0.16, r * 0.42, -0.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha /= 0.55;
     }
-    ctx.setLineDash([r * 0.14, r * 0.2]);
-    ctx.beginPath();
-    ctx.moveTo(x - 0.28 * r, y + 0.13 * r);
-    ctx.lineTo(x + 0.28 * r, y - 0.13 * r);
-    ctx.stroke();
     ctx.restore();
   } else if (kind === 'piercing') {
     // A round through armor plate: the plate broken where it went, splinters flying, the head out the far side.
