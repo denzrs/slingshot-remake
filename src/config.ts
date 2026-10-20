@@ -32,6 +32,14 @@ export const WORMHOLE = {
   COLORS: ['#4db8ff', '#ff9d3a', '#5cf08a', '#ff5cd0', '#ffe14d', '#a98bff'],
 } as const;
 
+/** The planetary defense: a shot is not struck down on entering the dome but tracked, locked and then hit. */
+export const DEFENSE = {
+  /** A shot must stay this long (s) in the dome for the turret to lock on, or it flies through unharmed. */
+  LOCK_TIME: 0.04,
+  /** Once locked, the interceptor takes this long (s) to arrive, and the hit is sure even if the shot has left the dome by then. */
+  TRAVEL_TIME: 0.05,
+} as const;
+
 /** Physics constants that only the nebula power-up uses. */
 export const NEBULA = {
   /** Half a field across at most: a cloud big enough to fly through, small enough to miss. */

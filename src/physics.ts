@@ -1,4 +1,4 @@
-import { NEBULA, PHYSICS, WORMHOLE } from './config';
+import { DEFENSE, NEBULA, PHYSICS, WORMHOLE } from './config';
 
 // Read once: Shot.step is the innermost loop of every CPU search and killcam, and an imported binding is slower to read than a local one.
 const { DT, G, SHIP_RADIUS, OUT_MARGIN } = PHYSICS;
@@ -79,12 +79,12 @@ export function isWormholeJump(points: readonly number[], i: number, wormholes: 
   return wormholes.some((w) => (near(x0, y0, w.ax, w.ay) && near(x1, y1, w.bx, w.by)) || (near(x0, y0, w.bx, w.by) && near(x1, y1, w.ax, w.ay)));
 }
 
-/** A planetary defense the power-up has set on a planet's surface: it shoots down every shot that enters its ring, bar its owner's side. */
+/** A planetary defense the power-up has set on a planet's surface: it tracks every shot that flies through its dome, bar its owner's side, and shoots it down. */
 export interface Defense {
   /** Where it stands: on the planet's surface. */
   x: number;
   y: number;
-  /** The ring it covers: one and a half times the planet's radius. Only the part outside the rock counts. */
+  /** The dome it covers: 1.7 times the planet's radius round the turret. Only the part outside the rock counts. */
   radius: number;
   /** The seed of the planet it stands on: it goes where that planet goes, and is gone when the planet is. */
   planet: number;
@@ -214,6 +214,13 @@ export class Shot {
   private readonly encounters: Encounter[] | null;
   /** The wormhole jumps this shot has made since the caller last cleared them: the volley puts both mouths in the trail, so a drawn trail can break between them. */
   readonly warps: { fromX: number; fromY: number; toX: number; toY: number }[] = [];
+  /**
+   * Seconds this shot has spent in the dome of each defense (an index into `world.defenses`), carried on through
+   * the interceptor's flight once the turret has locked on. Past lock plus travel the shot is struck down.
+   */
+  readonly locks: number[] = [];
+  /** The defenses that locked on and fired at this shot since the caller last cleared this. */
+  readonly intercepts: { defense: number }[] = [];
   /** The mouth (wormhole index * 2 + end) this shot last left by: it is ignored until the shot is clear of it, so it is not carried back at once. */
   private portal = -1;
   /** Ships already passed through, so one hull is only ever reported once. */
@@ -262,6 +269,7 @@ export class Shot {
     copy.time = this.time;
     copy.swingbys = this.swingbys;
     copy.portal = this.portal;
+    copy.locks.push(...this.locks);
     const c = Math.cos(turn);
     const s = Math.sin(turn);
     copy.vx = this.vx * c - this.vy * s;
@@ -366,12 +374,24 @@ export class Shot {
       const dy = hole.y - this.y;
       if (dx * dx + dy * dy < hole.radius * hole.radius) return this.finish({ kind: 'hole', hole: i });
     }
-    // A defense shoots down what enters its ring, unless the shot is its own side's.
+    // A defense tracks what flies through its dome, unless the shot is its own side's: once the shot has stayed
+    // in long enough the turret locks on and fires, and the interceptor lands a moment later, wherever the shot is
+    // by then. A shot that is out of the dome before the lock is made has got through.
     for (let i = 0; i < defenses.length; i++) {
       const d = defenses[i];
+      if (d.protects.includes(this.shooter)) continue;
       const dx = d.x - this.x;
       const dy = d.y - this.y;
-      if (dx * dx + dy * dy < d.radius * d.radius && !d.protects.includes(this.shooter)) return this.finish({ kind: 'shotdown', defense: i });
+      const before = this.locks[i] ?? 0;
+      const inside = dx * dx + dy * dy < d.radius * d.radius;
+      if (!inside && before < DEFENSE.LOCK_TIME) {
+        this.locks[i] = 0;
+        continue;
+      }
+      const held = before + dt;
+      this.locks[i] = held;
+      if (before < DEFENSE.LOCK_TIME && held >= DEFENSE.LOCK_TIME) this.intercepts.push({ defense: i });
+      if (held >= DEFENSE.LOCK_TIME + DEFENSE.TRAVEL_TIME) return this.finish({ kind: 'shotdown', defense: i });
     }
     const m = OUT_MARGIN;
     if (this.x < -m || this.x > width + m || this.y < -m || this.y > height + m) return this.finish({ kind: 'lost' });

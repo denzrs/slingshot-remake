@@ -113,6 +113,23 @@ export class Sound {
     this.hiss(a.t, 0.12, 0.15, 6000, 1500);
   }
 
+  /** A planetary defense launching an interceptor: a quick rising zap. */
+  defenseFire(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(500, 1500, 0.1, 0.06, 'sawtooth', a.t);
+    this.hiss(a.t, 0.06, 0.08, 7000, 2000);
+  }
+
+  /** The interceptor hitting its shot: a sharp crack with a ring after it. */
+  intercepted(): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(1500, 300, 0.2, 0.09, 'triangle', a.t);
+    this.hiss(a.t, 0.14, 0.2, 5000, 800);
+    this.tone(2200, 1100, 0.14, 0.04, 'sine', a.t + 0.03);
+  }
+
   /** The ship vanishes and arrives somewhere else: a sweep down, then a flash up. */
   teleport(): void {
     const a = this.begin();

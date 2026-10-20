@@ -124,10 +124,13 @@ function wire(m: Match): void {
         effects.spawn(e.x, e.y, color(e.player));
         if (audible) sound.spawn();
         break;
+      case 'defenseFire':
+        effects.defenseFire(e.x, e.y, e.toX, e.toY, POWER_UP_COLORS.defense);
+        if (audible) sound.defenseFire();
+        break;
       case 'shotdown':
-        effects.shieldHit(e.x, e.y, POWER_UP_COLORS.defense);
-        effects.fizzle(e.x, e.y, color(e.player), e.vx, e.vy);
-        if (audible) sound.shield();
+        effects.intercepted(e.x, e.y, POWER_UP_COLORS.defense, color(e.player), e.vx, e.vy, e.fromX, e.fromY);
+        if (audible) sound.intercepted();
         break;
       case 'split':
         effects.split(e.x, e.y, POWER_UP_COLORS.splitter);

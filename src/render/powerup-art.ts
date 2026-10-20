@@ -16,7 +16,7 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   nebula: '#9be7ff',
   piercing: '#dfe7f5',
   wormhole: '#4db8ff',
-  defense: '#6ea8ff',
+  defense: '#b4ff3c',
 };
 
 /** The colour of the portals of the wormhole with this id (the palette starts over after the last colour). */
@@ -178,20 +178,27 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.closePath();
     ctx.fill();
   } else if (kind === 'defense') {
-    // A turret on a planet: the rock's curve below, a barrel on it, and the ring it guards arcing over.
+    // A dome standing on the ground, a turret inside it with its barrel raised, and the interceptor leaving it.
     const alpha = ctx.globalAlpha;
-    ctx.arc(x, y + r * 1.15, r * 0.8, Math.PI * 1.2, Math.PI * 1.8);
+    const base = y + r * 0.6;
+    ctx.moveTo(x - r * 1.05, base);
+    ctx.lineTo(x + r * 1.05, base);
+    ctx.moveTo(x + r * 0.95, base);
+    ctx.arc(x, base, r * 0.95, 0, Math.PI, true);
     ctx.stroke();
+    // The turret: a head on the ground and a barrel raised at the sky.
     ctx.beginPath();
-    ctx.moveTo(x, y + r * 0.35);
-    ctx.lineTo(x, y - r * 0.15);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(x, y - r * 0.15, r * 0.17, 0, Math.PI * 2);
+    ctx.arc(x - r * 0.18, base - r * 0.02, r * 0.2, Math.PI, 0);
     ctx.fill();
-    ctx.globalAlpha = alpha * 0.7;
     ctx.beginPath();
-    ctx.arc(x, y + r * 0.35, r * 0.95, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.moveTo(x - r * 0.18, base - r * 0.16);
+    ctx.lineTo(x + r * 0.2, base - r * 0.5);
+    ctx.stroke();
+    // The interceptor: a short dash flying on from the barrel.
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.beginPath();
+    ctx.moveTo(x + r * 0.38, base - r * 0.68);
+    ctx.lineTo(x + r * 0.62, base - r * 0.9);
     ctx.stroke();
     ctx.globalAlpha = alpha;
   } else if (kind === 'splitter') {

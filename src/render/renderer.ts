@@ -14,7 +14,7 @@ import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
 import { drawNebula } from './nebula';
 import { drawPortal, drawWormhole } from './wormhole';
-import { drawDefense, defensePlanet } from './defense';
+import { defensePlanet, defenseTargets, drawDefense, drawInterception } from './defense';
 import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
@@ -217,7 +217,7 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
-    for (const d of world.defenses) drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, alpha);
+    world.defenses.forEach((d, i) => drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, alpha, defenseTargets(scene.volley?.shots ?? [], d, i)));
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
@@ -362,6 +362,8 @@ export class Renderer {
         this.drawOffscreenMarker(shot.x, shot.y, color);
       }
     }
+    // What the planetary defenses do to the shots they track: the lock-on and the interceptor, over the shots.
+    match.world.defenses.forEach((d, i) => drawInterception(ctx, d, match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, defenseTargets(scene.volley?.shots ?? [], d, i), this.time));
   }
 
   /** Experimental power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */

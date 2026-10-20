@@ -96,7 +96,7 @@ export const POWER_UP = {
    */
   NEBULA_EDGE_GAP: NEBULA.RADIUS,
   /** A planetary defense covers a ring of this share of its planet's radius, centred on the surface. */
-  DEFENSE_RADIUS_SHARE: 1.5,
+  DEFENSE_RADIUS_SHARE: 1.7,
 } as const;
 
 export interface Pickup {

@@ -158,8 +158,10 @@ function isGameEvent(value: unknown): boolean {
       return index('player') && finite('x') && finite('y');
     case 'defense':
       return index('player') && finite('x') && finite('y');
+    case 'defenseFire':
+      return index('player') && finite('x') && finite('y') && finite('toX') && finite('toY');
     case 'shotdown':
-      return index('player') && finite('x') && finite('y') && finite('vx') && finite('vy');
+      return index('player') && finite('x') && finite('y') && finite('vx') && finite('vy') && finite('fromX') && finite('fromY');
     case 'multiKill':
       return index('player') && finite('kills') && finite('points') && finite('x') && finite('y');
     case 'split':
