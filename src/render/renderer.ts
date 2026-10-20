@@ -333,6 +333,24 @@ export class Renderer {
         glow.addColorStop(1, rgba(color, 0));
         ctx.fillStyle = glow;
         ctx.fillRect(shot.x - 9, shot.y - 9, 18, 18);
+        // An armor-piercing round is an arrowhead pointing where it flies, glowing like the plain shot.
+        if (vs.pierce) {
+          ctx.save();
+          ctx.translate(shot.x, shot.y);
+          ctx.rotate(Math.atan2(shot.vy, shot.vx));
+          ctx.beginPath();
+          ctx.beginPath();
+          ctx.moveTo(13, 0);
+          ctx.lineTo(-6, -4);
+          ctx.lineTo(-3, 0);
+          ctx.lineTo(-6, 4);
+          ctx.closePath();
+          ctx.shadowColor = rgba(color, 0.9);
+          ctx.shadowBlur = 12;
+          ctx.fillStyle = rgba(COLORS.bone, 0.98);
+          ctx.fill();
+          ctx.restore();
+        }
       } else {
         this.drawOffscreenMarker(shot.x, shot.y, color);
       }
