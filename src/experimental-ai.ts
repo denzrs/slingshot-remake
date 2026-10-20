@@ -1423,6 +1423,7 @@ function estimatedWorld(visible: ExperimentalWorld, fit: GravityFit): World {
     // gravity source the fit treats as noise.
     nebulae: [],
     wormholes: [],
+    defenses: [],
     version: 0,
   };
 }

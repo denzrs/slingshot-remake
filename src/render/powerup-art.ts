@@ -16,6 +16,7 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   nebula: '#9be7ff',
   piercing: '#dfe7f5',
   wormhole: '#4db8ff',
+  defense: '#6ea8ff',
 };
 
 /** The colour of the portals of the wormhole with this id (the palette starts over after the last colour). */
@@ -176,6 +177,23 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.lineTo(x + r * 0.35, y + r * 0.28);
     ctx.closePath();
     ctx.fill();
+  } else if (kind === 'defense') {
+    // A turret on a planet: the rock's curve below, a barrel on it, and the ring it guards arcing over.
+    const alpha = ctx.globalAlpha;
+    ctx.arc(x, y + r * 1.15, r * 0.8, Math.PI * 1.2, Math.PI * 1.8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y + r * 0.35);
+    ctx.lineTo(x, y - r * 0.15);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y - r * 0.15, r * 0.17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = alpha * 0.7;
+    ctx.beginPath();
+    ctx.arc(x, y + r * 0.35, r * 0.95, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+    ctx.globalAlpha = alpha;
   } else if (kind === 'splitter') {
     ctx.moveTo(x, y + r);
     ctx.lineTo(x, y);

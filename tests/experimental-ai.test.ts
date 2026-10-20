@@ -44,7 +44,7 @@ describe('experimental starting knowledge', () => {
     width: FIELD.width, height: FIELD.height,
     ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
     planets: [{ x: 640, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' }],
-    holes: [], nebulae: [], wormholes: [], version: 0,
+    holes: [], nebulae: [], wormholes: [], defenses: [], version: 0,
   };
 
   it.each([[undefined, 1], [-1, 0], [2, 1], [NaN, 0], [Infinity, 0], [0.35, 0.35]])(
@@ -277,7 +277,7 @@ describe('experimental gravity fitting', () => {
       width: FIELD.width, height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' }],
-      holes: [],       nebulae: [], wormholes: [],
+      holes: [],       nebulae: [], wormholes: [], defenses: [],
       version: 0,
     };
     const visible = visibleWorld(world);
@@ -332,7 +332,7 @@ describe('experimental gravity fitting', () => {
     const world: World = {
       width: FIELD.width, height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
-      planets: [], holes: [{ x: 800, y: 650, radius: 30, mass: 200_000 }],     nebulae: [], wormholes: [],
+      planets: [], holes: [{ x: 800, y: 650, radius: 30, mass: 200_000 }],     nebulae: [], wormholes: [], defenses: [],
     version: 0,
     };
     const hidden = { ...visibleWorld(world), visiblePlanets: undefined, mode: 'horizon' as const };
@@ -352,7 +352,7 @@ describe('experimental gravity fitting', () => {
       planets: [
         { x: 550, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' },
         { x: 820, y: 280, radius: 30, mass: 30_000, seed: 2, style: 'rocky', tint: '#fff' },
-      ], holes: [], nebulae: [], wormholes: [], version: 0,
+      ], holes: [], nebulae: [], wormholes: [], defenses: [], version: 0,
     };
     const hidden = { ...visibleWorld(world), visiblePlanets: undefined };
     const learner = createExperimentalLearner(0.5);
@@ -382,7 +382,7 @@ describe('experimental gravity fitting', () => {
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: source === 'planet' ? [{ x: 640, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' }] : [],
       holes: source === 'hole' ? [{ x: 800, y: 650, radius: 30, mass: 200_000 }] : [],
-  nebulae: [], wormholes: [],
+  nebulae: [], wormholes: [], defenses: [],
       version: 0,
     };
     const visible = visibleWorld(world);
@@ -411,7 +411,7 @@ describe('experimental gravity fitting', () => {
       width: FIELD.width, height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' }],
-      holes: [], nebulae: [], wormholes: [], version: 0,
+      holes: [], nebulae: [], wormholes: [], defenses: [], version: 0,
     };
     const visible = visibleWorld(world);
     const learner = createExperimentalLearner();
@@ -442,7 +442,7 @@ describe('experimental gravity fitting', () => {
       planets: [
         { x: 640, y: 520, radius: 25, mass: 25 ** 3 * 0.76, seed: 1, style: 'rocky', tint: '#fff' },
         { x: 930, y: 640, radius: 30, mass: 30 ** 3 * 1.29, seed: 2, style: 'rocky', tint: '#fff' },
-      ], holes: [], nebulae: [], wormholes: [], version: 0,
+      ], holes: [], nebulae: [], wormholes: [], defenses: [], version: 0,
     };
     const visible = visibleWorld(world);
     const learner = createExperimentalLearner();
@@ -466,7 +466,7 @@ describe('experimental gravity fitting', () => {
       width: FIELD.width, height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 20_000, seed: 1, style: 'rocky', tint: '#fff' }],
-      holes: [], nebulae: [], wormholes: [], version: 0,
+      holes: [], nebulae: [], wormholes: [], defenses: [], version: 0,
     };
     const visible = visibleWorld(world);
     const learner = createExperimentalLearner();
@@ -487,7 +487,7 @@ describe('experimental gravity fitting', () => {
     const world: World = {
       width: FIELD.width, height: FIELD.height,
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: true }],
-      planets: [], holes: [], nebulae: [], wormholes: [], version: 0,
+      planets: [], holes: [], nebulae: [], wormholes: [], defenses: [], version: 0,
     };
     const aims: { angle: number; power: number }[] = [];
     const decisions: { kind: string; hypothesisCount: number; hitRate: number; unsafeRate: number }[] = [];
@@ -545,7 +545,7 @@ describe('experimental gravity fitting', () => {
       ships: [],
       planets: [planet],
       holes: [],
-      nebulae: [], wormholes: [],
+      nebulae: [], wormholes: [], defenses: [],
       version: 0,
     };
     const fit = fitGravity([], 1, FIELD.width, FIELD.height, false);
@@ -566,7 +566,7 @@ describe('experimental gravity fitting', () => {
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 15_625, seed: 1, style: 'rocky', tint: '#fff' }],
       holes: [],
-      nebulae: [], wormholes: [],
+      nebulae: [], wormholes: [], defenses: [],
       version: 0,
     };
     const shot = new Shot(world, 0, 0, 50, { bounce: false, timeLimit: 12 });
@@ -590,7 +590,7 @@ describe('experimental gravity fitting', () => {
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [],
       holes: [{ x: FIELD.width / 2, y: FIELD.height / 2, radius: 16, mass: HORIZON.START_MASS }],
-      nebulae: [], wormholes: [],
+      nebulae: [], wormholes: [], defenses: [],
       version: 0,
     };
     const shot = new Shot(world, 0, 0, 50, { bounce: true, timeLimit: 12 });
@@ -612,7 +612,7 @@ describe('experimental gravity fitting', () => {
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 15_625, seed: 1, style: 'rocky', tint: '#fff' }],
       holes: [],
-      nebulae: [], wormholes: [],
+      nebulae: [], wormholes: [], defenses: [],
       version: 0,
     };
     const trails: { points: number[]; angle: number; power: number }[] = [];
@@ -640,7 +640,7 @@ describe('experimental gravity fitting', () => {
       ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 400, alive: false }],
       planets: [{ x: 640, y: 520, radius: 25, mass: 15_625, seed: 1, style: 'rocky', tint: '#fff' }],
       holes: [],
-      nebulae: [], wormholes: [],
+      nebulae: [], wormholes: [], defenses: [],
       version: 0,
     };
     const shot = new Shot(world, 0, 0, 50, { bounce: false, timeLimit: 12 });

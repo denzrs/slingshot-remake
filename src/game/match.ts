@@ -139,6 +139,9 @@ export type GameEvent =
   | { type: 'planetKiller'; player: number; x: number; y: number; radius: number }
   | { type: 'nebula'; player: number; x: number; y: number }
   | { type: 'wormhole'; player: number; x: number; y: number; toX: number; toY: number }
+  | { type: 'defense'; player: number; x: number; y: number }
+  /** A planetary defense shot a flying shot down. */
+  | { type: 'shotdown'; player: number; x: number; y: number; vx: number; vy: number }
   | { type: 'split'; player: number; x: number; y: number }
   | { type: 'shield'; ship: number; x: number; y: number }
   | { type: 'kill'; record: KillRecord }
@@ -993,6 +996,9 @@ export abstract class Match {
         this.emit({ type: 'devour', x: e.x, y: e.y, toX: hole.x, toY: hole.y, color: COLORS.players[this.players[player].seat], vx: e.vx, vy: e.vy });
         break;
       }
+      case 'shotdown':
+        this.emit({ type: 'shotdown', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy });
+        break;
       case 'clash': {
         if (e.index >= end.other) break;
         const otherOwner = volley.shots[end.other].owner;
@@ -1273,13 +1279,14 @@ export abstract class Match {
 
   /**
    * Where a CPU lays the placement it holds, as an aim: a rough spot, never a searched one. A black hole or
-   * a nebula goes part way along the line to the nearest enemy, so that enemy's next shot runs into it; the
+   * a nebula goes part way along the line to the nearest enemy, so that enemy's next shot runs into it; a defense
+   * stands on the planet nearest the CPU, on the side that faces it; the
    * planet killer shoots the planet lying most in the way of that line. Null when the CPU holds no placement,
    * or there is no planet left.
    */
   protected cpuPlacementAim(p: PlayerState): Aim | null {
     const kind = p.powerUp;
-    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller') return null;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense') return null;
     const world = this.world;
     const from = world.ships[p.id];
     const friends = this.friendsOf(p.id);
@@ -1298,6 +1305,12 @@ export abstract class Match {
       return Math.hypot(from.x + t * dx - planet.x, from.y + t * dy - planet.y);
     };
     let spot: { x: number; y: number };
+    if (kind === 'defense') {
+      // On the planet nearest its own ship, on the side that faces it: the shots coming at the CPU pass there.
+      const near = [...world.planets].sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))[0];
+      if (!near) return null;
+      return { angle: normalizeAngle((Math.atan2(-(near.y - from.y), near.x - from.x) * 180) / Math.PI), power: 0 };
+    }
     if (kind === 'planetkiller') {
       const byGap = [...world.planets].sort((a, b) => laneGap(a) - laneGap(b));
       if (!byGap.length) return null;

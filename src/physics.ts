@@ -79,6 +79,21 @@ export function isWormholeJump(points: readonly number[], i: number, wormholes: 
   return wormholes.some((w) => (near(x0, y0, w.ax, w.ay) && near(x1, y1, w.bx, w.by)) || (near(x0, y0, w.bx, w.by) && near(x1, y1, w.ax, w.ay)));
 }
 
+/** A planetary defense the power-up has set on a planet's surface: it shoots down every shot that enters its ring, bar its owner's side. */
+export interface Defense {
+  /** Where it stands: on the planet's surface. */
+  x: number;
+  y: number;
+  /** The ring it covers: one and a half times the planet's radius. Only the part outside the rock counts. */
+  radius: number;
+  /** The seed of the planet it stands on: it goes where that planet goes, and is gone when the planet is. */
+  planet: number;
+  /** Who set it: its ring and turret are drawn in this player's colour. */
+  owner: number;
+  /** The players whose shots fly through unharmed: whoever set it, and their team. */
+  protects: number[];
+}
+
 export interface World {
   width: number;
   height: number;
@@ -91,7 +106,9 @@ export interface World {
   nebulae: Nebula[];
   /** Every wormhole the wormhole power-up has placed. */
   wormholes: Wormhole[];
-  /** Bumped whenever planets, the holes or the nebulae change, so cached render layers know to rebuild. */
+  /** Every planetary defense the defense power-up has set. */
+  defenses: Defense[];
+  /** Bumped whenever planets, the holes, the nebulae, the wormholes or the defenses change, so cached render layers know to rebuild. */
   version: number;
 }
 
@@ -106,6 +123,8 @@ export type ShotEnd =
   | { kind: 'planet'; planet: number }
   /** Which black hole swallowed it, as an index into `world.holes`. */
   | { kind: 'hole'; hole: number }
+  /** Which defense shot it down, as an index into `world.defenses`. */
+  | { kind: 'shotdown'; defense: number }
   | { kind: 'clash'; other: number }
   | { kind: 'lost' }
   | { kind: 'timeout' };
@@ -162,6 +181,7 @@ export function cloneWorld(w: World): World {
     holes: w.holes.map((h) => ({ ...h })),
     nebulae: w.nebulae.map((n) => ({ ...n })),
     wormholes: w.wormholes.map((o) => ({ ...o })),
+    defenses: w.defenses.map((d) => ({ ...d, protects: [...d.protects] })),
   };
 }
 
@@ -254,7 +274,7 @@ export class Shot {
   step(): ShotEnd | null {
     if (this.end) return this.end;
     const dt = DT;
-    const { planets, ships, holes, nebulae, width, height } = this.world;
+    const { planets, ships, holes, nebulae, defenses, width, height } = this.world;
     const pull = this.pull;
     const hx = this.vx;
     const hy = this.vy;
@@ -345,6 +365,13 @@ export class Shot {
       const dx = hole.x - this.x;
       const dy = hole.y - this.y;
       if (dx * dx + dy * dy < hole.radius * hole.radius) return this.finish({ kind: 'hole', hole: i });
+    }
+    // A defense shoots down what enters its ring, unless the shot is its own side's.
+    for (let i = 0; i < defenses.length; i++) {
+      const d = defenses[i];
+      const dx = d.x - this.x;
+      const dy = d.y - this.y;
+      if (dx * dx + dy * dy < d.radius * d.radius && !d.protects.includes(this.shooter)) return this.finish({ kind: 'shotdown', defense: i });
     }
     const m = OUT_MARGIN;
     if (this.x < -m || this.x > width + m || this.y < -m || this.y > height + m) return this.finish({ kind: 'lost' });

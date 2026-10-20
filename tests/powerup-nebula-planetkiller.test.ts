@@ -60,7 +60,7 @@ describe('planet killer power-up', () => {
     const far = planet(900, 400);
     const world: World = {
       width: 1280, height: 800, planets: [near, far],
-      ships: [{ x: 200, y: 400, alive: true }], holes: [], nebulae: [], wormholes: [], version: 0,
+      ships: [{ x: 200, y: 400, alive: true }], holes: [], nebulae: [], wormholes: [], defenses: [], version: 0,
     };
     expect(aimedPlanet(world, { x: 200, y: 400 }, 0)).toEqual({ index: 0, x: near.x, y: near.y });
   });
@@ -69,7 +69,7 @@ describe('planet killer power-up', () => {
     const far = planet(1200, 400);
     const world: World = {
       width: 1280, height: 800, planets: [far],
-      ships: [{ x: 60, y: 400, alive: true }], holes: [], nebulae: [], wormholes: [], version: 0,
+      ships: [{ x: 60, y: 400, alive: true }], holes: [], nebulae: [], wormholes: [], defenses: [], version: 0,
     };
     expect(aimedPlanet(world, { x: 60, y: 400 }, 0)).toEqual({ index: 0, x: far.x, y: far.y });
   });
@@ -109,7 +109,7 @@ describe('nebula power-up', () => {
 
   it('keeps the cloud whole inside the field, never off an edge', () => {
     const world: World = {
-      width: 1280, height: 800, planets: [], ships: [{ x: 200, y: 400, alive: true }], holes: [], nebulae: [], wormholes: [], version: 0,
+      width: 1280, height: 800, planets: [], ships: [{ x: 200, y: 400, alive: true }], holes: [], nebulae: [], wormholes: [], defenses: [], version: 0,
     };
     // Full power due east would put the spot past the right edge; the aim walks it back inside.
     const spot = nebulaSpot(world, { x: 200, y: 400 }, 0, 100)!;
@@ -122,7 +122,7 @@ describe('nebula power-up', () => {
     const world: World = {
       width: 1280, height: 800, planets: [],
       ships: [{ x: 200, y: 400, alive: true }], holes: [], version: 0,
-      nebulae: [{ x: 640, y: 400, radius: 4000, seed: 0.37 }], wormholes: [],
+      nebulae: [{ x: 640, y: 400, radius: 4000, seed: 0.37 }], wormholes: [], defenses: [],
     };
     const roomy = { bounce: false, timeLimit: 60 };
     const shot = new Shot(world, 0, 0, 40, roomy);
@@ -141,7 +141,7 @@ describe('nebula power-up', () => {
     const base: World = {
       width: 1280, height: 800,
       planets: [{ x: 640, y: 300, radius: 40, mass: 60_000, seed: 1, style: 'rocky', tint: '#fff' }],
-      ships: [{ x: 200, y: 400, alive: true }], holes: [], nebulae: [], wormholes: [], version: 0,
+      ships: [{ x: 200, y: 400, alive: true }], holes: [], nebulae: [], wormholes: [], defenses: [], version: 0,
     };
     const clear = new Shot(base, 0, 0, 60, rules);
     const cloudy = new Shot({ ...base, nebulae: [{ x: 600, y: 400, radius: NEBULA.RADIUS, seed: 0.37 }] }, 0, 0, 60, rules);
@@ -202,6 +202,25 @@ describe('a CPU and the placements', () => {
     expect(match.world.planets).toHaveLength(0);
   });
 
+  it('sets a planetary defense on the planet nearest it, and the defense guards its side', () => {
+    const match = cpuMatch();
+    const cpu = match.players[0];
+    const placer = match as unknown as Placer;
+    const own = match.world.ships[0];
+    const enemy = match.world.ships[1];
+    match.world.planets = [{ x: (own.x + enemy.x) / 2, y: (own.y + enemy.y) / 2, radius: 30, mass: 20_000, seed: 3, style: 'rocky', tint: '#fff' }];
+
+    cpu.powerUp = 'defense';
+    const aim = placer.cpuPlacementAim(cpu);
+    expect(aim).not.toBeNull();
+    cpu.angle = aim!.angle;
+    cpu.power = aim!.power;
+    expect(placer.placeForCpu(0)).toBe(true);
+    expect(cpu.powerUp).toBeNull();
+    expect(match.world.defenses).toHaveLength(1);
+    expect(match.world.defenses[0].protects).toContain(0);
+  });
+
   it('lays the placement it holds on its own turn, and fires nothing that turn', () => {
     const match = cpuMatch();
     const cpu = match.players[0];
@@ -217,7 +236,7 @@ describe('a shield bounce on the wire', () => {
   it('replays the same bounce from the volley script', () => {
     const world: World = {
       width: 1280, height: 800, planets: [],
-      ships: [{ x: 100, y: 400, alive: true }, { x: 500, y: 400, alive: true }], holes: [], nebulae: [], wormholes: [], version: 0,
+      ships: [{ x: 100, y: 400, alive: true }, { x: 500, y: 400, alive: true }], holes: [], nebulae: [], wormholes: [], defenses: [], version: 0,
     };
     world.ships[1].shield = true;
     const live = new Volley(world, [{ player: 0, angle: 0, power: 100 }], rules, true);

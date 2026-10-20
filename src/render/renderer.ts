@@ -14,6 +14,7 @@ import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
 import { drawNebula } from './nebula';
 import { drawPortal, drawWormhole } from './wormhole';
+import { drawDefense, defensePlanet } from './defense';
 import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
@@ -216,6 +217,7 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
+    for (const d of world.defenses) drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, alpha);
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
@@ -483,7 +485,7 @@ export class Renderer {
       const { owner, kind, target } = scene.placement;
       const from = match.world.ships[owner];
       const nextWormhole = nextWormholeId(match.world);
-      const color = kind === 'teleport' ? match.players[owner].color : kind === 'wormhole' ? portalColor(nextWormhole) : POWER_UP_COLORS[kind];
+      const color = kind === 'teleport' || kind === 'defense' ? match.players[owner].color : kind === 'wormhole' ? portalColor(nextWormhole) : POWER_UP_COLORS[kind];
       ctx.save();
       ctx.strokeStyle = color;
       ctx.globalAlpha = 0.6;
@@ -496,7 +498,16 @@ export class Renderer {
       ctx.setLineDash([]);
       ctx.globalAlpha = 0.85 + 0.15 * pulse;
       ctx.lineWidth = 2;
-      if (kind === 'blackhole') {
+      if (kind === 'defense') {
+        // In the colour of whoever is aiming it, like the ring that will stay on the field.
+        ctx.strokeStyle = color;
+        // The turret as it would stand, with the ring it would guard.
+        const planet = defensePlanet(match.world.planets, target);
+        if (planet) drawDefense(ctx, { x: target.x, y: target.y, radius: planet.radius * POWER_UP.DEFENSE_RADIUS_SHARE }, planet, color, this.time);
+        ctx.beginPath();
+        ctx.arc(target.x, target.y, 7 + 2 * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (kind === 'blackhole') {
         // The would-be horizon: a dark core inside a bright accretion ring.
         const r = POWER_UP.BLACKHOLE_RADIUS;
         ctx.beginPath();

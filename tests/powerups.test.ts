@@ -11,7 +11,7 @@ import { Volley } from '../src/volley';
 const rules = { bounce: false, timeLimit: 20 };
 
 function emptyWorld(ships: [number, number][] = [[300, 400], [900, 400]]): World {
-  return { width: 1280, height: 800, planets: [], ships: ships.map(([x, y]) => ({ x, y, alive: true })), holes: [], nebulae: [], wormholes: [], version: 0 };
+  return { width: 1280, height: 800, planets: [], ships: ships.map(([x, y]) => ({ x, y, alive: true })), holes: [], nebulae: [], wormholes: [], defenses: [], version: 0 };
 }
 
 /** A human duel with power-ups on, no planets, so flights are straight and predictable. */
