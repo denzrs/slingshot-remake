@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FIELD, WORMHOLE } from '../src/config';
 import { isWormholeJump, Shot, type World } from '../src/physics';
+import { PORTAL_PAIRS, portalPair } from '../src/render/powerup-art';
 
 const rules = { bounce: false, timeLimit: 20 };
 
@@ -66,5 +67,18 @@ describe('wormhole trail jump', () => {
   it('is found in both directions, and not for flight that merely passes a mouth', () => {
     expect(isWormholeJump([902.46, 700.04, 401.23, 399.87], 2, wormholes)).toBe(true);
     expect(isWormholeJump([400, 400, 403, 401], 2, wormholes)).toBe(false);
+  });
+});
+
+describe('wormhole portal colours', () => {
+  it('gives every portal on the field a colour of its own, until the palette is used up', () => {
+    const colours = PORTAL_PAIRS.flatMap((pair) => [pair.entry, pair.exit]);
+    expect(new Set(colours).size).toBe(colours.length);
+  });
+
+  it('starts over with the first pair after the last', () => {
+    expect(portalPair(0)).toBe(PORTAL_PAIRS[0]);
+    expect(portalPair(PORTAL_PAIRS.length)).toBe(PORTAL_PAIRS[0]);
+    expect(portalPair(PORTAL_PAIRS.length + 2)).toBe(PORTAL_PAIRS[2]);
   });
 });

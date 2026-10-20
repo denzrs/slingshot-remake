@@ -14,7 +14,7 @@ import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
 import { drawNebula } from './nebula';
 import { drawPortal, drawWormhole } from './wormhole';
-import { drawPowerUpSymbol, PORTAL_COLORS, POWER_UP_COLORS } from './powerup-art';
+import { drawPowerUpSymbol, portalPair, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
   hud: boolean;
@@ -217,7 +217,8 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
-    for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time);
+    // With more than one wormhole each pair has its own colours and a number besides.
+    world.wormholes.forEach((w, i) => drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, i, world.wormholes.length > 1 ? String(i + 1) : undefined));
     const next = match.nextHoleRadius;
     if (next && primary && !scene.camera) drawDangerRing(ctx, primary, next, this.time);
   }
@@ -481,7 +482,7 @@ export class Renderer {
     if (scene.placement?.target && scene.placement.kind !== 'planetkiller') {
       const { owner, kind, target } = scene.placement;
       const from = match.world.ships[owner];
-      const color = kind === 'teleport' ? match.players[owner].color : kind === 'wormhole' ? (scene.placement.entry ? PORTAL_COLORS.exit : PORTAL_COLORS.entry) : POWER_UP_COLORS[kind];
+      const color = kind === 'teleport' ? match.players[owner].color : kind === 'wormhole' ? (scene.placement.entry ? portalPair(match.world.wormholes.length).exit : portalPair(match.world.wormholes.length).entry) : POWER_UP_COLORS[kind];
       ctx.save();
       ctx.strokeStyle = color;
       ctx.globalAlpha = 0.6;
@@ -509,6 +510,9 @@ export class Renderer {
         // exit is then aimed relative to it: a thread to it, the ring it must stay out of, and a warning
         // while the aim is too close for the click to take.
         const entry = scene.placement.entry;
+        // The pair being set is the next one on the field: its colours, and its number when there are others.
+        const pair = portalPair(match.world.wormholes.length);
+        const mark = match.world.wormholes.length ? String(match.world.wormholes.length + 1) : undefined;
         const facing = entry ? Math.atan2(target.y - entry.y, target.x - entry.x) : Math.atan2(target.y - from.y, target.x - from.x);
         const tooClose = !!entry && Math.hypot(target.x - entry.x, target.y - entry.y) < WORMHOLE.MIN_SEPARATION;
         if (entry) {
@@ -523,9 +527,9 @@ export class Renderer {
           ctx.lineTo(target.x, target.y);
           ctx.stroke();
           ctx.restore();
-          drawPortal(ctx, entry.x, entry.y, facing, WORMHOLE.RADIUS, PORTAL_COLORS.entry, this.time, false);
+          drawPortal(ctx, entry.x, entry.y, facing, WORMHOLE.RADIUS, pair.entry, this.time, false, 1, 0, mark);
         }
-        drawPortal(ctx, target.x, target.y, entry ? facing + Math.PI : facing, WORMHOLE.RADIUS, color, this.time, !!entry, tooClose ? 0.3 : 0.7, 1);
+        drawPortal(ctx, target.x, target.y, entry ? facing + Math.PI : facing, WORMHOLE.RADIUS, color, this.time, !!entry, tooClose ? 0.3 : 0.7, 1, mark);
         ctx.globalAlpha = 1;
         ctx.font = `700 11px ${FONTS.mono}`;
         ctx.textAlign = 'center';
@@ -535,7 +539,7 @@ export class Renderer {
         const reach = WORMHOLE.RADIUS * 1.12 + 10;
         ctx.fillText(t(tooClose ? 'powerup.wormholeClose' : entry ? 'powerup.wormholeExit' : 'powerup.wormholeEntry').toUpperCase(), target.x, target.y + side * reach);
         if (entry) {
-          ctx.fillStyle = PORTAL_COLORS.entry;
+          ctx.fillStyle = pair.entry;
           ctx.fillText(t('powerup.wormholeEntry').toUpperCase(), entry.x, entry.y - side * reach);
         }
       } else if (kind === 'nebula') {

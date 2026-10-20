@@ -1,5 +1,6 @@
-import { PORTAL_COLORS } from './powerup-art';
+import { FONTS } from '../config';
 import { rgba } from './color';
+import { portalPair } from './powerup-art';
 
 /** The half-axes of a portal as shares of the wormhole's radius: a tall oval seen edge-on, like a doorway. */
 const WIDTH = 0.7;
@@ -92,6 +93,7 @@ export function drawPortal(
   exit: boolean,
   alpha = 1,
   phase = 0,
+  mark?: string,
 ): void {
   const { image, half } = sprite(color, radius);
   const rx = radius * WIDTH;
@@ -126,10 +128,29 @@ export function drawPortal(
     ctx.fill();
   }
   ctx.restore();
+
+  // The number of its wormhole, upright in the mouth.
+  if (mark) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = `700 ${Math.round(radius * 0.7)}px ${FONTS.mono}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(4, 8, 16, 0.85)';
+    ctx.strokeText(mark, x, y + 1);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(mark, x, y + 1);
+    ctx.restore();
+  }
 }
 
-/** Both portals of a wormhole, the first (entry, blue) and the second (exit, orange), turned to face each other. */
-export function drawWormhole(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, radius: number, time: number): void {
+/**
+ * Both portals of a wormhole, the entry and the exit, turned to face each other, in the colours of the
+ * wormhole's own pair. `mark` (its number) goes on both when there is more than one wormhole to tell apart.
+ */
+export function drawWormhole(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, radius: number, time: number, index: number, mark?: string): void {
+  const colors = portalPair(index);
   const toB = Math.atan2(by - ay, bx - ax);
   ctx.save();
   // A faint thread between the pair, so two wormholes on one field can be told apart.
@@ -142,6 +163,6 @@ export function drawWormhole(ctx: CanvasRenderingContext2D, ax: number, ay: numb
   ctx.lineTo(bx, by);
   ctx.stroke();
   ctx.restore();
-  drawPortal(ctx, ax, ay, toB, radius, PORTAL_COLORS.entry, time, false, 1, 0);
-  drawPortal(ctx, bx, by, toB + Math.PI, radius, PORTAL_COLORS.exit, time, true, 1, 0.5);
+  drawPortal(ctx, ax, ay, toB, radius, colors.entry, time, false, 1, 0, mark);
+  drawPortal(ctx, bx, by, toB + Math.PI, radius, colors.exit, time, true, 1, 0.5, mark);
 }

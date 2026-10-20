@@ -18,8 +18,23 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   wormhole: '#4db8ff',
 };
 
-/** A wormhole's two portals: the entry it is set with first is blue, the exit it is set with second is orange. */
-export const PORTAL_COLORS = { entry: '#4db8ff', exit: '#ff9d3a' } as const;
+/**
+ * The colours of a wormhole's two portals, one pair per wormhole on the field: the entry set first, the exit
+ * set second. The first pair is blue and orange; later pairs differ in both colours, so a wormhole can be told
+ * from the others (and a number on each portal says so too, for those who cannot tell the colours apart).
+ */
+export const PORTAL_PAIRS = [
+  { entry: '#4db8ff', exit: '#ff9d3a' },
+  { entry: '#5cf08a', exit: '#ff5cd0' },
+  { entry: '#ffe14d', exit: '#a98bff' },
+  { entry: '#f2f6ff', exit: '#ff3d5a' },
+] as const;
+
+/** The portal colours of the wormhole at this place in `world.wormholes` (the palette starts over after the last pair). */
+export const portalPair = (index: number): (typeof PORTAL_PAIRS)[number] => PORTAL_PAIRS[index % PORTAL_PAIRS.length];
+
+/** The first pair: the one on the power-up's symbol. */
+export const PORTAL_COLORS = PORTAL_PAIRS[0];
 
 /** Draws a power-up's symbol centred on (x, y), about `r` in size, in the current stroke and fill style. */
 export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKind, x: number, y: number, r: number): void {
