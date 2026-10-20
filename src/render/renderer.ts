@@ -339,14 +339,16 @@ export class Renderer {
           ctx.translate(shot.x, shot.y);
           ctx.rotate(Math.atan2(shot.vy, shot.vx));
           ctx.beginPath();
-          ctx.beginPath();
           ctx.moveTo(13, 0);
           ctx.lineTo(-6, -4);
           ctx.lineTo(-3, 0);
           ctx.lineTo(-6, 4);
           ctx.closePath();
-          ctx.shadowColor = rgba(color, 0.9);
-          ctx.shadowBlur = 12;
+          // A wide, faint outline in the owner's colour is the glow: shadowBlur costs far more on a phone.
+          ctx.lineJoin = 'round';
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = rgba(color, 0.35);
+          ctx.stroke();
           ctx.fillStyle = rgba(COLORS.bone, 0.98);
           ctx.fill();
           ctx.restore();
