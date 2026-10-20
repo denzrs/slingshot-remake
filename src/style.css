@@ -344,6 +344,87 @@ body {
   color: var(--bone-dim);
 }
 
+/* ——— Mode cards (the local menu) ——— */
+
+.panel.panel--cards {
+  width: min(920px, 100%);
+}
+
+.items--cards {
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.items--row .item--card {
+  flex: 1 1 180px;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  padding: 18px 14px 16px;
+  text-align: center;
+  background: rgb(18 40 77 / 0.55);
+}
+
+.item--card .item__icon {
+  display: block;
+  width: 84px;
+  height: 63px;
+  margin-bottom: 4px;
+  opacity: 0.85;
+  transition: opacity 120ms, transform 160ms;
+}
+
+.item--card:hover .item__icon,
+.item--card:focus .item__icon {
+  opacity: 1;
+  transform: scale(1.06);
+}
+
+.item--card .item__title {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.items--row .item--card:hover,
+.items--row .item--card:focus {
+  border-color: var(--p1);
+}
+
+.mode-icon {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mode-icon .ico-line {
+  stroke: var(--bone);
+  stroke-width: 1.8;
+}
+
+.mode-icon .ico-accent {
+  stroke: var(--p1);
+  stroke-width: 2.2;
+}
+
+.mode-icon .ico-accent-fill {
+  fill: var(--p1);
+  stroke: var(--p1);
+  stroke-width: 1;
+}
+
+.mode-icon .ico-fill {
+  fill: var(--plate);
+}
+
 .item__label {
   font-weight: 400;
   font-size: 15px;

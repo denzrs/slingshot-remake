@@ -13,6 +13,7 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, freeSeat, MIN_SEATS, removeSeat, seatTeamsFor, teamCounts, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
+import { modeIcon } from './mode-icons';
 import { groupTitle, RULE_GROUPS, ruleItems } from './rules';
 
 export interface App {
@@ -152,16 +153,39 @@ export function titleScreen(app: App): Screen {
     // A getter, so the lineup hint is fresh whenever the menu re-renders this screen.
     get items(): MenuItem[] {
       return [
-        { kind: 'action', label: t('mode.daily'), hint: dailyMenuHint(app.today()), primary: true, run: () => app.menu.push(() => dailyScreen(app)) },
-        { kind: 'action', label: t('mode.classic'), hint: t('mode.classic.hint'), run: () => app.menu.push(() => setupScreen(app, 'classic')) },
-        { kind: 'action', label: t('mode.horizon'), hint: t('mode.horizon.hint'), run: () => app.menu.push(() => setupScreen(app, 'horizon')) },
-        { kind: 'action', label: t('mode.mayhem'), hint: t('mode.mayhem.hint'), run: () => app.menu.push(() => mayhemScreen(app)) },
+        { kind: 'action', label: t('title.local'), hint: t('title.local.hint'), primary: true, run: () => app.menu.push(() => localScreen(app)) },
         { kind: 'action', label: t('multiplayer.title'), hint: t('multiplayer.hint'), run: () => app.openLobby() },
         { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
         { kind: 'action', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
         languageItem(app),
       ];
     },
+  };
+}
+
+/** The ways to play on this device, as a row of cards: the daily challenge and the three modes. */
+function localScreen(app: App): Screen {
+  const card = (label: string, hint: string, icon: Parameters<typeof modeIcon>[0], run: () => void, primary = false): MenuItem => ({ kind: 'action', section: 'cards', label, hint, icon: () => modeIcon(icon), primary, run });
+  return {
+    build: () =>
+      h(
+        'section.screen.screen--panel',
+        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('title.local') },
+        h(
+          'div.panel.panel--cards',
+          null,
+          h('h2.panel__title', null, t('title.local')),
+          h('div.items.items--row.items--cards', { 'data-section': 'cards' }),
+          h('div.items.items--row', { 'data-section': 'back' }),
+        ),
+      ),
+    items: [
+      card(t('mode.daily'), dailyMenuHint(app.today()), 'daily', () => app.menu.push(() => dailyScreen(app)), true),
+      card(t('mode.classic'), t('mode.classic.hint'), 'classic', () => app.menu.push(() => setupScreen(app, 'classic'))),
+      card(t('mode.horizon'), t('mode.horizon.hint'), 'horizon', () => app.menu.push(() => setupScreen(app, 'horizon'))),
+      card(t('mode.mayhem'), t('mode.mayhem.hint'), 'mayhem', () => app.menu.push(() => mayhemScreen(app))),
+      { kind: 'action', section: 'back', label: t('common.back'), run: () => app.menu.back() },
+    ],
   };
 }
 
