@@ -22,11 +22,14 @@ impl RoomManager {
 
     pub(super) fn broadcast_lobby(&mut self) {
         let message = json!({ "type": "lobby_update", "rooms": self.visible_rooms() });
-        let connections: Vec<u64> = self.net.connected().collect();
-        for conn in connections {
+        // The same list goes to everybody, so it is encoded once and the bytes are shared.
+        let Ok(bytes) = rmp_serde::to_vec_named(&message) else {
+            return;
+        };
+        for conn in self.net.connected() {
             // Players inside a room have no use for the room list.
             if !self.memberships.contains_key(&conn) {
-                self.send_value(conn, &message);
+                self.send_fast(conn, &bytes);
             }
         }
     }
