@@ -25,6 +25,17 @@ export const WORMHOLE = {
   RADIUS: 22,
   /** The two mouths keep at least this far apart. */
   MIN_SEPARATION: 120,
+  /**
+   * The colours of the portals, one pair per wormhole on the field: the entry set first, the exit set second.
+   * The first pair is blue and orange; later pairs differ in both colours, so a wormhole can be told from the
+   * others (a number on each portal says so too, for those who cannot tell the colours apart).
+   */
+  PAIRS: [
+    { entry: '#4db8ff', exit: '#ff9d3a' },
+    { entry: '#5cf08a', exit: '#ff5cd0' },
+    { entry: '#ffe14d', exit: '#a98bff' },
+    { entry: '#f2f6ff', exit: '#ff3d5a' },
+  ],
 } as const;
 
 /** Physics constants that only the nebula power-up uses. */

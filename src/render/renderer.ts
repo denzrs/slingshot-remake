@@ -2,7 +2,7 @@ import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, WORMHOLE } from '.
 import type { Match, Scene } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
-import { aimDirection, inNebula, isWormholeJump, type Wormhole, type World } from '../physics';
+import { aimDirection, inNebula, isWormholeJump, nextWormholeId, type Wormhole, type World } from '../physics';
 import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
@@ -218,7 +218,7 @@ export class Renderer {
 
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
     // With more than one wormhole each pair has its own colours and a number besides.
-    world.wormholes.forEach((w, i) => drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, i, world.wormholes.length > 1 ? String(i + 1) : undefined));
+    for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, world.wormholes.length > 1 ? String(w.id + 1) : undefined, scene.camera ? 0 : match.devourWormhole(w.id));
     const next = match.nextHoleRadius;
     if (next && primary && !scene.camera) drawDangerRing(ctx, primary, next, this.time);
   }
@@ -482,7 +482,8 @@ export class Renderer {
     if (scene.placement?.target && scene.placement.kind !== 'planetkiller') {
       const { owner, kind, target } = scene.placement;
       const from = match.world.ships[owner];
-      const color = kind === 'teleport' ? match.players[owner].color : kind === 'wormhole' ? (scene.placement.entry ? portalPair(match.world.wormholes.length).exit : portalPair(match.world.wormholes.length).entry) : POWER_UP_COLORS[kind];
+      const nextWormhole = nextWormholeId(match.world);
+      const color = kind === 'teleport' ? match.players[owner].color : kind === 'wormhole' ? (scene.placement.entry ? portalPair(nextWormhole).exit : portalPair(nextWormhole).entry) : POWER_UP_COLORS[kind];
       ctx.save();
       ctx.strokeStyle = color;
       ctx.globalAlpha = 0.6;
@@ -511,8 +512,8 @@ export class Renderer {
         // while the aim is too close for the click to take.
         const entry = scene.placement.entry;
         // The pair being set is the next one on the field: its colours, and its number when there are others.
-        const pair = portalPair(match.world.wormholes.length);
-        const mark = match.world.wormholes.length ? String(match.world.wormholes.length + 1) : undefined;
+        const pair = portalPair(nextWormhole);
+        const mark = match.world.wormholes.length ? String(nextWormhole + 1) : undefined;
         const facing = entry ? Math.atan2(target.y - entry.y, target.x - entry.x) : Math.atan2(target.y - from.y, target.x - from.x);
         const tooClose = !!entry && Math.hypot(target.x - entry.x, target.y - entry.y) < WORMHOLE.MIN_SEPARATION;
         if (entry) {

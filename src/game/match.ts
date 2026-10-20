@@ -727,6 +727,10 @@ export abstract class Match {
   swallowProgress(_ship: number): number {
     return 0;
   }
+  /** How far the wormhole with this id has fallen into the hole (0 to 1). */
+  devourWormhole(_id: number): number {
+    return 0;
+  }
   get nextHoleRadius(): number | null {
     return null;
   }

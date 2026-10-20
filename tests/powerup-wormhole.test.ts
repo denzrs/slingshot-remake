@@ -12,7 +12,7 @@ const world = (): World => ({
   ships: [{ x: 100, y: 400, alive: true }, { x: 1180, y: 700, alive: true }],
   holes: [],
   nebulae: [],
-  wormholes: [{ ax: 400, ay: 400, bx: 900, by: 700, radius: WORMHOLE.RADIUS }],
+  wormholes: [{ id: 0, ax: 400, ay: 400, bx: 900, by: 700, radius: WORMHOLE.RADIUS }],
   version: 0,
 });
 
@@ -41,7 +41,7 @@ describe('wormhole', () => {
 
   it('does not trip over the mouth it last left when that wormhole is gone', () => {
     const w = world();
-    w.wormholes.push({ ax: 400, ay: 100, bx: 700, by: 100, radius: WORMHOLE.RADIUS });
+    w.wormholes.push({ id: 1, ax: 400, ay: 100, bx: 700, by: 100, radius: WORMHOLE.RADIUS });
     w.wormholes = [w.wormholes[1], w.wormholes[0]];
     const shot = new Shot(w, 0, 0, 50, rules);
     for (let i = 0; i < 4000 && !shot.end && !shot.warps.length; i++) shot.step();
@@ -53,7 +53,7 @@ describe('wormhole', () => {
 });
 
 describe('wormhole trail jump', () => {
-  const wormholes = [{ ax: 401.23, ay: 399.87, bx: 902.46, by: 700.04, radius: WORMHOLE.RADIUS }];
+  const wormholes = [{ id: 0, ax: 401.23, ay: 399.87, bx: 902.46, by: 700.04, radius: WORMHOLE.RADIUS }];
   const rounded = (n: number): number => Math.round(n * 10) / 10;
 
   it('is found in a trail the wire has rounded to a tenth', () => {

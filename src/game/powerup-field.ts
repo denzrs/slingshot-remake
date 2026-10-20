@@ -1,4 +1,4 @@
-import type { ShotRules, World } from '../physics';
+import { nextWormholeId, type ShotRules, type World } from '../physics';
 import { aimedPlanet, aimedSpot, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
 import { NEBULA, WORMHOLE } from '../config';
 import type { Rng } from '../rng';
@@ -324,7 +324,7 @@ export class PowerUpField {
   /** Plants a wormhole: two mouths that carry a shot from one to the other, for the rest of the round. */
   private plantWormhole(id: number, a: { x: number; y: number }, b: { x: number; y: number }): boolean {
     const world = this.host.world();
-    world.wormholes.push({ ax: a.x, ay: a.y, bx: b.x, by: b.y, radius: WORMHOLE.RADIUS });
+    world.wormholes.push({ id: nextWormholeId(world), ax: a.x, ay: a.y, bx: b.x, by: b.y, radius: WORMHOLE.RADIUS });
     world.version++;
     this.host.players()[id].powerUp = null;
     this.host.players()[id].armed = false;

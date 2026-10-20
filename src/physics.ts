@@ -43,11 +43,18 @@ export interface Nebula {
 
 /** A pair of mouths the wormhole power-up has placed: a shot entering one leaves by the other. No gravity, no kill. */
 export interface Wormhole {
+  /** Which wormhole this is, for its colours and number: it keeps them when another is swallowed. */
+  id: number;
   ax: number;
   ay: number;
   bx: number;
   by: number;
   radius: number;
+}
+
+/** The id the next wormhole gets: one past the highest on the field, so a swallowed one never renumbers the rest. */
+export function nextWormholeId(world: Pick<World, 'wormholes'>): number {
+  return world.wormholes.reduce((next, w) => Math.max(next, w.id + 1), 0);
 }
 
 /** How far a trail point may sit from a mouth and still be that mouth: the wire rounds points to a tenth. */

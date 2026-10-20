@@ -3,7 +3,7 @@ import { createMatch, type Match } from '../src/game';
 import type { HorizonMatch } from '../src/game/horizon';
 import { POWER_UP, SPLIT_TURNS, spawnPickup, aimedSpot } from '../src/powerups';
 import { createRng } from '../src/rng';
-import { cloneWorld, type World } from '../src/physics';
+import { cloneWorld, nextWormholeId, type World } from '../src/physics';
 import { DEFAULT_SETTINGS } from '../src/settings';
 import { shotSource, Volley, type VolleyScript } from '../src/volley';
 
@@ -150,6 +150,67 @@ describe('power-ups in Event Horizon', () => {
     expect(match.pickups.some((p) => p.id === 70)).toBe(false);
     expect(faded).toEqual(['preview']);
     expect(match.pickups.length).toBe(POWER_UP.DEFAULT_AMOUNT);
+  });
+});
+
+describe('wormholes in Event Horizon', () => {
+  /** Both ships fire straight away from the hole's row, so no shot meets a portal laid on it. */
+  function collapseOnce(match: HorizonMatch): void {
+    const hole = match.world.holes[0];
+    const [a, b] = match.players;
+    const [shipA, shipB] = match.world.ships;
+    a.angle = shipA.y < hole.y ? 270 : 90;
+    b.angle = shipB.y < hole.y ? 270 : 90;
+    lockAll(match);
+    finishFlight(match);
+    expect(match.phase).toBe('collapse');
+  }
+
+  it('takes both portals when one ends up inside the grown hole, and leaves the others standing', () => {
+    const match = duel();
+    const hole = match.world.holes[0];
+    const radius = 22;
+    // Wormhole 0 has one mouth just outside the hole, within what the growth covers; wormhole 1 is far away.
+    match.world.wormholes.push(
+      { id: 0, ax: hole.x + hole.radius + 8, ay: hole.y, bx: hole.x - 300, by: hole.y, radius },
+      { id: 1, ax: hole.x + 280, ay: hole.y, bx: hole.x + 330, by: hole.y + 60, radius },
+    );
+    const far = match.world.wormholes[1];
+    const farBefore = { ax: far.ax, ay: far.ay, bx: far.bx, by: far.by };
+    const eaten: [number, number][] = [];
+    match.on((e) => e.type === 'devour' && eaten.push([e.x, e.y]));
+    collapseOnce(match);
+    expect(eaten.length).toBeGreaterThanOrEqual(2);
+    match.update(1 / 30);
+    expect(match.devourWormhole(0)).toBeGreaterThan(0);
+    expect(match.devourWormhole(1)).toBe(0);
+    for (let t = 0; t < 5 && match.phase === 'collapse'; t += 1 / 30) match.update(1 / 30);
+    expect(match.phase).not.toBe('collapse');
+    expect(match.world.wormholes.map((w) => w.id)).toEqual([1]);
+    // The survivor did not drift with the planets and pickups.
+    expect(match.world.wormholes[0]).toMatchObject(farBefore);
+  });
+
+  it('keeps the ids of the others, so a swallowed wormhole does not renumber or recolour them', () => {
+    const match = duel();
+    const hole = match.world.holes[0];
+    match.world.wormholes.push(
+      { id: 0, ax: hole.x + hole.radius + 8, ay: hole.y, bx: hole.x - 300, by: hole.y, radius: 22 },
+      { id: 1, ax: hole.x + 280, ay: hole.y, bx: hole.x + 330, by: hole.y + 60, radius: 22 },
+    );
+    collapseOnce(match);
+    for (let t = 0; t < 5 && match.phase === 'collapse'; t += 1 / 30) match.update(1 / 30);
+    expect(nextWormholeId(match.world)).toBe(2);
+  });
+
+  it('takes nothing when every portal is clear of the hole', () => {
+    const match = duel();
+    const hole = match.world.holes[0];
+    match.world.wormholes.push({ id: 0, ax: hole.x + 300, ay: hole.y, bx: hole.x - 300, by: hole.y, radius: 22 });
+    collapseOnce(match);
+    expect(match.devourWormhole(0)).toBe(0);
+    for (let t = 0; t < 5 && match.phase === 'collapse'; t += 1 / 30) match.update(1 / 30);
+    expect(match.world.wormholes.length).toBe(1);
   });
 });
 

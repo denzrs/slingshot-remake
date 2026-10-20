@@ -94,11 +94,12 @@ export function drawPortal(
   alpha = 1,
   phase = 0,
   mark?: string,
+  size = 1,
 ): void {
   const { image, half } = sprite(color, radius);
   const rx = radius * WIDTH;
   const ry = radius * HEIGHT;
-  const breathe = 1 + 0.04 * Math.sin(time * 2.3 + phase);
+  const breathe = (1 + 0.04 * Math.sin(time * 2.3 + phase)) * size;
   ctx.save();
   ctx.translate(x, y + 1.6 * Math.sin(time * 1.7 + phase));
   ctx.rotate(facing);
@@ -133,7 +134,7 @@ export function drawPortal(
   if (mark) {
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.font = `700 ${Math.round(radius * 0.7)}px ${FONTS.mono}`;
+    ctx.font = `700 ${Math.round(radius * 0.7 * size)}px ${FONTS.mono}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 3;
@@ -148,13 +149,15 @@ export function drawPortal(
 /**
  * Both portals of a wormhole, the entry and the exit, turned to face each other, in the colours of the
  * wormhole's own pair. `mark` (its number) goes on both when there is more than one wormhole to tell apart.
+ * `eaten` (0 to 1) is how far the black hole has taken it: the portals shrink and fade as they fall in.
  */
-export function drawWormhole(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, radius: number, time: number, index: number, mark?: string): void {
-  const colors = portalPair(index);
+export function drawWormhole(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, radius: number, time: number, id: number, mark?: string, eaten = 0): void {
+  const colors = portalPair(id);
+  const fade = 1 - eaten;
   const toB = Math.atan2(by - ay, bx - ax);
   ctx.save();
   // A faint thread between the pair, so two wormholes on one field can be told apart.
-  ctx.globalAlpha = 0.1;
+  ctx.globalAlpha = 0.1 * fade;
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 8]);
@@ -163,6 +166,6 @@ export function drawWormhole(ctx: CanvasRenderingContext2D, ax: number, ay: numb
   ctx.lineTo(bx, by);
   ctx.stroke();
   ctx.restore();
-  drawPortal(ctx, ax, ay, toB, radius, colors.entry, time, false, 1, 0, mark);
-  drawPortal(ctx, bx, by, toB + Math.PI, radius, colors.exit, time, true, 1, 0.5, mark);
+  drawPortal(ctx, ax, ay, toB, radius, colors.entry, time, false, fade, 0, mark, 1 - eaten * 0.7);
+  drawPortal(ctx, bx, by, toB + Math.PI, radius, colors.exit, time, true, fade, 0.5, mark, 1 - eaten * 0.7);
 }
