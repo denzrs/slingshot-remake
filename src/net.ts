@@ -28,7 +28,7 @@ export type ClientInput =
 
 type ClientMessage =
   | { type: 'lobby' }
-  | ({ type: 'create_room'; name: string; mode: RoomMode; gameMode: NetworkGameMode; rules: RoomRules; maxPlayers: number; password?: string; avatar?: Avatar } & Partial<RoomLook>)
+  | ({ type: 'create_room'; name: string; roomName?: string; mode: RoomMode; gameMode: NetworkGameMode; rules: RoomRules; maxPlayers: number; password?: string; avatar?: Avatar } & Partial<RoomLook>)
   | { type: 'join_room'; roomId: string; name: string; password?: string; avatar?: Avatar }
   /** Your symbol in the game, while the room waits. */
   | { type: 'set_avatar'; avatar: Avatar }
@@ -65,6 +65,8 @@ export interface DailyEntry {
 
 export interface LobbyRoom {
   id: string;
+  /** What the host called the room ("Ada's room" if they didn't). */
+  name: string;
   host: string;
   /** The room's number: rooms are told apart by it. */
   number: number;
@@ -93,6 +95,7 @@ interface RoomPlayer {
 
 export interface RoomInfo extends RoomLook {
   id: string;
+  name: string;
   /** The room's number, as the lobby lists it. */
   number: number;
   mode: RoomMode;

@@ -8,6 +8,7 @@ use tracing::{debug, warn};
 
 use crate::auth::Hashed;
 use crate::command::{CreateRoom, JoinRoom, JoinTarget};
+use crate::protocol::default_room_name;
 
 use super::model::*;
 use super::RoomManager;
@@ -46,6 +47,7 @@ impl RoomManager {
             .map(|room| {
                 json!({
                     "id": room.id,
+                    "name": room.name,
                     "host": room.players.first().map(|p| p.name.clone()).unwrap_or_default(),
                     "number": room.created_order + 1,
                     "symbol": room.look.symbol.as_str(),
@@ -68,6 +70,7 @@ impl RoomManager {
         }
         let CreateRoom {
             name,
+            room_name,
             mode,
             game_mode,
             max_players,
@@ -77,6 +80,9 @@ impl RoomManager {
             avatar,
         } = create;
         let Some(name) = self.accept(conn, name) else {
+            return;
+        };
+        let Some(room_name) = self.accept(conn, room_name) else {
             return;
         };
         let Some(mode) = self.accept(conn, mode) else {
@@ -114,10 +120,12 @@ impl RoomManager {
         } else {
             None
         };
+        let room_name = room_name.unwrap_or_else(|| default_room_name(&name, created_order + 1));
         self.rooms.insert(
             id.clone(),
             Room {
                 id: id.clone(),
+                name: room_name,
                 mode,
                 game_mode,
                 rules,

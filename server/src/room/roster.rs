@@ -76,6 +76,7 @@ impl RoomManager {
         };
         let room_info = json!({
             "id": room.id,
+            "name": room.name,
             "mode": room.mode.as_str(),
             "gameMode": room.game_mode.as_str(),
             "rules": rules_to_value(&room.rules),

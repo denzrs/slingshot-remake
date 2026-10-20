@@ -37,14 +37,57 @@ pub const MAX_NAME_LENGTH: usize = 24;
 /// `name.trim().slice(0, 24)`; None when the value is not a non-empty trimmed string.
 pub fn clean_name_checked(value: Option<&Value>) -> Option<String> {
     let s = value.and_then(Value::as_str)?;
-    let cleaned = clean_text(s);
+    let cleaned = clean_text(s, MAX_NAME_LENGTH);
     (!cleaned.is_empty()).then_some(cleaned)
+}
+
+/// The longest a room name may be: room for a full-length player name plus "'s room".
+pub const MAX_ROOM_NAME_LENGTH: usize = 40;
+
+/// What the host typed as the room's name.
+#[derive(Debug, PartialEq)]
+pub enum RoomName {
+    /// Nothing usable was typed; the room is called after its host.
+    Default,
+    Named(String),
+    /// The words will not do on a public list.
+    Refused,
+}
+
+/// A room name from a `create_room`, cleaned like a player name (longer allowed) and held to the
+/// same profanity check. A blank or missing one is not an error: the room gets the default.
+pub fn parse_room_name(value: Option<&Value>) -> RoomName {
+    match value {
+        None | Some(Value::Null) => RoomName::Default,
+        Some(Value::String(s)) => {
+            let cleaned = clean_text(s, MAX_ROOM_NAME_LENGTH);
+            if cleaned.is_empty() {
+                RoomName::Default
+            } else if is_acceptable_name(&cleaned) {
+                RoomName::Named(cleaned)
+            } else {
+                RoomName::Refused
+            }
+        }
+        Some(_) => RoomName::Refused,
+    }
+}
+
+/// "Ada's room"; a host name the check refuses gives "Room N" instead, so a default cannot slip a
+/// bad word onto the list either.
+pub fn default_room_name(host: &str, number: u64) -> String {
+    let name = format!("{host}'s room");
+    if is_acceptable_name(&name) {
+        name
+    } else {
+        format!("Room {number}")
+    }
 }
 
 /// Control characters (C0/C1, DEL, zero-width/bidi chars) are stripped so a name cannot smuggle
 /// terminal escapes or invisible directionality into other clients' UIs; then the text is trimmed
 /// and cut to `MAX_NAME_LENGTH` UTF-16 units. May come out empty.
-fn clean_text(s: &str) -> String {
+fn clean_text(s: &str, max: usize) -> String {
     let stripped: String = s
         .chars()
         .filter(|c| {
@@ -58,7 +101,7 @@ fn clean_text(s: &str) -> String {
     let mut end = stripped.len();
     for (index, character) in stripped.char_indices() {
         let width = character.len_utf16();
-        if units + width > MAX_NAME_LENGTH {
+        if units + width > max {
             end = index;
             break;
         }
