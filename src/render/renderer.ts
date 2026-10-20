@@ -13,8 +13,8 @@ import { Hud } from './hud';
 import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
 import { drawNebula } from './nebula';
-import { drawWormhole } from './wormhole';
-import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
+import { drawPortal, drawWormhole } from './wormhole';
+import { drawPowerUpSymbol, PORTAL_COLORS, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
   hud: boolean;
@@ -217,7 +217,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
-    for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, POWER_UP_COLORS.wormhole, this.time);
+    for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time);
     const next = match.nextHoleRadius;
     if (next && primary && !scene.camera) drawDangerRing(ctx, primary, next, this.time);
   }
@@ -481,7 +481,7 @@ export class Renderer {
     if (scene.placement?.target && scene.placement.kind !== 'planetkiller') {
       const { owner, kind, target } = scene.placement;
       const from = match.world.ships[owner];
-      const color = kind === 'teleport' ? match.players[owner].color : POWER_UP_COLORS[kind];
+      const color = kind === 'teleport' ? match.players[owner].color : kind === 'wormhole' ? (scene.placement.entry ? PORTAL_COLORS.exit : PORTAL_COLORS.entry) : POWER_UP_COLORS[kind];
       ctx.save();
       ctx.strokeStyle = color;
       ctx.globalAlpha = 0.6;
@@ -505,18 +505,39 @@ export class Renderer {
         ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
         ctx.fill();
       } else if (kind === 'wormhole') {
-        // The mouth being set: a ring. Once the first is set it stays on the field, drawn solid.
+        // The portal being set is a ghost of itself. Once the entry is set it stays on the field, solid; the
+        // exit is then aimed relative to it: a thread to it, the ring it must stay out of, and a warning
+        // while the aim is too close for the click to take.
         const entry = scene.placement.entry;
+        const facing = entry ? Math.atan2(target.y - entry.y, target.x - entry.x) : Math.atan2(target.y - from.y, target.x - from.x);
+        const tooClose = !!entry && Math.hypot(target.x - entry.x, target.y - entry.y) < WORMHOLE.MIN_SEPARATION;
         if (entry) {
+          ctx.save();
+          ctx.globalAlpha = tooClose ? 0.5 : 0.18;
+          ctx.strokeStyle = tooClose ? '#ff5c5c' : '#ffffff';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 6]);
           ctx.beginPath();
-          ctx.arc(entry.x, entry.y, WORMHOLE.RADIUS, 0, Math.PI * 2);
+          ctx.arc(entry.x, entry.y, WORMHOLE.MIN_SEPARATION, 0, Math.PI * 2);
+          ctx.moveTo(entry.x, entry.y);
+          ctx.lineTo(target.x, target.y);
           ctx.stroke();
+          ctx.restore();
+          drawPortal(ctx, entry.x, entry.y, facing, WORMHOLE.RADIUS, PORTAL_COLORS.entry, this.time, false);
         }
-        ctx.setLineDash([5, 4]);
-        ctx.beginPath();
-        ctx.arc(target.x, target.y, WORMHOLE.RADIUS, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
+        drawPortal(ctx, target.x, target.y, entry ? facing + Math.PI : facing, WORMHOLE.RADIUS, color, this.time, !!entry, tooClose ? 0.3 : 0.7, 1);
+        ctx.globalAlpha = 1;
+        ctx.font = `700 11px ${FONTS.mono}`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = tooClose ? '#ff5c5c' : color;
+        // The labels sit on the far side of each portal from the other, so two close ones do not overprint.
+        const side = entry && target.y >= entry.y ? 1 : -1;
+        const reach = WORMHOLE.RADIUS * 1.12 + 10;
+        ctx.fillText(t(tooClose ? 'powerup.wormholeClose' : entry ? 'powerup.wormholeExit' : 'powerup.wormholeEntry').toUpperCase(), target.x, target.y + side * reach);
+        if (entry) {
+          ctx.fillStyle = PORTAL_COLORS.entry;
+          ctx.fillText(t('powerup.wormholeEntry').toUpperCase(), entry.x, entry.y - side * reach);
+        }
       } else if (kind === 'nebula') {
         // The reach of the cloud as a plain ring: it must not wobble while the aim moves. The cloud that
         // lands gets its own random outline (its seed is drawn when it is laid).

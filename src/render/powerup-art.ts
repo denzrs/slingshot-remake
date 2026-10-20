@@ -1,4 +1,5 @@
 import type { PowerUpKind } from '../powerups';
+import { rgba } from './color';
 
 /**
  * Each power-up has a colour and a symbol of its own, so it reads at a glance on the field and in the HUD.
@@ -14,8 +15,11 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   planetkiller: '#ff5c5c',
   nebula: '#9be7ff',
   piercing: '#dfe7f5',
-  wormhole: '#5cf2c4',
+  wormhole: '#4db8ff',
 };
+
+/** A wormhole's two portals: the entry it is set with first is blue, the exit it is set with second is orange. */
+export const PORTAL_COLORS = { entry: '#4db8ff', exit: '#ff9d3a' } as const;
 
 /** Draws a power-up's symbol centred on (x, y), about `r` in size, in the current stroke and fill style. */
 export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKind, x: number, y: number, r: number): void {
@@ -134,15 +138,17 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     }
     ctx.fill();
   } else if (kind === 'wormhole') {
-    // Two mouths joined by a bridge: a small ring at each end.
-    ctx.arc(x - r * 0.62, y + r * 0.3, r * 0.34, 0, Math.PI * 2);
-    ctx.moveTo(x + r * 0.96, y - r * 0.3);
-    ctx.arc(x + r * 0.62, y - r * 0.3, r * 0.34, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x - r * 0.3, y + r * 0.18);
-    ctx.lineTo(x + r * 0.3, y - r * 0.18);
-    ctx.stroke();
+    // Two portals, the blue one and the orange one, tilted to face each other: the doorway pair.
+    ctx.save();
+    for (const [dx, dy, color] of [[-0.58, 0.24, PORTAL_COLORS.entry], [0.58, -0.24, PORTAL_COLORS.exit]] as const) {
+      ctx.beginPath();
+      ctx.ellipse(x + dx * r, y + dy * r, r * 0.3, r * 0.7, -0.4, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(color, 0.3);
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.stroke();
+    }
+    ctx.restore();
   } else if (kind === 'piercing') {
     // A round through armor plate: the plate broken where it went, splinters flying, the head out the far side.
     ctx.beginPath();
