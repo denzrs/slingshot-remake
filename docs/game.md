@@ -12,7 +12,7 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 | --- | --- |
 | ← → | Rotate ship |
 | ↑ ↓ | Shot power |
-| Enter / Space | Fire (Event Horizon: lock in your aim) |
+| Enter / Space | Fire (Event Horizon: lock in your aim; while a Mayhem round is announced: skip the announcement) |
 | Shift | Large steps (×10) |
 | Alt | Small steps (×0.1) |
 | Ctrl or Alt+Shift | Tiny steps (×0.01) – on macOS the system claims Ctrl+arrows |
@@ -82,6 +82,18 @@ Under the switch, two rows open while it is on: a tile per kind (click or tap it
 - The strip under each duel score shows the power-up a ship holds and the key that uses it. With three or more ships the scoreboard chip carries the symbol, and the key for the ship on turn. A shot that can still be split wears a gold ring.
 - Teleports, splits, pickups, a planted black hole, a blown-up planet and a laid cloud all come with their own sounds and effects.
 - **Touch:** a power-up button appears above the fire button while a ship holds a placement or a preview. With a splitter in the air the fire button reads *Split*.
+
+### Mayhem
+
+*Mayhem* is a mode of its own, next to Classic and Event Horizon on the title screen. Its setup has only what Mayhem needs: the mode the rounds are played in (*Played as*: Classic or Event Horizon), the number of rounds, the *Chaos level* (Mild, Wild or Insane) and the players. Everything else plays by the plain rules, which each round's twists then change. It works offline and online (in the lobby, *Mayhem* is a third game mode next to Classic and Event Horizon, and a Mayhem room shows up in the list as such). It never runs in the daily challenge or behind the title menu.
+
+Before every round the twists are announced on a band across the field: each one spins like a reel and lands on its name, and the ships stay put until it is over. The fire key skips the announcement (online, anybody's does). Afterwards the twists stay on screen as chips under the round number, and the final screen lists what every round was about and who scored most in it.
+
+- **The twists** are bundles of rules the game has anyway: *Billiard* (reflecting edges, two or three planets), *Blind flight* (invisible planets, Classic only), *Memory* (trails fade after a second, aim arrows hidden), *Precision* (every shot at one fixed power), *Short breath* (power capped at 30–50), *Crowded* (eight planets), *The void* (one planet), and the power-up rounds *Power-up rain* (four pickups, every kind), *Heavyweights* (only heavy and armor-piercing shots), *Gravity party* (black holes, polarity, planet killers, nebulae, wormholes), *Fortress* (shields and planetary defense) and *Teleport chaos* (teleports, wormholes, splitters), plus *Trick-shot fever* (reflecting edges and trick-shot bonuses, Classic only). Everything they don't touch stays plain: flight time is 20 s, shots are one per turn (Classic) or one salvo (Event Horizon), and there is no betting.
+- **Strength:** *Mild* plays one gentle twist a round (never one that takes away sight or power), with a calm round now and then as a breather. *Wild* plays one twist, now and then two. *Insane* plays two, now and then three.
+- **The deck** is shuffled: every twist comes up once before any comes up twice, never the same one two rounds in a row, never two that take hold of the same thing (two power limits, two planet counts, two power-up themes), and never one that would change nothing. The first round always has a twist.
+- **Finale:** the last round of a match with a set number of rounds always stacks at least two twists.
+- **Jackpot:** now and then (from round two on, more often in the finale) a round pays and costs double: every kill, self-hit, high-five, multi-kill bonus, survival and last-ship bonus counts twice.
 
 ## Rules & scoring
 

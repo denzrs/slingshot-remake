@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AIM } from '../src/config';
-import { defaultRoomRules, loadLobbyPrefs, rulesOf } from '../src/lobbyPrefs';
+import { defaultRoomRules, loadLobbyPrefs, mayhemRules, rulesOf } from '../src/lobbyPrefs';
 import { DEFAULT_ROOM_LOOK } from '../src/roomLook';
 import { DEFAULT_SETTINGS } from '../src/settings';
 
@@ -11,6 +11,19 @@ afterEach(() => vi.unstubAllGlobals());
 
 /** What a player has set up for offline games: nothing like the standard rules. */
 const OFFLINE = { rounds: 20, maxPlanets: 8, bounce: true, fixedPower: true, fixedPowerLevel: 90, maxPower: 30, shotTime: 60, hiddenAim: true, fadingTrails: 4, neighborGrace: 2 };
+
+describe('Mayhem rules', () => {
+  it('are the plain rules with only the rounds and the chaos strength of the room', () => {
+    expect(mayhemRules(3, 7)).toEqual({ ...defaultRoomRules(), rounds: 7, mayhem: 3 });
+  });
+
+  it('keep a saved chaos strength, and fall back to off for one nobody offers', () => {
+    stored({ 'slingshot.lobby.v1': { rules: { mayhem: 3 } } });
+    expect(loadLobbyPrefs('ws://x').rules.mayhem).toBe(3);
+    stored({ 'slingshot.lobby.v1': { rules: { mayhem: 9 } } });
+    expect(loadLobbyPrefs('ws://x').rules.mayhem).toBe(0);
+  });
+});
 
 describe('the lobby has its own state', () => {
   it('starts every new room with the standard rules', () => {

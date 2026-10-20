@@ -11,7 +11,7 @@ export type NetworkGameMode = 'classic' | 'horizon';
 export type NetworkCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
 
 /** The rules of an online game; a subset of the local `Settings`, so it can be spread straight into them. */
-export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails' | 'betting' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'>;
+export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails' | 'mayhem' | 'betting' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'>;
 
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
@@ -74,6 +74,8 @@ export interface LobbyRoom {
   color: RoomColor;
   mode: RoomMode;
   gameMode: NetworkGameMode;
+  /** The room's chaos strength: above 0 it is a Mayhem room, played in `gameMode`. */
+  mayhem: number;
   /** Seats taken, CPUs included. */
   players: number;
   /** How many of those seats are CPUs: a human can take one of them when the room is full. */

@@ -3,7 +3,7 @@ import { COLORS, MAX_PLAYERS, TEAMS } from '../config';
 import { teamName } from '../game';
 import { t } from '../i18n';
 import { canCopyInvite, inviteJoinAttempt, inviteLink, readInvite, shouldAutoConnectInvite, withoutInvite, withoutInvitePassword } from '../invite';
-import { loadLobbyPrefs, saveLobbyPrefs } from '../lobbyPrefs';
+import { loadLobbyPrefs, mayhemRules, saveLobbyPrefs } from '../lobbyPrefs';
 import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multiplayer';
 import type { LobbyRoom, NetworkCpuLevel, NetworkGameMode, RoomInfo, RoomMode, RoomRules } from '../net';
 import type { RoomLook } from '../roomLook';
@@ -14,7 +14,11 @@ import type { App } from './screens';
 import { AVATAR_LABEL, avatarSvg, playerIcon } from './avatars';
 import { lookDialog, lookSummary, picker, roomIcon, visibilityControl, type LookControl, type LookDialog } from './roomLook';
 
-const modeName = (mode: NetworkGameMode) => t(mode === 'classic' ? 'mode.classic' : 'mode.horizon');
+/** A game mode's name; a Mayhem room is the mode its rounds are played in, with Mayhem in front. */
+const modeName = (mode: NetworkGameMode, mayhem = false) => {
+  const name = t(mode === 'classic' ? 'mode.classic' : 'mode.horizon');
+  return mayhem ? `${t('mode.mayhem')} · ${name}` : name;
+};
 const matchTypeName = (mode: RoomMode) => (mode === 'team' ? t('players.teams', { n: 2 }) : t('players.ffa'));
 /** The symbols a player can pick, as the choices of a picker. */
 const avatarOptions = () => AVATARS.map((avatar) => ({ value: avatar, label: t(AVATAR_LABEL[avatar]), face: avatarSvg(avatar) }));
@@ -125,11 +129,11 @@ interface RulesForm {
  * The rules of a game as sliders and switches, in the blocks of the setup screen. Read-only, they
  * are what everybody but the host sees of a room.
  */
-function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly = false): RulesForm {
+function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly = false, mayhem = false): RulesForm {
   const controls: Control[] = [];
   const refresh = () => controls.forEach((c) => c.refresh());
   const env: Env = { sound: app.menu.sound, readonly, changed: refresh };
-  const items = ruleItems(mode, source, true);
+  const items = ruleItems(mode, source, true, mayhem);
   const groups = RULE_GROUPS.filter((group) => items.some((i) => i.group === group)).map((group) => {
     const rows = h('div.setup__rows', null);
     for (const { group: g, item } of items) {
@@ -301,7 +305,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
         null,
         h('strong', null, roomIcon(room.symbol, room.color), `${room.locked ? '🔒 ' : ''}${room.name}`),
         h('span.lobby-room__host', null, t('multiplayer.hostedBy', { name: room.host })),
-        h('span.lobby-room__tags', null, h('span.lobby__tag', null, modeName(room.gameMode)), h('span.lobby__tag', null, matchTypeName(room.mode)), pips(room.players, room.maxPlayers)),
+        h('span.lobby-room__tags', null, h('span.lobby__tag', null, modeName(room.gameMode, room.mayhem > 0)), h('span.lobby__tag', null, matchTypeName(room.mode)), pips(room.players, room.maxPlayers)),
       ),
       room.locked ? secretField(pass) : '',
       join,
@@ -326,27 +330,49 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   /** Where the rules of the room to create go; rebuilt when the game mode changes the list. */
   const createRules = h('div', null);
   const buildCreateRules = () => {
-    createRules.replaceChildren(rulesForm(prefs.gameMode, { get: () => prefs.rules, patch: (v) => (prefs.rules = { ...prefs.rules, ...v }), commit: save }, app).el);
+    const mayhem = prefs.rules.mayhem > 0;
+    createRules.replaceChildren(rulesForm(prefs.gameMode, { get: () => prefs.rules, patch: (v) => (prefs.rules = { ...prefs.rules, ...v }), commit: save }, app, false, mayhem).el);
     horizonNote.hidden = prefs.gameMode !== 'horizon';
+    mayhemBase.hidden = !mayhem;
   };
 
   // The controls redraw themselves; nothing else on this form depends on them.
   const env: Env = { sound, changed: () => {} };
+  // Mayhem is a mode of its own: with it picked, the mode below it is the one its rounds are played in.
   const gameMode = segmentedControl(
     {
       kind: 'segmented',
       label: t('multiplayer.gameMode'),
-      options: [{ value: 'classic', label: modeName('classic') }, { value: 'horizon', label: modeName('horizon') }],
-      get: () => prefs.gameMode,
+      options: [{ value: 'classic', label: modeName('classic') }, { value: 'horizon', label: modeName('horizon') }, { value: 'mayhem', label: t('mode.mayhem') }],
+      get: () => (prefs.rules.mayhem > 0 ? 'mayhem' : prefs.gameMode),
       set: (v) => {
-        prefs.gameMode = v as NetworkGameMode;
+        if (v === 'mayhem') prefs.rules = { ...prefs.rules, mayhem: prefs.rules.mayhem || 2 };
+        else {
+          prefs.gameMode = v as NetworkGameMode;
+          prefs.rules = { ...prefs.rules, mayhem: 0 };
+        }
         save();
-        // Classic-only rules appear or disappear.
+        // The rules on offer change with the mode: Classic-only ones come and go, a Mayhem room has two.
         buildCreateRules();
       },
     },
     env,
   );
+  const mayhemBaseControl = segmentedControl(
+    {
+      kind: 'segmented',
+      label: t('mayhem.base'),
+      options: [{ value: 'classic', label: modeName('classic') }, { value: 'horizon', label: modeName('horizon') }],
+      get: () => prefs.gameMode,
+      set: (v) => {
+        prefs.gameMode = v as NetworkGameMode;
+        save();
+        buildCreateRules();
+      },
+    },
+    env,
+  );
+  const mayhemBase = h('div', null, mayhemBaseControl.el);
   const matchType = segmentedControl(
     {
       kind: 'segmented',
@@ -388,7 +414,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     'section.lobby__card.lobby__card--wide',
     null,
     h('h3.setup__title', null, t('multiplayer.newRoom')),
-    h('div.lobby__basics', null, h('div', null, createVisibility.el, gameMode.el, matchType.el), h('div', null, field(t('multiplayer.roomName'), roomName), createSummary.el, capacity.el, field(t('multiplayer.passwordOptional'), secretField(password, () => void copyText(password.value, t('multiplayer.passwordCopied')))))),
+    h('div.lobby__basics', null, h('div', null, createVisibility.el, gameMode.el, mayhemBase, matchType.el), h('div', null, field(t('multiplayer.roomName'), roomName), createSummary.el, capacity.el, field(t('multiplayer.passwordOptional'), secretField(password, () => void copyText(password.value, t('multiplayer.passwordCopied')))))),
     createRules,
     horizonNote,
     h('div.lobby__actions', null, backToRooms, createButton),
@@ -398,7 +424,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   createButton.addEventListener('click', () => {
     const name = takeName();
     if (!name) return;
-    session.createRoom({ name, roomName: roomName.value, mode: prefs.matchType, gameMode: prefs.gameMode, rules: prefs.rules, maxPlayers: prefs.capacity, password: password.value, look: prefs.look, avatar: prefs.avatar });
+    session.createRoom({ name, roomName: roomName.value, mode: prefs.matchType, gameMode: prefs.gameMode, rules: prefs.rules.mayhem > 0 ? mayhemRules(prefs.rules.mayhem, prefs.rules.rounds) : prefs.rules, maxPlayers: prefs.capacity, password: password.value, look: prefs.look, avatar: prefs.avatar });
     hostPassword = password.value;
     password.value = '';
   });
@@ -532,7 +558,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     const { you } = session;
     const self = room.players.find((p) => p.id === you.playerId);
     selfReady = !!self?.ready;
-    roomTitle.replaceChildren(roomIcon(room.symbol, room.color), `${room.name} · ${modeName(room.gameMode)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`);
+    roomTitle.replaceChildren(roomIcon(room.symbol, room.color), `${room.name} · ${modeName(room.gameMode, room.rules.mayhem > 0)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`);
     roomCode.textContent = room.id;
     privateTag.hidden = room.visibility !== 'private';
     copyInvite.hidden = !canCopyInvite(room.locked, you.host);
@@ -607,11 +633,11 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     roomDialog?.refresh(lookOf(room));
 
     // The sliders live as long as the room does: rebuilding them at every update would drop the one being dragged.
-    const key = `${room.id}|${room.gameMode}|${you.host}`;
+    const key = `${room.id}|${room.gameMode}|${room.rules.mayhem > 0}|${you.host}`;
     if (key !== formKey) {
       formKey = key;
       draft = null;
-      form = rulesForm(room.gameMode, roomSource(room), app, !you.host);
+      form = rulesForm(room.gameMode, roomSource(room), app, !you.host, room.rules.mayhem > 0);
       roomRules.replaceChildren(form.el);
     }
     // What the host is in the middle of changing wins over the room's last word for a moment.

@@ -36,6 +36,27 @@ describe('CPU settings', () => {
   });
 });
 
+describe('Mayhem settings', () => {
+  it('start off, in Classic', () => {
+    storage();
+    expect(loadSettings()).toMatchObject({ mayhem: 0, mayhemBase: 'classic' });
+  });
+
+  it('keep the chaos strength and the mode the rounds are played in', () => {
+    storage();
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.mayhem = 3;
+    settings.mayhemBase = 'horizon';
+    saveSettings(settings);
+    expect(loadSettings()).toMatchObject({ mayhem: 3, mayhemBase: 'horizon' });
+  });
+
+  it('drop values nobody offers', () => {
+    storage({ mayhem: 7, mayhemBase: 'solar' });
+    expect(loadSettings()).toMatchObject({ mayhem: 0, mayhemBase: 'classic' });
+  });
+});
+
 describe('power settings', () => {
   it.each([10, 100])('keeps the supported cap boundary %s after saving and reloading', (maxPower) => {
     storage();

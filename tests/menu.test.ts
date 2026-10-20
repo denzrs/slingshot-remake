@@ -101,7 +101,7 @@ describe('game rules in the menu', () => {
 
   it('makes switches of the on/off rules, a bar of the power mode and sliders of the rest', () => {
     for (const row of all) {
-      if (row.key === 'fixedPower' || row.key === 'powerUpAmount') expect(row.control, row.key).toBe('segmented');
+      if (row.key === 'fixedPower' || row.key === 'powerUpAmount' || row.key === 'mayhem') expect(row.control, row.key).toBe('segmented');
       else if (row.key === 'powerUpKinds') expect(row.control).toBe('tiles');
       else if (row.options.length === 0) expect(row.control, row.key).toBe('toggle');
       else expect(row.control, row.key).toBe('slider');
@@ -142,6 +142,23 @@ describe('game rules in the menu', () => {
   it('offers exactly the power-up amounts and kinds the relay accepts', () => {
     expect(all.find((r) => r.key === 'powerUpAmount')!.options.map((o) => o.value)).toEqual(relayContract.options.powerUpAmount);
     expect(all.find((r) => r.key === 'powerUpKinds')!.options.map((o) => o.value)).toEqual(relayContract.defaults.powerUpKinds);
+  });
+
+  it('gives a Mayhem game only its rounds and its chaos strength, and every other game neither the strength nor a way to switch it on', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      for (const online of [false, true]) {
+        expect(rulesFor(mode, online, true).map((r) => r.key)).toEqual(['rounds', 'mayhem']);
+        expect(rulesFor(mode, online).map((r) => r.key)).not.toContain('mayhem');
+      }
+    }
+    const source = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 }), patch() {} };
+    expect(ruleItems('classic', source, false, true).map((i) => i.key)).toEqual(['rounds', 'mayhem']);
+    expect(ruleItems('classic', source).map((i) => i.key)).not.toContain('mayhem');
+  });
+
+  it('offers exactly the chaos strengths the relay accepts, bar "off", which is not a Mayhem game', () => {
+    expect(all.find((r) => r.key === 'mayhem')!.options.map((o) => o.value)).toEqual(relayContract.options.mayhem!.filter((n) => n > 0));
+    expect(relayContract.defaults.mayhem).toBe(0);
   });
 
   it('keeps the rules that only make sense online — betting — off the offline setup screen, in both modes', () => {

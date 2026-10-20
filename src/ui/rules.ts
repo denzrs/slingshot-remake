@@ -1,4 +1,4 @@
-import { AIM, GRACE, TRAIL_FADE } from '../config';
+import { AIM, GRACE, MAYHEM, TRAIL_FADE } from '../config';
 import { t, type Key } from '../i18n';
 import type { RoomRules } from '../net';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from '../powerups';
@@ -73,6 +73,8 @@ export function ruleRows(): RuleRow[] {
   const seconds = (n: number) => t('settings.seconds', { n });
   return [
     { key: 'rounds', group: 'match', control: 'slider', label: t('settings.rounds'), options: numbers([1, 3, 5, 7, 10, 15, 20, 0], (n) => (n ? String(n) : t('settings.endless'))) },
+    // Only in a Mayhem game, which has nothing else to set: the strength is a choice of three, never "off".
+    { key: 'mayhem', group: 'match', control: 'segmented', label: t('settings.mayhem'), options: numbers(MAYHEM.LEVELS.filter((n) => n > 0), (n) => t(`settings.mayhem.${n}` as Key)) },
     { key: 'shotTime', group: 'match', control: 'slider', label: t('settings.shotTime'), options: numbers([10, 20, 30, 60], seconds) },
     { key: 'maxPlanets', group: 'field', control: 'slider', label: t('settings.maxPlanets'), options: numbers([1, 2, 3, 4, 5, 6, 7, 8]) },
     { key: 'invisiblePlanets', group: 'field', control: 'toggle', label: t('settings.invisible'), options: [], classicOnly: true },
@@ -102,9 +104,15 @@ export function ruleRows(): RuleRow[] {
 
 const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has. */
-export const rulesFor = (mode: 'classic' | 'horizon', online = false): RuleRow[] =>
-  ruleRows().filter((row) => (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly));
+/** The rules a Mayhem game has: how many rounds, how wild — everything else is the plain rules, plus the round's twists. */
+const MAYHEM_RULES: readonly (keyof RoomRules)[] = ['rounds', 'mayhem'];
+
+/**
+ * The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has.
+ * A Mayhem game has only its own two.
+ */
+export const rulesFor = (mode: 'classic' | 'horizon', online = false, mayhem = false): RuleRow[] =>
+  ruleRows().filter((row) => (mayhem ? MAYHEM_RULES.includes(row.key) : row.key !== 'mayhem' && (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly)));
 
 // ————————————————————————————— As controls —————————————————————————————
 
@@ -123,11 +131,11 @@ export interface RuleSource {
 type RuleItem = Extract<MenuItem, { kind: 'slider' | 'toggle' | 'segmented' | 'tiles' }>;
 
 /** The controls for the rules of a game mode, each with the block it belongs to. */
-export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, online = false): { key: keyof RuleValues; group: RuleGroup; item: RuleItem }[] {
+export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, online = false, mayhem = false): { key: keyof RuleValues; group: RuleGroup; item: RuleItem }[] {
   /** The cap to come back to after trying another power mode. */
   let lastCap = source.get().maxPower < AIM.MAX_POWER ? source.get().maxPower : DEFAULT_CAP;
   const commit = source.commit;
-  return rulesFor(mode, online).map((row): { key: keyof RuleValues; group: RuleGroup; item: RuleItem } => {
+  return rulesFor(mode, online, mayhem).map((row): { key: keyof RuleValues; group: RuleGroup; item: RuleItem } => {
     const hidden = row.when ? () => !row.when!(source.get()) : undefined;
     const reserve = row.reserve ? () => row.reserve!(source.get()) : undefined;
     const inactive = row.inactive ? () => row.inactive!(source.get()) : undefined;

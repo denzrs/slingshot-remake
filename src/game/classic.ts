@@ -31,6 +31,9 @@ export interface ClassicSnapshot {
   summary: Match['summary'];
   notice: Match['notice'];
   settings: Match['settings'];
+  mayhem?: Match['mayhem'];
+  revealEnd?: number;
+  mayhemHistory?: Match['mayhemHistory'];
   roundStats: Match['roundStats'];
   matchStats: Match['matchStats'];
   scoreHistory: number[][];
@@ -72,6 +75,9 @@ export class ClassicMatch extends Match {
       summary: this.summary,
       notice: this.notice,
       settings: this.settings,
+      mayhem: this.mayhem,
+      revealEnd: this.revealEnd,
+      mayhemHistory: this.mayhemHistory,
       roundStats: this.roundStats,
       matchStats: this.matchStats,
       scoreHistory: this.scoreHistory,
@@ -84,6 +90,9 @@ export class ClassicMatch extends Match {
   restoreSnapshot(snapshot: ClassicSnapshot): void {
     if (snapshot.world.ships.length !== snapshot.players.length) return;
     this.settings = snapshot.settings;
+    this.mayhem = snapshot.mayhem ?? null;
+    this.revealEnd = snapshot.revealEnd ?? 0;
+    this.mayhemHistory = snapshot.mayhemHistory ?? [];
     this.phase = snapshot.phase;
     this.phaseTime = snapshot.phaseTime;
     this.clock = snapshot.clock;
@@ -175,6 +184,7 @@ export class ClassicMatch extends Match {
   }
 
   commit(): void {
+    if (this.skipReveal()) return;
     // The fire key during a flight: an armed splitter forks the shot.
     if (this.phase === 'flying') {
       this.splitInFlight(this.viewer ?? this.current);
@@ -205,6 +215,7 @@ export class ClassicMatch extends Match {
   }
 
   commitPlayer(id: number): void {
+    if (this.skipReveal()) return;
     // The fire key during a flight: an armed splitter forks the shot.
     if (this.phase === 'flying') {
       this.splitInFlight(id);
