@@ -153,7 +153,7 @@ export class Hud {
   }
 
   /**
-   * Experimental power-ups: the one a ship holds and the key that uses it, on one line as wide as the gauge
+   * Power-ups: the one a ship holds and the key that uses it, on one line as wide as the gauge
    * above (or as the card it sits under, in the scoreboard). No state words: an armed power-up shows its ring on
    * the ship instead.
    */

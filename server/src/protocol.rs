@@ -369,7 +369,7 @@ pub struct RoomRules {
     pub fading_trails: i64,
     /// Online: eliminated players may bet points of the match on who wins the round.
     pub betting: bool,
-    /// Experimental power-ups: pickups on the field, one held at a time.
+    /// Power-ups: pickups on the field, one held at a time.
     pub power_ups: bool,
     /// Which kinds may turn up: a bitmask over `POWER_UP_KINDS`, never empty.
     pub power_up_kinds: u16,

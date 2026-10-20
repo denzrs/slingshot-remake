@@ -41,7 +41,7 @@ export interface PlayerState {
   locked: boolean;
   /** The ship spent its shot on a teleport: it fires nothing this turn or volley. */
   passed: boolean;
-  /** Experimental power-up held (one at a time), null for none. */
+  /** Power-up held (one at a time), null for none. */
   powerUp: PowerUpKind | null;
   /** The held preview or splitter is set to go off with the next shot. */
   armed: boolean;
@@ -105,7 +105,7 @@ export interface Scene {
   trails: Trail[];
   volley: Volley | null;
   camera: Camera | null;
-  /** Experimental power-ups on the field, and the armed preview's path while aiming. */
+  /** Power-ups on the field, and the armed preview's path while aiming. */
   pickups?: readonly Pickup[];
   /** The pass the round is in, so the renderer can tell which pickups are about to fade. */
   pass?: number;
@@ -253,7 +253,7 @@ export abstract class Match {
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
   protected simClock = 0;
-  /** Experimental power-ups: the pickups on the field, who holds what, and what each one does. */
+  /** Power-ups: the pickups on the field, who holds what, and what each one does. */
   readonly power = new PowerUpField({
     enabled: () => this.powerUps,
     world: () => this.world,
@@ -562,7 +562,7 @@ export abstract class Match {
     return { world: this.world, trails: this.trails, volley: this.volley, camera: null, ...this.power.scene() };
   }
 
-  // ————————————————————————————— Experimental power-ups —————————————————————————————
+  // ————————————————————————————— Power-ups —————————————————————————————
 
   /** Power-ups are an offline experiment: Classic and Event Horizon, never on the attract screen, never online. */
   get powerUps(): boolean {

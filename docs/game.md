@@ -23,7 +23,7 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 | Shift + 1–5, 0 | Oracle, who wins the round: the ship still in (0 for a draw, where one is possible). You can also tap it |
 | B / Shift + B | Oracle, bet points of the match on your tip on the round: the smaller / the larger stake. You can also tap the stake |
 | Esc | Menu |
-| P | Use your power-up (experimental, offline Classic and Event Horizon): open or close the aim of a teleport, a black hole, a planet killer or a nebula, or arm a preview or a repulse for your next shot |
+| P | Use your power-up (Classic and Event Horizon): open or close the aim of a teleport, a black hole, a planet killer or a nebula, or arm a preview or a repulse for your next shot |
 | F | Fullscreen |
 | ↑ ↓ ← → Enter (in menus) | Pick a row, change its value (sliders, switches and lists alike), confirm. Home / End jump a slider to its ends; Esc goes back to the row you came from |
 

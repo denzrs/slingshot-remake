@@ -3,7 +3,7 @@ import { aimDirection, Shot, type ShotRules, type World } from './physics';
 import type { Rng } from './rng';
 
 /**
- * Experimental power-ups (offline Classic only): pickups float on the field, a shot that flies past one
+ * Power-ups: pickups float on the field, a shot that flies past one
  * takes it, and a ship holds one at a time. Everything here is pure, so the match can call it from its
  * own rng and the tests can call it directly.
  */

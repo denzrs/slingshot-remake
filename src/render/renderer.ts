@@ -354,7 +354,7 @@ export class Renderer {
     match.world.defenses.forEach((d, i) => drawInterception(ctx, match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, defenseView(scene.volley?.shots ?? [], d, i), this.time));
   }
 
-  /** Experimental power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */
+  /** Power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */
   private drawPowerUps(match: Match, scene: Scene): void {
     const { ctx } = this;
     const pulse = 0.5 + 0.5 * Math.sin(this.time * 5);

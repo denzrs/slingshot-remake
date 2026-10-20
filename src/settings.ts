@@ -32,7 +32,7 @@ export interface Settings {
   neighborGrace: number;
   /** Classic only: everybody aims, then all shots fly at once — as in Event Horizon — instead of one shot per turn. */
   simultaneousShots: boolean;
-  /** Experimental, Classic offline only: pickups float on the field, and a shot that flies past one takes it (preview, teleport or splitter). */
+  /** Pickups float on the field, and a shot that flies past one takes it (preview, teleport or splitter). */
   powerUps: boolean;
   /** Power-ups: the kinds that may turn up (never empty), and how many pickups lie on the field at once. */
   powerUpKinds: PowerUpKind[];

@@ -75,7 +75,7 @@ export interface PowerUpScene {
 }
 
 /**
- * Experimental power-ups (offline Classic): the pickups on the field, who holds what, and what each power-up
+ * Power-ups: the pickups on the field, who holds what, and what each power-up
  * does. The match calls in at round start, on every step of a flight and when a volley is over.
  */
 export class PowerUpField {
