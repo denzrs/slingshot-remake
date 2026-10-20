@@ -1,5 +1,5 @@
 import { AIM, NEBULA, PHYSICS } from './config';
-import { aimDirection, Shot, type ShotRules, type World } from './physics';
+import { aimDirection, portalFits, Shot, type ShotRules, type World } from './physics';
 import type { Rng } from './rng';
 
 /**
@@ -32,10 +32,10 @@ export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KIND
 
 /**
  * Kinds a CPU has no use for: it leaves them lying. Only the preview, which shows a shot's path and means
- * nothing to a planner that already knows it, and the wormhole and the polarity, which a CPU does not use yet. A placement (black hole, planet killer, nebula, defense) it does take,
- * and lays it at a rough spot of its own.
+ * nothing to a planner that already knows it. A placement (black hole, planet killer, nebula, defense,
+ * wormhole, polarity) it does take, and lays it at a rough spot of its own.
  */
-export const CPU_IGNORES: Readonly<Partial<Record<PowerUpKind, true>>> = { preview: true, wormhole: true, polarity: true };
+export const CPU_IGNORES: Readonly<Partial<Record<PowerUpKind, true>>> = { preview: true };
 
 export const POWER_UP = {
   /**
@@ -208,6 +208,28 @@ export function aimedSpot(world: World, from: { x: number; y: number }, angle: n
     if (isLanded(world, x, y)) return { x, y };
   }
   return null;
+}
+
+/**
+ * Where a CPU sets the two portals of a wormhole: one a little way out from its own ship, towards the enemy,
+ * and one close to the enemy, so a shot that goes in at the first comes out near its target. Each is walked
+ * back along that line until it is clear of planets and holes and of the other portal. Null when the line
+ * offers no such pair.
+ */
+export function cpuWormholeSpots(world: World, from: { x: number; y: number }, to: { x: number; y: number }): [{ x: number; y: number }, { x: number; y: number }] | null {
+  const d = distance(from.x, from.y, to.x, to.y);
+  if (!d) return null;
+  const [ux, uy] = [(to.x - from.x) / d, (to.y - from.y) / d];
+  const pick = (reach: number, others: { x: number; y: number }[]): { x: number; y: number } | null => {
+    for (let r = reach; r > 0; r -= POWER_UP.TELEPORT_AIM_STEP) {
+      const spot = { x: from.x + ux * r, y: from.y + uy * r };
+      if (isLanded(world, spot.x, spot.y) && portalFits(world, spot, others)) return spot;
+    }
+    return null;
+  };
+  const first = pick(0.3 * d, []);
+  const second = first && pick(0.75 * d, [first]);
+  return first && second ? [first, second] : null;
 }
 
 /**

@@ -4,6 +4,7 @@ import { createMatch, type Match } from '../src/game';
 import { isWormholeJump, portalFits, Shot, type World } from '../src/physics';
 import { DEFAULT_SETTINGS } from '../src/settings';
 import { portalColor } from '../src/render/powerup-art';
+import { CPU_IGNORES, cpuWormholeSpots } from '../src/powerups';
 
 const rules = { bounce: false, timeLimit: 20 };
 
@@ -158,3 +159,53 @@ describe('wormhole placement', () => {
     expect(first).toMatchObject(host.scene().placement!.first!);
   });
 });
+
+describe('wormhole for a CPU', () => {
+  type Placer = { cpuPlacementAim(p: unknown): { angle: number; power: number } | null; placeForCpu(id: number): boolean };
+
+  function cpuMatch(seed = 11): Match {
+    const seats = ['easy', 'human', 'off', 'off', 'off', 'off'] as const;
+    return createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed });
+  }
+
+  it('is a kind a CPU takes up: only the preview is left lying', () => {
+    expect(CPU_IGNORES.wormhole).toBeUndefined();
+    expect(CPU_IGNORES.preview).toBe(true);
+  });
+
+  it('picks one portal out from its ship and one near the enemy, clear of each other', () => {
+    const w = { ...world(), wormholes: [] };
+    const spots = cpuWormholeSpots(w, w.ships[0], w.ships[1])!;
+    expect(spots).not.toBeNull();
+    const [a, b] = spots;
+    expect(Math.hypot(a.x - w.ships[0].x, a.y - w.ships[0].y)).toBeLessThan(Math.hypot(b.x - w.ships[0].x, b.y - w.ships[0].y));
+    expect(Math.hypot(b.x - w.ships[1].x, b.y - w.ships[1].y)).toBeLessThan(Math.hypot(a.x - w.ships[1].x, a.y - w.ships[1].y));
+    expect(portalFits(w, a, [b])).toBe(true);
+  });
+
+  it('keeps clear of a planet on the line, and of the portals already there', () => {
+    const w = { ...world(), wormholes: [{ id: 0, ax: 400, ay: 455, bx: 900, by: 700, radius: WORMHOLE.RADIUS }] };
+    w.planets = [{ x: 400, y: 480, radius: 40, mass: 20_000, seed: 3, style: 'rocky', tint: '#fff' }];
+    const spots = cpuWormholeSpots(w, w.ships[0], w.ships[1]);
+    expect(spots).not.toBeNull();
+    for (const s of spots!) {
+      expect(Math.hypot(s.x - 400, s.y - 480)).toBeGreaterThan(40);
+      expect(portalFits(w, s)).toBe(true);
+    }
+  });
+
+  it('sets the pair, spends the power-up, and the match has a new wormhole', () => {
+    const match = cpuMatch();
+    const cpu = match.players[0];
+    const placer = match as unknown as Placer;
+    cpu.powerUp = 'wormhole';
+    const aim = placer.cpuPlacementAim(cpu);
+    expect(aim).not.toBeNull();
+    cpu.angle = aim!.angle;
+    cpu.power = aim!.power;
+    expect(placer.placeForCpu(0)).toBe(true);
+    expect(match.world.wormholes).toHaveLength(1);
+    expect(cpu.powerUp).toBeNull();
+  });
+});
+

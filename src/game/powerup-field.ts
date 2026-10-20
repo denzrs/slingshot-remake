@@ -1,5 +1,5 @@
 import { nextWormholeId, portalFits, type ShotRules, type World } from '../physics';
-import { aimedPlanet, aimedSpot, aimedSurface, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
+import { aimedPlanet, aimedSpot, aimedSurface, cpuWormholeSpots, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
 import { NEBULA, WORMHOLE } from '../config';
 import type { Rng } from '../rng';
 import { bump, type StatBook } from '../stats';
@@ -421,15 +421,30 @@ export class PowerUpField {
 
   /**
    * A CPU lays the placement it holds at the spot its own aim points at: no aim key, no confirm, and the
-   * shot is the caller's to spend. It handles only the four placements a CPU lays; a teleport it plans
-   * with, like a shot. False when it holds none of them, or the aim lands nowhere.
+   * shot is the caller's to spend. It handles the placements a CPU lays; a teleport it plans
+   * with, like a shot. False when it holds none of them, or the aim lands nowhere. A wormhole's portals
+   * are not aimed one by one: the aim points at the first, and both are worked out from the world.
    */
   placeForCpu(id: number): boolean {
     const p = this.host.players()[id];
     const kind = p.powerUp;
-    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense') return false;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'polarity') return false;
     const world = this.host.world();
     const from = world.ships[id];
+    if (kind === 'wormhole') {
+      const friends = this.host.friendsOf(id);
+      const target = this.host.players()
+        .filter((q) => q.alive && q.id !== id && !friends.includes(q.id))
+        .map((q) => world.ships[q.id])
+        .sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))[0];
+      const spots = target && cpuWormholeSpots(world, from, target);
+      return spots ? this.plantWormhole(id, spots[0], spots[1]) : false;
+    }
+    if (kind === 'polarity') {
+      // Only a planet that pulls: a CPU never turns one back.
+      const planet = aimedPlanet(world, from, this.host.players()[id].angle);
+      return planet && !world.planets[planet.index].reversed ? this.turnPolarity(id, planet.index) : false;
+    }
     if (kind === 'defense') {
       const surface = aimedSurface(world, from, p.angle);
       return surface ? this.plantDefense(id, surface) : false;

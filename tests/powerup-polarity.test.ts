@@ -27,10 +27,10 @@ const flyPast = (reversed: boolean, shooter = 0): number => {
 };
 
 describe('polarity power-up', () => {
-  it('is a known kind, which a CPU leaves lying', () => {
+  it('is a known kind, which a CPU takes up like the other placements', () => {
     expect(POWER_UP_KINDS).toContain('polarity');
     expect(POWER_UP_KINDS).not.toContain('repulse');
-    expect(CPU_IGNORES.polarity).toBe(true);
+    expect(CPU_IGNORES.polarity).toBeUndefined();
   });
 
   it('makes a planet push a shot away instead of pulling it in', () => {
@@ -111,5 +111,45 @@ describe('polarity power-up', () => {
     match.commit();
     expect(shooter.powerUp).toBe('polarity');
     expect(shooter.passed).toBe(false);
+  });
+
+  describe('for a CPU', () => {
+    type Placer = { cpuPlacementAim(p: unknown): { angle: number; power: number } | null; placeForCpu(id: number): boolean };
+
+    function cpuMatch(seed = 11): Match {
+      const seats = ['easy', 'human', 'off', 'off', 'off', 'off'] as const;
+      return createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed });
+    }
+
+    it('turns the nearest planet that still pulls, and spends the power-up', () => {
+      const match = cpuMatch();
+      const cpu = match.players[0];
+      const placer = match as unknown as Placer;
+      const own = match.world.ships[0];
+      // Two planets on the same side: the nearer one is turned already, so the CPU goes for the other.
+      match.world.planets = [
+        planet(own.x + 150, own.y - 120, { seed: 1, reversed: true }),
+        planet(own.x + 250, own.y + 150, { seed: 2 }),
+      ];
+      cpu.powerUp = 'polarity';
+      const aim = placer.cpuPlacementAim(cpu)!;
+      expect(aim).not.toBeNull();
+      cpu.angle = aim.angle;
+      cpu.power = aim.power;
+      expect(placer.placeForCpu(0)).toBe(true);
+      expect(match.world.planets.map((p) => !!p.reversed)).toEqual([true, true]);
+      expect(cpu.powerUp).toBeNull();
+    });
+
+    it('never turns a planet back, and keeps the power-up when every planet is turned', () => {
+      const match = cpuMatch();
+      const cpu = match.players[0];
+      const placer = match as unknown as Placer;
+      const own = match.world.ships[0];
+      match.world.planets = [planet(own.x + 200, own.y, { reversed: true })];
+      cpu.powerUp = 'polarity';
+      expect(placer.cpuPlacementAim(cpu)).toBeNull();
+      expect(cpu.powerUp).toBe('polarity');
+    });
   });
 });
