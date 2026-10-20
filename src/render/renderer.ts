@@ -297,7 +297,7 @@ export class Renderer {
           ctx.restore();
         }
         // A shot in a nebula pushes against the gas: a ring spreads from it (the wisps it sheds are the Effects').
-        if (inNebula(match.world.nebulae, shot.x, shot.y)) {
+        if (!vs.heavy && inNebula(match.world.nebulae, shot.x, shot.y)) {
           ctx.save();
           ctx.strokeStyle = POWER_UP_COLORS.nebula;
           const ripple = (this.time * 1.6) % 1;
@@ -314,6 +314,20 @@ export class Renderer {
         glow.addColorStop(1, rgba(color, 0));
         ctx.fillStyle = glow;
         ctx.fillRect(shot.x - 9, shot.y - 9, 18, 18);
+        // A heavy round is a bigger, solid ball in a ring of its own colour.
+        if (vs.heavy) {
+          ctx.save();
+          ctx.fillStyle = rgba(COLORS.bone, 0.98);
+          ctx.beginPath();
+          ctx.arc(shot.x, shot.y, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = rgba(POWER_UP_COLORS.heavy, 0.9);
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(shot.x, shot.y, 8, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
         // An armor-piercing round is an arrowhead pointing where it flies, glowing like the plain shot.
         if (vs.pierce) {
           ctx.save();

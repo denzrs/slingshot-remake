@@ -10,7 +10,7 @@ pub const MAX_TIP: i64 = 6;
 /// A teleport offers a few spots to choose from; a pick names one by its place in the list.
 const MAX_SPOT: usize = 8;
 /// The power-ups a room can lay, in the order the client lists them. A room's kinds are kept as a bitmask over this list.
-pub const POWER_UP_KINDS: [&str; 11] = [
+pub const POWER_UP_KINDS: [&str; 12] = [
     "preview",
     "teleport",
     "splitter",
@@ -22,6 +22,7 @@ pub const POWER_UP_KINDS: [&str; 11] = [
     "piercing",
     "wormhole",
     "defense",
+    "heavy",
 ];
 /// Every kind switched on: one bit per kind, so the mask fills from the top down and never shifts past the type.
 pub const ALL_POWER_UP_KINDS: u16 = u16::MAX >> (16 - POWER_UP_KINDS.len());

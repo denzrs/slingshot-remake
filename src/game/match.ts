@@ -189,9 +189,9 @@ export interface CpuJob {
   planner: Generator<void, Aim> | null;
   target: Aim | null;
   settle: number;
-  /** Power-ups: the planner found no hitting shot. Only known while the CPU holds a teleport. */
+  /** Power-ups: the planner found no hitting shot. Only known while the CPU holds a teleport or a heavy shot. */
   blind?: boolean;
-  teleportTried?: boolean;
+  rescueTried?: boolean;
 }
 
 /**
@@ -577,12 +577,19 @@ export abstract class Match {
   }
 
   /**
-   * A CPU holding a teleport that planned and found no hitting shot jumps to a new spot, once, and plans again
-   * from there. Returns true when it did, so the caller leaves this tick to the new position.
+   * A CPU that planned and found no hitting shot tries its way out once and plans again: a teleport jumps to a
+   * new spot, a heavy shot is armed. Returns true when it did, so the caller leaves this tick to the new plan.
    */
-  protected cpuTeleportIfBlind(p: PlayerState, job: CpuJob | undefined): boolean {
-    if (p.powerUp !== 'teleport' || !job?.target || !job.blind || job.teleportTried) return false;
-    job.teleportTried = true;
+  protected cpuRescueIfBlind(p: PlayerState, job: CpuJob | undefined): boolean {
+    if ((p.powerUp !== 'teleport' && p.powerUp !== 'heavy') || !job?.target || !job.blind || job.rescueTried) return false;
+    job.rescueTried = true;
+    if (p.powerUp === 'heavy') {
+      // Armed already: the plan that came up blind was made with it, so there is nothing left to try.
+      if (p.armed) return false;
+      p.armed = true;
+      this.cpuJobs.clear();
+      return true;
+    }
     return this.power.teleport(p.id);
   }
 
@@ -1130,6 +1137,7 @@ export abstract class Match {
       const p = this.players[id];
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
       const pierce = !!p.armed && p.powerUp === 'piercing';
+      const heavy = !!p.armed && p.powerUp === 'heavy';
       // The pickups a CPU would actually keep (a preview is of no use to it): the planner steers its
       // search through them, so a power-up-hungry level like Einstein collects more.
       const pickups: ShotGate[] = this.powerUps
@@ -1148,10 +1156,11 @@ export abstract class Match {
         lookahead,
         friends,
         pierce,
+        heavy,
         pickups,
         grudgeTarget: this.lastHitBy.get(id) ?? null,
-        // A CPU holding a teleport also wants to know whether it found a hitting shot at all.
-        ...(logDecisions || this.options.onCpuDecision || (this.powerUps && p.powerUp === 'teleport')
+        // A CPU holding a teleport or a heavy shot also wants to know whether it found a hitting shot at all.
+        ...(logDecisions || this.options.onCpuDecision || (this.powerUps && (p.powerUp === 'teleport' || p.powerUp === 'heavy'))
           ? {
               onDecision: (decision) => {
                 const job = this.cpuJobs.get(id);
