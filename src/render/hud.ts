@@ -944,6 +944,8 @@ export class Hud {
       if (match.viewer !== null && match.simultaneous) items = [['', t('hud.waitingOthers')]];
       else if (match.viewer !== null && thinker && !thinker.cpu) items = [['', t('hud.waitingFor', { name: thinker.name })]];
       else items = [['', thinker?.cpu ? t('hud.thinking', { name: thinker.name }) : t('hud.cpusAiming')]];
+    } else if (match.phase === 'orbit') {
+      items = [['', t('hud.orbit')]];
     } else if (match.phase === 'collapse') {
       items = [['', t('hud.collapse')]];
     } else if (match.phase === 'roundOver' && match.phaseTime > 0.6) {

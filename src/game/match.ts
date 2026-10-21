@@ -16,10 +16,10 @@ import { Crowd } from './crowd';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField, type PlacementAim } from './powerup-field';
 
-export type Mode = 'classic' | 'horizon' | 'challenge';
+export type Mode = 'classic' | 'solar' | 'horizon' | 'challenge';
 /** The modes you play against other ships, picked from the title menu. */
 export type VersusMode = Exclude<Mode, 'challenge'>;
-export type Phase = 'aiming' | 'flying' | 'killcam' | 'collapse' | 'roundOver' | 'gameOver';
+export type Phase = 'aiming' | 'flying' | 'killcam' | 'collapse' | 'orbit' | 'roundOver' | 'gameOver';
 
 export interface PlayerState {
   /** Index into `players` and `world.ships`. */
@@ -712,7 +712,7 @@ export abstract class Match {
 
   /** Power-ups are an offline experiment: Classic and Event Horizon, never on the attract screen, never online. */
   get powerUps(): boolean {
-    return this.settings.powerUps && (this.mode === 'classic' || this.mode === 'horizon') && !this.attract;
+    return this.settings.powerUps && this.mode !== 'challenge' && !this.attract;
   }
 
   /** Volleys that make up one pass: the shot of every ship still in, or one salvo at a time. */
@@ -866,6 +866,7 @@ export abstract class Match {
       maxPlanets: this.settings.maxPlanets,
       players: this.players.length,
       blackHole: this.mode === 'horizon',
+      solar: this.mode === 'solar',
       teams: this.teamMode ? this.players.map((p) => p.team!) : null,
     });
     this.hiddenPlanets = this.mode === 'classic' && this.settings.invisiblePlanets;
