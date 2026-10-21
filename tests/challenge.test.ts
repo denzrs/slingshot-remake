@@ -114,9 +114,8 @@ describe('daily challenge', () => {
       if (ch.theme === 'heavy') expect(mods.slice(1).every((m) => m.includes('heavy'))).toBe(true);
       if (ch.theme === 'precision') expect(mods.slice(1).every((m) => m.includes('fixedPower'))).toBe(true);
       if (ch.theme === 'bastion') expect(mods.slice(1).every((m) => m.includes('flak'))).toBe(true);
-      if (ch.theme === 'murk') expect(mods.slice(1).every((m) => m.includes('nebula'))).toBe(true);
+      if (ch.theme === 'nebula') expect(mods.slice(1).every((m) => m.includes('nebula'))).toBe(true);
       if (ch.theme === 'hammerhead') expect(mods.slice(1).every((m) => m.includes('plasma'))).toBe(true);
-      if (ch.theme === 'skewer') expect(mods.slice(1).every((m) => m.includes('piercing'))).toBe(true);
     }
   });
 
@@ -184,10 +183,9 @@ describe('sector layout', () => {
       expect(solutions.length, `${day} sector ${spec.index}`).toBe(spec.targets);
       expect(world.ships).toHaveLength(1 + spec.targets);
       for (const s of solutions) {
-        const { end, pierced } = simulateShot(cloneWorld(world), 0, s.angle, s.power, rules, [], [], spec.ammo === 'piercing', spec.ammo === 'plasma');
+        const { end } = simulateShot(cloneWorld(world), 0, s.angle, s.power, rules, [], [], false, spec.ammo === 'plasma');
         const label = `${day} sector ${spec.index} target ${s.target}`;
-        if (spec.ammo === 'piercing') expect(pierced.concat(end.kind === 'ship' ? [end.ship] : []), label).toContain(s.target);
-        else expect(end, label).toEqual({ kind: 'ship', ship: s.target });
+        expect(end, label).toEqual({ kind: 'ship', ship: s.target });
         expect(s.window).toBeGreaterThanOrEqual(0.08);
       }
     }
@@ -227,14 +225,14 @@ describe('sector layout', () => {
 describe('variations in play', () => {
   const dayOf = (theme: string) => days(40, VARIANTS).find((d) => dailyChallenge(d).theme === theme)!;
 
-  for (const theme of ['bastion', 'murk', 'hammerhead', 'skewer']) {
+  for (const theme of ['bastion', 'nebula', 'hammerhead']) {
     it(`can be won by flying the known solutions: ${theme}`, () => {
       const ch = dailyChallenge(dayOf(theme));
       const m = createChallenge(DEFAULT_SETTINGS, ch);
       for (let i = 0; i < ch.sectors.length; i++) {
         const sector = buildSector(ch.sectors[i]);
         for (const s of sector.solutions) {
-          if (m.phase !== 'aiming') break; // an armor-piercing shot may have taken the next target already
+          if (m.phase !== 'aiming') break;
           const target = m.world.ships[s.target];
           if (!target.alive) continue;
           m.setAim(s.angle, s.power);
@@ -247,22 +245,6 @@ describe('variations in play', () => {
       expect(m.phase).toBe('gameOver');
     }, 60_000);
   }
-
-  it('pays an armor-piercing shot that takes two targets as one shot', () => {
-    const ch = dailyChallenge(dayOf('skewer'));
-    const m = createChallenge(DEFAULT_SETTINGS, ch);
-    for (let i = 0; i < 2; i++) {
-      for (const s of buildSector(ch.sectors[i]).solutions) {
-        if (m.phase !== 'aiming' || !m.world.ships[s.target].alive) continue;
-        m.setAim(s.angle, s.power);
-        m.commit();
-        settle(m);
-      }
-      pass(m);
-    }
-    const r = m.result();
-    for (const sector of r.sectors) expect(sector.points).toBe(sector.shots.reduce((sum, x) => sum + x.points, 0) + sector.bonus);
-  }, 60_000);
 });
 
 describe('ranking', () => {

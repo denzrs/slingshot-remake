@@ -52,18 +52,18 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 
 // ————————————————————————————— Themes —————————————————————————————
 
-export type ThemeId = 'classic' | 'billiard' | 'blind' | 'singularity' | 'heavy' | 'precision' | 'sniper' | 'bastion' | 'murk' | 'hammerhead' | 'skewer';
+export type ThemeId = 'classic' | 'billiard' | 'blind' | 'singularity' | 'heavy' | 'precision' | 'sniper' | 'bastion' | 'nebula' | 'hammerhead';
 
 /** The seven themes of the first weeks: days before `VARIANTS_FROM` keep their old rotation, so no past or running day changes. */
 const CLASSIC_THEMES: readonly ThemeId[] = ['classic', 'billiard', 'blind', 'singularity', 'heavy', 'precision', 'sniper'];
 
-export const THEMES: readonly ThemeId[] = [...CLASSIC_THEMES, 'bastion', 'murk', 'hammerhead', 'skewer'];
+export const THEMES: readonly ThemeId[] = [...CLASSIC_THEMES, 'bastion', 'nebula', 'hammerhead'];
 
 /** Challenge #21 (2026-10-22), the first day with the flak, nebula and ammo variations. */
 const VARIANTS_FROM = 21;
 
-/** What the pilot's shots are made of in a sector: plasma (hard to bend, ignores clouds) or armor piercing (flies through ships). */
-export type Ammo = 'plasma' | 'piercing';
+/** What the pilot's shots are made of in a sector: plasma (hard to bend, ignores clouds). */
+export type Ammo = 'plasma';
 
 /** Per-sector rule twists a theme can switch on. `from` = first sector index (0-based) it may appear in. */
 interface Rate {
@@ -96,9 +96,8 @@ const THEME_RULES: Record<ThemeId, ThemeRule> = {
   precision: { fixedPower: { from: 1, p: 1 } },
   sniper: { sniper: true, bounce: { from: 3, p: 0.3 } },
   bastion: { flak: { from: 1, p: 1 } },
-  murk: { nebula: { from: 1, p: 1 } },
+  nebula: { nebula: { from: 1, p: 1 } },
   hammerhead: { ammo: { kind: 'plasma', from: 1 } },
-  skewer: { ammo: { kind: 'piercing', from: 1 } },
 };
 
 /** Classic dailies from the variations on may spice a sector with a flak cannon or a cloud, never with fixed ammo. */
@@ -131,7 +130,7 @@ function cycleOrder(cycle: number, themes: readonly ThemeId[], salt: string): Th
 // ————————————————————————————— Sector specs —————————————————————————————
 
 type Difficulty = 1 | 2 | 3 | 4 | 5;
-type Modifier = 'bounce' | 'invisible' | 'fixedPower' | 'hole' | 'heavy' | 'flak' | 'nebula' | 'plasma' | 'piercing';
+type Modifier = 'bounce' | 'invisible' | 'fixedPower' | 'hole' | 'heavy' | 'flak' | 'nebula' | 'plasma';
 
 export interface SectorSpec {
   index: number;
@@ -217,9 +216,6 @@ function sectorSpec(rule: ThemeRule, index: number, difficulty: Difficulty, rng:
     slack = Math.max(1, slack - 1);
   }
 
-  // Armor piercing rewards lining targets up: from the middle of the run there are always at least two.
-  if (ammo === 'piercing' && index >= 2) targets = Math.min(3, Math.max(2, targets));
-
   let planets = PLANETS[difficulty];
   if (invisible) planets = [2, Math.min(4, planets[1])];
   if (hole) planets = [Math.max(2, planets[0] - 1), Math.max(3, planets[1] - 2)];
@@ -237,7 +233,6 @@ export function modifiersOf(spec: SectorSpec): Modifier[] {
   if (spec.flak) out.push('flak');
   if (spec.nebulae) out.push('nebula');
   if (spec.ammo === 'plasma') out.push('plasma');
-  if (spec.ammo === 'piercing') out.push('piercing');
   return out;
 }
 
@@ -248,11 +243,10 @@ export function sectorRules(spec: SectorSpec): ShotRules {
 /** What the pilot fires in a sector: the rules of the flight, and the kind of shot. */
 interface Load {
   rules: ShotRules;
-  pierce: boolean;
   plasma: boolean;
 }
 
-const loadOf = (spec: SectorSpec): Load => ({ rules: sectorRules(spec), pierce: spec.ammo === 'piercing', plasma: spec.ammo === 'plasma' });
+const loadOf = (spec: SectorSpec): Load => ({ rules: sectorRules(spec), plasma: spec.ammo === 'plasma' });
 
 // ————————————————————————————— Ranking —————————————————————————————
 
@@ -384,8 +378,8 @@ interface Path {
 }
 
 /** Fly a probe from the player's ship and record where it goes. */
-function tracePath(world: World, angle: number, power: number, { rules, pierce, plasma }: Load): Path {
-  const shot = new Shot(world, 0, angle, power, rules, false, [], pierce, plasma);
+function tracePath(world: World, angle: number, power: number, { rules, plasma }: Load): Path {
+  const shot = new Shot(world, 0, angle, power, rules, false, [], false, plasma);
   const points: number[] = [];
   const curve: number[] = [];
   let turned = 0;
@@ -423,11 +417,10 @@ function candidateSpots(world: World, ships: Ship[], path: Path): { x: number; y
   return out;
 }
 
-/** Does the shot take the target down, and never its own ship? An armor-piercing one counts the ships it flies through. */
-function hits(world: World, ships: Ship[], angle: number, power: number, target: number, { rules, pierce, plasma }: Load): boolean {
-  const { end, pierced } = simulateShot({ ...world, ships }, 0, angle, power, rules, [], [], pierce, plasma);
-  if (pierced.includes(0) || (end.kind === 'ship' && end.ship === 0)) return false;
-  return (end.kind === 'ship' && end.ship === target) || pierced.includes(target);
+/** Does the shot take the target down, and never its own ship? */
+function hits(world: World, ships: Ship[], angle: number, power: number, target: number, { rules, plasma }: Load): boolean {
+  const { end } = simulateShot({ ...world, ships }, 0, angle, power, rules, [], [], false, plasma);
+  return end.kind === 'ship' && end.ship === target;
 }
 
 /**
