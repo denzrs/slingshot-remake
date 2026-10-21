@@ -8,9 +8,9 @@ use serde_json::Value;
 
 use crate::auth::{password_length, MAX_PASSWORD_LENGTH};
 use crate::protocol::{
-    is_input_message, is_safe_integer, parse_avatar, parse_cpu_level,
-    parse_daily_day, parse_daily_submit, parse_room_look, parse_player_name, parse_room_name, parse_rules, DailyScore,
-    RoomLook, RoomName, RoomRules,
+    is_input_message, is_safe_integer, parse_avatar, parse_cpu_level, parse_daily_day,
+    parse_daily_submit, parse_player_name, parse_room_look, parse_room_name, parse_rules,
+    DailyScore, RoomLook, RoomName, RoomRules,
 };
 use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
 

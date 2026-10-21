@@ -1013,7 +1013,10 @@ fn a_player_can_rename_in_a_waiting_room_but_not_to_a_profane_name() {
         .as_str()
         .unwrap()
         .to_owned();
-    rooms.handle(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest"}));
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+    );
     drain_json(&mut host_rx);
     drain_json(&mut guest_rx);
 
