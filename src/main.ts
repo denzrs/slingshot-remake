@@ -26,6 +26,7 @@ import { STYLE_MULTIPLIER, styleLabel } from './scoring';
 import { mayhemRules } from './lobbyPrefs';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
+import { eyeIcon } from './ui/dom';
 import { Menu } from './ui/menu';
 import { lobbyScreen } from './ui/lobby';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
@@ -671,7 +672,13 @@ function frame(now: number): void {
   net?.update(dt);
   const crowd = screen === 'play' && net && !net.isSpectator ? m.crowd.seats.filter((seat) => seat.present).length : 0;
   standsBadge.hidden = crowd === 0;
-  if (crowd) standsBadge.textContent = `👁 ${t('stands.badge', { n: crowd })}`;
+  if (crowd) {
+    const text = t('stands.badge', { n: crowd });
+    if (standsBadge.dataset.text !== text) {
+      standsBadge.dataset.text = text;
+      standsBadge.replaceChildren(eyeIcon(), text);
+    }
+  }
   renderer.draw(
     m,
     effects,

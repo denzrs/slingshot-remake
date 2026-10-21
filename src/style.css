@@ -2773,3 +2773,15 @@ kbd {
 .lobby__tag--live {
   color: var(--danger);
 }
+
+.eye-icon {
+  width: 1.2em;
+  height: 1.2em;
+  margin-right: 0.4em;
+  vertical-align: -0.2em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

@@ -8,6 +8,7 @@ import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multi
 import type { LobbyRoom, NetworkCpuLevel, NetworkGameMode, RoomInfo, RoomMode, RoomRules } from '../net';
 import type { RoomLook } from '../roomLook';
 import { buildControl, segmentedControl, sliderControl, type Control, type Env } from './controls';
+import { eyeIcon } from './dom';
 import { h, type Screen } from './menu';
 import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
 import type { App } from './screens';
@@ -314,7 +315,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
         null,
         h('strong', null, roomIcon(room.symbol, room.color), `${room.locked ? '🔒 ' : ''}${room.name}`),
         h('span.lobby-room__host', null, t('multiplayer.hostedBy', { name: room.host })),
-        h('span.lobby-room__tags', null, h('span.lobby__tag', null, modeName(room.gameMode, room.mayhem > 0)), h('span.lobby__tag', null, matchTypeName(room.mode)), pips(room.players, room.maxPlayers), ...(running ? [h('span.lobby__tag.lobby__tag--live', null, t('multiplayer.inProgress'))] : []), ...(room.spectators ? [h('span.lobby__tag', null, `👁 ${room.spectators}`)] : [])),
+        h('span.lobby-room__tags', null, h('span.lobby__tag', null, modeName(room.gameMode, room.mayhem > 0)), h('span.lobby__tag', null, matchTypeName(room.mode)), pips(room.players, room.maxPlayers), ...(running ? [h('span.lobby__tag.lobby__tag--live', null, t('multiplayer.inProgress'))] : []), ...(room.spectators ? [h('span.lobby__tag.lobby__tag--watchers', null, eyeIcon(), String(room.spectators))] : [])),
       ),
       room.locked ? secretField(pass) : '',
       h('div.lobby-room__actions', null, ...(running ? [] : [join]), watch),
