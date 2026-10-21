@@ -1,43 +1,116 @@
 import { COLORS } from '../config';
 import type { Planet } from '../physics';
-import { createRng, range } from '../rng';
 import { rgba } from './color';
+import { fbm } from './noise';
 
-const YELLOW = '#ffe03d';
-const AMBER = '#ff9a1f';
-const SPOT = '#7a2a0c';
+const YELLOW = [255, 226, 70] as const;
+const PALE = [255, 242, 140] as const;
+const AMBER = [255, 140, 20] as const;
+const SPOT = [120, 40, 10] as const;
+const TEX = 256;
 
-interface Spot {
-  angle: number;
-  dist: number;
-  size: number;
+const smooth = (e0: number, e1: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+};
+const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
+
+/** A cell's random point and brightness: the same for the same grid square and seed. */
+function cellHash(x: number, y: number, seed: number): [number, number, number] {
+  const h = (k: number): number => {
+    let n = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(k + 1, 1440662683) ^ seed;
+    n = Math.imul(n ^ (n >>> 13), 1274126177);
+    return ((n ^ (n >>> 16)) >>> 0) / 4294967295;
+  };
+  return [h(0), h(1), h(2)];
 }
 
-/** A sun's sunspots: the same for the same seed. */
-const spotsOf = (seed: number): Spot[] => {
-  const rng = createRng(seed);
-  return Array.from({ length: 4 + Math.floor(rng() * 3) }, () => ({ angle: rng() * Math.PI * 2, dist: Math.sqrt(rng()) * 0.7, size: range(rng, 0.06, 0.15) }));
-};
-const spotCache = new Map<number, Spot[]>();
+/**
+ * The sun's face, drawn once per sun: irregular convection cells (a Worley pattern — bright middles, amber seams)
+ * and ragged sunspots with a dark core and a softer penumbra, dimmed towards the limb. Same seed, same face.
+ */
+function makeFace(seed: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = TEX;
+  const ctx = canvas.getContext('2d')!;
+  const img = ctx.createImageData(TEX, TEX);
+  const scale = 3.4;
+  for (let py = 0; py < TEX; py++) {
+    for (let px = 0; px < TEX; px++) {
+      const x = ((px + 0.5) / TEX) * 2 - 1;
+      const y = ((py + 0.5) / TEX) * 2 - 1;
+      const rr = Math.hypot(x, y);
+      if (rr > 1) continue;
+      // Worley: nearest and second-nearest cell point.
+      const gx = x * scale;
+      const gy = y * scale;
+      let f1 = 9;
+      let f2 = 9;
+      let tone = 0.5;
+      for (let j = -1; j <= 1; j++) {
+        for (let i = -1; i <= 1; i++) {
+          const cx = Math.floor(gx) + i;
+          const cy = Math.floor(gy) + j;
+          const [hx, hy, ht] = cellHash(cx, cy, seed);
+          const d = Math.hypot(cx + hx - gx, cy + hy - gy);
+          if (d < f1) {
+            f2 = f1;
+            f1 = d;
+            tone = ht;
+          } else if (d < f2) f2 = d;
+        }
+      }
+      const seam = smooth(0, 0.16, f2 - f1);
+      const warm = 0.35 + 0.65 * (1 - f1 * 0.9) * (0.55 + 0.45 * tone);
+      let r = mix(AMBER[0], mix(YELLOW[0], PALE[0], warm), seam);
+      let g = mix(AMBER[1], mix(YELLOW[1], PALE[1], warm), seam);
+      let b = mix(AMBER[2], mix(YELLOW[2], PALE[2], warm), seam);
+
+      // Sunspots: where a slow noise runs high — ragged because finer noise rides on it.
+      const n = fbm(x * 1.9 + 3, y * 1.9 + 3, 0.5, seed, 3) + 0.12 * (fbm(x * 9, y * 9, 2, seed, 2) - 0.5);
+      const pen = smooth(0.6, 0.67, n);
+      const umbra = smooth(0.67, 0.73, n);
+      r = mix(r, mix(AMBER[0] * 0.8, SPOT[0], umbra), pen * 0.85);
+      g = mix(g, mix(AMBER[1] * 0.5, SPOT[1], umbra), pen * 0.85);
+      b = mix(b, mix(AMBER[2] * 0.5, SPOT[2], umbra), pen * 0.85);
+
+      const limb = 1 - 0.3 * rr ** 3;
+      const i = (py * TEX + px) * 4;
+      img.data[i] = r * limb;
+      img.data[i + 1] = g * limb;
+      img.data[i + 2] = b * limb;
+      img.data[i + 3] = 255 * smooth(1, 0.985, rr);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
+
+const faces = new Map<number, HTMLCanvasElement>();
 
 /**
- * The sun of the Solar System mode, in the black hole's line-art style: the same wide halo, a flat disc with the
- * bone ring just outside it, a few thick arcs of flare and concentric dashed rings streaming round it, the inner
- * ones faster. Round rings where the hole's disk is tilted: the sun is seen head-on.
+ * The sun of the Solar System mode, in the black hole's line-art style: a strong glow, a bright disc with the bone
+ * ring just outside it, a few thick arcs of flare and a close corona of dashed rings streaming round it, the inner
+ * ones faster. The surface churns: two copies of its face turn slowly against each other.
  */
 export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha = 1): void {
   const R = sun.radius;
+  let face = faces.get(sun.seed);
+  if (!face) {
+    if (faces.size > 8) faces.clear();
+    faces.set(sun.seed, (face = makeFace(sun.seed)));
+  }
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(sun.x, sun.y);
 
   // A strong glow: a tight bright one under a wide one.
   ctx.globalCompositeOperation = 'lighter';
-  for (const [reach, strength] of [[7, 0.3], [3, 0.55]] as const) {
+  for (const [reach, strength] of [[6, 0.26], [2.6, 0.55]] as const) {
     const halo = ctx.createRadialGradient(0, 0, R * 0.8, 0, 0, R * reach);
-    halo.addColorStop(0, rgba(YELLOW, strength));
-    halo.addColorStop(0.4, rgba(AMBER, strength * 0.3));
-    halo.addColorStop(1, rgba(AMBER, 0));
+    halo.addColorStop(0, rgba('#ffe03d', strength));
+    halo.addColorStop(0.4, rgba('#ff9a1f', strength * 0.3));
+    halo.addColorStop(1, rgba('#ff9a1f', 0));
     ctx.fillStyle = halo;
     ctx.beginPath();
     ctx.arc(0, 0, R * reach, 0, Math.PI * 2);
@@ -45,14 +118,13 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   }
   ctx.globalCompositeOperation = 'source-over';
 
-  // Streaming rings (inner = faster), as the hole's accretion disk.
-  const rings = 4;
+  // A close corona of streaming rings (inner = faster), as the hole's accretion disk.
+  const rings = 3;
   for (let i = 0; i < rings; i++) {
     const t = i / (rings - 1);
-    const r = R * (1.55 + t * 1.5);
-    const color = t < 0.25 ? COLORS.bone : t < 0.6 ? COLORS.sodium : COLORS.players[0];
-    ctx.strokeStyle = rgba(color, 0.6 - t * 0.4);
-    ctx.lineWidth = Math.max(0.8, R * (0.14 - t * 0.08));
+    const r = R * (1.45 + t * 0.55);
+    ctx.strokeStyle = rgba(t < 0.4 ? COLORS.bone : COLORS.sodium, 0.6 - t * 0.3);
+    ctx.lineWidth = Math.max(0.8, R * (0.1 - t * 0.04));
     ctx.setLineDash([R * (0.6 + t), R * (0.3 + t * 0.5)]);
     ctx.lineDashOffset = -time * (60 / (0.6 + t)) * (R / 34);
     ctx.beginPath();
@@ -65,61 +137,21 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   // Thick arcs of flare close above the surface, drifting slowly round.
   ctx.lineCap = 'round';
   ctx.strokeStyle = rgba(COLORS.sodium, 0.55);
-  ctx.lineWidth = R * 0.26;
+  ctx.lineWidth = R * 0.2;
   for (let i = 0; i < 3; i++) {
     const a = time * 0.12 + (i * Math.PI * 2) / 3;
     ctx.beginPath();
-    ctx.arc(0, 0, R * (1.32 + 0.05 * Math.sin(time * 0.8 + i * 2)), a, a + 0.9);
+    ctx.arc(0, 0, R * (1.24 + 0.04 * Math.sin(time * 0.8 + i * 2)), a, a + 0.8);
     ctx.stroke();
   }
 
-  // The disc: bright yellow, with convection cells churning in it and a few dark sunspots.
-  ctx.fillStyle = YELLOW;
-  ctx.beginPath();
-  ctx.arc(0, 0, R, 0, Math.PI * 2);
-  ctx.fill();
+  // The face, twice, turning against each other so the cells seem to churn.
   ctx.save();
-  ctx.clip();
-  const pitch = R * 0.3;
-  const rng = createRng(sun.seed ^ 0x51ed);
-  for (let row = -Math.ceil(R / pitch) - 1; row <= Math.ceil(R / pitch) + 1; row++) {
-    for (let col = -Math.ceil(R / pitch) - 1; col <= Math.ceil(R / pitch) + 1; col++) {
-      const x = (col + (row % 2 ? 0.5 : 0) + range(rng, -0.3, 0.3)) * pitch;
-      const y = row * pitch * 0.87 + range(rng, -0.25, 0.25) * pitch;
-      const phase = rng() * Math.PI * 2;
-      // Each cell wells up and sinks back: bright when it rises.
-      const rise = 0.5 + 0.5 * Math.sin(time * 0.9 + phase);
-      const cell = pitch * (0.5 + 0.06 * rise);
-      ctx.beginPath();
-      for (let k = 0; k < 6; k++) {
-        const a = (k / 6) * Math.PI * 2 + Math.PI / 6;
-        ctx.lineTo(x + Math.cos(a) * cell, y + Math.sin(a) * cell);
-      }
-      ctx.closePath();
-      ctx.fillStyle = rgba('#fff7b0', 0.25 + 0.4 * rise);
-      ctx.fill();
-      ctx.strokeStyle = rgba(AMBER, 0.4);
-      ctx.lineWidth = Math.max(0.6, R * 0.03);
-      ctx.stroke();
-    }
-  }
-  let spots = spotCache.get(sun.seed);
-  if (!spots) spotCache.set(sun.seed, (spots = spotsOf(sun.seed)));
-  for (const spot of spots) {
-    // The sun turns slowly, so the spots drift across; near the rim they are squeezed.
-    const a = spot.angle + time * 0.05;
-    const x = Math.cos(a) * spot.dist * R;
-    const y = Math.sin(a) * spot.dist * R * 0.6;
-    const r = spot.size * R;
-    ctx.fillStyle = rgba(AMBER, 0.55);
-    ctx.beginPath();
-    ctx.ellipse(x, y, r * 1.7, r * 1.7 * 0.8, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = rgba(SPOT, 0.9);
-    ctx.beginPath();
-    ctx.ellipse(x, y, r, r * 0.8, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  ctx.rotate(time * 0.05);
+  ctx.drawImage(face, -R, -R, R * 2, R * 2);
+  ctx.rotate(-time * 0.11 - 1.3);
+  ctx.globalAlpha = alpha * 0.3;
+  ctx.drawImage(face, -R, -R, R * 2, R * 2);
   ctx.restore();
 
   ctx.strokeStyle = rgba(COLORS.bone, 0.95);
