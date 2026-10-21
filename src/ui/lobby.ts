@@ -317,8 +317,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
         h('span.lobby-room__tags', null, h('span.lobby__tag', null, modeName(room.gameMode, room.mayhem > 0)), h('span.lobby__tag', null, matchTypeName(room.mode)), pips(room.players, room.maxPlayers), ...(running ? [h('span.lobby__tag.lobby__tag--live', null, t('multiplayer.inProgress'))] : []), ...(room.spectators ? [h('span.lobby__tag', null, `👁 ${room.spectators}`)] : [])),
       ),
       room.locked ? secretField(pass) : '',
-      ...(running ? [] : [join]),
-      watch,
+      h('div.lobby-room__actions', null, ...(running ? [] : [join]), watch),
     );
   };
 

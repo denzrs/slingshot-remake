@@ -1669,6 +1669,20 @@ body {
   grid-row: 1 / span 2;
 }
 
+/* Join and Watch side by side in the room's second column. */
+.lobby-room__actions {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: stretch;
+  gap: 8px;
+}
+
+.lobby-room__actions .lobby__button {
+  grid-column: auto;
+  grid-row: auto;
+}
+
 .lobby__empty {
   display: grid;
   gap: 6px;
