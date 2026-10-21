@@ -136,6 +136,17 @@ describe('display settings', () => {
     expect(loadSettings().menuBackground).toBe(false);
   });
 
+  it('puts the aiming stick on the left unless the right was chosen, and remembers the choice', () => {
+    storage();
+    expect(loadSettings().stickSide).toBe('left');
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.stickSide = 'right';
+    saveSettings(settings);
+    expect(loadSettings().stickSide).toBe('right');
+    storage({ stickSide: 'top' });
+    expect(loadSettings().stickSide).toBe('left');
+  });
+
   it('ignores stored display flags that are not booleans', () => {
     storage({ menuBackground: 'false', particles: 0, contours: null });
     const s = loadSettings();

@@ -476,6 +476,24 @@ function settingsScreen(app: App): Screen {
       settingToggle(app, t('settings.contours'), 'contours'),
       settingToggle(app, t('settings.particles'), 'particles'),
       settingToggle(app, t('settings.menuBackground'), 'menuBackground'),
+      // Only a touch screen has the stick.
+      ...(matchMedia('(pointer: coarse)').matches
+        ? [
+            {
+              kind: 'segmented' as const,
+              label: t('settings.stickSide'),
+              options: [
+                { value: 'left', label: t('settings.stickLeft') },
+                { value: 'right', label: t('settings.stickRight') },
+              ],
+              get: () => app.settings.stickSide,
+              set: (v: unknown) => {
+                app.settings.stickSide = v === 'right' ? 'right' : 'left';
+                app.settingsChanged();
+              },
+            },
+          ]
+        : []),
       settingToggle(app, t('settings.sound'), 'sound'),
       {
         kind: 'toggle',

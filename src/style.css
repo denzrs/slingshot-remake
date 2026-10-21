@@ -2897,6 +2897,15 @@ html.upright #touch-stick {
   bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px * var(--ui) + 12px);
 }
 
+html.stick-right #touch-stick {
+  left: auto;
+  right: max(16px, env(safe-area-inset-right));
+}
+
+html.upright.stick-right #touch-stick {
+  right: max(12px, env(safe-area-inset-right));
+}
+
 #touch-stick canvas {
   display: block;
   width: 100%;

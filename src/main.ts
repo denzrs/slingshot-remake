@@ -279,6 +279,7 @@ const app: App = {
   settings,
   settingsChanged() {
     saveSettings(settings);
+    applyStickSide();
     sound.enabled = settings.sound;
     effects.particles = settings.particles;
     attract.applySettings(settings);
@@ -564,6 +565,11 @@ const touchAimHandlers = {
 const touchControls = new TouchControls(document.querySelector<HTMLElement>('#touch-bar')!, touchAimHandlers);
 const touchStick = new TouchStick(touchAimHandlers);
 document.body.append(touchStick.el);
+/** The stick sits on the left of the screen, or — a setting on a touch screen — on the right. */
+function applyStickSide(): void {
+  document.documentElement.classList.toggle('stick-right', settings.stickSide === 'right');
+}
+applyStickSide();
 
 touchMenu.addEventListener('click', () => {
   sound.unlock();
