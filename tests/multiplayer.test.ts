@@ -1241,6 +1241,7 @@ describe('spectators online', () => {
     const [host, guest] = players;
     const [fan] = stands;
     host.session.sendChat('  gg you shit  ');
+    await waitForSession(host.session, () => host.session.chat.length === 1);
     await waitForSession(fan.session, () => fan.session.chat.length === 1);
     await waitForSession(guest.session, () => guest.session.chat.length === 1);
     for (const watcher of [host, guest, fan]) {
