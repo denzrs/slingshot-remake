@@ -1,4 +1,4 @@
-import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, WORMHOLE } from '../config';
+import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, SOLAR, WORMHOLE } from '../config';
 import type { Match, Scene } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
@@ -8,6 +8,7 @@ import { renderBackdrop, type View } from './backdrop';
 import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
 import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from './orientation';
 import { drawSun } from './sun';
+import { solarCenter } from '../world';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
 import { renderContours } from './contours';
@@ -196,6 +197,32 @@ export class Renderer {
     };
   }
 
+  private drawOrbits(world: World): void {
+    const { ctx } = this;
+    const centre = solarCenter();
+    const radii: number[] = [];
+    for (const o of [...world.planets.filter((p) => !p.sun), ...world.ships.filter((sh) => sh.alive)]) {
+      const r = Math.hypot(o.x - centre.x, o.y - centre.y);
+      if (!radii.some((known) => Math.abs(known - r) < 0.5)) radii.push(r);
+    }
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    ctx.strokeStyle = 'rgba(111, 227, 200, 0.45)';
+    for (const r of radii) {
+      ctx.beginPath();
+      ctx.arc(centre.x, centre.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255, 90, 110, 0.35)';
+    for (const r of [SOLAR.INNER_ORBIT, SOLAR.OUTER_ORBIT]) {
+      ctx.beginPath();
+      ctx.arc(centre.x, centre.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   private drawWorld(match: Match, scene: Scene, ps: number): void {
     const { ctx } = this;
     const world = scene.world;
@@ -218,6 +245,9 @@ export class Renderer {
       ctx.globalAlpha = alpha * (match.phase === 'collapse' || match.phase === 'orbit' ? 0.25 : 1);
       ctx.drawImage(layer.canvas, 0, 0, FIELD.width, FIELD.height);
     }
+
+    // Debug aid: the orbit every body of a Solar System rides, and the limits the orbits are laid out between.
+    if (import.meta.env.DEBUG_AIM && match.mode === 'solar') this.drawOrbits(world);
 
     // Nebula clouds sit behind the planets and the ships, so nothing hides inside them.
     if (world.nebulae.length) {
