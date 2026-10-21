@@ -69,6 +69,8 @@ export interface KillRecord {
   self: boolean;
   /** Shot down a teammate. */
   friendly: boolean;
+  /** A planetary defense's stray missile did it, not a shot. */
+  collateral?: boolean;
   combo: StyleKind[];
   multiplier: number;
   shots: number;
@@ -1005,7 +1007,7 @@ export abstract class Match {
     const killer = collateralBy ?? vs.owner;
     const self = killer === victim;
     const friendly = !self && this.players[killer].team !== null && this.players[killer].team === this.players[victim].team;
-    const hit = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : collateralBy !== undefined ? { points: SCORING.BASE, combo: [], multiplier: 1 } : this.killPoints(vs);
+    const hit = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : collateralBy !== undefined ? { points: SCORING.COLLATERAL, combo: [], multiplier: 1 } : this.killPoints(vs);
     const score = { ...hit, points: hit.points * this.payFactor };
     this.players[victim].alive = false;
     this.oracleKills.push({ killer, victim, self, friendly });
@@ -1017,6 +1019,7 @@ export abstract class Match {
       victim,
       self,
       friendly,
+      ...(collateralBy !== undefined ? { collateral: true } : {}),
       points: score.points,
       combo: score.combo,
       multiplier: score.multiplier,
