@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
-import { aimedSpot, POWER_UP } from '../src/powerups';
+import { aimedSpot, blackHoleFits, POWER_UP } from '../src/powerups';
 import { Shot, type World } from '../src/physics';
 import { DEFAULT_SETTINGS } from '../src/settings';
 
@@ -93,5 +93,17 @@ describe('a second black hole on the field', () => {
         expect(Math.hypot(target.x - hole.x, target.y - hole.y)).toBeGreaterThanOrEqual(hole.radius + POWER_UP.HOLE_GAP - 1e-6);
       }
     }
+  });
+});
+
+describe('black hole placement near players', () => {
+  it('refuses a spot closer than the gap to another ship, and allows it far away or on its owner', () => {
+    const world = { ships: [{ x: 100, y: 100, alive: true }, { x: 400, y: 100, alive: true }, { x: 150, y: 100, alive: false }] } as World;
+    const near = { x: 400 + POWER_UP.BLACKHOLE_PLAYER_GAP - 1, y: 100 };
+    const far = { x: 400 + POWER_UP.BLACKHOLE_PLAYER_GAP, y: 100 };
+    expect(blackHoleFits(world, near, 0)).toBe(false);
+    expect(blackHoleFits(world, far, 0)).toBe(true);
+    // Its own ship does not count, nor does a dead one.
+    expect(blackHoleFits(world, { x: 110, y: 100 }, 0)).toBe(true);
   });
 });
