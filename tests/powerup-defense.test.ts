@@ -3,6 +3,7 @@ import { createMatch, type Match } from '../src/game';
 import { CPU_IGNORES, POWER_UP, POWER_UP_KINDS, aimedSurface } from '../src/powerups';
 import { cloneWorld, defenseChance, Shot, simulateShot, type World } from '../src/physics';
 import { Volley } from '../src/volley';
+import { DEFENSE } from '../src/config';
 import { DEFAULT_SETTINGS } from '../src/settings';
 
 const rules = { bounce: false, timeLimit: 20 };
@@ -88,18 +89,21 @@ describe('planetary defense power-up', () => {
       let end = null;
       let caught: number | null = null;
       let launched = false;
+      let missile = { x: 0, y: 0 };
       while (!end && shot.x < 1000) {
         const misses = shot.misses.length;
+        if (shot.missiles.length) missile = { x: shot.missiles[0].x, y: shot.missiles[0].y };
         end = shot.step();
         if (shot.missiles.length && !launched) {
           launched = true;
           shot.missiles[0].roll = roll;
         }
-        if (shot.misses.length > misses) caught = Math.hypot(shot.x - d.x, shot.y - d.y);
+        if (shot.misses.length > misses) caught = Math.hypot(shot.misses[misses].x - d.x, shot.misses[misses].y - d.y);
       }
       expect(launched).toBe(true);
       if (end?.kind === 'shotdown') {
-        expect(roll).toBeLessThan(defenseChance(d, Math.hypot(shot.x - d.x, shot.y - d.y)));
+        // The missile meets the shot a little short of it, and the odds are those where the missile is.
+        expect(roll).toBeLessThan(defenseChance(d, Math.hypot(missile.x - d.x, missile.y - d.y)));
       } else if (caught !== null) {
         expect(roll).toBeGreaterThanOrEqual(defenseChance(d, caught));
       }
@@ -128,7 +132,8 @@ describe('planetary defense power-up', () => {
   });
 
   it('lets a shot through when the dice are unkind, and the missile that lost it flies on and is gone', () => {
-    const world = overhead([1]);
+    // The shot's closest pass is 100 above the turret: the best odds on offer are the middle zone's.
+    const world = overhead([1], 100);
     world.width = 6000;
     const shot = new Shot(world, 0, 0, 60, rules);
     let launched = false;
@@ -146,7 +151,7 @@ describe('planetary defense power-up', () => {
         break;
       }
     }
-    // A 0.999 roll beats only a sure hit: caught outside the inner zone, it misses.
+    // A 0.999 roll beats only a sure hit: this shot never gets into the inner zone, so it misses.
     expect(lostAt).toBeGreaterThanOrEqual(0);
     expect(shot.end?.kind).not.toBe('shotdown');
     expect(gone).toBe(true);
@@ -179,11 +184,33 @@ describe('planetary defense power-up', () => {
     expect(fired.size).toBeLessThanOrEqual(2);
   });
 
+  it('holds its fire until a missile can catch the shot where the odds are best', () => {
+    const world = overhead([1], 30);
+    const d = world.defenses[0];
+    const shot = new Shot(world, 0, 0, 60, rules);
+    let launchedAt = -1;
+    let caught: number | null = null;
+    for (let i = 0; i < 4000; i++) {
+      const end = shot.step();
+      if (shot.launches.length && launchedAt < 0) launchedAt = Math.hypot(shot.x - d.x, shot.y - d.y);
+      if (end) {
+        caught = Math.hypot(shot.x - d.x, shot.y - d.y);
+        expect(end.kind).toBe('shotdown');
+        break;
+      }
+    }
+    // It did not launch at the rim of the area, and the catch is in the sure inner zone.
+    expect(launchedAt).toBeLessThan(d.radius * 0.99);
+    expect(caught).not.toBeNull();
+    // The shot is caught within a missile's reach of the sure zone's line.
+    expect(caught!).toBeLessThan(d.radius * 0.4 + DEFENSE.HIT_RADIUS * 2);
+  });
+
   it('carries its missiles through a fork and through a volley snapshot', () => {
     const world = overhead([1]);
     const shot = new Shot(world, 0, 0, 60, rules);
     for (let i = 0; i < 400 && !shot.missiles.length; i++) shot.step();
-    for (let i = 0; i < 20; i++) shot.step();
+    for (let i = 0; i < 2; i++) shot.step();
     expect(shot.missiles.length).toBe(1);
     const fork = shot.fork(0.1);
     expect(fork.fired).toEqual(shot.fired);
@@ -193,7 +220,7 @@ describe('planetary defense power-up', () => {
     const volley = new Volley(world, [{ player: 0, angle: 0, power: 60 }], rules, false);
     const live = volley.shots[0].shot;
     for (let i = 0; i < 400 && !live.missiles.length; i++) volley.step();
-    for (let i = 0; i < 20; i++) volley.step();
+    for (let i = 0; i < 2; i++) volley.step();
     const saved = JSON.parse(JSON.stringify(volley.snapshot()));
     const other = new Volley(world, [{ player: 0, angle: 0, power: 60 }], rules, false);
     other.restore(saved);
@@ -324,10 +351,10 @@ describe('planetary defense power-up', () => {
     };
 
     it('sends a missile that lost its shot on as a shot of its own, for the defense owner', () => {
-      // Power 60 across the dome cuts too fast for the missile, so some seed loses it; look for a flight that does.
+      // A shot that only grazes the middle zone is caught at 50 %, so some aim loses its missile; look for a flight that does.
       let found = null;
       for (let power = 30; power <= 100 && !found; power += 2) {
-        const world = overhead([1], 30);
+        const world = overhead([1], 100);
         const volley = new Volley(world, [{ player: 0, angle: 0, power }], rules, false);
         run(volley);
         if (volley.shots.length > 1) found = volley;
@@ -344,7 +371,7 @@ describe('planetary defense power-up', () => {
       const world = overhead([1], 30);
       const volley = new Volley(world, [{ player: 0, angle: 0, power: 60 }], { bounce: false, timeLimit: 3 }, false);
       const shot = volley.shots[0].shot;
-      shot.missiles.push({ defense: 0, x: 400, y: 100, heading: 0, age: 5, roll: 1, chasing: true, trail: [400, 100] });
+      shot.missiles.push({ defense: 0, x: 400, y: 100, heading: 0, speed: 1000, age: 5, roll: 1, chasing: true, trail: [400, 100] });
       for (let i = 0; i < 10 && volley.shots.length < 2; i++) volley.step();
       expect(volley.shots).toHaveLength(2);
       const stray = volley.shots[1].shot;
@@ -363,7 +390,7 @@ describe('planetary defense power-up', () => {
         const world = guarded([...protects]);
         const volley = new Volley(world, [{ player: 0, angle: 90, power: 20 }], rules, false);
         // A missile on its way left, straight at ship 0, which it lost its shot near.
-        volley.shots[0].shot.missiles.push({ defense: 0, x: 200, y: 400, heading: Math.PI, age: 5, roll: 1, chasing: true, trail: [200, 400] });
+        volley.shots[0].shot.missiles.push({ defense: 0, x: 200, y: 400, heading: Math.PI, speed: 1000, age: 5, roll: 1, chasing: true, trail: [200, 400] });
         const stepsLimit = 400;
         for (let i = 0; i < stepsLimit && volley.shots.length < 2; i++) volley.step();
         expect(volley.shots[1]?.shot.shooter).toBe(1);

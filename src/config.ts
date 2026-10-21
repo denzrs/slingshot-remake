@@ -47,9 +47,17 @@ export const DEFENSE = {
     { reach: 0.65, chance: 0.5 },
     { reach: 1, chance: 0.25 },
   ],
-  /** The missile: it flies at this speed (px/s) and turns at most this fast (rad/s), so a shot that cuts across can lose it. */
+  /**
+   * The missile flies this many times as fast as the shot it chases (but never slower than `MISSILE_MIN_SPEED`, px/s),
+   * so a hard shot cannot simply outrun it. It turns at most `MISSILE_TURN` rad/s when flying at `MISSILE_SPEED`
+   * (px/s) and in proportion to its speed otherwise, so its turning circle is the same whatever it chases.
+   */
+  MISSILE_SPEED_RATIO: 2.5,
+  MISSILE_MIN_SPEED: 300,
   MISSILE_SPEED: 1000,
   MISSILE_TURN: 9,
+  /** The cannon plans as if a shot were this much further out than it is, so it aims well inside a zone rather than on its line. */
+  PLAN_MARGIN: 1.15,
   /** It has caught the shot when it comes this close. */
   HIT_RADIUS: 9,
   /** It gives up after this long (s), or once it has strayed a good way past the area. */

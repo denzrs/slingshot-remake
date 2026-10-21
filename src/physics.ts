@@ -105,6 +105,8 @@ export interface Missile {
   x: number;
   y: number;
   heading: number;
+  /** How fast it flies (px/s): a multiple of the speed of the shot it was fired at, when it was fired. */
+  speed: number;
   /** Seconds in the air. */
   age: number;
   /** The throw of the dice for this missile, 0 to 1, made when it was fired: it hits if this is below the chance where it catches the shot. */
@@ -428,13 +430,16 @@ export class Shot {
       if (dx * dx + dy * dy < hole.radius * hole.radius) return this.finish({ kind: 'hole', hole: i });
     }
     // Planetary defenses: a shot that flies into a defense's area (bar its own side's) gets a missile after it,
-    // once per defense. The missile homes in, and where it catches the shot decides whether it hits.
+    // once per defense. The defense foresees the shot's path and holds its fire until a missile launched now
+    // would just catch the shot where the odds are best; the missile homes in, and where it catches the shot decides whether it hits.
     for (let i = 0; i < defenses.length; i++) {
       const d = defenses[i];
       if (this.fired[i] || d.protects.includes(this.shooter)) continue;
       if ((d.x - this.x) ** 2 + (d.y - this.y) ** 2 >= d.radius * d.radius) continue;
+      const aim = this.foresee(d);
+      if (!aim.launch) continue;
       this.fired[i] = true;
-      this.missiles.push({ defense: i, x: d.x, y: d.y, heading: Math.atan2(this.y - d.y, this.x - d.x), age: 0, roll: dice(this.seed, i), chasing: true, trail: [d.x, d.y] });
+      this.missiles.push({ defense: i, x: d.x, y: d.y, heading: Math.atan2(aim.y - d.y, aim.x - d.x), speed: this.missileSpeed(), age: 0, roll: dice(this.seed, i), chasing: true, trail: [d.x, d.y] });
       this.launches.push({ defense: i });
     }
     for (let k = this.missiles.length - 1; k >= 0; k--) {
@@ -445,19 +450,20 @@ export class Shot {
         // Pure pursuit with a limited turn: it follows a shot that bends, and loses one that cuts across too fast.
         let turn = Math.atan2(this.y - missile.y, this.x - missile.x) - missile.heading;
         turn = Math.atan2(Math.sin(turn), Math.cos(turn));
-        const most = DEFENSE.MISSILE_TURN * dt;
+        const most = DEFENSE.MISSILE_TURN * (missile.speed / DEFENSE.MISSILE_SPEED) * dt;
         missile.heading += Math.max(-most, Math.min(most, turn));
       }
-      missile.x += Math.cos(missile.heading) * DEFENSE.MISSILE_SPEED * dt;
-      missile.y += Math.sin(missile.heading) * DEFENSE.MISSILE_SPEED * dt;
+      missile.x += Math.cos(missile.heading) * missile.speed * dt;
+      missile.y += Math.sin(missile.heading) * missile.speed * dt;
       const last = missile.trail.length;
       if (Math.hypot(missile.x - missile.trail[last - 2], missile.y - missile.trail[last - 1]) >= 6) {
         missile.trail.push(missile.x, missile.y);
         if (missile.trail.length > 36) missile.trail.splice(0, 2);
       }
       if (missile.chasing) {
-        if (Math.hypot(this.x - missile.x, this.y - missile.y) < DEFENSE.HIT_RADIUS) {
-          if (missile.roll < defenseChance(d, Math.hypot(this.x - d.x, this.y - d.y))) {
+        // Wide enough for the two to close in by one step's travel, or a fast pair could jump clean over each other.
+        if (Math.hypot(this.x - missile.x, this.y - missile.y) < Math.max(DEFENSE.HIT_RADIUS, (missile.speed + Math.hypot(this.vx, this.vy)) * dt)) {
+          if (missile.roll < defenseChance(d, Math.hypot(missile.x - d.x, missile.y - d.y))) {
             this.missiles.splice(k, 1);
             return this.finish({ kind: 'shotdown', defense: missile.defense });
           }
@@ -473,6 +479,42 @@ export class Shot {
     return null;
   }
 
+  /**
+   * Where a missile from `d` should catch this shot, from a look ahead along the shot's path (no defense
+   * interferes in it): the earliest point the missile can still reach in time where the odds are best, and
+   * whether it has to leave now to be there. A shot that cannot be caught anywhere is fired at at once.
+   * The same state always gives the same answer, so a replay or a restored snapshot launches on the same step.
+   */
+  private foresee(d: Defense): { launch: boolean; x: number; y: number } {
+    const probe = this.fork(0);
+    probe.fired.length = 0;
+    probe.fired.push(...this.world.defenses.map(() => true));
+    probe.missiles.length = 0;
+    const speed = this.missileSpeed();
+    let best = { chance: 0, x: this.x, y: this.y, slack: 0 };
+    for (let k = 1; k * DT <= DEFENSE.MISSILE_LIFE; k++) {
+      const over = probe.step();
+      const dist = Math.hypot(probe.x - d.x, probe.y - d.y);
+      if (dist > d.radius * 1.5) break;
+      // The missile has caught the shot once it is within HIT_RADIUS, a little short of the shot's own spot.
+      const slack = k * DT - Math.max(0, dist - DEFENSE.HIT_RADIUS) / speed;
+      // Planned with a margin, so the aim is well inside a zone; a point only the true odds favour still counts when nothing better is in reach.
+      const meet = Math.max(0, dist - DEFENSE.HIT_RADIUS);
+      const chance = defenseChance(d, meet * DEFENSE.PLAN_MARGIN) || defenseChance(d, meet) * 0.5;
+      if (slack >= 0 && chance > best.chance) {
+        best = { chance, x: probe.x, y: probe.y, slack };
+        if (chance >= 1) break;
+      }
+      if (over) break;
+    }
+    return { launch: best.chance === 0 || best.slack < DT, x: best.x, y: best.y };
+  }
+
+  /** How fast a missile fired at this shot now would fly: a multiple of the shot's own speed. */
+  private missileSpeed(): number {
+    return Math.max(DEFENSE.MISSILE_MIN_SPEED, Math.hypot(this.vx, this.vy) * DEFENSE.MISSILE_SPEED_RATIO);
+  }
+
   /** A missile has lost this shot: it is reported, and sent on as a shot of its own along the way it was flying. */
   private lose(missile: Missile, index: number): void {
     this.misses.push({ defense: missile.defense, x: missile.x, y: missile.y });
@@ -480,8 +522,8 @@ export class Shot {
       defense: missile.defense,
       x: missile.x,
       y: missile.y,
-      vx: Math.cos(missile.heading) * DEFENSE.MISSILE_SPEED,
-      vy: Math.sin(missile.heading) * DEFENSE.MISSILE_SPEED,
+      vx: Math.cos(missile.heading) * missile.speed,
+      vy: Math.sin(missile.heading) * missile.speed,
       trail: missile.trail,
     });
     this.missiles.splice(index, 1);
