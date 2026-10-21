@@ -67,7 +67,13 @@ export class ChatPanel {
       this.session.sendChat(this.input.value);
       this.input.value = '';
     });
+    this.log.addEventListener('scroll', () => this.fade());
     this.root.append(this.toggle, this.body);
+  }
+
+  /** The top of the log fades only while there are older lines hidden above it: the first line of a log is never faded. */
+  private fade(): void {
+    this.log.classList.toggle('is-overflowing', this.log.scrollTop > 2);
   }
 
   /** Whether an event came from inside the chat: the game's keys have no business with it. */
@@ -109,7 +115,6 @@ export class ChatPanel {
       }),
     );
     if (stuck) this.log.scrollTop = this.log.scrollHeight;
-    // Only a log that runs off the top fades there; a short one starts at full strength.
-    this.log.classList.toggle('is-overflowing', this.log.scrollHeight > this.log.clientHeight);
+    this.fade();
   }
 }
