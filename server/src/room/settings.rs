@@ -98,6 +98,29 @@ impl RoomManager {
         self.broadcast_room_update(&room_id, None);
     }
 
+    /// A player renames themselves while the room waits. The name has passed the same checks as at
+    /// joining; nobody has to confirm again.
+    pub(super) fn set_name(&mut self, conn: u64, name: Parsed<String>) {
+        let guard = self.member_of_waiting_room(
+            conn,
+            "You are not in a waiting room",
+            "The name cannot change while a game is running",
+        );
+        let Some((room_id, player_id)) = self.accept(conn, guard) else {
+            return;
+        };
+        let Some(name) = self.accept(conn, name) else {
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        if let Some(player) = room.players.iter_mut().find(|p| p.id == player_id) {
+            player.name = name;
+        }
+        self.broadcast_room_update(&room_id, None);
+        // The host's name is on the list beside the room.
+        self.broadcast_lobby();
+    }
+
     /// A player picks their own team; they have to confirm (ready) again, everybody else's choice
     /// stands.
     pub(super) fn set_team(&mut self, conn: u64, team: Parsed<u8>) {

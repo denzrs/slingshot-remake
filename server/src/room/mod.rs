@@ -112,6 +112,7 @@ impl RoomManager {
             RoomCommand::SetRules(rules) => self.set_rules(conn, rules),
             RoomCommand::SetRoom(look) => self.set_room(conn, look),
             RoomCommand::SetAvatar(avatar) => self.set_avatar(conn, avatar),
+            RoomCommand::SetName(name) => self.set_name(conn, name),
             RoomCommand::SetTeam(team) => self.set_team(conn, team),
             RoomCommand::ResetTeams => self.reset_teams(conn),
             RoomCommand::AddCpu { level, team } => self.add_cpu(conn, level, team),

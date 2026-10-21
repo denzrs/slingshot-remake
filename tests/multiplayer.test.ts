@@ -932,6 +932,22 @@ describe('the lobby look online', () => {
 });
 
 describe('the player symbols online', () => {
+  it('lets a player rename in the waiting room and refuses a profane name', async () => {
+    const host = await connectSession();
+    const guest = await connectSession();
+    host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2 });
+    await waitForSession(host, () => host.room !== null);
+    guest.joinRoom(host.room!.id, 'Ben');
+    await waitForSession(host, () => host.room?.players.length === 2);
+
+    guest.setName('Benedikt');
+    await waitForSession(host, () => host.room!.players[1].name === 'Benedikt');
+
+    guest.setName('fuck');
+    await waitForSession(guest, () => guest.notice === 'That name is not allowed');
+    expect(host.room!.players[1].name).toBe('Benedikt');
+  }, 60_000);
+
   it('shows each player the symbol they picked, in the lobby and in the game on both screens', async () => {
     const hostMatches: NetMatch[] = [];
     const guestMatches: NetMatch[] = [];

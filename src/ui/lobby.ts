@@ -210,7 +210,20 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const playerName = textInput(prefs.name, { maxLength: 24 });
   playerName.setAttribute('autocomplete', 'nickname');
   /** The name belongs to the connection card until there is a connection, and to the bar after it (in the hosted build: always the bar). */
-  const nameField = field(t('multiplayer.name'), playerName);
+  /** Why the relay turned the name down, right under the field it is about. */
+  const nameError = () => h('p.lobby__field-error', { role: 'alert' });
+  const joinNameError = nameError();
+  const roomNameError = nameError();
+  /** Set when a name goes out (join, create, rename); the relay's next error is then about it. */
+  let awaitingName = false;
+  const showNameError = (message: string | null) => {
+    for (const el of [joinNameError, roomNameError]) {
+      el.textContent = message ?? '';
+      el.hidden = !message;
+    }
+  };
+  showNameError(null);
+  const nameField = h('div', null, field(t('multiplayer.name'), playerName), joinNameError);
   const connectButton = button(hosted ? t('multiplayer.retry') : t('multiplayer.connect'), true);
   const connectFields = h('div.lobby__fields', null, ...(configuredServer ? [] : [field(t('multiplayer.server'), serverAddress)]));
   const connectView = h('section.lobby__card.lobby__card--narrow', null, h('h3.setup__title', null, t('multiplayer.connection')), connectFields, connectButton);
@@ -276,6 +289,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     prefs.name = name;
     save();
     localMessage = null;
+    awaitingName = true;
     return name;
   };
 
@@ -472,6 +486,29 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     session.setAvatar(avatar);
   });
   const roomAvatar = h('div.lobby__avatar', null, h('span.lobby__code-label', null, t('multiplayer.yourSymbol')), roomAvatarPicker.el);
+  /** Your name, as the others see it: changed here while the room waits. */
+  const roomPlayerName = textInput(prefs.name, { maxLength: 24 });
+  roomPlayerName.setAttribute('autocomplete', 'nickname');
+  const renameButton = button(t('multiplayer.rename'));
+  const renameRoomPlayer = () => {
+    const name = roomPlayerName.value.trim();
+    if (!name) {
+      localMessage = t('multiplayer.nameRequired');
+      render();
+      roomPlayerName.focus();
+      return;
+    }
+    localMessage = null;
+    prefs.name = name;
+    save();
+    awaitingName = true;
+    session.setName(name);
+  };
+  renameButton.addEventListener('click', renameRoomPlayer);
+  roomPlayerName.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') renameRoomPlayer();
+  });
+  const roomRename = h('div', null, h('div.lobby__avatar', null, field(t('multiplayer.name'), roomPlayerName), renameButton), roomNameError);
   /** In team rooms, while a team has nobody in it. */
   const teamWarning = h('p.lobby__rules-note.is-locked', null, t('multiplayer.teamsNeedPlayers'));
   /** The room's look: editable by the host, shown to everybody else. */
@@ -497,6 +534,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     players,
     cpuAddRow,
     cpuOnlyNote,
+    roomRename,
     roomAvatar,
     teamWarning,
     roomLookSlot,
@@ -614,6 +652,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       }),
     );
     if (picking) players.querySelector<HTMLElement>(`[data-pick-team="${picking}"]`)?.focus();
+    // The field follows the relay's idea of the name, except while it is being typed in.
+    if (self && document.activeElement !== roomPlayerName && roomPlayerName.value !== self.name) roomPlayerName.value = self.name;
     roomAvatarPicker.show(self?.avatar ?? prefs.avatar);
     roomAvatarPicker.el.style.setProperty('--tone', COLORS.players[you.playerId]);
 
@@ -789,6 +829,14 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
           return unsubscribe();
         }
         localMessage = null;
+        // The relay's reason for refusing a name goes under the name; it clears with the next good answer.
+        if (awaitingName && session.notice) {
+          showNameError(session.notice);
+          awaitingName = false;
+        } else if (!session.notice) {
+          showNameError(null);
+          if (session.room) awaitingName = false;
+        }
         render();
       });
       render();

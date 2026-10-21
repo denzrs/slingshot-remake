@@ -990,10 +990,52 @@ fn a_profane_room_name_is_refused_and_no_room_is_made() {
     );
     assert!(rooms.rooms.is_empty());
 
-    // A host name that would make the default profane gets a numbered room instead.
+    // A profane player name is refused the same way, and no room is made either.
     let mut other_rx = connect(&mut rooms, 2);
     drain_json(&mut other_rx);
     rooms.handle(2, &create("shit", None));
-    let created = take_type(&drain_json(&mut other_rx), "room_update")["room"].clone();
-    assert_eq!(created["name"], "Room 1");
+    assert_eq!(
+        take_type(&drain_json(&mut other_rx), "error")["message"],
+        "That name is not allowed"
+    );
+    assert!(rooms.rooms.is_empty());
+}
+
+#[test]
+fn a_player_can_rename_in_a_waiting_room_but_not_to_a_profane_name() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    let mut guest_rx = connect(&mut rooms, 2);
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    rooms.handle(1, &create("Ada", None));
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    rooms.handle(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest"}));
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+
+    rooms.handle(2, &json!({"type":"set_name","name":"  Ben  "}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["players"][1]["name"], "Ben");
+
+    rooms.handle(2, &json!({"type":"set_name","name":"fuck"}));
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "That name is not allowed"
+    );
+    rooms.handle(2, &json!({"type":"set_name","name":"   "}));
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "A non-empty player name is required"
+    );
+
+    // The host's name is the one the lobby lists.
+    let mut watcher = connect(&mut rooms, 3);
+    drain_json(&mut watcher);
+    rooms.handle(1, &json!({"type":"set_name","name":"Ada L"}));
+    let lobby = take_type(&drain_json(&mut watcher), "lobby_update");
+    assert_eq!(lobby["rooms"][0]["host"], "Ada L");
 }

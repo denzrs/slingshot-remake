@@ -8,8 +8,8 @@ use serde_json::Value;
 
 use crate::auth::{password_length, MAX_PASSWORD_LENGTH};
 use crate::protocol::{
-    clean_name_checked, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level,
-    parse_daily_day, parse_daily_submit, parse_room_look, parse_room_name, parse_rules, DailyScore,
+    is_input_message, is_safe_integer, parse_avatar, parse_cpu_level,
+    parse_daily_day, parse_daily_submit, parse_room_look, parse_player_name, parse_room_name, parse_rules, DailyScore,
     RoomLook, RoomName, RoomRules,
 };
 use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
@@ -41,6 +41,7 @@ pub enum RoomCommand<'a> {
     SetRules(Parsed<RoomRules>),
     SetRoom(Parsed<RoomLook>),
     SetAvatar(Parsed<Avatar>),
+    SetName(Parsed<String>),
     SetTeam(Parsed<u8>),
     ResetTeams,
     AddCpu {
@@ -174,6 +175,7 @@ impl<'a> RoomCommand<'a> {
             "set_avatar" => RoomCommand::SetAvatar(
                 parse_avatar(message.get("avatar")).ok_or("Malformed player symbol"),
             ),
+            "set_name" => RoomCommand::SetName(parse_player_name(message.get("name"))),
             "set_team" => RoomCommand::SetTeam(
                 named_team(message).and_then(|team| team.ok_or("team must be 0 or 1")),
             ),
@@ -217,8 +219,7 @@ impl CreateRoom {
             },
         };
         Self {
-            name: clean_name_checked(message.get("name"))
-                .ok_or("A non-empty player name is required"),
+            name: parse_player_name(message.get("name")),
             room_name: match parse_room_name(message.get("roomName")) {
                 RoomName::Default => Ok(None),
                 RoomName::Named(name) => Ok(Some(name)),
@@ -256,14 +257,17 @@ impl CreateRoom {
 
 impl JoinRoom {
     fn parse(message: &Value) -> Self {
-        let name = clean_name_checked(message.get("name"));
+        let name = parse_player_name(message.get("name"));
         let room_id = message.get("roomId").and_then(Value::as_str);
         Self {
             target: match (room_id, name) {
-                (Some(room_id), Some(name)) => Ok(JoinTarget {
+                (Some(room_id), Ok(name)) => Ok(JoinTarget {
                     room_id: room_id.to_owned(),
                     name,
                 }),
+                (Some(_), Err(refused)) if refused != "A non-empty player name is required" => {
+                    Err(refused)
+                }
                 _ => Err("join_room requires a roomId and non-empty player name"),
             },
             avatar: parse_avatar(message.get("avatar")).ok_or("Malformed player symbol"),

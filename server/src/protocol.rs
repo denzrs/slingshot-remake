@@ -42,6 +42,17 @@ pub fn clean_name_checked(value: Option<&Value>) -> Option<String> {
     (!cleaned.is_empty()).then_some(cleaned)
 }
 
+/// A player name from a lobby message: cleaned like any name, then held to the profanity check the
+/// boards and room names already pass. The error is what the player is told.
+pub fn parse_player_name(value: Option<&Value>) -> Result<String, &'static str> {
+    let name = clean_name_checked(value).ok_or("A non-empty player name is required")?;
+    if is_acceptable_name(&name) {
+        Ok(name)
+    } else {
+        Err("That name is not allowed")
+    }
+}
+
 /// The longest a room name may be: room for a full-length player name plus "'s room".
 pub const MAX_ROOM_NAME_LENGTH: usize = 40;
 

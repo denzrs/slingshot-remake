@@ -134,6 +134,11 @@ export class MultiplayerSession {
     this.send({ type: 'set_avatar', avatar });
   }
 
+  /** Your name in the room, while it waits. The relay answers a refused one with an error notice. */
+  setName(name: string): void {
+    this.send({ type: 'set_name', name });
+  }
+
   setReady(ready: boolean): void {
     this.send({ type: 'ready', ready });
   }
