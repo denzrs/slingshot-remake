@@ -44,7 +44,7 @@ function cellHash(i: number, j: number, seed: number): number {
 }
 
 /** The sprite sizes on offer, in device pixels: the one nearest the size the cloud is drawn at is used. */
-const SIZES = [384, 512, 768, 1024] as const;
+const SIZES = [384, 512, 768] as const;
 const sprites = new Map<string, HTMLCanvasElement>();
 
 /** The cloud's thickness on the coarse grid: 0 outside, rising to 1 in its densest gas. */

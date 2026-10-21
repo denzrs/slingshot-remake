@@ -94,6 +94,8 @@ export interface Defense {
   owner: number;
   /** The players whose shots fly through unharmed: whoever set it, and their team. */
   protects: number[];
+  /** Players whose ships its stray missiles fly through, though it fires at their shots (the daily challenge's pilot). */
+  spares?: number[];
 }
 
 /** A missile a planetary defense has fired at a shot. It lives with the shot it chases (`Shot.missiles`). */
