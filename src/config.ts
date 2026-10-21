@@ -158,6 +158,10 @@ export const MAYHEM = {
   FINALE_JACKPOT_CHANCE: 0.35,
   /** Seconds the announcement of a round holds the ships back, so the twists can be read. */
   REVEAL_TIME: 2.4,
+  /** Seconds into the announcement when the twists have landed and a tap may dismiss it. */
+  LANDED: 1.2,
+  /** The longest a held announcement waits for its host, so an absent one cannot freeze the room. */
+  HELD_MAX: 60,
 } as const;
 
 /** The oracle: eliminated players tip on what the others' shots do. A side standing — it never counts towards winning. */

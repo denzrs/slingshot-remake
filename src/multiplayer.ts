@@ -329,7 +329,10 @@ export class MultiplayerSession {
   private applyInput(match: NetMatch, id: number, input: ClientInput): void {
     if (input.kind === 'adjust') match.adjustPlayer(id, input.dAngle, input.dPower);
     else if (input.kind === 'aim') match.setPlayerAim(id, input.angle, input.power);
-    else if (input.kind === 'fire') match.commitPlayer(id);
+    // The announcement of a Mayhem round is the host's to dismiss; a guest's fire key does nothing until the ships are free.
+    else if (input.kind === 'fire') {
+      if (!match.revealing || id === this.you.playerId) match.commitPlayer(id);
+    }
     else if (input.kind === 'power') match.usePowerUp(id);
     else if (input.kind === 'cancel') match.cancelPlacement(id);
     else if (input.kind === 'bet') match.placeBet(id, input.pick, !!input.round, input.stake ?? 0);

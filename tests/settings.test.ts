@@ -125,3 +125,22 @@ describe('power-up choices', () => {
     expect(DEFAULT_SETTINGS.powerUpKinds).toEqual(POWER_UP_KINDS);
   });
 });
+
+describe('display settings', () => {
+  it('keeps the menu background match on by default and through a save', () => {
+    storage();
+    expect(loadSettings().menuBackground).toBe(true);
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.menuBackground = false;
+    saveSettings(settings);
+    expect(loadSettings().menuBackground).toBe(false);
+  });
+
+  it('ignores stored display flags that are not booleans', () => {
+    storage({ menuBackground: 'false', particles: 0, contours: null });
+    const s = loadSettings();
+    expect(s.menuBackground).toBe(true);
+    expect(s.particles).toBe(true);
+    expect(s.contours).toBe(true);
+  });
+});

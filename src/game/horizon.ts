@@ -45,6 +45,7 @@ export interface HorizonSnapshot {
   settings: Match['settings'];
   mayhem?: Match['mayhem'];
   revealEnd?: number;
+  revealHeld?: boolean;
   mayhemHistory?: Match['mayhemHistory'];
   roundStats: Match['roundStats'];
   matchStats: Match['matchStats'];
@@ -151,7 +152,7 @@ export class HorizonMatch extends Match {
       players: this.players.map((player) => ({ ...player })), current: this.current, world: this.world,
       trails: this.trails, volley: this.volley?.snapshot() ?? null, flightDoneAt: this.flightDoneAt, killFeed: this.killFeed,
       lastKill: this.lastKill, summary: this.summary, notice: this.notice, settings: this.settings,
-      mayhem: this.mayhem, revealEnd: this.revealEnd, mayhemHistory: this.mayhemHistory,
+      mayhem: this.mayhem, revealEnd: this.revealEnd, revealHeld: this.revealHeld, mayhemHistory: this.mayhemHistory,
       roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory,
       volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
       aims: this.aims, volleyKills: this.volleyKills,
@@ -174,6 +175,7 @@ export class HorizonMatch extends Match {
     this.settings = s.settings;
     this.mayhem = s.mayhem ?? null;
     this.revealEnd = s.revealEnd ?? 0;
+    this.revealHeld = s.revealHeld ?? false;
     this.mayhemHistory = s.mayhemHistory ?? [];
     this.phase = s.phase; this.phaseTime = s.phaseTime; this.clock = s.clock; this.round = s.round;
     this.worldSeed = s.worldSeed ?? 0;

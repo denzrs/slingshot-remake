@@ -47,6 +47,8 @@ export interface Settings {
   fadingTrails: number;
   contours: boolean;
   particles: boolean;
+  /** The title screen and menus show a CPU match playing behind them; off leaves the plate empty. */
+  menuBackground: boolean;
   sound: boolean;
   /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
   betting: boolean;
@@ -80,6 +82,7 @@ export const DEFAULT_SETTINGS: Settings = {
   betting: false,
   contours: true,
   particles: true,
+  menuBackground: true,
   sound: true,
   language: 'de',
   teamMode: 0,
@@ -103,6 +106,9 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
+      for (const key of ['contours', 'particles', 'menuBackground', 'sound'] as const) {
+        if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
+      }
       // Power-up choices: only known kinds, in their usual order, and never none at all.
       const kinds = POWER_UP_KINDS.filter((kind) => Array.isArray(parsed.powerUpKinds) && parsed.powerUpKinds.includes(kind));
       s.powerUpKinds = kinds.length ? kinds : [...POWER_UP_KINDS];

@@ -35,6 +35,8 @@ export class Renderer {
   view!: View;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly hud: Hud;
+  /** The empty plate is on the canvas already; it stays until the canvas is resized or a match is drawn over it. */
+  private emptyDrawn = false;
   private backdrop: { canvas: HTMLCanvasElement; walls: boolean } | null = null;
   /** Per world (live or killcam replay), rebuilt when the world's version or the pixel scale changes. */
   private contours = new WeakMap<World, { version: number; ps: number; canvas: HTMLCanvasElement }>();
@@ -70,6 +72,7 @@ export class Renderer {
     this.canvas.style.width = `${cssWidth}px`;
     this.canvas.style.height = `${cssHeight}px`;
     this.backdrop = null;
+    this.emptyDrawn = false;
     this.contours = new WeakMap();
   }
 
@@ -86,12 +89,27 @@ export class Renderer {
     return { x: (clientX - rect.left - v.offsetX) / v.scale, y: (clientY - rect.top - v.offsetY) / v.scale };
   }
 
-  draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
-    // Catches window resizes, zoom and moving to a screen with another pixel ratio.
+  /** Catches window resizes, zoom and moving to a screen with another pixel ratio. */
+  private resizeIfNeeded(): void {
     const v = this.view;
     if (v.cssWidth !== window.innerWidth || v.cssHeight !== window.innerHeight || v.dpr !== Math.min(window.devicePixelRatio || 1, 2)) {
       this.resize();
     }
+  }
+
+  /** Just the empty plate, for menus that show no game behind them. */
+  drawEmpty(): void {
+    this.resizeIfNeeded();
+    if (this.emptyDrawn) return;
+    this.emptyDrawn = true;
+    if (!this.backdrop || this.backdrop.walls) this.backdrop = { canvas: renderBackdrop(this.view, false), walls: false };
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.drawImage(this.backdrop.canvas, 0, 0);
+  }
+
+  draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
+    this.resizeIfNeeded();
+    this.emptyDrawn = false;
     this.time += dt;
     const { ctx, view } = this;
     const { dpr, scale, offsetX, offsetY } = view;
