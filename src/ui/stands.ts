@@ -54,12 +54,12 @@ export class Stands {
     const mine = gallery.betOf(id);
     const nameOf = (pick: number) => (pick === PICK_DRAW ? t('stands.draw') : (match.players[pick]?.name ?? '?'));
 
-    const head = h(
-      'div.stands__head',
-      null,
-      h('strong', null, t('stands.title')),
-      h('span.stands__balance', null, t('stands.points', { n: fmtInt(seat.balance) })),
-      h('span.stands__rank', null, t('stands.rank', { n: ranking.findIndex((s) => s.id === id) + 1, total: ranking.length })),
+    /** A row of the card: a small caps label, then what the row says. */
+    const row = (label: string, ...content: (Node | string)[]) => h('div.stands__row', null, h('span.stands__label', null, label), ...content);
+    const head = row(
+      t('stands.title'),
+      h('strong.stands__q', null, !book ? t('stands.title') : book.open ? t('stands.question') : t('stands.closed', { n: fmtInt(gallery.pot) })),
+      h('span.stands__score', null, fmtInt(seat.balance), h('small', null, ` ${t('stands.rank', { n: ranking.findIndex((s) => s.id === id) + 1, total: ranking.length })}`)),
     );
 
     const rows: HTMLElement[] = [head];
@@ -70,41 +70,42 @@ export class Stands {
       const payout = result.payouts.find((p) => p.id === id);
       const net = payout ? payout.payout - payout.stake : 0;
       const verdict = !payout ? '' : payout.payout === payout.stake ? t('stands.refund', { n: payout.stake }) : net > 0 ? t('stands.youWon', { n: net }) : t('stands.youLost', { n: payout.stake });
-      rows.push(h('div.stands__result', null, h('strong', null, outcome), verdict ? h(`span.${net > 0 ? 'is-win' : 'is-loss'}`, null, verdict) : ''));
+      rows.push(row(t('stands.bets'), h('strong.stands__q', null, outcome), verdict ? h(`span.stands__verdict.${net > 0 ? 'is-win' : 'is-loss'}`, null, verdict) : ''));
       return rows;
     }
     if (!book) return rows;
 
     const open = book.open;
     const sides: { pick: number; color: string }[] = [...book.choices.map((pick) => ({ pick, color: match.players[pick]?.color ?? '#fff' })), ...(book.draw ? [{ pick: PICK_DRAW, color: '#9aa6bd' }] : [])];
-    rows.push(h('div.stands__title', null, open ? t('stands.question') : t('stands.closed', { n: gallery.pot })));
     rows.push(
-      h(
-        'div.stands__sides',
-        null,
+      row(
+        t('stands.bets'),
         ...sides.map(({ pick, color }) => {
           const odds = gallery.odds(pick);
-          const share = Math.round(gallery.share(pick) * 100);
           const chosen = mine?.pick === pick;
-          const chip = h(`button.stands__side${chosen ? '.is-mine' : ''}`, { type: 'button', ...(open && options.length ? {} : { disabled: '' }) }, h('span.stands__name', null, nameOf(pick)), h('span.stands__odds', null, odds ? t('stands.odds', { odds: fmt(odds, 1) }) : t('stands.noOdds')), h('span.stands__share', null, `${share}%`));
+          const chip = h(
+            `button.stands__chip${chosen ? '.is-on' : ''}`,
+            { type: 'button', ...(open && options.length ? {} : { disabled: '' }) },
+            h('span.stands__name', null, nameOf(pick)),
+            h('span.stands__odds', null, odds ? t('stands.odds', { odds: fmt(odds, 1) }) : t('stands.noOdds')),
+            h('span.stands__share', null, `${Math.round(gallery.share(pick) * 100)}%`),
+          );
           chip.style.setProperty('--tone', color);
-          chip.style.setProperty('--share', `${share}%`);
           chip.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             this.bet(pick, this.stake);
           });
           return chip;
         }),
+        h('span.stands__pot', null, t('oracle.pot', { n: fmtInt(gallery.pot) })),
       ),
     );
     if (open) {
       rows.push(
-        h(
-          'div.stands__stakes',
-          null,
-          h('span', null, t('stands.stake')),
+        row(
+          t('stands.stake'),
           ...options.map((stake) => {
-            const pill = h(`button.stands__stake${stake === this.stake ? '.is-on' : ''}`, { type: 'button' }, String(stake));
+            const pill = h(`button.stands__chip.stands__chip--stake${stake === this.stake ? '.is-on' : ''}`, { type: 'button' }, fmtInt(stake));
             pill.addEventListener('pointerdown', (e) => {
               e.preventDefault();
               this.stake = stake;
@@ -113,12 +114,11 @@ export class Stands {
             });
             return pill;
           }),
-          options.length ? '' : h('span.stands__note', null, t('stands.broke')),
+          h('span.stands__note', null, mine ? t('stands.yourBet', { n: mine.stake, name: nameOf(mine.pick) }) : options.length ? t('stands.noBet') : t('stands.broke')),
         ),
       );
-      rows.push(h('p.stands__note', null, mine ? t('stands.yourBet', { n: mine.stake, name: nameOf(mine.pick) }) : options.length ? t('stands.noBet') : t('stands.openHint')));
     } else {
-      rows.push(h('p.stands__note', null, mine ? t('stands.yourBet', { n: mine.stake, name: nameOf(mine.pick) }) : t('stands.wait')));
+      rows.push(row(t('stands.stake'), h('span.stands__note', null, mine ? t('stands.yourBet', { n: mine.stake, name: nameOf(mine.pick) }) : t('stands.wait'))));
     }
     return rows;
   }
