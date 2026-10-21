@@ -249,10 +249,10 @@ export function sectorRules(spec: SectorSpec): ShotRules {
 interface Load {
   rules: ShotRules;
   pierce: boolean;
-  heavy: boolean;
+  plasma: boolean;
 }
 
-const loadOf = (spec: SectorSpec): Load => ({ rules: sectorRules(spec), pierce: spec.ammo === 'piercing', heavy: spec.ammo === 'plasma' });
+const loadOf = (spec: SectorSpec): Load => ({ rules: sectorRules(spec), pierce: spec.ammo === 'piercing', plasma: spec.ammo === 'plasma' });
 
 // ————————————————————————————— Ranking —————————————————————————————
 
@@ -384,8 +384,8 @@ interface Path {
 }
 
 /** Fly a probe from the player's ship and record where it goes. */
-function tracePath(world: World, angle: number, power: number, { rules, pierce, heavy }: Load): Path {
-  const shot = new Shot(world, 0, angle, power, rules, false, [], pierce, heavy);
+function tracePath(world: World, angle: number, power: number, { rules, pierce, plasma }: Load): Path {
+  const shot = new Shot(world, 0, angle, power, rules, false, [], pierce, plasma);
   const points: number[] = [];
   const curve: number[] = [];
   let turned = 0;
@@ -424,8 +424,8 @@ function candidateSpots(world: World, ships: Ship[], path: Path): { x: number; y
 }
 
 /** Does the shot take the target down, and never its own ship? An armor-piercing one counts the ships it flies through. */
-function hits(world: World, ships: Ship[], angle: number, power: number, target: number, { rules, pierce, heavy }: Load): boolean {
-  const { end, pierced } = simulateShot({ ...world, ships }, 0, angle, power, rules, [], [], pierce, heavy);
+function hits(world: World, ships: Ship[], angle: number, power: number, target: number, { rules, pierce, plasma }: Load): boolean {
+  const { end, pierced } = simulateShot({ ...world, ships }, 0, angle, power, rules, [], [], pierce, plasma);
   if (pierced.includes(0) || (end.kind === 'ship' && end.ship === 0)) return false;
   return (end.kind === 'ship' && end.ship === target) || pierced.includes(target);
 }

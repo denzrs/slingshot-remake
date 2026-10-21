@@ -167,7 +167,7 @@ export class ChallengeMatch extends Match {
     this.shotsLeft--;
     this.volleyKill = null;
     // The sector's ammo: plasma bends little and ignores clouds, armor piercing flies through every ship it meets.
-    const aim: VolleyAim = { player: 0, angle: p.angle, power: p.power, ...(this.spec.ammo === 'piercing' ? { pierce: true } : {}), ...(this.spec.ammo === 'plasma' ? { heavy: true } : {}) };
+    const aim: VolleyAim = { player: 0, angle: p.angle, power: p.power, ...(this.spec.ammo === 'piercing' ? { pierce: true } : {}), ...(this.spec.ammo === 'plasma' ? { plasma: true } : {}) };
     this.launch([aim], true);
   }
 

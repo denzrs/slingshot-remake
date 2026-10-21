@@ -98,7 +98,7 @@ export class Sound {
   }
 
   /** A planet's gravity turned round: a sweep that falls as the push starts, and rises when it is turned back. */
-  polarity(reversed: boolean): void {
+  antigravity(reversed: boolean): void {
     const a = this.begin();
     if (!a) return;
     this.tone(reversed ? 700 : 260, reversed ? 240 : 720, 0.22, 0.05, 'triangle', a.t);

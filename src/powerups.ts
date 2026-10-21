@@ -8,16 +8,16 @@ import type { Rng } from './rng';
  * own rng and the tests can call it directly.
  */
 
-export type PowerUpKind = 'preview' | 'teleport' | 'splitter' | 'polarity' | 'shield' | 'blackhole' | 'planetkiller' | 'nebula' | 'piercing' | 'wormhole' | 'defense' | 'heavy';
+export type PowerUpKind = 'preview' | 'teleport' | 'splitter' | 'antigravity' | 'shield' | 'blackhole' | 'planetkiller' | 'nebula' | 'piercing' | 'wormhole' | 'defense' | 'plasma';
 
-export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter', 'polarity', 'shield', 'blackhole', 'planetkiller', 'nebula', 'piercing', 'wormhole', 'defense', 'heavy'];
+export const POWER_UP_KINDS: readonly PowerUpKind[] = ['preview', 'teleport', 'splitter', 'antigravity', 'shield', 'blackhole', 'planetkiller', 'nebula', 'piercing', 'wormhole', 'defense', 'plasma'];
 
 /**
  * How often each kind turns up, relative to the others, and the same in every mode: the stronger the kind,
  * the scarcer it is. So the preview is the rarest find, then the planet killer and the black hole, up to the
  * teleport and the shield, which are the commonest.
  */
-export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 0.2, planetkiller: 0.3, blackhole: 0.3, splitter: 0.5, piercing: 0.5, polarity: 0.6, nebula: 0.8, teleport: 0.8, shield: 0.8, wormhole: 0.3, defense: 0.5, heavy: 0.5 };
+export const POWER_UP_WEIGHTS: Readonly<Record<PowerUpKind, number>> = { preview: 0.2, planetkiller: 0.3, blackhole: 0.3, splitter: 0.5, piercing: 0.5, antigravity: 0.6, nebula: 0.8, teleport: 0.8, shield: 0.8, wormhole: 0.3, defense: 0.5, plasma: 0.5 };
 
 /** The kind of a new pickup, drawn by weight from the kinds in play (all of them when the list is empty). */
 export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KINDS): PowerUpKind {
@@ -33,7 +33,7 @@ export function pickKind(rng: Rng, kinds: readonly PowerUpKind[] = POWER_UP_KIND
 /**
  * Kinds a CPU has no use for: it leaves them lying. Only the preview, which shows a shot's path and means
  * nothing to a planner that already knows it. A placement (black hole, planet killer, nebula, defense,
- * wormhole, polarity) it does take, and lays it at a rough spot of its own.
+ * wormhole, antigravity) it does take, and lays it at a rough spot of its own.
  */
 export const CPU_IGNORES: Readonly<Partial<Record<PowerUpKind, true>>> = { preview: true };
 

@@ -78,7 +78,7 @@ function sprite(color: string, radius: number): Sprite {
 
 /**
  * One portal: an oval doorway turned to face its partner, floating a little, a swirl turning in its mouth. The
- * sprite does the heavy drawing; this adds only the motion, a few strokes per frame. Both portals of a
+ * sprite does the plasma drawing; this adds only the motion, a few strokes per frame. Both portals of a
  * wormhole are drawn alike, because a shot goes through either one the same way.
  */
 export function drawPortal(

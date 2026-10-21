@@ -298,11 +298,11 @@ export class Renderer {
       const color = match.players[vs.owner].color;
       const shot = vs.shot;
       ctx.strokeStyle = color;
-      ctx.lineWidth = vs.heavy ? 1 : 2;
-      if (vs.heavy) ctx.globalAlpha = 0.45;
+      ctx.lineWidth = vs.plasma ? 1 : 2;
+      if (vs.plasma) ctx.globalAlpha = 0.45;
       strokePolyline(ctx, vs.trail, match.world.wormholes);
       ctx.globalAlpha = 1;
-      if (vs.heavy) this.drawPlasmaTrail(vs.trail, match.world.wormholes);
+      if (vs.plasma) this.drawPlasmaTrail(vs.trail, match.world.wormholes);
       if (shot.end) continue;
       if (shot.inField) {
         const owner = match.players[vs.owner];
@@ -318,7 +318,7 @@ export class Renderer {
           ctx.restore();
         }
         // A shot in a nebula pushes against the gas: a ring spreads from it (the wisps it sheds are the Effects').
-        if (!vs.heavy && inNebula(match.world.nebulae, shot.x, shot.y)) {
+        if (!vs.plasma && inNebula(match.world.nebulae, shot.x, shot.y)) {
           ctx.save();
           ctx.strokeStyle = POWER_UP_COLORS.nebula;
           const ripple = (this.time * 1.6) % 1;
@@ -336,15 +336,15 @@ export class Renderer {
         ctx.fillStyle = glow;
         ctx.fillRect(shot.x - 9, shot.y - 9, 18, 18);
         // A plasma shot is a pulsing cyan blob: a wide soft halo, a wobbling body and a bright core.
-        if (vs.heavy) {
+        if (vs.plasma) {
           ctx.save();
           const pulse = 1 + 0.12 * Math.sin(this.time * 14);
           const halo = ctx.createRadialGradient(shot.x, shot.y, 0, shot.x, shot.y, 15 * pulse);
-          halo.addColorStop(0, rgba(POWER_UP_COLORS.heavy, 0.55));
-          halo.addColorStop(1, rgba(POWER_UP_COLORS.heavy, 0));
+          halo.addColorStop(0, rgba(POWER_UP_COLORS.plasma, 0.55));
+          halo.addColorStop(1, rgba(POWER_UP_COLORS.plasma, 0));
           ctx.fillStyle = halo;
           ctx.fillRect(shot.x - 16, shot.y - 16, 32, 32);
-          ctx.fillStyle = rgba(POWER_UP_COLORS.heavy, 0.9);
+          ctx.fillStyle = rgba(POWER_UP_COLORS.plasma, 0.9);
           ctx.beginPath();
           for (let i = 0; i <= 16; i++) {
             const a = (i / 16) * Math.PI * 2;
@@ -457,8 +457,8 @@ export class Renderer {
       ctx.restore();
     }
     // A ship aiming a placement: a marker at the spot — a teleport door, or where a black hole, nebula or planet killer would land — with a line from the ship.
-    if (scene.placement?.kind === 'planetkiller' || scene.placement?.kind === 'polarity') {
-      // Only the angle aims a planet killer or a polarity, and the power plays no part. So the whole ray is drawn: out to the
+    if (scene.placement?.kind === 'planetkiller' || scene.placement?.kind === 'antigravity') {
+      // Only the angle aims a planet killer or a antigravity, and the power plays no part. So the whole ray is drawn: out to the
       // planet it will take (or turn) when there is one — locked on with brackets round it — or dimly to the edge when there is not.
       const { owner, target, kind } = scene.placement;
       const from = match.world.ships[owner];
@@ -494,7 +494,7 @@ export class Renderer {
           ctx.arc(planet.x, planet.y, r, a - 0.32, a + 0.32);
           ctx.stroke();
         }
-        if (kind === 'polarity') {
+        if (kind === 'antigravity') {
           // Rays pushing out, or pulling in when the planet is turned already: what the planet will do to shots.
           const back = !!planet.reversed;
           ctx.lineWidth = 2;
@@ -511,7 +511,7 @@ export class Renderer {
           ctx.font = `700 11px ${FONTS.mono}`;
           ctx.textAlign = 'center';
           ctx.fillStyle = color;
-          ctx.fillText(t(back ? 'powerup.polarityBack' : 'powerup.polarityTurn').toUpperCase(), planet.x, planet.y - planet.radius - 38);
+          ctx.fillText(t(back ? 'powerup.antigravityBack' : 'powerup.antigravityTurn').toUpperCase(), planet.x, planet.y - planet.radius - 38);
         } else {
           // The crack that will split it.
           ctx.lineWidth = 2;
@@ -525,7 +525,7 @@ export class Renderer {
       }
       ctx.restore();
     }
-    if (scene.placement?.target && scene.placement.kind !== 'planetkiller' && scene.placement.kind !== 'polarity') {
+    if (scene.placement?.target && scene.placement.kind !== 'planetkiller' && scene.placement.kind !== 'antigravity') {
       const { owner, kind, target } = scene.placement;
       const from = match.world.ships[owner];
       const nextWormhole = nextWormholeId(match.world);
@@ -703,7 +703,7 @@ export class Renderer {
       for (let k = from; k < n; k++) {
         if (wormholes.length && isWormholeJump(pts, k * 2, wormholes)) continue;
         const f = (k - from + 1) / (n - from);
-        ctx.strokeStyle = pass === 0 ? rgba(POWER_UP_COLORS.heavy, 0.22 * f) : rgba('#e6ffff', 0.8 * f * f);
+        ctx.strokeStyle = pass === 0 ? rgba(POWER_UP_COLORS.plasma, 0.22 * f) : rgba('#e6ffff', 0.8 * f * f);
         ctx.lineWidth = (pass === 0 ? 9 : 2.4) * f;
         ctx.beginPath();
         ctx.moveTo(pts[k * 2 - 2], pts[k * 2 - 1]);
@@ -719,7 +719,7 @@ export class Renderer {
       const dy = pts[k * 2 + 1] - pts[k * 2 - 1];
       const len = Math.hypot(dx, dy) || 1;
       const off = side * (2 + age * 9 + 1.5 * Math.sin(this.time * 6 + k));
-      ctx.fillStyle = rgba(POWER_UP_COLORS.heavy, 0.7 * (1 - age));
+      ctx.fillStyle = rgba(POWER_UP_COLORS.plasma, 0.7 * (1 - age));
       ctx.beginPath();
       ctx.arc(pts[k * 2] - (dy / len) * off, pts[k * 2 + 1] + (dx / len) * off, 1.8 * (1 - age) + 0.4, 0, Math.PI * 2);
       ctx.fill();
@@ -732,11 +732,11 @@ export class Renderer {
     if (!match.powerUps) return;
     const { ctx } = this;
     ctx.save();
-    ctx.strokeStyle = POWER_UP_COLORS.polarity;
+    ctx.strokeStyle = POWER_UP_COLORS.antigravity;
     ctx.lineWidth = 1.6;
     for (const planet of scene.world.planets) {
       if (!planet.reversed) continue;
-      // A faint rim in the polarity colour marks the planet that pushes.
+      // A faint rim in the antigravity colour marks the planet that pushes.
       ctx.globalAlpha = 0.5;
       ctx.beginPath();
       ctx.arc(planet.x, planet.y, planet.radius + 2, 0, Math.PI * 2);

@@ -14,7 +14,7 @@ pub const POWER_UP_KINDS: [&str; 12] = [
     "preview",
     "teleport",
     "splitter",
-    "polarity",
+    "antigravity",
     "shield",
     "blackhole",
     "planetkiller",
@@ -22,7 +22,7 @@ pub const POWER_UP_KINDS: [&str; 12] = [
     "piercing",
     "wormhole",
     "defense",
-    "heavy",
+    "plasma",
 ];
 /// Every kind switched on: one bit per kind, so the mask fills from the top down and never shifts past the type.
 pub const ALL_POWER_UP_KINDS: u16 = u16::MAX >> (16 - POWER_UP_KINDS.len());

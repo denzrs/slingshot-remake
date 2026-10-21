@@ -1,4 +1,5 @@
-import { defineConfig, type Plugin } from 'vite';
+import type { Plugin } from 'vite';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 /**
  * The debug aim predictor (`/debug-aim.html`) answers 404 unless the server was
@@ -37,4 +38,6 @@ export default defineConfig({
   // `DEBUG_AIM` (which serves /debug-aim.html) also reaches the client, so the in-game seed badge can follow it.
   envPrefix: ['VITE_', 'DEBUG_'],
   plugins: [debugAimGate()],
+  // Sibling git worktrees live under .claude/; their tests are not this checkout's.
+  test: { exclude: [...configDefaults.exclude, '.claude/**'] },
 });
