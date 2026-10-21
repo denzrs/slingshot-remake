@@ -33,7 +33,12 @@ pub struct RoomManager {
     next_room_order: u64,
     memberships: HashMap<u64, Membership>,
     net: Connections,
+    /// When each connection last renamed itself, so a rename cannot be repeated at the connection's message rate.
+    last_rename: HashMap<u64, std::time::Instant>,
 }
+
+/// The shortest time between two renames of one connection.
+const RENAME_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl RoomManager {
     pub fn new() -> Self {
@@ -42,6 +47,7 @@ impl RoomManager {
             next_room_order: 0,
             memberships: HashMap::new(),
             net: Connections::default(),
+            last_rename: HashMap::new(),
         }
     }
 
@@ -58,6 +64,7 @@ impl RoomManager {
 
     pub fn disconnect(&mut self, conn: u64) {
         self.net.close(conn);
+        self.last_rename.remove(&conn);
         self.remove_from_room(conn, "A player disconnected");
     }
 

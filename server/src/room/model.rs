@@ -67,6 +67,15 @@ pub(super) struct Membership {
     pub(super) player_id: usize,
 }
 
+/// Whether somebody in the room already goes by `name`, upper or lower case alike. A player's own seat
+/// (`except`) does not count, so they can change the case of their own name.
+pub(super) fn name_taken(room: &Room, name: &str, except: Option<usize>) -> bool {
+    let wanted = name.to_lowercase();
+    room.players
+        .iter()
+        .any(|p| Some(p.id) != except && p.name.to_lowercase() == wanted)
+}
+
 /// The team with fewer players, team 0 when they are even: where a newcomer goes.
 pub(super) fn smallest_team(room: &Room) -> u8 {
     let in_first = room.players.iter().filter(|p| p.team == 0).count();

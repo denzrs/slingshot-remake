@@ -1,11 +1,13 @@
 //! What the people in a waiting room change: ready, the rules, the lobby look, symbols and teams.
 
 use crate::command::Parsed;
-use crate::protocol::{default_room_name, RoomLook, RoomRules};
+use std::time::Instant;
+
+use crate::protocol::{default_room_name, RoomLook, RoomRules, NAME_TAKEN, RENAME_TOO_FAST};
 use crate::wire::Avatar;
 
 use super::model::*;
-use super::RoomManager;
+use super::{RoomManager, RENAME_COOLDOWN};
 
 impl RoomManager {
     pub(super) fn set_ready(&mut self, conn: u64, ready: Parsed<bool>) {
@@ -113,20 +115,44 @@ impl RoomManager {
             return;
         };
         let room = self.rooms.get_mut(&room_id).unwrap();
+        // The same name again changes nothing, so nobody is told anything.
+        if room
+            .players
+            .iter()
+            .any(|p| p.id == player_id && p.name == name)
+        {
+            return;
+        }
+        if name_taken(room, &name, Some(player_id)) {
+            self.error(conn, NAME_TAKEN);
+            return;
+        }
+        let now = Instant::now();
+        if self
+            .last_rename
+            .get(&conn)
+            .is_some_and(|last| now.duration_since(*last) < RENAME_COOLDOWN)
+        {
+            self.error(conn, RENAME_TOO_FAST);
+            return;
+        }
+        self.last_rename.insert(conn, now);
+        let room = self.rooms.get_mut(&room_id).unwrap();
         if let Some(player) = room.players.iter_mut().find(|p| p.id == player_id) {
             // A new name has to be confirmed again: nobody readies up as one person and plays as another.
-            if player.name != name {
-                player.ready = false;
-            }
+            player.ready = false;
             player.name = name.clone();
         }
         // A room the host never named is called after the host, so it follows their rename.
         if player_id == 0 && room.name_is_default {
             room.name = default_room_name(&name, room.created_order + 1);
         }
+        let listed = player_id == 0 && !room.look.is_private();
         self.broadcast_room_update(&room_id, None);
-        // The host's name is on the list beside the room.
-        self.broadcast_lobby();
+        // The host's name is on the list beside the room; nobody else's is, and a private room is not on it.
+        if listed {
+            self.broadcast_lobby();
+        }
     }
 
     /// A player picks their own team; they have to confirm (ready) again, everybody else's choice

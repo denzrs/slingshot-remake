@@ -58,9 +58,14 @@ pub const NAME_REQUIRED: &str = "A non-empty player name is required";
 /// What the player is told when the name fails the profanity check.
 pub const NAME_REFUSED: &str = "That name is not allowed";
 
+/// What a player is told when somebody in the room already goes by that name.
+pub const NAME_TAKEN: &str = "That name is taken in this room";
+/// What a player is told when they rename again right after a rename.
+pub const RENAME_TOO_FAST: &str = "Wait a moment before changing your name again";
+
 /// Whether an error is about the player's name, so the client can put it under the name field.
 pub fn is_name_refusal(message: &str) -> bool {
-    message == NAME_REQUIRED || message == NAME_REFUSED
+    [NAME_REQUIRED, NAME_REFUSED, NAME_TAKEN, RENAME_TOO_FAST].contains(&message)
 }
 
 /// The longest a room name may be: room for a full-length player name plus "'s room".

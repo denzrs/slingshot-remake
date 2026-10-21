@@ -949,13 +949,24 @@ describe('the player symbols online', () => {
     expect(host.room!.players[1].name).toBe('Benedikt');
 
     // Another refusal is not about the name, and a new attempt clears the old name error.
+    // The relay lets a connection rename once a second.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
     guest.setName('Benno');
     expect(guest.nameNotice).toBeNull();
     guest.setReady(true);
     await waitForSession(host, () => host.room!.players[1].name === 'Benno' && host.room!.players[1].ready);
     guest.setName('Benedikt');
+    await waitForSession(guest, () => guest.nameNotice === 'Wait a moment before changing your name again');
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    guest.setName('Benedikt');
     await waitForSession(host, () => host.room!.players[1].name === 'Benedikt');
     expect(host.room!.players[1].ready).toBe(false);
+
+    // Nobody else in the room can have the name.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    guest.setName('anna');
+    await waitForSession(guest, () => guest.nameNotice === 'That name is taken in this room');
+    expect(host.room!.players[1].name).toBe('Benedikt');
   }, 60_000);
 
   it('shows each player the symbol they picked, in the lobby and in the game on both screens', async () => {

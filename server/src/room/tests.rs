@@ -1077,14 +1077,192 @@ fn a_new_name_has_to_be_confirmed_again_and_the_same_one_does_not_unready() {
     drain_json(&mut host_rx);
     drain_json(&mut guest_rx);
 
+    // The same name again is no change: nothing is sent, nobody is unreadied, no error either.
     rooms.handle(2, &json!({"type":"set_name","name":"Guest"}));
-    let update = take_type(&drain_json(&mut host_rx), "room_update");
-    assert_eq!(update["room"]["players"][1]["ready"], true);
+    assert!(drain_json(&mut host_rx).is_empty());
+    assert!(drain_json(&mut guest_rx).is_empty());
 
-    rooms.handle(2, &json!({"type":"set_name","name":"Ada"}));
+    rooms.handle(2, &json!({"type":"set_name","name":"Gina"}));
     let update = take_type(&drain_json(&mut host_rx), "room_update");
-    assert_eq!(update["room"]["players"][1]["name"], "Ada");
+    assert_eq!(update["room"]["players"][1]["name"], "Gina");
     assert_eq!(update["room"]["players"][1]["ready"], false);
+}
+
+#[test]
+fn names_are_unique_in_a_room_whatever_the_case_but_free_again_elsewhere() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    let mut guest_rx = connect(&mut rooms, 2);
+    let mut other_rx = connect(&mut rooms, 3);
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    drain_json(&mut other_rx);
+    rooms.handle(1, &create("Ada", None));
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Joining under the host's name, in any case, is refused and says it is about the name.
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"aDa"}),
+    );
+    let error = take_type(&drain_json(&mut guest_rx), "error");
+    assert_eq!(error["message"], "That name is taken in this room");
+    assert_eq!(error["field"], "name");
+    assert!(!rooms.memberships.contains_key(&2));
+
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Grace"}),
+    );
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+
+    // Renaming onto somebody's name is refused too, and the name stays.
+    rooms.handle(2, &json!({"type":"set_name","name":"ADA"}));
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "That name is taken in this room"
+    );
+    assert!(drain_json(&mut host_rx).is_empty());
+
+    // A player may change the case of their own name.
+    rooms.handle(2, &json!({"type":"set_name","name":"GRACE"}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["players"][1]["name"], "GRACE");
+
+    // Another room does not mind.
+    rooms.handle(3, &create("Ada", None));
+    take_type(&drain_json(&mut other_rx), "room_update");
+}
+
+#[test]
+fn a_rename_waits_a_moment_after_the_last_one() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    drain_json(&mut host_rx);
+    rooms.handle(1, &create("Ada", None));
+    drain_json(&mut host_rx);
+
+    rooms.handle(1, &json!({"type":"set_name","name":"Ada L"}));
+    take_type(&drain_json(&mut host_rx), "room_update");
+    rooms.handle(1, &json!({"type":"set_name","name":"Ada M"}));
+    let error = take_type(&drain_json(&mut host_rx), "error");
+    assert_eq!(
+        error["message"],
+        "Wait a moment before changing your name again"
+    );
+    assert_eq!(error["field"], "name");
+
+    rooms.last_rename.clear();
+    rooms.handle(1, &json!({"type":"set_name","name":"Ada M"}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["players"][0]["name"], "Ada M");
+}
+
+#[test]
+fn only_a_host_rename_in_a_public_room_reaches_the_lobby_list() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    let mut guest_rx = connect(&mut rooms, 2);
+    let mut watcher_rx = connect(&mut rooms, 4);
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    drain_json(&mut watcher_rx);
+    rooms.handle(1, &create("Ada", None));
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Grace"}),
+    );
+    drain_json(&mut watcher_rx);
+
+    // A guest's name is not on the list.
+    rooms.handle(2, &json!({"type":"set_name","name":"Gina"}));
+    assert!(drain_json(&mut watcher_rx).is_empty());
+
+    // The host's is.
+    rooms.handle(1, &json!({"type":"set_name","name":"Ada L"}));
+    let lobby = take_type(&drain_json(&mut watcher_rx), "lobby_update");
+    assert_eq!(lobby["rooms"][0]["host"], "Ada L");
+
+    // A private room is not on it at all.
+    rooms.handle(1, &json!({"type":"set_room","look":{"visibility":"private","symbol":"moon","color":"#ff8660"}}));
+    drain_json(&mut watcher_rx);
+    rooms.last_rename.clear();
+    rooms.handle(1, &json!({"type":"set_name","name":"Ada P"}));
+    assert!(drain_json(&mut watcher_rx).is_empty());
+}
+
+#[test]
+fn a_rename_is_refused_while_a_game_runs_and_a_non_string_name_is_refused() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    let mut guest_rx = connect(&mut rooms, 2);
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    rooms.handle(1, &create("Ada", None));
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Grace"}),
+    );
+    rooms.handle(2, &json!({"type":"ready","ready":true}));
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+
+    // A name that is no string counts as no name.
+    rooms.handle(2, &json!({"type":"set_name","name":42}));
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "A non-empty player name is required"
+    );
+
+    rooms.handle(1, &json!({"type":"start_game"}));
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    rooms.handle(2, &json!({"type":"set_name","name":"Gina"}));
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "The name cannot change while a game is running"
+    );
+}
+
+#[test]
+fn a_join_with_a_profane_or_missing_name_is_refused_with_the_reason() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    let mut guest_rx = connect(&mut rooms, 2);
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    rooms.handle(1, &create("Ada", None));
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"shit"}),
+    );
+    let error = take_type(&drain_json(&mut guest_rx), "error");
+    assert_eq!(error["message"], "That name is not allowed");
+    assert_eq!(error["field"], "name");
+
+    rooms.handle(2, &json!({"type":"join_room","roomId":room_id}));
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "join_room requires a roomId and non-empty player name"
+    );
+    assert!(!rooms.memberships.contains_key(&2));
 }
 
 #[test]
