@@ -138,6 +138,8 @@ export const SOLAR = {
   /** Planets of this mode are smaller than on an open field, so several fit between the orbits. */
   MIN_PLANET: 13,
   MAX_PLANET: 52,
+  /** Planets here weigh this much more than their size alone gives (the sun is set apart). */
+  PLANET_HEAVY: 1.2,
   /** Turn per step in radians at REF_ORBIT; other orbits scale by (REF_ORBIT / r) ^ FALLOFF, so inner orbits turn faster. */
   TURN: 0.3,
   REF_ORBIT: 200,

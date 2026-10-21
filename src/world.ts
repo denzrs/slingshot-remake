@@ -198,7 +198,7 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
       planets.push({
         ...onOrbit(r, a),
         radius,
-        mass: range(rng, 0.75, 1.3) * radius ** 3,
+        mass: range(rng, 0.75, 1.3) * radius ** 3 * SOLAR.PLANET_HEAVY,
         seed: Math.floor(rng() * 2 ** 31),
         style,
         tint: pick(rng, TINTS[style]),
