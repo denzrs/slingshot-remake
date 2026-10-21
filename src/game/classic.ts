@@ -317,6 +317,7 @@ export class ClassicMatch extends Match {
   }
 
   private launchVolley(): void {
+    this.makeHeldPlacements();
     const aims = this.alive.filter((p) => !p.passed).flatMap((p) => this.aimsFor(p));
     for (const p of this.alive) if (!p.passed) p.shots++;
     this.notice = { text: t('notice.volley'), color: COLORS.bone, at: this.clock };

@@ -629,7 +629,8 @@ export abstract class Match {
 
   /** Fire, while aiming: the jump happens, or the black hole is planted. False when there is no aim, or it lands nowhere the ship may rest. */
   confirmPlacement(by?: number): boolean {
-    return this.power.confirmPlacement(by);
+    // In a salvo the others are still aiming against the field as it is: the placement waits for the volley.
+    return this.power.confirmPlacement(by, this.salvo);
   }
 
   cancelPlacement(by?: number): boolean {
@@ -644,6 +645,11 @@ export abstract class Match {
   /** Fire while the shot is flying: an armed splitter forks it into three. */
   protected splitInFlight(id = -1): boolean {
     return this.power.splitInFlight(id);
+  }
+
+  /** A salvo takes off: the placements it held back are made first, so the shots fly over the field they were laid on. */
+  protected makeHeldPlacements(): void {
+    this.power.makeHeld();
   }
 
   protected aimsFor(p: PlayerState): VolleyAim[] {
@@ -1180,7 +1186,7 @@ export abstract class Match {
 
   /** A CPU lays the placement it holds, at the spot its aim points at. False when it cannot lay it now. */
   protected placeForCpu(id: number): boolean {
-    return this.power.placeForCpu(id);
+    return this.power.placeForCpu(id, this.salvo);
   }
 
   /** Think for the given CPU players, sharing a per-frame time budget round-robin. */

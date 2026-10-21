@@ -1136,6 +1136,13 @@ describe('CPU seats online', () => {
 
       guest.session.input({ kind: 'fire' });
       for (let i = 0; i < 12; i++) await frame(host, guest);
+      // The salvo is not over until the host has locked in too: the jump waits for the volley.
+      expect(host.match().players[1].locked).toBe(true);
+      expect(host.match().world.ships[1]).toMatchObject(before);
+      expect(host.match().players[1].powerUp).toBe('teleport');
+      host.session.input({ kind: 'fire' });
+      for (let i = 0; i < 60 && host.match().phase === 'aiming'; i++) await frame(host, guest);
+      for (let i = 0; i < 12; i++) await frame(host, guest);
       const after = host.match().world.ships[1];
       expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeGreaterThan(0);
       expect(host.match().players[1].powerUp).toBeNull();

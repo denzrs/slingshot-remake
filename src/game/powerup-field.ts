@@ -89,6 +89,8 @@ export class PowerUpField {
   private choosing = new Set<number>();
   /** The first mouth of a wormhole a ship has set, by ship: the second click sets the other and plants the pair. */
   private wormFirst = new Map<number, { x: number; y: number }>();
+  /** The placements a salvo holds back, by ship: they are made when the volley takes off, not when their ship locks in. */
+  private held = new Map<number, () => boolean>();
 
   constructor(private readonly host: PowerUpHost) {}
 
@@ -110,6 +112,7 @@ export class PowerUpField {
     this.volleysThisPass = 0;
     this.choosing.clear();
     this.wormFirst.clear();
+    this.held.clear();
     if (this.enabled) for (let i = 0; i < this.amount; i++) this.spawn();
   }
 
@@ -276,10 +279,15 @@ export class PowerUpField {
     return !!this.placementAim(owner);
   }
 
-  /** Fire while aiming: the ship jumps, or the placement happens. False when there is no aim, or it lands nowhere. */
-  confirmPlacement(by: number = this.aimer): boolean {
+  /**
+   * Fire while aiming: the ship jumps, or the placement happens. False when there is no aim, or it lands nowhere.
+   * In a salvo (`hold`) the others are still aiming against the field as it is, so the placement is only taken
+   * down here and made by `makeHeld` once the volley takes off.
+   */
+  confirmPlacement(by: number = this.aimer, hold = false): boolean {
     const aim = this.placementAim(by);
     if (!aim?.target) return false;
+    let make: (() => boolean) | null;
     if (aim.kind === 'wormhole') {
       // A portal cannot overlap another, whatever the distance otherwise.
       if (aim.blocked) return false;
@@ -291,24 +299,62 @@ export class PowerUpField {
       }
       this.choosing.delete(by);
       this.wormFirst.delete(by);
-      return this.plantWormhole(aim.owner, first, aim.target);
+      const second = aim.target;
+      make = () => this.plantWormhole(aim.owner, first, second);
+    } else {
+      this.choosing.delete(by);
+      make = this.placementOf(aim);
     }
-    this.choosing.delete(by);
-    if (aim.kind === 'blackhole') return this.plantBlackHole(aim.owner, aim.target);
-    if (aim.kind === 'nebula') return this.plantNebula(aim.owner, aim.target);
-    if (aim.kind === 'defense') return this.plantDefense(aim.owner, aim.target);
-    if (aim.kind === 'polarity') {
-      const world = this.host.world();
-      const planet = aimedPlanet(world, world.ships[aim.owner], this.host.players()[aim.owner].angle);
-      return planet ? this.turnPolarity(aim.owner, planet.index) : false;
+    if (!make) return false;
+    if (!hold) return make();
+    this.held.set(by, make);
+    return true;
+  }
+
+  /** What a placement does once it is made, or null when its aim lands on nothing. A planet is kept by itself, not its place, which a planet killer made before it may have shifted. */
+  private placementOf(aim: PlacementAim): (() => boolean) | null {
+    const target = aim.target;
+    if (!target) return null;
+    const world = this.host.world();
+    const owner = aim.owner;
+    const aimed = aimedPlanet(world, world.ships[owner], this.host.players()[owner].angle);
+    switch (aim.kind) {
+      case 'blackhole': return () => this.plantBlackHole(owner, target);
+      case 'nebula': return () => this.plantNebula(owner, target);
+      case 'defense': {
+        const index = (target as { planet?: number }).planet;
+        if (index === undefined) return () => this.plantDefense(owner, target);
+        return this.onPlanet(world.planets[index], (i) => this.plantDefense(owner, { x: target.x, y: target.y, planet: i }));
+      }
+      case 'polarity': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.turnPolarity(owner, i));
+      case 'planetkiller': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.killPlanet(owner, i), () => this.spend(owner));
+      default: return () => this.teleport(owner, target);
     }
-    if (aim.kind === 'planetkiller') {
-      const world = this.host.world();
-      const p = this.host.players()[aim.owner];
-      const planet = aimedPlanet(world, world.ships[aim.owner], p.angle);
-      return planet ? this.killPlanet(aim.owner, planet.index) : false;
-    }
-    return this.teleport(aim.owner, aim.target);
+  }
+
+  /** A placement on a planet that finds the planet again when it is made: the index it was aimed at may have moved by then. `gone` runs when the planet has been taken meanwhile. */
+  private onPlanet(planet: World['planets'][number] | undefined, place: (index: number) => boolean, gone?: () => boolean): (() => boolean) | null {
+    if (!planet) return null;
+    const world = this.host.world();
+    return () => {
+      const index = world.planets.indexOf(planet);
+      return index >= 0 ? place(index) : (gone?.() ?? false);
+    };
+  }
+
+  /** A power-up used up without effect: two planet killers on one rock cost both ships theirs. */
+  private spend(id: number): boolean {
+    const p = this.host.players()[id];
+    p.powerUp = null;
+    p.armed = false;
+    return false;
+  }
+
+  /** The volley takes off: the placements a salvo held back are made now, ship by ship. A ship whose placement no longer lands keeps its power-up, unless its planet killer found the planet gone. */
+  makeHeld(): void {
+    const held = [...this.held.values()];
+    this.held.clear();
+    for (const make of held) make();
   }
 
   cancelPlacement(by: number = this.aimer): boolean {
@@ -426,10 +472,19 @@ export class PowerUpField {
    * with, like a shot. False when it holds none of them, or the aim lands nowhere. A wormhole's portals
    * are not aimed one by one: the aim points at the first, and both are worked out from the world.
    */
-  placeForCpu(id: number): boolean {
+  placeForCpu(id: number, hold = false): boolean {
+    const make = this.cpuPlacement(id);
+    if (!make) return false;
+    if (!hold) return make();
+    this.held.set(id, make);
+    return true;
+  }
+
+  /** What a CPU's placement does once it is made, or null when it holds none or has nowhere to lay it. */
+  private cpuPlacement(id: number): (() => boolean) | null {
     const p = this.host.players()[id];
     const kind = p.powerUp;
-    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'polarity') return false;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'polarity') return null;
     const world = this.host.world();
     const from = world.ships[id];
     if (kind === 'wormhole') {
@@ -439,24 +494,25 @@ export class PowerUpField {
         .map((q) => world.ships[q.id])
         .sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))[0];
       const spots = target && cpuWormholeSpots(world, from, target);
-      return spots ? this.plantWormhole(id, spots[0], spots[1]) : false;
+      return spots ? () => this.plantWormhole(id, spots[0], spots[1]) : null;
     }
     if (kind === 'polarity') {
       // Only a planet that pulls: a CPU never turns one back.
-      const planet = aimedPlanet(world, from, this.host.players()[id].angle);
-      return planet && !world.planets[planet.index].reversed ? this.turnPolarity(id, planet.index) : false;
+      const planet = aimedPlanet(world, from, p.angle);
+      return planet && !world.planets[planet.index].reversed ? this.onPlanet(world.planets[planet.index], (i) => this.turnPolarity(id, i)) : null;
     }
     if (kind === 'defense') {
       const surface = aimedSurface(world, from, p.angle);
-      return surface ? this.plantDefense(id, surface) : false;
+      if (!surface) return null;
+      return this.onPlanet(world.planets[surface.planet], (i) => this.plantDefense(id, { ...surface, planet: i }))
     }
     if (kind === 'planetkiller') {
       const planet = aimedPlanet(world, from, p.angle);
-      return planet ? this.killPlanet(id, planet.index) : false;
+      return planet ? this.onPlanet(world.planets[planet.index], (i) => this.killPlanet(id, i), () => this.spend(id)) : null;
     }
     const spot = kind === 'nebula' ? nebulaSpot(world, from, p.angle, p.power) : aimedSpot(world, from, p.angle, p.power);
-    if (!spot) return false;
-    return kind === 'nebula' ? this.plantNebula(id, spot) : this.plantBlackHole(id, spot);
+    if (!spot) return null;
+    return kind === 'nebula' ? () => this.plantNebula(id, spot) : () => this.plantBlackHole(id, spot);
   }
 
   /** Teleports a ship to `spot`, or to a random free one; false when there is none. */
