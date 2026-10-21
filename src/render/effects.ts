@@ -1,6 +1,7 @@
 import { COLORS, FONTS, PHYSICS } from '../config';
 import type { World } from '../physics';
 import { rgba } from './color';
+import { fillTextUpright, strokeTextUpright } from './orientation';
 
 type SparkTier = 'large' | 'medium' | 'small';
 
@@ -501,9 +502,9 @@ export class Effects {
       const y = c.y - 18 - t * 26;
       ctx.lineWidth = 3;
       ctx.strokeStyle = rgba(COLORS.plate, 0.85 * alpha);
-      ctx.strokeText(c.text, c.x, y);
+      strokeTextUpright(ctx, c.text, c.x, y);
       ctx.fillStyle = rgba(c.color, alpha);
-      ctx.fillText(c.text, c.x, y);
+      fillTextUpright(ctx, c.text, c.x, y);
     }
   }
 

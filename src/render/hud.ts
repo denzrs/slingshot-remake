@@ -47,7 +47,7 @@ export class Hud {
     this.shipPos = shipPos;
     // On a phone the field is small, but its labels must stay readable: they get a higher floor.
     this.k = Math.min(1.2, Math.max(opts.touch ? 0.95 : 0.72, view.scale));
-    this.field = { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
+    this.field = view.stage ?? { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
 
     const focus = match.focus;
     if (focus !== this.lastTurn) {
@@ -208,9 +208,9 @@ export class Hud {
         const face = Math.floor(age * 18 * (1 - progress * 0.65)) + i * 5;
         ctx.globalAlpha = alpha * 0.55;
         ctx.fillStyle = COLORS.bone;
-        ctx.font = `800 ${40 * k}px ${FONTS.display}`;
-        setSpacing(ctx, 4 * k);
-        ctx.fillText(t(`mayhem.twist.${TWIST_IDS[face % TWIST_IDS.length]}` as Key), cx, y);
+        const spinning = t(`mayhem.twist.${TWIST_IDS[face % TWIST_IDS.length]}` as Key);
+        this.fitDisplay(spinning, 40 * k, 4 * k, field.w - 32 * k);
+        ctx.fillText(spinning, cx, y);
         setSpacing(ctx, 0);
         ctx.globalAlpha = alpha;
         return;
@@ -218,8 +218,7 @@ export class Hud {
       const since = age - stop;
       const pop = since < 0.15 ? 1.3 - (since / 0.15) * 0.3 : 1;
       ctx.fillStyle = COLORS.sodium;
-      ctx.font = `800 ${44 * k * pop}px ${FONTS.display}`;
-      setSpacing(ctx, 4 * k);
+      this.fitDisplay(twistName(twist), 44 * k * pop, 4 * k, field.w - 32 * k);
       ctx.fillText(twistName(twist), cx, y);
       setSpacing(ctx, 0);
       ctx.fillStyle = COLORS.boneDim;
@@ -232,9 +231,9 @@ export class Hud {
       const y = top + head + rows * rowH + jackpotH / 2;
       ctx.globalAlpha = alpha * pulse;
       ctx.fillStyle = COLORS.danger;
-      ctx.font = `800 ${26 * k}px ${FONTS.display}`;
-      setSpacing(ctx, 5 * k);
-      ctx.fillText(t('mayhem.jackpot', { n: MAYHEM.JACKPOT_FACTOR }), cx, y - 6 * k);
+      const jackpot = t('mayhem.jackpot', { n: MAYHEM.JACKPOT_FACTOR });
+      this.fitDisplay(jackpot, 26 * k, 5 * k, field.w - 32 * k);
+      ctx.fillText(jackpot, cx, y - 6 * k);
       setSpacing(ctx, 0);
       ctx.globalAlpha = alpha;
       ctx.fillStyle = COLORS.boneDim;
@@ -637,6 +636,21 @@ export class Hud {
     ctx.textBaseline = 'top';
   }
 
+  /**
+   * Sets the display font at `size` with `spacing` between the letters — smaller, with the spacing, when `text`
+   * would be wider than `maxWidth`: a narrow screen must not cut a headline off.
+   */
+  private fitDisplay(text: string, size: number, spacing: number, maxWidth: number): void {
+    const { ctx } = this;
+    ctx.font = `800 ${size}px ${FONTS.display}`;
+    setSpacing(ctx, spacing);
+    const width = ctx.measureText(text).width;
+    if (width <= maxWidth) return;
+    const shrink = maxWidth / width;
+    ctx.font = `800 ${size * shrink}px ${FONTS.display}`;
+    setSpacing(ctx, spacing * shrink);
+  }
+
   private drawChallengeBanner(match: ChallengeMatch): void {
     const { ctx, k, field } = this;
     const s = match.summary!;
@@ -659,8 +673,7 @@ export class Hud {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = color;
-    ctx.font = `800 ${(title.length > 16 ? 58 : title.length > 10 ? 70 : 84) * k}px ${FONTS.display}`;
-    setSpacing(ctx, 6 * k);
+    this.fitDisplay(title, (title.length > 16 ? 58 : title.length > 10 ? 70 : 84) * k, 6 * k, field.w - 32 * k);
     ctx.fillText(title, cx + 3 * k, cy + 12 * k);
     setSpacing(ctx, 0);
 
@@ -675,7 +688,7 @@ export class Hud {
     if (tricks.length) parts.push(tricks.join(' · '));
     ctx.fillStyle = COLORS.boneDim;
     ctx.font = `400 ${12.5 * k}px ${FONTS.mono}`;
-    ctx.fillText(parts.join('  ·  '), cx, cy + 62 * k);
+    ctx.fillText(fitText(ctx, parts.join('  ·  '), field.w - 32 * k), cx, cy + 62 * k);
     ctx.globalAlpha = 1;
   }
 
@@ -691,8 +704,7 @@ export class Hud {
     ctx.globalAlpha = age > 0.9 ? Math.max(0, 1 - (age - 0.9) / 0.5) : 1;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `800 ${110 * k * pop}px ${FONTS.display}`;
-    setSpacing(ctx, 8 * k);
+    this.fitDisplay(n.text, 110 * k * pop, 8 * k, field.w - 24 * k);
     ctx.lineWidth = 6 * k;
     ctx.strokeStyle = rgba(COLORS.plate, 0.8);
     ctx.strokeText(n.text, field.x + field.w / 2, field.y + field.h / 2);
@@ -708,10 +720,10 @@ export class Hud {
     ctx.globalAlpha = age > 1.2 ? (1.6 - age) / 0.4 : 1;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `800 ${34 * k}px ${FONTS.display}`;
-    setSpacing(ctx, 3 * k);
+    const text = t('hud.turn', { name: p.name.toUpperCase() });
+    this.fitDisplay(text, 34 * k, 3 * k, field.w - 24 * k);
     ctx.fillStyle = p.color;
-    ctx.fillText(t('hud.turn', { name: p.name.toUpperCase() }), field.x + field.w / 2, field.y + field.h - 64 * k);
+    ctx.fillText(text, field.x + field.w / 2, field.y + field.h - 64 * k);
     setSpacing(ctx, 0);
     ctx.globalAlpha = 1;
   }
@@ -796,8 +808,7 @@ export class Hud {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = color;
-    ctx.font = `800 ${(title.length > 10 ? 70 : 84) * k}px ${FONTS.display}`;
-    setSpacing(ctx, 6 * k);
+    this.fitDisplay(title, (title.length > 10 ? 70 : 84) * k, 6 * k, field.w - 32 * k);
     ctx.fillText(title, cx + 3 * k, cy + 12 * k);
     setSpacing(ctx, 0);
 
@@ -816,10 +827,10 @@ export class Hud {
     }
     ctx.fillStyle = COLORS.bone;
     ctx.font = `700 ${17 * k}px ${FONTS.body}`;
-    ctx.fillText(line1, cx, cy + 42 * k);
+    ctx.fillText(fitText(ctx, line1, field.w - 32 * k), cx, cy + 42 * k);
     ctx.fillStyle = COLORS.boneDim;
     ctx.font = `400 ${12.5 * k}px ${FONTS.mono}`;
-    ctx.fillText(line2, cx, cy + 62 * k);
+    ctx.fillText(fitText(ctx, line2, field.w - 32 * k), cx, cy + 62 * k);
     ctx.globalAlpha = 1;
   }
 

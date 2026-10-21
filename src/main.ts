@@ -30,13 +30,13 @@ import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/chat';
 import { Menu } from './ui/menu';
 import { lobbyScreen } from './ui/lobby';
-import { TouchAim } from './ui/touch-aim';
+import { TouchControls } from './ui/touch-controls';
+import { TouchStick } from './ui/touch-stick';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
-const rotateHint = document.querySelector<HTMLButtonElement>('#rotate-hint')!;
 const touchMenu = document.querySelector<HTMLButtonElement>('#touch-menu')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
 /** How many are watching, for everybody who is not in the stands themselves. */
@@ -552,19 +552,18 @@ const endDrag = () => (dragging = false);
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
 
-const touchAim = new TouchAim({
-  aim(change) {
+/** Aiming is dragging on the field or pulling the stick; the buttons are for the last half degree. */
+const touchAimHandlers = {
+  aim(change: { angle?: number; power?: number }) {
     if (!match || !canAim()) return;
     const p = match.players[match.viewer ?? match.current];
     dispatchInput({ kind: 'aim', angle: change.angle ?? p.angle, power: change.power ?? p.power });
   },
   touched: () => sound.unlock(),
-});
-document.body.append(touchAim.el);
-
-/** Tapping the hint dismisses it for the rest of the visit. */
-let rotateDismissed = false;
-rotateHint.addEventListener('click', () => (rotateDismissed = true));
+};
+const touchControls = new TouchControls(document.querySelector<HTMLElement>('#touch-bar')!, touchAimHandlers);
+const touchStick = new TouchStick(touchAimHandlers);
+document.body.append(touchStick.el);
 
 touchMenu.addEventListener('click', () => {
   sound.unlock();
@@ -590,9 +589,6 @@ document.addEventListener('fullscreenchange', () => menu.refresh());
 function syncButtons(): void {
   const playing = screen === 'play' && !menu.isOpen && !!match;
   const m = match;
-  const portrait = playing && coarsePointer.matches && !rotateDismissed && window.innerHeight > window.innerWidth;
-  if (rotateHint.hidden === portrait) rotateHint.hidden = !portrait;
-  if (portrait && rotateHint.textContent !== t('touch.rotate')) rotateHint.textContent = t('touch.rotate');
   const showMenu = playing && coarsePointer.matches;
   if (touchMenu.hidden === showMenu) touchMenu.hidden = !showMenu;
   if (showMenu && touchMenu.ariaLabel !== t('common.menu')) touchMenu.ariaLabel = t('common.menu');
@@ -621,7 +617,9 @@ function syncButtons(): void {
 
   // The dial and the slider aim for whoever is aiming; a placement is aimed on the field itself.
   const aiming = playing && coarsePointer.matches && canAim() && !m!.placing ? m!.players[m!.viewer ?? m!.current] : null;
-  touchAim.update(aiming && { angle: aiming.angle, power: aiming.power, maxPower: m!.settings.maxPower, fixedPower: m!.settings.fixedPower });
+  const aim = aiming && { angle: aiming.angle, power: aiming.power, maxPower: m!.settings.maxPower, fixedPower: m!.settings.fixedPower };
+  touchControls.update(aim);
+  touchStick.update(aim);
 
   const canClip = playing && m instanceof HorizonMatch && m.canReplay && ClipRecorder.supported && !recorder.recording;
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;

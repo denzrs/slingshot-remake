@@ -2660,56 +2660,124 @@ kbd {
 
 /* ——— Touch ——— */
 
-#touch-fire {
+/*
+ * One set of touch buttons, in both ways of holding the phone: the angle pair on the left, the power pair and the fire
+ * button on the right (held sideways, in the corners of the screen) or in a bar across the foot (held upright).
+ */
+#touch-bar {
   position: fixed;
-  left: 50%;
+  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
   bottom: max(16px, env(safe-area-inset-bottom));
-  transform: translateX(-50%);
   z-index: 5;
-  min-width: calc(96px * var(--ui));
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  /* The gaps between the buttons are the field: a finger there aims. */
+  pointer-events: none;
+}
+
+#touch-bar > *,
+.tgroup > * {
+  pointer-events: auto;
+}
+
+.tgroup {
+  display: flex;
+  gap: 6px;
+}
+
+.tgroup[hidden] {
+  display: none;
+}
+
+.tbtn,
+#touch-fire,
+#touch-power {
   min-height: calc(56px * var(--ui));
-  padding: 0 22px;
-  border: 1px solid var(--p1);
+  border: 1px solid rgb(232 228 216 / 0.45);
   border-radius: 2px;
-  background: rgb(11 26 51 / 0.85);
+  background: rgb(11 26 51 / 0.72);
+  color: var(--bone);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.tbtn {
+  min-width: calc(56px * var(--ui));
+  font: 700 26px/1 var(--font-body);
+}
+
+.tbtn:active {
+  background: rgb(255 134 96 / 0.25);
+}
+
+.tbtn:disabled {
+  opacity: 0.35;
+}
+
+#touch-fire {
+  min-width: calc(96px * var(--ui));
+  padding: 0 22px;
+  border-color: var(--p1);
   color: var(--p1);
   font: 800 24px/1 var(--font-display);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-/* The power-up button sits above the fire button (in the middle), in the colour of the power-up it uses. */
+/* The power-up button: above the fire button, in the colour of the power-up it uses. */
 #touch-power {
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 16px + 56px * var(--ui));
-  z-index: 5;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 10px + 56px * var(--ui));
   min-height: calc(44px * var(--ui));
   padding: 0 16px;
-  border: 1px solid var(--power, var(--p1));
-  border-radius: 2px;
-  background: rgb(11 26 51 / 0.85);
+  border-color: var(--power, var(--p1));
   color: var(--power, var(--p1));
   font: 800 17px/1 var(--font-display);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-/* In portrait the field is tiny: ask for the phone to be turned (a tap dismisses it). */
-#rotate-hint {
-  position: fixed;
-  inset: auto 0 max(24px, env(safe-area-inset-bottom));
-  z-index: 6;
-  width: min(90%, 360px);
-  margin: 0 auto;
-  padding: 14px 18px;
-  border: 1px solid var(--sodium);
-  border-radius: 2px;
-  background: rgb(11 26 51 / 0.92);
-  color: var(--sodium);
-  font: 700 15px/1.3 var(--font-body);
-  text-align: center;
+/* Held sideways: the fire button on the right edge, the power pair just inside it, the angle pair on the left. */
+html:not(.upright) .tgroup--power {
+  order: 1;
+  margin-left: auto;
+}
+
+html:not(.upright) #touch-fire {
+  order: 2;
+}
+
+/* Held upright: a bar — the angle pair, the fire button across the middle, the power pair — and the power-up button beside the menu. */
+html.upright #touch-bar {
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  gap: 8px;
+}
+
+html.upright .tbtn {
+  min-width: calc(44px * var(--ui));
+}
+
+html.upright #touch-fire {
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+  font-size: 26px;
+}
+
+html.upright #touch-power {
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  bottom: auto;
+  min-height: calc(48px * var(--ui));
+  max-width: 52%;
+  font-size: 15px;
 }
 
 /* The way into the pause menu, where there is no Esc key. */
@@ -2728,7 +2796,6 @@ kbd {
   touch-action: manipulation;
 }
 
-#rotate-hint[hidden],
 #touch-menu[hidden],
 #touch-fire[hidden],
 #touch-power[hidden],
@@ -2803,87 +2870,41 @@ kbd {
   }
 }
 
-/* ——— Touch aiming: a power slider on the left, a quarter-circle angle wheel on the right ——— */
+/* ——— The aiming stick: a see-through circle over the corner of the field, above the buttons ——— */
 
-#touch-aim[hidden] {
+#touch-stick[hidden] {
   display: none;
 }
 
-#touch-aim {
-  --dial: min(calc(170px * var(--ui)), 46vh, 40vw);
-  --pad: 16px;
+#touch-stick {
+  --stick: clamp(96px, 36vh, 140px);
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 56px * var(--ui) + 12px);
+  z-index: 4;
+  width: var(--stick);
+  height: var(--stick);
+  border-radius: 50%;
+  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
-.pslider {
-  position: fixed;
-  left: max(var(--pad), env(safe-area-inset-left));
-  bottom: max(var(--pad), env(safe-area-inset-bottom));
-  z-index: 5;
-  width: calc(56px * var(--ui));
-  height: clamp(120px, 58vh, 320px);
-  border: 1px solid rgb(232 228 216 / 0.5);
-  border-radius: 2px;
-  background: rgb(11 26 51 / 0.7);
-  overflow: hidden;
-  touch-action: none;
+html.upright #touch-stick {
+  --stick: min(32vw, 132px);
+  left: max(12px, env(safe-area-inset-left));
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px * var(--ui) + 12px);
 }
 
-.pslider__fill {
-  position: absolute;
-  inset: auto 0 0;
-  background: rgb(255 134 96 / 0.55);
-  border-top: 3px solid var(--p1);
-}
-
-/* The part above a power cap can't be reached. */
-.pslider__cap {
-  position: absolute;
-  inset: 0 0 auto;
-  background: repeating-linear-gradient(135deg, rgb(11 26 51 / 0.9) 0 6px, rgb(91 125 179 / 0.25) 6px 8px);
-  pointer-events: none;
-}
-
-.pslider__value {
-  position: absolute;
-  inset: auto 0 6px;
-  text-align: center;
-  font: 800 calc(18px * var(--ui)) / 1 var(--font-display);
-  color: var(--bone);
-  pointer-events: none;
-}
-
-/* A fixed power: shown, not changeable. */
-.pslider--fixed {
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-.dial {
-  position: fixed;
-  right: max(var(--pad), env(safe-area-inset-right));
-  bottom: max(var(--pad), env(safe-area-inset-bottom));
-  z-index: 5;
-  width: var(--dial);
-  height: var(--dial);
-  border-top: 1px solid rgb(232 228 216 / 0.5);
-  border-left: 1px solid rgb(232 228 216 / 0.5);
-  border-top-left-radius: 100%;
-  background: radial-gradient(circle at 100% 100%, rgb(11 26 51 / 0.85) 0 18%, rgb(11 26 51 / 0.6) 18%);
-  touch-action: none;
-}
-
-/* The wheel is drawn on a canvas; the quarter-circle shape also limits where a finger can grab it. */
-.dial canvas {
-  position: absolute;
-  inset: 0;
+#touch-stick canvas {
+  display: block;
   width: 100%;
   height: 100%;
   pointer-events: none;
 }
 
-/* The clip button gives up the bottom-left corner to the slider. */
+/* The clip button sits in the top row, beside the menu button. */
 @media (pointer: coarse) {
   #clip-save {
     top: max(12px, env(safe-area-inset-top));
