@@ -495,7 +495,8 @@ export class HorizonMatch extends Match {
 
   /** The shot the killcam follows: the killing one, or — until a split has made it — the shot it will branch off from. */
   private focusShot(replay: Volley, clip: KillcamClip): VolleyShot {
-    return replay.shots[clip.focus] ?? replay.shots[shotSource(clip.aims.length, clip.script ?? [], clip.focus)];
+    // A stray missile is made mid-flight too; until then the camera stays on the last shot there is.
+    return replay.shots[clip.focus] ?? replay.shots[shotSource(clip.aims.length, clip.script ?? [], clip.focus)] ?? replay.shots[replay.shots.length - 1];
   }
 
   private killcamRate(k: KillcamState): number {

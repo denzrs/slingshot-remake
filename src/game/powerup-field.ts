@@ -187,6 +187,7 @@ export class PowerUpField {
     if (!this.pickups.length) return;
     const players = this.host.players();
     for (const vs of volley.shots) {
+      if (vs.stray) continue;
       const p = players[vs.owner];
       // A CPU has no use for a preview, so it leaves that lying.
       const hit = touchedPickups(this.pickups, vs.shot.x, vs.shot.y).find((i) => !(p.cpu && CPU_IGNORES[this.pickups[i].kind]));
@@ -483,7 +484,7 @@ export class PowerUpField {
     for (const who of id >= 0 ? [id] : players.filter((q) => !q.cpu).map((q) => q.id)) {
       const p = players[who];
       if (!p || !p.armed || p.powerUp !== 'splitter') continue;
-      const index = volley.shots.findIndex((vs) => vs.owner === who && !vs.shot.end);
+      const index = volley.shots.findIndex((vs) => vs.owner === who && !vs.stray && !vs.shot.end);
       if (index < 0 || !volley.split(index, SPLIT_TURNS, ++this.ids)) continue;
       p.powerUp = null;
       p.armed = false;
@@ -503,7 +504,7 @@ export class PowerUpField {
     for (let index = 0; index < shots; index++) {
       const vs = volley.shots[index];
       const p = players[vs.owner];
-      if (!p.cpu || !p.armed || p.powerUp !== 'splitter' || vs.shot.end || vs.shot.time < POWER_UP.CPU_SPLIT_MIN_TIME) continue;
+      if (vs.stray || !p.cpu || !p.armed || p.powerUp !== 'splitter' || vs.shot.end || vs.shot.time < POWER_UP.CPU_SPLIT_MIN_TIME) continue;
       const friends = host.friendsOf(p.id);
       const near = players.some((e) => e.alive && e.id !== p.id && !friends.includes(e.id) && Math.hypot(world.ships[e.id].x - vs.shot.x, world.ships[e.id].y - vs.shot.y) < POWER_UP.CPU_SPLIT_RANGE);
       if (near && volley.split(index, SPLIT_TURNS, ++this.ids)) {

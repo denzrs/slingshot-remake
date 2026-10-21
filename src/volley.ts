@@ -13,6 +13,8 @@ export interface VolleyAim {
   pierce?: boolean;
   /** Heavy: the shot is hard to bend and flies through clouds (the heavy power-up). */
   heavy?: boolean;
+  /** A defense's missile that lost its shot and flies on as a shot of its own: the index of the shot it left. Made by the volley, never aimed. */
+  stray?: number;
 }
 
 export interface VolleyShot {
@@ -24,6 +26,8 @@ export interface VolleyShot {
   pierce?: boolean;
   /** True for a heavy shot. */
   heavy?: boolean;
+  /** True for a defense's missile that lost its shot: it counts for the defense's owner, not as one of their shots. */
+  stray?: boolean;
   /** Flat [x0, y0, x1, y1, …] polyline in field units. */
   trail: number[];
 }
@@ -65,9 +69,7 @@ export type VolleyEvent =
   /** A planetary defense fired a missile at the shot, which is at (x, y). */
   | { type: 'intercept'; index: number; defense: number; x: number; y: number }
   /** A defense's missile lost its shot at (x, y) and flies on. */
-  | { type: 'interceptMiss'; index: number; defense: number; x: number; y: number }
-  /** A defense's missile, having lost its shot, hit a ship on its way: the ship is out. */
-  | { type: 'collateral'; index: number; defense: number; ship: number; x: number; y: number };
+  | { type: 'interceptMiss'; index: number; defense: number; x: number; y: number };
 
 const TRAIL_EVERY = 2;
 let nextVolleyId = 1;
@@ -89,8 +91,8 @@ export class Volley {
   constructor(
     readonly world: World,
     aims: VolleyAim[],
-    rules: ShotRules,
-    trackStyle: boolean,
+    private readonly rules: ShotRules,
+    private readonly trackStyle: boolean,
     script: readonly VolleyScript[] = [],
   ) {
     // A replay carries the script it is to follow; a live flight starts empty and writes its own.
@@ -99,7 +101,7 @@ export class Volley {
     this.aims = aims.map((aim) => ({ ...aim }));
     this.shots = aims.map((a) => {
       const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare, a.pierce, a.heavy);
-      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan, pierce: a.pierce, heavy: a.heavy };
+      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan, pierce: a.pierce, heavy: a.heavy, stray: a.stray !== undefined };
     });
   }
 
@@ -162,6 +164,25 @@ export class Volley {
     this.world.ships[ship].shield = on;
   }
 
+  /**
+   * A defense's missile has lost shot `index`: it flies on as a shot of its own, from where it was and the way
+   * it was going, for the defense's owner (who and whose side it passes through, as the defense does).
+   * Live flight and replay both make it at the same step, so it needs no script entry.
+   */
+  private release(index: number, lost: { defense: number; x: number; y: number; vx: number; vy: number; trail: number[] }): void {
+    const d = this.world.defenses[lost.defense];
+    if (!d) return;
+    const aim: VolleyAim = { player: d.owner, angle: 0, power: 0, spare: [...d.protects], stray: index };
+    const shot = new Shot(this.world, d.owner, aim.angle, aim.power, this.rules, this.trackStyle, aim.spare);
+    shot.x = lost.x;
+    shot.y = lost.y;
+    shot.vx = lost.vx;
+    shot.vy = lost.vy;
+    shot.seed = Math.imul(this.shots[index].shot.seed ^ (lost.defense + 1), 16777619) >>> 0;
+    this.aims.push(aim);
+    this.shots.push({ shot, owner: d.owner, trail: [...lost.trail, lost.x, lost.y], stray: true });
+  }
+
   /** A replay does what was done to the original flight, right before the step it was done after. */
   private runScript(): void {
     if (!this.replaying) return;
@@ -192,11 +213,8 @@ export class Volley {
       shot.launches.length = 0;
       for (const miss of shot.misses) events.push({ type: 'interceptMiss', index: i, defense: miss.defense, x: miss.x, y: miss.y });
       shot.misses.length = 0;
-      for (const c of shot.collaterals) {
-        this.world.ships[c.ship].alive = false;
-        events.push({ type: 'collateral', index: i, defense: c.defense, ship: c.ship, x: c.x, y: c.y });
-      }
-      shot.collaterals.length = 0;
+      for (const lost of shot.strays) this.release(i, lost);
+      shot.strays.length = 0;
       if (end || this.steps % TRAIL_EVERY === 0) vs.trail.push(shot.x, shot.y);
       // A shield bounces the shot off: it is spent doing so, here where a live flight and a replay agree.
       for (const r of shot.reflects) {
@@ -227,6 +245,10 @@ export class Volley {
         if (b.end) continue;
         const fan = this.aims[i].fan;
         if (fan !== undefined && fan === this.aims[j].fan) continue;
+        // A missile that lost a shot starts next to it: they do not cancel each other out, nor its brothers.
+        const { stray: strayI } = this.aims[i];
+        const { stray: strayJ } = this.aims[j];
+        if (strayI === j || strayJ === i || (strayI !== undefined && strayI === strayJ)) continue;
         const dx = a.x - b.x;
         const dy = a.y - b.y;
         if (dx * dx + dy * dy >= r2) continue;

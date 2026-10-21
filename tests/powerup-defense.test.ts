@@ -317,40 +317,60 @@ describe('planetary defense power-up', () => {
   });
 
   describe('collateral damage', () => {
-    /** A missile that has lost its shot, flying left from x = 160 along the line of the ship at x = 100. */
-    function stray(world: World, strayRoll: number): Shot {
-      const shot = new Shot(world, 1, 90, 60, rules);
-      shot.missiles.push({ defense: 0, x: 160, y: 400, heading: Math.PI, age: 0.5, roll: 1, stray: strayRoll, chasing: false, trail: [160, 400] });
-      return shot;
-    }
-    const fly = (shot: Shot): void => {
-      for (let i = 0; i < 60 && !shot.collaterals.length; i++) shot.step();
+    const run = (volley: Volley, steps = 4000) => {
+      const events = [];
+      for (let i = 0; i < steps && !volley.done; i++) events.push(...volley.step());
+      return events;
     };
 
-    it('lets a missile that lost its shot hit an unprotected ship, when its luck says so', () => {
-      const shot = stray(guarded([0]), 0.01);
-      fly(shot);
-      expect(shot.collaterals).toHaveLength(0);
-      const open = stray(guarded([1]), 0.01);
-      fly(open);
-      expect(open.collaterals).toMatchObject([{ defense: 0, ship: 0 }]);
-      expect(open.missiles).toHaveLength(0);
+    it('sends a missile that lost its shot on as a shot of its own, for the defense owner', () => {
+      // Power 60 across the dome cuts too fast for the missile, so some seed loses it; look for a flight that does.
+      let found = null;
+      for (let power = 30; power <= 100 && !found; power += 2) {
+        const world = overhead([1], 30);
+        const volley = new Volley(world, [{ player: 0, angle: 0, power }], rules, false);
+        run(volley);
+        if (volley.shots.length > 1) found = volley;
+      }
+      expect(found).not.toBeNull();
+      const stray = found!.shots[1];
+      expect(stray.stray).toBe(true);
+      expect(stray.owner).toBe(1);
+      expect(stray.shot.end).not.toBeNull();
+      expect(stray.trail.length).toBeGreaterThan(4);
     });
 
-    it('is rare: a missile with ordinary luck flies past', () => {
-      const shot = stray(guarded([1]), 0.99);
-      fly(shot);
-      expect(shot.collaterals).toHaveLength(0);
+    it('bends in gravity and runs out its time like any shot', () => {
+      const world = overhead([1], 30);
+      const volley = new Volley(world, [{ player: 0, angle: 0, power: 60 }], { bounce: false, timeLimit: 3 }, false);
+      const shot = volley.shots[0].shot;
+      shot.missiles.push({ defense: 0, x: 400, y: 100, heading: 0, age: 5, roll: 1, chasing: true, trail: [400, 100] });
+      for (let i = 0; i < 10 && volley.shots.length < 2; i++) volley.step();
+      expect(volley.shots).toHaveLength(2);
+      const stray = volley.shots[1].shot;
+      const speed0 = Math.hypot(stray.vx, stray.vy);
+      expect(speed0).toBeCloseTo(1000, 0);
+      for (let i = 0; i < 40; i++) stray.step();
+      // Gravity has turned it: it no longer flies exactly along its launch heading.
+      expect(Math.abs(stray.vy)).toBeGreaterThan(0.01);
+      volley.step();
+      for (let i = 0; i < 2000 && !stray.end; i++) stray.step();
+      expect(stray.end).not.toBeNull();
     });
 
-    it('takes the ship out in a volley and credits the defense owner', () => {
-      const world = guarded([1]);
-      const volley = new Volley(world, [{ player: 1, angle: 90, power: 60 }], rules, false);
-      volley.shots[0].shot.missiles.push({ defense: 0, x: 160, y: 400, heading: Math.PI, age: 0.5, roll: 1, stray: 0.01, chasing: false, trail: [160, 400] });
-      const events = [];
-      for (let i = 0; i < 60; i++) events.push(...volley.step());
-      expect(events.some((e) => e.type === 'collateral')).toBe(true);
-      expect(volley.world.ships[0].alive).toBe(false);
+    it('hits an unprotected ship it meets, and passes through its owner\'s side', () => {
+      for (const [protects, dies] of [[[1], true], [[0, 1], false]] as const) {
+        const world = guarded([...protects]);
+        const volley = new Volley(world, [{ player: 0, angle: 90, power: 20 }], rules, false);
+        // A missile on its way left, straight at ship 0, which it lost its shot near.
+        volley.shots[0].shot.missiles.push({ defense: 0, x: 200, y: 400, heading: Math.PI, age: 5, roll: 1, chasing: true, trail: [200, 400] });
+        const stepsLimit = 400;
+        for (let i = 0; i < stepsLimit && volley.shots.length < 2; i++) volley.step();
+        expect(volley.shots[1]?.shot.shooter).toBe(1);
+        const stray = volley.shots[1].shot;
+        for (let i = 0; i < 2000 && !stray.end; i++) volley.step();
+        expect(stray.end?.kind === 'ship' && stray.end.ship === 0).toBe(dies);
+      }
     });
   });
 });

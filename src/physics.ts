@@ -107,9 +107,7 @@ export interface Missile {
   age: number;
   /** The throw of the dice for this missile, 0 to 1, made when it was fired: it hits if this is below the chance where it catches the shot. */
   roll: number;
-  /** A second throw, made with the first: a missile that lost its shot and meets a ship hits it if this is below the collateral chance. */
-  stray: number;
-  /** Still after its shot; false once it has hit, or lost it and flies on. */
+  /** Still after its shot. A missile that has lost it is taken out of the list and flies on as a shot of its own (`Shot.strays`). */
   chasing: boolean;
   /** Where it has been, [x0, y0, x1, y1, …], newest last: its exhaust. */
   trail: number[];
@@ -260,8 +258,11 @@ export class Shot {
   readonly launches: { defense: number }[] = [];
   /** The missiles that lost the shot since the caller last cleared this. */
   readonly misses: { defense: number; x: number; y: number }[] = [];
-  /** The ships a stray missile hit since the caller last cleared this: the volley takes them out. */
-  readonly collaterals: { defense: number; ship: number; x: number; y: number }[] = [];
+  /**
+   * The missiles that lost this shot since the caller last cleared this, each with the way it was flying: the
+   * volley sends every one on as a shot of its own, which gravity bends and which hits what it meets.
+   */
+  readonly strays: { defense: number; x: number; y: number; vx: number; vy: number; trail: number[] }[] = [];
   /** The mouth (wormhole index * 2 + end) this shot last left by: it is ignored until the shot is clear of it, so it is not carried back at once. */
   private portal = -1;
   /** Ships already passed through, so one hull is only ever reported once. */
@@ -431,7 +432,7 @@ export class Shot {
       if (this.fired[i] || d.protects.includes(this.shooter)) continue;
       if ((d.x - this.x) ** 2 + (d.y - this.y) ** 2 >= d.radius * d.radius) continue;
       this.fired[i] = true;
-      this.missiles.push({ defense: i, x: d.x, y: d.y, heading: Math.atan2(this.y - d.y, this.x - d.x), age: 0, roll: dice(this.seed, i), stray: dice(this.seed, i + 4096), chasing: true, trail: [d.x, d.y] });
+      this.missiles.push({ defense: i, x: d.x, y: d.y, heading: Math.atan2(this.y - d.y, this.x - d.x), age: 0, roll: dice(this.seed, i), chasing: true, trail: [d.x, d.y] });
       this.launches.push({ defense: i });
     }
     for (let k = this.missiles.length - 1; k >= 0; k--) {
@@ -458,30 +459,30 @@ export class Shot {
             this.missiles.splice(k, 1);
             return this.finish({ kind: 'shotdown', defense: missile.defense });
           }
-          missile.chasing = false;
-          this.misses.push({ defense: missile.defense, x: missile.x, y: missile.y });
+          this.lose(missile, k);
         } else if (missile.age > DEFENSE.MISSILE_LIFE || Math.hypot(missile.x - d.x, missile.y - d.y) > d.radius * 1.5) {
-          missile.chasing = false;
-          this.misses.push({ defense: missile.defense, x: missile.x, y: missile.y });
+          this.lose(missile, k);
         }
       }
-      // One that has lost its shot may still find a ship on its way: any the defense's side does not protect,
-      // shield or not. A ship shot down is out for good, and the missile with it.
-      if (!missile.chasing && missile.stray < DEFENSE.COLLATERAL_CHANCE) {
-        const hit = ships.findIndex((s, n) => s.alive && !d.protects.includes(n) && Math.hypot(s.x - missile.x, s.y - missile.y) < PHYSICS.SHIP_RADIUS);
-        if (hit >= 0) {
-          this.collaterals.push({ defense: missile.defense, ship: hit, x: missile.x, y: missile.y });
-          this.missiles.splice(k, 1);
-          continue;
-        }
-      }
-      // One that has lost its shot flies on a little longer, then is gone.
-      if (!missile.chasing && missile.age > DEFENSE.MISSILE_LIFE + 0.4) this.missiles.splice(k, 1);
     }
     const m = OUT_MARGIN;
     if (this.x < -m || this.x > width + m || this.y < -m || this.y > height + m) return this.finish({ kind: 'lost' });
     if (this.time >= this.rules.timeLimit) return this.finish({ kind: 'timeout' });
     return null;
+  }
+
+  /** A missile has lost this shot: it is reported, and sent on as a shot of its own along the way it was flying. */
+  private lose(missile: Missile, index: number): void {
+    this.misses.push({ defense: missile.defense, x: missile.x, y: missile.y });
+    this.strays.push({
+      defense: missile.defense,
+      x: missile.x,
+      y: missile.y,
+      vx: Math.cos(missile.heading) * DEFENSE.MISSILE_SPEED,
+      vy: Math.sin(missile.heading) * DEFENSE.MISSILE_SPEED,
+      trail: missile.trail,
+    });
+    this.missiles.splice(index, 1);
   }
 
   /** Wormholes: a shot that reaches a mouth comes out of the other one with its velocity unchanged. Gravity never touches it. */
