@@ -29,7 +29,7 @@ describe('mayhem deck', () => {
         const laid = applyTwists(rules({ mayhem }), round);
         // Fixed power and a cap never apply together; a power-up round carries one theme.
         expect(laid.fixedPower && laid.maxPower < 100).toBe(false);
-        expect(round.twists.filter((t) => ['pickupRain', 'heavyweights', 'gravityParty', 'fortress', 'teleportChaos'].includes(t.id)).length).toBeLessThanOrEqual(1);
+        expect(round.twists.filter((t) => ['pickupRain', 'plasmaStorm', 'gravityParty', 'fortress', 'teleportChaos'].includes(t.id)).length).toBeLessThanOrEqual(1);
       }
     }
   });
@@ -94,7 +94,7 @@ describe('mayhem deck', () => {
   });
 
   it('skips a twist the room already plays by', () => {
-    const base = rules({ mayhem: 3, bounce: true, maxPlanets: 8, powerUps: true, powerUpKinds: ['heavy', 'piercing'], powerUpAmount: 3 });
+    const base = rules({ mayhem: 3, bounce: true, maxPlanets: 8, powerUps: true, powerUpKinds: ['plasma', 'piercing'], powerUpAmount: 3 });
     for (let seed = 1; seed <= 40; seed++) {
       for (const round of play(seed, base, 'classic', 10)) {
         for (const { id, n } of round.twists) {
@@ -120,8 +120,8 @@ describe('applying twists', () => {
   });
 
   it('builds a themed power-up round from the kinds of its theme', () => {
-    const laid = applyTwists(rules(), { twists: [{ id: 'heavyweights' }] });
-    expect(laid).toMatchObject({ powerUps: true, powerUpKinds: ['heavy', 'piercing'], powerUpAmount: 3 });
+    const laid = applyTwists(rules(), { twists: [{ id: 'plasmaStorm' }] });
+    expect(laid).toMatchObject({ powerUps: true, powerUpKinds: ['plasma', 'piercing'], powerUpAmount: 3 });
   });
 
   it('lets a cap replace fixed power', () => {

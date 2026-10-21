@@ -121,7 +121,7 @@ export class SnapshotDecoder {
         this.fields[key] = value;
       }
     }
-    return 'volley' in this.fields && 'phase' in this.fields ? { ...this.fields } : null;
+    return 'world' in this.fields && 'volley' in this.fields && 'phase' in this.fields ? { ...this.fields } : null;
   }
 
   private rebuildVolley(key: string, wire: WireVolley | null): VolleySnapshot | null {

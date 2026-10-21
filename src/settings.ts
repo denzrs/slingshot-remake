@@ -47,9 +47,13 @@ export interface Settings {
   fadingTrails: number;
   contours: boolean;
   particles: boolean;
+  /** The title screen and menus show a CPU match playing behind them; off leaves the plate empty. */
+  menuBackground: boolean;
   sound: boolean;
   /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
   betting: boolean;
+  /** Online: only the people who play may write in the room's chat; spectators read along (a rule of the room). */
+  chatPlayersOnly: boolean;
   language: Lang;
   /** 0 = free for all, otherwise the number of teams (2 or 3). */
   teamMode: number;
@@ -78,8 +82,10 @@ export const DEFAULT_SETTINGS: Settings = {
   hiddenAim: false,
   fadingTrails: 0,
   betting: false,
+  chatPlayersOnly: false,
   contours: true,
   particles: true,
+  menuBackground: true,
   sound: true,
   language: 'de',
   teamMode: 0,
@@ -88,21 +94,18 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const KEY = 'slingshot.settings.v1';
 
-/** Settings from before multiplayer stored a single opponent instead of seats. */
-interface LegacySettings {
-  opponent?: 'human' | 'cpu';
-  cpuLevel?: CpuLevel;
-}
-
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<Settings> & LegacySettings;
+      const parsed = JSON.parse(raw) as Partial<Settings>;
       const s: Settings = { ...DEFAULT_SETTINGS, ...parsed, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams] };
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
+      for (const key of ['contours', 'particles', 'menuBackground', 'sound'] as const) {
+        if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
+      }
       // Power-up choices: only known kinds, in their usual order, and never none at all.
       const kinds = POWER_UP_KINDS.filter((kind) => Array.isArray(parsed.powerUpKinds) && parsed.powerUpKinds.includes(kind));
       s.powerUpKinds = kinds.length ? kinds : [...POWER_UP_KINDS];
@@ -115,10 +118,7 @@ export function loadSettings(): Settings {
       // It used to be a plain on/off switch, "on" meaning two shots.
       if ((s.neighborGrace as unknown) === true) s.neighborGrace = 2;
       if (!GRACE.OPTIONS.includes(s.neighborGrace)) s.neighborGrace = 0;
-      else if (parsed.opponent === 'cpu') s.seats[1] = parsed.cpuLevel ?? 'medium';
       s.language = isLang(parsed.language) ? parsed.language : detectLang();
-      delete (s as Settings & LegacySettings).opponent;
-      delete (s as Settings & LegacySettings).cpuLevel;
       if (activeSeats(s).length < 2) s.seats = [...DEFAULT_SETTINGS.seats];
       return s;
     }

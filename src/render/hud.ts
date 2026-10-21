@@ -156,7 +156,7 @@ export class Hud {
     const { ctx, k, field } = this;
     const left = match.revealEnd - match.clock;
     const age = MAYHEM.REVEAL_TIME - left;
-    const alpha = Math.max(0, Math.min(1, age / 0.2, left / 0.35));
+    const alpha = Math.max(0, Math.min(1, age / 0.2, match.held ? 1 : left / 0.35));
     if (alpha <= 0) return;
     const cx = field.x + field.w / 2;
     const cy = field.y + field.h / 2;
@@ -168,7 +168,7 @@ export class Hud {
     const h = head + rows * rowH + jackpotH + foot;
     const top = cy - h / 2;
     // The reels stop one after another, the last one at the thud.
-    const landed = 1.2;
+    const landed = MAYHEM.LANDED;
     const stopAt = (i: number) => landed - 0.25 * (rows - 1 - i);
 
     ctx.globalAlpha = alpha;
@@ -243,10 +243,11 @@ export class Hud {
     }
 
     if (age > landed) {
-      ctx.fillStyle = rgba(COLORS.boneDim, 0.8);
+      ctx.globalAlpha = alpha * (0.7 + 0.3 * Math.sin(age * 4));
+      ctx.fillStyle = COLORS.boneDim;
       ctx.font = `700 ${11 * k}px ${FONTS.body}`;
       setSpacing(ctx, 2 * k);
-      ctx.fillText(t('mayhem.skip').toUpperCase(), cx, top + h - foot / 2);
+      ctx.fillText(t(match.canAdvance ? 'mayhem.skip' : 'hud.waitingHost').toUpperCase(), cx, top + h - foot / 2);
       setSpacing(ctx, 0);
     }
     ctx.globalAlpha = 1;
@@ -346,8 +347,8 @@ export class Hud {
       ctx.strokeStyle = color;
       ctx.lineWidth = 1 * k;
       ctx.strokeRect(capX, capY, capW, capH);
-      // An armed preview, piercing or heavy round has its key filled in: it is on.
-      const on = p.armed && (held === 'preview' || held === 'piercing' || held === 'heavy');
+      // An armed preview, piercing or plasma round has its key filled in: it is on.
+      const on = p.armed && (held === 'preview' || held === 'piercing' || held === 'plasma');
       if (on) {
         ctx.fillStyle = color;
         ctx.fillRect(capX, capY, capW, capH);
@@ -805,7 +806,7 @@ export class Hud {
     let line2 = '';
     if (duel && kill && !kill.self && kill.killer !== null) {
       line1 = `${match.players[kill.killer].name}  +${kill.points}`;
-      line2 = t('hud.shotPower', { n: kill.shots, power: fmt(kill.power, 2) });
+      line2 = kill.collateral ? t('hud.collateral') : t('hud.shotPower', { n: kill.shots, power: fmt(kill.power, 2) });
     } else if (s.team !== null) {
       line1 = `${t('hud.teamWinsRound', { team: teamName(s.team) })}${s.bonus ? `  ·  ${t('hud.perMember', { n: s.bonus })}` : ''}`;
       if (kill) line2 = killSegments(match, kill).map(([text]) => text).join('');

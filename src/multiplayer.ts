@@ -9,6 +9,18 @@ import type { Avatar } from './avatars';
 import { SnapshotDecoder, SnapshotEncoder } from './netsync';
 import type { Seat, Settings } from './settings';
 
+/** One line of the room's chat. A `system` line is something the relay said back to this client ("you are writing too fast"). */
+export interface ChatLine {
+  id: number;
+  name: string;
+  spectator: boolean;
+  text: string;
+  system?: boolean;
+}
+
+/** The most lines the chat keeps. */
+const CHAT_KEEP = 100;
+
 export type NetMatch = ClassicMatch | HorizonMatch;
 
 type GameStart = Extract<ServerMessage, { type: 'game_start' }>;
@@ -67,10 +79,21 @@ export class MultiplayerSession {
   connecting = false;
   rooms: LobbyRoom[] = [];
   room: RoomInfo | null = null;
-  you = { playerId: 0, host: false };
+  you: { playerId: number; host: boolean; spectator?: boolean; spectatorId?: number } = { playerId: 0, host: false };
   /** The last thing worth telling the player (server errors, "host left", …). */
   notice: string | null = null;
+  /** The notice, when it is the relay refusing the name: it belongs under the name field, not in the general message. */
+  private nameError: string | null = null;
   match: NetMatch | null = null;
+  /** What has been said in the room you are in. */
+  chat: ChatLine[] = [];
+  /** Lines ever added to the chat: unlike `chat.length` it keeps counting once the cap is reached. */
+  chatTotal = 0;
+  private chatRoom: string | null = null;
+
+  get nameNotice(): string | null {
+    return this.notice !== null && this.notice === this.nameError ? this.notice : null;
+  }
 
   private readonly listeners = new Set<() => void>();
   private readonly pendingEvents: GameEvent[] = [];
@@ -89,8 +112,18 @@ export class MultiplayerSession {
     this.client.onMessage((message) => this.receive(message));
   }
 
+  /** Whether you may write in this room's chat: everybody may, unless the host limited it to the players. */
+  get canChat(): boolean {
+    return !!this.room && !(this.isSpectator && this.room.rules.chatPlayersOnly);
+  }
+
   get isHost(): boolean {
     return this.you.host;
+  }
+
+  /** In the stands: watching the room without a seat. */
+  get isSpectator(): boolean {
+    return !!this.you.spectator;
   }
 
   subscribe(listener: () => void): () => void {
@@ -117,6 +150,7 @@ export class MultiplayerSession {
 
   createRoom(options: CreateRoomOptions): void {
     const { look = {}, ...room } = options;
+    this.nameError = null;
     this.send({ type: 'create_room', ...room, ...look, password: options.password || undefined, roomName: options.roomName?.trim() || undefined });
   }
 
@@ -125,13 +159,20 @@ export class MultiplayerSession {
     this.send({ type: 'set_room', look });
   }
 
-  joinRoom(roomId: string, name: string, password?: string, avatar?: Avatar): void {
-    this.send({ type: 'join_room', roomId, name, password: password || undefined, avatar });
+  joinRoom(roomId: string, name: string, password?: string, avatar?: Avatar, spectate = false): void {
+    this.nameError = null;
+    this.send({ type: 'join_room', roomId, name, password: password || undefined, avatar, ...(spectate ? { spectate } : {}) });
   }
 
   /** Your symbol in the game, while the room waits. Nobody has to confirm again. */
   setAvatar(avatar: Avatar): void {
     this.send({ type: 'set_avatar', avatar });
+  }
+
+  /** Your name in the room, while it waits. The relay answers a refused one with an error notice. */
+  setName(name: string): void {
+    this.nameError = null;
+    this.send({ type: 'set_name', name });
   }
 
   setReady(ready: boolean): void {
@@ -172,10 +213,17 @@ export class MultiplayerSession {
     this.send({ type: 'start_game' });
   }
 
+  /** Says something to the room. */
+  sendChat(text: string): void {
+    const trimmed = text.trim();
+    if (trimmed && this.canChat) this.send({ type: 'chat', text: trimmed });
+  }
+
   /** Leave the room (and any running game) but stay connected to the lobby. */
   leaveRoom(): void {
     if (this.room) this.send({ type: 'leave_room' });
     this.room = null;
+    this.clearChat();
     this.rooms = [];
     this.notice = null;
     this.dropMatch();
@@ -186,6 +234,7 @@ export class MultiplayerSession {
     this.client.close();
     this.connected = false;
     this.room = null;
+    this.clearChat();
     this.rooms = [];
     this.notice = null;
     this.dropMatch();
@@ -198,6 +247,12 @@ export class MultiplayerSession {
   input(input: ClientInput): void {
     const match = this.match;
     if (!match) return;
+    // The stands may bet and nothing else — the same tipping game the shot-down play. Remember the tip on this
+    // screen at once; the host judges it from its own copy.
+    if (this.isSpectator) {
+      if (input.kind === 'bet' && match.placeBet(this.you.spectatorId ?? -1, input.pick, !!input.round, input.stake ?? 0, true)) this.send({ type: 'input', input });
+      return;
+    }
     const id = this.you.playerId;
     if (this.isHost) {
       this.applyInput(match, id, input);
@@ -221,7 +276,7 @@ export class MultiplayerSession {
 
   /** Next round or rematch: the host's call alone, everybody else follows its state. The killcam is put to a vote. */
   advance(): void {
-    if (!this.match) return;
+    if (!this.match || this.isSpectator) return;
     if (this.match.phase === 'killcam') this.input({ kind: 'skip' });
     else if (this.isHost) this.match.advance();
   }
@@ -259,32 +314,57 @@ export class MultiplayerSession {
         this.rooms = message.rooms;
         break;
       case 'room_update':
+        if (message.room.id !== this.chatRoom) {
+          // A different room: its talk starts from nothing.
+          this.chat = [];
+          this.chatTotal = 0;
+          this.chatRoom = message.room.id;
+        }
         this.room = message.room;
         this.you = message.you;
         this.notice = message.notice ?? null;
         // The room went back to waiting under a running game (somebody left): the game is over.
         if (this.match && message.room.status === 'waiting') this.endMatch();
+        // The host keeps the stands' accounts: people come and go, the points stay.
+        else if (this.match && this.isHost) this.match.crowdChanged(message.room.spectators ?? []);
         break;
       case 'game_start':
         this.startMatch(message);
         break;
       case 'input':
-        if (this.match && this.isHost) this.applyInput(this.match, message.from, message.input);
+        if (!this.match || !this.isHost) break;
+        if (message.spectator) {
+          if (message.input.kind === 'bet') this.match.placeBet(message.from, message.input.pick, !!message.input.round, message.input.stake ?? 0, true);
+        } else this.applyInput(this.match, message.from, message.input);
+        break;
+      case 'keyframe':
+        // Somebody came in mid-game and has nothing to apply our patches to: start over with a full one.
+        if (this.isHost) this.encoder = new SnapshotEncoder();
         break;
       case 'state':
         this.applyState(message);
         break;
+      case 'chat':
+        this.chat = [...this.chat, { id: message.id, name: message.name, spectator: message.spectator, text: message.text }].slice(-CHAT_KEEP);
+        this.chatTotal++;
+        break;
       case 'room_closed':
         this.room = null;
+        this.clearChat();
         this.notice = message.message;
         if (this.match) this.endMatch();
         break;
       case 'error':
         this.notice = message.message;
+        // In a game nobody reads the notice, so what the relay says ("you are writing too fast") is said in the chat.
+        if (this.match) this.chat = [...this.chat, { id: -1, name: '', spectator: false, text: message.message, system: true }].slice(-CHAT_KEEP);
+        if (this.match) this.chatTotal++;
+        this.nameError = message.field === 'name' ? message.message : null;
         break;
       case 'closed':
         this.connected = false;
         this.room = null;
+        this.clearChat();
         this.rooms = [];
         this.notice = message.message;
         if (this.match) this.endMatch();
@@ -316,8 +396,11 @@ export class MultiplayerSession {
       oracle: true,
     });
     if (!(match instanceof ClassicMatch || match instanceof HorizonMatch)) return;
-    match.viewer = this.you.playerId;
+    // In the stands there is no ship to be: the match is seen from nowhere in particular.
+    match.viewer = this.isSpectator ? null : this.you.playerId;
+    match.spectatorId = this.isSpectator ? (this.you.spectatorId ?? null) : null;
     match.canAdvance = this.isHost;
+    if (this.isHost) match.crowd.sync(this.room?.spectators ?? []);
 
     this.resetSync();
     this.match?.dispose();
@@ -329,7 +412,10 @@ export class MultiplayerSession {
   private applyInput(match: NetMatch, id: number, input: ClientInput): void {
     if (input.kind === 'adjust') match.adjustPlayer(id, input.dAngle, input.dPower);
     else if (input.kind === 'aim') match.setPlayerAim(id, input.angle, input.power);
-    else if (input.kind === 'fire') match.commitPlayer(id);
+    // The announcement of a Mayhem round is the host's to dismiss; a guest's fire key does nothing until the ships are free.
+    else if (input.kind === 'fire') {
+      if (!match.revealing || id === this.you.playerId) match.commitPlayer(id);
+    }
     else if (input.kind === 'power') match.usePowerUp(id);
     else if (input.kind === 'cancel') match.cancelPlacement(id);
     else if (input.kind === 'bet') match.placeBet(id, input.pick, !!input.round, input.stake ?? 0);
@@ -370,6 +456,12 @@ export class MultiplayerSession {
 
   // ————————————————————————————— Plumbing —————————————————————————————
 
+  private clearChat(): void {
+    this.chat = [];
+    this.chatTotal = 0;
+    this.chatRoom = null;
+  }
+
   private endMatch(): void {
     this.dropMatch();
     this.hooks.matchEnded();
@@ -407,7 +499,7 @@ export class MultiplayerSession {
 function isEventForMatch(event: import('./game').GameEvent, playerCount: number): boolean {
   const inRange = (id: number) => Number.isSafeInteger(id) && id >= 0 && id < playerCount;
   switch (event.type) {
-    case 'turn': case 'lock': case 'fire': case 'impact': case 'fizzle': case 'style': case 'pickup': case 'teleport': case 'blackhole': case 'planetKiller': case 'nebula': case 'wormhole': case 'defense': case 'polarity': case 'defenseFire': case 'defenseMiss': case 'shotdown': case 'multiKill': case 'split':
+    case 'turn': case 'lock': case 'fire': case 'impact': case 'fizzle': case 'style': case 'pickup': case 'teleport': case 'blackhole': case 'planetKiller': case 'nebula': case 'wormhole': case 'defense': case 'antigravity': case 'defenseFire': case 'defenseMiss': case 'shotdown': case 'multiKill': case 'split':
       return inRange(event.player);
     case 'explode': case 'shield':
       return inRange(event.ship);

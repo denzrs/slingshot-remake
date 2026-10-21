@@ -92,7 +92,14 @@ impl RoomManager {
                 .iter()
                 .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "ready": p.confirmed(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str) }))
                 .collect::<Vec<_>>(),
+            "spectators": room
+                .spectators
+                .iter()
+                .map(|s| json!({ "id": s.id, "name": s.name }))
+                .collect::<Vec<_>>(),
         });
+        let in_the_stands: Vec<(u64, usize)> =
+            room.spectators.iter().map(|s| (s.conn, s.id)).collect();
         let recipients: Vec<(u64, usize)> = room
             .players
             .iter()
@@ -103,6 +110,17 @@ impl RoomManager {
                 "type": "room_update",
                 "room": room_info,
                 "you": { "playerId": player_id, "host": player_id == 0 },
+            });
+            if let Some(notice) = notice {
+                message["notice"] = json!(notice);
+            }
+            self.send_value(conn, &message);
+        }
+        for (conn, spectator_id) in in_the_stands {
+            let mut message = json!({
+                "type": "room_update",
+                "room": room_info,
+                "you": { "playerId": -1, "host": false, "spectator": true, "spectatorId": spectator_id },
             });
             if let Some(notice) = notice {
                 message["notice"] = json!(notice);

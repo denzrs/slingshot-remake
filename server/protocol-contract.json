@@ -15,8 +15,9 @@
     "fadingTrails": 0,
     "mayhem": 0,
     "betting": false,
+    "chatPlayersOnly": false,
     "powerUps": false,
-    "powerUpKinds": ["preview", "teleport", "splitter", "polarity", "shield", "blackhole", "planetkiller", "nebula", "piercing", "wormhole", "defense", "heavy"],
+    "powerUpKinds": ["preview", "teleport", "splitter", "antigravity", "shield", "blackhole", "planetkiller", "nebula", "piercing", "wormhole", "defense", "plasma"],
     "powerUpAmount": 2
   },
   "options": {
@@ -51,6 +52,9 @@
     "maxScore": 10000000,
     "nameLength": 24,
     "keepDays": 7
+  },
+  "spectators": {
+    "max": 20
   },
   "cpu": {
     "levels": ["easy", "medium", "hard", "hawking"]
