@@ -1,6 +1,6 @@
 import { FIELD, HORIZON, SOLAR } from './config';
 import type { BlackHole, Planet, PlanetStyle, Ship, World } from './physics';
-import { createRng, intRange, pick, range, type Rng } from './rng';
+import { createRng, intRange, pick, range, shuffle, type Rng } from './rng';
 
 const TINTS: Record<PlanetStyle, readonly string[]> = {
   rocky: ['#c9a77c', '#b8664a', '#a39a8a', '#c78f6d'],
@@ -133,24 +133,23 @@ export function onOrbit(r: number, a: number): { x: number; y: number } {
 
 export const orbitTurn = (r: number): number => SOLAR.TURN * (SOLAR.REF_ORBIT / Math.max(r, 1)) ** SOLAR.FALLOFF;
 
-/** One orbit: shared by up to two planets (opposite each other, same speed), or by some of the ships. */
+/** One orbit: shared by up to three planets (spread evenly round it, same speed), or by some of the ships. */
 type Body = { kind: 'planets'; radii: number[] } | { kind: 'ships' };
 
 /**
- * A sun in the middle, the planets on orbits round it — two to an orbit, facing each other. The ships ride orbits too — two or three to
- * an orbit — so that after every step the whole system turns and the gravity field with it. The orbits are spaced so
+ * A sun in the middle, the planets on orbits round it — up to three to an orbit. The ships ride the three outermost orbits — so that after every step the whole system turns and the gravity field with it. The orbits are spaced so
  * that no two bodies ever come near, however far each has turned.
  */
 function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
   const { width, height } = FIELD;
   const centre = solarCenter();
-  const bands = Math.min(2, Math.ceil(opts.players / 2));
+  const bands = Math.min(3, opts.players);
 
   const bodies: Body[] = [];
   // The mode's own planets are small, so more of them fit than on an open field: the setting is the least it draws.
   const wanted = opts.maxPlanets === 0 ? 0 : intRange(rng, Math.max(opts.maxPlanets, 2), Math.max(opts.maxPlanets, 2) + 3);
   const radii = Array.from({ length: wanted }, () => SOLAR.MIN_PLANET + (SOLAR.MAX_PLANET - SOLAR.MIN_PLANET) * Math.pow(rng(), 1.8));
-  for (let i = 0; i < radii.length; i += 2) bodies.push({ kind: 'planets', radii: radii.slice(i, i + 2) });
+  for (let i = 0; i < radii.length; i += 3) bodies.push({ kind: 'planets', radii: radii.slice(i, i + 3) });
   const half = (b: Body): number => (b.kind === 'planets' ? Math.max(...b.radii) : SOLAR.SHIP_BAND);
   const span = (list: readonly Body[]): number => list.reduce((sum, b) => sum + 2 * half(b) + SOLAR.ORBIT_GAP, -SOLAR.ORBIT_GAP);
   const room = SOLAR.OUTER_ORBIT - SOLAR.INNER_ORBIT;
@@ -161,14 +160,8 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
     if (last < 0) break;
     bodies.splice(last, 1);
   }
-  // Random order, but the ships' orbits tend outwards: nobody starts huddled up against the sun.
-  const order = bodies.map((b) => ({ b, key: rng() + (b.kind === 'ships' ? 0.2 : 0) })).sort((x, y) => x.key - y.key).map((e) => e.b);
-  // The outermost orbit is a planet's, so the system has an outside.
-  const outer = order.length - 1;
-  if (order[outer].kind === 'ships') {
-    const swap = order.map((b) => b.kind).lastIndexOf('planets');
-    if (swap >= 0) [order[outer], order[swap]] = [order[swap], order[outer]];
-  }
+  // The planets take the inner orbits, in random order; the ships ride the three outermost.
+  const order = [...shuffle(rng, bodies.filter((b) => b.kind === 'planets')), ...bodies.filter((b) => b.kind === 'ships')];
   // What is left over is shared out between the orbits.
   const slack = Math.max(0, room - span(order)) / (order.length + 1);
 
@@ -193,7 +186,7 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
     }
     const turn = rng() * Math.PI * 2;
     body.radii.forEach((radius, k) => {
-      const a = turn + k * Math.PI;
+      const a = turn + (k * Math.PI * 2) / body.radii.length;
       const style: PlanetStyle = radius > 24 ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
       planets.push({
         ...onOrbit(r, a),
