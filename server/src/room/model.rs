@@ -152,3 +152,13 @@ pub(super) fn free_avatar(room: &Room) -> Avatar {
         .find(|avatar| room.players.iter().all(|p| p.avatar != *avatar))
         .unwrap_or_default()
 }
+
+impl Room {
+    /// Everybody who hears the room: connected players, then spectators.
+    pub(super) fn recipients(&self) -> impl Iterator<Item = u64> + '_ {
+        self.players
+            .iter()
+            .filter_map(|p| p.conn)
+            .chain(self.spectators.iter().map(|s| s.conn))
+    }
+}

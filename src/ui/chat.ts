@@ -77,23 +77,24 @@ export class ChatPanel {
 
   /** Brings the panel up to date with the session; cheap enough to call on every message. */
   update(): void {
-    const { room, chat, canChat } = this.session;
+    const { room, chat, chatTotal, canChat } = this.session;
     this.root.hidden = !room;
     if (!room) {
       this.shown = '';
       this.seen = 0;
       return;
     }
-    if (chat.length < this.seen) this.seen = 0;
-    if (!this.collapsed) this.seen = chat.length;
-    const key = `${room.id}|${this.collapsed}|${canChat}|${chat.length}|${chat.length - this.seen}`;
+    // Counted by the session, not taken from `chat.length`, which stops growing once the log is capped.
+    if (chatTotal < this.seen) this.seen = 0;
+    if (!this.collapsed) this.seen = chatTotal;
+    const key = `${room.id}|${this.collapsed}|${canChat}|${chatTotal}|${chatTotal - this.seen}`;
     if (key === this.shown) return;
     this.shown = key;
 
     this.root.classList.toggle('is-collapsed', this.collapsed);
     this.toggle.setAttribute('aria-expanded', String(!this.collapsed));
     this.toggle.title = this.collapsed ? t('chat.open') : t('chat.close');
-    this.dot.hidden = !(this.collapsed && chat.length > this.seen);
+    this.dot.hidden = !(this.collapsed && chatTotal > this.seen);
     this.body.hidden = this.collapsed;
     this.input.disabled = !canChat;
     this.input.placeholder = canChat ? t('chat.placeholder') : t('chat.readOnly');

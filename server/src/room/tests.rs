@@ -1089,6 +1089,28 @@ fn a_spectator_joins_a_running_public_game_and_gets_the_start_and_a_keyframe_req
 }
 
 #[test]
+fn walking_in_and_out_of_the_stands_is_rate_limited() {
+    let mut rooms = RoomManager::new();
+    let (room_id, mut host_rx, _guest_rx) = started_room(&mut rooms, None, false);
+    let mut fan_rx = connect(&mut rooms, 3);
+    drain_json(&mut fan_rx);
+    drain_json(&mut host_rx);
+    let join = json!({"type":"join_room","roomId":room_id,"name":"Fan","spectate":true});
+    for _ in 0..10 {
+        rooms.handle_join_room(3, &join, Some(true));
+        rooms.leave_room(3);
+    }
+    let keyframes = drain_json(&mut host_rx)
+        .iter()
+        .filter(|m| m["type"] == "keyframe")
+        .count();
+    assert_eq!(keyframes, super::connections::MAX_SPECTATE_JOINS);
+    assert!(drain_json(&mut fan_rx)
+        .iter()
+        .any(|m| m["type"] == "error"));
+}
+
+#[test]
 fn spectators_get_the_hosts_state_but_cannot_send_anything_but_bets() {
     let mut rooms = RoomManager::new();
     let (room_id, mut host_rx, _guest_rx) = started_room(&mut rooms, None, false);

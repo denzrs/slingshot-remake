@@ -85,6 +85,8 @@ export class MultiplayerSession {
   match: NetMatch | null = null;
   /** What has been said in the room you are in. */
   chat: ChatLine[] = [];
+  /** Lines ever added to the chat: unlike `chat.length` it keeps counting once the cap is reached. */
+  chatTotal = 0;
   private chatRoom: string | null = null;
 
   private readonly listeners = new Set<() => void>();
@@ -301,6 +303,7 @@ export class MultiplayerSession {
         if (message.room.id !== this.chatRoom) {
           // A different room: its talk starts from nothing.
           this.chat = [];
+          this.chatTotal = 0;
           this.chatRoom = message.room.id;
         }
         this.room = message.room;
@@ -329,6 +332,7 @@ export class MultiplayerSession {
         break;
       case 'chat':
         this.chat = [...this.chat, { id: message.id, name: message.name, spectator: message.spectator, text: message.text }].slice(-CHAT_KEEP);
+        this.chatTotal++;
         break;
       case 'room_closed':
         this.room = null;
@@ -340,6 +344,7 @@ export class MultiplayerSession {
         this.notice = message.message;
         // In a game nobody reads the notice, so what the relay says ("you are writing too fast") is said in the chat.
         if (this.match) this.chat = [...this.chat, { id: -1, name: '', spectator: false, text: message.message, system: true }].slice(-CHAT_KEEP);
+        if (this.match) this.chatTotal++;
         break;
       case 'closed':
         this.connected = false;
@@ -435,6 +440,7 @@ export class MultiplayerSession {
 
   private clearChat(): void {
     this.chat = [];
+    this.chatTotal = 0;
     this.chatRoom = null;
   }
 

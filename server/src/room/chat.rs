@@ -47,12 +47,7 @@ impl RoomManager {
             return;
         }
         let room = self.rooms.get(&room_id).unwrap();
-        let everybody: Vec<u64> = room
-            .players
-            .iter()
-            .filter_map(|p| p.conn)
-            .chain(room.spectators.iter().map(|s| s.conn))
-            .collect();
+        let everybody: Vec<u64> = room.recipients().collect();
         let message = json!({ "type": "chat", "id": from, "spectator": spectator, "name": name, "text": text });
         for recipient in everybody {
             self.send_value(recipient, &message);

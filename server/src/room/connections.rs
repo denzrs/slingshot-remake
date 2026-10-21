@@ -17,6 +17,9 @@ pub const MAX_SPECTATOR_INPUTS_PER_SECOND: usize = 8;
 /// Chat messages one connection may send in `CHAT_WINDOW`.
 pub const MAX_CHAT_MESSAGES: usize = 5;
 pub const CHAT_WINDOW: Duration = Duration::from_secs(10);
+/// Times one connection may walk into the stands in `SPECTATE_WINDOW`: every mid-game arrival costs the host a full frame.
+pub const MAX_SPECTATE_JOINS: usize = 3;
+pub const SPECTATE_WINDOW: Duration = Duration::from_secs(30);
 
 struct Conn {
     tx: Outbound,
@@ -34,6 +37,7 @@ pub struct Connections {
     scrypt_windows: HashMap<u64, VecDeque<Instant>>,
     spectator_windows: HashMap<u64, VecDeque<Instant>>,
     chat_windows: HashMap<u64, VecDeque<Instant>>,
+    spectate_windows: HashMap<u64, VecDeque<Instant>>,
 }
 
 impl Connections {
@@ -67,6 +71,7 @@ impl Connections {
         self.scrypt_windows.remove(&conn);
         self.spectator_windows.remove(&conn);
         self.chat_windows.remove(&conn);
+        self.spectate_windows.remove(&conn);
         self.ips.remove(&conn);
     }
 
@@ -98,8 +103,29 @@ impl Connections {
             window.retain(|at| now.duration_since(*at) < CHAT_WINDOW);
             !window.is_empty()
         });
+        self.spectate_windows.retain(|_, window| {
+            window.retain(|at| now.duration_since(*at) < SPECTATE_WINDOW);
+            !window.is_empty()
+        });
         self.password_failures
             .retain(|conn, _| self.connected.contains(conn));
+    }
+
+    /// Counts one more walk into the stands; false when a connection keeps coming and going.
+    pub fn allow_spectate_join(&mut self, conn: u64) -> bool {
+        let now = Instant::now();
+        let window = self.spectate_windows.entry(conn).or_default();
+        while window
+            .front()
+            .is_some_and(|at| now.duration_since(*at) >= SPECTATE_WINDOW)
+        {
+            window.pop_front();
+        }
+        if window.len() >= MAX_SPECTATE_JOINS {
+            return false;
+        }
+        window.push_back(now);
+        true
     }
 
     /// Counts one more chat message from a connection; false when it is talking too much.

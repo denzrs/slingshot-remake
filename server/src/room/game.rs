@@ -83,12 +83,7 @@ impl RoomManager {
             .for_each(|(id, player)| player.id = id);
         let start = self.game_start_message(self.rooms.get(room_id).unwrap());
         let room = self.rooms.get(room_id).unwrap();
-        let recipients: Vec<u64> = room
-            .players
-            .iter()
-            .filter_map(|p| p.conn)
-            .chain(room.spectators.iter().map(|s| s.conn))
-            .collect();
+        let recipients: Vec<u64> = room.recipients().collect();
         for recipient in recipients {
             self.send_value(recipient, &start);
         }
@@ -193,14 +188,7 @@ impl RoomManager {
         let recipients: Vec<u64> = self
             .rooms
             .get(&room_id)
-            .map(|room| {
-                room.players
-                    .iter()
-                    .filter_map(|p| p.conn)
-                    .filter(|other| *other != conn)
-                    .chain(room.spectators.iter().map(|s| s.conn))
-                    .collect()
-            })
+            .map(|room| room.recipients().filter(|other| *other != conn).collect())
             .unwrap_or_default();
         for recipient in recipients {
             self.send_fast(recipient, bytes);

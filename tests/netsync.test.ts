@@ -43,6 +43,15 @@ function sync(mode: 'classic' | 'horizon') {
 }
 
 describe('state patches', () => {
+  it('stays null until a full frame has arrived, however many partial patches come first', () => {
+    const decoder = new SnapshotDecoder();
+    expect(decoder.apply({ volley: null, phase: 'aiming' })).toBeNull();
+    const host = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 2, seats: seats(2) }, { seats: seats(2), seed: 7, deterministicCpu: true }) as ClassicMatch;
+    const full = JSON.parse(JSON.stringify(new SnapshotEncoder().encode(host.snapshot())));
+    expect(decoder.apply(full)?.world).toBeDefined();
+  });
+
+
   for (const mode of ['classic', 'horizon'] as const) {
     it(`rebuilds the ${mode} host state exactly`, () => {
       sync(mode);

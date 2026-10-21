@@ -19,6 +19,10 @@ impl RoomManager {
         let Some(JoinTarget { room_id, name }) = self.accept(conn, join.target) else {
             return;
         };
+        if !self.net.allow_spectate_join(conn) {
+            self.error(conn, "You are coming and going too fast");
+            return;
+        }
         let room_id = room_id.as_str();
         let Some(room) = self.rooms.get(room_id) else {
             self.error(conn, "Room not found");

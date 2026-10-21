@@ -262,14 +262,7 @@ impl RoomManager {
             let others: Vec<u64> = self
                 .rooms
                 .get(&room_id)
-                .map(|room| {
-                    room.players
-                        .iter()
-                        .filter_map(|player| player.conn)
-                        .filter(|other| *other != conn)
-                        .chain(room.spectators.iter().map(|s| s.conn))
-                        .collect()
-                })
+                .map(|room| room.recipients().filter(|other| *other != conn).collect())
                 .unwrap_or_default();
             self.rooms.remove(&room_id);
             for other in &others {
