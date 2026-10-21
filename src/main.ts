@@ -517,6 +517,7 @@ canvas.addEventListener('pointerdown', (e) => {
     oraclePointer = true;
     return placeTip(tip);
   }
+  if (match.revealing) return primaryAction();
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
   if (!canAim()) return;
   dragging = true;
@@ -550,7 +551,9 @@ function syncButtons(): void {
   const m = match;
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
-    if (canAim()) touchLabel = m.placing ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
+    // The announcement of a Mayhem round waits for a tap (online only the host's).
+    if (m.revealing) touchLabel = m.canAdvance ? t('common.next') : null;
+    else if (canAim()) touchLabel = m.placing ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
     // A splitter in the air: the fire button splits the shot.
     else if (splitterInAir(m)) touchLabel = t('powerup.splitNow');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
