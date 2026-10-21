@@ -1,5 +1,5 @@
 import { nextWormholeId, portalFits, type ShotRules, type World } from '../physics';
-import { aimedPlanet, aimedSpot, aimedSurface, cpuWormholeSpots, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
+import { aimedPlanet, blackHoleFits, aimedSpot, aimedSurface, cpuWormholeSpots, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
 import { NEBULA, WORMHOLE } from '../config';
 import type { Rng } from '../rng';
 import { bump, type StatBook } from '../stats';
@@ -50,7 +50,7 @@ export interface PlacementAim {
   target: { x: number; y: number } | null;
   /** A wormhole's first portal, already set: the aim now picks the second. */
   first?: { x: number; y: number } | null;
-  /** A wormhole's aim that would overlap another portal, so the click does nothing. */
+  /** A wormhole's aim that would overlap another portal, or a black hole's that is too close to another player, so the click does nothing. */
   blocked?: boolean;
 }
 
@@ -265,6 +265,7 @@ export class PowerUpField {
     } else {
       target = aimedSpot(world, from, p.angle, p.power);
     }
+    if (kind === 'blackhole') return { owner, kind, target, blocked: !!target && !blackHoleFits(world, target, owner) };
     if (kind !== 'wormhole') return { owner, kind, target };
     const first = this.wormFirst.get(owner) ?? null;
     return { owner, kind, target, first, blocked: !!target && !portalFits(world, target, first ? [first] : []) };
@@ -288,6 +289,7 @@ export class PowerUpField {
   confirmPlacement(by: number = this.aimer, hold = false): boolean {
     const aim = this.placementAim(by);
     if (!aim?.target) return false;
+    if (aim.kind === 'blackhole' && aim.blocked) return false;
     let make: (() => boolean) | null;
     if (aim.kind === 'wormhole') {
       // A portal cannot overlap another, whatever the distance otherwise.
@@ -371,6 +373,8 @@ export class PowerUpField {
    */
   private plantBlackHole(id: number, spot: { x: number; y: number }): boolean {
     const world = this.host.world();
+    // A salvo plants at takeoff, after the ships may have moved (a held teleport): the gap holds then too, and a refused hole keeps its power-up.
+    if (!blackHoleFits(world, spot, id)) return false;
     world.holes.push({ x: spot.x, y: spot.y, radius: POWER_UP.BLACKHOLE_RADIUS, mass: POWER_UP.BLACKHOLE_MASS });
     world.version++;
     this.host.players()[id].powerUp = null;
@@ -512,7 +516,7 @@ export class PowerUpField {
       return planet ? this.onPlanet(world.planets[planet.index], (i) => this.killPlanet(id, i), () => this.spend(id)) : null;
     }
     const spot = kind === 'nebula' ? nebulaSpot(world, from, p.angle, p.power) : aimedSpot(world, from, p.angle, p.power);
-    if (!spot) return null;
+    if (!spot || (kind === 'blackhole' && !blackHoleFits(world, spot, id))) return null;
     return kind === 'nebula' ? () => this.plantNebula(id, spot) : () => this.plantBlackHole(id, spot);
   }
 
