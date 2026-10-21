@@ -8,7 +8,7 @@ use tracing::{debug, warn};
 
 use crate::auth::Hashed;
 use crate::command::{CreateRoom, JoinRoom, JoinTarget};
-use crate::protocol::default_room_name;
+use crate::protocol::{default_room_name, NAME_TAKEN};
 
 use super::model::*;
 use super::RoomManager;
@@ -121,12 +121,14 @@ impl RoomManager {
         } else {
             None
         };
+        let name_is_default = room_name.is_none();
         let room_name = room_name.unwrap_or_else(|| default_room_name(&name, created_order + 1));
         self.rooms.insert(
             id.clone(),
             Room {
                 id: id.clone(),
                 name: room_name,
+                name_is_default,
                 mode,
                 game_mode,
                 rules,
@@ -171,6 +173,14 @@ impl RoomManager {
             .get(room_id)
             .is_some_and(|room| room.password.is_some());
         if locked && !self.password_attempt_ok(conn, room_id, preverified) {
+            return;
+        }
+        if self
+            .rooms
+            .get(room_id)
+            .is_some_and(|room| name_taken(room, &name, None))
+        {
+            self.error(conn, NAME_TAKEN);
             return;
         }
         // A full room gives its newest CPU seat to the human who joins.

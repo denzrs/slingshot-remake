@@ -42,6 +42,32 @@ pub fn clean_name_checked(value: Option<&Value>) -> Option<String> {
     (!cleaned.is_empty()).then_some(cleaned)
 }
 
+/// A player name from a lobby message: cleaned like any name, then held to the profanity check the
+/// boards and room names already pass. The error is what the player is told.
+pub fn parse_player_name(value: Option<&Value>) -> Result<String, &'static str> {
+    let name = clean_name_checked(value).ok_or(NAME_REQUIRED)?;
+    if is_acceptable_name(&name) {
+        Ok(name)
+    } else {
+        Err(NAME_REFUSED)
+    }
+}
+
+/// What the player is told when the name is missing or empty.
+pub const NAME_REQUIRED: &str = "A non-empty player name is required";
+/// What the player is told when the name fails the profanity check.
+pub const NAME_REFUSED: &str = "That name is not allowed";
+
+/// What a player is told when somebody in the room already goes by that name.
+pub const NAME_TAKEN: &str = "That name is taken in this room";
+/// What a player is told when they rename again right after a rename.
+pub const RENAME_TOO_FAST: &str = "Wait a moment before changing your name again";
+
+/// Whether an error is about the player's name, so the client can put it under the name field.
+pub fn is_name_refusal(message: &str) -> bool {
+    [NAME_REQUIRED, NAME_REFUSED, NAME_TAKEN, RENAME_TOO_FAST].contains(&message)
+}
+
 /// The longest a room name may be: room for a full-length player name plus "'s room".
 pub const MAX_ROOM_NAME_LENGTH: usize = 40;
 

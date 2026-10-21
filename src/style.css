@@ -1309,6 +1309,17 @@ body {
   display: none;
 }
 
+/* The relay's reason for turning a name down, under the name field. */
+.lobby__field-error {
+  margin: 4px 0 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.lobby__field-error[hidden] {
+  display: none;
+}
+
 /* A line that says how the connection is: a dot that is lit while it is up. */
 .lobby__status {
   display: flex;

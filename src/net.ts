@@ -32,6 +32,8 @@ type ClientMessage =
   | { type: 'join_room'; roomId: string; name: string; password?: string; avatar?: Avatar }
   /** Your symbol in the game, while the room waits. */
   | { type: 'set_avatar'; avatar: Avatar }
+  /** Your name, while the room waits; the relay refuses one it will not carry. */
+  | { type: 'set_name'; name: string }
   | { type: 'ready'; ready: boolean }
   | { type: 'set_rules'; rules: RoomRules }
   /** Host only, while waiting: how the room shows up in the lobby. */
@@ -140,7 +142,8 @@ export type ServerMessage =
       you: DailyEntry | null;
     }
   | { type: 'room_closed'; message: string }
-  | { type: 'error'; message: string }
+  /** `field` names what the error is about, when it is about one thing the player typed. */
+  | { type: 'error'; message: string; field?: 'name' }
   /** Local only: the connection to the server is gone. */
   | { type: 'closed'; message: string };
 

@@ -46,6 +46,8 @@ pub(super) struct Room {
     pub(super) id: String,
     /// What the lobby calls the room; set at creation and already past the profanity check.
     pub(super) name: String,
+    /// The host never typed a name: the room is called after the host and follows their rename.
+    pub(super) name_is_default: bool,
     pub(super) mode: RoomMode,
     pub(super) game_mode: GameMode,
     pub(super) rules: RoomRules,
@@ -63,6 +65,15 @@ pub(super) struct Room {
 pub(super) struct Membership {
     pub(super) room_id: String,
     pub(super) player_id: usize,
+}
+
+/// Whether somebody in the room already goes by `name`, upper or lower case alike. A player's own seat
+/// (`except`) does not count, so they can change the case of their own name.
+pub(super) fn name_taken(room: &Room, name: &str, except: Option<usize>) -> bool {
+    let wanted = name.to_lowercase();
+    room.players
+        .iter()
+        .any(|p| Some(p.id) != except && p.name.to_lowercase() == wanted)
 }
 
 /// The team with fewer players, team 0 when they are even: where a newcomer goes.
