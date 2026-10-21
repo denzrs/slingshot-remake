@@ -33,6 +33,7 @@ export interface ClassicSnapshot {
   settings: Match['settings'];
   mayhem?: Match['mayhem'];
   revealEnd?: number;
+  revealHeld?: boolean;
   mayhemHistory?: Match['mayhemHistory'];
   roundStats: Match['roundStats'];
   matchStats: Match['matchStats'];
@@ -77,6 +78,7 @@ export class ClassicMatch extends Match {
       settings: this.settings,
       mayhem: this.mayhem,
       revealEnd: this.revealEnd,
+      revealHeld: this.revealHeld,
       mayhemHistory: this.mayhemHistory,
       roundStats: this.roundStats,
       matchStats: this.matchStats,
@@ -92,6 +94,7 @@ export class ClassicMatch extends Match {
     this.settings = snapshot.settings;
     this.mayhem = snapshot.mayhem ?? null;
     this.revealEnd = snapshot.revealEnd ?? 0;
+    this.revealHeld = snapshot.revealHeld ?? false;
     this.mayhemHistory = snapshot.mayhemHistory ?? [];
     this.phase = snapshot.phase;
     this.phaseTime = snapshot.phaseTime;

@@ -43,11 +43,19 @@ describe('a match with Mayhem', () => {
     expect(match.players.every((p) => !p.locked)).toBe(true);
   });
 
-  it('lets the announcement run out by itself', () => {
+  it('keeps the announcement up until a person dismisses it', () => {
     const match = start('classic');
-    for (let t = 0; t < MAYHEM.REVEAL_TIME + 0.5; t += 1 / 30) match.update(1 / 30);
+    for (let t = 0; t < MAYHEM.REVEAL_TIME + 5; t += 1 / 30) match.update(1 / 30);
+    expect(match.revealing).toBe(true);
+    match.commit();
     expect(match.revealing).toBe(false);
     expect(match.isHumanTurn).toBe(true);
+  });
+
+  it('lets the announcement run out by itself when only CPUs are playing', () => {
+    const match = start('classic', {}, cpus.map((s, i) => (i < 2 ? 'medium' : s)));
+    for (let t = 0; t < MAYHEM.REVEAL_TIME + 0.5; t += 1 / 30) match.update(1 / 30);
+    expect(match.revealing).toBe(false);
   });
 
   it('holds the ships still while it is announced', () => {

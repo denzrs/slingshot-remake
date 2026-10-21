@@ -241,6 +241,8 @@ export abstract class Match {
   mayhem: MayhemRound | null = null;
   /** Mayhem: the match clock when the announcement of the round is over and the ships may aim. */
   revealEnd = 0;
+  /** Mayhem: once the twists have landed, the announcement stays up until somebody dismisses it, so they can be read. */
+  revealHeld = false;
   /** Mayhem: how every round of the match so far was played, for the recap. */
   mayhemHistory: MayhemRound[] = [];
   /** Mayhem: the rules the room was set up with. `settings` is these with the round's twists laid over them. */
@@ -770,17 +772,20 @@ export abstract class Match {
     this.mayhem = this.deck.draw({ base: this.baseSettings, mode: this.mode as 'classic' | 'horizon', round: this.round, rounds: this.totalRounds });
     this.settings = applyTwists(this.baseSettings, this.mayhem);
     this.revealEnd = this.clock + MAYHEM.REVEAL_TIME;
+    // A match nobody is flying in (CPUs only) has no one to wait for.
+    this.revealHeld = this.players.some((p) => !p.cpu);
   }
 
   /** Mayhem: the round has been announced, but the ships are still held back. */
   get revealing(): boolean {
-    return this.mayhem !== null && this.clock < this.revealEnd;
+    return this.mayhem !== null && (this.clock < this.revealEnd || this.revealHeld);
   }
 
   /** The fire key during the announcement ends it instead of firing. True when it did. */
   protected skipReveal(): boolean {
     if (!this.revealing) return false;
     this.revealEnd = this.clock;
+    this.revealHeld = false;
     return true;
   }
 

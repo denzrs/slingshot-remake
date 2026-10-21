@@ -86,12 +86,24 @@ export class Renderer {
     return { x: (clientX - rect.left - v.offsetX) / v.scale, y: (clientY - rect.top - v.offsetY) / v.scale };
   }
 
-  draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
-    // Catches window resizes, zoom and moving to a screen with another pixel ratio.
+  /** Catches window resizes, zoom and moving to a screen with another pixel ratio. */
+  private resizeIfNeeded(): void {
     const v = this.view;
     if (v.cssWidth !== window.innerWidth || v.cssHeight !== window.innerHeight || v.dpr !== Math.min(window.devicePixelRatio || 1, 2)) {
       this.resize();
     }
+  }
+
+  /** Just the empty plate, for menus that show no game behind them. */
+  drawEmpty(): void {
+    this.resizeIfNeeded();
+    if (!this.backdrop || this.backdrop.walls) this.backdrop = { canvas: renderBackdrop(this.view, false), walls: false };
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.drawImage(this.backdrop.canvas, 0, 0);
+  }
+
+  draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
+    this.resizeIfNeeded();
     this.time += dt;
     const { ctx, view } = this;
     const { dpr, scale, offsetX, offsetY } = view;

@@ -155,7 +155,7 @@ export class Hud {
     const { ctx, k, field } = this;
     const left = match.revealEnd - match.clock;
     const age = MAYHEM.REVEAL_TIME - left;
-    const alpha = Math.max(0, Math.min(1, age / 0.2, left / 0.35));
+    const alpha = Math.max(0, Math.min(1, age / 0.2, match.revealHeld ? 1 : left / 0.35));
     if (alpha <= 0) return;
     const cx = field.x + field.w / 2;
     const cy = field.y + field.h / 2;
@@ -242,10 +242,11 @@ export class Hud {
     }
 
     if (age > landed) {
-      ctx.fillStyle = rgba(COLORS.boneDim, 0.8);
+      ctx.globalAlpha = alpha * (0.7 + 0.3 * Math.sin(age * 4));
+      ctx.fillStyle = COLORS.boneDim;
       ctx.font = `700 ${11 * k}px ${FONTS.body}`;
       setSpacing(ctx, 2 * k);
-      ctx.fillText(t('mayhem.skip').toUpperCase(), cx, top + h - foot / 2);
+      ctx.fillText(t(match.canAdvance ? 'mayhem.skip' : 'hud.waitingHost').toUpperCase(), cx, top + h - foot / 2);
       setSpacing(ctx, 0);
     }
     ctx.globalAlpha = 1;

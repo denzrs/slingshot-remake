@@ -1060,10 +1060,13 @@ describe('CPU seats online', () => {
       }
     }, 30_000);
 
-    it('lets a guest end the announcement with the fire key, for everybody', async () => {
+    it('leaves ending the announcement to the host, for everybody', async () => {
       const { host, guest } = await startRoom('horizon', ['Anna', 'Ben'], { ...rules, mayhem: 3 });
       expect(host.match().canAim(1)).toBe(false);
       guest.session.input({ kind: 'fire' });
+      for (let i = 0; i < 12; i++) await frame(host, guest);
+      expect(host.match().revealing).toBe(true);
+      host.session.input({ kind: 'fire' });
       for (let i = 0; i < 12; i++) await frame(host, guest);
       expect(host.match().revealing).toBe(false);
       expect(guest.match().revealing).toBe(false);

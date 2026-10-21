@@ -47,6 +47,8 @@ export interface Settings {
   fadingTrails: number;
   contours: boolean;
   particles: boolean;
+  /** The title screen and menus show a CPU match playing behind them; off leaves the plate empty. */
+  menuBackground: boolean;
   sound: boolean;
   /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
   betting: boolean;
@@ -80,6 +82,7 @@ export const DEFAULT_SETTINGS: Settings = {
   betting: false,
   contours: true,
   particles: true,
+  menuBackground: true,
   sound: true,
   language: 'de',
   teamMode: 0,

@@ -356,7 +356,9 @@ function primaryAction(): void {
   if (!match) return;
   if (online() && match.phase === 'gameOver') app.rematch();
   // The announcement of a Mayhem round: the fire key skips it.
-  else if (canAim() || match.revealing) dispatchInput({ kind: 'fire' });
+  else if (match.revealing) {
+    if (match.canAdvance) dispatchInput({ kind: 'fire' });
+  } else if (canAim()) dispatchInput({ kind: 'fire' });
   // While a shot flies, the fire key only matters for a splitter.
   else if (splitterInAir(match)) dispatchInput({ kind: 'fire' });
   else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
@@ -655,7 +657,8 @@ function frame(now: number): void {
   const net = online();
   // Online the others keep playing, so a menu on top doesn't stop the world.
   const paused = screen === 'play' && menu.isOpen && !net;
-  if (!paused) {
+  const empty = screen !== 'play' && !settings.menuBackground;
+  if (!paused && !empty) {
     if (!net || net.isHost) m.update(dt);
     effects.update(dt, m.world);
     // A shot flying through a nebula sheds wisps of gas, so its slowing down shows.
@@ -667,12 +670,15 @@ function frame(now: number): void {
     }
   }
   net?.update(dt);
-  renderer.draw(
-    m,
-    effects,
-    { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
-    paused ? 0 : dt,
-  );
+  if (empty) renderer.drawEmpty();
+  else {
+    renderer.draw(
+      m,
+      effects,
+      { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
+      paused ? 0 : dt,
+    );
+  }
   if (screen === 'play' && m === match) announceOracle(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();
