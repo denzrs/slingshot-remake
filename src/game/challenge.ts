@@ -3,7 +3,7 @@ import { AIM, CHALLENGE, FIELD } from '../config';
 import { cloneWorld, normalizeAngle, type ShotRules, type StyleKind } from '../physics';
 import { scoreChallengeHit } from '../scoring';
 import type { Settings } from '../settings';
-import type { VolleyShot } from '../volley';
+import type { VolleyAim, VolleyShot } from '../volley';
 import { Match, newPlayer, type KillRecord, type RoundTitle } from './match';
 
 export interface ShotLog {
@@ -166,7 +166,9 @@ export class ChallengeMatch extends Match {
     this.attempt++;
     this.shotsLeft--;
     this.volleyKill = null;
-    this.launch([{ player: 0, angle: p.angle, power: p.power }], true);
+    // The sector's ammo: plasma bends little and ignores clouds, armor piercing flies through every ship it meets.
+    const aim: VolleyAim = { player: 0, angle: p.angle, power: p.power, ...(this.spec.ammo === 'piercing' ? { pierce: true } : {}), ...(this.spec.ammo === 'plasma' ? { heavy: true } : {}) };
+    this.launch([aim], true);
   }
 
   protected updatePhase(_dt: number): void {}
@@ -178,7 +180,12 @@ export class ChallengeMatch extends Match {
   }
 
   protected recordKill(record: KillRecord): void {
-    this.volleyKill = record;
+    // An armor-piercing shot can take several targets down: the log pays them as one shot.
+    const before = this.volleyKill;
+    this.volleyKill =
+      before && !before.self && !record.self
+        ? { ...record, points: before.points + record.points, combo: [...before.combo, ...record.combo], multiplier: Math.max(before.multiplier, record.multiplier) }
+        : record;
     super.recordKill(record);
   }
 
