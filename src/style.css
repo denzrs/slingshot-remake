@@ -2867,6 +2867,9 @@ kbd {
   min-height: 0;
   margin-top: 6px;
   background: transparent;
+  /* Lines fade out as they reach the top of the bar. The bar is as tall as the room it has, and the log sits at its bottom,
+     so a short log is nowhere near the fade. */
+  mask-image: linear-gradient(to bottom, transparent, #000 56px);
 }
 
 .chat__body[hidden] {
