@@ -76,42 +76,43 @@ impl RoomManager {
         room.status = RoomStatus::Playing;
         room.last_state_seq = -1;
         let seed: u32 = rand::thread_rng().gen();
+        room.seed = seed;
         room.players
             .iter_mut()
             .enumerate()
             .for_each(|(id, player)| player.id = id);
-        let room_clone = (
-            room.id.clone(),
-            room.mode.as_str(),
-            room.game_mode.as_str(),
-            rules_to_value(&room.rules),
-            room.players
-                .iter()
-                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str) }))
-                .collect::<Vec<_>>(),
-            room.players.iter().filter_map(|p| p.conn).collect::<Vec<_>>(),
-        );
-        let (id, mode, game_mode, rules, players, recipients) = room_clone;
+        let start = self.game_start_message(self.rooms.get(room_id).unwrap());
+        let room = self.rooms.get(room_id).unwrap();
+        let recipients: Vec<u64> = room.recipients().collect();
         for recipient in recipients {
-            self.send_value(
-                recipient,
-                &json!({
-                    "type": "game_start",
-                    "roomId": id,
-                    "mode": mode,
-                    "gameMode": game_mode,
-                    "rules": rules,
-                    "hostId": 0,
-                    "seed": seed,
-                    "players": players,
-                }),
-            );
+            self.send_value(recipient, &start);
         }
         self.broadcast_room_update(room_id, None);
         self.broadcast_lobby();
     }
 
+    /// What a client needs to build the match of a running room.
+    pub(super) fn game_start_message(&self, room: &Room) -> Value {
+        json!({
+            "type": "game_start",
+            "roomId": room.id,
+            "mode": room.mode.as_str(),
+            "gameMode": room.game_mode.as_str(),
+            "rules": rules_to_value(&room.rules),
+            "hostId": 0,
+            "seed": room.seed,
+            "players": room
+                .players
+                .iter()
+                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str) }))
+                .collect::<Vec<_>>(),
+        })
+    }
+
     pub(super) fn relay_input(&mut self, conn: u64, input: Parsed<&Value>) {
+        if self.watching.contains_key(&conn) {
+            return self.relay_spectator_input(conn, input);
+        }
         let (room_id, my_id, host_conn) = {
             let Some(membership) = self.memberships.get(&conn) else {
                 self.error(conn, "You are not in a running game");
@@ -187,13 +188,7 @@ impl RoomManager {
         let recipients: Vec<u64> = self
             .rooms
             .get(&room_id)
-            .map(|room| {
-                room.players
-                    .iter()
-                    .filter_map(|p| p.conn)
-                    .filter(|other| *other != conn)
-                    .collect()
-            })
+            .map(|room| room.recipients().filter(|other| *other != conn).collect())
             .unwrap_or_default();
         for recipient in recipients {
             self.send_fast(recipient, bytes);

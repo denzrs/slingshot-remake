@@ -8,9 +8,9 @@ use serde_json::Value;
 
 use crate::auth::{password_length, MAX_PASSWORD_LENGTH};
 use crate::protocol::{
-    clean_name_checked, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level,
-    parse_daily_day, parse_daily_submit, parse_room_look, parse_room_name, parse_rules, DailyScore,
-    RoomLook, RoomName, RoomRules,
+    clean_chat, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level, parse_daily_day,
+    parse_daily_submit, parse_player_name, parse_room_look, parse_room_name, parse_rules,
+    DailyScore, RoomLook, RoomName, RoomRules, NAME_REQUIRED,
 };
 use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
 
@@ -41,6 +41,7 @@ pub enum RoomCommand<'a> {
     SetRules(Parsed<RoomRules>),
     SetRoom(Parsed<RoomLook>),
     SetAvatar(Parsed<Avatar>),
+    SetName(Parsed<String>),
     SetTeam(Parsed<u8>),
     ResetTeams,
     AddCpu {
@@ -57,6 +58,8 @@ pub enum RoomCommand<'a> {
     },
     StartGame,
     Input(Parsed<&'a Value>),
+    /// Something to say to the room.
+    Chat(Parsed<String>),
     LeaveRoom,
     /// A message with no `type`.
     Malformed,
@@ -106,6 +109,8 @@ pub struct JoinRoom {
     pub avatar: Parsed<Avatar>,
     /// Whatever the client sent as a password, to be checked against the room's.
     pub password: Option<String>,
+    /// Watch from the stands instead of taking a seat.
+    pub spectate: bool,
 }
 
 pub struct JoinTarget {
@@ -174,6 +179,7 @@ impl<'a> RoomCommand<'a> {
             "set_avatar" => RoomCommand::SetAvatar(
                 parse_avatar(message.get("avatar")).ok_or("Malformed player symbol"),
             ),
+            "set_name" => RoomCommand::SetName(parse_player_name(message.get("name"))),
             "set_team" => RoomCommand::SetTeam(
                 named_team(message).and_then(|team| team.ok_or("team must be 0 or 1")),
             ),
@@ -197,6 +203,9 @@ impl<'a> RoomCommand<'a> {
                     .filter(|input| is_input_message(input))
                     .ok_or("Malformed input message"),
             ),
+            "chat" => {
+                RoomCommand::Chat(clean_chat(message.get("text")).ok_or("Say something first"))
+            }
             "leave_room" => RoomCommand::LeaveRoom,
             other => RoomCommand::Unknown(other),
         }
@@ -217,8 +226,7 @@ impl CreateRoom {
             },
         };
         Self {
-            name: clean_name_checked(message.get("name"))
-                .ok_or("A non-empty player name is required"),
+            name: parse_player_name(message.get("name")),
             room_name: match parse_room_name(message.get("roomName")) {
                 RoomName::Default => Ok(None),
                 RoomName::Named(name) => Ok(Some(name)),
@@ -256,14 +264,15 @@ impl CreateRoom {
 
 impl JoinRoom {
     fn parse(message: &Value) -> Self {
-        let name = clean_name_checked(message.get("name"));
+        let name = parse_player_name(message.get("name"));
         let room_id = message.get("roomId").and_then(Value::as_str);
         Self {
             target: match (room_id, name) {
-                (Some(room_id), Some(name)) => Ok(JoinTarget {
+                (Some(room_id), Ok(name)) => Ok(JoinTarget {
                     room_id: room_id.to_owned(),
                     name,
                 }),
+                (Some(_), Err(refused)) if refused != NAME_REQUIRED => Err(refused),
                 _ => Err("join_room requires a roomId and non-empty player name"),
             },
             avatar: parse_avatar(message.get("avatar")).ok_or("Malformed player symbol"),
@@ -271,6 +280,7 @@ impl JoinRoom {
                 .get("password")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            spectate: message.get("spectate").and_then(Value::as_bool) == Some(true),
         }
     }
 }

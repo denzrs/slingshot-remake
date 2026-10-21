@@ -6,6 +6,7 @@ import type { PowerUpState } from './powerup-field';
 import { scoreHorizonKill } from '../scoring';
 import { shotSource, Volley, type VolleyAim, type VolleyScript, type VolleyShot, type VolleySnapshot } from '../volley';
 import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene } from './match';
+import type { CrowdSeat } from './crowd';
 import type { OracleSnapshot } from './oracle';
 
 /** Everything needed to replay one kill exactly — the physics is deterministic. */
@@ -45,6 +46,7 @@ export interface HorizonSnapshot {
   settings: Match['settings'];
   mayhem?: Match['mayhem'];
   revealEnd?: number;
+  revealHeld?: boolean;
   mayhemHistory?: Match['mayhemHistory'];
   roundStats: Match['roundStats'];
   matchStats: Match['matchStats'];
@@ -69,6 +71,8 @@ export interface HorizonSnapshot {
   };
   lastClip: KillcamClip | null;
   oracle: OracleSnapshot;
+  stands?: OracleSnapshot;
+  crowd?: CrowdSeat[];
   pickups?: Pickup[];
   power?: PowerUpState;
 }
@@ -151,7 +155,7 @@ export class HorizonMatch extends Match {
       players: this.players.map((player) => ({ ...player })), current: this.current, world: this.world,
       trails: this.trails, volley: this.volley?.snapshot() ?? null, flightDoneAt: this.flightDoneAt, killFeed: this.killFeed,
       lastKill: this.lastKill, summary: this.summary, notice: this.notice, settings: this.settings,
-      mayhem: this.mayhem, revealEnd: this.revealEnd, mayhemHistory: this.mayhemHistory,
+      mayhem: this.mayhem, revealEnd: this.revealEnd, revealHeld: this.revealHeld, mayhemHistory: this.mayhemHistory,
       roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory,
       volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
       aims: this.aims, volleyKills: this.volleyKills,
@@ -164,6 +168,8 @@ export class HorizonMatch extends Match {
       } : null,
       lastClip: this.lastClip,
       oracle: this.oracle.snapshot(),
+      stands: this.stands.snapshot(),
+      crowd: this.crowd.snapshot(),
       pickups: this.pickups,
       power: this.powerState,
     };
@@ -174,6 +180,7 @@ export class HorizonMatch extends Match {
     this.settings = s.settings;
     this.mayhem = s.mayhem ?? null;
     this.revealEnd = s.revealEnd ?? 0;
+    this.revealHeld = s.revealHeld ?? false;
     this.mayhemHistory = s.mayhemHistory ?? [];
     this.phase = s.phase; this.phaseTime = s.phaseTime; this.clock = s.clock; this.round = s.round;
     this.worldSeed = s.worldSeed ?? 0;
@@ -191,6 +198,8 @@ export class HorizonMatch extends Match {
     this.lastClip = s.lastClip;
     // Hosts from before the oracle send none.
     if (s.oracle) this.oracle.restore(s.oracle);
+    if (s.stands) this.stands.restore(s.stands);
+    this.crowd.restore(s.crowd);
     this.pickups = s.pickups ?? [];
     this.power.restoreState(s.power);
     this.killcam = null;

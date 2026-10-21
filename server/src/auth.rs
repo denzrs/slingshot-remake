@@ -87,7 +87,9 @@ pub async fn prepare_join(
             .error(conn, "Too many wrong passwords – reconnect to try again");
         return Err(Handled);
     }
-    let salt = manager.lock().join_password_salt(conn, join.room_id());
+    let salt = manager
+        .lock()
+        .join_password_salt(conn, join.room_id(), join.spectate);
     let Some((salt, hash)) = salt else {
         return Ok(None);
     };

@@ -90,6 +90,8 @@ export const POWER_UP = {
   /** A black hole the power-up plants: a modest, fixed horizon. It lasts the round and never grows. */
   BLACKHOLE_RADIUS: 18,
   BLACKHOLE_MASS: 260_000,
+  /** A black hole is never planted closer than this to another player's ship. */
+  BLACKHOLE_PLAYER_GAP: 150,
   /**
    * The reach of an aimed nebula: like the teleport aim, the angle and power put one cloud down. A cloud
    * keeps this far from the field edge, so its aim spot is drawn whole.
@@ -208,6 +210,11 @@ export function aimedSpot(world: World, from: { x: number; y: number }, angle: n
     if (isLanded(world, x, y)) return { x, y };
   }
   return null;
+}
+
+/** Whether a black hole may be planted at `spot` by ship `owner`: far enough from every other living ship. */
+export function blackHoleFits(world: World, spot: { x: number; y: number }, owner: number): boolean {
+  return world.ships.every((s, i) => i === owner || !s.alive || distance(s.x, s.y, spot.x, spot.y) >= POWER_UP.BLACKHOLE_PLAYER_GAP);
 }
 
 /**

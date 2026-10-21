@@ -8,7 +8,7 @@ import './style.css';
 import { Sound } from './audio';
 import { dailyChallenge, dateKey, isDateKey } from './challenge';
 import { ClipRecorder } from './clip';
-import { AIM, COLORS, FIELD, FONTS, PHYSICS } from './config';
+import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS } from './config';
 import { recordRun } from './dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
@@ -26,6 +26,8 @@ import { STYLE_MULTIPLIER, styleLabel } from './scoring';
 import { mayhemRules } from './lobbyPrefs';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
+import { eyeIcon } from './ui/dom';
+import { ChatPanel } from './ui/chat';
 import { Menu } from './ui/menu';
 import { lobbyScreen } from './ui/lobby';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
@@ -34,6 +36,8 @@ const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
+/** How many are watching, for everybody who is not in the stands themselves. */
+const standsBadge = document.querySelector<HTMLElement>('#stands-badge')!;
 const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 
@@ -213,7 +217,8 @@ wire(attract);
 /** Created on first use; it outlives single matches, so leaving a game lands you back in the lobby. */
 let session: MultiplayerSession | null = null;
 function multiplayer(): MultiplayerSession {
-  session ??= new MultiplayerSession({
+  if (session) return session;
+  session = new MultiplayerSession({
     settings: () => settings,
     matchStarted(m) {
       if (match !== m) match?.dispose();
@@ -232,8 +237,13 @@ function multiplayer(): MultiplayerSession {
       menu.open(() => lobbyScreen(app, multiplayer()));
     },
   });
+  const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session);
+  chat = panel;
+  session.subscribe(() => panel.update());
   return session;
 }
+/** The chat of the room, once there is a session for it. */
+let chat: ChatPanel | null = null;
 /** The online match on screen, if any. */
 const online = (): MultiplayerSession | null => (session?.match ? session : null);
 
@@ -356,7 +366,9 @@ function primaryAction(): void {
   if (!match) return;
   if (online() && match.phase === 'gameOver') app.rematch();
   // The announcement of a Mayhem round: the fire key skips it.
-  else if (canAim() || match.revealing) dispatchInput({ kind: 'fire' });
+  else if (match.revealing) {
+    if (match.canAdvance) dispatchInput({ kind: 'fire' });
+  } else if (canAim()) dispatchInput({ kind: 'fire' });
   // While a shot flies, the fire key only matters for a splitter.
   else if (splitterInAir(match)) dispatchInput({ kind: 'fire' });
   else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
@@ -382,15 +394,15 @@ function isTyping(target: EventTarget | null): boolean {
  * 0 for a salvo — and Shift with 1–5 (0 for a draw) for who wins the round.
  */
 function oracleKey(e: KeyboardEvent): OracleTap | null {
-  const q = match?.oracle.question;
+  const q = match?.betOracle.question;
   if (!match || !match.ghost || e.ctrlKey || e.metaKey || e.altKey) return null;
   const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code);
-  const rq = match.oracle.roundQuestion;
+  const rq = match.betOracle.roundQuestion;
   // B puts the smaller stake on the tip on the round, Shift + B the larger one: points of the match, once.
-  if (e.code === 'KeyB' && rq && match.viewer !== null) {
-    const mine = match.oracle.roundMine;
-    const options = stakeOptions(match.players[match.viewer].score);
-    if (!mine || mine.id !== rq.id || !match.maxStake(match.viewer) || !options.length) return null;
+  if (e.code === 'KeyB' && rq && match.bettor !== null) {
+    const mine = match.betOracle.roundMine;
+    const options = stakeOptions(match.purse(match.bettor));
+    if (!mine || mine.id !== rq.id || !match.maxStake(match.bettor) || !options.length) return null;
     return { pick: mine.pick, round: true, stake: e.shiftKey ? options[options.length - 1] : options[0] };
   }
   if (e.shiftKey && digit && rq) {
@@ -409,10 +421,10 @@ function oracleKey(e: KeyboardEvent): OracleTap | null {
 
 /** The oracle tip under a pointer: one of the bar's or the round row's choices, or — for a salvo — the ship itself. */
 function oracleTap(clientX: number, clientY: number): OracleTap | null {
-  const q = match?.oracle.question;
+  const q = match?.betOracle.question;
   if (!match || !match.ghost) return null;
   const chip = renderer.oracleHit(clientX, clientY);
-  if (chip) return chip.round ? (match.canBetRound(match.viewer ?? -1) ? chip : null) : q && !q.locked ? chip : null;
+  if (chip) return chip.round ? (match.canBetRound(match.bettor ?? -1) ? chip : null) : q && !q.locked ? chip : null;
   if (!q || q.locked || q.kind !== 'salvo') return null;
   const at = renderer.toField(clientX, clientY);
   const ship = q.choices.find((id) => Math.hypot(match!.world.ships[id].x - at.x, match!.world.ships[id].y - at.y) < 30);
@@ -429,6 +441,11 @@ function placeTip(tip: OracleTap): void {
 
 window.addEventListener('keydown', (e) => {
   sound.unlock();
+  // Typing in the chat is typing: no aiming, no menu keys, no fullscreen. Escape gives the keyboard back to the game.
+  if (chat?.owns(e.target)) {
+    if (e.code === 'Escape') (e.target as HTMLElement).blur();
+    return;
+  }
   if (e.code === 'KeyF' && !e.metaKey && !e.ctrlKey && !isTyping(e.target)) {
     app.toggleFullscreen();
     return;
@@ -515,6 +532,8 @@ canvas.addEventListener('pointerdown', (e) => {
     oraclePointer = true;
     return placeTip(tip);
   }
+  // A tap dismisses the announcement only once its twists have landed, so a double tap at the round change can't skip it unread.
+  if (match.revealing) return match.revealAge >= MAYHEM.LANDED ? primaryAction() : undefined;
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
   if (!canAim()) return;
   dragging = true;
@@ -548,7 +567,9 @@ function syncButtons(): void {
   const m = match;
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
-    if (canAim()) touchLabel = m.placing ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
+    // The announcement of a Mayhem round waits for a tap (online only the host's).
+    if (m.revealing) touchLabel = m.canAdvance ? t('common.next') : null;
+    else if (canAim()) touchLabel = m.placing ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
     // A splitter in the air: the fire button splits the shot.
     else if (splitterInAir(m)) touchLabel = t('powerup.splitNow');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
@@ -579,17 +600,17 @@ const judged = new WeakMap<Match, { shot: number; round: number }>();
  * everybody at the table, the moment the ghosts' majority turned out wrong ("Oracle fooled!") or knew it all.
  */
 function announceOracle(m: Match): void {
-  if (!judged.has(m)) judged.set(m, { shot: m.oracle.result?.id ?? 0, round: m.oracle.roundResult?.id ?? 0 });
+  if (!judged.has(m)) judged.set(m, { shot: m.betOracle.result?.id ?? 0, round: m.betOracle.roundResult?.id ?? 0 });
   const seen = judged.get(m)!;
   const crowd = (verdict: 'wrong' | 'right' | undefined, at: { x: number; y: number }, lift: number) => {
-    if (!verdict || m.viewer === null) return;
+    if (!verdict || m.bettor === null) return;
     effects.callout(t(verdict === 'wrong' ? 'oracle.crowd.wrong' : 'oracle.crowd.right'), at.x, at.y - lift, COLORS.sodium, true);
   };
 
-  const r = m.oracle.result;
+  const r = m.betOracle.result;
   if (r && m.phase !== 'killcam' && r.id > seen.shot) {
     seen.shot = r.id;
-    const tip = m.ghost ? r.tips.find((x) => x.player === m.viewer) : undefined;
+    const tip = m.ghost ? r.tips.find((x) => x.player === m.bettor) : undefined;
     const at = r.kind === 'shot' ? m.world.ships[r.shooter] : tip && tip.pick >= 0 ? m.world.ships[tip.pick] : { x: FIELD.width / 2, y: FIELD.height / 2 };
     if (tip) {
       effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), at.x, at.y - 34, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right);
@@ -598,10 +619,10 @@ function announceOracle(m: Match): void {
     crowd(r.crowd, at, tip ? 72 : 40);
   }
 
-  const round = m.oracle.roundResult;
+  const round = m.betOracle.roundResult;
   if (round && m.phase === 'roundOver' && round.id > seen.round) {
     seen.round = round.id;
-    const tip = m.ghost ? round.tips.find((x) => x.player === m.viewer) : undefined;
+    const tip = m.ghost ? round.tips.find((x) => x.player === m.bettor) : undefined;
     const winner = round.winners.length ? m.world.ships[round.winners[0]] : { x: FIELD.width / 2, y: FIELD.height / 2 };
     if (tip) {
       // Below the ship: the shot's own verdict may be floating above it.
@@ -655,7 +676,8 @@ function frame(now: number): void {
   const net = online();
   // Online the others keep playing, so a menu on top doesn't stop the world.
   const paused = screen === 'play' && menu.isOpen && !net;
-  if (!paused) {
+  const empty = screen !== 'play' && !settings.menuBackground;
+  if (!paused && !empty) {
     if (!net || net.isHost) m.update(dt);
     effects.update(dt, m.world);
     // A shot flying through a nebula sheds wisps of gas, so its slowing down shows.
@@ -667,12 +689,24 @@ function frame(now: number): void {
     }
   }
   net?.update(dt);
-  renderer.draw(
-    m,
-    effects,
-    { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
-    paused ? 0 : dt,
-  );
+  const crowd = screen === 'play' && net && !net.isSpectator ? m.crowd.seats.filter((seat) => seat.present).length : 0;
+  standsBadge.hidden = crowd === 0;
+  if (crowd) {
+    const text = t('stands.badge', { n: crowd });
+    if (standsBadge.dataset.text !== text) {
+      standsBadge.dataset.text = text;
+      standsBadge.replaceChildren(eyeIcon(), text);
+    }
+  }
+  if (empty) renderer.drawEmpty();
+  else {
+    renderer.draw(
+      m,
+      effects,
+      { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
+      paused ? 0 : dt,
+    );
+  }
   if (screen === 'play' && m === match) announceOracle(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();

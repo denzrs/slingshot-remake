@@ -42,10 +42,24 @@ impl Player {
     }
 }
 
+/// The most people who may watch one room.
+pub(super) const MAX_SPECTATORS: usize = 20;
+
+/// Somebody in the stands. Not a seat: spectators take no player index, are never counted among the
+/// humans a game needs, and leaving does not end a game.
+pub(super) struct Spectator {
+    /// Handed out in order and never reused in a room, so a host can key a spectator's points by it.
+    pub(super) id: usize,
+    pub(super) name: String,
+    pub(super) conn: u64,
+}
+
 pub(super) struct Room {
     pub(super) id: String,
     /// What the lobby calls the room; set at creation and already past the profanity check.
     pub(super) name: String,
+    /// The host never typed a name: the room is called after the host and follows their rename.
+    pub(super) name_is_default: bool,
     pub(super) mode: RoomMode,
     pub(super) game_mode: GameMode,
     pub(super) rules: RoomRules,
@@ -58,11 +72,36 @@ pub(super) struct Room {
     /// (salt, hash) — the plaintext never leaves the server.
     pub(super) password: Option<(Vec<u8>, Vec<u8>)>,
     pub(super) created_order: u64,
+    pub(super) spectators: Vec<Spectator>,
+    pub(super) next_spectator_id: usize,
+    /// The seed the running game started with, so a spectator who comes late can be told it.
+    pub(super) seed: u32,
 }
 
 pub(super) struct Membership {
     pub(super) room_id: String,
     pub(super) player_id: usize,
+}
+
+/// Where a spectator's connection sits: which room, and which place in its stands.
+pub(super) struct Watching {
+    pub(super) room_id: String,
+    pub(super) spectator_id: usize,
+}
+
+/// Whether somebody may walk into the stands of a game that is already running: only a room that is
+/// listed (public) and open (no password).
+pub(super) fn open_to_latecomers(room: &Room) -> bool {
+    !room.look.is_private() && room.password.is_none()
+}
+
+/// Whether somebody in the room already goes by `name`, upper or lower case alike. A player's own seat
+/// (`except`) does not count, so they can change the case of their own name.
+pub(super) fn name_taken(room: &Room, name: &str, except: Option<usize>) -> bool {
+    let wanted = name.to_lowercase();
+    room.players
+        .iter()
+        .any(|p| Some(p.id) != except && p.name.to_lowercase() == wanted)
 }
 
 /// The team with fewer players, team 0 when they are even: where a newcomer goes.
@@ -123,4 +162,14 @@ pub(super) fn free_avatar(room: &Room) -> Avatar {
         .copied()
         .find(|avatar| room.players.iter().all(|p| p.avatar != *avatar))
         .unwrap_or_default()
+}
+
+impl Room {
+    /// Everybody who hears the room: connected players, then spectators.
+    pub(super) fn recipients(&self) -> impl Iterator<Item = u64> + '_ {
+        self.players
+            .iter()
+            .filter_map(|p| p.conn)
+            .chain(self.spectators.iter().map(|s| s.conn))
+    }
 }

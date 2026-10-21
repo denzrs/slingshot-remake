@@ -4,6 +4,7 @@
 //! are split by what they change: the lobby list, a room's roster, its settings, its CPU seats and
 //! the running game.
 
+mod chat;
 mod connections;
 mod cpu;
 mod game;
@@ -12,6 +13,7 @@ mod lobby;
 mod model;
 mod roster;
 mod settings;
+mod spectate;
 #[cfg(test)]
 mod tests;
 
@@ -32,8 +34,16 @@ pub struct RoomManager {
     rooms: HashMap<String, Room>,
     next_room_order: u64,
     memberships: HashMap<u64, Membership>,
+    /// Connections in the stands. They hold no seat, so they are not in `memberships`: everything
+    /// that acts on a seat treats them as outsiders.
+    watching: HashMap<u64, Watching>,
     net: Connections,
+    /// When each connection last renamed itself, so a rename cannot be repeated at the connection's message rate.
+    last_rename: HashMap<u64, std::time::Instant>,
 }
+
+/// The shortest time between two renames of one connection.
+const RENAME_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(1);
 
 impl RoomManager {
     pub fn new() -> Self {
@@ -41,7 +51,9 @@ impl RoomManager {
             rooms: HashMap::new(),
             next_room_order: 0,
             memberships: HashMap::new(),
+            watching: HashMap::new(),
             net: Connections::default(),
+            last_rename: HashMap::new(),
         }
     }
 
@@ -58,6 +70,7 @@ impl RoomManager {
 
     pub fn disconnect(&mut self, conn: u64) {
         self.net.close(conn);
+        self.last_rename.remove(&conn);
         self.remove_from_room(conn, "A player disconnected");
     }
 
@@ -71,19 +84,25 @@ impl RoomManager {
     }
 
     pub fn can_create_room(&self, conn: u64) -> bool {
-        self.net.is_connected(conn) && !self.memberships.contains_key(&conn)
+        self.net.is_connected(conn) && !self.is_placed(conn)
+    }
+
+    /// Whether a connection already sits in a room, in a seat or in the stands.
+    pub(super) fn is_placed(&self, conn: u64) -> bool {
+        self.memberships.contains_key(&conn) || self.watching.contains_key(&conn)
     }
 
     pub fn password_attempts_exhausted(&self, conn: u64) -> bool {
         self.net.password_attempts_exhausted(conn)
     }
 
-    pub fn join_password_salt(&self, conn: u64, room_id: &str) -> Option<Hashed> {
-        if !self.net.is_connected(conn) || self.memberships.contains_key(&conn) {
+    pub fn join_password_salt(&self, conn: u64, room_id: &str, spectate: bool) -> Option<Hashed> {
+        if !self.net.is_connected(conn) || self.is_placed(conn) {
             return None;
         }
         let room = self.rooms.get(room_id)?;
-        if room.status != RoomStatus::Waiting || !can_take_human(room) {
+        // The stands of a waiting room take a password like a seat does; a running game has none.
+        if room.status != RoomStatus::Waiting || (!spectate && !can_take_human(room)) {
             return None;
         }
         room.password.clone()
@@ -112,6 +131,7 @@ impl RoomManager {
             RoomCommand::SetRules(rules) => self.set_rules(conn, rules),
             RoomCommand::SetRoom(look) => self.set_room(conn, look),
             RoomCommand::SetAvatar(avatar) => self.set_avatar(conn, avatar),
+            RoomCommand::SetName(name) => self.set_name(conn, name),
             RoomCommand::SetTeam(team) => self.set_team(conn, team),
             RoomCommand::ResetTeams => self.reset_teams(conn),
             RoomCommand::AddCpu { level, team } => self.add_cpu(conn, level, team),
@@ -119,6 +139,7 @@ impl RoomManager {
             RoomCommand::RemoveCpu { seat } => self.remove_cpu(conn, seat),
             RoomCommand::StartGame => self.start_game(conn),
             RoomCommand::Input(input) => self.relay_input(conn, input),
+            RoomCommand::Chat(text) => self.chat(conn, text),
             RoomCommand::LeaveRoom => self.leave_room(conn),
         }
     }
