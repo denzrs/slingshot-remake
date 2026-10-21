@@ -280,8 +280,11 @@ export class Renderer {
       const color = match.players[vs.owner].color;
       const shot = vs.shot;
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = vs.heavy ? 1 : 2;
+      if (vs.heavy) ctx.globalAlpha = 0.45;
       strokePolyline(ctx, vs.trail, match.world.wormholes);
+      ctx.globalAlpha = 1;
+      if (vs.heavy) this.drawPlasmaTrail(vs.trail, match.world.wormholes);
       if (shot.end) continue;
       if (shot.inField) {
         const owner = match.players[vs.owner];
@@ -314,18 +317,29 @@ export class Renderer {
         glow.addColorStop(1, rgba(color, 0));
         ctx.fillStyle = glow;
         ctx.fillRect(shot.x - 9, shot.y - 9, 18, 18);
-        // A heavy round is a bigger, solid ball in a ring of its own colour.
+        // A plasma shot is a pulsing cyan blob: a wide soft halo, a wobbling body and a bright core.
         if (vs.heavy) {
           ctx.save();
-          ctx.fillStyle = rgba(COLORS.bone, 0.98);
+          const pulse = 1 + 0.12 * Math.sin(this.time * 14);
+          const halo = ctx.createRadialGradient(shot.x, shot.y, 0, shot.x, shot.y, 15 * pulse);
+          halo.addColorStop(0, rgba(POWER_UP_COLORS.heavy, 0.55));
+          halo.addColorStop(1, rgba(POWER_UP_COLORS.heavy, 0));
+          ctx.fillStyle = halo;
+          ctx.fillRect(shot.x - 16, shot.y - 16, 32, 32);
+          ctx.fillStyle = rgba(POWER_UP_COLORS.heavy, 0.9);
           ctx.beginPath();
-          ctx.arc(shot.x, shot.y, 4.5, 0, Math.PI * 2);
+          for (let i = 0; i <= 16; i++) {
+            const a = (i / 16) * Math.PI * 2;
+            const rr = 5.5 * pulse + 1.2 * Math.sin(a * 3 + this.time * 10);
+            if (i === 0) ctx.moveTo(shot.x + Math.cos(a) * rr, shot.y + Math.sin(a) * rr);
+            else ctx.lineTo(shot.x + Math.cos(a) * rr, shot.y + Math.sin(a) * rr);
+          }
+          ctx.closePath();
           ctx.fill();
-          ctx.strokeStyle = rgba(POWER_UP_COLORS.heavy, 0.9);
-          ctx.lineWidth = 1.5;
+          ctx.fillStyle = rgba('#e6ffff', 0.95);
           ctx.beginPath();
-          ctx.arc(shot.x, shot.y, 8, 0, Math.PI * 2);
-          ctx.stroke();
+          ctx.arc(shot.x, shot.y, 2.4, 0, Math.PI * 2);
+          ctx.fill();
           ctx.restore();
         }
         // An armor-piercing round is an arrowhead pointing where it flies, glowing like the plain shot.
@@ -634,6 +648,42 @@ export class Renderer {
     }
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'start';
+  }
+
+  /** Plasma shot: a tapering cyan ribbon that swells toward the blob, with sparks that drift off the trail and die. */
+  private drawPlasmaTrail(pts: number[], wormholes: readonly Wormhole[]): void {
+    const { ctx } = this;
+    const n = pts.length / 2;
+    if (n < 2) return;
+    const from = Math.max(1, n - 48);
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (let pass = 0; pass < 2; pass++) {
+      for (let k = from; k < n; k++) {
+        if (wormholes.length && isWormholeJump(pts, k * 2, wormholes)) continue;
+        const f = (k - from + 1) / (n - from);
+        ctx.strokeStyle = pass === 0 ? rgba(POWER_UP_COLORS.heavy, 0.22 * f) : rgba('#e6ffff', 0.8 * f * f);
+        ctx.lineWidth = (pass === 0 ? 9 : 2.4) * f;
+        ctx.beginPath();
+        ctx.moveTo(pts[k * 2 - 2], pts[k * 2 - 1]);
+        ctx.lineTo(pts[k * 2], pts[k * 2 + 1]);
+        ctx.stroke();
+      }
+    }
+    // Sparks: every few points a speck sits off the line, drifting sideways as it ages and shrinking away.
+    for (let k = from; k < n; k += 3) {
+      const age = (n - k) / 48;
+      const side = Math.sin(k * 12.9898) > 0 ? 1 : -1;
+      const dx = pts[k * 2] - pts[k * 2 - 2];
+      const dy = pts[k * 2 + 1] - pts[k * 2 - 1];
+      const len = Math.hypot(dx, dy) || 1;
+      const off = side * (2 + age * 9 + 1.5 * Math.sin(this.time * 6 + k));
+      ctx.fillStyle = rgba(POWER_UP_COLORS.heavy, 0.7 * (1 - age));
+      ctx.beginPath();
+      ctx.arc(pts[k * 2] - (dy / len) * off, pts[k * 2 + 1] + (dx / len) * off, 1.8 * (1 - age) + 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   /** A planet whose gravity is turned round sends out rings that spread away from it, for as long as it pushes. */
