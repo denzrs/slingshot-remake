@@ -433,6 +433,8 @@ function hits(world: World, ships: Ship[], angle: number, power: number, target:
 /**
  * Angle tolerance of a solution in degrees. Probes offsets of doubling size on both sides and
  * keeps the last one that still hits without a gap, so the result is accurate to a factor of two.
+ * With a flak cannon on the field every probe angle rolls the cannon's dice anew (they are hashed from the shot's aim),
+ * so there the window measures some luck along with the aim and the hardness calibrated from it is only rough.
  */
 function angleWindow(world: World, ships: Ship[], angle: number, power: number, target: number, load: Load): number {
   const side = (dir: 1 | -1) => {
@@ -486,15 +488,15 @@ function raiseFlak(world: World, targets: number, rng: Rng): void {
   });
 }
 
-/** Lays a cloud somewhere in the field, clear of the pilot's ship so the shot does not start inside it. */
+/** Lays a cloud somewhere in the field, clear of the pilot's ship so the shot does not start inside it and clear of the other clouds. Without such a spot after 40 tries there is no cloud, rather than one on the pilot. */
 function raiseCloud(world: World, rng: Rng): void {
   const me = world.ships[0];
-  let spot = { x: FIELD.width / 2, y: FIELD.height / 2 };
   for (let attempt = 0; attempt < 40; attempt++) {
     const x = range(rng, NEBULA.RADIUS * 0.8, FIELD.width - NEBULA.RADIUS * 0.8);
     const y = range(rng, TOP + NEBULA.RADIUS * 0.4, FIELD.height - NEBULA.RADIUS * 0.8);
-    spot = { x, y };
-    if (Math.hypot(x - me.x, y - me.y) > NEBULA.RADIUS + 60 && world.nebulae.every((n) => Math.hypot(x - n.x, y - n.y) > NEBULA.RADIUS)) break;
+    if (Math.hypot(x - me.x, y - me.y) > NEBULA.RADIUS + 60 && world.nebulae.every((n) => Math.hypot(x - n.x, y - n.y) > NEBULA.RADIUS)) {
+      world.nebulae.push({ x, y, radius: NEBULA.RADIUS, seed: rng() });
+      return;
+    }
   }
-  world.nebulae.push({ ...spot, radius: NEBULA.RADIUS, seed: rng() });
 }

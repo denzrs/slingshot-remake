@@ -180,11 +180,11 @@ export class ChallengeMatch extends Match {
   }
 
   protected recordKill(record: KillRecord): void {
-    // An armor-piercing shot can take several targets down: the log pays them as one shot.
+    // An armor-piercing shot can take several targets down: the log pays them as one shot. They share the shot's tricks, so the longer list is the combo, not the two added.
     const before = this.volleyKill;
     this.volleyKill =
       before && !before.self && !record.self
-        ? { ...record, points: before.points + record.points, combo: [...before.combo, ...record.combo], multiplier: Math.max(before.multiplier, record.multiplier) }
+        ? { ...record, points: before.points + record.points, combo: record.combo.length > before.combo.length ? record.combo : before.combo, multiplier: Math.max(before.multiplier, record.multiplier) }
         : record;
     super.recordKill(record);
   }

@@ -19,6 +19,7 @@ import { AIM, CHALLENGE, FIELD, PHYSICS, SCORING } from '../src/config';
 import { loadDay, loadStreak, recordRun } from '../src/dailyStore';
 import { createChallenge, type ChallengeMatch } from '../src/game';
 import { cloneWorld, simulateShot } from '../src/physics';
+import { hashSeed } from '../src/rng';
 import { DEFAULT_SETTINGS } from '../src/settings';
 import { shareText } from '../src/ui/daily';
 
@@ -112,7 +113,7 @@ describe('daily challenge', () => {
       if (ch.theme === 'singularity') expect(mods.slice(2).every((m) => m.includes('hole'))).toBe(true);
       if (ch.theme === 'heavy') expect(mods.slice(1).every((m) => m.includes('heavy'))).toBe(true);
       if (ch.theme === 'precision') expect(mods.slice(1).every((m) => m.includes('fixedPower'))).toBe(true);
-      if (ch.theme === 'bastion') expect(mods.slice(1).every((m) => m.includes('flak') || m.includes('invisible'))).toBe(true);
+      if (ch.theme === 'bastion') expect(mods.slice(1).every((m) => m.includes('flak'))).toBe(true);
       if (ch.theme === 'murk') expect(mods.slice(1).every((m) => m.includes('nebula'))).toBe(true);
       if (ch.theme === 'hammerhead') expect(mods.slice(1).every((m) => m.includes('plasma'))).toBe(true);
       if (ch.theme === 'skewer') expect(mods.slice(1).every((m) => m.includes('piercing'))).toBe(true);
@@ -124,6 +125,48 @@ describe('daily challenge', () => {
       for (const s of dailyChallenge(d).sectors) expect([s.flak, s.nebulae, s.ammo]).toEqual([false, 0, null]);
     }
   });
+});
+
+describe('the days before the variations', () => {
+  // Taken from the code as it was before the variations: theme, the sector specs (without the newer flak, nebula and
+  // ammo fields) and the built layouts of challenges 1-20. A change to the dice or the generator would silently
+  // re-score days people have already flown, so any change here is a bug unless it is meant as a new rule set.
+  const GOLDEN: [string, number, number][] = [
+  ['billiard', 240732881, 483727359],
+  ['precision', 3218328474, 1488851397],
+  ['classic', 1983889761, 4204658898],
+  ['singularity', 3514810017, 2972258707],
+  ['heavy', 149241052, 3075566717],
+  ['blind', 2527043684, 3534513626],
+  ['sniper', 2580782376, 13024761],
+  ['precision', 1266344649, 2678994725],
+  ['sniper', 238250607, 3101825362],
+  ['heavy', 3486247310, 1006330891],
+  ['blind', 1531211745, 1513804643],
+  ['classic', 1377778844, 945731571],
+  ['billiard', 1361321284, 3884686764],
+  ['singularity', 4031896772, 3032699038],
+  ['sniper', 1236508810, 2070348219],
+  ['billiard', 3292377992, 2863832631],
+  ['heavy', 3500024370, 426073210],
+  ['precision', 3318768245, 2377899356],
+  ['blind', 1334173011, 421557249],
+  ['classic', 1155116576, 4229618436],
+  ];
+  const r = (n: number) => Math.round(n * 1000) / 1000;
+
+  it('keeps their themes, specs and layouts exactly', () => {
+    const got = days(20).map((day) => {
+      const ch = dailyChallenge(day);
+      const specs = ch.sectors.map(({ flak, nebulae, ammo, ...old }) => old);
+      const layouts = ch.sectors.map((spec) => {
+        const b = buildSector(spec);
+        return JSON.stringify([b.world.ships.map((x) => [r(x.x), r(x.y)]), b.world.planets.map((p) => [r(p.x), r(p.y), r(p.radius)]), b.solutions.map((x) => [x.angle, x.power, x.window])]);
+      });
+      return [ch.theme, hashSeed(JSON.stringify(specs)), hashSeed(...layouts)];
+    });
+    expect(got).toEqual(GOLDEN);
+  }, 60_000);
 });
 
 describe('sector layout', () => {
@@ -172,9 +215,12 @@ describe('sector layout', () => {
   }, SWEEP_TIMEOUT);
 
   it('builds a sector fast enough to do between two rounds', () => {
+    // The hazard sectors (flak, clouds, special ammo) are the costly ones: their shots go through the full simulation.
+    const hazards = sectors.filter(({ spec }) => spec.flak || spec.nebulae || spec.ammo).slice(0, 40);
+    expect(hazards.length).toBeGreaterThan(20);
     const t0 = performance.now();
-    for (const { spec } of sectors.slice(0, 40)) buildSector(spec);
-    expect((performance.now() - t0) / 40).toBeLessThan(250);
+    for (const { spec } of hazards) buildSector(spec);
+    expect((performance.now() - t0) / hazards.length).toBeLessThan(250);
   });
 });
 
