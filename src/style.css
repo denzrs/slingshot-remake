@@ -2884,11 +2884,6 @@ kbd {
   scrollbar-width: thin;
 }
 
-/* Once the log runs off the top, the oldest lines fade out instead of being cut off. */
-.chat__log.is-overflowing {
-  mask-image: linear-gradient(to bottom, transparent, #000 28px);
-}
-
 .chat__line {
   padding: 1px 0;
   overflow-wrap: anywhere;
