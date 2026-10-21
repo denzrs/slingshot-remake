@@ -109,5 +109,7 @@ export class ChatPanel {
       }),
     );
     if (stuck) this.log.scrollTop = this.log.scrollHeight;
+    // Only a log that runs off the top fades there; a short one starts at full strength.
+    this.log.classList.toggle('is-overflowing', this.log.scrollHeight > this.log.clientHeight);
   }
 }

@@ -2881,9 +2881,12 @@ kbd {
   overflow-y: auto;
   list-style: none;
   font: 13px/1.35 var(--font-body);
-  /* The oldest lines fade out at the top instead of being cut off. */
-  mask-image: linear-gradient(to bottom, transparent, #000 28px);
   scrollbar-width: thin;
+}
+
+/* Once the log runs off the top, the oldest lines fade out instead of being cut off. */
+.chat__log.is-overflowing {
+  mask-image: linear-gradient(to bottom, transparent, #000 28px);
 }
 
 .chat__line {
