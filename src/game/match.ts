@@ -69,6 +69,8 @@ export interface KillRecord {
   self: boolean;
   /** Shot down a teammate. */
   friendly: boolean;
+  /** A planetary defense's stray missile did it, not a shot. */
+  collateral?: boolean;
   combo: StyleKind[];
   multiplier: number;
   shots: number;
@@ -1004,7 +1006,7 @@ export abstract class Match {
     const killer = vs.owner;
     const self = killer === victim;
     const friendly = !self && this.players[killer].team !== null && this.players[killer].team === this.players[victim].team;
-    const hit = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : this.killPoints(vs);
+    const hit = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : vs.stray ? { points: SCORING.COLLATERAL, combo: [], multiplier: 1 } : this.killPoints(vs);
     const score = { ...hit, points: hit.points * this.payFactor };
     this.players[victim].alive = false;
     this.oracleKills.push({ killer, victim, self, friendly });
@@ -1016,6 +1018,7 @@ export abstract class Match {
       victim,
       self,
       friendly,
+      ...(vs.stray ? { collateral: true } : {}),
       points: score.points,
       combo: score.combo,
       multiplier: score.multiplier,
@@ -1053,6 +1056,7 @@ export abstract class Match {
   /** What the finished shots tell the scorecard: how far they flew and whom they narrowly missed. */
   private recordFlights(volley: Volley): void {
     for (const vs of volley.shots) {
+      if (vs.stray) continue;
       const trail = vs.trail;
       const end = { x: trail[trail.length - 2], y: trail[trail.length - 1] };
       this.record((book) => (book.longestShot = improve(book.longestShot, vs.owner, pathLength(trail), true, { trail, at: end })));

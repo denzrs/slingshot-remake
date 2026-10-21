@@ -804,7 +804,7 @@ export class Hud {
     let line2 = '';
     if (duel && kill && !kill.self && kill.killer !== null) {
       line1 = `${match.players[kill.killer].name}  +${kill.points}`;
-      line2 = t('hud.shotPower', { n: kill.shots, power: fmt(kill.power, 2) });
+      line2 = kill.collateral ? t('hud.collateral') : t('hud.shotPower', { n: kill.shots, power: fmt(kill.power, 2) });
     } else if (s.team !== null) {
       line1 = `${t('hud.teamWinsRound', { team: teamName(s.team) })}${s.bonus ? `  ·  ${t('hud.perMember', { n: s.bonus })}` : ''}`;
       if (kill) line2 = killSegments(match, kill).map(([text]) => text).join('');

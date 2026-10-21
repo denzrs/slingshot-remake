@@ -945,7 +945,7 @@ describe('the player symbols online', () => {
 
     guest.setAvatar('bolt');
     await waitForSession(host, () => host.room!.players[1].avatar === 'bolt');
-    await waitForSession(guest, () => guest.room!.players[1].avatar === 'bolt');
+    await waitForSession(guest, () => guest.room?.players[1]?.avatar === 'bolt');
 
     guest.setReady(true);
     await waitForSession(host, () => host.room!.players[1].ready);
