@@ -128,14 +128,16 @@ export const SOLAR = {
   CENTER_Y_SHIFT: 25,
   /** The innermost and outermost orbit a body may take (distance from the sun's centre). */
   INNER_ORBIT: 84,
-  OUTER_ORBIT: 322,
+  OUTER_ORBIT: 335,
+  /** The orbits are ellipses, this much wider than tall (the field is): an orbit's "radius" is its half-height. */
+  STRETCH: 1.6,
   /** Free space between two neighbouring orbits' bodies. */
   ORBIT_GAP: 14,
   /** How far a ship's orbit band reaches either side of its centre line. */
   SHIP_BAND: 14,
   /** Planets of this mode are smaller than on an open field, so several fit between the orbits. */
   MIN_PLANET: 13,
-  MAX_PLANET: 32,
+  MAX_PLANET: 52,
   /** Turn per step in radians at REF_ORBIT; other orbits scale by (REF_ORBIT / r) ^ FALLOFF, so inner orbits turn faster. */
   TURN: 0.3,
   REF_ORBIT: 200,
