@@ -1042,3 +1042,71 @@ fn a_player_can_rename_in_a_waiting_room_but_not_to_a_profane_name() {
     let lobby = take_type(&drain_json(&mut watcher), "lobby_update");
     assert_eq!(lobby["rooms"][0]["host"], "Ada L");
 }
+
+#[test]
+fn a_name_error_says_it_is_about_the_name_and_other_errors_do_not() {
+    let mut rooms = RoomManager::new();
+    let mut rx = connect(&mut rooms, 1);
+    drain_json(&mut rx);
+    rooms.handle(1, &create("shit", None));
+    let error = take_type(&drain_json(&mut rx), "error");
+    assert_eq!(error["field"], "name");
+
+    rooms.handle(1, &json!({"type":"join_room","roomId":"nope","name":"Ada"}));
+    let error = take_type(&drain_json(&mut rx), "error");
+    assert!(error.get("field").is_none());
+}
+
+#[test]
+fn a_new_name_has_to_be_confirmed_again_and_the_same_one_does_not_unready() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    let mut guest_rx = connect(&mut rooms, 2);
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    rooms.handle(1, &create("Ada", None));
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+    );
+    rooms.handle(2, &json!({"type":"ready","ready":true}));
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+
+    rooms.handle(2, &json!({"type":"set_name","name":"Guest"}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["players"][1]["ready"], true);
+
+    rooms.handle(2, &json!({"type":"set_name","name":"Ada"}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["players"][1]["name"], "Ada");
+    assert_eq!(update["room"]["players"][1]["ready"], false);
+}
+
+#[test]
+fn a_room_the_host_did_not_name_follows_their_rename_and_a_named_one_does_not() {
+    let mut rooms = RoomManager::new();
+    let mut default_rx = connect(&mut rooms, 1);
+    let mut named_rx = connect(&mut rooms, 2);
+    drain_json(&mut default_rx);
+    drain_json(&mut named_rx);
+
+    rooms.handle(1, &create("Ada", None));
+    let update = take_type(&drain_json(&mut default_rx), "room_update");
+    assert_eq!(update["room"]["name"], "Ada's room");
+    rooms.handle(1, &json!({"type":"set_name","name":"Grace"}));
+    let update = take_type(&drain_json(&mut default_rx), "room_update");
+    assert_eq!(update["room"]["name"], "Grace's room");
+
+    let mut message = create("Bob", None);
+    message["roomName"] = json!("Arena");
+    rooms.handle(2, &message);
+    drain_json(&mut named_rx);
+    rooms.handle(2, &json!({"type":"set_name","name":"Bobby"}));
+    let update = take_type(&drain_json(&mut named_rx), "room_update");
+    assert_eq!(update["room"]["name"], "Arena");
+}

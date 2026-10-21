@@ -70,7 +70,13 @@ export class MultiplayerSession {
   you = { playerId: 0, host: false };
   /** The last thing worth telling the player (server errors, "host left", …). */
   notice: string | null = null;
+  /** The notice, when it is the relay refusing the name: it belongs under the name field, not in the general message. */
+  private nameError: string | null = null;
   match: NetMatch | null = null;
+
+  get nameNotice(): string | null {
+    return this.notice !== null && this.notice === this.nameError ? this.notice : null;
+  }
 
   private readonly listeners = new Set<() => void>();
   private readonly pendingEvents: GameEvent[] = [];
@@ -117,6 +123,7 @@ export class MultiplayerSession {
 
   createRoom(options: CreateRoomOptions): void {
     const { look = {}, ...room } = options;
+    this.nameError = null;
     this.send({ type: 'create_room', ...room, ...look, password: options.password || undefined, roomName: options.roomName?.trim() || undefined });
   }
 
@@ -126,6 +133,7 @@ export class MultiplayerSession {
   }
 
   joinRoom(roomId: string, name: string, password?: string, avatar?: Avatar): void {
+    this.nameError = null;
     this.send({ type: 'join_room', roomId, name, password: password || undefined, avatar });
   }
 
@@ -136,6 +144,7 @@ export class MultiplayerSession {
 
   /** Your name in the room, while it waits. The relay answers a refused one with an error notice. */
   setName(name: string): void {
+    this.nameError = null;
     this.send({ type: 'set_name', name });
   }
 
@@ -286,6 +295,7 @@ export class MultiplayerSession {
         break;
       case 'error':
         this.notice = message.message;
+        this.nameError = message.field === 'name' ? message.message : null;
         break;
       case 'closed':
         this.connected = false;

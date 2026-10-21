@@ -945,7 +945,17 @@ describe('the player symbols online', () => {
 
     guest.setName('fuck');
     await waitForSession(guest, () => guest.notice === 'That name is not allowed');
+    expect(guest.nameNotice).toBe('That name is not allowed');
     expect(host.room!.players[1].name).toBe('Benedikt');
+
+    // Another refusal is not about the name, and a new attempt clears the old name error.
+    guest.setName('Benno');
+    expect(guest.nameNotice).toBeNull();
+    guest.setReady(true);
+    await waitForSession(host, () => host.room!.players[1].name === 'Benno' && host.room!.players[1].ready);
+    guest.setName('Benedikt');
+    await waitForSession(host, () => host.room!.players[1].name === 'Benedikt');
+    expect(host.room!.players[1].ready).toBe(false);
   }, 60_000);
 
   it('shows each player the symbol they picked, in the lobby and in the game on both screens', async () => {

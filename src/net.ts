@@ -142,7 +142,8 @@ export type ServerMessage =
       you: DailyEntry | null;
     }
   | { type: 'room_closed'; message: string }
-  | { type: 'error'; message: string }
+  /** `field` names what the error is about, when it is about one thing the player typed. */
+  | { type: 'error'; message: string; field?: 'name' }
   /** Local only: the connection to the server is gone. */
   | { type: 'closed'; message: string };
 

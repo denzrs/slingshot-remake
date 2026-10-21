@@ -121,12 +121,14 @@ impl RoomManager {
         } else {
             None
         };
+        let name_is_default = room_name.is_none();
         let room_name = room_name.unwrap_or_else(|| default_room_name(&name, created_order + 1));
         self.rooms.insert(
             id.clone(),
             Room {
                 id: id.clone(),
                 name: room_name,
+                name_is_default,
                 mode,
                 game_mode,
                 rules,

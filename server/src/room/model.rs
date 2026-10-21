@@ -46,6 +46,8 @@ pub(super) struct Room {
     pub(super) id: String,
     /// What the lobby calls the room; set at creation and already past the profanity check.
     pub(super) name: String,
+    /// The host never typed a name: the room is called after the host and follows their rename.
+    pub(super) name_is_default: bool,
     pub(super) mode: RoomMode,
     pub(super) game_mode: GameMode,
     pub(super) rules: RoomRules,

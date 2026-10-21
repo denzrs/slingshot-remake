@@ -1,7 +1,7 @@
 //! What the people in a waiting room change: ready, the rules, the lobby look, symbols and teams.
 
 use crate::command::Parsed;
-use crate::protocol::{RoomLook, RoomRules};
+use crate::protocol::{default_room_name, RoomLook, RoomRules};
 use crate::wire::Avatar;
 
 use super::model::*;
@@ -114,7 +114,15 @@ impl RoomManager {
         };
         let room = self.rooms.get_mut(&room_id).unwrap();
         if let Some(player) = room.players.iter_mut().find(|p| p.id == player_id) {
-            player.name = name;
+            // A new name has to be confirmed again: nobody readies up as one person and plays as another.
+            if player.name != name {
+                player.ready = false;
+            }
+            player.name = name.clone();
+        }
+        // A room the host never named is called after the host, so it follows their rename.
+        if player_id == 0 && room.name_is_default {
+            room.name = default_room_name(&name, room.created_order + 1);
         }
         self.broadcast_room_update(&room_id, None);
         // The host's name is on the list beside the room.

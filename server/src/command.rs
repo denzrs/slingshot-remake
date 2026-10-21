@@ -10,7 +10,7 @@ use crate::auth::{password_length, MAX_PASSWORD_LENGTH};
 use crate::protocol::{
     is_input_message, is_safe_integer, parse_avatar, parse_cpu_level, parse_daily_day,
     parse_daily_submit, parse_player_name, parse_room_look, parse_room_name, parse_rules,
-    DailyScore, RoomLook, RoomName, RoomRules,
+    DailyScore, RoomLook, RoomName, RoomRules, NAME_REQUIRED,
 };
 use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
 
@@ -265,9 +265,7 @@ impl JoinRoom {
                     room_id: room_id.to_owned(),
                     name,
                 }),
-                (Some(_), Err(refused)) if refused != "A non-empty player name is required" => {
-                    Err(refused)
-                }
+                (Some(_), Err(refused)) if refused != NAME_REQUIRED => Err(refused),
                 _ => Err("join_room requires a roomId and non-empty player name"),
             },
             avatar: parse_avatar(message.get("avatar")).ok_or("Malformed player symbol"),
