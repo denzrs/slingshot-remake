@@ -8,7 +8,7 @@ import { renderBackdrop, type View } from './backdrop';
 import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
 import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from './orientation';
 import { drawSun } from './sun';
-import { solarCenter } from '../world';
+import { orbitOf, solarCenter } from '../world';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
 import { renderContours } from './contours';
@@ -206,7 +206,7 @@ export class Renderer {
     const centre = solarCenter();
     const radii: number[] = [];
     for (const o of [...world.planets.filter((p) => !p.sun), ...world.ships.filter((sh) => sh.alive)]) {
-      const r = Math.hypot(o.x - centre.x, o.y - centre.y);
+      const r = orbitOf(o.x, o.y).r;
       if (!radii.some((known) => Math.abs(known - r) < 0.5)) radii.push(r);
     }
     ctx.save();
@@ -215,13 +215,13 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(111, 227, 200, 0.45)';
     for (const r of radii) {
       ctx.beginPath();
-      ctx.arc(centre.x, centre.y, r, 0, Math.PI * 2);
+      ctx.ellipse(centre.x, centre.y, r * SOLAR.STRETCH, r, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
     ctx.strokeStyle = 'rgba(255, 90, 110, 0.35)';
     for (const r of [SOLAR.INNER_ORBIT, SOLAR.OUTER_ORBIT]) {
       ctx.beginPath();
-      ctx.arc(centre.x, centre.y, r, 0, Math.PI * 2);
+      ctx.ellipse(centre.x, centre.y, r * SOLAR.STRETCH, r, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
     ctx.restore();

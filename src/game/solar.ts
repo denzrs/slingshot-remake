@@ -1,5 +1,6 @@
 import { SOLAR } from '../config';
-import { orbitTurn, solarCenter } from '../world';
+import { FIELD } from '../config';
+import { onOrbit, orbitOf, orbitTurn } from '../world';
 import { ClassicMatch } from './classic';
 
 /**
@@ -35,16 +36,13 @@ export class SolarMatch extends ClassicMatch {
 
   /** Turns everything that rides an orbit by `share` of a step. */
   private turn(share: number): void {
-    const centre = solarCenter();
     const world = this.world;
-    const move = (o: { x: number; y: number }): void => {
-      const dx = o.x - centre.x;
-      const dy = o.y - centre.y;
-      const a = orbitTurn(Math.hypot(dx, dy)) * share;
-      const cos = Math.cos(a);
-      const sin = Math.sin(a);
-      o.x = centre.x + dx * cos - dy * sin;
-      o.y = centre.y + dx * sin + dy * cos;
+    const move = (o: { x: number; y: number }, free = false): void => {
+      const { r, a } = orbitOf(o.x, o.y);
+      const to = onOrbit(r, a + orbitTurn(r) * share);
+      // What was dropped off its orbit (a teleported ship, a pickup) is kept on the field.
+      o.x = free ? Math.min(FIELD.width - 24, Math.max(24, to.x)) : to.x;
+      o.y = free ? Math.min(FIELD.height - 24, Math.max(24, to.y)) : to.y;
     };
     for (const p of world.planets) {
       if (p.sun) continue;
@@ -57,7 +55,7 @@ export class SolarMatch extends ClassicMatch {
         d.y += p.y - oy;
       }
     }
-    for (const p of this.alive) move(world.ships[p.id]);
-    for (const pickup of this.pickups) move(pickup);
+    for (const p of this.alive) move(world.ships[p.id], true);
+    for (const pickup of this.pickups) move(pickup, true);
   }
 }
