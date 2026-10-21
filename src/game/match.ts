@@ -924,6 +924,13 @@ export abstract class Match {
       if (d) this.emit({ type: 'defenseMiss', player: d.owner, x: e.x, y: e.y });
       return;
     }
+    if (e.type === 'collateral') {
+      // A defense's stray missile hit a ship: the defense's owner takes the kill.
+      const d = volley.world.defenses[e.defense];
+      this.emit({ type: 'explode', x: e.x, y: e.y, ship: e.ship, vx: 0, vy: 0 });
+      if (live && d) this.registerKill(vs, e.ship, volley, d.owner);
+      return;
+    }
     if (e.type === 'reflect') {
       // The shield bounced the shot off: it is spent, and so is the power-up it came from.
       this.emit({ type: 'shield', ship: e.ship, x: e.x, y: e.y });
@@ -994,11 +1001,11 @@ export abstract class Match {
     }
   }
 
-  private registerKill(vs: VolleyShot, victim: number, volley: Volley): void {
-    const killer = vs.owner;
+  private registerKill(vs: VolleyShot, victim: number, volley: Volley, collateralBy?: number): void {
+    const killer = collateralBy ?? vs.owner;
     const self = killer === victim;
     const friendly = !self && this.players[killer].team !== null && this.players[killer].team === this.players[victim].team;
-    const hit = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : this.killPoints(vs);
+    const hit = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : collateralBy !== undefined ? { points: SCORING.BASE, combo: [], multiplier: 1 } : this.killPoints(vs);
     const score = { ...hit, points: hit.points * this.payFactor };
     this.players[victim].alive = false;
     this.oracleKills.push({ killer, victim, self, friendly });

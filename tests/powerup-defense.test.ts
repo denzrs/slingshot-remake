@@ -315,4 +315,42 @@ describe('planetary defense power-up', () => {
     expect(match.world.defenses[0].protects).toContain(b.id);
     expect(match.world.defenses[0].protects).not.toContain(a.id);
   });
+
+  describe('collateral damage', () => {
+    /** A missile that has lost its shot, flying left from x = 160 along the line of the ship at x = 100. */
+    function stray(world: World, strayRoll: number): Shot {
+      const shot = new Shot(world, 1, 90, 60, rules);
+      shot.missiles.push({ defense: 0, x: 160, y: 400, heading: Math.PI, age: 0.5, roll: 1, stray: strayRoll, chasing: false, trail: [160, 400] });
+      return shot;
+    }
+    const fly = (shot: Shot): void => {
+      for (let i = 0; i < 60 && !shot.collaterals.length; i++) shot.step();
+    };
+
+    it('lets a missile that lost its shot hit an unprotected ship, when its luck says so', () => {
+      const shot = stray(guarded([0]), 0.01);
+      fly(shot);
+      expect(shot.collaterals).toHaveLength(0);
+      const open = stray(guarded([1]), 0.01);
+      fly(open);
+      expect(open.collaterals).toMatchObject([{ defense: 0, ship: 0 }]);
+      expect(open.missiles).toHaveLength(0);
+    });
+
+    it('is rare: a missile with ordinary luck flies past', () => {
+      const shot = stray(guarded([1]), 0.99);
+      fly(shot);
+      expect(shot.collaterals).toHaveLength(0);
+    });
+
+    it('takes the ship out in a volley and credits the defense owner', () => {
+      const world = guarded([1]);
+      const volley = new Volley(world, [{ player: 1, angle: 90, power: 60 }], rules, false);
+      volley.shots[0].shot.missiles.push({ defense: 0, x: 160, y: 400, heading: Math.PI, age: 0.5, roll: 1, stray: 0.01, chasing: false, trail: [160, 400] });
+      const events = [];
+      for (let i = 0; i < 60; i++) events.push(...volley.step());
+      expect(events.some((e) => e.type === 'collateral')).toBe(true);
+      expect(volley.world.ships[0].alive).toBe(false);
+    });
+  });
 });

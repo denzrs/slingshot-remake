@@ -65,7 +65,9 @@ export type VolleyEvent =
   /** A planetary defense fired a missile at the shot, which is at (x, y). */
   | { type: 'intercept'; index: number; defense: number; x: number; y: number }
   /** A defense's missile lost its shot at (x, y) and flies on. */
-  | { type: 'interceptMiss'; index: number; defense: number; x: number; y: number };
+  | { type: 'interceptMiss'; index: number; defense: number; x: number; y: number }
+  /** A defense's missile, having lost its shot, hit a ship on its way: the ship is out. */
+  | { type: 'collateral'; index: number; defense: number; ship: number; x: number; y: number };
 
 const TRAIL_EVERY = 2;
 let nextVolleyId = 1;
@@ -190,6 +192,11 @@ export class Volley {
       shot.launches.length = 0;
       for (const miss of shot.misses) events.push({ type: 'interceptMiss', index: i, defense: miss.defense, x: miss.x, y: miss.y });
       shot.misses.length = 0;
+      for (const c of shot.collaterals) {
+        this.world.ships[c.ship].alive = false;
+        events.push({ type: 'collateral', index: i, defense: c.defense, ship: c.ship, x: c.x, y: c.y });
+      }
+      shot.collaterals.length = 0;
       if (end || this.steps % TRAIL_EVERY === 0) vs.trail.push(shot.x, shot.y);
       // A shield bounces the shot off: it is spent doing so, here where a live flight and a replay agree.
       for (const r of shot.reflects) {

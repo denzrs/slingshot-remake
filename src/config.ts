@@ -54,6 +54,8 @@ export const DEFENSE = {
   HIT_RADIUS: 9,
   /** It gives up after this long (s), or once it has strayed a good way past the area. */
   MISSILE_LIFE: 1.4,
+  /** A missile that lost its shot and flies on hits a ship it meets (one its owner's side does not protect) only with this chance: collateral is rare. */
+  COLLATERAL_CHANCE: 0.3,
 } as const;
 
 /** Physics constants that only the nebula power-up uses. */
