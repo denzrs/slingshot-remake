@@ -153,9 +153,9 @@ export const SOLAR = {
   /** The orbits are ellipses, this much wider than tall (the field is): an orbit's "radius" is its half-height. */
   STRETCH: 1.6,
   /** Free space between two neighbouring orbits' bodies. */
-  ORBIT_GAP: 14,
+  ORBIT_GAP: 12,
   /** How far a ship's orbit band reaches either side of its centre line. */
-  SHIP_BAND: 14,
+  SHIP_BAND: 10,
   /** Planets of this mode are smaller than on an open field, so several fit between the orbits. */
   MIN_PLANET: 13,
   MAX_PLANET: 52,
