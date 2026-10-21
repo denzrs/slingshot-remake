@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::auth::{password_length, MAX_PASSWORD_LENGTH};
 use crate::protocol::{
-    is_input_message, is_safe_integer, parse_avatar, parse_cpu_level, parse_daily_day,
+    clean_chat, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level, parse_daily_day,
     parse_daily_submit, parse_player_name, parse_room_look, parse_room_name, parse_rules,
     DailyScore, RoomLook, RoomName, RoomRules, NAME_REQUIRED,
 };
@@ -58,6 +58,8 @@ pub enum RoomCommand<'a> {
     },
     StartGame,
     Input(Parsed<&'a Value>),
+    /// Something to say to the room.
+    Chat(Parsed<String>),
     LeaveRoom,
     /// A message with no `type`.
     Malformed,
@@ -107,6 +109,8 @@ pub struct JoinRoom {
     pub avatar: Parsed<Avatar>,
     /// Whatever the client sent as a password, to be checked against the room's.
     pub password: Option<String>,
+    /// Watch from the stands instead of taking a seat.
+    pub spectate: bool,
 }
 
 pub struct JoinTarget {
@@ -199,6 +203,9 @@ impl<'a> RoomCommand<'a> {
                     .filter(|input| is_input_message(input))
                     .ok_or("Malformed input message"),
             ),
+            "chat" => {
+                RoomCommand::Chat(clean_chat(message.get("text")).ok_or("Say something first"))
+            }
             "leave_room" => RoomCommand::LeaveRoom,
             other => RoomCommand::Unknown(other),
         }
@@ -273,6 +280,7 @@ impl JoinRoom {
                 .get("password")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            spectate: message.get("spectate").and_then(Value::as_bool) == Some(true),
         }
     }
 }

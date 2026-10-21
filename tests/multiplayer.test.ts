@@ -144,7 +144,7 @@ interface Client {
   syncElapsed: number;
 }
 
-const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, mayhem: 0, betting: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'polarity', 'shield'], powerUpAmount: 2 };
+const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, mayhem: 0, betting: false, chatPlayersOnly: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'polarity', 'shield'], powerUpAmount: 2 };
 
 async function connectSession(hooks: Partial<ConstructorParameters<typeof MultiplayerSession>[0]> = {}, settings = DEFAULT_SETTINGS, edit?: (message: ServerMessage) => ServerMessage): Promise<MultiplayerSession> {
   const session = new MultiplayerSession({ settings: () => cloneSettings(settings), matchStarted() {}, matchRestarted() {}, matchEnded() {}, ...hooks }, new RustTransport(edit));
@@ -1216,4 +1216,154 @@ describe('CPU seats online', () => {
       expect(host.match().players[1].powerUp).toBeNull();
     }, 30_000);
   });
+});
+
+describe('spectators online', () => {
+  /** Two players and any number of spectators who walk into the running, public room. */
+  async function startStands(fans: string[], roomRules: Partial<RoomRules> = {}): Promise<{ players: Client[]; stands: Client[] }> {
+    const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], { ...rules, fixedPower: false, bounce: false, ...roomRules });
+    const stands: Client[] = [];
+    for (const name of fans) {
+      let fanMatch: NetMatch | null = null;
+      const session = await connectSession({ matchStarted: (match) => { fanMatch = match; } });
+      await waitForSession(session, () => session.rooms.some((room) => room.id === host.session.room!.id));
+      session.joinRoom(host.session.room!.id, name, undefined, undefined, true);
+      await waitForSession(session, () => fanMatch !== null);
+      stands.push({ session, match: () => fanMatch!, syncElapsed: 0 });
+    }
+    return { players: [host, guest], stands };
+  }
+
+  const tick = async (clients: Client[], frames = 1): Promise<void> => {
+    for (let index = 0; index < frames; index++) {
+      const stateReceived = clients.slice(1).map((client) => (client.session.client as RustTransport).waitForMessage((message) => message.type === 'state'));
+      clients[0].match().update(1 / 30);
+      for (const client of clients) client.session.update(1 / 30);
+      await Promise.all(stateReceived);
+    }
+  };
+
+  it('lets a spectator walk into a running game, see the same match, and do nothing but bet', async () => {
+    const { players, stands } = await startStands(['Fan']);
+    const [host, guest] = players;
+    const [fan] = stands;
+    const everybody = [host, guest, fan];
+    await tick(everybody, 5);
+
+    expect(fan.session.isSpectator).toBe(true);
+    expect(fan.match().spectating).toBe(true);
+    expect(fan.match().viewer).toBeNull();
+    expect(fan.match().localCanAim).toBe(false);
+    // The keyframe request gave the latecomer a complete picture, not a patch on nothing.
+    expect(fan.match().round).toBe(host.match().round);
+    expect(fan.match().players.map((p) => p.name)).toEqual(['Anna', 'Ben']);
+    expect(host.session.room!.spectators.map((s) => s.name)).toEqual(['Fan']);
+    expect(guest.session.you.spectator).toBeUndefined();
+
+    // Aiming and firing from the stands go nowhere; a tampered client is told off.
+    const before = host.match().players.map((p) => ({ angle: p.angle, power: p.power, locked: p.locked }));
+    fan.session.input({ kind: 'aim', angle: 33, power: 77 });
+    fan.session.input({ kind: 'fire' });
+    fan.session.client.send({ type: 'input', input: { kind: 'aim', angle: 33, power: 77 } });
+    await waitForSession(fan.session, () => fan.session.notice === 'Spectators can only bet');
+    await tick(everybody, 3);
+    expect(host.match().players.map((p) => ({ angle: p.angle, power: p.power, locked: p.locked }))).toEqual(before);
+
+    // Leaving the stands does not end the game.
+    fan.session.leaveRoom();
+    await waitForSession(host.session, () => host.session.room!.spectators.length === 0);
+    expect(host.session.room!.status).toBe('playing');
+    expect(host.match().crowd.seats.every((seat) => !seat.present)).toBe(true);
+  }, 30_000);
+
+  it('lets everybody in the room talk, with the relay starring out profanity, and tells the sender when it is refused', async () => {
+    const { players, stands } = await startStands(['Fan']);
+    const [host, guest] = players;
+    const [fan] = stands;
+    host.session.sendChat('  gg you shit  ');
+    await waitForSession(host.session, () => host.session.chat.length === 1);
+    await waitForSession(fan.session, () => fan.session.chat.length === 1);
+    await waitForSession(guest.session, () => guest.session.chat.length === 1);
+    for (const watcher of [host, guest, fan]) {
+      const [line] = watcher.session.chat;
+      expect(line).toMatchObject({ name: 'Anna', id: 0, spectator: false });
+      expect(line.text.startsWith('gg you ') && !line.text.includes('shit')).toBe(true);
+    }
+    expect(fan.session.canChat).toBe(true);
+    fan.session.sendChat('nice game');
+    await waitForSession(host.session, () => host.session.chat.length === 2);
+    expect(host.session.chat[1]).toMatchObject({ name: 'Fan', spectator: true, text: 'nice game' });
+
+    // A flood is cut off after five, and the relay says so in the chat.
+    for (let i = 0; i < 8; i++) guest.session.sendChat(`spam ${i}`);
+    await waitForSession(guest.session, () => guest.session.chat.some((line) => line.system));
+    expect(guest.session.chat.find((line) => line.system)!.text).toBe('You are writing too fast');
+  }, 30_000);
+
+  it('lets the host keep the chat to the players: spectators read along but cannot write', async () => {
+    const { players, stands } = await startStands(['Fan'], { chatPlayersOnly: true });
+    const [host] = players;
+    const [fan] = stands;
+    expect(fan.session.canChat).toBe(false);
+    expect(host.session.canChat).toBe(true);
+    // The input is closed on a spectator's screen; a client that ignores that is refused by the relay.
+    fan.session.sendChat('let me in');
+    expect(fan.session.chat).toEqual([]);
+    fan.session.client.send({ type: 'chat', text: 'let me in' });
+    await waitForSession(fan.session, () => fan.session.chat.some((line) => line.system));
+    expect(fan.session.chat[0].text).toBe('Only the players can write in this room');
+    expect(host.session.chat).toEqual([]);
+
+    host.session.sendChat('players only');
+    await waitForSession(fan.session, () => fan.session.chat.some((line) => line.text === 'players only'));
+  }, 30_000);
+
+  it('lets the stands play the oracle: odds from their bets, a pot of their own, paid into bankrolls and not into scores', async () => {
+    const { players, stands } = await startStands(['Fan', 'Gus']);
+    const [host, guest] = players;
+    const [fan, gus] = stands;
+    const everybody = [host, guest, fan, gus];
+    const hm = host.match();
+    hm.world.planets = [];
+    Object.assign(hm.world.ships[0], { x: 100, y: 400 });
+    Object.assign(hm.world.ships[1], { x: 500, y: 400 });
+    await tick(everybody, 5);
+
+    // Nobody is out, and the stands can already bet on who wins the round.
+    expect(hm.stands.roundQuestion).not.toBeNull();
+    expect(hm.crowd.seats.map((seat) => seat.balance)).toEqual([500, 500]);
+    const [fanId, gusId] = [fan.session.you.spectatorId!, gus.session.you.spectatorId!];
+    fan.session.input({ kind: 'bet', pick: 1, round: true, stake: 250 });
+    gus.session.input({ kind: 'bet', pick: 0, round: true, stake: 120 });
+    await tick(everybody, 5);
+    // The odds are the pot over what is on a side, and every screen can work them out.
+    for (const watcher of [hm, fan.match(), gus.match()]) {
+      expect(watcher.stands.pot).toBe(370);
+      expect(watcher.stands.oddsFor(1, (pick) => watcher.sideOf(pick))).toBeCloseTo(370 / 250);
+      expect(watcher.stands.oddsFor(0, (pick) => watcher.sideOf(pick))).toBeCloseTo(370 / 120);
+      expect(watcher.crowd.seat(fanId)!.balance).toBe(250);
+    }
+    // Their points are not the players': the ghosts' pot is empty, and the tips stay face down.
+    expect(hm.oracle.pot).toBe(0);
+    expect(fan.match().stands.roundTippers.has(gusId)).toBe(true);
+
+    // Anna shoots Ben. Bets do not reach the host after the shot is away.
+    host.session.input({ kind: 'aim', angle: 0, power: 50 });
+    host.session.input({ kind: 'fire' });
+    for (let i = 0; i < 600 && hm.phase !== 'flying'; i++) await tick(everybody);
+    gus.session.input({ kind: 'bet', pick: 1, round: true, stake: 120 });
+    await tick(everybody, 3);
+    expect(hm.stands.stakeOf(gusId)).toBe(120);
+
+    for (let i = 0; i < 900 && hm.phase !== 'roundOver'; i++) await tick(everybody);
+    expect(hm.phase).toBe('roundOver');
+    await tick(everybody, 5);
+    // Gus was the only one right, so the whole pot is his; Anna's score is only what she shot for.
+    for (const watcher of [hm, fan.match(), gus.match()]) {
+      expect(watcher.stands.roundResult?.winners).toEqual([0]);
+      expect(watcher.crowd.seats.map((seat) => seat.balance)).toEqual([250, 750]);
+    }
+    expect(hm.players[0].score).toBe(1000);
+    expect(hm.players[1].score).toBe(0);
+  }, 90_000);
 });

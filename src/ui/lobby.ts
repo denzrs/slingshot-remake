@@ -1,5 +1,5 @@
 import { AVATARS, type Avatar } from '../avatars';
-import { COLORS, MAX_PLAYERS, TEAMS } from '../config';
+import { COLORS, GALLERY, MAX_PLAYERS, TEAMS } from '../config';
 import { teamName } from '../game';
 import { t } from '../i18n';
 import { canCopyInvite, inviteJoinAttempt, inviteLink, readInvite, shouldAutoConnectInvite, withoutInvite, withoutInvitePassword } from '../invite';
@@ -8,6 +8,7 @@ import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multi
 import type { LobbyRoom, NetworkCpuLevel, NetworkGameMode, RoomInfo, RoomMode, RoomRules } from '../net';
 import type { RoomLook } from '../roomLook';
 import { buildControl, segmentedControl, sliderControl, type Control, type Env } from './controls';
+import { eyeIcon } from './dom';
 import { h, type Screen } from './menu';
 import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
 import type { App } from './screens';
@@ -256,7 +257,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   // A link made by somebody in a locked room carries its password, so the guest needs no second paste.
   codePassword.value = invited?.password ?? '';
   const codeJoin = button(t('multiplayer.join'), true);
-  const joinByCode = () => {
+  const codeWatch = button(t('multiplayer.watch'));
+  const joinByCode = (spectate = false) => {
     const roomId = codeInput.value.trim();
     if (!roomId) {
       localMessage = t('multiplayer.codeRequired');
@@ -266,15 +268,16 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     }
     const name = takeName();
     if (!name) return;
-    session.joinRoom(roomId, name, codePassword.value, prefs.avatar);
+    session.joinRoom(roomId, name, codePassword.value, prefs.avatar, spectate);
   };
-  codeJoin.addEventListener('click', joinByCode);
+  codeJoin.addEventListener('click', () => joinByCode());
+  codeWatch.addEventListener('click', () => joinByCode(true));
   for (const input of [codeInput, codePassword]) {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') joinByCode();
     });
   }
-  const codeRow = h('div.lobby__code-join', null, h('span.lobby__code-label', null, t('multiplayer.joinCode')), codeInput, secretField(codePassword), codeJoin);
+  const codeRow = h('div.lobby__code-join', null, h('span.lobby__code-label', null, t('multiplayer.joinCode')), codeInput, secretField(codePassword), codeJoin, codeWatch);
   const roomsView = h('section.lobby__card', null, h('div.lobby__head', null, h('h3.setup__title', null, t('multiplayer.rooms')), openCreate), roomsList, codeRow);
 
   const sendingName = (name: string) => {
@@ -299,20 +302,27 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const roomRow = (room: LobbyRoom) => {
     // A room whose seats are CPUs still has room for a person: the newest CPU gives its seat up.
     const full = room.players >= room.maxPlayers && room.cpus === 0;
+    // A game under way has no seat to take, but anybody may watch it from the stands.
+    const running = room.status === 'playing';
     const join = button(full ? t('multiplayer.full') : t('multiplayer.join'), true);
     join.disabled = full;
+    const watch = button(t('multiplayer.watch'), running);
+    const standsFull = room.spectators >= GALLERY.MAX_SPECTATORS;
+    watch.disabled = standsFull;
+    if (standsFull) watch.title = t('multiplayer.standsFull');
     const pass = passwordInput(t('multiplayer.password'));
     pass.value = joinPasswords.get(room.id) ?? '';
     pass.addEventListener('input', () => joinPasswords.set(room.id, pass.value));
-    const doJoin = () => {
+    const doJoin = (spectate = false) => {
       const name = takeName();
       if (!name) return;
-      session.joinRoom(room.id, name, pass.value, prefs.avatar);
+      session.joinRoom(room.id, name, pass.value, prefs.avatar, spectate);
       joinPasswords.delete(room.id);
     };
-    join.addEventListener('click', doJoin);
+    join.addEventListener('click', () => doJoin());
+    watch.addEventListener('click', () => doJoin(true));
     pass.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') doJoin();
+      if (e.key === 'Enter') doJoin(running);
     });
     return h(
       'li.lobby-room',
@@ -322,10 +332,10 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
         null,
         h('strong', null, roomIcon(room.symbol, room.color), `${room.locked ? '🔒 ' : ''}${room.name}`),
         h('span.lobby-room__host', null, t('multiplayer.hostedBy', { name: room.host })),
-        h('span.lobby-room__tags', null, h('span.lobby__tag', null, modeName(room.gameMode, room.mayhem > 0)), h('span.lobby__tag', null, matchTypeName(room.mode)), pips(room.players, room.maxPlayers)),
+        h('span.lobby-room__tags', null, h('span.lobby__tag', null, modeName(room.gameMode, room.mayhem > 0)), h('span.lobby__tag', null, matchTypeName(room.mode)), pips(room.players, room.maxPlayers), ...(running ? [h('span.lobby__tag.lobby__tag--live', null, t('multiplayer.inProgress'))] : []), ...(room.spectators ? [h('span.lobby__tag.lobby__tag--watchers', null, eyeIcon(), String(room.spectators))] : [])),
       ),
       room.locked ? secretField(pass) : '',
-      join,
+      h('div.lobby-room__actions', null, ...(running ? [] : [join]), watch),
     );
   };
 
@@ -466,6 +476,10 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const copyPassword = button(t('multiplayer.copyPassword'));
   copyPassword.addEventListener('click', () => void copyText(hostPassword, t('multiplayer.passwordCopied')));
   const players = h('ul.lobby__players', null);
+  /** The people in the stands, under the players. */
+  const stands = h('p.lobby__note.lobby__stands', null);
+  /** Said to a spectator in place of the buttons they do not have. */
+  const watchNote = h('p.lobby__rules-note', null, t('multiplayer.watchNote'));
   /** Host only, while the room waits: seat a CPU of the chosen level. */
   let cpuLevel: NetworkCpuLevel = 'medium';
   const cpuAdd = button(t('multiplayer.addCpu'));
@@ -535,6 +549,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     h('div.lobby__head', null, roomCount, resetTeams),
     h('div.lobby__code', null, h('span.lobby__code-label', null, t('multiplayer.code')), roomCode, copyInvite, copyCode, copyPassword, privateTag),
     players,
+    stands,
+    watchNote,
     cpuAddRow,
     cpuOnlyNote,
     roomRename,
@@ -597,7 +613,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
 
   const renderRoom = (room: RoomInfo) => {
     const { you } = session;
-    const self = room.players.find((p) => p.id === you.playerId);
+    const self = you.spectator ? undefined : room.players.find((p) => p.id === you.playerId);
+    const watching = !!you.spectator;
     selfReady = !!self?.ready;
     roomTitle.replaceChildren(roomIcon(room.symbol, room.color), `${room.name} · ${modeName(room.gameMode, room.rules.mayhem > 0)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`);
     roomCode.textContent = room.id;
@@ -607,6 +624,12 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     const teamGame = room.mode === 'team';
     const inTeam = (k: number) => room.players.filter((p) => p.team === k).length;
     const teamsReady = !teamGame || (inTeam(0) > 0 && inTeam(1) > 0);
+    const crowd = room.spectators ?? [];
+    stands.hidden = !crowd.length;
+    stands.textContent = crowd.length ? t('multiplayer.standsList', { n: crowd.length, max: GALLERY.MAX_SPECTATORS, names: crowd.map((s) => s.name).join(', ') }) : '';
+    watchNote.hidden = !watching;
+    roomAvatar.hidden = watching;
+    ready.hidden = watching;
     roomCount.textContent = [`${room.players.length}/${room.maxPlayers} ${t('multiplayer.players')}`, ...(teamGame ? [0, 1].map((k) => `${teamName(k)} ${inTeam(k)}`) : [])].join(' · ');
     resetTeams.hidden = !(teamGame && you.host);
     teamWarning.hidden = teamsReady;
@@ -661,7 +684,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       roomPlayerName.value = self.name;
     }
     roomAvatarPicker.show(self?.avatar ?? prefs.avatar);
-    roomAvatarPicker.el.style.setProperty('--tone', COLORS.players[you.playerId]);
+    if (!watching) roomAvatarPicker.el.style.setProperty('--tone', COLORS.players[you.playerId]);
 
     // The look is rebuilt only when the room or the host changes, so an open dialog keeps its state between updates.
     const lookId = `${room.id}|${you.host}`;

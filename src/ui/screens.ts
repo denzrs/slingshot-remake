@@ -729,6 +729,12 @@ export function gameOverScreen(app: App, match: Match): Screen {
         return h('li', null, h('span.highlights__label', null, awardLabel(award.kind)), name, h('span.highlights__value', null, awardValue(award)));
       });
       if (highlights.length) lists.push(h('p.ranking-label', null, t('scorecard.match')), h('ul.highlights', null, ...highlights));
+      // The stands play the same game: whoever read the rounds best.
+      const seers = match.stands.ranking();
+      if (seers.length) {
+        const rows = seers.slice(0, 10).map(({ player, score }, i) => entry(i + 1, match.crowd.seat(player)?.name ?? '?', COLORS.bone, `${fmtInt(score.points)}  ·  ${score.right}/${score.total}`));
+        lists.push(h('p.ranking-label', null, t('stands.standings')), h('ol.ranking.ranking--small', null, ...rows));
+      }
       // The eliminated players' side standings.
       const tipsters = match.oracle.ranking();
       if (tipsters.length) {

@@ -196,6 +196,19 @@ export const ORACLE = {
   MIN_BET_TIME: 3,
 } as const;
 
+/**
+ * The stands: people who watch an online room without a seat. They play the oracle's tipping game like the shot-down
+ * players do — but with a bankroll of their own, which never touches a player's score. The most a room takes is shared
+ * with the relay (`protocol-contract.json`).
+ */
+export const GALLERY = {
+  MAX_SPECTATORS: 20,
+  /** What everybody in the stands starts a match with. */
+  BANKROLL: 500,
+  /** Somebody who is nearly broke starts the next round with at least this much. */
+  RELIEF: 100,
+} as const;
+
 /** Daily challenge: a fixed run of sectors against stationary targets, the same for everyone on a given day. */
 export const CHALLENGE = {
   SECTORS: 5,

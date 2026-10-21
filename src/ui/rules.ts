@@ -95,6 +95,7 @@ export function ruleRows(): RuleRow[] {
     { key: 'hiddenAim', group: 'twists', control: 'toggle', label: t('settings.hiddenAim'), options: [] },
     { key: 'fadingTrails', group: 'twists', control: 'slider', label: t('settings.fadingTrails'), options: numbers(TRAIL_FADE.OPTIONS, (n) => (n ? seconds(n) : t('common.off'))) },
     { key: 'betting', group: 'twists', control: 'toggle', label: t('settings.betting'), options: [], onlineOnly: true },
+    { key: 'chatPlayersOnly', group: 'twists', control: 'toggle', label: t('settings.chatPlayersOnly'), options: [], onlineOnly: true },
     { key: 'powerUps', group: 'twists', control: 'toggle', label: t('settings.powerUps'), options: [] },
     // The kinds and the amount are the last rows of the block and keep their space while the switch is off, so nothing moves.
     { key: 'powerUpKinds', group: 'twists', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}` as Key)) })), when: (r) => r.powerUps, reserve: () => true },
@@ -105,7 +106,7 @@ export function ruleRows(): RuleRow[] {
 const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** The rules a Mayhem game has: how many rounds, how wild, how long a shot may fly, and in Classic whether everybody shoots at once — everything else is the plain rules, plus the round's twists. */
-const MAYHEM_RULES: readonly (keyof RoomRules)[] = ['rounds', 'mayhem', 'shotTime', 'simultaneousShots'];
+const MAYHEM_RULES: readonly (keyof RoomRules)[] = ['rounds', 'mayhem', 'shotTime', 'simultaneousShots', 'chatPlayersOnly'];
 
 /**
  * The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has.
@@ -113,7 +114,7 @@ const MAYHEM_RULES: readonly (keyof RoomRules)[] = ['rounds', 'mayhem', 'shotTim
  */
 export const rulesFor = (mode: 'classic' | 'horizon', online = false, mayhem = false): RuleRow[] =>
   mayhem
-    ? ruleRows().filter((row) => MAYHEM_RULES.includes(row.key) && (mode === 'classic' || !row.classicOnly)).map((row): RuleRow => ({ ...row, group: 'match' }))
+    ? ruleRows().filter((row) => MAYHEM_RULES.includes(row.key) && (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly)).map((row): RuleRow => ({ ...row, group: 'match' }))
     : ruleRows().filter((row) => row.key !== 'mayhem' && (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly));
 
 // ————————————————————————————— As controls —————————————————————————————

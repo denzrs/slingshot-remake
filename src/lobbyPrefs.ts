@@ -42,6 +42,7 @@ export const rulesOf = (s: Settings): RoomRules => ({
   fadingTrails: s.fadingTrails,
   mayhem: s.mayhem,
   betting: s.betting,
+  chatPlayersOnly: s.chatPlayersOnly,
   powerUps: s.powerUps,
   powerUpKinds: [...s.powerUpKinds],
   powerUpAmount: s.powerUpAmount,
@@ -58,13 +59,14 @@ export const defaultRoomRules = (): RoomRules => rulesOf(DEFAULT_SETTINGS);
  * shoots at once are the only things to choose. The rest is the plain rules (trick-shot bonuses are always on, as in
  * Event Horizon), which the round's twists then change.
  */
-export const mayhemRules = (chosen: Pick<RoomRules, 'mayhem' | 'rounds' | 'shotTime' | 'simultaneousShots'>, mode: NetworkGameMode): RoomRules => ({
+export const mayhemRules = (chosen: Pick<RoomRules, 'mayhem' | 'rounds' | 'shotTime' | 'simultaneousShots'> & Partial<Pick<RoomRules, 'chatPlayersOnly'>>, mode: NetworkGameMode): RoomRules => ({
   ...defaultRoomRules(),
   rounds: chosen.rounds,
   mayhem: chosen.mayhem || 2,
   shotTime: chosen.shotTime,
   simultaneousShots: mode === 'classic' && chosen.simultaneousShots,
   styleBonuses: true,
+  chatPlayersOnly: chosen.chatPlayersOnly ?? false,
 });
 
 /** A saved list of power-up kinds: only known kinds, in the usual order, and never none. */
@@ -94,6 +96,7 @@ export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
         ...fresh.rules,
         ...saved.rules,
         betting: saved.rules?.betting === true,
+        chatPlayersOnly: saved.rules?.chatPlayersOnly === true,
         powerUps: saved.rules?.powerUps === true,
         powerUpKinds: powerUpKindsFrom(saved.rules?.powerUpKinds) ?? fresh.rules.powerUpKinds,
         powerUpAmount: POWER_UP.AMOUNTS.includes(saved.rules?.powerUpAmount as number) ? saved.rules!.powerUpAmount : fresh.rules.powerUpAmount,
