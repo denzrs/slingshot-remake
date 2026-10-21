@@ -65,7 +65,7 @@ interface Beam {
   color: string;
 }
 
-/** A heavy beam that burns for a moment: the planet killer's laser, drawn far wider than a teleport streak. */
+/** A plasma beam that burns for a moment: the planet killer's laser, drawn far wider than a teleport streak. */
 interface Laser {
   x1: number;
   y1: number;
@@ -219,7 +219,7 @@ export class Effects {
   }
 
   /** A planet's gravity turned round: rings pushed outward from the rock, or drawn back in when it is turned back. */
-  polarity(x: number, y: number, radius: number, reversed: boolean, color: string): void {
+  antigravity(x: number, y: number, radius: number, reversed: boolean, color: string): void {
     for (let i = 0; i < 3; i++) {
       const ring = { x, y, radius: radius * (1.8 + i * 0.9), life: 0.7 + i * 0.12, max: 0.7 + i * 0.12, color, inward: !reversed };
       this.rings.push(ring);
@@ -292,7 +292,7 @@ export class Effects {
   }
 
   /**
-   * The planet killer's shot: a heavy laser from the ship to the rock, then the rock blows apart. The planet
+   * The planet killer's shot: a plasma laser from the ship to the rock, then the rock blows apart. The planet
    * is already off the field by the time this plays, so the beam and the blast are what is left of it.
    */
   laser(fromX: number, fromY: number, toX: number, toY: number, color: string, radius = 30): void {

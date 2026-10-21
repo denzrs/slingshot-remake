@@ -139,7 +139,7 @@ export type GameEvent =
   | { type: 'wormhole'; player: number; x: number; y: number; toX: number; toY: number }
   | { type: 'defense'; player: number; x: number; y: number }
   /** A planet's gravity was turned round (`reversed`) or back. */
-  | { type: 'polarity'; player: number; x: number; y: number; radius: number; reversed: boolean }
+  | { type: 'antigravity'; player: number; x: number; y: number; radius: number; reversed: boolean }
   /** A planetary defense fired a missile at a shot: from its turret to where the shot is. */
   | { type: 'defenseFire'; player: number; x: number; y: number; toX: number; toY: number }
   /** A defense's missile lost its shot at (x, y). */
@@ -192,7 +192,7 @@ export interface CpuJob {
   planner: Generator<void, Aim> | null;
   target: Aim | null;
   settle: number;
-  /** Power-ups: the planner found no hitting shot. Only known while the CPU holds a teleport or a heavy shot. */
+  /** Power-ups: the planner found no hitting shot. Only known while the CPU holds a teleport or a plasma shot. */
   blind?: boolean;
   rescueTried?: boolean;
 }
@@ -591,12 +591,12 @@ export abstract class Match {
 
   /**
    * A CPU that planned and found no hitting shot tries its way out once and plans again: a teleport jumps to a
-   * new spot, a heavy shot is armed. Returns true when it did, so the caller leaves this tick to the new plan.
+   * new spot, a plasma shot is armed. Returns true when it did, so the caller leaves this tick to the new plan.
    */
   protected cpuRescueIfBlind(p: PlayerState, job: CpuJob | undefined): boolean {
-    if ((p.powerUp !== 'teleport' && p.powerUp !== 'heavy') || !job?.target || !job.blind || job.rescueTried) return false;
+    if ((p.powerUp !== 'teleport' && p.powerUp !== 'plasma') || !job?.target || !job.blind || job.rescueTried) return false;
     job.rescueTried = true;
-    if (p.powerUp === 'heavy') {
+    if (p.powerUp === 'plasma') {
       // Armed already: the plan that came up blind was made with it, so there is nothing left to try.
       if (p.armed) return false;
       p.armed = true;
@@ -1126,13 +1126,13 @@ export abstract class Match {
    * Where a CPU lays the placement it holds, as an aim: a rough spot, never a searched one. A black hole or
    * a nebula goes part way along the line to the nearest enemy, so that enemy's next shot runs into it; a defense
    * stands on the planet nearest the CPU, on the side that faces it; the
-   * planet killer shoots the planet lying most in the way of that line; a polarity turns the planet nearest the CPU
+   * planet killer shoots the planet lying most in the way of that line; a antigravity turns the planet nearest the CPU
    * that still pulls (so the shots coming at it are pushed away); a wormhole aims at its first portal, the second
    * lying near the enemy. Null when the CPU holds no placement, or there is nothing to lay it on.
    */
   protected cpuPlacementAim(p: PlayerState): Aim | null {
     const kind = p.powerUp;
-    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'polarity') return null;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'antigravity') return null;
     const world = this.world;
     const from = world.ships[p.id];
     const friends = this.friendsOf(p.id);
@@ -1157,7 +1157,7 @@ export abstract class Match {
       if (!near) return null;
       return { angle: normalizeAngle((Math.atan2(-(near.y - from.y), near.x - from.x) * 180) / Math.PI), power: 0 };
     }
-    if (kind === 'polarity') {
+    if (kind === 'antigravity') {
       // The nearest planet that pulls and that the aim would really meet first, so the placement lands on it.
       const angleTo = (planet: { x: number; y: number }): number => normalizeAngle((Math.atan2(-(planet.y - from.y), planet.x - from.x) * 180) / Math.PI);
       const near = world.planets
@@ -1202,7 +1202,7 @@ export abstract class Match {
       const p = this.players[id];
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
       const pierce = !!p.armed && p.powerUp === 'piercing';
-      const heavy = !!p.armed && p.powerUp === 'heavy';
+      const plasma = !!p.armed && p.powerUp === 'plasma';
       // The pickups a CPU would actually keep (a preview is of no use to it): the planner steers its
       // search through them, so a power-up-hungry level like Einstein collects more.
       const pickups: ShotGate[] = this.powerUps
@@ -1221,11 +1221,11 @@ export abstract class Match {
         lookahead,
         friends,
         pierce,
-        heavy,
+        plasma,
         pickups,
         grudgeTarget: this.lastHitBy.get(id) ?? null,
-        // A CPU holding a teleport or a heavy shot also wants to know whether it found a hitting shot at all.
-        ...(logDecisions || this.options.onCpuDecision || (this.powerUps && (p.powerUp === 'teleport' || p.powerUp === 'heavy'))
+        // A CPU holding a teleport or a plasma shot also wants to know whether it found a hitting shot at all.
+        ...(logDecisions || this.options.onCpuDecision || (this.powerUps && (p.powerUp === 'teleport' || p.powerUp === 'plasma'))
           ? {
               onDecision: (decision) => {
                 const job = this.cpuJobs.get(id);

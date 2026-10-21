@@ -51,9 +51,9 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 
 // ————————————————————————————— Themes —————————————————————————————
 
-export type ThemeId = 'classic' | 'billiard' | 'blind' | 'singularity' | 'heavy' | 'precision' | 'sniper';
+export type ThemeId = 'classic' | 'billiard' | 'blind' | 'singularity' | 'plasma' | 'precision' | 'sniper';
 
-export const THEMES: readonly ThemeId[] = ['classic', 'billiard', 'blind', 'singularity', 'heavy', 'precision', 'sniper'];
+export const THEMES: readonly ThemeId[] = ['classic', 'billiard', 'blind', 'singularity', 'plasma', 'precision', 'sniper'];
 
 /** Per-sector rule twists a theme can switch on. `from` = first sector index (0-based) it may appear in. */
 interface Rate {
@@ -66,17 +66,17 @@ interface ThemeRule {
   invisible?: Rate;
   fixedPower?: Rate;
   hole?: Rate;
-  heavy?: Rate;
+  plasma?: Rate;
   /** One more target than usual from sector 2 on, with one spare shot less (but always at least one). */
   sniper?: boolean;
 }
 
 const THEME_RULES: Record<ThemeId, ThemeRule> = {
-  classic: { bounce: { from: 2, p: 0.25 }, fixedPower: { from: 1, p: 0.2 }, heavy: { from: 2, p: 0.25 }, hole: { from: 3, p: 0.2 } },
+  classic: { bounce: { from: 2, p: 0.25 }, fixedPower: { from: 1, p: 0.2 }, plasma: { from: 2, p: 0.25 }, hole: { from: 3, p: 0.2 } },
   billiard: { bounce: { from: 1, p: 1 } },
   blind: { invisible: { from: 2, p: 1 } },
   singularity: { hole: { from: 2, p: 1 } },
-  heavy: { heavy: { from: 1, p: 1 } },
+  plasma: { plasma: { from: 1, p: 1 } },
   precision: { fixedPower: { from: 1, p: 1 } },
   sniper: { sniper: true, bounce: { from: 3, p: 0.3 } },
 };
@@ -103,7 +103,7 @@ function cycleOrder(cycle: number): ThemeId[] {
 // ————————————————————————————— Sector specs —————————————————————————————
 
 type Difficulty = 1 | 2 | 3 | 4 | 5;
-type Modifier = 'bounce' | 'invisible' | 'fixedPower' | 'hole' | 'heavy';
+type Modifier = 'bounce' | 'invisible' | 'fixedPower' | 'hole' | 'plasma';
 
 export interface SectorSpec {
   index: number;
@@ -137,7 +137,7 @@ const WEEKDAY_TILT = [-1, -1, 0, 0, 0, 1, 1];
 const PLANETS: Record<Difficulty, [number, number]> = { 1: [2, 3], 2: [3, 4], 3: [3, 5], 4: [4, 6], 5: [5, 7] };
 /** Shots on top of one per target. */
 const SLACK: Record<Difficulty, number> = { 1: 3, 2: 3, 3: 2, 4: 2, 5: 1 };
-const HEAVY = 1.7;
+const PLASMA = 1.7;
 
 export function dailyChallenge(key: string): Challenge {
   const number = challengeNumber(key);
@@ -153,7 +153,7 @@ export function dailyChallenge(key: string): Challenge {
 
 function sectorSpec(rule: ThemeRule, index: number, difficulty: Difficulty, rng: Rng, seed: number): SectorSpec {
   // Always draw the same number of values, so one sector's choices never shift another's.
-  const roll = { bounce: rng(), invisible: rng(), fixedPower: rng(), hole: rng(), heavy: rng(), extra: rng() };
+  const roll = { bounce: rng(), invisible: rng(), fixedPower: rng(), hole: rng(), plasma: rng(), extra: rng() };
   const on = (rate: Rate | undefined, r: number) => !!rate && index >= rate.from && r < rate.p;
 
   const invisible = on(rule.invisible, roll.invisible);
@@ -161,7 +161,7 @@ function sectorSpec(rule: ThemeRule, index: number, difficulty: Difficulty, rng:
   const hole = !invisible && on(rule.hole, roll.hole);
   const bounce = on(rule.bounce, roll.bounce);
   const fixedPower = on(rule.fixedPower, roll.fixedPower);
-  const heavy = on(rule.heavy, roll.heavy);
+  const plasma = on(rule.plasma, roll.plasma);
 
   let targets = { 1: 1, 2: 1 + +(roll.extra < 0.4), 3: 1 + +(roll.extra < 0.6), 4: 2, 5: 2 + +(roll.extra < 0.5) }[difficulty];
   let slack = SLACK[difficulty];
@@ -175,7 +175,7 @@ function sectorSpec(rule: ThemeRule, index: number, difficulty: Difficulty, rng:
   if (invisible) planets = [2, Math.min(4, planets[1])];
   if (hole) planets = [Math.max(2, planets[0] - 1), Math.max(3, planets[1] - 2)];
 
-  return { index, seed, difficulty, targets, planets, shots: targets + slack, bounce, invisible, fixedPower, hole, gravity: heavy ? HEAVY : 1 };
+  return { index, seed, difficulty, targets, planets, shots: targets + slack, bounce, invisible, fixedPower, hole, gravity: plasma ? PLASMA : 1 };
 }
 
 export function modifiersOf(spec: SectorSpec): Modifier[] {
@@ -184,7 +184,7 @@ export function modifiersOf(spec: SectorSpec): Modifier[] {
   if (spec.invisible) out.push('invisible');
   if (spec.fixedPower) out.push('fixedPower');
   if (spec.hole) out.push('hole');
-  if (spec.gravity > 1) out.push('heavy');
+  if (spec.gravity > 1) out.push('plasma');
   return out;
 }
 

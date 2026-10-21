@@ -100,7 +100,7 @@ describe('daily challenge', () => {
       if (ch.theme === 'billiard') expect(mods.slice(1).every((m) => m.includes('bounce'))).toBe(true);
       if (ch.theme === 'blind') expect(mods.slice(2).every((m) => m.includes('invisible'))).toBe(true);
       if (ch.theme === 'singularity') expect(mods.slice(2).every((m) => m.includes('hole'))).toBe(true);
-      if (ch.theme === 'heavy') expect(mods.slice(1).every((m) => m.includes('heavy'))).toBe(true);
+      if (ch.theme === 'plasma') expect(mods.slice(1).every((m) => m.includes('plasma'))).toBe(true);
       if (ch.theme === 'precision') expect(mods.slice(1).every((m) => m.includes('fixedPower'))).toBe(true);
     }
   });

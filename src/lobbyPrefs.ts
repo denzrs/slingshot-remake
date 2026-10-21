@@ -22,8 +22,6 @@ interface LobbyPrefs {
 }
 
 const KEY = 'slingshot.lobby.v1';
-/** Where the player name used to live on its own. */
-const LEGACY_NAME_KEY = 'slingshot.player-name';
 
 /** The rules out of a set of settings. */
 export const rulesOf = (s: Settings): RoomRules => ({
@@ -77,7 +75,6 @@ function powerUpKindsFrom(value: unknown): RoomRules['powerUpKinds'] | null {
 export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
   const fresh: LobbyPrefs = { server: defaultServer, name: 'Player', autoConnect: false, gameMode: 'classic', matchType: 'ffa', capacity: 4, look: { ...DEFAULT_ROOM_LOOK }, avatar: DEFAULT_AVATAR, rules: defaultRoomRules() };
   try {
-    fresh.name = localStorage.getItem(LEGACY_NAME_KEY) || fresh.name;
     const raw = localStorage.getItem(KEY);
     if (!raw) return fresh;
     const saved = JSON.parse(raw) as Partial<LobbyPrefs>;

@@ -10,10 +10,8 @@ const STATE_VERSION = 1;
 const STATE_KIND = 1;
 const STATE_HEADER_BYTES = 14;
 
-export const STATE_ENVELOPE_HEADER_BYTES = STATE_HEADER_BYTES;
-
 /** Match JSON.stringify's omission of optional object fields, recursively. */
-export function normalizeMessagePackValue(value: unknown): unknown {
+function normalizeMessagePackValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => item === undefined ? null : normalizeMessagePackValue(item));
   }
@@ -158,7 +156,7 @@ function isGameEvent(value: unknown): boolean {
       return index('player') && finite('x') && finite('y');
     case 'defense':
       return index('player') && finite('x') && finite('y');
-    case 'polarity':
+    case 'antigravity':
       return index('player') && finite('x') && finite('y') && finite('radius') && typeof event.reversed === 'boolean';
     case 'defenseFire':
       return index('player') && finite('x') && finite('y') && finite('toX') && finite('toY');

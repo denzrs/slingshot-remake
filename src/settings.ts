@@ -88,17 +88,11 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const KEY = 'slingshot.settings.v1';
 
-/** Settings from before multiplayer stored a single opponent instead of seats. */
-interface LegacySettings {
-  opponent?: 'human' | 'cpu';
-  cpuLevel?: CpuLevel;
-}
-
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<Settings> & LegacySettings;
+      const parsed = JSON.parse(raw) as Partial<Settings>;
       const s: Settings = { ...DEFAULT_SETTINGS, ...parsed, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams] };
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
@@ -115,10 +109,7 @@ export function loadSettings(): Settings {
       // It used to be a plain on/off switch, "on" meaning two shots.
       if ((s.neighborGrace as unknown) === true) s.neighborGrace = 2;
       if (!GRACE.OPTIONS.includes(s.neighborGrace)) s.neighborGrace = 0;
-      else if (parsed.opponent === 'cpu') s.seats[1] = parsed.cpuLevel ?? 'medium';
       s.language = isLang(parsed.language) ? parsed.language : detectLang();
-      delete (s as Settings & LegacySettings).opponent;
-      delete (s as Settings & LegacySettings).cpuLevel;
       if (activeSeats(s).length < 2) s.seats = [...DEFAULT_SETTINGS.seats];
       return s;
     }

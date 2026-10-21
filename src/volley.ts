@@ -11,8 +11,8 @@ export interface VolleyAim {
   fan?: number;
   /** Armor piercing: the shot goes through ships instead of stopping on them (the armor-piercing power-up). */
   pierce?: boolean;
-  /** Heavy: the shot is hard to bend and flies through clouds (the heavy power-up). */
-  heavy?: boolean;
+  /** Plasma: the shot is hard to bend and flies through clouds (the plasma power-up). */
+  plasma?: boolean;
   /** A defense's missile that lost its shot and flies on as a shot of its own: the index of the shot it left. Made by the volley, never aimed. */
   stray?: number;
 }
@@ -24,8 +24,8 @@ export interface VolleyShot {
   fan?: number;
   /** True for a shot that keeps travelling after it goes through a ship. */
   pierce?: boolean;
-  /** True for a heavy shot. */
-  heavy?: boolean;
+  /** True for a plasma shot. */
+  plasma?: boolean;
   /** True for a defense's missile that lost its shot: it counts for the defense's owner, not as one of their shots. */
   stray?: boolean;
   /** Flat [x0, y0, x1, y1, …] polyline in field units. */
@@ -100,8 +100,8 @@ export class Volley {
     this.script = script.map((entry) => ({ ...entry }));
     this.aims = aims.map((aim) => ({ ...aim }));
     this.shots = aims.map((a) => {
-      const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare, a.pierce, a.heavy);
-      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan, pierce: a.pierce, heavy: a.heavy, stray: a.stray !== undefined };
+      const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare, a.pierce, a.plasma);
+      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan, pierce: a.pierce, plasma: a.plasma, stray: a.stray !== undefined };
     });
   }
 
@@ -152,7 +152,7 @@ export class Volley {
     this.aims[index] = { ...this.aims[index], fan };
     vs.fan = fan;
     for (const turn of turns) {
-      this.shots.push({ shot: vs.shot.fork(turn), owner: vs.owner, trail: [...vs.trail], fan, pierce: vs.pierce, heavy: vs.heavy });
+      this.shots.push({ shot: vs.shot.fork(turn), owner: vs.owner, trail: [...vs.trail], fan, pierce: vs.pierce, plasma: vs.plasma });
       this.aims.push({ ...this.aims[index] });
     }
     return true;

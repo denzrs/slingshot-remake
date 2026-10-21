@@ -35,11 +35,11 @@ export interface PowerUpHost {
   record(update: (book: StatBook) => void): void;
 }
 
-/** The power-ups a player aims at a spot on the field, rather than firing: a teleport, a black hole, a planet killer, a nebula, a wormhole, a planetary defense or a polarity. */
-export type PlacementKind = 'teleport' | 'blackhole' | 'planetkiller' | 'nebula' | 'wormhole' | 'defense' | 'polarity';
+/** The power-ups a player aims at a spot on the field, rather than firing: a teleport, a black hole, a planet killer, a nebula, a wormhole, a planetary defense or a antigravity. */
+export type PlacementKind = 'teleport' | 'blackhole' | 'planetkiller' | 'nebula' | 'wormhole' | 'defense' | 'antigravity';
 
 /** Whether this power-up is aimed at a spot and then confirmed, instead of armed and spent by a shot. */
-export const isPlacement = (kind: PowerUpKind | null): kind is PlacementKind => kind === 'teleport' || kind === 'blackhole' || kind === 'planetkiller' || kind === 'nebula' || kind === 'wormhole' || kind === 'defense' || kind === 'polarity';
+export const isPlacement = (kind: PowerUpKind | null): kind is PlacementKind => kind === 'teleport' || kind === 'blackhole' || kind === 'planetkiller' || kind === 'nebula' || kind === 'wormhole' || kind === 'defense' || kind === 'antigravity';
 
 /** Where an aimed power-up would land or be planted, as the renderer sees it. */
 export interface PlacementAim {
@@ -199,8 +199,8 @@ export class PowerUpField {
       const dropped = p.powerUp;
       p.powerUp = pickup.kind;
       // A splitter and a shield need no key: they are ready from the start. A CPU holds everything armed, but a
-      // heavy shot, which it keeps back until a plain one finds nothing to hit.
-      p.armed = (p.cpu !== null && pickup.kind !== 'heavy') || pickup.kind === 'splitter' || pickup.kind === 'shield';
+      // plasma shot, which it keeps back until a plain one finds nothing to hit.
+      p.armed = (p.cpu !== null && pickup.kind !== 'plasma') || pickup.kind === 'splitter' || pickup.kind === 'shield';
       // The shield is on the ship itself, so every shot in the volley meets it. Swapping it away takes it off.
       volley.setShield(p.id, pickup.kind === 'shield');
       this.host.emit({ type: 'pickup', player: p.id, kind: pickup.kind, x: pickup.x, y: pickup.y, dropped });
@@ -212,7 +212,7 @@ export class PowerUpField {
 
   /**
    * The power-up key. A teleport or a black hole opens its aim: the angle and power set one spot, fire goes
-   * there (jumps, or plants the hole), the key again or Esc thinks again. A preview, armor piercing or a heavy shot is armed
+   * there (jumps, or plants the hole), the key again or Esc thinks again. A preview, armor piercing or a plasma shot is armed
    * instead (press again to disarm) and spent by the next shot. A splitter needs no key: it is armed, and the fire press
    * during the flight splits the shot.
    */
@@ -221,7 +221,7 @@ export class PowerUpField {
     if (!this.enabled || !host.canAim(id)) return;
     const p = host.players()[id];
     if (!p.powerUp || p.powerUp === 'splitter' || p.powerUp === 'shield') return;
-    if (p.powerUp === 'preview' || p.powerUp === 'piercing' || p.powerUp === 'heavy') {
+    if (p.powerUp === 'preview' || p.powerUp === 'piercing' || p.powerUp === 'plasma') {
       p.armed = !p.armed;
       this.previewKey = '';
       return;
@@ -255,7 +255,7 @@ export class PowerUpField {
     const world = this.host.world();
     const from = world.ships[owner];
     let target: { x: number; y: number } | null;
-    if (kind === 'planetkiller' || kind === 'polarity') {
+    if (kind === 'planetkiller' || kind === 'antigravity') {
       const planet = aimedPlanet(world, from, p.angle);
       target = planet ? { x: planet.x, y: planet.y } : null;
     } else if (kind === 'defense') {
@@ -327,7 +327,7 @@ export class PowerUpField {
         if (index === undefined) return () => this.plantDefense(owner, target);
         return this.onPlanet(world.planets[index], (i) => this.plantDefense(owner, { x: target.x, y: target.y, planet: i }));
       }
-      case 'polarity': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.turnPolarity(owner, i));
+      case 'antigravity': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.turnAntigravity(owner, i));
       case 'planetkiller': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.killPlanet(owner, i), () => this.spend(owner));
       default: return () => this.teleport(owner, target);
     }
@@ -417,7 +417,7 @@ export class PowerUpField {
    * Turns a planet's gravity round: it pushes every shot away instead of pulling it in, whoever's, for the rest
    * of the round. A planet that is turned already is turned back, so the other side can undo it.
    */
-  private turnPolarity(id: number, index: number): boolean {
+  private turnAntigravity(id: number, index: number): boolean {
     const world = this.host.world();
     const planet = world.planets[index];
     if (!planet) return false;
@@ -426,7 +426,7 @@ export class PowerUpField {
     this.host.players()[id].powerUp = null;
     this.host.players()[id].armed = false;
     this.host.clearCpuJobs();
-    this.host.emit({ type: 'polarity', player: id, x: planet.x, y: planet.y, radius: planet.radius, reversed: !!planet.reversed });
+    this.host.emit({ type: 'antigravity', player: id, x: planet.x, y: planet.y, radius: planet.radius, reversed: !!planet.reversed });
     return true;
   }
 
@@ -485,7 +485,7 @@ export class PowerUpField {
   private cpuPlacement(id: number): (() => boolean) | null {
     const p = this.host.players()[id];
     const kind = p.powerUp;
-    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'polarity') return null;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'antigravity') return null;
     const world = this.host.world();
     const from = world.ships[id];
     if (kind === 'wormhole') {
@@ -497,10 +497,10 @@ export class PowerUpField {
       const spots = target && cpuWormholeSpots(world, from, target);
       return spots ? () => this.plantWormhole(id, spots[0], spots[1]) : null;
     }
-    if (kind === 'polarity') {
+    if (kind === 'antigravity') {
       // Only a planet that pulls: a CPU never turns one back.
       const planet = aimedPlanet(world, from, p.angle);
-      return planet && !world.planets[planet.index].reversed ? this.onPlanet(world.planets[planet.index], (i) => this.turnPolarity(id, i)) : null;
+      return planet && !world.planets[planet.index].reversed ? this.onPlanet(world.planets[planet.index], (i) => this.turnAntigravity(id, i)) : null;
     }
     if (kind === 'defense') {
       const surface = aimedSurface(world, from, p.angle);
@@ -573,7 +573,7 @@ export class PowerUpField {
 
   /**
    * The aims a player's shot launches with. An armed preview is used up by the shot, an armed armor piercing
-   * rides the next shot through its targets, and an armed heavy shot makes it hard to bend; a splitter waits for the fire press during the flight, a shield for a hit.
+   * rides the next shot through its targets, and an armed plasma shot makes it hard to bend; a splitter waits for the fire press during the flight, a shield for a hit.
    */
   aimsFor(p: PlayerState): VolleyAim[] {
     const aim: VolleyAim = { player: p.id, angle: p.angle, power: p.power, spare: this.host.sparedFor(p.id) };
@@ -584,8 +584,8 @@ export class PowerUpField {
       p.armed = false;
       return [aim];
     }
-    if (p.powerUp === 'heavy') {
-      aim.heavy = true;
+    if (p.powerUp === 'plasma') {
+      aim.plasma = true;
       p.powerUp = null;
       p.armed = false;
       return [aim];

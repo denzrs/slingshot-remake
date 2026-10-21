@@ -345,8 +345,8 @@ export class Hud {
       ctx.strokeStyle = color;
       ctx.lineWidth = 1 * k;
       ctx.strokeRect(capX, capY, capW, capH);
-      // An armed preview, piercing or heavy round has its key filled in: it is on.
-      const on = p.armed && (held === 'preview' || held === 'piercing' || held === 'heavy');
+      // An armed preview, piercing or plasma round has its key filled in: it is on.
+      const on = p.armed && (held === 'preview' || held === 'piercing' || held === 'plasma');
       if (on) {
         ctx.fillStyle = color;
         ctx.fillRect(capX, capY, capW, capH);

@@ -9,7 +9,7 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   preview: '#3ff0ff',
   teleport: '#ff4fd8',
   splitter: '#ffd21f',
-  polarity: '#ff7a1a',
+  antigravity: '#ff7a1a',
   shield: '#4dffb0',
   blackhole: '#b99cff',
   planetkiller: '#ff5c5c',
@@ -17,7 +17,7 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   piercing: '#dfe7f5',
   wormhole: '#4db8ff',
   defense: '#b4ff3c',
-  heavy: '#22e4ff',
+  plasma: '#22e4ff',
 };
 
 /** The colour of the portals of the wormhole with this id (the palette starts over after the last colour). */
@@ -35,7 +35,7 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.beginPath();
     ctx.arc(x, y, r * 0.34, 0, Math.PI * 2);
     ctx.fill();
-  } else if (kind === 'polarity') {
+  } else if (kind === 'antigravity') {
     // A planet with its pull reversed: a small disc, and four arrows pushing outward.
     ctx.arc(x, y, r * 0.3, 0, Math.PI * 2);
     ctx.fill();
@@ -217,7 +217,7 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.moveTo(x + r * 0.34, y - r * 0.28);
     ctx.lineTo(x - r * 0.04, y + r * 0.2);
     ctx.stroke();
-  } else if (kind === 'heavy') {
+  } else if (kind === 'plasma') {
     // A plasma blob: a lumpy cyan globule with a bright core and a spark off its rim.
     for (let i = 0; i <= 24; i++) {
       const a = (i / 24) * Math.PI * 2;

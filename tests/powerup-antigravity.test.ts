@@ -26,11 +26,11 @@ const flyPast = (reversed: boolean, shooter = 0): number => {
   return shot.y - 400;
 };
 
-describe('polarity power-up', () => {
+describe('antigravity power-up', () => {
   it('is a known kind, which a CPU takes up like the other placements', () => {
-    expect(POWER_UP_KINDS).toContain('polarity');
+    expect(POWER_UP_KINDS).toContain('antigravity');
     expect(POWER_UP_KINDS).not.toContain('repulse');
-    expect(CPU_IGNORES.polarity).toBeUndefined();
+    expect(CPU_IGNORES.antigravity).toBeUndefined();
   });
 
   it('makes a planet push a shot away instead of pulling it in', () => {
@@ -68,19 +68,19 @@ describe('polarity power-up', () => {
     const events: string[] = [];
     match.on((e) => events.push(e.type));
 
-    shooter.powerUp = 'polarity';
+    shooter.powerUp = 'antigravity';
     shooter.angle = 0;
     shooter.power = 50;
     match.usePowerUp();
     expect(match.placing).toBe(true);
-    expect(match.scene().placement!.kind).toBe('polarity');
+    expect(match.scene().placement!.kind).toBe('antigravity');
     expect(match.scene().placement!.target).toEqual({ x: rock.x, y: rock.y });
 
     const before = match.world.version;
     match.commit();
     expect(match.world.planets[0].reversed).toBe(true);
     expect(match.world.version).toBeGreaterThan(before);
-    expect(events).toContain('polarity');
+    expect(events).toContain('antigravity');
     expect(shooter.powerUp).toBeNull();
     expect(shooter.passed).toBe(true);
   });
@@ -90,12 +90,12 @@ describe('polarity power-up', () => {
     const ship = match.world.ships[match.current];
     match.world.planets = [planet(ship.x + 400, ship.y, { reversed: true })];
     const shooter = match.players[match.current];
-    shooter.powerUp = 'polarity';
+    shooter.powerUp = 'antigravity';
     shooter.angle = 0;
     match.usePowerUp();
     const reversed: boolean[] = [];
     match.on((e) => {
-      if (e.type === 'polarity') reversed.push(e.reversed);
+      if (e.type === 'antigravity') reversed.push(e.reversed);
     });
     match.commit();
     expect(match.world.planets[0].reversed).toBe(false);
@@ -106,10 +106,10 @@ describe('polarity power-up', () => {
     const match = duel();
     match.world.planets = [];
     const shooter = match.players[match.current];
-    shooter.powerUp = 'polarity';
+    shooter.powerUp = 'antigravity';
     match.usePowerUp();
     match.commit();
-    expect(shooter.powerUp).toBe('polarity');
+    expect(shooter.powerUp).toBe('antigravity');
     expect(shooter.passed).toBe(false);
   });
 
@@ -131,7 +131,7 @@ describe('polarity power-up', () => {
         planet(own.x + 150, own.y - 120, { seed: 1, reversed: true }),
         planet(own.x + 250, own.y + 150, { seed: 2 }),
       ];
-      cpu.powerUp = 'polarity';
+      cpu.powerUp = 'antigravity';
       const aim = placer.cpuPlacementAim(cpu)!;
       expect(aim).not.toBeNull();
       cpu.angle = aim.angle;
@@ -147,9 +147,9 @@ describe('polarity power-up', () => {
       const placer = match as unknown as Placer;
       const own = match.world.ships[0];
       match.world.planets = [planet(own.x + 200, own.y, { reversed: true })];
-      cpu.powerUp = 'polarity';
+      cpu.powerUp = 'antigravity';
       expect(placer.cpuPlacementAim(cpu)).toBeNull();
-      expect(cpu.powerUp).toBe('polarity');
+      expect(cpu.powerUp).toBe('antigravity');
     });
   });
 });

@@ -16,7 +16,7 @@
     "mayhem": 0,
     "betting": false,
     "powerUps": false,
-    "powerUpKinds": ["preview", "teleport", "splitter", "polarity", "shield", "blackhole", "planetkiller", "nebula", "piercing", "wormhole", "defense", "heavy"],
+    "powerUpKinds": ["preview", "teleport", "splitter", "antigravity", "shield", "blackhole", "planetkiller", "nebula", "piercing", "wormhole", "defense", "plasma"],
     "powerUpAmount": 2
   },
   "options": {

@@ -20,7 +20,7 @@ export type TwistId =
   | 'crowded'
   | 'void'
   | 'pickupRain'
-  | 'heavyweights'
+  | 'plasmaStorm'
   | 'gravityParty'
   | 'fortress'
   | 'teleportChaos';
@@ -58,8 +58,8 @@ const TWISTS: Record<TwistId, TwistDef> = {
   crowded: { slots: ['planets'], apply: () => ({ maxPlanets: 8 }) },
   void: { slots: ['planets'], apply: () => ({ maxPlanets: 1 }) },
   pickupRain: { slots: ['pickups'], apply: () => pickups(POWER_UP_KINDS, 4) },
-  heavyweights: { slots: ['pickups'], apply: () => pickups(['heavy', 'piercing'], 3) },
-  gravityParty: { slots: ['pickups'], apply: () => pickups(['blackhole', 'polarity', 'planetkiller', 'nebula', 'wormhole'], 3) },
+  plasmaStorm: { slots: ['pickups'], apply: () => pickups(['plasma', 'piercing'], 3) },
+  gravityParty: { slots: ['pickups'], apply: () => pickups(['blackhole', 'antigravity', 'planetkiller', 'nebula', 'wormhole'], 3) },
   fortress: { slots: ['pickups'], apply: () => pickups(['shield', 'defense'], 3) },
   teleportChaos: { slots: ['pickups'], apply: () => pickups(['teleport', 'wormhole', 'splitter'], 3) },
 };
