@@ -373,6 +373,8 @@ export class PowerUpField {
    */
   private plantBlackHole(id: number, spot: { x: number; y: number }): boolean {
     const world = this.host.world();
+    // A salvo plants at takeoff, after the ships may have moved (a held teleport): the gap holds then too, and a refused hole keeps its power-up.
+    if (!blackHoleFits(world, spot, id)) return false;
     world.holes.push({ x: spot.x, y: spot.y, radius: POWER_UP.BLACKHOLE_RADIUS, mass: POWER_UP.BLACKHOLE_MASS });
     world.version++;
     this.host.players()[id].powerUp = null;

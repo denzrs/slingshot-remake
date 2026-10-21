@@ -107,3 +107,61 @@ describe('black hole placement near players', () => {
     expect(blackHoleFits(world, { x: 110, y: 100 }, 0)).toBe(true);
   });
 });
+
+describe('black hole placement in a match', () => {
+  /** Moves the rival to `dx` px right of `spot`, by default the one the ship on turn is aiming at. */
+  function rivalAt(match: Match, dx: number, spot = match.scene().placement!.target!): void {
+    const rival = match.world.ships[1 - match.current];
+    rival.x = spot.x + dx;
+    rival.y = spot.y;
+  }
+
+  it('reports a blocked aim, and a refused click keeps both the power-up and the shot', () => {
+    const match = duel();
+    const shooter = match.players[match.current];
+    shooter.powerUp = 'blackhole';
+    match.usePowerUp();
+    rivalAt(match, POWER_UP.BLACKHOLE_PLAYER_GAP - 1);
+    expect(match.scene().placement!.blocked).toBe(true);
+
+    match.commit();
+    expect(match.world.holes).toHaveLength(0);
+    expect(shooter.powerUp).toBe('blackhole');
+    expect(shooter.passed).toBe(false);
+    expect(match.placing).toBe(true);
+  });
+
+  it('does not plant a hole that a ship has moved next to since it was aimed', () => {
+    const match = duel();
+    const shooter = match.players[match.current];
+    shooter.powerUp = 'blackhole';
+    match.usePowerUp();
+    const power = (match as unknown as { power: { confirmPlacement(by: number, hold: boolean): boolean; makeHeld(): void } }).power;
+    // A salvo holds the placement back until takeoff; meanwhile the rival lands beside the spot.
+    const spot = match.scene().placement!.target!;
+    expect(power.confirmPlacement(match.current, true)).toBe(true);
+    rivalAt(match, 10, spot);
+    power.makeHeld();
+    expect(match.world.holes).toHaveLength(0);
+    expect(shooter.powerUp).toBe('blackhole');
+  });
+
+  it('has a CPU keep its hole, without swinging at it, when the enemy is too close for a legal spot', () => {
+    const seats = ['easy', 'human', 'off', 'off', 'off', 'off'] as const;
+    const match = createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed: 7 });
+    const cpu = match.players[0];
+    cpu.powerUp = 'blackhole';
+    const [own, enemy] = [match.world.ships[0], match.world.ships[1]];
+    enemy.x = own.x + 200;
+    enemy.y = own.y;
+    const placer = match as unknown as { cpuPlacementAim(p: unknown): { angle: number; power: number } | null };
+    expect(placer.cpuPlacementAim(cpu)).toBeNull();
+
+    // Far enough away, the spot it picks fits.
+    enemy.x = own.x + 700;
+    const aim = placer.cpuPlacementAim(cpu)!;
+    expect(aim).not.toBeNull();
+    const spot = aimedSpot(match.world, own, aim.angle, aim.power)!;
+    expect(blackHoleFits(match.world, spot, 0)).toBe(true);
+  });
+});

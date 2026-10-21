@@ -1178,7 +1178,12 @@ export abstract class Match {
     } else {
       // A little ahead of its own ship, on the way in: near enough for the enemy's shot to meet it.
       const d = Math.hypot(dx, dy) || 1;
-      const along = Math.min(0.45 * d, reach);
+      let along = Math.min(0.45 * d, reach);
+      if (kind === 'blackhole') {
+        // Short of the zone around the enemy, which a hole may not be laid in; too close for that, it keeps the hole.
+        along = Math.min(along, d - POWER_UP.BLACKHOLE_PLAYER_GAP - 5);
+        if (along < 60) return null;
+      }
       spot = { x: from.x + (dx / d) * along, y: from.y + (dy / d) * along };
     }
     const distance = Math.hypot(spot.x - from.x, spot.y - from.y);
