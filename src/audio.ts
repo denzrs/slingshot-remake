@@ -171,6 +171,21 @@ export class Sound {
     this.hiss(a.t, 0.4, 0.4, 3500, 300);
   }
 
+  /** A Mayhem round being announced: the reel ratchets down, lands with a thud, and a jackpot rings on top. */
+  reveal(jackpot: boolean): void {
+    const a = this.begin();
+    if (!a) return;
+    // The ticks slow down the way the reel does, then the names land together.
+    let at = 0;
+    for (let i = 0; i < 16; i++) {
+      this.tone(520 + i * 28, 500 + i * 28, 0.04, 0.05, 'square', a.t + at);
+      at += 0.035 + i * i * 0.0005;
+    }
+    this.tone(150, 45, 0.45, 0.6, 'sine', a.t + at);
+    this.hiss(a.t + at, 0.3, 0.3, 2800, 300);
+    if (jackpot) for (const [i, hz] of [660, 880, 1320].entries()) this.tone(hz, hz, 0.5, 0.07, 'triangle', a.t + at + 0.1 + i * 0.09);
+  }
+
   select(): void {
     const a = this.begin();
     if (!a) return;

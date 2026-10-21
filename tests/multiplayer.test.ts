@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { packMessage, packWireMessage, unpackWireMessage } from '../src/messagepack';
+import { mayhemRules } from '../src/lobbyPrefs';
 import { MultiplayerSession, type NetMatch, type Transport } from '../src/multiplayer';
 import type { RoomRules, ServerMessage } from '../src/net';
 import { TIP_HIDDEN } from '../src/game/oracle';
@@ -143,7 +144,7 @@ interface Client {
   syncElapsed: number;
 }
 
-const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, betting: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'polarity', 'shield'], powerUpAmount: 2 };
+const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, mayhem: 0, betting: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'polarity', 'shield'], powerUpAmount: 2 };
 
 async function connectSession(hooks: Partial<ConstructorParameters<typeof MultiplayerSession>[0]> = {}, settings = DEFAULT_SETTINGS, edit?: (message: ServerMessage) => ServerMessage): Promise<MultiplayerSession> {
   const session = new MultiplayerSession({ settings: () => cloneSettings(settings), matchStarted() {}, matchRestarted() {}, matchEnded() {}, ...hooks }, new RustTransport(edit));
@@ -1044,6 +1045,61 @@ describe('CPU seats online', () => {
     host.setCpu(2, { team: 2 as 0 });
     await waitForSession(host, () => host.notice !== null);
     expect(host.notice).toMatch(/team must be 0 or 1/i);
+  });
+
+  describe('Mayhem', () => {
+    it("plays every round by its own twists, and shows the guest the same ones and the same rules", async () => {
+      for (const mode of ['classic', 'horizon'] as const) {
+        const { host, guest } = await startRoom(mode, ['Anna', 'Ben'], { ...rules, mayhem: 2 });
+        expect(host.match().mayhem).not.toBeNull();
+        expect(host.match().revealing).toBe(true);
+        for (let i = 0; i < 12; i++) await frame(host, guest);
+        expect(guest.match().mayhem).toEqual(host.match().mayhem);
+        expect(guest.match().settings).toEqual(host.match().settings);
+        expect(guest.match().revealing).toBe(true);
+      }
+    }, 30_000);
+
+    it('lets a guest end the announcement with the fire key, for everybody', async () => {
+      const { host, guest } = await startRoom('horizon', ['Anna', 'Ben'], { ...rules, mayhem: 3 });
+      expect(host.match().canAim(1)).toBe(false);
+      guest.session.input({ kind: 'fire' });
+      for (let i = 0; i < 12; i++) await frame(host, guest);
+      expect(host.match().revealing).toBe(false);
+      expect(guest.match().revealing).toBe(false);
+      expect(host.match().canAim(1)).toBe(true);
+      expect(host.match().players.every((p) => !p.locked)).toBe(true);
+    }, 30_000);
+
+    it('lists a Mayhem room as one, with the mode its rounds are played in', async () => {
+      const host = await connectSession();
+      const plain = await connectSession();
+      const watcher = await connectSession();
+      host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'horizon', rules: { ...rules, mayhem: 3 }, maxPlayers: 2 });
+      plain.createRoom({ name: 'Ben', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2 });
+      await waitForSession(watcher, () => watcher.rooms.length === 2);
+      expect(watcher.rooms.find((room) => room.host === 'Anna')).toMatchObject({ gameMode: 'horizon', mayhem: 3 });
+      expect(watcher.rooms.find((room) => room.host === 'Ben')).toMatchObject({ gameMode: 'classic', mayhem: 0 });
+    }, 30_000);
+
+    it('plays a Mayhem room by the rules it was made with: trick shots always on, its flight time, and simultaneous shots in Classic only', async () => {
+      const chosen = { mayhem: 2, rounds: 3, shotTime: 30, simultaneousShots: true };
+      for (const mode of ['classic', 'horizon'] as const) {
+        const { host, guest } = await startRoom(mode, ['Anna', 'Ben'], mayhemRules(chosen, mode));
+        for (const side of [host, guest]) {
+          expect(side.match().settings).toMatchObject({ mayhem: 2, rounds: 3, shotTime: 30, styleBonuses: true, betting: false });
+          expect(side.match().settings.simultaneousShots).toBe(mode === 'classic');
+        }
+        expect(host.match().salvo).toBe(true);
+      }
+    }, 30_000);
+
+    it('plays without twists when it is off', async () => {
+      const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], rules);
+      for (let i = 0; i < 6; i++) await frame(host, guest);
+      expect(host.match().mayhem).toBeNull();
+      expect(guest.match().mayhem).toBeNull();
+    }, 30_000);
   });
 
   describe('power-ups', () => {

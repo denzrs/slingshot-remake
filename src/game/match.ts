@@ -1,7 +1,8 @@
 import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../ai';
 import type { Avatar } from '../avatars';
-import { AIM, COLORS, FIELD, GRACE, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
+import { AIM, COLORS, FIELD, GRACE, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
+import { applyTwists, MayhemDeck, type MayhemRound } from '../mayhem';
 import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
@@ -234,6 +235,15 @@ export abstract class Match {
   protected roundStartedAt = 0;
   /** Seed used to generate the current round's battlefield. */
   worldSeed = 0;
+  /** Mayhem: how this round plays — its twists, whether it is the finale or a jackpot. Null when the match has no twists. */
+  mayhem: MayhemRound | null = null;
+  /** Mayhem: the match clock when the announcement of the round is over and the ships may aim. */
+  revealEnd = 0;
+  /** Mayhem: how every round of the match so far was played, for the recap. */
+  mayhemHistory: MayhemRound[] = [];
+  /** Mayhem: the rules the room was set up with. `settings` is these with the round's twists laid over them. */
+  protected baseSettings: Settings;
+  private deck: MayhemDeck | null = null;
   /** Online: the player sitting at this screen. null = hot-seat, where whoever is on turn is at the keyboard. */
   viewer: number | null = null;
   /** Whether this screen may move the match on (next round, skip the killcam, rematch). Online only the host may. */
@@ -282,6 +292,7 @@ export abstract class Match {
     public settings: Settings,
     protected readonly options: MatchOptions = {},
   ) {
+    this.baseSettings = settings;
     this.matchSeed = options.seed ?? randomSeed();
     this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
     this.worldRng = createRng(this.matchSeed);
@@ -335,7 +346,7 @@ export abstract class Match {
   }
 
   get isHumanTurn(): boolean {
-    if (this.phase !== 'aiming' || this.current < 0) return false;
+    if (this.phase !== 'aiming' || this.current < 0 || this.revealing) return false;
     const p = this.players[this.current];
     return !p.cpu && !p.locked;
   }
@@ -353,7 +364,7 @@ export abstract class Match {
   /** Whether a human may change this player's aim right now. */
   canAim(id: number): boolean {
     const p = this.players[id];
-    return this.phase === 'aiming' && this.current === id && !!p && !p.cpu && !p.locked;
+    return this.phase === 'aiming' && !this.revealing && this.current === id && !!p && !p.cpu && !p.locked;
   }
 
   /** Whether the person at this screen has been shot down and may tip in the oracle. */
@@ -681,8 +692,12 @@ export abstract class Match {
     this.killFeed = [];
     this.matchStats = newStatBook();
     this.scoreHistory = [this.players.map(() => 0)];
+    this.mayhemHistory = [];
     this.oracle.reset(this.players.length);
     this.totalRounds = this.attract ? 0 : this.settings.rounds;
+    this.settings = this.baseSettings;
+    // The deck gets its seed from the world's stream only when there are twists, so a match without any plays as ever.
+    this.deck = this.mayhemOn ? new MayhemDeck(Math.floor(this.worldRng() * 2 ** 32)) : null;
     this.startRound();
   }
 
@@ -699,6 +714,7 @@ export abstract class Match {
     this.roundStats = newStatBook();
     this.roundStartedAt = this.clock;
     this.worldSeed = Math.floor(this.worldRng() * 2 ** 32);
+    this.rollTwists();
     this.world = generateWorld(this.worldSeed, {
       maxPlanets: this.settings.maxPlanets,
       players: this.players.length,
@@ -731,6 +747,40 @@ export abstract class Match {
     this.beginRound();
   }
 
+  /** Whether this match plays by twists: Mayhem is on, in a game against other ships and not on the title screen. */
+  private get mayhemOn(): boolean {
+    return this.baseSettings.mayhem > 0 && !this.attract && this.mode !== 'challenge';
+  }
+
+  /** Draws the twists of the round about to start and lays them over the room's rules, or puts the room's rules back. */
+  private rollTwists(): void {
+    if (!this.deck) {
+      this.mayhem = null;
+      this.settings = this.baseSettings;
+      return;
+    }
+    this.mayhem = this.deck.draw({ base: this.baseSettings, mode: this.mode as 'classic' | 'horizon', round: this.round, rounds: this.totalRounds });
+    this.settings = applyTwists(this.baseSettings, this.mayhem);
+    this.revealEnd = this.clock + MAYHEM.REVEAL_TIME;
+  }
+
+  /** Mayhem: the round has been announced, but the ships are still held back. */
+  get revealing(): boolean {
+    return this.mayhem !== null && this.clock < this.revealEnd;
+  }
+
+  /** The fire key during the announcement ends it instead of firing. True when it did. */
+  protected skipReveal(): boolean {
+    if (!this.revealing) return false;
+    this.revealEnd = this.clock;
+    return true;
+  }
+
+  /** Mayhem: what every point of this round is worth — a jackpot round pays and costs double. */
+  protected get payFactor(): number {
+    return this.mayhem?.jackpot ? MAYHEM.JACKPOT_FACTOR : 1;
+  }
+
   /** Nudge the current player's aim (human input). */
   adjust(dAngle: number, dPower: number): void {
     if (!this.isHumanTurn) return;
@@ -748,6 +798,7 @@ export abstract class Match {
   /** Called when settings change mid-match: only display options follow along, the rules stay as the game started. */
   applySettings(settings: Settings): void {
     this.settings.contours = settings.contours;
+    this.baseSettings.contours = settings.contours;
   }
 
   /** Online: one player's vote to skip the killcam. Only Event Horizon has one. */
@@ -773,6 +824,8 @@ export abstract class Match {
     this.clock += dt;
     this.phaseTime += dt;
     if (this.notice && this.clock - this.notice.at > 1.4) this.notice = null;
+    // The round's announcement holds everything still: no aiming, no CPU thinking, no shot clock.
+    if (this.revealing) return;
     if (this.phase === 'flying') this.updateFlight(dt);
     else this.updatePhase(dt);
     if (this.phase === 'roundOver' && this.attract && this.phaseTime > 3) this.advance();
@@ -921,7 +974,7 @@ export abstract class Match {
         const team = this.players[player].team;
         const friendly = team !== null && team === this.players[otherOwner].team;
         // A high-five pays both shooters whose shots cancelled each other — and only where trick shots pay.
-        const points = this.stylePays ? (friendly ? SCORING.HIGH_FIVE_TEAMMATE : SCORING.HIGH_FIVE_ENEMY) : 0;
+        const points = this.stylePays ? (friendly ? SCORING.HIGH_FIVE_TEAMMATE : SCORING.HIGH_FIVE_ENEMY) * this.payFactor : 0;
         if (live && points > 0) {
           this.players[player].score += points;
           this.players[otherOwner].score += points;
@@ -945,7 +998,8 @@ export abstract class Match {
     const killer = vs.owner;
     const self = killer === victim;
     const friendly = !self && this.players[killer].team !== null && this.players[killer].team === this.players[victim].team;
-    const score = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : this.killPoints(vs);
+    const hit = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : this.killPoints(vs);
+    const score = { ...hit, points: hit.points * this.payFactor };
     this.players[victim].alive = false;
     this.oracleKills.push({ killer, victim, self, friendly });
     this.players[killer].score += score.points;
@@ -981,7 +1035,7 @@ export abstract class Match {
     if (!self && !friendly && this.paysKillChain) {
       const kills = (this.killChain.get(killer) ?? 0) + 1;
       this.killChain.set(killer, kills);
-      const bonus = SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)];
+      const bonus = SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)] * this.payFactor;
       if (bonus > 0) {
         this.players[killer].score += bonus;
         this.emit({ type: 'multiKill', player: killer, kills, points: bonus, x: volley.world.ships[victim].x, y: volley.world.ships[victim].y });
@@ -1028,7 +1082,7 @@ export abstract class Match {
     const survivor = alive.length === 1 ? alive[0].id : null;
     // In team mode the whole winning team shares the bonus — fallen members included.
     const team = this.teamMode && alive.length > 0 && this.decided ? alive[0].team : null;
-    const bonus = team !== null || survivor !== null ? this.survivorBonus : 0;
+    const bonus = team !== null || survivor !== null ? this.survivorBonus * this.payFactor : 0;
     if (team !== null) {
       for (const p of this.players) if (p.team === team) p.score += bonus;
     } else if (survivor !== null) {
@@ -1041,6 +1095,7 @@ export abstract class Match {
     // What the bets on the round come to: their share of the pot goes into the winners' scores.
     for (const tip of this.oracle.roundResult?.tips ?? []) if (tip.payout && this.players[tip.player]) this.players[tip.player].score += tip.payout;
     this.scoreHistory.push(this.players.map((p) => p.score));
+    if (this.mayhem) this.mayhemHistory.push(this.mayhem);
     this.current = -1;
     this.setPhase('roundOver');
     this.emit({ type: 'roundEnd' });

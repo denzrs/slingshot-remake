@@ -36,7 +36,7 @@ interface Live {
 }
 
 export type MenuItem =
-  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; /** Small second line under the label. */ hint?: string; disabled?: boolean })
+  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; /** Small second line under the label. */ hint?: string; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; disabled?: boolean })
   | (Placed &
       Live & {
         /** Cycles through its options; the arrows at its sides go back and forth. */
@@ -266,7 +266,22 @@ export class Menu {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = item.primary ? 'item item--primary' : 'item';
-        if (item.hint) {
+        if (item.icon) {
+          b.classList.add('item--card');
+          const picture = document.createElement('span');
+          picture.className = 'item__icon';
+          picture.append(item.icon());
+          const label = document.createElement('span');
+          label.className = 'item__title';
+          label.textContent = item.label;
+          b.append(picture, label);
+          if (item.hint) {
+            const hint = document.createElement('span');
+            hint.className = 'item__hint';
+            hint.textContent = item.hint;
+            b.append(hint);
+          }
+        } else if (item.hint) {
           b.classList.add('item--hinted');
           const label = document.createElement('span');
           label.textContent = item.label;

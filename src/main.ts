@@ -23,6 +23,7 @@ import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './i18n';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './scoring';
+import { mayhemRules } from './lobbyPrefs';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
 import { Menu } from './ui/menu';
@@ -57,6 +58,7 @@ const attract = createMatch(
 let match: Match | null = null;
 let screen: 'title' | 'play' = 'title';
 let lastMode: VersusMode = 'classic';
+let lastMayhem = false;
 /** `?daily=YYYY-MM-DD` flies another day's challenge — handy for testing and for sharing an old one. */
 const requestedDay = new URLSearchParams(location.search).get('daily');
 const forcedDay = isDateKey(requestedDay) ? requestedDay : null;
@@ -66,11 +68,14 @@ const active = (): Match => (screen === 'play' && match ? match : attract);
 function wire(m: Match): void {
   const audible = m !== attract;
   const color = (id: number) => m.players[id].color;
+  // The first round of a Mayhem match is announced before anybody is listening for the round event.
+  if (audible && m.revealing) sound.reveal(m.mayhem!.jackpot);
   m.on((e) => {
     if (active() !== m) return;
     switch (e.type) {
       case 'round':
         effects.clear();
+        if (audible && m.revealing) sound.reveal(m.mayhem!.jackpot);
         break;
       case 'fire':
         effects.muzzle(e.x, e.y, e.angle, color(e.player));
@@ -274,11 +279,17 @@ const app: App = {
   get mode() {
     return screen === 'play' && match ? match.mode : null;
   },
+  get mayhem() {
+    return screen === 'play' && !!match && match.settings.mayhem > 0;
+  },
   today: () => forcedDay ?? dateKey(),
-  start(mode) {
+  start(mode, mayhem = false) {
     lastMode = mode;
+    lastMayhem = mayhem;
     match?.dispose();
-    match = createMatch(mode, cloneSettings(settings));
+    // Mayhem is a game of its own: it plays by its two rules over the plain ones, whatever the other setups say.
+    const rules = cloneSettings(settings);
+    match = createMatch(mode, mayhem ? { ...rules, ...mayhemRules(rules, mode) } : { ...rules, mayhem: 0 });
     wire(match);
     screen = 'play';
     effects.clear();
@@ -308,7 +319,7 @@ const app: App = {
     menu.close();
   },
   rematch() {
-    if (!match) return app.start(lastMode);
+    if (!match) return app.start(lastMode, lastMayhem);
     if (online()) {
       if (!match.canAdvance) return;
       advanceMatch();
@@ -344,7 +355,8 @@ function saveClip(): void {
 function primaryAction(): void {
   if (!match) return;
   if (online() && match.phase === 'gameOver') app.rematch();
-  else if (canAim()) dispatchInput({ kind: 'fire' });
+  // The announcement of a Mayhem round: the fire key skips it.
+  else if (canAim() || match.revealing) dispatchInput({ kind: 'fire' });
   // While a shot flies, the fire key only matters for a splitter.
   else if (splitterInAir(match)) dispatchInput({ kind: 'fire' });
   else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();

@@ -1,4 +1,4 @@
-import { AIM, GRACE, TRAIL_FADE } from './config';
+import { AIM, GRACE, MAYHEM, TRAIL_FADE } from './config';
 import { POWER_UP, POWER_UP_KINDS } from './powerups';
 import type { NetworkGameMode, RoomMode, RoomRules } from './net';
 import { avatarFrom, DEFAULT_AVATAR, type Avatar } from './avatars';
@@ -40,6 +40,7 @@ export const rulesOf = (s: Settings): RoomRules => ({
   simultaneousShots: s.simultaneousShots,
   hiddenAim: s.hiddenAim,
   fadingTrails: s.fadingTrails,
+  mayhem: s.mayhem,
   betting: s.betting,
   powerUps: s.powerUps,
   powerUpKinds: [...s.powerUpKinds],
@@ -51,6 +52,20 @@ export const rulesOf = (s: Settings): RoomRules => ({
  * a player has set up for offline games stays out of it, and the other way round.
  */
 export const defaultRoomRules = (): RoomRules => rulesOf(DEFAULT_SETTINGS);
+
+/**
+ * The rules of a Mayhem game: the rounds, the chaos strength, the flight time and (in Classic) whether everybody
+ * shoots at once are the only things to choose. The rest is the plain rules (trick-shot bonuses are always on, as in
+ * Event Horizon), which the round's twists then change.
+ */
+export const mayhemRules = (chosen: Pick<RoomRules, 'mayhem' | 'rounds' | 'shotTime' | 'simultaneousShots'>, mode: NetworkGameMode): RoomRules => ({
+  ...defaultRoomRules(),
+  rounds: chosen.rounds,
+  mayhem: chosen.mayhem || 2,
+  shotTime: chosen.shotTime,
+  simultaneousShots: mode === 'classic' && chosen.simultaneousShots,
+  styleBonuses: true,
+});
 
 /** A saved list of power-up kinds: only known kinds, in the usual order, and never none. */
 function powerUpKindsFrom(value: unknown): RoomRules['powerUpKinds'] | null {
@@ -85,6 +100,7 @@ export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
         maxPower: AIM.CAP_OPTIONS.includes(saved.rules?.maxPower as number) ? saved.rules!.maxPower : fresh.rules.maxPower,
         fixedPowerLevel: AIM.FIXED_OPTIONS.includes(saved.rules?.fixedPowerLevel as number) ? saved.rules!.fixedPowerLevel : fresh.rules.fixedPowerLevel,
         fadingTrails: TRAIL_FADE.OPTIONS.includes(saved.rules?.fadingTrails as number) ? saved.rules!.fadingTrails : fresh.rules.fadingTrails,
+        mayhem: MAYHEM.LEVELS.includes(saved.rules?.mayhem as number) ? saved.rules!.mayhem : fresh.rules.mayhem,
         // It used to be a plain on/off switch, "on" meaning two shots.
         neighborGrace: (saved.rules?.neighborGrace as unknown) === true ? 2 : GRACE.OPTIONS.includes(saved.rules?.neighborGrace as number) ? saved.rules!.neighborGrace : fresh.rules.neighborGrace,
       },

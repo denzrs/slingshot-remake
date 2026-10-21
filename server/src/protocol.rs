@@ -368,6 +368,8 @@ pub struct RoomRules {
     pub hidden_aim: bool,
     /// Seconds a finished shot's flight path stays on the board (0 = for good).
     pub fading_trails: i64,
+    /// Mayhem: every round has twists of its own (0 = off, then 1 mild, 2 wild, 3 insane).
+    pub mayhem: i64,
     /// Online: eliminated players may bet points of the match on who wins the round.
     pub betting: bool,
     /// Power-ups: pickups on the field, one held at a time.
@@ -392,6 +394,7 @@ pub const DEFAULT_RULES: RoomRules = RoomRules {
     simultaneous_shots: false,
     hidden_aim: false,
     fading_trails: 0,
+    mayhem: 0,
     betting: false,
     power_ups: false,
     power_up_kinds: ALL_POWER_UP_KINDS,
@@ -414,6 +417,7 @@ pub fn rules_to_value(rules: &RoomRules) -> Value {
         "simultaneousShots": rules.simultaneous_shots,
         "hiddenAim": rules.hidden_aim,
         "fadingTrails": rules.fading_trails,
+        "mayhem": rules.mayhem,
         "betting": rules.betting,
         "powerUps": rules.power_ups,
         "powerUpKinds": POWER_UP_KINDS
@@ -499,6 +503,9 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
     if !is_number_in(fading_trails, &[0, 1, 2, 4]) {
         return None;
     }
+    if field("mayhem").is_some_and(|v| !is_number_in(v, &[0, 1, 2, 3])) {
+        return None;
+    }
     // Power-ups came later: a client that doesn't send them plays without. A present value has to be valid.
     if field("powerUps").is_some_and(|v| !v.is_boolean()) {
         return None;
@@ -532,6 +539,7 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
         simultaneous_shots: value.get("simultaneousShots").unwrap().as_bool().unwrap(),
         hidden_aim: value.get("hiddenAim").unwrap().as_bool().unwrap(),
         fading_trails: i64_of(fading_trails),
+        mayhem: field("mayhem").map(i64_of).unwrap_or(DEFAULT_RULES.mayhem),
         betting: field("betting")
             .and_then(Value::as_bool)
             .unwrap_or(DEFAULT_RULES.betting),
@@ -618,7 +626,7 @@ mod tests {
             "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"bounce":true,
             "fixedPower":true,"fixedPowerLevel":70,"maxPower":80,"shotTime":20,
             "styleBonuses":true,"neighborGrace":1,"simultaneousShots":true,
-            "hiddenAim":false,"fadingTrails":2,"betting":true,
+            "hiddenAim":false,"fadingTrails":2,"mayhem":2,"betting":true,
             "powerUps":true,"powerUpKinds":["teleport","shield"],"powerUpAmount":3
         })
     }
@@ -688,6 +696,8 @@ mod tests {
             ("powerUpKinds", json!(["laser"])),
             ("powerUpAmount", json!(0)),
             ("powerUpAmount", json!(5)),
+            ("mayhem", json!(4)),
+            ("mayhem", json!("wild")),
         ] {
             let mut rules = valid_rules();
             rules[key] = value;

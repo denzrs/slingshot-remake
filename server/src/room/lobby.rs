@@ -54,6 +54,7 @@ impl RoomManager {
                     "color": room.look.color.as_str(),
                     "mode": room.mode.as_str(),
                     "gameMode": room.game_mode.as_str(),
+                    "mayhem": room.rules.mayhem,
                     "players": room.players.len(),
                     "cpus": room.players.iter().filter(|p| p.is_cpu()).count(),
                     "maxPlayers": room.max_players,

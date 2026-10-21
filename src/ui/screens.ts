@@ -3,6 +3,7 @@ import { teamName, type Match, type Mode, type VersusMode } from '../game';
 import { oracleAwards } from '../game/oracle';
 import { fmtInt, fmtNum, LANGS, t, tn, type Key, type Lang } from '../i18n';
 import { rulesOf } from '../lobbyPrefs';
+import { roundTitle } from '../mayhem';
 import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
 import { awards } from '../stats';
@@ -12,6 +13,7 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, freeSeat, MIN_SEATS, removeSeat, seatTeamsFor, teamCounts, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
+import { modeIcon } from './mode-icons';
 import { groupTitle, RULE_GROUPS, ruleItems } from './rules';
 
 export interface App {
@@ -20,9 +22,11 @@ export interface App {
   settingsChanged(): void;
   /** The mode being played right now, null on the title screen. */
   readonly mode: Mode | null;
+  /** Whether the game on screen is a Mayhem game. */
+  readonly mayhem: boolean;
   /** Today's date key — the real one, unless the URL asks for another day. */
   today(): string;
-  start(mode: VersusMode): void;
+  start(mode: VersusMode, mayhem?: boolean): void;
   startDaily(): void;
   /** True while an online match is on screen. */
   readonly online: boolean;
@@ -149,15 +153,39 @@ export function titleScreen(app: App): Screen {
     // A getter, so the lineup hint is fresh whenever the menu re-renders this screen.
     get items(): MenuItem[] {
       return [
-        { kind: 'action', label: t('mode.daily'), hint: dailyMenuHint(app.today()), primary: true, run: () => app.menu.push(() => dailyScreen(app)) },
-        { kind: 'action', label: t('mode.classic'), hint: t('mode.classic.hint'), run: () => app.menu.push(() => setupScreen(app, 'classic')) },
-        { kind: 'action', label: t('mode.horizon'), hint: t('mode.horizon.hint'), run: () => app.menu.push(() => setupScreen(app, 'horizon')) },
+        { kind: 'action', label: t('title.local'), hint: t('title.local.hint'), primary: true, run: () => app.menu.push(() => localScreen(app)) },
         { kind: 'action', label: t('multiplayer.title'), hint: t('multiplayer.hint'), run: () => app.openLobby() },
         { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
         { kind: 'action', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
         languageItem(app),
       ];
     },
+  };
+}
+
+/** The ways to play on this device, as a row of cards: the daily challenge and the three modes. */
+function localScreen(app: App): Screen {
+  const card = (label: string, hint: string, icon: Parameters<typeof modeIcon>[0], run: () => void, primary = false): MenuItem => ({ kind: 'action', section: 'cards', label, hint, icon: () => modeIcon(icon), primary, run });
+  return {
+    build: () =>
+      h(
+        'section.screen.screen--panel',
+        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('title.local') },
+        h(
+          'div.panel.panel--cards',
+          null,
+          h('h2.panel__title', null, t('title.local')),
+          h('div.items.items--row.items--cards', { 'data-section': 'cards' }),
+          h('div.items.items--row', { 'data-section': 'back' }),
+        ),
+      ),
+    items: [
+      card(t('mode.daily'), dailyMenuHint(app.today()), 'daily', () => app.menu.push(() => dailyScreen(app)), true),
+      card(t('mode.classic'), t('mode.classic.hint'), 'classic', () => app.menu.push(() => setupScreen(app, 'classic'))),
+      card(t('mode.horizon'), t('mode.horizon.hint'), 'horizon', () => app.menu.push(() => setupScreen(app, 'horizon'))),
+      card(t('mode.mayhem'), t('mode.mayhem.hint'), 'mayhem', () => app.menu.push(() => mayhemScreen(app))),
+      { kind: 'action', section: 'back', label: t('common.back'), run: () => app.menu.back() },
+    ],
   };
 }
 
@@ -169,7 +197,7 @@ export function pauseScreen(app: App): Screen {
     items: [
       { kind: 'action', label: t('pause.resume'), primary: true, run: () => app.resume() },
       // Online, the room decides: no restarts from the pause menu. The daily challenge has no setup, only a retry.
-      ...(mode && !app.online ? [{ kind: 'action', label: t('pause.newGame'), run: () => app.menu.push(() => setupScreen(app, mode)) } satisfies MenuItem] : []),
+      ...(mode && !app.online ? [{ kind: 'action', label: t('pause.newGame'), run: () => app.menu.push(() => (app.mayhem ? mayhemScreen(app) : setupScreen(app, mode))) } satisfies MenuItem] : []),
       ...(daily ? [{ kind: 'action', label: t('daily.retry'), run: () => app.rematch() } satisfies MenuItem] : []),
       { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
       { kind: 'action', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
@@ -381,6 +409,61 @@ function setupScreen(app: App, mode: VersusMode): Screen {
       ),
     items: [...rows, ...actions],
     // Enter starts the game straight away, as it always did.
+    focus: rows.length,
+  };
+}
+
+/**
+ * Mayhem: pick the mode the rounds are played in, how wild they get and who plays — that is all there is to set.
+ * Every round then plays by twists of its own.
+ */
+function mayhemScreen(app: App): Screen {
+  // The strength is never "off" here: a Mayhem game always has twists.
+  if (!app.settings.mayhem) app.settings.mayhem = 2;
+  // Every rule of the mode is built, and the Classic-only one hides while Event Horizon is picked.
+  const rules = ruleItems('classic', {
+    get: () => rulesOf(app.settings),
+    patch: (values) => {
+      Object.assign(app.settings, values);
+      app.settingsChanged();
+    },
+  }, false, true);
+  const base: MenuItem = {
+    kind: 'segmented',
+    section: 'match',
+    label: t('mayhem.base'),
+    options: [{ value: 'classic', label: t('mode.classic') }, { value: 'horizon', label: t('mode.horizon') }],
+    get: () => app.settings.mayhemBase,
+    set: (v) => {
+      app.settings.mayhemBase = v as 'classic' | 'horizon';
+      app.settingsChanged();
+    },
+  };
+  const rows: MenuItem[] = [
+    base,
+    ...rules.map(({ key, group, item }): MenuItem => ({ ...item, section: group, ...(key === 'simultaneousShots' ? { hidden: () => app.settings.mayhemBase === 'horizon' } : {}) })),
+  ];
+  const actions: MenuItem[] = [
+    { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(app.settings.mayhemBase, true) },
+    { kind: 'action', section: 'actions', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
+    { kind: 'action', section: 'actions', label: t('common.back'), run: () => app.menu.back() },
+  ];
+  return {
+    build: () =>
+      h(
+        'section.screen.screen--panel.screen--setup',
+        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('mode.mayhem') },
+        h(
+          'div.panel.panel--setup',
+          null,
+          h('h2.panel__title', null, t('mode.mayhem')),
+          h('p.note', null, t('mayhem.note')),
+          h('div.setup', null, h('section.setup__group', null, h('h3.setup__title', null, groupTitle('match')), h('div.setup__rows', { 'data-section': 'match' }))),
+          h('div.items.items--row.items--actions', { 'data-section': 'actions' }),
+          h('p.keys.keys--menu', null, t('setup.keys')),
+        ),
+      ),
+    items: [...rows, ...actions],
     focus: rows.length,
   };
 }
@@ -635,6 +718,8 @@ export function gameOverScreen(app: App, match: Match): Screen {
       }
       const chart = scoreChart(match);
       if (chart) lists.push(h('p.ranking-label', null, t('scorecard.history')), chart);
+      // Mayhem: what every round was about and who took it.
+      if (match.mayhemHistory.length) lists.push(h('p.ranking-label', null, t('mayhem.recap')), h('ul.highlights', null, ...roundRecap(match)));
       // The match's records, e.g. the longest shot of all rounds.
       const highlights = awards(match.matchStats).map((award) => {
         const who = awardWho(match, award);
@@ -681,6 +766,27 @@ export function gameOverScreen(app: App, match: Match): Screen {
     ],
     onEscape: () => (app.online ? app.toLobby() : app.toTitle()),
   };
+}
+
+/** One line per round of a Mayhem match: its twists, and whoever scored most in it. */
+function roundRecap(match: Match): Element[] {
+  return match.mayhemHistory.map((round, i) => {
+    const before = match.scoreHistory[i] ?? [];
+    const after = match.scoreHistory[i + 1] ?? [];
+    let best = -1;
+    let gain = 0;
+    match.players.forEach((_p, id) => {
+      const delta = (after[id] ?? 0) - (before[id] ?? 0);
+      if (delta > gain) {
+        best = id;
+        gain = delta;
+      }
+    });
+    const winner = best >= 0 ? match.players[best] : null;
+    const who = h('span.highlights__who', null, winner?.name ?? '');
+    if (winner) who.style.color = winner.color;
+    return h('li', null, h('span.highlights__label', null, `${i + 1}. ${roundTitle(round)}`), who, h('span.highlights__value', null, winner ? `+${fmtInt(gain)}` : ''));
+  });
 }
 
 /** Everybody's score after every round as lines, so you can see who caught up when. Needs at least two rounds. */

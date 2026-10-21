@@ -141,6 +141,23 @@ export const HORIZON = {
   KILLCAM_DELAY: 1,
 } as const;
 
+/** Mayhem: every round plays by its own twists, drawn from a deck. */
+export const MAYHEM = {
+  /** The chaos strength a room can pick (0 = off): mild, wild, insane. */
+  LEVELS: [0, 1, 2, 3] as readonly number[],
+  /** Mild only: the share of rounds (from the second on) that play by the plain rules, as a breather between the twists. */
+  QUIET_CHANCE: 0.2,
+  /** Wild and insane: the share of rounds that carry one twist more than their level calls for. */
+  EXTRA_CHANCE: 0.25,
+  /** The jackpot round pays every point, and costs every point, this many times over. */
+  JACKPOT_FACTOR: 2,
+  /** The share of rounds (from the second on) that are a jackpot, and of the finale. */
+  JACKPOT_CHANCE: 0.18,
+  FINALE_JACKPOT_CHANCE: 0.35,
+  /** Seconds the announcement of a round holds the ships back, so the twists can be read. */
+  REVEAL_TIME: 2.4,
+} as const;
+
 /** The oracle: eliminated players tip on what the others' shots do. A side standing — it never counts towards winning. */
 export const ORACLE = {
   /** Base points for a right tip: "will it hit?" (turn by turn), a named ship, and "nobody" (salvos). */
