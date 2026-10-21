@@ -17,7 +17,7 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   piercing: '#dfe7f5',
   wormhole: '#4db8ff',
   defense: '#b4ff3c',
-  heavy: '#d9a066',
+  heavy: '#22e4ff',
 };
 
 /** The colour of the portals of the wormhole with this id (the palette starts over after the last colour). */
@@ -218,17 +218,21 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.lineTo(x - r * 0.04, y + r * 0.2);
     ctx.stroke();
   } else if (kind === 'heavy') {
-    // A heavy round on a straight line: a solid ball in a ring, and the path running through it unbent.
-    ctx.arc(x, y, r * 0.42, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x, y, r * 0.7, 0, Math.PI * 2);
+    // A plasma blob: a lumpy cyan globule with a bright core and a spark off its rim.
+    for (let i = 0; i <= 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const rr = r * (0.62 + 0.12 * Math.sin(a * 3 + 0.8) + 0.06 * Math.sin(a * 5));
+      if (i === 0) ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+      else ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    ctx.closePath();
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(x - r, y);
-    ctx.lineTo(x - r * 0.7, y);
-    ctx.moveTo(x + r * 0.7, y);
-    ctx.lineTo(x + r, y);
+    ctx.arc(x, y, r * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + r * 0.8, y - r * 0.8);
+    ctx.lineTo(x + r * 0.98, y - r * 0.98);
     ctx.stroke();
   } else if (kind === 'splitter') {
     ctx.moveTo(x, y + r);
