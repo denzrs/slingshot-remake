@@ -134,7 +134,7 @@ describe('power-ups in Event Horizon', () => {
     expect(match.world.ships[a.id]).not.toMatchObject(before);
   });
 
-  it('makes a planet killer when the volley takes off, and a planet another killer took meanwhile fizzles', () => {
+  it('makes a planet killer when the volley takes off, and a second killer on the same planet is spent too', () => {
     const match = onlineDuel();
     const [a, b] = match.players;
     const rock = (seed: number, x: number, y: number) => ({ x, y, radius: 20, mass: 8_000, seed, style: 'rocky' as const, tint: '#fff' });
@@ -155,9 +155,9 @@ describe('power-ups in Event Horizon', () => {
     expect(match.world.planets).toHaveLength(1);
     for (let t = 0; t < 2 && match.phase === 'aiming'; t += 1 / 30) match.update(1 / 30);
     expect(match.world.planets).toHaveLength(0);
-    // The second killer found nothing to kill: it keeps its power-up.
+    // The second killer found nothing to kill, and is spent all the same.
     expect(a.powerUp).toBeNull();
-    expect(b.powerUp).toBe('planetkiller');
+    expect(b.powerUp).toBeNull();
   });
 
   it('takes a defense along with its planet: it drifts with a planet the hole pulls in, and is gone when the planet is', () => {

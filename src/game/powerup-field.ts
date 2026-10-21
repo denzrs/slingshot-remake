@@ -327,22 +327,30 @@ export class PowerUpField {
         return this.onPlanet(world.planets[index], (i) => this.plantDefense(owner, { x: target.x, y: target.y, planet: i }));
       }
       case 'polarity': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.turnPolarity(owner, i));
-      case 'planetkiller': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.killPlanet(owner, i));
+      case 'planetkiller': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.killPlanet(owner, i), () => this.spend(owner));
       default: return () => this.teleport(owner, target);
     }
   }
 
-  /** A placement on a planet that finds the planet again when it is made: the index it was aimed at may have moved by then. */
-  private onPlanet(planet: World['planets'][number] | undefined, place: (index: number) => boolean): (() => boolean) | null {
+  /** A placement on a planet that finds the planet again when it is made: the index it was aimed at may have moved by then. `gone` runs when the planet has been taken meanwhile. */
+  private onPlanet(planet: World['planets'][number] | undefined, place: (index: number) => boolean, gone?: () => boolean): (() => boolean) | null {
     if (!planet) return null;
     const world = this.host.world();
     return () => {
       const index = world.planets.indexOf(planet);
-      return index >= 0 && place(index);
+      return index >= 0 ? place(index) : (gone?.() ?? false);
     };
   }
 
-  /** The volley takes off: the placements a salvo held back are made now, ship by ship. A ship whose placement no longer lands keeps its power-up. */
+  /** A power-up used up without effect: two planet killers on one rock cost both ships theirs. */
+  private spend(id: number): boolean {
+    const p = this.host.players()[id];
+    p.powerUp = null;
+    p.armed = false;
+    return false;
+  }
+
+  /** The volley takes off: the placements a salvo held back are made now, ship by ship. A ship whose placement no longer lands keeps its power-up, unless its planet killer found the planet gone. */
   makeHeld(): void {
     const held = [...this.held.values()];
     this.held.clear();
@@ -500,7 +508,7 @@ export class PowerUpField {
     }
     if (kind === 'planetkiller') {
       const planet = aimedPlanet(world, from, p.angle);
-      return planet ? this.onPlanet(world.planets[planet.index], (i) => this.killPlanet(id, i)) : null;
+      return planet ? this.onPlanet(world.planets[planet.index], (i) => this.killPlanet(id, i), () => this.spend(id)) : null;
     }
     const spot = kind === 'nebula' ? nebulaSpot(world, from, p.angle, p.power) : aimedSpot(world, from, p.angle, p.power);
     if (!spot) return null;
