@@ -133,8 +133,8 @@ export function onOrbit(r: number, a: number): { x: number; y: number } {
 
 export const orbitTurn = (r: number): number => SOLAR.TURN * (SOLAR.REF_ORBIT / Math.max(r, 1)) ** SOLAR.FALLOFF;
 
-/** One orbit: shared by up to three planets (spread evenly round it, same speed), or by some of the ships. */
-type Body = { kind: 'planets'; radii: number[] } | { kind: 'ships' };
+/** One orbit: shared by up to three planets (spread evenly round it, same speed), or by some of the ships, who may have a planet along (its radius is in `guests`). */
+type Body = { kind: 'planets'; radii: number[] } | { kind: 'ships'; guests: number[] };
 
 /**
  * A sun in the middle, the planets on orbits round it — up to three to an orbit. The ships ride the three outermost orbits — so that after every step the whole system turns and the gravity field with it. The orbits are spaced so
@@ -149,16 +149,24 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
   // The mode's own planets are small, so more of them fit than on an open field: the setting is the least it draws.
   const wanted = opts.maxPlanets === 0 ? 0 : intRange(rng, Math.max(opts.maxPlanets, 2), Math.max(opts.maxPlanets, 2) + 3);
   const radii = Array.from({ length: wanted }, () => SOLAR.MIN_PLANET + (SOLAR.MAX_PLANET - SOLAR.MIN_PLANET) * Math.pow(rng(), 1.8));
+  // A ship's orbit may carry a planet too: same speed, so it keeps its distance from the ships for good.
+  const lanes: Body[] = Array.from({ length: bands }, () => ({ kind: 'ships', guests: radii.length > 2 && rng() < 0.7 ? [radii.pop()!] : [] }));
   for (let i = 0; i < radii.length; i += 3) bodies.push({ kind: 'planets', radii: radii.slice(i, i + 3) });
-  const half = (b: Body): number => (b.kind === 'planets' ? Math.max(...b.radii) : SOLAR.SHIP_BAND);
+  const half = (b: Body): number => (b.kind === 'planets' ? Math.max(...b.radii) : Math.max(SOLAR.SHIP_BAND, ...b.guests));
   const span = (list: readonly Body[]): number => list.reduce((sum, b) => sum + 2 * half(b) + SOLAR.ORBIT_GAP, -SOLAR.ORBIT_GAP);
   const room = SOLAR.OUTER_ORBIT - SOLAR.INNER_ORBIT;
-  for (let i = 0; i < bands; i++) bodies.push({ kind: 'ships' });
+  bodies.push(...lanes);
   // Too many for the room: the planets give way, the ships' orbits stay.
   while (span(bodies) > room) {
     const last = bodies.map((b) => b.kind).lastIndexOf('planets');
-    if (last < 0) break;
-    bodies.splice(last, 1);
+    if (last >= 0) {
+      bodies.splice(last, 1);
+      continue;
+    }
+    // Still too much: a guest planet that widens a ship's orbit goes too.
+    const wide = lanes.find((l) => l.kind === 'ships' && l.guests.length);
+    if (!wide || wide.kind !== 'ships') break;
+    wide.guests = [];
   }
   // The planets take the inner orbits, in random order; the ships ride the three outermost.
   const order = [...shuffle(rng, bodies.filter((b) => b.kind === 'planets')), ...bodies.filter((b) => b.kind === 'ships')];
@@ -176,12 +184,14 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
     sun: true,
   }];
   const bandRadii: number[] = [];
+  const bandGuests: number[][] = [];
   let cursor = SOLAR.INNER_ORBIT + slack * rng();
   for (const body of order) {
     const r = cursor + half(body);
     cursor += 2 * half(body) + SOLAR.ORBIT_GAP + slack;
     if (body.kind === 'ships') {
       bandRadii.push(r);
+      bandGuests.push(body.guests);
       continue;
     }
     const turn = rng() * Math.PI * 2;
@@ -205,10 +215,32 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
   if (opts.teams) seats.sort((a, b) => opts.teams![a] - opts.teams![b] || a - b);
   const offset = rng() * Math.PI * 2;
   const ships: Ship[] = new Array(n);
+  const angles: number[][] = bandRadii.map(() => []);
   seats.forEach((player, slot) => {
     const a = offset + (slot * Math.PI * 2) / n;
-    const r = bandRadii[slot % bandRadii.length];
-    ships[player] = { ...onOrbit(r, a), alive: true };
+    const lane = slot % bandRadii.length;
+    angles[lane].push(a);
+    ships[player] = { ...onOrbit(bandRadii[lane], a), alive: true };
+  });
+  // The guest planet takes the middle of the widest gap between the ships of its orbit, if it clears them all.
+  bandGuests.forEach((guests, lane) => {
+    for (const radius of guests) {
+      const taken = [...angles[lane]].sort((x, y) => x - y);
+      let at = taken[0] + Math.PI;
+      let widest = taken.length ? 0 : Math.PI * 2;
+      taken.forEach((a, i) => {
+        const gap = (i + 1 < taken.length ? taken[i + 1] : taken[0] + Math.PI * 2) - a;
+        if (gap > widest) {
+          widest = gap;
+          at = a + gap / 2;
+        }
+      });
+      const spot = onOrbit(bandRadii[lane], at);
+      if (ships.some((sh) => Math.hypot(sh.x - spot.x, sh.y - spot.y) < radius + SOLAR.SHIP_CLEARANCE)) continue;
+      const style: PlanetStyle = radius > 24 ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
+      planets.push({ ...spot, radius, mass: range(rng, 0.75, 1.3) * radius ** 3 * SOLAR.PLANET_HEAVY, seed: Math.floor(rng() * 2 ** 31), style, tint: pick(rng, TINTS[style]) });
+      angles[lane].push(at);
+    }
   });
 
   return { width, height, planets, ships, holes: [], nebulae: [], wormholes: [], defenses: [], version: 0 };
