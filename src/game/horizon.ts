@@ -6,6 +6,7 @@ import type { PowerUpState } from './powerup-field';
 import { scoreHorizonKill } from '../scoring';
 import { shotSource, Volley, type VolleyAim, type VolleyScript, type VolleyShot, type VolleySnapshot } from '../volley';
 import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene } from './match';
+import type { GallerySnapshot } from './gallery';
 import type { OracleSnapshot } from './oracle';
 
 /** Everything needed to replay one kill exactly — the physics is deterministic. */
@@ -69,6 +70,7 @@ export interface HorizonSnapshot {
   };
   lastClip: KillcamClip | null;
   oracle: OracleSnapshot;
+  gallery?: GallerySnapshot;
   pickups?: Pickup[];
   power?: PowerUpState;
 }
@@ -164,6 +166,7 @@ export class HorizonMatch extends Match {
       } : null,
       lastClip: this.lastClip,
       oracle: this.oracle.snapshot(),
+      gallery: this.gallery.snapshot(),
       pickups: this.pickups,
       power: this.powerState,
     };
@@ -191,6 +194,7 @@ export class HorizonMatch extends Match {
     this.lastClip = s.lastClip;
     // Hosts from before the oracle send none.
     if (s.oracle) this.oracle.restore(s.oracle);
+    this.gallery.restore(s.gallery);
     this.pickups = s.pickups ?? [];
     this.power.restoreState(s.power);
     this.killcam = null;

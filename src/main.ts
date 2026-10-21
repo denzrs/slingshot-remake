@@ -27,6 +27,7 @@ import { mayhemRules } from './lobbyPrefs';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
 import { Menu } from './ui/menu';
+import { Stands } from './ui/stands';
 import { lobbyScreen } from './ui/lobby';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
 
@@ -34,6 +35,8 @@ const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
+/** The stands: a spectator's betting strip, and the count of watchers everybody else sees. */
+const stands = new Stands(document.querySelector<HTMLElement>('#stands')!, document.querySelector<HTMLElement>('#stands-badge')!, (pick, stake) => dispatchInput({ kind: 'bet', pick, round: true, stake }));
 const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 
@@ -667,6 +670,7 @@ function frame(now: number): void {
     }
   }
   net?.update(dt);
+  stands.update(screen === 'play' && net ? m : null, net?.isSpectator ? (net.you.spectatorId ?? null) : null);
   renderer.draw(
     m,
     effects,

@@ -23,13 +23,14 @@ export type ClientInput =
   | { kind: 'cancel' }
   /** A vote to skip the killcam; it ends once half of the players want that. */
   | { kind: 'skip' }
-  /** An eliminated player's oracle tip: a ship's index, -1 for nobody, or 1/0 for hit/miss. With `round` it names the winner of the round instead, and `stake` bets that many of the player's points on it. */
+  /** An eliminated player's oracle tip: a ship's index, -1 for nobody, or 1/0 for hit/miss. With `round` it names the winner of the round instead, and `stake` bets that many of the player's points on it. A spectator's only input: a bet on the round, with a stake. */
   | { kind: 'bet'; pick: number; round?: boolean; stake?: number };
 
 type ClientMessage =
   | { type: 'lobby' }
   | ({ type: 'create_room'; name: string; roomName?: string; mode: RoomMode; gameMode: NetworkGameMode; rules: RoomRules; maxPlayers: number; password?: string; avatar?: Avatar } & Partial<RoomLook>)
-  | { type: 'join_room'; roomId: string; name: string; password?: string; avatar?: Avatar }
+  /** `spectate` takes a place in the stands instead of a seat: it works for a running game of a public room without a password, too. */
+  | { type: 'join_room'; roomId: string; name: string; password?: string; avatar?: Avatar; spectate?: boolean }
   /** Your symbol in the game, while the room waits. */
   | { type: 'set_avatar'; avatar: Avatar }
   | { type: 'ready'; ready: boolean }
@@ -82,6 +83,10 @@ export interface LobbyRoom {
   cpus: number;
   maxPlayers: number;
   locked: boolean;
+  /** A game that is already running is listed when it can be watched. */
+  status: 'waiting' | 'playing';
+  /** How many people are in the stands. */
+  spectators: number;
 }
 
 interface RoomPlayer {
@@ -107,6 +112,8 @@ export interface RoomInfo extends RoomLook {
   status: 'waiting' | 'playing';
   locked: boolean;
   players: RoomPlayer[];
+  /** The people in the stands. */
+  spectators: { id: number; name: string }[];
 }
 
 export type ServerMessage =
@@ -114,7 +121,8 @@ export type ServerMessage =
   | {
       type: 'room_update';
       room: RoomInfo;
-      you: { playerId: number; host: boolean };
+      /** In the stands `playerId` is -1 and `spectatorId` names the place; the points of the bets are kept under it. */
+      you: { playerId: number; host: boolean; spectator?: boolean; spectatorId?: number };
       /** Why the room changed under you, e.g. a running game was ended. */
       notice?: string;
     }
@@ -128,7 +136,10 @@ export type ServerMessage =
       seed: number;
       players: Array<{ id: number; name: string; avatar: Avatar; team: 0 | 1; cpu: NetworkCpuLevel | null }>;
     }
-  | { type: 'input'; from: number; input: ClientInput }
+  /** To the host: `from` is a player's seat, or — with `spectator` — a place in the stands. */
+  | { type: 'input'; from: number; input: ClientInput; spectator?: true }
+  /** To the host: someone joined the stands mid-game; the next state frame has to be a complete one. */
+  | { type: 'keyframe' }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }
   | {
       type: 'daily_board';

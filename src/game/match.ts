@@ -1,6 +1,6 @@
 import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../ai';
 import type { Avatar } from '../avatars';
-import { AIM, COLORS, FIELD, GRACE, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
+import { AIM, COLORS, FIELD, GALLERY, GRACE, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
 import { applyTwists, MayhemDeck, type MayhemRound } from '../mayhem';
 import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../physics';
@@ -10,6 +10,7 @@ import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings'
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
 import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
+import { Gallery } from './gallery';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField, type PlacementAim } from './powerup-field';
 
@@ -233,6 +234,8 @@ export abstract class Match {
   scoreHistory: number[][] = [];
   /** The tipping game for eliminated players (online only). */
   readonly oracle = new Oracle();
+  /** The stands: people watching an online room bet on who wins each round, with points of their own. */
+  readonly gallery = new Gallery();
   /** Match clock when the current round began, so kills can be timed from the start of the round. */
   protected roundStartedAt = 0;
   /** Seed used to generate the current round's battlefield. */
@@ -250,6 +253,8 @@ export abstract class Match {
   viewer: number | null = null;
   /** Whether this screen may move the match on (next round, skip the killcam, rematch). Online only the host may. */
   canAdvance = true;
+  /** This screen sits in the stands: it follows the match but takes no part in it. */
+  spectating = false;
 
   protected rng: Rng;
   private readonly matchSeed: number;
@@ -383,6 +388,8 @@ export abstract class Match {
 
   /** Whether the oracle's minimum window for tipping and betting on this aiming phase has passed. */
   protected get betWindowDone(): boolean {
+    // The first shot of a round waits for the stands to place their bets; later shots find the book closed.
+    if (this.gallery.isOpen && this.gallery.watching && this.phaseTime < GALLERY.MIN_OPEN) return false;
     return (!this.oracle.question && !this.oracle.roundQuestion) || this.phaseTime >= ORACLE.MIN_BET_TIME;
   }
   /**
@@ -432,6 +439,25 @@ export abstract class Match {
   }
 
   /**
+   * A bet from the stands on who wins the round. The host keeps it until the round is over; a screen
+   * only ever sees the book, which carries everybody's bets.
+   */
+  placeGalleryBet(spectator: number, pick: number, stake: number): boolean {
+    return !!this.options.oracle && !this.attract && this.gallery.bet(spectator, pick, stake);
+  }
+
+  /** The stands open their book on the round that just began: everybody is still in. */
+  private openGallery(): void {
+    if (!this.options.oracle || this.attract) return;
+    this.gallery.openBook(
+      this.round,
+      this.players.map((p) => p.id),
+      this.simultaneous,
+      this.players.map((p) => p.team ?? p.id),
+    );
+  }
+
+  /**
    * Once somebody is out and two or more ships are still in a contested round, the oracle asks who wins it.
    * Called whenever the aiming begins; a round has one such question.
    */
@@ -460,6 +486,7 @@ export abstract class Match {
 
   /** Whether the person at this screen may aim right now. */
   get localCanAim(): boolean {
+    if (this.spectating) return false;
     return this.viewer === null ? this.isHumanTurn : this.canAim(this.viewer);
   }
 
@@ -474,6 +501,8 @@ export abstract class Match {
    */
   aimVisible(id: number): boolean {
     if (!this.settings.hiddenAim || this.attract) return true;
+    // Nobody in the stands has a ship, so nobody has an aim of their own to see.
+    if (this.spectating) return false;
     if (this.viewer !== null) return id === this.viewer;
     return id === this.focus && !this.players[id]?.cpu;
   }
@@ -702,6 +731,7 @@ export abstract class Match {
     this.scoreHistory = [this.players.map(() => 0)];
     this.mayhemHistory = [];
     this.oracle.reset(this.players.length);
+    this.gallery.reset();
     this.totalRounds = this.attract ? 0 : this.settings.rounds;
     this.settings = this.baseSettings;
     // The deck gets its seed from the world's stream only when there are twists, so a match without any plays as ever.
@@ -751,6 +781,7 @@ export abstract class Match {
       p.power = startPower(this.settings);
     }
     this.power.startRound();
+    this.openGallery();
     this.emit({ type: 'round' });
     this.beginRound();
   }
@@ -843,6 +874,7 @@ export abstract class Match {
 
   protected launch(aims: VolleyAim[], trackStyle: boolean): void {
     this.oracle.lock();
+    this.gallery.close();
     this.oracleKills = [];
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
     this.simClock = 0;
@@ -1102,6 +1134,8 @@ export abstract class Match {
     this.summary = { title, survivor, team, bonus, lastKill: this.lastKill };
     // The oracle's question for the whole round: a lone survivor or a whole team won it, or nobody did.
     this.oracle.resolveRound(team !== null ? this.players.filter((p) => p.team === team).map((p) => p.id) : survivor !== null ? [survivor] : [], this.round, this.clock);
+    // The stands' book is settled on the same answer.
+    this.gallery.resolve(team !== null ? this.players.filter((p) => p.team === team).map((p) => p.id) : survivor !== null ? [survivor] : []);
     // What the bets on the round come to: their share of the pot goes into the winners' scores.
     for (const tip of this.oracle.roundResult?.tips ?? []) if (tip.payout && this.players[tip.player]) this.players[tip.player].score += tip.payout;
     this.scoreHistory.push(this.players.map((p) => p.score));

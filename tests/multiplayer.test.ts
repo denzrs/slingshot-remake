@@ -1177,3 +1177,115 @@ describe('CPU seats online', () => {
     }, 30_000);
   });
 });
+
+describe('spectators online', () => {
+  /** Two players and any number of spectators who walk into the running, public room. */
+  async function startStands(fans: string[]): Promise<{ players: Client[]; stands: Client[] }> {
+    const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], { ...rules, fixedPower: false, bounce: false });
+    const stands: Client[] = [];
+    for (const name of fans) {
+      let fanMatch: NetMatch | null = null;
+      const session = await connectSession({ matchStarted: (match) => { fanMatch = match; } });
+      await waitForSession(session, () => session.rooms.some((room) => room.id === host.session.room!.id));
+      session.joinRoom(host.session.room!.id, name, undefined, undefined, true);
+      await waitForSession(session, () => fanMatch !== null);
+      stands.push({ session, match: () => fanMatch!, syncElapsed: 0 });
+    }
+    return { players: [host, guest], stands };
+  }
+
+  const tick = async (clients: Client[], frames = 1): Promise<void> => {
+    for (let index = 0; index < frames; index++) {
+      const stateReceived = clients.slice(1).map((client) => (client.session.client as RustTransport).waitForMessage((message) => message.type === 'state'));
+      clients[0].match().update(1 / 30);
+      for (const client of clients) client.session.update(1 / 30);
+      await Promise.all(stateReceived);
+    }
+  };
+
+  it('lets a spectator walk into a running game, see the same match, and do nothing but bet', async () => {
+    const { players, stands } = await startStands(['Fan']);
+    const [host, guest] = players;
+    const [fan] = stands;
+    const everybody = [host, guest, fan];
+    await tick(everybody, 5);
+
+    expect(fan.session.isSpectator).toBe(true);
+    expect(fan.match().spectating).toBe(true);
+    expect(fan.match().viewer).toBeNull();
+    expect(fan.match().localCanAim).toBe(false);
+    // The keyframe request gave the latecomer a complete picture, not a patch on nothing.
+    expect(fan.match().round).toBe(host.match().round);
+    expect(fan.match().players.map((p) => p.name)).toEqual(['Anna', 'Ben']);
+    expect(host.session.room!.spectators.map((s) => s.name)).toEqual(['Fan']);
+    expect(guest.session.you.spectator).toBeUndefined();
+
+    // Aiming and firing from the stands go nowhere; a tampered client is told off.
+    const before = host.match().players.map((p) => ({ angle: p.angle, power: p.power, locked: p.locked }));
+    fan.session.input({ kind: 'aim', angle: 33, power: 77 });
+    fan.session.input({ kind: 'fire' });
+    fan.session.client.send({ type: 'input', input: { kind: 'aim', angle: 33, power: 77 } });
+    await waitForSession(fan.session, () => fan.session.notice === 'Spectators can only bet');
+    await tick(everybody, 3);
+    expect(host.match().players.map((p) => ({ angle: p.angle, power: p.power, locked: p.locked }))).toEqual(before);
+
+    // Leaving the stands does not end the game.
+    fan.session.leaveRoom();
+    await waitForSession(host.session, () => host.session.room!.spectators.length === 0);
+    expect(host.session.room!.status).toBe('playing');
+    expect(host.match().gallery.seats.every((seat) => !seat.present)).toBe(true);
+  }, 30_000);
+
+  it('makes the odds from what the stands have bet, closes the book at the first shot, and pays the pot out', async () => {
+    const { players, stands } = await startStands(['Fan', 'Gus']);
+    const [host, guest] = players;
+    const [fan, gus] = stands;
+    const everybody = [host, guest, fan, gus];
+    const hm = host.match();
+    hm.world.planets = [];
+    Object.assign(hm.world.ships[0], { x: 100, y: 400 });
+    Object.assign(hm.world.ships[1], { x: 500, y: 400 });
+    await tick(everybody, 5);
+
+    expect(hm.gallery.isOpen).toBe(true);
+    expect(hm.gallery.seats.map((seat) => seat.balance)).toEqual([500, 500]);
+    // Fan backs Ben with 100, Gus backs Anna with 50: the odds are the pot over each side's share.
+    fan.session.input({ kind: 'bet', pick: 1, round: true, stake: 100 });
+    gus.session.input({ kind: 'bet', pick: 0, round: true, stake: 50 });
+    await tick(everybody, 5);
+    for (const watcher of [hm, fan.match(), gus.match()]) {
+      expect(watcher.gallery.pot).toBe(150);
+      expect(watcher.gallery.odds(1)).toBeCloseTo(1.5);
+      expect(watcher.gallery.odds(0)).toBeCloseTo(3);
+      expect(watcher.gallery.betOf(fan.session.you.spectatorId!)).toEqual({ pick: 1, stake: 100 });
+    }
+    // Nobody in the stands can stake what they do not have, or bet on a ship that is not there.
+    gus.session.input({ kind: 'bet', pick: 0, round: true, stake: 9999 });
+    gus.session.input({ kind: 'bet', pick: 5, round: true, stake: 25 });
+    await tick(everybody, 3);
+    expect(hm.gallery.betOf(gus.session.you.spectatorId!)).toEqual({ pick: 0, stake: 50 });
+
+    // Anna shoots Ben. The shot waits for the betting window; once it flies, the book is shut.
+    host.session.input({ kind: 'aim', angle: 0, power: 50 });
+    host.session.input({ kind: 'fire' });
+    for (let i = 0; i < 600 && hm.phase !== 'flying'; i++) await tick(everybody);
+    expect(hm.phase).toBe('flying');
+    expect(hm.gallery.isOpen).toBe(false);
+    gus.session.input({ kind: 'bet', pick: 1, round: true, stake: 25 });
+    await tick(everybody, 3);
+    expect(hm.gallery.betOf(gus.session.you.spectatorId!)).toEqual({ pick: 0, stake: 50 });
+
+    for (let i = 0; i < 900 && hm.phase !== 'roundOver'; i++) await tick(everybody);
+    expect(hm.phase).toBe('roundOver');
+    await tick(everybody, 5);
+    // Gus was the only one right, so the whole pot of 150 is his: 450 + 150. Fan lost the 100.
+    for (const watcher of [hm, fan.match(), gus.match()]) {
+      expect(watcher.gallery.result?.winners).toEqual([0]);
+      expect(watcher.gallery.seats.map((seat) => seat.balance)).toEqual([400, 600]);
+      expect(watcher.gallery.ranking().map((seat) => seat.name)).toEqual(['Gus', 'Fan']);
+    }
+    // Their points never touched a player's score.
+    expect(hm.players[0].score + hm.players[1].score).toBe(hm.players.reduce((sum, p) => sum + p.score, 0));
+    expect(hm.players[1].score).toBe(0);
+  }, 90_000);
+});

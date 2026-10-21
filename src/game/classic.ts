@@ -6,6 +6,7 @@ import { Volley, type VolleyShot } from '../volley';
 import { Match, type RoundTitle } from './match';
 import type { Pickup } from '../powerups';
 import type { PowerUpState } from './powerup-field';
+import type { GallerySnapshot } from './gallery';
 import type { OracleSnapshot } from './oracle';
 
 export interface ClassicSnapshot {
@@ -42,6 +43,7 @@ export interface ClassicSnapshot {
   /** Phase time when a finished volley began waiting for its post-flight delay. */
   flightDoneAt?: number | null;
   oracle: OracleSnapshot;
+  gallery?: GallerySnapshot;
 }
 
 /**
@@ -84,6 +86,7 @@ export class ClassicMatch extends Match {
       planClock: this.planClock,
       flightDoneAt: this.flightDoneAt,
       oracle: this.oracle.snapshot(),
+      gallery: this.gallery.snapshot(),
     };
   }
 
@@ -119,6 +122,7 @@ export class ClassicMatch extends Match {
     this.planClock = snapshot.planClock;
     // Hosts from before the oracle send none.
     if (snapshot.oracle) this.oracle.restore(snapshot.oracle);
+    this.gallery.restore(snapshot.gallery);
     this.volley = null;
     if (snapshot.volley) {
       const volley = new Volley(snapshot.world, snapshot.volley.aims, this.rules, true);

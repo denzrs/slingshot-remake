@@ -106,6 +106,8 @@ pub struct JoinRoom {
     pub avatar: Parsed<Avatar>,
     /// Whatever the client sent as a password, to be checked against the room's.
     pub password: Option<String>,
+    /// Watch from the stands instead of taking a seat.
+    pub spectate: bool,
 }
 
 pub struct JoinTarget {
@@ -271,6 +273,7 @@ impl JoinRoom {
                 .get("password")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            spectate: message.get("spectate").and_then(Value::as_bool) == Some(true),
         }
     }
 }

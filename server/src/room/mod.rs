@@ -12,6 +12,7 @@ mod lobby;
 mod model;
 mod roster;
 mod settings;
+mod spectate;
 #[cfg(test)]
 mod tests;
 
@@ -32,6 +33,9 @@ pub struct RoomManager {
     rooms: HashMap<String, Room>,
     next_room_order: u64,
     memberships: HashMap<u64, Membership>,
+    /// Connections in the stands. They hold no seat, so they are not in `memberships`: everything
+    /// that acts on a seat treats them as outsiders.
+    watching: HashMap<u64, Watching>,
     net: Connections,
 }
 
@@ -41,6 +45,7 @@ impl RoomManager {
             rooms: HashMap::new(),
             next_room_order: 0,
             memberships: HashMap::new(),
+            watching: HashMap::new(),
             net: Connections::default(),
         }
     }
@@ -71,19 +76,25 @@ impl RoomManager {
     }
 
     pub fn can_create_room(&self, conn: u64) -> bool {
-        self.net.is_connected(conn) && !self.memberships.contains_key(&conn)
+        self.net.is_connected(conn) && !self.is_placed(conn)
+    }
+
+    /// Whether a connection already sits in a room, in a seat or in the stands.
+    pub(super) fn is_placed(&self, conn: u64) -> bool {
+        self.memberships.contains_key(&conn) || self.watching.contains_key(&conn)
     }
 
     pub fn password_attempts_exhausted(&self, conn: u64) -> bool {
         self.net.password_attempts_exhausted(conn)
     }
 
-    pub fn join_password_salt(&self, conn: u64, room_id: &str) -> Option<Hashed> {
-        if !self.net.is_connected(conn) || self.memberships.contains_key(&conn) {
+    pub fn join_password_salt(&self, conn: u64, room_id: &str, spectate: bool) -> Option<Hashed> {
+        if !self.net.is_connected(conn) || self.is_placed(conn) {
             return None;
         }
         let room = self.rooms.get(room_id)?;
-        if room.status != RoomStatus::Waiting || !can_take_human(room) {
+        // The stands of a waiting room take a password like a seat does; a running game has none.
+        if room.status != RoomStatus::Waiting || (!spectate && !can_take_human(room)) {
             return None;
         }
         room.password.clone()

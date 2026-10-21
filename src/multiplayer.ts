@@ -67,7 +67,7 @@ export class MultiplayerSession {
   connecting = false;
   rooms: LobbyRoom[] = [];
   room: RoomInfo | null = null;
-  you = { playerId: 0, host: false };
+  you: { playerId: number; host: boolean; spectator?: boolean; spectatorId?: number } = { playerId: 0, host: false };
   /** The last thing worth telling the player (server errors, "host left", …). */
   notice: string | null = null;
   match: NetMatch | null = null;
@@ -91,6 +91,11 @@ export class MultiplayerSession {
 
   get isHost(): boolean {
     return this.you.host;
+  }
+
+  /** In the stands: watching the room without a seat. */
+  get isSpectator(): boolean {
+    return !!this.you.spectator;
   }
 
   subscribe(listener: () => void): () => void {
@@ -125,8 +130,8 @@ export class MultiplayerSession {
     this.send({ type: 'set_room', look });
   }
 
-  joinRoom(roomId: string, name: string, password?: string, avatar?: Avatar): void {
-    this.send({ type: 'join_room', roomId, name, password: password || undefined, avatar });
+  joinRoom(roomId: string, name: string, password?: string, avatar?: Avatar, spectate = false): void {
+    this.send({ type: 'join_room', roomId, name, password: password || undefined, avatar, ...(spectate ? { spectate } : {}) });
   }
 
   /** Your symbol in the game, while the room waits. Nobody has to confirm again. */
@@ -198,6 +203,11 @@ export class MultiplayerSession {
   input(input: ClientInput): void {
     const match = this.match;
     if (!match) return;
+    // The stands may bet and nothing else. The host judges, and the book comes back with the next state.
+    if (this.isSpectator) {
+      if (input.kind === 'bet') this.send({ type: 'input', input });
+      return;
+    }
     const id = this.you.playerId;
     if (this.isHost) {
       this.applyInput(match, id, input);
@@ -221,7 +231,7 @@ export class MultiplayerSession {
 
   /** Next round or rematch: the host's call alone, everybody else follows its state. The killcam is put to a vote. */
   advance(): void {
-    if (!this.match) return;
+    if (!this.match || this.isSpectator) return;
     if (this.match.phase === 'killcam') this.input({ kind: 'skip' });
     else if (this.isHost) this.match.advance();
   }
@@ -264,12 +274,21 @@ export class MultiplayerSession {
         this.notice = message.notice ?? null;
         // The room went back to waiting under a running game (somebody left): the game is over.
         if (this.match && message.room.status === 'waiting') this.endMatch();
+        // The host keeps the stands' accounts: people come and go, the points stay.
+        else if (this.match && this.isHost) this.match.gallery.sync(message.room.spectators ?? []);
         break;
       case 'game_start':
         this.startMatch(message);
         break;
       case 'input':
-        if (this.match && this.isHost) this.applyInput(this.match, message.from, message.input);
+        if (!this.match || !this.isHost) break;
+        if (message.spectator) {
+          if (message.input.kind === 'bet') this.match.placeGalleryBet(message.from, message.input.pick, message.input.stake ?? 0);
+        } else this.applyInput(this.match, message.from, message.input);
+        break;
+      case 'keyframe':
+        // Somebody came in mid-game and has nothing to apply our patches to: start over with a full one.
+        if (this.isHost) this.encoder = new SnapshotEncoder();
         break;
       case 'state':
         this.applyState(message);
@@ -316,8 +335,11 @@ export class MultiplayerSession {
       oracle: true,
     });
     if (!(match instanceof ClassicMatch || match instanceof HorizonMatch)) return;
-    match.viewer = this.you.playerId;
+    // In the stands there is no ship to be: the match is seen from nowhere in particular.
+    match.viewer = this.isSpectator ? null : this.you.playerId;
+    match.spectating = this.isSpectator;
     match.canAdvance = this.isHost;
+    if (this.isHost) match.gallery.sync(this.room?.spectators ?? []);
 
     this.resetSync();
     this.match?.dispose();

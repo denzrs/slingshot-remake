@@ -728,6 +728,11 @@ export function gameOverScreen(app: App, match: Match): Screen {
         return h('li', null, h('span.highlights__label', null, awardLabel(award.kind)), name, h('span.highlights__value', null, awardValue(award)));
       });
       if (highlights.length) lists.push(h('p.ranking-label', null, t('scorecard.match')), h('ul.highlights', null, ...highlights));
+      // The stands: whoever read the rounds best.
+      const bettors = match.gallery.ranking().filter((seat) => seat.bets > 0);
+      if (bettors.length) {
+        lists.push(h('p.ranking-label', null, t('stands.standings')), h('ol.ranking.ranking--small', null, ...bettors.slice(0, 10).map((seat, i) => entry(i + 1, seat.name, COLORS.bone, `${fmtInt(seat.balance)}  ·  ${t('stands.right', { right: seat.right, bets: seat.bets })}`))));
+      }
       // The eliminated players' side standings.
       const tipsters = match.oracle.ranking();
       if (tipsters.length) {

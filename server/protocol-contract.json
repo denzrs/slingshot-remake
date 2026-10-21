@@ -52,6 +52,9 @@
     "nameLength": 24,
     "keepDays": 7
   },
+  "spectators": {
+    "max": 20
+  },
   "cpu": {
     "levels": ["easy", "medium", "hard", "hawking"]
   }
