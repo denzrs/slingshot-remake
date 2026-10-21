@@ -135,6 +135,8 @@ export const SOLAR = {
   ORBIT_GAP: 12,
   /** How far a ship's orbit band reaches either side of its centre line. */
   SHIP_BAND: 10,
+  /** A planet sharing a ship's orbit starts at least this far from the ship's centre beyond its own radius. */
+  SHIP_CLEARANCE: 40,
   /** Planets of this mode are smaller than on an open field, so several fit between the orbits. */
   MIN_PLANET: 13,
   MAX_PLANET: 52,
