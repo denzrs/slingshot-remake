@@ -117,6 +117,20 @@ function ringShips(rng: Rng, n: number, teams: readonly number[] | null): Ship[]
 export const solarCenter = (): { x: number; y: number } => ({ x: FIELD.width / 2, y: FIELD.height / 2 + SOLAR.CENTER_Y_SHIFT });
 
 /** How far a body on an orbit of radius `r` turns in one full step: the inner orbits are quicker. */
+/** Where on its orbit a point is: its orbit's radius (half-height) and its angle round the sun. */
+export function orbitOf(x: number, y: number): { r: number; a: number } {
+  const c = solarCenter();
+  const dx = (x - c.x) / SOLAR.STRETCH;
+  const dy = y - c.y;
+  return { r: Math.hypot(dx, dy), a: Math.atan2(dy, dx) };
+}
+
+/** The point at angle `a` on the orbit of radius `r`. */
+export function onOrbit(r: number, a: number): { x: number; y: number } {
+  const c = solarCenter();
+  return { x: c.x + Math.cos(a) * r * SOLAR.STRETCH, y: c.y + Math.sin(a) * r };
+}
+
 export const orbitTurn = (r: number): number => SOLAR.TURN * (SOLAR.REF_ORBIT / Math.max(r, 1)) ** SOLAR.FALLOFF;
 
 /** One orbit: shared by up to two planets (opposite each other, same speed), or by some of the ships. */
@@ -135,7 +149,7 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
   const bodies: Body[] = [];
   // The mode's own planets are small, so more of them fit than on an open field: the setting is the least it draws.
   const wanted = opts.maxPlanets === 0 ? 0 : intRange(rng, Math.max(opts.maxPlanets, 2), Math.max(opts.maxPlanets, 2) + 3);
-  const radii = Array.from({ length: wanted }, () => SOLAR.MIN_PLANET + (SOLAR.MAX_PLANET - SOLAR.MIN_PLANET) * Math.pow(rng(), 1.4));
+  const radii = Array.from({ length: wanted }, () => SOLAR.MIN_PLANET + (SOLAR.MAX_PLANET - SOLAR.MIN_PLANET) * Math.pow(rng(), 1.8));
   for (let i = 0; i < radii.length; i += 2) bodies.push({ kind: 'planets', radii: radii.slice(i, i + 2) });
   const half = (b: Body): number => (b.kind === 'planets' ? Math.max(...b.radii) : SOLAR.SHIP_BAND);
   const span = (list: readonly Body[]): number => list.reduce((sum, b) => sum + 2 * half(b) + SOLAR.ORBIT_GAP, -SOLAR.ORBIT_GAP);
@@ -148,7 +162,13 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
     bodies.splice(last, 1);
   }
   // Random order, but the ships' orbits tend outwards: nobody starts huddled up against the sun.
-  const order = bodies.map((b) => ({ b, key: rng() + (b.kind === 'ships' ? 0.5 : 0) })).sort((x, y) => x.key - y.key).map((e) => e.b);
+  const order = bodies.map((b) => ({ b, key: rng() + (b.kind === 'ships' ? 0.2 : 0) })).sort((x, y) => x.key - y.key).map((e) => e.b);
+  // The outermost orbit is a planet's, so the system has an outside.
+  const outer = order.length - 1;
+  if (order[outer].kind === 'ships') {
+    const swap = order.map((b) => b.kind).lastIndexOf('planets');
+    if (swap >= 0) [order[outer], order[swap]] = [order[swap], order[outer]];
+  }
   // What is left over is shared out between the orbits.
   const slack = Math.max(0, room - span(order)) / (order.length + 1);
 
@@ -176,8 +196,7 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
       const a = turn + k * Math.PI;
       const style: PlanetStyle = radius > 24 ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
       planets.push({
-        x: centre.x + Math.cos(a) * r,
-        y: centre.y + Math.sin(a) * r,
+        ...onOrbit(r, a),
         radius,
         mass: range(rng, 0.75, 1.3) * radius ** 3,
         seed: Math.floor(rng() * 2 ** 31),
@@ -196,7 +215,7 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
   seats.forEach((player, slot) => {
     const a = offset + (slot * Math.PI * 2) / n;
     const r = bandRadii[slot % bandRadii.length];
-    ships[player] = { x: centre.x + Math.cos(a) * r, y: centre.y + Math.sin(a) * r, alive: true };
+    ships[player] = { ...onOrbit(r, a), alive: true };
   });
 
   return { width, height, planets, ships, holes: [], nebulae: [], wormholes: [], defenses: [], version: 0 };

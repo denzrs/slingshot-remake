@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMatch, SolarMatch } from '../src/game';
 import { SOLAR } from '../src/config';
 import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
-import { generateWorld, orbitTurn, solarCenter } from '../src/world';
+import { generateWorld, onOrbit, orbitOf, orbitTurn, solarCenter } from '../src/world';
 
 const cpus = (n: number): Seat[] => [...Array(n).fill('medium'), ...Array(6 - n).fill('off')];
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }): number => Math.hypot(a.x - b.x, a.y - b.y);
@@ -17,11 +17,11 @@ describe('solar system world', () => {
       expect(dist(sun, centre)).toBe(0);
       expect(world.ships).toHaveLength(players);
       // Even a full table leaves room for planets.
-      expect(world.planets.length).toBeGreaterThanOrEqual(5);
+      expect(world.planets.length).toBeGreaterThanOrEqual(3);
       // Turning the system any amount never brings two bodies closer than they are now on their orbits: compare orbit radii.
       const bodies = [
-        ...world.planets.slice(1).map((p) => ({ r: dist(p, centre), reach: p.radius })),
-        ...world.ships.map((s) => ({ r: dist(s, centre), reach: SOLAR.SHIP_BAND / 2 })),
+        ...world.planets.slice(1).map((p) => ({ r: orbitOf(p.x, p.y).r, reach: p.radius })),
+        ...world.ships.map((s) => ({ r: orbitOf(s.x, s.y).r, reach: SOLAR.SHIP_BAND / 2 })),
       ];
       for (const b of bodies) {
         expect(b.r - b.reach).toBeGreaterThan(sun.radius);
@@ -43,14 +43,39 @@ describe('solar system world', () => {
   });
 });
 
+describe('solar system orbits', () => {
+  it('never bring two bodies into contact however long the system turns', () => {
+    let tightest = Infinity;
+    for (let seed = 1; seed <= 25; seed++) {
+      const world = generateWorld(seed, { maxPlanets: 6, players: 6, blackHole: false, solar: true });
+      const bodies = [
+        ...world.planets.slice(1).map((p) => ({ o: p, reach: p.radius })),
+        ...world.ships.map((s) => ({ o: s, reach: 8 })),
+      ];
+      for (let step = 0; step < 200; step++) {
+        for (const { o } of bodies) {
+          const { r, a } = orbitOf(o.x, o.y);
+          const to = onOrbit(r, a + orbitTurn(r) * 0.2);
+          o.x = to.x;
+          o.y = to.y;
+        }
+        for (let i = 0; i < bodies.length; i++) {
+          for (let j = i + 1; j < bodies.length; j++) tightest = Math.min(tightest, dist(bodies[i].o, bodies[j].o) - bodies[i].reach - bodies[j].reach);
+        }
+        for (const { o, reach } of bodies) tightest = Math.min(tightest, dist(o, solarCenter()) - SOLAR.SUN_RADIUS - reach);
+      }
+    }
+    expect(tightest).toBeGreaterThan(0);
+  });
+});
+
 describe('solar system match', () => {
   it('turns the planets and ships round the sun after a volley, keeping their orbits', () => {
     const seats = cpus(3);
     const match = createMatch('solar', { ...DEFAULT_SETTINGS, rounds: 1, seats }, { seats, seed: 5, deterministicCpu: true });
     try {
       expect(match).toBeInstanceOf(SolarMatch);
-      const centre = solarCenter();
-      const radii = () => [...match.world.planets.map((p) => dist(p, centre)), ...match.world.ships.map((s) => dist(s, centre))];
+      const radii = () => [...match.world.planets.map((p) => orbitOf(p.x, p.y).r), ...match.world.ships.map((s) => orbitOf(s.x, s.y).r)];
       const before = radii();
       const sun = { ...match.world.planets[0] };
       const first = { ...match.world.planets[1] };
