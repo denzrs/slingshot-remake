@@ -546,10 +546,33 @@ export class Renderer {
         ctx.stroke();
       } else if (kind === 'blackhole') {
         // The would-be horizon: a dark core inside a bright accretion ring.
+        // Too close to another ship, the click would do nothing: the ring turns red, those ships show their keep-out circle, and it says so.
         const r = POWER_UP.BLACKHOLE_RADIUS;
+        const blocked = !!scene.placement.blocked;
+        if (blocked) {
+          ctx.strokeStyle = '#ff5c5c';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 5]);
+          match.world.ships.forEach((s, i) => {
+            if (i === owner || !s.alive) return;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, POWER_UP.BLACKHOLE_PLAYER_GAP, 0, Math.PI * 2);
+            ctx.stroke();
+          });
+          ctx.setLineDash([]);
+          ctx.lineWidth = 2;
+        }
         ctx.beginPath();
         ctx.arc(target.x, target.y, r + 4 + 2.5 * pulse, 0, Math.PI * 2);
         ctx.stroke();
+        if (blocked) {
+          ctx.globalAlpha = 1;
+          ctx.font = `700 11px ${FONTS.mono}`;
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ff5c5c';
+          ctx.fillText(t('powerup.blackholeClose').toUpperCase(), target.x, target.y + (target.y > 60 ? -r - 14 : r + 22));
+          ctx.globalAlpha = 0.85 + 0.15 * pulse;
+        }
         ctx.fillStyle = COLORS.plate;
         ctx.beginPath();
         ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
