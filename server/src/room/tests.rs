@@ -1396,9 +1396,7 @@ fn walking_in_and_out_of_the_stands_is_rate_limited() {
         .filter(|m| m["type"] == "keyframe")
         .count();
     assert_eq!(keyframes, super::connections::MAX_SPECTATE_JOINS);
-    assert!(drain_json(&mut fan_rx)
-        .iter()
-        .any(|m| m["type"] == "error"));
+    assert!(drain_json(&mut fan_rx).iter().any(|m| m["type"] == "error"));
 }
 
 #[test]
