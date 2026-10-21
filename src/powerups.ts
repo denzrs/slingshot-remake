@@ -261,7 +261,7 @@ export function aimedPlanet(world: World, from: { x: number; y: number }, angle:
     const y = from.y + dir.y * reach;
     for (let i = 0; i < world.planets.length; i++) {
       const p = world.planets[i];
-      if (distance(x, y, p.x, p.y) < p.radius) return { index: i, x: p.x, y: p.y };
+      if (!p.sun && distance(x, y, p.x, p.y) < p.radius) return { index: i, x: p.x, y: p.y };
     }
   }
   return null;

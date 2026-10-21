@@ -182,6 +182,7 @@ function localScreen(app: App): Screen {
     items: [
       card(t('mode.daily'), dailyMenuHint(app.today()), 'daily', () => app.menu.push(() => dailyScreen(app)), true),
       card(t('mode.classic'), t('mode.classic.hint'), 'classic', () => app.menu.push(() => setupScreen(app, 'classic'))),
+      card(t('mode.solar'), t('mode.solar.hint'), 'solar', () => app.menu.push(() => setupScreen(app, 'solar'))),
       card(t('mode.horizon'), t('mode.horizon.hint'), 'horizon', () => app.menu.push(() => setupScreen(app, 'horizon'))),
       card(t('mode.mayhem'), t('mode.mayhem.hint'), 'mayhem', () => app.menu.push(() => mayhemScreen(app))),
       { kind: 'action', section: 'back', label: t('common.back'), run: () => app.menu.back() },
@@ -191,7 +192,7 @@ function localScreen(app: App): Screen {
 
 export function pauseScreen(app: App): Screen {
   const daily = app.mode === 'challenge';
-  const mode = app.mode === 'classic' || app.mode === 'horizon' ? app.mode : null;
+  const mode = app.mode === 'classic' || app.mode === 'solar' || app.mode === 'horizon' ? app.mode : null;
   return {
     build: () => panel(t('pause.title'), null),
     items: [
@@ -392,11 +393,11 @@ function setupScreen(app: App, mode: VersusMode): Screen {
     build: () =>
       h(
         'section.screen.screen--panel.screen--setup',
-        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t(mode === 'classic' ? 'mode.classic' : 'mode.horizon') },
+        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t(`mode.${mode}`) },
         h(
           'div.panel.panel--setup',
           null,
-          h('h2.panel__title', null, t(mode === 'classic' ? 'mode.classic' : 'mode.horizon')),
+          h('h2.panel__title', null, t(`mode.${mode}`)),
           h('p.note', null, t('setup.note')),
           h(
             'div.setup',

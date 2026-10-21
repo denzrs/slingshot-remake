@@ -111,10 +111,10 @@ const MAYHEM_RULES: readonly (keyof RoomRules)[] = ['rounds', 'mayhem', 'shotTim
  * The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has.
  * A Mayhem game has only its own, all in one block.
  */
-export const rulesFor = (mode: 'classic' | 'horizon', online = false, mayhem = false): RuleRow[] =>
+export const rulesFor = (mode: 'classic' | 'solar' | 'horizon', online = false, mayhem = false): RuleRow[] =>
   mayhem
-    ? ruleRows().filter((row) => MAYHEM_RULES.includes(row.key) && (mode === 'classic' || !row.classicOnly)).map((row): RuleRow => ({ ...row, group: 'match' }))
-    : ruleRows().filter((row) => row.key !== 'mayhem' && (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly));
+    ? ruleRows().filter((row) => MAYHEM_RULES.includes(row.key) && (mode !== 'horizon' || !row.classicOnly)).map((row): RuleRow => ({ ...row, group: 'match' }))
+    : ruleRows().filter((row) => row.key !== 'mayhem' && (mode !== 'horizon' || !row.classicOnly) && (online || !row.onlineOnly));
 
 // ————————————————————————————— As controls —————————————————————————————
 
@@ -133,7 +133,7 @@ export interface RuleSource {
 type RuleItem = Extract<MenuItem, { kind: 'slider' | 'toggle' | 'segmented' | 'tiles' }>;
 
 /** The controls for the rules of a game mode, each with the block it belongs to. */
-export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, online = false, mayhem = false): { key: keyof RuleValues; group: RuleGroup; item: RuleItem }[] {
+export function ruleItems(mode: 'classic' | 'solar' | 'horizon', source: RuleSource, online = false, mayhem = false): { key: keyof RuleValues; group: RuleGroup; item: RuleItem }[] {
   /** The cap to come back to after trying another power mode. */
   let lastCap = source.get().maxPower < AIM.MAX_POWER ? source.get().maxPower : DEFAULT_CAP;
   const commit = source.commit;

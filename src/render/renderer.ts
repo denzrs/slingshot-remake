@@ -166,7 +166,7 @@ export class Renderer {
         this.contours.set(world, layer);
       }
       // While the hole collapses everything moves, so the stale map fades back.
-      ctx.globalAlpha = alpha * (match.phase === 'collapse' ? 0.25 : 1);
+      ctx.globalAlpha = alpha * (match.phase === 'collapse' || match.phase === 'orbit' ? 0.25 : 1);
       ctx.drawImage(layer.canvas, 0, 0, FIELD.width, FIELD.height);
     }
 
@@ -188,6 +188,17 @@ export class Renderer {
         this.sprites.set(p.seed, sprite);
       }
       const size = sprite.width / ps;
+      if (p.sun) {
+        // The sun's corona, behind its disc.
+        const glow = ctx.createRadialGradient(p.x, p.y, p.radius * 0.8, p.x, p.y, p.radius * 3.2);
+        glow.addColorStop(0, 'rgba(242, 196, 109, 0.42)');
+        glow.addColorStop(1, 'rgba(242, 196, 109, 0)');
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius * 3.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
       const eaten = scene.camera ? 0 : match.devourProgress(p.seed);
       ctx.globalAlpha = alpha * (1 - eaten * 0.4);
       if (eaten > 0 && primary) {

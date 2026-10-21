@@ -49,7 +49,7 @@ export interface ClassicSnapshot {
  * A hit ship is out; the round ends when one ship — or one team — is left.
  */
 export class ClassicMatch extends Match {
-  readonly mode = 'classic';
+  readonly mode: 'classic' | 'solar' = 'classic';
 
   snapshot(): ClassicSnapshot {
     return {

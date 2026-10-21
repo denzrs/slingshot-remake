@@ -120,6 +120,30 @@ export const SCORING = {
 /** Fading trails: the choices for how long a finished shot's path lasts in seconds (0 = it stays), and the share of that time it stays fully visible before fading. */
 export const TRAIL_FADE = { OPTIONS: [0, 1, 2, 4], HOLD: 0.4 };
 
+/** "Sonnensystem" — a sun in the middle, planets and ships on orbits round it that turn on after every shot. */
+export const SOLAR = {
+  SUN_RADIUS: 44,
+  SUN_MASS: 200_000,
+  /** Where the system turns: the field's middle, a little low so the scoreboard along the top stays clear. */
+  CENTER_Y_SHIFT: 25,
+  /** The innermost and outermost orbit a body may take (distance from the sun's centre). */
+  INNER_ORBIT: 106,
+  OUTER_ORBIT: 312,
+  /** Free space between two neighbouring orbits' bodies. */
+  ORBIT_GAP: 22,
+  /** How far a ship's orbit band reaches either side of its centre line. */
+  SHIP_BAND: 20,
+  /** Planets of this mode are smaller than on an open field, so several fit between the orbits. */
+  MIN_PLANET: 13,
+  MAX_PLANET: 32,
+  /** Turn per step in radians at REF_ORBIT; other orbits scale by (REF_ORBIT / r) ^ FALLOFF, so inner orbits turn faster. */
+  TURN: 0.3,
+  REF_ORBIT: 200,
+  FALLOFF: 0.75,
+  /** Seconds the system takes to turn on. */
+  TURN_TIME: 1.8,
+} as const;
+
 /** "Ereignishorizont" — the gravity royale mode. */
 export const HORIZON = {
   START_RADIUS: 16,
