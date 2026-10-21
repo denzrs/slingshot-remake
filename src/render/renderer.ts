@@ -55,7 +55,9 @@ export class Renderer {
     const cssWidth = window.innerWidth;
     const cssHeight = window.innerHeight;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const margin = Math.min(28, cssWidth * 0.03);
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    // On a touch screen the field is height-limited and small: give it every pixel.
+    const margin = coarse ? 4 : Math.min(28, cssWidth * 0.03);
     const scale = Math.min((cssWidth - margin * 2) / FIELD.width, (cssHeight - margin * 2) / FIELD.height);
     this.view = {
       cssWidth,

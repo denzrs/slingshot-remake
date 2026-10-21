@@ -45,7 +45,8 @@ export class Hud {
   draw(match: Match, view: View, opts: DrawOptions, time: number, shipPos: (i: number) => { x: number; y: number }): void {
     this.time = time;
     this.shipPos = shipPos;
-    this.k = Math.min(1.2, Math.max(0.72, view.scale));
+    // On a phone the field is small, but its labels must stay readable: they get a higher floor.
+    this.k = Math.min(1.2, Math.max(opts.touch ? 0.95 : 0.72, view.scale));
     this.field = { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
 
     const focus = match.focus;

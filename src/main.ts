@@ -28,11 +28,14 @@ import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './s
 import { dailyResultScreen } from './ui/daily';
 import { Menu } from './ui/menu';
 import { lobbyScreen } from './ui/lobby';
+import { TouchAim } from './ui/touch-aim';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
+const rotateHint = document.querySelector<HTMLButtonElement>('#rotate-hint')!;
+const touchMenu = document.querySelector<HTMLButtonElement>('#touch-menu')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
 const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
@@ -362,6 +365,16 @@ function primaryAction(): void {
   else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
 }
 
+/** Esc / the touch menu button: think again while aiming a placement, otherwise pause. */
+function escapeAction(): void {
+  if (match?.placing) {
+    dispatchInput({ kind: 'cancel' });
+    return;
+  }
+  // A clip records whatever is on screen — don't freeze it behind the menu.
+  if (!recorder.recording) menu.open(() => pauseScreen(app));
+}
+
 // ————————————————————————————— Keyboard —————————————————————————————
 
 function stepFor(e: KeyboardEvent): readonly [number, number] {
@@ -476,13 +489,7 @@ window.addEventListener('keydown', (e) => {
       if (match?.powerUps && !e.repeat) dispatchInput({ kind: 'power' });
       break;
     case 'Escape':
-      // Aiming a placement: Esc thinks again, it does not open the menu.
-      if (match?.placing) {
-        dispatchInput({ kind: 'cancel' });
-        break;
-      }
-      // A clip records whatever is on screen — don't freeze it behind the menu.
-      if (!recorder.recording) menu.open(() => pauseScreen(app));
+      escapeAction();
       break;
     default:
       handled = false;
@@ -526,6 +533,24 @@ const endDrag = () => (dragging = false);
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
 
+const touchAim = new TouchAim({
+  aim(change) {
+    if (!match || !canAim()) return;
+    const p = match.players[match.viewer ?? match.current];
+    dispatchInput({ kind: 'aim', angle: change.angle ?? p.angle, power: change.power ?? p.power });
+  },
+  touched: () => sound.unlock(),
+});
+document.body.append(touchAim.el);
+
+/** Tapping the hint dismisses it for the rest of the visit. */
+let rotateDismissed = false;
+rotateHint.addEventListener('click', () => (rotateDismissed = true));
+
+touchMenu.addEventListener('click', () => {
+  sound.unlock();
+  if (screen === 'play' && !menu.isOpen) escapeAction();
+});
 touchFire.addEventListener('click', () => {
   sound.unlock();
   primaryAction();
@@ -546,6 +571,12 @@ document.addEventListener('fullscreenchange', () => menu.refresh());
 function syncButtons(): void {
   const playing = screen === 'play' && !menu.isOpen && !!match;
   const m = match;
+  const portrait = playing && coarsePointer.matches && !rotateDismissed && window.innerHeight > window.innerWidth;
+  if (rotateHint.hidden === portrait) rotateHint.hidden = !portrait;
+  if (portrait && rotateHint.textContent !== t('touch.rotate')) rotateHint.textContent = t('touch.rotate');
+  const showMenu = playing && coarsePointer.matches;
+  if (touchMenu.hidden === showMenu) touchMenu.hidden = !showMenu;
+  if (showMenu && touchMenu.ariaLabel !== t('common.menu')) touchMenu.ariaLabel = t('common.menu');
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
     if (canAim()) touchLabel = m.placing ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
@@ -566,6 +597,10 @@ function syncButtons(): void {
     if (touchPower.textContent !== label) touchPower.textContent = label;
     touchPower.style.setProperty('--power', POWER_UP_COLORS[power.powerUp!]);
   }
+
+  // The dial and the slider aim for whoever is aiming; a placement is aimed on the field itself.
+  const aiming = playing && coarsePointer.matches && canAim() && !m!.placing ? m!.players[m!.viewer ?? m!.current] : null;
+  touchAim.update(aiming && { angle: aiming.angle, power: aiming.power, maxPower: m!.settings.maxPower, fixedPower: m!.settings.fixedPower });
 
   const canClip = playing && m instanceof HorizonMatch && m.canReplay && ClipRecorder.supported && !recorder.recording;
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;
