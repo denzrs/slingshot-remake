@@ -776,9 +776,19 @@ export abstract class Match {
     this.revealHeld = this.players.some((p) => !p.cpu);
   }
 
+  /** Mayhem: the announcement is waiting for somebody to dismiss it (and gives up after `HELD_MAX`). */
+  get held(): boolean {
+    return this.revealHeld && this.clock < this.revealEnd + MAYHEM.HELD_MAX;
+  }
+
+  /** Mayhem: seconds since the round was announced. */
+  get revealAge(): number {
+    return this.clock - (this.revealEnd - MAYHEM.REVEAL_TIME);
+  }
+
   /** Mayhem: the round has been announced, but the ships are still held back. */
   get revealing(): boolean {
-    return this.mayhem !== null && (this.clock < this.revealEnd || this.revealHeld);
+    return this.mayhem !== null && (this.clock < this.revealEnd || this.held);
   }
 
   /** The fire key during the announcement ends it instead of firing. True when it did. */

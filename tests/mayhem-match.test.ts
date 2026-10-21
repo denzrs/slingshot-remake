@@ -52,6 +52,14 @@ describe('a match with Mayhem', () => {
     expect(match.isHumanTurn).toBe(true);
   });
 
+  it('gives up waiting for an absent host after a while', () => {
+    const match = start('classic');
+    for (let t = 0; t < MAYHEM.REVEAL_TIME + MAYHEM.HELD_MAX - 1; t += 1 / 30) match.update(1 / 30);
+    expect(match.revealing).toBe(true);
+    for (let t = 0; t < 2; t += 1 / 30) match.update(1 / 30);
+    expect(match.revealing).toBe(false);
+  });
+
   it('lets the announcement run out by itself when only CPUs are playing', () => {
     const match = start('classic', {}, cpus.map((s, i) => (i < 2 ? 'medium' : s)));
     for (let t = 0; t < MAYHEM.REVEAL_TIME + 0.5; t += 1 / 30) match.update(1 / 30);
@@ -229,11 +237,30 @@ describe('Mayhem over the wire', () => {
     expect(guest.settings).toEqual(host.settings);
   });
 
+  it('carries a held announcement, so the guest waits for the host', () => {
+    const host = start('classic') as ClassicMatch;
+    for (let t = 0; t < MAYHEM.REVEAL_TIME + 1; t += 1 / 30) host.update(1 / 30);
+    expect(host.revealHeld).toBe(true);
+    const guest = createMatch('classic', room({ mayhem: 0 }), { seats: humans, seed: 99 }) as ClassicMatch;
+    guest.restoreSnapshot(JSON.parse(JSON.stringify(host.snapshot())));
+    expect(guest.revealHeld).toBe(true);
+    expect(guest.revealing).toBe(true);
+  });
+
   it('does the same in Event Horizon', () => {
     const host = start('horizon') as HorizonMatch;
     const guest = createMatch('horizon', room({ mayhem: 0 }), { seats: humans, seed: 99 }) as HorizonMatch;
     guest.restoreSnapshot(JSON.parse(JSON.stringify(host.snapshot())));
     expect(guest.mayhem).toEqual(host.mayhem);
+    expect(guest.revealing).toBe(true);
+  });
+
+  it('carries a held announcement in Event Horizon too', () => {
+    const host = start('horizon') as HorizonMatch;
+    for (let t = 0; t < MAYHEM.REVEAL_TIME + 1; t += 1 / 30) host.update(1 / 30);
+    const guest = createMatch('horizon', room({ mayhem: 0 }), { seats: humans, seed: 99 }) as HorizonMatch;
+    guest.restoreSnapshot(JSON.parse(JSON.stringify(host.snapshot())));
+    expect(guest.revealHeld).toBe(true);
     expect(guest.revealing).toBe(true);
   });
 });

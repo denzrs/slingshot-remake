@@ -8,7 +8,7 @@ import './style.css';
 import { Sound } from './audio';
 import { dailyChallenge, dateKey, isDateKey } from './challenge';
 import { ClipRecorder } from './clip';
-import { AIM, COLORS, FIELD, FONTS, PHYSICS } from './config';
+import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS } from './config';
 import { recordRun } from './dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
@@ -517,7 +517,8 @@ canvas.addEventListener('pointerdown', (e) => {
     oraclePointer = true;
     return placeTip(tip);
   }
-  if (match.revealing) return primaryAction();
+  // A tap dismisses the announcement only once its twists have landed, so a double tap at the round change can't skip it unread.
+  if (match.revealing) return match.revealAge >= MAYHEM.LANDED ? primaryAction() : undefined;
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
   if (!canAim()) return;
   dragging = true;

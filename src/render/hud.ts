@@ -155,7 +155,7 @@ export class Hud {
     const { ctx, k, field } = this;
     const left = match.revealEnd - match.clock;
     const age = MAYHEM.REVEAL_TIME - left;
-    const alpha = Math.max(0, Math.min(1, age / 0.2, match.revealHeld ? 1 : left / 0.35));
+    const alpha = Math.max(0, Math.min(1, age / 0.2, match.held ? 1 : left / 0.35));
     if (alpha <= 0) return;
     const cx = field.x + field.w / 2;
     const cy = field.y + field.h / 2;
@@ -167,7 +167,7 @@ export class Hud {
     const h = head + rows * rowH + jackpotH + foot;
     const top = cy - h / 2;
     // The reels stop one after another, the last one at the thud.
-    const landed = 1.2;
+    const landed = MAYHEM.LANDED;
     const stopAt = (i: number) => landed - 0.25 * (rows - 1 - i);
 
     ctx.globalAlpha = alpha;
