@@ -1,6 +1,7 @@
 import { COLORS, DEFENSE, FONTS } from '../config';
 import type { Defense, Missile, Planet } from '../physics';
 import { rgba } from './color';
+import { fillTextUpright } from './orientation';
 
 /**
  * The planet a defense stands on: the one whose rim it sits at. Null once the rock is gone (a planet
@@ -274,7 +275,7 @@ export function drawDefense(
     for (const zone of DEFENSE.ZONES) {
       const to = d.radius * zone.reach;
       const r = from === 0 ? Math.max(to * 0.62, 16) : (from + to) / 2;
-      ctx.fillText(`${Math.round(zone.chance * 100)}%`, Math.cos(out) * r + 14 * Math.cos(out + Math.PI / 2), Math.sin(out) * r + 14 * Math.sin(out + Math.PI / 2));
+      fillTextUpright(ctx, `${Math.round(zone.chance * 100)}%`, Math.cos(out) * r + 14 * Math.cos(out + Math.PI / 2), Math.sin(out) * r + 14 * Math.sin(out + Math.PI / 2));
       from = to;
     }
   }

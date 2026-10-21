@@ -49,6 +49,8 @@ export interface Settings {
   particles: boolean;
   /** The title screen and menus show a CPU match playing behind them; off leaves the plate empty. */
   menuBackground: boolean;
+  /** Touch screens: the side of the screen the aiming stick sits on. */
+  stickSide: 'left' | 'right';
   sound: boolean;
   /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
   betting: boolean;
@@ -86,6 +88,7 @@ export const DEFAULT_SETTINGS: Settings = {
   contours: true,
   particles: true,
   menuBackground: true,
+  stickSide: 'left',
   sound: true,
   language: 'de',
   teamMode: 0,
@@ -106,6 +109,7 @@ export function loadSettings(): Settings {
       for (const key of ['contours', 'particles', 'menuBackground', 'sound'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
+      if (s.stickSide !== 'right') s.stickSide = 'left';
       // Power-up choices: only known kinds, in their usual order, and never none at all.
       const kinds = POWER_UP_KINDS.filter((kind) => Array.isArray(parsed.powerUpKinds) && parsed.powerUpKinds.includes(kind));
       s.powerUpKinds = kinds.length ? kinds : [...POWER_UP_KINDS];

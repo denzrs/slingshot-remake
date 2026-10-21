@@ -30,11 +30,14 @@ import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/chat';
 import { Menu } from './ui/menu';
 import { lobbyScreen } from './ui/lobby';
+import { TouchControls } from './ui/touch-controls';
+import { TouchStick } from './ui/touch-stick';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
+const touchMenu = document.querySelector<HTMLButtonElement>('#touch-menu')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
 /** How many are watching, for everybody who is not in the stands themselves. */
 const standsBadge = document.querySelector<HTMLElement>('#stands-badge')!;
@@ -276,6 +279,7 @@ const app: App = {
   settings,
   settingsChanged() {
     saveSettings(settings);
+    applyStickSide();
     sound.enabled = settings.sound;
     effects.particles = settings.particles;
     attract.applySettings(settings);
@@ -372,6 +376,16 @@ function primaryAction(): void {
   // While a shot flies, the fire key only matters for a splitter.
   else if (splitterInAir(match)) dispatchInput({ kind: 'fire' });
   else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
+}
+
+/** Esc / the touch menu button: think again while aiming a placement, otherwise pause. */
+function escapeAction(): void {
+  if (match?.placing) {
+    dispatchInput({ kind: 'cancel' });
+    return;
+  }
+  // A clip records whatever is on screen — don't freeze it behind the menu.
+  if (!recorder.recording) menu.open(() => pauseScreen(app));
 }
 
 // ————————————————————————————— Keyboard —————————————————————————————
@@ -493,13 +507,7 @@ window.addEventListener('keydown', (e) => {
       if (match?.powerUps && !e.repeat) dispatchInput({ kind: 'power' });
       break;
     case 'Escape':
-      // Aiming a placement: Esc thinks again, it does not open the menu.
-      if (match?.placing) {
-        dispatchInput({ kind: 'cancel' });
-        break;
-      }
-      // A clip records whatever is on screen — don't freeze it behind the menu.
-      if (!recorder.recording) menu.open(() => pauseScreen(app));
+      escapeAction();
       break;
     default:
       handled = false;
@@ -545,6 +553,28 @@ const endDrag = () => (dragging = false);
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
 
+/** Aiming is dragging on the field or pulling the stick; the buttons are for the last half degree. */
+const touchAimHandlers = {
+  aim(change: { angle?: number; power?: number }) {
+    if (!match || !canAim()) return;
+    const p = match.players[match.viewer ?? match.current];
+    dispatchInput({ kind: 'aim', angle: change.angle ?? p.angle, power: change.power ?? p.power });
+  },
+  touched: () => sound.unlock(),
+};
+const touchControls = new TouchControls(document.querySelector<HTMLElement>('#touch-bar')!, touchAimHandlers);
+const touchStick = new TouchStick(touchAimHandlers);
+document.body.append(touchStick.el);
+/** The stick sits on the left of the screen, or — a setting on a touch screen — on the right. */
+function applyStickSide(): void {
+  document.documentElement.classList.toggle('stick-right', settings.stickSide === 'right');
+}
+applyStickSide();
+
+touchMenu.addEventListener('click', () => {
+  sound.unlock();
+  if (screen === 'play' && !menu.isOpen) escapeAction();
+});
 touchFire.addEventListener('click', () => {
   sound.unlock();
   primaryAction();
@@ -565,6 +595,9 @@ document.addEventListener('fullscreenchange', () => menu.refresh());
 function syncButtons(): void {
   const playing = screen === 'play' && !menu.isOpen && !!match;
   const m = match;
+  const showMenu = playing && coarsePointer.matches;
+  if (touchMenu.hidden === showMenu) touchMenu.hidden = !showMenu;
+  if (showMenu && touchMenu.ariaLabel !== t('common.menu')) touchMenu.ariaLabel = t('common.menu');
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
     // The announcement of a Mayhem round waits for a tap (online only the host's).
@@ -587,6 +620,12 @@ function syncButtons(): void {
     if (touchPower.textContent !== label) touchPower.textContent = label;
     touchPower.style.setProperty('--power', POWER_UP_COLORS[power.powerUp!]);
   }
+
+  // The dial and the slider aim for whoever is aiming; a placement is aimed on the field itself.
+  const aiming = playing && coarsePointer.matches && canAim() && !m!.placing ? m!.players[m!.viewer ?? m!.current] : null;
+  const aim = aiming && { angle: aiming.angle, power: aiming.power, maxPower: m!.settings.maxPower, fixedPower: m!.settings.fixedPower };
+  touchControls.update(aim);
+  touchStick.update(aim);
 
   const canClip = playing && m instanceof HorizonMatch && m.canReplay && ClipRecorder.supported && !recorder.recording;
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;

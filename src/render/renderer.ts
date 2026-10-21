@@ -5,6 +5,8 @@ import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
 import { aimDirection, inNebula, isWormholeJump, nextWormholeId, type Wormhole, type World } from '../physics';
 import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
+import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
+import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from './orientation';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
 import { renderContours } from './contours';
@@ -57,16 +59,26 @@ export class Renderer {
     const cssWidth = window.innerWidth;
     const cssHeight = window.innerHeight;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const margin = Math.min(28, cssWidth * 0.03);
-    const scale = Math.min((cssWidth - margin * 2) / FIELD.width, (cssHeight - margin * 2) / FIELD.height);
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    // Held upright a phone gets its own layout: HUD on top, the field, the thumbs' controls underneath.
+    const portrait = coarse && cssHeight > cssWidth ? portraitLayout(cssWidth, cssHeight, safeArea(), touchScale()) : null;
+    applyUpright(portrait);
+    // On a touch screen the field is height-limited and small: give it every pixel.
+    const margin = coarse ? 4 : Math.min(28, cssWidth * 0.03);
+    const scale = portrait?.scale ?? Math.min((cssWidth - margin * 2) / FIELD.width, (cssHeight - margin * 2) / FIELD.height);
+    const rotated = !!portrait?.rotated;
+    const plate = plateUnits(rotated);
     this.view = {
       cssWidth,
       cssHeight,
       dpr,
       scale,
-      offsetX: (cssWidth - FIELD.width * scale) / 2,
-      offsetY: (cssHeight - FIELD.height * scale) / 2,
+      offsetX: portrait?.offsetX ?? (cssWidth - plate.w * scale) / 2,
+      offsetY: portrait?.offsetY ?? (cssHeight - plate.h * scale) / 2,
+      stage: portrait?.stage,
+      rotated,
     };
+    setTurned(rotated);
     this.canvas.width = Math.round(cssWidth * dpr);
     this.canvas.height = Math.round(cssHeight * dpr);
     this.canvas.style.width = `${cssWidth}px`;
@@ -86,7 +98,16 @@ export class Renderer {
   toField(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
     const v = this.view;
-    return { x: (clientX - rect.left - v.offsetX) / v.scale, y: (clientY - rect.top - v.offsetY) / v.scale };
+    const sx = (clientX - rect.left - v.offsetX) / v.scale;
+    const sy = (clientY - rect.top - v.offsetY) / v.scale;
+    // Turned, the field's y runs to the right on the screen and its x up.
+    return v.rotated ? { x: FIELD.width - sy, y: sx } : { x: sx, y: sy };
+  }
+
+  /** Where a field point is on the screen (CSS px on the canvas). */
+  private screenOf(x: number, y: number): { x: number; y: number } {
+    const { scale, offsetX, offsetY, rotated } = this.view;
+    return rotated ? { x: offsetX + y * scale, y: offsetY + (FIELD.width - x) * scale } : { x: offsetX + x * scale, y: offsetY + y * scale };
   }
 
   /** Catches window resizes, zoom and moving to a screen with another pixel ratio. */
@@ -125,12 +146,8 @@ export class Renderer {
     const base = dpr * scale;
     const cam = scene.camera;
     const P = base * (cam?.zoom ?? 1);
-    let tx = dpr * offsetX;
-    let ty = dpr * offsetY;
-    if (cam) {
-      tx = dpr * (offsetX + (FIELD.width * scale) / 2) - cam.x * P;
-      ty = dpr * (offsetY + (FIELD.height * scale) / 2) - cam.y * P;
-    }
+    const plate = plateUnits(!!view.rotated);
+    const [a, b, c, d, e, f] = fieldTransform(view, cam ?? undefined);
     const shakeX = effects.shake ? (Math.random() - 0.5) * 2 * effects.shake : 0;
     const shakeY = effects.shake ? (Math.random() - 0.5) * 2 * effects.shake : 0;
 
@@ -138,10 +155,10 @@ export class Renderer {
     if (cam) {
       // Keep the zoomed killcam inside the plate.
       ctx.beginPath();
-      ctx.rect(dpr * offsetX, dpr * offsetY, FIELD.width * base, FIELD.height * base);
+      ctx.rect(dpr * offsetX, dpr * offsetY, plate.w * base, plate.h * base);
       ctx.clip();
     }
-    ctx.setTransform(P, 0, 0, P, tx + shakeX * P, ty + shakeY * P);
+    ctx.setTransform(a, b, c, d, e + shakeX * P, f + shakeY * P);
     this.drawWorld(match, scene, base);
     this.drawTrails(match, scene);
     this.drawSpotlight(match, scene);
@@ -158,10 +175,7 @@ export class Renderer {
 
     if (opts.hud) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      this.hud.draw(match, view, opts, this.time, (i) => ({
-        x: offsetX + match.world.ships[i].x * scale,
-        y: offsetY + match.world.ships[i].y * scale,
-      }));
+      this.hud.draw(match, view, opts, this.time, (i) => this.screenOf(match.world.ships[i].x, match.world.ships[i].y));
     }
   }
 
@@ -215,6 +229,13 @@ export class Renderer {
         ctx.rotate(Math.atan2(primary.y - p.y, primary.x - p.x));
         const shrink = 1 - eaten * 0.85;
         ctx.scale((1 + eaten * 1.8) * shrink, (1 - eaten * 0.6) * shrink);
+        ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+        ctx.restore();
+      } else if (isTurned()) {
+        // The light stays where it was painted: upright on the screen.
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        uprightFrame(ctx);
         ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
         ctx.restore();
       } else {
@@ -412,6 +433,7 @@ export class Renderer {
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.translate(pick.x, pick.y);
+      uprightFrame(ctx);
       ctx.scale(pop, pop);
       ctx.shadowColor = color;
       ctx.shadowBlur = 14 + 8 * pulse;
@@ -433,7 +455,7 @@ export class Renderer {
       ctx.globalAlpha = alpha * Math.min(1, pop);
       ctx.font = `700 11px ${FONTS.mono}`;
       ctx.fillStyle = color;
-      ctx.fillText(t(`powerup.${pick.kind}` as Key).toUpperCase(), pick.x, pick.y + 20);
+      fillTextUpright(ctx, t(`powerup.${pick.kind}` as Key).toUpperCase(), pick.x, pick.y, 0, 20);
       ctx.restore();
     }
     for (const id of this.pickupSeen.keys()) if (!present.has(id)) this.pickupSeen.delete(id);
@@ -511,7 +533,7 @@ export class Renderer {
           ctx.font = `700 11px ${FONTS.mono}`;
           ctx.textAlign = 'center';
           ctx.fillStyle = color;
-          ctx.fillText(t(back ? 'powerup.antigravityBack' : 'powerup.antigravityTurn').toUpperCase(), planet.x, planet.y - planet.radius - 38);
+          fillTextUpright(ctx, t(back ? 'powerup.antigravityBack' : 'powerup.antigravityTurn').toUpperCase(), planet.x, planet.y, 0, -planet.radius - 38);
         } else {
           // The crack that will split it.
           ctx.lineWidth = 2;
@@ -556,7 +578,9 @@ export class Renderer {
             ctx.font = `700 11px ${FONTS.mono}`;
             ctx.textAlign = 'center';
             ctx.fillStyle = '#ff5c5c';
-            ctx.fillText(t('powerup.defenseReplaces').toUpperCase(), standing.x, standing.y + (standing.y > planet.y ? 22 : -16));
+            // Above or below the planet as it appears on the screen.
+            const below = isTurned() ? standing.x < planet.x : standing.y > planet.y;
+            fillTextUpright(ctx, t('powerup.defenseReplaces').toUpperCase(), standing.x, standing.y, 0, below ? 22 : -16);
           }
         }
         ctx.beginPath();
@@ -621,12 +645,12 @@ export class Renderer {
         ctx.textAlign = 'center';
         ctx.fillStyle = blocked ? '#ff5c5c' : color;
         // The labels sit on the far side of each portal from the other, so two close ones do not overprint.
-        const side = first && target.y >= first.y ? 1 : -1;
+        const side = first && (isTurned() ? target.x <= first.x : target.y >= first.y) ? 1 : -1;
         const reach = WORMHOLE.RADIUS * 1.12 + 10;
-        ctx.fillText(t(blocked ? 'powerup.wormholeClose' : first ? 'powerup.wormholeSecond' : 'powerup.wormholeFirst').toUpperCase(), target.x, target.y + side * reach);
+        fillTextUpright(ctx, t(blocked ? 'powerup.wormholeClose' : first ? 'powerup.wormholeSecond' : 'powerup.wormholeFirst').toUpperCase(), target.x, target.y, 0, side * reach);
         if (first) {
           ctx.fillStyle = color;
-          ctx.fillText(t('powerup.wormholeFirst').toUpperCase(), first.x, first.y - side * reach);
+          fillTextUpright(ctx, t('powerup.wormholeFirst').toUpperCase(), first.x, first.y, 0, -side * reach);
         }
       } else if (kind === 'nebula') {
         // The reach of the cloud as a plain ring: it must not wobble while the aim moves. The cloud that
@@ -782,7 +806,8 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = rgba(danger ? COLORS.bone : color, 0.9);
-    ctx.fillText(String(Math.round(beyond)), -Math.cos(a) * 30, -Math.sin(a) * 30);
+    const [ox, oy] = screenOffset(-Math.cos(a) * 30, -Math.sin(a) * 30);
+    fillTextUpright(ctx, String(Math.round(beyond)), 0, 0, ox, oy);
     ctx.restore();
   }
 
