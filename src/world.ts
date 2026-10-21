@@ -1,6 +1,6 @@
 import { FIELD, HORIZON, SOLAR } from './config';
 import type { BlackHole, Planet, PlanetStyle, Ship, World } from './physics';
-import { createRng, intRange, pick, range, shuffle, type Rng } from './rng';
+import { createRng, intRange, pick, range, type Rng } from './rng';
 
 const TINTS: Record<PlanetStyle, readonly string[]> = {
   rocky: ['#c9a77c', '#b8664a', '#a39a8a', '#c78f6d'],
@@ -123,14 +123,14 @@ export const orbitTurn = (r: number): number => SOLAR.TURN * (SOLAR.REF_ORBIT / 
 type Body = { kind: 'planet'; radius: number } | { kind: 'ships' };
 
 /**
- * A sun in the middle, and every planet on an orbit of its own round it. The ships ride orbits too — about two to
+ * A sun in the middle, and every planet on an orbit of its own round it. The ships ride orbits too — two or three to
  * an orbit — so that after every step the whole system turns and the gravity field with it. The orbits are spaced so
  * that no two bodies ever come near, however far each has turned.
  */
 function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
   const { width, height } = FIELD;
   const centre = solarCenter();
-  const bands = Math.min(3, Math.ceil(opts.players / 2));
+  const bands = Math.min(2, Math.ceil(opts.players / 2));
 
   const bodies: Body[] = [];
   const wanted = intRange(rng, Math.min(opts.minPlanets ?? 2, opts.maxPlanets), opts.maxPlanets);
@@ -145,7 +145,8 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
     if (last < 0) break;
     bodies.splice(last, 1);
   }
-  const order = shuffle(rng, bodies);
+  // Random order, but the ships' orbits tend outwards: nobody starts huddled up against the sun.
+  const order = bodies.map((b) => ({ b, key: rng() + (b.kind === 'ships' ? 0.5 : 0) })).sort((x, y) => x.key - y.key).map((e) => e.b);
   // What is left over is shared out between the orbits.
   const slack = Math.max(0, room - span(order)) / (order.length + 1);
 

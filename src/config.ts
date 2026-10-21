@@ -148,12 +148,12 @@ export const SOLAR = {
   /** Where the system turns: the field's middle, a little low so the scoreboard along the top stays clear. */
   CENTER_Y_SHIFT: 25,
   /** The innermost and outermost orbit a body may take (distance from the sun's centre). */
-  INNER_ORBIT: 106,
-  OUTER_ORBIT: 312,
+  INNER_ORBIT: 84,
+  OUTER_ORBIT: 322,
   /** Free space between two neighbouring orbits' bodies. */
-  ORBIT_GAP: 22,
+  ORBIT_GAP: 14,
   /** How far a ship's orbit band reaches either side of its centre line. */
-  SHIP_BAND: 20,
+  SHIP_BAND: 14,
   /** Planets of this mode are smaller than on an open field, so several fit between the orbits. */
   MIN_PLANET: 13,
   MAX_PLANET: 32,
