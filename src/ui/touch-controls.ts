@@ -1,6 +1,6 @@
 import { AIM } from '../config';
 import { normalizeAngle } from '../physics';
-import { t } from '../i18n';
+import { t, type Key } from '../i18n';
 import { h } from './dom';
 
 /** What the controls show: the aim of the ship that is being aimed. */
@@ -33,6 +33,8 @@ export class TouchControls {
   private readonly angleGroup = h('div.tgroup.tgroup--angle', { role: 'group' });
   private readonly powerGroup = h('div.tgroup.tgroup--power', { role: 'group' });
   private readonly powerButtons: HTMLButtonElement[] = [];
+  /** Every button with the words that say what it does, for those who cannot see the symbol. */
+  private readonly named: [HTMLButtonElement, Key][] = [];
   private angle = 0;
   private power = 0;
   private maxPower: number = AIM.MAX_POWER;
@@ -42,8 +44,8 @@ export class TouchControls {
 
   constructor(bar: HTMLElement, private readonly on: TouchAimHandlers) {
     this.angleGroup.hidden = this.powerGroup.hidden = true;
-    this.angleGroup.append(this.step('↺', () => this.nudgeAngle(1)), this.step('↻', () => this.nudgeAngle(-1)));
-    this.powerGroup.append(this.step('−', () => this.nudgePower(-1), true), this.step('+', () => this.nudgePower(1), true));
+    this.angleGroup.append(this.step('↺', 'touch.counterClockwise', () => this.nudgeAngle(1)), this.step('↻', 'touch.clockwise', () => this.nudgeAngle(-1)));
+    this.powerGroup.append(this.step('−', 'touch.lessPower', () => this.nudgePower(-1), true), this.step('+', 'touch.morePower', () => this.nudgePower(1), true));
     // The fire button, in the markup, stays between them.
     bar.prepend(this.angleGroup);
     bar.append(this.powerGroup);
@@ -72,14 +74,16 @@ export class TouchControls {
       this.labelled = labels;
       this.angleGroup.setAttribute('aria-label', t('hud.angle'));
       this.powerGroup.setAttribute('aria-label', t('hud.power'));
+      for (const [button, key] of this.named) button.setAttribute('aria-label', t(key));
     }
   }
 
-  private step(label: string, run: () => void, power = false): HTMLButtonElement {
+  private step(label: string, name: Key, run: () => void, power = false): HTMLButtonElement {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'tbtn';
     button.textContent = label;
+    this.named.push([button, name]);
     if (power) this.powerButtons.push(button);
     button.addEventListener('pointerdown', (e) => {
       this.on.touched();
