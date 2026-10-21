@@ -11,7 +11,7 @@ export type NetworkGameMode = 'classic' | 'horizon';
 export type NetworkCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
 
 /** The rules of an online game; a subset of the local `Settings`, so it can be spread straight into them. */
-export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails' | 'mayhem' | 'betting' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'>;
+export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails' | 'mayhem' | 'betting' | 'chatPlayersOnly' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'>;
 
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
@@ -54,6 +54,8 @@ type ClientMessage =
   | { type: 'daily_submit'; day: string; name: string; score: number }
   /** Look at a day's leaderboard without posting anything. */
   | { type: 'daily_top'; day: string }
+  /** Something to say to everybody in the room. The relay cleans it and stars out profanity. */
+  | { type: 'chat'; text: string }
   | { type: 'leave_room' };
 
 /** One run on a daily leaderboard, as the relay ranks it. */
@@ -138,6 +140,8 @@ export type ServerMessage =
     }
   /** To the host: `from` is a player's seat, or — with `spectator` — a place in the stands. */
   | { type: 'input'; from: number; input: ClientInput; spectator?: true }
+  /** Somebody said something in the room — `id` is their seat, or their place in the stands (`spectator`). */
+  | { type: 'chat'; id: number; spectator: boolean; name: string; text: string }
   /** To the host: someone joined the stands mid-game; the next state frame has to be a complete one. */
   | { type: 'keyframe' }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }

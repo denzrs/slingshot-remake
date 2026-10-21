@@ -50,6 +50,8 @@ export interface Settings {
   sound: boolean;
   /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
   betting: boolean;
+  /** Online: only the people who play may write in the room's chat; spectators read along (a rule of the room). */
+  chatPlayersOnly: boolean;
   language: Lang;
   /** 0 = free for all, otherwise the number of teams (2 or 3). */
   teamMode: number;
@@ -78,6 +80,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hiddenAim: false,
   fadingTrails: 0,
   betting: false,
+  chatPlayersOnly: false,
   contours: true,
   particles: true,
   sound: true,

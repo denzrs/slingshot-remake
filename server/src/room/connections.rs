@@ -14,6 +14,9 @@ pub const MAX_PASSWORD_ATTEMPTS: u32 = 5;
 pub const MAX_SCRYPT_PER_SECOND: usize = 10;
 /// How many inputs a spectator may send per second; a bet needs a few clicks, not a stream.
 pub const MAX_SPECTATOR_INPUTS_PER_SECOND: usize = 8;
+/// Chat messages one connection may send in `CHAT_WINDOW`.
+pub const MAX_CHAT_MESSAGES: usize = 5;
+pub const CHAT_WINDOW: Duration = Duration::from_secs(10);
 
 struct Conn {
     tx: Outbound,
@@ -30,6 +33,7 @@ pub struct Connections {
     password_failures: HashMap<u64, u32>,
     scrypt_windows: HashMap<u64, VecDeque<Instant>>,
     spectator_windows: HashMap<u64, VecDeque<Instant>>,
+    chat_windows: HashMap<u64, VecDeque<Instant>>,
 }
 
 impl Connections {
@@ -62,6 +66,7 @@ impl Connections {
         self.password_failures.remove(&conn);
         self.scrypt_windows.remove(&conn);
         self.spectator_windows.remove(&conn);
+        self.chat_windows.remove(&conn);
         self.ips.remove(&conn);
     }
 
@@ -89,8 +94,29 @@ impl Connections {
             window.retain(|at| now.duration_since(*at) < Duration::from_secs(1));
             !window.is_empty()
         });
+        self.chat_windows.retain(|_, window| {
+            window.retain(|at| now.duration_since(*at) < CHAT_WINDOW);
+            !window.is_empty()
+        });
         self.password_failures
             .retain(|conn, _| self.connected.contains(conn));
+    }
+
+    /// Counts one more chat message from a connection; false when it is talking too much.
+    pub fn allow_chat(&mut self, conn: u64) -> bool {
+        let now = Instant::now();
+        let window = self.chat_windows.entry(conn).or_default();
+        while window
+            .front()
+            .is_some_and(|at| now.duration_since(*at) >= CHAT_WINDOW)
+        {
+            window.pop_front();
+        }
+        if window.len() >= MAX_CHAT_MESSAGES {
+            return false;
+        }
+        window.push_back(now);
+        true
     }
 
     /// Counts one more input from a spectator; false when they are sending too many.

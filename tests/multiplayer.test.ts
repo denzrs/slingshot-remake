@@ -144,7 +144,7 @@ interface Client {
   syncElapsed: number;
 }
 
-const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, mayhem: 0, betting: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'polarity', 'shield'], powerUpAmount: 2 };
+const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, mayhem: 0, betting: false, chatPlayersOnly: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'polarity', 'shield'], powerUpAmount: 2 };
 
 async function connectSession(hooks: Partial<ConstructorParameters<typeof MultiplayerSession>[0]> = {}, settings = DEFAULT_SETTINGS, edit?: (message: ServerMessage) => ServerMessage): Promise<MultiplayerSession> {
   const session = new MultiplayerSession({ settings: () => cloneSettings(settings), matchStarted() {}, matchRestarted() {}, matchEnded() {}, ...hooks }, new RustTransport(edit));
@@ -1180,8 +1180,8 @@ describe('CPU seats online', () => {
 
 describe('spectators online', () => {
   /** Two players and any number of spectators who walk into the running, public room. */
-  async function startStands(fans: string[]): Promise<{ players: Client[]; stands: Client[] }> {
-    const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], { ...rules, fixedPower: false, bounce: false });
+  async function startStands(fans: string[], roomRules: Partial<RoomRules> = {}): Promise<{ players: Client[]; stands: Client[] }> {
+    const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], { ...rules, fixedPower: false, bounce: false, ...roomRules });
     const stands: Client[] = [];
     for (const name of fans) {
       let fanMatch: NetMatch | null = null;
@@ -1234,6 +1234,47 @@ describe('spectators online', () => {
     await waitForSession(host.session, () => host.session.room!.spectators.length === 0);
     expect(host.session.room!.status).toBe('playing');
     expect(host.match().crowd.seats.every((seat) => !seat.present)).toBe(true);
+  }, 30_000);
+
+  it('lets everybody in the room talk, with the relay starring out profanity, and tells the sender when it is refused', async () => {
+    const { players, stands } = await startStands(['Fan']);
+    const [host, guest] = players;
+    const [fan] = stands;
+    host.session.sendChat('  gg you shit  ');
+    await waitForSession(fan.session, () => fan.session.chat.length === 1);
+    await waitForSession(guest.session, () => guest.session.chat.length === 1);
+    for (const watcher of [host, guest, fan]) {
+      const [line] = watcher.session.chat;
+      expect(line).toMatchObject({ name: 'Anna', id: 0, spectator: false });
+      expect(line.text.startsWith('gg you ') && !line.text.includes('shit')).toBe(true);
+    }
+    expect(fan.session.canChat).toBe(true);
+    fan.session.sendChat('nice game');
+    await waitForSession(host.session, () => host.session.chat.length === 2);
+    expect(host.session.chat[1]).toMatchObject({ name: 'Fan', spectator: true, text: 'nice game' });
+
+    // A flood is cut off after five, and the relay says so in the chat.
+    for (let i = 0; i < 8; i++) guest.session.sendChat(`spam ${i}`);
+    await waitForSession(guest.session, () => guest.session.chat.some((line) => line.system));
+    expect(guest.session.chat.find((line) => line.system)!.text).toBe('You are writing too fast');
+  }, 30_000);
+
+  it('lets the host keep the chat to the players: spectators read along but cannot write', async () => {
+    const { players, stands } = await startStands(['Fan'], { chatPlayersOnly: true });
+    const [host] = players;
+    const [fan] = stands;
+    expect(fan.session.canChat).toBe(false);
+    expect(host.session.canChat).toBe(true);
+    // The input is closed on a spectator's screen; a client that ignores that is refused by the relay.
+    fan.session.sendChat('let me in');
+    expect(fan.session.chat).toEqual([]);
+    fan.session.client.send({ type: 'chat', text: 'let me in' });
+    await waitForSession(fan.session, () => fan.session.chat.some((line) => line.system));
+    expect(fan.session.chat[0].text).toBe('Only the players can write in this room');
+    expect(host.session.chat).toEqual([]);
+
+    host.session.sendChat('players only');
+    await waitForSession(fan.session, () => fan.session.chat.some((line) => line.text === 'players only'));
   }, 30_000);
 
   it('lets the stands play the oracle: odds from their bets, a pot of their own, paid into bankrolls and not into scores', async () => {

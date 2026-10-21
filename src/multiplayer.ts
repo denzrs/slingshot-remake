@@ -9,6 +9,18 @@ import type { Avatar } from './avatars';
 import { SnapshotDecoder, SnapshotEncoder } from './netsync';
 import type { Seat, Settings } from './settings';
 
+/** One line of the room's chat. A `system` line is something the relay said back to this client ("you are writing too fast"). */
+export interface ChatLine {
+  id: number;
+  name: string;
+  spectator: boolean;
+  text: string;
+  system?: boolean;
+}
+
+/** The most lines the chat keeps. */
+const CHAT_KEEP = 100;
+
 export type NetMatch = ClassicMatch | HorizonMatch;
 
 type GameStart = Extract<ServerMessage, { type: 'game_start' }>;
@@ -71,6 +83,9 @@ export class MultiplayerSession {
   /** The last thing worth telling the player (server errors, "host left", …). */
   notice: string | null = null;
   match: NetMatch | null = null;
+  /** What has been said in the room you are in. */
+  chat: ChatLine[] = [];
+  private chatRoom: string | null = null;
 
   private readonly listeners = new Set<() => void>();
   private readonly pendingEvents: GameEvent[] = [];
@@ -87,6 +102,11 @@ export class MultiplayerSession {
   ) {
     this.client = client;
     this.client.onMessage((message) => this.receive(message));
+  }
+
+  /** Whether you may write in this room's chat: everybody may, unless the host limited it to the players. */
+  get canChat(): boolean {
+    return !!this.room && !(this.isSpectator && this.room.rules.chatPlayersOnly);
   }
 
   get isHost(): boolean {
@@ -177,10 +197,17 @@ export class MultiplayerSession {
     this.send({ type: 'start_game' });
   }
 
+  /** Says something to the room. */
+  sendChat(text: string): void {
+    const trimmed = text.trim();
+    if (trimmed && this.canChat) this.send({ type: 'chat', text: trimmed });
+  }
+
   /** Leave the room (and any running game) but stay connected to the lobby. */
   leaveRoom(): void {
     if (this.room) this.send({ type: 'leave_room' });
     this.room = null;
+    this.clearChat();
     this.rooms = [];
     this.notice = null;
     this.dropMatch();
@@ -191,6 +218,7 @@ export class MultiplayerSession {
     this.client.close();
     this.connected = false;
     this.room = null;
+    this.clearChat();
     this.rooms = [];
     this.notice = null;
     this.dropMatch();
@@ -270,6 +298,11 @@ export class MultiplayerSession {
         this.rooms = message.rooms;
         break;
       case 'room_update':
+        if (message.room.id !== this.chatRoom) {
+          // A different room: its talk starts from nothing.
+          this.chat = [];
+          this.chatRoom = message.room.id;
+        }
         this.room = message.room;
         this.you = message.you;
         this.notice = message.notice ?? null;
@@ -294,17 +327,24 @@ export class MultiplayerSession {
       case 'state':
         this.applyState(message);
         break;
+      case 'chat':
+        this.chat = [...this.chat, { id: message.id, name: message.name, spectator: message.spectator, text: message.text }].slice(-CHAT_KEEP);
+        break;
       case 'room_closed':
         this.room = null;
+        this.clearChat();
         this.notice = message.message;
         if (this.match) this.endMatch();
         break;
       case 'error':
         this.notice = message.message;
+        // In a game nobody reads the notice, so what the relay says ("you are writing too fast") is said in the chat.
+        if (this.match) this.chat = [...this.chat, { id: -1, name: '', spectator: false, text: message.message, system: true }].slice(-CHAT_KEEP);
         break;
       case 'closed':
         this.connected = false;
         this.room = null;
+        this.clearChat();
         this.rooms = [];
         this.notice = message.message;
         if (this.match) this.endMatch();
@@ -392,6 +432,11 @@ export class MultiplayerSession {
   }
 
   // ————————————————————————————— Plumbing —————————————————————————————
+
+  private clearChat(): void {
+    this.chat = [];
+    this.chatRoom = null;
+  }
 
   private endMatch(): void {
     this.dropMatch();

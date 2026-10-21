@@ -27,6 +27,7 @@ import { mayhemRules } from './lobbyPrefs';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
 import { eyeIcon } from './ui/dom';
+import { ChatPanel } from './ui/chat';
 import { Menu } from './ui/menu';
 import { lobbyScreen } from './ui/lobby';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
@@ -216,7 +217,8 @@ wire(attract);
 /** Created on first use; it outlives single matches, so leaving a game lands you back in the lobby. */
 let session: MultiplayerSession | null = null;
 function multiplayer(): MultiplayerSession {
-  session ??= new MultiplayerSession({
+  if (session) return session;
+  session = new MultiplayerSession({
     settings: () => settings,
     matchStarted(m) {
       if (match !== m) match?.dispose();
@@ -235,8 +237,13 @@ function multiplayer(): MultiplayerSession {
       menu.open(() => lobbyScreen(app, multiplayer()));
     },
   });
+  const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session);
+  chat = panel;
+  session.subscribe(() => panel.update());
   return session;
 }
+/** The chat of the room, once there is a session for it. */
+let chat: ChatPanel | null = null;
 /** The online match on screen, if any. */
 const online = (): MultiplayerSession | null => (session?.match ? session : null);
 
@@ -432,6 +439,11 @@ function placeTip(tip: OracleTap): void {
 
 window.addEventListener('keydown', (e) => {
   sound.unlock();
+  // Typing in the chat is typing: no aiming, no menu keys, no fullscreen. Escape gives the keyboard back to the game.
+  if (chat?.owns(e.target)) {
+    if (e.code === 'Escape') (e.target as HTMLElement).blur();
+    return;
+  }
   if (e.code === 'KeyF' && !e.metaKey && !e.ctrlKey && !isTyping(e.target)) {
     app.toggleFullscreen();
     return;

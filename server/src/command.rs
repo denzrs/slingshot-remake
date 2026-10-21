@@ -8,9 +8,9 @@ use serde_json::Value;
 
 use crate::auth::{password_length, MAX_PASSWORD_LENGTH};
 use crate::protocol::{
-    clean_name_checked, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level,
-    parse_daily_day, parse_daily_submit, parse_room_look, parse_room_name, parse_rules, DailyScore,
-    RoomLook, RoomName, RoomRules,
+    clean_chat, clean_name_checked, is_input_message, is_safe_integer, parse_avatar,
+    parse_cpu_level, parse_daily_day, parse_daily_submit, parse_room_look, parse_room_name,
+    parse_rules, DailyScore, RoomLook, RoomName, RoomRules,
 };
 use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
 
@@ -57,6 +57,8 @@ pub enum RoomCommand<'a> {
     },
     StartGame,
     Input(Parsed<&'a Value>),
+    /// Something to say to the room.
+    Chat(Parsed<String>),
     LeaveRoom,
     /// A message with no `type`.
     Malformed,
@@ -199,6 +201,9 @@ impl<'a> RoomCommand<'a> {
                     .filter(|input| is_input_message(input))
                     .ok_or("Malformed input message"),
             ),
+            "chat" => {
+                RoomCommand::Chat(clean_chat(message.get("text")).ok_or("Say something first"))
+            }
             "leave_room" => RoomCommand::LeaveRoom,
             other => RoomCommand::Unknown(other),
         }

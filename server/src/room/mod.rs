@@ -4,6 +4,7 @@
 //! are split by what they change: the lobby list, a room's roster, its settings, its CPU seats and
 //! the running game.
 
+mod chat;
 mod connections;
 mod cpu;
 mod game;
@@ -130,6 +131,7 @@ impl RoomManager {
             RoomCommand::RemoveCpu { seat } => self.remove_cpu(conn, seat),
             RoomCommand::StartGame => self.start_game(conn),
             RoomCommand::Input(input) => self.relay_input(conn, input),
+            RoomCommand::Chat(text) => self.chat(conn, text),
             RoomCommand::LeaveRoom => self.leave_room(conn),
         }
     }

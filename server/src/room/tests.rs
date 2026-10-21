@@ -1268,3 +1268,96 @@ fn the_stands_hold_as_many_as_the_shared_contract_says() {
         serde_json::from_str(include_str!("../../protocol-contract.json")).unwrap();
     assert_eq!(contract["spectators"]["max"], MAX_SPECTATORS);
 }
+
+fn say(rooms: &mut RoomManager, conn: u64, text: &str) {
+    rooms.handle(conn, &json!({"type":"chat","text":text}));
+}
+
+fn chats(rx: &mut mpsc::Receiver<crate::codec::WireMessage>) -> Vec<Value> {
+    drain_json(rx)
+        .into_iter()
+        .filter(|m| m["type"] == "chat")
+        .collect()
+}
+
+#[test]
+fn chat_reaches_everybody_in_the_room_censored_and_names_the_sender() {
+    let mut rooms = RoomManager::new();
+    let (room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
+    let mut fan_rx = watch(&mut rooms, 3, &room_id);
+    drain_json(&mut fan_rx);
+    let mut outsider_rx = connect(&mut rooms, 9);
+    drain_json(&mut outsider_rx);
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+
+    say(&mut rooms, 2, "  gg you shit  ");
+    for rx in [&mut host_rx, &mut guest_rx, &mut fan_rx] {
+        let heard = chats(rx);
+        assert_eq!(heard.len(), 1);
+        assert_eq!(heard[0]["name"], "Guest");
+        assert_eq!(heard[0]["id"], 1);
+        assert_eq!(heard[0]["spectator"], false);
+        let text = heard[0]["text"].as_str().unwrap();
+        assert!(
+            text.starts_with("gg you ") && !text.contains("shit"),
+            "{text}"
+        );
+    }
+    say(&mut rooms, 3, "nice shot");
+    let heard = chats(&mut host_rx);
+    assert_eq!(
+        (heard[0]["name"].as_str(), heard[0]["spectator"].as_bool()),
+        (Some("Fan 3"), Some(true))
+    );
+
+    // Somebody outside a room has nobody to talk to; nothing else is said either.
+    say(&mut rooms, 9, "hello?");
+    assert_eq!(
+        take_type(&drain_json(&mut outsider_rx), "error")["message"],
+        "Join a room to chat"
+    );
+    say(&mut rooms, 2, "   ");
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "Say something first"
+    );
+    assert!(chats(&mut host_rx).is_empty());
+}
+
+#[test]
+fn the_host_can_limit_chat_to_the_players_and_nobody_can_flood_it() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    drain_json(&mut host_rx);
+    let mut message = create("Host", None);
+    message["rules"] = json!({
+        "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"bounce":false,
+        "fixedPower":false,"fixedPowerLevel":55,"maxPower":100,"shotTime":20,
+        "styleBonuses":false,"neighborGrace":0,"simultaneousShots":false,
+        "hiddenAim":false,"fadingTrails":0,"chatPlayersOnly":true
+    });
+    rooms.handle(1, &message);
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["rules"]["chatPlayersOnly"], true);
+    let room_id = update["room"]["id"].as_str().unwrap().to_owned();
+    let mut fan_rx = watch(&mut rooms, 3, &room_id);
+    drain_json(&mut fan_rx);
+
+    // Spectators read along but may not write.
+    say(&mut rooms, 3, "can I join in?");
+    assert_eq!(
+        take_type(&drain_json(&mut fan_rx), "error")["message"],
+        "Only the players can write in this room"
+    );
+    say(&mut rooms, 1, "welcome");
+    assert_eq!(chats(&mut fan_rx)[0]["text"], "welcome");
+
+    // Five messages in ten seconds, then it is too fast.
+    drain_json(&mut host_rx);
+    for n in 0..8 {
+        say(&mut rooms, 1, &format!("message {n}"));
+    }
+    let sent = chats(&mut host_rx).len();
+    assert_eq!(sent, super::connections::MAX_CHAT_MESSAGES - 1);
+}

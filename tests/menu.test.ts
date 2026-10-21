@@ -147,7 +147,7 @@ describe('game rules in the menu', () => {
   it('gives a Mayhem game only its rounds, its chaos strength and the flight time and (in Classic) simultaneous shots, and every other game neither the strength nor a way to switch it on', () => {
     for (const mode of ['classic', 'horizon'] as const) {
       for (const online of [false, true]) {
-        expect(rulesFor(mode, online, true).map((r) => r.key)).toEqual(mode === 'classic' ? ['rounds', 'mayhem', 'shotTime', 'simultaneousShots'] : ['rounds', 'mayhem', 'shotTime']);
+        expect(rulesFor(mode, online, true).map((r) => r.key)).toEqual([...(mode === 'classic' ? ['rounds', 'mayhem', 'shotTime', 'simultaneousShots'] : ['rounds', 'mayhem', 'shotTime']), ...(online ? ['chatPlayersOnly'] : [])]);
         expect(rulesFor(mode, online).map((r) => r.key)).not.toContain('mayhem');
       }
     }
@@ -162,9 +162,9 @@ describe('game rules in the menu', () => {
     expect(relayContract.defaults.mayhem).toBe(0);
   });
 
-  it('keeps the rules that only make sense online — betting — off the offline setup screen, in both modes', () => {
+  it('keeps the rules that only make sense online — betting and the chat limit — off the offline setup screen, in both modes', () => {
     const online = all.filter((r) => r.onlineOnly);
-    expect(online.map((r) => r.key)).toEqual(['betting']);
+    expect(online.map((r) => r.key)).toEqual(['betting', 'chatPlayersOnly']);
     for (const mode of ['classic', 'horizon'] as const) {
       expect(rulesFor(mode).map((r) => r.key)).not.toContain('betting');
       expect(rulesFor(mode, true).map((r) => r.key)).toContain('betting');

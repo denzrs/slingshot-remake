@@ -15,6 +15,7 @@
     "fadingTrails": 0,
     "mayhem": 0,
     "betting": false,
+    "chatPlayersOnly": false,
     "powerUps": false,
     "powerUpKinds": ["preview", "teleport", "splitter", "polarity", "shield", "blackhole", "planetkiller", "nebula", "piercing", "wormhole", "defense", "heavy"],
     "powerUpAmount": 2
