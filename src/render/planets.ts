@@ -66,8 +66,7 @@ export function renderPlanet(p: Planet, ps: number): HTMLCanvasElement {
       const tz = -dx * sn + nz * cs;
       const a = albedo(tx, dy, tz);
 
-      // A star is its own light.
-      const lambert = p.style === 'star' ? 1 : Math.max(0, dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2]);
+      const lambert = Math.max(0, dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2]);
       const v = clamp01(0.05 + 0.95 * lambert * a);
       const dark = 1 - v;
 
@@ -102,7 +101,7 @@ export function renderPlanet(p: Planet, ps: number): HTMLCanvasElement {
 }
 
 function makeCraters(p: Planet, rng: () => number): Crater[] {
-  if (p.style === 'gas' || p.style === 'star') return [];
+  if (p.style === 'gas') return [];
   const count = p.style === 'rocky' ? 6 + Math.floor(rng() * 8) : 2 + Math.floor(rng() * 3);
   const out: Crater[] = [];
   for (let i = 0; i < count; i++) {
@@ -122,8 +121,6 @@ function albedoFn(p: Planet, seed: number, tilt: number, bandFreq: number, crate
         const band = Math.sin(lat * bandFreq + turb * 3.2);
         return 0.74 + 0.2 * band + 0.1 * (turb - 0.5);
       };
-    case 'star':
-      return (x: number, y: number, z: number) => 0.9 + 0.3 * (fbm(x * 3.2, y * 3.2, z * 3.2, seed, 4) - 0.5);
     case 'ice':
       return (x: number, y: number, z: number) => {
         const n = fbm(x * 3, y * 3, z * 3, seed, 4);

@@ -7,6 +7,7 @@ import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
 import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from './orientation';
+import { drawSun } from './sun';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
 import { renderContours } from './contours';
@@ -232,23 +233,13 @@ export class Renderer {
       this.spritePs = ps;
     }
     for (const p of showPlanets ? world.planets : []) {
+      if (p.sun) continue;
       let sprite = this.sprites.get(p.seed);
       if (!sprite) {
         sprite = renderPlanet(p, ps);
         this.sprites.set(p.seed, sprite);
       }
       const size = sprite.width / ps;
-      if (p.sun) {
-        // The sun's corona, behind its disc.
-        const glow = ctx.createRadialGradient(p.x, p.y, p.radius * 0.8, p.x, p.y, p.radius * 3.2);
-        glow.addColorStop(0, 'rgba(242, 196, 109, 0.42)');
-        glow.addColorStop(1, 'rgba(242, 196, 109, 0)');
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = glow;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius * 3.2, 0, Math.PI * 2);
-        ctx.fill();
-      }
       const eaten = scene.camera ? 0 : match.devourProgress(p.seed);
       ctx.globalAlpha = alpha * (1 - eaten * 0.4);
       if (eaten > 0 && primary) {
@@ -274,6 +265,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     world.defenses.forEach((d, i) => d.wrecked || drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, 1, defenseView(scene.volley?.shots ?? [], d, i), false, !showPlanets));
+    for (const p of world.planets) if (p.sun) drawSun(ctx, p, this.time, alpha);
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
