@@ -70,11 +70,11 @@ function makeFace(seed: number): HTMLCanvasElement {
       const n = fbm(x * 1.9 + 3, y * 1.9 + 3, 0.5, seed, 3) + 0.12 * (fbm(x * 9, y * 9, 2, seed, 2) - 0.5);
       const pen = smooth(0.6, 0.67, n);
       const umbra = smooth(0.67, 0.73, n);
-      r = mix(r, mix(AMBER[0] * 0.8, SPOT[0], umbra), pen * 0.85);
-      g = mix(g, mix(AMBER[1] * 0.5, SPOT[1], umbra), pen * 0.85);
-      b = mix(b, mix(AMBER[2] * 0.5, SPOT[2], umbra), pen * 0.85);
+      r = mix(r, mix(AMBER[0] * 0.8, SPOT[0], umbra), pen * 0.95);
+      g = mix(g, mix(AMBER[1] * 0.5, SPOT[1], umbra), pen * 0.95);
+      b = mix(b, mix(AMBER[2] * 0.5, SPOT[2], umbra), pen * 0.95);
 
-      const limb = 1 - 0.3 * rr ** 3;
+      const limb = 1 - 0.15 * rr ** 3;
       const i = (py * TEX + px) * 4;
       img.data[i] = r * limb;
       img.data[i + 1] = g * limb;
@@ -152,6 +152,26 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   ctx.rotate(-time * 0.11 - 1.3);
   ctx.globalAlpha = alpha * 0.3;
   ctx.drawImage(face, -R, -R, R * 2, R * 2);
+  ctx.restore();
+
+  // The glow inside: a hot, pulsing core and a bright rim, added on top of the face.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, R, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.globalCompositeOperation = 'lighter';
+  const pulse = 0.85 + 0.15 * Math.sin(time * 1.4);
+  const core = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+  core.addColorStop(0, rgba('#fff6c0', 0.5 * pulse * alpha));
+  core.addColorStop(0.5, rgba('#ffe03d', 0.22 * alpha));
+  core.addColorStop(1, rgba('#ffe03d', 0));
+  ctx.fillStyle = core;
+  ctx.fillRect(-R, -R, R * 2, R * 2);
+  const rim = ctx.createRadialGradient(0, 0, R * 0.7, 0, 0, R);
+  rim.addColorStop(0, rgba('#ffb030', 0));
+  rim.addColorStop(1, rgba('#ffd060', 0.45 * alpha));
+  ctx.fillStyle = rim;
+  ctx.fillRect(-R, -R, R * 2, R * 2);
   ctx.restore();
 
   ctx.strokeStyle = rgba(COLORS.bone, 0.95);
