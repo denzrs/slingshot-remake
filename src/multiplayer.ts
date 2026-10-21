@@ -203,9 +203,10 @@ export class MultiplayerSession {
   input(input: ClientInput): void {
     const match = this.match;
     if (!match) return;
-    // The stands may bet and nothing else. The host judges, and the book comes back with the next state.
+    // The stands may bet and nothing else — the same tipping game the shot-down play. Remember the tip on this
+    // screen at once; the host judges it from its own copy.
     if (this.isSpectator) {
-      if (input.kind === 'bet') this.send({ type: 'input', input });
+      if (input.kind === 'bet' && match.placeBet(this.you.spectatorId ?? -1, input.pick, !!input.round, input.stake ?? 0, true)) this.send({ type: 'input', input });
       return;
     }
     const id = this.you.playerId;
@@ -275,7 +276,7 @@ export class MultiplayerSession {
         // The room went back to waiting under a running game (somebody left): the game is over.
         if (this.match && message.room.status === 'waiting') this.endMatch();
         // The host keeps the stands' accounts: people come and go, the points stay.
-        else if (this.match && this.isHost) this.match.gallery.sync(message.room.spectators ?? []);
+        else if (this.match && this.isHost) this.match.crowdChanged(message.room.spectators ?? []);
         break;
       case 'game_start':
         this.startMatch(message);
@@ -283,7 +284,7 @@ export class MultiplayerSession {
       case 'input':
         if (!this.match || !this.isHost) break;
         if (message.spectator) {
-          if (message.input.kind === 'bet') this.match.placeGalleryBet(message.from, message.input.pick, message.input.stake ?? 0);
+          if (message.input.kind === 'bet') this.match.placeBet(message.from, message.input.pick, !!message.input.round, message.input.stake ?? 0, true);
         } else this.applyInput(this.match, message.from, message.input);
         break;
       case 'keyframe':
@@ -337,9 +338,9 @@ export class MultiplayerSession {
     if (!(match instanceof ClassicMatch || match instanceof HorizonMatch)) return;
     // In the stands there is no ship to be: the match is seen from nowhere in particular.
     match.viewer = this.isSpectator ? null : this.you.playerId;
-    match.spectating = this.isSpectator;
+    match.spectatorId = this.isSpectator ? (this.you.spectatorId ?? null) : null;
     match.canAdvance = this.isHost;
-    if (this.isHost) match.gallery.sync(this.room?.spectators ?? []);
+    if (this.isHost) match.crowd.sync(this.room?.spectators ?? []);
 
     this.resetSync();
     this.match?.dispose();

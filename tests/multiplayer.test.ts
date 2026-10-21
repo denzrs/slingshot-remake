@@ -1233,10 +1233,10 @@ describe('spectators online', () => {
     fan.session.leaveRoom();
     await waitForSession(host.session, () => host.session.room!.spectators.length === 0);
     expect(host.session.room!.status).toBe('playing');
-    expect(host.match().gallery.seats.every((seat) => !seat.present)).toBe(true);
+    expect(host.match().crowd.seats.every((seat) => !seat.present)).toBe(true);
   }, 30_000);
 
-  it('makes the odds from what the stands have bet, closes the book at the first shot, and pays the pot out', async () => {
+  it('lets the stands play the oracle: odds from their bets, a pot of their own, paid into bankrolls and not into scores', async () => {
     const { players, stands } = await startStands(['Fan', 'Gus']);
     const [host, guest] = players;
     const [fan, gus] = stands;
@@ -1247,45 +1247,41 @@ describe('spectators online', () => {
     Object.assign(hm.world.ships[1], { x: 500, y: 400 });
     await tick(everybody, 5);
 
-    expect(hm.gallery.isOpen).toBe(true);
-    expect(hm.gallery.seats.map((seat) => seat.balance)).toEqual([500, 500]);
-    // Fan backs Ben with 100, Gus backs Anna with 50: the odds are the pot over each side's share.
-    fan.session.input({ kind: 'bet', pick: 1, round: true, stake: 100 });
-    gus.session.input({ kind: 'bet', pick: 0, round: true, stake: 50 });
+    // Nobody is out, and the stands can already bet on who wins the round.
+    expect(hm.stands.roundQuestion).not.toBeNull();
+    expect(hm.crowd.seats.map((seat) => seat.balance)).toEqual([500, 500]);
+    const [fanId, gusId] = [fan.session.you.spectatorId!, gus.session.you.spectatorId!];
+    fan.session.input({ kind: 'bet', pick: 1, round: true, stake: 250 });
+    gus.session.input({ kind: 'bet', pick: 0, round: true, stake: 120 });
     await tick(everybody, 5);
+    // The odds are the pot over what is on a side, and every screen can work them out.
     for (const watcher of [hm, fan.match(), gus.match()]) {
-      expect(watcher.gallery.pot).toBe(150);
-      expect(watcher.gallery.odds(1)).toBeCloseTo(1.5);
-      expect(watcher.gallery.odds(0)).toBeCloseTo(3);
-      expect(watcher.gallery.betOf(fan.session.you.spectatorId!)).toEqual({ pick: 1, stake: 100 });
+      expect(watcher.stands.pot).toBe(370);
+      expect(watcher.stands.oddsFor(1, (pick) => watcher.sideOf(pick))).toBeCloseTo(370 / 250);
+      expect(watcher.stands.oddsFor(0, (pick) => watcher.sideOf(pick))).toBeCloseTo(370 / 120);
+      expect(watcher.crowd.seat(fanId)!.balance).toBe(250);
     }
-    // Nobody in the stands can stake what they do not have, or bet on a ship that is not there.
-    gus.session.input({ kind: 'bet', pick: 0, round: true, stake: 9999 });
-    gus.session.input({ kind: 'bet', pick: 5, round: true, stake: 25 });
-    await tick(everybody, 3);
-    expect(hm.gallery.betOf(gus.session.you.spectatorId!)).toEqual({ pick: 0, stake: 50 });
+    // Their points are not the players': the ghosts' pot is empty, and the tips stay face down.
+    expect(hm.oracle.pot).toBe(0);
+    expect(fan.match().stands.roundTippers.has(gusId)).toBe(true);
 
-    // Anna shoots Ben. The shot waits for the betting window; once it flies, the book is shut.
+    // Anna shoots Ben. Bets do not reach the host after the shot is away.
     host.session.input({ kind: 'aim', angle: 0, power: 50 });
     host.session.input({ kind: 'fire' });
     for (let i = 0; i < 600 && hm.phase !== 'flying'; i++) await tick(everybody);
-    expect(hm.phase).toBe('flying');
-    expect(hm.gallery.isOpen).toBe(false);
-    gus.session.input({ kind: 'bet', pick: 1, round: true, stake: 25 });
+    gus.session.input({ kind: 'bet', pick: 1, round: true, stake: 120 });
     await tick(everybody, 3);
-    expect(hm.gallery.betOf(gus.session.you.spectatorId!)).toEqual({ pick: 0, stake: 50 });
+    expect(hm.stands.stakeOf(gusId)).toBe(120);
 
     for (let i = 0; i < 900 && hm.phase !== 'roundOver'; i++) await tick(everybody);
     expect(hm.phase).toBe('roundOver');
     await tick(everybody, 5);
-    // Gus was the only one right, so the whole pot of 150 is his: 450 + 150. Fan lost the 100.
+    // Gus was the only one right, so the whole pot is his; Anna's score is only what she shot for.
     for (const watcher of [hm, fan.match(), gus.match()]) {
-      expect(watcher.gallery.result?.winners).toEqual([0]);
-      expect(watcher.gallery.seats.map((seat) => seat.balance)).toEqual([400, 600]);
-      expect(watcher.gallery.ranking().map((seat) => seat.name)).toEqual(['Gus', 'Fan']);
+      expect(watcher.stands.roundResult?.winners).toEqual([0]);
+      expect(watcher.crowd.seats.map((seat) => seat.balance)).toEqual([250, 750]);
     }
-    // Their points never touched a player's score.
-    expect(hm.players[0].score + hm.players[1].score).toBe(hm.players.reduce((sum, p) => sum + p.score, 0));
+    expect(hm.players[0].score).toBe(1000);
     expect(hm.players[1].score).toBe(0);
   }, 90_000);
 });

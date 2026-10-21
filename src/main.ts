@@ -27,7 +27,6 @@ import { mayhemRules } from './lobbyPrefs';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
 import { Menu } from './ui/menu';
-import { Stands } from './ui/stands';
 import { lobbyScreen } from './ui/lobby';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
 
@@ -35,8 +34,8 @@ const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
-/** The stands: a spectator's betting strip, and the count of watchers everybody else sees. */
-const stands = new Stands(document.querySelector<HTMLElement>('#stands')!, document.querySelector<HTMLElement>('#stands-badge')!, (pick, stake) => dispatchInput({ kind: 'bet', pick, round: true, stake }));
+/** How many are watching, for everybody who is not in the stands themselves. */
+const standsBadge = document.querySelector<HTMLElement>('#stands-badge')!;
 const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 
@@ -385,15 +384,15 @@ function isTyping(target: EventTarget | null): boolean {
  * 0 for a salvo — and Shift with 1–5 (0 for a draw) for who wins the round.
  */
 function oracleKey(e: KeyboardEvent): OracleTap | null {
-  const q = match?.oracle.question;
+  const q = match?.betOracle.question;
   if (!match || !match.ghost || e.ctrlKey || e.metaKey || e.altKey) return null;
   const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code);
-  const rq = match.oracle.roundQuestion;
+  const rq = match.betOracle.roundQuestion;
   // B puts the smaller stake on the tip on the round, Shift + B the larger one: points of the match, once.
-  if (e.code === 'KeyB' && rq && match.viewer !== null) {
-    const mine = match.oracle.roundMine;
-    const options = stakeOptions(match.players[match.viewer].score);
-    if (!mine || mine.id !== rq.id || !match.maxStake(match.viewer) || !options.length) return null;
+  if (e.code === 'KeyB' && rq && match.bettor !== null) {
+    const mine = match.betOracle.roundMine;
+    const options = stakeOptions(match.purse(match.bettor));
+    if (!mine || mine.id !== rq.id || !match.maxStake(match.bettor) || !options.length) return null;
     return { pick: mine.pick, round: true, stake: e.shiftKey ? options[options.length - 1] : options[0] };
   }
   if (e.shiftKey && digit && rq) {
@@ -412,10 +411,10 @@ function oracleKey(e: KeyboardEvent): OracleTap | null {
 
 /** The oracle tip under a pointer: one of the bar's or the round row's choices, or — for a salvo — the ship itself. */
 function oracleTap(clientX: number, clientY: number): OracleTap | null {
-  const q = match?.oracle.question;
+  const q = match?.betOracle.question;
   if (!match || !match.ghost) return null;
   const chip = renderer.oracleHit(clientX, clientY);
-  if (chip) return chip.round ? (match.canBetRound(match.viewer ?? -1) ? chip : null) : q && !q.locked ? chip : null;
+  if (chip) return chip.round ? (match.canBetRound(match.bettor ?? -1) ? chip : null) : q && !q.locked ? chip : null;
   if (!q || q.locked || q.kind !== 'salvo') return null;
   const at = renderer.toField(clientX, clientY);
   const ship = q.choices.find((id) => Math.hypot(match!.world.ships[id].x - at.x, match!.world.ships[id].y - at.y) < 30);
@@ -582,17 +581,17 @@ const judged = new WeakMap<Match, { shot: number; round: number }>();
  * everybody at the table, the moment the ghosts' majority turned out wrong ("Oracle fooled!") or knew it all.
  */
 function announceOracle(m: Match): void {
-  if (!judged.has(m)) judged.set(m, { shot: m.oracle.result?.id ?? 0, round: m.oracle.roundResult?.id ?? 0 });
+  if (!judged.has(m)) judged.set(m, { shot: m.betOracle.result?.id ?? 0, round: m.betOracle.roundResult?.id ?? 0 });
   const seen = judged.get(m)!;
   const crowd = (verdict: 'wrong' | 'right' | undefined, at: { x: number; y: number }, lift: number) => {
-    if (!verdict || m.viewer === null) return;
+    if (!verdict || m.bettor === null) return;
     effects.callout(t(verdict === 'wrong' ? 'oracle.crowd.wrong' : 'oracle.crowd.right'), at.x, at.y - lift, COLORS.sodium, true);
   };
 
-  const r = m.oracle.result;
+  const r = m.betOracle.result;
   if (r && m.phase !== 'killcam' && r.id > seen.shot) {
     seen.shot = r.id;
-    const tip = m.ghost ? r.tips.find((x) => x.player === m.viewer) : undefined;
+    const tip = m.ghost ? r.tips.find((x) => x.player === m.bettor) : undefined;
     const at = r.kind === 'shot' ? m.world.ships[r.shooter] : tip && tip.pick >= 0 ? m.world.ships[tip.pick] : { x: FIELD.width / 2, y: FIELD.height / 2 };
     if (tip) {
       effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), at.x, at.y - 34, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right);
@@ -601,10 +600,10 @@ function announceOracle(m: Match): void {
     crowd(r.crowd, at, tip ? 72 : 40);
   }
 
-  const round = m.oracle.roundResult;
+  const round = m.betOracle.roundResult;
   if (round && m.phase === 'roundOver' && round.id > seen.round) {
     seen.round = round.id;
-    const tip = m.ghost ? round.tips.find((x) => x.player === m.viewer) : undefined;
+    const tip = m.ghost ? round.tips.find((x) => x.player === m.bettor) : undefined;
     const winner = round.winners.length ? m.world.ships[round.winners[0]] : { x: FIELD.width / 2, y: FIELD.height / 2 };
     if (tip) {
       // Below the ship: the shot's own verdict may be floating above it.
@@ -670,7 +669,9 @@ function frame(now: number): void {
     }
   }
   net?.update(dt);
-  stands.update(screen === 'play' && net ? m : null, net?.isSpectator ? (net.you.spectatorId ?? null) : null);
+  const crowd = screen === 'play' && net && !net.isSpectator ? m.crowd.seats.filter((seat) => seat.present).length : 0;
+  standsBadge.hidden = crowd === 0;
+  if (crowd) standsBadge.textContent = `👁 ${t('stands.badge', { n: crowd })}`;
   renderer.draw(
     m,
     effects,

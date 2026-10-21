@@ -193,19 +193,16 @@ export const ORACLE = {
 } as const;
 
 /**
- * The stands: people who watch an online room without a seat, and bet on who wins each round. Their points are
- * their own and never touch a player's score. The most a room takes is shared with the relay (`protocol-contract.json`).
+ * The stands: people who watch an online room without a seat. They play the oracle's tipping game like the shot-down
+ * players do — but with a bankroll of their own, which never touches a player's score. The most a room takes is shared
+ * with the relay (`protocol-contract.json`).
  */
 export const GALLERY = {
   MAX_SPECTATORS: 20,
   /** What everybody in the stands starts a match with. */
   BANKROLL: 500,
-  /** The stakes on offer; one that is more than the bankroll is left out. */
-  STAKES: [25, 50, 100, 250],
   /** Somebody who is nearly broke starts the next round with at least this much. */
-  RELIEF: 25,
-  /** Seconds the betting stays open before the first shot of a round may fly, once somebody is watching. */
-  MIN_OPEN: 6,
+  RELIEF: 100,
 } as const;
 
 /** Daily challenge: a fixed run of sectors against stationary targets, the same for everyone on a given day. */

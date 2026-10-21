@@ -6,7 +6,7 @@ import { Volley, type VolleyShot } from '../volley';
 import { Match, type RoundTitle } from './match';
 import type { Pickup } from '../powerups';
 import type { PowerUpState } from './powerup-field';
-import type { GallerySnapshot } from './gallery';
+import type { CrowdSeat } from './crowd';
 import type { OracleSnapshot } from './oracle';
 
 export interface ClassicSnapshot {
@@ -43,7 +43,8 @@ export interface ClassicSnapshot {
   /** Phase time when a finished volley began waiting for its post-flight delay. */
   flightDoneAt?: number | null;
   oracle: OracleSnapshot;
-  gallery?: GallerySnapshot;
+  stands?: OracleSnapshot;
+  crowd?: CrowdSeat[];
 }
 
 /**
@@ -86,7 +87,8 @@ export class ClassicMatch extends Match {
       planClock: this.planClock,
       flightDoneAt: this.flightDoneAt,
       oracle: this.oracle.snapshot(),
-      gallery: this.gallery.snapshot(),
+      stands: this.stands.snapshot(),
+      crowd: this.crowd.snapshot(),
     };
   }
 
@@ -122,7 +124,8 @@ export class ClassicMatch extends Match {
     this.planClock = snapshot.planClock;
     // Hosts from before the oracle send none.
     if (snapshot.oracle) this.oracle.restore(snapshot.oracle);
-    this.gallery.restore(snapshot.gallery);
+    if (snapshot.stands) this.stands.restore(snapshot.stands);
+    this.crowd.restore(snapshot.crowd);
     this.volley = null;
     if (snapshot.volley) {
       const volley = new Volley(snapshot.world, snapshot.volley.aims, this.rules, true);
@@ -409,7 +412,10 @@ export class ClassicMatch extends Match {
     this.current = id;
     this.setPhase('aiming');
     // A CPU shoots within a second or two — too quick to tip on.
-    if (this.players[id].cpu) this.oracle.close();
+    if (this.players[id].cpu) {
+      this.oracle.close();
+      this.stands.close();
+    }
     else this.openOracle('shot', id);
     this.emit({ type: 'turn', player: id });
   }

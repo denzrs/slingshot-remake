@@ -2751,21 +2751,7 @@ kbd {
   }
 }
 
-/* The stands: a card at the bottom for whoever watches, drawn like the oracle's card the shot-down players get. */
-#stands {
-  position: fixed;
-  left: 50%;
-  bottom: max(16px, env(safe-area-inset-bottom));
-  z-index: 6;
-  width: min(760px, calc(100vw - 32px));
-  transform: translateX(-50%);
-  padding: 6px 16px 6px 18px;
-  background: rgb(11 26 51 / 0.96);
-  box-shadow: inset 3px 0 0 var(--sodium);
-  font: 13px/1.3 var(--font-body);
-}
-
-#stands[hidden],
+/* How many people are watching, for everybody who is not in the stands. */
 #stands-badge[hidden] {
   display: none;
 }
@@ -2782,109 +2768,6 @@ kbd {
   font: 12px/1.3 var(--font-mono);
   letter-spacing: 0.06em;
   pointer-events: none;
-}
-
-.stands__row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  min-height: 38px;
-}
-
-.stands__row + .stands__row {
-  border-top: 1px solid rgb(232 228 216 / 0.12);
-}
-
-.stands__label {
-  min-width: 64px;
-  margin-right: 8px;
-  color: rgb(255 210 122 / 0.75);
-  font-weight: 700;
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.stands__row:first-child .stands__label {
-  color: var(--sodium);
-}
-
-.stands__q {
-  font-size: 17px;
-}
-
-.stands__score {
-  margin-left: auto;
-  font: 700 14px var(--font-mono);
-}
-
-.stands__score small {
-  color: var(--bone-dim);
-  font-weight: 400;
-}
-
-.stands__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid rgb(232 228 216 / 0.4);
-  border-radius: 4px;
-  background: rgb(232 228 216 / 0.06);
-  color: var(--tone, var(--bone));
-  font: 700 13px var(--font-body);
-  cursor: pointer;
-}
-
-.stands__chip:disabled {
-  cursor: default;
-}
-
-.stands__chip.is-on {
-  border-color: var(--sodium);
-  background: var(--sodium);
-  color: var(--plate);
-}
-
-.stands__chip--stake {
-  color: var(--bone);
-  font-family: var(--font-mono);
-}
-
-.stands__odds {
-  color: var(--sodium);
-  font: 700 12px var(--font-mono);
-}
-
-.stands__share {
-  color: var(--bone-dim);
-  font: 400 11px var(--font-mono);
-}
-
-.stands__chip.is-on .stands__odds,
-.stands__chip.is-on .stands__share {
-  color: var(--plate);
-}
-
-.stands__pot {
-  margin-left: auto;
-  color: var(--sodium);
-  font-weight: 700;
-}
-
-.stands__note {
-  color: var(--bone-dim);
-  font-size: 13px;
-}
-
-.stands__verdict.is-win {
-  color: var(--sodium);
-}
-
-.stands__verdict.is-loss {
-  color: var(--danger);
 }
 
 .lobby__tag--live {
