@@ -1,11 +1,12 @@
-import { FIELD, HORIZON } from './config';
+import { FIELD, HORIZON, SOLAR } from './config';
 import type { BlackHole, Planet, PlanetStyle, Ship, World } from './physics';
-import { createRng, intRange, pick, range, type Rng } from './rng';
+import { createRng, intRange, pick, range, shuffle, type Rng } from './rng';
 
 const TINTS: Record<PlanetStyle, readonly string[]> = {
   rocky: ['#c9a77c', '#b8664a', '#a39a8a', '#c78f6d'],
   gas: ['#d8b98a', '#9c8bb5', '#c9a0a0', '#b7c28f'],
   ice: ['#9fc3d6', '#bcd3dc', '#8fb3b0'],
+  star: ['#f2c46d'],
 };
 
 const SHIP_CLEARANCE = 110;
@@ -21,6 +22,8 @@ interface WorldOptions {
   blackHole: boolean;
   /** Team per player (team mode), so teammates can start side by side. */
   teams?: readonly number[] | null;
+  /** Solar System: a sun in the middle, planets and ships on orbits round it. */
+  solar?: boolean;
 }
 
 /**
@@ -30,6 +33,7 @@ interface WorldOptions {
  */
 export function generateWorld(seed: number, opts: WorldOptions): World {
   const rng = createRng(seed);
+  if (opts.solar) return generateSolarWorld(rng, opts);
   const { width, height } = FIELD;
   const duel = opts.players === 2 && !opts.blackHole;
   const ships = duel ? duelShips(rng) : ringShips(rng, opts.players, opts.teams ?? null);
@@ -107,4 +111,87 @@ function ringShips(rng: Rng, n: number, teams: readonly number[] | null): Ship[]
     ships[player] = { x: width / 2 + Math.cos(a) * rx, y: cy + Math.sin(a) * ry, alive: true };
   });
   return ships;
+}
+
+/** The sun's place, and the centre everything in a Solar System turns around. */
+export const solarCenter = (): { x: number; y: number } => ({ x: FIELD.width / 2, y: FIELD.height / 2 + SOLAR.CENTER_Y_SHIFT });
+
+/** How far a body on an orbit of radius `r` turns in one full step: the inner orbits are quicker. */
+export const orbitTurn = (r: number): number => SOLAR.TURN * (SOLAR.REF_ORBIT / Math.max(r, 1)) ** SOLAR.FALLOFF;
+
+/** One thing that takes an orbit of its own: a planet, or a band that some of the ships share. */
+type Body = { kind: 'planet'; radius: number } | { kind: 'ships' };
+
+/**
+ * A sun in the middle, and every planet on an orbit of its own round it. The ships ride orbits too — about two to
+ * an orbit — so that after every step the whole system turns and the gravity field with it. The orbits are spaced so
+ * that no two bodies ever come near, however far each has turned.
+ */
+function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
+  const { width, height } = FIELD;
+  const centre = solarCenter();
+  const bands = Math.min(3, Math.ceil(opts.players / 2));
+
+  const bodies: Body[] = [];
+  const wanted = intRange(rng, Math.min(opts.minPlanets ?? 2, opts.maxPlanets), opts.maxPlanets);
+  for (let i = 0; i < wanted; i++) bodies.push({ kind: 'planet', radius: SOLAR.MIN_PLANET + (SOLAR.MAX_PLANET - SOLAR.MIN_PLANET) * Math.pow(rng(), 1.4) });
+  const half = (b: Body): number => (b.kind === 'planet' ? b.radius : SOLAR.SHIP_BAND);
+  const span = (list: readonly Body[]): number => list.reduce((sum, b) => sum + 2 * half(b) + SOLAR.ORBIT_GAP, -SOLAR.ORBIT_GAP);
+  const room = SOLAR.OUTER_ORBIT - SOLAR.INNER_ORBIT;
+  for (let i = 0; i < bands; i++) bodies.push({ kind: 'ships' });
+  // Too many for the room: the planets give way, the ships' orbits stay.
+  while (span(bodies) > room) {
+    const last = bodies.map((b) => b.kind).lastIndexOf('planet');
+    if (last < 0) break;
+    bodies.splice(last, 1);
+  }
+  const order = shuffle(rng, bodies);
+  // What is left over is shared out between the orbits.
+  const slack = Math.max(0, room - span(order)) / (order.length + 1);
+
+  const planets: Planet[] = [{
+    x: centre.x,
+    y: centre.y,
+    radius: SOLAR.SUN_RADIUS,
+    mass: SOLAR.SUN_MASS,
+    seed: Math.floor(rng() * 2 ** 31),
+    style: 'star',
+    tint: '#f2c46d',
+    sun: true,
+  }];
+  const bandRadii: number[] = [];
+  let cursor = SOLAR.INNER_ORBIT + slack * rng();
+  for (const body of order) {
+    const r = cursor + half(body);
+    cursor += 2 * half(body) + SOLAR.ORBIT_GAP + slack;
+    if (body.kind === 'ships') {
+      bandRadii.push(r);
+      continue;
+    }
+    const a = rng() * Math.PI * 2;
+    const style: PlanetStyle = body.radius > 24 ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
+    planets.push({
+      x: centre.x + Math.cos(a) * r,
+      y: centre.y + Math.sin(a) * r,
+      radius: body.radius,
+      mass: range(rng, 0.75, 1.3) * body.radius ** 3,
+      seed: Math.floor(rng() * 2 ** 31),
+      style,
+      tint: pick(rng, TINTS[style]),
+    });
+  }
+
+  // Ships take their places one after another round the sun, the bands in turn; teammates sit next to each other.
+  const n = opts.players;
+  const seats = Array.from({ length: n }, (_, i) => i);
+  if (opts.teams) seats.sort((a, b) => opts.teams![a] - opts.teams![b] || a - b);
+  const offset = rng() * Math.PI * 2;
+  const ships: Ship[] = new Array(n);
+  seats.forEach((player, slot) => {
+    const a = offset + (slot * Math.PI * 2) / n;
+    const r = bandRadii[slot % bandRadii.length];
+    ships[player] = { x: centre.x + Math.cos(a) * r, y: centre.y + Math.sin(a) * r, alive: true };
+  });
+
+  return { width, height, planets, ships, holes: [], nebulae: [], wormholes: [], defenses: [], version: 0 };
 }
