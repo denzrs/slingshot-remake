@@ -17,7 +17,7 @@ describe('solar system world', () => {
       expect(dist(sun, centre)).toBe(0);
       expect(world.ships).toHaveLength(players);
       // Even a full table leaves room for planets.
-      expect(world.planets.length).toBeGreaterThanOrEqual(3);
+      expect(world.planets.length).toBeGreaterThanOrEqual(5);
       // Turning the system any amount never brings two bodies closer than they are now on their orbits: compare orbit radii.
       const bodies = [
         ...world.planets.slice(1).map((p) => ({ r: dist(p, centre), reach: p.radius })),
