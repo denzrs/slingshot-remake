@@ -35,6 +35,8 @@ export class Renderer {
   view!: View;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly hud: Hud;
+  /** The empty plate is on the canvas already; it stays until the canvas is resized or a match is drawn over it. */
+  private emptyDrawn = false;
   private backdrop: { canvas: HTMLCanvasElement; walls: boolean } | null = null;
   /** Per world (live or killcam replay), rebuilt when the world's version or the pixel scale changes. */
   private contours = new WeakMap<World, { version: number; ps: number; canvas: HTMLCanvasElement }>();
@@ -70,6 +72,7 @@ export class Renderer {
     this.canvas.style.width = `${cssWidth}px`;
     this.canvas.style.height = `${cssHeight}px`;
     this.backdrop = null;
+    this.emptyDrawn = false;
     this.contours = new WeakMap();
   }
 
@@ -86,12 +89,27 @@ export class Renderer {
     return { x: (clientX - rect.left - v.offsetX) / v.scale, y: (clientY - rect.top - v.offsetY) / v.scale };
   }
 
-  draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
-    // Catches window resizes, zoom and moving to a screen with another pixel ratio.
+  /** Catches window resizes, zoom and moving to a screen with another pixel ratio. */
+  private resizeIfNeeded(): void {
     const v = this.view;
     if (v.cssWidth !== window.innerWidth || v.cssHeight !== window.innerHeight || v.dpr !== Math.min(window.devicePixelRatio || 1, 2)) {
       this.resize();
     }
+  }
+
+  /** Just the empty plate, for menus that show no game behind them. */
+  drawEmpty(): void {
+    this.resizeIfNeeded();
+    if (this.emptyDrawn) return;
+    this.emptyDrawn = true;
+    if (!this.backdrop || this.backdrop.walls) this.backdrop = { canvas: renderBackdrop(this.view, false), walls: false };
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.drawImage(this.backdrop.canvas, 0, 0);
+  }
+
+  draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
+    this.resizeIfNeeded();
+    this.emptyDrawn = false;
     this.time += dt;
     const { ctx, view } = this;
     const { dpr, scale, offsetX, offsetY } = view;
@@ -546,10 +564,33 @@ export class Renderer {
         ctx.stroke();
       } else if (kind === 'blackhole') {
         // The would-be horizon: a dark core inside a bright accretion ring.
+        // Too close to another ship, the click would do nothing: the ring turns red, those ships show their keep-out circle, and it says so.
         const r = POWER_UP.BLACKHOLE_RADIUS;
+        const blocked = !!scene.placement.blocked;
+        if (blocked) {
+          ctx.strokeStyle = '#ff5c5c';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 5]);
+          match.world.ships.forEach((s, i) => {
+            if (i === owner || !s.alive) return;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, POWER_UP.BLACKHOLE_PLAYER_GAP, 0, Math.PI * 2);
+            ctx.stroke();
+          });
+          ctx.setLineDash([]);
+          ctx.lineWidth = 2;
+        }
         ctx.beginPath();
         ctx.arc(target.x, target.y, r + 4 + 2.5 * pulse, 0, Math.PI * 2);
         ctx.stroke();
+        if (blocked) {
+          ctx.globalAlpha = 1;
+          ctx.font = `700 11px ${FONTS.mono}`;
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ff5c5c';
+          ctx.fillText(t('powerup.blackholeClose').toUpperCase(), target.x, target.y + (target.y > 60 ? -r - 14 : r + 22));
+          ctx.globalAlpha = 0.85 + 0.15 * pulse;
+        }
         ctx.fillStyle = COLORS.plate;
         ctx.beginPath();
         ctx.arc(target.x, target.y, r, 0, Math.PI * 2);

@@ -932,6 +932,43 @@ describe('the lobby look online', () => {
 });
 
 describe('the player symbols online', () => {
+  it('lets a player rename in the waiting room and refuses a profane name', async () => {
+    const host = await connectSession();
+    const guest = await connectSession();
+    host.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules, maxPlayers: 2 });
+    await waitForSession(host, () => host.room !== null);
+    guest.joinRoom(host.room!.id, 'Ben');
+    await waitForSession(host, () => host.room?.players.length === 2);
+
+    guest.setName('Benedikt');
+    await waitForSession(host, () => host.room!.players[1].name === 'Benedikt');
+
+    guest.setName('fuck');
+    await waitForSession(guest, () => guest.notice === 'That name is not allowed');
+    expect(guest.nameNotice).toBe('That name is not allowed');
+    expect(host.room!.players[1].name).toBe('Benedikt');
+
+    // Another refusal is not about the name, and a new attempt clears the old name error.
+    // The relay lets a connection rename once a second.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    guest.setName('Benno');
+    expect(guest.nameNotice).toBeNull();
+    guest.setReady(true);
+    await waitForSession(host, () => host.room!.players[1].name === 'Benno' && host.room!.players[1].ready);
+    guest.setName('Benedikt');
+    await waitForSession(guest, () => guest.nameNotice === 'Wait a moment before changing your name again');
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    guest.setName('Benedikt');
+    await waitForSession(host, () => host.room!.players[1].name === 'Benedikt');
+    expect(host.room!.players[1].ready).toBe(false);
+
+    // Nobody else in the room can have the name.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    guest.setName('anna');
+    await waitForSession(guest, () => guest.nameNotice === 'That name is taken in this room');
+    expect(host.room!.players[1].name).toBe('Benedikt');
+  }, 60_000);
+
   it('shows each player the symbol they picked, in the lobby and in the game on both screens', async () => {
     const hostMatches: NetMatch[] = [];
     const guestMatches: NetMatch[] = [];
@@ -1060,10 +1097,13 @@ describe('CPU seats online', () => {
       }
     }, 30_000);
 
-    it('lets a guest end the announcement with the fire key, for everybody', async () => {
+    it('leaves ending the announcement to the host, for everybody', async () => {
       const { host, guest } = await startRoom('horizon', ['Anna', 'Ben'], { ...rules, mayhem: 3 });
       expect(host.match().canAim(1)).toBe(false);
       guest.session.input({ kind: 'fire' });
+      for (let i = 0; i < 12; i++) await frame(host, guest);
+      expect(host.match().revealing).toBe(true);
+      host.session.input({ kind: 'fire' });
       for (let i = 0; i < 12; i++) await frame(host, guest);
       expect(host.match().revealing).toBe(false);
       expect(guest.match().revealing).toBe(false);

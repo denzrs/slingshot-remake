@@ -248,6 +248,8 @@ export abstract class Match {
   mayhem: MayhemRound | null = null;
   /** Mayhem: the match clock when the announcement of the round is over and the ships may aim. */
   revealEnd = 0;
+  /** Mayhem: once the twists have landed, the announcement stays up until somebody dismisses it, so they can be read. */
+  revealHeld = false;
   /** Mayhem: how every round of the match so far was played, for the recap. */
   mayhemHistory: MayhemRound[] = [];
   /** Mayhem: the rules the room was set up with. `settings` is these with the round's twists laid over them. */
@@ -847,17 +849,30 @@ export abstract class Match {
     this.mayhem = this.deck.draw({ base: this.baseSettings, mode: this.mode as 'classic' | 'horizon', round: this.round, rounds: this.totalRounds });
     this.settings = applyTwists(this.baseSettings, this.mayhem);
     this.revealEnd = this.clock + MAYHEM.REVEAL_TIME;
+    // A match nobody is flying in (CPUs only) has no one to wait for.
+    this.revealHeld = this.players.some((p) => !p.cpu);
+  }
+
+  /** Mayhem: the announcement is waiting for somebody to dismiss it (and gives up after `HELD_MAX`). */
+  get held(): boolean {
+    return this.revealHeld && this.clock < this.revealEnd + MAYHEM.HELD_MAX;
+  }
+
+  /** Mayhem: seconds since the round was announced. */
+  get revealAge(): number {
+    return this.clock - (this.revealEnd - MAYHEM.REVEAL_TIME);
   }
 
   /** Mayhem: the round has been announced, but the ships are still held back. */
   get revealing(): boolean {
-    return this.mayhem !== null && this.clock < this.revealEnd;
+    return this.mayhem !== null && (this.clock < this.revealEnd || this.held);
   }
 
   /** The fire key during the announcement ends it instead of firing. True when it did. */
   protected skipReveal(): boolean {
     if (!this.revealing) return false;
     this.revealEnd = this.clock;
+    this.revealHeld = false;
     return true;
   }
 
@@ -1259,7 +1274,12 @@ export abstract class Match {
     } else {
       // A little ahead of its own ship, on the way in: near enough for the enemy's shot to meet it.
       const d = Math.hypot(dx, dy) || 1;
-      const along = Math.min(0.45 * d, reach);
+      let along = Math.min(0.45 * d, reach);
+      if (kind === 'blackhole') {
+        // Short of the zone around the enemy, which a hole may not be laid in; too close for that, it keeps the hole.
+        along = Math.min(along, d - POWER_UP.BLACKHOLE_PLAYER_GAP - 5);
+        if (along < 60) return null;
+      }
       spot = { x: from.x + (dx / d) * along, y: from.y + (dy / d) * along };
     }
     const distance = Math.hypot(spot.x - from.x, spot.y - from.y);

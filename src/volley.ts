@@ -172,7 +172,7 @@ export class Volley {
   private release(index: number, lost: { defense: number; x: number; y: number; vx: number; vy: number; trail: number[] }): void {
     const d = this.world.defenses[lost.defense];
     if (!d) return;
-    const aim: VolleyAim = { player: d.owner, angle: 0, power: 0, spare: [...d.protects], stray: index };
+    const aim: VolleyAim = { player: d.owner, angle: 0, power: 0, spare: [...d.protects, ...(d.spares ?? [])], stray: index };
     const shot = new Shot(this.world, d.owner, aim.angle, aim.power, this.rules, this.trackStyle, aim.spare);
     shot.x = lost.x;
     shot.y = lost.y;

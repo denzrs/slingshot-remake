@@ -475,6 +475,7 @@ function settingsScreen(app: App): Screen {
     items: [
       settingToggle(app, t('settings.contours'), 'contours'),
       settingToggle(app, t('settings.particles'), 'particles'),
+      settingToggle(app, t('settings.menuBackground'), 'menuBackground'),
       settingToggle(app, t('settings.sound'), 'sound'),
       {
         kind: 'toggle',

@@ -8,7 +8,7 @@ import './style.css';
 import { Sound } from './audio';
 import { dailyChallenge, dateKey, isDateKey } from './challenge';
 import { ClipRecorder } from './clip';
-import { AIM, COLORS, FIELD, FONTS, PHYSICS } from './config';
+import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS } from './config';
 import { recordRun } from './dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
@@ -366,7 +366,9 @@ function primaryAction(): void {
   if (!match) return;
   if (online() && match.phase === 'gameOver') app.rematch();
   // The announcement of a Mayhem round: the fire key skips it.
-  else if (canAim() || match.revealing) dispatchInput({ kind: 'fire' });
+  else if (match.revealing) {
+    if (match.canAdvance) dispatchInput({ kind: 'fire' });
+  } else if (canAim()) dispatchInput({ kind: 'fire' });
   // While a shot flies, the fire key only matters for a splitter.
   else if (splitterInAir(match)) dispatchInput({ kind: 'fire' });
   else if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
@@ -530,6 +532,8 @@ canvas.addEventListener('pointerdown', (e) => {
     oraclePointer = true;
     return placeTip(tip);
   }
+  // A tap dismisses the announcement only once its twists have landed, so a double tap at the round change can't skip it unread.
+  if (match.revealing) return match.revealAge >= MAYHEM.LANDED ? primaryAction() : undefined;
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
   if (!canAim()) return;
   dragging = true;
@@ -563,7 +567,9 @@ function syncButtons(): void {
   const m = match;
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
-    if (canAim()) touchLabel = m.placing ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
+    // The announcement of a Mayhem round waits for a tap (online only the host's).
+    if (m.revealing) touchLabel = m.canAdvance ? t('common.next') : null;
+    else if (canAim()) touchLabel = m.placing ? t('powerup.jump') : m.salvo ? t('common.ready') : t('common.fire');
     // A splitter in the air: the fire button splits the shot.
     else if (splitterInAir(m)) touchLabel = t('powerup.splitNow');
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
@@ -670,7 +676,8 @@ function frame(now: number): void {
   const net = online();
   // Online the others keep playing, so a menu on top doesn't stop the world.
   const paused = screen === 'play' && menu.isOpen && !net;
-  if (!paused) {
+  const empty = screen !== 'play' && !settings.menuBackground;
+  if (!paused && !empty) {
     if (!net || net.isHost) m.update(dt);
     effects.update(dt, m.world);
     // A shot flying through a nebula sheds wisps of gas, so its slowing down shows.
@@ -691,12 +698,15 @@ function frame(now: number): void {
       standsBadge.replaceChildren(eyeIcon(), text);
     }
   }
-  renderer.draw(
-    m,
-    effects,
-    { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
-    paused ? 0 : dt,
-  );
+  if (empty) renderer.drawEmpty();
+  else {
+    renderer.draw(
+      m,
+      effects,
+      { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
+      paused ? 0 : dt,
+    );
+  }
   if (screen === 'play' && m === match) announceOracle(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();

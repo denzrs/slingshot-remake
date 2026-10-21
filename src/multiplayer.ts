@@ -82,12 +82,18 @@ export class MultiplayerSession {
   you: { playerId: number; host: boolean; spectator?: boolean; spectatorId?: number } = { playerId: 0, host: false };
   /** The last thing worth telling the player (server errors, "host left", …). */
   notice: string | null = null;
+  /** The notice, when it is the relay refusing the name: it belongs under the name field, not in the general message. */
+  private nameError: string | null = null;
   match: NetMatch | null = null;
   /** What has been said in the room you are in. */
   chat: ChatLine[] = [];
   /** Lines ever added to the chat: unlike `chat.length` it keeps counting once the cap is reached. */
   chatTotal = 0;
   private chatRoom: string | null = null;
+
+  get nameNotice(): string | null {
+    return this.notice !== null && this.notice === this.nameError ? this.notice : null;
+  }
 
   private readonly listeners = new Set<() => void>();
   private readonly pendingEvents: GameEvent[] = [];
@@ -144,6 +150,7 @@ export class MultiplayerSession {
 
   createRoom(options: CreateRoomOptions): void {
     const { look = {}, ...room } = options;
+    this.nameError = null;
     this.send({ type: 'create_room', ...room, ...look, password: options.password || undefined, roomName: options.roomName?.trim() || undefined });
   }
 
@@ -153,12 +160,19 @@ export class MultiplayerSession {
   }
 
   joinRoom(roomId: string, name: string, password?: string, avatar?: Avatar, spectate = false): void {
+    this.nameError = null;
     this.send({ type: 'join_room', roomId, name, password: password || undefined, avatar, ...(spectate ? { spectate } : {}) });
   }
 
   /** Your symbol in the game, while the room waits. Nobody has to confirm again. */
   setAvatar(avatar: Avatar): void {
     this.send({ type: 'set_avatar', avatar });
+  }
+
+  /** Your name in the room, while it waits. The relay answers a refused one with an error notice. */
+  setName(name: string): void {
+    this.nameError = null;
+    this.send({ type: 'set_name', name });
   }
 
   setReady(ready: boolean): void {
@@ -345,6 +359,7 @@ export class MultiplayerSession {
         // In a game nobody reads the notice, so what the relay says ("you are writing too fast") is said in the chat.
         if (this.match) this.chat = [...this.chat, { id: -1, name: '', spectator: false, text: message.message, system: true }].slice(-CHAT_KEEP);
         if (this.match) this.chatTotal++;
+        this.nameError = message.field === 'name' ? message.message : null;
         break;
       case 'closed':
         this.connected = false;
@@ -397,7 +412,10 @@ export class MultiplayerSession {
   private applyInput(match: NetMatch, id: number, input: ClientInput): void {
     if (input.kind === 'adjust') match.adjustPlayer(id, input.dAngle, input.dPower);
     else if (input.kind === 'aim') match.setPlayerAim(id, input.angle, input.power);
-    else if (input.kind === 'fire') match.commitPlayer(id);
+    // The announcement of a Mayhem round is the host's to dismiss; a guest's fire key does nothing until the ships are free.
+    else if (input.kind === 'fire') {
+      if (!match.revealing || id === this.you.playerId) match.commitPlayer(id);
+    }
     else if (input.kind === 'power') match.usePowerUp(id);
     else if (input.kind === 'cancel') match.cancelPlacement(id);
     else if (input.kind === 'bet') match.placeBet(id, input.pick, !!input.round, input.stake ?? 0);
