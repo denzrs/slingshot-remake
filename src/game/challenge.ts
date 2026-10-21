@@ -166,8 +166,8 @@ export class ChallengeMatch extends Match {
     this.attempt++;
     this.shotsLeft--;
     this.volleyKill = null;
-    // The sector's ammo: plasma bends little and ignores clouds, armor piercing flies through every ship it meets.
-    const aim: VolleyAim = { player: 0, angle: p.angle, power: p.power, ...(this.spec.ammo === 'piercing' ? { pierce: true } : {}), ...(this.spec.ammo === 'plasma' ? { plasma: true } : {}) };
+    // The sector's ammo: plasma bends little and ignores clouds.
+    const aim: VolleyAim = { player: 0, angle: p.angle, power: p.power, ...(this.spec.ammo === 'plasma' ? { plasma: true } : {}) };
     this.launch([aim], true);
   }
 
@@ -180,12 +180,7 @@ export class ChallengeMatch extends Match {
   }
 
   protected recordKill(record: KillRecord): void {
-    // An armor-piercing shot can take several targets down: the log pays them as one shot. They share the shot's tricks, so the longer list is the combo, not the two added.
-    const before = this.volleyKill;
-    this.volleyKill =
-      before && !before.self && !record.self
-        ? { ...record, points: before.points + record.points, combo: record.combo.length > before.combo.length ? record.combo : before.combo, multiplier: Math.max(before.multiplier, record.multiplier) }
-        : record;
+    this.volleyKill = record;
     super.recordKill(record);
   }
 
