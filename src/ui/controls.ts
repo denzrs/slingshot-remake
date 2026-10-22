@@ -2,6 +2,7 @@ import type { Sound } from '../audio';
 import { t } from '../i18n';
 import { h } from './dom';
 import type { MenuItem } from './menu';
+import { pilotArt } from './mode-icons';
 
 /** One row that can be changed: what the menu (or the lobby) needs to keep it in sync. */
 export interface Control {
@@ -488,144 +489,68 @@ function choiceControl(item: Item<'choice'>, env: Env): Control {
 
 // ————————————————————————————— Seat —————————————————————————————
 
-/**
- * One ship of the line-up: who flies it, which team it is in, and a way to take it out. The row is
- * one stop for ↑/↓; ←/→ move a cursor over its buttons and Enter presses the one it is on.
- */
+/** A ship card: choose human or CPU first; CPU strength only appears when it applies. */
 function seatControl(item: Item<'seat'>, env: Env): Control {
-  /** What each button does, in the order the cursor visits them. */
-  const buttons: { el: HTMLElement; skip(): boolean; press(): void; draw(): void }[] = [];
-
-  const pill = (label: string, tone?: string): HTMLElement => {
-    const p = h('span.pill', null, label);
-    if (tone) {
-      p.classList.add('pill--tone');
-      p.style.setProperty('--tone', tone);
-    }
-    return p;
-  };
-
-  const fliers = h('span.seat__group', { role: 'radiogroup', 'aria-label': item.label });
-  item.fliers.forEach((flier, i) => {
-    // The CPU levels sit behind a small caption, apart from the human.
-    if (i === 1) fliers.append(h('span.seat__caption', null, item.cpuCaption));
-    const el = pill(flier.label);
-    el.setAttribute('role', 'radio');
-    fliers.append(el);
-    buttons.push({
-      el,
-      skip: () => false,
-      press: () => item.set(flier.value),
-      draw: () => {
-        const on = item.get() === flier.value;
-        el.classList.toggle('is-on', on);
-        el.setAttribute('aria-checked', String(on));
-      },
-    });
-  });
-
-  const cells: HTMLElement[] = [fliers];
+  let lastCpu = item.get() === 'human' ? item.fliers[2]?.value ?? item.fliers[1].value : item.get();
+  const human = h('button.pilot__type', { type: 'button' }, item.fliers[0].label) as HTMLButtonElement;
+  const cpu = h('button.pilot__type', { type: 'button' }, item.cpuCaption) as HTMLButtonElement;
+  const types = h('div.pilot__types', { role: 'group', 'aria-label': item.label }, human, cpu);
+  const level = h('select.pilot__select', { 'aria-label': `${item.label} · ${t('flow.cpuLevel')}` }) as HTMLSelectElement;
+  for (const flier of item.fliers.slice(1)) {
+    const option = h('option', { value: String(flier.value) }, flier.label);
+    level.append(option);
+  }
+  const difficulty = h('label.pilot__field', null, h('span', null, t('flow.cpuLevel')), level);
+  const el = h('div.item.item--seat.pilot', { role: 'group', 'aria-label': item.label },
+    h('div.pilot__picture', null, pilotArt()),
+    h('span.pilot__name', null, item.label), types, difficulty,
+  );
+  let teamSelect: HTMLSelectElement | undefined;
   if (item.teams) {
-    const { teams } = item;
-    const group = h('span.seat__group.seat__group--teams', { role: 'radiogroup' }, h('span.seat__caption', null, teams.caption));
-    teams.options.forEach((team, i) => {
-      const el = pill(team.label, teams.tones[i]);
-      el.setAttribute('role', 'radio');
-      group.append(el);
-      buttons.push({
-        el,
-        skip: () => false,
-        press: () => teams.set(team.value),
-        draw: () => {
-          const on = teams.get() === team.value;
-          el.classList.toggle('is-on', on);
-          el.setAttribute('aria-checked', String(on));
-        },
-      });
+    teamSelect = h('select.pilot__select', { 'aria-label': `${item.label} · ${item.teams.caption}` }) as HTMLSelectElement;
+    for (const team of item.teams.options) teamSelect.append(h('option', { value: String(team.value) }, team.label));
+    el.append(h('label.pilot__field', null, h('span', null, item.teams.caption), teamSelect));
+    teamSelect.addEventListener('change', () => {
+      item.teams!.set(item.teams!.options[teamSelect!.selectedIndex].value);
+      env.changed();
     });
-    cells.push(group);
   }
+  let removeButton: HTMLButtonElement | undefined;
   if (item.remove) {
-    const { remove } = item;
-    const el = h('span.pill.pill--remove', { role: 'button', 'aria-label': remove.label, title: remove.label }, '✕');
-    buttons.push({
-      el,
-      skip: () => remove.disabled(),
-      press: () => remove.run(),
-      draw: () => {
-        el.classList.toggle('is-disabled', remove.disabled());
-        el.setAttribute('aria-disabled', String(remove.disabled()));
-      },
-    });
-    cells.push(h('span.seat__remove', null, el));
+    removeButton = h('button.pilot__remove', { type: 'button', 'aria-label': item.remove.label, title: item.remove.label }, '×') as HTMLButtonElement;
+    removeButton.addEventListener('click', () => { if (!item.remove!.disabled()) item.remove!.run(); });
+    el.append(removeButton);
   }
-
-  const name = h('span.item__name.seat__name', null, h('span.item__label', null, item.label));
-  const swatch = h('span.item__swatch', { 'aria-hidden': 'true' });
-  swatch.style.background = item.swatch;
-  name.prepend(swatch);
-  const el = h('div.item.item--seat', { role: 'group', 'aria-label': item.label }, name, h('span.seat__cells', null, ...cells));
   focusable(el, env);
-
-  /** The button the cursor is on. */
-  let cursor = Math.max(0, item.fliers.findIndex((f) => f.value === item.get()));
-  const draw = (): void => {
-    syncHidden(el, item.hidden?.() ?? false, true);
-    if (item.teams) {
-      // In team play the ship flies in its team's colour: the row, its dot and its team bar all say so.
-      const tone = item.teams.tones[item.teams.options.findIndex((o) => o.value === item.teams!.get())];
-      el.classList.add('item--teamed');
-      el.style.setProperty('--team', tone);
-      swatch.style.background = tone;
-    }
-    buttons.forEach((b, i) => {
-      b.draw();
-      b.el.classList.toggle('is-cursor', i === cursor);
-    });
+  const draw = () => {
+    const isCpu = item.get() !== item.fliers[0].value;
+    human.setAttribute('aria-pressed', String(!isCpu));
+    cpu.setAttribute('aria-pressed', String(isCpu));
+    difficulty.hidden = !isCpu;
+    if (isCpu) level.value = String(item.get());
+    if (removeButton) removeButton.disabled = item.remove!.disabled();
+    const teamIndex = item.teams?.options.findIndex((o) => o.value === item.teams!.get()) ?? -1;
+    el.style.setProperty('--pilot-tone', teamIndex >= 0 ? item.teams!.tones[teamIndex] : item.swatch);
+    if (teamSelect) teamSelect.value = String(item.teams!.get());
   };
-  const press = (i: number): void => {
-    const b = buttons[i];
-    if (!b || b.skip()) return;
-    cursor = i;
-    b.press();
+  const set = (value: unknown) => {
+    if (env.readonly) return;
+    item.set(value);
+    if (value !== item.fliers[0].value) lastCpu = value;
     env.sound?.blip();
     env.changed();
     draw();
   };
-
-  if (!env.readonly) {
-    buttons.forEach((b, i) =>
-      b.el.addEventListener('click', () => {
-        el.focus({ preventScroll: true });
-        press(i);
-      }),
-    );
-    const move = (dir: 1 | -1): void => {
-      for (let i = cursor + dir; i >= 0 && i < buttons.length; i += dir) {
-        if (!buttons[i].skip()) {
-          cursor = i;
-          break;
-        }
-      }
-      draw();
-    };
-    keys(el, (e) => {
-      switch (e.key) {
-        case 'ArrowLeft':
-          move(-1);
-          return true;
-        case 'ArrowRight':
-          move(1);
-          return true;
-        case 'Enter':
-        case ' ':
-          if (!e.repeat) press(cursor);
-          return true;
-      }
-      return false;
-    });
-  }
-
+  human.addEventListener('click', () => set(item.fliers[0].value));
+  cpu.addEventListener('click', () => set(lastCpu));
+  level.addEventListener('change', () => set(item.fliers[level.selectedIndex + 1].value));
+  keys(el, (e) => {
+    if (e.target !== el) return false;
+    if (e.key === 'ArrowLeft') { set(item.fliers[0].value); return true; }
+    if (e.key === 'ArrowRight') { set(lastCpu); return true; }
+    if (e.key === 'Enter' || e.key === ' ') { (item.get() === item.fliers[0].value ? human : cpu).focus(); return true; }
+    return false;
+  });
   draw();
   return { el, refresh: draw };
 }

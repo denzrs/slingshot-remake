@@ -16,6 +16,7 @@ import { AVATAR_LABEL, avatarSvg, playerIcon } from './avatars';
 import { lookDialog, lookSummary, picker, roomIcon, visibilityControl, type LookControl, type LookDialog } from './roomLook';
 import { menuPage } from './menu-page';
 import { modeArt } from './mode-icons';
+import { flightCard } from './flight-card';
 import { MATCH_PRESETS, matchingPreset, presetRules } from './match-presets';
 
 /** A game mode's name; a Mayhem room is the mode its rounds are played in, with Mayhem in front. */
@@ -148,13 +149,28 @@ function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly
     }
     return h('section.setup__group', null, h('h3.setup__title', null, groupTitle(group)), rows);
   });
-  const el = h('div.setup.setup--lobby', null, ...groups);
+  const labels = RULE_GROUPS.filter((group) => items.some((i) => i.group === group));
+  const tabs = labels.map((group, index) => {
+    const tab = button(groupTitle(group));
+    tab.className = 'item';
+    tab.addEventListener('click', () => select(index));
+    return tab;
+  });
+  const select = (index: number) => {
+    groups.forEach((group, i) => { group.hidden = i !== index; });
+    tabs.forEach((tab, i) => { tab.classList.toggle('is-selected', i === index); tab.setAttribute('aria-pressed', String(i === index)); });
+  };
+  const el = h('div.category-editor.rules-browser', null,
+    h('nav.items.category-nav', { 'aria-label': t('briefing.rules') }, ...tabs),
+    h('div.category-editor__fields', null, ...groups),
+  );
+  select(0);
   refresh();
   return { el, refresh };
 }
 
 /** What the lobby is showing while the player is not in a room. */
-type View = 'rooms' | 'create';
+type View = 'home' | 'rooms' | 'create' | 'code';
 
 /**
  * Online play, one step at a time: connect to a relay, see the open rooms, open one of your own —
@@ -188,7 +204,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   let localMessage: string | null = null;
   /** The last connection attempt failed; the hosted build then offers the connect card again. */
   let connectFailed = false;
-  let view: View = 'rooms';
+  let view: View = invited ? 'code' : 'home';
   /** Join passwords typed so far, per room — the room list is rebuilt whenever it changes. */
   const joinPasswords = new Map<string, string>();
   /** The password the player set for the room they opened; it is shown to the host to share, until they leave. */
@@ -251,7 +267,25 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const disconnectButton = button(t('multiplayer.disconnect'));
   // The hosted build is connected as of now: there is nothing to disconnect from.
   disconnectButton.hidden = hosted;
-  const bar = h('div.lobby__bar', null, serverLink, barName, avatarRow, disconnectButton);
+  const profileLabel = h('span', null);
+  const profile = h('details.online-profile', null,
+    h('summary', null, h('span', null, t('flow.profile')), profileLabel),
+    h('div.online-profile__fields', null, barName, avatarRow),
+  ) as HTMLDetailsElement;
+  const connectionLabel = h('span', null);
+  const connection = h('details.online-connection', null,
+    h('summary', null, connectionLabel), serverLink, disconnectButton,
+  );
+  const bar = h('div.online-identity', null, profile, connection);
+  const connectSlot = h('div', null);
+  const homeView = h('div.online-home', null,
+    h('div.flight-cards', null,
+      flightCard(t('flow.find'), t('flow.findHint'), 'rooms', () => enter('rooms')),
+      flightCard(t('flow.create'), t('flow.createHint'), 'create', () => enter('create')),
+      flightCard(t('flow.code'), t('flow.codeHint'), 'code', () => enter('code')),
+    ),
+    bar,
+  );
 
   // ————————————————————————————— The open rooms —————————————————————————————
 
@@ -283,8 +317,17 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       if (e.key === 'Enter') joinByCode();
     });
   }
-  const codeRow = h('div.lobby__code-join', null, h('span.lobby__code-label', null, t('multiplayer.joinCode')), codeInput, secretField(codePassword), codeJoin, codeWatch);
-  const roomsView = h('section.lobby__card', null, h('div.lobby__head', null, h('h3.setup__title', null, t('multiplayer.rooms')), openCreate), roomsList, codeRow);
+  codeInput.setAttribute('aria-label', t('multiplayer.code'));
+  const codeView = h('section.online-code', null,
+    h('div.online-code__art', null, modeArt('code')),
+    h('div.online-code__form', null,
+      field(t('multiplayer.code'), codeInput),
+      h('details.online-code__password', null, h('summary', null, t('flow.codePassword')), field(t('multiplayer.password'), secretField(codePassword))),
+      h('div.lobby__actions', null, codeWatch, codeJoin),
+    ),
+  );
+  if (invited?.password) (codeView.querySelector('details') as HTMLDetailsElement).open = true;
+  const roomsView = h('section.online-rooms', null, h('div.lobby__head', null, h('h3.setup__title', null, t('multiplayer.rooms')), openCreate), roomsList);
 
   const sendingName = (name: string) => {
     pendingName = name;
@@ -296,6 +339,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     const name = playerName.value.trim();
     if (!name) {
       localMessage = t('multiplayer.nameRequired');
+      view = 'home';
+      profile.open = true;
       render();
       playerName.focus();
       return null;
@@ -401,27 +446,24 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   };
 
   // The controls redraw themselves; nothing else on this form depends on them.
-  const env: Env = { sound, changed: () => {} };
+  const env: Env = { sound, changed: () => paintRoomOptions() };
   // Mayhem is a mode of its own: with it picked, the mode below it is the one its rounds are played in.
-  const gameMode = segmentedControl(
-    {
-      kind: 'segmented',
-      label: t('multiplayer.gameMode'),
-      options: [{ value: 'classic', label: modeName('classic') }, { value: 'horizon', label: modeName('horizon') }, { value: 'mayhem', label: t('mode.mayhem') }],
-      get: () => (prefs.rules.mayhem > 0 ? 'mayhem' : prefs.gameMode),
-      set: (v) => {
-        if (v === 'mayhem') prefs.rules = { ...prefs.rules, mayhem: prefs.rules.mayhem || 2 };
-        else {
-          prefs.gameMode = v as NetworkGameMode;
-          prefs.rules = { ...prefs.rules, mayhem: 0 };
-        }
-        save();
-        // The rules on offer change with the mode: Classic-only ones come and go, a Mayhem room has two.
-        buildCreateRules();
-      },
-    },
-    env,
-  );
+  const modeChoices = (['classic', 'horizon', 'mayhem'] as const).map((mode) => {
+    const label = t(`mode.${mode}`);
+    const card = flightCard(label, t(`mode.${mode}.hint`), mode, () => {
+      if (mode === 'mayhem') prefs.rules = { ...prefs.rules, mayhem: prefs.rules.mayhem || 2 };
+      else { prefs.gameMode = mode; prefs.rules = { ...prefs.rules, mayhem: 0 }; }
+      save();
+      buildCreateRules();
+      paintModeChoices();
+      sound.select();
+    });
+    return { mode, card };
+  });
+  const paintModeChoices = () => {
+    const selected = prefs.rules.mayhem > 0 ? 'mayhem' : prefs.gameMode;
+    modeChoices.forEach(({ mode, card }) => card.setAttribute('aria-pressed', String(selected === mode)));
+  };
   const mayhemBaseControl = segmentedControl(
     {
       kind: 'segmented',
@@ -468,21 +510,31 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     save();
     createSummary.refresh(prefs.look);
     createDialog.refresh(prefs.look);
+    paintRoomOptions();
   };
   const createVisibility = visibilityControl(prefs.look, lookSave, { sound });
   const createDialog = lookDialog(prefs.look, lookSave, { sound });
   const createSummary = lookSummary(prefs.look, () => createDialog.open());
-  const backToRooms = button(t('multiplayer.backToRooms'));
+  const backToRooms = button(t('flow.onlineBack'));
   const createButton = button(t('multiplayer.create'), true);
-  const createView = h(
-    'section.lobby__card.lobby__card--wide',
-    null,
-    h('h3.setup__title', null, t('shell.roomBasics')),
-    h('div.lobby__basics', null, h('div', null, createVisibility.el, gameMode.el, mayhemBase, matchType.el), h('div', null, field(t('multiplayer.roomName'), roomName), createSummary.el, capacity.el, field(t('multiplayer.passwordOptional'), secretField(password, () => void copyText(password.value, t('multiplayer.passwordCopied')))))),
-    createRules,
-    horizonNote,
+  const optionRecap = h('span', null);
+  const paintRoomOptions = () => {
+    optionRecap.textContent = `${prefs.capacity} ${t('multiplayer.players')} · ${t(prefs.look.visibility === 'public' ? 'multiplayer.public' : 'multiplayer.private')} · ${matchTypeName(prefs.matchType)}`;
+  };
+  const roomOptions = h('details.online-options', null,
+    h('summary', null, h('span', null, t('flow.options')), optionRecap),
+    h('div.lobby__basics', null,
+      h('div', null, field(t('multiplayer.roomName'), roomName), capacity.el, matchType.el),
+      h('div', null, createVisibility.el, field(t('multiplayer.passwordOptional'), secretField(password, () => void copyText(password.value, t('multiplayer.passwordCopied')))), createSummary.el),
+    ),
+  );
+  const createView = h('section.online-create', null,
+    h('div.flight-cards.flight-cards--modes', null, ...modeChoices.map(({ card }) => card)),
+    mayhemBase, createRules, roomOptions, horizonNote,
     h('div.lobby__actions', null, backToRooms, createButton),
   );
+  paintModeChoices();
+  paintRoomOptions();
   buildCreateRules();
 
   createButton.addEventListener('click', () => {
@@ -569,7 +621,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const roomLookSlot = h('div', null);
   /** Where the rules of the room are: sliders for the host, the same, locked, for everybody else. */
   const roomRuleFields = h('div', null);
-  const roomRules = h('details.lobby__rule-details', null, h('summary', null, t('shell.roomRules')), roomRuleFields);
+  const roomRules = h('section.lobby__rule-details', null, h('h3.setup__title', null, t('shell.roomRules')), roomRuleFields);
   /** Above the rules: that they reset everybody's "ready" (host), or that they are not yours to change (everyone else). */
   const rulesNote = h('p.lobby__rules-note', null);
   const roomNote = h('p.lobby__note', null);
@@ -591,13 +643,11 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     watchNote,
     cpuAddRow,
     cpuOnlyNote,
-    roomRename,
-    roomAvatar,
     teamWarning,
-    roomLookSlot,
-    rulesNote,
-    roomRules,
-    roomNote,
+    h('details.online-options', null,
+      h('summary', null, t('flow.roomDetails')),
+      roomRename, roomAvatar, roomLookSlot, rulesNote, roomRules, roomNote,
+    ),
     h('div.lobby__actions', null, ready, start, leave),
   );
 
@@ -769,8 +819,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const backBar = h('div.lobby__back', null, backButton);
 
   const root = menuPage({
-    title: t('multiplayer.title'), eyebrow: t('launcher.online'), intro: t('shell.lobbyIntro'), className: 'menu-page--lobby',
-    body: [h('div.lobby', null, status, bar, connectView, roomsView, createView, roomView, backBar)], footer: false,
+    title: t('flow.online'), eyebrow: 'Slingshot', intro: t('flow.onlineIntro'), className: 'menu-page--lobby',
+    body: [h('div.lobby', null, status, homeView, connectSlot, roomsView, codeView, createView, roomView, backBar)], footer: false,
   });
   const heading = root.querySelector<HTMLElement>('.menu-page__title')!;
   const introduction = root.querySelector<HTMLElement>('.menu-page__intro')!;
@@ -785,15 +835,18 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
 
   const render = () => {
     const { connected, connecting, room, rooms: open } = session;
-    const title = room ? room.name : connected && view === 'create' ? t('multiplayer.newRoom') : t('multiplayer.title');
+    const title = room ? room.name : t(({ home: 'flow.online', rooms: 'flow.find', create: 'flow.create', code: 'flow.code' } as const)[view]);
     heading.textContent = title;
     root.setAttribute('aria-label', title);
-    introduction.textContent = room ? t('shell.roomIntro') : connected && view === 'create' ? t('shell.createIntro') : t('shell.lobbyIntro');
+    introduction.textContent = room ? t('shell.roomIntro') : t(({ home: 'flow.onlineIntro', rooms: 'flow.findHint', create: 'flow.createIntro', code: 'flow.codeIntro' } as const)[view]);
+    profileLabel.textContent = playerName.value.trim() || t('multiplayer.name');
+    connectionLabel.textContent = t(connected ? 'flow.connected' : 'flow.connection');
+    backButton.textContent = view === 'home' ? `← ${t('common.mainMenu')}` : t('flow.onlineBack');
     avatarBar.show(prefs.avatar);
     const browsing = connected && !room;
     // A room, once left, leaves you at the list of rooms; and it takes the invitation out of the address bar.
     if (room) {
-      view = 'rooms';
+      view = 'home';
       dropInvite();
     }
     // Whoever followed an invite came here to get into that room, so it is joined for them — no second click.
@@ -811,14 +864,18 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     }
     // The hosted build says nothing about connecting or being connected; its connect card returns only when that failed.
     const retry = hosted && !connected && !connecting && (connectFailed || session.notice !== null);
-    const idle = hosted ? '' : t('multiplayer.connectHint');
+    const idle = hosted || view === 'home' ? '' : t('multiplayer.connectHint');
     const message = localMessage ?? session.notice ?? inviteNote ?? (connecting ? (hosted ? '' : t('multiplayer.connecting')) : !connected ? idle : '');
     status.textContent = message;
     status.classList.toggle('is-busy', connecting);
     status.hidden = !message;
 
-    bar.hidden = !browsing;
-    connectView.hidden = hosted ? !retry : connected;
+    homeView.hidden = !!room || view !== 'home';
+    // Choosing a destination can connect in place. Server editing stays a secondary home option.
+    (view === 'home' ? connection : connectSlot).append(connectView);
+    connectView.hidden = connected || (hosted && !retry);
+    connectSlot.hidden = connected || view === 'home' || !!room;
+    codeView.hidden = !(browsing && view === 'code');
     roomsView.hidden = !(browsing && view === 'rooms');
     createView.hidden = !(browsing && view === 'create');
     roomView.hidden = !room;
@@ -831,7 +888,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     roomDialog?.close();
     roomDialog = null;
 
-    (connected || hosted ? barName : connectFields).append(nameField);
+    barName.append(nameField);
     if (!configuredServer) linkText.textContent = t('multiplayer.connectedTo', { server: session.client.address || prefs.server });
     connectButton.disabled = connecting;
     serverAddress.disabled = connecting;
@@ -861,6 +918,13 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     view = next;
     localMessage = null;
     render();
+    root.scrollTop = 0;
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+  };
+  const enter = (next: View) => {
+    show(next);
+    if (!session.connected && !session.connecting) void connect(false);
   };
 
   connectButton.addEventListener('click', () => void connect(false));
@@ -870,11 +934,11 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   disconnectButton.addEventListener('click', () => {
     session.disconnect();
     prefs.autoConnect = false;
-    view = 'rooms';
+    view = 'home';
     save();
   });
-  openCreate.addEventListener('click', () => show('create'));
-  backToRooms.addEventListener('click', () => show('rooms'));
+  openCreate.addEventListener('click', () => enter('create'));
+  backToRooms.addEventListener('click', () => show('home'));
   playerName.addEventListener('change', () => {
     prefs.name = playerName.value.trim() || prefs.name;
     save();
@@ -884,7 +948,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const goBack = () => {
     dropInvite();
     if (session.room) session.leaveRoom();
-    else if (session.connected && view === 'create') show('rooms');
+    else if (view !== 'home') show('home');
     else {
       session.disconnect();
       app.toTitle();

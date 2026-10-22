@@ -1,5 +1,7 @@
 # Menü: Richtung und Entscheidungen
 
+> Für die nächste Umsetzung gilt die neuere [UX-Spezifikation und Agent-Übergabe](menu-ux-spec.md). Dieser Text dokumentiert die erste Gestaltungsrichtung; die ursprünglichen Folgeschritte sind keine vollständige Beschreibung des aktuellen Entwurfs.
+
 Das Menü soll sich wie der Einstieg in ein Gravitationsduell anfühlen. Die Bahn eines Schusses ist das wiederkehrende Motiv. Die Referenzen liefern dafür eine passende Bildsprache; ihre vielen Rahmen, Leuchteffekte und konkurrierenden Überschriften werden sparsamer eingesetzt.
 
 ## Visuelle Grundlage
@@ -49,7 +51,7 @@ Auf schmalen Handys werden aus den drei Moduskarten kompakte Zeilen. Die Hauptak
 
 - **Crew direkt bearbeiten:** Mensch/CPU und Hinzufügen in der Vorbereitung anbieten, sobald sechs Plätze und Teamwahl dort übersichtlich unterzubringen sind. Die derzeitige eigene Crew-Seite hält die Vorbereitung ruhig.
 - **Letztes Match wiederholen:** Ein direkter Einstieg mit Modus, Regeln und Crew des letzten Matches. Dafür den letzten tatsächlich gespielten Zustand speichern, unabhängig von gerade bearbeiteten Einstellungen.
-- **Lobby angleichen:** Dieselben Vorlagen und Modusbilder für neue Online-Räume nutzen. Die Raumübersicht sollte zuerst Freunde/Einladung und freie Plätze beantworten; Serverdetails dürfen weniger Raum beanspruchen.
+- **Multiplayer im Hauptmenü:** Die drei Karten „Raum suchen“, „Raum erstellen“ und „Code eingeben“ gehören in den rechten Bereich des Hauptmenüs, sobald Online ausgewählt ist. Der separate Online-Einstieg des zweiten Entwurfs muss dafür integriert werden.
 - **Regeln erklären:** Bei komplexen Optionen wie Schonfrist und fester Schusskraft eine knappe Erklärung direkt am Regler anbieten. Ein konkretes Beispiel hilft mehr als zusätzliche Symbole.
 
-Diese Ideen sind bewusst als nächste Schritte getrennt. Der aktuelle Umbau umfasst das Hauptmenü, die lokale Vorbereitung, Regelvorlagen und ihre Navigation.
+Der erste Entwurf ist als `70d4c94` gesichert. Ein zweiter Entwurf enthält weitere Menüseiten und vereinfachte Abläufe, ist aber noch nicht visuell abgenommen. Die verbindlichen Ziele, offenen Punkte und Abnahmekriterien stehen in der neueren UX-Spezifikation.

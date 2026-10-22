@@ -1,4 +1,4 @@
-import { dailyChallenge, dateKey, modifiersOf, type SectorSpec } from '../challenge';
+import { dailyChallenge, dateKey, modifiersOf } from '../challenge';
 import { loadDay, loadStreak, type RunOutcome } from '../dailyStore';
 import type { ChallengeMatch, SectorResult, ShotLog } from '../game';
 import { fmtInt, getLang, t, tn, type Key } from '../i18n';
@@ -41,47 +41,56 @@ export function dailyScreen(app: App): Screen {
   const day = loadDay(key);
   const streak = loadStreak(key);
 
-  const sectorRow = (spec: SectorSpec) =>
-    h(
-      'li',
-      null,
-      h('span.sectors__n', null, t('daily.sector', { n: spec.index + 1 })),
-      h('span.pips', { role: 'img', 'aria-label': `${spec.difficulty}/5` }, ...Array.from({ length: 5 }, (_, i) => h(i < spec.difficulty ? 'span.pip.pip--on' : 'span.pip', null))),
-      h('span.sectors__info', null, `${tn('daily.targets', spec.targets)} · ${tn('daily.shots', spec.shots)}`),
+  let selected = 0;
+  const detail = h('div.mission-detail', { 'aria-live': 'polite' });
+  const update = () => {
+    const spec = challenge.sectors[selected];
+    detail.replaceChildren(
+      h('div', null,
+        h('strong', null, t('flow.sectorDetails', { n: selected + 1, difficulty: spec.difficulty })),
+        h('span', null, `${tn('daily.targets', spec.targets)} · ${tn('daily.shots', spec.shots)}`),
+      ),
       h('span.chips', null, ...modifiersOf(spec).map((m) => h('span.chip', null, t(`daily.mod.${m}` as Key)))),
     );
+  };
   const stat = (label: string, value: string) => h('div', null, h('dt', null, label), h('dd', null, value));
-
+  const hasBoard = leaderboardAvailable();
   return {
     build: () => {
-      const stats = day
-        ? h(
-            'dl.daily-stats',
-            null,
-            stat(t('daily.stats.best'), fmtInt(day.best)),
-            stat(t('daily.stats.attempts'), String(day.attempts)),
-            stat(t('daily.stats.streak'), streak ? tn('daily.days', streak) : '—'),
-          )
-        : h('p.note.daily-stats-none', null, t('daily.stats.none'));
-      return menuPage({
-        title: themeName(challenge.theme), eyebrow: t('daily.eyebrow', { n: challenge.number }), intro: `${formatDay(key)} · ${t(`daily.theme.${challenge.theme}.text` as Key)}`,
-        className: 'menu-page--daily',
-        body: [h('h3.setup__title', null, t('shell.sectors')), h('ol.sectors', null, ...challenge.sectors.map(sectorRow))],
-        aside: [h('div.menu-page__art', null, modeArt('daily')), h('h3.setup__title', null, t('shell.yourProgress')), stats,
-          h('p.note', null, t('daily.rules')),
-          ...(key === dateKey() ? [h('p.note.daily-reset', null, t('daily.resets', { time: untilMidnight() }))] : []),
+      const stats = h('dl.mission-stats', null,
+        stat(t('daily.stats.best'), day ? fmtInt(day.best) : '—'),
+        stat(t('daily.stats.attempts'), String(day?.attempts ?? 0)),
+        stat(t('daily.stats.streak'), streak ? tn('daily.days', streak) : '—'),
+      );
+      const root = menuPage({
+        title: themeName(challenge.theme), eyebrow: `${t('daily.eyebrow', { n: challenge.number })} · ${formatDay(key)}`,
+        intro: t(`daily.theme.${challenge.theme}.text` as Key), className: 'menu-page--mission',
+        body: [
+          h('h3.setup__title', null, t('shell.sectors')),
+          h('div.items.items--row.mission-route', { 'data-section': 'route' }), detail,
+          h('div.mission-bottom', null, stats,
+            h('details.mission-rules', null, h('summary', null, t('flow.missionDetails')), h('p.note', null, t('daily.rules'))),
+          ),
+          ...(key === dateKey() ? [h('p.daily-reset', null, t('daily.resets', { time: untilMidnight() }))] : []),
         ],
       });
+      root.querySelector('.menu-page__head')!.append(h('div.mission-art', null, modeArt(challenge.theme === 'singularity' ? 'horizon' : 'daily')));
+      return root;
     },
     items: [
-      // The day's standing, before or without flying it: nothing is posted from here.
-      ...(leaderboardAvailable()
-        ? [{ kind: 'action', label: t('daily.board.view'), run: () => app.menu.push(() => leaderboardScreen(app, key, formatDay(key), null)) } satisfies MenuItem]
-        : []),
+      ...challenge.sectors.map((spec): MenuItem => ({
+        kind: 'action', section: 'route', label: t('daily.sector', { n: spec.index + 1 }),
+        tag: `${'●'.repeat(spec.difficulty)}${'○'.repeat(5 - spec.difficulty)}`,
+        hint: `${tn('daily.targets', spec.targets)} · ${tn('daily.shots', spec.shots)}`,
+        selected: () => selected === spec.index,
+        run: () => { selected = spec.index; app.menu.refresh(); },
+      })),
       { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
+      ...(hasBoard ? [{ kind: 'action', label: t('daily.board.view'), run: () => app.menu.push(() => leaderboardScreen(app, key, formatDay(key), null)) } satisfies MenuItem] : []),
       { kind: 'action', label: t('daily.start'), primary: true, run: () => app.startDaily() },
     ],
-    focus: leaderboardAvailable() ? 2 : 1,
+    focus: challenge.sectors.length + (hasBoard ? 2 : 1),
+    update,
   };
 }
 
@@ -153,14 +162,15 @@ export function dailyResultScreen(app: App, match: ChallengeMatch, outcome: RunO
       );
       status = h('p.daily__status', { role: 'status' }, '');
       return menuPage({
-        title: `#${result.number} · ${themeName(result.theme)}`, eyebrow: t('daily.result.eyebrow'), intro: formatDay(result.dateKey), className: 'menu-page--daily-result',
+        title: `#${result.number} · ${themeName(result.theme)}`, eyebrow: t('daily.result.eyebrow'), intro: formatDay(result.dateKey), className: 'menu-page--daily-result.menu-page--mission-result',
         body: [
           h('p.daily__score', null, h('span.daily__num', null, fmtInt(result.total)), h('span.daily__unit', null, t('daily.result.points'))),
           h('p.daily__rank', { 'data-rank': String(result.rank) }, t(`daily.rank.${result.rank}` as Key)),
-          h('ol.sectors.sectors--result', null, ...result.sectors.map(sectorLine)),
+          h('ol.mission-scorecards', null, ...result.sectors.map(sectorLine)),
+          legend,
+          h('p.daily__meta', null, meta, outcome.newBest ? h('strong.daily__new', null, `  ${t('daily.result.newBest')}`) : ''), status,
         ],
-        aside: [h('div.menu-page__art', null, modeArt('daily')), h('h3.setup__title', null, t('shell.yourProgress')),
-          h('p.daily__meta', null, meta, outcome.newBest ? h('strong.daily__new', null, `  ${t('daily.result.newBest')}`) : ''), legend, status],
+
       });
     },
     items: [
@@ -174,11 +184,11 @@ export function dailyResultScreen(app: App, match: ChallengeMatch, outcome: RunO
             } satisfies MenuItem,
           ]
         : []),
-      { kind: 'action', label: t('daily.retry'), run: () => app.rematch() },
+      { kind: 'action', label: t('daily.retry'), primary: true, run: () => app.rematch() },
       { kind: 'action', label: t('common.mainMenu'), run: () => app.toTitle() },
-      { kind: 'action', label: t('daily.result.copy'), primary: true, run: () => void copy() },
+      { kind: 'action', label: t('daily.result.copy'), run: () => void copy() },
     ] satisfies MenuItem[],
-    focus: leaderboardAvailable() ? 3 : 2,
+    focus: leaderboardAvailable() ? 1 : 0,
     onEscape: () => app.toTitle(),
   };
 }

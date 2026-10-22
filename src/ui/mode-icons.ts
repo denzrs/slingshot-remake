@@ -1,4 +1,4 @@
-export type ModeArt = 'daily' | 'classic' | 'horizon' | 'mayhem' | 'trickshot' | 'sniper' | 'party';
+export type ModeArt = 'daily' | 'classic' | 'horizon' | 'mayhem' | 'trickshot' | 'sniper' | 'party' | 'rooms' | 'create' | 'code';
 let artId = 0;
 
 /** Orbital charts for the menu, drawn as vectors so they stay crisp on phones and large screens. */
@@ -14,6 +14,22 @@ export function modeArt(kind: ModeArt): SVGElement {
     .map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i % 4 === 0 ? 1.5 : .8}" fill="#e8e4d8" opacity="${i % 3 === 0 ? '.65' : '.25'}"/>`).join('');
   let scene: string;
   switch (kind) {
+    case 'rooms':
+      scene = `${orbit(132, 57, -18)}${orbit(90, 34, -18)}${planet(160, 98, 24)}
+        <g fill="none" stroke="#6fe3c8" stroke-width="1.5"><circle cx="160" cy="98" r="69"/><path d="M160 29v69l59-35" fill="#6fe3c8" fill-opacity=".05"/></g>
+        <circle cx="219" cy="63" r="5" fill="#ffad65"/>${ship(63, 140, 38, '#e8e4d8', 1.2)}${ship(262, 71, -130, '#6fe3c8', .8)}`;
+      break;
+    case 'create':
+      scene = `${orbit(130, 50, -20)}${planet(110, 105, 32)}${ship(237, 69, 25, '#e8e4d8', 1.7)}
+        <path d="M164 146Q190 155 212 124" stroke="#6fe3c8" stroke-width="2" fill="none"/>
+        <g fill="none" stroke="#ffad65" stroke-width="2"><circle cx="222" cy="133" r="23"/><path d="M222 120v26m-13-13h26"/></g>`;
+      break;
+    case 'code':
+      scene = `${orbit(125, 49, -22)}${planet(261, 45, 13)}
+        <rect x="70" y="54" width="180" height="96" rx="7" fill="#0c2035" stroke="#6fe3c8" stroke-opacity=".5"/>
+        <g fill="none" stroke="#ffad65" stroke-width="2"><rect x="91" y="86" width="23" height="32" rx="3"/><rect x="129" y="86" width="23" height="32" rx="3"/><rect x="167" y="86" width="23" height="32" rx="3"/><rect x="205" y="86" width="23" height="32" rx="3"/></g><g fill="#ffad65"><circle cx="102.5" cy="102" r="3"/><circle cx="140.5" cy="102" r="3"/><circle cx="178.5" cy="102" r="3"/><circle cx="216.5" cy="102" r="3"/></g>
+        ${ship(40, 159, 55, '#e8e4d8', .9)}`;
+      break;
     case 'classic':
       scene = `${orbit(142, 58, -20)}${orbit(105, 38, -20)}${orbit(66, 24, -20)}
         <path d="M14 158 C49 173 83 141 96 96 S161 16 223 50 S264 136 302 92" fill="none" stroke="#6fe3c8" stroke-width="1.8"/>
@@ -68,5 +84,15 @@ export function modeArt(kind: ModeArt): SVGElement {
     <radialGradient id="${id}-glow"><stop stop-color="#294b65" stop-opacity=".4"/><stop offset="1" stop-color="#122039" stop-opacity="0"/></radialGradient>
     <path id="${id}-ship" d="M0-13 8 8 0 4-8 8Zm0 20 3 7-3-2-3 2Z"/>
   </defs><ellipse cx="160" cy="105" rx="150" ry="100" fill="url(#${id}-glow)"/>${stars}${scene}`;
+  return svg;
+}
+
+/** A crew member's actual ship, deliberately simpler than a mode illustration. */
+export function pilotArt(): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 160 100');
+  svg.setAttribute('class', 'pilot-art');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.innerHTML = '<ellipse cx="80" cy="56" rx="64" ry="25" fill="none" stroke="currentColor" stroke-opacity=".15" transform="rotate(-18 80 56)"/><path d="M80 12 105 73 80 61 55 73Z" fill="currentColor"/><path d="m80 27 9 24H71Z" fill="#081426"/><path d="M75 70v12m10-12v12m-5-10v19" stroke="currentColor" stroke-opacity=".4" stroke-width="2"/>';
   return svg;
 }
