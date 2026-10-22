@@ -12,6 +12,7 @@ use crate::protocol::{
     parse_daily_submit, parse_player_name, parse_room_look, parse_room_name, parse_rules,
     DailyScore, RoomLook, RoomName, RoomRules, NAME_REQUIRED,
 };
+use crate::report::{parse_round_report, parse_turn_report, RoundReport, TurnReport};
 use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
 
 /// The most players a room takes.
@@ -60,6 +61,10 @@ pub enum RoomCommand<'a> {
     Input(Parsed<&'a Value>),
     /// Something to say to the room.
     Chat(Parsed<String>),
+    /// The host's account of a round that just ended.
+    RoundStats(Parsed<RoundReport>),
+    /// The host's account of a turn that was just flown.
+    TurnStats(Parsed<TurnReport>),
     LeaveRoom,
     /// A message with no `type`.
     Malformed,
@@ -205,6 +210,12 @@ impl<'a> RoomCommand<'a> {
             ),
             "chat" => {
                 RoomCommand::Chat(clean_chat(message.get("text")).ok_or("Say something first"))
+            }
+            "round_stats" => {
+                RoomCommand::RoundStats(parse_round_report(message).ok_or("Malformed round stats"))
+            }
+            "turn_stats" => {
+                RoomCommand::TurnStats(parse_turn_report(message).ok_or("Malformed turn stats"))
             }
             "leave_room" => RoomCommand::LeaveRoom,
             other => RoomCommand::Unknown(other),

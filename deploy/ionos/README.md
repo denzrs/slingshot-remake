@@ -34,3 +34,5 @@ Create the `ionos-production` environment and restrict deployments to the `main`
 - Optional limits: `RELAY_PORT`, `RELAY_MAX_CONNECTIONS`, `RELAY_MAX_CONNECTIONS_PER_IP`, `RELAY_CONNECTIONS_PER_IP_PER_SECOND`, `RELAY_MAX_MESSAGES_PER_SECOND`
 
 Set the repository variable `VITE_MULTIPLAYER_SERVER` to `wss://slingshot-relay.eu:8080`; it is embedded in the public frontend build. The certificate paths are configured in the workflow and the private key contents never leave the VPS.
+
+When `STATS=1` is set in `relay.env`, the relay also keeps a week of anonymous round statistics in `/srv/slingshot/stats.db` (off by default; `STATS_DB` overrides the path, `STATS_KEEP_DAYS` the window, default `7`). It is handled exactly like `leaderboard.db`: a data file next to the binary that a deploy leaves alone, pruned by the relay, no backup needed, and the relay will not start without it. It holds no names and no addresses – see *Match statistics* in `docs/multiplayer.md`.

@@ -1,0 +1,57 @@
+import { describe, expect, it } from 'vitest';
+import { roundReport, turnReport, type ReportSource, type TurnSource } from '../src/roundReport';
+import type { ShotRecord } from '../src/shotLog';
+import { bump, newStatBook } from '../src/stats';
+
+describe('round report', () => {
+  const source = (): ReportSource => ({
+    round: 2,
+    roundSeconds: 41.26,
+    roundStats: newStatBook(),
+    summary: { title: 'hit', survivor: 1, team: null },
+    players: [
+      { score: 120.4, shots: 3, alive: false },
+      { score: 800, shots: 2, alive: true },
+    ],
+    world: { planets: [{}, {}, {}] },
+  });
+
+  it('counts per seat, with zero for a seat the book never heard of', () => {
+    const match = source();
+    bump(match.roundStats.kills, 1);
+    bump(match.roundStats.kills, 1);
+    bump(match.roundStats.grazes, 0);
+    const report = roundReport(match);
+    expect(report.players[0]).toMatchObject({ score: 120, shots: 3, kills: 0, grazes: 1, alive: false });
+    expect(report.players[1]).toMatchObject({ score: 800, kills: 2, grazes: 0, alive: true });
+    expect(report).toMatchObject({ round: 2, title: 'hit', survivor: 1, team: null, seconds: 41.3, planets: 3 });
+  });
+
+  it('carries the records without the shots behind them', () => {
+    const match = source();
+    match.roundStats.bestHit = { player: 1, value: 250, trail: [0, 0, 1, 1], at: { x: 1, y: 1 } };
+    const report = roundReport(match);
+    expect(report.records).toEqual({ bestHit: { player: 1, value: 250 } });
+  });
+});
+
+describe('turn report', () => {
+  const shot: ShotRecord = { n: 1, turn: 3, player: 0, angle: 33.3333, power: 61.26, powerUp: 'plasma', fork: false, resolution: 'ship', hits: 1, hitSeat: 1, hitKind: 'enemy', points: 249.6 };
+  const source = (): TurnSource => ({
+    round: 2,
+    players: [
+      { score: 120.4, alive: false },
+      { score: 800, alive: true },
+    ],
+    shotLog: { turn: 3, ofTurn: () => [shot] },
+  });
+
+  it('names the turn and where the scores stand after it', () => {
+    expect(turnReport(source())).toMatchObject({ round: 2, turn: 3, players: [{ score: 120, alive: false }, { score: 800, alive: true }] });
+  });
+
+  it('lists each shot of the turn with its numbers rounded', () => {
+    const [first] = turnReport(source()).shots;
+    expect(first).toMatchObject({ player: 0, turn: 3, angle: 33.33, power: 61.3, powerUp: 'plasma', resolution: 'ship', hitSeat: 1, hitKind: 'enemy', points: 250 });
+  });
+});

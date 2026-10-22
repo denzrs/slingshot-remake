@@ -10,6 +10,7 @@ import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings'
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
 import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
+import { ShotLog } from '../shotLog';
 import { Crowd } from './crowd';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField, type PlacementAim } from './powerup-field';
@@ -229,6 +230,8 @@ export abstract class Match {
   notice: { text: string; color: string; at: number } | null = null;
   /** What happened this round, and in the whole match — for the scorecard. */
   roundStats: StatBook = newStatBook();
+  /** Each shot of the round, for the host's report to the relay. */
+  readonly shotLog = new ShotLog();
   matchStats: StatBook = newStatBook();
   /** Everybody's score at the start of the match and after every round — for the chart on the final screen. */
   scoreHistory: number[][] = [];
@@ -242,6 +245,10 @@ export abstract class Match {
   readonly crowd = new Crowd();
   /** Match clock when the current round began, so kills can be timed from the start of the round. */
   protected roundStartedAt = 0;
+  /** How long the current round has run, in seconds of match clock. */
+  get roundSeconds(): number {
+    return this.clock - this.roundStartedAt;
+  }
   /** Seed used to generate the current round's battlefield. */
   worldSeed = 0;
   /** Mayhem: how this round plays — its twists, whether it is the finale or a jackpot. Null when the match has no twists. */
@@ -277,6 +284,7 @@ export abstract class Match {
   private disposed = false;
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
+  private turnListeners: (() => void)[] = [];
   protected simClock = 0;
   /** Power-ups: the pickups on the field, who holds what, and what each one does. */
   readonly power = new PowerUpField({
@@ -336,12 +344,18 @@ export abstract class Match {
     this.listeners.push(listener);
   }
 
+  /** Called when a turn's shots have all landed and the scores are settled, before the next phase begins. */
+  onTurnEnd(listener: () => void): void {
+    this.turnListeners.push(listener);
+  }
+
   /** Stop this match for good when it leaves the application. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.resetFlight();
     this.listeners.length = 0;
+    this.turnListeners.length = 0;
   }
 
   private resetFlight(): void {
@@ -729,6 +743,7 @@ export abstract class Match {
   }
 
   protected aimsFor(p: PlayerState): VolleyAim[] {
+    this.shotLog.carry(p.id, p.powerUp, p.armed);
     return this.power.aimsFor(p);
   }
 
@@ -799,6 +814,7 @@ export abstract class Match {
     this.crowd.relief();
     this.oracleKills = [];
     this.roundStats = newStatBook();
+    this.shotLog.reset();
     this.roundStartedAt = this.clock;
     this.worldSeed = Math.floor(this.worldRng() * 2 ** 32);
     this.rollTwists();
@@ -938,6 +954,7 @@ export abstract class Match {
     this.stands.lock();
     this.oracleKills = [];
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
+    this.shotLog.launched(this.volley.shots, aims);
     this.simClock = 0;
     this.flightDoneAt = null;
     this.cpuJobs.clear();
@@ -972,6 +989,7 @@ export abstract class Match {
     this.volley = null;
     this.power.onVolleyEnd();
     this.judgeOracle();
+    for (const listener of this.turnListeners) listener();
     this.afterVolley();
   }
 
@@ -1057,6 +1075,7 @@ export abstract class Match {
       return;
     }
     const end = e.end;
+    if (live) this.shotLog.ended(vs, end.kind);
     switch (end.kind) {
       case 'ship': {
         const ship = volley.world.ships[end.ship];
@@ -1093,6 +1112,8 @@ export abstract class Match {
         if (live && points > 0) {
           this.players[player].score += points;
           this.players[otherOwner].score += points;
+          this.shotLog.bonus(vs, points);
+          this.shotLog.bonus(volley.shots[end.other], points);
         }
         this.emit({
           type: 'clash',
@@ -1118,6 +1139,7 @@ export abstract class Match {
     this.players[victim].alive = false;
     this.oracleKills.push({ killer, victim, self, friendly });
     this.players[killer].score += score.points;
+    this.shotLog.hit(vs, victim, self ? 'self' : friendly ? 'friendly' : 'enemy', score.points);
     // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
     if (!self && !friendly) this.lastHitBy.set(victim, killer);
     const record: KillRecord = {
@@ -1154,6 +1176,7 @@ export abstract class Match {
       const bonus = SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)] * this.payFactor;
       if (bonus > 0) {
         this.players[killer].score += bonus;
+        this.shotLog.bonus(vs, bonus);
         this.emit({ type: 'multiKill', player: killer, kills, points: bonus, x: volley.world.ships[victim].x, y: volley.world.ships[victim].y });
       }
     }

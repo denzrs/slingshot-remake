@@ -121,6 +121,7 @@ beforeAll(async () => {
       CONNECTIONS_PER_IP_PER_SECOND: '1000',
       MAX_MESSAGES_PER_SECOND: '100000',
       LEADERBOARD_DB: join(dataDir, 'leaderboard.db'),
+      STATS_DB: join(dataDir, 'stats.db'),
       RUST_LOG: process.env.RELAY_LOG ?? 'info',
     },
     stdio: process.env.RELAY_LOG ? 'inherit' : 'ignore',

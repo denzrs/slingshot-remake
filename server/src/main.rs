@@ -11,8 +11,11 @@ mod config;
 mod connection;
 mod leaderboard;
 mod protocol;
+mod pseudonym;
+mod report;
 mod room;
 mod router;
+mod stats;
 mod tls;
 mod wire;
 
@@ -33,6 +36,7 @@ use crate::config::{
 use crate::connection::{handle_connection, Shared};
 use crate::leaderboard::{Leaderboard, DEFAULT_KEEP_DAYS};
 use crate::room::RoomManager;
+use crate::stats::{Stats, DEFAULT_KEEP_DAYS as DEFAULT_STATS_KEEP_DAYS};
 use crate::tls::load_tls;
 
 #[tokio::main]
@@ -111,6 +115,27 @@ async fn main() {
     };
     info!(%db_path, keep_days, "leaderboard open");
 
+    // Match statistics are opt-in: `--stats` (or STATS=1, for a service that has no arguments to
+    // give). STATS_DB is their file and STATS_KEEP_DAYS how long they are kept; the data is
+    // described in `stats`. Opened like the leaderboard, and for the same reason it stops the relay.
+    let stats = if std::env::args().any(|arg| arg == "--stats") || env_flag("STATS") {
+        let stats_path = std::env::var("STATS_DB").unwrap_or_else(|_| "stats.db".to_string());
+        let stats_days = env_parse("STATS_KEEP_DAYS", DEFAULT_STATS_KEEP_DAYS);
+        match Stats::open(&stats_path, stats_days).await {
+            Ok(stats) => {
+                info!(%stats_path, stats_days, "statistics on");
+                Some(Arc::new(stats))
+            }
+            Err(err) => {
+                error!(%stats_path, %err, "failed to open the statistics");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        info!("statistics off (start with --stats to keep them)");
+        None
+    };
+
     let listener = match TcpListener::bind(("::", port)).await {
         Ok(listener) => listener,
         Err(err) => {
@@ -120,7 +145,11 @@ async fn main() {
     };
     info!(%port, "relay listening");
 
-    let manager = Arc::new(Mutex::new(RoomManager::new()));
+    let mut rooms = RoomManager::new();
+    if let Some(stats) = &stats {
+        rooms = rooms.with_stats(stats.clone());
+    }
+    let manager = Arc::new(Mutex::new(rooms));
     let guard = Arc::new(AdmissionGuard::new(
         max_connections,
         max_per_ip,
@@ -144,6 +173,9 @@ async fn main() {
                 shared.guard.sweep();
                 shared.manager.lock().sweep();
                 shared.boards.prune_if_due().await;
+                if let Some(stats) = &stats {
+                    stats.prune_if_due().await;
+                }
             }
             accepted = listener.accept() => {
                 let (stream, peer) = match accepted {

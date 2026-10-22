@@ -1672,3 +1672,171 @@ fn the_host_can_limit_chat_to_the_players_and_nobody_can_flood_it() {
     let sent = chats(&mut host_rx).len();
     assert_eq!(sent, super::connections::MAX_CHAT_MESSAGES - 1);
 }
+
+fn round_report_message(round: i64, seats: usize) -> Value {
+    let seat = json!({"score": 10, "shots": 1, "kills": 0, "swingbys": 0, "grazes": 0, "ownGoals": 0, "pickups": 0, "saves": 0, "alive": true});
+    json!({
+        "type": "round_stats", "round": round, "title": "hit", "survivor": 0, "team": null,
+        "seconds": 20.0, "planets": 3, "players": vec![seat; seats], "records": {},
+    })
+}
+
+fn turn_report_message(round: i64, turn: i64, seats: usize) -> Value {
+    json!({
+        "type": "turn_stats", "round": round, "turn": turn,
+        "players": vec![json!({"score": 10, "alive": true}); seats],
+        "shots": [{"n": turn, "turn": turn, "player": 0, "angle": 45.0, "power": 50.0, "powerUp": null, "fork": false, "resolution": "lost", "hits": 0, "hitSeat": null, "hitKind": null, "points": 0}],
+    })
+}
+
+/// Wait for the writer to have written `rows` rows of a table.
+async fn written(stats: &Stats, table: &str, rows: i64) {
+    for _ in 0..100 {
+        if stats.count(table).await == rows {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(stats.count(table).await, rows, "rows of {table}");
+}
+
+/// A running two-person game with the statistics in memory; the host is connection 1.
+fn running_game_with_stats() -> (
+    RoomManager,
+    Arc<Stats>,
+    [mpsc::Receiver<crate::codec::WireMessage>; 2],
+) {
+    let stats = Arc::new(futures_util::FutureExt::now_or_never(Stats::in_memory()).unwrap());
+    let mut rooms = RoomManager::new().with_stats(stats.clone());
+    let mut host_rx = connect(&mut rooms, 1);
+    rooms.handle(1, &create("Host", None));
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut guest_rx = connect(&mut rooms, 2);
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+    );
+    rooms.handle(2, &json!({"type":"ready","ready":true}));
+    rooms.handle(1, &json!({"type":"start_game"}));
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    (rooms, stats, [host_rx, guest_rx])
+}
+
+#[tokio::test]
+async fn the_hosts_round_report_is_written_down_once() {
+    let (mut rooms, stats, [mut host_rx, _guest_rx]) = running_game_with_stats();
+    rooms.handle(1, &round_report_message(1, 2));
+    assert!(drain_json(&mut host_rx).is_empty());
+    written(&stats, "stat_seats", 2).await;
+    assert_eq!(stats.count("stat_rounds").await, 1);
+
+    // The same round again, or an earlier one, is turned away.
+    rooms.handle(1, &round_report_message(1, 2));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "That round was already reported"
+    );
+    rooms.handle(1, &round_report_message(2, 2));
+    assert!(drain_json(&mut host_rx).is_empty());
+}
+
+#[tokio::test]
+async fn the_hosts_turn_reports_are_written_down_in_order_and_only_while_the_round_is_on() {
+    let (mut rooms, stats, [mut host_rx, _guest_rx]) = running_game_with_stats();
+    rooms.handle(1, &turn_report_message(1, 1, 2));
+    rooms.handle(1, &turn_report_message(1, 2, 2));
+    assert!(drain_json(&mut host_rx).is_empty());
+    written(&stats, "stat_turns", 4).await;
+    assert_eq!(stats.count("stat_shots").await, 2);
+
+    // A turn already reported, or one before it, is turned away.
+    for stale in [2, 1] {
+        rooms.handle(1, &turn_report_message(1, stale, 2));
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "That turn was already reported"
+        );
+    }
+    // The next round's turns count from one again; once a round is reported, its turns are over.
+    rooms.handle(1, &round_report_message(1, 2));
+    rooms.handle(1, &turn_report_message(1, 3, 2));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "That round is already over"
+    );
+    rooms.handle(1, &turn_report_message(2, 1, 2));
+    assert!(drain_json(&mut host_rx).is_empty());
+    written(&stats, "stat_turns", 6).await;
+}
+
+#[tokio::test]
+async fn only_the_host_of_a_running_game_may_report_and_only_for_its_own_seats() {
+    let (mut rooms, stats, [mut host_rx, mut guest_rx]) = running_game_with_stats();
+    for message in [round_report_message(1, 2), turn_report_message(1, 1, 2)] {
+        rooms.handle(2, &message);
+        assert_eq!(
+            take_type(&drain_json(&mut guest_rx), "error")["message"],
+            "Only the room host can report stats"
+        );
+    }
+    for message in [round_report_message(1, 3), turn_report_message(1, 1, 3)] {
+        rooms.handle(1, &message);
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "Stats do not match the seats"
+        );
+    }
+    rooms.handle(1, &json!({"type": "round_stats", "round": 1}));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "Malformed round stats"
+    );
+    rooms.handle(1, &json!({"type": "turn_stats", "round": 1}));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "Malformed turn stats"
+    );
+    // A connection outside any game has nothing to report.
+    let mut stranger_rx = connect(&mut rooms, 3);
+    rooms.handle(3, &round_report_message(1, 2));
+    assert_eq!(
+        take_type(&drain_json(&mut stranger_rx), "error")["message"],
+        "You are not in a running game"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(stats.count("stat_rounds").await, 0);
+    assert_eq!(stats.count("stat_turns").await, 0);
+}
+
+#[test]
+fn without_statistics_reports_are_checked_and_dropped() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    rooms.handle(1, &create("Host", None));
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut guest_rx = connect(&mut rooms, 2);
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+    );
+    rooms.handle(2, &json!({"type":"ready","ready":true}));
+    rooms.handle(1, &json!({"type":"start_game"}));
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    rooms.handle(1, &turn_report_message(1, 1, 2));
+    rooms.handle(1, &round_report_message(1, 2));
+    assert!(drain_json(&mut host_rx).is_empty());
+    // The order is still enforced, so a host sees the same answers with or without them.
+    rooms.handle(1, &turn_report_message(1, 2, 2));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "That round is already over"
+    );
+}

@@ -228,4 +228,55 @@ describe('scorecard in a match', () => {
     }
     expect([...seen].sort()).toEqual(['bestHit', 'fastestKill', 'longestShot', 'sniper']);
   });
+
+  describe('shot log', () => {
+    it('writes down how a shot was aimed, how it ended and what it earned', () => {
+      const { m } = duel(false);
+      expect(m.shotLog.shots).toEqual([]);
+      shoot(m);
+      expect(m.shotLog.shots).toHaveLength(1);
+      expect(m.shotLog.shots[0]).toMatchObject({
+        n: 1,
+        player: 0,
+        powerUp: null,
+        fork: false,
+        resolution: 'ship',
+        hits: 1,
+        hitSeat: 1,
+        hitKind: 'enemy',
+      });
+      expect(m.shotLog.shots[0].points).toBe(m.lastKill!.points);
+    expect(m.shotLog.shots[0].turn).toBe(1);
+    expect(m.shotLog.ofTurn()).toEqual(m.shotLog.shots);
+    });
+
+    it('records a shot that hit nothing, and a hit on oneself', () => {
+      const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, bounce: true, fixedPower: true }, { seats }) as ClassicMatch;
+      m.world.planets = [];
+      Object.assign(m.world.ships[0], { x: 100, y: 400 });
+      Object.assign(m.world.ships[1], { x: 1100, y: 700 });
+      m.setAim(90, 55);
+      m.commit();
+      for (let t = 0; t < 30 && m.phase === 'flying'; t += 1 / 30) m.update(1 / 30);
+      expect(m.shotLog.shots[0]).toMatchObject({ player: 0, angle: 90, resolution: 'ship', hitSeat: 0, hitKind: 'self' });
+      expect(m.shotLog.shots[0].points).toBeLessThan(0);
+    });
+
+    it('tells the listeners when a turn is over, with the scores settled', () => {
+      const { m } = duel(false);
+      const seen: { turn: number; score: number }[] = [];
+      m.onTurnEnd(() => seen.push({ turn: m.shotLog.turn, score: m.players[0].score }));
+      shoot(m);
+      expect(seen).toEqual([{ turn: 1, score: m.players[0].score }]);
+      expect(seen[0].score).toBeGreaterThan(0);
+    });
+
+    it('starts over with every round', () => {
+      const { m } = duel(false);
+      shoot(m);
+      m.startRound();
+      expect(m.shotLog.shots).toEqual([]);
+      expect(m.shotLog.turn).toBe(0);
+    });
+  });
 });
