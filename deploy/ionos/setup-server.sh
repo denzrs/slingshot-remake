@@ -84,7 +84,8 @@ Bootstrap done. Next, on GitHub:
       IONOS_SERVER_IP, IONOS_DEPLOY_USER (ops),
       RELAY_PORT, RELAY_ALLOWED_ORIGINS, RELAY_MAX_CONNECTIONS,
       RELAY_MAX_CONNECTIONS_PER_IP, RELAY_CONNECTIONS_PER_IP_PER_SECOND,
-      RELAY_MAX_MESSAGES_PER_SECOND, RELAY_HEALTHCHECK_URL
+      RELAY_MAX_MESSAGES_PER_SECOND, RELAY_HEALTHCHECK_URL,
+      RELAY_STATS (optional: 1 keeps the anonymous match statistics, default off)
   - ionos-production environment secrets:
       IONOS_DEPLOY_SSH_KEY (private key), IONOS_DEPLOY_KNOWN_HOSTS
   - put the matching public key in /home/ops/.ssh/authorized_keys
