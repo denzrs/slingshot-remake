@@ -174,7 +174,7 @@ jobs:
           : "${RELAY_MAX_CONNECTIONS_PER_IP:=64}"
           : "${RELAY_CONNECTIONS_PER_IP_PER_SECOND:=20}"
           : "${RELAY_MAX_MESSAGES_PER_SECOND:=300}"
-          : "${RELAY_STATS:=0}"
+          : "${RELAY_STATS:=1}"
           if [[ "$RELAY_STATS" != 0 && "$RELAY_STATS" != 1 ]]; then
             echo 'RELAY_STATS must be 0 or 1' >&2
             exit 1
@@ -197,7 +197,7 @@ jobs:
             printf 'MAX_CONNECTIONS_PER_IP=%s\n' "$RELAY_MAX_CONNECTIONS_PER_IP"
             printf 'CONNECTIONS_PER_IP_PER_SECOND=%s\n' "$RELAY_CONNECTIONS_PER_IP_PER_SECOND"
             printf 'MAX_MESSAGES_PER_SECOND=%s\n' "$RELAY_MAX_MESSAGES_PER_SECOND"
-            # Match statistics are opt-in (the relay's --stats): only a RELAY_STATS=1 switches them on.
+            # Match statistics (the relay's --stats) are on in the deployed relay; RELAY_STATS=0 switches them off.
             [[ "$RELAY_STATS" != 1 ]] || printf 'STATS=1\n'
             [[ -z "$RELAY_TLS_CERT" ]] || printf 'TLS_CERT=%s\n' "$RELAY_TLS_CERT"
             [[ -z "$RELAY_TLS_KEY" ]] || printf 'TLS_KEY=%s\n' "$RELAY_TLS_KEY"
