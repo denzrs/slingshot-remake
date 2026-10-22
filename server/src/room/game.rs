@@ -1,14 +1,24 @@
 //! Starting a game, and relaying a running game's input and state.
 
+use std::sync::Arc;
+
 use rand::Rng;
 use serde_json::{json, Value};
 
 use crate::command::Parsed;
 use crate::protocol::rules_to_value;
-use crate::wire::CpuLevel;
+use crate::report::{RoundReport, TurnReport};
+use crate::stats::{Job, Occupant, RoundFacts, SeatFacts, Stats};
+use crate::wire::{CpuLevel, RoomMode};
 
 use super::model::*;
 use super::RoomManager;
+
+/// What the statistics need once a report has passed: where to put it and what the room knows.
+struct Reporting {
+    stats: Arc<Stats>,
+    facts: RoundFacts,
+}
 
 impl RoomManager {
     pub(super) fn start_game(&mut self, conn: u64) {
@@ -77,6 +87,9 @@ impl RoomManager {
         room.last_state_seq = -1;
         let seed: u32 = rand::thread_rng().gen();
         room.seed = seed;
+        room.match_id = format!("{:016x}", rand::thread_rng().gen::<u64>());
+        room.reported_round = 0;
+        room.reported_turn = (0, 0);
         room.players
             .iter_mut()
             .enumerate()
@@ -145,6 +158,107 @@ impl RoomManager {
                 host_conn,
                 &json!({ "type": "input", "from": from, "input": input }),
             );
+        }
+    }
+
+    /// The checks every report from the host has to pass: it comes from the host of a running game
+    /// and has one entry per seat. Gives the room, and what the statistics need to know about it
+    /// (nothing, when they are off, or when somebody has just left a seat).
+    fn reporter(&mut self, conn: u64, seats: usize) -> Option<(String, Option<Reporting>)> {
+        let Some(membership) = self.memberships.get(&conn) else {
+            self.error(conn, "You are not in a running game");
+            return None;
+        };
+        let (room_id, my_id) = (membership.room_id.clone(), membership.player_id);
+        let Some(room) = self.rooms.get(&room_id) else {
+            self.error(conn, "You are not in a running game");
+            return None;
+        };
+        if room.status != RoomStatus::Playing {
+            self.error(conn, "You are not in a running game");
+            return None;
+        }
+        if my_id != 0 {
+            self.error(conn, "Only the room host can report stats");
+            return None;
+        }
+        if seats != room.players.len() {
+            self.error(conn, "Stats do not match the seats");
+            return None;
+        }
+        let reporting = self.stats.clone().and_then(|stats| {
+            let seats: Option<Vec<SeatFacts>> = room
+                .players
+                .iter()
+                .map(|player| {
+                    let occupant = match (player.cpu, player.conn) {
+                        (Some(level), _) => Occupant::Cpu(level.as_str()),
+                        (None, Some(conn)) => Occupant::Person(self.net.peer_ip(conn)?),
+                        (None, None) => return None,
+                    };
+                    Some(SeatFacts {
+                        occupant,
+                        team: (room.mode == RoomMode::Team).then_some(player.team),
+                    })
+                })
+                .collect();
+            Some(Reporting {
+                stats,
+                facts: RoundFacts {
+                    room_id: room.id.clone(),
+                    match_id: room.match_id.clone(),
+                    game_mode: room.game_mode.as_str(),
+                    mode: room.mode.as_str(),
+                    rules: rules_to_value(&room.rules),
+                    spectators: room.spectators.len(),
+                    seats: seats?,
+                },
+            })
+        });
+        Some((room_id, reporting))
+    }
+
+    /// The host says how a round went. It is written down once per round, in order.
+    pub(super) fn report_round(&mut self, conn: u64, report: Parsed<RoundReport>) {
+        let Some(report) = self.accept(conn, report) else {
+            return;
+        };
+        let Some((room_id, reporting)) = self.reporter(conn, report.seats.len()) else {
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        if report.round <= room.reported_round {
+            self.error(conn, "That round was already reported");
+            return;
+        }
+        room.reported_round = report.round;
+        // Queued for the writer: the dispatch is synchronous, the database is not.
+        if let Some(Reporting { stats, facts }) = reporting {
+            stats.submit(Job::Round(facts, report));
+        }
+    }
+
+    /// The host says how a turn went: the shots just flown. A turn is written down once, in order,
+    /// and only while its round is still on (the round's own report closes it).
+    pub(super) fn report_turn(&mut self, conn: u64, report: Parsed<TurnReport>) {
+        let Some(report) = self.accept(conn, report) else {
+            return;
+        };
+        let Some((room_id, reporting)) = self.reporter(conn, report.seats.len()) else {
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        if report.round <= room.reported_round {
+            self.error(conn, "That round is already over");
+            return;
+        }
+        if (report.round, report.turn) <= room.reported_turn {
+            self.error(conn, "That turn was already reported");
+            return;
+        }
+        room.reported_turn = (report.round, report.turn);
+        if let Some(Reporting { stats, facts }) = reporting {
+            stats.submit(Job::Turn(facts, report));
         }
     }
 

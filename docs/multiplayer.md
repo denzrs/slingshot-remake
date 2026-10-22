@@ -32,7 +32,7 @@ The Rust relay logs through `tracing`. Set `RUST_LOG=debug` to show each message
 
 **Hosting.** For remote players, host both the web client and the relay at reachable addresses. Use a `wss://` address behind TLS when the client is served over HTTPS. Set `VITE_MULTIPLAYER_SERVER` to that address when building the client: it is embedded in the build, and a `wss://` value turns on the hosted lobby described above.
 
-**Relay environment.** `PORT` selects the listening port (default `8080`). `ALLOWED_ORIGINS` is a comma-separated exact-origin allowlist; `ALLOW_ALL_ORIGINS=1` disables origin checks. Set both `TLS_CERT` and `TLS_KEY` to PEM file paths to serve WSS directly; if TLS terminates at a reverse proxy, leave both unset and forward to the relay over a trusted network. `MAX_CONNECTIONS` (8192), `MAX_CONNECTIONS_PER_IP` (64), `CONNECTIONS_PER_IP_PER_SECOND` (20), and `MAX_MESSAGES_PER_SECOND` (300) tune admission and per-connection rate limits. These limits use the TCP peer address; configure proxy/network limits accordingly. `LEADERBOARD_DB` names the daily board's SQLite file (default `leaderboard.db`, relative to the working directory) and `LEADERBOARD_KEEP_DAYS` how many days of it are kept (default `7`); a board file that cannot be opened stops the relay at startup, so a bad path fails the deployment instead of running on without one. `RUST_LOG` controls log filtering. `npm run bench:relay -- ws://localhost:8080` sends the localhost Vite origin by default; override it with `BENCH_ORIGIN` when benchmarking another allowlisted origin.
+**Relay environment.** `PORT` selects the listening port (default `8080`). `ALLOWED_ORIGINS` is a comma-separated exact-origin allowlist; `ALLOW_ALL_ORIGINS=1` disables origin checks. Set both `TLS_CERT` and `TLS_KEY` to PEM file paths to serve WSS directly; if TLS terminates at a reverse proxy, leave both unset and forward to the relay over a trusted network. `MAX_CONNECTIONS` (8192), `MAX_CONNECTIONS_PER_IP` (64), `CONNECTIONS_PER_IP_PER_SECOND` (20), and `MAX_MESSAGES_PER_SECOND` (300) tune admission and per-connection rate limits. These limits use the TCP peer address; configure proxy/network limits accordingly. `LEADERBOARD_DB` names the daily board's SQLite file (default `leaderboard.db`, relative to the working directory) and `LEADERBOARD_KEEP_DAYS` how many days of it are kept (default `7`); a board file that cannot be opened stops the relay at startup, so a bad path fails the deployment instead of running on without one. Match statistics are **off unless asked for**: start the relay with `--stats` (`npm run dev:server:stats`), or set `STATS=1` where a service has no arguments to give. `STATS_DB` then names their SQLite file (default `stats.db`) and `STATS_KEEP_DAYS` how many days of it are kept (default `7`); like the board's file, one that cannot be opened stops the relay at startup. `RUST_LOG` controls log filtering. `npm run bench:relay -- ws://localhost:8080` sends the localhost Vite origin by default; override it with `BENCH_ORIGIN` when benchmarking another allowlisted origin.
 
 **Names in the lobby.** A player name is held to the same profanity check as board and room names, when joining or creating (`That name is not allowed`) and when renaming. A player renames from the field above their symbol picker in a waiting room (`set_name`); it is refused while a game runs.
 
@@ -47,3 +47,71 @@ After a daily run, the result card offers **Post to leaderboard** — but only w
 - **The boards are pruned**, not accumulated: a relay sweep drops the days past `LEADERBOARD_KEEP_DAYS` at most every six hours, so the file stays the size of a week's worth of runs.
 
 The board is one SQLite-compatible file beside the relay, read and written through [`turso`](https://crates.io/crates/turso), the Rust engine — so the build needs no C toolchain for it, only for the TLS stack it already had. It rides on the relay's WebSocket protocol as two extra control messages, `daily_submit` and `daily_top`, answered with `daily_board`. Nothing about them is stored per connection: the board is read and written on demand, and a client opens a short-lived connection for one request of its own.
+
+## Match statistics
+
+When started with `--stats`, the relay keeps a week of numbers about online games, to see how they are played: how long rounds run, which rules and game modes get picked, how aim and power-ups pay off, how often CPUs win. The relay itself never sees a game — the host's client runs it and the state frames are opaque to the relay — so the host reports, and it does so turn by turn:
+
+- **After every turn** (a turn is one volley: a single shot in classic's turn order, everybody's shots when they fly together) the host's client sends `turn_stats`: the turn number, every shot fired in it (see `stat_shots` below) and, for each seat, the score and whether the ship is still alive.
+- **When a round ends** it sends `round_stats`: how the round ended, its length, the planet count, for each seat the score, shots, kills, swing-bys, grazes, own goals, pick-ups and shield saves and whether it survived, and the round's records (longest shot, fastest kill, best hit, narrowest miss, longest hit).
+
+The relay adds what it knows itself: the game and room mode, the room's rules, how many seats are people and how many CPUs (and which level), and how many are watching.
+
+- **No names.** Not a player's, not a room's; the report carries seat numbers and the relay writes none of the names it knows. A room appears only as its random code (`room_id`), which names the room and nobody in it. A person is told apart the way the daily board does it – a hash of their address and the day, kept in memory, so the *same person is one player all day and somebody else tomorrow* (and after a restart) – but with a **key of its own**, so a row here can never be matched to a name on the board. A CPU seat has no hash, only its level. Rounds of one game share a random `match_id`, so several games in one room can be told apart.
+- **Reported by the host, in order.** The relay takes a report only from the host of a running game and only with one entry per seat. A turn is written down once and only after the turns before it (turns count from 1 in every round), and once a round is reported its turns are over; numbers out of range, a shot of some other turn or a title, resolution or power-up it does not know are refused. Like the daily board, the numbers are taken at face value: they come from the host's own browser.
+- **Pruned after `STATS_KEEP_DAYS`** (default 7) by the same six-hourly sweep as the board.
+
+### What is stored
+
+`stat_rounds` – one row per round:
+
+| Column | Meaning |
+| --- | --- |
+| `room_id` | The room's random code |
+| `match_id` | Random id of the game (a room can play several) |
+| `round`, `at`, `day` | Round number, Unix time and UTC date it was reported |
+| `game_mode`, `mode` | `classic` / `horizon`; `ffa` / `team` |
+| `rules` | The room's rules as JSON |
+| `humans`, `cpus`, `spectators` | How many seats are people, how many CPUs, how many watch |
+| `title`, `survivor`, `team` | How the round ended, the last ship standing, the winning team |
+| `seconds`, `planets` | Length of the round, planet count |
+| `longest_shot`, `fastest_kill`, `best_hit`, `close_call`, `sniper` (+ `_seat`) | The round's records and the seat that set each |
+
+`stat_seats` – one row per ship and round:
+
+| Column | Meaning |
+| --- | --- |
+| `match_id`, `round`, `seat`, `at` | Which ship in which round |
+| `player` | The day's pseudonym of a person; empty for a CPU |
+| `cpu` | A CPU's level; empty for a person |
+| `team`, `won`, `alive` | Team (team games), won the round, survived it |
+| `score`, `shots`, `kills`, `swingbys`, `grazes`, `own_goals`, `pickups`, `saves` | The ship's round |
+
+`stat_turns` – one row per ship and turn, for how the scores run:
+
+| Column | Meaning |
+| --- | --- |
+| `match_id`, `round`, `turn`, `seat`, `at` | Which ship after which turn |
+| `player`, `cpu` | The day's pseudonym of a person, or the level of a CPU |
+| `alive`, `score` | Whether the ship is still in the round, and its score after the turn |
+
+`stat_shots` – one row per shot, as the host's game logged it:
+
+| Column | Meaning |
+| --- | --- |
+| `match_id`, `round`, `turn`, `n`, `at` | Which turn of which round, and the shot's number in the order fired in the round |
+| `seat`, `player`, `cpu` | The shooter's seat; the day's pseudonym of a person or the level of a CPU |
+| `angle`, `power` | As aimed: degrees (0° right, counter-clockwise) and power 0–100 |
+| `power_up` | What rode with the shot: `preview`, `piercing`, `plasma`, or `splitter` (for its shots); empty for none |
+| `fork` | One of the extra shots a splitter made |
+| `resolution` | How it ended: `ship`, `planet`, `hole` (black hole), `shotdown` (by a defense), `clash` (against another shot), `lost` (off the field), `timeout` |
+| `hits`, `hit_seat`, `hit_kind` | Ships it took out (armor piercing can take several), the first of them, and whether it was an `enemy`, `self` or `friendly` |
+| `points` | What the shot earned: its hits, a high-five, the multi-kill bonus (negative for a ship of one's own) |
+
+Placement power-ups (teleport, black hole, …) and shield bounces are not shots and are not logged here; a defense's stray missile is counted in the seat's score, not as a shot. All tables can be read with any SQLite tool.
+
+### What it costs
+
+`npm run build:server && npm run bench:stats` starts the relay twice from the same binary, without and with `--stats`, puts the same load on each (rooms streaming 30 Hz states, hosts reporting turns and rounds) and compares state latency, CPU time, memory and rows written; `ROOMS`, `SECONDS`, `TURN_MS`, `TURNS` and `SHOTS` change the load. Reports are handed to a single writer task through a queue of 1024 and written one transaction each, so a report never waits for the database and a burst cannot grow memory without bound – if the queue is ever full, the report is dropped with a warning.
+
+On a development machine (release build, 10 rooms of four, each turn reported every 250 ms with two shots – a real turn takes seconds, so this is already about ten times a busy relay's rate) state latency did not move (p99 2.4 → 1.9 ms), the relay used 0.24 CPU-seconds more per 10 s and about 5 MB more memory, writing 240 rows/s. At roughly 100 times a real rate (a turn every 40 ms, four shots, 1,300 rows/s) p99 state latency went from 2.1 to 2.6 ms and the relay used 1.2 CPU-seconds more per 10 s – about an eighth of a core.

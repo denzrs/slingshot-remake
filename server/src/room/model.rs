@@ -76,6 +76,12 @@ pub(super) struct Room {
     pub(super) next_spectator_id: usize,
     /// The seed the running game started with, so a spectator who comes late can be told it.
     pub(super) seed: u32,
+    /// Names the running game in the statistics and nothing else: random, and new for every game.
+    pub(super) match_id: String,
+    /// The last round the host reported, so a round is written down once.
+    pub(super) reported_round: i64,
+    /// The last turn the host reported, as (round, turn): a turn is written down once, in order.
+    pub(super) reported_turn: (i64, i64),
 }
 
 pub(super) struct Membership {

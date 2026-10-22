@@ -6,6 +6,7 @@ import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkCpuLevel, 
 import { defaultRoomRules } from './lobbyPrefs';
 import type { RoomLook } from './roomLook';
 import type { Avatar } from './avatars';
+import { roundReport, turnReport } from './roundReport';
 import { SnapshotDecoder, SnapshotEncoder } from './netsync';
 import type { Seat, Settings } from './settings';
 
@@ -405,7 +406,13 @@ export class MultiplayerSession {
     this.resetSync();
     this.match?.dispose();
     this.match = match;
-    if (this.isHost) match.on((event) => this.pendingEvents.push(event));
+    if (this.isHost) {
+      match.on((event) => {
+        this.pendingEvents.push(event);
+        if (event.type === 'roundEnd') this.send({ type: 'round_stats', ...roundReport(match) });
+      });
+      match.onTurnEnd(() => this.send({ type: 'turn_stats', ...turnReport(match) }));
+    }
     this.hooks.matchStarted(match);
   }
 

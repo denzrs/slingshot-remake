@@ -31,6 +31,8 @@ Create the `ionos-production` environment and restrict deployments to the `main`
 - `IONOS_SERVER_IP`, `IONOS_DEPLOY_USER` (`ops`)
 - `RELAY_ALLOWED_ORIGINS` (the exact frontend origin)
 - `RELAY_HEALTHCHECK_URL` (`wss://slingshot-relay.eu:8080`)
-- Optional limits: `RELAY_PORT`, `RELAY_MAX_CONNECTIONS`, `RELAY_MAX_CONNECTIONS_PER_IP`, `RELAY_CONNECTIONS_PER_IP_PER_SECOND`, `RELAY_MAX_MESSAGES_PER_SECOND`
+- Optional limits: `RELAY_PORT`, `RELAY_MAX_CONNECTIONS`, `RELAY_MAX_CONNECTIONS_PER_IP`, `RELAY_CONNECTIONS_PER_IP_PER_SECOND`, `RELAY_MAX_MESSAGES_PER_SECOND`, `RELAY_STATS` (`1` keeps the match statistics, default off)
 
 Set the repository variable `VITE_MULTIPLAYER_SERVER` to `wss://slingshot-relay.eu:8080`; it is embedded in the public frontend build. The certificate paths are configured in the workflow and the private key contents never leave the VPS.
+
+Match statistics are off until the `ionos-production` environment has the variable `RELAY_STATS=1`: the deploy then writes `STATS=1` into `relay.env` (the relay's `--stats`, given as an environment variable because the service unit passes no arguments – so **the unit file never has to change and nothing has to be re-run by hand**, just redeploy). The relay then keeps a week of anonymous round statistics in `/srv/slingshot/stats.db` (`STATS_DB` overrides the path, `STATS_KEEP_DAYS` the window, default `7`). It is handled exactly like `leaderboard.db`: a data file next to the binary that a deploy leaves alone, pruned by the relay, no backup needed, and the relay will not start without it. It holds no names and no addresses – see *Match statistics* in `docs/multiplayer.md`.

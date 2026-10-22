@@ -149,6 +149,9 @@ impl RoomManager {
                 spectators: Vec::new(),
                 next_spectator_id: 0,
                 seed: 0,
+                match_id: String::new(),
+                reported_round: 0,
+                reported_turn: (0, 0),
             },
         );
         self.add_player(&id, conn, name, avatar);

@@ -11,14 +11,14 @@
 //! run only overwrites a worse one), the score range the client also enforces, and the name cleanup
 //! in `protocol`; a day's board is then a plain sorted read.
 
-use std::collections::hash_map::RandomState;
-use std::hash::{BuildHasher, Hash, Hasher};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tracing::{info, warn};
 use turso::{Builder, Connection, Database};
+
+use crate::pseudonym::Pseudonyms;
 
 /// How many runs a day's board hands back.
 pub const BOARD_SIZE: usize = 50;
@@ -79,7 +79,7 @@ pub struct Leaderboard {
     /// The per-process hashing key: a player is the hash of their address and the day, so no
     /// address is ever written down. A restart (a deploy) forgets the key, and with it who posted
     /// what — at worst someone posts a second run for the same day.
-    key: RandomState,
+    players: Pseudonyms,
     /// How many days a board is kept.
     keep_days: i64,
     last_prune: AtomicI64,
@@ -99,7 +99,7 @@ impl Leaderboard {
         Ok(Self {
             _database: database,
             conn,
-            key: RandomState::new(),
+            players: Pseudonyms::new(),
             keep_days: keep_days.max(1),
             last_prune: AtomicI64::new(0),
         })
@@ -190,10 +190,7 @@ impl Leaderboard {
 
     /// Who posted this run: the address and the day, hashed so the address is not kept.
     fn player(&self, day: &str, ip: IpAddr) -> String {
-        let mut hasher = self.key.build_hasher();
-        day.hash(&mut hasher);
-        ip.hash(&mut hasher);
-        format!("{:016x}", hasher.finish())
+        self.players.player(day, ip)
     }
 }
 

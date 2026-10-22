@@ -10,10 +10,12 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "dev:server": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml",
+    "dev:server:stats": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml -- --stats",
     "build:server": "cargo build --locked --release --manifest-path server/Cargo.toml",
     "bench:relay": "tsx benchmarks/relay-perf.ts",
     "bench:powerups": "tsx benchmarks/powerups.ts",
-    "bench:multikill": "tsx benchmarks/multi-kill.ts"
+    "bench:multikill": "tsx benchmarks/multi-kill.ts",
+    "bench:stats": "tsx benchmarks/stats-perf.ts"
   },
   "keywords": [],
   "author": "",

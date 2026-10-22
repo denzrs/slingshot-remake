@@ -19,6 +19,7 @@ mod tests;
 
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use serde_json::{json, Value};
 
@@ -26,6 +27,7 @@ use crate::auth::Hashed;
 use crate::codec::Outbound;
 use crate::command::RoomCommand;
 use crate::leaderboard::Board;
+use crate::stats::Stats;
 
 use connections::Connections;
 use model::*;
@@ -40,6 +42,8 @@ pub struct RoomManager {
     net: Connections,
     /// When each connection last renamed itself, so a rename cannot be repeated at the connection's message rate.
     last_rename: HashMap<u64, std::time::Instant>,
+    /// Where the host's round reports go; none in the tests that have no business writing files.
+    stats: Option<Arc<Stats>>,
 }
 
 /// The shortest time between two renames of one connection.
@@ -54,7 +58,13 @@ impl RoomManager {
             watching: HashMap::new(),
             net: Connections::default(),
             last_rename: HashMap::new(),
+            stats: None,
         }
+    }
+
+    pub fn with_stats(mut self, stats: Arc<Stats>) -> Self {
+        self.stats = Some(stats);
+        self
     }
 
     pub fn connect(
@@ -140,6 +150,8 @@ impl RoomManager {
             RoomCommand::StartGame => self.start_game(conn),
             RoomCommand::Input(input) => self.relay_input(conn, input),
             RoomCommand::Chat(text) => self.chat(conn, text),
+            RoomCommand::RoundStats(report) => self.report_round(conn, report),
+            RoomCommand::TurnStats(report) => self.report_turn(conn, report),
             RoomCommand::LeaveRoom => self.leave_room(conn),
         }
     }

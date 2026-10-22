@@ -2,6 +2,7 @@ import type { Avatar } from './avatars';
 import type { GameEvent } from './game';
 import type { StatePatch } from './netsync';
 import type { RoomColor, RoomLook, RoomSymbol } from './roomLook';
+import type { RoundReport, TurnReport } from './roundReport';
 import type { Settings } from './settings';
 import { packWireMessage, unpackWireMessage } from './messagepack';
 
@@ -52,6 +53,10 @@ type ClientMessage =
   | { type: 'start_game' }
   | { type: 'input'; input: ClientInput }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }
+  /** Host only: how a round went, for the relay's short-lived, pseudonymised statistics. */
+  | ({ type: 'round_stats' } & RoundReport)
+  /** Host only: the shots of a turn that has just been flown, and the scores after them. */
+  | ({ type: 'turn_stats' } & TurnReport)
   /** Post a daily-challenge run to the day's leaderboard; the board comes back either way. */
   | { type: 'daily_submit'; day: string; name: string; score: number }
   /** Look at a day's leaderboard without posting anything. */
