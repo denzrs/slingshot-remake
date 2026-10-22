@@ -185,13 +185,11 @@ export class Renderer {
     const primary = world.holes[0];
     if (primary) drawLens(ctx, primary, this.backdrop!.canvas);
 
-    let alpha = 1;
-    if (match.hiddenPlanets) {
-      if (!match.planetsVisible) return;
-      alpha = Math.min(1, match.phaseTime / 0.8);
-    }
+    // Hidden planets (and the contours of their gravity, which would give them away) fade in once the round is over.
+    const showPlanets = match.planetsVisible;
+    const alpha = match.hiddenPlanets ? Math.min(1, match.phaseTime / 0.8) : 1;
 
-    if (match.settings.contours) {
+    if (showPlanets && match.settings.contours) {
       let layer = this.contours.get(world);
       if (!layer || layer.version !== world.version || layer.ps !== ps) {
         layer = { version: world.version, ps, canvas: renderContours(world, ps) };
@@ -204,7 +202,7 @@ export class Renderer {
 
     // Nebula clouds sit behind the planets and the ships, so nothing hides inside them.
     if (world.nebulae.length) {
-      ctx.globalAlpha = alpha;
+      ctx.globalAlpha = 1;
       for (const n of world.nebulae) drawNebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
       ctx.globalAlpha = 1;
     }
@@ -213,7 +211,7 @@ export class Renderer {
       this.sprites.clear();
       this.spritePs = ps;
     }
-    for (const p of world.planets) {
+    for (const p of showPlanets ? world.planets : []) {
       let sprite = this.sprites.get(p.seed);
       if (!sprite) {
         sprite = renderPlanet(p, ps);
@@ -244,7 +242,7 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
-    world.defenses.forEach((d, i) => drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, alpha, defenseView(scene.volley?.shots ?? [], d, i)));
+    world.defenses.forEach((d, i) => drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, 1, defenseView(scene.volley?.shots ?? [], d, i), false, !showPlanets));
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));

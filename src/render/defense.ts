@@ -149,7 +149,8 @@ function area(color: string, radius: number, planetRadius: number): { image: HTM
  * A planetary defense: its area in three zones with the turret on the planet's surface. The turret scans the area
  * with a sweeping beam, and turns to the shot its missile is after; the rims flare while an enemy is inside.
  * `view` is what it is up to (see `defenseView`); its missiles are drawn by `drawInterception`, over the shots.
- * `labels` writes the chance of a hit in each zone, for the aim.
+ * `labels` writes the chance of a hit in each zone, for the aim. `hideRock` draws the rings whole, without the gap
+ * where the planet is.
  */
 export function drawDefense(
   ctx: CanvasRenderingContext2D,
@@ -160,13 +161,15 @@ export function drawDefense(
   alpha = 1,
   view?: DefenseView,
   labels = false,
+  hideRock = false,
 ): void {
   const out = planet ? Math.atan2(d.y - planet.y, d.x - planet.x) : -Math.PI / 2;
-  const rock = planet?.radius ?? d.radius / 3;
+  // A hidden planet leaves no gap in the area, so the rings do not tell where it is.
+  const rock = hideRock ? 0 : (planet?.radius ?? d.radius / 3);
   const { image, half } = area(color, d.radius, rock);
   const [inner, middle] = DEFENSE.ZONES.map((zone) => d.radius * zone.reach);
   // Where the inner zone meets the ground, as an angle at the turret: the rock takes the sector of this half-angle facing it.
-  const open = Math.acos(Math.min(1, inner / (2 * rock)));
+  const open = Math.acos(Math.min(1, inner / (2 * rock || 1e-9)));
   const chasing = view?.chases[0];
   const aim = chasing ? Math.atan2(chasing.shot.y - d.y, chasing.shot.x - d.x) : out + Math.sin(time * 0.9) * 1.0;
 
