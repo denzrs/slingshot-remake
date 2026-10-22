@@ -29,7 +29,7 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 
 ## Game modes
 
-The title screen has four entries: *Local*, *Multiplayer*, *Settings* and *How to play*. *Local* shows the ways to play on this device as a row of cards (arrow keys and Enter, or a click): the Daily Challenge, Classic, Event Horizon and Mayhem. Every mode but the daily challenge opens its setup first, where Enter starts the game.
+The title screen shows Classic, Event Horizon and Mayhem directly. Choose a mode (←/→ and Enter, or a click), then *Prepare match*. The Daily Challenge has its own solo entry underneath. *Play online* opens the multiplayer lobby; *Settings* and *How to play* sit in the navigation rail. Keyboard focus has a light outline; the selected mode has an orange border and a check mark.
 
 - **Daily Challenge** (*Tägliche Herausforderung*) – five sectors with stationary targets and a limited number of shots, the same for everyone on a given calendar day. Today's theme (Billiard, Blind flight, Singularity, Heavy load, Precision, Sniper or Classic, and since challenge #21 also **Bastion**, **Nebula** and **Hammerhead**) decides which twists the sectors carry. Bastion puts a flak cannon (a planetary defense that belongs to the targets) on a planet, Nebula lays a nebula over the field, Hammerhead gives you plasma shots only; Classic days sometimes carry a cloud or a cannon too. Days before #21 keep their old themes; difficulty ramps up through the day and with the weekend. Every target is guaranteed to be hittable. At the end you get a result card with your score and rank, made for screenshots, plus a Wordle-style text to copy. Your best run, attempts and streak are kept in the browser. Add `?daily=YYYY-MM-DD` to the URL to fly another day. Where a relay is configured the card also offers **Post to leaderboard**: the run goes up under a name you type, next to everyone else's runs of that day — nothing is posted unless you ask for it. The Daily Challenge screen has its own **Leaderboard** row, which shows the same board without offering to post ([multiplayer.md](multiplayer.md#daily-leaderboard)).
 - **Classic** – the original duel, extended to up to six ships. Players take turns, one shot each. A hit ship is out; the round ends when one ship is left.
@@ -39,7 +39,18 @@ The title screen has four entries: *Local*, *Multiplayer*, *Settings* and *How t
 
 ## Game setup
 
-Before a game starts — and for the room in the multiplayer lobby, where only the host can edit it — the rules are sliders and switches in four blocks (match, battlefield, shots, extras). Drag a slider, click its track or use ← →; everything is remembered for the next game, and *Reset rules* puts the defaults back. As in the original, you can toggle invisible planets, reflecting edges, fixed power, planet count, rounds and flight time.
+Classic and Event Horizon open a match briefing with four rule presets. Choosing a preset replaces the match rules, keeping the players, teams and device preferences. Existing custom rules are preserved when opening the briefing; the active preset is derived from the actual rules, or labelled *Custom rules* when none matches.
+
+| Preset | Rules |
+| --- | --- |
+| Standard | Original defaults: 5 rounds, up to 4 planets, 20-second flights, no power-ups or reflecting edges. |
+| Trickshot | Standard with power capped at 60, reflecting edges and trick-shot bonuses. |
+| Sniper | Standard with hidden aim arrows, trails that fade after 2 seconds, 30-second flights and up to 3 planets. |
+| Party | Standard with up to 8 planets, all power-ups, 4 pickups, reflecting edges and trick-shot bonuses. |
+
+Rounds, planet count and power-ups can be changed directly in the briefing. *Edit players* opens the crew; *Adjust rules* opens all sliders and switches in four blocks (match, battlefield, shots, extras). *Done* returns to the briefing with the changes kept. *Start game* is initially focused, so Enter starts the match. Everything is remembered for the next game, and *Reset rules* in the full rules screen puts the defaults back.
+
+The online room keeps its existing grouped rule controls, where only the host can edit them. Drag a slider, click its track or use ← →. As in the original, you can toggle invisible planets, reflecting edges, fixed power, planet count, rounds and flight time.
 
 **Shot power** is one choice of three: *Free* (0–100), *Capped* (a maximum from 10 to 90, a low one favours trick shots) or *Fixed* (every shot flies with the same power, 10 to 100 in steps of 5 – only the angle counts). The slider next to the choice appears only for *Capped* and *Fixed*.
 

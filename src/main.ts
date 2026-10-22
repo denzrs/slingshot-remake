@@ -4,6 +4,8 @@ import '@fontsource/b612/700';
 import '@fontsource/b612-mono/400';
 import '@fontsource/b612-mono/700';
 import './style.css';
+import './ui/launcher.css';
+import './ui/menu-page.css';
 
 import { Sound } from './audio';
 import { dailyChallenge, dateKey, isDateKey } from './challenge';

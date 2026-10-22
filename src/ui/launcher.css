@@ -1,0 +1,674 @@
+/* ——— Flight selection: the main menu and the match briefing ——— */
+
+.screen--title {
+  padding: clamp(20px, 3.5vh, 44px) clamp(22px, 5vw, 88px);
+  background: linear-gradient(110deg, rgb(7 17 34 / 0.97), rgb(11 26 51 / 0.94) 55%, rgb(11 26 51 / 0.87));
+}
+
+.launcher,
+.briefing {
+  width: min(1280px, 100%);
+  min-width: 0;
+  margin: auto;
+  animation: rise 450ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.launcher__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(240px, 0.7fr);
+  column-gap: 64px;
+  align-items: end;
+  margin-bottom: clamp(24px, 4vh, 44px);
+}
+
+.launcher__head .eyebrow {
+  grid-column: 1;
+  margin-bottom: 12px;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: var(--launch-accent);
+}
+
+.launcher .wordmark {
+  grid-column: 1;
+  font-size: clamp(76px, min(10vw, 17vh), 144px);
+  line-height: 0.86;
+}
+
+.launcher .lede {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  max-width: 39ch;
+  margin: 0 0 2px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.launcher__body {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: clamp(28px, 4vw, 64px);
+}
+
+.launcher__nav {
+  align-self: start;
+  gap: 12px;
+  padding-top: 33px;
+}
+
+.launcher__nav .item {
+  min-width: 0;
+  min-height: 52px;
+  padding: 10px 12px 10px 18px;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  color: var(--bone-dim);
+  font: 800 28px/1.15 var(--font-display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.launcher__nav .item__hint {
+  max-width: 25ch;
+  font: 400 10.5px/1.6 var(--font-body);
+  text-transform: none;
+}
+
+.launcher__nav .is-selected {
+  color: var(--launch-accent);
+  border-color: var(--launch-accent);
+  background: linear-gradient(90deg, rgb(255 173 101 / 0.1), transparent);
+}
+
+.launcher__nav .item:nth-child(3) {
+  margin-top: 16px;
+}
+
+.launcher .item::before,
+.briefing .item::before {
+  display: none;
+}
+
+.launcher__content {
+  min-width: 0;
+}
+
+.launcher__section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.launcher__section-head h2,
+.launcher__section-head h3 {
+  margin: 0;
+  font: 800 21px/1.2 var(--font-display);
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.launcher__section-head > span,
+.briefing__device {
+  color: var(--bone-dim);
+  font: 10px/1.5 var(--font-mono);
+}
+
+.launcher__modes,
+.briefing__cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 14px;
+  margin: 0;
+}
+
+.launcher__modes .item--card,
+.briefing__cards .item--card {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid rgb(91 125 179 / 0.45);
+  border-radius: 5px;
+  background: rgb(9 21 39 / 0.8);
+  text-align: left;
+  transition: border-color 160ms, background 160ms, transform 160ms;
+}
+
+.launcher__modes .item__icon {
+  width: 100%;
+  height: clamp(88px, 14vh, 150px);
+  margin: 0 0 4px;
+  opacity: 1;
+}
+
+.mode-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.launcher__modes .item__tag {
+  min-height: 14px;
+  color: var(--p2);
+  font: 9px/1.5 var(--font-mono);
+  letter-spacing: 0.015em;
+}
+
+.launcher__modes .item__title {
+  font-size: clamp(22px, 2.1vw, 30px);
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+.launcher__modes .item__hint {
+  font-size: 11.5px;
+  line-height: 1.6;
+  max-width: 29ch;
+}
+
+.launcher__modes .is-selected,
+.briefing__cards .is-selected {
+  border-color: var(--launch-accent);
+  background: linear-gradient(160deg, rgb(255 173 101 / 0.075), rgb(9 21 39 / 0.95) 70%);
+  box-shadow: 0 0 0 1px rgb(255 173 101 / 0.2), 0 7px 28px rgb(0 0 0 / 0.12);
+}
+
+.launcher__modes .is-selected .item__title,
+.briefing__cards .is-selected .item__title {
+  color: var(--launch-accent);
+}
+
+.launcher__modes .item__selection,
+.briefing__cards .item__selection {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: var(--launch-accent);
+  font: 12px/1 var(--font-body);
+}
+
+.item__selection[hidden] { display: none; }
+
+.launcher__modes .item:hover,
+.briefing__cards .item:hover {
+  border-color: var(--bone-dim);
+  transform: translateY(-2px);
+}
+
+.launcher .item:focus-visible,
+.briefing .item:focus-visible {
+  outline: 2px solid var(--bone);
+  outline-offset: 4px;
+  box-shadow: none;
+}
+
+.launcher__daily {
+  margin-top: 14px;
+}
+
+.launcher__daily .item--card {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) auto;
+  grid-template-areas: 'art title tag' 'art hint tag';
+  gap: 3px 14px;
+  padding: 10px 16px;
+  border: 1px solid rgb(91 125 179 / 0.3);
+  border-radius: 4px;
+  background: rgb(17 35 59 / 0.65);
+  text-align: left;
+}
+
+.launcher__daily .item__icon {
+  grid-area: art;
+  width: 60px;
+  height: 42px;
+  margin: 0;
+}
+
+.launcher__daily .item__title {
+  grid-area: title;
+  font-size: 19px;
+  letter-spacing: 0.025em;
+}
+
+.launcher__daily .item__hint {
+  grid-area: hint;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.launcher__daily .item__tag {
+  grid-area: tag;
+  align-self: center;
+  color: var(--p2);
+  font: 9px/1.5 var(--font-mono);
+}
+
+.launcher__launch {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.launcher__next {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--bone-dim);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.launcher__selection {
+  color: var(--bone);
+  font-size: 13px;
+}
+
+.launcher__cta,
+.briefing__start,
+.briefing__back {
+  margin: 0;
+}
+
+.launcher__cta .item,
+.briefing__start .item {
+  gap: 24px;
+  min-height: 50px;
+  padding: 10px 22px;
+  border: 1px solid var(--launch-accent);
+  border-radius: 3px;
+  color: #0b192b;
+  background: var(--launch-accent);
+  font: 800 25px/1.1 var(--font-display);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.launcher__cta .item::after,
+.briefing__start .item::after {
+  content: '→';
+  font: 20px/1 var(--font-body);
+}
+
+.launcher__cta .item:hover,
+.launcher__cta .item:focus,
+.briefing__start .item:hover,
+.briefing__start .item:focus {
+  color: #0b192b;
+  background: #ffc28d;
+}
+
+.launcher__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  padding-top: 22px;
+  margin-top: 24px;
+  border-top: 1px solid rgb(91 125 179 / 0.2);
+}
+
+.launcher__foot .keys,
+.briefing__foot .keys {
+  margin: 0;
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.launcher__language {
+  width: 220px;
+  margin-left: auto;
+}
+
+.launcher__language .item {
+  min-height: 36px;
+  padding: 4px 6px;
+  gap: 12px;
+}
+
+.launcher__language .item__label,
+.launcher__language .item__value {
+  font-size: 10px;
+}
+
+.launcher__foot .title-foot {
+  margin: 0;
+}
+
+.launcher__foot .version {
+  font-size: 9px;
+}
+
+.screen--briefing {
+  padding: clamp(24px, 4vh, 48px) clamp(20px, 5vw, 80px);
+  background: rgb(7 17 34 / 0.9);
+}
+
+.briefing {
+  width: min(1220px, 100%);
+}
+
+.briefing__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.briefing__head .eyebrow {
+  color: var(--launch-accent);
+  margin-bottom: 10px;
+  font-size: 10px;
+}
+
+.briefing__title {
+  margin: 0;
+  font: 800 clamp(46px, 5vw, 70px)/1 var(--font-display);
+  text-transform: uppercase;
+}
+
+.briefing__head .note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.briefing__device {
+  padding: 8px 0;
+  white-space: nowrap;
+}
+
+.briefing__device::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 8px 1px 0;
+  border-radius: 50%;
+  background: var(--p2);
+}
+
+.briefing__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  gap: 36px;
+  margin-top: 32px;
+}
+
+.briefing__cards {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.briefing__cards .item--card {
+  gap: 8px;
+  padding: 12px;
+}
+
+.briefing__cards .item__icon {
+  width: 100%;
+  height: 94px;
+  margin: 0;
+  opacity: 1;
+}
+
+.briefing__cards .item__title {
+  font-size: 25px;
+  letter-spacing: 0.02em;
+}
+
+.briefing__cards .item__hint {
+  font-size: 10.5px;
+  line-height: 1.7;
+}
+
+.launcher__section-head > span.briefing__preset {
+  color: var(--p2);
+}
+
+.launcher__section-head > span.briefing__preset.is-custom {
+  color: var(--launch-accent);
+}
+
+.briefing__preset-note {
+  margin: 12px 0 22px;
+  color: var(--bone-dim);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.briefing__quick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  padding-top: 10px;
+  border-top: 1px solid rgb(91 125 179 / 0.3);
+}
+
+.briefing__quick .item {
+  min-width: 0;
+  padding-inline: 2px;
+}
+
+.briefing__quick .item__label {
+  font-size: 12px;
+}
+
+.briefing__aside {
+  padding-left: 28px;
+  border-left: 1px solid rgb(91 125 179 / 0.3);
+}
+
+.briefing__aside .setup__title {
+  font-size: 10px;
+  color: var(--bone-dim);
+}
+
+.briefing__crew {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.briefing__ship {
+  display: block;
+  font-size: 25px;
+  line-height: 1;
+  text-shadow: 0 0 20px currentColor;
+}
+
+.briefing__lineup {
+  margin: 12px 0 6px;
+  font-size: 13px;
+}
+
+.briefing__crew-note {
+  margin: 0;
+  color: var(--bone-dim);
+  font-size: 10.5px;
+  line-height: 1.7;
+}
+
+.briefing__players {
+  margin: 10px 0 28px;
+}
+
+.briefing__players .item,
+.briefing__edit .item {
+  min-height: 36px;
+  padding: 6px 0;
+  justify-content: flex-start;
+  color: var(--p2);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.briefing__players .item::after,
+.briefing__edit .item::after {
+  content: '↗';
+  font-size: 14px;
+}
+
+.briefing__facts {
+  margin: 12px 0 6px;
+  font-size: 10.5px;
+}
+
+.briefing__facts > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgb(91 125 179 / 0.14);
+}
+
+.briefing__facts dt {
+  color: var(--bone-dim);
+}
+
+.briefing__facts dd {
+  margin: 0;
+  color: var(--bone);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.briefing__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid rgb(91 125 179 / 0.3);
+}
+
+.briefing__back .item {
+  min-height: 44px;
+  padding: 10px 16px;
+  color: var(--bone-dim);
+  font-size: 12px;
+}
+
+.briefing__back .item::before {
+  display: inline;
+  position: static;
+  content: '←';
+  width: auto;
+  height: auto;
+  border: 0;
+  opacity: 1;
+  transform: none;
+}
+
+.screen[data-rebuild] .launcher,
+.screen[data-rebuild] .briefing {
+  animation: none;
+}
+
+@media (max-width: 1100px) {
+  .launcher__body { grid-template-columns: 180px minmax(0, 1fr); gap: 28px; }
+  .launcher__head { column-gap: 28px; }
+  .launcher__nav .item { font-size: 25px; }
+  .launcher__daily .item__tag { display: none; }
+  .launcher__daily .item--card { grid-template-columns: 52px minmax(0, 1fr); }
+  .briefing__body { grid-template-columns: minmax(0, 1fr) 220px; gap: 24px; }
+  .briefing__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .briefing__cards .item--card { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 4px 10px; }
+  .briefing__cards .item__icon { grid-column: 1; grid-row: 1 / 3; height: 65px; }
+  .briefing__cards .item__title { align-self: end; font-size: 23px; }
+  .briefing__cards .item__hint { align-self: start; }
+  .briefing__quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; }
+  .briefing__aside { padding-left: 20px; }
+}
+
+@media (max-width: 760px) {
+  .launcher__head { grid-template-columns: 1fr; margin-bottom: 26px; }
+  .launcher .wordmark { font-size: clamp(68px, 17vw, 116px); }
+  .launcher .lede { grid-column: 1; grid-row: 3; margin-top: 16px; max-width: 54ch; font-size: 12px; line-height: 1.7; }
+  .launcher__body { display: flex; flex-direction: column; gap: 24px; }
+  .launcher__nav { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0; }
+  .launcher__nav .item { padding: 8px 12px; min-height: 44px; font-size: 23px; }
+  .launcher__nav .item:nth-child(3) { margin: 0; }
+  .launcher__nav .item__hint { display: none; }
+  .launcher__modes { gap: 10px; }
+  .launcher__modes .item--card { padding: 12px; }
+  .launcher__modes .item__title { font-size: 24px; }
+  .launcher__modes .item__tag { font-size: 8px; }
+  .launcher__foot { margin-top: 20px; padding-top: 16px; gap: 10px 16px; }
+  .launcher__foot .keys { display: none; }
+  .launcher__language { margin-left: 0; width: 200px; }
+  .briefing__head { gap: 12px; }
+  .briefing__device { display: none; }
+  .briefing__body { grid-template-columns: minmax(0, 1fr); margin-top: 24px; }
+  .briefing__aside { padding: 20px 0 0; border-left: 0; border-top: 1px solid rgb(91 125 179 / 0.3); }
+  .briefing__crew { margin-top: 14px; }
+  .briefing__players { margin-bottom: 20px; }
+  .briefing__foot { position: sticky; bottom: -24px; z-index: 1; padding: 14px 0 max(20px, env(safe-area-inset-bottom)); margin-top: 20px; background: #081426; }
+  .briefing__foot .keys { display: none; }
+  .briefing__start .item { font-size: 23px; padding-inline: 20px; }
+}
+
+@media (max-width: 520px) {
+  .screen--title { padding: max(28px, env(safe-area-inset-top)) 22px max(18px, env(safe-area-inset-bottom)); }
+  .launcher__head .eyebrow { font-size: 8px; letter-spacing: 0.16em; }
+  .launcher__nav .item { font-size: 20px; white-space: nowrap; }
+  .launcher__nav .item:nth-child(n + 3) { font: 400 12px/1.5 var(--font-body); letter-spacing: 0; text-transform: none; }
+  .launcher__content .launcher__section-head > span { display: none; }
+  .launcher__modes { grid-template-columns: minmax(0, 1fr); }
+  .launcher__modes .item--card { display: grid; grid-template-columns: 86px minmax(0, 1fr); grid-template-rows: auto auto 1fr; gap: 3px 12px; padding: 12px; }
+  .launcher__modes .item__icon { grid-column: 1; grid-row: 1 / 4; height: 80px; margin: 0; }
+  .launcher__modes .item__tag { grid-column: 2; margin-top: 3px; }
+  .launcher__modes .item__title { grid-column: 2; font-size: 25px; overflow-wrap: anywhere; }
+  .launcher__modes .item__hint { grid-column: 2; font-size: 11.5px; line-height: 1.6; }
+  .launcher__modes .item__selection { top: 9px; right: 9px; font-size: 10px; }
+  .launcher__section-head h2 { font-size: 20px; }
+  .launcher__section-head > span { font-size: 8px; }
+  .launcher__daily .item--card { padding: 12px; gap: 4px 10px; }
+  .launcher__daily .item__title { font-size: 20px; }
+  .launcher__daily .item__hint { font-size: 10px; }
+  .launcher__launch { position: sticky; bottom: -1px; z-index: 1; margin: 14px -4px 0; padding: 12px 4px; background: #0b1a30; border-top: 1px solid rgb(91 125 179 / 0.3); }
+  .launcher__next { display: none; }
+  .launcher__cta { width: 100%; }
+  .launcher__cta .item { width: 100%; justify-content: space-between; gap: 12px; padding: 10px 14px; min-height: 48px; font-size: 24px; white-space: nowrap; }
+  .screen--briefing { padding: 28px 20px 0; }
+  .briefing__title { font-size: 48px; overflow-wrap: anywhere; }
+  .briefing__cards { gap: 10px; }
+  .briefing__cards .item--card { display: flex; padding: 12px; }
+  .briefing__cards .item__icon { height: 70px; }
+  .briefing__cards .item__title { align-self: flex-start; font-size: 24px; }
+  .briefing__cards .item__hint { font-size: 10px; line-height: 1.6; }
+  .briefing__preset-note { margin-bottom: 16px; }
+  .briefing__quick { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .briefing__quick .item { padding-block: 10px; }
+  .briefing__foot { bottom: 0; margin-inline: -20px; padding-inline: 20px; gap: 12px; }
+  .briefing__back .item { gap: 8px; padding: 10px; font-size: 11px; }
+  .briefing__start { flex: 1; min-width: 0; }
+  .briefing__start .item { width: 100%; gap: 8px; font-size: 22px; padding-inline: 12px; white-space: nowrap; }
+}
+
+@media (max-width: 380px) {
+  .launcher__modes .item--card { grid-template-columns: 72px minmax(0, 1fr); }
+  .launcher__modes .item__icon { height: 76px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launcher, .briefing { animation: none; }
+  .launcher__modes .item, .briefing__cards .item { transition: none; }
+  .launcher__modes .item:hover, .briefing__cards .item:hover { transform: none; }
+  .launcher .item__icon, .briefing .item__icon { transition: none; transform: none; }
+}

@@ -13,7 +13,9 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, freeSeat, MIN_SEATS, removeSeat, seatTeamsFor, teamCounts, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
-import { modeIcon } from './mode-icons';
+import { modeArt } from './mode-icons';
+import { menuGroup, menuPage } from './menu-page';
+import { MATCH_PRESETS, matchingPreset, presetRules } from './match-presets';
 import { groupTitle, RULE_GROUPS, ruleItems } from './rules';
 
 export interface App {
@@ -125,67 +127,64 @@ function lineup(s: Settings): string {
   return parts.join(' · ');
 }
 
+type LocalMode = VersusMode | 'mayhem';
+let titleMode: LocalMode = 'classic';
+const modeName = (mode: LocalMode): string => t(`mode.${mode}` as Key);
+
+/** The modes live on the title screen: choose here, prepare the match next. */
 export function titleScreen(app: App): Screen {
+  const selectedName = h('strong.launcher__selection', null);
+  const selectionHint = h('span', null, t('launcher.nextHint'));
+  const update = (): void => { selectedName.textContent = modeName(titleMode); };
+  const modeCard = (mode: LocalMode, tag: Key): MenuItem => ({
+    kind: 'action', section: 'modes', label: modeName(mode), hint: t(`mode.${mode}.hint` as Key),
+    tag: t(tag), icon: () => modeArt(mode), selected: () => titleMode === mode,
+    run: () => { titleMode = mode; app.menu.refresh(); },
+  });
   return {
-    build: () =>
-      h(
-        'section.screen.screen--title',
-        { 'aria-labelledby': 'wordmark' },
-        h(
-          'div.title-col',
-          null,
+    build: () => h('section.screen.screen--title', { 'aria-labelledby': 'wordmark' },
+      h('div.launcher', null,
+        h('header.launcher__head', null,
           h('p.eyebrow', null, t('title.eyebrow')),
           h('h1.wordmark', { id: 'wordmark' }, 'Slingshot'),
-          h('p.lede', null, t('title.lede')),
-          h('nav.items', { 'data-items': '', 'aria-label': t('title.menuLabel') }),
-          h('p.keys', null, t('title.keys')),
-          // Set by the deploy workflow; local builds say so.
-          h(
-            'div.title-foot',
-            null,
+          h('p.lede', null, t('launcher.lede')),
+        ),
+        h('div.launcher__body', null,
+          h('nav.launcher__nav.items', { 'data-section': 'navigation', 'aria-label': t('title.menuLabel') }),
+          h('div.launcher__content', null,
+            h('div.launcher__section-head', null, h('h2', null, t('launcher.choose')), h('span', null, t('launcher.onDevice'))),
+            h('div.items.items--row.launcher__modes', { 'data-section': 'modes', 'role': 'group', 'aria-label': t('launcher.choose') }),
+            h('div.items.launcher__daily', { 'data-section': 'daily' }),
+            h('div.launcher__launch', null,
+              h('div.launcher__next', { 'aria-live': 'polite' }, selectedName, selectionHint),
+              h('div.items.items--row.launcher__cta', { 'data-section': 'launch' }),
+            ),
+          ),
+        ),
+        h('footer.launcher__foot', null,
+          h('p.keys', null, t('launcher.keys')),
+          h('div.items.launcher__language', { 'data-section': 'language' }),
+          h('div.title-foot', null,
             h('p.version', null, String(import.meta.env.VITE_APP_VERSION || 'Local-Dev')),
-            ...(import.meta.env.VITE_COFFEE_URL
-              ? [coffeeButton()]
-              : []),
+            ...(import.meta.env.VITE_COFFEE_URL ? [coffeeButton()] : []),
           ),
         ),
       ),
-    // A getter, so the lineup hint is fresh whenever the menu re-renders this screen.
-    get items(): MenuItem[] {
-      return [
-        { kind: 'action', label: t('title.local'), hint: t('title.local.hint'), primary: true, run: () => app.menu.push(() => localScreen(app)) },
-        { kind: 'action', label: t('multiplayer.title'), hint: t('multiplayer.hint'), run: () => app.openLobby() },
-        { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
-        { kind: 'action', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
-        languageItem(app),
-      ];
-    },
-  };
-}
-
-/** The ways to play on this device, as a row of cards: the daily challenge and the three modes. */
-function localScreen(app: App): Screen {
-  const card = (label: string, hint: string, icon: Parameters<typeof modeIcon>[0], run: () => void, primary = false): MenuItem => ({ kind: 'action', section: 'cards', label, hint, icon: () => modeIcon(icon), primary, run });
-  return {
-    build: () =>
-      h(
-        'section.screen.screen--panel',
-        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('title.local') },
-        h(
-          'div.panel.panel--cards',
-          null,
-          h('h2.panel__title', null, t('title.local')),
-          h('div.items.items--row.items--cards', { 'data-section': 'cards' }),
-          h('div.items.items--row', { 'data-section': 'back' }),
-        ),
-      ),
+    ),
     items: [
-      card(t('mode.daily'), dailyMenuHint(app.today()), 'daily', () => app.menu.push(() => dailyScreen(app)), true),
-      card(t('mode.classic'), t('mode.classic.hint'), 'classic', () => app.menu.push(() => setupScreen(app, 'classic'))),
-      card(t('mode.horizon'), t('mode.horizon.hint'), 'horizon', () => app.menu.push(() => setupScreen(app, 'horizon'))),
-      card(t('mode.mayhem'), t('mode.mayhem.hint'), 'mayhem', () => app.menu.push(() => mayhemScreen(app))),
-      { kind: 'action', section: 'back', label: t('common.back'), run: () => app.menu.back() },
+      { kind: 'action', section: 'navigation', label: t('launcher.local'), hint: t('launcher.localHint'), selected: () => true, run: () => app.menu.focusSection('modes') },
+      { kind: 'action', section: 'navigation', label: t('launcher.online'), hint: t('launcher.onlineHint'), run: () => app.openLobby() },
+      { kind: 'action', section: 'navigation', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
+      { kind: 'action', section: 'navigation', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
+      modeCard('classic', 'launcher.tag.classic'),
+      modeCard('horizon', 'launcher.tag.horizon'),
+      modeCard('mayhem', 'launcher.tag.mayhem'),
+      { kind: 'action', section: 'daily', label: t('mode.daily'), hint: dailyMenuHint(app.today()), tag: t('launcher.solo'), icon: () => modeArt('daily'), run: () => app.menu.push(() => dailyScreen(app)) },
+      { kind: 'action', section: 'launch', label: t('launcher.prepare'), primary: true, run: () => app.menu.push(() => titleMode === 'mayhem' ? mayhemScreen(app) : setupScreen(app, titleMode)) },
+      { ...languageItem(app), section: 'language' },
     ],
+    focus: 8,
+    update,
   };
 }
 
@@ -193,7 +192,13 @@ export function pauseScreen(app: App): Screen {
   const daily = app.mode === 'challenge';
   const mode = app.mode === 'classic' || app.mode === 'horizon' ? app.mode : null;
   return {
-    build: () => panel(t('pause.title'), null),
+    build: () => menuPage({
+      title: t('pause.title'), eyebrow: app.mode === 'challenge' ? t('mode.daily') : app.mayhem ? t('mode.mayhem') : modeName(app.mode === 'horizon' ? 'horizon' : 'classic'),
+      intro: t('shell.pauseNote'), className: 'menu-page--pause',
+      body: [h('nav.items.pause-actions', { 'data-items': '', 'aria-label': t('pause.title') })],
+      aside: [h('div.menu-page__art', null, modeArt(app.mode === 'challenge' ? 'daily' : app.mayhem ? 'mayhem' : app.mode === 'horizon' ? 'horizon' : 'classic'))],
+      footer: false,
+    }),
     items: [
       { kind: 'action', label: t('pause.resume'), primary: true, run: () => app.resume() },
       // Online, the room decides: no restarts from the pause menu. The daily challenge has no setup, only a retry.
@@ -277,7 +282,7 @@ function playersScreen(app: App): Screen {
 
   const add = (label: string, flier: 'human' | 'medium'): MenuItem => ({
     kind: 'action',
-    section: 'actions',
+    section: 'crew-actions',
     label,
     disabled: freeSeat(s) === null,
     run: () => {
@@ -305,23 +310,13 @@ function playersScreen(app: App): Screen {
     );
   };
 
-  const block = (title: string, section: string) => h('section.setup__group', null, h('h3.setup__title', null, title), h('div.setup__rows', { 'data-section': section }));
   return {
-    build: () =>
-      h(
-        'section.screen.screen--panel.screen--setup',
-        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('common.players') },
-        h(
-          'div.panel.panel--players',
-          null,
-          h('h2.panel__title', null, t('common.players')),
-          h('p.note', null, t('players.note')),
-          block(t('players.group.mode'), 'mode'),
-          block(t('players.group.crew', { n: seats.length, max: MAX_PLAYERS }), 'seats'),
-          summary,
-          h('div.items.items--row.items--actions', { 'data-section': 'actions' }),
-        ),
-      ),
+    build: () => menuPage({
+      title: t('common.players'), eyebrow: t('briefing.crew'), intro: t('players.note'), className: 'menu-page--crew',
+      body: [menuGroup(t('players.group.mode'), 'mode'), menuGroup(t('players.group.crew', { n: seats.length, max: MAX_PLAYERS }), 'seats'), summary, h('div.items.items--row.crew-actions', { 'data-section': 'crew-actions' })],
+      keys: t('briefing.keys'),
+      footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
+    }),
     items: [
       mode,
       ...seats.map(seat),
@@ -331,7 +326,7 @@ function playersScreen(app: App): Screen {
         ? [
             {
               kind: 'action',
-              section: 'actions',
+              section: 'crew-actions',
               label: t('players.balance'),
               run: () => {
                 balanceTeams(s);
@@ -363,8 +358,86 @@ function settingToggle(app: App, label: string, key: BooleanSetting): MenuItem {
   };
 }
 
-/** The rules of a game, shown right before it starts. They are remembered between games. */
+/** A concise briefing; the complete rules are one step away. Existing custom rules are preserved. */
 function setupScreen(app: App, mode: VersusMode): Screen {
+  const s = app.settings;
+  const presetLabel = h('span.briefing__preset', null);
+  const summary = h('dl.briefing__facts', { 'aria-live': 'polite' });
+  const crew = h('div.briefing__crew', { 'aria-hidden': 'true' });
+  const crewLabel = h('p.briefing__lineup', null);
+  const quickKeys = ['rounds', 'maxPlanets', 'powerUps'] as const;
+  const quick = ruleItems(mode, {
+    get: () => rulesOf(s),
+    patch: (values) => { Object.assign(s, values); app.settingsChanged(); },
+  }).filter(({ key }) => quickKeys.some((quickKey) => quickKey === key));
+  const update = (): void => {
+    const preset = matchingPreset(rulesOf(s), mode);
+    presetLabel.textContent = preset ? t(`preset.${preset}` as Key) : t('preset.custom');
+    presetLabel.classList.toggle('is-custom', !preset);
+    crewLabel.textContent = lineup(s);
+    crew.replaceChildren(...activeSeats(s).map((i) => {
+      const marker = h('span.briefing__ship', null, '▲');
+      marker.style.color = COLORS.players[i];
+      return marker;
+    }));
+    const fact = (label: string, value: string) => h('div', null, h('dt', null, label), h('dd', null, value));
+    summary.replaceChildren(
+      fact(t('settings.shotTime'), t('settings.seconds', { n: s.shotTime })),
+      fact(t('settings.bounce'), t(s.bounce ? 'common.on' : 'common.off')),
+      fact(t('settings.hiddenAim'), t(s.hiddenAim ? 'common.on' : 'common.off')),
+    );
+  };
+  return {
+    build: () => h('section.screen.screen--panel.screen--briefing', { role: 'dialog', 'aria-modal': 'true', 'aria-label': modeName(mode) },
+      h('div.briefing', null,
+        h('header.briefing__head', null,
+          h('div', null, h('p.eyebrow', null, t('launcher.prepare')), h('h2.briefing__title', null, modeName(mode)), h('p.note', null, t(`mode.${mode}.hint` as Key))),
+          h('span.briefing__device', null, t('launcher.onDevice')),
+        ),
+        h('div.briefing__body', null,
+          h('section.briefing__presets', { 'aria-labelledby': 'preset-heading' },
+            h('div.launcher__section-head', null, h('h3', { id: 'preset-heading' }, t('preset.choose')), presetLabel),
+            h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') }),
+            h('p.briefing__preset-note', null, t('preset.note')),
+            h('div.briefing__quick', { 'data-section': 'quick' }),
+          ),
+          h('aside.briefing__aside', null,
+            h('h3.setup__title', null, t('briefing.crew')),
+            crew, crewLabel,
+            h('p.briefing__crew-note', null, t('briefing.crewHint')),
+            h('div.items.briefing__players', { 'data-section': 'players' }),
+            h('h3.setup__title', null, t('briefing.rules')),
+            summary,
+            h('div.items.briefing__edit', { 'data-section': 'edit' }),
+          ),
+        ),
+        h('footer.briefing__foot', null,
+          h('div.items.items--row.briefing__back', { 'data-section': 'back' }),
+          h('p.keys', null, t('briefing.keys')),
+          h('div.items.items--row.briefing__start', { 'data-section': 'start' }),
+        ),
+      ),
+    ),
+    items: [
+      ...MATCH_PRESETS.map((preset): MenuItem => ({
+        kind: 'action', section: 'presets', label: t(`preset.${preset}` as Key), hint: t(`preset.${preset}.hint` as Key),
+        icon: () => modeArt(preset === 'standard' ? 'classic' : preset), selected: () => matchingPreset(rulesOf(s), mode) === preset,
+        run: () => { Object.assign(s, presetRules(preset)); app.settingsChanged(); app.menu.refresh(); },
+      })),
+      ...quick.map(({ item }): MenuItem => ({ ...item, section: 'quick' })),
+      { kind: 'action', section: 'players', label: t('briefing.editCrew'), run: () => app.menu.push(() => playersScreen(app)) },
+      { kind: 'action', section: 'edit', label: t('briefing.editRules'), run: () => app.menu.push(() => rulesScreen(app, mode)) },
+      { kind: 'action', section: 'back', label: t('common.back'), run: () => app.menu.back() },
+      { kind: 'action', section: 'start', label: t('setup.start'), primary: true, run: () => app.start(mode) },
+    ],
+    // Enter keeps the quick route into the game; the presets remain a click or arrow away.
+    focus: MATCH_PRESETS.length + quick.length + 3,
+    update,
+  };
+}
+
+/** All rules, grouped by subject, without overwhelming the match briefing. */
+function rulesScreen(app: App, mode: VersusMode): Screen {
   const rules = ruleItems(mode, {
     get: () => rulesOf(app.settings),
     patch: (values) => {
@@ -374,7 +447,6 @@ function setupScreen(app: App, mode: VersusMode): Screen {
   });
   const rows: MenuItem[] = rules.map(({ group, item }): MenuItem => ({ ...item, section: group }));
   const actions: MenuItem[] = [
-    { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(mode) },
     { kind: 'action', section: 'actions', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
     {
       kind: 'action',
@@ -387,29 +459,18 @@ function setupScreen(app: App, mode: VersusMode): Screen {
       },
     },
     { kind: 'action', section: 'actions', label: t('common.back'), run: () => app.menu.back() },
+    { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },
   ];
   return {
-    build: () =>
-      h(
-        'section.screen.screen--panel.screen--setup',
-        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t(mode === 'classic' ? 'mode.classic' : 'mode.horizon') },
-        h(
-          'div.panel.panel--setup',
-          null,
-          h('h2.panel__title', null, t(mode === 'classic' ? 'mode.classic' : 'mode.horizon')),
-          h('p.note', null, t('setup.note')),
-          h(
-            'div.setup',
-            null,
-            ...RULE_GROUPS.filter((group) => rules.some((r) => r.group === group)).map((group) => h('section.setup__group', null, h('h3.setup__title', null, groupTitle(group)), h('div.setup__rows', { 'data-section': group }))),
-          ),
-          h('div.items.items--row.items--actions', { 'data-section': 'actions' }),
-          h('p.keys.keys--menu', null, t('setup.keys')),
-        ),
-      ),
+    build: () => menuPage({
+      title: t('briefing.editRules'), eyebrow: modeName(mode), intro: t('setup.note'), className: 'menu-page--rules',
+      body: [h('div.setup', null, ...RULE_GROUPS.filter((group) => rules.some((r) => r.group === group)).map((group) => menuGroup(groupTitle(group), group)))],
+      keys: t('briefing.keys'),
+      footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
+    }),
     items: [...rows, ...actions],
-    // Enter starts the game straight away, as it always did.
-    focus: rows.length,
+    // Return to the briefing with the edited rules.
+    focus: rows.length + actions.length - 1,
   };
 }
 
@@ -444,43 +505,42 @@ function mayhemScreen(app: App): Screen {
     ...rules.map(({ key, group, item }): MenuItem => ({ ...item, section: group, ...(key === 'simultaneousShots' ? { hidden: () => app.settings.mayhemBase === 'horizon' } : {}) })),
   ];
   const actions: MenuItem[] = [
-    { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(app.settings.mayhemBase, true) },
     { kind: 'action', section: 'actions', label: t('common.players'), hint: lineup(app.settings), run: () => app.menu.push(() => playersScreen(app)) },
     { kind: 'action', section: 'actions', label: t('common.back'), run: () => app.menu.back() },
+    { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(app.settings.mayhemBase, true) },
   ];
   return {
-    build: () =>
-      h(
-        'section.screen.screen--panel.screen--setup',
-        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('mode.mayhem') },
-        h(
-          'div.panel.panel--setup',
-          null,
-          h('h2.panel__title', null, t('mode.mayhem')),
-          h('p.note', null, t('mayhem.note')),
-          h('div.setup', null, h('section.setup__group', null, h('h3.setup__title', null, groupTitle('match')), h('div.setup__rows', { 'data-section': 'match' }))),
-          h('div.items.items--row.items--actions', { 'data-section': 'actions' }),
-          h('p.keys.keys--menu', null, t('setup.keys')),
-        ),
-      ),
+    build: () => menuPage({
+      title: t('mode.mayhem'), eyebrow: t('launcher.prepare'), intro: t('mayhem.note'), className: 'menu-page--mayhem',
+      body: [menuGroup(groupTitle('match'), 'match')],
+      aside: [h('div.menu-page__art', null, modeArt('mayhem')), h('h3.setup__title', null, t('briefing.crew')), h('p.note', null, lineup(app.settings)), h('p.note', null, t('shell.mayhemNote'))],
+      keys: t('briefing.keys'),
+      footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
+    }),
     items: [...rows, ...actions],
-    focus: rows.length,
+    focus: rows.length + actions.length - 1,
   };
 }
 
 /** Only what concerns this device; the rules of a game live on the setup screen. */
 function settingsScreen(app: App): Screen {
   return {
-    build: () => panel(t('common.settings'), h('p.note', null, t('settings.note')), 'panel--medium'),
+    build: () => menuPage({
+      title: t('common.settings'), eyebrow: t('shell.device'), intro: t('settings.note'), className: 'menu-page--settings',
+      body: [h('div.preferences', null, menuGroup(t('shell.display'), 'display'), menuGroup(t('shell.soundDevice'), 'device'), menuGroup(t('common.language'), 'language'), ...(matchMedia('(pointer: coarse)').matches ? [menuGroup(t('shell.touch'), 'touch')] : []))],
+      keys: t('briefing.keys'),
+      footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
+    }),
     items: [
-      settingToggle(app, t('settings.contours'), 'contours'),
-      settingToggle(app, t('settings.particles'), 'particles'),
-      settingToggle(app, t('settings.menuBackground'), 'menuBackground'),
+      { ...settingToggle(app, t('settings.contours'), 'contours'), section: 'display' },
+      { ...settingToggle(app, t('settings.particles'), 'particles'), section: 'display' },
+      { ...settingToggle(app, t('settings.menuBackground'), 'menuBackground'), section: 'display' },
       // Only a touch screen has the stick.
       ...(matchMedia('(pointer: coarse)').matches
         ? [
             {
               kind: 'segmented' as const,
+              section: 'touch',
               label: t('settings.stickSide'),
               options: [
                 { value: 'left', label: t('settings.stickLeft') },
@@ -494,15 +554,16 @@ function settingsScreen(app: App): Screen {
             },
           ]
         : []),
-      settingToggle(app, t('settings.sound'), 'sound'),
+      { ...settingToggle(app, t('settings.sound'), 'sound'), section: 'device' },
       {
         kind: 'toggle',
         label: t('settings.fullscreen'),
+        section: 'device',
         get: () => app.isFullscreen(),
         set: () => app.toggleFullscreen(),
       },
-      languageItem(app),
-      { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
+      { ...languageItem(app), section: 'language' },
+      { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },
     ],
   };
 }
@@ -647,40 +708,22 @@ function tutorialScreen(app: App): () => Screen {
   let page = 0;
   return (): Screen => {
     const last = page === TUTORIAL.length - 1;
+    const lessons = TUTORIAL.map((lesson) => lesson());
     return {
-      // Every page is in the DOM, only the current one is seen: the pages share one grid cell, so the
-      // dialog is as tall as the longest page and the buttons stay in place while you turn them.
-      build: () =>
-        h(
-          'section.screen.screen--panel',
-          { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('common.help') },
-          h(
-            'div.panel.panel--wide',
-            null,
-            h('h2.panel__title', null, t('common.help')),
-            h(
-              'div.tutorial',
-              null,
-              h('div.tutorial__progress', { 'aria-hidden': 'true' }, ...TUTORIAL.map((_, i) => h(i === page ? 'span.is-current' : i < page ? 'span.is-done' : 'span', null))),
-              h(
-                'div.tutorial__pages',
-                null,
-                ...TUTORIAL.map((lessonOf, i) => {
-                  const lesson = lessonOf();
-                  return h(
-                    i === page ? 'div.tutorial__page.is-current' : 'div.tutorial__page',
-                    null,
-                    h('p.eyebrow', null, t('tutorial.step', { n: i + 1, total: TUTORIAL.length })),
-                    h('h3.tutorial__title', null, lesson.title),
-                    ...lesson.body,
-                  );
-                }),
-              ),
-            ),
-            h('div.items.items--row', { 'data-section': 'pager' }),
-          ),
-        ),
+      build: () => menuPage({
+        title: t('common.help'), eyebrow: t('shell.flightSchool'), className: 'menu-page--tutorial',
+        body: [h('article.tutorial', { 'aria-live': 'polite' },
+          h('p.eyebrow', null, t('tutorial.step', { n: page + 1, total: TUTORIAL.length })),
+          h('h3.tutorial__title', null, lessons[page].title), ...lessons[page].body,
+        )],
+        aside: [h('nav.items.tutorial-chapters', { 'data-section': 'chapters', 'aria-label': t('shell.chapters') })],
+        footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'pager' }),
+      }),
       items: [
+        ...lessons.map((lesson, i): MenuItem => ({
+          kind: 'action', section: 'chapters', label: lesson.title, selected: () => page === i,
+          run: () => { page = i; app.menu.rebuild(); },
+        })),
         {
           kind: 'action',
           section: 'pager',
@@ -709,7 +752,7 @@ function tutorialScreen(app: App): () => Screen {
             },
       ],
       // "Next" has the focus, so Enter turns the pages.
-      focus: 1,
+      focus: TUTORIAL.length + 1,
     };
   };
 }
@@ -724,8 +767,6 @@ export function gameOverScreen(app: App, match: Match): Screen {
   };
   return {
     build: () => {
-      const title = h('h2.result', null, headline);
-      if (winner) title.style.color = winner.color;
       const lists: Element[] = [];
       if (match.teamMode) {
         // Teams first; the individual standings follow, smaller.
@@ -768,27 +809,22 @@ export function gameOverScreen(app: App, match: Match): Screen {
         });
         if (honours.length) lists.push(h('p.ranking-label', null, t('oracle.awards')), h('ul.highlights', null, ...honours));
       }
-      return h(
-        'section.screen.screen--panel',
-        { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('over.label') },
-        h(
-          'div.panel.panel--result',
-          null,
-          h('p.eyebrow', null, tn('over.after', match.round)),
-          title,
-          ...lists,
-          h('div.items.items--row', { 'data-items': '' }),
-        ),
-      );
+      const page = menuPage({
+        title: headline, eyebrow: t('over.label'), intro: tn('over.after', match.round), className: 'menu-page--results',
+        body: [h('div.match-report', null, ...lists)],
+      });
+      if (winner) page.style.setProperty('--winner', winner.color);
+      return page;
     },
     items: [
-      match.canAdvance
-        ? { kind: 'action', label: t('over.rematch'), primary: true, run: () => app.rematch() }
-        : { kind: 'action', label: t('over.rematch'), hint: t('over.hostRematch'), disabled: true, run: () => {} },
       app.online
         ? { kind: 'action', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
         : { kind: 'action', label: t('common.mainMenu'), run: () => app.toTitle() },
+      match.canAdvance
+        ? { kind: 'action', label: t('over.rematch'), primary: true, run: () => app.rematch() }
+        : { kind: 'action', label: t('over.rematch'), hint: t('over.hostRematch'), disabled: true, run: () => {} },
     ],
+    focus: 1,
     onEscape: () => (app.online ? app.toLobby() : app.toTitle()),
   };
 }
@@ -842,12 +878,4 @@ function scoreChart(match: Match): SVGElement | null {
     );
   }
   return svg;
-}
-
-function panel(title: string, body: HTMLElement | null, extraClass = ''): HTMLElement {
-  return h(
-    'section.screen.screen--panel',
-    { role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
-    h(`div.panel${extraClass ? '.' + extraClass : ''}`, null, h('h2.panel__title', null, title), ...(body ? [body] : []), h('div.items', { 'data-items': '' })),
-  );
 }

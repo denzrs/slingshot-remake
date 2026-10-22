@@ -14,6 +14,9 @@ import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
 import type { App } from './screens';
 import { AVATAR_LABEL, avatarSvg, playerIcon } from './avatars';
 import { lookDialog, lookSummary, picker, roomIcon, visibilityControl, type LookControl, type LookDialog } from './roomLook';
+import { menuPage } from './menu-page';
+import { modeArt } from './mode-icons';
+import { MATCH_PRESETS, matchingPreset, presetRules } from './match-presets';
 
 /** A game mode's name; a Mayhem room is the mode its rounds are played in, with Mayhem in front. */
 const modeName = (mode: NetworkGameMode, mayhem = false) => {
@@ -130,10 +133,10 @@ interface RulesForm {
  * The rules of a game as sliders and switches, in the blocks of the setup screen. Read-only, they
  * are what everybody but the host sees of a room.
  */
-function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly = false, mayhem = false): RulesForm {
+function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly = false, mayhem = false, changed?: () => void): RulesForm {
   const controls: Control[] = [];
   const refresh = () => controls.forEach((c) => c.refresh());
-  const env: Env = { sound: app.menu.sound, readonly, changed: refresh };
+  const env: Env = { sound: app.menu.sound, readonly, changed: () => { refresh(); changed?.(); } };
   const items = ruleItems(mode, source, true, mayhem);
   const groups = RULE_GROUPS.filter((group) => items.some((i) => i.group === group)).map((group) => {
     const rows = h('div.setup__rows', null);
@@ -227,7 +230,10 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const nameField = h('div', null, field(t('multiplayer.name'), playerName), joinNameError);
   const connectButton = button(hosted ? t('multiplayer.retry') : t('multiplayer.connect'), true);
   const connectFields = h('div.lobby__fields', null, ...(configuredServer ? [] : [field(t('multiplayer.server'), serverAddress)]));
-  const connectView = h('section.lobby__card.lobby__card--narrow', null, h('h3.setup__title', null, t('multiplayer.connection')), connectFields, connectButton);
+  const connectView = h('section.lobby__card.lobby__card--narrow.lobby__connect', null,
+    h('h3.setup__title', null, t('multiplayer.connection')), connectFields, connectButton,
+    h('div.lobby__connect-art', null, modeArt('classic'), h('p.note', null, t('shell.connectNote'))),
+  );
 
   /** Once connected: who you are connected to, your name, a way out. */
   const linkText = h('span.lobby__link-text', null);
@@ -356,9 +362,40 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const horizonNote = h('p.lobby__note', null, t('multiplayer.horizonNote'));
   /** Where the rules of the room to create go; rebuilt when the game mode changes the list. */
   const createRules = h('div', null);
+  let createRulesOpen = false;
   const buildCreateRules = () => {
     const mayhem = prefs.rules.mayhem > 0;
-    createRules.replaceChildren(rulesForm(prefs.gameMode, { get: () => prefs.rules, patch: (v) => (prefs.rules = { ...prefs.rules, ...v }), commit: save }, app, false, mayhem).el);
+    const presetStatus = h('span.lobby__preset-status', { 'aria-live': 'polite' });
+    const choices: HTMLButtonElement[] = [];
+    const paintPresets = () => {
+      const selected = matchingPreset(prefs.rules, prefs.gameMode);
+      presetStatus.textContent = selected ? t(`preset.${selected}`) : t('preset.custom');
+      choices.forEach((choice, i) => {
+        choice.setAttribute('aria-pressed', String(selected === MATCH_PRESETS[i]));
+      });
+    };
+    const form = rulesForm(prefs.gameMode, { get: () => prefs.rules, patch: (v) => (prefs.rules = { ...prefs.rules, ...v }), commit: save }, app, false, mayhem, paintPresets);
+    if (mayhem) createRules.replaceChildren(form.el);
+    else {
+      for (const preset of MATCH_PRESETS) {
+        const choice = button(t(`preset.${preset}`));
+        choice.classList.add('lobby__preset');
+        choice.replaceChildren(h('span', { 'aria-hidden': 'true' }, modeArt(preset === 'standard' ? 'classic' : preset)), h('strong', null, t(`preset.${preset}`)));
+        choice.addEventListener('click', () => {
+          prefs.rules = { ...presetRules(preset), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+          save();
+          form.refresh();
+          paintPresets();
+          sound.select();
+        });
+        choices.push(choice);
+      }
+      const details = h('details.lobby__rule-details', null, h('summary', null, t('briefing.editRules')), form.el) as HTMLDetailsElement;
+      details.open = createRulesOpen;
+      details.addEventListener('toggle', () => { createRulesOpen = details.open; });
+      createRules.replaceChildren(h('div.lobby__preset-head', null, h('h3.setup__title', null, t('preset.choose')), presetStatus), h('div.lobby__presets', null, ...choices), details);
+      paintPresets();
+    }
     horizonNote.hidden = prefs.gameMode !== 'horizon';
     mayhemBase.hidden = !mayhem;
   };
@@ -440,7 +477,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const createView = h(
     'section.lobby__card.lobby__card--wide',
     null,
-    h('h3.setup__title', null, t('multiplayer.newRoom')),
+    h('h3.setup__title', null, t('shell.roomBasics')),
     h('div.lobby__basics', null, h('div', null, createVisibility.el, gameMode.el, mayhemBase, matchType.el), h('div', null, field(t('multiplayer.roomName'), roomName), createSummary.el, capacity.el, field(t('multiplayer.passwordOptional'), secretField(password, () => void copyText(password.value, t('multiplayer.passwordCopied')))))),
     createRules,
     horizonNote,
@@ -531,7 +568,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   /** The room's look: editable by the host, shown to everybody else. */
   const roomLookSlot = h('div', null);
   /** Where the rules of the room are: sliders for the host, the same, locked, for everybody else. */
-  const roomRules = h('div', null);
+  const roomRuleFields = h('div', null);
+  const roomRules = h('details.lobby__rule-details', null, h('summary', null, t('shell.roomRules')), roomRuleFields);
   /** Above the rules: that they reset everybody's "ready" (host), or that they are not yours to change (everyone else). */
   const rulesNote = h('p.lobby__rules-note', null);
   const roomNote = h('p.lobby__note', null);
@@ -616,7 +654,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     const self = you.spectator ? undefined : room.players.find((p) => p.id === you.playerId);
     const watching = !!you.spectator;
     selfReady = !!self?.ready;
-    roomTitle.replaceChildren(roomIcon(room.symbol, room.color), `${room.name} · ${modeName(room.gameMode, room.rules.mayhem > 0)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`);
+    roomTitle.replaceChildren(roomIcon(room.symbol, room.color), `${modeName(room.gameMode, room.rules.mayhem > 0)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`);
     roomCode.textContent = room.id;
     privateTag.hidden = room.visibility !== 'private';
     copyInvite.hidden = !canCopyInvite(room.locked, you.host);
@@ -707,7 +745,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       formKey = key;
       draft = null;
       form = rulesForm(room.gameMode, roomSource(room), app, !you.host, room.rules.mayhem > 0);
-      roomRules.replaceChildren(form.el);
+      roomRuleFields.replaceChildren(form.el);
     }
     // What the host is in the middle of changing wins over the room's last word for a moment.
     if (Date.now() - touched > 1000 && !sendTimer) draft = null;
@@ -730,11 +768,12 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const backButton = button(`← ${t('common.mainMenu')}`);
   const backBar = h('div.lobby__back', null, backButton);
 
-  const root = h(
-    'section.screen.screen--panel.screen--lobby',
-    { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('multiplayer.title') },
-    h('div.panel.panel--lobby', null, h('h2.panel__title', null, t('multiplayer.title')), h('div.lobby', null, status, bar, connectView, roomsView, createView, roomView, backBar), h('div.items', { 'data-items': '' })),
-  );
+  const root = menuPage({
+    title: t('multiplayer.title'), eyebrow: t('launcher.online'), intro: t('shell.lobbyIntro'), className: 'menu-page--lobby',
+    body: [h('div.lobby', null, status, bar, connectView, roomsView, createView, roomView, backBar)], footer: false,
+  });
+  const heading = root.querySelector<HTMLElement>('.menu-page__title')!;
+  const introduction = root.querySelector<HTMLElement>('.menu-page__intro')!;
 
   /** An invite is a one-shot: once a room is entered, or the lobby is left, it is out of the URL again. */
   const dropInvite = () => {
@@ -746,6 +785,10 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
 
   const render = () => {
     const { connected, connecting, room, rooms: open } = session;
+    const title = room ? room.name : connected && view === 'create' ? t('multiplayer.newRoom') : t('multiplayer.title');
+    heading.textContent = title;
+    root.setAttribute('aria-label', title);
+    introduction.textContent = room ? t('shell.roomIntro') : connected && view === 'create' ? t('shell.createIntro') : t('shell.lobbyIntro');
     avatarBar.show(prefs.avatar);
     const browsing = connected && !room;
     // A room, once left, leaves you at the list of rooms; and it takes the invitation out of the address bar.

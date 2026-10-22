@@ -36,7 +36,7 @@ interface Live {
 }
 
 export type MenuItem =
-  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; /** Small second line under the label. */ hint?: string; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; disabled?: boolean })
+  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; /** Small second line under the label. */ hint?: string; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; disabled?: boolean })
   | (Placed &
       Live & {
         /** Cycles through its options; the arrows at its sides go back and forth. */
@@ -179,6 +179,11 @@ export class Menu {
     this.current?.update?.();
   }
 
+  /** Move from the navigation rail into a screen's choices. */
+  focusSection(section: string): void {
+    this.focusables.find((el) => el.parentElement?.dataset.section === section && !el.hidden)?.focus();
+  }
+
   /** Returns true if the key was consumed. */
   handleKey(e: KeyboardEvent): boolean {
     // Typing into a field (the lobby's name, address, password) is not menu navigation — only Esc still goes back.
@@ -295,6 +300,20 @@ export class Menu {
         if (item.disabled) {
           b.classList.add('is-disabled');
           b.setAttribute('aria-disabled', 'true');
+        }
+        if (item.tag) b.prepend(Object.assign(document.createElement('span'), { className: 'item__tag', textContent: item.tag }));
+        if (item.selected) {
+          const marker = document.createElement('span');
+          marker.className = 'item__selection';
+          marker.textContent = '✓';
+          marker.setAttribute('aria-hidden', 'true');
+          if (item.icon) b.append(marker);
+          this.controls.push({ el: b, refresh: () => {
+            const selected = item.selected!();
+            b.classList.toggle('is-selected', selected);
+            b.setAttribute('aria-pressed', String(selected));
+            marker.hidden = !selected;
+          } });
         }
         b.addEventListener('click', () => {
           if (item.disabled) return;
