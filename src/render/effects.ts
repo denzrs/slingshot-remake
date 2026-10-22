@@ -1,4 +1,4 @@
-import { COLORS, FONTS, PHYSICS } from '../config';
+import { COLORS, FIELD, FONTS, PHYSICS } from '../config';
 import type { World } from '../physics';
 import { rgba } from './color';
 import { fillTextUpright, strokeTextUpright } from './orientation';
@@ -26,6 +26,8 @@ interface GravityBody {
 
 const MAX_SPARKS = 1800;
 const MAX_MOTES = 240;
+/** Debris that drifts this far from the middle of the field is gone for good: nothing pulls it back. */
+const DEBRIS_RANGE = 1000;
 /** The fastest a power-up's pieces fly on their way to the ship. */
 const MOTE_SPEED = 900;
 
@@ -391,7 +393,7 @@ export class Effects {
           break;
         }
       }
-      if (!collided) remaining.push(s);
+      if (!collided && Math.hypot(s.x - FIELD.width / 2, s.y - FIELD.height / 2) < DEBRIS_RANGE) remaining.push(s);
     }
     this.sparks = remaining;
     this.sparks.push(...fragments.slice(0, MAX_SPARKS - remaining.length));

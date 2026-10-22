@@ -1,6 +1,6 @@
 import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../ai';
 import type { Avatar } from '../avatars';
-import { AIM, COLORS, FIELD, GRACE, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
+import { AIM, COLORS, FIELD, GRACE, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
 import { applyTwists, MayhemDeck, type MayhemRound } from '../mayhem';
 import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../physics';
@@ -968,6 +968,7 @@ export abstract class Match {
     if (this.phaseTime - this.flightDoneAt < this.afterVolleyDelay) return;
     this.recordFlights(volley);
     this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, fan: vs.fan, points: vs.trail, volley: this.volleyNumber, at: this.clock })));
+    this.pruneTrails();
     this.volley = null;
     this.power.onVolleyEnd();
     this.judgeOracle();
@@ -1003,6 +1004,19 @@ export abstract class Match {
 
   protected get volleyNumber(): number {
     return 0;
+  }
+
+  /** A long round piles up finished trails; each player keeps only their newest ones. */
+  private pruneTrails(): void {
+    const kept = new Map<number, number>();
+    const drop = new Set<Trail>();
+    for (let i = this.trails.length - 1; i >= 0; i--) {
+      const t = this.trails[i];
+      const n = (kept.get(t.owner) ?? 0) + 1;
+      kept.set(t.owner, n);
+      if (n > MAX_TRAILS_PER_PLAYER) drop.add(t);
+    }
+    if (drop.size) this.trails = this.trails.filter((t) => !drop.has(t));
   }
 
   /** Turn a simulation event into game events. `live` = the real volley, not a killcam replay. */
