@@ -127,6 +127,8 @@ export const SCORING = {
 
 /** Fading trails: the choices for how long a finished shot's path lasts in seconds (0 = it stays), and the share of that time it stays fully visible before fading. */
 export const TRAIL_FADE = { OPTIONS: [0, 1, 2, 4], HOLD: 0.4 };
+/** How many finished trails each player keeps on screen: older ones are barely visible anyway, and every one is redrawn each frame. */
+export const MAX_TRAILS_PER_PLAYER = 12;
 
 /** "Ereignishorizont" — the gravity royale mode. */
 export const HORIZON = {
