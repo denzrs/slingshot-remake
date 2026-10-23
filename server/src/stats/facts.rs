@@ -90,6 +90,53 @@ const QUERIES: &[Query] = &[
            ON b.match_id = a.match_id AND b.round = a.round AND b.seat = a.seat AND b.turn = a.turn + 1
          WHERE a.fork = 0 AND b.fork = 0 AND a.resolution IN ('planet', 'lost', 'clash')",
     ),
+    // — Shot types, power and kills —
+    ("plasmaShots", 5, concat!("SELECT SUM(power_up = 'plasma'), ", pct!("power_up = 'plasma'", "1"), ", ", pct!("hit_kind = 'enemy' AND power_up = 'plasma'", "power_up = 'plasma'"), " FROM stat_shots")),
+    ("piercingShots", 5, concat!("SELECT SUM(power_up = 'piercing'), ", pct!("power_up = 'piercing'", "1"), ", ", pct!("hit_kind = 'enemy' AND power_up = 'piercing'", "power_up = 'piercing'"), " FROM stat_shots")),
+    ("splitterShots", 5, concat!("SELECT SUM(power_up = 'splitter'), ", pct!("power_up = 'splitter'", "1"), ", ", pct!("hit_kind = 'enemy' AND power_up = 'splitter'", "power_up = 'splitter'"), " FROM stat_shots")),
+    ("lowPower", 20, concat!("SELECT SUM(power < 20), ", pct!("power < 20", "1"), ", ", pct!("hit_kind = 'enemy' AND power < 20", "power < 20"), " FROM stat_shots")),
+    ("avgKillTurn", 20, "SELECT COUNT(*), AVG(turn) FROM stat_shots WHERE hit_kind = 'enemy'"),
+    ("longestShot", 25, "SELECT COUNT(*), MAX(longest_shot) FROM stat_rounds WHERE longest_shot IS NOT NULL"),
+    ("sniper", 25, "SELECT COUNT(*), MAX(sniper) FROM stat_rounds WHERE sniper IS NOT NULL"),
+    // A kill is an enemy ship: the chain counts a ship's kills in a round (2 a double kill, 3 a multi kill, 4 a mega kill, 5 a monster kill).
+    (
+        "multiKill",
+        10,
+        "SELECT COUNT(DISTINCT match_id || ':' || round), 100.0 * COUNT(DISTINCT CASE WHEN kills >= 2 THEN match_id || ':' || round END) / COUNT(DISTINCT match_id || ':' || round) FROM stat_seats",
+    ),
+    ("bigKills", 1, "SELECT SUM(kills >= 4), SUM(kills >= 4), SUM(kills >= 5) FROM stat_seats"),
+    ("monsterKill", 25, "SELECT COUNT(*), MAX(kills) FROM stat_seats"),
+    (
+        "volleyKill",
+        10,
+        concat!("SELECT COUNT(*), ", pct!("h > 1", "1"), " FROM (SELECT SUM(hits) AS h FROM stat_shots GROUP BY match_id, round, turn HAVING SUM(hits) > 0)"),
+    ),
+    (
+        "firstShotKill",
+        20,
+        concat!(
+            "SELECT COUNT(*), ", pct!("s.hit_kind = 'enemy'", "1"),
+            " FROM stat_shots s WHERE s.n = (SELECT MIN(x.n) FROM stat_shots x WHERE x.match_id = s.match_id AND x.round = s.round)"
+        ),
+    ),
+    // Only Classic has a turn order; in Event Horizon everyone fires together.
+    (
+        "seatAdvantage",
+        20,
+        concat!(
+            "SELECT COUNT(*), ", pct!("se.won = 1", "1"),
+            " FROM stat_shots s
+               JOIN stat_matches m ON m.match_id = s.match_id
+               JOIN stat_seats se ON se.match_id = s.match_id AND se.round = s.round AND se.seat = s.seat
+              WHERE m.game_mode = 'classic' AND s.n = (SELECT MIN(x.n) FROM stat_shots x WHERE x.match_id = s.match_id AND x.round = s.round)"
+        ),
+    ),
+    // — Power-ups laid on the field —
+    ("placedBlackhole", 1, "SELECT COUNT(*), COUNT(*) FROM stat_placements WHERE kind = 'blackhole'"),
+    ("placedWormhole", 1, "SELECT COUNT(*), COUNT(*) FROM stat_placements WHERE kind = 'wormhole'"),
+    ("placedNebula", 1, "SELECT COUNT(*), COUNT(*) FROM stat_placements WHERE kind = 'nebula'"),
+    // A planet of -1 is a planet killer that found its planet already gone.
+    ("planetsDestroyed", 1, "SELECT COUNT(*), COUNT(*) FROM stat_placements WHERE kind = 'planetkiller' AND planet >= 0"),
     // — Rounds and games —
     ("rounds", 5, "SELECT COUNT(*), AVG(seconds), MAX(seconds) FROM stat_rounds WHERE seconds > 0"),
     ("longestRound", 25, "SELECT COUNT(*), MAX(turns) FROM stat_rounds WHERE turns IS NOT NULL"),
@@ -105,11 +152,44 @@ const QUERIES: &[Query] = &[
             " FROM stat_seats WHERE match_id IN (SELECT match_id FROM stat_seats WHERE cpu IS NOT NULL) AND match_id IN (SELECT match_id FROM stat_seats WHERE cpu IS NULL)"
         ),
     ),
+    ("quickRound", 10, concat!("SELECT COUNT(*), ", pct!("seconds < 30", "1"), " FROM stat_rounds WHERE seconds > 0")),
+    ("soloVsCpu", 10, concat!("SELECT COUNT(*), ", pct!("humans = 1 AND cpus > 0", "1"), " FROM stat_rounds")),
+    ("spectated", 10, concat!("SELECT COUNT(*), ", pct!("spectators > 0", "1"), " FROM stat_rounds")),
+    ("avgHumans", 10, "SELECT COUNT(*), AVG(humans) FROM stat_rounds"),
+    (
+        "planetsEffect",
+        10,
+        concat!("SELECT SUM(planets >= 4), ", pct!("title = 'selfHit' AND planets >= 4", "planets >= 4"), ", ", pct!("title = 'selfHit' AND planets < 4", "planets < 4"), " FROM stat_rounds"),
+    ),
+    (
+        "cpuLevels",
+        40,
+        concat!("SELECT SUM(cpu IN ('easy', 'hawking')), ", pct!("won = 1 AND cpu = 'hawking'", "cpu = 'hawking'"), ", ", pct!("won = 1 AND cpu = 'easy'", "cpu = 'easy'"), " FROM stat_seats"),
+    ),
+    ("pickups", 20, "SELECT COUNT(*), 1.0 * SUM(pickups) / COUNT(*) FROM stat_seats WHERE cpu IS NULL"),
+    ("grazes", 20, "SELECT COUNT(*), 1.0 * SUM(grazes) / COUNT(*) FROM stat_seats WHERE cpu IS NULL"),
+    // A save is a shield bouncing a shot that would have hit its holder.
+    ("saves", 1, "SELECT SUM(saves), SUM(saves) FROM stat_seats"),
+    (
+        "ownGoals",
+        10,
+        concat!("SELECT COUNT(*), ", pct!("o > 0", "1"), " FROM (SELECT SUM(own_goals) AS o FROM stat_seats WHERE player IS NOT NULL GROUP BY match_id, player)"),
+    ),
     ("swingbys", 10, "SELECT COUNT(*), 1.0 * SUM(swingbys) / COUNT(DISTINCT match_id || ':' || round) FROM stat_seats"),
     ("bestHit", 25, "SELECT COUNT(*), MAX(best_hit) FROM stat_rounds WHERE best_hit IS NOT NULL"),
     ("fastestKill", 25, "SELECT COUNT(*), MIN(fastest_kill) FROM stat_rounds WHERE fastest_kill IS NOT NULL"),
     ("closeCall", 25, "SELECT COUNT(*), MIN(close_call) FROM stat_rounds WHERE close_call > 0"),
     ("today", 1, "SELECT rounds, rounds, points FROM stat_days WHERE day = date('now')"),
+    // The week's rounds against the week before; the weekend's share needs two weeks of days to mean anything.
+    (
+        "weekTrend",
+        20,
+        "SELECT p, t, 100.0 * t / p FROM (
+             SELECT SUM(CASE WHEN day <= date('now', '-7 days') AND day > date('now', '-14 days') THEN rounds END) AS p,
+                    COALESCE(SUM(CASE WHEN day > date('now', '-7 days') THEN rounds END), 0) AS t
+             FROM stat_days)",
+    ),
+    ("weekend", 14, concat!("SELECT COUNT(DISTINCT day), ", pct!("strftime('%w', day) IN ('0', '6')", "1"), " FROM stat_rounds")),
     // — The oracle: tips and bets —
     ("tipRound", 5, concat!("SELECT COUNT(*), ", pct!("correct = 1", "1"), " FROM stat_tips WHERE kind = 'round'")),
     ("tipShot", 5, concat!("SELECT COUNT(*), ", pct!("correct = 1", "1"), " FROM stat_tips WHERE kind = 'shot'")),

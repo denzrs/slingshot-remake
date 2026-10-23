@@ -10,6 +10,9 @@ describe('facts for the menu', () => {
     expect(factText({ id: 'rounds', values: [70.75, 161.1] })).toBe('An average round takes 1:11, the longest 2:41.');
     expect(factText({ id: 'betWin', values: [250] })).toBe('Biggest bet win so far: +250 points.');
     expect(factText({ id: 'hitRate', values: [0.4] })).toContain('0.4%');
+    expect(factText({ id: 'plasmaShots', values: [4.2, 50] })).toBe('4.2% of all shots are plasma – 50% of those hit.');
+    expect(factText({ id: 'placedNebula', values: [12] })).toBe('12 nebulae have been placed.');
+    expect(factText({ id: 'weekTrend', values: [140, 112.5] })).toBe('The last 7 days: 140 rounds – 113% of the week before.');
   });
 
   it('has nothing to say about a fact it does not know, one with numbers missing, or a harmless 0% self hit', () => {
