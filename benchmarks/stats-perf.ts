@@ -96,6 +96,7 @@ function roundReport(round: number) {
     team: null,
     seconds: 41.3,
     planets: 4,
+    turns: TURNS,
     players: Array.from({ length: GUESTS + 1 }, () => seat),
     records: { bestHit: { player: 0, value: 250 } },
   };
