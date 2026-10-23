@@ -1,3 +1,4 @@
+import type { ReplayTurn } from './game/replay';
 import type { Avatar } from './avatars';
 import type { GameEvent } from './game';
 import type { StatePatch } from './netsync';
@@ -61,9 +62,64 @@ type ClientMessage =
   | { type: 'daily_submit'; day: string; name: string; score: number }
   /** Look at a day's leaderboard without posting anything. */
   | { type: 'daily_top'; day: string }
+  /** The numbers behind the stats page: the totals of every day, and the latest games. */
+  | { type: 'stats_overview' }
+  /** A game played on this device, told to the relay when it is over: its rounds and nothing to fly it again with. */
+  | ({ type: 'local_game' } & LocalGameReport)
+  /** One game from the statistics, to fly it again: what it took is kept for games whose host logged it. */
+  | { type: 'stats_replay'; id: string }
   /** Something to say to everybody in the room. The relay cleans it and stars out profanity. */
   | { type: 'chat'; text: string }
   | { type: 'leave_room' };
+
+/** One day of the stats heatmap: UTC date, and what happened on it. */
+export interface StatsDay {
+  day: string;
+  rounds: number;
+  /** People who played, counted once per day. */
+  players: number;
+  /** What the shots earned, summed. */
+  points: number;
+}
+
+/** One game of the stats table: its rounds taken together. */
+export interface StatsGame {
+  id: string;
+  /** Unix seconds of its first reported round. */
+  at: number;
+  gameMode: 'classic' | 'horizon';
+  mode: 'ffa' | 'team';
+  humans: number;
+  cpus: number;
+  rounds: number;
+  points: number;
+  /** Whether the game can be watched again. */
+  replay: boolean;
+  /** Played on one device and reported when it was over: it has its rounds and nothing more. */
+  local: boolean;
+}
+
+/** A game played on one device, as the relay is told of it when it is over. */
+export interface LocalGameReport {
+  gameMode: NetworkGameMode;
+  mode: RoomMode;
+  rules: RoomRules;
+  /** Who sat where: a CPU's level, or null for a person; the team in team games. */
+  seats: { cpu: NetworkCpuLevel | null; team: 0 | 1 | null }[];
+  /** Every round, as the host of an online game would report it. */
+  rounds: RoundReport[];
+}
+
+/** A recorded game as the relay hands it over: what it takes to fly it again (see `game/replay.ts`). */
+export interface StatsReplay {
+  gameMode: NetworkGameMode;
+  mode: RoomMode;
+  rules: RoomRules;
+  seed: number;
+  /** Who sat where: a CPU's level, or null for a person; the team in team games. */
+  seats: { cpu: NetworkCpuLevel | null; team: 0 | 1 | null }[];
+  turns: ReplayTurn[];
+}
 
 /** One run on a daily leaderboard, as the relay ranks it. */
 export interface DailyEntry {
@@ -161,6 +217,19 @@ export type ServerMessage =
       /** Your own run, wherever it sits — null when you have not posted one for that day. */
       you: DailyEntry | null;
     }
+  | {
+      type: 'stats_overview';
+      /** False when the relay keeps no statistics. */
+      enabled: boolean;
+      /** Every day with games, oldest first. */
+      days: StatsDay[];
+      /** The same for the games played on one device. */
+      localDays: StatsDay[];
+      /** The latest games, newest first. */
+      games: StatsGame[];
+    }
+  /** `replay` is null when the relay has no such game, or not the whole of it. */
+  | { type: 'stats_replay'; id: string; replay: StatsReplay | null }
   | { type: 'room_closed'; message: string }
   /** `field` names what the error is about, when it is about one thing the player typed. */
   | { type: 'error'; message: string; field?: 'name' }

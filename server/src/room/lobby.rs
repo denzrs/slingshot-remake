@@ -133,6 +133,7 @@ impl RoomManager {
             id.clone(),
             Room {
                 id: id.clone(),
+                uid: format!("{:032x}", rand::thread_rng().gen::<u128>()),
                 name: room_name,
                 name_is_default,
                 mode,

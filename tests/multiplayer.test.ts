@@ -12,6 +12,12 @@ import { MultiplayerSession, type NetMatch, type Transport } from '../src/multip
 import type { RoomRules, ServerMessage } from '../src/net';
 import { TIP_HIDDEN } from '../src/game/oracle';
 import { cloneSettings, DEFAULT_SETTINGS } from '../src/settings';
+import { netMatch } from '../src/netMatch';
+import { POWER_UP_KINDS } from '../src/powerups';
+import { StatsBoard } from '../src/statsBoard';
+import { createMatch } from '../src/game';
+import { reportLocalGame, trackLocalGame } from '../src/localStats';
+import type { LocalGameReport } from '../src/net';
 
 const activeTransports = new Set<RustTransport>();
 let serverProcess: ChildProcess;
@@ -118,7 +124,7 @@ beforeAll(async () => {
   serverProcess = spawn(binary, [], {
     // The relay opens a daily leaderboard wherever it runs; this one writes it to a throwaway file
     // rather than leaving a board behind in the working tree.
-    env: { ...process.env, PORT: String(port), ALLOW_ALL_ORIGINS: '1', ALLOWED_ORIGINS: '', CONNECTIONS_PER_IP_PER_SECOND: '1000', MAX_MESSAGES_PER_SECOND: '100000', LEADERBOARD_DB: join(tmpdir(), `slingshot-board-${port}.db`), STATS_DB: join(tmpdir(), `slingshot-stats-${port}.db`), RUST_LOG: process.env.RUST_LOG ?? 'info' },
+    env: { ...process.env, PORT: String(port), ALLOW_ALL_ORIGINS: '1', ALLOWED_ORIGINS: '', STATS: '1', CONNECTIONS_PER_IP_PER_SECOND: '1000', MAX_MESSAGES_PER_SECOND: '100000', DATABASE: join(tmpdir(), `slingshot-${port}.db`), RUST_LOG: process.env.RUST_LOG ?? 'info' },
     stdio: process.env.RELAY_LOG ? 'inherit' : 'ignore',
   });
   await waitForServer(serverUrl);
@@ -1366,4 +1372,90 @@ describe('spectators online', () => {
     expect(hm.players[0].score).toBe(1000);
     expect(hm.players[1].score).toBe(0);
   }, 90_000);
+});
+
+describe('statistics and replays', () => {
+  it('a game played on the relay can be flown again from what the relay kept, with the same result', async () => {
+    let hostMatch: NetMatch | null = null;
+    const hostSession = await connectSession({ matchStarted: (match) => { hostMatch = match; } });
+    const guestSession = await connectSession();
+    const playRules: RoomRules = { ...rules, rounds: 2, maxPlanets: 5, bounce: false, fixedPower: false, powerUps: true, powerUpAmount: 4, powerUpKinds: [...POWER_UP_KINDS] };
+    hostSession.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules: playRules, maxPlayers: 3 });
+    await waitForSession(hostSession, () => hostSession.room !== null);
+    await waitForSession(guestSession, () => guestSession.rooms.some((room) => room.id === hostSession.room!.id));
+    guestSession.joinRoom(hostSession.room!.id, 'Ben');
+    await waitForSession(hostSession, () => hostSession.room?.players.length === 2);
+    hostSession.addCpu('hard');
+    await waitForSession(hostSession, () => hostSession.room?.players.length === 3);
+    guestSession.setReady(true);
+    await waitForSession(hostSession, () => hostSession.room!.players.slice(1).every((player) => player.ready));
+    hostSession.startGame();
+    await waitForSession(hostSession, () => hostMatch !== null);
+    const match = hostMatch!;
+
+    // Both people shoot at whatever their own angle says; the CPU thinks for itself.
+    const dt = 1 / 30;
+    for (let i = 0; i < 60_000 && match.phase !== 'gameOver'; i++) {
+      for (const p of match.players) {
+        if (p.cpu || !match.canAim(p.id)) continue;
+        match.setPlayerAim(p.id, 20 + ((i * 37 + p.id * 91) % 140), 35 + ((i * 13) % 55));
+        match.commitPlayer(p.id);
+      }
+      match.update(dt);
+      hostSession.update(dt);
+      if (match.phase === 'roundOver' && match.phaseTime > 1) match.advance();
+      // Let the sockets run now and then: a loop that never yields leaves the guest unread, and the relay
+      // drops a client whose backlog grows (which ends the game early and nothing is kept for it).
+      if (i % 200 === 199) await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(match.phase).toBe('gameOver');
+
+    // The relay writes behind a queue: ask until the game is on the list and flyable.
+    const board = () => new StatsBoard(() => { const transport = new RustTransport(); transport.setAddress(serverUrl); return transport; });
+    let game;
+    for (let i = 0; i < 100 && !game; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const overview = await board().overview();
+      game = overview.games.find((g) => g.replay);
+    }
+    expect(game, 'the game is on the list and can be flown again').toBeDefined();
+    expect(game!.rounds).toBe(2);
+    const data = await board().replay(game!.id);
+    expect(data).not.toBeNull();
+    expect(data!.seats).toHaveLength(3);
+
+    // Fly it from what the relay has: the same ships end up with the same scores.
+    const again = netMatch({ ...data!, players: data!.seats }, DEFAULT_SETTINGS, { script: { turns: data!.turns } })!;
+    for (let i = 0; i < 60_000 && again.replayState === 'playing' && again.phase !== 'gameOver'; i++) again.update(dt);
+    expect(again.replayState).not.toBe('drifted');
+    expect(again.phase).toBe('gameOver');
+    expect(again.players.map((p) => Math.round(p.score))).toEqual(match.players.map((p) => Math.round(p.score)));
+    expect(again.round).toBe(match.round);
+  }, 120_000);
+
+  it('keeps a game played on one device, without turns, and lists it as local and not to be watched again', async () => {
+    const seats = ['medium', 'hard', 'off', 'off', 'off', 'off'] as const;
+    const settings = { ...cloneSettings(DEFAULT_SETTINGS), rounds: 2, seats: [...seats] };
+    const match = createMatch('horizon', settings, { seats: [...seats], seed: 6, deterministicCpu: true });
+    let report: LocalGameReport | null = null;
+    trackLocalGame(match, settings, (sent) => { report = sent; });
+    for (let i = 0; i < 100_000 && match.phase !== 'gameOver'; i++) {
+      match.update(1 / 30);
+      if (match.phase === 'roundOver' && match.phaseTime > 1) match.advance();
+    }
+    expect(report).not.toBeNull();
+    const transport = new RustTransport();
+    transport.setAddress(serverUrl);
+    await reportLocalGame(report!, transport);
+
+    const board = () => new StatsBoard(() => { const t = new RustTransport(); t.setAddress(serverUrl); return t; });
+    let game;
+    for (let i = 0; i < 100 && !game; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      game = (await board().overview()).games.find((g) => g.local && g.gameMode === 'horizon');
+    }
+    expect(game, 'the game is on the list').toBeDefined();
+    expect(game).toMatchObject({ local: true, replay: false, rounds: 2, cpus: 2, humans: 0 });
+    expect(await board().replay(game!.id)).toBeNull();
+  }, 60_000);
 });

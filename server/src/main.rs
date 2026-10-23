@@ -9,6 +9,7 @@ mod codec;
 mod command;
 mod config;
 mod connection;
+mod db;
 mod leaderboard;
 mod protocol;
 mod pseudonym;
@@ -100,13 +101,23 @@ async fn main() {
         }
     };
 
-    // LEADERBOARD_DB: the daily-challenge board's file. It sits beside the binary and the
-    // environment file, which a deploy never replaces — only the binary is flipped.
-    let db_path = std::env::var("LEADERBOARD_DB").unwrap_or_else(|_| "leaderboard.db".to_string());
+    // DATABASE: the relay's one data file, for the daily-challenge board and the match statistics
+    // alike (LEADERBOARD_DB, its name from when it held only the board, still works). It sits beside
+    // the binary and the environment file, which a deploy never replaces — only the binary is flipped.
+    let db_path = std::env::var("DATABASE")
+        .or_else(|_| std::env::var("LEADERBOARD_DB"))
+        .unwrap_or_else(|_| "slingshot.db".to_string());
     let keep_days = env_parse("LEADERBOARD_KEEP_DAYS", DEFAULT_KEEP_DAYS);
-    // A board that cannot be opened is a deployment mistake (a bad path, a read-only directory);
+    // A database that cannot be opened is a deployment mistake (a bad path, a read-only directory);
     // the relay refusing to start says so, where serving on without one would not.
-    let boards = match Leaderboard::open(&db_path, keep_days).await {
+    let database = match db::open(&db_path).await {
+        Ok(database) => database,
+        Err(err) => {
+            error!(%db_path, %err, "failed to open the database");
+            std::process::exit(1);
+        }
+    };
+    let boards = match Leaderboard::open(&database, keep_days).await {
         Ok(boards) => Arc::new(boards),
         Err(err) => {
             error!(%db_path, %err, "failed to open the leaderboard");
@@ -116,18 +127,17 @@ async fn main() {
     info!(%db_path, keep_days, "leaderboard open");
 
     // Match statistics are opt-in: `--stats` (or STATS=1, for a service that has no arguments to
-    // give). STATS_DB is their file and STATS_KEEP_DAYS how long they are kept; the data is
-    // described in `stats`. Opened like the leaderboard, and for the same reason it stops the relay.
+    // give). STATS_KEEP_DAYS is how long they are kept; the data is described in `stats`. Opened
+    // like the leaderboard, and for the same reason it stops the relay.
     let stats = if std::env::args().any(|arg| arg == "--stats") || env_flag("STATS") {
-        let stats_path = std::env::var("STATS_DB").unwrap_or_else(|_| "stats.db".to_string());
         let stats_days = env_parse("STATS_KEEP_DAYS", DEFAULT_STATS_KEEP_DAYS);
-        match Stats::open(&stats_path, stats_days).await {
+        match Stats::open(&database, stats_days).await {
             Ok(stats) => {
-                info!(%stats_path, stats_days, "statistics on");
+                info!(stats_days, "statistics on");
                 Some(Arc::new(stats))
             }
             Err(err) => {
-                error!(%stats_path, %err, "failed to open the statistics");
+                error!(%db_path, %err, "failed to open the statistics");
                 std::process::exit(1);
             }
         }

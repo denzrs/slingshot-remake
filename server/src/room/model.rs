@@ -55,7 +55,11 @@ pub(super) struct Spectator {
 }
 
 pub(super) struct Room {
+    /// The code players type to join. Free again once the room is gone, so it is not an identity.
     pub(super) id: String,
+    /// Names the room in the statistics and nothing else: 128 random bits made with the room and
+    /// never reused, where the code is only unique among the rooms open now.
+    pub(super) uid: String,
     /// What the lobby calls the room; set at creation and already past the profanity check.
     pub(super) name: String,
     /// The host never typed a name: the room is called after the host and follows their rename.

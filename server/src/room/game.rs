@@ -193,7 +193,10 @@ impl RoomManager {
                 .map(|player| {
                     let occupant = match (player.cpu, player.conn) {
                         (Some(level), _) => Occupant::Cpu(level.as_str()),
-                        (None, Some(conn)) => Occupant::Person(self.net.peer_ip(conn)?),
+                        (None, Some(conn)) => Occupant::Person {
+                            ip: self.net.peer_ip(conn)?,
+                            name: player.name.clone(),
+                        },
                         (None, None) => return None,
                     };
                     Some(SeatFacts {
@@ -205,13 +208,15 @@ impl RoomManager {
             Some(Reporting {
                 stats,
                 facts: RoundFacts {
-                    room_id: room.id.clone(),
+                    room_id: room.uid.clone(),
                     match_id: room.match_id.clone(),
+                    seed: room.seed,
                     game_mode: room.game_mode.as_str(),
                     mode: room.mode.as_str(),
                     rules: rules_to_value(&room.rules),
                     spectators: room.spectators.len(),
                     seats: seats?,
+                    local: false,
                 },
             })
         });

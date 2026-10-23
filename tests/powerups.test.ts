@@ -298,6 +298,24 @@ describe('power-ups in a match', () => {
     expect(shooter.armed).toBe(false);
   });
 
+  it('writes down when a splitter went off, on the shot and on its forks', () => {
+    const match = duel();
+    const shooter = match.players[match.current];
+    shooter.powerUp = 'splitter';
+    shooter.armed = true;
+    match.commit();
+    for (let i = 0; i < 20; i++) match.update(1 / 60);
+    match.commit();
+    const at = match.volley!.script.find((entry) => entry.kind === 'split')!.at;
+    expect(at).toBeGreaterThan(0);
+    for (let t = 0; t < 60 && match.phase === 'flying'; t += 1 / 30) match.update(1 / 30);
+    const shots = match.shotLog.shots;
+    expect(shots).toHaveLength(3);
+    expect(shots.filter((s) => s.fork)).toHaveLength(2);
+    expect(new Set(shots.map((s) => s.fan)).size).toBe(1);
+    expect(shots.every((s) => s.fan !== null && s.splitAt === at)).toBe(true);
+  });
+
   it('lets a CPU shot take a pickup, held armed so the CPU can use it', () => {
     const seats = ['hard', 'human', 'off', 'off', 'off', 'off'] as const;
     const match = createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed: 7 });

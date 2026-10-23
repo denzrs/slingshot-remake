@@ -15,7 +15,9 @@
     "bench:relay": "tsx benchmarks/relay-perf.ts",
     "bench:powerups": "tsx benchmarks/powerups.ts",
     "bench:multikill": "tsx benchmarks/multi-kill.ts",
-    "bench:stats": "tsx benchmarks/stats-perf.ts"
+    "bench:stats": "tsx benchmarks/stats-perf.ts",
+    "bench:client": "tsx benchmarks/client-perf.ts",
+    "bench:browser": "tsx benchmarks/browser-perf.ts"
   },
   "keywords": [],
   "author": "",

@@ -5,6 +5,7 @@ import type { Rng } from '../rng';
 import { bump, type StatBook } from '../stats';
 import type { Volley, VolleyAim } from '../volley';
 import type { GameEvent, Phase, PlayerState } from './match';
+import type { ReplayPlacement } from './replay';
 
 /** What the power-ups need from the match they belong to. */
 export interface PowerUpHost {
@@ -30,6 +31,8 @@ export interface PowerUpHost {
   kinds(): readonly PowerUpKind[];
   amount(): number;
   emit(event: GameEvent): void;
+  /** A placement has been made: for the match's log of what was done. */
+  placed(placement: ReplayPlacement): void;
   clearCpuJobs(): void;
   /** Writes into the round's and the match's stat book, for the scorecard. */
   record(update: (book: StatBook) => void): void;
@@ -178,7 +181,7 @@ export class PowerUpField {
   /** One step of a flight: shots take the pickups they pass, and CPUs with a splitter may fork. */
   onStep(volley: Volley): void {
     this.collect(volley);
-    this.cpuSplits(volley);
+    if (!this.scripted) this.cpuSplits(volley);
   }
 
   /**
@@ -330,7 +333,7 @@ export class PowerUpField {
         return this.onPlanet(world.planets[index], (i) => this.plantDefense(owner, { x: target.x, y: target.y, planet: i }));
       }
       case 'antigravity': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.turnAntigravity(owner, i));
-      case 'planetkiller': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.killPlanet(owner, i), () => this.spend(owner));
+      case 'planetkiller': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.killPlanet(owner, i), () => this.spendGone(owner));
       default: return () => this.teleport(owner, target);
     }
   }
@@ -351,6 +354,29 @@ export class PowerUpField {
     p.powerUp = null;
     p.armed = false;
     return false;
+  }
+
+  /** Whether this field only does what a replay's log says: nothing happens on a CPU's own mind. */
+  scripted = false;
+
+  /** Makes a placement the log says was made. False when it no longer lands: the replay has drifted from the game. */
+  placeLogged(placement: ReplayPlacement): boolean {
+    const { player: id, x = 0, y = 0, x2 = 0, y2 = 0, planet = 0 } = placement;
+    switch (placement.kind) {
+      case 'teleport': return placement.x === undefined ? this.teleport(id) : this.teleport(id, { x, y });
+      case 'blackhole': return this.plantBlackHole(id, { x, y });
+      case 'nebula': return this.plantNebula(id, { x, y });
+      case 'wormhole': return this.plantWormhole(id, { x, y }, { x: x2, y: y2 });
+      case 'planetkiller': return planet < 0 ? this.spend(id) : this.killPlanet(id, planet);
+      case 'antigravity': return this.turnAntigravity(id, planet);
+      case 'defense': return this.plantDefense(id, { x, y, planet });
+    }
+  }
+
+  /** A planet killer whose planet was taken by another in the same volley: spent, and nothing to show for it. */
+  private spendGone(id: number): boolean {
+    this.host.placed({ player: id, kind: 'planetkiller', planet: -1 });
+    return this.spend(id);
   }
 
   /** The volley takes off: the placements a salvo held back are made now, ship by ship. A ship whose placement no longer lands keeps its power-up, unless its planet killer found the planet gone. */
@@ -377,6 +403,7 @@ export class PowerUpField {
     if (!blackHoleFits(world, spot, id)) return false;
     world.holes.push({ x: spot.x, y: spot.y, radius: POWER_UP.BLACKHOLE_RADIUS, mass: POWER_UP.BLACKHOLE_MASS });
     world.version++;
+    this.host.placed({ player: id, kind: 'blackhole', x: spot.x, y: spot.y });
     this.host.players()[id].powerUp = null;
     this.host.players()[id].armed = false;
     this.host.clearCpuJobs();
@@ -391,6 +418,7 @@ export class PowerUpField {
     const world = this.host.world();
     world.wormholes.push({ id: nextWormholeId(world), ax: a.x, ay: a.y, bx: b.x, by: b.y, radius: WORMHOLE.RADIUS });
     world.version++;
+    this.host.placed({ player: id, kind: 'wormhole', x: a.x, y: a.y, x2: b.x, y2: b.y });
     this.host.players()[id].powerUp = null;
     this.host.players()[id].armed = false;
     this.host.clearCpuJobs();
@@ -407,6 +435,7 @@ export class PowerUpField {
     const planet = world.planets[index];
     if (!planet) return false;
     world.planets.splice(index, 1);
+    this.host.placed({ player: id, kind: 'planetkiller', planet: index });
     // A defense stood on the rock: it goes with it.
     world.defenses = world.defenses.filter((d) => d.planet !== planet.seed);
     world.version++;
@@ -427,6 +456,7 @@ export class PowerUpField {
     if (!planet) return false;
     planet.reversed = !planet.reversed;
     world.version++;
+    this.host.placed({ player: id, kind: 'antigravity', planet: index });
     this.host.players()[id].powerUp = null;
     this.host.players()[id].armed = false;
     this.host.clearCpuJobs();
@@ -447,6 +477,7 @@ export class PowerUpField {
     world.defenses = world.defenses.filter((d) => d.planet !== planet.seed);
     world.defenses.push({ x: spot.x, y: spot.y, radius: planet.radius * POWER_UP.DEFENSE_RADIUS_SHARE, planet: planet.seed, owner: id, protects: [id, ...this.host.friendsOf(id)] });
     world.version++;
+    this.host.placed({ player: id, kind: 'defense', x: spot.x, y: spot.y, planet: world.planets.indexOf(planet) });
     this.host.players()[id].powerUp = null;
     this.host.players()[id].armed = false;
     this.host.clearCpuJobs();
@@ -464,6 +495,7 @@ export class PowerUpField {
     // The seed comes from the match rng, so a guest draws the very cloud the host laid.
     world.nebulae.push({ x: spot.x, y: spot.y, radius: NEBULA.RADIUS, seed: rng() });
     world.version++;
+    this.host.placed({ player: id, kind: 'nebula', x: spot.x, y: spot.y });
     this.host.players()[id].powerUp = null;
     this.host.players()[id].armed = false;
     this.host.clearCpuJobs();
@@ -513,7 +545,7 @@ export class PowerUpField {
     }
     if (kind === 'planetkiller') {
       const planet = aimedPlanet(world, from, p.angle);
-      return planet ? this.onPlanet(world.planets[planet.index], (i) => this.killPlanet(id, i), () => this.spend(id)) : null;
+      return planet ? this.onPlanet(world.planets[planet.index], (i) => this.killPlanet(id, i), () => this.spendGone(id)) : null;
     }
     const spot = kind === 'nebula' ? nebulaSpot(world, from, p.angle, p.power) : aimedSpot(world, from, p.angle, p.power);
     if (!spot || (kind === 'blackhole' && !blackHoleFits(world, spot, id))) return null;
@@ -521,12 +553,20 @@ export class PowerUpField {
   }
 
   /** Teleports a ship to `spot`, or to a random free one; false when there is none. */
-  teleport(id: number, spot: { x: number; y: number } | null = teleportSpot(this.host.world(), this.host.rng(), this.pickups)): boolean {
-    if (!spot) return false;
+  teleport(id: number, aimed?: { x: number; y: number } | null): boolean {
+    // A spot the game draws itself comes from the match's stream, so the log only notes that it did.
+    const drawn = aimed === undefined;
+    const spot = drawn ? teleportSpot(this.host.world(), this.host.rng(), this.pickups) : aimed;
+    // A draw that found nowhere to land still used the stream: a replay has to draw it too.
+    if (!spot) {
+      if (drawn) this.host.placed({ player: id, kind: 'teleport' });
+      return false;
+    }
     const ship = this.host.world().ships[id];
     const [fromX, fromY] = [ship.x, ship.y];
     ship.x = spot.x;
     ship.y = spot.y;
+    this.host.placed(drawn ? { player: id, kind: 'teleport' } : { player: id, kind: 'teleport', x: spot.x, y: spot.y });
     this.host.players()[id].powerUp = null;
     this.host.clearCpuJobs();
     this.host.emit({ type: 'teleport', player: id, fromX, fromY, toX: spot.x, toY: spot.y });

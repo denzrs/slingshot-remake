@@ -14,6 +14,7 @@ describe('round report', () => {
       { score: 800, shots: 2, alive: true },
     ],
     world: { planets: [{}, {}, {}] },
+    shotLog: { turn: 4 },
   });
 
   it('counts per seat, with zero for a seat the book never heard of', () => {
@@ -24,7 +25,7 @@ describe('round report', () => {
     const report = roundReport(match);
     expect(report.players[0]).toMatchObject({ score: 120, shots: 3, kills: 0, grazes: 1, alive: false });
     expect(report.players[1]).toMatchObject({ score: 800, kills: 2, grazes: 0, alive: true });
-    expect(report).toMatchObject({ round: 2, title: 'hit', survivor: 1, team: null, seconds: 41.3, planets: 3 });
+    expect(report).toMatchObject({ round: 2, title: 'hit', survivor: 1, team: null, seconds: 41.3, planets: 3, turns: 4 });
   });
 
   it('carries the records without the shots behind them', () => {
@@ -36,22 +37,26 @@ describe('round report', () => {
 });
 
 describe('turn report', () => {
-  const shot: ShotRecord = { n: 1, turn: 3, player: 0, angle: 33.3333, power: 61.26, powerUp: 'plasma', fork: false, resolution: 'ship', hits: 1, hitSeat: 1, hitKind: 'enemy', points: 249.6 };
+  const shot: ShotRecord = { n: 1, turn: 3, player: 0, angle: 33.3333, power: 61.26, powerUp: 'plasma', rider: 'plasma', fork: false, fan: null, splitAt: null, resolution: 'ship', hits: 1, hitSeat: 1, hitKind: 'enemy', points: 249.6 };
   const source = (): TurnSource => ({
     round: 2,
     players: [
       { score: 120.4, alive: false },
       { score: 800, alive: true },
     ],
-    shotLog: { turn: 3, ofTurn: () => [shot] },
+    shotLog: { turn: 3, ofTurn: () => [shot], placementsOfTurn: () => [{ player: 1, kind: 'blackhole', x: 410.5, y: 220.25 }] },
   });
 
   it('names the turn and where the scores stand after it', () => {
     expect(turnReport(source())).toMatchObject({ round: 2, turn: 3, players: [{ score: 120, alive: false }, { score: 800, alive: true }] });
   });
 
-  it('lists each shot of the turn with its numbers rounded', () => {
+  it('lists each shot of the turn with its aim exactly as aimed and its points rounded', () => {
     const [first] = turnReport(source()).shots;
-    expect(first).toMatchObject({ player: 0, turn: 3, angle: 33.33, power: 61.3, powerUp: 'plasma', resolution: 'ship', hitSeat: 1, hitKind: 'enemy', points: 250 });
+    expect(first).toMatchObject({ player: 0, turn: 3, angle: 33.3333, power: 61.26, powerUp: 'plasma', resolution: 'ship', hitSeat: 1, hitKind: 'enemy', points: 250 });
+  });
+
+  it('lists the placements made before the turn', () => {
+    expect(turnReport(source()).placements).toEqual([{ player: 1, kind: 'blackhole', x: 410.5, y: 220.25 }]);
   });
 });
