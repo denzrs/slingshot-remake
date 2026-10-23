@@ -376,7 +376,7 @@ Use an isolated temporary leaderboard DB, local clients and test names. Never su
 | Crew | 2, 3 and 6 seats; Human ↔ CPU; all CPU levels; remove/add; FFA / 2 teams / 3 teams; balance / invalid teams |
 | Daily | No run; previous best/streak; every sector selected; historical day; result success/failure/negative values; board on/off |
 | Preferences | Each category; language change while in Language; touch category on/off; immediate application and return |
-| Full rules | Each category; conditional power controls; power-ups off/on; reset; return without lost edits |
+| Full rules | Each category; conditional power controls; power-up kinds independently on/off including none; reset; return without lost edits |
 | Other menus | Tutorial chapter jump / next / previous; pause / resume; match-end standings / awards |
 | Viewports | 1440×900, 1280×720, 768×1024, 390×844, **320×740**; both languages on the narrowest layout |
 | Accessibility | Tab, Shift+Tab, arrows, Enter/Space, Esc; visible focus vs selection; correct button/select labels; reduced motion |

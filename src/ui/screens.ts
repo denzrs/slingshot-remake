@@ -8,16 +8,19 @@ import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
 import { awards } from '../stats';
 import type { StyleKind } from '../physics';
-import type { PowerUpKind } from '../powerups';
+import { POWER_UP_KINDS, type PowerUpKind } from '../powerups';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
-import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, freeSeat, MIN_SEATS, removeSeat, seatTeamsFor, teamCounts, type Seat, type Settings } from '../settings';
+import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, MIN_SEATS, removeSeat, seatTeamsFor, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
-import { modeArt, pilotArt } from './mode-icons';
+import { modeArt } from './mode-icons';
 import type { LobbyEntry } from './lobby';
 import { menuGroup, menuPage } from './menu-page';
-import { presetsForMode, matchingPreset, presetRules, MAYHEM_PRESETS, matchingMayhemPreset } from './match-presets';
+import { presetsForMode, presetRules, matchingPreset, MAYHEM_PRESETS, mayhemPresetRules, matchingMayhemPreset, matchingHandpicked, pickOfTheDay } from './match-presets';
+import { pickArt, pickHint, pickName } from './pick-of-day';
 import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
+import { powerUpSummary } from './powerup-summary';
+import { teamRoster } from './team-roster';
 import { mountTutorialPreview, type TutorialPreviewKind } from './tutorial-preview';
 
 export interface App {
@@ -136,28 +139,102 @@ const modeName = (mode: LocalMode): string => t(`mode.${mode}` as Key);
 const MAIN_MODES = ['classic', 'horizon', 'mayhem'] as const satisfies readonly LocalMode[];
 type ModeTransition = 'next' | 'previous';
 
-function changeLocalMode(app: App, from: LocalMode, to: LocalMode): void {
+/** Default once on entry; rebuilding after rule or crew edits keeps the player's subsequent choices. */
+function prepareModeScreen(app: App, mode: LocalMode, transition?: ModeTransition): () => Screen {
+  const pick = pickOfTheDay(mode, app.today());
+  Object.assign(app.settings, pick.rules, { powerUpKinds: [...pick.rules.powerUpKinds] }, mode === 'mayhem' ? { mayhemBase: pick.base } : {});
+  app.settingsChanged();
+  return () => mode === 'mayhem' ? mayhemScreen(app, transition) : setupScreen(app, mode, transition);
+}
+
+function changeLocalMode(app: App, from: LocalMode, to: LocalMode, transition: ModeTransition): void {
   if (from === to) return;
-  const fromIndex = MAIN_MODES.indexOf(from as (typeof MAIN_MODES)[number]);
-  const toIndex = MAIN_MODES.indexOf(to as (typeof MAIN_MODES)[number]);
-  const transition: ModeTransition = toIndex > fromIndex ? 'next' : 'previous';
   app.menu.replace(
-    () => to === 'mayhem' ? mayhemScreen(app, transition) : setupScreen(app, to, transition),
-    toIndex,
+    prepareModeScreen(app, to, transition),
+    0,
   );
 }
 
 function modePagerItems(app: App, current: LocalMode): MenuItem[] {
   const currentIndex = MAIN_MODES.indexOf(current as (typeof MAIN_MODES)[number]);
-  return MAIN_MODES.map((mode, index) => ({ mode, index, distance: Math.abs(index - currentIndex) }))
-    .filter(({ mode }) => mode !== current)
-    .sort((a, b) => a.distance - b.distance || a.index - b.index)
-    .map(({ mode, index, distance }): MenuItem => ({
-      kind: 'action', section: 'mode-pager',
-      label: index < currentIndex ? `‹ ${modeName(mode)}` : `${modeName(mode)} ›`,
-      className: `mode-pager__item mode-pager__item--${distance === 1 ? 'near' : 'far'}`,
-      run: () => changeLocalMode(app, current, mode),
-    }));
+  // Rotate the cycle so the active mode stays first and the next two always peek in from the right.
+  const modes = MAIN_MODES.map((_, distance) => MAIN_MODES[(currentIndex + distance) % MAIN_MODES.length]);
+  return modes.map((mode, distance): MenuItem => ({
+    kind: 'action', section: 'mode-pager',
+    label: modeName(mode),
+    className: `mode-pager__item mode-pager__item--${mode} mode-pager__item--${distance === 0 ? 'active' : distance === 1 ? 'near' : 'far'}`,
+    selected: () => mode === current,
+    run: () => changeLocalMode(app, current, mode, 'next'),
+  }));
+}
+
+function modePagerHeader(current: LocalMode, transition?: ModeTransition): HTMLElement {
+  return h('div.mode-carousel', null,
+    h('h2.mode-pager__semantic-title', { 'aria-live': 'polite', 'aria-atomic': 'true' }, modeName(current)),
+    h('div.mode-pager__viewport', null,
+      h('nav.items.items--row.mode-pager', {
+        'data-section': 'mode-pager', 'data-transition': transition ?? '', 'aria-label': t('launcher.switchMode'),
+      }),
+    ),
+    h('div.mode-pager__keys', { 'aria-hidden': 'true' },
+      h('span', null, '‹ (Q)'),
+      h('span', null, '(E) ›'),
+    ),
+  );
+}
+
+/** Place the selected mode at a stable anchor after the menu has mounted its button rows. */
+function positionModeCarousel(root: HTMLElement): () => void {
+  const viewport = root.querySelector<HTMLElement>('.mode-pager__viewport');
+  const track = root.querySelector<HTMLElement>('.mode-pager');
+  if (!viewport || !track) return () => {};
+
+  let frame = 0;
+  let settleFrame = 0;
+  const targetOffset = (): number => {
+    const active = track.querySelector<HTMLElement>('.is-selected');
+    if (!active) return 0;
+    const configuredAnchor = Number.parseFloat(getComputedStyle(viewport).getPropertyValue('--mode-anchor'));
+    const anchorPercent = Number.isFinite(configuredAnchor) ? configuredAnchor : 0;
+    const anchor = viewport.clientWidth * anchorPercent / 100;
+    return anchor - active.offsetLeft;
+  };
+  const position = (): void => {
+    if (!track.isConnected) return;
+    const target = targetOffset();
+    if (!track.classList.contains('is-positioned')) {
+      const entering = track.dataset.transition;
+      const entranceOffset = entering === 'next' ? 72 : entering === 'previous' ? -72 : 0;
+      track.style.transform = `translate3d(${target + entranceOffset}px, 0, 0)`;
+      if (!settleFrame) {
+        settleFrame = requestAnimationFrame(() => {
+          settleFrame = 0;
+          if (!track.isConnected) return;
+          track.classList.add('is-positioned');
+          track.style.transform = `translate3d(${targetOffset()}px, 0, 0)`;
+        });
+      }
+      return;
+    }
+    track.style.transform = `translate3d(${target}px, 0, 0)`;
+  };
+  const schedulePosition = (): void => {
+    if (frame) cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      position();
+    });
+  };
+  const observer = new ResizeObserver(schedulePosition);
+  observer.observe(viewport);
+  observer.observe(track);
+  schedulePosition();
+
+  return () => {
+    observer.disconnect();
+    if (frame) cancelAnimationFrame(frame);
+    if (settleFrame) cancelAnimationFrame(settleFrame);
+  };
 }
 
 function enableModeSwipe(root: HTMLElement, app: App, current: LocalMode): void {
@@ -178,11 +255,27 @@ function enableModeSwipe(root: HTMLElement, app: App, current: LocalMode): void 
     start = null;
     if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
     const index = MAIN_MODES.indexOf(current as (typeof MAIN_MODES)[number]);
-    const next = MAIN_MODES[index + (dx < 0 ? 1 : -1)];
-    if (!next) return;
+    const direction = dx < 0 ? 'next' : 'previous';
+    const next = MAIN_MODES[(index + (direction === 'next' ? 1 : -1) + MAIN_MODES.length) % MAIN_MODES.length];
     event.preventDefault();
-    changeLocalMode(app, current, next);
+    changeLocalMode(app, current, next, direction);
   }, { passive: false });
+  root.addEventListener('keydown', (event: KeyboardEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element) || event.altKey || event.ctrlKey || event.metaKey) return;
+    const key = event.key.toLowerCase();
+    const shortcut = key === 'q' || key === 'e';
+    if (target.closest('input, select, textarea, [contenteditable="true"]')) return;
+    if (!shortcut && ((key !== 'arrowleft' && key !== 'arrowright') || !target.closest('.mode-pager'))) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const index = MAIN_MODES.indexOf(current as (typeof MAIN_MODES)[number]);
+    const direction = key === 'arrowright' || key === 'e' ? 'next' : 'previous';
+    const next = MAIN_MODES[(index + (direction === 'next' ? 1 : -1) + MAIN_MODES.length) % MAIN_MODES.length];
+    changeLocalMode(app, current, next, direction);
+  });
 }
 
 /** The modes live on the title screen: choose here, prepare the match next. */
@@ -222,6 +315,12 @@ export function titleScreen(app: App): Screen {
     content.style.minHeight = `${Math.max(localHeight, onlineHeight)}px`;
   };
   const chooseSection = (section: LauncherSection): void => {
+    if (section !== launcherSection) {
+      const direction = section === 'online' ? 'next' : 'previous';
+      content.classList.remove('launcher__content--enter-next', 'launcher__content--enter-previous');
+      void content.offsetWidth;
+      content.classList.add(`launcher__content--enter-${direction}`);
+    }
     launcherSection = section;
     app.menu.refresh();
     app.menu.focusSection(section === 'local' ? 'modes' : 'online');
@@ -230,7 +329,7 @@ export function titleScreen(app: App): Screen {
     kind: 'action', section: 'modes', label: modeName(mode), hint: t(`mode.${mode}.hint` as Key),
     icon: () => modeArt(mode),
     hidden: () => launcherSection !== 'local',
-    run: () => app.menu.push(() => mode === 'mayhem' ? mayhemScreen(app) : setupScreen(app, mode)),
+    run: () => app.menu.push(prepareModeScreen(app, mode)),
   });
   return {
     build: () => h('section.screen.screen--title', { 'aria-labelledby': 'wordmark' },
@@ -287,7 +386,7 @@ export function pauseScreen(app: App): Screen {
     items: [
       { kind: 'action', section: 'actions', label: t('pause.resume'), primary: true, run: () => app.resume() },
       // Online, the room decides: no restarts from the pause menu. The daily challenge has no setup, only a retry.
-      ...(mode && !app.online ? [{ kind: 'action', section: 'actions', label: t('pause.newGame'), run: () => app.menu.push(() => (app.mayhem ? mayhemScreen(app) : setupScreen(app, mode))) } satisfies MenuItem] : []),
+      ...(mode && !app.online ? [{ kind: 'action', section: 'actions', label: t('pause.newGame'), run: () => app.menu.push(prepareModeScreen(app, app.mayhem ? 'mayhem' : mode)) } satisfies MenuItem] : []),
       ...(daily ? [{ kind: 'action', section: 'actions', label: t('daily.retry'), run: () => app.rematch() } satisfies MenuItem] : []),
       { kind: 'action', section: 'actions', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
       { kind: 'action', section: 'actions', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
@@ -309,7 +408,8 @@ function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {
     { value: 'hard', label: t('cpu.hard') },
     { value: 'hawking', label: t('cpu.hawking') },
   ];
-  const teams = Array.from({ length: s.teamMode }, (_, k) => k);
+  const board = teamRoster(t('briefing.crew'));
+  const slots = Array.from({ length: MAX_PLAYERS }, (_, i) => h('div.crew-slot', { 'data-section': `seat-${i}` }));
 
   const mode: MenuItem = {
     kind: 'segmented',
@@ -323,14 +423,15 @@ function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {
     get: () => s.teamMode,
     set: (v) => {
       s.teamMode = v as number;
+      if (s.teamMode) balanceTeams(s);
       app.settingsChanged();
-      // The seats gain or lose their team buttons.
+      // The roster gains one column per team.
       app.menu.rebuild();
     },
   };
   const seat = (i: number): MenuItem => ({
     kind: 'seat',
-    section: 'seats',
+    section: `seat-${i}`,
     label: t('players.player', { n: i + 1 }),
     swatch: COLORS.players[i],
     fliers,
@@ -342,105 +443,73 @@ function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {
       s.seats[i] = v as Seat;
       app.settingsChanged();
     },
-    teams: s.teamMode
-      ? {
-          caption: t('players.team'),
-          options: teams.map((k) => ({ value: k, label: teamName(k) })),
-          tones: teams.map((k) => TEAMS[k][0]),
-          get: () => s.seatTeams[i] % s.teamMode,
-          set: (v) => {
-            s.seatTeams[i] = v as number;
-            app.settingsChanged();
-          },
-        }
-      : undefined,
     remove: {
       label: t('players.remove', { n: i + 1 }),
       disabled: () => activeSeats(s).length <= MIN_SEATS,
       run: () => {
-        const at = seats.indexOf(i);
         if (!removeSeat(s, i)) return;
         app.settingsChanged();
-        // The focus stays where the ship was: on whoever moved up, or on the last one.
-        app.menu.rebuild(1 + Math.min(at, seats.length - 2));
+        // The removed ship becomes an empty slot in the same position.
+        app.menu.rebuild(1 + i);
       },
     },
   });
 
-  const add = (label: string, flier: 'human' | 'medium'): MenuItem => ({
-    kind: 'action',
-    section: 'seats',
-    icon: pilotArt,
-    hint: t('flow.addPilotHint'),
-    label,
-    disabled: freeSeat(s) === null,
+  const add = (i: number): MenuItem => ({
+    kind: 'action', section: `seat-${i}`, className: 'slot-card slot-card--empty',
+    tag: t('players.player', { n: i + 1 }),
+    icon: () => h('span.slot-card__plus', { 'aria-hidden': 'true' }, '+'),
+    hint: t('slots.free'), label: t('flow.addPilot'),
     run: () => {
-      if (addSeat(s, flier) === null) return;
+      const team = board.teamOf(String(i));
+      if (addSeat(s, 'human', i) === null) return;
+      if (s.teamMode && team !== null) s.seatTeams[i] = team;
       app.settingsChanged();
-      // The newcomer is the row after the last one (the mode bar comes first).
-      app.menu.rebuild(1 + seats.length);
+      app.menu.rebuild(1 + i);
     },
   });
 
-  const metric = (label: string): { el: HTMLElement; value: HTMLElement } => {
-    const value = h('strong.crew-overview__value', null, '0');
-    return { el: h('div.crew-overview__metric', null, h('span', null, label), value), value };
-  };
-  const shipsMetric = metric(t('players.ships'));
-  const humansMetric = metric(t('players.humans'));
-  const cpusMetric = metric(t('players.cpus'));
-  const formatMetric = metric(t('players.format'));
-
-  /** In team play: how many ships each team has, and a warning when that is no match. */
-  const summary = h('div.team-summary', { 'aria-live': 'polite', hidden: '' });
+  const summary = h('p.team-warning', { 'aria-live': 'polite', hidden: '' }, t('players.teamNote'));
   const crewActions = h('div.items.items--row.crew-actions', { 'data-section': 'crew-actions' });
-  const overview = h('section.crew-overview', null,
-    h('div.crew-overview__heading', null, h('h3', null, t('players.overview'))),
-    h('div.crew-overview__metrics', null, shipsMetric.el, humansMetric.el, cpusMetric.el, formatMetric.el),
-    h('p.crew-overview__note', null, t('players.note')),
-    summary,
-    crewActions,
-  );
+  const count = h('h3.setup__title', null, t('players.group.crew', { n: seats.length, max: MAX_PLAYERS }));
+  const crewStatus = h('p.crew-roster__status', { 'aria-live': 'polite' });
   const roster = h('section.crew-roster', null,
-    h('div.crew-roster__heading', null,
-      h('h3.setup__title', null, t('players.group.crew', { n: seats.length, max: MAX_PLAYERS })),
-      h('p', null, t('players.rosterHint')),
-    ),
-    h('div.items.crew-roster__grid', { 'data-section': 'seats' }),
+    h('div.crew-roster__heading', null, count, crewStatus),
+    board.el,
   );
   const update = (): void => {
     const active = activeSeats(s);
     const humans = active.filter((i) => s.seats[i] === 'human').length;
-    shipsMetric.value.textContent = `${active.length}/${MAX_PLAYERS}`;
-    humansMetric.value.textContent = String(humans);
-    cpusMetric.value.textContent = String(active.length - humans);
-    formatMetric.value.textContent = s.teamMode ? t('players.teams', { n: s.teamMode }) : t('players.ffa');
-    summary.hidden = !s.teamMode;
-    if (!s.teamMode) return;
-    const valid = seatTeamsFor(s, active) !== null;
-    summary.classList.toggle('is-warning', !valid);
-    summary.replaceChildren(
-      h('span.team-summary__label', null, t('players.teamDistribution')),
-      ...teamCounts(s).map((n, k) => {
-        const dot = h('span.item__swatch', null);
-        dot.style.background = TEAMS[k][0];
-        return h('span.team-chip', null, dot, h('span', null, teamName(k)), h('strong', null, String(n)));
-      }),
-      ...(valid ? [] : [h('span.team-warning', null, t('players.teamNote'))]),
-    );
+    crewStatus.textContent = [
+      ...(humans ? [`${humans} ${tn('lineup.human', humans)}`] : []),
+      ...(active.length > humans ? [`${active.length - humans} ${tn('lineup.cpu', active.length - humans)}`] : []),
+    ].join(' · ');
+    summary.hidden = !s.teamMode || seatTeamsFor(s, active) !== null;
+    board.show(slots.map((el, i) => ({
+      key: String(i), el, label: t('players.player', { n: i + 1 }),
+      team: s.seats[i] === 'off' ? null : s.seatTeams[i] % Math.max(1, s.teamMode),
+      ...(s.seats[i] !== 'off' && s.teamMode ? { move: (team: number) => {
+        s.seatTeams[i] = team;
+        app.settingsChanged();
+        app.menu.refresh();
+      } } : {}),
+    })), s.teamMode);
   };
 
   return {
-    build: () => menuPage({
-      title: t('flow.crewTitle'), eyebrow: t('briefing.crew'), intro: t('flow.crewIntro'), className: 'menu-page--crew',
-      body: [h('div.crew-config', null, menuGroup(t('players.group.mode'), 'mode'), overview), roster],
-      keys: t('flow.tabKeys'),
-      footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
-    }),
+    build: () => {
+      board.show(slots.map((el, i) => ({ key: String(i), el, label: t('players.player', { n: i + 1 }), team: s.seats[i] === 'off' ? null : s.seatTeams[i] % Math.max(1, s.teamMode) })), s.teamMode);
+      return menuPage({
+        title: t('flow.crewTitle'), className: 'menu-page--crew',
+        headerAside: h('div.crew-config', null, menuGroup(t('players.group.mode'), 'mode'), crewActions),
+        body: [summary, roster],
+        keys: t('flow.tabKeys'),
+        footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
+      });
+    },
     items: [
       mode,
-      ...seats.map(seat),
-      ...(seats.length < MAX_PLAYERS ? [add(t('flow.addPilot'), 'human')] : []),
+      ...Array.from({ length: MAX_PLAYERS }, (_, i) => s.seats[i] === 'off' ? add(i) : seat(i)),
       ...(s.teamMode
         ? [
             {
@@ -483,14 +552,16 @@ function settingToggle(app: App, label: string, key: BooleanSetting): MenuItem {
   };
 }
 
-/** A concise briefing; the complete rules are one step away. Existing custom rules are preserved. */
+/** A concise briefing; rule and crew subpages preserve edits made after entering the mode. */
 function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): Screen {
   const s = app.settings;
   const presets = presetsForMode(mode);
+  const pick = pickOfTheDay(mode, app.today());
   const summary = h('dl.briefing__facts', { 'aria-live': 'polite' });
   const crew = h('div.briefing__crew', { 'aria-hidden': 'true' });
   const crewLabel = h('p.briefing__lineup', null);
-  const quickKeys = ['rounds', 'maxPlanets', 'powerUps'] as const;
+  const quickKeys = ['rounds', 'shotTime'] as const;
+  const powerups = powerUpSummary(() => s);
   const quick = ruleItems(mode, {
     get: () => rulesOf(s),
     patch: (values) => { Object.assign(s, values); app.settingsChanged(); },
@@ -508,18 +579,23 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
       fact(t('settings.bounce'), t(s.bounce ? 'common.on' : 'common.off')),
       fact(t('settings.hiddenAim'), t(s.hiddenAim ? 'common.on' : 'common.off')),
     );
+    powerups.update();
   };
+  let disposeModeCarousel = (): void => {};
   return {
     build: () => {
       const page = menuPage({
-        title: modeName(mode), eyebrow: t('launcher.prepare'), intro: t(`mode.${mode}.hint` as Key),
-        headerAside: h('nav.items.items--row.mode-pager', { 'data-section': 'mode-pager', 'aria-label': t('launcher.switchMode') }),
+        title: modeName(mode), eyebrow: t('launcher.prepare'),
+        headerTitle: modePagerHeader(mode, transition),
         className: `menu-page--briefing menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
         body: [
           h('section.briefing__presets', { 'aria-labelledby': 'preset-heading' },
             h('div.launcher__section-head', null, h('h3', { id: 'preset-heading' }, t('preset.choose'))),
             h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') }),
-            h('div.briefing__quick', { 'data-section': 'quick' }),
+            h('div.briefing__quick', null,
+              h('div.briefing__quick-controls', { 'data-section': 'quick' }),
+              powerups.el,
+            ),
           ),
         ],
         aside: [
@@ -534,11 +610,20 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
         keys: t('briefing.keys'),
         footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
       });
+      disposeModeCarousel = positionModeCarousel(page);
       enableModeSwipe(page, app, mode);
       return page;
     },
+    dispose: () => disposeModeCarousel(),
     items: [
       ...modePagerItems(app, mode),
+      {
+        kind: 'action', section: 'presets', label: pickName(pick), className: 'item--pick',
+        tag: t('preset.pick.today'), hint: pickHint(pick),
+        icon: () => pickArt(pick),
+        selected: () => matchingHandpicked(rulesOf(s), mode, mode)?.id === pick.id,
+        run: () => { Object.assign(s, pick.rules); app.settingsChanged(); app.menu.refresh(); },
+      },
       ...presets.map((preset): MenuItem => ({
         kind: 'action', section: 'presets', label: t(`preset.${preset}` as Key), hint: t(`preset.${preset}.hint` as Key),
         icon: () => modeArt(preset === 'simultaneous' ? 'simultaneous' : preset === 'standard' ? 'classic' : preset, mode === 'horizon' && preset !== 'simultaneous' ? { mode: 'horizon', preset } : undefined),
@@ -552,7 +637,7 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
       { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(mode) },
     ],
     // Enter keeps the quick route into the game; the presets remain a click or arrow away.
-    focus: MAIN_MODES.length + presets.length + quick.length + 3,
+    focus: MAIN_MODES.length + 1 + presets.length + quick.length + 3,
     update,
   };
 }
@@ -578,7 +663,7 @@ function rulesScreen(app: App, mode: VersusMode, mayhem = false): Screen {
   }));
   return {
     build: () => menuPage({
-      title: t('briefing.editRules'), eyebrow: mayhem ? t('mode.mayhem') : modeName(mode), intro: t('flow.rulesIntro'), className: 'menu-page--rules',
+      title: t('briefing.editRules'), eyebrow: mayhem ? t('mode.mayhem') : modeName(mode), className: 'menu-page--rules',
       body: [h('div.category-editor', null,
         h('nav.items.category-nav', { 'data-section': 'categories', 'aria-label': t('briefing.rules') }),
         h('div.category-editor__fields', null, heading, h('div.setup__rows', { 'data-section': 'fields' })),
@@ -607,22 +692,26 @@ function rulesScreen(app: App, mode: VersusMode, mayhem = false): Screen {
   };
 }
 
-/** Mayhem uses the same briefing layout as Classic and Event Horizon, with its own four setup presets. */
+/** Mayhem uses the same briefing layout, with handpicked combinations and regular presets. */
 function mayhemScreen(app: App, transition?: ModeTransition): Screen {
   const s = app.settings;
   // The strength is never "off" here: a Mayhem game always has twists.
   if (!s.mayhem) s.mayhem = 2;
+  const pick = pickOfTheDay('mayhem', app.today());
   const summary = h('dl.briefing__facts', { 'aria-live': 'polite' });
   const crew = h('div.briefing__crew', { 'aria-hidden': 'true' });
   const crewLabel = h('p.briefing__lineup', null);
-  const quickKeys = ['rounds', 'mayhem', 'shotTime'] as const;
+  const powerups = powerUpSummary(() => ({ powerUps: true, powerUpKinds: POWER_UP_KINDS }));
+  const quickKeys = ['rounds', 'shotTime', 'mayhem'] as const;
   const quick = ruleItems('classic', {
     get: () => rulesOf(s),
     patch: (values) => {
       Object.assign(s, values);
       app.settingsChanged();
     },
-  }, false, true).filter(({ key }) => quickKeys.some((quickKey) => quickKey === key));
+  }, false, true)
+    .filter(({ key }) => quickKeys.some((quickKey) => quickKey === key))
+    .sort((a, b) => quickKeys.indexOf(a.key as (typeof quickKeys)[number]) - quickKeys.indexOf(b.key as (typeof quickKeys)[number]));
   const update = (): void => {
     crewLabel.textContent = lineup(s);
     crew.replaceChildren(...activeSeats(s).map((i) => {
@@ -638,19 +727,23 @@ function mayhemScreen(app: App, transition?: ModeTransition): Screen {
       fact(t('settings.simultaneousShots'), t(s.mayhemBase === 'horizon' || s.simultaneousShots ? 'common.on' : 'common.off')),
       fact(t('settings.shotTime'), t('settings.seconds', { n: s.shotTime })),
     );
+    powerups.update();
   };
+  let disposeModeCarousel = (): void => {};
   return {
     build: () => {
       const page = menuPage({
-        title: t('mode.mayhem'), eyebrow: t('launcher.prepare'), intro: t('mode.mayhem.hint'),
-        headerAside: h('nav.items.items--row.mode-pager', { 'data-section': 'mode-pager', 'aria-label': t('launcher.switchMode') }),
+        title: t('mode.mayhem'), eyebrow: t('launcher.prepare'),
+        headerTitle: modePagerHeader('mayhem', transition),
         className: `menu-page--briefing menu-page--mayhem menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
         body: [
           h('section.briefing__presets', { 'aria-labelledby': 'preset-heading' },
             h('div.launcher__section-head', null, h('h3', { id: 'preset-heading' }, t('preset.choose'))),
             h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') }),
-            h('p.briefing__preset-note', null, t('mayhem.preset.note')),
-            h('div.briefing__quick', { 'data-section': 'quick' }),
+            h('div.briefing__quick', null,
+              h('div.briefing__quick-controls', { 'data-section': 'quick' }),
+              powerups.el,
+            ),
           ),
         ],
         aside: [
@@ -665,18 +758,26 @@ function mayhemScreen(app: App, transition?: ModeTransition): Screen {
         keys: t('briefing.keys'),
         footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
       });
+      disposeModeCarousel = positionModeCarousel(page);
       enableModeSwipe(page, app, 'mayhem');
       return page;
     },
+    dispose: () => disposeModeCarousel(),
     items: [
       ...modePagerItems(app, 'mayhem'),
+      {
+        kind: 'action', section: 'presets', label: pickName(pick), className: 'item--pick',
+        tag: t('preset.pick.today'), hint: pickHint(pick),
+        icon: () => pickArt(pick),
+        selected: () => matchingHandpicked(rulesOf(s), 'mayhem', s.mayhemBase)?.id === pick.id,
+        run: () => { Object.assign(s, pick.rules, { mayhemBase: pick.base }); app.settingsChanged(); app.menu.refresh(); },
+      },
       ...MAYHEM_PRESETS.map((preset): MenuItem => ({
         kind: 'action', section: 'presets', label: t(preset.key),
-        icon: () => modeArt(preset.base, { mode: 'mayhem', preset: preset.art }), selected: () => matchingMayhemPreset(s) === preset,
+        icon: () => modeArt(preset.base, { mode: 'mayhem', preset: preset.art }),
+        selected: () => matchingHandpicked(rulesOf(s), 'mayhem', s.mayhemBase)?.id !== pick.id && matchingMayhemPreset(s) === preset,
         run: () => {
-          s.mayhem = preset.strength;
-          s.mayhemBase = preset.base;
-          s.simultaneousShots = preset.simultaneousShots;
+          Object.assign(s, mayhemPresetRules(preset), { mayhemBase: preset.base });
           app.settingsChanged();
           app.menu.refresh();
         },
@@ -687,7 +788,7 @@ function mayhemScreen(app: App, transition?: ModeTransition): Screen {
       { kind: 'action', section: 'actions', label: t('common.back'), run: () => app.menu.back() },
       { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(s.mayhemBase, true) },
     ],
-    focus: MAIN_MODES.length + MAYHEM_PRESETS.length + quick.length + 3,
+    focus: MAIN_MODES.length + 1 + MAYHEM_PRESETS.length + quick.length + 3,
     update,
   };
 }
@@ -936,19 +1037,23 @@ function tutorialScreen(app: App): () => Screen {
   let preview: ReturnType<typeof mountTutorialPreview> | null = null;
   return (): Screen => {
     const lessons = TUTORIAL.map((lesson) => lesson());
+    const hasPreview = page !== 0 && page !== lessons.length - 1;
     const powerUps = lessons[page].powerUps ?? [];
     const tricks = lessons[page].tricks ?? [];
     if (powerUps.length && !powerUps.includes(selectedPowerUp)) selectedPowerUp = powerUps[0];
     if (tricks.length && !tricks.includes(selectedTrick)) selectedTrick = tricks[0];
-    const canvas = h('canvas.tutorial__canvas', { 'aria-hidden': 'true' }) as HTMLCanvasElement;
-    const timeline = h('input.tutorial__timeline', {
+    const canvas = hasPreview ? h('canvas.tutorial__canvas', { 'aria-hidden': 'true' }) as HTMLCanvasElement : null;
+    const timeline = hasPreview ? h('input.tutorial__timeline', {
       type: 'range', min: '0', max: '1000', step: '1', value: '0',
       'aria-label': t('tutorial.preview.timeline'),
-    }) as HTMLInputElement;
-    timeline.addEventListener('input', () => preview?.seek(Number(timeline.value) / 1000));
+    }) as HTMLInputElement : null;
+    timeline?.addEventListener('input', (event) => {
+      const range = event.currentTarget as HTMLInputElement;
+      preview?.seek(Number(range.value) / 1000);
+    });
     return {
       build: () => {
-        const previewPanel = h('section.tutorial__preview', { 'aria-label': t('tutorial.preview.aria') },
+        const previewPanel = hasPreview && canvas && timeline ? h('section.tutorial__preview', { 'aria-label': t('tutorial.preview.aria') },
           h('div.tutorial__preview-head', null,
             h('span.tutorial__preview-label', null, t('tutorial.preview.label')),
             powerUps.length ? h('span.tutorial__preview-choice', null, t(`powerup.${selectedPowerUp}` as Key))
@@ -959,10 +1064,12 @@ function tutorialScreen(app: App): () => Screen {
             timeline,
             h('div.items', { 'data-section': 'preview-action' }),
           ),
-        );
-        preview = mountTutorialPreview(canvas, lessons[page].demo, (progress) => {
-          timeline.value = String(Math.round(progress * 1000));
-        }, powerUps.length ? selectedPowerUp : undefined, tricks.length ? selectedTrick : undefined);
+        ) : null;
+        if (canvas && timeline) {
+          preview = mountTutorialPreview(canvas, lessons[page].demo, (progress) => {
+            timeline.value = String(Math.round(progress * 1000));
+          }, powerUps.length ? selectedPowerUp : undefined, tricks.length ? selectedTrick : undefined);
+        }
         const powerContent: (Node | string)[] = powerUps.length
           ? [
               h('p.tutorial__selection-prompt', null, t('tutorial.powerups.choose')),
@@ -997,9 +1104,9 @@ function tutorialScreen(app: App): () => Screen {
           body: [h('article.tutorial', { 'aria-live': 'polite' },
             h('p.eyebrow', null, t('tutorial.step', { n: page + 1, total: TUTORIAL.length })),
             h('h3.tutorial__title', null, lessons[page].title),
-            h('div.tutorial__layout', null,
+            h(`div.tutorial__layout${hasPreview ? '' : '.tutorial__layout--text-only'}`, null,
               h('div.tutorial__copy', null, ...lessons[page].body, ...powerContent, ...trickContent),
-              previewPanel,
+              ...(previewPanel ? [previewPanel] : []),
             ),
           )],
           aside: [h('nav.items.tutorial-chapters', { 'data-section': 'chapters', 'aria-label': t('shell.chapters') })],
@@ -1021,7 +1128,7 @@ function tutorialScreen(app: App): () => Screen {
           icon: () => trickIcon(kind), selected: () => selectedTrick === kind,
           run: () => { selectedTrick = kind; app.menu.rebuild(); },
         })),
-        { kind: 'action', section: 'preview-action', label: t('tutorial.preview.replay'), run: () => { timeline.value = '0'; preview?.replay(); } },
+        ...(hasPreview ? [{ kind: 'action' as const, section: 'preview-action', label: t('tutorial.preview.replay'), run: () => { if (timeline) timeline.value = '0'; preview?.replay(); } }] : []),
         { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },
       ],
       // Keep focus on this chapter so ↑/↓ navigates the lesson list.

@@ -243,7 +243,13 @@ function multiplayer(): MultiplayerSession {
       menu.open(() => lobby);
     },
   });
-  const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session);
+  const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session, () => {
+    const mount = overlay.querySelector<HTMLElement>('.menu-page--room .room-chat-slot');
+    if (mount) return { kind: 'lobby', mount };
+    const matchMenu = overlay.querySelector('.menu-page--pause, .menu-page--results');
+    if (screen === 'play' && session?.match && session.match === match && (!menu.isOpen || matchMenu)) return { kind: 'game' };
+    return null;
+  });
   chat = panel;
   session.subscribe(() => panel.update());
   return session;
@@ -750,13 +756,14 @@ function frame(now: number): void {
     renderer.draw(
       m,
       effects,
-      { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
+      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
       paused ? 0 : dt,
     );
   }
   if (screen === 'play' && m === match) announceOracle(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();
+  chat?.update();
   requestAnimationFrame(frame);
 }
 

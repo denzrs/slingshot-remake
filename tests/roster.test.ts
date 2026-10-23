@@ -20,6 +20,20 @@ describe('the line-up', () => {
     expect(addSeat(s, 'human')).toBe(1);
   });
 
+  it('fills the clicked slot and balances its team', () => {
+    const s = lineup(['human', 'human'], { teamMode: 2, seatTeams: [0, 0, 0, 0, 0, 0] });
+    expect(addSeat(s, 'human', 5)).toBe(5);
+    expect(activeSeats(s)).toEqual([0, 1, 5]);
+    expect(s.seatTeams[5]).toBe(1);
+  });
+
+  it('leaves occupied and invalid slots alone', () => {
+    const s = lineup(['human', 'human']);
+    const before = cloneSettings(s);
+    for (const slot of [0, -1, 6, 1.5, NaN]) expect(addSeat(s, 'medium', slot)).toBeNull();
+    expect(s).toEqual(before);
+  });
+
   it('stops at six ships', () => {
     const s = lineup(['human', 'human', 'human', 'human', 'human', 'human']);
     expect(freeSeat(s)).toBeNull();

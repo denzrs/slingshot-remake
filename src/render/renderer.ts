@@ -21,6 +21,8 @@ import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
   hud: boolean;
+  /** Fill the viewport with the animated world while a menu is open. */
+  fullScreen: boolean;
   /** Touch device: hint at dragging instead of keys. */
   touch: boolean;
   /** A clip is being recorded right now. */
@@ -39,7 +41,7 @@ export class Renderer {
   private readonly hud: Hud;
   /** The empty plate is on the canvas already; it stays until the canvas is resized or a match is drawn over it. */
   private emptyDrawn = false;
-  private backdrop: { canvas: HTMLCanvasElement; walls: boolean } | null = null;
+  private backdrop: { canvas: HTMLCanvasElement; walls: boolean; fullScreen: boolean } | null = null;
   /** Per world (live or killcam replay), rebuilt when the world's version or the pixel scale changes. */
   private contours = new WeakMap<World, { version: number; ps: number; canvas: HTMLCanvasElement }>();
   /** Planet sprites by seed at `spritePs` device pixels per field unit. */
@@ -123,7 +125,7 @@ export class Renderer {
     this.resizeIfNeeded();
     if (this.emptyDrawn) return;
     this.emptyDrawn = true;
-    if (!this.backdrop || this.backdrop.walls) this.backdrop = { canvas: renderBackdrop(this.view, false), walls: false };
+    if (!this.backdrop || this.backdrop.walls || this.backdrop.fullScreen) this.backdrop = { canvas: renderBackdrop(this.view, false), walls: false, fullScreen: false };
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.drawImage(this.backdrop.canvas, 0, 0);
   }
@@ -132,13 +134,15 @@ export class Renderer {
     this.resizeIfNeeded();
     this.emptyDrawn = false;
     this.time += dt;
-    const { ctx, view } = this;
-    const { dpr, scale, offsetX, offsetY } = view;
+    const { ctx } = this;
+    const view = this.view;
+    const fieldView = opts.fullScreen ? this.fullScreenView() : view;
+    const { dpr, scale, offsetX, offsetY } = fieldView;
     const scene = match.scene();
     const walls = match.rules.bounce;
 
-    if (!this.backdrop || this.backdrop.walls !== walls) {
-      this.backdrop = { canvas: renderBackdrop(view, walls), walls };
+    if (!this.backdrop || this.backdrop.walls !== walls || this.backdrop.fullScreen !== opts.fullScreen) {
+      this.backdrop = { canvas: renderBackdrop(fieldView, walls, !opts.fullScreen), walls, fullScreen: opts.fullScreen };
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(this.backdrop.canvas, 0, 0);
@@ -146,8 +150,8 @@ export class Renderer {
     const base = dpr * scale;
     const cam = scene.camera;
     const P = base * (cam?.zoom ?? 1);
-    const plate = plateUnits(!!view.rotated);
-    const [a, b, c, d, e, f] = fieldTransform(view, cam ?? undefined);
+    const plate = plateUnits(!!fieldView.rotated);
+    const [a, b, c, d, e, f] = fieldTransform(fieldView, cam ?? undefined);
     const shakeX = effects.shake ? (Math.random() - 0.5) * 2 * effects.shake : 0;
     const shakeY = effects.shake ? (Math.random() - 0.5) * 2 * effects.shake : 0;
 
@@ -177,6 +181,18 @@ export class Renderer {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       this.hud.draw(match, view, opts, this.time, (i) => this.screenOf(match.world.ships[i].x, match.world.ships[i].y));
     }
+  }
+
+  private fullScreenView(): View {
+    const view = this.view;
+    const plate = plateUnits(!!view.rotated);
+    const scale = Math.max(view.cssWidth / plate.w, view.cssHeight / plate.h);
+    return {
+      ...view,
+      scale,
+      offsetX: (view.cssWidth - plate.w * scale) / 2,
+      offsetY: (view.cssHeight - plate.h * scale) / 2,
+    };
   }
 
   private drawWorld(match: Match, scene: Scene, ps: number): void {

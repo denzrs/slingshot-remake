@@ -96,7 +96,6 @@ export function ruleRows(): RuleRow[] {
     { key: 'fadingTrails', group: 'twists', control: 'slider', label: t('settings.fadingTrails'), options: numbers(TRAIL_FADE.OPTIONS, (n) => (n ? seconds(n) : t('common.off'))) },
     { key: 'betting', group: 'twists', control: 'toggle', label: t('settings.betting'), options: [], onlineOnly: true },
     { key: 'chatPlayersOnly', group: 'twists', control: 'toggle', label: t('settings.chatPlayersOnly'), options: [], onlineOnly: true },
-    { key: 'powerUps', group: 'powerups', control: 'toggle', label: t('settings.powerUps'), options: [] },
     { key: 'powerUpKinds', group: 'powerups', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}` as Key)) })) },
     { key: 'powerUpAmount', group: 'powerups', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps },
   ];
@@ -155,6 +154,7 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, onlin
         item: {
           kind: 'tiles',
           label: row.label,
+          allowEmpty: true,
           hidden,
           reserve,
           commit,
@@ -165,7 +165,9 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, onlin
             draw: (ctx, r) => drawPowerUpSymbol(ctx, o.value, 0, 0, r),
           })),
           get: () => source.get().powerUps ? source.get().powerUpKinds : [],
-          set: (kinds) => source.patch({ powerUps: true, powerUpKinds: POWER_UP_KINDS.filter((k) => kinds.includes(k)) }),
+          set: (kinds) => kinds.length
+            ? source.patch({ powerUps: true, powerUpKinds: POWER_UP_KINDS.filter((k) => kinds.includes(k)) })
+            : source.patch({ powerUps: false }),
         },
       };
     }

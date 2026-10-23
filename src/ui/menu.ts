@@ -70,10 +70,12 @@ export type MenuItem =
       })
   | (Placed &
       Live & {
-        /** A row of tiles, each one on or off on its own; a non-empty selection stays non-empty. */
+        /** A row of tiles, each one on or off on its own. */
         kind: 'tiles';
         label: string;
         tiles: Tile[];
+        /** Let every tile be switched off, so the group can mean none. */
+        allowEmpty?: boolean;
         /** The values of the tiles that are on. */
         get: () => unknown[];
         set: (v: unknown[]) => void;
@@ -93,8 +95,6 @@ export type MenuItem =
         rememberCpu?: (value: unknown) => void;
         get: () => unknown;
         set: (v: unknown) => void;
-        /** In team play: the teams it can be in, each with its colour. */
-        teams?: { caption: string; options: Choice<unknown>[]; tones: string[]; get: () => unknown; set: (v: unknown) => void };
         /** A button that takes the ship out. */
         remove?: { label: string; disabled: () => boolean; run: () => void };
       });

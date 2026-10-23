@@ -6,7 +6,6 @@ import { h, type MenuItem, type Screen } from './menu';
 import { leaderboardAvailable, leaderboardScreen } from './leaderboard';
 import type { App } from './screens';
 import { menuPage } from './menu-page';
-import { modeArt } from './mode-icons';
 
 /** "Fri, 2 October 2026" in the UI language. */
 function formatDay(key: string): string {
@@ -63,23 +62,24 @@ export function dailyScreen(app: App): Screen {
         stat(t('daily.stats.streak'), streak ? tn('daily.days', streak) : '—'),
       );
       const root = menuPage({
-        title: themeName(challenge.theme), eyebrow: `${t('daily.eyebrow', { n: challenge.number })} · ${formatDay(key)}`,
-        intro: t(`daily.theme.${challenge.theme}.text` as Key), className: 'menu-page--mission',
+        title: themeName(challenge.theme), eyebrow: t('daily.eyebrow'),
+        intro: challenge.theme === 'precision'
+          ? undefined
+          : t(`daily.theme.${challenge.theme}.text` as Key),
+        className: 'menu-page--mission',
         body: [
-          h('h3.setup__title', null, t('shell.sectors')),
+          h('h3.setup__title', null, t('daily.routeHeading', { n: challenge.number, date: formatDay(key) })),
           h('div.items.items--row.mission-route', { 'data-section': 'route' }), detail,
-          h('div.mission-bottom', null, stats,
-            h('details.mission-rules', null, h('summary', null, t('flow.missionDetails')), h('p.note', null, t('daily.rules'))),
-          ),
+          h('div.mission-bottom', null, stats),
           ...(key === dateKey() ? [h('p.daily-reset', null, t('daily.resets', { time: untilMidnight() }))] : []),
         ],
       });
-      root.querySelector('.menu-page__head')!.append(h('div.mission-art', null, modeArt(challenge.theme === 'singularity' ? 'horizon' : 'daily')));
       return root;
     },
     items: [
       ...challenge.sectors.map((spec): MenuItem => ({
         kind: 'action', section: 'route', label: t('daily.sector', { n: spec.index + 1 }),
+        className: `mission-difficulty--${spec.difficulty}`,
         tag: `${'●'.repeat(spec.difficulty)}${'○'.repeat(5 - spec.difficulty)}`,
         hint: `${tn('daily.targets', spec.targets)} · ${tn('daily.shots', spec.shots)}`,
         selected: () => selected === spec.index,

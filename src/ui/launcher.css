@@ -203,15 +203,13 @@
   max-width: 29ch;
 }
 
-.launcher__modes .is-selected,
-.briefing__cards .is-selected {
+.launcher__modes .is-selected {
   border-color: var(--launch-accent);
   background: linear-gradient(160deg, rgb(255 173 101 / 0.075), rgb(9 21 39 / 0.95) 70%);
   box-shadow: 0 0 0 1px rgb(255 173 101 / 0.2), 0 7px 28px rgb(0 0 0 / 0.12);
 }
 
-.launcher__modes .is-selected .item__title,
-.briefing__cards .is-selected .item__title {
+.launcher__modes .is-selected .item__title {
   color: var(--launch-accent);
 }
 
@@ -331,8 +329,11 @@
 }
 
 .briefing__cards .item__title {
+  min-width: 0;
   font-size: 25px;
   letter-spacing: 0.02em;
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
 .briefing__cards .item__hint {
@@ -361,6 +362,89 @@
 
 .briefing__quick .item__label {
   font-size: 12px;
+}
+
+.briefing__quick-controls { display: contents; }
+
+.briefing__powerups {
+  order: 1;
+  grid-column: 3;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 2px;
+}
+
+.briefing__powerups-label {
+  color: var(--bone);
+  font-size: 12px;
+}
+
+.briefing__powerups-note {
+  color: var(--bone-dim);
+  font: 9px/1.4 var(--font-mono);
+}
+
+.briefing__powerup-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+}
+
+.briefing__powerup {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--powerup-tone) 58%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--powerup-tone) 10%, transparent);
+  cursor: help;
+}
+
+.briefing__powerup:focus-visible {
+  outline: 2px solid var(--bone);
+  outline-offset: 2px;
+}
+
+.briefing__powerup-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.briefing__powerup-none {
+  color: var(--bone-dim);
+  font: 10px/1.5 var(--font-mono);
+}
+
+.powerup-tooltip {
+  position: fixed;
+  z-index: 1200;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 8px 10px;
+  border: 1px solid rgb(91 125 179 / 0.65);
+  border-radius: 3px;
+  background: rgb(7 17 34 / 0.98);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  color: var(--bone);
+  font-size: 11px;
+  line-height: 1.5;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(3px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+}
+
+.powerup-tooltip.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 .menu-page--briefing .menu-page__aside .setup__title {
@@ -453,6 +537,13 @@
   .briefing__cards .item__title { align-self: end; font-size: 23px; }
   .briefing__cards .item__hint { align-self: start; }
   .briefing__quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; }
+  .briefing__powerups { grid-column: auto; }
+}
+
+@media (max-width: 900px) {
+  .briefing__cards .item--card { display: flex; gap: 8px; padding: 12px; }
+  .briefing__cards .item__icon { height: clamp(62px, 10vh, 82px); }
+  .briefing__cards .item__title { font-size: clamp(18px, 2.6vw, 22px); }
 }
 
 @media (max-width: 760px) {
@@ -476,6 +567,10 @@
   .launcher__language { margin-left: 0; width: 200px; }
   .briefing__crew { margin-top: 14px; }
   .briefing__players { margin-bottom: 20px; }
+}
+
+@media (max-height: 840px) and (min-width: 761px) {
+  .screen--title > .launcher { margin-top: clamp(18px, 4vh, 44px); }
 }
 
 @media (max-width: 520px) {
@@ -508,10 +603,11 @@
   .briefing__cards { gap: 10px; }
   .briefing__cards .item--card { display: flex; padding: 12px; }
   .briefing__cards .item__icon { height: 70px; }
-  .briefing__cards .item__title { align-self: flex-start; font-size: 24px; }
+  .briefing__cards .item__title { align-self: flex-start; font-size: clamp(16px, 5vw, 19px); }
   .briefing__cards .item__hint { font-size: 10px; line-height: 1.6; }
   .briefing__preset-note { margin-bottom: 16px; }
   .briefing__quick { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .briefing__powerups { grid-column: auto; }
   .briefing__quick .item { padding-block: 10px; }
 }
 
@@ -520,6 +616,15 @@
   .launcher__modes .item__icon { height: 76px; }
   .launcher__online .item--card { grid-template-columns: 72px minmax(0, 1fr); gap: 3px 12px; padding: 12px; }
   .launcher__online .item__icon { height: 76px; }
+}
+
+@media (max-height: 780px) and (max-width: 380px) {
+  .screen--title { padding-top: max(12px, env(safe-area-inset-top)); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .launcher__head { margin-bottom: 8px; }
+  .launcher__body { gap: 12px; }
+  .launcher__modes .item__icon { height: 60px; }
+  .launcher__modes .item--card { padding-block: 10px; }
+  .launcher__foot { margin-top: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
