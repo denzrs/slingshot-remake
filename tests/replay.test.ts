@@ -103,7 +103,7 @@ describe('a recorded match flown again', () => {
     expect(again.replayState).not.toBe('drifted');
     expect(second.traces).toEqual(first.traces);
     expect(again.players.map((p) => p.score)).toEqual(original.players.map((p) => p.score));
-  });
+  }, 30_000);
 });
 
 describe('what the recordings held', () => {

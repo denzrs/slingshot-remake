@@ -1405,7 +1405,7 @@ export abstract class Match {
       return { angle: angleTo(near.planet), power: 0 };
     }
     if (kind === 'wormhole') {
-      const spots = enemies[0] && cpuWormholeSpots(world, from, enemies[0]);
+      const spots = enemies[0] && cpuWormholeSpots(world, from, enemies[0], p.id);
       if (!spots) return null;
       spot = spots[0];
     } else if (kind === 'planetkiller') {
