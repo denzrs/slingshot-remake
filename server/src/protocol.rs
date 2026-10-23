@@ -764,7 +764,10 @@ mod tests {
         assert!(is_input_message(&json!({"kind":"skipRound"})));
         assert!(is_input_message(&json!({"kind":"skipVote","yes":true})));
         assert!(is_input_message(&json!({"kind":"skipVote","yes":false})));
-        for invalid in [json!({"kind":"skipVote"}), json!({"kind":"skipVote","yes":1})] {
+        for invalid in [
+            json!({"kind":"skipVote"}),
+            json!({"kind":"skipVote","yes":1}),
+        ] {
             assert!(!is_input_message(&invalid), "accepted input: {invalid}");
         }
     }
