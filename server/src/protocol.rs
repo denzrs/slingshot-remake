@@ -362,7 +362,16 @@ pub fn parse_daily_submit(value: &Value) -> Option<DailyScore> {
 /// (`brau` covers `brauchen`, `Brause`, `Braut`, `Braunschweig`), so these are stems; a stem here
 /// must not be, or begin, a word the dictionary is right about.
 const GERMAN_SAFE_WORDS: &[&str] = &[
-    "brau", "bräu", "brav", "churer", "kanal", "analys", "analpha", "negger", "tschure", "knutte",
+    "brau",
+    "bräu",
+    "brav",
+    "churer",
+    "kanal",
+    "analys",
+    "analpha",
+    "schwarzenegger",
+    "tschure",
+    "knutte",
     "spastik",
 ];
 
