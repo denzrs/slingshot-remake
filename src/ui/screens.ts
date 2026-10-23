@@ -13,7 +13,6 @@ import type { PowerUpKind } from '../powerups';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, freeSeat, MIN_SEATS, removeSeat, seatTeamsFor, teamCounts, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
-import { statsAvailable, statsScreen } from './stats';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
 import { modeIcon } from './mode-icons';
 import { groupTitle, RULE_GROUPS, ruleItems } from './rules';
@@ -164,7 +163,6 @@ export function titleScreen(app: App): Screen {
       return [
         { kind: 'action', label: t('title.local'), hint: t('title.local.hint'), primary: true, run: () => app.menu.push(() => localScreen(app)) },
         { kind: 'action', label: t('multiplayer.title'), hint: t('multiplayer.hint'), run: () => app.openLobby() },
-        ...(statsAvailable() ? [{ kind: 'action', label: t('stats.title'), hint: t('stats.hint'), run: () => app.menu.push(() => statsScreen(app)) } satisfies MenuItem] : []),
         { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
         { kind: 'action', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
         languageItem(app),

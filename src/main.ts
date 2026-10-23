@@ -804,7 +804,11 @@ async function boot(): Promise<void> {
   await Promise.race([Promise.all(fonts.map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 1500))]);
   // An invite link opens the lobby by itself and joins the named room after connecting.
   if (readInvite(location.search, location.hash)) app.openLobby();
-  else app.toTitle();
+  else {
+    app.toTitle();
+    // The statistics page has no menu entry: it is at /stats.
+    if (statsAvailable() && /\/stats\/?$/.test(location.pathname)) menu.push(() => statsScreen(app));
+  }
   requestAnimationFrame(frame);
 }
 void boot();

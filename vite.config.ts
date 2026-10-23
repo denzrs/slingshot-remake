@@ -31,13 +31,30 @@ function blockDebugAim(server: { middlewares: { use: (fn: (req: { url?: string }
   });
 }
 
+/**
+ * `/stats` opens the statistics page (the game reads the path itself). A static host only answers for files that exist, so
+ * the build also carries the page as `stats/index.html` – the same page, its relative links stepping up one level. The dev
+ * and preview servers already answer any path with the page.
+ */
+function statsRoute(): Plugin {
+  return {
+    name: 'stats-route',
+    enforce: 'post',
+    generateBundle(_options, bundle) {
+      const page = bundle['index.html'];
+      if (page?.type !== 'asset' || typeof page.source !== 'string') return;
+      this.emitFile({ type: 'asset', fileName: 'stats/index.html', source: page.source.replaceAll('="./', '="../') });
+    },
+  };
+}
+
 // Relative base so the build works under any GitHub Pages sub-path
 // (e.g. https://<user>.github.io/<repo>/).
 export default defineConfig({
   base: './',
   // `DEBUG_AIM` (which serves /debug-aim.html) also reaches the client, so the in-game seed badge can follow it.
   envPrefix: ['VITE_', 'DEBUG_'],
-  plugins: [debugAimGate()],
+  plugins: [debugAimGate(), statsRoute()],
   // Sibling git worktrees live under .claude/; their tests are not this checkout's.
   test: { exclude: [...configDefaults.exclude, '.claude/**'] },
 });
