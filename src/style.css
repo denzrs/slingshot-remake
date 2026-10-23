@@ -2661,10 +2661,7 @@ kbd {
 /* ——— Statistics ——— */
 
 .panel--stats {
-  width: min(900px, 100%);
-  max-height: 100%;
-  overflow-x: hidden;
-  overflow-y: auto;
+  width: min(1080px, 100%);
   text-align: center;
 }
 
@@ -2675,7 +2672,7 @@ kbd {
 .panel--stats .items--row {
   flex-wrap: wrap;
   justify-content: center;
-  margin-top: 16px;
+  margin-top: 10px;
 }
 
 .panel--stats .lb__status {
@@ -2762,7 +2759,8 @@ kbd {
 
 .hm__cell {
   display: block;
-  aspect-ratio: 1;
+  /* A fixed height: square cells would grow taller as the panel gets wider. */
+  height: 14px;
   min-width: 10px;
   border: 1px solid rgb(91 125 179 / 0.22);
   border-radius: 2px;
@@ -2821,6 +2819,7 @@ kbd {
 .hm__legend .hm__cell {
   width: 12px;
   min-width: 12px;
+  height: 12px;
 }
 
 .st__table {
