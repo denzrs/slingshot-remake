@@ -167,15 +167,15 @@ const SCHEMA: [&str; 14] = [
          planet   INTEGER,
          PRIMARY KEY (match_id, round, turn, n)
      )",
-    // One row per day: rounds played, and the points the shots earned (a shot's points are added
-    // once, so the day's total is a plain sum). Kept as long as the rows above, and quick to read.
+    // One row per day: rounds played, and the points the seats earned (each round adds what the scores rose by,
+    // betting left out, so the day's total is a plain sum). Kept as long as the rows above, and quick to read.
     "CREATE TABLE IF NOT EXISTS stat_days (
          day    TEXT    PRIMARY KEY,
          rounds INTEGER NOT NULL,
          points INTEGER NOT NULL
      )",
     // The same for games played on one device. They are told apart because their numbers are not the online ones:
-    // a local game has no shots, and its points are the scores the seats ended on, CPUs included.
+    // their points include the CPUs' seats.
     "CREATE TABLE IF NOT EXISTS stat_local_days (
          day    TEXT    PRIMARY KEY,
          rounds INTEGER NOT NULL,
@@ -604,12 +604,10 @@ impl Store {
         for shot in &report.shots {
             self.write_shot(facts, report.round, shot, &who, at).await?;
         }
-        let points = report.shots.iter().map(|shot| shot.points).sum();
-        self.tally(facts.local, &who, 0, points, at).await
+        self.tally(facts.local, &who, 0, 0, at).await
     }
 
-    /// A game played on one device: its rounds as the player's own client reports them, all at once, and the
-    /// points they ended on for the day's total (there are no shots to add up).
+    /// A game played on one device: its rounds as the player's own client reports them, all at once.
     async fn write_local(
         &self,
         facts: &RoundFacts,
@@ -619,11 +617,7 @@ impl Store {
         for report in rounds {
             self.write_round(facts, report, at).await?;
         }
-        let points = rounds
-            .last()
-            .map_or(0, |last| last.seats.iter().map(|seat| seat.score).sum());
-        self.tally(facts.local, &self.who(facts), 0, points, at)
-            .await
+        Ok(())
     }
 
     /// The game's row, written with its first report: the seed, the rules and who sat where.
@@ -772,7 +766,28 @@ impl Store {
             ];
             self.conn.execute(INSERT_TIP, row).await?;
         }
-        self.tally(facts.local, &who, 1, 0, at).await
+        // What the seats earned this round: the scores rose by that much, less what betting moved.
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT COALESCE(SUM(score), 0) FROM stat_seats WHERE match_id = ?1 AND round = ?2",
+                (facts.match_id.clone(), report.round - 1),
+            )
+            .await?;
+        let before: i64 = match rows.next().await? {
+            Some(row) => row.get(0)?,
+            None => 0,
+        };
+        drop(rows);
+        let now: i64 = report.seats.iter().map(|ship| ship.score).sum();
+        let betting: i64 = report
+            .tips
+            .iter()
+            .filter(|tip| !tip.stands)
+            .map(|tip| tip.payout - tip.stake)
+            .sum();
+        self.tally(facts.local, &who, 1, now - before - betting, at)
+            .await
     }
 
     /// Add to the day's totals: rounds and points, and the people who played.
@@ -984,11 +999,14 @@ impl Store {
         }
         drop(rows);
 
-        // What the shots earned; a game on one device has none, and ended on the points its seats held.
+        // What the seats earned: the scores they ended on, less what betting moved.
         let mut rows = self
             .reader
             .query(
-                format!("SELECT match_id, SUM(points) FROM stat_shots WHERE match_id IN ({ids}) GROUP BY match_id"),
+                format!(
+                    "SELECT match_id, SUM(score) FROM stat_seats s WHERE match_id IN ({ids})
+                     AND round = (SELECT MAX(round) FROM stat_seats WHERE match_id = s.match_id) GROUP BY match_id"
+                ),
                 (),
             )
             .await?;
@@ -1002,17 +1020,14 @@ impl Store {
             .reader
             .query(
                 format!(
-                    "SELECT match_id, SUM(score) FROM stat_seats s WHERE match_id IN ({ids})
-                     AND round = (SELECT MAX(round) FROM stat_seats WHERE match_id = s.match_id) GROUP BY match_id"
+                    "SELECT match_id, SUM(payout - stake) FROM stat_tips WHERE stands = 0 AND match_id IN ({ids}) GROUP BY match_id"
                 ),
                 (),
             )
             .await?;
         while let Some(row) = rows.next().await? {
             if let Some(i) = by_id(&mut heads, &row.get::<String>(0)?) {
-                if heads[i].game.local {
-                    heads[i].game.points = row.get(1)?;
-                }
+                heads[i].game.points -= row.get::<i64>(1)?;
             }
         }
         drop(rows);
