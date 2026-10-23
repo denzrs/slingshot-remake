@@ -93,6 +93,17 @@ function duel(seed = 7): Match {
 }
 
 describe('wormhole placement', () => {
+  it('replays a recorded pair even when a living ship is now inside the placement gap', () => {
+    const match = duel();
+    match.players[0].powerUp = 'wormhole';
+    match.world.ships[1].x = 308.5;
+    match.world.ships[1].y = 611;
+
+    expect(match.power.placeLogged({ player: 0, kind: 'wormhole', x: 308.57588601721625, y: 611.05741618765046, x2: 329.18325751788302, y2: 717.07315199999812 })).toBe(true);
+    expect(match.world.wormholes).toHaveLength(1);
+    expect(match.players[0].powerUp).toBeNull();
+  });
+
   it('lets two portals sit at any distance, as long as they do not overlap', () => {
     const w = world();
     expect(portalFits(w, { x: 400 + WORMHOLE.GAP - 1, y: 400 })).toBe(false);
