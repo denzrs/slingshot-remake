@@ -163,7 +163,7 @@ export function statsScreen(app: App): Screen {
     }
     const local = source === 'local';
     view.show(local ? overview.localDays : overview.days, metric);
-    const shownGames = overview.games.filter((game) => game.local === local);
+    const shownGames = overview.games.filter((game) => game.local === local).slice(0, 5);
     head.hidden = shownGames.length === 0;
     games.replaceChildren(...(shownGames.length === 0 ? [h('li.st__none', null, t('stats.none'))] : shownGames.map((game) => gameRow(game, watch))));
   };
