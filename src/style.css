@@ -2580,6 +2580,17 @@ kbd {
   margin-top: 24px;
 }
 
+.panel--daily .items--row[data-section='pager'] {
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.panel--daily .items--row[data-section='pager'] .item {
+  min-width: 0;
+  padding-inline: 12px;
+  font-size: 12px;
+}
+
 /* ——— Daily leaderboard ——— */
 
 .lb {
@@ -2589,6 +2600,18 @@ kbd {
   text-align: left;
 }
 
+.lb__head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lb__day {
+  flex: 1;
+  text-align: center;
+}
+.lb__kind {
+  text-align: center;
+}
 .lb__hint {
   margin: 0;
 }

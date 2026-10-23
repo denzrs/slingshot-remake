@@ -1,3 +1,5 @@
+import { challengeNumber, shiftDate } from './challenge';
+import { CHALLENGE } from './config';
 import { DEFAULT_SERVER } from './multiplayer';
 import { NetworkClient, type DailyEntry } from './net';
 
@@ -62,4 +64,13 @@ export class Leaderboard {
       connection.close();
     }
   }
+}
+
+/** How many days back the relay keeps a board (`daily.keepDays` in `server/protocol-contract.json`). */
+export const BOARD_KEEP_DAYS = 7;
+
+/** The oldest day whose board can still hold runs, seen from `today`; never before the first challenge. */
+export function oldestBoardDay(today: string): string {
+  const oldest = shiftDate(today, -BOARD_KEEP_DAYS);
+  return challengeNumber(oldest) < 1 ? CHALLENGE.EPOCH : oldest;
 }

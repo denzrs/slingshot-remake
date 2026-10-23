@@ -36,7 +36,7 @@ interface Live {
 }
 
 export type MenuItem =
-  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; /** Small second line under the label. */ hint?: string; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; disabled?: boolean })
+  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; /** Small second line under the label. */ hint?: string; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; disabled?: boolean | (() => boolean) })
   | (Placed &
       Live & {
         /** Cycles through its options; the arrows at its sides go back and forth. */
@@ -129,6 +129,7 @@ export class Menu {
   /** Every row, in the order ↑/↓ visit them. */
   private focusables: HTMLElement[] = [];
   private controls: Control[] = [];
+  private actionRefresh: (() => void)[] = [];
 
   constructor(
     private readonly root: HTMLElement,
@@ -176,6 +177,7 @@ export class Menu {
   /** Re-read every setting row, e.g. after something outside the menu changed a value. */
   refresh(): void {
     for (const control of this.controls) control.refresh();
+    for (const refresh of this.actionRefresh) refresh();
     this.current?.update?.();
   }
 
@@ -258,6 +260,7 @@ export class Menu {
     this.current = screen;
     this.focusables = [];
     this.controls = [];
+    this.actionRefresh = [];
     const env = { sound: this.sound, changed: () => this.refresh() };
 
     for (const item of screen.items) {
@@ -292,12 +295,16 @@ export class Menu {
         } else {
           b.textContent = item.label;
         }
-        if (item.disabled) {
-          b.classList.add('is-disabled');
-          b.setAttribute('aria-disabled', 'true');
-        }
+        const isDisabled = (): boolean => typeof item.disabled === 'function' ? item.disabled() : !!item.disabled;
+        const refresh = (): void => {
+          const disabled = isDisabled();
+          b.classList.toggle('is-disabled', disabled);
+          b.setAttribute('aria-disabled', String(disabled));
+        };
+        refresh();
+        this.actionRefresh.push(refresh);
         b.addEventListener('click', () => {
-          if (item.disabled) return;
+          if (isDisabled()) return;
           this.sound.select();
           item.run();
         });
