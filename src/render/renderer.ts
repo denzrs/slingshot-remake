@@ -1,5 +1,5 @@
 import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, WORMHOLE } from '../config';
-import type { Match, Scene } from '../game';
+import type { Match, Scene, Trail } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
 import { aimDirection, inNebula, isWormholeJump, nextWormholeId, type Wormhole, type World } from '../physics';
@@ -44,6 +44,9 @@ export class Renderer {
   private contours = new WeakMap<World, { version: number; ps: number; canvas: HTMLCanvasElement }>();
   /** Planet sprites by seed at `spritePs` device pixels per field unit. */
   private sprites = new Map<number, HTMLCanvasElement>();
+  /** The finished trails, drawn once: dashed strokes are costly to rasterise and the trails only change when a shot ends. */
+  private trailLayer: { key: string; world: World; canvas: HTMLCanvasElement } | null = null;
+  private readonly trailIds = new WeakMap<Trail, number>();
   private spritePs = 0;
   private time = 0;
   /** When each power-up pickup was first drawn, for its pop-in. */
@@ -86,6 +89,7 @@ export class Renderer {
     this.backdrop = null;
     this.emptyDrawn = false;
     this.contours = new WeakMap();
+    this.trailLayer = null;
   }
 
   /** The oracle choice under a pointer position (client px), if it is over one. */
@@ -160,7 +164,7 @@ export class Renderer {
     }
     ctx.setTransform(a, b, c, d, e + shakeX * P, f + shakeY * P);
     this.drawWorld(match, scene, base);
-    this.drawTrails(match, scene);
+    this.drawTrails(match, scene, base);
     this.drawSpotlight(match, scene);
     this.drawShips(match, scene);
     this.drawPowerUps(match, scene);
@@ -288,15 +292,36 @@ export class Renderer {
     ctx.restore();
   }
 
-  private drawTrails(match: Match, scene: Scene): void {
+  /** The finished trails on a canvas the size of the field plus a margin, rebuilt when a trail comes, goes or changes rank. */
+  private trailLayerFor(match: Match, drawn: { trail: Trail; rank: number }[], ps: number): HTMLCanvasElement {
+    const ids = drawn.map((d) => {
+      let id = this.trailIds.get(d.trail);
+      if (id === undefined) this.trailIds.set(d.trail, (id = nextTrailId++));
+      return `${id}:${Math.min(d.rank, 2)}`;
+    });
+    const key = `${ps}|${ids.join(',')}`;
+    const cached = this.trailLayer;
+    if (cached && cached.key === key && cached.world === match.world) return cached.canvas;
+    const canvas = cached?.canvas ?? document.createElement('canvas');
+    canvas.width = Math.ceil((FIELD.width + 2 * TRAIL_MARGIN) * ps);
+    canvas.height = Math.ceil((FIELD.height + 2 * TRAIL_MARGIN) * ps);
+    const c = canvas.getContext('2d')!;
+    c.setTransform(ps, 0, 0, ps, TRAIL_MARGIN * ps, TRAIL_MARGIN * ps);
+    c.lineJoin = 'round';
+    c.lineCap = 'round';
+    strokeTrails(c, match, drawn as { trail: Trail; rank: number; fade: number }[]);
+    this.trailLayer = { key, world: match.world, canvas };
+    return canvas;
+  }
+
+  private drawTrails(match: Match, scene: Scene, ps: number): void {
     const { ctx } = this;
     const rank = new Map<number, number>();
     // In salvo modes, and while aiming, previous trails step back as dashed lines so the next or live shots read clearly.
     const firstRank = match.salvo || match.phase === 'aiming' ? 1 : 0;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    // The shots of one splitter fan count as one flight: they share a rank.
     const lastFan = new Map<number, number | undefined>();
+    const drawn: { trail: Trail; rank: number; fade: number }[] = [];
+    // The shots of one splitter fan count as one flight: they share a rank.
     for (let i = scene.trails.length - 1; i >= 0; i--) {
       const t = scene.trails[i];
       const fade = match.trailAlpha(t);
@@ -305,13 +330,17 @@ export class Renderer {
       if (t.fan !== undefined && lastFan.get(t.owner) === t.fan) r -= 1;
       else rank.set(t.owner, r + 1);
       lastFan.set(t.owner, t.fan);
-      const color = match.players[t.owner].color;
-      ctx.strokeStyle = rgba(color, (r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2) * fade);
-      ctx.lineWidth = r === 0 ? 1.6 : 1;
-      ctx.setLineDash(r === 0 ? [] : [1.5, 4]);
-      strokePolyline(ctx, t.points, match.world.wormholes);
+      drawn.push({ trail: t, rank: r, fade });
     }
-    ctx.setLineDash([]);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    const still = !scene.camera && drawn.length > 1 && drawn.every((d) => d.fade === 1);
+    if (still) {
+      const layer = this.trailLayerFor(match, drawn, ps);
+      ctx.drawImage(layer, -TRAIL_MARGIN, -TRAIL_MARGIN, FIELD.width + 2 * TRAIL_MARGIN, FIELD.height + 2 * TRAIL_MARGIN);
+    } else {
+      strokeTrails(ctx, match, drawn);
+    }
 
     for (const vs of scene.volley?.shots ?? []) {
       const color = match.players[vs.owner].color;
@@ -982,6 +1011,20 @@ function easeOutBack(t: number): number {
   const c1 = 1.70158;
   const c3 = c1 + 1;
   return 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2;
+}
+
+let nextTrailId = 0;
+/** How far past the field's edge a cached trail is still kept, in field units: shots that fly off do so on the screen's margin. */
+const TRAIL_MARGIN = 200;
+
+function strokeTrails(ctx: CanvasRenderingContext2D, match: Match, drawn: readonly { trail: Trail; rank: number; fade: number }[]): void {
+  for (const { trail, rank: r, fade } of drawn) {
+    ctx.strokeStyle = rgba(match.players[trail.owner].color, (r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2) * fade);
+    ctx.lineWidth = r === 0 ? 1.6 : 1;
+    ctx.setLineDash(r === 0 ? [] : [1.5, 4]);
+    strokePolyline(ctx, trail.points, match.world.wormholes);
+  }
+  ctx.setLineDash([]);
 }
 
 function strokePolyline(ctx: CanvasRenderingContext2D, pts: number[], wormholes: readonly Wormhole[] = []): void {
