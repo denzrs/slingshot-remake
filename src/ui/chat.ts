@@ -117,10 +117,16 @@ export class ChatPanel {
     this.hint();
   }
 
-  /** Tab or Enter takes the picked emoji, the arrows move the pick, Escape drops the offer. Without an offer, keys are the input's own. */
+  /**
+   * Tab or Enter takes the picked emoji, the arrows move the pick, Escape drops the offer. Without an offer, keys are the input's own.
+   * Enter sends instead when the word is already a finished smiley (the send turns it into the emoji), and Shift+Tab still leaves the input.
+   */
   private key(e: KeyboardEvent): void {
     if (!this.offered.length) return;
     const n = this.offered.length;
+    const picked = this.offered[this.pick];
+    if (e.key === 'Enter' && this.pick === 0 && picked.label === picked.replaces) return;
+    if (e.key === 'Tab' && e.shiftKey) return;
     if (e.key === 'Tab' || e.key === 'Enter') this.take(this.pick);
     else if (e.key === 'ArrowDown') this.pick = (this.pick + 1) % n;
     else if (e.key === 'ArrowUp') this.pick = (this.pick + n - 1) % n;
