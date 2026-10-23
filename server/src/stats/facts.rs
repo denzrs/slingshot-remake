@@ -2,16 +2,17 @@
 //! the client words it in the player's language. A query answers one row whose first column is how many things it looked at: a fact
 //! with too few of them is left out, so the menu never boasts of three shots.
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use tracing::warn;
 
-use super::Store;
+use super::{Stats, Store};
 
-/// How long a set of facts is handed out again before the queries are asked anew.
-const FRESH: Duration = Duration::from_secs(60);
+/// How long a set of facts is handed out before one request starts making them anew (they move slowly: a day's worth of play barely shifts a share).
+const FRESH: Duration = Duration::from_secs(10 * 60);
 
 /// One finding: what it is about and its numbers (the sample size is not among them).
 #[derive(Clone, Debug, PartialEq)]
@@ -120,20 +121,30 @@ const QUERIES: &[Query] = &[
     ("betLoss", 25, "SELECT COUNT(*), MAX(stake) FROM stat_tips WHERE stake > 0 AND payout = 0"),
 ];
 
-impl Store {
-    /// The facts, made at most once in `FRESH` and shared by whoever asks in between.
+impl Stats {
+    /// The facts, always from the cache once there is one: a request never waits for the queries. Facts older than `FRESH` are
+    /// still handed out while one task in the background makes them anew, so the menus of any number of visitors cost one set of
+    /// queries per `FRESH`, and only the very first request after a start waits for them.
     pub async fn facts_shared(&self) -> Arc<Vec<Fact>> {
         let mut held = self.facts.lock().await;
         if let Some((made, facts)) = held.as_ref() {
-            if made.elapsed() < FRESH {
-                return facts.clone();
+            if made.elapsed() >= FRESH && !self.refreshing_facts.swap(true, Ordering::AcqRel) {
+                let store = self.store.clone();
+                tokio::spawn(async move {
+                    let facts = Arc::new(store.facts().await);
+                    *store.facts.lock().await = Some((Instant::now(), facts));
+                    store.refreshing_facts.store(false, Ordering::Release);
+                });
             }
+            return facts.clone();
         }
         let facts = Arc::new(self.facts().await);
         *held = Some((Instant::now(), facts.clone()));
         facts
     }
+}
 
+impl Store {
     /// Every fact the data can back. A query that fails is left out, not fatal: the menu shows the rest.
     pub async fn facts(&self) -> Vec<Fact> {
         let mut out = Vec::new();
@@ -199,5 +210,12 @@ mod tests {
             {}
         }
         assert!(stats.facts().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn facts_are_made_once_and_handed_out_from_the_cache() {
+        let stats = Stats::in_memory().await;
+        let first = stats.facts_shared().await;
+        assert!(Arc::ptr_eq(&first, &stats.facts_shared().await));
     }
 }

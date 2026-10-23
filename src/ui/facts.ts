@@ -9,12 +9,31 @@ export const FACT_MS = 10_000;
 /** How long a fade takes: out at the end of a fact's time, in at the start of the next. */
 export const FADE_MS = 900;
 /** How long the numbers fetched are kept before a menu asks again. */
-const KEEP_MS = 5 * 60_000;
+const KEEP_MS = 10 * 60_000;
+/** Where they are kept across page loads, so a reload does not go to the relay again. */
+const STORE_KEY = 'slingshot.facts';
 /** How long a line waits to be put on the page before it gives up (screens are built a moment before they are shown). */
 const MOUNT_TRIES = 20;
 
-let kept: { at: number; facts: StatsFact[] } | null = null;
+let kept: { at: number; facts: StatsFact[] } | null = recall();
 let loading: Promise<StatsFact[]> | null = null;
+
+function recall(): { at: number; facts: StatsFact[] } | null {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(STORE_KEY) ?? 'null');
+    return saved && typeof saved.at === 'number' && Array.isArray(saved.facts) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function remember(): void {
+  try {
+    if (kept?.facts.length) sessionStorage.setItem(STORE_KEY, JSON.stringify(kept));
+  } catch {
+    // Storage may be blocked; the numbers are then asked for again on the next load.
+  }
+}
 
 /** The findings of the relay; none when it cannot be reached or keeps no statistics. Shared by menus that open one after the other. */
 async function load(board: StatsBoard): Promise<StatsFact[]> {
@@ -25,6 +44,7 @@ async function load(board: StatsBoard): Promise<StatsFact[]> {
     .finally(() => (loading = null));
   const facts = await loading;
   kept = { at: Date.now(), facts };
+  remember();
   return facts;
 }
 

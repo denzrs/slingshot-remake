@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
@@ -362,8 +362,10 @@ pub struct Store {
     /// One reader at a time: several tasks asking one connection at once wait on one another's statements, which a page with
     /// a few readers felt as seconds. Holds the overview last made, to hand to whoever asks within `OVERVIEW_FRESH`.
     reading: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<Overview>)>>,
-    /// The menu's facts last made (see `facts`), kept for a minute.
+    /// The menu's facts last made (see `facts_shared`): handed out until a refresh in the background replaces them.
     facts: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<Vec<Fact>>)>>,
+    /// Set while a refresh of the facts runs, so that only one does.
+    refreshing_facts: AtomicBool,
     /// Its own key, kept in `stat_meta`: see `pseudonym`.
     /// The key of the week it was made in (see `week_of`) and the players it hashes.
     players: parking_lot::Mutex<(i64, Identities)>,
@@ -407,6 +409,7 @@ impl Store {
             facts_reader,
             reading: tokio::sync::Mutex::new(None),
             facts: tokio::sync::Mutex::new(None),
+            refreshing_facts: AtomicBool::new(false),
             players: parking_lot::Mutex::new((week, Identities::new(salt))),
             keep_days: keep_days.max(1),
             last_prune: AtomicI64::new(0),
