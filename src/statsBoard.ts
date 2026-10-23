@@ -1,5 +1,5 @@
 import { DEFAULT_SERVER } from './multiplayer';
-import { NetworkClient, type ServerMessage, type StatsDay, type StatsGame, type StatsReplay } from './net';
+import { NetworkClient, type ServerMessage, type StatsBetting, type StatsDay, type StatsFact, type StatsGame, type StatsReplay } from './net';
 
 /** What the relay keeps about the games played on it. */
 export interface StatsOverview {
@@ -10,6 +10,7 @@ export interface StatsOverview {
   /** Games played on one device, by day. */
   localDays: StatsDay[];
   games: StatsGame[];
+  betting: StatsBetting | null;
 }
 
 /** What the stats page needs from a connection — the WebSocket client, or a stand-in in tests. */
@@ -23,7 +24,13 @@ export class StatsBoard {
 
   async overview(): Promise<StatsOverview> {
     const reply = await this.ask({ type: 'stats_overview' }, (message) => (message.type === 'stats_overview' ? message : null));
-    return { enabled: reply.enabled, days: reply.days, localDays: reply.localDays ?? [], games: reply.games };
+    return { enabled: reply.enabled, days: reply.days, localDays: reply.localDays ?? [], games: reply.games, betting: reply.betting ?? null };
+  }
+
+  /** The findings for the menu; none when the relay keeps no statistics. */
+  async facts(): Promise<StatsFact[]> {
+    const reply = await this.ask({ type: 'stats_facts' }, (message) => (message.type === 'stats_facts' ? message : null));
+    return reply.enabled ? reply.facts : [];
   }
 
   /** A game to fly again, or null when the relay does not have the whole of it. */

@@ -4,6 +4,29 @@ import { ClassicMatch } from '../src/game/classic';
 import { Oracle, oracleAwards, oracleMultiplier, stakeOptions, TIP_HIDDEN, TIP_HIT, TIP_MISS, TIP_NOBODY } from '../src/game/oracle';
 import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
+describe('oracle tips for the statistics', () => {
+  it('keeps how each judged tip came out, without a name, until the next round begins', () => {
+    const oracle = new Oracle();
+    oracle.reset(4);
+    oracle.open('shot', 2, []);
+    oracle.bet(1, TIP_HIT);
+    oracle.resolve([0], true, 1);
+    oracle.openRound([0, 2, 3], false);
+    oracle.betRound(1, 3, [0, 2, 3]);
+    oracle.setStake(1, 100);
+    oracle.betRound(0, 2, [0, 2, 3]);
+    oracle.resolveRound([3], 1, 9);
+    expect(oracle.judged).toEqual([
+      { kind: 'shot', right: true, stake: 0, payout: 0, underdog: false, stands: false },
+      { kind: 'round', right: true, stake: 100, payout: 100, underdog: false, stands: false },
+      { kind: 'round', right: false, stake: 0, payout: 0, underdog: false, stands: false },
+    ]);
+    oracle.startRound();
+    expect(oracle.judged).toEqual([]);
+    expect(new Oracle(true).judged).toEqual([]);
+  });
+});
+
 describe('oracle scoring', () => {
   it('pays 100 for a right shot tip, more for a streak, and a wrong tip ends the streak', () => {
     const oracle = new Oracle();

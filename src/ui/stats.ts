@@ -1,5 +1,5 @@
-import { fmtInt, getLang, t, tn } from '../i18n';
-import type { StatsDay, StatsGame } from '../net';
+import { fmt, fmtInt, getLang, t, tn } from '../i18n';
+import type { StatsBetting, StatsDay, StatsGame } from '../net';
 import { buildHeatmap, METRICS, SOURCES, StatsBoard, type Metric, type Source, type StatsOverview } from '../statsBoard';
 import { h, type MenuItem, type Screen } from './menu';
 import { leaderboardAvailable } from './leaderboard';
@@ -114,6 +114,29 @@ function gameRow(game: StatsGame, watch: (game: StatsGame, button: HTMLButtonEle
   );
 }
 
+const rate = (part: number, of: number): string => (of > 0 ? `${fmt((100 * part) / of, 0)}%` : '–');
+
+/** The tips and bets as a title and a row of figures. */
+function bettingView(b: StatsBetting): HTMLElement[] {
+  const figure = (value: string, label: string): HTMLElement => h('div.st__figure', null, h('strong', null, value), h('span', null, label));
+  const net = b.paid - b.staked;
+  return [
+    h('h3.st__title', null, t('stats.betting')),
+    h(
+      'div.st__figures',
+      null,
+      figure(rate(b.roundRight, b.roundTips), t('stats.betting.round', { n: fmtInt(b.roundTips) })),
+      figure(rate(b.shotRight, b.shotTips), t('stats.betting.shot', { n: fmtInt(b.shotTips) })),
+      figure(rate(b.won, b.bets), t('stats.betting.paid', { n: fmtInt(b.bets) })),
+      figure(b.bets ? fmtInt(Math.round(b.staked / b.bets)) : '–', t('stats.betting.stake', { n: fmtInt(b.biggestStake) })),
+      figure(b.biggestWin ? `+${fmtInt(b.biggestWin)}` : '–', t('stats.betting.win')),
+      figure(rate(b.underdogs, b.roundRight + b.shotRight), t('stats.betting.underdog')),
+      figure(rate(b.stands, b.roundTips + b.shotTips), t('stats.betting.stands')),
+      figure(`${net > 0 ? '+' : ''}${fmtInt(net)}`, t('stats.betting.net')),
+    ),
+  ];
+}
+
 /**
  * How the games on the relay go: a year of days as a heatmap that can be read as rounds, players or points
  * per day, and the latest games below it, each with a button to watch it again.
@@ -130,6 +153,7 @@ export function statsScreen(app: App): Screen {
   const heat = h('div.st__heat', null);
   const games = h('ol.st__rows', null);
   const head = h('div.st__head', null, h('span', null, t('stats.col.when')), h('span', null, t('stats.col.mode')), h('span', null, t('stats.col.players')), h('span.st__num', null, t('stats.col.rounds')), h('span.st__num', null, t('stats.col.points')), h('span', null));
+  const betting = h('div.st__betting', null);
   const table = h('div.st__table', null, h('h3.st__title', null, t('stats.games')), head, games);
 
   /** Fetches a game and flies it: the button says so while it waits, and the page says if it could not. */
@@ -151,6 +175,7 @@ export function statsScreen(app: App): Screen {
     const shown = !!overview?.enabled;
     heat.hidden = !shown;
     table.hidden = !shown;
+    betting.hidden = !shown || !overview?.betting;
     if (!overview || !shown) return;
     hideTip();
     // The heatmap is made once; a switch of what it shows only changes the squares.
@@ -161,6 +186,7 @@ export function statsScreen(app: App): Screen {
       const frame = view.el.querySelector('.hm__frame');
       if (frame) frame.scrollLeft = frame.scrollWidth;
     }
+    if (overview.betting) betting.replaceChildren(...bettingView(overview.betting));
     const local = source === 'local';
     view.show(local ? overview.localDays : overview.days, metric);
     const shownGames = overview.games.filter((game) => game.local === local).slice(0, 5);
@@ -192,6 +218,7 @@ export function statsScreen(app: App): Screen {
       status,
       heat,
       table,
+      betting,
       h('div.items.items--row', { 'data-items': '' }),
     ),
   );

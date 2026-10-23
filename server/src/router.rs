@@ -57,6 +57,7 @@ pub async fn route(
         }
         Command::Daily(DailyCommand::Top(day)) => daily_top(manager, boards, conn_id, day).await,
         Command::Daily(DailyCommand::Stats) => stats_overview(manager, conn_id).await,
+        Command::Daily(DailyCommand::Facts) => stats_facts(manager, conn_id).await,
         Command::Daily(DailyCommand::Local(game)) => local_game(manager, conn_id, *game),
         Command::Daily(DailyCommand::Replay(id)) => stats_replay(manager, conn_id, id).await,
         Command::Room(RoomCommand::CreateRoom(create)) => {
@@ -166,6 +167,18 @@ async fn stats_overview(manager: &Mutex<RoomManager>, conn_id: u64) {
                 .error(conn_id, "The statistics are unavailable");
         }
     }
+}
+
+/// The menu's facts; with statistics off there are none, and the menu is told so.
+async fn stats_facts(manager: &Mutex<RoomManager>, conn_id: u64) {
+    let stats = manager.lock().stats();
+    let facts = match stats {
+        Some(stats) => Some(stats.facts_shared().await),
+        None => None,
+    };
+    manager
+        .lock()
+        .stats_facts(conn_id, facts.as_deref().map(Vec::as_slice));
 }
 
 /// A game played on one device: handed to the statistics, if the relay keeps any, and not answered.

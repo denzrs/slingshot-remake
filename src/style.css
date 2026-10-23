@@ -144,6 +144,39 @@ body {
   color: var(--bone-dim);
 }
 
+/* A finding from the statistics: two lines are kept free so the menu does not jump as facts change. */
+.fact {
+  min-height: 2.8em;
+  max-width: 44ch;
+  margin: -12px 0 22px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--p2);
+  opacity: 0;
+  transition: opacity 900ms ease;
+}
+
+.fact:empty {
+  display: none;
+}
+
+.fact.is-in {
+  opacity: 0.9;
+}
+
+.panel--lobby > .fact {
+  min-height: 0;
+  max-width: none;
+  margin: -6px 0 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fact {
+    transition: none;
+  }
+}
+
 .keys {
   margin: 22px 0 0;
   font-family: var(--font-mono);
@@ -2687,6 +2720,38 @@ kbd {
 }
 
 .st__heat[hidden],
+.st__betting[hidden] {
+  display: none;
+}
+
+.st__betting {
+  margin-top: 20px;
+}
+
+.st__figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px 16px;
+}
+
+.st__figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.st__figure strong {
+  font-family: var(--font-display);
+  font-size: 26px;
+  color: var(--bone);
+}
+
+.st__figure span {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--bone-dim);
+}
+
 .st__table[hidden] {
   display: none;
 }

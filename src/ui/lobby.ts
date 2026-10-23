@@ -14,6 +14,7 @@ import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
 import type { App } from './screens';
 import { AVATAR_LABEL, avatarSvg, playerIcon } from './avatars';
 import { lookDialog, lookSummary, picker, roomIcon, visibilityControl, type LookControl, type LookDialog } from './roomLook';
+import { factTicker } from './facts';
 
 /** A game mode's name; a Mayhem room is the mode its rounds are played in, with Mayhem in front. */
 const modeName = (mode: NetworkGameMode, mayhem = false) => {
@@ -733,7 +734,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const root = h(
     'section.screen.screen--panel.screen--lobby',
     { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('multiplayer.title') },
-    h('div.panel.panel--lobby', null, h('h2.panel__title', null, t('multiplayer.title')), h('div.lobby', null, status, bar, connectView, roomsView, createView, roomView, backBar), h('div.items', { 'data-items': '' })),
+    h('div.panel.panel--lobby', null, h('h2.panel__title', null, t('multiplayer.title')), factTicker(), h('div.lobby', null, status, bar, connectView, roomsView, createView, roomView, backBar), h('div.items', { 'data-items': '' })),
   );
 
   /** An invite is a one-shot: once a room is entered, or the lobby is left, it is out of the URL again. */
