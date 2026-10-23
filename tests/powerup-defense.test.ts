@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../src/game';
 import { CPU_IGNORES, POWER_UP, POWER_UP_KINDS, aimedSurface } from '../src/powerups';
-import { cloneWorld, defenseChance, Shot, simulateShot, type World } from '../src/physics';
+import { cannonHead, cloneWorld, defenseChance, Shot, simulateShot, type World } from '../src/physics';
 import { Volley } from '../src/volley';
 import { DEFENSE } from '../src/config';
 import { DEFAULT_SETTINGS } from '../src/settings';
@@ -12,6 +12,9 @@ function duel(seed = 7): Match {
   const seats = ['human', 'human', 'off', 'off', 'off', 'off'] as const;
   return createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed });
 }
+
+/** Whether an armor-piercing shot at this power wrecks the cannon in this world. */
+const pierceFlight = (world: World, power: number): boolean => simulateShot(world, 0, 0, power, rules, [], [], true).wrecked.length > 0;
 
 const planet = (x: number, y: number, radius = 40) => ({ x, y, radius, mass: 30_000, seed: 9, style: 'rocky' as const, tint: '#fff' });
 
@@ -245,21 +248,6 @@ describe('planetary defense power-up', () => {
     expect(outcome.end.kind).toBe('planet');
   });
 
-  it('goes for a piercing shot like any other', () => {
-    const world = overhead([1]);
-    const shot = new Shot(world, 0, 0, 60, rules, false, [], true);
-    let launched = false;
-    while (!shot.end && shot.x < 1000) {
-      shot.step();
-      if (shot.missiles.length && !launched) {
-        launched = true;
-        shot.missiles[0].roll = 0.01;
-      }
-    }
-    expect(launched).toBe(true);
-    expect(shot.end?.kind).toBe('shotdown');
-  });
-
   it('is aimed with the power-up key, fire sets it, and it spends the shot', () => {
     const match = duel();
     const shooter = match.players[match.current];
@@ -398,6 +386,78 @@ describe('planetary defense power-up', () => {
         for (let i = 0; i < 2000 && !stray.end; i++) volley.step();
         expect(stray.end?.kind === 'ship' && stray.end.ship === 0).toBe(dies);
       }
+    });
+  });
+
+  describe('armor piercing against a cannon', () => {
+    const powers = Array.from({ length: 61 }, (_, i) => 40 + i);
+    const flights = (world: World, pierce: boolean) => powers.map((power) => simulateShot(world, 0, 0, power, rules, [], [], pierce));
+
+    it('draws no missile at all: the cannon cannot lock onto it', () => {
+      const world = overhead([1]);
+      const shot = new Shot(world, 0, 0, 60, rules, false, [], true);
+      while (!shot.end && shot.x < 1000) shot.step();
+      expect(shot.missiles).toHaveLength(0);
+      expect(shot.launches).toHaveLength(0);
+    });
+
+    it('may wreck the cannon by touching its icon; a plain shot never does', () => {
+      const world = guarded([1]);
+      const pierced = flights(world, true);
+      const plain = flights(world, false);
+      expect(pierced.some((f) => f.wrecked.length)).toBe(true);
+      expect(plain.every((f) => f.wrecked.length === 0)).toBe(true);
+    });
+
+    it('wrecks a cannon of its own side as readily: the owner may take it down', () => {
+      const own = flights(guarded([0, 1]), true);
+      const enemy = flights(guarded([1]), true);
+      expect(own.some((f) => f.wrecked.length)).toBe(true);
+      expect(own.map((f) => f.wrecked.length)).toEqual(enemy.map((f) => f.wrecked.length));
+    });
+
+    it('wrecks it every time the shot touches the icon, whoever owns it, and never when it stays clear', () => {
+      for (const protects of [[1], [0, 1]]) {
+        for (let above = 0; above <= 60; above += 1.5) {
+          for (const power of [35, 60, 85]) {
+            const world = overhead(protects, above);
+            const head = cannonHead(world, world.defenses[0]);
+            const shot = new Shot(world, 0, 0, power, rules, false, [], true);
+            let nearest = Infinity;
+            while (!shot.end && shot.x < 1100) {
+              shot.step();
+              nearest = Math.min(nearest, Math.hypot(shot.x - head.x, shot.y - head.y));
+            }
+            if (nearest < DEFENSE.CANNON_REACH - 2) expect(shot.wrecks, `above ${above}, power ${power}`).toHaveLength(1);
+            if (nearest > DEFENSE.CANNON_REACH + 2) expect(shot.wrecks, `above ${above}, power ${power}`).toHaveLength(0);
+          }
+        }
+      }
+    });
+
+    it('wrecks one in passing too, when the shot grazes the icon above the rock', () => {
+      const brushed = flights(overhead([1], 8), true);
+      expect(brushed.some((f) => f.wrecked.length)).toBe(true);
+      expect(brushed.some((f) => f.end.kind !== 'planet')).toBe(true);
+    });
+
+    it('does not wreck a cannon it merely flies past', () => {
+      expect(flights(overhead([1], 110), true).every((f) => f.wrecked.length === 0)).toBe(true);
+    });
+
+    it('the volley marks the cannon wrecked, and it fires at nothing afterwards', () => {
+      const world = guarded([1]);
+      const power = powers.find((pw) => pierceFlight(world, pw))!;
+      const volley = new Volley(world, [{ player: 0, angle: 0, power, pierce: true }], rules, false);
+      const events = [];
+      for (let i = 0; i < 4000 && !volley.shots.every((vs) => vs.shot.end); i++) events.push(...volley.step());
+      expect(events.some((e) => e.type === 'wreck')).toBe(true);
+      expect(world.defenses[0].wrecked).toBe(true);
+      expect(world.version).toBeGreaterThan(0);
+
+      const again = new Shot(world, 0, 0, 80, rules);
+      while (!again.end && again.x < 1000) again.step();
+      expect(again.missiles).toHaveLength(0);
     });
   });
 });

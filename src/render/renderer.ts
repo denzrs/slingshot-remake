@@ -246,7 +246,7 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
-    world.defenses.forEach((d, i) => drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, 1, defenseView(scene.volley?.shots ?? [], d, i), false, !showPlanets));
+    world.defenses.forEach((d, i) => d.wrecked || drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, 1, defenseView(scene.volley?.shots ?? [], d, i), false, !showPlanets));
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
@@ -433,7 +433,7 @@ export class Renderer {
       }
     }
     // What the planetary defenses do to the shots they track: the lock-on and the interceptor, over the shots.
-    match.world.defenses.forEach((d, i) => drawInterception(ctx, match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, defenseView(scene.volley?.shots ?? [], d, i), this.time));
+    match.world.defenses.forEach((d, i) => d.wrecked || drawInterception(ctx, match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, defenseView(scene.volley?.shots ?? [], d, i), this.time));
   }
 
   /** Power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */
@@ -599,7 +599,7 @@ export class Renderer {
         const planet = defensePlanet(match.world.planets, target);
         if (planet) {
           drawDefense(ctx, { x: target.x, y: target.y, radius: planet.radius * POWER_UP.DEFENSE_RADIUS_SHARE }, planet, color, this.time, 1, undefined, true);
-          const standing = match.world.defenses.find((o) => o.planet === planet.seed);
+          const standing = match.world.defenses.find((o) => o.planet === planet.seed && !o.wrecked);
           if (standing) {
             ctx.globalAlpha = 1;
             ctx.font = `700 11px ${FONTS.mono}`;

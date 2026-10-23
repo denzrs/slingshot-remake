@@ -506,7 +506,7 @@ export class MultiplayerSession {
 function isEventForMatch(event: import('./game').GameEvent, playerCount: number): boolean {
   const inRange = (id: number) => Number.isSafeInteger(id) && id >= 0 && id < playerCount;
   switch (event.type) {
-    case 'turn': case 'lock': case 'fire': case 'impact': case 'fizzle': case 'style': case 'pickup': case 'teleport': case 'blackhole': case 'planetKiller': case 'nebula': case 'wormhole': case 'defense': case 'antigravity': case 'defenseFire': case 'defenseMiss': case 'shotdown': case 'multiKill': case 'split':
+    case 'turn': case 'lock': case 'fire': case 'impact': case 'fizzle': case 'style': case 'pickup': case 'teleport': case 'blackhole': case 'planetKiller': case 'nebula': case 'wormhole': case 'defense': case 'antigravity': case 'defenseFire': case 'defenseMiss': case 'defenseWrecked': case 'shotdown': case 'multiKill': case 'split':
       return inRange(event.player);
     case 'explode': case 'shield':
       return inRange(event.ship);

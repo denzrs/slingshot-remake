@@ -65,6 +65,8 @@ export type VolleyEvent =
   | { type: 'reflect'; index: number; ship: number; x: number; y: number }
   /** An armor-piercing shot went through a ship: the ship is out, and the shot flies on. */
   | { type: 'pierce'; index: number; ship: number; x: number; y: number; vx: number; vy: number }
+  /** An armor-piercing shot struck a planet next to a cannon and wrecked it. */
+  | { type: 'wreck'; index: number; defense: number; x: number; y: number }
   | { type: 'style'; index: number; event: StyleEvent }
   /** A planetary defense fired a missile at the shot, which is at (x, y). */
   | { type: 'intercept'; index: number; defense: number; x: number; y: number }
@@ -229,6 +231,15 @@ export class Volley {
         events.push({ type: 'pierce', index: i, ship: hit.ship, x: hit.x, y: hit.y, vx: shot.vx, vy: shot.vy });
       }
       shot.hits.length = 0;
+      // An armor-piercing shot struck a planet at its cannon: the cannon is out for the rest of the round.
+      for (const w of shot.wrecks) {
+        const d = this.world.defenses[w.defense];
+        if (!d || d.wrecked) continue;
+        d.wrecked = true;
+        this.world.version++;
+        events.push({ type: 'wreck', index: i, defense: w.defense, x: w.x, y: w.y });
+      }
+      shot.wrecks.length = 0;
       if (end) {
         if (end.kind === 'ship') this.world.ships[end.ship].alive = false;
         events.push({ type: 'end', index: i, end, x: shot.x, y: shot.y, vx: shot.vx, vy: shot.vy });
