@@ -1404,6 +1404,9 @@ describe('statistics and replays', () => {
       match.update(dt);
       hostSession.update(dt);
       if (match.phase === 'roundOver' && match.phaseTime > 1) match.advance();
+      // Let the sockets run now and then: a loop that never yields leaves the guest unread, and the relay
+      // drops a client whose backlog grows (which ends the game early and nothing is kept for it).
+      if (i % 200 === 199) await new Promise((resolve) => setImmediate(resolve));
     }
     expect(match.phase).toBe('gameOver');
 
