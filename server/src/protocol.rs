@@ -362,7 +362,8 @@ pub fn parse_daily_submit(value: &Value) -> Option<DailyScore> {
 /// (`brau` covers `brauchen`, `Brause`, `Braut`, `Braunschweig`), so these are stems; a stem here
 /// must not be, or begin, a word the dictionary is right about.
 const GERMAN_SAFE_WORDS: &[&str] = &[
-    "brau", "bräu", "brav", "churer", "kanal", "analys", "analpha",
+    "brau", "bräu", "brav", "churer", "kanal", "analys", "analpha", "negger", "tschure", "knutte",
+    "spastik",
 ];
 
 /// German profanity the English dictionary lacks, taken from the German list of LDNOOBW
@@ -1161,6 +1162,10 @@ mod tests {
             "Klassenarbeit",
             "Hans",
             "Kacheln",
+            "Schwarzenegger",
+            "Tschure",
+            "Knutte",
+            "Spastik",
         ] {
             assert!(is_acceptable_name(fine), "refused {fine}");
         }
