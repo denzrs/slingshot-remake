@@ -1058,6 +1058,29 @@ fn a_name_error_says_it_is_about_the_name_and_other_errors_do_not() {
 }
 
 #[test]
+fn a_password_error_says_it_is_about_the_password() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    drain_json(&mut host_rx);
+    let create = create("Ada", Some("secret"));
+    rooms.handle_create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let mut guest_rx = connect(&mut rooms, 2);
+    drain_json(&mut guest_rx);
+    rooms.handle_join_room(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"}),
+        Some(false),
+    );
+    let error = take_type(&drain_json(&mut guest_rx), "error");
+    assert_eq!(error["field"], "password");
+}
+
+#[test]
 fn a_new_name_has_to_be_confirmed_again_and_the_same_one_does_not_unready() {
     let mut rooms = RoomManager::new();
     let mut host_rx = connect(&mut rooms, 1);

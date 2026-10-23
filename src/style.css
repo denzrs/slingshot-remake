@@ -1625,6 +1625,11 @@ body {
   grid-column: 1;
 }
 
+.lobby-room .lobby__field-error {
+  grid-column: 1;
+  margin: 0;
+}
+
 .lobby-room .lobby__button {
   grid-column: 2;
   grid-row: 1 / span 2;

@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use tracing::{info, warn};
 
 use crate::codec::{frame, Outbound};
-use crate::protocol::is_name_refusal;
+use crate::protocol::{is_name_refusal, is_password_refusal};
 
 pub const MAX_PASSWORD_ATTEMPTS: u32 = 5;
 pub const MAX_SCRYPT_PER_SECOND: usize = 10;
@@ -231,6 +231,8 @@ impl Connections {
         // An error about the name says so, so the client can show it under the name field and nowhere else.
         let value = if is_name_refusal(message) {
             json!({ "type": "error", "message": message, "field": "name" })
+        } else if is_password_refusal(message) {
+            json!({ "type": "error", "message": message, "field": "password" })
         } else {
             json!({ "type": "error", "message": message })
         };

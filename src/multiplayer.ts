@@ -86,6 +86,8 @@ export class MultiplayerSession {
   notice: string | null = null;
   /** The notice, when it is the relay refusing the name: it belongs under the name field, not in the general message. */
   private nameError: string | null = null;
+  /** The notice, when it is the relay refusing the room password: it belongs at the password field. */
+  private passwordError: string | null = null;
   match: NetMatch | null = null;
   /** What has been said in the room you are in. */
   chat: ChatLine[] = [];
@@ -95,6 +97,10 @@ export class MultiplayerSession {
 
   get nameNotice(): string | null {
     return this.notice !== null && this.notice === this.nameError ? this.notice : null;
+  }
+
+  get passwordNotice(): string | null {
+    return this.notice !== null && this.notice === this.passwordError ? this.notice : null;
   }
 
   private readonly listeners = new Set<() => void>();
@@ -376,6 +382,7 @@ export class MultiplayerSession {
         if (this.match) this.chat = [...this.chat, { id: -1, name: '', spectator: false, text: message.message, system: true }].slice(-CHAT_KEEP);
         if (this.match) this.chatTotal++;
         this.nameError = message.field === 'name' ? message.message : null;
+        this.passwordError = message.field === 'password' ? message.message : null;
         break;
       case 'closed':
         this.connected = false;

@@ -158,11 +158,19 @@ export type ServerMessage =
     }
   | { type: 'room_closed'; message: string }
   /** `field` names what the error is about, when it is about one thing the player typed. */
-  | { type: 'error'; message: string; field?: 'name' }
+  | { type: 'error'; message: string; field?: 'name' | 'password' }
   /** Local only: the connection to the server is gone. */
   | { type: 'closed'; message: string };
 
 const CONNECT_TIMEOUT_MS = 10_000;
+
+/** Why the socket never opened; the lobby says it in the player's language. */
+export class ConnectError extends Error {
+  constructor(readonly reason: 'unreachable' | 'timeout' | 'closed', readonly url: string, message: string) {
+    super(message);
+    this.name = 'ConnectError';
+  }
+}
 
 /** A thin, non-reconnecting WebSocket transport for the lobby and game relay protocol. */
 export class NetworkClient {
@@ -210,7 +218,7 @@ export class NetworkClient {
           this.socket = null;
           this.connectPromise = null;
         }
-        reject(new Error(`Connection to ${this.url} timed out`));
+        reject(new ConnectError('timeout', this.url, `Connection to ${this.url} timed out`));
       }, CONNECT_TIMEOUT_MS);
 
       socket.addEventListener('open', () => {
@@ -227,7 +235,7 @@ export class NetworkClient {
         window.clearTimeout(timeout);
         if (this.socket === socket) this.socket = null;
         if (this.connectPromise) this.connectPromise = null;
-        reject(new Error(`Could not connect to ${this.url}. Check the server address and make sure the server is running.`));
+        reject(new ConnectError('unreachable', this.url, `Could not connect to ${this.url}. Check the server address and make sure the server is running.`));
       });
       socket.addEventListener('close', () => {
         if (this.socket === socket) {
@@ -237,7 +245,7 @@ export class NetworkClient {
         if (!settled) {
           settled = true;
           window.clearTimeout(timeout);
-          reject(new Error(`Connection to ${this.url} closed before it was established`));
+          reject(new ConnectError('closed', this.url, `Connection to ${this.url} closed before it was established`));
         } else if (opened && !this.closed) {
           this.deliver({ type: 'closed', message: `Connection to ${this.url} was closed.` });
         }

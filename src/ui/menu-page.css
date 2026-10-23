@@ -514,23 +514,9 @@
 .flight-card__art { display: block; width: 100%; height: 170px; }
 .flight-card__title { font: 800 34px/1.1 var(--font-display); text-transform: uppercase; letter-spacing: .015em; }
 .flight-card__hint { max-width: 32ch; color: var(--bone-dim); font: 400 12px/1.7 var(--font-body); }
-.flight-card__arrow { position: absolute; right: 18px; top: 18px; color: var(--p2); font: 18px/1 var(--font-body); }
 .flight-card:hover { transform: translateY(-3px); border-color: var(--bone-dim); background: rgb(21 43 68 / .8); }
 .flight-card[aria-pressed='true'] { border-color: var(--launch-accent); background: rgb(255 173 101 / .055); }
-.flight-card[aria-pressed='true'] .flight-card__title, .flight-card[aria-pressed='true'] .flight-card__arrow { color: var(--launch-accent); }
-.flight-card[aria-pressed='true'] .flight-card__arrow { font-size: 0; }
-.flight-card[aria-pressed='true'] .flight-card__arrow::after { content: '✓'; font-size: 16px; }
-.online-identity { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 24px; padding-top: 28px; margin-top: 28px; border-top: 1px solid var(--menu-line); }
-.online-profile { flex: 1; min-width: 0; }
-.online-profile > summary { display: flex; gap: 18px; align-items: center; width: fit-content; cursor: pointer; font-size: 12px; }
-.online-profile > summary > span:first-child { color: var(--bone-dim); }
-.online-profile > summary::after { content: '↗'; color: var(--p2); }
-.online-profile__fields { display: flex; flex-wrap: wrap; align-items: end; gap: 24px; padding-top: 24px; }
-.online-profile__fields .lobby__avatar { margin-left: 0; }
-.online-connection { max-width: 100%; color: var(--bone-dim); font-size: 11px; }
-.online-connection summary { cursor: pointer; padding-block: 5px; }
-.online-connection .lobby__link { display: block; max-width: 100%; overflow-wrap: anywhere; padding: 15px 0; }
-.online-connection .lobby__connect { max-width: 100%; margin-top: 18px; }
+.flight-card[aria-pressed='true'] .flight-card__title { color: var(--launch-accent); }
 .online-create > .flight-cards { margin-bottom: 24px; }
 .flight-cards--modes .flight-card { padding: 16px; gap: 8px; }
 .flight-cards--modes .flight-card__art { height: 120px; }
@@ -548,9 +534,6 @@
 .online-code__art { height: 260px; }
 .online-code__form { min-width: 0; }
 .online-code__form > .lobby__field input { font: 400 26px/1.5 var(--font-mono); letter-spacing: .08em; text-transform: none; }
-.online-code__password { margin: 22px 0; }
-.online-code__password summary { color: var(--bone-dim); font-size: 11px; cursor: pointer; }
-.online-code__password[open] summary { margin-bottom: 16px; }
 .online-rooms .lobby__head { margin-bottom: 20px; }
 
 /* Online flows: keep the action visible and the account details quiet. */
@@ -582,51 +565,161 @@
 .menu-page--lobby .menu-page__actions > .lobby__button { flex: 0 1 auto; }
 .menu-page--lobby .menu-page__actions > .lobby__button:first-child { margin-right: 0; }
 
-.menu-page--lobby .online-identity {
-  align-items: center;
-  gap: 10px 20px;
-  padding: 0 0 12px;
-  margin: 0 0 2px;
-  border: 0;
-  border-bottom: 1px solid var(--menu-line);
+/* Swiping between the online pages moves the page, not the pilot card above it. */
+.menu-page--lobby.menu-page--mode-enter-next .menu-page__body,
+.menu-page--lobby.menu-page--mode-enter-previous .menu-page__body { animation: none; overflow-x: clip; }
+.menu-page--lobby.menu-page--mode-enter-next .lobby > :not(.online-identity) { animation: mode-body-enter-next 560ms cubic-bezier(.16, 1, .3, 1) 55ms both; }
+.menu-page--lobby.menu-page--mode-enter-previous .lobby > :not(.online-identity) { animation: mode-body-enter-previous 560ms cubic-bezier(.16, 1, .3, 1) 55ms both; }
+@media (prefers-reduced-motion: reduce) {
+  .menu-page--lobby.menu-page--mode-enter-next .lobby > :not(.online-identity),
+  .menu-page--lobby.menu-page--mode-enter-previous .lobby > :not(.online-identity) { animation: none; }
 }
-.menu-page--lobby .online-profile > summary {
-  min-height: 36px;
-  gap: 12px;
-  padding: 6px 10px;
+
+/* The pilot card: who you are and what you are connected to, one quiet panel above every online view. */
+.menu-page--lobby .online-identity {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px 32px;
+  padding: 16px 20px;
+  margin: 0 0 6px;
   border: 1px solid var(--menu-line);
   border-radius: 3px;
-  background: rgb(13 29 50 / .45);
+  background: rgb(13 29 50 / .55);
 }
+.menu-page--lobby .online-identity[hidden] { display: none; }
 .menu-page--lobby details > summary { list-style: none; }
 .menu-page--lobby details > summary::-webkit-details-marker { display: none; }
-.menu-page--lobby .online-profile > summary::after { content: '+'; font: 14px/1 var(--font-mono); }
-.menu-page--lobby .online-profile[open] > summary::after { content: '−'; }
-.menu-page--lobby .online-profile__fields { align-items: end; gap: 14px 20px; padding-top: 16px; }
-.menu-page--lobby .online-profile__fields .lobby__name { flex: 1 1 220px; }
-.menu-page--lobby .online-connection { flex: 0 1 auto; }
-.menu-page--lobby .online-connection summary { display: flex; align-items: center; gap: 8px; padding: 7px 0; }
-.menu-page--lobby .online-connection summary::before { content: ''; width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--bone-dim); }
-.menu-page--lobby .online-connection.is-connected summary::before { background: var(--p2); box-shadow: 0 0 9px rgb(111 227 200 / .5); }
-.menu-page--lobby .online-connection .lobby__link { padding: 10px 0; }
+.menu-page--lobby .online-profile { flex: 1 1 320px; min-width: 0; }
+.menu-page--lobby .online-profile > summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: fit-content;
+  max-width: 100%;
+  cursor: pointer;
+}
+.online-profile__avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgb(111 227 200 / .4);
+  border-radius: 50%;
+  background: rgb(111 227 200 / .07);
+  color: var(--p2);
+}
+.online-profile__avatar svg { width: 26px; height: 26px; }
+.online-profile__text { display: grid; gap: 3px; min-width: 0; }
+.online-profile__label { color: var(--bone-dim); font: 10px/1.2 var(--font-mono); letter-spacing: .18em; text-transform: uppercase; }
+.online-profile__name { overflow: hidden; font: 700 22px/1.15 var(--font-body); text-overflow: ellipsis; white-space: nowrap; }
+.online-profile__edit {
+  padding: 5px 12px;
+  border: 1px solid var(--menu-line);
+  border-radius: 3px;
+  color: var(--bone-dim);
+  font-size: 12px;
+  transition: border-color 140ms, color 140ms;
+}
+.online-profile__edit::after { content: ' +'; font-family: var(--font-mono); }
+.online-profile[open] .online-profile__edit::after { content: ' −'; }
+.menu-page--lobby .online-profile > summary:hover .online-profile__edit { border-color: var(--p2); color: var(--bone); }
+.menu-page--lobby .online-profile__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px 24px;
+  padding-top: 18px;
+  margin-top: 16px;
+  border-top: 1px solid var(--menu-line);
+}
+.menu-page--lobby .online-profile__fields .lobby__name { flex: 0 1 260px; }
+.online-profile__actions { margin-left: auto; }
+.online-profile__actions .lobby__button { min-height: 40px; padding-inline: 22px; }
+.menu-page--lobby .online-profile__fields .lobby__name .lobby__field { display: grid; align-items: stretch; gap: 8px; }
+.menu-page--lobby .online-profile__fields .lobby__name .lobby__field input { width: 100%; min-height: 40px; }
+.menu-page--lobby .online-profile__fields .lobby__avatar { margin-left: 0; flex-direction: column; align-items: flex-start; gap: 8px; }
+.menu-page--lobby .online-profile__fields .lobby__avatar .room-pick { grid-template-columns: repeat(8, 38px); gap: 6px; }
+.menu-page--lobby .online-profile__fields .lobby__avatar .room-pick__option { width: 38px; height: 38px; }
+.menu-page--lobby .online-connection { flex: 0 1 auto; margin-left: auto; text-align: right; }
+.menu-page--lobby .online-connection > summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 48px;
+  cursor: pointer;
+}
+.menu-page--lobby .online-connection.is-static > summary { cursor: default; pointer-events: none; }
+.menu-page--lobby .online-connection > summary::after {
+  content: '';
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bone-dim);
+  opacity: .6;
+}
+.menu-page--lobby .online-connection.is-connected > summary::after { background: var(--p2); opacity: 1; box-shadow: 0 0 12px rgb(111 227 200 / .6); }
+.online-connection__text { display: grid; gap: 3px; }
+.online-connection__state { font: 600 14px/1.2 var(--font-body); }
+.online-connection__server { color: var(--bone-dim); font: 11px/1.2 var(--font-mono); overflow-wrap: anywhere; }
+.menu-page--lobby .online-connection .lobby__button { margin-top: 10px; min-height: 34px; padding: 5px 14px; font-size: 12px; }
 
 .menu-page--lobby .online-rooms .lobby__head {
   align-items: center;
   gap: 18px;
-  padding-bottom: 10px;
-  margin-bottom: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
   border-bottom: 1px solid var(--menu-line);
 }
 .menu-page--lobby .online-rooms .lobby__head .setup__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin: 0;
   padding: 0;
   border: 0;
   color: var(--bone);
-  font: 700 15px/1.4 var(--font-body);
+  font: 700 18px/1.3 var(--font-body);
   letter-spacing: 0;
   text-transform: none;
 }
-.menu-page--lobby .online-rooms .lobby__head .lobby__button { min-height: 38px; }
+.online-rooms__count {
+  min-width: 26px;
+  padding: 2px 8px;
+  border: 1px solid var(--menu-line);
+  border-radius: 99px;
+  color: var(--p2);
+  font: 600 12px/1.4 var(--font-mono);
+  text-align: center;
+}
+.online-rooms__count[hidden] { display: none; }
+.menu-page--lobby .online-rooms .lobby__head .lobby__button { min-height: 42px; padding-inline: 20px; }
+.menu-page--lobby .lobby__empty {
+  justify-items: center;
+  gap: 8px;
+  padding: clamp(28px, 7vh, 64px) 20px;
+  border: 1px dashed var(--menu-line);
+  border-radius: 3px;
+  background: rgb(13 29 50 / .28);
+  list-style: none;
+}
+.menu-page--lobby .lobby__empty strong { font: 700 20px/1.3 var(--font-body); text-transform: none; }
+.menu-page--lobby .lobby__empty > span:not(.lobby__empty-radar) { max-width: 46ch; line-height: 1.6; }
+.menu-page--lobby .lobby__empty .lobby__button { margin-top: 8px; }
+.lobby__empty-radar {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, var(--p2) 0 2.5px, transparent 3px),
+    repeating-radial-gradient(circle, transparent 0 9px, rgb(111 227 200 / .35) 9px 10px);
+  opacity: .7;
+}
 .menu-page--lobby .lobby__rooms { gap: 8px; }
 .menu-page--lobby .lobby-room {
   padding: 13px 15px;
@@ -645,8 +738,9 @@
   background: rgb(7 17 34 / .72);
   font-size: 24px;
 }
-.online-code__password { padding: 12px 0; margin: 14px 0; border-top: 1px solid var(--menu-line); border-bottom: 1px solid var(--menu-line); }
-.online-code__password summary { color: var(--p2); font-size: 12px; }
+.online-code__password { margin: 16px 0 0; }
+.online-code__password[hidden] { display: none; }
+.online-code__form .lobby__actions { margin-top: 20px; }
 .online-code__form .lobby__actions { gap: 10px; }
 
 .online-create > .flight-cards { gap: 12px; margin-bottom: 18px; }
@@ -777,15 +871,16 @@
   .flight-card__title { font-size: 26px; }
   .flight-card__hint { font-size: 11px; }
   .flight-card__art { height: 100px; }
-  .online-identity { gap: 18px; }
   .online-profile__fields { flex-direction: column; align-items: stretch; }
   .online-code { gap: 24px; }
   .online-code__art { height: 180px; }
   .menu-page--lobby .menu-page__title { font-size: clamp(40px, 8vw, 58px); }
-  .menu-page--lobby .online-identity { align-items: flex-start; gap: 10px; }
-  .menu-page--lobby .online-profile { width: 100%; }
-  .menu-page--lobby .online-profile > summary { max-width: 100%; }
-  .menu-page--lobby .online-connection { align-self: flex-end; }
+  .menu-page--lobby .online-identity { gap: 12px; padding: 14px 16px; }
+  .menu-page--lobby .online-profile { flex-basis: 100%; }
+  .menu-page--lobby .online-profile > summary { width: 100%; }
+  .online-profile__text { flex: 1; }
+  .menu-page--lobby .online-connection { flex-basis: 100%; margin-left: 0; padding-top: 10px; border-top: 1px solid var(--menu-line); text-align: left; }
+  .menu-page--lobby .online-connection > summary { flex-direction: row-reverse; justify-content: flex-end; min-height: 0; }
   .menu-page--lobby .menu-page__actions > .lobby__button:first-child { margin-right: 0; }
   .mission-route .item .item__hint { display: none; }
   .mission-route .item { padding: 12px 8px; align-items: center; text-align: center; }
@@ -805,13 +900,10 @@
   .flight-card__art { grid-column: 1; grid-row: 1 / 3; height: 80px; }
   .flight-card__title { grid-column: 2; align-self: end; font-size: 29px; }
   .flight-card__hint { grid-column: 2; font-size: 11px; }
-  .flight-card__arrow { top: 10px; right: 10px; font-size: 13px; }
   .flight-cards--modes .flight-card__art { height: 72px; }
   .flight-cards--modes .flight-card__title { font-size: 26px; }
   .flight-cards--modes .flight-card { padding: 14px; }
   .flight-cards--modes .flight-card__hint { font-size: 10px; }
-  .online-identity { margin-top: 20px; padding-top: 20px; flex-direction: column; gap: 14px; }
-  .online-profile > summary { gap: 14px; }
   .online-code { grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 0; }
   .online-code__art { display: none; }
   .online-code__form .lobby__actions { margin-inline: 0; padding-inline: 0; }
@@ -983,3 +1075,15 @@
     box-shadow: none;
   }
 }
+
+/* What the relay says sits at the foot of the page's content, out of the way of the heading. */
+.menu-page--lobby .lobby__status {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 10px 14px;
+  border: 1px solid var(--menu-line);
+  border-radius: 3px;
+  background: rgb(9 21 39 / .94);
+}
+.menu-page--lobby .lobby__status[hidden] { display: none; }

@@ -1,11 +1,11 @@
 import { AVATARS, type Avatar } from '../avatars';
 import { COLORS, GALLERY, MAX_PLAYERS } from '../config';
-import { t, type Key } from '../i18n';
+import { relayText, t, type Key } from '../i18n';
 import { POWER_UP_KINDS } from '../powerups';
 import { canCopyInvite, inviteJoinAttempt, inviteLink, readInvite, shouldAutoConnectInvite, withoutInvite, withoutInvitePassword } from '../invite';
 import { loadLobbyPrefs, mayhemRules, saveLobbyPrefs } from '../lobbyPrefs';
 import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multiplayer';
-import type { LobbyRoom, NetworkCpuLevel, NetworkGameMode, RoomInfo, RoomMode, RoomRules } from '../net';
+import { ConnectError, type LobbyRoom, type NetworkCpuLevel, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules } from '../net';
 import type { RoomLook } from '../roomLook';
 import { buildControl, optionSelector, segmentedControl, sliderControl, type Control, type Env } from './controls';
 import { eyeIcon } from './dom';
@@ -237,7 +237,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   let pendingName: string | null = null;
   const showNameError = (message: string | null) => {
     for (const el of [joinNameError, roomNameError]) {
-      el.textContent = message ?? '';
+      el.textContent = message ? relayText(message) : '';
       el.hidden = !message;
     }
   };
@@ -251,9 +251,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   );
 
   /** Once connected: who you are connected to, your name, a way out. */
-  const linkText = h('span.lobby__link-text', null);
-  const serverLink = h('span.lobby__link', null, linkText);
-  serverLink.hidden = configuredServer;
   const barName = h('div.lobby__name', null);
   /** The symbol the player shows in online games: picked here before a room, and inside one (below the players). */
   const avatarBar = picker<Avatar>(t('multiplayer.yourSymbol'), avatarOptions(), false, (avatar) => {
@@ -266,15 +263,42 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const disconnectButton = button(t('multiplayer.disconnect'));
   // The hosted build is connected as of now: there is nothing to disconnect from.
   disconnectButton.hidden = hosted;
-  const profileLabel = h('span', null);
+  const saveProfile = button(t('flow.profileSave'), true);
+  const profileLabel = h('span.online-profile__name', null);
+  const profileAvatar = h('span.online-profile__avatar', null);
   const profile = h('details.online-profile', null,
-    h('summary', null, h('span', null, t('flow.profile')), profileLabel),
-    h('div.online-profile__fields', null, barName, avatarRow),
+    h('summary', null,
+      profileAvatar,
+      h('span.online-profile__text', null, h('span.online-profile__label', null, t('flow.profile')), profileLabel),
+      h('span.online-profile__edit', null, t('flow.profileEdit')),
+    ),
+    h('div.online-profile__fields', null, barName, avatarRow, h('div.online-profile__actions', null, saveProfile)),
   ) as HTMLDetailsElement;
-  const connectionLabel = h('span', null);
+  /** The name and the symbol are the player's own: saving them closes the panel, whatever the relay will say to the name later. */
+  const commitProfile = () => {
+    const name = playerName.value.trim();
+    if (!name) {
+      showNameError(t('multiplayer.nameRequired'));
+      playerName.focus();
+      return;
+    }
+    showNameError(null);
+    prefs.name = name;
+    save();
+    profile.open = false;
+    render();
+  };
+  saveProfile.addEventListener('click', commitProfile);
+  playerName.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') commitProfile();
+  });
+  const connectionLabel = h('span.online-connection__state', null);
+  const connectionServer = h('span.online-connection__server', null);
   const connection = h('details.online-connection', null,
-    h('summary', null, connectionLabel), serverLink, disconnectButton,
+    h('summary', null, h('span.online-connection__text', null, connectionLabel, connectionServer)), disconnectButton,
   );
+  // Nothing to open where there is nothing to disconnect from.
+  connection.classList.toggle('is-static', hosted);
   const bar = h('div.online-identity', null, profile, connection);
   const connectSlot = h('div', null, connectView);
 
@@ -285,6 +309,24 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   // A private room is not listed: its code gets you in — or the invite link, which carries it.
   const codeInput = textInput(invited?.roomId ?? '', { maxLength: 16, autocomplete: 'off', spellcheck: false, placeholder: t('multiplayer.codePlaceholder') });
   const codePassword = passwordInput(t('multiplayer.password'));
+  /** A line under the field it is about; empty and hidden until there is something to say. */
+  const fieldError = () => {
+    const el = h('p.lobby__field-error', { role: 'alert' });
+    el.hidden = true;
+    return el;
+  };
+  const showFieldError = (el: HTMLElement, message: string | null) => {
+    el.textContent = message ?? '';
+    el.hidden = !message;
+  };
+  const codeError = fieldError();
+  const codePasswordError = fieldError();
+  /** Whose password the relay is about to judge: it answers a wrong one with an error, and that goes right there. */
+  /** A join by code is waiting for the relay's answer; if that is a refusal, it goes under the code. */
+  let codeJoinPending = false;
+  /** The relay notice that went under the code already, so the general message does not say it again. */
+  let codeNotice: string | null = null;
+  let passwordTarget: { error: HTMLElement; input: HTMLInputElement; reveal?: HTMLElement } | null = null;
   // A link made by somebody in a locked room carries its password, so the guest needs no second paste.
   codePassword.value = invited?.password ?? '';
   const codeJoin = button(t('multiplayer.join'), true);
@@ -292,13 +334,16 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const joinByCode = (spectate = false) => {
     const roomId = codeInput.value.trim();
     if (!roomId) {
-      localMessage = t('multiplayer.codeRequired');
-      render();
+      showFieldError(codeError, t('multiplayer.codeRequired'));
       codeInput.focus();
       return;
     }
     const name = takeName();
     if (!name) return;
+    showFieldError(codePasswordError, null);
+    codeJoinPending = true;
+    codeNotice = null;
+    passwordTarget = { error: codePasswordError, input: codePassword, reveal: codePasswordBox };
     session.joinRoom(roomId, name, codePassword.value, prefs.avatar, spectate);
   };
   codeJoin.addEventListener('click', () => joinByCode());
@@ -308,17 +353,23 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       if (e.key === 'Enter') joinByCode();
     });
   }
+  codeInput.addEventListener('input', () => showFieldError(codeError, null));
+  codePassword.addEventListener('input', () => showFieldError(codePasswordError, null));
   codeInput.setAttribute('aria-label', t('multiplayer.code'));
+  // Most rooms have no password: its field comes up only when the relay says this one does.
+  const codePasswordBox = h('div.online-code__password', null, field(t('multiplayer.password'), secretField(codePassword)), codePasswordError);
+  codePasswordBox.hidden = true;
   const codeView = h('section.online-code', null,
     h('div.online-code__art', null, modeArt('code')),
     h('div.online-code__form', null,
       field(t('multiplayer.code'), codeInput),
-      h('details.online-code__password', null, h('summary', null, t('flow.codePassword')), field(t('multiplayer.password'), secretField(codePassword))),
+      codeError,
+      codePasswordBox,
       h('div.lobby__actions', null, codeWatch, codeJoin),
     ),
   );
-  if (invited?.password) (codeView.querySelector('details') as HTMLDetailsElement).open = true;
-  const roomsView = h('section.online-rooms', null, h('div.lobby__head', null, h('h3.setup__title', null, t('multiplayer.rooms')), openCreate), roomsList);
+  const roomsCount = h('span.online-rooms__count', null, '0');
+  const roomsView = h('section.online-rooms', null, h('div.lobby__head', null, h('h3.setup__title', null, t('multiplayer.rooms'), roomsCount), openCreate), roomsList);
 
   const sendingName = (name: string) => {
     pendingName = name;
@@ -353,10 +404,16 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     if (standsFull) watch.title = t('multiplayer.standsFull');
     const pass = passwordInput(t('multiplayer.password'));
     pass.value = joinPasswords.get(room.id) ?? '';
-    pass.addEventListener('input', () => joinPasswords.set(room.id, pass.value));
+    const passError = fieldError();
+    pass.addEventListener('input', () => {
+      joinPasswords.set(room.id, pass.value);
+      showFieldError(passError, null);
+    });
     const doJoin = (spectate = false) => {
       const name = takeName();
       if (!name) return;
+      showFieldError(passError, null);
+      passwordTarget = { error: passError, input: pass };
       session.joinRoom(room.id, name, pass.value, prefs.avatar, spectate);
       joinPasswords.delete(room.id);
     };
@@ -375,7 +432,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
         h('span.lobby-room__host', null, t('multiplayer.hostedBy', { name: room.host })),
         h('span.lobby-room__tags', null, h('span.lobby__tag', null, modeName(room.gameMode, room.mayhem > 0)), h('span.lobby__tag', null, matchTypeName(room.mode)), pips(room.players, room.maxPlayers), ...(running ? [h('span.lobby__tag.lobby__tag--live', null, t('multiplayer.inProgress'))] : []), ...(room.spectators ? [h('span.lobby__tag.lobby__tag--watchers', null, eyeIcon(), String(room.spectators))] : [])),
       ),
-      room.locked ? secretField(pass) : '',
+      ...(room.locked ? [secretField(pass), passError] : []),
       h('div.lobby-room__actions', null, ...(running ? [] : [join]), watch),
     );
   };
@@ -388,11 +445,14 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     const key = `${loaded}:${failed}:${JSON.stringify(open)}`;
     if (key === shownRooms) return;
     shownRooms = key;
+    roomsCount.textContent = String(open.length);
+    roomsCount.hidden = !loaded || failed;
+    const radar = () => h('span.lobby__empty-radar', { 'aria-hidden': 'true' });
     const empty = failed
-      ? h('li.lobby__empty', null, h('strong', null, t('multiplayer.roomsFailed')), retryRooms)
+      ? h('li.lobby__empty', null, radar(), h('strong', null, t('multiplayer.roomsFailed')), retryRooms)
       : !loaded
-        ? h('li.lobby__empty', null, h('strong', null, t('multiplayer.roomsLoading')))
-        : h('li.lobby__empty', null, h('strong', null, t('multiplayer.noRooms')));
+        ? h('li.lobby__empty', null, radar(), h('strong', null, t('multiplayer.roomsLoading')))
+        : h('li.lobby__empty', null, radar(), h('strong', null, t('multiplayer.noRooms')), h('span', null, t('multiplayer.noRoomsHint')));
     roomsList.replaceChildren(...(open.length ? open.map(roomRow) : [empty]));
   };
 
@@ -943,7 +1003,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const root = menuPage({
     title: t(({ rooms: 'flow.find', create: 'flow.create', code: 'flow.code' } as const)[view]), eyebrow: t('launcher.online'), intro: t(({ rooms: 'flow.findHint', create: 'flow.createIntro', code: 'flow.codeIntro' } as const)[view]), className: 'menu-page--lobby menu-page--mode-enter-next',
     headerTitle: onlineHeader,
-    body: [h('div.lobby', null, status, bar, connectSlot, roomsView, codeView, createView, roomView)], footer: footerActions, keys: t('flow.tabKeys'),
+    body: [h('div.lobby', null, bar, connectSlot, roomsView, codeView, createView, roomView, status)], footer: footerActions, keys: t('flow.tabKeys'),
   });
   const page = root.querySelector<HTMLElement>('.menu-page')!;
   const eyebrow = root.querySelector<HTMLElement>('.menu-page__head .eyebrow')!;
@@ -1024,7 +1084,10 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     page.classList.toggle('menu-page--create-setup', createSetup);
     page.classList.toggle('menu-page--room', !!room);
     profileLabel.textContent = playerName.value.trim() || t('multiplayer.name');
+    profileAvatar.replaceChildren(avatarSvg(prefs.avatar));
     connectionLabel.textContent = t(connected ? 'flow.connected' : 'flow.connection');
+    connectionServer.textContent = connected && !configuredServer ? (session.client.address || prefs.server).replace(/^wss?:\/\//, '') : '';
+    connectionServer.hidden = !connectionServer.textContent;
     connection.classList.toggle('is-connected', connected);
     backButton.textContent = t(createSetup ? 'common.back' : view === 'create' && createFromRooms ? 'flow.roomsBack' : 'flow.onlineBack');
     avatarBar.show(prefs.avatar);
@@ -1047,7 +1110,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     // The hosted build says nothing about connecting or being connected; its connect card returns only when that failed.
     const retry = hosted && !connected && !connecting && (connectFailed || session.notice !== null);
     const idle = hosted ? '' : t('multiplayer.connectHint');
-    const message = localMessage ?? session.notice ?? inviteNote ?? (connecting ? (hosted ? '' : t('multiplayer.connecting')) : !connected ? idle : '');
+    const notice = session.passwordNotice || session.notice === codeNotice ? null : session.notice && relayText(session.notice);
+    const message = localMessage ?? notice ?? inviteNote ?? (connecting ? (hosted ? '' : t('multiplayer.connecting')) : !connected ? idle : '');
     status.textContent = message;
     status.classList.toggle('is-busy', connecting);
     status.hidden = !message;
@@ -1079,10 +1143,17 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     roomDialog = null;
 
     barName.append(nameField);
-    if (!configuredServer) linkText.textContent = t('multiplayer.connectedTo', { server: session.client.address || prefs.server });
     connectButton.disabled = connecting;
     serverAddress.disabled = connecting;
     renderRooms(open, session.roomListLoaded, !session.roomListLoaded && !!session.notice);
+  };
+
+  const connectErrorText = (error: unknown): string => {
+    if (!(error instanceof ConnectError)) return error instanceof Error ? error.message : String(error);
+    const params = { server: error.url };
+    if (error.reason === 'timeout') return t('multiplayer.connectTimeout', params);
+    if (error.reason === 'closed') return t('multiplayer.connectClosed', params);
+    return t('multiplayer.connectUnreachable', params);
   };
 
   const connect = async (silent: boolean) => {
@@ -1098,7 +1169,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     } catch (error) {
       connectFailed = true;
       prefs.autoConnect = false;
-      localMessage = configuredServer ? t('multiplayer.connectFailed') : error instanceof Error ? error.message : String(error);
+      localMessage = configuredServer ? t('multiplayer.connectFailed') : connectErrorText(error);
     }
     save();
     render();
@@ -1242,6 +1313,21 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
             save();
             pendingName = null;
           }
+        }
+        if (codeJoinPending && session.room) codeJoinPending = false;
+        else if (codeJoinPending && session.notice && !session.passwordNotice) {
+          showFieldError(codeError, relayText(session.notice));
+          codeNotice = session.notice;
+          codeJoinPending = false;
+        }
+        if (session.passwordNotice && passwordTarget) {
+          const { error, input, reveal } = passwordTarget;
+          // "Wrong password" is all the relay says for a missing one too; the player is told which it was.
+          const wrong = session.passwordNotice === 'Wrong password';
+          showFieldError(error, wrong ? t(input.value ? 'multiplayer.passwordWrong' : 'multiplayer.passwordNeeded') : relayText(session.passwordNotice));
+          if (reveal) reveal.hidden = false;
+          queueMicrotask(() => input.focus());
+          passwordTarget = null;
         }
         render();
       });

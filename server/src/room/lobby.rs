@@ -8,7 +8,7 @@ use tracing::{debug, warn};
 
 use crate::auth::Hashed;
 use crate::command::{CreateRoom, JoinRoom, JoinTarget};
-use crate::protocol::{default_room_name, NAME_TAKEN};
+use crate::protocol::{default_room_name, NAME_TAKEN, TOO_MANY_PASSWORDS, WRONG_PASSWORD};
 
 use super::model::*;
 use super::RoomManager;
@@ -227,7 +227,7 @@ impl RoomManager {
     ) -> bool {
         if self.net.password_attempts_exhausted(conn) {
             warn!(room_id = %room_id, "password attempts exhausted");
-            self.error(conn, "Too many wrong passwords – reconnect to try again");
+            self.error(conn, TOO_MANY_PASSWORDS);
             return false;
         }
         let correct = preverified.unwrap_or(false);
@@ -237,7 +237,7 @@ impl RoomManager {
         } else {
             self.net.password_failed(conn);
             debug!(room_id = %room_id, "password rejected");
-            self.error(conn, "Wrong password");
+            self.error(conn, WRONG_PASSWORD);
             false
         }
     }
