@@ -57,6 +57,8 @@ impl RoomManager {
             team,
             conn: None,
             cpu: Some(level),
+            token: String::new(),
+            lost_at: None,
         });
         unready_humans(room);
         self.broadcast_room_update(&room_id, None);

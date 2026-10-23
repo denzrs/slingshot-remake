@@ -81,7 +81,10 @@ impl RoomManager {
     pub fn disconnect(&mut self, conn: u64) {
         self.net.close(conn);
         self.last_rename.remove(&conn);
-        self.remove_from_room(conn, "A player disconnected");
+        // A dropped connection in a running game keeps its seat for a while: it may come back.
+        if !self.hold_seat(conn) {
+            self.remove_from_room(conn, "A player disconnected");
+        }
     }
 
     /// Prune expired password and scrypt timestamps without disturbing active lockouts.
@@ -153,6 +156,7 @@ impl RoomManager {
             RoomCommand::RoundStats(report) => self.report_round(conn, report),
             RoomCommand::TurnStats(report) => self.report_turn(conn, report),
             RoomCommand::LeaveRoom => self.leave_room(conn),
+            RoomCommand::Resume(token) => self.resume(conn, token),
         }
     }
 

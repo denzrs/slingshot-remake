@@ -70,7 +70,9 @@ type ClientMessage =
   | { type: 'stats_replay'; id: string }
   /** Something to say to everybody in the room. The relay cleans it and stars out profanity. */
   | { type: 'chat'; text: string }
-  | { type: 'leave_room' };
+  | { type: 'leave_room' }
+  /** A new connection asks for the seat that `token` was given for, after the old connection dropped. */
+  | { type: 'resume'; token: string };
 
 /** One day of the stats heatmap: UTC date, and what happened on it. */
 export interface StatsDay {
@@ -160,6 +162,8 @@ interface RoomPlayer {
   avatar: Avatar;
   /** A CPU is always ready. */
   ready: boolean;
+  /** False while a running game holds the seat for a connection that dropped. Absent counts as connected. */
+  connected?: boolean;
   team: 0 | 1;
   /** The level of a CPU seat; null for a person. */
   cpu: NetworkCpuLevel | null;
@@ -187,7 +191,7 @@ export type ServerMessage =
       type: 'room_update';
       room: RoomInfo;
       /** In the stands `playerId` is -1 and `spectatorId` names the place; the points of the bets are kept under it. */
-      you: { playerId: number; host: boolean; spectator?: boolean; spectatorId?: number };
+      you: { playerId: number; host: boolean; spectator?: boolean; spectatorId?: number; token?: string };
       /** Why the room changed under you, e.g. a running game was ended. */
       notice?: string;
     }
@@ -231,6 +235,8 @@ export type ServerMessage =
   /** `replay` is null when the relay has no such game, or not the whole of it. */
   | { type: 'stats_replay'; id: string; replay: StatsReplay | null }
   | { type: 'room_closed'; message: string }
+  /** The seat asked for with `resume` was given up (or never held). */
+  | { type: 'resume_failed'; message: string }
   /** `field` names what the error is about, when it is about one thing the player typed. */
   | { type: 'error'; message: string; field?: 'name' }
   /** Local only: the connection to the server is gone. */
@@ -238,7 +244,7 @@ export type ServerMessage =
 
 const CONNECT_TIMEOUT_MS = 10_000;
 
-/** A thin, non-reconnecting WebSocket transport for the lobby and game relay protocol. */
+/** A thin WebSocket transport (it connects again only when asked to) for the lobby and game relay protocol. */
 export class NetworkClient {
   private socket: WebSocket | null = null;
   private connectPromise: Promise<void> | null = null;
@@ -304,6 +310,8 @@ export class NetworkClient {
         reject(new Error(`Could not connect to ${this.url}. Check the server address and make sure the server is running.`));
       });
       socket.addEventListener('close', () => {
+        // A socket that `drop` already gave up on has been reported; its late close says nothing new.
+        const current = this.socket === socket;
         if (this.socket === socket) {
           this.socket = null;
           this.connectPromise = null;
@@ -312,7 +320,7 @@ export class NetworkClient {
           settled = true;
           window.clearTimeout(timeout);
           reject(new Error(`Connection to ${this.url} closed before it was established`));
-        } else if (opened && !this.closed) {
+        } else if (opened && current && !this.closed) {
           this.deliver({ type: 'closed', message: `Connection to ${this.url} was closed.` });
         }
       });
@@ -337,6 +345,20 @@ export class NetworkClient {
     // msgpackr returns a Uint8Array backed by an ArrayBuffer; the assertion narrows
     // its broad library type without copying the encoded frame.
     socket.send(bytes as Uint8Array<ArrayBuffer>);
+  }
+
+  /**
+   * Gives up on the socket without closing the client: for a connection that has gone quiet while
+   * the browser still thinks it is open. Tells the listeners, so they can connect again.
+   */
+  drop(): void {
+    const socket = this.socket;
+    if (!socket) return;
+    this.socket = null;
+    this.connectPromise = null;
+    const opened = socket.readyState === WebSocket.OPEN;
+    try { socket.close(); } catch { /* already gone */ }
+    if (opened && !this.closed) this.deliver({ type: 'closed', message: `Connection to ${this.url} was lost.` });
   }
 
   close(): void {

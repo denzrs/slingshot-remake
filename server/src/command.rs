@@ -74,6 +74,8 @@ pub enum RoomCommand<'a> {
     /// The host's account of a turn that was just flown.
     TurnStats(Parsed<TurnReport>),
     LeaveRoom,
+    /// A new connection asks for the seat its `token` was given for.
+    Resume(Parsed<String>),
     /// A message with no `type`.
     Malformed,
     /// A message whose `type` is not one the relay knows.
@@ -239,6 +241,14 @@ impl<'a> RoomCommand<'a> {
                 RoomCommand::TurnStats(parse_turn_report(message).ok_or("Malformed turn stats"))
             }
             "leave_room" => RoomCommand::LeaveRoom,
+            "resume" => RoomCommand::Resume(
+                message
+                    .get("token")
+                    .and_then(Value::as_str)
+                    .filter(|token| !token.is_empty() && token.len() <= 64)
+                    .map(str::to_owned)
+                    .ok_or("Malformed resume token"),
+            ),
             other => RoomCommand::Unknown(other),
         }
     }

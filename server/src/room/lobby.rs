@@ -4,10 +4,10 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use rand::Rng;
 use serde_json::{json, Value};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::auth::Hashed;
-use crate::command::{CreateRoom, JoinRoom, JoinTarget};
+use crate::command::{CreateRoom, JoinRoom, JoinTarget, Parsed};
 use crate::protocol::{default_room_name, NAME_TAKEN};
 
 use super::model::*;
@@ -269,16 +269,22 @@ impl RoomManager {
         let Some(membership) = self.memberships.remove(&conn) else {
             return;
         };
-        let room_id = membership.room_id;
-        let player_id = membership.player_id;
+        self.give_up_seat(&membership.room_id, membership.player_id, Some(conn), reason);
+    }
 
+    /// Takes a seat out of its room for good. `gone` is the seat's connection, if it still had one.
+    fn give_up_seat(&mut self, room_id: &str, player_id: usize, gone: Option<u64>, reason: &str) {
         if player_id == 0 {
             let others: Vec<u64> = self
                 .rooms
-                .get(&room_id)
-                .map(|room| room.recipients().filter(|other| *other != conn).collect())
+                .get(room_id)
+                .map(|room| {
+                    room.recipients()
+                        .filter(|other| Some(*other) != gone)
+                        .collect()
+                })
                 .unwrap_or_default();
-            self.rooms.remove(&room_id);
+            self.rooms.remove(room_id);
             for other in &others {
                 self.memberships.remove(other);
                 self.watching.remove(other);
@@ -294,15 +300,135 @@ impl RoomManager {
 
         let was_playing = self
             .rooms
-            .get(&room_id)
+            .get(room_id)
             .is_some_and(|room| room.status == RoomStatus::Playing);
-        self.remove_player(&room_id, player_id);
+        self.remove_player(room_id, player_id);
         if was_playing {
-            self.reset_to_waiting(&room_id);
+            self.reset_to_waiting(room_id);
         }
         let notice = was_playing.then(|| format!("{reason} – the game was ended"));
-        self.broadcast_room_update(&room_id, notice.as_deref());
+        self.broadcast_room_update(room_id, notice.as_deref());
         self.broadcast_lobby();
+    }
+
+    /// A connection dropped out of a running game: keep its seat for `SEAT_GRACE` so the same
+    /// player can come back with their token. False when there is no such seat to hold.
+    pub(super) fn hold_seat(&mut self, conn: u64) -> bool {
+        let Some(membership) = self.memberships.get(&conn) else {
+            return false;
+        };
+        let (room_id, player_id) = (membership.room_id.clone(), membership.player_id);
+        let Some(room) = self.rooms.get_mut(&room_id) else {
+            return false;
+        };
+        if room.status != RoomStatus::Playing {
+            return false;
+        }
+        let Some(player) = room.players.iter_mut().find(|p| p.id == player_id) else {
+            return false;
+        };
+        if player.token.is_empty() {
+            return false;
+        }
+        player.conn = None;
+        player.lost_at = Some(std::time::Instant::now());
+        let notice = format!(
+            "{} lost the connection – the seat is held for {} s",
+            player.name,
+            SEAT_GRACE.as_secs()
+        );
+        self.memberships.remove(&conn);
+        info!(conn, room = %room_id, seat = player_id, "seat held for a dropped connection");
+        self.broadcast_room_update(&room_id, Some(&notice));
+        true
+    }
+
+    /// Gives up the seats whose grace has run out. Called every few seconds.
+    pub fn expire_seats(&mut self) {
+        self.expire_seats_at(std::time::Instant::now());
+    }
+
+    pub(super) fn expire_seats_at(&mut self, now: std::time::Instant) {
+        let expired: Vec<(String, String)> = self
+            .rooms
+            .values()
+            .flat_map(|room| {
+                room.players
+                    .iter()
+                    .filter(|p| p.lost_at.is_some_and(|at| now.duration_since(at) >= SEAT_GRACE))
+                    .map(|p| (room.id.clone(), p.token.clone()))
+            })
+            .collect();
+        for (room_id, token) in expired {
+            // Earlier removals renumber the seats, and may have closed the room: look the seat up again.
+            let Some(player_id) = self.rooms.get(&room_id).and_then(|room| {
+                room.players
+                    .iter()
+                    .find(|p| p.token == token)
+                    .map(|p| p.id)
+            }) else {
+                continue;
+            };
+            info!(room = %room_id, seat = player_id, "held seat expired");
+            self.give_up_seat(&room_id, player_id, None, "A player disconnected");
+        }
+    }
+
+    /// A new connection takes back the seat its token was issued for.
+    pub(super) fn resume(&mut self, conn: u64, token: Parsed<String>) {
+        let Some(token) = self.accept(conn, token) else {
+            return;
+        };
+        if self.is_placed(conn) {
+            self.error(conn, "You are already in a room");
+            return;
+        }
+        let found = self.rooms.values().find_map(|room| {
+            room.players
+                .iter()
+                .find(|p| !p.token.is_empty() && p.token == token)
+                .map(|p| (room.id.clone(), p.id))
+        });
+        let Some((room_id, player_id)) = found else {
+            self.send_value(
+                conn,
+                &json!({ "type": "resume_failed", "message": "Your seat was given up" }),
+            );
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        let playing = room.status == RoomStatus::Playing;
+        let player = room
+            .players
+            .iter_mut()
+            .find(|p| p.id == player_id)
+            .expect("the seat was just found");
+        // A half-dead old connection may still be on the seat: the token wins.
+        let old = player.conn.replace(conn);
+        player.lost_at = None;
+        let notice = format!("{} is back", player.name);
+        if let Some(old) = old {
+            self.memberships.remove(&old);
+        }
+        self.memberships.insert(
+            conn,
+            Membership {
+                room_id: room_id.clone(),
+                player_id,
+            },
+        );
+        info!(conn, room = %room_id, seat = player_id, "seat resumed");
+        self.broadcast_room_update(&room_id, Some(&notice));
+        // The host sends only what changed: whoever was away needs a complete frame to start over.
+        if playing && player_id != 0 {
+            let host = self
+                .rooms
+                .get(&room_id)
+                .and_then(|room| room.players.first().and_then(|p| p.conn));
+            if let Some(host) = host {
+                self.send_value(host, &json!({ "type": "keyframe" }));
+            }
+        }
     }
 
     pub(super) fn new_room_id(&self) -> String {

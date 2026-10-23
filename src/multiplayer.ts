@@ -62,7 +62,13 @@ export function isSecureRelay(address: string): boolean {
 }
 
 /** What the session needs from a connection — the WebSocket client, or a stand-in in tests. */
-export type Transport = Pick<NetworkClient, 'address' | 'setAddress' | 'connect' | 'onMessage' | 'send' | 'close'>;
+export type Transport = Pick<NetworkClient, 'address' | 'setAddress' | 'connect' | 'onMessage' | 'send' | 'close'> & Partial<Pick<NetworkClient, 'drop'>>;
+
+/** How long a dropped connection keeps trying to take its seat back; the relay holds the seat a little longer than this. */
+const RESUME_WINDOW_MS = 30_000;
+const RESUME_RETRY_MS = [250, 500, 1000, 2000, 3000];
+/** A guest that hears nothing from the host for this long treats its connection as dead and connects again. */
+const SILENCE_LIMIT = 6;
 
 /** The host sends the match state this often; the guest sends its aim at the same rate. */
 const SYNC_INTERVAL = 1 / 30;
@@ -90,6 +96,14 @@ export class MultiplayerSession {
   /** Lines ever added to the chat: unlike `chat.length` it keeps counting once the cap is reached. */
   chatTotal = 0;
   private chatRoom: string | null = null;
+  /** The connection dropped and the session is trying to take its seat back; the room and the match are kept meanwhile. */
+  reconnecting = false;
+  /** What lets a new connection take this player's seat back; only seated players have one. */
+  private token: string | null = null;
+  private reconnectLoop = false;
+  private lostAt = 0;
+  /** Seconds since the last state frame from the host. */
+  private silence = 0;
 
   get nameNotice(): string | null {
     return this.notice !== null && this.notice === this.nameError ? this.notice : null;
@@ -222,6 +236,7 @@ export class MultiplayerSession {
   /** Leave the room (and any running game) but stay connected to the lobby. */
   leaveRoom(): void {
     if (this.room) this.send({ type: 'leave_room' });
+    this.forgetSeat();
     this.room = null;
     this.clearChat();
     this.rooms = [];
@@ -231,6 +246,9 @@ export class MultiplayerSession {
   }
 
   disconnect(): void {
+    // Say so: otherwise the relay holds the seat of a running game for a while, in case we come back.
+    if (this.room) this.send({ type: 'leave_room' });
+    this.forgetSeat();
     this.client.close();
     this.connected = false;
     this.room = null;
@@ -286,6 +304,15 @@ export class MultiplayerSession {
     const match = this.match;
     if (!match) return;
     if (!this.isHost) match.extrapolate(dt);
+    // A guest hears the host about 30 times a second. Hearing nothing for long, while the host is still
+    // there, means this connection died quietly: connect again instead of waiting for the browser to notice.
+    if (!this.isHost && !this.reconnecting && this.room?.players[0]?.connected !== false) {
+      this.silence += dt;
+      if (this.silence > SILENCE_LIMIT) {
+        this.silence = 0;
+        this.client.drop?.();
+      }
+    }
     this.syncElapsed += dt;
     if (this.syncElapsed < SYNC_INTERVAL) return;
     this.syncElapsed %= SYNC_INTERVAL;
@@ -323,6 +350,10 @@ export class MultiplayerSession {
         this.room = message.room;
         this.you = message.you;
         this.notice = message.notice ?? null;
+        if (message.you.token) this.token = message.you.token;
+        if (this.reconnecting) this.resumed();
+        // In a game nobody reads the notice ("Anna lost the connection", "Anna is back"): the chat says it.
+        if (this.match && message.notice) this.say(message.notice);
         // The room went back to waiting under a running game (somebody left): the game is over.
         if (this.match && message.room.status === 'waiting') this.endMatch();
         // The host keeps the stands' accounts: people come and go, the points stay.
@@ -342,6 +373,7 @@ export class MultiplayerSession {
         if (this.isHost) this.encoder = new SnapshotEncoder();
         break;
       case 'state':
+        this.silence = 0;
         this.applyState(message);
         break;
       case 'chat':
@@ -349,20 +381,39 @@ export class MultiplayerSession {
         this.chatTotal++;
         break;
       case 'room_closed':
+        this.forgetSeat();
         this.room = null;
         this.clearChat();
         this.notice = message.message;
         if (this.match) this.endMatch();
         break;
+      case 'resume_failed':
+        // The seat was given up while we were away: the game is over for us, as it would have been.
+        this.forgetSeat();
+        this.room = null;
+        this.clearChat();
+        this.rooms = [];
+        this.notice = message.message;
+        if (this.match) this.endMatch();
+        this.send({ type: 'lobby' });
+        break;
       case 'error':
         this.notice = message.message;
         // In a game nobody reads the notice, so what the relay says ("you are writing too fast") is said in the chat.
-        if (this.match) this.chat = [...this.chat, { id: -1, name: '', spectator: false, text: message.message, system: true }].slice(-CHAT_KEEP);
-        if (this.match) this.chatTotal++;
+        if (this.match) this.say(message.message);
         this.nameError = message.field === 'name' ? message.message : null;
         break;
       case 'closed':
         this.connected = false;
+        // A seated player in a room keeps the room and the match and tries to come back to the seat.
+        if (this.token && this.room && !this.isSpectator && this.client.address) {
+          if (!this.reconnecting) this.lostAt = Date.now();
+          this.reconnecting = true;
+          this.silence = 0;
+          this.notice = 'Connection lost – reconnecting…';
+          void this.reconnect();
+          break;
+        }
         this.room = null;
         this.clearChat();
         this.rooms = [];
@@ -441,6 +492,60 @@ export class MultiplayerSession {
   }
 
   // ————————————————————————————— Plumbing —————————————————————————————
+
+  private say(text: string): void {
+    this.chat = [...this.chat, { id: -1, name: '', spectator: false, text, system: true }].slice(-CHAT_KEEP);
+    this.chatTotal++;
+  }
+
+  private forgetSeat(): void {
+    this.token = null;
+    this.reconnecting = false;
+  }
+
+  /** Connects again with growing pauses until the seat is ours or the relay would have given it up. */
+  private async reconnect(): Promise<void> {
+    if (this.reconnectLoop) return;
+    this.reconnectLoop = true;
+    try {
+      for (let attempt = 0; this.reconnecting && Date.now() - this.lostAt < RESUME_WINDOW_MS; attempt++) {
+        try {
+          await this.client.connect();
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, RESUME_RETRY_MS[Math.min(attempt, RESUME_RETRY_MS.length - 1)]));
+          continue;
+        }
+        if (!this.reconnecting || !this.token) return;
+        this.connected = true;
+        // The answer is a room update (the seat is back) or `resume_failed`; `reconnecting` stays on until then.
+        this.send({ type: 'resume', token: this.token });
+        return;
+      }
+      if (this.reconnecting) this.giveUp();
+    } finally {
+      this.reconnectLoop = false;
+    }
+  }
+
+  /** Back in the seat: the host starts its sync over with a complete frame, a guest gets one asked for. */
+  private resumed(): void {
+    this.reconnecting = false;
+    this.silence = 0;
+    if (this.isHost) this.encoder = new SnapshotEncoder();
+    this.emit();
+  }
+
+  /** The relay could not be reached in time: what a lost connection used to mean at once. */
+  private giveUp(): void {
+    this.forgetSeat();
+    this.connected = false;
+    this.room = null;
+    this.clearChat();
+    this.rooms = [];
+    this.notice = `Connection to ${this.client.address} was lost.`;
+    if (this.match) this.endMatch();
+    this.emit();
+  }
 
   private clearChat(): void {
     this.chat = [];

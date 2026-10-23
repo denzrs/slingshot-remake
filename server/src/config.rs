@@ -6,7 +6,10 @@ pub const DEFAULT_PORT: u16 = 8080;
 /// The host's full state can be large once; everything after that is small patches.
 pub const MAX_PAYLOAD: usize = 1024 * 1024;
 pub const MAX_MESSAGES_PER_SECOND: u32 = 300;
-pub const HEARTBEAT_MS: u64 = 30_000;
+pub const HEARTBEAT_MS: u64 = 10_000;
+/// Pings in a row that may go unanswered before a peer counts as dead. A proxy that stalls for a
+/// moment should not cost a player the game.
+pub const HEARTBEAT_MISSES: u32 = 3;
 /// Sized for ~1k concurrent rooms (6 players each) plus idle lobby browsers.
 pub const DEFAULT_MAX_CONNECTIONS: usize = 8192;
 pub const DEFAULT_MAX_CONNECTIONS_PER_IP: usize = 64;

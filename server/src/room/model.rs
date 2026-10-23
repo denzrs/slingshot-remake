@@ -29,6 +29,10 @@ pub(super) struct Player {
     pub(super) conn: Option<u64>,
     /// The level of a CPU seat.
     pub(super) cpu: Option<CpuLevel>,
+    /// The secret that lets a new connection take this seat back (`resume`); empty for a CPU.
+    pub(super) token: String,
+    /// Set while a running game holds the seat for a connection that dropped.
+    pub(super) lost_at: Option<std::time::Instant>,
 }
 
 impl Player {
@@ -41,6 +45,9 @@ impl Player {
         self.ready || self.is_cpu()
     }
 }
+
+/// How long a running game holds the seat of a dropped connection before giving it up.
+pub(super) const SEAT_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// The most people who may watch one room.
 pub(super) const MAX_SPECTATORS: usize = 20;
