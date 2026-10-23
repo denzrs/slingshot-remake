@@ -1,6 +1,8 @@
 //! Validation helpers for untrusted wire input, checked before the room logic sees it.
 
-use rustrict::CensorStr;
+use std::sync::LazyLock;
+
+use rustrict::{Censor, Trie, Type};
 use serde_json::Value;
 
 use crate::wire::{Avatar, CpuLevel, RoomColor, RoomSymbol, Visibility, Wire};
@@ -355,17 +357,86 @@ pub fn parse_daily_submit(value: &Value) -> Option<DailyScore> {
         .then_some(DailyScore { day, name, score })
 }
 
+/// German words the English dictionary takes for something else: "brauchen" and its kin contain
+/// `bra`, which it reads as a word of its own. Each entry also clears the words built on it
+/// (`brau` covers `brauchen`, `Brause`, `Braut`, `Braunschweig`), so these are stems; a stem here
+/// must not be, or begin, a word the dictionary is right about.
+const GERMAN_SAFE_WORDS: &[&str] = &[
+    "brau", "bräu", "brav", "churer", "kanal", "analys", "analpha",
+];
+
+/// German profanity the English dictionary lacks, taken from the German list of LDNOOBW
+/// (<https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words>, © Shutterstock,
+/// Inc., CC BY 4.0) and cut down to words that do not turn up inside ordinary ones. Left out on
+/// purpose: `nackt`, `porno`, `muschi`, `popel` and the like (ordinary or ambiguous), and `möse` and
+/// `vögeln` (the check folds umlauts, so they would also refuse `Mose` and `Vogeln`). Lower case only,
+/// and `rustrict` has already folded `ß` and umlauts when it compares.
+const GERMAN_PROFANITY: &[&str] = &[
+    "analritter",
+    "arschloch",
+    "arschficker",
+    "arschlecker",
+    "ficken",
+    "fickt",
+    "flittchen",
+    "fotze",
+    "hackfresse",
+    "hure",
+    "hurensohn",
+    "kackbratze",
+    "kackwurst",
+    "kampflesbe",
+    "kanake",
+    "neger",
+    "nutte",
+    "pimmel",
+    "pimpern",
+    "pissen",
+    "pisser",
+    "schlampe",
+    "scheisse",
+    "scheisser",
+    "schwanzlutscher",
+    "schwuchtel",
+    "tittchen",
+    "titten",
+    "wichse",
+    "wichsen",
+    "wichser",
+    "vollpfosten",
+    "bimbo",
+    "mutterficker",
+    "ficker",
+    "spasti",
+    "fotzen",
+];
+
+/// The default `rustrict` dictionary plus `GERMAN_PROFANITY` and `GERMAN_SAFE_WORDS`.
+static DICTIONARY: LazyLock<Trie> = LazyLock::new(|| {
+    let mut trie = Trie::default();
+    for word in GERMAN_PROFANITY.iter().copied() {
+        trie.set(word, Type::PROFANE | Type::MODERATE);
+    }
+    for word in GERMAN_SAFE_WORDS.iter().copied() {
+        trie.set(word, Type::SAFE);
+    }
+    trie
+});
+
 /// Whether a name may stand on a public board. `clean_name_checked` has already dropped the control
 /// characters and cut the length; this is about the words themselves.
 ///
 /// It is `rustrict` at its "inappropriate" threshold: an English dictionary with the usual simple
-/// evasions folded in (`f4ck`, `sh1t` and `a55hole` are all caught). Two honest limits come with it,
-/// and neither is a reason not to have it: the dictionary is English, so German profanity is covered
-/// only in part — `Arsch` and `Hurensohn` are, `Fick` is not — and it reads no context, so a few
-/// real surnames come out unacceptable (`Hancock`, `Dick`). A name that is refused can simply be
-/// typed again.
+/// evasions folded in (`f4ck`, `sh1t` and `a55hole` are all caught), and the German words it
+/// mistakes (`brauchen`) cleared. Two honest limits come with it, and neither is a reason not to
+/// have it: the dictionary is English, so German profanity is covered only in part — `Arsch` and
+/// `Hurensohn` are, `Fick` is not — and it reads no context, so a few real surnames come out
+/// unacceptable (`Hancock`, `Dick`). A name that is refused can simply be typed again.
 pub fn is_acceptable_name(name: &str) -> bool {
-    !name.is_inappropriate()
+    !Censor::from_str(name)
+        .with_trie(&DICTIONARY)
+        .analyze()
+        .is(Type::INAPPROPRIATE)
 }
 
 /// The longest chat message, in UTF-16 units like a name.
@@ -376,7 +447,20 @@ pub const MAX_CHAT_LENGTH: usize = 200;
 /// dictionary is English). None when nothing is left to say.
 pub fn clean_chat(value: Option<&Value>) -> Option<String> {
     let cleaned = clean_text(value.and_then(Value::as_str)?, MAX_CHAT_LENGTH);
-    (!cleaned.is_empty()).then(|| rustrict::Censor::from_str(&cleaned).censor())
+    (!cleaned.is_empty()).then(|| censor(&cleaned))
+}
+
+/// `text` with the objectionable words starred out. `rustrict` also folds what it passes through
+/// (`ä` comes out as `a`), so only the stars are taken from it and everything else stays as typed.
+fn censor(text: &str) -> String {
+    let censored = Censor::from_str(text).with_trie(&DICTIONARY).censor();
+    if censored.chars().count() != text.chars().count() {
+        return censored;
+    }
+    text.chars()
+        .zip(censored.chars())
+        .map(|(typed, out)| if out == '*' { '*' } else { typed })
+        .collect()
 }
 
 /// The rules of an online game, chosen by whoever creates (and later edits) the room.
@@ -985,6 +1069,101 @@ mod tests {
         let long = "x".repeat(MAX_NAME_LENGTH + 20);
         let run = parse_daily_submit(&json!({"day":"2026-10-19","name":long,"score":1})).unwrap();
         assert_eq!(run.name.chars().count(), MAX_NAME_LENGTH);
+    }
+
+    #[test]
+    fn german_words_with_bra_in_them_are_not_profanity() {
+        for fine in [
+            "brauchen",
+            "braucht",
+            "bräuchte",
+            "Brause",
+            "Braut",
+            "Braunschweig",
+            "Brav",
+            "Bräu",
+        ] {
+            assert!(is_acceptable_name(fine), "refused {fine}");
+        }
+        assert_eq!(
+            clean_chat(Some(&json!("Wir brauchen mehr Bräu, möchte ich"))),
+            Some("Wir brauchen mehr Bräu, möchte ich".into())
+        );
+        // Only the stars come from the filter: the typed umlauts stay, and real profanity still goes.
+        assert_eq!(
+            clean_chat(Some(&json!("möchte shit"))),
+            Some("möchte s***".into())
+        );
+    }
+
+    #[test]
+    fn german_profanity_is_refused_and_ordinary_german_is_not() {
+        for rude in [
+            "Arschloch",
+            "Scheiße",
+            "Scheisse",
+            "Fotze",
+            "Hurensohn",
+            "Hure",
+            "Nutte",
+            "Wichser",
+            "Schlampe",
+            "Bimbo",
+            "Schwuchtel",
+            "Pimmel",
+            "Titten",
+            "ficken",
+            "Spasti",
+            "Kacke",
+            "Arsch",
+            "du Wichser",
+            "Fotze99",
+        ] {
+            assert!(!is_acceptable_name(rude), "accepted {rude}");
+            assert_ne!(
+                clean_chat(Some(&json!(rude))).unwrap(),
+                rude,
+                "let {rude} through"
+            );
+        }
+        for fine in [
+            "Marsch",
+            "Barsch",
+            "Fick",
+            "Mose",
+            "Vögeln",
+            "Möse",
+            "Nackt",
+            "Muschi",
+            "Popel",
+            "Churer",
+            "Pickel",
+            "Titan",
+            "Wichtig",
+            "Wicht",
+            "Kachel",
+            "Fotograf",
+            "Fotos",
+            "Hurrikan",
+            "Hubert",
+            "Scheibe",
+            "Scheinwerfer",
+            "Schlange",
+            "Schwan",
+            "Spaß",
+            "Spaten",
+            "Negev",
+            "Kanal",
+            "Analyse",
+            "Analphabet",
+            "Banane",
+            "Kanzler",
+            "Klassenarbeit",
+            "Hans",
+            "Kacheln",
+        ] {
+            assert!(is_acceptable_name(fine), "refused {fine}");
+        }
     }
 
     #[test]
