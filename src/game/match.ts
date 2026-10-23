@@ -914,7 +914,7 @@ export abstract class Match {
   }
 
   /** The fire key during the announcement ends it instead of firing. True when it did. */
-  protected skipReveal(): boolean {
+  skipReveal(): boolean {
     if (!this.revealing) return false;
     this.revealEnd = this.clock;
     this.revealHeld = false;
@@ -969,6 +969,8 @@ export abstract class Match {
     this.clock += dt;
     this.phaseTime += dt;
     if (this.notice && this.clock - this.notice.at > 1.4) this.notice = null;
+    // A replay has no one to press a key: it lets the announcement be read, then goes on.
+    if (this.scriptTurns && this.revealing && this.revealAge > 2.5) this.skipReveal();
     // The round's announcement holds everything still: no aiming, no CPU thinking, no shot clock.
     if (this.revealing) return;
     if (this.phase === 'flying') this.updateFlight(dt);
@@ -1015,11 +1017,6 @@ export abstract class Match {
     // The killcams and the collapse of Event Horizon play as they do in a game.
     if (this.phase !== 'aiming') return this.updatePhase(dt);
     if (this.replayState !== 'playing') return;
-    // A Mayhem round is announced until somebody presses a key.
-    if (this.revealing) {
-      if (this.revealAge > 2.5) this.skipReveal();
-      return;
-    }
     // A beat to see the field before the shots go off.
     if (this.phaseTime < 1) return;
     const turn = this.shotLog.turn + 1;
