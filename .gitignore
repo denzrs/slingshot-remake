@@ -3,5 +3,6 @@ dist
 .DS_Store
 server/target
 # The relay's daily leaderboard, left behind by running it from the working tree.
+slingshot.db*
 leaderboard.db*
 stats.db*

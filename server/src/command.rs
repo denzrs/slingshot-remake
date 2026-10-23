@@ -12,7 +12,9 @@ use crate::protocol::{
     parse_daily_submit, parse_player_name, parse_room_look, parse_room_name, parse_rules,
     DailyScore, RoomLook, RoomName, RoomRules, NAME_REQUIRED,
 };
-use crate::report::{parse_round_report, parse_turn_report, RoundReport, TurnReport};
+use crate::report::{
+    parse_local_game, parse_round_report, parse_turn_report, LocalGame, RoundReport, TurnReport,
+};
 use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
 
 /// The most players a room takes.
@@ -32,6 +34,12 @@ pub enum Command<'a> {
 pub enum DailyCommand {
     Submit(Parsed<DailyScore>),
     Top(Parsed<String>),
+    /// The stats page's numbers.
+    Stats,
+    /// One game, to fly again.
+    Replay(Parsed<String>),
+    /// A game played on one device, reported when it is over.
+    Local(Box<Parsed<LocalGame>>),
 }
 
 pub enum RoomCommand<'a> {
@@ -140,6 +148,12 @@ impl JoinRoom {
     }
 }
 
+/// The `id` of a `stats_replay`: a game's random id, 16 hex digits.
+fn parse_match_id(message: &Value) -> Option<String> {
+    let id = message.get("id")?.as_str()?;
+    (id.len() == 16 && id.bytes().all(|b| b.is_ascii_hexdigit())).then(|| id.to_string())
+}
+
 impl<'a> Command<'a> {
     pub fn parse(message: &'a Value) -> Self {
         match message.get("type").and_then(Value::as_str) {
@@ -148,6 +162,13 @@ impl<'a> Command<'a> {
             )),
             Some("daily_top") => Command::Daily(DailyCommand::Top(
                 parse_daily_day(message).ok_or("Invalid day"),
+            )),
+            Some("stats_overview") => Command::Daily(DailyCommand::Stats),
+            Some("local_game") => Command::Daily(DailyCommand::Local(Box::new(
+                parse_local_game(message).ok_or("Invalid game"),
+            ))),
+            Some("stats_replay") => Command::Daily(DailyCommand::Replay(
+                parse_match_id(message).ok_or("Invalid game"),
             )),
             _ => Command::Room(RoomCommand::parse(message)),
         }

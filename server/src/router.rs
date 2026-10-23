@@ -56,6 +56,9 @@ pub async fn route(
             daily_submit(manager, boards, conn_id, run).await
         }
         Command::Daily(DailyCommand::Top(day)) => daily_top(manager, boards, conn_id, day).await,
+        Command::Daily(DailyCommand::Stats) => stats_overview(manager, conn_id).await,
+        Command::Daily(DailyCommand::Local(game)) => local_game(manager, conn_id, *game),
+        Command::Daily(DailyCommand::Replay(id)) => stats_replay(manager, conn_id, id).await,
         Command::Room(RoomCommand::CreateRoom(create)) => {
             let can_create = manager.lock().can_create_room(conn_id);
             if !can_create || !create.is_valid() {
@@ -143,6 +146,67 @@ async fn daily_top(
             manager
                 .lock()
                 .error(conn_id, "The leaderboard is unavailable");
+        }
+    }
+}
+
+/// The numbers of the stats page. With statistics off there is nothing to show, and the page is told so.
+async fn stats_overview(manager: &Mutex<RoomManager>, conn_id: u64) {
+    let stats = manager.lock().stats();
+    let Some(stats) = stats else {
+        manager.lock().stats_overview(conn_id, None);
+        return;
+    };
+    match stats.overview_shared().await {
+        Ok(overview) => manager.lock().stats_overview(conn_id, Some(&overview)),
+        Err(err) => {
+            warn!(%err, "stats read failed");
+            manager
+                .lock()
+                .error(conn_id, "The statistics are unavailable");
+        }
+    }
+}
+
+/// A game played on one device: handed to the statistics, if the relay keeps any, and not answered.
+fn local_game(manager: &Mutex<RoomManager>, conn_id: u64, game: Parsed<crate::report::LocalGame>) {
+    let game = match game {
+        Ok(game) => game,
+        Err(reason) => {
+            manager.lock().error(conn_id, reason);
+            return;
+        }
+    };
+    let (ip, stats) = {
+        let manager = manager.lock();
+        (manager.peer_ip(conn_id), manager.stats())
+    };
+    if let (Some(ip), Some(stats)) = (ip, stats) {
+        stats.submit_local(ip, game);
+    }
+}
+
+/// One game to fly again, or `replay: null` when this relay has no such game or not the whole of it.
+async fn stats_replay(manager: &Mutex<RoomManager>, conn_id: u64, id: Parsed<String>) {
+    let id = match id {
+        Ok(id) => id,
+        Err(reason) => {
+            manager.lock().error(conn_id, reason);
+            return;
+        }
+    };
+    let stats = manager.lock().stats();
+    let Some(stats) = stats else {
+        manager.lock().stats_replay(conn_id, &id, None);
+        return;
+    };
+    match stats.replay_shared(&id).await {
+        Ok(replay) => manager.lock().stats_replay(conn_id, &id, replay),
+        Err(err) => {
+            warn!(%err, "stats read failed");
+            manager
+                .lock()
+                .error(conn_id, "The statistics are unavailable");
         }
     }
 }
@@ -313,6 +377,42 @@ mod tests {
             take_type(&mut guest_rx, "error").await["message"],
             "Wrong password"
         );
+    }
+
+    #[tokio::test]
+    async fn the_stats_page_is_told_the_numbers_or_that_there_are_none() {
+        let scrypt_slots = ScryptSlots::new(MAX_CONCURRENT_SCRYPTS);
+        let boards = Leaderboard::in_memory().await;
+        let ask = serde_json::json!({"type":"stats_overview"});
+
+        // Statistics off: an answer all the same, saying so.
+        let manager = Mutex::new(RoomManager::new());
+        let (tx, mut rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (slow, _) = tokio::sync::watch::channel(false);
+        manager
+            .lock()
+            .connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow);
+        let _ = take_type(&mut rx, "lobby_update").await;
+        route(&manager, &scrypt_slots, &boards, 1, &ask).await;
+        let off = take_type(&mut rx, "stats_overview").await;
+        assert_eq!(off["enabled"], false);
+
+        // Statistics on, nothing played yet: enabled, and empty.
+        let manager = Mutex::new(
+            RoomManager::new()
+                .with_stats(std::sync::Arc::new(crate::stats::Stats::in_memory().await)),
+        );
+        let (tx, mut rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (slow, _) = tokio::sync::watch::channel(false);
+        manager
+            .lock()
+            .connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow);
+        let _ = take_type(&mut rx, "lobby_update").await;
+        route(&manager, &scrypt_slots, &boards, 1, &ask).await;
+        let on = take_type(&mut rx, "stats_overview").await;
+        assert_eq!(on["enabled"], true);
+        assert_eq!(on["days"], serde_json::json!([]));
+        assert_eq!(on["games"], serde_json::json!([]));
     }
 
     #[tokio::test]

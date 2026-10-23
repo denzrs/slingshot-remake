@@ -11,6 +11,7 @@ import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../vo
 import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
 import { ShotLog } from '../shotLog';
+import { replayKey, RIDERS, type ReplayScript, type ReplayTurn } from './replay';
 import { Crowd } from './crowd';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField, type PlacementAim } from './powerup-field';
@@ -184,6 +185,8 @@ export interface MatchOptions {
   oracle?: boolean;
   /** Reproducible multi-round worlds, independent of planner random consumption. */
   seed?: number;
+  /** Fly a recorded match again: the seats do what the script says and nothing else (see `replay`). */
+  script?: ReplayScript;
   /** Finish CPU generators without a wall-clock budget, for deterministic simulation. */
   deterministicCpu?: boolean;
   /** Receives normal CPU planner decisions; console logging can also enable this path. */
@@ -285,6 +288,23 @@ export abstract class Match {
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
   private turnListeners: (() => void)[] = [];
+
+  // ————————————————————————————— Replay —————————————————————————————
+
+  /** The turns of a recorded match by round and turn, when this match flies one again. */
+  private scriptTurns: Map<string, ReplayTurn> | null = null;
+  /** Splits still to make in the flight on screen: whose, and the step of the flight they went off at. */
+  private pendingSplits: { player: number; at: number }[] = [];
+  /**
+   * How the replay stands: `finished` when the recording has run out, `drifted` when the game stopped doing
+   * what the recording says it did (a version that plays differently from the one that was recorded).
+   */
+  replayState: 'playing' | 'finished' | 'drifted' = 'playing';
+
+  /** Whether this match flies a recording instead of being played. */
+  get replaying(): boolean {
+    return this.scriptTurns !== null;
+  }
   protected simClock = 0;
   /** Power-ups: the pickups on the field, who holds what, and what each one does. */
   readonly power = new PowerUpField({
@@ -305,6 +325,7 @@ export abstract class Match {
     kinds: () => this.settings.powerUpKinds,
     amount: () => this.settings.powerUpAmount,
     emit: (event) => this.emit(event),
+    placed: (placement) => this.shotLog.placed(placement),
     clearCpuJobs: () => this.cpuJobs.clear(),
     record: (update) => this.record(update),
   });
@@ -317,6 +338,10 @@ export abstract class Match {
     this.matchSeed = options.seed ?? randomSeed();
     this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
     this.worldRng = createRng(this.matchSeed);
+    if (options.script) {
+      this.scriptTurns = new Map(options.script.turns.map((turn) => [replayKey(turn.round, turn.turn), turn]));
+      this.power.scripted = true;
+    }
   }
 
   abstract get rules(): ShotRules;
@@ -373,7 +398,7 @@ export abstract class Match {
   }
 
   get isHumanTurn(): boolean {
-    if (this.phase !== 'aiming' || this.current < 0 || this.revealing) return false;
+    if (this.replaying || this.phase !== 'aiming' || this.current < 0 || this.revealing) return false;
     const p = this.players[this.current];
     return !p.cpu && !p.locked;
   }
@@ -391,6 +416,8 @@ export abstract class Match {
   /** Whether a human may change this player's aim right now. */
   canAim(id: number): boolean {
     const p = this.players[id];
+    // Nobody aims in a replay: the recording does.
+    if (this.replaying) return false;
     return this.phase === 'aiming' && !this.revealing && this.current === id && !!p && !p.cpu && !p.locked;
   }
 
@@ -943,6 +970,7 @@ export abstract class Match {
     // The round's announcement holds everything still: no aiming, no CPU thinking, no shot clock.
     if (this.revealing) return;
     if (this.phase === 'flying') this.updateFlight(dt);
+    else if (this.scriptTurns) this.updateScripted(dt);
     else this.updatePhase(dt);
     if (this.phase === 'roundOver' && this.attract && this.phaseTime > 3) this.advance();
   }
@@ -965,6 +993,77 @@ export abstract class Match {
     });
   }
 
+  /** A replay presses the fire key of every shot that was split, at the step it was pressed at. */
+  private makeSplits(volley: Volley): void {
+    const due = this.pendingSplits.filter((split) => split.at <= volley.steps);
+    this.pendingSplits = this.pendingSplits.filter((split) => split.at > volley.steps);
+    for (const split of due) if (split.at < volley.steps || !this.power.splitInFlight(split.player)) this.replayState = 'drifted';
+  }
+
+  /** Between flights a replay does what the recording says, where a game waits for its players. */
+  private updateScripted(dt: number): void {
+    if (this.phase === 'roundOver') {
+      if (this.phaseTime > 3) this.advance();
+      return;
+    }
+    if (this.phase === 'gameOver') {
+      this.replayState = 'finished';
+      return;
+    }
+    // The killcams and the collapse of Event Horizon play as they do in a game.
+    if (this.phase !== 'aiming') return this.updatePhase(dt);
+    if (this.replayState !== 'playing') return;
+    // A Mayhem round is announced until somebody presses a key.
+    if (this.revealing) {
+      if (this.revealAge > 2.5) this.skipReveal();
+      return;
+    }
+    // A beat to see the field before the shots go off.
+    if (this.phaseTime < 1) return;
+    const turn = this.shotLog.turn + 1;
+    const recorded = this.scriptTurns!.get(replayKey(this.round, turn));
+    if (!recorded && !this.recordedBeyond(turn)) {
+      this.replayState = 'finished';
+      return;
+    }
+    this.playTurn(recorded ?? { round: this.round, turn, placements: [], shots: [] });
+  }
+
+  /** Whether the recording has a turn of this round after `turn`: a gap before it is a turn nobody shot in. */
+  private recordedBeyond(turn: number): boolean {
+    for (let later = turn + 1; later <= turn + 50; later++) if (this.scriptTurns!.has(replayKey(this.round, later))) return true;
+    return false;
+  }
+
+  /** Flies a turn of the recording, the way the mode flies its own. */
+  protected playTurn(_turn: ReplayTurn): void {
+    this.replayState = 'drifted';
+  }
+
+  /**
+   * Lays the turn's placements down and puts the shooters' aims in, as the recording has them, so the mode's own launch
+   * can take off from there. `who` are the ships that may shoot this turn. False when the match does not hold what the
+   * recording says it did (a rider armed that was never picked up).
+   */
+  protected stageTurn(turn: ReplayTurn, who: PlayerState[]): boolean {
+    let faithful = true;
+    for (const placement of turn.placements) faithful = this.power.placeLogged(placement) && faithful;
+    const shots = new Map(turn.shots.map((shot) => [shot.player, shot]));
+    for (const p of who) {
+      const shot = shots.get(p.id);
+      p.passed = !shot;
+      if (!shot) continue;
+      p.angle = shot.angle;
+      p.power = shot.power;
+      const rides = RIDERS.some((rider) => rider === p.powerUp);
+      if (rides) p.armed = shot.rider === p.powerUp;
+      else if (shot.rider) faithful = false;
+    }
+    this.pendingSplits = turn.shots.flatMap((shot) => (shot.splitAt === null ? [] : [{ player: shot.player, at: shot.splitAt }]));
+    if (!faithful) this.replayState = 'drifted';
+    return faithful;
+  }
+
   /** Long flights speed up so nobody waits for an orbit to decay. */
   private get flightSpeed(): number {
     const t = this.phaseTime;
@@ -976,6 +1075,7 @@ export abstract class Match {
     const volley = this.volley;
     this.simClock += dt * this.flightSpeed;
     while (this.simClock >= PHYSICS.DT && !volley.done) {
+      if (this.pendingSplits.length) this.makeSplits(volley);
       this.simClock -= PHYSICS.DT;
       for (const e of volley.step()) this.onVolleyEvent(volley, e, true);
       this.power.onStep(volley);
@@ -984,6 +1084,7 @@ export abstract class Match {
     this.flightDoneAt ??= this.phaseTime;
     if (this.phaseTime - this.flightDoneAt < this.afterVolleyDelay) return;
     this.recordFlights(volley);
+    this.shotLog.splits(volley.script);
     this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, fan: vs.fan, points: vs.trail, volley: this.volleyNumber, at: this.clock })));
     this.pruneTrails();
     this.volley = null;

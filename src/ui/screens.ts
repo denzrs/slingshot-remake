@@ -3,6 +3,7 @@ import { teamName, type Match, type Mode, type VersusMode } from '../game';
 import { oracleAwards } from '../game/oracle';
 import { fmtInt, fmtNum, LANGS, t, tn, type Key, type Lang } from '../i18n';
 import { rulesOf } from '../lobbyPrefs';
+import type { StatsReplay } from '../net';
 import { roundTitle } from '../mayhem';
 import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
@@ -12,6 +13,7 @@ import type { PowerUpKind } from '../powerups';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, freeSeat, MIN_SEATS, removeSeat, seatTeamsFor, teamCounts, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
+import { statsAvailable, statsScreen } from './stats';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
 import { modeIcon } from './mode-icons';
 import { groupTitle, RULE_GROUPS, ruleItems } from './rules';
@@ -30,6 +32,13 @@ export interface App {
   startDaily(): void;
   /** True while an online match is on screen. */
   readonly online: boolean;
+  /** True while a recorded game is being flown again. */
+  readonly replaying: boolean;
+  watchReplay(data: StatsReplay): void;
+  /** Fly the replay on screen again from the start. */
+  watchAgain(): void;
+  /** Back to the statistics, from a replay. */
+  leaveReplay(): void;
   openLobby(): void;
   /** Leave the online game (and its room) for the multiplayer lobby, still connected. */
   toLobby(): void;
@@ -155,6 +164,7 @@ export function titleScreen(app: App): Screen {
       return [
         { kind: 'action', label: t('title.local'), hint: t('title.local.hint'), primary: true, run: () => app.menu.push(() => localScreen(app)) },
         { kind: 'action', label: t('multiplayer.title'), hint: t('multiplayer.hint'), run: () => app.openLobby() },
+        ...(statsAvailable() ? [{ kind: 'action', label: t('stats.title'), hint: t('stats.hint'), run: () => app.menu.push(() => statsScreen(app)) } satisfies MenuItem] : []),
         { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
         { kind: 'action', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
         languageItem(app),
@@ -190,6 +200,18 @@ function localScreen(app: App): Screen {
 }
 
 export function pauseScreen(app: App): Screen {
+  if (app.replaying) {
+    return {
+      build: () => panel(t('replay.title'), null),
+      items: [
+        { kind: 'action', label: t('pause.resume'), primary: true, run: () => app.resume() },
+        { kind: 'action', label: t('replay.again'), run: () => app.watchAgain() },
+        { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
+        { kind: 'action', label: t('replay.back'), run: () => app.leaveReplay() },
+      ],
+      onEscape: () => app.resume(),
+    };
+  }
   const daily = app.mode === 'challenge';
   const mode = app.mode === 'classic' || app.mode === 'horizon' ? app.mode : null;
   return {
@@ -781,15 +803,20 @@ export function gameOverScreen(app: App, match: Match): Screen {
         ),
       );
     },
-    items: [
-      match.canAdvance
-        ? { kind: 'action', label: t('over.rematch'), primary: true, run: () => app.rematch() }
-        : { kind: 'action', label: t('over.rematch'), hint: t('over.hostRematch'), disabled: true, run: () => {} },
-      app.online
-        ? { kind: 'action', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
-        : { kind: 'action', label: t('common.mainMenu'), run: () => app.toTitle() },
-    ],
-    onEscape: () => (app.online ? app.toLobby() : app.toTitle()),
+    items: match.replaying
+      ? [
+          { kind: 'action', label: t('replay.again'), primary: true, run: () => app.watchAgain() },
+          { kind: 'action', label: t('replay.back'), run: () => app.leaveReplay() },
+        ]
+      : [
+          match.canAdvance
+            ? { kind: 'action', label: t('over.rematch'), primary: true, run: () => app.rematch() }
+            : { kind: 'action', label: t('over.rematch'), hint: t('over.hostRematch'), disabled: true, run: () => {} },
+          app.online
+            ? { kind: 'action', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
+            : { kind: 'action', label: t('common.mainMenu'), run: () => app.toTitle() },
+        ],
+    onEscape: () => (match.replaying ? app.leaveReplay() : app.online ? app.toLobby() : app.toTitle()),
   };
 }
 

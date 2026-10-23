@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tracing::{info, warn};
-use turso::{Builder, Connection, Database};
+use turso::{Connection, Database};
 
 use crate::pseudonym::Pseudonyms;
 
@@ -86,13 +86,11 @@ pub struct Leaderboard {
 }
 
 impl Leaderboard {
-    /// Open (or create) the board file. A board that cannot be opened is a deployment error, not
-    /// something to run without.
-    pub async fn open(path: &str, keep_days: i64) -> turso::Result<Self> {
-        let database = Builder::new_local(path).build().await?;
+    /// Open the board in the relay's database, creating its table. A board that cannot be opened is
+    /// a deployment error, not something to run without.
+    pub async fn open(database: &Database, keep_days: i64) -> turso::Result<Self> {
+        let database = database.clone();
         let conn = database.connect()?;
-        // The relay is the only writer; WAL keeps a board read off the writer's back.
-        let _ = conn.pragma_update("journal_mode", "WAL").await?;
         conn.execute("PRAGMA synchronous = NORMAL", ()).await?;
         conn.busy_timeout(Duration::from_secs(2))?;
         conn.execute(SCHEMA, ()).await?;
@@ -108,7 +106,10 @@ impl Leaderboard {
     /// A board in memory, for the relay's own tests: they have no business writing files.
     #[cfg(test)]
     pub async fn in_memory() -> Self {
-        Self::open(":memory:", DEFAULT_KEEP_DAYS)
+        let database = crate::db::open(":memory:")
+            .await
+            .expect("an in-memory database opens");
+        Self::open(&database, DEFAULT_KEEP_DAYS)
             .await
             .expect("an in-memory board opens")
     }

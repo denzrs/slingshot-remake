@@ -4,7 +4,8 @@
  */
 import type { ShotEnd } from './physics';
 import type { PowerUpKind } from './powerups';
-import type { VolleyAim, VolleyShot } from './volley';
+import { RIDERS, type ReplayPlacement, type Rider } from './game/replay';
+import type { VolleyAim, VolleyScript, VolleyShot } from './volley';
 
 /** How a shot ended: on a ship, a planet or a black hole, shot down by a defense, against another shot, off the field or out of time. */
 export type ShotResolution = ShotEnd['kind'];
@@ -13,7 +14,7 @@ export type ShotResolution = ShotEnd['kind'];
 export type HitKind = 'enemy' | 'self' | 'friendly';
 
 /** The power-ups that ride on a single shot; the others are placed, or wait for a hit. */
-const RIDES: readonly PowerUpKind[] = ['preview', 'piercing', 'plasma'];
+const RIDES: readonly PowerUpKind[] = RIDERS;
 
 export interface ShotRecord {
   /** Order of launch within the round, from 1. */
@@ -25,8 +26,14 @@ export interface ShotRecord {
   angle: number;
   power: number;
   powerUp: PowerUpKind | null;
+  /** What was armed when the shot was fired: unlike `powerUp` it stays that when the shot is split on the way. Null for a fork. */
+  rider: Rider | null;
   /** One of the extra shots of a splitter, not the one that was aimed. */
   fork: boolean;
+  /** The splitter fan the shot belongs to (the shot that was split and its forks share it), unique within the turn. Null for a shot that was never split. */
+  fan: number | null;
+  /** The physics step of the flight at which the splitter went off, the same for the whole fan. A replay splits the shot at this step. Null for a shot that was never split. */
+  splitAt: number | null;
   /** Null while the shot is still flying. */
   resolution: ShotResolution | null;
   /** Ships the shot took out (an armor-piercing one can take several), and the first of them. */
@@ -39,6 +46,8 @@ export interface ShotRecord {
 
 export class ShotLog {
   shots: ShotRecord[] = [];
+  /** The placements of the round, each with the turn it is made before (the one that has not been launched yet). */
+  placements: (ReplayPlacement & { turn: number })[] = [];
   /** Volleys launched so far this round. */
   turn = 0;
   private bySource = new WeakMap<VolleyShot, ShotRecord>();
@@ -46,6 +55,7 @@ export class ShotLog {
 
   reset(): void {
     this.shots = [];
+    this.placements = [];
     this.turn = 0;
     this.bySource = new WeakMap();
     this.carried.clear();
@@ -74,15 +84,36 @@ export class ShotLog {
       const parent = [...this.shots].reverse().find((s) => s.player === vs.owner && !s.fork);
       record = this.add(vs, parent?.angle ?? 0, parent?.power ?? 0, true, null);
     }
-    if (vs.fan !== undefined) record.powerUp = 'splitter';
+    if (vs.fan !== undefined) {
+      record.powerUp = 'splitter';
+      record.fan = vs.fan;
+    }
     return record;
   }
 
+  /** The splits a flight made, from its script: when each fan was split, put on the shots of the turn that has just been flown. */
+  splits(script: readonly VolleyScript[]): void {
+    for (const entry of script) {
+      if (entry.kind !== 'split') continue;
+      for (const record of this.ofTurn()) if (record.fan === entry.fan) record.splitAt = entry.at;
+    }
+  }
+
   private add(vs: VolleyShot, angle: number, power: number, fork: boolean, powerUp: PowerUpKind | null): ShotRecord {
-    const record: ShotRecord = { n: this.shots.length + 1, turn: this.turn, player: vs.owner, angle, power, powerUp, fork, resolution: null, hits: 0, hitSeat: null, hitKind: null, points: 0 };
+    const record: ShotRecord = { n: this.shots.length + 1, turn: this.turn, player: vs.owner, angle, power, powerUp, rider: RIDERS.find((r) => r === powerUp) ?? null, fork, fan: null, splitAt: null, resolution: null, hits: 0, hitSeat: null, hitKind: null, points: 0 };
     this.shots.push(record);
     this.bySource.set(vs, record);
     return record;
+  }
+
+  /** A power-up was laid on the field: it belongs to the turn that is being aimed. */
+  placed(placement: ReplayPlacement): void {
+    this.placements.push({ ...placement, turn: this.turn + 1 });
+  }
+
+  /** The placements made for the turn that has just been flown. */
+  placementsOfTurn(): ReplayPlacement[] {
+    return this.placements.filter((p) => p.turn === this.turn).map(({ turn: _turn, ...placement }) => placement);
   }
 
   /** The shots of the turn that has just been flown. */

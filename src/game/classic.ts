@@ -6,6 +6,7 @@ import { Volley, type VolleyShot } from '../volley';
 import { Match, type RoundTitle } from './match';
 import type { Pickup } from '../powerups';
 import type { PowerUpState } from './powerup-field';
+import type { ReplayTurn } from './replay';
 import type { CrowdSeat } from './crowd';
 import type { OracleSnapshot } from './oracle';
 
@@ -154,6 +155,7 @@ export class ClassicMatch extends Match {
 
   /** Online salvos have no turns: everyone who hasn't locked in may aim. */
   canAim(id: number): boolean {
+    if (this.replaying) return false;
     if (!(this.salvo && this.simultaneous)) return super.canAim(id);
     const p = this.players[id];
     return this.phase === 'aiming' && !!p && p.alive && !p.cpu && !p.locked;
@@ -324,6 +326,20 @@ export class ClassicMatch extends Match {
       if (this.planClock <= 0) this.commit();
     }
     if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6 && this.betWindowDone) this.launchVolley();
+  }
+
+  protected playTurn(turn: ReplayTurn): void {
+    if (this.salvo) {
+      if (this.stageTurn(turn, this.alive)) this.launchVolley();
+      return;
+    }
+    // One ship's turn: the recording has a shot of theirs or none.
+    const p = this.players[this.current];
+    if (turn.shots.some((shot) => shot.player !== p.id)) {
+      this.replayState = 'drifted';
+      return;
+    }
+    if (this.stageTurn(turn, [p])) this.fire();
   }
 
   private launchVolley(): void {

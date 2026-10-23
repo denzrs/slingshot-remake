@@ -3,6 +3,7 @@ import { t } from '../i18n';
 import { cloneWorld, type ShotRules, type StyleKind, type World } from '../physics';
 import { POWER_UP, type Pickup } from '../powerups';
 import type { PowerUpState } from './powerup-field';
+import type { ReplayTurn } from './replay';
 import { scoreHorizonKill } from '../scoring';
 import { shotSource, Volley, type VolleyAim, type VolleyScript, type VolleyShot, type VolleySnapshot } from '../volley';
 import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene } from './match';
@@ -218,6 +219,7 @@ export class HorizonMatch extends Match {
 
   /** Everyone who hasn't locked in may aim when all aim at once; otherwise only the player on turn. */
   canAim(id: number): boolean {
+    if (this.replaying) return false;
     if (!this.simultaneous) return super.canAim(id);
     const p = this.players[id];
     return this.phase === 'aiming' && !this.revealing && !!p && p.alive && !p.cpu && !p.locked;
@@ -424,6 +426,10 @@ export class HorizonMatch extends Match {
       if (this.clock_ <= 0) this.commit();
     }
     if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6 && this.betWindowDone) this.launchVolley();
+  }
+
+  protected playTurn(turn: ReplayTurn): void {
+    if (this.stageTurn(turn, this.alive)) this.launchVolley();
   }
 
   private launchVolley(): void {

@@ -33,6 +33,10 @@ import { lobbyScreen } from './ui/lobby';
 import { TouchControls } from './ui/touch-controls';
 import { TouchStick } from './ui/touch-stick';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
+import { statsAvailable, statsScreen } from './ui/stats';
+import { reportLocalGame, trackLocalGame } from './localStats';
+import { netMatch } from './netMatch';
+import type { StatsReplay } from './net';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
@@ -63,6 +67,8 @@ const attract = createMatch(
   { attract: true, seats: ['medium', 'medium', 'medium', 'medium', 'off', 'off'] },
 );
 let match: Match | null = null;
+/** The game on screen when it is a replay, to watch it again. */
+let lastReplay: StatsReplay | null = null;
 let screen: 'title' | 'play' = 'title';
 let lastMode: VersusMode = 'classic';
 let lastMayhem = false;
@@ -252,6 +258,8 @@ const online = (): MultiplayerSession | null => (session?.match ? session : null
 
 /** Route a player input: online it goes through the session, offline straight to the match. */
 function dispatchInput(input: ClientInput): void {
+  // Nobody plays a replay.
+  if (match?.replaying) return;
   const net = online();
   if (net) return net.input(input);
   if (!match) return;
@@ -303,7 +311,10 @@ const app: App = {
     match?.dispose();
     // Mayhem is a game of its own: it plays by its two rules over the plain ones, whatever the other setups say.
     const rules = cloneSettings(settings);
-    match = createMatch(mode, mayhem ? { ...rules, ...mayhemRules(rules, mode) } : { ...rules, mayhem: 0 });
+    const played = mayhem ? { ...rules, ...mayhemRules(rules, mode) } : { ...rules, mayhem: 0 };
+    match = createMatch(mode, played);
+    // Where there is a relay, a game played here to its end is told to it, for its statistics.
+    if (statsAvailable()) trackLocalGame(match, played, (report) => void reportLocalGame(report));
     wire(match);
     screen = 'play';
     effects.clear();
@@ -344,6 +355,31 @@ const app: App = {
     match.newMatch();
     menu.close();
   },
+  get replaying() {
+    return screen === 'play' && !!match?.replaying;
+  },
+  watchReplay(data) {
+    const replay = netMatch({ ...data, players: data.seats }, settings, { script: { turns: data.turns } });
+    if (!replay) return;
+    lastReplay = data;
+    match?.dispose();
+    match = replay;
+    wire(match);
+    screen = 'play';
+    effects.clear();
+    menu.close();
+  },
+  watchAgain() {
+    if (lastReplay) app.watchReplay(lastReplay);
+  },
+  leaveReplay() {
+    match?.dispose();
+    match = null;
+    screen = 'title';
+    effects.clear();
+    menu.open(() => titleScreen(app));
+    menu.push(() => statsScreen(app));
+  },
   toTitle() {
     session?.disconnect();
     match?.dispose();
@@ -368,6 +404,11 @@ function saveClip(): void {
 /** Enter / Space / the touch button: fire or lock in, continue, or skip the killcam. */
 function primaryAction(): void {
   if (!match) return;
+  // A replay only goes on past the round's end and the killcams.
+  if (match.replaying) {
+    if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
+    return;
+  }
   if (online() && match.phase === 'gameOver') app.rematch();
   // The announcement of a Mayhem round: the fire key skips it.
   else if (match.revealing) {
@@ -752,8 +793,8 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 
-if (import.meta.env.DEV) {
-  // Handle for poking at the running game from the dev console.
+if (import.meta.env.DEV || import.meta.env.VITE_BENCH) {
+  // Handle for poking at the running game from the dev console, and for the browser benchmark (a build made with VITE_BENCH set).
   Object.assign(window, { slingshot: { app, attract, settings, get match() { return match; } } });
 }
 

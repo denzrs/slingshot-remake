@@ -1,14 +1,13 @@
-import { MAX_PLAYERS } from './config';
-import { ClassicMatch, createMatch, HorizonMatch, type GameEvent } from './game';
+import type { GameEvent } from './game';
 import type { ClassicSnapshot } from './game/classic';
 import type { HorizonSnapshot } from './game/horizon';
 import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkCpuLevel, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules, type ServerMessage } from './net';
-import { defaultRoomRules } from './lobbyPrefs';
 import type { RoomLook } from './roomLook';
 import type { Avatar } from './avatars';
 import { roundReport, turnReport } from './roundReport';
 import { SnapshotDecoder, SnapshotEncoder } from './netsync';
-import type { Seat, Settings } from './settings';
+import { netMatch, type NetMatch } from './netMatch';
+import type { Settings } from './settings';
 
 /** One line of the room's chat. A `system` line is something the relay said back to this client ("you are writing too fast"). */
 export interface ChatLine {
@@ -22,7 +21,7 @@ export interface ChatLine {
 /** The most lines the chat keeps. */
 const CHAT_KEEP = 100;
 
-export type NetMatch = ClassicMatch | HorizonMatch;
+export type { NetMatch };
 
 type GameStart = Extract<ServerMessage, { type: 'game_start' }>;
 
@@ -51,7 +50,7 @@ interface CreateRoomOptions {
   avatar?: Avatar;
 }
 
-export const DEFAULT_SERVER: string = String(import.meta.env.VITE_MULTIPLAYER_SERVER || 'ws://localhost:8080');
+export const DEFAULT_SERVER: string = String(import.meta.env?.VITE_MULTIPLAYER_SERVER || 'ws://localhost:8080');
 
 /** Whether an address is a secure relay (`wss://`): the hosted one, which the build connects to on its own. */
 export function isSecureRelay(address: string): boolean {
@@ -375,28 +374,8 @@ export class MultiplayerSession {
   }
 
   private startMatch(message: GameStart): void {
-    const base = this.hooks.settings();
-    // A CPU seat plays the level the host gave it; the host's simulation runs it for everybody.
-    const seats: Seat[] = Array.from({ length: MAX_PLAYERS }, (_, i) => (i < message.players.length ? (message.players[i].cpu ?? 'human') : 'off'));
-    // The room's rules decide, not whatever this player has set up for offline games: from this device only
-    // the display settings (lines, particles, sound, language) carry over.
-    const settings: Settings = {
-      ...base,
-      ...defaultRoomRules(),
-      ...message.rules,
-      seats,
-      seatTeams: [...base.seatTeams],
-      teamMode: message.mode === 'team' ? 2 : 0,
-    };
-    const match = createMatch(message.gameMode, settings, {
-      seats,
-      names: message.players.map((p) => p.name),
-      avatars: message.players.map((p) => p.avatar),
-      teams: message.mode === 'team' ? message.players.map((p) => p.team) : undefined,
-      simultaneous: message.gameMode === 'horizon' || settings.simultaneousShots,
-      oracle: true,
-    });
-    if (!(match instanceof ClassicMatch || match instanceof HorizonMatch)) return;
+    const match = netMatch({ ...message, players: message.players.map((p) => ({ cpu: p.cpu, team: p.team, name: p.name, avatar: p.avatar })) }, this.hooks.settings(), { oracle: true });
+    if (!match) return;
     // In the stands there is no ship to be: the match is seen from nowhere in particular.
     match.viewer = this.isSpectator ? null : this.you.playerId;
     match.spectatorId = this.isSpectator ? (this.you.spectatorId ?? null) : null;

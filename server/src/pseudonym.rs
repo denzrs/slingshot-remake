@@ -27,3 +27,40 @@ impl Pseudonyms {
         format!("{:016x}", hasher.finish())
     }
 }
+
+/// Telling the people in the match statistics apart for as long as the statistics are kept: a
+/// player is a keyed hash of their address and the name they play under, so the same person is the
+/// same player on every day and after every restart, and two people behind one address are two
+/// players. The key is a random salt that the database keeps (see `stats`), so the hash cannot be
+/// worked out from a list of addresses and names without it. Not the board's key: the board's
+/// rows carry a name, and sharing a hash with it would tie that name to these rows.
+pub struct Identities {
+    salt: Vec<u8>,
+}
+
+impl Identities {
+    pub fn new(salt: Vec<u8>) -> Self {
+        Self { salt }
+    }
+
+    /// A fresh salt: 32 random bytes.
+    pub fn new_salt() -> Vec<u8> {
+        use rand::Rng;
+        rand::thread_rng().gen::<[u8; 32]>().to_vec()
+    }
+
+    /// Who this name is at this address: 16 hex digits.
+    pub fn player(&self, ip: IpAddr, name: &str) -> String {
+        use hmac::{Hmac, Mac};
+        let mut mac =
+            Hmac::<sha2::Sha256>::new_from_slice(&self.salt).expect("HMAC takes a key of any size");
+        mac.update(ip.to_string().as_bytes());
+        // The address holds no NUL, so where it ends and the name begins is never in doubt.
+        mac.update(&[0]);
+        mac.update(name.as_bytes());
+        mac.finalize().into_bytes()[..8]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+}

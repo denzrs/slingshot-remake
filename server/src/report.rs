@@ -6,7 +6,8 @@ use std::ops::RangeInclusive;
 
 use serde_json::Value;
 
-use crate::protocol::{is_record, is_safe_integer, POWER_UP_KINDS};
+use crate::protocol::{is_record, is_safe_integer, parse_rules, RoomRules, POWER_UP_KINDS};
+use crate::wire::{CpuLevel, GameMode, RoomMode, Wire};
 
 /// A room never seats more than this many ships.
 pub const MAX_SEATS: usize = 6;
@@ -34,6 +35,18 @@ pub const RECORD_KEYS: [&str; 5] = [
 const RESOLUTIONS: [&str; 7] = [
     "ship", "planet", "hole", "shotdown", "clash", "lost", "timeout",
 ];
+/// The power-ups that ride on one shot.
+const RIDERS: [&str; 3] = ["preview", "piercing", "plasma"];
+/// The power-ups that are laid on the field, as a placement names them.
+const PLACEMENT_KINDS: [&str; 7] = [
+    "teleport",
+    "blackhole",
+    "planetkiller",
+    "nebula",
+    "wormhole",
+    "defense",
+    "antigravity",
+];
 const HIT_KINDS: [&str; 3] = ["enemy", "self", "friendly"];
 /// Shots in one round beyond which a report is not believed (six ships, a long round, splitters).
 const MAX_SHOTS: usize = 500;
@@ -43,6 +56,8 @@ const MAX_COUNT: i64 = 10_000;
 const MAX_SCORE: i64 = 10_000_000;
 /// A round that has run this long (an hour) is not one.
 const MAX_SECONDS: f64 = 3600.0;
+/// Physics steps in one flight; the longest takes far fewer.
+const MAX_STEP: i64 = 1_000_000;
 const MAX_PLANETS: i64 = 64;
 const MAX_ROUND: i64 = 1000;
 /// Turns in one round; a long endless round is still far from it.
@@ -74,6 +89,14 @@ pub struct ShotRound {
     pub power: f64,
     pub power_up: Option<&'static str>,
     pub fork: bool,
+    /// What was armed when the shot was fired (a preview, armor piercing or plasma), unlike `power_up` it
+    /// stays that when the shot is split on the way; None for a fork.
+    pub rider: Option<&'static str>,
+    /// The splitter fan the shot belongs to (the shot that was split and its forks share it); None
+    /// for a shot that was never split. Unique within a turn.
+    pub fan: Option<i64>,
+    /// The physics step of the flight at which the splitter went off, the same for the whole fan.
+    pub split_at: Option<i64>,
     /// None for a shot still in the air when the round ended.
     pub resolution: Option<&'static str>,
     pub hits: i64,
@@ -108,6 +131,14 @@ fn int(value: Option<&Value>, range: RangeInclusive<i64>) -> Option<i64> {
         .as_i64()
         .or_else(|| value.as_f64().map(|f| f as i64))?;
     range.contains(&n).then_some(n)
+}
+
+/// An optional integer: absent or null is nothing, anything else has to be in range.
+fn optional_int(value: Option<&Value>, range: RangeInclusive<i64>) -> Option<Option<i64>> {
+    match value {
+        None | Some(Value::Null) => Some(None),
+        some => int(some, range).map(Some),
+    }
 }
 
 fn real(value: Option<&Value>, max: f64) -> Option<f64> {
@@ -148,6 +179,9 @@ fn parse_shot(value: &Value, seats: usize, turn: i64) -> Option<ShotRound> {
         power: real(value.get("power"), 100.0)?,
         power_up: choice(value.get("powerUp"), &POWER_UP_KINDS)?,
         fork: value.get("fork")?.as_bool()?,
+        rider: choice(value.get("rider"), &RIDERS)?,
+        fan: optional_int(value.get("fan"), 0..=MAX_COUNT)?,
+        split_at: optional_int(value.get("splitAt"), 0..=MAX_STEP)?,
         resolution: choice(value.get("resolution"), &RESOLUTIONS)?,
         hits: int(value.get("hits"), 0..=MAX_SEATS as i64)?,
         hit_seat: seat(value.get("hitSeat"), seats)?,
@@ -223,6 +257,42 @@ pub struct SeatTurn {
     pub alive: bool,
 }
 
+/// A power-up laid on the field before a turn's shots (see `game/replay.ts` on the client).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlacementReport {
+    pub seat: usize,
+    pub kind: &'static str,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    /// A wormhole's second mouth.
+    pub x2: Option<f64>,
+    pub y2: Option<f64>,
+    /// The planet it went to, as its place in the world's list; -1 for a planet killer that found its planet gone.
+    pub planet: Option<i64>,
+}
+
+/// Placements in one turn: every ship may lay one, and a salvo's rescue teleports add a few.
+const MAX_PLACEMENTS: usize = 64;
+
+fn parse_placement(value: &Value, seats: usize) -> Option<PlacementReport> {
+    if !is_record(value) {
+        return None;
+    }
+    let coordinate = |key: &str| match value.get(key) {
+        None | Some(Value::Null) => Some(None),
+        some => real(some, MAX_RECORD).map(Some),
+    };
+    Some(PlacementReport {
+        seat: seat(value.get("player"), seats)??,
+        kind: choice(value.get("kind"), &PLACEMENT_KINDS)??,
+        x: coordinate("x")?,
+        y: coordinate("y")?,
+        x2: coordinate("x2")?,
+        y2: coordinate("y2")?,
+        planet: optional_int(value.get("planet"), -1..=MAX_PLANETS)?,
+    })
+}
+
 /// The shots of one turn (a volley) and where the scores stand after them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TurnReport {
@@ -230,6 +300,9 @@ pub struct TurnReport {
     pub turn: i64,
     pub seats: Vec<SeatTurn>,
     pub shots: Vec<ShotRound>,
+    /// The power-ups laid on the field before the shots; None from a client that does not say, whose
+    /// game cannot be flown again.
+    pub placements: Option<Vec<PlacementReport>>,
 }
 
 /// A `turn_stats`, or None when anything in it will not do.
@@ -257,11 +330,91 @@ pub fn parse_turn_report(value: &Value) -> Option<TurnReport> {
         .iter()
         .map(|shot| parse_shot(shot, seats.len(), turn))
         .collect::<Option<_>>()?;
+    let placements = match value.get("placements") {
+        None | Some(Value::Null) => None,
+        Some(list) => Some(
+            list.as_array()
+                .filter(|list| list.len() <= MAX_PLACEMENTS)?
+                .iter()
+                .map(|placement| parse_placement(placement, seats.len()))
+                .collect::<Option<Vec<_>>>()?,
+        ),
+    };
     Some(TurnReport {
         round: int(value.get("round"), 1..=MAX_ROUND)?,
         turn,
         seats,
         shots,
+        placements,
+    })
+}
+
+/// A game played on one device, reported when it is over: no turns and no shots, so nothing to fly again.
+#[derive(Clone, Debug)]
+pub struct LocalGame {
+    pub game_mode: GameMode,
+    pub mode: RoomMode,
+    pub rules: RoomRules,
+    /// Who sat where: a CPU's level, or None for a person; the team in team games.
+    pub seats: Vec<(Option<CpuLevel>, Option<u8>)>,
+    pub rounds: Vec<RoundReport>,
+}
+
+/// Rounds of one local game beyond which a report is not believed.
+const MAX_LOCAL_ROUNDS: usize = 99;
+
+/// A `local_game`, or None when anything in it will not do.
+pub fn parse_local_game(value: &Value) -> Option<LocalGame> {
+    if !is_record(value) {
+        return None;
+    }
+    let game_mode = value
+        .get("gameMode")
+        .and_then(Value::as_str)
+        .and_then(GameMode::parse)?;
+    let mode = value
+        .get("mode")
+        .and_then(Value::as_str)
+        .and_then(RoomMode::parse)?;
+    let rules = parse_rules(value.get("rules")?)?;
+    let seats = value
+        .get("seats")?
+        .as_array()
+        .filter(|list| (2..=MAX_SEATS).contains(&list.len()))?
+        .iter()
+        .map(|seat| {
+            if !is_record(seat) {
+                return None;
+            }
+            let cpu = match seat.get("cpu") {
+                None | Some(Value::Null) => None,
+                some => Some(some.and_then(Value::as_str).and_then(CpuLevel::parse)?),
+            };
+            let team = match seat.get("team") {
+                None | Some(Value::Null) => None,
+                some => Some(int(some, 0..=1)? as u8),
+            };
+            Some((cpu, team))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let rounds = value
+        .get("rounds")?
+        .as_array()
+        .filter(|list| (1..=MAX_LOCAL_ROUNDS).contains(&list.len()))?
+        .iter()
+        .map(parse_round_report)
+        .collect::<Option<Vec<_>>>()?;
+    // The rounds count up from 1, and every one has a ship for every seat.
+    let in_order = rounds
+        .iter()
+        .enumerate()
+        .all(|(i, round)| round.round == i as i64 + 1 && round.seats.len() == seats.len());
+    in_order.then_some(LocalGame {
+        game_mode,
+        mode,
+        rules,
+        seats,
+        rounds,
     })
 }
 
@@ -285,6 +438,41 @@ mod tests {
             ],
             "records": {"bestHit": {"player": 1, "value": 250.5}},
         })
+    }
+
+    #[test]
+    fn a_local_game_has_rounds_in_order_for_every_seat_and_rules_that_will_do() {
+        let rules = json!({
+            "rounds":2,"maxPlanets":4,"invisiblePlanets":false,"bounce":true,
+            "fixedPower":false,"fixedPowerLevel":55,"maxPower":100,"shotTime":20,
+            "styleBonuses":false,"neighborGrace":0,"simultaneousShots":false,
+            "hiddenAim":false,"fadingTrails":0,"mayhem":0,"betting":false,
+            "chatPlayersOnly":false,"powerUps":false,"powerUpKinds":["teleport"],"powerUpAmount":2
+        });
+        let mut round_two = sample();
+        round_two["round"] = json!(2);
+        let game = |rounds: Vec<Value>| {
+            json!({
+                "gameMode": "classic", "mode": "ffa", "rules": rules,
+                "seats": [{"cpu": null, "team": null}, {"cpu": "hard", "team": null}],
+                "rounds": rounds,
+            })
+        };
+        let mut first = sample();
+        first["round"] = json!(1);
+        let parsed =
+            parse_local_game(&game(vec![first.clone(), round_two.clone()])).expect("a whole game");
+        assert_eq!(parsed.rounds.len(), 2);
+        assert_eq!(parsed.seats[1].0.map(|level| level.as_str()), Some("hard"));
+        // Out of order, a seat short, nothing played, or rules that will not do.
+        assert!(parse_local_game(&game(vec![round_two.clone(), first.clone()])).is_none());
+        assert!(parse_local_game(&game(vec![])).is_none());
+        let mut short = first.clone();
+        short["players"] = json!([short["players"][0].clone()]);
+        assert!(parse_local_game(&game(vec![short])).is_none());
+        let mut bad = game(vec![first]);
+        bad["rules"]["rounds"] = json!(1000);
+        assert!(parse_local_game(&bad).is_none());
     }
 
     #[test]

@@ -27,7 +27,7 @@ use crate::auth::Hashed;
 use crate::codec::Outbound;
 use crate::command::RoomCommand;
 use crate::leaderboard::Board;
-use crate::stats::Stats;
+use crate::stats::{Overview, Stats};
 
 use connections::Connections;
 use model::*;
@@ -175,6 +175,40 @@ impl RoomManager {
                 "entries": board.entries.iter().map(entry).collect::<Vec<_>>(),
                 "you": board.you.as_ref().map(entry),
             }),
+        );
+    }
+
+    /// The statistics, to await outside the room lock.
+    pub fn stats(&self) -> Option<Arc<Stats>> {
+        self.stats.clone()
+    }
+
+    /// The stats page's numbers as they go on the wire; `None` when the relay keeps no statistics.
+    pub fn stats_overview(&mut self, conn: u64, overview: Option<&Overview>) {
+        let value = match overview {
+            None => json!({ "type": "stats_overview", "enabled": false, "days": [], "games": [] }),
+            Some(overview) => json!({
+                "type": "stats_overview",
+                "enabled": true,
+                "days": overview.days.iter().map(|d| json!({
+                    "day": d.day, "rounds": d.rounds, "players": d.players, "points": d.points,
+                })).collect::<Vec<_>>(),
+                "games": overview.games.iter().map(|g| json!({
+                    "id": g.id, "at": g.at, "gameMode": g.game_mode, "mode": g.mode,
+                    "humans": g.humans, "cpus": g.cpus, "rounds": g.rounds, "points": g.points,
+                    "replay": g.replay,
+                    "local": g.local,
+                })).collect::<Vec<_>>(),
+            }),
+        };
+        self.send_value(conn, &value);
+    }
+
+    /// One game as the client flies it again; `None` when there is no such game, or not the whole of it.
+    pub fn stats_replay(&mut self, conn: u64, id: &str, replay: Option<Value>) {
+        self.send_value(
+            conn,
+            &json!({ "type": "stats_replay", "id": id, "replay": replay }),
         );
     }
 

@@ -4,6 +4,7 @@
  * the daily board does, and keeps it for a week.
  */
 import type { RoundTitle } from './game/match';
+import type { ReplayPlacement } from './game/replay';
 import type { ShotRecord } from './shotLog';
 import type { Best, StatBook } from './stats';
 
@@ -54,14 +55,16 @@ export interface TurnReport {
   /** 1 for the first turn of the round. */
   turn: number;
   players: { score: number; alive: boolean }[];
-  /** The line of each shot, its numbers rounded to what is worth keeping. */
+  /** The line of each shot: its aim exactly as aimed. */
   shots: ShotRecord[];
+  /** The power-ups laid on the field before the turn's shots, in the order they were made. */
+  placements: ReplayPlacement[];
 }
 
 export interface TurnSource {
   round: number;
   players: readonly { score: number; alive: boolean }[];
-  shotLog: { turn: number; ofTurn(): ShotRecord[] };
+  shotLog: { turn: number; ofTurn(): ShotRecord[]; placementsOfTurn(): ReplayPlacement[] };
 }
 
 export function turnReport(match: TurnSource): TurnReport {
@@ -69,7 +72,9 @@ export function turnReport(match: TurnSource): TurnReport {
     round: match.round,
     turn: match.shotLog.turn,
     players: match.players.map((p) => ({ score: Math.round(p.score), alive: p.alive })),
-    shots: match.shotLog.ofTurn().map((s) => ({ ...s, angle: Math.round(s.angle * 100) / 100, power: round1(s.power), points: Math.round(s.points) })),
+    // The aim goes as it was aimed, to the last decimal: a replay has to fly the same flight.
+    shots: match.shotLog.ofTurn().map((s) => ({ ...s, points: Math.round(s.points) })),
+    placements: match.shotLog.placementsOfTurn(),
   };
 }
 
