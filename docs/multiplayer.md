@@ -2,6 +2,12 @@
 
 How online games work for the players, and how to run and host the relay they connect through. The game itself is described in [game.md](game.md).
 
+## Skipping a round
+
+A round that has gone nowhere can be skipped by vote. Only the **host** may call it (*Vote to skip round* in the menu, or **N**); the call is the host's own yes. Everybody at the table, the host included, then answers with **Y** / **N**, or with the buttons that come up on a touch screen. More than half of the people (CPUs have no vote) have to say yes within 20 seconds; if too many say no, or time runs out, play goes on. A skipped round ends at once with the title *Round skipped*: **nobody scores in it** – every ship goes back to the points it had when the round began, bets on the round are returned, and oracle points and honours from the skipped round are discarded – and the match goes on with the next round (or the final screen after the last one). A skipped round still counts towards the number of rounds, and the host reports it to the relay's statistics like any round, under the title `skipped` (with the scores it ended on, and only the turns that were really flown: a volley still in the air is dropped). A replay of such a game ends that round after its last recorded turn, because the relay hands the client the list of skipped rounds along with the turns.
+
+Offline there is no vote: the player skips on their own (*Skip round* in the pause menu, or **N** twice).
+
 ## Playing online
 
 In the client, open **Multiplayer**, connect to the relay address (default `ws://localhost:8080`), then create or join a room.

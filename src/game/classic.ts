@@ -3,7 +3,7 @@ import { scoreChallengeHit } from '../scoring';
 import { AIM, COLORS, HORIZON, SCORING } from '../config';
 import { t } from '../i18n';
 import { Volley, type VolleyShot } from '../volley';
-import { Match, type RoundTitle } from './match';
+import { Match, type RoundTitle, type SkipVote } from './match';
 import type { Pickup } from '../powerups';
 import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
@@ -40,6 +40,7 @@ export interface ClassicSnapshot {
   roundStats: Match['roundStats'];
   matchStats: Match['matchStats'];
   scoreHistory: number[][];
+  skipVote?: SkipVote | null;
   /** Simultaneous shots: seconds left to aim. */
   planClock: number;
   /** Phase time when a finished volley began waiting for its post-flight delay. */
@@ -87,6 +88,7 @@ export class ClassicMatch extends Match {
       roundStats: this.roundStats,
       matchStats: this.matchStats,
       scoreHistory: this.scoreHistory,
+      skipVote: this.skipVote,
       planClock: this.planClock,
       flightDoneAt: this.flightDoneAt,
       oracle: this.oracle.snapshot(),
@@ -125,6 +127,7 @@ export class ClassicMatch extends Match {
     this.roundStats = snapshot.roundStats;
     this.matchStats = snapshot.matchStats;
     this.scoreHistory = snapshot.scoreHistory;
+    this.skipVote = snapshot.skipVote ?? null;
     this.planClock = snapshot.planClock;
     // Hosts from before the oracle send none.
     if (snapshot.oracle) this.oracle.restore(snapshot.oracle);

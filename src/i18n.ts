@@ -643,6 +643,21 @@ const en = {
   'replay.loading': 'Fetching the game…',
   'title.cleared': 'SECTOR CLEARED',
   'title.outOfShots': 'OUT OF SHOTS',
+  'title.skipped': 'ROUND SKIPPED',
+  'skip.declined': 'NOT SKIPPED',
+  'skip.lapsed': 'NOT SKIPPED',
+  'skip.action': 'Skip round',
+  'skip.call': 'Vote to skip round',
+  'skip.yes': 'Vote yes',
+  'skip.no': 'Vote no',
+  'skip.confirm': 'PRESS N AGAIN TO SKIP THE ROUND',
+  'skip.banner': 'SKIP THIS ROUND? NOBODY SCORES',
+  'skip.votes': '{yes} / {needed} YES',
+  'skip.hostAsks': '{name} PROPOSES · Y = YES · N = NO',
+  'skip.waiting': 'WAITING FOR THE OTHERS …',
+  'skip.answered': 'YOU VOTED {answer}',
+  'skip.answerYes': 'YES',
+  'skip.answerNo': 'NO',
 } as const;
 
 export type Key = keyof typeof en;
@@ -1277,6 +1292,21 @@ const de: Dict = {
   'replay.loading': 'Spiel wird geholt …',
   'title.cleared': 'SEKTOR GESICHERT',
   'title.outOfShots': 'KEINE SCHÜSSE MEHR',
+  'title.skipped': 'RUNDE ÜBERSPRUNGEN',
+  'skip.declined': 'NICHT ÜBERSPRUNGEN',
+  'skip.lapsed': 'NICHT ÜBERSPRUNGEN',
+  'skip.action': 'Runde überspringen',
+  'skip.call': 'Abstimmung: Runde überspringen',
+  'skip.yes': 'Mit Ja stimmen',
+  'skip.no': 'Mit Nein stimmen',
+  'skip.confirm': 'N NOCH MAL DRÜCKEN, UM DIE RUNDE ZU ÜBERSPRINGEN',
+  'skip.banner': 'RUNDE ÜBERSPRINGEN? NIEMAND PUNKTET',
+  'skip.votes': '{yes} / {needed} JA',
+  'skip.hostAsks': '{name} SCHLÄGT VOR · J = JA · N = NEIN',
+  'skip.waiting': 'WARTE AUF DIE ANDEREN …',
+  'skip.answered': 'DEINE STIMME: {answer}',
+  'skip.answerYes': 'JA',
+  'skip.answerNo': 'NEIN',
 };
 
 const DICTS: Record<Lang, Dict> = { de, en };

@@ -18,6 +18,7 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 | Ctrl or Alt+Shift | Tiny steps (×0.01) – on macOS the system claims Ctrl+arrows |
 | Drag (mouse/touch) | Aim directly, the arrow tip follows the pointer |
 | Space | Next round, skip the killcam |
+| N | Skip the round – nobody scores in it. Offline: press it twice (or use *Skip round* in the pause menu). Online: see [Skipping a round](multiplayer.md#skipping-a-round) – Y / N answer a vote |
 | C | Save the last killcam as a video |
 | ← → / 1–5, 0 | Oracle, once you are shot down online: tip hit or miss (turn by turn) / name the ship that gets hit, or 0 for nobody. You can also tap the choices or the ships |
 | Shift + 1–5, 0 | Oracle, who wins the round: the ship still in (0 for a draw, where one is possible). You can also tap it |
