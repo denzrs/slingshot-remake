@@ -126,10 +126,12 @@ fn room_flow_authorizes_host_and_relays_guest_input_and_host_state() {
 
     rooms.disconnect(1);
     // The host's seat is held, not given up: the room is still there.
-    assert!(take_type(&drain_json(&mut guest_rx), "room_update")["notice"]
-        .as_str()
-        .unwrap()
-        .contains("lost the connection"));
+    assert!(
+        take_type(&drain_json(&mut guest_rx), "room_update")["notice"]
+            .as_str()
+            .unwrap()
+            .contains("lost the connection")
+    );
     rooms.expire_seats_at(std::time::Instant::now() + SEAT_GRACE);
     assert_eq!(
         take_type(&drain_json(&mut guest_rx), "room_closed")["message"],
@@ -1853,7 +1855,9 @@ fn without_statistics_reports_are_checked_and_dropped() {
 fn a_dropped_guest_keeps_the_seat_and_the_game_until_the_grace_runs_out() {
     let mut rooms = RoomManager::new();
     let (_room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
-    let token = rooms.rooms.values().next().unwrap().players[1].token.clone();
+    let token = rooms.rooms.values().next().unwrap().players[1]
+        .token
+        .clone();
     drain_json(&mut host_rx);
     drain_json(&mut guest_rx);
 
@@ -1898,7 +1902,9 @@ fn a_dropped_guest_keeps_the_seat_and_the_game_until_the_grace_runs_out() {
 fn a_dropped_host_can_come_back_and_nobody_else_is_sent_away() {
     let mut rooms = RoomManager::new();
     let (_room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
-    let token = rooms.rooms.values().next().unwrap().players[0].token.clone();
+    let token = rooms.rooms.values().next().unwrap().players[0]
+        .token
+        .clone();
     drain_json(&mut host_rx);
     drain_json(&mut guest_rx);
 
@@ -1927,7 +1933,9 @@ fn a_dropped_host_can_come_back_and_nobody_else_is_sent_away() {
 fn a_token_that_is_not_held_any_more_is_turned_away() {
     let mut rooms = RoomManager::new();
     let (_room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
-    let token = rooms.rooms.values().next().unwrap().players[1].token.clone();
+    let token = rooms.rooms.values().next().unwrap().players[1]
+        .token
+        .clone();
     drain_json(&mut host_rx);
     drain_json(&mut guest_rx);
     rooms.disconnect(2);

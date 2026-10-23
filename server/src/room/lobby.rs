@@ -269,7 +269,12 @@ impl RoomManager {
         let Some(membership) = self.memberships.remove(&conn) else {
             return;
         };
-        self.give_up_seat(&membership.room_id, membership.player_id, Some(conn), reason);
+        self.give_up_seat(
+            &membership.room_id,
+            membership.player_id,
+            Some(conn),
+            reason,
+        );
     }
 
     /// Takes a seat out of its room for good. `gone` is the seat's connection, if it still had one.
@@ -355,18 +360,20 @@ impl RoomManager {
             .flat_map(|room| {
                 room.players
                     .iter()
-                    .filter(|p| p.lost_at.is_some_and(|at| now.duration_since(at) >= SEAT_GRACE))
+                    .filter(|p| {
+                        p.lost_at
+                            .is_some_and(|at| now.duration_since(at) >= SEAT_GRACE)
+                    })
                     .map(|p| (room.id.clone(), p.token.clone()))
             })
             .collect();
         for (room_id, token) in expired {
             // Earlier removals renumber the seats, and may have closed the room: look the seat up again.
-            let Some(player_id) = self.rooms.get(&room_id).and_then(|room| {
-                room.players
-                    .iter()
-                    .find(|p| p.token == token)
-                    .map(|p| p.id)
-            }) else {
+            let Some(player_id) = self
+                .rooms
+                .get(&room_id)
+                .and_then(|room| room.players.iter().find(|p| p.token == token).map(|p| p.id))
+            else {
                 continue;
             };
             info!(room = %room_id, seat = player_id, "held seat expired");
