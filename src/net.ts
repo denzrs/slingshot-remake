@@ -36,9 +36,12 @@ type ClientMessage =
   /** Your name, while the room waits; the relay refuses one it will not carry. */
   | { type: 'set_name'; name: string }
   | { type: 'ready'; ready: boolean }
-  | { type: 'set_rules'; rules: RoomRules }
+  /** `gameMode` changes the game the rules are for; without it the room keeps its own. */
+  | { type: 'set_rules'; rules: RoomRules; gameMode?: NetworkGameMode }
   /** Host only, while waiting: how the room shows up in the lobby. */
   | { type: 'set_room'; look: RoomLook }
+  /** Host only, while waiting: free for all or teams; the players are dealt out to the teams and confirm again. */
+  | { type: 'set_mode'; mode: RoomMode }
   /** Pick your own team (team rooms, while waiting); you have to be ready again afterwards. */
   | { type: 'set_team'; team: 0 | 1 }
   /** Host only: deal everybody back out to the two teams in the order they joined. */

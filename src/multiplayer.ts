@@ -20,6 +20,8 @@ export interface ChatLine {
 
 /** The most lines the chat keeps. */
 const CHAT_KEEP = 100;
+/** What the relay answers a chat message that comes too soon after the last. */
+const CHAT_TOO_FAST = 'You are writing too fast';
 
 export type NetMatch = ClassicMatch | HorizonMatch;
 
@@ -189,9 +191,14 @@ export class MultiplayerSession {
     this.send({ type: 'ready', ready });
   }
 
-  /** Host only: change the rules of the waiting room. */
-  setRules(rules: RoomRules): void {
-    this.send({ type: 'set_rules', rules });
+  /** Host only: change the rules of the waiting room, and with them the game if one is given. */
+  setRules(rules: RoomRules, gameMode?: NetworkGameMode): void {
+    this.send({ type: 'set_rules', rules, ...(gameMode ? { gameMode } : {}) });
+  }
+
+  /** Host only: turn the waiting room into a team room or back into a free for all. */
+  setRoomMode(mode: RoomMode): void {
+    this.send({ type: 'set_mode', mode });
   }
 
   /** Pick your own team while the team room waits. */
@@ -376,14 +383,18 @@ export class MultiplayerSession {
         this.notice = message.message;
         if (this.match) this.endMatch();
         break;
-      case 'error':
-        this.notice = message.message;
-        // In a game nobody reads the notice, so what the relay says ("you are writing too fast") is said in the chat.
-        if (this.match) this.chat = [...this.chat, { id: -1, name: '', spectator: false, text: message.message, system: true }].slice(-CHAT_KEEP);
-        if (this.match) this.chatTotal++;
+      case 'error': {
+        // Said in the chat, not in the lobby's status line: "you are writing too fast" is about the chat, and nobody reads the notice in a game.
+        const aboutChat = message.message === CHAT_TOO_FAST;
+        if (aboutChat || this.match) {
+          this.chat = [...this.chat, { id: -1, name: '', spectator: false, text: message.message, system: true }].slice(-CHAT_KEEP);
+          this.chatTotal++;
+        }
+        if (!(aboutChat && this.room)) this.notice = message.message;
         this.nameError = message.field === 'name' ? message.message : null;
         this.passwordError = message.field === 'password' ? message.message : null;
         break;
+      }
       case 'closed':
         this.connected = false;
         this.room = null;

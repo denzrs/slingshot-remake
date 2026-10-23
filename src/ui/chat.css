@@ -15,14 +15,17 @@
 #chat[hidden],
 #chat [hidden] { display: none; }
 #chat.is-collapsed { width: auto; }
-#chat.is-docked {
-  position: relative;
-  inset: auto;
-  z-index: auto;
-  width: 100%;
-  height: 380px;
-  max-height: 480px;
-  min-height: 310px;
+#chat.is-lobby { bottom: max(112px, env(safe-area-inset-bottom)); }
+/* Closed in the waiting room, the button sits in the footer row instead of floating over the crew list. */
+#chat.is-lobby.is-collapsed { position: static; z-index: auto; }
+.lobby__chat-slot { display: flex; align-items: center; order: -2; }
+.lobby__chat-slot:has(> #chat[hidden]) { display: none; }
+.lobby__chat-slot .chat__toggle { min-height: 48px; box-shadow: none; }
+/* Open, it pops up from its own button and leaves the crew list uncovered. */
+@media (min-width: 521px) {
+  #chat.is-lobby { position: relative; z-index: auto; inset: auto; width: auto; min-height: 48px; max-height: none; }
+  #chat.is-lobby .chat__toggle[hidden] { display: flex; }
+  #chat.is-lobby .chat__body { position: absolute; bottom: calc(100% + 10px); left: 0; width: 330px; height: min(380px, calc(100dvh - 190px)); }
 }
 .chat__toggle, .chat__body { pointer-events: auto; }
 .chat__icon { flex: none; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
@@ -54,7 +57,6 @@
   background: #0a192b;
   box-shadow: 0 12px 32px rgb(0 0 0 / .28);
 }
-.is-docked .chat__body { box-shadow: none; }
 .chat__header { display: flex; flex: none; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--chat-line); background: #0e2239; }
 .chat__header > .chat__icon { color: var(--p2); }
 .chat__heading { flex: 1; min-width: 0; }
@@ -83,19 +85,9 @@
 .chat__send:hover:not(:disabled) { border-color: var(--p2); background: #20504b; }
 .chat__send:disabled { opacity: .35; cursor: default; }
 #chat :is(button, input):focus-visible { outline: 2px solid var(--p2); outline-offset: 2px; }
-.room-deck__content { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 18px; align-items: stretch; }
-.room-chat-slot { position: sticky; top: 0; align-self: start; min-width: 0; min-height: 0; }
-@media (min-width: 1101px) and (max-height: 800px) {
-  #chat.is-docked { height: 330px; }
-}
-@media (max-width: 1100px) {
-  .room-chat-slot { position: static; }
-  .room-deck__content { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  #chat.is-docked { height: 300px; min-height: 0; }
-}
 @media (max-width: 520px) {
   #chat { right: max(12px, env(safe-area-inset-right)); bottom: max(90px, env(safe-area-inset-bottom)); width: calc(100vw - 24px); max-height: min(380px, calc(100dvh - 180px)); }
-  #chat.is-docked { width: 100%; max-height: none; }
+  #chat.is-lobby { bottom: max(150px, env(safe-area-inset-bottom)); }
   .chat__header { padding: 11px 12px; }
   .chat__input { font-size: 16px; }
   .chat__toggle { min-height: 44px; }

@@ -56,7 +56,8 @@ let session: MultiplayerSession;
 const transport: Transport = { address: '', setAddress() {}, connect: async () => {}, onMessage() {}, send() {}, close() {} };
 beforeEach(() => {
   vi.stubGlobal('window', { innerWidth: 1280 });
-  vi.stubGlobal('document', { createElementNS: dom.element, body: dom.element(), activeElement: null });
+  const slot = dom.element('div.lobby__chat-slot');
+  vi.stubGlobal('document', { createElementNS: dom.element, body: dom.element(), activeElement: null, slot, querySelector: (selector: string) => (selector === '.lobby__chat-slot' ? slot : null) });
   vi.stubGlobal('localStorage', { getItem: () => null, setItem() {} });
   session = new MultiplayerSession({ settings: () => DEFAULT_SETTINGS, matchStarted() {}, matchRestarted() {}, matchEnded() {} }, transport);
   session.room = {
@@ -70,8 +71,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe('chat follows the visible online surface', () => {
   it('hides when leaving the online room screen, even while the session still owns that room', () => {
     const root = h('aside', null);
-    const mount = h('div', null);
-    let location: ChatLocation = { kind: 'lobby', mount };
+    let location: ChatLocation = { kind: 'lobby' };
     const panel: ChatPanel = new ChatPanel(root, session, () => location);
     panel.update();
     expect(root.hidden).toBe(false);
@@ -89,14 +89,13 @@ describe('chat follows the visible online surface', () => {
     expect(root.hidden).toBe(true);
   });
 
-  it('mounts beside the lobby slots and moves back out for the online game', () => {
+  it('docks in the lobby footer and floats over the online game', () => {
     const root = h('aside', null);
-    const mount = h('div', null);
-    let location: ChatLocation = { kind: 'lobby', mount };
+    let location: ChatLocation = { kind: 'lobby' };
     const panel = new ChatPanel(root, session, () => location);
     expect(root.hidden).toBe(true); // No flash before the first visibility update.
     panel.update();
-    expect(root.parentElement).toBe(mount);
+    expect(root.parentElement).toBe((document as unknown as { slot: unknown }).slot);
     location = { kind: 'game' };
     panel.update();
     expect(root.parentElement).toBe(document.body);

@@ -121,6 +121,25 @@ function languageItem(app: App): MenuItem {
   };
 }
 
+/** One ship per seat; when teams are in play the ships group under their team's colour. */
+function crewMarkers(s: Settings): HTMLElement[] {
+  const seats = activeSeats(s);
+  const ship = (color: string) => {
+    const marker = h('span.briefing__ship', null, '▲');
+    marker.style.color = color;
+    return marker;
+  };
+  const teams = seatTeamsFor(s, seats);
+  if (!teams) return seats.map((i) => ship(COLORS.players[i]));
+  return Array.from({ length: s.teamMode }, (_, team) => {
+    const members = seats.filter((_, k) => teams[k] === team);
+    if (!members.length) return null;
+    const group = h('span.briefing__team', null, ...members.map((_, k) => ship(TEAMS[team][k % 3])));
+    group.style.setProperty('--team-tone', TEAMS[team][0]);
+    return group;
+  }).filter((group): group is HTMLElement => group !== null);
+}
+
 function lineup(s: Settings): string {
   const seats = activeSeats(s).map((i) => s.seats[i]);
   const humans = seats.filter((x) => x === 'human').length;
@@ -469,12 +488,11 @@ function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {
     },
   });
 
-  const summary = h('p.team-warning', { 'aria-live': 'polite', hidden: '' }, t('players.teamNote'));
   const crewActions = h('div.items.items--row.crew-actions', { 'data-section': 'crew-actions' });
   const count = h('h3.setup__title', null, t('players.group.crew', { n: seats.length, max: MAX_PLAYERS }));
   const crewStatus = h('p.crew-roster__status', { 'aria-live': 'polite' });
   const roster = h('section.crew-roster', null,
-    h('div.crew-roster__heading', null, count, crewStatus),
+    h('div.crew-roster__heading', null, count, h('div.crew-roster__aside', null, crewStatus, crewActions)),
     board.el,
   );
   const update = (): void => {
@@ -484,7 +502,6 @@ function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {
       ...(humans ? [`${humans} ${tn('lineup.human', humans)}`] : []),
       ...(active.length > humans ? [`${active.length - humans} ${tn('lineup.cpu', active.length - humans)}`] : []),
     ].join(' · ');
-    summary.hidden = !s.teamMode || seatTeamsFor(s, active) !== null;
     board.show(slots.map((el, i) => ({
       key: String(i), el, label: t('players.player', { n: i + 1 }),
       team: s.seats[i] === 'off' ? null : s.seatTeams[i] % Math.max(1, s.teamMode),
@@ -501,8 +518,8 @@ function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {
       board.show(slots.map((el, i) => ({ key: String(i), el, label: t('players.player', { n: i + 1 }), team: s.seats[i] === 'off' ? null : s.seatTeams[i] % Math.max(1, s.teamMode) })), s.teamMode);
       return menuPage({
         title: t('flow.crewTitle'), className: 'menu-page--crew',
-        headerAside: h('div.crew-config', null, menuGroup(t('players.group.mode'), 'mode'), crewActions),
-        body: [summary, roster],
+        headerAside: h('div.crew-config', null, menuGroup(t('players.group.mode'), 'mode')),
+        body: [roster],
         keys: t('flow.tabKeys'),
         footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
       });
@@ -568,11 +585,7 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
   }).filter(({ key }) => quickKeys.some((quickKey) => quickKey === key));
   const update = (): void => {
     crewLabel.textContent = lineup(s);
-    crew.replaceChildren(...activeSeats(s).map((i) => {
-      const marker = h('span.briefing__ship', null, '▲');
-      marker.style.color = COLORS.players[i];
-      return marker;
-    }));
+    crew.replaceChildren(...crewMarkers(s));
     const fact = (label: string, value: string) => h('div', null, h('dt', null, label), h('dd', null, value));
     summary.replaceChildren(
       fact(t('settings.shotTime'), t('settings.seconds', { n: s.shotTime })),
@@ -589,8 +602,7 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
         headerTitle: modePagerHeader(mode, transition),
         className: `menu-page--briefing menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
         body: [
-          h('section.briefing__presets', { 'aria-labelledby': 'preset-heading' },
-            h('div.launcher__section-head', null, h('h3', { id: 'preset-heading' }, t('preset.choose'))),
+          h('section.briefing__presets', null,
             h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') }),
             h('div.briefing__quick', null,
               h('div.briefing__quick-controls', { 'data-section': 'quick' }),
@@ -601,7 +613,6 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
         aside: [
           h('h3.setup__title', null, t('briefing.crew')),
           crew, crewLabel,
-          h('p.briefing__crew-note', null, t('briefing.crewHint')),
           h('div.items.briefing__players', { 'data-section': 'players' }),
           h('h3.setup__title', null, t('briefing.rules')),
           summary,
@@ -714,17 +725,13 @@ function mayhemScreen(app: App, transition?: ModeTransition): Screen {
     .sort((a, b) => quickKeys.indexOf(a.key as (typeof quickKeys)[number]) - quickKeys.indexOf(b.key as (typeof quickKeys)[number]));
   const update = (): void => {
     crewLabel.textContent = lineup(s);
-    crew.replaceChildren(...activeSeats(s).map((i) => {
-      const marker = h('span.briefing__ship', null, '▲');
-      marker.style.color = COLORS.players[i];
-      return marker;
-    }));
+    crew.replaceChildren(...crewMarkers(s));
     const fact = (label: string, value: string) => h('div', null, h('dt', null, label), h('dd', null, value));
     summary.replaceChildren(
       fact(t('settings.mayhem'), t(`settings.mayhem.${s.mayhem}` as Key)),
       fact(t('mayhem.base'), modeName(s.mayhemBase)),
       fact(t('settings.rounds'), s.rounds ? String(s.rounds) : t('settings.endless')),
-      fact(t('settings.simultaneousShots'), t(s.mayhemBase === 'horizon' || s.simultaneousShots ? 'common.on' : 'common.off')),
+      ...(s.mayhemBase === 'horizon' ? [] : [fact(t('settings.simultaneousShots'), t(s.simultaneousShots ? 'common.on' : 'common.off'))]),
       fact(t('settings.shotTime'), t('settings.seconds', { n: s.shotTime })),
     );
     powerups.update();
@@ -737,8 +744,7 @@ function mayhemScreen(app: App, transition?: ModeTransition): Screen {
         headerTitle: modePagerHeader('mayhem', transition),
         className: `menu-page--briefing menu-page--mayhem menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
         body: [
-          h('section.briefing__presets', { 'aria-labelledby': 'preset-heading' },
-            h('div.launcher__section-head', null, h('h3', { id: 'preset-heading' }, t('preset.choose'))),
+          h('section.briefing__presets', null,
             h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') }),
             h('div.briefing__quick', null,
               h('div.briefing__quick-controls', { 'data-section': 'quick' }),
@@ -749,7 +755,6 @@ function mayhemScreen(app: App, transition?: ModeTransition): Screen {
         aside: [
           h('h3.setup__title', null, t('briefing.crew')),
           crew, crewLabel,
-          h('p.briefing__crew-note', null, t('briefing.crewHint')),
           h('div.items.briefing__players', { 'data-section': 'players' }),
           h('h3.setup__title', null, t('briefing.rules')),
           summary,

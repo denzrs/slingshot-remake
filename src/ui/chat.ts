@@ -1,12 +1,12 @@
 import { COLORS } from '../config';
-import { getLang, t } from '../i18n';
+import { getLang, relayText, t } from '../i18n';
 import type { MultiplayerSession } from '../multiplayer';
 import { eyeIcon, h } from './dom';
 import './chat.css';
 
 const KEY = 'slingshot.chat.collapsed';
 
-export type ChatLocation = { kind: 'lobby'; mount: HTMLElement } | { kind: 'game' } | null;
+export type ChatLocation = { kind: 'lobby' } | { kind: 'game' } | null;
 
 function remembered(): boolean {
   try { return localStorage.getItem(KEY) !== '0'; } catch { return true; }
@@ -26,7 +26,7 @@ function icon(path: string): SVGElement {
 }
 const bubbleIcon = () => icon('<path d="M4 5h16v11H10l-5 4v-4H4Z"/>');
 
-/** One room channel, docked in its lobby and expandable over its online match. */
+/** One room channel, a widget that opens over the waiting room and over its online match. */
 export class ChatPanel {
   private collapsed = remembered();
   private readonly unread = h('span.chat__unread', { 'aria-hidden': 'true' });
@@ -59,8 +59,7 @@ export class ChatPanel {
       if (event.key !== 'Escape') return;
       event.preventDefault();
       event.stopPropagation();
-      if (this.location()?.kind === 'game') this.expand(false);
-      else this.input.blur();
+      this.expand(false);
     });
     this.input.addEventListener('input', () => { this.send.disabled = !this.session.canChat || !this.input.value.trim(); });
     this.form.addEventListener('submit', (event) => {
@@ -86,14 +85,19 @@ export class ChatPanel {
     return !this.root.hidden && target instanceof Node && this.root.contains(target);
   }
 
+  /** The waiting room hosts the chat in its footer row; everywhere else it floats over the page. */
+  private mount(lobby: boolean): void {
+    const host = (lobby && document.querySelector<HTMLElement>('.lobby__chat-slot')) || document.body;
+    if (this.root.parentElement !== host) host.append(this.root);
+  }
+
   /** Called on navigation as well as relay messages; room membership alone never shows chat. */
   update(): void {
     const { room, chat, chatTotal, canChat } = this.session;
     const location = this.location();
     const visible = !!room && !!location;
     if (this.root.hidden === visible) this.root.hidden = !visible;
-    const mount = visible && location.kind === 'lobby' ? location.mount : document.body;
-    if (this.root.parentElement !== mount) mount.append(this.root);
+    this.mount(location?.kind === 'lobby');
     if (!room) {
       this.shown = '';
       this.seen = 0;
@@ -101,8 +105,7 @@ export class ChatPanel {
       this.input.value = '';
     }
     if (!visible) { this.shown = ''; return; }
-    const docked = location.kind === 'lobby';
-    const collapsed = !docked && this.collapsed;
+    const collapsed = this.collapsed;
     if (room.id !== this.roomId) {
       this.roomId = room.id;
       this.input.value = '';
@@ -113,10 +116,9 @@ export class ChatPanel {
     const key = `${room.id}|${room.name}|${location.kind}|${collapsed}|${canChat}|${chatTotal}|${getLang()}|${this.session.you.playerId}|${this.session.you.spectatorId}`;
     if (key === this.shown) return;
     this.shown = key;
-    this.root.classList.toggle('is-docked', docked);
+    this.root.classList.toggle('is-lobby', location.kind === 'lobby');
     this.root.classList.toggle('is-collapsed', collapsed);
-    this.toggle.hidden = docked || !collapsed;
-    this.close.hidden = docked;
+    this.toggle.hidden = !collapsed;
     this.body.hidden = collapsed;
     this.toggle.setAttribute('aria-expanded', String(!collapsed));
     this.toggle.setAttribute('aria-label', t('chat.open'));
@@ -134,7 +136,7 @@ export class ChatPanel {
     this.empty.hidden = chat.length > 0;
     this.log.hidden = chat.length === 0;
     this.log.replaceChildren(...chat.map((line) => {
-      if (line.system) return h('li.chat__line.chat__line--system', null, line.text);
+      if (line.system) return h('li.chat__line.chat__line--system', null, relayText(line.text));
       const mine = line.spectator === !!this.session.you.spectator && line.id === (line.spectator ? this.session.you.spectatorId : this.session.you.playerId);
       const name = h(`span.chat__name${line.spectator ? '.chat__name--watcher' : ''}`, line.spectator ? { title: t('chat.watcher') } : null, ...(line.spectator ? [eyeIcon()] : []), line.name);
       if (!line.spectator) name.style.setProperty('--speaker-tone', COLORS.players[line.id % COLORS.players.length]);

@@ -520,7 +520,7 @@ export function optionSelector<T>(label: string, choices: readonly { value: T; l
 
 // ————————————————————————————— Seat —————————————————————————————
 
-/** A ship card: choose human or CPU first; CPU strength only appears when it applies. */
+/** A ship card: choose human or CPU first; CPU strength fades in over the portrait slot when it applies. */
 function seatControl(item: Item<'seat'>, env: Env): Control {
   let lastCpu = item.get() === 'human' ? item.lastCpu?.() ?? item.fliers[2]?.value ?? item.fliers[1].value : item.get();
   const human = h('button.pilot__type', { type: 'button' }, item.fliers[0].label) as HTMLButtonElement;
@@ -536,9 +536,10 @@ function seatControl(item: Item<'seat'>, env: Env): Control {
     types,
   );
   const level = optionSelector(`${item.label} · ${t('flow.cpuLevel')}`, item.fliers.slice(1), item.get, (value) => set(value));
-  const difficulty = h('div.pilot__field', null, h('span', null, t('flow.cpuLevel')), level.el);
-  const options = h('div.pilot__options', null, difficulty);
-  const el = h('div.item.item--seat.pilot.slot-card', { role: 'group', 'aria-label': item.label }, header, identity, assignment, options);
+  const options = h('div.pilot__options', null, level.el);
+  // Portrait and strength picker share one fixed-height body so switching Mensch/CPU never resizes the card.
+  const body = h('div.pilot__body', null, identity, options);
+  const el = h('div.item.item--seat.pilot.slot-card', { role: 'group', 'aria-label': item.label }, header, body, assignment);
   let removeButton: HTMLButtonElement | undefined;
   if (item.remove) {
     removeButton = h('button.pilot__remove', { type: 'button', 'aria-label': item.remove.label, title: item.remove.label }, '×') as HTMLButtonElement;
@@ -556,7 +557,6 @@ function seatControl(item: Item<'seat'>, env: Env): Control {
     cpu.setAttribute('aria-checked', String(isCpu));
     human.tabIndex = isCpu ? -1 : 0;
     cpu.tabIndex = isCpu ? 0 : -1;
-    difficulty.hidden = !isCpu;
     level.refresh();
     if (removeButton) removeButton.disabled = item.remove!.disabled();
     el.style.setProperty('--slot-tone', item.swatch);

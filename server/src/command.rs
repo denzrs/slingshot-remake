@@ -38,8 +38,14 @@ pub enum RoomCommand<'a> {
     CreateRoom(CreateRoom),
     JoinRoom(JoinRoom),
     Ready(Parsed<bool>),
-    SetRules(Parsed<RoomRules>),
+    SetRules {
+        rules: Parsed<RoomRules>,
+        /// The game the rules are for; none keeps the room's.
+        game_mode: Parsed<Option<GameMode>>,
+    },
     SetRoom(Parsed<RoomLook>),
+    /// Host only: free for all or teams, while the room waits.
+    SetMode(Parsed<RoomMode>),
     SetAvatar(Parsed<Avatar>),
     SetName(Parsed<String>),
     SetTeam(Parsed<u8>),
@@ -164,17 +170,32 @@ impl<'a> RoomCommand<'a> {
                     .and_then(Value::as_bool)
                     .ok_or("ready must be a boolean"),
             ),
-            "set_rules" => RoomCommand::SetRules(
-                message
+            "set_rules" => RoomCommand::SetRules {
+                rules: message
                     .get("rules")
                     .and_then(parse_rules)
                     .ok_or("Malformed game rules"),
-            ),
+                game_mode: match message.get("gameMode") {
+                    None | Some(Value::Null) => Ok(None),
+                    Some(value) => value
+                        .as_str()
+                        .and_then(GameMode::parse)
+                        .map(Some)
+                        .ok_or("gameMode must be classic or horizon"),
+                },
+            },
             "set_room" => RoomCommand::SetRoom(
                 message
                     .get("look")
                     .and_then(parse_room_look)
                     .ok_or("Malformed room settings"),
+            ),
+            "set_mode" => RoomCommand::SetMode(
+                message
+                    .get("mode")
+                    .and_then(Value::as_str)
+                    .and_then(RoomMode::parse)
+                    .ok_or("Mode must be ffa or team"),
             ),
             "set_avatar" => RoomCommand::SetAvatar(
                 parse_avatar(message.get("avatar")).ok_or("Malformed player symbol"),

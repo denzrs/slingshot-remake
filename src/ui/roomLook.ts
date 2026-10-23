@@ -90,10 +90,9 @@ export interface LookControl {
   refresh(look: RoomLook): void;
 }
 
-/** Whether the room is listed (public) or only found by its code (private), as a switch with a note for private. */
+/** Whether the room is listed (public) or only found by its code (private), as a switch. */
 export function visibilityControl(look: RoomLook, change: (patch: Partial<RoomLook>) => void, { readonly = false, sound }: { readonly?: boolean; sound?: Sound } = {}): LookControl {
   let current = look;
-  const note = h('p.lobby__note', null, t('multiplayer.privateHint'));
   const control = segmentedControl(
     {
       kind: 'segmented',
@@ -105,7 +104,6 @@ export function visibilityControl(look: RoomLook, change: (patch: Partial<RoomLo
       get: () => current.visibility,
       set: (v) => {
         current = { ...current, visibility: v as RoomVisibility };
-        note.hidden = current.visibility !== 'private';
         change({ visibility: v as RoomVisibility });
       },
     },
@@ -114,9 +112,8 @@ export function visibilityControl(look: RoomLook, change: (patch: Partial<RoomLo
   const refresh = (next: RoomLook): void => {
     current = next;
     control.refresh();
-    note.hidden = current.visibility !== 'private';
   };
-  const el = h('div.look-visibility', null, control.el, note);
+  const el = h('div.look-visibility', null, control.el);
   refresh(look);
   return { el, refresh };
 }

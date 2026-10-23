@@ -75,14 +75,13 @@
 .menu-page--room .room-deck { gap: 0; padding: 0; border: 0; background: none; }
 .room-deck__heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
 .menu-page--room .room-deck__heading .setup__title { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--bone-dim); font: 12px/1.5 var(--font-body); }
-.room-deck__connection { display: flex; align-items: center; gap: 7px; color: var(--p2); font: 10px/1.5 var(--font-mono); text-transform: uppercase; }
-.room-deck__connection::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.menu-page--room .lobby__code { margin: 12px 0 18px; padding: 10px 0; border-block: 1px solid var(--menu-line); border-inline: 0; background: none; }
+.menu-page--room .lobby__code { margin: 12px 0 18px; padding: 10px 16px; border: 1px solid var(--menu-line); border-radius: 3px; background: rgb(13 29 50 / .55); }
 .menu-page--room .lobby__code-value { font-size: 20px; }
 .menu-page--room .room-deck__roster-head { margin-bottom: 10px; }
 .room-deck__roster-head .lobby__note { color: var(--bone); font: 800 25px/1.2 var(--font-display); text-transform: uppercase; }
 .menu-page--room .online-options { margin-top: 16px; }
-.menu-page--room .menu-page__actions > .lobby__button:last-child { margin-right: auto; order: -1; border-color: rgb(255 90 110 / .4); color: #ff8996; }
+/* Leaving sits left of the big action, where Back sits on every other page. */
+.menu-page--room .menu-page__actions > .lobby__button:last-child { order: -1; margin-right: 0; }
 @media (max-width: 900px) {
   .menu-page .slot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -95,7 +94,6 @@
   .crew-roster__heading .setup__title { font-size: 24px; }
   .menu-page--room .lobby__code { gap: 8px; }
   .menu-page--room .lobby__code > .lobby__button { min-height: 34px; padding: 6px 8px; font-size: 10px; }
-  .menu-page--room .menu-page__actions > .lobby__button:last-child { margin-right: 0; }
 }
 @media (min-width: 901px) and (max-height: 800px) {
   .menu-page--crew, .menu-page--room { margin-top: 0; }
@@ -103,6 +101,8 @@
   .menu-page--crew .menu-page__head { margin-bottom: 14px; }
   .menu-page .slot-card { min-height: 178px; gap: 7px; padding: 10px 12px; }
   .slot-card__portrait { flex-basis: 44px; min-height: 44px; }
+  .pilot__body { flex-basis: 100px; min-height: 100px; }
+  .pilot.is-cpu .pilot__body > .slot-card__portrait { padding-bottom: 48px; }
   .slot-card__portrait > .pilot-art { height: 44px; }
   .slot-card__portrait .player-icon { width: 40px; height: 40px; }
 }
@@ -144,5 +144,17 @@
   .player-slot .slot-card__portrait .player-icon { width: 34px; height: 34px; }
   .player-slot .lobby__ready { padding-top: 0; }
   .menu-page--room .room-deck__roster-head { margin-bottom: 8px; }
-  .menu-page--room .lobby__code { margin-block: 8px; }
+  .menu-page--room .lobby__code { margin-block: 4px 6px; padding-block: 4px; }
+}
+
+/* An open seat confirms the copied invite itself: the card lights up, the check draws, the words rise in. */
+.slot-card--empty.is-copied { border-style: solid; border-color: var(--p2); background: rgb(111 227 200 / .07); animation: seat-copied 1.8s ease-out; }
+.slot-card__check { width: 22px; height: 22px; flex: none; fill: none; stroke: var(--p2); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.slot-card__check path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: seat-check .4s .05s ease-out forwards; }
+.slot-card__copied { color: var(--p2); animation: seat-copied-in .35s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes seat-copied { 0% { box-shadow: 0 0 0 0 rgb(111 227 200 / .5); } 35% { box-shadow: 0 0 0 7px rgb(111 227 200 / 0); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes seat-check { to { stroke-dashoffset: 0; } }
+@keyframes seat-copied-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .slot-card--empty.is-copied, .slot-card__check path, .slot-card__copied { animation: none; stroke-dashoffset: 0; }
 }

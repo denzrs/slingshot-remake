@@ -244,8 +244,7 @@ function multiplayer(): MultiplayerSession {
     },
   });
   const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session, () => {
-    const mount = overlay.querySelector<HTMLElement>('.menu-page--room .room-chat-slot');
-    if (mount) return { kind: 'lobby', mount };
+    if (overlay.querySelector('.menu-page--room')) return { kind: 'lobby' };
     const matchMenu = overlay.querySelector('.menu-page--pause, .menu-page--results');
     if (screen === 'play' && session?.match && session.match === match && (!menu.isOpen || matchMenu)) return { kind: 'game' };
     return null;
