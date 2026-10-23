@@ -143,6 +143,10 @@ function wire(m: Match): void {
         effects.missileLost(e.x, e.y, POWER_UP_COLORS.defense);
         if (audible) sound.fizzle();
         break;
+      case 'defenseWrecked':
+        effects.explode(e.x, e.y, POWER_UP_COLORS.defense, 0, 0);
+        if (audible) sound.explode();
+        break;
       case 'shotdown':
         effects.intercepted(e.x, e.y, POWER_UP_COLORS.defense, color(e.player), e.vx, e.vy);
         if (audible) sound.intercepted();

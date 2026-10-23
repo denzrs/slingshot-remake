@@ -146,6 +146,8 @@ export type GameEvent =
   | { type: 'defenseFire'; player: number; x: number; y: number; toX: number; toY: number }
   /** A defense's missile lost its shot at (x, y). */
   | { type: 'defenseMiss'; player: number; x: number; y: number }
+  /** An armor-piercing shot wrecked a planetary defense (`player` set it, `by` fired the shot). */
+  | { type: 'defenseWrecked'; player: number; by: number; x: number; y: number }
   /** A planetary defense shot a flying shot down. */
   | { type: 'shotdown'; player: number; x: number; y: number; vx: number; vy: number }
   | { type: 'split'; player: number; x: number; y: number }
@@ -1057,6 +1059,10 @@ export abstract class Match {
       if (d) this.emit({ type: 'defenseMiss', player: d.owner, x: e.x, y: e.y });
       return;
     }
+    if (e.type === 'wreck') {
+      this.emit({ type: 'defenseWrecked', player: volley.world.defenses[e.defense].owner, by: player, x: e.x, y: e.y });
+      return;
+    }
     if (e.type === 'reflect') {
       // The shield bounced the shot off: it is spent, and so is the power-up it came from.
       this.emit({ type: 'shield', ship: e.ship, x: e.x, y: e.y });
@@ -1339,6 +1345,8 @@ export abstract class Match {
       if (this.cpuJobs.has(id)) continue;
       const p = this.players[id];
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
+      // Einstein and Hawking hold armor piercing for a cannon: it may wreck one an ordinary shot only meets a missile from.
+      if (p.powerUp === 'piercing' && !p.armed && (p.cpu === 'hard' || p.cpu === 'hawking') && this.world.defenses.some((d) => !d.wrecked && !d.protects.includes(id))) p.armed = true;
       const pierce = !!p.armed && p.powerUp === 'piercing';
       const plasma = !!p.armed && p.powerUp === 'plasma';
       // The pickups a CPU would actually keep (a preview is of no use to it): the planner steers its

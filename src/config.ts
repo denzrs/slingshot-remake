@@ -62,6 +62,12 @@ export const DEFENSE = {
   HIT_RADIUS: 9,
   /** It gives up after this long (s), or once it has strayed a good way past the area. */
   MISSILE_LIFE: 1.4,
+  /**
+   * The cannon's icon, which an armor-piercing shot wrecks by touching it, whoever's it is: a circle of radius
+   * `CANNON_REACH` (px) round the turret's head, which sits `CANNON_HEAD` out from the surface. It covers the base plate and the barrel's root.
+   */
+  CANNON_HEAD: 8,
+  CANNON_REACH: 15,
 } as const;
 
 /** Physics constants that only the nebula power-up uses. */

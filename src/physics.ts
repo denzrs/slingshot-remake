@@ -96,6 +96,8 @@ export interface Defense {
   protects: number[];
   /** Players whose ships its stray missiles fly through, though it fires at their shots (the daily challenge's pilot). */
   spares?: number[];
+  /** An armor-piercing shot has knocked the cannon out: it neither fires nor shows any more, for the rest of the round. */
+  wrecked?: boolean;
 }
 
 /** A missile a planetary defense has fired at a shot. It lives with the shot it chases (`Shot.missiles`). */
@@ -121,6 +123,22 @@ export interface Missile {
 export function defenseChance(d: Pick<Defense, 'radius'>, distance: number): number {
   for (const zone of DEFENSE.ZONES) if (distance < d.radius * zone.reach) return zone.chance;
   return 0;
+}
+
+/** How far the point (px, py) is from the segment from (ax, ay) to (bx, by). */
+function segmentDistance(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+  return Math.hypot(ax + t * dx - px, ay + t * dy - py);
+}
+
+/** Where a cannon's icon is centred: its turret head, out from the surface on the line from the planet's heart through the turret. */
+export function cannonHead(world: Pick<World, 'planets'>, d: Pick<Defense, 'x' | 'y' | 'planet'>): { x: number; y: number } {
+  const rock = world.planets.find((p) => p.seed === d.planet);
+  const out = rock ? Math.atan2(d.y - rock.y, d.x - rock.x) : 0;
+  return { x: d.x + Math.cos(out) * DEFENSE.CANNON_HEAD, y: d.y + Math.sin(out) * DEFENSE.CANNON_HEAD };
 }
 
 /** A number from 0 to 1 that is the same for the same seed and salt, and unlike for another: the dice of a replay. */
@@ -271,6 +289,13 @@ export class Shot {
   private portal = -1;
   /** Ships already passed through, so one hull is only ever reported once. */
   private readonly pierced = new Set<number>();
+  /** The cannons this armor-piercing shot has knocked out by striking their planet (an index into `world.defenses`); the volley marks them wrecked and clears this. */
+  readonly wrecks: { defense: number; x: number; y: number }[] = [];
+  /** The cannons whose icon this shot has touched already, so each is reported once. */
+  private readonly struck = new Set<number>();
+  /** Where this shot was when the cannons were last checked: the start of the stretch to check now. */
+  private strikeX: number | null = null;
+  private strikeY: number | null = null;
 
   constructor(
     private readonly world: World,
@@ -397,6 +422,7 @@ export class Shot {
     if (this.encounters) this.trackStyle(hx, hy, bounced);
     if (this.world.wormholes.length) this.warp();
 
+    if (this.pierce) this.strikeCannons();
     const r2 = SHIP_RADIUS * SHIP_RADIUS;
     for (let i = 0; i < ships.length; i++) {
       const s = ships[i];
@@ -429,12 +455,12 @@ export class Shot {
       const dy = hole.y - this.y;
       if (dx * dx + dy * dy < hole.radius * hole.radius) return this.finish({ kind: 'hole', hole: i });
     }
-    // Planetary defenses: a shot that flies into a defense's area (bar its own side's) gets a missile after it,
+    // Planetary defenses: a shot that flies into a defense's area (bar its own side's, and an armor-piercing shot, which the cannon cannot lock onto) gets a missile after it,
     // once per defense. The defense foresees the shot's path and holds its fire until a missile launched now
     // would just catch the shot where the odds are best; the missile homes in, and where it catches the shot decides whether it hits.
-    for (let i = 0; i < defenses.length; i++) {
+    for (let i = 0; i < defenses.length && !this.pierce; i++) {
       const d = defenses[i];
-      if (this.fired[i] || d.protects.includes(this.shooter)) continue;
+      if (this.fired[i] || d.wrecked || d.protects.includes(this.shooter)) continue;
       if ((d.x - this.x) ** 2 + (d.y - this.y) ** 2 >= d.radius * d.radius) continue;
       const aim = this.foresee(d);
       if (!aim.launch) continue;
@@ -508,6 +534,28 @@ export class Shot {
       if (over) break;
     }
     return { launch: best.chance === 0 || best.slack < DT, x: best.x, y: best.y };
+  }
+
+  /**
+   * An armor-piercing shot that touches a cannon's icon (a circle round its turret head) wrecks it. Its own side's
+   * cannon is no exception: the owner can take its cannon down.
+   */
+  private strikeCannons(): void {
+    const { defenses } = this.world;
+    // The whole stretch flown this step counts, so a fast shot cannot skip over the icon between two steps (a jump through a wormhole or a teleport is no stretch).
+    const jumped = this.strikeX === null || Math.hypot(this.x - this.strikeX, this.y - this.strikeY!) > 60;
+    const fromX = jumped ? this.x : this.strikeX!;
+    const fromY = jumped ? this.y : this.strikeY!;
+    for (let i = 0; i < defenses.length; i++) {
+      const d = defenses[i];
+      if (d.wrecked || this.struck.has(i)) continue;
+      const head = cannonHead(this.world, d);
+      if (segmentDistance(head.x, head.y, fromX, fromY, this.x, this.y) >= DEFENSE.CANNON_REACH) continue;
+      this.struck.add(i);
+      this.wrecks.push({ defense: i, x: d.x, y: d.y });
+    }
+    this.strikeX = this.x;
+    this.strikeY = this.y;
   }
 
   /** How fast a missile fired at this shot now would fly: a multiple of the shot's own speed. */
@@ -661,6 +709,10 @@ export interface ShotOutcome {
   gates: number[];
   /** Ships an armor-piercing shot went through (they would be killed), in the order it met them. */
   pierced: number[];
+  /** The cannons (indices into `world.defenses`) an armor-piercing shot would knock out. */
+  wrecked: number[];
+  /** How close an armor-piercing shot came to the icon of a standing enemy cannon (Infinity for any other shot, or when none stands): the planner's way to home in on one. */
+  cannonClosest: number;
 }
 
 /**
@@ -688,8 +740,11 @@ export function simulateShot(
   let end: ShotEnd | null = null;
   const passed: number[] = [];
   const taken = new Set<number>();
+  const cannons = pierce ? world.defenses.filter((d) => !d.wrecked && !d.protects.includes(shooter)).map((d) => cannonHead(world, d)) : [];
+  let cannon2 = Infinity;
   while (!end) {
     end = shot.step();
+    for (const c of cannons) cannon2 = Math.min(cannon2, (c.x - shot.x) ** 2 + (c.y - shot.y) ** 2);
     for (const t of targets) {
       const dx = t.x - shot.x;
       const dy = t.y - shot.y;
@@ -711,7 +766,7 @@ export function simulateShot(
       }
     });
   }
-  return { end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: passed, pierced: shot.hits.map((hit) => hit.ship) };
+  return { end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: passed, pierced: shot.hits.map((hit) => hit.ship), wrecked: shot.wrecks.map((w) => w.defense), cannonClosest: Math.sqrt(cannon2) };
 }
 
 export interface StyledShotOutcome extends ShotOutcome {
@@ -764,7 +819,7 @@ export function* simulateStyledShot(
     if (!end && ++steps % 240 === 0) yield;
   }
   return {
-    end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: [], pierced: shot.hits.map((hit) => hit.ship),
+    end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: [], pierced: shot.hits.map((hit) => hit.ship), wrecked: shot.wrecks.map((w) => w.defense), cannonClosest: Infinity,
     swingbys: shot.swingbys, flightTime: shot.time, pathLength,
   };
 }

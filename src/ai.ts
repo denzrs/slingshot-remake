@@ -91,18 +91,39 @@ export interface PlanOptions {
   plasma?: boolean;
 }
 
+/** The cost of an armor-piercing shot that wrecks an enemy cannon but kills nobody: just short of a miss that touched, far from a hit. */
+const WRECK_COST = 0.05;
+
+/** How much less a near miss of an enemy cannon is worth than the same near miss of an enemy ship (px added to its distance). */
+const CANNON_PULL = 15;
+
+/** What a shot that would wreck a cannon of its own side costs: enough to pick another line to the same kill, never enough to lose the kill (hits stay below 0). */
+const OWN_WRECK_COST = 0.4;
+
+/** How much better a killing shot is for also wrecking an enemy cannon: more than power-saving, less than a kill itself. */
+const WRECK_BONUS = 0.3;
+
 /** Planning cost: 0 or below means a hit, lower power is slightly preferred among hits. */
 function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[], profile: Readonly<CpuProfile>, gates: readonly ShotGate[], pierce: boolean, plasma: boolean): number {
-  const { end, closest, selfClosest, gates: passed, pierced } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends, gates, pierce, plasma);
+  const { end, closest, selfClosest, gates: passed, pierced, wrecked, cannonClosest } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends, gates, pierce, plasma);
   // An armor-piercing shot kills what it goes through and flies on, so its end state alone would read as a miss.
   const onFriend = (ship: number): boolean => ship === shooter || friends.includes(ship);
   if ((end.kind === 'ship' && onFriend(end.ship)) || pierced.some(onFriend)) return 1e6;
   const risk = selfClosest < profile.selfMargin ? (profile.selfMargin - selfClosest) * 20 : 0;
-  if (end.kind === 'ship' || pierced.length) return -1 + aim.power * (1 / 1000 + profile.powerFrugality) + risk;
+  // A cannon standing for this CPU or its team is worth keeping: a shot of its own that would wreck one is the worse for it.
+  const ownWreck = wrecked.some((i) => world.defenses[i].protects.includes(shooter));
+  const enemyWreck = wrecked.some((i) => !world.defenses[i].protects.includes(shooter));
+  const penalty = ownWreck ? OWN_WRECK_COST : 0;
+  // Among the shots that kill, one that also clips an enemy cannon on the way is the better one.
+  if (end.kind === 'ship' || pierced.length) return -1 - (enemyWreck ? WRECK_BONUS : 0) + penalty + aim.power * (1 / 1000 + profile.powerFrugality) + risk;
+  // Knocking out an enemy cannon is no kill, but better than any miss: it only reorders the shots that miss.
+  if (enemyWreck && !ownWreck) return WRECK_COST + risk;
   // A shot that would collect a pickup is worth some extra miss distance. The bounty is capped at the
   // current miss, so a non-hit can never beat a hit — it only reorders shots that miss either way.
-  const bounty = passed.length && profile.pickupAppetite > 0 ? Math.min(profile.pickupAppetite, closest) : 0;
-  return closest - bounty + risk;
+  // An armor-piercing shot that nears an enemy cannon is on its way to wrecking it: that counts like nearing a ship, a little less.
+  const miss = Math.min(closest, cannonClosest + CANNON_PULL);
+  const bounty = passed.length && profile.pickupAppetite > 0 ? Math.min(profile.pickupAppetite, miss) : 0;
+  return miss - bounty + risk;
 }
 
 /**
