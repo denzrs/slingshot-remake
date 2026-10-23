@@ -357,6 +357,8 @@ pub struct Store {
     /// never holds up the overview (nor the other way round).
     replay_reader: Connection,
     replaying: tokio::sync::Mutex<()>,
+    /// For the menu's facts, a few dozen scans of the shots: a connection of their own, so they never queue the overview's reads.
+    facts_reader: Connection,
     /// One reader at a time: several tasks asking one connection at once wait on one another's statements, which a page with
     /// a few readers felt as seconds. Holds the overview last made, to hand to whoever asks within `OVERVIEW_FRESH`.
     reading: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<Overview>)>>,
@@ -393,12 +395,15 @@ impl Store {
         reader.busy_timeout(Duration::from_secs(2))?;
         let replay_reader = database.connect()?;
         replay_reader.busy_timeout(Duration::from_secs(2))?;
+        let facts_reader = database.connect()?;
+        facts_reader.busy_timeout(Duration::from_secs(2))?;
         Ok(Self {
             _database: database,
             conn,
             reader,
             replay_reader,
             replaying: tokio::sync::Mutex::new(()),
+            facts_reader,
             reading: tokio::sync::Mutex::new(None),
             facts: tokio::sync::Mutex::new(None),
             players: Identities::new(salt),

@@ -144,7 +144,7 @@ body {
   color: var(--bone-dim);
 }
 
-/* A finding from the statistics: two lines are kept free so the menu does not jump as facts change. */
+/* A finding from the statistics: two lines are kept free (even while empty) so the menu does not jump as facts arrive or change. */
 .fact {
   min-height: 2.8em;
   max-width: 44ch;
@@ -155,10 +155,6 @@ body {
   color: var(--p2);
   opacity: 0;
   transition: opacity 900ms ease;
-}
-
-.fact:empty {
-  display: none;
 }
 
 .fact.is-in {

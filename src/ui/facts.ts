@@ -34,7 +34,11 @@ async function load(board: StatsBoard): Promise<StatsFact[]> {
  */
 export function factTicker(board = new StatsBoard()): HTMLElement {
   const line = h('p.fact', { 'aria-hidden': 'true' });
-  if (!leaderboardAvailable()) return line;
+  // No relay, no facts: the line takes no room. With one, its room is kept from the start so the menu does not jump later.
+  if (!leaderboardAvailable()) {
+    line.hidden = true;
+    return line;
+  }
   let seen = false;
   let tries = 0;
   const show = (texts: string[], next: number): void => {

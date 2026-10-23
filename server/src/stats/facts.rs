@@ -34,6 +34,9 @@ macro_rules! pct {
 }
 
 /// An id, the fewest things it needs to have looked at, and the query: `n` first, then the numbers.
+///
+/// Stats are reported by the hosts and taken at face value, so a fact that names a single record (a best, a biggest) asks for
+/// many more samples than a share does: one rogue host cannot put a silly record on the menu on its own.
 type Query = (&'static str, i64, &'static str);
 
 const QUERIES: &[Query] = &[
@@ -88,7 +91,7 @@ const QUERIES: &[Query] = &[
     ),
     // — Rounds and games —
     ("rounds", 5, "SELECT COUNT(*), AVG(seconds), MAX(seconds) FROM stat_rounds WHERE seconds > 0"),
-    ("longestRound", 5, "SELECT COUNT(*), MAX(turns) FROM stat_rounds WHERE turns IS NOT NULL"),
+    ("longestRound", 25, "SELECT COUNT(*), MAX(turns) FROM stat_rounds WHERE turns IS NOT NULL"),
     ("selfHitRounds", 10, concat!("SELECT COUNT(*), ", pct!("title = 'selfHit'", "1"), " FROM stat_rounds")),
     ("noWinner", 10, concat!("SELECT COUNT(*), ", pct!("survivor IS NULL AND team IS NULL", "1"), " FROM stat_rounds")),
     ("horizonShare", 10, concat!("SELECT COUNT(*), ", pct!("game_mode = 'horizon'", "1"), " FROM stat_rounds")),
@@ -102,10 +105,10 @@ const QUERIES: &[Query] = &[
         ),
     ),
     ("swingbys", 10, "SELECT COUNT(*), 1.0 * SUM(swingbys) / COUNT(DISTINCT match_id || ':' || round) FROM stat_seats"),
-    ("bestHit", 5, "SELECT COUNT(*), MAX(best_hit) FROM stat_rounds WHERE best_hit IS NOT NULL"),
-    ("fastestKill", 5, "SELECT COUNT(*), MIN(fastest_kill) FROM stat_rounds WHERE fastest_kill IS NOT NULL"),
-    ("closeCall", 5, "SELECT COUNT(*), MIN(close_call) FROM stat_rounds WHERE close_call > 0"),
-    ("today", 1, "SELECT rounds, rounds, points FROM stat_days ORDER BY day DESC LIMIT 1"),
+    ("bestHit", 25, "SELECT COUNT(*), MAX(best_hit) FROM stat_rounds WHERE best_hit IS NOT NULL"),
+    ("fastestKill", 25, "SELECT COUNT(*), MIN(fastest_kill) FROM stat_rounds WHERE fastest_kill IS NOT NULL"),
+    ("closeCall", 25, "SELECT COUNT(*), MIN(close_call) FROM stat_rounds WHERE close_call > 0"),
+    ("today", 1, "SELECT rounds, rounds, points FROM stat_days WHERE day = date('now')"),
     // — The oracle: tips and bets —
     ("tipRound", 5, concat!("SELECT COUNT(*), ", pct!("correct = 1", "1"), " FROM stat_tips WHERE kind = 'round'")),
     ("tipShot", 5, concat!("SELECT COUNT(*), ", pct!("correct = 1", "1"), " FROM stat_tips WHERE kind = 'shot'")),
@@ -113,8 +116,8 @@ const QUERIES: &[Query] = &[
     ("tipStands", 5, concat!("SELECT COUNT(*), ", pct!("stands = 1", "1"), " FROM stat_tips")),
     ("betPaid", 5, concat!("SELECT COUNT(*), ", pct!("payout > stake", "1"), " FROM stat_tips WHERE stake > 0")),
     ("betStake", 5, "SELECT COUNT(*), AVG(stake), MAX(stake) FROM stat_tips WHERE stake > 0"),
-    ("betWin", 3, "SELECT COUNT(*), MAX(payout - stake) FROM stat_tips WHERE stake > 0 AND payout > stake"),
-    ("betLoss", 3, "SELECT COUNT(*), MAX(stake) FROM stat_tips WHERE stake > 0 AND payout = 0"),
+    ("betWin", 25, "SELECT COUNT(*), MAX(payout - stake) FROM stat_tips WHERE stake > 0 AND payout > stake"),
+    ("betLoss", 25, "SELECT COUNT(*), MAX(stake) FROM stat_tips WHERE stake > 0 AND payout = 0"),
 ];
 
 impl Store {
@@ -145,7 +148,7 @@ impl Store {
     }
 
     async fn fact(&self, sql: &str, at_least: i64) -> turso::Result<Option<Vec<f64>>> {
-        let mut rows = self.reader.query(sql, ()).await?;
+        let mut rows = self.facts_reader.query(sql, ()).await?;
         let Some(row) = rows.next().await? else {
             return Ok(None);
         };
