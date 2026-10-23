@@ -186,13 +186,14 @@ impl RoomManager {
     /// The stats page's numbers as they go on the wire; `None` when the relay keeps no statistics.
     pub fn stats_overview(&mut self, conn: u64, overview: Option<&Overview>) {
         let value = match overview {
-            None => json!({ "type": "stats_overview", "enabled": false, "days": [], "games": [] }),
+            None => {
+                json!({ "type": "stats_overview", "enabled": false, "days": [], "localDays": [], "games": [] })
+            }
             Some(overview) => json!({
                 "type": "stats_overview",
                 "enabled": true,
-                "days": overview.days.iter().map(|d| json!({
-                    "day": d.day, "rounds": d.rounds, "players": d.players, "points": d.points,
-                })).collect::<Vec<_>>(),
+                "days": overview.days.iter().map(day_json).collect::<Vec<_>>(),
+                "localDays": overview.local_days.iter().map(day_json).collect::<Vec<_>>(),
                 "games": overview.games.iter().map(|g| json!({
                     "id": g.id, "at": g.at, "gameMode": g.game_mode, "mode": g.mode,
                     "humans": g.humans, "cpus": g.cpus, "rounds": g.rounds, "points": g.points,
@@ -223,6 +224,10 @@ impl RoomManager {
     pub fn error(&self, conn: u64, message: &str) {
         self.net.error(conn, message);
     }
+}
+
+fn day_json(d: &crate::stats::DayTotals) -> Value {
+    json!({ "day": d.day, "rounds": d.rounds, "players": d.players, "points": d.points })
 }
 
 /// The raw-message entry points the tests use to give a room a prehashed password or a verdict.

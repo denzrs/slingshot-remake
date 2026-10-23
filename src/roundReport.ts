@@ -39,6 +39,8 @@ export interface RoundReport {
   /** Seconds of match clock the round took. */
   seconds: number;
   planets: number;
+  /** How many turns (volleys) the round took: the relay checks the turn reports it kept against it. */
+  turns: number;
   players: SeatReport[];
   records: {
     longestShot?: RecordReport;
@@ -86,6 +88,7 @@ export interface ReportSource {
   summary: { title: RoundTitle; survivor: number | null; team: number | null } | null;
   players: readonly { score: number; shots: number; alive: boolean }[];
   world: { planets: readonly unknown[] };
+  shotLog: { turn: number };
 }
 
 const RECORDS = ['longestShot', 'fastestKill', 'bestHit', 'closeCall', 'sniper'] as const;
@@ -108,6 +111,7 @@ export function roundReport(match: ReportSource): RoundReport {
     team: match.summary?.team ?? null,
     seconds: round1(match.roundSeconds),
     planets: match.world.planets.length,
+    turns: match.shotLog.turn,
     players: match.players.map((p, i) => ({
       score: Math.round(p.score),
       shots: p.shots,

@@ -10,9 +10,10 @@
 //! CPU seat has no hash. The numbers are taken at face value: they come from the host's own
 //! browser, and the relay can fly nothing again.
 
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use tracing::{info, warn};
@@ -31,7 +32,7 @@ const OVERVIEW_GAMES: i64 = 50;
 const PRUNE_INTERVAL_SECS: i64 = 6 * 60 * 60;
 const DAY_SECS: i64 = 24 * 60 * 60;
 
-const SCHEMA: [&str; 11] = [
+const SCHEMA: [&str; 13] = [
     // What the statistics remember between runs: the key their players are hashed with.
     "CREATE TABLE IF NOT EXISTS stat_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     // One row per round. `match_id` is random per game and `room_id` random per room; neither is reused.
@@ -156,6 +157,18 @@ const SCHEMA: [&str; 11] = [
          rounds INTEGER NOT NULL,
          points INTEGER NOT NULL
      )",
+    // The same for games played on one device. They are told apart because their numbers are not the online ones:
+    // a local game has no shots, and its points are the scores the seats ended on, CPUs included.
+    "CREATE TABLE IF NOT EXISTS stat_local_days (
+         day    TEXT    PRIMARY KEY,
+         rounds INTEGER NOT NULL,
+         points INTEGER NOT NULL
+     )",
+    "CREATE TABLE IF NOT EXISTS stat_local_day_players (
+         day    TEXT NOT NULL,
+         player TEXT NOT NULL,
+         PRIMARY KEY (day, player)
+     )",
     // Who played on a day, for as long as the day is kept: a player's hash and nothing about them.
     "CREATE TABLE IF NOT EXISTS stat_day_players (
          day    TEXT NOT NULL,
@@ -201,6 +214,17 @@ const ADD_DAY: &str = "INSERT INTO stat_days (day, rounds, points) VALUES (date(
 const ADD_DAY_PLAYER: &str =
     "INSERT OR IGNORE INTO stat_day_players (day, player) VALUES (date(?1, 'unixepoch'), ?2)";
 
+const ADD_LOCAL_DAY: &str = "INSERT INTO stat_local_days (day, rounds, points) VALUES (date(?1, 'unixepoch'), ?2, ?3)
+     ON CONFLICT(day) DO UPDATE SET rounds = rounds + excluded.rounds, points = points + excluded.points";
+
+const ADD_LOCAL_DAY_PLAYER: &str =
+    "INSERT OR IGNORE INTO stat_local_day_players (day, player) VALUES (date(?1, 'unixepoch'), ?2)";
+
+const SET_TURNS: &str = "UPDATE stat_rounds SET turns = ?3 WHERE match_id = ?1 AND round = ?2";
+
+const PRUNE_LOCAL_DAYS: &str = "DELETE FROM stat_local_days WHERE day < date(?1, 'unixepoch')";
+const PRUNE_LOCAL_DAY_PLAYERS: &str =
+    "DELETE FROM stat_local_day_players WHERE day < date(?1, 'unixepoch')";
 const PRUNE_DAYS: &str = "DELETE FROM stat_days WHERE day < date(?1, 'unixepoch')";
 const PRUNE_DAY_PLAYERS: &str = "DELETE FROM stat_day_players WHERE day < date(?1, 'unixepoch')";
 
@@ -238,7 +262,10 @@ pub struct Game {
 }
 
 pub struct Overview {
+    /// Online games, by day.
     pub days: Vec<DayTotals>,
+    /// Games played on one device, by day.
+    pub local_days: Vec<DayTotals>,
     pub games: Vec<Game>,
 }
 
@@ -282,6 +309,10 @@ pub struct Store {
     conn: Connection,
     /// For the overview's reads, so they never sit inside the writer's transaction.
     reader: Connection,
+    /// For replays, which read a game's every row: a connection of their own and their own lock, so that a replay
+    /// never holds up the overview (nor the other way round).
+    replay_reader: Connection,
+    replaying: tokio::sync::Mutex<()>,
     /// One reader at a time: several tasks asking one connection at once wait on one another's statements, which a page with
     /// a few readers felt as seconds. Holds the overview last made, to hand to whoever asks within `OVERVIEW_FRESH`.
     reading: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<Overview>)>>,
@@ -307,16 +338,21 @@ impl Store {
             ("stat_shots", "fan", "INTEGER"),
             ("stat_shots", "split_at", "INTEGER"),
             ("stat_shots", "rider", "TEXT"),
+            ("stat_rounds", "turns", "INTEGER"),
         ] {
             Self::ensure_column(&conn, table, column, declared).await?;
         }
         let salt = Self::salt(&conn).await?;
         let reader = database.connect()?;
         reader.busy_timeout(Duration::from_secs(2))?;
+        let replay_reader = database.connect()?;
+        replay_reader.busy_timeout(Duration::from_secs(2))?;
         Ok(Self {
             _database: database,
             conn,
             reader,
+            replay_reader,
+            replaying: tokio::sync::Mutex::new(()),
             reading: tokio::sync::Mutex::new(None),
             players: Identities::new(salt),
             keep_days: keep_days.max(1),
@@ -381,14 +417,24 @@ impl Store {
     }
 
     async fn record_at(&self, job: &Job, at: i64) -> turso::Result<()> {
-        self.conn.execute("BEGIN", ()).await?;
+        if self.conn.execute("BEGIN", ()).await.is_err() {
+            // A transaction left open by a failure would fail every write after it: close it and begin again.
+            let _ = self.conn.execute("ROLLBACK", ()).await;
+            self.conn.execute("BEGIN", ()).await?;
+        }
         let written = match job {
             Job::Round(facts, report) => self.write_round(facts, report, at).await,
             Job::Turn(facts, report) => self.write_turn(facts, report, at).await,
             Job::Local(facts, rounds) => self.write_local(facts, rounds, at).await,
         };
         match written {
-            Ok(()) => self.conn.execute("COMMIT", ()).await.map(|_| ()),
+            Ok(()) => match self.conn.execute("COMMIT", ()).await {
+                Ok(_) => Ok(()),
+                Err(err) => {
+                    let _ = self.conn.execute("ROLLBACK", ()).await;
+                    Err(err)
+                }
+            },
             Err(err) => {
                 let _ = self.conn.execute("ROLLBACK", ()).await;
                 Err(err)
@@ -461,7 +507,7 @@ impl Store {
             self.write_shot(facts, report.round, shot, &who, at).await?;
         }
         let points = report.shots.iter().map(|shot| shot.points).sum();
-        self.tally(&who, 0, points, at).await
+        self.tally(facts.local, &who, 0, points, at).await
     }
 
     /// A game played on one device: its rounds as the player's own client reports them, all at once, and the
@@ -478,7 +524,8 @@ impl Store {
         let points = rounds
             .last()
             .map_or(0, |last| last.seats.iter().map(|seat| seat.score).sum());
-        self.tally(&self.who(facts), 0, points, at).await
+        self.tally(facts.local, &self.who(facts), 0, points, at)
+            .await
     }
 
     /// The game's row, written with its first report: the seed, the rules and who sat where.
@@ -580,6 +627,11 @@ impl Store {
         round.push(Sql::Text(facts.room_id.clone()));
         debug_assert_eq!(report.records.len(), RECORD_KEYS.len());
         self.conn.execute(INSERT_ROUND, round).await?;
+        if let Some(turns) = report.turns {
+            self.conn
+                .execute(SET_TURNS, (facts.match_id.clone(), report.round, turns))
+                .await?;
+        }
 
         let who = self.who(facts);
         for (seat, (sitter, ship)) in facts.seats.iter().zip(&report.seats).enumerate() {
@@ -607,23 +659,27 @@ impl Store {
             ];
             self.conn.execute(INSERT_SEAT, row).await?;
         }
-        self.tally(&who, 1, 0, at).await
+        self.tally(facts.local, &who, 1, 0, at).await
     }
 
     /// Add to the day's totals: rounds and points, and the people who played.
     async fn tally(
         &self,
+        local: bool,
         who: &[(Sql, Sql)],
         rounds: i64,
         points: i64,
         at: i64,
     ) -> turso::Result<()> {
-        self.conn.execute(ADD_DAY, (at, rounds, points)).await?;
+        let (add_day, add_player) = if local {
+            (ADD_LOCAL_DAY, ADD_LOCAL_DAY_PLAYER)
+        } else {
+            (ADD_DAY, ADD_DAY_PLAYER)
+        };
+        self.conn.execute(add_day, (at, rounds, points)).await?;
         for (player, _) in who {
             if let Sql::Text(player) = player {
-                self.conn
-                    .execute(ADD_DAY_PLAYER, (at, player.clone()))
-                    .await?;
+                self.conn.execute(add_player, (at, player.clone())).await?;
             }
         }
         Ok(())
@@ -644,6 +700,10 @@ impl Store {
         let removed = self.conn.execute(PRUNE_ROUNDS, (cutoff,)).await?;
         self.conn.execute(PRUNE_DAYS, (cutoff,)).await?;
         self.conn.execute(PRUNE_DAY_PLAYERS, (cutoff,)).await?;
+        self.conn.execute(PRUNE_LOCAL_DAYS, (cutoff,)).await?;
+        self.conn
+            .execute(PRUNE_LOCAL_DAY_PLAYERS, (cutoff,))
+            .await?;
         Ok(removed)
     }
 
@@ -663,18 +723,31 @@ impl Store {
 
     /// What the stats page shows: the totals of every day kept, and the latest games.
     pub async fn overview(&self) -> turso::Result<Overview> {
-        let mut days = Vec::new();
+        Ok(Overview {
+            days: self.days("stat_days", "stat_day_players").await?,
+            local_days: self
+                .days("stat_local_days", "stat_local_day_players")
+                .await?,
+            games: self.latest_games().await?,
+        })
+    }
+
+    /// The totals of every day in a pair of day tables (online or local), oldest first.
+    async fn days(&self, days: &str, players: &str) -> turso::Result<Vec<DayTotals>> {
+        let mut out = Vec::new();
         let mut rows = self
             .reader
             .query(
-                "SELECT d.day, d.rounds,
-                        (SELECT COUNT(*) FROM stat_day_players p WHERE p.day = d.day), d.points
-                 FROM stat_days d ORDER BY d.day",
+                format!(
+                    "SELECT d.day, d.rounds,
+                            (SELECT COUNT(*) FROM {players} p WHERE p.day = d.day), d.points
+                     FROM {days} d ORDER BY d.day"
+                ),
                 (),
             )
             .await?;
         while let Some(row) = rows.next().await? {
-            days.push(DayTotals {
+            out.push(DayTotals {
                 day: row.get(0)?,
                 rounds: row.get(1)?,
                 players: row.get(2)?,
@@ -682,10 +755,7 @@ impl Store {
             });
         }
         drop(rows);
-        Ok(Overview {
-            days,
-            games: self.latest_games().await?,
-        })
+        Ok(out)
     }
 
     /// The latest games, newest first, with what the table shows of each. A handful of queries in all – one for the games, then one
@@ -795,13 +865,15 @@ impl Store {
         drop(rows);
 
         // Whether a game can be flown again: its rounds' turns, counted.
-        let mut turns: std::collections::HashMap<String, Vec<(i64, i64)>> =
+        let mut turns: std::collections::HashMap<String, Vec<(i64, i64, i64)>> =
+            std::collections::HashMap::new();
+        let mut reported: std::collections::HashMap<String, Vec<(i64, Option<i64>)>> =
             std::collections::HashMap::new();
         let mut rows = self
             .reader
             .query(
                 format!(
-                    "SELECT match_id, COUNT(DISTINCT turn), MAX(turn) FROM stat_turns WHERE match_id IN ({ids}) GROUP BY match_id, round"
+                    "SELECT match_id, round, COUNT(DISTINCT turn), MAX(turn) FROM stat_turns WHERE match_id IN ({ids}) GROUP BY match_id, round"
                 ),
                 (),
             )
@@ -810,7 +882,21 @@ impl Store {
             turns
                 .entry(row.get(0)?)
                 .or_default()
-                .push((row.get(1)?, row.get(2)?));
+                .push((row.get(1)?, row.get(2)?, row.get(3)?));
+        }
+        drop(rows);
+        let mut rows = self
+            .reader
+            .query(
+                format!("SELECT match_id, round, turns FROM stat_rounds WHERE match_id IN ({ids})"),
+                (),
+            )
+            .await?;
+        while let Some(row) = rows.next().await? {
+            reported
+                .entry(row.get(0)?)
+                .or_default()
+                .push((row.get(1)?, row.get::<i64>(2).ok()));
         }
         drop(rows);
 
@@ -818,8 +904,9 @@ impl Store {
             .into_iter()
             .map(|mut head| {
                 let counted = turns.get(&head.game.id).map_or(&[][..], Vec::as_slice);
+                let rounds = reported.get(&head.game.id).map_or(&[][..], Vec::as_slice);
                 head.game.replay = !head.game.local
-                    && is_replayable(head.replayable, &head.rules, head.game.rounds, counted);
+                    && is_replayable(head.replayable, &head.rules, rounds, counted);
                 head.game
             })
             .collect())
@@ -829,7 +916,7 @@ impl Store {
     /// it logged what a replay needs, every round of the rules was reported, and every round's turns are all there.
     async fn replayable(&self, match_id: &str) -> turso::Result<bool> {
         let mut rows = self
-            .reader
+            .replay_reader
             .query(
                 "SELECT replayable, rules, source FROM stat_matches WHERE match_id = ?1",
                 (match_id.to_string(),),
@@ -846,33 +933,34 @@ impl Store {
         }
         let mut counted = Vec::new();
         let mut rows = self
-            .reader
+            .replay_reader
             .query(
-                "SELECT COUNT(DISTINCT turn), MAX(turn) FROM stat_turns WHERE match_id = ?1 GROUP BY round",
+                "SELECT round, COUNT(DISTINCT turn), MAX(turn) FROM stat_turns WHERE match_id = ?1 GROUP BY round",
                 (match_id.to_string(),),
             )
             .await?;
         while let Some(row) = rows.next().await? {
-            counted.push((row.get(0)?, row.get(1)?));
+            counted.push((row.get(0)?, row.get(1)?, row.get(2)?));
         }
         drop(rows);
+        let mut rounds = Vec::new();
         let mut rows = self
-            .reader
+            .replay_reader
             .query(
-                "SELECT COUNT(*) FROM stat_rounds WHERE match_id = ?1",
+                "SELECT round, turns FROM stat_rounds WHERE match_id = ?1",
                 (match_id.to_string(),),
             )
             .await?;
-        let reported = match rows.next().await? {
-            Some(row) => row.get::<i64>(0)?,
-            None => 0,
-        };
-        Ok(is_replayable(replayable, &rules, reported, &counted))
+        while let Some(row) = rows.next().await? {
+            rounds.push((row.get(0)?, row.get::<i64>(1).ok()));
+        }
+        drop(rows);
+        Ok(is_replayable(replayable, &rules, &rounds, &counted))
     }
 
     /// A replay, read by one reader at a time like the overview.
     pub async fn replay_shared(&self, match_id: &str) -> turso::Result<Option<Value>> {
-        let _reading = self.reading.lock().await;
+        let _replaying = self.replaying.lock().await;
         self.replay(match_id).await
     }
 
@@ -884,7 +972,7 @@ impl Store {
         }
         let id = match_id.to_string();
         let mut rows = self
-            .reader
+            .replay_reader
             .query(
                 "SELECT seed, game_mode, mode, rules, seats FROM stat_matches WHERE match_id = ?1",
                 (id.clone(),),
@@ -904,7 +992,7 @@ impl Store {
         // The turns, in order: a turn nobody shot in still has its row among the seats'.
         let mut turns: Vec<(i64, i64, Vec<Value>, Vec<Value>)> = Vec::new();
         let mut rows = self
-            .reader
+            .replay_reader
             .query(
                 "SELECT DISTINCT round, turn FROM stat_turns WHERE match_id = ?1 ORDER BY round, turn",
                 (id.clone(),),
@@ -920,7 +1008,7 @@ impl Store {
                 .ok()
         };
         let mut rows = self
-            .reader
+            .replay_reader
             .query(
                 "SELECT round, turn, seat, angle, power, rider, split_at FROM stat_shots
                  WHERE match_id = ?1 AND fork = 0 ORDER BY round, turn, n",
@@ -941,7 +1029,7 @@ impl Store {
         }
         drop(rows);
         let mut rows = self
-            .reader
+            .replay_reader
             .query(
                 "SELECT round, turn, seat, kind, x, y, x2, y2, planet FROM stat_placements
                  WHERE match_id = ?1 ORDER BY round, turn, n",
@@ -1018,7 +1106,16 @@ pub enum Job {
 pub struct Stats {
     store: std::sync::Arc<Store>,
     queue: tokio::sync::mpsc::Sender<Job>,
+    /// Per address, when the current hour of local games began and how many were handed in during it.
+    local_games: std::sync::Mutex<HashMap<IpAddr, (Instant, u32)>>,
 }
+
+/// How many games played on one device an address may hand in per hour: far more than anyone plays, far fewer
+/// than it takes to bury the statistics under made-up games.
+const LOCAL_GAMES_PER_HOUR: u32 = 20;
+const LOCAL_WINDOW: Duration = Duration::from_secs(3600);
+/// Addresses remembered at most; when it is passed, those whose hour is over are forgotten.
+const LOCAL_ADDRESSES: usize = 4096;
 
 impl std::ops::Deref for Stats {
     type Target = Store;
@@ -1042,7 +1139,11 @@ impl Stats {
                 }
             }
         });
-        Ok(Self { store, queue })
+        Ok(Self {
+            store,
+            queue,
+            local_games: std::sync::Mutex::new(HashMap::new()),
+        })
     }
 
     #[cfg(test)]
@@ -1059,6 +1160,10 @@ impl Stats {
     /// the player's own client knows no room and chooses no id that could name one.
     pub fn submit_local(&self, ip: IpAddr, game: LocalGame) {
         use rand::Rng;
+        if !self.local_allowed(ip, Instant::now()) {
+            warn!(%ip, "too many local games from one address; one was dropped");
+            return;
+        }
         let mut rng = rand::thread_rng();
         let facts = RoundFacts {
             room_id: format!("{:032x}", rng.gen::<u128>()),
@@ -1088,6 +1193,26 @@ impl Stats {
         self.submit(Job::Local(facts, game.rounds));
     }
 
+    /// Whether `ip` may hand in another local game: a fixed window of an hour from its first, with a count.
+    fn local_allowed(&self, ip: IpAddr, now: Instant) -> bool {
+        let mut seen = self
+            .local_games
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if seen.len() >= LOCAL_ADDRESSES {
+            seen.retain(|_, (since, _)| now.duration_since(*since) < LOCAL_WINDOW);
+        }
+        let entry = seen.entry(ip).or_insert((now, 0));
+        if now.duration_since(entry.0) >= LOCAL_WINDOW {
+            *entry = (now, 0);
+        }
+        if entry.1 >= LOCAL_GAMES_PER_HOUR {
+            return false;
+        }
+        entry.1 += 1;
+        true
+    }
+
     /// Hand a round to the writer. Never waits: a full queue drops the round and says so.
     pub fn submit(&self, job: Job) {
         if self.queue.try_send(job).is_err() {
@@ -1101,19 +1226,36 @@ fn optional(value: Option<i64>) -> Sql {
 }
 
 /// Whether a game can be flown again: no client left out the placements, every round of the rules was reported, and
-/// every round's turns count up from 1 without a gap (`counted` is, per round with turns, how many there are and the
-/// highest number).
-fn is_replayable(replayable: i64, rules: &str, reported: i64, counted: &[(i64, i64)]) -> bool {
+/// every round's turns count up from 1 to the number the round reported (`counted` is, per round with turns, how many
+/// there are and the highest number).
+fn is_replayable(
+    replayable: i64,
+    rules: &str,
+    reported: &[(i64, Option<i64>)],
+    counted: &[(i64, i64, i64)],
+) -> bool {
     let expected = serde_json::from_str::<Value>(rules)
         .ok()
         .and_then(|rules| rules.get("rounds").and_then(Value::as_i64));
     let Some(expected) = expected else {
         return false;
     };
+    // Each round says how many turns it took: those are all there, from 1 without a gap, and there is no turn
+    // of a round that was never reported. A round that does not say (an old client) cannot be checked.
+    let whole = reported.iter().all(|(round, turns)| {
+        let found = counted.iter().find(|(r, _, _)| r == round);
+        match (turns, found) {
+            (Some(0), None) => true,
+            (Some(turns), Some((_, count, last))) => count == turns && last == turns,
+            _ => false,
+        }
+    });
     replayable != 0
-        && counted.iter().all(|(turns, last)| turns == last)
-        && counted.len() as i64 == expected
-        && reported == expected
+        && whole
+        && counted
+            .iter()
+            .all(|(round, _, _)| reported.iter().any(|(r, _)| r == round))
+        && reported.len() as i64 == expected
 }
 
 fn encode_hex(bytes: &[u8]) -> String {
@@ -1146,7 +1288,7 @@ mod tests {
     fn round(round: i64) -> RoundReport {
         parse_round_report(&json!({
             "round": round, "title": "hit", "survivor": 1, "team": null,
-            "seconds": 30.5, "planets": 3,
+            "seconds": 30.5, "planets": 3, "turns": 2,
             "players": [
                 {"score": 0, "shots": 2, "kills": 0, "swingbys": 0, "grazes": 1, "ownGoals": 0, "pickups": 0, "saves": 0, "alive": false},
                 {"score": 500, "shots": 1, "kills": 1, "swingbys": 2, "grazes": 0, "ownGoals": 0, "pickups": 0, "saves": 0, "alive": true},
@@ -1499,6 +1641,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_turn_lost_at_the_end_of_a_round_is_noticed() {
+        let ann = [10, 0, 0, 1];
+        let stats = Stats::in_memory().await;
+        // The round says it took two turns; the second never arrived.
+        stats.record(&turn_job(ann, 1, 1)).await.unwrap();
+        stats.record(&round_job(ann, 1)).await.unwrap();
+        assert!(!stats.overview().await.unwrap().games[0].replay);
+        assert!(stats.replay("0123456789abcdef").await.unwrap().is_none());
+        // A round that does not say how many turns it took cannot be checked either.
+        let stats = Stats::in_memory().await;
+        let mut vague = round(1);
+        vague.turns = None;
+        stats.record(&turn_job(ann, 1, 1)).await.unwrap();
+        stats.record(&turn_job(ann, 1, 2)).await.unwrap();
+        stats
+            .record(&Job::Round(facts(ann, "ann"), vague))
+            .await
+            .unwrap();
+        assert!(!stats.overview().await.unwrap().games[0].replay);
+    }
+
+    #[tokio::test]
+    async fn an_address_may_hand_in_only_so_many_local_games_an_hour() {
+        let stats = Stats::in_memory().await;
+        let ip: IpAddr = [10, 0, 0, 1].into();
+        let other: IpAddr = [10, 0, 0, 2].into();
+        let now = Instant::now();
+        for _ in 0..LOCAL_GAMES_PER_HOUR {
+            assert!(stats.local_allowed(ip, now));
+        }
+        assert!(!stats.local_allowed(ip, now));
+        assert!(
+            stats.local_allowed(other, now),
+            "another address has its own"
+        );
+        assert!(
+            stats.local_allowed(ip, now + LOCAL_WINDOW),
+            "the next hour starts afresh"
+        );
+    }
+
+    #[tokio::test]
     async fn a_game_played_on_one_device_is_kept_without_turns_and_cannot_be_flown_again() {
         let stats = Stats::in_memory().await;
         let mut facts = facts([10, 0, 0, 1], "");
@@ -1517,9 +1701,10 @@ mod tests {
         // No shots to add up: the points are what the seats ended on (0 and 500).
         assert_eq!(game.points, 500);
         assert!(stats.replay("0123456789abcdef").await.unwrap().is_none());
-        // The day counts it: two rounds, one person, the points it ended on.
+        // The day counts it, among the local days and not the online ones: two rounds, one person, the points it ended on.
+        assert!(overview.days.is_empty());
         assert_eq!(
-            overview.days[0],
+            overview.local_days[0],
             DayTotals {
                 day: "2025-10-09".into(),
                 rounds: 2,

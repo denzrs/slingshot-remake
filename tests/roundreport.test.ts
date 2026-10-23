@@ -14,6 +14,7 @@ describe('round report', () => {
       { score: 800, shots: 2, alive: true },
     ],
     world: { planets: [{}, {}, {}] },
+    shotLog: { turn: 4 },
   });
 
   it('counts per seat, with zero for a seat the book never heard of', () => {
@@ -24,7 +25,7 @@ describe('round report', () => {
     const report = roundReport(match);
     expect(report.players[0]).toMatchObject({ score: 120, shots: 3, kills: 0, grazes: 1, alive: false });
     expect(report.players[1]).toMatchObject({ score: 800, kills: 2, grazes: 0, alive: true });
-    expect(report).toMatchObject({ round: 2, title: 'hit', survivor: 1, team: null, seconds: 41.3, planets: 3 });
+    expect(report).toMatchObject({ round: 2, title: 'hit', survivor: 1, team: null, seconds: 41.3, planets: 3, turns: 4 });
   });
 
   it('carries the records without the shots behind them', () => {

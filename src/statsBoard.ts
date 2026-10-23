@@ -5,7 +5,10 @@ import { NetworkClient, type ServerMessage, type StatsDay, type StatsGame, type 
 export interface StatsOverview {
   /** False when the relay keeps no statistics. */
   enabled: boolean;
+  /** Online games, by day. */
   days: StatsDay[];
+  /** Games played on one device, by day. */
+  localDays: StatsDay[];
   games: StatsGame[];
 }
 
@@ -20,7 +23,7 @@ export class StatsBoard {
 
   async overview(): Promise<StatsOverview> {
     const reply = await this.ask({ type: 'stats_overview' }, (message) => (message.type === 'stats_overview' ? message : null));
-    return { enabled: reply.enabled, days: reply.days, games: reply.games };
+    return { enabled: reply.enabled, days: reply.days, localDays: reply.localDays ?? [], games: reply.games };
   }
 
   /** A game to fly again, or null when the relay does not have the whole of it. */
@@ -33,25 +36,33 @@ export class StatsBoard {
     const connection = this.connection();
     try {
       await connection.connect();
-      const { promise, resolve, reject } = Promise.withResolvers<T>();
-      const timer = setTimeout(() => reject(new Error('The statistics did not answer')), REPLY_TIMEOUT_MS);
-      connection.onMessage((message) => {
-        const answer = pick(message);
-        if (answer !== null) {
+      return await new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('The statistics did not answer')), REPLY_TIMEOUT_MS);
+        const done = (settle: () => void): void => {
           clearTimeout(timer);
-          resolve(answer);
-        } else if (message.type === 'error' || message.type === 'closed') {
-          clearTimeout(timer);
-          reject(new Error(message.message));
+          settle();
+        };
+        connection.onMessage((message) => {
+          const answer = pick(message);
+          if (answer !== null) done(() => resolve(answer));
+          else if (message.type === 'error' || message.type === 'closed') done(() => reject(new Error(message.message)));
+        });
+        try {
+          connection.send(request);
+        } catch (error) {
+          done(() => reject(error));
         }
       });
-      connection.send(request);
-      return await promise;
     } finally {
       connection.close();
     }
   }
 }
+
+/** Which games the page shows: those played on the relay, or those played on one device. */
+export type Source = 'online' | 'local';
+
+export const SOURCES: readonly Source[] = ['online', 'local'];
 
 /** What a heatmap colours a day by. */
 export type Metric = 'rounds' | 'players' | 'points';

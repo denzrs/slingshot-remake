@@ -121,6 +121,9 @@ pub struct RoundReport {
     pub seconds: f64,
     pub planets: i64,
     pub seats: Vec<SeatRound>,
+    /// How many turns the round took, as the host counted them: what the turn reports are checked against, so a
+    /// turn lost at the end of a round is noticed. None from a client that does not say.
+    pub turns: Option<i64>,
     /// Indexed like `RECORD_KEYS`.
     pub records: [Option<RecordRound>; RECORD_KEYS.len()],
 }
@@ -246,6 +249,7 @@ pub fn parse_round_report(value: &Value) -> Option<RoundReport> {
         seconds: real(value.get("seconds"), MAX_SECONDS)?,
         planets: int(value.get("planets"), 0..=MAX_PLANETS)?,
         seats,
+        turns: optional_int(value.get("turns"), 0..=MAX_TURN)?,
         records,
     })
 }

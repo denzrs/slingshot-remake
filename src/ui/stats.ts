@@ -1,6 +1,6 @@
 import { fmtInt, getLang, t, tn } from '../i18n';
-import type { StatsGame } from '../net';
-import { buildHeatmap, METRICS, StatsBoard, type Metric, type StatsOverview } from '../statsBoard';
+import type { StatsDay, StatsGame } from '../net';
+import { buildHeatmap, METRICS, SOURCES, StatsBoard, type Metric, type Source, type StatsOverview } from '../statsBoard';
 import { h, type MenuItem, type Screen } from './menu';
 import { leaderboardAvailable } from './leaderboard';
 import type { App } from './screens';
@@ -33,9 +33,9 @@ function hideTip(): HTMLElement | null {
  * The heatmap: built once, with a square for every day of the year, and then only told what to show. Switching what it
  * shows is a few hundred attribute changes, where building it again was a few hundred elements and a repaint of the page.
  */
-function heatmapView(overview: StatsOverview): { el: HTMLElement; show(metric: Metric): void } {
+function heatmapView(): { el: HTMLElement; show(days: readonly StatsDay[], metric: Metric): void } {
   const today = utcToday();
-  const first = buildHeatmap(overview.days, 'rounds', today);
+  const first = buildHeatmap([], 'rounds', today);
   const grid = h('div.hm__grid', { role: 'img' });
   const squares: (HTMLElement | null)[][] = [];
   for (const week of first.weeks) {
@@ -78,8 +78,8 @@ function heatmapView(overview: StatsOverview): { el: HTMLElement; show(metric: M
   });
   grid.addEventListener('mouseleave', hideTip);
   const total = h('p.hm__total', null, '');
-  const show = (metric: Metric): void => {
-    const shown = buildHeatmap(overview.days, metric, today);
+  const show = (days: readonly StatsDay[], metric: Metric): void => {
+    const shown = buildHeatmap(days, metric, today);
     shown.weeks.forEach((week, w) =>
       week.forEach((cell, d) => {
         const square = squares[w][d];
@@ -121,6 +121,7 @@ function gameRow(game: StatsGame, watch: (game: StatsGame, button: HTMLButtonEle
 export function statsScreen(app: App): Screen {
   const board = new StatsBoard();
   let metric: Metric = 'rounds';
+  let source: Source = 'online';
   let overview: StatsOverview | null = null;
   let view: ReturnType<typeof heatmapView> | null = null;
   let failed = false;
@@ -141,7 +142,8 @@ export function statsScreen(app: App): Screen {
       button.textContent = label;
       status.textContent = t('replay.failed');
     };
-    board.replay(game.id).then((replay) => (replay ? app.watchReplay(replay) : failedToLoad()), failedToLoad);
+    // A reply that comes after the player has left this page must not pull them into a replay.
+    board.replay(game.id).then((replay) => (!root.isConnected ? undefined : replay ? app.watchReplay(replay) : failedToLoad()), () => root.isConnected && failedToLoad());
   };
 
   const paint = (): void => {
@@ -151,18 +153,19 @@ export function statsScreen(app: App): Screen {
     table.hidden = !shown;
     if (!overview || !shown) return;
     hideTip();
-    // The page is made once; a switch of what the heatmap shows only changes the squares.
+    // The heatmap is made once; a switch of what it shows only changes the squares.
     if (!view) {
-      view = heatmapView(overview);
+      view = heatmapView();
       heat.replaceChildren(view.el);
       // On a narrow screen the heatmap scrolls: it opens on today, the right-hand end.
       const frame = view.el.querySelector('.hm__frame');
       if (frame) frame.scrollLeft = frame.scrollWidth;
-      games.replaceChildren(...overview.games.map((game) => gameRow(game, watch)));
-      head.hidden = overview.games.length === 0;
-      if (overview.games.length === 0) games.replaceChildren(h('li.st__none', null, t('stats.none')));
     }
-    view.show(metric);
+    const local = source === 'local';
+    view.show(local ? overview.localDays : overview.days, metric);
+    const shownGames = overview.games.filter((game) => game.local === local);
+    head.hidden = shownGames.length === 0;
+    games.replaceChildren(...(shownGames.length === 0 ? [h('li.st__none', null, t('stats.none'))] : shownGames.map((game) => gameRow(game, watch))));
   };
 
   void board.overview().then(
@@ -184,6 +187,7 @@ export function statsScreen(app: App): Screen {
       null,
       h('p.eyebrow', null, t('stats.eyebrow')),
       h('h2.daily__title', null, t('stats.title')),
+      h('div.items.items--row', { 'data-section': 'source' }),
       h('div.items.items--row', { 'data-section': 'metric' }),
       status,
       heat,
@@ -196,6 +200,17 @@ export function statsScreen(app: App): Screen {
   return {
     build: () => root,
     items: [
+      {
+        kind: 'segmented',
+        section: 'source',
+        label: t('stats.source'),
+        options: SOURCES.map((s) => ({ value: s, label: t(`stats.source.${s}`) })),
+        get: () => source,
+        set: (v) => {
+          source = v as Source;
+          paint();
+        },
+      },
       {
         kind: 'segmented',
         section: 'metric',

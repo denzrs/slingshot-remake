@@ -223,6 +223,8 @@ export type ServerMessage =
       enabled: boolean;
       /** Every day with games, oldest first. */
       days: StatsDay[];
+      /** The same for the games played on one device. */
+      localDays: StatsDay[];
       /** The latest games, newest first. */
       games: StatsGame[];
     }

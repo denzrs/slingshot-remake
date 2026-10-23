@@ -57,9 +57,9 @@ describe('stats board', () => {
   };
 
   it('asks the relay once and hands back what it says', async () => {
-    const reply: ServerMessage = { type: 'stats_overview', enabled: true, days: [day('2026-10-23', 2)], games: [] };
+    const reply: ServerMessage = { type: 'stats_overview', enabled: true, days: [day('2026-10-23', 2)], localDays: [day('2026-10-22', 1)], games: [] };
     const overview = await new StatsBoard(() => connection(reply)).overview();
-    expect(overview).toEqual({ enabled: true, days: [day('2026-10-23', 2)], games: [] });
+    expect(overview).toEqual({ enabled: true, days: [day('2026-10-23', 2)], localDays: [day('2026-10-22', 1)], games: [] });
   });
 
   it('turns a refusal into an error', async () => {
