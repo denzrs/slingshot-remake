@@ -209,3 +209,13 @@ describe('wormhole for a CPU', () => {
   });
 });
 
+
+describe('wormhole placement near players', () => {
+  it('refuses a portal closer than the gap to another ship, but not to its owner or a dead one', () => {
+    const w = { ...world(), wormholes: [], ships: [{ x: 100, y: 100, alive: true }, { x: 600, y: 100, alive: true }, { x: 900, y: 100, alive: false }] } as World;
+    expect(portalFits(w, { x: 600 + WORMHOLE.PLAYER_GAP - 1, y: 100 }, [], 0)).toBe(false);
+    expect(portalFits(w, { x: 600 + WORMHOLE.PLAYER_GAP, y: 100 }, [], 0)).toBe(true);
+    expect(portalFits(w, { x: 110, y: 100 }, [], 0)).toBe(true);
+    expect(portalFits(w, { x: 900, y: 100 }, [], 0)).toBe(true);
+  });
+});

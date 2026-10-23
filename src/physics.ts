@@ -61,11 +61,13 @@ export function nextWormholeId(world: Pick<World, 'wormholes'>): number {
 
 /**
  * Whether a portal can be set at this spot: clear of every portal on the field and of the `others` (the entry
- * of the pair being set), so that no two portals overlap. Any distance is fine beyond that.
+ * of the pair being set), so that no two portals overlap, and far enough from every living ship but the
+ * `owner`'s. Any distance is fine beyond that.
  */
-export function portalFits(world: Pick<World, 'wormholes'>, spot: { x: number; y: number }, others: readonly { x: number; y: number }[] = []): boolean {
+export function portalFits(world: Pick<World, 'wormholes' | 'ships'>, spot: { x: number; y: number }, others: readonly { x: number; y: number }[] = [], owner = -1): boolean {
   const clear = (x: number, y: number): boolean => Math.hypot(spot.x - x, spot.y - y) >= WORMHOLE.GAP;
-  return world.wormholes.every((w) => clear(w.ax, w.ay) && clear(w.bx, w.by)) && others.every((o) => clear(o.x, o.y));
+  return world.wormholes.every((w) => clear(w.ax, w.ay) && clear(w.bx, w.by)) && others.every((o) => clear(o.x, o.y))
+    && world.ships.every((s, i) => i === owner || !s.alive || Math.hypot(spot.x - s.x, spot.y - s.y) >= WORMHOLE.PLAYER_GAP);
 }
 
 /** How far a trail point may sit from a mouth and still be that mouth: the wire rounds points to a tenth. */

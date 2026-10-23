@@ -653,6 +653,21 @@ export class Renderer {
         const first = scene.placement.first;
         const facing = first ? Math.atan2(target.y - first.y, target.x - first.x) : Math.atan2(target.y - from.y, target.x - from.x);
         const blocked = !!scene.placement.blocked;
+        // Too close to another ship is a reason of its own: those ships show their keep-out circle.
+        const nearShip = blocked && match.world.ships.some((s, i) => i !== owner && s.alive && Math.hypot(target.x - s.x, target.y - s.y) < WORMHOLE.PLAYER_GAP);
+        if (nearShip) {
+          ctx.save();
+          ctx.strokeStyle = '#ff5c5c';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 5]);
+          match.world.ships.forEach((s, i) => {
+            if (i === owner || !s.alive) return;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, WORMHOLE.PLAYER_GAP, 0, Math.PI * 2);
+            ctx.stroke();
+          });
+          ctx.restore();
+        }
         if (first) {
           ctx.save();
           ctx.globalAlpha = blocked ? 0.5 : 0.25;
@@ -674,7 +689,7 @@ export class Renderer {
         // The labels sit on the far side of each portal from the other, so two close ones do not overprint.
         const side = first && (isTurned() ? target.x <= first.x : target.y >= first.y) ? 1 : -1;
         const reach = WORMHOLE.RADIUS * 1.12 + 10;
-        fillTextUpright(ctx, t(blocked ? 'powerup.wormholeClose' : first ? 'powerup.wormholeSecond' : 'powerup.wormholeFirst').toUpperCase(), target.x, target.y, 0, side * reach);
+        fillTextUpright(ctx, t(nearShip ? 'powerup.blackholeClose' : blocked ? 'powerup.wormholeClose' : first ? 'powerup.wormholeSecond' : 'powerup.wormholeFirst').toUpperCase(), target.x, target.y, 0, side * reach);
         if (first) {
           ctx.fillStyle = color;
           fillTextUpright(ctx, t('powerup.wormholeFirst').toUpperCase(), first.x, first.y, 0, -side * reach);
