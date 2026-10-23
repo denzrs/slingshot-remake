@@ -1,6 +1,6 @@
 import { modifiersOf } from '../challenge';
 import { AIM, COLORS, FIELD, FONTS, MAYHEM, TEAMS } from '../config';
-import { ChallengeMatch, HorizonMatch, teamName, type KillRecord, type Match, type PlayerState } from '../game';
+import { ChallengeMatch, HorizonMatch, SKIP_VOTE_TIME, teamName, type KillRecord, type Match, type PlayerState } from '../game';
 import { fmt, fmtInt, t, type Key } from '../i18n';
 import { TWIST_IDS, twistName } from '../mayhem';
 import { awardLabel, awardValue, awardWho, spotlight } from '../scorecard';
@@ -63,6 +63,7 @@ export class Hud {
     const killcam = match instanceof HorizonMatch ? match.killcamInfo : null;
     if (killcam) {
       this.drawKillcam(match, killcam, opts);
+      this.drawSkipVote(match);
       if (ghost) this.oracle.drawKillcamVerdict(frame, match, opts.touch);
       return;
     }
@@ -84,6 +85,7 @@ export class Hud {
     }
     if (match.phase === 'aiming' && focus >= 0 && match.aimVisible(focus)) this.drawReadout(match, match.players[focus], shipPos(focus));
     this.drawNotice(match);
+    this.drawSkipVote(match);
     // The oracle's card holds the question — or the round's summary — at the bottom edge; it already names whose shot it is.
     this.oracle.plan(frame, match, opts.touch, ghost);
     const asking = this.oracle.asking;
@@ -113,6 +115,37 @@ export class Hud {
     let label = match.totalRounds ? `${t('hud.round')} ${match.round} / ${match.totalRounds}` : `${t('hud.round')} ${match.round}`;
     if (match instanceof HorizonMatch) label += `  ·  ${t('hud.volley')} ${match.volleyNo}`;
     ctx.fillText(label, field.x + field.w / 2, field.y + 18 * k);
+    setSpacing(ctx, 0);
+  }
+
+  /** A vote to skip the round: what is asked, how many have said yes, and what this person can do about it. */
+  private drawSkipVote(match: Match): void {
+    const vote = match.skipVote;
+    if (!vote) return;
+    const { ctx, k, field } = this;
+    const lines = [t('skip.banner'), t('skip.votes', { yes: vote.yes.length, needed: match.skipVotesNeeded })];
+    const me = match.viewer;
+    const answer = me === null ? null : match.skipAnswer(me);
+    if (match.canAnswerSkip(me)) lines.push(t('skip.hostAsks', { name: (match.players[vote.by]?.name ?? '').toUpperCase() }));
+    else if (answer) lines.push(t('skip.answered', { answer: t(answer === 'yes' ? 'skip.answerYes' : 'skip.answerNo') }));
+    else lines.push(t('skip.waiting'));
+    const left = Math.max(0, vote.until - match.clock);
+    const w = Math.min(field.w - 24 * k, 400 * k);
+    const h = (lines.length * 20 + 18) * k;
+    const x = field.x + field.w / 2 - w / 2;
+    const y = field.y + 70 * k;
+    ctx.fillStyle = rgba(COLORS.plate, 0.92);
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = COLORS.sodium;
+    ctx.fillRect(x, y + h - 3 * k, (w * left) / SKIP_VOTE_TIME, 3 * k);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    lines.forEach((line, i) => {
+      ctx.font = i === 0 ? `800 ${17 * k}px ${FONTS.display}` : `700 ${12.5 * k}px ${FONTS.mono}`;
+      ctx.fillStyle = i === 0 ? COLORS.sodium : COLORS.bone;
+      setSpacing(ctx, i === 0 ? 2 * k : 0);
+      ctx.fillText(fitText(ctx, line, w - 20 * k), x + w / 2, y + (14 + i * 20 + 10) * k);
+    });
     setSpacing(ctx, 0);
   }
 

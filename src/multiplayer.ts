@@ -405,6 +405,8 @@ export class MultiplayerSession {
     else if (input.kind === 'power') match.usePowerUp(id);
     else if (input.kind === 'cancel') match.cancelPlacement(id);
     else if (input.kind === 'bet') match.placeBet(id, input.pick, !!input.round, input.stake ?? 0);
+    else if (input.kind === 'skipRound') match.requestSkipRound(id);
+    else if (input.kind === 'skipVote') match.voteSkipRound(id, input.yes);
     else match.voteSkip(id);
   }
 

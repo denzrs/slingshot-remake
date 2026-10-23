@@ -43,6 +43,12 @@ export interface App {
   toLobby(): void;
   resume(): void;
   rematch(): void;
+  /** What the pause menu offers about skipping the round: nothing, to skip it, to call a vote, or to answer the open one. */
+  readonly skipOffer: 'skip' | 'call' | 'answer' | null;
+  /** Skips the round (offline) or calls the vote (online host). */
+  skipRound(): void;
+  /** Answers the open vote to skip the round. */
+  answerSkip(yes: boolean): void;
   toTitle(): void;
   toggleFullscreen(): void;
   isFullscreen(): boolean;
@@ -197,6 +203,20 @@ function localScreen(app: App): Screen {
   };
 }
 
+const skipAnswerItems = (app: App): MenuItem[] => [
+  { kind: 'action', label: t('skip.yes'), primary: true, run: () => (app.answerSkip(true), app.resume()) },
+  { kind: 'action', label: t('skip.no'), run: () => (app.answerSkip(false), app.resume()) },
+];
+
+/** What a touch screen shows when the host has called a vote to skip the round: the answer, without hunting for a key. */
+export function skipVoteScreen(app: App): Screen {
+  return {
+    build: () => panel(t('skip.banner'), null),
+    items: skipAnswerItems(app),
+    onEscape: () => app.resume(),
+  };
+}
+
 export function pauseScreen(app: App): Screen {
   if (app.replaying) {
     return {
@@ -219,6 +239,10 @@ export function pauseScreen(app: App): Screen {
       // Online, the room decides: no restarts from the pause menu. The daily challenge has no setup, only a retry.
       ...(mode && !app.online ? [{ kind: 'action', label: t('pause.newGame'), run: () => app.menu.push(() => (app.mayhem ? mayhemScreen(app) : setupScreen(app, mode))) } satisfies MenuItem] : []),
       ...(daily ? [{ kind: 'action', label: t('daily.retry'), run: () => app.rematch() } satisfies MenuItem] : []),
+      ...(app.skipOffer === 'skip' || app.skipOffer === 'call'
+        ? [{ kind: 'action', label: t(app.skipOffer === 'skip' ? 'skip.action' : 'skip.call'), run: () => app.skipRound() } satisfies MenuItem]
+        : []),
+      ...(app.skipOffer === 'answer' ? skipAnswerItems(app) : []),
       { kind: 'action', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
       { kind: 'action', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
       app.online

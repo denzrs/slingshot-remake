@@ -1052,7 +1052,21 @@ impl Store {
                 turns[i].2.push(placement);
             }
         }
+        // The rounds the room skipped by vote: they end after their last turn.
+        let mut skipped: Vec<i64> = Vec::new();
+        let mut rows = self
+            .replay_reader
+            .query(
+                "SELECT round FROM stat_rounds WHERE match_id = ?1 AND title = 'skipped' ORDER BY round",
+                (match_id.to_string(),),
+            )
+            .await?;
+        while let Some(row) = rows.next().await? {
+            skipped.push(row.get(0)?);
+        }
+        drop(rows);
         Ok(Some(serde_json::json!({
+            "skipped": skipped,
             "seed": header.0,
             "gameMode": header.1,
             "mode": header.2,
@@ -1585,6 +1599,7 @@ mod tests {
             .await
             .unwrap()
             .expect("the one round of the rules is all there");
+        assert_eq!(replay["skipped"], json!([]));
         assert_eq!(replay["seed"], 99);
         assert_eq!(replay["gameMode"], "classic");
         assert_eq!(replay["rules"], json!({"rounds": 1}));
