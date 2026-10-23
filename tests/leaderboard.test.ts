@@ -7,7 +7,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
-import { Leaderboard, BoardRejected, type BoardConnection } from '../src/leaderboard';
+import { BOARD_KEEP_DAYS, Leaderboard, BoardRejected, oldestBoardDay, type BoardConnection } from '../src/leaderboard';
+import { shiftDate } from '../src/challenge';
+import { CHALLENGE } from '../src/config';
+import { readFileSync } from 'node:fs';
 import { packWireMessage, unpackWireMessage } from '../src/messagepack';
 import type { ServerMessage } from '../src/net';
 
@@ -205,5 +208,22 @@ describe('daily leaderboard', () => {
 
     // Nothing of it reached the board.
     expect((await boards.top('2026-10-13')).entries).toEqual([]);
+  });
+});
+
+describe('paging through past boards', () => {
+  const contract = JSON.parse(readFileSync(fileURLToPath(new URL('../server/protocol-contract.json', import.meta.url)), 'utf8')) as { daily: { keepDays: number } };
+
+  it('keeps as many days as the relay does', () => {
+    expect(BOARD_KEEP_DAYS).toBe(contract.daily.keepDays);
+  });
+
+  it('stops at the oldest day the relay still holds', () => {
+    expect(oldestBoardDay('2026-10-23')).toBe('2026-10-16');
+  });
+
+  it('never goes before the first challenge', () => {
+    expect(oldestBoardDay(CHALLENGE.EPOCH)).toBe(CHALLENGE.EPOCH);
+    expect(oldestBoardDay(shiftDate(CHALLENGE.EPOCH, 2))).toBe(CHALLENGE.EPOCH);
   });
 });

@@ -1,10 +1,11 @@
-import { dailyChallenge } from '../challenge';
+import { dailyChallenge, dateKey, shiftDate } from '../challenge';
 import { fmtInt, t, type Key } from '../i18n';
-import { Leaderboard, BoardRejected, type DailyBoard } from '../leaderboard';
+import { Leaderboard, BoardRejected, oldestBoardDay, type DailyBoard } from '../leaderboard';
 import { loadLobbyPrefs, saveLobbyPrefs } from '../lobbyPrefs';
 import { DEFAULT_SERVER } from '../multiplayer';
 import type { DailyEntry } from '../net';
 import { h, type MenuItem, type Screen } from './menu';
+import { formatDay } from './dayFormat';
 import type { App } from './screens';
 
 /**
@@ -33,7 +34,8 @@ function boardRow(entry: DailyEntry, yours: boolean): HTMLElement {
 export function leaderboardScreen(app: App, day: string, caption: string, score: number | null): Screen {
   const boards = new Leaderboard();
   const prefs = loadLobbyPrefs(DEFAULT_SERVER);
-  const challenge = dailyChallenge(day);
+  /** The day on show: the one the screen opened on, until the player pages through the others. */
+  let shown = day;
   let name = prefs.name;
   let board: DailyBoard | null = null;
   let message: string | null = null;
@@ -55,11 +57,22 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
 
   const status = h('p.lb__status', { role: 'status' }, '');
   const rows = h('ol.lb__rows', null);
+  const title = h('h2.daily__title', null);
+  const kind = h('p.note.lb__kind', null);
+  const date = h('p.daily__date', null);
+  const paintHead = (): void => {
+    const challenge = dailyChallenge(shown);
+    title.textContent = `#${challenge.number} · ${t(`daily.theme.${challenge.theme}` as Key)}`;
+    kind.textContent = t(`daily.theme.${challenge.theme}.text` as Key);
+    date.textContent = shown === day ? caption : formatDay(shown);
+    app.menu.refresh();
+  };
 
   const paint = (): void => {
+    paintHead();
     nameField.value = name;
     const empty = !!board && board.entries.length === 0;
-    status.textContent = busy ? t('daily.board.loading') : message ?? (empty ? t('daily.board.empty') : '');
+    status.textContent = busy ? t('daily.board.loading') : message ?? (empty ? t(shown === dateKey() ? 'daily.board.empty' : 'daily.board.emptyDay') : '');
     // A refused run is the player's to fix; that is not the same colour as a posted one.
     status.classList.toggle('is-refused', refused);
     const mine = board?.you ?? null;
@@ -82,6 +95,7 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
       return;
     }
     name = wanted;
+    shown = day;
     prefs.name = wanted;
     saveLobbyPrefs(prefs);
     const mine = ++pending;
@@ -113,11 +127,16 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
     if (event.key === 'Enter') void submit();
   });
 
-  // The board is there before the player decides anything about it.
-  void (async (): Promise<void> => {
+  const load = async (): Promise<void> => {
     const mine = ++pending;
+    const wanted = shown;
+    board = null;
+    message = null;
+    refused = false;
+    busy = true;
+    paint();
     try {
-      const seen = await boards.top(day);
+      const seen = await boards.top(wanted);
       if (mine !== pending) return;
       board = seen;
     } catch {
@@ -126,7 +145,15 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
     }
     busy = false;
     paint();
-  })();
+  };
+
+  const go = (days: number): void => {
+    shown = shiftDate(shown, days);
+    void load();
+  };
+
+  // The board is there before the player decides anything about it.
+  void load();
 
   const goesUp = score !== null;
   const root = h(
@@ -136,8 +163,8 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
       'div.panel.panel--daily',
       null,
       h('p.eyebrow', null, t('daily.board.eyebrow')),
-      h('h2.daily__title', null, `#${challenge.number} · ${t(`daily.theme.${challenge.theme}` as Key)}`),
-      h('p.daily__date', null, caption),
+      h('div.lb__head', null, h('div.lb__day', null, title, date)),
+      kind,
       h(
         'div.lb',
         null,
@@ -145,6 +172,7 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
         ...(goesUp
           ? [h('label.lobby__field', null, h('span', null, t('daily.board.name')), nameField), h('p.note.lb__hint', null, t('daily.board.hint'))]
           : []),
+        h('div.items.items--row', { 'data-section': 'pager' }),
         h('div.items.items--row', { 'data-items': '' }),
         status,
         rows,
@@ -160,6 +188,8 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
       return root;
     },
     items: [
+      { kind: 'action', label: `‹ ${t('daily.board.prev')}`, run: () => go(-1), section: 'pager', disabled: () => shown <= oldestBoardDay(dateKey()) },
+      { kind: 'action', label: `${t('daily.board.next')} ›`, run: () => go(1), section: 'pager', disabled: () => shown >= dateKey() },
       ...(goesUp ? [{ kind: 'action', label: t('daily.board.submit'), primary: true, run: () => void submit() } satisfies MenuItem] : []),
       { kind: 'action', label: t('common.back'), primary: !goesUp, run: () => app.menu.back() },
     ] satisfies MenuItem[],
