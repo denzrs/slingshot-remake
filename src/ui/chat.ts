@@ -1,4 +1,5 @@
 import { COLORS } from '../config';
+import { applySuggestion, emojify, suggest, type Suggestion } from '../emoji';
 import { t } from '../i18n';
 import type { MultiplayerSession } from '../multiplayer';
 import { eyeIcon, h } from './dom';
@@ -44,7 +45,11 @@ export class ChatPanel {
   private readonly dot = h('span.chat__dot', null);
   private readonly log = h('ol.chat__log', { 'aria-live': 'polite' });
   private readonly input = h('input.chat__input', { type: 'text', maxlength: '200', autocomplete: 'off', spellcheck: 'false' }) as HTMLInputElement;
-  private readonly body = h('div.chat__body', { id: 'chat-body' }, this.log, h('form.chat__form', null, this.input));
+  private readonly hints = h('ul.chat__hints', { role: 'listbox' });
+  private readonly body = h('div.chat__body', { id: 'chat-body' }, this.log, h('form.chat__form', null, this.hints, this.input));
+  /** The emoji on offer for the word being typed, and which of them Tab or Enter would take. */
+  private offered: Suggestion[] = [];
+  private pick = 0;
   /** What is on screen now, so a redraw happens only when something changed. */
   private shown = '';
   private seen = 0;
@@ -64,10 +69,66 @@ export class ChatPanel {
     });
     this.body.querySelector('form')!.addEventListener('submit', (e) => {
       e.preventDefault();
-      this.session.sendChat(this.input.value);
+      this.session.sendChat(emojify(this.input.value));
       this.input.value = '';
+      this.hint();
+    });
+    this.input.addEventListener('input', () => this.hint());
+    this.input.addEventListener('click', () => this.hint());
+    this.input.addEventListener('blur', () => {
+      this.offered = [];
+      this.renderHints();
+    });
+    this.input.addEventListener('keydown', (e) => this.key(e));
+    // Mouse down, not click: the input would lose focus first, and with it the offer.
+    this.hints.addEventListener('mousedown', (e) => {
+      const index = Number((e.target as HTMLElement).closest('li')?.dataset.index ?? -1);
+      if (index < 0) return;
+      e.preventDefault();
+      this.take(index);
     });
     this.root.append(this.toggle, this.body);
+  }
+
+  private hint(): void {
+    this.offered = suggest(this.input.value, this.input.selectionStart ?? this.input.value.length);
+    this.pick = 0;
+    this.renderHints();
+  }
+
+  private renderHints(): void {
+    this.hints.hidden = this.offered.length === 0;
+    this.hints.replaceChildren(
+      ...this.offered.map((s, i) => {
+        const li = h(`li.chat__hint${i === this.pick ? '.is-picked' : ''}`, { role: 'option', 'aria-selected': String(i === this.pick) }, h('span.chat__hint-emoji', null, s.emoji), h('span.chat__hint-label', null, s.label));
+        li.dataset.index = String(i);
+        return li;
+      }),
+    );
+  }
+
+  private take(index: number): void {
+    const s = this.offered[index];
+    if (!s) return;
+    const caret = this.input.selectionStart ?? this.input.value.length;
+    const next = applySuggestion(this.input.value, caret, s);
+    this.input.value = next.text;
+    this.input.setSelectionRange(next.caret, next.caret);
+    this.hint();
+  }
+
+  /** Tab or Enter takes the picked emoji, the arrows move the pick, Escape drops the offer. Without an offer, keys are the input's own. */
+  private key(e: KeyboardEvent): void {
+    if (!this.offered.length) return;
+    const n = this.offered.length;
+    if (e.key === 'Tab' || e.key === 'Enter') this.take(this.pick);
+    else if (e.key === 'ArrowDown') this.pick = (this.pick + 1) % n;
+    else if (e.key === 'ArrowUp') this.pick = (this.pick + n - 1) % n;
+    else if (e.key === 'Escape') this.offered = [];
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.renderHints();
   }
 
   /** Whether an event came from inside the chat: the game's keys have no business with it. */
