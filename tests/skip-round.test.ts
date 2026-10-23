@@ -4,6 +4,7 @@ import type { ClassicMatch } from '../src/game/classic';
 import type { ReplayScript } from '../src/game/replay';
 import { roundReport, turnReport } from '../src/roundReport';
 import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
+import { TIP_HIT } from '../src/game/oracle';
 
 /** A Classic match on its first round with `humans` people, a CPU after them, and 40 points already on the first ship. */
 function scored(online: boolean, humans = 2): ClassicMatch {
@@ -75,6 +76,40 @@ describe('skipping a round', () => {
     m.update(25);
     expect(m.skipVote).toBeNull();
     expect(m.phase).not.toBe('roundOver');
+  });
+
+  it('cannot change a normally ended round through a vote that was still open', () => {
+    const m = scored(true, 3);
+    const rounds: string[] = [];
+    m.on((event) => { if (event.type === 'roundEnd') rounds.push(m.summary?.title ?? ''); });
+    m.requestSkipRound(0);
+    (m as unknown as { endRound(): void }).endRound();
+    const historyLength = m.scoreHistory.length;
+    const finishedTitle = m.summary?.title;
+    m.voteSkipRound(1, true);
+    expect(m.skipVote).toBeNull();
+    expect(m.summary?.title).toBe(finishedTitle);
+    expect(m.scoreHistory).toHaveLength(historyLength);
+    expect(rounds).toHaveLength(1);
+  });
+
+  it('rolls back oracle points and honours earned in a skipped round', () => {
+    const m = scored(true, 3);
+    const score = m.oracle.scores[1];
+    score.points = 75;
+    score.right = 1;
+    score.total = 2;
+    score.streak = 1;
+    score.stats.bestStreak = 1;
+    m.oracle.startRound();
+    m.oracle.open('shot', 0, []);
+    m.oracle.bet(1, TIP_HIT);
+    m.oracle.resolve([1], true, m.clock);
+    expect(m.oracle.scores[1].points).toBeGreaterThan(75);
+    m.requestSkipRound(0);
+    m.voteSkipRound(2, true);
+    expect(m.oracle.scores[1]).toMatchObject({ points: 75, right: 1, total: 2, streak: 1, roundPoints: 0, roundTotal: 0 });
+    expect(m.oracle.scores[1].stats.bestStreak).toBe(1);
   });
 
   it('ends the last round into the final screen', () => {

@@ -1005,7 +1005,7 @@ export abstract class Match {
   /** One person's answer to the open vote; it counts once. The round is skipped when enough have said yes, and the vote lapses when too many have said no. */
   voteSkipRound(player: number, yes: boolean): void {
     const vote = this.skipVote;
-    if (!vote || !this.voters.includes(player) || vote.yes.includes(player) || vote.no.includes(player)) return;
+    if (!vote || !this.canSkipRound || this.clock >= vote.until || !this.voters.includes(player) || vote.yes.includes(player) || vote.no.includes(player)) return;
     (yes ? vote.yes : vote.no).push(player);
     if (vote.yes.length >= this.skipVotesNeeded) this.skipRound();
     else if (vote.no.length > this.voters.length - this.skipVotesNeeded) this.endSkipVote('skip.declined');
@@ -1042,7 +1042,10 @@ export abstract class Match {
     // Back to what everybody had when the round began (this also gives back what was staked on the oracle's questions).
     const before = this.scoreHistory[this.scoreHistory.length - 1];
     for (const p of this.players) p.score = before[p.id] ?? 0;
+    for (const [id, stake] of this.oracle.stakes) this.payInto(id, stake, false);
     for (const [id, stake] of this.stands.stakes) this.payInto(id, stake, true);
+    this.oracle.rollbackRound();
+    this.stands.rollbackRound();
     this.oracle.startRound();
     this.stands.startRound();
     this.summary = { title: 'skipped', survivor: null, team: null, bonus: 0, lastKill: null };
@@ -1429,6 +1432,8 @@ export abstract class Match {
   protected onKill(_record: KillRecord, _shotIndex: number, _step: number): void {}
 
   protected endRound(): void {
+    // A pending vote cannot change a round after its normal result has been recorded.
+    this.skipVote = null;
     const alive = this.alive;
     const survivor = alive.length === 1 ? alive[0].id : null;
     // In team mode the whole winning team shares the bonus — fallen members included.

@@ -386,6 +386,7 @@ const app: App = {
     menu.open(() => lobbyScreen(app, multiplayer()));
   },
   resume() {
+    voteMenuOpen = false;
     menu.close();
   },
   rematch() {
@@ -568,7 +569,7 @@ window.addEventListener('keydown', (e) => {
   }
 
   // Y (or J) agrees to the vote to skip the round; N, handled below, declines it.
-  if ((e.key === 'y' || e.key === 'j') && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && match.canAnswerSkip(match.viewer) && online()) {
+  if ((e.code === 'KeyY' || e.code === 'KeyJ') && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && match.canAnswerSkip(match.viewer) && online()) {
     dispatchInput({ kind: 'skipVote', yes: true });
     e.preventDefault();
     return;
@@ -730,6 +731,8 @@ function syncButtons(): void {
 
 /** The vote to skip the round (by when it lapses) that the touch menu has already been put up for. */
 let askedVote = -1;
+let askedVoteMatch: Match | null = null;
+let voteMenuOpen = false;
 
 /** The oracle's last verdicts per match (shot or salvo, and the round's), so each one is announced on the field once. */
 const judged = new WeakMap<Match, { shot: number; round: number }>();
@@ -829,8 +832,15 @@ function frame(now: number): void {
   }
   net?.update(dt);
   // On a touch screen there is no key to answer a vote to skip the round with: the answer comes up as a menu.
-  if (screen === 'play' && net && coarsePointer.matches && !menu.isOpen && m.canAnswerSkip(m.viewer) && m.skipVote!.until !== askedVote) {
+  if (voteMenuOpen && !menu.isOpen) voteMenuOpen = false;
+  if (voteMenuOpen && (!m.skipVote || m.skipVote.until !== askedVote || !m.canAnswerSkip(m.viewer))) {
+    voteMenuOpen = false;
+    menu.close();
+  }
+  if (screen === 'play' && net && coarsePointer.matches && !menu.isOpen && m.canAnswerSkip(m.viewer) && (m !== askedVoteMatch || m.skipVote!.until !== askedVote)) {
     askedVote = m.skipVote!.until;
+    askedVoteMatch = m;
+    voteMenuOpen = true;
     menu.open(() => skipVoteScreen(app));
   }
   const crowd = screen === 'play' && net && !net.isSpectator ? m.crowd.seats.filter((seat) => seat.present).length : 0;
