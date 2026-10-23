@@ -392,7 +392,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       ? h('li.lobby__empty', null, h('strong', null, t('multiplayer.roomsFailed')), retryRooms)
       : !loaded
         ? h('li.lobby__empty', null, h('strong', null, t('multiplayer.roomsLoading')))
-        : h('li.lobby__empty', null, h('strong', null, t('multiplayer.noRooms')), h('span', null, t('multiplayer.noRoomsHint')));
+        : h('li.lobby__empty', null, h('strong', null, t('multiplayer.noRooms')));
     roomsList.replaceChildren(...(open.length ? open.map(roomRow) : [empty]));
   };
 
