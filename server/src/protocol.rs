@@ -243,7 +243,9 @@ pub fn is_input_message(value: &Value) -> bool {
             is_finite_number(value.get("dAngle")) && is_finite_number(value.get("dPower"))
         }
         Some("aim") => is_finite_number(value.get("angle")) && is_finite_number(value.get("power")),
-        Some("fire") | Some("skip") | Some("power") | Some("cancel") => true,
+        Some("fire") | Some("skip") | Some("skipRound") | Some("power") | Some("cancel") => true,
+        // An answer to the vote to skip the round.
+        Some("skipVote") => matches!(value.get("yes"), Some(Value::Bool(_))),
         // A teleport spot picked by number: there are only a few.
         Some("spot") => value
             .get("index")
@@ -754,6 +756,19 @@ mod tests {
                 parse_rules(&rules).is_none(),
                 "accepted invalid {key}: {rules}"
             );
+        }
+    }
+
+    #[test]
+    fn skip_round_inputs_are_accepted_and_a_vote_needs_an_answer() {
+        assert!(is_input_message(&json!({"kind":"skipRound"})));
+        assert!(is_input_message(&json!({"kind":"skipVote","yes":true})));
+        assert!(is_input_message(&json!({"kind":"skipVote","yes":false})));
+        for invalid in [
+            json!({"kind":"skipVote"}),
+            json!({"kind":"skipVote","yes":1}),
+        ] {
+            assert!(!is_input_message(&invalid), "accepted input: {invalid}");
         }
     }
 

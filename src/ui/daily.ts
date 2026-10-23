@@ -1,16 +1,11 @@
 import { dailyChallenge, dateKey, modifiersOf, type SectorSpec } from '../challenge';
 import { loadDay, loadStreak, type RunOutcome } from '../dailyStore';
 import type { ChallengeMatch, SectorResult, ShotLog } from '../game';
-import { fmtInt, getLang, t, tn, type Key } from '../i18n';
+import { fmtInt, t, tn, type Key } from '../i18n';
+import { formatDay } from './dayFormat';
 import { h, type MenuItem, type Screen } from './menu';
 import { leaderboardAvailable, leaderboardScreen } from './leaderboard';
 import type { App } from './screens';
-
-/** "Fri, 2 October 2026" in the UI language. */
-function formatDay(key: string): string {
-  const [y, m, d] = key.split('-').map(Number);
-  return new Intl.DateTimeFormat(getLang(), { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(y, m - 1, d));
-}
 
 const themeName = (theme: string) => t(`daily.theme.${theme}` as Key);
 

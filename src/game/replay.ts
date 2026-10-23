@@ -50,6 +50,8 @@ export interface ReplayTurn {
 
 export interface ReplayScript {
   turns: ReplayTurn[];
+  /** The rounds that were skipped by vote: they end after their last turn, and nobody scored in them. */
+  skipped?: number[];
 }
 
 export const replayKey = (round: number, turn: number): string => `${round}:${turn}`;

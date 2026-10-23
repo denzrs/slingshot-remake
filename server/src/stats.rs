@@ -4,8 +4,8 @@
 //! what only it knows (the room's rules, who is a person, how many watch) and writes it down.
 //!
 //! No name is kept — not a player's, not a room's. A person is told apart by a keyed hash of their
-//! address and the name they play under (`pseudonym::Identities`), the same on every day, with a key
-//! of its own, so a stats row can never be matched to a name on the board. A room is a random id of
+//! address and the name they play under (`pseudonym::Identities`), the same on every day of a week, with a
+//! key of its own that is replaced every Sunday, so a stats row can never be matched to a name on the board. A room is a random id of
 //! its own, never reused (not the code players type, which is free again when the room is gone). A
 //! CPU seat has no hash. The numbers are taken at face value: they come from the host's own
 //! browser, and the relay can fly nothing again.
@@ -365,7 +365,8 @@ pub struct Store {
     /// The menu's facts last made (see `facts`), kept for a minute.
     facts: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<Vec<Fact>>)>>,
     /// Its own key, kept in `stat_meta`: see `pseudonym`.
-    players: Identities,
+    /// The key of the week it was made in (see `week_of`) and the players it hashes.
+    players: parking_lot::Mutex<(i64, Identities)>,
     keep_days: i64,
     last_prune: AtomicI64,
 }
@@ -390,7 +391,7 @@ impl Store {
         ] {
             Self::ensure_column(&conn, table, column, declared).await?;
         }
-        let salt = Self::salt(&conn).await?;
+        let (week, salt) = Self::salt(&conn, week_of(now_unix())).await?;
         let reader = database.connect()?;
         reader.busy_timeout(Duration::from_secs(2))?;
         let replay_reader = database.connect()?;
@@ -406,7 +407,7 @@ impl Store {
             facts_reader,
             reading: tokio::sync::Mutex::new(None),
             facts: tokio::sync::Mutex::new(None),
-            players: Identities::new(salt),
+            players: parking_lot::Mutex::new((week, Identities::new(salt))),
             keep_days: keep_days.max(1),
             last_prune: AtomicI64::new(0),
         })
@@ -442,25 +443,65 @@ impl Store {
         Ok(())
     }
 
-    /// The key the players are hashed with: made on the first start and kept, so a player stays the
-    /// same one across restarts and deploys.
-    async fn salt(conn: &Connection) -> turso::Result<Vec<u8>> {
+    /// The key the players are hashed with and the week it was made in: made on the first start and
+    /// kept, so a player stays the same one across restarts and deploys, until the week is over (see
+    /// `week_of`) and a fresh one takes its place.
+    async fn salt(conn: &Connection, week: i64) -> turso::Result<(i64, Vec<u8>)> {
         let mut rows = conn
-            .query("SELECT value FROM stat_meta WHERE key = 'player_salt'", ())
+            .query(
+                "SELECT value FROM stat_meta WHERE key = 'player_salt'
+                 UNION ALL SELECT value FROM stat_meta WHERE key = 'player_salt_week'",
+                (),
+            )
             .await?;
-        if let Some(row) = rows.next().await? {
-            if let Some(salt) = decode_hex(&row.get::<String>(0)?) {
-                return Ok(salt);
-            }
+        let mut kept = Vec::new();
+        while let Some(row) = rows.next().await? {
+            kept.push(row.get::<String>(0)?);
         }
         drop(rows);
+        // A file from before the rotation has a salt and no week: it is in the week it is opened.
+        let made = kept.get(1).and_then(|text| text.parse::<i64>().ok());
+        if let Some(salt) = kept.first().and_then(|text| decode_hex(text)) {
+            if made.unwrap_or(week) == week {
+                if made.is_none() {
+                    Self::keep_salt(conn, &salt, week).await?;
+                }
+                return Ok((week, salt));
+            }
+        }
         let salt = Identities::new_salt();
-        conn.execute(
-            "INSERT OR REPLACE INTO stat_meta (key, value) VALUES ('player_salt', ?1)",
-            (encode_hex(&salt),),
-        )
-        .await?;
-        Ok(salt)
+        Self::keep_salt(conn, &salt, week).await?;
+        Ok((week, salt))
+    }
+
+    async fn keep_salt(conn: &Connection, salt: &[u8], week: i64) -> turso::Result<()> {
+        for (key, value) in [
+            ("player_salt", encode_hex(salt)),
+            ("player_salt_week", week.to_string()),
+        ] {
+            conn.execute(
+                "INSERT OR REPLACE INTO stat_meta (key, value) VALUES (?1, ?2)",
+                (key, value),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Swaps the players' key for a fresh one when a new week has begun, so nobody can be followed
+    /// from one week to the next.
+    async fn rotate(&self, at: i64) -> turso::Result<()> {
+        let week = week_of(at);
+        if self.players.lock().0 >= week {
+            return Ok(());
+        }
+        let salt = Identities::new_salt();
+        Self::keep_salt(&self.conn, &salt, week).await?;
+        let mut players = self.players.lock();
+        if players.0 < week {
+            *players = (week, Identities::new(salt));
+        }
+        Ok(())
     }
 
     /// Write what a report says down, as one transaction.
@@ -469,6 +510,7 @@ impl Store {
     }
 
     async fn record_at(&self, job: &Job, at: i64) -> turso::Result<()> {
+        self.rotate(at).await?;
         if self.conn.execute("BEGIN", ()).await.is_err() {
             // A transaction left open by a failure would fail every write after it: close it and begin again.
             let _ = self.conn.execute("ROLLBACK", ()).await;
@@ -500,9 +542,10 @@ impl Store {
             .seats
             .iter()
             .map(|sitter| match &sitter.occupant {
-                Occupant::Person { ip, name } => {
-                    (Sql::Text(self.players.player(*ip, name)), Sql::Null)
-                }
+                Occupant::Person { ip, name } => (
+                    Sql::Text(self.players.lock().1.player(*ip, name)),
+                    Sql::Null,
+                ),
                 Occupant::Cpu(level) => (Sql::Null, Sql::Text((*level).into())),
             })
             .collect()
@@ -1159,7 +1202,21 @@ impl Store {
                 turns[i].2.push(placement);
             }
         }
+        // The rounds the room skipped by vote: they end after their last turn.
+        let mut skipped: Vec<i64> = Vec::new();
+        let mut rows = self
+            .replay_reader
+            .query(
+                "SELECT round FROM stat_rounds WHERE match_id = ?1 AND title = 'skipped' ORDER BY round",
+                (match_id.to_string(),),
+            )
+            .await?;
+        while let Some(row) = rows.next().await? {
+            skipped.push(row.get(0)?);
+        }
+        drop(rows);
         Ok(Some(serde_json::json!({
+            "skipped": skipped,
             "seed": header.0,
             "gameMode": header.1,
             "mode": header.2,
@@ -1379,6 +1436,13 @@ fn decode_hex(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+/// The Sunday (as a day number since the epoch) that the week of this moment began on, UTC. The
+/// players' key is replaced when it changes. The epoch, a Thursday, is day 0, so day 3 is a Sunday.
+fn week_of(at: i64) -> i64 {
+    let day = at.div_euclid(DAY_SECS);
+    day - (day - 3).rem_euclid(7)
+}
+
 fn now_unix() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1544,7 +1608,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_player_is_their_address_and_name_on_every_day_and_nobody_else() {
+    async fn a_player_is_their_address_and_name_on_every_day_of_a_week_and_nobody_else() {
         let stats = Stats::in_memory().await;
         let day = 1_760_000_000;
         let ip = [10, 0, 0, 1];
@@ -1552,7 +1616,7 @@ mod tests {
         stats.record_at(&job(ip, "ann", 1), day).await.unwrap();
         stats.record_at(&job(ip, "ann", 2), day + 60).await.unwrap();
         stats
-            .record_at(&job(ip, "ann", 3), day + 9 * DAY_SECS)
+            .record_at(&job(ip, "ann", 3), day + 2 * DAY_SECS)
             .await
             .unwrap();
         // The same address under another name, and another address under the same name.
@@ -1570,6 +1634,34 @@ mod tests {
         assert_eq!(players[0], players[2]);
         assert_ne!(players[0], players[3]);
         assert_ne!(players[0], players[4]);
+    }
+
+    #[test]
+    fn a_week_begins_on_sunday_at_midnight_utc() {
+        // 2025-10-05 was a Sunday.
+        let sunday = 1_759_622_400;
+        assert_eq!(sunday % DAY_SECS, 0);
+        assert_eq!(week_of(sunday), week_of(sunday + 7 * DAY_SECS - 1));
+        assert_ne!(week_of(sunday), week_of(sunday - 1));
+        assert_ne!(week_of(sunday), week_of(sunday + 7 * DAY_SECS));
+        assert_eq!(week_of(sunday), sunday / DAY_SECS);
+    }
+
+    #[tokio::test]
+    async fn a_new_week_makes_the_same_person_a_new_player() {
+        let stats = Stats::in_memory().await;
+        let now = now_unix();
+        let job = |t| Job::Turn(facts([10, 0, 0, 1], "ann"), turn(1, t));
+        stats.record_at(&job(1), now).await.unwrap();
+        stats.record_at(&job(2), now).await.unwrap();
+        stats.record_at(&job(3), now + 8 * DAY_SECS).await.unwrap();
+        let players = text(
+            &stats,
+            "SELECT player FROM stat_turns WHERE seat = 0 ORDER BY turn",
+        )
+        .await;
+        assert_eq!(players[0], players[1]);
+        assert_ne!(players[0], players[2]);
     }
 
     #[tokio::test]
@@ -1692,6 +1784,7 @@ mod tests {
             .await
             .unwrap()
             .expect("the one round of the rules is all there");
+        assert_eq!(replay["skipped"], json!([]));
         assert_eq!(replay["seed"], 99);
         assert_eq!(replay["gameMode"], "classic");
         assert_eq!(replay["rules"], json!({"rounds": 1}));

@@ -141,7 +141,7 @@ function bettingView(b: StatsBetting): HTMLElement[] {
  * How the games on the relay go: a year of days as a heatmap that can be read as rounds, players or points
  * per day, and the latest games below it, each with a button to watch it again.
  */
-export function statsScreen(app: App): Screen {
+function statsContent(app: App): Screen {
   const board = new StatsBoard();
   let metric: Metric = 'rounds';
   let source: Source = 'online';
@@ -250,6 +250,64 @@ export function statsScreen(app: App): Screen {
         },
       },
       { kind: 'action', label: t('common.back'), primary: true, run: () => app.menu.back() },
+    ] satisfies MenuItem[],
+  };
+}
+
+/** The password the statistics page asks for, set at build time (`VITE_STATS_PASSWORD`); none set means the page is open. */
+const statsPassword = (): string => String(import.meta.env.VITE_STATS_PASSWORD || '');
+
+const UNLOCK_KEY = 'slingshot.stats.unlocked';
+
+/** A correct password is remembered for the browser session only. */
+function unlocked(): boolean {
+  try {
+    return sessionStorage.getItem(UNLOCK_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function remember(): void {
+  try {
+    sessionStorage.setItem(UNLOCK_KEY, '1');
+  } catch {
+    // Private mode: the password is asked for again next time.
+  }
+}
+
+/**
+ * The statistics page, behind a password for now. This only keeps casual visitors out: the password is part of the build,
+ * and so readable in the page's script by anyone who looks.
+ */
+export function statsScreen(app: App): Screen {
+  const password = statsPassword();
+  if (!password || unlocked()) return statsContent(app);
+  const input = h('input',{ type: 'password', autocomplete: 'off', 'aria-label': t('stats.password') }) as HTMLInputElement;
+  const error = h('p.lb__status.is-refused', { role: 'alert' }, t('stats.password.wrong'));
+  error.hidden = true;
+  const submit = (): void => {
+    if (input.value !== password) {
+      error.hidden = false;
+      input.select();
+      return;
+    }
+    remember();
+    app.menu.rebuild();
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') submit();
+  });
+  const root = h(
+    'section.screen.screen--panel',
+    { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('stats.title') },
+    h('div.panel', null, h('p.eyebrow', null, t('stats.eyebrow')), h('h2.daily__title', null, t('stats.title')), h('label.lobby__field', null, h('span', null, t('stats.password')), input), error, h('div.items.items--row', { 'data-items': '' })),
+  );
+  return {
+    build: () => root,
+    items: [
+      { kind: 'action', label: t('stats.password.open'), primary: true, run: submit },
+      { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
     ] satisfies MenuItem[],
   };
 }
