@@ -64,11 +64,13 @@ export function isSecureRelay(address: string): boolean {
 /** What the session needs from a connection — the WebSocket client, or a stand-in in tests. */
 export type Transport = Pick<NetworkClient, 'address' | 'setAddress' | 'connect' | 'onMessage' | 'send' | 'close'> & Partial<Pick<NetworkClient, 'drop'>>;
 
-/** How long a dropped connection keeps trying to take its seat back; the relay holds the seat a little longer than this. */
+/** How long a dropped connection keeps trying to take its seat back; the relay holds the seat for the same time (plus a sweep). */
 const RESUME_WINDOW_MS = 30_000;
 const RESUME_RETRY_MS = [250, 500, 1000, 2000, 3000];
 /** A guest that hears nothing from the host for this long treats its connection as dead and connects again. */
 const SILENCE_LIMIT = 6;
+/** How often a host that draws no frames (hidden tab) still sends its state. */
+const HEARTBEAT_MS = 1000;
 
 /** The host sends the match state this often; the guest sends its aim at the same rate. */
 const SYNC_INTERVAL = 1 / 30;
@@ -104,6 +106,8 @@ export class MultiplayerSession {
   private lostAt = 0;
   /** Seconds since the last state frame from the host. */
   private silence = 0;
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private lastStateAt = 0;
 
   get nameNotice(): string | null {
     return this.notice !== null && this.notice === this.nameError ? this.notice : null;
@@ -124,6 +128,13 @@ export class MultiplayerSession {
   ) {
     this.client = client;
     this.client.onMessage((message) => this.receive(message));
+    // Closing the tab on purpose is leaving: say so, or the others wait out the held seat. (A page that only
+    // goes into the back/forward cache, `persisted`, may come back and keeps its seat.)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pagehide', (event) => {
+        if (!event.persisted && this.room) this.send({ type: 'leave_room' });
+      });
+    }
   }
 
   /** Whether you may write in this room's chat: everybody may, unless the host limited it to the players. */
@@ -306,7 +317,8 @@ export class MultiplayerSession {
     if (!this.isHost) match.extrapolate(dt);
     // A guest hears the host about 30 times a second. Hearing nothing for long, while the host is still
     // there, means this connection died quietly: connect again instead of waiting for the browser to notice.
-    if (!this.isHost && !this.reconnecting && this.room?.players[0]?.connected !== false) {
+    // The stands have no seat to take back, so they are not asked to; a closed socket still ends their visit.
+    if (!this.isHost && !this.isSpectator && !this.reconnecting && this.room?.players[0]?.connected !== false) {
       this.silence += dt;
       if (this.silence > SILENCE_LIMIT) {
         this.silence = 0;
@@ -316,21 +328,40 @@ export class MultiplayerSession {
     this.syncElapsed += dt;
     if (this.syncElapsed < SYNC_INTERVAL) return;
     this.syncElapsed %= SYNC_INTERVAL;
-    if (this.isHost) {
-      const events = this.pendingEvents.splice(0);
-      const seq = this.seq + 1;
-      try {
-        this.send({ type: 'state', seq, patch: this.encoder.encode(match.snapshot()), events });
-        this.seq = seq;
-      } catch (error) {
-        // A failed patch may have advanced the encoder's deltas; restart from a full snapshot.
-        this.encoder = new SnapshotEncoder();
-        this.pendingEvents.unshift(...events);
-        console.error('Could not encode game state', error);
-      }
-    } else {
-      this.flushAim();
+    if (this.isHost) this.sendState(match);
+    else this.flushAim();
+  }
+
+  /** The host's patch of the game since the last one, with the events in between. */
+  private sendState(match: NetMatch): void {
+    this.lastStateAt = Date.now();
+    const events = this.pendingEvents.splice(0);
+    const seq = this.seq + 1;
+    try {
+      this.send({ type: 'state', seq, patch: this.encoder.encode(match.snapshot()), events });
+      this.seq = seq;
+    } catch (error) {
+      // A failed patch may have advanced the encoder's deltas; restart from a full snapshot.
+      this.encoder = new SnapshotEncoder();
+      this.pendingEvents.unshift(...events);
+      console.error('Could not encode game state', error);
     }
+  }
+
+  /**
+   * A hidden tab stops drawing frames, so a host in the background would fall silent and every guest would
+   * take that for a dead connection. Timers still tick there (about once a second): keep the guests posted.
+   */
+  private startHeartbeat(match: NetMatch): void {
+    this.stopHeartbeat();
+    this.heartbeat = setInterval(() => {
+      if (this.match === match && Date.now() - this.lastStateAt >= HEARTBEAT_MS) this.sendState(match);
+    }, HEARTBEAT_MS);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeat !== null) clearInterval(this.heartbeat);
+    this.heartbeat = null;
   }
 
   // ————————————————————————————— Messages —————————————————————————————
@@ -442,6 +473,7 @@ export class MultiplayerSession {
         if (event.type === 'roundEnd') this.send({ type: 'round_stats', ...roundReport(match) });
       });
       match.onTurnEnd(() => this.send({ type: 'turn_stats', ...turnReport(match) }));
+      this.startHeartbeat(match);
     }
     this.hooks.matchStarted(match);
   }
@@ -561,6 +593,7 @@ export class MultiplayerSession {
   }
 
   private dropMatch(): void {
+    this.stopHeartbeat();
     this.match?.dispose();
     this.match = null;
     this.resetSync();

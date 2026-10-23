@@ -1501,4 +1501,10 @@ describe('statistics and replays', () => {
     await state;
     expect(guest.session.room?.status).toBe('playing');
   }, 30_000);
+
+  it('keeps the guests posted while the host draws no frames', async () => {
+    const { guest } = await startRoom('classic');
+    // Nobody calls `update`, as in a hidden tab: the state still comes, from the host's heartbeat.
+    await (guest.session.client as RustTransport).waitForMessage((message) => message.type === 'state');
+  }, 10_000);
 });
