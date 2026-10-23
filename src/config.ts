@@ -26,7 +26,7 @@ export const WORMHOLE = {
   /** Two portals closer than this overlap, and cannot be placed: centre to centre, the ovals' full height. */
   GAP: 50,
   /** A portal is never set closer than this to another player's ship: centre to centre, as for a black hole. */
-  PLAYER_GAP: 150,
+  PLAYER_GAP: 100,
   /**
    * The colour of a wormhole's portals: both portals of one wormhole share it, and each wormhole on the field has
    * its own, so which portals belong together can be seen at once. The palette starts over after the last.
