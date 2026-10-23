@@ -25,6 +25,8 @@ let serverUrl: string;
 
 class RustTransport implements Transport {
   private url = '';
+  /** Closed on purpose by the test: no reconnecting, and the relay is told so it frees the seat at once. */
+  private closing = false;
   private socket: WebSocket | null = null;
   get rawSocket(): WebSocket | null { return this.socket; }
   private edit: (message: ServerMessage) => ServerMessage;
@@ -48,6 +50,7 @@ class RustTransport implements Transport {
   onMessage(listener: (message: ServerMessage) => void): void { this.listener = listener; }
 
   async connect(): Promise<void> {
+    this.closing = false;
     const { promise, resolve, reject } = Promise.withResolvers<void>();
     const socket = new WebSocket(this.url);
     this.socket = socket;
@@ -70,7 +73,7 @@ class RustTransport implements Transport {
     });
     socket.on('close', () => {
       activeTransports.delete(this);
-      if (opened) this.listener?.({ type: 'closed', message: 'Test relay connection closed' });
+      if (opened && !this.closing) this.listener?.({ type: 'closed', message: 'Test relay connection closed' });
     });
     await promise;
   }
@@ -83,9 +86,13 @@ class RustTransport implements Transport {
   async close(): Promise<void> {
     const socket = this.socket;
     this.socket = null;
+    this.closing = true;
     if (!socket || socket.readyState === WebSocket.CLOSED) return;
     const closed = once(socket, 'close');
-    if (socket.readyState === WebSocket.OPEN) socket.close();
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(packWireMessage({ type: 'leave_room' }));
+      socket.close();
+    }
     else socket.terminate();
     await closed;
   }
@@ -1458,4 +1465,46 @@ describe('statistics and replays', () => {
     expect(game).toMatchObject({ local: true, replay: false, rounds: 2, cpus: 2, humans: 0 });
     expect(await board().replay(game!.id)).toBeNull();
   }, 60_000);
+
+  it('keeps the game when a guest\'s connection drops and comes back', async () => {
+    const { host, guest } = await startRoom('classic');
+    const guestTransport = guest.session.client as RustTransport;
+    const held = waitForSession(host.session, () => host.session.room?.players[1].connected === false);
+    guestTransport.rawSocket!.terminate();
+    await held;
+    // The room and the game are still there, only the seat is marked.
+    expect(host.session.room?.status).toBe('playing');
+    expect(guest.session.match).not.toBeNull();
+    await waitForSession(host.session, () => host.session.room?.players[1].connected === true);
+    await waitForSession(guest.session, () => !guest.session.reconnecting && guest.session.connected);
+    expect(guest.session.room?.status).toBe('playing');
+    expect(guest.session.you.playerId).toBe(1);
+    // The host's next frame reaches the guest over the new connection.
+    const state = guestTransport.waitForMessage((message) => message.type === 'state');
+    host.session.update(1 / 30);
+    await state;
+    expect(host.session.room?.status).toBe('playing');
+  }, 30_000);
+
+  it('keeps the room when the host\'s connection drops and comes back', async () => {
+    const { host, guest } = await startRoom('classic');
+    const hostTransport = host.session.client as RustTransport;
+    const held = waitForSession(guest.session, () => guest.session.room?.players[0].connected === false);
+    hostTransport.rawSocket!.terminate();
+    await held;
+    expect(guest.session.room?.status).toBe('playing');
+    await waitForSession(guest.session, () => guest.session.room?.players[0].connected === true);
+    await waitForSession(host.session, () => !host.session.reconnecting && host.session.connected);
+    expect(host.session.isHost).toBe(true);
+    const state = (guest.session.client as RustTransport).waitForMessage((message) => message.type === 'state');
+    host.session.update(1 / 30);
+    await state;
+    expect(guest.session.room?.status).toBe('playing');
+  }, 30_000);
+
+  it('keeps the guests posted while the host draws no frames', async () => {
+    const { guest } = await startRoom('classic');
+    // Nobody calls `update`, as in a hidden tab: the state still comes, from the host's heartbeat.
+    await (guest.session.client as RustTransport).waitForMessage((message) => message.type === 'state');
+  }, 10_000);
 });

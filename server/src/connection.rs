@@ -20,7 +20,7 @@ use tracing::{debug, info, instrument, warn, Instrument};
 use crate::admission::AdmissionGuard;
 use crate::auth::ScryptSlots;
 use crate::codec::WireMessage;
-use crate::config::{HANDSHAKE_TIMEOUT, HEARTBEAT_MS, MAX_PAYLOAD};
+use crate::config::{HANDSHAKE_TIMEOUT, HEARTBEAT_MISSES, HEARTBEAT_MS, MAX_PAYLOAD};
 use crate::leaderboard::Leaderboard;
 use crate::room::RoomManager;
 use crate::router::deliver;
@@ -88,7 +88,7 @@ where
     let connection = tracing::Span::current();
     let writer_task = tokio::spawn(writer_task(rx, writer).instrument(connection));
 
-    let mut alive = true;
+    let mut missed: u32 = 0;
     let mut window_start = Instant::now();
     let mut window_count: u32 = 0;
     let mut heartbeat = tokio::time::interval(Duration::from_millis(HEARTBEAT_MS));
@@ -104,26 +104,30 @@ where
                 }
             }
             _ = heartbeat.tick() => {
-                if !alive {
-                    break; // no pong since the last ping — dead peer
+                if missed >= HEARTBEAT_MISSES {
+                    info!(missed, "no sign of life after the pings; dropping the peer");
+                    break; // dead peer
                 }
-                alive = false;
+                missed += 1;
                 let _ = tx.try_send(WireMessage::Ping(Vec::new()));
             }
             incoming = reader.next() => {
                 let Some(frame) = incoming else { break };
                 match frame {
                     Ok(message) => match &message {
-                        Message::Pong(_) => alive = true,
+                        // Any sign of life will do, not only the pong: on a busy link it may queue behind data.
+                        Message::Pong(_) => missed = 0,
                         Message::Ping(payload) => {
                             let _ = tx.try_send(WireMessage::Pong(payload.clone()));
                         }
-                        Message::Close(_) => {
+                        Message::Close(frame) => {
+                            info!(?frame, "peer closed the connection");
                             // tungstenite auto-replies to a peer close and drives the handshake;
                             // just tear down.
                             break;
                         }
                         Message::Text(_) | Message::Binary(_) => {
+                            missed = 0;
                             if !within_rate_limit(&mut window_start, &mut window_count, max_messages_per_second) {
                                 warn!("rate limit exceeded; closing with 1008");
                                 drain_flood(&mut reader, &tx).await;
@@ -138,7 +142,10 @@ where
                         }
                         _ => {}
                     },
-                    Err(_) => break,
+                    Err(err) => {
+                        info!(%err, "connection read failed");
+                        break;
+                    }
                 }
             }
         }

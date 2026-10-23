@@ -176,9 +176,14 @@ async fn main() {
     });
     let mut sweep = tokio::time::interval(Duration::from_secs(60));
     sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut seats = tokio::time::interval(Duration::from_secs(2));
+    seats.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {
+            _ = seats.tick() => {
+                shared.manager.lock().expire_seats();
+            }
             _ = sweep.tick() => {
                 shared.guard.sweep();
                 shared.manager.lock().sweep();

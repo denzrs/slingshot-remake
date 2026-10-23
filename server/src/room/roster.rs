@@ -1,5 +1,8 @@
 //! Who sits in a room: adding and removing seats, and telling the room about it.
 
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
+use rand::Rng;
 use serde_json::json;
 
 use crate::protocol::rules_to_value;
@@ -25,6 +28,8 @@ impl RoomManager {
             team,
             conn: Some(conn),
             cpu: None,
+            token: URL_SAFE_NO_PAD.encode(rand::thread_rng().gen::<[u8; 16]>()),
+            lost_at: None,
         });
         self.memberships.insert(
             conn,
@@ -90,7 +95,7 @@ impl RoomManager {
             "players": room
                 .players
                 .iter()
-                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "ready": p.confirmed(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str) }))
+                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "ready": p.confirmed(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str), "connected": p.lost_at.is_none() }))
                 .collect::<Vec<_>>(),
             "spectators": room
                 .spectators
@@ -100,16 +105,16 @@ impl RoomManager {
         });
         let in_the_stands: Vec<(u64, usize)> =
             room.spectators.iter().map(|s| (s.conn, s.id)).collect();
-        let recipients: Vec<(u64, usize)> = room
+        let recipients: Vec<(u64, usize, String)> = room
             .players
             .iter()
-            .filter_map(|p| p.conn.map(|conn| (conn, p.id)))
+            .filter_map(|p| p.conn.map(|conn| (conn, p.id, p.token.clone())))
             .collect();
-        for (conn, player_id) in recipients {
+        for (conn, player_id, token) in recipients {
             let mut message = json!({
                 "type": "room_update",
                 "room": room_info,
-                "you": { "playerId": player_id, "host": player_id == 0 },
+                "you": { "playerId": player_id, "host": player_id == 0, "token": token },
             });
             if let Some(notice) = notice {
                 message["notice"] = json!(notice);

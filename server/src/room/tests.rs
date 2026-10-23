@@ -125,6 +125,14 @@ fn room_flow_authorizes_host_and_relays_guest_input_and_host_state() {
     );
 
     rooms.disconnect(1);
+    // The host's seat is held, not given up: the room is still there.
+    assert!(
+        take_type(&drain_json(&mut guest_rx), "room_update")["notice"]
+            .as_str()
+            .unwrap()
+            .contains("lost the connection")
+    );
+    rooms.expire_seats_at(std::time::Instant::now() + SEAT_GRACE);
     assert_eq!(
         take_type(&drain_json(&mut guest_rx), "room_closed")["message"],
         "The host left the room"
@@ -566,6 +574,7 @@ fn leaving_running_game_returns_room_to_waiting_and_reindexes_players() {
     drain_json(&mut host_rx);
     drain_json(&mut guest_rx);
     rooms.disconnect(2);
+    rooms.expire_seats_at(std::time::Instant::now() + SEAT_GRACE);
     let update = take_type(&drain_json(&mut host_rx), "room_update");
     assert_eq!(update["room"]["status"], "waiting");
     assert_eq!(update["room"]["players"].as_array().unwrap().len(), 1);
@@ -1551,6 +1560,7 @@ fn a_spectator_leaving_does_not_end_the_game_and_a_closing_room_sends_them_home(
     assert_eq!(update["room"]["spectators"].as_array().unwrap().len(), 1);
 
     rooms.disconnect(1);
+    rooms.expire_seats_at(std::time::Instant::now() + SEAT_GRACE);
     assert_eq!(
         take_type(&drain_json(&mut other_rx), "room_closed")["message"],
         "The host left the room"
@@ -1839,4 +1849,133 @@ fn without_statistics_reports_are_checked_and_dropped() {
         take_type(&drain_json(&mut host_rx), "error")["message"],
         "That round is already over"
     );
+}
+
+#[test]
+fn a_dropped_guest_keeps_the_seat_and_the_game_until_the_grace_runs_out() {
+    let mut rooms = RoomManager::new();
+    let (_room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
+    let token = rooms.rooms.values().next().unwrap().players[1]
+        .token
+        .clone();
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+
+    rooms.disconnect(2);
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["status"], "playing");
+    assert_eq!(update["room"]["players"][1]["connected"], false);
+    assert!(update["notice"]
+        .as_str()
+        .unwrap()
+        .contains("lost the connection"));
+
+    // Still inside the grace: nothing is given up.
+    rooms.expire_seats_at(std::time::Instant::now());
+    assert_eq!(rooms.rooms.values().next().unwrap().players.len(), 2);
+
+    // A new connection takes the seat back and the host is asked for a complete frame.
+    let mut back_rx = connect(&mut rooms, 7);
+    drain_json(&mut back_rx);
+    rooms.handle(7, &json!({"type":"resume","token":token}));
+    let update = take_type(&drain_json(&mut back_rx), "room_update");
+    assert_eq!(update["you"]["playerId"], 1);
+    assert_eq!(update["room"]["status"], "playing");
+    assert_eq!(update["room"]["players"][1]["connected"], true);
+    assert!(drain_json(&mut host_rx)
+        .iter()
+        .any(|m| m["type"] == "keyframe"));
+
+    // The seat can use its new connection, and the grace no longer applies to it.
+    rooms.handle(
+        7,
+        &json!({"type":"input","input":{"kind":"aim","angle":15,"power":50}}),
+    );
+    assert!(drain_json(&mut host_rx)
+        .iter()
+        .any(|m| m["type"] == "input" && m["from"] == 1));
+    rooms.expire_seats_at(std::time::Instant::now() + SEAT_GRACE);
+    assert_eq!(rooms.rooms.values().next().unwrap().players.len(), 2);
+}
+
+#[test]
+fn a_dropped_host_can_come_back_and_nobody_else_is_sent_away() {
+    let mut rooms = RoomManager::new();
+    let (_room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
+    let token = rooms.rooms.values().next().unwrap().players[0]
+        .token
+        .clone();
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+
+    rooms.disconnect(1);
+    let messages = drain_json(&mut guest_rx);
+    assert!(messages.iter().all(|m| m["type"] != "room_closed"));
+    assert_eq!(
+        take_type(&messages, "room_update")["room"]["status"],
+        "playing"
+    );
+
+    let mut back_rx = connect(&mut rooms, 9);
+    drain_json(&mut back_rx);
+    rooms.handle(9, &json!({"type":"resume","token":token}));
+    let update = take_type(&drain_json(&mut back_rx), "room_update");
+    assert_eq!(update["you"]["playerId"], 0);
+    assert_eq!(update["you"]["host"], true);
+    // The host's state reaches the guest again over the new connection.
+    let payload =
+        rmp_serde::to_vec_named(&json!({"patch":{"phase":"aiming"},"events":[]})).unwrap();
+    rooms.handle_state_envelope(9, 5, &crate::codec::state_frame(5, &payload));
+    assert_eq!(take_type(&drain_json(&mut guest_rx), "state")["seq"], 5);
+}
+
+#[test]
+fn a_token_that_is_not_held_any_more_is_turned_away() {
+    let mut rooms = RoomManager::new();
+    let (_room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
+    let token = rooms.rooms.values().next().unwrap().players[1]
+        .token
+        .clone();
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    rooms.disconnect(2);
+    rooms.expire_seats_at(std::time::Instant::now() + SEAT_GRACE);
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "room_update")["room"]["status"],
+        "waiting"
+    );
+
+    let mut late_rx = connect(&mut rooms, 8);
+    drain_json(&mut late_rx);
+    rooms.handle(8, &json!({"type":"resume","token":token}));
+    assert_eq!(
+        take_type(&drain_json(&mut late_rx), "resume_failed")["message"],
+        "Your seat was given up"
+    );
+    rooms.handle(8, &json!({"type":"resume","token":"nonsense"}));
+    assert_eq!(
+        take_type(&drain_json(&mut late_rx), "resume_failed")["type"],
+        "resume_failed"
+    );
+}
+
+#[test]
+fn a_drop_in_a_waiting_room_still_frees_the_seat_at_once() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    let mut guest_rx = connect(&mut rooms, 2);
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    rooms.handle(1, &create("Host", None));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert!(!update["you"]["token"].as_str().unwrap().is_empty());
+    let room_id = update["room"]["id"].as_str().unwrap().to_owned();
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+    );
+    drain_json(&mut host_rx);
+    rooms.disconnect(2);
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["players"].as_array().unwrap().len(), 1);
 }
