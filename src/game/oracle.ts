@@ -47,6 +47,19 @@ export interface OracleTip {
   payout?: number;
 }
 
+/** A judged tip as the relay's statistics keep it: nobody's name, only how it came out. */
+export interface TipReport {
+  /** A single shot's hit/miss tip or a salvo question (`shot`), or the round's winner (`round`). */
+  kind: 'shot' | 'round';
+  right: boolean;
+  /** A bet on the round: the points staked and what came back (the stake included); 0 and 0 for a plain tip. */
+  stake: number;
+  payout: number;
+  underdog: boolean;
+  /** Placed from the stands rather than by a shot-down player. */
+  stands: boolean;
+}
+
 export interface OracleResult {
   /** The question this answers. */
   id: number;
@@ -175,6 +188,9 @@ export class Oracle {
   /** …and on the round question. */
   roundMine: { id: number; pick: number } | null = null;
 
+  /** Every tip judged in this round, for the statistics (not part of a snapshot). */
+  readonly judged: TipReport[] = [];
+
   /** The stakes on each pick of the round question as the host sent them; null where this oracle works them out itself. */
   private sharedPools: Map<number, number> | null = null;
 
@@ -208,6 +224,7 @@ export class Oracle {
     this.tips.clear();
     this.roundTips.clear();
     this.roundStakes.clear();
+    this.judged.length = 0;
     this.recount();
     this.sharedPools = null;
     this.scores = Array.from({ length: players }, emptyScore);
@@ -229,6 +246,7 @@ export class Oracle {
     this.roundTips.clear();
     this.roundStakes.clear();
     this.sharedPools = null;
+    this.judged.length = 0;
     this.recount();
     for (const score of this.scores) {
       score.roundPoints = 0;
@@ -294,6 +312,7 @@ export class Oracle {
       return { player, pick, right, base, shot: q.kind === 'shot' };
     });
     this.result = { id: q.id, kind: q.kind, shooter: q.shooter, victims, hit, ...this.settle(entries), at };
+    this.keep('shot', this.result.tips);
     this.close();
   }
 
@@ -388,6 +407,7 @@ export class Oracle {
     const settled = this.settle(entries);
     this.shareThePot(settled.tips);
     this.roundResult = { id: q.id, kind: 'winner', round, winners, ...settled, at };
+    this.keep('round', settled.tips);
     this.roundQuestion = null;
     this.roundTips.clear();
     this.roundStakes.clear();
@@ -423,6 +443,10 @@ export class Oracle {
       tip.stake = stake;
       tip.payout = refund ? stake : (shares.find((share) => share.tip === tip)?.whole ?? 0) * ORACLE.STAKE_STEP;
     }
+  }
+
+  private keep(kind: TipReport['kind'], tips: readonly OracleTip[]): void {
+    for (const tip of tips) this.judged.push({ kind, right: tip.right, stake: tip.stake ?? 0, payout: tip.payout ?? 0, underdog: !!tip.underdog, stands: this.publicBook });
   }
 
   /** Books a question's tips: the points, the streaks, the tallies the awards come from. */

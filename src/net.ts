@@ -68,6 +68,7 @@ type ClientMessage =
   | { type: 'daily_top'; day: string }
   /** The numbers behind the stats page: the totals of every day, and the latest games. */
   | { type: 'stats_overview' }
+  | { type: 'stats_facts' }
   /** A game played on this device, told to the relay when it is over: its rounds and nothing to fly it again with. */
   | ({ type: 'local_game' } & LocalGameReport)
   /** One game from the statistics, to fly it again: what it took is kept for games whose host logged it. */
@@ -77,6 +78,31 @@ type ClientMessage =
   | { type: 'leave_room' }
   /** A new connection asks for the seat that `token` was given for, after the old connection dropped. */
   | { type: 'resume'; token: string };
+
+/** One finding of the statistics, for the menu: what it is about and the numbers its sentence is made of. */
+export interface StatsFact {
+  id: string;
+  values: number[];
+}
+
+/** What the oracle's tips and bets came to on the relay. */
+export interface StatsBetting {
+  shotTips: number;
+  shotRight: number;
+  roundTips: number;
+  roundRight: number;
+  /** Right tips against the crowd. */
+  underdogs: number;
+  /** Tips from the stands. */
+  stands: number;
+  /** Round tips with points on them, the points staked and paid back, the bets that paid more than the stake. */
+  bets: number;
+  staked: number;
+  paid: number;
+  won: number;
+  biggestWin: number;
+  biggestStake: number;
+}
 
 /** One day of the stats heatmap: UTC date, and what happened on it. */
 export interface StatsDay {
@@ -237,7 +263,11 @@ export type ServerMessage =
       localDays: StatsDay[];
       /** The latest games, newest first. */
       games: StatsGame[];
+      /** Tips and bets; null while nobody has tipped (and from a relay that does not say). */
+      betting?: StatsBetting | null;
     }
+  /** One-line findings of the statistics for the menu: an id, and the numbers its wording is made of. */
+  | { type: 'stats_facts'; enabled: boolean; facts: StatsFact[] }
   /** `replay` is null when the relay has no such game, or not the whole of it. */
   | { type: 'stats_replay'; id: string; replay: StatsReplay | null }
   | { type: 'room_closed'; message: string }

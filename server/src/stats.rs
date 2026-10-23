@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
@@ -21,6 +21,9 @@ use turso::{Connection, Database, Value as Sql};
 
 use crate::pseudonym::Identities;
 use crate::report::{LocalGame, RoundReport, ShotRound, TurnReport, RECORD_KEYS};
+
+mod facts;
+pub use facts::Fact;
 
 /// Days a round is kept before the sweeper drops it.
 pub const DEFAULT_KEEP_DAYS: i64 = 365;
@@ -32,7 +35,7 @@ const OVERVIEW_GAMES: i64 = 50;
 const PRUNE_INTERVAL_SECS: i64 = 6 * 60 * 60;
 const DAY_SECS: i64 = 24 * 60 * 60;
 
-const SCHEMA: [&str; 13] = [
+const SCHEMA: [&str; 14] = [
     // What the statistics remember between runs: the key their players are hashed with.
     "CREATE TABLE IF NOT EXISTS stat_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     // One row per round. `match_id` is random per game and `room_id` random per room; neither is reused.
@@ -80,6 +83,20 @@ const SCHEMA: [&str; 13] = [
          pickups   INTEGER NOT NULL,
          saves     INTEGER NOT NULL,
          PRIMARY KEY (match_id, round, seat)
+     )",
+    // One row per judged tip of the oracle game (the shot-down players' and the stands'), no names: how it came out.
+    "CREATE TABLE IF NOT EXISTS stat_tips (
+         match_id TEXT    NOT NULL,
+         round    INTEGER NOT NULL,
+         n        INTEGER NOT NULL,
+         at       INTEGER NOT NULL,
+         kind     TEXT    NOT NULL,
+         correct  INTEGER NOT NULL,
+         stake    INTEGER NOT NULL,
+         payout   INTEGER NOT NULL,
+         underdog INTEGER NOT NULL,
+         stands   INTEGER NOT NULL,
+         PRIMARY KEY (match_id, round, n)
      )",
     // One row per shot: how it was aimed, what rode with it, how it ended, what it earned.
     "CREATE TABLE IF NOT EXISTS stat_shots (
@@ -190,6 +207,9 @@ const INSERT_SEAT: &str = "INSERT INTO stat_seats (
          score, shots, kills, swingbys, grazes, own_goals, pickups, saves)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)";
 
+const INSERT_TIP: &str = "INSERT OR IGNORE INTO stat_tips (match_id, round, n, at, kind, correct, stake, payout, underdog, stands)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)";
+
 const INSERT_SHOT: &str = "INSERT INTO stat_shots (
          match_id, round, turn, n, at, seat, player, cpu, angle, power, power_up, fork,
          fan, split_at, rider, resolution, hits, hit_seat, hit_kind, points)
@@ -234,6 +254,7 @@ const PRUNE_TURNS: &str = "DELETE FROM stat_turns WHERE at < ?1";
 const PRUNE_SHOTS: &str = "DELETE FROM stat_shots WHERE at < ?1";
 const PRUNE_ROUNDS: &str = "DELETE FROM stat_rounds WHERE at < ?1";
 const PRUNE_SEATS: &str = "DELETE FROM stat_seats WHERE at < ?1";
+const PRUNE_TIPS: &str = "DELETE FROM stat_tips WHERE at < ?1";
 
 /// One day of the heatmap.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -261,7 +282,30 @@ pub struct Game {
     pub local: bool,
 }
 
+/// What the oracle's tips and bets came to, all kept games together.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Betting {
+    pub shot_tips: i64,
+    pub shot_right: i64,
+    pub round_tips: i64,
+    pub round_right: i64,
+    /// Right tips against the crowd.
+    pub underdogs: i64,
+    /// Tips placed from the stands.
+    pub stands: i64,
+    /// Round tips with points on them.
+    pub bets: i64,
+    pub staked: i64,
+    pub paid: i64,
+    /// Bets that paid more than the stake.
+    pub won: i64,
+    pub biggest_win: i64,
+    pub biggest_stake: i64,
+}
+
 pub struct Overview {
+    /// Tips and bets; None while nobody has tipped.
+    pub betting: Option<Betting>,
     /// Online games, by day.
     pub days: Vec<DayTotals>,
     /// Games played on one device, by day.
@@ -313,9 +357,15 @@ pub struct Store {
     /// never holds up the overview (nor the other way round).
     replay_reader: Connection,
     replaying: tokio::sync::Mutex<()>,
+    /// For the menu's facts, a few dozen scans of the shots: a connection of their own, so they never queue the overview's reads.
+    facts_reader: Connection,
     /// One reader at a time: several tasks asking one connection at once wait on one another's statements, which a page with
     /// a few readers felt as seconds. Holds the overview last made, to hand to whoever asks within `OVERVIEW_FRESH`.
     reading: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<Overview>)>>,
+    /// The menu's facts last made (see `facts_shared`): handed out until a refresh in the background replaces them.
+    facts: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<Vec<Fact>>)>>,
+    /// Set while a refresh of the facts runs, so that only one does.
+    refreshing_facts: AtomicBool,
     /// Its own key, kept in `stat_meta`: see `pseudonym`.
     /// The key of the week it was made in (see `week_of`) and the players it hashes.
     players: parking_lot::Mutex<(i64, Identities)>,
@@ -348,13 +398,18 @@ impl Store {
         reader.busy_timeout(Duration::from_secs(2))?;
         let replay_reader = database.connect()?;
         replay_reader.busy_timeout(Duration::from_secs(2))?;
+        let facts_reader = database.connect()?;
+        facts_reader.busy_timeout(Duration::from_secs(2))?;
         Ok(Self {
             _database: database,
             conn,
             reader,
             replay_reader,
             replaying: tokio::sync::Mutex::new(()),
+            facts_reader,
             reading: tokio::sync::Mutex::new(None),
+            facts: tokio::sync::Mutex::new(None),
+            refreshing_facts: AtomicBool::new(false),
             players: parking_lot::Mutex::new((week, Identities::new(salt))),
             keep_days: keep_days.max(1),
             last_prune: AtomicI64::new(0),
@@ -702,6 +757,21 @@ impl Store {
             ];
             self.conn.execute(INSERT_SEAT, row).await?;
         }
+        for (n, tip) in report.tips.iter().enumerate() {
+            let row = vec![
+                Sql::Text(facts.match_id.clone()),
+                Sql::Integer(report.round),
+                Sql::Integer(n as i64 + 1),
+                Sql::Integer(at),
+                Sql::Text(tip.kind.into()),
+                Sql::Integer(tip.right.into()),
+                Sql::Integer(tip.stake),
+                Sql::Integer(tip.payout),
+                Sql::Integer(tip.underdog.into()),
+                Sql::Integer(tip.stands.into()),
+            ];
+            self.conn.execute(INSERT_TIP, row).await?;
+        }
         self.tally(facts.local, &who, 1, 0, at).await
     }
 
@@ -736,6 +806,7 @@ impl Store {
 
     async fn prune_before(&self, cutoff: i64) -> turso::Result<u64> {
         self.conn.execute(PRUNE_SEATS, (cutoff,)).await?;
+        self.conn.execute(PRUNE_TIPS, (cutoff,)).await?;
         self.conn.execute(PRUNE_PLACEMENTS, (cutoff,)).await?;
         self.conn.execute(PRUNE_MATCHES, (cutoff,)).await?;
         self.conn.execute(PRUNE_SHOTS, (cutoff,)).await?;
@@ -767,12 +838,51 @@ impl Store {
     /// What the stats page shows: the totals of every day kept, and the latest games.
     pub async fn overview(&self) -> turso::Result<Overview> {
         Ok(Overview {
+            betting: self.betting().await?,
             days: self.days("stat_days", "stat_day_players").await?,
             local_days: self
                 .days("stat_local_days", "stat_local_day_players")
                 .await?,
             games: self.latest_games().await?,
         })
+    }
+
+    async fn betting(&self) -> turso::Result<Option<Betting>> {
+        let mut rows = self
+            .reader
+            .query(
+                "SELECT COUNT(*),
+                        COALESCE(SUM(kind = 'shot'), 0), COALESCE(SUM(kind = 'shot' AND correct = 1), 0),
+                        COALESCE(SUM(kind = 'round'), 0), COALESCE(SUM(kind = 'round' AND correct = 1), 0),
+                        COALESCE(SUM(underdog), 0), COALESCE(SUM(stands), 0),
+                        COALESCE(SUM(stake > 0), 0), COALESCE(SUM(stake), 0), COALESCE(SUM(payout), 0),
+                        COALESCE(SUM(stake > 0 AND payout > stake), 0),
+                        COALESCE(MAX(CASE WHEN payout > stake THEN payout - stake ELSE 0 END), 0),
+                        COALESCE(MAX(stake), 0)
+                 FROM stat_tips",
+                (),
+            )
+            .await?;
+        let Some(row) = rows.next().await? else {
+            return Ok(None);
+        };
+        if row.get::<i64>(0)? == 0 {
+            return Ok(None);
+        }
+        Ok(Some(Betting {
+            shot_tips: row.get(1)?,
+            shot_right: row.get(2)?,
+            round_tips: row.get(3)?,
+            round_right: row.get(4)?,
+            underdogs: row.get(5)?,
+            stands: row.get(6)?,
+            bets: row.get(7)?,
+            staked: row.get(8)?,
+            paid: row.get(9)?,
+            won: row.get(10)?,
+            biggest_win: row.get(11)?,
+            biggest_stake: row.get(12)?,
+        }))
     }
 
     /// The totals of every day in a pair of day tables (online or local), oldest first.
@@ -1862,5 +1972,64 @@ mod tests {
         assert_eq!(stats.count("stat_seats").await, 2);
         assert_eq!(stats.count("stat_turns").await, 2);
         assert_eq!(stats.count("stat_shots").await, 2);
+    }
+
+    #[tokio::test]
+    async fn the_tips_of_a_round_are_kept_and_the_menu_gets_facts_from_them() {
+        let stats = Stats::in_memory().await;
+        let mut report = round(1);
+        let tip = |kind: &str, correct: bool, stake: i64, payout: i64| json!({"kind": kind, "right": correct, "stake": stake, "payout": payout, "underdog": false, "stands": false});
+        let mut sent = json!({
+            "round": 1, "title": "hit", "survivor": 1, "team": null, "seconds": 30.5, "planets": 3, "turns": 2,
+            "players": [
+                {"score": 0, "shots": 2, "kills": 0, "swingbys": 0, "grazes": 1, "ownGoals": 0, "pickups": 0, "saves": 0, "alive": false},
+                {"score": 500, "shots": 1, "kills": 1, "swingbys": 2, "grazes": 0, "ownGoals": 0, "pickups": 0, "saves": 0, "alive": true},
+            ],
+            "records": {},
+            "tips": [
+                tip("round", true, 100, 250), tip("round", false, 100, 0), tip("round", false, 50, 0),
+                tip("round", true, 0, 0), tip("round", false, 0, 0), tip("shot", true, 0, 0),
+            ],
+        });
+        report.tips = parse_round_report(&sent).unwrap().tips;
+        assert_eq!(report.tips.len(), 6);
+        stats
+            .record(&Job::Round(facts([10, 0, 0, 1], "ann"), report))
+            .await
+            .unwrap();
+        assert_eq!(stats.count("stat_tips").await, 6);
+
+        let betting = stats.overview().await.unwrap().betting.unwrap();
+        assert_eq!(
+            (
+                betting.shot_tips,
+                betting.shot_right,
+                betting.round_tips,
+                betting.round_right
+            ),
+            (1, 1, 5, 2)
+        );
+        assert_eq!(
+            (betting.bets, betting.staked, betting.paid, betting.won),
+            (3, 250, 250, 1)
+        );
+        assert_eq!((betting.biggest_win, betting.biggest_stake), (150, 100));
+
+        let facts = stats.facts().await;
+        let ids: Vec<_> = facts.iter().map(|f| f.id).collect();
+        // Five round tips are enough for a fact; three bets and one shot tip, or no shots at all, are not.
+        assert!(
+            ids.contains(&"tipRound") && ids.contains(&"tipStands"),
+            "{ids:?}"
+        );
+        assert!(
+            !ids.contains(&"betStake") && !ids.contains(&"hitRate"),
+            "{ids:?}"
+        );
+        let round_tips = facts.iter().find(|f| f.id == "tipRound").unwrap();
+        assert_eq!(round_tips.values, [40.0]);
+        // A tip that does not make sense is no report at all.
+        sent["tips"][0]["kind"] = json!("lottery");
+        assert!(parse_round_report(&sent).is_none());
     }
 }

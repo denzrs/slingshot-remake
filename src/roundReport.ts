@@ -4,6 +4,7 @@
  * the daily board does, and keeps it for a week.
  */
 import type { RoundTitle } from './game/match';
+import type { TipReport } from './game/oracle';
 import type { ReplayPlacement } from './game/replay';
 import type { ShotRecord } from './shotLog';
 import type { Best, StatBook } from './stats';
@@ -42,6 +43,8 @@ export interface RoundReport {
   /** How many turns (volleys) the round took: the relay checks the turn reports it kept against it. */
   turns: number;
   players: SeatReport[];
+  /** The tips and bets of the shot-down players and of the stands that were judged in this round; left out when there were none. */
+  tips?: TipReport[];
   records: {
     longestShot?: RecordReport;
     fastestKill?: RecordReport;
@@ -89,6 +92,9 @@ export interface ReportSource {
   players: readonly { score: number; shots: number; alive: boolean }[];
   world: { planets: readonly unknown[] };
   shotLog: { turn: number };
+  /** The shot-down players' tipping game and the stands'. */
+  oracle?: { judged: readonly TipReport[] };
+  stands?: { judged: readonly TipReport[] };
 }
 
 const RECORDS = ['longestShot', 'fastestKill', 'bestHit', 'closeCall', 'sniper'] as const;
@@ -104,6 +110,7 @@ export function roundReport(match: ReportSource): RoundReport {
     const found = record(book[kind]);
     if (found) records[kind] = found;
   }
+  const tips = [...(match.oracle?.judged ?? []), ...(match.stands?.judged ?? [])];
   return {
     round: match.round,
     title: match.summary?.title ?? 'noneLeft',
@@ -123,6 +130,7 @@ export function roundReport(match: ReportSource): RoundReport {
       saves: book.saves?.[i] ?? 0,
       alive: p.alive,
     })),
+    ...(tips.length ? { tips } : {}),
     records,
   };
 }

@@ -68,7 +68,7 @@ The board shares one SQLite-compatible file beside the relay with the match stat
 When started with `--stats`, the relay keeps a year of numbers about online games, to see how they are played: how long rounds run, which rules and game modes get picked, how aim and power-ups pay off, how often CPUs win. The relay itself never sees a game — the host's client runs it and the state frames are opaque to the relay — so the host reports, and it does so turn by turn:
 
 - **After every turn** (a turn is one volley: a single shot in classic's turn order, everybody's shots when they fly together) the host's client sends `turn_stats`: the turn number, every shot fired in it (see `stat_shots` below) and, for each seat, the score and whether the ship is still alive.
-- **When a round ends** it sends `round_stats`: how the round ended, its length, the planet count, for each seat the score, shots, kills, swing-bys, grazes, own goals, pick-ups and shield saves and whether it survived, and the round's records (longest shot, fastest kill, best hit, narrowest miss, longest hit).
+- **When a round ends** it sends `round_stats`: how the round ended, its length, the planet count, for each seat the score, shots, kills, swing-bys, grazes, own goals, pick-ups and shield saves and whether it survived, and the round's records (longest shot, fastest kill, best hit, narrowest miss, longest hit), and — in a room with tipping (the shot-down players' and the stands' oracle) — how each tip and bet judged in the round came out (`tips`: no names, only the kind, right or wrong, the stake and what it paid).
 
 The relay adds what it knows itself: the game and room mode, the room's rules, how many seats are people and how many CPUs (and which level), and how many are watching.
 
@@ -127,11 +127,28 @@ The relay adds what it knows itself: the game and room mode, the room's rules, h
 | `hits`, `hit_seat`, `hit_kind` | Ships it took out (armor piercing can take several), the first of them, and whether it was an `enemy`, `self` or `friendly` |
 | `points` | What the shot earned: its hits, a high-five, the multi-kill bonus (negative for a ship of one's own) |
 
+`stat_tips` – one row per tip of the oracle game that was judged, with no name and no seat:
+
+| Column | Meaning |
+| --- | --- |
+| `match_id`, `round`, `n`, `at` | Which round, and the tip's number in it |
+| `kind` | `shot` (will it hit, or who gets hit) or `round` (who wins the round) |
+| `correct` | Whether the tip was right |
+| `stake`, `payout` | Points bet on a round tip and what came back, the stake included; 0 and 0 for a plain tip or a lost bet's payout |
+| `underdog` | A right tip against the crowd |
+| `stands` | Placed from the stands rather than by a shot-down player |
+
 Placement power-ups (teleport, black hole, …) and shield bounces are not shots and are not logged here; a defense's stray missile is counted in the seat's score, not as a shot. All tables can be read with any SQLite tool.
+
+### Facts in the menus
+
+The title menu and the multiplayer lobby show **facts** from the statistics wherever the build has a relay: a single line that fades in, stays for ten seconds (the fades included) and fades out as the next one fades in, in a random order, such as *"In Event Horizon, 20% of shots at power 80 or more hit the shooter – below that, 4%"* or *"12% of bets pay out more than the stake"*. The client asks the relay with `stats_facts` and is answered with `stats_facts` (`enabled: false` when the relay keeps no statistics): a list of `{ id, values }`, where the numbers are what the sentence is made of and the client words them in the player's language (`fact.<id>` in `src/i18n.ts`, `src/statsFacts.ts` for how each number is shown). Each fact is a query of its own (`server/src/stats/facts.rs`) that also counts what it looked at; a fact with too few of them is left out, so a young database tells little instead of boasting of three shots. The facts cover aim and power (hit rate, shots lost to the void, first turn against later ones, repeated aims after a miss, self hits by power and game mode, power-ups), rounds and games (length, self-hit endings, shares of modes, humans against CPUs, swing-bys, records, today) and the oracle (how often tips are right, underdogs, the stands' share, bets that paid, the average and biggest stakes, the biggest win and loss). The relay hands out the facts it has and makes them anew in the background at most every ten minutes (only the first request after a start waits for the queries); the client keeps them for ten, across page loads (`sessionStorage`). Facts that name a single record (the best hit, the fastest kill, the closest call, the longest round, the biggest win and loss) need at least 25 samples, because hosts report their numbers and they are taken at face value. The facts are read on a connection of their own, so their scans never queue the overview. Like the overview, only totals leave the relay.
+
+Because the menu asks as soon as it is shown, a build with a relay opens a WebSocket to it for every title-menu view, not only once someone opens Multiplayer: the relay sees the visitor's IP address earlier than it otherwise would.
 
 ### The statistics page
 
-The title menu has a **Statistics** entry wherever the build has a relay (`VITE_MULTIPLAYER_SERVER`), in the menu's own style: a GitHub-style heatmap of the last year, a switch above it between **rounds**, **players** and **points** per day, and under it a table of the latest 50 games (when, mode, seats, rounds, points) with a **Rewatch** button at the right of each row. The numbers come over the relay's WebSocket as one more control message, `stats_overview`, answered with `stats_overview` (`enabled: false` when the relay keeps no statistics, so the page says so). Only totals leave the relay – no player hash, no room, no seat – so the message is open to anybody who can connect, like the daily board.
+The title menu has a **Statistics** entry wherever the build has a relay (`VITE_MULTIPLAYER_SERVER`), in the menu's own style: a GitHub-style heatmap of the last year, a switch above it between **rounds**, **players** and **points** per day, and under it a table of the latest 50 games and — once somebody has tipped — a **Betting** block (`betting` in `stats_overview`: tips and bets of all kept games added up: share of right round and shot tips, bets that paid more than the stake, average and biggest stake, biggest win, right tips against the crowd, the stands' share, and the points the bets took in or gave out) (when, mode, seats, rounds, points) with a **Rewatch** button at the right of each row. The numbers come over the relay's WebSocket as one more control message, `stats_overview`, answered with `stats_overview` (`enabled: false` when the relay keeps no statistics, so the page says so). Only totals leave the relay – no player hash, no room, no seat – so the message is open to anybody who can connect, like the daily board.
 
 - **Days and games.** The per-day totals live in `stat_days` (rounds; the points the shots earned, each added once) and `stat_day_players` (the hashes of the people who played that day, counted once per day) and are pruned with everything else after `STATS_KEEP_DAYS`, so the heatmap spans as much as is kept (at most the year it draws). Days are UTC dates. The table lists the latest 50 games.
 - **Points** are the points shots earned (the sum of `stat_shots.points`, negative for hitting yourself), not the seats' scores, which run on from round to round.

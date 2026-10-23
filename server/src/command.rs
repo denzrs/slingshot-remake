@@ -36,6 +36,8 @@ pub enum DailyCommand {
     Top(Parsed<String>),
     /// The stats page's numbers.
     Stats,
+    /// The menu's facts.
+    Facts,
     /// One game, to fly again.
     Replay(Parsed<String>),
     /// A game played on one device, reported when it is over.
@@ -166,6 +168,7 @@ impl<'a> Command<'a> {
                 parse_daily_day(message).ok_or("Invalid day"),
             )),
             Some("stats_overview") => Command::Daily(DailyCommand::Stats),
+            Some("stats_facts") => Command::Daily(DailyCommand::Facts),
             Some("local_game") => Command::Daily(DailyCommand::Local(Box::new(
                 parse_local_game(message).ok_or("Invalid game"),
             ))),

@@ -80,6 +80,38 @@ pub struct SeatRound {
     pub alive: bool,
 }
 
+/// One judged tip of the oracle game: a hit/miss or salvo tip, or a bet on who wins the round.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TipRound {
+    /// `shot` (a question about a shot or a salvo) or `round` (who wins the round).
+    pub kind: &'static str,
+    pub right: bool,
+    /// The points staked on a round tip and what came back, the stake included; 0 for a plain tip.
+    pub stake: i64,
+    pub payout: i64,
+    pub underdog: bool,
+    /// Placed from the stands rather than by a shot-down player.
+    pub stands: bool,
+}
+
+/// Tips in one round: a few spectators on a handful of questions.
+const MAX_TIPS: usize = 2000;
+const TIP_KINDS: [&str; 2] = ["shot", "round"];
+
+fn parse_tip(value: &Value) -> Option<TipRound> {
+    if !is_record(value) {
+        return None;
+    }
+    Some(TipRound {
+        kind: choice(value.get("kind"), &TIP_KINDS)??,
+        right: value.get("right")?.as_bool()?,
+        stake: int(value.get("stake"), 0..=MAX_SCORE)?,
+        payout: int(value.get("payout"), 0..=MAX_SCORE * 10)?,
+        underdog: value.get("underdog")?.as_bool()?,
+        stands: value.get("stands")?.as_bool()?,
+    })
+}
+
 /// One shot: how it was aimed, what rode with it, how it ended and what it earned.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShotRound {
@@ -125,6 +157,8 @@ pub struct RoundReport {
     /// How many turns the round took, as the host counted them: what the turn reports are checked against, so a
     /// turn lost at the end of a round is noticed. None from a client that does not say.
     pub turns: Option<i64>,
+    /// The tips and bets judged in the round; empty from a client that does not say, or when nobody tipped.
+    pub tips: Vec<TipRound>,
     /// Indexed like `RECORD_KEYS`.
     pub records: [Option<RecordRound>; RECORD_KEYS.len()],
 }
@@ -242,6 +276,15 @@ pub fn parse_round_report(value: &Value) -> Option<RoundReport> {
             value: real(entry.get("value"), MAX_RECORD)?,
         });
     }
+    let tips: Vec<TipRound> = match value.get("tips") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(list) => list
+            .as_array()
+            .filter(|list| list.len() <= MAX_TIPS)?
+            .iter()
+            .map(parse_tip)
+            .collect::<Option<_>>()?,
+    };
     Some(RoundReport {
         round: int(value.get("round"), 1..=MAX_ROUND)?,
         title,
@@ -251,6 +294,7 @@ pub fn parse_round_report(value: &Value) -> Option<RoundReport> {
         planets: int(value.get("planets"), 0..=MAX_PLANETS)?,
         seats,
         turns: optional_int(value.get("turns"), 0..=MAX_TURN)?,
+        tips,
         records,
     })
 }

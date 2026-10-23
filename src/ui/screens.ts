@@ -13,6 +13,7 @@ import type { PowerUpKind } from '../powerups';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, freeSeat, MIN_SEATS, removeSeat, seatTeamsFor, teamCounts, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
+import { factTicker } from './facts';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
 import { modeIcon } from './mode-icons';
 import { groupTitle, RULE_GROUPS, ruleItems } from './rules';
@@ -151,6 +152,7 @@ export function titleScreen(app: App): Screen {
           h('p.eyebrow', null, t('title.eyebrow')),
           h('h1.wordmark', { id: 'wordmark' }, 'Slingshot'),
           h('p.lede', null, t('title.lede')),
+          factTicker(),
           h('nav.items', { 'data-items': '', 'aria-label': t('title.menuLabel') }),
           h('p.keys', null, t('title.keys')),
           // Set by the deploy workflow; local builds say so.

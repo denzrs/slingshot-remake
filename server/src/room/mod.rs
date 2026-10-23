@@ -191,11 +191,18 @@ impl RoomManager {
     pub fn stats_overview(&mut self, conn: u64, overview: Option<&Overview>) {
         let value = match overview {
             None => {
-                json!({ "type": "stats_overview", "enabled": false, "days": [], "localDays": [], "games": [] })
+                json!({ "type": "stats_overview", "enabled": false, "days": [], "localDays": [], "games": [], "betting": null })
             }
             Some(overview) => json!({
                 "type": "stats_overview",
                 "enabled": true,
+                "betting": overview.betting.as_ref().map(|b| json!({
+                    "shotTips": b.shot_tips, "shotRight": b.shot_right,
+                    "roundTips": b.round_tips, "roundRight": b.round_right,
+                    "underdogs": b.underdogs, "stands": b.stands,
+                    "bets": b.bets, "staked": b.staked, "paid": b.paid, "won": b.won,
+                    "biggestWin": b.biggest_win, "biggestStake": b.biggest_stake,
+                })),
                 "days": overview.days.iter().map(day_json).collect::<Vec<_>>(),
                 "localDays": overview.local_days.iter().map(day_json).collect::<Vec<_>>(),
                 "games": overview.games.iter().map(|g| json!({
@@ -204,6 +211,19 @@ impl RoomManager {
                     "replay": g.replay,
                     "local": g.local,
                 })).collect::<Vec<_>>(),
+            }),
+        };
+        self.send_value(conn, &value);
+    }
+
+    /// The menu's facts as they go on the wire; `None` when the relay keeps no statistics.
+    pub fn stats_facts(&mut self, conn: u64, facts: Option<&[crate::stats::Fact]>) {
+        let value = match facts {
+            None => json!({ "type": "stats_facts", "enabled": false, "facts": [] }),
+            Some(facts) => json!({
+                "type": "stats_facts",
+                "enabled": true,
+                "facts": facts.iter().map(crate::stats::Fact::json).collect::<Vec<_>>(),
             }),
         };
         self.send_value(conn, &value);
