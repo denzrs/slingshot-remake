@@ -31,7 +31,7 @@ import { dailyResultScreen } from './ui/daily';
 import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/chat';
 import { Menu } from './ui/menu';
-import { lobbyScreen } from './ui/lobby';
+import { lobbyScreen, type LobbyEntry } from './ui/lobby';
 import { TouchControls } from './ui/touch-controls';
 import { TouchStick } from './ui/touch-stick';
 import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
@@ -239,7 +239,8 @@ function multiplayer(): MultiplayerSession {
       match = null;
       screen = 'title';
       effects.clear();
-      menu.open(() => lobbyScreen(app, multiplayer()));
+      const lobby = lobbyScreen(app, multiplayer());
+      menu.open(() => lobby);
     },
   });
   const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session);
@@ -322,14 +323,19 @@ const app: App = {
   get online() {
     return !!online();
   },
-  openLobby: () => menu.open(() => lobbyScreen(app, multiplayer())),
+  openLobby(entry?: LobbyEntry) {
+    const lobby = lobbyScreen(app, multiplayer(), entry);
+    if (entry) menu.push(() => lobby);
+    else menu.open(() => lobby);
+  },
   toLobby() {
     session?.leaveRoom();
     match?.dispose();
     match = null;
     screen = 'title';
     effects.clear();
-    menu.open(() => lobbyScreen(app, multiplayer()));
+    const lobby = lobbyScreen(app, multiplayer(), 'rooms');
+    menu.open(() => lobby);
   },
   resume() {
     menu.close();

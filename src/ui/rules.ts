@@ -6,9 +6,9 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import type { MenuItem } from './menu';
 
 /** The blocks the setup screen and the lobby sort the rules into. */
-type RuleGroup = 'match' | 'field' | 'shots' | 'twists';
+type RuleGroup = 'match' | 'field' | 'shots' | 'twists' | 'powerups';
 
-export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists'];
+export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists', 'powerups'];
 
 export const groupTitle = (group: RuleGroup): string => t(`setup.group.${group}` as Key);
 
@@ -96,10 +96,9 @@ export function ruleRows(): RuleRow[] {
     { key: 'fadingTrails', group: 'twists', control: 'slider', label: t('settings.fadingTrails'), options: numbers(TRAIL_FADE.OPTIONS, (n) => (n ? seconds(n) : t('common.off'))) },
     { key: 'betting', group: 'twists', control: 'toggle', label: t('settings.betting'), options: [], onlineOnly: true },
     { key: 'chatPlayersOnly', group: 'twists', control: 'toggle', label: t('settings.chatPlayersOnly'), options: [], onlineOnly: true },
-    { key: 'powerUps', group: 'twists', control: 'toggle', label: t('settings.powerUps'), options: [] },
-    // The kinds and the amount are the last rows of the block and keep their space while the switch is off, so nothing moves.
-    { key: 'powerUpKinds', group: 'twists', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}` as Key)) })), when: (r) => r.powerUps, reserve: () => true },
-    { key: 'powerUpAmount', group: 'twists', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps, reserve: () => true },
+    { key: 'powerUps', group: 'powerups', control: 'toggle', label: t('settings.powerUps'), options: [] },
+    { key: 'powerUpKinds', group: 'powerups', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}` as Key)) })) },
+    { key: 'powerUpAmount', group: 'powerups', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps },
   ];
 }
 
@@ -165,8 +164,8 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, onlin
             color: POWER_UP_COLORS[o.value],
             draw: (ctx, r) => drawPowerUpSymbol(ctx, o.value, 0, 0, r),
           })),
-          get: () => source.get().powerUpKinds,
-          set: (kinds) => source.patch({ powerUpKinds: POWER_UP_KINDS.filter((k) => kinds.includes(k)) }),
+          get: () => source.get().powerUps ? source.get().powerUpKinds : [],
+          set: (kinds) => source.patch({ powerUps: true, powerUpKinds: POWER_UP_KINDS.filter((k) => kinds.includes(k)) }),
         },
       };
     }

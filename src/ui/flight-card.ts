@@ -10,5 +10,15 @@ export function flightCard(title: string, hint: string, art: ModeArt, run: () =>
     h('span.flight-card__arrow', { 'aria-hidden': 'true' }, '↗'),
   ) as HTMLButtonElement;
   el.addEventListener('click', run);
+  el.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    const siblings = [...(el.parentElement?.querySelectorAll<HTMLButtonElement>('.flight-card') ?? [])]
+      .filter((sibling) => !sibling.disabled);
+    const index = siblings.indexOf(el);
+    const next = siblings[index + (event.key === 'ArrowRight' ? 1 : -1)];
+    if (!next) return;
+    event.preventDefault();
+    next.focus();
+  });
   return el;
 }

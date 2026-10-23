@@ -184,11 +184,11 @@ export function dailyResultScreen(app: App, match: ChallengeMatch, outcome: RunO
             } satisfies MenuItem,
           ]
         : []),
-      { kind: 'action', label: t('daily.retry'), primary: true, run: () => app.rematch() },
       { kind: 'action', label: t('common.mainMenu'), run: () => app.toTitle() },
       { kind: 'action', label: t('daily.result.copy'), run: () => void copy() },
+      { kind: 'action', label: t('daily.retry'), primary: true, run: () => app.rematch() },
     ] satisfies MenuItem[],
-    focus: leaderboardAvailable() ? 1 : 0,
+    focus: leaderboardAvailable() ? 3 : 2,
     onEscape: () => app.toTitle(),
   };
 }

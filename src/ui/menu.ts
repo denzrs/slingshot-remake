@@ -36,7 +36,7 @@ interface Live {
 }
 
 export type MenuItem =
-  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; /** Small second line under the label. */ hint?: string; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; disabled?: boolean })
+  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; className?: string; /** Small second line under the label. */ hint?: string; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; /** Keeps conditional actions out of both sight and keyboard focus. */ hidden?: () => boolean; disabled?: boolean })
   | (Placed &
       Live & {
         /** Cycles through its options; the arrows at its sides go back and forth. */
@@ -70,7 +70,7 @@ export type MenuItem =
       })
   | (Placed &
       Live & {
-        /** A row of tiles, each one on or off on its own; at least one stays on. */
+        /** A row of tiles, each one on or off on its own; a non-empty selection stays non-empty. */
         kind: 'tiles';
         label: string;
         tiles: Tile[];
@@ -88,6 +88,9 @@ export type MenuItem =
         /** Who can fly it: the first is the human, the others are the CPU levels. */
         fliers: Choice<unknown>[];
         cpuCaption: string;
+        /** CPU level last chosen for this seat during the current crew edit. */
+        lastCpu?: () => unknown;
+        rememberCpu?: (value: unknown) => void;
         get: () => unknown;
         set: (v: unknown) => void;
         /** In team play: the teams it can be in, each with its colour. */
@@ -108,7 +111,10 @@ export interface Screen {
   /** A value changed (or something outside changed it): redraw what the rows don't, like a summary line. */
   update?: () => void;
   /** What Esc does when this is the bottom-most screen. */
-  onEscape?: () => void;
+  /** Return true to consume Escape without popping the screen (e.g. closing a disclosure/dialog). */
+  onEscape?: () => boolean | void;
+  /** Release subscriptions or transient work before the screen is rebuilt or covered. */
+  dispose?: () => void;
 }
 
 interface Level {
@@ -139,6 +145,10 @@ export class Menu {
     return this.stack.length > 0;
   }
 
+  get depth(): number {
+    return this.stack.length;
+  }
+
   /** Replace the whole stack with one screen. */
   open(screen: ScreenFactory): void {
     this.stack = [{ screen, focus: 0 }];
@@ -151,6 +161,15 @@ export class Menu {
     this.render();
   }
 
+  /** Swap the current page while keeping its parent in the navigation stack. */
+  replace(screen: ScreenFactory, focusIndex = 0): void {
+    const level = this.stack[this.stack.length - 1];
+    if (!level) return;
+    level.screen = screen;
+    level.focus = focusIndex;
+    this.render(focusIndex);
+  }
+
   /** Build the current screen again (e.g. after a language switch or a new row), without the screen's entrance. The focus stays on its row, or goes to row `focus`. */
   rebuild(focus?: number): void {
     if (!this.isOpen) return;
@@ -158,15 +177,15 @@ export class Menu {
   }
 
   back(): void {
+    if (this.current?.onEscape?.() === true) return;
     if (this.stack.length > 1) {
       this.stack.pop();
       this.render(this.stack[this.stack.length - 1].focus);
-    } else {
-      this.current?.onEscape?.();
     }
   }
 
   close(): void {
+    this.current?.dispose?.();
     this.stack = [];
     this.current = null;
     this.root.hidden = true;
@@ -198,6 +217,7 @@ export class Menu {
     switch (e.key) {
       case 'ArrowDown':
       case 'ArrowUp': {
+        if (this.isTitleScreen()) return this.handleTitleDirection(focused, e.key);
         const dir = e.key === 'ArrowDown' ? 1 : -1;
         const next = this.visibleFrom(index < 0 ? (dir === 1 ? -1 : 0) : index, dir);
         this.focusables[next]?.focus();
@@ -206,6 +226,7 @@ export class Menu {
       }
       case 'ArrowLeft':
       case 'ArrowRight':
+        if (this.isTitleScreen()) return this.handleTitleDirection(focused, e.key);
         // The rows that hold a value read these themselves; a plain button just hands over to its neighbour.
         this.focusBeside(focused, e.key === 'ArrowRight' ? 1 : -1);
         return true;
@@ -255,7 +276,78 @@ export class Menu {
     }
   }
 
+  /** The launcher is a spatial layout, so its arrows follow what is actually beside each row. */
+  private isTitleScreen(): boolean {
+    return !!this.root.querySelector('.screen--title');
+  }
+
+  private handleTitleDirection(from: HTMLElement | null, key: string): true {
+    if (!from || !this.focusables.includes(from)) return true;
+
+    const section = from.parentElement?.dataset.section;
+    if (section === 'navigation' && key === 'ArrowRight') {
+      const navItems = this.focusables.filter((el) => el.parentElement?.dataset.section === 'navigation' && this.isVisible(el));
+      const navIndex = navItems.indexOf(from);
+      // Local and Online act as tabs: a single right arrow enters the selected panel.
+      if (navIndex === 0 || navIndex === 1) {
+        from.click();
+        return true;
+      }
+    }
+
+    if (this.focusInDirection(from, key)) return true;
+
+    if (key === 'ArrowLeft' && (section === 'modes' || section === 'daily' || section === 'online')) {
+      const selectedTab = this.focusables.find((el) =>
+        el.parentElement?.dataset.section === 'navigation' && el.getAttribute('aria-pressed') === 'true' && this.isVisible(el),
+      );
+      selectedTab?.focus();
+    }
+    return true;
+  }
+
+  private isVisible(el: HTMLElement): boolean {
+    return !el.hidden && !el.closest('[hidden]') && el.getClientRects().length > 0;
+  }
+
+  /** Pick the closest visible row in the requested direction, using the layout's actual geometry. */
+  private focusInDirection(from: HTMLElement, key: string): boolean {
+    const source = from.getBoundingClientRect();
+    const horizontal = key === 'ArrowLeft' || key === 'ArrowRight';
+    const positive = key === 'ArrowRight' || key === 'ArrowDown';
+    const sourcePrimary = horizontal ? (source.left + source.right) / 2 : (source.top + source.bottom) / 2;
+    const sourceCrossStart = horizontal ? source.top : source.left;
+    const sourceCrossEnd = horizontal ? source.bottom : source.right;
+    let best: HTMLElement | undefined;
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    for (const candidate of this.focusables) {
+      if (candidate === from || !this.isVisible(candidate)) continue;
+      const rect = candidate.getBoundingClientRect();
+      const primary = horizontal ? (rect.left + rect.right) / 2 : (rect.top + rect.bottom) / 2;
+      const delta = primary - sourcePrimary;
+      if (positive ? delta <= 1 : delta >= -1) continue;
+
+      const crossStart = horizontal ? rect.top : rect.left;
+      const crossEnd = horizontal ? rect.bottom : rect.right;
+      const crossGap = Math.max(0, sourceCrossStart - crossEnd, crossStart - sourceCrossEnd);
+      const primaryGap = Math.abs(delta);
+      // Overlapping rows on the cross axis win, then shorter movement wins.
+      const score = primaryGap + crossGap * 2;
+      if (score < bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+
+    if (!best) return false;
+    best.focus();
+    this.sound.blip();
+    return true;
+  }
+
   private render(focusIndex?: number, quietly = false): void {
+    this.current?.dispose?.();
     const screen = this.stack[this.stack.length - 1].screen();
     const el = screen.build();
     if (quietly) el.dataset.rebuild = '';
@@ -270,7 +362,7 @@ export class Menu {
       if (item.kind === 'action') {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = item.primary ? 'item item--primary' : 'item';
+        b.className = [item.primary ? 'item item--primary' : 'item', item.className].filter(Boolean).join(' ');
         if (item.icon) {
           b.classList.add('item--card');
           const picture = document.createElement('span');
@@ -309,11 +401,14 @@ export class Menu {
           marker.setAttribute('aria-hidden', 'true');
           if (item.icon) b.append(marker);
           this.controls.push({ el: b, refresh: () => {
+            b.hidden = item.hidden?.() ?? false;
             const selected = item.selected!();
             b.classList.toggle('is-selected', selected);
             b.setAttribute('aria-pressed', String(selected));
             marker.hidden = !selected;
           } });
+        } else if (item.hidden) {
+          this.controls.push({ el: b, refresh: () => { b.hidden = item.hidden!(); } });
         }
         b.addEventListener('click', () => {
           if (item.disabled) return;

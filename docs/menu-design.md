@@ -1,8 +1,6 @@
-# Menü: Richtung und Entscheidungen
+# Menü: Richtung und Abläufe
 
-> Für die nächste Umsetzung gilt die neuere [UX-Spezifikation und Agent-Übergabe](menu-ux-spec.md). Dieser Text dokumentiert die erste Gestaltungsrichtung; die ursprünglichen Folgeschritte sind keine vollständige Beschreibung des aktuellen Entwurfs.
-
-Das Menü soll sich wie der Einstieg in ein Gravitationsduell anfühlen. Die Bahn eines Schusses ist das wiederkehrende Motiv. Die Referenzen liefern dafür eine passende Bildsprache; ihre vielen Rahmen, Leuchteffekte und konkurrierenden Überschriften werden sparsamer eingesetzt.
+Die verbindlichen Interaktions- und Abnahmeziele stehen in der [UX-Spezifikation und Agent-Übergabe](menu-ux-spec.md). Diese Seite hält die aktuelle Menüstruktur und ihre visuelle Richtung fest.
 
 ## Visuelle Grundlage
 
@@ -13,45 +11,42 @@ Das Menü soll sich wie der Einstieg in ein Gravitationsduell anfühlen. Die Bah
 | Aktion und Auswahl | Orange `#ffad65` |
 | Werte und Links | Mint `#6fe3c8` |
 | Schrift | Big Shoulders Stencil für Marke und kurze Überschriften; B612 für lesbare Erklärungen; B612 Mono für Werte |
-| Eigenständiges Motiv | Gezeichnete Orbit-Szenen: ein gebogener Schuss, ein schwarzes Loch, chaotische Bahnen |
+| Eigenständiges Motiv | Gezeichnete Orbit-Szenen und die Schiffe des Spiels als SVG |
 
-Die Modusbilder sind skalierbare SVGs. Sie passen zu den Farben des Spiels, bleiben auf allen Displaygrößen scharf und brauchen keine externen Bilddienste. Eine helle Kontur zeigt den Tastaturfokus; Orange plus Häkchen zeigt die Auswahl. Beides darf gleichzeitig sichtbar sein.
+Eine helle Kontur zeigt Tastaturfokus; eine Auswahl erhält zusätzlich zum Orange ein Häkchen. Hover aktiviert oder wählt keine Karte. Bewegungen bleiben dezent und entfallen bei `prefers-reduced-motion`.
 
-## Aufbau
+## Hauptmenü
 
 ```text
-SLINGSHOT                                  Kurzbeschreibung
+SLINGSHOT
 
 Lokal / Solo       Klassisch      Ereignishorizont      Mayhem
-Online spielen     └── Moduswahl mit eigener Illustration ──┘
-Anleitung          Tägliche Herausforderung · heutige Mission
-Einstellungen      Auswahl                         Match vorbereiten →
+Online spielen     Tägliche Herausforderung · heutige Mission
+Anleitung
+Einstellungen      ODER, bei Online:
+                   Raum suchen       Raum erstellen       Code eingeben
 
 Tastaturhilfe                          Sprache             Version
 ```
 
-Die lokale Moduswahl steht direkt im Hauptmenü. Die tägliche Herausforderung hat einen eigenen Einstieg: Sie ist eine feste Solo-Mission und braucht keine gewöhnliche Match-Vorbereitung. Mayhem bleibt von Party getrennt: Mayhem verändert Regeln zwischen den Runden, Party ist eine feste Regelvorlage.
+Der Rahmen des Hauptmenüs – Seitenabstand, Navigation und Fußzeile – bleibt beim Wechsel zwischen Lokal und Online an derselben Stelle. Der Inhaltsbereich reserviert die Höhe des jeweils größeren Bereichs, damit die Fußzeile auch auf kurzen Viewports nicht nach oben springt. Nur der rechte Inhalt wechselt. Lokale Moduskarten öffnen direkt die passende Vorbereitung; die tägliche Herausforderung öffnet ihre Missionsbeschreibung. Es gibt keine zusätzliche Zeile mit Moduszusammenfassung und „Match vorbereiten“.
 
-Klassisch und Ereignishorizont öffnen eine kompakte Vorbereitung:
+Die Online-Karten führen direkt zur Raumsuche, Raumerstellung oder Code-Eingabe. Die Raumsuche zeigt eigene Lade-, Fehler- und Leerzustände. Die Raumerstellung beginnt mit Modus und Regelvorlage; Raumoptionen und vollständige Regeln bleiben hinter benannten Offenlegungen erreichbar. Code-Eingabe bleibt ein eigener kurzer Ablauf.
 
-```text
-Modus und Erklärung
+## Vorbereitungen und Crew
 
-Standard · Trickshot · Sniper · Party       Crew und Mitspieler ändern
-Runden · Planeten · Power-ups              Regelüberblick / Regeln anpassen
+Klassisch und Ereignishorizont öffnen eine Vorbereitung mit vier echten Regelvorlagen, einem kompakten Regelüberblick und einer Aktion zum Ändern vollständiger Regeln. Vorlagen ersetzen Matchregeln ausdrücklich und behalten Crew, Teams und Geräteeinstellungen. Eigene Regeln bleiben beim Öffnen erhalten; die aktive Vorlage wird aus den tatsächlichen Werten bestimmt.
 
-← Zurück                                              Spiel starten →
-```
+Mayhem ist ein eigener Modus. Die Vorbereitung zeigt nur Mayhem-Regler und Besatzung; die Online-Raumerstellung hält Mayhem ebenfalls klar von der Party-Vorlage getrennt.
 
-Eigene Regeln bleiben beim Öffnen erhalten. Eine Vorlage ersetzt die Regeln ausdrücklich, behält aber Crew, Teams und Geräteeinstellungen. Die aktive Vorlage wird aus den tatsächlichen Werten ermittelt. Weichen sie ab, steht dort „Eigene Regeln“. Alle bisherigen Regler bleiben über „Regeln anpassen“ erreichbar.
+Die Crew-Seite zeigt Schiffe als kompakte Karten. Mensch oder CPU ist direkt wählbar; Schwierigkeitsgrad erscheint nur bei CPU. Teams, Hinzufügen und Entfernen bleiben sichtbar, ohne alle sechs Plätze mit bedingten Feldern gleichzeitig auszuschreiben.
 
-Auf schmalen Handys werden aus den drei Moduskarten kompakte Zeilen. Die Hauptaktion bleibt beim Scrollen sichtbar. Die vier Vorlagen stehen in zwei Spalten; Crew und Detailregeln folgen darunter. So bleiben alle Möglichkeiten erreichbar, ohne kleine Desktop-Elemente einfach zusammenzustauchen.
+## Daily
 
-## Nächste sinnvolle Ausbaustufen
+Die Missionsbeschreibung führt über fünf verbundene Sektoren. Die Auswahl zeigt Ziele, Schussbudget, Schwierigkeit und echte Modifikatoren in einem gemeinsamen Detailbereich. Bestwert, Versuche und Serie bleiben ergänzende Kennzahlen. Ein Start beginnt den vollständigen Lauf bei Sektor eins.
 
-- **Crew direkt bearbeiten:** Mensch/CPU und Hinzufügen in der Vorbereitung anbieten, sobald sechs Plätze und Teamwahl dort übersichtlich unterzubringen sind. Die derzeitige eigene Crew-Seite hält die Vorbereitung ruhig.
-- **Letztes Match wiederholen:** Ein direkter Einstieg mit Modus, Regeln und Crew des letzten Matches. Dafür den letzten tatsächlich gespielten Zustand speichern, unabhängig von gerade bearbeiteten Einstellungen.
-- **Multiplayer im Hauptmenü:** Die drei Karten „Raum suchen“, „Raum erstellen“ und „Code eingeben“ gehören in den rechten Bereich des Hauptmenüs, sobald Online ausgewählt ist. Der separate Online-Einstieg des zweiten Entwurfs muss dafür integriert werden.
-- **Regeln erklären:** Bei komplexen Optionen wie Schonfrist und fester Schusskraft eine knappe Erklärung direkt am Regler anbieten. Ein konkretes Beispiel hilft mehr als zusätzliche Symbole.
+Das Ergebnis stellt Punktzahl und Rang vor die fünf echten Sektorverläufe. Kopieren und optionale Ranglisteneinträge bleiben ausdrückliche Aktionen; Ergebnisse werden nie automatisch veröffentlicht.
 
-Der erste Entwurf ist als `70d4c94` gesichert. Ein zweiter Entwurf enthält weitere Menüseiten und vereinfachte Abläufe, ist aber noch nicht visuell abgenommen. Die verbindlichen Ziele, offenen Punkte und Abnahmekriterien stehen in der neueren UX-Spezifikation.
+## Kleine Bildschirme
+
+Bei schmalen Viewports wird die Navigation kompakt und die Online-Karten werden zu illustrierten Zeilen. Crew-Karten wechseln bei 320 px in eine Spalte; die fünf Daily-Sektoren bleiben in einer Reihe erkennbar. Seitenabstände, berührbare Ziele, fokussierte Eingaben und Sprache bleiben nutzbar.

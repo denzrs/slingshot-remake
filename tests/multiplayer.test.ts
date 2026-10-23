@@ -198,6 +198,19 @@ async function frame(host: Client, guest: Client, dt = 1 / 60): Promise<void> {
 }
 
 describe('online games', () => {
+  it('tracks when the room list is ready and when it is being refreshed', async () => {
+    const session = await connectSession();
+    await waitForSession(session, () => session.roomListLoaded);
+
+    session.requestRooms();
+    expect(session.roomListLoaded).toBe(false);
+    await waitForSession(session, () => session.roomListLoaded);
+    expect(session.roomListLoaded).toBe(true);
+
+    session.disconnect();
+    expect(session.roomListLoaded).toBe(false);
+  });
+
   it('rejects unsupported state envelope versions', async () => {
     const { host } = await startRoom('classic');
     const transport = host.session.client as RustTransport;

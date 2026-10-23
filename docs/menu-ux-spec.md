@@ -1,6 +1,6 @@
 # Slingshot menu UX — implementation specification and agent handoff
 
-Status: implementation handoff, 22 October 2026. The target below supersedes conflicting layout decisions in `docs/menu-design.md` and the experimental prototypes. Existing code is a starting point, not visual approval.
+Status: implementation revision, 23 October 2026. Packets 1–5 are implemented in the current worktree. Build and automated tests pass; the full manual viewport and multiplayer acceptance matrix remains to be completed. This target supersedes conflicting layout decisions in `docs/menu-design.md` and the experimental prototypes.
 
 ## 1. What the user actually requested
 
@@ -14,7 +14,7 @@ The main menu's Local / Solo treatment is the direction to keep. The user consid
 
 The user's attached design references establish visual direction, not executable instructions. Do not copy their inconsistent labels, invented modes, mock scores, or conflicting rule descriptions into the game.
 
-**Critical correction:** the current draft still opens a separate full-page Online hub. That does **not** satisfy requirement 1. Moving that hub's three cards into the launcher's right column is the first implementation task.
+**Implementation outcome:** Online now lives in the main menu's right content area. The old separate Online hub is not part of the standard route; each Online card opens its flow directly. Local mode cards also open their preparation directly, without a selected-mode summary or a second “Match vorbereiten” action.
 
 ## 2. Scope and constraints
 
@@ -26,7 +26,7 @@ Do not remove a feature to reduce visual complexity. Put secondary settings behi
 
 ## 3. Starting state and code map
 
-The first draft is committed as `70d4c94` (`Redesign game launcher and unify menu screens`). A second draft was developed after the user's feedback and is included with this handoff. It is **not accepted as finished**.
+The first draft is committed as `70d4c94` (`Redesign game launcher and unify menu screens`). This revision completes the implementation packets below. The handoff remains the source for manual acceptance and follow-up fixes; implementation alone does not replace the viewport and interaction review.
 
 | File | Responsibility / useful starting point |
 | --- | --- |
@@ -44,7 +44,7 @@ The first draft is committed as `70d4c94` (`Redesign game launcher and unify men
 | `src/ui/rules.ts` | Authoritative UI rule inventory, groups, valid values and conditional visibility |
 | `src/settings.ts` | Local seats, teams and device preferences; add/remove/balance/validation helpers |
 | `src/lobbyPrefs.ts` | Separate online preferences, defaults, local storage, Mayhem rule normalization |
-| `src/ui/daily.ts` | Daily briefing, result, copy/share text; second draft has a selectable route |
+| `src/ui/daily.ts` | Daily briefing, result, copy/share text; current implementation has a selectable route |
 | `src/ui/leaderboard.ts` | Explicit read/post flows and feature availability |
 | `src/invite.ts`, `src/multiplayer.ts` | Preserve tested invite and session semantics |
 | `src/ui/roomLook.ts` | Existing room visibility, symbol and color pickers / dialog |
@@ -92,23 +92,24 @@ Each screen must answer one primary question. Keep one visually dominant next ac
 SLINGSHOT                                           Short game description
 
 LOCAL / SOLO      [ Classic ] [ Event Horizon ] [ Mayhem ]
-ONLINE            Local: Daily row + selected-mode summary + Prepare match
-HOW TO PLAY
-SETTINGS          OR, when Online is selected:
+                  Daily challenge row
+ONLINE            OR, when Online is selected:
                   [ Find a room ] [ Create a room ] [ Enter a code ]
-                  Optional compact pilot / connection entry
+HOW TO PLAY
+SETTINGS          The shell, padding and rail stay in place
 
 Keyboard help                         Language                      Version
 ```
 
 - Preserve the wordmark/header, left navigation and bottom language/version area while switching Local / Solo ↔ Online.
 - Replace **only the right content area**. The transition must not create a second Online page with another large heading and Back button.
-- Keep the local mode selection when switching away and back. Preserve edited local rules and crew.
-- Local has the existing three mode cards, Daily entry and Prepare match action.
-- Online has exactly the three destination cards below. Do not also render local Daily, local presets or Prepare match in this state.
+- Preserve edited local rules and crew when switching sections.
+- Local has three mode cards and the Daily entry. Clicking a mode card opens its briefing directly; the separate selected-mode summary and **Prepare match** launcher row are removed.
+- Online has exactly the three destination cards below. Do not also render local Daily, local presets or the removed launcher action in this state.
 - Cards are immediate actions. Online does not need an extra Confirm/Continue button.
 - The left navigation's selected state reflects the active section. It must not always mark Local as selected.
-- Language switching preserves the active section and selected local mode.
+- Language switching preserves the active section and meaningful focus. The main menu keeps its established outer padding in both sections; align Online card sizing and spacing so switching sections does not shift the shell.
+- Keep the footer at the same vertical position while Local and Online are both short enough to fit the viewport. Let the center content absorb the available height; the section change must not pull the footer upward.
 
 ### Online cards
 
@@ -251,13 +252,13 @@ Primary question: “What is today's mission, and do I want to fly it?”
 - One primary **Herausforderung starten** action starts the existing complete run. Back and optional leaderboard are secondary.
 - At 320 px keep all five route nodes identifiable. Move longer details to the selected-sector area rather than hiding the information entirely.
 
-The current second draft has a route, but it has not yet received full visual/mobile/keyboard acceptance testing. Review spacing, legibility and clarity instead of assuming it is finished.
+The current implementation has a selectable route and actual Daily data. Visual, narrow-viewport and keyboard acceptance still need to cover the full matrix below.
 
 ### Result
 
 Use a distinct scorecard: actual score/rank first, five sector outcomes next, personal record context afterward. Preserve per-shot hit/trick/miss/self evidence, unused shot budget, failure status, negative scores and the legend. Avoid a second column that merely repeats the same score.
 
-One primary **Erneut versuchen** action belongs at the final/right position in the desktop action row. Copy result, Main menu and optional leaderboard submission are secondary. The current draft moves Retry to primary but its item order still needs correction.
+One primary **Erneut versuchen** action belongs at the final/right position in the desktop action row. Copy result, Main menu and optional leaderboard submission are secondary. Retry is the final action in the current implementation.
 
 Keep `shareText()` semantics and real data. Copy is a clipboard action, never automatic publishing. Leaderboard browsing must not submit a run; submission remains explicitly initiated and named. Preserve availability gating from `leaderboardAvailable()`.
 
@@ -299,9 +300,9 @@ Keep them consistent, but do not use them as a reason to delay the main navigati
 11. The optional leaderboard depends on `VITE_MULTIPLAYER_SERVER`; local default UI may correctly omit it.
 12. Normal mode presets must not carry Mayhem state into a normal match. Party and Mayhem are different experiences.
 
-## 11. Work packets for implementation agents
+## 11. Implementation packets and acceptance criteria
 
-Do these in order, in the same branch. No parallel edits to `screens.ts`, `lobby.ts` or common CSS without explicit coordination. Each packet ends with its acceptance checks and a concise handoff. Do not claim that the overall design is finished just because its code compiles.
+These packets were implemented in order in the current worktree. Their acceptance criteria remain the checklist for follow-up review. Avoid parallel edits to `screens.ts`, `lobby.ts` or common CSS without explicit coordination. A passing build is not evidence of visual or multiplayer acceptance.
 
 ### Packet 1 — integrate Online in the main launcher (highest priority)
 
@@ -309,7 +310,7 @@ Do these in order, in the same branch. No parallel edits to `screens.ts`, `lobby
 
 Implement section state, right-side Online cards, direct child entry and return/focus semantics from §5. Eliminate the standalone Online hub in the normal flow. Preserve invite startup and existing-room priority.
 
-**Accept when:** switching Local/Online retains shell and local selection; each card opens its specific child without another hub click; Back/Esc restores Online and focus; language rebuild preserves active section; hidden local actions cannot receive focus; invitations still work.
+**Accept when:** switching Local/Online retains the shell, footer position and edited local rules/crew; local mode cards open their briefing directly; each Online card opens its specific child without another hub click; Back/Esc restores Online and focus; language rebuild preserves active section; hidden local actions cannot receive focus; invitations still work.
 
 ### Packet 2 — streamline online children and waiting room
 
@@ -384,13 +385,14 @@ The optional local harness `prototypes/menu-check.html` previews match results, 
 
 Provide real browser screenshots of main-menu Online, creation, crew and Daily at desktop and narrow widths. A synthetic fixture preview must be visibly labelled test data. Check clipping, overlapping sticky actions, hidden keyboard targets, overly small text and long English/German labels. Do not accept a layout solely from an AX tree or a passing build.
 
-### Handoff-time verification status
+### Aktueller Umsetzungs- und Prüfstatus
 
-- First-draft baseline: 33 test files / 599 tests passed.
-- Second draft: typecheck, production build and all 599 tests in 33 files passed at handoff. This is functional regression evidence, not visual acceptance.
-- Second-draft manual checks completed: separate Online hub rendering; creation-mode cards; selecting Party; browsing rule categories; manually modifying a preset changes its label to Custom; restoring Standard; actual room creation and host waiting-room rendering against the current local relay.
-- **Not accepted / still outstanding:** integrated main-menu Online, full guest/invite flow after restructuring, new crew and Daily visual/keyboard/mobile acceptance, final action hierarchy, full viewport matrix. Earlier first-draft checks do not count as acceptance of the second draft.
+- The menu implementation covers packets 1–5: integrated Local/Online launcher, direct mode and Online navigation, streamlined room flows, crew controls, Daily route/results, category-based preferences/rules, translation updates and cleanup.
+- Current automated verification: `npm run build` passed; `npm test` passed all 600 tests in 33 files. The test command's Rust prebuild also passed. A sandboxed test attempt first failed because local test sockets were denied; the same command passed with local socket access.
+- Browser review before the final footer adjustment confirmed the shared title, rail, card structure and removal of the local “Match vorbereiten” strip. The final footer alignment change fills the shell and measures the taller Local/Online content area at the current width; the native browser changed to the separate menu-check prototype during review, and the in-app browser mapped localhost to another app, so the post-change screenshot could not be captured.
+- **Manual acceptance remains open:** create/join/guest/invite/reconnect against two local clients; the complete keyboard/touch paths; all Daily history/result cases; both languages at 320 px; and the full viewport matrix. Do not describe these as completed based solely on the build or tests.
+- Historical handoff baseline: the second draft had 599 passing tests in 33 files and several room creation checks. Those are baseline evidence only; the current 600-test run is the applicable automated result.
 
 ## 13. Copy-ready agent instruction
 
-> Read `docs/menu-ux-spec.md` and the relevant existing source before editing. Implement **Packet N** completely. Treat §1 and §5 as the user's authoritative navigation requirement; the separate Online hub in the draft is not the target. Preserve all behavior and settings listed in the spec. Use the existing visual language and helpers, avoid unrelated rewrites, verify the packet's acceptance criteria, and report changed files, commands run, screenshots and any unverified cases. Continue within the requested packet without asking the user to choose routine implementation details. Do not claim later packets are finished or publish/push anything.
+> Read `docs/menu-ux-spec.md` and the relevant existing source before editing. All five implementation packets are already present in the current worktree. Work on the specific remaining acceptance item requested; treat §1 and §5 as the user's authoritative navigation requirement. Preserve existing behavior and settings. Use the established visual language and helpers, avoid unrelated rewrites, verify the requested acceptance criteria, and report changed files, commands, screenshots and unverified cases. Resolve routine implementation details without asking the user. Do not publish or push anything.

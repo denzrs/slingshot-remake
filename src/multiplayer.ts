@@ -78,6 +78,8 @@ export class MultiplayerSession {
   /** A connection attempt is under way. */
   connecting = false;
   rooms: LobbyRoom[] = [];
+  /** The first lobby update after connecting has arrived. An empty list before this is still loading. */
+  roomListLoaded = false;
   room: RoomInfo | null = null;
   you: { playerId: number; host: boolean; spectator?: boolean; spectatorId?: number } = { playerId: 0, host: false };
   /** The last thing worth telling the player (server errors, "host left", …). */
@@ -135,6 +137,8 @@ export class MultiplayerSession {
 
   async connect(address: string): Promise<void> {
     this.connecting = true;
+    this.roomListLoaded = false;
+    this.rooms = [];
     this.emit();
     try {
       this.client.setAddress(address);
@@ -225,6 +229,7 @@ export class MultiplayerSession {
     this.room = null;
     this.clearChat();
     this.rooms = [];
+    this.roomListLoaded = false;
     this.notice = null;
     this.dropMatch();
     this.emit();
@@ -236,8 +241,18 @@ export class MultiplayerSession {
     this.room = null;
     this.clearChat();
     this.rooms = [];
+    this.roomListLoaded = false;
     this.notice = null;
     this.dropMatch();
+    this.emit();
+  }
+
+  /** Ask the relay for a fresh room list after a recoverable list error. */
+  requestRooms(): void {
+    if (!this.connected || this.room) return;
+    this.notice = null;
+    this.roomListLoaded = false;
+    this.send({ type: 'lobby' });
     this.emit();
   }
 
@@ -312,6 +327,7 @@ export class MultiplayerSession {
     switch (message.type) {
       case 'lobby_update':
         this.rooms = message.rooms;
+        this.roomListLoaded = true;
         break;
       case 'room_update':
         if (message.room.id !== this.chatRoom) {
@@ -366,6 +382,7 @@ export class MultiplayerSession {
         this.room = null;
         this.clearChat();
         this.rooms = [];
+        this.roomListLoaded = false;
         this.notice = message.message;
         if (this.match) this.endMatch();
         break;

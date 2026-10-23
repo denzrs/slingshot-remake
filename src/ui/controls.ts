@@ -338,7 +338,7 @@ const TILE_ICON = 34;
 
 /**
  * A row of tiles with a symbol each, every one on or off on its own: click or tap a tile, or move the cursor
- * with ←/→ and press Enter. The last tile that is on stays on.
+ * with ←/→ and press Enter. If the group has a selection, the last selected tile stays on.
  */
 function tilesControl(item: Item<'tiles'>, env: Env): Control {
   const { tiles } = item;
@@ -491,25 +491,33 @@ function choiceControl(item: Item<'choice'>, env: Env): Control {
 
 /** A ship card: choose human or CPU first; CPU strength only appears when it applies. */
 function seatControl(item: Item<'seat'>, env: Env): Control {
-  let lastCpu = item.get() === 'human' ? item.fliers[2]?.value ?? item.fliers[1].value : item.get();
+  let lastCpu = item.get() === 'human' ? item.lastCpu?.() ?? item.fliers[2]?.value ?? item.fliers[1].value : item.get();
   const human = h('button.pilot__type', { type: 'button' }, item.fliers[0].label) as HTMLButtonElement;
   const cpu = h('button.pilot__type', { type: 'button' }, item.cpuCaption) as HTMLButtonElement;
-  const types = h('div.pilot__types', { role: 'group', 'aria-label': item.label }, human, cpu);
+  human.setAttribute('role', 'radio');
+  cpu.setAttribute('role', 'radio');
+  const types = h('div.pilot__types', { role: 'radiogroup', 'aria-label': `${item.label} · ${t('players.assignment')}` }, human, cpu);
+  const identity = h('div.pilot__identity', null,
+    h('div.pilot__picture', null, pilotArt()),
+    h('div.pilot__identity-copy', null, h('span.pilot__name', null, item.label)),
+  );
+  const assignment = h('div.pilot__assignment', null,
+    h('span.pilot__section-label', null, t('players.assignment')),
+    types,
+  );
   const level = h('select.pilot__select', { 'aria-label': `${item.label} · ${t('flow.cpuLevel')}` }) as HTMLSelectElement;
   for (const flier of item.fliers.slice(1)) {
     const option = h('option', { value: String(flier.value) }, flier.label);
     level.append(option);
   }
   const difficulty = h('label.pilot__field', null, h('span', null, t('flow.cpuLevel')), level);
-  const el = h('div.item.item--seat.pilot', { role: 'group', 'aria-label': item.label },
-    h('div.pilot__picture', null, pilotArt()),
-    h('span.pilot__name', null, item.label), types, difficulty,
-  );
+  const options = h('div.pilot__options', null, difficulty);
+  const el = h('div.item.item--seat.pilot', { role: 'group', 'aria-label': item.label }, identity, assignment, options);
   let teamSelect: HTMLSelectElement | undefined;
   if (item.teams) {
     teamSelect = h('select.pilot__select', { 'aria-label': `${item.label} · ${item.teams.caption}` }) as HTMLSelectElement;
     for (const team of item.teams.options) teamSelect.append(h('option', { value: String(team.value) }, team.label));
-    el.append(h('label.pilot__field', null, h('span', null, item.teams.caption), teamSelect));
+    options.append(h('label.pilot__field.pilot__team', null, h('span', null, item.teams.caption), teamSelect));
     teamSelect.addEventListener('change', () => {
       item.teams!.set(item.teams!.options[teamSelect!.selectedIndex].value);
       env.changed();
@@ -524,25 +532,46 @@ function seatControl(item: Item<'seat'>, env: Env): Control {
   focusable(el, env);
   const draw = () => {
     const isCpu = item.get() !== item.fliers[0].value;
+    el.classList.toggle('is-cpu', isCpu);
     human.setAttribute('aria-pressed', String(!isCpu));
     cpu.setAttribute('aria-pressed', String(isCpu));
+    human.setAttribute('aria-checked', String(!isCpu));
+    cpu.setAttribute('aria-checked', String(isCpu));
+    human.tabIndex = isCpu ? -1 : 0;
+    cpu.tabIndex = isCpu ? 0 : -1;
     difficulty.hidden = !isCpu;
     if (isCpu) level.value = String(item.get());
     if (removeButton) removeButton.disabled = item.remove!.disabled();
-    const teamIndex = item.teams?.options.findIndex((o) => o.value === item.teams!.get()) ?? -1;
-    el.style.setProperty('--pilot-tone', teamIndex >= 0 ? item.teams!.tones[teamIndex] : item.swatch);
+    el.style.setProperty('--pilot-tone', item.swatch);
     if (teamSelect) teamSelect.value = String(item.teams!.get());
   };
   const set = (value: unknown) => {
     if (env.readonly) return;
     item.set(value);
-    if (value !== item.fliers[0].value) lastCpu = value;
+    if (value !== item.fliers[0].value) {
+      lastCpu = value;
+      item.rememberCpu?.(value);
+    }
     env.sound?.blip();
     env.changed();
     draw();
   };
   human.addEventListener('click', () => set(item.fliers[0].value));
   cpu.addEventListener('click', () => set(lastCpu));
+  human.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    event.stopPropagation();
+    cpu.focus();
+    set(lastCpu);
+  });
+  cpu.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft') return;
+    event.preventDefault();
+    event.stopPropagation();
+    human.focus();
+    set(item.fliers[0].value);
+  });
   level.addEventListener('change', () => set(item.fliers[level.selectedIndex + 1].value));
   keys(el, (e) => {
     if (e.target !== el) return false;
