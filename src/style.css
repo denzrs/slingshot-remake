@@ -3383,3 +3383,45 @@ html.upright.stick-right #touch-stick {
 .chat__input:disabled {
   opacity: 0.6;
 }
+
+.chat__form {
+  position: relative;
+}
+
+.chat__hints {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  left: 0;
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+  border: 1px solid rgb(232 228 216 / 0.3);
+  border-radius: 4px;
+  background: rgb(6 15 31 / 0.92);
+  font: 13px var(--font-body);
+}
+
+.chat__hints[hidden] {
+  display: none;
+}
+
+.chat__hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  color: var(--bone-dim);
+  cursor: pointer;
+}
+
+.chat__hint.is-picked,
+.chat__hint:hover {
+  background: rgb(232 228 216 / 0.14);
+  color: var(--bone);
+}
+
+.chat__hint-emoji {
+  font-size: 16px;
+}
