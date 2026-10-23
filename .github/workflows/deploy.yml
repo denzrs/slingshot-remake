@@ -356,6 +356,7 @@ jobs:
         env:
           VITE_COFFEE_URL: ${{ vars.VITE_COFFEE_URL }}
           VITE_MULTIPLAYER_SERVER: ${{ vars.VITE_MULTIPLAYER_SERVER }}
+          VITE_STATS_PASSWORD: ${{ vars.VITE_STATS_PASSWORD }}
       - name: Zip the build for the release
         if: steps.version.outputs.release == 'true'
         env:

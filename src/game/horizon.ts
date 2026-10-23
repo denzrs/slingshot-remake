@@ -6,7 +6,7 @@ import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
 import { scoreHorizonKill } from '../scoring';
 import { shotSource, Volley, type VolleyAim, type VolleyScript, type VolleyShot, type VolleySnapshot } from '../volley';
-import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene } from './match';
+import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene, type SkipVote } from './match';
 import type { CrowdSeat } from './crowd';
 import type { OracleSnapshot } from './oracle';
 
@@ -52,6 +52,7 @@ export interface HorizonSnapshot {
   roundStats: Match['roundStats'];
   matchStats: Match['matchStats'];
   scoreHistory: number[][];
+  skipVote?: SkipVote | null;
   volleyNo: number;
   clock_: HorizonMatch['clock_'];
   queue: number[];
@@ -157,7 +158,7 @@ export class HorizonMatch extends Match {
       trails: this.trails, volley: this.volley?.snapshot() ?? null, flightDoneAt: this.flightDoneAt, killFeed: this.killFeed,
       lastKill: this.lastKill, summary: this.summary, notice: this.notice, settings: this.settings,
       mayhem: this.mayhem, revealEnd: this.revealEnd, revealHeld: this.revealHeld, mayhemHistory: this.mayhemHistory,
-      roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory,
+      roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory, skipVote: this.skipVote,
       volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
       aims: this.aims, volleyKills: this.volleyKills,
       collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships], pickups: [...this.collapse.pickups], wormholes: this.collapse.wormholes.map((w) => ({ ...w })) } : null,
@@ -188,7 +189,7 @@ export class HorizonMatch extends Match {
     this.totalRounds = s.totalRounds; this.hiddenPlanets = s.hiddenPlanets; this.teamMode = s.teamMode;
     this.players = s.players.map((player) => ({ ...player })); this.current = s.current;
     this.world = s.world; this.trails = s.trails; this.killFeed = s.killFeed; this.lastKill = s.lastKill;
-    this.summary = s.summary; this.notice = s.notice; this.roundStats = s.roundStats; this.matchStats = s.matchStats; this.scoreHistory = s.scoreHistory; this.volleyNo = s.volleyNo; this.clock_ = s.clock_;
+    this.summary = s.summary; this.notice = s.notice; this.roundStats = s.roundStats; this.matchStats = s.matchStats; this.scoreHistory = s.scoreHistory; this.skipVote = s.skipVote ?? null; this.volleyNo = s.volleyNo; this.clock_ = s.clock_;
     this.queue = [...s.queue]; this.volleySnapshot = s.snapshot; this.aims = s.aims; this.volleyKills = s.volleyKills;
     this.collapse = s.collapse ? { ...s.collapse, planets: new Map(s.collapse.planets), ships: new Map(s.collapse.ships), pickups: new Map(s.collapse.pickups ?? []), wormholes: s.collapse.wormholes ?? [] } : null;
     this.volley = null;
@@ -307,6 +308,12 @@ export class HorizonMatch extends Match {
 
   private get collapseT(): number {
     return Math.min(1, this.phaseTime / HORIZON.COLLAPSE_TIME);
+  }
+
+  protected abandonRound(): void {
+    this.killcam = null;
+    this.collapse = null;
+    this.queue = [];
   }
 
   protected beginRound(): void {

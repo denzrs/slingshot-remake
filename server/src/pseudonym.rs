@@ -30,7 +30,7 @@ impl Pseudonyms {
 
 /// Telling the people in the match statistics apart for as long as the statistics are kept: a
 /// player is a keyed hash of their address and the name they play under, so the same person is the
-/// same player on every day and after every restart, and two people behind one address are two
+/// same player on every day of a week and after every restart, until the key is replaced on Sunday, and two people behind one address are two
 /// players. The key is a random salt that the database keeps (see `stats`), so the hash cannot be
 /// worked out from a list of addresses and names without it. Not the board's key: the board's
 /// rows carry a name, and sharing a hash with it would tie that name to these rows.

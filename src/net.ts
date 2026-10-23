@@ -25,6 +25,10 @@ export type ClientInput =
   | { kind: 'cancel' }
   /** A vote to skip the killcam; it ends once half of the players want that. */
   | { kind: 'skip' }
+  /** The host asks to skip the round: a vote the host's own yes opens. Nobody scores in a skipped round. */
+  | { kind: 'skipRound' }
+  /** An answer to the open vote to skip the round. */
+  | { kind: 'skipVote'; yes: boolean }
   /** An eliminated player's oracle tip: a ship's index, -1 for nobody, or 1/0 for hit/miss. With `round` it names the winner of the round instead, and `stake` bets that many of the player's points on it. A spectator's only input: a bet on the round, with a stake. */
   | { kind: 'bet'; pick: number; round?: boolean; stake?: number };
 
@@ -121,6 +125,8 @@ export interface StatsReplay {
   /** Who sat where: a CPU's level, or null for a person; the team in team games. */
   seats: { cpu: NetworkCpuLevel | null; team: 0 | 1 | null }[];
   turns: ReplayTurn[];
+  /** The rounds the room skipped by vote. */
+  skipped?: number[];
 }
 
 /** One run on a daily leaderboard, as the relay ranks it. */

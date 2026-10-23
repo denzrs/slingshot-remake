@@ -271,7 +271,7 @@ export class PowerUpField {
     if (kind === 'blackhole') return { owner, kind, target, blocked: !!target && !blackHoleFits(world, target, owner) };
     if (kind !== 'wormhole') return { owner, kind, target };
     const first = this.wormFirst.get(owner) ?? null;
-    return { owner, kind, target, first, blocked: !!target && !portalFits(world, target, first ? [first] : []) };
+    return { owner, kind, target, first, blocked: !!target && !portalFits(world, target, first ? [first] : [], owner) };
   }
 
   /** Whether the ship at this screen (or on turn) is aiming a placement. */
@@ -366,7 +366,7 @@ export class PowerUpField {
       case 'teleport': return placement.x === undefined ? this.teleport(id) : this.teleport(id, { x, y });
       case 'blackhole': return this.plantBlackHole(id, { x, y });
       case 'nebula': return this.plantNebula(id, { x, y });
-      case 'wormhole': return this.plantWormhole(id, { x, y }, { x: x2, y: y2 });
+      case 'wormhole': return this.plantWormhole(id, { x, y }, { x: x2, y: y2 }, true);
       case 'planetkiller': return planet < 0 ? this.spend(id) : this.killPlanet(id, planet);
       case 'antigravity': return this.turnAntigravity(id, planet);
       case 'defense': return this.plantDefense(id, { x, y, planet });
@@ -414,8 +414,11 @@ export class PowerUpField {
   }
 
   /** Plants a wormhole: two mouths that carry a shot from one to the other, for the rest of the round. */
-  private plantWormhole(id: number, a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+  private plantWormhole(id: number, a: { x: number; y: number }, b: { x: number; y: number }, recorded = false): boolean {
     const world = this.host.world();
+    // A salvo plants at takeoff, after the ships may have moved: the gap holds then too.
+    // Replay placements are authoritative: living ships may now be closer than the placement rule allowed.
+    if (!recorded && (!portalFits(world, a, [b], id) || !portalFits(world, b, [], id))) return false;
     world.wormholes.push({ id: nextWormholeId(world), ax: a.x, ay: a.y, bx: b.x, by: b.y, radius: WORMHOLE.RADIUS });
     world.version++;
     this.host.placed({ player: id, kind: 'wormhole', x: a.x, y: a.y, x2: b.x, y2: b.y });
@@ -530,7 +533,7 @@ export class PowerUpField {
         .filter((q) => q.alive && q.id !== id && !friends.includes(q.id))
         .map((q) => world.ships[q.id])
         .sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))[0];
-      const spots = target && cpuWormholeSpots(world, from, target);
+      const spots = target && cpuWormholeSpots(world, from, target, id);
       return spots ? () => this.plantWormhole(id, spots[0], spots[1]) : null;
     }
     if (kind === 'antigravity') {

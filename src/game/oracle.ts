@@ -192,6 +192,8 @@ export class Oracle {
   private roundTips = new Map<number, { pick: number; sides: number }>();
   /** What every bettor has staked on the round question. The stake is out of the player's score until the round is over. */
   private roundStakes = new Map<number, number>();
+  /** Oracle standings before this round, so a skipped round can give back every point and honour it earned. */
+  private roundStartScores: OracleScore[] = [];
   /** [hit, miss] on the open shot question. */
   private heard: [number, number] = [0, 0];
 
@@ -209,6 +211,7 @@ export class Oracle {
     this.recount();
     this.sharedPools = null;
     this.scores = Array.from({ length: players }, emptyScore);
+    this.roundStartScores = this.copyScores(this.scores);
   }
 
   /** Makes room in the standings for a bettor who was not there when the match began (somebody who came to watch). */
@@ -233,6 +236,18 @@ export class Oracle {
       score.roundTotal = 0;
       score.roundStats = emptyTally();
     }
+    this.roundStartScores = this.copyScores(this.scores);
+  }
+
+  /** Undo oracle points, streaks, totals and honours earned during a round that was skipped. */
+  rollbackRound(): void {
+    const length = this.scores.length;
+    this.scores = this.copyScores(this.roundStartScores);
+    while (this.scores.length < length) this.scores.push(emptyScore());
+  }
+
+  private copyScores(scores: readonly OracleScore[]): OracleScore[] {
+    return scores.map((score) => ({ ...score, stats: { ...score.stats }, roundStats: { ...score.roundStats } }));
   }
 
   open(kind: OracleKind, shooter: number, choices: number[]): void {

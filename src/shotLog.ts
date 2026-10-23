@@ -61,6 +61,14 @@ export class ShotLog {
     this.carried.clear();
   }
 
+  /** The volley in the air is given up (the round was skipped): it never ends, so it is not a turn of the round. */
+  abandonTurn(): void {
+    this.shots = this.shots.filter((s) => s.turn !== this.turn);
+    this.placements = this.placements.filter((p) => p.turn !== this.turn);
+    this.turn = Math.max(0, this.turn - 1);
+    this.carried.clear();
+  }
+
   /** What a player's next shot carries: noted as it is aimed, before the power-up is spent on it. */
   carry(player: number, held: PowerUpKind | null, armed: boolean): void {
     if (armed && held && RIDES.includes(held)) this.carried.set(player, held);

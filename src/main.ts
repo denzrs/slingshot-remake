@@ -32,7 +32,7 @@ import { Menu } from './ui/menu';
 import { lobbyScreen } from './ui/lobby';
 import { TouchControls } from './ui/touch-controls';
 import { TouchStick } from './ui/touch-stick';
-import { gameOverScreen, pauseScreen, titleScreen, type App } from './ui/screens';
+import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, type App } from './ui/screens';
 import { statsAvailable, statsScreen } from './ui/stats';
 import { reportLocalGame, trackLocalGame } from './localStats';
 import { netMatch } from './netMatch';
@@ -286,9 +286,50 @@ function advanceMatch(): void {
 /** Whether the local player may aim right now. */
 const canAim = (): boolean => !!match?.localCanAim;
 
+/** Offline, skipping a round takes the key twice within this many seconds, so a stray press costs nothing. */
+const SKIP_CONFIRM = 3;
+let skipAskedAt = -Infinity;
+
+/** The skip key: skip the round (online the host calls a vote, everybody else votes no). */
+function skipKey(): void {
+  if (!match || match.replaying || !match.canSkipRound && !match.skipVote) return;
+  const net = online();
+  if (net) {
+    if (net.isSpectator) return;
+    if (match.skipVote) {
+      if (match.canAnswerSkip(match.viewer)) dispatchInput({ kind: 'skipVote', yes: false });
+    } else if (net.isHost) dispatchInput({ kind: 'skipRound' });
+    return;
+  }
+  if (performance.now() / 1000 - skipAskedAt < SKIP_CONFIRM) {
+    skipAskedAt = -Infinity;
+    match.requestSkipRound(0);
+  } else {
+    skipAskedAt = performance.now() / 1000;
+    match.notice = { text: t('skip.confirm'), color: COLORS.boneDim, at: match.clock };
+  }
+}
+
 const app: App = {
   menu,
   settings,
+  get skipOffer() {
+    const m = match;
+    if (!m || m.replaying || screen !== 'play') return null;
+    const net = online();
+    if (!net) return m.canSkipRound ? 'skip' : null;
+    if (net.isSpectator) return null;
+    if (m.skipVote) return m.canAnswerSkip(m.viewer) ? 'answer' : null;
+    return net.isHost && m.canSkipRound ? 'call' : null;
+  },
+  skipRound() {
+    menu.close();
+    if (online()) dispatchInput({ kind: 'skipRound' });
+    else match?.requestSkipRound(0);
+  },
+  answerSkip(yes) {
+    dispatchInput({ kind: 'skipVote', yes });
+  },
   settingsChanged() {
     saveSettings(settings);
     applyStickSide();
@@ -345,6 +386,7 @@ const app: App = {
     menu.open(() => lobbyScreen(app, multiplayer()));
   },
   resume() {
+    voteMenuOpen = false;
     menu.close();
   },
   rematch() {
@@ -363,7 +405,7 @@ const app: App = {
     return screen === 'play' && !!match?.replaying;
   },
   watchReplay(data) {
-    const replay = netMatch({ ...data, players: data.seats }, settings, { script: { turns: data.turns } });
+    const replay = netMatch({ ...data, players: data.seats }, settings, { script: { turns: data.turns, skipped: data.skipped } });
     if (!replay) return;
     lastReplay = data;
     match?.dispose();
@@ -526,6 +568,13 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Y (or J) agrees to the vote to skip the round; N, handled below, declines it.
+  if ((e.code === 'KeyY' || e.code === 'KeyJ') && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && match.canAnswerSkip(match.viewer) && online()) {
+    dispatchInput({ kind: 'skipVote', yes: true });
+    e.preventDefault();
+    return;
+  }
+
   const [dAngle, dPower] = stepFor(e);
   let handled = true;
   switch (e.code) {
@@ -548,6 +597,9 @@ window.addEventListener('keydown', (e) => {
       break;
     case 'KeyC':
       saveClip();
+      break;
+    case 'KeyN':
+      if (!e.repeat) skipKey();
       break;
     case 'KeyP':
       if (match?.powerUps && !e.repeat) dispatchInput({ kind: 'power' });
@@ -677,6 +729,11 @@ function syncButtons(): void {
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;
 }
 
+/** The vote to skip the round (by when it lapses) that the touch menu has already been put up for. */
+let askedVote = -1;
+let askedVoteMatch: Match | null = null;
+let voteMenuOpen = false;
+
 /** The oracle's last verdicts per match (shot or salvo, and the round's), so each one is announced on the field once. */
 const judged = new WeakMap<Match, { shot: number; round: number }>();
 
@@ -774,6 +831,18 @@ function frame(now: number): void {
     }
   }
   net?.update(dt);
+  // On a touch screen there is no key to answer a vote to skip the round with: the answer comes up as a menu.
+  if (voteMenuOpen && !menu.isOpen) voteMenuOpen = false;
+  if (voteMenuOpen && (!m.skipVote || m.skipVote.until !== askedVote || !m.canAnswerSkip(m.viewer))) {
+    voteMenuOpen = false;
+    menu.close();
+  }
+  if (screen === 'play' && net && coarsePointer.matches && !menu.isOpen && m.canAnswerSkip(m.viewer) && (m !== askedVoteMatch || m.skipVote!.until !== askedVote)) {
+    askedVote = m.skipVote!.until;
+    askedVoteMatch = m;
+    voteMenuOpen = true;
+    menu.open(() => skipVoteScreen(app));
+  }
   const crowd = screen === 'play' && net && !net.isSpectator ? m.crowd.seats.filter((seat) => seat.present).length : 0;
   standsBadge.hidden = crowd === 0;
   if (crowd) {

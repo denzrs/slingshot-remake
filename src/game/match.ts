@@ -82,7 +82,18 @@ export interface KillRecord {
   at: number;
 }
 
-export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots';
+export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots' | 'skipped';
+
+/** How long the people at the table have to answer a vote to skip the round, in seconds of match clock. */
+export const SKIP_VOTE_TIME = 20;
+
+/** An open vote to skip the round: who called it, who has answered how, and when it lapses. */
+export interface SkipVote {
+  by: number;
+  yes: number[];
+  no: number[];
+  until: number;
+}
 
 interface RoundSummary {
   title: RoundTitle;
@@ -295,6 +306,8 @@ export abstract class Match {
 
   /** The turns of a recorded match by round and turn, when this match flies one again. */
   private scriptTurns: Map<string, ReplayTurn> | null = null;
+  /** The rounds of a recorded match that were skipped by vote. */
+  private scriptSkipped = new Set<number>();
   /** Splits still to make in the flight on screen: whose, and the step of the flight they went off at. */
   private pendingSplits: { player: number; at: number }[] = [];
   /**
@@ -341,6 +354,7 @@ export abstract class Match {
     this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
     this.worldRng = createRng(this.matchSeed);
     if (options.script) {
+      this.scriptSkipped = new Set(options.script.skipped ?? []);
       this.scriptTurns = new Map(options.script.turns.map((turn) => [replayKey(turn.round, turn.turn), turn]));
       this.power.scripted = true;
     }
@@ -834,6 +848,7 @@ export abstract class Match {
     // The chain counts a round's kills: several in one turn (a splitter's forks, an armor-piercing round) or
     // one per turn adding up. A new round starts everyone over, so no round opens with a chain carried in.
     this.killChain.clear();
+    this.skipVote = null;
     this.round++;
     // Stakes that were never paid out (a round cut short) go back to their owners.
     for (const [id, stake] of this.oracle.stakes) this.payInto(id, stake, false);
@@ -949,6 +964,98 @@ export abstract class Match {
   /** Online: one player's vote to skip the killcam. Only Event Horizon has one. */
   voteSkip(_player: number): void {}
 
+  // ————————————————————————————— Skipping a round —————————————————————————————
+
+  /** The vote to skip the round that is open, if any. Online only: offline the player simply skips. */
+  skipVote: SkipVote | null = null;
+
+  /** Whether this match is played online, against the people of a room. */
+  protected get online(): boolean {
+    return !!this.options.oracle;
+  }
+
+  /** Whether a round is on that could be skipped right now. */
+  get canSkipRound(): boolean {
+    if (this.attract || this.replaying || this.mode === 'challenge' || this.revealing) return false;
+    return this.phase === 'aiming' || this.phase === 'flying' || this.phase === 'killcam' || this.phase === 'collapse';
+  }
+
+  /** The people at the table: they are the ones who vote. */
+  private get voters(): number[] {
+    return this.players.filter((p) => !p.cpu).map((p) => p.id);
+  }
+
+  /** Yes votes it takes to skip: more than half of the people at the table. */
+  get skipVotesNeeded(): number {
+    return Math.floor(this.voters.length / 2) + 1;
+  }
+
+  /**
+   * Offline the player skips on their own. Online only the host (seat 0) may ask, which opens a vote its own
+   * yes starts off. Nobody scores in a skipped round.
+   */
+  requestSkipRound(player: number): void {
+    if (!this.canSkipRound) return;
+    if (!this.online) return this.skipRound();
+    if (player !== 0 || this.skipVote || this.players[player]?.cpu) return;
+    this.skipVote = { by: player, yes: [], no: [], until: this.clock + SKIP_VOTE_TIME };
+    this.voteSkipRound(player, true);
+  }
+
+  /** One person's answer to the open vote; it counts once. The round is skipped when enough have said yes, and the vote lapses when too many have said no. */
+  voteSkipRound(player: number, yes: boolean): void {
+    const vote = this.skipVote;
+    if (!vote || !this.canSkipRound || this.clock >= vote.until || !this.voters.includes(player) || vote.yes.includes(player) || vote.no.includes(player)) return;
+    (yes ? vote.yes : vote.no).push(player);
+    if (vote.yes.length >= this.skipVotesNeeded) this.skipRound();
+    else if (vote.no.length > this.voters.length - this.skipVotesNeeded) this.endSkipVote('skip.declined');
+  }
+
+  /** How this person has answered the open vote, null while they have not (or when they have no say). */
+  skipAnswer(player: number): 'yes' | 'no' | null {
+    const vote = this.skipVote;
+    return vote?.yes.includes(player) ? 'yes' : vote?.no.includes(player) ? 'no' : null;
+  }
+
+  /** Whether this person may still answer the open vote. */
+  canAnswerSkip(player: number | null): boolean {
+    return player !== null && !!this.skipVote && this.players[player]?.cpu === null && !this.skipAnswer(player);
+  }
+
+  private endSkipVote(text: 'skip.declined' | 'skip.lapsed'): void {
+    this.skipVote = null;
+    this.notice = { text: t(text), color: COLORS.boneDim, at: this.clock };
+  }
+
+  /** Mode-specific loose ends of a round cut short: a killcam in the making, a collapse under way. */
+  protected abandonRound(): void {}
+
+  /** Ends the round where it stands: whatever was scored in it is taken back, and the match goes on as after any round. */
+  protected skipRound(): void {
+    this.skipVote = null;
+    // A volley still in the air is no turn of the round: its report would never come, and the round's own would not add up.
+    if (this.volley) this.shotLog.abandonTurn();
+    this.volley = null;
+    this.flightDoneAt = null;
+    this.cpuJobs.clear();
+    this.abandonRound();
+    // Back to what everybody had when the round began (this also gives back what was staked on the oracle's questions).
+    const before = this.scoreHistory[this.scoreHistory.length - 1];
+    for (const p of this.players) p.score = before[p.id] ?? 0;
+    for (const [id, stake] of this.oracle.stakes) this.payInto(id, stake, false);
+    for (const [id, stake] of this.stands.stakes) this.payInto(id, stake, true);
+    this.oracle.rollbackRound();
+    this.stands.rollbackRound();
+    this.oracle.startRound();
+    this.stands.startRound();
+    this.summary = { title: 'skipped', survivor: null, team: null, bonus: 0, lastKill: null };
+    this.scoreHistory.push(before.slice());
+    if (this.mayhem) this.mayhemHistory.push(this.mayhem);
+    this.current = -1;
+    this.setPhase('roundOver');
+    this.emit({ type: 'roundEnd' });
+  }
+
   /** Space / "continue": next round, final screen, or a new match. */
   advance(): void {
     if (this.phaseTime < 0.6) return;
@@ -969,6 +1076,7 @@ export abstract class Match {
     this.clock += dt;
     this.phaseTime += dt;
     if (this.notice && this.clock - this.notice.at > 1.4) this.notice = null;
+    if (this.skipVote && this.clock >= this.skipVote.until) this.endSkipVote('skip.lapsed');
     // A replay has no one to press a key: it lets the announcement be read, then goes on.
     if (this.scriptTurns && this.revealing && this.revealAge > 2.5) this.skipReveal();
     // The round's announcement holds everything still: no aiming, no CPU thinking, no shot clock.
@@ -1022,7 +1130,9 @@ export abstract class Match {
     const turn = this.shotLog.turn + 1;
     const recorded = this.scriptTurns!.get(replayKey(this.round, turn));
     if (!recorded && !this.recordedBeyond(turn)) {
-      this.replayState = 'finished';
+      // The room skipped this round by vote: it ends where the recording does.
+      if (this.scriptSkipped.has(this.round)) this.skipRound();
+      else this.replayState = 'finished';
       return;
     }
     this.playTurn(recorded ?? { round: this.round, turn, placements: [], shots: [] });
@@ -1322,6 +1432,8 @@ export abstract class Match {
   protected onKill(_record: KillRecord, _shotIndex: number, _step: number): void {}
 
   protected endRound(): void {
+    // A pending vote cannot change a round after its normal result has been recorded.
+    this.skipVote = null;
     const alive = this.alive;
     const survivor = alive.length === 1 ? alive[0].id : null;
     // In team mode the whole winning team shares the bonus — fallen members included.
@@ -1405,7 +1517,7 @@ export abstract class Match {
       return { angle: angleTo(near.planet), power: 0 };
     }
     if (kind === 'wormhole') {
-      const spots = enemies[0] && cpuWormholeSpots(world, from, enemies[0]);
+      const spots = enemies[0] && cpuWormholeSpots(world, from, enemies[0], p.id);
       if (!spots) return null;
       spot = spots[0];
     } else if (kind === 'planetkiller') {

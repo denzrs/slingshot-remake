@@ -223,14 +223,14 @@ export function blackHoleFits(world: World, spot: { x: number; y: number }, owne
  * back along that line until it is clear of planets and holes and of the other portal. Null when the line
  * offers no such pair.
  */
-export function cpuWormholeSpots(world: World, from: { x: number; y: number }, to: { x: number; y: number }): [{ x: number; y: number }, { x: number; y: number }] | null {
+export function cpuWormholeSpots(world: World, from: { x: number; y: number }, to: { x: number; y: number }, owner = -1): [{ x: number; y: number }, { x: number; y: number }] | null {
   const d = distance(from.x, from.y, to.x, to.y);
   if (!d) return null;
   const [ux, uy] = [(to.x - from.x) / d, (to.y - from.y) / d];
   const pick = (reach: number, others: { x: number; y: number }[]): { x: number; y: number } | null => {
     for (let r = reach; r > 0; r -= POWER_UP.TELEPORT_AIM_STEP) {
       const spot = { x: from.x + ux * r, y: from.y + uy * r };
-      if (isLanded(world, spot.x, spot.y) && portalFits(world, spot, others)) return spot;
+      if (isLanded(world, spot.x, spot.y) && portalFits(world, spot, others, owner)) return spot;
     }
     return null;
   };
