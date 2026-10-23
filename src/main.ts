@@ -410,6 +410,7 @@ function primaryAction(): void {
   if (!match) return;
   // A replay only goes on past the round's end and the killcams.
   if (match.replaying) {
+    if (match.skipReveal()) return;
     if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
     return;
   }
