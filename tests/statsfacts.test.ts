@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { setLang } from '../src/i18n';
-import { factText, factTexts } from '../src/statsFacts';
+import { factParts, factText, factTexts } from '../src/statsFacts';
 
 describe('facts for the menu', () => {
   beforeAll(() => setLang('en'));
@@ -28,5 +28,17 @@ describe('facts for the menu', () => {
     const texts = factTexts(facts, () => 0);
     expect(texts).toHaveLength(2);
     expect(new Set(texts)).toEqual(new Set(facts.slice(0, 2).map((f) => factText(f))));
+  });
+});
+
+describe('factParts', () => {
+  it('sets the numbers apart from the words', () => {
+    expect(factParts({ id: 'firstTurn', values: [15.6, 18] })).toEqual([
+      { text: 'A shot in the first turn hits ', number: false },
+      { text: '16', number: true },
+      { text: '% of the time, a later one ', number: false },
+      { text: '18', number: true },
+      { text: '%.', number: false },
+    ]);
   });
 });

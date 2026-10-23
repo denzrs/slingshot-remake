@@ -1,6 +1,6 @@
 import type { StatsFact } from '../net';
 import { StatsBoard } from '../statsBoard';
-import { factTexts } from '../statsFacts';
+import { factLines, type FactPart } from '../statsFacts';
 import { h } from './dom';
 import { leaderboardAvailable } from './leaderboard';
 
@@ -61,18 +61,18 @@ export function factTicker(board = new StatsBoard()): HTMLElement {
   }
   let seen = false;
   let tries = 0;
-  const show = (texts: string[], next: number): void => {
+  const show = (lines: FactPart[][], next: number): void => {
     if (line.isConnected) seen = true;
     else if (seen || ++tries > MOUNT_TRIES) return;
-    else return void setTimeout(() => show(texts, next), 100);
-    line.textContent = texts[next % texts.length];
+    else return void setTimeout(() => show(lines, next), 100);
+    line.replaceChildren(...lines[next % lines.length].map((part) => (part.number ? h('span.fact__n', null, part.text) : part.text)));
     line.classList.add('is-in');
     setTimeout(() => line.classList.remove('is-in'), FACT_MS - FADE_MS);
-    setTimeout(() => show(texts, next + 1), FACT_MS);
+    setTimeout(() => show(lines, next + 1), FACT_MS);
   };
   void load(board).then((facts) => {
-    const texts = factTexts(facts);
-    if (texts.length) show(texts, 0);
+    const lines = factLines(facts);
+    if (lines.length) show(lines, 0);
   });
   return line;
 }
