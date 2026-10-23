@@ -159,6 +159,7 @@ body {
 
 .fact__n {
   color: var(--p2);
+  font-weight: 700;
 }
 
 .fact.is-in {

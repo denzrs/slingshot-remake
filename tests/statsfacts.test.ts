@@ -35,10 +35,16 @@ describe('factParts', () => {
   it('sets the numbers apart from the words', () => {
     expect(factParts({ id: 'firstTurn', values: [15.6, 18] })).toEqual([
       { text: 'A shot in the first turn hits ', number: false },
-      { text: '16', number: true },
-      { text: '% of the time, a later one ', number: false },
-      { text: '18', number: true },
-      { text: '%.', number: false },
+      { text: '16%', number: true },
+      { text: ' of the time, a later one ', number: false },
+      { text: '18%', number: true },
+      { text: '.', number: false },
     ]);
+  });
+
+  it('keeps the space before a percent sign with the number', () => {
+    setLang('de');
+    expect(factParts({ id: 'hitRate', values: [12] })?.map((p) => p.text)).toEqual(['Nur ', '12 %', ' aller Schüsse treffen ein gegnerisches Schiff.']);
+    setLang('en');
   });
 });

@@ -66,11 +66,16 @@ export function factParts(fact: StatsFact): FactPart[] | null {
   } catch {
     return null;
   }
-  // Splitting on the fences leaves words at even places and numbers at odd ones.
-  return sentence
-    .split(new RegExp(`${OPEN}(.*?)${CLOSE}`))
-    .map((text, i) => ({ text, number: i % 2 === 1 }))
-    .filter((part) => part.text !== '');
+  // A percent sign belongs to its number, with or without the space some languages put before it.
+  const parts: FactPart[] = [];
+  let from = 0;
+  for (const match of sentence.matchAll(new RegExp(`${OPEN}(.*?)${CLOSE}( ?%)?`, 'g'))) {
+    if (match.index > from) parts.push({ text: sentence.slice(from, match.index), number: false });
+    parts.push({ text: match[1] + (match[2] ?? ''), number: true });
+    from = match.index + match[0].length;
+  }
+  if (from < sentence.length) parts.push({ text: sentence.slice(from), number: false });
+  return parts;
 }
 
 /** The sentence for a fact as plain text. */
