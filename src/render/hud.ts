@@ -63,7 +63,7 @@ export class Hud {
     const frame: OracleFrame = { ctx: this.ctx, k: this.k, field: this.field, time, shipPos, keyHints: opts.keyHints && !opts.touch };
     const ghost = match.ghost;
 
-    const killcam = match instanceof HorizonMatch ? match.killcamInfo : null;
+    const killcam = match.killcamInfo;
     if (killcam) {
       this.drawKillcam(match, killcam, opts);
       this.drawSkipVote(match);
@@ -881,7 +881,7 @@ export class Hud {
 
   // ————————————————————————————— Killcam —————————————————————————————
 
-  private drawKillcam(match: Match, info: NonNullable<HorizonMatch['killcamInfo']>, opts: DrawOptions): void {
+  private drawKillcam(match: Match, info: NonNullable<Match['killcamInfo']>, opts: DrawOptions): void {
     const { recording, slow } = info;
     const record = info.clip.record;
     const { ctx, k, field } = this;
@@ -939,7 +939,6 @@ export class Hud {
   private drawHint(match: Match, touch: boolean): void {
     const { k, field } = this;
     const maxWidth = field.w - 48 * k;
-    const horizon = match instanceof HorizonMatch;
     let items: KeyItem[] = [];
     if (match.localCanAim) {
       if (touch) {
@@ -963,7 +962,7 @@ export class Hud {
     } else if (match.phase === 'roundOver' && match.phaseTime > 0.6) {
       const next = match.isLastRound ? t('hud.finalStandings') : match instanceof ChallengeMatch ? t('daily.hud.nextSector') : t('hud.nextRound');
       items = [match.canAdvance ? [touch ? '' : t('common.space'), next] : ['', t('hud.waitingHost')]];
-      if (horizon && match.lastClip && !touch) items.push(['C', t('hud.saveKillcam')]);
+      if (match.canSaveClip && !touch) items.push(['C', t('hud.saveKillcam')]);
     }
     if (!items.length) return;
     const width = this.measureKeyRow(items, k);

@@ -9,8 +9,9 @@ import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
 import type { CrowdSeat } from './crowd';
 import type { OracleSnapshot } from './oracle';
+import type { KillcamSnapshot } from './killcam';
 
-export interface ClassicSnapshot {
+export interface ClassicSnapshot extends Partial<KillcamSnapshot> {
   phase: Match['phase'];
   phaseTime: number;
   clock: number;
@@ -91,6 +92,7 @@ export class ClassicMatch extends Match {
       skipVote: this.skipVote,
       planClock: this.planClock,
       flightDoneAt: this.flightDoneAt,
+      ...this.killcam.snapshot(),
       oracle: this.oracle.snapshot(),
       stands: this.stands.snapshot(),
       crowd: this.crowd.snapshot(),
@@ -139,6 +141,7 @@ export class ClassicMatch extends Match {
       volley.restore(snapshot.volley);
       this.volley = volley;
     }
+    this.killcam.restore(snapshot, this.rules);
     this.restarted();
     this.flightDoneAt = snapshot.flightDoneAt ?? null;
   }

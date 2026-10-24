@@ -107,6 +107,7 @@ export class ChallengeMatch extends Match {
   }
 
   startRound(): void {
+    this.killcam.reset();
     this.round++;
     const sector = this.sector(this.round - 1);
     this.spec = sector.spec;

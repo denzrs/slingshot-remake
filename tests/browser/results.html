@@ -1,0 +1,100 @@
+<!-- Browser regression: npm run dev, then open /tests/browser/results.html?check.
+     Uses the real Menu and result screen, including shortcuts outside the screen DOM. -->
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Endscreen check</title>
+  </head>
+  <body>
+    <div id="overlay"></div>
+    <script type="module">
+      import '@fontsource/big-shoulders-stencil-display/800';
+      import '@fontsource/b612/400';
+      import '@fontsource/b612/700';
+      import '@fontsource/b612-mono/400';
+      import '@fontsource/b612-mono/700';
+      import '/src/style.css';
+      import '/src/ui/launcher.css';
+      import '/src/ui/menu-page.css';
+      import { createMatch } from '/src/game/index.ts';
+      import { cloneSettings, DEFAULT_SETTINGS } from '/src/settings.ts';
+      import { Menu } from '/src/ui/menu.ts';
+      import { gameOverScreen } from '/src/ui/screens.ts';
+      import { Sound } from '/src/audio.ts';
+      import { setLang } from '/src/i18n.ts';
+
+      setLang('de');
+      const settings = cloneSettings(DEFAULT_SETTINGS);
+      settings.seats = ['human', 'medium', 'medium', 'medium', 'medium', 'medium'];
+      const match = createMatch('classic', settings, { seed: 31 });
+      match.phase = 'gameOver';
+      match.players.forEach((player, i) => { player.score = [0, 1630, 1330, 1920, 3750, 50][i]; });
+      const trail = Array.from({ length: 80 }, (_, i) => [80 + i * 12, 200 + 150 * Math.sin(i / 79 * Math.PI * 2)]).flat();
+      Object.assign(match.matchStats, {
+        longestShot: { player: 2, value: 3644, trail },
+        fastestKill: { player: 3, value: 4, trail },
+        bestHit: { player: 3, value: 1870, trail },
+        swingbys: [0, 0, 5], grazes: [0, 0, 1], kills: [0, 0, 0, 0, 2],
+        closeCall: { player: 1, value: 1.4, trail },
+      });
+      const sound = new Sound();
+      sound.menuEnabled = false;
+      const menu = new Menu(document.querySelector('#overlay'), sound);
+      const app = { menu, settings, online: false, toTitle() {}, rematch() {} };
+      menu.open(() => gameOverScreen(app, match));
+      window.addEventListener('keydown', (event) => {
+        if (menu.handleKey(event)) event.preventDefault();
+      });
+
+      if (new URLSearchParams(location.search).has('check')) {
+        const checks = [];
+        const current = () => document.querySelector('.mode-pager .is-selected').textContent;
+        const press = (target, key, extra = {}) => target.dispatchEvent(new KeyboardEvent('keydown', {
+          key, bubbles: true, cancelable: true, ...extra,
+        }));
+        const assert = (condition, label) => {
+          if (!condition) throw Error(label);
+          checks.push(label);
+        };
+        let status;
+        try {
+          document.activeElement.blur();
+          press(document.body, 'e');
+          assert(current() === 'Statistik', 'E wechselt bei Fokus auf dem Hintergrund');
+          assert(![...document.querySelectorAll('.match-report h3')].some((el) => el.textContent === 'Platzierung'),
+            'Keine doppelte Platzierung in der Statistik');
+          const back = document.querySelector('.menu-page__actions > button');
+          back.focus();
+          press(back, 'q');
+          assert(current() === 'Ergebnis', 'Q wechselt vom Footer');
+          const input = document.createElement('input');
+          document.body.append(input);
+          input.focus();
+          press(input, 'e');
+          assert(current() === 'Ergebnis', 'Texteingabe bleibt unverändert');
+          input.remove();
+          press(document.body, 'e', { ctrlKey: true });
+          assert(current() === 'Ergebnis', 'Browser-Shortcut bleibt frei');
+          document.activeElement.blur();
+          press(document.body, 'e');
+          assert(current() === 'Statistik', 'Wechsel nach erneutem Aufbau');
+          assert(document.querySelectorAll('.match-records li').length === 7, 'Alle sieben Rekorde erhalten');
+          menu.close();
+          press(document.body, 'e');
+          assert(!menu.isOpen, 'Kein veralteter Listener nach Schließen');
+          status = 'BESTANDEN: ' + checks.length + ' Prüfungen\n' + checks.join('\n');
+        } catch (error) {
+          status = 'FEHLER: ' + error.message;
+        }
+        match.dispose();
+        const output = document.createElement('pre');
+        output.textContent = status;
+        output.style.cssText = 'position:fixed;inset:20px;z-index:999;background:#081426;color:#6fe3c8;padding:24px;white-space:pre-wrap';
+        document.querySelector('.screen')?.setAttribute('aria-modal', 'false');
+        document.body.append(output);
+        document.title = status.split('\n')[0];
+      }
+    </script>
+  </body>
+</html>

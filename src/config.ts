@@ -213,9 +213,10 @@ export const HORIZON = {
   SIMULTANEOUS_CLOCK: 15,
   SHOT_TIME: 10,
   COLLAPSE_TIME: 1.5,
-  /** Seconds the finished volley stays on screen before a killcam cuts in, so the last hit lands first. */
-  KILLCAM_DELAY: 1,
 } as const;
+
+/** Killcams pause on the finished flight before cutting to the replay. */
+export const KILLCAM = { DELAY: 1 } as const;
 
 /** Mayhem: every round plays by its own twists, drawn from a deck. */
 export const MAYHEM = {

@@ -103,3 +103,17 @@ describe('the lobby has its own state', () => {
     expect(loadLobbyPrefs('ws://x').capacity).toBe(4);
   });
 });
+
+describe('killcam room preferences', () => {
+  it.each(['auto', 'off', 'every', 'round'] as const)('remembers %s independently of offline settings', (killcam) => {
+    stored({ 'slingshot.lobby.v1': { rules: { killcam } } });
+    expect(loadLobbyPrefs('ws://x').rules.killcam).toBe(killcam);
+  });
+
+  it('uses automatic salvos for old or invalid saved rules', () => {
+    for (const killcam of [undefined, null, true, 'always']) {
+      stored({ 'slingshot.lobby.v1': { rules: { killcam } } });
+      expect(loadLobbyPrefs('ws://x').rules.killcam).toBe('auto');
+    }
+  });
+});

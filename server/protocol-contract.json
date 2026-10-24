@@ -11,6 +11,7 @@
     "styleBonuses": false,
     "neighborGrace": 0,
     "simultaneousShots": false,
+    "killcam": "auto",
     "hiddenAim": false,
     "fadingTrails": 0,
     "mayhem": 0,
@@ -29,7 +30,8 @@
     "neighborGrace": [0, 1, 2],
     "fadingTrails": [0, 1, 2, 4],
     "mayhem": [0, 1, 2, 3],
-    "powerUpAmount": [1, 2, 3, 4]
+    "powerUpAmount": [1, 2, 3, 4],
+    "killcam": ["auto", "off", "every", "round"]
   },
   "room": {
     "defaults": {

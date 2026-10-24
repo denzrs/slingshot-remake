@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const relayContract = JSON.parse(readFileSync(fileURLToPath(new URL('../server/protocol-contract.json', import.meta.url)), 'utf8')) as {
   defaults: RoomRules;
-  options: Partial<Record<keyof RoomRules, readonly number[]>>;
+  options: Partial<Record<keyof RoomRules, readonly (number | string)[]>>;
 };
 
 describe('stepping through values', () => {
@@ -104,7 +104,7 @@ describe('game rules in the menu', () => {
 
   it('makes switches of the on/off rules, a bar of the few-choice rules and sliders of the rest', () => {
     for (const row of all) {
-      if (row.key === 'fixedPower' || row.key === 'powerUpAmount' || row.key === 'mayhem') expect(row.control, row.key).toBe('segmented');
+      if (row.key === 'fixedPower' || row.key === 'powerUpAmount' || row.key === 'mayhem' || row.key === 'killcam') expect(row.control, row.key).toBe('segmented');
       else if (row.key === 'powerUpKinds') expect(row.control).toBe('tiles');
       else if (row.options.length === 0) expect(row.control, row.key).toBe('toggle');
       else expect(row.control, row.key).toBe('slider');
@@ -163,8 +163,23 @@ describe('game rules in the menu', () => {
     expect(item.hidden?.()).toBe(true);
   });
 
+  it('offers the shared killcam choices in every offline and online mode', () => {
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      for (const online of [false, true]) {
+        const row = rulesFor(mode, online).find((r) => r.key === 'killcam')!;
+        expect(row.options.map((o) => o.value)).toEqual(relayContract.options.killcam);
+        let rules = rulesOf(DEFAULT_SETTINGS);
+        const item = ruleItems(mode, { get: () => rules, patch: (value) => { rules = { ...rules, ...value }; } }, online).find((r) => r.key === 'killcam')!.item;
+        expect(item.kind).toBe('segmented');
+        if (item.kind !== 'segmented') throw new Error('Expected killcam options');
+        item.set('round');
+        expect(rules.killcam).toBe('round');
+      }
+    }
+  });
+
   it('offers exactly the chaos strengths the relay accepts, bar "off", which is not a Mayhem game', () => {
-    expect(all.find((r) => r.key === 'mayhem')!.options.map((o) => o.value)).toEqual(relayContract.options.mayhem!.filter((n) => n > 0));
+    expect(all.find((r) => r.key === 'mayhem')!.options.map((o) => o.value)).toEqual(relayContract.options.mayhem!.filter((n) => typeof n === 'number' && n > 0));
     expect(relayContract.defaults.mayhem).toBe(0);
   });
 

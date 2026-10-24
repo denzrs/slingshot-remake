@@ -2,6 +2,31 @@
   "draft": {
     "items": [
       {
+        "id": "match-result-pager",
+        "title": { "de": "Dein Match im Rückblick", "en": "Your match at a glance" },
+        "text": {
+          "de": "Zum Abschluss siehst du die Platzierung und einen besonderen Spielmoment. Wechsle mit Q/E oder per Wischen zur Statistik: Dort findest du alle Rekorde, den Punkteverlauf und die weiteren Wertungen.",
+          "en": "Finish with the standings and a standout match moment. Use Q/E or swipe to Statistics for all records, the score history and the other standings."
+        },
+        "where": { "de": "Endstand → Ergebnis / Statistik", "en": "Final standings → Result / Statistics" }
+      },
+      {
+        "id": "killcams-all-modes",
+        "title": { "de": "Killcams nach Wunsch", "en": "Killcams your way" },
+        "text": {
+          "de": "Killcams gibt es jetzt auch in Klassisch und Sonnensystem. Wähle Wiederholungen nach jedem Kill oder nur am Rundenende; automatisch sind sie nur bei gleichzeitigen Salven an.",
+          "en": "Killcams are now available in Classic and Solar System too. Choose replays after every kill or only at round end; by default they play only for simultaneous salvos."
+        },
+        "where": { "de": "Regeln anpassen → Spiel → Killcam", "en": "Adjust rules → Match → Killcam" },
+        "image": {
+          "src": "killcam-options.webp",
+          "alt": {
+            "de": "Die hervorgehobene Killcam-Auswahl mit Auto, Aus, Jeder Kill und Rundenende",
+            "en": "The highlighted killcam choices: Auto, Off, Every kill and Round end"
+          }
+        }
+      },
+      {
         "id": "preset-customization",
         "title": { "de": "Preset nach Wunsch", "en": "Make it your preset" },
         "text": {

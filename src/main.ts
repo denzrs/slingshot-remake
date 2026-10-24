@@ -12,7 +12,7 @@ import { dailyChallenge, dateKey, isDateKey } from './challenge';
 import { ClipRecorder } from './clip';
 import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS } from './config';
 import { recordRun } from './dailyStore';
-import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
+import { ChallengeMatch, createChallenge, createMatch, type Match, type VersusMode } from './game';
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
 import type { OracleTap } from './render/oracle';
 import { readInvite } from './invite';
@@ -462,7 +462,7 @@ const app: App = {
 
 /** Replay the last killcam while recording the canvas, then download the video. */
 function saveClip(): void {
-  if (!(match instanceof HorizonMatch) || !ClipRecorder.supported || recorder.recording) return;
+  if (!match?.canSaveClip || !ClipRecorder.supported || recorder.recording) return;
   match.replayLastKill(true);
 }
 
@@ -744,7 +744,7 @@ function syncButtons(): void {
   touchControls.update(aim);
   touchStick.update(aim);
 
-  const canClip = playing && m instanceof HorizonMatch && m.canReplay && ClipRecorder.supported && !recorder.recording;
+  const canClip = playing && m?.canSaveClip && ClipRecorder.supported && !recorder.recording;
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;
 }
 

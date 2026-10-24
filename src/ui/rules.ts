@@ -1,4 +1,5 @@
 import { AIM, GRACE, MAYHEM, TRAIL_FADE } from '../config';
+import { KILLCAM_MODES, type KillcamMode } from '../settings';
 import type { VersusMode } from '../game';
 import { t, type Key } from '../i18n';
 import type { RoomRules } from '../net';
@@ -51,7 +52,7 @@ interface RuleRow {
   key: keyof RoomRules;
   label: string;
   /** Every value the rule can take — for a slider, its stops from lowest to highest. */
-  options: { value: number | boolean | PowerMode | PowerUpKind; label: string }[];
+  options: { value: number | boolean | PowerMode | PowerUpKind | KillcamMode; label: string }[];
   /** Switches for on/off rules, sliders for numbers, a segmented bar for a choice between a few words, tiles for several that can each be on or off. */
   control: 'toggle' | 'slider' | 'segmented' | 'tiles';
   group: RuleGroup;
@@ -77,6 +78,7 @@ export function ruleRows(): RuleRow[] {
     // Only while Mayhem is on: the Mayhem preset turns it on, every other preset off, so the strength is never "off" here.
     { key: 'mayhem', group: 'match', control: 'segmented', label: t('settings.mayhem'), options: numbers(MAYHEM.LEVELS.filter((n) => n > 0), (n) => t(`settings.mayhem.${n}` as Key)), when: (r) => r.mayhem > 0 },
     { key: 'shotTime', group: 'match', control: 'slider', label: t('settings.shotTime'), options: numbers([10, 20, 30, 60], seconds) },
+    { key: 'killcam', group: 'match', control: 'segmented', label: t('settings.killcam'), options: KILLCAM_MODES.map((value) => ({ value, label: t(`settings.killcam.${value}` as Key) })) },
     { key: 'maxPlanets', group: 'field', control: 'slider', label: t('settings.maxPlanets'), options: numbers([1, 2, 3, 4, 5, 6, 7, 8]) },
     { key: 'invisiblePlanets', group: 'field', control: 'toggle', label: t('settings.invisible'), options: [], classicOnly: true },
     { key: 'bounce', group: 'field', control: 'toggle', label: t('settings.bounce'), options: [] },

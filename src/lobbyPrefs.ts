@@ -3,7 +3,7 @@ import { POWER_UP, POWER_UP_KINDS } from './powerups';
 import type { NetworkGameMode, RoomRules } from './net';
 import { avatarFrom, DEFAULT_AVATAR, type Avatar } from './avatars';
 import { DEFAULT_ROOM_LOOK, roomLookFrom, type RoomLook } from './roomLook';
-import { DEFAULT_SETTINGS, type Settings } from './settings';
+import { DEFAULT_SETTINGS, isKillcamMode, type Settings } from './settings';
 
 /** What the multiplayer lobby remembers between visits, so it needn't be filled in again. */
 interface LobbyPrefs {
@@ -35,6 +35,7 @@ export const rulesOf = (s: Settings): RoomRules => ({
   styleBonuses: s.styleBonuses,
   neighborGrace: s.neighborGrace,
   simultaneousShots: s.simultaneousShots,
+  killcam: s.killcam,
   hiddenAim: s.hiddenAim,
   fadingTrails: s.fadingTrails,
   mayhem: s.mayhem,
@@ -75,6 +76,7 @@ export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
       rules: {
         ...fresh.rules,
         ...saved.rules,
+        killcam: isKillcamMode(saved.rules?.killcam) ? saved.rules.killcam : fresh.rules.killcam,
         betting: saved.rules?.betting === true,
         chatPlayersOnly: saved.rules?.chatPlayersOnly === true,
         powerUps: saved.rules?.powerUps === true,

@@ -258,9 +258,9 @@ describe('ranking', () => {
   });
 });
 
-/** Fly a match headlessly until the current volley has landed. */
+/** Fly a match headlessly through the current volley and its killcam. */
 function settle(m: ChallengeMatch): void {
-  for (let i = 0; i < 20_000 && m.phase === 'flying'; i++) m.update(1 / 30);
+  for (let i = 0; i < 20_000 && (m.phase === 'flying' || m.phase === 'killcam'); i++) m.update(1 / 30);
 }
 
 function pass(m: ChallengeMatch): void {

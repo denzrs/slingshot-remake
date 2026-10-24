@@ -175,16 +175,68 @@
 .menu-page .lb__status { margin: 0; font-size: 13px; line-height: 1.7; }
 .menu-page .lb__rows { gap: 7px; }
 
-/* Match report: standings, round history and records. */
-.menu-page--results .menu-page__title { color: var(--winner, var(--bone)); }
-.match-report { columns: 2; column-gap: 48px; }
-.match-report > * { break-inside: avoid; }
-.match-report .ranking, .match-report .highlights { max-width: none; margin-top: 0; margin-bottom: 24px; }
-.match-report .ranking li { padding: 13px 0; gap: 12px; }
-.match-report .ranking__name { overflow-wrap: anywhere; }
-.match-report .ranking-label { margin: 0 0 12px; break-after: avoid; color: var(--launch-accent); line-height: 1.6; }
-.match-report .highlights li { gap: 10px; padding: 12px 0; font-size: 12px; }
-.match-report .score-chart { max-width: none; margin-bottom: 28px; }
+/* Match finish: a result to celebrate, with the complete report one page away. */
+.menu-page--results { --mode-active-size: clamp(48px, min(6.5vw, 10vh), 78px); touch-action: pan-y pinch-zoom; }
+.menu-page--results .menu-page__intro { margin-top: 6px; font-size: 12px; }
+.menu-page--results .ranking-label { margin: 0 0 16px; color: var(--launch-accent); font: 700 10px/1.6 var(--font-body); letter-spacing: .18em; }
+.result-overview { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: start; gap: clamp(28px, 4vw, 60px); padding: 4px 0 24px; }
+.result-overview--quiet { grid-template-columns: minmax(0, 640px); }
+.result-standing { min-width: 0; }
+.result-standing__winner { margin: 0 0 24px; color: var(--winner, var(--bone)); font: 800 clamp(32px, 4vw, 52px)/1 var(--font-display); text-transform: uppercase; overflow-wrap: anywhere; }
+.result-standing .ranking { max-width: none; margin: 0; }
+.result-standing .ranking li { grid-template-columns: 1.7em minmax(0, 1fr) auto; gap: 12px; padding: 13px 12px; font-size: 14px; }
+.result-standing--decided .ranking li:first-child { margin-bottom: 3px; border-left: 2px solid var(--winner); background: rgb(91 125 179 / .09); }
+.result-standing .ranking__name, .match-report .ranking__name { min-width: 0; overflow-wrap: anywhere; }
+.result-standing .ranking__name::before { content: ''; display: inline-block; width: 9px; height: 11px; margin-right: 10px; background: var(--player); clip-path: polygon(50% 0, 100% 100%, 50% 76%, 0 100%); }
+.result-standing .ranking__score { font-size: 18px; }
+.result-standing__you { display: inline-block; margin-left: 8px; color: var(--bone-dim); font: 400 10px/1.5 var(--font-body); }
+.result-spotlight { min-width: 0; padding: 22px 26px 18px; border: 1px solid var(--menu-line); border-radius: 4px; background: radial-gradient(ellipse at 55% 30%, color-mix(in srgb, var(--record) 7%, transparent), transparent 70%), rgb(14 30 51 / .45); }
+.result-spotlight > .match-highlight__trail { width: 100%; height: clamp(150px, 25vh, 250px); margin: 4px 0 22px; opacity: 1; }
+.result-spotlight .match-highlight__path { stroke-width: 2.2; }
+.result-spotlight__caption { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 14px 24px; }
+.result-spotlight__label { margin: 0 0 8px; color: var(--bone-dim); font-size: 12px; }
+.result-spotlight__who { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.result-spotlight__value { margin: 0; font: 800 clamp(28px, 3.4vw, 48px)/1 var(--font-display); white-space: nowrap; }
+.result-spotlight--number .result-spotlight__caption { min-height: 180px; align-content: center; }
+.match-highlight__event { fill: none; stroke-width: 1; opacity: .65; }
+.match-report { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 28px 48px; padding: 4px 0 28px; }
+.report-section { min-width: 0; }
+.match-report__details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 48px; min-width: 0; }
+.match-report .ranking, .match-report .highlights { max-width: none; margin: 0; }
+.match-report .ranking li { grid-template-columns: 1.7em minmax(0, 1fr) auto; gap: 12px; padding: 10px 0; font-size: 12px; }
+.match-report .ranking__score { font-size: 14px; }
+.match-report .highlights li { gap: 8px 12px; padding: 12px 0; font-size: 12px; }
+.match-report .highlights__value { min-width: 0; font-size: 13px; }
+.match-report .highlights__who { overflow-wrap: anywhere; }
+.match-report .score-chart { max-width: none; margin: 0; }
+.match-records { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 28px; }
+.match-report .match-records li { grid-template-columns: minmax(0, 1fr) auto; align-content: start; padding-block: 16px; }
+.match-records .highlights__label { grid-column: 1 / -1; }
+.match-records .highlights__who { grid-column: 1; }
+.match-records .highlights__value { grid-column: 2; }
+.match-records .match-highlight__trail { height: 94px; margin: 6px 0 0; }
+
+@media (max-width: 1000px) {
+  .result-overview { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 28px; }
+  .result-spotlight { padding: 20px; }
+  .match-report { gap: 28px; }
+  .match-records { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 760px) {
+  .result-overview, .match-report { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .result-standing__winner { font-size: 36px; margin-bottom: 20px; }
+  .result-standing .ranking li { padding-block: 11px; font-size: 13px; }
+  .result-standing .ranking__score { font-size: 16px; }
+  .result-spotlight > .match-highlight__trail { height: 160px; }
+  .result-spotlight__value { font-size: 36px; }
+  .match-records { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; }
+  .match-report__details { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 460px) {
+  .match-records { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* Online lobby, room creation and the room share the same header and controls. */
 .menu-page--lobby .lobby { max-width: none; gap: 20px; }
@@ -275,7 +327,6 @@
   .tutorial-chapters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
   .tutorial-chapters .item { min-height: 44px; padding: 8px; font-size: 10px; }
   .menu-page .tutorial__title { font-size: 32px; }
-  .match-report { columns: 1; }
   .menu-page--lobby .lobby { gap: 16px; }
   .menu-page--lobby .lobby__card { padding: 16px; }
   .menu-page--lobby .lobby__connect { grid-template-columns: minmax(0, 1fr); }

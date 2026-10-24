@@ -7,6 +7,11 @@ import { isLook, type Look } from './render/look';
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
 export type Seat = 'human' | CpuLevel | 'off';
 
+export const KILLCAM_MODES = ['auto', 'off', 'every', 'round'] as const;
+export type KillcamMode = (typeof KILLCAM_MODES)[number];
+export type KillcamPlayback = Exclude<KillcamMode, 'auto'>;
+export const isKillcamMode = (value: unknown): value is KillcamMode => KILLCAM_MODES.some((mode) => mode === value);
+
 /**
  * One bag of settings, two homes in the UI: the rules of a game (seats, teams, rounds, planets, bounce,
  * flight time, …) are set on the setup screen right before it starts; the settings screen only keeps
@@ -33,6 +38,8 @@ export interface Settings {
   neighborGrace: number;
   /** Classic only: everybody aims, then all shots fly at once — as in Event Horizon — instead of one shot per turn. */
   simultaneousShots: boolean;
+  /** Automatic: replays after kills in salvos, off for sequential shots. */
+  killcam: KillcamMode;
   /** Pickups float on the field, and a shot that flies past one takes it (preview, teleport or splitter). */
   powerUps: boolean;
   /** Power-ups: the kinds that may turn up (never empty), and how many pickups lie on the field at once. */
@@ -82,6 +89,7 @@ export const DEFAULT_SETTINGS: Settings = {
   styleBonuses: false,
   neighborGrace: 0,
   simultaneousShots: false,
+  killcam: 'auto',
   powerUps: false,
   powerUpKinds: [...POWER_UP_KINDS],
   powerUpAmount: POWER_UP.DEFAULT_AMOUNT,
@@ -121,6 +129,7 @@ export function loadSettings(): Settings {
       for (const key of ['contours', 'particles', 'menuBackground', 'statsTicker', 'menuSounds', 'gameSounds'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
+      if (!isKillcamMode(s.killcam)) s.killcam = DEFAULT_SETTINGS.killcam;
       if (!isLook(s.look)) s.look = DEFAULT_SETTINGS.look;
       if (s.stickSide !== 'right') s.stickSide = 'left';
       if (!Object.hasOwn(DEBRIS, s.debris)) s.debris = DEFAULT_SETTINGS.debris;

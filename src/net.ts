@@ -14,7 +14,7 @@ export type NetworkGameMode = 'classic' | 'solar' | 'horizon';
 export type NetworkCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
 
 /** The rules of an online game; a subset of the local `Settings`, so it can be spread straight into them. */
-export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails' | 'mayhem' | 'betting' | 'chatPlayersOnly' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'>;
+export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'killcam' | 'hiddenAim' | 'fadingTrails' | 'mayhem' | 'betting' | 'chatPlayersOnly' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'>;
 
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }

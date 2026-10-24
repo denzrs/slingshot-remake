@@ -7,7 +7,7 @@ import type { StatsReplay } from '../net';
 import { roundTitle } from '../mayhem';
 import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
-import { awards } from '../stats';
+import { awards, type Award } from '../stats';
 import type { StyleKind } from '../physics';
 import { type PowerUpKind } from '../powerups';
 import { isLook } from '../render/look';
@@ -240,11 +240,15 @@ function modePagerItems(app: App, current: VersusMode): MenuItem[] {
 }
 
 function modePagerHeader(current: VersusMode, transition?: ModeTransition): HTMLElement {
+  return pagePagerHeader(modeName(current), t('launcher.switchMode'), transition);
+}
+
+function pagePagerHeader(title: string, label: string, transition?: ModeTransition): HTMLElement {
   return h('div.mode-carousel', null,
-    h('h2.mode-pager__semantic-title', { 'aria-live': 'polite', 'aria-atomic': 'true' }, modeName(current)),
+    h('h2.mode-pager__semantic-title', { 'aria-live': 'polite', 'aria-atomic': 'true' }, title),
     h('div.mode-pager__viewport', null,
       h('nav.items.items--row.mode-pager', {
-        'data-section': 'mode-pager', 'data-transition': transition ?? '', 'aria-label': t('launcher.switchMode'),
+        'data-section': 'mode-pager', 'data-transition': transition ?? '', 'aria-label': label,
       }),
     ),
     h('div.mode-pager__keys', { 'aria-hidden': 'true' },
@@ -308,45 +312,56 @@ function positionModeCarousel(root: HTMLElement): () => void {
   };
 }
 
-function enableModeSwipe(root: HTMLElement, app: App, current: VersusMode): void {
+function enableModeSwipe(root: HTMLElement, app: App, current: VersusMode): () => void {
+  return enablePagerNavigation(root, (direction) => {
+    const index = MAIN_MODES.indexOf(current as (typeof MAIN_MODES)[number]);
+    const next = MAIN_MODES[(index + (direction === 'next' ? 1 : -1) + MAIN_MODES.length) % MAIN_MODES.length];
+    changeLocalMode(app, current, next, direction);
+  }, '.briefing__quick, .briefing__players, .briefing__edit');
+}
+
+/** The same Q/E, focused arrows and horizontal swipe on every page carousel. */
+function enablePagerNavigation(root: HTMLElement, step: (direction: ModeTransition) => void, ignoreTouch?: string): () => void {
+  const listeners = new AbortController();
+  const { signal } = listeners;
   let start: { x: number; y: number } | null = null;
   root.addEventListener('touchstart', (event: TouchEvent) => {
     if (event.touches.length !== 1) { start = null; return; }
     const target = event.target;
-    if (target instanceof Element && target.closest('input, select, textarea, .briefing__quick, .briefing__players, .briefing__edit')) {
+    if (target instanceof Element && (target.closest('input, select, textarea, [contenteditable="true"]') || (ignoreTouch && target.closest(ignoreTouch)))) {
       start = null;
       return;
     }
     start = { x: event.touches[0].clientX, y: event.touches[0].clientY };
-  }, { passive: true });
+  }, { passive: true, signal });
   root.addEventListener('touchend', (event: TouchEvent) => {
     if (!start || event.changedTouches.length !== 1) { start = null; return; }
     const dx = event.changedTouches[0].clientX - start.x;
     const dy = event.changedTouches[0].clientY - start.y;
     start = null;
     if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
-    const index = MAIN_MODES.indexOf(current as (typeof MAIN_MODES)[number]);
     const direction = dx < 0 ? 'next' : 'previous';
-    const next = MAIN_MODES[(index + (direction === 'next' ? 1 : -1) + MAIN_MODES.length) % MAIN_MODES.length];
     event.preventDefault();
-    changeLocalMode(app, current, next, direction);
-  }, { passive: false });
-  root.addEventListener('keydown', (event: KeyboardEvent) => {
+    step(direction);
+  }, { passive: false, signal });
+  root.addEventListener('touchcancel', () => { start = null; }, { signal });
+  // Background clicks leave focus on the document body, outside the page's event path.
+  root.ownerDocument.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (!root.isConnected) return;
     const target = event.target;
     if (!(target instanceof Element) || event.altKey || event.ctrlKey || event.metaKey) return;
     const key = event.key.toLowerCase();
     const shortcut = key === 'q' || key === 'e';
     if (target.closest('input, select, textarea, [contenteditable="true"]')) return;
-    if (!shortcut && ((key !== 'arrowleft' && key !== 'arrowright') || !target.closest('.mode-pager'))) {
+    if (!shortcut && ((key !== 'arrowleft' && key !== 'arrowright') || !root.contains(target) || !target.closest('.mode-pager'))) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
-    const index = MAIN_MODES.indexOf(current as (typeof MAIN_MODES)[number]);
     const direction = key === 'arrowright' || key === 'e' ? 'next' : 'previous';
-    const next = MAIN_MODES[(index + (direction === 'next' ? 1 : -1) + MAIN_MODES.length) % MAIN_MODES.length];
-    changeLocalMode(app, current, next, direction);
-  });
+    step(direction);
+  }, { capture: true, signal });
+  return () => listeners.abort();
 }
 
 /** The modes live on the title screen: choose here, prepare the match next. */
@@ -772,8 +787,9 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
         keys: t('briefing.keys'),
         footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
       });
-      disposeModeCarousel = positionModeCarousel(page);
-      enableModeSwipe(page, app, mode);
+      const stopCarousel = positionModeCarousel(page);
+      const stopNavigation = enableModeSwipe(page, app, mode);
+      disposeModeCarousel = () => { stopNavigation(); stopCarousel(); };
       return page;
     },
     dispose: () => disposeModeCarousel(),
@@ -1245,50 +1261,66 @@ function tutorialScreen(app: App): () => Screen {
   };
 }
 
-export function gameOverScreen(app: App, match: Match): Screen {
+type ResultPage = 'result' | 'stats';
+
+export function gameOverScreen(app: App, match: Match, view: ResultPage = 'result', transition?: ModeTransition): Screen {
   const winner = match.winner();
   const headline = !winner ? t('over.draw') : match.teamMode ? t('over.teamWins', { team: winner.name }) : t('over.wins', { name: winner.name });
-  const entry = (place: number, name: string, color: string, score: number | string) => {
+  const records = awards(match.matchStats);
+  const featured = records.find((award) => award.kind === 'bestHit' && award.trail && award.trail.length >= 4)
+    ?? records.find((award) => award.trail && award.trail.length >= 4)
+    ?? records[0];
+  const entry = (place: number, name: string, color: string, score: number | string, player?: number) => {
     const label = h('span.ranking__name', null, name);
     label.style.color = color;
-    return h('li', null, h('span.ranking__place', null, `${place}.`), label, h('span.ranking__score', null, String(score)));
+    const row = h('li', null, h('span.ranking__place', null, `${place}.`), label, h('span.ranking__score', null, typeof score === 'number' ? fmtInt(score) : score));
+    row.style.setProperty('--player', color);
+    if (player !== undefined && match.viewer === player) label.append(h('span.result-standing__you', null, t('over.you')));
+    return row;
+  };
+  const playerRanking = () => h('ol.ranking', null, ...match.ranking().map((p, i) => entry(i + 1, p.name, p.color, p.score, p.id)));
+  const teamRanking = () => h('ol.ranking', null, ...match.teamRanking().map((r, i) => entry(i + 1, t('team.name', { team: teamName(r.team) }), TEAMS[r.team][0], r.score)));
+  const section = (title: string, ...content: Node[]) => h('section.report-section', null, h('h3.ranking-label', null, title), ...content);
+  let page: HTMLElement;
+  let disposeCarousel = (): void => {};
+  const other: ResultPage = view === 'result' ? 'stats' : 'result';
+  const pageLabel = (which: ResultPage) => t(which === 'result' ? 'over.result' : 'over.stats');
+  const changePage = (next: ResultPage, direction: ModeTransition): void => {
+    if (next === view) return;
+    // A page shortcut keeps the footer action the player was about to use in focus.
+    const actions = [...page.querySelectorAll('.menu-page__actions > button')];
+    const action = actions.findIndex((button) => button === document.activeElement);
+    app.menu.replace(() => gameOverScreen(app, match, next, direction), action < 0 ? 0 : action + 2);
   };
   return {
     build: () => {
       const lists: Element[] = [];
-      if (match.teamMode) {
-        // Teams first; the individual standings follow, smaller.
-        lists.push(h('ol.ranking', null, ...match.teamRanking().map((r, i) => entry(i + 1, t('team.name', { team: teamName(r.team) }), TEAMS[r.team][0], r.score))));
-        lists.push(h('p.ranking-label', null, t('over.players')));
-        lists.push(h('ol.ranking.ranking--small', null, ...match.ranking().map((p, i) => entry(i + 1, p.name, p.color, p.score))));
-      } else {
-        lists.push(h('ol.ranking', null, ...match.ranking().map((p, i) => entry(i + 1, p.name, p.color, p.score))));
-      }
+      // Team totals are on Result; keep the individual breakdown here for team matches.
+      if (match.teamMode) lists.push(section(t('over.players'), playerRanking()));
       const chart = scoreChart(match);
-      if (chart) lists.push(h('p.ranking-label', null, t('scorecard.history')), chart);
+      if (chart) lists.push(section(t('scorecard.history'), chart));
       // Mayhem: what every round was about and who took it.
-      if (match.mayhemHistory.length) lists.push(h('p.ranking-label', null, t('mayhem.recap')), h('ul.highlights', null, ...roundRecap(match)));
+      if (match.mayhemHistory.length) lists.push(section(t('mayhem.recap'), h('ul.highlights', null, ...roundRecap(match))));
       // The match's records, e.g. the longest shot of all rounds.
-      const highlights = awards(match.matchStats).map((award) => {
+      const highlights = records.map((award) => {
         const who = awardWho(match, award);
         const name = h('span.highlights__who', null, who.name);
         name.style.color = who.color;
         const row = h('li.match-highlight', null, h('span.highlights__label', null, awardLabel(award.kind)), name, h('span.highlights__value', null, awardValue(award)));
-        if (award.trail && award.trail.length >= 4) row.append(matchShotTrail(award.trail, who.color, `${awardLabel(award.kind)} · ${who.name}`));
+        if (award.trail && award.trail.length >= 4) row.append(matchShotTrail(award, who.color, `${awardLabel(award.kind)} · ${who.name}`));
         return row;
       });
-      if (highlights.length) lists.push(h('p.ranking-label', null, t('scorecard.match')), h('ul.highlights', null, ...highlights));
       // The stands play the same game: whoever read the rounds best.
       const seers = match.stands.ranking();
       if (seers.length) {
         const rows = seers.slice(0, 10).map(({ player, score }, i) => entry(i + 1, match.crowd.seat(player)?.name ?? '?', COLORS.bone, `${fmtInt(score.points)}  ·  ${score.right}/${score.total}`));
-        lists.push(h('p.ranking-label', null, t('stands.standings')), h('ol.ranking.ranking--small', null, ...rows));
+        lists.push(section(t('stands.standings'), h('ol.ranking.ranking--small', null, ...rows)));
       }
       // The eliminated players' side standings.
       const tipsters = match.oracle.ranking();
       if (tipsters.length) {
         const rows = tipsters.map(({ player, score }, i) => entry(i + 1, match.players[player].name, match.players[player].color, `${fmtInt(score.points)}  ·  ${score.right}/${score.total}`));
-        lists.push(h('p.ranking-label', null, t('oracle.match')), h('ol.ranking.ranking--small', null, ...rows));
+        lists.push(section(t('oracle.match'), h('ol.ranking.ranking--small', null, ...rows)));
         // Their honours: the prophet, the seer, the lone wolf …
         const honours = oracleAwards(match.oracle.scores, 'match').flatMap((award) => {
           const who = match.players[award.player];
@@ -1297,38 +1329,92 @@ export function gameOverScreen(app: App, match: Match): Screen {
           name.style.color = who.color;
           return [h('li', null, h('span.highlights__label', null, t(`oracle.award.${award.kind}`)), name, h('span.highlights__value', null, t(`oracle.awardValue.${award.kind}`, { n: award.value })))];
         });
-        if (honours.length) lists.push(h('p.ranking-label', null, t('oracle.awards')), h('ul.highlights', null, ...honours));
+        if (honours.length) lists.push(section(t('oracle.awards'), h('ul.highlights', null, ...honours)));
       }
-      const page = menuPage({
-        title: headline, eyebrow: t('over.label'), intro: tn('over.after', match.round), className: 'menu-page--results',
-        body: [h('div.match-report', null, ...lists)],
+      const standings = h(`section.result-standing${winner ? '.result-standing--decided' : ''}`, null,
+        h('h3.result-standing__winner', null, headline),
+        h('p.ranking-label', null, t(match.teamMode ? 'over.teams' : 'over.standings')),
+        match.teamMode ? teamRanking() : playerRanking(),
+      );
+      page = menuPage({
+        title: `${pageLabel(view)} · ${headline}`, eyebrow: t('over.label'), intro: tn('over.after', match.round),
+        headerTitle: pagePagerHeader(pageLabel(view), t('over.switchPage'), transition),
+        className: `menu-page--results menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
+        body: view === 'result'
+          ? [h(`div.result-overview${featured ? '' : '.result-overview--quiet'}`, null, standings,
+              ...(featured ? [matchSpotlight(match, featured)] : []))]
+          : [h('div.match-report', null,
+              ...(highlights.length ? [section(t('scorecard.match'), h('ul.highlights.match-records', null, ...highlights))] : []),
+              ...(lists.length ? [h('div.match-report__details', null, ...lists)] : []),
+              ...(!highlights.length && !lists.length ? [h('p.note', null, t('over.noStats'))] : []),
+            )],
+        footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
+        keys: t('over.keys'),
       });
       if (winner) page.style.setProperty('--winner', winner.color);
+      const stopCarousel = positionModeCarousel(page);
+      const stopNavigation = enablePagerNavigation(page, (direction) => changePage(other, direction));
+      disposeCarousel = () => { stopNavigation(); stopCarousel(); };
       return page;
     },
-    items: match.replaying
+    dispose: () => disposeCarousel(),
+    update: () => {
+      page.querySelectorAll('.mode-pager button').forEach((button) => {
+        if (button.classList.contains('is-selected')) button.setAttribute('aria-current', 'page');
+        else button.removeAttribute('aria-current');
+      });
+    },
+    items: [
+      ...[view, other].map((which, i): MenuItem => ({
+        kind: 'action', section: 'mode-pager', label: pageLabel(which),
+        className: `mode-pager__item mode-pager__item--${i === 0 ? 'active' : 'near'}`,
+        selected: () => which === view,
+        run: () => changePage(which, which === 'stats' ? 'next' : 'previous'),
+      })),
+      ...(match.replaying
       ? [
-          { kind: 'action', label: t('replay.back'), run: () => app.leaveReplay() },
-          { kind: 'action', label: t('replay.again'), primary: true, run: () => app.watchAgain() },
-        ]
+          { kind: 'action', section: 'actions', label: t('replay.back'), run: () => app.leaveReplay() },
+          { kind: 'action', section: 'actions', label: t('replay.again'), primary: true, run: () => app.watchAgain() },
+        ] satisfies MenuItem[]
       : [
           app.online
-            ? { kind: 'action', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
-            : { kind: 'action', label: t('common.mainMenu'), run: () => app.toTitle() },
+            ? { kind: 'action', section: 'actions', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
+            : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: () => app.toTitle() },
           match.canAdvance
-            ? { kind: 'action', label: t('over.rematch'), primary: true, run: () => app.rematch() }
-            : { kind: 'action', label: t('over.rematch'), hint: t('over.hostRematch'), disabled: true, run: () => {} },
-        ],
-    focus: 1,
+            ? { kind: 'action', section: 'actions', label: t('over.rematch'), primary: true, run: () => app.rematch() }
+            : { kind: 'action', section: 'actions', label: t('over.rematch'), hint: t('over.hostRematch'), disabled: true, run: () => {} },
+        ] satisfies MenuItem[]),
+    ],
+    focus: 3,
     onEscape: () => (match.replaying ? app.leaveReplay() : app.online ? app.toLobby() : app.toTitle()),
   };
 }
 
+/** One real match record gets the space of a mode illustration on the result page. */
+function matchSpotlight(match: Match, award: Award): HTMLElement {
+  const who = awardWho(match, award);
+  const name = h('span.result-spotlight__who', null, who.name);
+  name.style.color = who.color;
+  const hasTrail = !!award.trail && award.trail.length >= 4;
+  const card = h('section.result-spotlight', null,
+    h('h3.ranking-label', null, t('over.spotlight')),
+    ...(hasTrail ? [matchShotTrail(award, who.color, `${awardLabel(award.kind)} · ${who.name}`, true)] : []),
+    h('div.result-spotlight__caption', null,
+      h('div', null, h('p.result-spotlight__label', null, awardLabel(award.kind)), name),
+      h('p.result-spotlight__value', null, awardValue(award)),
+    ),
+  );
+  card.style.setProperty('--record', who.color);
+  if (!hasTrail) card.classList.add('result-spotlight--number');
+  return card;
+}
+
 /** The match record's saved path, drawn across as a small, replay-like trajectory highlight. */
-function matchShotTrail(points: number[], color: string, label: string): SVGSVGElement {
-  const size = 240;
-  const height = 52;
-  const pad = 9;
+function matchShotTrail(award: Award, color: string, label: string, featured = false): SVGSVGElement {
+  const points = award.trail!;
+  const size = featured ? 640 : 320;
+  const height = featured ? 270 : 100;
+  const pad = featured ? 30 : 12;
   const xs = points.filter((_, i) => i % 2 === 0);
   const ys = points.filter((_, i) => i % 2 === 1);
   const minX = Math.min(...xs);
@@ -1337,10 +1423,12 @@ function matchShotTrail(points: number[], color: string, label: string): SVGSVGE
   const maxY = Math.max(...ys);
   const spanX = Math.max(1, maxX - minX);
   const spanY = Math.max(1, maxY - minY);
-  const point = (i: number): [number, number] => [
-    pad + ((points[i] - minX) / spanX) * (size - pad * 2),
-    height - pad - ((points[i + 1] - minY) / spanY) * (height - pad * 2),
+  const scale = Math.min((size - pad * 2) / spanX, (height - pad * 2) / spanY);
+  const project = (x: number, y: number): [number, number] => [
+    (size - spanX * scale) / 2 + (x - minX) * scale,
+    (height + spanY * scale) / 2 - (y - minY) * scale,
   ];
+  const point = (i: number) => project(points[i], points[i + 1]);
   const pathData = Array.from({ length: points.length / 2 }, (_, i) => {
     const [x, y] = point(i * 2);
     return `${i ? 'L' : 'M'}${x},${y}`;
@@ -1359,13 +1447,32 @@ function matchShotTrail(points: number[], color: string, label: string): SVGSVGE
   path.setAttribute('pathLength', '1');
   path.setAttribute('stroke', color);
   svg.append(path);
+  if (award.at) {
+    const [x, y] = project(award.at.x, award.at.y);
+    const mark = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    mark.setAttribute('class', 'match-highlight__event');
+    mark.setAttribute('cx', String(x));
+    mark.setAttribute('cy', String(y));
+    mark.setAttribute('r', featured ? '12' : '6');
+    mark.setAttribute('stroke', color);
+    svg.append(mark);
+  }
   const [startX, startY] = point(0);
+  if (featured) {
+    const [nextX, nextY] = point(2);
+    const ship = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const angle = Math.atan2(nextY - startY, nextX - startX) * 180 / Math.PI;
+    ship.setAttribute('d', 'M 8 0 L -6 -5 L -3 0 L -6 5 Z');
+    ship.setAttribute('transform', `translate(${startX} ${startY}) rotate(${angle})`);
+    ship.setAttribute('fill', color);
+    svg.append(ship);
+  }
   const start = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
   start.setAttribute('class', 'match-highlight__start');
   start.setAttribute('cx', String(startX));
   start.setAttribute('cy', String(startY));
   start.setAttribute('r', '2');
-  svg.append(start);
+  if (!featured) svg.append(start);
   const [endX, endY] = point(points.length - 2);
   const end = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
   end.setAttribute('class', 'match-highlight__end');

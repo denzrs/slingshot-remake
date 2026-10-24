@@ -483,6 +483,26 @@ fn censor(text: &str) -> String {
         .collect()
 }
 
+/// When automatic killcams play; Auto enables them for simultaneous salvos only.
+#[derive(Clone, Copy, Debug)]
+pub enum KillcamMode {
+    Auto,
+    Off,
+    Every,
+    Round,
+}
+
+impl KillcamMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Off => "off",
+            Self::Every => "every",
+            Self::Round => "round",
+        }
+    }
+}
+
 /// The rules of an online game, chosen by whoever creates (and later edits) the room.
 #[derive(Clone, Debug)]
 pub struct RoomRules {
@@ -506,6 +526,7 @@ pub struct RoomRules {
     pub neighbor_grace: i64,
     /// Classic only: everybody aims at once and all shots fly together.
     pub simultaneous_shots: bool,
+    pub killcam: KillcamMode,
     /// Everybody sees only their own aim, not the opponents'.
     pub hidden_aim: bool,
     /// Seconds a finished shot's flight path stays on the board (0 = for good).
@@ -536,6 +557,7 @@ pub const DEFAULT_RULES: RoomRules = RoomRules {
     style_bonuses: false,
     neighbor_grace: 0,
     simultaneous_shots: false,
+    killcam: KillcamMode::Auto,
     hidden_aim: false,
     fading_trails: 0,
     mayhem: 0,
@@ -560,6 +582,7 @@ pub fn rules_to_value(rules: &RoomRules) -> Value {
         "styleBonuses": rules.style_bonuses,
         "neighborGrace": rules.neighbor_grace,
         "simultaneousShots": rules.simultaneous_shots,
+        "killcam": rules.killcam.as_str(),
         "hiddenAim": rules.hidden_aim,
         "fadingTrails": rules.fading_trails,
         "mayhem": rules.mayhem,
@@ -621,6 +644,16 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
             return None;
         }
     }
+    let killcam = match field("killcam") {
+        None => KillcamMode::Auto,
+        Some(v) => match v.as_str()? {
+            "auto" => KillcamMode::Auto,
+            "off" => KillcamMode::Off,
+            "every" => KillcamMode::Every,
+            "round" => KillcamMode::Round,
+            _ => return None,
+        },
+    };
     let neighbor_grace = field("neighborGrace")?;
     if !is_number_in(neighbor_grace, &[0, 1, 2]) {
         return None;
@@ -687,6 +720,7 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
         style_bonuses: value.get("styleBonuses").unwrap().as_bool().unwrap(),
         neighbor_grace: i64_of(neighbor_grace),
         simultaneous_shots: value.get("simultaneousShots").unwrap().as_bool().unwrap(),
+        killcam,
         hidden_aim: value.get("hiddenAim").unwrap().as_bool().unwrap(),
         fading_trails: i64_of(fading_trails),
         mayhem: field("mayhem").map(i64_of).unwrap_or(DEFAULT_RULES.mayhem),
@@ -819,6 +853,25 @@ mod tests {
         assert_eq!(parsed.max_power, 100);
         assert_eq!(parsed.fixed_power_level, 55);
         assert!(!parsed.betting);
+    }
+
+    #[test]
+    fn killcam_rules_preserve_choices_and_default_legacy_clients_to_auto() {
+        for choice in ["auto", "off", "every", "round"] {
+            let mut rules = valid_rules();
+            rules["killcam"] = json!(choice);
+            let parsed = parse_rules(&rules).expect("killcam choice accepted");
+            assert_eq!(rules_to_value(&parsed)["killcam"], json!(choice));
+        }
+        assert_eq!(
+            rules_to_value(&parse_rules(&valid_rules()).unwrap())["killcam"],
+            json!("auto")
+        );
+        for invalid in [json!(true), json!(1), json!("always"), json!([])] {
+            let mut rules = valid_rules();
+            rules["killcam"] = invalid;
+            assert!(parse_rules(&rules).is_none());
+        }
     }
 
     #[test]

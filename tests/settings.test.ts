@@ -199,3 +199,23 @@ describe('Graphics look', () => {
     expect(loadSettings().look).toBe('classic');
   });
 });
+
+describe('killcam settings', () => {
+  it('defaults old and fresh settings to automatic salvos', () => {
+    storage();
+    expect(loadSettings().killcam).toBe('auto');
+    storage({ simultaneousShots: false });
+    expect(loadSettings().killcam).toBe('auto');
+  });
+
+  it.each(['auto', 'off', 'every', 'round'] as const)('remembers %s after saving and reloading', (killcam) => {
+    storage();
+    saveSettings({ ...cloneSettings(DEFAULT_SETTINGS), killcam });
+    expect(loadSettings().killcam).toBe(killcam);
+  });
+
+  it.each([null, 1, true, 'all'])('rejects invalid persisted value %s', (killcam) => {
+    storage({ killcam });
+    expect(loadSettings().killcam).toBe('auto');
+  });
+});
