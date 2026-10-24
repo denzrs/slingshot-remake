@@ -1462,6 +1462,8 @@
   .menu-page--room .lobby > .room-deck { display: contents; }
   .menu-page--room .room-deck > .room-info { grid-column: 2; grid-row: 1; align-self: stretch; margin: 0; }
   .menu-page--room .room-deck > .room-deck__layout { grid-column: 1 / -1; grid-row: 2; }
+  /* A spectator has no pilot card: the room card takes its place and the whole row. */
+  .menu-page--room .lobby:has(> .online-identity[hidden]) > .room-deck > .room-info { grid-column: 1 / -1; }
 }
 @media (min-width: 1100px) {
   .menu-page--room .menu-page__head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px); align-items: end; gap: 0 32px; }
