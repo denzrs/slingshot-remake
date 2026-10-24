@@ -51,21 +51,6 @@ export const rulesOf = (s: Settings): RoomRules => ({
  */
 export const defaultRoomRules = (): RoomRules => rulesOf(DEFAULT_SETTINGS);
 
-/**
- * The rules of a Mayhem game: the rounds, the chaos strength, the flight time and (in Classic) whether everybody
- * shoots at once are the only things to choose. The rest is the plain rules (trick-shot bonuses are always on, as in
- * Event Horizon), which the round's twists then change.
- */
-export const mayhemRules = (chosen: Pick<RoomRules, 'mayhem' | 'rounds' | 'shotTime' | 'simultaneousShots'> & Partial<Pick<RoomRules, 'chatPlayersOnly'>>, mode: NetworkGameMode): RoomRules => ({
-  ...defaultRoomRules(),
-  rounds: chosen.rounds,
-  mayhem: chosen.mayhem || 2,
-  shotTime: chosen.shotTime,
-  simultaneousShots: mode === 'classic' && chosen.simultaneousShots,
-  styleBonuses: true,
-  chatPlayersOnly: chosen.chatPlayersOnly ?? false,
-});
-
 /** A saved list of power-up kinds: only known kinds, in the usual order, and never none. */
 function powerUpKindsFrom(value: unknown): RoomRules['powerUpKinds'] | null {
   if (!Array.isArray(value)) return null;

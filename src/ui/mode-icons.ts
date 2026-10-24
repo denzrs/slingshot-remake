@@ -6,6 +6,13 @@ export type PresetArtTreatment =
   | { mode: 'mayhem'; preset: MayhemPresetArt };
 let artId = 0;
 
+/** The card of a regular preset in a mode: Event Horizon's own take on it, simultaneous fire, or the wild orbits of Mayhem. */
+export function presetArt(preset: 'standard' | 'trickshot' | 'simultaneous' | 'mayhem', mode: 'classic' | 'horizon'): SVGElement {
+  if (preset === 'mayhem') return modeArt(mode, { mode: 'mayhem', preset: mode === 'horizon' ? 'insaneHorizon' : 'wildClassic' });
+  if (preset === 'simultaneous') return modeArt('simultaneous');
+  return modeArt(preset === 'standard' ? 'classic' : preset, mode === 'horizon' ? { mode: 'horizon', preset } : undefined);
+}
+
 /** Orbital charts for the menu, drawn as vectors so they stay crisp on phones and large screens. */
 export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGElement {
   const id = `orbit-${++artId}`;

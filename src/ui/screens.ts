@@ -8,16 +8,16 @@ import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
 import { awards } from '../stats';
 import type { StyleKind } from '../physics';
-import { POWER_UP_KINDS, type PowerUpKind } from '../powerups';
+import { type PowerUpKind } from '../powerups';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, MIN_SEATS, removeSeat, seatTeamsFor, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
 import { heartIcon } from './dom';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
-import { modeArt } from './mode-icons';
+import { modeArt, presetArt } from './mode-icons';
 import type { LobbyEntry } from './lobby';
 import { menuGroup, menuPage } from './menu-page';
-import { presetsForMode, presetRules, matchingPreset, MAYHEM_PRESETS, mayhemPresetRules, matchingMayhemPreset, matchingHandpicked, pickOfTheDay } from './match-presets';
+import { presetsForMode, presetRules, matchingPreset, matchingHandpicked, pickOfTheDay, samePick } from './match-presets';
 import { pickArt, pickHint, pickName } from './pick-of-day';
 import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
 import { powerUpSummary } from './powerup-summary';
@@ -34,7 +34,7 @@ export interface App {
   readonly mayhem: boolean;
   /** Today's date key — the real one, unless the URL asks for another day. */
   today(): string;
-  start(mode: VersusMode, mayhem?: boolean): void;
+  start(mode: VersusMode): void;
   startDaily(): void;
   /** True while an online match is on screen. */
   readonly online: boolean;
@@ -168,22 +168,21 @@ function lineup(s: Settings): string {
   return parts.join(' · ');
 }
 
-type LocalMode = VersusMode | 'mayhem';
 type LauncherSection = 'local' | 'online';
 let launcherSection: LauncherSection = 'local';
-const modeName = (mode: LocalMode): string => t(`mode.${mode}` as Key);
-const MAIN_MODES = ['classic', 'horizon', 'mayhem'] as const satisfies readonly LocalMode[];
+const modeName = (mode: VersusMode): string => t(`mode.${mode}` as Key);
+const MAIN_MODES = ['classic', 'horizon'] as const satisfies readonly VersusMode[];
 type ModeTransition = 'next' | 'previous';
 
 /** Default once on entry; rebuilding after rule or crew edits keeps the player's subsequent choices. */
-function prepareModeScreen(app: App, mode: LocalMode, transition?: ModeTransition): () => Screen {
+function prepareModeScreen(app: App, mode: VersusMode, transition?: ModeTransition): () => Screen {
   const pick = pickOfTheDay(mode, app.today());
-  Object.assign(app.settings, pick.rules, { powerUpKinds: [...pick.rules.powerUpKinds] }, mode === 'mayhem' ? { mayhemBase: pick.base } : {});
+  Object.assign(app.settings, pick.rules, { powerUpKinds: [...pick.rules.powerUpKinds] });
   app.settingsChanged();
-  return () => mode === 'mayhem' ? mayhemScreen(app, transition) : setupScreen(app, mode, transition);
+  return () => setupScreen(app, mode, transition);
 }
 
-function changeLocalMode(app: App, from: LocalMode, to: LocalMode, transition: ModeTransition): void {
+function changeLocalMode(app: App, from: VersusMode, to: VersusMode, transition: ModeTransition): void {
   if (from === to) return;
   app.menu.replace(
     prepareModeScreen(app, to, transition),
@@ -191,7 +190,7 @@ function changeLocalMode(app: App, from: LocalMode, to: LocalMode, transition: M
   );
 }
 
-function modePagerItems(app: App, current: LocalMode): MenuItem[] {
+function modePagerItems(app: App, current: VersusMode): MenuItem[] {
   const currentIndex = MAIN_MODES.indexOf(current as (typeof MAIN_MODES)[number]);
   // Rotate the cycle so the active mode stays first and the next two always peek in from the right.
   const modes = MAIN_MODES.map((_, distance) => MAIN_MODES[(currentIndex + distance) % MAIN_MODES.length]);
@@ -204,7 +203,7 @@ function modePagerItems(app: App, current: LocalMode): MenuItem[] {
   }));
 }
 
-function modePagerHeader(current: LocalMode, transition?: ModeTransition): HTMLElement {
+function modePagerHeader(current: VersusMode, transition?: ModeTransition): HTMLElement {
   return h('div.mode-carousel', null,
     h('h2.mode-pager__semantic-title', { 'aria-live': 'polite', 'aria-atomic': 'true' }, modeName(current)),
     h('div.mode-pager__viewport', null,
@@ -273,7 +272,7 @@ function positionModeCarousel(root: HTMLElement): () => void {
   };
 }
 
-function enableModeSwipe(root: HTMLElement, app: App, current: LocalMode): void {
+function enableModeSwipe(root: HTMLElement, app: App, current: VersusMode): void {
   let start: { x: number; y: number } | null = null;
   root.addEventListener('touchstart', (event: TouchEvent) => {
     if (event.touches.length !== 1) { start = null; return; }
@@ -361,7 +360,7 @@ export function titleScreen(app: App): Screen {
     app.menu.refresh();
     app.menu.focusSection(section === 'local' ? 'modes' : 'online');
   };
-  const modeCard = (mode: LocalMode): MenuItem => ({
+  const modeCard = (mode: VersusMode): MenuItem => ({
     kind: 'action', section: 'modes', label: modeName(mode), hint: t(`mode.${mode}.hint` as Key),
     icon: () => modeArt(mode),
     hidden: () => launcherSection !== 'local',
@@ -394,14 +393,13 @@ export function titleScreen(app: App): Screen {
       { kind: 'action', section: 'navigation', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
       modeCard('classic'),
       modeCard('horizon'),
-      modeCard('mayhem'),
       { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.daily'), hint: dailyMenuHint(app.today()), icon: () => modeArt('daily'), run: () => app.menu.push(() => dailyScreen(app)) },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.code'), hint: t('flow.codeHint'), icon: () => modeArt('code'), run: () => app.openLobby('code') },
       { ...languageItem(app), section: 'language' },
     ],
-    focus: launcherSection === 'local' ? 4 : 8,
+    focus: launcherSection === 'local' ? 4 : 7,
     update,
     onEscape: () => {
       if (launcherSection === 'online') chooseSection('local');
@@ -415,7 +413,7 @@ export function pauseScreen(app: App, match: Match | null): Screen {
   // The way on is the last button, at the right edge, where the eye ends up.
   const items: MenuItem[] = [
     // Online, the room decides: no restarts from the pause menu. The daily challenge has no setup, only a retry.
-    ...(mode && !app.online ? [{ kind: 'action', section: 'actions', label: t('pause.newGame'), run: () => app.menu.push(prepareModeScreen(app, app.mayhem ? 'mayhem' : mode)) } satisfies MenuItem] : []),
+    ...(mode && !app.online ? [{ kind: 'action', section: 'actions', label: t('pause.newGame'), run: () => app.menu.push(prepareModeScreen(app, mode)) } satisfies MenuItem] : []),
     ...(daily ? [{ kind: 'action', section: 'actions', label: t('daily.retry'), run: () => app.rematch() } satisfies MenuItem] : []),
     { kind: 'action', section: 'actions', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
     { kind: 'action', section: 'actions', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
@@ -426,7 +424,7 @@ export function pauseScreen(app: App, match: Match | null): Screen {
   ];
   return {
     build: () => menuPage({
-      title: t('pause.title'), eyebrow: app.mode === 'challenge' ? t('mode.daily') : app.mayhem ? t('mode.mayhem') : modeName(app.mode === 'horizon' ? 'horizon' : 'classic'),
+      title: t('pause.title'), eyebrow: app.mode === 'challenge' ? t('mode.daily') : `${modeName(app.mode === 'horizon' ? 'horizon' : 'classic')}${app.mayhem ? ` · ${t('mode.mayhem')}` : ''}`,
       className: 'menu-page--pause',
       body: [h('div.menu-page__art', null, modeArt(app.mode === 'challenge' ? 'daily' : app.mayhem ? 'mayhem' : app.mode === 'horizon' ? 'horizon' : 'classic'))],
       aside: match ? pauseStanding(match) : undefined,
@@ -629,10 +627,13 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
   const crewLabel = h('p.briefing__lineup', null);
   const quickKeys = ['rounds', 'shotTime'] as const;
   const powerups = powerUpSummary(() => s);
-  const quick = ruleItems(mode, {
+  const rules = ruleItems(mode, {
     get: () => rulesOf(s),
     patch: (values) => { Object.assign(s, values); app.settingsChanged(); },
-  }).filter(({ key }) => quickKeys.some((quickKey) => quickKey === key));
+  });
+  const quick = rules.filter(({ key }) => quickKeys.some((quickKey) => quickKey === key));
+  // The strength of Mayhem shows up under the sliders while Mayhem is on.
+  const mayhem = rules.find(({ key }) => key === 'mayhem')!;
   const update = (): void => {
     crewLabel.textContent = lineup(s);
     crew.replaceChildren(...crewMarkers(s));
@@ -641,6 +642,7 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
       fact(t('settings.shotTime'), t('settings.seconds', { n: s.shotTime })),
       fact(t('settings.bounce'), t(s.bounce ? 'common.on' : 'common.off')),
       fact(t('settings.hiddenAim'), t(s.hiddenAim ? 'common.on' : 'common.off')),
+      ...(s.mayhem ? [fact(t('mode.mayhem'), t(`settings.mayhem.${s.mayhem}` as Key))] : []),
     );
     powerups.update();
   };
@@ -656,6 +658,7 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
             h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') }),
             h('div.briefing__quick', null,
               h('div.briefing__quick-controls', { 'data-section': 'quick' }),
+              h('div.briefing__mayhem', { 'data-section': 'quick-mayhem' }),
               powerups.el,
             ),
           ),
@@ -682,29 +685,30 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
         kind: 'action', section: 'presets', label: pickName(pick), className: 'item--pick',
         tag: t('preset.pick.today'), hint: pickHint(pick),
         icon: () => pickArt(pick),
-        selected: () => matchingHandpicked(rulesOf(s), mode, mode)?.id === pick.id,
+        selected: () => samePick(matchingHandpicked(rulesOf(s), mode), pick),
         run: () => { Object.assign(s, pick.rules); app.settingsChanged(); app.menu.refresh(); },
       },
       ...presets.map((preset): MenuItem => ({
         kind: 'action', section: 'presets', label: t(`preset.${preset}` as Key), hint: t(`preset.${preset}.hint` as Key),
-        icon: () => modeArt(preset === 'simultaneous' ? 'simultaneous' : preset === 'standard' ? 'classic' : preset, mode === 'horizon' && preset !== 'simultaneous' ? { mode: 'horizon', preset } : undefined),
-        selected: () => matchingPreset(rulesOf(s), mode) === preset,
+        icon: () => presetArt(preset, mode),
+        selected: () => !samePick(matchingHandpicked(rulesOf(s), mode), pick) && matchingPreset(rulesOf(s), mode) === preset,
         run: () => { Object.assign(s, presetRules(preset)); app.settingsChanged(); app.menu.refresh(); },
       })),
       ...quick.map(({ item }): MenuItem => ({ ...item, section: 'quick' })),
+      { ...mayhem.item, section: 'quick-mayhem' },
       { kind: 'action', section: 'players', label: t('briefing.editCrew'), run: () => openPlayers(app) },
       { kind: 'action', section: 'edit', label: t('briefing.editRules'), run: () => app.menu.push(() => rulesScreen(app, mode)) },
       { kind: 'action', section: 'actions', label: t('common.back'), run: () => app.menu.back() },
       { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(mode) },
     ],
     // Enter keeps the quick route into the game; the presets remain a click or arrow away.
-    focus: MAIN_MODES.length + 1 + presets.length + quick.length + 3,
+    focus: MAIN_MODES.length + 1 + presets.length + quick.length + 1 + 3,
     update,
   };
 }
 
 /** All rules, grouped by subject, without overwhelming the match briefing. */
-function rulesScreen(app: App, mode: VersusMode, mayhem = false): Screen {
+function rulesScreen(app: App, mode: VersusMode): Screen {
   const source: RuleSource = {
     get: () => rulesOf(app.settings),
     patch: (values) => {
@@ -713,7 +717,6 @@ function rulesScreen(app: App, mode: VersusMode, mayhem = false): Screen {
     },
   };
   const rules = ruleItems(mode, source);
-  if (mayhem) rules.push(...ruleItems(mode, source, false, true).filter(({ key }) => key === 'mayhem'));
   const groups = RULE_GROUPS.filter((group) => rules.some((r) => r.group === group));
   let category = groups[0];
   const heading = h('h3.setup__title', null);
@@ -724,7 +727,7 @@ function rulesScreen(app: App, mode: VersusMode, mayhem = false): Screen {
   }));
   return {
     build: () => menuPage({
-      title: t('briefing.editRules'), eyebrow: mayhem ? t('mode.mayhem') : modeName(mode), className: 'menu-page--rules',
+      title: t('briefing.editRules'), eyebrow: modeName(mode), className: 'menu-page--rules',
       body: [h('div.category-editor', null,
         h('nav.items.category-nav', { 'data-section': 'categories', 'aria-label': t('briefing.rules') }),
         h('div.category-editor__fields', null, heading, h('div.setup__rows', { 'data-section': 'fields' })),
@@ -739,112 +742,15 @@ function rulesScreen(app: App, mode: VersusMode, mayhem = false): Screen {
       })),
       ...rows,
       { kind: 'action', section: 'actions', label: t('setup.reset'), run: () => {
-        if (mayhem) {
-          Object.assign(app.settings, rulesOf(DEFAULT_SETTINGS), { mayhem: 2, mayhemBase: mode });
-        } else {
-          Object.assign(app.settings, rulesOf(DEFAULT_SETTINGS));
-        }
+        // A Mayhem game goes back to the Mayhem preset at its strength, any other one to the standard rules.
+        const { mayhem } = app.settings;
+        Object.assign(app.settings, mayhem ? { ...presetRules('mayhem'), mayhem } : rulesOf(DEFAULT_SETTINGS));
         app.settingsChanged(); app.menu.refresh();
       } },
       { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },
     ],
     update: () => { heading.textContent = groupTitle(category); },
     focus: 0,
-  };
-}
-
-/** Mayhem uses the same briefing layout, with handpicked combinations and regular presets. */
-function mayhemScreen(app: App, transition?: ModeTransition): Screen {
-  const s = app.settings;
-  // The strength is never "off" here: a Mayhem game always has twists.
-  if (!s.mayhem) s.mayhem = 2;
-  const pick = pickOfTheDay('mayhem', app.today());
-  const summary = h('dl.briefing__facts', { 'aria-live': 'polite' });
-  const crew = h('div.briefing__crew', { 'aria-hidden': 'true' });
-  const crewLabel = h('p.briefing__lineup', null);
-  const powerups = powerUpSummary(() => ({ powerUps: true, powerUpKinds: POWER_UP_KINDS }));
-  const quickKeys = ['rounds', 'shotTime', 'mayhem'] as const;
-  const quick = ruleItems('classic', {
-    get: () => rulesOf(s),
-    patch: (values) => {
-      Object.assign(s, values);
-      app.settingsChanged();
-    },
-  }, false, true)
-    .filter(({ key }) => quickKeys.some((quickKey) => quickKey === key))
-    .sort((a, b) => quickKeys.indexOf(a.key as (typeof quickKeys)[number]) - quickKeys.indexOf(b.key as (typeof quickKeys)[number]));
-  const update = (): void => {
-    crewLabel.textContent = lineup(s);
-    crew.replaceChildren(...crewMarkers(s));
-    const fact = (label: string, value: string) => h('div', null, h('dt', null, label), h('dd', null, value));
-    summary.replaceChildren(
-      fact(t('settings.mayhem'), t(`settings.mayhem.${s.mayhem}` as Key)),
-      fact(t('mayhem.base'), modeName(s.mayhemBase)),
-      fact(t('settings.rounds'), s.rounds ? String(s.rounds) : t('settings.endless')),
-      ...(s.mayhemBase === 'horizon' ? [] : [fact(t('settings.simultaneousShots'), t(s.simultaneousShots ? 'common.on' : 'common.off'))]),
-      fact(t('settings.shotTime'), t('settings.seconds', { n: s.shotTime })),
-    );
-    powerups.update();
-  };
-  let disposeModeCarousel = (): void => {};
-  return {
-    build: () => {
-      const page = menuPage({
-        title: t('mode.mayhem'), eyebrow: t('launcher.prepare'),
-        headerTitle: modePagerHeader('mayhem', transition),
-        className: `menu-page--briefing menu-page--mayhem menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
-        body: [
-          h('section.briefing__presets', null,
-            h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') }),
-            h('div.briefing__quick', null,
-              h('div.briefing__quick-controls', { 'data-section': 'quick' }),
-              powerups.el,
-            ),
-          ),
-        ],
-        aside: [
-          h('h3.setup__title', null, t('briefing.crew')),
-          crew, crewLabel,
-          h('div.items.briefing__players', { 'data-section': 'players' }),
-          h('h3.setup__title', null, t('briefing.rules')),
-          summary,
-          h('div.items.briefing__edit', { 'data-section': 'edit' }),
-        ],
-        keys: t('briefing.keys'),
-        footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
-      });
-      disposeModeCarousel = positionModeCarousel(page);
-      enableModeSwipe(page, app, 'mayhem');
-      return page;
-    },
-    dispose: () => disposeModeCarousel(),
-    items: [
-      ...modePagerItems(app, 'mayhem'),
-      {
-        kind: 'action', section: 'presets', label: pickName(pick), className: 'item--pick',
-        tag: t('preset.pick.today'), hint: pickHint(pick),
-        icon: () => pickArt(pick),
-        selected: () => matchingHandpicked(rulesOf(s), 'mayhem', s.mayhemBase)?.id === pick.id,
-        run: () => { Object.assign(s, pick.rules, { mayhemBase: pick.base }); app.settingsChanged(); app.menu.refresh(); },
-      },
-      ...MAYHEM_PRESETS.map((preset): MenuItem => ({
-        kind: 'action', section: 'presets', label: t(preset.key),
-        icon: () => modeArt(preset.base, { mode: 'mayhem', preset: preset.art }),
-        selected: () => matchingHandpicked(rulesOf(s), 'mayhem', s.mayhemBase)?.id !== pick.id && matchingMayhemPreset(s) === preset,
-        run: () => {
-          Object.assign(s, mayhemPresetRules(preset), { mayhemBase: preset.base });
-          app.settingsChanged();
-          app.menu.refresh();
-        },
-      })),
-      ...quick.map(({ item }): MenuItem => ({ ...item, section: 'quick' })),
-      { kind: 'action', section: 'players', label: t('briefing.editCrew'), run: () => openPlayers(app) },
-      { kind: 'action', section: 'edit', label: t('briefing.editRules'), run: () => app.menu.push(() => rulesScreen(app, s.mayhemBase, true)) },
-      { kind: 'action', section: 'actions', label: t('common.back'), run: () => app.menu.back() },
-      { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(s.mayhemBase, true) },
-    ],
-    focus: MAIN_MODES.length + 1 + MAYHEM_PRESETS.length + quick.length + 3,
-    update,
   };
 }
 

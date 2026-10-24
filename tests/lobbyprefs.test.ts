@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AIM } from '../src/config';
-import { defaultRoomRules, loadLobbyPrefs, mayhemRules, rulesOf } from '../src/lobbyPrefs';
+import { defaultRoomRules, loadLobbyPrefs, rulesOf } from '../src/lobbyPrefs';
 import { DEFAULT_ROOM_LOOK } from '../src/roomLook';
 import { DEFAULT_SETTINGS } from '../src/settings';
 
@@ -13,14 +13,6 @@ afterEach(() => vi.unstubAllGlobals());
 const OFFLINE = { rounds: 20, maxPlanets: 8, bounce: true, fixedPower: true, fixedPowerLevel: 90, maxPower: 30, shotTime: 60, hiddenAim: true, fadingTrails: 4, neighborGrace: 2 };
 
 describe('Mayhem rules', () => {
-  it('are the plain rules with only the rounds and the chaos strength of the room', () => {
-    const chosen = { mayhem: 3, rounds: 7, shotTime: 30, simultaneousShots: true };
-    expect(mayhemRules(chosen, 'classic')).toEqual({ ...defaultRoomRules(), rounds: 7, mayhem: 3, shotTime: 30, simultaneousShots: true, styleBonuses: true });
-    // Event Horizon has its own salvos; simultaneous shots are a Classic rule.
-    expect(mayhemRules(chosen, 'horizon').simultaneousShots).toBe(false);
-    expect(mayhemRules({ ...chosen, mayhem: 0 }, 'classic').mayhem).toBe(2);
-  });
-
   it('keep a saved chaos strength, and fall back to off for one nobody offers', () => {
     stored({ 'slingshot.lobby.v1': { rules: { mayhem: 3 } } });
     expect(loadLobbyPrefs('ws://x').rules.mayhem).toBe(3);
