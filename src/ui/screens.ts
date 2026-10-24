@@ -20,9 +20,9 @@ import { h, type Menu, type MenuItem, type Screen } from './menu';
 import { modeArt, presetArt } from './mode-icons';
 import type { LobbyEntry } from './lobby';
 import { menuGroup, menuPage } from './menu-page';
-import { presetsForMode, presetRules, matchingPreset, matchingHandpicked, pickOfTheDay, presetChangeCount, samePick } from './match-presets';
+import { presetsForMode, presetRules, matchingPreset, matchingHandpicked, pickOfTheDay, changedRules, presetChangeCount, samePick } from './match-presets';
 import { pickArt, pickHint, pickName } from './pick-of-day';
-import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
+import { groupTitle, RULE_COLUMNS, ruleItems, ruleValueText, type RuleSource } from './rules';
 import { powerUpSummary } from './powerup-summary';
 import { teamRoster } from './team-roster';
 import { mountTutorialPreview, type TutorialPreviewKind } from './tutorial-preview';
@@ -726,6 +726,10 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
     app.settingsChanged(); app.menu.refresh();
   };
   const summary = h('dl.briefing__facts', { 'aria-live': 'polite' });
+  const rulesHeading = h('h3.setup__title', null, t('briefing.rules'));
+  // The rounds, the shot clock and the power-ups sit in the page itself: the summary lists what else differs from the standard.
+  const shownInPage: readonly string[] = ['rounds', 'shotTime', 'powerUpKinds', 'powerUpAmount'];
+  const standard = presetRules('standard', mode);
   const crew = h('div.briefing__crew', { 'aria-hidden': 'true' });
   const crewLabel = h('p.briefing__lineup', null);
   const quickKeys = ['rounds', 'shotTime'] as const;
@@ -740,13 +744,12 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
   const update = (): void => {
     crewLabel.textContent = lineup(s);
     crew.replaceChildren(...crewMarkers(s));
-    const fact = (label: string, value: string) => h('div', null, h('dt', null, label), h('dd', null, value));
-    summary.replaceChildren(
-      fact(t('settings.shotTime'), t('settings.seconds', { n: s.shotTime })),
-      fact(t('settings.bounce'), t(s.bounce ? 'common.on' : 'common.off')),
-      fact(t('settings.hiddenAim'), t(s.hiddenAim ? 'common.on' : 'common.off')),
-      ...(s.mayhem ? [fact(t('mode.mayhem'), t(`settings.mayhem.${s.mayhem}` as Key))] : []),
-    );
+    const rules = rulesOf(s);
+    const changes = changedRules(rules, standard, mode).filter(({ key }) => !shownInPage.includes(key));
+    rulesHeading.textContent = t(changes.length ? 'briefing.rulesChanged' : 'briefing.rules');
+    summary.replaceChildren(...(changes.length
+      ? changes.map((row) => h('div', null, h('dt', null, row.label), h('dd', null, ruleValueText(row, rules))))
+      : [h('div', null, h('dt', null, t('briefing.rulesStandard')))]));
     powerups.update();
   };
   let disposeModeCarousel = (): void => {};
@@ -770,7 +773,7 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
           h('h3.setup__title', null, t('briefing.crew')),
           crew, crewLabel,
           h('div.items.briefing__players', { 'data-section': 'players' }),
-          h('h3.setup__title', null, t('briefing.rules')),
+          rulesHeading,
           summary,
           h('div.items.briefing__edit', { 'data-section': 'edit' }),
         ],
@@ -827,7 +830,7 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
   };
 }
 
-/** All rules, grouped by subject, without overwhelming the match briefing. */
+/** All rules on one page, grouped by subject in two columns. */
 function rulesScreen(app: App, mode: VersusMode, onReset?: (rules: ReturnType<typeof rulesOf>) => void): Screen {
   const source: RuleSource = {
     get: () => rulesOf(app.settings),
@@ -838,29 +841,21 @@ function rulesScreen(app: App, mode: VersusMode, onReset?: (rules: ReturnType<ty
     },
   };
   const rules = ruleItems(mode, source);
-  const groups = RULE_GROUPS.filter((group) => rules.some((r) => r.group === group));
-  let category = groups[0];
-  const heading = h('h3.setup__title', null);
-  const rows: MenuItem[] = rules.map(({ group, item }): MenuItem => ({
-    ...item, section: 'fields',
-    hidden: () => category !== group || (item.hidden?.() ?? false),
-    reserve: () => category === group && (item.reserve?.() ?? false),
-  }));
+  const columns = RULE_COLUMNS.map((groups) => groups.filter((group) => rules.some((r) => r.group === group))).filter((groups) => groups.length);
+  // The keyboard walks the items in this order: down the left column, then down the right one.
+  const order = columns.flat();
+  const rows: MenuItem[] = rules
+    .filter(({ group }) => order.includes(group))
+    .sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group))
+    .map(({ group, item }): MenuItem => ({ ...item, section: `rules-${group}` }));
   return {
     build: () => menuPage({
       title: t('briefing.editRules'), eyebrow: modeName(mode), className: 'menu-page--rules',
-      body: [h('div.category-editor', null,
-        h('nav.items.category-nav', { 'data-section': 'categories', 'aria-label': t('briefing.rules') }),
-        h('div.category-editor__fields', null, heading, h('div.setup__rows', { 'data-section': 'fields' })),
-      )],
+      body: [h('div.sheet', null, ...columns.map((groups) => h('div.sheet__col', null, ...groups.map((group) => menuGroup(groupTitle(group), `rules-${group}`)))))],
       keys: t('briefing.keys'),
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
     }),
     items: [
-      ...groups.map((group): MenuItem => ({
-        kind: 'action', section: 'categories', label: groupTitle(group), selected: () => category === group,
-        run: () => { category = group; app.menu.refresh(); },
-      })),
       ...rows,
       { kind: 'action', section: 'actions', label: t('setup.reset'), run: () => {
         // A Mayhem game goes back to the Mayhem preset at its strength, any other one to the standard rules.
@@ -871,49 +866,32 @@ function rulesScreen(app: App, mode: VersusMode, onReset?: (rules: ReturnType<ty
       } },
       { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },
     ],
-    update: () => { heading.textContent = groupTitle(category); },
     focus: 0,
   };
 }
 
-type PreferenceCategory = 'display' | 'device' | 'language' | 'touch';
-let preferenceCategory: PreferenceCategory = 'display';
-
-/** Only what concerns this device; the rules of a game live on the setup screen. */
+/** Only what concerns this device; the rules of a game live on the setup screen. Everything on one page, in two columns. */
 function settingsScreen(app: App): Screen {
-  const categories: { key: PreferenceCategory; label: string }[] = [
-    { key: 'display', label: t('shell.display') }, { key: 'device', label: t('shell.soundDevice') },
-    { key: 'language', label: t('common.language') },
-    ...(matchMedia('(pointer: coarse)').matches ? [{ key: 'touch' as const, label: t('shell.touch') }] : []),
-  ];
-  if (!categories.some(({ key }) => key === preferenceCategory)) preferenceCategory = 'display';
-  const heading = h('h3.setup__title', null);
-  const inCategory = (item: MenuItem, category: PreferenceCategory): MenuItem => {
-    const wasHidden = item.hidden;
-    const wasReserved = 'reserve' in item ? item.reserve : undefined;
-    return {
-      ...item,
-      section: 'fields',
-      hidden: () => preferenceCategory !== category || (wasHidden?.() ?? false),
-      ...(wasReserved ? { reserve: () => preferenceCategory === category && wasReserved() } : {}),
-    } as MenuItem;
-  };
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const inGroup = (item: MenuItem, group: 'display' | 'device' | 'language' | 'touch'): MenuItem => ({ ...item, section: `prefs-${group}` } as MenuItem);
   return {
     build: () => menuPage({
       title: t('common.settings'), intro: t('settings.note'), className: 'menu-page--settings',
-      body: [h('div.category-editor', null,
-        h('nav.items.category-nav', { 'data-section': 'categories', 'aria-label': t('common.settings') }),
-        h('div.category-editor__fields', null, heading, h('div.setup__rows', { 'data-section': 'fields' })),
+      body: [h('div.sheet', null,
+        h('div.sheet__col', null, menuGroup(t('shell.display'), 'prefs-display')),
+        h('div.sheet__col', null,
+          menuGroup(t('shell.soundDevice'), 'prefs-device'),
+          menuGroup(t('common.language'), 'prefs-language'),
+          // Only a touch screen has the stick.
+          ...(touch ? [menuGroup(t('shell.touch'), 'prefs-touch')] : []),
+        ),
       )],
       keys: t('briefing.keys'),
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
     }),
-    update: () => { heading.textContent = categories.find(({ key }) => key === preferenceCategory)!.label; },
     items: [
-      ...categories.map(({ key, label }): MenuItem => ({ kind: 'action', section: 'categories', label, selected: () => preferenceCategory === key, run: () => { preferenceCategory = key; app.menu.refresh(); } })),
-      inCategory({
+      inGroup({
         kind: 'segmented',
-        section: 'fields',
         label: t('settings.look'),
         options: [
           { value: 'refined', label: t('settings.lookRefined') },
@@ -925,9 +903,9 @@ function settingsScreen(app: App): Screen {
           app.settingsChanged();
         },
       }, 'display'),
-      inCategory(settingToggle(app, t('settings.contours'), 'contours'), 'display'),
-      inCategory(settingToggle(app, t('settings.particles'), 'particles'), 'display'),
-      inCategory({
+      inGroup(settingToggle(app, t('settings.contours'), 'contours'), 'display'),
+      inGroup(settingToggle(app, t('settings.particles'), 'particles'), 'display'),
+      inGroup({
         kind: 'segmented',
         label: t('settings.debris'),
         options: (Object.keys(DEBRIS) as Debris[]).map((value) => ({ value, label: t(`settings.debris.${value}`) })),
@@ -938,38 +916,33 @@ function settingsScreen(app: App): Screen {
           app.settingsChanged();
         },
       }, 'display'),
-      inCategory(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'display'),
-      inCategory(settingToggle(app, t('settings.statsTicker'), 'statsTicker'), 'display'),
-      inCategory(settingToggle(app, t('settings.lessMenuMotion'), 'lessMenuMotion'), 'display'),
-      // Only a touch screen has the stick.
-      ...(matchMedia('(pointer: coarse)').matches
-        ? [
-            {
-              kind: 'segmented' as const,
-              section: 'fields', hidden: () => preferenceCategory !== 'touch',
-              label: t('settings.stickSide'),
-              options: [
-                { value: 'left', label: t('settings.stickLeft') },
-                { value: 'right', label: t('settings.stickRight') },
-              ],
-              get: () => app.settings.stickSide,
-              set: (v: unknown) => {
-                app.settings.stickSide = v === 'right' ? 'right' : 'left';
-                app.settingsChanged();
-              },
-            },
-          ]
-        : []),
-      inCategory(settingToggle(app, t('settings.menuSounds'), 'menuSounds'), 'device'),
-      inCategory(settingToggle(app, t('settings.gameSounds'), 'gameSounds'), 'device'),
-      {
+      inGroup(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'display'),
+      inGroup(settingToggle(app, t('settings.statsTicker'), 'statsTicker'), 'display'),
+      inGroup(settingToggle(app, t('settings.lessMenuMotion'), 'lessMenuMotion'), 'display'),
+      inGroup(settingToggle(app, t('settings.menuSounds'), 'menuSounds'), 'device'),
+      inGroup(settingToggle(app, t('settings.gameSounds'), 'gameSounds'), 'device'),
+      inGroup({
         kind: 'toggle',
         label: t('settings.fullscreen'),
-        section: 'fields', hidden: () => preferenceCategory !== 'device',
         get: () => app.isFullscreen(),
         set: () => app.toggleFullscreen(),
-      },
-      inCategory(languageItem(app), 'language'),
+      }, 'device'),
+      inGroup(languageItem(app), 'language'),
+      ...(touch
+        ? [inGroup({
+            kind: 'segmented',
+            label: t('settings.stickSide'),
+            options: [
+              { value: 'left', label: t('settings.stickLeft') },
+              { value: 'right', label: t('settings.stickRight') },
+            ],
+            get: () => app.settings.stickSide,
+            set: (v: unknown) => {
+              app.settings.stickSide = v === 'right' ? 'right' : 'left';
+              app.settingsChanged();
+            },
+          }, 'touch')]
+        : []),
       { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },
     ],
   };

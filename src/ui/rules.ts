@@ -8,9 +8,12 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import type { MenuItem } from './menu';
 
 /** The blocks the setup screen and the lobby sort the rules into. */
-type RuleGroup = 'match' | 'field' | 'shots' | 'twists' | 'powerups';
+export type RuleGroup = 'match' | 'field' | 'shots' | 'twists' | 'powerups';
 
 export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists', 'powerups'];
+
+/** The two columns of the rules page, balanced by height: the match and its field on the left, the shots and the power-ups on the right. */
+export const RULE_COLUMNS: readonly (readonly RuleGroup[])[] = [['match', 'field', 'twists'], ['shots', 'powerups']];
 
 export const groupTitle = (group: RuleGroup): string => t(`setup.group.${group}` as Key);
 
@@ -48,7 +51,7 @@ export function powerModePatch(mode: PowerMode, cap: number = DEFAULT_CAP): Pick
 
 // ————————————————————————————— The rules —————————————————————————————
 
-interface RuleRow {
+export interface RuleRow {
   key: keyof RoomRules;
   label: string;
   /** Every value the rule can take — for a slider, its stops from lowest to highest. */
@@ -104,6 +107,18 @@ export function ruleRows(): RuleRow[] {
   ];
 }
 
+/** A rule's value in words: the stop it sits on, on or off, the strength of a cap, or how many power-ups are in. */
+export function ruleValueText(row: RuleRow, rules: RoomRules): string {
+  const option = (value: unknown) => row.options.find((o) => o.value === value)?.label ?? String(value);
+  if (row.key === 'fixedPower') {
+    const mode = powerModeOf(rules);
+    return mode === 'cap' ? `${option(mode)} ${rules.maxPower}` : mode === 'fixed' ? `${option(mode)} ${rules.fixedPowerLevel}` : option(mode);
+  }
+  if (row.key === 'powerUpKinds') return rules.powerUps ? `${rules.powerUpKinds.length}/${POWER_UP_KINDS.length}` : t('common.off');
+  if (row.control === 'toggle') return t(rules[row.key] ? 'common.on' : 'common.off');
+  return option(rules[row.key]);
+}
+
 const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has. */
@@ -150,6 +165,7 @@ export function ruleItems(mode: VersusMode, source: RuleSource, online = false):
           kind: 'tiles',
           label: row.label,
           allowEmpty: true,
+          quick: { all: t('powerups.all'), none: t('powerups.none') },
           hidden,
           reserve,
           commit,

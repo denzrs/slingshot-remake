@@ -3,6 +3,8 @@
   --launch-accent: #ffad65;
   --menu-surface: #081426;
   --menu-line: rgb(91 125 179 / 0.28);
+  /* The heading of a menu page: a label for the page, not a poster, so the settings below it get the room. */
+  --page-title-size: clamp(40px, min(4.8vw, 7.5vh), 60px);
 }
 
 .screen--menu-page {
@@ -22,14 +24,14 @@
   flex-direction: column;
   width: min(1280px, 100%);
   min-width: 0;
-  margin: clamp(18px, 4vh, 60px) auto 0;
-  animation: rise 400ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  margin: clamp(12px, 2.5vh, 32px) auto 0;
+  animation: rise 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
-.menu-page__head { flex: 0 0 auto; margin-bottom: clamp(18px, 3vh, 32px); }
-.menu-page__head .eyebrow { margin: 0 0 12px; color: var(--launch-accent); font-size: 10px; }
-.menu-page__title { margin: 0; font: 800 clamp(58px, min(7.5vw, 12vh), 96px)/0.9 var(--font-display); letter-spacing: 0.01em; text-transform: uppercase; overflow-wrap: anywhere; }
-.menu-page__intro { max-width: 76ch; margin: 14px 0 0; color: var(--bone-dim); font-size: 14px; line-height: 1.7; }
+.menu-page__head { flex: 0 0 auto; margin-bottom: clamp(14px, 2.2vh, 24px); }
+.menu-page__head .eyebrow { margin: 0 0 8px; color: var(--launch-accent); font-size: 10px; }
+.menu-page__title { margin: 0; font: 800 var(--page-title-size)/0.95 var(--font-display); letter-spacing: 0.01em; text-transform: uppercase; overflow-wrap: anywhere; }
+.menu-page__intro { max-width: 76ch; margin: 8px 0 0; color: var(--bone-dim); font-size: 13px; line-height: 1.6; }
 /* The side padding is given back as margin: it leaves room for the focus rings of the first and last column, which the scroll box would clip. */
 .menu-page__body { flex: 1 1 0; min-width: 0; min-height: 0; margin-inline: -6px; padding-inline: 6px; overflow-y: auto; overscroll-behavior: contain; }
 .menu-page__body--split { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 42px; }
@@ -170,13 +172,13 @@
 .menu-page--leaderboard .daily-board-pager__viewport { --mode-anchor: 0%; }
 .menu-page--leaderboard .daily-board-pager { margin: 0; }
 .menu-page--leaderboard .daily-board-carousel .daily__date { margin-top: 8px; text-align: left; }
-.menu-page--leaderboard { --mode-active-size: clamp(58px, 6vw, 84px); touch-action: pan-y pinch-zoom; }
+.menu-page--leaderboard { touch-action: pan-y pinch-zoom; }
 .menu-page .lb__row { padding: 15px 18px; border-color: var(--menu-line); background: rgb(14 30 51 / 0.65); }
 .menu-page .lb__status { margin: 0; font-size: 13px; line-height: 1.7; }
 .menu-page .lb__rows { gap: 7px; }
 
 /* Match finish: a result to celebrate, with the complete report one page away. */
-.menu-page--results { --mode-active-size: clamp(48px, min(6.5vw, 10vh), 78px); touch-action: pan-y pinch-zoom; }
+.menu-page--results { touch-action: pan-y pinch-zoom; }
 .menu-page--results .menu-page__intro { margin-top: 6px; font-size: 12px; }
 .menu-page--results .ranking-label { margin: 0 0 16px; color: var(--launch-accent); font: 700 10px/1.6 var(--font-body); letter-spacing: .18em; }
 .result-overview { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: start; gap: clamp(28px, 4vw, 60px); padding: 4px 0 24px; }
@@ -372,7 +374,7 @@
   width: max-content;
   min-width: 100%;
   margin: 0;
-  transition: transform 400ms cubic-bezier(.16, 1, .3, 1);
+  transition: transform 260ms cubic-bezier(.16, 1, .3, 1);
   will-change: transform;
 }
 .mode-pager:not(.is-positioned) { transition: none; }
@@ -398,16 +400,16 @@
 }
 .menu-page .mode-pager .item::before { display: none; }
 .menu-page .mode-pager .mode-pager__item--near {
-  font-size: clamp(27px, 3.8vw, 52px);
+  font-size: clamp(22px, 2.6vw, 34px);
   opacity: .4;
 }
 .menu-page .mode-pager .mode-pager__item--far {
-  font-size: clamp(22px, 3vw, 40px);
+  font-size: clamp(18px, 2.1vw, 26px);
   opacity: .2;
 }
 .menu-page .mode-pager .mode-pager__item--active {
   color: var(--bone);
-  font-size: var(--mode-active-size, clamp(58px, min(7.5vw, 12vh), 96px));
+  font-size: var(--mode-active-size, var(--page-title-size));
   font-weight: 900;
   opacity: 1;
   text-shadow: 0 0 22px rgb(255 173 101 / .12);
@@ -462,26 +464,26 @@
 .menu-page.menu-page--mode-enter-previous,
 .menu-page.menu-page--entered { animation: none; }
 .menu-page--mode-enter-next .menu-page__head > .mode-carousel,
-.menu-page--mode-enter-next .menu-page__head > .menu-page__title { animation: mode-header-enter-next 320ms cubic-bezier(.16, 1, .3, 1) both; }
+.menu-page--mode-enter-next .menu-page__head > .menu-page__title { animation: mode-header-enter-next 200ms cubic-bezier(.16, 1, .3, 1) both; }
 .menu-page--mode-enter-previous .menu-page__head > .mode-carousel,
-.menu-page--mode-enter-previous .menu-page__head > .menu-page__title { animation: mode-header-enter-previous 320ms cubic-bezier(.16, 1, .3, 1) both; }
-.menu-page--mode-enter-next .menu-page__body { animation: mode-body-enter-next 560ms cubic-bezier(.16, 1, .3, 1) 55ms both; }
-.menu-page--mode-enter-previous .menu-page__body { animation: mode-body-enter-previous 560ms cubic-bezier(.16, 1, .3, 1) 55ms both; }
+.menu-page--mode-enter-previous .menu-page__head > .menu-page__title { animation: mode-header-enter-previous 200ms cubic-bezier(.16, 1, .3, 1) both; }
+.menu-page--mode-enter-next .menu-page__body { animation: mode-body-enter-next 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
+.menu-page--mode-enter-previous .menu-page__body { animation: mode-body-enter-previous 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
 .menu-page--mode-enter-next .mode-pager__item--active,
-.menu-page--mode-enter-previous .mode-pager__item--active { animation: mode-title-flare 480ms ease-out both; }
-.menu-page--mode-enter-next .briefing__cards > :is(.item, .briefing__preset-shell) { animation: preset-enter-next 340ms cubic-bezier(.2, .7, .2, 1) 45ms both; }
-.menu-page--mode-enter-previous .briefing__cards > :is(.item, .briefing__preset-shell) { animation: preset-enter-previous 340ms cubic-bezier(.2, .7, .2, 1) 45ms both; }
+.menu-page--mode-enter-previous .mode-pager__item--active { animation: mode-title-flare 300ms ease-out both; }
+.menu-page--mode-enter-next .briefing__cards > :is(.item, .briefing__preset-shell) { animation: preset-enter-next 220ms cubic-bezier(.2, .7, .2, 1) 25ms both; }
+.menu-page--mode-enter-previous .briefing__cards > :is(.item, .briefing__preset-shell) { animation: preset-enter-previous 220ms cubic-bezier(.2, .7, .2, 1) 25ms both; }
 .menu-page--mode-enter-next .briefing__cards > .item:nth-child(2),
 .menu-page--mode-enter-previous .briefing__cards > .item:nth-child(2) { animation-delay: 95ms; }
 .menu-page--mode-enter-next .briefing__cards > .item:nth-child(3),
 .menu-page--mode-enter-previous .briefing__cards > .item:nth-child(3) { animation-delay: 145ms; }
 .menu-page--mode-enter-next .briefing__cards > .item:nth-child(4),
 .menu-page--mode-enter-previous .briefing__cards > .item:nth-child(4) { animation-delay: 195ms; }
-.launcher__content--enter-next .launcher__section-head { animation: mode-body-enter-next 280ms cubic-bezier(.16, 1, .3, 1) both; }
-.launcher__content--enter-previous .launcher__section-head { animation: mode-body-enter-previous 280ms cubic-bezier(.16, 1, .3, 1) both; }
-.launcher__content--enter-next .launcher__online > .item { animation: preset-enter-next 340ms cubic-bezier(.2, .7, .2, 1) 35ms both; }
+.launcher__content--enter-next .launcher__section-head { animation: mode-body-enter-next 200ms cubic-bezier(.16, 1, .3, 1) both; }
+.launcher__content--enter-previous .launcher__section-head { animation: mode-body-enter-previous 200ms cubic-bezier(.16, 1, .3, 1) both; }
+.launcher__content--enter-next .launcher__online > .item { animation: preset-enter-next 220ms cubic-bezier(.2, .7, .2, 1) 20ms both; }
 .launcher__content--enter-previous .launcher__modes > .item,
-.launcher__content--enter-previous .launcher__daily > .item { animation: preset-enter-previous 340ms cubic-bezier(.2, .7, .2, 1) 35ms both; }
+.launcher__content--enter-previous .launcher__daily > .item { animation: preset-enter-previous 220ms cubic-bezier(.2, .7, .2, 1) 20ms both; }
 .launcher__content--enter-next .launcher__online > .item:nth-child(2),
 .launcher__content--enter-previous .launcher__modes > .item:nth-child(2) { animation-delay: 90ms; }
 .launcher__content--enter-next .launcher__online > .item:nth-child(3),
@@ -495,10 +497,10 @@
 
 @media (max-width: 1000px) {
   .mode-pager__viewport { --mode-anchor: 0%; }
-  .menu-page .mode-pager .item { font-size: clamp(28px, 4.4vw, 46px); }
-  .menu-page .mode-pager .mode-pager__item--near { font-size: clamp(25px, 3.9vw, 40px); }
-  .menu-page .mode-pager .mode-pager__item--far { font-size: clamp(20px, 2.8vw, 30px); }
-  .menu-page .mode-pager .mode-pager__item--active { font-size: var(--mode-active-size, clamp(48px, 8vw, 78px)); }
+  .menu-page .mode-pager .item { font-size: clamp(22px, 3.2vw, 32px); }
+  .menu-page .mode-pager .mode-pager__item--near { font-size: clamp(20px, 2.8vw, 28px); }
+  .menu-page .mode-pager .mode-pager__item--far { font-size: clamp(17px, 2.3vw, 24px); }
+  .menu-page .mode-pager .mode-pager__item--active { font-size: var(--mode-active-size, var(--page-title-size)); }
 }
 @media (max-width: 760px) {
   .mode-pager__viewport { --mode-anchor: 0%; }
@@ -506,7 +508,7 @@
   .menu-page .mode-pager .item { font-size: clamp(22px, 6vw, 36px); }
   .menu-page .mode-pager .mode-pager__item--near { font-size: clamp(19px, 5vw, 31px); }
   .menu-page .mode-pager .mode-pager__item--far { font-size: clamp(17px, 4.5vw, 28px); }
-  .menu-page .mode-pager .mode-pager__item--active { font-size: var(--mode-active-size, clamp(36px, 10vw, 64px)); }
+  .menu-page .mode-pager .mode-pager__item--active { font-size: var(--mode-active-size, var(--page-title-size)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .menu-page.menu-page--mode-enter-next,
@@ -611,9 +613,9 @@
 .menu-page--lobby.menu-page--mode-enter-next .menu-page__body,
 .menu-page--lobby.menu-page--mode-enter-previous .menu-page__body { animation: none; overflow-x: clip; }
 .menu-page--lobby.menu-page--mode-enter-next .lobby > :not(.online-identity):not(.room-deck),
-.menu-page--lobby.menu-page--mode-enter-next .room-deck__briefing { animation: mode-body-enter-next 560ms cubic-bezier(.16, 1, .3, 1) 55ms both; }
+.menu-page--lobby.menu-page--mode-enter-next .room-deck__briefing { animation: mode-body-enter-next 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
 .menu-page--lobby.menu-page--mode-enter-previous .lobby > :not(.online-identity):not(.room-deck),
-.menu-page--lobby.menu-page--mode-enter-previous .room-deck__briefing { animation: mode-body-enter-previous 560ms cubic-bezier(.16, 1, .3, 1) 55ms both; }
+.menu-page--lobby.menu-page--mode-enter-previous .room-deck__briefing { animation: mode-body-enter-previous 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
 @media (prefers-reduced-motion: reduce) {
   .menu-page--lobby.menu-page--mode-enter-next .lobby > :not(.online-identity):not(.room-deck),
   .menu-page--lobby.menu-page--mode-enter-previous .lobby > :not(.online-identity):not(.room-deck),
@@ -712,7 +714,7 @@
 .menu-page--lobby .online-connection.is-dropped .online-connection__state::after { animation: drop-ping 900ms cubic-bezier(.2, .7, .2, 1); }
 .online-connection.is-linked .online-connection__text,
 .online-connection.is-dropped .online-connection__text { animation: link-text 520ms cubic-bezier(.2, .7, .2, 1); }
-.lobby--linked > :not([hidden]):not(.online-identity) { animation: link-enter 460ms cubic-bezier(.2, .7, .2, 1) both; }
+.lobby--linked > :not([hidden]):not(.online-identity) { animation: link-enter 260ms cubic-bezier(.2, .7, .2, 1) both; }
 @keyframes link-ping {
   0% { transform: scale(.6); box-shadow: 0 0 0 0 rgb(111 227 200 / .7), 0 0 12px rgb(111 227 200 / .6); }
   35% { transform: scale(1.5); }
@@ -946,7 +948,6 @@
 
 /* Five connected sectors form the Daily's route. Only the chosen sector shows its detail. */
 .menu-page--mission { max-width: none; }
-.menu-page--mission .menu-page__title { font-size: clamp(58px, 6vw, 84px); }
 .mission-route { position: relative; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; margin: 24px 0 20px; }
 .mission-route::before { content: ''; position: absolute; left: 0; right: 0; top: 20px; height: 1px; background: var(--menu-line); }
 .mission-route .item { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 9px; padding: 16px; border: 1px solid var(--menu-line); border-radius: 4px; background: #0c1c31; text-align: left; }
@@ -984,13 +985,23 @@
   min-height: 0;
 }
 
-/* Full settings remain available one category at a time. */
-.category-editor { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 48px; min-height: 260px; }
-.category-nav { align-self: start; gap: 6px; }
-.category-nav .item { min-height: 44px; padding: 12px 14px; border-left: 2px solid transparent; border-radius: 0; font-size: 13px; color: var(--bone-dim); }
-.category-nav .item.is-selected { border-color: var(--launch-accent); color: var(--launch-accent); background: rgb(255 173 101 / .065); }
-.category-editor__fields { min-width: 0; }
-.category-editor__fields > .setup__rows > .item { padding: 15px 8px; border-bottom: 1px solid var(--menu-line); border-radius: 0; }
+/* Settings and rules: every group on one page. The columns sit side by side while the page is wide enough for two. */
+.sheet { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 22px clamp(28px, 4vw, 56px); align-items: start; }
+.sheet__col { display: flex; flex-direction: column; gap: 22px; min-width: 0; container-type: inline-size; }
+.sheet .menu-group, .sheet .setup__group { margin: 0; }
+.sheet .setup__title { margin: 0 0 4px; }
+.sheet .setup__rows { gap: 0; }
+.sheet .setup__rows > .item { min-height: 40px; padding: 8px 8px; border-bottom: 1px solid rgb(91 125 179 / .18); border-radius: 0; }
+.sheet .setup__rows > .item--segmented { padding-block: 8px; gap: 6px; }
+.sheet .setup__rows > .item--slider { padding-block: 8px 3px; }
+.sheet .segmented__option { min-height: 32px; }
+.sheet .setup__rows > .item.is-readonly { padding-block: 7px; }
+/* The power-up tiles: as many to a row as the column holds, so twelve fit in two rows. */
+.sheet .item--tiles .tile { padding: 7px 4px 6px; gap: 3px; }
+.sheet .item--tiles .tile__icon { width: 26px; height: 26px; }
+@container (min-width: 460px) {
+  .sheet .item--tiles .tile { flex-basis: calc(100% / 6 - 5px); }
+}
 
 @media (max-width: 900px) {
   .flight-card__art { height: 130px; }
@@ -1000,7 +1011,6 @@
   .mission-route .item { padding: 12px; }
   .mission-scorecards { gap: 8px; }
   .mission-scorecards li { padding: 16px 10px; }
-  .category-editor { grid-template-columns: 180px minmax(0, 1fr); gap: 28px; }
 }
 @media (max-width: 760px) {
   .flight-cards { gap: 12px; }
@@ -1025,9 +1035,6 @@
   .mission-scorecards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .mission-scorecards li { padding: 16px 12px; }
   .mission-bottom { flex-direction: column; gap: 20px; }
-  .category-editor { grid-template-columns: minmax(0, 1fr); gap: 26px; min-height: 300px; }
-  .category-nav { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; }
-  .category-nav .item { min-height: 40px; padding: 8px 12px; border: 1px solid var(--menu-line); font-size: 12px; }
 }
 @media (max-width: 520px) {
   .tutorial__selection-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1041,8 +1048,6 @@
   .menu-page--lobby .menu-page__actions > .lobby__button:first-child { margin-right: 0; }
   .online-options > summary > span:nth-child(2) { flex-basis: 90%; line-height: 1.6; }
   .online-create .lobby__presets { gap: 8px; }
-  .menu-page--mission .menu-page__title { font-size: 54px; }
-  .menu-page--leaderboard { --mode-active-size: 54px; }
   .mission-route { gap: 6px; margin-top: 18px; }
   .mission-route .item { padding: 12px 3px; gap: 7px; }
   .mission-route .item > span:not([class]) { font-size: 18px; }
@@ -1375,8 +1380,7 @@
 /* The rules of a room: the local rules page, laid over the lobby. */
 .rules-page { position: fixed; z-index: 50; background: #081426; }
 .rules-page[hidden] { display: none; }
-.rules-page .setup__group > .setup__rows > .item { padding: 15px 8px; border-bottom: 1px solid var(--menu-line); border-radius: 0; }
-.room-deck__briefing .briefing__edit { margin: 4px 0 0; padding-top: 6px; border-top: 1px solid var(--menu-line); }
+.room-deck__briefing .briefing__edit { margin: 8px 0 0; }
 
 /* Copying is an icon beside the code; what was copied appears beside it for a moment. The room's settings sit at the right. */
 .menu-page--room .room-info .lobby__icon-button { width: 34px; height: 34px; min-height: 0; }
@@ -1421,3 +1425,21 @@
   .room-deck__briefing, .lobby--linked > *
 ) { animation: none !important; }
 .menu-motion-less #overlay :is(*, *::before, *::after) { transition: none !important; }
+
+/* The room on a wide screen: who you are and which room this is sit side by side, and the facts ticker moves up beside the title.
+   Two bars and a ticker used to stack above the crew and the game; this gives their height back. */
+@media (min-width: 1000px) {
+  .menu-page--room .lobby { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 14px 16px; align-items: stretch; }
+  .menu-page--room .lobby > * { grid-column: 1 / -1; }
+  .menu-page--room .lobby > .online-identity { grid-column: 1; grid-row: 1; gap: 8px 16px; }
+  .menu-page--room .lobby > .online-identity .online-profile { flex-basis: 200px; }
+  /* The room card has no frame of its own in a room, so its children join the page grid. */
+  .menu-page--room .lobby > .room-deck { display: contents; }
+  .menu-page--room .room-deck > .room-info { grid-column: 2; grid-row: 1; align-self: stretch; margin: 0; }
+  .menu-page--room .room-deck > .room-deck__layout { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (min-width: 1100px) {
+  .menu-page--room .menu-page__head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px); align-items: end; gap: 0 32px; }
+  .menu-page--room .menu-page__head > :not(.stats-ticker) { grid-column: 1; }
+  .menu-page--room .menu-page__head > .stats-ticker { grid-column: 2; grid-row: 1 / span 2; align-self: end; margin: 0 0 6px; }
+}

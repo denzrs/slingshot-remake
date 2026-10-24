@@ -357,7 +357,18 @@ function tilesControl(item: Item<'tiles'>, env: Env): Control {
     return { cell, icon };
   });
   const row = h('span.tiles', null, ...cells.map((c) => c.cell));
-  const el = h('div.item.item--tiles', { role: 'group', 'aria-label': item.label }, h('span.item__label', null, item.label), row);
+  const quickButton = (text: string, key: string, on: boolean) => {
+    const b = h('button.tiles__quick', { type: 'button', tabindex: '-1', title: `${text} (${key})` }, text);
+    b.addEventListener('click', () => {
+      el.focus({ preventScroll: true });
+      setAll(on);
+    });
+    return b;
+  };
+  const quick = item.quick && !env.readonly ? { all: quickButton(item.quick.all, 'A', true), none: quickButton(item.quick.none, 'N', false) } : null;
+  const el = h('div.item.item--tiles', { role: 'group', 'aria-label': item.label },
+    quick ? h('span.tiles__head', null, h('span.item__label', null, item.label), h('span.tiles__quick-row', null, quick.all, quick.none)) : h('span.item__label', null, item.label),
+    row);
   focusable(el, env);
 
   const isOn = (i: number): boolean => item.get().includes(tiles[i].value);
@@ -384,6 +395,11 @@ function tilesControl(item: Item<'tiles'>, env: Env): Control {
       ctx.lineCap = ctx.lineJoin = 'round';
       tiles[i].draw(ctx, TILE_ICON * 0.36);
     });
+    if (quick) {
+      const count = tiles.filter((_, i) => isOn(i)).length;
+      quick.all.classList.toggle('is-on', count === tiles.length);
+      quick.none.classList.toggle('is-on', count === 0);
+    }
   };
   function toggle(i: number): void {
     const wasOn = isOn(i);
@@ -400,10 +416,32 @@ function tilesControl(item: Item<'tiles'>, env: Env): Control {
     item.commit?.();
   }
 
+  /** Every tile on or, where a group may be empty, every one off. */
+  function setAll(on: boolean): void {
+    const next = on ? tiles.map((tile) => tile.value) : [];
+    if (!next.length && !item.allowEmpty) return;
+    if (next.length === item.get().length) return;
+    item.set(next);
+    draw();
+    env.sound?.toggle(on);
+    env.changed();
+    item.commit?.();
+  }
+
   if (!env.readonly) {
     el.addEventListener('focus', draw);
     keys(el, (e) => {
       switch (e.key) {
+        case 'a':
+        case 'A':
+          if (!item.quick) return false;
+          setAll(true);
+          return true;
+        case 'n':
+        case 'N':
+          if (!item.quick) return false;
+          setAll(false);
+          return true;
         case 'ArrowLeft':
           cursor = stepIndex(cursor, -1, tiles.length, false);
           break;

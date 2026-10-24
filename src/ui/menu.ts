@@ -76,6 +76,8 @@ export type MenuItem =
         tiles: Tile[];
         /** Let every tile be switched off, so the group can mean none. */
         allowEmpty?: boolean;
+        /** Two buttons beside the label that switch every tile on or off at once (also the A and N keys). */
+        quick?: { all: string; none: string };
         /** The values of the tiles that are on. */
         get: () => unknown[];
         set: (v: unknown[]) => void;

@@ -9,7 +9,7 @@ import type { RoomLook, RoomVisibility } from '../roomLook';
 import { buildControl, optionSelector, segmentedControl, sliderControl, type Control, type Env } from './controls';
 import { eyeIcon } from './dom';
 import { h, type Screen } from './menu';
-import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
+import { groupTitle, RULE_COLUMNS, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
 import type { App } from './screens';
 import { AVATAR_LABEL, avatarSvg, playerIcon } from './avatars';
 import { lookDialog, picker, roomIcon, visibilityControl, type LookDialog } from './roomLook';
@@ -172,7 +172,7 @@ interface RulesForm {
 }
 
 /**
- * The rules of a game as sliders and switches, in the blocks of the setup screen. Read-only, they
+ * The rules of a game as sliders and switches, in the blocks and columns of the rules page. Read-only, they
  * are what everybody but the host sees of a room.
  */
 function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly = false, changed?: () => void): RulesForm {
@@ -180,7 +180,7 @@ function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly
   const refresh = () => controls.forEach((c) => c.refresh());
   const env: Env = { sound: app.menu.sound, readonly, changed: () => { refresh(); changed?.(); } };
   const items = ruleItems(mode, source, true);
-  const groups = RULE_GROUPS.filter((group) => items.some((i) => i.group === group)).map((group) => {
+  const groups = new Map(RULE_GROUPS.filter((group) => items.some((i) => i.group === group)).map((group) => {
     const rows = h('div.setup__rows', null);
     for (const { group: g, item } of items) {
       if (g !== group) continue;
@@ -188,24 +188,12 @@ function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly
       controls.push(control);
       rows.append(control.el);
     }
-    return h('section.setup__group', null, h('h3.setup__title', null, groupTitle(group)), rows);
-  });
-  const labels = RULE_GROUPS.filter((group) => items.some((i) => i.group === group));
-  const tabs = labels.map((group, index) => {
-    const tab = button(groupTitle(group));
-    tab.className = 'item';
-    tab.addEventListener('click', () => select(index));
-    return tab;
-  });
-  const select = (index: number) => {
-    groups.forEach((group, i) => { group.hidden = i !== index; });
-    tabs.forEach((tab, i) => { tab.classList.toggle('is-selected', i === index); tab.setAttribute('aria-pressed', String(i === index)); });
-  };
-  const el = h('div.category-editor.rules-browser', null,
-    h('nav.items.category-nav', { 'aria-label': t('briefing.rules') }, ...tabs),
-    h('div.category-editor__fields', null, ...groups),
+    return [group, h('section.setup__group', null, h('h3.setup__title', null, groupTitle(group)), rows)] as const;
+  }));
+  const el = h('div.sheet.rules-browser', null,
+    ...RULE_COLUMNS.map((column) => column.filter((group) => groups.has(group))).filter((column) => column.length)
+      .map((column) => h('div.sheet__col', null, ...column.map((group) => groups.get(group)!))),
   );
-  select(0);
   refresh();
   return { el, refresh };
 }
@@ -579,12 +567,12 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const createQuick = h('div.briefing__quick', null);
   const createPowerups = powerUpSummary(() => prefs.rules);
   const createRules = h('div', null);
-  /** All the rules, one category at a time, over the page: a link below the presets opens them, as it does in the local briefing. */
+  /** All the rules on one page over this one: a link below the presets opens them, as it does in the local briefing. */
   const rulesLinkLabel = h('span.item__label', null, t('briefing.editRules'));
   const rulesLink = h('button.item', { type: 'button' }, rulesLinkLabel);
   const rulesDone = h('button.item.item--primary', { type: 'button' }, t('briefing.done'));
   const rulesReset = h('button.item', { type: 'button' }, t('setup.reset'));
-  /** The page of the local briefing — the same frame, the same categories, the same footer — over the lobby. */
+  /** The page of the local briefing — the same frame, the same groups, the same footer — over the lobby. */
   const rulesDialog = menuPage({
     title: t('briefing.editRules'), eyebrow: '', className: 'menu-page--rules',
     body: [createRules],

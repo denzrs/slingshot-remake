@@ -1,7 +1,7 @@
 import type { VersusMode } from '../game';
 import { defaultRoomRules } from '../lobbyPrefs';
 import type { RoomRules } from '../net';
-import { powerModeOf, rulesFor } from './rules';
+import { powerModeOf, rulesFor, type RuleRow } from './rules';
 
 /** The chaos strength the Mayhem preset starts at in all three modes: Wild. */
 export const MAYHEM_PRESET_LEVEL = 2;
@@ -60,16 +60,18 @@ export function matchingPreset(rules: RoomRules, mode: VersusMode): MatchPreset 
   return presetsForMode(mode).find((preset) => sameRules(rules, presetRules(preset, mode), mode, true));
 }
 
-/** Count differing rule rows, ignoring conditional values that are inactive on both sides. */
-export function presetChangeCount(rules: RoomRules, baseline: RoomRules, mode: VersusMode, online = false): number {
-  let changes = 0;
+/** The rule rows whose value differs, ignoring conditional values that are inactive on both sides. */
+export function changedRules(rules: RoomRules, baseline: RoomRules, mode: VersusMode, online = false): RuleRow[] {
+  const changed: RuleRow[] = [];
   for (const row of rulesFor(mode, online)) {
     if (row.key === 'fixedPower') {
-      if (powerModeOf(rules) !== powerModeOf(baseline)) changes++;
+      // A different cap or fixed level counts under the rows of its own, below.
+      if (powerModeOf(rules) !== powerModeOf(baseline) || (powerModeOf(rules) === 'cap' && rules.maxPower !== baseline.maxPower) || (powerModeOf(rules) === 'fixed' && rules.fixedPowerLevel !== baseline.fixedPowerLevel)) changed.push(row);
       continue;
     }
-    if (row.key === 'maxPower' && (powerModeOf(rules) !== 'cap' || powerModeOf(baseline) !== 'cap')) continue;
-    if (row.key === 'fixedPowerLevel' && (powerModeOf(rules) !== 'fixed' || powerModeOf(baseline) !== 'fixed')) continue;
+    if (row.key === 'maxPower' || row.key === 'fixedPowerLevel') continue;
+    // The table's own switches, one click away in the room: a different pick, not a change to the preset.
+    if (row.key === 'betting' || row.key === 'chatPlayersOnly') continue;
     if (row.when && !row.when(rules) && !row.when(baseline)) continue;
     if (row.inactive && row.inactive(rules) && row.inactive(baseline)) continue;
 
@@ -81,10 +83,13 @@ export function presetChangeCount(rules: RoomRules, baseline: RoomRules, mode: V
     const equal = Array.isArray(current) && Array.isArray(original)
       ? current.length === original.length && current.every((item) => original.includes(item))
       : current === original;
-    if (!equal) changes++;
+    if (!equal) changed.push(row);
   }
-  return changes;
+  return changed;
 }
+
+/** Count differing rule rows. */
+export const presetChangeCount = (rules: RoomRules, baseline: RoomRules, mode: VersusMode, online = false): number => changedRules(rules, baseline, mode, online).length;
 
 export const HANDPICKED_IDS = ['express', 'ghost', 'garden', 'supernova'] as const;
 export type HandpickedId = (typeof HANDPICKED_IDS)[number];
