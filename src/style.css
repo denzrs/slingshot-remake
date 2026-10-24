@@ -134,11 +134,11 @@ body {
   color: var(--bone-dim);
 }
 
-/* A quiet news band lets the game stats pass by without competing with the menu itself. */
+/* A quiet banner shows one game stat at a time without competing with the menu itself. */
 .stats-ticker {
   position: relative;
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: 16px;
   width: 100%;
@@ -175,39 +175,32 @@ body {
 }
 
 .stats-ticker__viewport {
-  display: flex;
+  display: grid;
   min-width: 0;
-  overflow: hidden;
   align-items: center;
 }
 
 .stats-ticker__loading {
   color: var(--bone-dim);
   font: 400 11px/1.5 var(--font-mono);
-  white-space: nowrap;
 }
 
-.stats-ticker__track {
-  display: flex;
-  width: max-content;
-  animation: stats-ticker-scroll var(--stats-ticker-duration, 90s) linear infinite;
-  will-change: transform;
-}
-
-.stats-ticker__group {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  width: max-content;
-  padding-right: 42px;
-}
-
+/* All facts share one cell, so the banner keeps the height of the longest and nothing jumps. */
 .stats-ticker__fact {
-  flex: 0 0 auto;
-  padding-inline: 20px;
+  grid-area: 1 / 1;
+  padding-block: 8px;
   color: var(--bone-dim);
   font: 400 11px/1.5 var(--font-mono);
-  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 700ms ease, transform 700ms ease;
+  pointer-events: none;
+}
+
+.stats-ticker__fact.is-active {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
 }
 
 .stats-ticker__number {
@@ -215,12 +208,23 @@ body {
   font-weight: 700;
 }
 
-.stats-ticker__divider {
-  flex: 0 0 auto;
-  width: 1px;
-  height: 18px;
-  background: rgb(111 227 200 / 0.46);
-  transform: skew(-18deg);
+.stats-ticker__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 16px;
+}
+
+.stats-ticker__dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgb(91 125 179 / 0.4);
+  transition: background-color 700ms ease;
+}
+
+.stats-ticker__dot.is-active {
+  background: var(--launch-accent, #ffad65);
 }
 
 .stats-ticker__a11y {
@@ -235,26 +239,19 @@ body {
   border: 0;
 }
 
-.stats-ticker:hover .stats-ticker__track,
-.stats-ticker:focus-within .stats-ticker__track {
-  animation-play-state: paused;
-}
-
-@keyframes stats-ticker-scroll {
-  to { transform: translate3d(-50%, 0, 0); }
-}
-
 @media (max-width: 520px) {
   .stats-ticker { min-height: 46px; gap: 10px; }
   .stats-ticker__label { padding-inline: 12px 10px; font-size: 8px; letter-spacing: 0.06em; }
-  .stats-ticker__fact { padding-inline: 14px; font-size: 10px; }
+  .stats-ticker__fact { font-size: 10px; }
+  .stats-ticker__dots { display: none; }
 }
 
+/* Stillness keeps the rotation but swaps facts at once instead of fading. */
 @media (prefers-reduced-motion: reduce) {
-  .stats-ticker__track { animation: none; will-change: auto; }
-  .stats-ticker__group:nth-child(2) { display: none; }
-  .stats-ticker__viewport { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+  .stats-ticker__fact, .stats-ticker__dot { transform: none; transition: none; }
 }
+
+.menu-motion-less .stats-ticker__fact, .menu-motion-less .stats-ticker__dot { transform: none; transition: none; }
 
 .keys {
   margin: 22px 0 0;

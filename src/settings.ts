@@ -59,7 +59,7 @@ export interface Settings {
   debris: Debris;
   /** The title screen and menus show a CPU match playing behind them; off leaves the plate empty. */
   menuBackground: boolean;
-  /** Show the scrolling statistics ticker in the title menu and multiplayer lobby. */
+  /** Show the rotating statistics banner in the title menu and multiplayer lobby. */
   statsTicker: boolean;
   /** Menus change pages without sliding, fading or flaring: moving through them is instant. */
   lessMenuMotion: boolean;

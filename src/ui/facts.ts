@@ -9,7 +9,7 @@ import { leaderboardAvailable } from './leaderboard';
 const KEEP_MS = 10 * 60_000;
 /** Where they are kept across page loads, so a reload does not go to the relay again. */
 const STORE_KEY = 'slingshot.facts';
-/** A short selection keeps one trip across the banner readable. */
+/** A short selection keeps one round of the banner brief. */
 const TICKER_FACTS = 10;
 
 let kept: { at: number; facts: StatsFact[] } | null = recall();
@@ -45,24 +45,21 @@ async function load(board: StatsBoard): Promise<StatsFact[]> {
   return facts;
 }
 
-function factGroup(lines: FactPart[][]): HTMLElement {
-  const group = h('span.stats-ticker__group', null);
-  lines.forEach((parts, index) => {
-    group.append(
-      h('span.stats-ticker__fact', null, ...parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text))),
-    );
-    if (index < lines.length - 1) group.append(h('span.stats-ticker__divider', { 'aria-hidden': 'true' }));
-  });
-  return group;
+/** How long one fact stays before the next one fades in. */
+const FACT_MS = 8_000;
+
+function factLine(parts: FactPart[]): HTMLElement {
+  return h('span.stats-ticker__fact', { 'aria-hidden': 'true' }, ...parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text)));
 }
 
-/** A continuous, readable news band of relay statistics for a menu header. */
+/** A quiet banner of relay statistics for a menu header: one fact at a time, fading into the next. */
 export function factTicker(enabled = true, board = new StatsBoard()): HTMLElement {
   const ticker = h('div.stats-ticker', { role: 'region', 'aria-label': t('stats.ticker.label'), 'aria-busy': 'true' });
   const label = h('span.stats-ticker__label', { 'aria-hidden': 'true' }, t('stats.ticker.label'));
   const viewport = h('span.stats-ticker__viewport', null, h('span.stats-ticker__loading', null, t('stats.loading')));
+  const dots = h('span.stats-ticker__dots', { 'aria-hidden': 'true' });
   const accessibleFacts = h('span.stats-ticker__a11y', null);
-  ticker.append(label, viewport, accessibleFacts);
+  ticker.append(label, viewport, dots, accessibleFacts);
 
   if (!enabled || !leaderboardAvailable()) {
     ticker.hidden = true;
@@ -78,15 +75,33 @@ export function factTicker(enabled = true, board = new StatsBoard()): HTMLElemen
       return;
     }
 
-    const summary = lines.map((parts) => parts.map((part) => part.text).join('')).join(' ');
-    const group = factGroup(lines);
-    const track = h('span.stats-ticker__track', { 'aria-hidden': 'true' }, group, group.cloneNode(true));
-    const characterCount = lines.reduce((total, parts) => total + parts.reduce((length, part) => length + part.text.length, 0), 0);
-    const duration = Math.round(Math.max(48, Math.min(120, characterCount * 0.16)));
-    track.style.setProperty('--stats-ticker-duration', `${duration}s`);
-    viewport.replaceChildren(track);
-    accessibleFacts.textContent = summary;
+    const items = lines.map(factLine);
+    const marks = lines.map(() => h('span.stats-ticker__dot', null));
+    let current = 0;
+    const show = (index: number): void => {
+      current = index;
+      items.forEach((item, i) => item.classList.toggle('is-active', i === index));
+      marks.forEach((mark, i) => mark.classList.toggle('is-active', i === index));
+    };
+    show(0);
+    viewport.replaceChildren(...items);
+    dots.replaceChildren(...marks);
+    accessibleFacts.textContent = lines.map((parts) => parts.map((part) => part.text).join('')).join(' ');
     ticker.removeAttribute('aria-busy');
+    if (lines.length < 2) return;
+
+    let held = false;
+    const hold = (value: boolean) => () => void (held = value);
+    ticker.addEventListener('pointerenter', hold(true));
+    ticker.addEventListener('pointerleave', hold(false));
+    ticker.addEventListener('focusin', hold(true));
+    ticker.addEventListener('focusout', hold(false));
+    const timer = setInterval(() => {
+      // The menu page this lives on is gone once it has left the document.
+      if (!ticker.isConnected) return clearInterval(timer);
+      if (held || document.hidden) return;
+      show((current + 1) % items.length);
+    }, FACT_MS);
   });
   return ticker;
 }

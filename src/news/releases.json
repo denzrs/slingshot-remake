@@ -79,10 +79,10 @@
         "id": "stats-news-ticker",
         "title": { "de": "Zahlen im Vorbeiflug", "en": "Stats on the fly" },
         "text": {
-          "de": "Kleine Fundstücke aus den Spielstatistiken rauschen jetzt als Laufband durchs Titelmenü und die Online-Lobby. Wenn du lieber Ruhe hast, schalte es unter Einstellungen → Darstellung aus.",
-          "en": "Small discoveries from the game stats now stream through the title screen and online lobby. Turn the ticker off under Settings → Display if you would rather have a quieter menu."
+          "de": "Kleine Fundstücke aus den Spielstatistiken blenden sich jetzt einzeln im Titelmenü und in der Online-Lobby ein. Wenn du lieber Ruhe hast, schalte die Leiste unter Einstellungen → Darstellung aus.",
+          "en": "Small discoveries from the game stats now fade in one at a time on the title screen and in the online lobby. Turn the banner off under Settings → Display if you would rather have a quieter menu."
         },
-        "where": { "de": "Einstellungen → Darstellung → Statistik-Laufband", "en": "Settings → Display → Stats ticker" }
+        "where": { "de": "Einstellungen → Darstellung → Statistik-Leiste", "en": "Settings → Display → Stats banner" }
       },
       {
         "id": "solar-system-v2",
