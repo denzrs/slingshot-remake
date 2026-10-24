@@ -52,7 +52,7 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 
 **Tests.** `npm test` builds and tests the Rust relay, so install the stable Rust toolchain (including Cargo) first; `npx vitest` runs only the TypeScript tests and expects the Rust test binary to have been built. The suites take roughly one minute on 8 cores. Vitest runs test files in parallel but the tests inside one file one after the other, so put a long-running test in a file of its own instead of adding it to a big one. Under Vitest every read of an imported binding goes through a getter, which doubled the cost of `Shot.step` until it read its `PHYSICS` constants once into locals; do the same in other hot loops. Comparing huge snapshots with `toEqual` is slow too, so `tests/netsync.test.ts` only falls back to it to explain a mismatch.
 
-**What's New.** A dialog over the title screen groups feature cards under each release tag, with a short summary above them. Add upcoming copy to the `draft` in [`src/news/releases.json`](src/news/releases.json); the main-branch release workflow moves it under the generated tag before building. [AGENTS.md](AGENTS.md) explains the JSON format and screenshots.
+**What's New.** A dialog over the title screen groups feature cards under each release tag. Add upcoming copy to the `draft` in [`src/news/releases.json`](src/news/releases.json); the main-branch release workflow moves it under the generated tag before building. [AGENTS.md](AGENTS.md) explains the JSON format and screenshots.
 
 **Releases.** A merge to `main` starts **Slingshot CI**. After checks pass, a dedicated GitHub App finalizes the news, creates a release commit, and atomically pushes that commit to `main` together with an annotated version tag. The tag starts **Slingshot Deploy & Release**, which checks and builds the tagged source, deploys the newest release and publishes its GitHub release assets. The generated commit is recognized without `[skip ci]`, so it does not create a release loop or suppress the tag pipeline. [Release setup](deploy/releases.md) explains the one-time App, Ruleset and environment configuration.
 
@@ -60,7 +60,7 @@ The next version is a minor bump (`vX.Y.0` → `vX.(Y+1).0`), or a major bump wh
 
 ## Credits & license
 
-🎯 **Special shoutout to [matthias-Q](https://github.com/matthias-Q)**, who gave me the idea for this remake.
+🎯 **Special shoutout to [matthias-Q](https://github.com/matthias-Q)**, co-contributor to this project and the original idea behind this remake.
 
 Slingshot is a from-scratch remake of the game of the same name, written in Python/Pygame by [Jonathan Musther and Bart Mak](https://libregamewiki.org/Slingshot) (2007, GPL-2.0-or-later). This project reuses none of its code or assets; it only follows the original's game idea and rules.
 

@@ -29,7 +29,7 @@ function fixture(t, { empty = false } = {}) {
   writeFileSync(join(root, 'package.json'), '{"version":"1.0.0"}\n');
   const copy = { de: 'Neue Funktion', en: 'New feature' };
   writeFileSync(join(root, 'src/news/releases.json'), JSON.stringify({
-    draft: { summary: empty ? { de: '', en: '' } : copy, items: empty ? [] : [{ id: 'new-feature', title: copy, text: copy }] },
+    draft: { items: empty ? [] : [{ id: 'new-feature', title: copy, text: copy }] },
     releases: [],
   }));
   git(root, 'add', '.');

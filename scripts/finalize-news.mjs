@@ -16,11 +16,11 @@ function object(value, path) {
   return value;
 }
 
-function localized(value, path, allowBlank = false) {
+function localized(value, path) {
   object(value, path);
   for (const language of ['de', 'en']) {
-    if (typeof value[language] !== 'string' || (!allowBlank && !value[language].trim())) {
-      problem(`${path}.${language} must be ${allowBlank ? 'a string' : 'non-empty text'}`);
+    if (typeof value[language] !== 'string' || !value[language].trim()) {
+      problem(`${path}.${language} must be non-empty text`);
     }
   }
 }
@@ -60,7 +60,6 @@ function validate(document) {
   object(document, 'document');
   object(document.draft, 'draft');
   if (!Array.isArray(document.draft.items)) problem('draft.items must be an array');
-  localized(document.draft.summary, 'draft.summary', document.draft.items.length === 0);
   if (!Array.isArray(document.releases)) problem('releases must be an array');
 
   const ids = new Set();
@@ -78,7 +77,6 @@ function validate(document) {
     tags.add(release.tag);
     if (previous && compareVersions(previous, version) <= 0) problem('releases must be ordered newest first');
     previous = version;
-    localized(release.summary, `releases[${index}].summary`);
     if (!Array.isArray(release.items) || release.items.length === 0) problem(`releases[${index}].items must contain at least one item`);
     for (let itemIndex = 0; itemIndex < release.items.length; itemIndex++) {
       validateItem(release.items[itemIndex], `releases[${index}].items[${itemIndex}]`, ids);
@@ -117,8 +115,8 @@ if (command === '--validate') {
   } else if (!document.draft.items.length) {
     console.log('The news draft is empty; nothing to finalize.');
   } else {
-    document.releases.unshift({ tag: argument, ...document.draft });
-    document.draft = { summary: { de: '', en: '' }, items: [] };
+    document.releases.unshift({ tag: argument, items: document.draft.items });
+    document.draft = { items: [] };
     validate(document);
     writeFileSync(sourcePath, `${JSON.stringify(document, null, 2)}\n`);
     console.log(`Finalized ${document.releases[0].items.length} What's New items as ${argument}.`);

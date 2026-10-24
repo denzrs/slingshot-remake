@@ -36,7 +36,7 @@ interface Live {
 }
 
 export type MenuItem =
-  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; className?: string; /** Small second line under the label. */ hint?: string; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; /** Keeps conditional actions out of both sight and keyboard focus. */ hidden?: () => boolean; disabled?: boolean | (() => boolean) })
+  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; className?: string; /** Small second line under the label. */ hint?: string; /** A status line below the hint, refreshed with the rest of the menu. */ status?: () => string; /** Turn the status badge into a separate reset action. */ statusAction?: () => void; statusActionLabel?: string; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; /** Keeps conditional actions out of both sight and keyboard focus. */ hidden?: () => boolean; disabled?: boolean | (() => boolean) })
   | (Placed &
       Live & {
         /** Cycles through its options; the arrows at its sides go back and forth. */
@@ -270,9 +270,22 @@ export class Menu {
 
   /** ←/→ on a button laid out in a row (the choices under a result, say) move to its neighbour. */
   private focusBeside(from: HTMLElement | null, dir: 1 | -1): void {
-    if (!from?.parentElement?.matches('.items--row')) return;
+    if (!from) return;
+    const cardShell = from.parentElement?.classList.contains('briefing__preset-shell') ? from.parentElement : null;
+    const row = cardShell?.parentElement ?? from.parentElement;
+    if (!row?.matches('.items--row')) return;
+    if (cardShell) {
+      const shells = Array.from(row.children).filter((child): child is HTMLElement => child instanceof HTMLElement && child.classList.contains('briefing__preset-shell'));
+      const targetShell = shells[shells.indexOf(cardShell) + dir];
+      const target = targetShell?.querySelector<HTMLElement>('.item--card');
+      if (target && !target.hidden) {
+        target.focus();
+        this.sound.blip();
+      }
+      return;
+    }
     const target = this.focusables[this.focusables.indexOf(from) + dir];
-    if (target && target.parentElement === from.parentElement && !target.hidden) {
+    if (target && target.parentElement === row && !target.hidden) {
       target.focus();
       this.sound.blip();
     }
@@ -362,6 +375,7 @@ export class Menu {
 
     for (const item of screen.items) {
       let row: HTMLElement;
+      let rowFocusables: HTMLElement[] | null = null;
       if (item.kind === 'action') {
         const b = document.createElement('button');
         b.type = 'button';
@@ -401,28 +415,64 @@ export class Menu {
         refresh();
         this.actionRefresh.push(refresh);
         if (item.tag) b.prepend(Object.assign(document.createElement('span'), { className: 'item__tag', textContent: item.tag }));
-        if (item.selected) {
+        const shell = item.statusAction ? Object.assign(document.createElement('div'), { className: 'briefing__preset-shell' }) : null;
+        if (shell) shell.dataset.section = item.section ?? '';
+        const statusButton = item.status && item.statusAction ? document.createElement('button') : null;
+        const statusCount = statusButton ? Object.assign(document.createElement('span'), { className: 'item__status-count' }) : null;
+        const statusAction = statusButton ? Object.assign(document.createElement('span'), { className: 'item__status-action', textContent: item.statusActionLabel ?? '' }) : null;
+        if (statusButton && shell && statusCount && statusAction) {
+          statusButton.type = 'button';
+          statusButton.className = 'item__status item__status-reset';
+          statusButton.hidden = true;
+          statusButton.append(statusCount, statusAction);
+          shell.append(b, statusButton);
+          statusButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            if (statusButton.hidden || !item.statusAction) return;
+            this.sound.select();
+            item.statusAction();
+            b.focus({ preventScroll: true });
+          });
+          row = shell;
+          rowFocusables = [b, statusButton];
+        } else {
+          row = b;
+        }
+        const status = item.status && !item.statusAction ? Object.assign(document.createElement('span'), { className: 'item__status' }) : null;
+        if (status) b.append(status);
+        if (item.selected || item.status || item.hidden) {
           const marker = document.createElement('span');
           marker.className = 'item__selection';
           marker.textContent = '✓';
           marker.setAttribute('aria-hidden', 'true');
-          if (item.icon) b.append(marker);
+          if (item.selected && item.icon) b.append(marker);
           this.controls.push({ el: b, refresh: () => {
             b.hidden = item.hidden?.() ?? false;
-            const selected = item.selected!();
-            b.classList.toggle('is-selected', selected);
-            b.setAttribute('aria-pressed', String(selected));
-            marker.hidden = !selected;
+            if (item.selected) {
+              const selected = item.selected();
+              b.classList.toggle('is-selected', selected);
+              b.setAttribute('aria-pressed', String(selected));
+              if (item.icon) marker.hidden = !selected;
+            }
+            const text = item.status?.() ?? '';
+            if (statusButton) {
+              statusCount!.textContent = text;
+              statusButton.hidden = !text;
+              statusButton.setAttribute('aria-label', text ? `${text}. ${item.statusActionLabel ?? ''}` : '');
+              shell?.classList.toggle('is-modified', !!text);
+              b.classList.toggle('is-modified', !!text);
+            } else if (status) {
+              status.textContent = text;
+              status.hidden = !text;
+              b.classList.toggle('is-modified', !!text);
+            }
           } });
-        } else if (item.hidden) {
-          this.controls.push({ el: b, refresh: () => { b.hidden = item.hidden!(); } });
         }
         b.addEventListener('click', () => {
           if (isDisabled()) return;
           this.sound.select();
           item.run();
         });
-        row = b;
       } else {
         const control = buildControl(item, env);
         this.controls.push(control);
@@ -430,7 +480,7 @@ export class Menu {
       }
       const home = item.section ? el.querySelector<HTMLElement>(`[data-section="${item.section}"]`) : null;
       (home ?? list).append(row);
-      this.focusables.push(row);
+      this.focusables.push(...(rowFocusables ?? [row]));
     }
 
     this.root.replaceChildren(el);

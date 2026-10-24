@@ -24,7 +24,6 @@ export interface NewsItem {
 /** One What's New section. The tag is assigned by the release workflow. */
 export interface NewsBundle {
   tag: string;
-  summary: Localized;
   items: readonly NewsItem[];
 }
 

@@ -4,7 +4,7 @@ The README covers setup and releases. This file covers the player-facing work th
 
 ## Announce new features in What's New
 
-Players get a "What's New" dialog once for every release and can reopen it from the title screen. Its source is [`src/news/releases.json`](src/news/releases.json): `draft` holds the next release's summary and items; `releases` holds finalized bundles, newest first. **When a player-facing feature lands, add its item to `draft.items` and update the draft summary in the same change.** The release Action assigns the generated Git tag and moves the draft into `releases` before building.
+Players get a "What's New" dialog once for every release and can reopen it from the title screen. Its source is [`src/news/releases.json`](src/news/releases.json): `draft` holds the next release's items; `releases` holds finalized bundles, newest first. **When a player-facing feature lands, add its item to `draft.items` in the same change.** The release Action assigns the generated Git tag and moves the draft into `releases` before building.
 
 Announce new modes, rules, power-ups, looks, settings, online features and other things players would want to try. Skip fixes, balancing, refactors, tests, docs and anything invisible. When in doubt, leave it out: the dialog works best when each bundle has only the changes that matter.
 
@@ -13,7 +13,7 @@ Announce new modes, rules, power-ups, looks, settings, online features and other
 ```json
 {
   "id": "refined-look",
-  "title": { "de": "Refined Look", "en": "Refined Look" },
+  "title": { "de": "Verfeinerter Look", "en": "Refined Look" },
   "text": { "de": "…", "en": "…" },
   "where": { "de": "Einstellungen → Darstellung → Grafik", "en": "Settings → Display → Graphics" },
   "image": { "src": "refined-look.webp", "alt": { "de": "…", "en": "…" } },
@@ -36,7 +36,7 @@ A picture beats a paragraph, and one that shows where the feature lives beats bo
 ```bash
 npm run dev   # in another terminal
 npm run shot -- --out src/news/images/refined-look.webp \
-  --settings '{"look":"refined"}' --click "Einstellungen" --mark "Refined Look"
+  --settings '{"look":"refined"}' --click "Einstellungen" --mark "Verfeinerter Look"
 ```
 
 `--size WxH` (default 1280x720), `--wait <ms>` and `--url` are available too; see [`scripts/shot.ts`](scripts/shot.ts). The shots use the German UI. Look at each result before committing it.
@@ -47,4 +47,8 @@ Open `http://localhost:5173/?news` to preview the newest bundles, or add `?news=
 
 ## Language
 
-UI labels live in `src/i18n.ts` (every key in both languages). Release summaries and What's New items live together in `src/news/releases.json`.
+UI labels live in `src/i18n.ts` (every key in both languages). What's New items live in `src/news/releases.json`.
+
+## Presets
+
+For a new or changed match preset idea, follow [`add-game-preset`](.agents/skills/add-game-preset/SKILL.md). It covers the three independent mode groups, both match setup flows, translations, card art and release notes.

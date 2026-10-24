@@ -1,10 +1,22 @@
 {
   "draft": {
-    "summary": {
-      "de": "Das Sonnensystem dreht sich weiter, Statistik-Fundstücke rauschen durchs Menü, Slingshot bekommt einen verfeinerten Look und Menü- und Spieltöne lassen sich getrennt einstellen.",
-      "en": "The Solar System keeps turning, stats fly through the menu, Slingshot gets a refined look, and menu and game sounds can be set separately."
-    },
     "items": [
+      {
+        "id": "preset-customization",
+        "title": { "de": "Preset nach Wunsch", "en": "Make it your preset" },
+        "text": {
+          "de": "Passe ein Preset an, ohne die Auswahl zu verlieren. Das gelbe Badge zählt deine Änderungen; mit einem Klick setzt du das Preset zurück.",
+          "en": "Adjust a preset and keep it selected. Its yellow badge counts your changes; click it to restore the original rules."
+        },
+        "where": { "de": "Match vorbereiten → Wie wollt ihr spielen?", "en": "Prepare match → How do you want to play?" },
+        "image": {
+          "src": "preset-customization.webp",
+          "alt": {
+            "de": "Das Standard-Preset mit einer Regeländerung und gelbem Zurücksetzen-Badge",
+            "en": "The Standard preset with one rule change and its yellow reset badge"
+          }
+        }
+      },
       {
         "id": "separate-menu-game-sounds",
         "title": { "de": "Ton nach Wunsch", "en": "Sound your way" },
@@ -13,6 +25,13 @@
           "en": "Turn menu sounds and game sounds on or off independently. You choose where Slingshot makes a sound."
         },
         "where": { "de": "Einstellungen → Ton & Bildschirm", "en": "Settings → Sound & screen" },
+        "image": {
+          "src": "separate-menu-game-sounds.webp",
+          "alt": {
+            "de": "Die hervorgehobenen Schalter für Menütöne und Spieltöne in den Toneinstellungen",
+            "en": "The highlighted toggles for menu and game sounds in sound settings"
+          }
+        },
         "open": "settings"
       },
       {
@@ -26,7 +45,7 @@
       },
       {
         "id": "solar-system-v2",
-        "title": { "de": "Sonnensystem in v2", "en": "Solar System in v2" },
+        "title": { "de": "Sonnensystem", "en": "Solar System" },
         "text": {
           "de": "Planeten und Schiffe kreisen um die Sonne, während sich das ganze Spielfeld im Lauf der Partie weiterdreht. Sonnenstürme verpassen Schüssen einen elektrischen Ruck; im Spielbericht erscheinen deine stärksten Flugbahnen als animierte Highlights.",
           "en": "Planets and ships orbit the sun as the whole field turns during play. Solar storms give shots an electric kick, and your standout paths appear as animated highlights in the match report."
@@ -42,7 +61,7 @@
       },
       {
         "id": "refined-look",
-        "title": { "de": "Refined Look", "en": "Refined Look" },
+        "title": { "de": "Verfeinerter Look", "en": "Refined Look" },
         "text": {
           "de": "Glühende Raumschiffe und Planeten, die sich bewegen: Slingshot in einer neuen Grafik. Der klassische Look bleibt, du schaltest jederzeit um.",
           "en": "Glowing ships and planets that move: Slingshot with new graphics. The classic look is still there, switch any time."
@@ -51,7 +70,7 @@
         "image": {
           "src": "refined-look.webp",
           "alt": {
-            "de": "Die Einstellungen mit der hervorgehobenen Auswahl „Refined Look“ unter Grafik",
+            "de": "Die Einstellungen mit der hervorgehobenen Auswahl „Verfeinerter Look“ unter Grafik",
             "en": "The settings with the Graphics choice \"Refined Look\" highlighted"
           }
         },
@@ -61,10 +80,26 @@
         "id": "release-notes-bundles",
         "title": { "de": "Was ist neu, auf einen Blick", "en": "What's new, at a glance" },
         "text": {
-          "de": "Jetzt stehen die Updates unter ihrem Release-Tag: erst die kurze Zusammenfassung, darunter die Neuerungen als kleine Kacheln. So siehst du schneller, was neu ist.",
-          "en": "Updates now sit under their release tag: a short summary first, then each feature in a compact tile. It is easier to scan what is new."
+          "de": "Jetzt findest du die Updates unter ihrem Release-Tag als kleine Kacheln. So siehst du auf einen Blick, was neu ist.",
+          "en": "Each release now groups its updates into compact cards under its tag, so you can scan what's new at a glance."
         },
         "where": { "de": "Titelmenü → Was ist neu", "en": "Title screen → What's new" }
+      },
+      {
+        "id": "news-image-expand",
+        "title": { "de": "Bilder vergrößern", "en": "Expand images" },
+        "text": {
+          "de": "Bei Kacheln mit eigenem Screenshot kannst du mit „Vergrößern“ das Bild groß ansehen. Mit Esc oder „Schließen“ bist du sofort zurück.",
+          "en": "On cards with a custom screenshot, choose Expand to view it at full size. Press Esc or Close to return."
+        },
+        "where": { "de": "Titelmenü → Was ist neu → Vergrößern", "en": "Title screen → What's new → Expand" },
+        "image": {
+          "src": "news-image-expand.webp",
+          "alt": {
+            "de": "Großansicht der Preset-Kachel mit dem Schließen-Button am oberen Rand",
+            "en": "An enlarged preset card with a Close button at the top"
+          }
+        }
       }
     ]
   },

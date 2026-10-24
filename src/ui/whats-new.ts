@@ -6,13 +6,60 @@ import { modeArt } from './mode-icons';
 import type { App } from './screens';
 import './whats-new.css';
 
-function media(item: NewsItem): HTMLElement {
+function artwork(item: NewsItem, enlarged = false): HTMLElement {
   const lang = getLang();
-  return h('div.news__media', null,
-    item.image
-      ? h('img.news__image', { src: item.image.src, alt: item.image.alt[lang], width: '1280', height: '720', loading: 'lazy' })
-      : h('div.news__art', { role: 'img', 'aria-label': t('news.artAlt') }, modeArt('news')),
-  );
+  if (item.image) {
+    return h(`img.${enlarged ? 'news__lightbox-image' : 'news__image'}`, {
+      src: item.image.src,
+      alt: item.image.alt[lang],
+      width: '1280',
+      height: '720',
+      ...(enlarged ? {} : { loading: 'lazy' }),
+    });
+  }
+  return h(`div.news__art${enlarged ? '.news__art--large' : ''}`, { role: 'img', 'aria-label': t('news.artAlt') }, modeArt('news'));
+}
+
+function media(item: NewsItem): HTMLElement {
+  if (!item.image) return h('div.news__media', null, artwork(item));
+
+  const lang = getLang();
+  const titleId = `news-lightbox-title-${item.id}`;
+  const close = h('button.news__lightbox-close', {
+    type: 'button',
+    'aria-label': t('news.close'),
+  }, h('span', { 'aria-hidden': 'true' }, '×'), t('news.close'));
+  const dialog = h('dialog.news__lightbox', { 'aria-labelledby': titleId },
+    h('div.news__lightbox-panel', null,
+      h('header.news__lightbox-head', null,
+        h('div.news__lightbox-heading', null,
+          h('p.news__lightbox-kicker', null, t('news.expand')),
+          h('h3.news__lightbox-title', { id: titleId }, item.title[lang]),
+        ),
+        close,
+      ),
+      h('div.news__lightbox-stage', null, artwork(item, true)),
+    ),
+  ) as HTMLDialogElement;
+  const expand = h('button.news__expand', {
+    type: 'button',
+    'aria-label': `${t('news.expand')}: ${item.title[lang]}`,
+  }, h('span.news__expand-icon', { 'aria-hidden': 'true' }, '⤢'), t('news.expand'));
+  const container = h('div.news__media', null, artwork(item), expand, dialog);
+
+  expand.addEventListener('click', () => dialog.showModal());
+  close.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    dialog.close();
+  });
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+
+  return container;
 }
 
 function card(item: NewsItem): HTMLElement {
@@ -29,18 +76,16 @@ function card(item: NewsItem): HTMLElement {
 }
 
 function release(bundle: NewsBundle): HTMLElement {
-  const lang = getLang();
   const tag = bundle.tag === 'next' ? t('news.nextTag') : bundle.tag;
   return h('section.news__release', null,
     h('header.news__release-head', null,
       h('h3.news__tag', null, tag),
-      h('p.news__summary', null, bundle.summary[lang]),
     ),
     h('div.news__items', null, ...bundle.items.map(card)),
   );
 }
 
-/** The What's New dialog: release tags and summaries group the smaller feature cards below. */
+/** The What's New dialog: release tags group the feature cards below. */
 export function newsScreen(app: App, bundles: readonly NewsBundle[], open: Record<NewsTarget, () => void>): Screen {
   const tryIt = bundles.flatMap((bundle) => bundle.items.flatMap((item): MenuItem[] => (item.open ? [{ kind: 'action', section: `try-${item.id}`, label: t('news.try'), run: open[item.open] }] : [])));
   const rows: MenuItem[] = [

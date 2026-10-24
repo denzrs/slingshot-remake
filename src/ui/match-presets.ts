@@ -1,30 +1,45 @@
 import type { VersusMode } from '../game';
 import { defaultRoomRules } from '../lobbyPrefs';
 import type { RoomRules } from '../net';
-import { rulesFor } from './rules';
+import { powerModeOf, rulesFor } from './rules';
 
-/** Regular presets follow the featured handpicked collection. */
-export const MATCH_PRESETS = ['standard', 'trickshot', 'mayhem'] as const;
-export const CLASSIC_PRESETS = ['standard', 'simultaneous', 'mayhem'] as const;
-export type MatchPreset = (typeof MATCH_PRESETS)[number] | (typeof CLASSIC_PRESETS)[number];
-
-/** The chaos strength the Mayhem preset starts at, in both modes: Wild. */
+/** The chaos strength the Mayhem preset starts at in all three modes: Wild. */
 export const MAYHEM_PRESET_LEVEL = 2;
 
-/** Event Horizon keeps Trickshot; Classic and the Solar System offer simultaneous fire instead. All end with Mayhem. */
+type PresetRuleFactory = (base: RoomRules) => RoomRules;
+/** Each game mode owns its regular preset group, even when two groups currently share entries. */
+const PRESET_GROUPS = {
+  classic: {
+    standard: (base) => base,
+    simultaneous: (base) => ({ ...base, simultaneousShots: true }),
+    mayhem: (base) => ({ ...base, mayhem: MAYHEM_PRESET_LEVEL, styleBonuses: true }),
+  },
+  solar: {
+    standard: (base) => base,
+    simultaneous: (base) => ({ ...base, simultaneousShots: true }),
+    mayhem: (base) => ({ ...base, mayhem: MAYHEM_PRESET_LEVEL, styleBonuses: true }),
+  },
+  horizon: {
+    standard: (base) => base,
+    trickshot: (base) => ({ ...base, maxPower: 60, bounce: true, styleBonuses: true }),
+    mayhem: (base) => ({ ...base, mayhem: MAYHEM_PRESET_LEVEL, styleBonuses: true }),
+  },
+} satisfies Record<VersusMode, Record<string, PresetRuleFactory>>;
+
+export type MatchPreset = { [Mode in VersusMode]: keyof typeof PRESET_GROUPS[Mode] }[VersusMode];
+
+/** The three modes have separate preset groups; Solar System currently has the same entries as Classic. */
 export function presetsForMode(mode: VersusMode): readonly MatchPreset[] {
-  return mode === 'horizon' ? MATCH_PRESETS : CLASSIC_PRESETS;
+  return Object.keys(PRESET_GROUPS[mode]) as MatchPreset[];
 }
 
-export function presetRules(preset: MatchPreset): RoomRules {
-  const base = defaultRoomRules();
-  switch (preset) {
-    case 'standard': return base;
-    case 'trickshot': return { ...base, maxPower: 60, bounce: true, styleBonuses: true };
-    case 'simultaneous': return { ...base, simultaneousShots: true };
-    // The plain rules with twists laid over them every round; trick shots pay, as in Event Horizon.
-    case 'mayhem': return { ...base, mayhem: MAYHEM_PRESET_LEVEL, styleBonuses: true };
-  }
+export function presetRules(preset: MatchPreset, mode?: VersusMode): RoomRules {
+  const findFactory = (group: Record<string, PresetRuleFactory>): PresetRuleFactory | undefined => group[preset];
+  const factory = mode
+    ? findFactory(PRESET_GROUPS[mode])
+    : Object.values(PRESET_GROUPS).map(findFactory).find((candidate) => candidate !== undefined);
+  if (!factory) throw new Error(`Preset "${preset}" is not defined${mode ? ` for ${mode}` : ''}`);
+  return factory(defaultRoomRules());
 }
 
 /** Whether a set of rules plays as the expected ones in a mode: rules the mode doesn't have, and rows that are out of play in both, don't count. */
@@ -42,7 +57,33 @@ function sameRules(rules: RoomRules, expected: RoomRules, mode: VersusMode, anyM
 
 /** Match the actual rules, including manual edits, rather than remembering a potentially stale label. Mayhem stays itself at any strength. */
 export function matchingPreset(rules: RoomRules, mode: VersusMode): MatchPreset | undefined {
-  return presetsForMode(mode).find((preset) => sameRules(rules, presetRules(preset), mode, true));
+  return presetsForMode(mode).find((preset) => sameRules(rules, presetRules(preset, mode), mode, true));
+}
+
+/** Count differing rule rows, ignoring conditional values that are inactive on both sides. */
+export function presetChangeCount(rules: RoomRules, baseline: RoomRules, mode: VersusMode, online = false): number {
+  let changes = 0;
+  for (const row of rulesFor(mode, online)) {
+    if (row.key === 'fixedPower') {
+      if (powerModeOf(rules) !== powerModeOf(baseline)) changes++;
+      continue;
+    }
+    if (row.key === 'maxPower' && (powerModeOf(rules) !== 'cap' || powerModeOf(baseline) !== 'cap')) continue;
+    if (row.key === 'fixedPowerLevel' && (powerModeOf(rules) !== 'fixed' || powerModeOf(baseline) !== 'fixed')) continue;
+    if (row.when && !row.when(rules) && !row.when(baseline)) continue;
+    if (row.inactive && row.inactive(rules) && row.inactive(baseline)) continue;
+
+    const value = (source: RoomRules): unknown => row.key === 'powerUpKinds'
+      ? source.powerUps ? source.powerUpKinds : []
+      : source[row.key];
+    const current = value(rules);
+    const original = value(baseline);
+    const equal = Array.isArray(current) && Array.isArray(original)
+      ? current.length === original.length && current.every((item) => original.includes(item))
+      : current === original;
+    if (!equal) changes++;
+  }
+  return changes;
 }
 
 export const HANDPICKED_IDS = ['express', 'ghost', 'garden', 'supernova'] as const;

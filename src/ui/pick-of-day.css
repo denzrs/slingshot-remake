@@ -1,4 +1,4 @@
-/* The daily recommendation glows green; other selected presets use the warm menu accent. */
+/* The daily recommendation glows green, and selected presets can show their edits in gold. */
 .briefing__cards .item.item--pick.item--card {
   border-color: rgb(91 125 179 / .45);
   background: rgb(9 21 39 / .8);
@@ -31,3 +31,75 @@
 .briefing__cards .item.item--pick[aria-pressed='true'] .item__title,
 .briefing__cards .item.item--pick[aria-pressed='true'] .item__tag { color: #a3eddb; }
 .briefing__cards .item--pick:focus-visible { outline: 2px solid var(--bone); outline-offset: 3px; }
+
+.briefing__preset-shell {
+  position: relative;
+  display: grid;
+  min-width: 0;
+}
+.briefing__preset-shell > .item--card { width: 100%; min-width: 0; }
+.briefing__preset-shell:hover > .item--card {
+  border-color: var(--bone-dim);
+  transform: translateY(-2px);
+}
+.briefing__cards .item__status-reset {
+  position: absolute;
+  z-index: 3;
+  top: 9px;
+  right: 9px;
+  display: grid;
+  place-items: center;
+  max-width: calc(100% - 18px);
+  overflow: hidden;
+  padding: 4px 6px;
+  border: 1px solid rgb(243 211 106 / .62);
+  border-radius: 2px;
+  background: rgb(9 21 39 / .94);
+  color: #ffe58c;
+  font: 9px/1.25 var(--font-mono);
+  letter-spacing: .01em;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.briefing__cards .item__status-reset[hidden] { display: none; }
+.briefing__cards .item__status-reset > span { grid-area: 1 / 1; white-space: nowrap; transition: opacity 180ms ease, transform 180ms ease; }
+.briefing__cards .item__status-action { opacity: 0; transform: translateY(4px); }
+.briefing__preset-shell:hover .item__status-reset { transform: translateY(-2px); }
+.briefing__preset-shell:is(:hover, :focus-within) .item__status-reset,
+.briefing__cards .item__status-reset:is(:hover, :focus-visible, :active) {
+  border-color: #ffe58c;
+  background: #172236;
+  box-shadow: 0 0 14px rgb(243 211 106 / .23);
+}
+.briefing__cards .item__status-reset:focus-visible { outline: 2px solid var(--bone); outline-offset: 3px; }
+.briefing__preset-shell:is(:hover, :focus-within) .item__status-count,
+.briefing__cards .item__status-reset:is(:hover, :focus-visible, :active) .item__status-count { opacity: 0; transform: translateY(-4px); }
+.briefing__preset-shell:is(:hover, :focus-within) .item__status-action,
+.briefing__cards .item__status-reset:is(:hover, :focus-visible, :active) .item__status-action { opacity: 1; transform: none; }
+.briefing__cards .item--card.is-modified[aria-pressed='true'],
+.briefing__cards .item--pick.item--card.is-modified[aria-pressed='true'] {
+  border-color: #f3d36a;
+  background: radial-gradient(ellipse at 50% 0, rgb(243 211 106 / .16), transparent 76%), #272831;
+  box-shadow: inset 0 3px #f3d36a, 0 0 15px rgb(243 211 106 / .13);
+  animation: preset-modified-glow 2.8s ease-in-out infinite;
+}
+.briefing__cards .item--card.is-modified[aria-pressed='true'] .item__title,
+.briefing__cards .item--card.is-modified[aria-pressed='true'] .item__tag {
+  color: #ffe58c;
+}
+.briefing__cards .item--card.is-modified[aria-pressed='true'] .item__icon {
+  filter: drop-shadow(0 0 11px rgb(243 211 106 / .38));
+}
+
+@keyframes preset-modified-glow {
+  0%, 100% { box-shadow: inset 0 3px #f3d36a, 0 0 10px rgb(243 211 106 / .1); }
+  50% { box-shadow: inset 0 3px #ffe58c, 0 0 19px rgb(243 211 106 / .24); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .briefing__cards .item--card.is-modified[aria-pressed='true'] { animation: none; }
+  .briefing__cards .item__status-reset,
+  .briefing__cards .item__status-reset > span { transition: none; }
+  .briefing__preset-shell:hover > .item--card,
+  .briefing__preset-shell:hover .item__status-reset { transform: none; }
+}

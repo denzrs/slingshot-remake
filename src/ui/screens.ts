@@ -20,7 +20,7 @@ import { h, type Menu, type MenuItem, type Screen } from './menu';
 import { modeArt, presetArt } from './mode-icons';
 import type { LobbyEntry } from './lobby';
 import { menuGroup, menuPage } from './menu-page';
-import { presetsForMode, presetRules, matchingPreset, matchingHandpicked, pickOfTheDay, samePick } from './match-presets';
+import { presetsForMode, presetRules, matchingPreset, matchingHandpicked, pickOfTheDay, presetChangeCount, samePick } from './match-presets';
 import { pickArt, pickHint, pickName } from './pick-of-day';
 import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
 import { powerUpSummary } from './powerup-summary';
@@ -192,12 +192,29 @@ let launcherSection: LauncherSection = 'local';
 const modeName = (mode: VersusMode): string => t(`mode.${mode}` as Key);
 const MAIN_MODES = ['classic', 'horizon', 'solar'] as const satisfies readonly VersusMode[];
 type ModeTransition = 'next' | 'previous';
+type LocalPresetSelectionState = { current?: { id: string; rules: ReturnType<typeof rulesOf> } };
+const localPresetSelections = new WeakMap<App, Map<VersusMode, LocalPresetSelectionState>>();
+
+function localPresetSelectionState(app: App, mode: VersusMode): LocalPresetSelectionState {
+  let byMode = localPresetSelections.get(app);
+  if (!byMode) {
+    byMode = new Map();
+    localPresetSelections.set(app, byMode);
+  }
+  let state = byMode.get(mode);
+  if (!state) {
+    state = {};
+    byMode.set(mode, state);
+  }
+  return state;
+}
 
 /** Default once on entry; rebuilding after rule or crew edits keeps the player's subsequent choices. */
 function prepareModeScreen(app: App, mode: VersusMode, transition?: ModeTransition): () => Screen {
   const pick = pickOfTheDay(mode, app.today());
   Object.assign(app.settings, pick.rules, { powerUpKinds: [...pick.rules.powerUpKinds] });
   app.settingsChanged();
+  localPresetSelectionState(app, mode).current = { id: 'handpicked', rules: rulesOf(app.settings) };
   return () => setupScreen(app, mode, transition);
 }
 
@@ -685,6 +702,24 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
   const s = app.settings;
   const presets = presetsForMode(mode);
   const pick = pickOfTheDay(mode, app.today());
+  const selectionState = localPresetSelectionState(app, mode);
+  if (!selectionState.current) {
+    const initialRules = rulesOf(s);
+    const initialPick = matchingHandpicked(initialRules, mode);
+    const initialPreset = samePick(initialPick, pick) ? 'handpicked' : matchingPreset(initialRules, mode);
+    if (initialPreset) selectionState.current = { id: initialPreset, rules: initialRules };
+  }
+  const modifiedStatus = (id: string): string => {
+    if (selectionState.current?.id !== id) return '';
+    const changes = presetChangeCount(rulesOf(s), selectionState.current.rules, mode);
+    return changes === 1 ? t('preset.modified.one') : changes > 1 ? t('preset.modified.many', { n: changes }) : '';
+  };
+  const resetPresetChanges = (id: string): void => {
+    const selectedPreset = selectionState.current;
+    if (selectedPreset?.id !== id) return;
+    Object.assign(s, selectedPreset.rules, { powerUpKinds: [...selectedPreset.rules.powerUpKinds] });
+    app.settingsChanged(); app.menu.refresh();
+  };
   const summary = h('dl.briefing__facts', { 'aria-live': 'polite' });
   const crew = h('div.briefing__crew', { 'aria-hidden': 'true' });
   const crewLabel = h('p.briefing__lineup', null);
@@ -692,7 +727,7 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
   const powerups = powerUpSummary(() => s);
   const rules = ruleItems(mode, {
     get: () => rulesOf(s),
-    patch: (values) => { Object.assign(s, values); app.settingsChanged(); },
+    patch: (values) => { Object.assign(s, values); app.settingsChanged(); app.menu.refresh(); },
   });
   const quick = rules.filter(({ key }) => quickKeys.some((quickKey) => quickKey === key));
   // The strength of Mayhem shows up under the sliders while Mayhem is on.
@@ -748,19 +783,35 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
         kind: 'action', section: 'presets', label: pickName(pick), className: 'item--pick',
         tag: t('preset.pick.today'), hint: pickHint(pick),
         icon: () => pickArt(pick),
-        selected: () => samePick(matchingHandpicked(rulesOf(s), mode), pick),
-        run: () => { Object.assign(s, pick.rules); app.settingsChanged(); app.menu.refresh(); },
+        selected: () => selectionState.current?.id === 'handpicked',
+        status: () => modifiedStatus('handpicked'),
+        statusActionLabel: t('preset.resetAction'),
+        statusAction: () => resetPresetChanges('handpicked'),
+        run: () => {
+          Object.assign(s, pick.rules);
+          selectionState.current = { id: 'handpicked', rules: rulesOf(s) };
+          app.settingsChanged(); app.menu.refresh();
+        },
       },
       ...presets.map((preset): MenuItem => ({
         kind: 'action', section: 'presets', label: t(`preset.${preset}` as Key), hint: t(`preset.${preset}.hint` as Key),
         icon: () => presetArt(preset, mode),
-        selected: () => !samePick(matchingHandpicked(rulesOf(s), mode), pick) && matchingPreset(rulesOf(s), mode) === preset,
-        run: () => { Object.assign(s, presetRules(preset)); app.settingsChanged(); app.menu.refresh(); },
+        selected: () => selectionState.current?.id === preset,
+        status: () => modifiedStatus(preset),
+        statusActionLabel: t('preset.resetAction'),
+        statusAction: () => resetPresetChanges(preset),
+        run: () => {
+          Object.assign(s, presetRules(preset, mode));
+          selectionState.current = { id: preset, rules: rulesOf(s) };
+          app.settingsChanged(); app.menu.refresh();
+        },
       })),
       ...quick.map(({ item }): MenuItem => ({ ...item, section: 'quick' })),
       { ...mayhem.item, section: 'quick-mayhem' },
       { kind: 'action', section: 'players', label: t('briefing.editCrew'), run: () => openPlayers(app) },
-      { kind: 'action', section: 'edit', label: t('briefing.editRules'), run: () => app.menu.push(() => rulesScreen(app, mode)) },
+      { kind: 'action', section: 'edit', label: t('briefing.editRules'), run: () => app.menu.push(() => rulesScreen(app, mode, (rules) => {
+        selectionState.current = { id: rules.mayhem ? 'mayhem' : 'standard', rules };
+      })) },
       { kind: 'action', section: 'actions', label: t('common.back'), run: () => app.menu.back() },
       { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(mode) },
     ],
@@ -771,12 +822,13 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
 }
 
 /** All rules, grouped by subject, without overwhelming the match briefing. */
-function rulesScreen(app: App, mode: VersusMode): Screen {
+function rulesScreen(app: App, mode: VersusMode, onReset?: (rules: ReturnType<typeof rulesOf>) => void): Screen {
   const source: RuleSource = {
     get: () => rulesOf(app.settings),
     patch: (values) => {
       Object.assign(app.settings, values);
       app.settingsChanged();
+      app.menu.refresh();
     },
   };
   const rules = ruleItems(mode, source);
@@ -807,7 +859,8 @@ function rulesScreen(app: App, mode: VersusMode): Screen {
       { kind: 'action', section: 'actions', label: t('setup.reset'), run: () => {
         // A Mayhem game goes back to the Mayhem preset at its strength, any other one to the standard rules.
         const { mayhem } = app.settings;
-        Object.assign(app.settings, mayhem ? { ...presetRules('mayhem'), mayhem } : rulesOf(DEFAULT_SETTINGS));
+        Object.assign(app.settings, mayhem ? { ...presetRules('mayhem', mode), mayhem } : rulesOf(DEFAULT_SETTINGS));
+        onReset?.(rulesOf(app.settings));
         app.settingsChanged(); app.menu.refresh();
       } },
       { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },

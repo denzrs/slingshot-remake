@@ -17,7 +17,7 @@ import { factTicker } from './facts';
 import { menuPage } from './menu-page';
 import { modeArt, presetArt } from './mode-icons';
 import { pickArt, pickHint, pickName } from './pick-of-day';
-import { presetsForMode, matchingPreset, presetRules, matchingHandpicked, pickOfTheDay, samePick } from './match-presets';
+import { presetsForMode, matchingPreset, presetChangeCount, presetRules, matchingHandpicked, pickOfTheDay, samePick } from './match-presets';
 import { powerUpSummary } from './powerup-summary';
 import { teamRoster, type RosterCard } from './team-roster';
 
@@ -611,6 +611,13 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   let createRulesForm: RulesForm | null = null;
   let createQuickControls: Control[] = [];
   let paintCreatePresetState = () => {};
+  let selectedCreatePreset: { id: string; mode: NetworkGameMode; rules: RoomRules } | undefined;
+  const copyRules = (rules: RoomRules): RoomRules => ({ ...rules, powerUpKinds: [...rules.powerUpKinds] });
+  const rememberMatchingCreatePreset = (pick: ReturnType<typeof pickOfTheDay>) => {
+    const picked = samePick(matchingHandpicked(prefs.rules, prefs.gameMode), pick);
+    const preset = picked ? 'handpicked' : matchingPreset(prefs.rules, prefs.gameMode);
+    selectedCreatePreset = preset ? { id: preset, mode: prefs.gameMode, rules: copyRules(prefs.rules) } : undefined;
+  };
   /** Everybody but the host sees the game and its rules as the host set them, locked. */
   const readOnly = (): boolean => !!session.room && !session.you.host;
   /** What the host changes goes to the relay a moment later, as one message however many keys were pressed. */
@@ -627,6 +634,17 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     clearTimeout(rulesTimer);
     rulesTimer = setTimeout(pushRules, 250);
   };
+  const resetCreatePresetChanges = () => {
+    if (readOnly()) return;
+    const selection = selectedCreatePreset;
+    if (!selection || selection.mode !== prefs.gameMode) return;
+    prefs.rules = copyRules(selection.rules);
+    commitRules();
+    createRulesForm?.refresh();
+    createQuickControls.forEach((control) => control.refresh());
+    paintCreatePresetState();
+    createPowerups.update();
+  };
   /** Which game the rules are for. Presets within one game only change values, so the cards and sliders stay where they are. */
   const gameKey = () => prefs.gameMode;
   const rebuildIfGameChanged = (before: string) => {
@@ -637,6 +655,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const buildCreateRules = () => {
     const presets = presetsForMode(prefs.gameMode);
     const pick = pickOfTheDay(prefs.gameMode, app.today());
+    if (readOnly() || !selectedCreatePreset || selectedCreatePreset.mode !== prefs.gameMode) rememberMatchingCreatePreset(pick);
     createRulesForm = rulesForm(prefs.gameMode, {
       get: () => prefs.rules,
       patch: (v) => (prefs.rules = { ...prefs.rules, ...v }),
@@ -646,18 +665,32 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       createPowerups.update();
     });
     createRules.replaceChildren(createRulesForm.el);
-    const choices: { id: string; card: HTMLButtonElement }[] = [];
+    const choices: { id: string; card: HTMLButtonElement; shell: HTMLDivElement; status: HTMLButtonElement; count: HTMLSpanElement }[] = [];
     const addPreset = (id: string, label: string, hint: string, art: SVGElement, apply: () => void, featured = false) => {
+      const shell = h('div.briefing__preset-shell', null) as HTMLDivElement;
+      const status = h('button.item__status.item__status-reset', { type: 'button', hidden: '' },
+        h('span.item__status-count', null),
+        h('span.item__status-action', null, t('preset.resetAction')),
+      ) as HTMLButtonElement;
+      const count = status.querySelector<HTMLSpanElement>('.item__status-count')!;
       const card = h('button.item.item--card.lobby__preset', { type: 'button', 'aria-pressed': 'false' },
         h('span.item__icon', { 'aria-hidden': 'true' }, art),
         h('span.item__title', null, label),
         ...(hint ? [h('span.item__hint', null, hint)] : []),
       ) as HTMLButtonElement;
+      shell.append(card, status);
       if (featured) {
         card.classList.add('item--pick');
         card.prepend(h('span.item__tag', null, t('preset.pick.today')));
       }
       card.classList.toggle('is-readonly', readOnly());
+      status.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (status.hidden || readOnly()) return;
+        resetCreatePresetChanges();
+        sound.select();
+        card.focus({ preventScroll: true });
+      });
       card.addEventListener('click', () => {
         if (readOnly()) return;
         apply();
@@ -669,24 +702,35 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
         createPresetCards.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus({ preventScroll: true });
         sound.select();
       });
-      choices.push({ id, card });
+      choices.push({ id, card, shell, status, count });
     };
     addPreset('handpicked', pickName(pick), pickHint(pick), pickArt(pick), () => {
       const before = gameKey();
       prefs.gameMode = pick.base;
       prefs.rules = { ...pick.rules, powerUpKinds: [...pick.rules.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+      selectedCreatePreset = { id: 'handpicked', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
       rebuildIfGameChanged(before);
     }, true);
     for (const preset of presets) {
       addPreset(preset, t(`preset.${preset}`), t(`preset.${preset}.hint`), presetArt(preset, prefs.gameMode), () => {
-        prefs.rules = { ...presetRules(preset), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+        prefs.rules = { ...presetRules(preset, prefs.gameMode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+        selectedCreatePreset = { id: preset, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
       });
     }
-    createPresetCards.replaceChildren(...choices.map(({ card }) => card));
+    createPresetCards.replaceChildren(...choices.map(({ shell }) => shell));
     paintCreatePresetState = () => {
-      const selectedId = samePick(matchingHandpicked(prefs.rules, prefs.gameMode), pick) ? 'handpicked' : matchingPreset(prefs.rules, prefs.gameMode);
-      const selected = selectedId && choices.some(({ id }) => id === selectedId) ? selectedId : undefined;
-      choices.forEach(({ id, card }) => card.setAttribute('aria-pressed', String(id === selected)));
+      const selection = selectedCreatePreset?.mode === prefs.gameMode ? selectedCreatePreset : undefined;
+      const changes = selection ? presetChangeCount(prefs.rules, selection.rules, prefs.gameMode, true) : 0;
+      choices.forEach(({ id, card, status, count }) => {
+        const selected = id === selection?.id;
+        const cardChanges = selected ? changes : 0;
+        const text = cardChanges === 1 ? t('preset.modified.one') : cardChanges > 1 ? t('preset.modified.many', { n: cardChanges }) : '';
+        count.textContent = text;
+        status.hidden = cardChanges === 0 || readOnly();
+        status.setAttribute('aria-label', text ? `${text}. ${t('preset.resetAction')}` : '');
+        card.classList.toggle('is-modified', cardChanges > 0);
+        card.setAttribute('aria-pressed', String(selected));
+      });
     };
     paintCreatePresetState();
       };
@@ -696,7 +740,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     if (readOnly()) return;
     // A Mayhem game goes back to the Mayhem preset at its strength, any other one to the standard rules.
     const { mayhem } = prefs.rules;
-    prefs.rules = mayhem ? { ...presetRules('mayhem'), mayhem } : defaultRoomRules();
+    prefs.rules = mayhem ? { ...presetRules('mayhem', prefs.gameMode), mayhem } : defaultRoomRules();
+    selectedCreatePreset = { id: mayhem ? 'mayhem' : 'standard', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
     commitRules();
     createRulesForm?.refresh();
     createQuickControls.forEach((control) => control.refresh());
@@ -735,6 +780,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     const pick = pickOfTheDay(mode, app.today());
     prefs.gameMode = pick.base;
     prefs.rules = { ...pick.rules, powerUpKinds: [...pick.rules.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+    selectedCreatePreset = { id: 'handpicked', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
     commitRules();
     buildCreateRules();
     buildCreateQuick();
@@ -1016,6 +1062,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       prefs.gameMode = room.gameMode;
       prefs.rules = { ...prefs.rules, ...room.rules, powerUpKinds: [...room.rules.powerUpKinds] };
       if (sameGame) {
+        rememberMatchingCreatePreset(pickOfTheDay(prefs.gameMode, app.today()));
         createRulesForm?.refresh();
         createQuickControls.forEach((control) => control.refresh());
         paintCreatePresetState();
@@ -1217,6 +1264,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       prefs.gameMode = ownGame.gameMode;
       prefs.rules = ownGame.rules;
       ownGame = null;
+      selectedCreatePreset = undefined;
       buildCreateRules();
       buildCreateQuick();
     }

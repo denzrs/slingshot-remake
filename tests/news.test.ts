@@ -8,7 +8,6 @@ import { SETTINGS_KEY } from '../src/settings';
 
 const bundle = (tag: string, ids: string[]): NewsBundle => ({
   tag,
-  summary: { de: `Zusammenfassung ${tag}`, en: `Summary ${tag}` },
   items: ids.map((id) => ({ id, title: { de: id, en: id }, text: { de: id, en: id } })),
 });
 const bundles = [bundle('v1.4.0', ['d', 'c']), bundle('v1.3.0', ['b']), bundle('v1.2.0', ['a'])];
@@ -90,9 +89,8 @@ describe('the announcements themselves', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('have summaries and item copy in every language', () => {
+  it('have item copy in every language', () => {
     for (const bundle of NEWS) {
-      for (const lang of LANGS) expect(bundle.summary[lang].trim(), `${bundle.tag} summary ${lang}`).not.toBe('');
       for (const entry of bundle.items) {
         for (const lang of LANGS) {
           expect(entry.title[lang].trim(), `${entry.id} title ${lang}`).not.toBe('');
