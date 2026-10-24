@@ -2,7 +2,7 @@
 //! a small shared concurrency limit (one slot per client at most) and a per-client budget, so a flood of password checks
 //! can never stall the connections that are only playing.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,6 +10,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use rand::Rng;
 
+use crate::admission::Who;
 use crate::command::{CreateRoom, JoinRoom};
 use crate::room::RoomManager;
 
@@ -23,29 +24,46 @@ const BUSY: &str = "Server busy – try again shortly";
 pub const PASSWORDS_EXHAUSTED: &str = "Too many wrong passwords – try again in a few minutes";
 const ROOM_BUSY: &str = "Too many password attempts on this room – try again shortly";
 
-/// The shared limit on password derivations running at once, of which one client holds at most one,
-/// so a single client cannot keep everybody else's passwords waiting. Cloning copies the handle.
+/// Shared slots one client may hold at once, over all its browsers.
+const SLOTS_PER_CLIENT: usize = 2;
+
+/// The shared limit on password derivations running at once. A browser holds at most one and a
+/// client at most `SLOTS_PER_CLIENT`, so neither one person nor one address can keep everybody
+/// else's passwords waiting. Cloning copies the handle.
 #[derive(Clone)]
 pub struct ScryptSlots {
     total: Arc<tokio::sync::Semaphore>,
-    running: Arc<Mutex<HashSet<IpAddr>>>,
+    running: Arc<Mutex<Running>>,
 }
 
-/// A running derivation's hold on a shared slot and on its client's one.
+#[derive(Default)]
+struct Running {
+    browsers: HashSet<Who>,
+    clients: HashMap<IpAddr, usize>,
+}
+
+/// A running derivation's hold on a shared slot and on its browser's one.
 struct Slot {
     _permit: tokio::sync::OwnedSemaphorePermit,
-    _client: ClientSlot,
+    _browser: BrowserSlot,
 }
 
-/// The client's one derivation; handed back when dropped.
-struct ClientSlot {
-    running: Arc<Mutex<HashSet<IpAddr>>>,
-    client: IpAddr,
+/// The browser's one derivation; handed back when dropped.
+struct BrowserSlot {
+    running: Arc<Mutex<Running>>,
+    who: Who,
 }
 
-impl Drop for ClientSlot {
+impl Drop for BrowserSlot {
     fn drop(&mut self) {
-        self.running.lock().remove(&self.client);
+        let mut running = self.running.lock();
+        running.browsers.remove(&self.who);
+        if let Some(count) = running.clients.get_mut(&self.who.client) {
+            *count -= 1;
+            if *count == 0 {
+                running.clients.remove(&self.who.client);
+            }
+        }
     }
 }
 
@@ -53,20 +71,25 @@ impl ScryptSlots {
     pub fn new(slots: usize) -> Self {
         Self {
             total: Arc::new(tokio::sync::Semaphore::new(slots)),
-            running: Arc::new(Mutex::new(HashSet::new())),
+            running: Arc::new(Mutex::new(Running::default())),
         }
     }
 
-    /// A slot, or None when the client already runs a derivation or none frees up within the queue
-    /// timeout.
-    async fn acquire(&self, client: IpAddr) -> Option<Slot> {
-        if !self.running.lock().insert(client) {
-            return None;
+    /// A slot, or None when the browser already runs a derivation, its client runs as many as it
+    /// may, or none frees up within the queue timeout.
+    async fn acquire(&self, who: Who) -> Option<Slot> {
+        {
+            let mut running = self.running.lock();
+            let client = running.clients.get(&who.client).copied().unwrap_or(0);
+            if client >= SLOTS_PER_CLIENT || !running.browsers.insert(who) {
+                return None;
+            }
+            *running.clients.entry(who.client).or_insert(0) += 1;
         }
-        // Held from here, so every way out below hands the client's slot back.
-        let client = ClientSlot {
+        // Held from here, so every way out below hands the browser's slot back.
+        let browser = BrowserSlot {
             running: self.running.clone(),
-            client,
+            who,
         };
         let permit = tokio::time::timeout(SCRYPT_QUEUE_TIMEOUT, self.total.clone().acquire_owned())
             .await
@@ -74,7 +97,7 @@ impl ScryptSlots {
             .ok()?;
         Some(Slot {
             _permit: permit,
-            _client: client,
+            _browser: browser,
         })
     }
 
@@ -156,17 +179,17 @@ async fn derive<T: Send + 'static>(
     conn: u64,
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, Handled> {
-    let client = {
+    let who = {
         let mut manager = manager.lock();
-        match manager.peer_ip(conn) {
-            Some(client) if manager.scrypt_budget_available(conn) => client,
+        match manager.who(conn) {
+            Some(who) if manager.scrypt_budget_available(conn) => who,
             _ => {
                 manager.error(conn, BUSY);
                 return Err(Handled);
             }
         }
     };
-    let Some(permit) = slots.acquire(client).await else {
+    let Some(permit) = slots.acquire(who).await else {
         manager.lock().error(conn, BUSY);
         return Err(Handled);
     };
@@ -225,32 +248,52 @@ fn timing_safe_eq(left: &[u8], right: &[u8]) -> bool {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn one_client_holds_one_slot_however_many_are_free() {
-        let slots = ScryptSlots::new(MAX_CONCURRENT_SCRYPTS);
-        let a: IpAddr = "198.51.100.9".parse().unwrap();
-        let b: IpAddr = "203.0.113.4".parse().unwrap();
-        let first = slots.acquire(a).await.expect("a free slot");
-        assert!(
-            slots.acquire(a).await.is_none(),
-            "the client already runs one"
-        );
-        let other = slots
-            .acquire(b)
-            .await
-            .expect("somebody else still gets one");
-        drop(first);
-        assert!(
-            slots.acquire(a).await.is_some(),
-            "the client's slot came back"
-        );
-        drop(other);
+    use crate::admission::BrowserId;
+
+    fn who(client: &str, browser: Option<u8>) -> Who {
+        Who {
+            client: client.parse().unwrap(),
+            browser: browser.map(BrowserId::of),
+        }
     }
 
     #[tokio::test]
-    async fn a_client_waiting_in_vain_for_a_shared_slot_gets_its_own_back() {
+    async fn one_browser_holds_one_slot_and_one_address_two_however_many_are_free() {
+        let slots = ScryptSlots::new(MAX_CONCURRENT_SCRYPTS);
+        let (a, b, c) = (
+            who("198.51.100.9", Some(1)),
+            who("198.51.100.9", Some(2)),
+            who("198.51.100.9", Some(3)),
+        );
+        let first = slots.acquire(a).await.expect("a free slot");
+        assert!(
+            slots.acquire(a).await.is_none(),
+            "the browser already runs one"
+        );
+        let second = slots
+            .acquire(b)
+            .await
+            .expect("another browser behind the same address gets one");
+        assert!(
+            slots.acquire(c).await.is_none(),
+            "the address holds as many as it may"
+        );
+        let elsewhere = slots
+            .acquire(who("203.0.113.4", None))
+            .await
+            .expect("somebody elsewhere still gets one");
+        drop(first);
+        assert!(
+            slots.acquire(c).await.is_some(),
+            "the address's slot came back"
+        );
+        drop((second, elsewhere));
+    }
+
+    #[tokio::test]
+    async fn a_browser_waiting_in_vain_for_a_shared_slot_gets_its_own_back() {
         let slots = ScryptSlots::new(0);
-        let a: IpAddr = "198.51.100.9".parse().unwrap();
+        let a = who("198.51.100.9", None);
         assert!(slots.acquire(a).await.is_none());
         slots.add_permits(1);
         assert!(slots.acquire(a).await.is_some());

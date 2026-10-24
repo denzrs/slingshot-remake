@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use tracing::{info, warn};
 
+use crate::admission::{BrowserId, Who, CEILING};
 use crate::codec::{Frame, Outbound, OutboundPool, WireMessage};
 use crate::protocol::is_name_refusal;
 
@@ -93,21 +94,61 @@ impl<K: std::hash::Hash + Eq> Windows<K> {
     }
 }
 
+/// A limit per browser (`Who`), under a ceiling of `CEILING` times as much per client: the people
+/// behind one shared address each get the limit, and made-up ids get no further than the ceiling.
+struct PerBrowser {
+    own: Windows<Who>,
+    ceiling: Windows<IpAddr>,
+}
+
+impl PerBrowser {
+    fn new(span: Duration) -> Self {
+        Self {
+            own: Windows::new(span),
+            ceiling: Windows::new(span),
+        }
+    }
+
+    fn spent(&mut self, who: Who, now: Instant, max: usize) -> bool {
+        self.own.count(&who, now) >= max || self.ceiling.count(&who.client, now) >= max * CEILING
+    }
+
+    fn record(&mut self, who: Who, now: Instant) {
+        self.own.record(who, now);
+        self.ceiling.record(who.client, now);
+    }
+
+    fn allow(&mut self, who: Who, now: Instant, max: usize) -> bool {
+        if self.spent(who, now, max) {
+            return false;
+        }
+        self.record(who, now);
+        true
+    }
+
+    fn sweep(&mut self, now: Instant) {
+        self.own.sweep(now);
+        self.ceiling.sweep(now);
+    }
+}
+
 pub struct Connections {
     connected: HashSet<u64>,
     outbounds: HashMap<u64, Conn>,
     /// Which client each connection is (`admission::client_of`). The per-client limits below count
     /// by it, and the leaderboard and statistics tell players apart by it.
     ips: HashMap<u64, IpAddr>,
-    /// Wrong passwords per client.
-    password_failures: Windows<IpAddr>,
+    /// The browser id each connection sent, if it sent one (see `admission::BrowserId`).
+    browsers: HashMap<u64, BrowserId>,
+    /// Wrong passwords per browser.
+    password_failures: PerBrowser,
     /// Password checks per room.
     room_password_checks: Windows<String>,
-    /// Password derivations started per client.
-    scrypt_windows: Windows<IpAddr>,
+    /// Password derivations started per browser.
+    scrypt_windows: PerBrowser,
     lobby_requests: Windows<u64>,
-    /// Database requests per client, and how many a minute it may make.
-    db_requests: Windows<IpAddr>,
+    /// Database requests per browser, and how many a minute it may make.
+    db_requests: PerBrowser,
     db_requests_per_minute: usize,
     spectator_windows: HashMap<u64, VecDeque<Instant>>,
     chat_windows: HashMap<u64, VecDeque<Instant>>,
@@ -122,11 +163,12 @@ impl Default for Connections {
             connected: HashSet::new(),
             outbounds: HashMap::new(),
             ips: HashMap::new(),
-            password_failures: Windows::new(PASSWORD_WINDOW),
+            browsers: HashMap::new(),
+            password_failures: PerBrowser::new(PASSWORD_WINDOW),
             room_password_checks: Windows::new(ROOM_PASSWORD_WINDOW),
-            scrypt_windows: Windows::new(Duration::from_secs(1)),
+            scrypt_windows: PerBrowser::new(Duration::from_secs(1)),
             lobby_requests: Windows::new(LOBBY_WINDOW),
-            db_requests: Windows::new(DB_WINDOW),
+            db_requests: PerBrowser::new(DB_WINDOW),
             db_requests_per_minute: DEFAULT_DB_REQUESTS_PER_MINUTE,
             spectator_windows: HashMap::new(),
             chat_windows: HashMap::new(),
@@ -176,6 +218,21 @@ impl Connections {
         self.chat_windows.remove(&conn);
         self.spectate_windows.remove(&conn);
         self.ips.remove(&conn);
+        self.browsers.remove(&conn);
+    }
+
+    pub fn set_browser(&mut self, conn: u64, browser: BrowserId) {
+        if self.connected.contains(&conn) {
+            self.browsers.insert(conn, browser);
+        }
+    }
+
+    /// Who a connection counts as for the abuse limits.
+    pub fn who(&self, conn: u64) -> Option<Who> {
+        Some(Who {
+            client: self.peer_ip(conn)?,
+            browser: self.browsers.get(&conn).copied(),
+        })
     }
 
     pub fn is_connected(&self, conn: u64) -> bool {
@@ -269,25 +326,26 @@ impl Connections {
         self.spectator_windows.remove(&conn);
     }
 
-    /// Counts one more derivation for the connection's client; false when it has started too many.
+    /// Counts one more derivation for the connection's browser; false when it has started too many.
     pub fn scrypt_budget_available(&mut self, conn: u64) -> bool {
-        let Some(client) = self.peer_ip(conn) else {
+        let Some(who) = self.who(conn) else {
             return false;
         };
         self.scrypt_windows
-            .allow(client, Instant::now(), MAX_SCRYPT_PER_SECOND)
+            .allow(who, Instant::now(), MAX_SCRYPT_PER_SECOND)
     }
 
     pub fn password_attempts_exhausted(&mut self, conn: u64) -> bool {
-        let Some(client) = self.peer_ip(conn) else {
+        let Some(who) = self.who(conn) else {
             return true;
         };
-        self.password_failures.count(&client, Instant::now()) >= MAX_PASSWORD_ATTEMPTS
+        self.password_failures
+            .spent(who, Instant::now(), MAX_PASSWORD_ATTEMPTS)
     }
 
     pub fn password_failed(&mut self, conn: u64) {
-        if let Some(client) = self.peer_ip(conn) {
-            self.password_failures.record(client, Instant::now());
+        if let Some(who) = self.who(conn) {
+            self.password_failures.record(who, Instant::now());
         }
     }
 
@@ -310,13 +368,13 @@ impl Connections {
         self.db_requests_per_minute = requests;
     }
 
-    /// Counts one more database request for the connection's client; false when it has made its share.
+    /// Counts one more database request for the connection's browser; false when it has made its share.
     pub fn allow_db_request(&mut self, conn: u64) -> bool {
-        let Some(client) = self.peer_ip(conn) else {
+        let Some(who) = self.who(conn) else {
             return false;
         };
         let limit = self.db_requests_per_minute;
-        self.db_requests.allow(client, Instant::now(), limit)
+        self.db_requests.allow(who, Instant::now(), limit)
     }
 
     pub fn send_value(&self, conn: u64, value: &Value) {

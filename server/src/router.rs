@@ -222,12 +222,12 @@ fn local_game(manager: &Mutex<RoomManager>, conn_id: u64, game: Parsed<crate::re
             return;
         }
     };
-    let (ip, stats) = {
+    let (who, stats) = {
         let manager = manager.lock();
-        (manager.peer_ip(conn_id), manager.stats())
+        (manager.who(conn_id), manager.stats())
     };
-    if let (Some(ip), Some(stats)) = (ip, stats) {
-        stats.submit_local(ip, game);
+    if let (Some(who), Some(stats)) = (who, stats) {
+        stats.submit_local(who, game);
     }
 }
 

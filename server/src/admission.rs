@@ -24,6 +24,52 @@ pub fn client_of(ip: IpAddr) -> IpAddr {
     }
 }
 
+/// A random id the game keeps in the browser and sends with every connection (`?b=`), so that
+/// the people behind one shared address (a VPN, a carrier NAT) are told apart by the abuse limits.
+///
+/// It is used for that alone and lives in memory only, for as long as a limit's window: never
+/// written to the database, never logged, never part of the statistics or the board. `Debug` does
+/// not print it, so it cannot slip into a log line either.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BrowserId([u8; 16]);
+
+impl BrowserId {
+    /// The id from a connection's query string, or None when there is none or it is not one.
+    pub fn from_query(query: Option<&str>) -> Option<Self> {
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        use base64::Engine as _;
+        let value = query?.split('&').find_map(|pair| pair.strip_prefix("b="))?;
+        if value.len() != 22 {
+            return None;
+        }
+        let bytes = URL_SAFE_NO_PAD.decode(value).ok()?;
+        Some(Self(bytes.try_into().ok()?))
+    }
+
+    #[cfg(test)]
+    pub fn of(byte: u8) -> Self {
+        Self([byte; 16])
+    }
+}
+
+impl std::fmt::Debug for BrowserId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("BrowserId(..)")
+    }
+}
+
+/// Who a request counts as for the abuse limits: a browser on a client, or the client alone when
+/// the connection sent no id. Each limit counts per `Who`, under a ceiling per client (`CEILING`
+/// times the limit), so a made-up id buys a few more tries at most and leaving it out buys nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Who {
+    pub client: IpAddr,
+    pub browser: Option<BrowserId>,
+}
+
+/// How many times a limit one client may use over all its browsers.
+pub const CEILING: usize = 10;
+
 struct IpState {
     count: usize,
     recent: VecDeque<Instant>,
@@ -114,6 +160,26 @@ impl AdmissionGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_browser_id_is_read_from_the_query_and_never_printed() {
+        let id = BrowserId::from_query(Some("b=AAECAwQFBgcICQoLDA0ODw")).expect("an id");
+        assert_eq!(
+            id,
+            BrowserId((0..16).collect::<Vec<u8>>().try_into().unwrap())
+        );
+        assert_eq!(
+            BrowserId::from_query(Some("x=1&b=AAECAwQFBgcICQoLDA0ODw")),
+            Some(id)
+        );
+        assert_eq!(BrowserId::from_query(None), None);
+        assert_eq!(BrowserId::from_query(Some("b=short")), None);
+        assert_eq!(
+            BrowserId::from_query(Some("b=!!!!!!!!!!!!!!!!!!!!!!")),
+            None
+        );
+        assert_eq!(format!("{id:?}"), "BrowserId(..)");
+    }
 
     #[test]
     fn a_client_is_its_ipv4_address_or_its_ipv6_slash_64() {

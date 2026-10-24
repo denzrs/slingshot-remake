@@ -20,6 +20,7 @@ use serde_json::Value;
 use tracing::{info, warn};
 use turso::{Connection, Database, Value as Sql};
 
+use crate::admission::{Who, CEILING};
 use crate::pseudonym::Identities;
 use crate::report::{LocalGame, RoundReport, ShotRound, TurnReport, RECORD_KEYS};
 
@@ -1320,33 +1321,97 @@ pub enum Job {
 pub struct Stats {
     store: std::sync::Arc<Store>,
     queue: tokio::sync::mpsc::Sender<Job>,
-    /// Per address, when the current hour of local games began and how many were handed in during it.
-    local_games: std::sync::Mutex<HashMap<IpAddr, (Instant, u32)>>,
-    /// Per client, when its current day of writing began, the rows it has had written since, and
-    /// whether it has been told it is over.
-    writes: parking_lot::Mutex<HashMap<IpAddr, WriteDay>>,
+    /// Local games handed in this hour, per browser and per client.
+    local_games: parking_lot::Mutex<(Quota<Who>, Quota<IpAddr>)>,
+    /// Rows written this day, per browser and per client.
+    writes: parking_lot::Mutex<(Quota<Who>, Quota<IpAddr>)>,
     rows_per_day: u64,
 }
 
-/// Rows of statistics one client may have written per day, hosting and playing alone together
-/// (`STATS_ROWS_PER_DAY`). A real host writes about ten rows a turn and a turn takes at least
-/// several seconds, so a whole day of hosting stays near a third of it; a host making reports up
-/// gets no further.
+/// Rows of statistics one browser may have written per day, hosting and playing alone together
+/// (`STATS_ROWS_PER_DAY`), and `CEILING` times as many over all the browsers of one client. A real
+/// host writes about ten rows a turn and a turn takes at least several seconds, so a whole day of
+/// hosting stays near a third of it; a host making reports up gets no further.
 pub const DEFAULT_ROWS_PER_DAY: u64 = 300_000;
 const WRITE_WINDOW: Duration = Duration::from_secs(24 * 3600);
 
-struct WriteDay {
+/// How many games played on one device a browser may hand in per hour (and `CEILING` times as many
+/// per client): far more than anyone plays, far fewer than it takes to bury the statistics under
+/// made-up games.
+const LOCAL_GAMES_PER_HOUR: u64 = 20;
+const LOCAL_WINDOW: Duration = Duration::from_secs(3600);
+
+/// An amount per key in a fixed window that starts with the key's first use.
+struct Quota<K> {
+    window: Duration,
+    used: HashMap<K, Used>,
+}
+
+struct Used {
     since: Instant,
-    rows: u64,
+    amount: u64,
+    /// Whether going over has been logged in this window already.
     warned: bool,
 }
 
-/// How many games played on one device an address may hand in per hour: far more than anyone plays, far fewer
-/// than it takes to bury the statistics under made-up games.
-const LOCAL_GAMES_PER_HOUR: u32 = 20;
-const LOCAL_WINDOW: Duration = Duration::from_secs(3600);
-/// Addresses remembered at most; when it is passed, those whose hour is over are forgotten.
-const LOCAL_ADDRESSES: usize = 4096;
+impl<K: std::hash::Hash + Eq + Copy> Quota<K> {
+    fn new(window: Duration) -> Self {
+        Self {
+            window,
+            used: HashMap::new(),
+        }
+    }
+
+    fn entry(&mut self, key: K, now: Instant) -> &mut Used {
+        let window = self.window;
+        let used = self.used.entry(key).or_insert(Used {
+            since: now,
+            amount: 0,
+            warned: false,
+        });
+        if now.duration_since(used.since) >= window {
+            *used = Used {
+                since: now,
+                amount: 0,
+                warned: false,
+            };
+        }
+        used
+    }
+
+    fn sweep(&mut self, now: Instant) {
+        let window = self.window;
+        self.used
+            .retain(|_, used| now.duration_since(used.since) < window);
+    }
+}
+
+/// Take `amount` from a browser's quota and its client's (`CEILING` times `max`), from both or
+/// neither. False, and logged once per window, when either is spent.
+fn take_both(
+    quotas: &mut (Quota<Who>, Quota<IpAddr>),
+    who: Who,
+    amount: u64,
+    max: u64,
+    now: Instant,
+    what: &str,
+) -> bool {
+    let (own, client) = quotas;
+    let fits_client = client.entry(who.client, now).amount + amount <= max * CEILING as u64;
+    let own = own.entry(who, now);
+    if !fits_client || own.amount + amount > max {
+        if !std::mem::replace(&mut own.warned, true) {
+            warn!(
+                what,
+                "a browser or its address is over its statistics quota; its reports are dropped"
+            );
+        }
+        return false;
+    }
+    own.amount += amount;
+    client.entry(who.client, now).amount += amount;
+    true
+}
 
 impl std::ops::Deref for Stats {
     type Target = Store;
@@ -1373,8 +1438,11 @@ impl Stats {
         Ok(Self {
             store,
             queue,
-            local_games: std::sync::Mutex::new(HashMap::new()),
-            writes: parking_lot::Mutex::new(HashMap::new()),
+            local_games: parking_lot::Mutex::new((
+                Quota::new(LOCAL_WINDOW),
+                Quota::new(LOCAL_WINDOW),
+            )),
+            writes: parking_lot::Mutex::new((Quota::new(WRITE_WINDOW), Quota::new(WRITE_WINDOW))),
             rows_per_day: DEFAULT_ROWS_PER_DAY,
         })
     }
@@ -1384,43 +1452,25 @@ impl Stats {
         self
     }
 
-    /// Whether `client` may have `rows` more rows written today; counts them when it may.
-    pub fn admit(&self, client: IpAddr, rows: u64, now: Instant) -> bool {
-        let mut writes = self.writes.lock();
-        let day = writes.entry(client).or_insert(WriteDay {
-            since: now,
-            rows: 0,
-            warned: false,
-        });
-        if now.duration_since(day.since) >= WRITE_WINDOW {
-            *day = WriteDay {
-                since: now,
-                rows: 0,
-                warned: false,
-            };
-        }
-        if day.rows + rows > self.rows_per_day {
-            if !std::mem::replace(&mut day.warned, true) {
-                warn!(
-                    rows = day.rows,
-                    "a client is over its statistics budget for the day; its reports are dropped"
-                );
-            }
-            return false;
-        }
-        day.rows += rows;
-        true
+    /// Whether `who` may have `rows` more rows written today; counts them when it may.
+    pub fn admit(&self, who: Who, rows: u64, now: Instant) -> bool {
+        take_both(
+            &mut self.writes.lock(),
+            who,
+            rows,
+            self.rows_per_day,
+            now,
+            "rows",
+        )
     }
 
-    /// Forget the clients whose window is over, so neither map grows with addresses that came once.
+    /// Forget whoever's window is over, so no map grows with addresses that came once.
     pub fn sweep(&self, now: Instant) {
-        self.writes
-            .lock()
-            .retain(|_, day| now.duration_since(day.since) < WRITE_WINDOW);
-        self.local_games
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .retain(|_, (since, _)| now.duration_since(*since) < LOCAL_WINDOW);
+        for quotas in [&self.writes, &self.local_games] {
+            let mut quotas = quotas.lock();
+            quotas.0.sweep(now);
+            quotas.1.sweep(now);
+        }
     }
 
     #[cfg(test)]
@@ -1433,18 +1483,17 @@ impl Stats {
             .expect("an in-memory store opens")
     }
 
-    /// Hand over a game played on one device by the person at `ip`. It has the ids of any other game, made here:
+    /// Hand over a game played on one device by `who`. It has the ids of any other game, made here:
     /// the player's own client knows no room and chooses no id that could name one.
-    pub fn submit_local(&self, ip: IpAddr, game: LocalGame) {
+    pub fn submit_local(&self, who: Who, game: LocalGame) {
         use rand::Rng;
         let now = Instant::now();
-        if !self.local_allowed(ip, now) {
-            warn!(%ip, "too many local games from one address; one was dropped");
+        if !self.local_allowed(who, now) || !self.admit(who, game.rows(), now) {
             return;
         }
-        if !self.admit(ip, game.rows(), now) {
-            return;
-        }
+        // The person is told apart in the statistics by their address, as online; the browser id
+        // is for the limits above and goes no further.
+        let ip = who.client;
         let mut rng = rand::thread_rng();
         let facts = RoundFacts {
             room_id: format!("{:032x}", rng.gen::<u128>()),
@@ -1474,24 +1523,16 @@ impl Stats {
         self.submit(Job::Local(facts, game.rounds));
     }
 
-    /// Whether `ip` may hand in another local game: a fixed window of an hour from its first, with a count.
-    fn local_allowed(&self, ip: IpAddr, now: Instant) -> bool {
-        let mut seen = self
-            .local_games
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if seen.len() >= LOCAL_ADDRESSES {
-            seen.retain(|_, (since, _)| now.duration_since(*since) < LOCAL_WINDOW);
-        }
-        let entry = seen.entry(ip).or_insert((now, 0));
-        if now.duration_since(entry.0) >= LOCAL_WINDOW {
-            *entry = (now, 0);
-        }
-        if entry.1 >= LOCAL_GAMES_PER_HOUR {
-            return false;
-        }
-        entry.1 += 1;
-        true
+    /// Whether `who` may hand in another local game: a fixed window of an hour from its first, with a count.
+    fn local_allowed(&self, who: Who, now: Instant) -> bool {
+        take_both(
+            &mut self.local_games.lock(),
+            who,
+            1,
+            LOCAL_GAMES_PER_HOUR,
+            now,
+            "local games",
+        )
     }
 
     /// Hand a round to the writer. Never waits: a full queue drops the round and says so.
@@ -1995,43 +2036,72 @@ mod tests {
         assert_eq!(*first, stats.replay(id).await.unwrap().unwrap());
     }
 
+    fn who(last: u8, browser: Option<u8>) -> Who {
+        Who {
+            client: [10, 0, 0, last].into(),
+            browser: browser.map(crate::admission::BrowserId::of),
+        }
+    }
+
     #[tokio::test]
-    async fn a_client_has_only_so_many_rows_written_a_day() {
+    async fn a_browser_has_only_so_many_rows_written_a_day() {
         let stats = Stats::in_memory().await.with_rows_per_day(100);
-        let host: IpAddr = [10, 0, 0, 1].into();
-        let other: IpAddr = [10, 0, 0, 2].into();
+        let host = who(1, Some(1));
         let now = Instant::now();
         assert!(stats.admit(host, 60, now));
         assert!(stats.admit(host, 40, now));
         assert!(!stats.admit(host, 1, now), "the day's rows are spent");
-        assert!(stats.admit(other, 100, now), "somebody else's are not");
-        // The next day starts over; the sweep forgets a client whose day is over.
+        assert!(
+            stats.admit(who(2, None), 100, now),
+            "somebody else's are not"
+        );
+        // The next day starts over; the sweep forgets whoever's day is over.
         let tomorrow = now + WRITE_WINDOW;
         assert!(stats.admit(host, 100, tomorrow));
         stats.sweep(tomorrow + Duration::from_secs(1));
+        let writes = stats.writes.lock();
         assert_eq!(
-            stats.writes.lock().len(),
-            1,
-            "only the client that wrote today is kept"
+            (writes.0.used.len(), writes.1.used.len()),
+            (1, 1),
+            "only the one that wrote today is kept"
         );
     }
 
     #[tokio::test]
-    async fn an_address_may_hand_in_only_so_many_local_games_an_hour() {
-        let stats = Stats::in_memory().await;
-        let ip: IpAddr = [10, 0, 0, 1].into();
-        let other: IpAddr = [10, 0, 0, 2].into();
+    async fn browsers_behind_one_address_each_get_their_rows_up_to_the_address_ceiling() {
+        let stats = Stats::in_memory().await.with_rows_per_day(100);
         let now = Instant::now();
-        for _ in 0..LOCAL_GAMES_PER_HOUR {
-            assert!(stats.local_allowed(ip, now));
+        for browser in 0..CEILING as u8 {
+            assert!(
+                stats.admit(who(1, Some(browser)), 100, now),
+                "browser {browser}"
+            );
         }
-        assert!(!stats.local_allowed(ip, now));
         assert!(
-            stats.local_allowed(other, now),
-            "another address has its own"
+            !stats.admit(who(1, Some(200)), 1, now),
+            "the address is at its ceiling, whatever id comes next"
         );
         assert!(
-            stats.local_allowed(ip, now + LOCAL_WINDOW),
+            !stats.admit(who(1, None), 1, now),
+            "and without an id there is nothing left either"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_browser_may_hand_in_only_so_many_local_games_an_hour() {
+        let stats = Stats::in_memory().await;
+        let one = who(1, Some(1));
+        let now = Instant::now();
+        for _ in 0..LOCAL_GAMES_PER_HOUR {
+            assert!(stats.local_allowed(one, now));
+        }
+        assert!(!stats.local_allowed(one, now));
+        assert!(
+            stats.local_allowed(who(1, Some(2)), now),
+            "another browser behind the same address has its own"
+        );
+        assert!(
+            stats.local_allowed(one, now + LOCAL_WINDOW),
             "the next hour starts afresh"
         );
     }

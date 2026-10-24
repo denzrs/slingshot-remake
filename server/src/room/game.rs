@@ -18,8 +18,8 @@ use super::RoomManager;
 struct Reporting {
     stats: Arc<Stats>,
     facts: RoundFacts,
-    /// The host's client, whose daily budget the report is written from.
-    host: std::net::IpAddr,
+    /// The host, whose daily budget the report is written from.
+    host: crate::admission::Who,
 }
 
 impl RoomManager {
@@ -209,7 +209,7 @@ impl RoomManager {
                 .collect();
             Some(Reporting {
                 stats,
-                host: self.net.peer_ip(conn)?,
+                host: self.net.who(conn)?,
                 facts: RoundFacts {
                     room_id: room.uid.clone(),
                     match_id: room.match_id.clone(),

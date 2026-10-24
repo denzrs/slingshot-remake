@@ -217,6 +217,15 @@ impl RoomManager {
         self.net.peer_ip(conn)
     }
 
+    /// Who a connection counts as for the abuse limits: its client, and its browser if it said.
+    pub fn who(&self, conn: u64) -> Option<crate::admission::Who> {
+        self.net.who(conn)
+    }
+
+    pub fn set_browser(&mut self, conn: u64, browser: crate::admission::BrowserId) {
+        self.net.set_browser(conn, browser);
+    }
+
     /// One day's board as it goes on the wire: the top runs, and the caller's own run if it posted one.
     pub fn daily_board(&mut self, conn: u64, day: &str, board: &Board) {
         fn entry(e: &crate::leaderboard::Entry) -> Value {

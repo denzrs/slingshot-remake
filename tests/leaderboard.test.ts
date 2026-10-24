@@ -198,6 +198,11 @@ describe('daily leaderboard', () => {
     expect(seen.entries).toEqual([]);
   });
 
+  it('answers a connection that names its browser, as the game connects', async () => {
+    const boards = new Leaderboard(() => new RelayConnection(`${serverUrl}/?b=AAECAwQFBgcICQoLDA0ODw`));
+    expect((await boards.top(TODAY)).day).toBe(TODAY);
+  });
+
   it('takes runs only for the days it keeps a board for', async () => {
     const boards = onRelay();
     await expect(boards.submit(shiftDate(TODAY, 30), 'Ada', 100)).rejects.toThrow(/board is not open/);
