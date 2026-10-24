@@ -570,7 +570,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const createRules = h('div', null);
   /** All the rules on one page over this one: a link below the presets opens them, as it does in the local briefing. */
   const rulesLinkLabel = h('span.item__label', null, t('briefing.editRules'));
-  const rulesLink = h('button.item', { type: 'button' }, rulesLinkLabel);
+  const rulesLink = h('button.item.briefing__switch-action', { type: 'button' }, rulesLinkLabel);
   const rulesDone = h('button.item.item--primary', { type: 'button' }, t('briefing.done'));
   const rulesReset = h('button.item', { type: 'button' }, t('setup.reset'));
   const rulesCancel = h('button.item', { type: 'button', hidden: '' }, t('preset.creator.cancel'));
@@ -653,7 +653,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     focusPresetCard();
   });
   rulesLink.addEventListener('click', () => openRulesDialog(null));
-  const createAdvanced = h('div.items.briefing__edit', null, rulesLink);
   let createRulesForm: RulesForm | null = null;
   let createQuickControls: Control[] = [];
   let paintCreatePresetState = () => {};
@@ -938,7 +937,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     createQuickControls.push(...switches);
     const sliders = createQuickControls.slice(0, createQuickControls.length - switches.length).map(({ el }) => el);
     const mayhem = sliders.pop()!;
-    createQuick.replaceChildren(...sliders, h('div.briefing__mayhem', null, mayhem), createPowerups.el, h('div.briefing__switches', null, ...switches.map(({ el }) => el)));
+    createQuick.replaceChildren(...sliders, h('div.briefing__mayhem', null, mayhem), createPowerups.el, h('div.briefing__switches', null, ...switches.map(({ el }) => el), rulesLink));
     createPowerups.update();
   };
 
@@ -993,7 +992,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       createPresetCards,
       createQuick,
     ),
-    createAdvanced,
   );
   /** A room is opened with a name and who may come in; the game is the host's to pick once the room stands. */
   roomName.setAttribute('aria-label', t('multiplayer.roomName'));
