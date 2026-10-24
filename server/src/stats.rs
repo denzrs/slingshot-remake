@@ -10,9 +10,10 @@
 //! CPU seat has no hash. The numbers are taken at face value: they come from the host's own
 //! browser, and the relay can fly nothing again.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
@@ -29,6 +30,8 @@ pub use facts::Fact;
 pub const DEFAULT_KEEP_DAYS: i64 = 365;
 /// How long an overview is good for: the page asks every so often, and what it shows moves by the minute.
 const OVERVIEW_FRESH: Duration = Duration::from_secs(2);
+/// Replays kept in memory: the page lists the latest games, and those are the ones flown again.
+const REPLAYS_KEPT: usize = 16;
 /// Games the overview lists.
 const OVERVIEW_GAMES: i64 = 50;
 /// The sweeper runs at most this often, however busy the relay is.
@@ -357,6 +360,8 @@ pub struct Store {
     /// never holds up the overview (nor the other way round).
     replay_reader: Connection,
     replaying: tokio::sync::Mutex<()>,
+    /// The replays last read, oldest first (see `replay_shared`).
+    replays: parking_lot::Mutex<VecDeque<(String, Arc<Value>)>>,
     /// For the menu's facts, a few dozen scans of the shots: a connection of their own, so they never queue the overview's reads.
     facts_reader: Connection,
     /// One reader at a time: several tasks asking one connection at once wait on one another's statements, which a page with
@@ -406,6 +411,7 @@ impl Store {
             reader,
             replay_reader,
             replaying: tokio::sync::Mutex::new(()),
+            replays: parking_lot::Mutex::new(VecDeque::new()),
             facts_reader,
             reading: tokio::sync::Mutex::new(None),
             facts: tokio::sync::Mutex::new(None),
@@ -1127,9 +1133,35 @@ impl Store {
     }
 
     /// A replay, read by one reader at a time like the overview.
-    pub async fn replay_shared(&self, match_id: &str) -> turso::Result<Option<Value>> {
+    /// A game that can be flown again is finished and stays as it is, so the latest few are kept
+    /// and handed to whoever asks again without reading every row once more.
+    pub async fn replay_shared(&self, match_id: &str) -> turso::Result<Option<Arc<Value>>> {
+        if let Some(replay) = self.cached_replay(match_id) {
+            return Ok(Some(replay));
+        }
         let _replaying = self.replaying.lock().await;
-        self.replay(match_id).await
+        // Somebody may have read it while this one waited for the lock.
+        if let Some(replay) = self.cached_replay(match_id) {
+            return Ok(Some(replay));
+        }
+        let Some(replay) = self.replay(match_id).await? else {
+            return Ok(None);
+        };
+        let replay = Arc::new(replay);
+        let mut replays = self.replays.lock();
+        if replays.len() >= REPLAYS_KEPT {
+            replays.pop_front();
+        }
+        replays.push_back((match_id.to_owned(), replay.clone()));
+        Ok(Some(replay))
+    }
+
+    fn cached_replay(&self, match_id: &str) -> Option<Arc<Value>> {
+        self.replays
+            .lock()
+            .iter()
+            .find(|(id, _)| id == match_id)
+            .map(|(_, replay)| replay.clone())
     }
 
     /// Everything the client needs to fly a game again: the seed, the rules, who sat where and, turn by
@@ -1290,6 +1322,23 @@ pub struct Stats {
     queue: tokio::sync::mpsc::Sender<Job>,
     /// Per address, when the current hour of local games began and how many were handed in during it.
     local_games: std::sync::Mutex<HashMap<IpAddr, (Instant, u32)>>,
+    /// Per client, when its current day of writing began, the rows it has had written since, and
+    /// whether it has been told it is over.
+    writes: parking_lot::Mutex<HashMap<IpAddr, WriteDay>>,
+    rows_per_day: u64,
+}
+
+/// Rows of statistics one client may have written per day, hosting and playing alone together
+/// (`STATS_ROWS_PER_DAY`). A real host writes about ten rows a turn and a turn takes at least
+/// several seconds, so a whole day of hosting stays near a third of it; a host making reports up
+/// gets no further.
+pub const DEFAULT_ROWS_PER_DAY: u64 = 300_000;
+const WRITE_WINDOW: Duration = Duration::from_secs(24 * 3600);
+
+struct WriteDay {
+    since: Instant,
+    rows: u64,
+    warned: bool,
 }
 
 /// How many games played on one device an address may hand in per hour: far more than anyone plays, far fewer
@@ -1325,7 +1374,53 @@ impl Stats {
             store,
             queue,
             local_games: std::sync::Mutex::new(HashMap::new()),
+            writes: parking_lot::Mutex::new(HashMap::new()),
+            rows_per_day: DEFAULT_ROWS_PER_DAY,
         })
+    }
+
+    pub fn with_rows_per_day(mut self, rows: u64) -> Self {
+        self.rows_per_day = rows;
+        self
+    }
+
+    /// Whether `client` may have `rows` more rows written today; counts them when it may.
+    pub fn admit(&self, client: IpAddr, rows: u64, now: Instant) -> bool {
+        let mut writes = self.writes.lock();
+        let day = writes.entry(client).or_insert(WriteDay {
+            since: now,
+            rows: 0,
+            warned: false,
+        });
+        if now.duration_since(day.since) >= WRITE_WINDOW {
+            *day = WriteDay {
+                since: now,
+                rows: 0,
+                warned: false,
+            };
+        }
+        if day.rows + rows > self.rows_per_day {
+            if !std::mem::replace(&mut day.warned, true) {
+                warn!(
+                    rows = day.rows,
+                    "a client is over its statistics budget for the day; its reports are dropped"
+                );
+            }
+            return false;
+        }
+        day.rows += rows;
+        true
+    }
+
+    /// Forget the clients whose window is over, so neither map grows with addresses that came once.
+    pub fn sweep(&self, now: Instant) {
+        self.writes
+            .lock()
+            .retain(|_, day| now.duration_since(day.since) < WRITE_WINDOW);
+        self.local_games
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|_, (since, _)| now.duration_since(*since) < LOCAL_WINDOW);
     }
 
     #[cfg(test)]
@@ -1342,8 +1437,12 @@ impl Stats {
     /// the player's own client knows no room and chooses no id that could name one.
     pub fn submit_local(&self, ip: IpAddr, game: LocalGame) {
         use rand::Rng;
-        if !self.local_allowed(ip, Instant::now()) {
+        let now = Instant::now();
+        if !self.local_allowed(ip, now) {
             warn!(%ip, "too many local games from one address; one was dropped");
+            return;
+        }
+        if !self.admit(ip, game.rows(), now) {
             return;
         }
         let mut rng = rand::thread_rng();
@@ -1878,6 +1977,43 @@ mod tests {
             .await
             .unwrap();
         assert!(!stats.overview().await.unwrap().games[0].replay);
+    }
+
+    #[tokio::test]
+    async fn a_replay_once_read_is_handed_out_again_without_reading_it_anew() {
+        let stats = Stats::in_memory().await;
+        let id = "0123456789abcdef";
+        let ann = [10, 0, 0, 1];
+        // Not flyable yet: nothing is kept, so the finished game is read once it is.
+        assert!(stats.replay_shared(id).await.unwrap().is_none());
+        stats.record(&turn_job(ann, 1, 1)).await.unwrap();
+        stats.record(&turn_job(ann, 1, 2)).await.unwrap();
+        stats.record(&round_job(ann, 1)).await.unwrap();
+        let first = stats.replay_shared(id).await.unwrap().expect("flyable");
+        let again = stats.replay_shared(id).await.unwrap().expect("flyable");
+        assert!(Arc::ptr_eq(&first, &again));
+        assert_eq!(*first, stats.replay(id).await.unwrap().unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_client_has_only_so_many_rows_written_a_day() {
+        let stats = Stats::in_memory().await.with_rows_per_day(100);
+        let host: IpAddr = [10, 0, 0, 1].into();
+        let other: IpAddr = [10, 0, 0, 2].into();
+        let now = Instant::now();
+        assert!(stats.admit(host, 60, now));
+        assert!(stats.admit(host, 40, now));
+        assert!(!stats.admit(host, 1, now), "the day's rows are spent");
+        assert!(stats.admit(other, 100, now), "somebody else's are not");
+        // The next day starts over; the sweep forgets a client whose day is over.
+        let tomorrow = now + WRITE_WINDOW;
+        assert!(stats.admit(host, 100, tomorrow));
+        stats.sweep(tomorrow + Duration::from_secs(1));
+        assert_eq!(
+            stats.writes.lock().len(),
+            1,
+            "only the client that wrote today is kept"
+        );
     }
 
     #[tokio::test]

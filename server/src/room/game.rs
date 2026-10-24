@@ -18,6 +18,8 @@ use super::RoomManager;
 struct Reporting {
     stats: Arc<Stats>,
     facts: RoundFacts,
+    /// The host's client, whose daily budget the report is written from.
+    host: std::net::IpAddr,
 }
 
 impl RoomManager {
@@ -207,6 +209,7 @@ impl RoomManager {
                 .collect();
             Some(Reporting {
                 stats,
+                host: self.net.peer_ip(conn)?,
                 facts: RoundFacts {
                     room_id: room.uid.clone(),
                     match_id: room.match_id.clone(),
@@ -238,8 +241,10 @@ impl RoomManager {
         }
         room.reported_round = report.round;
         // Queued for the writer: the dispatch is synchronous, the database is not.
-        if let Some(Reporting { stats, facts }) = reporting {
-            stats.submit(Job::Round(facts, report));
+        if let Some(Reporting { stats, facts, host }) = reporting {
+            if stats.admit(host, report.rows(), std::time::Instant::now()) {
+                stats.submit(Job::Round(facts, report));
+            }
         }
     }
 
@@ -262,8 +267,10 @@ impl RoomManager {
             return;
         }
         room.reported_turn = (report.round, report.turn);
-        if let Some(Reporting { stats, facts }) = reporting {
-            stats.submit(Job::Turn(facts, report));
+        if let Some(Reporting { stats, facts, host }) = reporting {
+            if stats.admit(host, report.rows(), std::time::Instant::now()) {
+                stats.submit(Job::Turn(facts, report));
+            }
         }
     }
 

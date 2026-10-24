@@ -131,7 +131,7 @@ beforeAll(async () => {
   serverProcess = spawn(binary, [], {
     // The relay opens a daily leaderboard wherever it runs; this one writes it to a throwaway file
     // rather than leaving a board behind in the working tree.
-    env: { ...process.env, PORT: String(port), ALLOW_ALL_ORIGINS: '1', ALLOWED_ORIGINS: '', STATS: '1', CONNECTIONS_PER_IP_PER_SECOND: '1000', MAX_MESSAGES_PER_SECOND: '100000', MAX_BYTES_PER_SECOND: '1000000000', DATABASE: join(tmpdir(), `slingshot-${port}.db`), RUST_LOG: process.env.RUST_LOG ?? 'info' },
+    env: { ...process.env, PORT: String(port), ALLOW_ALL_ORIGINS: '1', ALLOWED_ORIGINS: '', STATS: '1', CONNECTIONS_PER_IP_PER_SECOND: '1000', MAX_MESSAGES_PER_SECOND: '100000', MAX_BYTES_PER_SECOND: '1000000000', DB_REQUESTS_PER_MINUTE: '1000000', DATABASE: join(tmpdir(), `slingshot-${port}.db`), RUST_LOG: process.env.RUST_LOG ?? 'info' },
     stdio: process.env.RELAY_LOG ? 'inherit' : 'ignore',
   });
   await waitForServer(serverUrl);
@@ -208,6 +208,14 @@ async function frame(host: Client, guest: Client, dt = 1 / 60): Promise<void> {
   host.session.update(dt);
   guest.session.update(dt);
   if (stateReceived) await stateReceived;
+}
+
+/**
+ * Frames until `done` holds. `frame` waits for the host's state to reach the guest, but nothing
+ * waits for the guest's input to reach the host: on a busy machine it can take more than a few frames.
+ */
+async function framesUntil(host: Client, guest: Client, done: () => boolean, most = 600): Promise<void> {
+  for (let i = 0; i < most && !done(); i++) await frame(host, guest);
 }
 
 describe('online games', () => {
@@ -490,7 +498,7 @@ describe('online games', () => {
       // The guest's aim reaches the host while the host is aiming too.
       guest.session.input({ kind: 'aim', angle: 123, power: 40 });
       host.session.input({ kind: 'aim', angle: 33, power: 60 });
-      for (let i = 0; i < 5; i++) await frame(host, guest);
+      await framesUntil(host, guest, () => hm.players[1].angle === 123);
       expect(hm.players[1].angle).toBe(123);
       expect(hm.players[0].angle).toBe(33);
       // Our own aim is not dragged back by the host's snapshots.

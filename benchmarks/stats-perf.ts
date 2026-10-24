@@ -199,6 +199,7 @@ async function run(withStats: boolean) {
       MAX_CONNECTIONS_PER_IP: '1000',
       MAX_MESSAGES_PER_SECOND: '100000',
       MAX_BYTES_PER_SECOND: '1000000000',
+      DB_REQUESTS_PER_MINUTE: '1000000',
       DATABASE: statsDb,
       RUST_LOG: 'warn',
     },

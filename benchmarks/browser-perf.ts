@@ -86,7 +86,7 @@ function build(variant: 'off' | 'on'): string {
 /** Starts the relay on a database that already holds a year of days and fifty games, as a relay that has been up for a while does. */
 async function startRelay(): Promise<void> {
   const db = join(work, 'slingshot.db');
-  const env = { PORT: String(RELAY_PORT), ALLOW_ALL_ORIGINS: '1', ALLOWED_ORIGINS: '', STATS: '1', DATABASE: db, RUST_LOG: 'warn', CONNECTIONS_PER_IP_PER_SECOND: '1000', MAX_MESSAGES_PER_SECOND: '100000', MAX_BYTES_PER_SECOND: '1000000000' };
+  const env = { PORT: String(RELAY_PORT), ALLOW_ALL_ORIGINS: '1', ALLOWED_ORIGINS: '', STATS: '1', DATABASE: db, RUST_LOG: 'warn', CONNECTIONS_PER_IP_PER_SECOND: '1000', MAX_MESSAGES_PER_SECOND: '100000', MAX_BYTES_PER_SECOND: '1000000000', DB_REQUESTS_PER_MINUTE: '1000000' };
   // The first start only makes the tables.
   const first = launch(BIN!, [], env);
   await sleep(1000);

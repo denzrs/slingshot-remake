@@ -38,8 +38,8 @@ use crate::config::{
 };
 use crate::connection::{handle_connection, Shared};
 use crate::leaderboard::{Leaderboard, DEFAULT_KEEP_DAYS};
-use crate::room::{RoomManager, LOBBY_INTERVAL};
-use crate::stats::{Stats, DEFAULT_KEEP_DAYS as DEFAULT_STATS_KEEP_DAYS};
+use crate::room::{RoomManager, DEFAULT_DB_REQUESTS_PER_MINUTE, LOBBY_INTERVAL};
+use crate::stats::{Stats, DEFAULT_KEEP_DAYS as DEFAULT_STATS_KEEP_DAYS, DEFAULT_ROWS_PER_DAY};
 use crate::tls::load_tls;
 
 #[tokio::main]
@@ -135,10 +135,11 @@ async fn main() {
     // like the leaderboard, and for the same reason it stops the relay.
     let stats = if std::env::args().any(|arg| arg == "--stats") || env_flag("STATS") {
         let stats_days = env_parse("STATS_KEEP_DAYS", DEFAULT_STATS_KEEP_DAYS);
+        let rows_per_day = env_parse("STATS_ROWS_PER_DAY", DEFAULT_ROWS_PER_DAY);
         match Stats::open(&database, stats_days).await {
             Ok(stats) => {
-                info!(stats_days, "statistics on");
-                Some(Arc::new(stats))
+                info!(stats_days, rows_per_day, "statistics on");
+                Some(Arc::new(stats.with_rows_per_day(rows_per_day)))
             }
             Err(err) => {
                 error!(%db_path, %err, "failed to open the statistics");
@@ -162,7 +163,11 @@ async fn main() {
     info!(max_bytes_per_second, max_outbound_bytes, "transport limits");
     let mut rooms = RoomManager::new()
         .with_outbound_pool(OutboundPool::new(max_outbound_bytes))
-        .with_lobby_interval(LOBBY_INTERVAL);
+        .with_lobby_interval(LOBBY_INTERVAL)
+        .with_db_requests_per_minute(env_parse(
+            "DB_REQUESTS_PER_MINUTE",
+            DEFAULT_DB_REQUESTS_PER_MINUTE,
+        ));
     if let Some(stats) = &stats {
         rooms = rooms.with_stats(stats.clone());
     }
@@ -182,6 +187,23 @@ async fn main() {
         max_messages_per_second,
         max_bytes_per_second,
     });
+    // Pruning deletes rows and may take a while: it runs in a task of its own, so the accept loop
+    // below never waits for the database.
+    {
+        let boards = shared.boards.clone();
+        let stats = stats.clone();
+        tokio::spawn(async move {
+            let mut prune = tokio::time::interval(Duration::from_secs(60));
+            prune.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                prune.tick().await;
+                boards.prune_if_due().await;
+                if let Some(stats) = &stats {
+                    stats.prune_if_due().await;
+                }
+            }
+        });
+    }
     let mut sweep = tokio::time::interval(Duration::from_secs(60));
     sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut seats = tokio::time::interval(Duration::from_secs(2));
@@ -201,9 +223,8 @@ async fn main() {
             _ = sweep.tick() => {
                 shared.guard.sweep();
                 shared.manager.lock().sweep();
-                shared.boards.prune_if_due().await;
                 if let Some(stats) = &stats {
-                    stats.prune_if_due().await;
+                    stats.sweep(std::time::Instant::now());
                 }
             }
             accepted = listener.accept() => {

@@ -57,7 +57,18 @@ pub async fn route(
     conn_id: u64,
     message: &Value,
 ) {
-    match Command::parse(message) {
+    let command = Command::parse(message);
+    // Every request that reaches the database counts against the client's share; a local game has
+    // a limit of its own and is never answered.
+    if let Command::Daily(daily) = &command {
+        if !matches!(daily, DailyCommand::Local(_)) && !manager.lock().allow_db_request(conn_id) {
+            manager
+                .lock()
+                .error(conn_id, "Too many requests – try again shortly");
+            return;
+        }
+    }
+    match command {
         Command::Daily(DailyCommand::Submit(run)) => {
             daily_submit(manager, boards, conn_id, run).await
         }
@@ -119,6 +130,12 @@ async fn daily_submit(
         manager.lock().error(conn_id, "That name is not allowed");
         return;
     }
+    if !boards.keeps(&run.day, crate::leaderboard::today()) {
+        manager
+            .lock()
+            .error(conn_id, "That day's board is not open");
+        return;
+    }
     match boards.submit(&run.day, &run.name, run.score, ip).await {
         Ok(board) => manager.lock().daily_board(conn_id, &run.day, &board),
         Err(err) => {
@@ -146,6 +163,15 @@ async fn daily_top(
             return;
         }
     };
+    // A day without a board here is an empty one, and costs no read.
+    if !boards.keeps(&day, crate::leaderboard::today()) {
+        let empty = crate::leaderboard::Board {
+            entries: Vec::new(),
+            you: None,
+        };
+        manager.lock().daily_board(conn_id, &day, &empty);
+        return;
+    }
     match boards.board(&day, ip).await {
         Ok(board) => manager.lock().daily_board(conn_id, &day, &board),
         Err(err) => {
@@ -220,7 +246,7 @@ async fn stats_replay(manager: &Mutex<RoomManager>, conn_id: u64, id: Parsed<Str
         return;
     };
     match stats.replay_shared(&id).await {
-        Ok(replay) => manager.lock().stats_replay(conn_id, &id, replay),
+        Ok(replay) => manager.lock().stats_replay(conn_id, &id, replay.as_deref()),
         Err(err) => {
             warn!(%err, "stats read failed");
             manager
@@ -422,6 +448,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_client_gets_only_so_many_database_answers_a_minute() {
+        let manager = Mutex::new(RoomManager::new().with_db_requests_per_minute(3));
+        let scrypt_slots = ScryptSlots::new(MAX_CONCURRENT_SCRYPTS);
+        let boards = Leaderboard::in_memory().await;
+        let day = crate::leaderboard::day_key(crate::leaderboard::today());
+        // Two connections of one client, the way the client asks: a connection per request.
+        let mut receivers = Vec::new();
+        for conn in [1, 2] {
+            let (tx, mut rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+            let (slow, _) = tokio::sync::watch::channel(false);
+            manager
+                .lock()
+                .connect(conn, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow);
+            let _ = take_type(&mut rx, "lobby_update").await;
+            receivers.push(rx);
+        }
+        let ask = serde_json::json!({"type":"daily_top","day":day});
+        for _ in 0..2 {
+            route(&manager, &scrypt_slots, &boards, 1, &ask).await;
+            let _ = take_type(&mut receivers[0], "daily_board").await;
+        }
+        route(&manager, &scrypt_slots, &boards, 2, &ask).await;
+        let _ = take_type(&mut receivers[1], "daily_board").await;
+        route(&manager, &scrypt_slots, &boards, 2, &ask).await;
+        assert_eq!(
+            take_type(&mut receivers[1], "error").await["message"],
+            "Too many requests – try again shortly"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_run_for_a_day_without_a_board_is_refused_and_such_a_board_is_empty() {
+        let manager = Mutex::new(RoomManager::new());
+        let scrypt_slots = ScryptSlots::new(MAX_CONCURRENT_SCRYPTS);
+        let boards = Leaderboard::in_memory().await;
+        let (tx, mut rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (slow, _) = tokio::sync::watch::channel(false);
+        manager
+            .lock()
+            .connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow);
+        let _ = take_type(&mut rx, "lobby_update").await;
+        let today = crate::leaderboard::today();
+        for far in [today + 30, today - 30] {
+            let day = crate::leaderboard::day_key(far);
+            route(
+                &manager,
+                &scrypt_slots,
+                &boards,
+                1,
+                &serde_json::json!({"type":"daily_submit","day":day,"name":"Ada","score":10}),
+            )
+            .await;
+            assert_eq!(
+                take_type(&mut rx, "error").await["message"],
+                "That day's board is not open"
+            );
+            route(
+                &manager,
+                &scrypt_slots,
+                &boards,
+                1,
+                &serde_json::json!({"type":"daily_top","day":day}),
+            )
+            .await;
+            assert_eq!(
+                take_type(&mut rx, "daily_board").await["entries"],
+                serde_json::json!([])
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn the_stats_page_is_told_the_numbers_or_that_there_are_none() {
         let scrypt_slots = ScryptSlots::new(MAX_CONCURRENT_SCRYPTS);
         let boards = Leaderboard::in_memory().await;
@@ -468,17 +566,18 @@ mod tests {
             .lock()
             .connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow);
         let _ = take_type(&mut rx, "lobby_update").await;
+        let day = crate::leaderboard::day_key(crate::leaderboard::today());
 
         route(
             &manager,
             &scrypt_slots,
             &boards,
             1,
-            &serde_json::json!({"type":"daily_submit","day":"2026-10-19","name":"Ada","score":4200}),
+            &serde_json::json!({"type":"daily_submit","day":day,"name":"Ada","score":4200}),
         )
         .await;
         let board = take_type(&mut rx, "daily_board").await;
-        assert_eq!(board["day"], "2026-10-19");
+        assert_eq!(board["day"], day);
         assert_eq!(
             board["entries"],
             serde_json::json!([{"rank":1,"name":"Ada","score":4200}])
@@ -495,7 +594,7 @@ mod tests {
             &scrypt_slots,
             &boards,
             1,
-            &serde_json::json!({"type":"daily_submit","day":"2026-10-19","name":"fuck","score":9000}),
+            &serde_json::json!({"type":"daily_submit","day":day,"name":"fuck","score":9000}),
         )
         .await;
         assert_eq!(
@@ -509,7 +608,7 @@ mod tests {
             &scrypt_slots,
             &boards,
             1,
-            &serde_json::json!({"type":"daily_submit","day":"2026-10-19","name":"  ","score":10}),
+            &serde_json::json!({"type":"daily_submit","day":day,"name":"  ","score":10}),
         )
         .await;
         assert_eq!(
@@ -532,7 +631,7 @@ mod tests {
             &scrypt_slots,
             &boards,
             1,
-            &serde_json::json!({"type":"daily_top","day":"2026-10-19"}),
+            &serde_json::json!({"type":"daily_top","day":day}),
         )
         .await;
         assert_eq!(

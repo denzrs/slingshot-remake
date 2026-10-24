@@ -13,6 +13,7 @@ typechecks them, so a change to `src/` can break them.
 | `npm run bench:browser` | `browser-perf.ts` | Frame times in headless Chromium of a build without a relay (nothing is sent) against one with it: the title screen, a match, a replay and the statistics page (`SECONDS`, `MATCH_SECONDS`, `CHROME`) |
 | – | `relay-matrix.ts` | JSON, plain MessagePack and MessagePack with envelope on equivalent live relay workloads (`npx tsx benchmarks/relay-matrix.ts ws://localhost:8080 json\|msgpack\|envelope`) |
 | – | `relay-profile-load.ts` | Sustained state-frame workload for profiling the relay (`npx tsx benchmarks/relay-profile-load.ts ws://localhost:8080 msgpack\|envelope [seconds]`) |
+| – | `report-volume.ts` | What a host reports to the statistics per round and turn (turns, shots, placements, simulated seconds), with CPUs at two and six seats; sizes the relay's `STATS_ROWS_PER_DAY` (`MATCHES`, `ROUNDS`) |
 
 Reports are written to the paths you pass with `--json`. The three statistics benchmarks write their figures as JSON to the path in `BENCH_JSON`.
 

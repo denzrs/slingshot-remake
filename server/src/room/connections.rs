@@ -24,6 +24,11 @@ pub const MAX_SCRYPT_PER_SECOND: usize = 10;
 /// Room lists one connection may ask for in `LOBBY_WINDOW`; the relay sends every change anyway.
 pub const MAX_LOBBY_REQUESTS: usize = 5;
 pub const LOBBY_WINDOW: Duration = Duration::from_secs(10);
+/// Requests that read or write the database (the daily board, the statistics page, the menu's
+/// facts, replays) one client may make per minute (`DB_REQUESTS_PER_MINUTE`). The client opens a
+/// connection per request, so they are counted per client; a page view takes a handful.
+pub const DEFAULT_DB_REQUESTS_PER_MINUTE: usize = 120;
+pub const DB_WINDOW: Duration = Duration::from_secs(60);
 /// How many inputs a spectator may send per second; a bet needs a few clicks, not a stream.
 pub const MAX_SPECTATOR_INPUTS_PER_SECOND: usize = 8;
 /// Chat messages one connection may send in `CHAT_WINDOW`.
@@ -101,6 +106,9 @@ pub struct Connections {
     /// Password derivations started per client.
     scrypt_windows: Windows<IpAddr>,
     lobby_requests: Windows<u64>,
+    /// Database requests per client, and how many a minute it may make.
+    db_requests: Windows<IpAddr>,
+    db_requests_per_minute: usize,
     spectator_windows: HashMap<u64, VecDeque<Instant>>,
     chat_windows: HashMap<u64, VecDeque<Instant>>,
     spectate_windows: HashMap<u64, VecDeque<Instant>>,
@@ -118,6 +126,8 @@ impl Default for Connections {
             room_password_checks: Windows::new(ROOM_PASSWORD_WINDOW),
             scrypt_windows: Windows::new(Duration::from_secs(1)),
             lobby_requests: Windows::new(LOBBY_WINDOW),
+            db_requests: Windows::new(DB_WINDOW),
+            db_requests_per_minute: DEFAULT_DB_REQUESTS_PER_MINUTE,
             spectator_windows: HashMap::new(),
             chat_windows: HashMap::new(),
             spectate_windows: HashMap::new(),
@@ -188,6 +198,7 @@ impl Connections {
         self.password_failures.sweep(now);
         self.room_password_checks.sweep(now);
         self.lobby_requests.sweep(now);
+        self.db_requests.sweep(now);
         self.spectator_windows.retain(|_, window| {
             window.retain(|at| now.duration_since(*at) < Duration::from_secs(1));
             !window.is_empty()
@@ -293,6 +304,19 @@ impl Connections {
     pub fn allow_lobby_request(&mut self, conn: u64) -> bool {
         self.lobby_requests
             .allow(conn, Instant::now(), MAX_LOBBY_REQUESTS)
+    }
+
+    pub fn set_db_requests_per_minute(&mut self, requests: usize) {
+        self.db_requests_per_minute = requests;
+    }
+
+    /// Counts one more database request for the connection's client; false when it has made its share.
+    pub fn allow_db_request(&mut self, conn: u64) -> bool {
+        let Some(client) = self.peer_ip(conn) else {
+            return false;
+        };
+        let limit = self.db_requests_per_minute;
+        self.db_requests.allow(client, Instant::now(), limit)
     }
 
     pub fn send_value(&self, conn: u64, value: &Value) {

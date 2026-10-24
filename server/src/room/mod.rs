@@ -6,6 +6,7 @@
 
 mod chat;
 mod connections;
+pub use connections::DEFAULT_DB_REQUESTS_PER_MINUTE;
 #[cfg(test)]
 pub use connections::MAX_PASSWORD_ATTEMPTS;
 mod cpu;
@@ -144,6 +145,16 @@ impl RoomManager {
         self.net.allow_room_password_check(room_id)
     }
 
+    /// How many database requests one client may make per minute.
+    pub fn with_db_requests_per_minute(mut self, requests: usize) -> Self {
+        self.net.set_db_requests_per_minute(requests);
+        self
+    }
+
+    pub fn allow_db_request(&mut self, conn: u64) -> bool {
+        self.net.allow_db_request(conn)
+    }
+
     pub fn join_password_salt(&self, conn: u64, room_id: &str, spectate: bool) -> Option<Hashed> {
         if !self.net.is_connected(conn) || self.is_placed(conn) {
             return None;
@@ -270,7 +281,7 @@ impl RoomManager {
     }
 
     /// One game as the client flies it again; `None` when there is no such game, or not the whole of it.
-    pub fn stats_replay(&mut self, conn: u64, id: &str, replay: Option<Value>) {
+    pub fn stats_replay(&mut self, conn: u64, id: &str, replay: Option<&Value>) {
         self.send_value(
             conn,
             &json!({ "type": "stats_replay", "id": id, "replay": replay }),
