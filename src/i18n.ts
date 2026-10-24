@@ -212,7 +212,6 @@ const en = {
   // — title screen —
   // — match launcher —
   'shell.keys': '↑ ↓ navigate · Enter select · Esc back',
-  'shell.pauseNote': 'Resume the game or adjust your settings.',
   'shell.device': 'On this device',
   'shell.display': 'Display',
   'shell.soundDevice': 'Sound & screen',
@@ -293,6 +292,7 @@ const en = {
   'pause.title': 'Paused',
   'pause.resume': 'Resume',
   'pause.newGame': 'New game',
+  'pause.standings': 'Standings',
 
   // — players —
   'slots.local': 'Local',
@@ -961,7 +961,6 @@ const de: Dict = {
 
   // — match launcher —
   'shell.keys': '↑ ↓ navigieren · Enter wählen · Esc zurück',
-  'shell.pauseNote': 'Setze das Spiel fort oder passe deine Einstellungen an.',
   'shell.device': 'An diesem Gerät',
   'shell.display': 'Darstellung',
   'shell.soundDevice': 'Ton & Bildschirm',
@@ -1041,6 +1040,7 @@ const de: Dict = {
   'pause.title': 'Pause',
   'pause.resume': 'Weiterspielen',
   'pause.newGame': 'Neues Spiel',
+  'pause.standings': 'Zwischenstand',
 
   'slots.local': 'Lokal',
   'slots.online': 'Online',

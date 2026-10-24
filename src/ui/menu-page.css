@@ -90,8 +90,17 @@
 .menu-page--briefing,
 .menu-page--leaderboard,
 .menu-page--lobby { width: 100%; }
-.menu-page--pause .menu-page__body { display: flex; align-items: center; justify-content: center; }
-.menu-page--pause .menu-page__art { width: min(440px, 100%); height: 300px; margin: 0; }
+.menu-page--pause .menu-page__body--split { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 48px; }
+.menu-page--pause .menu-page__main { display: flex; align-items: center; justify-content: center; }
+.menu-page--pause .menu-page__art { width: min(560px, 100%); height: min(380px, 100%); margin: 0; }
+.menu-page--pause .menu-page__aside { align-self: start; padding-left: 36px; }
+.menu-page--pause .ranking, .menu-page--pause .score-chart { max-width: none; margin-top: 0; margin-bottom: 22px; }
+.menu-page--pause .ranking li { padding: 11px 0; gap: 12px; }
+.menu-page--pause .ranking__name { overflow-wrap: anywhere; }
+.menu-page--pause .ranking-label { margin: 0 0 12px; color: var(--launch-accent); line-height: 1.6; }
+.pause-standing__round { margin: 0 0 14px; font: 700 13px/1.4 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--bone-dim); }
+.pause-standing__score { margin: 0; font: 800 64px/1 var(--font-display); }
+.pause-standing__meta { margin: 8px 0 0; color: var(--bone-dim); font-size: 13px; }
 .pause-actions { gap: 8px; }
 .pause-actions .item { min-height: 48px; padding: 12px 16px; border: 1px solid var(--menu-line); border-radius: 3px; font-size: 13px; }
 .pause-actions .item--primary { font-size: 26px; }

@@ -398,7 +398,7 @@ function escapeAction(): void {
     return;
   }
   // A clip records whatever is on screen — don't freeze it behind the menu.
-  if (!recorder.recording) menu.open(() => pauseScreen(app));
+  if (!recorder.recording) menu.open(() => pauseScreen(app, match));
 }
 
 // ————————————————————————————— Keyboard —————————————————————————————

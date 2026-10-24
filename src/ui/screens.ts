@@ -1,5 +1,5 @@
 import { CHALLENGE, COLORS, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
-import { teamName, type Match, type Mode, type VersusMode } from '../game';
+import { ChallengeMatch, teamName, type Match, type Mode, type VersusMode } from '../game';
 import { oracleAwards } from '../game/oracle';
 import { fmtInt, fmtNum, LANGS, t, tn, type Key, type Lang } from '../i18n';
 import { rulesOf } from '../lobbyPrefs';
@@ -392,29 +392,62 @@ export function titleScreen(app: App): Screen {
   };
 }
 
-export function pauseScreen(app: App): Screen {
+export function pauseScreen(app: App, match: Match | null): Screen {
   const daily = app.mode === 'challenge';
   const mode = app.mode === 'classic' || app.mode === 'horizon' ? app.mode : null;
+  // The way on is the last button, at the right edge, where the eye ends up.
+  const items: MenuItem[] = [
+    // Online, the room decides: no restarts from the pause menu. The daily challenge has no setup, only a retry.
+    ...(mode && !app.online ? [{ kind: 'action', section: 'actions', label: t('pause.newGame'), run: () => app.menu.push(prepareModeScreen(app, app.mayhem ? 'mayhem' : mode)) } satisfies MenuItem] : []),
+    ...(daily ? [{ kind: 'action', section: 'actions', label: t('daily.retry'), run: () => app.rematch() } satisfies MenuItem] : []),
+    { kind: 'action', section: 'actions', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
+    { kind: 'action', section: 'actions', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
+    app.online
+      ? { kind: 'action', section: 'actions', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
+      : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: () => app.toTitle() },
+    { kind: 'action', section: 'actions', label: t('pause.resume'), primary: true, run: () => app.resume() },
+  ];
   return {
     build: () => menuPage({
       title: t('pause.title'), eyebrow: app.mode === 'challenge' ? t('mode.daily') : app.mayhem ? t('mode.mayhem') : modeName(app.mode === 'horizon' ? 'horizon' : 'classic'),
-      intro: t('shell.pauseNote'), className: 'menu-page--pause',
+      className: 'menu-page--pause',
       body: [h('div.menu-page__art', null, modeArt(app.mode === 'challenge' ? 'daily' : app.mayhem ? 'mayhem' : app.mode === 'horizon' ? 'horizon' : 'classic'))],
+      aside: match ? pauseStanding(match) : undefined,
       footer: h('nav.items.items--row.pause-actions.menu-page__actions', { 'data-section': 'actions', 'aria-label': t('pause.title') }),
     }),
-    items: [
-      { kind: 'action', section: 'actions', label: t('pause.resume'), primary: true, run: () => app.resume() },
-      // Online, the room decides: no restarts from the pause menu. The daily challenge has no setup, only a retry.
-      ...(mode && !app.online ? [{ kind: 'action', section: 'actions', label: t('pause.newGame'), run: () => app.menu.push(prepareModeScreen(app, app.mayhem ? 'mayhem' : mode)) } satisfies MenuItem] : []),
-      ...(daily ? [{ kind: 'action', section: 'actions', label: t('daily.retry'), run: () => app.rematch() } satisfies MenuItem] : []),
-      { kind: 'action', section: 'actions', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
-      { kind: 'action', section: 'actions', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
-      app.online
-        ? { kind: 'action', section: 'actions', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
-        : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: () => app.toTitle() },
-    ],
+    items,
+    focus: items.length - 1,
     onEscape: () => app.resume(),
   };
+}
+
+/** The pause menu's side panel: where the match stands right now. */
+function pauseStanding(match: Match): Node[] {
+  const row = (place: number, name: string, color: string, score: number | string) => {
+    const label = h('span.ranking__name', null, name);
+    label.style.color = color;
+    return h('li', null, h('span.ranking__place', null, `${place}.`), label, h('span.ranking__score', null, String(score)));
+  };
+  if (match instanceof ChallengeMatch) {
+    return [
+      h('p.ranking-label', null, t('pause.standings')),
+      h('p.pause-standing__round', null, t('daily.sector', { n: match.spec.index + 1 })),
+      h('p.pause-standing__score', null, fmtInt(match.total)),
+      h('p.pause-standing__meta', null, tn('daily.shots', match.shotsLeft)),
+    ];
+  }
+  const nodes: Node[] = [h('p.ranking-label', null, t('pause.standings'))];
+  nodes.push(h('p.pause-standing__round', null, match.totalRounds ? `${t('hud.round')} ${match.round} / ${match.totalRounds}` : `${t('hud.round')} ${match.round}`));
+  if (match.teamMode) {
+    nodes.push(h('ol.ranking', null, ...match.teamRanking().map((r, i) => row(i + 1, t('team.name', { team: teamName(r.team) }), TEAMS[r.team][0], r.score))));
+    nodes.push(h('p.ranking-label', null, t('over.players')));
+    nodes.push(h('ol.ranking.ranking--small', null, ...match.ranking().map((p, i) => row(i + 1, p.name, p.color, p.score))));
+  } else {
+    nodes.push(h('ol.ranking', null, ...match.ranking().map((p, i) => row(i + 1, p.name, p.color, p.score))));
+  }
+  const chart = scoreChart(match);
+  if (chart) nodes.push(h('p.ranking-label', null, t('scorecard.history')), chart);
+  return nodes;
 }
 
 function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {
