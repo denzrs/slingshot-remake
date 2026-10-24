@@ -1,5 +1,5 @@
 import { PHYSICS } from './config';
-import { Shot, type Missile, type ShotEnd, type ShotRules, type StyleEvent, type World } from './physics';
+import { Shot, type Missile, type ShotEnd, type ShotRules, type StormContactSnapshot, type StyleEvent, type World } from './physics';
 
 export interface VolleyAim {
   player: number;
@@ -38,7 +38,7 @@ export interface VolleySnapshot {
   aims: VolleyAim[];
   steps: number;
   script?: VolleyScript[];
-  shots: { owner: number; trail: number[]; x: number; y: number; vx: number; vy: number; time: number; end: ShotEnd | null; style: StyleEvent[] | null; fired?: boolean[]; missiles?: Missile[]; seed?: number }[];
+  shots: { owner: number; trail: number[]; x: number; y: number; vx: number; vy: number; time: number; end: ShotEnd | null; style: StyleEvent[] | null; fired?: boolean[]; missiles?: Missile[]; seed?: number; stormContacts?: StormContactSnapshot[] }[];
 }
 
 /** Something done to a flight after it started, so a replay can do it at the same step: a split, or a shield put on or taken off. */
@@ -123,6 +123,7 @@ export class Volley {
         fired: [...shot.fired],
         missiles: shot.missiles.map((m) => ({ ...m, trail: [...m.trail] })),
         seed: shot.seed,
+        stormContacts: shot.snapshotStormContacts(),
       })),
     };
   }
@@ -140,6 +141,7 @@ export class Volley {
       current.shot.fired.splice(0, Infinity, ...(saved.fired ?? []));
       current.shot.missiles.splice(0, Infinity, ...(saved.missiles ?? []).map((m) => ({ ...m, trail: [...m.trail] })));
       if (saved.seed !== undefined) current.shot.seed = saved.seed;
+      current.shot.restoreStormContacts(saved.stormContacts);
     });
   }
 

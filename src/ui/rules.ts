@@ -1,4 +1,6 @@
 import { AIM, GRACE, MAYHEM, TRAIL_FADE } from '../config';
+import { KILLCAM_MODES, type KillcamMode } from '../settings';
+import type { VersusMode } from '../game';
 import { t, type Key } from '../i18n';
 import type { RoomRules } from '../net';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from '../powerups';
@@ -6,9 +8,12 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import type { MenuItem } from './menu';
 
 /** The blocks the setup screen and the lobby sort the rules into. */
-type RuleGroup = 'match' | 'field' | 'shots' | 'twists';
+export type RuleGroup = 'match' | 'field' | 'shots' | 'twists' | 'powerups';
 
-export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists'];
+export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists', 'powerups'];
+
+/** The two columns of the rules page, balanced by height: the match and its field on the left, the shots and the power-ups on the right. */
+export const RULE_COLUMNS: readonly (readonly RuleGroup[])[] = [['match', 'field', 'twists'], ['shots', 'powerups']];
 
 export const groupTitle = (group: RuleGroup): string => t(`setup.group.${group}` as Key);
 
@@ -46,11 +51,11 @@ export function powerModePatch(mode: PowerMode, cap: number = DEFAULT_CAP): Pick
 
 // ————————————————————————————— The rules —————————————————————————————
 
-interface RuleRow {
+export interface RuleRow {
   key: keyof RoomRules;
   label: string;
   /** Every value the rule can take — for a slider, its stops from lowest to highest. */
-  options: { value: number | boolean | PowerMode | PowerUpKind; label: string }[];
+  options: { value: number | boolean | PowerMode | PowerUpKind | KillcamMode; label: string }[];
   /** Switches for on/off rules, sliders for numbers, a segmented bar for a choice between a few words, tiles for several that can each be on or off. */
   control: 'toggle' | 'slider' | 'segmented' | 'tiles';
   group: RuleGroup;
@@ -73,9 +78,10 @@ export function ruleRows(): RuleRow[] {
   const seconds = (n: number) => t('settings.seconds', { n });
   return [
     { key: 'rounds', group: 'match', control: 'slider', label: t('settings.rounds'), options: numbers([1, 3, 5, 7, 10, 15, 20, 0], (n) => (n ? String(n) : t('settings.endless'))) },
-    // Only in a Mayhem game, which has nothing else to set: the strength is a choice of three, never "off".
-    { key: 'mayhem', group: 'match', control: 'segmented', label: t('settings.mayhem'), options: numbers(MAYHEM.LEVELS.filter((n) => n > 0), (n) => t(`settings.mayhem.${n}` as Key)) },
+    // Only while Mayhem is on: the Mayhem preset turns it on, every other preset off, so the strength is never "off" here.
+    { key: 'mayhem', group: 'match', control: 'segmented', label: t('settings.mayhem'), options: numbers(MAYHEM.LEVELS.filter((n) => n > 0), (n) => t(`settings.mayhem.${n}` as Key)), when: (r) => r.mayhem > 0 },
     { key: 'shotTime', group: 'match', control: 'slider', label: t('settings.shotTime'), options: numbers([10, 20, 30, 60], seconds) },
+    { key: 'killcam', group: 'match', control: 'segmented', label: t('settings.killcam'), options: KILLCAM_MODES.map((value) => ({ value, label: t(`settings.killcam.${value}` as Key) })) },
     { key: 'maxPlanets', group: 'field', control: 'slider', label: t('settings.maxPlanets'), options: numbers([1, 2, 3, 4, 5, 6, 7, 8]) },
     { key: 'invisiblePlanets', group: 'field', control: 'toggle', label: t('settings.invisible'), options: [], classicOnly: true },
     { key: 'bounce', group: 'field', control: 'toggle', label: t('settings.bounce'), options: [] },
@@ -96,26 +102,28 @@ export function ruleRows(): RuleRow[] {
     { key: 'fadingTrails', group: 'twists', control: 'slider', label: t('settings.fadingTrails'), options: numbers(TRAIL_FADE.OPTIONS, (n) => (n ? seconds(n) : t('common.off'))) },
     { key: 'betting', group: 'twists', control: 'toggle', label: t('settings.betting'), options: [], onlineOnly: true },
     { key: 'chatPlayersOnly', group: 'twists', control: 'toggle', label: t('settings.chatPlayersOnly'), options: [], onlineOnly: true },
-    { key: 'powerUps', group: 'twists', control: 'toggle', label: t('settings.powerUps'), options: [] },
-    // The kinds and the amount are the last rows of the block and keep their space while the switch is off, so nothing moves.
-    { key: 'powerUpKinds', group: 'twists', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}` as Key)) })), when: (r) => r.powerUps, reserve: () => true },
-    { key: 'powerUpAmount', group: 'twists', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps, reserve: () => true },
+    { key: 'powerUpKinds', group: 'powerups', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}` as Key)) })) },
+    { key: 'powerUpAmount', group: 'powerups', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps },
   ];
+}
+
+/** A rule's value in words: the stop it sits on, on or off, the strength of a cap, or how many power-ups are in. */
+export function ruleValueText(row: RuleRow, rules: RoomRules): string {
+  const option = (value: unknown) => row.options.find((o) => o.value === value)?.label ?? String(value);
+  if (row.key === 'fixedPower') {
+    const mode = powerModeOf(rules);
+    return mode === 'cap' ? `${option(mode)} ${rules.maxPower}` : mode === 'fixed' ? `${option(mode)} ${rules.fixedPowerLevel}` : option(mode);
+  }
+  if (row.key === 'powerUpKinds') return rules.powerUps ? `${rules.powerUpKinds.length}/${POWER_UP_KINDS.length}` : t('common.off');
+  if (row.control === 'toggle') return t(rules[row.key] ? 'common.on' : 'common.off');
+  return option(rules[row.key]);
 }
 
 const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** The rules a Mayhem game has: how many rounds, how wild, how long a shot may fly, and in Classic whether everybody shoots at once — everything else is the plain rules, plus the round's twists. */
-const MAYHEM_RULES: readonly (keyof RoomRules)[] = ['rounds', 'mayhem', 'shotTime', 'simultaneousShots', 'chatPlayersOnly'];
-
-/**
- * The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has.
- * A Mayhem game has only its own, all in one block.
- */
-export const rulesFor = (mode: 'classic' | 'horizon', online = false, mayhem = false): RuleRow[] =>
-  mayhem
-    ? ruleRows().filter((row) => MAYHEM_RULES.includes(row.key) && (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly)).map((row): RuleRow => ({ ...row, group: 'match' }))
-    : ruleRows().filter((row) => row.key !== 'mayhem' && (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly));
+/** The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has. */
+export const rulesFor = (mode: VersusMode, online = false): RuleRow[] =>
+  ruleRows().filter((row) => (mode !== 'horizon' || !row.classicOnly) && (online || !row.onlineOnly));
 
 // ————————————————————————————— As controls —————————————————————————————
 
@@ -134,11 +142,11 @@ export interface RuleSource {
 type RuleItem = Extract<MenuItem, { kind: 'slider' | 'toggle' | 'segmented' | 'tiles' }>;
 
 /** The controls for the rules of a game mode, each with the block it belongs to. */
-export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, online = false, mayhem = false): { key: keyof RuleValues; group: RuleGroup; item: RuleItem }[] {
+export function ruleItems(mode: VersusMode, source: RuleSource, online = false): { key: keyof RuleValues; group: RuleGroup; item: RuleItem }[] {
   /** The cap to come back to after trying another power mode. */
   let lastCap = source.get().maxPower < AIM.MAX_POWER ? source.get().maxPower : DEFAULT_CAP;
   const commit = source.commit;
-  return rulesFor(mode, online, mayhem).map((row): { key: keyof RuleValues; group: RuleGroup; item: RuleItem } => {
+  return rulesFor(mode, online).map((row): { key: keyof RuleValues; group: RuleGroup; item: RuleItem } => {
     const hidden = row.when ? () => !row.when!(source.get()) : undefined;
     const reserve = row.reserve ? () => row.reserve!(source.get()) : undefined;
     const inactive = row.inactive ? () => row.inactive!(source.get()) : undefined;
@@ -156,6 +164,8 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, onlin
         item: {
           kind: 'tiles',
           label: row.label,
+          allowEmpty: true,
+          quick: { all: t('powerups.all'), none: t('powerups.none') },
           hidden,
           reserve,
           commit,
@@ -165,8 +175,10 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, onlin
             color: POWER_UP_COLORS[o.value],
             draw: (ctx, r) => drawPowerUpSymbol(ctx, o.value, 0, 0, r),
           })),
-          get: () => source.get().powerUpKinds,
-          set: (kinds) => source.patch({ powerUpKinds: POWER_UP_KINDS.filter((k) => kinds.includes(k)) }),
+          get: () => source.get().powerUps ? source.get().powerUpKinds : [],
+          set: (kinds) => kinds.length
+            ? source.patch({ powerUps: true, powerUpKinds: POWER_UP_KINDS.filter((k) => kinds.includes(k)) })
+            : source.patch({ powerUps: false }),
         },
       };
     }

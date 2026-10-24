@@ -1,30 +1,17 @@
-import { AIM, HORIZON, PHYSICS, SCORING, COLORS, WORMHOLE } from '../config';
+import { AIM, HORIZON, SCORING, COLORS, WORMHOLE } from '../config';
 import { t } from '../i18n';
-import { cloneWorld, type ShotRules, type StyleKind, type World } from '../physics';
+import type { ShotRules, StyleKind, World } from '../physics';
 import { POWER_UP, type Pickup } from '../powerups';
 import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
 import { scoreHorizonKill } from '../scoring';
-import { shotSource, Volley, type VolleyAim, type VolleyScript, type VolleyShot, type VolleySnapshot } from '../volley';
-import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene, type SkipVote } from './match';
+import { Volley, type VolleyShot, type VolleySnapshot } from '../volley';
+import { Match, type Phase, type RoundTitle, type SkipVote } from './match';
 import type { CrowdSeat } from './crowd';
 import type { OracleSnapshot } from './oracle';
+import type { KillcamSnapshot } from './killcam';
 
-/** Everything needed to replay one kill exactly — the physics is deterministic. */
-interface KillcamClip {
-  snapshot: World;
-  aims: VolleyAim[];
-  /** What was done to the flight on the way (splits, shields), so the replay flies the same flight. */
-  script?: VolleyScript[];
-  /** Index of the killing shot within the volley. */
-  focus: number;
-  victim: number;
-  /** Simulation step at which the kill happened. */
-  killStep: number;
-  record: KillRecord;
-}
-
-export interface HorizonSnapshot {
+export interface HorizonSnapshot extends KillcamSnapshot {
   phase: Phase;
   phaseTime: number;
   clock: number;
@@ -56,41 +43,12 @@ export interface HorizonSnapshot {
   volleyNo: number;
   clock_: HorizonMatch['clock_'];
   queue: number[];
-  snapshot: World | null;
-  aims: VolleyAim[];
-  volleyKills: { record: KillRecord; shotIndex: number; step: number }[];
   collapse: null | Omit<CollapseState, 'planets' | 'ships' | 'pickups'> & { planets: [number, Drift][]; ships: [number, Drift][]; pickups?: [number, Drift][] };
-  /** The clip being replayed — static for the whole killcam, so it travels as its own (rarely changing) field. */
-  killcamClip: KillcamClip | null;
-  killcam: null | {
-    replay: VolleySnapshot;
-    simClock: number;
-    hold: number;
-    camera: Camera;
-    returnTo: Phase | null;
-    recording: boolean;
-    skipVotes: number[];
-  };
-  lastClip: KillcamClip | null;
   oracle: OracleSnapshot;
   stands?: OracleSnapshot;
   crowd?: CrowdSeat[];
   pickups?: Pickup[];
   power?: PowerUpState;
-}
-
-interface KillcamState {
-  clip: KillcamClip;
-  replay: Volley;
-  simClock: number;
-  /** Seconds spent after the kill, holding on the explosion. */
-  hold: number;
-  camera: Camera;
-  /** Phase to return to afterwards (replays started from the round summary); null = continue the volley. */
-  returnTo: Phase | null;
-  recording: boolean;
-  /** Online: the players who voted to skip. */
-  skipVotes: number[];
 }
 
 interface Drift {
@@ -134,16 +92,9 @@ const SWALLOW_MARGIN = 14;
 export class HorizonMatch extends Match {
   readonly mode = 'horizon';
   volleyNo = 0;
-  lastClip: KillcamClip | null = null;
-  killcam: KillcamState | null = null;
 
   private clock_: number = HORIZON.SHOT_CLOCK;
   private queue: number[] = [];
-  private volleySnapshot: World | null = null;
-  private aims: VolleyAim[] = [];
-  /** What was done to the volley in the air; the killcam's clip keeps it. */
-  private volleyScript: VolleyScript[] = [];
-  private volleyKills: { record: KillRecord; shotIndex: number; step: number }[] = [];
   private collapse: CollapseState | null = null;
 
   get rules(): ShotRules {
@@ -159,16 +110,9 @@ export class HorizonMatch extends Match {
       lastKill: this.lastKill, summary: this.summary, notice: this.notice, settings: this.settings,
       mayhem: this.mayhem, revealEnd: this.revealEnd, revealHeld: this.revealHeld, mayhemHistory: this.mayhemHistory,
       roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory, skipVote: this.skipVote,
-      volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
-      aims: this.aims, volleyKills: this.volleyKills,
+      volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue,
+      ...this.killcam.snapshot(),
       collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships], pickups: [...this.collapse.pickups], wormholes: this.collapse.wormholes.map((w) => ({ ...w })) } : null,
-      killcamClip: this.killcam?.clip ?? null,
-      killcam: this.killcam ? {
-        replay: this.killcam.replay.snapshot(), simClock: this.killcam.simClock,
-        hold: this.killcam.hold, camera: this.killcam.camera, returnTo: this.killcam.returnTo,
-        recording: this.killcam.recording, skipVotes: [...this.killcam.skipVotes],
-      } : null,
-      lastClip: this.lastClip,
       oracle: this.oracle.snapshot(),
       stands: this.stands.snapshot(),
       crowd: this.crowd.snapshot(),
@@ -190,30 +134,20 @@ export class HorizonMatch extends Match {
     this.players = s.players.map((player) => ({ ...player })); this.current = s.current;
     this.world = s.world; this.trails = s.trails; this.killFeed = s.killFeed; this.lastKill = s.lastKill;
     this.summary = s.summary; this.notice = s.notice; this.roundStats = s.roundStats; this.matchStats = s.matchStats; this.scoreHistory = s.scoreHistory; this.skipVote = s.skipVote ?? null; this.volleyNo = s.volleyNo; this.clock_ = s.clock_;
-    this.queue = [...s.queue]; this.volleySnapshot = s.snapshot; this.aims = s.aims; this.volleyKills = s.volleyKills;
+    this.queue = [...s.queue];
     this.collapse = s.collapse ? { ...s.collapse, planets: new Map(s.collapse.planets), ships: new Map(s.collapse.ships), pickups: new Map(s.collapse.pickups ?? []), wormholes: s.collapse.wormholes ?? [] } : null;
     this.volley = null;
     if (s.volley) {
       this.volley = new Volley(this.world, s.volley.aims, this.rules, true);
       this.volley.restore(s.volley);
     }
-    this.lastClip = s.lastClip;
     // Hosts from before the oracle send none.
     if (s.oracle) this.oracle.restore(s.oracle);
     if (s.stands) this.stands.restore(s.stands);
     this.crowd.restore(s.crowd);
     this.pickups = s.pickups ?? [];
     this.power.restoreState(s.power);
-    this.killcam = null;
-    if (s.killcam && s.killcamClip) {
-      const clip = s.killcamClip;
-      const replay = new Volley(cloneWorld(clip.snapshot), clip.aims, this.rules, true, clip.script);
-      replay.restore(s.killcam.replay);
-      this.killcam = {
-        clip, replay, simClock: s.killcam.simClock, hold: s.killcam.hold,
-        camera: s.killcam.camera, returnTo: s.killcam.returnTo, recording: s.killcam.recording, skipVotes: [...s.killcam.skipVotes],
-      };
-    }
+    this.killcam.restore(s, this.rules);
     this.restarted();
     this.flightDoneAt = s.flightDoneAt ?? null;
   }
@@ -259,10 +193,6 @@ export class HorizonMatch extends Match {
     return true;
   }
 
-  protected get afterVolleyDelay(): number {
-    return this.volleyKills.length ? HORIZON.KILLCAM_DELAY : 0;
-  }
-
   protected get survivorBonus(): number {
     return SCORING.LAST_IN_ORBIT;
   }
@@ -284,16 +214,6 @@ export class HorizonMatch extends Match {
     return hole.radius + HORIZON.GROWTH + HORIZON.GROWTH_ACCEL * this.volleyNo;
   }
 
-  get canReplay(): boolean {
-    return !!this.lastClip && (this.phase === 'roundOver' || (this.phase === 'killcam' && !this.killcam?.recording));
-  }
-
-  scene(): Scene {
-    const k = this.killcam;
-    if (k) return { world: k.replay.world, trails: [], volley: k.replay, camera: k.camera };
-    return super.scene();
-  }
-
   devourProgress(seed: number): number {
     return this.collapse?.planets.get(seed)?.lost ? this.collapseT : 0;
   }
@@ -311,15 +231,12 @@ export class HorizonMatch extends Match {
   }
 
   protected abandonRound(): void {
-    this.killcam = null;
     this.collapse = null;
     this.queue = [];
   }
 
   protected beginRound(): void {
     this.volleyNo = 0;
-    this.lastClip = null;
-    this.killcam = null;
     this.collapse = null;
     this.startPlanning();
   }
@@ -387,7 +304,6 @@ export class HorizonMatch extends Match {
 
   protected updatePhase(dt: number): void {
     if (this.phase === 'aiming') this.updatePlanning(dt);
-    else if (this.phase === 'killcam') this.updateKillcam(dt);
     else if (this.phase === 'collapse') this.updateCollapse();
   }
 
@@ -401,7 +317,7 @@ export class HorizonMatch extends Match {
         const job = this.cpuJob(p.id);
         if (this.cpuRescueIfBlind(p, job)) continue;
         const place = this.cpuPlacementAim(p);
-        if (place && this.phaseTime >= 0.5) {
+        if (place && !job?.placeFailed && this.phaseTime >= 0.5) {
           // It lays the placement once its aim is on the spot; the placement spends its shot, so it fires nothing this volley.
           if (!this.swingTowards(p, place, dt, 2)) continue;
           if (this.placeForCpu(p.id)) {
@@ -411,6 +327,7 @@ export class HorizonMatch extends Match {
             continue;
           }
           // Nowhere to lay it this volley: it keeps the power-up and aims a shot instead.
+          if (job) job.placeFailed = true;
         }
         if (!job?.target || this.phaseTime < 0.5) continue;
         if (this.swingTowards(p, job.target, dt, 2)) {
@@ -441,137 +358,21 @@ export class HorizonMatch extends Match {
 
   private launchVolley(): void {
     this.makeHeldPlacements();
-    this.volleySnapshot = cloneWorld(this.world);
-    this.aims = this.alive.filter((p) => !p.passed).flatMap((p) => this.aimsFor(p));
+    const aims = this.alive.filter((p) => !p.passed).flatMap((p) => this.aimsFor(p));
     for (const p of this.alive) if (!p.passed) p.shots++;
-    this.volleyKills = [];
     this.notice = { text: t('notice.volley'), color: COLORS.bone, at: this.clock };
     this.emit({ type: 'volley' });
-    this.launch(this.aims, true);
-    this.volleyScript = this.volley?.script ?? [];
-  }
-
-  protected onKill(record: KillRecord, shotIndex: number, step: number): void {
-    this.volleyKills.push({ record, shotIndex, step });
+    this.launch(aims, true);
   }
 
   protected afterVolley(): void {
-    // Replay the volley's best kill (self-hits only if that's all there was).
-    const best = [...this.volleyKills].sort((a, b) => Number(own(a.record)) - Number(own(b.record)) || b.record.points - a.record.points)[0];
-    if (best && this.volleySnapshot) {
-      this.lastClip = {
-        snapshot: this.volleySnapshot,
-        aims: this.aims,
-        script: this.volleyScript,
-        focus: best.shotIndex,
-        victim: best.record.victim,
-        killStep: best.step,
-        record: best.record,
-      };
-      this.startKillcam(this.lastClip, null, false);
-    } else {
-      this.startCollapse();
-    }
+    this.startCollapse();
   }
 
   protected killPoints(vs: VolleyShot): { points: number; combo: StyleKind[]; multiplier: number } {
     const kinds = (vs.shot.style ?? []).map((e) => e.kind);
     const { points, combo } = scoreHorizonKill(vs.shot.power, kinds, this.settings.fixedPower);
     return { points, combo: kinds, multiplier: combo };
-  }
-
-  // ————————————————————————————— Killcam —————————————————————————————
-
-  /** Replay the last kill (e.g. to record a clip). Returns false when there is nothing to replay right now. */
-  replayLastKill(recording: boolean): boolean {
-    if (!this.lastClip || !this.canReplay) return false;
-    const returnTo = this.phase === 'killcam' ? this.killcam!.returnTo : this.phase;
-    this.startKillcam(this.lastClip, returnTo, recording);
-    return true;
-  }
-
-  get killcamInfo(): { clip: KillcamClip; recording: boolean; slow: boolean; votes: number; needed: number } | null {
-    const k = this.killcam;
-    if (!k) return null;
-    return { clip: k.clip, recording: k.recording, slow: this.killcamRate(k) < 0.5, votes: k.skipVotes.length, needed: this.skipsNeeded };
-  }
-
-  /** At least half of the people at the table have to want the killcam gone. */
-  private get skipsNeeded(): number {
-    return Math.ceil(this.players.filter((p) => !p.cpu).length / 2);
-  }
-
-  voteSkip(player: number): void {
-    const k = this.killcam;
-    if (!k || k.recording || this.phaseTime <= 0.3 || k.skipVotes.includes(player)) return;
-    k.skipVotes.push(player);
-    if (k.skipVotes.length >= this.skipsNeeded) this.endKillcam();
-  }
-
-  private startKillcam(clip: KillcamClip, returnTo: Phase | null, recording: boolean): void {
-    const replay = new Volley(cloneWorld(clip.snapshot), clip.aims, this.rules, true, clip.script);
-    const start = this.focusShot(replay, clip).shot;
-    this.killcam = { clip, replay, simClock: 0, hold: 0, camera: { x: start.x, y: start.y, zoom: 1.2 }, returnTo, recording, skipVotes: [] };
-    this.setPhase('killcam');
-    this.emit({ type: 'killcam', active: true, recording });
-  }
-
-  /** The shot the killcam follows: the killing one, or — until a split has made it — the shot it will branch off from. */
-  private focusShot(replay: Volley, clip: KillcamClip): VolleyShot {
-    // A stray missile is made mid-flight too; until then the camera stays on the last shot there is.
-    return replay.shots[clip.focus] ?? replay.shots[shotSource(clip.aims.length, clip.script ?? [], clip.focus)] ?? replay.shots[replay.shots.length - 1];
-  }
-
-  private killcamRate(k: KillcamState): number {
-    const toKill = k.clip.killStep - k.replay.steps;
-    if (toKill <= 0) return 0.3;
-    // Slow motion for the last moments before impact.
-    return toKill < 0.7 / PHYSICS.DT ? 0.2 : 0.85;
-  }
-
-  private updateKillcam(dt: number): void {
-    const k = this.killcam!;
-    k.simClock += dt * this.killcamRate(k);
-    while (k.simClock >= PHYSICS.DT && !k.replay.done) {
-      k.simClock -= PHYSICS.DT;
-      for (const e of k.replay.step()) this.onVolleyEvent(k.replay, e, false);
-    }
-    const afterKill = k.replay.steps >= k.clip.killStep;
-    if (afterKill || k.replay.done) k.hold += dt;
-
-    // Follow the killing shot, then settle on the wreck.
-    const focus = this.focusShot(k.replay, k.clip).shot;
-    const victim = k.replay.world.ships[k.clip.victim];
-    const tx = afterKill ? victim.x : focus.x;
-    const ty = afterKill ? victim.y : focus.y;
-    const tz = afterKill ? 2.3 : 1.7;
-    const f = 1 - Math.exp(-dt * 5);
-    const cam = k.camera;
-    cam.zoom += (tz - cam.zoom) * f;
-    cam.x += (tx - cam.x) * f;
-    cam.y += (ty - cam.y) * f;
-    const halfW = k.replay.world.width / (2 * cam.zoom);
-    const halfH = k.replay.world.height / (2 * cam.zoom);
-    cam.x = Math.min(k.replay.world.width - halfW, Math.max(halfW, cam.x));
-    cam.y = Math.min(k.replay.world.height - halfH, Math.max(halfH, cam.y));
-
-    if (k.hold > 1.4) this.endKillcam();
-  }
-
-  private endKillcam(): void {
-    const k = this.killcam!;
-    this.killcam = null;
-    this.emit({ type: 'killcam', active: false, recording: k.recording });
-    if (k.returnTo) this.setPhase(k.returnTo);
-    else this.startCollapse();
-  }
-
-  advance(): void {
-    if (this.phase === 'killcam') {
-      if (!this.killcam!.recording && this.phaseTime > 0.3) this.endKillcam();
-      return;
-    }
-    super.advance();
   }
 
   // ————————————————————————————— Collapse —————————————————————————————
@@ -689,9 +490,6 @@ export class HorizonMatch extends Match {
     return this.lastKill?.killer === null ? 'swallowed' : 'noneLeft';
   }
 }
-
-/** A kill against your own side — never the first choice for the killcam. */
-const own = (r: KillRecord) => r.self || r.friendly;
 
 /** Ease towards the drift target; things falling into the hole accelerate (quadratic). */
 function move(o: { x: number; y: number }, d: Drift, e: number, t: number): void {

@@ -1,0 +1,301 @@
+/* The daily recommendation glows green, and selected presets can show their edits in gold. */
+.briefing__cards .item.item--pick.item--card {
+  border-color: rgb(91 125 179 / .45);
+  background: rgb(9 21 39 / .8);
+  box-shadow: none;
+}
+.briefing__cards .item.item--pick .item__title { color: var(--bone); }
+.briefing__cards { padding-top: 26px; }
+.briefing__cards .item--pick .item__tag {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  color: var(--bone-dim);
+  font: 9px/1.4 var(--font-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.briefing__cards .item.item--card[aria-pressed='true'] {
+  border-color: #ffad65;
+  background: radial-gradient(ellipse at 50% 0, rgb(255 173 101 / .12), transparent 75%), #252432;
+  box-shadow: inset 0 3px #ffad65;
+}
+.briefing__cards .item.item--card[aria-pressed='true'] .item__title { color: #ffca9b; }
+.briefing__cards .item.item--pick.item--card[aria-pressed='true'] {
+  border-color: #a3eddb;
+  background: radial-gradient(ellipse at 50% 0, rgb(111 227 200 / .13), transparent 75%), #102e3c;
+  box-shadow: inset 0 3px #6fe3c8;
+}
+.briefing__cards .item.item--pick[aria-pressed='true'] .item__title,
+.briefing__cards .item.item--pick[aria-pressed='true'] .item__tag { color: #a3eddb; }
+.briefing__cards .item--pick:focus-visible { outline: 2px solid var(--bone); outline-offset: 3px; }
+
+.briefing__preset-shell {
+  position: relative;
+  display: grid;
+  min-width: 0;
+}
+.briefing__preset-shell > .item--card { width: 100%; min-width: 0; }
+.briefing__preset-shell:hover > .item--card {
+  border-color: var(--bone-dim);
+  transform: translateY(-2px);
+}
+.briefing__cards .item__status-reset {
+  position: absolute;
+  z-index: 3;
+  top: 9px;
+  right: 9px;
+  display: grid;
+  place-items: center;
+  max-width: calc(100% - 18px);
+  overflow: hidden;
+  padding: 4px 6px;
+  border: 1px solid rgb(243 211 106 / .62);
+  border-radius: 2px;
+  background: rgb(9 21 39 / .94);
+  color: #ffe58c;
+  font: 9px/1.25 var(--font-mono);
+  letter-spacing: .01em;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.briefing__cards .item__status-reset[hidden] { display: none; }
+.briefing__cards .item__status-reset > span { grid-area: 1 / 1; white-space: nowrap; transition: opacity 180ms ease, transform 180ms ease; }
+.briefing__cards .item__status-action { opacity: 0; transform: translateY(4px); }
+.briefing__preset-shell:hover .item__status-reset { transform: translateY(-2px); }
+.briefing__preset-shell:is(:hover, :focus-within) .item__status-reset,
+.briefing__cards .item__status-reset:is(:hover, :focus-visible, :active) {
+  border-color: #ffe58c;
+  background: #172236;
+  box-shadow: 0 0 14px rgb(243 211 106 / .23);
+}
+.briefing__cards .item__status-reset:focus-visible { outline: 2px solid var(--bone); outline-offset: 3px; }
+.briefing__preset-shell:is(:hover, :focus-within) .item__status-count,
+.briefing__cards .item__status-reset:is(:hover, :focus-visible, :active) .item__status-count { opacity: 0; transform: translateY(-4px); }
+.briefing__preset-shell:is(:hover, :focus-within) .item__status-action,
+.briefing__cards .item__status-reset:is(:hover, :focus-visible, :active) .item__status-action { opacity: 1; transform: none; }
+.briefing__cards .item--card.is-modified[aria-pressed='true'],
+.briefing__cards .item--pick.item--card.is-modified[aria-pressed='true'] {
+  border-color: #f3d36a;
+  background: radial-gradient(ellipse at 50% 0, rgb(243 211 106 / .16), transparent 76%), #272831;
+  box-shadow: inset 0 3px #f3d36a, 0 0 15px rgb(243 211 106 / .13);
+  animation: preset-modified-glow 2.8s ease-in-out infinite;
+}
+.briefing__cards .item--card.is-modified[aria-pressed='true'] .item__title,
+.briefing__cards .item--card.is-modified[aria-pressed='true'] .item__tag {
+  color: #ffe58c;
+}
+.briefing__cards .item--card.is-modified[aria-pressed='true'] .item__icon {
+  filter: drop-shadow(0 0 11px rgb(243 211 106 / .38));
+}
+
+@keyframes preset-modified-glow {
+  0%, 100% { box-shadow: inset 0 3px #f3d36a, 0 0 10px rgb(243 211 106 / .1); }
+  50% { box-shadow: inset 0 3px #ffe58c, 0 0 19px rgb(243 211 106 / .24); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .briefing__cards .item--card.is-modified[aria-pressed='true'] { animation: none; }
+  .briefing__cards .item__status-reset,
+  .briefing__cards .item__status-reset > span { transition: none; }
+  .briefing__preset-shell:hover > .item--card,
+  .briefing__preset-shell:hover .item__status-reset { transform: none; }
+}
+
+/* "Save" under the badge of a card with edits: there while the pointer or the keyboard is on the card. */
+.briefing__cards .item__status-save {
+  position: absolute;
+  z-index: 3;
+  top: 36px;
+  right: 9px;
+  padding: 4px 6px;
+  border: 1px solid rgb(111 227 200 / .6);
+  border-radius: 2px;
+  background: #172236;
+  color: #a3eddb;
+  font: 9px/1.25 var(--font-mono);
+  letter-spacing: .01em;
+  cursor: pointer;
+}
+.briefing__cards .item__status-save[hidden] { display: none; }
+.briefing__cards .item__status-save { opacity: 0; transform: translateY(-4px); pointer-events: none; transition: opacity 180ms ease, transform 180ms ease; }
+.briefing__preset-shell:is(:hover, :focus-within) .item__status-save { opacity: 1; transform: none; pointer-events: auto; }
+.briefing__cards .item__status-save:is(:hover, :focus-visible) { border-color: #a3eddb; box-shadow: 0 0 14px rgb(111 227 200 / .2); }
+.briefing__cards .item__status-save:focus-visible { outline: 2px solid var(--bone); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .briefing__cards .item__status-save { transition: none; } }
+
+/* The name field at the top of the preset creator. */
+.preset-name { display: grid; gap: 6px; max-width: 420px; margin: 0 0 18px; }
+.preset-name__label { color: var(--bone-dim); font: 10px/1.4 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
+.preset-name input {
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--menu-line, rgb(91 125 179 / .45));
+  border-radius: 2px;
+  background: var(--menu-surface, rgb(9 21 39 / .8));
+  color: var(--bone);
+  font: 16px/1.2 var(--font-display);
+  letter-spacing: .02em;
+}
+.preset-name input:focus-visible { outline: 2px solid var(--launch-accent, #ffad65); outline-offset: 2px; }
+
+/* The player's own presets: slim strips stacked in the column after the cards. */
+.briefing__own {
+  order: 99;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+/* Four places in the column: each preset takes one, and the area for the next one takes what is left. */
+.briefing__own > * { flex: 0 0 calc((100% - 24px) / 4); min-height: 40px; min-width: 0; }
+.briefing__own > .item--strip-empty,
+.briefing__own > .briefing__preset-shell:has(> .item--strip-empty),
+.briefing__own > .item--card,
+.briefing__own > .briefing__preset-shell:has(> .item--card) { flex: 1 1 0; }
+.briefing__own .item--strip {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  height: 100%;
+  padding: 0 40px 0 12px;
+  border: 1px solid rgb(91 125 179 / .45);
+  background: rgb(9 21 39 / .8);
+  text-align: left;
+  overflow: hidden;
+}
+.briefing__own .item--strip .item__title {
+  min-width: 0;
+  overflow: hidden;
+  font: 800 18px/1 var(--font-display);
+  letter-spacing: .02em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.briefing__own .item--strip:hover { border-color: var(--bone-dim); }
+.briefing__own .item--strip[aria-pressed='true'] {
+  border-color: #ffad65;
+  background: radial-gradient(ellipse at 0 50%, rgb(255 173 101 / .14), transparent 75%), #252432;
+  box-shadow: inset 3px 0 #ffad65;
+}
+.briefing__own .item--strip[aria-pressed='true'] .item__title { color: #ffca9b; }
+.briefing__own .item--strip.is-modified[aria-pressed='true'] {
+  border-color: #f3d36a;
+  background: radial-gradient(ellipse at 0 50%, rgb(243 211 106 / .16), transparent 76%), #272831;
+  box-shadow: inset 3px 0 #f3d36a;
+}
+.briefing__own .item--strip.is-modified[aria-pressed='true'] .item__title { color: #ffe58c; }
+.briefing__own .item--strip:focus-visible { outline: 2px solid var(--bone); outline-offset: 3px; }
+/* The plus strip, the open slot for the next preset: not a preset yet. */
+.briefing__own .item--strip-empty {
+  padding-right: 12px;
+  border-style: dashed;
+  border-color: rgb(255 173 101 / .5);
+  background: transparent;
+}
+.briefing__own .item--strip-empty .item__title { color: #ffca9b; }
+.briefing__own .item--strip-empty .item__title::before { content: '+'; margin-right: 8px; font-size: 22px; }
+.briefing__own .item--strip-empty:is(:hover, :focus-visible) { border-color: #ffad65; background: rgb(255 173 101 / .06); }
+/*
+ * Edit and, while a strip has edits, undo and keep: small icon buttons at the strip's end, always in the same place, so
+ * nothing moves and no words change under the pointer. The badge's texts stay for screen readers.
+ */
+.briefing__own .item__status {
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  font-size: 0;
+  opacity: 1;
+  transform: translateY(-50%);
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.briefing__own .briefing__preset-shell:hover .item__status-reset { transform: translateY(-50%); }
+.briefing__own .item__status > span { display: none; }
+.briefing__own .item__status::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  -webkit-mask: var(--strip-icon) center / contain no-repeat;
+  mask: var(--strip-icon) center / contain no-repeat;
+}
+.briefing__own .item__status-reset { right: 6px; color: var(--bone-dim); --strip-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z'/%3E%3C/svg%3E"); }
+.briefing__own .item__status-save { right: 6px; color: #a3eddb; --strip-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7'/%3E%3C/svg%3E"); }
+.briefing__own .item__status-save[hidden] { display: none; }
+/* With edits: undo, then keep, each its own button over the end of the strip. */
+.briefing__own .briefing__preset-shell.is-modified .item__status { border-color: rgb(243 211 106 / .45); background: #1d2030; }
+.briefing__own .briefing__preset-shell.is-modified .item__status-reset { right: 36px; color: #ffe58c; --strip-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9h10a6 6 0 0 1 0 12H8'/%3E%3Cpath d='m8 5-4 4 4 4'/%3E%3C/svg%3E"); }
+.briefing__own .briefing__preset-shell.is-modified .item__status-save { border-color: rgb(111 227 200 / .5); }
+.briefing__own .item__status:focus-visible { outline: 2px solid var(--bone); outline-offset: 2px; }
+/* Saving shows only while the strip has edits. */
+.briefing__own .item__status-save { pointer-events: auto; }
+
+.briefing__own .briefing__preset-shell .item__status-save { opacity: 1; transform: translateY(-50%); }
+
+/* The empty slot, while there is no preset of your own: one card that fills the column, with a plus. */
+.briefing__own > .item--card,
+.briefing__own > .briefing__preset-shell > .item--card { height: 100%; }
+.briefing__cards .item.item--custom-empty.item--card {
+  border-style: dashed;
+  border-color: rgb(255 173 101 / .5);
+  background: transparent;
+  box-shadow: none;
+}
+.briefing__cards .item.item--custom-empty .item__title { color: #ffca9b; }
+.briefing__cards .item.item--custom-empty:is(:hover, :focus-visible) { background: rgb(255 173 101 / .06); border-color: #ffad65; }
+
+/* The card badges light up in gold when their card is hovered; on a strip the icons stay quiet and only brighten under the pointer. */
+.briefing__own .briefing__preset-shell:is(:hover, :focus-within) .item__status { border-color: transparent; background: transparent; box-shadow: none; }
+.briefing__own .briefing__preset-shell.is-modified:is(:hover, :focus-within) .item__status { border-color: rgb(243 211 106 / .45); background: #1d2030; }
+.briefing__own .briefing__preset-shell.is-modified:is(:hover, :focus-within) .item__status-save { border-color: rgb(111 227 200 / .5); }
+.briefing__own .briefing__preset-shell .item__status:is(:hover, :focus-visible) { color: var(--bone); background: rgb(232 228 216 / .12); }
+.briefing__own .briefing__preset-shell .item__status-save:is(:hover, :focus-visible) { color: #d5fff3; }
+
+/* The area for the next preset: with room for more than a strip it stands tall, with the plus above its name. */
+.briefing__own > .briefing__preset-shell > .item--strip-empty { height: 100%; }
+.briefing__own[data-own='1'] .item--strip-empty,
+.briefing__own[data-own='2'] .item--strip-empty {
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+.briefing__own[data-own='1'] .item--strip-empty .item__title,
+.briefing__own[data-own='2'] .item--strip-empty .item__title { display: grid; justify-items: center; text-align: center; }
+.briefing__own[data-own='1'] .item--strip-empty .item__title::before,
+.briefing__own[data-own='2'] .item--strip-empty .item__title::before { margin: 0 0 2px; font-size: 40px; line-height: 1; }
+
+/* Deleting a preset asks twice: the second ask turns red and pulses, so it is clear one more click is needed. */
+.menu-page .item--delete:is(:hover, :focus-visible) { border-color: var(--danger); color: var(--danger); }
+.menu-page .item--delete.is-confirming {
+  border-color: var(--danger);
+  background: rgb(255 90 110 / .16);
+  color: #ffb3bd;
+  animation: delete-confirm-pulse 1s ease-in-out 1;
+}
+@keyframes delete-confirm-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(255 90 110 / 0); transform: scale(1); }
+  50% { box-shadow: 0 0 0 4px rgb(255 90 110 / .3), 0 0 22px rgb(255 90 110 / .45); transform: scale(1.04); }
+}
+@media (prefers-reduced-motion: reduce) { .menu-page .item--delete.is-confirming { animation: none; } }
+
+/* A strip lifts a little under the pointer like the cards do, and its icons go with it. */
+.briefing__own .briefing__preset-shell { transition: transform 160ms ease; }
+.briefing__own .briefing__preset-shell:hover { transform: translateY(-2px); }
+.briefing__own > .item--strip-empty { transition: transform 160ms ease, border-color 160ms ease, background 160ms ease; }
+.briefing__own > .item--strip-empty:hover { transform: translateY(-2px); }
+@media (prefers-reduced-motion: reduce) {
+  .briefing__own .briefing__preset-shell,
+  .briefing__own > .item--strip-empty { transition: none; }
+  .briefing__own .briefing__preset-shell:hover,
+  .briefing__own > .item--strip-empty:hover { transform: none; }
+}

@@ -20,6 +20,8 @@ export interface ChatLine {
 
 /** The most lines the chat keeps. */
 const CHAT_KEEP = 100;
+/** What the relay answers a chat message that comes too soon after the last. */
+const CHAT_TOO_FAST = 'You are writing too fast';
 
 export type { NetMatch };
 
@@ -86,12 +88,16 @@ export class MultiplayerSession {
   /** A connection attempt is under way. */
   connecting = false;
   rooms: LobbyRoom[] = [];
+  /** The first lobby update after connecting has arrived. An empty list before this is still loading. */
+  roomListLoaded = false;
   room: RoomInfo | null = null;
   you: { playerId: number; host: boolean; spectator?: boolean; spectatorId?: number } = { playerId: 0, host: false };
   /** The last thing worth telling the player (server errors, "host left", …). */
   notice: string | null = null;
   /** The notice, when it is the relay refusing the name: it belongs under the name field, not in the general message. */
   private nameError: string | null = null;
+  /** The notice, when it is the relay refusing the room password: it belongs at the password field. */
+  private passwordError: string | null = null;
   match: NetMatch | null = null;
   /** What has been said in the room you are in. */
   chat: ChatLine[] = [];
@@ -111,6 +117,10 @@ export class MultiplayerSession {
 
   get nameNotice(): string | null {
     return this.notice !== null && this.notice === this.nameError ? this.notice : null;
+  }
+
+  get passwordNotice(): string | null {
+    return this.notice !== null && this.notice === this.passwordError ? this.notice : null;
   }
 
   private readonly listeners = new Set<() => void>();
@@ -160,6 +170,8 @@ export class MultiplayerSession {
 
   async connect(address: string): Promise<void> {
     this.connecting = true;
+    this.roomListLoaded = false;
+    this.rooms = [];
     this.emit();
     try {
       this.client.setAddress(address);
@@ -204,9 +216,14 @@ export class MultiplayerSession {
     this.send({ type: 'ready', ready });
   }
 
-  /** Host only: change the rules of the waiting room. */
-  setRules(rules: RoomRules): void {
-    this.send({ type: 'set_rules', rules });
+  /** Host only: change the rules of the waiting room, and with them the game if one is given. */
+  setRules(rules: RoomRules, gameMode?: NetworkGameMode): void {
+    this.send({ type: 'set_rules', rules, ...(gameMode ? { gameMode } : {}) });
+  }
+
+  /** Host only: turn the waiting room into a team room or back into a free for all. */
+  setRoomMode(mode: RoomMode): void {
+    this.send({ type: 'set_mode', mode });
   }
 
   /** Pick your own team while the team room waits. */
@@ -251,6 +268,7 @@ export class MultiplayerSession {
     this.room = null;
     this.clearChat();
     this.rooms = [];
+    this.roomListLoaded = false;
     this.notice = null;
     this.dropMatch();
     this.emit();
@@ -265,8 +283,18 @@ export class MultiplayerSession {
     this.room = null;
     this.clearChat();
     this.rooms = [];
+    this.roomListLoaded = false;
     this.notice = null;
     this.dropMatch();
+    this.emit();
+  }
+
+  /** Ask the relay for a fresh room list after a recoverable list error. */
+  requestRooms(): void {
+    if (!this.connected || this.room) return;
+    this.notice = null;
+    this.roomListLoaded = false;
+    this.send({ type: 'lobby' });
     this.emit();
   }
 
@@ -370,6 +398,7 @@ export class MultiplayerSession {
     switch (message.type) {
       case 'lobby_update':
         this.rooms = message.rooms;
+        this.roomListLoaded = true;
         break;
       case 'room_update':
         if (message.room.id !== this.chatRoom) {
@@ -428,12 +457,15 @@ export class MultiplayerSession {
         if (this.match) this.endMatch();
         this.send({ type: 'lobby' });
         break;
-      case 'error':
-        this.notice = message.message;
-        // In a game nobody reads the notice, so what the relay says ("you are writing too fast") is said in the chat.
-        if (this.match) this.say(message.message);
+      case 'error': {
+        // Said in the chat, not in the lobby's status line: "you are writing too fast" is about the chat, and nobody reads the notice in a game.
+        const aboutChat = message.message === CHAT_TOO_FAST;
+        if (aboutChat || this.match) this.say(message.message);
+        if (!(aboutChat && this.room)) this.notice = message.message;
         this.nameError = message.field === 'name' ? message.message : null;
+        this.passwordError = message.field === 'password' ? message.message : null;
         break;
+      }
       case 'closed':
         this.connected = false;
         // A seated player in a room keeps the room and the match and tries to come back to the seat.
@@ -448,6 +480,7 @@ export class MultiplayerSession {
         this.room = null;
         this.clearChat();
         this.rooms = [];
+        this.roomListLoaded = false;
         this.notice = message.message;
         if (this.match) this.endMatch();
         break;

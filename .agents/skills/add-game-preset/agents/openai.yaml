@@ -1,0 +1,4 @@
+interface:
+  display_name: "Add Game Preset"
+  short_description: "Turn Slingshot preset ideas into localized game presets."
+  default_prompt: "Use $add-game-preset to implement this Slingshot preset idea: [describe it]."

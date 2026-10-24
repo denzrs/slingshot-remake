@@ -77,7 +77,7 @@ describe('scorecard in a match', () => {
   function shoot(m: Match): void {
     m.setAim(0, 55);
     m.commit();
-    for (let t = 0; t < 30 && m.phase === 'flying'; t += 1 / 30) m.update(1 / 30);
+    for (let t = 0; t < 30 && (m.phase === 'flying' || m.phase === 'killcam'); t += 1 / 30) m.update(1 / 30);
   }
 
   it('records the longest shot, the fastest kill, the best hit and the grazes', () => {
@@ -138,7 +138,7 @@ describe('scorecard in a match', () => {
     // Straight up, off the top edge and back down onto the shooter's own ship.
     m.setAim(90, 55);
     m.commit();
-    for (let t = 0; t < 30 && m.phase === 'flying'; t += 1 / 30) m.update(1 / 30);
+    for (let t = 0; t < 30 && (m.phase === 'flying' || m.phase === 'killcam'); t += 1 / 30) m.update(1 / 30);
     expect(m.lastKill).toMatchObject({ killer: 0, victim: 0, self: true });
     expect(m.roundStats.kills).toEqual([]);
     expect(m.roundStats.fastestKill).toBeNull();
@@ -191,7 +191,7 @@ describe('scorecard in a match', () => {
     Object.assign(m.world.ships[1], { x: 1100, y: 700 });
     m.setAim(90, 55);
     m.commit();
-    for (let t = 0; t < 30 && m.phase === 'flying'; t += 1 / 30) m.update(1 / 30);
+    for (let t = 0; t < 30 && (m.phase === 'flying' || m.phase === 'killcam'); t += 1 / 30) m.update(1 / 30);
     expect(m.roundStats.ownGoals).toEqual([1]);
     expect(awards(m.roundStats).find((a) => a.kind === 'ownGoals')).toMatchObject({ players: [0], value: 1 });
   });
@@ -257,7 +257,7 @@ describe('scorecard in a match', () => {
       Object.assign(m.world.ships[1], { x: 1100, y: 700 });
       m.setAim(90, 55);
       m.commit();
-      for (let t = 0; t < 30 && m.phase === 'flying'; t += 1 / 30) m.update(1 / 30);
+      for (let t = 0; t < 30 && (m.phase === 'flying' || m.phase === 'killcam'); t += 1 / 30) m.update(1 / 30);
       expect(m.shotLog.shots[0]).toMatchObject({ player: 0, angle: 90, resolution: 'ship', hitSeat: 0, hitKind: 'self' });
       expect(m.shotLog.shots[0].points).toBeLessThan(0);
     });

@@ -1,19 +1,16 @@
 import type { StatsFact } from '../net';
 import { StatsBoard } from '../statsBoard';
 import { factLines, type FactPart } from '../statsFacts';
+import { t } from '../i18n';
 import { h } from './dom';
 import { leaderboardAvailable } from './leaderboard';
 
-/** How long a fact stays, its fades included. */
-export const FACT_MS = 10_000;
-/** How long a fade takes: out at the end of a fact's time, in at the start of the next. */
-export const FADE_MS = 900;
 /** How long the numbers fetched are kept before a menu asks again. */
 const KEEP_MS = 10 * 60_000;
 /** Where they are kept across page loads, so a reload does not go to the relay again. */
 const STORE_KEY = 'slingshot.facts';
-/** How long a line waits to be put on the page before it gives up (screens are built a moment before they are shown). */
-const MOUNT_TRIES = 20;
+/** A short selection keeps one round of the banner brief. */
+const TICKER_FACTS = 10;
 
 let kept: { at: number; facts: StatsFact[] } | null = recall();
 let loading: Promise<StatsFact[]> | null = null;
@@ -35,7 +32,7 @@ function remember(): void {
   }
 }
 
-/** The findings of the relay; none when it cannot be reached or keeps no statistics. Shared by menus that open one after the other. */
+/** The findings of the relay, shared by menus that open one after the other. */
 async function load(board: StatsBoard): Promise<StatsFact[]> {
   if (kept && Date.now() - kept.at < KEEP_MS) return kept.facts;
   loading ??= board
@@ -48,31 +45,63 @@ async function load(board: StatsBoard): Promise<StatsFact[]> {
   return facts;
 }
 
-/**
- * A line of findings from the statistics for a menu. It stays empty while the numbers are on their way and when there are none; then
- * each fact fades in, is read for `FACT_MS` and fades out as the next one fades in. It stops by itself once its screen is gone.
- */
-export function factTicker(board = new StatsBoard()): HTMLElement {
-  const line = h('p.fact', { 'aria-hidden': 'true' });
-  // No relay, no facts: the line takes no room. With one, its room is kept from the start so the menu does not jump later.
-  if (!leaderboardAvailable()) {
-    line.hidden = true;
-    return line;
+/** How long one fact stays before the next one fades in. */
+const FACT_MS = 8_000;
+
+function factLine(parts: FactPart[]): HTMLElement {
+  return h('span.stats-ticker__fact', { 'aria-hidden': 'true' }, ...parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text)));
+}
+
+/** A quiet banner of relay statistics for a menu header: one fact at a time, fading into the next. */
+export function factTicker(enabled = true, board = new StatsBoard()): HTMLElement {
+  const ticker = h('div.stats-ticker', { role: 'region', 'aria-label': t('stats.ticker.label'), 'aria-busy': 'true' });
+  const label = h('span.stats-ticker__label', { 'aria-hidden': 'true' }, t('stats.ticker.label'));
+  const viewport = h('span.stats-ticker__viewport', null, h('span.stats-ticker__loading', null, t('stats.loading')));
+  const dots = h('span.stats-ticker__dots', { 'aria-hidden': 'true' });
+  const accessibleFacts = h('span.stats-ticker__a11y', null);
+  ticker.append(label, viewport, dots, accessibleFacts);
+
+  if (!enabled || !leaderboardAvailable()) {
+    ticker.hidden = true;
+    ticker.removeAttribute('aria-busy');
+    return ticker;
   }
-  let seen = false;
-  let tries = 0;
-  const show = (lines: FactPart[][], next: number): void => {
-    if (line.isConnected) seen = true;
-    else if (seen || ++tries > MOUNT_TRIES) return;
-    else return void setTimeout(() => show(lines, next), 100);
-    line.replaceChildren(...lines[next % lines.length].map((part) => (part.number ? h('span.fact__n', null, part.text) : part.text)));
-    line.classList.add('is-in');
-    setTimeout(() => line.classList.remove('is-in'), FACT_MS - FADE_MS);
-    setTimeout(() => show(lines, next + 1), FACT_MS);
-  };
+
   void load(board).then((facts) => {
-    const lines = factLines(facts);
-    if (lines.length) show(lines, 0);
+    const lines = factLines(facts).slice(0, TICKER_FACTS);
+    if (!lines.length) {
+      ticker.hidden = true;
+      ticker.removeAttribute('aria-busy');
+      return;
+    }
+
+    const items = lines.map(factLine);
+    const marks = lines.map(() => h('span.stats-ticker__dot', null));
+    let current = 0;
+    const show = (index: number): void => {
+      current = index;
+      items.forEach((item, i) => item.classList.toggle('is-active', i === index));
+      marks.forEach((mark, i) => mark.classList.toggle('is-active', i === index));
+    };
+    show(0);
+    viewport.replaceChildren(...items);
+    dots.replaceChildren(...marks);
+    accessibleFacts.textContent = lines.map((parts) => parts.map((part) => part.text).join('')).join(' ');
+    ticker.removeAttribute('aria-busy');
+    if (lines.length < 2) return;
+
+    let held = false;
+    const hold = (value: boolean) => () => void (held = value);
+    ticker.addEventListener('pointerenter', hold(true));
+    ticker.addEventListener('pointerleave', hold(false));
+    ticker.addEventListener('focusin', hold(true));
+    ticker.addEventListener('focusout', hold(false));
+    const timer = setInterval(() => {
+      // The menu page this lives on is gone once it has left the document.
+      if (!ticker.isConnected) return clearInterval(timer);
+      if (held || document.hidden) return;
+      show((current + 1) % items.length);
+    }, FACT_MS);
   });
-  return line;
+  return ticker;
 }

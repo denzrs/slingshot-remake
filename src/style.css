@@ -99,19 +99,9 @@ body {
   backdrop-filter: blur(3px);
 }
 
-/* Auto vertical margins centre content when it fits and start it at the top when
-   it overflows, while the title column stays at the screen's left inset. */
-.screen--title > .title-col {
-  margin-block: auto;
-}
-
+/* Auto margins centre a panel when it fits, and let it scroll from the top otherwise. */
 .screen--panel > .panel {
   margin: auto;
-}
-
-.title-col {
-  width: min(520px, 100%);
-  animation: rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
 .eyebrow {
@@ -144,39 +134,124 @@ body {
   color: var(--bone-dim);
 }
 
-/* A finding from the statistics: two lines are kept free (even while empty) so the menu does not jump as facts arrive or change. */
-.fact {
-  min-height: 2.8em;
-  max-width: 44ch;
-  margin: -12px 0 22px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--bone);
-  opacity: 0;
-  transition: opacity 900ms ease;
+/* A quiet banner shows one game stat at a time without competing with the menu itself. */
+.stats-ticker {
+  position: relative;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  min-height: 50px;
+  overflow: hidden;
+  border-block: 1px solid rgb(91 125 179 / 0.24);
+  background: linear-gradient(90deg, rgb(8 20 38 / 0.72), rgb(17 34 57 / 0.3) 72%, rgb(8 20 38 / 0.5));
 }
 
-.fact__n {
+.stats-ticker[hidden] {
+  display: none;
+}
+
+.stats-ticker::before {
+  position: absolute;
+  inset: 9px auto 9px 0;
+  width: 2px;
+  background: var(--launch-accent, #ffad65);
+  content: '';
+}
+
+.stats-ticker__label {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 0 14px 0 16px;
+  border-right: 1px solid rgb(91 125 179 / 0.28);
+  color: var(--launch-accent, #ffad65);
+  font: 700 9px/1.4 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.stats-ticker__viewport {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+}
+
+.stats-ticker__loading {
+  color: var(--bone-dim);
+  font: 400 11px/1.5 var(--font-mono);
+}
+
+/* All facts share one cell, so the banner keeps the height of the longest and nothing jumps. */
+.stats-ticker__fact {
+  grid-area: 1 / 1;
+  padding-block: 8px;
+  color: var(--bone-dim);
+  font: 400 11px/1.5 var(--font-mono);
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 700ms ease, transform 700ms ease;
+  pointer-events: none;
+}
+
+.stats-ticker__fact.is-active {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.stats-ticker__number {
   color: var(--p1);
   font-weight: 700;
 }
 
-.fact.is-in {
-  opacity: 0.9;
+.stats-ticker__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 16px;
 }
 
-.panel--lobby > .fact {
-  min-height: 0;
-  max-width: none;
-  margin: -6px 0 12px;
+.stats-ticker__dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgb(91 125 179 / 0.4);
+  transition: background-color 700ms ease;
 }
 
+.stats-ticker__dot.is-active {
+  background: var(--launch-accent, #ffad65);
+}
+
+.stats-ticker__a11y {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 520px) {
+  .stats-ticker { min-height: 46px; gap: 10px; }
+  .stats-ticker__label { padding-inline: 12px 10px; font-size: 8px; letter-spacing: 0.06em; }
+  .stats-ticker__fact { font-size: 10px; }
+  .stats-ticker__dots { display: none; }
+}
+
+/* Stillness keeps the rotation but swaps facts at once instead of fading. */
 @media (prefers-reduced-motion: reduce) {
-  .fact {
-    transition: none;
-  }
+  .stats-ticker__fact, .stats-ticker__dot { transform: none; transition: none; }
 }
+
+.menu-motion-less .stats-ticker__fact, .menu-motion-less .stats-ticker__dot { transform: none; transition: none; }
 
 .keys {
   margin: 22px 0 0;
@@ -382,17 +457,6 @@ body {
 
 /* ——— Mode cards (the local menu) ——— */
 
-.panel.panel--cards {
-  width: min(920px, 100%);
-}
-
-.items--cards {
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: 14px;
-  margin-top: 22px;
-}
-
 .items--row .item--card {
   flex: 1 1 180px;
   flex-direction: column;
@@ -431,34 +495,6 @@ body {
 .items--row .item--card:hover,
 .items--row .item--card:focus {
   border-color: var(--p1);
-}
-
-.mode-icon {
-  width: 100%;
-  height: 100%;
-  fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.mode-icon .ico-line {
-  stroke: var(--bone);
-  stroke-width: 1.8;
-}
-
-.mode-icon .ico-accent {
-  stroke: var(--p1);
-  stroke-width: 2.2;
-}
-
-.mode-icon .ico-accent-fill {
-  fill: var(--p1);
-  stroke: var(--p1);
-  stroke-width: 1;
-}
-
-.mode-icon .ico-fill {
-  fill: var(--plate);
 }
 
 .item__label {
@@ -675,7 +711,7 @@ body {
   padding: 30px 26px 24px;
   background: rgb(11 26 51 / 0.94);
   border: 1px solid rgb(91 125 179 / 0.45);
-  animation: rise 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: rise 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
 .panel--wide {
@@ -717,8 +753,7 @@ body {
 }
 
 /* Rebuilding a screen in place (a new row, another language) shouldn't replay its entrance. */
-.screen[data-rebuild] .panel,
-.screen[data-rebuild] .title-col {
+.screen[data-rebuild] .panel {
   animation: none;
 }
 
@@ -892,6 +927,42 @@ body {
   background: color-mix(in srgb, var(--tone) 14%, transparent);
   color: var(--bone);
   box-shadow: 0 0 12px color-mix(in srgb, var(--tone) 28%, transparent);
+}
+
+/* The all / none buttons beside a tile group's label. */
+.tiles__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tiles__quick-row {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.tiles__quick {
+  min-height: 26px;
+  padding: 3px 12px;
+  border: 1px solid rgb(91 125 179 / 0.5);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--bone-dim);
+  font: 700 11px/1.2 var(--font-body);
+  cursor: pointer;
+  transition: border-color 140ms, color 140ms, background 140ms;
+}
+
+.tiles__quick:hover {
+  border-color: var(--p2);
+  color: var(--bone);
+}
+
+.tiles__quick.is-on {
+  border-color: var(--p2);
+  background: rgb(111 227 200 / 0.12);
+  color: var(--p2);
 }
 
 @media (max-width: 520px) {
@@ -1709,6 +1780,11 @@ body {
   grid-column: 1;
 }
 
+.lobby-room .lobby__field-error {
+  grid-column: 1;
+  margin: 0;
+}
+
 .lobby-room .lobby__button {
   grid-column: 2;
   grid-row: 1 / span 2;
@@ -2369,6 +2445,46 @@ kbd {
   min-width: 5.5em;
   text-align: right;
   font: 700 14px/1 var(--font-mono);
+}
+
+.match-highlight__trail {
+  grid-column: 1 / -1;
+  display: block;
+  width: 100%;
+  height: 40px;
+  margin-top: -3px;
+  overflow: visible;
+  opacity: 0.88;
+}
+
+.match-highlight__path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: highlight-trace 1.1s ease-out forwards;
+}
+
+.match-highlight__start {
+  fill: var(--bone-dim);
+}
+
+.match-highlight__end {
+  stroke: var(--plate);
+  stroke-width: 1.5;
+}
+
+@keyframes highlight-trace {
+  to { stroke-dashoffset: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .match-highlight__path {
+    stroke-dashoffset: 0;
+    animation: none;
+  }
 }
 
 /* ——— Daily challenge ——— */
@@ -3103,15 +3219,25 @@ html.upright #touch-bar {
   gap: 8px;
 }
 
+/* The step buttons give way first: the word on the fire button must never spill over its neighbours. */
+html.upright .tgroup {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
 html.upright .tbtn {
-  min-width: calc(44px * var(--ui));
+  flex: 1 1 calc(44px * var(--ui));
+  min-width: calc(36px * var(--ui));
+  font-size: 24px;
 }
 
 html.upright #touch-fire {
-  flex: 1;
-  min-width: 0;
-  padding: 0 8px;
-  font-size: 26px;
+  flex: 1 0 auto;
+  min-width: max-content;
+  padding: 0 10px;
+  font-size: 24px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 html.upright #touch-power {
@@ -3182,12 +3308,11 @@ html.upright #touch-power {
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(8px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .title-col,
   .panel {
     animation: none;
   }
@@ -3298,196 +3423,4 @@ html.upright.stick-right #touch-stick {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-/* The chat: a see-through bar down the right edge, over the lobby and the game alike. */
-#chat {
-  position: fixed;
-  right: max(8px, env(safe-area-inset-right));
-  top: 160px;
-  bottom: 190px;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  width: min(280px, calc(100vw - 16px));
-  pointer-events: none;
-}
-
-#chat[hidden] {
-  display: none;
-}
-
-#chat.is-collapsed {
-  bottom: auto;
-}
-
-.chat__toggle,
-.chat__body {
-  pointer-events: auto;
-}
-
-.chat__toggle {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid rgb(232 228 216 / 0.3);
-  border-radius: 4px;
-  background: rgb(11 26 51 / 0.35);
-  color: var(--bone-dim);
-  font: 700 11px var(--font-body);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.chat__toggle:hover,
-.chat__toggle:focus-visible {
-  outline: none;
-  color: var(--bone);
-  border-color: var(--sodium);
-}
-
-.chat__icon,
-.chat .eye-icon {
-  width: 1.3em;
-  height: 1.3em;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linejoin: round;
-}
-
-.chat__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--sodium);
-}
-
-.chat__dot[hidden] {
-  display: none;
-}
-
-.chat__body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  justify-content: flex-end;
-  width: 100%;
-  min-height: 0;
-  margin-top: 6px;
-  background: transparent;
-  /* Lines fade out as they reach the top of the bar. The bar is as tall as the room it has, and the log sits at its bottom,
-     so a short log is nowhere near the fade. */
-  mask-image: linear-gradient(to bottom, transparent, #000 56px);
-}
-
-.chat__body[hidden] {
-  display: none;
-}
-
-.chat__log {
-  flex: 0 1 auto;
-  min-height: 0;
-  margin: 0;
-  padding: 0 4px 6px 0;
-  overflow-y: auto;
-  list-style: none;
-  font: 13px/1.35 var(--font-body);
-  scrollbar-width: thin;
-}
-
-.chat__line {
-  padding: 1px 0;
-  overflow-wrap: anywhere;
-  text-shadow: 0 1px 3px rgb(6 15 31 / 0.95), 0 0 2px rgb(6 15 31 / 0.9);
-}
-
-.chat__name {
-  font-weight: 700;
-}
-
-.chat__name--watcher {
-  color: var(--bone-dim);
-}
-
-.chat__name .eye-icon {
-  margin-right: 0.3em;
-  vertical-align: -0.2em;
-}
-
-.chat__text {
-  color: var(--bone);
-}
-
-.chat__line--system {
-  color: var(--bone-dim);
-  font-style: italic;
-}
-
-.chat__input {
-  width: 100%;
-  min-height: 34px;
-  padding: 6px 10px;
-  border: 1px solid rgb(232 228 216 / 0.3);
-  border-radius: 4px;
-  background: rgb(6 15 31 / 0.4);
-  color: var(--bone);
-  font: 13px var(--font-body);
-}
-
-.chat__input:focus {
-  outline: none;
-  border-color: var(--sodium);
-  background: rgb(6 15 31 / 0.7);
-}
-
-.chat__input:disabled {
-  opacity: 0.6;
-}
-
-.chat__form {
-  position: relative;
-}
-
-.chat__hints {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 4px);
-  left: 0;
-  margin: 0;
-  padding: 2px;
-  list-style: none;
-  border: 1px solid rgb(232 228 216 / 0.3);
-  border-radius: 4px;
-  background: rgb(6 15 31 / 0.92);
-  font: 13px var(--font-body);
-}
-
-.chat__hints[hidden] {
-  display: none;
-}
-
-.chat__hint {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 3px;
-  color: var(--bone-dim);
-  cursor: pointer;
-}
-
-.chat__hint.is-picked,
-.chat__hint:hover {
-  background: rgb(232 228 216 / 0.14);
-  color: var(--bone);
-}
-
-.chat__hint-emoji {
-  font-size: 16px;
 }

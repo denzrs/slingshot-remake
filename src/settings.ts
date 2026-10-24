@@ -2,14 +2,20 @@ import type { CpuLevel } from './ai';
 import { AIM, DEBRIS, GRACE, MAX_PLAYERS, MAYHEM, TRAIL_FADE, type Debris } from './config';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from './powerups';
 import { detectLang, isLang, type Lang } from './i18n';
+import { isLook, type Look } from './render/look';
 
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
 export type Seat = 'human' | CpuLevel | 'off';
 
+export const KILLCAM_MODES = ['auto', 'off', 'every', 'round'] as const;
+export type KillcamMode = (typeof KILLCAM_MODES)[number];
+export type KillcamPlayback = Exclude<KillcamMode, 'auto'>;
+export const isKillcamMode = (value: unknown): value is KillcamMode => KILLCAM_MODES.some((mode) => mode === value);
+
 /**
  * One bag of settings, two homes in the UI: the rules of a game (seats, teams, rounds, planets, bounce,
  * flight time, …) are set on the setup screen right before it starts; the settings screen only keeps
- * what concerns this device (contours, particles, sound, language).
+ * what concerns this device (look, sound, language, and menu display).
  */
 export interface Settings {
   /** Always MAX_PLAYERS long; seats that aren't 'off' take part, keeping their number and colour. */
@@ -32,6 +38,8 @@ export interface Settings {
   neighborGrace: number;
   /** Classic only: everybody aims, then all shots fly at once — as in Event Horizon — instead of one shot per turn. */
   simultaneousShots: boolean;
+  /** Automatic: replays after kills in salvos, off for sequential shots. */
+  killcam: KillcamMode;
   /** Pickups float on the field, and a shot that flies past one takes it (preview, teleport or splitter). */
   powerUps: boolean;
   /** Power-ups: the kinds that may turn up (never empty), and how many pickups lie on the field at once. */
@@ -39,21 +47,26 @@ export interface Settings {
   powerUpAmount: number;
   /** Mayhem: every round has twists of its own, laid over these rules. 0 = off, otherwise the chaos strength (1 mild, 2 wild, 3 insane). */
   mayhem: number;
-  /** Mayhem: the mode the rounds are played in, Classic or Event Horizon. */
-  mayhemBase: 'classic' | 'horizon';
   /** Other players' aim arrows, angles and ship headings stay hidden: you only see your own aim. */
   hiddenAim: boolean;
   /** Seconds a finished shot's flight path stays on the board before it has faded away; 0 = it stays. */
   fadingTrails: number;
+  /** The original classic plate, or the refined look (glowing ships, moving planets). */
+  look: Look;
   contours: boolean;
   particles: boolean;
   /** How far the sparks of explosions and wreckage coast before they come to rest. */
   debris: Debris;
   /** The title screen and menus show a CPU match playing behind them; off leaves the plate empty. */
   menuBackground: boolean;
+  /** Show the rotating statistics banner in the title menu and multiplayer lobby. */
+  statsTicker: boolean;
+  /** Menus change pages without sliding, fading or flaring: moving through them is instant. */
+  lessMenuMotion: boolean;
   /** Touch screens: the side of the screen the aiming stick sits on. */
   stickSide: 'left' | 'right';
-  sound: boolean;
+  menuSounds: boolean;
+  gameSounds: boolean;
   /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
   betting: boolean;
   /** Online: only the people who play may write in the room's chat; spectators read along (a rule of the room). */
@@ -78,40 +91,49 @@ export const DEFAULT_SETTINGS: Settings = {
   styleBonuses: false,
   neighborGrace: 0,
   simultaneousShots: false,
+  killcam: 'auto',
   powerUps: false,
   powerUpKinds: [...POWER_UP_KINDS],
   powerUpAmount: POWER_UP.DEFAULT_AMOUNT,
   mayhem: 0,
-  mayhemBase: 'classic',
   hiddenAim: false,
   fadingTrails: 0,
   betting: false,
   chatPlayersOnly: false,
+  look: 'classic',
   contours: true,
   particles: true,
   debris: 'medium',
   menuBackground: true,
+  statsTicker: true,
+  lessMenuMotion: false,
   stickSide: 'left',
-  sound: true,
+  menuSounds: true,
+  gameSounds: true,
   language: 'de',
   teamMode: 0,
   seatTeams: [0, 1, 0, 1, 0, 1],
 };
 
-const KEY = 'slingshot.settings.v1';
+export const SETTINGS_KEY = 'slingshot.settings.v1';
 
 export function loadSettings(): Settings {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<Settings>;
+      const { sound: legacySoundValue, ...parsed } = JSON.parse(raw) as Partial<Settings> & { sound?: unknown };
       const s: Settings = { ...DEFAULT_SETTINGS, ...parsed, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams] };
+      const legacySound = typeof legacySoundValue === 'boolean' ? legacySoundValue : undefined;
+      s.menuSounds = typeof parsed.menuSounds === 'boolean' ? parsed.menuSounds : legacySound ?? DEFAULT_SETTINGS.menuSounds;
+      s.gameSounds = typeof parsed.gameSounds === 'boolean' ? parsed.gameSounds : legacySound ?? DEFAULT_SETTINGS.gameSounds;
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
-      for (const key of ['contours', 'particles', 'menuBackground', 'sound'] as const) {
+      for (const key of ['contours', 'particles', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'menuSounds', 'gameSounds'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
+      if (!isKillcamMode(s.killcam)) s.killcam = DEFAULT_SETTINGS.killcam;
+      if (!isLook(s.look)) s.look = DEFAULT_SETTINGS.look;
       if (s.stickSide !== 'right') s.stickSide = 'left';
       if (!Object.hasOwn(DEBRIS, s.debris)) s.debris = DEFAULT_SETTINGS.debris;
       // Power-up choices: only known kinds, in their usual order, and never none at all.
@@ -120,7 +142,6 @@ export function loadSettings(): Settings {
       if (!POWER_UP.AMOUNTS.includes(s.powerUpAmount)) s.powerUpAmount = POWER_UP.DEFAULT_AMOUNT;
       if (!TRAIL_FADE.OPTIONS.includes(s.fadingTrails)) s.fadingTrails = 0;
       if (!MAYHEM.LEVELS.includes(s.mayhem)) s.mayhem = 0;
-      if (s.mayhemBase !== 'horizon') s.mayhemBase = 'classic';
       if (!AIM.CAP_OPTIONS.includes(s.maxPower)) s.maxPower = AIM.MAX_POWER;
       if (!AIM.FIXED_OPTIONS.includes(s.fixedPowerLevel)) s.fixedPowerLevel = AIM.FIXED_POWER;
       // It used to be a plain on/off switch, "on" meaning two shots.
@@ -146,7 +167,7 @@ export function cloneSettings(s: Settings): Settings {
 
 export function saveSettings(s: Settings): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(s));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
   } catch {
     // Not fatal: settings just won't survive a reload.
   }
@@ -174,10 +195,10 @@ export function teamCounts(s: Settings): number[] {
   return counts;
 }
 
-/** Puts a ship (who flies it: a human or a CPU) into the first free seat — in team mode, into the smallest team. Returns the seat, or null when there is none. */
-export function addSeat(s: Settings, flier: Exclude<Seat, 'off'>): number | null {
-  const i = freeSeat(s);
-  if (i === null) return null;
+/** Seats a human or CPU in the requested slot (or the first free one), on the smallest team. */
+export function addSeat(s: Settings, flier: Exclude<Seat, 'off'>, slot?: number): number | null {
+  const i = slot ?? freeSeat(s);
+  if (i === null || !Number.isInteger(i) || i < 0 || i >= MAX_PLAYERS || s.seats[i] !== 'off') return null;
   if (s.teamMode) {
     const counts = teamCounts(s);
     s.seatTeams[i] = counts.indexOf(Math.min(...counts));

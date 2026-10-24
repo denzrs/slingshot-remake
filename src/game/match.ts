@@ -1,25 +1,26 @@
 import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../ai';
 import type { Avatar } from '../avatars';
-import { AIM, COLORS, FIELD, GRACE, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
+import { AIM, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
 import { applyTwists, MayhemDeck, type MayhemRound } from '../mayhem';
 import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
-import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings';
+import { seatTeamsFor, startPower, type KillcamPlayback, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
 import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
 import { ShotLog } from '../shotLog';
 import { replayKey, RIDERS, type ReplayScript, type ReplayTurn } from './replay';
 import { Crowd } from './crowd';
+import { Killcam } from './killcam';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField, type PlacementAim } from './powerup-field';
 
-export type Mode = 'classic' | 'horizon' | 'challenge';
+export type Mode = 'classic' | 'solar' | 'horizon' | 'challenge';
 /** The modes you play against other ships, picked from the title menu. */
 export type VersusMode = Exclude<Mode, 'challenge'>;
-export type Phase = 'aiming' | 'flying' | 'killcam' | 'collapse' | 'roundOver' | 'gameOver';
+export type Phase = 'aiming' | 'flying' | 'killcam' | 'collapse' | 'orbit' | 'roundOver' | 'gameOver';
 
 export interface PlayerState {
   /** Index into `players` and `world.ships`. */
@@ -213,10 +214,12 @@ export interface CpuJob {
   /** Power-ups: the planner found no hitting shot. Only known while the CPU holds a teleport or a plasma shot. */
   blind?: boolean;
   rescueTried?: boolean;
+  /** A placement could not be laid at its spot: the CPU shoots instead, rather than swinging back to the spot every frame. */
+  placeFailed?: boolean;
 }
 
 /**
- * Everything both modes share: players, rounds, scoring, CPU thinking and flying volleys.
+ * Everything the modes share: players, rounds, scoring, CPU thinking and flying volleys.
  * Subclasses decide how turns are structured.
  */
 export abstract class Match {
@@ -241,6 +244,7 @@ export abstract class Match {
   volley: Volley | null = null;
   killFeed: KillRecord[] = [];
   lastKill: KillRecord | null = null;
+  protected readonly killcam = new Killcam();
   summary: RoundSummary | null = null;
   /** Big transient announcement, e.g. "SALVE!". */
   notice: { text: string; color: string; at: number } | null = null;
@@ -705,14 +709,14 @@ export abstract class Match {
   }
 
   scene(): Scene {
-    return { world: this.world, trails: this.trails, volley: this.volley, camera: null, ...this.power.scene() };
+    return this.killcam.scene() ?? { world: this.world, trails: this.trails, volley: this.volley, camera: null, ...this.power.scene() };
   }
 
   // ————————————————————————————— Power-ups —————————————————————————————
 
   /** Power-ups are an offline experiment: Classic and Event Horizon, never on the attract screen, never online. */
   get powerUps(): boolean {
-    return this.settings.powerUps && (this.mode === 'classic' || this.mode === 'horizon') && !this.attract;
+    return this.settings.powerUps && this.mode !== 'challenge' && !this.attract;
   }
 
   /** Volleys that make up one pass: the shot of every ship still in, or one salvo at a time. */
@@ -844,6 +848,7 @@ export abstract class Match {
   }
 
   startRound(): void {
+    this.killcam.reset();
     this.resetFlight();
     // The chain counts a round's kills: several in one turn (a splitter's forks, an armor-piercing round) or
     // one per turn adding up. A new round starts everyone over, so no round opens with a chain carried in.
@@ -866,6 +871,7 @@ export abstract class Match {
       maxPlanets: this.settings.maxPlanets,
       players: this.players.length,
       blackHole: this.mode === 'horizon',
+      solar: this.mode === 'solar',
       teams: this.teamMode ? this.players.map((p) => p.team!) : null,
     });
     this.hiddenPlanets = this.mode === 'classic' && this.settings.invisiblePlanets;
@@ -906,7 +912,7 @@ export abstract class Match {
       this.settings = this.baseSettings;
       return;
     }
-    this.mayhem = this.deck.draw({ base: this.baseSettings, mode: this.mode as 'classic' | 'horizon', round: this.round, rounds: this.totalRounds });
+    this.mayhem = this.deck.draw({ base: this.baseSettings, mode: this.mode === 'horizon' ? 'horizon' : 'classic', round: this.round, rounds: this.totalRounds });
     this.settings = applyTwists(this.baseSettings, this.mayhem);
     this.revealEnd = this.clock + MAYHEM.REVEAL_TIME;
     // A match nobody is flying in (CPUs only) has no one to wait for.
@@ -961,8 +967,68 @@ export abstract class Match {
     this.baseSettings.contours = settings.contours;
   }
 
-  /** Online: one player's vote to skip the killcam. Only Event Horizon has one. */
-  voteSkip(_player: number): void {}
+  private get killcamMode(): KillcamPlayback {
+    if (this.mode === 'challenge') return 'off';
+    const choice = this.settings.killcam ?? 'auto';
+    return choice === 'auto' ? (this.salvo ? 'every' : 'off') : choice;
+  }
+
+  /** Round-end playback returns to the completed summary, so scores and mode transitions run once. */
+  private showRoundKillcam(): void {
+    if (this.killcamMode === 'round' && this.lastClip) this.startKillcam(this.lastClip, 'roundOver', false);
+  }
+
+  get lastClip() {
+    return this.killcam.lastClip;
+  }
+
+  get canReplay(): boolean {
+    return this.mode !== 'challenge' && !!this.lastClip && (this.phase === 'roundOver' || (this.phase === 'killcam' && !this.killcam.active?.recording));
+  }
+
+  /** Saving is offered while the killcam is on screen, not again on its result screen. */
+  get canSaveClip(): boolean {
+    return this.phase === 'killcam' && this.canReplay;
+  }
+
+  get killcamInfo() {
+    return this.killcam.info(this.skipsNeeded);
+  }
+
+  /** At least half of the human players must want to skip; target drones and CPUs do not vote. */
+  private get skipsNeeded(): number {
+    return Math.ceil(this.players.filter((p) => !p.cpu && !p.target).length / 2);
+  }
+
+  voteSkip(player: number): void {
+    const k = this.killcam.active;
+    const p = this.players[player];
+    if (!p || p.cpu || p.target || !k || k.recording || this.phaseTime <= 0.3 || k.skipVotes.includes(player)) return;
+    k.skipVotes.push(player);
+    if (k.skipVotes.length >= this.skipsNeeded) this.endKillcam();
+  }
+
+  /** Replay the last kill, keeping the pending mode transition or the round summary to return to. */
+  replayLastKill(recording: boolean): boolean {
+    if (!this.lastClip || !this.canReplay) return false;
+    const returnTo = this.phase === 'killcam' ? this.killcam.active!.returnTo : this.phase;
+    this.startKillcam(this.lastClip, returnTo, recording);
+    return true;
+  }
+
+  private startKillcam(clip: NonNullable<Match['lastClip']>, returnTo: Phase | null, recording: boolean): void {
+    this.killcam.start(clip, returnTo, recording, this.rules);
+    this.setPhase('killcam');
+    this.emit({ type: 'killcam', active: true, recording });
+  }
+
+  private endKillcam(): void {
+    const k = this.killcam.active!;
+    this.killcam.active = null;
+    this.emit({ type: 'killcam', active: false, recording: k.recording });
+    if (k.returnTo) this.setPhase(k.returnTo);
+    else this.afterVolley();
+  }
 
   // ————————————————————————————— Skipping a round —————————————————————————————
 
@@ -1038,6 +1104,7 @@ export abstract class Match {
     this.volley = null;
     this.flightDoneAt = null;
     this.cpuJobs.clear();
+    this.killcam.reset();
     this.abandonRound();
     // Back to what everybody had when the round began (this also gives back what was staked on the oracle's questions).
     const before = this.scoreHistory[this.scoreHistory.length - 1];
@@ -1058,6 +1125,10 @@ export abstract class Match {
 
   /** Space / "continue": next round, final screen, or a new match. */
   advance(): void {
+    if (this.phase === 'killcam') {
+      if (!this.killcam.active!.recording && this.phaseTime > 0.3) this.endKillcam();
+      return;
+    }
     if (this.phaseTime < 0.6) return;
     if (this.phase === 'roundOver') {
       if (this.isLastRound) {
@@ -1081,7 +1152,9 @@ export abstract class Match {
     if (this.scriptTurns && this.revealing && this.revealAge > 2.5) this.skipReveal();
     // The round's announcement holds everything still: no aiming, no CPU thinking, no shot clock.
     if (this.revealing) return;
-    if (this.phase === 'flying') this.updateFlight(dt);
+    if (this.phase === 'killcam') {
+      if (this.killcam.update(dt, (volley, event) => this.onVolleyEvent(volley, event, false))) this.endKillcam();
+    } else if (this.phase === 'flying') this.updateFlight(dt);
     else if (this.scriptTurns) this.updateScripted(dt);
     else this.updatePhase(dt);
     if (this.phase === 'roundOver' && this.attract && this.phaseTime > 3) this.advance();
@@ -1093,6 +1166,7 @@ export abstract class Match {
     this.oracle.lock();
     this.stands.lock();
     this.oracleKills = [];
+    this.killcam.capture(this.world, aims);
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
     this.shotLog.launched(this.volley.shots, aims);
     this.simClock = 0;
@@ -1122,7 +1196,7 @@ export abstract class Match {
       this.replayState = 'finished';
       return;
     }
-    // The killcams and the collapse of Event Horizon play as they do in a game.
+    // Mode transitions play as they do in a game.
     if (this.phase !== 'aiming') return this.updatePhase(dt);
     if (this.replayState !== 'playing') return;
     // A beat to see the field before the shots go off.
@@ -1200,7 +1274,9 @@ export abstract class Match {
     this.power.onVolleyEnd();
     this.judgeOracle();
     for (const listener of this.turnListeners) listener();
-    this.afterVolley();
+    const clip = this.killcam.finish(volley.script, this.killcamMode === 'round');
+    if (clip && this.killcamMode === 'every') this.startKillcam(clip, null, false);
+    else this.afterVolley();
   }
 
   /**
@@ -1227,7 +1303,7 @@ export abstract class Match {
 
   /** Seconds to keep a finished volley on screen before moving on (e.g. before a killcam). */
   protected get afterVolleyDelay(): number {
-    return 0;
+    return this.killcam.hasKills && (this.killcamMode === 'every' || (this.killcamMode === 'round' && this.decided)) ? KILLCAM.DELAY : 0;
   }
 
   protected get volleyNumber(): number {
@@ -1394,7 +1470,7 @@ export abstract class Match {
         this.emit({ type: 'multiKill', player: killer, kills, points: bonus, x: volley.world.ships[victim].x, y: volley.world.ships[victim].y });
       }
     }
-    this.onKill(record, volley.shots.indexOf(vs), volley.steps);
+    this.killcam.record(record, volley.shots.indexOf(vs), volley.steps);
   }
 
   /** What the finished shots tell the scorecard: how far they flew and whom they narrowly missed. */
@@ -1428,9 +1504,6 @@ export abstract class Match {
     this.emit({ type: 'kill', record });
   }
 
-  /** Hook for Event Horizon to remember kills for the killcam. */
-  protected onKill(_record: KillRecord, _shotIndex: number, _step: number): void {}
-
   protected endRound(): void {
     // A pending vote cannot change a round after its normal result has been recorded.
     this.skipVote = null;
@@ -1458,6 +1531,7 @@ export abstract class Match {
     this.current = -1;
     this.setPhase('roundOver');
     this.emit({ type: 'roundEnd' });
+    this.showRoundKillcam();
   }
 
   // ————————————————————————————— CPU —————————————————————————————

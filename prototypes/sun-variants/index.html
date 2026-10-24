@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sonnen-Varianten</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b1730; color: #e8e4d8; font: 14px/1.4 ui-monospace, Menlo, monospace; }
+  h1 { margin: 16px 20px 4px; font-size: 16px; letter-spacing: .08em; text-transform: uppercase; color: #ffb45a; }
+  p.lead { margin: 0 20px 12px; color: #9fb3c8; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 0 12px 16px; }
+  figure { margin: 0; background: #10203d; border: 1px solid #1f3558; position: relative; }
+  figcaption { padding: 8px 12px 10px; }
+  figcaption b { display: block; color: #ffd08a; font-size: 14px; letter-spacing: .04em; }
+  figcaption span { color: #9fb3c8; font-size: 12px; }
+  canvas { display: block; width: 100%; height: 400px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>Sonnen-Varianten</h1>
+<p class="lead">Dieselbe Sonne (Radius 44) in sechs Looks. Groß vergrößert; unten links in Spielgröße mit Planet und Schiff daneben.</p>
+<div class="grid" id="grid"></div>
+<script type="module">
+import { VARIANTS } from './variants.ts';
+const grid = document.getElementById('grid');
+const cells = VARIANTS.map((v) => {
+  const fig = document.createElement('figure');
+  const canvas = document.createElement('canvas');
+  const cap = document.createElement('figcaption');
+  cap.innerHTML = `<b>${v.id === 'aktuell' ? '0' : VARIANTS.indexOf(v)} · ${v.name}</b><span>${v.note}</span>`;
+  fig.append(canvas, cap);
+  grid.append(fig);
+  return { v, canvas, ctx: canvas.getContext('2d') };
+});
+const R = 44;
+function frame(now) {
+  const time = now / 1000 + 3;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  for (const { v, canvas, ctx } of cells) {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#10203d'; ctx.fillRect(0, 0, w, h);
+    // Big.
+    const zoom = Math.min(w / 2, h / 2.3) / (R * 2.4);
+    ctx.save();
+    ctx.translate(w / 2, h / 2 - 34);
+    ctx.scale(zoom, zoom);
+    v.draw(ctx, R, time);
+    ctx.restore();
+    // In game size, with company.
+    const bx = w - 172, by = h - 102, bw = 160, bh = 90;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(bx, by, bw, bh); ctx.clip();
+    ctx.fillStyle = '#0d1a33'; ctx.fillRect(bx, by, bw, bh);
+    ctx.translate(bx + 56, by + bh / 2);
+    v.draw(ctx, R, time);
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#8fa6bd'; ctx.beginPath(); ctx.arc(98, 24, 11, 0, 7); ctx.fill();
+    ctx.fillStyle = '#6fe3c8'; ctx.beginPath(); ctx.moveTo(96, -30); ctx.lineTo(106, -16); ctx.lineTo(99, -19); ctx.lineTo(92, -16); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = '#1f3558'; ctx.strokeRect(bx + .5, by + .5, bw, bh);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

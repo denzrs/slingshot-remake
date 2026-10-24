@@ -1,0 +1,65 @@
+.team-roster { min-width: 0; }
+.team-roster__columns { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+.team-roster.has-teams .team-roster__columns { grid-template-columns: repeat(var(--team-count), minmax(0, 1fr)); }
+.team-column { container-type: inline-size; min-width: 0; padding: 12px; border: 1px solid color-mix(in srgb, var(--team-tone) 30%, transparent); border-top: 3px solid var(--team-tone); border-radius: 4px; background: color-mix(in srgb, var(--team-tone) 3%, #081426); }
+.team-column__head { display: flex; align-items: center; gap: 12px; min-height: 32px; margin-bottom: 12px; }
+.team-column__head h3 { flex: 1; margin: 0; color: var(--team-tone); font: 800 30px/1 var(--font-display); text-transform: uppercase; }
+.team-column__count { display: grid; place-items: center; min-width: 28px; height: 26px; border: 1px solid color-mix(in srgb, var(--team-tone) 25%, transparent); border-radius: 3px; color: var(--team-tone); font: 12px/1 var(--font-mono); }
+.menu-page .team-roster.has-teams .slot-grid { grid-template-columns: minmax(0, 1fr); }
+.team-roster__grid { min-height: 80px; }
+.roster-entry { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.crew-slot > .slot-card { flex: 1; width: 100%; }
+.roster-move { position: absolute; top: 9px; right: 43px; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--menu-line); border-radius: 3px; background: #10253b; color: var(--bone-dim); font: 20px/1 var(--font-body); cursor: grab; touch-action: manipulation; }
+.roster-move:hover, .roster-move[aria-pressed='true'] { color: var(--p2); border-color: var(--p2); }
+.roster-move:active { cursor: grabbing; }
+.roster-entry.has-move .slot-card__head { padding-right: 64px; }
+.player-slot > .slot-card__head > .lobby__icon-button { position: absolute; top: 10px; right: 10px; }
+.roster-entry.is-moving > .slot-card,
+.slot-card.roster-entry.is-moving { outline: 2px solid var(--p2); outline-offset: 2px; }
+.team-column.is-drop-target { outline: 2px solid var(--team-tone); outline-offset: 2px; background: color-mix(in srgb, var(--team-tone) 10%, #081426); }
+.team-column__place { width: 100%; min-height: 38px; margin-bottom: 12px; padding: 8px 10px; border: 1px dashed var(--team-tone); border-radius: 3px; background: color-mix(in srgb, var(--team-tone) 10%, #081426); color: var(--team-tone); font: 12px/1.5 var(--font-body); cursor: pointer; }
+.team-column__place[hidden], .team-roster__hint[hidden] { display: none; }
+.team-column__place:hover { background: color-mix(in srgb, var(--team-tone) 20%, #081426); }
+.roster-move:focus-visible, .team-column__place:focus-visible { outline: 2px solid var(--p2); outline-offset: 3px; }
+.team-roster__hint { margin: 12px 0 4px; color: var(--bone-dim); font: 10px/1.6 var(--font-body); }
+.option-selector { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; width: 100%; }
+.option-selector__choice { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 34px; padding: 7px 8px; border: 1px solid var(--menu-line); border-radius: 3px; background: #081426; color: var(--bone-dim); font: 11px/1.3 var(--font-body); cursor: pointer; text-align: left; }
+.option-selector__choice:hover { border-color: var(--slot-tone, var(--p2)); }
+.option-selector__choice[aria-checked='true'] { border-color: var(--slot-tone, var(--p2)); color: var(--slot-tone, var(--p2)); background: color-mix(in srgb, var(--slot-tone, var(--p2)) 10%, #081426); }
+.option-selector__choice:focus-visible { outline: 2px solid var(--slot-tone, var(--p2)); outline-offset: 2px; }
+.option-selector__rank { display: flex; flex: none; align-items: flex-end; gap: 2px; height: 10px; }
+.option-selector__rank i { display: block; width: 2px; height: 100%; background: currentColor; opacity: .17; }
+.option-selector__rank i.is-on { opacity: 1; }
+/* On a local seat card the four strengths sit in one row so the picker fits the portrait slot. */
+.pilot .option-selector { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.pilot .option-selector__choice { flex-direction: column; justify-content: center; gap: 5px; min-height: 46px; padding: 6px 2px; font-size: 10px; text-align: center; }
+.pilot .option-selector__choice > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+@container (min-width: 460px) {
+  .menu-page .team-roster[data-teams] .slot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (min-width: 700px) {
+  .menu-page .team-roster[data-teams='2'] .slot-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* A narrow team column stacks its ships as short horizontal cards instead of tall portrait ones. */
+@media (min-width: 521px) {
+@container (max-width: 459px) {
+  .team-roster.has-teams .pilot { display: grid; grid-template-columns: 76px minmax(0, 1fr); grid-template-areas: 'head head' 'pic level' 'pic assign'; gap: 8px 12px; min-height: 0; }
+  .team-roster.has-teams .pilot > .slot-card__head { grid-area: head; }
+  .team-roster.has-teams .pilot__body { display: contents; }
+  .team-roster.has-teams .pilot__body > .slot-card__portrait { grid-area: pic; padding-bottom: 0; }
+  .team-roster.has-teams .pilot__body .pilot-art { width: 76px; height: 50px; }
+  .team-roster.has-teams .pilot__options { position: static; grid-area: level; }
+  .team-roster.has-teams .pilot__assignment { grid-area: assign; }
+  .menu-page--crew .team-roster.has-teams .slot-card--empty { min-height: 144px; }
+}
+}
+
+@media (max-width: 760px) {
+  .team-roster.has-teams .team-roster__columns { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .team-column { padding: 10px; }
+  .team-column__head h3 { font-size: 27px; }
+}
+@media (max-width: 520px) {
+  .team-roster__columns { gap: 12px; }
+  .option-selector__choice { min-height: 38px; }
+}

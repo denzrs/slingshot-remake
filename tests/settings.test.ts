@@ -37,23 +37,22 @@ describe('CPU settings', () => {
 });
 
 describe('Mayhem settings', () => {
-  it('start off, in Classic', () => {
+  it('start off', () => {
     storage();
-    expect(loadSettings()).toMatchObject({ mayhem: 0, mayhemBase: 'classic' });
+    expect(loadSettings()).toMatchObject({ mayhem: 0 });
   });
 
-  it('keep the chaos strength and the mode the rounds are played in', () => {
+  it('keep the chaos strength', () => {
     storage();
     const settings = cloneSettings(DEFAULT_SETTINGS);
     settings.mayhem = 3;
-    settings.mayhemBase = 'horizon';
     saveSettings(settings);
-    expect(loadSettings()).toMatchObject({ mayhem: 3, mayhemBase: 'horizon' });
+    expect(loadSettings()).toMatchObject({ mayhem: 3 });
   });
 
   it('drop values nobody offers', () => {
-    storage({ mayhem: 7, mayhemBase: 'solar' });
-    expect(loadSettings()).toMatchObject({ mayhem: 0, mayhemBase: 'classic' });
+    storage({ mayhem: 7 });
+    expect(loadSettings()).toMatchObject({ mayhem: 0 });
   });
 });
 
@@ -104,7 +103,7 @@ describe('power settings', () => {
 
 describe('power-up choices', () => {
   it('start with every kind and the usual amount, also for settings saved before they existed', () => {
-    storage({ sound: false });
+    storage();
     const loaded = loadSettings();
     expect(loaded.powerUpKinds).toEqual(POWER_UP_KINDS);
     expect(loaded.powerUpAmount).toBe(POWER_UP.DEFAULT_AMOUNT);
@@ -166,5 +165,57 @@ describe('display settings', () => {
     expect(s.menuBackground).toBe(true);
     expect(s.particles).toBe(true);
     expect(s.contours).toBe(true);
+  });
+});
+
+describe('sound settings', () => {
+  it('migrates the old single switch to menu and game sounds', () => {
+    storage({ sound: false });
+    expect(loadSettings()).toMatchObject({ menuSounds: false, gameSounds: false });
+  });
+
+  it('lets saved menu and game choices override the old single switch', () => {
+    storage({ sound: false, menuSounds: true });
+    expect(loadSettings()).toMatchObject({ menuSounds: true, gameSounds: false });
+  });
+});
+
+describe('Graphics look', () => {
+  it('is the classic look unless the player picked another', () => {
+    storage();
+    expect(loadSettings().look).toBe('classic');
+  });
+
+  it('keeps the refined look after saving and reloading', () => {
+    storage();
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.look = 'refined';
+    saveSettings(settings);
+    expect(loadSettings().look).toBe('refined');
+  });
+
+  it('falls back to the classic look for a value it does not know', () => {
+    storage({ look: 'sepia' });
+    expect(loadSettings().look).toBe('classic');
+  });
+});
+
+describe('killcam settings', () => {
+  it('defaults old and fresh settings to automatic salvos', () => {
+    storage();
+    expect(loadSettings().killcam).toBe('auto');
+    storage({ simultaneousShots: false });
+    expect(loadSettings().killcam).toBe('auto');
+  });
+
+  it.each(['auto', 'off', 'every', 'round'] as const)('remembers %s after saving and reloading', (killcam) => {
+    storage();
+    saveSettings({ ...cloneSettings(DEFAULT_SETTINGS), killcam });
+    expect(loadSettings().killcam).toBe(killcam);
+  });
+
+  it.each([null, 1, true, 'all'])('rejects invalid persisted value %s', (killcam) => {
+    storage({ killcam });
+    expect(loadSettings().killcam).toBe('auto');
   });
 });

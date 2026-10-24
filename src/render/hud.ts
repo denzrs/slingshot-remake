@@ -31,6 +31,8 @@ export class Hud {
   private time = 0;
   private k = 1;
   private field: Box = { x: 0, y: 0, w: 0, h: 0 };
+  /** The whole canvas, for what takes over the screen and not just the field. */
+  private screen = { w: 0, h: 0 };
   private readonly oracle = new OracleHud();
 
   private shipPos: (i: number) => { x: number; y: number } = () => ({ x: 0, y: 0 });
@@ -47,6 +49,7 @@ export class Hud {
     this.shipPos = shipPos;
     // On a phone the field is small, but its labels must stay readable: they get a higher floor.
     this.k = Math.min(1.2, Math.max(opts.touch ? 0.95 : 0.72, view.scale));
+    this.screen = { w: view.cssWidth, h: view.cssHeight };
     this.field = view.stage ?? { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
 
     const focus = match.focus;
@@ -60,7 +63,7 @@ export class Hud {
     const frame: OracleFrame = { ctx: this.ctx, k: this.k, field: this.field, time, shipPos, keyHints: opts.keyHints && !opts.touch };
     const ghost = match.ghost;
 
-    const killcam = match instanceof HorizonMatch ? match.killcamInfo : null;
+    const killcam = match.killcamInfo;
     if (killcam) {
       this.drawKillcam(match, killcam, opts);
       this.drawSkipVote(match);
@@ -205,14 +208,7 @@ export class Hud {
     const stopAt = (i: number) => landed - 0.25 * (rows - 1 - i);
 
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = rgba(COLORS.plate, 0.55);
-    ctx.fillRect(field.x, field.y, field.w, field.h);
-    ctx.fillStyle = rgba(COLORS.plate, 0.92);
-    ctx.fillRect(field.x, top, field.w, h);
-    const edge = round.finale ? COLORS.danger : COLORS.sodium;
-    ctx.fillStyle = rgba(edge, 0.85);
-    ctx.fillRect(field.x, top, field.w, 1);
-    ctx.fillRect(field.x, top + h - 1, field.w, 1);
+    this.takeOver(top, h, round.finale ? COLORS.danger : COLORS.sodium, 0.62, 0.92);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -670,6 +666,30 @@ export class Hud {
   }
 
   /**
+   * What takes the screen over for a moment: the whole canvas dims (`dim`), HUD and field alike, and a band runs
+   * edge to edge at `top`, `h` tall, with a lit line at each edge in `edge` and a soft glow spilling out of it.
+   * Draw it with the global alpha of the moment's fade.
+   */
+  private takeOver(top: number, h: number, edge: string, dim: number, band: number): void {
+    const { ctx, screen } = this;
+    ctx.fillStyle = rgba(COLORS.plate, dim);
+    ctx.fillRect(0, 0, screen.w, screen.h);
+    ctx.fillStyle = rgba(COLORS.plate, band);
+    ctx.fillRect(0, top, screen.w, h);
+    for (const y of [top, top + h]) {
+      const glow = ctx.createLinearGradient(0, y - 14, 0, y + 14);
+      glow.addColorStop(0, rgba(edge, 0));
+      glow.addColorStop(0.5, rgba(edge, 0.22));
+      glow.addColorStop(1, rgba(edge, 0));
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, y - 14, screen.w, 28);
+    }
+    ctx.fillStyle = rgba(edge, 0.85);
+    ctx.fillRect(0, top, screen.w, 1);
+    ctx.fillRect(0, top + h - 1, screen.w, 1);
+  }
+
+  /**
    * Sets the display font at `size` with `spacing` between the letters — smaller, with the spacing, when `text`
    * would be wider than `maxWidth`: a narrow screen must not cut a headline off.
    */
@@ -697,11 +717,7 @@ export class Hud {
     const h = 150 * k;
 
     ctx.globalAlpha = fade;
-    ctx.fillStyle = rgba(COLORS.plate, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, h);
-    ctx.fillStyle = rgba(color, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, 1);
-    ctx.fillRect(field.x, cy + h / 2 - 1, field.w, 1);
+    this.takeOver(cy - h / 2, h, color, 0.45, 0.85);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
@@ -832,11 +848,7 @@ export class Hud {
     const h = 150 * k;
 
     ctx.globalAlpha = fade;
-    ctx.fillStyle = rgba(COLORS.plate, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, h);
-    ctx.fillStyle = rgba(color, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, 1);
-    ctx.fillRect(field.x, cy + h / 2 - 1, field.w, 1);
+    this.takeOver(cy - h / 2, h, color, 0.45, 0.85);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
@@ -869,7 +881,7 @@ export class Hud {
 
   // ————————————————————————————— Killcam —————————————————————————————
 
-  private drawKillcam(match: Match, info: NonNullable<HorizonMatch['killcamInfo']>, opts: DrawOptions): void {
+  private drawKillcam(match: Match, info: NonNullable<Match['killcamInfo']>, opts: DrawOptions): void {
     const { recording, slow } = info;
     const record = info.clip.record;
     const { ctx, k, field } = this;
@@ -927,7 +939,6 @@ export class Hud {
   private drawHint(match: Match, touch: boolean): void {
     const { k, field } = this;
     const maxWidth = field.w - 48 * k;
-    const horizon = match instanceof HorizonMatch;
     let items: KeyItem[] = [];
     if (match.localCanAim) {
       if (touch) {
@@ -944,12 +955,14 @@ export class Hud {
       if (match.viewer !== null && match.simultaneous) items = [['', t('hud.waitingOthers')]];
       else if (match.viewer !== null && thinker && !thinker.cpu) items = [['', t('hud.waitingFor', { name: thinker.name })]];
       else items = [['', thinker?.cpu ? t('hud.thinking', { name: thinker.name }) : t('hud.cpusAiming')]];
+    } else if (match.phase === 'orbit') {
+      items = [['', t('hud.orbit')]];
     } else if (match.phase === 'collapse') {
       items = [['', t('hud.collapse')]];
     } else if (match.phase === 'roundOver' && match.phaseTime > 0.6) {
       const next = match.isLastRound ? t('hud.finalStandings') : match instanceof ChallengeMatch ? t('daily.hud.nextSector') : t('hud.nextRound');
       items = [match.canAdvance ? [touch ? '' : t('common.space'), next] : ['', t('hud.waitingHost')]];
-      if (horizon && match.lastClip && !touch) items.push(['C', t('hud.saveKillcam')]);
+      if (match.canSaveClip && !touch) items.push(['C', t('hud.saveKillcam')]);
     }
     if (!items.length) return;
     const width = this.measureKeyRow(items, k);

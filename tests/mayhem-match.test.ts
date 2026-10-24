@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAYHEM } from '../src/config';
-import { mayhemRules } from '../src/lobbyPrefs';
+import { presetRules } from '../src/ui/match-presets';
 import { createMatch, type Match, type VersusMode } from '../src/game';
 import type { ClassicMatch } from '../src/game/classic';
 import type { HorizonMatch } from '../src/game/horizon';
@@ -130,8 +130,8 @@ describe('a match with Mayhem', () => {
     }
   });
 
-  it('pays for trick shots in every round of a Mayhem game, in Classic too', () => {
-    const settings = { ...cloneSettings(DEFAULT_SETTINGS), ...mayhemRules({ mayhem: 3, rounds: 4, shotTime: 10, simultaneousShots: false }, 'classic'), seats: humans };
+  it('pays for trick shots in every round of a game from the Mayhem preset, in Classic too', () => {
+    const settings = { ...cloneSettings(DEFAULT_SETTINGS), ...presetRules('mayhem'), mayhem: 3, rounds: 4, shotTime: 10, seats: humans };
     const match = createMatch('classic', settings, { seats: humans, seed: 12 });
     for (let round = 1; round <= 4; round++) {
       expect(match.settings.styleBonuses).toBe(true);

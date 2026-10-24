@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const relayContract = JSON.parse(readFileSync(fileURLToPath(new URL('../server/protocol-contract.json', import.meta.url)), 'utf8')) as {
   defaults: RoomRules;
-  options: Partial<Record<keyof RoomRules, readonly number[]>>;
+  options: Partial<Record<keyof RoomRules, readonly (number | string)[]>>;
 };
 
 describe('stepping through values', () => {
@@ -67,8 +67,9 @@ describe('game rules in the menu', () => {
   const all = ruleRows();
   const valued = all.filter((row) => row.control !== 'toggle');
 
-  it('lists every rule the setup and online lobby share, once — the shot power one in three parts', () => {
-    expect(all.map((row) => row.key).sort()).toEqual(Object.keys(relayContract.defaults).sort());
+  it('lists every rule the setup and online lobby share, once — the shot power one in three parts, and the power-up switch in the kinds', () => {
+    // Choosing kinds is what switches the power-ups on: no kinds, no power-ups. So the switch has no row of its own.
+    expect(all.map((row) => row.key).sort()).toEqual(Object.keys(relayContract.defaults).filter((key) => key !== 'powerUps').sort());
   });
 
   it('sorts every rule into a block of the setup screen', () => {
@@ -81,6 +82,8 @@ describe('game rules in the menu', () => {
     for (const row of all.filter((r) => r.control === 'slider')) {
       // The cap's slider only has stops below "no cap": no cap is the power mode "free".
       if (row.key === 'maxPower') continue;
+      // Mayhem's strength is out of sight while Mayhem is off, as it is by default.
+      if (row.when && !row.when(defaults)) continue;
       expect(row.options.map((o) => o.value), row.key).toContain(defaults[row.key]);
     }
   });
@@ -99,9 +102,9 @@ describe('game rules in the menu', () => {
     expect(fixed.options.map((option) => option.value)).toEqual(relayContract.options.fixedPowerLevel);
   });
 
-  it('makes switches of the on/off rules, a bar of the power mode and sliders of the rest', () => {
+  it('makes switches of the on/off rules, a bar of the few-choice rules and sliders of the rest', () => {
     for (const row of all) {
-      if (row.key === 'fixedPower' || row.key === 'powerUpAmount' || row.key === 'mayhem') expect(row.control, row.key).toBe('segmented');
+      if (row.key === 'fixedPower' || row.key === 'powerUpAmount' || row.key === 'mayhem' || row.key === 'killcam') expect(row.control, row.key).toBe('segmented');
       else if (row.key === 'powerUpKinds') expect(row.control).toBe('tiles');
       else if (row.options.length === 0) expect(row.control, row.key).toBe('toggle');
       else expect(row.control, row.key).toBe('slider');
@@ -125,17 +128,16 @@ describe('game rules in the menu', () => {
     }
   });
 
-  it('offers the power-ups, their kinds and their amount in both modes, offline and in an online room', () => {
-    for (const mode of ['classic', 'horizon'] as const) {
-      for (const online of [false, true]) expect(rulesFor(mode, online).map((r) => r.key)).toEqual(expect.arrayContaining(['powerUps', 'powerUpKinds', 'powerUpAmount']));
+  it('offers the power-up kinds and their amount in every mode, offline and in an online room', () => {
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      for (const online of [false, true]) expect(rulesFor(mode, online).map((r) => r.key)).toEqual(expect.arrayContaining(['powerUpKinds', 'powerUpAmount']));
     }
   });
 
-  it('keeps the kinds and the amount hidden but in place while power-ups are off', () => {
+  it('hides the amount while power-ups are off', () => {
     const source = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), powerUps: false }), patch() {} };
-    for (const { key, item } of ruleItems('classic', source).filter((r) => r.key === 'powerUpKinds' || r.key === 'powerUpAmount')) {
+    for (const { key, item } of ruleItems('classic', source).filter((r) => r.key === 'powerUpAmount')) {
       expect(item.hidden?.(), key).toBe(true);
-      expect(item.reserve?.(), key).toBe(true);
     }
   });
 
@@ -144,21 +146,40 @@ describe('game rules in the menu', () => {
     expect(all.find((r) => r.key === 'powerUpKinds')!.options.map((o) => o.value)).toEqual(relayContract.defaults.powerUpKinds);
   });
 
-  it('gives a Mayhem game only its rounds, its chaos strength and the flight time and (in Classic) simultaneous shots, and every other game neither the strength nor a way to switch it on', () => {
+  it('shows the strength of Mayhem in both modes, among the match rules, only while Mayhem is on', () => {
     for (const mode of ['classic', 'horizon'] as const) {
       for (const online of [false, true]) {
-        expect(rulesFor(mode, online, true).map((r) => r.key)).toEqual([...(mode === 'classic' ? ['rounds', 'mayhem', 'shotTime', 'simultaneousShots'] : ['rounds', 'mayhem', 'shotTime']), ...(online ? ['chatPlayersOnly'] : [])]);
-        expect(rulesFor(mode, online).map((r) => r.key)).not.toContain('mayhem');
+        const row = rulesFor(mode, online).find((r) => r.key === 'mayhem')!;
+        expect(row.group).toBe('match');
+        expect(row.when!({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 })).toBe(true);
+        expect(row.when!(rulesOf(DEFAULT_SETTINGS))).toBe(false);
       }
     }
-    const source = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 }), patch() {} };
-    expect(ruleItems('classic', source, false, true).map((i) => i.key)).toEqual(['rounds', 'mayhem', 'shotTime', 'simultaneousShots']);
-    expect(new Set(ruleItems('classic', source, false, true).map((i) => i.group))).toEqual(new Set(['match']));
-    expect(ruleItems('classic', source).map((i) => i.key)).not.toContain('mayhem');
+    let rules = { ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 };
+    const item = ruleItems('classic', { get: () => rules, patch: (v) => (rules = { ...rules, ...v }) }).find((i) => i.key === 'mayhem')!.item;
+    expect(item.kind).toBe('segmented');
+    expect(item.hidden?.()).toBe(false);
+    rules = { ...rules, mayhem: 0 };
+    expect(item.hidden?.()).toBe(true);
+  });
+
+  it('offers the shared killcam choices in every offline and online mode', () => {
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      for (const online of [false, true]) {
+        const row = rulesFor(mode, online).find((r) => r.key === 'killcam')!;
+        expect(row.options.map((o) => o.value)).toEqual(relayContract.options.killcam);
+        let rules = rulesOf(DEFAULT_SETTINGS);
+        const item = ruleItems(mode, { get: () => rules, patch: (value) => { rules = { ...rules, ...value }; } }, online).find((r) => r.key === 'killcam')!.item;
+        expect(item.kind).toBe('segmented');
+        if (item.kind !== 'segmented') throw new Error('Expected killcam options');
+        item.set('round');
+        expect(rules.killcam).toBe('round');
+      }
+    }
   });
 
   it('offers exactly the chaos strengths the relay accepts, bar "off", which is not a Mayhem game', () => {
-    expect(all.find((r) => r.key === 'mayhem')!.options.map((o) => o.value)).toEqual(relayContract.options.mayhem!.filter((n) => n > 0));
+    expect(all.find((r) => r.key === 'mayhem')!.options.map((o) => o.value)).toEqual(relayContract.options.mayhem!.filter((n) => typeof n === 'number' && n > 0));
     expect(relayContract.defaults.mayhem).toBe(0);
   });
 

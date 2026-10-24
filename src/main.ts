@@ -4,32 +4,34 @@ import '@fontsource/b612/700';
 import '@fontsource/b612-mono/400';
 import '@fontsource/b612-mono/700';
 import './style.css';
+import './ui/launcher.css';
+import './ui/menu-page.css';
 
 import { Sound } from './audio';
 import { dailyChallenge, dateKey, isDateKey } from './challenge';
 import { ClipRecorder } from './clip';
 import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS } from './config';
 import { recordRun } from './dailyStore';
-import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
+import { ChallengeMatch, createChallenge, createMatch, type Match, type VersusMode } from './game';
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
 import type { OracleTap } from './render/oracle';
 import { readInvite } from './invite';
 import { MultiplayerSession } from './multiplayer';
 import type { ClientInput } from './net';
-import { inNebula } from './physics';
+import { inPowerUpNebula } from './physics';
 import { POWER_UP } from './powerups';
 import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './i18n';
+import { setLook } from './render/look';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './scoring';
-import { mayhemRules } from './lobbyPrefs';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
 import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/chat';
 import { Menu } from './ui/menu';
-import { lobbyScreen } from './ui/lobby';
+import { lobbyScreen, type LobbyEntry } from './ui/lobby';
 import { TouchControls } from './ui/touch-controls';
 import { TouchStick } from './ui/touch-stick';
 import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, type App } from './ui/screens';
@@ -49,10 +51,12 @@ const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 
 const settings = loadSettings();
+setLook(settings.look);
 setLang(settings.language);
 applyStaticTexts();
 const sound = new Sound();
-sound.enabled = settings.sound;
+sound.menuEnabled = settings.menuSounds;
+sound.gameEnabled = settings.gameSounds;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const coarsePointer = matchMedia('(pointer: coarse)');
 const effects = new Effects(settings.particles, reducedMotion, settings.debris);
@@ -63,7 +67,7 @@ const recorder = new ClipRecorder();
 /** The title screen plays an Event Horizon match between four CPUs behind the menu. */
 const attract = createMatch(
   'horizon',
-  { ...DEFAULT_SETTINGS, maxPlanets: 4, contours: settings.contours, sound: false },
+  { ...DEFAULT_SETTINGS, maxPlanets: 4, contours: settings.contours },
   { attract: true, seats: ['medium', 'medium', 'medium', 'medium', 'off', 'off'] },
 );
 let match: Match | null = null;
@@ -71,7 +75,6 @@ let match: Match | null = null;
 let lastReplay: StatsReplay | null = null;
 let screen: 'title' | 'play' = 'title';
 let lastMode: VersusMode = 'classic';
-let lastMayhem = false;
 /** `?daily=YYYY-MM-DD` flies another day's challenge — handy for testing and for sharing an old one. */
 const requestedDay = new URLSearchParams(location.search).get('daily');
 const forcedDay = isDateKey(requestedDay) ? requestedDay : null;
@@ -207,7 +210,7 @@ function wire(m: Match): void {
         if (audible) sound.volley();
         break;
       case 'lock':
-        if (audible) sound.blip();
+        if (audible) sound.gameBlip();
         break;
       case 'killcam':
         effects.clear();
@@ -247,10 +250,16 @@ function multiplayer(): MultiplayerSession {
       match = null;
       screen = 'title';
       effects.clear();
-      menu.open(() => lobbyScreen(app, multiplayer()));
+      const lobby = lobbyScreen(app, multiplayer());
+      menu.open(() => lobby);
     },
   });
-  const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session);
+  const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session, () => {
+    if (overlay.querySelector('.menu-page--room')) return { kind: 'lobby' };
+    const matchMenu = overlay.querySelector('.menu-page--pause, .menu-page--results');
+    if (screen === 'play' && session?.match && session.match === match && (!menu.isOpen || matchMenu)) return { kind: 'game' };
+    return null;
+  });
   chat = panel;
   session.subscribe(() => panel.update());
   return session;
@@ -333,9 +342,12 @@ const app: App = {
   settingsChanged() {
     saveSettings(settings);
     applyStickSide();
-    sound.enabled = settings.sound;
+    applyMenuMotion();
+    sound.menuEnabled = settings.menuSounds;
+    sound.gameEnabled = settings.gameSounds;
     effects.particles = settings.particles;
     effects.debrisLevel = settings.debris;
+    setLook(settings.look);
     attract.applySettings(settings);
     if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {
@@ -351,13 +363,11 @@ const app: App = {
     return screen === 'play' && !!match && match.settings.mayhem > 0;
   },
   today: () => forcedDay ?? dateKey(),
-  start(mode, mayhem = false) {
+  start(mode) {
     lastMode = mode;
-    lastMayhem = mayhem;
     match?.dispose();
-    // Mayhem is a game of its own: it plays by its two rules over the plain ones, whatever the other setups say.
-    const rules = cloneSettings(settings);
-    const played = mayhem ? { ...rules, ...mayhemRules(rules, mode) } : { ...rules, mayhem: 0 };
+    // Mayhem is a preset of the rules (the level of `mayhem`), not a mode of its own.
+    const played = cloneSettings(settings);
     match = createMatch(mode, played);
     // Where there is a relay, a game played here to its end is told to it, for its statistics.
     if (statsAvailable()) trackLocalGame(match, played, (report) => void reportLocalGame(report));
@@ -377,21 +387,26 @@ const app: App = {
   get online() {
     return !!online();
   },
-  openLobby: () => menu.open(() => lobbyScreen(app, multiplayer())),
+  openLobby(entry?: LobbyEntry) {
+    const lobby = lobbyScreen(app, multiplayer(), entry);
+    if (entry) menu.push(() => lobby);
+    else menu.open(() => lobby);
+  },
   toLobby() {
     session?.leaveRoom();
     match?.dispose();
     match = null;
     screen = 'title';
     effects.clear();
-    menu.open(() => lobbyScreen(app, multiplayer()));
+    const lobby = lobbyScreen(app, multiplayer(), 'rooms');
+    menu.open(() => lobby);
   },
   resume() {
     voteMenuOpen = false;
     menu.close();
   },
   rematch() {
-    if (!match) return app.start(lastMode, lastMayhem);
+    if (!match) return app.start(lastMode);
     if (online()) {
       if (!match.canAdvance) return;
       advanceMatch();
@@ -444,7 +459,7 @@ const app: App = {
 
 /** Replay the last killcam while recording the canvas, then download the video. */
 function saveClip(): void {
-  if (!(match instanceof HorizonMatch) || !ClipRecorder.supported || recorder.recording) return;
+  if (!match?.canSaveClip || !ClipRecorder.supported || recorder.recording) return;
   match.replayLastKill(true);
 }
 
@@ -474,7 +489,7 @@ function escapeAction(): void {
     return;
   }
   // A clip records whatever is on screen — don't freeze it behind the menu.
-  if (!recorder.recording) menu.open(() => pauseScreen(app));
+  if (!recorder.recording) menu.open(() => pauseScreen(app, match));
 }
 
 // ————————————————————————————— Keyboard —————————————————————————————
@@ -669,6 +684,10 @@ function applyStickSide(): void {
   document.documentElement.classList.toggle('stick-right', settings.stickSide === 'right');
 }
 applyStickSide();
+function applyMenuMotion(): void {
+  document.documentElement.classList.toggle('menu-motion-less', settings.lessMenuMotion);
+}
+applyMenuMotion();
 
 touchMenu.addEventListener('click', () => {
   sound.unlock();
@@ -726,7 +745,7 @@ function syncButtons(): void {
   touchControls.update(aim);
   touchStick.update(aim);
 
-  const canClip = playing && m instanceof HorizonMatch && m.canReplay && ClipRecorder.supported && !recorder.recording;
+  const canClip = playing && m?.canSaveClip && ClipRecorder.supported && !recorder.recording;
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;
 }
 
@@ -834,7 +853,7 @@ function frame(now: number): void {
     if (m.world.nebulae.length) {
       for (const vs of m.scene().volley?.shots ?? []) {
         const s = vs.shot;
-        if (!s.end && s.inField && inNebula(m.world.nebulae, s.x, s.y)) effects.nebulaDrag(s.x, s.y, s.vx, s.vy, dt, POWER_UP_COLORS.nebula);
+        if (!s.end && s.inField && inPowerUpNebula(m.world.nebulae, s.x, s.y)) effects.nebulaDrag(s.x, s.y, s.vx, s.vy, dt, POWER_UP_COLORS.nebula);
       }
     }
   }
@@ -865,13 +884,14 @@ function frame(now: number): void {
     renderer.draw(
       m,
       effects,
-      { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
+      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
       paused ? 0 : dt,
     );
   }
   if (screen === 'play' && m === match) announceOracle(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();
+  chat?.update();
   requestAnimationFrame(frame);
 }
 

@@ -1,25 +1,32 @@
 import { AVATARS, type Avatar } from '../avatars';
 import { COLORS, GALLERY, MAX_PLAYERS, TEAMS } from '../config';
-import { teamName } from '../game';
-import { t } from '../i18n';
+import { relayText, t, type Key } from '../i18n';
 import { canCopyInvite, inviteJoinAttempt, inviteLink, readInvite, shouldAutoConnectInvite, withoutInvite, withoutInvitePassword } from '../invite';
-import { loadLobbyPrefs, mayhemRules, saveLobbyPrefs } from '../lobbyPrefs';
+import { defaultRoomRules, loadLobbyPrefs, saveLobbyPrefs } from '../lobbyPrefs';
+import { clearOverride, deleteCustomPreset, loadCustomPresets, MAX_CUSTOM_PRESETS, saveCustomPreset, saveOverride, type CustomPreset } from '../customPresets';
 import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multiplayer';
-import type { LobbyRoom, NetworkCpuLevel, NetworkGameMode, RoomInfo, RoomMode, RoomRules } from '../net';
-import type { RoomLook } from '../roomLook';
-import { buildControl, segmentedControl, sliderControl, type Control, type Env } from './controls';
+import { ConnectError, type LobbyRoom, type NetworkCpuLevel, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules } from '../net';
+import type { RoomLook, RoomVisibility } from '../roomLook';
+import { buildControl, optionSelector, segmentedControl, sliderControl, type Control, type Env } from './controls';
 import { eyeIcon } from './dom';
 import { h, type Screen } from './menu';
-import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
+import { groupTitle, RULE_COLUMNS, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
 import type { App } from './screens';
 import { AVATAR_LABEL, avatarSvg, playerIcon } from './avatars';
-import { lookDialog, lookSummary, picker, roomIcon, visibilityControl, type LookControl, type LookDialog } from './roomLook';
+import { lookDialog, picker, roomIcon, visibilityControl, type LookDialog } from './roomLook';
 import { factTicker } from './facts';
+import { menuPage } from './menu-page';
+import { modeArt, presetArt } from './mode-icons';
+import { pickArt, pickHint, pickName } from './pick-of-day';
+import { presetsForMode, presetHintKey, matchingPreset, matchingCustom, presetChangeCount, presetRules, savedPresetRules, isOverridden, matchingHandpicked, pickOfTheDay, samePick } from './match-presets';
+import { presetNameField } from './preset-name';
+import { powerUpSummary } from './powerup-summary';
+import { teamRoster, type RosterCard } from './team-roster';
 
-/** A game mode's name; a Mayhem room is the mode its rounds are played in, with Mayhem in front. */
+/** A game mode's name, with Mayhem behind it when its rounds have twists. */
 const modeName = (mode: NetworkGameMode, mayhem = false) => {
-  const name = t(mode === 'classic' ? 'mode.classic' : 'mode.horizon');
-  return mayhem ? `${t('mode.mayhem')} · ${name}` : name;
+  const name = t(`mode.${mode}` as Key);
+  return mayhem ? `${name} · ${t('mode.mayhem')}` : name;
 };
 const matchTypeName = (mode: RoomMode) => (mode === 'team' ? t('players.teams', { n: 2 }) : t('players.ffa'));
 /** The symbols a player can pick, as the choices of a picker. */
@@ -54,22 +61,6 @@ const ICON_CLOSE = '<path d="M6 6l12 12M18 6L6 18"/>';
 /** The levels a CPU seat can take online, in the order the offline game lists them. */
 const CPU_LEVELS: NetworkCpuLevel[] = ['easy', 'medium', 'hard', 'hawking'];
 
-/** A native picker from a list of [value, label] choices. */
-function choicePicker(label: string, choices: Array<[string, string]>, current: string, onChange: (value: string) => void): HTMLSelectElement {
-  const el = document.createElement('select');
-  el.className = 'lobby__cpu-select';
-  el.setAttribute('aria-label', label);
-  for (const [value, text] of choices) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = text;
-    option.selected = value === current;
-    el.append(option);
-  }
-  el.addEventListener('change', () => onChange(el.value));
-  return el;
-}
-
 function iconButton(label: string, icon: string): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
@@ -85,7 +76,7 @@ function iconButton(label: string, icon: string): HTMLButtonElement {
  * A password field with an eye that shows or hides what is typed. With `onCopy`, a button beside it
  * copies the password.
  */
-function secretField(input: HTMLInputElement, onCopy?: () => void): HTMLElement {
+function secretField(input: HTMLInputElement, onCopy?: (button: HTMLElement) => void): HTMLElement {
   const eye = iconButton('', ICON_EYE);
   const paintEye = (): void => {
     const shown = input.type === 'text';
@@ -103,10 +94,65 @@ function secretField(input: HTMLInputElement, onCopy?: () => void): HTMLElement 
   const parts: Node[] = [input, eye];
   if (onCopy) {
     const copy = iconButton(t('multiplayer.copyPassword'), ICON_COPY);
-    copy.addEventListener('click', onCopy);
+    copy.addEventListener('click', () => onCopy(copy));
     parts.push(copy);
   }
   return h('span.lobby__secret', null, ...parts);
+}
+
+const ICON_LINK = '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>';
+const ICON_KEY = '<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l3 3M14 9l2 2"/>';
+const ICON_CHECK = '<path d="M5 12.5l4.5 4.5L19 7"/>';
+
+/** Confirms "copied" in the thing that was pressed, for a moment, and then gives it back. */
+function flashCopied(button: HTMLElement, what: string): void {
+  if (button.classList.contains('is-flash')) return;
+  button.classList.add('is-flash');
+  if (button.classList.contains('slot-card__join')) {
+    flashSeat(button, what);
+    return;
+  }
+  // An icon button lights up and draws a check; what was copied floats under it as a tooltip, so nothing around it moves.
+  const note = h('span.flash-note', { role: 'status' }, what);
+  const icon = button.querySelector('svg');
+  const saved = icon?.innerHTML;
+  if (icon) icon.replaceChildren(...svgChildren(ICON_CHECK));
+  button.classList.add('is-copied');
+  button.append(note);
+  setTimeout(() => {
+    if (icon && saved !== undefined) icon.innerHTML = saved;
+    note.remove();
+    button.classList.remove('is-copied', 'is-flash');
+  }, 1600);
+}
+
+/** An open seat says it in the seat itself: the card lights up and its label is swapped for what was copied. */
+function flashSeat(button: HTMLElement, what: string): void {
+  const card = button.closest('.slot-card');
+  const saved = [...button.childNodes];
+  const check = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  check.setAttribute('viewBox', '0 0 24 24');
+  check.setAttribute('class', 'slot-card__check');
+  check.setAttribute('aria-hidden', 'true');
+  check.innerHTML = ICON_CHECK;
+  card?.classList.add('is-copied');
+  button.replaceChildren(check, h('span.slot-card__copied', { role: 'status' }, what));
+  setTimeout(() => {
+    button.replaceChildren(...saved);
+    button.classList.remove('is-flash');
+    card?.classList.remove('is-copied');
+  }, 1800);
+}
+
+/** A small padlock that takes the colour of its text. */
+function lockIcon(): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'lock-icon');
+  svg.setAttribute('aria-hidden', 'true');
+  // Only our own constants go in here.
+  svg.innerHTML = '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>';
+  return svg;
 }
 
 /** The children of an SVG, parsed from a constant. */
@@ -128,15 +174,15 @@ interface RulesForm {
 }
 
 /**
- * The rules of a game as sliders and switches, in the blocks of the setup screen. Read-only, they
+ * The rules of a game as sliders and switches, in the blocks and columns of the rules page. Read-only, they
  * are what everybody but the host sees of a room.
  */
-function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly = false, mayhem = false): RulesForm {
+function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly = false, changed?: () => void): RulesForm {
   const controls: Control[] = [];
   const refresh = () => controls.forEach((c) => c.refresh());
-  const env: Env = { sound: app.menu.sound, readonly, changed: refresh };
-  const items = ruleItems(mode, source, true, mayhem);
-  const groups = RULE_GROUPS.filter((group) => items.some((i) => i.group === group)).map((group) => {
+  const env: Env = { sound: app.menu.sound, readonly, changed: () => { refresh(); changed?.(); } };
+  const items = ruleItems(mode, source, true);
+  const groups = new Map(RULE_GROUPS.filter((group) => items.some((i) => i.group === group)).map((group) => {
     const rows = h('div.setup__rows', null);
     for (const { group: g, item } of items) {
       if (g !== group) continue;
@@ -144,15 +190,29 @@ function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly
       controls.push(control);
       rows.append(control.el);
     }
-    return h('section.setup__group', null, h('h3.setup__title', null, groupTitle(group)), rows);
-  });
-  const el = h('div.setup.setup--lobby', null, ...groups);
+    return [group, h('section.setup__group', null, h('h3.setup__title', null, groupTitle(group)), rows)] as const;
+  }));
+  const el = h('div.sheet.rules-browser', null,
+    ...RULE_COLUMNS.map((column) => column.filter((group) => groups.has(group))).filter((column) => column.length)
+      .map((column) => h('div.sheet__col', null, ...column.map((group) => groups.get(group)!))),
+  );
   refresh();
   return { el, refresh };
 }
 
-/** What the lobby is showing while the player is not in a room. */
-type View = 'rooms' | 'create';
+/** Direct child views reachable from the Online section of the main launcher. */
+export type LobbyEntry = 'rooms' | 'create' | 'code';
+type View = LobbyEntry;
+/** The games a host picks between in the room, in the order of the pager. */
+const PICKER_MODES: readonly NetworkGameMode[] = ['classic', 'horizon', 'solar'];
+type OnlineSectionDirection = 'next' | 'previous';
+// Keep the focused section at the anchor and preview the next two, wrapping back to the start.
+const ONLINE_SECTIONS: readonly LobbyEntry[] = ['rooms', 'create', 'code'];
+const ONLINE_SECTION_TITLE: Record<LobbyEntry, Key> = {
+  rooms: 'flow.find',
+  create: 'flow.create',
+  code: 'flow.code',
+};
 
 /**
  * Online play, one step at a time: connect to a relay, see the open rooms, open one of your own —
@@ -163,7 +223,7 @@ type View = 'rooms' | 'create';
  * A build that was given a secure relay (`wss://`) is hosted: it connects as soon as the lobby opens,
  * with no connection screen. Every other build (self-hosted or local dev) keeps the connection card.
  */
-export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
+export function lobbyScreen(app: App, session: MultiplayerSession, entry?: LobbyEntry): Screen {
   const prefs = loadLobbyPrefs(DEFAULT_SERVER);
   const configuredServer = Boolean(import.meta.env.VITE_MULTIPLAYER_SERVER);
   const hosted = configuredServer && isSecureRelay(DEFAULT_SERVER);
@@ -186,22 +246,24 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   let localMessage: string | null = null;
   /** The last connection attempt failed; the hosted build then offers the connect card again. */
   let connectFailed = false;
-  let view: View = 'rooms';
+  let view: View = invited ? 'code' : entry ?? 'rooms';
+  let lastContentState: string | null = null;
+  let createFromRooms = false;
   /** Join passwords typed so far, per room — the room list is rebuilt whenever it changes. */
   const joinPasswords = new Map<string, string>();
   /** The password the player set for the room they opened; it is shown to the host to share, until they leave. */
   let hostPassword = '';
 
-  /** Copies a text to the clipboard and says so, or says that it could not. Nothing happens for an empty text. */
-  const copyText = async (text: string, done: string): Promise<void> => {
+  /** Copies a text to the clipboard and says so in the button that asked for it, or says that it could not. Nothing happens for an empty text. */
+  const copyText = async (text: string, what: string, target: HTMLElement): Promise<void> => {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      localMessage = done;
+      flashCopied(target, what);
     } catch {
       localMessage = t('multiplayer.copyFailed');
+      render();
     }
-    render();
   };
 
   const status = h('p.lobby__status', { role: 'status', 'aria-live': 'polite' });
@@ -215,25 +277,22 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   /** Why the relay turned the name down, right under the field it is about. */
   const nameError = () => h('p.lobby__field-error', { role: 'alert' });
   const joinNameError = nameError();
-  const roomNameError = nameError();
   /** The name that went out (join, create, rename) and has not been answered yet. It becomes the default for next time only once the relay has taken it. */
   let pendingName: string | null = null;
   const showNameError = (message: string | null) => {
-    for (const el of [joinNameError, roomNameError]) {
-      el.textContent = message ?? '';
-      el.hidden = !message;
-    }
+    joinNameError.textContent = message ? relayText(message) : '';
+    joinNameError.hidden = !message;
   };
   showNameError(null);
   const nameField = h('div', null, field(t('multiplayer.name'), playerName), joinNameError);
   const connectButton = button(hosted ? t('multiplayer.retry') : t('multiplayer.connect'), true);
   const connectFields = h('div.lobby__fields', null, ...(configuredServer ? [] : [field(t('multiplayer.server'), serverAddress)]));
-  const connectView = h('section.lobby__card.lobby__card--narrow', null, h('h3.setup__title', null, t('multiplayer.connection')), connectFields, connectButton);
+  const connectView = h('section.lobby__card.lobby__card--narrow.lobby__connect', null,
+    h('h3.setup__title', null, t('multiplayer.connection')), connectFields, connectButton,
+    h('div.lobby__connect-art', null, modeArt('classic'), h('p.note', null, t('shell.connectNote'))),
+  );
 
   /** Once connected: who you are connected to, your name, a way out. */
-  const linkText = h('span.lobby__link-text', null);
-  const serverLink = h('span.lobby__link', null, linkText);
-  serverLink.hidden = configuredServer;
   const barName = h('div.lobby__name', null);
   /** The symbol the player shows in online games: picked here before a room, and inside one (below the players). */
   const avatarBar = picker<Avatar>(t('multiplayer.yourSymbol'), avatarOptions(), false, (avatar) => {
@@ -241,12 +300,74 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     prefs.avatar = avatar;
     save();
     avatarBar.show(avatar);
+    if (session.room && !session.you.spectator) session.setAvatar(avatar);
   });
   const avatarRow = h('div.lobby__avatar', null, h('span.lobby__code-label', null, t('multiplayer.yourSymbol')), avatarBar.el);
   const disconnectButton = button(t('multiplayer.disconnect'));
-  // The hosted build is connected as of now: there is nothing to disconnect from.
-  disconnectButton.hidden = hosted;
-  const bar = h('div.lobby__bar', null, serverLink, barName, avatarRow, disconnectButton);
+  // Nothing to disconnect from before a connection, and the hosted build is connected as of now (render keeps this up to date).
+  disconnectButton.hidden = true;
+  const saveProfile = button(t('flow.profileSave'), true);
+  const profileLabel = h('span.online-profile__name', null);
+  const profileAvatar = h('span.online-profile__avatar', null);
+  const profile = h('details.online-profile', null,
+    h('summary', null,
+      profileAvatar,
+      h('span.online-profile__text', null, h('span.online-profile__label', null, t('flow.profile')), profileLabel),
+      h('span.online-profile__edit', null, t('flow.profileEdit')),
+    ),
+    h('div.online-profile__fields', null, barName, avatarRow, h('div.online-profile__actions', null, saveProfile)),
+  ) as HTMLDetailsElement;
+  /** The name and the symbol are the player's own: saving them closes the panel, whatever the relay will say to the name later. */
+  const commitProfile = () => {
+    const name = playerName.value.trim();
+    if (!name) {
+      showNameError(t('multiplayer.nameRequired'));
+      playerName.focus();
+      return;
+    }
+    showNameError(null);
+    profile.open = false;
+    if (session.room) {
+      // Inside a room the relay has the last word on the name; the field keeps what was typed until it answers.
+      sendingName(name);
+      session.setName(name);
+      render();
+      return;
+    }
+    prefs.name = name;
+    save();
+    render();
+  };
+  saveProfile.addEventListener('click', commitProfile);
+  playerName.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') commitProfile();
+  });
+  const connectionLabel = h('span.online-connection__state', null);
+  const connectionServer = h('span.online-connection__server', null);
+  const connection = h('div.online-connection', null,
+    h('div.online-connection__status', null, h('span.online-connection__text', null, connectionLabel, connectionServer)), disconnectButton,
+  );
+  const bar = h('div.online-identity', null, profile, connection);
+  const connectSlot = h('div', null, connectView);
+  /** True once the relay has answered while this page was open; the page opening on a live connection is not news. */
+  let wasConnected: boolean | null = null;
+  let linkedTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A reconnect the player did not ask for: the page waits for it instead of showing a connect card for a moment. */
+  let quietConnect = false;
+  /** The connection coming up or going away: one ping on the status dot, and what the card made room for fades in. */
+  const flashConnection = (state: 'is-linked' | 'is-dropped'): void => {
+    lobbyEl.classList.remove('lobby--linked');
+    connection.classList.remove('is-linked', 'is-dropped');
+    void connection.offsetWidth;
+    // While the page is still building itself up, the content fade would be a second entrance.
+    if (page.classList.contains('menu-page--entered')) lobbyEl.classList.add('lobby--linked');
+    connection.classList.add(state);
+    clearTimeout(linkedTimer);
+    linkedTimer = setTimeout(() => {
+      lobbyEl.classList.remove('lobby--linked');
+      connection.classList.remove('is-linked', 'is-dropped');
+    }, 1400);
+  };
 
   // ————————————————————————————— The open rooms —————————————————————————————
 
@@ -255,31 +376,81 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   // A private room is not listed: its code gets you in — or the invite link, which carries it.
   const codeInput = textInput(invited?.roomId ?? '', { maxLength: 16, autocomplete: 'off', spellcheck: false, placeholder: t('multiplayer.codePlaceholder') });
   const codePassword = passwordInput(t('multiplayer.password'));
+  /** A line under the field it is about; empty and hidden until there is something to say. */
+  const fieldError = () => {
+    const el = h('p.lobby__field-error', { role: 'alert' });
+    el.hidden = true;
+    return el;
+  };
+  const showFieldError = (el: HTMLElement, message: string | null) => {
+    el.textContent = message ?? '';
+    el.hidden = !message;
+  };
+  const codeError = fieldError();
+  // Its line is kept free, so a refusal fills it instead of pushing the form down.
+  codeError.classList.add('online-code__error');
+  const codePasswordError = fieldError();
+  codePasswordError.classList.add('online-code__error');
+  /** Whose password the relay is about to judge: it answers a wrong one with an error, and that goes right there. */
+  /** A join by code is waiting for the relay's answer; if that is a refusal, it goes under the code. */
+  let codeJoinPending = false;
+  /** The relay notice that went under the code already, so the general message does not say it again. */
+  let codeNotice: string | null = null;
+  let passwordTarget: { error: HTMLElement; input: HTMLInputElement; reveal?: HTMLElement } | null = null;
   // A link made by somebody in a locked room carries its password, so the guest needs no second paste.
   codePassword.value = invited?.password ?? '';
   const codeJoin = button(t('multiplayer.join'), true);
-  const codeWatch = button(t('multiplayer.watch'));
-  const joinByCode = (spectate = false) => {
+  /** Whoever has a code may sit down or watch from the stands; the choice is made before the one button. */
+  let joinAsSpectator = false;
+  const joinAs = segmentedControl(
+    {
+      kind: 'segmented',
+      label: t('multiplayer.joinAs'),
+      options: [{ value: 'player', label: t('multiplayer.asPlayer') }, { value: 'spectator', label: t('multiplayer.asSpectator') }],
+      get: () => (joinAsSpectator ? 'spectator' : 'player'),
+      set: (v) => { joinAsSpectator = v === 'spectator'; },
+    },
+    { sound, changed: () => {} },
+  );
+  const joinByCode = () => {
+    const spectate = joinAsSpectator;
     const roomId = codeInput.value.trim();
     if (!roomId) {
-      localMessage = t('multiplayer.codeRequired');
-      render();
+      showFieldError(codeError, t('multiplayer.codeRequired'));
       codeInput.focus();
       return;
     }
     const name = takeName();
     if (!name) return;
+    showFieldError(codePasswordError, null);
+    codeJoinPending = true;
+    codeNotice = null;
+    passwordTarget = { error: codePasswordError, input: codePassword, reveal: codePasswordBox };
     session.joinRoom(roomId, name, codePassword.value, prefs.avatar, spectate);
   };
   codeJoin.addEventListener('click', () => joinByCode());
-  codeWatch.addEventListener('click', () => joinByCode(true));
   for (const input of [codeInput, codePassword]) {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') joinByCode();
     });
   }
-  const codeRow = h('div.lobby__code-join', null, h('span.lobby__code-label', null, t('multiplayer.joinCode')), codeInput, secretField(codePassword), codeJoin, codeWatch);
-  const roomsView = h('section.lobby__card', null, h('div.lobby__head', null, h('h3.setup__title', null, t('multiplayer.rooms')), openCreate), roomsList, codeRow);
+  codeInput.addEventListener('input', () => showFieldError(codeError, null));
+  codePassword.addEventListener('input', () => showFieldError(codePasswordError, null));
+  codeInput.setAttribute('aria-label', t('multiplayer.code'));
+  // Most rooms have no password: its field comes up only when the relay says this one does.
+  const codePasswordBox = h('div.online-code__password', null, field(t('multiplayer.password'), secretField(codePassword)), codePasswordError);
+  codePasswordBox.hidden = true;
+  const codeView = h('section.online-code', null,
+    h('div.online-code__art', null, modeArt('code')),
+    h('div.online-code__form', null,
+      // The placeholder names the field, so it has no label of its own: the box stays as tall as the one for opening a room.
+      h('div.online-code__code', null, h('div.lobby__field', null, codeInput), codeError),
+      joinAs.el,
+      codePasswordBox,
+    ),
+  );
+  const roomsCount = h('span.online-rooms__count', null, '0');
+  const roomsView = h('section.online-rooms', null, h('div.lobby__head', null, h('h3.setup__title', null, t('multiplayer.rooms'), roomsCount), openCreate), roomsList);
 
   const sendingName = (name: string) => {
     pendingName = name;
@@ -291,6 +462,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     const name = playerName.value.trim();
     if (!name) {
       localMessage = t('multiplayer.nameRequired');
+      profile.open = true;
       render();
       playerName.focus();
       return null;
@@ -313,10 +485,16 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     if (standsFull) watch.title = t('multiplayer.standsFull');
     const pass = passwordInput(t('multiplayer.password'));
     pass.value = joinPasswords.get(room.id) ?? '';
-    pass.addEventListener('input', () => joinPasswords.set(room.id, pass.value));
+    const passError = fieldError();
+    pass.addEventListener('input', () => {
+      joinPasswords.set(room.id, pass.value);
+      showFieldError(passError, null);
+    });
     const doJoin = (spectate = false) => {
       const name = takeName();
       if (!name) return;
+      showFieldError(passError, null);
+      passwordTarget = { error: passError, input: pass };
       session.joinRoom(room.id, name, pass.value, prefs.avatar, spectate);
       joinPasswords.delete(room.id);
     };
@@ -331,22 +509,55 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       h(
         'div.lobby-room__info',
         null,
-        h('strong', null, roomIcon(room.symbol, room.color), `${room.locked ? '🔒 ' : ''}${room.name}`),
+        h('strong', null, roomIcon(room.symbol, room.color), ...(room.locked ? [lockIcon()] : []), room.name),
         h('span.lobby-room__host', null, t('multiplayer.hostedBy', { name: room.host })),
         h('span.lobby-room__tags', null, h('span.lobby__tag', null, modeName(room.gameMode, room.mayhem > 0)), h('span.lobby__tag', null, matchTypeName(room.mode)), pips(room.players, room.maxPlayers), ...(running ? [h('span.lobby__tag.lobby__tag--live', null, t('multiplayer.inProgress'))] : []), ...(room.spectators ? [h('span.lobby__tag.lobby__tag--watchers', null, eyeIcon(), String(room.spectators))] : [])),
       ),
-      room.locked ? secretField(pass) : '',
+      ...(room.locked ? [secretField(pass), passError] : []),
       h('div.lobby-room__actions', null, ...(running ? [] : [join]), watch),
     );
   };
 
   /** What the room list showed last: it is only rebuilt when that changes, so a half-typed password survives. */
   let shownRooms = '';
-  const renderRooms = (open: LobbyRoom[]) => {
-    const key = JSON.stringify(open);
+  let roomsWereSearching = false;
+  let roomsHaveRendered = false;
+  let roomsFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
+  const retryRooms = button(t('multiplayer.retryRooms'));
+  retryRooms.addEventListener('click', () => session.requestRooms());
+  const renderRooms = (open: LobbyRoom[], loaded: boolean, failed: boolean) => {
+    const key = `${loaded}:${failed}:${JSON.stringify(open)}`;
     if (key === shownRooms) return;
     shownRooms = key;
-    roomsList.replaceChildren(...(open.length ? open.map(roomRow) : [h('li.lobby__empty', null, h('strong', null, t('multiplayer.noRooms')), h('span', null, t('multiplayer.noRoomsHint')))]));
+    const wasSearching = roomsWereSearching;
+    roomsWereSearching = !loaded && !failed;
+    const shouldFlashResult = (loaded || failed) && (wasSearching || !roomsHaveRendered);
+    clearTimeout(roomsFeedbackTimer);
+    roomsList.classList.remove('is-found');
+    roomsCount.textContent = String(open.length);
+    roomsCount.hidden = !loaded || failed;
+    const radar = () => h('span.lobby__empty-radar', { 'aria-hidden': 'true' });
+    if (open.length) {
+      roomsList.replaceChildren(...open.map(roomRow));
+      if (loaded && !failed && shouldFlashResult) {
+        void roomsList.offsetWidth;
+        roomsList.classList.add('is-found');
+        roomsFeedbackTimer = setTimeout(() => roomsList.classList.remove('is-found'), 1000);
+      }
+    } else {
+      const empty = failed
+        ? h('li.lobby__empty', null, radar(), h('strong', null, t('multiplayer.roomsFailed')), retryRooms)
+        : !loaded
+          ? h('li.lobby__empty.is-searching', null, radar(), h('strong', null, t('multiplayer.roomsLoading')))
+          : h('li.lobby__empty', null, radar(), h('strong', null, t('multiplayer.noRooms')), h('span', null, t('multiplayer.noRoomsHint')));
+      if (shouldFlashResult && loaded && !failed) empty.classList.add('is-not-found');
+      if (shouldFlashResult && failed) empty.classList.add('is-error');
+      roomsList.replaceChildren(empty);
+      if (empty.classList.contains('is-not-found') || empty.classList.contains('is-error')) {
+        roomsFeedbackTimer = setTimeout(() => empty.classList.remove('is-not-found', 'is-error'), 1000);
+      }
+    }
+    roomsHaveRendered = true;
   };
 
   // ————————————————————————————— Opening a room —————————————————————————————
@@ -354,66 +565,391 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const password = passwordInput();
   const roomName = textInput('', { maxLength: 40, autocomplete: 'off', placeholder: t('multiplayer.roomNamePlaceholder', { name: playerName.value.trim() || t('multiplayer.host') }) });
   playerName.addEventListener('input', () => (roomName.placeholder = t('multiplayer.roomNamePlaceholder', { name: playerName.value.trim() || t('multiplayer.host') })));
-  const horizonNote = h('p.lobby__note', null, t('multiplayer.horizonNote'));
-  /** Where the rules of the room to create go; rebuilt when the game mode changes the list. */
+  const createPresetCards = h('div.items.items--row.briefing__cards', { role: 'group', 'aria-label': t('preset.choose') });
+  const createQuick = h('div.briefing__quick', null);
+  const createPowerups = powerUpSummary(() => prefs.rules);
   const createRules = h('div', null);
+  /** All the rules on one page over this one: a link below the presets opens them, as it does in the local briefing. */
+  const rulesLinkLabel = h('span.item__label', null, t('briefing.editRules'));
+  const rulesLink = h('button.item', { type: 'button' }, rulesLinkLabel);
+  const rulesDone = h('button.item.item--primary', { type: 'button' }, t('briefing.done'));
+  const rulesReset = h('button.item', { type: 'button' }, t('setup.reset'));
+  const rulesCancel = h('button.item', { type: 'button', hidden: '' }, t('preset.creator.cancel'));
+  const rulesDelete = h('button.item.item--delete', { type: 'button', hidden: '' }, t('preset.creator.delete'));
+  /** Set while the page is the preset creator: the rules as they were when it opened, to go back to unless the preset is kept. */
+  let creator: { before: RoomRules; existing?: CustomPreset; name: string; defaultName: string; confirmDelete: boolean } | null = null;
+  const creatorName = h('div', { hidden: '' });
+  /** The page of the local briefing — the same frame, the same groups, the same footer — over the lobby. */
+  const rulesDialog = menuPage({
+    title: t('briefing.editRules'), eyebrow: '', className: 'menu-page--rules',
+    body: [creatorName, createRules],
+    keys: t('briefing.keys'),
+    footer: h('div.items.items--row.menu-page__actions', null, rulesReset, rulesDelete, rulesCancel, rulesDone),
+  });
+  rulesDialog.classList.add('rules-page');
+  rulesDialog.hidden = true;
+  const closeRulesDialog = () => {
+    creator = null;
+    rulesDialog.hidden = true;
+    rulesDialog.remove();
+    rulesLink.focus({ preventScroll: true });
+  };
+  /** Where the focus goes once the creator is gone: the card it made, or else the plus. */
+  const focusPresetCard = () => (createPresetCards.querySelector<HTMLButtonElement>('[aria-pressed="true"]') ?? createPresetCards.querySelector<HTMLButtonElement>('.item--strip-empty, .item--custom-empty'))?.focus({ preventScroll: true });
+  /** Closing the creator any way but Save puts the rules back. */
+  const dismissRulesDialog = () => {
+    const open = creator;
+    if (open) restoreRules(open.before);
+    closeRulesDialog();
+    if (open) focusPresetCard();
+  };
+  const openRulesDialog = (open: typeof creator) => {
+    creator = open;
+    rulesDialog.querySelector('.eyebrow')!.textContent = modeName(prefs.gameMode, prefs.rules.mayhem > 0);
+    rulesDialog.querySelector('.menu-page__title')!.textContent = open ? t(open.existing ? 'preset.creator.titleEdit' : 'preset.creator.title') : rulesLinkLabel.textContent;
+    rulesDone.textContent = t(open ? 'preset.creator.save' : 'briefing.done');
+    rulesCancel.hidden = !open;
+    rulesDelete.hidden = !open?.existing;
+    rulesDelete.textContent = t('preset.creator.delete');
+    rulesDelete.classList.remove('is-confirming');
+    creatorName.replaceChildren(...(open ? [presetNameField(open.name, open.defaultName, (name) => { open.name = name; })] : []));
+    creatorName.hidden = !open;
+    rulesReset.hidden = readOnly();
+    rulesDialog.hidden = false;
+    document.body.append(rulesDialog);
+    rulesDone.focus();
+  };
+  /** One page for making a preset and for changing one: the rules page with a name above it. */
+  const openCreator = (existing?: CustomPreset) => {
+    const before = copyRules(prefs.rules);
+    if (existing) {
+      prefs.rules = { ...existing.rules, powerUpKinds: [...existing.rules.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+      restoreRules(prefs.rules);
+    }
+    openRulesDialog({ before, existing, name: existing?.name ?? '', defaultName: t('preset.creator.namePlaceholder', { n: loadCustomPresets(prefs.gameMode).length + 1 }), confirmDelete: false });
+  };
+  rulesDone.addEventListener('click', () => {
+    if (!creator) return closeRulesDialog();
+    const kept = saveCustomPreset(prefs.gameMode, { id: creator.existing?.id, name: creator.name || creator.defaultName, rules: prefs.rules });
+    if (!kept) return;
+    // The cards are drawn again around the preset it made.
+    selectedCreatePreset = { id: `custom:${kept.id}`, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+    closeRulesDialog();
+    buildCreateRules();
+    focusPresetCard();
+  });
+  rulesCancel.addEventListener('click', dismissRulesDialog);
+  /** Deleting asks twice. */
+  rulesDelete.addEventListener('click', () => {
+    if (!creator?.existing) return;
+    if (!creator.confirmDelete) {
+      creator.confirmDelete = true;
+      rulesDelete.textContent = t('preset.creator.deleteConfirm');
+      rulesDelete.classList.add('is-confirming');
+      return;
+    }
+    deleteCustomPreset(prefs.gameMode, creator.existing.id);
+    dismissRulesDialog();
+    buildCreateRules();
+    focusPresetCard();
+  });
+  rulesLink.addEventListener('click', () => openRulesDialog(null));
+  const createAdvanced = h('div.items.briefing__edit', null, rulesLink);
+  let createRulesForm: RulesForm | null = null;
+  let createQuickControls: Control[] = [];
+  let paintCreatePresetState = () => {};
+  let selectedCreatePreset: { id: string; mode: NetworkGameMode; rules: RoomRules } | undefined;
+  const copyRules = (rules: RoomRules): RoomRules => ({ ...rules, powerUpKinds: [...rules.powerUpKinds] });
+  const rememberMatchingCreatePreset = (pick: ReturnType<typeof pickOfTheDay>) => {
+    const picked = samePick(matchingHandpicked(prefs.rules, prefs.gameMode), pick);
+    const mine = matchingCustom(prefs.rules, prefs.gameMode);
+    const preset = matchingPreset(prefs.rules, prefs.gameMode) ?? (picked ? 'handpicked' : mine ? `custom:${mine.id}` : undefined);
+    selectedCreatePreset = preset ? { id: preset, mode: prefs.gameMode, rules: copyRules(prefs.rules) } : undefined;
+  };
+  /** Everybody but the host sees the game and its rules as the host set them, locked. */
+  const readOnly = (): boolean => !!session.room && !session.you.host;
+  /** What the host changes goes to the relay a moment later, as one message however many keys were pressed. */
+  let rulesTimer: ReturnType<typeof setTimeout> | undefined;
+  const pushRules = () => {
+    clearTimeout(rulesTimer);
+    rulesTimer = undefined;
+    if (session.room && session.you.host) session.setRules(prefs.rules, prefs.gameMode);
+  };
+  /** The host's rules are remembered for the next room, and — inside a room — sent to everybody in it. */
+  const commitRules = () => {
+    save();
+    if (!session.room) return;
+    clearTimeout(rulesTimer);
+    rulesTimer = setTimeout(pushRules, 250);
+  };
+  const restoreRules = (rules: RoomRules) => {
+    prefs.rules = copyRules(rules);
+    commitRules();
+    createRulesForm?.refresh();
+    createQuickControls.forEach((control) => control.refresh());
+    paintCreatePresetState();
+    createPowerups.update();
+  };
+  const resetCreatePresetChanges = () => {
+    if (readOnly()) return;
+    const selection = selectedCreatePreset;
+    if (!selection || selection.mode !== prefs.gameMode) return;
+    prefs.rules = copyRules(selection.rules);
+    commitRules();
+    createRulesForm?.refresh();
+    createQuickControls.forEach((control) => control.refresh());
+    paintCreatePresetState();
+    createPowerups.update();
+  };
+  /** Which game the rules are for. Presets within one game only change values, so the cards and sliders stay where they are. */
+  const gameKey = () => prefs.gameMode;
+  const rebuildIfGameChanged = (before: string) => {
+    if (gameKey() === before) return;
+    buildCreateRules();
+    buildCreateQuick();
+  };
   const buildCreateRules = () => {
-    const mayhem = prefs.rules.mayhem > 0;
-    createRules.replaceChildren(rulesForm(prefs.gameMode, { get: () => prefs.rules, patch: (v) => (prefs.rules = { ...prefs.rules, ...v }), commit: save }, app, false, mayhem).el);
-    horizonNote.hidden = prefs.gameMode !== 'horizon';
-    mayhemBase.hidden = !mayhem;
+    const presets = presetsForMode(prefs.gameMode);
+    const pick = pickOfTheDay(prefs.gameMode, app.today());
+    if (readOnly() || !selectedCreatePreset || selectedCreatePreset.mode !== prefs.gameMode) rememberMatchingCreatePreset(pick);
+    createRulesForm = rulesForm(prefs.gameMode, {
+      get: () => prefs.rules,
+      patch: (v) => (prefs.rules = { ...prefs.rules, ...v }),
+      commit: commitRules,
+    }, app, readOnly(), () => {
+      paintCreatePresetState();
+      createPowerups.update();
+      createQuickControls.forEach((control) => control.refresh());
+    });
+    createRules.replaceChildren(createRulesForm.el);
+    const customs = loadCustomPresets(prefs.gameMode);
+    const changesFor = (id: string): number => {
+      const selection = selectedCreatePreset?.mode === prefs.gameMode ? selectedCreatePreset : undefined;
+      return selection?.id === id ? presetChangeCount(prefs.rules, selection.rules, prefs.gameMode, true) : 0;
+    };
+    const modifiedText = (id: string): string => {
+      const changes = changesFor(id);
+      return changes === 1 ? t('preset.modified.one') : changes > 1 ? t('preset.modified.many', { n: changes }) : '';
+    };
+    /** Everything but a card's own rules stays: the table's switches are not part of a preset. */
+    const withTable = (rules: RoomRules): RoomRules => ({ ...rules, powerUpKinds: [...rules.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly });
+    /** The rules as they play now are what the card holds from here on. */
+    const keepAs = (id: string) => {
+      selectedCreatePreset = { id, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+      paintCreatePresetState();
+    };
+    const choices: { id: string; own: boolean; card: HTMLButtonElement; shell: HTMLDivElement; status: HTMLButtonElement; save: HTMLButtonElement; count: HTMLSpanElement; behavior: CardOptions }[] = [];
+    interface CardOptions {
+      featured?: boolean;
+      /** A slim strip in the column after the cards: just a name, no picture. */
+      strip?: boolean;
+      /** Stands in the column after the cards without being a strip: the empty slot's card. */
+      own?: boolean;
+      className?: string;
+      /** The badge's text; empty hides it. Edits come first, then what the card is. */
+      status?: () => string;
+      actionLabel?: () => string;
+      action?: () => void;
+      /** A second action under the badge, while it holds. */
+      secondary?: { visible: () => boolean; run: () => void };
+      /** Opens something instead of choosing the card. */
+      open?: () => void;
+    }
+    const addPreset = (id: string, label: string, hint: string, art: SVGElement | null, apply: () => void, options: CardOptions = {}) => {
+      const behavior: CardOptions = {
+        status: () => modifiedText(id),
+        actionLabel: () => t('preset.resetAction'),
+        action: resetCreatePresetChanges,
+        ...options,
+      };
+      const shell = h('div.briefing__preset-shell', null) as HTMLDivElement;
+      const status = h('button.item__status.item__status-reset', { type: 'button', hidden: '' },
+        h('span.item__status-count', null),
+        h('span.item__status-action', null, behavior.actionLabel!()),
+      ) as HTMLButtonElement;
+      const save = h('button.item__status.item__status-save', { type: 'button', hidden: '', title: t('preset.custom.save') }, t('preset.custom.save')) as HTMLButtonElement;
+      const count = status.querySelector<HTMLSpanElement>('.item__status-count')!;
+      const card = (options.strip
+        ? h('button.item.item--strip', { type: 'button', 'aria-pressed': 'false' }, h('span.item__title', null, label))
+        : h('button.item.item--card.lobby__preset', { type: 'button', 'aria-pressed': 'false' },
+            h('span.item__icon', { 'aria-hidden': 'true' }, ...(art ? [art] : [])),
+            h('span.item__title', null, label),
+            ...(hint ? [h('span.item__hint', null, hint)] : []),
+          )) as HTMLButtonElement;
+      shell.append(card, status, ...(behavior.secondary ? [save] : []));
+      if (options.featured) {
+        card.classList.add('item--pick');
+        card.prepend(h('span.item__tag', null, t('preset.pick.today')));
+      }
+      if (options.className) card.classList.add(...options.className.split(' '));
+      card.classList.toggle('is-readonly', readOnly());
+      status.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (status.hidden || readOnly()) return;
+        behavior.action!();
+        sound.select();
+        focusPresetCard();
+      });
+      save.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (save.hidden || readOnly()) return;
+        behavior.secondary!.run();
+        sound.select();
+        focusPresetCard();
+      });
+      card.addEventListener('click', () => {
+        if (readOnly()) return;
+        if (options.open) {
+          sound.select();
+          return options.open();
+        }
+        apply();
+        commitRules();
+        createRulesForm?.refresh();
+        createQuickControls.forEach((control) => control.refresh());
+        paintCreatePresetState();
+        createPowerups.update();
+        focusPresetCard();
+        sound.select();
+      });
+      choices.push({ id, own: !!(options.strip || options.own), card, shell, status, save, count, behavior });
+    };
+    for (const preset of presets) {
+      addPreset(preset, t(`preset.${preset}`), t(presetHintKey(preset, prefs.gameMode)), presetArt(preset, prefs.gameMode), () => {
+        prefs.rules = withTable(savedPresetRules(preset, prefs.gameMode));
+        selectedCreatePreset = { id: preset, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+      }, {
+        // Edits come first; with none, a card the player changed and kept says so.
+        status: () => modifiedText(preset) || (isOverridden(preset, prefs.gameMode) ? t('preset.overridden') : ''),
+        actionLabel: () => t(changesFor(preset) ? 'preset.resetAction' : 'preset.restoreOriginal'),
+        action: () => {
+          if (changesFor(preset)) return resetCreatePresetChanges();
+          clearOverride(prefs.gameMode, preset);
+          if (selectedCreatePreset?.id !== preset) return paintCreatePresetState();
+          restoreRules(withTable(presetRules(preset, prefs.gameMode)));
+          keepAs(preset);
+        },
+        secondary: { visible: () => changesFor(preset) > 0, run: () => { saveOverride(prefs.gameMode, preset, prefs.rules); keepAs(preset); } },
+      });
+    }
+    addPreset('handpicked', pickName(pick), pickHint(pick), pickArt(pick), () => {
+      const before = gameKey();
+      prefs.gameMode = pick.base;
+      prefs.rules = { ...pick.rules, powerUpKinds: [...pick.rules.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+      selectedCreatePreset = { id: 'handpicked', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+      rebuildIfGameChanged(before);
+    }, { featured: true });
+    // The player's own presets: slim strips in the column after the cards, with a plus strip for the next one.
+    for (const preset of customs) {
+      const id = `custom:${preset.id}`;
+      addPreset(id, preset.name, '', null, () => {
+        prefs.rules = withTable(preset.rules);
+        selectedCreatePreset = { id, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+      }, {
+        strip: true,
+        status: () => (changesFor(id) ? t('preset.custom.modified') : t('preset.custom.edit')),
+        actionLabel: () => t(changesFor(id) ? 'preset.resetAction' : 'preset.custom.edit'),
+        action: () => (changesFor(id) ? resetCreatePresetChanges() : openCreator(preset)),
+        secondary: {
+          visible: () => changesFor(id) > 0,
+          run: () => {
+            if (!saveCustomPreset(prefs.gameMode, { id: preset.id, name: preset.name, rules: prefs.rules })) return;
+            keepAs(id);
+            buildCreateRules();
+          },
+        },
+      });
+    }
+    // The first one has the whole column to itself, as a card; from then on the plus is a strip below the others.
+    if (customs.length === 0) {
+      addPreset('custom:new', t('preset.custom.new'), t('preset.custom.empty'), modeArt('customAdd'), () => {}, { own: true, className: 'item--custom-empty', status: () => '', open: () => openCreator() });
+    } else if (customs.length < MAX_CUSTOM_PRESETS) {
+      addPreset('custom:new', t('preset.custom.new'), '', null, () => {}, { strip: true, className: 'item--strip-empty', status: () => '', open: () => openCreator() });
+    }
+    createPresetCards.replaceChildren(...choices.filter(({ own }) => !own).map(({ shell }) => shell), h('div.briefing__own', { 'data-own': String(customs.length) }, ...choices.filter(({ own }) => own).map(({ shell }) => shell)));
+    paintCreatePresetState = () => {
+      const selection = selectedCreatePreset?.mode === prefs.gameMode ? selectedCreatePreset : undefined;
+      choices.forEach(({ id, card, shell, status, save, count, behavior }) => {
+        const selected = id === selection?.id;
+        const edits = changesFor(id);
+        const text = behavior.status!();
+        const label = behavior.actionLabel!();
+        count.textContent = text;
+        status.querySelector('.item__status-action')!.textContent = label;
+        status.hidden = !text || readOnly();
+        status.setAttribute('aria-label', text && label ? `${text}. ${label}` : text);
+        status.title = label;
+        save.hidden = !text || readOnly() || !(behavior.secondary?.visible() ?? false);
+        card.classList.toggle('is-modified', edits > 0);
+        shell.classList.toggle('is-modified', edits > 0);
+        card.setAttribute('aria-pressed', String(selected));
+      });
+    };
+    paintCreatePresetState();
   };
 
-  // The controls redraw themselves; nothing else on this form depends on them.
+  /** Back to the standard rules of the game being played, as the local rules page does. */
+  rulesReset.addEventListener('click', () => {
+    if (readOnly()) return;
+    // A Mayhem game goes back to the Mayhem preset at its strength, any other one to the standard rules.
+    const { mayhem } = prefs.rules;
+    prefs.rules = mayhem ? { ...presetRules('mayhem', prefs.gameMode), mayhem } : defaultRoomRules();
+    selectedCreatePreset = { id: mayhem ? 'mayhem' : 'standard', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+    commitRules();
+    createRulesForm?.refresh();
+    createQuickControls.forEach((control) => control.refresh());
+    paintCreatePresetState();
+    createPowerups.update();
+    sound.select();
+  });
+
+  const buildCreateQuick = () => {
+    // The strength of Mayhem comes last, in a row of its own under the sliders, while Mayhem is on.
+    const quickKeys = ['rounds', 'shotTime', 'mayhem'];
+    /** What a host wants to flip during a room, one click away instead of in the rules page. */
+    const switchLabels: Partial<Record<keyof RoomRules, Key>> = { betting: 'room.betting', chatPlayersOnly: 'room.chatPlayersOnly' };
+    const all = ruleItems(prefs.gameMode, {
+      get: () => prefs.rules,
+      patch: (v) => (prefs.rules = { ...prefs.rules, ...v }),
+      commit: commitRules,
+    }, true);
+    const env = { sound, readonly: readOnly(), changed: () => {
+      paintCreatePresetState();
+      createPowerups.update();
+      createRulesForm?.refresh();
+    } };
+    createQuickControls = all
+      .filter(({ key }) => quickKeys.includes(key))
+      .sort((a, b) => quickKeys.indexOf(a.key) - quickKeys.indexOf(b.key))
+      .map(({ item }) => buildControl(item, env));
+    const switches = all
+      .filter(({ key }) => key in switchLabels)
+      .map(({ key, item }) => buildControl({ ...item, label: t(switchLabels[key]!) }, env));
+    createQuickControls.push(...switches);
+    const sliders = createQuickControls.slice(0, createQuickControls.length - switches.length).map(({ el }) => el);
+    const mayhem = sliders.pop()!;
+    createQuick.replaceChildren(...sliders, h('div.briefing__mayhem', null, mayhem), createPowerups.el, h('div.briefing__switches', null, ...switches.map(({ el }) => el)));
+    createPowerups.update();
+  };
+
+  // The controls redraw themselves; the room and rule summaries follow their values.
   const env: Env = { sound, changed: () => {} };
-  // Mayhem is a mode of its own: with it picked, the mode below it is the one its rounds are played in.
-  const gameMode = segmentedControl(
-    {
-      kind: 'segmented',
-      label: t('multiplayer.gameMode'),
-      options: [{ value: 'classic', label: modeName('classic') }, { value: 'horizon', label: modeName('horizon') }, { value: 'mayhem', label: t('mode.mayhem') }],
-      get: () => (prefs.rules.mayhem > 0 ? 'mayhem' : prefs.gameMode),
-      set: (v) => {
-        if (v === 'mayhem') prefs.rules = { ...prefs.rules, mayhem: prefs.rules.mayhem || 2 };
-        else {
-          prefs.gameMode = v as NetworkGameMode;
-          prefs.rules = { ...prefs.rules, mayhem: 0 };
-        }
-        save();
-        // The rules on offer change with the mode: Classic-only ones come and go, a Mayhem room has two.
-        buildCreateRules();
-      },
-    },
-    env,
-  );
-  const mayhemBaseControl = segmentedControl(
-    {
-      kind: 'segmented',
-      label: t('mayhem.base'),
-      options: [{ value: 'classic', label: modeName('classic') }, { value: 'horizon', label: modeName('horizon') }],
-      get: () => prefs.gameMode,
-      set: (v) => {
-        prefs.gameMode = v as NetworkGameMode;
-        save();
-        buildCreateRules();
-      },
-    },
-    env,
-  );
-  const mayhemBase = h('div', null, mayhemBaseControl.el);
-  const matchType = segmentedControl(
-    {
-      kind: 'segmented',
-      label: t('multiplayer.matchType'),
-      options: [{ value: 'ffa', label: matchTypeName('ffa') }, { value: 'team', label: matchTypeName('team') }],
-      get: () => prefs.matchType,
-      set: (v) => {
-        prefs.matchType = v as RoomMode;
-        save();
-      },
-    },
-    env,
-  );
+  const currentMode = (): NetworkGameMode => prefs.gameMode;
+  /** The host's pick in the pager: the game starts from that mode's first preset, and the room follows. */
+  const setMode = (mode: NetworkGameMode, direction: OnlineSectionDirection) => {
+    if (mode === currentMode()) return;
+    const first = presetsForMode(mode)[0];
+    prefs.gameMode = mode;
+    prefs.rules = { ...savedPresetRules(first, mode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+    selectedCreatePreset = { id: first, mode, rules: copyRules(prefs.rules) };
+    commitRules();
+    buildCreateRules();
+    buildCreateQuick();
+    sound.select();
+    pendingContentDirection = direction;
+    render();
+  };
+
   const capacity = sliderControl(
     {
       kind: 'slider',
@@ -430,196 +966,160 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   const lookSave = (patch: Partial<RoomLook>) => {
     prefs.look = { ...prefs.look, ...patch };
     save();
-    createSummary.refresh(prefs.look);
+    paintLookButton();
     createDialog.refresh(prefs.look);
   };
   const createVisibility = visibilityControl(prefs.look, lookSave, { sound });
   const createDialog = lookDialog(prefs.look, lookSave, { sound });
-  const createSummary = lookSummary(prefs.look, () => createDialog.open());
-  const backToRooms = button(t('multiplayer.backToRooms'));
+  /** The room's symbol in its colour, beside its name: a click opens the dialog to change both. */
+  const lookButton = iconButton(t('multiplayer.lookTitle'), '');
+  lookButton.classList.add('online-create__look');
+  const paintLookButton = () => lookButton.replaceChildren(roomIcon(prefs.look.symbol, prefs.look.color));
+  lookButton.addEventListener('click', () => createDialog.open());
+  paintLookButton();
   const createButton = button(t('multiplayer.create'), true);
-  const createView = h(
-    'section.lobby__card.lobby__card--wide',
-    null,
-    h('h3.setup__title', null, t('multiplayer.newRoom')),
-    h('div.lobby__basics', null, h('div', null, createVisibility.el, gameMode.el, mayhemBase, matchType.el), h('div', null, field(t('multiplayer.roomName'), roomName), createSummary.el, capacity.el, field(t('multiplayer.passwordOptional'), secretField(password, () => void copyText(password.value, t('multiplayer.passwordCopied')))))),
-    createRules,
-    horizonNote,
-    h('div.lobby__actions', null, backToRooms, createButton),
+  const createSetupMain = h('div.online-create__main', null,
+    h('section.briefing__presets', null,
+      createPresetCards,
+      createQuick,
+    ),
+    createAdvanced,
   );
+  /** A room is opened with a name and who may come in; the game is the host's to pick once the room stands. */
+  roomName.setAttribute('aria-label', t('multiplayer.roomName'));
+  const createView = h('section.online-create', null,
+    h('div.lobby__field', null, h('span', null, t('multiplayer.roomSymbolName')), h('div.online-create__name', null, lookButton, roomName)),
+    createVisibility.el,
+    field(t('multiplayer.passwordOptional'), secretField(password, (copy) => void copyText(password.value, t('multiplayer.passwordCopied'), copy))),
+    capacity.el,
+  );
+  /** Opening a room and joining one by code share one slot, so the two boxes are the same size whichever shows. */
+  const openForms = h('div.online-forms', null, codeView, createView);
+  // A new lobby starts on the mode's first preset, as the local setup does; the pager and the cards change it from there.
+  const startPreset = presetsForMode(prefs.gameMode)[0];
+  prefs.rules = { ...savedPresetRules(startPreset, prefs.gameMode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+  selectedCreatePreset = { id: startPreset, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
   buildCreateRules();
+  buildCreateQuick();
 
   createButton.addEventListener('click', () => {
     const name = takeName();
     if (!name) return;
-    session.createRoom({ name, roomName: roomName.value, mode: prefs.matchType, gameMode: prefs.gameMode, rules: prefs.rules.mayhem > 0 ? mayhemRules(prefs.rules, prefs.gameMode) : prefs.rules, maxPlayers: prefs.capacity, password: password.value, look: prefs.look, avatar: prefs.avatar });
+    // An empty field names the room as its placeholder promised, in the player's language — not the relay's English default.
+    session.createRoom({ name, roomName: roomName.value.trim() || roomName.placeholder, mode: 'ffa', gameMode: prefs.gameMode, rules: prefs.rules, maxPlayers: prefs.capacity, password: password.value, look: prefs.look, avatar: prefs.avatar });
     hostPassword = password.value;
     password.value = '';
   });
 
   // ————————————————————————————— Inside a room —————————————————————————————
 
-  const roomTitle = h('h3.setup__title', null);
+  /** The room's symbol in its colour; for the host it opens the dialog that changes it. */
+  const roomSymbol = h('button.room-info__symbol', { type: 'button' }) as HTMLButtonElement;
+  roomSymbol.addEventListener('click', () => roomDialog?.open());
+  /** Who may find the room and whether it is teams: the host's selectors, read-only for everybody else. */
+  const roomSwitches = h('span.room-info__switches', null);
+  /** Free for all or teams: it belongs to the players, so it sits above them. */
+  const roomModeSlot = h('span.room-deck__mode', null);
+  let roomSwitchesKey = '';
+  let roomSwitchControls: Control[] = [];
+  const shownRoom = { visibility: 'public' as RoomVisibility, mode: 'ffa' as RoomMode };
+  const paintRoomSwitches = (room: RoomInfo, host: boolean): void => {
+    shownRoom.visibility = room.visibility;
+    shownRoom.mode = room.mode;
+    const key = `${room.id}|${host}`;
+    if (key !== roomSwitchesKey) {
+      roomSwitchesKey = key;
+      const env = { sound, changed: () => {}, readonly: !host };
+      roomSwitchControls = [
+        segmentedControl({
+          kind: 'segmented', label: t('multiplayer.visibility'),
+          options: [{ value: 'public', label: t('multiplayer.public') }, { value: 'private', label: t('multiplayer.private') }],
+          get: () => shownRoom.visibility,
+          set: (v) => { shownRoom.visibility = v as RoomVisibility; changeRoomLook({ visibility: shownRoom.visibility }); },
+        }, env),
+        segmentedControl({
+          kind: 'segmented', label: t('multiplayer.matchType'),
+          options: [{ value: 'ffa', label: matchTypeName('ffa') }, { value: 'team', label: matchTypeName('team') }],
+          get: () => shownRoom.mode,
+          set: (v) => { shownRoom.mode = v as RoomMode; session.setRoomMode(shownRoom.mode); },
+        }, env),
+      ];
+      roomSwitches.replaceChildren(roomSwitchControls[0].el);
+      roomModeSlot.replaceChildren(roomSwitchControls[1].el);
+    }
+    roomSwitchControls.forEach((control) => control.refresh());
+  };
   const roomCount = h('p.lobby__note', null);
   /** Host only, in team rooms: deal everybody back out to the teams. */
   const resetTeams = button(t('multiplayer.resetTeams'));
   resetTeams.addEventListener('click', () => session.resetTeams());
   /** The code others join the room with; a private room can only be found this way. */
   const roomCode = h('span.lobby__code-value', null);
-  const privateTag = h('span.lobby__tag', null, t('multiplayer.private'));
+  /** Whether the room takes a password. */
+  const lockTag = h('span.lobby__tag', null, lockIcon(), t('multiplayer.passwordProtected'));
   /** The invite link: one link that opens the client and puts the guest straight into this room. */
-  const copyInvite = button(t('multiplayer.copyInvite'), true);
-  copyInvite.addEventListener('click', () =>
-    void copyText(inviteLink(`${location.origin}${location.pathname}`, session.room?.id ?? '', configuredServer ? undefined : session.client.address, hostPassword), t('multiplayer.inviteCopied')),
-  );
-  const copyCode = button(t('multiplayer.copyCode'));
-  copyCode.addEventListener('click', () => void copyText(session.room?.id ?? '', t('multiplayer.codeCopied')));
-  const copyPassword = button(t('multiplayer.copyPassword'));
-  copyPassword.addEventListener('click', () => void copyText(hostPassword, t('multiplayer.passwordCopied')));
-  const players = h('ul.lobby__players', null);
+  const copyInvite = iconButton(t('multiplayer.copyInvite'), ICON_LINK);
+  const copyInviteLink = (target: HTMLElement) =>
+    void copyText(inviteLink(`${location.origin}${location.pathname}`, session.room?.id ?? '', configuredServer ? undefined : session.client.address, hostPassword), t('multiplayer.inviteCopied'), target);
+  copyInvite.addEventListener('click', () => copyInviteLink(copyInvite));
+  const copyCode = iconButton(t('multiplayer.copyCode'), ICON_COPY);
+  copyCode.addEventListener('click', () => void copyText(session.room?.id ?? '', t('multiplayer.codeCopied'), copyCode));
+  const copyPassword = iconButton(t('multiplayer.copyPassword'), ICON_KEY);
+  copyPassword.addEventListener('click', () => void copyText(hostPassword, t('multiplayer.passwordCopied'), copyPassword));
+  const roster = teamRoster(t('multiplayer.players'));
+  const players = roster.el;
+  players.classList.add('lobby__players');
   /** The people in the stands, under the players. */
   const stands = h('p.lobby__note.lobby__stands', null);
   /** Said to a spectator in place of the buttons they do not have. */
   const watchNote = h('p.lobby__rules-note', null, t('multiplayer.watchNote'));
-  /** Host only, while the room waits: seat a CPU of the chosen level. */
-  let cpuLevel: NetworkCpuLevel = 'medium';
-  const cpuAdd = button(t('multiplayer.addCpu'));
-  cpuAdd.addEventListener('click', () => session.addCpu(cpuLevel));
-  const cpuAddRow = h(
-    'div.lobby__cpu-add',
-    null,
-    choicePicker(t('multiplayer.cpuLevel'), CPU_LEVELS.map((level) => [level, t(`cpu.${level}`)]), cpuLevel, (level) => {
-      cpuLevel = level as NetworkCpuLevel;
-    }),
-    cpuAdd,
-  );
-  /** When only CPUs share the room with the host: such a game is played offline, not here. */
-  const cpuOnlyNote = h('p.lobby__rules-note.is-locked', null, t('multiplayer.cpuOnlyNote'));
-  /** Your own symbol, as the game shows it: picked here while the room waits. */
-  const roomAvatarPicker = picker<Avatar>(t('multiplayer.yourSymbol'), avatarOptions(), false, (avatar) => {
-    sound.blip();
-    prefs.avatar = avatar;
-    save();
-    roomAvatarPicker.show(avatar);
-    session.setAvatar(avatar);
-  });
-  const roomAvatar = h('div.lobby__avatar', null, h('span.lobby__code-label', null, t('multiplayer.yourSymbol')), roomAvatarPicker.el);
-  /** Your name, as the others see it: changed here while the room waits. */
-  const roomPlayerName = textInput(prefs.name, { maxLength: 24 });
-  roomPlayerName.setAttribute('autocomplete', 'nickname');
-  /** The name the field was last set from, so a render does not put the old one back over a refused attempt. */
-  let syncedName = '';
-  const renameButton = button(t('multiplayer.rename'));
-  const renameRoomPlayer = () => {
-    const name = roomPlayerName.value.trim();
-    if (!name) {
-      localMessage = t('multiplayer.nameRequired');
-      render();
-      roomPlayerName.focus();
-      return;
-    }
-    localMessage = null;
-    sendingName(name);
-    session.setName(name);
-  };
-  renameButton.addEventListener('click', renameRoomPlayer);
-  roomPlayerName.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') renameRoomPlayer();
-  });
-  const roomRename = h('div', null, h('div.lobby__avatar', null, field(t('multiplayer.name'), roomPlayerName), renameButton), roomNameError);
-  /** In team rooms, while a team has nobody in it. */
-  const teamWarning = h('p.lobby__rules-note.is-locked', null, t('multiplayer.teamsNeedPlayers'));
   /** The room's look: editable by the host, shown to everybody else. */
-  const roomLookSlot = h('div', null);
-  /** Where the rules of the room are: sliders for the host, the same, locked, for everybody else. */
-  const roomRules = h('div', null);
-  /** Above the rules: that they reset everybody's "ready" (host), or that they are not yours to change (everyone else). */
-  const rulesNote = h('p.lobby__rules-note', null);
-  const roomNote = h('p.lobby__note', null);
+  const startHint = h('p.lobby__start-hint', { role: 'status' }, '');
   const ready = button(t('multiplayer.ready'), true);
   const start = button(t('multiplayer.start'), true);
   const leave = button(t('multiplayer.leave'));
   let selfReady = false;
   ready.addEventListener('click', () => session.setReady(!selfReady));
   start.addEventListener('click', () => session.startGame());
-  leave.addEventListener('click', () => session.leaveRoom());
-  const roomView = h(
-    'section.lobby__card.lobby__card--wide',
-    null,
-    roomTitle,
-    h('div.lobby__head', null, roomCount, resetTeams),
-    h('div.lobby__code', null, h('span.lobby__code-label', null, t('multiplayer.code')), roomCode, copyInvite, copyCode, copyPassword, privateTag),
+  leave.addEventListener('click', () => { view = 'rooms'; session.leaveRoom(); });
+  /** What the room is about: the host picks the game and its rules here, everybody else reads them. */
+  const hostBriefing = createSetupMain;
+  const roomBriefing = h('div.room-deck__briefing', null, hostBriefing);
+  const roomCrew = h('div.room-deck__crew', null,
+    h('div.lobby__head.room-deck__roster-head', null, roomCount, roomModeSlot, resetTeams),
     players,
     stands,
     watchNote,
-    cpuAddRow,
-    cpuOnlyNote,
-    roomRename,
-    roomAvatar,
-    teamWarning,
-    roomLookSlot,
-    rulesNote,
-    roomRules,
-    roomNote,
-    h('div.lobby__actions', null, ready, start, leave),
+  );
+  const roomView = h(
+    'section.lobby__card.lobby__card--wide.room-deck',
+    null,
+    h('div.lobby__code.room-info', null, roomSymbol,
+      h('div.room-info__share', null, h('span.lobby__code-label', null, t('multiplayer.code')), roomCode, copyCode, copyInvite, lockTag, copyPassword),
+      roomSwitches),
+    h('div.room-deck__layout', null, roomCrew, roomBriefing),
   );
 
   /** The host's change to the look of the room: sent as the whole look, so nothing else gets lost. */
   const changeRoomLook = (patch: Partial<RoomLook>) => {
     if (session.room) session.setRoomLook({ ...lookOf(session.room), ...patch });
   };
-  let roomVisibility: LookControl | null = null;
-  let roomSummary: LookControl | null = null;
   let roomDialog: LookDialog | null = null;
   let roomLookKey = '';
 
-  /** The rules as the host is editing them; the room's own once nobody is. */
-  let draft: RoomRules | null = null;
-  let touched = 0;
-  let sendTimer: ReturnType<typeof setTimeout> | undefined;
-  let form: RulesForm | null = null;
-  let formKey = '';
-
-  const roomSource = (room: RoomInfo): RuleSource => ({
-    get: () => draft ?? session.room?.rules ?? room.rules,
-    patch: (v) => {
-      draft = { ...(draft ?? session.room?.rules ?? room.rules), ...v };
-      touched = Date.now();
-    },
-    // Every change resets everybody to "not ready", so a burst of key presses goes out as one.
-    commit: () => {
-      clearTimeout(sendTimer);
-      sendTimer = setTimeout(() => {
-        sendTimer = undefined;
-        if (draft) session.setRules(draft);
-      }, 250);
-    },
-  });
-
-  /** Your own team: one button per team, in its colour. */
-  const teamPicker = (current: number) =>
-    h(
-      'span.seat__group.lobby__teams',
-      { role: 'radiogroup', 'aria-label': t('multiplayer.yourTeam') },
-      ...[0, 1].map((k) => {
-        const pick = h(`button.pill.pill--tone${k === current ? '.is-on' : ''}`, { type: 'button', role: 'radio', 'aria-checked': String(k === current), 'data-pick-team': String(k) }, teamName(k));
-        pick.style.setProperty('--tone', TEAMS[k][0]);
-        pick.addEventListener('click', () => {
-          sound.blip();
-          session.setTeam(k as 0 | 1);
-        });
-        return pick;
-      }),
-    );
+  /** The host's own rules, kept aside while the room's are on show; they come back when the room is left. */
+  let ownGame: { gameMode: NetworkGameMode; rules: RoomRules } | null = null;
+  let followed = '';
 
   const renderRoom = (room: RoomInfo) => {
     const { you } = session;
     const self = you.spectator ? undefined : room.players.find((p) => p.id === you.playerId);
     const watching = !!you.spectator;
     selfReady = !!self?.ready;
-    roomTitle.replaceChildren(roomIcon(room.symbol, room.color), `${room.name} · ${modeName(room.gameMode, room.rules.mayhem > 0)} · ${matchTypeName(room.mode)}${room.locked ? ' 🔒' : ''}`);
+    roomSymbol.replaceChildren(roomIcon(room.symbol, room.color));
     roomCode.textContent = room.id;
-    privateTag.hidden = room.visibility !== 'private';
+    paintRoomSwitches(room, you.host);
+    lockTag.hidden = !room.locked;
     copyInvite.hidden = !canCopyInvite(room.locked, you.host);
     copyPassword.hidden = !(you.host && room.locked && hostPassword);
     const teamGame = room.mode === 'team';
@@ -629,113 +1129,227 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     stands.hidden = !crowd.length;
     stands.textContent = crowd.length ? t('multiplayer.standsList', { n: crowd.length, max: GALLERY.MAX_SPECTATORS, names: crowd.map((s) => s.name).join(', ') }) : '';
     watchNote.hidden = !watching;
-    roomAvatar.hidden = watching;
-    ready.hidden = watching;
-    roomCount.textContent = [`${room.players.length}/${room.maxPlayers} ${t('multiplayer.players')}`, ...(teamGame ? [0, 1].map((k) => `${teamName(k)} ${inTeam(k)}`) : [])].join(' · ');
+    ready.hidden = watching || you.host;
+    roomCount.textContent = `${room.players.length}/${room.maxPlayers} ${t('multiplayer.players')}`;
     resetTeams.hidden = !(teamGame && you.host);
-    teamWarning.hidden = teamsReady;
     const people = room.players.filter((p) => p.cpu === null).length;
     const cpus = room.players.length - people;
-    cpuAddRow.hidden = !(you.host && room.status === 'waiting');
-    cpuAdd.disabled = room.players.length >= room.maxPlayers;
-    cpuOnlyNote.hidden = !(cpus > 0 && people < 2);
 
-    // The list is rebuilt at every update, so the team button that has the keyboard has to get it back.
-    const picking = (document.activeElement as HTMLElement | null)?.dataset.pickTeam;
-    players.replaceChildren(
-      ...room.players.map((player) => {
-        const dot = h('span.lobby__dot', null);
-        if (teamGame) dot.style.background = TEAMS[player.team][0];
-        else dot.classList.add('lobby__dot--none');
+    // Restore the actual control after relay updates rebuild the cards.
+    const focused = document.activeElement as HTMLElement | null;
+    const focusKey = players.contains(focused) ? focused?.dataset.slotFocus : undefined;
+    const cards: RosterCard[] = [
+      ...room.players.map((player): RosterCard => {
         const mine = player.id === you.playerId;
         const cpu = player.cpu;
         // A CPU seat is the host's to change; the others only see what it is.
         const cpuTag = cpu === null ? [] : [h('span.lobby__tag', null, t('multiplayer.cpuTag'))];
-        const levelPick = cpu === null || !you.host ? [] : [choicePicker(t('multiplayer.cpuLevel'), CPU_LEVELS.map((level) => [level, t(`cpu.${level}`)]), cpu, (level) => session.setCpu(player.id, { level: level as NetworkCpuLevel }))];
-        // Everybody picks their own team; what the others picked is shown, not editable (a CPU's the host's to move).
-        const team = !teamGame
-          ? []
-          : mine
-            ? [teamPicker(player.team)]
-            : cpu !== null && you.host
-              ? [choicePicker(t('multiplayer.cpuTeam'), [['0', teamName(0)], ['1', teamName(1)]], String(player.team), (value) => session.setCpu(player.id, { team: Number(value) as 0 | 1 }))]
-              : [h('span.lobby__tag', null, teamName(player.team))];
+        const levelPick = cpu === null ? [] : you.host && room.status === 'waiting'
+          ? [optionSelector(`${player.name} · ${t('multiplayer.cpuLevel')}`, CPU_LEVELS.map((level) => ({ value: level, label: t(`cpu.${level}`) })), () => cpu, (level) => session.setCpu(player.id, { level })).el]
+          : [h('span.lobby__tag', null, t(`cpu.${cpu}`))];
         const removeButton = cpu === null || !you.host ? null : iconButton(t('multiplayer.removeCpu'), ICON_CLOSE);
         removeButton?.addEventListener('click', () => session.removeCpu(player.id));
-        return h(
-          'li',
-          null,
-          dot,
-          playerIcon(player.avatar, COLORS.players[player.id]),
-          h('span.lobby__player-name', null, player.name),
-          ...(mine ? [h('span.lobby__tag', null, t('multiplayer.you'))] : []),
-          ...(player.id === 0 ? [h('span.lobby__tag.lobby__tag--host', null, t('multiplayer.host'))] : []),
-          ...cpuTag,
-          ...team,
-          ...levelPick,
-          h(player.ready ? 'span.lobby__ready.lobby__ready--on' : 'span.lobby__ready', null, player.ready ? `✓ ${t('multiplayer.ready')}` : t('multiplayer.notReady')),
-          ...(removeButton ? [removeButton] : []),
+        const card = h('li.slot-card.player-slot', { 'aria-label': t('players.player', { n: player.id + 1 }) },
+          h('div.slot-card__head', null,
+            h('span.slot-card__number', null, `P${player.id + 1}`),
+            h('span.slot-card__kind', null, t(cpu !== null ? 'players.cpu' : mine ? 'slots.local' : 'slots.online')),
+            ...(removeButton ? [removeButton] : []),
+          ),
+          h('div.slot-card__portrait', { 'aria-hidden': 'true' }, playerIcon(player.avatar, COLORS.players[player.id])),
+          h('div.player-slot__identity', null,
+            h('span.lobby__player-name', { title: player.name }, player.name),
+            ...(mine ? [h('span.lobby__tag', null, t('multiplayer.you'))] : []),
+            ...(player.id === 0 ? [h('span.lobby__tag.lobby__tag--host', null, t('multiplayer.host'))] : []),
+            ...cpuTag,
+          ),
+          h('div.player-slot__controls', null, ...levelPick),
+          h(player.ready ? 'span.lobby__ready.lobby__ready--on' : 'span.lobby__ready', null,
+            player.id === 0 ? t('multiplayer.host') : player.ready ? `✓ ${t('multiplayer.ready')}` : t('multiplayer.notReady')),
         );
+        card.style.setProperty('--slot-tone', teamGame ? TEAMS[player.team][0] : COLORS.players[player.id]);
+        card.classList.toggle('is-self', mine);
+        card.classList.toggle('is-cpu', cpu !== null);
+        card.classList.toggle('has-remove', !!removeButton);
+        card.classList.toggle('is-ready', player.ready);
+        card.querySelectorAll<HTMLElement>('button').forEach((control, i) => {
+          control.dataset.slotFocus = `${player.id}-${i}`;
+        });
+        return {
+          key: String(player.id), el: card, label: player.name, team: player.team,
+          ...(teamGame && room.status === 'waiting' && (mine || (cpu !== null && you.host)) ? { move: (team: number) => {
+            sound.blip();
+            if (cpu !== null) session.setCpu(player.id, { team: team as 0 | 1 });
+            else session.setTeam(team as 0 | 1);
+          } } : {}),
+        };
       }),
-    );
-    if (picking) players.querySelector<HTMLElement>(`[data-pick-team="${picking}"]`)?.focus();
-    // The field follows the relay's name when that changes, so a refused name stays in the field to be corrected.
-    if (self && self.name !== syncedName) {
-      syncedName = self.name;
-      roomPlayerName.value = self.name;
-    }
-    roomAvatarPicker.show(self?.avatar ?? prefs.avatar);
-    if (!watching) roomAvatarPicker.el.style.setProperty('--tone', COLORS.players[you.playerId]);
-
+      ...Array.from({ length: room.maxPlayers - room.players.length }, (_, i) => {
+        const slot = room.players.length + i;
+        const invite = button(t('slots.invite'));
+        invite.className = 'slot-card__join';
+        invite.append(h('span.slot-card__plus', { 'aria-hidden': 'true' }, '+'));
+        invite.disabled = !canCopyInvite(room.locked, you.host);
+        invite.dataset.slotFocus = `invite-${slot}`;
+        invite.addEventListener('click', () => copyInviteLink(invite));
+        const addCpu = button(t('multiplayer.addCpu'));
+        addCpu.className = 'slot-card__add-cpu';
+        addCpu.dataset.slotFocus = `cpu-${slot}`;
+        addCpu.addEventListener('click', () => {
+          const team = roster.teamOf(`free-${slot}`);
+          session.addCpu('medium', teamGame && team !== null ? team as 0 | 1 : undefined);
+        });
+        addCpu.hidden = !(you.host && room.status === 'waiting');
+        const card = h('article.slot-card.slot-card--empty', null,
+          h('div.slot-card__head', null, h('span.slot-card__number', null, `P${slot + 1}`), h('span.slot-card__kind', null, t('slots.free'))),
+          invite, h('span.slot-card__waiting', null, t('slots.waiting')), addCpu,
+        );
+        return { key: `free-${slot}`, label: t('slots.free'), el: card, team: null };
+      }),
+    ];
+    roster.show(cards, teamGame ? 2 : 0, room.maxPlayers);
+    if (focusKey) players.querySelector<HTMLElement>(`[data-slot-focus="${focusKey}"]`)?.focus({ preventScroll: true });
     // The look is rebuilt only when the room or the host changes, so an open dialog keeps its state between updates.
     const lookId = `${room.id}|${you.host}`;
     if (lookId !== roomLookKey) {
       roomLookKey = lookId;
-      roomVisibility = visibilityControl(lookOf(room), changeRoomLook, { readonly: !you.host, sound });
-      // Only the host changes the look. The others see the room's colour and symbol in its title, so they get no summary.
-      roomSummary = you.host ? lookSummary(lookOf(room), () => roomDialog?.open()) : null;
       roomDialog?.close();
       roomDialog = you.host ? lookDialog(lookOf(room), changeRoomLook, { sound }) : null;
-      roomLookSlot.replaceChildren(roomSummary ? h('div.lobby__look-row', null, roomVisibility.el, roomSummary.el) : roomVisibility.el);
     }
-    roomVisibility?.refresh(lookOf(room));
-    roomSummary?.refresh(lookOf(room));
+    roomSymbol.disabled = !you.host;
+    roomSymbol.title = you.host ? t('multiplayer.lookTitle') : '';
     roomDialog?.refresh(lookOf(room));
 
-    // The sliders live as long as the room does: rebuilding them at every update would drop the one being dragged.
-    const key = `${room.id}|${room.gameMode}|${room.rules.mayhem > 0}|${you.host}`;
-    if (key !== formKey) {
-      formKey = key;
-      draft = null;
-      form = rulesForm(room.gameMode, roomSource(room), app, !you.host, room.rules.mayhem > 0);
-      roomRules.replaceChildren(form.el);
+    // The host edits the game and its rules in the briefing; everybody else sees the same page, locked, and it follows the host.
+    if (!you.host) {
+      ownGame ??= { gameMode: prefs.gameMode, rules: prefs.rules };
+      const sameGame = followed.startsWith(`${room.id}|${room.gameMode}|`);
+      followed = `${room.id}|${room.gameMode}|${JSON.stringify(room.rules)}`;
+      prefs.gameMode = room.gameMode;
+      prefs.rules = { ...prefs.rules, ...room.rules, powerUpKinds: [...room.rules.powerUpKinds] };
+      if (sameGame) {
+        rememberMatchingCreatePreset(pickOfTheDay(prefs.gameMode, app.today()));
+        createRulesForm?.refresh();
+        createQuickControls.forEach((control) => control.refresh());
+        paintCreatePresetState();
+        createPowerups.update();
+      } else {
+        buildCreateRules();
+        buildCreateQuick();
+      }
     }
-    // What the host is in the middle of changing wins over the room's last word for a moment.
-    if (Date.now() - touched > 1000 && !sendTimer) draft = null;
-    form?.refresh();
-
-    rulesNote.textContent = you.host ? t('multiplayer.rulesResetNote') : `🔒 ${t('multiplayer.hostRules')}`;
-    rulesNote.classList.toggle('is-locked', !you.host);
-    roomNote.textContent = room.gameMode === 'horizon' ? t('multiplayer.horizonNote') : '';
-    roomNote.hidden = !roomNote.textContent;
+    rulesLinkLabel.textContent = t(you.host ? 'briefing.editRules' : 'shell.roomRules');
     ready.textContent = self?.ready ? t('multiplayer.unready') : t('multiplayer.ready');
-    ready.classList.toggle('lobby__button--primary', !self?.ready);
+    ready.classList.toggle('lobby__button--primary', !you.host && !watching && !self?.ready);
     start.hidden = !you.host;
     // Everybody but the host must be ready; the host's click is its own "ready". CPUs are always ready, but a game needs a second person.
-    start.disabled = people < 2 || !room.players.every((p) => p.id === 0 || p.ready) || !teamsReady;
+    const guestsReady = room.players.every((p) => p.id === 0 || p.ready);
+    start.disabled = people < 2 || !guestsReady || !teamsReady;
+    // Why the game cannot start, beside the start button: CPUs alone play offline, and a team game needs somebody in each team.
+    const hints = [
+      ...(cpus > 0 && people < 2 ? [t('multiplayer.cpuOnlyNote')] : you.host && people < 2 ? [t('multiplayer.startNeedHuman')] : []),
+      ...(!teamsReady ? [t('multiplayer.teamsNeedPlayers')] : []),
+    ];
+    if (!hints.length && you.host && !guestsReady) hints.push(t('multiplayer.startNeedReady'));
+    startHint.textContent = hints.join('\n');
+    startHint.hidden = !hints.length;
+    start.classList.toggle('lobby__button--primary', you.host);
   };
 
   // ————————————————————————————— Rendering —————————————————————————————
 
-  // Out of a room, the way back to the main menu; inside one there is "Leave room".
-  const backButton = button(`← ${t('common.mainMenu')}`);
-  const backBar = h('div.lobby__back', null, backButton);
-
-  const root = h(
-    'section.screen.screen--panel.screen--lobby',
-    { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('multiplayer.title') },
-    h('div.panel.panel--lobby', null, h('h2.panel__title', null, t('multiplayer.title')), factTicker(), h('div.lobby', null, status, bar, connectView, roomsView, createView, roomView, backBar), h('div.items', { 'data-items': '' })),
+  // Each lobby page is a child of Online. Leaving an active room remains a separate action.
+  const backButton = button(t('common.back'));
+  const footerActions = h('div.items.items--row.menu-page__actions.lobby__actions', null, h('div.lobby__chat-slot', null), startHint, backButton, codeJoin, createButton, ready, start, leave);
+  const onlineSectionNav = h('nav.items.items--row.mode-pager.online-section-pager', { 'aria-label': t('launcher.online') });
+  onlineSectionNav.classList.add('is-positioned');
+  const onlineSectionButtons = ONLINE_SECTIONS.map(() => h('button.item.mode-pager__item', { type: 'button' }) as HTMLButtonElement);
+  onlineSectionNav.append(...onlineSectionButtons);
+  const onlineSectionViewport = h('div.mode-pager__viewport.online-section-viewport', null, onlineSectionNav);
+  const onlineSectionKeys = h('div.mode-pager__keys.online-section-keys', { 'aria-hidden': 'true' },
+    h('span', null, '‹ (Q)'), h('span', null, '(E) ›'),
   );
+  const onlineHeading = h('h2.menu-page__title.online-view-title', { tabindex: '-1', 'aria-live': 'polite' });
+  const onlineHeader = h('div.mode-carousel.online-section-header', null, onlineSectionViewport, onlineSectionKeys, onlineHeading);
+
+  const lobbyEl = h('div.lobby', null, bar, connectSlot, roomsView, openForms, roomView, status);
+  const root = menuPage({
+    title: t(({ rooms: 'flow.find', create: 'flow.create', code: 'flow.code' } as const)[view]), eyebrow: t('launcher.online'), className: 'menu-page--lobby menu-page--mode-enter-next',
+    headerTitle: onlineHeader,
+    headerAside: factTicker(app.settings.statsTicker),
+    body: [lobbyEl], footer: footerActions, keys: t('flow.tabKeys'),
+  });
+  const page = root.querySelector<HTMLElement>('.menu-page')!;
+  const eyebrow = root.querySelector<HTMLElement>('.menu-page__head .eyebrow')!;
+  const heading = onlineHeading;
+  let pendingContentDirection: OnlineSectionDirection | null = null;
+  let enterTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The host of a waiting room picks the game in the pager, where everybody else has the online pages. */
+  const hostPicking = (): boolean => !!session.room && session.you.host && !session.you.spectator && session.room.status === 'waiting';
+  const paintOnlineSectionNav = (inRoom: boolean): void => {
+    const picking = hostPicking();
+    const entries: { id: string; label: string }[] = picking
+      ? PICKER_MODES.map((mode) => ({ id: mode, label: t(`mode.${mode}` as Key) }))
+      : ONLINE_SECTIONS.map((section) => ({ id: section, label: t(ONLINE_SECTION_TITLE[section]) }));
+    const index = Math.max(0, entries.findIndex((entry) => entry.id === (picking ? currentMode() : view)));
+    onlineSectionButtons.forEach((item, distance) => {
+      // Two games fill only two of the three places.
+      item.hidden = distance >= entries.length;
+      const entry = entries[(index + distance) % entries.length];
+      const selected = distance === 0;
+      item.className = `item mode-pager__item mode-pager__item--${entry.id} mode-pager__item--${selected ? 'active' : distance === 1 ? 'near' : 'far'}`;
+      item.textContent = entry.label;
+      delete item.dataset.view;
+      delete item.dataset.mode;
+      item.dataset[picking ? 'mode' : 'view'] = entry.id;
+      if (selected) item.setAttribute('aria-current', 'page');
+      else item.removeAttribute('aria-current');
+    });
+    const visible = !inRoom || picking;
+    onlineSectionViewport.hidden = !visible;
+    onlineSectionKeys.hidden = !visible;
+    page.classList.toggle('menu-page--online-carousel-active', visible);
+  };
+  const animateOnlineCarousel = (direction: OnlineSectionDirection): void => {
+    if (onlineSectionViewport.hidden) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      onlineSectionNav.classList.add('is-positioned');
+      onlineSectionNav.style.transform = 'translate3d(0, 0, 0)';
+      return;
+    }
+    const offset = direction === 'next' ? 72 : -72;
+    onlineSectionNav.classList.remove('is-positioned');
+    onlineSectionNav.style.transform = `translate3d(${offset}px, 0, 0)`;
+    void onlineSectionNav.offsetWidth;
+    requestAnimationFrame(() => {
+      if (!onlineSectionNav.isConnected || onlineSectionViewport.hidden) return;
+      onlineSectionNav.classList.add('is-positioned');
+      onlineSectionNav.style.transform = 'translate3d(0, 0, 0)';
+    });
+  };
+  /** Without the marker the page would fall back to its own entrance and play it a second time. */
+  const endEntrance = (): void => {
+    page.classList.remove('menu-page--mode-enter-next', 'menu-page--mode-enter-previous');
+    page.classList.add('menu-page--entered');
+  };
+  const animateContentState = (inRoom: boolean): void => {
+    const state = inRoom ? `room-${hostPicking() ? currentMode() : ''}` : view;
+    if (lastContentState !== null && state !== lastContentState) {
+      const order: Record<string, number> = { rooms: 0, create: 1, code: 2 };
+      const from = order[lastContentState];
+      const to = order[state];
+      const forward = from === undefined || to === undefined ? 0 : (to - from + ONLINE_SECTIONS.length) % ONLINE_SECTIONS.length;
+      const direction = pendingContentDirection ?? (forward <= 1 ? 'next' : 'previous');
+      animateOnlineCarousel(direction);
+      page.classList.remove('menu-page--mode-enter-next', 'menu-page--mode-enter-previous', 'menu-page--entered');
+      void page.offsetWidth;
+      page.classList.add(`menu-page--mode-enter-${direction}`);
+      // The entrance is over after a moment; cards rebuilt later must not play it again.
+      clearTimeout(enterTimer);
+      enterTimer = setTimeout(() => endEntrance(), 900);
+    }
+    pendingContentDirection = null;
+    lastContentState = state;
+  };
 
   /** An invite is a one-shot: once a room is entered, or the lobby is left, it is out of the URL again. */
   const dropInvite = () => {
@@ -747,13 +1361,24 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
 
   const render = () => {
     const { connected, connecting, room, rooms: open } = session;
+    const title = room ? room.name : t(ONLINE_SECTION_TITLE[view]);
+    heading.textContent = room && !hostPicking() ? modeName(room.gameMode, room.rules.mayhem > 0) : title;
+    root.setAttribute('aria-label', title);
+    eyebrow.textContent = room ? `${t('launcher.online')} · ${t('multiplayer.roomNumber', { n: room.number })} · ${room.name}` : t('launcher.online');
+    page.classList.toggle('menu-page--room', !!room);
+    profileLabel.textContent = playerName.value.trim() || t('multiplayer.name');
+    profileAvatar.replaceChildren(avatarSvg(prefs.avatar));
+    connectionLabel.textContent = t(connected ? 'flow.connected' : 'flow.connection');
+    connectionServer.textContent = connected && !configuredServer ? (session.client.address || prefs.server).replace(/^wss?:\/\//, '') : '';
+    connectionServer.hidden = !connectionServer.textContent;
+    connection.classList.toggle('is-connected', connected);
+    connection.classList.toggle('is-connecting', connecting && !connected && !hosted);
+    if (wasConnected !== null && connected !== wasConnected) flashConnection(connected ? 'is-linked' : 'is-dropped');
+    wasConnected = connected;
+    disconnectButton.hidden = hosted || !connected;
     avatarBar.show(prefs.avatar);
     const browsing = connected && !room;
-    // A room, once left, leaves you at the list of rooms; and it takes the invitation out of the address bar.
-    if (room) {
-      view = 'rooms';
-      dropInvite();
-    }
+    if (room) dropInvite();
     // Whoever followed an invite came here to get into that room, so it is joined for them — no second click.
     // Only a missing player name stops it: then the lobby asks for one and shows the join row as usual.
     const inviteAttempt = inviteJoinAttempt(invited, invitePending, browsing, playerName.value);
@@ -765,41 +1390,73 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
       inviteNote = null;
     } else if (inviteAttempt.kind === 'name-required') {
       inviteNote = t('multiplayer.nameRequired');
+      profile.open = true;
       playerName.focus();
     }
     // The hosted build says nothing about connecting or being connected; its connect card returns only when that failed.
     const retry = hosted && !connected && !connecting && (connectFailed || session.notice !== null);
-    const idle = hosted ? '' : t('multiplayer.connectHint');
-    const message = localMessage ?? session.notice ?? inviteNote ?? (connecting ? (hosted ? '' : t('multiplayer.connecting')) : !connected ? idle : '');
+    // The code page says what went wrong at its own fields; what is left over from earlier is not its news.
+    const ownsNotice = session.passwordNotice !== null || session.notice === codeNotice || (view === 'code' && !room);
+    const notice = ownsNotice ? null : session.notice && relayText(session.notice);
+    const message = localMessage ?? notice ?? inviteNote ?? (connecting && !hosted ? t('multiplayer.connecting') : '');
     status.textContent = message;
     status.classList.toggle('is-busy', connecting);
     status.hidden = !message;
 
-    bar.hidden = !browsing;
-    connectView.hidden = hosted ? !retry : connected;
+    connectView.hidden = connected || (hosted && !retry) || quietConnect;
+    connectSlot.hidden = connected || !!room || quietConnect;
+    codeView.hidden = !(browsing && view === 'code');
     roomsView.hidden = !(browsing && view === 'rooms');
     createView.hidden = !(browsing && view === 'create');
+    openForms.hidden = codeView.hidden && createView.hidden;
     roomView.hidden = !room;
-    backBar.hidden = !!room || (connected && view === 'create');
+    bar.hidden = !!room && !!session.you.spectator;
+    backButton.hidden = !!room;
+    createButton.hidden = !(browsing && view === 'create');
+    codeJoin.hidden = !(browsing && view === 'code');
+    leave.hidden = !room;
+    if (!room) {
+      ready.hidden = true;
+      start.hidden = true;
+      startHint.hidden = true;
+    }
+    paintOnlineSectionNav(!!room);
+    animateContentState(!!room);
     if (room) return renderRoom(room);
-    // Out of the room the next one starts from scratch.
-    formKey = '';
+    // Out of the room the next one starts from scratch, with the rules one had before.
+    followed = '';
+    if (ownGame) {
+      prefs.gameMode = ownGame.gameMode;
+      prefs.rules = ownGame.rules;
+      ownGame = null;
+      selectedCreatePreset = undefined;
+      buildCreateRules();
+      buildCreateQuick();
+    }
     hostPassword = '';
     roomLookKey = '';
     roomDialog?.close();
     roomDialog = null;
 
-    (connected || hosted ? barName : connectFields).append(nameField);
-    if (!configuredServer) linkText.textContent = t('multiplayer.connectedTo', { server: session.client.address || prefs.server });
+    barName.append(nameField);
     connectButton.disabled = connecting;
     serverAddress.disabled = connecting;
-    renderRooms(open);
+    renderRooms(open, session.roomListLoaded, !session.roomListLoaded && !!session.notice);
+  };
+
+  const connectErrorText = (error: unknown): string => {
+    if (!(error instanceof ConnectError)) return error instanceof Error ? error.message : String(error);
+    const params = { server: error.url };
+    if (error.reason === 'timeout') return t('multiplayer.connectTimeout', params);
+    if (error.reason === 'closed') return t('multiplayer.connectClosed', params);
+    return t('multiplayer.connectUnreachable', params);
   };
 
   const connect = async (silent: boolean) => {
     const address = configuredServer ? DEFAULT_SERVER : serverAddress.value.trim();
     localMessage = silent ? null : t('multiplayer.connecting');
     connectFailed = false;
+    quietConnect = silent;
     render();
     try {
       await session.connect(address);
@@ -809,17 +1466,84 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
     } catch (error) {
       connectFailed = true;
       prefs.autoConnect = false;
-      localMessage = configuredServer ? t('multiplayer.connectFailed') : error instanceof Error ? error.message : String(error);
+      localMessage = configuredServer ? t('multiplayer.connectFailed') : connectErrorText(error);
     }
+    quietConnect = false;
     save();
     render();
   };
 
+  const focusOnlineSection = (): void => {
+    if (onlineSectionViewport.hidden) heading.focus({ preventScroll: true });
+    else onlineSectionButtons.find((item) => item.classList.contains('mode-pager__item--active'))?.focus({ preventScroll: true });
+  };
   const show = (next: View) => {
     view = next;
     localMessage = null;
+    // What the relay said on the page we leave is not news on the next one.
+    if (!session.room) session.notice = null;
     render();
+    root.querySelector<HTMLElement>('.menu-page__body')!.scrollTop = 0;
+    focusOnlineSection();
   };
+  const enter = (next: View) => {
+    show(next);
+    // Whoever disconnected (or never connected) stays offline while paging; the connect card has the button.
+    if (!session.connected && !session.connecting && (configuredServer || prefs.autoConnect)) void connect(false);
+  };
+  const navigateOnlineSection = (next: View, direction: OnlineSectionDirection): void => {
+    if (next === view) return;
+    pendingContentDirection = direction;
+    enter(next);
+  };
+  onlineSectionButtons.forEach((item) => item.addEventListener('click', () => {
+    const mode = item.dataset.mode as NetworkGameMode | undefined;
+    if (mode) {
+      setMode(mode, 'next');
+      focusOnlineSection();
+      return;
+    }
+    const next = item.dataset.view as View | undefined;
+    if (next) navigateOnlineSection(next, 'next');
+  }));
+  /** One step along the pager: the next page, or the next game for the host of a waiting room. */
+  const stepPager = (direction: OnlineSectionDirection): void => {
+    const step = direction === 'next' ? 1 : -1;
+    if (hostPicking()) {
+      setMode(PICKER_MODES[(PICKER_MODES.indexOf(currentMode()) + step + PICKER_MODES.length) % PICKER_MODES.length], direction);
+      focusOnlineSection();
+      return;
+    }
+    navigateOnlineSection(ONLINE_SECTIONS[(ONLINE_SECTIONS.indexOf(view) + step + ONLINE_SECTIONS.length) % ONLINE_SECTIONS.length], direction);
+  };
+  const handleOnlineSectionKey = (event: KeyboardEvent): void => {
+    if (!root.isConnected || onlineSectionViewport.hidden || event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest('input, select, textarea, [contenteditable]:not([contenteditable="false"])')) return;
+    const key = event.key.toLowerCase();
+    const shortcut = key === 'q' || key === 'e';
+    if (!shortcut && (!target.closest('.online-section-pager') || (key !== 'arrowleft' && key !== 'arrowright'))) return;
+    event.preventDefault();
+    event.stopPropagation();
+    stepPager(key === 'arrowright' || key === 'e' ? 'next' : 'previous');
+  };
+  // Capture at document level so the shortcuts still work when focus is on content controls
+  // whose own key handlers stop bubbling. Text fields remain untouched.
+  document.addEventListener('keydown', handleOnlineSectionKey, true);
+  let swipeStart: { x: number; y: number } | null = null;
+  onlineSectionViewport.addEventListener('touchstart', (event: TouchEvent) => {
+    if (event.touches.length !== 1) { swipeStart = null; return; }
+    swipeStart = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+  }, { passive: true });
+  onlineSectionViewport.addEventListener('touchend', (event: TouchEvent) => {
+    if (!swipeStart || event.changedTouches.length !== 1) { swipeStart = null; return; }
+    const dx = event.changedTouches[0].clientX - swipeStart.x;
+    const dy = event.changedTouches[0].clientY - swipeStart.y;
+    swipeStart = null;
+    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
+    event.preventDefault();
+    stepPager(dx < 0 ? 'next' : 'previous');
+  }, { passive: false });
 
   connectButton.addEventListener('click', () => void connect(false));
   serverAddress.addEventListener('keydown', (e) => {
@@ -828,35 +1552,49 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
   disconnectButton.addEventListener('click', () => {
     session.disconnect();
     prefs.autoConnect = false;
-    view = 'rooms';
     save();
   });
-  openCreate.addEventListener('click', () => show('create'));
-  backToRooms.addEventListener('click', () => show('rooms'));
+  openCreate.addEventListener('click', () => {
+    createFromRooms = true;
+    enter('create');
+  });
   playerName.addEventListener('change', () => {
     prefs.name = playerName.value.trim() || prefs.name;
     save();
   });
 
-  /** One step back: out of the room, out of the form, and from the list of rooms out of the lobby. */
+  /** Return to the main menu's Online section, or leave a standalone invite/lobby screen. */
   const goBack = () => {
     dropInvite();
-    if (session.room) session.leaveRoom();
-    else if (session.connected && view === 'create') show('rooms');
-    else {
+    if (session.room) {
+      view = 'rooms';
+      session.leaveRoom();
+    } else if (app.menu.depth > 1) {
+      app.menu.back();
+    } else {
       session.disconnect();
       app.toTitle();
     }
   };
-  backButton.addEventListener('click', goBack);
+  backButton.addEventListener('click', () => {
+    if (!session.room && view === 'create' && createFromRooms) {
+      createFromRooms = false;
+      show('rooms');
+      return;
+    }
+    goBack();
+  });
 
+  let unsubscribe: (() => void) | null = null;
   return {
     build: () => {
-      // The session outlives this screen: re-render on its changes until the screen is gone.
-      const unsubscribe = session.subscribe(() => {
+      unsubscribe?.();
+      // The session outlives this screen. Subscribe while mounted and release on a stack change/rebuild.
+      unsubscribe = session.subscribe(() => {
         if (!root.isConnected) {
-          clearTimeout(sendTimer);
-          return unsubscribe();
+          unsubscribe?.();
+          unsubscribe = null;
+          return;
         }
         localMessage = null;
         // The relay's reason for refusing a name goes under the name; other errors stay in the general message.
@@ -864,6 +1602,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
           const self = session.room?.players.find((p) => p.id === session.you.playerId);
           if (session.nameNotice) {
             showNameError(session.nameNotice);
+            profile.open = true;
+            queueMicrotask(() => playerName.focus());
             pendingName = null;
           } else if (self?.name === pendingName) {
             // Taken: only now is it the default for next time.
@@ -872,21 +1612,51 @@ export function lobbyScreen(app: App, session: MultiplayerSession): Screen {
             pendingName = null;
           }
         }
+        if (codeJoinPending && session.room) codeJoinPending = false;
+        else if (codeJoinPending && session.notice && !session.passwordNotice) {
+          showFieldError(codeError, relayText(session.notice));
+          codeNotice = session.notice;
+          codeJoinPending = false;
+        }
+        if (session.passwordNotice && passwordTarget) {
+          const { error, input, reveal } = passwordTarget;
+          // "Wrong password" is all the relay says for a missing one too; the player is told which it was.
+          const wrong = session.passwordNotice === 'Wrong password';
+          showFieldError(error, wrong ? t(input.value ? 'multiplayer.passwordWrong' : 'multiplayer.passwordNeeded') : relayText(session.passwordNotice));
+          if (reveal) reveal.hidden = false;
+          queueMicrotask(() => input.focus());
+          passwordTarget = null;
+        }
         render();
       });
-      render();
       // Reconnect to a previously used relay. A different relay named by an invite requires an explicit click.
       // Deferred until the screen is in the DOM — the session's updates only reach a mounted screen.
       const mayAutoConnect = shouldAutoConnectInvite(invited, prefs.server) && (prefs.autoConnect || !!invited);
-      if (!session.connected && !session.connecting && !session.room && (configuredServer || mayAutoConnect)) setTimeout(() => void connect(true), 0);
+      const reconnect = !session.connected && !session.connecting && !session.room && (configuredServer || mayAutoConnect);
+      quietConnect = reconnect;
+      render();
+      enterTimer = setTimeout(() => endEntrance(), 900);
+      if (reconnect) setTimeout(() => void connect(true), 0);
+      focusOnlineSection();
       return root;
     },
     items: [],
+    dispose: () => {
+      document.removeEventListener('keydown', handleOnlineSectionKey, true);
+      unsubscribe?.();
+      unsubscribe = null;
+      clearTimeout(roomsFeedbackTimer);
+      if (rulesTimer) pushRules();
+      roomDialog?.close();
+      rulesDialog.remove();
+    },
     // Escape closes an open look dialog first, and only then leaves the lobby.
     onEscape: () => {
-      if (createDialog.isOpen()) createDialog.close();
-      else if (roomDialog?.isOpen()) roomDialog.close();
-      else goBack();
+      if (!rulesDialog.hidden) { dismissRulesDialog(); return true; }
+      if (createDialog.isOpen()) { createDialog.close(); return true; }
+      if (roomDialog?.isOpen()) { roomDialog.close(); return true; }
+      if (app.menu.depth === 1) { goBack(); return true; }
+      return false;
     },
   };
 }

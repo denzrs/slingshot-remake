@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { packMessage, packWireMessage, unpackWireMessage } from '../src/messagepack';
-import { mayhemRules } from '../src/lobbyPrefs';
+import { presetRules } from '../src/ui/match-presets';
 import { MultiplayerSession, type NetMatch, type Transport } from '../src/multiplayer';
 import type { RoomRules, ServerMessage } from '../src/net';
 import { TIP_HIDDEN } from '../src/game/oracle';
@@ -157,7 +157,7 @@ interface Client {
   syncElapsed: number;
 }
 
-const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, mayhem: 0, betting: false, chatPlayersOnly: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'antigravity', 'shield'], powerUpAmount: 2 };
+const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, killcam: 'auto', hiddenAim: false, fadingTrails: 0, mayhem: 0, betting: false, chatPlayersOnly: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'antigravity', 'shield'], powerUpAmount: 2 };
 
 async function connectSession(hooks: Partial<ConstructorParameters<typeof MultiplayerSession>[0]> = {}, settings = DEFAULT_SETTINGS, edit?: (message: ServerMessage) => ServerMessage): Promise<MultiplayerSession> {
   const session = new MultiplayerSession({ settings: () => cloneSettings(settings), matchStarted() {}, matchRestarted() {}, matchEnded() {}, ...hooks }, new RustTransport(edit));
@@ -177,7 +177,7 @@ function waitForSession(session: MultiplayerSession, predicate: () => boolean): 
   return promise;
 }
 
-async function startRoom(gameMode: 'classic' | 'horizon', names = ['Anna', 'Ben'], roomRules: RoomRules = rules): Promise<{ host: Client; guest: Client }> {
+async function startRoom(gameMode: 'classic' | 'solar' | 'horizon', names = ['Anna', 'Ben'], roomRules: RoomRules = rules): Promise<{ host: Client; guest: Client }> {
   let hostMatch: NetMatch | null = null;
   let guestMatch: NetMatch | null = null;
   const hostSession = await connectSession({ matchStarted: (match) => { hostMatch = match; } });
@@ -219,6 +219,19 @@ async function framesUntil(host: Client, guest: Client, done: () => boolean, mos
 }
 
 describe('online games', () => {
+  it('tracks when the room list is ready and when it is being refreshed', async () => {
+    const session = await connectSession();
+    await waitForSession(session, () => session.roomListLoaded);
+
+    session.requestRooms();
+    expect(session.roomListLoaded).toBe(false);
+    await waitForSession(session, () => session.roomListLoaded);
+    expect(session.roomListLoaded).toBe(true);
+
+    session.disconnect();
+    expect(session.roomListLoaded).toBe(false);
+  });
+
   it('rejects unsupported state envelope versions', async () => {
     const { host } = await startRoom('classic');
     const transport = host.session.client as RustTransport;
@@ -413,8 +426,8 @@ describe('online games', () => {
     }
   });
 
-  it('lets a guest vote to skip the killcam', async () => {
-    const { host, guest } = await startRoom('horizon');
+  it.each(['classic', 'solar', 'horizon'] as const)('lets a guest vote to skip the %s killcam', async (mode) => {
+    const { host, guest } = await startRoom(mode, ['Anna', 'Ben'], { ...rules, killcam: 'every' });
     const hm = host.match();
     hm.world.planets = [];
     Object.assign(hm.world.ships[0], { x: 100, y: 400 });
@@ -481,6 +494,31 @@ describe('online games', () => {
     for (let i = 0; i < 60; i++) await frame(host, guest);
     expect(hm.phase).not.toBe('aiming');
     expect(guest.match().phase).toBe(hm.phase);
+  });
+
+  describe('in the Solar System', () => {
+    it('turns the planets and ships on the guest\'s screen as it does on the host\'s', async () => {
+      const { host, guest } = await startRoom('solar');
+      const hm = host.match();
+      const gm = guest.match();
+      expect(hm.mode).toBe('solar');
+      expect(gm.mode).toBe('solar');
+      for (let i = 0; i < 5; i++) await frame(host, guest);
+      const before = hm.world.planets.map((p) => ({ x: p.x, y: p.y }));
+      // The system turns once both ships have fired, not after each shot.
+      host.session.input({ kind: 'fire' });
+      for (let i = 0; i < 60 * 20 && !(hm.phase === 'aiming' && hm.current === 1); i++) await frame(host, guest);
+      expect(hm.phase).toBe('aiming');
+      expect(hm.world.planets.map((p) => ({ x: p.x, y: p.y }))).toEqual(before);
+      guest.session.input({ kind: 'fire' });
+      for (let i = 0; i < 60 * 20 && hm.phase !== 'orbit'; i++) await frame(host, guest);
+      expect(hm.phase).toBe('orbit');
+      for (let i = 0; i < 60 * 4 && hm.phase === 'orbit'; i++) await frame(host, guest);
+      for (let i = 0; i < 10; i++) await frame(host, guest);
+      expect(hm.world.planets.some((p, i) => p.sun !== true && Math.hypot(p.x - before[i].x, p.y - before[i].y) > 1)).toBe(true);
+      expect(gm.world.planets.map((p) => ({ x: p.x, y: p.y }))).toEqual(hm.world.planets.map((p) => ({ x: p.x, y: p.y })));
+      expect(gm.world.ships.map((sh) => ({ x: sh.x, y: sh.y }))).toEqual(hm.world.ships.map((sh) => ({ x: sh.x, y: sh.y })));
+    }, 60_000);
   });
 
   describe('in Event Horizon', () => {
@@ -824,6 +862,9 @@ describe('the oracle online', () => {
     // Ben is out with 400 points: he may stake 100 or 200. He bets 200 on Cleo.
     hm.players[1].score = 400;
     await tick(everybody, 5);
+    // The guest checks a stake against its own copy of the score: wait until the host's state has brought it.
+    for (let i = 0; i < 60 && ben.match().players[1].score !== 400; i++) await tick(everybody);
+    expect(ben.match().players[1].score).toBe(400);
     ben.session.input({ kind: 'bet', pick: 2, round: true, stake: 200 });
     await tick(everybody, 5);
     for (const client of everybody) {
@@ -838,6 +879,8 @@ describe('the oracle online', () => {
     // Dora is out with 800 points and bets her most, 400, on Anna.
     hm.players[3].score = 800;
     await tick(everybody, 5);
+    for (let i = 0; i < 60 && dora.match().players[3].score !== 800; i++) await tick(everybody);
+    expect(dora.match().players[3].score).toBe(800);
     dora.session.input({ kind: 'bet', pick: 0, round: true, stake: 400 });
     await tick(everybody, 5);
     for (const client of everybody) expect(client.match().oracle.pot).toBe(600);
@@ -878,6 +921,9 @@ describe('the oracle online', () => {
     for (let i = 0; i < 600 && !(hm.phase === 'aiming' && hm.current === 2); i++) await tick(everybody);
     hm.players[1].score = 400;
     await tick(everybody, 5);
+    // The guest checks a stake against its own copy of the score: wait until the host's state has brought it.
+    for (let i = 0; i < 60 && ben.match().players[1].score !== 400; i++) await tick(everybody);
+    expect(ben.match().players[1].score).toBe(400);
     ben.session.input({ kind: 'bet', pick: 2, round: true, stake: 200 });
     await tick(everybody, 5);
     for (const client of everybody) {
@@ -1143,10 +1189,10 @@ describe('CPU seats online', () => {
       expect(watcher.rooms.find((room) => room.host === 'Ben')).toMatchObject({ gameMode: 'classic', mayhem: 0 });
     }, 30_000);
 
-    it('plays a Mayhem room by the rules it was made with: trick shots always on, its flight time, and simultaneous shots in Classic only', async () => {
-      const chosen = { mayhem: 2, rounds: 3, shotTime: 30, simultaneousShots: true };
+    it('plays a room from the Mayhem preset by the rules it was made with: trick shots on, its flight time, and simultaneous shots in Classic', async () => {
       for (const mode of ['classic', 'horizon'] as const) {
-        const { host, guest } = await startRoom(mode, ['Anna', 'Ben'], mayhemRules(chosen, mode));
+        const chosen = { ...presetRules('mayhem'), rounds: 3, shotTime: 30, simultaneousShots: mode === 'classic' };
+        const { host, guest } = await startRoom(mode, ['Anna', 'Ben'], chosen);
         for (const side of [host, guest]) {
           expect(side.match().settings).toMatchObject({ mayhem: 2, rounds: 3, shotTime: 30, styleBonuses: true, betting: false });
           expect(side.match().settings.simultaneousShots).toBe(mode === 'classic');

@@ -1,9 +1,9 @@
-import { DEFENSE, PLASMA, NEBULA, PHYSICS, WORMHOLE } from './config';
+import { DEFENSE, PLASMA, NEBULA, PHYSICS, SOLAR_STORM, WORMHOLE } from './config';
 
 // Read once: Shot.step is the innermost loop of every CPU search and killcam, and an imported binding is slower to read than a local one.
 const { DT, G, SHIP_RADIUS, OUT_MARGIN } = PHYSICS;
 
-export type PlanetStyle = 'rocky' | 'gas' | 'ice';
+export type PlanetStyle = 'rocky' | 'gas' | 'ice' | 'star';
 
 export interface Planet {
   x: number;
@@ -16,6 +16,8 @@ export interface Planet {
   tint: string;
   /** The antigravity power-up has turned this planet's gravity round: it pushes shots away instead of pulling them in. */
   reversed?: boolean;
+  /** The sun of the Solar System mode: the system turns around it, and no power-up can touch it. */
+  sun?: boolean;
 }
 
 export interface Ship {
@@ -34,13 +36,24 @@ export interface BlackHole {
   mass: number;
 }
 
-/** A cloud the nebula power-up has placed: shots inside it are slowed and feel the gravity harder. */
+/** A cloud from a nebula power-up or solar storm. Only nebula clouds slow shots and deepen gravity. */
 export interface Nebula {
   x: number;
   y: number;
   radius: number;
   /** Fixes the cloud's uneven outline, so it is drawn the same everywhere and never changes once laid. */
   seed: number;
+  /** Thrown out by the sun's storm in a Solar System rather than placed: it gives entering shots an electric kick. */
+  storm?: boolean;
+  /** A storm cloud in its last turn of the system: it thins away and is gone when the turn ends. */
+  fading?: boolean;
+}
+
+/** Per-shot contact state, kept in snapshots so a guest never repeats a storm kick on restore. */
+export interface StormContactSnapshot {
+  seed: number;
+  inside: boolean;
+  entries: number;
 }
 
 /** A pair of mouths the wormhole power-up has placed: a shot entering one leaves by the other. No gravity, no kill. */
@@ -217,13 +230,25 @@ export function aimDirection(angleDeg: number): { x: number; y: number } {
   return { x: Math.cos(a), y: -Math.sin(a) };
 }
 
-/** Whether a point is inside any nebula cloud: where a shot is slowed, and where the renderer shows it. */
-export function inNebula(nebulae: readonly Nebula[], x: number, y: number): boolean {
-  return nebulae.some((n) => {
+const contains = (n: Nebula, x: number, y: number): boolean => {
     const dx = n.x - x;
     const dy = n.y - y;
     return dx * dx + dy * dy < n.radius * n.radius;
-  });
+};
+
+/** Whether a point is inside any nebula or solar-storm cloud. */
+export function inNebula(nebulae: readonly Nebula[], x: number, y: number): boolean {
+  return nebulae.some((n) => contains(n, x, y));
+}
+
+/** Whether a point is inside a nebula power-up cloud, excluding solar-storm clouds. */
+export function inPowerUpNebula(nebulae: readonly Nebula[], x: number, y: number): boolean {
+  return nebulae.some((n) => !n.storm && contains(n, x, y));
+}
+
+/** The solar-storm patch around a point, if there is one. */
+export function stormCloudAt(nebulae: readonly Nebula[], x: number, y: number): Nebula | undefined {
+  return nebulae.find((n) => n.storm && contains(n, x, y));
 }
 
 export function normalizeAngle(deg: number): number {
@@ -278,6 +303,8 @@ export class Shot {
   readonly missiles: Missile[] = [];
   /** The dice of this shot, the same on every replay: it is made from the aim, so identical shots meet identical luck. */
   seed: number;
+  /** How many times this shot has entered each storm cloud, and whether it is there now. */
+  private readonly stormContacts = new Map<number, { inside: boolean; entries: number }>();
   /** The defenses that fired at this shot since the caller last cleared this. */
   readonly launches: { defense: number }[] = [];
   /** The missiles that lost the shot since the caller last cleared this. */
@@ -334,6 +361,49 @@ export class Shot {
     if (!this.end) this.end = end;
   }
 
+  snapshotStormContacts(): StormContactSnapshot[] {
+    return [...this.stormContacts].map(([seed, contact]) => ({ seed, ...contact }));
+  }
+
+  restoreStormContacts(contacts: readonly StormContactSnapshot[] = []): void {
+    this.stormContacts.clear();
+    for (const contact of contacts) this.stormContacts.set(contact.seed, { inside: contact.inside, entries: contact.entries });
+  }
+
+  private updateStormContacts(): void {
+    if (this.plasma) return;
+    const clouds = this.world.nebulae;
+    for (const [seed] of this.stormContacts) {
+      if (!clouds.some((cloud) => cloud.storm && cloud.seed === seed)) this.stormContacts.delete(seed);
+    }
+    for (const cloud of clouds) {
+      if (!cloud.storm) continue;
+      const dx = cloud.x - this.x;
+      const dy = cloud.y - this.y;
+      const inside = dx * dx + dy * dy < cloud.radius * cloud.radius;
+      const contact = this.stormContacts.get(cloud.seed) ?? { inside: false, entries: 0 };
+      if (inside && !contact.inside) {
+        this.kickFromStorm(cloud, contact.entries);
+        contact.entries++;
+      }
+      contact.inside = inside;
+      this.stormContacts.set(cloud.seed, contact);
+    }
+  }
+
+  private kickFromStorm(cloud: Nebula, entry: number): void {
+    const cloudSeed = Math.floor(cloud.seed * 0x1_0000_0000) >>> 0;
+    const salt = Math.imul(cloudSeed ^ (entry + 1), 0x9e3779b1);
+    const turn = (dice(this.seed, salt) * 2 - 1) * SOLAR_STORM.KICK_TURN_DEGREES * Math.PI / 180;
+    const speed = SOLAR_STORM.KICK_MIN_SPEED + dice(this.seed, salt + 1) * (SOLAR_STORM.KICK_MAX_SPEED - SOLAR_STORM.KICK_MIN_SPEED);
+    const c = Math.cos(turn);
+    const s = Math.sin(turn);
+    const vx = this.vx;
+    const vy = this.vy;
+    this.vx = (vx * c - vy * s) * speed;
+    this.vy = (vx * s + vy * c) * speed;
+  }
+
   /**
    * A copy of this shot that flies on from the same point, its velocity turned by `turn` radians:
    * how a splitter forks a shot in mid-flight. The original keeps flying as it was.
@@ -348,6 +418,7 @@ export class Shot {
     copy.fired.push(...this.fired);
     copy.missiles.push(...this.missiles.map((m) => ({ ...m, trail: [...m.trail] })));
     copy.seed = Math.imul(this.seed ^ Math.round(turn * 1e6), 16777619) >>> 0;
+    copy.restoreStormContacts(this.snapshotStormContacts());
     const c = Math.cos(turn);
     const s = Math.sin(turn);
     copy.vx = this.vx * c - this.vy * s;
@@ -363,6 +434,7 @@ export class Shot {
     const { planets, ships, holes, nebulae, defenses, width, height } = this.world;
     const hx = this.vx;
     const hy = this.vy;
+    this.updateStormContacts();
 
     let ax = 0;
     let ay = 0;
@@ -390,7 +462,7 @@ export class Shot {
       ay *= PLASMA.GRAVITY;
     }
     // A cloud deepens the gravity and drags on the shot, so it both bends into the cloud and slows inside it.
-    const clouded = !this.plasma && inNebula(nebulae, this.x, this.y);
+    const clouded = !this.plasma && inPowerUpNebula(nebulae, this.x, this.y);
     if (clouded) {
       ax *= NEBULA.GRAVITY;
       ay *= NEBULA.GRAVITY;

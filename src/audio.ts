@@ -1,6 +1,7 @@
 /** Tiny synthesized sound set — no audio files needed. */
 export class Sound {
-  enabled = true;
+  menuEnabled = true;
+  gameEnabled = true;
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
@@ -54,6 +55,13 @@ export class Sound {
   }
 
   blip(): void {
+    const a = this.begin('menu');
+    if (!a) return;
+    this.tone(880, 880, 0.05, 0.05, 'square', a.t);
+  }
+
+  /** A gameplay cue that uses the same short tone as a menu blip. */
+  gameBlip(): void {
     const a = this.begin();
     if (!a) return;
     this.tone(880, 880, 0.05, 0.05, 'square', a.t);
@@ -187,14 +195,14 @@ export class Sound {
   }
 
   select(): void {
-    const a = this.begin();
+    const a = this.begin('menu');
     if (!a) return;
     this.tone(660, 990, 0.09, 0.07, 'square', a.t);
   }
 
   /** A slider's detent: the pitch climbs with the position (0 = lowest, 1 = highest). */
   tick(position: number): void {
-    const a = this.begin();
+    const a = this.begin('menu');
     if (!a) return;
     const hz = 380 + Math.min(1, Math.max(0, position)) * 640;
     this.tone(hz, hz * 1.04, 0.045, 0.05, 'square', a.t);
@@ -202,14 +210,14 @@ export class Sound {
 
   /** A switch snapping on (up) or off (down). */
   toggle(on: boolean): void {
-    const a = this.begin();
+    const a = this.begin('menu');
     if (!a) return;
     if (on) this.tone(520, 900, 0.08, 0.06, 'square', a.t);
     else this.tone(820, 420, 0.08, 0.06, 'square', a.t);
   }
 
-  private begin(): { ctx: AudioContext; t: number } | null {
-    if (!this.enabled || !this.ctx || !this.master || this.ctx.state !== 'running') return null;
+  private begin(channel: 'menu' | 'game' = 'game'): { ctx: AudioContext; t: number } | null {
+    if (!(channel === 'menu' ? this.menuEnabled : this.gameEnabled) || !this.ctx || !this.master || this.ctx.state !== 'running') return null;
     return { ctx: this.ctx, t: this.ctx.currentTime };
   }
 

@@ -6,3 +6,4 @@ server/target
 slingshot.db*
 leaderboard.db*
 stats.db*
+slingshot-stats-demo.db*

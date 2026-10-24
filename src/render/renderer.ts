@@ -1,26 +1,34 @@
-import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, WORMHOLE } from '../config';
+import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, SOLAR, WORMHOLE } from '../config';
 import type { Match, Scene, Trail } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
-import { aimDirection, inNebula, isWormholeJump, nextWormholeId, type Wormhole, type World } from '../physics';
+import { aimDirection, inPowerUpNebula, isWormholeJump, nextWormholeId, stormCloudAt, type Wormhole, type World } from '../physics';
 import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
 import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from './orientation';
+import { drawSun } from './sun';
+import { orbitOf, solarCenter } from '../world';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
 import { renderContours } from './contours';
 import type { Effects } from './effects';
 import { Hud } from './hud';
 import type { OracleTap } from './oracle';
+import { getLook, isRefined, type Look } from './look';
+import type { PlanetSprite } from './planet-common';
 import { renderPlanet } from './planets';
+import { drawRefinedShip, SHIP_HULL } from './ship';
 import { drawNebula } from './nebula';
+import { drawStormBurst, drawStormCloud, drawStormSparks, stormFlare } from './storm';
 import { drawPortal, drawWormhole } from './wormhole';
 import { defensePlanet, defenseView, drawDefense, drawInterception } from './defense';
 import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
   hud: boolean;
+  /** Fill the viewport with the animated world while a menu is open. */
+  fullScreen: boolean;
   /** Touch device: hint at dragging instead of keys. */
   touch: boolean;
   /** A clip is being recorded right now. */
@@ -29,25 +37,22 @@ export interface DrawOptions {
   keyHints: boolean;
 }
 
-const SHIP_HULL: [number, number][] = [
-  [15, 0], [-2, -5], [-11, -11], [-7, -3.5], [-11, 0], [-7, 3.5], [-11, 11], [-2, 5],
-];
-
 export class Renderer {
   view!: View;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly hud: Hud;
   /** The empty plate is on the canvas already; it stays until the canvas is resized or a match is drawn over it. */
   private emptyDrawn = false;
-  private backdrop: { canvas: HTMLCanvasElement; walls: boolean } | null = null;
+  private backdrop: { canvas: HTMLCanvasElement; walls: boolean; fullScreen: boolean } | null = null;
   /** Per world (live or killcam replay), rebuilt when the world's version or the pixel scale changes. */
   private contours = new WeakMap<World, { version: number; ps: number; canvas: HTMLCanvasElement }>();
   /** Planet sprites by seed at `spritePs` device pixels per field unit. */
-  private sprites = new Map<number, HTMLCanvasElement>();
+  private sprites = new Map<number, PlanetSprite>();
   /** The finished trails, drawn once: dashed strokes are costly to rasterise and the trails only change when a shot ends. */
   private trailLayer: { key: string; world: World; canvas: HTMLCanvasElement } | null = null;
   private readonly trailIds = new WeakMap<Trail, number>();
   private spritePs = 0;
+  private spriteLook: Look = getLook();
   private time = 0;
   /** When each power-up pickup was first drawn, for its pop-in. */
   private readonly pickupSeen = new Map<number, number>();
@@ -127,7 +132,7 @@ export class Renderer {
     this.resizeIfNeeded();
     if (this.emptyDrawn) return;
     this.emptyDrawn = true;
-    if (!this.backdrop || this.backdrop.walls) this.backdrop = { canvas: renderBackdrop(this.view, false), walls: false };
+    if (!this.backdrop || this.backdrop.walls || this.backdrop.fullScreen) this.backdrop = { canvas: renderBackdrop(this.view, false), walls: false, fullScreen: false };
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.drawImage(this.backdrop.canvas, 0, 0);
   }
@@ -136,13 +141,15 @@ export class Renderer {
     this.resizeIfNeeded();
     this.emptyDrawn = false;
     this.time += dt;
-    const { ctx, view } = this;
-    const { dpr, scale, offsetX, offsetY } = view;
+    const { ctx } = this;
+    const view = this.view;
+    const fieldView = opts.fullScreen ? this.fullScreenView() : view;
+    const { dpr, scale, offsetX, offsetY } = fieldView;
     const scene = match.scene();
     const walls = match.rules.bounce;
 
-    if (!this.backdrop || this.backdrop.walls !== walls) {
-      this.backdrop = { canvas: renderBackdrop(view, walls), walls };
+    if (!this.backdrop || this.backdrop.walls !== walls || this.backdrop.fullScreen !== opts.fullScreen) {
+      this.backdrop = { canvas: renderBackdrop(fieldView, walls, !opts.fullScreen), walls, fullScreen: opts.fullScreen };
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(this.backdrop.canvas, 0, 0);
@@ -150,8 +157,8 @@ export class Renderer {
     const base = dpr * scale;
     const cam = scene.camera;
     const P = base * (cam?.zoom ?? 1);
-    const plate = plateUnits(!!view.rotated);
-    const [a, b, c, d, e, f] = fieldTransform(view, cam ?? undefined);
+    const plate = plateUnits(!!fieldView.rotated);
+    const [a, b, c, d, e, f] = fieldTransform(fieldView, cam ?? undefined);
     const shakeX = effects.shake ? (Math.random() - 0.5) * 2 * effects.shake : 0;
     const shakeY = effects.shake ? (Math.random() - 0.5) * 2 * effects.shake : 0;
 
@@ -183,6 +190,73 @@ export class Renderer {
     }
   }
 
+  private fullScreenView(): View {
+    const view = this.view;
+    const plate = plateUnits(!!view.rotated);
+    const scale = Math.max(view.cssWidth / plate.w, view.cssHeight / plate.h);
+    return {
+      ...view,
+      scale,
+      offsetX: (view.cssWidth - plate.w * scale) / 2,
+      offsetY: (view.cssHeight - plate.h * scale) / 2,
+    };
+  }
+
+  private drawOrbits(world: World): void {
+    const { ctx } = this;
+    const centre = solarCenter();
+    const radii: number[] = [];
+    for (const o of [...world.planets.filter((p) => !p.sun), ...world.ships.filter((sh) => sh.alive)]) {
+      const r = orbitOf(o.x, o.y).r;
+      if (!radii.some((known) => Math.abs(known - r) < 0.5)) radii.push(r);
+    }
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    ctx.strokeStyle = 'rgba(111, 227, 200, 0.45)';
+    for (const r of radii) {
+      ctx.beginPath();
+      ctx.ellipse(centre.x, centre.y, r * SOLAR.STRETCH, r, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255, 90, 110, 0.35)';
+    for (const r of [SOLAR.INNER_ORBIT, SOLAR.OUTER_ORBIT]) {
+      ctx.beginPath();
+      ctx.ellipse(centre.x, centre.y, r * SOLAR.STRETCH, r, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** When this screen first saw each storm cloud, in renderer time: the burst plays from there, the same for every cloud of one storm. */
+  private readonly stormSeen = new Map<number, number>();
+
+  /** When this screen first saw each storm cloud thinning away, in renderer time. */
+  private readonly stormFading = new Map<number, number>();
+
+  /** How far a storm cloud has thinned away (0 → 1): its last turn of the system lasts about this long. */
+  private stormDissolve(cloud: { seed: number; fading?: boolean }): number {
+    if (!cloud.fading) {
+      this.stormFading.delete(cloud.seed);
+      return 0;
+    }
+    if (!this.stormFading.has(cloud.seed)) this.stormFading.set(cloud.seed, this.time);
+    return Math.min(1, (this.time - this.stormFading.get(cloud.seed)!) / 1.7);
+  }
+
+  /** Seconds since the storm broke out (of the cloud with `seed`, or the newest one), or -1 when the world has none. */
+  private stormAge(world: World, seed?: number): number {
+    const clouds = world.nebulae.filter((n) => n.storm);
+    if (!clouds.length) {
+      this.stormSeen.clear();
+      return -1;
+    }
+    for (const n of clouds) if (!this.stormSeen.has(n.seed)) this.stormSeen.set(n.seed, this.time);
+    for (const key of this.stormSeen.keys()) if (!clouds.some((n) => n.seed === key)) this.stormSeen.delete(key);
+    const first = seed === undefined ? Math.max(...this.stormSeen.values()) : this.stormSeen.get(seed)!;
+    return this.time - first;
+  }
+
   private drawWorld(match: Match, scene: Scene, ps: number): void {
     const { ctx } = this;
     const world = scene.world;
@@ -200,28 +274,37 @@ export class Renderer {
         this.contours.set(world, layer);
       }
       // While the hole collapses everything moves, so the stale map fades back.
-      ctx.globalAlpha = alpha * (match.phase === 'collapse' ? 0.25 : 1);
+      ctx.globalAlpha = alpha * (match.phase === 'collapse' || match.phase === 'orbit' ? 0.25 : 1);
       ctx.drawImage(layer.canvas, 0, 0, FIELD.width, FIELD.height);
     }
+
+    // Debug aid: the orbit every body of a Solar System rides, and the limits the orbits are laid out between.
+    if (import.meta.env.DEBUG_AIM && match.mode === 'solar') this.drawOrbits(world);
 
     // Nebula clouds sit behind the planets and the ships, so nothing hides inside them.
     if (world.nebulae.length) {
       ctx.globalAlpha = 1;
-      for (const n of world.nebulae) drawNebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
+      const sun = world.planets.find((p) => p.sun);
+      for (const n of world.nebulae) {
+        if (n.storm && sun) drawStormCloud(ctx, n, sun, this.stormAge(world, n.seed), this.time, this.stormDissolve(n));
+        else drawNebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
+      }
+      if (sun) drawStormBurst(ctx, sun, this.stormAge(world));
       ctx.globalAlpha = 1;
     }
 
-    if (this.spritePs !== ps || this.sprites.size > 64) {
+    if (this.spritePs !== ps || this.spriteLook !== getLook() || this.sprites.size > 64) {
       this.sprites.clear();
       this.spritePs = ps;
+      this.spriteLook = getLook();
     }
     for (const p of showPlanets ? world.planets : []) {
+      if (p.sun) continue;
       let sprite = this.sprites.get(p.seed);
       if (!sprite) {
         sprite = renderPlanet(p, ps);
         this.sprites.set(p.seed, sprite);
       }
-      const size = sprite.width / ps;
       const eaten = scene.camera ? 0 : match.devourProgress(p.seed);
       ctx.globalAlpha = alpha * (1 - eaten * 0.4);
       if (eaten > 0 && primary) {
@@ -231,22 +314,23 @@ export class Renderer {
         ctx.rotate(Math.atan2(primary.y - p.y, primary.x - p.x));
         const shrink = 1 - eaten * 0.85;
         ctx.scale((1 + eaten * 1.8) * shrink, (1 - eaten * 0.6) * shrink);
-        ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+        sprite.draw(ctx, 0, 0, ps, this.time);
         ctx.restore();
       } else if (isTurned()) {
         // The light stays where it was painted: upright on the screen.
         ctx.save();
         ctx.translate(p.x, p.y);
         uprightFrame(ctx);
-        ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+        sprite.draw(ctx, 0, 0, ps, this.time);
         ctx.restore();
       } else {
-        ctx.drawImage(sprite, p.x - size / 2, p.y - size / 2, size, size);
+        sprite.draw(ctx, p.x, p.y, ps, this.time);
       }
     }
     ctx.globalAlpha = 1;
 
     world.defenses.forEach((d, i) => d.wrecked || drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, 1, defenseView(scene.volley?.shots ?? [], d, i), false, !showPlanets));
+    for (const p of world.planets) if (p.sun) drawSun(ctx, p, this.time, alpha, stormFlare(this.stormAge(world)));
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
@@ -366,7 +450,7 @@ export class Renderer {
           ctx.restore();
         }
         // A shot in a nebula pushes against the gas: a ring spreads from it (the wisps it sheds are the Effects').
-        if (!vs.plasma && inNebula(match.world.nebulae, shot.x, shot.y)) {
+        if (!vs.plasma && inPowerUpNebula(match.world.nebulae, shot.x, shot.y)) {
           ctx.save();
           ctx.strokeStyle = POWER_UP_COLORS.nebula;
           const ripple = (this.time * 1.6) % 1;
@@ -383,6 +467,8 @@ export class Renderer {
         glow.addColorStop(1, rgba(color, 0));
         ctx.fillStyle = glow;
         ctx.fillRect(shot.x - 9, shot.y - 9, 18, 18);
+        const storm = !vs.plasma ? stormCloudAt(match.world.nebulae, shot.x, shot.y) : undefined;
+        if (storm) drawStormSparks(ctx, shot.x, shot.y, this.time, storm.seed);
         // A plasma shot is a pulsing cyan blob: a wide soft halo, a wobbling body and a bright core.
         if (vs.plasma) {
           ctx.save();
@@ -929,27 +1015,31 @@ export class Renderer {
       const hideHeading = planning && !aimShown;
       const heading = hideHeading ? (Math.atan2(ship.y - scene.world.height / 2, scene.world.width / 2 - ship.x) * 180) / Math.PI : player.angle;
       ctx.rotate((-heading * Math.PI) / 180);
-      if (current && aimShown) {
-        const flicker = 0.6 + 0.4 * Math.sin(this.time * 31) * Math.sin(this.time * 17);
-        ctx.fillStyle = rgba(COLORS.sodium, 0.55 * flicker);
+      if (isRefined()) {
+        drawRefinedShip(ctx, color, this.time, current && aimShown ? 1 : 0, i * 1.7);
+      } else {
+        if (current && aimShown) {
+          const flicker = 0.6 + 0.4 * Math.sin(this.time * 31) * Math.sin(this.time * 17);
+          ctx.fillStyle = rgba(COLORS.sodium, 0.55 * flicker);
+          ctx.beginPath();
+          ctx.moveTo(-10, -2.5);
+          ctx.lineTo(-16 - 4 * flicker, 0);
+          ctx.lineTo(-10, 2.5);
+          ctx.fill();
+        }
         ctx.beginPath();
-        ctx.moveTo(-10, -2.5);
-        ctx.lineTo(-16 - 4 * flicker, 0);
-        ctx.lineTo(-10, 2.5);
+        SHIP_HULL.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = COLORS.plate;
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.fillStyle = COLORS.plate;
+        ctx.beginPath();
+        ctx.ellipse(4, 0, 3.2, 1.8, 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.beginPath();
-      SHIP_HULL.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      ctx.closePath();
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.strokeStyle = COLORS.plate;
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-      ctx.fillStyle = COLORS.plate;
-      ctx.beginPath();
-      ctx.ellipse(4, 0, 3.2, 1.8, 0, 0, Math.PI * 2);
-      ctx.fill();
       ctx.restore();
     });
   }
