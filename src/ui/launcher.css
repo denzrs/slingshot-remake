@@ -573,14 +573,16 @@
   margin: 10px 0 28px;
 }
 
-/* The same quiet button as Zurück: bordered, bone text, no arrow. */
+/* The same quiet button as Zurück and the room's footer buttons: dim text, the menu line, no arrow. */
 .briefing__players .item,
 .briefing__edit .item {
-  min-height: 40px;
-  padding: 8px 14px;
+  min-height: 42px;
+  padding: 10px 16px;
   justify-content: center;
-  border: 1px solid rgb(91 125 179 / 0.5);
-  font-size: 14px;
+  border: 1px solid var(--menu-line);
+  border-radius: 3px;
+  color: var(--bone-dim);
+  font-size: 13px;
 }
 
 .briefing__players .item::before,
