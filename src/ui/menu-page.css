@@ -974,6 +974,9 @@
   transform-origin: center;
   transition: transform 260ms cubic-bezier(.2, .7, .2, 1), filter 260ms ease;
 }
+/* The card that holds focus without a keyboard (the first one on opening) must not keep the base 1.06 zoom, or hovering it would shrink its art. */
+.screen--title .launcher__modes .item--card:focus .item__icon,
+.screen--title .launcher__online .item--card:focus .item__icon { transform: none; }
 .screen--title .launcher__modes .item--card .item__title,
 .screen--title .launcher__online .item--card .item__title { transition: color 180ms ease; }
 .screen--title .launcher__modes .item--card:is(:hover, :focus-visible),
