@@ -15,7 +15,7 @@ The relay keeps the daily-challenge leaderboard and the match statistics in one 
 
 ## Backups
 
-The board alone would need none – it is a week that refills itself – but the same file holds a year of match statistics that nothing else can rebuild. The deploy writes `BACKUP_DIR=/srv/slingshot/backups` into `relay.env`, and the relay snapshots the database there once a UTC day (`slingshot-YYYY-MM-DD.db`, written with `VACUUM INTO` so the copy is consistent while the relay keeps writing), keeping the newest 14 (`BACKUP_KEEP`). The first snapshot is written on the first start after the deploy. Do not copy `slingshot.db` itself while the relay runs: the WAL beside it may be half-applied – copy a snapshot.
+The board alone would need none – it is a week that refills itself – but the same file holds a year of match statistics that nothing else can rebuild. The deploy writes `BACKUP_DIR=/srv/slingshot/backups` into `relay.env`, and the relay snapshots the database there once a UTC day (`slingshot-YYYY-MM-DD.db`, written with `VACUUM INTO` so the copy is consistent while the relay keeps writing), keeping the newest 7 (`BACKUP_KEEP`). The first snapshot is written on the first start after the deploy. Do not copy `slingshot.db` itself while the relay runs: the WAL beside it may be half-applied – copy a snapshot.
 
 The snapshots live on the VPS, so they cover a bad write or a bad release, not a lost machine. Pull them somewhere else on a schedule, for example from a machine at home:
 
