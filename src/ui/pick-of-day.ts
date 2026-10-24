@@ -1,10 +1,11 @@
-import { t } from '../i18n';
+import { t, type Key } from '../i18n';
 import type { HandpickedId, HandpickedPreset } from './match-presets';
 import { nextSpaceArtId, spaceArt } from './space-art';
 import './pick-of-day.css';
 
 export const pickName = (pick: HandpickedPreset): string => t(`preset.pick.${pick.id}`);
-export const pickHint = (pick: HandpickedPreset): string => t(`preset.pick.${pick.mode}.${pick.id}`);
+// Preset creation guarantees valid mode/id pairs, though the interface stores them as separate unions.
+export const pickHint = (pick: HandpickedPreset): string => t(`preset.pick.${pick.mode}.${pick.id}` as Key);
 
 const COLORS: Record<HandpickedId, string> = {
   pinballRiot: '#ffad65',
