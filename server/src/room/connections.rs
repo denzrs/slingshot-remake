@@ -3,6 +3,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::IpAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -11,6 +13,8 @@ use tracing::{info, warn};
 use crate::admission::{BrowserId, Who, CEILING};
 use crate::codec::{Frame, Outbound, OutboundPool, WireMessage};
 use crate::protocol::is_name_refusal;
+
+use super::relay::RelaySlot;
 
 /// Wrong passwords one client may type in `PASSWORD_WINDOW`, over all its connections and rooms.
 /// Counted per client, so reconnecting does not start the count over.
@@ -39,10 +43,48 @@ pub const CHAT_WINDOW: Duration = Duration::from_secs(10);
 pub const MAX_SPECTATE_JOINS: usize = 3;
 pub const SPECTATE_WINDOW: Duration = Duration::from_secs(30);
 
-struct Conn {
+/// One connection's outbound queue and its byte budget. Shared with the relay of the connection's room,
+/// which sends state frames to it without the room manager.
+pub struct Sink {
     tx: Outbound,
-    bytes: std::sync::Arc<tokio::sync::Semaphore>,
+    bytes: Arc<tokio::sync::Semaphore>,
     slow: tokio::sync::watch::Sender<bool>,
+    /// Cleared when the connection closes, so a relay that has not heard yet sends it nothing.
+    open: AtomicBool,
+}
+
+impl Sink {
+    /// Queue a frame, or drop the connection as slow if it cannot take it. Every recipient shares the
+    /// same bytes.
+    pub fn send(&self, conn: u64, bytes: &Frame, pool: &OutboundPool) {
+        if !self.open.load(Ordering::Relaxed) {
+            return;
+        }
+        if bytes.len() > crate::codec::OUTBOUND_BYTES {
+            let _ = self.slow.send(true);
+            warn!(
+                conn,
+                "outbound frame exceeds byte budget; closing connection"
+            );
+            return;
+        }
+        let Some(permits) = pool.reserve(&self.bytes, bytes.len()) else {
+            let _ = self.slow.send(true);
+            warn!(conn, "outbound byte budget exhausted; closing connection");
+            return;
+        };
+        if self
+            .tx
+            .try_send(WireMessage::Binary(bytes.clone(), Some(permits)))
+            .is_err()
+        {
+            let _ = self.slow.send(true);
+            warn!(
+                conn,
+                "outbound writer unavailable or queue full; closing connection"
+            );
+        }
+    }
 }
 
 /// When each key last did something, within a window: a sliding-window rate limit per key.
@@ -134,7 +176,9 @@ impl PerBrowser {
 
 pub struct Connections {
     connected: HashSet<u64>,
-    outbounds: HashMap<u64, Conn>,
+    outbounds: HashMap<u64, Arc<Sink>>,
+    /// Where each connection's state frames go: its room's relay, while it is in a room.
+    relay_slots: HashMap<u64, Arc<RelaySlot>>,
     /// Which client each connection is (`admission::client_of`). The per-client limits below count
     /// by it, and the leaderboard and statistics tell players apart by it.
     ips: HashMap<u64, IpAddr>,
@@ -162,6 +206,7 @@ impl Default for Connections {
         Self {
             connected: HashSet::new(),
             outbounds: HashMap::new(),
+            relay_slots: HashMap::new(),
             ips: HashMap::new(),
             browsers: HashMap::new(),
             password_failures: PerBrowser::new(PASSWORD_WINDOW),
@@ -197,21 +242,24 @@ impl Connections {
         self.ips.insert(conn, ip);
         self.outbounds.insert(
             conn,
-            Conn {
+            Arc::new(Sink {
                 tx,
-                bytes: std::sync::Arc::new(tokio::sync::Semaphore::new(
-                    crate::codec::OUTBOUND_BYTES,
-                )),
+                bytes: Arc::new(tokio::sync::Semaphore::new(crate::codec::OUTBOUND_BYTES)),
                 slow,
-            },
+                open: AtomicBool::new(true),
+            }),
         );
+        self.relay_slots.insert(conn, Arc::default());
         info!(conn, "connection opened");
     }
 
     pub fn close(&mut self, conn: u64) {
         info!(conn, "connection closed");
         self.connected.remove(&conn);
-        self.outbounds.remove(&conn);
+        if let Some(sink) = self.outbounds.remove(&conn) {
+            sink.open.store(false, Ordering::Relaxed);
+        }
+        self.relay_slots.remove(&conn);
         // The per-client counts outlive the connection: that is what they are for.
         self.lobby_requests.forget(&conn);
         self.spectator_windows.remove(&conn);
@@ -233,6 +281,18 @@ impl Connections {
             client: self.peer_ip(conn)?,
             browser: self.browsers.get(&conn).copied(),
         })
+    }
+
+    pub fn sink(&self, conn: u64) -> Option<Arc<Sink>> {
+        self.outbounds.get(&conn).cloned()
+    }
+
+    pub fn relay_slot(&self, conn: u64) -> Option<Arc<RelaySlot>> {
+        self.relay_slots.get(&conn).cloned()
+    }
+
+    pub fn pool(&self) -> OutboundPool {
+        self.pool.clone()
     }
 
     pub fn is_connected(&self, conn: u64) -> bool {
@@ -387,32 +447,8 @@ impl Connections {
     /// The fast path: an already-serialized frame that may be fanned out to several players. Every
     /// recipient shares the same bytes.
     pub fn send_fast(&self, conn: u64, bytes: &Frame) {
-        let Some(out) = self.outbounds.get(&conn) else {
-            return;
-        };
-        if bytes.len() > crate::codec::OUTBOUND_BYTES {
-            let _ = out.slow.send(true);
-            warn!(
-                conn,
-                "outbound frame exceeds byte budget; closing connection"
-            );
-            return;
-        }
-        let Some(permits) = self.pool.reserve(&out.bytes, bytes.len()) else {
-            let _ = out.slow.send(true);
-            warn!(conn, "outbound byte budget exhausted; closing connection");
-            return;
-        };
-        if out
-            .tx
-            .try_send(WireMessage::Binary(bytes.clone(), Some(permits)))
-            .is_err()
-        {
-            let _ = out.slow.send(true);
-            warn!(
-                conn,
-                "outbound writer unavailable or queue full; closing connection"
-            );
+        if let Some(sink) = self.outbounds.get(&conn) {
+            sink.send(conn, bytes, &self.pool);
         }
     }
 

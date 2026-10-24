@@ -79,7 +79,8 @@ pub(super) struct Room {
     pub(super) status: RoomStatus,
     pub(super) players: Vec<Player>,
     pub(super) next_player_id: usize,
-    pub(super) last_state_seq: i64,
+    /// Counts the games the room has started; a new one starts the state sequence over (see `relay`).
+    pub(super) game: u64,
     /// (salt, hash) — the plaintext never leaves the server.
     pub(super) password: Option<(Vec<u8>, Vec<u8>)>,
     pub(super) created_order: u64,

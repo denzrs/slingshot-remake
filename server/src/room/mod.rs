@@ -14,6 +14,8 @@ mod game;
 mod guards;
 mod lobby;
 mod model;
+mod relay;
+pub use relay::{Forward, RelaySlot};
 mod roster;
 mod settings;
 mod spectate;
@@ -28,7 +30,7 @@ use serde_json::{json, Value};
 
 use crate::auth::Hashed;
 use crate::codec::{Frame, Outbound, OutboundPool};
-use crate::command::RoomCommand;
+use crate::command::{CreateRoom, JoinRoom, RoomCommand};
 use crate::leaderboard::Board;
 use crate::stats::{Overview, Stats};
 
@@ -49,6 +51,10 @@ pub struct RoomManager {
     stats: Option<Arc<Stats>>,
     /// The room list goes out at most once per `lobby_interval`; see `broadcast_lobby`.
     lobby: LobbyThrottle,
+    /// Each room's relay for the host's state frames; see `relay`.
+    wires: HashMap<String, relay::Wire>,
+    /// Which room each seat token belongs to, so `resume` need not look through every room.
+    tokens: HashMap<String, String>,
 }
 
 /// The shortest time between two room-list broadcasts on the relay (`LOBBY_INTERVAL` in the tests'
@@ -79,6 +85,8 @@ impl RoomManager {
             stats: None,
             // Unthrottled unless asked for: the tests read every broadcast as it happens.
             lobby: LobbyThrottle::default(),
+            wires: HashMap::new(),
+            tokens: HashMap::new(),
         }
     }
 
@@ -111,12 +119,51 @@ impl RoomManager {
     }
 
     pub fn disconnect(&mut self, conn: u64) {
+        let before = self.room_of(conn);
         self.net.close(conn);
         self.last_rename.remove(&conn);
         // A dropped connection in a running game keeps its seat for a while: it may come back.
         if !self.hold_seat(conn) {
             self.remove_from_room(conn, "A player disconnected");
         }
+        self.resync(before, conn);
+    }
+
+    /// Where a connection's state frames go; the connection's task holds on to it.
+    pub fn relay_slot(&self, conn: u64) -> Option<Arc<RelaySlot>> {
+        self.net.relay_slot(conn)
+    }
+
+    /// The room a connection is in, in a seat or in the stands.
+    fn room_of(&self, conn: u64) -> Option<String> {
+        self.memberships
+            .get(&conn)
+            .map(|m| m.room_id.clone())
+            .or_else(|| self.watching.get(&conn).map(|w| w.room_id.clone()))
+    }
+
+    /// Bring the rooms a step may have changed up to date with their relays: the room the connection
+    /// was in before the step, and the one it is in now. A step only ever changes those.
+    fn resync(&mut self, before: Option<String>, conn: u64) {
+        let after = self.room_of(conn);
+        if let Some(room) = &before {
+            self.sync_room(room);
+        }
+        if let Some(room) = after.filter(|room| before.as_ref() != Some(room)) {
+            self.sync_room(&room);
+        }
+    }
+
+    pub fn create_room(&mut self, conn: u64, create: CreateRoom, prehashed: Option<Hashed>) {
+        let before = self.room_of(conn);
+        self.open_room(conn, create, prehashed);
+        self.resync(before, conn);
+    }
+
+    pub fn join_room(&mut self, conn: u64, join: JoinRoom, preverified: Option<bool>) {
+        let before = self.room_of(conn);
+        self.enter_room(conn, join, preverified);
+        self.resync(before, conn);
     }
 
     /// Prune expired password and scrypt timestamps without disturbing active lockouts.
@@ -178,6 +225,12 @@ impl RoomManager {
         if !self.net.is_connected(conn) {
             return;
         }
+        let before = self.room_of(conn);
+        self.carry_out(conn, command);
+        self.resync(before, conn);
+    }
+
+    fn carry_out(&mut self, conn: u64, command: RoomCommand<'_>) {
         match command {
             RoomCommand::Malformed => self.error(conn, "Malformed message"),
             RoomCommand::Unknown(other) => {

@@ -9,11 +9,12 @@ use crate::auth::{self, ScryptSlots};
 use crate::command::{Command, DailyCommand, Parsed, RoomCommand};
 use crate::leaderboard::Leaderboard;
 use crate::protocol::DailyScore;
-use crate::room::RoomManager;
+use crate::room::{Forward, RelaySlot, RoomManager};
 
 /// Parse one decoded inbound frame and pass it to the room logic.
 pub async fn deliver(
     manager: &Mutex<RoomManager>,
+    relay: &RelaySlot,
     scrypt_slots: &ScryptSlots,
     boards: &Leaderboard,
     conn_id: u64,
@@ -24,8 +25,19 @@ pub async fn deliver(
             manager.lock().error(conn_id, "Invalid state envelope");
             return;
         };
-        // The room checks sender, status, and sequence before relaying the original frame.
+        // The room's relay checks sender and sequence before relaying the original frame, under the
+        // room's own lock. Whatever it does not take for the host's, the room manager answers.
         debug!(bytes = bytes.len(), kind = "state", "inbound message");
+        if let Some(relay) = relay.get() {
+            match relay.forward(conn_id, seq, bytes) {
+                Forward::Sent => return,
+                Forward::Refused(reason) => {
+                    manager.lock().error(conn_id, reason);
+                    return;
+                }
+                Forward::NotHost => {}
+            }
+        }
         manager.lock().handle_state_envelope(conn_id, seq, bytes);
         return;
     }
@@ -440,7 +452,15 @@ mod tests {
             "text": "x".repeat(crate::codec::MAX_CONTROL_BYTES),
         });
         let bytes = rmp_serde::to_vec_named(&chat).unwrap();
-        deliver(&manager, &scrypt_slots, &boards, 1, &bytes).await;
+        deliver(
+            &manager,
+            &RelaySlot::default(),
+            &scrypt_slots,
+            &boards,
+            1,
+            &bytes,
+        )
+        .await;
         assert_eq!(
             take_type(&mut rx, "error").await["message"],
             "Message too large"

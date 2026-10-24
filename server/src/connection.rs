@@ -149,13 +149,14 @@ where
     let (writer, mut reader) = ws.split();
     let (tx, rx) = mpsc::channel::<WireMessage>(crate::codec::OUTBOUND_QUEUE);
     let (slow_tx, mut slow_rx) = tokio::sync::watch::channel(false);
-    {
+    let relay = {
         let mut manager = manager.lock();
         manager.connect(conn_id, client, tx.clone(), slow_tx);
         if let Some(browser) = browser {
             manager.set_browser(conn_id, browser);
         }
-    }
+        manager.relay_slot(conn_id).unwrap_or_default()
+    };
     teardown.connected = true;
     debug!("connection opened");
     let connection = tracing::Span::current();
@@ -216,7 +217,7 @@ where
                                 break;
                             }
                             match message {
-                                Message::Binary(bytes) => deliver(&manager, &scrypt, &boards, conn_id, &bytes).await,
+                                Message::Binary(bytes) => deliver(&manager, &relay, &scrypt, &boards, conn_id, &bytes).await,
                                 Message::Text(_) => manager.lock().error(conn_id, "Only binary MessagePack messages are accepted"),
                                 _ => unreachable!(),
                             }
