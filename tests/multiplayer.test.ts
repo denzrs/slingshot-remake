@@ -862,6 +862,9 @@ describe('the oracle online', () => {
     // Ben is out with 400 points: he may stake 100 or 200. He bets 200 on Cleo.
     hm.players[1].score = 400;
     await tick(everybody, 5);
+    // The guest checks a stake against its own copy of the score: wait until the host's state has brought it.
+    for (let i = 0; i < 60 && ben.match().players[1].score !== 400; i++) await tick(everybody);
+    expect(ben.match().players[1].score).toBe(400);
     ben.session.input({ kind: 'bet', pick: 2, round: true, stake: 200 });
     await tick(everybody, 5);
     for (const client of everybody) {
@@ -876,6 +879,8 @@ describe('the oracle online', () => {
     // Dora is out with 800 points and bets her most, 400, on Anna.
     hm.players[3].score = 800;
     await tick(everybody, 5);
+    for (let i = 0; i < 60 && dora.match().players[3].score !== 800; i++) await tick(everybody);
+    expect(dora.match().players[3].score).toBe(800);
     dora.session.input({ kind: 'bet', pick: 0, round: true, stake: 400 });
     await tick(everybody, 5);
     for (const client of everybody) expect(client.match().oracle.pot).toBe(600);
@@ -916,6 +921,9 @@ describe('the oracle online', () => {
     for (let i = 0; i < 600 && !(hm.phase === 'aiming' && hm.current === 2); i++) await tick(everybody);
     hm.players[1].score = 400;
     await tick(everybody, 5);
+    // The guest checks a stake against its own copy of the score: wait until the host's state has brought it.
+    for (let i = 0; i < 60 && ben.match().players[1].score !== 400; i++) await tick(everybody);
+    expect(ben.match().players[1].score).toBe(400);
     ben.session.input({ kind: 'bet', pick: 2, round: true, stake: 200 });
     await tick(everybody, 5);
     for (const client of everybody) {
