@@ -186,6 +186,8 @@ export const SOLAR_STORM = {
   MIN_DIST: 130,
   MAX_DIST: 330,
   OVERLAP: 0.6,
+  /** The clouds last this many passes after the one that broke the storm; then they thin away while the system turns. */
+  LIFETIME: 3,
 } as const;
 
 /** "Ereignishorizont" — the gravity royale mode. */
