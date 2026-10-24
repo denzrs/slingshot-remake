@@ -48,7 +48,7 @@ wire_enum! {
 }
 
 wire_enum! {
-    GameMode { Classic = "classic", Horizon = "horizon" }
+    GameMode { Classic = "classic", Solar = "solar", Horizon = "horizon" }
 }
 
 wire_enum! {

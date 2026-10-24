@@ -11,9 +11,9 @@ export type MatchPreset = (typeof MATCH_PRESETS)[number] | (typeof CLASSIC_PRESE
 /** The chaos strength the Mayhem preset starts at, in both modes: Wild. */
 export const MAYHEM_PRESET_LEVEL = 2;
 
-/** Event Horizon keeps Trickshot; Classic offers simultaneous fire instead. Both end with Mayhem. */
+/** Event Horizon keeps Trickshot; Classic and the Solar System offer simultaneous fire instead. All end with Mayhem. */
 export function presetsForMode(mode: VersusMode): readonly MatchPreset[] {
-  return mode === 'classic' ? CLASSIC_PRESETS : MATCH_PRESETS;
+  return mode === 'horizon' ? MATCH_PRESETS : CLASSIC_PRESETS;
 }
 
 export function presetRules(preset: MatchPreset): RoomRules {
@@ -50,13 +50,13 @@ export type HandpickedId = (typeof HANDPICKED_IDS)[number];
 export interface HandpickedPreset {
   id: HandpickedId;
   /** Which set of texts describes it: the mode's own, or Mayhem's. */
-  mode: VersusMode | 'mayhem';
+  mode: Exclude<VersusMode, 'solar'> | 'mayhem';
   /** The mode it is played in. */
   base: VersusMode;
   rules: RoomRules;
 }
 
-/** The authored Mayhem combinations: each is played in one mode, and joins that mode's rotation. */
+/** The authored Mayhem combinations: each is played in one mode, and joins that mode's rotation. The Solar System plays Classic's. */
 const MAYHEM_PICKS: readonly { id: HandpickedId; base: VersusMode; patch: Partial<RoomRules> }[] = [
   { id: 'express', base: 'classic', patch: { rounds: 3, shotTime: 10, mayhem: 1, simultaneousShots: true } },
   { id: 'ghost', base: 'horizon', patch: { rounds: 3, shotTime: 30, mayhem: 2 } },
@@ -66,13 +66,15 @@ const MAYHEM_PICKS: readonly { id: HandpickedId; base: VersusMode; patch: Partia
 
 /** Four authored combinations per mode, then the Mayhem ones played in it. */
 export function handpickedPresets(mode: VersusMode): HandpickedPreset[] {
-  const make = (id: HandpickedId, patch: Partial<RoomRules>): HandpickedPreset => ({ id, mode, base: mode, rules: { ...defaultRoomRules(), ...patch, mayhem: 0 } });
+  // The Solar System has Classic's rules, so Classic's texts and combinations describe it.
+  const classic = mode !== 'horizon';
+  const make = (id: HandpickedId, patch: Partial<RoomRules>): HandpickedPreset => ({ id, mode: classic ? 'classic' : mode, base: mode, rules: { ...defaultRoomRules(), ...patch, mayhem: 0 } });
   return [
-    make('express', { rounds: 3, shotTime: 10, maxPlanets: 2, ...(mode === 'classic' ? { simultaneousShots: true } : { fixedPower: true, fixedPowerLevel: 50 }) }),
-    make('ghost', { rounds: 5, shotTime: 30, maxPlanets: mode === 'classic' ? 3 : 4, hiddenAim: true, fadingTrails: 2 }),
+    make('express', { rounds: 3, shotTime: 10, maxPlanets: 2, ...(classic ? { simultaneousShots: true } : { fixedPower: true, fixedPowerLevel: 50 }) }),
+    make('ghost', { rounds: 5, shotTime: 30, maxPlanets: classic ? 3 : 4, hiddenAim: true, fadingTrails: 2 }),
     make('garden', { rounds: 7, shotTime: 30, maxPlanets: 6, maxPower: 60, bounce: true, styleBonuses: true, powerUps: true, powerUpAmount: 2, powerUpKinds: ['preview', 'teleport', 'shield'] }),
-    make('supernova', { rounds: 5, shotTime: 10, maxPlanets: 8, bounce: true, styleBonuses: true, simultaneousShots: mode === 'classic', powerUps: true, powerUpAmount: 4 }),
-    ...MAYHEM_PICKS.filter((pick) => pick.base === mode).map(({ id, patch }): HandpickedPreset => ({
+    make('supernova', { rounds: 5, shotTime: 10, maxPlanets: 8, bounce: true, styleBonuses: true, simultaneousShots: classic, powerUps: true, powerUpAmount: 4 }),
+    ...MAYHEM_PICKS.filter((pick) => pick.base === (classic ? 'classic' : 'horizon')).map(({ id, patch }): HandpickedPreset => ({
       id, mode: 'mayhem', base: mode, rules: { ...defaultRoomRules(), ...patch, styleBonuses: true },
     })),
   ];
@@ -104,8 +106,8 @@ export function pickOfTheDay(mode: VersusMode, day: string): HandpickedPreset {
     cachedPickLength = picks.length;
     cachedPickIndex = index;
   }
-  // Distinct offsets keep both modes on different authored combinations each day.
-  const modeOffset = { classic: 0, horizon: 1 }[mode];
+  // Distinct offsets keep the modes on different authored combinations each day.
+  const modeOffset = { classic: 0, horizon: 1, solar: 2 }[mode];
   return picks[(cachedPickIndex + modeOffset) % picks.length];
 }
 

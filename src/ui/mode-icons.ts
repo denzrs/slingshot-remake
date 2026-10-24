@@ -1,4 +1,4 @@
-export type ModeArt = 'daily' | 'classic' | 'horizon' | 'mayhem' | 'trickshot' | 'sniper' | 'party' | 'simultaneous' | 'rooms' | 'create' | 'code';
+export type ModeArt = 'daily' | 'classic' | 'solar' | 'horizon' | 'mayhem' | 'trickshot' | 'sniper' | 'party' | 'simultaneous' | 'rooms' | 'create' | 'code';
 export type MatchPresetArt = 'standard' | 'trickshot' | 'sniper' | 'party';
 export type MayhemPresetArt = 'wildClassic' | 'insaneClassic' | 'insaneClassicSimultaneous' | 'insaneHorizon';
 export type PresetArtTreatment =
@@ -6,10 +6,11 @@ export type PresetArtTreatment =
   | { mode: 'mayhem'; preset: MayhemPresetArt };
 let artId = 0;
 
-/** The card of a regular preset in a mode: Event Horizon's own take on it, simultaneous fire, or the wild orbits of Mayhem. */
-export function presetArt(preset: 'standard' | 'trickshot' | 'simultaneous' | 'mayhem', mode: 'classic' | 'horizon'): SVGElement {
-  if (preset === 'mayhem') return modeArt(mode, { mode: 'mayhem', preset: mode === 'horizon' ? 'insaneHorizon' : 'wildClassic' });
+/** The card of a regular preset in a mode: Event Horizon's own take on it, simultaneous fire, or the wild orbits of Mayhem. The Solar System keeps its sun on the plain card. */
+export function presetArt(preset: 'standard' | 'trickshot' | 'simultaneous' | 'mayhem', mode: 'classic' | 'solar' | 'horizon'): SVGElement {
+  if (preset === 'mayhem') return modeArt(mode === 'horizon' ? 'horizon' : 'classic', { mode: 'mayhem', preset: mode === 'horizon' ? 'insaneHorizon' : 'wildClassic' });
   if (preset === 'simultaneous') return modeArt('simultaneous');
+  if (mode === 'solar') return modeArt('solar');
   return modeArt(preset === 'standard' ? 'classic' : preset, mode === 'horizon' ? { mode: 'horizon', preset } : undefined);
 }
 
@@ -58,6 +59,14 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
         <path d="M282 30 C252 23 215 36 194 71 S154 158 109 165" fill="none" stroke="#ffad65" stroke-width="1.5" stroke-dasharray="4 5"/>
         ${planet(154, 101, 30)}${planet(254, 48, 12, true)}${planet(60, 127, 7, true)}
         ${ship(30, 159, 78, '#6fe3c8', .95)}${ship(280, 30, -100, '#ffad65', .9)}`;
+      break;
+    case 'solar':
+      scene = `<circle cx="160" cy="100" r="46" fill="#f2c46d" opacity=".06"/><circle cx="160" cy="100" r="31" fill="#f2c46d" opacity=".1"/>
+        ${orbit(52, 28, -8, '#f2c46d', '.4')}${orbit(92, 49, -8, '#7697ae', '.32')}${orbit(132, 70, -8, '#7697ae', '.3')}${orbit(150, 82, -8, '#6fe3c8', '.4')}
+        <circle cx="160" cy="100" r="19" fill="#f2c46d" stroke="#fff0cf" stroke-opacity=".75" stroke-width="1.5"/><circle cx="160" cy="100" r="11" fill="#ffe7a8" opacity=".8"/>
+        ${planet(212, 100, 8, true)}${planet(79, 72, 11)}${planet(214, 143, 6)}
+        <path d="M42 150C70 164 98 135 112 108s33-62 70-55" fill="none" stroke="#6fe3c8" stroke-width="1.7" stroke-dasharray="4 4"/>
+        ${ship(38, 141, 58, '#6fe3c8', .9)}${ship(282, 66, -120, '#ffad65', .85)}`;
       break;
     case 'simultaneous':
       scene = `${orbit(141, 54, -19, '#6fe3c8', '.45')}${orbit(121, 47, 24, '#ffad65', '.4')}

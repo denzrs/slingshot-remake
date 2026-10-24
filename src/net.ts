@@ -9,7 +9,7 @@ import { packWireMessage, unpackWireMessage } from './messagepack';
 import { withBrowserId } from './browserId';
 
 export type RoomMode = 'ffa' | 'team';
-export type NetworkGameMode = 'classic' | 'horizon';
+export type NetworkGameMode = 'classic' | 'solar' | 'horizon';
 /** The level of a CPU seat in an online room: the same CPUs as offline. */
 export type NetworkCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
 

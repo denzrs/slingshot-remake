@@ -212,7 +212,7 @@ impl<'a> RoomCommand<'a> {
                         .as_str()
                         .and_then(GameMode::parse)
                         .map(Some)
-                        .ok_or("gameMode must be classic or horizon"),
+                        .ok_or("gameMode must be classic, solar or horizon"),
                 },
             },
             "set_room" => RoomCommand::SetRoom(
@@ -307,7 +307,7 @@ impl CreateRoom {
                 .get("gameMode")
                 .and_then(Value::as_str)
                 .and_then(GameMode::parse)
-                .ok_or("gameMode must be classic or horizon"),
+                .ok_or("gameMode must be classic, solar or horizon"),
             max_players: match max_players_num {
                 Some(count)
                     if max_players.is_some_and(is_safe_integer)
