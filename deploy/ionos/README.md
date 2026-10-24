@@ -1,6 +1,6 @@
 # IONOS relay deployment
 
-The relay runs as the unprivileged `ops` account in a systemd user unit. The tag-triggered GitHub Actions job deploys the binary and `/srv/slingshot/relay.env`, then checks a real WebSocket/TLS handshake against the public endpoint. It only restarts the unit when the binary/configuration changed or the service is inactive. If restart or health check fails, it restores both the previous binary and environment file.
+The relay runs as the unprivileged `ops` account in a systemd user unit. The GitHub Actions job deploys the binary and `/srv/slingshot/relay.env`, restarts the unit, and checks a real WebSocket/TLS handshake against the public endpoint. If restart or health check fails, it restores both the previous binary and environment file.
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ The relay keeps the daily-challenge leaderboard and the match statistics in one 
 
 ## Bootstrap the unit and renewal hook
 
-Run the **Slingshot server setup** workflow on `main` to stage the files, review them under `/srv/slingshot/ionos-setup`, then run on the VPS:
+Stage the files through the `Test, Deploy & Release` workflow's **bootstrap** dispatch input, review them under `/srv/slingshot/ionos-setup`, then run on the VPS:
 
 ```sh
 sudo bash /srv/slingshot/ionos-setup/setup-server.sh
@@ -26,7 +26,7 @@ The setup script installs the unit under `/home/ops/.config/systemd/user/` and i
 
 ## GitHub Actions settings
 
-Create the `ionos-production` environment. Under **Deployment branches and tags → Selected branches and tags**, allow the branch `main` for server setup and tags matching `v*` for release deployments. See [Release setup](../releases.md) for the release App and Pages environment. Put `IONOS_DEPLOY_SSH_KEY` and `IONOS_DEPLOY_KNOWN_HOSTS` in that environment as secrets. Set these environment variables:
+Create the `ionos-production` environment and restrict deployments to the `main` branch. Put `IONOS_DEPLOY_SSH_KEY` and `IONOS_DEPLOY_KNOWN_HOSTS` in that environment as secrets. Set these environment variables:
 
 - `IONOS_SERVER_IP`, `IONOS_DEPLOY_USER` (`ops`)
 - `RELAY_ALLOWED_ORIGINS` (the exact frontend origin)

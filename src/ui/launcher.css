@@ -296,20 +296,14 @@
   margin-left: auto;
 }
 
-.launcher__news {
-  width: auto;
-}
-
-.launcher__language .item,
-.launcher__news .item {
+.launcher__language .item {
   min-height: 36px;
   padding: 4px 6px;
   gap: 8px;
 }
 
 .launcher__language .item__label,
-.launcher__language .item__value,
-.launcher__news .item {
+.launcher__language .item__value {
   font-size: 10px;
 }
 

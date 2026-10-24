@@ -1,4 +1,4 @@
-export type ModeArt = 'daily' | 'classic' | 'solar' | 'horizon' | 'mayhem' | 'trickshot' | 'sniper' | 'party' | 'simultaneous' | 'rooms' | 'create' | 'code' | 'news';
+export type ModeArt = 'daily' | 'classic' | 'solar' | 'horizon' | 'mayhem' | 'trickshot' | 'sniper' | 'party' | 'simultaneous' | 'rooms' | 'create' | 'code';
 export type MatchPresetArt = 'standard' | 'trickshot' | 'sniper' | 'party';
 export type MayhemPresetArt = 'wildClassic' | 'insaneClassic' | 'insaneClassicSimultaneous' | 'insaneHorizon';
 export type SolarPresetArt = 'simultaneous' | 'mayhem';
@@ -53,15 +53,6 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
         <rect x="70" y="54" width="180" height="96" rx="7" fill="#0c2035" stroke="#6fe3c8" stroke-opacity=".5"/>
         <g fill="none" stroke="#ffad65" stroke-width="2"><rect x="91" y="86" width="23" height="32" rx="3"/><rect x="129" y="86" width="23" height="32" rx="3"/><rect x="167" y="86" width="23" height="32" rx="3"/><rect x="205" y="86" width="23" height="32" rx="3"/></g><g fill="#ffad65"><circle cx="102.5" cy="102" r="3"/><circle cx="140.5" cy="102" r="3"/><circle cx="178.5" cy="102" r="3"/><circle cx="216.5" cy="102" r="3"/></g>
         ${ship(40, 159, 55, '#e8e4d8', .9)}`;
-      break;
-    case 'news':
-      scene = `${orbit(138, 54, -18, '#7697ae', '.32')}${orbit(104, 38, -18, '#ffad65', '.24')}
-        <path d="M18 48Q40 42 60 54M261 143Q282 130 304 136" fill="none" stroke="#6fe3c8" stroke-width="1.5" stroke-dasharray="3 5" opacity=".62"/>
-        ${planet(75, 120, 17)}${planet(241, 62, 12, true)}${planet(213, 151, 6)}
-        <circle cx="160" cy="100" r="43" fill="#6fe3c8" opacity=".045"/><circle cx="160" cy="100" r="34" fill="none" stroke="#6fe3c8" stroke-opacity=".28"/>
-        <circle cx="160" cy="100" r="27" fill="#10243a" stroke="#ffad65" stroke-width="2" stroke-opacity=".92"/>
-        <circle cx="160" cy="91" r="2.8" fill="#ffad65"/><path d="M160 99v15" fill="none" stroke="#ffad65" stroke-width="3.2" stroke-linecap="round"/>
-        ${ship(28, 47, 70, '#6fe3c8', .85, 'news-art__ship news-art__ship--one')}${ship(292, 139, -112, '#ffad65', .82, 'news-art__ship news-art__ship--two')}`;
       break;
     case 'classic':
       scene = `${orbit(142, 58, -20)}${orbit(105, 38, -20)}${orbit(66, 24, -20)}
@@ -222,8 +213,8 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
     }
   }
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', kind === 'news' ? '0 0 320 180' : '0 0 320 196');
-  svg.setAttribute('class', kind === 'news' ? 'mode-art mode-art--news' : 'mode-art');
+  svg.setAttribute('viewBox', '0 0 320 196');
+  svg.setAttribute('class', 'mode-art');
   svg.setAttribute('aria-hidden', 'true');
   svg.innerHTML = `<defs>
     <radialGradient id="${id}-planet" cx="30%" cy="25%"><stop stop-color="#9cc9bd"/><stop offset=".55" stop-color="#416c76"/><stop offset="1" stop-color="#142c42"/></radialGradient>

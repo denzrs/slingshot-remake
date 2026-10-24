@@ -1,6 +1,6 @@
 ---
 name: add-game-preset
-description: Implement a Slingshot match preset idea across its chosen game mode or modes, including rules, localization, card art, and release notes. Use for preset bundles; a genuinely new game mechanic also needs its own implementation.
+description: Implement a Slingshot match preset idea across its chosen game mode or modes, including rules, localization, and card art. Use for preset bundles; a genuinely new game mechanic also needs its own implementation.
 ---
 
 # Add Game Preset
@@ -18,7 +18,3 @@ Turn the idea into a playable, easy-to-find preset. Keep the work focused on the
 ## Today's Pick
 
 Extend the handpicked rotation only when the user wants the preset featured as “Today’s pick.” Update `HandpickedId`, `handpickedPresets` and its mode-specific rules in `src/ui/match-presets.ts`, the card scene in `src/ui/pick-of-day.ts`, and the corresponding English and German `preset.pick.*` strings in `src/i18n.ts`.
-
-## Release notes
-
-A new player-facing preset is a feature. Add a concise bilingual item and update `draft.summary` in `src/news/releases.json`, following the release instructions in `AGENTS.md`, then run `npm run news:validate`.

@@ -26,9 +26,6 @@ import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
 import { powerUpSummary } from './powerup-summary';
 import { teamRoster } from './team-roster';
 import { mountTutorialPreview, type TutorialPreviewKind } from './tutorial-preview';
-import { newsScreen } from './whats-new';
-import { NEWS } from '../news/items';
-import type { NewsBundle } from '../news/types';
 
 export interface App {
   menu: Menu;
@@ -431,7 +428,6 @@ export function titleScreen(app: App): Screen {
         h('footer.launcher__foot', null,
           h('p.keys', null, t('launcher.keys')),
           h('div.items.launcher__language', { 'data-section': 'language' }),
-          h('div.items.launcher__news', { 'data-section': 'news' }),
           h('div.title-foot', null,
             creditsBadge(),
             ...(import.meta.env.VITE_COFFEE_URL ? [coffeeButton()] : []),
@@ -452,7 +448,6 @@ export function titleScreen(app: App): Screen {
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.code'), hint: t('flow.codeHint'), icon: () => modeArt('code'), run: () => app.openLobby('code') },
       { ...languageItem(app), section: 'language' },
-      { kind: 'action', section: 'news', label: t('news.open'), run: () => app.menu.push(() => whatsNewScreen(app, NEWS)) },
     ],
     focus: launcherSection === 'local' ? 4 : 7,
     update,
@@ -474,11 +469,6 @@ export function skipVoteScreen(app: App): Screen {
     items: skipAnswerItems(app),
     onEscape: () => app.resume(),
   };
-}
-
-/** The What's New dialog with its buttons wired: "Try it" opens the place an item is about. */
-export function whatsNewScreen(app: App, bundles: readonly NewsBundle[]): Screen {
-  return newsScreen(app, bundles, { settings: () => app.menu.push(() => settingsScreen(app)) });
 }
 
 export function pauseScreen(app: App, match: Match | null): Screen {

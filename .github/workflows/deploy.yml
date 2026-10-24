@@ -1,48 +1,54 @@
-name: Slingshot Deploy & Release
+name: Slingshot CI, Deploy & Release
 
-# CI publishes the release commit and its tag together. Only tags build production bundles.
+# Merges to main are tested, deployed to Pages, and released automatically. v* tags are
+# released as-is without restarting the multiplayer relay.
+
 on:
   push:
+    branches: [main]
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: 'Stage VPS bootstrap files (run once; then execute the staged script with sudo on the VPS)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
-# Deploy one release at a time. Older tags can rebuild assets but never roll back production.
+# Release and production-deployment runs queue up one after another. Only a superseded run of the
+# same pull request is cancelled.
 concurrency:
-  group: slingshot-production
-  queue: max
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'main-line' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  context:
+  test:
+    # A bootstrap-only dispatch provisions the server without running the whole suite.
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.bootstrap == 'true') }}
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.release.outputs.tag }}
-      sha: ${{ steps.release.outputs.sha }}
-      deploy: ${{ steps.release.outputs.deploy }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
         with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
+          cache-workspaces: server
+          components: rustfmt, clippy
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - name: Verify the immutable release source and finalized news
-        id: release
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          EXPECTED_SHA: ${{ github.sha }}
-        run: node scripts/release.mjs inspect-tag "$RELEASE_TAG" "$EXPECTED_SHA"
-
-  checks:
-    needs: context
-    uses: ./.github/workflows/checks.yml
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: cargo fmt --manifest-path server/Cargo.toml -- --check
+      - run: cargo clippy --locked --manifest-path server/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --locked --manifest-path server/Cargo.toml
+      - run: npm test
 
   server-x86_64:
-    needs: [context, checks]
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -65,46 +71,70 @@ jobs:
           name: server-x86_64
           path: server/target/x86_64-unknown-linux-musl/release/slingshot-server
 
-  build:
-    needs: [context, checks]
+  relay-changes:
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
-    env:
-      VITE_APP_VERSION: ${{ needs.context.outputs.tag }}
+    outputs:
+      changed: ${{ steps.detect.outputs.changed }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ needs.context.outputs.sha }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run news:validate
-      - run: npm run build
+          fetch-depth: 0
+      - id: detect
         env:
-          VITE_COFFEE_URL: ${{ vars.VITE_COFFEE_URL }}
-          VITE_MULTIPLAYER_SERVER: ${{ vars.VITE_MULTIPLAYER_SERVER }}
-          VITE_STATS_PASSWORD: ${{ vars.VITE_STATS_PASSWORD }}
-      - name: Zip the build for the release
+          BEFORE: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == workflow_dispatch || "$BEFORE" =~ ^0+$ ]] || git diff --name-only "$BEFORE" "$GITHUB_SHA" | awk 'BEGIN { found = 0 } /^server\// || /^deploy\/ionos\// || /^\.github\/workflows\/deploy\.yml$/ { found = 1 } END { exit !found }'; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
+
+  push-server-setup:
+    name: Stage server setup files
+    # From the Actions tab with the bootstrap checkbox: stages setup files in a private
+    # directory under /srv/slingshot. Review them and run the script manually as root.
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.bootstrap == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ionos-production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Copy deploy/ionos/ to the server
         env:
-          TAG: ${{ needs.context.outputs.tag }}
-        run: (cd dist && zip -r "../slingshot-$TAG.zip" .)
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: release-zip
-          path: slingshot-*.zip
-          if-no-files-found: error
-      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
-        with:
-          path: dist
+          SSH_KEY: ${{ secrets.IONOS_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.IONOS_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ vars.IONOS_SERVER_IP }}
+          DEPLOY_USER: ${{ vars.IONOS_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          DEPLOY_USER="${DEPLOY_USER:-ops}"
+          missing=()
+          for name in SSH_KEY KNOWN_HOSTS HOST; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          ((${#missing[@]} == 0)) || { printf 'Missing settings: %s\n' "${missing[*]}" >&2; exit 1; }
+          install -m 0700 -d "$RUNNER_TEMP/ionos-ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ionos-ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ionos-ssh/known_hosts"
+          chmod 0600 "$RUNNER_TEMP/ionos-ssh/id_ed25519" "$RUNNER_TEMP/ionos-ssh/known_hosts"
+          ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$HOST" "install -d -m 0700 /srv/slingshot/ionos-setup"
+          scp "${ssh_options[@]}" deploy/ionos/setup-server.sh deploy/ionos/slingshot-relay.service deploy/ionos/renewal-deploy.sh \
+            "$DEPLOY_USER@$HOST:/srv/slingshot/ionos-setup/"
 
   deploy-relay:
     name: Deploy multiplayer relay
-    # Only the newest release deploys. The remote script compares the actual binary
-    # and environment file before deciding whether the service needs a restart.
-    if: needs.context.outputs.deploy == 'true'
-    needs: [context, build, server-x86_64]
+    # Deploy relay changes on main or by explicit dispatch from main only.
+    # Never restart on feature branches, tags, or frontend-only pushes.
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.relay-changes.outputs.changed == 'true') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.event.inputs.bootstrap != 'true')
+    needs: [test, server-x86_64, relay-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: ionos-production
@@ -181,12 +211,6 @@ jobs:
           remote_deploy='
             set -e
             export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-            if systemctl --user is-active --quiet slingshot-relay.service &&
-              cmp -s slingshot-server slingshot-server.new && cmp -s relay.env relay.env.new; then
-              rm -f slingshot-server.new relay.env.new
-              echo "Relay binary and configuration are unchanged; keeping the running service."
-              exit 0
-            fi
             rm -f slingshot-server.prev relay.env.prev
             [ ! -e slingshot-server ] || mv slingshot-server slingshot-server.prev
             [ ! -e relay.env ] || mv relay.env relay.env.prev
@@ -212,14 +236,10 @@ jobs:
           remote_rollback='
             set -e
             export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-            if [ -e slingshot-server.prev ]; then
-              [ ! -e slingshot-server ] || mv slingshot-server slingshot-server.failed
-              mv slingshot-server.prev slingshot-server
-            fi
-            if [ -e relay.env.prev ]; then
-              [ ! -e relay.env ] || mv relay.env relay.env.failed
-              mv relay.env.prev relay.env
-            fi
+            [ ! -e slingshot-server ] || mv slingshot-server slingshot-server.failed
+            [ ! -e relay.env ] || mv relay.env relay.env.failed
+            [ ! -e slingshot-server.prev ] || mv slingshot-server.prev slingshot-server
+            [ ! -e relay.env.prev ] || mv relay.env.prev relay.env
             systemctl --user reset-failed slingshot-relay.service 2>/dev/null || true
             systemctl --user restart slingshot-relay.service || true
             sleep 2
@@ -292,11 +312,77 @@ jobs:
           fi
           ssh "${ssh_options[@]}" "$DEPLOY_USER@$DEPLOY_HOST" 'cd /srv/slingshot && rm -f slingshot-server.prev relay.env.prev && journalctl --user -u slingshot-relay.service -n 10 --no-pager || true'
 
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # need all tags to work out the version
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Determine version
+        id: version
+        # A pushed tag is released as it is. Otherwise: the tag on HEAD if there is one (already released,
+        # nothing to do), else the next minor after the latest tag, which the release job will create.
+        run: |
+          semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          release=false
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag="$GITHUB_REF_NAME"
+            release=true
+          else
+            tag=$(git tag --points-at HEAD | grep -E "$semver" | head -n 1 || true)
+            if [ -z "$tag" ]; then
+              latest=$(git tag -l 'v*' --sort=-v:refname | grep -E "$semver" | head -n 1 || true)
+              # No release yet: start from the version in package.json.
+              latest=${latest:-v$(node -p "require('./package.json').version")}
+              IFS=. read -r major minor _ <<< "${latest#v}"
+              tag="v$major.$((minor + 1)).0"
+              if [ "$GITHUB_EVENT_NAME" = push ]; then release=true; fi
+            fi
+          fi
+          echo "Version $tag (release: $release)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "VITE_APP_VERSION=$tag" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_COFFEE_URL: ${{ vars.VITE_COFFEE_URL }}
+          VITE_MULTIPLAYER_SERVER: ${{ vars.VITE_MULTIPLAYER_SERVER }}
+          VITE_STATS_PASSWORD: ${{ vars.VITE_STATS_PASSWORD }}
+      - name: Zip the build for the release
+        if: steps.version.outputs.release == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: (cd dist && zip -r "../slingshot-$TAG.zip" .)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.version.outputs.release == 'true'
+        with:
+          name: release-zip
+          path: slingshot-*.zip
+          if-no-files-found: error
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: dist
+
+  # Publish the main-branch build on every merge, retaining the github-pages environment's main gate.
   deploy-pages:
-    needs: [context, build, deploy-relay]
+    needs: [build, server-x86_64, relay-changes, deploy-relay]
     if: >-
-      always() && needs.context.outputs.deploy == 'true' &&
-      needs.build.result == 'success' && needs.deploy-relay.result == 'success'
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.build.result == 'success' && needs.server-x86_64.result == 'success' &&
+      needs.relay-changes.result == 'success' &&
+      (needs.deploy-relay.result == 'success' || needs.deploy-relay.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -309,12 +395,8 @@ jobs:
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
 
   release:
-    needs: [context, build, server-x86_64, deploy-relay, deploy-pages]
-    if: >-
-      always() && needs.context.result == 'success' &&
-      needs.build.result == 'success' && needs.server-x86_64.result == 'success' &&
-      (needs.deploy-relay.result == 'success' || needs.deploy-relay.result == 'skipped') &&
-      (needs.deploy-pages.result == 'success' || needs.deploy-pages.result == 'skipped')
+    needs: [build, server-x86_64]
+    if: needs.build.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -325,12 +407,11 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: server-x86_64
-      - name: Publish GitHub release
+      - name: Create tag and GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.context.outputs.tag }}
-          LATEST_RELEASE: ${{ needs.context.outputs.deploy }}
+          TAG: ${{ needs.build.outputs.tag }}
         run: |
           mv slingshot-server slingshot-server-linux-x86_64
           sha256sum slingshot-server-linux-x86_64 > slingshot-server-linux-x86_64.sha256
@@ -338,11 +419,9 @@ jobs:
             gh release upload "$TAG" "slingshot-$TAG.zip" slingshot-server-linux-x86_64 \
               slingshot-server-linux-x86_64.sha256 --clobber
           else
-            latest_flag=--latest=false
-            if [[ "$LATEST_RELEASE" == true ]]; then latest_flag=--latest; fi
             gh release create "$TAG" "slingshot-$TAG.zip" slingshot-server-linux-x86_64 \
               slingshot-server-linux-x86_64.sha256 \
-              --verify-tag "$latest_flag" \
+              --target "$GITHUB_SHA" \
               --title "Slingshot $TAG" \
               --generate-notes
           fi

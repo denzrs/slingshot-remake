@@ -1,16 +1,16 @@
 /**
- * Screenshots of the running game for the What's New dialog (and anything else that wants a picture).
+ * Screenshots of the running game.
  *
  *   npm run dev                      # in another terminal
- *   npm run shot -- --out src/news/images/refined-look.webp --settings '{"look":"refined"}' \
+ *   npm run shot -- --out refined-look.webp --settings '{"look":"refined"}' \
  *     --click "Einstellungen" --mark "Verfeinerter Look"
  *
  * Drives a headless Chrome over the DevTools protocol, so it needs Chrome installed
  * (set CHROME_PATH if it isn't where this script looks).
  *
  *   --out <file>        where to write it; the format follows the extension (.webp, .png, .jpg)
- *   --url <url>         default http://localhost:5173/ (`?news=off` is added, so the What's New dialog stays out of the shot; pass `?news` to shoot it)
- *   --size <WxH>        viewport, default 1280x720 (keep 16:9 for the dialog)
+ *   --url <url>         default http://localhost:5173/
+ *   --size <WxH>        viewport, default 1280x720
  *   --settings <json>   merged into the saved settings before the page loads; a German UI unless it says otherwise
  *   --click <text>      press the button with this text, once per flag, in order
  *   --mark <text>       draw a ring around the smallest element showing this text, once per flag
@@ -171,7 +171,6 @@ async function main(): Promise<void> {
     const settings = JSON.stringify({ language: 'de', ...opts.settings });
     await cdp.evaluate(`localStorage.setItem('slingshot.settings.v1', ${JSON.stringify(settings)}); true`);
     const target = new URL(opts.url);
-    if (!target.searchParams.has('news')) target.searchParams.set('news', 'off');
     await cdp.send('Page.navigate', { url: target.href });
     await sleep(opts.wait);
     for (const text of opts.clicks) {
