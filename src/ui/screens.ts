@@ -1,4 +1,4 @@
-import { CHALLENGE, COLORS, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
+import { CHALLENGE, COLORS, DEBRIS, HORIZON, MAX_PLAYERS, SCORING, TEAMS, type Debris } from '../config';
 import { teamName, type Match, type Mode, type VersusMode } from '../game';
 import { oracleAwards } from '../game/oracle';
 import { fmtInt, fmtNum, LANGS, t, tn, type Key, type Lang } from '../i18n';
@@ -521,6 +521,17 @@ function settingsScreen(app: App): Screen {
     items: [
       settingToggle(app, t('settings.contours'), 'contours'),
       settingToggle(app, t('settings.particles'), 'particles'),
+      {
+        kind: 'segmented',
+        label: t('settings.debris'),
+        options: (Object.keys(DEBRIS) as Debris[]).map((value) => ({ value, label: t(`settings.debris.${value}`) })),
+        hidden: () => !app.settings.particles,
+        get: () => app.settings.debris,
+        set: (v) => {
+          app.settings.debris = v as Debris;
+          app.settingsChanged();
+        },
+      },
       settingToggle(app, t('settings.menuBackground'), 'menuBackground'),
       // Only a touch screen has the stick.
       ...(matchMedia('(pointer: coarse)').matches

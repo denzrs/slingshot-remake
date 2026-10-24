@@ -57,6 +57,19 @@ describe('Mayhem settings', () => {
   });
 });
 
+describe('debris', () => {
+  it.each(['low', 'medium', 'high'] as const)('keeps %s after saving and reloading', (debris) => {
+    storage();
+    saveSettings({ ...cloneSettings(DEFAULT_SETTINGS), debris });
+    expect(loadSettings().debris).toBe(debris);
+  });
+
+  it.each([undefined, 'endless', 'toString'])('replaces %s with medium', (debris) => {
+    storage({ debris });
+    expect(loadSettings().debris).toBe('medium');
+  });
+});
+
 describe('power settings', () => {
   it.each([10, 100])('keeps the supported cap boundary %s after saving and reloading', (maxPower) => {
     storage();

@@ -1,4 +1,4 @@
-import { COLORS, FIELD, FONTS, PHYSICS } from '../config';
+import { COLORS, DEBRIS, FIELD, FONTS, PHYSICS, type Debris } from '../config';
 import type { World } from '../physics';
 import { rgba } from './color';
 import { fillTextUpright, strokeTextUpright } from './orientation';
@@ -25,6 +25,8 @@ interface GravityBody {
 }
 
 const MAX_SPARKS = 1800;
+/** A spark's drag at low debris; the debris setting scales it down from there. */
+const SPARK_DRAG = 0.12;
 const MAX_MOTES = 240;
 /** Debris that drifts this far from the middle of the field is gone for good: nothing pulls it back. */
 const DEBRIS_RANGE = 1000;
@@ -105,7 +107,13 @@ export class Effects {
   constructor(
     public particles: boolean,
     private readonly reducedMotion: boolean,
+    public debrisLevel: Debris,
   ) {}
+
+  /** The drag a new spark gets: sparks already flying keep theirs when the setting changes. */
+  private get sparkDrag(): number {
+    return SPARK_DRAG * DEBRIS[this.debrisLevel];
+  }
 
   clear(): void {
     this.sparks = [];
@@ -282,7 +290,7 @@ export class Effects {
         vy: ny * sp + nx * swirl + vy,
         size: 1.2 + Math.random() * 2,
         color: Math.random() < 0.3 ? COLORS.sodium : color,
-        drag: 0.24,
+        drag: 2 * this.sparkDrag,
         tier: 'medium',
       });
     }
@@ -543,7 +551,7 @@ export class Effects {
 
   private spark(x: number, y: number, vx: number, vy: number, color: string, tier: SparkTier): Spark {
     const size = tier === 'large' ? 2.4 + Math.random() * 2 : tier === 'medium' ? 1.6 + Math.random() * 1.5 : 0.8 + Math.random() * 1.2;
-    return { x, y, vx, vy, size, color, drag: 0.12, tier };
+    return { x, y, vx, vy, size, color, drag: this.sparkDrag, tier };
   }
 
   private fragment(spark: Spark, into: Spark[], body: GravityBody): void {
