@@ -1,5 +1,5 @@
 import type { CpuLevel } from './ai';
-import { AIM, GRACE, MAX_PLAYERS, MAYHEM, TRAIL_FADE } from './config';
+import { AIM, GRACE, MAX_PLAYERS, MAYHEM, SPARK_FLIGHT, TRAIL_FADE, type SparkFlight } from './config';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from './powerups';
 import { detectLang, isLang, type Lang } from './i18n';
 
@@ -47,6 +47,8 @@ export interface Settings {
   fadingTrails: number;
   contours: boolean;
   particles: boolean;
+  /** How far the sparks of explosions and debris coast before they come to rest. */
+  sparkFlight: SparkFlight;
   /** The title screen and menus show a CPU match playing behind them; off leaves the plate empty. */
   menuBackground: boolean;
   /** Touch screens: the side of the screen the aiming stick sits on. */
@@ -87,6 +89,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatPlayersOnly: false,
   contours: true,
   particles: true,
+  sparkFlight: 'medium',
   menuBackground: true,
   stickSide: 'left',
   sound: true,
@@ -110,6 +113,7 @@ export function loadSettings(): Settings {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
       if (s.stickSide !== 'right') s.stickSide = 'left';
+      if (!Object.hasOwn(SPARK_FLIGHT, s.sparkFlight)) s.sparkFlight = DEFAULT_SETTINGS.sparkFlight;
       // Power-up choices: only known kinds, in their usual order, and never none at all.
       const kinds = POWER_UP_KINDS.filter((kind) => Array.isArray(parsed.powerUpKinds) && parsed.powerUpKinds.includes(kind));
       s.powerUpKinds = kinds.length ? kinds : [...POWER_UP_KINDS];

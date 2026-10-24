@@ -1,4 +1,4 @@
-import { CHALLENGE, COLORS, HORIZON, MAX_PLAYERS, SCORING, TEAMS } from '../config';
+import { CHALLENGE, COLORS, HORIZON, MAX_PLAYERS, SCORING, SPARK_FLIGHT, TEAMS, type SparkFlight } from '../config';
 import { teamName, type Match, type Mode, type VersusMode } from '../game';
 import { oracleAwards } from '../game/oracle';
 import { fmtInt, fmtNum, LANGS, t, tn, type Key, type Lang } from '../i18n';
@@ -521,6 +521,17 @@ function settingsScreen(app: App): Screen {
     items: [
       settingToggle(app, t('settings.contours'), 'contours'),
       settingToggle(app, t('settings.particles'), 'particles'),
+      {
+        kind: 'segmented',
+        label: t('settings.sparkFlight'),
+        options: (Object.keys(SPARK_FLIGHT) as SparkFlight[]).map((value) => ({ value, label: t(`settings.sparkFlight.${value}`) })),
+        hidden: () => !app.settings.particles,
+        get: () => app.settings.sparkFlight,
+        set: (v) => {
+          app.settings.sparkFlight = v as SparkFlight;
+          app.settingsChanged();
+        },
+      },
       settingToggle(app, t('settings.menuBackground'), 'menuBackground'),
       // Only a touch screen has the stick.
       ...(matchMedia('(pointer: coarse)').matches

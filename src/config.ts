@@ -135,6 +135,9 @@ export const SCORING = {
 
 /** Fading trails: the choices for how long a finished shot's path lasts in seconds (0 = it stays), and the share of that time it stays fully visible before fading. */
 export const TRAIL_FADE = { OPTIONS: [0, 1, 2, 4], HOLD: 0.4 };
+/** Spark flight: how far the sparks of explosions and debris coast before their drag stops them — what each choice multiplies the drag by. */
+export const SPARK_FLIGHT = { short: 1, medium: 0.5, long: 0.25 } as const;
+export type SparkFlight = keyof typeof SPARK_FLIGHT;
 /** How many finished trails each player keeps on screen: older ones are barely visible anyway, and every one is redrawn each frame. */
 export const MAX_TRAILS_PER_PLAYER = 12;
 

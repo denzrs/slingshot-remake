@@ -57,6 +57,19 @@ describe('Mayhem settings', () => {
   });
 });
 
+describe('spark flight', () => {
+  it.each(['short', 'medium', 'long'] as const)('keeps %s after saving and reloading', (sparkFlight) => {
+    storage();
+    saveSettings({ ...cloneSettings(DEFAULT_SETTINGS), sparkFlight });
+    expect(loadSettings().sparkFlight).toBe(sparkFlight);
+  });
+
+  it.each([undefined, 'endless', 'toString'])('replaces %s with medium', (sparkFlight) => {
+    storage({ sparkFlight });
+    expect(loadSettings().sparkFlight).toBe('medium');
+  });
+});
+
 describe('power settings', () => {
   it.each([10, 100])('keeps the supported cap boundary %s after saving and reloading', (maxPower) => {
     storage();
