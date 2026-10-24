@@ -35,7 +35,7 @@ export function trackLocalGame(match: Match, rules: Settings, send: (report: Loc
     else if (event.type === 'roundEnd') rounds.push(roundReport(match));
     else if (event.type === 'gameOver' && rounds.length) {
       send({
-        gameMode: match.mode === 'horizon' ? 'horizon' : 'classic',
+        gameMode: match.mode === 'horizon' || match.mode === 'solar' ? match.mode : 'classic',
         mode: match.teamMode ? 'team' : 'ffa',
         rules: rulesOf(rules),
         seats: match.players.map((p) => ({ cpu: p.cpu, team: match.teamMode ? ((p.team ?? 0) as 0 | 1) : null })),

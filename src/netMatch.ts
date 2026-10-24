@@ -45,7 +45,7 @@ export function netMatch(game: NetGame, base: Settings, extra: Pick<MatchOptions
     seed: game.seed,
     ...extra,
   });
-  return match.mode === 'classic' || match.mode === 'horizon' ? (match as NetMatch) : null;
+  return match.mode === 'classic' || match.mode === 'solar' || match.mode === 'horizon' ? (match as NetMatch) : null;
 }
 
 export type { ReplayScript };

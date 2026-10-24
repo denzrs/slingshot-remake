@@ -123,7 +123,7 @@ export interface StatsGame {
   id: string;
   /** Unix seconds of its first reported round. */
   at: number;
-  gameMode: 'classic' | 'horizon';
+  gameMode: NetworkGameMode;
   mode: 'ffa' | 'team';
   humans: number;
   cpus: number;
