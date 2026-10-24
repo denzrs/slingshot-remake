@@ -6,6 +6,7 @@
 
 mod chat;
 mod connections;
+pub use connections::DEFAULT_DB_REQUESTS_PER_MINUTE;
 #[cfg(test)]
 pub use connections::MAX_PASSWORD_ATTEMPTS;
 mod cpu;
@@ -144,6 +145,16 @@ impl RoomManager {
         self.net.allow_room_password_check(room_id)
     }
 
+    /// How many database requests one client may make per minute.
+    pub fn with_db_requests_per_minute(mut self, requests: usize) -> Self {
+        self.net.set_db_requests_per_minute(requests);
+        self
+    }
+
+    pub fn allow_db_request(&mut self, conn: u64) -> bool {
+        self.net.allow_db_request(conn)
+    }
+
     pub fn join_password_salt(&self, conn: u64, room_id: &str, spectate: bool) -> Option<Hashed> {
         if !self.net.is_connected(conn) || self.is_placed(conn) {
             return None;
@@ -204,6 +215,15 @@ impl RoomManager {
     /// await it; the room dispatch cannot.
     pub fn peer_ip(&self, conn: u64) -> Option<IpAddr> {
         self.net.peer_ip(conn)
+    }
+
+    /// Who a connection counts as for the abuse limits: its client, and its browser if it said.
+    pub fn who(&self, conn: u64) -> Option<crate::admission::Who> {
+        self.net.who(conn)
+    }
+
+    pub fn set_browser(&mut self, conn: u64, browser: crate::admission::BrowserId) {
+        self.net.set_browser(conn, browser);
     }
 
     /// One day's board as it goes on the wire: the top runs, and the caller's own run if it posted one.
@@ -270,7 +290,7 @@ impl RoomManager {
     }
 
     /// One game as the client flies it again; `None` when there is no such game, or not the whole of it.
-    pub fn stats_replay(&mut self, conn: u64, id: &str, replay: Option<Value>) {
+    pub fn stats_replay(&mut self, conn: u64, id: &str, replay: Option<&Value>) {
         self.send_value(
             conn,
             &json!({ "type": "stats_replay", "id": id, "replay": replay }),

@@ -124,6 +124,7 @@ beforeAll(async () => {
       CONNECTIONS_PER_IP_PER_SECOND: '1000',
       MAX_MESSAGES_PER_SECOND: '100000',
       MAX_BYTES_PER_SECOND: '1000000000',
+      DB_REQUESTS_PER_MINUTE: '1000000',
       DATABASE: join(dataDir, 'slingshot.db'),
       RUST_LOG: process.env.RELAY_LOG ?? 'info',
     },
@@ -141,8 +142,11 @@ afterAll(async () => {
   if (dataDir) await rm(dataDir, { recursive: true, force: true });
 });
 
-const DAY = '2026-10-19';
-const OTHER_DAY = '2026-10-18';
+// The relay keeps the boards of the last few days only, so the days here count back from today.
+const TODAY = new Date().toISOString().slice(0, 10);
+const daysAgo = (days: number): string => shiftDate(TODAY, -days);
+const DAY = TODAY;
+const OTHER_DAY = daysAgo(1);
 
 describe('daily leaderboard', () => {
   it('posts a run and hands the board back with the run on it', async () => {
@@ -170,12 +174,12 @@ describe('daily leaderboard', () => {
 
   it('keeps each day its own board', async () => {
     const boards = onRelay();
-    await boards.submit('2026-10-17', 'Cy', 7000);
-    const seen = await boards.top('2026-10-17');
+    await boards.submit(daysAgo(2), 'Cy', 7000);
+    const seen = await boards.top(daysAgo(2));
     expect(seen.entries).toEqual([{ rank: 1, name: 'Cy', score: 7000 }]);
     expect(seen.you).toEqual({ rank: 1, name: 'Cy', score: 7000 });
 
-    const today = await boards.top('2026-10-16');
+    const today = await boards.top(daysAgo(3));
     expect(today.entries).toEqual([]);
     expect(today.you).toBeNull();
   });
@@ -190,25 +194,40 @@ describe('daily leaderboard', () => {
     await expect(boards.top('nope')).rejects.toThrow(/Invalid day/);
 
     // Nothing of that reached the board.
-    const seen = await boards.top('2026-10-15');
+    const seen = await boards.top(daysAgo(4));
     expect(seen.entries).toEqual([]);
+  });
+
+  it('answers a connection that names its browser, as the game connects', async () => {
+    const boards = new Leaderboard(() => new RelayConnection(`${serverUrl}/?b=AAECAwQFBgcICQoLDA0ODw`));
+    expect((await boards.top(TODAY)).day).toBe(TODAY);
+  });
+
+  it('takes runs only for the days it keeps a board for', async () => {
+    const boards = onRelay();
+    await expect(boards.submit(shiftDate(TODAY, 30), 'Ada', 100)).rejects.toThrow(/board is not open/);
+    await expect(boards.submit(daysAgo(30), 'Ada', 100)).rejects.toThrow(/board is not open/);
+    // Looking is never refused: a day it does not keep has an empty board.
+    expect((await boards.top(shiftDate(TODAY, 30))).entries).toEqual([]);
+    // A player ahead of UTC is already on tomorrow.
+    expect((await boards.submit(shiftDate(TODAY, 1), 'Kiri', 300)).you?.score).toBe(300);
   });
 
   it('takes a name down to what the rest of the game shows', async () => {
     const boards = onRelay();
     const long = 'Bartholomew Featherstonehaugh';
-    const board = await boards.submit('2026-10-14', `  ${long}  `, 5);
+    const board = await boards.submit(daysAgo(5), `  ${long}  `, 5);
     expect(board.you?.name).toBe(long.slice(0, 24));
   });
 
   it('refuses a name the board will not carry, and says so', async () => {
     const boards = onRelay();
-    const rejected = await boards.submit('2026-10-13', 'fuck', 9999).catch((error: unknown) => error);
+    const rejected = await boards.submit(daysAgo(6), 'fuck', 9999).catch((error: unknown) => error);
     expect(rejected).toBeInstanceOf(BoardRejected);
     expect((rejected as Error).message).toBe('That name is not allowed');
 
     // Nothing of it reached the board.
-    expect((await boards.top('2026-10-13')).entries).toEqual([]);
+    expect((await boards.top(daysAgo(6))).entries).toEqual([]);
   });
 });
 

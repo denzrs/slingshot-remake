@@ -10,15 +10,17 @@
 //! CPU seat has no hash. The numbers are taken at face value: they come from the host's own
 //! browser, and the relay can fly nothing again.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use tracing::{info, warn};
 use turso::{Connection, Database, Value as Sql};
 
+use crate::admission::{Who, CEILING};
 use crate::pseudonym::Identities;
 use crate::report::{LocalGame, RoundReport, ShotRound, TurnReport, RECORD_KEYS};
 
@@ -29,6 +31,8 @@ pub use facts::Fact;
 pub const DEFAULT_KEEP_DAYS: i64 = 365;
 /// How long an overview is good for: the page asks every so often, and what it shows moves by the minute.
 const OVERVIEW_FRESH: Duration = Duration::from_secs(2);
+/// Replays kept in memory: the page lists the latest games, and those are the ones flown again.
+const REPLAYS_KEPT: usize = 16;
 /// Games the overview lists.
 const OVERVIEW_GAMES: i64 = 50;
 /// The sweeper runs at most this often, however busy the relay is.
@@ -357,6 +361,8 @@ pub struct Store {
     /// never holds up the overview (nor the other way round).
     replay_reader: Connection,
     replaying: tokio::sync::Mutex<()>,
+    /// The replays last read, oldest first (see `replay_shared`).
+    replays: parking_lot::Mutex<VecDeque<(String, Arc<Value>)>>,
     /// For the menu's facts, a few dozen scans of the shots: a connection of their own, so they never queue the overview's reads.
     facts_reader: Connection,
     /// One reader at a time: several tasks asking one connection at once wait on one another's statements, which a page with
@@ -406,6 +412,7 @@ impl Store {
             reader,
             replay_reader,
             replaying: tokio::sync::Mutex::new(()),
+            replays: parking_lot::Mutex::new(VecDeque::new()),
             facts_reader,
             reading: tokio::sync::Mutex::new(None),
             facts: tokio::sync::Mutex::new(None),
@@ -1127,9 +1134,35 @@ impl Store {
     }
 
     /// A replay, read by one reader at a time like the overview.
-    pub async fn replay_shared(&self, match_id: &str) -> turso::Result<Option<Value>> {
+    /// A game that can be flown again is finished and stays as it is, so the latest few are kept
+    /// and handed to whoever asks again without reading every row once more.
+    pub async fn replay_shared(&self, match_id: &str) -> turso::Result<Option<Arc<Value>>> {
+        if let Some(replay) = self.cached_replay(match_id) {
+            return Ok(Some(replay));
+        }
         let _replaying = self.replaying.lock().await;
-        self.replay(match_id).await
+        // Somebody may have read it while this one waited for the lock.
+        if let Some(replay) = self.cached_replay(match_id) {
+            return Ok(Some(replay));
+        }
+        let Some(replay) = self.replay(match_id).await? else {
+            return Ok(None);
+        };
+        let replay = Arc::new(replay);
+        let mut replays = self.replays.lock();
+        if replays.len() >= REPLAYS_KEPT {
+            replays.pop_front();
+        }
+        replays.push_back((match_id.to_owned(), replay.clone()));
+        Ok(Some(replay))
+    }
+
+    fn cached_replay(&self, match_id: &str) -> Option<Arc<Value>> {
+        self.replays
+            .lock()
+            .iter()
+            .find(|(id, _)| id == match_id)
+            .map(|(_, replay)| replay.clone())
     }
 
     /// Everything the client needs to fly a game again: the seed, the rules, who sat where and, turn by
@@ -1288,16 +1321,97 @@ pub enum Job {
 pub struct Stats {
     store: std::sync::Arc<Store>,
     queue: tokio::sync::mpsc::Sender<Job>,
-    /// Per address, when the current hour of local games began and how many were handed in during it.
-    local_games: std::sync::Mutex<HashMap<IpAddr, (Instant, u32)>>,
+    /// Local games handed in this hour, per browser and per client.
+    local_games: parking_lot::Mutex<(Quota<Who>, Quota<IpAddr>)>,
+    /// Rows written this day, per browser and per client.
+    writes: parking_lot::Mutex<(Quota<Who>, Quota<IpAddr>)>,
+    rows_per_day: u64,
 }
 
-/// How many games played on one device an address may hand in per hour: far more than anyone plays, far fewer
-/// than it takes to bury the statistics under made-up games.
-const LOCAL_GAMES_PER_HOUR: u32 = 20;
+/// Rows of statistics one browser may have written per day, hosting and playing alone together
+/// (`STATS_ROWS_PER_DAY`), and `CEILING` times as many over all the browsers of one client. A real
+/// host writes about ten rows a turn and a turn takes at least several seconds, so a whole day of
+/// hosting stays near a third of it; a host making reports up gets no further.
+pub const DEFAULT_ROWS_PER_DAY: u64 = 300_000;
+const WRITE_WINDOW: Duration = Duration::from_secs(24 * 3600);
+
+/// How many games played on one device a browser may hand in per hour (and `CEILING` times as many
+/// per client): far more than anyone plays, far fewer than it takes to bury the statistics under
+/// made-up games.
+const LOCAL_GAMES_PER_HOUR: u64 = 20;
 const LOCAL_WINDOW: Duration = Duration::from_secs(3600);
-/// Addresses remembered at most; when it is passed, those whose hour is over are forgotten.
-const LOCAL_ADDRESSES: usize = 4096;
+
+/// An amount per key in a fixed window that starts with the key's first use.
+struct Quota<K> {
+    window: Duration,
+    used: HashMap<K, Used>,
+}
+
+struct Used {
+    since: Instant,
+    amount: u64,
+    /// Whether going over has been logged in this window already.
+    warned: bool,
+}
+
+impl<K: std::hash::Hash + Eq + Copy> Quota<K> {
+    fn new(window: Duration) -> Self {
+        Self {
+            window,
+            used: HashMap::new(),
+        }
+    }
+
+    fn entry(&mut self, key: K, now: Instant) -> &mut Used {
+        let window = self.window;
+        let used = self.used.entry(key).or_insert(Used {
+            since: now,
+            amount: 0,
+            warned: false,
+        });
+        if now.duration_since(used.since) >= window {
+            *used = Used {
+                since: now,
+                amount: 0,
+                warned: false,
+            };
+        }
+        used
+    }
+
+    fn sweep(&mut self, now: Instant) {
+        let window = self.window;
+        self.used
+            .retain(|_, used| now.duration_since(used.since) < window);
+    }
+}
+
+/// Take `amount` from a browser's quota and its client's (`CEILING` times `max`), from both or
+/// neither. False, and logged once per window, when either is spent.
+fn take_both(
+    quotas: &mut (Quota<Who>, Quota<IpAddr>),
+    who: Who,
+    amount: u64,
+    max: u64,
+    now: Instant,
+    what: &str,
+) -> bool {
+    let (own, client) = quotas;
+    let fits_client = client.entry(who.client, now).amount + amount <= max * CEILING as u64;
+    let own = own.entry(who, now);
+    if !fits_client || own.amount + amount > max {
+        if !std::mem::replace(&mut own.warned, true) {
+            warn!(
+                what,
+                "a browser or its address is over its statistics quota; its reports are dropped"
+            );
+        }
+        return false;
+    }
+    own.amount += amount;
+    client.entry(who.client, now).amount += amount;
+    true
+}
 
 impl std::ops::Deref for Stats {
     type Target = Store;
@@ -1324,8 +1438,39 @@ impl Stats {
         Ok(Self {
             store,
             queue,
-            local_games: std::sync::Mutex::new(HashMap::new()),
+            local_games: parking_lot::Mutex::new((
+                Quota::new(LOCAL_WINDOW),
+                Quota::new(LOCAL_WINDOW),
+            )),
+            writes: parking_lot::Mutex::new((Quota::new(WRITE_WINDOW), Quota::new(WRITE_WINDOW))),
+            rows_per_day: DEFAULT_ROWS_PER_DAY,
         })
+    }
+
+    pub fn with_rows_per_day(mut self, rows: u64) -> Self {
+        self.rows_per_day = rows;
+        self
+    }
+
+    /// Whether `who` may have `rows` more rows written today; counts them when it may.
+    pub fn admit(&self, who: Who, rows: u64, now: Instant) -> bool {
+        take_both(
+            &mut self.writes.lock(),
+            who,
+            rows,
+            self.rows_per_day,
+            now,
+            "rows",
+        )
+    }
+
+    /// Forget whoever's window is over, so no map grows with addresses that came once.
+    pub fn sweep(&self, now: Instant) {
+        for quotas in [&self.writes, &self.local_games] {
+            let mut quotas = quotas.lock();
+            quotas.0.sweep(now);
+            quotas.1.sweep(now);
+        }
     }
 
     #[cfg(test)]
@@ -1338,14 +1483,17 @@ impl Stats {
             .expect("an in-memory store opens")
     }
 
-    /// Hand over a game played on one device by the person at `ip`. It has the ids of any other game, made here:
+    /// Hand over a game played on one device by `who`. It has the ids of any other game, made here:
     /// the player's own client knows no room and chooses no id that could name one.
-    pub fn submit_local(&self, ip: IpAddr, game: LocalGame) {
+    pub fn submit_local(&self, who: Who, game: LocalGame) {
         use rand::Rng;
-        if !self.local_allowed(ip, Instant::now()) {
-            warn!(%ip, "too many local games from one address; one was dropped");
+        let now = Instant::now();
+        if !self.local_allowed(who, now) || !self.admit(who, game.rows(), now) {
             return;
         }
+        // The person is told apart in the statistics by their address, as online; the browser id
+        // is for the limits above and goes no further.
+        let ip = who.client;
         let mut rng = rand::thread_rng();
         let facts = RoundFacts {
             room_id: format!("{:032x}", rng.gen::<u128>()),
@@ -1375,24 +1523,16 @@ impl Stats {
         self.submit(Job::Local(facts, game.rounds));
     }
 
-    /// Whether `ip` may hand in another local game: a fixed window of an hour from its first, with a count.
-    fn local_allowed(&self, ip: IpAddr, now: Instant) -> bool {
-        let mut seen = self
-            .local_games
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if seen.len() >= LOCAL_ADDRESSES {
-            seen.retain(|_, (since, _)| now.duration_since(*since) < LOCAL_WINDOW);
-        }
-        let entry = seen.entry(ip).or_insert((now, 0));
-        if now.duration_since(entry.0) >= LOCAL_WINDOW {
-            *entry = (now, 0);
-        }
-        if entry.1 >= LOCAL_GAMES_PER_HOUR {
-            return false;
-        }
-        entry.1 += 1;
-        true
+    /// Whether `who` may hand in another local game: a fixed window of an hour from its first, with a count.
+    fn local_allowed(&self, who: Who, now: Instant) -> bool {
+        take_both(
+            &mut self.local_games.lock(),
+            who,
+            1,
+            LOCAL_GAMES_PER_HOUR,
+            now,
+            "local games",
+        )
     }
 
     /// Hand a round to the writer. Never waits: a full queue drops the round and says so.
@@ -1881,21 +2021,87 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_address_may_hand_in_only_so_many_local_games_an_hour() {
+    async fn a_replay_once_read_is_handed_out_again_without_reading_it_anew() {
         let stats = Stats::in_memory().await;
-        let ip: IpAddr = [10, 0, 0, 1].into();
-        let other: IpAddr = [10, 0, 0, 2].into();
-        let now = Instant::now();
-        for _ in 0..LOCAL_GAMES_PER_HOUR {
-            assert!(stats.local_allowed(ip, now));
+        let id = "0123456789abcdef";
+        let ann = [10, 0, 0, 1];
+        // Not flyable yet: nothing is kept, so the finished game is read once it is.
+        assert!(stats.replay_shared(id).await.unwrap().is_none());
+        stats.record(&turn_job(ann, 1, 1)).await.unwrap();
+        stats.record(&turn_job(ann, 1, 2)).await.unwrap();
+        stats.record(&round_job(ann, 1)).await.unwrap();
+        let first = stats.replay_shared(id).await.unwrap().expect("flyable");
+        let again = stats.replay_shared(id).await.unwrap().expect("flyable");
+        assert!(Arc::ptr_eq(&first, &again));
+        assert_eq!(*first, stats.replay(id).await.unwrap().unwrap());
+    }
+
+    fn who(last: u8, browser: Option<u8>) -> Who {
+        Who {
+            client: [10, 0, 0, last].into(),
+            browser: browser.map(crate::admission::BrowserId::of),
         }
-        assert!(!stats.local_allowed(ip, now));
+    }
+
+    #[tokio::test]
+    async fn a_browser_has_only_so_many_rows_written_a_day() {
+        let stats = Stats::in_memory().await.with_rows_per_day(100);
+        let host = who(1, Some(1));
+        let now = Instant::now();
+        assert!(stats.admit(host, 60, now));
+        assert!(stats.admit(host, 40, now));
+        assert!(!stats.admit(host, 1, now), "the day's rows are spent");
         assert!(
-            stats.local_allowed(other, now),
-            "another address has its own"
+            stats.admit(who(2, None), 100, now),
+            "somebody else's are not"
+        );
+        // The next day starts over; the sweep forgets whoever's day is over.
+        let tomorrow = now + WRITE_WINDOW;
+        assert!(stats.admit(host, 100, tomorrow));
+        stats.sweep(tomorrow + Duration::from_secs(1));
+        let writes = stats.writes.lock();
+        assert_eq!(
+            (writes.0.used.len(), writes.1.used.len()),
+            (1, 1),
+            "only the one that wrote today is kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn browsers_behind_one_address_each_get_their_rows_up_to_the_address_ceiling() {
+        let stats = Stats::in_memory().await.with_rows_per_day(100);
+        let now = Instant::now();
+        for browser in 0..CEILING as u8 {
+            assert!(
+                stats.admit(who(1, Some(browser)), 100, now),
+                "browser {browser}"
+            );
+        }
+        assert!(
+            !stats.admit(who(1, Some(200)), 1, now),
+            "the address is at its ceiling, whatever id comes next"
         );
         assert!(
-            stats.local_allowed(ip, now + LOCAL_WINDOW),
+            !stats.admit(who(1, None), 1, now),
+            "and without an id there is nothing left either"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_browser_may_hand_in_only_so_many_local_games_an_hour() {
+        let stats = Stats::in_memory().await;
+        let one = who(1, Some(1));
+        let now = Instant::now();
+        for _ in 0..LOCAL_GAMES_PER_HOUR {
+            assert!(stats.local_allowed(one, now));
+        }
+        assert!(!stats.local_allowed(one, now));
+        assert!(
+            stats.local_allowed(who(1, Some(2)), now),
+            "another browser behind the same address has its own"
+        );
+        assert!(
+            stats.local_allowed(one, now + LOCAL_WINDOW),
             "the next hour starts afresh"
         );
     }

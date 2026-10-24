@@ -11,9 +11,11 @@
 //! run only overwrites a worse one), the score range the client also enforces, and the name cleanup
 //! in `protocol`; a day's board is then a plain sorted read.
 
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tracing::{info, warn};
 use turso::{Connection, Database};
@@ -83,7 +85,15 @@ pub struct Leaderboard {
     /// How many days a board is kept.
     keep_days: i64,
     last_prune: AtomicI64,
+    /// Each day's top list as last read, handed out for `TOP_FRESH`; a run posted to a day drops it.
+    tops: parking_lot::Mutex<HashMap<String, TopList>>,
 }
+
+/// A day's top list, and when it was read.
+type TopList = (Instant, Arc<Vec<Entry>>);
+
+/// How long a day's top list is handed out again before it is read anew.
+const TOP_FRESH: Duration = Duration::from_secs(1);
 
 impl Leaderboard {
     /// Open the board in the relay's database, creating its table. A board that cannot be opened is
@@ -100,7 +110,15 @@ impl Leaderboard {
             players: Pseudonyms::new(),
             keep_days: keep_days.max(1),
             last_prune: AtomicI64::new(0),
+            tops: parking_lot::Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Whether `day` has a board here, seen from `today` (both as days since 1970): one of the days
+    /// that are kept, or tomorrow, which is already today for a player east of UTC. A run for any
+    /// other day would only be a row the sweeper takes years to reach.
+    pub fn keeps(&self, day: &str, today: i64) -> bool {
+        day_number(day).is_some_and(|day| (today - self.keep_days..=today + 1).contains(&day))
     }
 
     /// A board in memory, for the relay's own tests: they have no business writing files.
@@ -126,11 +144,29 @@ impl Leaderboard {
         self.conn
             .execute(UPSERT, (day, player.as_str(), name, score, now_unix()))
             .await?;
+        // The poster sees their own run on the list.
+        self.tops.lock().remove(day);
         self.board(day, ip).await
     }
 
     /// A day's board: the best runs, and where the caller's own run sits.
     pub async fn board(&self, day: &str, ip: IpAddr) -> turso::Result<Board> {
+        let entries = self.top(day).await?;
+        let you = self.own_entry(day, &self.player(day, ip)).await?;
+        Ok(Board {
+            entries: entries.as_ref().clone(),
+            you,
+        })
+    }
+
+    /// A day's best runs, read at most once per `TOP_FRESH` however many look.
+    async fn top(&self, day: &str) -> turso::Result<Arc<Vec<Entry>>> {
+        let now = Instant::now();
+        if let Some((read, entries)) = self.tops.lock().get(day) {
+            if now.duration_since(*read) < TOP_FRESH {
+                return Ok(entries.clone());
+            }
+        }
         let mut rows = self.conn.query(TOP_LIST, (day, BOARD_SIZE as i64)).await?;
         let mut entries = Vec::new();
         while let Some(row) = rows.next().await? {
@@ -140,8 +176,11 @@ impl Leaderboard {
                 score: row.get::<i64>(1)?,
             });
         }
-        let you = self.own_entry(day, &self.player(day, ip)).await?;
-        Ok(Board { entries, you })
+        let entries = Arc::new(entries);
+        let mut tops = self.tops.lock();
+        tops.retain(|_, (read, _)| now.duration_since(*read) < TOP_FRESH);
+        tops.insert(day.to_owned(), (now, entries.clone()));
+        Ok(entries)
     }
 
     /// The caller's own run, wherever it sits on the board — the top list stops at `BOARD_SIZE`.
@@ -172,7 +211,10 @@ impl Leaderboard {
     /// Drop the boards of the days older than `keep_days`; returns how many runs went.
     pub async fn prune(&self, keep_days: i64) -> turso::Result<u64> {
         let cutoff = format!("-{} days", keep_days.max(1));
-        self.conn.execute(PRUNE, (cutoff,)).await
+        let removed = self.conn.execute(PRUNE, (cutoff,)).await;
+        // A list read before the sweep would show runs that are gone.
+        self.tops.lock().clear();
+        removed
     }
 
     /// Called from the relay's sweep: prune once in a while, and never let a failure stop the relay.
@@ -202,6 +244,50 @@ fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
+/// Today in UTC, as days since 1970-01-01.
+pub fn today() -> i64 {
+    now_unix().div_euclid(24 * 60 * 60)
+}
+
+/// A `YYYY-MM-DD` day as days since 1970-01-01 (the proleptic Gregorian calendar), or None when it
+/// is not one.
+pub fn day_number(day: &str) -> Option<i64> {
+    let bytes = day.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return None;
+    }
+    let year: i64 = day[0..4].parse().ok()?;
+    let month: i64 = day[5..7].parse().ok()?;
+    let date: i64 = day[8..10].parse().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&date) {
+        return None;
+    }
+    // Howard Hinnant's days_from_civil.
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + date - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    Some(era * 146_097 + day_of_era - 719_468)
+}
+
+/// The `YYYY-MM-DD` of a day since 1970-01-01: `day_number` the other way round.
+#[cfg(test)]
+pub fn day_key(days: i64) -> String {
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let mp = (5 * day_of_year + 2) / 153;
+    let date = day_of_year - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{date:02}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +297,43 @@ mod tests {
     }
 
     const DAY: &str = "2026-10-19";
+
+    #[test]
+    fn days_count_from_1970_and_back() {
+        assert_eq!(day_number("1970-01-01"), Some(0));
+        assert_eq!(day_number("2000-03-01"), Some(11_017));
+        assert_eq!(day_number("2026-10-19"), Some(20_745));
+        assert_eq!(day_number("2026-13-01"), None);
+        assert_eq!(day_number("today"), None);
+        for days in [0, 11_016, 11_017, 20_745, 59, 60, 425] {
+            assert_eq!(day_number(&day_key(days)), Some(days));
+        }
+        assert_eq!(day_key(20_745), "2026-10-19");
+    }
+
+    #[tokio::test]
+    async fn a_board_is_open_for_the_days_it_keeps_and_tomorrow() {
+        let board = Leaderboard::in_memory().await;
+        let today = day_number(DAY).unwrap();
+        assert!(board.keeps(DAY, today));
+        assert!(board.keeps("2026-10-20", today), "tomorrow east of UTC");
+        assert!(!board.keeps("2026-10-21", today));
+        assert!(board.keeps("2026-10-12", today), "the oldest day kept");
+        assert!(!board.keeps("2026-10-11", today));
+        assert!(!board.keeps("2999-12-31", today));
+    }
+
+    #[tokio::test]
+    async fn a_posted_run_is_on_the_list_at_once_though_the_list_is_kept_a_moment() {
+        let board = Leaderboard::in_memory().await;
+        board.submit(DAY, "Ada", 1200, ip(1)).await.unwrap();
+        // Read and kept …
+        assert_eq!(board.board(DAY, ip(9)).await.unwrap().entries.len(), 1);
+        // … yet the next run shows up straight away.
+        let posted = board.submit(DAY, "Grace", 3400, ip(2)).await.unwrap();
+        assert_eq!(posted.entries[0].name, "Grace");
+        assert_eq!(board.board(DAY, ip(9)).await.unwrap().entries.len(), 2);
+    }
 
     #[tokio::test]
     async fn a_board_ranks_the_best_run_first() {

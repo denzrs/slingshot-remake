@@ -17,7 +17,7 @@ use tokio_tungstenite::tungstenite::Error as WsError;
 use tokio_tungstenite::{accept_hdr_async_with_config, WebSocketStream};
 use tracing::{debug, info, instrument, warn, Instrument};
 
-use crate::admission::AdmissionGuard;
+use crate::admission::{AdmissionGuard, BrowserId};
 use crate::auth::ScryptSlots;
 use crate::codec::WireMessage;
 use crate::config::{HANDSHAKE_TIMEOUT, HEARTBEAT_MISSES, HEARTBEAT_MS, MAX_PAYLOAD};
@@ -134,8 +134,8 @@ where
         accept_with_negotiation(stream, Some(config), &allowed_origins),
     )
     .await;
-    let ws = match handshake {
-        Ok(Ok(ws)) => ws,
+    let (ws, browser) = match handshake {
+        Ok(Ok(accepted)) => accepted,
         Ok(Err(error)) => {
             warn!(%error, "websocket handshake rejected");
             return;
@@ -152,6 +152,9 @@ where
     {
         let mut manager = manager.lock();
         manager.connect(conn_id, client, tx.clone(), slow_tx);
+        if let Some(browser) = browser {
+            manager.set_browser(conn_id, browser);
+        }
     }
     teardown.connected = true;
     debug!("connection opened");
@@ -257,20 +260,22 @@ fn within_rate_limit(window_start: &mut Instant, window_count: &mut u32, limit: 
 
 /// Handshake with optional origin enforcement. When `allowed_origins` is non-empty,
 /// handshakes whose `Origin` header is not in the list are rejected with 403 before the
-/// upgrade completes.
+/// upgrade completes. Also gives the browser id the game sent in the query string, if any.
 #[allow(clippy::result_large_err)]
 async fn accept_with_negotiation<S>(
     stream: S,
     config: Option<WebSocketConfig>,
     allowed_origins: &[String],
-) -> Result<WebSocketStream<S>, WsError>
+) -> Result<(WebSocketStream<S>, Option<BrowserId>), WsError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let origins: Vec<String> = allowed_origins.to_vec();
+    let mut browser = None;
     let ws = accept_hdr_async_with_config(
         stream,
-        move |request: &Request, response: Response| {
+        |request: &Request, response: Response| {
+            browser = BrowserId::from_query(request.uri().query());
             if !origins.is_empty() {
                 let origin = request
                     .headers()
@@ -292,7 +297,7 @@ where
         config,
     )
     .await?;
-    Ok(ws)
+    Ok((ws, browser))
 }
 
 /// Consume a rate-limited peer's still-arriving flood while the connection is still ACTIVE

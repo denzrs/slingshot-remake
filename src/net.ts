@@ -6,6 +6,7 @@ import type { RoomColor, RoomLook, RoomSymbol } from './roomLook';
 import type { RoundReport, TurnReport } from './roundReport';
 import type { Settings } from './settings';
 import { packWireMessage, unpackWireMessage } from './messagepack';
+import { withBrowserId } from './browserId';
 
 export type RoomMode = 'ffa' | 'team';
 export type NetworkGameMode = 'classic' | 'horizon';
@@ -308,7 +309,7 @@ export class NetworkClient {
 
     let socket: WebSocket;
     try {
-      socket = new WebSocket(this.url);
+      socket = new WebSocket(withBrowserId(this.url));
       socket.binaryType = 'arraybuffer';
     } catch (error) {
       return Promise.reject(error instanceof Error ? error : new Error(String(error)));

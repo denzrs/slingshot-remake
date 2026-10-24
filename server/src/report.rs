@@ -246,6 +246,27 @@ fn parse_seat(value: &Value) -> Option<SeatRound> {
     })
 }
 
+impl RoundReport {
+    /// The rows writing it down takes: the round's, one per ship and one per tip.
+    pub fn rows(&self) -> u64 {
+        (1 + self.seats.len() + self.tips.len()) as u64
+    }
+}
+
+impl TurnReport {
+    /// The rows writing it down takes: one per ship, shot and placement.
+    pub fn rows(&self) -> u64 {
+        (self.seats.len() + self.shots.len() + self.placements.as_ref().map_or(0, Vec::len)) as u64
+    }
+}
+
+impl LocalGame {
+    /// The rows writing it down takes: the game's, and its rounds'.
+    pub fn rows(&self) -> u64 {
+        1 + self.rounds.iter().map(RoundReport::rows).sum::<u64>()
+    }
+}
+
 /// A `round_stats`, or None when anything in it will not do.
 pub fn parse_round_report(value: &Value) -> Option<RoundReport> {
     if !is_record(value) {

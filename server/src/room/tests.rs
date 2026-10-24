@@ -437,6 +437,62 @@ fn state_envelopes_require_a_playing_room_host_and_monotonic_sequence() {
 }
 
 #[test]
+fn behind_one_address_a_lockout_is_one_browsers_until_the_address_ceiling() {
+    use crate::admission::{BrowserId, CEILING};
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    drain_json(&mut host_rx);
+    rooms.handle_create_room(
+        1,
+        &create("Host", Some("secret")),
+        Some((vec![1; 16], vec![2; 32])),
+    );
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let join = |name: &str, password: &str| json!({"type":"join_room","roomId":room_id,"name":name,"password":password});
+    let miss = |rooms: &mut RoomManager, conn: u64, browser: u8, times: usize| {
+        let mut rx = connect_from(rooms, conn, "198.51.100.9");
+        rooms.set_browser(conn, BrowserId::of(browser));
+        drain_json(&mut rx);
+        for _ in 0..times {
+            rooms.handle_join_room(conn, &join("Guest", "wrong"), Some(false));
+        }
+        rx
+    };
+
+    // One person mistypes until locked out …
+    let mut typo_rx = miss(&mut rooms, 2, 1, MAX_PASSWORD_ATTEMPTS);
+    drain_json(&mut typo_rx);
+    rooms.handle_join_room(2, &join("Guest", "secret"), Some(true));
+    assert_eq!(
+        take_type(&drain_json(&mut typo_rx), "error")["message"],
+        crate::auth::PASSWORDS_EXHAUSTED
+    );
+    // … and their neighbour behind the same address still gets in.
+    let mut neighbour_rx = miss(&mut rooms, 3, 2, 0);
+    rooms.handle_join_room(3, &join("Neighbour", "secret"), Some(true));
+    assert!(drain_json(&mut neighbour_rx)
+        .iter()
+        .any(|m| m["type"] == "room_update"));
+
+    // Made-up ids end at the address's ceiling: with the first browser's misses, CEILING browsers'
+    // worth of them.
+    let mut conn = 10;
+    for browser in 0..CEILING as u8 - 1 {
+        drop(miss(&mut rooms, conn, 100 + browser, MAX_PASSWORD_ATTEMPTS));
+        conn += 1;
+    }
+    let mut fresh_rx = miss(&mut rooms, conn, 250, 0);
+    rooms.handle_join_room(conn, &join("Fresh", "secret"), Some(true));
+    assert_eq!(
+        take_type(&drain_json(&mut fresh_rx), "error")["message"],
+        crate::auth::PASSWORDS_EXHAUSTED
+    );
+}
+
+#[test]
 fn create_room_validates_before_hashing_and_password_budget_is_per_client() {
     let mut rooms = RoomManager::new();
     let mut rx = connect_from(&mut rooms, 1, "198.51.100.9");
