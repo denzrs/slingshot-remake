@@ -300,7 +300,7 @@ export class ClassicMatch extends Match {
         const job = this.cpuJob(p.id);
         if (this.cpuRescueIfBlind(p, job)) continue;
         const place = this.cpuPlacementAim(p);
-        if (place && this.phaseTime >= 0.5) {
+        if (place && !job?.placeFailed && this.phaseTime >= 0.5) {
           // It lays the placement once its aim is on the spot; the placement spends its shot, so it fires nothing.
           if (!this.swingTowards(p, place, dt, 2)) continue;
           if (this.placeForCpu(p.id)) {
@@ -310,6 +310,7 @@ export class ClassicMatch extends Match {
             continue;
           }
           // Nowhere to lay it this volley: it keeps the power-up and aims a shot instead.
+          if (job) job.placeFailed = true;
         }
         if (!job?.target || this.phaseTime < 0.5) continue;
         if (this.swingTowards(p, job.target, dt, 2)) {
@@ -382,7 +383,7 @@ export class ClassicMatch extends Match {
     const job = this.cpuJob(p.id);
     if (this.cpuRescueIfBlind(p, job)) return;
     const place = this.cpuPlacementAim(p);
-    if (place && this.phaseTime >= 0.7) {
+    if (place && !job?.placeFailed && this.phaseTime >= 0.7) {
       // It lays the placement once its aim is on the spot; the placement spends its shot, so the turn moves on.
       if (!this.swingTowards(p, place, dt)) return;
       if (this.placeForCpu(p.id)) {
@@ -390,6 +391,7 @@ export class ClassicMatch extends Match {
         return;
       }
       // Nowhere to lay it this turn: it keeps the power-up and shoots instead.
+      if (job) job.placeFailed = true;
     }
     if (!job?.target || this.phaseTime < 0.7) return;
     if (this.swingTowards(p, job.target, dt)) {

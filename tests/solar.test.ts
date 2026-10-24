@@ -228,3 +228,28 @@ describe('the sun\'s storm', () => {
     }
   });
 });
+
+describe('a CPU holding a placement it cannot lay', () => {
+  it('shoots with one smooth swing instead of twitching between the placement spot and its shot', () => {
+    const seats = cpus(2);
+    const match = createMatch('solar', { ...DEFAULT_SETTINGS, rounds: 1, seats, powerUps: true }, { seats, seed: 4, deterministicCpu: true }) as SolarMatch;
+    (match as unknown as { placeForCpu: () => boolean }).placeForCpu = () => false;
+    match.players[match.current].powerUp = 'blackhole';
+    const shooter = match.players[match.current];
+    let last = shooter.angle;
+    let heading = 0;
+    let reversals = 0;
+    for (let t = 0; t < 10 && match.phase === 'aiming'; t += 1 / 60) {
+      match.update(1 / 60);
+      const turned = ((shooter.angle - last + 540) % 360) - 180;
+      if (turned !== 0) {
+        if (heading && Math.sign(turned) !== heading) reversals++;
+        heading = Math.sign(turned);
+      }
+      last = shooter.angle;
+    }
+    expect(match.phase).not.toBe('aiming');
+    // Once is fine: from the placement spot over to the shot. Every frame is the twitch.
+    expect(reversals).toBeLessThanOrEqual(1);
+  });
+});

@@ -214,6 +214,8 @@ export interface CpuJob {
   /** Power-ups: the planner found no hitting shot. Only known while the CPU holds a teleport or a plasma shot. */
   blind?: boolean;
   rescueTried?: boolean;
+  /** A placement could not be laid at its spot: the CPU shoots instead, rather than swinging back to the spot every frame. */
+  placeFailed?: boolean;
 }
 
 /**
