@@ -1,9 +1,8 @@
 import { AVATARS, type Avatar } from '../avatars';
 import { COLORS, GALLERY, MAX_PLAYERS, TEAMS } from '../config';
 import { relayText, t, type Key } from '../i18n';
-import { POWER_UP_KINDS } from '../powerups';
 import { canCopyInvite, inviteJoinAttempt, inviteLink, readInvite, shouldAutoConnectInvite, withoutInvite, withoutInvitePassword } from '../invite';
-import { defaultRoomRules, loadLobbyPrefs, mayhemRules, saveLobbyPrefs } from '../lobbyPrefs';
+import { defaultRoomRules, loadLobbyPrefs, saveLobbyPrefs } from '../lobbyPrefs';
 import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multiplayer';
 import { ConnectError, type LobbyRoom, type NetworkCpuLevel, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules } from '../net';
 import type { RoomLook, RoomVisibility } from '../roomLook';
@@ -16,16 +15,16 @@ import { AVATAR_LABEL, avatarSvg, playerIcon } from './avatars';
 import { lookDialog, picker, roomIcon, visibilityControl, type LookDialog } from './roomLook';
 import { factTicker } from './facts';
 import { menuPage } from './menu-page';
-import { modeArt } from './mode-icons';
+import { modeArt, presetArt } from './mode-icons';
 import { pickArt, pickHint, pickName } from './pick-of-day';
-import { presetsForMode, matchingPreset, presetRules, MAYHEM_PRESETS, mayhemPresetRules, matchingMayhemPreset, matchingHandpicked, pickOfTheDay } from './match-presets';
+import { presetsForMode, matchingPreset, presetRules, matchingHandpicked, pickOfTheDay, samePick } from './match-presets';
 import { powerUpSummary } from './powerup-summary';
 import { teamRoster, type RosterCard } from './team-roster';
 
-/** A game mode's name; a Mayhem room is the mode its rounds are played in, with Mayhem in front. */
+/** A game mode's name, with Mayhem behind it when its rounds have twists. */
 const modeName = (mode: NetworkGameMode, mayhem = false) => {
   const name = t(mode === 'classic' ? 'mode.classic' : 'mode.horizon');
-  return mayhem ? `${t('mode.mayhem')} · ${name}` : name;
+  return mayhem ? `${name} · ${t('mode.mayhem')}` : name;
 };
 const matchTypeName = (mode: RoomMode) => (mode === 'team' ? t('players.teams', { n: 2 }) : t('players.ffa'));
 /** The symbols a player can pick, as the choices of a picker. */
@@ -176,11 +175,11 @@ interface RulesForm {
  * The rules of a game as sliders and switches, in the blocks of the setup screen. Read-only, they
  * are what everybody but the host sees of a room.
  */
-function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly = false, mayhem = false, changed?: () => void): RulesForm {
+function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly = false, changed?: () => void): RulesForm {
   const controls: Control[] = [];
   const refresh = () => controls.forEach((c) => c.refresh());
   const env: Env = { sound: app.menu.sound, readonly, changed: () => { refresh(); changed?.(); } };
-  const items = ruleItems(mode, source, true, mayhem);
+  const items = ruleItems(mode, source, true);
   const groups = RULE_GROUPS.filter((group) => items.some((i) => i.group === group)).map((group) => {
     const rows = h('div.setup__rows', null);
     for (const { group: g, item } of items) {
@@ -215,8 +214,7 @@ function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly
 export type LobbyEntry = 'rooms' | 'create' | 'code';
 type View = LobbyEntry;
 /** The games a host picks between in the room, in the order of the pager. */
-type PickerMode = 'classic' | 'horizon' | 'mayhem';
-const PICKER_MODES: readonly PickerMode[] = ['classic', 'horizon', 'mayhem'];
+const PICKER_MODES: readonly NetworkGameMode[] = ['classic', 'horizon'];
 type OnlineSectionDirection = 'next' | 'previous';
 // Keep the focused section at the anchor and preview the next two, wrapping back to the start.
 const ONLINE_SECTIONS: readonly LobbyEntry[] = ['rooms', 'create', 'code'];
@@ -359,6 +357,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const connection = h('div.online-connection', null,
     h('div.online-connection__status', null, h('span.online-connection__text', null, connectionLabel, connectionServer)), disconnectButton,
   );
+  const bar = h('div.online-identity', null, profile, connection);
+  const connectSlot = h('div', null, connectView);
   /** True once the relay has answered while this page was open; the page opening on a live connection is not news. */
   let wasConnected: boolean | null = null;
   let linkedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -378,8 +378,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       connection.classList.remove('is-linked', 'is-dropped');
     }, 1400);
   };
-  const bar = h('div.online-identity', null, profile, connection);
-  const connectSlot = h('div', null, connectView);
 
   // ————————————————————————————— The open rooms —————————————————————————————
 
@@ -557,7 +555,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const createPresetCards = h('div.items.items--row.briefing__cards', { role: 'group', 'aria-label': t('preset.choose') });
   const createQuick = h('div.briefing__quick', null);
   const createPowerups = powerUpSummary(() => prefs.rules);
-  const createMayhemPowerups = powerUpSummary(() => ({ powerUps: true, powerUpKinds: POWER_UP_KINDS }));
   const createRules = h('div', null);
   /** All the rules, one category at a time, over the page: a link below the presets opens them, as it does in the local briefing. */
   const rulesLinkLabel = h('span.item__label', null, t('briefing.editRules'));
@@ -595,11 +592,10 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const readOnly = (): boolean => !!session.room && !session.you.host;
   /** What the host changes goes to the relay a moment later, as one message however many keys were pressed. */
   let rulesTimer: ReturnType<typeof setTimeout> | undefined;
-  const wireRules = (): RoomRules => (prefs.rules.mayhem > 0 ? mayhemRules(prefs.rules, prefs.gameMode) : prefs.rules);
   const pushRules = () => {
     clearTimeout(rulesTimer);
     rulesTimer = undefined;
-    if (session.room && session.you.host) session.setRules(wireRules(), prefs.gameMode);
+    if (session.room && session.you.host) session.setRules(prefs.rules, prefs.gameMode);
   };
   /** The host's rules are remembered for the next room, and — inside a room — sent to everybody in it. */
   const commitRules = () => {
@@ -609,22 +605,20 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     rulesTimer = setTimeout(pushRules, 250);
   };
   /** Which game the rules are for. Presets within one game only change values, so the cards and sliders stay where they are. */
-  const gameKey = () => `${prefs.gameMode}|${prefs.rules.mayhem > 0}`;
+  const gameKey = () => prefs.gameMode;
   const rebuildIfGameChanged = (before: string) => {
     if (gameKey() === before) return;
     buildCreateRules();
     buildCreateQuick();
   };
   const buildCreateRules = () => {
-    const mayhem = prefs.rules.mayhem > 0;
     const presets = presetsForMode(prefs.gameMode);
-    const pickMode = mayhem ? 'mayhem' : prefs.gameMode;
-    const pick = pickOfTheDay(pickMode, app.today());
+    const pick = pickOfTheDay(prefs.gameMode, app.today());
     createRulesForm = rulesForm(prefs.gameMode, {
       get: () => prefs.rules,
       patch: (v) => (prefs.rules = { ...prefs.rules, ...v }),
       commit: commitRules,
-    }, app, readOnly(), mayhem, () => {
+    }, app, readOnly(), () => {
       paintCreatePresetState();
       createPowerups.update();
     });
@@ -660,29 +654,14 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       prefs.rules = { ...pick.rules, powerUpKinds: [...pick.rules.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
       rebuildIfGameChanged(before);
     }, true);
-    if (mayhem) {
-      for (const preset of MAYHEM_PRESETS) {
-        addPreset(preset.key, t(preset.key), '', modeArt(preset.base, { mode: 'mayhem', preset: preset.art }), () => {
-          const before = gameKey();
-          prefs.gameMode = preset.base;
-          prefs.rules = { ...mayhemPresetRules(preset), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
-          rebuildIfGameChanged(before);
-        });
-      }
-    } else {
-      for (const preset of presets) {
-        const art = preset === 'simultaneous' ? 'simultaneous' : preset === 'standard' ? 'classic' : preset;
-        addPreset(preset, t(`preset.${preset}`), t(`preset.${preset}.hint`), modeArt(art, prefs.gameMode === 'horizon' && preset !== 'simultaneous' ? { mode: 'horizon', preset } : undefined), () => {
-          prefs.rules = { ...presetRules(preset), mayhem: 0, betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
-        });
-      }
+    for (const preset of presets) {
+      addPreset(preset, t(`preset.${preset}`), t(`preset.${preset}.hint`), presetArt(preset, prefs.gameMode), () => {
+        prefs.rules = { ...presetRules(preset), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+      });
     }
     createPresetCards.replaceChildren(...choices.map(({ card }) => card));
     paintCreatePresetState = () => {
-      const handpicked = matchingHandpicked(prefs.rules, pickMode, prefs.gameMode);
-      const selectedId = handpicked?.id === pick.id ? 'handpicked' : mayhem
-        ? matchingMayhemPreset({ mayhem: prefs.rules.mayhem, mayhemBase: prefs.gameMode, simultaneousShots: prefs.rules.simultaneousShots })?.key
-        : matchingPreset(prefs.rules, prefs.gameMode);
+      const selectedId = samePick(matchingHandpicked(prefs.rules, prefs.gameMode), pick) ? 'handpicked' : matchingPreset(prefs.rules, prefs.gameMode);
       const selected = selectedId && choices.some(({ id }) => id === selectedId) ? selectedId : undefined;
       choices.forEach(({ id, card }) => card.setAttribute('aria-pressed', String(id === selected)));
     };
@@ -692,7 +671,9 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   /** Back to the standard rules of the game being played, as the local rules page does. */
   rulesReset.addEventListener('click', () => {
     if (readOnly()) return;
-    prefs.rules = prefs.rules.mayhem > 0 ? { ...defaultRoomRules(), mayhem: 2 } : defaultRoomRules();
+    // A Mayhem game goes back to the Mayhem preset at its strength, any other one to the standard rules.
+    const { mayhem } = prefs.rules;
+    prefs.rules = mayhem ? { ...presetRules('mayhem'), mayhem } : defaultRoomRules();
     commitRules();
     createRulesForm?.refresh();
     createQuickControls.forEach((control) => control.refresh());
@@ -702,32 +683,31 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   });
 
   const buildCreateQuick = () => {
-    const mayhem = prefs.rules.mayhem > 0;
-    const quickKeys = mayhem ? ['rounds', 'shotTime', 'mayhem'] : ['rounds', 'shotTime'];
-    createQuick.classList.toggle('briefing__quick--mayhem', mayhem);
+    // The strength of Mayhem comes last, in a row of its own under the sliders, while Mayhem is on.
+    const quickKeys = ['rounds', 'shotTime', 'mayhem'];
     createQuickControls = ruleItems(prefs.gameMode, {
       get: () => prefs.rules,
       patch: (v) => (prefs.rules = { ...prefs.rules, ...v }),
       commit: commitRules,
-    }, true, mayhem)
+    }, true)
       .filter(({ key }) => quickKeys.includes(key))
+      .sort((a, b) => quickKeys.indexOf(a.key) - quickKeys.indexOf(b.key))
       .map(({ item }) => buildControl(item, { sound, readonly: readOnly(), changed: () => {
         paintCreatePresetState();
         createPowerups.update();
         createRulesForm?.refresh();
       } }));
-    createQuick.replaceChildren(
-      ...createQuickControls.map(({ el }) => el),
-      mayhem ? createMayhemPowerups.el : createPowerups.el,
-    );
+    const sliders = createQuickControls.map(({ el }) => el);
+    const mayhem = sliders.pop()!;
+    createQuick.replaceChildren(...sliders, h('div.briefing__mayhem', null, mayhem), createPowerups.el);
     createPowerups.update();
   };
 
   // The controls redraw themselves; the room and rule summaries follow their values.
   const env: Env = { sound, changed: () => {} };
-  const currentMode = (): PickerMode => (prefs.rules.mayhem > 0 ? 'mayhem' : prefs.gameMode);
+  const currentMode = (): NetworkGameMode => prefs.gameMode;
   /** The host's pick in the pager: the game starts from that mode's pick of the day, and the room follows. */
-  const setMode = (mode: PickerMode, direction: OnlineSectionDirection) => {
+  const setMode = (mode: NetworkGameMode, direction: OnlineSectionDirection) => {
     if (mode === currentMode()) return;
     const pick = pickOfTheDay(mode, app.today());
     prefs.gameMode = pick.base;
@@ -792,7 +772,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     const name = takeName();
     if (!name) return;
     // An empty field names the room as its placeholder promised, in the player's language — not the relay's English default.
-    session.createRoom({ name, roomName: roomName.value.trim() || roomName.placeholder, mode: 'ffa', gameMode: prefs.gameMode, rules: prefs.rules.mayhem > 0 ? mayhemRules(prefs.rules, prefs.gameMode) : prefs.rules, maxPlayers: prefs.capacity, password: password.value, look: prefs.look, avatar: prefs.avatar });
+    session.createRoom({ name, roomName: roomName.value.trim() || roomName.placeholder, mode: 'ffa', gameMode: prefs.gameMode, rules: prefs.rules, maxPlayers: prefs.capacity, password: password.value, look: prefs.look, avatar: prefs.avatar });
     hostPassword = password.value;
     password.value = '';
   });
@@ -1008,8 +988,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     // The host edits the game and its rules in the briefing; everybody else sees the same page, locked, and it follows the host.
     if (!you.host) {
       ownGame ??= { gameMode: prefs.gameMode, rules: prefs.rules };
-      const sameGame = followed.startsWith(`${room.id}|${room.gameMode}|${room.rules.mayhem > 0}|`);
-      followed = `${room.id}|${room.gameMode}|${room.rules.mayhem > 0}|${JSON.stringify(room.rules)}`;
+      const sameGame = followed.startsWith(`${room.id}|${room.gameMode}|`);
+      followed = `${room.id}|${room.gameMode}|${JSON.stringify(room.rules)}`;
       prefs.gameMode = room.gameMode;
       prefs.rules = { ...prefs.rules, ...room.rules, powerUpKinds: [...room.rules.powerUpKinds] };
       if (sameGame) {
@@ -1036,7 +1016,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     ];
     if (!hints.length && you.host && !guestsReady) hints.push(t('multiplayer.startNeedReady'));
     startHint.textContent = hints.join('\n');
-  const lobbyEl = h('div.lobby', null, bar, connectSlot, roomsView, openForms, roomView, status);
     startHint.hidden = !hints.length;
     start.classList.toggle('lobby__button--primary', you.host);
   };
@@ -1057,6 +1036,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const onlineHeading = h('h2.menu-page__title.online-view-title', { tabindex: '-1', 'aria-live': 'polite' });
   const onlineHeader = h('div.mode-carousel.online-section-header', null, onlineSectionViewport, onlineSectionKeys, onlineHeading);
 
+  const lobbyEl = h('div.lobby', null, bar, connectSlot, roomsView, openForms, roomView, status);
   const root = menuPage({
     title: t(({ rooms: 'flow.find', create: 'flow.create', code: 'flow.code' } as const)[view]), eyebrow: t('launcher.online'), intro: t(({ rooms: 'flow.findHint', create: 'flow.createIntro', code: 'flow.codeIntro' } as const)[view]), className: 'menu-page--lobby menu-page--mode-enter-next',
     headerTitle: onlineHeader,
@@ -1077,6 +1057,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       : ONLINE_SECTIONS.map((section) => ({ id: section, label: t(ONLINE_SECTION_TITLE[section]) }));
     const index = Math.max(0, entries.findIndex((entry) => entry.id === (picking ? currentMode() : view)));
     onlineSectionButtons.forEach((item, distance) => {
+      // Two games fill only two of the three places.
+      item.hidden = distance >= entries.length;
       const entry = entries[(index + distance) % entries.length];
       const selected = distance === 0;
       item.className = `item mode-pager__item mode-pager__item--${entry.id} mode-pager__item--${selected ? 'active' : distance === 1 ? 'near' : 'far'}`;
@@ -1139,9 +1121,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     if (inviteInUrl) history.replaceState(null, '', withoutInvite(location.href));
     inviteInUrl = false;
     inviteNote = null;
-    connection.classList.toggle('is-connecting', connecting && !connected && !hosted);
-    if (wasConnected !== null && connected !== wasConnected) flashConnection(connected ? 'is-linked' : 'is-dropped');
-    wasConnected = connected;
     invitePending = false;
   };
 
@@ -1160,6 +1139,9 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     connectionServer.textContent = connected && !configuredServer ? (session.client.address || prefs.server).replace(/^wss?:\/\//, '') : '';
     connectionServer.hidden = !connectionServer.textContent;
     connection.classList.toggle('is-connected', connected);
+    connection.classList.toggle('is-connecting', connecting && !connected && !hosted);
+    if (wasConnected !== null && connected !== wasConnected) flashConnection(connected ? 'is-linked' : 'is-dropped');
+    wasConnected = connected;
     disconnectButton.hidden = hosted || !connected;
     avatarBar.show(prefs.avatar);
     const browsing = connected && !room;
@@ -1222,7 +1204,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     roomDialog?.close();
     roomDialog = null;
 
-    quietConnect = silent;
     barName.append(nameField);
     connectButton.disabled = connecting;
     serverAddress.disabled = connecting;
@@ -1234,7 +1215,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     const params = { server: error.url };
     if (error.reason === 'timeout') return t('multiplayer.connectTimeout', params);
     if (error.reason === 'closed') return t('multiplayer.connectClosed', params);
-    quietConnect = false;
     return t('multiplayer.connectUnreachable', params);
   };
 
@@ -1242,6 +1222,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     const address = configuredServer ? DEFAULT_SERVER : serverAddress.value.trim();
     localMessage = silent ? null : t('multiplayer.connecting');
     connectFailed = false;
+    quietConnect = silent;
     render();
     try {
       await session.connect(address);
@@ -1253,6 +1234,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       prefs.autoConnect = false;
       localMessage = configuredServer ? t('multiplayer.connectFailed') : connectErrorText(error);
     }
+    quietConnect = false;
     save();
     render();
   };
@@ -1281,7 +1263,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     enter(next);
   };
   onlineSectionButtons.forEach((item) => item.addEventListener('click', () => {
-    const mode = item.dataset.mode as PickerMode | undefined;
+    const mode = item.dataset.mode as NetworkGameMode | undefined;
     if (mode) {
       setMode(mode, 'next');
       focusOnlineSection();

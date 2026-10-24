@@ -37,23 +37,22 @@ describe('CPU settings', () => {
 });
 
 describe('Mayhem settings', () => {
-  it('start off, in Classic', () => {
+  it('start off', () => {
     storage();
-    expect(loadSettings()).toMatchObject({ mayhem: 0, mayhemBase: 'classic' });
+    expect(loadSettings()).toMatchObject({ mayhem: 0 });
   });
 
-  it('keep the chaos strength and the mode the rounds are played in', () => {
+  it('keep the chaos strength', () => {
     storage();
     const settings = cloneSettings(DEFAULT_SETTINGS);
     settings.mayhem = 3;
-    settings.mayhemBase = 'horizon';
     saveSettings(settings);
-    expect(loadSettings()).toMatchObject({ mayhem: 3, mayhemBase: 'horizon' });
+    expect(loadSettings()).toMatchObject({ mayhem: 3 });
   });
 
   it('drop values nobody offers', () => {
-    storage({ mayhem: 7, mayhemBase: 'solar' });
-    expect(loadSettings()).toMatchObject({ mayhem: 0, mayhemBase: 'classic' });
+    storage({ mayhem: 7 });
+    expect(loadSettings()).toMatchObject({ mayhem: 0 });
   });
 });
 

@@ -120,6 +120,9 @@
   margin: 0;
 }
 
+/* Two modes, side by side over the daily challenge. */
+.launcher__modes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
 .launcher__online {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -311,9 +314,6 @@
   font-size: 9px;
 }
 
-.briefing__cards {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
 /* The version tag and the credits line each sit in a slot whose column animates between 0fr and 1fr,
  * so the footer grows by the credits' width and the language picker is eased aside instead of jumping. */
 .credits {
@@ -377,6 +377,9 @@
   .credits__agents { display: none; }
 }
 
+.briefing__cards {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .briefing__cards .item--card {
@@ -428,6 +431,10 @@
 }
 
 .briefing__quick-controls { display: contents; }
+
+/* Mayhem's strength sits under the sliders, as wide as they are, and only while Mayhem is on. */
+.briefing__mayhem { grid-column: 1 / 3; grid-row: 2; min-width: 0; }
+.briefing__mayhem:not(:has(> .item:not([hidden]))) { display: none; }
 
 .briefing__powerups {
   order: 1;
@@ -603,6 +610,7 @@
   .briefing__cards .item__hint { align-self: start; }
   .briefing__quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; }
   .briefing__powerups { grid-column: auto; }
+  .briefing__mayhem { grid-column: 1 / -1; }
 }
 
 @media (max-width: 900px) {
@@ -673,6 +681,7 @@
   .briefing__preset-note { margin-bottom: 16px; }
   .briefing__quick { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .briefing__powerups { grid-column: auto; }
+  .briefing__mayhem { grid-column: auto; grid-row: auto; }
   .briefing__quick .item { padding-block: 10px; }
 }
 
@@ -697,5 +706,5 @@
   .launcher__modes .item, .launcher__online .item, .briefing__cards .item { transition: none; }
   .launcher__modes .item:hover, .launcher__online .item:hover, .briefing__cards .item:hover { transform: none; }
   .launcher .item__icon, .briefing .item__icon { transition: none; transform: none; }
-}
   .credits__slot, .credits__tag, .credits__line { transition: none; }
+}

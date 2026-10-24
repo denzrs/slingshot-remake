@@ -25,7 +25,6 @@ import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './i18n';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './scoring';
-import { mayhemRules } from './lobbyPrefs';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
 import { dailyResultScreen } from './ui/daily';
 import { eyeIcon } from './ui/dom';
@@ -73,7 +72,6 @@ let match: Match | null = null;
 let lastReplay: StatsReplay | null = null;
 let screen: 'title' | 'play' = 'title';
 let lastMode: VersusMode = 'classic';
-let lastMayhem = false;
 /** `?daily=YYYY-MM-DD` flies another day's challenge — handy for testing and for sharing an old one. */
 const requestedDay = new URLSearchParams(location.search).get('daily');
 const forcedDay = isDateKey(requestedDay) ? requestedDay : null;
@@ -359,13 +357,11 @@ const app: App = {
     return screen === 'play' && !!match && match.settings.mayhem > 0;
   },
   today: () => forcedDay ?? dateKey(),
-  start(mode, mayhem = false) {
+  start(mode) {
     lastMode = mode;
-    lastMayhem = mayhem;
     match?.dispose();
-    // Mayhem is a game of its own: it plays by its two rules over the plain ones, whatever the other setups say.
-    const rules = cloneSettings(settings);
-    const played = mayhem ? { ...rules, ...mayhemRules(rules, mode) } : { ...rules, mayhem: 0 };
+    // Mayhem is a preset of the rules (the level of `mayhem`), not a mode of its own.
+    const played = cloneSettings(settings);
     match = createMatch(mode, played);
     // Where there is a relay, a game played here to its end is told to it, for its statistics.
     if (statsAvailable()) trackLocalGame(match, played, (report) => void reportLocalGame(report));
@@ -404,7 +400,7 @@ const app: App = {
     menu.close();
   },
   rematch() {
-    if (!match) return app.start(lastMode, lastMayhem);
+    if (!match) return app.start(lastMode);
     if (online()) {
       if (!match.canAdvance) return;
       advanceMatch();

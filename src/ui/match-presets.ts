@@ -1,16 +1,17 @@
 import type { VersusMode } from '../game';
-import { defaultRoomRules, mayhemRules } from '../lobbyPrefs';
+import { defaultRoomRules } from '../lobbyPrefs';
 import type { RoomRules } from '../net';
 import { rulesFor } from './rules';
-import type { Key } from '../i18n';
-import type { MayhemPresetArt } from './mode-icons';
 
 /** Regular presets follow the featured handpicked collection. */
-export const MATCH_PRESETS = ['standard', 'trickshot', 'party'] as const;
-export const CLASSIC_PRESETS = ['standard', 'simultaneous', 'party'] as const;
+export const MATCH_PRESETS = ['standard', 'trickshot', 'mayhem'] as const;
+export const CLASSIC_PRESETS = ['standard', 'simultaneous', 'mayhem'] as const;
 export type MatchPreset = (typeof MATCH_PRESETS)[number] | (typeof CLASSIC_PRESETS)[number];
 
-/** Event Horizon keeps Trickshot; Classic offers simultaneous fire instead. */
+/** The chaos strength the Mayhem preset starts at, in both modes: Wild. */
+export const MAYHEM_PRESET_LEVEL = 2;
+
+/** Event Horizon keeps Trickshot; Classic offers simultaneous fire instead. Both end with Mayhem. */
 export function presetsForMode(mode: VersusMode): readonly MatchPreset[] {
   return mode === 'classic' ? CLASSIC_PRESETS : MATCH_PRESETS;
 }
@@ -20,83 +21,74 @@ export function presetRules(preset: MatchPreset): RoomRules {
   switch (preset) {
     case 'standard': return base;
     case 'trickshot': return { ...base, maxPower: 60, bounce: true, styleBonuses: true };
-    case 'party': return { ...base, powerUps: true, powerUpAmount: 4, maxPlanets: 8, bounce: true, styleBonuses: true };
     case 'simultaneous': return { ...base, simultaneousShots: true };
+    // The plain rules with twists laid over them every round; trick shots pay, as in Event Horizon.
+    case 'mayhem': return { ...base, mayhem: MAYHEM_PRESET_LEVEL, styleBonuses: true };
   }
 }
 
-/** Match the actual rules, including manual edits, rather than remembering a potentially stale label. */
-export function matchingPreset(rules: RoomRules, mode: VersusMode): MatchPreset | undefined {
-  const candidates = presetsForMode(mode);
-  return candidates.find((preset) => {
-    const expected = presetRules(preset);
-    if (rules.powerUps !== expected.powerUps) return false;
-    return rulesFor(mode).every(({ key, when, inactive }) => {
-      if (key === 'powerUpKinds' && !rules.powerUps && !expected.powerUps) return true;
-      if (when && !when(rules) && !when(expected)) return true;
-      if (inactive?.(rules) && inactive(expected)) return true;
-      const a = rules[key], b = expected[key];
-      return Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((value) => b.includes(value)) : a === b;
-    });
+/** Whether a set of rules plays as the expected ones in a mode: rules the mode doesn't have, and rows that are out of play in both, don't count. */
+function sameRules(rules: RoomRules, expected: RoomRules, mode: VersusMode, anyMayhemLevel = false): boolean {
+  if (rules.powerUps !== expected.powerUps) return false;
+  return rulesFor(mode).every(({ key, when, inactive }) => {
+    if (key === 'powerUpKinds' && !rules.powerUps && !expected.powerUps) return true;
+    if (when && !when(rules) && !when(expected)) return true;
+    if (inactive?.(rules) && inactive(expected)) return true;
+    const a = rules[key], b = expected[key];
+    if (key === 'mayhem' && anyMayhemLevel) return (a as number) > 0 === (b as number) > 0;
+    return Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((value) => b.includes(value)) : a === b;
   });
 }
 
-/** The same Mayhem starts in the offline briefing and online room setup. */
-export const MAYHEM_PRESETS = [
-  { key: 'mayhem.preset.wildClassic', art: 'wildClassic', strength: 2, base: 'classic', simultaneousShots: false },
-  { key: 'mayhem.preset.insaneClassicSimultaneous', art: 'insaneClassicSimultaneous', strength: 3, base: 'classic', simultaneousShots: true },
-  { key: 'mayhem.preset.insaneHorizon', art: 'insaneHorizon', strength: 3, base: 'horizon', simultaneousShots: false },
-] as const satisfies readonly { key: Key; art: MayhemPresetArt; strength: number; base: VersusMode; simultaneousShots: boolean }[];
-
-/** Applying a regular Mayhem preset also replaces a previous recommendation's round and flight settings. */
-export function mayhemPresetRules(preset: (typeof MAYHEM_PRESETS)[number]): RoomRules {
-  return mayhemRules({ ...defaultRoomRules(), mayhem: preset.strength, simultaneousShots: preset.simultaneousShots }, preset.base);
+/** Match the actual rules, including manual edits, rather than remembering a potentially stale label. Mayhem stays itself at any strength. */
+export function matchingPreset(rules: RoomRules, mode: VersusMode): MatchPreset | undefined {
+  return presetsForMode(mode).find((preset) => sameRules(rules, presetRules(preset), mode, true));
 }
 
-export function matchingMayhemPreset(settings: { mayhem: number; mayhemBase: VersusMode; simultaneousShots: boolean }): (typeof MAYHEM_PRESETS)[number] | undefined {
-  return MAYHEM_PRESETS.find((preset) => settings.mayhem === preset.strength
-    && settings.mayhemBase === preset.base
-    && (preset.base === 'horizon' || settings.simultaneousShots === preset.simultaneousShots));
-}
-
-
-export type PickMode = VersusMode | 'mayhem';
 export const HANDPICKED_IDS = ['express', 'ghost', 'garden', 'supernova'] as const;
 export type HandpickedId = (typeof HANDPICKED_IDS)[number];
 export interface HandpickedPreset {
   id: HandpickedId;
-  mode: PickMode;
+  /** Which set of texts describes it: the mode's own, or Mayhem's. */
+  mode: VersusMode | 'mayhem';
+  /** The mode it is played in. */
   base: VersusMode;
   rules: RoomRules;
 }
 
-/** Four authored combinations per mode; Mayhem only uses settings its round engine preserves. */
-export function handpickedPresets(mode: PickMode): HandpickedPreset[] {
-  const base = defaultRoomRules();
-  const make = (id: HandpickedId, patch: Partial<RoomRules>, gameMode: VersusMode = mode === 'mayhem' ? 'classic' : mode): HandpickedPreset => ({
-    id, mode, base: gameMode,
-    rules: mode === 'mayhem' ? mayhemRules({ ...base, ...patch }, gameMode) : { ...defaultRoomRules(), ...patch, mayhem: 0 },
-  });
-  if (mode === 'mayhem') return [
-    make('express', { rounds: 3, shotTime: 10, mayhem: 1, simultaneousShots: true }),
-    make('ghost', { rounds: 3, shotTime: 30, mayhem: 2 }, 'horizon'),
-    make('garden', { rounds: 7, shotTime: 30, mayhem: 2 }),
-    make('supernova', { rounds: 7, shotTime: 10, mayhem: 3 }, 'horizon'),
-  ];
+/** The authored Mayhem combinations: each is played in one mode, and joins that mode's rotation. */
+const MAYHEM_PICKS: readonly { id: HandpickedId; base: VersusMode; patch: Partial<RoomRules> }[] = [
+  { id: 'express', base: 'classic', patch: { rounds: 3, shotTime: 10, mayhem: 1, simultaneousShots: true } },
+  { id: 'ghost', base: 'horizon', patch: { rounds: 3, shotTime: 30, mayhem: 2 } },
+  { id: 'garden', base: 'classic', patch: { rounds: 7, shotTime: 30, mayhem: 2 } },
+  { id: 'supernova', base: 'horizon', patch: { rounds: 7, shotTime: 10, mayhem: 3 } },
+];
+
+/** Four authored combinations per mode, then the Mayhem ones played in it. */
+export function handpickedPresets(mode: VersusMode): HandpickedPreset[] {
+  const make = (id: HandpickedId, patch: Partial<RoomRules>): HandpickedPreset => ({ id, mode, base: mode, rules: { ...defaultRoomRules(), ...patch, mayhem: 0 } });
   return [
     make('express', { rounds: 3, shotTime: 10, maxPlanets: 2, ...(mode === 'classic' ? { simultaneousShots: true } : { fixedPower: true, fixedPowerLevel: 50 }) }),
     make('ghost', { rounds: 5, shotTime: 30, maxPlanets: mode === 'classic' ? 3 : 4, hiddenAim: true, fadingTrails: 2 }),
     make('garden', { rounds: 7, shotTime: 30, maxPlanets: 6, maxPower: 60, bounce: true, styleBonuses: true, powerUps: true, powerUpAmount: 2, powerUpKinds: ['preview', 'teleport', 'shield'] }),
     make('supernova', { rounds: 5, shotTime: 10, maxPlanets: 8, bounce: true, styleBonuses: true, simultaneousShots: mode === 'classic', powerUps: true, powerUpAmount: 4 }),
+    ...MAYHEM_PICKS.filter((pick) => pick.base === mode).map(({ id, patch }): HandpickedPreset => ({
+      id, mode: 'mayhem', base: mode, rules: { ...defaultRoomRules(), ...patch, styleBonuses: true },
+    })),
   ];
 }
 
+/** Whether two handpicked combinations are the same one (a mode's own and its Mayhem one may share a name). */
+export const samePick = (a: HandpickedPreset | undefined, b: HandpickedPreset): boolean => !!a && a.id === b.id && a.mode === b.mode;
+
 let cachedPickDay = '';
+let cachedPickLength = 0;
 let cachedPickIndex = 0;
 
 /** Stable per day/device, distinct across modes, with no consecutive repeats within a mode. */
-export function pickOfTheDay(mode: PickMode, day: string): HandpickedPreset {
-  if (day !== cachedPickDay) {
+export function pickOfTheDay(mode: VersusMode, day: string): HandpickedPreset {
+  const picks = handpickedPresets(mode);
+  if (day !== cachedPickDay || picks.length !== cachedPickLength) {
     const [year, month, date] = day.split('-').map(Number);
     const days = Math.abs(Math.floor(Date.UTC(year, month - 1, date) / 86_400_000));
     let seed = 0x51a95;
@@ -105,28 +97,18 @@ export function pickOfTheDay(mode: PickMode, day: string): HandpickedPreset {
       seed ^= seed << 13;
       seed ^= seed >>> 17;
       seed ^= seed << 5;
-      // Move by one, two or three: today's combination cannot equal yesterday's.
-      index = (index + 1 + (seed >>> 0) % (HANDPICKED_IDS.length - 1)) % HANDPICKED_IDS.length;
+      // Move on by at least one: today's combination cannot equal yesterday's.
+      index = (index + 1 + (seed >>> 0) % (picks.length - 1)) % picks.length;
     }
     cachedPickDay = day;
+    cachedPickLength = picks.length;
     cachedPickIndex = index;
   }
-  // Distinct offsets keep all three modes on different authored combinations each day.
-  const modeOffset = { classic: 0, horizon: 1, mayhem: 2 }[mode];
-  return handpickedPresets(mode)[(cachedPickIndex + modeOffset) % HANDPICKED_IDS.length];
+  // Distinct offsets keep both modes on different authored combinations each day.
+  const modeOffset = { classic: 0, horizon: 1 }[mode];
+  return picks[(cachedPickIndex + modeOffset) % picks.length];
 }
 
-export function matchingHandpicked(rules: RoomRules, mode: PickMode, base: VersusMode = mode === 'horizon' ? 'horizon' : 'classic'): HandpickedPreset | undefined {
-  return handpickedPresets(mode).find((pick) => {
-    if (mode === 'mayhem' && base !== pick.base) return false;
-    return rulesFor(pick.base, false, mode === 'mayhem').every(({ key, when, inactive }) => {
-      const expected = pick.rules;
-      if (mode !== 'mayhem' && rules.powerUps !== expected.powerUps) return false;
-      if (key === 'powerUpKinds' && !rules.powerUps && !expected.powerUps) return true;
-      if (when && !when(rules) && !when(expected)) return true;
-      if (inactive?.(rules) && inactive(expected)) return true;
-      const a = rules[key], b = expected[key];
-      return Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((value) => b.includes(value)) : a === b;
-    });
-  });
+export function matchingHandpicked(rules: RoomRules, mode: VersusMode): HandpickedPreset | undefined {
+  return handpickedPresets(mode).find((pick) => sameRules(rules, pick.rules, mode));
 }

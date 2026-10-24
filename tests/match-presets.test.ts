@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, cloneSettings } from '../src/settings';
 import { rulesOf } from '../src/lobbyPrefs';
-import { presetsForMode, matchingPreset, presetRules, handpickedPresets, matchingHandpicked, pickOfTheDay, MAYHEM_PRESETS, mayhemPresetRules } from '../src/ui/match-presets';
+import { presetsForMode, matchingPreset, presetRules, handpickedPresets, matchingHandpicked, pickOfTheDay, samePick, MAYHEM_PRESET_LEVEL } from '../src/ui/match-presets';
 import { rulesFor } from '../src/ui/rules';
 
 describe('match presets', () => {
@@ -18,6 +18,7 @@ describe('match presets', () => {
         expect(matchingPreset(rules, mode)).toBe(preset);
         for (const row of rulesFor(mode)) {
           if (!row.options.length || row.control === 'tiles' || row.key === 'fixedPower' || row.key === 'maxPower') continue;
+          if (row.when && !row.when(rules)) continue;
           expect(row.options.map(({ value }) => value), `${preset}: ${row.key}`).toContain(rules[row.key]);
         }
       }
@@ -46,8 +47,8 @@ describe('match presets', () => {
     rules.powerUpAmount = 1;
     rules.powerUpKinds = ['shield'];
     expect(matchingPreset(rules, 'classic')).toBe('standard');
-    const party = { ...presetRules('party'), powerUpKinds: rules.powerUpKinds };
-    expect(matchingPreset(party, 'classic')).toBeUndefined();
+    const garden = { ...handpickedPresets('classic')[2].rules, powerUpKinds: rules.powerUpKinds };
+    expect(matchingHandpicked(garden, 'classic')).toBeUndefined();
   });
 
   it('replaces previous custom rules without changing seats or device preferences', () => {
@@ -60,8 +61,8 @@ describe('match presets', () => {
     settings.fixedPower = true;
     settings.invisiblePlanets = true;
     const before = cloneSettings(settings);
-    Object.assign(settings, presetRules('party'));
-    expect(matchingPreset(rulesOf(settings), 'classic')).toBe('party');
+    Object.assign(settings, presetRules('mayhem'));
+    expect(matchingPreset(rulesOf(settings), 'classic')).toBe('mayhem');
     for (const key of ['seats', 'seatTeams', 'teamMode', 'language', 'stickSide', 'sound'] as const) {
       expect(settings[key]).toEqual(before[key]);
     }
@@ -70,28 +71,50 @@ describe('match presets', () => {
   });
 
   it('gives every application its own power-up list', () => {
-    const first = presetRules('party');
+    const first = presetRules('mayhem');
     first.powerUpKinds.pop();
-    expect(presetRules('party').powerUpKinds).toEqual(DEFAULT_SETTINGS.powerUpKinds);
+    expect(presetRules('mayhem').powerUpKinds).toEqual(DEFAULT_SETTINGS.powerUpKinds);
+  });
+});
+
+describe('the Mayhem preset', () => {
+  it('stands in for Party in both modes, at Wild', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      expect(presetsForMode(mode).at(-1)).toBe('mayhem');
+      expect(presetsForMode(mode)).not.toContain('party');
+    }
+    expect(MAYHEM_PRESET_LEVEL).toBe(2);
+    expect(presetRules('mayhem')).toEqual({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2, styleBonuses: true });
+  });
+
+  it('stays selected at any strength, and no other preset has twists', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      for (const mayhem of [1, 2, 3]) expect(matchingPreset({ ...presetRules('mayhem'), mayhem }, mode)).toBe('mayhem');
+      expect(matchingPreset({ ...presetRules('standard'), mayhem: 2 }, mode)).not.toBe('standard');
+      for (const preset of presetsForMode(mode)) expect(presetRules(preset).mayhem > 0).toBe(preset === 'mayhem');
+    }
   });
 });
 
 
 describe('handpicked combinations', () => {
-  it('removes Sniper and Insane Classic from the regular choices', () => {
-    expect(presetsForMode('classic')).toEqual(['standard', 'simultaneous', 'party']);
-    expect(presetsForMode('horizon')).toEqual(['standard', 'trickshot', 'party']);
-    expect(MAYHEM_PRESETS.map(({ art }) => art)).toEqual(['wildClassic', 'insaneClassicSimultaneous', 'insaneHorizon']);
+  it('offers Standard, the mode’s own preset and Mayhem as the regular choices', () => {
+    expect(presetsForMode('classic')).toEqual(['standard', 'simultaneous', 'mayhem']);
+    expect(presetsForMode('horizon')).toEqual(['standard', 'trickshot', 'mayhem']);
   });
 
-  it('provides four distinct, selectable combinations with valid settings in each mode', () => {
-    for (const mode of ['classic', 'horizon', 'mayhem'] as const) {
+  it('provides four of the mode’s own and two Mayhem combinations, distinct, selectable and with valid settings, in each mode', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
       const picks = handpickedPresets(mode);
-      expect(picks).toHaveLength(4);
-      expect(new Set(picks.map(({ id }) => id)).size).toBe(4);
+      expect(picks).toHaveLength(6);
+      expect(picks.filter((pick) => pick.mode === mode)).toHaveLength(4);
+      expect(picks.filter((pick) => pick.mode === 'mayhem')).toHaveLength(2);
+      expect(new Set(picks.map(({ id, mode }) => `${mode}.${id}`)).size).toBe(6);
       for (const pick of picks) {
-        expect(matchingHandpicked(pick.rules, mode, pick.base)?.id).toBe(pick.id);
-        for (const row of rulesFor(pick.base, false, mode === 'mayhem')) {
+        expect(pick.base).toBe(mode);
+        expect(pick.rules.mayhem > 0).toBe(pick.mode === 'mayhem');
+        expect(samePick(matchingHandpicked(pick.rules, mode), pick)).toBe(true);
+        for (const row of rulesFor(pick.base)) {
           if (!row.options.length || row.control === 'tiles' || row.key === 'fixedPower' || row.key === 'maxPower') continue;
           if (row.when && !row.when(pick.rules)) continue;
           expect(row.options.map(({ value }) => value), `${mode}/${pick.id}: ${row.key}`).toContain(pick.rules[row.key]);
@@ -100,45 +123,47 @@ describe('handpicked combinations', () => {
     }
   });
 
-  it('keeps each mode’s daily choice stable, distinct from other modes and different from yesterday', () => {
-    const modes = ['classic', 'horizon', 'mayhem'] as const;
+  it('keeps each mode’s daily choice stable, distinct from the other mode and different from yesterday, Mayhem ones among them', () => {
+    const modes = ['classic', 'horizon'] as const;
     const days = Array.from({ length: 90 }, (_, i) => new Date(Date.UTC(2026, 9, i + 1)).toISOString().slice(0, 10));
+    const key = (pick: { id: string; mode: string }) => `${pick.mode}.${pick.id}`;
     for (const mode of modes) {
-      const ids = days.map((day) => pickOfTheDay(mode, day).id);
-      expect(new Set(ids).size).toBe(4);
-      expect(ids.some((id, i) => i > 0 && id === ids[i - 1])).toBe(false);
-      expect(ids.slice(4)).not.toEqual(ids.slice(0, -4));
+      const keys = days.map((day) => key(pickOfTheDay(mode, day)));
+      expect(new Set(keys).size).toBe(6);
+      expect(keys.some((k) => k.startsWith('mayhem.'))).toBe(true);
+      expect(keys.some((k, i) => i > 0 && k === keys[i - 1])).toBe(false);
     }
     for (const day of days) {
       const picks = modes.map((mode) => pickOfTheDay(mode, day));
-      expect(new Set(picks.map(({ id }) => id)).size).toBe(3);
-      for (const pick of picks) {
+      expect(samePick(picks[0], picks[1])).toBe(false);
+      for (const [i, pick] of picks.entries()) {
         // Revisit after another day to exercise the cache as well.
-        pickOfTheDay(pick.mode, '2027-01-01');
-        expect(pickOfTheDay(pick.mode, day)).toEqual(pick);
+        pickOfTheDay(modes[i], '2027-01-01');
+        expect(pickOfTheDay(modes[i], day)).toEqual(pick);
       }
     }
   });
 
-  it('clears a Mayhem recommendation when choosing any regular preset, even at the same chaos strength', () => {
-    for (const pick of handpickedPresets('mayhem')) {
-      const settings = cloneSettings(DEFAULT_SETTINGS);
-      Object.assign(settings, pick.rules, { mayhemBase: pick.base });
-      expect(matchingHandpicked(rulesOf(settings), 'mayhem', settings.mayhemBase)?.id).toBe(pick.id);
-      for (const preset of MAYHEM_PRESETS) {
-        Object.assign(settings, mayhemPresetRules(preset), { mayhemBase: preset.base });
-        expect(matchingHandpicked(rulesOf(settings), 'mayhem', settings.mayhemBase)).toBeUndefined();
+  it('clears a Mayhem recommendation when choosing the Mayhem preset, even at the same chaos strength', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      for (const pick of handpickedPresets(mode).filter((pick) => pick.mode === 'mayhem')) {
+        const settings = cloneSettings(DEFAULT_SETTINGS);
+        Object.assign(settings, pick.rules);
+        expect(samePick(matchingHandpicked(rulesOf(settings), mode), pick)).toBe(true);
+        Object.assign(settings, presetRules('mayhem'), { mayhem: pick.rules.mayhem });
+        expect(matchingHandpicked(rulesOf(settings), mode)).toBeUndefined();
       }
     }
   });
 
-  it('uses Mayhem settings that survive game normalization, and matches the actual base mode', () => {
-    for (const pick of handpickedPresets('mayhem')) {
-      expect(pick.rules.mayhem).toBeGreaterThan(0);
-      expect(pick.rules.maxPlanets).toBe(DEFAULT_SETTINGS.maxPlanets);
-      expect(pick.rules.powerUps).toBe(false);
-      expect(matchingHandpicked(pick.rules, 'mayhem', pick.base === 'classic' ? 'horizon' : 'classic')).toBeUndefined();
-      expect(matchingHandpicked({ ...pick.rules, rounds: 15 }, 'mayhem', pick.base)).toBeUndefined();
+  it('keeps Mayhem combinations to the plain rules, and tells them apart by their strength', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      for (const pick of handpickedPresets(mode).filter((pick) => pick.mode === 'mayhem')) {
+        expect(pick.rules.maxPlanets).toBe(DEFAULT_SETTINGS.maxPlanets);
+        expect(pick.rules.powerUps).toBe(false);
+        expect(matchingHandpicked({ ...pick.rules, rounds: 15 }, mode)).toBeUndefined();
+        expect(matchingHandpicked({ ...pick.rules, mayhem: pick.rules.mayhem === 3 ? 2 : 3 }, mode)).toBeUndefined();
+      }
     }
   });
 

@@ -39,8 +39,6 @@ export interface Settings {
   powerUpAmount: number;
   /** Mayhem: every round has twists of its own, laid over these rules. 0 = off, otherwise the chaos strength (1 mild, 2 wild, 3 insane). */
   mayhem: number;
-  /** Mayhem: the mode the rounds are played in, Classic or Event Horizon. */
-  mayhemBase: 'classic' | 'horizon';
   /** Other players' aim arrows, angles and ship headings stay hidden: you only see your own aim. */
   hiddenAim: boolean;
   /** Seconds a finished shot's flight path stays on the board before it has faded away; 0 = it stays. */
@@ -82,7 +80,6 @@ export const DEFAULT_SETTINGS: Settings = {
   powerUpKinds: [...POWER_UP_KINDS],
   powerUpAmount: POWER_UP.DEFAULT_AMOUNT,
   mayhem: 0,
-  mayhemBase: 'classic',
   hiddenAim: false,
   fadingTrails: 0,
   betting: false,
@@ -120,7 +117,6 @@ export function loadSettings(): Settings {
       if (!POWER_UP.AMOUNTS.includes(s.powerUpAmount)) s.powerUpAmount = POWER_UP.DEFAULT_AMOUNT;
       if (!TRAIL_FADE.OPTIONS.includes(s.fadingTrails)) s.fadingTrails = 0;
       if (!MAYHEM.LEVELS.includes(s.mayhem)) s.mayhem = 0;
-      if (s.mayhemBase !== 'horizon') s.mayhemBase = 'classic';
       if (!AIM.CAP_OPTIONS.includes(s.maxPower)) s.maxPower = AIM.MAX_POWER;
       if (!AIM.FIXED_OPTIONS.includes(s.fixedPowerLevel)) s.fixedPowerLevel = AIM.FIXED_POWER;
       // It used to be a plain on/off switch, "on" meaning two shots.
