@@ -831,6 +831,7 @@
   background: rgb(13 29 50 / .28);
   list-style: none;
 }
+.menu-page--lobby .lobby__empty { padding-block: clamp(12px, 2.5vh, 36px); }
 .menu-page--lobby .lobby__empty strong,
 .menu-page--leaderboard .lobby__empty strong { font: 700 20px/1.3 var(--font-body); text-transform: none; }
 .menu-page--lobby .lobby__empty > span:not(.lobby__empty-radar),
