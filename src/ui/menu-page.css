@@ -1409,3 +1409,15 @@
 /* A guest cannot pick: the presets that are not the room's are greyed out, and the chosen one stays lit.
    Dimmed with a filter, not opacity: the entrance animation owns the opacity and would flash the cards at full strength. */
 .menu-page .lobby__preset.is-readonly[aria-pressed='false'] { filter: grayscale(.7) brightness(.55); }
+
+/* Settings → Less motion in menus: pages and cards appear in place, with no sliding, fading or flaring between them.
+   Spinners and status pings keep running; they report something rather than move you around. */
+.menu-motion-less :is(
+  .menu-page, .launcher, .panel,
+  .menu-page__head > .mode-carousel, .menu-page__head > .menu-page__title, .menu-page__body,
+  .mode-pager__item--active, .briefing__cards > *, .launcher__section-head,
+  .launcher__online > .item, .launcher__modes > .item, .launcher__daily > .item,
+  .menu-page--mode-enter-next .lobby > *, .menu-page--mode-enter-previous .lobby > *,
+  .room-deck__briefing, .lobby--linked > *
+) { animation: none !important; }
+.menu-motion-less #overlay :is(*, *::before, *::after) { transition: none !important; }

@@ -950,6 +950,7 @@ function settingsScreen(app: App): Screen {
       }, 'display'),
       inCategory(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'display'),
       inCategory(settingToggle(app, t('settings.statsTicker'), 'statsTicker'), 'display'),
+      inCategory(settingToggle(app, t('settings.lessMenuMotion'), 'lessMenuMotion'), 'display'),
       // Only a touch screen has the stick.
       ...(matchMedia('(pointer: coarse)').matches
         ? [

@@ -61,6 +61,8 @@ export interface Settings {
   menuBackground: boolean;
   /** Show the scrolling statistics ticker in the title menu and multiplayer lobby. */
   statsTicker: boolean;
+  /** Menus change pages without sliding, fading or flaring: moving through them is instant. */
+  lessMenuMotion: boolean;
   /** Touch screens: the side of the screen the aiming stick sits on. */
   stickSide: 'left' | 'right';
   menuSounds: boolean;
@@ -104,6 +106,7 @@ export const DEFAULT_SETTINGS: Settings = {
   debris: 'medium',
   menuBackground: true,
   statsTicker: true,
+  lessMenuMotion: false,
   stickSide: 'left',
   menuSounds: true,
   gameSounds: true,
@@ -126,7 +129,7 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
-      for (const key of ['contours', 'particles', 'menuBackground', 'statsTicker', 'menuSounds', 'gameSounds'] as const) {
+      for (const key of ['contours', 'particles', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'menuSounds', 'gameSounds'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
       if (!isKillcamMode(s.killcam)) s.killcam = DEFAULT_SETTINGS.killcam;

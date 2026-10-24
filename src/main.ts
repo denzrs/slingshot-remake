@@ -346,6 +346,7 @@ const app: App = {
   settingsChanged() {
     saveSettings(settings);
     applyStickSide();
+    applyMenuMotion();
     sound.menuEnabled = settings.menuSounds;
     sound.gameEnabled = settings.gameSounds;
     effects.particles = settings.particles;
@@ -687,6 +688,10 @@ function applyStickSide(): void {
   document.documentElement.classList.toggle('stick-right', settings.stickSide === 'right');
 }
 applyStickSide();
+function applyMenuMotion(): void {
+  document.documentElement.classList.toggle('menu-motion-less', settings.lessMenuMotion);
+}
+applyMenuMotion();
 
 touchMenu.addEventListener('click', () => {
   sound.unlock();
