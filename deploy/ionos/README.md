@@ -11,7 +11,27 @@ The relay runs as the unprivileged `ops` account in a systemd user unit. The Git
 
 ## The daily board
 
-The relay keeps the daily-challenge leaderboard and the match statistics in one file, `/srv/slingshot/slingshot.db` (a SQLite-compatible file written through `turso`, created on first start, `DATABASE` overrides the path; before this file the board was `leaderboard.db` – set `DATABASE=/srv/slingshot/leaderboard.db` to keep using it). It is a data file next to the binary, so a deploy leaves it alone: the deployment only flips `slingshot-server` and `relay.env`, and the relay prunes the days past `LEADERBOARD_KEEP_DAYS` (default `7`) itself. It holds nothing but the day, the hashed poster, the name they chose and the score, so it needs no backup — and the relay will not start if it cannot open it, which fails the deploy's health check and rolls back rather than serving on without a board. A name the board will not carry (checked with `rustrict`) is refused with a message the player can act on; the scores themselves are taken at face value.
+The relay keeps the daily-challenge leaderboard and the match statistics in one file, `/srv/slingshot/slingshot.db` (a SQLite-compatible file written through `turso`, created on first start, `DATABASE` overrides the path; before this file the board was `leaderboard.db` – set `DATABASE=/srv/slingshot/leaderboard.db` to keep using it). It is a data file next to the binary, so a deploy leaves it alone: the deployment only flips `slingshot-server` and `relay.env`, and the relay prunes the days past `LEADERBOARD_KEEP_DAYS` (default `7`) itself. The relay will not start if it cannot open it, which fails the deploy's health check and rolls back rather than serving on without a board.
+
+## Backups
+
+The board alone would need none – it is a week that refills itself – but the same file holds a year of match statistics that nothing else can rebuild. The deploy writes `BACKUP_DIR=/srv/slingshot/backups` into `relay.env`, and the relay snapshots the database there once a UTC day (`slingshot-YYYY-MM-DD.db`, written with `VACUUM INTO` so the copy is consistent while the relay keeps writing), keeping the newest 14 (`BACKUP_KEEP`). The first snapshot is written on the first start after the deploy. Do not copy `slingshot.db` itself while the relay runs: the WAL beside it may be half-applied – copy a snapshot.
+
+The snapshots live on the VPS, so they cover a bad write or a bad release, not a lost machine. Pull them somewhere else on a schedule, for example from a machine at home:
+
+```sh
+rsync -a ops@slingshot-relay.eu:/srv/slingshot/backups/ ~/backups/slingshot/
+```
+
+To restore, stop the relay, move the database aside together with its `-wal` (a WAL left beside the snapshot would be replayed onto it) and start it on a snapshot:
+
+```sh
+systemctl --user stop slingshot-relay.service
+cd /srv/slingshot
+mkdir -p broken && mv slingshot.db slingshot.db-* broken/ 2>/dev/null
+cp backups/slingshot-YYYY-MM-DD.db slingshot.db
+systemctl --user start slingshot-relay.service
+``` A name the board will not carry (checked with `rustrict`) is refused with a message the player can act on; the scores themselves are taken at face value.
 
 ## Bootstrap the unit and renewal hook
 

@@ -5,6 +5,7 @@
 
 mod admission;
 mod auth;
+mod backup;
 mod codec;
 mod command;
 mod config;
@@ -30,6 +31,7 @@ use tracing::{error, info, warn};
 
 use crate::admission::{client_of, AdmissionGuard};
 use crate::auth::{ScryptSlots, MAX_CONCURRENT_SCRYPTS};
+use crate::backup::{Backups, DEFAULT_KEEP as DEFAULT_BACKUP_KEEP};
 use crate::codec::{OutboundPool, DEFAULT_OUTBOUND_BYTES_TOTAL};
 use crate::config::{
     env_flag, env_parse, DEFAULT_CONNECTIONS_PER_IP_PER_SECOND, DEFAULT_MAX_CONNECTIONS,
@@ -151,6 +153,28 @@ async fn main() {
         None
     };
 
+    // BACKUP_DIR: where a daily snapshot of the database goes, the newest BACKUP_KEEP kept. Unset,
+    // there are none (the tests and benchmarks start relays that should not leave files behind).
+    let backups = match std::env::var("BACKUP_DIR") {
+        Ok(dir) if !dir.is_empty() => {
+            let keep = env_parse("BACKUP_KEEP", DEFAULT_BACKUP_KEEP);
+            match Backups::open(&database, &dir, keep) {
+                Ok(backups) => {
+                    info!(%dir, keep, "daily database snapshots on");
+                    Some(backups)
+                }
+                Err(err) => {
+                    error!(%dir, %err, "failed to open the backup directory");
+                    std::process::exit(1);
+                }
+            }
+        }
+        _ => {
+            info!("database snapshots off (set BACKUP_DIR to keep them)");
+            None
+        }
+    };
+
     let listener = match TcpListener::bind(("::", port)).await {
         Ok(listener) => listener,
         Err(err) => {
@@ -187,8 +211,8 @@ async fn main() {
         max_messages_per_second,
         max_bytes_per_second,
     });
-    // Pruning deletes rows and may take a while: it runs in a task of its own, so the accept loop
-    // below never waits for the database.
+    // Pruning deletes rows and a snapshot copies the file; both may take a while, so they run in a
+    // task of their own and the accept loop below never waits for the database.
     {
         let boards = shared.boards.clone();
         let stats = stats.clone();
@@ -200,6 +224,9 @@ async fn main() {
                 boards.prune_if_due().await;
                 if let Some(stats) = &stats {
                     stats.prune_if_due().await;
+                }
+                if let Some(backups) = &backups {
+                    backups.snapshot_if_due().await;
                 }
             }
         });
