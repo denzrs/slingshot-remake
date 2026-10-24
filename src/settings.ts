@@ -2,6 +2,7 @@ import type { CpuLevel } from './ai';
 import { AIM, GRACE, MAX_PLAYERS, MAYHEM, TRAIL_FADE } from './config';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from './powerups';
 import { detectLang, isLang, type Lang } from './i18n';
+import { isLook, type Look } from './render/look';
 
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
 export type Seat = 'human' | CpuLevel | 'off';
@@ -43,6 +44,8 @@ export interface Settings {
   hiddenAim: boolean;
   /** Seconds a finished shot's flight path stays on the board before it has faded away; 0 = it stays. */
   fadingTrails: number;
+  /** The original classic plate, or the refined look (glowing ships, moving planets). */
+  look: Look;
   contours: boolean;
   particles: boolean;
   /** The title screen and menus show a CPU match playing behind them; off leaves the plate empty. */
@@ -82,6 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fadingTrails: 0,
   betting: false,
   chatPlayersOnly: false,
+  look: 'classic',
   contours: true,
   particles: true,
   menuBackground: true,
@@ -92,11 +96,11 @@ export const DEFAULT_SETTINGS: Settings = {
   seatTeams: [0, 1, 0, 1, 0, 1],
 };
 
-const KEY = 'slingshot.settings.v1';
+export const SETTINGS_KEY = 'slingshot.settings.v1';
 
 export function loadSettings(): Settings {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<Settings>;
       const s: Settings = { ...DEFAULT_SETTINGS, ...parsed, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams] };
@@ -106,6 +110,7 @@ export function loadSettings(): Settings {
       for (const key of ['contours', 'particles', 'menuBackground', 'sound'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
+      if (!isLook(s.look)) s.look = DEFAULT_SETTINGS.look;
       if (s.stickSide !== 'right') s.stickSide = 'left';
       // Power-up choices: only known kinds, in their usual order, and never none at all.
       const kinds = POWER_UP_KINDS.filter((kind) => Array.isArray(parsed.powerUpKinds) && parsed.powerUpKinds.includes(kind));
@@ -138,7 +143,7 @@ export function cloneSettings(s: Settings): Settings {
 
 export function saveSettings(s: Settings): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(s));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
   } catch {
     // Not fatal: settings just won't survive a reload.
   }

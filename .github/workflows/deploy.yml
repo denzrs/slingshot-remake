@@ -322,6 +322,7 @@ jobs:
         id: version
         # A pushed tag is released as it is. Otherwise: the tag on HEAD if there is one (already released,
         # nothing to do), else the next minor after the latest tag, which the release job will create.
+        # A commit since the latest tag with [major] in its message makes it the next major instead.
         run: |
           semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
           release=false
@@ -335,7 +336,11 @@ jobs:
               # No release yet: start from the version in package.json.
               latest=${latest:-v$(node -p "require('./package.json').version")}
               IFS=. read -r major minor _ <<< "${latest#v}"
-              tag="v$major.$((minor + 1)).0"
+              if git log --format=%B "$latest..HEAD" 2>/dev/null | grep -qiF '[major]'; then
+                tag="v$((major + 1)).0.0"
+              else
+                tag="v$major.$((minor + 1)).0"
+              fi
               if [ "$GITHUB_EVENT_NAME" = push ]; then release=true; fi
             fi
           fi
