@@ -171,7 +171,7 @@ function lineup(s: Settings): string {
 type LauncherSection = 'local' | 'online';
 let launcherSection: LauncherSection = 'local';
 const modeName = (mode: VersusMode): string => t(`mode.${mode}` as Key);
-const MAIN_MODES = ['classic', 'horizon'] as const satisfies readonly VersusMode[];
+const MAIN_MODES = ['classic', 'solar', 'horizon'] as const satisfies readonly VersusMode[];
 type ModeTransition = 'next' | 'previous';
 
 /** Default once on entry; rebuilding after rule or crew edits keeps the player's subsequent choices. */
@@ -392,6 +392,7 @@ export function titleScreen(app: App): Screen {
       { kind: 'action', section: 'navigation', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
       { kind: 'action', section: 'navigation', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
       modeCard('classic'),
+      modeCard('solar'),
       modeCard('horizon'),
       { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.daily'), hint: dailyMenuHint(app.today()), icon: () => modeArt('daily'), run: () => app.menu.push(() => dailyScreen(app)) },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
@@ -409,7 +410,7 @@ export function titleScreen(app: App): Screen {
 
 export function pauseScreen(app: App, match: Match | null): Screen {
   const daily = app.mode === 'challenge';
-  const mode = app.mode === 'classic' || app.mode === 'horizon' ? app.mode : null;
+  const mode = app.mode === 'classic' || app.mode === 'solar' || app.mode === 'horizon' ? app.mode : null;
   // The way on is the last button, at the right edge, where the eye ends up.
   const items: MenuItem[] = [
     // Online, the room decides: no restarts from the pause menu. The daily challenge has no setup, only a retry.
@@ -424,9 +425,9 @@ export function pauseScreen(app: App, match: Match | null): Screen {
   ];
   return {
     build: () => menuPage({
-      title: t('pause.title'), eyebrow: app.mode === 'challenge' ? t('mode.daily') : `${modeName(app.mode === 'horizon' ? 'horizon' : 'classic')}${app.mayhem ? ` · ${t('mode.mayhem')}` : ''}`,
+      title: t('pause.title'), eyebrow: app.mode === 'challenge' ? t('mode.daily') : `${modeName(app.mode === 'horizon' || app.mode === 'solar' ? app.mode : 'classic')}${app.mayhem ? ` · ${t('mode.mayhem')}` : ''}`,
       className: 'menu-page--pause',
-      body: [h('div.menu-page__art', null, modeArt(app.mode === 'challenge' ? 'daily' : app.mayhem ? 'mayhem' : app.mode === 'horizon' ? 'horizon' : 'classic'))],
+      body: [h('div.menu-page__art', null, modeArt(app.mode === 'challenge' ? 'daily' : app.mayhem ? 'mayhem' : app.mode === 'horizon' || app.mode === 'solar' ? app.mode : 'classic'))],
       aside: match ? pauseStanding(match) : undefined,
       footer: h('nav.items.items--row.pause-actions.menu-page__actions', { 'data-section': 'actions', 'aria-label': t('pause.title') }),
     }),

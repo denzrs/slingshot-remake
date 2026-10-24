@@ -6,7 +6,7 @@ import type { Settings } from './settings';
 import { packWireMessage, unpackWireMessage } from './messagepack';
 
 export type RoomMode = 'ffa' | 'team';
-export type NetworkGameMode = 'classic' | 'horizon';
+export type NetworkGameMode = 'classic' | 'solar' | 'horizon';
 /** The level of a CPU seat in an online room: the same CPUs as offline. */
 export type NetworkCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
 

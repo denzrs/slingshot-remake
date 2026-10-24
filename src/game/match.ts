@@ -847,7 +847,7 @@ export abstract class Match {
       this.settings = this.baseSettings;
       return;
     }
-    this.mayhem = this.deck.draw({ base: this.baseSettings, mode: this.mode as 'classic' | 'horizon', round: this.round, rounds: this.totalRounds });
+    this.mayhem = this.deck.draw({ base: this.baseSettings, mode: this.mode === 'horizon' ? 'horizon' : 'classic', round: this.round, rounds: this.totalRounds });
     this.settings = applyTwists(this.baseSettings, this.mayhem);
     this.revealEnd = this.clock + MAYHEM.REVEAL_TIME;
     // A match nobody is flying in (CPUs only) has no one to wait for.
