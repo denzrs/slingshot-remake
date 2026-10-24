@@ -505,7 +505,12 @@ describe('online games', () => {
       expect(gm.mode).toBe('solar');
       for (let i = 0; i < 5; i++) await frame(host, guest);
       const before = hm.world.planets.map((p) => ({ x: p.x, y: p.y }));
+      // The system turns once both ships have fired, not after each shot.
       host.session.input({ kind: 'fire' });
+      for (let i = 0; i < 60 * 20 && !(hm.phase === 'aiming' && hm.current === 1); i++) await frame(host, guest);
+      expect(hm.phase).toBe('aiming');
+      expect(hm.world.planets.map((p) => ({ x: p.x, y: p.y }))).toEqual(before);
+      guest.session.input({ kind: 'fire' });
       for (let i = 0; i < 60 * 20 && hm.phase !== 'orbit'; i++) await frame(host, guest);
       expect(hm.phase).toBe('orbit');
       for (let i = 0; i < 60 * 4 && hm.phase === 'orbit'; i++) await frame(host, guest);

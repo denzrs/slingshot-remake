@@ -43,6 +43,8 @@ export interface Nebula {
   radius: number;
   /** Fixes the cloud's uneven outline, so it is drawn the same everywhere and never changes once laid. */
   seed: number;
+  /** Thrown out by the sun's storm in a Solar System rather than placed: the same drag, drawn as hot plasma. */
+  storm?: boolean;
 }
 
 /** A pair of mouths the wormhole power-up has placed: a shot entering one leaves by the other. No gravity, no kill. */

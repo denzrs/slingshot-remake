@@ -17,6 +17,7 @@ import { Hud } from './hud';
 import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
 import { drawNebula } from './nebula';
+import { drawStormBurst, drawStormCloud, stormFlare } from './storm';
 import { drawPortal, drawWormhole } from './wormhole';
 import { defensePlanet, defenseView, drawDefense, drawInterception } from './defense';
 import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
@@ -227,6 +228,22 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** When this screen first saw each storm cloud, in renderer time: the burst plays from there, the same for every cloud of one storm. */
+  private readonly stormSeen = new Map<number, number>();
+
+  /** Seconds since the storm broke out (of the cloud with `seed`, or the newest one), or -1 when the world has none. */
+  private stormAge(world: World, seed?: number): number {
+    const clouds = world.nebulae.filter((n) => n.storm);
+    if (!clouds.length) {
+      this.stormSeen.clear();
+      return -1;
+    }
+    for (const n of clouds) if (!this.stormSeen.has(n.seed)) this.stormSeen.set(n.seed, this.time);
+    for (const key of this.stormSeen.keys()) if (!clouds.some((n) => n.seed === key)) this.stormSeen.delete(key);
+    const first = seed === undefined ? Math.max(...this.stormSeen.values()) : this.stormSeen.get(seed)!;
+    return this.time - first;
+  }
+
   private drawWorld(match: Match, scene: Scene, ps: number): void {
     const { ctx } = this;
     const world = scene.world;
@@ -254,7 +271,12 @@ export class Renderer {
     // Nebula clouds sit behind the planets and the ships, so nothing hides inside them.
     if (world.nebulae.length) {
       ctx.globalAlpha = 1;
-      for (const n of world.nebulae) drawNebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
+      const sun = world.planets.find((p) => p.sun);
+      for (const n of world.nebulae) {
+        if (n.storm && sun) drawStormCloud(ctx, n, sun, this.stormAge(world, n.seed), this.time);
+        else drawNebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
+      }
+      if (sun) drawStormBurst(ctx, sun, this.stormAge(world));
       ctx.globalAlpha = 1;
     }
 
@@ -295,7 +317,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     world.defenses.forEach((d, i) => d.wrecked || drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, 1, defenseView(scene.volley?.shots ?? [], d, i), false, !showPlanets));
-    for (const p of world.planets) if (p.sun) drawSun(ctx, p, this.time, alpha);
+    for (const p of world.planets) if (p.sun) drawSun(ctx, p, this.time, alpha, stormFlare(this.stormAge(world)));
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));

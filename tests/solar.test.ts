@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, SolarMatch } from '../src/game';
-import { SOLAR } from '../src/config';
+import { SOLAR, SOLAR_STORM } from '../src/config';
 import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
+import { inNebula } from '../src/physics';
 import { generateWorld, onOrbit, orbitOf, orbitTurn, solarCenter } from '../src/world';
 
 const cpus = (n: number): Seat[] => [...Array(n).fill('medium'), ...Array(6 - n).fill('off')];
@@ -37,9 +38,11 @@ describe('solar system world', () => {
     }
   });
 
-  it('turns the inner orbits quicker', () => {
-    expect(orbitTurn(100)).toBeGreaterThan(orbitTurn(200));
-    expect(orbitTurn(200)).toBeGreaterThan(orbitTurn(300));
+  it('turns a circle in 4 steps near the sun, 8 in the middle and 12 far out', () => {
+    const third = (SOLAR.OUTER_ORBIT - SOLAR.INNER_ORBIT) / 3;
+    for (const [r, steps] of [[SOLAR.INNER_ORBIT + 1, 4], [SOLAR.INNER_ORBIT + third * 0.9, 4], [SOLAR.INNER_ORBIT + third * 1.5, 8], [SOLAR.OUTER_ORBIT - third * 0.1, 12], [SOLAR.OUTER_ORBIT, 12]] as const) {
+      expect(orbitTurn(r) * steps).toBeCloseTo(Math.PI * 2, 9);
+    }
   });
 });
 
@@ -104,6 +107,101 @@ describe('solar system match', () => {
         if (match.phase === 'roundOver') match.advance();
       }
       expect(match.phase).toBe('gameOver');
+    } finally {
+      match.dispose();
+    }
+  });
+});
+
+describe('the sun\'s storm', () => {
+  const solar = (seed: number, players = 3, rounds = 1): SolarMatch => {
+    const seats = cpus(players);
+    return createMatch('solar', { ...DEFAULT_SETTINGS, rounds, seats }, { seats, seed, deterministicCpu: true }) as SolarMatch;
+  };
+  /** The storm, set off at once. */
+  const erupt = (match: SolarMatch): void => (match as unknown as { erupt(): void }).erupt();
+
+  it('breaks out in a played round, as the system turns', () => {
+    let outbreaks = 0;
+    for (const seed of [3, 5, 8, 13, 21, 34, 55, 89]) {
+      const match = solar(seed, 4);
+      let seen = 0;
+      for (let t = 0; t < 1200 && match.phase !== 'gameOver'; t += 1 / 30) {
+        match.update(1 / 30);
+        if (match.phase === 'killcam') match.advance();
+        const storm = match.world.nebulae.filter((n) => n.storm).length;
+        if (storm === seen) continue;
+        seen = storm;
+        outbreaks++;
+        // The clouds are over the field before anybody can aim again.
+        expect(match.phase).toBe('orbit');
+        expect(storm).toBeGreaterThanOrEqual(1);
+        expect(storm).toBeLessThanOrEqual(SOLAR_STORM.MAX_CLOUDS);
+      }
+      match.dispose();
+    }
+    expect(outbreaks).toBeGreaterThanOrEqual(1);
+  });
+
+  it('turns the system once every ship has fired, not after each shot', () => {
+    const match = solar(11, 3);
+    try {
+      const planets = () => match.world.planets.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join('|');
+      const start = planets();
+      const fired = new Set<number>();
+      let turned = false;
+      for (let t = 0; t < 600 && !turned; t += 1 / 30) {
+        if (match.phase === 'aiming') fired.add(match.current);
+        match.update(1 / 30);
+        if (match.phase === 'killcam') match.advance();
+        if (match.phase === 'orbit') {
+          turned = true;
+          // Everybody still in had a shot first.
+          for (const p of match.alive) expect(fired.has(p.id)).toBe(true);
+        } else {
+          // Until the pass is over the planets stand still.
+          expect(planets()).toBe(start);
+        }
+      }
+      expect(turned).toBe(true);
+      expect(fired.size).toBeGreaterThanOrEqual(2);
+    } finally {
+      match.dispose();
+    }
+  });
+
+  it('lays a few clouds on the field, away from one another and the edge', () => {
+    for (let seed = 1; seed <= 25; seed++) {
+      const match = solar(seed);
+      erupt(match);
+      const clouds = match.world.nebulae.filter((n) => n.storm);
+      expect(clouds.length).toBeGreaterThanOrEqual(2);
+      expect(clouds.length).toBeLessThanOrEqual(SOLAR_STORM.MAX_CLOUDS);
+      for (const c of clouds) {
+        expect(c.radius).toBeGreaterThanOrEqual(SOLAR_STORM.MIN_RADIUS);
+        expect(c.radius).toBeLessThanOrEqual(SOLAR_STORM.MAX_RADIUS);
+        expect(c.x).toBeGreaterThan(0);
+        expect(c.x).toBeLessThan(1280);
+        expect(c.y).toBeGreaterThan(0);
+        expect(c.y).toBeLessThan(800);
+      }
+      for (let i = 0; i < clouds.length; i++) for (let j = i + 1; j < clouds.length; j++) expect(dist(clouds[i], clouds[j])).toBeGreaterThanOrEqual((clouds[i].radius + clouds[j].radius) * SOLAR_STORM.OVERLAP);
+      match.dispose();
+    }
+  });
+
+  it('counts as a nebula to the physics', () => {
+    expect(inNebula([{ x: 100, y: 100, radius: 50, seed: 0.5, storm: true }], 120, 100)).toBe(true);
+    expect(inNebula([{ x: 100, y: 100, radius: 50, seed: 0.5, storm: true }], 200, 100)).toBe(false);
+  });
+
+  it('is gone with the round', () => {
+    const match = solar(7, 2, 2);
+    try {
+      erupt(match);
+      expect(match.world.nebulae.some((n) => n.storm)).toBe(true);
+      match.startRound();
+      expect(match.world.nebulae.some((n) => n.storm)).toBe(false);
     } finally {
       match.dispose();
     }
