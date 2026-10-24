@@ -199,6 +199,8 @@ jobs:
             printf 'MAX_MESSAGES_PER_SECOND=%s\n' "$RELAY_MAX_MESSAGES_PER_SECOND"
             # Match statistics (the relay's --stats) are on in the deployed relay; RELAY_STATS=0 switches them off.
             [[ "$RELAY_STATS" != 1 ]] || printf 'STATS=1\n'
+            # A daily snapshot of the database, the newest 14 kept; see "Backups" in deploy/ionos/README.md.
+            printf 'BACKUP_DIR=/srv/slingshot/backups\n'
             [[ -z "$RELAY_TLS_CERT" ]] || printf 'TLS_CERT=%s\n' "$RELAY_TLS_CERT"
             [[ -z "$RELAY_TLS_KEY" ]] || printf 'TLS_KEY=%s\n' "$RELAY_TLS_KEY"
           } > "$RUNNER_TEMP/relay.env"

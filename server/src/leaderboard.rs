@@ -272,7 +272,6 @@ pub fn day_number(day: &str) -> Option<i64> {
 }
 
 /// The `YYYY-MM-DD` of a day since 1970-01-01: `day_number` the other way round.
-#[cfg(test)]
 pub fn day_key(days: i64) -> String {
     // Howard Hinnant's civil_from_days.
     let z = days + 719_468;
