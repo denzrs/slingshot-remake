@@ -637,14 +637,24 @@ function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {
     tag: t('players.player', { n: i + 1 }),
     icon: () => h('span.slot-card__plus', { 'aria-hidden': 'true' }, '+'),
     hint: t('slots.free'), label: t('flow.addPilot'),
+    choices: [
+      { label: t('seat.human'), run: () => addAs(i, 'human') },
+      { label: t('players.cpu'), run: () => addAs(i, 'cpu') },
+    ],
     run: () => {
-      const team = board.teamOf(String(i));
-      if (addSeat(s, 'human', i) === null) return;
-      if (s.teamMode && team !== null) s.seatTeams[i] = team;
-      app.settingsChanged();
-      app.menu.rebuild(1 + i);
+      addAs(i, 'human');
     },
   });
+  const addAs = (i: number, flier: 'human' | 'cpu'): void => {
+    const team = board.teamOf(String(i));
+    const remembered = lastCpuBySeat.get(i);
+    const cpu = remembered && remembered !== 'human' && remembered !== 'off' ? remembered : 'medium';
+    if (addSeat(s, flier === 'human' ? 'human' : cpu, i) === null) return;
+    if (flier !== 'human') lastCpuBySeat.set(i, cpu);
+    if (s.teamMode && team !== null) s.seatTeams[i] = team;
+    app.settingsChanged();
+    app.menu.rebuild(1 + i);
+  };
 
   const crewActions = h('div.items.items--row.crew-actions', { 'data-section': 'crew-actions' });
   const count = h('h3.setup__title', null, t('players.group.crew', { n: seats.length, max: MAX_PLAYERS }));
@@ -785,7 +795,14 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
   const crew = h('div.briefing__crew', { 'aria-hidden': 'true' });
   const crewLabel = h('p.briefing__lineup', null);
   const quickKeys = ['rounds', 'shotTime'] as const;
-  const powerups = powerUpSummary(() => s);
+  const powerups = powerUpSummary(() => s, {
+    patch: (values) => {
+      Object.assign(s, values);
+      app.settingsChanged();
+      update();
+      app.menu.refresh();
+    },
+  });
   const rules = ruleItems(mode, {
     get: () => rulesOf(s),
     patch: (values) => { Object.assign(s, values); app.settingsChanged(); app.menu.refresh(); },

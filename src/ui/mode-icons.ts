@@ -1,3 +1,5 @@
+import { nextSpaceArtId, spaceArt } from './space-art';
+
 export type ModeArt = 'daily' | 'classic' | 'solar' | 'horizon' | 'mayhem' | 'trickshot' | 'sniper' | 'party' | 'simultaneous' | 'rooms' | 'create' | 'code' | 'customAdd';
 export type MatchPresetArt = 'standard' | 'trickshot' | 'sniper' | 'party';
 export type MayhemPresetArt = 'wildClassic' | 'insaneClassic' | 'insaneClassicSimultaneous' | 'insaneHorizon';
@@ -6,8 +8,6 @@ export type PresetArtTreatment =
   | { mode: 'horizon'; preset: MatchPresetArt }
   | { mode: 'solar'; preset: SolarPresetArt }
   | { mode: 'mayhem'; preset: MayhemPresetArt };
-let artId = 0;
-
 /** The card of a regular preset in a mode: Event Horizon's own take on it, simultaneous fire, or the wild orbits of Mayhem. The Solar System has its own sun on all of them. */
 export function presetArt(preset: 'standard' | 'trickshot' | 'simultaneous' | 'powerups' | 'mayhem', mode: 'classic' | 'solar' | 'horizon'): SVGElement {
   if (mode === 'solar') return modeArt('solar', preset === 'powerups' || preset === 'mayhem' ? { mode: 'solar', preset } : undefined);
@@ -20,22 +20,11 @@ export function presetArt(preset: 'standard' | 'trickshot' | 'simultaneous' | 'p
 
 /** Orbital charts for the menu, drawn as vectors so they stay crisp on phones and large screens. */
 export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGElement {
-  const id = `orbit-${++artId}`;
-  const ship = (x: number, y: number, angle: number, color: string, scale = 1, className = '') =>
-    `<use href="#${id}-ship"${className ? ` class="${className}"` : ''} transform="translate(${x} ${y}) rotate(${angle}) scale(${scale})" fill="${color}"/>`;
-  const planet = (x: number, y: number, r: number, warm = false) =>
-    `<circle cx="${x}" cy="${y}" r="${r + 4}" fill="${warm ? '#ffad65' : '#6fe3c8'}" opacity=".035"/><circle cx="${x}" cy="${y}" r="${r}" fill="url(#${id}-${warm ? 'warm' : 'planet'})" stroke="${warm ? '#e8b27b' : '#8bdacb'}" stroke-opacity=".4"/><ellipse cx="${x - r * .25}" cy="${y - r * .25}" rx="${r * .55}" ry="${r * .18}" fill="#e8e4d8" opacity=".11" transform="rotate(-25 ${x} ${y})"/>`;
+  const id = nextSpaceArtId('orbit');
+  const art = spaceArt(id);
+  const { ship, planet, singularity } = art;
   const orbit = (rx: number, ry: number, angle: number, color = '#7697ae', opacity = '.3') =>
     `<ellipse cx="160" cy="100" rx="${rx}" ry="${ry}" transform="rotate(${angle} 160 100)" fill="none" stroke="${color}" stroke-opacity="${opacity}"/>`;
-  const singularity = (x: number, y: number, r: number, angle = -24) => `
-    <g>
-      <ellipse cx="${x}" cy="${y}" rx="${r * 1.9}" ry="${r * .72}" transform="rotate(${angle} ${x} ${y})" fill="none" stroke="#90c5cf" stroke-width="8" stroke-opacity=".12"/>
-      <ellipse cx="${x}" cy="${y}" rx="${r * 1.9}" ry="${r * .72}" transform="rotate(${angle} ${x} ${y})" fill="none" stroke="#f4d2a0" stroke-width="2.4" stroke-opacity=".78"/>
-      <ellipse cx="${x}" cy="${y}" rx="${r * 1.45}" ry="${r * .52}" transform="rotate(${angle} ${x} ${y})" fill="none" stroke="#ffad65" stroke-width="1" stroke-dasharray="5 7" stroke-opacity=".86"/>
-      <circle cx="${x}" cy="${y}" r="${r}" fill="#020711" stroke="#b8d4d5" stroke-width="1.25" stroke-opacity=".8"/>
-      <circle cx="${x}" cy="${y}" r="${r * .77}" fill="#00030a"/>
-      <path d="M${x - r * .82} ${y - r * .62}a${r} ${r} 0 0 1 ${r * 1.58} ${r * .08}" fill="none" stroke="#fff0cf" stroke-width="1.2" stroke-linecap="round" opacity=".8"/>
-    </g>`;
   const stars = [[18, 28], [67, 14], [110, 167], [284, 23], [253, 155], [197, 29], [40, 156], [299, 117], [140, 37], [91, 88], [219, 176], [275, 78]]
     .map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i % 4 === 0 ? 1.5 : .8}" fill="#e8e4d8" opacity="${i % 3 === 0 ? '.65' : '.25'}"/>`).join('');
   let scene: string;
@@ -65,9 +54,7 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
         ${ship(30, 159, 78, '#6fe3c8', .95)}${ship(280, 30, -100, '#ffad65', .9)}`;
       break;
     case 'solar':
-      scene = `<circle cx="160" cy="100" r="46" fill="#f2c46d" opacity=".06"/><circle cx="160" cy="100" r="31" fill="#f2c46d" opacity=".1"/>
-        ${orbit(52, 28, -8, '#f2c46d', '.4')}${orbit(92, 49, -8, '#7697ae', '.32')}${orbit(132, 70, -8, '#7697ae', '.3')}${orbit(150, 82, -8, '#6fe3c8', '.4')}
-        <circle cx="160" cy="100" r="19" fill="#f2c46d" stroke="#fff0cf" stroke-opacity=".75" stroke-width="1.5"/><circle cx="160" cy="100" r="11" fill="#ffe7a8" opacity=".8"/>
+      scene = `${orbit(52, 28, -8, '#f2c46d', '.4')}${orbit(92, 49, -8, '#7697ae', '.32')}${orbit(132, 70, -8, '#7697ae', '.3')}${orbit(150, 82, -8, '#6fe3c8', '.4')}${art.sun()}
         ${planet(212, 100, 8, true)}${planet(79, 72, 11)}${planet(214, 143, 6)}
         <path d="M42 150C70 164 98 135 112 108s33-62 70-55" fill="none" stroke="#6fe3c8" stroke-width="1.7" stroke-dasharray="4 4"/>
         ${ship(38, 141, 58, '#6fe3c8', .9)}${ship(282, 66, -120, '#ffad65', .85)}`;
@@ -82,9 +69,7 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
         <g fill="#fff0cf"><circle cx="117" cy="83" r="2.5"/><circle cx="119" cy="114" r="2.5"/><circle cx="125" cy="109" r="2.5"/></g>`;
       break;
     case 'horizon':
-      scene = `${[94, 80, 68, 58].map((r) => orbit(r * 1.4, r * .45, -24, '#aac3d6', String(.14 + (94 - r) / 140))).join('')}
-        <ellipse cx="160" cy="100" rx="76" ry="30" transform="rotate(-24 160 100)" fill="none" stroke="#90c5cf" stroke-width="12" opacity=".06"/>
-        <circle cx="160" cy="100" r="35" fill="#060c18" stroke="#aeced2" stroke-width="1.5"/>
+      scene = `${singularity(160, 100, 35)}
         <path d="M78 136 C114 142 156 128 190 110 S230 78 235 59" fill="none" stroke="#f4d2a0" stroke-width="3"/>
         <path d="M71 141 C113 151 181 120 219 89" fill="none" stroke="#f4d2a0" stroke-width="1" opacity=".45"/>
         <path d="M34 43 Q111 8 128 54" fill="none" stroke="#6fe3c8" stroke-dasharray="3 4" opacity=".6"/>
@@ -124,7 +109,7 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
       break;
   }
   if (treatment?.mode === 'solar') {
-    const sun = `<circle cx="160" cy="100" r="46" fill="#f2c46d" opacity=".06"/><circle cx="160" cy="100" r="31" fill="#f2c46d" opacity=".1"/><circle cx="160" cy="100" r="19" fill="#f2c46d" stroke="#fff0cf" stroke-opacity=".75" stroke-width="1.5"/><circle cx="160" cy="100" r="11" fill="#ffe7a8" opacity=".8"/>`;
+    const sun = art.sun();
     switch (treatment.preset) {
       // One shot bends round the sun and collects three pick-ups on the way (preview, teleport, shield); a fourth, the splitter, waits below.
       case 'powerups': {
@@ -230,13 +215,7 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
   svg.setAttribute('viewBox', '0 0 320 196');
   svg.setAttribute('class', 'mode-art');
   svg.setAttribute('aria-hidden', 'true');
-  svg.innerHTML = `<defs>
-    <radialGradient id="${id}-planet" cx="30%" cy="25%"><stop stop-color="#9cc9bd"/><stop offset=".55" stop-color="#416c76"/><stop offset="1" stop-color="#142c42"/></radialGradient>
-    <radialGradient id="${id}-warm" cx="30%" cy="25%"><stop stop-color="#e4bb82"/><stop offset=".6" stop-color="#a47756"/><stop offset="1" stop-color="#3d3440"/></radialGradient>
-    <radialGradient id="${id}-glow"><stop stop-color="#294b65" stop-opacity=".4"/><stop offset="1" stop-color="#122039" stop-opacity="0"/></radialGradient>
-    <radialGradient id="${id}-void"><stop offset=".72" stop-color="#00020a"/><stop offset="1" stop-color="#101c2a"/></radialGradient>
-    <path id="${id}-ship" d="M0-13 8 8 0 4-8 8Zm0 20 3 7-3-2-3 2Z"/>
-  </defs><ellipse cx="160" cy="105" rx="150" ry="100" fill="url(#${id}-glow)"/>${stars}${scene}`;
+  svg.innerHTML = `${art.defs}${art.glow}${stars}${scene}`;
   return svg;
 }
 

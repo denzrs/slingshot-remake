@@ -661,7 +661,7 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
     // Clients from before the cap, or the fixed level, existed don't send them; a missing field
     // (or a null one) falls back to the default, exactly like `?? 100` on the JS side.
     let max_power_ok = match field("maxPower") {
-        Some(v) => is_number_in(v, &[10, 20, 30, 40, 50, 60, 70, 80, 90, 100]),
+        Some(v) => is_number_in(v, &[10, 20, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100]),
         None => true,
     };
     if !max_power_ok {

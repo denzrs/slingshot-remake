@@ -23,7 +23,11 @@ export type TwistId =
   | 'plasmaStorm'
   | 'gravityParty'
   | 'fortress'
-  | 'teleportChaos';
+  | 'teleportChaos'
+  | 'ricochetOverdrive'
+  | 'nebulaLock'
+  | 'minefield'
+  | 'mirrorMatch';
 
 /** The rules a twist may change. */
 export type TwistRules = Pick<
@@ -62,6 +66,31 @@ const TWISTS: Record<TwistId, TwistDef> = {
   gravityParty: { slots: ['pickups'], apply: () => pickups(['blackhole', 'antigravity', 'planetkiller', 'nebula', 'wormhole'], 3) },
   fortress: { slots: ['pickups'], apply: () => pickups(['shield', 'defense'], 3) },
   teleportChaos: { slots: ['pickups'], apply: () => pickups(['teleport', 'wormhole', 'splitter'], 3) },
+  ricochetOverdrive: {
+    slots: ['bounce', 'power', 'sight'],
+    harsh: true,
+    apply: () => ({ bounce: true, fixedPower: true, fixedPowerLevel: 90, maxPower: 100, fadingTrails: 2 }),
+  },
+  nebulaLock: {
+    slots: ['pickups', 'power'],
+    apply: () => ({ ...pickups(['nebula', 'plasma'], 4), fixedPower: false, maxPower: 60 }),
+  },
+  minefield: {
+    slots: ['planets', 'pickups'],
+    classicOnly: true,
+    apply: () => ({ ...pickups(['antigravity', 'defense', 'planetkiller'], 3), maxPlanets: 7 }),
+  },
+  mirrorMatch: {
+    slots: ['power', 'sight', 'pickups'],
+    roll: (rng) => pick(rng, [50, 60, 70]),
+    apply: (n) => ({
+      ...pickups(['preview'], 2),
+      fixedPower: true,
+      fixedPowerLevel: n,
+      maxPower: 100,
+      hiddenAim: true,
+    }),
+  },
 };
 
 export const TWIST_IDS = Object.keys(TWISTS) as TwistId[];

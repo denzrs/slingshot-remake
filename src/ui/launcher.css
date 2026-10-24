@@ -228,8 +228,13 @@
 .item__selection[hidden] { display: none; }
 
 .launcher__modes .item:hover,
-.launcher__online .item:hover,
-.briefing__cards .item:hover {
+.launcher__online .item:hover {
+  border-color: var(--bone-dim);
+  transform: translateY(-2px);
+}
+
+.briefing__cards .item--card:hover {
+  z-index: 1;
   border-color: var(--bone-dim);
   transform: translateY(-2px);
 }
@@ -384,8 +389,30 @@
 }
 
 .briefing__cards {
+  --preset-card-height: 216px;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
+}
+
+.briefing__cards > .item--card,
+.briefing__cards > .briefing__preset-shell,
+.briefing__cards > .briefing__own {
+  height: var(--preset-card-height);
+  min-height: 0;
+}
+.briefing__cards > .briefing__preset-shell > .item--card { width: 100%; height: 100%; }
+.briefing__cards > :is(.item--card, .briefing__preset-shell) .item__title {
+  display: -webkit-box;
+  min-height: 2.2em;
+  max-height: 2.2em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.1;
+}
+.briefing__cards > :is(.item--card, .briefing__preset-shell) .item__hint {
+  min-height: 0;
+  max-height: 5.1em;
 }
 
 .briefing__cards .item--card {
@@ -395,7 +422,7 @@
 
 .briefing__cards .item__icon {
   width: 100%;
-  height: 94px;
+  height: 80px;
   margin: 0;
   opacity: 1;
 }
@@ -411,6 +438,10 @@
 .briefing__cards .item__hint {
   font-size: 10.5px;
   line-height: 1.7;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 
 .briefing__preset-note {
@@ -458,7 +489,7 @@
 .briefing__quick .briefing__switches .item--toggle:not(.is-readonly):focus-visible { border-color: var(--p2); }
 .briefing__quick .briefing__switches .item--toggle:not(.is-readonly)::before { display: none; }
 
-/* Mayhem's strength sits under the sliders, only while Mayhem is on: its name, and a short bar of three choices under it. */
+/* Mayhem's strength sits under the sliders, only while Mayhem is on. */
 .briefing__mayhem { grid-column: 1 / 3; grid-row: 2; min-width: 0; }
 .briefing__mayhem:not(:has(> .item:not([hidden]))) { display: none; }
 .briefing__mayhem .segmented { justify-self: start; width: calc(var(--n) * 84px); max-width: 100%; }
@@ -473,15 +504,20 @@
   padding: 9px 2px 8px;
 }
 
+/* The local briefing gives each quick setting a matching slot, with Mayhem beside the sliders. */
+.menu-page--briefing .briefing__quick { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.menu-page--briefing .briefing__mayhem { grid-column: 4; grid-row: 1; }
+
 .briefing__powerups-label {
   color: var(--bone);
   font-size: 12px;
 }
 
 .briefing__powerup-list {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(7, 28px);
   align-items: center;
+  justify-content: start;
   gap: 4px;
   /* Room for two rows of tiles, so the row keeps its height whether the list is empty, short or full. */
   min-height: 60px;
@@ -493,10 +529,39 @@
   place-items: center;
   width: 28px;
   height: 28px;
+  padding: 0;
   border: 1px solid color-mix(in srgb, var(--powerup-tone) 58%, transparent);
   border-radius: 3px;
   background: color-mix(in srgb, var(--powerup-tone) 10%, transparent);
-  cursor: help;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: filter 120ms, opacity 120ms, border-color 120ms, background-color 120ms;
+}
+
+.briefing__powerup.is-inactive {
+  border-color: rgb(119 143 170 / 42%);
+  background: rgb(119 143 170 / 8%);
+  opacity: 0.62;
+}
+
+.briefing__powerup.is-inactive .briefing__powerup-icon {
+  filter: brightness(0) saturate(100%) invert(65%);
+}
+
+.briefing__powerup:disabled {
+  cursor: default;
+}
+
+.briefing__powerup:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--powerup-tone) 85%, white);
+  background: color-mix(in srgb, var(--powerup-tone) 20%, transparent);
+  filter: none;
+  opacity: 1;
+}
+
+.briefing__powerup:hover:not(:disabled) .briefing__powerup-icon {
+  filter: none;
 }
 
 .briefing__powerup:focus-visible {
@@ -508,11 +573,6 @@
   display: block;
   width: 20px;
   height: 20px;
-}
-
-.briefing__powerup-none {
-  color: var(--bone-dim);
-  font: 10px/1.5 var(--font-mono);
 }
 
 .powerup-tooltip {
@@ -608,6 +668,10 @@
   border-bottom: 1px solid rgb(91 125 179 / 0.14);
 }
 
+.briefing__facts > div:last-child {
+  border-bottom: 0;
+}
+
 .briefing__facts dt {
   color: var(--bone-dim);
 }
@@ -628,20 +692,25 @@
   .launcher__head { column-gap: 28px; }
   .launcher__nav .item { font-size: 25px; }
   .launcher__daily .item--card { grid-template-columns: 52px minmax(0, 1fr); }
-  .briefing__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .briefing__cards { --preset-card-height: 116px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .briefing__cards .item--card { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 4px 10px; }
-  .briefing__cards .item__icon { grid-column: 1; grid-row: 1 / 3; height: 65px; }
-  .briefing__cards .item__title { align-self: end; font-size: 23px; }
-  .briefing__cards .item__hint { align-self: start; }
+  .briefing__cards .item__icon { grid-column: 1; grid-row: 1 / 3; height: 62px; }
+  .briefing__cards .item__title { align-self: end; font-size: 22px; }
+  .briefing__cards > :is(.item--card, .briefing__preset-shell) .item__hint { max-height: 3.4em; }
+  .briefing__cards .item__hint { align-self: start; -webkit-line-clamp: 2; }
   .briefing__quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; }
   .briefing__powerups { grid-column: auto; }
   .briefing__mayhem { grid-column: 1 / -1; }
+  .menu-page--briefing .briefing__quick { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .menu-page--briefing .briefing__mayhem { grid-column: 1; grid-row: 2; }
+  .menu-page--briefing .briefing__powerups { grid-column: 2; grid-row: 2; }
 }
 
 @media (max-width: 900px) {
+  .briefing__cards { --preset-card-height: 200px; }
   .briefing__cards .item--card { display: flex; gap: 8px; padding: 12px; }
-  .briefing__cards .item__icon { height: clamp(62px, 10vh, 82px); }
-  .briefing__cards .item__title { font-size: clamp(18px, 2.6vw, 22px); }
+  .briefing__cards .item__icon { height: clamp(56px, 8vh, 68px); }
+  .briefing__cards .item__title { font-size: clamp(18px, 2.4vw, 20px); }
 }
 
 @media (max-width: 760px) {
@@ -698,15 +767,18 @@
   .launcher__daily .item--card { padding: 12px; gap: 4px 10px; }
   .launcher__daily .item__title { font-size: 20px; }
   .launcher__daily .item__hint { font-size: 10px; }
-  .briefing__cards { gap: 10px; }
+  .briefing__cards { --preset-card-height: 88px; gap: 10px; }
   .briefing__cards .item--card { display: flex; padding: 12px; }
   .briefing__cards .item__icon { height: 70px; }
   .briefing__cards .item__title { align-self: flex-start; font-size: clamp(16px, 5vw, 19px); }
   .briefing__cards .item__hint { font-size: 10px; line-height: 1.6; }
   .briefing__preset-note { margin-bottom: 16px; }
   .briefing__quick { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .menu-page--briefing .briefing__quick { grid-template-columns: minmax(0, 1fr); }
   .briefing__powerups { grid-column: auto; }
   .briefing__mayhem { grid-column: auto; grid-row: auto; }
+  .menu-page--briefing .briefing__mayhem { grid-column: auto; grid-row: auto; }
+  .menu-page--briefing .briefing__powerups { grid-column: auto; grid-row: auto; }
   .briefing__quick .item { padding-block: 10px; }
 }
 

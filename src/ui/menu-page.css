@@ -101,6 +101,8 @@
 .pause-standing { width: min(520px, 100%); }
 .menu-page--pause .ranking, .menu-page--pause .score-chart { max-width: none; margin-top: 0; margin-bottom: 22px; }
 .menu-page--pause .ranking li { padding: 11px 0; gap: 12px; }
+.menu-page--pause .ranking:not(.ranking--small) li:first-child .ranking__place,
+.menu-page--pause .ranking:not(.ranking--small) li:first-child .ranking__name { font-size: 1.15em; }
 .menu-page--pause .ranking__name { overflow-wrap: anywhere; }
 .menu-page--pause .ranking-label { margin: 0 0 12px; color: var(--launch-accent); line-height: 1.6; }
 .menu-page--pause .pause-oracle-ranking { margin: 4px 0 12px; }
@@ -193,7 +195,7 @@
 .result-standing__winner { margin: 0 0 24px; color: var(--winner, var(--bone)); font: 800 clamp(32px, 4vw, 52px)/1 var(--font-display); text-transform: uppercase; overflow-wrap: anywhere; }
 .result-standing .ranking { max-width: none; margin: 0; }
 .result-standing .ranking li { grid-template-columns: 1.7em minmax(0, 1fr) auto; gap: 12px; padding: 13px 12px; font-size: 14px; }
-.result-standing--decided .ranking li:first-child { margin-bottom: 3px; border-left: 2px solid var(--winner); background: rgb(91 125 179 / .09); }
+.result-standing--decided .ranking li:first-child { margin-bottom: 3px; padding-left: 10px; border-left: 2px solid var(--winner); background: rgb(91 125 179 / .09); }
 .result-standing .ranking__name, .match-report .ranking__name { min-width: 0; overflow-wrap: anywhere; }
 .result-standing .ranking__name::before { content: ''; display: inline-block; width: 9px; height: 11px; margin-right: 10px; background: var(--player); clip-path: polygon(50% 0, 100% 100%, 50% 76%, 0 100%); }
 .result-standing .ranking__score { font-size: 18px; }
@@ -269,6 +271,13 @@
 .lobby__connect-art .note { margin-bottom: 0; font-size: 12px; }
 .menu-page .lobby__button { min-height: 42px; padding: 10px 16px; border-radius: 3px; border-color: var(--menu-line); font-size: 12px; }
 .menu-page .lobby__button--primary { font-size: 23px; }
+.menu-page--lobby .lobby__connect > .lobby__button {
+  align-self: center;
+  width: fit-content;
+  height: 48px;
+  min-height: 48px;
+  padding: 8px 20px;
+}
 .menu-page .lobby__field { font-size: 12px; gap: 8px; }
 .menu-page .lobby__field input, .menu-page .lobby-room input, .menu-page .lobby__code-join input { min-height: 44px; padding: 10px 12px; border-color: var(--menu-line); background: var(--menu-surface); font-size: 14px; }
 .menu-page .lobby__bar { padding: 16px; gap: 16px 24px; border-color: var(--menu-line); background: transparent; }
@@ -553,6 +562,18 @@
   .menu-page__actions .item--primary { flex: 1 1 100%; margin-left: 0; }
   .menu-page--settings .menu-page__actions .item--primary,
   .menu-page--tutorial .menu-page__actions .item--primary { flex: 0 1 auto; margin-left: auto; }
+  .menu-page--briefing .menu-page__actions { flex-wrap: nowrap; justify-content: flex-end; gap: 8px; }
+  .menu-page--briefing .menu-page__actions > .item { height: 48px; min-height: 48px; }
+  .menu-page--briefing .menu-page__actions > .item:first-child { flex: 0 0 auto; }
+  .menu-page--briefing .menu-page__actions > .item--primary {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 48px;
+    margin-left: 0;
+    padding: 10px 8px;
+    font-size: clamp(17px, 5.8vw, 22px);
+    white-space: nowrap;
+  }
   .menu-page .sectors li { grid-template-columns: minmax(0, 1fr) auto; padding: 16px 0; gap: 10px; }
   .menu-page .sectors__info { grid-column: 1 / -1; font-size: 11px; }
   .menu-page .chips { grid-column: 1 / -1; }
@@ -1108,7 +1129,7 @@
 }
 .menu-page--lobby .briefing__cards .item__icon { width: 100%; height: clamp(62px, 9vh, 88px); }
 .menu-page--lobby .briefing__cards .item__title { min-width: 0; font-size: clamp(17px, 1.65vw, 23px); }
-.menu-page--lobby .briefing__cards .item__hint { color: var(--bone-dim); font-size: 10px; line-height: 1.55; }
+.menu-page--lobby .briefing__cards .item__hint { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--bone-dim); font-size: 10px; line-height: 1.55; }
 .menu-page--room .briefing__quick { gap: 12px 22px; }
 .menu-page--room .briefing__quick .item { padding: 8px 0; }
 .menu-page--room .lobby__rule-details { margin-top: 20px; }

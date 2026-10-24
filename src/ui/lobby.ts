@@ -567,7 +567,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   playerName.addEventListener('input', () => (roomName.placeholder = t('multiplayer.roomNamePlaceholder', { name: playerName.value.trim() || t('multiplayer.host') })));
   const createPresetCards = h('div.items.items--row.briefing__cards', { role: 'group', 'aria-label': t('preset.choose') });
   const createQuick = h('div.briefing__quick', null);
-  const createPowerups = powerUpSummary(() => prefs.rules);
   const createRules = h('div', null);
   /** All the rules on one page over this one: a link below the presets opens them, as it does in the local briefing. */
   const rulesLinkLabel = h('span.item__label', null, t('briefing.editRules'));
@@ -682,6 +681,17 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     clearTimeout(rulesTimer);
     rulesTimer = setTimeout(pushRules, 250);
   };
+  const createPowerups = powerUpSummary(() => prefs.rules, {
+    canChange: () => !readOnly(),
+    patch: (values) => {
+      if (readOnly()) return;
+      prefs.rules = { ...prefs.rules, ...values, powerUpKinds: [...values.powerUpKinds] };
+      commitRules();
+      createQuickControls.forEach((control) => control.refresh());
+      createRulesForm?.refresh();
+      paintCreatePresetState();
+    },
+  });
   const restoreRules = (rules: RoomRules) => {
     prefs.rules = copyRules(rules);
     commitRules();
@@ -1395,15 +1405,15 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     }
     // The hosted build says nothing about connecting or being connected; its connect card returns only when that failed.
     const retry = hosted && !connected && !connecting && (connectFailed || session.notice !== null);
+    connectView.hidden = connected || (hosted && !retry) || quietConnect;
     // The code page says what went wrong at its own fields; what is left over from earlier is not its news.
     const ownsNotice = session.passwordNotice !== null || session.notice === codeNotice || (view === 'code' && !room);
     const notice = ownsNotice ? null : session.notice && relayText(session.notice);
     const message = localMessage ?? notice ?? inviteNote ?? (connecting && !hosted ? t('multiplayer.connecting') : '');
     status.textContent = message;
     status.classList.toggle('is-busy', connecting);
-    status.hidden = !message;
+    status.hidden = !message || !connectView.hidden;
 
-    connectView.hidden = connected || (hosted && !retry) || quietConnect;
     connectSlot.hidden = connected || !!room || quietConnect;
     codeView.hidden = !(browsing && view === 'code');
     roomsView.hidden = !(browsing && view === 'rooms');

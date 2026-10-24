@@ -36,7 +36,7 @@ interface Live {
 }
 
 export type MenuItem =
-  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; className?: string; /** Small second line under the label. */ hint?: string; /** A status line below the hint, refreshed with the rest of the menu. */ status?: () => string; /** Turn the status badge into a separate reset action. */ statusAction?: () => void; statusActionLabel?: string | (() => string); /** Whether the status counts as edits to the row, which light it up in gold; any status does by default. */ modified?: () => boolean; /** A second action beside the status badge, shown while `statusSecondaryVisible` holds. */ statusSecondary?: () => void; statusSecondaryLabel?: string; statusSecondaryVisible?: () => boolean; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; /** Keeps conditional actions out of both sight and keyboard focus. */ hidden?: () => boolean; disabled?: boolean | (() => boolean) })
+  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; className?: string; /** Small second line under the label. */ hint?: string; /** A status line below the hint, refreshed with the rest of the menu. */ status?: () => string; /** Turn the status badge into a separate reset action. */ statusAction?: () => void; statusActionLabel?: string | (() => string); /** Whether the status counts as edits to the row, which light it up in gold; any status does by default. */ modified?: () => boolean; /** A second action beside the status badge, shown while `statusSecondaryVisible` holds. */ statusSecondary?: () => void; statusSecondaryLabel?: string; statusSecondaryVisible?: () => boolean; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** Actions revealed inside a card on hover or keyboard focus. */ choices?: { label: string; run: () => void }[]; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; /** Keeps conditional actions out of both sight and keyboard focus. */ hidden?: () => boolean; disabled?: boolean | (() => boolean) })
   | (Placed &
       Live & {
         /** Cycles through its options; the arrows at its sides go back and forth. */
@@ -383,9 +383,15 @@ export class Menu {
       let row: HTMLElement;
       let rowFocusables: HTMLElement[] | null = null;
       if (item.kind === 'action') {
-        const b = document.createElement('button');
-        b.type = 'button';
+        const choiceCard = !!item.choices?.length;
+        const b = document.createElement(choiceCard ? 'div' : 'button');
+        if (!choiceCard) (b as HTMLButtonElement).type = 'button';
         b.className = [item.primary ? 'item item--primary' : 'item', item.className].filter(Boolean).join(' ');
+        if (choiceCard) {
+          b.classList.add('item--choice-card');
+          b.setAttribute('role', 'group');
+          b.setAttribute('aria-label', item.tag ?? item.label);
+        }
         if (item.icon) {
           b.classList.add('item--card');
           const picture = document.createElement('span');
@@ -424,6 +430,41 @@ export class Menu {
         refresh();
         this.actionRefresh.push(refresh);
         if (item.tag) b.prepend(Object.assign(document.createElement('span'), { className: 'item__tag', textContent: item.tag }));
+        if (choiceCard) {
+          const choices = document.createElement('div');
+          choices.className = 'slot-card__choices';
+          choices.setAttribute('role', 'group');
+          choices.setAttribute('aria-label', item.label);
+          const buttons = item.choices!.map((choice) => {
+            const button = Object.assign(document.createElement('button'), { type: 'button', className: 'slot-card__choice', textContent: choice.label });
+            button.addEventListener('click', (event) => {
+              event.stopPropagation();
+              this.sound.select();
+              choice.run();
+            });
+            return button;
+          });
+          buttons.forEach((button, index) => button.addEventListener('keydown', (event) => {
+            const horizontal: 1 | -1 | 0 = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+            if (horizontal) {
+              event.preventDefault();
+              event.stopPropagation();
+              buttons[(index + horizontal + buttons.length) % buttons.length].focus();
+              return;
+            }
+            const vertical: 1 | -1 | 0 = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+            if (button !== buttons[0] && vertical) {
+              event.preventDefault();
+              event.stopPropagation();
+              const rowIndex = this.focusables.indexOf(buttons[0]);
+              this.focusables[this.visibleFrom(rowIndex, vertical)]?.focus();
+              this.sound.blip();
+            }
+          }));
+          choices.append(...buttons);
+          b.append(choices);
+          rowFocusables = [buttons[0]];
+        }
         const shell = item.statusAction ? Object.assign(document.createElement('div'), { className: 'briefing__preset-shell' }) : null;
         if (shell) shell.dataset.section = item.section ?? '';
         const statusButton = item.status && item.statusAction ? document.createElement('button') : null;
@@ -494,7 +535,7 @@ export class Menu {
             }
           } });
         }
-        b.addEventListener('click', () => {
+        if (!choiceCard) b.addEventListener('click', () => {
           if (isDisabled()) return;
           this.sound.select();
           item.run();

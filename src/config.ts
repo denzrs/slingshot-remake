@@ -98,7 +98,7 @@ export const AIM = {
   DEFAULT_POWER: 50,
   FIXED_POWER: 55,
   /** The choices for capping a shot's power, lowest first (the highest is no cap). */
-  CAP_OPTIONS: [10, 20, 30, 40, 50, 60, 70, 80, 90, 100] as readonly number[],
+  CAP_OPTIONS: [10, 20, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100] as readonly number[],
   /** The choices for the power every shot has when it is fixed: finer than the cap, so the classic 55 is one of them. */
   FIXED_OPTIONS: Array.from({ length: 19 }, (_, i) => 10 + i * 5) as readonly number[],
   /** [angle step in degrees, power step] per modifier. */

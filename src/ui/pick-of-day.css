@@ -5,17 +5,44 @@
   box-shadow: none;
 }
 .briefing__cards .item.item--pick .item__title { color: var(--bone); }
-.briefing__cards { padding-top: 26px; }
+.briefing__cards .item--pick .item__hint {
+  max-height: 3.4em;
+  -webkit-line-clamp: 2;
+}
+/* Keep room for the hover lift and focus ring inside the scroll container. */
+.briefing__cards { padding-top: 6px; }
 .briefing__cards .item--pick .item__tag {
   position: absolute;
-  bottom: calc(100% + 10px);
-  left: 0;
-  color: var(--bone-dim);
-  font: 9px/1.4 var(--font-mono);
-  letter-spacing: .12em;
+  z-index: 2;
+  top: 8px;
+  right: 8px;
+  left: auto;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  padding: 3px 6px;
+  border: 1px solid rgb(111 227 200 / .42);
+  border-radius: 2px;
+  background: rgb(8 20 38 / .94);
+  color: #a3eddb;
+  font: 8px/1.2 var(--font-mono);
+  letter-spacing: .08em;
   text-transform: uppercase;
   white-space: nowrap;
+  text-overflow: ellipsis;
   pointer-events: none;
+}
+/* Wide five-card rows stack the day and change badges to match the reset/save pair. */
+@media (min-width: 1101px) {
+  .briefing__preset-shell:has(> .item--pick):has(> .item__status-reset:not([hidden])) > .item__status-reset {
+    top: 36px;
+  }
+}
+/* The two-column layout has enough width to keep both badges on one row. */
+@media (min-width: 761px) and (max-width: 1100px) {
+  .briefing__preset-shell:has(> .item--pick):has(> .item__status-reset:not([hidden])) > .item--pick .item__tag {
+    right: auto;
+    left: 8px;
+  }
 }
 .briefing__cards .item.item--card[aria-pressed='true'] {
   border-color: #ffad65;
@@ -38,10 +65,11 @@
   min-width: 0;
 }
 .briefing__preset-shell > .item--card { width: 100%; min-width: 0; }
-.briefing__preset-shell:hover > .item--card {
-  border-color: var(--bone-dim);
+.briefing__preset-shell:is(:hover, :focus-within) > .item--card {
   transform: translateY(-2px);
+  border-color: var(--bone-dim);
 }
+.briefing__preset-shell:is(:hover, :focus-within) { z-index: 1; }
 .briefing__cards .item__status-reset {
   position: absolute;
   z-index: 3;
@@ -64,7 +92,7 @@
 .briefing__cards .item__status-reset[hidden] { display: none; }
 .briefing__cards .item__status-reset > span { grid-area: 1 / 1; white-space: nowrap; transition: opacity 180ms ease, transform 180ms ease; }
 .briefing__cards .item__status-action { opacity: 0; transform: translateY(4px); }
-.briefing__preset-shell:hover .item__status-reset { transform: translateY(-2px); }
+.briefing__preset-shell:is(:hover, :focus-within) .item__status-reset { transform: translateY(-2px); }
 .briefing__preset-shell:is(:hover, :focus-within) .item__status-reset,
 .briefing__cards .item__status-reset:is(:hover, :focus-visible, :active) {
   border-color: #ffe58c;
@@ -100,8 +128,8 @@
   .briefing__cards .item--card.is-modified[aria-pressed='true'] { animation: none; }
   .briefing__cards .item__status-reset,
   .briefing__cards .item__status-reset > span { transition: none; }
-  .briefing__preset-shell:hover > .item--card,
-  .briefing__preset-shell:hover .item__status-reset { transform: none; }
+  .briefing__preset-shell:is(:hover, :focus-within) > .item--card,
+  .briefing__preset-shell:is(:hover, :focus-within) .item__status-reset { transform: none; }
 }
 
 /* "Save" under the badge of a card with edits: there while the pointer or the keyboard is on the card. */
@@ -205,7 +233,6 @@
  * nothing moves and no words change under the pointer. The badge's texts stay for screen readers.
  */
 .briefing__own .item__status {
-  top: 50%;
   display: grid;
   place-items: center;
   width: 26px;
@@ -216,12 +243,20 @@
   box-shadow: none;
   font-size: 0;
   opacity: 1;
-  transform: translateY(-50%);
   transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
 }
-.briefing__own .briefing__preset-shell:hover .item__status-reset { transform: translateY(-50%); }
+.briefing__own .item__status-reset,
+.briefing__own .item__status-save {
+  top: 0;
+  bottom: 0;
+  margin-block: auto;
+  transform: none;
+}
 .briefing__own .item__status > span { display: none; }
 .briefing__own .item__status::before {
+  position: absolute;
+  inset: 0;
+  margin: auto;
   content: '';
   width: 14px;
   height: 14px;
@@ -236,11 +271,102 @@
 .briefing__own .briefing__preset-shell.is-modified .item__status { border-color: rgb(243 211 106 / .45); background: #1d2030; }
 .briefing__own .briefing__preset-shell.is-modified .item__status-reset { right: 36px; color: #ffe58c; --strip-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9h10a6 6 0 0 1 0 12H8'/%3E%3Cpath d='m8 5-4 4 4 4'/%3E%3C/svg%3E"); }
 .briefing__own .briefing__preset-shell.is-modified .item__status-save { border-color: rgb(111 227 200 / .5); }
+.briefing__own .briefing__preset-shell:is(:hover, :focus-within) .item__status-reset { transform: none; }
 .briefing__own .item__status:focus-visible { outline: 2px solid var(--bone); outline-offset: 2px; }
 /* Saving shows only while the strip has edits. */
 .briefing__own .item__status-save { pointer-events: auto; }
 
-.briefing__own .briefing__preset-shell .item__status-save { opacity: 1; transform: translateY(-50%); }
+.briefing__own .briefing__preset-shell .item__status-save { opacity: 1; }
+
+/* On narrow screens, keep each preset readable in a compact horizontal card. Custom rules wrap into two columns. */
+@media (max-width: 760px) {
+  .briefing__cards > .briefing__own[data-own]:not([data-own='0']) {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: 44px;
+    align-content: start;
+    gap: 8px;
+    height: auto;
+    min-height: 0;
+  }
+  .briefing__cards > .briefing__own[data-own]:not([data-own='0']) > * {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+  .briefing__cards > .briefing__own[data-own]:not([data-own='0']) .item--strip {
+    padding-inline: 10px 38px;
+  }
+  .briefing__cards > .briefing__own[data-own]:not([data-own='0']) .item--strip .item__title {
+    font-size: 15px;
+  }
+}
+
+@media (max-width: 760px) {
+  .briefing__cards {
+    --preset-card-height: 88px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .briefing__cards .item--card {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 2px 10px;
+    padding: 8px 12px;
+    text-align: left;
+  }
+  .briefing__cards .item__icon {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    width: 100%;
+    height: 64px;
+    margin: 0;
+  }
+  .briefing__cards .item__title {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    min-height: 0;
+    max-height: 2.1em;
+    font-size: clamp(15px, 4.3vw, 17px);
+    line-height: 1.05;
+    text-align: left;
+  }
+  .briefing__cards .item__hint {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+    min-height: 0;
+    max-height: 2.6em;
+    font-size: 9.5px;
+    line-height: 1.3;
+    text-align: left;
+  }
+  .briefing__cards .item--pick .item__tag {
+    position: static;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: start;
+    align-self: start;
+    max-width: 100%;
+    padding: 0 5px;
+    font-size: 7px;
+    line-height: 1;
+  }
+  .briefing__cards .item--pick.item--card { grid-template-rows: 10px minmax(0, 1fr) minmax(0, 1fr); row-gap: 1px; }
+  .briefing__cards .item--pick .item__icon { grid-row: 1 / 4; }
+  .briefing__cards .item--pick .item__title { grid-row: 2; align-self: end; font-size: clamp(14px, 3.8vw, 15px); line-height: 1; max-height: 2em; }
+  .briefing__cards .item--pick .item__hint {
+    grid-row: 3;
+    align-self: start;
+    min-height: 0;
+    max-height: 2.6em;
+    -webkit-line-clamp: 2;
+  }
+}
 
 /* The empty slot, while there is no preset of your own: one card that fills the column, with a plus. */
 .briefing__own > .item--card,
@@ -288,14 +414,23 @@
 }
 @media (prefers-reduced-motion: reduce) { .menu-page .item--delete.is-confirming { animation: none; } }
 
-/* A strip lifts a little under the pointer like the cards do, and its icons go with it. */
-.briefing__own .briefing__preset-shell { transition: transform 160ms ease; }
-.briefing__own .briefing__preset-shell:hover { transform: translateY(-2px); }
+/* The open slot lifts under the pointer; saved strips stay fixed. */
 .briefing__own > .item--strip-empty { transition: transform 160ms ease, border-color 160ms ease, background 160ms ease; }
 .briefing__own > .item--strip-empty:hover { transform: translateY(-2px); }
 @media (prefers-reduced-motion: reduce) {
-  .briefing__own .briefing__preset-shell,
   .briefing__own > .item--strip-empty { transition: none; }
-  .briefing__own .briefing__preset-shell:hover,
   .briefing__own > .item--strip-empty:hover { transform: none; }
+}
+
+@media (max-width: 760px) {
+  .briefing__own[data-own='1'] .item--strip-empty .item__title,
+  .briefing__own[data-own='2'] .item--strip-empty .item__title {
+    display: inline;
+    text-align: left;
+  }
+  .briefing__own[data-own='1'] .item--strip-empty .item__title::before,
+  .briefing__own[data-own='2'] .item--strip-empty .item__title::before {
+    margin: 0 6px 0 0;
+    font-size: 18px;
+  }
 }

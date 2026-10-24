@@ -2361,10 +2361,6 @@ kbd {
   border-bottom: 1px solid rgb(91 125 179 / 0.2);
 }
 
-.ranking li:first-child {
-  font-size: 1.15em;
-}
-
 .ranking-label {
   margin: 18px 0 0;
   font-size: 11px;

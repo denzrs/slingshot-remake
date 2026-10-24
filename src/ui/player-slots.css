@@ -45,6 +45,8 @@
 .menu-page button.slot-card--empty { justify-content: center; align-items: center; text-align: center; cursor: pointer; }
 .menu-page button.slot-card--empty:hover,
 .slot-card--empty:has(.slot-card__join:hover:not(:disabled)) { border-color: var(--p2); background: rgb(111 227 200 / .035); }
+.menu-page .slot-card--empty.item--choice-card { align-items: center; justify-content: center; text-align: center; cursor: default; }
+.menu-page .slot-card--empty.item--choice-card:is(:hover, :focus-within) { border-color: var(--p2); background: rgb(111 227 200 / .035); }
 .slot-card--empty .slot-card__head { color: var(--bone-dim); }
 .slot-card--empty .slot-card__kind { margin-left: auto; color: var(--bone-dim); font-size: 9px; }
 .slot-card--empty > .item__tag { position: absolute; top: 14px; left: 14px; font: 800 21px/1 var(--font-display); text-transform: uppercase; }
@@ -53,6 +55,14 @@
 .slot-card--empty .item__title { font: 800 24px/1.2 var(--font-display); text-transform: uppercase; }
 .slot-card--empty .item__hint,
 .slot-card__waiting { color: var(--bone-dim); font: 10px/1.5 var(--font-mono); text-align: center; }
+.slot-card__choices { position: absolute; inset: 48px 12px 12px; display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 8px; }
+.slot-card__choice { min-width: 0; min-height: 40px; padding: 7px 9px; border: 1px solid var(--menu-line); border-radius: 3px; background: rgb(5 15 29 / .85); color: var(--bone); cursor: pointer; font: 700 13px/1.3 var(--font-body); }
+.slot-card__choice:hover { border-color: var(--p2); color: var(--p2); background: rgb(111 227 200 / .08); }
+.slot-card__choice:focus-visible { outline: 2px solid var(--p2); outline-offset: 2px; }
+.slot-card--empty.item--choice-card:is(:hover, :focus-within) .slot-card__choices { display: grid; }
+.slot-card--empty.item--choice-card:is(:hover, :focus-within) > .item__icon,
+.slot-card--empty.item--choice-card:is(:hover, :focus-within) > .item__title,
+.slot-card--empty.item--choice-card:is(:hover, :focus-within) > .item__hint { visibility: hidden; }
 .slot-card__join { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 88px; padding: 0; border: 0; background: transparent; color: var(--p2); cursor: pointer; font: 800 24px/1.2 var(--font-display); text-transform: uppercase; }
 .slot-card__join .slot-card__plus { order: -1; }
 .slot-card__join:disabled { color: var(--bone-dim); cursor: default; }
@@ -88,12 +98,19 @@
 @media (max-width: 520px) {
   .menu-page .slot-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .menu-page .slot-card { min-height: 190px; }
-  .menu-page button.slot-card--empty { min-height: 150px; }
+  .menu-page button.slot-card--empty,
+  .menu-page .slot-card--empty.item--choice-card { min-height: 150px; }
   .crew-config { gap: 10px; margin-bottom: 16px; }
   .crew-config .segmented__option { font-size: 10px; }
   .crew-roster__heading .setup__title { font-size: 24px; }
   .menu-page--room .lobby__code { gap: 8px; }
   .menu-page--room .lobby__code > .lobby__button { min-height: 34px; padding: 6px 8px; font-size: 10px; }
+}
+@media (hover: none) {
+  .slot-card--empty.item--choice-card .slot-card__choices { display: grid; }
+  .slot-card--empty.item--choice-card > .item__icon,
+  .slot-card--empty.item--choice-card > .item__title,
+  .slot-card--empty.item--choice-card > .item__hint { display: none; }
 }
 @media (min-width: 901px) and (max-height: 800px) {
   .menu-page--crew, .menu-page--room { margin-top: 0; }
