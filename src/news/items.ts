@@ -15,7 +15,7 @@ export const NEWS: readonly NewsItem[] = [
       de: 'Kleine Fundstücke aus den Spielstatistiken rauschen jetzt als Laufband durchs Titelmenü und die Online-Lobby. Wenn du lieber Ruhe hast, schalte es unter Einstellungen → Darstellung aus.',
       en: 'Small discoveries from the game stats now stream through the title screen and online lobby. Turn the ticker off under Settings → Display if you would rather have a quieter menu.',
     },
-    where: { de: 'Titelmenü · Online spielen · Einstellungen → Darstellung → Statistik-Laufband', en: 'Title screen · Play online · Settings → Display → Stats ticker' },
+    where: { de: 'Einstellungen → Darstellung → Statistik-Laufband', en: 'Settings → Display → Stats ticker' },
   },
   {
     id: 'solar-system-v2',

@@ -416,7 +416,7 @@ export function titleScreen(app: App): Screen {
       modeCard('horizon'),
       modeCard('solar'),
       { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.daily'), hint: dailyMenuHint(app.today()), icon: () => modeArt('daily'), run: () => app.menu.push(() => dailyScreen(app)) },
-      { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
+      { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.code'), hint: t('flow.codeHint'), icon: () => modeArt('code'), run: () => app.openLobby('code') },
       { ...languageItem(app), section: 'language' },

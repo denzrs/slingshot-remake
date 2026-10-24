@@ -530,21 +530,44 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
 
   /** What the room list showed last: it is only rebuilt when that changes, so a half-typed password survives. */
   let shownRooms = '';
+  let roomsWereSearching = false;
+  let roomsHaveRendered = false;
+  let roomsFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
   const retryRooms = button(t('multiplayer.retryRooms'));
   retryRooms.addEventListener('click', () => session.requestRooms());
   const renderRooms = (open: LobbyRoom[], loaded: boolean, failed: boolean) => {
     const key = `${loaded}:${failed}:${JSON.stringify(open)}`;
     if (key === shownRooms) return;
     shownRooms = key;
+    const wasSearching = roomsWereSearching;
+    roomsWereSearching = !loaded && !failed;
+    const shouldFlashResult = (loaded || failed) && (wasSearching || !roomsHaveRendered);
+    clearTimeout(roomsFeedbackTimer);
+    roomsList.classList.remove('is-found');
     roomsCount.textContent = String(open.length);
     roomsCount.hidden = !loaded || failed;
     const radar = () => h('span.lobby__empty-radar', { 'aria-hidden': 'true' });
-    const empty = failed
-      ? h('li.lobby__empty', null, radar(), h('strong', null, t('multiplayer.roomsFailed')), retryRooms)
-      : !loaded
-        ? h('li.lobby__empty', null, radar(), h('strong', null, t('multiplayer.roomsLoading')))
-        : h('li.lobby__empty', null, radar(), h('strong', null, t('multiplayer.noRooms')), h('span', null, t('multiplayer.noRoomsHint')));
-    roomsList.replaceChildren(...(open.length ? open.map(roomRow) : [empty]));
+    if (open.length) {
+      roomsList.replaceChildren(...open.map(roomRow));
+      if (loaded && !failed && shouldFlashResult) {
+        void roomsList.offsetWidth;
+        roomsList.classList.add('is-found');
+        roomsFeedbackTimer = setTimeout(() => roomsList.classList.remove('is-found'), 1000);
+      }
+    } else {
+      const empty = failed
+        ? h('li.lobby__empty', null, radar(), h('strong', null, t('multiplayer.roomsFailed')), retryRooms)
+        : !loaded
+          ? h('li.lobby__empty.is-searching', null, radar(), h('strong', null, t('multiplayer.roomsLoading')))
+          : h('li.lobby__empty', null, radar(), h('strong', null, t('multiplayer.noRooms')), h('span', null, t('multiplayer.noRoomsHint')));
+      if (shouldFlashResult && loaded && !failed) empty.classList.add('is-not-found');
+      if (shouldFlashResult && failed) empty.classList.add('is-error');
+      roomsList.replaceChildren(empty);
+      if (empty.classList.contains('is-not-found') || empty.classList.contains('is-error')) {
+        roomsFeedbackTimer = setTimeout(() => empty.classList.remove('is-not-found', 'is-error'), 1000);
+      }
+    }
+    roomsHaveRendered = true;
   };
 
   // ————————————————————————————— Opening a room —————————————————————————————
@@ -1409,6 +1432,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       document.removeEventListener('keydown', handleOnlineSectionKey, true);
       unsubscribe?.();
       unsubscribe = null;
+      clearTimeout(roomsFeedbackTimer);
       if (rulesTimer) pushRules();
       roomDialog?.close();
       rulesDialog.remove();
