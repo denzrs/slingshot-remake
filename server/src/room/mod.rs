@@ -6,6 +6,8 @@
 
 mod chat;
 mod connections;
+#[cfg(test)]
+pub use connections::MAX_PASSWORD_ATTEMPTS;
 mod cpu;
 mod game;
 mod guards;
@@ -44,6 +46,21 @@ pub struct RoomManager {
     last_rename: HashMap<u64, std::time::Instant>,
     /// Where the host's round reports go; none in the tests that have no business writing files.
     stats: Option<Arc<Stats>>,
+    /// The room list goes out at most once per `lobby_interval`; see `broadcast_lobby`.
+    lobby: LobbyThrottle,
+}
+
+/// The shortest time between two room-list broadcasts on the relay (`LOBBY_INTERVAL` in the tests'
+/// absence). Every change in the lobby is a broadcast to everyone in it, so churning rooms could
+/// otherwise send the whole list as fast as messages arrive.
+pub const LOBBY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+
+#[derive(Default)]
+struct LobbyThrottle {
+    interval: std::time::Duration,
+    last_sent: Option<std::time::Instant>,
+    /// Something changed since the last broadcast, which still has to go out.
+    pending: bool,
 }
 
 /// The shortest time between two renames of one connection.
@@ -59,7 +76,15 @@ impl RoomManager {
             net: Connections::default(),
             last_rename: HashMap::new(),
             stats: None,
+            // Unthrottled unless asked for: the tests read every broadcast as it happens.
+            lobby: LobbyThrottle::default(),
         }
+    }
+
+    /// Send the room list at most once per `interval`, the last change always included.
+    pub fn with_lobby_interval(mut self, interval: std::time::Duration) -> Self {
+        self.lobby.interval = interval;
+        self
     }
 
     pub fn with_stats(mut self, stats: Arc<Stats>) -> Self {
@@ -111,8 +136,12 @@ impl RoomManager {
         self.memberships.contains_key(&conn) || self.watching.contains_key(&conn)
     }
 
-    pub fn password_attempts_exhausted(&self, conn: u64) -> bool {
+    pub fn password_attempts_exhausted(&mut self, conn: u64) -> bool {
         self.net.password_attempts_exhausted(conn)
+    }
+
+    pub fn allow_room_password_check(&mut self, room_id: &str) -> bool {
+        self.net.allow_room_password_check(room_id)
     }
 
     pub fn join_password_salt(&self, conn: u64, room_id: &str, spectate: bool) -> Option<Hashed> {
@@ -143,7 +172,12 @@ impl RoomManager {
             RoomCommand::Unknown(other) => {
                 self.error(conn, &format!("Unknown message type: {other}"))
             }
-            RoomCommand::Lobby => self.send_lobby(conn),
+            // Every change is sent anyway: a client asking over and over is only refused the copies.
+            RoomCommand::Lobby => {
+                if self.net.allow_lobby_request(conn) {
+                    self.send_lobby(conn);
+                }
+            }
             RoomCommand::CreateRoom(create) => self.create_room(conn, create, None),
             RoomCommand::JoinRoom(join) => self.join_room(conn, join, None),
             RoomCommand::Ready(ready) => self.set_ready(conn, ready),

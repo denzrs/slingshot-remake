@@ -7,6 +7,23 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
+/// Who a connection counts as for every per-address limit: an IPv4 address as it is (also when the
+/// dual-stack listener reports it IPv4-mapped), an IPv6 address by its /64. A single IPv6 host
+/// usually holds a whole /64, so counting its addresses one by one would give it billions of
+/// fresh starts; everyone behind one /64 shares, as everyone behind one IPv4 NAT already does.
+pub fn client_of(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(_) => ip,
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let network = u128::from(v6) & !((1u128 << 64) - 1);
+                IpAddr::V6(network.into())
+            }
+        },
+    }
+}
+
 struct IpState {
     count: usize,
     recent: VecDeque<Instant>,
@@ -91,5 +108,36 @@ impl AdmissionGuard {
                 .retain(|t| now.duration_since(*t) < Duration::from_secs(1));
             state.count > 0 || !state.recent.is_empty()
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_client_is_its_ipv4_address_or_its_ipv6_slash_64() {
+        let v4: IpAddr = "203.0.113.7".parse().unwrap();
+        assert_eq!(client_of(v4), v4);
+        let mapped: IpAddr = "::ffff:203.0.113.7".parse().unwrap();
+        assert_eq!(client_of(mapped), v4);
+        let network: IpAddr = "2001:db8:1:2::".parse().unwrap();
+        for address in ["2001:db8:1:2:aaaa:bbbb:cccc:dddd", "2001:db8:1:2::1"] {
+            assert_eq!(client_of(address.parse().unwrap()), network);
+        }
+        let next: IpAddr = "2001:db8:1:3::1".parse().unwrap();
+        assert_ne!(client_of(next), network);
+    }
+
+    #[test]
+    fn addresses_of_one_slash_64_share_the_per_address_cap() {
+        let guard = AdmissionGuard::new(100, 2, 100);
+        let clients: Vec<IpAddr> = ["2001:db8::1", "2001:db8::2", "2001:db8::3"]
+            .iter()
+            .map(|address| client_of(address.parse().unwrap()))
+            .collect();
+        assert!(guard.try_admit(clients[0]));
+        assert!(guard.try_admit(clients[1]));
+        assert!(!guard.try_admit(clients[2]), "the /64 is at its cap");
     }
 }

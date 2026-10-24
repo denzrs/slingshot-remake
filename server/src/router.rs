@@ -325,9 +325,9 @@ mod tests {
             .connect(2, IpAddr::V4(Ipv4Addr::LOCALHOST), guest_tx, guest_slow);
         let _ = take_type(&mut guest_rx, "lobby_update").await;
 
-        // Establish five failures. The exhausted attempt must not wait on the unavailable
-        // derivation permit (nor consume a per-connection scrypt budget).
-        for _ in 0..5 {
+        // Use up the allowed failures. The exhausted attempt must not wait on the unavailable
+        // derivation permit (nor consume a scrypt budget).
+        for _ in 0..crate::room::MAX_PASSWORD_ATTEMPTS {
             manager.lock().handle_join_room(
                 2,
                 &serde_json::json!({
@@ -346,7 +346,7 @@ mod tests {
         route(&manager, &scrypt_slots, &boards, 2, &attempt).await;
         assert_eq!(
             take_type(&mut guest_rx, "error").await["message"],
-            "Too many wrong passwords – reconnect to try again"
+            crate::auth::PASSWORDS_EXHAUSTED
         );
     }
 

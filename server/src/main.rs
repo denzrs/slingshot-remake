@@ -28,7 +28,7 @@ use parking_lot::Mutex;
 use tokio::net::TcpListener;
 use tracing::{error, info, warn};
 
-use crate::admission::AdmissionGuard;
+use crate::admission::{client_of, AdmissionGuard};
 use crate::auth::{ScryptSlots, MAX_CONCURRENT_SCRYPTS};
 use crate::codec::{OutboundPool, DEFAULT_OUTBOUND_BYTES_TOTAL};
 use crate::config::{
@@ -38,7 +38,7 @@ use crate::config::{
 };
 use crate::connection::{handle_connection, Shared};
 use crate::leaderboard::{Leaderboard, DEFAULT_KEEP_DAYS};
-use crate::room::RoomManager;
+use crate::room::{RoomManager, LOBBY_INTERVAL};
 use crate::stats::{Stats, DEFAULT_KEEP_DAYS as DEFAULT_STATS_KEEP_DAYS};
 use crate::tls::load_tls;
 
@@ -160,7 +160,9 @@ async fn main() {
     info!(%port, "relay listening");
 
     info!(max_bytes_per_second, max_outbound_bytes, "transport limits");
-    let mut rooms = RoomManager::new().with_outbound_pool(OutboundPool::new(max_outbound_bytes));
+    let mut rooms = RoomManager::new()
+        .with_outbound_pool(OutboundPool::new(max_outbound_bytes))
+        .with_lobby_interval(LOBBY_INTERVAL);
     if let Some(stats) = &stats {
         rooms = rooms.with_stats(stats.clone());
     }
@@ -184,9 +186,15 @@ async fn main() {
     sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut seats = tokio::time::interval(Duration::from_secs(2));
     seats.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // Often enough that a held-back room list goes out soon after its interval is over.
+    let mut lobby = tokio::time::interval(LOBBY_INTERVAL / 5);
+    lobby.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {
+            _ = lobby.tick() => {
+                shared.manager.lock().flush_lobby();
+            }
             _ = seats.tick() => {
                 shared.manager.lock().expire_seats();
             }
@@ -209,7 +217,9 @@ async fn main() {
                         continue;
                     }
                 };
-                if !shared.guard.try_admit(peer.ip()) {
+                // From here on the connection is its client: every per-address limit counts that.
+                let client = client_of(peer.ip());
+                if !shared.guard.try_admit(client) {
                     warn!("connection refused: at the connection limit");
                     drop(stream);
                     continue;
@@ -227,20 +237,20 @@ async fn main() {
                             let accepted = tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await;
                             match accepted {
                                 Ok(Ok(tls_stream)) => {
-                                    handle_connection(tls_stream, peer, shared.as_ref().clone(), conn_id).await;
+                                    handle_connection(tls_stream, client, shared.as_ref().clone(), conn_id).await;
                                 }
                                 Ok(Err(err)) => {
                                     warn!(%err, "TLS handshake failed");
-                                    shared.guard.release(peer.ip());
+                                    shared.guard.release(client);
                                 }
                                 Err(_) => {
                                     warn!("TLS handshake timed out");
-                                    shared.guard.release(peer.ip());
+                                    shared.guard.release(client);
                                 }
                             }
                         }
                         None => {
-                            handle_connection(stream, peer, shared.as_ref().clone(), conn_id).await;
+                            handle_connection(stream, client, shared.as_ref().clone(), conn_id).await;
                         }
                     }
                 });

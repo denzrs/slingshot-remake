@@ -1,5 +1,5 @@
-//! Who is connected: each connection's outbound queue and address, and the per-connection limits
-//! on password attempts and scrypt work.
+//! Who is connected: each connection's outbound queue and client, and the limits on password
+//! attempts, scrypt work and room-list requests.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::IpAddr;
@@ -11,8 +11,19 @@ use tracing::{info, warn};
 use crate::codec::{Frame, Outbound, OutboundPool, WireMessage};
 use crate::protocol::is_name_refusal;
 
-pub const MAX_PASSWORD_ATTEMPTS: u32 = 5;
+/// Wrong passwords one client may type in `PASSWORD_WINDOW`, over all its connections and rooms.
+/// Counted per client, so reconnecting does not start the count over.
+pub const MAX_PASSWORD_ATTEMPTS: usize = 10;
+pub const PASSWORD_WINDOW: Duration = Duration::from_secs(15 * 60);
+/// Password checks one room takes in `ROOM_PASSWORD_WINDOW`, from everybody together: a guesser
+/// spread over many addresses gets no further than one, and a friend waits a few seconds at worst.
+pub const MAX_ROOM_PASSWORD_CHECKS: usize = 5;
+pub const ROOM_PASSWORD_WINDOW: Duration = Duration::from_secs(5);
+/// Password derivations one client may start per second.
 pub const MAX_SCRYPT_PER_SECOND: usize = 10;
+/// Room lists one connection may ask for in `LOBBY_WINDOW`; the relay sends every change anyway.
+pub const MAX_LOBBY_REQUESTS: usize = 5;
+pub const LOBBY_WINDOW: Duration = Duration::from_secs(10);
 /// How many inputs a spectator may send per second; a bet needs a few clicks, not a stream.
 pub const MAX_SPECTATOR_INPUTS_PER_SECOND: usize = 8;
 /// Chat messages one connection may send in `CHAT_WINDOW`.
@@ -28,19 +39,91 @@ struct Conn {
     slow: tokio::sync::watch::Sender<bool>,
 }
 
-#[derive(Default)]
+/// When each key last did something, within a window: a sliding-window rate limit per key.
+struct Windows<K> {
+    span: Duration,
+    seen: HashMap<K, VecDeque<Instant>>,
+}
+
+impl<K: std::hash::Hash + Eq> Windows<K> {
+    fn new(span: Duration) -> Self {
+        Self {
+            span,
+            seen: HashMap::new(),
+        }
+    }
+
+    /// How often `key` did it within the window.
+    fn count(&mut self, key: &K, now: Instant) -> usize {
+        let span = self.span;
+        self.seen.get_mut(key).map_or(0, |window| {
+            window.retain(|at| now.duration_since(*at) < span);
+            window.len()
+        })
+    }
+
+    fn record(&mut self, key: K, now: Instant) {
+        self.seen.entry(key).or_default().push_back(now);
+    }
+
+    /// Record one more unless `key` already did it `max` times within the window.
+    fn allow(&mut self, key: K, now: Instant, max: usize) -> bool {
+        if self.count(&key, now) >= max {
+            return false;
+        }
+        self.record(key, now);
+        true
+    }
+
+    fn forget(&mut self, key: &K) {
+        self.seen.remove(key);
+    }
+
+    fn sweep(&mut self, now: Instant) {
+        let span = self.span;
+        self.seen.retain(|_, window| {
+            window.retain(|at| now.duration_since(*at) < span);
+            !window.is_empty()
+        });
+    }
+}
+
 pub struct Connections {
     connected: HashSet<u64>,
     outbounds: HashMap<u64, Conn>,
-    /// Where each connection came from. The leaderboard is told apart by it; nothing else uses it.
+    /// Which client each connection is (`admission::client_of`). The per-client limits below count
+    /// by it, and the leaderboard and statistics tell players apart by it.
     ips: HashMap<u64, IpAddr>,
-    password_failures: HashMap<u64, u32>,
-    scrypt_windows: HashMap<u64, VecDeque<Instant>>,
+    /// Wrong passwords per client.
+    password_failures: Windows<IpAddr>,
+    /// Password checks per room.
+    room_password_checks: Windows<String>,
+    /// Password derivations started per client.
+    scrypt_windows: Windows<IpAddr>,
+    lobby_requests: Windows<u64>,
     spectator_windows: HashMap<u64, VecDeque<Instant>>,
     chat_windows: HashMap<u64, VecDeque<Instant>>,
     spectate_windows: HashMap<u64, VecDeque<Instant>>,
     /// What all the outbound queues may hold together.
     pool: OutboundPool,
+}
+
+impl Default for Connections {
+    fn default() -> Self {
+        Self {
+            connected: HashSet::new(),
+            outbounds: HashMap::new(),
+            ips: HashMap::new(),
+            password_failures: Windows::new(PASSWORD_WINDOW),
+            room_password_checks: Windows::new(ROOM_PASSWORD_WINDOW),
+            scrypt_windows: Windows::new(Duration::from_secs(1)),
+            lobby_requests: Windows::new(LOBBY_WINDOW),
+            spectator_windows: HashMap::new(),
+            chat_windows: HashMap::new(),
+            spectate_windows: HashMap::new(),
+            pool: OutboundPool::default(),
+        }
+    }
 }
 
 impl Connections {
@@ -77,8 +160,8 @@ impl Connections {
         info!(conn, "connection closed");
         self.connected.remove(&conn);
         self.outbounds.remove(&conn);
-        self.password_failures.remove(&conn);
-        self.scrypt_windows.remove(&conn);
+        // The per-client counts outlive the connection: that is what they are for.
+        self.lobby_requests.forget(&conn);
         self.spectator_windows.remove(&conn);
         self.chat_windows.remove(&conn);
         self.spectate_windows.remove(&conn);
@@ -101,10 +184,10 @@ impl Connections {
     /// Prune expired password and scrypt timestamps without disturbing active lockouts.
     pub fn sweep(&mut self) {
         let now = Instant::now();
-        self.scrypt_windows.retain(|_, window| {
-            window.retain(|at| now.duration_since(*at) < Duration::from_secs(1));
-            !window.is_empty()
-        });
+        self.scrypt_windows.sweep(now);
+        self.password_failures.sweep(now);
+        self.room_password_checks.sweep(now);
+        self.lobby_requests.sweep(now);
         self.spectator_windows.retain(|_, window| {
             window.retain(|at| now.duration_since(*at) < Duration::from_secs(1));
             !window.is_empty()
@@ -117,8 +200,6 @@ impl Connections {
             window.retain(|at| now.duration_since(*at) < SPECTATE_WINDOW);
             !window.is_empty()
         });
-        self.password_failures
-            .retain(|conn, _| self.connected.contains(conn));
     }
 
     /// Counts one more walk into the stands; false when a connection keeps coming and going.
@@ -177,28 +258,41 @@ impl Connections {
         self.spectator_windows.remove(&conn);
     }
 
+    /// Counts one more derivation for the connection's client; false when it has started too many.
     pub fn scrypt_budget_available(&mut self, conn: u64) -> bool {
-        let now = Instant::now();
-        let window = self.scrypt_windows.entry(conn).or_default();
-        while window
-            .front()
-            .is_some_and(|at| now.duration_since(*at) >= Duration::from_secs(1))
-        {
-            window.pop_front();
-        }
-        if window.len() >= MAX_SCRYPT_PER_SECOND {
+        let Some(client) = self.peer_ip(conn) else {
             return false;
-        }
-        window.push_back(now);
-        true
+        };
+        self.scrypt_windows
+            .allow(client, Instant::now(), MAX_SCRYPT_PER_SECOND)
     }
 
-    pub fn password_attempts_exhausted(&self, conn: u64) -> bool {
-        self.password_failures.get(&conn).copied().unwrap_or(0) >= MAX_PASSWORD_ATTEMPTS
+    pub fn password_attempts_exhausted(&mut self, conn: u64) -> bool {
+        let Some(client) = self.peer_ip(conn) else {
+            return true;
+        };
+        self.password_failures.count(&client, Instant::now()) >= MAX_PASSWORD_ATTEMPTS
     }
 
     pub fn password_failed(&mut self, conn: u64) {
-        *self.password_failures.entry(conn).or_insert(0) += 1;
+        if let Some(client) = self.peer_ip(conn) {
+            self.password_failures.record(client, Instant::now());
+        }
+    }
+
+    /// Counts one more password check against a room; false when the room has had its share.
+    pub fn allow_room_password_check(&mut self, room_id: &str) -> bool {
+        self.room_password_checks.allow(
+            room_id.to_owned(),
+            Instant::now(),
+            MAX_ROOM_PASSWORD_CHECKS,
+        )
+    }
+
+    /// Counts one more request for the room list; false when the connection keeps asking.
+    pub fn allow_lobby_request(&mut self, conn: u64) -> bool {
+        self.lobby_requests
+            .allow(conn, Instant::now(), MAX_LOBBY_REQUESTS)
     }
 
     pub fn send_value(&self, conn: u64, value: &Value) {

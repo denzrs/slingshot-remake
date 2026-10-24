@@ -1,4 +1,6 @@
-use super::connections::{MAX_PASSWORD_ATTEMPTS, MAX_SCRYPT_PER_SECOND};
+use super::connections::{
+    MAX_LOBBY_REQUESTS, MAX_PASSWORD_ATTEMPTS, MAX_ROOM_PASSWORD_CHECKS, MAX_SCRYPT_PER_SECOND,
+};
 use super::*;
 use crate::auth::{check_password, hash_password, password_length};
 use crate::command::RoomCommand;
@@ -139,8 +141,19 @@ fn room_flow_authorizes_host_and_relays_guest_input_and_host_state() {
     );
 }
 
+fn connect_from(
+    manager: &mut RoomManager,
+    id: u64,
+    client: &str,
+) -> mpsc::Receiver<crate::codec::WireMessage> {
+    let (tx, rx) = mpsc::channel(128);
+    let (slow, _) = tokio::sync::watch::channel(false);
+    manager.connect(id, client.parse().unwrap(), tx, slow);
+    rx
+}
+
 #[test]
-fn password_attempts_lock_out_after_five_failures() {
+fn password_attempts_lock_out_the_client_and_reconnecting_does_not_start_over() {
     let mut rooms = RoomManager::new();
     let mut host_rx = connect(&mut rooms, 1);
     drain_json(&mut host_rx);
@@ -150,28 +163,21 @@ fn password_attempts_lock_out_after_five_failures() {
         .as_str()
         .unwrap()
         .to_owned();
+    let join = |password: &str| json!({"type":"join_room","roomId":room_id,"name":"Guest","password":password});
 
-    let mut guest_rx = connect(&mut rooms, 2);
+    let mut guest_rx = connect_from(&mut rooms, 2, "198.51.100.9");
     drain_json(&mut guest_rx);
-    for _ in 0..5 {
-        rooms.handle_join_room(
-            2,
-            &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"}),
-            Some(false),
-        );
+    for _ in 0..MAX_PASSWORD_ATTEMPTS {
+        rooms.handle_join_room(2, &join("wrong"), Some(false));
         assert_eq!(
             take_type(&drain_json(&mut guest_rx), "error")["message"],
             "Wrong password"
         );
     }
-    rooms.handle_join_room(
-        2,
-        &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"secret"}),
-        Some(true),
-    );
+    rooms.handle_join_room(2, &join("secret"), Some(true));
     assert_eq!(
         take_type(&drain_json(&mut guest_rx), "error")["message"],
-        "Too many wrong passwords – reconnect to try again"
+        crate::auth::PASSWORDS_EXHAUSTED
     );
     assert_eq!(
         drain_json(&mut guest_rx)
@@ -179,6 +185,28 @@ fn password_attempts_lock_out_after_five_failures() {
             .filter(|m| m["type"] == "room_update")
             .count(),
         0
+    );
+
+    // A new connection from the same client is still locked out.
+    rooms.disconnect(2);
+    let mut again_rx = connect_from(&mut rooms, 3, "198.51.100.9");
+    drain_json(&mut again_rx);
+    rooms.handle_join_room(3, &join("secret"), Some(true));
+    assert_eq!(
+        take_type(&drain_json(&mut again_rx), "error")["message"],
+        crate::auth::PASSWORDS_EXHAUSTED
+    );
+
+    // Somebody else is not.
+    let mut other_rx = connect_from(&mut rooms, 4, "203.0.113.4");
+    drain_json(&mut other_rx);
+    rooms.handle_join_room(4, &join("secret"), Some(true));
+    assert_eq!(
+        take_type(&drain_json(&mut other_rx), "room_update")["room"]["players"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
     );
 }
 
@@ -297,7 +325,7 @@ fn open_rooms_ignore_password_failures_and_password_success_does_not_reset_them(
             "Wrong password"
         );
     }
-    // The fifth miss cannot be cleared by successfully joining a different open room.
+    // The last allowed miss cannot be cleared by successfully joining a different open room.
     rooms.handle_join_room(
         2,
         &json!({"type":"join_room","roomId":open_id,"name":"Guest"}),
@@ -325,7 +353,7 @@ fn open_rooms_ignore_password_failures_and_password_success_does_not_reset_them(
     );
     assert_eq!(
         take_type(&drain_json(&mut guest_rx), "error")["message"],
-        "Too many wrong passwords – reconnect to try again"
+        crate::auth::PASSWORDS_EXHAUSTED
     );
 }
 
@@ -409,19 +437,95 @@ fn state_envelopes_require_a_playing_room_host_and_monotonic_sequence() {
 }
 
 #[test]
-fn create_room_validates_before_hashing_and_password_budget_is_per_connection() {
+fn create_room_validates_before_hashing_and_password_budget_is_per_client() {
     let mut rooms = RoomManager::new();
-    let mut rx = connect(&mut rooms, 1);
-    drain_json(&mut rx);
+    let mut rx = connect_from(&mut rooms, 1, "198.51.100.9");
+    let mut same_rx = connect_from(&mut rooms, 2, "198.51.100.9");
+    let mut other_rx = connect_from(&mut rooms, 3, "203.0.113.4");
+    for rx in [&mut rx, &mut same_rx, &mut other_rx] {
+        drain_json(rx);
+    }
     assert!(!valid_create_room_message(
         &json!({"type":"create_room","password":"secret"})
     ));
-    assert!(rooms.scrypt_budget_available(1));
-    for _ in 1..MAX_SCRYPT_PER_SECOND {
+    for _ in 0..MAX_SCRYPT_PER_SECOND {
         assert!(rooms.scrypt_budget_available(1));
     }
     assert!(!rooms.scrypt_budget_available(1));
-    assert!(rooms.scrypt_budget_available(2));
+    assert!(
+        !rooms.scrypt_budget_available(2),
+        "another connection of the same client shares the budget"
+    );
+    assert!(rooms.scrypt_budget_available(3));
+    assert!(
+        !rooms.scrypt_budget_available(4),
+        "no budget for a connection that is not there"
+    );
+}
+
+#[test]
+fn a_room_takes_only_so_many_password_checks_from_everybody_together() {
+    let mut rooms = RoomManager::new();
+    for _ in 0..MAX_ROOM_PASSWORD_CHECKS {
+        assert!(rooms.allow_room_password_check("abc"));
+    }
+    assert!(!rooms.allow_room_password_check("abc"));
+    assert!(rooms.allow_room_password_check("other"));
+}
+
+#[test]
+fn lobby_changes_within_the_interval_go_out_once_with_the_latest_list() {
+    // Long enough that the test itself never takes it.
+    let interval = std::time::Duration::from_secs(10);
+    let mut rooms = RoomManager::new().with_lobby_interval(interval);
+    let mut watcher = connect(&mut rooms, 1);
+    let mut host = connect(&mut rooms, 2);
+    drain_json(&mut watcher);
+    drain_json(&mut host);
+    let lists = |rx: &mut mpsc::Receiver<crate::codec::WireMessage>| -> Vec<usize> {
+        drain_json(rx)
+            .iter()
+            .filter(|m| m["type"] == "lobby_update")
+            .map(|m| m["rooms"].as_array().unwrap().len())
+            .collect()
+    };
+
+    // The first change goes out at once.
+    rooms.handle(2, &create("Host", None));
+    assert_eq!(lists(&mut watcher), vec![1]);
+    let start = std::time::Instant::now();
+    // Changes inside the interval are held back …
+    rooms.handle(2, &json!({"type":"leave_room"}));
+    rooms.handle(2, &create("Second", None));
+    rooms.flush_lobby_at(start);
+    assert_eq!(lists(&mut watcher), Vec::<usize>::new());
+    // … and go out together once it is over, as the list is then.
+    rooms.flush_lobby_at(start + interval);
+    let latest = drain_json(&mut watcher);
+    let updates: Vec<&Value> = latest
+        .iter()
+        .filter(|m| m["type"] == "lobby_update")
+        .collect();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0]["rooms"][0]["host"], "Second");
+    // Nothing changed since: nothing more goes out.
+    rooms.flush_lobby_at(start + interval * 3);
+    assert_eq!(lists(&mut watcher), Vec::<usize>::new());
+}
+
+#[test]
+fn asking_for_the_room_list_over_and_over_gets_only_a_few_answers() {
+    let mut rooms = RoomManager::new();
+    let mut rx = connect(&mut rooms, 1);
+    drain_json(&mut rx);
+    for _ in 0..MAX_LOBBY_REQUESTS * 3 {
+        rooms.handle(1, &json!({"type":"lobby"}));
+    }
+    let answers = drain_json(&mut rx)
+        .iter()
+        .filter(|m| m["type"] == "lobby_update")
+        .count();
+    assert_eq!(answers, MAX_LOBBY_REQUESTS);
 }
 
 #[test]
@@ -432,7 +536,7 @@ fn outbound_queue_overflow_signals_immediate_disconnect_without_dropping_silentl
     rooms.connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow_tx);
     let _ = rx.try_recv(); // initial lobby update
     for _ in 0..=crate::codec::OUTBOUND_QUEUE {
-        rooms.handle(1, &json!({"type":"lobby"}));
+        rooms.error(1, "a message nobody reads");
     }
     assert!(*slow_rx.borrow());
     let mut queued = 0;
