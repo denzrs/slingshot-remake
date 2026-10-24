@@ -102,9 +102,9 @@ describe('game rules in the menu', () => {
     expect(fixed.options.map((option) => option.value)).toEqual(relayContract.options.fixedPowerLevel);
   });
 
-  it('makes switches of the on/off rules, a bar of the power mode and sliders of the rest', () => {
+  it('makes switches of the on/off rules, a bar of the few-choice rules and sliders of the rest', () => {
     for (const row of all) {
-      if (row.key === 'fixedPower' || row.key === 'powerUpAmount') expect(row.control, row.key).toBe('segmented');
+      if (row.key === 'fixedPower' || row.key === 'powerUpAmount' || row.key === 'mayhem') expect(row.control, row.key).toBe('segmented');
       else if (row.key === 'powerUpKinds') expect(row.control).toBe('tiles');
       else if (row.options.length === 0) expect(row.control, row.key).toBe('toggle');
       else expect(row.control, row.key).toBe('slider');
@@ -157,7 +157,7 @@ describe('game rules in the menu', () => {
     }
     let rules = { ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 };
     const item = ruleItems('classic', { get: () => rules, patch: (v) => (rules = { ...rules, ...v }) }).find((i) => i.key === 'mayhem')!.item;
-    expect(item.kind).toBe('slider');
+    expect(item.kind).toBe('segmented');
     expect(item.hidden?.()).toBe(false);
     rules = { ...rules, mayhem: 0 };
     expect(item.hidden?.()).toBe(true);

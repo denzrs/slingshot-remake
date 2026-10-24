@@ -31,7 +31,6 @@ export function newsScreen(app: App, items: readonly NewsItem[], open: Record<Ne
   return {
     build: () => menuPage({
       title: t('news.title'),
-      intro: t('news.intro'),
       className: 'menu-page--news',
       body: [h('div.news', null, ...items.map(card))],
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),

@@ -8,21 +8,19 @@ let tooltipTarget: HTMLElement | null = null;
 
 /**
  * A compact readout for the power-ups that can appear in a match. With Mayhem on and power-ups off,
- * they still come in the rounds a power-up twist is drawn for — any kind, so all are shown, with a note.
+ * they still come in the rounds a power-up twist is drawn for — any kind, so all are shown.
  */
 export function powerUpSummary(
   getRules: () => { powerUps: boolean; powerUpKinds: readonly PowerUpKind[]; mayhem: number },
 ): { el: HTMLElement; update: () => void } {
   const label = h('span.briefing__powerups-label', null, t('settings.powerUps'));
-  const hint = h('span.briefing__powerups-note', null, t('powerups.viaTwists'));
   const value = h('span.briefing__powerup-list', { 'aria-live': 'polite' });
-  const el = h('div.briefing__powerups', { role: 'group', 'aria-label': t('settings.powerUps') }, label, hint, value);
+  const el = h('div.briefing__powerups', { role: 'group', 'aria-label': t('settings.powerUps') }, label, value);
 
   const update = (): void => {
     if (tooltipTarget && !tooltipTarget.isConnected) hidePowerUpTooltip(tooltipTarget);
     const rules = getRules();
     const viaTwists = !rules.powerUps && rules.mayhem > 0;
-    hint.hidden = !viaTwists;
     if (viaTwists) {
       value.replaceChildren(...POWER_UP_KINDS.map(powerUpIcon));
       return;

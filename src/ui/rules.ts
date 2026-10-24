@@ -75,7 +75,7 @@ export function ruleRows(): RuleRow[] {
   return [
     { key: 'rounds', group: 'match', control: 'slider', label: t('settings.rounds'), options: numbers([1, 3, 5, 7, 10, 15, 20, 0], (n) => (n ? String(n) : t('settings.endless'))) },
     // Only while Mayhem is on: the Mayhem preset turns it on, every other preset off, so the strength is never "off" here.
-    { key: 'mayhem', group: 'match', control: 'slider', label: t('settings.mayhem'), options: numbers(MAYHEM.LEVELS.filter((n) => n > 0), (n) => t(`settings.mayhem.${n}` as Key)), when: (r) => r.mayhem > 0 },
+    { key: 'mayhem', group: 'match', control: 'segmented', label: t('settings.mayhem'), options: numbers(MAYHEM.LEVELS.filter((n) => n > 0), (n) => t(`settings.mayhem.${n}` as Key)), when: (r) => r.mayhem > 0 },
     { key: 'shotTime', group: 'match', control: 'slider', label: t('settings.shotTime'), options: numbers([10, 20, 30, 60], seconds) },
     { key: 'maxPlanets', group: 'field', control: 'slider', label: t('settings.maxPlanets'), options: numbers([1, 2, 3, 4, 5, 6, 7, 8]) },
     { key: 'invisiblePlanets', group: 'field', control: 'toggle', label: t('settings.invisible'), options: [], classicOnly: true },

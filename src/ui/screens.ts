@@ -841,7 +841,7 @@ function settingsScreen(app: App): Screen {
   };
   return {
     build: () => menuPage({
-      title: t('common.settings'), eyebrow: t('shell.device'), intro: t('settings.note'), className: 'menu-page--settings',
+      title: t('common.settings'), intro: t('settings.note'), className: 'menu-page--settings',
       body: [h('div.category-editor', null,
         h('nav.items.category-nav', { 'data-section': 'categories', 'aria-label': t('common.settings') }),
         h('div.category-editor__fields', null, heading, h('div.setup__rows', { 'data-section': 'fields' })),
