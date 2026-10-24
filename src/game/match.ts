@@ -490,6 +490,15 @@ export abstract class Match {
     return !!this.options.oracle && !!me && !me.alive && !me.cpu;
   }
 
+  get oracleEnabled(): boolean {
+    return !!this.options.oracle;
+  }
+
+  /** Whether this screen is allowed to see the oracle's live information. The living only see its round summary. */
+  get canSeeOracle(): boolean {
+    return this.ghost || this.phase === 'roundOver';
+  }
+
   /** Whether this bettor may tip right now: shot down (or in the stands), and a question is open. */
   canBet(id: number, crowd = this.spectating): boolean {
     if (!this.options.oracle) return false;

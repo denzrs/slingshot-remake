@@ -103,6 +103,9 @@
 .menu-page--pause .ranking li { padding: 11px 0; gap: 12px; }
 .menu-page--pause .ranking__name { overflow-wrap: anywhere; }
 .menu-page--pause .ranking-label { margin: 0 0 12px; color: var(--launch-accent); line-height: 1.6; }
+.menu-page--pause .pause-oracle-ranking { margin: 4px 0 12px; }
+.menu-page--pause .pause-oracle-ranking li { padding: 5px 0; }
+.menu-page--pause .pause-oracle-bets { margin: -4px 0 18px; }
 .pause-standing__round { margin: 0 0 14px; font: 700 13px/1.4 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--bone-dim); }
 .pause-standing__score { margin: 0; font: 800 64px/1 var(--font-display); }
 .pause-standing__meta { margin: 8px 0 0; color: var(--bone-dim); font-size: 13px; }

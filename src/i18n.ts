@@ -150,7 +150,6 @@ const en = {
   'multiplayer.cpuTeam': 'CPU team',
   'multiplayer.removeCpu': 'Remove CPU',
   'multiplayer.cpuOnlyNote': 'Against CPUs alone, play in the singleplayer lobby – an online game needs a second person.',
-  'multiplayer.toLobby': 'Back to lobby',
   'multiplayer.openCreate': '+ New room',
   'multiplayer.backToRooms': '← Rooms',
   'multiplayer.roomsLoading': 'Looking for open rooms …',
@@ -213,7 +212,7 @@ const en = {
   'shell.display': 'Display',
   'shell.soundDevice': 'Sound & screen',
   'shell.touch': 'Touch controls',
-  'shell.flightSchool': 'Flight school',
+  'shell.flightSchool': 'Slingshot',
   'shell.chapters': 'Chapters',
   'shell.yourProgress': 'Your progress',
   'shell.connectNote': 'Share a room with friends. Play Classic or Event Horizon together.',
@@ -224,7 +223,7 @@ const en = {
   'launcher.local': 'Local / Solo',
   'launcher.online': 'Play online',
   'launcher.choose': 'Choose a game mode',
-  'launcher.prepare': 'Prepare match',
+  'launcher.prepare': 'Local / Solo',
   'launcher.switchMode': 'Swipe or choose another game mode',
   'launcher.keys': '↑ ↓ navigate · ← → modes · Enter select',
   'preset.choose': 'How do you want to play?',
@@ -312,6 +311,11 @@ const en = {
   'pause.resume': 'Resume',
   'pause.newGame': 'New game',
   'pause.standings': 'Standings',
+  'pause.oracleTitle': 'Oracle standings',
+  'pause.oracleEmpty': 'No oracle tips yet',
+  'pause.oracleBets.one': 'Open pot {pot} · {n} bet',
+  'pause.oracleBets.other': 'Open pot {pot} · {n} bets',
+  'pause.oracleBetsSettled': 'Staked {stake} · returned {returned}',
 
   // — players —
   'slots.local': 'Local',
@@ -485,7 +489,6 @@ const en = {
   'setup.keys': '↑ ↓ select · ← → change · Enter confirm',
 
   // — how to play: a short tutorial, page by page —
-  'tutorial.step': 'Step {n} of {total}',
   'tutorial.done': "Let's go!",
   'tutorial.preview.aria': 'Game simulation preview',
   'tutorial.preview.label': 'Flight simulation',
@@ -522,10 +525,11 @@ const en = {
   'tutorial.horizon.2': 'Projectiles that meet in the air cancel each other out.',
   'tutorial.horizon.3': 'After every volley the black hole in the middle grows. It swallows planets and pulls every ship closer. Touch the red ring and you are out.',
   'tutorial.horizon.4': 'Scoring: a kill is worth base points times your trick-shot combo. Every volley survived brings {volley} points, the last ship in orbit {orbit}.',
+  'tutorial.solar.title': 'Solar System',
+  'tutorial.solar.1': 'The sun sits at the centre. Planets and ships orbit it, moving more slowly near the sun and faster farther out. After everyone shoots, the system turns. The sun can send out storms that change the direction and speed of shots passing through them.',
   'tutorial.powerups.title': 'Tactical power-ups',
   'tutorial.powerups.title2': 'Field effects',
-  'tutorial.powerups.1': 'Power-ups are optional: choose which kinds can appear in the game rules. An online room gets them from its host. Pickups float on the field, a shot that flies close to one takes it, and a ship holds one at a time.',
-  'tutorial.powerups.group1': 'These are used as part of your turn: while aiming, to reposition, or to modify a shot in flight.',
+  'tutorial.powerups.1': 'Power-ups appear and disappear. Collect them with a shot that passes nearby; each ship can hold one at a time. Use it to aim, reposition, or change a shot in flight.',
   'tutorial.powerups.preview': 'shows the first seconds of your shot while you aim',
   'tutorial.powerups.teleport': 'press P, aim, then fire to jump there; the jump spends your shot',
   'tutorial.powerups.splitter': 'fire again while your shot is flying to fork it into three',
@@ -654,6 +658,7 @@ const en = {
   'oracle.stakeMine': 'Your stake: {n}',
   'oracle.pot': 'Pot {n}',
   'oracle.betFirst': 'Tip a winner first, then put points on it',
+  'oracle.noStake': 'Your score is too low to stake',
   'oracle.bets': 'Bets',
   'oracle.idle': 'The next shot is coming up …',
   'oracle.mine': 'Your tip: {pick}',
@@ -1097,7 +1102,6 @@ const de: Dict = {
   'multiplayer.cpuTeam': 'Team der CPU',
   'multiplayer.removeCpu': 'CPU entfernen',
   'multiplayer.cpuOnlyNote': 'Gegen CPUs allein spielt man in der Einzelspieler-Lobby – ein Online-Spiel braucht eine zweite Person.',
-  'multiplayer.toLobby': 'Zurück zur Lobby',
   'multiplayer.openCreate': '+ Neuer Raum',
   'multiplayer.backToRooms': '← Räume',
   'multiplayer.roomsLoading': 'Suche nach offenen Räumen …',
@@ -1159,7 +1163,7 @@ const de: Dict = {
   'shell.display': 'Darstellung',
   'shell.soundDevice': 'Ton & Bildschirm',
   'shell.touch': 'Touch-Steuerung',
-  'shell.flightSchool': 'Flugschule',
+  'shell.flightSchool': 'Slingshot',
   'shell.chapters': 'Kapitel',
   'shell.yourProgress': 'Dein Fortschritt',
   'shell.connectNote': 'Triff dich mit Freunden in einem Raum. Spielt gemeinsam Klassisch oder Ereignishorizont.',
@@ -1170,7 +1174,7 @@ const de: Dict = {
   'launcher.local': 'Lokal / Solo',
   'launcher.online': 'Online spielen',
   'launcher.choose': 'Spielmodus wählen',
-  'launcher.prepare': 'Match vorbereiten',
+  'launcher.prepare': 'Lokal / Solo',
   'launcher.switchMode': 'Wischen oder anderen Spielmodus wählen',
   'launcher.keys': '↑ ↓ navigieren · ← → Modi · Enter wählen',
   'preset.choose': 'Wie wollt ihr spielen?',
@@ -1257,6 +1261,11 @@ const de: Dict = {
   'pause.resume': 'Weiterspielen',
   'pause.newGame': 'Neues Spiel',
   'pause.standings': 'Zwischenstand',
+  'pause.oracleTitle': 'Orakelwertung',
+  'pause.oracleEmpty': 'Noch keine Orakel-Tipps',
+  'pause.oracleBets.one': 'Offener Topf {pot} · {n} Wette',
+  'pause.oracleBets.other': 'Offener Topf {pot} · {n} Wetten',
+  'pause.oracleBetsSettled': 'Einsatz {stake} · zurück {returned}',
 
   'slots.local': 'Lokal',
   'slots.online': 'Online',
@@ -1427,7 +1436,6 @@ const de: Dict = {
   'setup.reset': 'Regeln zurücksetzen',
   'setup.keys': '↑ ↓ wählen · ← → ändern · Enter bestätigen',
 
-  'tutorial.step': 'Schritt {n} von {total}',
   'tutorial.done': 'Los geht’s!',
   'tutorial.preview.aria': 'Spielsimulation',
   'tutorial.preview.label': 'Flugsimulation',
@@ -1464,10 +1472,11 @@ const de: Dict = {
   'tutorial.horizon.2': 'Treffen sich zwei Geschosse in der Luft, heben sie sich gegenseitig auf.',
   'tutorial.horizon.3': 'Nach jeder Salve wächst das schwarze Loch in der Mitte. Es frisst Planeten und zieht alle Schiffe näher heran. Wer den roten Ring berührt, ist raus.',
   'tutorial.horizon.4': 'Punkte: Ein Abschuss zählt Grundpunkte mal Trick-Combo. Jede überlebte Salve bringt {volley} Punkte, das letzte Schiff im Orbit {orbit}.',
+  'tutorial.solar.title': 'Sonnensystem',
+  'tutorial.solar.1': 'Die Sonne steht in der Mitte. Planeten und Schiffe kreisen um sie: nahe der Sonne langsamer, weiter außen schneller. Sobald alle geschossen haben, dreht sich das System weiter. Die Sonne kann Stürme aussenden, die durchfliegende Schüsse ablenken und ihr Tempo verändern.',
   'tutorial.powerups.title': 'Taktische Power-ups',
   'tutorial.powerups.title2': 'Feldeffekte',
-  'tutorial.powerups.1': 'Power-ups sind optional: Wähle in den Spielregeln aus, welche Arten auftauchen können. In einem Online-Raum legt das der Host fest. Auf dem Feld treiben Pickups: Ein Schuss, der nah an einem vorbeifliegt, nimmt es auf, und ein Schiff hält immer nur eines.',
-  'tutorial.powerups.group1': 'Diese setzt du direkt in deinem Zug ein: beim Zielen, zum Versetzen oder um einen fliegenden Schuss zu verändern.',
+  'tutorial.powerups.1': 'Power-ups tauchen auf und verschwinden wieder. Sammle sie mit einem nahen Schuss ein – pro Schiff eins gleichzeitig. Nutze es zum Zielen, Versetzen oder Ändern deines Schusses.',
   'tutorial.powerups.preview': 'zeigt beim Zielen die ersten Sekunden deines Schusses',
   'tutorial.powerups.teleport': 'mit P zielen, dann feuern und dorthin springen; der Sprung verbraucht deinen Schuss',
   'tutorial.powerups.splitter': 'feuere noch einmal, während der Schuss fliegt, und er teilt sich in drei',
@@ -1594,6 +1603,7 @@ const de: Dict = {
   'oracle.stakeMine': 'Dein Einsatz: {n}',
   'oracle.pot': 'Topf {n}',
   'oracle.betFirst': 'Erst auf einen Sieger tippen, dann Punkte setzen',
+  'oracle.noStake': 'Dein Punktestand reicht nicht für einen Einsatz',
   'oracle.bets': 'Wetten',
   'oracle.idle': 'Gleich geht es weiter …',
   'oracle.mine': 'Dein Tipp: {pick}',
@@ -1890,7 +1900,7 @@ const de: Dict = {
 const DICTS: Record<Lang, Dict> = { de, en };
 
 /** Keys that come in a `.one` / `.other` pair. */
-type PluralKey = 'lineup.human' | 'lineup.cpu' | 'over.after' | 'daily.targets' | 'daily.shots' | 'daily.days' | 'stats.rounds' | 'stats.players';
+type PluralKey = 'lineup.human' | 'lineup.cpu' | 'over.after' | 'daily.targets' | 'daily.shots' | 'daily.days' | 'stats.rounds' | 'stats.players' | 'pause.oracleBets';
 
 let current: Lang = 'de';
 

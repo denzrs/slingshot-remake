@@ -11,6 +11,7 @@ import { Sound } from './audio';
 import { dailyChallenge, dateKey, isDateKey } from './challenge';
 import { ClipRecorder } from './clip';
 import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS } from './config';
+import { createUiPreview, type UiPreview } from './devPreview';
 import { recordRun } from './dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, type Match, type VersusMode } from './game';
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
@@ -78,6 +79,10 @@ let lastMode: VersusMode = 'classic';
 /** `?daily=YYYY-MM-DD` flies another day's challenge — handy for testing and for sharing an old one. */
 const requestedDay = new URLSearchParams(location.search).get('daily');
 const forcedDay = isDateKey(requestedDay) ? requestedDay : null;
+const requestedPreview = new URLSearchParams(location.search).get('preview');
+const uiPreview: UiPreview | null = import.meta.env.DEV && ['oracle-card', 'oracle-pause', 'stands-card', 'stands-pause'].includes(requestedPreview ?? '')
+  ? requestedPreview as UiPreview
+  : null;
 
 const active = (): Match => (screen === 'play' && match ? match : attract);
 
@@ -323,6 +328,7 @@ const app: App = {
   menu,
   settings,
   get skipOffer() {
+    if (uiPreview) return null;
     const m = match;
     if (!m || m.replaying || screen !== 'play') return null;
     const net = online();
@@ -385,14 +391,14 @@ const app: App = {
     menu.close();
   },
   get online() {
-    return !!online();
+    return !!uiPreview || !!online();
   },
   openLobby(entry?: LobbyEntry) {
     const lobby = lobbyScreen(app, multiplayer(), entry);
     if (entry) menu.push(() => lobby);
     else menu.open(() => lobby);
   },
-  toLobby() {
+  leaveOnlineRoom() {
     session?.leaveRoom();
     match?.dispose();
     match = null;
@@ -844,7 +850,7 @@ function frame(now: number): void {
   }
   const net = online();
   // Online the others keep playing, so a menu on top doesn't stop the world.
-  const paused = screen === 'play' && menu.isOpen && !net;
+  const paused = screen === 'play' && !net && (menu.isOpen || (!!uiPreview && uiPreview.endsWith('card')));
   const empty = screen !== 'play' && !settings.menuBackground;
   if (!paused && !empty) {
     if (!net || net.isHost) m.update(dt);
@@ -904,6 +910,15 @@ async function boot(): Promise<void> {
   // Canvas text needs the web fonts loaded before the first draw.
   const fonts = [`800 32px ${FONTS.display}`, `400 16px ${FONTS.body}`, `700 16px ${FONTS.body}`, `400 16px ${FONTS.mono}`, `700 16px ${FONTS.mono}`];
   await Promise.race([Promise.all(fonts.map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 1500))]);
+  if (uiPreview) {
+    match = createUiPreview(uiPreview);
+    screen = 'play';
+    wire(match);
+    effects.clear();
+    if (uiPreview.endsWith('pause')) menu.open(() => pauseScreen(app, match));
+    requestAnimationFrame(frame);
+    return;
+  }
   // An invite link opens the lobby by itself and joins the named room after connecting.
   if (readInvite(location.search, location.hash)) app.openLobby();
   else {

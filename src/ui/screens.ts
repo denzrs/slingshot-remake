@@ -51,8 +51,8 @@ export interface App {
   /** Back to the statistics, from a replay. */
   leaveReplay(): void;
   openLobby(entry?: LobbyEntry): void;
-  /** Leave the online game (and its room) for the multiplayer lobby, still connected. */
-  toLobby(): void;
+  /** Leave the online game and its room for the room list, still connected. */
+  leaveOnlineRoom(): void;
   resume(): void;
   rematch(): void;
   /** What the pause menu offers about skipping the round: nothing, to skip it, to call a vote, or to answer the open one. */
@@ -504,7 +504,7 @@ export function pauseScreen(app: App, match: Match | null): Screen {
     ...(app.skipOffer === 'answer' ? skipAnswerItems(app, 'actions') : []),
     { kind: 'action', section: 'actions', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
     app.online
-      ? { kind: 'action', section: 'actions', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
+      ? { kind: 'action', section: 'actions', label: t('multiplayer.leave'), run: () => app.leaveOnlineRoom() }
       : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: () => app.toTitle() },
     { kind: 'action', section: 'actions', label: t('pause.resume'), primary: true, run: () => app.resume() },
   ];
@@ -512,7 +512,7 @@ export function pauseScreen(app: App, match: Match | null): Screen {
     build: () => menuPage({
       title: t('pause.title'), eyebrow: app.mode === 'challenge' ? t('mode.daily') : `${modeName(app.mode === 'horizon' || app.mode === 'solar' ? app.mode : 'classic')}${app.mayhem ? ` · ${t('mode.mayhem')}` : ''}`,
       className: 'menu-page--pause',
-      body: match ? [h('div.pause-standing', null, ...pauseStanding(match))] : [],
+      body: match ? [h('div.pause-standing', null, ...pauseStanding(match, app.online))] : [],
       footer: h('nav.items.items--row.pause-actions.menu-page__actions', { 'data-section': 'actions', 'aria-label': t('pause.title') }),
     }),
     items,
@@ -522,7 +522,7 @@ export function pauseScreen(app: App, match: Match | null): Screen {
 }
 
 /** The pause menu's middle: where the match stands right now. */
-function pauseStanding(match: Match): Node[] {
+function pauseStanding(match: Match, online: boolean): Node[] {
   const row = (place: number, name: string, color: string, score: number | string) => {
     const label = h('span.ranking__name', null, name);
     label.style.color = color;
@@ -544,6 +544,31 @@ function pauseStanding(match: Match): Node[] {
     nodes.push(h('ol.ranking.ranking--small', null, ...match.ranking().map((p, i) => row(i + 1, p.name, p.color, p.score))));
   } else {
     nodes.push(h('ol.ranking', null, ...match.ranking().map((p, i) => row(i + 1, p.name, p.color, p.score))));
+  }
+  if (online && match.oracleEnabled && match.canSeeOracle) {
+    const oracle = match.betOracle;
+    const ranking = oracle.ranking().slice(0, 3);
+    nodes.push(h('p.ranking-label', null, t('pause.oracleTitle')));
+    if (ranking.length) {
+      nodes.push(h('ol.ranking.ranking--small.pause-oracle-ranking', null, ...ranking.map(({ player, score }, i) => {
+        const person = match.tipster(player);
+        return row(i + 1, person?.name ?? '?', person?.color ?? COLORS.bone, `${fmtInt(score.points)} · ${score.right}/${score.total}`);
+      })));
+    } else {
+      nodes.push(h('p.pause-standing__meta', null, t('pause.oracleEmpty')));
+    }
+    if (match.bettingOn) {
+      const settled = oracle.roundResult?.round === match.round ? oracle.roundResult.tips : null;
+      const staked = settled
+        ? settled.reduce((sum, tip) => sum + (tip.stake ?? 0), 0)
+        : oracle.pot;
+      const returned = settled?.reduce((sum, tip) => sum + (tip.payout ?? 0), 0) ?? 0;
+      const bets = settled ? settled.filter((tip) => !!tip.stake).length : oracle.stakes.size;
+      const betSummary = settled
+        ? t('pause.oracleBetsSettled', { stake: fmtInt(staked), returned: fmtInt(returned) })
+        : tn('pause.oracleBets', bets, { pot: fmtInt(staked) });
+      nodes.push(h('p.pause-standing__meta.pause-oracle-bets', null, betSummary));
+    }
   }
   const chart = scoreChart(match);
   if (chart) nodes.push(h('p.ranking-label', null, t('scorecard.history')), chart);
@@ -1180,10 +1205,15 @@ const TUTORIAL: (() => Lesson)[] = [
     ],
   }),
   () => ({
+    title: t('tutorial.solar.title'),
+    demo: 'solar',
+    body: [para(t('tutorial.solar.1'))],
+  }),
+  () => ({
     title: t('tutorial.powerups.title'),
     demo: 'powerups',
     powerUps: POWER_PAGES[0],
-    body: [para(t('tutorial.powerups.1')), para(t('tutorial.powerups.group1'))],
+    body: [para(t('tutorial.powerups.1'))],
   }),
   () => ({
     title: t('tutorial.powerups.title2'),
@@ -1299,7 +1329,6 @@ function tutorialScreen(app: App): () => Screen {
         return menuPage({
           title: t('common.help'), eyebrow: t('shell.flightSchool'), className: 'menu-page--tutorial',
           body: [h('article.tutorial', { 'aria-live': 'polite' },
-            h('p.eyebrow', null, t('tutorial.step', { n: page + 1, total: TUTORIAL.length })),
             h('h3.tutorial__title', null, lessons[page].title),
             h(`div.tutorial__layout${hasPreview ? '' : '.tutorial__layout--text-only'}`, null,
               h('div.tutorial__copy', null, ...lessons[page].body, ...powerContent, ...trickContent),
@@ -1455,7 +1484,7 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
         ] satisfies MenuItem[]
       : [
           app.online
-            ? { kind: 'action', section: 'actions', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
+            ? { kind: 'action', section: 'actions', label: t('multiplayer.leave'), run: () => app.leaveOnlineRoom() }
             : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: () => app.toTitle() },
           match.canAdvance
             ? { kind: 'action', section: 'actions', label: t('over.rematch'), primary: true, run: () => app.rematch() }
@@ -1463,7 +1492,7 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
         ] satisfies MenuItem[]),
     ],
     focus: 3,
-    onEscape: () => (match.replaying ? app.leaveReplay() : app.online ? app.toLobby() : app.toTitle()),
+    onEscape: () => (match.replaying ? app.leaveReplay() : app.online ? app.leaveOnlineRoom() : app.toTitle()),
   };
 }
 

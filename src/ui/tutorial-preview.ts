@@ -1,15 +1,17 @@
-import { COLORS, FIELD, HORIZON, NEBULA, WORMHOLE } from '../config';
+import { COLORS, FIELD, HORIZON, NEBULA, SOLAR, WORMHOLE } from '../config';
 import { t } from '../i18n';
 import { cloneWorld, Shot, type ShotEnd, type StyleEvent, type StyleKind, type World } from '../physics';
 import type { PowerUpKind } from '../powerups';
 import { drawBlackHole } from '../render/blackhole';
 import { drawDefense } from '../render/defense';
 import { drawNebula } from '../render/nebula';
+import { drawStormCloud } from '../render/storm';
+import { drawSun } from '../render/sun';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import type { PlanetSprite } from '../render/planet-common';
 import { renderPlanet } from '../render/planets';
 
-export type TutorialPreviewKind = 'welcome' | 'aim' | 'gravity' | 'round' | 'horizon' | 'powerups' | 'powerupsField' | 'tricks' | 'daily' | 'keys';
+export type TutorialPreviewKind = 'welcome' | 'aim' | 'gravity' | 'round' | 'horizon' | 'solar' | 'powerups' | 'powerupsField' | 'tricks' | 'daily' | 'keys';
 
 interface Point {
   x: number;
@@ -70,6 +72,19 @@ function createWorld(kind: TutorialPreviewKind, powerUp?: PowerUpKind): World {
     { x: 150, y: 205, alive: players > 3 },
   ];
   const eventHorizon = kind === 'horizon';
+  if (kind === 'solar') {
+    const c = { x: FIELD.width / 2, y: FIELD.height / 2 + SOLAR.CENTER_Y_SHIFT };
+    return {
+      width: FIELD.width, height: FIELD.height,
+      ships: [ship(330, 245), ship(950, 245)],
+      planets: [
+        { x: c.x, y: c.y, radius: SOLAR.SUN_RADIUS, mass: SOLAR.SUN_MASS, seed: 1701, style: 'star', tint: '#f2c46d', sun: true },
+        planet(c.x, c.y - 142, 29, 'rocky', '#c78f6d', 1702),
+        planet(c.x + 282, c.y + 8, 40, 'gas', '#b99cff', 1703),
+      ],
+      holes: [], nebulae: [{ x: c.x + 85, y: 245, radius: 70, seed: 0.521, storm: true }], wormholes: [], defenses: [], version: 0,
+    };
+  }
   const wormholes = kind === 'powerupsField' && powerUp === 'wormhole'
     ? [{ id: 0, ax: 390, ay: 470, bx: 935, by: 345, radius: WORMHOLE.RADIUS }]
     : [];
@@ -436,6 +451,11 @@ function buildDemo(kind: TutorialPreviewKind, powerUp?: PowerUpKind, trick?: Sty
         world.planets = [];
         for (let i = 0; i < world.ships.length; i++) flights.push(trace(world, i, angleTo(world.ships[i], world.holes[0]), 48));
         break;
+      case 'solar': {
+        flights.push(trace(world, 0, angleTo(world.ships[0], world.ships[1]), 48));
+        flights[0].startTime = 0.35;
+        break;
+      }
       case 'powerups':
         duel(world, [ship(130, 400), ship(1150, 400)]);
         flights.push(trace(world, 0, 0, 50));
@@ -560,6 +580,7 @@ function drawTrack(ctx: CanvasRenderingContext2D, flight: Flight, localTime: num
   }
   ctx.stroke();
   ctx.setLineDash([]);
+
   if (!faint && !flight.ghost) {
     const p = points[visible - 1];
     ctx.beginPath();
@@ -688,6 +709,20 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
   }
   ctx.setLineDash([]);
 
+  if (demo.kind === 'solar') {
+    const cx = FIELD.width / 2;
+    const cy = FIELD.height / 2 + SOLAR.CENTER_Y_SHIFT;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(242,196,109,.2)';
+    ctx.lineWidth = 1.5;
+    for (const radius of [142, 282]) {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, radius * SOLAR.STRETCH, radius, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // Fixed, fine star coordinates keep the miniature field stable while its simulation plays.
   for (let i = 0; i < 74; i++) {
     const x = (i * 367 + 83) % FIELD.width;
@@ -707,10 +742,19 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
   for (const cloud of demo.world.nebulae) {
     ctx.save();
     if (demo.powerUp === 'nebula' || demo.powerUp === 'plasma') ctx.globalAlpha = Math.min(1, simTime / 0.45);
-    drawNebula(ctx, cloud, POWER_UP_COLORS.nebula, time);
+    if (cloud.storm) {
+      const sun = demo.world.planets.find((p) => p.sun);
+      if (sun) drawStormCloud(ctx, cloud, sun, simTime, time);
+    } else {
+      drawNebula(ctx, cloud, POWER_UP_COLORS.nebula, time);
+    }
     ctx.restore();
   }
   for (const p of demo.world.planets) {
+    if (p.sun) {
+      drawSun(ctx, p, time);
+      continue;
+    }
     let sprite = sprites.get(p.seed);
     if (!sprite) {
       sprite = renderPlanet(p, 1);

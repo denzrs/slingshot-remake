@@ -167,7 +167,7 @@ export const SOLAR = {
    * The orbits fall into three sectors, an equal share of the way from the innermost to the outermost orbit each,
    * and a body goes once round the sun in this many steps (a step is a pass: every ship has shot): inner, middle, outer.
    */
-  SECTOR_STEPS: [4, 8, 12],
+  SECTOR_STEPS: [12, 8, 4],
   /** Seconds the system takes to turn on. */
   TURN_TIME: 1.8,
 } as const;

@@ -134,7 +134,7 @@ export function onOrbit(r: number, a: number): { x: number; y: number } {
 export const orbitSector = (r: number): number =>
   Math.min(SOLAR.SECTOR_STEPS.length - 1, Math.max(0, Math.floor(((r - SOLAR.INNER_ORBIT) / (SOLAR.OUTER_ORBIT - SOLAR.INNER_ORBIT)) * SOLAR.SECTOR_STEPS.length)));
 
-/** How far a body on an orbit of radius `r` turns in one step: a full circle takes 4 steps near the sun, 8 in the middle, 12 far out. */
+/** How far a body on an orbit of radius `r` turns in one step: it moves slowly near the sun and faster farther out. */
 export const orbitTurn = (r: number): number => (Math.PI * 2) / SOLAR.SECTOR_STEPS[orbitSector(r)];
 
 /** One orbit: shared by up to three planets (spread evenly round it, same speed), or by some of the ships, who may have a planet along (its radius is in `guests`). */
