@@ -33,9 +33,72 @@ pub struct Shared {
     pub guard: Arc<AdmissionGuard>,
     pub boards: Arc<Leaderboard>,
     pub scrypt: ScryptSlots,
-    /// The origin allowlist the handshake enforces, and the per-connection message limit.
+    /// The origin allowlist the handshake enforces, and the per-connection message and byte limits.
     pub allowed_origins: Arc<Vec<String>>,
     pub max_messages_per_second: u32,
+    pub max_bytes_per_second: usize,
+}
+
+/// Whatever a connection holds of the relay, handed back however its task ends: the normal way out
+/// of the loop, or a panic in a handler, which would otherwise leave a ghost in its room and its
+/// address's admission slot taken for good.
+struct Teardown {
+    manager: Arc<Mutex<RoomManager>>,
+    guard: Arc<AdmissionGuard>,
+    peer: SocketAddr,
+    conn_id: u64,
+    /// Set once the room logic knows the connection, until it has been told it is gone.
+    connected: bool,
+}
+
+impl Teardown {
+    fn disconnect(&mut self) {
+        if std::mem::take(&mut self.connected) {
+            self.manager.lock().disconnect(self.conn_id);
+        }
+    }
+}
+
+impl Drop for Teardown {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            warn!("connection task panicked; cleaning up");
+        }
+        self.disconnect();
+        self.guard.release(self.peer.ip());
+    }
+}
+
+/// The inbound byte limit: a bucket that refills at `rate` bytes per second and holds enough for
+/// the largest frame, so one full state frame always fits while a stream of them does not.
+struct ByteBudget {
+    rate: f64,
+    capacity: f64,
+    tokens: f64,
+    last: Instant,
+}
+
+impl ByteBudget {
+    fn new(rate: usize, now: Instant) -> Self {
+        let capacity = rate.max(MAX_PAYLOAD) as f64;
+        Self {
+            rate: rate as f64,
+            capacity,
+            tokens: capacity,
+            last: now,
+        }
+    }
+
+    fn take(&mut self, bytes: usize, now: Instant) -> bool {
+        let elapsed = now.duration_since(self.last).as_secs_f64();
+        self.last = now;
+        self.tokens = (self.tokens + elapsed * self.rate).min(self.capacity);
+        if self.tokens < bytes as f64 {
+            return false;
+        }
+        self.tokens -= bytes as f64;
+        true
+    }
 }
 
 /// One TCP connection: handshake, then the inbound loop (rate limit + heartbeat) next to a writer
@@ -52,7 +115,15 @@ where
         scrypt,
         allowed_origins,
         max_messages_per_second,
+        max_bytes_per_second,
     } = shared;
+    let mut teardown = Teardown {
+        manager: manager.clone(),
+        guard,
+        peer,
+        conn_id,
+        connected: false,
+    };
     let config = WebSocketConfig {
         max_message_size: Some(MAX_PAYLOAD),
         max_frame_size: Some(MAX_PAYLOAD),
@@ -67,12 +138,10 @@ where
         Ok(Ok(ws)) => ws,
         Ok(Err(error)) => {
             warn!(%error, "websocket handshake rejected");
-            guard.release(peer.ip());
             return;
         }
         Err(_) => {
             warn!("websocket handshake timed out");
-            guard.release(peer.ip());
             return;
         }
     };
@@ -84,6 +153,7 @@ where
         let mut manager = manager.lock();
         manager.connect(conn_id, peer.ip(), tx.clone(), slow_tx);
     }
+    teardown.connected = true;
     debug!("connection opened");
     let connection = tracing::Span::current();
     let writer_task = tokio::spawn(writer_task(rx, writer).instrument(connection));
@@ -91,6 +161,7 @@ where
     let mut missed: u32 = 0;
     let mut window_start = Instant::now();
     let mut window_count: u32 = 0;
+    let mut inbound_bytes = ByteBudget::new(max_bytes_per_second, Instant::now());
     let mut heartbeat = tokio::time::interval(Duration::from_millis(HEARTBEAT_MS));
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     heartbeat.tick().await; // like setInterval, the first expiry is a full interval away
@@ -128,8 +199,15 @@ where
                         }
                         Message::Text(_) | Message::Binary(_) => {
                             missed = 0;
-                            if !within_rate_limit(&mut window_start, &mut window_count, max_messages_per_second) {
-                                warn!("rate limit exceeded; closing with 1008");
+                            let limited = if !inbound_bytes.take(message.len(), Instant::now()) {
+                                Some("byte rate")
+                            } else if !within_rate_limit(&mut window_start, &mut window_count, max_messages_per_second) {
+                                Some("message rate")
+                            } else {
+                                None
+                            };
+                            if let Some(limit) = limited {
+                                warn!(limit, "rate limit exceeded; closing with 1008");
                                 drain_flood(&mut reader, &tx).await;
                                 let _ = tx.try_send(WireMessage::CloseWith { code: 1008, reason: "Rate limit exceeded" });
                                 break;
@@ -151,10 +229,7 @@ where
         }
     }
 
-    {
-        let mut manager = manager.lock();
-        manager.disconnect(conn_id);
-    }
+    teardown.disconnect();
     // Every exit path already sent a close (peer-close echo in the loop, the rate-limit frame),
     // so the writer just drains whatever is queued.
     drop(tx);
@@ -166,7 +241,7 @@ where
         writer_task.abort();
         let _ = writer_task.await;
     }
-    guard.release(peer.ip());
+    drop(teardown);
     info!("connection closed");
 }
 
@@ -258,7 +333,8 @@ async fn writer_task<S: AsyncRead + AsyncWrite + Unpin>(
     while let Some(frame) = rx.recv().await {
         let message = match frame {
             WireMessage::Binary(bytes, permit) => {
-                let result = sink.send(Message::Binary(bytes)).await;
+                // The socket's own copy, made here rather than under the room lock.
+                let result = sink.send(Message::Binary(bytes.to_vec())).await;
                 drop(permit);
                 if result.is_err() {
                     break;
@@ -281,3 +357,54 @@ async fn writer_task<S: AsyncRead + AsyncWrite + Unpin>(
 
 /// The split sink type the writer drains (kept concrete to stay out of the room logic).
 type SplitSink<S> = futures_util::stream::SplitSink<WebSocketStream<S>, Message>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    #[test]
+    fn the_byte_budget_lets_one_full_frame_through_but_not_a_stream_of_them() {
+        let start = Instant::now();
+        let mut budget = ByteBudget::new(1000, start);
+        assert!(budget.take(MAX_PAYLOAD, start));
+        assert!(!budget.take(2000, start));
+        // Two seconds refill what two seconds allow, and no more.
+        let later = start + Duration::from_secs(2);
+        assert!(budget.take(2000, later));
+        assert!(!budget.take(1, later));
+    }
+
+    #[test]
+    fn a_panicking_connection_still_leaves_its_room_and_hands_back_its_slot() {
+        let manager = Arc::new(Mutex::new(RoomManager::new()));
+        let guard = Arc::new(AdmissionGuard::new(10, 1, 10));
+        let peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1);
+        assert!(guard.try_admit(peer.ip()));
+        let (tx, _rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (slow, _) = tokio::sync::watch::channel(false);
+        manager.lock().connect(7, peer.ip(), tx, slow);
+
+        let (task_manager, task_guard) = (manager.clone(), guard.clone());
+        let panicked = std::thread::spawn(move || {
+            let _teardown = Teardown {
+                manager: task_manager,
+                guard: task_guard,
+                peer,
+                conn_id: 7,
+                connected: true,
+            };
+            panic!("a handler bug");
+        })
+        .join();
+        assert!(panicked.is_err());
+        assert!(
+            manager.lock().peer_ip(7).is_none(),
+            "the connection is gone"
+        );
+        assert!(
+            guard.try_admit(peer.ip()),
+            "its admission slot is free again"
+        );
+    }
+}

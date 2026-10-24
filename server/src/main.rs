@@ -1,7 +1,7 @@
 //! The WebSocket relay for online games.
 //!
 //! It also caps concurrent connections and throttles fresh connections per IP, alongside the
-//! per-connection 300 msg/s limit.
+//! per-connection 300 msg/s and 2 MiB/s limits.
 
 mod admission;
 mod auth;
@@ -30,9 +30,11 @@ use tracing::{error, info, warn};
 
 use crate::admission::AdmissionGuard;
 use crate::auth::{ScryptSlots, MAX_CONCURRENT_SCRYPTS};
+use crate::codec::{OutboundPool, DEFAULT_OUTBOUND_BYTES_TOTAL};
 use crate::config::{
     env_flag, env_parse, DEFAULT_CONNECTIONS_PER_IP_PER_SECOND, DEFAULT_MAX_CONNECTIONS,
-    DEFAULT_MAX_CONNECTIONS_PER_IP, DEFAULT_PORT, HANDSHAKE_TIMEOUT, MAX_MESSAGES_PER_SECOND,
+    DEFAULT_MAX_CONNECTIONS_PER_IP, DEFAULT_PORT, HANDSHAKE_TIMEOUT, MAX_BYTES_PER_SECOND,
+    MAX_MESSAGES_PER_SECOND,
 };
 use crate::connection::{handle_connection, Shared};
 use crate::leaderboard::{Leaderboard, DEFAULT_KEEP_DAYS};
@@ -59,6 +61,8 @@ async fn main() {
         DEFAULT_CONNECTIONS_PER_IP_PER_SECOND,
     );
     let max_messages_per_second = env_parse("MAX_MESSAGES_PER_SECOND", MAX_MESSAGES_PER_SECOND);
+    let max_bytes_per_second = env_parse("MAX_BYTES_PER_SECOND", MAX_BYTES_PER_SECOND);
+    let max_outbound_bytes = env_parse("MAX_OUTBOUND_BYTES", DEFAULT_OUTBOUND_BYTES_TOTAL);
     // Comma-separated allowlist of Origin header values (e.g. "https://game.example.com"),
     // required unless ALLOW_ALL_ORIGINS=1. Browsers always send Origin on WS handshakes,
     // so the allowlist blocks cross-site WebSocket hijacking; handshakes with no Origin
@@ -155,7 +159,8 @@ async fn main() {
     };
     info!(%port, "relay listening");
 
-    let mut rooms = RoomManager::new();
+    info!(max_bytes_per_second, max_outbound_bytes, "transport limits");
+    let mut rooms = RoomManager::new().with_outbound_pool(OutboundPool::new(max_outbound_bytes));
     if let Some(stats) = &stats {
         rooms = rooms.with_stats(stats.clone());
     }
@@ -173,6 +178,7 @@ async fn main() {
         scrypt: ScryptSlots::new(MAX_CONCURRENT_SCRYPTS),
         allowed_origins: Arc::new(allowed_origins),
         max_messages_per_second,
+        max_bytes_per_second,
     });
     let mut sweep = tokio::time::interval(Duration::from_secs(60));
     sweep.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

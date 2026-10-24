@@ -448,8 +448,66 @@ fn oversized_outbound_payload_signals_immediate_disconnect() {
     let (tx, _rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
     let (slow_tx, slow_rx) = tokio::sync::watch::channel(false);
     rooms.connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow_tx);
-    rooms.send_fast(1, &vec![b'x'; crate::codec::OUTBOUND_BYTES + 1]);
+    rooms.send_fast(
+        1,
+        &crate::codec::Frame::from(vec![b'x'; crate::codec::OUTBOUND_BYTES + 1]),
+    );
     assert!(*slow_rx.borrow());
+}
+
+#[test]
+fn the_relay_wide_outbound_budget_drops_whoever_would_overflow_it() {
+    let pool = crate::codec::OutboundPool::new(1000);
+    let mut rooms = RoomManager::new().with_outbound_pool(pool.clone());
+    let (tx_a, _rx_a) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+    let (slow_a, slow_rx_a) = tokio::sync::watch::channel(false);
+    let (tx_b, _rx_b) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+    let (slow_b, slow_rx_b) = tokio::sync::watch::channel(false);
+    rooms.connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx_a, slow_a);
+    rooms.connect(2, IpAddr::V4(Ipv4Addr::LOCALHOST), tx_b, slow_b);
+    let used = 1000 - pool.available();
+    // Each connection's own budget is far from spent; together they pass the relay's.
+    let frame = crate::codec::Frame::from(vec![b'x'; (1000 - used) / 2 + 1]);
+    rooms.send_fast(1, &frame);
+    assert!(!*slow_rx_a.borrow());
+    rooms.send_fast(2, &frame);
+    assert!(*slow_rx_b.borrow());
+}
+
+#[test]
+fn a_state_frame_is_shared_by_its_recipients_not_copied_for_each() {
+    let mut rooms = RoomManager::new();
+    let mut receivers: Vec<_> = (1..=3).map(|id| connect(&mut rooms, id)).collect();
+    for receiver in &mut receivers {
+        drain_json(receiver);
+    }
+    rooms.handle(1, &create("Host", None));
+    let room_id = take_type(&drain_json(&mut receivers[0]), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for (conn, name) in [(2, "B"), (3, "C")] {
+        rooms.handle(
+            conn,
+            &json!({"type":"join_room","roomId":room_id,"name":name}),
+        );
+        rooms.handle(conn, &json!({"type":"ready","ready":true}));
+    }
+    rooms.handle(1, &json!({"type":"start_game"}));
+    for receiver in &mut receivers {
+        drain_json(receiver);
+    }
+    let frame = crate::codec::state_frame(1, &[0x80]);
+    rooms.handle_state_envelope(1, 1, &frame);
+    let delivered: Vec<crate::codec::Frame> = receivers[1..]
+        .iter_mut()
+        .map(|rx| match rx.try_recv() {
+            Ok(crate::codec::WireMessage::Binary(bytes, _)) => bytes,
+            _ => panic!("no state frame delivered"),
+        })
+        .collect();
+    assert_eq!(&*delivered[0], frame.as_slice());
+    assert!(std::sync::Arc::ptr_eq(&delivered[0], &delivered[1]));
 }
 
 #[test]

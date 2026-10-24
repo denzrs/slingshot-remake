@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use tracing::{info, warn};
 
-use crate::codec::{frame, Outbound};
+use crate::codec::{Frame, Outbound, OutboundPool, WireMessage};
 use crate::protocol::is_name_refusal;
 
 pub const MAX_PASSWORD_ATTEMPTS: u32 = 5;
@@ -39,9 +39,18 @@ pub struct Connections {
     spectator_windows: HashMap<u64, VecDeque<Instant>>,
     chat_windows: HashMap<u64, VecDeque<Instant>>,
     spectate_windows: HashMap<u64, VecDeque<Instant>>,
+    /// What all the outbound queues may hold together.
+    pool: OutboundPool,
 }
 
 impl Connections {
+    pub fn with_pool(pool: OutboundPool) -> Self {
+        Self {
+            pool,
+            ..Self::default()
+        }
+    }
+
     pub fn open(
         &mut self,
         conn: u64,
@@ -196,11 +205,12 @@ impl Connections {
         let Ok(bytes) = rmp_serde::to_vec_named(value) else {
             return;
         };
-        self.send_fast(conn, &bytes);
+        self.send_fast(conn, &Frame::from(bytes));
     }
 
-    /// The fast path: an already-serialized MessagePack frame that may be fanned out to several players.
-    pub fn send_fast(&self, conn: u64, bytes: &[u8]) {
+    /// The fast path: an already-serialized frame that may be fanned out to several players. Every
+    /// recipient shares the same bytes.
+    pub fn send_fast(&self, conn: u64, bytes: &Frame) {
         let Some(out) = self.outbounds.get(&conn) else {
             return;
         };
@@ -212,13 +222,16 @@ impl Connections {
             );
             return;
         }
-        let permits = bytes.len();
-        let Ok(permit) = out.bytes.clone().try_acquire_many_owned(permits as u32) else {
+        let Some(permits) = self.pool.reserve(&out.bytes, bytes.len()) else {
             let _ = out.slow.send(true);
             warn!(conn, "outbound byte budget exhausted; closing connection");
             return;
         };
-        if out.tx.try_send(frame(bytes, Some(permit))).is_err() {
+        if out
+            .tx
+            .try_send(WireMessage::Binary(bytes.clone(), Some(permits)))
+            .is_err()
+        {
             let _ = out.slow.send(true);
             warn!(
                 conn,
