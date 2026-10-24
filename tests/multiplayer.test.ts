@@ -164,7 +164,7 @@ function waitForSession(session: MultiplayerSession, predicate: () => boolean): 
   return promise;
 }
 
-async function startRoom(gameMode: 'classic' | 'horizon', names = ['Anna', 'Ben'], roomRules: RoomRules = rules): Promise<{ host: Client; guest: Client }> {
+async function startRoom(gameMode: 'classic' | 'solar' | 'horizon', names = ['Anna', 'Ben'], roomRules: RoomRules = rules): Promise<{ host: Client; guest: Client }> {
   let hostMatch: NetMatch | null = null;
   let guestMatch: NetMatch | null = null;
   const hostSession = await connectSession({ matchStarted: (match) => { hostMatch = match; } });
@@ -473,6 +473,26 @@ describe('online games', () => {
     for (let i = 0; i < 60; i++) await frame(host, guest);
     expect(hm.phase).not.toBe('aiming');
     expect(guest.match().phase).toBe(hm.phase);
+  });
+
+  describe('in the Solar System', () => {
+    it('turns the planets and ships on the guest\'s screen as it does on the host\'s', async () => {
+      const { host, guest } = await startRoom('solar');
+      const hm = host.match();
+      const gm = guest.match();
+      expect(hm.mode).toBe('solar');
+      expect(gm.mode).toBe('solar');
+      for (let i = 0; i < 5; i++) await frame(host, guest);
+      const before = hm.world.planets.map((p) => ({ x: p.x, y: p.y }));
+      host.session.input({ kind: 'fire' });
+      for (let i = 0; i < 60 * 20 && hm.phase !== 'orbit'; i++) await frame(host, guest);
+      expect(hm.phase).toBe('orbit');
+      for (let i = 0; i < 60 * 4 && hm.phase === 'orbit'; i++) await frame(host, guest);
+      for (let i = 0; i < 10; i++) await frame(host, guest);
+      expect(hm.world.planets.some((p, i) => p.sun !== true && Math.hypot(p.x - before[i].x, p.y - before[i].y) > 1)).toBe(true);
+      expect(gm.world.planets.map((p) => ({ x: p.x, y: p.y }))).toEqual(hm.world.planets.map((p) => ({ x: p.x, y: p.y })));
+      expect(gm.world.ships.map((sh) => ({ x: sh.x, y: sh.y }))).toEqual(hm.world.ships.map((sh) => ({ x: sh.x, y: sh.y })));
+    }, 60_000);
   });
 
   describe('in Event Horizon', () => {

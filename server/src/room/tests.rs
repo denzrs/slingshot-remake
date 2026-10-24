@@ -582,6 +582,12 @@ fn the_host_can_change_the_game_with_the_rules_and_nobody_else_can() {
         .iter()
         .all(|p| p["ready"] == false));
 
+    rooms.handle(1, &json!({"type":"set_rules","gameMode":"solar","rules":rules}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["gameMode"], "solar");
+    rooms.handle(1, &json!({"type":"set_rules","gameMode":"horizon","rules":rules}));
+    take_type(&drain_json(&mut host_rx), "room_update");
+
     // Without a gameMode the room keeps the one it has.
     rooms.handle(1, &json!({"type":"set_rules","rules":rules}));
     let update = take_type(&drain_json(&mut host_rx), "room_update");
