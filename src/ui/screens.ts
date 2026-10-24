@@ -14,6 +14,7 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, MIN_SEATS, removeSeat, seatTeamsFor, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
 import { factTicker } from './facts';
+import { heartIcon } from './dom';
 import { h, type Menu, type MenuItem, type Screen } from './menu';
 import { modeArt } from './mode-icons';
 import type { LobbyEntry } from './lobby';
@@ -85,6 +86,22 @@ function loadBmcWidget(): Promise<BmcButtonWidget | null> {
     document.head.append(script);
   });
   return bmcWidget;
+}
+
+/** The version tag; hovering or focusing it swaps the text for who built the game. */
+function creditsBadge(): HTMLElement {
+  const link = (user: string) => h('a', { href: `https://github.com/${user}`, target: '_blank', rel: 'noopener noreferrer' }, user);
+  return h('div.version.credits', { tabindex: '0' },
+    h('span.credits__slot.credits__slot--tag', null,
+      h('span.credits__tag', null, String(import.meta.env.VITE_APP_VERSION || 'Local-Dev')),
+    ),
+    h('span.credits__slot.credits__slot--line', null,
+      h('span.credits__line', null,
+        `${t('credits.with')} `, heartIcon(), ` ${t('credits.by')} `, link('denzrs'), ' & ', link('matthias-Q'),
+        h('span.credits__agents', null, t('credits.agents')),
+      ),
+    ),
+  );
 }
 
 /** The official BMC widget uses document.write when initialized from its data-name embed.
@@ -380,7 +397,7 @@ export function titleScreen(app: App): Screen {
           h('p.keys', null, t('launcher.keys')),
           h('div.items.launcher__language', { 'data-section': 'language' }),
           h('div.title-foot', null,
-            h('p.version', null, String(import.meta.env.VITE_APP_VERSION || 'Local-Dev')),
+            creditsBadge(),
             ...(import.meta.env.VITE_COFFEE_URL ? [coffeeButton()] : []),
           ),
         ),

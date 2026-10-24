@@ -288,14 +288,14 @@
 }
 
 .launcher__language {
-  width: 220px;
+  width: auto;
   margin-left: auto;
 }
 
 .launcher__language .item {
   min-height: 36px;
   padding: 4px 6px;
-  gap: 12px;
+  gap: 8px;
 }
 
 .launcher__language .item__label,
@@ -314,6 +314,69 @@
 .briefing__cards {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+/* The version tag and the credits line each sit in a slot whose column animates between 0fr and 1fr,
+ * so the footer grows by the credits' width and the language picker is eased aside instead of jumping. */
+.credits {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  cursor: default;
+  outline: none;
+}
+
+.credits__slot {
+  display: grid;
+  transition: grid-template-columns 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.credits__slot--tag { grid-template-columns: 1fr; }
+.credits__slot--line { grid-template-columns: 0fr; }
+
+.credits__tag,
+.credits__line {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 260ms ease;
+}
+
+.credits__line {
+  text-align: right;
+  line-height: 1.7;
+  opacity: 0;
+}
+
+.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__slot--tag { grid-template-columns: 0fr; }
+.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__slot--line { grid-template-columns: 1fr; }
+.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__tag { opacity: 0; }
+.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__line { opacity: 1; }
+
+.credits__line a {
+  color: var(--bone);
+  text-decoration: none;
+  transition: color 140ms ease;
+}
+
+.credits__line a:hover,
+.credits__line a:focus-visible {
+  color: var(--p1);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.credits__agents { display: block; color: var(--bone-dim); }
+
+.heart-icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.15em;
+  fill: var(--danger);
+}
+
+@media (max-width: 700px) {
+  .credits__agents { display: none; }
+}
+
 }
 
 .briefing__cards .item--card {
@@ -635,3 +698,4 @@
   .launcher__modes .item:hover, .launcher__online .item:hover, .briefing__cards .item:hover { transform: none; }
   .launcher .item__icon, .briefing .item__icon { transition: none; transform: none; }
 }
+  .credits__slot, .credits__tag, .credits__line { transition: none; }
