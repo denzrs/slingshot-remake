@@ -14,8 +14,8 @@ use turso::{Connection, Database};
 
 use crate::leaderboard::{day_key, today};
 
-/// Snapshots kept before the oldest is deleted: a week, one a day.
-pub const DEFAULT_KEEP: usize = 7;
+/// Snapshots kept before the oldest is deleted: two weeks, one a day.
+pub const DEFAULT_KEEP: usize = 14;
 const PREFIX: &str = "slingshot-";
 const SUFFIX: &str = ".db";
 
