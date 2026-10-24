@@ -221,6 +221,17 @@
 .match-records .highlights__value { grid-column: 2; }
 .match-records .match-highlight__trail { height: 94px; margin: 6px 0 0; }
 
+/* On a wide page the records and the rest of the report sit side by side, so the whole report fits without a scroll bar. */
+@media (min-width: 1001px) {
+  .match-report { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 20px 40px; padding-bottom: 0; }
+  .match-report > :only-child { grid-column: 1 / -1; }
+  .match-report__details { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .match-records { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .match-report .match-records li { padding-block: 10px; }
+  .match-records .match-highlight__trail { height: 56px; margin-top: 4px; }
+  .match-report .score-chart { max-width: 340px; margin-inline: 0; }
+}
+
 @media (max-width: 1000px) {
   .result-overview { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 28px; }
   .result-spotlight { padding: 20px; }
