@@ -8,7 +8,14 @@
           "de": "Zum Abschluss siehst du die Platzierung und einen besonderen Spielmoment. Wechsle mit Q/E oder per Wischen zur Statistik: Dort findest du alle Rekorde, den Punkteverlauf und die weiteren Wertungen.",
           "en": "Finish with the standings and a standout match moment. Use Q/E or swipe to Statistics for all records, the score history and the other standings."
         },
-        "where": { "de": "Endstand → Ergebnis / Statistik", "en": "Final standings → Result / Statistics" }
+        "where": { "de": "Endstand → Ergebnis / Statistik", "en": "Final standings → Result / Statistics" },
+        "image": {
+          "src": "match-result-pager.webp",
+          "alt": {
+            "de": "Der neue Endscreen mit Platzierung, hervorgehobener Flugbahn und dem Pager für Ergebnis und Statistik",
+            "en": "The new match result screen with standings, a featured shot path and the Result and Statistics pager"
+          }
+        }
       },
       {
         "id": "killcams-all-modes",
