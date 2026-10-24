@@ -9,6 +9,7 @@ import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
 import { awards } from '../stats';
 import type { StyleKind } from '../physics';
 import { type PowerUpKind } from '../powerups';
+import { isLook } from '../render/look';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { activeSeats, addSeat, balanceTeams, DEFAULT_SETTINGS, MIN_SEATS, removeSeat, seatTeamsFor, type Seat, type Settings } from '../settings';
 import { dailyMenuHint, dailyScreen } from './daily';
@@ -23,6 +24,9 @@ import { groupTitle, RULE_GROUPS, ruleItems, type RuleSource } from './rules';
 import { powerUpSummary } from './powerup-summary';
 import { teamRoster } from './team-roster';
 import { mountTutorialPreview, type TutorialPreviewKind } from './tutorial-preview';
+import { newsScreen } from './whats-new';
+import { NEWS } from '../news/items';
+import type { NewsItem } from '../news/types';
 
 export interface App {
   menu: Menu;
@@ -171,7 +175,7 @@ function lineup(s: Settings): string {
 type LauncherSection = 'local' | 'online';
 let launcherSection: LauncherSection = 'local';
 const modeName = (mode: VersusMode): string => t(`mode.${mode}` as Key);
-const MAIN_MODES = ['classic', 'solar', 'horizon'] as const satisfies readonly VersusMode[];
+const MAIN_MODES = ['classic', 'horizon', 'solar'] as const satisfies readonly VersusMode[];
 type ModeTransition = 'next' | 'previous';
 
 /** Default once on entry; rebuilding after rule or crew edits keeps the player's subsequent choices. */
@@ -379,6 +383,7 @@ export function titleScreen(app: App): Screen {
         h('footer.launcher__foot', null,
           h('p.keys', null, t('launcher.keys')),
           h('div.items.launcher__language', { 'data-section': 'language' }),
+          h('div.items.launcher__news', { 'data-section': 'news' }),
           h('div.title-foot', null,
             creditsBadge(),
             ...(import.meta.env.VITE_COFFEE_URL ? [coffeeButton()] : []),
@@ -392,13 +397,14 @@ export function titleScreen(app: App): Screen {
       { kind: 'action', section: 'navigation', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
       { kind: 'action', section: 'navigation', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
       modeCard('classic'),
-      modeCard('solar'),
       modeCard('horizon'),
+      modeCard('solar'),
       { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.daily'), hint: dailyMenuHint(app.today()), icon: () => modeArt('daily'), run: () => app.menu.push(() => dailyScreen(app)) },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.code'), hint: t('flow.codeHint'), icon: () => modeArt('code'), run: () => app.openLobby('code') },
       { ...languageItem(app), section: 'language' },
+      { kind: 'action', section: 'news', label: t('news.open'), run: () => app.menu.push(() => whatsNewScreen(app, NEWS)) },
     ],
     focus: launcherSection === 'local' ? 4 : 7,
     update,
@@ -406,6 +412,11 @@ export function titleScreen(app: App): Screen {
       if (launcherSection === 'online') chooseSection('local');
     },
   };
+}
+
+/** The What's New dialog with its buttons wired: "Try it" opens the place an item is about. */
+export function whatsNewScreen(app: App, items: readonly NewsItem[]): Screen {
+  return newsScreen(app, items, { settings: () => app.menu.push(() => settingsScreen(app)) });
 }
 
 export function pauseScreen(app: App, match: Match | null): Screen {
@@ -790,6 +801,20 @@ function settingsScreen(app: App): Screen {
     update: () => { heading.textContent = categories.find(({ key }) => key === preferenceCategory)!.label; },
     items: [
       ...categories.map(({ key, label }): MenuItem => ({ kind: 'action', section: 'categories', label, selected: () => preferenceCategory === key, run: () => { preferenceCategory = key; app.menu.refresh(); } })),
+      inCategory({
+        kind: 'segmented',
+        section: 'fields',
+        label: t('settings.look'),
+        options: [
+          { value: 'refined', label: t('settings.lookRefined') },
+          { value: 'classic', label: t('settings.lookClassic') },
+        ],
+        get: () => app.settings.look,
+        set: (v: unknown) => {
+          app.settings.look = isLook(v) ? v : 'classic';
+          app.settingsChanged();
+        },
+      }, 'display'),
       inCategory(settingToggle(app, t('settings.contours'), 'contours'), 'display'),
       inCategory(settingToggle(app, t('settings.particles'), 'particles'), 'display'),
       inCategory(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'display'),

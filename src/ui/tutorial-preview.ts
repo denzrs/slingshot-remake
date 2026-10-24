@@ -5,6 +5,7 @@ import { drawBlackHole } from '../render/blackhole';
 import { drawDefense } from '../render/defense';
 import { drawNebula } from '../render/nebula';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
+import type { PlanetSprite } from '../render/planet-common';
 import { renderPlanet } from '../render/planets';
 
 export type TutorialPreviewKind = 'welcome' | 'aim' | 'gravity' | 'round' | 'horizon' | 'powerups' | 'powerupsField' | 'tricks' | 'daily' | 'keys';
@@ -452,7 +453,7 @@ function drawTarget(ctx: CanvasRenderingContext2D, point: Point, time: number): 
   ctx.restore();
 }
 
-function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, time: number, dpr: number, canvasWidth: number, canvasHeight: number, sprites: Map<number, HTMLCanvasElement>): void {
+function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, time: number, dpr: number, canvasWidth: number, canvasHeight: number, sprites: Map<number, PlanetSprite>): void {
   const scale = Math.min((canvasWidth - 28) / FIELD.width, (canvasHeight - 28) / FIELD.height);
   const ox = (canvasWidth - FIELD.width * scale) / 2;
   const oy = (canvasHeight - FIELD.height * scale) / 2;
@@ -496,7 +497,7 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
       sprite = renderPlanet(p, 1);
       sprites.set(p.seed, sprite);
     }
-    ctx.drawImage(sprite, p.x - p.radius - 2, p.y - p.radius - 2, p.radius * 2 + 4, p.radius * 2 + 4);
+    sprite.draw(ctx, p.x, p.y, 1, time);
   }
   for (const defense of demo.world.defenses) {
     const host = demo.world.planets.find((p) => p.seed === defense.planet) ?? null;
@@ -670,7 +671,7 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
 /** Mounts a deterministic miniature scene that uses the same projectile physics as a match. */
 export function mountTutorialPreview(canvas: HTMLCanvasElement, kind: TutorialPreviewKind, onProgress: (progress: number) => void, powerUp?: PowerUpKind, trick?: StyleKind): TutorialPreviewController {
   const demo = buildDemo(kind, powerUp, trick);
-  const sprites = new Map<number, HTMLCanvasElement>();
+  const sprites = new Map<number, PlanetSprite>();
   const ctx = canvas.getContext('2d');
   let observer: ResizeObserver | null = null;
   let frame = 0;

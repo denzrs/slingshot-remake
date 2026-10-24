@@ -154,3 +154,23 @@ describe('display settings', () => {
     expect(s.contours).toBe(true);
   });
 });
+
+describe('Graphics look', () => {
+  it('is the classic look unless the player picked another', () => {
+    storage();
+    expect(loadSettings().look).toBe('classic');
+  });
+
+  it('keeps the refined look after saving and reloading', () => {
+    storage();
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.look = 'refined';
+    saveSettings(settings);
+    expect(loadSettings().look).toBe('refined');
+  });
+
+  it('falls back to the classic look for a value it does not know', () => {
+    storage({ look: 'sepia' });
+    expect(loadSettings().look).toBe('classic');
+  });
+});
