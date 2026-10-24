@@ -131,7 +131,7 @@ beforeAll(async () => {
   serverProcess = spawn(binary, [], {
     // The relay opens a daily leaderboard wherever it runs; this one writes it to a throwaway file
     // rather than leaving a board behind in the working tree.
-    env: { ...process.env, PORT: String(port), ALLOW_ALL_ORIGINS: '1', ALLOWED_ORIGINS: '', STATS: '1', CONNECTIONS_PER_IP_PER_SECOND: '1000', MAX_MESSAGES_PER_SECOND: '100000', DATABASE: join(tmpdir(), `slingshot-${port}.db`), RUST_LOG: process.env.RUST_LOG ?? 'info' },
+    env: { ...process.env, PORT: String(port), ALLOW_ALL_ORIGINS: '1', ALLOWED_ORIGINS: '', STATS: '1', CONNECTIONS_PER_IP_PER_SECOND: '1000', MAX_MESSAGES_PER_SECOND: '100000', MAX_BYTES_PER_SECOND: '1000000000', DATABASE: join(tmpdir(), `slingshot-${port}.db`), RUST_LOG: process.env.RUST_LOG ?? 'info' },
     stdio: process.env.RELAY_LOG ? 'inherit' : 'ignore',
   });
   await waitForServer(serverUrl);
