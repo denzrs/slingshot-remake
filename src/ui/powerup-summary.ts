@@ -1,24 +1,32 @@
 import { t, type Key } from '../i18n';
-import type { PowerUpKind } from '../powerups';
+import { POWER_UP_KINDS, type PowerUpKind } from '../powerups';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { h } from './dom';
 
 let powerUpTooltip: HTMLElement | null = null;
 let tooltipTarget: HTMLElement | null = null;
 
-/** A compact readout for the power-ups that can appear in a match. */
+/**
+ * A compact readout for the power-ups that can appear in a match. With Mayhem on and power-ups off,
+ * they still come in the rounds a power-up twist is drawn for — any kind, so all are shown, with a note.
+ */
 export function powerUpSummary(
-  getRules: () => { powerUps: boolean; powerUpKinds: readonly PowerUpKind[] },
-  note?: string,
+  getRules: () => { powerUps: boolean; powerUpKinds: readonly PowerUpKind[]; mayhem: number },
 ): { el: HTMLElement; update: () => void } {
   const label = h('span.briefing__powerups-label', null, t('settings.powerUps'));
-  const hint = note ? h('span.briefing__powerups-note', null, note) : null;
+  const hint = h('span.briefing__powerups-note', null, t('powerups.viaTwists'));
   const value = h('span.briefing__powerup-list', { 'aria-live': 'polite' });
-  const el = h('div.briefing__powerups', { role: 'group', 'aria-label': t('settings.powerUps') }, label, ...(hint ? [hint] : []), value);
+  const el = h('div.briefing__powerups', { role: 'group', 'aria-label': t('settings.powerUps') }, label, hint, value);
 
   const update = (): void => {
     if (tooltipTarget && !tooltipTarget.isConnected) hidePowerUpTooltip(tooltipTarget);
     const rules = getRules();
+    const viaTwists = !rules.powerUps && rules.mayhem > 0;
+    hint.hidden = !viaTwists;
+    if (viaTwists) {
+      value.replaceChildren(...POWER_UP_KINDS.map(powerUpIcon));
+      return;
+    }
     if (!rules.powerUps) {
       value.replaceChildren(h('span.briefing__powerup-none', null, t('common.none')));
       return;
