@@ -239,12 +239,17 @@ describe('fixed shot power', () => {
       const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, fixedPower: true, fixedPowerLevel: level }, { seats }) as ClassicMatch;
       const powers = fires(m);
       const dt = 1 / 30;
-      for (let t = 0; t < 300 && m.phase !== 'roundOver'; t += dt) {
-        m.update(dt);
-        if (m.phase === 'killcam') m.advance();
+      try {
+        // The setting applies to every CPU shot; two turns exercise the handoff without simulating a whole round.
+        for (let t = 0; t < 300 && m.phase !== 'roundOver' && powers.length < 2; t += dt) {
+          m.update(dt);
+          if (m.phase === 'killcam') m.advance();
+        }
+        expect(powers.length).toBeGreaterThan(0);
+        expect(new Set(powers), `level ${level}`).toEqual(new Set([level]));
+      } finally {
+        m.dispose();
       }
-      expect(powers.length).toBeGreaterThan(0);
-      expect(new Set(powers), `level ${level}`).toEqual(new Set([level]));
     }
   });
 
