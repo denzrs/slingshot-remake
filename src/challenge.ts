@@ -52,15 +52,20 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 
 // ————————————————————————————— Themes —————————————————————————————
 
-export type ThemeId = 'classic' | 'billiard' | 'blind' | 'singularity' | 'heavy' | 'precision' | 'sniper' | 'bastion' | 'nebula' | 'hammerhead';
+export type ThemeId = 'classic' | 'billiard' | 'blind' | 'singularity' | 'heavy' | 'precision' | 'sniper' | 'bastion' | 'nebula' | 'hammerhead'
+  | 'nebulaBilliard' | 'flakRain' | 'blackBilliards' | 'plasmaStorm' | 'gravityLadder' | 'shortFuse' | 'noReserve';
 
 /** The seven themes of the first weeks: days before `VARIANTS_FROM` keep their old rotation, so no past or running day changes. */
 const CLASSIC_THEMES: readonly ThemeId[] = ['classic', 'billiard', 'blind', 'singularity', 'heavy', 'precision', 'sniper'];
 
-export const THEMES: readonly ThemeId[] = [...CLASSIC_THEMES, 'bastion', 'nebula', 'hammerhead'];
+const VARIANT_THEMES: readonly ThemeId[] = [...CLASSIC_THEMES, 'bastion', 'nebula', 'hammerhead'];
+
+export const THEMES: readonly ThemeId[] = [...VARIANT_THEMES, 'nebulaBilliard', 'flakRain', 'blackBilliards', 'plasmaStorm', 'gravityLadder', 'shortFuse', 'noReserve'];
 
 /** Challenge #21 (2026-10-22), the first day with the flak, nebula and ammo variations. */
 const VARIANTS_FROM = 21;
+/** Keep already-published challenges on their original rotation; the expanded pool starts with #24. */
+const EXPANDED_THEMES_FROM = 24;
 
 /** What the pilot's shots are made of in a sector: plasma (hard to bend, ignores clouds). */
 export type Ammo = 'plasma';
@@ -85,6 +90,10 @@ interface ThemeRule {
   ammo?: { kind: Ammo; from: number };
   /** One more target than usual from sector 2 on, with one spare shot less (but always at least one). */
   sniper?: boolean;
+  /** Add a cloud to a guaranteed edge-bounce challenge. */
+  noReserve?: boolean;
+  gravityLadder?: boolean;
+  flightTime?: number;
 }
 
 const THEME_RULES: Record<ThemeId, ThemeRule> = {
@@ -98,6 +107,13 @@ const THEME_RULES: Record<ThemeId, ThemeRule> = {
   bastion: { flak: { from: 1, p: 1 } },
   nebula: { nebula: { from: 1, p: 1 } },
   hammerhead: { ammo: { kind: 'plasma', from: 1 } },
+  nebulaBilliard: { bounce: { from: 0, p: 1 }, nebula: { from: 1, p: 1 } },
+  flakRain: { flak: { from: 1, p: 1 }, nebula: { from: 3, p: 0.5 } },
+  blackBilliards: { bounce: { from: 1, p: 1 }, hole: { from: 1, p: 1 } },
+  plasmaStorm: { ammo: { kind: 'plasma', from: 1 }, flak: { from: 1, p: 1 }, nebula: { from: 1, p: 1 } },
+  gravityLadder: { gravityLadder: true },
+  shortFuse: { flightTime: 9 },
+  noReserve: { noReserve: true },
 };
 
 /** Classic dailies from the variations on may spice a sector with a flak cannon or a cloud, never with fixed ammo. */
@@ -110,7 +126,14 @@ const CLASSIC_VARIANTS: Pick<ThemeRule, 'flak' | 'nebula'> = { nebula: { from: 1
 export function themeFor(number: number): ThemeId {
   // The days up to the variations keep the old seven-day cycles, so nobody's past (or today's) challenge changes.
   if (number < VARIANTS_FROM) return cycleTheme(number - 1, CLASSIC_THEMES, 'slingshot-themes');
-  return cycleTheme(number - VARIANTS_FROM, THEMES, 'slingshot-themes-v2');
+  if (number < EXPANDED_THEMES_FROM) return cycleTheme(number - VARIANTS_FROM, VARIANT_THEMES, 'slingshot-themes-v2');
+  const idx = number - EXPANDED_THEMES_FROM;
+  if (idx < THEMES.length) {
+    const firstOrder = cycleOrder(0, THEMES, 'slingshot-themes-v3');
+    if (firstOrder[0] === themeFor(EXPANDED_THEMES_FROM - 1)) [firstOrder[0], firstOrder[1]] = [firstOrder[1], firstOrder[0]];
+    return firstOrder[idx];
+  }
+  return cycleTheme(idx, THEMES, 'slingshot-themes-v3');
 }
 
 function cycleTheme(idx: number, themes: readonly ThemeId[], salt: string): ThemeId {
@@ -130,7 +153,7 @@ function cycleOrder(cycle: number, themes: readonly ThemeId[], salt: string): Th
 // ————————————————————————————— Sector specs —————————————————————————————
 
 type Difficulty = 1 | 2 | 3 | 4 | 5;
-type Modifier = 'bounce' | 'invisible' | 'fixedPower' | 'hole' | 'heavy' | 'flak' | 'nebula' | 'plasma';
+type Modifier = 'bounce' | 'invisible' | 'fixedPower' | 'hole' | 'heavy' | 'flak' | 'nebula' | 'plasma' | 'gravityLadder' | 'shortFuse' | 'noReserve';
 
 export interface SectorSpec {
   index: number;
@@ -154,6 +177,12 @@ export interface SectorSpec {
   nebulae: number;
   /** The pilot has only this kind of shot. */
   ammo: Ammo | null;
+  /** Optional challenge-specific flight clock; omitted on historical challenges to preserve their data. */
+  flightTime?: number;
+  /** Distinguishes the rising-gravity theme from the standard heavy-gravity modifier. */
+  gravityLadder?: boolean;
+  /** Marks the exact-target shot budget theme. */
+  noReserve?: boolean;
 }
 
 export interface Challenge {
@@ -209,7 +238,7 @@ function sectorSpec(rule: ThemeRule, index: number, difficulty: Difficulty, rng:
   const ammo = rule.ammo && index >= rule.ammo.from ? rule.ammo.kind : null;
 
   let targets = { 1: 1, 2: 1 + +(roll.extra < 0.4), 3: 1 + +(roll.extra < 0.6), 4: 2, 5: 2 + +(roll.extra < 0.5) }[difficulty];
-  let slack = SLACK[difficulty];
+  let slack = rule.noReserve ? 0 : SLACK[difficulty];
   if (rule.sniper && index >= 1) {
     targets = Math.min(3, targets + 1);
     // Tight, but never without a spare shot: one mistake is allowed.
@@ -220,7 +249,14 @@ function sectorSpec(rule: ThemeRule, index: number, difficulty: Difficulty, rng:
   if (invisible) planets = [2, Math.min(4, planets[1])];
   if (hole) planets = [Math.max(2, planets[0] - 1), Math.max(3, planets[1] - 2)];
 
-  return { index, seed, difficulty, targets, planets, shots: targets + slack, bounce, invisible, fixedPower, hole, gravity: heavy ? HEAVY : 1, flak, nebulae, ammo };
+  const gravity = rule.gravityLadder ? [1.2, 1.4, 1.6, 1.8, 2][index] : heavy ? HEAVY : 1;
+  return {
+    index, seed, difficulty, targets, planets, shots: targets + slack, bounce, invisible, fixedPower, hole, gravity,
+    flak, nebulae, ammo,
+    ...(rule.flightTime ? { flightTime: rule.flightTime } : {}),
+    ...(rule.gravityLadder ? { gravityLadder: true } : {}),
+    ...(rule.noReserve ? { noReserve: true } : {}),
+  };
 }
 
 export function modifiersOf(spec: SectorSpec): Modifier[] {
@@ -229,15 +265,18 @@ export function modifiersOf(spec: SectorSpec): Modifier[] {
   if (spec.invisible) out.push('invisible');
   if (spec.fixedPower) out.push('fixedPower');
   if (spec.hole) out.push('hole');
-  if (spec.gravity > 1) out.push('heavy');
+  if (spec.gravity > 1 && !spec.gravityLadder) out.push('heavy');
   if (spec.flak) out.push('flak');
   if (spec.nebulae) out.push('nebula');
   if (spec.ammo === 'plasma') out.push('plasma');
+  if (spec.gravityLadder) out.push('gravityLadder');
+  if (spec.flightTime) out.push('shortFuse');
+  if (spec.noReserve) out.push('noReserve');
   return out;
 }
 
 export function sectorRules(spec: SectorSpec): ShotRules {
-  return { bounce: spec.bounce, timeLimit: CHALLENGE.FLIGHT_TIME };
+  return { bounce: spec.bounce, timeLimit: spec.flightTime ?? CHALLENGE.FLIGHT_TIME };
 }
 
 /** What the pilot fires in a sector: the rules of the flight, and the kind of shot. */

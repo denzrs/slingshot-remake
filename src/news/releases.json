@@ -2,6 +2,15 @@
   "draft": {
     "items": [
       {
+        "id": "daily-challenge-variety",
+        "title": { "de": "Sieben neue Daily Challenges", "en": "Seven new daily challenges" },
+        "text": {
+          "de": "Flieg durch Nebel-Billard, Flakregen, Schwarzes Billard, Plasmasturm, die Gravitationsleiter, eine kurze Zündschnur oder ganz ohne Schussreserve. Jeden Tag wartet eine neue Regelkombination.",
+          "en": "Fly through Nebula Billiards, Flak Rain, Black Billiards, Plasma Storm, the Gravity Ladder, a Short Fuse or a run with No Reserve. A new rule set awaits each day."
+        },
+        "where": { "de": "Titelmenü → Tägliche Herausforderung", "en": "Title screen → Daily Challenge" }
+      },
+      {
         "id": "match-result-pager",
         "title": { "de": "Dein Match im Rückblick", "en": "Your match at a glance" },
         "text": {
