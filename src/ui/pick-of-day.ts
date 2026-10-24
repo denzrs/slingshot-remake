@@ -18,7 +18,7 @@ export function pickArt(pick: HandpickedPreset): SVGElement {
   const core = pick.base === 'horizon'
     ? '<ellipse cx="160" cy="98" rx="62" ry="19" transform="rotate(-25 160 98)" fill="none" stroke="#eac796" stroke-width="2"/><circle cx="160" cy="98" r="27" fill="#020711" stroke="#b1ccd8"/>'
     : pick.base === 'solar'
-      ? '<circle cx="160" cy="98" r="40" fill="#f2c46d" opacity=".08"/><circle cx="160" cy="98" r="27" fill="#f2c46d" fill-opacity=".85" stroke="#fff0cf" stroke-opacity=".7"/>'
+      ? `<g fill="none" stroke="${color}" stroke-opacity=".28"><ellipse cx="160" cy="98" rx="62" ry="34"/><ellipse cx="160" cy="98" rx="104" ry="56"/></g><circle cx="160" cy="98" r="40" fill="#f2c46d" opacity=".08"/><circle cx="160" cy="98" r="24" fill="#f2c46d" fill-opacity=".85" stroke="#fff0cf" stroke-opacity=".7"/><circle cx="160" cy="98" r="14" fill="#ffe7a8" opacity=".75"/>`
       : planet(160, 98, pick.id === 'garden' ? 22 : 30);
   const scenes = {
     express: `<path d="M22 142Q83 150 120 89T285 49M29 160Q97 163 131 105" fill="none" stroke="${color}" stroke-width="2"/>${ship(29, 142, 65)}${ship(282, 49, -120)}<path d="m57 59 14-9-3 17m12-20 14-9-3 17" fill="none" stroke="${color}" stroke-width="2"/>`,
