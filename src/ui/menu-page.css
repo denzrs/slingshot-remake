@@ -18,26 +18,25 @@
 
 .menu-page {
   display: flex;
-  flex: 1 1 auto;
-  height: auto;
+  flex: 0 1 auto;
+  height: var(--menu-frame-height);
   min-height: 0;
   flex-direction: column;
   width: min(1280px, 100%);
   min-width: 0;
-  margin: clamp(12px, 2.5vh, 32px) auto 0;
-  animation: rise 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  margin: var(--menu-frame-offset) auto 0;
 }
 
-/* On tall screens the page stops growing and sits in the middle instead of stretching over an empty window. */
-@media (min-height: 1100px) {
-  .menu-page { flex: 0 1 auto; height: min(900px, 100%); margin-block: auto; }
-}
+.menu-page__head > :not(.mode-carousel),
+.menu-page__head .mode-pager__viewport,
+.menu-page__main { animation: rise 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
 
 .menu-page__head { flex: 0 0 auto; margin-bottom: clamp(14px, 2.2vh, 24px); }
 .menu-page__head .eyebrow { margin: 0 0 8px; color: var(--launch-accent); font-size: 10px; }
 .menu-page__title { margin: 0; font: 800 var(--page-title-size)/0.95 var(--font-display); letter-spacing: 0.01em; text-transform: uppercase; overflow-wrap: anywhere; }
 .menu-page__intro { max-width: 76ch; margin: 8px 0 0; color: var(--bone-dim); font-size: 13px; line-height: 1.6; }
-/* The side padding is given back as margin: it leaves room for the focus rings of the first and last column, which the scroll box would clip. */
+/* A bounded, shared frame anchors every footer at the same height. Long bodies scroll within it.
+ * The side padding leaves room for focus rings that the scroll box would otherwise clip. */
 .menu-page__body { flex: 1 1 0; min-width: 0; min-height: 0; margin-inline: -6px; padding-inline: 6px; overflow-y: auto; overscroll-behavior: contain; }
 .menu-page__body--split { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 42px; }
 .menu-page__main, .menu-page__aside, .menu-group { min-width: 0; }
@@ -56,12 +55,13 @@
 
 .menu-page__foot {
   flex: 0 0 auto;
+  min-height: var(--menu-footer-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 22px 0 max(22px, env(safe-area-inset-bottom));
-  margin-top: auto;
+  padding: 14px 0 max(14px, env(safe-area-inset-bottom));
+  margin-top: 32px;
   border-top: 1px solid var(--menu-line);
   background: transparent;
 }
@@ -85,7 +85,9 @@
 .menu-page .item:focus-visible, .menu-page button:focus-visible, .menu-page input:focus-visible, .menu-page select:focus-visible,
 .menu-page summary:focus-visible, .look-dialog button:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--bone); }
 .menu-page .item.is-disabled, .menu-page [aria-disabled='true'], .menu-page button:disabled { opacity: 0.4; }
-.screen[data-rebuild] .menu-page { animation: none; }
+.screen[data-rebuild] .menu-page__head > *,
+.screen[data-rebuild] .menu-page__head .mode-pager__viewport,
+.screen[data-rebuild] .menu-page__main { animation: none; }
 
 /* Device preferences: related controls share a group. */
 .preferences { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px 56px; }
@@ -179,7 +181,7 @@
 .menu-page--leaderboard .lb__kind { min-height: 1.7em; text-align: left; }
 .menu-page--leaderboard .daily-board-pager__viewport { --mode-anchor: 0%; }
 .menu-page--leaderboard .daily-board-pager { margin: 0; }
-.menu-page--leaderboard .daily-board-carousel .daily__date { margin-top: 8px; text-align: left; }
+.menu-page--leaderboard .daily-board-carousel .daily__date { grid-column: 1; grid-row: 2; margin: 2px 0 0; text-align: left; }
 .menu-page--leaderboard { touch-action: pan-y pinch-zoom; }
 .menu-page .lb__row { padding: 15px 18px; border-color: var(--menu-line); background: rgb(14 30 51 / 0.65); }
 .menu-page .lb__status { margin: 0; font-size: 13px; line-height: 1.7; }
@@ -336,7 +338,7 @@
   .menu-page--briefing .menu-page__body--split { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .menu-page__aside { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--menu-line); }
   .menu-page__art { height: 130px; margin-bottom: 16px; }
-  .menu-page__foot { gap: 12px 16px; margin: auto -22px 0; padding: 16px 22px max(18px, env(safe-area-inset-bottom)); }
+  .menu-page__foot { gap: 12px 16px; margin: 24px -22px 0; padding: 16px 22px max(18px, env(safe-area-inset-bottom)); }
   .menu-page__foot > .keys { display: none; }
   .menu-page__actions { justify-content: flex-end; gap: 10px; }
   .menu-page--settings .menu-page__actions,
@@ -369,7 +371,8 @@
 /* A fixed viewport keeps the active mode in one place while the three labels slide past. */
 .menu-page--mode-pager .menu-page__head { min-width: 0; }
 .menu-page--mode-pager .menu-page__head > .eyebrow { margin-bottom: 8px; }
-.mode-carousel { position: relative; min-width: 0; }
+/* The hints occupy their own stable row; only the viewport of page labels moves. */
+.mode-carousel { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; min-width: 0; }
 .mode-pager__semantic-title {
   position: absolute;
   width: 1px;
@@ -382,9 +385,12 @@
   border: 0;
 }
 .mode-pager__viewport {
+  grid-column: 1 / -1;
+  grid-row: 1;
   --mode-anchor: 0%;
   width: 100%;
   min-width: 0;
+  min-height: calc(var(--page-title-size) * .94 + 8px);
   overflow: hidden;
   touch-action: pan-y pinch-zoom;
 }
@@ -450,6 +456,10 @@
   text-underline-offset: .12em;
 }
 .mode-pager__keys {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: end;
+  align-self: start;
   display: flex;
   justify-content: flex-end;
   gap: 14px;
@@ -488,12 +498,12 @@
 .menu-page.menu-page--mode-enter-next,
 .menu-page.menu-page--mode-enter-previous,
 .menu-page.menu-page--entered { animation: none; }
-.menu-page--mode-enter-next .menu-page__head > .mode-carousel,
+.menu-page--mode-enter-next .menu-page__head .mode-pager__viewport,
 .menu-page--mode-enter-next .menu-page__head > .menu-page__title { animation: mode-header-enter-next 200ms cubic-bezier(.16, 1, .3, 1) both; }
-.menu-page--mode-enter-previous .menu-page__head > .mode-carousel,
+.menu-page--mode-enter-previous .menu-page__head .mode-pager__viewport,
 .menu-page--mode-enter-previous .menu-page__head > .menu-page__title { animation: mode-header-enter-previous 200ms cubic-bezier(.16, 1, .3, 1) both; }
-.menu-page--mode-enter-next .menu-page__body { animation: mode-body-enter-next 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
-.menu-page--mode-enter-previous .menu-page__body { animation: mode-body-enter-previous 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
+.menu-page--mode-enter-next .menu-page__main { animation: mode-body-enter-next 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
+.menu-page--mode-enter-previous .menu-page__main { animation: mode-body-enter-previous 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
 .menu-page--mode-enter-next .mode-pager__item--active,
 .menu-page--mode-enter-previous .mode-pager__item--active { animation: mode-title-flare 300ms ease-out both; }
 .menu-page--mode-enter-next .briefing__cards > :is(.item, .briefing__preset-shell) { animation: preset-enter-next 220ms cubic-bezier(.2, .7, .2, 1) 25ms both; }
@@ -504,6 +514,11 @@
 .menu-page--mode-enter-previous .briefing__cards > .item:nth-child(3) { animation-delay: 145ms; }
 .menu-page--mode-enter-next .briefing__cards > .item:nth-child(4),
 .menu-page--mode-enter-previous .briefing__cards > .item:nth-child(4) { animation-delay: 195ms; }
+/* Keep the section label fixed while Q/E moves the selected local mode or daily-board date. */
+.menu-page--briefing.menu-page--mode-enter-next .menu-page__head > .eyebrow,
+.menu-page--briefing.menu-page--mode-enter-previous .menu-page__head > .eyebrow,
+.menu-page--leaderboard.menu-page--mode-enter-next .menu-page__head > .eyebrow,
+.menu-page--leaderboard.menu-page--mode-enter-previous .menu-page__head > .eyebrow { animation: none; }
 .launcher__content--enter-next .launcher__section-head { animation: mode-body-enter-next 200ms cubic-bezier(.16, 1, .3, 1) both; }
 .launcher__content--enter-previous .launcher__section-head { animation: mode-body-enter-previous 200ms cubic-bezier(.16, 1, .3, 1) both; }
 .launcher__content--enter-next .launcher__online > .item { animation: preset-enter-next 220ms cubic-bezier(.2, .7, .2, 1) 20ms both; }
@@ -538,8 +553,8 @@
 @media (prefers-reduced-motion: reduce) {
   .menu-page.menu-page--mode-enter-next,
   .menu-page.menu-page--mode-enter-previous { animation: none; }
-  .menu-page--mode-enter-next .menu-page__head > .mode-carousel,
-  .menu-page--mode-enter-previous .menu-page__head > .mode-carousel,
+  .menu-page--mode-enter-next .menu-page__head .mode-pager__viewport,
+  .menu-page--mode-enter-previous .menu-page__head .mode-pager__viewport,
   .menu-page--mode-enter-next .menu-page__head > .menu-page__title,
   .menu-page--mode-enter-previous .menu-page__head > .menu-page__title,
 .menu-page--mode-enter-next .briefing__cards > :is(.item, .briefing__preset-shell),
@@ -549,8 +564,8 @@
   .launcher__content--enter-next .launcher__online > .item,
   .launcher__content--enter-previous .launcher__modes > .item,
   .launcher__content--enter-previous .launcher__daily > .item { animation: none; }
-  .menu-page--mode-enter-next .menu-page__body,
-  .menu-page--mode-enter-previous .menu-page__body,
+  .menu-page--mode-enter-next .menu-page__main,
+  .menu-page--mode-enter-previous .menu-page__main,
   .menu-page--mode-enter-next .mode-pager__item--active,
   .menu-page--mode-enter-previous .mode-pager__item--active { animation: none; }
   .mode-pager, .menu-page .mode-pager .item { transition: none; }
@@ -598,7 +613,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .menu-page { animation: none; }
+  .menu-page, .menu-page__head > :not(.mode-carousel), .menu-page__head .mode-pager__viewport, .menu-page__main { animation: none; }
 }
 
 /* A destination is a card; configuration follows the decision. */
@@ -640,15 +655,15 @@
 .menu-page--lobby .online-section-viewport { touch-action: pan-y pinch-zoom; }
 .menu-page--lobby .menu-page__body { margin-top: 0; }
 .menu-page--lobby .lobby { gap: 16px; }
-.menu-page--lobby .menu-page__foot { margin-top: auto; padding-top: 22px; }
 .menu-page--lobby .menu-page__actions.lobby__actions { justify-content: flex-end; }
 .menu-page--lobby .menu-page__actions > .lobby__button { flex: 0 1 auto; }
 .menu-page--lobby .menu-page__actions > .lobby__button:first-child { margin-right: 0; }
 .menu-page--lobby .menu-page__actions .lobby__button--primary { margin-left: 0; }
 
 /* Swiping between the online pages moves the page, not the pilot card above it. In a room only the game on the left moves: the room's card and the crew stay put. */
+.menu-page--lobby .menu-page__main { animation: none; }
 .menu-page--lobby.menu-page--mode-enter-next .menu-page__body,
-.menu-page--lobby.menu-page--mode-enter-previous .menu-page__body { animation: none; overflow-x: clip; }
+.menu-page--lobby.menu-page--mode-enter-previous .menu-page__body { overflow-x: clip; }
 .menu-page--lobby.menu-page--mode-enter-next .lobby > :not(.online-identity):not(.room-deck),
 .menu-page--lobby.menu-page--mode-enter-next .room-deck__briefing { animation: mode-body-enter-next 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
 .menu-page--lobby.menu-page--mode-enter-previous .lobby > :not(.online-identity):not(.room-deck),
@@ -941,8 +956,6 @@
 .menu-page--lobby .lobby__card--wide > .setup__title { font-size: 27px; }
 .menu-page--lobby .online-options { padding-block: 15px; }
 .menu-page--lobby .online-options > summary { min-height: 38px; align-items: center; }
-/* A full-width flight manifest makes every ship and assignment legible at a glance. */
-.menu-page--crew { width: min(1760px, 100%); }
 /* Local crew shares the waiting room's fixed slot grid. */
 .menu-page--crew .menu-page__head { margin-bottom: clamp(16px, 2.5vh, 28px); }
 .crew-config { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; }
@@ -1016,11 +1029,6 @@
 .mission-scorecards .sectors__points { font: 400 18px/1.5 var(--font-mono); }
 .menu-page--mission-result .daily__rank { margin-bottom: 0; }
 .menu-page--mission-result .daily__meta { margin-top: 20px; }
-
-/* Settings and tutorial use the same full-height page and footer structure. */
-.menu-page--tutorial .menu-page__body {
-  min-height: 0;
-}
 
 /* Settings and rules: every group on one page. The columns sit side by side while the page is wide enough for two. */
 .sheet { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 22px clamp(28px, 4vw, 56px); align-items: start; }
@@ -1097,15 +1105,6 @@
   .mission-scorecards .sectors__n { font-size: 25px; }
 }
 @media (max-width: 380px) {
-}
-@media (max-height: 820px) and (min-width: 761px) {
-  .menu-page { margin-top: clamp(16px, 3vh, 30px); }
-  .menu-page__head { margin-bottom: clamp(14px, 2vh, 22px); }
-  .menu-page__intro { margin-top: 10px; }
-  .menu-page--briefing .menu-page__body--split { gap: 24px; }
-  .menu-page--briefing .briefing__cards .item--card { gap: 6px; padding: 10px; }
-  .menu-page--briefing .briefing__cards .item__icon { height: clamp(64px, 10vh, 84px); }
-  .menu-page--briefing .menu-page__foot { padding-top: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .flight-card { transition: none; }
@@ -1368,14 +1367,6 @@
 .menu-page--room .online-options > summary { min-height: 32px; display: flex; align-items: center; padding: 0; }
 .menu-page--room .lobby__rule-details[open] > summary,
 .menu-page--room .online-options[open] > summary { margin-bottom: 14px; }
-@media (min-width: 1000px) and (max-height: 800px) {
-  .menu-page--room .briefing__cards .item__icon { height: 46px; }
-  .menu-page--room .room-deck__briefing .briefing__cards { margin-bottom: 8px; }
-}
-@media (min-width: 1000px) and (max-height: 800px) {
-  .menu-page .room-deck__crew .slot-card { padding-block: 5px; }
-}
-
 /* For everybody but the host the game is on show, not to be touched. */
 .menu-page .lobby__preset.is-readonly { cursor: default; }
 .menu-page .lobby__preset.is-readonly:hover { transform: none; }
@@ -1466,8 +1457,8 @@
 /* Settings → Less motion in menus: pages and cards appear in place, with no sliding, fading or flaring between them.
    Spinners and status pings keep running; they report something rather than move you around. */
 .menu-motion-less :is(
-  .menu-page, .launcher, .panel,
-  .menu-page__head > .mode-carousel, .menu-page__head > .menu-page__title, .menu-page__body,
+  .menu-page, .launcher, .panel, .menu-page__head, .launcher__head, .launcher__body,
+  .menu-page__head > *, .menu-page__head .mode-pager__viewport, .menu-page__main,
   .mode-pager__item--active, .briefing__cards > *, .launcher__section-head,
   .launcher__online > .item, .launcher__modes > .item, .launcher__daily > .item,
   .menu-page--mode-enter-next .lobby > *, .menu-page--mode-enter-previous .lobby > *,

@@ -2,7 +2,7 @@
 
 .screen--title {
   flex-direction: column;
-  padding: clamp(20px, 3.5vh, 44px) clamp(22px, 5vw, 88px);
+  padding: clamp(20px, 3.5vh, 44px) clamp(22px, 5vw, 88px) 0;
   background: linear-gradient(110deg, rgb(7 17 34 / 0.97), rgb(11 26 51 / 0.94) 55%, rgb(11 26 51 / 0.87));
 }
 
@@ -14,18 +14,19 @@
   animation: rise 450ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
-/* Keep the title shell at a stable vertical anchor when its right-hand section changes height. */
+/* Share the subpages' frame and footer row so their dividers line up at every viewport size. */
 .screen--title > .launcher {
   display: flex;
-  flex: 1 0 auto;
+  flex: 0 1 auto;
   flex-direction: column;
-  margin: clamp(24px, 8vh, 120px) auto 0;
+  height: var(--menu-frame-height);
+  min-height: 0;
+  margin: var(--menu-frame-offset) auto 0;
+  animation: none;
 }
 
-/* On tall screens the title page stops growing and sits in the middle, like the menu pages. */
-@media (min-height: 1100px) {
-  .screen--title > .launcher { flex: 0 0 auto; min-height: 900px; margin-block: auto; }
-}
+.launcher__head,
+.launcher__body { animation: rise 450ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
 
 .launcher__head {
   display: grid;
@@ -45,7 +46,8 @@
 }
 
 .launcher__body {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
   gap: clamp(28px, 4vw, 64px);
@@ -285,13 +287,15 @@
 }
 
 .launcher__foot {
+  flex: 0 0 auto;
+  min-height: var(--menu-footer-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 16px 24px;
-  padding-top: 22px;
-  margin-top: 24px;
+  padding: 14px 0 max(14px, env(safe-area-inset-bottom));
+  margin-top: 56px;
   border-top: 1px solid rgb(91 125 179 / 0.2);
 }
 
@@ -697,7 +701,8 @@
   white-space: nowrap;
 }
 
-.screen[data-rebuild] .launcher {
+.screen[data-rebuild] .launcher__head,
+.screen[data-rebuild] .launcher__body {
   animation: none;
 }
 
@@ -728,7 +733,8 @@
 }
 
 @media (max-width: 760px) {
-  .screen--title > .launcher { margin: 0 auto; }
+  .screen--title > .launcher { flex: 0 0 auto; height: auto; margin: 0 auto; }
+  .launcher__body { flex: 0 0 auto; }
   .launcher__head { margin-bottom: 26px; }
   .launcher .wordmark { font-size: clamp(68px, 17vw, 116px); }
   .launcher__body { display: flex; flex-direction: column; gap: 24px; }
@@ -748,10 +754,6 @@
   .launcher__language { margin-left: 0; width: 200px; }
   .briefing__crew { margin-top: 14px; }
   .briefing__players { margin-bottom: 20px; }
-}
-
-@media (max-height: 840px) and (min-width: 761px) {
-  .screen--title > .launcher { margin-top: clamp(18px, 4vh, 44px); }
 }
 
 @media (max-width: 520px) {
@@ -814,7 +816,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .launcher { animation: none; }
+  .launcher, .launcher__head, .launcher__body { animation: none; }
   .launcher__modes .item, .launcher__online .item, .briefing__cards .item { transition: none; }
   .launcher__modes .item:hover, .launcher__online .item:hover, .briefing__cards .item:hover { transform: none; }
   .launcher .item__icon, .briefing .item__icon { transition: none; transform: none; }

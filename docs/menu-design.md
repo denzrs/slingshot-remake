@@ -31,6 +31,10 @@ Tastaturhilfe                          Sprache             Version
 
 Der Rahmen des Hauptmenüs – Seitenabstand, Navigation und Fußzeile – bleibt beim Wechsel zwischen Lokal und Online an derselben Stelle. Der Inhaltsbereich reserviert die Höhe des jeweils größeren Bereichs, damit die Fußzeile auch auf kurzen Viewports nicht nach oben springt. Nur der rechte Inhalt wechselt. Lokale Moduskarten öffnen direkt die passende Vorbereitung; die tägliche Herausforderung öffnet ihre Missionsbeschreibung. Es gibt keine zusätzliche Zeile mit Moduszusammenfassung und „Match vorbereiten“.
 
+Hauptmenü und Untermenüs – Flugtraining, Einstellungen, Matchvorbereitung, Crew, Regeln, Daily, Online und Ergebnisse – folgen dem normalen Browserzoom ohne zusätzliche Zoom-Kompensation. Auf Desktop teilen sie dieselbe obere Position, die fließende Rahmenhöhe und eine einheitliche Footer-Zeile. Dadurch bleibt auch die Trennlinie beim Wechsel zwischen Hauptmenü und Unterseiten auf derselben Höhe. Der Rahmen ist 1280 px breit und höchstens 764 px hoch; kleine Viewports verkleinern ihn. Lange Inhalte scrollen darin, während die Aktionen erreichbar bleiben. Zusätzliche Fensterhöhe löst keinen Wechsel zu einem zentrierten 900 px hohen Rahmen oder einer anderen Kartengröße aus.
+
+Eingangsanimationen bewegen nur Überschrift und Hauptinhalt. Die Q/E-Hinweise liegen in einer eigenen, ruhenden Kopfzeile. Sie, die Spieler-/Regelspalte der lokalen Vorbereitung, der Footer und die Trennlinie bleiben auch bei aktivierten Menübewegungen an ihrer Position.
+
 Die Online-Karten führen direkt zur Raumsuche, Raumerstellung oder Code-Eingabe. Die Raumsuche zeigt eigene Lade-, Fehler- und Leerzustände. Die Raumerstellung beginnt mit Modus und Regelvorlage; Raumoptionen und vollständige Regeln bleiben hinter benannten Offenlegungen erreichbar. Code-Eingabe bleibt ein eigener kurzer Ablauf.
 
 ## Vorbereitungen und Crew

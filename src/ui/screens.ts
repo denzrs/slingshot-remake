@@ -391,11 +391,12 @@ export function titleScreen(app: App): Screen {
   const update = (): void => {
     // Measure both sections at the current width and reserve the taller one. This keeps the
     // footer anchored even on short viewports where the content itself cannot fill the shell.
+    // Retain fractional pixels so repeated measurements cannot grow the shell.
     content.style.minHeight = '';
     showSection('local');
-    const localHeight = content.getBoundingClientRect().height;
+    const localHeight = parseFloat(getComputedStyle(content).height);
     showSection('online');
-    const onlineHeight = content.getBoundingClientRect().height;
+    const onlineHeight = parseFloat(getComputedStyle(content).height);
     showSection(launcherSection);
     content.style.minHeight = `${Math.max(localHeight, onlineHeight)}px`;
   };
@@ -416,6 +417,7 @@ export function titleScreen(app: App): Screen {
     hidden: () => launcherSection !== 'local',
     run: () => app.menu.push(prepareModeScreen(app, mode)),
   });
+  window.addEventListener('resize', update);
   return {
     build: () => h('section.screen.screen--title', { 'aria-labelledby': 'wordmark' },
       h('div.launcher', null,
@@ -453,6 +455,7 @@ export function titleScreen(app: App): Screen {
     ],
     focus: launcherSection === 'local' ? 4 : 7,
     update,
+    dispose: () => window.removeEventListener('resize', update),
     onEscape: () => {
       if (launcherSection === 'online') chooseSection('local');
     },

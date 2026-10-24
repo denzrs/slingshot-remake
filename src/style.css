@@ -10,6 +10,10 @@
   --font-display: 'Big Shoulders Stencil Display', 'Arial Narrow', sans-serif;
   --font-body: 'B612', system-ui, sans-serif;
   --font-mono: 'B612 Mono', ui-monospace, monospace;
+  /* Shared geometry keeps the footer divider still when navigating between menus. */
+  --menu-frame-height: clamp(680px, calc(32vh + 432px), 764px);
+  --menu-frame-offset: clamp(18px, min(8vh, max(4vh, calc(34vh - 234px))), 120px);
+  --menu-footer-height: 86px;
   /* Enlarges the touch controls on a touch screen. */
   --ui: 1;
   color-scheme: dark;
