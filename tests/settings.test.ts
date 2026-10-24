@@ -57,16 +57,16 @@ describe('Mayhem settings', () => {
   });
 });
 
-describe('spark flight', () => {
-  it.each(['short', 'medium', 'long'] as const)('keeps %s after saving and reloading', (sparkFlight) => {
+describe('debris', () => {
+  it.each(['low', 'medium', 'high'] as const)('keeps %s after saving and reloading', (debris) => {
     storage();
-    saveSettings({ ...cloneSettings(DEFAULT_SETTINGS), sparkFlight });
-    expect(loadSettings().sparkFlight).toBe(sparkFlight);
+    saveSettings({ ...cloneSettings(DEFAULT_SETTINGS), debris });
+    expect(loadSettings().debris).toBe(debris);
   });
 
-  it.each([undefined, 'endless', 'toString'])('replaces %s with medium', (sparkFlight) => {
-    storage({ sparkFlight });
-    expect(loadSettings().sparkFlight).toBe('medium');
+  it.each([undefined, 'endless', 'toString'])('replaces %s with medium', (debris) => {
+    storage({ debris });
+    expect(loadSettings().debris).toBe('medium');
   });
 });
 

@@ -55,7 +55,7 @@ const sound = new Sound();
 sound.enabled = settings.sound;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const coarsePointer = matchMedia('(pointer: coarse)');
-const effects = new Effects(settings.particles, reducedMotion, settings.sparkFlight);
+const effects = new Effects(settings.particles, reducedMotion, settings.debris);
 const renderer = new Renderer(canvas);
 const menu = new Menu(overlay, sound);
 const recorder = new ClipRecorder();
@@ -335,7 +335,7 @@ const app: App = {
     applyStickSide();
     sound.enabled = settings.sound;
     effects.particles = settings.particles;
-    effects.sparkFlight = settings.sparkFlight;
+    effects.debrisLevel = settings.debris;
     attract.applySettings(settings);
     if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {

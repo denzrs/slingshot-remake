@@ -1,4 +1,4 @@
-import { COLORS, FIELD, FONTS, PHYSICS, SPARK_FLIGHT, type SparkFlight } from '../config';
+import { COLORS, DEBRIS, FIELD, FONTS, PHYSICS, type Debris } from '../config';
 import type { World } from '../physics';
 import { rgba } from './color';
 import { fillTextUpright, strokeTextUpright } from './orientation';
@@ -25,7 +25,7 @@ interface GravityBody {
 }
 
 const MAX_SPARKS = 1800;
-/** A spark's drag on the shortest flight; the spark flight setting scales it down from there. */
+/** A spark's drag at low debris; the debris setting scales it down from there. */
 const SPARK_DRAG = 0.12;
 const MAX_MOTES = 240;
 /** Debris that drifts this far from the middle of the field is gone for good: nothing pulls it back. */
@@ -107,12 +107,12 @@ export class Effects {
   constructor(
     public particles: boolean,
     private readonly reducedMotion: boolean,
-    public sparkFlight: SparkFlight,
+    public debrisLevel: Debris,
   ) {}
 
   /** The drag a new spark gets: sparks already flying keep theirs when the setting changes. */
   private get sparkDrag(): number {
-    return SPARK_DRAG * SPARK_FLIGHT[this.sparkFlight];
+    return SPARK_DRAG * DEBRIS[this.debrisLevel];
   }
 
   clear(): void {
