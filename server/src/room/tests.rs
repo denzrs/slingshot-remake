@@ -2197,3 +2197,138 @@ fn a_drop_in_a_waiting_room_still_frees_the_seat_at_once() {
     let update = take_type(&drain_json(&mut host_rx), "room_update");
     assert_eq!(update["room"]["players"].as_array().unwrap().len(), 1);
 }
+
+fn state(seq: u64) -> Vec<u8> {
+    let payload = rmp_serde::to_vec_named(&json!({"patch":{},"events":[]})).unwrap();
+    crate::codec::state_frame(seq, &payload)
+}
+
+fn states(rx: &mut mpsc::Receiver<crate::codec::WireMessage>) -> Vec<Value> {
+    drain_json(rx)
+        .into_iter()
+        .map(|m| m["seq"].clone())
+        .filter(|seq| !seq.is_null())
+        .collect()
+}
+
+#[test]
+fn the_host_s_state_goes_through_the_room_s_relay_while_the_room_manager_is_held() {
+    let mut rooms = RoomManager::new();
+    let (_room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    let slot = rooms.relay_slot(1).unwrap();
+    let manager = parking_lot::Mutex::new(rooms);
+    let _held = manager.lock();
+    let relay = slot.get().expect("a running game's host has a relay");
+    assert_eq!(relay.forward(1, 1, &state(1)), Forward::Sent);
+    assert_eq!(states(&mut guest_rx), vec![json!(1)]);
+    assert_eq!(
+        relay.forward(1, 1, &state(1)),
+        Forward::Refused("State sequence must increase monotonically")
+    );
+    assert_eq!(relay.forward(2, 2, &state(2)), Forward::NotHost);
+    assert!(states(&mut guest_rx).is_empty());
+}
+
+#[test]
+fn who_hears_a_room_s_relay_follows_who_is_in_the_room() {
+    let mut rooms = RoomManager::new();
+    let (room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
+    let mut fan_rx = connect(&mut rooms, 3);
+    rooms.handle(
+        3,
+        &json!({"type":"join_room","roomId":room_id,"name":"Fan","spectate":true}),
+    );
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    drain_json(&mut fan_rx);
+    let relay = rooms.relay_slot(1).unwrap().get().unwrap();
+
+    // A spectator who walks in mid-game hears the next frame.
+    assert_eq!(relay.forward(1, 1, &state(1)), Forward::Sent);
+    assert_eq!(states(&mut guest_rx), vec![json!(1)]);
+    assert_eq!(states(&mut fan_rx), vec![json!(1)]);
+
+    // Whoever leaves hears no more, and their connection points at no relay.
+    rooms.handle(3, &json!({"type":"leave_room"}));
+    assert!(rooms.relay_slot(3).unwrap().get().is_none());
+    assert_eq!(relay.forward(1, 2, &state(2)), Forward::Sent);
+    assert_eq!(states(&mut guest_rx), vec![json!(2)]);
+    assert!(states(&mut fan_rx).is_empty());
+
+    // A dropped guest's seat is held, but the old connection hears nothing.
+    rooms.disconnect(2);
+    assert_eq!(relay.forward(1, 3, &state(3)), Forward::Sent);
+    assert!(states(&mut guest_rx).is_empty());
+
+    // Once the room is gone, so is its relay: the host's frames go nowhere and nobody is told twice.
+    rooms.handle(1, &json!({"type":"leave_room"}));
+    assert!(!rooms.rooms.contains_key(&room_id));
+    assert!(rooms.relay_slot(1).unwrap().get().is_none());
+    assert_eq!(relay.forward(1, 4, &state(4)), Forward::NotHost);
+    rooms.handle_state_envelope(1, 4, &state(4));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "You are not in a running game"
+    );
+}
+
+#[test]
+fn a_new_game_in_the_room_starts_the_state_sequence_over() {
+    let mut rooms = RoomManager::new();
+    let (room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
+    rooms.handle_state_envelope(1, 40, &state(40));
+    assert_eq!(states(&mut guest_rx), vec![json!(40)]);
+
+    rooms.reset_to_waiting(&room_id);
+    rooms.handle(2, &json!({"type":"ready","ready":true}));
+    // Between games the host's frames are refused as before.
+    rooms.handle_state_envelope(1, 41, &state(41));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "You are not in a running game"
+    );
+    rooms.handle(1, &json!({"type":"start_game"}));
+    drain_json(&mut guest_rx);
+    rooms.handle_state_envelope(1, 1, &state(1));
+    assert_eq!(states(&mut guest_rx), vec![json!(1)]);
+}
+
+#[test]
+fn a_seat_token_is_found_without_looking_through_the_rooms_and_forgotten_with_its_room() {
+    let mut rooms = RoomManager::new();
+    let (room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
+    let token = rooms.rooms[&room_id].players[1].token.clone();
+    assert_eq!(rooms.tokens.get(&token), Some(&room_id));
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+
+    rooms.disconnect(2);
+    let mut back_rx = connect(&mut rooms, 7);
+    rooms.handle(7, &json!({"type":"resume","token":token}));
+    assert_eq!(
+        take_type(&drain_json(&mut back_rx), "room_update")["you"]["playerId"],
+        1
+    );
+    // The seat's new connection hears the host's frames.
+    rooms.handle_state_envelope(1, 1, &state(1));
+    assert_eq!(states(&mut back_rx), vec![json!(1)]);
+
+    rooms.handle(1, &json!({"type":"leave_room"}));
+    assert!(rooms.tokens.is_empty());
+    assert!(rooms.wires.is_empty());
+}
+
+#[test]
+fn a_closed_connection_is_sent_nothing_by_a_relay_that_has_not_heard_yet() {
+    let mut rooms = RoomManager::new();
+    let (_room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
+    drain_json(&mut host_rx);
+    let relay = rooms.relay_slot(1).unwrap().get().unwrap();
+    // Closed under the room manager, without the room being synced: the relay still lists the guest.
+    rooms.net.close(2);
+    drain_json(&mut guest_rx);
+    assert_eq!(relay.forward(1, 1, &state(1)), Forward::Sent);
+    assert!(states(&mut guest_rx).is_empty());
+}

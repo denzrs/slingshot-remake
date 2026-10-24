@@ -69,7 +69,6 @@ impl RoomManager {
             return;
         };
         room.status = RoomStatus::Waiting;
-        room.last_state_seq = -1;
         for player in room.players.iter_mut() {
             player.ready = false;
         }

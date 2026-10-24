@@ -102,7 +102,7 @@ impl RoomManager {
             .collect()
     }
 
-    pub fn create_room(&mut self, conn: u64, create: CreateRoom, prehashed: Option<Hashed>) {
+    pub(super) fn open_room(&mut self, conn: u64, create: CreateRoom, prehashed: Option<Hashed>) {
         if self.is_placed(conn) {
             self.error(conn, "Leave your current room before creating another");
             return;
@@ -176,7 +176,7 @@ impl RoomManager {
                 status: RoomStatus::Waiting,
                 players: Vec::new(),
                 next_player_id: 0,
-                last_state_seq: -1,
+                game: 0,
                 password,
                 created_order,
                 spectators: Vec::new(),
@@ -192,7 +192,7 @@ impl RoomManager {
         self.broadcast_lobby();
     }
 
-    pub fn join_room(&mut self, conn: u64, join: JoinRoom, preverified: Option<bool>) {
+    pub(super) fn enter_room(&mut self, conn: u64, join: JoinRoom, preverified: Option<bool>) {
         if self.is_placed(conn) {
             self.error(conn, "Leave your current room before joining another");
             return;
@@ -410,6 +410,7 @@ impl RoomManager {
             };
             info!(room = %room_id, seat = player_id, "held seat expired");
             self.give_up_seat(&room_id, player_id, None, "A player disconnected");
+            self.sync_room(&room_id);
         }
     }
 
@@ -422,12 +423,16 @@ impl RoomManager {
             self.error(conn, "You are already in a room");
             return;
         }
-        let found = self.rooms.values().find_map(|room| {
-            room.players
-                .iter()
-                .find(|p| !p.token.is_empty() && p.token == token)
-                .map(|p| (room.id.clone(), p.id))
-        });
+        let found = self
+            .tokens
+            .get(&token)
+            .and_then(|room_id| self.rooms.get(room_id))
+            .and_then(|room| {
+                room.players
+                    .iter()
+                    .find(|p| !p.token.is_empty() && p.token == token)
+                    .map(|p| (room.id.clone(), p.id))
+            });
         let Some((room_id, player_id)) = found else {
             self.send_value(
                 conn,

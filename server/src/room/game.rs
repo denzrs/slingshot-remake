@@ -86,7 +86,7 @@ impl RoomManager {
             return;
         }
         room.status = RoomStatus::Playing;
-        room.last_state_seq = -1;
+        room.game += 1;
         let seed: u32 = rand::thread_rng().gen();
         room.seed = seed;
         room.match_id = format!("{:016x}", rand::thread_rng().gen::<u64>());
@@ -296,30 +296,14 @@ impl RoomManager {
             self.error(conn, "Only the room host can send state");
             return;
         }
-        if seq > 9_007_199_254_740_991 {
-            self.error(conn, "Invalid state sequence");
+        let Some(relay) = self.relay_of(&room_id) else {
+            self.error(conn, "You are not in a running game");
             return;
-        }
-        let seq = seq as i64;
-        let last_seq = self
-            .rooms
-            .get(&room_id)
-            .map(|room| room.last_state_seq)
-            .unwrap_or(0);
-        if seq <= last_seq {
-            self.error(conn, "State sequence must increase monotonically");
-            return;
-        }
-        self.rooms.get_mut(&room_id).unwrap().last_state_seq = seq;
-        let recipients: Vec<u64> = self
-            .rooms
-            .get(&room_id)
-            .map(|room| room.recipients().filter(|other| *other != conn).collect())
-            .unwrap_or_default();
-        // Copied once, here, and shared by every recipient's queue.
-        let frame = crate::codec::Frame::from(bytes);
-        for recipient in recipients {
-            self.send_fast(recipient, &frame);
+        };
+        match relay.forward(conn, seq, bytes) {
+            super::Forward::Sent => {}
+            super::Forward::Refused(reason) => self.error(conn, reason),
+            super::Forward::NotHost => self.error(conn, "Only the room host can send state"),
         }
     }
 }
