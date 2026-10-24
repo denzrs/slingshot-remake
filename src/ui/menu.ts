@@ -36,7 +36,7 @@ interface Live {
 }
 
 export type MenuItem =
-  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; className?: string; /** Small second line under the label. */ hint?: string; /** A status line below the hint, refreshed with the rest of the menu. */ status?: () => string; /** Turn the status badge into a separate reset action. */ statusAction?: () => void; statusActionLabel?: string; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; /** Keeps conditional actions out of both sight and keyboard focus. */ hidden?: () => boolean; disabled?: boolean | (() => boolean) })
+  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; className?: string; /** Small second line under the label. */ hint?: string; /** A status line below the hint, refreshed with the rest of the menu. */ status?: () => string; /** Turn the status badge into a separate reset action. */ statusAction?: () => void; statusActionLabel?: string | (() => string); /** The status action waits for a second click before it acts. */ statusConfirming?: () => boolean; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; /** Keeps conditional actions out of both sight and keyboard focus. */ hidden?: () => boolean; disabled?: boolean | (() => boolean) })
   | (Placed &
       Live & {
         /** Cycles through its options; the arrows at its sides go back and forth. */
@@ -421,7 +421,8 @@ export class Menu {
         if (shell) shell.dataset.section = item.section ?? '';
         const statusButton = item.status && item.statusAction ? document.createElement('button') : null;
         const statusCount = statusButton ? Object.assign(document.createElement('span'), { className: 'item__status-count' }) : null;
-        const statusAction = statusButton ? Object.assign(document.createElement('span'), { className: 'item__status-action', textContent: item.statusActionLabel ?? '' }) : null;
+        const actionLabel = (): string => (typeof item.statusActionLabel === 'function' ? item.statusActionLabel() : item.statusActionLabel ?? '');
+        const statusAction = statusButton ? Object.assign(document.createElement('span'), { className: 'item__status-action', textContent: actionLabel() }) : null;
         if (statusButton && shell && statusCount && statusAction) {
           statusButton.type = 'button';
           statusButton.className = 'item__status item__status-reset';
@@ -458,9 +459,14 @@ export class Menu {
             }
             const text = item.status?.() ?? '';
             if (statusButton) {
+              const label = actionLabel();
+              const confirming = item.statusConfirming?.() ?? false;
               statusCount!.textContent = text;
+              statusAction!.textContent = label;
               statusButton.hidden = !text;
-              statusButton.setAttribute('aria-label', text ? `${text}. ${item.statusActionLabel ?? ''}` : '');
+              statusButton.setAttribute('aria-label', text && label ? `${text}. ${label}` : text);
+              statusButton.classList.toggle('is-confirming', confirming);
+              shell?.classList.toggle('is-confirming', confirming);
               shell?.classList.toggle('is-modified', !!text);
               b.classList.toggle('is-modified', !!text);
             } else if (status) {

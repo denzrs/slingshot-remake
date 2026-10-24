@@ -3,6 +3,7 @@ import { COLORS, GALLERY, MAX_PLAYERS, TEAMS } from '../config';
 import { relayText, t, type Key } from '../i18n';
 import { canCopyInvite, inviteJoinAttempt, inviteLink, readInvite, shouldAutoConnectInvite, withoutInvite, withoutInvitePassword } from '../invite';
 import { defaultRoomRules, loadLobbyPrefs, saveLobbyPrefs } from '../lobbyPrefs';
+import { CONFIRM_OVERWRITE_MS, loadCustomPreset, saveCustomPreset } from '../customPresets';
 import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multiplayer';
 import { ConnectError, type LobbyRoom, type NetworkCpuLevel, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules } from '../net';
 import type { RoomLook, RoomVisibility } from '../roomLook';
@@ -603,7 +604,9 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const copyRules = (rules: RoomRules): RoomRules => ({ ...rules, powerUpKinds: [...rules.powerUpKinds] });
   const rememberMatchingCreatePreset = (pick: ReturnType<typeof pickOfTheDay>) => {
     const picked = samePick(matchingHandpicked(prefs.rules, prefs.gameMode), pick);
-    const preset = matchingPreset(prefs.rules, prefs.gameMode) ?? (picked ? 'handpicked' : undefined);
+    const custom = loadCustomPreset(prefs.gameMode);
+    const mine = !!custom && presetChangeCount(prefs.rules, custom, prefs.gameMode, true) === 0;
+    const preset = matchingPreset(prefs.rules, prefs.gameMode) ?? (picked ? 'handpicked' : mine ? 'custom' : undefined);
     selectedCreatePreset = preset ? { id: preset, mode: prefs.gameMode, rules: copyRules(prefs.rules) } : undefined;
   };
   /** Everybody but the host sees the game and its rules as the host set them, locked. */
@@ -654,12 +657,43 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       createQuickControls.forEach((control) => control.refresh());
     });
     createRules.replaceChildren(createRulesForm.el);
+    let custom = loadCustomPreset(prefs.gameMode);
+    const isCustom = (): boolean => !!custom && presetChangeCount(prefs.rules, custom, prefs.gameMode, true) === 0;
+    /** Rules that no card holds as they are: an edited preset, worth keeping as "My rules". */
+    const unsaved = (): boolean =>
+      !matchingPreset(prefs.rules, prefs.gameMode) && !samePick(matchingHandpicked(prefs.rules, prefs.gameMode), pick) && !isCustom();
+    /** Replacing saved rules takes a second click; the first one only asks. It lapses after a while, or once the rules change. */
+    let confirming: { rules: string; timer: ReturnType<typeof setTimeout> } | null = null;
+    const stopConfirming = () => {
+      if (confirming) clearTimeout(confirming.timer);
+      confirming = null;
+    };
+    const isConfirming = (): boolean => {
+      if (confirming && confirming.rules !== JSON.stringify(prefs.rules)) stopConfirming();
+      return !!confirming;
+    };
+    const saveCustom = () => {
+      if (readOnly() || isCustom()) return;
+      if (custom && !isConfirming()) {
+        confirming = { rules: JSON.stringify(prefs.rules), timer: setTimeout(() => { confirming = null; paintCreatePresetState(); }, CONFIRM_OVERWRITE_MS) };
+        paintCreatePresetState();
+        return;
+      }
+      stopConfirming();
+      const wasEmpty = !custom;
+      saveCustomPreset(prefs.gameMode, prefs.rules);
+      custom = loadCustomPreset(prefs.gameMode);
+      selectedCreatePreset = { id: 'custom', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+      // The empty card's hint said how to fill it; the full one says what it holds.
+      if (wasEmpty) buildCreateRules();
+      else paintCreatePresetState();
+    };
     const choices: { id: string; card: HTMLButtonElement; shell: HTMLDivElement; status: HTMLButtonElement; count: HTMLSpanElement }[] = [];
     const addPreset = (id: string, label: string, hint: string, art: SVGElement, apply: () => void, featured = false) => {
       const shell = h('div.briefing__preset-shell', null) as HTMLDivElement;
       const status = h('button.item__status.item__status-reset', { type: 'button', hidden: '' },
         h('span.item__status-count', null),
-        h('span.item__status-action', null, t('preset.resetAction')),
+        h('span.item__status-action', null, t(id === 'custom' ? 'preset.custom.save' : 'preset.resetAction')),
       ) as HTMLButtonElement;
       const count = status.querySelector<HTMLSpanElement>('.item__status-count')!;
       const card = h('button.item.item--card.lobby__preset', { type: 'button', 'aria-pressed': 'false' },
@@ -676,9 +710,10 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       status.addEventListener('click', (event) => {
         event.stopPropagation();
         if (status.hidden || readOnly()) return;
-        resetCreatePresetChanges();
+        if (id === 'custom') saveCustom();
+        else resetCreatePresetChanges();
         sound.select();
-        card.focus({ preventScroll: true });
+        createPresetCards.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus({ preventScroll: true });
       });
       card.addEventListener('click', () => {
         if (readOnly()) return;
@@ -706,17 +741,31 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       selectedCreatePreset = { id: 'handpicked', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
       rebuildIfGameChanged(before);
     }, true);
+    addPreset('custom', t('preset.custom'), t(custom ? 'preset.custom.hint' : 'preset.custom.empty'), modeArt('custom'), () => {
+      if (!custom) return saveCustom();
+      stopConfirming();
+      prefs.rules = { ...custom, powerUpKinds: [...custom.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+      selectedCreatePreset = { id: 'custom', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+    });
     createPresetCards.replaceChildren(...choices.map(({ shell }) => shell));
     paintCreatePresetState = () => {
       const selection = selectedCreatePreset?.mode === prefs.gameMode ? selectedCreatePreset : undefined;
       const changes = selection ? presetChangeCount(prefs.rules, selection.rules, prefs.gameMode, true) : 0;
-      choices.forEach(({ id, card, status, count }) => {
+      choices.forEach(({ id, card, shell, status, count }) => {
         const selected = id === selection?.id;
-        const cardChanges = selected ? changes : 0;
-        const text = cardChanges === 1 ? t('preset.modified.one') : cardChanges > 1 ? t('preset.modified.many', { n: cardChanges }) : '';
+        const mine = id === 'custom';
+        const cardChanges = selected && !mine ? changes : 0;
+        const asking = mine && isConfirming();
+        const text = mine
+          ? !unsaved() ? '' : asking ? t('preset.custom.confirm') : t('preset.custom.unsaved')
+          : cardChanges === 1 ? t('preset.modified.one') : cardChanges > 1 ? t('preset.modified.many', { n: cardChanges }) : '';
+        const label = t(!mine ? 'preset.resetAction' : asking ? 'preset.custom.overwrite' : 'preset.custom.save');
         count.textContent = text;
-        status.hidden = cardChanges === 0 || readOnly();
-        status.setAttribute('aria-label', text ? `${text}. ${t('preset.resetAction')}` : '');
+        status.querySelector('.item__status-action')!.textContent = label;
+        status.hidden = !text || readOnly();
+        status.setAttribute('aria-label', text && label ? `${text}. ${label}` : text);
+        status.classList.toggle('is-confirming', asking);
+        shell.classList.toggle('is-confirming', asking);
         card.classList.toggle('is-modified', cardChanges > 0);
         card.setAttribute('aria-pressed', String(selected));
       });

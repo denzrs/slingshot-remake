@@ -3,7 +3,8 @@ import { ChallengeMatch, teamName, type Match, type Mode, type VersusMode } from
 import { oracleAwards } from '../game/oracle';
 import { fmtInt, fmtNum, LANGS, t, tn, type Key, type Lang } from '../i18n';
 import { rulesOf } from '../lobbyPrefs';
-import type { StatsReplay } from '../net';
+import { CONFIRM_OVERWRITE_MS, loadCustomPreset, saveCustomPreset } from '../customPresets';
+import type { RoomRules, StatsReplay } from '../net';
 import { roundTitle } from '../mayhem';
 import { awardLabel, awardValue, awardWho } from '../scorecard';
 import { STYLE_MULTIPLIER, styleLabel } from '../scoring';
@@ -706,12 +707,45 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
   const presets = presetsForMode(mode);
   const pick = pickOfTheDay(mode, app.today());
   const selectionState = localPresetSelectionState(app, mode);
+  let custom = loadCustomPreset(mode);
+  const isCustom = (rules: RoomRules): boolean => !!custom && presetChangeCount(rules, custom, mode) === 0;
   if (!selectionState.current) {
     const initialRules = rulesOf(s);
     const initialPick = matchingHandpicked(initialRules, mode);
-    const initialPreset = matchingPreset(initialRules, mode) ?? (samePick(initialPick, pick) ? 'handpicked' : undefined);
+    const initialPreset = matchingPreset(initialRules, mode) ?? (samePick(initialPick, pick) ? 'handpicked' : isCustom(initialRules) ? 'custom' : undefined);
     if (initialPreset) selectionState.current = { id: initialPreset, rules: initialRules };
   }
+  /** Replacing saved rules takes a second click; the first one only asks. It lapses after a while, or once the rules change. */
+  /** Rules that no card holds as they are: an edited preset, worth keeping as "My rules". */
+  const unsaved = (): boolean => {
+    const rules = rulesOf(s);
+    return !matchingPreset(rules, mode) && !samePick(matchingHandpicked(rules, mode), pick) && !isCustom(rules);
+  };
+  /** Replacing saved rules takes a second click; the first one only asks. It lapses after a while, or once the rules change. */
+  let confirming: { rules: string; timer: ReturnType<typeof setTimeout> } | null = null;
+  const stopConfirming = (): void => {
+    if (confirming) clearTimeout(confirming.timer);
+    confirming = null;
+  };
+  const isConfirming = (): boolean => {
+    if (confirming && confirming.rules !== JSON.stringify(rulesOf(s))) stopConfirming();
+    return !!confirming;
+  };
+  const saveCustom = (): void => {
+    if (isCustom(rulesOf(s))) return;
+    if (custom && !isConfirming()) {
+      confirming = { rules: JSON.stringify(rulesOf(s)), timer: setTimeout(() => { confirming = null; app.menu.refresh(); }, CONFIRM_OVERWRITE_MS) };
+      app.menu.refresh();
+      return;
+    }
+    stopConfirming();
+    const wasEmpty = !custom;
+    custom = rulesOf(s);
+    saveCustomPreset(mode, custom);
+    selectionState.current = { id: 'custom', rules: rulesOf(s) };
+    // The empty card's hint said how to fill it; the full one says what it holds.
+    if (wasEmpty) app.menu.rebuild(); else app.menu.refresh();
+  };
   const modifiedStatus = (id: string): string => {
     if (selectionState.current?.id !== id) return '';
     const changes = presetChangeCount(rulesOf(s), selectionState.current.rules, mode);
@@ -751,6 +785,61 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
     powerups.update();
   };
   let disposeModeCarousel = (): void => {};
+  const items: MenuItem[] = [
+    ...modePagerItems(app, mode),
+    ...presets.map((preset): MenuItem => ({
+      kind: 'action', section: 'presets', label: t(`preset.${preset}` as Key), hint: t(presetHintKey(preset, mode)),
+      icon: () => presetArt(preset, mode),
+      selected: () => selectionState.current?.id === preset,
+      status: () => modifiedStatus(preset),
+      statusActionLabel: t('preset.resetAction'),
+      statusAction: () => resetPresetChanges(preset),
+      run: () => {
+        Object.assign(s, presetRules(preset, mode));
+        selectionState.current = { id: preset, rules: rulesOf(s) };
+        app.settingsChanged(); app.menu.refresh();
+      },
+    })),
+    {
+      kind: 'action', section: 'presets', label: pickName(pick), className: 'item--pick',
+      tag: t('preset.pick.today'), hint: pickHint(pick),
+      icon: () => pickArt(pick),
+      selected: () => selectionState.current?.id === 'handpicked',
+      status: () => modifiedStatus('handpicked'),
+      statusActionLabel: t('preset.resetAction'),
+      statusAction: () => resetPresetChanges('handpicked'),
+      run: () => {
+        Object.assign(s, pick.rules);
+        selectionState.current = { id: 'handpicked', rules: rulesOf(s) };
+        app.settingsChanged(); app.menu.refresh();
+      },
+    },
+    {
+      kind: 'action', section: 'presets', label: t('preset.custom'), className: 'item--custom',
+      hint: t(custom ? 'preset.custom.hint' : 'preset.custom.empty'),
+      icon: () => modeArt('custom'),
+      selected: () => selectionState.current?.id === 'custom',
+      status: () => (!unsaved() ? '' : isConfirming() ? t('preset.custom.confirm') : t('preset.custom.unsaved')),
+      statusActionLabel: () => t(isConfirming() ? 'preset.custom.overwrite' : 'preset.custom.save'),
+      statusConfirming: isConfirming,
+      statusAction: saveCustom,
+      run: () => {
+        if (!custom) return saveCustom();
+        stopConfirming();
+        Object.assign(s, custom, { powerUpKinds: [...custom.powerUpKinds], betting: s.betting, chatPlayersOnly: s.chatPlayersOnly });
+        selectionState.current = { id: 'custom', rules: rulesOf(s) };
+        app.settingsChanged(); app.menu.refresh();
+      },
+    },
+    ...quick.map(({ item }): MenuItem => ({ ...item, section: 'quick' })),
+    { ...mayhem.item, section: 'quick-mayhem' },
+    { kind: 'action', section: 'players', label: t('briefing.editCrew'), run: () => openPlayers(app) },
+    { kind: 'action', section: 'edit', label: t('briefing.editRules'), run: () => app.menu.push(() => rulesScreen(app, mode, (rules) => {
+      selectionState.current = { id: rules.mayhem ? 'mayhem' : 'standard', rules };
+    })) },
+    { kind: 'action', section: 'actions', label: t('common.back'), run: () => app.menu.back() },
+    { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(mode) },
+  ];
   return {
     build: () => {
       const page = menuPage({
@@ -783,47 +872,10 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
       disposeModeCarousel = () => { stopNavigation(); stopCarousel(); };
       return page;
     },
-    dispose: () => disposeModeCarousel(),
-    items: [
-      ...modePagerItems(app, mode),
-      ...presets.map((preset): MenuItem => ({
-        kind: 'action', section: 'presets', label: t(`preset.${preset}` as Key), hint: t(presetHintKey(preset, mode)),
-        icon: () => presetArt(preset, mode),
-        selected: () => selectionState.current?.id === preset,
-        status: () => modifiedStatus(preset),
-        statusActionLabel: t('preset.resetAction'),
-        statusAction: () => resetPresetChanges(preset),
-        run: () => {
-          Object.assign(s, presetRules(preset, mode));
-          selectionState.current = { id: preset, rules: rulesOf(s) };
-          app.settingsChanged(); app.menu.refresh();
-        },
-      })),
-      {
-        kind: 'action', section: 'presets', label: pickName(pick), className: 'item--pick',
-        tag: t('preset.pick.today'), hint: pickHint(pick),
-        icon: () => pickArt(pick),
-        selected: () => selectionState.current?.id === 'handpicked',
-        status: () => modifiedStatus('handpicked'),
-        statusActionLabel: t('preset.resetAction'),
-        statusAction: () => resetPresetChanges('handpicked'),
-        run: () => {
-          Object.assign(s, pick.rules);
-          selectionState.current = { id: 'handpicked', rules: rulesOf(s) };
-          app.settingsChanged(); app.menu.refresh();
-        },
-      },
-      ...quick.map(({ item }): MenuItem => ({ ...item, section: 'quick' })),
-      { ...mayhem.item, section: 'quick-mayhem' },
-      { kind: 'action', section: 'players', label: t('briefing.editCrew'), run: () => openPlayers(app) },
-      { kind: 'action', section: 'edit', label: t('briefing.editRules'), run: () => app.menu.push(() => rulesScreen(app, mode, (rules) => {
-        selectionState.current = { id: rules.mayhem ? 'mayhem' : 'standard', rules };
-      })) },
-      { kind: 'action', section: 'actions', label: t('common.back'), run: () => app.menu.back() },
-      { kind: 'action', section: 'actions', label: t('setup.start'), primary: true, run: () => app.start(mode) },
-    ],
+    dispose: () => { stopConfirming(); disposeModeCarousel(); },
+    items,
     // Enter keeps the quick route into the game; the presets remain a click or arrow away.
-    focus: MAIN_MODES.length + 1 + presets.length + quick.length + 1 + 3,
+    focus: items.length - 1,
     update,
   };
 }
