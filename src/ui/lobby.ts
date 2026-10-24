@@ -358,6 +358,25 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const connection = h('div.online-connection', null,
     h('div.online-connection__status', null, h('span.online-connection__text', null, connectionLabel, connectionServer)), disconnectButton,
   );
+  /** True once the relay has answered while this page was open; the page opening on a live connection is not news. */
+  let wasConnected: boolean | null = null;
+  let linkedTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A reconnect the player did not ask for: the page waits for it instead of showing a connect card for a moment. */
+  let quietConnect = false;
+  /** The connection coming up or going away: one ping on the status dot, and what the card made room for fades in. */
+  const flashConnection = (state: 'is-linked' | 'is-dropped'): void => {
+    lobbyEl.classList.remove('lobby--linked');
+    connection.classList.remove('is-linked', 'is-dropped');
+    void connection.offsetWidth;
+    // While the page is still building itself up, the content fade would be a second entrance.
+    if (page.classList.contains('menu-page--entered')) lobbyEl.classList.add('lobby--linked');
+    connection.classList.add(state);
+    clearTimeout(linkedTimer);
+    linkedTimer = setTimeout(() => {
+      lobbyEl.classList.remove('lobby--linked');
+      connection.classList.remove('is-linked', 'is-dropped');
+    }, 1400);
+  };
   const bar = h('div.online-identity', null, profile, connection);
   const connectSlot = h('div', null, connectView);
 
@@ -1016,6 +1035,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     ];
     if (!hints.length && you.host && !guestsReady) hints.push(t('multiplayer.startNeedReady'));
     startHint.textContent = hints.join('\n');
+  const lobbyEl = h('div.lobby', null, bar, connectSlot, roomsView, openForms, roomView, status);
     startHint.hidden = !hints.length;
     start.classList.toggle('lobby__button--primary', you.host);
   };
@@ -1039,7 +1059,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const root = menuPage({
     title: t(({ rooms: 'flow.find', create: 'flow.create', code: 'flow.code' } as const)[view]), eyebrow: t('launcher.online'), intro: t(({ rooms: 'flow.findHint', create: 'flow.createIntro', code: 'flow.codeIntro' } as const)[view]), className: 'menu-page--lobby menu-page--mode-enter-next',
     headerTitle: onlineHeader,
-    body: [h('div.lobby', null, bar, connectSlot, roomsView, openForms, roomView, status)], footer: footerActions, keys: t('flow.tabKeys'),
+    body: [lobbyEl], footer: footerActions, keys: t('flow.tabKeys'),
   });
   const page = root.querySelector<HTMLElement>('.menu-page')!;
   const eyebrow = root.querySelector<HTMLElement>('.menu-page__head .eyebrow')!;
@@ -1118,6 +1138,9 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     if (inviteInUrl) history.replaceState(null, '', withoutInvite(location.href));
     inviteInUrl = false;
     inviteNote = null;
+    connection.classList.toggle('is-connecting', connecting && !connected && !hosted);
+    if (wasConnected !== null && connected !== wasConnected) flashConnection(connected ? 'is-linked' : 'is-dropped');
+    wasConnected = connected;
     invitePending = false;
   };
 
@@ -1164,8 +1187,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     status.classList.toggle('is-busy', connecting);
     status.hidden = !message;
 
-    connectView.hidden = connected || (hosted && !retry);
-    connectSlot.hidden = connected || !!room;
+    connectView.hidden = connected || (hosted && !retry) || quietConnect;
+    connectSlot.hidden = connected || !!room || quietConnect;
     codeView.hidden = !(browsing && view === 'code');
     roomsView.hidden = !(browsing && view === 'rooms');
     createView.hidden = !(browsing && view === 'create');
@@ -1198,6 +1221,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     roomDialog?.close();
     roomDialog = null;
 
+    quietConnect = silent;
     barName.append(nameField);
     connectButton.disabled = connecting;
     serverAddress.disabled = connecting;
@@ -1209,6 +1233,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     const params = { server: error.url };
     if (error.reason === 'timeout') return t('multiplayer.connectTimeout', params);
     if (error.reason === 'closed') return t('multiplayer.connectClosed', params);
+    quietConnect = false;
     return t('multiplayer.connectUnreachable', params);
   };
 
@@ -1387,12 +1412,14 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
         }
         render();
       });
-      render();
-      enterTimer = setTimeout(() => endEntrance(), 900);
       // Reconnect to a previously used relay. A different relay named by an invite requires an explicit click.
       // Deferred until the screen is in the DOM — the session's updates only reach a mounted screen.
       const mayAutoConnect = shouldAutoConnectInvite(invited, prefs.server) && (prefs.autoConnect || !!invited);
-      if (!session.connected && !session.connecting && !session.room && (configuredServer || mayAutoConnect)) setTimeout(() => void connect(true), 0);
+      const reconnect = !session.connected && !session.connecting && !session.room && (configuredServer || mayAutoConnect);
+      quietConnect = reconnect;
+      render();
+      enterTimer = setTimeout(() => endEntrance(), 900);
+      if (reconnect) setTimeout(() => void connect(true), 0);
       focusOnlineSection();
       return root;
     },
