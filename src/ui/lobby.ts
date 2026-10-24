@@ -603,7 +603,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const copyRules = (rules: RoomRules): RoomRules => ({ ...rules, powerUpKinds: [...rules.powerUpKinds] });
   const rememberMatchingCreatePreset = (pick: ReturnType<typeof pickOfTheDay>) => {
     const picked = samePick(matchingHandpicked(prefs.rules, prefs.gameMode), pick);
-    const preset = picked ? 'handpicked' : matchingPreset(prefs.rules, prefs.gameMode);
+    const preset = matchingPreset(prefs.rules, prefs.gameMode) ?? (picked ? 'handpicked' : undefined);
     selectedCreatePreset = preset ? { id: preset, mode: prefs.gameMode, rules: copyRules(prefs.rules) } : undefined;
   };
   /** Everybody but the host sees the game and its rules as the host set them, locked. */
@@ -693,6 +693,12 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       });
       choices.push({ id, card, shell, status, count });
     };
+    for (const preset of presets) {
+      addPreset(preset, t(`preset.${preset}`), t(presetHintKey(preset, prefs.gameMode)), presetArt(preset, prefs.gameMode), () => {
+        prefs.rules = { ...presetRules(preset, prefs.gameMode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+        selectedCreatePreset = { id: preset, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+      });
+    }
     addPreset('handpicked', pickName(pick), pickHint(pick), pickArt(pick), () => {
       const before = gameKey();
       prefs.gameMode = pick.base;
@@ -700,12 +706,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       selectedCreatePreset = { id: 'handpicked', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
       rebuildIfGameChanged(before);
     }, true);
-    for (const preset of presets) {
-      addPreset(preset, t(`preset.${preset}`), t(presetHintKey(preset, prefs.gameMode)), presetArt(preset, prefs.gameMode), () => {
-        prefs.rules = { ...presetRules(preset, prefs.gameMode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
-        selectedCreatePreset = { id: preset, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
-      });
-    }
     createPresetCards.replaceChildren(...choices.map(({ shell }) => shell));
     paintCreatePresetState = () => {
       const selection = selectedCreatePreset?.mode === prefs.gameMode ? selectedCreatePreset : undefined;
@@ -771,13 +771,13 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   // The controls redraw themselves; the room and rule summaries follow their values.
   const env: Env = { sound, changed: () => {} };
   const currentMode = (): NetworkGameMode => prefs.gameMode;
-  /** The host's pick in the pager: the game starts from that mode's pick of the day, and the room follows. */
+  /** The host's pick in the pager: the game starts from that mode's first preset, and the room follows. */
   const setMode = (mode: NetworkGameMode, direction: OnlineSectionDirection) => {
     if (mode === currentMode()) return;
-    const pick = pickOfTheDay(mode, app.today());
-    prefs.gameMode = pick.base;
-    prefs.rules = { ...pick.rules, powerUpKinds: [...pick.rules.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
-    selectedCreatePreset = { id: 'handpicked', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+    const first = presetsForMode(mode)[0];
+    prefs.gameMode = mode;
+    prefs.rules = { ...presetRules(first, mode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+    selectedCreatePreset = { id: first, mode, rules: copyRules(prefs.rules) };
     commitRules();
     buildCreateRules();
     buildCreateQuick();
@@ -831,6 +831,10 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   );
   /** Opening a room and joining one by code share one slot, so the two boxes are the same size whichever shows. */
   const openForms = h('div.online-forms', null, codeView, createView);
+  // A new lobby starts on the mode's first preset, as the local setup does; the pager and the cards change it from there.
+  const startPreset = presetsForMode(prefs.gameMode)[0];
+  prefs.rules = { ...presetRules(startPreset, prefs.gameMode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+  selectedCreatePreset = { id: startPreset, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
   buildCreateRules();
   buildCreateQuick();
 

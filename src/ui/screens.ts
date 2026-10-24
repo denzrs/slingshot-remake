@@ -208,10 +208,10 @@ function localPresetSelectionState(app: App, mode: VersusMode): LocalPresetSelec
 
 /** Default once on entry; rebuilding after rule or crew edits keeps the player's subsequent choices. */
 function prepareModeScreen(app: App, mode: VersusMode, transition?: ModeTransition): () => Screen {
-  const pick = pickOfTheDay(mode, app.today());
-  Object.assign(app.settings, pick.rules, { powerUpKinds: [...pick.rules.powerUpKinds] });
+  const first = presetsForMode(mode)[0];
+  Object.assign(app.settings, presetRules(first, mode));
   app.settingsChanged();
-  localPresetSelectionState(app, mode).current = { id: 'handpicked', rules: rulesOf(app.settings) };
+  localPresetSelectionState(app, mode).current = { id: first, rules: rulesOf(app.settings) };
   return () => setupScreen(app, mode, transition);
 }
 
@@ -711,7 +711,7 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
   if (!selectionState.current) {
     const initialRules = rulesOf(s);
     const initialPick = matchingHandpicked(initialRules, mode);
-    const initialPreset = samePick(initialPick, pick) ? 'handpicked' : matchingPreset(initialRules, mode);
+    const initialPreset = matchingPreset(initialRules, mode) ?? (samePick(initialPick, pick) ? 'handpicked' : undefined);
     if (initialPreset) selectionState.current = { id: initialPreset, rules: initialRules };
   }
   const modifiedStatus = (id: string): string => {
@@ -788,6 +788,19 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
     dispose: () => disposeModeCarousel(),
     items: [
       ...modePagerItems(app, mode),
+      ...presets.map((preset): MenuItem => ({
+        kind: 'action', section: 'presets', label: t(`preset.${preset}` as Key), hint: t(presetHintKey(preset, mode)),
+        icon: () => presetArt(preset, mode),
+        selected: () => selectionState.current?.id === preset,
+        status: () => modifiedStatus(preset),
+        statusActionLabel: t('preset.resetAction'),
+        statusAction: () => resetPresetChanges(preset),
+        run: () => {
+          Object.assign(s, presetRules(preset, mode));
+          selectionState.current = { id: preset, rules: rulesOf(s) };
+          app.settingsChanged(); app.menu.refresh();
+        },
+      })),
       {
         kind: 'action', section: 'presets', label: pickName(pick), className: 'item--pick',
         tag: t('preset.pick.today'), hint: pickHint(pick),
@@ -802,19 +815,6 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
           app.settingsChanged(); app.menu.refresh();
         },
       },
-      ...presets.map((preset): MenuItem => ({
-        kind: 'action', section: 'presets', label: t(`preset.${preset}` as Key), hint: t(presetHintKey(preset, mode)),
-        icon: () => presetArt(preset, mode),
-        selected: () => selectionState.current?.id === preset,
-        status: () => modifiedStatus(preset),
-        statusActionLabel: t('preset.resetAction'),
-        statusAction: () => resetPresetChanges(preset),
-        run: () => {
-          Object.assign(s, presetRules(preset, mode));
-          selectionState.current = { id: preset, rules: rulesOf(s) };
-          app.settingsChanged(); app.menu.refresh();
-        },
-      })),
       ...quick.map(({ item }): MenuItem => ({ ...item, section: 'quick' })),
       { ...mayhem.item, section: 'quick-mayhem' },
       { kind: 'action', section: 'players', label: t('briefing.editCrew'), run: () => openPlayers(app) },
