@@ -47,9 +47,9 @@ describe('the lobby has its own state', () => {
   });
 
   it('keeps what the lobby itself saved', () => {
-    stored({ 'slingshot.lobby.v1': { name: 'Anna', server: 'ws://there', gameMode: 'horizon', matchType: 'team', capacity: 6, rules: { maxPower: 40, fixedPowerLevel: 75, hiddenAim: true } } });
+    stored({ 'slingshot.lobby.v1': { name: 'Anna', server: 'ws://there', gameMode: 'horizon', capacity: 6, rules: { maxPower: 40, fixedPowerLevel: 75, hiddenAim: true } } });
     const prefs = loadLobbyPrefs('ws://x');
-    expect(prefs).toMatchObject({ name: 'Anna', server: 'ws://there', gameMode: 'horizon', matchType: 'team', capacity: 6 });
+    expect(prefs).toMatchObject({ name: 'Anna', server: 'ws://there', gameMode: 'horizon', capacity: 6 });
     expect(prefs.rules).toMatchObject({ maxPower: 40, fixedPowerLevel: 75, hiddenAim: true });
   });
 

@@ -768,6 +768,85 @@ fn host_cannot_change_rules_after_start_and_invalid_rule_types_are_rejected() {
 }
 
 #[test]
+fn the_host_can_change_the_game_with_the_rules_and_nobody_else_can() {
+    let rules = json!({
+        "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"bounce":false,
+        "fixedPower":false,"fixedPowerLevel":55,"maxPower":100,"shotTime":20,
+        "styleBonuses":false,"neighborGrace":0,"simultaneousShots":false,
+        "hiddenAim":false,"fadingTrails":0
+    });
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    let mut guest_rx = connect(&mut rooms, 2);
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+    rooms.handle(1, &create("Host", None));
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    rooms.handle(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest"}));
+    rooms.handle(2, &json!({"type":"ready","ready":true}));
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+
+    rooms.handle(2, &json!({"type":"set_rules","gameMode":"horizon","rules":rules}));
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "Only the room host can change the rules"
+    );
+
+    rooms.handle(1, &json!({"type":"set_rules","gameMode":"nonsense","rules":rules}));
+    take_type(&drain_json(&mut host_rx), "error");
+
+    rooms.handle(1, &json!({"type":"set_rules","gameMode":"horizon","rules":rules}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["gameMode"], "horizon");
+    assert!(update["room"]["players"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|p| p["ready"] == false));
+
+    // Without a gameMode the room keeps the one it has.
+    rooms.handle(1, &json!({"type":"set_rules","rules":rules}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["gameMode"], "horizon");
+}
+
+#[test]
+fn the_host_switches_between_free_for_all_and_teams_and_nobody_else_can() {
+    let (mut rooms, mut host_rx, room_id) = host_room("ffa", 4);
+    let mut guest_rx = join(&mut rooms, 2, &room_id, "Guest");
+    rooms.handle(2, &json!({"type":"ready","ready":true}));
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+
+    rooms.handle(2, &json!({"type":"set_mode","mode":"team"}));
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "Only the room host can change the mode"
+    );
+    rooms.handle(1, &json!({"type":"set_mode","mode":"nonsense"}));
+    take_type(&drain_json(&mut host_rx), "error");
+
+    rooms.handle(1, &json!({"type":"set_mode","mode":"team"}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["mode"], "team");
+    assert_eq!(update["room"]["players"][0]["team"], 0);
+    assert_eq!(update["room"]["players"][1]["team"], 1);
+    assert!(update["room"]["players"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|p| p["ready"] == false));
+
+    rooms.handle(1, &json!({"type":"set_mode","mode":"ffa"}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["mode"], "ffa");
+}
+
+#[test]
 fn leaving_running_game_returns_room_to_waiting_and_reindexes_players() {
     let mut rooms = RoomManager::new();
     let mut host_rx = connect(&mut rooms, 1);
@@ -1282,6 +1361,29 @@ fn a_name_error_says_it_is_about_the_name_and_other_errors_do_not() {
     rooms.handle(1, &json!({"type":"join_room","roomId":"nope","name":"Ada"}));
     let error = take_type(&drain_json(&mut rx), "error");
     assert!(error.get("field").is_none());
+}
+
+#[test]
+fn a_password_error_says_it_is_about_the_password() {
+    let mut rooms = RoomManager::new();
+    let mut host_rx = connect(&mut rooms, 1);
+    drain_json(&mut host_rx);
+    let create = create("Ada", Some("secret"));
+    rooms.handle_create_room(1, &create, Some((vec![1; 16], vec![2; 32])));
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let mut guest_rx = connect(&mut rooms, 2);
+    drain_json(&mut guest_rx);
+    rooms.handle_join_room(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Guest","password":"wrong"}),
+        Some(false),
+    );
+    let error = take_type(&drain_json(&mut guest_rx), "error");
+    assert_eq!(error["field"], "password");
 }
 
 #[test]

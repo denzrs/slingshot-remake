@@ -7,6 +7,7 @@ import type { DailyEntry } from '../net';
 import { h, type MenuItem, type Screen } from './menu';
 import { formatDay } from './dayFormat';
 import type { App } from './screens';
+import { menuPage } from './menu-page';
 
 /**
  * Whether the daily leaderboard can be reached at all. It lives on the multiplayer relay, so a
@@ -57,7 +58,7 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
 
   const status = h('p.lb__status', { role: 'status' }, '');
   const rows = h('ol.lb__rows', null);
-  const title = h('h2.daily__title', null);
+  const title = h('h2.menu-page__title', null);
   const kind = h('p.note.lb__kind', null);
   const date = h('p.daily__date', null);
   const paintHead = (): void => {
@@ -156,29 +157,17 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
   void load();
 
   const goesUp = score !== null;
-  const root = h(
-    'section.screen.screen--panel',
-    { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('daily.board.eyebrow') },
-    h(
-      'div.panel.panel--daily',
-      null,
-      h('p.eyebrow', null, t('daily.board.eyebrow')),
-      h('div.lb__head', null, h('div.lb__day', null, title, date)),
+  // The heading and the day under it change as the player pages through the boards: `paintHead` keeps them.
+  const root = menuPage({
+    title: caption, eyebrow: t('daily.board.eyebrow'), headerTitle: title, headerAside: date, className: 'menu-page--leaderboard',
+    body: [h('div.lb', null,
       kind,
-      h(
-        'div.lb',
-        null,
-        // With nothing to post there is no name to give and nothing to press but Back.
-        ...(goesUp
-          ? [h('label.lobby__field', null, h('span', null, t('daily.board.name')), nameField), h('p.note.lb__hint', null, t('daily.board.hint'))]
-          : []),
-        h('div.items.items--row', { 'data-section': 'pager' }),
-        h('div.items.items--row', { 'data-items': '' }),
-        status,
-        rows,
-      ),
-    ),
-  );
+      // With nothing to post there is no name to give and nothing to press but Back.
+      ...(goesUp ? [h('label.lobby__field', null, h('span', null, t('daily.board.name')), nameField), h('p.note.lb__hint', null, t('daily.board.hint'))] : []),
+      h('div.items.items--row', { 'data-section': 'pager' }),
+      status, rows,
+    )],
+  });
   paint();
 
   return {
@@ -190,8 +179,8 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
     items: [
       { kind: 'action', label: `‹ ${t('daily.board.prev')}`, run: () => go(-1), section: 'pager', disabled: () => shown <= oldestBoardDay(dateKey()) },
       { kind: 'action', label: `${t('daily.board.next')} ›`, run: () => go(1), section: 'pager', disabled: () => shown >= dateKey() },
-      ...(goesUp ? [{ kind: 'action', label: t('daily.board.submit'), primary: true, run: () => void submit() } satisfies MenuItem] : []),
       { kind: 'action', label: t('common.back'), primary: !goesUp, run: () => app.menu.back() },
+      ...(goesUp ? [{ kind: 'action', label: t('daily.board.submit'), primary: true, run: () => void submit() } satisfies MenuItem] : []),
     ] satisfies MenuItem[],
   };
 }

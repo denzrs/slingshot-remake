@@ -273,7 +273,7 @@ impl RoomManager {
         } else {
             self.net.password_failed(conn);
             debug!(room_id = %room_id, "password rejected");
-            self.error(conn, "Wrong password");
+            self.error(conn, crate::protocol::WRONG_PASSWORD);
             false
         }
     }

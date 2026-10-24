@@ -43,9 +43,12 @@ type ClientMessage =
   /** Your name, while the room waits; the relay refuses one it will not carry. */
   | { type: 'set_name'; name: string }
   | { type: 'ready'; ready: boolean }
-  | { type: 'set_rules'; rules: RoomRules }
+  /** `gameMode` changes the game the rules are for; without it the room keeps its own. */
+  | { type: 'set_rules'; rules: RoomRules; gameMode?: NetworkGameMode }
   /** Host only, while waiting: how the room shows up in the lobby. */
   | { type: 'set_room'; look: RoomLook }
+  /** Host only, while waiting: free for all or teams; the players are dealt out to the teams and confirm again. */
+  | { type: 'set_mode'; mode: RoomMode }
   /** Pick your own team (team rooms, while waiting); you have to be ready again afterwards. */
   | { type: 'set_team'; team: 0 | 1 }
   /** Host only: deal everybody back out to the two teams in the order they joined. */
@@ -275,11 +278,19 @@ export type ServerMessage =
   /** The seat asked for with `resume` was given up (or never held). */
   | { type: 'resume_failed'; message: string }
   /** `field` names what the error is about, when it is about one thing the player typed. */
-  | { type: 'error'; message: string; field?: 'name' }
+  | { type: 'error'; message: string; field?: 'name' | 'password' }
   /** Local only: the connection to the server is gone. */
   | { type: 'closed'; message: string };
 
 const CONNECT_TIMEOUT_MS = 10_000;
+
+/** Why the socket never opened; the lobby says it in the player's language. */
+export class ConnectError extends Error {
+  constructor(readonly reason: 'unreachable' | 'timeout' | 'closed', readonly url: string, message: string) {
+    super(message);
+    this.name = 'ConnectError';
+  }
+}
 
 /** A thin WebSocket transport (it connects again only when asked to) for the lobby and game relay protocol. */
 export class NetworkClient {
@@ -327,7 +338,7 @@ export class NetworkClient {
           this.socket = null;
           this.connectPromise = null;
         }
-        reject(new Error(`Connection to ${this.url} timed out`));
+        reject(new ConnectError('timeout', this.url, `Connection to ${this.url} timed out`));
       }, CONNECT_TIMEOUT_MS);
 
       socket.addEventListener('open', () => {
@@ -344,7 +355,7 @@ export class NetworkClient {
         window.clearTimeout(timeout);
         if (this.socket === socket) this.socket = null;
         if (this.connectPromise) this.connectPromise = null;
-        reject(new Error(`Could not connect to ${this.url}. Check the server address and make sure the server is running.`));
+        reject(new ConnectError('unreachable', this.url, `Could not connect to ${this.url}. Check the server address and make sure the server is running.`));
       });
       socket.addEventListener('close', () => {
         // A socket that `drop` already gave up on has been reported; its late close says nothing new.
@@ -356,7 +367,7 @@ export class NetworkClient {
         if (!settled) {
           settled = true;
           window.clearTimeout(timeout);
-          reject(new Error(`Connection to ${this.url} closed before it was established`));
+          reject(new ConnectError('closed', this.url, `Connection to ${this.url} closed before it was established`));
         } else if (opened && current && !this.closed) {
           this.deliver({ type: 'closed', message: `Connection to ${this.url} was closed.` });
         }

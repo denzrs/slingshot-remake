@@ -1,6 +1,6 @@
 import { AIM, GRACE, MAYHEM, TRAIL_FADE } from './config';
 import { POWER_UP, POWER_UP_KINDS } from './powerups';
-import type { NetworkGameMode, RoomMode, RoomRules } from './net';
+import type { NetworkGameMode, RoomRules } from './net';
 import { avatarFrom, DEFAULT_AVATAR, type Avatar } from './avatars';
 import { DEFAULT_ROOM_LOOK, roomLookFrom, type RoomLook } from './roomLook';
 import { DEFAULT_SETTINGS, type Settings } from './settings';
@@ -12,7 +12,6 @@ interface LobbyPrefs {
   /** Connect on opening the lobby: set once a connection worked. */
   autoConnect: boolean;
   gameMode: NetworkGameMode;
-  matchType: RoomMode;
   capacity: number;
   /** The name, listing, symbol and colour the next room starts with. */
   look: RoomLook;
@@ -75,7 +74,7 @@ function powerUpKindsFrom(value: unknown): RoomRules['powerUpKinds'] | null {
 }
 
 export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
-  const fresh: LobbyPrefs = { server: defaultServer, name: 'Player', autoConnect: false, gameMode: 'classic', matchType: 'ffa', capacity: 4, look: { ...DEFAULT_ROOM_LOOK }, avatar: DEFAULT_AVATAR, rules: defaultRoomRules() };
+  const fresh: LobbyPrefs = { server: defaultServer, name: 'Player', autoConnect: false, gameMode: 'classic', capacity: 4, look: { ...DEFAULT_ROOM_LOOK }, avatar: DEFAULT_AVATAR, rules: defaultRoomRules() };
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return fresh;
@@ -85,7 +84,6 @@ export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
       name: typeof saved.name === 'string' && saved.name ? saved.name : fresh.name,
       autoConnect: saved.autoConnect === true,
       gameMode: saved.gameMode === 'horizon' ? 'horizon' : 'classic',
-      matchType: saved.matchType === 'team' ? 'team' : 'ffa',
       capacity: Number.isInteger(saved.capacity) && saved.capacity! >= 2 && saved.capacity! <= 6 ? saved.capacity! : fresh.capacity,
       look: roomLookFrom(saved.look),
       avatar: avatarFrom(saved.avatar),

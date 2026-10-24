@@ -22,7 +22,7 @@ export interface View {
  * The static plate behind everything: ink gradient, stars, emulsion grain and
  * the plotter frame with registration marks. Rebuilt only on resize or when edges change.
  */
-export function renderBackdrop(view: View, walls: boolean): HTMLCanvasElement {
+export function renderBackdrop(view: View, walls: boolean, drawFrame = true): HTMLCanvasElement {
   const { cssWidth, cssHeight, dpr, scale, offsetX, offsetY } = view;
   const plate = plateUnits(!!view.rotated);
   const canvas = document.createElement('canvas');
@@ -66,11 +66,11 @@ export function renderBackdrop(view: View, walls: boolean): HTMLCanvasElement {
     ctx.fill();
   }
 
-  drawFrame(ctx, scale, offsetX, offsetY, walls, plate);
+  if (drawFrame) drawPlotterFrame(ctx, scale, offsetX, offsetY, walls, plate);
   return canvas;
 }
 
-function drawFrame(ctx: CanvasRenderingContext2D, scale: number, ox: number, oy: number, walls: boolean, plate: { w: number; h: number }): void {
+function drawPlotterFrame(ctx: CanvasRenderingContext2D, scale: number, ox: number, oy: number, walls: boolean, plate: { w: number; h: number }): void {
   const W = plate.w * scale;
   const H = plate.h * scale;
   ctx.save();

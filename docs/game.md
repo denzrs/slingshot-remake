@@ -2,7 +2,7 @@
 
 A web remake of the Linux classic [Slingshot](https://wiki.ubuntuusers.de/Spiele/Slingshot/): two spaceships take turns firing at each other, and every shot is bent by the gravity of the planets in between. The number, size and position of the planets change every round. Old shot trails stay on screen, so you can feel your way towards a hit.
 
-The UI is available in **German and English**. On the first visit it follows your browser language; switch any time with the *Language* row on the title screen or in the settings.
+The UI is available in **German and English**. On the first visit it follows your browser language; switch any time with the *Language* control in the title-screen footer or in device settings.
 
 Everything about how the game plays: controls, modes, setup, the CPU opponents and the scoring. For playing online see [multiplayer.md](multiplayer.md); for running and developing the project see the [README](../README.md).
 
@@ -30,7 +30,7 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 
 ## Game modes
 
-The title screen has four entries: *Local*, *Multiplayer*, *Settings* and *How to play*. *Local* shows the ways to play on this device as a row of cards (arrow keys and Enter, or a click): the Daily Challenge, Classic, Event Horizon and Mayhem. Every mode but the daily challenge opens its setup first, where Enter starts the game.
+The title screen keeps Local / Solo and Online in one shell. Click a Classic, Event Horizon or Mayhem card to open that mode's briefing directly; the Daily Challenge card opens its mission. Online replaces only the right-hand content with *Find a room*, *Create a room* and *Enter a code*, each opening its flow directly. *Settings* and *How to play* remain in the navigation rail. Keyboard focus has a light outline; selected navigation choices use an orange marker.
 
 - **Daily Challenge** (*Tägliche Herausforderung*) – five sectors with stationary targets and a limited number of shots, the same for everyone on a given calendar day. Today's theme (Billiard, Blind flight, Singularity, Heavy load, Precision, Sniper or Classic, and since challenge #21 also **Bastion**, **Nebula** and **Hammerhead**) decides which twists the sectors carry. Bastion puts a flak cannon (a planetary defense that belongs to the targets) on a planet, Nebula lays a nebula over the field, Hammerhead gives you plasma shots only; Classic days sometimes carry a cloud or a cannon too. Days before #21 keep their old themes; difficulty ramps up through the day and with the weekend. Every target is guaranteed to be hittable. At the end you get a result card with your score and rank, made for screenshots, plus a Wordle-style text to copy. Your best run, attempts and streak are kept in the browser. Add `?daily=YYYY-MM-DD` to the URL to fly another day. Where a relay is configured the card also offers **Post to leaderboard**: the run goes up under a name you type, next to everyone else's runs of that day — nothing is posted unless you ask for it. The Daily Challenge screen has its own **Leaderboard** row, which shows the same board without offering to post ([multiplayer.md](multiplayer.md#daily-leaderboard)).
 - **Classic** – the original duel, extended to up to six ships. Players take turns, one shot each. A hit ship is out; the round ends when one ship is left.
@@ -40,13 +40,24 @@ The title screen has four entries: *Local*, *Multiplayer*, *Settings* and *How t
 
 ## Game setup
 
-Before a game starts — and for the room in the multiplayer lobby, where only the host can edit it — the rules are sliders and switches in four blocks (match, battlefield, shots, extras). Drag a slider, click its track or use ← →; everything is remembered for the next game, and *Reset rules* puts the defaults back. As in the original, you can toggle invisible planets, reflecting edges, fixed power, planet count, rounds and flight time.
+Classic and Event Horizon open a match briefing with four rule presets. Choosing a preset replaces the match rules, keeping the players, teams and device preferences. Existing custom rules are preserved when opening the briefing; the active preset is derived from the actual rules, or labelled *Custom rules* when none matches.
+
+| Preset | Rules |
+| --- | --- |
+| Standard | Original defaults: 5 rounds, up to 4 planets, 20-second flights, no power-ups or reflecting edges. |
+| Trickshot | Standard with power capped at 60, reflecting edges and trick-shot bonuses. |
+| Sniper | Standard with hidden aim arrows, trails that fade after 2 seconds, 30-second flights and up to 3 planets. |
+| Party | Standard with up to 8 planets, all power-ups, 4 pickups, reflecting edges and trick-shot bonuses. |
+
+Rounds and planet count can be changed directly in the briefing. It also shows the active power-ups as icons; hover an icon to read its effect. In Mayhem, the icons show kinds that may appear in a round twist. *Edit players* opens the crew; *Adjust rules* opens all rules in five categories (match, field, shots, twists and power-ups). *Done* returns to the briefing with the changes kept. *Start game* is initially focused, so Enter starts the match. Everything is remembered for the next game, and *Reset rules* in the full rules screen puts the defaults back.
+
+The online room keeps its existing grouped rule controls, where only the host can edit them. Drag a slider, click its track or use ← →. As in the original, you can toggle invisible planets, reflecting edges, fixed power, planet count, rounds and flight time.
 
 **Shot power** is one choice of three: *Free* (0–100), *Capped* (a maximum from 10 to 90, a low one favours trick shots) or *Fixed* (every shot flies with the same power, 10 to 100 in steps of 5 – only the angle counts). The slider next to the choice appears only for *Capped* and *Fixed*.
 
-The **Players** screen lists the ships (two to six): add a human or a CPU, take a ship out with ✕ and switch between free for all and two or three teams. In team mode every ship picks its team, and *Balance teams* deals them out evenly.
+The **Players** screen presents two to six ships as pilot cards. Choose *Human* or *CPU* directly; a CPU card reveals its four difficulty levels. Add pilots as humans by default, remove a ship with its labelled control, and switch between free for all and two or three teams. In team mode every ship picks its team, and *Balance teams* deals them out evenly.
 
-The **Settings** screen holds the device options: sound, fullscreen, particles, language and gravity contours. The browser saves them.
+The **Settings** screen groups device options one category at a time: display, sound and fullscreen, language, and touch controls on coarse-pointer devices. The browser saves them.
 
 ### CPU opponents
 
@@ -61,9 +72,9 @@ New CPU seats start as Newton. In an online room the host seats CPUs in the same
 
 ### Power-ups
 
-Switch on *Power-ups* in the twists block. It works in Classic and Event Horizon, offline and in online rooms (the host sets it with the room's rules); the daily challenge and the menu background never use it. Online, the host's copy of the match runs everything and the guests send the keys: the power-up key, the aim and fire. Only the ship aiming a teleport sees where it would land. In Event Horizon a salvo counts as one pass, pickups keep clear of the black hole, and when it grows it pulls them in like planets: they drift towards it, the ones it swallows are gone and replaced, the fire key during the flight splits, and the killcam replays splits and shield bounces exactly.
+Choose the active kinds in the *Power-ups* category. It works in Classic and Event Horizon, offline and in online rooms (the host sets it with the room's rules); the daily challenge and the menu background never use it. Leave every tile off to play with no power-ups. Online, the host's copy of the match runs everything and the guests send the keys: the power-up key, the aim and fire. Only the ship aiming a teleport sees where it would land. In Event Horizon a salvo counts as one pass, pickups keep clear of the black hole, and when it grows it pulls them in like planets: they drift towards it, the ones it swallows are gone and replaced, the fire key during the flight splits, and the killcam replays splits and shield bounces exactly.
 
-Under the switch, two rows open while it is on: a tile per kind (click or tap it, or ←/→ and Enter; at least one stays on) and *Pickups on the field* (1–4, usually 2). There is no submenu. A round starts with that many, a taken pickup is replaced at once, and the field never holds more. *Reset rules* puts the choices back too.
+Each kind has its own on/off tile (click or tap it, or ←/→ and Enter); all tiles may be off. *Pickups on the field* (1–4, usually 2) appears while at least one kind is active. There is no submenu. A round starts with that many, a taken pickup is replaced at once, and the field never holds more. *Reset rules* puts the choices back too.
 
 - **Pickups** float on the field, each with its own symbol and a bright colour: a cyan eye for the preview, a magenta portal for the teleport, a gold fork for the splitter, a violet ring for the black hole, a red cracked disc for the planet killer, an icy cloud for the nebula, an orange disc with four arrows for the anti-gravity, a blue turret under a half ring for the planetary defense, a pale missile through broken armor for armor piercing, a cyan plasma blob for the plasma shot. A shot that flies close to one takes it, and keeps flying.
 - **One held at a time.** Taking another one swaps it: the old one is lost.

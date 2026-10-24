@@ -65,6 +65,14 @@ pub const NAME_TAKEN: &str = "That name is taken in this room";
 /// What a player is told when they rename again right after a rename.
 pub const RENAME_TOO_FAST: &str = "Wait a moment before changing your name again";
 
+/// What a player is told when the password they sent does not open the room (or they sent none).
+pub const WRONG_PASSWORD: &str = "Wrong password";
+
+/// Whether an error is about the room's password, so the client can put it at the password field.
+pub fn is_password_refusal(message: &str) -> bool {
+    [WRONG_PASSWORD, crate::auth::PASSWORDS_EXHAUSTED].contains(&message)
+}
+
 /// Whether an error is about the player's name, so the client can put it under the name field.
 pub fn is_name_refusal(message: &str) -> bool {
     [NAME_REQUIRED, NAME_REFUSED, NAME_TAKEN, RENAME_TOO_FAST].contains(&message)

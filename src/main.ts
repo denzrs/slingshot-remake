@@ -4,6 +4,8 @@ import '@fontsource/b612/700';
 import '@fontsource/b612-mono/400';
 import '@fontsource/b612-mono/700';
 import './style.css';
+import './ui/launcher.css';
+import './ui/menu-page.css';
 
 import { Sound } from './audio';
 import { dailyChallenge, dateKey, isDateKey } from './challenge';
@@ -29,7 +31,7 @@ import { dailyResultScreen } from './ui/daily';
 import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/chat';
 import { Menu } from './ui/menu';
-import { lobbyScreen } from './ui/lobby';
+import { lobbyScreen, type LobbyEntry } from './ui/lobby';
 import { TouchControls } from './ui/touch-controls';
 import { TouchStick } from './ui/touch-stick';
 import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, type App } from './ui/screens';
@@ -247,10 +249,16 @@ function multiplayer(): MultiplayerSession {
       match = null;
       screen = 'title';
       effects.clear();
-      menu.open(() => lobbyScreen(app, multiplayer()));
+      const lobby = lobbyScreen(app, multiplayer());
+      menu.open(() => lobby);
     },
   });
-  const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session);
+  const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session, () => {
+    if (overlay.querySelector('.menu-page--room')) return { kind: 'lobby' };
+    const matchMenu = overlay.querySelector('.menu-page--pause, .menu-page--results');
+    if (screen === 'play' && session?.match && session.match === match && (!menu.isOpen || matchMenu)) return { kind: 'game' };
+    return null;
+  });
   chat = panel;
   session.subscribe(() => panel.update());
   return session;
@@ -377,14 +385,19 @@ const app: App = {
   get online() {
     return !!online();
   },
-  openLobby: () => menu.open(() => lobbyScreen(app, multiplayer())),
+  openLobby(entry?: LobbyEntry) {
+    const lobby = lobbyScreen(app, multiplayer(), entry);
+    if (entry) menu.push(() => lobby);
+    else menu.open(() => lobby);
+  },
   toLobby() {
     session?.leaveRoom();
     match?.dispose();
     match = null;
     screen = 'title';
     effects.clear();
-    menu.open(() => lobbyScreen(app, multiplayer()));
+    const lobby = lobbyScreen(app, multiplayer(), 'rooms');
+    menu.open(() => lobby);
   },
   resume() {
     voteMenuOpen = false;
@@ -474,7 +487,7 @@ function escapeAction(): void {
     return;
   }
   // A clip records whatever is on screen — don't freeze it behind the menu.
-  if (!recorder.recording) menu.open(() => pauseScreen(app));
+  if (!recorder.recording) menu.open(() => pauseScreen(app, match));
 }
 
 // ————————————————————————————— Keyboard —————————————————————————————
@@ -865,13 +878,14 @@ function frame(now: number): void {
     renderer.draw(
       m,
       effects,
-      { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
+      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
       paused ? 0 : dt,
     );
   }
   if (screen === 'play' && m === match) announceOracle(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();
+  chat?.update();
   requestAnimationFrame(frame);
 }
 

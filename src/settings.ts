@@ -174,10 +174,10 @@ export function teamCounts(s: Settings): number[] {
   return counts;
 }
 
-/** Puts a ship (who flies it: a human or a CPU) into the first free seat — in team mode, into the smallest team. Returns the seat, or null when there is none. */
-export function addSeat(s: Settings, flier: Exclude<Seat, 'off'>): number | null {
-  const i = freeSeat(s);
-  if (i === null) return null;
+/** Seats a human or CPU in the requested slot (or the first free one), on the smallest team. */
+export function addSeat(s: Settings, flier: Exclude<Seat, 'off'>, slot?: number): number | null {
+  const i = slot ?? freeSeat(s);
+  if (i === null || !Number.isInteger(i) || i < 0 || i >= MAX_PLAYERS || s.seats[i] !== 'off') return null;
   if (s.teamMode) {
     const counts = teamCounts(s);
     s.seatTeams[i] = counts.indexOf(Math.min(...counts));
