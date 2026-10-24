@@ -142,12 +142,29 @@ export const SOLAR = {
   MAX_PLANET: 52,
   /** Planets here weigh this much more than their size alone gives (the sun is set apart). */
   PLANET_HEAVY: 1.2,
-  /** Turn per step in radians at REF_ORBIT; other orbits scale by (REF_ORBIT / r) ^ FALLOFF, so inner orbits turn faster. */
-  TURN: 0.3,
-  REF_ORBIT: 200,
-  FALLOFF: 0.75,
+  /**
+   * The orbits fall into three sectors, an equal share of the way from the innermost to the outermost orbit each,
+   * and a body goes once round the sun in this many steps (a step is a pass: every ship has shot): inner, middle, outer.
+   */
+  SECTOR_STEPS: [4, 8, 12],
   /** Seconds the system takes to turn on. */
   TURN_TIME: 1.8,
+} as const;
+
+/** The sun's storm: once in a round it bursts, and throws a few clouds of plasma over the field that slow shots like a nebula. */
+export const SOLAR_STORM = {
+  /** It breaks out as the system turns after this many passes of the round (picked at random, both ends included); a round decided sooner has none. */
+  FIRST_PASS: 1,
+  LAST_PASS: 4,
+  /** How many clouds. */
+  MIN_CLOUDS: 3,
+  MAX_CLOUDS: 5,
+  MIN_RADIUS: 56,
+  MAX_RADIUS: 86,
+  /** How far from the sun a cloud lands (the orbit radius it would lie on), and how much the clouds may overlap one another. */
+  MIN_DIST: 130,
+  MAX_DIST: 330,
+  OVERLAP: 0.6,
 } as const;
 
 /** "Ereignishorizont" — the gravity royale mode. */

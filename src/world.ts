@@ -116,7 +116,6 @@ function ringShips(rng: Rng, n: number, teams: readonly number[] | null): Ship[]
 /** The sun's place, and the centre everything in a Solar System turns around. */
 export const solarCenter = (): { x: number; y: number } => ({ x: FIELD.width / 2, y: FIELD.height / 2 + SOLAR.CENTER_Y_SHIFT });
 
-/** How far a body on an orbit of radius `r` turns in one full step: the inner orbits are quicker. */
 /** Where on its orbit a point is: its orbit's radius (half-height) and its angle round the sun. */
 export function orbitOf(x: number, y: number): { r: number; a: number } {
   const c = solarCenter();
@@ -131,7 +130,12 @@ export function onOrbit(r: number, a: number): { x: number; y: number } {
   return { x: c.x + Math.cos(a) * r * SOLAR.STRETCH, y: c.y + Math.sin(a) * r };
 }
 
-export const orbitTurn = (r: number): number => SOLAR.TURN * (SOLAR.REF_ORBIT / Math.max(r, 1)) ** SOLAR.FALLOFF;
+/** Which of the three sectors an orbit of radius `r` lies in: 0 near the sun, 2 far out. */
+export const orbitSector = (r: number): number =>
+  Math.min(SOLAR.SECTOR_STEPS.length - 1, Math.max(0, Math.floor(((r - SOLAR.INNER_ORBIT) / (SOLAR.OUTER_ORBIT - SOLAR.INNER_ORBIT)) * SOLAR.SECTOR_STEPS.length)));
+
+/** How far a body on an orbit of radius `r` turns in one step: a full circle takes 4 steps near the sun, 8 in the middle, 12 far out. */
+export const orbitTurn = (r: number): number => (Math.PI * 2) / SOLAR.SECTOR_STEPS[orbitSector(r)];
 
 /** One orbit: shared by up to three planets (spread evenly round it, same speed), or by some of the ships, who may have a planet along (its radius is in `guests`). */
 type Body = { kind: 'planets'; radii: number[] } | { kind: 'ships'; guests: number[] };
