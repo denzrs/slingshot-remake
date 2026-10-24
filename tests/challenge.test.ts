@@ -53,8 +53,11 @@ describe('themes', () => {
   const first = challengeNumber(VARIANTS);
 
   it('plays every theme once per cycle', () => {
+    // Challenges 21–23 were already live when the expanded 17-theme pool was introduced at #24.
+    expect([themeFor(first), themeFor(first + 1), themeFor(first + 2)]).toEqual(['singularity', 'precision', 'bastion']);
     for (let cycle = 0; cycle < 12; cycle++) {
-      const seen = Array.from({ length: THEMES.length }, (_, i) => themeFor(first + cycle * THEMES.length + i));
+      const start = first + 3 + cycle * THEMES.length;
+      const seen = Array.from({ length: THEMES.length }, (_, i) => themeFor(start + i));
       expect(new Set(seen).size).toBe(THEMES.length);
     }
   });
