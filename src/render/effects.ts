@@ -282,7 +282,7 @@ export class Effects {
         vy: ny * sp + nx * swirl + vy,
         size: 1.2 + Math.random() * 2,
         color: Math.random() < 0.3 ? COLORS.sodium : color,
-        drag: 0.24,
+        drag: 0.12,
         tier: 'medium',
       });
     }
@@ -543,7 +543,7 @@ export class Effects {
 
   private spark(x: number, y: number, vx: number, vy: number, color: string, tier: SparkTier): Spark {
     const size = tier === 'large' ? 2.4 + Math.random() * 2 : tier === 'medium' ? 1.6 + Math.random() * 1.5 : 0.8 + Math.random() * 1.2;
-    return { x, y, vx, vy, size, color, drag: 0.12, tier };
+    return { x, y, vx, vy, size, color, drag: 0.06, tier };
   }
 
   private fragment(spark: Spark, into: Spark[], body: GravityBody): void {
