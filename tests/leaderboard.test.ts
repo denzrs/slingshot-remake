@@ -123,6 +123,7 @@ beforeAll(async () => {
       ALLOW_ALL_ORIGINS: '1',
       CONNECTIONS_PER_IP_PER_SECOND: '1000',
       MAX_MESSAGES_PER_SECOND: '100000',
+      MAX_BYTES_PER_SECOND: '1000000000',
       DATABASE: join(dataDir, 'slingshot.db'),
       RUST_LOG: process.env.RELAY_LOG ?? 'info',
     },
