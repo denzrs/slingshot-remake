@@ -501,7 +501,6 @@ export function pauseScreen(app: App, match: Match | null): Screen {
       : []),
     ...(app.skipOffer === 'answer' ? skipAnswerItems(app, 'actions') : []),
     { kind: 'action', section: 'actions', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
-    { kind: 'action', section: 'actions', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
     app.online
       ? { kind: 'action', section: 'actions', label: t('multiplayer.toLobby'), run: () => app.toLobby() }
       : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: () => app.toTitle() },
@@ -511,8 +510,7 @@ export function pauseScreen(app: App, match: Match | null): Screen {
     build: () => menuPage({
       title: t('pause.title'), eyebrow: app.mode === 'challenge' ? t('mode.daily') : `${modeName(app.mode === 'horizon' || app.mode === 'solar' ? app.mode : 'classic')}${app.mayhem ? ` · ${t('mode.mayhem')}` : ''}`,
       className: 'menu-page--pause',
-      body: [h('div.menu-page__art', null, modeArt(app.mode === 'challenge' ? 'daily' : app.mayhem ? 'mayhem' : app.mode === 'horizon' || app.mode === 'solar' ? app.mode : 'classic'))],
-      aside: match ? pauseStanding(match) : undefined,
+      body: match ? [h('div.pause-standing', null, ...pauseStanding(match))] : [],
       footer: h('nav.items.items--row.pause-actions.menu-page__actions', { 'data-section': 'actions', 'aria-label': t('pause.title') }),
     }),
     items,
@@ -521,7 +519,7 @@ export function pauseScreen(app: App, match: Match | null): Screen {
   };
 }
 
-/** The pause menu's side panel: where the match stands right now. */
+/** The pause menu's middle: where the match stands right now. */
 function pauseStanding(match: Match): Node[] {
   const row = (place: number, name: string, color: string, score: number | string) => {
     const label = h('span.ranking__name', null, name);

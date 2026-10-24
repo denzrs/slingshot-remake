@@ -97,10 +97,8 @@
 .menu-page--briefing,
 .menu-page--leaderboard,
 .menu-page--lobby { width: min(1280px, 100%); }
-.menu-page--pause .menu-page__body--split { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 48px; }
-.menu-page--pause .menu-page__main { display: flex; align-items: center; justify-content: center; }
-.menu-page--pause .menu-page__art { width: min(560px, 100%); height: min(380px, 100%); margin: 0; }
-.menu-page--pause .menu-page__aside { align-self: start; padding-left: 36px; }
+.menu-page--pause .menu-page__main { display: flex; align-items: center; justify-content: center; height: 100%; }
+.pause-standing { width: min(520px, 100%); }
 .menu-page--pause .ranking, .menu-page--pause .score-chart { max-width: none; margin-top: 0; margin-bottom: 22px; }
 .menu-page--pause .ranking li { padding: 11px 0; gap: 12px; }
 .menu-page--pause .ranking__name { overflow-wrap: anywhere; }
@@ -324,7 +322,6 @@
   .menu-page__actions .item--primary { min-height: 48px; font-size: 23px; }
   .preferences { gap: 28px; }
   .menu-page .setup { grid-template-columns: minmax(0, 1fr); }
-  .menu-page--pause .menu-page__art { display: none; }
   .menu-page--tutorial .menu-page__body { display: flex; flex-direction: column; gap: 24px; }
   .menu-page--tutorial .menu-page__aside { order: -1; padding: 0 0 20px; border: 0; border-bottom: 1px solid var(--menu-line); }
   .tutorial__layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
