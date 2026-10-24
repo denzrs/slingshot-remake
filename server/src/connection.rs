@@ -1,7 +1,7 @@
 //! One client connection: handshake, the inbound loop (rate limit + heartbeat) and the writer task
 //! that drains the room's outbound channel.
 
-use std::net::SocketAddr;
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -45,7 +45,7 @@ pub struct Shared {
 struct Teardown {
     manager: Arc<Mutex<RoomManager>>,
     guard: Arc<AdmissionGuard>,
-    peer: SocketAddr,
+    client: IpAddr,
     conn_id: u64,
     /// Set once the room logic knows the connection, until it has been told it is gone.
     connected: bool,
@@ -65,7 +65,7 @@ impl Drop for Teardown {
             warn!("connection task panicked; cleaning up");
         }
         self.disconnect();
-        self.guard.release(self.peer.ip());
+        self.guard.release(self.client);
     }
 }
 
@@ -104,7 +104,7 @@ impl ByteBudget {
 /// One TCP connection: handshake, then the inbound loop (rate limit + heartbeat) next to a writer
 /// task that drains the room's outbound channel.
 #[instrument(skip_all, fields(conn = conn_id))]
-pub async fn handle_connection<S>(stream: S, peer: SocketAddr, shared: Shared, conn_id: u64)
+pub async fn handle_connection<S>(stream: S, client: IpAddr, shared: Shared, conn_id: u64)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -120,7 +120,7 @@ where
     let mut teardown = Teardown {
         manager: manager.clone(),
         guard,
-        peer,
+        client,
         conn_id,
         connected: false,
     };
@@ -151,7 +151,7 @@ where
     let (slow_tx, mut slow_rx) = tokio::sync::watch::channel(false);
     {
         let mut manager = manager.lock();
-        manager.connect(conn_id, peer.ip(), tx.clone(), slow_tx);
+        manager.connect(conn_id, client, tx.clone(), slow_tx);
     }
     teardown.connected = true;
     debug!("connection opened");
@@ -361,7 +361,7 @@ type SplitSink<S> = futures_util::stream::SplitSink<WebSocketStream<S>, Message>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::Ipv4Addr;
 
     #[test]
     fn the_byte_budget_lets_one_full_frame_through_but_not_a_stream_of_them() {
@@ -379,18 +379,18 @@ mod tests {
     fn a_panicking_connection_still_leaves_its_room_and_hands_back_its_slot() {
         let manager = Arc::new(Mutex::new(RoomManager::new()));
         let guard = Arc::new(AdmissionGuard::new(10, 1, 10));
-        let peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1);
-        assert!(guard.try_admit(peer.ip()));
+        let client = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        assert!(guard.try_admit(client));
         let (tx, _rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
         let (slow, _) = tokio::sync::watch::channel(false);
-        manager.lock().connect(7, peer.ip(), tx, slow);
+        manager.lock().connect(7, client, tx, slow);
 
         let (task_manager, task_guard) = (manager.clone(), guard.clone());
         let panicked = std::thread::spawn(move || {
             let _teardown = Teardown {
                 manager: task_manager,
                 guard: task_guard,
-                peer,
+                client,
                 conn_id: 7,
                 connected: true,
             };
@@ -402,9 +402,6 @@ mod tests {
             manager.lock().peer_ip(7).is_none(),
             "the connection is gone"
         );
-        assert!(
-            guard.try_admit(peer.ip()),
-            "its admission slot is free again"
-        );
+        assert!(guard.try_admit(client), "its admission slot is free again");
     }
 }

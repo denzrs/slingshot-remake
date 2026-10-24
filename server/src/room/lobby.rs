@@ -21,7 +21,38 @@ impl RoomManager {
         );
     }
 
+    /// The room list changed. It goes out now unless one went out within the lobby interval; then
+    /// `flush_lobby` sends it once the interval is over, with whatever changed in between.
     pub(super) fn broadcast_lobby(&mut self) {
+        self.broadcast_lobby_at(std::time::Instant::now());
+    }
+
+    pub(super) fn broadcast_lobby_at(&mut self, now: std::time::Instant) {
+        let throttle = &mut self.lobby;
+        let due = throttle
+            .last_sent
+            .is_none_or(|at| now.duration_since(at) >= throttle.interval);
+        if !due {
+            throttle.pending = true;
+            return;
+        }
+        throttle.last_sent = Some(now);
+        throttle.pending = false;
+        self.send_lobby_to_everybody();
+    }
+
+    /// Send a held-back room list whose interval is over. Called every few dozen milliseconds.
+    pub fn flush_lobby(&mut self) {
+        self.flush_lobby_at(std::time::Instant::now());
+    }
+
+    pub(super) fn flush_lobby_at(&mut self, now: std::time::Instant) {
+        if self.lobby.pending {
+            self.broadcast_lobby_at(now);
+        }
+    }
+
+    fn send_lobby_to_everybody(&mut self) {
         let message = json!({ "type": "lobby_update", "rooms": self.visible_rooms() });
         // The same list goes to everybody, so it is encoded once and the bytes are shared.
         let Ok(bytes) = rmp_serde::to_vec_named(&message) else {
@@ -232,7 +263,7 @@ impl RoomManager {
     ) -> bool {
         if self.net.password_attempts_exhausted(conn) {
             warn!(room_id = %room_id, "password attempts exhausted");
-            self.error(conn, "Too many wrong passwords – reconnect to try again");
+            self.error(conn, crate::auth::PASSWORDS_EXHAUSTED);
             return false;
         }
         let correct = preverified.unwrap_or(false);

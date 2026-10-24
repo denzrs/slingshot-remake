@@ -1,7 +1,9 @@
 //! Room passwords. Hashing is scrypt and runs off the room lock and off the async reactor, behind
-//! a small shared concurrency limit and a per-connection budget, so a flood of password checks
+//! a small shared concurrency limit (one slot per client at most) and a per-client budget, so a flood of password checks
 //! can never stall the connections that are only playing.
 
+use std::collections::HashSet;
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,27 +20,67 @@ pub const MAX_CONCURRENT_SCRYPTS: usize = 4;
 const SCRYPT_QUEUE_TIMEOUT: Duration = Duration::from_secs(1);
 
 const BUSY: &str = "Server busy – try again shortly";
+pub const PASSWORDS_EXHAUSTED: &str = "Too many wrong passwords – try again in a few minutes";
+const ROOM_BUSY: &str = "Too many password attempts on this room – try again shortly";
 
-/// The shared limit on password derivations running at once. Cloning copies the handle.
+/// The shared limit on password derivations running at once, of which one client holds at most one,
+/// so a single client cannot keep everybody else's passwords waiting. Cloning copies the handle.
 #[derive(Clone)]
-pub struct ScryptSlots(Arc<tokio::sync::Semaphore>);
+pub struct ScryptSlots {
+    total: Arc<tokio::sync::Semaphore>,
+    running: Arc<Mutex<HashSet<IpAddr>>>,
+}
+
+/// A running derivation's hold on a shared slot and on its client's one.
+struct Slot {
+    _permit: tokio::sync::OwnedSemaphorePermit,
+    _client: ClientSlot,
+}
+
+/// The client's one derivation; handed back when dropped.
+struct ClientSlot {
+    running: Arc<Mutex<HashSet<IpAddr>>>,
+    client: IpAddr,
+}
+
+impl Drop for ClientSlot {
+    fn drop(&mut self) {
+        self.running.lock().remove(&self.client);
+    }
+}
 
 impl ScryptSlots {
     pub fn new(slots: usize) -> Self {
-        Self(Arc::new(tokio::sync::Semaphore::new(slots)))
+        Self {
+            total: Arc::new(tokio::sync::Semaphore::new(slots)),
+            running: Arc::new(Mutex::new(HashSet::new())),
+        }
     }
 
-    /// A slot, or None when none frees up within the queue timeout.
-    async fn acquire(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
-        tokio::time::timeout(SCRYPT_QUEUE_TIMEOUT, self.0.clone().acquire_owned())
+    /// A slot, or None when the client already runs a derivation or none frees up within the queue
+    /// timeout.
+    async fn acquire(&self, client: IpAddr) -> Option<Slot> {
+        if !self.running.lock().insert(client) {
+            return None;
+        }
+        // Held from here, so every way out below hands the client's slot back.
+        let client = ClientSlot {
+            running: self.running.clone(),
+            client,
+        };
+        let permit = tokio::time::timeout(SCRYPT_QUEUE_TIMEOUT, self.total.clone().acquire_owned())
             .await
             .ok()?
-            .ok()
+            .ok()?;
+        Some(Slot {
+            _permit: permit,
+            _client: client,
+        })
     }
 
     #[cfg(test)]
     pub fn add_permits(&self, count: usize) {
-        self.0.add_permits(count);
+        self.total.add_permits(count);
     }
 }
 
@@ -81,18 +123,23 @@ pub async fn prepare_join(
         // Never worth a scrypt; `password_attempt_ok` counts this as a miss.
         return Ok(Some(false));
     }
-    if manager.lock().password_attempts_exhausted(conn) {
-        manager
-            .lock()
-            .error(conn, "Too many wrong passwords – reconnect to try again");
-        return Err(Handled);
-    }
-    let salt = manager
-        .lock()
-        .join_password_salt(conn, join.room_id(), join.spectate);
-    let Some((salt, hash)) = salt else {
-        return Ok(None);
+    let salt = {
+        let mut manager = manager.lock();
+        if manager.password_attempts_exhausted(conn) {
+            manager.error(conn, PASSWORDS_EXHAUSTED);
+            return Err(Handled);
+        }
+        let Some(salt) = manager.join_password_salt(conn, join.room_id(), join.spectate) else {
+            return Ok(None);
+        };
+        // A room's share of checks is spent: like a busy server, this is no miss of the client's.
+        if !manager.allow_room_password_check(join.room_id()) {
+            manager.error(conn, ROOM_BUSY);
+            return Err(Handled);
+        }
+        salt
     };
+    let (salt, hash) = salt;
     let plaintext = plaintext.to_owned();
     derive(manager, slots, conn, move || {
         check_password(&plaintext, &salt, &hash)
@@ -101,7 +148,7 @@ pub async fn prepare_join(
     .map(Some)
 }
 
-/// Run a derivation on the blocking pool, within the connection's budget and the shared slots.
+/// Run a derivation on the blocking pool, within the client's budget and the shared slots.
 /// When either is spent the client is told the server is busy, and no password attempt is counted.
 async fn derive<T: Send + 'static>(
     manager: &Mutex<RoomManager>,
@@ -109,11 +156,17 @@ async fn derive<T: Send + 'static>(
     conn: u64,
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, Handled> {
-    if !manager.lock().scrypt_budget_available(conn) {
-        manager.lock().error(conn, BUSY);
-        return Err(Handled);
-    }
-    let Some(permit) = slots.acquire().await else {
+    let client = {
+        let mut manager = manager.lock();
+        match manager.peer_ip(conn) {
+            Some(client) if manager.scrypt_budget_available(conn) => client,
+            _ => {
+                manager.error(conn, BUSY);
+                return Err(Handled);
+            }
+        }
+    };
+    let Some(permit) = slots.acquire(client).await else {
         manager.lock().error(conn, BUSY);
         return Err(Handled);
     };
@@ -166,4 +219,40 @@ fn timing_safe_eq(left: &[u8], right: &[u8]) -> bool {
             left.get(index).copied().unwrap_or(0) ^ right.get(index).copied().unwrap_or(0);
     }
     difference == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn one_client_holds_one_slot_however_many_are_free() {
+        let slots = ScryptSlots::new(MAX_CONCURRENT_SCRYPTS);
+        let a: IpAddr = "198.51.100.9".parse().unwrap();
+        let b: IpAddr = "203.0.113.4".parse().unwrap();
+        let first = slots.acquire(a).await.expect("a free slot");
+        assert!(
+            slots.acquire(a).await.is_none(),
+            "the client already runs one"
+        );
+        let other = slots
+            .acquire(b)
+            .await
+            .expect("somebody else still gets one");
+        drop(first);
+        assert!(
+            slots.acquire(a).await.is_some(),
+            "the client's slot came back"
+        );
+        drop(other);
+    }
+
+    #[tokio::test]
+    async fn a_client_waiting_in_vain_for_a_shared_slot_gets_its_own_back() {
+        let slots = ScryptSlots::new(0);
+        let a: IpAddr = "198.51.100.9".parse().unwrap();
+        assert!(slots.acquire(a).await.is_none());
+        slots.add_permits(1);
+        assert!(slots.acquire(a).await.is_some());
+    }
 }
