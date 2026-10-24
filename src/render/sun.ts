@@ -2,21 +2,19 @@ import type { Planet } from '../physics';
 import { rgba } from './color';
 import { fbm } from './noise';
 
-const TEX = 288;
-
 const smooth = (e0: number, e1: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
   return t * t * (3 - 2 * t);
 };
 const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
 
-/** The colour of the photosphere by temperature (0 cool, 1 hot): ember red, orange, gold, and nearly white in the hottest cells. */
+/** The colour of the surface by temperature (0 cool, 1 hot): ember red, orange, gold, and nearly white where it is hottest. */
 const RAMP: readonly (readonly [number, number, number, number])[] = [
-  [0, 150, 36, 8],
-  [0.28, 232, 84, 14],
-  [0.55, 255, 156, 36],
-  [0.8, 255, 214, 98],
-  [1, 255, 248, 214],
+  [0, 120, 26, 8],
+  [0.3, 226, 76, 14],
+  [0.58, 255, 150, 30],
+  [0.82, 255, 214, 90],
+  [1, 255, 248, 200],
 ];
 function heat(t: number): [number, number, number] {
   const x = Math.min(1, Math.max(0, t));
@@ -27,98 +25,64 @@ function heat(t: number): [number, number, number] {
     const k = (x - t0) / (t1 - t0);
     return [mix(r0, r1, k), mix(g0, g1, k), mix(b0, b1, k)];
   }
-  return [255, 248, 214];
+  return [255, 248, 200];
 }
 
-/** A cell's random point and brightness: the same for the same grid cube and seed. */
-function cellHash(x: number, y: number, z: number, seed: number): [number, number, number, number] {
-  const h = (k: number): number => {
-    let n = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 2147483647) ^ Math.imul(k + 1, 1440662683) ^ seed;
-    n = Math.imul(n ^ (n >>> 13), 1274126177);
-    return ((n ^ (n >>> 16)) >>> 0) / 4294967295;
-  };
-  return [h(0), h(1), h(2), h(3)];
+/** The plasma is worked out on a small grid and drawn up to the sun's size: it is all soft flow, so nothing is lost. */
+const PLASMA = 120;
+/** How often the surface is worked out again (s): the flow is slow, so this is plenty. */
+const PLASMA_STEP = 1 / 24;
+
+interface Plasma {
+  canvas: HTMLCanvasElement;
+  img: ImageData;
+  at: number;
 }
+const plasmas = new Map<number, Plasma>();
 
 /**
- * The sun's face, drawn once per sun, as a ball seen from outside. Granulation: a 3D Worley pattern on the surface,
- * hot bright middles in cool dark seams, so the cells crowd together and squash towards the edge as on a real sphere.
- * Limb darkening reddens and dims the edge. A few sunspots (a dark core in a softer penumbra) and bright faculae
- * near the limb sit on top. Same seed, same face.
+ * The sun's surface at `time`: gas that flows. One flow field warps another, so the gas folds in on itself and
+ * churns; it is hot and bright in the middle of a fold and cool and dark in the seams, and the edge is dimmed and
+ * reddened as on a ball seen from outside. It is worked out per pixel, a few times a second, and kept per sun.
  */
-function makeFace(seed: number): HTMLCanvasElement {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = TEX;
-  const ctx = canvas.getContext('2d')!;
-  const img = ctx.createImageData(TEX, TEX);
-  const scale = 8.6;
-  // Turns the whole ball by a seed's worth, so every sun shows another side.
-  const phase = (seed % 997) / 997 * Math.PI * 2;
-  const [cs, sn] = [Math.cos(phase), Math.sin(phase)];
-  for (let py = 0; py < TEX; py++) {
-    for (let px = 0; px < TEX; px++) {
-      const x = ((px + 0.5) / TEX) * 2 - 1;
-      const y = ((py + 0.5) / TEX) * 2 - 1;
+function plasma(seed: number, time: number): HTMLCanvasElement {
+  let p = plasmas.get(seed);
+  if (!p) {
+    if (plasmas.size > 8) plasmas.clear();
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = PLASMA;
+    p = { canvas, img: canvas.getContext('2d')!.createImageData(PLASMA, PLASMA), at: -Infinity };
+    plasmas.set(seed, p);
+  }
+  if (time >= p.at && time - p.at < PLASMA_STEP) return p.canvas;
+  p.at = time;
+  const t = time * 0.16;
+  const data = p.img.data;
+  for (let py = 0; py < PLASMA; py++) {
+    for (let px = 0; px < PLASMA; px++) {
+      const x = ((px + 0.5) / PLASMA) * 2 - 1;
+      const y = ((py + 0.5) / PLASMA) * 2 - 1;
       const rr = Math.hypot(x, y);
-      if (rr >= 1) continue;
-      const z = Math.sqrt(1 - rr * rr);
-      // The surface point, turned about the vertical axis.
-      const sx = x * cs + z * sn;
-      const sz = -x * sn + z * cs;
-      const gx = sx * scale;
-      const gy = y * scale;
-      const gz = sz * scale;
-      let f1 = 9;
-      let f2 = 9;
-      let tone = 0.5;
-      for (let k = -1; k <= 1; k++) {
-        for (let j = -1; j <= 1; j++) {
-          for (let i = -1; i <= 1; i++) {
-            const cx = Math.floor(gx) + i;
-            const cy = Math.floor(gy) + j;
-            const cz = Math.floor(gz) + k;
-            const [hx, hy, hz, ht] = cellHash(cx, cy, cz, seed);
-            const d = Math.hypot(cx + hx - gx, cy + hy - gy, cz + hz - gz);
-            if (d < f1) {
-              f2 = f1;
-              f1 = d;
-              tone = ht;
-            } else if (d < f2) f2 = d;
-          }
-        }
+      const i = (py * PLASMA + px) * 4;
+      if (rr >= 1) {
+        data[i + 3] = 0;
+        continue;
       }
-      const seam = smooth(0, 0.3, f2 - f1);
-      // Broad patches of hotter and cooler surface under the cells, and a fine grain over them.
-      const patch = fbm(sx * 1.9 + 5, y * 1.9, sz * 1.9, seed, 3);
-      const grain = fbm(sx * 24, y * 24, sz * 24, seed + 31, 2);
-      let temp = 0.46 + 0.3 * seam + 0.16 * (1 - f1 * 0.7) * (0.5 + 0.5 * tone) + 0.36 * (patch - 0.5) + 0.1 * (grain - 0.5);
-
-      // Sunspots: where a slow noise runs high; finer noise makes the edge ragged.
-      const n = fbm(sx * 1.5 + 11, y * 1.5, sz * 1.5, seed + 7, 3) + 0.1 * (fbm(sx * 8, y * 8, sz * 8, seed + 3, 2) - 0.5);
-      const pen = smooth(0.64, 0.7, n);
-      const umbra = smooth(0.7, 0.75, n);
-      temp = mix(temp, mix(0.18, 0.02, umbra), pen * 0.92);
-
-      // Faculae: bright veins in the active zones towards the limb.
-      const veins = fbm(sx * 3.4, y * 3.4 + 2, sz * 3.4, seed + 19, 3);
-        temp += smooth(0.58, 0.72, veins) * smooth(0.55, 0.95, rr) * 0.18 * (1 - pen);
-
-      // Limb darkening: the edge is seen through more cool gas.
-      const mu = z;
-      temp *= 0.48 + 0.52 * Math.pow(mu, 0.55);
+      const z = Math.sqrt(1 - rr * rr);
+      const qx = fbm(x * 1.9 + t, y * 1.9, z * 1.9, seed, 3);
+      const qy = fbm(x * 1.9, y * 1.9 + t * 0.8, z * 1.9 + 4, seed + 7, 3);
+      const f = fbm(x * 2.8 + qx * 2.6 + 1.7, y * 2.8 + qy * 2.6 + 9.2, z * 2.8 + t * 0.6, seed + 13, 3);
+      const temp = (0.12 + 1.05 * Math.pow(f, 1.4)) * (0.5 + 0.5 * Math.pow(z, 0.5));
       const [r, g, b] = heat(temp);
-      const i = (py * TEX + px) * 4;
-      img.data[i] = r;
-      img.data[i + 1] = g;
-      img.data[i + 2] = b;
-      img.data[i + 3] = 255 * smooth(1, 0.985, rr);
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+      data[i + 3] = 255 * smooth(1, 0.97, rr);
     }
   }
-  ctx.putImageData(img, 0, 0);
-  return canvas;
+  p.canvas.getContext('2d')!.putImageData(p.img, 0, 0);
+  return p.canvas;
 }
-
-const faces = new Map<number, HTMLCanvasElement>();
 
 /** How far the corona sprite reaches, in sun radii, and how many pixels across it is. */
 const CORONA_REACH = 3.6;
@@ -173,19 +137,13 @@ const slot = (seed: number, k: number): number => {
 const LOOPS = 4;
 
 /**
- * The sun of the Solar System mode: a boiling granulated ball with a reddish limb and sunspots, a thin pink
- * chromosphere round it, magnetic loops that rise off the surface and fall back, a corona of curving rays, and a wide
- * warm glow. Two copies of the face turn slowly against each other so the cells seem to churn. `flare` (0 → 1) is the
- * storm breaking out: the glow swells, the loops leap high and the disc whitens.
+ * The sun of the Solar System mode: a ball of flowing plasma that folds and churns, a thin pink chromosphere round
+ * it, magnetic loops that rise off the surface and fall back, a corona of curving rays, and a wide warm glow.
+ * `flare` (0 → 1) is the storm breaking out: the glow swells, the loops leap high and the disc whitens.
  */
 export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha = 1, flare = 0): void {
   const R = sun.radius;
   const seed = sun.seed;
-  let face = faces.get(seed);
-  if (!face) {
-    if (faces.size > 8) faces.clear();
-    faces.set(seed, (face = makeFace(seed)));
-  }
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(sun.x, sun.y);
@@ -272,14 +230,8 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   ctx.arc(0, 0, R * 1.14, 0, Math.PI * 2);
   ctx.fill();
 
-  // The face, twice, turning against each other so the cells seem to churn.
-  ctx.save();
-  ctx.rotate(time * 0.035);
-  ctx.drawImage(face, -R, -R, R * 2, R * 2);
-  ctx.rotate(-time * 0.085 - 1.3);
-  ctx.globalAlpha = alpha * 0.28;
-  ctx.drawImage(face, -R, -R, R * 2, R * 2);
-  ctx.restore();
+  // The surface: flowing plasma.
+  ctx.drawImage(plasma(seed, time), -R, -R, R * 2, R * 2);
 
   // Light from inside: a hot pulsing middle, a bright thin rim, and in a flare the whole disc whitens.
   ctx.save();
