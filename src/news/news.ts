@@ -1,22 +1,22 @@
 import { SETTINGS_KEY } from '../settings';
 import { NEWS } from './items';
-import type { NewsItem } from './types';
+import type { NewsBundle } from './types';
 
-/** The id of the newest item the player has been shown. */
+/** The tag of the newest bundle the player has been shown. */
 export const NEWS_KEY = 'slingshot.news.seen';
 
-/** More than this many unread items at once would be a wall of text; the newest win. */
+/** More than this many unread release bundles at once would be a wall of text; the newest win. */
 export const MAX_SHOWN = 4;
 
 /**
- * What a player is told about now: the items above the one they last saw, newest first.
+ * What a player is told about now: the bundles newer than the last tag they saw.
  * A first-time visitor has nothing to catch up on; a returning one who has never seen the dialog
  * (the update that brought it) gets the newest items.
  */
-export function pendingNews(items: readonly NewsItem[], seen: string | null, returning: boolean): NewsItem[] {
+export function pendingNews(bundles: readonly NewsBundle[], seen: string | null, returning: boolean): NewsBundle[] {
   if (seen === null && !returning) return [];
-  const seenAt = seen === null ? -1 : items.findIndex((item) => item.id === seen);
-  const unseen = seenAt < 0 ? items : items.slice(0, seenAt);
+  const seenAt = seen === null ? -1 : bundles.findIndex((bundle) => bundle.tag === seen);
+  const unseen = seenAt < 0 ? bundles : bundles.slice(0, seenAt);
   return unseen.slice(0, MAX_SHOWN);
 }
 
@@ -30,19 +30,19 @@ export function isReturningPlayer(): boolean {
 }
 
 /** What `pendingNews` makes of this browser's storage; nothing when storage is blocked. */
-export function newsForThisPlayer(returning: boolean, items: readonly NewsItem[] = NEWS): NewsItem[] {
+export function newsForThisPlayer(returning: boolean, bundles: readonly NewsBundle[] = NEWS): NewsBundle[] {
   try {
-    return pendingNews(items, localStorage.getItem(NEWS_KEY), returning);
+    return pendingNews(bundles, localStorage.getItem(NEWS_KEY), returning);
   } catch {
     return [];
   }
 }
 
-/** Remember that the player knows everything up to the newest item. */
-export function markNewsSeen(items: readonly NewsItem[] = NEWS): void {
-  if (!items.length) return;
+/** Remember that the player knows everything up to the newest release bundle. */
+export function markNewsSeen(bundles: readonly NewsBundle[] = NEWS): void {
+  if (!bundles.length) return;
   try {
-    localStorage.setItem(NEWS_KEY, items[0].id);
+    localStorage.setItem(NEWS_KEY, bundles[0].tag);
   } catch {
     // Not fatal: they will see it once more.
   }

@@ -6,15 +6,10 @@ export type Localized = Record<Lang, string>;
 /** Where the "Try it" button of an item leads. */
 export type NewsTarget = 'settings';
 
-/**
- * One announcement in the What's New dialog. The list below is the whole change log players see:
- * add an item at the top for every feature a player would want to know about (see AGENTS.md).
- */
+/** One player-facing change inside a release bundle. */
 export interface NewsItem {
-  /** Unique and never reused, e.g. `refined-look`. A player has seen everything from this one on down. */
+  /** Unique and never reused, e.g. `refined-look`. */
   id: string;
-  /** `YYYY-MM-DD`, the day it went in. */
-  date: string;
   title: Localized;
   /** One or two sentences: what it is and why it is fun. */
   text: Localized;
@@ -24,4 +19,17 @@ export interface NewsItem {
   image?: { src: string; alt: Localized };
   /** A button that opens the place the item is about. */
   open?: NewsTarget;
+}
+
+/** One What's New section. The tag is assigned by the release workflow. */
+export interface NewsBundle {
+  tag: string;
+  summary: Localized;
+  items: readonly NewsItem[];
+}
+
+/** Editorial source for published bundles and the bundle being prepared for the next release. */
+export interface NewsDocument {
+  draft: Omit<NewsBundle, 'tag'>;
+  releases: readonly NewsBundle[];
 }

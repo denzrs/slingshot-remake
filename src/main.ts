@@ -59,7 +59,8 @@ setLook(settings.look);
 setLang(settings.language);
 applyStaticTexts();
 const sound = new Sound();
-sound.enabled = settings.sound;
+sound.menuEnabled = settings.menuSounds;
+sound.gameEnabled = settings.gameSounds;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const coarsePointer = matchMedia('(pointer: coarse)');
 const effects = new Effects(settings.particles, reducedMotion, settings.debris);
@@ -70,7 +71,7 @@ const recorder = new ClipRecorder();
 /** The title screen plays an Event Horizon match between four CPUs behind the menu. */
 const attract = createMatch(
   'horizon',
-  { ...DEFAULT_SETTINGS, maxPlanets: 4, contours: settings.contours, sound: false },
+  { ...DEFAULT_SETTINGS, maxPlanets: 4, contours: settings.contours },
   { attract: true, seats: ['medium', 'medium', 'medium', 'medium', 'off', 'off'] },
 );
 let match: Match | null = null;
@@ -213,7 +214,7 @@ function wire(m: Match): void {
         if (audible) sound.volley();
         break;
       case 'lock':
-        if (audible) sound.blip();
+        if (audible) sound.gameBlip();
         break;
       case 'killcam':
         effects.clear();
@@ -345,7 +346,8 @@ const app: App = {
   settingsChanged() {
     saveSettings(settings);
     applyStickSide();
-    sound.enabled = settings.sound;
+    sound.menuEnabled = settings.menuSounds;
+    sound.gameEnabled = settings.gameSounds;
     effects.particles = settings.particles;
     effects.debrisLevel = settings.debris;
     setLook(settings.look);
@@ -904,10 +906,10 @@ if (import.meta.env.DEV || import.meta.env.VITE_BENCH) {
 function announceNews(): void {
   const ask = new URLSearchParams(location.search).get('news');
   if (ask === 'off') return;
-  const items = ask !== null ? NEWS.slice(0, MAX_SHOWN) : newsForThisPlayer(returningPlayer);
-  if (!items.length) return;
+  const bundles = ask !== null ? NEWS.slice(0, MAX_SHOWN) : newsForThisPlayer(returningPlayer);
+  if (!bundles.length) return;
   markNewsSeen();
-  menu.push(() => whatsNewScreen(app, items));
+  menu.push(() => whatsNewScreen(app, bundles));
 }
 
 async function boot(): Promise<void> {

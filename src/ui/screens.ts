@@ -28,7 +28,7 @@ import { teamRoster } from './team-roster';
 import { mountTutorialPreview, type TutorialPreviewKind } from './tutorial-preview';
 import { newsScreen } from './whats-new';
 import { NEWS } from '../news/items';
-import type { NewsItem } from '../news/types';
+import type { NewsBundle } from '../news/types';
 
 export interface App {
   menu: Menu;
@@ -445,8 +445,8 @@ export function skipVoteScreen(app: App): Screen {
 }
 
 /** The What's New dialog with its buttons wired: "Try it" opens the place an item is about. */
-export function whatsNewScreen(app: App, items: readonly NewsItem[]): Screen {
-  return newsScreen(app, items, { settings: () => app.menu.push(() => settingsScreen(app)) });
+export function whatsNewScreen(app: App, bundles: readonly NewsBundle[]): Screen {
+  return newsScreen(app, bundles, { settings: () => app.menu.push(() => settingsScreen(app)) });
 }
 
 export function pauseScreen(app: App, match: Match | null): Screen {
@@ -900,7 +900,8 @@ function settingsScreen(app: App): Screen {
             },
           ]
         : []),
-      inCategory(settingToggle(app, t('settings.sound'), 'sound'), 'device'),
+      inCategory(settingToggle(app, t('settings.menuSounds'), 'menuSounds'), 'device'),
+      inCategory(settingToggle(app, t('settings.gameSounds'), 'gameSounds'), 'device'),
       {
         kind: 'toggle',
         label: t('settings.fullscreen'),

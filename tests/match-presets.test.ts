@@ -57,13 +57,14 @@ describe('match presets', () => {
     settings.teamMode = 2;
     settings.language = 'en';
     settings.stickSide = 'right';
-    settings.sound = false;
+    settings.menuSounds = false;
+    settings.gameSounds = false;
     settings.fixedPower = true;
     settings.invisiblePlanets = true;
     const before = cloneSettings(settings);
     Object.assign(settings, presetRules('mayhem'));
     expect(matchingPreset(rulesOf(settings), 'classic')).toBe('mayhem');
-    for (const key of ['seats', 'seatTeams', 'teamMode', 'language', 'stickSide', 'sound'] as const) {
+    for (const key of ['seats', 'seatTeams', 'teamMode', 'language', 'stickSide', 'menuSounds', 'gameSounds'] as const) {
       expect(settings[key]).toEqual(before[key]);
     }
     expect(settings.fixedPower).toBe(false);

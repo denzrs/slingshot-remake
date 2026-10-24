@@ -56,7 +56,8 @@ export interface Settings {
   statsTicker: boolean;
   /** Touch screens: the side of the screen the aiming stick sits on. */
   stickSide: 'left' | 'right';
-  sound: boolean;
+  menuSounds: boolean;
+  gameSounds: boolean;
   /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
   betting: boolean;
   /** Online: only the people who play may write in the room's chat; spectators read along (a rule of the room). */
@@ -96,7 +97,8 @@ export const DEFAULT_SETTINGS: Settings = {
   menuBackground: true,
   statsTicker: true,
   stickSide: 'left',
-  sound: true,
+  menuSounds: true,
+  gameSounds: true,
   language: 'de',
   teamMode: 0,
   seatTeams: [0, 1, 0, 1, 0, 1],
@@ -108,12 +110,15 @@ export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<Settings>;
+      const { sound: legacySoundValue, ...parsed } = JSON.parse(raw) as Partial<Settings> & { sound?: unknown };
       const s: Settings = { ...DEFAULT_SETTINGS, ...parsed, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams] };
+      const legacySound = typeof legacySoundValue === 'boolean' ? legacySoundValue : undefined;
+      s.menuSounds = typeof parsed.menuSounds === 'boolean' ? parsed.menuSounds : legacySound ?? DEFAULT_SETTINGS.menuSounds;
+      s.gameSounds = typeof parsed.gameSounds === 'boolean' ? parsed.gameSounds : legacySound ?? DEFAULT_SETTINGS.gameSounds;
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
-      for (const key of ['contours', 'particles', 'menuBackground', 'statsTicker', 'sound'] as const) {
+      for (const key of ['contours', 'particles', 'menuBackground', 'statsTicker', 'menuSounds', 'gameSounds'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
       if (!isLook(s.look)) s.look = DEFAULT_SETTINGS.look;

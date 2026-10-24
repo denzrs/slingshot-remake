@@ -130,7 +130,8 @@ describe('the sun\'s storm', () => {
         match.update(1 / 30);
         if (match.phase === 'killcam') match.advance();
         const storm = match.world.nebulae.filter((n) => n.storm).length;
-        if (storm === seen) continue;
+        // The clouds disappearing after their lifetime changes the count too, but is not another outbreak.
+        if (storm <= seen) continue;
         seen = storm;
         outbreaks++;
         // The clouds are over the field before anybody can aim again.

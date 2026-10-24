@@ -103,7 +103,7 @@ describe('power settings', () => {
 
 describe('power-up choices', () => {
   it('start with every kind and the usual amount, also for settings saved before they existed', () => {
-    storage({ sound: false });
+    storage();
     const loaded = loadSettings();
     expect(loaded.powerUpKinds).toEqual(POWER_UP_KINDS);
     expect(loaded.powerUpAmount).toBe(POWER_UP.DEFAULT_AMOUNT);
@@ -165,6 +165,18 @@ describe('display settings', () => {
     expect(s.menuBackground).toBe(true);
     expect(s.particles).toBe(true);
     expect(s.contours).toBe(true);
+  });
+});
+
+describe('sound settings', () => {
+  it('migrates the old single switch to menu and game sounds', () => {
+    storage({ sound: false });
+    expect(loadSettings()).toMatchObject({ menuSounds: false, gameSounds: false });
+  });
+
+  it('lets saved menu and game choices override the old single switch', () => {
+    storage({ sound: false, menuSounds: true });
+    expect(loadSettings()).toMatchObject({ menuSounds: true, gameSounds: false });
   });
 });
 

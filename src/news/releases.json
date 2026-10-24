@@ -1,0 +1,72 @@
+{
+  "draft": {
+    "summary": {
+      "de": "Das Sonnensystem dreht sich weiter, Statistik-Fundstücke rauschen durchs Menü, Slingshot bekommt einen verfeinerten Look und Menü- und Spieltöne lassen sich getrennt einstellen.",
+      "en": "The Solar System keeps turning, stats fly through the menu, Slingshot gets a refined look, and menu and game sounds can be set separately."
+    },
+    "items": [
+      {
+        "id": "separate-menu-game-sounds",
+        "title": { "de": "Ton nach Wunsch", "en": "Sound your way" },
+        "text": {
+          "de": "Schalte Menütöne und Spieltöne jetzt unabhängig voneinander ein oder aus. So bestimmst du selbst, wo Slingshot zu hören ist.",
+          "en": "Turn menu sounds and game sounds on or off independently. You choose where Slingshot makes a sound."
+        },
+        "where": { "de": "Einstellungen → Ton & Bildschirm", "en": "Settings → Sound & screen" },
+        "open": "settings"
+      },
+      {
+        "id": "stats-news-ticker",
+        "title": { "de": "Zahlen im Vorbeiflug", "en": "Stats on the fly" },
+        "text": {
+          "de": "Kleine Fundstücke aus den Spielstatistiken rauschen jetzt als Laufband durchs Titelmenü und die Online-Lobby. Wenn du lieber Ruhe hast, schalte es unter Einstellungen → Darstellung aus.",
+          "en": "Small discoveries from the game stats now stream through the title screen and online lobby. Turn the ticker off under Settings → Display if you would rather have a quieter menu."
+        },
+        "where": { "de": "Einstellungen → Darstellung → Statistik-Laufband", "en": "Settings → Display → Stats ticker" }
+      },
+      {
+        "id": "solar-system-v2",
+        "title": { "de": "Sonnensystem in v2", "en": "Solar System in v2" },
+        "text": {
+          "de": "Planeten und Schiffe kreisen um die Sonne, während sich das ganze Spielfeld im Lauf der Partie weiterdreht. Sonnenstürme verpassen Schüssen einen elektrischen Ruck; im Spielbericht erscheinen deine stärksten Flugbahnen als animierte Highlights.",
+          "en": "Planets and ships orbit the sun as the whole field turns during play. Solar storms give shots an electric kick, and your standout paths appear as animated highlights in the match report."
+        },
+        "where": { "de": "Sonnensystem", "en": "Solar System" },
+        "image": {
+          "src": "v2-solar-system.webp",
+          "alt": {
+            "de": "Partie im Sonnensystem mit Sonne, Planeten und umlaufenden Bahnen",
+            "en": "A Solar System match with the sun, planets and their orbits"
+          }
+        }
+      },
+      {
+        "id": "refined-look",
+        "title": { "de": "Refined Look", "en": "Refined Look" },
+        "text": {
+          "de": "Glühende Raumschiffe und Planeten, die sich bewegen: Slingshot in einer neuen Grafik. Der klassische Look bleibt, du schaltest jederzeit um.",
+          "en": "Glowing ships and planets that move: Slingshot with new graphics. The classic look is still there, switch any time."
+        },
+        "where": { "de": "Einstellungen → Darstellung → Grafik", "en": "Settings → Display → Graphics" },
+        "image": {
+          "src": "refined-look.webp",
+          "alt": {
+            "de": "Die Einstellungen mit der hervorgehobenen Auswahl „Refined Look“ unter Grafik",
+            "en": "The settings with the Graphics choice \"Refined Look\" highlighted"
+          }
+        },
+        "open": "settings"
+      },
+      {
+        "id": "release-notes-bundles",
+        "title": { "de": "Was ist neu, auf einen Blick", "en": "What's new, at a glance" },
+        "text": {
+          "de": "Jetzt stehen die Updates unter ihrem Release-Tag: erst die kurze Zusammenfassung, darunter die Neuerungen als kleine Kacheln. So siehst du schneller, was neu ist.",
+          "en": "Updates now sit under their release tag: a short summary first, then each feature in a compact tile. It is easier to scan what is new."
+        },
+        "where": { "de": "Titelmenü → Was ist neu", "en": "Title screen → What's new" }
+      }
+    ]
+  },
+  "releases": []
+}

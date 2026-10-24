@@ -20,7 +20,7 @@ export interface NetGame {
 /**
  * The match of an online game, built the same way for the people playing it and for whoever flies it again later,
  * so both get the same match from the same game. The room's rules decide, not whatever this person has set up
- * for offline games: from this device only the display settings (lines, particles, sound, language) carry over.
+ * for offline games: from this device only the display settings (lines, particles, menu and game sounds, language) carry over.
  * A `script` makes it a replay.
  */
 export function netMatch(game: NetGame, base: Settings, extra: Pick<MatchOptions, 'oracle' | 'script'> = {}): NetMatch | null {

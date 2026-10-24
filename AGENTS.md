@@ -1,37 +1,37 @@
 # Working on Slingshot
 
-Notes for agents (and people) changing this repo. The README covers setup, scripts and releases; this file covers what to do besides writing the code.
+The README covers setup and releases. This file covers the player-facing work that accompanies code changes.
 
 ## Announce new features in What's New
 
-Players get a "What's New" dialog over the title screen once for every update, and can open it again from the title screen's footer. It is fed by one list: [`src/news/items.ts`](src/news/items.ts). **When you add or change something a player would notice, add an item at the top of that list in the same change.** Nothing needs clearing or resetting: the browser remembers the id of the newest item a player has seen, so a new item on top is shown to everybody who hasn't seen it yet.
+Players get a "What's New" dialog once for every release and can reopen it from the title screen. Its source is [`src/news/releases.json`](src/news/releases.json): `draft` holds the next release's summary and items; `releases` holds finalized bundles, newest first. **When a player-facing feature lands, add its item to `draft.items` and update the draft summary in the same change.** The release Action assigns the generated Git tag and moves the draft into `releases` before building.
 
-**Announce:** new game modes, rules and power-ups, new looks or settings, new online features, anything players would want to try. **Don't announce:** fixes, balancing, refactors, tests, docs, anything invisible. When in doubt, leave it out: the dialog only works if it is rarely there. Three or four items fill a screen, so don't announce five small things; announce the one that matters.
+Announce new modes, rules, power-ups, looks, settings, online features and other things players would want to try. Skip fixes, balancing, refactors, tests, docs and anything invisible. When in doubt, leave it out: the dialog works best when each bundle has only the changes that matter.
 
 ### Write an item
 
-```ts
+```json
 {
-  id: 'refined-look',                       // unique, never reused or renamed once shipped
-  date: '2026-10-24',                       // YYYY-MM-DD
-  title: { de: 'Refined Look', en: 'Refined Look' },
-  text: { de: '…', en: '…' },               // one or two sentences: what it is, why it is fun
-  where: { de: 'Einstellungen → Darstellung → Grafik', en: 'Settings → Display → Graphics' },
-  image: { src: refinedLook, alt: { de: '…', en: '…' } },  // optional, see below
-  open: 'settings',                         // optional "Try it" button, see NewsTarget in src/news/types.ts
+  "id": "refined-look",
+  "title": { "de": "Refined Look", "en": "Refined Look" },
+  "text": { "de": "…", "en": "…" },
+  "where": { "de": "Einstellungen → Darstellung → Grafik", "en": "Settings → Display → Graphics" },
+  "image": { "src": "refined-look.webp", "alt": { "de": "…", "en": "…" } },
+  "open": "settings"
 }
 ```
 
-- Both languages, always (`tests/news.test.ts` checks it). German addresses the player as "du". Write like a friend showing a new toy, not like release notes.
-- Say **where to find it** in `where`, using the labels exactly as they appear in the UI.
-- Newest item first; the test checks the dates.
-- Need a new "Try it" target? Add it to `NewsTarget` in `src/news/types.ts` and wire it in `whatsNewScreen` in `src/ui/screens.ts`.
+- Give every item a unique, permanent kebab-case `id`. Dates are not part of the news data; the release tag provides the chronology.
+- Write both languages. German addresses the player as "du". Keep the title short and the text to one or two friendly sentences.
+- Say where to find the feature in `where`, using the UI labels exactly as they appear.
+- Images are optional. Use a 16:9 `.webp` under 250 KB in `src/news/images/`; `src` is the filename. Without an image, the card uses the built-in space illustration.
+- `open` adds a "Try it" button. Add new targets to `NewsTarget` in `src/news/types.ts` and wire them in `whatsNewScreen` in `src/ui/screens.ts`.
+- Run `npm run news:validate` to check the JSON, languages, ids and image files.
+- For a manually pushed release tag, move the draft into `releases` under that exact tag and clear `draft.items` before creating the tag. The tag workflow checks that the bundle is already finalized.
 
 ### Make the picture
 
-A picture beats a paragraph, and one that shows *where* the thing is beats both. Pictures are 16:9 `.webp`, well under 250 KB, in `src/news/images/`, imported at the top of `items.ts`.
-
-Start the dev server, then let `npm run shot` take it (it drives headless Chrome; set `CHROME_PATH` if Chrome is elsewhere). The settings are applied before the page loads, `--click` presses buttons by their text, `--mark` draws a ring around what the player should look at:
+A picture beats a paragraph, and one that shows where the feature lives beats both. Start the dev server, then let `npm run shot` take it (it drives headless Chrome; set `CHROME_PATH` if Chrome is elsewhere). The settings are applied before the page loads, `--click` presses buttons by their text, and `--mark` draws a ring around what the player should look at:
 
 ```bash
 npm run dev   # in another terminal
@@ -39,12 +39,12 @@ npm run shot -- --out src/news/images/refined-look.webp \
   --settings '{"look":"refined"}' --click "Einstellungen" --mark "Refined Look"
 ```
 
-`--size WxH` (default 1280x720), `--wait <ms>` and `--url` are there too; see the head of [`scripts/shot.ts`](scripts/shot.ts). The shots are in German. Look at the result before you commit it.
+`--size WxH` (default 1280x720), `--wait <ms>` and `--url` are available too; see [`scripts/shot.ts`](scripts/shot.ts). The shots use the German UI. Look at each result before committing it.
 
-### Try it
+### Preview and seen state
 
-Open `http://localhost:5173/?news` to see the newest items again whatever the browser remembers (`?news=off` keeps the dialog away). To test as a player would, clear `slingshot.news.seen` in the browser's local storage while `slingshot.settings.v1` exists (a browser without saved settings counts as a first visit, and first-time visitors are not shown the dialog).
+Open `http://localhost:5173/?news` to preview the newest bundles, or add `?news=off` to keep the dialog away. A draft appears as "Nächste Version" locally. The browser stores the newest seen release tag in `slingshot.news.seen`. For a clean player preview, clear that key while `slingshot.settings.v1` exists. A browser without saved settings counts as a first visit and does not get the dialog.
 
 ## Language
 
-The UI is German and English, strings live in `src/i18n.ts` (every key in both). Texts of What's New items stay in `src/news/items.ts`, next to the item.
+UI labels live in `src/i18n.ts` (every key in both languages). Release summaries and What's New items live together in `src/news/releases.json`.

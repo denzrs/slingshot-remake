@@ -785,21 +785,33 @@ fn the_host_can_change_the_game_with_the_rules_and_nobody_else_can() {
         .as_str()
         .unwrap()
         .to_owned();
-    rooms.handle(2, &json!({"type":"join_room","roomId":room_id,"name":"Guest"}));
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Guest"}),
+    );
     rooms.handle(2, &json!({"type":"ready","ready":true}));
     drain_json(&mut host_rx);
     drain_json(&mut guest_rx);
 
-    rooms.handle(2, &json!({"type":"set_rules","gameMode":"horizon","rules":rules}));
+    rooms.handle(
+        2,
+        &json!({"type":"set_rules","gameMode":"horizon","rules":rules}),
+    );
     assert_eq!(
         take_type(&drain_json(&mut guest_rx), "error")["message"],
         "Only the room host can change the rules"
     );
 
-    rooms.handle(1, &json!({"type":"set_rules","gameMode":"nonsense","rules":rules}));
+    rooms.handle(
+        1,
+        &json!({"type":"set_rules","gameMode":"nonsense","rules":rules}),
+    );
     take_type(&drain_json(&mut host_rx), "error");
 
-    rooms.handle(1, &json!({"type":"set_rules","gameMode":"horizon","rules":rules}));
+    rooms.handle(
+        1,
+        &json!({"type":"set_rules","gameMode":"horizon","rules":rules}),
+    );
     let update = take_type(&drain_json(&mut host_rx), "room_update");
     assert_eq!(update["room"]["gameMode"], "horizon");
     assert!(update["room"]["players"]
@@ -808,10 +820,16 @@ fn the_host_can_change_the_game_with_the_rules_and_nobody_else_can() {
         .iter()
         .all(|p| p["ready"] == false));
 
-    rooms.handle(1, &json!({"type":"set_rules","gameMode":"solar","rules":rules}));
+    rooms.handle(
+        1,
+        &json!({"type":"set_rules","gameMode":"solar","rules":rules}),
+    );
     let update = take_type(&drain_json(&mut host_rx), "room_update");
     assert_eq!(update["room"]["gameMode"], "solar");
-    rooms.handle(1, &json!({"type":"set_rules","gameMode":"horizon","rules":rules}));
+    rooms.handle(
+        1,
+        &json!({"type":"set_rules","gameMode":"horizon","rules":rules}),
+    );
     take_type(&drain_json(&mut host_rx), "room_update");
 
     // Without a gameMode the room keeps the one it has.

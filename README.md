@@ -39,6 +39,7 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 | `npm run dev` | Dev server at http://localhost:5173 |
 | `npm run build` | Typecheck and build the client into `dist/` |
 | `npm run typecheck` | Typecheck the client, tests and benchmarks |
+| `npm run news:validate` | Validate the What's New release JSON |
 | `npm run shot -- --out <file>` | Screenshot of the running game for a What's New picture (see [AGENTS.md](AGENTS.md)) |
 | `npm test` | Run all tests |
 | `npm run dev:server` | Rust multiplayer relay (port `8080`, override with `PORT`) |
@@ -50,9 +51,9 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 
 **Tests.** `npm test` builds and tests the Rust relay, so install the stable Rust toolchain (including Cargo) first; `npx vitest` runs only the TypeScript tests and expects the Rust test binary to have been built. The suites take roughly one minute on 8 cores. Vitest runs test files in parallel but the tests inside one file one after the other, so put a long-running test in a file of its own instead of adding it to a big one. Under Vitest every read of an imported binding goes through a getter, which doubled the cost of `Shot.step` until it read its `PHYSICS` constants once into locals; do the same in other hot loops. Comparing huge snapshots with `toEqual` is slow too, so `tests/netsync.test.ts` only falls back to it to explain a mismatch.
 
-**What's New.** A dialog over the title screen tells players about new features once per update. Add an item to [`src/news/items.ts`](src/news/items.ts) whenever something worth announcing lands; [AGENTS.md](AGENTS.md) explains how to write one and how to take its screenshot with `npm run shot`.
+**What's New.** A dialog over the title screen groups feature cards under each release tag, with a short summary above them. Add upcoming copy to the `draft` in [`src/news/releases.json`](src/news/releases.json); the main-branch release workflow moves it under the generated tag before building. [AGENTS.md](AGENTS.md) explains the JSON format and screenshots.
 
-**Releases.** Every merge to `main` that passes typecheck and tests is tagged with the next minor version (`vX.Y.0` → `vX.(Y+1).0`), released on GitHub and deployed to GitHub Pages. Put `[major]` in a commit message (with squash merges: the PR title or description) to get the next major version instead (`vX.Y.0` → `v(X+1).0.0`); the marker counts until the next release is tagged. Pushing a tag such as `v2.0.0` by hand also works.
+**Releases.** Every merge to `main` that passes typecheck and tests is tagged with the next minor version (`vX.Y.0` → `vX.(Y+1).0`), released on GitHub and deployed to GitHub Pages. When the What's New draft has items, the workflow first commits the finalized JSON with `[skip ci]`, tags that commit, then builds and publishes from the tag in the same run. Put `[major]` in a commit message (with squash merges: the PR title or description) to get the next major version instead (`vX.Y.0` → `v(X+1).0.0`); the marker counts until the next release is tagged. Pushing a tag such as `v2.0.0` by hand also works when its What's New bundle is already finalized in the JSON file.
 
 ## Credits & license
 

@@ -92,8 +92,7 @@ impl Stats {
 
         // Local games populate the second heatmap and the source switch. Their fixture rounds are
         // intentionally summary-only, as actual local-game reports are.
-        let mut local_index = 0;
-        for age in (6..365).step_by(15) {
+        for (local_index, age) in (6..365).step_by(15).enumerate() {
             let index = local_index + 200;
             let id = index as u64 + 1;
             let game_mode = GAME_MODES[index % GAME_MODES.len()];
@@ -104,7 +103,6 @@ impl Stats {
                 .collect();
             let at = today - age as i64 * DAY_SECS + today_offset - 3600;
             self.record_at(&Job::Local(facts, rounds), at).await?;
-            local_index += 1;
             games += 1;
         }
 
@@ -141,7 +139,7 @@ fn demo_facts(
     rules.betting = !local;
     rules.power_ups = true;
 
-    let solo = index % 4 == 0;
+    let solo = index.is_multiple_of(4);
     let second = if solo {
         SeatFacts {
             occupant: Occupant::Cpu(CPU_LEVELS[(index / 2) % CPU_LEVELS.len()]),
@@ -269,13 +267,13 @@ fn demo_round(index: usize, round: i64, team_mode: bool, local: bool) -> RoundRe
                 },
                 swingbys: ((index + seat) % 4) as i64,
                 grazes: ((index + round as usize) % 3) as i64,
-                own_goals: if (index + seat + round as usize) % 13 == 0 {
+                own_goals: if (index + seat + round as usize).is_multiple_of(13) {
                     1
                 } else {
                     0
                 },
                 pickups: ((index + seat) % 3) as i64,
-                saves: if (index + seat + round as usize) % 11 == 0 {
+                saves: if (index + seat + round as usize).is_multiple_of(11) {
                     1
                 } else {
                     0
@@ -313,23 +311,23 @@ fn demo_round(index: usize, round: i64, team_mode: bool, local: bool) -> RoundRe
         vec![
             TipRound {
                 kind: "round",
-                right: index % 3 != 0,
+                right: !index.is_multiple_of(3),
                 stake: 100 + (index % 8) as i64 * 50,
-                payout: if index % 3 != 0 {
+                payout: if !index.is_multiple_of(3) {
                     180 + (index % 8) as i64 * 90
                 } else {
                     0
                 },
-                underdog: index % 4 == 0,
-                stands: index % 5 == 0,
+                underdog: index.is_multiple_of(4),
+                stands: index.is_multiple_of(5),
             },
             TipRound {
                 kind: "shot",
-                right: index % 2 == 0,
+                right: index.is_multiple_of(2),
                 stake: 0,
                 payout: 0,
-                underdog: index % 3 == 0,
-                stands: index % 4 == 0,
+                underdog: index.is_multiple_of(3),
+                stands: index.is_multiple_of(4),
             },
         ]
     };
