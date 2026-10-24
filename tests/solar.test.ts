@@ -38,9 +38,9 @@ describe('solar system world', () => {
     }
   });
 
-  it('turns a circle in 4 steps near the sun, 8 in the middle and 12 far out', () => {
+  it('turns a circle in 12 steps near the sun, 8 in the middle and 4 far out', () => {
     const third = (SOLAR.OUTER_ORBIT - SOLAR.INNER_ORBIT) / 3;
-    for (const [r, steps] of [[SOLAR.INNER_ORBIT + 1, 4], [SOLAR.INNER_ORBIT + third * 0.9, 4], [SOLAR.INNER_ORBIT + third * 1.5, 8], [SOLAR.OUTER_ORBIT - third * 0.1, 12], [SOLAR.OUTER_ORBIT, 12]] as const) {
+    for (const [r, steps] of [[SOLAR.INNER_ORBIT + 1, 12], [SOLAR.INNER_ORBIT + third * 0.9, 12], [SOLAR.INNER_ORBIT + third * 1.5, 8], [SOLAR.OUTER_ORBIT - third * 0.1, 4], [SOLAR.OUTER_ORBIT, 4]] as const) {
       expect(orbitTurn(r) * steps).toBeCloseTo(Math.PI * 2, 9);
     }
   });
