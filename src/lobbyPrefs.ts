@@ -68,7 +68,7 @@ export function loadLobbyPrefs(defaultServer: string): LobbyPrefs {
       server: typeof saved.server === 'string' && saved.server && saved.server !== 'ws://localhost:8080' ? saved.server : fresh.server,
       name: typeof saved.name === 'string' && saved.name ? saved.name : fresh.name,
       autoConnect: saved.autoConnect === true,
-      gameMode: saved.gameMode === 'horizon' ? 'horizon' : 'classic',
+      gameMode: saved.gameMode === 'horizon' || saved.gameMode === 'solar' ? saved.gameMode : 'classic',
       capacity: Number.isInteger(saved.capacity) && saved.capacity! >= 2 && saved.capacity! <= 6 ? saved.capacity! : fresh.capacity,
       look: roomLookFrom(saved.look),
       avatar: avatarFrom(saved.avatar),

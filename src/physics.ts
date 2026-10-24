@@ -3,7 +3,7 @@ import { DEFENSE, PLASMA, NEBULA, PHYSICS, WORMHOLE } from './config';
 // Read once: Shot.step is the innermost loop of every CPU search and killcam, and an imported binding is slower to read than a local one.
 const { DT, G, SHIP_RADIUS, OUT_MARGIN } = PHYSICS;
 
-export type PlanetStyle = 'rocky' | 'gas' | 'ice';
+export type PlanetStyle = 'rocky' | 'gas' | 'ice' | 'star';
 
 export interface Planet {
   x: number;
@@ -16,6 +16,8 @@ export interface Planet {
   tint: string;
   /** The antigravity power-up has turned this planet's gravity round: it pushes shots away instead of pulling them in. */
   reversed?: boolean;
+  /** The sun of the Solar System mode: the system turns around it, and no power-up can touch it. */
+  sun?: boolean;
 }
 
 export interface Ship {
@@ -41,6 +43,10 @@ export interface Nebula {
   radius: number;
   /** Fixes the cloud's uneven outline, so it is drawn the same everywhere and never changes once laid. */
   seed: number;
+  /** Thrown out by the sun's storm in a Solar System rather than placed: the same drag, drawn as hot plasma. */
+  storm?: boolean;
+  /** A storm cloud in its last turn of the system: it thins away and is gone when the turn ends. */
+  fading?: boolean;
 }
 
 /** A pair of mouths the wormhole power-up has placed: a shot entering one leaves by the other. No gravity, no kill. */

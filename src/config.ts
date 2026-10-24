@@ -120,6 +120,55 @@ export const SCORING = {
 /** Fading trails: the choices for how long a finished shot's path lasts in seconds (0 = it stays), and the share of that time it stays fully visible before fading. */
 export const TRAIL_FADE = { OPTIONS: [0, 1, 2, 4], HOLD: 0.4 };
 
+/** "Sonnensystem" — a sun in the middle, planets and ships on orbits round it that turn on after every shot. */
+export const SOLAR = {
+  SUN_RADIUS: 44,
+  SUN_MASS: 200_000,
+  /** Where the system turns: the field's middle, a little low so the scoreboard along the top stays clear. */
+  CENTER_Y_SHIFT: 25,
+  /** The innermost and outermost orbit a body may take (distance from the sun's centre). */
+  INNER_ORBIT: 84,
+  OUTER_ORBIT: 335,
+  /** The orbits are ellipses, this much wider than tall (the field is): an orbit's "radius" is its half-height. */
+  STRETCH: 1.6,
+  /** Free space between two neighbouring orbits' bodies. */
+  ORBIT_GAP: 12,
+  /** How far a ship's orbit band reaches either side of its centre line. */
+  SHIP_BAND: 10,
+  /** A planet sharing a ship's orbit starts at least this far from the ship's centre beyond its own radius. */
+  SHIP_CLEARANCE: 40,
+  /** Planets of this mode are smaller than on an open field, so several fit between the orbits. */
+  MIN_PLANET: 13,
+  MAX_PLANET: 52,
+  /** Planets here weigh this much more than their size alone gives (the sun is set apart). */
+  PLANET_HEAVY: 1.2,
+  /**
+   * The orbits fall into three sectors, an equal share of the way from the innermost to the outermost orbit each,
+   * and a body goes once round the sun in this many steps (a step is a pass: every ship has shot): inner, middle, outer.
+   */
+  SECTOR_STEPS: [4, 8, 12],
+  /** Seconds the system takes to turn on. */
+  TURN_TIME: 1.8,
+} as const;
+
+/** The sun's storm: once in a round it bursts, and throws a few clouds of plasma over the field that slow shots like a nebula. */
+export const SOLAR_STORM = {
+  /** It breaks out as the system turns after this many passes of the round (picked at random, both ends included); a round decided sooner has none. */
+  FIRST_PASS: 1,
+  LAST_PASS: 4,
+  /** How many clouds. */
+  MIN_CLOUDS: 3,
+  MAX_CLOUDS: 5,
+  MIN_RADIUS: 56,
+  MAX_RADIUS: 86,
+  /** How far from the sun a cloud lands (the orbit radius it would lie on), and how much the clouds may overlap one another. */
+  MIN_DIST: 130,
+  MAX_DIST: 330,
+  OVERLAP: 0.6,
+  /** The clouds last this many passes after the one that broke the storm; then they thin away while the system turns. */
+  LIFETIME: 3,
+} as const;
+
 /** "Ereignishorizont" — the gravity royale mode. */
 export const HORIZON = {
   START_RADIUS: 16,

@@ -1,4 +1,4 @@
-import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, WORMHOLE } from '../config';
+import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, SOLAR, WORMHOLE } from '../config';
 import type { Match, Scene } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
@@ -7,6 +7,8 @@ import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
 import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from './orientation';
+import { drawSun } from './sun';
+import { orbitOf, solarCenter } from '../world';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
 import { renderContours } from './contours';
@@ -15,6 +17,7 @@ import { Hud } from './hud';
 import type { OracleTap } from './oracle';
 import { renderPlanet } from './planets';
 import { drawNebula } from './nebula';
+import { drawStormBurst, drawStormCloud, stormFlare } from './storm';
 import { drawPortal, drawWormhole } from './wormhole';
 import { defensePlanet, defenseView, drawDefense, drawInterception } from './defense';
 import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
@@ -195,6 +198,61 @@ export class Renderer {
     };
   }
 
+  private drawOrbits(world: World): void {
+    const { ctx } = this;
+    const centre = solarCenter();
+    const radii: number[] = [];
+    for (const o of [...world.planets.filter((p) => !p.sun), ...world.ships.filter((sh) => sh.alive)]) {
+      const r = orbitOf(o.x, o.y).r;
+      if (!radii.some((known) => Math.abs(known - r) < 0.5)) radii.push(r);
+    }
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    ctx.strokeStyle = 'rgba(111, 227, 200, 0.45)';
+    for (const r of radii) {
+      ctx.beginPath();
+      ctx.ellipse(centre.x, centre.y, r * SOLAR.STRETCH, r, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255, 90, 110, 0.35)';
+    for (const r of [SOLAR.INNER_ORBIT, SOLAR.OUTER_ORBIT]) {
+      ctx.beginPath();
+      ctx.ellipse(centre.x, centre.y, r * SOLAR.STRETCH, r, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** When this screen first saw each storm cloud, in renderer time: the burst plays from there, the same for every cloud of one storm. */
+  private readonly stormSeen = new Map<number, number>();
+
+  /** When this screen first saw each storm cloud thinning away, in renderer time. */
+  private readonly stormFading = new Map<number, number>();
+
+  /** How far a storm cloud has thinned away (0 → 1): its last turn of the system lasts about this long. */
+  private stormDissolve(cloud: { seed: number; fading?: boolean }): number {
+    if (!cloud.fading) {
+      this.stormFading.delete(cloud.seed);
+      return 0;
+    }
+    if (!this.stormFading.has(cloud.seed)) this.stormFading.set(cloud.seed, this.time);
+    return Math.min(1, (this.time - this.stormFading.get(cloud.seed)!) / 1.7);
+  }
+
+  /** Seconds since the storm broke out (of the cloud with `seed`, or the newest one), or -1 when the world has none. */
+  private stormAge(world: World, seed?: number): number {
+    const clouds = world.nebulae.filter((n) => n.storm);
+    if (!clouds.length) {
+      this.stormSeen.clear();
+      return -1;
+    }
+    for (const n of clouds) if (!this.stormSeen.has(n.seed)) this.stormSeen.set(n.seed, this.time);
+    for (const key of this.stormSeen.keys()) if (!clouds.some((n) => n.seed === key)) this.stormSeen.delete(key);
+    const first = seed === undefined ? Math.max(...this.stormSeen.values()) : this.stormSeen.get(seed)!;
+    return this.time - first;
+  }
+
   private drawWorld(match: Match, scene: Scene, ps: number): void {
     const { ctx } = this;
     const world = scene.world;
@@ -214,14 +272,22 @@ export class Renderer {
         this.contours.set(world, layer);
       }
       // While the hole collapses everything moves, so the stale map fades back.
-      ctx.globalAlpha = alpha * (match.phase === 'collapse' ? 0.25 : 1);
+      ctx.globalAlpha = alpha * (match.phase === 'collapse' || match.phase === 'orbit' ? 0.25 : 1);
       ctx.drawImage(layer.canvas, 0, 0, FIELD.width, FIELD.height);
     }
+
+    // Debug aid: the orbit every body of a Solar System rides, and the limits the orbits are laid out between.
+    if (import.meta.env.DEBUG_AIM && match.mode === 'solar') this.drawOrbits(world);
 
     // Nebula clouds sit behind the planets and the ships, so nothing hides inside them.
     if (world.nebulae.length) {
       ctx.globalAlpha = alpha;
-      for (const n of world.nebulae) drawNebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
+      const sun = world.planets.find((p) => p.sun);
+      for (const n of world.nebulae) {
+        if (n.storm && sun) drawStormCloud(ctx, n, sun, this.stormAge(world, n.seed), this.time, this.stormDissolve(n));
+        else drawNebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
+      }
+      if (sun) drawStormBurst(ctx, sun, this.stormAge(world));
       ctx.globalAlpha = 1;
     }
 
@@ -230,6 +296,7 @@ export class Renderer {
       this.spritePs = ps;
     }
     for (const p of world.planets) {
+      if (p.sun) continue;
       let sprite = this.sprites.get(p.seed);
       if (!sprite) {
         sprite = renderPlanet(p, ps);
@@ -261,6 +328,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     world.defenses.forEach((d, i) => drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, alpha, defenseView(scene.volley?.shots ?? [], d, i)));
+    for (const p of world.planets) if (p.sun) drawSun(ctx, p, this.time, alpha, stormFlare(this.stormAge(world)));
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));

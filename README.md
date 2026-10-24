@@ -1,6 +1,6 @@
 # Slingshot
 
-A web remake of the Linux classic [Slingshot](https://wiki.ubuntuusers.de/Spiele/Slingshot/): up to six spaceships fire at each other, and every shot is bent by the gravity of the planets in between. Classic duels, a gravity royale with a growing black hole (Event Horizon), a daily challenge, CPU opponents and online multiplayer. The UI is available in German and English.
+A web remake of the Linux classic [Slingshot](https://wiki.ubuntuusers.de/Spiele/Slingshot/): up to six spaceships fire at each other, and every shot is bent by the gravity of the planets in between. Classic duels, a solar system whose orbits turn after every shot, a gravity royale with a growing black hole (Event Horizon), a daily challenge, CPU opponents and online multiplayer. The UI is available in German and English.
 
 ## Getting started
 

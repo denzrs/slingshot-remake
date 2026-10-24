@@ -1,4 +1,5 @@
 import { AIM, GRACE, MAYHEM, TRAIL_FADE } from '../config';
+import type { VersusMode } from '../game';
 import { t, type Key } from '../i18n';
 import type { RoomRules } from '../net';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from '../powerups';
@@ -104,8 +105,8 @@ export function ruleRows(): RuleRow[] {
 const capital = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** The rows that apply to a game mode — and, for the rules of a room, the ones that only an online game has. */
-export const rulesFor = (mode: 'classic' | 'horizon', online = false): RuleRow[] =>
-  ruleRows().filter((row) => (mode === 'classic' || !row.classicOnly) && (online || !row.onlineOnly));
+export const rulesFor = (mode: VersusMode, online = false): RuleRow[] =>
+  ruleRows().filter((row) => (mode !== 'horizon' || !row.classicOnly) && (online || !row.onlineOnly));
 
 // ————————————————————————————— As controls —————————————————————————————
 
@@ -124,7 +125,7 @@ export interface RuleSource {
 type RuleItem = Extract<MenuItem, { kind: 'slider' | 'toggle' | 'segmented' | 'tiles' }>;
 
 /** The controls for the rules of a game mode, each with the block it belongs to. */
-export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, online = false): { key: keyof RuleValues; group: RuleGroup; item: RuleItem }[] {
+export function ruleItems(mode: VersusMode, source: RuleSource, online = false): { key: keyof RuleValues; group: RuleGroup; item: RuleItem }[] {
   /** The cap to come back to after trying another power mode. */
   let lastCap = source.get().maxPower < AIM.MAX_POWER ? source.get().maxPower : DEFAULT_CAP;
   const commit = source.commit;
