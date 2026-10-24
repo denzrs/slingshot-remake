@@ -126,8 +126,8 @@ export class OracleHud {
 
   /** The verdict on the viewer's own tip while it is fresh, as long as it is on show. */
   private verdictFor(f: OracleFrame, match: Match): OracleResult | null {
-    const r = match.oracle.result;
-    const viewer = match.viewer;
+    const r = match.betOracle.result;
+    const viewer = match.bettor;
     if (!r || viewer === null || !match.ghost || match.clock - r.at > 20 || !r.tips.some((tip) => tip.player === viewer)) return null;
     if (this.shown.match !== match || this.shown.id !== r.id) this.shown = { match, id: r.id, since: f.time };
     return f.time - this.shown.since < ORACLE.RESULT_SECONDS ? r : null;
@@ -140,7 +140,7 @@ export class OracleHud {
   plan(f: OracleFrame, match: Match, touch: boolean, ghost: boolean): void {
     const z = sizes(touch);
     const k = scaleOf(f);
-    const o = match.oracle;
+    const o = match.betOracle;
     const over = match.phase === 'roundOver';
     let height = 0;
     if (over) {
@@ -177,7 +177,7 @@ export class OracleHud {
       ctx.globalAlpha = Math.min(1, Math.max(0, (match.phaseTime - 0.9) / 0.5));
       this.drawRoundCard(f, match, touch);
     } else if (this.mode === 'verdict') {
-      const r = match.oracle.result!;
+      const r = match.betOracle.result!;
       const age = f.time - this.shown.since;
       ctx.globalAlpha = Math.min(1, (ORACLE.RESULT_SECONDS - age) / 0.4);
       this.drawVerdict(f, match, r, this.card, touch);
@@ -189,8 +189,8 @@ export class OracleHud {
 
   /** A verdict that falls during the killcam shows at the top, where the bottom edge belongs to the replay. */
   drawKillcamVerdict(f: OracleFrame, match: Match, touch: boolean): void {
-    const r = match.oracle.result;
-    const viewer = match.viewer;
+    const r = match.betOracle.result;
+    const viewer = match.bettor;
     if (!r || viewer === null || !match.ghost || match.clock - r.at > 20 || !r.tips.some((tip) => tip.player === viewer)) return;
     const z = sizes(touch);
     const k = scaleOf(f);
@@ -236,7 +236,7 @@ export class OracleHud {
   private drawScore(f: OracleFrame, match: Match, right: number, mid: number): number {
     const { ctx } = f;
     const k = scaleOf(f);
-    const score = match.viewer === null ? undefined : match.oracle.scores[match.viewer];
+    const score = match.bettor === null ? undefined : match.betOracle.scores[match.bettor];
     if (!score) return 0;
     // What the next right tip is worth.
     const streak = score.streak >= 1 ? ` ×${fmt(oracleMultiplier(score.streak + 1), 1).replace(/[.,]0$/, '')}` : '';
@@ -257,6 +257,13 @@ export class OracleHud {
   private pickLabel(match: Match, kind: OracleKind, pick: number): string {
     if (kind === 'shot') return pick === TIP_HIT ? t('oracle.hit') : t('oracle.miss');
     return pick === TIP_NOBODY ? t('oracle.nobody') : match.players[pick]?.name ?? '';
+  }
+
+  /** What the crowd's bets have made of a side's odds, after its name ("Anna ×2.4") — in the stands' open book only. */
+  private withOdds(match: Match, id: number, name: string): string {
+    const o = match.betOracle;
+    const odds = o.openBook ? o.oddsFor(id, (pick) => match.sideOf(pick)) : null;
+    return odds ? `${name} ×${fmt(odds, 1)}` : name;
   }
 
   private roundPickLabel(match: Match, pick: number): string {
@@ -350,7 +357,7 @@ export class OracleHud {
   private tipSegments(match: Match, kind: OracleKind | 'round', tips: { player: number; pick: number; right?: boolean; fresh?: boolean }[], marks: boolean, names: boolean): Segment[] {
     const out: Segment[] = [];
     tips.forEach((tip, i) => {
-      const who = match.players[tip.player];
+      const who = match.tipster(tip.player) ?? { name: '?', color: COLORS.boneDim };
       const down = tip.pick === TIP_HIDDEN;
       const named = kind !== 'shot' && tip.pick >= 0 ? match.players[tip.pick] : undefined;
       if (i) out.push(['    ', COLORS.bone]);
@@ -400,8 +407,8 @@ export class OracleHud {
     const { ctx } = f;
     const k = scaleOf(f);
     const z = sizes(touch);
-    const q = match.oracle.question;
-    const rq = match.oracle.roundQuestion;
+    const q = match.betOracle.question;
+    const rq = match.betOracle.roundQuestion;
     const c = this.card;
     this.plate(f, c, COLORS.sodium);
     const left = c.x + 18 * k;
@@ -459,7 +466,7 @@ export class OracleHud {
     const { ctx } = f;
     const k = scaleOf(f);
     const z = sizes(touch);
-    const me = match.oracle.mine;
+    const me = match.betOracle.mine;
     const mine = me && me.id === q.id ? me.pick : null;
 
     // The others' tips lie face down while the question is open and turn over, one after another, when it is locked.
@@ -467,8 +474,8 @@ export class OracleHud {
       if (q.locked) this.revealed = { match, id: q.id, since: f.time };
     }
     const turning = q.locked ? f.time - this.revealed.since : -1;
-    const tips = [...match.oracle.picks]
-      .filter(([player]) => player !== match.viewer && match.players[player])
+    const tips = [...match.betOracle.picks]
+      .filter(([player]) => player !== match.bettor && match.tipster(player))
       .map(([player, pick], i) => {
         const age = turning - i * ORACLE.REVEAL_STEP;
         const up = age >= 0 && pick !== TIP_HIDDEN;
@@ -511,7 +518,7 @@ export class OracleHud {
     const { ctx } = f;
     const k = scaleOf(f);
     const z = sizes(touch);
-    const rq = match.oracle.roundQuestion!;
+    const rq = match.betOracle.roundQuestion!;
     let cx = this.rowLabel(f, t('oracle.roundName'), left, mid, rgba(COLORS.sodium, 0.75));
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
@@ -521,17 +528,17 @@ export class OracleHud {
     ctx.fillText(question, cx, mid + 0.5 * k);
     cx += ctx.measureText(question).width + 16 * k;
 
-    const me = match.oracle.roundMine;
+    const me = match.betOracle.roundMine;
     const mine = me && me.id === rq.id ? me.pick : null;
     const aiming = match.phase === 'aiming';
     const chips: Chip[] = aiming
-      ? match.roundChoices.map((id, i): Chip => ({ label: match.players[id].name, pick: id, round: true, color: match.players[id].color, key: `⇧${i + 1}` }))
+      ? match.roundChoices.map((id, i): Chip => ({ label: this.withOdds(match, id, match.players[id].name), pick: id, round: true, color: match.players[id].color, key: `⇧${i + 1}` }))
       : [];
-    if (aiming && rq.draw) chips.push({ label: t('oracle.roundDraw'), pick: TIP_NOBODY, round: true, key: '⇧0' });
+    if (aiming && rq.draw) chips.push({ label: this.withOdds(match, TIP_NOBODY, t('oracle.roundDraw')), pick: TIP_NOBODY, round: true, key: '⇧0' });
 
     // How many have tipped goes at the right edge — if the choices keep their names without it.
     let edge = right;
-    const tipped = match.oracle.roundTippers.size;
+    const tipped = match.betOracle.roundTippers.size;
     if (tipped) {
       ctx.font = `700 ${13 * k}px ${FONTS.body}`;
       const need = chips.reduce((sum, c) => sum + ctx.measureText(c.label).width + 28 * k + (f.keyHints ? 22 * k : 0), 0);
@@ -556,14 +563,14 @@ export class OracleHud {
 
   /** What the bet on the round question looks like for this screen: the stakes there are to choose from, what is staked, the pot. */
   private betState(match: Match): { show: boolean; options: number[]; staked: number; pot: number; tipped: boolean } {
-    const o = match.oracle;
-    const viewer = match.viewer;
+    const o = match.betOracle;
+    const viewer = match.bettor;
     const none = { show: false, options: [], staked: 0, pot: o.pot, tipped: false };
-    if (viewer === null || !match.ghost || !o.roundQuestion || !match.settings.betting) return none;
+    if (viewer === null || !match.ghost || !o.roundQuestion || !match.bettingOn) return none;
     const staked = o.stakeOf(viewer);
     const me = o.roundMine;
     const tipped = !!me && me.id === o.roundQuestion.id;
-    const options = !staked && match.canBetRound(viewer) ? stakeOptions(match.players[viewer].score) : [];
+    const options = !staked && match.canBetRound(viewer) ? stakeOptions(match.purse(viewer)) : [];
     return { show: options.length > 0 || staked > 0 || o.pot > 0, options, staked, pot: o.pot, tipped };
   }
 
@@ -601,7 +608,7 @@ export class OracleHud {
       ctx.fillText(fitText(ctx, t('oracle.betFirst'), Math.max(40 * k, edge - cx)), cx, mid + 0.5 * k);
       return;
     }
-    const pick = match.oracle.roundMine!.pick;
+    const pick = match.betOracle.roundMine!.pick;
     const keys = bet.options.length === 2 ? ['B', '⇧B'] : ['⇧B'];
     const chips = bet.options.map((amount, i): Chip => ({ label: fmtInt(amount), pick, round: true, stake: amount, key: keys[i] }));
     this.drawChips(f, chips, null, cx, mid, edge - cx, z.roundChip, 13);
@@ -614,7 +621,7 @@ export class OracleHud {
     const { ctx } = f;
     const k = scaleOf(f);
     const z = sizes(touch);
-    const viewer = match.viewer!;
+    const viewer = match.bettor!;
     const mine = r.tips.find((tip) => tip.player === viewer)!;
     const accent = mine.right ? COLORS.sodium : COLORS.boneDim;
     this.plate(f, c, accent);
@@ -673,10 +680,10 @@ export class OracleHud {
     const { ctx } = f;
     const k = scaleOf(f);
     const z = sizes(touch);
-    const o = match.oracle;
+    const o = match.betOracle;
     const c = this.card;
     const result = o.roundResult?.round === match.round ? o.roundResult : null;
-    const viewer = match.viewer;
+    const viewer = match.bettor;
     const mine = result && viewer !== null && match.ghost ? result.tips.find((tip) => tip.player === viewer) : undefined;
     this.plate(f, c, mine && !mine.right ? COLORS.boneDim : COLORS.sodium);
     const left = c.x + 18 * k;
@@ -765,28 +772,30 @@ export class OracleHud {
         bets.forEach((tip, i) => {
           const net = tip.payout! - tip.stake!;
           if (i) out.push(['    ', COLORS.bone]);
-          out.push(['● ', match.players[tip.player].color]);
-          if (names) out.push([`${match.players[tip.player].name} `, COLORS.boneDim]);
+          const who = match.tipster(tip.player) ?? { name: '?', color: COLORS.boneDim };
+          out.push(['● ', who.color]);
+          if (names) out.push([`${who.name} `, COLORS.boneDim]);
           out.push([net > 0 ? `+${fmtInt(net)}` : net < 0 ? `−${fmtInt(-net)}` : '±0', net > 0 ? COLORS.sodium : net < 0 ? COLORS.boneDim : COLORS.bone]);
         });
         return out;
       };
       items.push([line(true), line(false)]);
     }
-    const rows = match.oracle.roundRanking();
+    const rows = match.betOracle.roundRanking();
     if (rows.length) {
       const line = (count: number): Segment[] => {
         const out: Segment[] = [[`${t('oracle.standing')}   `, COLORS.sodium]];
         rows.slice(0, count).forEach(({ player, score }, i) => {
           if (i) out.push(['    ', COLORS.bone]);
-          out.push([match.players[player].name, match.players[player].color], [`  ${score.roundRight}/${score.roundTotal}  `, COLORS.bone], [`+${score.roundPoints}`, i === 0 ? COLORS.sodium : COLORS.boneDim]);
+          const who = match.tipster(player) ?? { name: '?', color: COLORS.boneDim };
+          out.push([who.name, who.color], [`  ${score.roundRight}/${score.roundTotal}  `, COLORS.bone], [`+${score.roundPoints}`, i === 0 ? COLORS.sodium : COLORS.boneDim]);
         });
         return out;
       };
       items.push([4, 3, 2, 1].map(line));
     }
-    for (const award of oracleAwards(match.oracle.scores, 'round')) {
-      const who = match.players[award.player];
+    for (const award of oracleAwards(match.betOracle.scores, 'round')) {
+      const who = match.tipster(award.player);
       if (who) items.push([[[`★ ${t(`oracle.award.${award.kind}`)}   `, COLORS.sodium], [who.name, who.color], [`   ${t(`oracle.awardValue.${award.kind}`, { n: award.value })}`, COLORS.boneDim]]]);
     }
     return items;
@@ -796,10 +805,10 @@ export class OracleHud {
 
   /** A ring around whoever the question is about, and around the ship that was tipped. */
   drawMarks(f: OracleFrame, match: Match): void {
-    const q = match.oracle.question;
+    const q = match.betOracle.question;
     if (!q || !ASKING.has(match.phase)) return;
     const { ctx, k } = f;
-    const me = match.oracle.mine;
+    const me = match.betOracle.mine;
     const mine = me && me.id === q.id ? me.pick : null;
     ctx.save();
     ctx.setLineDash([4 * k, 3 * k]);
@@ -829,16 +838,16 @@ export class OracleHud {
    * of them tipped — and nothing the aim line does not already show.
    */
   drawMood(f: OracleFrame, match: Match): void {
-    const q = match.oracle.question;
-    const mood = match.oracle.mood;
-    if (!q || q.kind !== 'shot' || !mood || match.ghost || match.viewer === null || !ASKING.has(match.phase)) return;
+    const q = match.betOracle.question;
+    const mood = match.betOracle.mood;
+    if (!q || q.kind !== 'shot' || !mood || match.ghost || match.bettor === null || !ASKING.has(match.phase)) return;
     const shooter = match.players[q.shooter];
     if (!shooter?.alive) return;
     const { ctx, field } = f;
     const k = scaleOf(f);
     const total = mood.hit + mood.miss;
     const hitSide = mood.hit > mood.miss;
-    const you = match.viewer === q.shooter ? '.you' : '';
+    const you = match.bettor === q.shooter ? '.you' : '';
     const n = Math.max(mood.hit, mood.miss);
     const key = mood.hit === mood.miss ? `oracle.mood${you}.split` : `oracle.mood${you}.${hitSide ? 'hit' : 'miss'}`;
     const text = t(key as 'oracle.mood.split', { n, of: total });

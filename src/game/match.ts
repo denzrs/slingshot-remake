@@ -1,7 +1,8 @@
 import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../ai';
 import type { Avatar } from '../avatars';
-import { AIM, COLORS, FIELD, GRACE, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
+import { AIM, COLORS, FIELD, GRACE, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
 import { t } from '../i18n';
+import { applyTwists, MayhemDeck, type MayhemRound } from '../mayhem';
 import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
@@ -9,6 +10,7 @@ import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings'
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
 import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
+import { Crowd } from './crowd';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField, type PlacementAim } from './powerup-field';
 
@@ -68,6 +70,8 @@ export interface KillRecord {
   self: boolean;
   /** Shot down a teammate. */
   friendly: boolean;
+  /** A planetary defense's stray missile did it, not a shot. */
+  collateral?: boolean;
   combo: StyleKind[];
   multiplier: number;
   shots: number;
@@ -136,7 +140,7 @@ export type GameEvent =
   | { type: 'wormhole'; player: number; x: number; y: number; toX: number; toY: number }
   | { type: 'defense'; player: number; x: number; y: number }
   /** A planet's gravity was turned round (`reversed`) or back. */
-  | { type: 'polarity'; player: number; x: number; y: number; radius: number; reversed: boolean }
+  | { type: 'antigravity'; player: number; x: number; y: number; radius: number; reversed: boolean }
   /** A planetary defense fired a missile at a shot: from its turret to where the shot is. */
   | { type: 'defenseFire'; player: number; x: number; y: number; toX: number; toY: number }
   /** A defense's missile lost its shot at (x, y). */
@@ -189,7 +193,7 @@ export interface CpuJob {
   planner: Generator<void, Aim> | null;
   target: Aim | null;
   settle: number;
-  /** Power-ups: the planner found no hitting shot. Only known while the CPU holds a teleport or a heavy shot. */
+  /** Power-ups: the planner found no hitting shot. Only known while the CPU holds a teleport or a plasma shot. */
   blind?: boolean;
   rescueTried?: boolean;
 }
@@ -230,14 +234,33 @@ export abstract class Match {
   scoreHistory: number[][] = [];
   /** The tipping game for eliminated players (online only). */
   readonly oracle = new Oracle();
+  /**
+   * The stands: people watching an online room play the same tipping game with an oracle of their own (so the pots never mix),
+   * and — since they have no score in the match — a bankroll each, kept in `crowd`.
+   */
+  readonly stands = new Oracle(true);
+  readonly crowd = new Crowd();
   /** Match clock when the current round began, so kills can be timed from the start of the round. */
   protected roundStartedAt = 0;
   /** Seed used to generate the current round's battlefield. */
   worldSeed = 0;
+  /** Mayhem: how this round plays — its twists, whether it is the finale or a jackpot. Null when the match has no twists. */
+  mayhem: MayhemRound | null = null;
+  /** Mayhem: the match clock when the announcement of the round is over and the ships may aim. */
+  revealEnd = 0;
+  /** Mayhem: once the twists have landed, the announcement stays up until somebody dismisses it, so they can be read. */
+  revealHeld = false;
+  /** Mayhem: how every round of the match so far was played, for the recap. */
+  mayhemHistory: MayhemRound[] = [];
+  /** Mayhem: the rules the room was set up with. `settings` is these with the round's twists laid over them. */
+  protected baseSettings: Settings;
+  private deck: MayhemDeck | null = null;
   /** Online: the player sitting at this screen. null = hot-seat, where whoever is on turn is at the keyboard. */
   viewer: number | null = null;
   /** Whether this screen may move the match on (next round, skip the killcam, rematch). Online only the host may. */
   canAdvance = true;
+  /** Online: this screen's place in the stands, if it sits there. It follows the match but takes no part in it. */
+  spectatorId: number | null = null;
 
   protected rng: Rng;
   private readonly matchSeed: number;
@@ -282,6 +305,7 @@ export abstract class Match {
     public settings: Settings,
     protected readonly options: MatchOptions = {},
   ) {
+    this.baseSettings = settings;
     this.matchSeed = options.seed ?? randomSeed();
     this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
     this.worldRng = createRng(this.matchSeed);
@@ -335,7 +359,7 @@ export abstract class Match {
   }
 
   get isHumanTurn(): boolean {
-    if (this.phase !== 'aiming' || this.current < 0) return false;
+    if (this.phase !== 'aiming' || this.current < 0 || this.revealing) return false;
     const p = this.players[this.current];
     return !p.cpu && !p.locked;
   }
@@ -353,100 +377,161 @@ export abstract class Match {
   /** Whether a human may change this player's aim right now. */
   canAim(id: number): boolean {
     const p = this.players[id];
-    return this.phase === 'aiming' && this.current === id && !!p && !p.cpu && !p.locked;
+    return this.phase === 'aiming' && !this.revealing && this.current === id && !!p && !p.cpu && !p.locked;
   }
 
-  /** Whether the person at this screen has been shot down and may tip in the oracle. */
+  get spectating(): boolean {
+    return this.spectatorId !== null;
+  }
+
+  /** The oracle this screen plays in: the stands' for a spectator, else the shot-down players'. */
+  get betOracle(): Oracle {
+    return this.spectating ? this.stands : this.oracle;
+  }
+
+  /** Who this screen tips as: its place in the stands, or its ship; null in hot-seat. */
+  get bettor(): number | null {
+    return this.spectating ? this.spectatorId : this.viewer;
+  }
+
+  /** Whether stakes are on: the shot-down need the room's rule for it, the stands bet with their own points anyway. */
+  get bettingOn(): boolean {
+    return this.spectating || this.settings.betting;
+  }
+
+  /** What a bettor has to stake: a player's score in the match, or a spectator's bankroll. */
+  purse(id: number, crowd = this.spectating): number {
+    return (crowd ? this.crowd.seat(id)?.balance : this.players[id]?.score) ?? 0;
+  }
+
+  private payInto(id: number, amount: number, crowd: boolean): void {
+    const seat = crowd ? this.crowd.seat(id) : undefined;
+    if (seat) seat.balance += amount;
+    else if (!crowd && this.players[id]) this.players[id].score += amount;
+  }
+
+  /** Who a tip came from, as a name and a colour: a ship, or somebody in the stands. */
+  tipster(id: number): { name: string; color: string } | undefined {
+    if (!this.spectating) return this.players[id];
+    const seat = this.crowd.seat(id);
+    return seat && { name: seat.name, color: COLORS.players[id % COLORS.players.length] };
+  }
+
+  /** Which side a ship is on: its team, or itself. Teammates win and lose together. */
+  sideOf(id: number): number {
+    return this.players[id]?.team ?? id;
+  }
+
+  /** Whether the person at this screen may tip in the oracle: shot down, or in the stands. */
   get ghost(): boolean {
+    if (this.spectating) return !!this.options.oracle && !!this.crowd.seat(this.spectatorId)?.present;
     const me = this.viewer === null ? undefined : this.players[this.viewer];
     return !!this.options.oracle && !!me && !me.alive && !me.cpu;
   }
 
-  /** Whether this player may tip right now: shot down, and a question is open. */
-  canBet(id: number): boolean {
+  /** Whether this bettor may tip right now: shot down (or in the stands), and a question is open. */
+  canBet(id: number, crowd = this.spectating): boolean {
+    if (!this.options.oracle) return false;
+    const o = crowd ? this.stands : this.oracle;
+    if (!o.question || o.question.locked) return false;
+    if (crowd) return !!this.crowd.seat(id)?.present;
     const p = this.players[id];
-    return !!this.options.oracle && !!p && !p.alive && !p.cpu && !!this.oracle.question && !this.oracle.question.locked;
+    return !!p && !p.alive && !p.cpu;
   }
 
   /** Whether the oracle's minimum window for tipping and betting on this aiming phase has passed. */
   protected get betWindowDone(): boolean {
-    return (!this.oracle.question && !this.oracle.roundQuestion) || this.phaseTime >= ORACLE.MIN_BET_TIME;
+    const asked = this.oracle.question || this.oracle.roundQuestion || this.stands.question || this.stands.roundQuestion;
+    return !asked || this.phaseTime >= ORACLE.MIN_BET_TIME;
   }
+
   /**
-   * Puts a stake on the player's tip on the round question, once. The points leave their score at once —
+   * Puts a stake on the bettor's tip on the round question, once. The points leave their purse at once —
    * they come back with a share of the pot if the tip was right, or when there is nobody to share with.
    */
-  private placeStake(id: number, stake: number): boolean {
-    const p = this.players[id];
-    if (!p || stake > this.maxStake(id) || !this.oracle.setStake(id, stake)) return false;
-    p.score -= stake;
+  private placeStake(id: number, stake: number, crowd: boolean): boolean {
+    if (stake > this.maxStake(id, crowd) || !(crowd ? this.stands : this.oracle).setStake(id, stake)) return false;
+    this.payInto(id, -stake, crowd);
     return true;
   }
 
   /** The ships a tip on who wins the round may name right now: the ones still in. */
   get roundChoices(): number[] {
-    return (this.oracle.roundQuestion?.choices ?? []).filter((id) => this.players[id]?.alive);
+    return (this.betOracle.roundQuestion?.choices ?? []).filter((id) => this.players[id]?.alive);
   }
 
-  /** Whether this player may tip on who wins the round right now: shot down, the question is open, and the next shots have not flown yet. */
-  canBetRound(id: number): boolean {
+  /** Whether this bettor may tip on who wins the round right now: the question is open, and the next shots have not flown yet. */
+  canBetRound(id: number, crowd = this.spectating): boolean {
+    if (!this.options.oracle || this.phase !== 'aiming' || !(crowd ? this.stands : this.oracle).roundQuestion) return false;
+    if (crowd) return !!this.crowd.seat(id)?.present;
     const p = this.players[id];
-    return !!this.options.oracle && !!p && !p.alive && !p.cpu && !!this.oracle.roundQuestion && this.phase === 'aiming';
+    return !!p && !p.alive && !p.cpu;
   }
 
-  /** The most this player could still stake on the round question: a share of their score, once. 0 when there is no bet to make — or the room plays without betting. */
-  maxStake(id: number): number {
-    const p = this.players[id];
-    if (!p || !this.settings.betting || !this.canBetRound(id) || !this.oracle.canStake(id)) return 0;
-    return stakeOptions(p.score).at(-1) ?? 0;
+  /** The most this bettor could still stake on the round question: a share of their purse, once. 0 when there is no bet to make — or the room plays without betting. */
+  maxStake(id: number, crowd = this.spectating): number {
+    if (!(crowd || this.settings.betting) || !this.canBetRound(id, crowd) || !(crowd ? this.stands : this.oracle).canStake(id)) return 0;
+    return stakeOptions(this.purse(id, crowd)).at(-1) ?? 0;
   }
 
   /**
-   * An eliminated player's tip — on the open shot or salvo, or (`round`) on who wins the round, with an
-   * optional `stake` of the player's own points on it. The host keeps it until the verdict; a screen also
-   * remembers its own to show it.
+   * A tip — on the open shot or salvo, or (`round`) on who wins the round, with an optional `stake` of the
+   * bettor's own points on it. `crowd` says it comes from the stands, not from a shot-down player; a screen
+   * in the stands means that by itself. The host keeps it until the verdict; a screen also remembers its own to show it.
    */
-  placeBet(id: number, pick: number, round = false, stake = 0): boolean {
+  placeBet(id: number, pick: number, round = false, stake = 0, crowd = this.spectating): boolean {
+    const o = crowd ? this.stands : this.oracle;
+    const mine = id === this.bettor && crowd === this.spectating;
     if (round) {
-      if (!this.canBetRound(id) || !this.oracle.betRound(id, pick, this.alive.map((p) => p.id), this.sidesIn)) return false;
-      if (id === this.viewer) this.oracle.roundMine = { id: this.oracle.roundQuestion!.id, pick };
-      if (stake > 0) this.placeStake(id, stake);
+      if (!this.canBetRound(id, crowd) || !o.betRound(id, pick, this.alive.map((p) => p.id), this.sidesIn)) return false;
+      if (mine) o.roundMine = { id: o.roundQuestion!.id, pick };
+      if (stake > 0) this.placeStake(id, stake, crowd);
       return true;
     }
-    if (!this.canBet(id) || !this.oracle.bet(id, pick)) return false;
-    if (id === this.viewer) this.oracle.mine = { id: this.oracle.question!.id, pick };
+    if (!this.canBet(id, crowd) || !o.bet(id, pick)) return false;
+    if (mine) o.mine = { id: o.question!.id, pick };
     return true;
   }
 
   /**
    * Once somebody is out and two or more ships are still in a contested round, the oracle asks who wins it.
-   * Called whenever the aiming begins; a round has one such question.
+   * Called whenever the aiming begins; a round has one such question. The stands' oracle asks it from the
+   * start of the round, once somebody is watching, since they have no ship to lose.
    */
   private openRoundQuestion(): void {
-    if (!this.options.oracle || this.attract || this.oracle.roundQuestion || this.decided) return;
-    if (!this.players.some((p) => !p.alive && !p.cpu)) return;
-    this.oracle.openRound(this.alive.map((p) => p.id), this.simultaneous);
+    if (!this.options.oracle || this.attract || this.decided) return;
+    if (!this.oracle.roundQuestion && this.players.some((p) => !p.alive && !p.cpu)) this.oracle.openRound(this.alive.map((p) => p.id), this.simultaneous);
+    if (!this.stands.roundQuestion && this.crowd.watching) this.stands.openRound(this.alive.map((p) => p.id), this.simultaneous);
+  }
+
+  /** The people in the stands changed (host): keep the list, and let a newcomer bet on the round already under way. */
+  crowdChanged(people: readonly { id: number; name: string }[]): void {
+    this.crowd.sync(people);
+    if (this.phase === 'aiming') this.openRoundQuestion();
   }
 
   /** Subclasses call this when a shot (`shot`, by `shooter`) or a salvo is about to be aimed. */
   protected openOracle(kind: OracleKind, shooter = -1): void {
-    const ghosts = this.players.some((p) => !p.alive && !p.cpu);
-    if (!this.options.oracle || this.attract || !ghosts) return this.oracle.close();
-    this.oracle.open(kind, shooter, kind === 'salvo' ? this.alive.map((p) => p.id) : []);
+    const live = !!this.options.oracle && !this.attract;
+    const choices = kind === 'salvo' ? this.alive.map((p) => p.id) : [];
+    if (live && this.players.some((p) => !p.alive && !p.cpu)) this.oracle.open(kind, shooter, choices);
+    else this.oracle.close();
+    if (live && this.crowd.watching) this.stands.open(kind, shooter, choices);
+    else this.stands.close();
   }
 
   private judgeOracle(): void {
-    const q = this.oracle.question;
-    if (q) {
-      const victims = [...new Set(this.oracleKills.map((k) => k.victim))];
-      const hit = this.oracleKills.some((k) => k.killer === q.shooter && !k.self && !k.friendly);
-      this.oracle.resolve(victims, hit, this.clock);
+    const victims = [...new Set(this.oracleKills.map((k) => k.victim))];
+    for (const o of [this.oracle, this.stands]) {
+      const q = o.question;
+      if (q) o.resolve(victims, this.oracleKills.some((k) => k.killer === q.shooter && !k.self && !k.friendly), this.clock);
     }
     this.oracleKills = [];
   }
 
   /** Whether the person at this screen may aim right now. */
   get localCanAim(): boolean {
+    if (this.spectating) return false;
     return this.viewer === null ? this.isHumanTurn : this.canAim(this.viewer);
   }
 
@@ -461,6 +546,8 @@ export abstract class Match {
    */
   aimVisible(id: number): boolean {
     if (!this.settings.hiddenAim || this.attract) return true;
+    // Nobody in the stands has a ship, so nobody has an aim of their own to see.
+    if (this.spectating) return false;
     if (this.viewer !== null) return id === this.viewer;
     return id === this.focus && !this.players[id]?.cpu;
   }
@@ -578,12 +665,12 @@ export abstract class Match {
 
   /**
    * A CPU that planned and found no hitting shot tries its way out once and plans again: a teleport jumps to a
-   * new spot, a heavy shot is armed. Returns true when it did, so the caller leaves this tick to the new plan.
+   * new spot, a plasma shot is armed. Returns true when it did, so the caller leaves this tick to the new plan.
    */
   protected cpuRescueIfBlind(p: PlayerState, job: CpuJob | undefined): boolean {
-    if ((p.powerUp !== 'teleport' && p.powerUp !== 'heavy') || !job?.target || !job.blind || job.rescueTried) return false;
+    if ((p.powerUp !== 'teleport' && p.powerUp !== 'plasma') || !job?.target || !job.blind || job.rescueTried) return false;
     job.rescueTried = true;
-    if (p.powerUp === 'heavy') {
+    if (p.powerUp === 'plasma') {
       // Armed already: the plan that came up blind was made with it, so there is nothing left to try.
       if (p.armed) return false;
       p.armed = true;
@@ -618,7 +705,8 @@ export abstract class Match {
 
   /** Fire, while aiming: the jump happens, or the black hole is planted. False when there is no aim, or it lands nowhere the ship may rest. */
   confirmPlacement(by?: number): boolean {
-    return this.power.confirmPlacement(by);
+    // In a salvo the others are still aiming against the field as it is: the placement waits for the volley.
+    return this.power.confirmPlacement(by, this.salvo);
   }
 
   cancelPlacement(by?: number): boolean {
@@ -633,6 +721,11 @@ export abstract class Match {
   /** Fire while the shot is flying: an armed splitter forks it into three. */
   protected splitInFlight(id = -1): boolean {
     return this.power.splitInFlight(id);
+  }
+
+  /** A salvo takes off: the placements it held back are made first, so the shots fly over the field they were laid on. */
+  protected makeHeldPlacements(): void {
+    this.power.makeHeld();
   }
 
   protected aimsFor(p: PlayerState): VolleyAim[] {
@@ -681,8 +774,14 @@ export abstract class Match {
     this.killFeed = [];
     this.matchStats = newStatBook();
     this.scoreHistory = [this.players.map(() => 0)];
+    this.mayhemHistory = [];
     this.oracle.reset(this.players.length);
+    this.stands.reset(0);
+    this.crowd.reset();
     this.totalRounds = this.attract ? 0 : this.settings.rounds;
+    this.settings = this.baseSettings;
+    // The deck gets its seed from the world's stream only when there are twists, so a match without any plays as ever.
+    this.deck = this.mayhemOn ? new MayhemDeck(Math.floor(this.worldRng() * 2 ** 32)) : null;
     this.startRound();
   }
 
@@ -693,12 +792,16 @@ export abstract class Match {
     this.killChain.clear();
     this.round++;
     // Stakes that were never paid out (a round cut short) go back to their owners.
-    for (const [id, stake] of this.oracle.stakes) if (this.players[id]) this.players[id].score += stake;
+    for (const [id, stake] of this.oracle.stakes) this.payInto(id, stake, false);
+    for (const [id, stake] of this.stands.stakes) this.payInto(id, stake, true);
     this.oracle.startRound();
+    this.stands.startRound();
+    this.crowd.relief();
     this.oracleKills = [];
     this.roundStats = newStatBook();
     this.roundStartedAt = this.clock;
     this.worldSeed = Math.floor(this.worldRng() * 2 ** 32);
+    this.rollTwists();
     this.world = generateWorld(this.worldSeed, {
       maxPlanets: this.settings.maxPlanets,
       players: this.players.length,
@@ -731,6 +834,53 @@ export abstract class Match {
     this.beginRound();
   }
 
+  /** Whether this match plays by twists: Mayhem is on, in a game against other ships and not on the title screen. */
+  private get mayhemOn(): boolean {
+    return this.baseSettings.mayhem > 0 && !this.attract && this.mode !== 'challenge';
+  }
+
+  /** Draws the twists of the round about to start and lays them over the room's rules, or puts the room's rules back. */
+  private rollTwists(): void {
+    if (!this.deck) {
+      this.mayhem = null;
+      this.settings = this.baseSettings;
+      return;
+    }
+    this.mayhem = this.deck.draw({ base: this.baseSettings, mode: this.mode as 'classic' | 'horizon', round: this.round, rounds: this.totalRounds });
+    this.settings = applyTwists(this.baseSettings, this.mayhem);
+    this.revealEnd = this.clock + MAYHEM.REVEAL_TIME;
+    // A match nobody is flying in (CPUs only) has no one to wait for.
+    this.revealHeld = this.players.some((p) => !p.cpu);
+  }
+
+  /** Mayhem: the announcement is waiting for somebody to dismiss it (and gives up after `HELD_MAX`). */
+  get held(): boolean {
+    return this.revealHeld && this.clock < this.revealEnd + MAYHEM.HELD_MAX;
+  }
+
+  /** Mayhem: seconds since the round was announced. */
+  get revealAge(): number {
+    return this.clock - (this.revealEnd - MAYHEM.REVEAL_TIME);
+  }
+
+  /** Mayhem: the round has been announced, but the ships are still held back. */
+  get revealing(): boolean {
+    return this.mayhem !== null && (this.clock < this.revealEnd || this.held);
+  }
+
+  /** The fire key during the announcement ends it instead of firing. True when it did. */
+  protected skipReveal(): boolean {
+    if (!this.revealing) return false;
+    this.revealEnd = this.clock;
+    this.revealHeld = false;
+    return true;
+  }
+
+  /** Mayhem: what every point of this round is worth — a jackpot round pays and costs double. */
+  protected get payFactor(): number {
+    return this.mayhem?.jackpot ? MAYHEM.JACKPOT_FACTOR : 1;
+  }
+
   /** Nudge the current player's aim (human input). */
   adjust(dAngle: number, dPower: number): void {
     if (!this.isHumanTurn) return;
@@ -748,6 +898,7 @@ export abstract class Match {
   /** Called when settings change mid-match: only display options follow along, the rules stay as the game started. */
   applySettings(settings: Settings): void {
     this.settings.contours = settings.contours;
+    this.baseSettings.contours = settings.contours;
   }
 
   /** Online: one player's vote to skip the killcam. Only Event Horizon has one. */
@@ -773,6 +924,8 @@ export abstract class Match {
     this.clock += dt;
     this.phaseTime += dt;
     if (this.notice && this.clock - this.notice.at > 1.4) this.notice = null;
+    // The round's announcement holds everything still: no aiming, no CPU thinking, no shot clock.
+    if (this.revealing) return;
     if (this.phase === 'flying') this.updateFlight(dt);
     else this.updatePhase(dt);
     if (this.phase === 'roundOver' && this.attract && this.phaseTime > 3) this.advance();
@@ -782,6 +935,7 @@ export abstract class Match {
 
   protected launch(aims: VolleyAim[], trackStyle: boolean): void {
     this.oracle.lock();
+    this.stands.lock();
     this.oracleKills = [];
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
     this.simClock = 0;
@@ -921,7 +1075,7 @@ export abstract class Match {
         const team = this.players[player].team;
         const friendly = team !== null && team === this.players[otherOwner].team;
         // A high-five pays both shooters whose shots cancelled each other — and only where trick shots pay.
-        const points = this.stylePays ? (friendly ? SCORING.HIGH_FIVE_TEAMMATE : SCORING.HIGH_FIVE_ENEMY) : 0;
+        const points = this.stylePays ? (friendly ? SCORING.HIGH_FIVE_TEAMMATE : SCORING.HIGH_FIVE_ENEMY) * this.payFactor : 0;
         if (live && points > 0) {
           this.players[player].score += points;
           this.players[otherOwner].score += points;
@@ -945,7 +1099,8 @@ export abstract class Match {
     const killer = vs.owner;
     const self = killer === victim;
     const friendly = !self && this.players[killer].team !== null && this.players[killer].team === this.players[victim].team;
-    const score = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : this.killPoints(vs);
+    const hit = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : vs.stray ? { points: SCORING.COLLATERAL, combo: [], multiplier: 1 } : this.killPoints(vs);
+    const score = { ...hit, points: hit.points * this.payFactor };
     this.players[victim].alive = false;
     this.oracleKills.push({ killer, victim, self, friendly });
     this.players[killer].score += score.points;
@@ -956,6 +1111,7 @@ export abstract class Match {
       victim,
       self,
       friendly,
+      ...(vs.stray ? { collateral: true } : {}),
       points: score.points,
       combo: score.combo,
       multiplier: score.multiplier,
@@ -981,7 +1137,7 @@ export abstract class Match {
     if (!self && !friendly && this.paysKillChain) {
       const kills = (this.killChain.get(killer) ?? 0) + 1;
       this.killChain.set(killer, kills);
-      const bonus = SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)];
+      const bonus = SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)] * this.payFactor;
       if (bonus > 0) {
         this.players[killer].score += bonus;
         this.emit({ type: 'multiKill', player: killer, kills, points: bonus, x: volley.world.ships[victim].x, y: volley.world.ships[victim].y });
@@ -993,6 +1149,7 @@ export abstract class Match {
   /** What the finished shots tell the scorecard: how far they flew and whom they narrowly missed. */
   private recordFlights(volley: Volley): void {
     for (const vs of volley.shots) {
+      if (vs.stray) continue;
       const trail = vs.trail;
       const end = { x: trail[trail.length - 2], y: trail[trail.length - 1] };
       this.record((book) => (book.longestShot = improve(book.longestShot, vs.owner, pathLength(trail), true, { trail, at: end })));
@@ -1028,7 +1185,7 @@ export abstract class Match {
     const survivor = alive.length === 1 ? alive[0].id : null;
     // In team mode the whole winning team shares the bonus — fallen members included.
     const team = this.teamMode && alive.length > 0 && this.decided ? alive[0].team : null;
-    const bonus = team !== null || survivor !== null ? this.survivorBonus : 0;
+    const bonus = team !== null || survivor !== null ? this.survivorBonus * this.payFactor : 0;
     if (team !== null) {
       for (const p of this.players) if (p.team === team) p.score += bonus;
     } else if (survivor !== null) {
@@ -1037,10 +1194,14 @@ export abstract class Match {
     const title = team !== null ? 'teamWin' : this.roundTitle(survivor);
     this.summary = { title, survivor, team, bonus, lastKill: this.lastKill };
     // The oracle's question for the whole round: a lone survivor or a whole team won it, or nobody did.
-    this.oracle.resolveRound(team !== null ? this.players.filter((p) => p.team === team).map((p) => p.id) : survivor !== null ? [survivor] : [], this.round, this.clock);
-    // What the bets on the round come to: their share of the pot goes into the winners' scores.
-    for (const tip of this.oracle.roundResult?.tips ?? []) if (tip.payout && this.players[tip.player]) this.players[tip.player].score += tip.payout;
+    const winners = team !== null ? this.players.filter((p) => p.team === team).map((p) => p.id) : survivor !== null ? [survivor] : [];
+    this.oracle.resolveRound(winners, this.round, this.clock);
+    this.stands.resolveRound(winners, this.round, this.clock);
+    // What the bets on the round come to: their share of the pot goes into the winners' purses.
+    for (const tip of this.oracle.roundResult?.tips ?? []) if (tip.payout) this.payInto(tip.player, tip.payout, false);
+    for (const tip of this.stands.roundResult?.tips ?? []) if (tip.payout) this.payInto(tip.player, tip.payout, true);
     this.scoreHistory.push(this.players.map((p) => p.score));
+    if (this.mayhem) this.mayhemHistory.push(this.mayhem);
     this.current = -1;
     this.setPhase('roundOver');
     this.emit({ type: 'roundEnd' });
@@ -1061,13 +1222,13 @@ export abstract class Match {
    * Where a CPU lays the placement it holds, as an aim: a rough spot, never a searched one. A black hole or
    * a nebula goes part way along the line to the nearest enemy, so that enemy's next shot runs into it; a defense
    * stands on the planet nearest the CPU, on the side that faces it; the
-   * planet killer shoots the planet lying most in the way of that line; a polarity turns the planet nearest the CPU
+   * planet killer shoots the planet lying most in the way of that line; a antigravity turns the planet nearest the CPU
    * that still pulls (so the shots coming at it are pushed away); a wormhole aims at its first portal, the second
    * lying near the enemy. Null when the CPU holds no placement, or there is nothing to lay it on.
    */
   protected cpuPlacementAim(p: PlayerState): Aim | null {
     const kind = p.powerUp;
-    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'polarity') return null;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'antigravity') return null;
     const world = this.world;
     const from = world.ships[p.id];
     const friends = this.friendsOf(p.id);
@@ -1092,7 +1253,7 @@ export abstract class Match {
       if (!near) return null;
       return { angle: normalizeAngle((Math.atan2(-(near.y - from.y), near.x - from.x) * 180) / Math.PI), power: 0 };
     }
-    if (kind === 'polarity') {
+    if (kind === 'antigravity') {
       // The nearest planet that pulls and that the aim would really meet first, so the placement lands on it.
       const angleTo = (planet: { x: number; y: number }): number => normalizeAngle((Math.atan2(-(planet.y - from.y), planet.x - from.x) * 180) / Math.PI);
       const near = world.planets
@@ -1113,7 +1274,12 @@ export abstract class Match {
     } else {
       // A little ahead of its own ship, on the way in: near enough for the enemy's shot to meet it.
       const d = Math.hypot(dx, dy) || 1;
-      const along = Math.min(0.45 * d, reach);
+      let along = Math.min(0.45 * d, reach);
+      if (kind === 'blackhole') {
+        // Short of the zone around the enemy, which a hole may not be laid in; too close for that, it keeps the hole.
+        along = Math.min(along, d - POWER_UP.BLACKHOLE_PLAYER_GAP - 5);
+        if (along < 60) return null;
+      }
       spot = { x: from.x + (dx / d) * along, y: from.y + (dy / d) * along };
     }
     const distance = Math.hypot(spot.x - from.x, spot.y - from.y);
@@ -1125,7 +1291,7 @@ export abstract class Match {
 
   /** A CPU lays the placement it holds, at the spot its aim points at. False when it cannot lay it now. */
   protected placeForCpu(id: number): boolean {
-    return this.power.placeForCpu(id);
+    return this.power.placeForCpu(id, this.salvo);
   }
 
   /** Think for the given CPU players, sharing a per-frame time budget round-robin. */
@@ -1137,7 +1303,7 @@ export abstract class Match {
       const p = this.players[id];
       const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
       const pierce = !!p.armed && p.powerUp === 'piercing';
-      const heavy = !!p.armed && p.powerUp === 'heavy';
+      const plasma = !!p.armed && p.powerUp === 'plasma';
       // The pickups a CPU would actually keep (a preview is of no use to it): the planner steers its
       // search through them, so a power-up-hungry level like Einstein collects more.
       const pickups: ShotGate[] = this.powerUps
@@ -1156,11 +1322,11 @@ export abstract class Match {
         lookahead,
         friends,
         pierce,
-        heavy,
+        plasma,
         pickups,
         grudgeTarget: this.lastHitBy.get(id) ?? null,
-        // A CPU holding a teleport or a heavy shot also wants to know whether it found a hitting shot at all.
-        ...(logDecisions || this.options.onCpuDecision || (this.powerUps && (p.powerUp === 'teleport' || p.powerUp === 'heavy'))
+        // A CPU holding a teleport or a plasma shot also wants to know whether it found a hitting shot at all.
+        ...(logDecisions || this.options.onCpuDecision || (this.powerUps && (p.powerUp === 'teleport' || p.powerUp === 'plasma'))
           ? {
               onDecision: (decision) => {
                 const job = this.cpuJobs.get(id);

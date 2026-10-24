@@ -1,4 +1,4 @@
-import { AIM, GRACE, TRAIL_FADE } from '../config';
+import { AIM, GRACE, MAYHEM, TRAIL_FADE } from '../config';
 import { t, type Key } from '../i18n';
 import type { RoomRules } from '../net';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from '../powerups';
@@ -6,9 +6,9 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import type { MenuItem } from './menu';
 
 /** The blocks the setup screen and the lobby sort the rules into. */
-type RuleGroup = 'match' | 'field' | 'shots' | 'twists';
+type RuleGroup = 'match' | 'field' | 'shots' | 'twists' | 'powerups';
 
-export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists'];
+export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists', 'powerups'];
 
 export const groupTitle = (group: RuleGroup): string => t(`setup.group.${group}` as Key);
 
@@ -73,6 +73,8 @@ export function ruleRows(): RuleRow[] {
   const seconds = (n: number) => t('settings.seconds', { n });
   return [
     { key: 'rounds', group: 'match', control: 'slider', label: t('settings.rounds'), options: numbers([1, 3, 5, 7, 10, 15, 20, 0], (n) => (n ? String(n) : t('settings.endless'))) },
+    // Only while Mayhem is on: the Mayhem preset turns it on, every other preset off, so the strength is never "off" here.
+    { key: 'mayhem', group: 'match', control: 'slider', label: t('settings.mayhem'), options: numbers(MAYHEM.LEVELS.filter((n) => n > 0), (n) => t(`settings.mayhem.${n}` as Key)), when: (r) => r.mayhem > 0 },
     { key: 'shotTime', group: 'match', control: 'slider', label: t('settings.shotTime'), options: numbers([10, 20, 30, 60], seconds) },
     { key: 'maxPlanets', group: 'field', control: 'slider', label: t('settings.maxPlanets'), options: numbers([1, 2, 3, 4, 5, 6, 7, 8]) },
     { key: 'invisiblePlanets', group: 'field', control: 'toggle', label: t('settings.invisible'), options: [], classicOnly: true },
@@ -93,10 +95,9 @@ export function ruleRows(): RuleRow[] {
     { key: 'hiddenAim', group: 'twists', control: 'toggle', label: t('settings.hiddenAim'), options: [] },
     { key: 'fadingTrails', group: 'twists', control: 'slider', label: t('settings.fadingTrails'), options: numbers(TRAIL_FADE.OPTIONS, (n) => (n ? seconds(n) : t('common.off'))) },
     { key: 'betting', group: 'twists', control: 'toggle', label: t('settings.betting'), options: [], onlineOnly: true },
-    { key: 'powerUps', group: 'twists', control: 'toggle', label: t('settings.powerUps'), options: [] },
-    // The kinds and the amount are the last rows of the block and keep their space while the switch is off, so nothing moves.
-    { key: 'powerUpKinds', group: 'twists', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}` as Key)) })), when: (r) => r.powerUps, reserve: () => true },
-    { key: 'powerUpAmount', group: 'twists', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps, reserve: () => true },
+    { key: 'chatPlayersOnly', group: 'twists', control: 'toggle', label: t('settings.chatPlayersOnly'), options: [], onlineOnly: true },
+    { key: 'powerUpKinds', group: 'powerups', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}` as Key)) })) },
+    { key: 'powerUpAmount', group: 'powerups', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps },
   ];
 }
 
@@ -145,6 +146,7 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, onlin
         item: {
           kind: 'tiles',
           label: row.label,
+          allowEmpty: true,
           hidden,
           reserve,
           commit,
@@ -154,8 +156,10 @@ export function ruleItems(mode: 'classic' | 'horizon', source: RuleSource, onlin
             color: POWER_UP_COLORS[o.value],
             draw: (ctx, r) => drawPowerUpSymbol(ctx, o.value, 0, 0, r),
           })),
-          get: () => source.get().powerUpKinds,
-          set: (kinds) => source.patch({ powerUpKinds: POWER_UP_KINDS.filter((k) => kinds.includes(k)) }),
+          get: () => source.get().powerUps ? source.get().powerUpKinds : [],
+          set: (kinds) => kinds.length
+            ? source.patch({ powerUps: true, powerUpKinds: POWER_UP_KINDS.filter((k) => kinds.includes(k)) })
+            : source.patch({ powerUps: false }),
         },
       };
     }

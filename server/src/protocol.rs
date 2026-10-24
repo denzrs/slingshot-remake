@@ -14,7 +14,7 @@ pub const POWER_UP_KINDS: [&str; 12] = [
     "preview",
     "teleport",
     "splitter",
-    "polarity",
+    "antigravity",
     "shield",
     "blackhole",
     "planetkiller",
@@ -22,7 +22,7 @@ pub const POWER_UP_KINDS: [&str; 12] = [
     "piercing",
     "wormhole",
     "defense",
-    "heavy",
+    "plasma",
 ];
 /// Every kind switched on: one bit per kind, so the mask fills from the top down and never shifts past the type.
 pub const ALL_POWER_UP_KINDS: u16 = u16::MAX >> (16 - POWER_UP_KINDS.len());
@@ -40,6 +40,42 @@ pub fn clean_name_checked(value: Option<&Value>) -> Option<String> {
     let s = value.and_then(Value::as_str)?;
     let cleaned = clean_text(s, MAX_NAME_LENGTH);
     (!cleaned.is_empty()).then_some(cleaned)
+}
+
+/// A player name from a lobby message: cleaned like any name, then held to the profanity check the
+/// boards and room names already pass. The error is what the player is told.
+pub fn parse_player_name(value: Option<&Value>) -> Result<String, &'static str> {
+    let name = clean_name_checked(value).ok_or(NAME_REQUIRED)?;
+    if is_acceptable_name(&name) {
+        Ok(name)
+    } else {
+        Err(NAME_REFUSED)
+    }
+}
+
+/// What the player is told when the name is missing or empty.
+pub const NAME_REQUIRED: &str = "A non-empty player name is required";
+/// What the player is told when the name fails the profanity check.
+pub const NAME_REFUSED: &str = "That name is not allowed";
+
+/// What a player is told when somebody in the room already goes by that name.
+pub const NAME_TAKEN: &str = "That name is taken in this room";
+/// What a player is told when they rename again right after a rename.
+pub const RENAME_TOO_FAST: &str = "Wait a moment before changing your name again";
+
+/// What a player is told when the password they sent does not open the room (or they sent none).
+pub const WRONG_PASSWORD: &str = "Wrong password";
+/// What a player is told when they have missed the password too often on this connection.
+pub const TOO_MANY_PASSWORDS: &str = "Too many wrong passwords – reconnect to try again";
+
+/// Whether an error is about the room's password, so the client can put it at the password field.
+pub fn is_password_refusal(message: &str) -> bool {
+    [WRONG_PASSWORD, TOO_MANY_PASSWORDS].contains(&message)
+}
+
+/// Whether an error is about the player's name, so the client can put it under the name field.
+pub fn is_name_refusal(message: &str) -> bool {
+    [NAME_REQUIRED, NAME_REFUSED, NAME_TAKEN, RENAME_TOO_FAST].contains(&message)
 }
 
 /// The longest a room name may be: room for a full-length player name plus "'s room".
@@ -94,7 +130,8 @@ fn clean_text(s: &str, max: usize) -> String {
         .filter(|c| {
             let u = *c as u32;
             !matches!(u, 0x00..=0x1F | 0x7F..=0x9F)
-                && !matches!(u, 0x200B | 0x200E..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0xFEFF)
+                && !matches!(u, 0x200B | 0x200E..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0xFEFF
+                    | 0x2066..=0x2069 | 0x061C | 0x115F | 0x1160 | 0x2800 | 0x3164 | 0xFFA0)
         })
         .collect();
     let stripped = stripped.trim();
@@ -341,6 +378,17 @@ pub fn is_acceptable_name(name: &str) -> bool {
     !name.is_inappropriate()
 }
 
+/// The longest chat message, in UTF-16 units like a name.
+pub const MAX_CHAT_LENGTH: usize = 200;
+
+/// A chat message from a client: control and invisible characters stripped, trimmed, cut to length, and
+/// every word the profanity check objects to starred out (`rustrict`, like names — with the same limits: the
+/// dictionary is English). None when nothing is left to say.
+pub fn clean_chat(value: Option<&Value>) -> Option<String> {
+    let cleaned = clean_text(value.and_then(Value::as_str)?, MAX_CHAT_LENGTH);
+    (!cleaned.is_empty()).then(|| rustrict::Censor::from_str(&cleaned).censor())
+}
+
 /// The rules of an online game, chosen by whoever creates (and later edits) the room.
 #[derive(Clone, Debug)]
 pub struct RoomRules {
@@ -368,8 +416,12 @@ pub struct RoomRules {
     pub hidden_aim: bool,
     /// Seconds a finished shot's flight path stays on the board (0 = for good).
     pub fading_trails: i64,
+    /// Mayhem: every round has twists of its own (0 = off, then 1 mild, 2 wild, 3 insane).
+    pub mayhem: i64,
     /// Online: eliminated players may bet points of the match on who wins the round.
     pub betting: bool,
+    /// Chat: only the people who play may write; spectators can read along.
+    pub chat_players_only: bool,
     /// Power-ups: pickups on the field, one held at a time.
     pub power_ups: bool,
     /// Which kinds may turn up: a bitmask over `POWER_UP_KINDS`, never empty.
@@ -392,7 +444,9 @@ pub const DEFAULT_RULES: RoomRules = RoomRules {
     simultaneous_shots: false,
     hidden_aim: false,
     fading_trails: 0,
+    mayhem: 0,
     betting: false,
+    chat_players_only: false,
     power_ups: false,
     power_up_kinds: ALL_POWER_UP_KINDS,
     power_up_amount: 2,
@@ -414,7 +468,9 @@ pub fn rules_to_value(rules: &RoomRules) -> Value {
         "simultaneousShots": rules.simultaneous_shots,
         "hiddenAim": rules.hidden_aim,
         "fadingTrails": rules.fading_trails,
+        "mayhem": rules.mayhem,
         "betting": rules.betting,
+        "chatPlayersOnly": rules.chat_players_only,
         "powerUps": rules.power_ups,
         "powerUpKinds": POWER_UP_KINDS
             .iter()
@@ -495,8 +551,15 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
     if field("betting").is_some_and(|v| !v.is_boolean()) {
         return None;
     }
+    // Likewise for the chat limit, which came later.
+    if field("chatPlayersOnly").is_some_and(|v| !v.is_boolean()) {
+        return None;
+    }
     let fading_trails = field("fadingTrails")?;
     if !is_number_in(fading_trails, &[0, 1, 2, 4]) {
+        return None;
+    }
+    if field("mayhem").is_some_and(|v| !is_number_in(v, &[0, 1, 2, 3])) {
         return None;
     }
     // Power-ups came later: a client that doesn't send them plays without. A present value has to be valid.
@@ -532,9 +595,13 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
         simultaneous_shots: value.get("simultaneousShots").unwrap().as_bool().unwrap(),
         hidden_aim: value.get("hiddenAim").unwrap().as_bool().unwrap(),
         fading_trails: i64_of(fading_trails),
+        mayhem: field("mayhem").map(i64_of).unwrap_or(DEFAULT_RULES.mayhem),
         betting: field("betting")
             .and_then(Value::as_bool)
             .unwrap_or(DEFAULT_RULES.betting),
+        chat_players_only: field("chatPlayersOnly")
+            .and_then(Value::as_bool)
+            .unwrap_or(DEFAULT_RULES.chat_players_only),
         power_ups: field("powerUps")
             .and_then(Value::as_bool)
             .unwrap_or(DEFAULT_RULES.power_ups),
@@ -618,7 +685,7 @@ mod tests {
             "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"bounce":true,
             "fixedPower":true,"fixedPowerLevel":70,"maxPower":80,"shotTime":20,
             "styleBonuses":true,"neighborGrace":1,"simultaneousShots":true,
-            "hiddenAim":false,"fadingTrails":2,"betting":true,
+            "hiddenAim":false,"fadingTrails":2,"mayhem":2,"betting":true,"chatPlayersOnly":true,
             "powerUps":true,"powerUpKinds":["teleport","shield"],"powerUpAmount":3
         })
     }
@@ -688,6 +755,8 @@ mod tests {
             ("powerUpKinds", json!(["laser"])),
             ("powerUpAmount", json!(0)),
             ("powerUpAmount", json!(5)),
+            ("mayhem", json!(4)),
+            ("mayhem", json!("wild")),
         ] {
             let mut rules = valid_rules();
             rules[key] = value;
@@ -741,6 +810,7 @@ mod tests {
             "simultaneousShots",
             "hiddenAim",
             "betting",
+            "chatPlayersOnly",
         ] {
             let mut rules = valid_rules();
             rules[key] = json!("true");
@@ -749,6 +819,31 @@ mod tests {
                 "accepted invalid boolean {key}"
             );
         }
+    }
+
+    #[test]
+    fn chat_is_cleaned_cut_and_censored() {
+        assert_eq!(
+            clean_chat(Some(&json!("  hello\u{7}\u{202e} there  "))),
+            Some("hello there".into())
+        );
+        assert_eq!(clean_chat(Some(&json!("   "))), None);
+        assert_eq!(clean_chat(Some(&json!(5))), None);
+        assert_eq!(clean_chat(None), None);
+        let long = "a".repeat(500);
+        assert_eq!(
+            clean_chat(Some(&json!(long))).unwrap().len(),
+            MAX_CHAT_LENGTH
+        );
+        let rude = clean_chat(Some(&json!("you are a shit player, fuck off"))).unwrap();
+        assert!(!rude.contains("shit") && !rude.contains("fuck"), "{rude}");
+        assert!(rude.contains("player") && rude.contains('*'));
+        // The simple evasions are caught like they are in names.
+        assert!(!clean_chat(Some(&json!("sh1t"))).unwrap().contains("sh1t"));
+        assert_eq!(
+            clean_chat(Some(&json!("good game, well played"))).unwrap(),
+            "good game, well played"
+        );
     }
 
     #[test]

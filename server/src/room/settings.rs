@@ -1,11 +1,13 @@
 //! What the people in a waiting room change: ready, the rules, the lobby look, symbols and teams.
 
 use crate::command::Parsed;
-use crate::protocol::{RoomLook, RoomRules};
-use crate::wire::Avatar;
+use std::time::Instant;
+
+use crate::protocol::{default_room_name, RoomLook, RoomRules, NAME_TAKEN, RENAME_TOO_FAST};
+use crate::wire::{Avatar, GameMode, RoomMode};
 
 use super::model::*;
-use super::RoomManager;
+use super::{RoomManager, RENAME_COOLDOWN};
 
 impl RoomManager {
     pub(super) fn set_ready(&mut self, conn: u64, ready: Parsed<bool>) {
@@ -37,7 +39,12 @@ impl RoomManager {
     }
 
     /// The host edits the rules while the room is waiting; everybody has to confirm (ready) again.
-    pub(super) fn set_rules(&mut self, conn: u64, rules: Parsed<RoomRules>) {
+    pub(super) fn set_rules(
+        &mut self,
+        conn: u64,
+        rules: Parsed<RoomRules>,
+        game_mode: Parsed<Option<GameMode>>,
+    ) {
         let guard = self.host_of_waiting_room(
             conn,
             "Only the room host can change the rules",
@@ -49,8 +56,14 @@ impl RoomManager {
         let Some(rules) = self.accept(conn, rules) else {
             return;
         };
+        let Some(game_mode) = self.accept(conn, game_mode) else {
+            return;
+        };
         let room = self.rooms.get_mut(&room_id).unwrap();
         room.rules = rules;
+        if let Some(game_mode) = game_mode {
+            room.game_mode = game_mode;
+        }
         for player in room.players.iter_mut() {
             player.ready = false;
         }
@@ -78,6 +91,33 @@ impl RoomManager {
         self.broadcast_lobby();
     }
 
+    /// The host turns the waiting room into a team room or back into a free for all. Going to teams
+    /// deals everybody out to the two teams in the order they joined; everybody confirms again.
+    pub(super) fn set_mode(&mut self, conn: u64, mode: Parsed<RoomMode>) {
+        let guard = self.host_of_waiting_room(
+            conn,
+            "Only the room host can change the mode",
+            "The mode cannot change while a game is running",
+        );
+        let Some(room_id) = self.accept(conn, guard) else {
+            return;
+        };
+        let Some(mode) = self.accept(conn, mode) else {
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        if room.mode == mode {
+            return;
+        }
+        room.mode = mode;
+        for (i, player) in room.players.iter_mut().enumerate() {
+            player.team = (i % 2) as u8;
+            player.ready = false;
+        }
+        self.broadcast_room_update(&room_id, None);
+        self.broadcast_lobby();
+    }
+
     /// A player picks the symbol they show in the game, while the room waits. Nobody has to confirm again.
     pub(super) fn set_avatar(&mut self, conn: u64, avatar: Parsed<Avatar>) {
         let guard = self.member_of_waiting_room(
@@ -96,6 +136,61 @@ impl RoomManager {
             player.avatar = avatar;
         }
         self.broadcast_room_update(&room_id, None);
+    }
+
+    /// A player renames themselves while the room waits. The name has passed the same checks as at
+    /// joining; nobody has to confirm again.
+    pub(super) fn set_name(&mut self, conn: u64, name: Parsed<String>) {
+        let guard = self.member_of_waiting_room(
+            conn,
+            "You are not in a waiting room",
+            "The name cannot change while a game is running",
+        );
+        let Some((room_id, player_id)) = self.accept(conn, guard) else {
+            return;
+        };
+        let Some(name) = self.accept(conn, name) else {
+            return;
+        };
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        // The same name again changes nothing, so nobody is told anything.
+        if room
+            .players
+            .iter()
+            .any(|p| p.id == player_id && p.name == name)
+        {
+            return;
+        }
+        if name_taken(room, &name, Some(player_id)) {
+            self.error(conn, NAME_TAKEN);
+            return;
+        }
+        let now = Instant::now();
+        if self
+            .last_rename
+            .get(&conn)
+            .is_some_and(|last| now.duration_since(*last) < RENAME_COOLDOWN)
+        {
+            self.error(conn, RENAME_TOO_FAST);
+            return;
+        }
+        self.last_rename.insert(conn, now);
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        if let Some(player) = room.players.iter_mut().find(|p| p.id == player_id) {
+            // A new name has to be confirmed again: nobody readies up as one person and plays as another.
+            player.ready = false;
+            player.name = name.clone();
+        }
+        // A room the host never named is called after the host, so it follows their rename.
+        if player_id == 0 && room.name_is_default {
+            room.name = default_room_name(&name, room.created_order + 1);
+        }
+        let listed = player_id == 0 && !room.look.is_private();
+        self.broadcast_room_update(&room_id, None);
+        // The host's name is on the list beside the room; nobody else's is, and a private room is not on it.
+        if listed {
+            self.broadcast_lobby();
+        }
     }
 
     /// A player picks their own team; they have to confirm (ready) again, everybody else's choice

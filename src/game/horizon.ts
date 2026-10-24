@@ -6,6 +6,7 @@ import type { PowerUpState } from './powerup-field';
 import { scoreHorizonKill } from '../scoring';
 import { shotSource, Volley, type VolleyAim, type VolleyScript, type VolleyShot, type VolleySnapshot } from '../volley';
 import { Match, type Camera, type KillRecord, type Phase, type RoundTitle, type Scene } from './match';
+import type { CrowdSeat } from './crowd';
 import type { OracleSnapshot } from './oracle';
 
 /** Everything needed to replay one kill exactly — the physics is deterministic. */
@@ -43,6 +44,10 @@ export interface HorizonSnapshot {
   summary: Match['summary'];
   notice: Match['notice'];
   settings: Match['settings'];
+  mayhem?: Match['mayhem'];
+  revealEnd?: number;
+  revealHeld?: boolean;
+  mayhemHistory?: Match['mayhemHistory'];
   roundStats: Match['roundStats'];
   matchStats: Match['matchStats'];
   scoreHistory: number[][];
@@ -66,6 +71,8 @@ export interface HorizonSnapshot {
   };
   lastClip: KillcamClip | null;
   oracle: OracleSnapshot;
+  stands?: OracleSnapshot;
+  crowd?: CrowdSeat[];
   pickups?: Pickup[];
   power?: PowerUpState;
 }
@@ -148,6 +155,7 @@ export class HorizonMatch extends Match {
       players: this.players.map((player) => ({ ...player })), current: this.current, world: this.world,
       trails: this.trails, volley: this.volley?.snapshot() ?? null, flightDoneAt: this.flightDoneAt, killFeed: this.killFeed,
       lastKill: this.lastKill, summary: this.summary, notice: this.notice, settings: this.settings,
+      mayhem: this.mayhem, revealEnd: this.revealEnd, revealHeld: this.revealHeld, mayhemHistory: this.mayhemHistory,
       roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory,
       volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue, snapshot: this.volleySnapshot,
       aims: this.aims, volleyKills: this.volleyKills,
@@ -160,6 +168,8 @@ export class HorizonMatch extends Match {
       } : null,
       lastClip: this.lastClip,
       oracle: this.oracle.snapshot(),
+      stands: this.stands.snapshot(),
+      crowd: this.crowd.snapshot(),
       pickups: this.pickups,
       power: this.powerState,
     };
@@ -168,6 +178,10 @@ export class HorizonMatch extends Match {
   restoreSnapshot(s: HorizonSnapshot): void {
     if (s.world.ships.length !== s.players.length) return;
     this.settings = s.settings;
+    this.mayhem = s.mayhem ?? null;
+    this.revealEnd = s.revealEnd ?? 0;
+    this.revealHeld = s.revealHeld ?? false;
+    this.mayhemHistory = s.mayhemHistory ?? [];
     this.phase = s.phase; this.phaseTime = s.phaseTime; this.clock = s.clock; this.round = s.round;
     this.worldSeed = s.worldSeed ?? 0;
     this.totalRounds = s.totalRounds; this.hiddenPlanets = s.hiddenPlanets; this.teamMode = s.teamMode;
@@ -184,6 +198,8 @@ export class HorizonMatch extends Match {
     this.lastClip = s.lastClip;
     // Hosts from before the oracle send none.
     if (s.oracle) this.oracle.restore(s.oracle);
+    if (s.stands) this.stands.restore(s.stands);
+    this.crowd.restore(s.crowd);
     this.pickups = s.pickups ?? [];
     this.power.restoreState(s.power);
     this.killcam = null;
@@ -204,7 +220,7 @@ export class HorizonMatch extends Match {
   canAim(id: number): boolean {
     if (!this.simultaneous) return super.canAim(id);
     const p = this.players[id];
-    return this.phase === 'aiming' && !!p && p.alive && !p.cpu && !p.locked;
+    return this.phase === 'aiming' && !this.revealing && !!p && p.alive && !p.cpu && !p.locked;
   }
 
   adjustPlayer(id: number, dAngle: number, dPower: number): void {
@@ -221,6 +237,7 @@ export class HorizonMatch extends Match {
   }
 
   commitPlayer(id: number): void {
+    if (this.skipReveal()) return;
     // The fire key during a flight: an armed splitter forks the shot.
     if (this.phase === 'flying') {
       this.splitInFlight(id);
@@ -332,6 +349,7 @@ export class HorizonMatch extends Match {
   }
 
   commit(): void {
+    if (this.skipReveal()) return;
     // The fire key during a flight: an armed splitter forks the shot.
     if (this.phase === 'flying') {
       this.splitInFlight(this.viewer ?? this.current);
@@ -409,6 +427,7 @@ export class HorizonMatch extends Match {
   }
 
   private launchVolley(): void {
+    this.makeHeldPlacements();
     this.volleySnapshot = cloneWorld(this.world);
     this.aims = this.alive.filter((p) => !p.passed).flatMap((p) => this.aimsFor(p));
     for (const p of this.alive) if (!p.passed) p.shots++;
@@ -486,7 +505,8 @@ export class HorizonMatch extends Match {
 
   /** The shot the killcam follows: the killing one, or — until a split has made it — the shot it will branch off from. */
   private focusShot(replay: Volley, clip: KillcamClip): VolleyShot {
-    return replay.shots[clip.focus] ?? replay.shots[shotSource(clip.aims.length, clip.script ?? [], clip.focus)];
+    // A stray missile is made mid-flight too; until then the camera stays on the last shot there is.
+    return replay.shots[clip.focus] ?? replay.shots[shotSource(clip.aims.length, clip.script ?? [], clip.focus)] ?? replay.shots[replay.shots.length - 1];
   }
 
   private killcamRate(k: KillcamState): number {
@@ -645,7 +665,7 @@ export class HorizonMatch extends Match {
       this.emit({ type: 'devour', x: hole.x, y: hole.y, toX: hole.x, toY: hole.y, color: this.players[id].color, vx: 0, vy: 0 });
       this.recordKill({ killer: null, victim: id, points: 0, self: false, friendly: false, combo: [], multiplier: 1, shots: 0, power: 0, at: this.clock });
     }
-    for (const p of this.alive) p.score += SCORING.VOLLEY_SURVIVED;
+    for (const p of this.alive) p.score += SCORING.VOLLEY_SURVIVED * this.payFactor;
 
     if (this.decided) this.endRound();
     else this.startPlanning();

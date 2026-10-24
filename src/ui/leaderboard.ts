@@ -6,6 +6,7 @@ import { DEFAULT_SERVER } from '../multiplayer';
 import type { DailyEntry } from '../net';
 import { h, type MenuItem, type Screen } from './menu';
 import type { App } from './screens';
+import { menuPage } from './menu-page';
 
 /**
  * Whether the daily leaderboard can be reached at all. It lives on the multiplayer relay, so a
@@ -129,28 +130,13 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
   })();
 
   const goesUp = score !== null;
-  const root = h(
-    'section.screen.screen--panel',
-    { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('daily.board.eyebrow') },
-    h(
-      'div.panel.panel--daily',
-      null,
-      h('p.eyebrow', null, t('daily.board.eyebrow')),
-      h('h2.daily__title', null, `#${challenge.number} · ${t(`daily.theme.${challenge.theme}` as Key)}`),
-      h('p.daily__date', null, caption),
-      h(
-        'div.lb',
-        null,
-        // With nothing to post there is no name to give and nothing to press but Back.
-        ...(goesUp
-          ? [h('label.lobby__field', null, h('span', null, t('daily.board.name')), nameField), h('p.note.lb__hint', null, t('daily.board.hint'))]
-          : []),
-        h('div.items.items--row', { 'data-items': '' }),
-        status,
-        rows,
-      ),
-    ),
-  );
+  const root = menuPage({
+    title: `#${challenge.number} · ${t(`daily.theme.${challenge.theme}` as Key)}`, eyebrow: t('daily.board.eyebrow'), intro: caption, className: 'menu-page--leaderboard',
+    body: [h('div.lb', null,
+      ...(goesUp ? [h('label.lobby__field', null, h('span', null, t('daily.board.name')), nameField), h('p.note.lb__hint', null, t('daily.board.hint'))] : []),
+      status, rows,
+    )],
+  });
   paint();
 
   return {
@@ -160,8 +146,8 @@ export function leaderboardScreen(app: App, day: string, caption: string, score:
       return root;
     },
     items: [
-      ...(goesUp ? [{ kind: 'action', label: t('daily.board.submit'), primary: true, run: () => void submit() } satisfies MenuItem] : []),
       { kind: 'action', label: t('common.back'), primary: !goesUp, run: () => app.menu.back() },
+      ...(goesUp ? [{ kind: 'action', label: t('daily.board.submit'), primary: true, run: () => void submit() } satisfies MenuItem] : []),
     ] satisfies MenuItem[],
   };
 }

@@ -36,6 +36,26 @@ describe('CPU settings', () => {
   });
 });
 
+describe('Mayhem settings', () => {
+  it('start off', () => {
+    storage();
+    expect(loadSettings()).toMatchObject({ mayhem: 0 });
+  });
+
+  it('keep the chaos strength', () => {
+    storage();
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.mayhem = 3;
+    saveSettings(settings);
+    expect(loadSettings()).toMatchObject({ mayhem: 3 });
+  });
+
+  it('drop values nobody offers', () => {
+    storage({ mayhem: 7 });
+    expect(loadSettings()).toMatchObject({ mayhem: 0 });
+  });
+});
+
 describe('power settings', () => {
   it.each([10, 100])('keeps the supported cap boundary %s after saving and reloading', (maxPower) => {
     storage();
@@ -102,5 +122,35 @@ describe('power-up choices', () => {
     const copy = cloneSettings(DEFAULT_SETTINGS);
     copy.powerUpKinds.pop();
     expect(DEFAULT_SETTINGS.powerUpKinds).toEqual(POWER_UP_KINDS);
+  });
+});
+
+describe('display settings', () => {
+  it('keeps the menu background match on by default and through a save', () => {
+    storage();
+    expect(loadSettings().menuBackground).toBe(true);
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.menuBackground = false;
+    saveSettings(settings);
+    expect(loadSettings().menuBackground).toBe(false);
+  });
+
+  it('puts the aiming stick on the left unless the right was chosen, and remembers the choice', () => {
+    storage();
+    expect(loadSettings().stickSide).toBe('left');
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.stickSide = 'right';
+    saveSettings(settings);
+    expect(loadSettings().stickSide).toBe('right');
+    storage({ stickSide: 'top' });
+    expect(loadSettings().stickSide).toBe('left');
+  });
+
+  it('ignores stored display flags that are not booleans', () => {
+    storage({ menuBackground: 'false', particles: 0, contours: null });
+    const s = loadSettings();
+    expect(s.menuBackground).toBe(true);
+    expect(s.particles).toBe(true);
+    expect(s.contours).toBe(true);
   });
 });

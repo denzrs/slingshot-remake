@@ -1,5 +1,5 @@
 import { nextWormholeId, portalFits, type ShotRules, type World } from '../physics';
-import { aimedPlanet, aimedSpot, aimedSurface, cpuWormholeSpots, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
+import { aimedPlanet, blackHoleFits, aimedSpot, aimedSurface, cpuWormholeSpots, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
 import { NEBULA, WORMHOLE } from '../config';
 import type { Rng } from '../rng';
 import { bump, type StatBook } from '../stats';
@@ -35,11 +35,11 @@ export interface PowerUpHost {
   record(update: (book: StatBook) => void): void;
 }
 
-/** The power-ups a player aims at a spot on the field, rather than firing: a teleport, a black hole, a planet killer, a nebula, a wormhole, a planetary defense or a polarity. */
-export type PlacementKind = 'teleport' | 'blackhole' | 'planetkiller' | 'nebula' | 'wormhole' | 'defense' | 'polarity';
+/** The power-ups a player aims at a spot on the field, rather than firing: a teleport, a black hole, a planet killer, a nebula, a wormhole, a planetary defense or a antigravity. */
+export type PlacementKind = 'teleport' | 'blackhole' | 'planetkiller' | 'nebula' | 'wormhole' | 'defense' | 'antigravity';
 
 /** Whether this power-up is aimed at a spot and then confirmed, instead of armed and spent by a shot. */
-export const isPlacement = (kind: PowerUpKind | null): kind is PlacementKind => kind === 'teleport' || kind === 'blackhole' || kind === 'planetkiller' || kind === 'nebula' || kind === 'wormhole' || kind === 'defense' || kind === 'polarity';
+export const isPlacement = (kind: PowerUpKind | null): kind is PlacementKind => kind === 'teleport' || kind === 'blackhole' || kind === 'planetkiller' || kind === 'nebula' || kind === 'wormhole' || kind === 'defense' || kind === 'antigravity';
 
 /** Where an aimed power-up would land or be planted, as the renderer sees it. */
 export interface PlacementAim {
@@ -50,7 +50,7 @@ export interface PlacementAim {
   target: { x: number; y: number } | null;
   /** A wormhole's first portal, already set: the aim now picks the second. */
   first?: { x: number; y: number } | null;
-  /** A wormhole's aim that would overlap another portal, so the click does nothing. */
+  /** A wormhole's aim that would overlap another portal, or a black hole's that is too close to another player, so the click does nothing. */
   blocked?: boolean;
 }
 
@@ -89,6 +89,8 @@ export class PowerUpField {
   private choosing = new Set<number>();
   /** The first mouth of a wormhole a ship has set, by ship: the second click sets the other and plants the pair. */
   private wormFirst = new Map<number, { x: number; y: number }>();
+  /** The placements a salvo holds back, by ship: they are made when the volley takes off, not when their ship locks in. */
+  private held = new Map<number, () => boolean>();
 
   constructor(private readonly host: PowerUpHost) {}
 
@@ -110,6 +112,7 @@ export class PowerUpField {
     this.volleysThisPass = 0;
     this.choosing.clear();
     this.wormFirst.clear();
+    this.held.clear();
     if (this.enabled) for (let i = 0; i < this.amount; i++) this.spawn();
   }
 
@@ -187,6 +190,7 @@ export class PowerUpField {
     if (!this.pickups.length) return;
     const players = this.host.players();
     for (const vs of volley.shots) {
+      if (vs.stray) continue;
       const p = players[vs.owner];
       // A CPU has no use for a preview, so it leaves that lying.
       const hit = touchedPickups(this.pickups, vs.shot.x, vs.shot.y).find((i) => !(p.cpu && CPU_IGNORES[this.pickups[i].kind]));
@@ -195,8 +199,8 @@ export class PowerUpField {
       const dropped = p.powerUp;
       p.powerUp = pickup.kind;
       // A splitter and a shield need no key: they are ready from the start. A CPU holds everything armed, but a
-      // heavy shot, which it keeps back until a plain one finds nothing to hit.
-      p.armed = (p.cpu !== null && pickup.kind !== 'heavy') || pickup.kind === 'splitter' || pickup.kind === 'shield';
+      // plasma shot, which it keeps back until a plain one finds nothing to hit.
+      p.armed = (p.cpu !== null && pickup.kind !== 'plasma') || pickup.kind === 'splitter' || pickup.kind === 'shield';
       // The shield is on the ship itself, so every shot in the volley meets it. Swapping it away takes it off.
       volley.setShield(p.id, pickup.kind === 'shield');
       this.host.emit({ type: 'pickup', player: p.id, kind: pickup.kind, x: pickup.x, y: pickup.y, dropped });
@@ -208,7 +212,7 @@ export class PowerUpField {
 
   /**
    * The power-up key. A teleport or a black hole opens its aim: the angle and power set one spot, fire goes
-   * there (jumps, or plants the hole), the key again or Esc thinks again. A preview, armor piercing or a heavy shot is armed
+   * there (jumps, or plants the hole), the key again or Esc thinks again. A preview, armor piercing or a plasma shot is armed
    * instead (press again to disarm) and spent by the next shot. A splitter needs no key: it is armed, and the fire press
    * during the flight splits the shot.
    */
@@ -217,7 +221,7 @@ export class PowerUpField {
     if (!this.enabled || !host.canAim(id)) return;
     const p = host.players()[id];
     if (!p.powerUp || p.powerUp === 'splitter' || p.powerUp === 'shield') return;
-    if (p.powerUp === 'preview' || p.powerUp === 'piercing' || p.powerUp === 'heavy') {
+    if (p.powerUp === 'preview' || p.powerUp === 'piercing' || p.powerUp === 'plasma') {
       p.armed = !p.armed;
       this.previewKey = '';
       return;
@@ -251,7 +255,7 @@ export class PowerUpField {
     const world = this.host.world();
     const from = world.ships[owner];
     let target: { x: number; y: number } | null;
-    if (kind === 'planetkiller' || kind === 'polarity') {
+    if (kind === 'planetkiller' || kind === 'antigravity') {
       const planet = aimedPlanet(world, from, p.angle);
       target = planet ? { x: planet.x, y: planet.y } : null;
     } else if (kind === 'defense') {
@@ -261,6 +265,7 @@ export class PowerUpField {
     } else {
       target = aimedSpot(world, from, p.angle, p.power);
     }
+    if (kind === 'blackhole') return { owner, kind, target, blocked: !!target && !blackHoleFits(world, target, owner) };
     if (kind !== 'wormhole') return { owner, kind, target };
     const first = this.wormFirst.get(owner) ?? null;
     return { owner, kind, target, first, blocked: !!target && !portalFits(world, target, first ? [first] : []) };
@@ -276,10 +281,16 @@ export class PowerUpField {
     return !!this.placementAim(owner);
   }
 
-  /** Fire while aiming: the ship jumps, or the placement happens. False when there is no aim, or it lands nowhere. */
-  confirmPlacement(by: number = this.aimer): boolean {
+  /**
+   * Fire while aiming: the ship jumps, or the placement happens. False when there is no aim, or it lands nowhere.
+   * In a salvo (`hold`) the others are still aiming against the field as it is, so the placement is only taken
+   * down here and made by `makeHeld` once the volley takes off.
+   */
+  confirmPlacement(by: number = this.aimer, hold = false): boolean {
     const aim = this.placementAim(by);
     if (!aim?.target) return false;
+    if (aim.kind === 'blackhole' && aim.blocked) return false;
+    let make: (() => boolean) | null;
     if (aim.kind === 'wormhole') {
       // A portal cannot overlap another, whatever the distance otherwise.
       if (aim.blocked) return false;
@@ -291,24 +302,62 @@ export class PowerUpField {
       }
       this.choosing.delete(by);
       this.wormFirst.delete(by);
-      return this.plantWormhole(aim.owner, first, aim.target);
+      const second = aim.target;
+      make = () => this.plantWormhole(aim.owner, first, second);
+    } else {
+      this.choosing.delete(by);
+      make = this.placementOf(aim);
     }
-    this.choosing.delete(by);
-    if (aim.kind === 'blackhole') return this.plantBlackHole(aim.owner, aim.target);
-    if (aim.kind === 'nebula') return this.plantNebula(aim.owner, aim.target);
-    if (aim.kind === 'defense') return this.plantDefense(aim.owner, aim.target);
-    if (aim.kind === 'polarity') {
-      const world = this.host.world();
-      const planet = aimedPlanet(world, world.ships[aim.owner], this.host.players()[aim.owner].angle);
-      return planet ? this.turnPolarity(aim.owner, planet.index) : false;
+    if (!make) return false;
+    if (!hold) return make();
+    this.held.set(by, make);
+    return true;
+  }
+
+  /** What a placement does once it is made, or null when its aim lands on nothing. A planet is kept by itself, not its place, which a planet killer made before it may have shifted. */
+  private placementOf(aim: PlacementAim): (() => boolean) | null {
+    const target = aim.target;
+    if (!target) return null;
+    const world = this.host.world();
+    const owner = aim.owner;
+    const aimed = aimedPlanet(world, world.ships[owner], this.host.players()[owner].angle);
+    switch (aim.kind) {
+      case 'blackhole': return () => this.plantBlackHole(owner, target);
+      case 'nebula': return () => this.plantNebula(owner, target);
+      case 'defense': {
+        const index = (target as { planet?: number }).planet;
+        if (index === undefined) return () => this.plantDefense(owner, target);
+        return this.onPlanet(world.planets[index], (i) => this.plantDefense(owner, { x: target.x, y: target.y, planet: i }));
+      }
+      case 'antigravity': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.turnAntigravity(owner, i));
+      case 'planetkiller': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.killPlanet(owner, i), () => this.spend(owner));
+      default: return () => this.teleport(owner, target);
     }
-    if (aim.kind === 'planetkiller') {
-      const world = this.host.world();
-      const p = this.host.players()[aim.owner];
-      const planet = aimedPlanet(world, world.ships[aim.owner], p.angle);
-      return planet ? this.killPlanet(aim.owner, planet.index) : false;
-    }
-    return this.teleport(aim.owner, aim.target);
+  }
+
+  /** A placement on a planet that finds the planet again when it is made: the index it was aimed at may have moved by then. `gone` runs when the planet has been taken meanwhile. */
+  private onPlanet(planet: World['planets'][number] | undefined, place: (index: number) => boolean, gone?: () => boolean): (() => boolean) | null {
+    if (!planet) return null;
+    const world = this.host.world();
+    return () => {
+      const index = world.planets.indexOf(planet);
+      return index >= 0 ? place(index) : (gone?.() ?? false);
+    };
+  }
+
+  /** A power-up used up without effect: two planet killers on one rock cost both ships theirs. */
+  private spend(id: number): boolean {
+    const p = this.host.players()[id];
+    p.powerUp = null;
+    p.armed = false;
+    return false;
+  }
+
+  /** The volley takes off: the placements a salvo held back are made now, ship by ship. A ship whose placement no longer lands keeps its power-up, unless its planet killer found the planet gone. */
+  makeHeld(): void {
+    const held = [...this.held.values()];
+    this.held.clear();
+    for (const make of held) make();
   }
 
   cancelPlacement(by: number = this.aimer): boolean {
@@ -324,6 +373,8 @@ export class PowerUpField {
    */
   private plantBlackHole(id: number, spot: { x: number; y: number }): boolean {
     const world = this.host.world();
+    // A salvo plants at takeoff, after the ships may have moved (a held teleport): the gap holds then too, and a refused hole keeps its power-up.
+    if (!blackHoleFits(world, spot, id)) return false;
     world.holes.push({ x: spot.x, y: spot.y, radius: POWER_UP.BLACKHOLE_RADIUS, mass: POWER_UP.BLACKHOLE_MASS });
     world.version++;
     this.host.players()[id].powerUp = null;
@@ -370,7 +421,7 @@ export class PowerUpField {
    * Turns a planet's gravity round: it pushes every shot away instead of pulling it in, whoever's, for the rest
    * of the round. A planet that is turned already is turned back, so the other side can undo it.
    */
-  private turnPolarity(id: number, index: number): boolean {
+  private turnAntigravity(id: number, index: number): boolean {
     const world = this.host.world();
     const planet = world.planets[index];
     if (!planet) return false;
@@ -379,7 +430,7 @@ export class PowerUpField {
     this.host.players()[id].powerUp = null;
     this.host.players()[id].armed = false;
     this.host.clearCpuJobs();
-    this.host.emit({ type: 'polarity', player: id, x: planet.x, y: planet.y, radius: planet.radius, reversed: !!planet.reversed });
+    this.host.emit({ type: 'antigravity', player: id, x: planet.x, y: planet.y, radius: planet.radius, reversed: !!planet.reversed });
     return true;
   }
 
@@ -426,10 +477,19 @@ export class PowerUpField {
    * with, like a shot. False when it holds none of them, or the aim lands nowhere. A wormhole's portals
    * are not aimed one by one: the aim points at the first, and both are worked out from the world.
    */
-  placeForCpu(id: number): boolean {
+  placeForCpu(id: number, hold = false): boolean {
+    const make = this.cpuPlacement(id);
+    if (!make) return false;
+    if (!hold) return make();
+    this.held.set(id, make);
+    return true;
+  }
+
+  /** What a CPU's placement does once it is made, or null when it holds none or has nowhere to lay it. */
+  private cpuPlacement(id: number): (() => boolean) | null {
     const p = this.host.players()[id];
     const kind = p.powerUp;
-    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'polarity') return false;
+    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'antigravity') return null;
     const world = this.host.world();
     const from = world.ships[id];
     if (kind === 'wormhole') {
@@ -439,24 +499,25 @@ export class PowerUpField {
         .map((q) => world.ships[q.id])
         .sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))[0];
       const spots = target && cpuWormholeSpots(world, from, target);
-      return spots ? this.plantWormhole(id, spots[0], spots[1]) : false;
+      return spots ? () => this.plantWormhole(id, spots[0], spots[1]) : null;
     }
-    if (kind === 'polarity') {
+    if (kind === 'antigravity') {
       // Only a planet that pulls: a CPU never turns one back.
-      const planet = aimedPlanet(world, from, this.host.players()[id].angle);
-      return planet && !world.planets[planet.index].reversed ? this.turnPolarity(id, planet.index) : false;
+      const planet = aimedPlanet(world, from, p.angle);
+      return planet && !world.planets[planet.index].reversed ? this.onPlanet(world.planets[planet.index], (i) => this.turnAntigravity(id, i)) : null;
     }
     if (kind === 'defense') {
       const surface = aimedSurface(world, from, p.angle);
-      return surface ? this.plantDefense(id, surface) : false;
+      if (!surface) return null;
+      return this.onPlanet(world.planets[surface.planet], (i) => this.plantDefense(id, { ...surface, planet: i }))
     }
     if (kind === 'planetkiller') {
       const planet = aimedPlanet(world, from, p.angle);
-      return planet ? this.killPlanet(id, planet.index) : false;
+      return planet ? this.onPlanet(world.planets[planet.index], (i) => this.killPlanet(id, i), () => this.spend(id)) : null;
     }
     const spot = kind === 'nebula' ? nebulaSpot(world, from, p.angle, p.power) : aimedSpot(world, from, p.angle, p.power);
-    if (!spot) return false;
-    return kind === 'nebula' ? this.plantNebula(id, spot) : this.plantBlackHole(id, spot);
+    if (!spot || (kind === 'blackhole' && !blackHoleFits(world, spot, id))) return null;
+    return kind === 'nebula' ? () => this.plantNebula(id, spot) : () => this.plantBlackHole(id, spot);
   }
 
   /** Teleports a ship to `spot`, or to a random free one; false when there is none. */
@@ -483,7 +544,7 @@ export class PowerUpField {
     for (const who of id >= 0 ? [id] : players.filter((q) => !q.cpu).map((q) => q.id)) {
       const p = players[who];
       if (!p || !p.armed || p.powerUp !== 'splitter') continue;
-      const index = volley.shots.findIndex((vs) => vs.owner === who && !vs.shot.end);
+      const index = volley.shots.findIndex((vs) => vs.owner === who && !vs.stray && !vs.shot.end);
       if (index < 0 || !volley.split(index, SPLIT_TURNS, ++this.ids)) continue;
       p.powerUp = null;
       p.armed = false;
@@ -503,7 +564,7 @@ export class PowerUpField {
     for (let index = 0; index < shots; index++) {
       const vs = volley.shots[index];
       const p = players[vs.owner];
-      if (!p.cpu || !p.armed || p.powerUp !== 'splitter' || vs.shot.end || vs.shot.time < POWER_UP.CPU_SPLIT_MIN_TIME) continue;
+      if (vs.stray || !p.cpu || !p.armed || p.powerUp !== 'splitter' || vs.shot.end || vs.shot.time < POWER_UP.CPU_SPLIT_MIN_TIME) continue;
       const friends = host.friendsOf(p.id);
       const near = players.some((e) => e.alive && e.id !== p.id && !friends.includes(e.id) && Math.hypot(world.ships[e.id].x - vs.shot.x, world.ships[e.id].y - vs.shot.y) < POWER_UP.CPU_SPLIT_RANGE);
       if (near && volley.split(index, SPLIT_TURNS, ++this.ids)) {
@@ -516,7 +577,7 @@ export class PowerUpField {
 
   /**
    * The aims a player's shot launches with. An armed preview is used up by the shot, an armed armor piercing
-   * rides the next shot through its targets, and an armed heavy shot makes it hard to bend; a splitter waits for the fire press during the flight, a shield for a hit.
+   * rides the next shot through its targets, and an armed plasma shot makes it hard to bend; a splitter waits for the fire press during the flight, a shield for a hit.
    */
   aimsFor(p: PlayerState): VolleyAim[] {
     const aim: VolleyAim = { player: p.id, angle: p.angle, power: p.power, spare: this.host.sparedFor(p.id) };
@@ -527,8 +588,8 @@ export class PowerUpField {
       p.armed = false;
       return [aim];
     }
-    if (p.powerUp === 'heavy') {
-      aim.heavy = true;
+    if (p.powerUp === 'plasma') {
+      aim.plasma = true;
       p.powerUp = null;
       p.armed = false;
       return [aim];

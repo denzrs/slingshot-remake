@@ -13,9 +13,11 @@
     "simultaneousShots": false,
     "hiddenAim": false,
     "fadingTrails": 0,
+    "mayhem": 0,
     "betting": false,
+    "chatPlayersOnly": false,
     "powerUps": false,
-    "powerUpKinds": ["preview", "teleport", "splitter", "polarity", "shield", "blackhole", "planetkiller", "nebula", "piercing", "wormhole", "defense", "heavy"],
+    "powerUpKinds": ["preview", "teleport", "splitter", "antigravity", "shield", "blackhole", "planetkiller", "nebula", "piercing", "wormhole", "defense", "plasma"],
     "powerUpAmount": 2
   },
   "options": {
@@ -26,6 +28,7 @@
     "shotTime": [10, 20, 30, 60],
     "neighborGrace": [0, 1, 2],
     "fadingTrails": [0, 1, 2, 4],
+    "mayhem": [0, 1, 2, 3],
     "powerUpAmount": [1, 2, 3, 4]
   },
   "room": {
@@ -49,6 +52,9 @@
     "maxScore": 10000000,
     "nameLength": 24,
     "keepDays": 7
+  },
+  "spectators": {
+    "max": 20
   },
   "cpu": {
     "levels": ["easy", "medium", "hard", "hawking"]

@@ -1,5 +1,6 @@
-import { COLORS, FIELD } from '../config';
+import { COLORS } from '../config';
 import { createRng } from '../rng';
+import { plateUnits } from './layout';
 import { rgba } from './color';
 
 export interface View {
@@ -11,22 +12,27 @@ export interface View {
   scale: number;
   offsetX: number;
   offsetY: number;
+  /** Held upright on a phone, the HUD gets this box (above the controls, the whole width) instead of the field's. */
+  stage?: { x: number; y: number; w: number; h: number };
+  /** The field is turned a quarter round (its left side at the bottom): see `layout.ts`. */
+  rotated?: boolean;
 }
 
 /**
  * The static plate behind everything: ink gradient, stars, emulsion grain and
  * the plotter frame with registration marks. Rebuilt only on resize or when edges change.
  */
-export function renderBackdrop(view: View, walls: boolean): HTMLCanvasElement {
+export function renderBackdrop(view: View, walls: boolean, drawFrame = true): HTMLCanvasElement {
   const { cssWidth, cssHeight, dpr, scale, offsetX, offsetY } = view;
+  const plate = plateUnits(!!view.rotated);
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(cssWidth * dpr);
   canvas.height = Math.round(cssHeight * dpr);
   const ctx = canvas.getContext('2d')!;
   ctx.scale(dpr, dpr);
 
-  const cx = offsetX + (FIELD.width * scale) / 2;
-  const cy = offsetY + (FIELD.height * scale) / 2;
+  const cx = offsetX + (plate.w * scale) / 2;
+  const cy = offsetY + (plate.h * scale) / 2;
   const g = ctx.createRadialGradient(cx, cy * 0.9, 0, cx, cy, Math.hypot(cssWidth, cssHeight) * 0.62);
   g.addColorStop(0, COLORS.plateLift);
   g.addColorStop(1, COLORS.plate);
@@ -60,13 +66,13 @@ export function renderBackdrop(view: View, walls: boolean): HTMLCanvasElement {
     ctx.fill();
   }
 
-  drawFrame(ctx, scale, offsetX, offsetY, walls);
+  if (drawFrame) drawPlotterFrame(ctx, scale, offsetX, offsetY, walls, plate);
   return canvas;
 }
 
-function drawFrame(ctx: CanvasRenderingContext2D, scale: number, ox: number, oy: number, walls: boolean): void {
-  const W = FIELD.width * scale;
-  const H = FIELD.height * scale;
+function drawPlotterFrame(ctx: CanvasRenderingContext2D, scale: number, ox: number, oy: number, walls: boolean, plate: { w: number; h: number }): void {
+  const W = plate.w * scale;
+  const H = plate.h * scale;
   ctx.save();
   ctx.translate(ox, oy);
   ctx.lineWidth = 1;
@@ -81,13 +87,13 @@ function drawFrame(ctx: CanvasRenderingContext2D, scale: number, ox: number, oy:
   // Ruler ticks every 40 field units, longer every 200.
   ctx.strokeStyle = rgba(COLORS.line, 0.45);
   ctx.beginPath();
-  for (let u = 40; u < FIELD.width; u += 40) {
+  for (let u = 40; u < plate.w; u += 40) {
     const len = u % 200 === 0 ? 9 : 4;
     const x = Math.round(u * scale) + 0.5;
     ctx.moveTo(x, 0); ctx.lineTo(x, len);
     ctx.moveTo(x, H); ctx.lineTo(x, H - len);
   }
-  for (let u = 40; u < FIELD.height; u += 40) {
+  for (let u = 40; u < plate.h; u += 40) {
     const len = u % 200 === 0 ? 9 : 4;
     const y = Math.round(u * scale) + 0.5;
     ctx.moveTo(0, y); ctx.lineTo(len, y);

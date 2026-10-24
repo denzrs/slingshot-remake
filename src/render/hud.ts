@@ -1,7 +1,8 @@
 import { modifiersOf } from '../challenge';
-import { AIM, COLORS, FIELD, FONTS, TEAMS } from '../config';
+import { AIM, COLORS, FIELD, FONTS, MAYHEM, TEAMS } from '../config';
 import { ChallengeMatch, HorizonMatch, teamName, type KillRecord, type Match, type PlayerState } from '../game';
 import { fmt, fmtInt, t, type Key } from '../i18n';
+import { TWIST_IDS, twistName } from '../mayhem';
 import { awardLabel, awardValue, awardWho, spotlight } from '../scorecard';
 import { styleLabel } from '../scoring';
 import { awards } from '../stats';
@@ -44,8 +45,9 @@ export class Hud {
   draw(match: Match, view: View, opts: DrawOptions, time: number, shipPos: (i: number) => { x: number; y: number }): void {
     this.time = time;
     this.shipPos = shipPos;
-    this.k = Math.min(1.2, Math.max(0.72, view.scale));
-    this.field = { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
+    // On a phone the field is small, but its labels must stay readable: they get a higher floor.
+    this.k = Math.min(1.2, Math.max(opts.touch ? 0.95 : 0.72, view.scale));
+    this.field = view.stage ?? { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
 
     const focus = match.focus;
     if (focus !== this.lastTurn) {
@@ -72,6 +74,7 @@ export class Hud {
 
     const duel = match.mode === 'classic' && match.players.length === 2;
     this.drawRoundLabel(match);
+    this.drawTwistChips(match);
     if (duel) {
       this.drawDuelBlock(match, match.players[0], 'left');
       this.drawDuelBlock(match, match.players[1], 'right');
@@ -93,7 +96,8 @@ export class Hud {
       this.drawScorecard(match);
     }
     this.oracle.drawCard(frame, match, opts.touch);
-    if (!asking) this.drawHint(match, opts.touch);
+    if (!asking && !match.revealing) this.drawHint(match, opts.touch);
+    if (match.revealing) this.drawReveal(match);
     if (opts.recording) this.drawRec();
   }
 
@@ -110,6 +114,143 @@ export class Hud {
     if (match instanceof HorizonMatch) label += `  ·  ${t('hud.volley')} ${match.volleyNo}`;
     ctx.fillText(label, field.x + field.w / 2, field.y + 18 * k);
     setSpacing(ctx, 0);
+  }
+
+  // ————————————————————————————— Mayhem —————————————————————————————
+
+  /** The round's twists as chips under the round label, so nobody forgets what this round is about. */
+  private drawTwistChips(match: Match): void {
+    const round = match.mayhem;
+    if (!round) return;
+    const labels: string[] = [];
+    const colors: string[] = [];
+    if (round.finale) {
+      labels.push(t('mayhem.finale'));
+      colors.push(COLORS.danger);
+    }
+    for (const twist of round.twists) {
+      labels.push(twistName(twist));
+      colors.push(COLORS.sodium);
+    }
+    if (round.jackpot) {
+      labels.push(t('mayhem.jackpot', { n: MAYHEM.JACKPOT_FACTOR }));
+      colors.push(COLORS.danger);
+    }
+    if (!round.twists.length && !round.finale && !round.jackpot) {
+      labels.push(t('mayhem.quiet'));
+      colors.push(COLORS.boneDim);
+    }
+    // The duel has its blocks in the corners; with a scoreboard across the top the chips go under it (and under its power-up strip).
+    const duel = match.mode === 'classic' && match.players.length === 2;
+    const below = duel ? 34 : (match.teamMode ? 66 : 50) + 40 + (match.powerUps ? 32 : 10);
+    this.drawChips(labels, this.field.x + this.field.w / 2, this.field.y + (below + (duel ? 18 : 0)) * this.k, colors);
+  }
+
+  /**
+   * The announcement of a Mayhem round: a band over the field in which each twist spins like a reel, slows down
+   * and lands on its name, one after the other; the last lands together with the thud of the sound.
+   */
+  private drawReveal(match: Match): void {
+    const round = match.mayhem;
+    if (!round) return;
+    const { ctx, k, field } = this;
+    const left = match.revealEnd - match.clock;
+    const age = MAYHEM.REVEAL_TIME - left;
+    const alpha = Math.max(0, Math.min(1, age / 0.2, match.held ? 1 : left / 0.35));
+    if (alpha <= 0) return;
+    const cx = field.x + field.w / 2;
+    const cy = field.y + field.h / 2;
+    const rows = Math.max(1, round.twists.length);
+    const rowH = 76 * k;
+    const head = 62 * k;
+    const foot = 38 * k;
+    const jackpotH = round.jackpot ? 40 * k : 0;
+    const h = head + rows * rowH + jackpotH + foot;
+    const top = cy - h / 2;
+    // The reels stop one after another, the last one at the thud.
+    const landed = MAYHEM.LANDED;
+    const stopAt = (i: number) => landed - 0.25 * (rows - 1 - i);
+
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = rgba(COLORS.plate, 0.55);
+    ctx.fillRect(field.x, field.y, field.w, field.h);
+    ctx.fillStyle = rgba(COLORS.plate, 0.92);
+    ctx.fillRect(field.x, top, field.w, h);
+    const edge = round.finale ? COLORS.danger : COLORS.sodium;
+    ctx.fillStyle = rgba(edge, 0.85);
+    ctx.fillRect(field.x, top, field.w, 1);
+    ctx.fillRect(field.x, top + h - 1, field.w, 1);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = round.finale ? COLORS.danger : COLORS.boneDim;
+    ctx.font = `800 ${(round.finale ? 26 : 16) * k}px ${FONTS.display}`;
+    setSpacing(ctx, 5 * k);
+    ctx.fillText(round.finale ? t('mayhem.finale') : t('mayhem.round', { n: match.round }), cx, top + head / 2);
+    setSpacing(ctx, 0);
+
+    if (!round.twists.length) {
+      ctx.fillStyle = COLORS.bone;
+      ctx.font = `800 ${44 * k}px ${FONTS.display}`;
+      setSpacing(ctx, 4 * k);
+      ctx.fillText(t('mayhem.quiet'), cx, top + head + rowH * 0.4);
+      setSpacing(ctx, 0);
+      ctx.fillStyle = COLORS.boneDim;
+      ctx.font = `400 ${13 * k}px ${FONTS.mono}`;
+      ctx.fillText(t('mayhem.quietInfo'), cx, top + head + rowH * 0.8);
+    }
+    round.twists.forEach((twist, i) => {
+      const y = top + head + rowH * i + rowH * 0.4;
+      const stop = stopAt(i);
+      if (age < stop) {
+        // Spinning: the faces flick past, slower and slower as the stop comes near.
+        const progress = age / stop;
+        const face = Math.floor(age * 18 * (1 - progress * 0.65)) + i * 5;
+        ctx.globalAlpha = alpha * 0.55;
+        ctx.fillStyle = COLORS.bone;
+        const spinning = t(`mayhem.twist.${TWIST_IDS[face % TWIST_IDS.length]}` as Key);
+        this.fitDisplay(spinning, 40 * k, 4 * k, field.w - 32 * k);
+        ctx.fillText(spinning, cx, y);
+        setSpacing(ctx, 0);
+        ctx.globalAlpha = alpha;
+        return;
+      }
+      const since = age - stop;
+      const pop = since < 0.15 ? 1.3 - (since / 0.15) * 0.3 : 1;
+      ctx.fillStyle = COLORS.sodium;
+      this.fitDisplay(twistName(twist), 44 * k * pop, 4 * k, field.w - 32 * k);
+      ctx.fillText(twistName(twist), cx, y);
+      setSpacing(ctx, 0);
+      ctx.fillStyle = COLORS.boneDim;
+      ctx.font = `400 ${13 * k}px ${FONTS.mono}`;
+      ctx.fillText(t(`mayhem.twist.${twist.id}.info` as Key, { n: twist.n ?? 0 }), cx, y + 34 * k);
+    });
+
+    if (round.jackpot && age > landed + 0.1) {
+      const pulse = 0.75 + 0.25 * Math.sin(age * 9);
+      const y = top + head + rows * rowH + jackpotH / 2;
+      ctx.globalAlpha = alpha * pulse;
+      ctx.fillStyle = COLORS.danger;
+      const jackpot = t('mayhem.jackpot', { n: MAYHEM.JACKPOT_FACTOR });
+      this.fitDisplay(jackpot, 26 * k, 5 * k, field.w - 32 * k);
+      ctx.fillText(jackpot, cx, y - 6 * k);
+      setSpacing(ctx, 0);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = COLORS.boneDim;
+      ctx.font = `400 ${12 * k}px ${FONTS.mono}`;
+      ctx.fillText(t('mayhem.jackpotInfo'), cx, y + 15 * k);
+    }
+
+    if (age > landed) {
+      ctx.globalAlpha = alpha * (0.7 + 0.3 * Math.sin(age * 4));
+      ctx.fillStyle = COLORS.boneDim;
+      ctx.font = `700 ${11 * k}px ${FONTS.body}`;
+      setSpacing(ctx, 2 * k);
+      ctx.fillText(t(match.canAdvance ? 'mayhem.skip' : 'hud.waitingHost').toUpperCase(), cx, top + h - foot / 2);
+      setSpacing(ctx, 0);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textBaseline = 'top';
   }
 
   /** Classic two-player layout: big blocks in the top corners, as in the original. */
@@ -205,8 +346,8 @@ export class Hud {
       ctx.strokeStyle = color;
       ctx.lineWidth = 1 * k;
       ctx.strokeRect(capX, capY, capW, capH);
-      // An armed preview, piercing or heavy round has its key filled in: it is on.
-      const on = p.armed && (held === 'preview' || held === 'piercing' || held === 'heavy');
+      // An armed preview, piercing or plasma round has its key filled in: it is on.
+      const on = p.armed && (held === 'preview' || held === 'piercing' || held === 'plasma');
       if (on) {
         ctx.fillStyle = color;
         ctx.fillRect(capX, capY, capW, capH);
@@ -430,7 +571,7 @@ export class Hud {
   }
 
   /** Small outlined tags centred on `cx`, e.g. "BOUNCE". */
-  private drawChips(labels: string[], cx: number, y: number): void {
+  private drawChips(labels: string[], cx: number, y: number, colors: string[] = []): void {
     if (!labels.length) return;
     const { ctx, k } = this;
     ctx.font = `700 ${9.5 * k}px ${FONTS.body}`;
@@ -442,12 +583,13 @@ export class Hud {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     labels.forEach((label, i) => {
-      ctx.strokeStyle = rgba(COLORS.sodium, 0.6);
+      const color = colors[i] ?? COLORS.sodium;
+      ctx.strokeStyle = rgba(color, 0.6);
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.roundRect(x + 0.5, y + 0.5, widths[i], 17 * k, 3 * k);
       ctx.stroke();
-      ctx.fillStyle = COLORS.sodium;
+      ctx.fillStyle = color;
       ctx.fillText(label.toUpperCase(), x + padX, y + 9.5 * k);
       x += widths[i] + gap;
     });
@@ -494,6 +636,21 @@ export class Hud {
     ctx.textBaseline = 'top';
   }
 
+  /**
+   * Sets the display font at `size` with `spacing` between the letters — smaller, with the spacing, when `text`
+   * would be wider than `maxWidth`: a narrow screen must not cut a headline off.
+   */
+  private fitDisplay(text: string, size: number, spacing: number, maxWidth: number): void {
+    const { ctx } = this;
+    ctx.font = `800 ${size}px ${FONTS.display}`;
+    setSpacing(ctx, spacing);
+    const width = ctx.measureText(text).width;
+    if (width <= maxWidth) return;
+    const shrink = maxWidth / width;
+    ctx.font = `800 ${size * shrink}px ${FONTS.display}`;
+    setSpacing(ctx, spacing * shrink);
+  }
+
   private drawChallengeBanner(match: ChallengeMatch): void {
     const { ctx, k, field } = this;
     const s = match.summary!;
@@ -516,8 +673,7 @@ export class Hud {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = color;
-    ctx.font = `800 ${(title.length > 16 ? 58 : title.length > 10 ? 70 : 84) * k}px ${FONTS.display}`;
-    setSpacing(ctx, 6 * k);
+    this.fitDisplay(title, (title.length > 16 ? 58 : title.length > 10 ? 70 : 84) * k, 6 * k, field.w - 32 * k);
     ctx.fillText(title, cx + 3 * k, cy + 12 * k);
     setSpacing(ctx, 0);
 
@@ -532,7 +688,7 @@ export class Hud {
     if (tricks.length) parts.push(tricks.join(' · '));
     ctx.fillStyle = COLORS.boneDim;
     ctx.font = `400 ${12.5 * k}px ${FONTS.mono}`;
-    ctx.fillText(parts.join('  ·  '), cx, cy + 62 * k);
+    ctx.fillText(fitText(ctx, parts.join('  ·  '), field.w - 32 * k), cx, cy + 62 * k);
     ctx.globalAlpha = 1;
   }
 
@@ -548,8 +704,7 @@ export class Hud {
     ctx.globalAlpha = age > 0.9 ? Math.max(0, 1 - (age - 0.9) / 0.5) : 1;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `800 ${110 * k * pop}px ${FONTS.display}`;
-    setSpacing(ctx, 8 * k);
+    this.fitDisplay(n.text, 110 * k * pop, 8 * k, field.w - 24 * k);
     ctx.lineWidth = 6 * k;
     ctx.strokeStyle = rgba(COLORS.plate, 0.8);
     ctx.strokeText(n.text, field.x + field.w / 2, field.y + field.h / 2);
@@ -565,10 +720,10 @@ export class Hud {
     ctx.globalAlpha = age > 1.2 ? (1.6 - age) / 0.4 : 1;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `800 ${34 * k}px ${FONTS.display}`;
-    setSpacing(ctx, 3 * k);
+    const text = t('hud.turn', { name: p.name.toUpperCase() });
+    this.fitDisplay(text, 34 * k, 3 * k, field.w - 24 * k);
     ctx.fillStyle = p.color;
-    ctx.fillText(t('hud.turn', { name: p.name.toUpperCase() }), field.x + field.w / 2, field.y + field.h - 64 * k);
+    ctx.fillText(text, field.x + field.w / 2, field.y + field.h - 64 * k);
     setSpacing(ctx, 0);
     ctx.globalAlpha = 1;
   }
@@ -653,8 +808,7 @@ export class Hud {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = color;
-    ctx.font = `800 ${(title.length > 10 ? 70 : 84) * k}px ${FONTS.display}`;
-    setSpacing(ctx, 6 * k);
+    this.fitDisplay(title, (title.length > 10 ? 70 : 84) * k, 6 * k, field.w - 32 * k);
     ctx.fillText(title, cx + 3 * k, cy + 12 * k);
     setSpacing(ctx, 0);
 
@@ -663,7 +817,7 @@ export class Hud {
     let line2 = '';
     if (duel && kill && !kill.self && kill.killer !== null) {
       line1 = `${match.players[kill.killer].name}  +${kill.points}`;
-      line2 = t('hud.shotPower', { n: kill.shots, power: fmt(kill.power, 2) });
+      line2 = kill.collateral ? t('hud.collateral') : t('hud.shotPower', { n: kill.shots, power: fmt(kill.power, 2) });
     } else if (s.team !== null) {
       line1 = `${t('hud.teamWinsRound', { team: teamName(s.team) })}${s.bonus ? `  ·  ${t('hud.perMember', { n: s.bonus })}` : ''}`;
       if (kill) line2 = killSegments(match, kill).map(([text]) => text).join('');
@@ -673,10 +827,10 @@ export class Hud {
     }
     ctx.fillStyle = COLORS.bone;
     ctx.font = `700 ${17 * k}px ${FONTS.body}`;
-    ctx.fillText(line1, cx, cy + 42 * k);
+    ctx.fillText(fitText(ctx, line1, field.w - 32 * k), cx, cy + 42 * k);
     ctx.fillStyle = COLORS.boneDim;
     ctx.font = `400 ${12.5 * k}px ${FONTS.mono}`;
-    ctx.fillText(line2, cx, cy + 62 * k);
+    ctx.fillText(fitText(ctx, line2, field.w - 32 * k), cx, cy + 62 * k);
     ctx.globalAlpha = 1;
   }
 

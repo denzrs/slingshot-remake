@@ -10,6 +10,8 @@
   --font-display: 'Big Shoulders Stencil Display', 'Arial Narrow', sans-serif;
   --font-body: 'B612', system-ui, sans-serif;
   --font-mono: 'B612 Mono', ui-monospace, monospace;
+  /* Enlarges the touch controls on a touch screen. */
+  --ui: 1;
   color-scheme: dark;
 }
 
@@ -97,19 +99,9 @@ body {
   backdrop-filter: blur(3px);
 }
 
-/* Auto vertical margins centre content when it fits and start it at the top when
-   it overflows, while the title column stays at the screen's left inset. */
-.screen--title > .title-col {
-  margin-block: auto;
-}
-
+/* Auto margins centre a panel when it fits, and let it scroll from the top otherwise. */
 .screen--panel > .panel {
   margin: auto;
-}
-
-.title-col {
-  width: min(520px, 100%);
-  animation: rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
 .eyebrow {
@@ -342,6 +334,48 @@ body {
   font-size: 12.5px;
   letter-spacing: 0;
   color: var(--bone-dim);
+}
+
+/* ——— Mode cards (the local menu) ——— */
+
+.items--row .item--card {
+  flex: 1 1 180px;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  padding: 18px 14px 16px;
+  text-align: center;
+  background: rgb(18 40 77 / 0.55);
+}
+
+.item--card .item__icon {
+  display: block;
+  width: 84px;
+  height: 63px;
+  margin-bottom: 4px;
+  opacity: 0.85;
+  transition: opacity 120ms, transform 160ms;
+}
+
+.item--card:hover .item__icon,
+.item--card:focus .item__icon {
+  opacity: 1;
+  transform: scale(1.06);
+}
+
+.item--card .item__title {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.items--row .item--card:hover,
+.items--row .item--card:focus {
+  border-color: var(--p1);
 }
 
 .item__label {
@@ -600,8 +634,7 @@ body {
 }
 
 /* Rebuilding a screen in place (a new row, another language) shouldn't replay its entrance. */
-.screen[data-rebuild] .panel,
-.screen[data-rebuild] .title-col {
+.screen[data-rebuild] .panel {
   animation: none;
 }
 
@@ -1101,6 +1134,9 @@ body {
 }
 
 @media (pointer: coarse) {
+  :root {
+    --ui: 1.2;
+  }
   .keys--menu {
     display: none;
   }
@@ -1225,6 +1261,17 @@ body {
 .lobby__card[hidden],
 .lobby__button[hidden],
 .lobby__cpu-add[hidden] {
+  display: none;
+}
+
+/* The relay's reason for turning a name down, under the name field. */
+.lobby__field-error {
+  margin: 4px 0 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.lobby__field-error[hidden] {
   display: none;
 }
 
@@ -1578,6 +1625,11 @@ body {
   grid-column: 1;
 }
 
+.lobby-room .lobby__field-error {
+  grid-column: 1;
+  margin: 0;
+}
+
 .lobby-room .lobby__button {
   grid-column: 2;
   grid-row: 1 / span 2;
@@ -1586,6 +1638,20 @@ body {
 
 .lobby-room input + .lobby__button {
   grid-row: 1 / span 2;
+}
+
+/* Join and Watch side by side in the room's second column. */
+.lobby-room__actions {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: stretch;
+  gap: 8px;
+}
+
+.lobby-room__actions .lobby__button {
+  grid-column: auto;
+  grid-row: auto;
 }
 
 .lobby__empty {
@@ -2549,40 +2615,153 @@ kbd {
 
 /* ——— Touch ——— */
 
-#touch-fire {
+/*
+ * One set of touch buttons, in both ways of holding the phone: the angle pair on the left, the power pair and the fire
+ * button on the right (held sideways, in the corners of the screen) or in a bar across the foot (held upright).
+ */
+#touch-bar {
   position: fixed;
+  left: max(16px, env(safe-area-inset-left));
   right: max(16px, env(safe-area-inset-right));
   bottom: max(16px, env(safe-area-inset-bottom));
   z-index: 5;
-  min-width: 96px;
-  min-height: 56px;
-  padding: 0 22px;
-  border: 1px solid var(--p1);
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  /* The gaps between the buttons are the field: a finger there aims. */
+  pointer-events: none;
+}
+
+#touch-bar > *,
+.tgroup > * {
+  pointer-events: auto;
+}
+
+.tgroup {
+  display: flex;
+  gap: 6px;
+}
+
+.tgroup[hidden] {
+  display: none;
+}
+
+.tbtn,
+#touch-fire,
+#touch-power {
+  min-height: calc(56px * var(--ui));
+  border: 1px solid rgb(232 228 216 / 0.45);
   border-radius: 2px;
-  background: rgb(11 26 51 / 0.85);
+  background: rgb(11 26 51 / 0.72);
+  color: var(--bone);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.tbtn {
+  min-width: calc(56px * var(--ui));
+  font: 700 26px/1 var(--font-body);
+}
+
+.tbtn:active {
+  background: rgb(255 134 96 / 0.25);
+}
+
+.tbtn:disabled {
+  opacity: 0.35;
+}
+
+#touch-fire {
+  min-width: calc(96px * var(--ui));
+  padding: 0 22px;
+  border-color: var(--p1);
   color: var(--p1);
   font: 800 24px/1 var(--font-display);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-/* The power-up button sits above the fire button, in the colour of the power-up it uses. */
+/* The power-up button: above the fire button, in the colour of the power-up it uses. */
 #touch-power {
   position: fixed;
   right: max(16px, env(safe-area-inset-right));
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 72px);
-  z-index: 5;
-  min-height: 44px;
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 10px + 56px * var(--ui));
+  min-height: calc(44px * var(--ui));
   padding: 0 16px;
-  border: 1px solid var(--power, var(--p1));
-  border-radius: 2px;
-  background: rgb(11 26 51 / 0.85);
+  border-color: var(--power, var(--p1));
   color: var(--power, var(--p1));
   font: 800 17px/1 var(--font-display);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
+/* Held sideways: the fire button on the right edge, the power pair just inside it, the angle pair on the left. */
+html:not(.upright) .tgroup--power {
+  order: 1;
+  margin-left: auto;
+}
+
+html:not(.upright) #touch-fire {
+  order: 2;
+}
+
+/* Held upright: a bar — the angle pair, the fire button across the middle, the power pair — and the power-up button beside the menu. */
+html.upright #touch-bar {
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  gap: 8px;
+}
+
+/* The step buttons give way first: the word on the fire button must never spill over its neighbours. */
+html.upright .tgroup {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+html.upright .tbtn {
+  flex: 1 1 calc(44px * var(--ui));
+  min-width: calc(36px * var(--ui));
+  font-size: 24px;
+}
+
+html.upright #touch-fire {
+  flex: 1 0 auto;
+  min-width: max-content;
+  padding: 0 10px;
+  font-size: 24px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+html.upright #touch-power {
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  bottom: auto;
+  min-height: calc(48px * var(--ui));
+  max-width: 52%;
+  font-size: 15px;
+}
+
+/* The way into the pause menu, where there is no Esc key. */
+#touch-menu {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  z-index: 5;
+  width: calc(48px * var(--ui));
+  height: calc(48px * var(--ui));
+  border: 1px solid rgb(232 228 216 / 0.5);
+  border-radius: 2px;
+  background: rgb(11 26 51 / 0.85);
+  color: var(--bone);
+  font: 700 24px/1 var(--font-body);
+  touch-action: manipulation;
+}
+
+#touch-menu[hidden],
 #touch-fire[hidden],
 #touch-power[hidden],
 #clip-save[hidden] {
@@ -2594,7 +2773,7 @@ kbd {
   left: max(16px, env(safe-area-inset-left));
   bottom: max(16px, env(safe-area-inset-bottom));
   z-index: 5;
-  min-height: 44px;
+  min-height: calc(44px * var(--ui));
   padding: 0 16px 0 34px;
   border: 1px solid rgb(255 90 110 / 0.7);
   border-radius: 2px;
@@ -2630,7 +2809,6 @@ kbd {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .title-col,
   .panel {
     animation: none;
   }
@@ -2654,4 +2832,91 @@ kbd {
   .panel {
     padding: 24px 16px 18px;
   }
+}
+
+/* ——— The aiming stick: a see-through circle over the corner of the field, above the buttons ——— */
+
+#touch-stick[hidden] {
+  display: none;
+}
+
+#touch-stick {
+  --stick: clamp(96px, 36vh, 140px);
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 56px * var(--ui) + 12px);
+  z-index: 4;
+  width: var(--stick);
+  height: var(--stick);
+  border-radius: 50%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+html.upright #touch-stick {
+  --stick: min(32vw, 132px);
+  left: max(12px, env(safe-area-inset-left));
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px * var(--ui) + 12px);
+}
+
+html.stick-right #touch-stick {
+  left: auto;
+  right: max(16px, env(safe-area-inset-right));
+}
+
+html.upright.stick-right #touch-stick {
+  right: max(12px, env(safe-area-inset-right));
+}
+
+#touch-stick canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* The clip button sits in the top row, beside the menu button. */
+@media (pointer: coarse) {
+  #clip-save {
+    top: max(12px, env(safe-area-inset-top));
+    bottom: auto;
+    left: calc(max(12px, env(safe-area-inset-left)) + 48px * var(--ui) + 10px);
+  }
+}
+
+/* How many people are watching, for everybody who is not in the stands. */
+#stands-badge[hidden] {
+  display: none;
+}
+
+#stands-badge {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 56px);
+  z-index: 5;
+  padding: 4px 9px;
+  border: 1px solid rgb(91 125 179 / 0.55);
+  background: rgb(11 26 51 / 0.82);
+  color: var(--bone-dim);
+  font: 12px/1.3 var(--font-mono);
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+
+.lobby__tag--live {
+  color: var(--danger);
+}
+
+.eye-icon {
+  width: 1.2em;
+  height: 1.2em;
+  margin-right: 0.4em;
+  vertical-align: -0.2em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }

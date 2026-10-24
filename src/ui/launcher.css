@@ -1,0 +1,710 @@
+/* ——— Flight selection: the main menu and the match briefing ——— */
+
+.screen--title {
+  flex-direction: column;
+  padding: clamp(20px, 3.5vh, 44px) clamp(22px, 5vw, 88px);
+  background: linear-gradient(110deg, rgb(7 17 34 / 0.97), rgb(11 26 51 / 0.94) 55%, rgb(11 26 51 / 0.87));
+}
+
+.launcher,
+.briefing {
+  width: min(1280px, 100%);
+  min-width: 0;
+  margin: auto;
+  animation: rise 450ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* Keep the title shell at a stable vertical anchor when its right-hand section changes height. */
+.screen--title > .launcher {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  margin: clamp(24px, 8vh, 120px) auto 0;
+}
+
+.launcher__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: end;
+  margin-bottom: clamp(24px, 4vh, 44px);
+}
+
+.launcher .wordmark {
+  grid-column: 1;
+  font-size: clamp(76px, min(10vw, 17vh), 144px);
+  line-height: 0.86;
+}
+
+.launcher__body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: clamp(28px, 4vw, 64px);
+}
+
+.launcher__nav {
+  align-self: start;
+  gap: 12px;
+  padding-top: 33px;
+}
+
+.launcher__nav .item {
+  min-width: 0;
+  min-height: 52px;
+  padding: 10px 12px 10px 18px;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  color: var(--bone-dim);
+  font: 800 28px/1.15 var(--font-display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.launcher__nav .item__hint {
+  max-width: 25ch;
+  font: 400 10.5px/1.6 var(--font-body);
+  text-transform: none;
+}
+
+.launcher__nav .is-selected {
+  color: var(--launch-accent);
+  border-color: var(--launch-accent);
+  background: linear-gradient(90deg, rgb(255 173 101 / 0.1), transparent);
+}
+
+.launcher__nav .item:nth-child(3) {
+  margin-top: 16px;
+}
+
+.launcher .item::before,
+.briefing .item::before {
+  display: none;
+}
+
+.launcher__content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  width: 100%;
+  min-width: 0;
+}
+
+.launcher__section-head {
+  grid-row: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 12px;
+}
+
+.launcher__section-head h2,
+.launcher__section-head h3 {
+  margin: 0;
+  font: 800 21px/1.2 var(--font-display);
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.launcher__section-head > span {
+  color: var(--bone-dim);
+  font: 10px/1.5 var(--font-mono);
+}
+
+.launcher__modes,
+.briefing__cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 14px;
+  margin: 0;
+}
+
+/* Two modes, side by side over the daily challenge. */
+.launcher__modes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.launcher__online {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 14px;
+  margin: 0;
+}
+
+.launcher__content > .launcher__modes,
+.launcher__content > .launcher__online {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: stretch;
+  justify-content: stretch;
+  width: 100%;
+  margin: 0;
+}
+
+.launcher__modes .item--card,
+.briefing__cards .item--card,
+.launcher__online .item--card {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid rgb(91 125 179 / 0.45);
+  border-radius: 5px;
+  background: rgb(9 21 39 / 0.8);
+  text-align: left;
+  transition: border-color 160ms, background 160ms, transform 160ms;
+}
+
+.launcher__modes .item__icon {
+  width: 100%;
+  height: clamp(88px, 14vh, 150px);
+  margin: 0 0 4px;
+  opacity: 1;
+}
+
+.launcher__online .item__icon {
+  width: 100%;
+  height: clamp(88px, 14vh, 150px);
+  margin: 0 0 4px;
+  opacity: 1;
+}
+
+.mode-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.launcher__modes .item__title {
+  font-size: clamp(22px, 2.1vw, 30px);
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+.launcher__online .item__title {
+  font-size: clamp(22px, 2.1vw, 30px);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.launcher__modes .item__hint {
+  font-size: 11.5px;
+  line-height: 1.6;
+  max-width: 29ch;
+}
+
+.launcher__online .item__hint {
+  font-size: 11.5px;
+  line-height: 1.6;
+  max-width: 29ch;
+}
+
+.launcher__modes .is-selected {
+  border-color: var(--launch-accent);
+  background: linear-gradient(160deg, rgb(255 173 101 / 0.075), rgb(9 21 39 / 0.95) 70%);
+  box-shadow: 0 0 0 1px rgb(255 173 101 / 0.2), 0 7px 28px rgb(0 0 0 / 0.12);
+}
+
+.launcher__modes .is-selected .item__title {
+  color: var(--launch-accent);
+}
+
+.launcher__modes .item__selection,
+.briefing__cards .item__selection { display: none; }
+
+.item__selection[hidden] { display: none; }
+
+.launcher__modes .item:hover,
+.launcher__online .item:hover,
+.briefing__cards .item:hover {
+  border-color: var(--bone-dim);
+  transform: translateY(-2px);
+}
+
+.launcher .item:focus-visible,
+.briefing .item:focus-visible {
+  outline: 2px solid var(--bone);
+  outline-offset: 4px;
+  box-shadow: none;
+}
+
+.launcher .items--row .item--card:focus { border-color: rgb(91 125 179 / 0.45); }
+
+.launcher__daily {
+  grid-row: 3;
+  margin-top: 14px;
+}
+
+.launcher__daily .item--card {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr);
+  grid-template-areas: 'art title' 'art hint';
+  gap: 3px 14px;
+  padding: 10px 16px;
+  border: 1px solid rgb(91 125 179 / 0.3);
+  border-radius: 4px;
+  background: rgb(17 35 59 / 0.65);
+  text-align: left;
+}
+
+.launcher__daily .item__icon {
+  grid-area: art;
+  width: 60px;
+  height: 42px;
+  margin: 0;
+}
+
+.launcher__daily .item__title {
+  grid-area: title;
+  font-size: 19px;
+  letter-spacing: 0.025em;
+}
+
+.launcher__daily .item__hint {
+  grid-area: hint;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.launcher__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  padding-top: 22px;
+  margin-top: 24px;
+  border-top: 1px solid rgb(91 125 179 / 0.2);
+}
+
+.launcher__foot .keys {
+  margin: 0;
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.launcher__language {
+  width: auto;
+  margin-left: auto;
+}
+
+.launcher__language .item {
+  min-height: 36px;
+  padding: 4px 6px;
+  gap: 8px;
+}
+
+.launcher__language .item__label,
+.launcher__language .item__value {
+  font-size: 10px;
+}
+
+.launcher__foot .title-foot {
+  margin: 0;
+}
+
+.launcher__foot .version {
+  font-size: 9px;
+}
+
+/* The version tag and the credits line each sit in a slot whose column animates between 0fr and 1fr,
+ * so the footer grows by the credits' width and the language picker is eased aside instead of jumping. */
+.credits {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  cursor: default;
+  outline: none;
+}
+
+.credits__slot {
+  display: grid;
+  transition: grid-template-columns 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.credits__slot--tag { grid-template-columns: 1fr; }
+.credits__slot--line { grid-template-columns: 0fr; }
+
+.credits__tag,
+.credits__line {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 260ms ease;
+}
+
+.credits__line {
+  text-align: right;
+  line-height: 1.7;
+  opacity: 0;
+}
+
+.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__slot--tag { grid-template-columns: 0fr; }
+.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__slot--line { grid-template-columns: 1fr; }
+.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__tag { opacity: 0; }
+.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__line { opacity: 1; }
+
+.credits__line a {
+  color: var(--bone);
+  text-decoration: none;
+  transition: color 140ms ease;
+}
+
+.credits__line a:hover,
+.credits__line a:focus-visible {
+  color: var(--p1);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.credits__agents { display: block; color: var(--bone-dim); }
+
+.heart-icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.15em;
+  fill: var(--danger);
+}
+
+@media (max-width: 700px) {
+  .credits__agents { display: none; }
+}
+
+.briefing__cards {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.briefing__cards .item--card {
+  gap: 8px;
+  padding: 12px;
+}
+
+.briefing__cards .item__icon {
+  width: 100%;
+  height: 94px;
+  margin: 0;
+  opacity: 1;
+}
+
+.briefing__cards .item__title {
+  min-width: 0;
+  font-size: 25px;
+  letter-spacing: 0.02em;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.briefing__cards .item__hint {
+  font-size: 10.5px;
+  line-height: 1.7;
+}
+
+.briefing__preset-note {
+  margin: 12px 0 22px;
+  color: var(--bone-dim);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.briefing__quick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  padding-top: 10px;
+}
+
+.briefing__quick .item {
+  min-width: 0;
+  padding-inline: 2px;
+}
+
+.briefing__quick .item__label {
+  font-size: 12px;
+}
+
+.briefing__quick-controls { display: contents; }
+
+/* Mayhem's strength sits under the sliders, as wide as they are, and only while Mayhem is on. */
+.briefing__mayhem { grid-column: 1 / 3; grid-row: 2; min-width: 0; }
+.briefing__mayhem:not(:has(> .item:not([hidden]))) { display: none; }
+
+.briefing__powerups {
+  order: 1;
+  grid-column: 3;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 2px;
+}
+
+.briefing__powerups-label {
+  color: var(--bone);
+  font-size: 12px;
+}
+
+.briefing__powerups-note {
+  color: var(--bone-dim);
+  font: 9px/1.4 var(--font-mono);
+}
+
+.briefing__powerup-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+}
+
+.briefing__powerup {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--powerup-tone) 58%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--powerup-tone) 10%, transparent);
+  cursor: help;
+}
+
+.briefing__powerup:focus-visible {
+  outline: 2px solid var(--bone);
+  outline-offset: 2px;
+}
+
+.briefing__powerup-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.briefing__powerup-none {
+  color: var(--bone-dim);
+  font: 10px/1.5 var(--font-mono);
+}
+
+.powerup-tooltip {
+  position: fixed;
+  z-index: 1200;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 8px 10px;
+  border: 1px solid rgb(91 125 179 / 0.65);
+  border-radius: 3px;
+  background: rgb(7 17 34 / 0.98);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  color: var(--bone);
+  font-size: 11px;
+  line-height: 1.5;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(3px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+}
+
+.powerup-tooltip.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.menu-page--briefing .menu-page__aside .setup__title {
+  font-size: 10px;
+  color: var(--bone-dim);
+}
+
+.briefing__crew {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.briefing__crew:has(.briefing__team) { gap: 18px; }
+
+.briefing__team {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 7px;
+  border-bottom: 2px solid color-mix(in srgb, var(--team-tone) 55%, transparent);
+}
+
+.briefing__ship {
+  display: block;
+  font-size: 25px;
+  line-height: 1;
+  text-shadow: 0 0 20px currentColor;
+}
+
+.briefing__lineup {
+  margin: 12px 0 6px;
+  font-size: 13px;
+}
+
+.briefing__players {
+  margin: 10px 0 28px;
+}
+
+.briefing__players .item,
+.briefing__edit .item {
+  min-height: 36px;
+  padding: 6px 0;
+  justify-content: flex-start;
+  color: var(--p2);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.briefing__players .item::after,
+.briefing__edit .item::after {
+  content: '↗';
+  font-size: 14px;
+}
+
+.briefing__facts {
+  margin: 12px 0 6px;
+  font-size: 10.5px;
+}
+
+.briefing__facts > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgb(91 125 179 / 0.14);
+}
+
+.briefing__facts dt {
+  color: var(--bone-dim);
+}
+
+.briefing__facts dd {
+  margin: 0;
+  color: var(--bone);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.screen[data-rebuild] .launcher {
+  animation: none;
+}
+
+@media (max-width: 1100px) {
+  .launcher__body { grid-template-columns: 180px minmax(0, 1fr); gap: 28px; }
+  .launcher__head { column-gap: 28px; }
+  .launcher__nav .item { font-size: 25px; }
+  .launcher__daily .item--card { grid-template-columns: 52px minmax(0, 1fr); }
+  .briefing__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .briefing__cards .item--card { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 4px 10px; }
+  .briefing__cards .item__icon { grid-column: 1; grid-row: 1 / 3; height: 65px; }
+  .briefing__cards .item__title { align-self: end; font-size: 23px; }
+  .briefing__cards .item__hint { align-self: start; }
+  .briefing__quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; }
+  .briefing__powerups { grid-column: auto; }
+  .briefing__mayhem { grid-column: 1 / -1; }
+}
+
+@media (max-width: 900px) {
+  .briefing__cards .item--card { display: flex; gap: 8px; padding: 12px; }
+  .briefing__cards .item__icon { height: clamp(62px, 10vh, 82px); }
+  .briefing__cards .item__title { font-size: clamp(18px, 2.6vw, 22px); }
+}
+
+@media (max-width: 760px) {
+  .screen--title > .launcher { margin: 0 auto; }
+  .launcher__head { margin-bottom: 26px; }
+  .launcher .wordmark { font-size: clamp(68px, 17vw, 116px); }
+  .launcher__body { display: flex; flex-direction: column; gap: 24px; }
+  .launcher__nav { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0; }
+  .launcher__nav .item { padding: 8px 12px; min-height: 44px; font-size: 23px; }
+  .launcher__nav .item:nth-child(3) { margin: 0; }
+  .launcher__nav .item__hint { display: none; }
+  .launcher__modes { gap: 10px; }
+  .launcher__online { gap: 10px; }
+  .launcher__online .item--card { padding: 12px; }
+  .launcher__online .item__title { font-size: 24px; }
+  .launcher__online .item__hint { font-size: 11.5px; }
+  .launcher__modes .item--card { padding: 12px; }
+  .launcher__modes .item__title { font-size: 24px; }
+  .launcher__foot { margin-top: 20px; padding-top: 16px; gap: 10px 16px; }
+  .launcher__foot .keys { display: none; }
+  .launcher__language { margin-left: 0; width: 200px; }
+  .briefing__crew { margin-top: 14px; }
+  .briefing__players { margin-bottom: 20px; }
+}
+
+@media (max-height: 840px) and (min-width: 761px) {
+  .screen--title > .launcher { margin-top: clamp(18px, 4vh, 44px); }
+}
+
+@media (max-width: 520px) {
+  .screen--title { padding: max(28px, env(safe-area-inset-top)) 22px max(18px, env(safe-area-inset-bottom)); }
+  .launcher__nav .item { font-size: 20px; white-space: nowrap; }
+  .launcher__nav .item:nth-child(n + 3) { font: 400 12px/1.5 var(--font-body); letter-spacing: 0; text-transform: none; }
+  .launcher__content .launcher__section-head > span { display: none; }
+  .launcher__modes { grid-template-columns: minmax(0, 1fr); }
+  .launcher__online { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .launcher__online .item--card {
+    display: grid;
+    grid-template-columns: 86px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 4px 12px;
+    padding: 12px;
+  }
+  .launcher__online .item__icon { grid-column: 1; grid-row: 1 / 3; height: 80px; margin: 0; }
+  .launcher__online .item__title { grid-column: 2; align-self: end; font-size: 25px; }
+  .launcher__online .item__hint { grid-column: 2; align-self: start; font-size: 11.5px; line-height: 1.6; }
+  .launcher__online .item__selection { top: 9px; right: 9px; }
+  .launcher__modes .item--card { display: grid; grid-template-columns: 86px minmax(0, 1fr); grid-template-rows: auto auto 1fr; gap: 3px 12px; padding: 12px; }
+  .launcher__modes .item__icon { grid-column: 1; grid-row: 1 / 4; height: 80px; margin: 0; }
+  .launcher__modes .item__title { grid-column: 2; font-size: 25px; overflow-wrap: anywhere; }
+  .launcher__modes .item__hint { grid-column: 2; font-size: 11.5px; line-height: 1.6; }
+  .launcher__section-head h2 { font-size: 20px; }
+  .launcher__section-head > span { font-size: 8px; }
+  .launcher__daily .item--card { padding: 12px; gap: 4px 10px; }
+  .launcher__daily .item__title { font-size: 20px; }
+  .launcher__daily .item__hint { font-size: 10px; }
+  .briefing__cards { gap: 10px; }
+  .briefing__cards .item--card { display: flex; padding: 12px; }
+  .briefing__cards .item__icon { height: 70px; }
+  .briefing__cards .item__title { align-self: flex-start; font-size: clamp(16px, 5vw, 19px); }
+  .briefing__cards .item__hint { font-size: 10px; line-height: 1.6; }
+  .briefing__preset-note { margin-bottom: 16px; }
+  .briefing__quick { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .briefing__powerups { grid-column: auto; }
+  .briefing__mayhem { grid-column: auto; grid-row: auto; }
+  .briefing__quick .item { padding-block: 10px; }
+}
+
+@media (max-width: 380px) {
+  .launcher__modes .item--card { grid-template-columns: 72px minmax(0, 1fr); }
+  .launcher__modes .item__icon { height: 76px; }
+  .launcher__online .item--card { grid-template-columns: 72px minmax(0, 1fr); gap: 3px 12px; padding: 12px; }
+  .launcher__online .item__icon { height: 76px; }
+}
+
+@media (max-height: 780px) and (max-width: 380px) {
+  .screen--title { padding-top: max(12px, env(safe-area-inset-top)); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .launcher__head { margin-bottom: 8px; }
+  .launcher__body { gap: 12px; }
+  .launcher__modes .item__icon { height: 60px; }
+  .launcher__modes .item--card { padding-block: 10px; }
+  .launcher__foot { margin-top: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launcher { animation: none; }
+  .launcher__modes .item, .launcher__online .item, .briefing__cards .item { transition: none; }
+  .launcher__modes .item:hover, .launcher__online .item:hover, .briefing__cards .item:hover { transform: none; }
+  .launcher .item__icon, .briefing .item__icon { transition: none; transform: none; }
+  .credits__slot, .credits__tag, .credits__line { transition: none; }
+}

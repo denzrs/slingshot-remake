@@ -11,31 +11,37 @@ export type NetworkGameMode = 'classic' | 'horizon';
 export type NetworkCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
 
 /** The rules of an online game; a subset of the local `Settings`, so it can be spread straight into them. */
-export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails' | 'betting' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'>;
+export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'hiddenAim' | 'fadingTrails' | 'mayhem' | 'betting' | 'chatPlayersOnly' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'>;
 
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
   | { kind: 'aim'; angle: number; power: number }
   | { kind: 'fire' }
-  /** The power-up key: opens or closes a teleport's aim, or arms a preview, armor piercing or a heavy shot. */
+  /** The power-up key: opens or closes a teleport's aim, or arms a preview, armor piercing or a plasma shot. */
   | { kind: 'power' }
   /** Esc while a teleport is being aimed. */
   | { kind: 'cancel' }
   /** A vote to skip the killcam; it ends once half of the players want that. */
   | { kind: 'skip' }
-  /** An eliminated player's oracle tip: a ship's index, -1 for nobody, or 1/0 for hit/miss. With `round` it names the winner of the round instead, and `stake` bets that many of the player's points on it. */
+  /** An eliminated player's oracle tip: a ship's index, -1 for nobody, or 1/0 for hit/miss. With `round` it names the winner of the round instead, and `stake` bets that many of the player's points on it. A spectator's only input: a bet on the round, with a stake. */
   | { kind: 'bet'; pick: number; round?: boolean; stake?: number };
 
 type ClientMessage =
   | { type: 'lobby' }
   | ({ type: 'create_room'; name: string; roomName?: string; mode: RoomMode; gameMode: NetworkGameMode; rules: RoomRules; maxPlayers: number; password?: string; avatar?: Avatar } & Partial<RoomLook>)
-  | { type: 'join_room'; roomId: string; name: string; password?: string; avatar?: Avatar }
+  /** `spectate` takes a place in the stands instead of a seat: it works for a running game of a public room without a password, too. */
+  | { type: 'join_room'; roomId: string; name: string; password?: string; avatar?: Avatar; spectate?: boolean }
   /** Your symbol in the game, while the room waits. */
   | { type: 'set_avatar'; avatar: Avatar }
+  /** Your name, while the room waits; the relay refuses one it will not carry. */
+  | { type: 'set_name'; name: string }
   | { type: 'ready'; ready: boolean }
-  | { type: 'set_rules'; rules: RoomRules }
+  /** `gameMode` changes the game the rules are for; without it the room keeps its own. */
+  | { type: 'set_rules'; rules: RoomRules; gameMode?: NetworkGameMode }
   /** Host only, while waiting: how the room shows up in the lobby. */
   | { type: 'set_room'; look: RoomLook }
+  /** Host only, while waiting: free for all or teams; the players are dealt out to the teams and confirm again. */
+  | { type: 'set_mode'; mode: RoomMode }
   /** Pick your own team (team rooms, while waiting); you have to be ready again afterwards. */
   | { type: 'set_team'; team: 0 | 1 }
   /** Host only: deal everybody back out to the two teams in the order they joined. */
@@ -53,6 +59,8 @@ type ClientMessage =
   | { type: 'daily_submit'; day: string; name: string; score: number }
   /** Look at a day's leaderboard without posting anything. */
   | { type: 'daily_top'; day: string }
+  /** Something to say to everybody in the room. The relay cleans it and stars out profanity. */
+  | { type: 'chat'; text: string }
   | { type: 'leave_room' };
 
 /** One run on a daily leaderboard, as the relay ranks it. */
@@ -74,12 +82,18 @@ export interface LobbyRoom {
   color: RoomColor;
   mode: RoomMode;
   gameMode: NetworkGameMode;
+  /** The room's chaos strength: above 0 it is a Mayhem room, played in `gameMode`. */
+  mayhem: number;
   /** Seats taken, CPUs included. */
   players: number;
   /** How many of those seats are CPUs: a human can take one of them when the room is full. */
   cpus: number;
   maxPlayers: number;
   locked: boolean;
+  /** A game that is already running is listed when it can be watched. */
+  status: 'waiting' | 'playing';
+  /** How many people are in the stands. */
+  spectators: number;
 }
 
 interface RoomPlayer {
@@ -105,6 +119,8 @@ export interface RoomInfo extends RoomLook {
   status: 'waiting' | 'playing';
   locked: boolean;
   players: RoomPlayer[];
+  /** The people in the stands. */
+  spectators: { id: number; name: string }[];
 }
 
 export type ServerMessage =
@@ -112,7 +128,8 @@ export type ServerMessage =
   | {
       type: 'room_update';
       room: RoomInfo;
-      you: { playerId: number; host: boolean };
+      /** In the stands `playerId` is -1 and `spectatorId` names the place; the points of the bets are kept under it. */
+      you: { playerId: number; host: boolean; spectator?: boolean; spectatorId?: number };
       /** Why the room changed under you, e.g. a running game was ended. */
       notice?: string;
     }
@@ -126,7 +143,12 @@ export type ServerMessage =
       seed: number;
       players: Array<{ id: number; name: string; avatar: Avatar; team: 0 | 1; cpu: NetworkCpuLevel | null }>;
     }
-  | { type: 'input'; from: number; input: ClientInput }
+  /** To the host: `from` is a player's seat, or — with `spectator` — a place in the stands. */
+  | { type: 'input'; from: number; input: ClientInput; spectator?: true }
+  /** Somebody said something in the room — `id` is their seat, or their place in the stands (`spectator`). */
+  | { type: 'chat'; id: number; spectator: boolean; name: string; text: string }
+  /** To the host: someone joined the stands mid-game; the next state frame has to be a complete one. */
+  | { type: 'keyframe' }
   | { type: 'state'; seq: number; patch: StatePatch; events: GameEvent[] }
   | {
       type: 'daily_board';
@@ -138,11 +160,20 @@ export type ServerMessage =
       you: DailyEntry | null;
     }
   | { type: 'room_closed'; message: string }
-  | { type: 'error'; message: string }
+  /** `field` names what the error is about, when it is about one thing the player typed. */
+  | { type: 'error'; message: string; field?: 'name' | 'password' }
   /** Local only: the connection to the server is gone. */
   | { type: 'closed'; message: string };
 
 const CONNECT_TIMEOUT_MS = 10_000;
+
+/** Why the socket never opened; the lobby says it in the player's language. */
+export class ConnectError extends Error {
+  constructor(readonly reason: 'unreachable' | 'timeout' | 'closed', readonly url: string, message: string) {
+    super(message);
+    this.name = 'ConnectError';
+  }
+}
 
 /** A thin, non-reconnecting WebSocket transport for the lobby and game relay protocol. */
 export class NetworkClient {
@@ -190,7 +221,7 @@ export class NetworkClient {
           this.socket = null;
           this.connectPromise = null;
         }
-        reject(new Error(`Connection to ${this.url} timed out`));
+        reject(new ConnectError('timeout', this.url, `Connection to ${this.url} timed out`));
       }, CONNECT_TIMEOUT_MS);
 
       socket.addEventListener('open', () => {
@@ -207,7 +238,7 @@ export class NetworkClient {
         window.clearTimeout(timeout);
         if (this.socket === socket) this.socket = null;
         if (this.connectPromise) this.connectPromise = null;
-        reject(new Error(`Could not connect to ${this.url}. Check the server address and make sure the server is running.`));
+        reject(new ConnectError('unreachable', this.url, `Could not connect to ${this.url}. Check the server address and make sure the server is running.`));
       });
       socket.addEventListener('close', () => {
         if (this.socket === socket) {
@@ -217,7 +248,7 @@ export class NetworkClient {
         if (!settled) {
           settled = true;
           window.clearTimeout(timeout);
-          reject(new Error(`Connection to ${this.url} closed before it was established`));
+          reject(new ConnectError('closed', this.url, `Connection to ${this.url} closed before it was established`));
         } else if (opened && !this.closed) {
           this.deliver({ type: 'closed', message: `Connection to ${this.url} was closed.` });
         }

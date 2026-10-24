@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use rand::Rng;
 
 use crate::command::{CreateRoom, JoinRoom};
+use crate::protocol::TOO_MANY_PASSWORDS;
 use crate::room::RoomManager;
 
 pub const MAX_PASSWORD_LENGTH: usize = 64;
@@ -82,12 +83,12 @@ pub async fn prepare_join(
         return Ok(Some(false));
     }
     if manager.lock().password_attempts_exhausted(conn) {
-        manager
-            .lock()
-            .error(conn, "Too many wrong passwords – reconnect to try again");
+        manager.lock().error(conn, TOO_MANY_PASSWORDS);
         return Err(Handled);
     }
-    let salt = manager.lock().join_password_salt(conn, join.room_id());
+    let salt = manager
+        .lock()
+        .join_password_salt(conn, join.room_id(), join.spectate);
     let Some((salt, hash)) = salt else {
         return Ok(None);
     };

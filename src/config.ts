@@ -71,8 +71,8 @@ export const NEBULA = {
   GRAVITY: 1.7,
 } as const;
 
-export const HEAVY = {
-  /** Share of every pull (planets and black holes) a heavy shot feels: it is hard to bend. A cloud neither deepens nor drags it. */
+export const PLASMA = {
+  /** Share of every pull (planets and black holes) a plasma shot feels: it is hard to bend. A cloud neither deepens nor drags it. */
   GRAVITY: 0.4,
 } as const;
 
@@ -96,6 +96,8 @@ export const AIM = {
 
 export const SCORING = {
   BASE: 1000,
+  /** A defense's stray missile hitting an enemy: what its owner gets, in place of the base score. */
+  COLLATERAL: 500,
   /** Penalty for destroying your own ship. */
   SELF_HIT: 300,
   /** Classic: bonus for the last ship standing. */
@@ -141,6 +143,27 @@ export const HORIZON = {
   KILLCAM_DELAY: 1,
 } as const;
 
+/** Mayhem: every round plays by its own twists, drawn from a deck. */
+export const MAYHEM = {
+  /** The chaos strength a room can pick (0 = off): mild, wild, insane. */
+  LEVELS: [0, 1, 2, 3] as readonly number[],
+  /** Mild only: the share of rounds (from the second on) that play by the plain rules, as a breather between the twists. */
+  QUIET_CHANCE: 0.2,
+  /** Wild and insane: the share of rounds that carry one twist more than their level calls for. */
+  EXTRA_CHANCE: 0.25,
+  /** The jackpot round pays every point, and costs every point, this many times over. */
+  JACKPOT_FACTOR: 2,
+  /** The share of rounds (from the second on) that are a jackpot, and of the finale. */
+  JACKPOT_CHANCE: 0.18,
+  FINALE_JACKPOT_CHANCE: 0.35,
+  /** Seconds the announcement of a round holds the ships back, so the twists can be read. */
+  REVEAL_TIME: 2.4,
+  /** Seconds into the announcement when the twists have landed and a tap may dismiss it. */
+  LANDED: 1.2,
+  /** The longest a held announcement waits for its host, so an absent one cannot freeze the room. */
+  HELD_MAX: 60,
+} as const;
+
 /** The oracle: eliminated players tip on what the others' shots do. A side standing — it never counts towards winning. */
 export const ORACLE = {
   /** Base points for a right tip: "will it hit?" (turn by turn), a named ship, and "nobody" (salvos). */
@@ -171,6 +194,19 @@ export const ORACLE = {
   STAKE_STEP: 10,
   /** Seconds a question stays open before a shot or salvo may fly, so ghosts have time to tip and bet. */
   MIN_BET_TIME: 3,
+} as const;
+
+/**
+ * The stands: people who watch an online room without a seat. They play the oracle's tipping game like the shot-down
+ * players do — but with a bankroll of their own, which never touches a player's score. The most a room takes is shared
+ * with the relay (`protocol-contract.json`).
+ */
+export const GALLERY = {
+  MAX_SPECTATORS: 20,
+  /** What everybody in the stands starts a match with. */
+  BANKROLL: 500,
+  /** Somebody who is nearly broke starts the next round with at least this much. */
+  RELIEF: 100,
 } as const;
 
 /** Daily challenge: a fixed run of sectors against stationary targets, the same for everyone on a given day. */

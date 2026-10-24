@@ -87,13 +87,13 @@ export interface PlanOptions {
   onDecision?: CpuDecisionReporter;
   /** Armor piercing: the CPU's shot goes through ships, so a pass-through counts as a hit. */
   pierce?: boolean;
-  /** Heavy: the CPU's shot is hard to bend and ignores clouds, so the search flies it that way. */
-  heavy?: boolean;
+  /** Plasma: the CPU's shot is hard to bend and ignores clouds, so the search flies it that way. */
+  plasma?: boolean;
 }
 
 /** Planning cost: 0 or below means a hit, lower power is slightly preferred among hits. */
-function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[], profile: Readonly<CpuProfile>, gates: readonly ShotGate[], pierce: boolean, heavy: boolean): number {
-  const { end, closest, selfClosest, gates: passed, pierced } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends, gates, pierce, heavy);
+function evaluate(world: World, shooter: number, aim: Aim, rules: ShotRules, friends: readonly number[], profile: Readonly<CpuProfile>, gates: readonly ShotGate[], pierce: boolean, plasma: boolean): number {
+  const { end, closest, selfClosest, gates: passed, pierced } = simulateShot(world, shooter, aim.angle, aim.power, rules, friends, gates, pierce, plasma);
   // An armor-piercing shot kills what it goes through and flies on, so its end state alone would read as a miss.
   const onFriend = (ship: number): boolean => ship === shooter || friends.includes(ship);
   if ((end.kind === 'ship' && onFriend(end.ship)) || pierced.some(onFriend)) return 1e6;
@@ -125,7 +125,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const self = world.ships[shooter];
   function reportDecision(searched: Candidate | null, launch: Aim): void {
     if (!opts.onDecision) return;
-    const predicted = simulateShot(world, shooter, launch.angle, launch.power, rules, friends, [], opts.pierce ?? false, opts.heavy ?? false);
+    const predicted = simulateShot(world, shooter, launch.angle, launch.power, rules, friends, [], opts.pierce ?? false, opts.plasma ?? false);
     opts.onDecision({
       level: opts.level,
       attempt: opts.attempt,
@@ -140,11 +140,11 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   }
   const friends = opts.friends ?? [];
   const pierce = opts.pierce ?? false;
-  const heavy = opts.heavy ?? false;
+  const plasma = opts.plasma ?? false;
   const grudgeTarget = opts.grudgeTarget ?? null;
   // A pickup the CPU ignores (a preview) is not worth aiming at, so the caller filters those out.
   const gates = opts.pickups ?? [];
-  const evaluateAim = (aim: Aim): number => evaluate(world, shooter, aim, planRules, friends, profile, gates, pierce, heavy);
+  const evaluateAim = (aim: Aim): number => evaluate(world, shooter, aim, planRules, friends, profile, gates, pierce, plasma);
   /** Whether one of these ships is the shooter or a teammate: a hit on one of them is a blunder to avoid. */
   const onFriend = (ship: number): boolean => ship === shooter || friends.includes(ship);
   /** Whether a styled flight killed anybody (a plain hit, or a hull it went through with armor piercing). */
@@ -153,7 +153,7 @@ export function* planShot(world: World, shooter: number, opts: PlanOptions): Gen
   const blundered = (s: StyledShotOutcome): boolean => (s.end.kind === 'ship' && onFriend(s.end.ship)) || s.pierced.some(onFriend);
   function* candidate(aim: Aim): Generator<void, Candidate> {
     if (!hawking) return { ...aim, cost: evaluateAim(aim) };
-    const style = yield* simulateStyledShot(world, shooter, aim.angle, aim.power, planRules, friends, pierce, heavy);
+    const style = yield* simulateStyledShot(world, shooter, aim.angle, aim.power, planRules, friends, pierce, plasma);
     const risk = style.selfClosest < profile.selfMargin ? (profile.selfMargin - style.selfClosest) * 20 : 0;
     const cost = blundered(style) ? 1e6 : killed(style) ? -1 + aim.power * (1 / 1000 + profile.powerFrugality) + risk : style.closest + risk;
     return { ...aim, cost, style };

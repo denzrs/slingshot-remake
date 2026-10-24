@@ -121,6 +121,8 @@ export interface OracleSnapshot {
   roundTips?: [player: number, pick: number][];
   /** What the eliminated have staked on the round question, as [player, stake] pairs. */
   roundStakes?: [player: number, stake: number][];
+  /** The stands' book only: how much is staked on each pick, as [pick, stake] pairs — the odds are made of it. */
+  pools?: [pick: number, stake: number][];
 }
 
 /** What a ghost with `score` points may stake on the round question: half of the allowed most, and the most; none if it is not worth it. */
@@ -157,6 +159,10 @@ interface Entry {
  * a salvo is about to be aimed, close when it is fired, and are judged from what the shots did.
  * One more question runs alongside for the whole round: who wins it.
  * The host judges; every screen mirrors the verdict and the standings from its snapshots.
+ *
+ * The same game is played twice in an online room: by the shot-down players, and by the stands (people
+ * watching without a ship). Each has an oracle of its own, so their pots never mix. The stands' one has an
+ * open book (`publicBook`): what is staked on each pick is shown to everybody, because the odds come from it.
  */
 export class Oracle {
   question: OracleQuestion | null = null;
@@ -168,6 +174,16 @@ export class Oracle {
   mine: { id: number; pick: number } | null = null;
   /** …and on the round question. */
   roundMine: { id: number; pick: number } | null = null;
+
+  /** The stakes on each pick of the round question as the host sent them; null where this oracle works them out itself. */
+  private sharedPools: Map<number, number> | null = null;
+
+  constructor(private readonly publicBook = false) {}
+
+  /** Whether what is staked on each pick is common knowledge (the stands) or secret until the round is over (the shot-down). */
+  get openBook(): boolean {
+    return this.publicBook;
+  }
 
   private serial = 0;
   /** Who tipped what on the open question: the host's book. Guests only ever hold the faces-down copy. */
@@ -191,7 +207,13 @@ export class Oracle {
     this.roundTips.clear();
     this.roundStakes.clear();
     this.recount();
+    this.sharedPools = null;
     this.scores = Array.from({ length: players }, emptyScore);
+  }
+
+  /** Makes room in the standings for a bettor who was not there when the match began (somebody who came to watch). */
+  private ensure(player: number): void {
+    while (this.scores.length <= player) this.scores.push(emptyScore());
   }
 
   startRound(): void {
@@ -203,6 +225,7 @@ export class Oracle {
     this.tips.clear();
     this.roundTips.clear();
     this.roundStakes.clear();
+    this.sharedPools = null;
     this.recount();
     for (const score of this.scores) {
       score.roundPoints = 0;
@@ -240,6 +263,7 @@ export class Oracle {
   /** Records a tip, replacing the player's earlier one. Whether the player may tip at all is the match's call. */
   bet(player: number, pick: number): boolean {
     if (!this.accepts(pick)) return false;
+    this.ensure(player);
     this.tips.set(player, pick);
     this.recount();
     return true;
@@ -281,6 +305,7 @@ export class Oracle {
   betRound(player: number, pick: number, alive: readonly number[], sides = alive.length): boolean {
     if (!this.acceptsRound(pick, alive)) return false;
     if (this.roundStakes.has(player)) return this.roundTips.get(player)?.pick === pick;
+    this.ensure(player);
     this.roundTips.set(player, { pick, sides });
     return true;
   }
@@ -309,6 +334,28 @@ export class Oracle {
     return sum;
   }
 
+  /** What is staked on each pick of the round question. */
+  get pools(): ReadonlyMap<number, number> {
+    if (this.sharedPools) return this.sharedPools;
+    const out = new Map<number, number>();
+    for (const [player, stake] of this.roundStakes) {
+      const pick = this.roundTips.get(player)?.pick;
+      if (pick !== undefined) out.set(pick, (out.get(pick) ?? 0) + stake);
+    }
+    return out;
+  }
+
+  /**
+   * What a point on `pick` pays if it wins, as things stand (the stake included): the pot over everything staked
+   * on the same side — `sideOf` says which ships share a side, the members of a team. Null while nobody has backed it.
+   */
+  oddsFor(pick: number, sideOf: (pick: number) => number): number | null {
+    const side = pick === TIP_NOBODY ? TIP_NOBODY : sideOf(pick);
+    let staked = 0;
+    for (const [p, stake] of this.pools) if ((p === TIP_NOBODY ? TIP_NOBODY : sideOf(p)) === side) staked += stake;
+    return staked > 0 ? this.pot / staked : null;
+  }
+
   /** Stakes taken and not yet paid out, for a round that is cut short. */
   get stakes(): ReadonlyMap<number, number> {
     return this.roundStakes;
@@ -329,6 +376,7 @@ export class Oracle {
     this.roundQuestion = null;
     this.roundTips.clear();
     this.roundStakes.clear();
+    this.sharedPools = null;
   }
 
   /**
@@ -463,6 +511,7 @@ export class Oracle {
       roundResult: this.roundResult,
       roundTips: [...this.roundTips.keys()].map((player) => [player, TIP_HIDDEN]),
       roundStakes: [...this.roundStakes],
+      ...(this.publicBook ? { pools: [...this.pools] } : {}),
     };
   }
 
@@ -476,6 +525,7 @@ export class Oracle {
     this.roundResult = snapshot.roundResult ?? null;
     this.roundTips = new Map((snapshot.roundTips ?? []).map(([player, pick]) => [player, { pick, sides: 0 }]));
     this.roundStakes = new Map(snapshot.roundStakes ?? []);
+    this.sharedPools = snapshot.pools ? new Map(snapshot.pools) : null;
   }
 }
 

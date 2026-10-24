@@ -3,7 +3,7 @@ import { AIM, CHALLENGE, FIELD } from '../config';
 import { cloneWorld, normalizeAngle, type ShotRules, type StyleKind } from '../physics';
 import { scoreChallengeHit } from '../scoring';
 import type { Settings } from '../settings';
-import type { VolleyShot } from '../volley';
+import type { VolleyAim, VolleyShot } from '../volley';
 import { Match, newPlayer, type KillRecord, type RoundTitle } from './match';
 
 export interface ShotLog {
@@ -166,7 +166,9 @@ export class ChallengeMatch extends Match {
     this.attempt++;
     this.shotsLeft--;
     this.volleyKill = null;
-    this.launch([{ player: 0, angle: p.angle, power: p.power }], true);
+    // The sector's ammo: plasma bends little and ignores clouds.
+    const aim: VolleyAim = { player: 0, angle: p.angle, power: p.power, ...(this.spec.ammo === 'plasma' ? { plasma: true } : {}) };
+    this.launch([aim], true);
   }
 
   protected updatePhase(_dt: number): void {}

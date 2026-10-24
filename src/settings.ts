@@ -1,5 +1,5 @@
 import type { CpuLevel } from './ai';
-import { AIM, GRACE, MAX_PLAYERS, TRAIL_FADE } from './config';
+import { AIM, GRACE, MAX_PLAYERS, MAYHEM, TRAIL_FADE } from './config';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from './powerups';
 import { detectLang, isLang, type Lang } from './i18n';
 
@@ -37,15 +37,23 @@ export interface Settings {
   /** Power-ups: the kinds that may turn up (never empty), and how many pickups lie on the field at once. */
   powerUpKinds: PowerUpKind[];
   powerUpAmount: number;
+  /** Mayhem: every round has twists of its own, laid over these rules. 0 = off, otherwise the chaos strength (1 mild, 2 wild, 3 insane). */
+  mayhem: number;
   /** Other players' aim arrows, angles and ship headings stay hidden: you only see your own aim. */
   hiddenAim: boolean;
   /** Seconds a finished shot's flight path stays on the board before it has faded away; 0 = it stays. */
   fadingTrails: number;
   contours: boolean;
   particles: boolean;
+  /** The title screen and menus show a CPU match playing behind them; off leaves the plate empty. */
+  menuBackground: boolean;
+  /** Touch screens: the side of the screen the aiming stick sits on. */
+  stickSide: 'left' | 'right';
   sound: boolean;
   /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
   betting: boolean;
+  /** Online: only the people who play may write in the room's chat; spectators read along (a rule of the room). */
+  chatPlayersOnly: boolean;
   language: Lang;
   /** 0 = free for all, otherwise the number of teams (2 or 3). */
   teamMode: number;
@@ -69,11 +77,15 @@ export const DEFAULT_SETTINGS: Settings = {
   powerUps: false,
   powerUpKinds: [...POWER_UP_KINDS],
   powerUpAmount: POWER_UP.DEFAULT_AMOUNT,
+  mayhem: 0,
   hiddenAim: false,
   fadingTrails: 0,
   betting: false,
+  chatPlayersOnly: false,
   contours: true,
   particles: true,
+  menuBackground: true,
+  stickSide: 'left',
   sound: true,
   language: 'de',
   teamMode: 0,
@@ -82,35 +94,31 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const KEY = 'slingshot.settings.v1';
 
-/** Settings from before multiplayer stored a single opponent instead of seats. */
-interface LegacySettings {
-  opponent?: 'human' | 'cpu';
-  cpuLevel?: CpuLevel;
-}
-
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<Settings> & LegacySettings;
+      const parsed = JSON.parse(raw) as Partial<Settings>;
       const s: Settings = { ...DEFAULT_SETTINGS, ...parsed, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams] };
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
+      for (const key of ['contours', 'particles', 'menuBackground', 'sound'] as const) {
+        if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
+      }
+      if (s.stickSide !== 'right') s.stickSide = 'left';
       // Power-up choices: only known kinds, in their usual order, and never none at all.
       const kinds = POWER_UP_KINDS.filter((kind) => Array.isArray(parsed.powerUpKinds) && parsed.powerUpKinds.includes(kind));
       s.powerUpKinds = kinds.length ? kinds : [...POWER_UP_KINDS];
       if (!POWER_UP.AMOUNTS.includes(s.powerUpAmount)) s.powerUpAmount = POWER_UP.DEFAULT_AMOUNT;
       if (!TRAIL_FADE.OPTIONS.includes(s.fadingTrails)) s.fadingTrails = 0;
+      if (!MAYHEM.LEVELS.includes(s.mayhem)) s.mayhem = 0;
       if (!AIM.CAP_OPTIONS.includes(s.maxPower)) s.maxPower = AIM.MAX_POWER;
       if (!AIM.FIXED_OPTIONS.includes(s.fixedPowerLevel)) s.fixedPowerLevel = AIM.FIXED_POWER;
       // It used to be a plain on/off switch, "on" meaning two shots.
       if ((s.neighborGrace as unknown) === true) s.neighborGrace = 2;
       if (!GRACE.OPTIONS.includes(s.neighborGrace)) s.neighborGrace = 0;
-      else if (parsed.opponent === 'cpu') s.seats[1] = parsed.cpuLevel ?? 'medium';
       s.language = isLang(parsed.language) ? parsed.language : detectLang();
-      delete (s as Settings & LegacySettings).opponent;
-      delete (s as Settings & LegacySettings).cpuLevel;
       if (activeSeats(s).length < 2) s.seats = [...DEFAULT_SETTINGS.seats];
       return s;
     }
@@ -158,10 +166,10 @@ export function teamCounts(s: Settings): number[] {
   return counts;
 }
 
-/** Puts a ship (who flies it: a human or a CPU) into the first free seat — in team mode, into the smallest team. Returns the seat, or null when there is none. */
-export function addSeat(s: Settings, flier: Exclude<Seat, 'off'>): number | null {
-  const i = freeSeat(s);
-  if (i === null) return null;
+/** Seats a human or CPU in the requested slot (or the first free one), on the smallest team. */
+export function addSeat(s: Settings, flier: Exclude<Seat, 'off'>, slot?: number): number | null {
+  const i = slot ?? freeSeat(s);
+  if (i === null || !Number.isInteger(i) || i < 0 || i >= MAX_PLAYERS || s.seats[i] !== 'off') return null;
   if (s.teamMode) {
     const counts = teamCounts(s);
     s.seatTeams[i] = counts.indexOf(Math.min(...counts));

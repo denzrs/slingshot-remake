@@ -5,6 +5,8 @@ import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
 import { aimDirection, inNebula, isWormholeJump, nextWormholeId, type Wormhole, type World } from '../physics';
 import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
+import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
+import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from './orientation';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
 import { renderContours } from './contours';
@@ -19,6 +21,8 @@ import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
   hud: boolean;
+  /** Fill the viewport with the animated world while a menu is open. */
+  fullScreen: boolean;
   /** Touch device: hint at dragging instead of keys. */
   touch: boolean;
   /** A clip is being recorded right now. */
@@ -35,7 +39,9 @@ export class Renderer {
   view!: View;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly hud: Hud;
-  private backdrop: { canvas: HTMLCanvasElement; walls: boolean } | null = null;
+  /** The empty plate is on the canvas already; it stays until the canvas is resized or a match is drawn over it. */
+  private emptyDrawn = false;
+  private backdrop: { canvas: HTMLCanvasElement; walls: boolean; fullScreen: boolean } | null = null;
   /** Per world (live or killcam replay), rebuilt when the world's version or the pixel scale changes. */
   private contours = new WeakMap<World, { version: number; ps: number; canvas: HTMLCanvasElement }>();
   /** Planet sprites by seed at `spritePs` device pixels per field unit. */
@@ -55,21 +61,32 @@ export class Renderer {
     const cssWidth = window.innerWidth;
     const cssHeight = window.innerHeight;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const margin = Math.min(28, cssWidth * 0.03);
-    const scale = Math.min((cssWidth - margin * 2) / FIELD.width, (cssHeight - margin * 2) / FIELD.height);
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    // Held upright a phone gets its own layout: HUD on top, the field, the thumbs' controls underneath.
+    const portrait = coarse && cssHeight > cssWidth ? portraitLayout(cssWidth, cssHeight, safeArea(), touchScale()) : null;
+    applyUpright(portrait);
+    // On a touch screen the field is height-limited and small: give it every pixel.
+    const margin = coarse ? 4 : Math.min(28, cssWidth * 0.03);
+    const scale = portrait?.scale ?? Math.min((cssWidth - margin * 2) / FIELD.width, (cssHeight - margin * 2) / FIELD.height);
+    const rotated = !!portrait?.rotated;
+    const plate = plateUnits(rotated);
     this.view = {
       cssWidth,
       cssHeight,
       dpr,
       scale,
-      offsetX: (cssWidth - FIELD.width * scale) / 2,
-      offsetY: (cssHeight - FIELD.height * scale) / 2,
+      offsetX: portrait?.offsetX ?? (cssWidth - plate.w * scale) / 2,
+      offsetY: portrait?.offsetY ?? (cssHeight - plate.h * scale) / 2,
+      stage: portrait?.stage,
+      rotated,
     };
+    setTurned(rotated);
     this.canvas.width = Math.round(cssWidth * dpr);
     this.canvas.height = Math.round(cssHeight * dpr);
     this.canvas.style.width = `${cssWidth}px`;
     this.canvas.style.height = `${cssHeight}px`;
     this.backdrop = null;
+    this.emptyDrawn = false;
     this.contours = new WeakMap();
   }
 
@@ -83,23 +100,49 @@ export class Renderer {
   toField(clientX: number, clientY: number): { x: number; y: number } {
     const rect = this.canvas.getBoundingClientRect();
     const v = this.view;
-    return { x: (clientX - rect.left - v.offsetX) / v.scale, y: (clientY - rect.top - v.offsetY) / v.scale };
+    const sx = (clientX - rect.left - v.offsetX) / v.scale;
+    const sy = (clientY - rect.top - v.offsetY) / v.scale;
+    // Turned, the field's y runs to the right on the screen and its x up.
+    return v.rotated ? { x: FIELD.width - sy, y: sx } : { x: sx, y: sy };
   }
 
-  draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
-    // Catches window resizes, zoom and moving to a screen with another pixel ratio.
+  /** Where a field point is on the screen (CSS px on the canvas). */
+  private screenOf(x: number, y: number): { x: number; y: number } {
+    const { scale, offsetX, offsetY, rotated } = this.view;
+    return rotated ? { x: offsetX + y * scale, y: offsetY + (FIELD.width - x) * scale } : { x: offsetX + x * scale, y: offsetY + y * scale };
+  }
+
+  /** Catches window resizes, zoom and moving to a screen with another pixel ratio. */
+  private resizeIfNeeded(): void {
     const v = this.view;
     if (v.cssWidth !== window.innerWidth || v.cssHeight !== window.innerHeight || v.dpr !== Math.min(window.devicePixelRatio || 1, 2)) {
       this.resize();
     }
+  }
+
+  /** Just the empty plate, for menus that show no game behind them. */
+  drawEmpty(): void {
+    this.resizeIfNeeded();
+    if (this.emptyDrawn) return;
+    this.emptyDrawn = true;
+    if (!this.backdrop || this.backdrop.walls || this.backdrop.fullScreen) this.backdrop = { canvas: renderBackdrop(this.view, false), walls: false, fullScreen: false };
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.drawImage(this.backdrop.canvas, 0, 0);
+  }
+
+  draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
+    this.resizeIfNeeded();
+    this.emptyDrawn = false;
     this.time += dt;
-    const { ctx, view } = this;
-    const { dpr, scale, offsetX, offsetY } = view;
+    const { ctx } = this;
+    const view = this.view;
+    const fieldView = opts.fullScreen ? this.fullScreenView() : view;
+    const { dpr, scale, offsetX, offsetY } = fieldView;
     const scene = match.scene();
     const walls = match.rules.bounce;
 
-    if (!this.backdrop || this.backdrop.walls !== walls) {
-      this.backdrop = { canvas: renderBackdrop(view, walls), walls };
+    if (!this.backdrop || this.backdrop.walls !== walls || this.backdrop.fullScreen !== opts.fullScreen) {
+      this.backdrop = { canvas: renderBackdrop(fieldView, walls, !opts.fullScreen), walls, fullScreen: opts.fullScreen };
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(this.backdrop.canvas, 0, 0);
@@ -107,12 +150,8 @@ export class Renderer {
     const base = dpr * scale;
     const cam = scene.camera;
     const P = base * (cam?.zoom ?? 1);
-    let tx = dpr * offsetX;
-    let ty = dpr * offsetY;
-    if (cam) {
-      tx = dpr * (offsetX + (FIELD.width * scale) / 2) - cam.x * P;
-      ty = dpr * (offsetY + (FIELD.height * scale) / 2) - cam.y * P;
-    }
+    const plate = plateUnits(!!fieldView.rotated);
+    const [a, b, c, d, e, f] = fieldTransform(fieldView, cam ?? undefined);
     const shakeX = effects.shake ? (Math.random() - 0.5) * 2 * effects.shake : 0;
     const shakeY = effects.shake ? (Math.random() - 0.5) * 2 * effects.shake : 0;
 
@@ -120,10 +159,10 @@ export class Renderer {
     if (cam) {
       // Keep the zoomed killcam inside the plate.
       ctx.beginPath();
-      ctx.rect(dpr * offsetX, dpr * offsetY, FIELD.width * base, FIELD.height * base);
+      ctx.rect(dpr * offsetX, dpr * offsetY, plate.w * base, plate.h * base);
       ctx.clip();
     }
-    ctx.setTransform(P, 0, 0, P, tx + shakeX * P, ty + shakeY * P);
+    ctx.setTransform(a, b, c, d, e + shakeX * P, f + shakeY * P);
     this.drawWorld(match, scene, base);
     this.drawTrails(match, scene);
     this.drawSpotlight(match, scene);
@@ -140,11 +179,20 @@ export class Renderer {
 
     if (opts.hud) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      this.hud.draw(match, view, opts, this.time, (i) => ({
-        x: offsetX + match.world.ships[i].x * scale,
-        y: offsetY + match.world.ships[i].y * scale,
-      }));
+      this.hud.draw(match, view, opts, this.time, (i) => this.screenOf(match.world.ships[i].x, match.world.ships[i].y));
     }
+  }
+
+  private fullScreenView(): View {
+    const view = this.view;
+    const plate = plateUnits(!!view.rotated);
+    const scale = Math.max(view.cssWidth / plate.w, view.cssHeight / plate.h);
+    return {
+      ...view,
+      scale,
+      offsetX: (view.cssWidth - plate.w * scale) / 2,
+      offsetY: (view.cssHeight - plate.h * scale) / 2,
+    };
   }
 
   private drawWorld(match: Match, scene: Scene, ps: number): void {
@@ -197,6 +245,13 @@ export class Renderer {
         ctx.rotate(Math.atan2(primary.y - p.y, primary.x - p.x));
         const shrink = 1 - eaten * 0.85;
         ctx.scale((1 + eaten * 1.8) * shrink, (1 - eaten * 0.6) * shrink);
+        ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+        ctx.restore();
+      } else if (isTurned()) {
+        // The light stays where it was painted: upright on the screen.
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        uprightFrame(ctx);
         ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
         ctx.restore();
       } else {
@@ -280,8 +335,11 @@ export class Renderer {
       const color = match.players[vs.owner].color;
       const shot = vs.shot;
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = vs.plasma ? 1 : 2;
+      if (vs.plasma) ctx.globalAlpha = 0.45;
       strokePolyline(ctx, vs.trail, match.world.wormholes);
+      ctx.globalAlpha = 1;
+      if (vs.plasma) this.drawPlasmaTrail(vs.trail, match.world.wormholes);
       if (shot.end) continue;
       if (shot.inField) {
         const owner = match.players[vs.owner];
@@ -297,7 +355,7 @@ export class Renderer {
           ctx.restore();
         }
         // A shot in a nebula pushes against the gas: a ring spreads from it (the wisps it sheds are the Effects').
-        if (!vs.heavy && inNebula(match.world.nebulae, shot.x, shot.y)) {
+        if (!vs.plasma && inNebula(match.world.nebulae, shot.x, shot.y)) {
           ctx.save();
           ctx.strokeStyle = POWER_UP_COLORS.nebula;
           const ripple = (this.time * 1.6) % 1;
@@ -314,18 +372,29 @@ export class Renderer {
         glow.addColorStop(1, rgba(color, 0));
         ctx.fillStyle = glow;
         ctx.fillRect(shot.x - 9, shot.y - 9, 18, 18);
-        // A heavy round is a bigger, solid ball in a ring of its own colour.
-        if (vs.heavy) {
+        // A plasma shot is a pulsing cyan blob: a wide soft halo, a wobbling body and a bright core.
+        if (vs.plasma) {
           ctx.save();
-          ctx.fillStyle = rgba(COLORS.bone, 0.98);
+          const pulse = 1 + 0.12 * Math.sin(this.time * 14);
+          const halo = ctx.createRadialGradient(shot.x, shot.y, 0, shot.x, shot.y, 15 * pulse);
+          halo.addColorStop(0, rgba(POWER_UP_COLORS.plasma, 0.55));
+          halo.addColorStop(1, rgba(POWER_UP_COLORS.plasma, 0));
+          ctx.fillStyle = halo;
+          ctx.fillRect(shot.x - 16, shot.y - 16, 32, 32);
+          ctx.fillStyle = rgba(POWER_UP_COLORS.plasma, 0.9);
           ctx.beginPath();
-          ctx.arc(shot.x, shot.y, 4.5, 0, Math.PI * 2);
+          for (let i = 0; i <= 16; i++) {
+            const a = (i / 16) * Math.PI * 2;
+            const rr = 5.5 * pulse + 1.2 * Math.sin(a * 3 + this.time * 10);
+            if (i === 0) ctx.moveTo(shot.x + Math.cos(a) * rr, shot.y + Math.sin(a) * rr);
+            else ctx.lineTo(shot.x + Math.cos(a) * rr, shot.y + Math.sin(a) * rr);
+          }
+          ctx.closePath();
           ctx.fill();
-          ctx.strokeStyle = rgba(POWER_UP_COLORS.heavy, 0.9);
-          ctx.lineWidth = 1.5;
+          ctx.fillStyle = rgba('#e6ffff', 0.95);
           ctx.beginPath();
-          ctx.arc(shot.x, shot.y, 8, 0, Math.PI * 2);
-          ctx.stroke();
+          ctx.arc(shot.x, shot.y, 2.4, 0, Math.PI * 2);
+          ctx.fill();
           ctx.restore();
         }
         // An armor-piercing round is an arrowhead pointing where it flies, glowing like the plain shot.
@@ -380,6 +449,7 @@ export class Renderer {
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.translate(pick.x, pick.y);
+      uprightFrame(ctx);
       ctx.scale(pop, pop);
       ctx.shadowColor = color;
       ctx.shadowBlur = 14 + 8 * pulse;
@@ -401,7 +471,7 @@ export class Renderer {
       ctx.globalAlpha = alpha * Math.min(1, pop);
       ctx.font = `700 11px ${FONTS.mono}`;
       ctx.fillStyle = color;
-      ctx.fillText(t(`powerup.${pick.kind}` as Key).toUpperCase(), pick.x, pick.y + 20);
+      fillTextUpright(ctx, t(`powerup.${pick.kind}` as Key).toUpperCase(), pick.x, pick.y, 0, 20);
       ctx.restore();
     }
     for (const id of this.pickupSeen.keys()) if (!present.has(id)) this.pickupSeen.delete(id);
@@ -425,8 +495,8 @@ export class Renderer {
       ctx.restore();
     }
     // A ship aiming a placement: a marker at the spot — a teleport door, or where a black hole, nebula or planet killer would land — with a line from the ship.
-    if (scene.placement?.kind === 'planetkiller' || scene.placement?.kind === 'polarity') {
-      // Only the angle aims a planet killer or a polarity, and the power plays no part. So the whole ray is drawn: out to the
+    if (scene.placement?.kind === 'planetkiller' || scene.placement?.kind === 'antigravity') {
+      // Only the angle aims a planet killer or a antigravity, and the power plays no part. So the whole ray is drawn: out to the
       // planet it will take (or turn) when there is one — locked on with brackets round it — or dimly to the edge when there is not.
       const { owner, target, kind } = scene.placement;
       const from = match.world.ships[owner];
@@ -462,7 +532,7 @@ export class Renderer {
           ctx.arc(planet.x, planet.y, r, a - 0.32, a + 0.32);
           ctx.stroke();
         }
-        if (kind === 'polarity') {
+        if (kind === 'antigravity') {
           // Rays pushing out, or pulling in when the planet is turned already: what the planet will do to shots.
           const back = !!planet.reversed;
           ctx.lineWidth = 2;
@@ -479,7 +549,7 @@ export class Renderer {
           ctx.font = `700 11px ${FONTS.mono}`;
           ctx.textAlign = 'center';
           ctx.fillStyle = color;
-          ctx.fillText(t(back ? 'powerup.polarityBack' : 'powerup.polarityTurn').toUpperCase(), planet.x, planet.y - planet.radius - 38);
+          fillTextUpright(ctx, t(back ? 'powerup.antigravityBack' : 'powerup.antigravityTurn').toUpperCase(), planet.x, planet.y, 0, -planet.radius - 38);
         } else {
           // The crack that will split it.
           ctx.lineWidth = 2;
@@ -493,7 +563,7 @@ export class Renderer {
       }
       ctx.restore();
     }
-    if (scene.placement?.target && scene.placement.kind !== 'planetkiller' && scene.placement.kind !== 'polarity') {
+    if (scene.placement?.target && scene.placement.kind !== 'planetkiller' && scene.placement.kind !== 'antigravity') {
       const { owner, kind, target } = scene.placement;
       const from = match.world.ships[owner];
       const nextWormhole = nextWormholeId(match.world);
@@ -524,7 +594,9 @@ export class Renderer {
             ctx.font = `700 11px ${FONTS.mono}`;
             ctx.textAlign = 'center';
             ctx.fillStyle = '#ff5c5c';
-            ctx.fillText(t('powerup.defenseReplaces').toUpperCase(), standing.x, standing.y + (standing.y > planet.y ? 22 : -16));
+            // Above or below the planet as it appears on the screen.
+            const below = isTurned() ? standing.x < planet.x : standing.y > planet.y;
+            fillTextUpright(ctx, t('powerup.defenseReplaces').toUpperCase(), standing.x, standing.y, 0, below ? 22 : -16);
           }
         }
         ctx.beginPath();
@@ -532,10 +604,33 @@ export class Renderer {
         ctx.stroke();
       } else if (kind === 'blackhole') {
         // The would-be horizon: a dark core inside a bright accretion ring.
+        // Too close to another ship, the click would do nothing: the ring turns red, those ships show their keep-out circle, and it says so.
         const r = POWER_UP.BLACKHOLE_RADIUS;
+        const blocked = !!scene.placement.blocked;
+        if (blocked) {
+          ctx.strokeStyle = '#ff5c5c';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 5]);
+          match.world.ships.forEach((s, i) => {
+            if (i === owner || !s.alive) return;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, POWER_UP.BLACKHOLE_PLAYER_GAP, 0, Math.PI * 2);
+            ctx.stroke();
+          });
+          ctx.setLineDash([]);
+          ctx.lineWidth = 2;
+        }
         ctx.beginPath();
         ctx.arc(target.x, target.y, r + 4 + 2.5 * pulse, 0, Math.PI * 2);
         ctx.stroke();
+        if (blocked) {
+          ctx.globalAlpha = 1;
+          ctx.font = `700 11px ${FONTS.mono}`;
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ff5c5c';
+          ctx.fillText(t('powerup.blackholeClose').toUpperCase(), target.x, target.y + (target.y > 60 ? -r - 14 : r + 22));
+          ctx.globalAlpha = 0.85 + 0.15 * pulse;
+        }
         ctx.fillStyle = COLORS.plate;
         ctx.beginPath();
         ctx.arc(target.x, target.y, r, 0, Math.PI * 2);
@@ -566,12 +661,12 @@ export class Renderer {
         ctx.textAlign = 'center';
         ctx.fillStyle = blocked ? '#ff5c5c' : color;
         // The labels sit on the far side of each portal from the other, so two close ones do not overprint.
-        const side = first && target.y >= first.y ? 1 : -1;
+        const side = first && (isTurned() ? target.x <= first.x : target.y >= first.y) ? 1 : -1;
         const reach = WORMHOLE.RADIUS * 1.12 + 10;
-        ctx.fillText(t(blocked ? 'powerup.wormholeClose' : first ? 'powerup.wormholeSecond' : 'powerup.wormholeFirst').toUpperCase(), target.x, target.y + side * reach);
+        fillTextUpright(ctx, t(blocked ? 'powerup.wormholeClose' : first ? 'powerup.wormholeSecond' : 'powerup.wormholeFirst').toUpperCase(), target.x, target.y, 0, side * reach);
         if (first) {
           ctx.fillStyle = color;
-          ctx.fillText(t('powerup.wormholeFirst').toUpperCase(), first.x, first.y - side * reach);
+          fillTextUpright(ctx, t('powerup.wormholeFirst').toUpperCase(), first.x, first.y, 0, -side * reach);
         }
       } else if (kind === 'nebula') {
         // The reach of the cloud as a plain ring: it must not wobble while the aim moves. The cloud that
@@ -636,16 +731,52 @@ export class Renderer {
     ctx.textAlign = 'start';
   }
 
+  /** Plasma shot: a tapering cyan ribbon that swells toward the blob, with sparks that drift off the trail and die. */
+  private drawPlasmaTrail(pts: number[], wormholes: readonly Wormhole[]): void {
+    const { ctx } = this;
+    const n = pts.length / 2;
+    if (n < 2) return;
+    const from = Math.max(1, n - 48);
+    ctx.save();
+    ctx.lineCap = 'round';
+    for (let pass = 0; pass < 2; pass++) {
+      for (let k = from; k < n; k++) {
+        if (wormholes.length && isWormholeJump(pts, k * 2, wormholes)) continue;
+        const f = (k - from + 1) / (n - from);
+        ctx.strokeStyle = pass === 0 ? rgba(POWER_UP_COLORS.plasma, 0.22 * f) : rgba('#e6ffff', 0.8 * f * f);
+        ctx.lineWidth = (pass === 0 ? 9 : 2.4) * f;
+        ctx.beginPath();
+        ctx.moveTo(pts[k * 2 - 2], pts[k * 2 - 1]);
+        ctx.lineTo(pts[k * 2], pts[k * 2 + 1]);
+        ctx.stroke();
+      }
+    }
+    // Sparks: every few points a speck sits off the line, drifting sideways as it ages and shrinking away.
+    for (let k = from; k < n; k += 3) {
+      const age = (n - k) / 48;
+      const side = Math.sin(k * 12.9898) > 0 ? 1 : -1;
+      const dx = pts[k * 2] - pts[k * 2 - 2];
+      const dy = pts[k * 2 + 1] - pts[k * 2 - 1];
+      const len = Math.hypot(dx, dy) || 1;
+      const off = side * (2 + age * 9 + 1.5 * Math.sin(this.time * 6 + k));
+      ctx.fillStyle = rgba(POWER_UP_COLORS.plasma, 0.7 * (1 - age));
+      ctx.beginPath();
+      ctx.arc(pts[k * 2] - (dy / len) * off, pts[k * 2 + 1] + (dx / len) * off, 1.8 * (1 - age) + 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   /** A planet whose gravity is turned round sends out rings that spread away from it, for as long as it pushes. */
   private drawRepelWaves(match: Match, scene: Scene): void {
     if (!match.powerUps) return;
     const { ctx } = this;
     ctx.save();
-    ctx.strokeStyle = POWER_UP_COLORS.polarity;
+    ctx.strokeStyle = POWER_UP_COLORS.antigravity;
     ctx.lineWidth = 1.6;
     for (const planet of scene.world.planets) {
       if (!planet.reversed) continue;
-      // A faint rim in the polarity colour marks the planet that pushes.
+      // A faint rim in the antigravity colour marks the planet that pushes.
       ctx.globalAlpha = 0.5;
       ctx.beginPath();
       ctx.arc(planet.x, planet.y, planet.radius + 2, 0, Math.PI * 2);
@@ -691,7 +822,8 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = rgba(danger ? COLORS.bone : color, 0.9);
-    ctx.fillText(String(Math.round(beyond)), -Math.cos(a) * 30, -Math.sin(a) * 30);
+    const [ox, oy] = screenOffset(-Math.cos(a) * 30, -Math.sin(a) * 30);
+    fillTextUpright(ctx, String(Math.round(beyond)), 0, 0, ox, oy);
     ctx.restore();
   }
 

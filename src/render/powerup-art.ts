@@ -9,7 +9,7 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   preview: '#3ff0ff',
   teleport: '#ff4fd8',
   splitter: '#ffd21f',
-  polarity: '#ff7a1a',
+  antigravity: '#ff7a1a',
   shield: '#4dffb0',
   blackhole: '#b99cff',
   planetkiller: '#ff5c5c',
@@ -17,7 +17,7 @@ export const POWER_UP_COLORS: Record<PowerUpKind, string> = {
   piercing: '#dfe7f5',
   wormhole: '#4db8ff',
   defense: '#b4ff3c',
-  heavy: '#d9a066',
+  plasma: '#22e4ff',
 };
 
 /** The colour of the portals of the wormhole with this id (the palette starts over after the last colour). */
@@ -35,7 +35,7 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.beginPath();
     ctx.arc(x, y, r * 0.34, 0, Math.PI * 2);
     ctx.fill();
-  } else if (kind === 'polarity') {
+  } else if (kind === 'antigravity') {
     // A planet with its pull reversed: a small disc, and four arrows pushing outward.
     ctx.arc(x, y, r * 0.3, 0, Math.PI * 2);
     ctx.fill();
@@ -217,18 +217,22 @@ export function drawPowerUpSymbol(ctx: CanvasRenderingContext2D, kind: PowerUpKi
     ctx.moveTo(x + r * 0.34, y - r * 0.28);
     ctx.lineTo(x - r * 0.04, y + r * 0.2);
     ctx.stroke();
-  } else if (kind === 'heavy') {
-    // A heavy round on a straight line: a solid ball in a ring, and the path running through it unbent.
-    ctx.arc(x, y, r * 0.42, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x, y, r * 0.7, 0, Math.PI * 2);
+  } else if (kind === 'plasma') {
+    // A plasma blob: a lumpy cyan globule with a bright core and a spark off its rim.
+    for (let i = 0; i <= 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const rr = r * (0.62 + 0.12 * Math.sin(a * 3 + 0.8) + 0.06 * Math.sin(a * 5));
+      if (i === 0) ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+      else ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    ctx.closePath();
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(x - r, y);
-    ctx.lineTo(x - r * 0.7, y);
-    ctx.moveTo(x + r * 0.7, y);
-    ctx.lineTo(x + r, y);
+    ctx.arc(x, y, r * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + r * 0.8, y - r * 0.8);
+    ctx.lineTo(x + r * 0.98, y - r * 0.98);
     ctx.stroke();
   } else if (kind === 'splitter') {
     ctx.moveTo(x, y + r);

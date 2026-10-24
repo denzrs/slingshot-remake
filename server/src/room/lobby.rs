@@ -8,7 +8,7 @@ use tracing::{debug, warn};
 
 use crate::auth::Hashed;
 use crate::command::{CreateRoom, JoinRoom, JoinTarget};
-use crate::protocol::default_room_name;
+use crate::protocol::{default_room_name, NAME_TAKEN, TOO_MANY_PASSWORDS, WRONG_PASSWORD};
 
 use super::model::*;
 use super::RoomManager;
@@ -29,7 +29,7 @@ impl RoomManager {
         };
         for conn in self.net.connected() {
             // Players inside a room have no use for the room list.
-            if !self.memberships.contains_key(&conn) {
+            if !self.is_placed(conn) {
                 self.send_fast(conn, &bytes);
             }
         }
@@ -39,7 +39,11 @@ impl RoomManager {
         let mut rooms: Vec<_> = self
             .rooms
             .values()
-            .filter(|room| room.status == RoomStatus::Waiting && !room.look.is_private())
+            // A running game is listed too when it can be watched: public, and without a password.
+            .filter(|room| {
+                !room.look.is_private()
+                    && (room.status == RoomStatus::Waiting || open_to_latecomers(room))
+            })
             .collect();
         rooms.sort_by_key(|room| room.created_order);
         rooms
@@ -54,6 +58,9 @@ impl RoomManager {
                     "color": room.look.color.as_str(),
                     "mode": room.mode.as_str(),
                     "gameMode": room.game_mode.as_str(),
+                    "mayhem": room.rules.mayhem,
+                    "status": room.status.as_str(),
+                    "spectators": room.spectators.len(),
                     "players": room.players.len(),
                     "cpus": room.players.iter().filter(|p| p.is_cpu()).count(),
                     "maxPlayers": room.max_players,
@@ -64,7 +71,7 @@ impl RoomManager {
     }
 
     pub fn create_room(&mut self, conn: u64, create: CreateRoom, prehashed: Option<Hashed>) {
-        if self.memberships.contains_key(&conn) {
+        if self.is_placed(conn) {
             self.error(conn, "Leave your current room before creating another");
             return;
         }
@@ -120,12 +127,14 @@ impl RoomManager {
         } else {
             None
         };
+        let name_is_default = room_name.is_none();
         let room_name = room_name.unwrap_or_else(|| default_room_name(&name, created_order + 1));
         self.rooms.insert(
             id.clone(),
             Room {
                 id: id.clone(),
                 name: room_name,
+                name_is_default,
                 mode,
                 game_mode,
                 rules,
@@ -137,6 +146,9 @@ impl RoomManager {
                 last_state_seq: -1,
                 password,
                 created_order,
+                spectators: Vec::new(),
+                next_spectator_id: 0,
+                seed: 0,
             },
         );
         self.add_player(&id, conn, name, avatar);
@@ -145,9 +157,12 @@ impl RoomManager {
     }
 
     pub fn join_room(&mut self, conn: u64, join: JoinRoom, preverified: Option<bool>) {
-        if self.memberships.contains_key(&conn) {
+        if self.is_placed(conn) {
             self.error(conn, "Leave your current room before joining another");
             return;
+        }
+        if join.spectate {
+            return self.join_as_spectator(conn, join, preverified);
         }
         let Some(JoinTarget { room_id, name }) = self.accept(conn, join.target) else {
             return;
@@ -170,6 +185,14 @@ impl RoomManager {
             .get(room_id)
             .is_some_and(|room| room.password.is_some());
         if locked && !self.password_attempt_ok(conn, room_id, preverified) {
+            return;
+        }
+        if self
+            .rooms
+            .get(room_id)
+            .is_some_and(|room| name_taken(room, &name, None))
+        {
+            self.error(conn, NAME_TAKEN);
             return;
         }
         // A full room gives its newest CPU seat to the human who joins.
@@ -204,7 +227,7 @@ impl RoomManager {
     ) -> bool {
         if self.net.password_attempts_exhausted(conn) {
             warn!(room_id = %room_id, "password attempts exhausted");
-            self.error(conn, "Too many wrong passwords – reconnect to try again");
+            self.error(conn, TOO_MANY_PASSWORDS);
             return false;
         }
         let correct = preverified.unwrap_or(false);
@@ -214,13 +237,13 @@ impl RoomManager {
         } else {
             self.net.password_failed(conn);
             debug!(room_id = %room_id, "password rejected");
-            self.error(conn, "Wrong password");
+            self.error(conn, WRONG_PASSWORD);
             false
         }
     }
 
     pub(super) fn leave_room(&mut self, conn: u64) {
-        if !self.memberships.contains_key(&conn) {
+        if !self.is_placed(conn) {
             self.error(conn, "You are not in a room");
             return;
         }
@@ -230,11 +253,15 @@ impl RoomManager {
 
     /**
      * Takes a connection out of its room.
-     * - The host leaving closes the room; everybody else is sent back to the lobby.
+     * - The host leaving closes the room; everybody else, the stands included, is sent back to the lobby.
+     * - A spectator leaving changes nothing about the game.
      * - Anyone else leaving a running game aborts that game; the remaining players land in the
      *   waiting room again (the room itself survives).
      */
     pub(super) fn remove_from_room(&mut self, conn: u64, reason: &str) {
+        if self.remove_spectator(conn) {
+            return;
+        }
         let Some(membership) = self.memberships.remove(&conn) else {
             return;
         };
@@ -245,17 +272,13 @@ impl RoomManager {
             let others: Vec<u64> = self
                 .rooms
                 .get(&room_id)
-                .map(|room| {
-                    room.players
-                        .iter()
-                        .filter_map(|player| player.conn)
-                        .filter(|other| *other != conn)
-                        .collect()
-                })
+                .map(|room| room.recipients().filter(|other| *other != conn).collect())
                 .unwrap_or_default();
             self.rooms.remove(&room_id);
             for other in &others {
                 self.memberships.remove(other);
+                self.watching.remove(other);
+                self.net.forget_spectator(*other);
                 self.send_value(
                     *other,
                     &json!({ "type": "room_closed", "message": "The host left the room" }),

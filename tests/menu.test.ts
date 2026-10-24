@@ -81,6 +81,8 @@ describe('game rules in the menu', () => {
     for (const row of all.filter((r) => r.control === 'slider')) {
       // The cap's slider only has stops below "no cap": no cap is the power mode "free".
       if (row.key === 'maxPower') continue;
+      // Mayhem's strength is out of sight while Mayhem is off, as it is by default.
+      if (row.when && !row.when(defaults)) continue;
       expect(row.options.map((o) => o.value), row.key).toContain(defaults[row.key]);
     }
   });
@@ -144,9 +146,31 @@ describe('game rules in the menu', () => {
     expect(all.find((r) => r.key === 'powerUpKinds')!.options.map((o) => o.value)).toEqual(relayContract.defaults.powerUpKinds);
   });
 
-  it('keeps the rules that only make sense online — betting — off the offline setup screen, in both modes', () => {
+  it('shows the strength of Mayhem in both modes, among the match rules, only while Mayhem is on', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      for (const online of [false, true]) {
+        const row = rulesFor(mode, online).find((r) => r.key === 'mayhem')!;
+        expect(row.group).toBe('match');
+        expect(row.when!({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 })).toBe(true);
+        expect(row.when!(rulesOf(DEFAULT_SETTINGS))).toBe(false);
+      }
+    }
+    let rules = { ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 };
+    const item = ruleItems('classic', { get: () => rules, patch: (v) => (rules = { ...rules, ...v }) }).find((i) => i.key === 'mayhem')!.item;
+    expect(item.kind).toBe('slider');
+    expect(item.hidden?.()).toBe(false);
+    rules = { ...rules, mayhem: 0 };
+    expect(item.hidden?.()).toBe(true);
+  });
+
+  it('offers exactly the chaos strengths the relay accepts, bar "off", which is not a Mayhem game', () => {
+    expect(all.find((r) => r.key === 'mayhem')!.options.map((o) => o.value)).toEqual(relayContract.options.mayhem!.filter((n) => n > 0));
+    expect(relayContract.defaults.mayhem).toBe(0);
+  });
+
+  it('keeps the rules that only make sense online — betting and the chat limit — off the offline setup screen, in both modes', () => {
     const online = all.filter((r) => r.onlineOnly);
-    expect(online.map((r) => r.key)).toEqual(['betting']);
+    expect(online.map((r) => r.key)).toEqual(['betting', 'chatPlayersOnly']);
     for (const mode of ['classic', 'horizon'] as const) {
       expect(rulesFor(mode).map((r) => r.key)).not.toContain('betting');
       expect(rulesFor(mode, true).map((r) => r.key)).toContain('betting');
