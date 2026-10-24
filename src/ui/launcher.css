@@ -425,6 +425,8 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
   padding-top: 10px;
+  /* Top-aligned, so a taller power-up list never moves the sliders' labels. */
+  align-items: start;
 }
 
 .briefing__quick .item {
@@ -468,7 +470,7 @@
   align-content: start;
   gap: 8px;
   min-width: 0;
-  padding: 8px 2px;
+  padding: 9px 2px 8px;
 }
 
 .briefing__powerups-label {
@@ -481,7 +483,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  min-height: 28px;
+  /* Room for two rows of tiles, so the row keeps its height whether the list is empty, short or full. */
+  min-height: 60px;
+  align-content: start;
 }
 
 .briefing__powerup {
