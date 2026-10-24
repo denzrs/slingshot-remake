@@ -1,4 +1,5 @@
 import type { VersusMode } from '../game';
+import { loadCustomPresets, loadOverride, type CustomPreset } from '../customPresets';
 import { defaultRoomRules } from '../lobbyPrefs';
 import type { Key } from '../i18n';
 import type { RoomRules } from '../net';
@@ -48,6 +49,14 @@ export function presetRules(preset: MatchPreset, mode?: VersusMode): RoomRules {
   return factory(defaultRoomRules());
 }
 
+/** What choosing the card gives: the rules the player saved over the preset, else the original ones. */
+export function savedPresetRules(preset: MatchPreset, mode: VersusMode): RoomRules {
+  return loadOverride(mode, preset) ?? presetRules(preset, mode);
+}
+
+/** Whether the player has changed a built-in preset and kept it that way. */
+export const isOverridden = (preset: MatchPreset, mode: VersusMode): boolean => loadOverride(mode, preset) !== null;
+
 /** Whether a set of rules plays as the expected ones in a mode: rules the mode doesn't have, and rows that are out of play in both, don't count. */
 function sameRules(rules: RoomRules, expected: RoomRules, mode: VersusMode, anyMayhemLevel = false): boolean {
   if (rules.powerUps !== expected.powerUps) return false;
@@ -63,7 +72,12 @@ function sameRules(rules: RoomRules, expected: RoomRules, mode: VersusMode, anyM
 
 /** Match the actual rules, including manual edits, rather than remembering a potentially stale label. Mayhem stays itself at any strength. */
 export function matchingPreset(rules: RoomRules, mode: VersusMode): MatchPreset | undefined {
-  return presetsForMode(mode).find((preset) => sameRules(rules, presetRules(preset, mode), mode, true));
+  return presetsForMode(mode).find((preset) => sameRules(rules, savedPresetRules(preset, mode), mode, true));
+}
+
+/** The player's own preset that plays exactly as these rules, if any. */
+export function matchingCustom(rules: RoomRules, mode: VersusMode): CustomPreset | undefined {
+  return loadCustomPresets(mode).find((preset) => sameRules(rules, preset.rules, mode));
 }
 
 /** The rule rows whose value differs, ignoring conditional values that are inactive on both sides. */

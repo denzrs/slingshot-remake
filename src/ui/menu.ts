@@ -36,7 +36,7 @@ interface Live {
 }
 
 export type MenuItem =
-  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; className?: string; /** Small second line under the label. */ hint?: string; /** A status line below the hint, refreshed with the rest of the menu. */ status?: () => string; /** Turn the status badge into a separate reset action. */ statusAction?: () => void; statusActionLabel?: string | (() => string); /** The status action waits for a second click before it acts. */ statusConfirming?: () => boolean; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; /** Keeps conditional actions out of both sight and keyboard focus. */ hidden?: () => boolean; disabled?: boolean | (() => boolean) })
+  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; className?: string; /** Small second line under the label. */ hint?: string; /** A status line below the hint, refreshed with the rest of the menu. */ status?: () => string; /** Turn the status badge into a separate reset action. */ statusAction?: () => void; statusActionLabel?: string | (() => string); /** Whether the status counts as edits to the row, which light it up in gold; any status does by default. */ modified?: () => boolean; /** A second action beside the status badge, shown while `statusSecondaryVisible` holds. */ statusSecondary?: () => void; statusSecondaryLabel?: string; statusSecondaryVisible?: () => boolean; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; /** Keeps conditional actions out of both sight and keyboard focus. */ hidden?: () => boolean; disabled?: boolean | (() => boolean) })
   | (Placed &
       Live & {
         /** Cycles through its options; the arrows at its sides go back and forth. */
@@ -110,6 +110,8 @@ export interface Screen {
   items: MenuItem[];
   /** The row (an index into `items`) that has the focus when the screen opens; the first by default. */
   focus?: number;
+  /** The same by item: the row that has the focus, as an index into `items`. Rows with a badge hold more than one focusable, so this is the one to use after them. */
+  focusItem?: number;
   /** A value changed (or something outside changed it): redraw what the rows don't, like a summary line. */
   update?: () => void;
   /** What Esc does when this is the bottom-most screen. */
@@ -374,8 +376,10 @@ export class Menu {
     this.controls = [];
     this.actionRefresh = [];
     const env = { sound: this.sound, changed: () => this.refresh() };
+    const firstFocusable: number[] = [];
 
     for (const item of screen.items) {
+      firstFocusable.push(this.focusables.length);
       let row: HTMLElement;
       let rowFocusables: HTMLElement[] | null = null;
       if (item.kind === 'action') {
@@ -405,6 +409,9 @@ export class Menu {
           hint.className = 'item__hint';
           hint.textContent = item.hint;
           b.append(label, hint);
+        } else if (item.className?.includes('item--strip')) {
+          // A strip is one line that gives way to its badge: the name needs a box of its own to be cut short.
+          b.append(Object.assign(document.createElement('span'), { className: 'item__title', textContent: item.label }));
         } else {
           b.textContent = item.label;
         }
@@ -423,6 +430,7 @@ export class Menu {
         const statusCount = statusButton ? Object.assign(document.createElement('span'), { className: 'item__status-count' }) : null;
         const actionLabel = (): string => (typeof item.statusActionLabel === 'function' ? item.statusActionLabel() : item.statusActionLabel ?? '');
         const statusAction = statusButton ? Object.assign(document.createElement('span'), { className: 'item__status-action', textContent: actionLabel() }) : null;
+        const secondaryButton = statusButton && item.statusSecondary ? Object.assign(document.createElement('button'), { type: 'button', className: 'item__status item__status-save', hidden: true, title: item.statusSecondaryLabel ?? '', textContent: item.statusSecondaryLabel ?? '' }) : null;
         if (statusButton && shell && statusCount && statusAction) {
           statusButton.type = 'button';
           statusButton.className = 'item__status item__status-reset';
@@ -436,8 +444,18 @@ export class Menu {
             item.statusAction();
             b.focus({ preventScroll: true });
           });
+          if (secondaryButton) {
+            shell.append(secondaryButton);
+            secondaryButton.addEventListener('click', (event) => {
+              event.stopPropagation();
+              if (secondaryButton.hidden) return;
+              this.sound.select();
+              item.statusSecondary?.();
+              b.focus({ preventScroll: true });
+            });
+          }
           row = shell;
-          rowFocusables = [b, statusButton];
+          rowFocusables = [b, statusButton, ...(secondaryButton ? [secondaryButton] : [])];
         } else {
           row = b;
         }
@@ -460,15 +478,15 @@ export class Menu {
             const text = item.status?.() ?? '';
             if (statusButton) {
               const label = actionLabel();
-              const confirming = item.statusConfirming?.() ?? false;
               statusCount!.textContent = text;
               statusAction!.textContent = label;
               statusButton.hidden = !text;
               statusButton.setAttribute('aria-label', text && label ? `${text}. ${label}` : text);
-              statusButton.classList.toggle('is-confirming', confirming);
-              shell?.classList.toggle('is-confirming', confirming);
-              shell?.classList.toggle('is-modified', !!text);
-              b.classList.toggle('is-modified', !!text);
+              statusButton.title = label;
+              if (secondaryButton) secondaryButton.hidden = !text || !(item.statusSecondaryVisible?.() ?? true);
+              const modified = item.modified?.() ?? !!text;
+              shell?.classList.toggle('is-modified', modified);
+              b.classList.toggle('is-modified', modified);
             } else if (status) {
               status.textContent = text;
               status.hidden = !text;
@@ -494,6 +512,6 @@ export class Menu {
     this.root.replaceChildren(el);
     this.root.hidden = false;
     this.refresh();
-    this.focusables[focusIndex ?? screen.focus ?? 0]?.focus({ preventScroll: true });
+    this.focusables[focusIndex ?? (screen.focusItem !== undefined ? firstFocusable[screen.focusItem] : screen.focus) ?? 0]?.focus({ preventScroll: true });
   }
 }

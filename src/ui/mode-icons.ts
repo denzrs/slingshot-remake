@@ -1,4 +1,4 @@
-export type ModeArt = 'daily' | 'classic' | 'solar' | 'horizon' | 'mayhem' | 'trickshot' | 'sniper' | 'party' | 'simultaneous' | 'rooms' | 'create' | 'code' | 'custom';
+export type ModeArt = 'daily' | 'classic' | 'solar' | 'horizon' | 'mayhem' | 'trickshot' | 'sniper' | 'party' | 'simultaneous' | 'rooms' | 'create' | 'code' | 'customAdd';
 export type MatchPresetArt = 'standard' | 'trickshot' | 'sniper' | 'party';
 export type MayhemPresetArt = 'wildClassic' | 'insaneClassic' | 'insaneClassicSimultaneous' | 'insaneHorizon';
 export type SolarPresetArt = 'powerups' | 'mayhem';
@@ -111,11 +111,11 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
         <path d="M295 6v145" stroke="#ffad65" opacity=".35" stroke-width="5"/>
         <circle cx="295" cy="19" r="5" fill="#ffad65"/>${ship(32, 153, 78, '#e8e4d8', 1)}`;
       break;
-    case 'custom':
-      // The player's own rules, kept like a bookmark beside a quiet orbit.
-      scene = `${orbit(130, 50, -20)}${planet(96, 112, 30)}
-        <path d="M196 40h52v108l-26-19-26 19Z" fill="#0c2035" stroke="#ffad65" stroke-width="2"/>
-        <path d="m222 70 5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1Z" fill="#ffad65"/>`;
+    case 'customAdd':
+      // An empty slot: a dashed orbit around a plus.
+      scene = `<ellipse cx="160" cy="100" rx="96" ry="62" fill="none" stroke="#ffad65" stroke-opacity=".5" stroke-width="2" stroke-dasharray="6 9"/>
+        <circle cx="160" cy="100" r="34" fill="#ffad65" opacity=".08"/><circle cx="160" cy="100" r="30" fill="none" stroke="#ffad65" stroke-width="2"/>
+        <path d="M160 82v36M142 100h36" stroke="#ffad65" stroke-width="4" stroke-linecap="round"/>`;
       break;
     case 'daily':
       scene = `${orbit(122, 48, -25)}${planet(204, 101, 38)}

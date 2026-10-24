@@ -3,7 +3,7 @@ import { COLORS, GALLERY, MAX_PLAYERS, TEAMS } from '../config';
 import { relayText, t, type Key } from '../i18n';
 import { canCopyInvite, inviteJoinAttempt, inviteLink, readInvite, shouldAutoConnectInvite, withoutInvite, withoutInvitePassword } from '../invite';
 import { defaultRoomRules, loadLobbyPrefs, saveLobbyPrefs } from '../lobbyPrefs';
-import { CONFIRM_OVERWRITE_MS, loadCustomPreset, saveCustomPreset } from '../customPresets';
+import { clearOverride, deleteCustomPreset, loadCustomPresets, MAX_CUSTOM_PRESETS, saveCustomPreset, saveOverride, type CustomPreset } from '../customPresets';
 import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../multiplayer';
 import { ConnectError, type LobbyRoom, type NetworkCpuLevel, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules } from '../net';
 import type { RoomLook, RoomVisibility } from '../roomLook';
@@ -18,7 +18,8 @@ import { factTicker } from './facts';
 import { menuPage } from './menu-page';
 import { modeArt, presetArt } from './mode-icons';
 import { pickArt, pickHint, pickName } from './pick-of-day';
-import { presetsForMode, presetHintKey, matchingPreset, presetChangeCount, presetRules, matchingHandpicked, pickOfTheDay, samePick } from './match-presets';
+import { presetsForMode, presetHintKey, matchingPreset, matchingCustom, presetChangeCount, presetRules, savedPresetRules, isOverridden, matchingHandpicked, pickOfTheDay, samePick } from './match-presets';
+import { presetNameField } from './preset-name';
 import { powerUpSummary } from './powerup-summary';
 import { teamRoster, type RosterCard } from './team-roster';
 
@@ -573,29 +574,86 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const rulesLink = h('button.item', { type: 'button' }, rulesLinkLabel);
   const rulesDone = h('button.item.item--primary', { type: 'button' }, t('briefing.done'));
   const rulesReset = h('button.item', { type: 'button' }, t('setup.reset'));
+  const rulesCancel = h('button.item', { type: 'button', hidden: '' }, t('preset.creator.cancel'));
+  const rulesDelete = h('button.item.item--delete', { type: 'button', hidden: '' }, t('preset.creator.delete'));
+  /** Set while the page is the preset creator: the rules as they were when it opened, to go back to unless the preset is kept. */
+  let creator: { before: RoomRules; existing?: CustomPreset; name: string; defaultName: string; confirmDelete: boolean } | null = null;
+  const creatorName = h('div', { hidden: '' });
   /** The page of the local briefing — the same frame, the same groups, the same footer — over the lobby. */
   const rulesDialog = menuPage({
     title: t('briefing.editRules'), eyebrow: '', className: 'menu-page--rules',
-    body: [createRules],
+    body: [creatorName, createRules],
     keys: t('briefing.keys'),
-    footer: h('div.items.items--row.menu-page__actions', null, rulesReset, rulesDone),
+    footer: h('div.items.items--row.menu-page__actions', null, rulesReset, rulesDelete, rulesCancel, rulesDone),
   });
   rulesDialog.classList.add('rules-page');
   rulesDialog.hidden = true;
   const closeRulesDialog = () => {
+    creator = null;
     rulesDialog.hidden = true;
     rulesDialog.remove();
     rulesLink.focus({ preventScroll: true });
   };
-  rulesDone.addEventListener('click', closeRulesDialog);
-  rulesLink.addEventListener('click', () => {
+  /** Where the focus goes once the creator is gone: the card it made, or else the plus. */
+  const focusPresetCard = () => (createPresetCards.querySelector<HTMLButtonElement>('[aria-pressed="true"]') ?? createPresetCards.querySelector<HTMLButtonElement>('.item--strip-empty, .item--custom-empty'))?.focus({ preventScroll: true });
+  /** Closing the creator any way but Save puts the rules back. */
+  const dismissRulesDialog = () => {
+    const open = creator;
+    if (open) restoreRules(open.before);
+    closeRulesDialog();
+    if (open) focusPresetCard();
+  };
+  const openRulesDialog = (open: typeof creator) => {
+    creator = open;
     rulesDialog.querySelector('.eyebrow')!.textContent = modeName(prefs.gameMode, prefs.rules.mayhem > 0);
-    rulesDialog.querySelector('.menu-page__title')!.textContent = rulesLinkLabel.textContent;
+    rulesDialog.querySelector('.menu-page__title')!.textContent = open ? t(open.existing ? 'preset.creator.titleEdit' : 'preset.creator.title') : rulesLinkLabel.textContent;
+    rulesDone.textContent = t(open ? 'preset.creator.save' : 'briefing.done');
+    rulesCancel.hidden = !open;
+    rulesDelete.hidden = !open?.existing;
+    rulesDelete.textContent = t('preset.creator.delete');
+    rulesDelete.classList.remove('is-confirming');
+    creatorName.replaceChildren(...(open ? [presetNameField(open.name, open.defaultName, (name) => { open.name = name; })] : []));
+    creatorName.hidden = !open;
     rulesReset.hidden = readOnly();
     rulesDialog.hidden = false;
     document.body.append(rulesDialog);
     rulesDone.focus();
+  };
+  /** One page for making a preset and for changing one: the rules page with a name above it. */
+  const openCreator = (existing?: CustomPreset) => {
+    const before = copyRules(prefs.rules);
+    if (existing) {
+      prefs.rules = { ...existing.rules, powerUpKinds: [...existing.rules.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+      restoreRules(prefs.rules);
+    }
+    openRulesDialog({ before, existing, name: existing?.name ?? '', defaultName: t('preset.creator.namePlaceholder', { n: loadCustomPresets(prefs.gameMode).length + 1 }), confirmDelete: false });
+  };
+  rulesDone.addEventListener('click', () => {
+    if (!creator) return closeRulesDialog();
+    const kept = saveCustomPreset(prefs.gameMode, { id: creator.existing?.id, name: creator.name || creator.defaultName, rules: prefs.rules });
+    if (!kept) return;
+    // The cards are drawn again around the preset it made.
+    selectedCreatePreset = { id: `custom:${kept.id}`, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+    closeRulesDialog();
+    buildCreateRules();
+    focusPresetCard();
   });
+  rulesCancel.addEventListener('click', dismissRulesDialog);
+  /** Deleting asks twice. */
+  rulesDelete.addEventListener('click', () => {
+    if (!creator?.existing) return;
+    if (!creator.confirmDelete) {
+      creator.confirmDelete = true;
+      rulesDelete.textContent = t('preset.creator.deleteConfirm');
+      rulesDelete.classList.add('is-confirming');
+      return;
+    }
+    deleteCustomPreset(prefs.gameMode, creator.existing.id);
+    dismissRulesDialog();
+    buildCreateRules();
+    focusPresetCard();
+  });
+  rulesLink.addEventListener('click', () => openRulesDialog(null));
   const createAdvanced = h('div.items.briefing__edit', null, rulesLink);
   let createRulesForm: RulesForm | null = null;
   let createQuickControls: Control[] = [];
@@ -604,9 +662,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const copyRules = (rules: RoomRules): RoomRules => ({ ...rules, powerUpKinds: [...rules.powerUpKinds] });
   const rememberMatchingCreatePreset = (pick: ReturnType<typeof pickOfTheDay>) => {
     const picked = samePick(matchingHandpicked(prefs.rules, prefs.gameMode), pick);
-    const custom = loadCustomPreset(prefs.gameMode);
-    const mine = !!custom && presetChangeCount(prefs.rules, custom, prefs.gameMode, true) === 0;
-    const preset = matchingPreset(prefs.rules, prefs.gameMode) ?? (picked ? 'handpicked' : mine ? 'custom' : undefined);
+    const mine = matchingCustom(prefs.rules, prefs.gameMode);
+    const preset = matchingPreset(prefs.rules, prefs.gameMode) ?? (picked ? 'handpicked' : mine ? `custom:${mine.id}` : undefined);
     selectedCreatePreset = preset ? { id: preset, mode: prefs.gameMode, rules: copyRules(prefs.rules) } : undefined;
   };
   /** Everybody but the host sees the game and its rules as the host set them, locked. */
@@ -624,6 +681,14 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     if (!session.room) return;
     clearTimeout(rulesTimer);
     rulesTimer = setTimeout(pushRules, 250);
+  };
+  const restoreRules = (rules: RoomRules) => {
+    prefs.rules = copyRules(rules);
+    commitRules();
+    createRulesForm?.refresh();
+    createQuickControls.forEach((control) => control.refresh());
+    paintCreatePresetState();
+    createPowerups.update();
   };
   const resetCreatePresetChanges = () => {
     if (readOnly()) return;
@@ -657,81 +722,114 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       createQuickControls.forEach((control) => control.refresh());
     });
     createRules.replaceChildren(createRulesForm.el);
-    let custom = loadCustomPreset(prefs.gameMode);
-    const isCustom = (): boolean => !!custom && presetChangeCount(prefs.rules, custom, prefs.gameMode, true) === 0;
-    /** Rules that no card holds as they are: an edited preset, worth keeping as "My rules". */
-    const unsaved = (): boolean =>
-      !matchingPreset(prefs.rules, prefs.gameMode) && !samePick(matchingHandpicked(prefs.rules, prefs.gameMode), pick) && !isCustom();
-    /** Replacing saved rules takes a second click; the first one only asks. It lapses after a while, or once the rules change. */
-    let confirming: { rules: string; timer: ReturnType<typeof setTimeout> } | null = null;
-    const stopConfirming = () => {
-      if (confirming) clearTimeout(confirming.timer);
-      confirming = null;
+    const customs = loadCustomPresets(prefs.gameMode);
+    const changesFor = (id: string): number => {
+      const selection = selectedCreatePreset?.mode === prefs.gameMode ? selectedCreatePreset : undefined;
+      return selection?.id === id ? presetChangeCount(prefs.rules, selection.rules, prefs.gameMode, true) : 0;
     };
-    const isConfirming = (): boolean => {
-      if (confirming && confirming.rules !== JSON.stringify(prefs.rules)) stopConfirming();
-      return !!confirming;
+    const modifiedText = (id: string): string => {
+      const changes = changesFor(id);
+      return changes === 1 ? t('preset.modified.one') : changes > 1 ? t('preset.modified.many', { n: changes }) : '';
     };
-    const saveCustom = () => {
-      if (readOnly() || isCustom()) return;
-      if (custom && !isConfirming()) {
-        confirming = { rules: JSON.stringify(prefs.rules), timer: setTimeout(() => { confirming = null; paintCreatePresetState(); }, CONFIRM_OVERWRITE_MS) };
-        paintCreatePresetState();
-        return;
-      }
-      stopConfirming();
-      const wasEmpty = !custom;
-      saveCustomPreset(prefs.gameMode, prefs.rules);
-      custom = loadCustomPreset(prefs.gameMode);
-      selectedCreatePreset = { id: 'custom', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
-      // The empty card's hint said how to fill it; the full one says what it holds.
-      if (wasEmpty) buildCreateRules();
-      else paintCreatePresetState();
+    /** Everything but a card's own rules stays: the table's switches are not part of a preset. */
+    const withTable = (rules: RoomRules): RoomRules => ({ ...rules, powerUpKinds: [...rules.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly });
+    /** The rules as they play now are what the card holds from here on. */
+    const keepAs = (id: string) => {
+      selectedCreatePreset = { id, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+      paintCreatePresetState();
     };
-    const choices: { id: string; card: HTMLButtonElement; shell: HTMLDivElement; status: HTMLButtonElement; count: HTMLSpanElement }[] = [];
-    const addPreset = (id: string, label: string, hint: string, art: SVGElement, apply: () => void, featured = false) => {
+    const choices: { id: string; own: boolean; card: HTMLButtonElement; shell: HTMLDivElement; status: HTMLButtonElement; save: HTMLButtonElement; count: HTMLSpanElement; behavior: CardOptions }[] = [];
+    interface CardOptions {
+      featured?: boolean;
+      /** A slim strip in the column after the cards: just a name, no picture. */
+      strip?: boolean;
+      /** Stands in the column after the cards without being a strip: the empty slot's card. */
+      own?: boolean;
+      className?: string;
+      /** The badge's text; empty hides it. Edits come first, then what the card is. */
+      status?: () => string;
+      actionLabel?: () => string;
+      action?: () => void;
+      /** A second action under the badge, while it holds. */
+      secondary?: { visible: () => boolean; run: () => void };
+      /** Opens something instead of choosing the card. */
+      open?: () => void;
+    }
+    const addPreset = (id: string, label: string, hint: string, art: SVGElement | null, apply: () => void, options: CardOptions = {}) => {
+      const behavior: CardOptions = {
+        status: () => modifiedText(id),
+        actionLabel: () => t('preset.resetAction'),
+        action: resetCreatePresetChanges,
+        ...options,
+      };
       const shell = h('div.briefing__preset-shell', null) as HTMLDivElement;
       const status = h('button.item__status.item__status-reset', { type: 'button', hidden: '' },
         h('span.item__status-count', null),
-        h('span.item__status-action', null, t(id === 'custom' ? 'preset.custom.save' : 'preset.resetAction')),
+        h('span.item__status-action', null, behavior.actionLabel!()),
       ) as HTMLButtonElement;
+      const save = h('button.item__status.item__status-save', { type: 'button', hidden: '', title: t('preset.custom.save') }, t('preset.custom.save')) as HTMLButtonElement;
       const count = status.querySelector<HTMLSpanElement>('.item__status-count')!;
-      const card = h('button.item.item--card.lobby__preset', { type: 'button', 'aria-pressed': 'false' },
-        h('span.item__icon', { 'aria-hidden': 'true' }, art),
-        h('span.item__title', null, label),
-        ...(hint ? [h('span.item__hint', null, hint)] : []),
-      ) as HTMLButtonElement;
-      shell.append(card, status);
-      if (featured) {
+      const card = (options.strip
+        ? h('button.item.item--strip', { type: 'button', 'aria-pressed': 'false' }, h('span.item__title', null, label))
+        : h('button.item.item--card.lobby__preset', { type: 'button', 'aria-pressed': 'false' },
+            h('span.item__icon', { 'aria-hidden': 'true' }, ...(art ? [art] : [])),
+            h('span.item__title', null, label),
+            ...(hint ? [h('span.item__hint', null, hint)] : []),
+          )) as HTMLButtonElement;
+      shell.append(card, status, ...(behavior.secondary ? [save] : []));
+      if (options.featured) {
         card.classList.add('item--pick');
         card.prepend(h('span.item__tag', null, t('preset.pick.today')));
       }
+      if (options.className) card.classList.add(...options.className.split(' '));
       card.classList.toggle('is-readonly', readOnly());
       status.addEventListener('click', (event) => {
         event.stopPropagation();
         if (status.hidden || readOnly()) return;
-        if (id === 'custom') saveCustom();
-        else resetCreatePresetChanges();
+        behavior.action!();
         sound.select();
-        createPresetCards.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus({ preventScroll: true });
+        focusPresetCard();
+      });
+      save.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (save.hidden || readOnly()) return;
+        behavior.secondary!.run();
+        sound.select();
+        focusPresetCard();
       });
       card.addEventListener('click', () => {
         if (readOnly()) return;
+        if (options.open) {
+          sound.select();
+          return options.open();
+        }
         apply();
         commitRules();
         createRulesForm?.refresh();
         createQuickControls.forEach((control) => control.refresh());
         paintCreatePresetState();
         createPowerups.update();
-        createPresetCards.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus({ preventScroll: true });
+        focusPresetCard();
         sound.select();
       });
-      choices.push({ id, card, shell, status, count });
+      choices.push({ id, own: !!(options.strip || options.own), card, shell, status, save, count, behavior });
     };
     for (const preset of presets) {
       addPreset(preset, t(`preset.${preset}`), t(presetHintKey(preset, prefs.gameMode)), presetArt(preset, prefs.gameMode), () => {
-        prefs.rules = { ...presetRules(preset, prefs.gameMode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+        prefs.rules = withTable(savedPresetRules(preset, prefs.gameMode));
         selectedCreatePreset = { id: preset, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+      }, {
+        // Edits come first; with none, a card the player changed and kept says so.
+        status: () => modifiedText(preset) || (isOverridden(preset, prefs.gameMode) ? t('preset.overridden') : ''),
+        actionLabel: () => t(changesFor(preset) ? 'preset.resetAction' : 'preset.restoreOriginal'),
+        action: () => {
+          if (changesFor(preset)) return resetCreatePresetChanges();
+          clearOverride(prefs.gameMode, preset);
+          if (selectedCreatePreset?.id !== preset) return paintCreatePresetState();
+          restoreRules(withTable(presetRules(preset, prefs.gameMode)));
+          keepAs(preset);
+        },
+        secondary: { visible: () => changesFor(preset) > 0, run: () => { saveOverride(prefs.gameMode, preset, prefs.rules); keepAs(preset); } },
       });
     }
     addPreset('handpicked', pickName(pick), pickHint(pick), pickArt(pick), () => {
@@ -740,38 +838,55 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       prefs.rules = { ...pick.rules, powerUpKinds: [...pick.rules.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
       selectedCreatePreset = { id: 'handpicked', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
       rebuildIfGameChanged(before);
-    }, true);
-    addPreset('custom', t('preset.custom'), t(custom ? 'preset.custom.hint' : 'preset.custom.empty'), modeArt('custom'), () => {
-      if (!custom) return saveCustom();
-      stopConfirming();
-      prefs.rules = { ...custom, powerUpKinds: [...custom.powerUpKinds], betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
-      selectedCreatePreset = { id: 'custom', mode: prefs.gameMode, rules: copyRules(prefs.rules) };
-    });
-    createPresetCards.replaceChildren(...choices.map(({ shell }) => shell));
+    }, { featured: true });
+    // The player's own presets: slim strips in the column after the cards, with a plus strip for the next one.
+    for (const preset of customs) {
+      const id = `custom:${preset.id}`;
+      addPreset(id, preset.name, '', null, () => {
+        prefs.rules = withTable(preset.rules);
+        selectedCreatePreset = { id, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
+      }, {
+        strip: true,
+        status: () => (changesFor(id) ? t('preset.custom.modified') : t('preset.custom.edit')),
+        actionLabel: () => t(changesFor(id) ? 'preset.resetAction' : 'preset.custom.edit'),
+        action: () => (changesFor(id) ? resetCreatePresetChanges() : openCreator(preset)),
+        secondary: {
+          visible: () => changesFor(id) > 0,
+          run: () => {
+            if (!saveCustomPreset(prefs.gameMode, { id: preset.id, name: preset.name, rules: prefs.rules })) return;
+            keepAs(id);
+            buildCreateRules();
+          },
+        },
+      });
+    }
+    // The first one has the whole column to itself, as a card; from then on the plus is a strip below the others.
+    if (customs.length === 0) {
+      addPreset('custom:new', t('preset.custom.new'), t('preset.custom.empty'), modeArt('customAdd'), () => {}, { own: true, className: 'item--custom-empty', status: () => '', open: () => openCreator() });
+    } else if (customs.length < MAX_CUSTOM_PRESETS) {
+      addPreset('custom:new', t('preset.custom.new'), '', null, () => {}, { strip: true, className: 'item--strip-empty', status: () => '', open: () => openCreator() });
+    }
+    createPresetCards.replaceChildren(...choices.filter(({ own }) => !own).map(({ shell }) => shell), h('div.briefing__own', { 'data-own': String(customs.length) }, ...choices.filter(({ own }) => own).map(({ shell }) => shell)));
     paintCreatePresetState = () => {
       const selection = selectedCreatePreset?.mode === prefs.gameMode ? selectedCreatePreset : undefined;
-      const changes = selection ? presetChangeCount(prefs.rules, selection.rules, prefs.gameMode, true) : 0;
-      choices.forEach(({ id, card, shell, status, count }) => {
+      choices.forEach(({ id, card, shell, status, save, count, behavior }) => {
         const selected = id === selection?.id;
-        const mine = id === 'custom';
-        const cardChanges = selected && !mine ? changes : 0;
-        const asking = mine && isConfirming();
-        const text = mine
-          ? !unsaved() ? '' : asking ? t('preset.custom.confirm') : t('preset.custom.unsaved')
-          : cardChanges === 1 ? t('preset.modified.one') : cardChanges > 1 ? t('preset.modified.many', { n: cardChanges }) : '';
-        const label = t(!mine ? 'preset.resetAction' : asking ? 'preset.custom.overwrite' : 'preset.custom.save');
+        const edits = changesFor(id);
+        const text = behavior.status!();
+        const label = behavior.actionLabel!();
         count.textContent = text;
         status.querySelector('.item__status-action')!.textContent = label;
         status.hidden = !text || readOnly();
         status.setAttribute('aria-label', text && label ? `${text}. ${label}` : text);
-        status.classList.toggle('is-confirming', asking);
-        shell.classList.toggle('is-confirming', asking);
-        card.classList.toggle('is-modified', cardChanges > 0);
+        status.title = label;
+        save.hidden = !text || readOnly() || !(behavior.secondary?.visible() ?? false);
+        card.classList.toggle('is-modified', edits > 0);
+        shell.classList.toggle('is-modified', edits > 0);
         card.setAttribute('aria-pressed', String(selected));
       });
     };
     paintCreatePresetState();
-      };
+  };
 
   /** Back to the standard rules of the game being played, as the local rules page does. */
   rulesReset.addEventListener('click', () => {
@@ -825,7 +940,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     if (mode === currentMode()) return;
     const first = presetsForMode(mode)[0];
     prefs.gameMode = mode;
-    prefs.rules = { ...presetRules(first, mode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+    prefs.rules = { ...savedPresetRules(first, mode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
     selectedCreatePreset = { id: first, mode, rules: copyRules(prefs.rules) };
     commitRules();
     buildCreateRules();
@@ -882,7 +997,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const openForms = h('div.online-forms', null, codeView, createView);
   // A new lobby starts on the mode's first preset, as the local setup does; the pager and the cards change it from there.
   const startPreset = presetsForMode(prefs.gameMode)[0];
-  prefs.rules = { ...presetRules(startPreset, prefs.gameMode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
+  prefs.rules = { ...savedPresetRules(startPreset, prefs.gameMode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
   selectedCreatePreset = { id: startPreset, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
   buildCreateRules();
   buildCreateQuick();
@@ -1537,7 +1652,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     },
     // Escape closes an open look dialog first, and only then leaves the lobby.
     onEscape: () => {
-      if (!rulesDialog.hidden) { closeRulesDialog(); return true; }
+      if (!rulesDialog.hidden) { dismissRulesDialog(); return true; }
       if (createDialog.isOpen()) { createDialog.close(); return true; }
       if (roomDialog?.isOpen()) { roomDialog.close(); return true; }
       if (app.menu.depth === 1) { goBack(); return true; }

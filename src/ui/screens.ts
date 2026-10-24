@@ -3,7 +3,7 @@ import { ChallengeMatch, teamName, type Match, type Mode, type VersusMode } from
 import { oracleAwards } from '../game/oracle';
 import { fmtInt, fmtNum, LANGS, t, tn, type Key, type Lang } from '../i18n';
 import { rulesOf } from '../lobbyPrefs';
-import { CONFIRM_OVERWRITE_MS, loadCustomPreset, saveCustomPreset } from '../customPresets';
+import { clearOverride, deleteCustomPreset, loadCustomPresets, MAX_CUSTOM_PRESETS, saveCustomPreset, saveOverride, type CustomPreset } from '../customPresets';
 import type { RoomRules, StatsReplay } from '../net';
 import { roundTitle } from '../mayhem';
 import { awardLabel, awardValue, awardWho } from '../scorecard';
@@ -21,7 +21,8 @@ import { h, type Menu, type MenuItem, type Screen } from './menu';
 import { modeArt, presetArt } from './mode-icons';
 import type { LobbyEntry } from './lobby';
 import { menuGroup, menuPage } from './menu-page';
-import { presetsForMode, presetHintKey, presetRules, matchingPreset, matchingHandpicked, pickOfTheDay, changedRules, presetChangeCount, samePick } from './match-presets';
+import { presetsForMode, presetHintKey, presetRules, savedPresetRules, isOverridden, matchingPreset, matchingCustom, matchingHandpicked, pickOfTheDay, changedRules, presetChangeCount, samePick } from './match-presets';
+import { presetNameField } from './preset-name';
 import { pickArt, pickHint, pickName } from './pick-of-day';
 import { groupTitle, RULE_COLUMNS, ruleItems, ruleValueText, type RuleSource } from './rules';
 import { powerUpSummary } from './powerup-summary';
@@ -210,7 +211,7 @@ function localPresetSelectionState(app: App, mode: VersusMode): LocalPresetSelec
 /** Default once on entry; rebuilding after rule or crew edits keeps the player's subsequent choices. */
 function prepareModeScreen(app: App, mode: VersusMode, transition?: ModeTransition): () => Screen {
   const first = presetsForMode(mode)[0];
-  Object.assign(app.settings, presetRules(first, mode));
+  Object.assign(app.settings, savedPresetRules(first, mode));
   app.settingsChanged();
   localPresetSelectionState(app, mode).current = { id: first, rules: rulesOf(app.settings) };
   return () => setupScreen(app, mode, transition);
@@ -707,55 +708,49 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
   const presets = presetsForMode(mode);
   const pick = pickOfTheDay(mode, app.today());
   const selectionState = localPresetSelectionState(app, mode);
-  let custom = loadCustomPreset(mode);
-  const isCustom = (rules: RoomRules): boolean => !!custom && presetChangeCount(rules, custom, mode) === 0;
+  const customs = loadCustomPresets(mode);
+  const customId = (preset: CustomPreset): string => `custom:${preset.id}`;
   if (!selectionState.current) {
     const initialRules = rulesOf(s);
     const initialPick = matchingHandpicked(initialRules, mode);
-    const initialPreset = matchingPreset(initialRules, mode) ?? (samePick(initialPick, pick) ? 'handpicked' : isCustom(initialRules) ? 'custom' : undefined);
+    const mine = matchingCustom(initialRules, mode);
+    const initialPreset = matchingPreset(initialRules, mode) ?? (samePick(initialPick, pick) ? 'handpicked' : mine ? customId(mine) : undefined);
     if (initialPreset) selectionState.current = { id: initialPreset, rules: initialRules };
   }
-  /** Replacing saved rules takes a second click; the first one only asks. It lapses after a while, or once the rules change. */
-  /** Rules that no card holds as they are: an edited preset, worth keeping as "My rules". */
-  const unsaved = (): boolean => {
-    const rules = rulesOf(s);
-    return !matchingPreset(rules, mode) && !samePick(matchingHandpicked(rules, mode), pick) && !isCustom(rules);
-  };
-  /** Replacing saved rules takes a second click; the first one only asks. It lapses after a while, or once the rules change. */
-  let confirming: { rules: string; timer: ReturnType<typeof setTimeout> } | null = null;
-  const stopConfirming = (): void => {
-    if (confirming) clearTimeout(confirming.timer);
-    confirming = null;
-  };
-  const isConfirming = (): boolean => {
-    if (confirming && confirming.rules !== JSON.stringify(rulesOf(s))) stopConfirming();
-    return !!confirming;
-  };
-  const saveCustom = (): void => {
-    if (isCustom(rulesOf(s))) return;
-    if (custom && !isConfirming()) {
-      confirming = { rules: JSON.stringify(rulesOf(s)), timer: setTimeout(() => { confirming = null; app.menu.refresh(); }, CONFIRM_OVERWRITE_MS) };
-      app.menu.refresh();
-      return;
-    }
-    stopConfirming();
-    const wasEmpty = !custom;
-    custom = rulesOf(s);
-    saveCustomPreset(mode, custom);
-    selectionState.current = { id: 'custom', rules: rulesOf(s) };
-    // The empty card's hint said how to fill it; the full one says what it holds.
-    if (wasEmpty) app.menu.rebuild(); else app.menu.refresh();
-  };
+  const changesOf = (id: string): number => (selectionState.current?.id === id ? presetChangeCount(rulesOf(s), selectionState.current.rules, mode) : 0);
   const modifiedStatus = (id: string): string => {
-    if (selectionState.current?.id !== id) return '';
-    const changes = presetChangeCount(rulesOf(s), selectionState.current.rules, mode);
+    const changes = changesOf(id);
     return changes === 1 ? t('preset.modified.one') : changes > 1 ? t('preset.modified.many', { n: changes }) : '';
   };
+  /** Back to what the card was when it was chosen, or last saved. */
   const resetPresetChanges = (id: string): void => {
     const selectedPreset = selectionState.current;
     if (selectedPreset?.id !== id) return;
     Object.assign(s, selectedPreset.rules, { powerUpKinds: [...selectedPreset.rules.powerUpKinds] });
     app.settingsChanged(); app.menu.refresh();
+  };
+  /** The rules as they play now are what the card holds from here on. */
+  const rebase = (id: string): void => {
+    selectionState.current = { id, rules: rulesOf(s) };
+    app.menu.refresh();
+  };
+  /** One page for making a preset and for changing one: the rules page with a name above it. */
+  const openCreator = (existing?: CustomPreset): void => {
+    const before = rulesOf(s);
+    if (existing) {
+      Object.assign(s, existing.rules, { powerUpKinds: [...existing.rules.powerUpKinds], betting: s.betting, chatPlayersOnly: s.chatPlayersOnly });
+      app.settingsChanged();
+    }
+    const creator: PresetCreator = {
+      before, existing: !!existing, name: existing?.name ?? '', defaultName: t('preset.creator.namePlaceholder', { n: customs.length + 1 }), confirmDelete: false, saved: false,
+      save: () => {
+        const kept = saveCustomPreset(mode, { id: existing?.id, name: creator.name || creator.defaultName, rules: rulesOf(s) });
+        if (kept) selectionState.current = { id: customId(kept), rules: rulesOf(s) };
+        return !!kept;
+      },
+      remove: () => { if (existing) deleteCustomPreset(mode, existing.id); },
+    };
+    app.menu.push(() => rulesScreen(app, mode, undefined, creator));
   };
   const summary = h('dl.briefing__facts', { 'aria-live': 'polite' });
   const rulesHeading = h('h3.setup__title', null, t('briefing.rules'));
@@ -791,11 +786,25 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
       kind: 'action', section: 'presets', label: t(`preset.${preset}` as Key), hint: t(presetHintKey(preset, mode)),
       icon: () => presetArt(preset, mode),
       selected: () => selectionState.current?.id === preset,
-      status: () => modifiedStatus(preset),
-      statusActionLabel: t('preset.resetAction'),
-      statusAction: () => resetPresetChanges(preset),
+      // Edits come first; with none, a card the player changed and kept says so.
+      status: () => modifiedStatus(preset) || (isOverridden(preset, mode) ? t('preset.overridden') : ''),
+      modified: () => changesOf(preset) > 0,
+      statusActionLabel: () => t(changesOf(preset) ? 'preset.resetAction' : 'preset.restoreOriginal'),
+      statusAction: () => {
+        if (changesOf(preset)) return resetPresetChanges(preset);
+        clearOverride(mode, preset);
+        if (selectionState.current?.id === preset) {
+          Object.assign(s, presetRules(preset, mode));
+          app.settingsChanged();
+          selectionState.current = { id: preset, rules: rulesOf(s) };
+        }
+        app.menu.refresh();
+      },
+      statusSecondaryLabel: t('preset.custom.save'),
+      statusSecondaryVisible: () => changesOf(preset) > 0,
+      statusSecondary: () => { saveOverride(mode, preset, rulesOf(s)); rebase(preset); },
       run: () => {
-        Object.assign(s, presetRules(preset, mode));
+        Object.assign(s, savedPresetRules(preset, mode));
         selectionState.current = { id: preset, rules: rulesOf(s) };
         app.settingsChanged(); app.menu.refresh();
       },
@@ -814,23 +823,40 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
         app.settingsChanged(); app.menu.refresh();
       },
     },
-    {
-      kind: 'action', section: 'presets', label: t('preset.custom'), className: 'item--custom',
-      hint: t(custom ? 'preset.custom.hint' : 'preset.custom.empty'),
-      icon: () => modeArt('custom'),
-      selected: () => selectionState.current?.id === 'custom',
-      status: () => (!unsaved() ? '' : isConfirming() ? t('preset.custom.confirm') : t('preset.custom.unsaved')),
-      statusActionLabel: () => t(isConfirming() ? 'preset.custom.overwrite' : 'preset.custom.save'),
-      statusConfirming: isConfirming,
-      statusAction: saveCustom,
-      run: () => {
-        if (!custom) return saveCustom();
-        stopConfirming();
-        Object.assign(s, custom, { powerUpKinds: [...custom.powerUpKinds], betting: s.betting, chatPlayersOnly: s.chatPlayersOnly });
-        selectionState.current = { id: 'custom', rules: rulesOf(s) };
-        app.settingsChanged(); app.menu.refresh();
-      },
-    },
+    // The player's own presets: slim strips in the column after the cards, with a plus strip for the next one.
+    ...customs.map((preset): MenuItem => {
+      const id = customId(preset);
+      return {
+        kind: 'action', section: 'presets-own', label: preset.name, className: 'item--strip',
+        selected: () => selectionState.current?.id === id,
+        status: () => (changesOf(id) ? t('preset.custom.modified') : t('preset.custom.edit')),
+        modified: () => changesOf(id) > 0,
+        statusActionLabel: () => t(changesOf(id) ? 'preset.resetAction' : 'preset.custom.edit'),
+        statusAction: () => (changesOf(id) ? resetPresetChanges(id) : openCreator(preset)),
+        statusSecondaryLabel: t('preset.custom.save'),
+        statusSecondaryVisible: () => changesOf(id) > 0,
+        statusSecondary: () => {
+          if (!saveCustomPreset(mode, { id: preset.id, name: preset.name, rules: rulesOf(s) })) return;
+          selectionState.current = { id, rules: rulesOf(s) };
+          app.menu.rebuild();
+        },
+        run: () => {
+          Object.assign(s, preset.rules, { powerUpKinds: [...preset.rules.powerUpKinds], betting: s.betting, chatPlayersOnly: s.chatPlayersOnly });
+          selectionState.current = { id, rules: rulesOf(s) };
+          app.settingsChanged(); app.menu.refresh();
+        },
+      };
+    }),
+    // The first one has the whole column to itself, as a card; from then on the plus is a strip below the others.
+    ...(customs.length === 0
+      ? [{
+          kind: 'action', section: 'presets-own', label: t('preset.custom.new'), className: 'item--custom-empty', hint: t('preset.custom.empty'),
+          icon: () => modeArt('customAdd'),
+          run: () => openCreator(),
+        } satisfies MenuItem]
+      : customs.length < MAX_CUSTOM_PRESETS
+        ? [{ kind: 'action', section: 'presets-own', label: t('preset.custom.new'), className: 'item--strip item--strip-empty', run: () => openCreator() } satisfies MenuItem]
+        : []),
     ...quick.map(({ item }): MenuItem => ({ ...item, section: 'quick' })),
     { ...mayhem.item, section: 'quick-mayhem' },
     { kind: 'action', section: 'players', label: t('briefing.editCrew'), run: () => openPlayers(app) },
@@ -848,7 +874,8 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
         className: `menu-page--briefing menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
         body: [
           h('section.briefing__presets', null,
-            h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') }),
+            h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') },
+              h('div.briefing__own', { 'data-section': 'presets-own', 'data-own': String(customs.length) })),
             h('div.briefing__quick', null,
               h('div.briefing__quick-controls', { 'data-section': 'quick' }),
               h('div.briefing__mayhem', { 'data-section': 'quick-mayhem' }),
@@ -872,16 +899,35 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
       disposeModeCarousel = () => { stopNavigation(); stopCarousel(); };
       return page;
     },
-    dispose: () => { stopConfirming(); disposeModeCarousel(); },
+    dispose: () => disposeModeCarousel(),
     items,
     // Enter keeps the quick route into the game; the presets remain a click or arrow away.
-    focus: items.length - 1,
+    focusItem: items.length - 1,
     update,
   };
 }
 
 /** All rules on one page, grouped by subject in two columns. */
-function rulesScreen(app: App, mode: VersusMode, onReset?: (rules: ReturnType<typeof rulesOf>) => void): Screen {
+/** The preset creator's state. It lives outside the screen, which is built again whenever a row changes. */
+interface PresetCreator {
+  /** The rules as they were when it opened: Cancel, Esc and Delete put them back. */
+  before: RoomRules;
+  existing: boolean;
+  name: string;
+  defaultName: string;
+  confirmDelete: boolean;
+  saved: boolean;
+  save: () => boolean;
+  remove: () => void;
+}
+
+function rulesScreen(app: App, mode: VersusMode, onReset?: (rules: ReturnType<typeof rulesOf>) => void, creator?: PresetCreator): Screen {
+  // The creator edits the live rules like any rules page; leaving it any other way than Save puts them back as they were.
+  const restore = (): void => {
+    if (!creator || creator.saved) return;
+    Object.assign(app.settings, creator.before, { powerUpKinds: [...creator.before.powerUpKinds] });
+    app.settingsChanged();
+  };
   const source: RuleSource = {
     get: () => rulesOf(app.settings),
     patch: (values) => {
@@ -900,8 +946,8 @@ function rulesScreen(app: App, mode: VersusMode, onReset?: (rules: ReturnType<ty
     .map(({ group, item }): MenuItem => ({ ...item, section: `rules-${group}` }));
   return {
     build: () => menuPage({
-      title: t('briefing.editRules'), eyebrow: modeName(mode), className: 'menu-page--rules',
-      body: [h('div.sheet', null, ...columns.map((groups) => h('div.sheet__col', null, ...groups.map((group) => menuGroup(groupTitle(group), `rules-${group}`)))))],
+      title: t(creator ? (creator.existing ? 'preset.creator.titleEdit' : 'preset.creator.title') : 'briefing.editRules'), eyebrow: modeName(mode), className: 'menu-page--rules',
+      body: [...(creator ? [presetNameField(creator.name, creator.defaultName, (name) => { creator.name = name; })] : []), h('div.sheet', null, ...columns.map((groups) => h('div.sheet__col', null, ...groups.map((group) => menuGroup(groupTitle(group), `rules-${group}`)))))],
       keys: t('briefing.keys'),
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
     }),
@@ -914,9 +960,26 @@ function rulesScreen(app: App, mode: VersusMode, onReset?: (rules: ReturnType<ty
         onReset?.(rulesOf(app.settings));
         app.settingsChanged(); app.menu.refresh();
       } },
-      { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },
+      ...(creator
+        ? [
+            // Deleting asks twice; the question outlives the rebuild of this screen in the creator's own state.
+            ...(creator.existing ? [{ kind: 'action', section: 'actions', label: t(creator.confirmDelete ? 'preset.creator.deleteConfirm' : 'preset.creator.delete'), className: creator.confirmDelete ? 'item--delete is-confirming' : 'item--delete', run: () => {
+              if (!creator.confirmDelete) { creator.confirmDelete = true; app.menu.rebuild(); return; }
+              creator.remove();
+              app.menu.back();
+            } } satisfies MenuItem] : []),
+            { kind: 'action', section: 'actions', label: t('preset.creator.cancel'), run: () => app.menu.back() } satisfies MenuItem,
+            { kind: 'action', section: 'actions', label: t('preset.creator.save'), primary: true, run: () => {
+              if (!creator.save()) return;
+              creator.saved = true;
+              app.menu.back();
+            } } satisfies MenuItem,
+          ]
+        : [{ kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() } satisfies MenuItem]),
     ],
     focus: 0,
+    // Back, Cancel and Esc all leave through here.
+    onEscape: () => { restore(); },
   };
 }
 
