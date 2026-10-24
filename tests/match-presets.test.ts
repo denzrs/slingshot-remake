@@ -85,7 +85,7 @@ describe('the Mayhem preset', () => {
       expect(presetsForMode(mode)).not.toContain('party');
     }
     expect(MAYHEM_PRESET_LEVEL).toBe(2);
-    expect(presetRules('mayhem')).toEqual({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2, styleBonuses: true });
+    expect(presetRules('mayhem')).toEqual({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2, styleBonuses: true, simultaneousShots: true });
   });
 
   it('stays selected at any strength, and no other preset has twists', () => {
@@ -98,7 +98,39 @@ describe('the Mayhem preset', () => {
 });
 
 
+describe('simultaneous shots in presets', () => {
+  it('fires one ship at a time only in Classic Standard', () => {
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      for (const preset of presetsForMode(mode)) {
+        const sequential = mode === 'classic' && preset === 'standard';
+        // Event Horizon always fires simultaneously; its rule row doesn't exist.
+        if (mode === 'horizon') continue;
+        expect(presetRules(preset, mode).simultaneousShots, `${mode}/${preset}`).toBe(!sequential);
+      }
+    }
+  });
+
+  it('gives the Solar System no separate All-at-once card, since all of its presets are simultaneous', () => {
+    expect(presetsForMode('solar')).toEqual(['standard', 'powerups', 'mayhem']);
+  });
+
+  it('turns every kind of power-up on in the Solar System\'s Power-ups preset', () => {
+    const rules = presetRules('powerups', 'solar');
+    expect(rules.powerUps).toBe(true);
+    expect(rules.powerUpKinds).toEqual(DEFAULT_SETTINGS.powerUpKinds);
+    expect(matchingPreset(rules, 'solar')).toBe('powerups');
+    expect(matchingPreset({ ...rules, powerUps: false }, 'solar')).toBe('standard');
+    expect(() => presetRules('powerups', 'classic')).toThrow();
+  });
+});
+
 describe('handpicked combinations', () => {
+  it('fires simultaneously in every pick', () => {
+    for (const mode of ['classic', 'solar'] as const) {
+      for (const pick of handpickedPresets(mode)) expect(pick.rules.simultaneousShots, `${mode}/${pick.mode}.${pick.id}`).toBe(true);
+    }
+  });
+
   it('offers Standard, the mode’s own preset and Mayhem as the regular choices', () => {
     expect(presetsForMode('classic')).toEqual(['standard', 'simultaneous', 'mayhem']);
     expect(presetsForMode('horizon')).toEqual(['standard', 'trickshot', 'mayhem']);

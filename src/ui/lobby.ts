@@ -17,7 +17,7 @@ import { factTicker } from './facts';
 import { menuPage } from './menu-page';
 import { modeArt, presetArt } from './mode-icons';
 import { pickArt, pickHint, pickName } from './pick-of-day';
-import { presetsForMode, matchingPreset, presetChangeCount, presetRules, matchingHandpicked, pickOfTheDay, samePick } from './match-presets';
+import { presetsForMode, presetHintKey, matchingPreset, presetChangeCount, presetRules, matchingHandpicked, pickOfTheDay, samePick } from './match-presets';
 import { powerUpSummary } from './powerup-summary';
 import { teamRoster, type RosterCard } from './team-roster';
 
@@ -651,6 +651,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     }, app, readOnly(), () => {
       paintCreatePresetState();
       createPowerups.update();
+      createQuickControls.forEach((control) => control.refresh());
     });
     createRules.replaceChildren(createRulesForm.el);
     const choices: { id: string; card: HTMLButtonElement; shell: HTMLDivElement; status: HTMLButtonElement; count: HTMLSpanElement }[] = [];
@@ -700,7 +701,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
       rebuildIfGameChanged(before);
     }, true);
     for (const preset of presets) {
-      addPreset(preset, t(`preset.${preset}`), t(`preset.${preset}.hint`), presetArt(preset, prefs.gameMode), () => {
+      addPreset(preset, t(`preset.${preset}`), t(presetHintKey(preset, prefs.gameMode)), presetArt(preset, prefs.gameMode), () => {
         prefs.rules = { ...presetRules(preset, prefs.gameMode), betting: prefs.rules.betting, chatPlayersOnly: prefs.rules.chatPlayersOnly };
         selectedCreatePreset = { id: preset, mode: prefs.gameMode, rules: copyRules(prefs.rules) };
       });
@@ -741,21 +742,29 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const buildCreateQuick = () => {
     // The strength of Mayhem comes last, in a row of its own under the sliders, while Mayhem is on.
     const quickKeys = ['rounds', 'shotTime', 'mayhem'];
-    createQuickControls = ruleItems(prefs.gameMode, {
+    /** What a host wants to flip during a room, one click away instead of in the rules page. */
+    const switchLabels: Partial<Record<keyof RoomRules, Key>> = { betting: 'room.betting', chatPlayersOnly: 'room.chatPlayersOnly' };
+    const all = ruleItems(prefs.gameMode, {
       get: () => prefs.rules,
       patch: (v) => (prefs.rules = { ...prefs.rules, ...v }),
       commit: commitRules,
-    }, true)
+    }, true);
+    const env = { sound, readonly: readOnly(), changed: () => {
+      paintCreatePresetState();
+      createPowerups.update();
+      createRulesForm?.refresh();
+    } };
+    createQuickControls = all
       .filter(({ key }) => quickKeys.includes(key))
       .sort((a, b) => quickKeys.indexOf(a.key) - quickKeys.indexOf(b.key))
-      .map(({ item }) => buildControl(item, { sound, readonly: readOnly(), changed: () => {
-        paintCreatePresetState();
-        createPowerups.update();
-        createRulesForm?.refresh();
-      } }));
-    const sliders = createQuickControls.map(({ el }) => el);
+      .map(({ item }) => buildControl(item, env));
+    const switches = all
+      .filter(({ key }) => key in switchLabels)
+      .map(({ key, item }) => buildControl({ ...item, label: t(switchLabels[key]!) }, env));
+    createQuickControls.push(...switches);
+    const sliders = createQuickControls.slice(0, createQuickControls.length - switches.length).map(({ el }) => el);
     const mayhem = sliders.pop()!;
-    createQuick.replaceChildren(...sliders, h('div.briefing__mayhem', null, mayhem), createPowerups.el);
+    createQuick.replaceChildren(...sliders, h('div.briefing__mayhem', null, mayhem), createPowerups.el, h('div.briefing__switches', null, ...switches.map(({ el }) => el)));
     createPowerups.update();
   };
 

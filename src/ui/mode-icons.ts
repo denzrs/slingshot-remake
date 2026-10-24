@@ -1,7 +1,7 @@
 export type ModeArt = 'daily' | 'classic' | 'solar' | 'horizon' | 'mayhem' | 'trickshot' | 'sniper' | 'party' | 'simultaneous' | 'rooms' | 'create' | 'code';
 export type MatchPresetArt = 'standard' | 'trickshot' | 'sniper' | 'party';
 export type MayhemPresetArt = 'wildClassic' | 'insaneClassic' | 'insaneClassicSimultaneous' | 'insaneHorizon';
-export type SolarPresetArt = 'simultaneous' | 'mayhem';
+export type SolarPresetArt = 'powerups' | 'mayhem';
 export type PresetArtTreatment =
   | { mode: 'horizon'; preset: MatchPresetArt }
   | { mode: 'solar'; preset: SolarPresetArt }
@@ -9,10 +9,12 @@ export type PresetArtTreatment =
 let artId = 0;
 
 /** The card of a regular preset in a mode: Event Horizon's own take on it, simultaneous fire, or the wild orbits of Mayhem. The Solar System has its own sun on all of them. */
-export function presetArt(preset: 'standard' | 'trickshot' | 'simultaneous' | 'mayhem', mode: 'classic' | 'solar' | 'horizon'): SVGElement {
-  if (mode === 'solar') return modeArt('solar', preset === 'simultaneous' || preset === 'mayhem' ? { mode: 'solar', preset } : undefined);
+export function presetArt(preset: 'standard' | 'trickshot' | 'simultaneous' | 'powerups' | 'mayhem', mode: 'classic' | 'solar' | 'horizon'): SVGElement {
+  if (mode === 'solar') return modeArt('solar', preset === 'powerups' || preset === 'mayhem' ? { mode: 'solar', preset } : undefined);
   if (preset === 'mayhem') return modeArt(mode === 'horizon' ? 'horizon' : 'classic', { mode: 'mayhem', preset: mode === 'horizon' ? 'insaneHorizon' : 'wildClassic' });
   if (preset === 'simultaneous') return modeArt('simultaneous');
+  // Power-ups is the Solar System's own card, handled above.
+  if (preset === 'powerups') return modeArt('classic');
   return modeArt(preset === 'standard' ? 'classic' : preset, mode === 'horizon' ? { mode: 'horizon', preset } : undefined);
 }
 
@@ -118,16 +120,22 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
   if (treatment?.mode === 'solar') {
     const sun = `<circle cx="160" cy="100" r="46" fill="#f2c46d" opacity=".06"/><circle cx="160" cy="100" r="31" fill="#f2c46d" opacity=".1"/><circle cx="160" cy="100" r="19" fill="#f2c46d" stroke="#fff0cf" stroke-opacity=".75" stroke-width="1.5"/><circle cx="160" cy="100" r="11" fill="#ffe7a8" opacity=".8"/>`;
     switch (treatment.preset) {
-      // Every ship fires at once from its place on the outer orbit: three shots bend round the sun and cross.
-      case 'simultaneous':
+      // One shot bends round the sun and collects three pick-ups on the way (preview, teleport, shield); a fourth, the splitter, waits below.
+      case 'powerups': {
+        const orb = (x: number, y: number, color: string, symbol: string) =>
+          `<circle cx="${x}" cy="${y}" r="21" fill="${color}" opacity=".1"/><circle cx="${x}" cy="${y}" r="15" fill="#0c2035" stroke="${color}" stroke-width="1.6"/><g fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${symbol}</g>`;
         scene = `${orbit(52, 28, -8, '#f2c46d', '.35')}${orbit(92, 49, -8, '#7697ae', '.3')}${orbit(150, 82, -8, '#7697ae', '.4')}${sun}
-          ${planet(212, 100, 8, true)}${planet(79, 72, 11)}${planet(214, 143, 6)}
-          <path d="M33 141C78 62 196 36 289 60" fill="none" stroke="#6fe3c8" stroke-width="1.8"/>
-          <path d="M289 60C236 172 117 178 34 142" fill="none" stroke="#ffad65" stroke-width="1.8"/>
-          <path d="M160 181C104 124 196 88 252 32" fill="none" stroke="#bc92ff" stroke-width="1.5" stroke-dasharray="3 4"/>
-          ${ship(32, 141, 62, '#6fe3c8', .85)}${ship(290, 59, -110, '#ffad65', .85)}${ship(160, 183, -4, '#bc92ff', .8)}
-          <g fill="#fff0cf"><circle cx="118" cy="83" r="2.5"/><circle cx="203" cy="142" r="2.5"/><circle cx="198" cy="82" r="2.5"/></g>`;
+          ${planet(58, 66, 10)}${planet(198, 152, 7)}${planet(284, 118, 8, true)}
+          <path d="M34 146Q130 30 292 62" fill="none" stroke="#6fe3c8" stroke-width="6" opacity=".08"/>
+          <path d="M34 146Q130 30 292 62" fill="none" stroke="#6fe3c8" stroke-width="1.8" stroke-dasharray="5 4"/>
+          ${orb(98, 90, '#3ff0ff', '<path d="M89 90Q98 80 107 90Q98 100 89 90Z"/><circle cx="98" cy="90" r="2.4" fill="#3ff0ff"/>')}
+          ${orb(160, 63, '#ff4fd8', '<circle cx="160" cy="63" r="8"/><circle cx="160" cy="63" r="2.6" fill="#ff4fd8"/>')}
+          ${orb(230, 55, '#4dffb0', '<path d="M222 48H238Q238 60 230 66Q222 60 222 48Z" fill="#4dffb0" fill-opacity=".25"/><path d="M226 56 230 51 234 56"/>')}
+          ${orb(246, 140, '#ffd21f', '<path d="M240 149 236 132M240 149 246 131M240 149 256 135"/><circle cx="240" cy="149" r="2.4" fill="#ffd21f"/>')}
+          <g fill="#fff0cf"><circle cx="292" cy="62" r="2.6"/></g>
+          ${ship(34, 146, 40, '#6fe3c8', .9)}`;
         break;
+      }
       // The orbits tip over and the rounds turn wild: a spark and a bolt over the sun's system.
       case 'mayhem':
         scene = `${orbit(146, 44, -28, '#6fe3c8', '.55')}${orbit(120, 56, 32, '#ffad65', '.5')}${orbit(84, 76, -14, '#bc92ff', '.42')}${sun}

@@ -1,5 +1,6 @@
 import type { VersusMode } from '../game';
 import { defaultRoomRules } from '../lobbyPrefs';
+import type { Key } from '../i18n';
 import type { RoomRules } from '../net';
 import { powerModeOf, rulesFor, type RuleRow } from './rules';
 
@@ -12,12 +13,13 @@ const PRESET_GROUPS = {
   classic: {
     standard: (base) => base,
     simultaneous: (base) => ({ ...base, simultaneousShots: true }),
-    mayhem: (base) => ({ ...base, mayhem: MAYHEM_PRESET_LEVEL, styleBonuses: true }),
+    mayhem: (base) => ({ ...base, mayhem: MAYHEM_PRESET_LEVEL, styleBonuses: true, simultaneousShots: true }),
   },
+  // Every Solar System preset fires simultaneously, so it has no separate "All at once" card.
   solar: {
-    standard: (base) => base,
-    simultaneous: (base) => ({ ...base, simultaneousShots: true }),
-    mayhem: (base) => ({ ...base, mayhem: MAYHEM_PRESET_LEVEL, styleBonuses: true }),
+    standard: (base) => ({ ...base, simultaneousShots: true }),
+    powerups: (base) => ({ ...base, simultaneousShots: true, powerUps: true, powerUpAmount: 3 }),
+    mayhem: (base) => ({ ...base, mayhem: MAYHEM_PRESET_LEVEL, styleBonuses: true, simultaneousShots: true }),
   },
   horizon: {
     standard: (base) => base,
@@ -28,10 +30,14 @@ const PRESET_GROUPS = {
 
 export type MatchPreset = { [Mode in VersusMode]: keyof typeof PRESET_GROUPS[Mode] }[VersusMode];
 
-/** The three modes have separate preset groups; Solar System currently has the same entries as Classic. */
+/** The three modes have separate preset groups. Only Classic's Standard fires one ship at a time. */
 export function presetsForMode(mode: VersusMode): readonly MatchPreset[] {
   return Object.keys(PRESET_GROUPS[mode]) as MatchPreset[];
 }
+
+/** The hint's text key: Classic Standard is the one preset where the ships take turns, and says so. */
+export const presetHintKey = (preset: MatchPreset, mode: VersusMode): Key =>
+  (mode === 'classic' && preset === 'standard' ? 'preset.standard.classic.hint' : `preset.${preset}.hint`) as Key;
 
 export function presetRules(preset: MatchPreset, mode?: VersusMode): RoomRules {
   const findFactory = (group: Record<string, PresetRuleFactory>): PresetRuleFactory | undefined => group[preset];
@@ -104,24 +110,24 @@ export interface HandpickedPreset {
 
 /** The authored Mayhem combinations: each is played in one mode, and joins that mode's rotation. The Solar System plays Classic's. */
 const MAYHEM_PICKS: readonly { id: HandpickedId; base: VersusMode; patch: Partial<RoomRules> }[] = [
-  { id: 'express', base: 'classic', patch: { rounds: 3, shotTime: 10, mayhem: 1, simultaneousShots: true } },
+  { id: 'express', base: 'classic', patch: { rounds: 3, shotTime: 10, mayhem: 1 } },
   { id: 'ghost', base: 'horizon', patch: { rounds: 3, shotTime: 30, mayhem: 2 } },
   { id: 'garden', base: 'classic', patch: { rounds: 7, shotTime: 30, mayhem: 2 } },
   { id: 'supernova', base: 'horizon', patch: { rounds: 7, shotTime: 10, mayhem: 3 } },
 ];
 
-/** Four authored combinations per mode, then the Mayhem ones played in it. */
+/** Four authored combinations per mode, then the Mayhem ones played in it. Classic and the Solar System play all of them with simultaneous shots; Event Horizon always does. */
 export function handpickedPresets(mode: VersusMode): HandpickedPreset[] {
   // The Solar System has Classic's rules, so Classic's texts and combinations describe it.
   const classic = mode !== 'horizon';
-  const make = (id: HandpickedId, patch: Partial<RoomRules>): HandpickedPreset => ({ id, mode: classic ? 'classic' : mode, base: mode, rules: { ...defaultRoomRules(), ...patch, mayhem: 0 } });
+  const make = (id: HandpickedId, patch: Partial<RoomRules>): HandpickedPreset => ({ id, mode: classic ? 'classic' : mode, base: mode, rules: { ...defaultRoomRules(), ...patch, mayhem: 0, simultaneousShots: classic } });
   return [
-    make('express', { rounds: 3, shotTime: 10, maxPlanets: 2, ...(classic ? { simultaneousShots: true } : { fixedPower: true, fixedPowerLevel: 50 }) }),
+    make('express', { rounds: 3, shotTime: 10, maxPlanets: 2, ...(classic ? {} : { fixedPower: true, fixedPowerLevel: 50 }) }),
     make('ghost', { rounds: 5, shotTime: 30, maxPlanets: classic ? 3 : 4, hiddenAim: true, fadingTrails: 2 }),
     make('garden', { rounds: 7, shotTime: 30, maxPlanets: 6, maxPower: 60, bounce: true, styleBonuses: true, powerUps: true, powerUpAmount: 2, powerUpKinds: ['preview', 'teleport', 'shield'] }),
-    make('supernova', { rounds: 5, shotTime: 10, maxPlanets: 8, bounce: true, styleBonuses: true, simultaneousShots: classic, powerUps: true, powerUpAmount: 4 }),
+    make('supernova', { rounds: 5, shotTime: 10, maxPlanets: 8, bounce: true, styleBonuses: true, powerUps: true, powerUpAmount: 4 }),
     ...MAYHEM_PICKS.filter((pick) => pick.base === (classic ? 'classic' : 'horizon')).map(({ id, patch }): HandpickedPreset => ({
-      id, mode: 'mayhem', base: mode, rules: { ...defaultRoomRules(), ...patch, styleBonuses: true },
+      id, mode: 'mayhem', base: mode, rules: { ...defaultRoomRules(), ...patch, styleBonuses: true, simultaneousShots: classic },
     })),
   ];
 }

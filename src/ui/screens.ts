@@ -20,7 +20,7 @@ import { h, type Menu, type MenuItem, type Screen } from './menu';
 import { modeArt, presetArt } from './mode-icons';
 import type { LobbyEntry } from './lobby';
 import { menuGroup, menuPage } from './menu-page';
-import { presetsForMode, presetRules, matchingPreset, matchingHandpicked, pickOfTheDay, changedRules, presetChangeCount, samePick } from './match-presets';
+import { presetsForMode, presetHintKey, presetRules, matchingPreset, matchingHandpicked, pickOfTheDay, changedRules, presetChangeCount, samePick } from './match-presets';
 import { pickArt, pickHint, pickName } from './pick-of-day';
 import { groupTitle, RULE_COLUMNS, ruleItems, ruleValueText, type RuleSource } from './rules';
 import { powerUpSummary } from './powerup-summary';
@@ -803,7 +803,7 @@ function setupScreen(app: App, mode: VersusMode, transition?: ModeTransition): S
         },
       },
       ...presets.map((preset): MenuItem => ({
-        kind: 'action', section: 'presets', label: t(`preset.${preset}` as Key), hint: t(`preset.${preset}.hint` as Key),
+        kind: 'action', section: 'presets', label: t(`preset.${preset}` as Key), hint: t(presetHintKey(preset, mode)),
         icon: () => presetArt(preset, mode),
         selected: () => selectionState.current?.id === preset,
         status: () => modifiedStatus(preset),
