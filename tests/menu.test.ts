@@ -67,8 +67,9 @@ describe('game rules in the menu', () => {
   const all = ruleRows();
   const valued = all.filter((row) => row.control !== 'toggle');
 
-  it('lists every rule the setup and online lobby share, once — the shot power one in three parts', () => {
-    expect(all.map((row) => row.key).sort()).toEqual(Object.keys(relayContract.defaults).sort());
+  it('lists every rule the setup and online lobby share, once — the shot power one in three parts, and the power-up switch in the kinds', () => {
+    // Choosing kinds is what switches the power-ups on: no kinds, no power-ups. So the switch has no row of its own.
+    expect(all.map((row) => row.key).sort()).toEqual(Object.keys(relayContract.defaults).filter((key) => key !== 'powerUps').sort());
   });
 
   it('sorts every rule into a block of the setup screen', () => {
@@ -127,17 +128,16 @@ describe('game rules in the menu', () => {
     }
   });
 
-  it('offers the power-ups, their kinds and their amount in both modes, offline and in an online room', () => {
-    for (const mode of ['classic', 'horizon'] as const) {
-      for (const online of [false, true]) expect(rulesFor(mode, online).map((r) => r.key)).toEqual(expect.arrayContaining(['powerUps', 'powerUpKinds', 'powerUpAmount']));
+  it('offers the power-up kinds and their amount in every mode, offline and in an online room', () => {
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      for (const online of [false, true]) expect(rulesFor(mode, online).map((r) => r.key)).toEqual(expect.arrayContaining(['powerUpKinds', 'powerUpAmount']));
     }
   });
 
-  it('keeps the kinds and the amount hidden but in place while power-ups are off', () => {
+  it('hides the amount while power-ups are off', () => {
     const source = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), powerUps: false }), patch() {} };
-    for (const { key, item } of ruleItems('classic', source).filter((r) => r.key === 'powerUpKinds' || r.key === 'powerUpAmount')) {
+    for (const { key, item } of ruleItems('classic', source).filter((r) => r.key === 'powerUpAmount')) {
       expect(item.hidden?.(), key).toBe(true);
-      expect(item.reserve?.(), key).toBe(true);
     }
   });
 
