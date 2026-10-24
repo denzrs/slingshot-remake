@@ -27,6 +27,7 @@ impl RoomManager {
         let Ok(bytes) = rmp_serde::to_vec_named(&message) else {
             return;
         };
+        let bytes = crate::codec::Frame::from(bytes);
         for conn in self.net.connected() {
             // Players inside a room have no use for the room list.
             if !self.is_placed(conn) {

@@ -29,6 +29,12 @@ pub async fn deliver(
         manager.lock().handle_state_envelope(conn_id, seq, bytes);
         return;
     }
+    // Only the host's state may be large; anything else that big is not worth decoding, which
+    // would blow it up many times over.
+    if bytes.len() > crate::codec::MAX_CONTROL_BYTES {
+        manager.lock().error(conn_id, "Message too large");
+        return;
+    }
     let message = match rmp_serde::from_slice::<serde_json::Value>(bytes) {
         Ok(message) => message,
         Err(_) => {
@@ -389,6 +395,29 @@ mod tests {
         assert_eq!(
             take_type(&mut guest_rx, "error").await["message"],
             "Wrong password"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_oversized_control_message_is_refused_before_it_is_decoded() {
+        let manager = Mutex::new(RoomManager::new());
+        let scrypt_slots = ScryptSlots::new(MAX_CONCURRENT_SCRYPTS);
+        let boards = Leaderboard::in_memory().await;
+        let (tx, mut rx) = mpsc::channel(crate::codec::OUTBOUND_QUEUE);
+        let (slow, _) = tokio::sync::watch::channel(false);
+        manager
+            .lock()
+            .connect(1, IpAddr::V4(Ipv4Addr::LOCALHOST), tx, slow);
+        let _ = take_type(&mut rx, "lobby_update").await;
+        let chat = serde_json::json!({
+            "type": "chat",
+            "text": "x".repeat(crate::codec::MAX_CONTROL_BYTES),
+        });
+        let bytes = rmp_serde::to_vec_named(&chat).unwrap();
+        deliver(&manager, &scrypt_slots, &boards, 1, &bytes).await;
+        assert_eq!(
+            take_type(&mut rx, "error").await["message"],
+            "Message too large"
         );
     }
 

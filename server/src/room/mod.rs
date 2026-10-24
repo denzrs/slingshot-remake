@@ -24,7 +24,7 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use crate::auth::Hashed;
-use crate::codec::Outbound;
+use crate::codec::{Frame, Outbound, OutboundPool};
 use crate::command::RoomCommand;
 use crate::leaderboard::Board;
 use crate::stats::{Overview, Stats};
@@ -64,6 +64,12 @@ impl RoomManager {
 
     pub fn with_stats(mut self, stats: Arc<Stats>) -> Self {
         self.stats = Some(stats);
+        self
+    }
+
+    /// Bound what all the outbound queues hold together. Set before the first connection.
+    pub fn with_outbound_pool(mut self, pool: OutboundPool) -> Self {
+        self.net = Connections::with_pool(pool);
         self
     }
 
@@ -241,7 +247,7 @@ impl RoomManager {
         self.net.send_value(conn, value);
     }
 
-    fn send_fast(&self, conn: u64, bytes: &[u8]) {
+    fn send_fast(&self, conn: u64, bytes: &Frame) {
         self.net.send_fast(conn, bytes);
     }
 

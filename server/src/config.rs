@@ -6,6 +6,9 @@ pub const DEFAULT_PORT: u16 = 8080;
 /// The host's full state can be large once; everything after that is small patches.
 pub const MAX_PAYLOAD: usize = 1024 * 1024;
 pub const MAX_MESSAGES_PER_SECOND: u32 = 300;
+/// Inbound bytes per second one connection may send (`MAX_BYTES_PER_SECOND`). A real host streams
+/// well under 1 MB/s at 30 Hz; the bucket also always holds one full `MAX_PAYLOAD` frame.
+pub const MAX_BYTES_PER_SECOND: usize = 2 * 1024 * 1024;
 pub const HEARTBEAT_MS: u64 = 10_000;
 /// Pings in a row that may go unanswered before a peer counts as dead. A proxy that stalls for a
 /// moment should not cost a player the game.

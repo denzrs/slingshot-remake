@@ -309,8 +309,10 @@ impl RoomManager {
             .get(&room_id)
             .map(|room| room.recipients().filter(|other| *other != conn).collect())
             .unwrap_or_default();
+        // Copied once, here, and shared by every recipient's queue.
+        let frame = crate::codec::Frame::from(bytes);
         for recipient in recipients {
-            self.send_fast(recipient, bytes);
+            self.send_fast(recipient, &frame);
         }
     }
 }
