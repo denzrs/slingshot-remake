@@ -141,7 +141,7 @@ export function renderRefinedPlanet(p: Planet, ps: number): PlanetSprite {
     lctx.fillRect(0, 0, W, canvas.height);
     return { canvas, y0 };
   });
-  const speeds = Array.from({ length: rows }, (_, i) => 1.15 * (gas ? (i % 2 ? -1 : 1) * range(rng, 0.006, 0.014) : 0.005));
+  const speeds = Array.from({ length: rows }, (_, i) => 1.5 * (gas ? (i % 2 ? -1 : 1) * range(rng, 0.006, 0.014) : 0.005));
   const phase = rng();
 
   return {
