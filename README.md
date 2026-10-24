@@ -40,6 +40,7 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 | `npm run build` | Typecheck and build the client into `dist/` |
 | `npm run typecheck` | Typecheck the client, tests and benchmarks |
 | `npm run news:validate` | Validate the What's New release JSON |
+| `npm run release:check` | Check release preparation, atomic pushes, retries and deployment guards against local Git repositories |
 | `npm run shot -- --out <file>` | Screenshot of the running game for a What's New picture (see [AGENTS.md](AGENTS.md)) |
 | `npm test` | Run all tests |
 | `npm run dev:server` | Rust multiplayer relay (port `8080`, override with `PORT`) |
@@ -53,7 +54,9 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 
 **What's New.** A dialog over the title screen groups feature cards under each release tag, with a short summary above them. Add upcoming copy to the `draft` in [`src/news/releases.json`](src/news/releases.json); the main-branch release workflow moves it under the generated tag before building. [AGENTS.md](AGENTS.md) explains the JSON format and screenshots.
 
-**Releases.** Every merge to `main` that passes typecheck and tests is tagged with the next minor version (`vX.Y.0` → `vX.(Y+1).0`), released on GitHub and deployed to GitHub Pages. When the What's New draft has items, the workflow first commits the finalized JSON with `[skip ci]`, tags that commit, then builds and publishes from the tag in the same run. Put `[major]` in a commit message (with squash merges: the PR title or description) to get the next major version instead (`vX.Y.0` → `v(X+1).0.0`); the marker counts until the next release is tagged. Pushing a tag such as `v2.0.0` by hand also works when its What's New bundle is already finalized in the JSON file.
+**Releases.** A merge to `main` starts **Slingshot CI**. After checks pass, a dedicated GitHub App finalizes the news, creates a release commit, and atomically pushes that commit to `main` together with an annotated version tag. The tag starts **Slingshot Deploy & Release**, which checks and builds the tagged source, deploys the newest release and publishes its GitHub release assets. The generated commit is recognized without `[skip ci]`, so it does not create a release loop or suppress the tag pipeline. [Release setup](deploy/releases.md) explains the one-time App, Ruleset and environment configuration.
+
+The next version is a minor bump (`vX.Y.0` → `vX.(Y+1).0`), or a major bump when a commit since the last release contains `[major]` (with squash merges: the PR title or description). Rapid successive merges can be included in one release: an older run that no longer matches `main` leaves preparation to the newer checked run. Pushing a tag such as `v2.0.0` manually also works when the commit is part of `main` and its What's New bundle is already finalized. Older tags can rebuild release assets but do not roll back production.
 
 ## Credits & license
 

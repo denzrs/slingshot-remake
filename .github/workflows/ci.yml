@@ -1,0 +1,102 @@
+name: Slingshot CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A generated release commit must not cancel the source merge that is publishing it.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-main-{0}', github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      generated: ${{ steps.release.outputs.generated }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == push ]]; then
+            node scripts/release.mjs classify "$SOURCE_SHA"
+          else
+            echo 'generated=false' >> "$GITHUB_OUTPUT"
+          fi
+
+  checks:
+    needs: classify
+    if: needs.classify.outputs.generated != 'true'
+    uses: ./.github/workflows/checks.yml
+
+  prepare-release:
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: slingshot-release-preparation
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Check release App configuration
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$CLIENT_ID" || -z "$PRIVATE_KEY" ]]; then
+            echo '::error::Set RELEASE_APP_CLIENT_ID (Actions variable) and RELEASE_APP_PRIVATE_KEY (Actions secret). See deploy/releases.md.'
+            exit 1
+          fi
+      - name: Create a short-lived token for this repository only
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Finalize news and atomically publish the commit and tag
+        id: release
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          RELEASE_BOT_SLUG: ${{ steps.app.outputs.app-slug }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bot_id=$(gh api "users/${RELEASE_BOT_SLUG}[bot]" --jq .id)
+          git config user.name "${RELEASE_BOT_SLUG}[bot]"
+          git config user.email "${bot_id}+${RELEASE_BOT_SLUG}[bot]@users.noreply.github.com"
+          gh auth setup-git --hostname github.com
+          node scripts/release.mjs prepare "$SOURCE_SHA"
+      - name: Summarize the hand-off to the tag pipeline
+        env:
+          RELEASED: ${{ steps.release.outputs.release }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          RELEASE_REASON: ${{ steps.release.outputs.reason }}
+        run: |
+          if [[ "$RELEASED" == true ]]; then
+            echo "Prepared $RELEASE_TAG at $RELEASE_SHA. The tag-triggered Deploy & Release workflow builds and publishes it." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No tag created: $RELEASE_REASON." >> "$GITHUB_STEP_SUMMARY"
+          fi

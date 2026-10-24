@@ -1,0 +1,47 @@
+name: Slingshot server setup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slingshot-production
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  push-server-setup:
+    name: Stage server setup files
+    # Review the staged files before running the script manually as root on the VPS.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ionos-production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Copy deploy/ionos/ to the server
+        env:
+          SSH_KEY: ${{ secrets.IONOS_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.IONOS_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ vars.IONOS_SERVER_IP }}
+          DEPLOY_USER: ${{ vars.IONOS_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          DEPLOY_USER="${DEPLOY_USER:-ops}"
+          missing=()
+          for name in SSH_KEY KNOWN_HOSTS HOST; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          ((${#missing[@]} == 0)) || { printf 'Missing settings: %s\n' "${missing[*]}" >&2; exit 1; }
+          install -m 0700 -d "$RUNNER_TEMP/ionos-ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ionos-ssh/id_ed25519"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ionos-ssh/known_hosts"
+          chmod 0600 "$RUNNER_TEMP/ionos-ssh/id_ed25519" "$RUNNER_TEMP/ionos-ssh/known_hosts"
+          ssh_options=(-i "$RUNNER_TEMP/ionos-ssh/id_ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/ionos-ssh/known_hosts")
+          ssh "${ssh_options[@]}" "$DEPLOY_USER@$HOST" "install -d -m 0700 /srv/slingshot/ionos-setup"
+          scp "${ssh_options[@]}" deploy/ionos/setup-server.sh deploy/ionos/slingshot-relay.service deploy/ionos/renewal-deploy.sh \
+            "$DEPLOY_USER@$HOST:/srv/slingshot/ionos-setup/"
+

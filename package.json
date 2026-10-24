@@ -7,6 +7,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "news:validate": "node scripts/finalize-news.mjs --validate",
+    "release:check": "node --test scripts/check-release.mjs",
     "pretest": "cargo build --locked --manifest-path server/Cargo.toml",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
