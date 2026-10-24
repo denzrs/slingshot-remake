@@ -15,7 +15,10 @@ import { renderContours } from './contours';
 import type { Effects } from './effects';
 import { Hud } from './hud';
 import type { OracleTap } from './oracle';
+import { getLook, isRefined, type Look } from './look';
+import type { PlanetSprite } from './planet-common';
 import { renderPlanet } from './planets';
+import { drawRefinedShip, SHIP_HULL } from './ship';
 import { drawNebula } from './nebula';
 import { drawStormBurst, drawStormCloud, stormFlare } from './storm';
 import { drawPortal, drawWormhole } from './wormhole';
@@ -34,10 +37,6 @@ export interface DrawOptions {
   keyHints: boolean;
 }
 
-const SHIP_HULL: [number, number][] = [
-  [15, 0], [-2, -5], [-11, -11], [-7, -3.5], [-11, 0], [-7, 3.5], [-11, 11], [-2, 5],
-];
-
 export class Renderer {
   view!: View;
   private readonly ctx: CanvasRenderingContext2D;
@@ -48,11 +47,12 @@ export class Renderer {
   /** Per world (live or killcam replay), rebuilt when the world's version or the pixel scale changes. */
   private contours = new WeakMap<World, { version: number; ps: number; canvas: HTMLCanvasElement }>();
   /** Planet sprites by seed at `spritePs` device pixels per field unit. */
-  private sprites = new Map<number, HTMLCanvasElement>();
+  private sprites = new Map<number, PlanetSprite>();
   /** The finished trails, drawn once: dashed strokes are costly to rasterise and the trails only change when a shot ends. */
   private trailLayer: { key: string; world: World; canvas: HTMLCanvasElement } | null = null;
   private readonly trailIds = new WeakMap<Trail, number>();
   private spritePs = 0;
+  private spriteLook: Look = getLook();
   private time = 0;
   /** When each power-up pickup was first drawn, for its pop-in. */
   private readonly pickupSeen = new Map<number, number>();
@@ -293,9 +293,10 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
 
-    if (this.spritePs !== ps || this.sprites.size > 64) {
+    if (this.spritePs !== ps || this.spriteLook !== getLook() || this.sprites.size > 64) {
       this.sprites.clear();
       this.spritePs = ps;
+      this.spriteLook = getLook();
     }
     for (const p of showPlanets ? world.planets : []) {
       if (p.sun) continue;
@@ -304,7 +305,6 @@ export class Renderer {
         sprite = renderPlanet(p, ps);
         this.sprites.set(p.seed, sprite);
       }
-      const size = sprite.width / ps;
       const eaten = scene.camera ? 0 : match.devourProgress(p.seed);
       ctx.globalAlpha = alpha * (1 - eaten * 0.4);
       if (eaten > 0 && primary) {
@@ -314,17 +314,17 @@ export class Renderer {
         ctx.rotate(Math.atan2(primary.y - p.y, primary.x - p.x));
         const shrink = 1 - eaten * 0.85;
         ctx.scale((1 + eaten * 1.8) * shrink, (1 - eaten * 0.6) * shrink);
-        ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+        sprite.draw(ctx, 0, 0, ps, this.time);
         ctx.restore();
       } else if (isTurned()) {
         // The light stays where it was painted: upright on the screen.
         ctx.save();
         ctx.translate(p.x, p.y);
         uprightFrame(ctx);
-        ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
+        sprite.draw(ctx, 0, 0, ps, this.time);
         ctx.restore();
       } else {
-        ctx.drawImage(sprite, p.x - size / 2, p.y - size / 2, size, size);
+        sprite.draw(ctx, p.x, p.y, ps, this.time);
       }
     }
     ctx.globalAlpha = 1;
@@ -1013,27 +1013,31 @@ export class Renderer {
       const hideHeading = planning && !aimShown;
       const heading = hideHeading ? (Math.atan2(ship.y - scene.world.height / 2, scene.world.width / 2 - ship.x) * 180) / Math.PI : player.angle;
       ctx.rotate((-heading * Math.PI) / 180);
-      if (current && aimShown) {
-        const flicker = 0.6 + 0.4 * Math.sin(this.time * 31) * Math.sin(this.time * 17);
-        ctx.fillStyle = rgba(COLORS.sodium, 0.55 * flicker);
+      if (isRefined()) {
+        drawRefinedShip(ctx, color, this.time, current && aimShown ? 1 : 0, i * 1.7);
+      } else {
+        if (current && aimShown) {
+          const flicker = 0.6 + 0.4 * Math.sin(this.time * 31) * Math.sin(this.time * 17);
+          ctx.fillStyle = rgba(COLORS.sodium, 0.55 * flicker);
+          ctx.beginPath();
+          ctx.moveTo(-10, -2.5);
+          ctx.lineTo(-16 - 4 * flicker, 0);
+          ctx.lineTo(-10, 2.5);
+          ctx.fill();
+        }
         ctx.beginPath();
-        ctx.moveTo(-10, -2.5);
-        ctx.lineTo(-16 - 4 * flicker, 0);
-        ctx.lineTo(-10, 2.5);
+        SHIP_HULL.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = COLORS.plate;
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.fillStyle = COLORS.plate;
+        ctx.beginPath();
+        ctx.ellipse(4, 0, 3.2, 1.8, 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.beginPath();
-      SHIP_HULL.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      ctx.closePath();
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.strokeStyle = COLORS.plate;
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-      ctx.fillStyle = COLORS.plate;
-      ctx.beginPath();
-      ctx.ellipse(4, 0, 3.2, 1.8, 0, 0, Math.PI * 2);
-      ctx.fill();
       ctx.restore();
     });
   }

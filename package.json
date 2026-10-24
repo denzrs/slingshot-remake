@@ -9,6 +9,7 @@
     "pretest": "cargo build --locked --manifest-path server/Cargo.toml",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "shot": "tsx scripts/shot.ts",
     "dev:server": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml",
     "dev:server:stats": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml -- --stats",
     "build:server": "cargo build --locked --release --manifest-path server/Cargo.toml",

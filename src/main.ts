@@ -22,6 +22,7 @@ import { inNebula } from './physics';
 import { POWER_UP } from './powerups';
 import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './i18n';
+import { setLook } from './render/look';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './scoring';
@@ -29,11 +30,13 @@ import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './s
 import { dailyResultScreen } from './ui/daily';
 import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/chat';
+import { markNewsSeen, isReturningPlayer, MAX_SHOWN, newsForThisPlayer } from './news/news';
+import { NEWS } from './news/items';
 import { Menu } from './ui/menu';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
 import { TouchControls } from './ui/touch-controls';
 import { TouchStick } from './ui/touch-stick';
-import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, type App } from './ui/screens';
+import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, whatsNewScreen, type App } from './ui/screens';
 import { statsAvailable, statsScreen } from './ui/stats';
 import { reportLocalGame, trackLocalGame } from './localStats';
 import { netMatch } from './netMatch';
@@ -49,7 +52,10 @@ const standsBadge = document.querySelector<HTMLElement>('#stands-badge')!;
 const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 
+/** Asked before anything is saved: a browser without saved settings is a first visit, with nothing new to tell. */
+const returningPlayer = isReturningPlayer();
 const settings = loadSettings();
+setLook(settings.look);
 setLang(settings.language);
 applyStaticTexts();
 const sound = new Sound();
@@ -342,6 +348,7 @@ const app: App = {
     sound.enabled = settings.sound;
     effects.particles = settings.particles;
     effects.debrisLevel = settings.debris;
+    setLook(settings.look);
     attract.applySettings(settings);
     if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {
@@ -890,6 +897,19 @@ if (import.meta.env.DEV || import.meta.env.VITE_BENCH) {
   Object.assign(window, { slingshot: { app, attract, settings, get match() { return match; } } });
 }
 
+/**
+ * The What's New dialog opens over the title screen once for every update.
+ * `?news` shows the newest items again, to try a new one out; `?news=off` keeps it away (for screenshots).
+ */
+function announceNews(): void {
+  const ask = new URLSearchParams(location.search).get('news');
+  if (ask === 'off') return;
+  const items = ask !== null ? NEWS.slice(0, MAX_SHOWN) : newsForThisPlayer(returningPlayer);
+  if (!items.length) return;
+  markNewsSeen();
+  menu.push(() => whatsNewScreen(app, items));
+}
+
 async function boot(): Promise<void> {
   // Canvas text needs the web fonts loaded before the first draw.
   const fonts = [`800 32px ${FONTS.display}`, `400 16px ${FONTS.body}`, `700 16px ${FONTS.body}`, `400 16px ${FONTS.mono}`, `700 16px ${FONTS.mono}`];
@@ -898,6 +918,7 @@ async function boot(): Promise<void> {
   if (readInvite(location.search, location.hash)) app.openLobby();
   else {
     app.toTitle();
+    announceNews();
     // The statistics page has no menu entry: it is at /stats.
     if (statsAvailable() && /\/stats\/?$/.test(location.pathname)) menu.push(() => statsScreen(app));
   }

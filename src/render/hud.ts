@@ -31,6 +31,8 @@ export class Hud {
   private time = 0;
   private k = 1;
   private field: Box = { x: 0, y: 0, w: 0, h: 0 };
+  /** The whole canvas, for what takes over the screen and not just the field. */
+  private screen = { w: 0, h: 0 };
   private readonly oracle = new OracleHud();
 
   private shipPos: (i: number) => { x: number; y: number } = () => ({ x: 0, y: 0 });
@@ -47,6 +49,7 @@ export class Hud {
     this.shipPos = shipPos;
     // On a phone the field is small, but its labels must stay readable: they get a higher floor.
     this.k = Math.min(1.2, Math.max(opts.touch ? 0.95 : 0.72, view.scale));
+    this.screen = { w: view.cssWidth, h: view.cssHeight };
     this.field = view.stage ?? { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
 
     const focus = match.focus;
@@ -205,14 +208,7 @@ export class Hud {
     const stopAt = (i: number) => landed - 0.25 * (rows - 1 - i);
 
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = rgba(COLORS.plate, 0.55);
-    ctx.fillRect(field.x, field.y, field.w, field.h);
-    ctx.fillStyle = rgba(COLORS.plate, 0.92);
-    ctx.fillRect(field.x, top, field.w, h);
-    const edge = round.finale ? COLORS.danger : COLORS.sodium;
-    ctx.fillStyle = rgba(edge, 0.85);
-    ctx.fillRect(field.x, top, field.w, 1);
-    ctx.fillRect(field.x, top + h - 1, field.w, 1);
+    this.takeOver(top, h, round.finale ? COLORS.danger : COLORS.sodium, 0.62, 0.92);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -670,6 +666,30 @@ export class Hud {
   }
 
   /**
+   * What takes the screen over for a moment: the whole canvas dims (`dim`), HUD and field alike, and a band runs
+   * edge to edge at `top`, `h` tall, with a lit line at each edge in `edge` and a soft glow spilling out of it.
+   * Draw it with the global alpha of the moment's fade.
+   */
+  private takeOver(top: number, h: number, edge: string, dim: number, band: number): void {
+    const { ctx, screen } = this;
+    ctx.fillStyle = rgba(COLORS.plate, dim);
+    ctx.fillRect(0, 0, screen.w, screen.h);
+    ctx.fillStyle = rgba(COLORS.plate, band);
+    ctx.fillRect(0, top, screen.w, h);
+    for (const y of [top, top + h]) {
+      const glow = ctx.createLinearGradient(0, y - 14, 0, y + 14);
+      glow.addColorStop(0, rgba(edge, 0));
+      glow.addColorStop(0.5, rgba(edge, 0.22));
+      glow.addColorStop(1, rgba(edge, 0));
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, y - 14, screen.w, 28);
+    }
+    ctx.fillStyle = rgba(edge, 0.85);
+    ctx.fillRect(0, top, screen.w, 1);
+    ctx.fillRect(0, top + h - 1, screen.w, 1);
+  }
+
+  /**
    * Sets the display font at `size` with `spacing` between the letters — smaller, with the spacing, when `text`
    * would be wider than `maxWidth`: a narrow screen must not cut a headline off.
    */
@@ -697,11 +717,7 @@ export class Hud {
     const h = 150 * k;
 
     ctx.globalAlpha = fade;
-    ctx.fillStyle = rgba(COLORS.plate, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, h);
-    ctx.fillStyle = rgba(color, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, 1);
-    ctx.fillRect(field.x, cy + h / 2 - 1, field.w, 1);
+    this.takeOver(cy - h / 2, h, color, 0.45, 0.85);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
@@ -832,11 +848,7 @@ export class Hud {
     const h = 150 * k;
 
     ctx.globalAlpha = fade;
-    ctx.fillStyle = rgba(COLORS.plate, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, h);
-    ctx.fillStyle = rgba(color, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, 1);
-    ctx.fillRect(field.x, cy + h / 2 - 1, field.w, 1);
+    this.takeOver(cy - h / 2, h, color, 0.45, 0.85);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';

@@ -214,7 +214,7 @@ function rulesForm(mode: NetworkGameMode, source: RuleSource, app: App, readonly
 export type LobbyEntry = 'rooms' | 'create' | 'code';
 type View = LobbyEntry;
 /** The games a host picks between in the room, in the order of the pager. */
-const PICKER_MODES: readonly NetworkGameMode[] = ['classic', 'solar', 'horizon'];
+const PICKER_MODES: readonly NetworkGameMode[] = ['classic', 'horizon', 'solar'];
 type OnlineSectionDirection = 'next' | 'previous';
 // Keep the focused section at the anchor and preview the next two, wrapping back to the start.
 const ONLINE_SECTIONS: readonly LobbyEntry[] = ['rooms', 'create', 'code'];
