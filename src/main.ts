@@ -781,7 +781,14 @@ function announceOracle(m: Match): void {
 }
 
 let last = performance.now();
+/** The attract match behind the menu runs at 30 fps: nobody plays it, and every frame repaints the whole canvas. */
+const ATTRACT_FRAME_MS = 1000 / 30;
 function frame(now: number): void {
+  // A few ms of slack, so a 60 Hz display draws every second frame rather than every third.
+  if (screen !== 'play' && now - last < ATTRACT_FRAME_MS - 4) {
+    requestAnimationFrame(frame);
+    return;
+  }
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const m = active();
