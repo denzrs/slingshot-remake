@@ -18,7 +18,7 @@ import type { OracleTap } from './render/oracle';
 import { readInvite } from './invite';
 import { MultiplayerSession } from './multiplayer';
 import type { ClientInput } from './net';
-import { inNebula } from './physics';
+import { inPowerUpNebula } from './physics';
 import { POWER_UP } from './powerups';
 import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './i18n';
@@ -850,7 +850,7 @@ function frame(now: number): void {
     if (m.world.nebulae.length) {
       for (const vs of m.scene().volley?.shots ?? []) {
         const s = vs.shot;
-        if (!s.end && s.inField && inNebula(m.world.nebulae, s.x, s.y)) effects.nebulaDrag(s.x, s.y, s.vx, s.vy, dt, POWER_UP_COLORS.nebula);
+        if (!s.end && s.inField && inPowerUpNebula(m.world.nebulae, s.x, s.y)) effects.nebulaDrag(s.x, s.y, s.vx, s.vy, dt, POWER_UP_COLORS.nebula);
       }
     }
   }

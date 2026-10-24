@@ -2,7 +2,7 @@ import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, SOLAR, WORMHOLE } 
 import type { Match, Scene, Trail } from '../game';
 import { t, type Key } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
-import { aimDirection, inNebula, isWormholeJump, nextWormholeId, type Wormhole, type World } from '../physics';
+import { aimDirection, inPowerUpNebula, isWormholeJump, nextWormholeId, stormCloudAt, type Wormhole, type World } from '../physics';
 import { POWER_UP, PREVIEW_POINTS } from '../powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
@@ -20,7 +20,7 @@ import type { PlanetSprite } from './planet-common';
 import { renderPlanet } from './planets';
 import { drawRefinedShip, SHIP_HULL } from './ship';
 import { drawNebula } from './nebula';
-import { drawStormBurst, drawStormCloud, stormFlare } from './storm';
+import { drawStormBurst, drawStormCloud, drawStormSparks, stormFlare } from './storm';
 import { drawPortal, drawWormhole } from './wormhole';
 import { defensePlanet, defenseView, drawDefense, drawInterception } from './defense';
 import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
@@ -450,7 +450,7 @@ export class Renderer {
           ctx.restore();
         }
         // A shot in a nebula pushes against the gas: a ring spreads from it (the wisps it sheds are the Effects').
-        if (!vs.plasma && inNebula(match.world.nebulae, shot.x, shot.y)) {
+        if (!vs.plasma && inPowerUpNebula(match.world.nebulae, shot.x, shot.y)) {
           ctx.save();
           ctx.strokeStyle = POWER_UP_COLORS.nebula;
           const ripple = (this.time * 1.6) % 1;
@@ -467,6 +467,8 @@ export class Renderer {
         glow.addColorStop(1, rgba(color, 0));
         ctx.fillStyle = glow;
         ctx.fillRect(shot.x - 9, shot.y - 9, 18, 18);
+        const storm = !vs.plasma ? stormCloudAt(match.world.nebulae, shot.x, shot.y) : undefined;
+        if (storm) drawStormSparks(ctx, shot.x, shot.y, this.time, storm.seed);
         // A plasma shot is a pulsing cyan blob: a wide soft halo, a wobbling body and a bright core.
         if (vs.plasma) {
           ctx.save();

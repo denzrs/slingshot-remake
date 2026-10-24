@@ -134,38 +134,126 @@ body {
   color: var(--bone-dim);
 }
 
-/* A finding from the statistics: two lines are kept free (even while empty) so the menu does not jump as facts arrive or change. */
-.fact {
-  min-height: 2.8em;
-  max-width: 44ch;
-  margin: -12px 0 22px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--bone);
-  opacity: 0;
-  transition: opacity 900ms ease;
+/* A quiet news band lets the game stats pass by without competing with the menu itself. */
+.stats-ticker {
+  position: relative;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  min-height: 50px;
+  overflow: hidden;
+  border-block: 1px solid rgb(91 125 179 / 0.24);
+  background: linear-gradient(90deg, rgb(8 20 38 / 0.72), rgb(17 34 57 / 0.3) 72%, rgb(8 20 38 / 0.5));
 }
 
-.fact__n {
+.stats-ticker[hidden] {
+  display: none;
+}
+
+.stats-ticker::before {
+  position: absolute;
+  inset: 9px auto 9px 0;
+  width: 2px;
+  background: var(--launch-accent, #ffad65);
+  content: '';
+}
+
+.stats-ticker__label {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 0 14px 0 16px;
+  border-right: 1px solid rgb(91 125 179 / 0.28);
+  color: var(--launch-accent, #ffad65);
+  font: 700 9px/1.4 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.stats-ticker__viewport {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  align-items: center;
+}
+
+.stats-ticker__loading {
+  color: var(--bone-dim);
+  font: 400 11px/1.5 var(--font-mono);
+  white-space: nowrap;
+}
+
+.stats-ticker__track {
+  display: flex;
+  width: max-content;
+  animation: stats-ticker-scroll var(--stats-ticker-duration, 90s) linear infinite;
+  will-change: transform;
+}
+
+.stats-ticker__group {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  width: max-content;
+  padding-right: 42px;
+}
+
+.stats-ticker__fact {
+  flex: 0 0 auto;
+  padding-inline: 20px;
+  color: var(--bone-dim);
+  font: 400 11px/1.5 var(--font-mono);
+  white-space: nowrap;
+}
+
+.stats-ticker__number {
   color: var(--p1);
   font-weight: 700;
 }
 
-.fact.is-in {
-  opacity: 0.9;
+.stats-ticker__divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 18px;
+  background: rgb(111 227 200 / 0.46);
+  transform: skew(-18deg);
 }
 
-.panel--lobby > .fact {
-  min-height: 0;
-  max-width: none;
-  margin: -6px 0 12px;
+.stats-ticker__a11y {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.stats-ticker:hover .stats-ticker__track,
+.stats-ticker:focus-within .stats-ticker__track {
+  animation-play-state: paused;
+}
+
+@keyframes stats-ticker-scroll {
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+@media (max-width: 520px) {
+  .stats-ticker { min-height: 46px; gap: 10px; }
+  .stats-ticker__label { padding-inline: 12px 10px; font-size: 8px; letter-spacing: 0.06em; }
+  .stats-ticker__fact { padding-inline: 14px; font-size: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fact {
-    transition: none;
-  }
+  .stats-ticker__track { animation: none; will-change: auto; }
+  .stats-ticker__group:nth-child(2) { display: none; }
+  .stats-ticker__viewport { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
 }
 
 .keys {
@@ -2324,6 +2412,46 @@ kbd {
   min-width: 5.5em;
   text-align: right;
   font: 700 14px/1 var(--font-mono);
+}
+
+.match-highlight__trail {
+  grid-column: 1 / -1;
+  display: block;
+  width: 100%;
+  height: 40px;
+  margin-top: -3px;
+  overflow: visible;
+  opacity: 0.88;
+}
+
+.match-highlight__path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: highlight-trace 1.1s ease-out forwards;
+}
+
+.match-highlight__start {
+  fill: var(--bone-dim);
+}
+
+.match-highlight__end {
+  stroke: var(--plate);
+  stroke-width: 1.5;
+}
+
+@keyframes highlight-trace {
+  to { stroke-dashoffset: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .match-highlight__path {
+    stroke-dashoffset: 0;
+    animation: none;
+  }
 }
 
 /* ——— Daily challenge ——— */

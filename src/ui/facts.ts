@@ -1,19 +1,16 @@
 import type { StatsFact } from '../net';
 import { StatsBoard } from '../statsBoard';
 import { factLines, type FactPart } from '../statsFacts';
+import { t } from '../i18n';
 import { h } from './dom';
 import { leaderboardAvailable } from './leaderboard';
 
-/** How long a fact stays, its fades included. */
-export const FACT_MS = 10_000;
-/** How long a fade takes: out at the end of a fact's time, in at the start of the next. */
-export const FADE_MS = 900;
 /** How long the numbers fetched are kept before a menu asks again. */
 const KEEP_MS = 10 * 60_000;
 /** Where they are kept across page loads, so a reload does not go to the relay again. */
 const STORE_KEY = 'slingshot.facts';
-/** How long a line waits to be put on the page before it gives up (screens are built a moment before they are shown). */
-const MOUNT_TRIES = 20;
+/** A short selection keeps one trip across the banner readable. */
+const TICKER_FACTS = 10;
 
 let kept: { at: number; facts: StatsFact[] } | null = recall();
 let loading: Promise<StatsFact[]> | null = null;
@@ -35,7 +32,7 @@ function remember(): void {
   }
 }
 
-/** The findings of the relay; none when it cannot be reached or keeps no statistics. Shared by menus that open one after the other. */
+/** The findings of the relay, shared by menus that open one after the other. */
 async function load(board: StatsBoard): Promise<StatsFact[]> {
   if (kept && Date.now() - kept.at < KEEP_MS) return kept.facts;
   loading ??= board
@@ -48,31 +45,48 @@ async function load(board: StatsBoard): Promise<StatsFact[]> {
   return facts;
 }
 
-/**
- * A line of findings from the statistics for a menu. It stays empty while the numbers are on their way and when there are none; then
- * each fact fades in, is read for `FACT_MS` and fades out as the next one fades in. It stops by itself once its screen is gone.
- */
-export function factTicker(board = new StatsBoard()): HTMLElement {
-  const line = h('p.fact', { 'aria-hidden': 'true' });
-  // No relay, no facts: the line takes no room. With one, its room is kept from the start so the menu does not jump later.
-  if (!leaderboardAvailable()) {
-    line.hidden = true;
-    return line;
-  }
-  let seen = false;
-  let tries = 0;
-  const show = (lines: FactPart[][], next: number): void => {
-    if (line.isConnected) seen = true;
-    else if (seen || ++tries > MOUNT_TRIES) return;
-    else return void setTimeout(() => show(lines, next), 100);
-    line.replaceChildren(...lines[next % lines.length].map((part) => (part.number ? h('span.fact__n', null, part.text) : part.text)));
-    line.classList.add('is-in');
-    setTimeout(() => line.classList.remove('is-in'), FACT_MS - FADE_MS);
-    setTimeout(() => show(lines, next + 1), FACT_MS);
-  };
-  void load(board).then((facts) => {
-    const lines = factLines(facts);
-    if (lines.length) show(lines, 0);
+function factGroup(lines: FactPart[][]): HTMLElement {
+  const group = h('span.stats-ticker__group', null);
+  lines.forEach((parts, index) => {
+    group.append(
+      h('span.stats-ticker__fact', null, ...parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text))),
+    );
+    if (index < lines.length - 1) group.append(h('span.stats-ticker__divider', { 'aria-hidden': 'true' }));
   });
-  return line;
+  return group;
+}
+
+/** A continuous, readable news band of relay statistics for a menu header. */
+export function factTicker(enabled = true, board = new StatsBoard()): HTMLElement {
+  const ticker = h('div.stats-ticker', { role: 'region', 'aria-label': t('stats.ticker.label'), 'aria-busy': 'true' });
+  const label = h('span.stats-ticker__label', { 'aria-hidden': 'true' }, t('stats.ticker.label'));
+  const viewport = h('span.stats-ticker__viewport', null, h('span.stats-ticker__loading', null, t('stats.loading')));
+  const accessibleFacts = h('span.stats-ticker__a11y', null);
+  ticker.append(label, viewport, accessibleFacts);
+
+  if (!enabled || !leaderboardAvailable()) {
+    ticker.hidden = true;
+    ticker.removeAttribute('aria-busy');
+    return ticker;
+  }
+
+  void load(board).then((facts) => {
+    const lines = factLines(facts).slice(0, TICKER_FACTS);
+    if (!lines.length) {
+      ticker.hidden = true;
+      ticker.removeAttribute('aria-busy');
+      return;
+    }
+
+    const summary = lines.map((parts) => parts.map((part) => part.text).join('')).join(' ');
+    const group = factGroup(lines);
+    const track = h('span.stats-ticker__track', { 'aria-hidden': 'true' }, group, group.cloneNode(true));
+    const characterCount = lines.reduce((total, parts) => total + parts.reduce((length, part) => length + part.text.length, 0), 0);
+    const duration = Math.round(Math.max(48, Math.min(120, characterCount * 0.16)));
+    track.style.setProperty('--stats-ticker-duration', `${duration}s`);
+    viewport.replaceChildren(track);
+    accessibleFacts.textContent = summary;
+    ticker.removeAttribute('aria-busy');
+  });
+  return ticker;
 }

@@ -24,6 +24,7 @@ use crate::admission::{Who, CEILING};
 use crate::pseudonym::Identities;
 use crate::report::{LocalGame, RoundReport, ShotRound, TurnReport, RECORD_KEYS};
 
+mod demo;
 mod facts;
 pub use facts::Fact;
 

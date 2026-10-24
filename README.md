@@ -32,6 +32,8 @@ Hosting, TLS, the relay's environment variables and how online play works are co
 
 ## Development
 
+To inspect the statistics UI with sample history, start `npm run dev:server:stats-demo` in one terminal and run `VITE_MULTIPLAYER_SERVER=ws://localhost:8080 npm run dev` in another. Open `http://localhost:5173/stats`. The demo flag implies `--stats`, writes only to `slingshot-stats-demo.db` (override with `STATS_DEMO_DATABASE`), and refreshes its synthetic statistics on each start; it ignores `DATABASE` and `LEADERBOARD_DB` so normal relay data stays untouched.
+
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Dev server at http://localhost:5173 |
@@ -40,6 +42,7 @@ Hosting, TLS, the relay's environment variables and how online play works are co
 | `npm run shot -- --out <file>` | Screenshot of the running game for a What's New picture (see [AGENTS.md](AGENTS.md)) |
 | `npm test` | Run all tests |
 | `npm run dev:server` | Rust multiplayer relay (port `8080`, override with `PORT`) |
+| `npm run dev:server:stats-demo` | Relay with a separate, refreshed demo database for the Stats page |
 | `npm run build:server` | Build the Rust relay in release mode |
 | `npm run bench:relay -- ws://localhost:8080` | Measure Rust relay latency, fan-out, real 30 Hz snapshots and synthetic large payloads |
 

@@ -12,6 +12,7 @@
     "shot": "tsx scripts/shot.ts",
     "dev:server": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml",
     "dev:server:stats": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml -- --stats",
+    "dev:server:stats-demo": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml -- --stats-demo",
     "build:server": "cargo build --locked --release --manifest-path server/Cargo.toml",
     "bench:relay": "tsx benchmarks/relay-perf.ts",
     "bench:powerups": "tsx benchmarks/powerups.ts",

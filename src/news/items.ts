@@ -1,4 +1,5 @@
 import refinedLook from './images/refined-look.webp';
+import solarSystem from './images/v2-solar-system.webp';
 import type { NewsItem } from './types';
 
 /**
@@ -6,6 +7,33 @@ import type { NewsItem } from './types';
  * every player who has not seen it gets the dialog once, at their next visit. How to write one: AGENTS.md.
  */
 export const NEWS: readonly NewsItem[] = [
+  {
+    id: 'stats-news-ticker',
+    date: '2026-10-24',
+    title: { de: 'Zahlen im Vorbeiflug', en: 'Stats on the fly' },
+    text: {
+      de: 'Kleine Fundstücke aus den Spielstatistiken rauschen jetzt als Laufband durchs Titelmenü und die Online-Lobby. Wenn du lieber Ruhe hast, schalte es unter Einstellungen → Darstellung aus.',
+      en: 'Small discoveries from the game stats now stream through the title screen and online lobby. Turn the ticker off under Settings → Display if you would rather have a quieter menu.',
+    },
+    where: { de: 'Titelmenü · Online spielen · Einstellungen → Darstellung → Statistik-Laufband', en: 'Title screen · Play online · Settings → Display → Stats ticker' },
+  },
+  {
+    id: 'solar-system-v2',
+    date: '2026-10-24',
+    title: { de: 'Sonnensystem in v2', en: 'Solar System in v2' },
+    text: {
+      de: 'Planeten und Schiffe kreisen um die Sonne, während sich das ganze Spielfeld im Lauf der Partie weiterdreht. Sonnenstürme verpassen Schüssen einen elektrischen Ruck; im Spielbericht erscheinen deine stärksten Flugbahnen als animierte Highlights.',
+      en: 'Planets and ships orbit the sun as the whole field turns during play. Solar storms give shots an electric kick, and your standout paths appear as animated highlights in the match report.',
+    },
+    where: { de: 'Sonnensystem', en: 'Solar System' },
+    image: {
+      src: solarSystem,
+      alt: {
+        de: 'Partie im Sonnensystem mit Sonne, Planeten und umlaufenden Bahnen',
+        en: 'A Solar System match with the sun, planets and their orbits',
+      },
+    },
+  },
   {
     id: 'refined-look',
     date: '2026-10-24',

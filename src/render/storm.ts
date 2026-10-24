@@ -133,6 +133,39 @@ export function drawStormBurst(ctx: CanvasRenderingContext2D, sun: { x: number; 
   ctx.restore();
 }
 
+/** A couple of electric arcs jump around a shot while it is inside the sun's storm. */
+export function drawStormSparks(ctx: CanvasRenderingContext2D, x: number, y: number, time: number, seed: number): void {
+  const beat = Math.floor(time * 24);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let arc = 0; arc < 2; arc++) {
+    const phase = beat * 7 + arc * 19;
+    const angle = slot(seed, phase) * Math.PI * 2;
+    const length = 6 + slot(seed, phase + 1) * 6;
+    const points: [number, number][] = [];
+    for (let i = 0; i <= 4; i++) {
+      const along = 2 + (length * i) / 4;
+      const across = i === 0 || i === 4 ? 0 : (slot(seed, phase + i * 3) - 0.5) * 5;
+      points.push([
+        Math.cos(angle) * along - Math.sin(angle) * across,
+        Math.sin(angle) * along + Math.cos(angle) * across,
+      ]);
+    }
+    ctx.beginPath();
+    points.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+    ctx.strokeStyle = rgba('#78dfff', 0.4);
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.strokeStyle = rgba('#e7fbff', 0.95);
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /**
  * One cloud of the sun's storm. It is flung out of the sun trailing fire, swelling
  * past its size and settling; after that it lies in place, a nebula's haze of plasma lit from inside, with a

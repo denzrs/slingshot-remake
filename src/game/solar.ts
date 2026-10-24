@@ -51,7 +51,8 @@ export class SolarMatch extends ClassicMatch {
 
   /**
    * The sun bursts: a few clouds of plasma land round it, away from each other. They stay a few passes (or until the
-   * round ends), and slow and bend a shot like a nebula. No shot flies while the system turns, so the clouds are in place before anybody aims.
+   * round ends), and scramble each shot with a brief electric kick as it enters. No shot flies while the system turns,
+   * so the clouds are in place before anybody aims.
    */
   private erupt(): void {
     const world = this.world;

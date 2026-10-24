@@ -2,6 +2,7 @@ import { getLang, t } from '../i18n';
 import type { NewsItem, NewsTarget } from '../news/types';
 import { h, type MenuItem, type Screen } from './menu';
 import { menuPage } from './menu-page';
+import { modeArt } from './mode-icons';
 import type { App } from './screens';
 import './whats-new.css';
 
@@ -10,7 +11,9 @@ const dateFormat = (date: string): string => new Date(`${date}T12:00:00`).toLoca
 function card(item: NewsItem): HTMLElement {
   const lang = getLang();
   return h('article.news__item', null,
-    ...(item.image ? [h('img.news__image', { src: item.image.src, alt: item.image.alt[lang], width: '1280', height: '720', loading: 'lazy' })] : []),
+    item.image
+      ? h('img.news__image', { src: item.image.src, alt: item.image.alt[lang], width: '1280', height: '720', loading: 'lazy' })
+      : h('div.news__art', { role: 'img', 'aria-label': t('news.artAlt') }, modeArt('news')),
     h('div.news__text', null,
       h('p.news__date', null, dateFormat(item.date)),
       h('h3.news__title', null, item.title[lang]),

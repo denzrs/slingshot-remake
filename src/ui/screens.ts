@@ -390,7 +390,7 @@ export function titleScreen(app: App): Screen {
       h('div.launcher', null,
         h('header.launcher__head', null,
           h('h1.wordmark', { id: 'wordmark' }, 'Slingshot'),
-          factTicker(),
+          factTicker(app.settings.statsTicker),
         ),
         h('div.launcher__body', null,
           h('nav.launcher__nav.items', { 'data-section': 'navigation', 'aria-label': t('title.menuLabel') }),
@@ -416,7 +416,7 @@ export function titleScreen(app: App): Screen {
       modeCard('horizon'),
       modeCard('solar'),
       { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.daily'), hint: dailyMenuHint(app.today()), icon: () => modeArt('daily'), run: () => app.menu.push(() => dailyScreen(app)) },
-      { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
+      { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') },
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.code'), hint: t('flow.codeHint'), icon: () => modeArt('code'), run: () => app.openLobby('code') },
       { ...languageItem(app), section: 'language' },
@@ -880,6 +880,7 @@ function settingsScreen(app: App): Screen {
         },
       }, 'display'),
       inCategory(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'display'),
+      inCategory(settingToggle(app, t('settings.statsTicker'), 'statsTicker'), 'display'),
       // Only a touch screen has the stick.
       ...(matchMedia('(pointer: coarse)').matches
         ? [
@@ -1218,7 +1219,9 @@ export function gameOverScreen(app: App, match: Match): Screen {
         const who = awardWho(match, award);
         const name = h('span.highlights__who', null, who.name);
         name.style.color = who.color;
-        return h('li', null, h('span.highlights__label', null, awardLabel(award.kind)), name, h('span.highlights__value', null, awardValue(award)));
+        const row = h('li.match-highlight', null, h('span.highlights__label', null, awardLabel(award.kind)), name, h('span.highlights__value', null, awardValue(award)));
+        if (award.trail && award.trail.length >= 4) row.append(matchShotTrail(award.trail, who.color, `${awardLabel(award.kind)} · ${who.name}`));
+        return row;
       });
       if (highlights.length) lists.push(h('p.ranking-label', null, t('scorecard.match')), h('ul.highlights', null, ...highlights));
       // The stands play the same game: whoever read the rounds best.
@@ -1265,6 +1268,59 @@ export function gameOverScreen(app: App, match: Match): Screen {
     focus: 1,
     onEscape: () => (match.replaying ? app.leaveReplay() : app.online ? app.toLobby() : app.toTitle()),
   };
+}
+
+/** The match record's saved path, drawn across as a small, replay-like trajectory highlight. */
+function matchShotTrail(points: number[], color: string, label: string): SVGSVGElement {
+  const size = 240;
+  const height = 52;
+  const pad = 9;
+  const xs = points.filter((_, i) => i % 2 === 0);
+  const ys = points.filter((_, i) => i % 2 === 1);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const spanX = Math.max(1, maxX - minX);
+  const spanY = Math.max(1, maxY - minY);
+  const point = (i: number): [number, number] => [
+    pad + ((points[i] - minX) / spanX) * (size - pad * 2),
+    height - pad - ((points[i + 1] - minY) / spanY) * (height - pad * 2),
+  ];
+  const pathData = Array.from({ length: points.length / 2 }, (_, i) => {
+    const [x, y] = point(i * 2);
+    return `${i ? 'L' : 'M'}${x},${y}`;
+  }).join(' ');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'match-highlight__trail');
+  svg.setAttribute('viewBox', `0 0 ${size} ${height}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', label);
+  const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+  title.textContent = label;
+  svg.append(title);
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('class', 'match-highlight__path');
+  path.setAttribute('d', pathData);
+  path.setAttribute('pathLength', '1');
+  path.setAttribute('stroke', color);
+  svg.append(path);
+  const [startX, startY] = point(0);
+  const start = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  start.setAttribute('class', 'match-highlight__start');
+  start.setAttribute('cx', String(startX));
+  start.setAttribute('cy', String(startY));
+  start.setAttribute('r', '2');
+  svg.append(start);
+  const [endX, endY] = point(points.length - 2);
+  const end = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  end.setAttribute('class', 'match-highlight__end');
+  end.setAttribute('cx', String(endX));
+  end.setAttribute('cy', String(endY));
+  end.setAttribute('r', '3');
+  end.setAttribute('fill', color);
+  svg.append(end);
+  return svg;
 }
 
 /** One line per round of a Mayhem match: its twists, and whoever scored most in it. */

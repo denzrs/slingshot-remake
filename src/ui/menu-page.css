@@ -529,6 +529,7 @@
 /* Online flows: keep the action visible and the account details quiet. */
 .menu-page--lobby.menu-page--online-carousel-active .menu-page__head > .eyebrow { margin-bottom: 8px; }
 .menu-page--lobby .menu-page__intro { max-width: 54ch; margin-top: 14px; line-height: 1.6; }
+.menu-page--lobby .menu-page__head > .stats-ticker { margin-top: 18px; }
 .menu-page--lobby .online-section-header { min-width: 0; }
 .menu-page--lobby.menu-page--online-carousel-active .online-view-title {
   position: absolute;

@@ -1038,14 +1038,14 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
 
   const lobbyEl = h('div.lobby', null, bar, connectSlot, roomsView, openForms, roomView, status);
   const root = menuPage({
-    title: t(({ rooms: 'flow.find', create: 'flow.create', code: 'flow.code' } as const)[view]), eyebrow: t('launcher.online'), intro: t(({ rooms: 'flow.findHint', create: 'flow.createIntro', code: 'flow.codeIntro' } as const)[view]), className: 'menu-page--lobby menu-page--mode-enter-next',
+    title: t(({ rooms: 'flow.find', create: 'flow.create', code: 'flow.code' } as const)[view]), eyebrow: t('launcher.online'), className: 'menu-page--lobby menu-page--mode-enter-next',
     headerTitle: onlineHeader,
-    body: [factTicker(), lobbyEl], footer: footerActions, keys: t('flow.tabKeys'),
+    headerAside: factTicker(app.settings.statsTicker),
+    body: [lobbyEl], footer: footerActions, keys: t('flow.tabKeys'),
   });
   const page = root.querySelector<HTMLElement>('.menu-page')!;
   const eyebrow = root.querySelector<HTMLElement>('.menu-page__head .eyebrow')!;
   const heading = onlineHeading;
-  const introduction = root.querySelector<HTMLElement>('.menu-page__intro')!;
   let pendingContentDirection: OnlineSectionDirection | null = null;
   let enterTimer: ReturnType<typeof setTimeout> | undefined;
   /** The host of a waiting room picks the game in the pager, where everybody else has the online pages. */
@@ -1130,8 +1130,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     heading.textContent = room && !hostPicking() ? modeName(room.gameMode, room.rules.mayhem > 0) : title;
     root.setAttribute('aria-label', title);
     eyebrow.textContent = room ? `${t('launcher.online')} · ${t('multiplayer.roomNumber', { n: room.number })} · ${room.name}` : t('launcher.online');
-    introduction.hidden = !!room;
-    introduction.textContent = room ? t(hostPicking() ? 'flow.roomHostIntro' : 'shell.roomIntro') : t(({ rooms: 'flow.findHint', create: 'flow.createIntro', code: 'flow.codeIntro' } as const)[view]);
     page.classList.toggle('menu-page--room', !!room);
     profileLabel.textContent = playerName.value.trim() || t('multiplayer.name');
     profileAvatar.replaceChildren(avatarSvg(prefs.avatar));

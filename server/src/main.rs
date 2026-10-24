@@ -105,12 +105,34 @@ async fn main() {
         }
     };
 
+    // --stats-demo gets its own database by default so synthetic rows can never land in the real
+    // leaderboard or match statistics. STATS_DEMO_DATABASE is the only override for that mode.
+    let stats_demo = std::env::args().any(|arg| arg == "--stats-demo");
     // DATABASE: the relay's one data file, for the daily-challenge board and the match statistics
     // alike (LEADERBOARD_DB, its name from when it held only the board, still works). It sits beside
     // the binary and the environment file, which a deploy never replaces — only the binary is flipped.
-    let db_path = std::env::var("DATABASE")
-        .or_else(|_| std::env::var("LEADERBOARD_DB"))
-        .unwrap_or_else(|_| "slingshot.db".to_string());
+    let db_path = if stats_demo {
+        let demo_path = std::env::var("STATS_DEMO_DATABASE")
+            .unwrap_or_else(|_| "slingshot-stats-demo.db".to_string());
+        let normal_paths = [
+            std::env::var("DATABASE").ok(),
+            std::env::var("LEADERBOARD_DB").ok(),
+            Some("slingshot.db".to_string()),
+        ];
+        if normal_paths
+            .into_iter()
+            .flatten()
+            .any(|normal_path| same_database_path(&demo_path, &normal_path))
+        {
+            error!(%demo_path, "STATS_DEMO_DATABASE must not point at the normal relay database");
+            std::process::exit(1);
+        }
+        demo_path
+    } else {
+        std::env::var("DATABASE")
+            .or_else(|_| std::env::var("LEADERBOARD_DB"))
+            .unwrap_or_else(|_| "slingshot.db".to_string())
+    };
     let keep_days = env_parse("LEADERBOARD_KEEP_DAYS", DEFAULT_KEEP_DAYS);
     // A database that cannot be opened is a deployment mistake (a bad path, a read-only directory);
     // the relay refusing to start says so, where serving on without one would not.
@@ -131,15 +153,26 @@ async fn main() {
     info!(%db_path, keep_days, "leaderboard open");
 
     // Match statistics are opt-in: `--stats` (or STATS=1, for a service that has no arguments to
-    // give). STATS_KEEP_DAYS is how long they are kept; the data is described in `stats`. Opened
+    // give). --stats-demo implies --stats and fills its isolated database with synthetic data.
+    // STATS_KEEP_DAYS is how long they are kept; the data is described in `stats`. Opened
     // like the leaderboard, and for the same reason it stops the relay.
-    let stats = if std::env::args().any(|arg| arg == "--stats") || env_flag("STATS") {
+    let stats = if stats_demo || std::env::args().any(|arg| arg == "--stats") || env_flag("STATS") {
         let stats_days = env_parse("STATS_KEEP_DAYS", DEFAULT_STATS_KEEP_DAYS);
         let rows_per_day = env_parse("STATS_ROWS_PER_DAY", DEFAULT_ROWS_PER_DAY);
         match Stats::open(&database, stats_days).await {
             Ok(stats) => {
                 info!(stats_days, rows_per_day, "statistics on");
-                Some(Arc::new(stats.with_rows_per_day(rows_per_day)))
+                let stats = stats.with_rows_per_day(rows_per_day);
+                if stats_demo {
+                    match stats.seed_demo().await {
+                        Ok(games) => info!(games, %db_path, "synthetic statistics seeded"),
+                        Err(err) => {
+                            error!(%db_path, %err, "failed to seed synthetic statistics");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Some(Arc::new(stats))
             }
             Err(err) => {
                 error!(%db_path, %err, "failed to open the statistics");
@@ -278,4 +311,25 @@ async fn main() {
             }
         }
     }
+}
+
+/// Resolve equivalent paths (including symlinks) before the demo mode clears its statistics tables.
+fn same_database_path(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+    let normalize = |path: &str| {
+        let path = std::path::Path::new(path);
+        if let Ok(canonical) = std::fs::canonicalize(path) {
+            return Some(canonical);
+        }
+        let parent = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        Some(std::fs::canonicalize(parent).ok()?.join(path.file_name()?))
+    };
+    normalize(left)
+        .zip(normalize(right))
+        .is_some_and(|(left, right)| left == right)
 }

@@ -29,6 +29,10 @@
   margin-bottom: clamp(24px, 4vh, 44px);
 }
 
+.launcher__head .stats-ticker {
+  margin-top: clamp(18px, 2.4vh, 28px);
+}
+
 .launcher .wordmark {
   grid-column: 1;
   font-size: clamp(76px, min(10vw, 17vh), 144px);

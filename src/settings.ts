@@ -10,7 +10,7 @@ export type Seat = 'human' | CpuLevel | 'off';
 /**
  * One bag of settings, two homes in the UI: the rules of a game (seats, teams, rounds, planets, bounce,
  * flight time, …) are set on the setup screen right before it starts; the settings screen only keeps
- * what concerns this device (contours, particles, sound, language).
+ * what concerns this device (look, sound, language, and menu display).
  */
 export interface Settings {
   /** Always MAX_PLAYERS long; seats that aren't 'off' take part, keeping their number and colour. */
@@ -52,6 +52,8 @@ export interface Settings {
   debris: Debris;
   /** The title screen and menus show a CPU match playing behind them; off leaves the plate empty. */
   menuBackground: boolean;
+  /** Show the scrolling statistics ticker in the title menu and multiplayer lobby. */
+  statsTicker: boolean;
   /** Touch screens: the side of the screen the aiming stick sits on. */
   stickSide: 'left' | 'right';
   sound: boolean;
@@ -92,6 +94,7 @@ export const DEFAULT_SETTINGS: Settings = {
   particles: true,
   debris: 'medium',
   menuBackground: true,
+  statsTicker: true,
   stickSide: 'left',
   sound: true,
   language: 'de',
@@ -110,7 +113,7 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
-      for (const key of ['contours', 'particles', 'menuBackground', 'sound'] as const) {
+      for (const key of ['contours', 'particles', 'menuBackground', 'statsTicker', 'sound'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
       if (!isLook(s.look)) s.look = DEFAULT_SETTINGS.look;

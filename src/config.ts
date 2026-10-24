@@ -172,16 +172,20 @@ export const SOLAR = {
   TURN_TIME: 1.8,
 } as const;
 
-/** The sun's storm: once in a round it bursts, and throws a few clouds of plasma over the field that slow shots like a nebula. */
+/** The sun's storm: once in a round it bursts, and throws a few clouds of plasma over the field that scramble shots. */
 export const SOLAR_STORM = {
   /** It breaks out as the system turns after this many passes of the round (picked at random, both ends included); a round decided sooner has none. */
   FIRST_PASS: 1,
   LAST_PASS: 4,
   /** How many clouds. */
-  MIN_CLOUDS: 3,
-  MAX_CLOUDS: 5,
+  MIN_CLOUDS: 2,
+  MAX_CLOUDS: 3,
   MIN_RADIUS: 56,
   MAX_RADIUS: 86,
+  /** A cloud entry gives a shot one short electronic kick. */
+  KICK_TURN_DEGREES: 26,
+  KICK_MIN_SPEED: 0.84,
+  KICK_MAX_SPEED: 1.18,
   /** How far from the sun a cloud lands (the orbit radius it would lie on), and how much the clouds may overlap one another. */
   MIN_DIST: 130,
   MAX_DIST: 330,
