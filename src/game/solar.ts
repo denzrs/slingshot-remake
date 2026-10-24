@@ -9,7 +9,7 @@ import { ClassicMatch } from './classic';
  * and the ships ride orbits round it, and after every pass (once every ship still in has fired, or after a volley
  * with simultaneous shots) the whole system turns on: a circle takes 4 passes near the sun, 8 in the middle and
  * 12 far out. So the gravity field changes under everyone's feet. Once in a round the sun bursts in a storm that
- * throws plasma clouds over the field.
+ * throws plasma clouds over the field; a few passes later they thin away again.
  */
 export class SolarMatch extends ClassicMatch {
   readonly mode = 'solar';
@@ -44,12 +44,14 @@ export class SolarMatch extends ClassicMatch {
     this.trails = [];
     this.turned = 0;
     if (++this.passes === this.stormAt) this.erupt();
+    // The storm has run its course: the clouds thin away through this turn.
+    if (this.passes === this.stormAt + SOLAR_STORM.LIFETIME) for (const n of this.world.nebulae) if (n.storm) n.fading = true;
     this.setPhase('orbit');
   }
 
   /**
-   * The sun bursts: a few clouds of plasma land round it, away from each other. They stay for the round, and slow and
-   * bend a shot like a nebula. No shot flies while the system turns, so the clouds are in place before anybody aims.
+   * The sun bursts: a few clouds of plasma land round it, away from each other. They stay a few passes (or until the
+   * round ends), and slow and bend a shot like a nebula. No shot flies while the system turns, so the clouds are in place before anybody aims.
    */
   private erupt(): void {
     const world = this.world;
@@ -74,6 +76,8 @@ export class SolarMatch extends ClassicMatch {
     this.turn(eased - this.turned);
     this.turned = eased;
     if (t < 1) return;
+    // The clouds that were thinning away are gone.
+    this.world.nebulae = this.world.nebulae.filter((n) => !n.fading);
     this.world.version++;
     super.afterVolley();
   }

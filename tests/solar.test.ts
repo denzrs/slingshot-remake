@@ -195,6 +195,27 @@ describe('the sun\'s storm', () => {
     expect(inNebula([{ x: 100, y: 100, radius: 50, seed: 0.5, storm: true }], 200, 100)).toBe(false);
   });
 
+  it('thins away again a few passes after it broke out, as the system turns', () => {
+    const match = solar(9, 3);
+    try {
+      const inner = match as unknown as { passes: number; stormAt: number; fired: Set<number>; afterVolley(): void };
+      erupt(match);
+      expect(match.world.nebulae.some((n) => n.storm)).toBe(true);
+      // The pass before the last of the storm's life: the clouds still lie there.
+      inner.passes = inner.stormAt + SOLAR_STORM.LIFETIME - 1;
+      inner.fired = new Set(match.alive.map((p) => p.id));
+      inner.afterVolley();
+      expect(match.phase).toBe('orbit');
+      expect(match.world.nebulae.filter((n) => n.storm).every((n) => n.fading)).toBe(true);
+      expect(match.world.nebulae.some((n) => n.storm)).toBe(true);
+      for (let t = 0; t < 10 && match.phase === 'orbit'; t += 1 / 30) match.update(1 / 30);
+      expect(match.phase).not.toBe('orbit');
+      expect(match.world.nebulae.some((n) => n.storm)).toBe(false);
+    } finally {
+      match.dispose();
+    }
+  });
+
   it('is gone with the round', () => {
     const match = solar(7, 2, 2);
     try {

@@ -45,6 +45,8 @@ export interface Nebula {
   seed: number;
   /** Thrown out by the sun's storm in a Solar System rather than placed: the same drag, drawn as hot plasma. */
   storm?: boolean;
+  /** A storm cloud in its last turn of the system: it thins away and is gone when the turn ends. */
+  fading?: boolean;
 }
 
 /** A pair of mouths the wormhole power-up has placed: a shot entering one leaves by the other. No gravity, no kill. */

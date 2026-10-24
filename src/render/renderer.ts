@@ -227,6 +227,19 @@ export class Renderer {
   /** When this screen first saw each storm cloud, in renderer time: the burst plays from there, the same for every cloud of one storm. */
   private readonly stormSeen = new Map<number, number>();
 
+  /** When this screen first saw each storm cloud thinning away, in renderer time. */
+  private readonly stormFading = new Map<number, number>();
+
+  /** How far a storm cloud has thinned away (0 → 1): its last turn of the system lasts about this long. */
+  private stormDissolve(cloud: { seed: number; fading?: boolean }): number {
+    if (!cloud.fading) {
+      this.stormFading.delete(cloud.seed);
+      return 0;
+    }
+    if (!this.stormFading.has(cloud.seed)) this.stormFading.set(cloud.seed, this.time);
+    return Math.min(1, (this.time - this.stormFading.get(cloud.seed)!) / 1.7);
+  }
+
   /** Seconds since the storm broke out (of the cloud with `seed`, or the newest one), or -1 when the world has none. */
   private stormAge(world: World, seed?: number): number {
     const clouds = world.nebulae.filter((n) => n.storm);
@@ -271,7 +284,7 @@ export class Renderer {
       ctx.globalAlpha = alpha;
       const sun = world.planets.find((p) => p.sun);
       for (const n of world.nebulae) {
-        if (n.storm && sun) drawStormCloud(ctx, n, sun, this.stormAge(world, n.seed), this.time);
+        if (n.storm && sun) drawStormCloud(ctx, n, sun, this.stormAge(world, n.seed), this.time, this.stormDissolve(n));
         else drawNebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
       }
       if (sun) drawStormBurst(ctx, sun, this.stormAge(world));
