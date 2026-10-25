@@ -498,6 +498,10 @@
 .menu-page.menu-page--mode-enter-next,
 .menu-page.menu-page--mode-enter-previous,
 .menu-page.menu-page--entered { animation: none; }
+/* Once the switch is over, taking its animation away must not bring the page's plain entrance back: it would play the heading (and the content) a second time. The eyebrow keeps its one steady animation, so it never restarts. */
+.menu-page--entered .menu-page__head > .menu-page__title,
+.menu-page--entered .menu-page__head .mode-pager__viewport,
+.menu-page--entered .menu-page__main { animation: none; }
 .menu-page--mode-enter-next .menu-page__head .mode-pager__viewport,
 .menu-page--mode-enter-next .menu-page__head > .menu-page__title { animation: mode-header-enter-next 200ms cubic-bezier(.16, 1, .3, 1) both; }
 .menu-page--mode-enter-previous .menu-page__head .mode-pager__viewport,
@@ -989,6 +993,10 @@
 .pilot__body > .slot-card__portrait { flex: none; min-height: 0; padding-bottom: 0; transition: padding-bottom .18s ease; }
 .pilot.is-cpu .pilot__body > .slot-card__portrait { padding-bottom: 52px; }
 .pilot__options { position: absolute; inset: auto 0 0; transition: opacity .18s ease; }
+@media (max-height: 960px) {
+  .pilot__body { flex-basis: 96px; min-height: 96px; }
+  .pilot.is-cpu .pilot__body > .slot-card__portrait { padding-bottom: 44px; }
+}
 .pilot:not(.is-cpu) .pilot__options { visibility: hidden; opacity: 0; }
 .pilot__select { width: 100%; min-height: 36px; padding: 6px 8px; border: 1px solid var(--menu-line); border-radius: 3px; background: #081426; color: var(--bone); cursor: pointer; font: 12px/1.4 var(--font-body); letter-spacing: 0; text-transform: none; }
 .pilot__remove { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 28px; min-height: 28px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--bone-dim); font: 18px/1 var(--font-body); cursor: pointer; }

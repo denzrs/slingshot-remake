@@ -6,6 +6,10 @@ import './team-roster.css';
 
 interface TeamSeat { team: number | null }
 
+/** A team with more seats than this lays them out in two columns (three from five seats on): in a two-team game and in a three-team one. */
+const MANY_SEATS = 3;
+const MANY_SEATS_THREE = 2;
+
 /** Keep occupied seats in their chosen team; spread the remaining slots over the smaller groups. */
 export function groupRoster<T extends TeamSeat>(seats: readonly T[], teamCount: number): T[][] {
   if (teamCount < 2) return [[...seats]];
@@ -129,6 +133,9 @@ export function teamRoster(label: string) {
       if (count !== teamCount) buildColumns(teamCount);
       if (!selection()) selected = null;
       const grouped = groupRoster(cards, count);
+      // A team with many seats gets a wider column (its seats then sit two or, from five seats on, three across), so a lopsided split still fits the page.
+      const many = count > 2 ? MANY_SEATS_THREE : MANY_SEATS;
+      columns.style.setProperty('--team-cols', grouped.map((group) => `minmax(0, ${group.length > 4 ? 2.4 : group.length > many ? 1.7 : 1}fr)`).join(' '));
       assignments.clear();
       const nextHandles = new Map<string, HTMLButtonElement>();
       const focused = document.activeElement as HTMLElement | null;
@@ -136,6 +143,8 @@ export function teamRoster(label: string) {
       for (const [team, group] of grouped.entries()) {
         const grid = grids[team];
         grid.dataset.capacity = String(capacity);
+        grid.classList.toggle('has-many', count > 1 && group.length > many);
+        grid.classList.toggle('has-most', count > 1 && group.length > 4);
         if (totals[team]) totals[team].textContent = String(group.filter((card) => card.team !== null).length);
         for (const card of group) {
           assignments.set(card.key, team);

@@ -95,6 +95,16 @@
 @media (max-width: 900px) {
   .menu-page .slot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+/* A short window packs the seats a little closer, so two rows of them still fit. */
+@media (max-height: 960px) {
+  .menu-page .slot-grid { gap: 10px; }
+  .menu-page .slot-card { gap: 6px; padding: 11px; min-height: 180px; }
+  .slot-card__portrait { flex-basis: 44px; min-height: 44px; }
+  .slot-card__portrait > .pilot-art { width: 70px; height: 44px; }
+  .team-column__head { margin-bottom: 8px; }
+  .slot-card__join { min-height: 70px; }
+  .pilot .option-selector__choice { min-height: 38px; gap: 3px; }
+}
 @media (max-width: 520px) {
   .menu-page .slot-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .menu-page .slot-card { min-height: 190px; }
