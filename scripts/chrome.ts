@@ -114,6 +114,11 @@ export async function launchChrome(width: number, height: number): Promise<Brows
     '--hide-scrollbars',
     '--no-first-run',
     '--disable-gpu-vsync',
+    // A window nobody looks at (a locked screen, another desktop) must not run slower: the pages wait for animation frames.
+    '--disable-renderer-backgrounding',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-background-timer-throttling',
+    '--disable-features=CalculateNativeWinOcclusion',
     'about:blank',
   ], { stdio: 'ignore' });
   const cdp = await Cdp.connect(await waitForDebugger(port));
