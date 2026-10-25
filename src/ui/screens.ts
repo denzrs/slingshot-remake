@@ -131,7 +131,27 @@ function coffeeButton(): HTMLElement {
 
     button.rel = 'noopener noreferrer';
     if (!bmcStylesInstalled) {
-      styles.textContent += `\n.bmc-btn, .bmc-btn-text { font-family: var(--font-body) !important; }\n.bmc-btn { min-width: 0; height: 40px; padding: 0 12px; border: 1px solid var(--line) !important; border-radius: 3px; font-size: 13px; }\n.bmc-btn svg { height: 25px !important; }\n`;
+      // The widget's own colours are inline !important, so the quiet footer look has to beat them the same way.
+      styles.textContent += `
+.coffee-button .bmc-btn, .coffee-button .bmc-btn-text { font-family: var(--font-body) !important; }
+.coffee-button .bmc-btn { min-width: 0 !important; height: 32px !important; padding: 0 12px !important; gap: 0; font-size: 0 !important; border: 1px solid rgb(91 125 179 / 0.35) !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; color: var(--bone-dim) !important; letter-spacing: 0.08em; text-transform: uppercase; transition: color 140ms ease, border-color 140ms ease; }
+.coffee-button .bmc-btn:hover, .coffee-button .bmc-btn:focus-visible { border-color: var(--sodium) !important; color: var(--sodium) !important; }
+.coffee-button .bmc-btn { justify-content: center !important; }
+.coffee-button .bmc-btn-text { margin: 0 !important; color: inherit !important; font-size: 10px !important; }
+.coffee-button .bmc-btn, .coffee-button .bmc-btn-text { position: relative; }
+.coffee-button .bmc-btn::before, .coffee-button .bmc-btn::after, .coffee-button .bmc-btn-text::before, .coffee-button .bmc-btn-text::after { position: absolute; top: 0; line-height: 1; opacity: 0; pointer-events: none; }
+.coffee-button .bmc-btn::after { --dx: 52px; --dy: -50px; --rot: 0deg; content: '\\1F680'; font-size: 14px; left: 62%; }
+.coffee-button .bmc-btn::before { content: '\\2764\\FE0F'; font-size: 12px; left: 28%; }
+.coffee-button .bmc-btn-text::after { --dx: -46px; --dy: -44px; --rot: -90deg; content: '\\1F680'; font-size: 14px; left: 20%; }
+.coffee-button .bmc-btn-text::before { content: '\\2764\\FE0F'; font-size: 12px; left: 80%; }
+.coffee-button .bmc-btn:is(:hover, :focus-visible)::after { animation: bmc-ship 1.1s ease-in infinite; }
+.coffee-button .bmc-btn:is(:hover, :focus-visible)::before { animation: bmc-heart 1.6s ease-out 0.3s infinite; }
+.coffee-button .bmc-btn:is(:hover, :focus-visible) .bmc-btn-text::after { animation: bmc-ship 1.3s ease-in 0.6s infinite; }
+.coffee-button .bmc-btn:is(:hover, :focus-visible) .bmc-btn-text::before { animation: bmc-heart 1.9s ease-out 0.9s infinite; }
+@keyframes bmc-ship { 0% { opacity: 1; transform: translate(0, 0) rotate(var(--rot)) scale(0.8); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(1.1); } }
+@keyframes bmc-heart { 0% { opacity: 0; transform: translate(0, 0) scale(0.6); } 15% { opacity: 1; } 100% { opacity: 0; transform: translate(-14px, -58px) scale(1.15); } }
+@media (prefers-reduced-motion: reduce) { .coffee-button .bmc-btn::before, .coffee-button .bmc-btn::after, .coffee-button .bmc-btn-text::before, .coffee-button .bmc-btn-text::after { animation: none !important; } }
+`;
       document.head.append(styles);
       bmcStylesInstalled = true;
     }
