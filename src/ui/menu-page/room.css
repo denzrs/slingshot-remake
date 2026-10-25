@@ -428,8 +428,9 @@
 @media (max-height: 1000px) {
   .menu-page--room .briefing__cards { --preset-card-height: clamp(136px, calc(30vh - 105px), 190px); }
 }
+/* In the room the cards are a name and a picture: the one line under the name never fit, and was cut off at any height. */
+.menu-page--room .briefing__cards .item__hint { display: none; }
 @media (max-height: 1000px) {
-  .menu-page--room .briefing__cards .item__hint { display: none; }
   .menu-page--room .room-deck__briefing .briefing__cards { margin-bottom: 8px; }
   .menu-page--room .briefing__quick { row-gap: 6px; }
 }
