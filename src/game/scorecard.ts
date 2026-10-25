@@ -59,3 +59,22 @@ export function spotlight(match: Match): { award: Award; index: number; /** Seco
   const award = shots[turn % shots.length];
   return { award, index: list.indexOf(award), age: match.phaseTime - SPOTLIGHT_AFTER - turn * SPOTLIGHT_EVERY };
 }
+
+/** The records worth a moment on the result page, best hit first. */
+const MOMENT_ORDER: AwardKind[] = ['bestHit', 'longestShot', 'sniper', 'fastestKill', 'closeCall'];
+
+/**
+ * The match records that come with a shot, in the order the result page flips through them. A hit often sets several
+ * records at once (best hit, sniper, fastest kill), so a shot that is already in the reel is not shown twice.
+ */
+export function matchMoments(list: readonly Award[]): Award[] {
+  const seen = new Set<string>();
+  return MOMENT_ORDER.flatMap((kind) => {
+    const award = list.find((a) => a.kind === kind);
+    if (!award?.trail || award.trail.length < 4) return [];
+    const key = award.trail.join(',');
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [award];
+  });
+}

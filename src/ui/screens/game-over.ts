@@ -3,11 +3,12 @@ import { teamName, type Match } from '../../game';
 import { oracleAwards } from '../../game/oracle';
 import { fmtInt, t, tn } from '../../platform/i18n';
 import { roundTitle } from '../../game/mayhem';
-import { awardLabel, awardValue, awardWho } from '../../game/scorecard';
-import { awards, type Award } from '../../data/stats';
+import { awardLabel, awardValue, awardWho, matchMoments } from '../../game/scorecard';
+import { awards } from '../../data/stats';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
 import type { App } from './app';
+import { matchMomentReel, matchShotTrail } from './match-moments';
 import { enablePagerNavigation, pagePagerHeader, positionModeCarousel, type ModeTransition } from './mode-pager';
 
 type ResultPage = 'result' | 'stats';
@@ -16,9 +17,9 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
   const winner = match.winner();
   const headline = !winner ? t('over.draw') : match.teamMode ? t('over.teamWins', { team: winner.name }) : t('over.wins', { name: winner.name });
   const records = awards(match.matchStats);
-  const featured = records.find((award) => award.kind === 'bestHit' && award.trail && award.trail.length >= 4)
-    ?? records.find((award) => award.trail && award.trail.length >= 4)
-    ?? records[0];
+  // The highlights the card flips through; a match with no shot to show still gets its first record as a number.
+  const moments = matchMoments(records);
+  const featured = moments.length ? moments : records.slice(0, 1);
   const entry = (place: number, name: string, color: string, score: number | string, player?: number) => {
     const label = h('span.ranking__name', null, name);
     label.style.color = color;
@@ -32,6 +33,7 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
   const section = (title: string, ...content: Node[]) => h('section.report-section', null, h('h3.ranking-label', null, title), ...content);
   let page: HTMLElement;
   let disposeCarousel = (): void => {};
+  let disposeReel = (): void => {};
   const other: ResultPage = view === 'result' ? 'stats' : 'result';
   const pageLabel = (which: ResultPage) => t(which === 'result' ? 'over.result' : 'over.stats');
   const changePage = (next: ResultPage, direction: ModeTransition): void => {
@@ -85,13 +87,14 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
         h('p.ranking-label', null, t(match.teamMode ? 'over.teams' : 'over.standings')),
         match.teamMode ? teamRanking() : playerRanking(),
       );
+      const reel = view === 'result' && featured.length ? matchMomentReel(match, featured) : null;
+      disposeReel = reel?.dispose ?? (() => {});
       page = menuPage({
         title: `${pageLabel(view)} · ${headline}`, eyebrow: t('over.label'), intro: tn('over.after', match.round),
         headerTitle: pagePagerHeader(pageLabel(view), t('over.switchPage'), transition),
         className: `menu-page--results menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
         body: view === 'result'
-          ? [h(`div.result-overview${featured ? '' : '.result-overview--quiet'}`, null, standings,
-              ...(featured ? [matchSpotlight(match, featured)] : []))]
+          ? [h(`div.result-overview${featured.length ? '' : '.result-overview--quiet'}`, null, standings, ...(reel ? [reel.element] : []))]
           : [h('div.match-report', null,
               ...(highlights.length ? [section(t('scorecard.match'), h('ul.highlights.match-records', null, ...highlights))] : []),
               ...(lists.length ? [h('div.match-report__details', null, ...lists)] : []),
@@ -102,8 +105,8 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
       });
       if (winner) page.style.setProperty('--winner', winner.color);
       const stopCarousel = positionModeCarousel(page);
-      const stopNavigation = enablePagerNavigation(page, (direction) => changePage(other, direction));
-      disposeCarousel = () => { stopNavigation(); stopCarousel(); };
+      const stopNavigation = enablePagerNavigation(page, (direction) => changePage(other, direction), featured.length > 1 ? '.result-spotlight' : undefined);
+      disposeCarousel = () => { stopNavigation(); stopCarousel(); disposeReel(); };
       return page;
     },
     dispose: () => disposeCarousel(),
@@ -137,100 +140,6 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
     focus: 3,
     onEscape: () => (match.replaying ? app.leaveReplay() : app.online ? app.leaveOnlineRoom() : app.toTitle()),
   };
-}
-
-/** One real match record gets the space of a mode illustration on the result page. */
-function matchSpotlight(match: Match, award: Award): HTMLElement {
-  const who = awardWho(match, award);
-  const name = h('span.result-spotlight__who', null, who.name);
-  name.style.color = who.color;
-  const hasTrail = !!award.trail && award.trail.length >= 4;
-  const card = h('section.result-spotlight', null,
-    h('h3.ranking-label', null, t('over.spotlight')),
-    ...(hasTrail ? [matchShotTrail(award, who.color, `${awardLabel(award.kind)} · ${who.name}`, true)] : []),
-    h('div.result-spotlight__caption', null,
-      h('div', null, h('p.result-spotlight__label', null, awardLabel(award.kind)), name),
-      h('p.result-spotlight__value', null, awardValue(award)),
-    ),
-  );
-  card.style.setProperty('--record', who.color);
-  if (!hasTrail) card.classList.add('result-spotlight--number');
-  return card;
-}
-
-/** The match record's saved path, drawn across as a small, replay-like trajectory highlight. */
-function matchShotTrail(award: Award, color: string, label: string, featured = false): SVGSVGElement {
-  const points = award.trail!;
-  const size = featured ? 640 : 320;
-  const height = featured ? 270 : 100;
-  const pad = featured ? 30 : 12;
-  const xs = points.filter((_, i) => i % 2 === 0);
-  const ys = points.filter((_, i) => i % 2 === 1);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const spanX = Math.max(1, maxX - minX);
-  const spanY = Math.max(1, maxY - minY);
-  const scale = Math.min((size - pad * 2) / spanX, (height - pad * 2) / spanY);
-  const project = (x: number, y: number): [number, number] => [
-    (size - spanX * scale) / 2 + (x - minX) * scale,
-    (height + spanY * scale) / 2 - (y - minY) * scale,
-  ];
-  const point = (i: number) => project(points[i], points[i + 1]);
-  const pathData = Array.from({ length: points.length / 2 }, (_, i) => {
-    const [x, y] = point(i * 2);
-    return `${i ? 'L' : 'M'}${x},${y}`;
-  }).join(' ');
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'match-highlight__trail');
-  svg.setAttribute('viewBox', `0 0 ${size} ${height}`);
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', label);
-  const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-  title.textContent = label;
-  svg.append(title);
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('class', 'match-highlight__path');
-  path.setAttribute('d', pathData);
-  path.setAttribute('pathLength', '1');
-  path.setAttribute('stroke', color);
-  svg.append(path);
-  if (award.at) {
-    const [x, y] = project(award.at.x, award.at.y);
-    const mark = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    mark.setAttribute('class', 'match-highlight__event');
-    mark.setAttribute('cx', String(x));
-    mark.setAttribute('cy', String(y));
-    mark.setAttribute('r', featured ? '12' : '6');
-    mark.setAttribute('stroke', color);
-    svg.append(mark);
-  }
-  const [startX, startY] = point(0);
-  if (featured) {
-    const [nextX, nextY] = point(2);
-    const ship = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    const angle = Math.atan2(nextY - startY, nextX - startX) * 180 / Math.PI;
-    ship.setAttribute('d', 'M 8 0 L -6 -5 L -3 0 L -6 5 Z');
-    ship.setAttribute('transform', `translate(${startX} ${startY}) rotate(${angle})`);
-    ship.setAttribute('fill', color);
-    svg.append(ship);
-  }
-  const start = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-  start.setAttribute('class', 'match-highlight__start');
-  start.setAttribute('cx', String(startX));
-  start.setAttribute('cy', String(startY));
-  start.setAttribute('r', '2');
-  if (!featured) svg.append(start);
-  const [endX, endY] = point(points.length - 2);
-  const end = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-  end.setAttribute('class', 'match-highlight__end');
-  end.setAttribute('cx', String(endX));
-  end.setAttribute('cy', String(endY));
-  end.setAttribute('r', '3');
-  end.setAttribute('fill', color);
-  svg.append(end);
-  return svg;
 }
 
 /** One line per round of a Mayhem match: its twists, and whoever scored most in it. */

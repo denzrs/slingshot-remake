@@ -197,15 +197,31 @@
 .result-standing .ranking__name::before { content: ''; display: inline-block; width: 9px; height: 11px; margin-right: 10px; background: var(--player); clip-path: polygon(50% 0, 100% 100%, 50% 76%, 0 100%); }
 .result-standing .ranking__score { font-size: 18px; }
 .result-standing__you { display: inline-block; margin-left: 8px; color: var(--bone-dim); font: 400 10px/1.5 var(--font-body); }
-.result-spotlight { min-width: 0; padding: 22px 26px 18px; border: 1px solid var(--menu-line); border-radius: 4px; background: radial-gradient(ellipse at 55% 30%, color-mix(in srgb, var(--record) 7%, transparent), transparent 70%), rgb(14 30 51 / .45); }
-.result-spotlight > .match-highlight__trail { width: 100%; height: clamp(150px, 25vh, 250px); margin: 4px 0 22px; opacity: 1; }
+.result-spotlight { position: relative; min-width: 0; padding: 22px 26px 18px; border: 1px solid var(--menu-line); border-radius: 4px; background: radial-gradient(ellipse at 55% 30%, color-mix(in srgb, var(--record) 7%, transparent), transparent 70%), rgb(14 30 51 / .45); }
+.result-spotlight__slide > .match-highlight__trail { width: 100%; height: clamp(150px, 25vh, 250px); margin: 4px 0 22px; opacity: 1; }
 .result-spotlight .match-highlight__path { stroke-width: 2.2; }
 .result-spotlight__caption { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 14px 24px; }
 .result-spotlight__label { margin: 0 0 8px; color: var(--bone-dim); font-size: 12px; }
 .result-spotlight__who { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
 .result-spotlight__value { margin: 0; font: 800 clamp(28px, 3.4vw, 48px)/1 var(--font-display); white-space: nowrap; }
-.result-spotlight--number .result-spotlight__caption { min-height: 180px; align-content: center; }
+.result-spotlight__slide--number .result-spotlight__caption { min-height: 180px; align-content: center; }
 .match-highlight__event { fill: none; stroke-width: 1; opacity: .65; }
+/* The reel of match highlights: arrows and dots in the card's top corner, the slide fading in under them. */
+.result-spotlight__nav { position: absolute; top: 14px; right: 18px; display: flex; align-items: center; gap: 6px; }
+.result-spotlight__dots { display: flex; align-items: center; }
+.result-spotlight__dot, .result-spotlight__arrow { display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--bone-dim); cursor: pointer; }
+.result-spotlight__dot { width: 20px; height: 24px; }
+.result-spotlight__dot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .4; transition: opacity .2s, transform .2s; }
+.result-spotlight__dot.is-active { color: var(--record, var(--bone)); }
+.result-spotlight__dot.is-active::before { opacity: 1; transform: scale(1.25); }
+.result-spotlight__arrow { width: 28px; height: 28px; border-radius: 3px; }
+.result-spotlight__arrow::before { content: ''; width: 8px; height: 8px; border: solid currentColor; border-width: 0 0 2px 2px; transform: translateX(2px) rotate(45deg); }
+.result-spotlight__arrow--next::before { transform: translateX(-2px) rotate(225deg); }
+.result-spotlight__dot:hover, .result-spotlight__arrow:hover { color: var(--bone); }
+.result-spotlight__dot:focus-visible, .result-spotlight__arrow:focus-visible { outline: 2px solid var(--launch-accent); outline-offset: 1px; }
+.result-spotlight__slide.is-entering { animation: spotlight-in .4s ease-out; }
+@keyframes spotlight-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .result-spotlight__slide.is-entering { animation: none; } }
 .match-report { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 28px 48px; padding: 4px 0 28px; }
 .report-section { min-width: 0; }
 .match-report__details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 48px; min-width: 0; }
@@ -246,7 +262,7 @@
   .result-standing__winner { font-size: 36px; margin-bottom: 20px; }
   .result-standing .ranking li { padding-block: 11px; font-size: 13px; }
   .result-standing .ranking__score { font-size: 16px; }
-  .result-spotlight > .match-highlight__trail { height: 160px; }
+  .result-spotlight__slide > .match-highlight__trail { height: 160px; }
   .result-spotlight__value { font-size: 36px; }
   .match-records { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; }
   .match-report__details { grid-template-columns: minmax(0, 1fr); }

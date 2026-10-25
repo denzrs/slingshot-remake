@@ -616,6 +616,9 @@ const en = {
   'over.teams': 'Teams',
   'over.you': 'you',
   'over.spotlight': 'Match spotlight',
+  'over.spotlightPrev': 'Previous highlight',
+  'over.spotlightNext': 'Next highlight',
+  'over.spotlightOf': 'Highlight {n} of {total}',
   'over.switchPage': 'Switch between result and statistics',
   'over.keys': 'Q E pages · ↑ ↓ navigate · Enter select · Esc back',
 
@@ -1591,6 +1594,9 @@ const de: Dict = {
   'over.teams': 'Teams',
   'over.you': 'du',
   'over.spotlight': 'Spielmoment',
+  'over.spotlightPrev': 'Vorheriges Highlight',
+  'over.spotlightNext': 'Nächstes Highlight',
+  'over.spotlightOf': 'Highlight {n} von {total}',
   'over.switchPage': 'Zwischen Ergebnis und Statistik wechseln',
   'over.keys': 'Q E Seiten · ↑ ↓ navigieren · Enter wählen · Esc zurück',
 

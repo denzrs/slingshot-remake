@@ -30,13 +30,13 @@
       const match = createMatch('classic', settings, { seed: 31 });
       match.phase = 'gameOver';
       match.players.forEach((player, i) => { player.score = [0, 1630, 1330, 1920, 3750, 50][i]; });
-      const trail = Array.from({ length: 80 }, (_, i) => [80 + i * 12, 200 + 150 * Math.sin(i / 79 * Math.PI * 2)]).flat();
+      const flight = (amp, turns) => Array.from({ length: 80 }, (_, i) => [80 + i * 12, 200 + amp * Math.sin(i / 79 * Math.PI * turns)]).flat();
       Object.assign(match.matchStats, {
-        longestShot: { player: 2, value: 3644, trail },
-        fastestKill: { player: 3, value: 4, trail },
-        bestHit: { player: 3, value: 1870, trail },
+        longestShot: { player: 2, value: 3644, trail: flight(150, 2) },
+        fastestKill: { player: 3, value: 4, trail: flight(90, 3) },
+        bestHit: { player: 3, value: 1870, trail: flight(150, 1) },
         swingbys: [0, 0, 5], grazes: [0, 0, 1], kills: [0, 0, 0, 0, 2],
-        closeCall: { player: 1, value: 1.4, trail },
+        closeCall: { player: 1, value: 1.4, trail: flight(60, 4) },
       });
       const sound = new Sound();
       sound.menuEnabled = false;
@@ -59,6 +59,15 @@
         };
         let status;
         try {
+          const label = () => document.querySelector('.result-spotlight__label').textContent;
+          assert(document.querySelectorAll('.result-spotlight__dot').length === 4, 'Vier Highlights im Spielmoment');
+          assert(label() === 'Bester Treffer', 'Der beste Treffer kommt zuerst');
+          document.querySelector('.result-spotlight__arrow--next').click();
+          assert(label() === 'Weitester Schuss', 'Pfeil schaltet zum nächsten Highlight');
+          document.querySelectorAll('.result-spotlight__dot')[3].click();
+          assert(label() === 'Knappster Fehlschuss', 'Punkt springt zum gewählten Highlight');
+          press(document.querySelector('.result-spotlight__arrow--next'), 'ArrowRight');
+          assert(label() === 'Bester Treffer' && current() === 'Ergebnis', 'Pfeiltaste dreht das Karussell, nicht die Seite');
           document.activeElement.blur();
           press(document.body, 'e');
           assert(current() === 'Statistik', 'E wechselt bei Fokus auf dem Hintergrund');

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMatch, type GameEvent, type Match } from '../../src/game';
 import type { ClassicMatch } from '../../src/game/classic';
 import type { Planet } from '../../src/sim/physics';
-import { spotlight } from '../../src/game/scorecard';
+import { matchMoments, spotlight } from '../../src/game/scorecard';
 import { awards, bump, closestApproach, improve, newStatBook, pathLength, thinTrail } from '../../src/data/stats';
 import { DEFAULT_SETTINGS, type Seat } from '../../src/data/settings';
 
@@ -278,5 +278,34 @@ describe('scorecard in a match', () => {
       expect(m.shotLog.shots).toEqual([]);
       expect(m.shotLog.turn).toBe(0);
     });
+  });
+});
+
+describe('match moments', () => {
+  const trail = (n: number) => Array.from({ length: 8 }, (_, i) => i + n);
+
+  it('lists the records that come with a shot, best hit first', () => {
+    const book = newStatBook();
+    book.longestShot = { player: 0, value: 900, trail: trail(0), at: { x: 1, y: 1 } };
+    book.bestHit = { player: 1, value: 1500, trail: trail(10), at: { x: 2, y: 2 } };
+    book.closeCall = { player: 2, value: 5, trail: trail(20), at: { x: 3, y: 3 } };
+    bump(book.swingbys, 0);
+    expect(matchMoments(awards(book)).map((a) => a.kind)).toEqual(['bestHit', 'longestShot', 'closeCall']);
+  });
+
+  it('shows a shot that set several records once', () => {
+    const book = newStatBook();
+    book.bestHit = { player: 1, value: 1500, trail: trail(0), at: { x: 2, y: 2 } };
+    book.fastestKill = { player: 1, value: 3, trail: trail(0), at: { x: 2, y: 2 } };
+    book.sniper = { player: 1, value: 800, trail: trail(0), at: { x: 2, y: 2 } };
+    expect(matchMoments(awards(book)).map((a) => a.kind)).toEqual(['bestHit']);
+  });
+
+  it('has nothing for records without a path', () => {
+    const book = newStatBook();
+    bump(book.kills, 0);
+    bump(book.kills, 0);
+    book.bestHit = { player: 0, value: 100 };
+    expect(matchMoments(awards(book))).toEqual([]);
   });
 });
