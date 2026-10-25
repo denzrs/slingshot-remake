@@ -153,7 +153,7 @@ const HANDPICKED: Record<VersusMode, readonly HandpickedSpec[]> = {
     { id: 'horizonShadow', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, hiddenAim: true, fadingTrails: 1, fixedPower: true, fixedPowerLevel: 60, ...pickups(['wormhole', 'shield', 'piercing'], 3) } },
     { id: 'gravityCentrifuge', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, bounce: true, fixedPower: true, fixedPowerLevel: 85, ...pickups(['antigravity', 'nebula', 'plasma', 'splitter'], 4) } },
     { id: 'planetEater', patch: { rounds: 5, shotTime: 20, maxPlanets: 6, maxPower: 65, ...pickups(['defense', 'planetkiller', 'blackhole', 'teleport'], 4) } },
-    { id: 'singularityBlitz', patch: { rounds: 3, shotTime: 15, maxPlanets: 1, bounce: true, hiddenAim: true, mayhem: 2, ...pickups(['teleport', 'splitter', 'shield'], 3) } },
+    { id: 'singularityBlitz', patch: { rounds: 3, shotTime: 10, maxPlanets: 1, bounce: true, hiddenAim: true, mayhem: 2, ...pickups(['teleport', 'splitter', 'shield'], 3) } },
     { id: 'deathSpiral', patch: { rounds: 7, shotTime: 20, maxPlanets: 3, maxPower: 50, fadingTrails: 2, mayhem: 3, ...pickups(['blackhole', 'wormhole', 'nebula', 'piercing'], 4) } },
   ],
 };

@@ -159,11 +159,23 @@ export class MayhemDeck {
     const quiet = level === 1 && round > 1 && !finale && this.rng() < MAYHEM.QUIET_CHANCE;
     const wanted = quiet ? 0 : (level === 3 ? 2 : 1) + (level > 1 && this.rng() < MAYHEM.EXTRA_CHANCE ? 1 : 0);
     const count = finale ? Math.max(2, wanted) : wanted;
-    const twists: RoundTwist[] = [];
-    while (twists.length < count) {
-      const next = this.take(base, mode, level, twists);
-      if (!next) break;
-      twists.push(next);
+    const bag = this.bag;
+    const stack = (skip: readonly TwistId[]): RoundTwist[] => {
+      this.bag = [...bag];
+      const laid: RoundTwist[] = [];
+      while (laid.length < count) {
+        const next = this.take(base, mode, level, laid, skip);
+        if (!next) break;
+        laid.push(next);
+      }
+      return laid;
+    };
+    let twists = stack([]);
+    // A finale always stacks: when its first twist leaves nothing to pair with, lead with another one.
+    const skip: TwistId[] = [];
+    while (finale && twists.length > 0 && twists.length < count && skip.length < TWIST_IDS.length) {
+      skip.push(twists[0].id);
+      twists = stack(skip);
     }
     this.previous = twists.map((t) => t.id);
     const jackpot = round > 1 && this.rng() < (finale ? MAYHEM.FINALE_JACKPOT_CHANCE : MAYHEM.JACKPOT_CHANCE);
@@ -171,13 +183,13 @@ export class MayhemDeck {
   }
 
   /** The next twist from the bag that fits the round so far, or null when none does. */
-  private take(base: Settings, mode: 'classic' | 'horizon', level: number, chosen: readonly RoundTwist[]): RoundTwist | null {
+  private take(base: Settings, mode: 'classic' | 'horizon', level: number, chosen: readonly RoundTwist[], skip: readonly TwistId[]): RoundTwist | null {
     // The second pass runs on a refilled bag: whatever the first one left did not fit.
     for (let pass = 0; pass < 2; pass++) {
       for (let i = 0; i < this.bag.length; i++) {
         const id = this.bag[i];
         const def = TWISTS[id];
-        if (this.previous.includes(id) || (def.classicOnly && mode !== 'classic') || (def.harsh && level === 1)) continue;
+        if (this.previous.includes(id) || skip.includes(id) || (def.classicOnly && mode !== 'classic') || (def.harsh && level === 1)) continue;
         if (chosen.some((c) => TWISTS[c.id].slots.some((slot) => def.slots.includes(slot)))) continue;
         const n = def.roll?.(this.rng);
         const laid = applyTwists(base, { twists: [...chosen, { id, n }] });

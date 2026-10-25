@@ -249,7 +249,7 @@ describe('shot power: free, capped or fixed', () => {
   });
 
   it('keeps the cap slider below "no cap", so dragging it can never drop out of the mode', () => {
-    expect(CAP_STOPS).toEqual([10, 20, 30, 40, 50, 60, 70, 80, 90]);
+    expect(CAP_STOPS).toEqual([10, 20, 30, 35, 40, 45, 50, 60, 70, 80, 90]);
     for (const n of CAP_STOPS) expect(powerModeOf(rules({ maxPower: n }))).toBe('cap');
   });
 

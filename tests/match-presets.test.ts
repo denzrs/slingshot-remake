@@ -199,9 +199,12 @@ describe('handpicked combinations', () => {
   });
 
   it('clears the selection when edited while ignoring inactive rules and room preferences', () => {
-    const pick = handpickedPresets('horizon')[0];
+    // Horizon Shadow fires at a fixed power, so a cap is inactive; Escape Velocity is capped, so its cap counts.
+    const pick = handpickedPresets('horizon').find(({ id }) => id === 'horizonShadow')!;
     expect(matchingHandpicked({ ...pick.rules, maxPower: 30, simultaneousShots: true, betting: true }, 'horizon')?.id).toBe(pick.id);
     expect(matchingHandpicked({ ...pick.rules, shotTime: 60 }, 'horizon')).toBeUndefined();
+    const capped = handpickedPresets('horizon').find(({ id }) => id === 'escapeVelocity')!;
+    expect(matchingHandpicked({ ...capped.rules, maxPower: 30 }, 'horizon')).toBeUndefined();
     const first = handpickedPresets('classic')[2];
     first.rules.powerUpKinds.pop();
     expect(handpickedPresets('classic')[2].rules.powerUpKinds).toHaveLength(4);

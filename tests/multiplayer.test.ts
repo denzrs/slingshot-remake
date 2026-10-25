@@ -1454,12 +1454,25 @@ describe('statistics and replays', () => {
     await waitForSession(hostSession, () => hostMatch !== null);
     const match = hostMatch!;
 
-    // Both people shoot at whatever their own angle says; the CPU thinks for itself.
+    // Both people shoot towards the nearest ship still flying, a little further off with every shot; the CPU thinks for itself.
+    // (The offset follows the shot count and not the clock: a flight takes the same number of frames every time, so a
+    // clock-driven aim can fall into step with it and repeat one blocked shot for good.)
     const dt = 1 / 30;
+    const shots = new Map<number, number>();
+    const bearing = (from: number): number => {
+      const me = match.world.ships[from];
+      const [target] = match.players
+        .filter((q) => q.id !== from && q.alive)
+        .map((q) => match.world.ships[q.id])
+        .sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y));
+      return target ? (Math.atan2(-(target.y - me.y), target.x - me.x) * 180) / Math.PI : 90;
+    };
     for (let i = 0; i < 60_000 && match.phase !== 'gameOver'; i++) {
       for (const p of match.players) {
         if (p.cpu || !match.canAim(p.id)) continue;
-        match.setPlayerAim(p.id, 20 + ((i * 37 + p.id * 91) % 140), 35 + ((i * 13) % 55));
+        const n = shots.get(p.id) ?? 0;
+        shots.set(p.id, n + 1);
+        match.setPlayerAim(p.id, bearing(p.id) + (((n * 37 + p.id * 91) % 41) - 20), 35 + ((n * 13 + p.id * 29) % 55));
         match.commitPlayer(p.id);
       }
       match.update(dt);
