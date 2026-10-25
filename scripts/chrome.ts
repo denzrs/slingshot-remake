@@ -95,6 +95,8 @@ export interface Browser {
   cdp: Cdp;
   /** Sets the viewport the page is laid out in. */
   resize(width: number, height: number, mobile?: boolean): Promise<void>;
+  /** Plays the page's CSS animations and transitions this many times faster (the setting goes with the loaded page, so ask again after a navigation). */
+  playbackRate(rate: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -118,9 +120,11 @@ export async function launchChrome(width: number, height: number): Promise<Brows
   await cdp.send('Page.enable');
   const resize = (w: number, h: number, mobile = false) => cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile }).then(() => undefined);
   await resize(width, height);
+  await cdp.send('Animation.enable');
   return {
     cdp,
     resize,
+    playbackRate: (rate) => cdp.send('Animation.setPlaybackRate', { playbackRate: rate }).then(() => undefined),
     async close() {
       cdp.close();
       proc.kill();

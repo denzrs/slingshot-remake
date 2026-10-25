@@ -7,3 +7,6 @@ slingshot.db*
 leaderboard.db*
 stats.db*
 slingshot-stats-demo.db*
+# What `npm run screens -- --compare` keeps and writes.
+.screens-baseline/
+.screens-current/

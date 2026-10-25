@@ -39,7 +39,9 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 | `npm run dev` | Dev server at http://localhost:5173 |
 | `npm run build` | Typecheck and build the client into `dist/` |
 | `npm run typecheck` | Typecheck the client, tests, benchmarks and scripts |
-| `npm run screens -- --out <dir>` | Walk every menu page at several window sizes in headless Chrome, check nothing is clipped, and dump DOM and metrics to diff between two builds (see `scripts/screens.ts`) |
+| `npm run screens` | Build the game and walk every menu page at 13 window sizes in headless Chrome (about 4 minutes with the relay running); fails if anything is cut off (see `scripts/screens.ts`) |
+| `npm run screens:quick` | The same at three sizes, under a minute |
+| `npm run screens -- --compare [ref]` | What the working tree changed on each page since `HEAD` (or another commit): DOM, element positions and styles; the earlier run is kept in `.screens-baseline/` |
 | `npm run shot -- --out <file>` | Screenshot of the running game (headless Chrome; see `scripts/shot.ts`) |
 | `npm test` | Run all tests |
 | `npm run dev:server` | Rust multiplayer relay (port `8080`, override with `PORT`) |
