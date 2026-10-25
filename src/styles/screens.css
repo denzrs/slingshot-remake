@@ -1,0 +1,252 @@
+/* ——— Screens ——— */
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow-y: auto;
+  padding: max(24px, env(safe-area-inset-top)) 16px 24px;
+}
+
+.screen--title {
+  background: linear-gradient(90deg, rgb(11 26 51 / 0.94) 0%, rgb(11 26 51 / 0.82) 34%, rgb(11 26 51 / 0) 68%);
+  padding-left: clamp(16px, 7vw, 120px);
+}
+
+.screen--panel {
+  background: rgb(11 26 51 / 0.62);
+  backdrop-filter: blur(3px);
+}
+
+/* Auto margins centre a panel when it fits, and let it scroll from the top otherwise. */
+.screen--panel > .panel {
+  margin: auto;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--p1);
+}
+
+.wordmark {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(72px, 13vw, 168px);
+  line-height: 0.82;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: var(--bone);
+  /* The wordmark is "plotted": a thin offset trace in the second player's colour. */
+  text-shadow: 3px 3px 0 rgb(111 227 200 / 0.28);
+}
+
+.lede {
+  max-width: 40ch;
+  margin: 22px 0 30px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--bone-dim);
+}
+
+/* A quiet banner shows one game stat at a time without competing with the menu itself. */
+.stats-ticker {
+  position: relative;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  min-height: 50px;
+  overflow: hidden;
+  border-block: 1px solid rgb(91 125 179 / 0.24);
+  background: linear-gradient(90deg, rgb(8 20 38 / 0.72), rgb(17 34 57 / 0.3) 72%, rgb(8 20 38 / 0.5));
+}
+
+.stats-ticker[hidden] {
+  display: none;
+}
+
+.stats-ticker::before {
+  position: absolute;
+  inset: 9px auto 9px 0;
+  width: 2px;
+  background: var(--launch-accent, #ffad65);
+  content: '';
+}
+
+.stats-ticker__label {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 0 14px 0 16px;
+  border-right: 1px solid rgb(91 125 179 / 0.28);
+  color: var(--launch-accent, #ffad65);
+  font: 700 9px/1.4 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.stats-ticker__viewport {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+}
+
+.stats-ticker__loading {
+  color: var(--bone-dim);
+  font: 400 11px/1.5 var(--font-mono);
+}
+
+/* All facts share one cell, so the banner keeps the height of the longest and nothing jumps. */
+.stats-ticker__fact {
+  grid-area: 1 / 1;
+  padding-block: 8px;
+  color: var(--bone-dim);
+  font: 400 11px/1.5 var(--font-mono);
+  opacity: 0;
+  transform: translateY(3px);
+  transition: opacity 700ms ease, transform 700ms ease;
+  pointer-events: none;
+}
+
+.stats-ticker__fact.is-active {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.stats-ticker__number {
+  color: var(--p1);
+  font-weight: 700;
+}
+
+.stats-ticker__dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 16px;
+}
+
+.stats-ticker__dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgb(91 125 179 / 0.4);
+  transition: background-color 700ms ease;
+}
+
+.stats-ticker__dot.is-active {
+  background: var(--launch-accent, #ffad65);
+}
+
+.stats-ticker__a11y {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 520px) {
+  .stats-ticker { min-height: 46px; gap: 10px; }
+  .stats-ticker__label { padding-inline: 12px 10px; font-size: 8px; letter-spacing: 0.06em; }
+  .stats-ticker__fact { font-size: 10px; }
+  .stats-ticker__dots { display: none; }
+}
+
+/* Stillness keeps the rotation but swaps facts at once instead of fading. */
+@media (prefers-reduced-motion: reduce) {
+  .stats-ticker__fact, .stats-ticker__dot { transform: none; transition: none; }
+}
+
+.menu-motion-less .stats-ticker__fact, .menu-motion-less .stats-ticker__dot { transform: none; transition: none; }
+
+.keys {
+  margin: 22px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--bone-dim);
+  opacity: 0.8;
+}
+
+.title-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.title-foot .version {
+  margin: 0;
+}
+
+.coffee-button {
+  display: flex;
+  align-items: center;
+}
+
+.coffee-link {
+  color: var(--bone-dim);
+  font-size: 11px;
+  text-decoration: none;
+  opacity: 0.7;
+  transition: color 140ms ease, opacity 140ms ease;
+}
+
+.coffee-link:hover,
+.coffee-link:focus-visible {
+  color: var(--p1);
+  opacity: 1;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.version {
+  margin: 0;
+}
+
+.coffee-button {
+  display: flex;
+  align-items: center;
+}
+
+.coffee-link {
+  color: var(--bone-dim);
+  font-size: 11px;
+  text-decoration: none;
+  opacity: 0.7;
+  transition: color 140ms ease, opacity 140ms ease;
+}
+
+.coffee-link:hover,
+.coffee-link:focus-visible {
+  color: var(--p1);
+  opacity: 1;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@keyframes ghost-bob {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.version {
+  margin: 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--bone-dim);
+  opacity: 0.55;
+}

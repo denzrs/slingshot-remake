@@ -1,0 +1,84 @@
+:root {
+  --plate: #0b1a33;
+  --line: #5b7db3;
+  --bone: #e8e4d8;
+  --bone-dim: #9aa6bd;
+  --sodium: #ffd27a;
+  --p1: #ff8660;
+  --p2: #6fe3c8;
+  --danger: #ff5a6e;
+  --font-display: 'Big Shoulders Stencil Display', 'Arial Narrow', sans-serif;
+  --font-body: 'B612', system-ui, sans-serif;
+  --font-mono: 'B612 Mono', ui-monospace, monospace;
+  /* Shared geometry keeps the footer divider still when navigating between menus. */
+  --menu-frame-height: clamp(680px, calc(32vh + 432px), 764px);
+  --menu-frame-offset: clamp(18px, min(8vh, max(4vh, calc(34vh - 234px))), 120px);
+  --menu-footer-height: 86px;
+  /* Enlarges the touch controls on a touch screen. */
+  --ui: 1;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--plate);
+  color: var(--bone);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+#debug-seed {
+  display: block;
+  position: fixed;
+  z-index: 5;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  padding: 5px 9px;
+  border: 1px solid rgb(91 125 179 / 0.55);
+  background: rgb(11 26 51 / 0.82);
+  color: var(--sodium);
+  font: 11px/1.3 var(--font-mono);
+  letter-spacing: 0.08em;
+  transform: translateX(-50%);
+  color: var(--sodium);
+  text-decoration: none;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+#debug-seed[hidden] {
+  display: none;
+}
+
+#debug-seed:hover,
+#debug-seed:focus-visible {
+  border-color: var(--sodium);
+  background: rgb(11 26 51 / 0.96);
+  outline: 2px solid var(--sodium);
+  outline-offset: 2px;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+
+#overlay[hidden] {
+  display: none;
+}

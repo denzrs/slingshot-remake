@@ -74,7 +74,7 @@
 }
 
 /* Seats in a team: a window that is not tall packs them a little tighter, so three of them stay on the page; a tall one keeps the roomy cards. */
-@media (min-width: 521px) and (max-height: 999px) {
+@media (min-width: 521px) and (max-height: 1000px) {
   .team-roster.has-teams .pilot { padding: 8px 10px; }
   .team-roster.has-teams .option-selector__choice { min-height: 32px; padding-block: 3px; }
   .team-roster.has-teams .pilot__type { min-height: 30px; padding-block: 3px; }
@@ -93,7 +93,7 @@
   .menu-page--crew .team-roster.has-teams .has-many .slot-card--empty .item__title { font-size: 15px; }
   .menu-page--crew .team-roster.has-teams .has-many .slot-card--empty .slot-card__choices { inset: 8px 10px; }
 }
-@media (min-width: 521px) and (max-height: 999px) {
+@media (min-width: 521px) and (max-height: 1000px) {
   .team-roster.has-teams .has-many .pilot { gap: 4px; }
   .team-roster.has-teams .has-many .option-selector { gap: 3px; }
   .team-roster.has-teams .has-many .slot-card__number { font-size: 21px; }
