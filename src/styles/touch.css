@@ -1,9 +1,32 @@
 /* ——— Touch ——— */
 
 /*
- * One set of touch buttons, in both ways of holding the phone: the angle pair on the left, the power pair and the fire
- * button on the right (held sideways, in the corners of the screen) or in a bar across the foot (held upright).
+ * The aiming controls on a touch screen: the angle wheel in a corner of the screen, the power bar on the edge opposite
+ * it, and the fire button beside the wheel, where the thumb that turned it can reach. The wheel's side is a setting
+ * (`wheel-left` on the root puts everything the other way round).
+ * Held sideways the bar stands upright at the left edge; held upright it lies across the foot beside the fire button, and
+ * the wheel sits above them in the corner.
  */
+:root {
+  --wheel: clamp(132px, 46vh, 184px);
+  /* The menu button, and the height of the fire button and of the bar across the foot: the sizes the portrait layout reserves (`render/layout.ts`). */
+  --menu: calc(38px * var(--ui));
+  --row: calc(46px * var(--ui));
+}
+
+html.upright {
+  --wheel: min(46vw, 184px);
+}
+
+/* A tablet has the room: bigger controls, and a wheel that fills the thumb's reach. */
+@media (pointer: coarse) and (min-width: 761px) and (min-height: 741px) {
+  :root,
+  html.upright {
+    --ui: 1.4;
+    --wheel: clamp(200px, 30vmin, 320px);
+  }
+}
+
 #touch-bar {
   position: fixed;
   left: max(16px, env(safe-area-inset-left));
@@ -12,29 +35,27 @@
   z-index: 5;
   display: flex;
   align-items: flex-end;
+  justify-content: flex-end;
   gap: 10px;
+  /* Room for the wheel in its corner. */
+  padding-right: calc(var(--wheel) + 14px);
   /* The gaps between the buttons are the field: a finger there aims. */
   pointer-events: none;
 }
 
-#touch-bar > *,
-.tgroup > * {
+html.wheel-left #touch-bar {
+  justify-content: flex-start;
+  padding-right: 0;
+  padding-left: calc(var(--wheel) + 14px);
+}
+
+#touch-bar > * {
   pointer-events: auto;
 }
 
-.tgroup {
-  display: flex;
-  gap: 6px;
-}
-
-.tgroup[hidden] {
-  display: none;
-}
-
-.tbtn,
 #touch-fire,
-#touch-power {
-  min-height: calc(56px * var(--ui));
+#touch-power,
+.pbar__step {
   border: 1px solid rgb(232 228 216 / 0.45);
   border-radius: 2px;
   background: rgb(11 26 51 / 0.72);
@@ -45,35 +66,30 @@
   -webkit-touch-callout: none;
 }
 
-.tbtn {
-  min-width: calc(56px * var(--ui));
-  font: 700 26px/1 var(--font-body);
-}
-
-.tbtn:active {
-  background: rgb(255 134 96 / 0.25);
-}
-
-.tbtn:disabled {
-  opacity: 0.35;
-}
-
+/* The fire button is the one tinted thing among the see-through ones: present when it is needed, quiet otherwise. */
 #touch-fire {
-  min-width: calc(96px * var(--ui));
-  padding: 0 22px;
+  min-width: calc(68px * var(--ui));
+  min-height: var(--row);
+  padding: 0 14px;
   border-color: var(--p1);
+  background: linear-gradient(rgb(255 134 96 / 0.2), rgb(255 134 96 / 0.2)), rgb(11 26 51 / 0.72);
   color: var(--p1);
-  font: 800 24px/1 var(--font-display);
+  font: 800 18px/1 var(--font-display);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+#touch-fire:active {
+  background: linear-gradient(rgb(255 134 96 / 0.45), rgb(255 134 96 / 0.45)), rgb(11 26 51 / 0.72);
+  color: var(--bone);
 }
 
 /* The power-up button: above the fire button, in the colour of the power-up it uses. */
 #touch-power {
   position: fixed;
-  right: max(16px, env(safe-area-inset-right));
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 10px + 56px * var(--ui));
-  min-height: calc(44px * var(--ui));
+  right: calc(max(16px, env(safe-area-inset-right)) + var(--wheel) + 14px);
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 10px + 40px * var(--ui));
+  min-height: calc(40px * var(--ui));
   padding: 0 16px;
   border-color: var(--power, var(--p1));
   color: var(--power, var(--p1));
@@ -82,71 +98,317 @@
   text-transform: uppercase;
 }
 
-/* Held sideways: the fire button on the right edge, the power pair just inside it, the angle pair on the left. */
-html:not(.upright) .tgroup--power {
-  order: 1;
-  margin-left: auto;
+html.wheel-left #touch-power {
+  right: auto;
+  left: calc(max(16px, env(safe-area-inset-left)) + var(--wheel) + 14px);
 }
 
-html:not(.upright) #touch-fire {
-  order: 2;
+/* ——— The power bar ——— */
+
+.pbar {
+  --h: calc(34px * var(--ui));
+  display: flex;
+  gap: 6px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-/* Held upright: a bar — the angle pair, the fire button across the middle, the power pair — and the power-up button beside the menu. */
+.pbar[hidden] {
+  display: none;
+}
+
+.pbar__step {
+  flex: none;
+  padding: 0;
+  font: 700 24px/1 var(--font-body);
+}
+
+.pbar__step:active {
+  background: rgb(255 134 96 / 0.25);
+}
+
+.pbar__step:disabled {
+  opacity: 0.35;
+}
+
+.pbar__track {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgb(232 228 216 / 0.45);
+  border-radius: 2px;
+  background: rgb(11 26 51 / 0.55);
+  touch-action: none;
+}
+
+/* Everything on the track sits at a share of the way along it, the handle kept inside: `calc(var(--h) / 2 + (100% - var(--h)) * share)`. */
+.pbar__fill,
+.pbar__handle,
+.pbar__tick,
+.pbar__cap {
+  position: absolute;
+  pointer-events: none;
+}
+
+.pbar__fill {
+  background: var(--p1);
+  opacity: 0.55;
+}
+
+/* The groove the handle runs in. */
+.pbar__track::before {
+  content: '';
+  position: absolute;
+  background: rgb(232 228 216 / 0.3);
+}
+
+.pbar__handle {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--p1);
+  border-radius: 2px;
+  background: var(--p1);
+  color: var(--plate);
+  box-shadow: 0 0 0 3px rgb(11 26 51 / 0.55);
+}
+
+.pbar__value {
+  font: 800 18px/1 var(--font-display);
+  letter-spacing: 0.04em;
+}
+
+.pbar__tick {
+  background: rgb(232 228 216 / 0.45);
+}
+
+.pbar__tick--major {
+  background: rgb(232 228 216 / 0.85);
+}
+
+/* What the cap puts out of reach. */
+.pbar__cap {
+  display: none;
+  background: repeating-linear-gradient(135deg, rgb(91 125 179 / 0.55) 0 2px, transparent 2px 7px);
+}
+
+.pbar--capped .pbar__cap {
+  display: block;
+}
+
+/* A fixed power is shown, not changed. */
+.pbar--fixed .pbar__handle {
+  border-color: rgb(232 228 216 / 0.45);
+  background: rgb(232 228 216 / 0.4);
+}
+
+.pbar--fixed .pbar__track {
+  opacity: 0.6;
+}
+
+/* Held sideways: a bar that stands at the edge, from under the menu button to the foot of the screen. */
+html:not(.upright) .pbar {
+  position: fixed;
+  /* In line with the menu button above it: the same edge, the same width. */
+  left: max(12px, env(safe-area-inset-left));
+  top: calc(max(12px, env(safe-area-inset-top)) + var(--menu) + 12px);
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: var(--menu);
+  flex-direction: column-reverse;
+}
+
+html:not(.upright).wheel-left .pbar {
+  left: auto;
+  right: max(12px, env(safe-area-inset-right));
+}
+
+html:not(.upright) .pbar__step {
+  width: 100%;
+  height: calc(34px * var(--ui));
+}
+
+html:not(.upright) .pbar__track::before {
+  left: calc(50% - 0.5px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+html:not(.upright) .pbar__fill {
+  left: calc(50% - 2px);
+  width: 4px;
+  bottom: 0;
+  height: calc(var(--h) / 2 + (100% - var(--h)) * var(--p, 0));
+}
+
+html:not(.upright) .pbar__handle {
+  left: 0;
+  right: 0;
+  height: var(--h);
+  bottom: calc((100% - var(--h)) * var(--p, 0));
+}
+
+html:not(.upright) .pbar__tick {
+  right: 0;
+  width: 7px;
+  height: 1px;
+  bottom: calc(var(--h) / 2 + (100% - var(--h)) * var(--at));
+}
+
+html:not(.upright) .pbar__tick--major {
+  width: 13px;
+}
+
+html:not(.upright) .pbar__cap {
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: calc(var(--h) / 2 + (100% - var(--h)) * var(--cap, 1));
+}
+
+/* Held upright: a bar across the foot of the screen. */
 html.upright #touch-bar {
   left: max(12px, env(safe-area-inset-left));
   right: max(12px, env(safe-area-inset-right));
   bottom: max(12px, env(safe-area-inset-bottom));
+  padding: 0;
   gap: 8px;
 }
 
-/* The step buttons give way first: the word on the fire button must never spill over its neighbours. */
-html.upright .tgroup {
-  flex: 0 1 auto;
+/* Under the thumb that does not turn the wheel — and not wider than a thumb sweeps. */
+html.upright #touch-bar {
+  justify-content: flex-start;
+}
+
+html.upright.wheel-left #touch-bar {
+  justify-content: flex-end;
+}
+
+html.upright .pbar {
+  flex: 1 1 0;
   min-width: 0;
+  max-width: 560px;
+  height: var(--row);
 }
 
-html.upright .tbtn {
-  flex: 1 1 calc(44px * var(--ui));
-  min-width: calc(36px * var(--ui));
-  font-size: 24px;
+html.upright .pbar__step {
+  width: calc(40px * var(--ui));
+  height: 100%;
 }
 
+html.upright .pbar__track::before {
+  top: calc(50% - 0.5px);
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+html.upright .pbar__fill {
+  top: calc(50% - 2px);
+  height: 4px;
+  left: 0;
+  width: calc(var(--h) / 2 + (100% - var(--h)) * var(--p, 0));
+}
+
+html.upright .pbar__handle {
+  top: 0;
+  bottom: 0;
+  width: var(--h);
+  left: calc((100% - var(--h)) * var(--p, 0));
+}
+
+html.upright .pbar__tick {
+  bottom: 0;
+  width: 1px;
+  height: 7px;
+  left: calc(var(--h) / 2 + (100% - var(--h)) * var(--at));
+}
+
+html.upright .pbar__tick--major {
+  height: 13px;
+}
+
+html.upright .pbar__cap {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: calc(var(--h) / 2 + (100% - var(--h)) * var(--cap, 1));
+}
+
+/* Held sideways there is no row to match: the fire button is only as tall as it needs to be. */
+html:not(.upright) #touch-fire {
+  min-height: calc(40px * var(--ui));
+}
+
+/* The fire button ends the row, under the thumb that turned the wheel. */
 html.upright #touch-fire {
-  flex: 1 0 auto;
-  min-width: max-content;
-  padding: 0 10px;
-  font-size: 24px;
-  letter-spacing: 0.04em;
+  margin-left: auto;
   white-space: nowrap;
 }
 
+html.upright.wheel-left #touch-fire {
+  order: -1;
+  margin: 0 auto 0 0;
+}
+
+/* Held upright the power-up button waits above the bar, in the corner opposite the wheel. */
 html.upright #touch-power {
-  top: max(12px, env(safe-area-inset-top));
-  right: max(12px, env(safe-area-inset-right));
-  bottom: auto;
-  min-height: calc(48px * var(--ui));
+  top: auto;
+  right: auto;
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--row) + 12px);
+  left: max(12px, env(safe-area-inset-left));
   max-width: 52%;
   font-size: 15px;
 }
 
-/* The way into the pause menu, where there is no Esc key. */
-#touch-menu {
+html.upright.wheel-left #touch-power {
+  left: auto;
+  right: max(12px, env(safe-area-inset-right));
+}
+
+/* The way into the pause menu. */
+#pause-button {
   position: fixed;
   top: max(12px, env(safe-area-inset-top));
   left: max(12px, env(safe-area-inset-left));
   z-index: 5;
-  width: calc(48px * var(--ui));
-  height: calc(48px * var(--ui));
+  width: var(--menu);
+  height: var(--menu);
   border: 1px solid rgb(232 228 216 / 0.5);
   border-radius: 2px;
   background: rgb(11 26 51 / 0.85);
   color: var(--bone);
-  font: 700 24px/1 var(--font-body);
+  display: grid;
+  place-items: center;
+  padding: 0;
   touch-action: manipulation;
 }
 
-#touch-menu[hidden],
+/* Two bars: it pauses the game and opens its menu. */
+.pause-icon {
+  display: block;
+  box-sizing: border-box;
+  width: 14px;
+  height: 16px;
+  border-inline: 4px solid currentColor;
+}
+
+/* Held upright it stands beside the round label, in the row the label has to itself, so the field gets the room the button had. */
+html.upright #pause-button {
+  top: calc(max(12px, env(safe-area-inset-top)) + 6px);
+  width: 36px;
+  height: 36px;
+}
+
+/* Its touch target reaches past what is drawn. */
+html.upright #pause-button::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+#pause-button[hidden],
 #touch-fire[hidden],
 #touch-power[hidden],
 #clip-save[hidden] {
@@ -219,43 +481,44 @@ html.upright #touch-power {
   }
 }
 
-/* ——— The aiming stick: a see-through circle over the corner of the field, above the buttons ——— */
+/* ——— The angle wheel: a see-through quarter circle in the corner of the screen ——— */
 
-#touch-stick[hidden] {
+.twheel[hidden] {
   display: none;
 }
 
-#touch-stick {
-  --stick: clamp(96px, 36vh, 140px);
+.twheel {
   position: fixed;
-  left: max(16px, env(safe-area-inset-left));
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 56px * var(--ui) + 12px);
+  right: env(safe-area-inset-right, 0px);
+  bottom: env(safe-area-inset-bottom, 0px);
   z-index: 4;
-  width: var(--stick);
-  height: var(--stick);
-  border-radius: 50%;
+  width: var(--wheel);
+  height: var(--wheel);
+  /* The corner of the square that is not the wheel is the field's: a finger there aims. */
+  border-top-left-radius: 100%;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
 
-html.upright #touch-stick {
-  --stick: min(32vw, 132px);
-  left: max(12px, env(safe-area-inset-left));
-  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 56px * var(--ui) + 12px);
+.twheel--left {
+  right: auto;
+  left: env(safe-area-inset-left, 0px);
+  border-top-left-radius: 0;
+  border-top-right-radius: 100%;
 }
 
-html.stick-right #touch-stick {
-  left: auto;
-  right: max(16px, env(safe-area-inset-right));
+/* Held upright the wheel stands above the bar at the foot, not in front of it. */
+html.upright .twheel {
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--row) + 12px);
 }
 
-html.upright.stick-right #touch-stick {
-  right: max(12px, env(safe-area-inset-right));
+.twheel:focus-visible {
+  outline: 2px solid var(--p1);
 }
 
-#touch-stick canvas {
+.twheel canvas {
   display: block;
   width: 100%;
   height: 100%;
@@ -267,8 +530,15 @@ html.upright.stick-right #touch-stick {
   #clip-save {
     top: max(12px, env(safe-area-inset-top));
     bottom: auto;
-    left: calc(max(12px, env(safe-area-inset-left)) + 48px * var(--ui) + 10px);
+    left: calc(max(12px, env(safe-area-inset-left)) + var(--menu) + 10px);
   }
+}
+
+html.upright #clip-save {
+  top: calc(max(12px, env(safe-area-inset-top)) + 6px);
+  left: auto;
+  right: max(12px, env(safe-area-inset-right));
+  min-height: 36px;
 }
 
 /* How many people are watching, for everybody who is not in the stands. */

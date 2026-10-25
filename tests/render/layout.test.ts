@@ -13,6 +13,8 @@ function plate(layout: NonNullable<ReturnType<typeof portraitLayout>>) {
 
 describe('portrait layout', () => {
   it.each([
+    [360, 640],
+    [375, 667],
     [375, 812],
     [390, 844],
     [412, 915],
@@ -32,8 +34,6 @@ describe('portrait layout', () => {
 
   it.each([
     [320, 568],
-    [375, 667],
-    [360, 640],
   ])('keeps the field straight on a short %i×%i screen, where that is the bigger one', (width, height) => {
     const layout = portraitLayout(width, height, NO_INSET, UI)!;
     expect(layout.rotated).toBe(false);

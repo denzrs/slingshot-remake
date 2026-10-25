@@ -99,14 +99,14 @@ export function settingsScreen(app: App): Screen {
       ...(touch
         ? [inGroup({
             kind: 'segmented',
-            label: t('settings.stickSide'),
+            label: t('settings.wheelSide'),
             options: [
-              { value: 'left', label: t('settings.stickLeft') },
-              { value: 'right', label: t('settings.stickRight') },
+              { value: 'left', label: t('settings.wheelLeft') },
+              { value: 'right', label: t('settings.wheelRight') },
             ],
-            get: () => app.settings.stickSide,
+            get: () => app.settings.wheelSide,
             set: (v: unknown) => {
-              app.settings.stickSide = v === 'right' ? 'right' : 'left';
+              app.settings.wheelSide = v === 'left' ? 'left' : 'right';
               app.settingsChanged();
             },
           }, 'touch')]

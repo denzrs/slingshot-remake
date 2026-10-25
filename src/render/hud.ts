@@ -14,6 +14,9 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
 import type { DrawOptions } from './renderer';
 import { fitText, setSpacing } from './text';
 
+/** On a phone held upright the duel's two blocks start this far lower (field units before `k`), under the round label and the pause button beside it. */
+const DUEL_DROP = 24;
+
 type KeyItem = [key: string, label: string];
 type Segment = [text: string, color: string];
 
@@ -34,6 +37,9 @@ export class Hud {
   /** The whole canvas, for what takes over the screen and not just the field. */
   private screen = { w: 0, h: 0 };
   private readonly oracle = new OracleHud();
+
+  /** How far the duel's blocks sit lower on a phone held upright, where the round label's row is shared with the pause button. */
+  private drop = 0;
 
   private shipPos: (i: number) => { x: number; y: number } = () => ({ x: 0, y: 0 });
 
@@ -77,6 +83,7 @@ export class Hud {
     }
 
     const duel = match.mode === 'classic' && match.players.length === 2;
+    this.drop = duel && view.stage ? DUEL_DROP * this.k : 0;
     this.drawRoundLabel(match);
     this.drawTwistChips(match);
     if (duel) {
@@ -179,7 +186,7 @@ export class Hud {
     // The duel has its blocks in the corners; with a scoreboard across the top the chips go under it (and under its power-up strip).
     const duel = match.mode === 'classic' && match.players.length === 2;
     const below = duel ? 34 : (match.teamMode ? 66 : 50) + 40 + (match.powerUps ? 32 : 10);
-    this.drawChips(labels, this.field.x + this.field.w / 2, this.field.y + (below + (duel ? 18 : 0)) * this.k, colors);
+    this.drawChips(labels, this.field.x + this.field.w / 2, this.field.y + (below + (duel ? 18 : 0)) * this.k + this.drop, colors);
   }
 
   /**
@@ -286,7 +293,7 @@ export class Hud {
   private drawDuelBlock(match: Match, p: PlayerState, align: 'left' | 'right'): void {
     const { ctx, k, field } = this;
     const x = align === 'left' ? field.x + 24 * k : field.x + field.w - 24 * k;
-    const y = field.y + 22 * k;
+    const y = field.y + 22 * k + this.drop;
     const active = (match.phase === 'aiming' || match.phase === 'flying') && match.focus === p.id;
     ctx.globalAlpha = active || match.phase === 'roundOver' || match.phase === 'gameOver' ? 1 : 0.55;
     ctx.textAlign = align;
@@ -445,22 +452,38 @@ export class Hud {
       // An online player's symbol leads the card, in the player's colour; the name and score sit beside it.
       const textX = p.avatar ? x + 26 * k : x + 10 * k;
       if (p.avatar) drawAvatar(ctx, p.avatar, x + 17 * k, y + h / 2, 16 * k, p.color);
+      const status = !p.alive ? ['✕', COLORS.boneDim] : active ? [t('hud.aiming'), p.color] : planning && p.locked ? [t('hud.ready'), COLORS.boneDim] : null;
+      const name = p.name.toUpperCase();
+      const room = w - (textX - x) - 4 * k;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
+      ctx.font = `700 ${9.5 * k}px ${FONTS.mono}`;
+      const statusWidth = status ? ctx.measureText(status[0]).width + 8 * k : 0;
       ctx.font = `700 ${10 * k}px ${FONTS.body}`;
       setSpacing(ctx, 1.6 * k);
-      ctx.fillText(p.name.toUpperCase(), textX, y + 6 * k);
+      // Six cards across a phone are narrow: when the name and the status do not both fit, the status becomes a dot and the name shrinks to the room.
+      const roomy = ctx.measureText(name).width + statusWidth <= room;
+      if (!roomy) {
+        ctx.font = `700 ${9 * k}px ${FONTS.body}`;
+        setSpacing(ctx, 0.6 * k);
+      }
+      ctx.fillText(roomy ? name : fitText(ctx, name, room - (status ? 8 * k : 0)), textX, y + 6 * k);
       setSpacing(ctx, 0);
       ctx.fillStyle = COLORS.bone;
       ctx.font = `700 ${17 * k}px ${FONTS.mono}`;
       ctx.fillText(String(p.score), textX, y + 19 * k);
 
-      ctx.textAlign = 'right';
-      ctx.font = `700 ${9.5 * k}px ${FONTS.mono}`;
-      const status = !p.alive ? ['✕', COLORS.boneDim] : active ? [t('hud.aiming'), p.color] : planning && p.locked ? [t('hud.ready'), COLORS.boneDim] : null;
       if (status) {
         ctx.fillStyle = status[1];
-        ctx.fillText(status[0], x + w - 8 * k, y + 7 * k);
+        if (roomy) {
+          ctx.textAlign = 'right';
+          ctx.font = `700 ${9.5 * k}px ${FONTS.mono}`;
+          ctx.fillText(status[0], x + w - 8 * k, y + 7 * k);
+        } else {
+          ctx.beginPath();
+          ctx.arc(x + w - 6 * k, y + 9 * k, 2.4 * k, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
       // The power-up area under the card: what the ship holds, and its key. Dead ships keep theirs out of sight.
       if (match.powerUps && p.alive) this.drawPowerUpSlot(p, x, y + h + 4 * k, 'left', match.placing && match.focus === p.id, w);
@@ -506,7 +529,7 @@ export class Hud {
     let y = at.y - h / 2;
     x = Math.min(field.x + field.w - w - 6, Math.max(field.x + 6, x));
     const top = match.mode === 'classic' && match.players.length === 2 ? 130 : match.teamMode ? 114 : 98;
-    y = Math.min(field.y + field.h - h - 30 * k, Math.max(field.y + top * k, y));
+    y = Math.min(field.y + field.h - h - 30 * k, Math.max(field.y + top * k + this.drop, y));
 
     ctx.fillStyle = rgba(COLORS.plate, 0.78);
     ctx.fillRect(x, y, w, h);

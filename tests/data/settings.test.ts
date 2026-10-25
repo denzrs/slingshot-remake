@@ -148,15 +148,15 @@ describe('display settings', () => {
     expect(loadSettings().menuBackground).toBe(false);
   });
 
-  it('puts the aiming stick on the left unless the right was chosen, and remembers the choice', () => {
+  it('puts the angle wheel on the right unless the left was chosen, and remembers the choice', () => {
     storage();
-    expect(loadSettings().stickSide).toBe('left');
+    expect(loadSettings().wheelSide).toBe('right');
     const settings = cloneSettings(DEFAULT_SETTINGS);
-    settings.stickSide = 'right';
+    settings.wheelSide = 'left';
     saveSettings(settings);
-    expect(loadSettings().stickSide).toBe('right');
-    storage({ stickSide: 'top' });
-    expect(loadSettings().stickSide).toBe('left');
+    expect(loadSettings().wheelSide).toBe('left');
+    storage({ wheelSide: 'top' });
+    expect(loadSettings().wheelSide).toBe('right');
   });
 
   it('ignores stored display flags that are not booleans', () => {

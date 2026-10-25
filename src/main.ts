@@ -34,8 +34,8 @@ import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/room/chat';
 import { Menu } from './ui/menu/menu';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
-import { TouchControls } from './ui/touch/touch-controls';
-import { TouchStick } from './ui/touch/touch-stick';
+import { TouchPower } from './ui/touch/touch-power';
+import { TouchWheel } from './ui/touch/touch-wheel';
 import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, type App } from './ui/screens';
 import { statsAvailable, statsScreen } from './ui/stats/stats';
 import { reportLocalGame, trackLocalGame } from './net/localStats';
@@ -45,7 +45,7 @@ import type { StatsReplay } from './net/net';
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
-const touchMenu = document.querySelector<HTMLButtonElement>('#touch-menu')!;
+const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
 /** How many are watching, for everybody who is not in the stands themselves. */
 const standsBadge = document.querySelector<HTMLElement>('#stands-badge')!;
@@ -348,7 +348,7 @@ const app: App = {
   },
   settingsChanged() {
     saveSettings(settings);
-    applyStickSide();
+    applyWheelSide();
     applyMenuMotion();
     sound.menuEnabled = settings.menuSounds;
     sound.gameEnabled = settings.gameSounds;
@@ -674,7 +674,7 @@ const endDrag = () => (dragging = false);
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
 
-/** Aiming is dragging on the field or pulling the stick; the buttons are for the last half degree. */
+/** Aiming is dragging on the field, turning the wheel for the angle or sliding the bar for the power. */
 const touchAimHandlers = {
   aim(change: { angle?: number; power?: number }) {
     if (!match || !canAim()) return;
@@ -683,20 +683,23 @@ const touchAimHandlers = {
   },
   touched: () => sound.unlock(),
 };
-const touchControls = new TouchControls(document.querySelector<HTMLElement>('#touch-bar')!, touchAimHandlers);
-const touchStick = new TouchStick(touchAimHandlers);
-document.body.append(touchStick.el);
-/** The stick sits on the left of the screen, or — a setting on a touch screen — on the right. */
-function applyStickSide(): void {
-  document.documentElement.classList.toggle('stick-right', settings.stickSide === 'right');
+const touchBar = document.querySelector<HTMLElement>('#touch-bar')!;
+const powerBar = new TouchPower(touchAimHandlers);
+const touchWheel = new TouchWheel(touchAimHandlers);
+touchBar.prepend(powerBar.el);
+document.body.append(touchWheel.el);
+/** The wheel sits in the right corner of the screen, or — a setting on a touch screen — in the left one, and the power bar and the fire button follow. */
+function applyWheelSide(): void {
+  document.documentElement.classList.toggle('wheel-left', settings.wheelSide === 'left');
+  touchWheel.setSide(settings.wheelSide);
 }
-applyStickSide();
+applyWheelSide();
 function applyMenuMotion(): void {
   document.documentElement.classList.toggle('menu-motion-less', settings.lessMenuMotion);
 }
 applyMenuMotion();
 
-touchMenu.addEventListener('click', () => {
+pauseButton.addEventListener('click', () => {
   sound.unlock();
   if (screen === 'play' && !menu.isOpen) escapeAction();
 });
@@ -720,9 +723,12 @@ document.addEventListener('fullscreenchange', () => menu.refresh());
 function syncButtons(): void {
   const playing = screen === 'play' && !menu.isOpen && !!match;
   const m = match;
-  const showMenu = playing && coarsePointer.matches;
-  if (touchMenu.hidden === showMenu) touchMenu.hidden = !showMenu;
-  if (showMenu && touchMenu.ariaLabel !== t('common.menu')) touchMenu.ariaLabel = t('common.menu');
+  // The way into the pause menu: a button for a thumb, and for a mouse too, where Esc does the same.
+  if (pauseButton.hidden === playing) pauseButton.hidden = !playing;
+  if (playing && pauseButton.ariaLabel !== t('pause.title')) {
+    pauseButton.ariaLabel = t('pause.title');
+    pauseButton.title = coarsePointer.matches ? '' : `${t('pause.title')} (Esc)`;
+  }
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
     // The announcement of a Mayhem round waits for a tap (online only the host's).
@@ -747,11 +753,11 @@ function syncButtons(): void {
     touchPower.style.setProperty('--power', POWER_UP_COLORS[kind]);
   }
 
-  // The dial and the slider aim for whoever is aiming; a placement is aimed on the field itself.
+  // The wheel and the bar aim for whoever is aiming; a placement is aimed on the field itself.
   const aiming = playing && coarsePointer.matches && canAim() && !m!.placing ? m!.players[m!.viewer ?? m!.current] : null;
   const aim = aiming && { angle: aiming.angle, power: aiming.power, maxPower: m!.settings.maxPower, fixedPower: m!.settings.fixedPower };
-  touchControls.update(aim);
-  touchStick.update(aim);
+  powerBar.update(aim);
+  touchWheel.update(aim);
 
   const canClip = playing && m?.canSaveClip && ClipRecorder.supported && !recorder.recording;
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;

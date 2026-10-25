@@ -22,12 +22,11 @@ export interface PortraitLayout {
 /** Sizes in CSS pixels, before the touch scale `ui`. */
 const PAD = 12;
 const GAP = 12;
-const MENU = 48;
-const BUTTON = 56;
+const BUTTON = 46;
 const MARGIN = 4;
 /** What the HUD needs above the field: the round label and a scoreboard row — and the least it gets on a small phone. */
-const HUD_MIN = 112;
-const HUD_SQUEEZED = 88;
+const HUD_MIN = 124;
+const HUD_SQUEEZED = 100;
 /** A line under the field for the hint. */
 const HINT = 24;
 /** Below this height-to-width ratio (a square-ish window) the field is not small enough to need a layout of its own. */
@@ -46,7 +45,7 @@ export const plateUnits = (rotated: boolean): { w: number; h: number } => (rotat
  */
 export function portraitLayout(width: number, height: number, safe: { top: number; bottom: number }, ui: number): PortraitLayout | null {
   if (height < width * TALL) return null;
-  const top = Math.max(safe.top, PAD) + MENU * ui + 6;
+  const top = Math.max(safe.top, PAD);
   const bar = Math.max(safe.bottom, PAD) + BUTTON * ui + GAP;
   const stage = { x: 0, y: top, w: width, h: height - bar - top };
   const room = (hud: number): number => stage.h - hud - HINT - GAP;
