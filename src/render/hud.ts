@@ -962,6 +962,8 @@ export class Hud {
   private drawHint(match: Match, touch: boolean): void {
     const { k, field } = this;
     const maxWidth = field.w - 48 * k;
+    // Switching to a phone-sized window, the field can be narrower than the margins for a frame: there is no room for a hint.
+    if (maxWidth <= 0) return;
     let items: KeyItem[] = [];
     if (match.localCanAim) {
       if (touch) {
