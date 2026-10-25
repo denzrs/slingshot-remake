@@ -118,24 +118,6 @@ export function visibilityControl(look: RoomLook, change: (patch: Partial<RoomLo
   return { el, refresh };
 }
 
-/**
- * The room's symbol and colour at a glance: the symbol in its colour and its names. With `open`, a button
- * beside them opens the dialog to change them; without it, the summary only shows.
- */
-export function lookSummary(look: RoomLook, open?: () => void): LookControl {
-  const icon = h('span.look-summary__icon', null);
-  const text = h('span.look-summary__text', null);
-  const action = h('button.lobby__button', { type: 'button' }, t('multiplayer.lookChange'));
-  if (open) action.addEventListener('click', open);
-  const el = h('div.look-summary', null, icon, h('div.look-summary__body', null, h('span.look-caption', null, t('multiplayer.lookTitle')), text), ...(open ? [action] : []));
-  const refresh = (next: RoomLook): void => {
-    icon.replaceChildren(roomIcon(next.symbol, next.color));
-    text.textContent = `${t(SYMBOL_LABEL[next.symbol])} · ${t(COLOR_LABEL[next.color])}`;
-  };
-  refresh(look);
-  return { el, refresh };
-}
-
 /** The dialog that opens over the screen to choose the symbol and colour. Each choice applies at once. */
 export interface LookDialog extends LookControl {
   open(): void;

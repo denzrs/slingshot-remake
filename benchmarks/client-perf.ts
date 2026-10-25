@@ -17,7 +17,8 @@
 // Knobs (environment): MATCHES (4, per mode), ROUNDS (2), BENCH_JSON (a path: the figures as JSON).
 
 import { writeFileSync } from 'node:fs';
-import { createMatch, type Match, type VersusMode } from '../src/game';
+import { createMatch, type Match } from '../src/game';
+import type { GameMode } from '../src/modes';
 import { RIDERS, type ReplayScript } from '../src/game/replay';
 import { reportLocalGame, trackLocalGame } from '../src/localStats';
 import { packWireMessage } from '../src/messagepack';
@@ -31,7 +32,7 @@ const DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
 
 const seats: Seat[] = ['hard', 'medium', 'medium', 'off', 'off', 'off'];
-const settings = (mode: VersusMode): Settings => ({ ...cloneSettings(DEFAULT_SETTINGS), rounds: ROUNDS, seats, powerUps: true, maxPlanets: 5, simultaneousShots: mode === 'classic' });
+const settings = (mode: GameMode): Settings => ({ ...cloneSettings(DEFAULT_SETTINGS), rounds: ROUNDS, seats, powerUps: true, maxPlanets: 5, simultaneousShots: mode === 'classic' });
 
 const pct = (sorted: number[], p: number) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] : NaN);
 const fmt = (v: number, digits = 2) => (Number.isFinite(v) ? v.toLocaleString('en-US', { maximumFractionDigits: digits }) : 'n/a');
@@ -57,7 +58,7 @@ interface Figures {
   recording: ReplayScript;
 }
 
-function play(mode: VersusMode, seed: number, variant: Variant, script?: ReplayScript): Figures {
+function play(mode: GameMode, seed: number, variant: Variant, script?: ReplayScript): Figures {
   logging(variant !== 'baseline' || !!script);
   const rules = settings(mode);
   const match: Match = createMatch(mode, rules, { seats, seed, deterministicCpu: true, simultaneous: mode === 'horizon' || rules.simultaneousShots, script });
@@ -143,7 +144,7 @@ function summarize(label: string, runs: Figures[]): Row {
 
 const results: Record<string, Row[]> = {};
 
-for (const mode of ['classic', 'horizon'] as VersusMode[]) {
+for (const mode of ['classic', 'horizon'] as GameMode[]) {
   console.log(`\n${mode}: ${MATCHES} seeded matches of ${ROUNDS} rounds, three CPUs${settings(mode).simultaneousShots ? ', everybody at once' : ''}, power-ups on`);
   // Warm up: the first matches pay for the engine's own start-up.
   for (const variant of VARIANTS) play(mode, 1, variant);

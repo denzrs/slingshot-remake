@@ -1191,7 +1191,7 @@ describe('CPU seats online', () => {
 
     it('plays a room from the Mayhem preset by the rules it was made with: trick shots on, its flight time, and simultaneous shots in Classic', async () => {
       for (const mode of ['classic', 'horizon'] as const) {
-        const chosen = { ...presetRules('mayhem'), rounds: 3, shotTime: 30, simultaneousShots: mode === 'classic' };
+        const chosen = { ...presetRules('mayhem', mode), rounds: 3, shotTime: 30, simultaneousShots: mode === 'classic' };
         const { host, guest } = await startRoom(mode, ['Anna', 'Ben'], chosen);
         for (const side of [host, guest]) {
           expect(side.match().settings).toMatchObject({ mayhem: 2, rounds: 3, shotTime: 30, styleBonuses: true, betting: false });

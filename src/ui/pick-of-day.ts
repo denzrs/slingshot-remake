@@ -66,9 +66,9 @@ export function pickArt(pick: HandpickedPreset): SVGElement {
   };
 
   const background = '<g fill="#e8e4d8" opacity=".4"><circle cx="32" cy="25" r="1"/><circle cx="107" cy="33" r="1.5"/><circle cx="281" cy="99" r="1"/><circle cx="190" cy="169" r="1"/><circle cx="65" cy="176" r="1"/></g>';
-  const modeField = pick.base === 'horizon'
+  const modeField = pick.mode === 'horizon'
     ? art.singularity(160, 98, 27)
-    : pick.base === 'solar'
+    : pick.mode === 'solar'
       ? `<g fill="none" stroke="#f2c46d" stroke-opacity=".23"><ellipse cx="160" cy="98" rx="62" ry="34"/><ellipse cx="160" cy="98" rx="104" ry="56"/></g>${art.sun(160, 98)}`
       : '<ellipse cx="160" cy="98" rx="110" ry="58" fill="none" stroke="#b4c8d4" stroke-opacity=".14"/>';
   const mayhem = pick.rules.mayhem > 0

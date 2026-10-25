@@ -1,16 +1,17 @@
 import { MAX_PLAYERS } from './config';
 import { createMatch, type ClassicMatch, type HorizonMatch, type MatchOptions } from './game';
 import type { ReplayScript } from './game/replay';
-import { defaultRoomRules } from './lobbyPrefs';
+import { defaultRoomRules } from './roomRules';
 import type { Avatar } from './avatars';
-import type { NetworkCpuLevel, NetworkGameMode, RoomMode, RoomRules } from './net';
+import type { NetworkCpuLevel, RoomMode, RoomRules } from './net';
+import type { GameMode } from './modes';
 import type { Seat, Settings } from './settings';
 
 export type NetMatch = ClassicMatch | HorizonMatch;
 
 /** What an online game is made of: the room's rules and who sits where, and the seed its worlds grow from. */
 export interface NetGame {
-  gameMode: NetworkGameMode;
+  gameMode: GameMode;
   mode: RoomMode;
   rules?: RoomRules;
   seed: number;

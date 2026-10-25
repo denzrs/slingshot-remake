@@ -20,7 +20,7 @@ Eine helle Kontur zeigt Tastaturfokus; eine Auswahl erhält zusätzlich zum Oran
 ```text
 SLINGSHOT
 
-Lokal / Solo       Klassisch      Ereignishorizont      Mayhem
+Lokal / Solo       Klassisch      Ereignishorizont      Solar System
 Online spielen     Tägliche Herausforderung · heutige Mission
 Anleitung
 Einstellungen      ODER, bei Online:
@@ -39,9 +39,9 @@ Die Online-Karten führen direkt zur Raumsuche, Raumerstellung oder Code-Eingabe
 
 ## Vorbereitungen und Crew
 
-Klassisch und Ereignishorizont öffnen eine Vorbereitung mit vier echten Regelvorlagen, einem kompakten Regelüberblick und einer Aktion zum Ändern vollständiger Regeln. Vorlagen ersetzen Matchregeln ausdrücklich und behalten Crew, Teams und Geräteeinstellungen. Eigene Regeln bleiben beim Öffnen erhalten; die aktive Vorlage wird aus den tatsächlichen Werten bestimmt.
+Klassisch, Ereignishorizont und Solar System öffnen eine Vorbereitung mit Regelvorlagen, einem kompakten Regelüberblick und einer Aktion zum Ändern vollständiger Regeln. Vorlagen ersetzen Matchregeln ausdrücklich und behalten Crew, Teams und Geräteeinstellungen. Eigene Regeln bleiben beim Öffnen erhalten; die aktive Vorlage wird aus den tatsächlichen Werten bestimmt.
 
-Mayhem ist ein eigener Modus. Die Vorbereitung zeigt nur Mayhem-Regler und Besatzung; die Online-Raumerstellung hält Mayhem ebenfalls klar von der Party-Vorlage getrennt.
+Mayhem ist eine Vorlage in Klassisch und Ereignishorizont, kein eigener Modus: Solange sie aktiv ist, erscheint ein Stärkeregler. Lokale Vorbereitung und Online-Raum teilen sich dieselbe Kartenlogik (`src/ui/preset-cards.ts`); beide Abläufe unterscheiden sich nur über den `PresetHost`, der Regeln und Speicherung liefert.
 
 Die Crew-Seite zeigt Schiffe als kompakte Karten. Mensch oder CPU ist direkt wählbar; Schwierigkeitsgrad erscheint nur bei CPU. Teams, Hinzufügen und Entfernen bleiben sichtbar, ohne alle sechs Plätze mit bedingten Feldern gleichzeitig auszuschreiben.
 
@@ -54,3 +54,15 @@ Das Ergebnis stellt Punktzahl und Rang vor die fünf echten Sektorverläufe. Kop
 ## Kleine Bildschirme
 
 Bei schmalen Viewports wird die Navigation kompakt und die Online-Karten werden zu illustrierten Zeilen. Crew-Karten wechseln bei 320 px in eine Spalte; die fünf Daily-Sektoren bleiben in einer Reihe erkennbar. Seitenabstände, berührbare Ziele, fokussierte Eingaben und Sprache bleiben nutzbar.
+
+## Wo der Code liegt
+
+| Ort | Inhalt |
+| --- | --- |
+| `src/ui/screens/` | Seiten des Hauptmenüs: `title`, `setup`, `players`, `rules-page`, `settings`, `tutorial`, `pause`, `game-over`; `index.ts` exportiert nur `App` und die vier Einstiegsseiten |
+| `src/ui/lobby/` | Online-Lobby: `index.ts` ist der Rahmen, dazu `connection`, `browse`, `open-room`, `room`, `briefing`, `rules-form`, `widgets` |
+| `src/ui/preset-cards.ts` | Gemeinsame Regelvorlagen-Karten für lokal und online |
+| `src/roomRules.ts` | Einzige Quelle für Regeltyp, Standardwerte, Kopieren und Prüfen |
+| `src/modes.ts` | `GameMode`, `GAME_MODES`, `CLASSIC_FAMILY` |
+
+Seitenvergleich im Browser: `npm run screens` (siehe `scripts/screens.ts`).

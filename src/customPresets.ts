@@ -1,5 +1,6 @@
-import type { NetworkGameMode, RoomRules } from './net';
-import { roomRulesFrom } from './lobbyPrefs';
+import type { RoomRules } from './net';
+import type { GameMode } from './modes';
+import { roomRulesFrom } from './roomRules';
 
 /**
  * What the player keeps of the presets, in this browser only; local games and online rooms share it. Per mode there are
@@ -29,7 +30,7 @@ interface SavedMode {
   custom?: SavedCustom[];
 }
 
-type Saved = Partial<Record<NetworkGameMode, SavedMode>>;
+type Saved = Partial<Record<GameMode, SavedMode>>;
 
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 
@@ -42,7 +43,7 @@ function readAll(): Saved {
   }
 }
 
-function writeMode(mode: NetworkGameMode, saved: SavedMode): void {
+function writeMode(mode: GameMode, saved: SavedMode): void {
   try {
     localStorage.setItem(KEY, JSON.stringify({ ...readAll(), [mode]: saved }));
   } catch {
@@ -50,7 +51,7 @@ function writeMode(mode: NetworkGameMode, saved: SavedMode): void {
   }
 }
 
-const readMode = (mode: NetworkGameMode): SavedMode => {
+const readMode = (mode: GameMode): SavedMode => {
   const saved = readAll()[mode];
   return isObject(saved) ? saved : {};
 };
@@ -68,18 +69,18 @@ export const cleanPresetName = (name: string): string => name.replace(/\s+/g, ' 
 // ————————————————————————————— Built-in presets, changed and kept —————————————————————————————
 
 /** The rules the player saved over a built-in preset, or null while it is as shipped. */
-export function loadOverride(mode: NetworkGameMode, preset: string): RoomRules | null {
+export function loadOverride(mode: GameMode, preset: string): RoomRules | null {
   const saved = readMode(mode).overrides?.[preset];
   return isObject(saved) ? restored(saved) : null;
 }
 
-export function saveOverride(mode: NetworkGameMode, preset: string, rules: RoomRules): void {
+export function saveOverride(mode: GameMode, preset: string, rules: RoomRules): void {
   const saved = readMode(mode);
   writeMode(mode, { ...saved, overrides: { ...saved.overrides, [preset]: stored(rules) } });
 }
 
 /** Back to the original. */
-export function clearOverride(mode: NetworkGameMode, preset: string): void {
+export function clearOverride(mode: GameMode, preset: string): void {
   const saved = readMode(mode);
   if (!saved.overrides || !(preset in saved.overrides)) return;
   const { [preset]: _gone, ...rest } = saved.overrides;
@@ -88,7 +89,7 @@ export function clearOverride(mode: NetworkGameMode, preset: string): void {
 
 // ————————————————————————————— The player's own presets —————————————————————————————
 
-export function loadCustomPresets(mode: NetworkGameMode): CustomPreset[] {
+export function loadCustomPresets(mode: GameMode): CustomPreset[] {
   const list = readMode(mode).custom;
   if (!Array.isArray(list)) return [];
   return list
@@ -101,7 +102,7 @@ export function loadCustomPresets(mode: NetworkGameMode): CustomPreset[] {
  * Keeps a preset: a new one (no `id`) joins the list, one that exists is replaced in its place. Null once the list is
  * full, or when the id is gone (deleted somewhere else in the meantime).
  */
-export function saveCustomPreset(mode: NetworkGameMode, preset: { id?: string; name: string; rules: RoomRules }): CustomPreset | null {
+export function saveCustomPreset(mode: GameMode, preset: { id?: string; name: string; rules: RoomRules }): CustomPreset | null {
   const list = loadCustomPresets(mode);
   const name = cleanPresetName(preset.name);
   if (!name) return null;
@@ -114,7 +115,7 @@ export function saveCustomPreset(mode: NetworkGameMode, preset: { id?: string; n
   return kept;
 }
 
-export function deleteCustomPreset(mode: NetworkGameMode, id: string): void {
+export function deleteCustomPreset(mode: GameMode, id: string): void {
   const saved = readMode(mode);
   writeMode(mode, { ...saved, custom: loadCustomPresets(mode).filter((entry) => entry.id !== id).map((entry) => ({ id: entry.id, name: entry.name, rules: stored(entry.rules) })) });
 }

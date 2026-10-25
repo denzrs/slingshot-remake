@@ -38,7 +38,8 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 | --- | --- |
 | `npm run dev` | Dev server at http://localhost:5173 |
 | `npm run build` | Typecheck and build the client into `dist/` |
-| `npm run typecheck` | Typecheck the client, tests and benchmarks |
+| `npm run typecheck` | Typecheck the client, tests, benchmarks and scripts |
+| `npm run screens -- --out <dir>` | Walk every menu page at several window sizes in headless Chrome, check nothing is clipped, and dump DOM and metrics to diff between two builds (see `scripts/screens.ts`) |
 | `npm run shot -- --out <file>` | Screenshot of the running game (headless Chrome; see `scripts/shot.ts`) |
 | `npm test` | Run all tests |
 | `npm run dev:server` | Rust multiplayer relay (port `8080`, override with `PORT`) |

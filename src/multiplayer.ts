@@ -1,7 +1,8 @@
 import type { GameEvent } from './game';
 import type { ClassicSnapshot } from './game/classic';
 import type { HorizonSnapshot } from './game/horizon';
-import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkCpuLevel, type NetworkGameMode, type RoomInfo, type RoomMode, type RoomRules, type ServerMessage } from './net';
+import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkCpuLevel, type RoomInfo, type RoomMode, type RoomRules, type ServerMessage } from './net';
+import type { GameMode } from './modes';
 import type { RoomLook } from './roomLook';
 import type { Avatar } from './avatars';
 import { roundReport, turnReport } from './roundReport';
@@ -42,7 +43,7 @@ interface CreateRoomOptions {
   /** Blank: the server calls the room "<name>'s room". It refuses profane ones. */
   roomName?: string;
   mode: RoomMode;
-  gameMode: NetworkGameMode;
+  gameMode: GameMode;
   rules: RoomRules;
   maxPlayers: number;
   password?: string;
@@ -217,7 +218,7 @@ export class MultiplayerSession {
   }
 
   /** Host only: change the rules of the waiting room, and with them the game if one is given. */
-  setRules(rules: RoomRules, gameMode?: NetworkGameMode): void {
+  setRules(rules: RoomRules, gameMode?: GameMode): void {
     this.send({ type: 'set_rules', rules, ...(gameMode ? { gameMode } : {}) });
   }
 

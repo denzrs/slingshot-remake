@@ -1,5 +1,5 @@
 import { dailyChallenge, dateKey, shiftDate } from '../challenge';
-import { fmtInt, t, type Key } from '../i18n';
+import { fmtInt, t } from '../i18n';
 import { Leaderboard, BoardRejected, oldestBoardDay, type DailyBoard } from '../leaderboard';
 import { loadLobbyPrefs, saveLobbyPrefs } from '../lobbyPrefs';
 import { DEFAULT_SERVER } from '../multiplayer';
@@ -156,7 +156,7 @@ export function leaderboardScreen(
   let stopPager = (): void => {};
   const dayLabel = (key: string): string => {
     const challenge = dailyChallenge(key);
-    return t(`daily.theme.${challenge.theme}` as Key);
+    return t(`daily.theme.${challenge.theme}`);
   };
   const canView = (key: string): boolean => key >= oldestBoardDay(dateKey()) && key <= dateKey();
   const goTo = (key: string): void => {
@@ -185,7 +185,7 @@ export function leaderboardScreen(
   const paintHead = (): void => {
     const challenge = dailyChallenge(shown);
     title.textContent = dayLabel(shown);
-    kind.textContent = challenge.theme === 'precision' ? '' : t(`daily.theme.${challenge.theme}.text` as Key);
+    kind.textContent = challenge.theme === 'precision' ? '' : t(`daily.theme.${challenge.theme}.text`);
     date.textContent = shown === day ? caption : formatDay(shown);
     app.menu.refresh();
   };

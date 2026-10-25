@@ -13,7 +13,8 @@ import { ClipRecorder } from './clip';
 import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS } from './config';
 import { createUiPreview, type UiPreview } from './devPreview';
 import { recordRun } from './dailyStore';
-import { ChallengeMatch, createChallenge, createMatch, type Match, type VersusMode } from './game';
+import { ChallengeMatch, createChallenge, createMatch, type Match } from './game';
+import type { GameMode } from './modes';
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
 import type { OracleTap } from './render/oracle';
 import { readInvite } from './invite';
@@ -75,7 +76,7 @@ let match: Match | null = null;
 /** The game on screen when it is a replay, to watch it again. */
 let lastReplay: StatsReplay | null = null;
 let screen: 'title' | 'play' = 'title';
-let lastMode: VersusMode = 'classic';
+let lastMode: GameMode = 'classic';
 /** `?daily=YYYY-MM-DD` flies another day's challenge — handy for testing and for sharing an old one. */
 const requestedDay = new URLSearchParams(location.search).get('daily');
 const forcedDay = isDateKey(requestedDay) ? requestedDay : null;
@@ -740,9 +741,10 @@ function syncButtons(): void {
   const power = holder && holder.powerUp && holder.powerUp !== 'splitter' && holder.powerUp !== 'shield' ? holder : null;
   if (touchPower.hidden !== !power) touchPower.hidden = !power;
   if (power) {
-    const label = `${power.armed || m!.placing ? '● ' : ''}${t(`powerup.${power.powerUp}` as Key).toUpperCase()}`;
+    const kind = power.powerUp!;
+    const label = `${power.armed || m!.placing ? '● ' : ''}${t(`powerup.${kind}`).toUpperCase()}`;
     if (touchPower.textContent !== label) touchPower.textContent = label;
-    touchPower.style.setProperty('--power', POWER_UP_COLORS[power.powerUp!]);
+    touchPower.style.setProperty('--power', POWER_UP_COLORS[kind]);
   }
 
   // The dial and the slider aim for whoever is aiming; a placement is aimed on the field itself.

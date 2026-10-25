@@ -1,5 +1,6 @@
 import { MAYHEM } from './config';
-import { t, type Key } from './i18n';
+import { t } from './i18n';
+import { CLASSIC_FAMILY, type GameMode } from './modes';
 import { POWER_UP_KINDS, type PowerUpKind } from './powerups';
 import { createRng, intRange, pick, shuffle, type Rng } from './rng';
 import type { Settings } from './settings';
@@ -42,8 +43,8 @@ type Slot = 'planets' | 'bounce' | 'power' | 'sight' | 'pickups';
 
 interface TwistDef {
   slots: readonly Slot[];
-  /** Only meaningful in Classic (Event Horizon always shows its planets and scores trick shots anyway). */
-  classicOnly?: boolean;
+  /** The game modes the twist may turn up in; every mode when left out. */
+  modes?: readonly GameMode[];
   /** Left out of mild rounds: it takes away something the ships rely on. */
   harsh?: boolean;
   /** A number the twist rolls anew every time (a power, a planet count) — the same one it is applied and announced with. */
@@ -55,7 +56,7 @@ const pickups = (kinds: readonly PowerUpKind[], amount: number): Partial<TwistRu
 
 const TWISTS: Record<TwistId, TwistDef> = {
   billiard: { slots: ['bounce', 'planets'], roll: (rng) => intRange(rng, 2, 3), apply: (n) => ({ bounce: true, maxPlanets: n }) },
-  blind: { slots: ['sight'], classicOnly: true, harsh: true, apply: () => ({ invisiblePlanets: true }) },
+  blind: { slots: ['sight'], modes: CLASSIC_FAMILY, harsh: true, apply: () => ({ invisiblePlanets: true }) },
   memory: { slots: ['sight'], harsh: true, apply: () => ({ hiddenAim: true, fadingTrails: 1 }) },
   precision: { slots: ['power'], harsh: true, roll: (rng) => 35 + 5 * intRange(rng, 0, 9), apply: (n) => ({ fixedPower: true, fixedPowerLevel: n, maxPower: 100 }) },
   shortBreath: { slots: ['power'], roll: (rng) => pick(rng, [30, 40, 50]), apply: (n) => ({ fixedPower: false, maxPower: n }) },
@@ -77,7 +78,7 @@ const TWISTS: Record<TwistId, TwistDef> = {
   },
   minefield: {
     slots: ['planets', 'pickups'],
-    classicOnly: true,
+    modes: CLASSIC_FAMILY,
     apply: () => ({ ...pickups(['antigravity', 'defense', 'planetkiller'], 3), maxPlanets: 7 }),
   },
   mirrorMatch: {
@@ -118,7 +119,7 @@ export function applyTwists<S extends TwistRules>(base: S, round: { twists: read
 const differs = (a: TwistRules, b: TwistRules): boolean => TWIST_RULE_KEYS.some((key) => JSON.stringify(a[key]) !== JSON.stringify(b[key]));
 
 /** A twist's name in the language of the UI. */
-export const twistName = (twist: RoundTwist): string => t(`mayhem.twist.${twist.id}` as Key);
+export const twistName = (twist: RoundTwist): string => t(`mayhem.twist.${twist.id}`);
 
 /** What a round was about, in a line: its twists, and the finale or jackpot it was. */
 export function roundTitle(round: MayhemRound): string {
@@ -132,7 +133,7 @@ export function roundTitle(round: MayhemRound): string {
 export interface DrawContext {
   /** The rules the room was set up with, `mayhem` among them. */
   base: Settings;
-  mode: 'classic' | 'horizon';
+  mode: GameMode;
   /** The round about to start (1-based), and how many the match has (0 = endless). */
   round: number;
   rounds: number;
@@ -183,13 +184,13 @@ export class MayhemDeck {
   }
 
   /** The next twist from the bag that fits the round so far, or null when none does. */
-  private take(base: Settings, mode: 'classic' | 'horizon', level: number, chosen: readonly RoundTwist[], skip: readonly TwistId[]): RoundTwist | null {
+  private take(base: Settings, mode: GameMode, level: number, chosen: readonly RoundTwist[], skip: readonly TwistId[]): RoundTwist | null {
     // The second pass runs on a refilled bag: whatever the first one left did not fit.
     for (let pass = 0; pass < 2; pass++) {
       for (let i = 0; i < this.bag.length; i++) {
         const id = this.bag[i];
         const def = TWISTS[id];
-        if (this.previous.includes(id) || skip.includes(id) || (def.classicOnly && mode !== 'classic') || (def.harsh && level === 1)) continue;
+        if (this.previous.includes(id) || skip.includes(id) || (def.modes && !def.modes.includes(mode)) || (def.harsh && level === 1)) continue;
         if (chosen.some((c) => TWISTS[c.id].slots.some((slot) => def.slots.includes(slot)))) continue;
         const n = def.roll?.(this.rng);
         const laid = applyTwists(base, { twists: [...chosen, { id, n }] });

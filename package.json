@@ -10,6 +10,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "shot": "tsx scripts/shot.ts",
+    "screens": "tsx scripts/screens.ts",
     "dev:server": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml",
     "dev:server:stats": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml -- --stats",
     "dev:server:stats-demo": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml -- --stats-demo",

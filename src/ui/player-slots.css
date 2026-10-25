@@ -75,8 +75,6 @@
 .player-slot__identity .lobby__tag { padding: 2px 5px; font-size: 8px; letter-spacing: .03em; }
 .player-slot__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .player-slot__controls:empty { display: none; }
-.player-slot__controls .lobby__cpu-select { flex: 1; min-width: 0; width: auto; min-height: 32px; font-size: 11px; }
-.player-slot__controls .lobby__teams { flex: 1; margin: 0; }
 .player-slot .lobby__ready { margin: auto 0 0; padding-top: 3px; font-size: 10px; }
 .player-slot .lobby__icon-button { margin-left: auto; width: 26px; min-height: 26px; }
 .menu-page--room .menu-page__head { margin-bottom: 18px; }
@@ -89,7 +87,6 @@
 .menu-page--room .lobby__code-value { font-size: 20px; }
 .menu-page--room .room-deck__roster-head { margin-bottom: 10px; }
 .room-deck__roster-head .lobby__note { color: var(--bone); font: 800 25px/1.2 var(--font-display); text-transform: uppercase; }
-.menu-page--room .online-options { margin-top: 16px; }
 /* Leaving sits left of the big action, where Back sits on every other page. */
 .menu-page--room .menu-page__actions > .lobby__button:last-child { order: -1; margin-right: 0; }
 @media (max-width: 900px) {

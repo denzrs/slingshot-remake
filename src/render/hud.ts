@@ -1,7 +1,7 @@
 import { modifiersOf } from '../challenge';
 import { AIM, COLORS, FIELD, FONTS, MAYHEM, TEAMS } from '../config';
 import { ChallengeMatch, HorizonMatch, SKIP_VOTE_TIME, teamName, type KillRecord, type Match, type PlayerState } from '../game';
-import { fmt, fmtInt, t, type Key } from '../i18n';
+import { fmt, fmtInt, t } from '../i18n';
 import { TWIST_IDS, twistName } from '../mayhem';
 import { awardLabel, awardValue, awardWho, spotlight } from '../scorecard';
 import { styleLabel } from '../scoring';
@@ -237,7 +237,7 @@ export class Hud {
         const face = Math.floor(age * 18 * (1 - progress * 0.65)) + i * 5;
         ctx.globalAlpha = alpha * 0.55;
         ctx.fillStyle = COLORS.bone;
-        const spinning = t(`mayhem.twist.${TWIST_IDS[face % TWIST_IDS.length]}` as Key);
+        const spinning = t(`mayhem.twist.${TWIST_IDS[face % TWIST_IDS.length]}`);
         this.fitDisplay(spinning, 40 * k, 4 * k, field.w - 32 * k);
         ctx.fillText(spinning, cx, y);
         setSpacing(ctx, 0);
@@ -252,7 +252,7 @@ export class Hud {
       setSpacing(ctx, 0);
       ctx.fillStyle = COLORS.boneDim;
       ctx.font = `400 ${13 * k}px ${FONTS.mono}`;
-      ctx.fillText(t(`mayhem.twist.${twist.id}.info` as Key, { n: twist.n ?? 0 }), cx, y + 34 * k);
+      ctx.fillText(t(`mayhem.twist.${twist.id}.info`, { n: twist.n ?? 0 }), cx, y + 34 * k);
     });
 
     if (round.jackpot && age > landed + 0.1) {
@@ -363,7 +363,7 @@ export class Hud {
     }
     ctx.fillStyle = held ? color : COLORS.boneDim;
     ctx.font = `700 ${10 * k}px ${FONTS.body}`;
-    const name = held ? t(`powerup.${held}` as Key).toUpperCase() : t('hud.powerUp.title').toUpperCase();
+    const name = held ? t(`powerup.${held}`).toUpperCase() : t('hud.powerUp.title').toUpperCase();
     ctx.fillText(fitText(ctx, name, w - 24 * k - 42 * k), left + 24 * k, cy + 0.5 * k);
 
     // The key that uses it, at the right edge.
@@ -568,7 +568,7 @@ export class Hud {
     ctx.fillStyle = COLORS.boneDim;
     ctx.font = `700 ${10.5 * k}px ${FONTS.body}`;
     setSpacing(ctx, 1.8 * k);
-    ctx.fillText(t(`daily.theme.${match.challenge.theme}` as Key).toUpperCase(), left, top + 28 * k);
+    ctx.fillText(t(`daily.theme.${match.challenge.theme}`).toUpperCase(), left, top + 28 * k);
 
     // Centre: the sector, and the rules it plays by.
     ctx.textAlign = 'center';
@@ -1036,7 +1036,7 @@ function killSegments(match: Match, r: KillRecord): Segment[] {
 
 /** Rule tags of the current daily sector, e.g. ["Bounce", "Fixed power"]. */
 function modifierLabels(match: ChallengeMatch): string[] {
-  return modifiersOf(match.spec).map((m) => t(`daily.mod.${m}` as Key));
+  return modifiersOf(match.spec).map((m) => t(`daily.mod.${m}`));
 }
 
 function nameLabel(p: PlayerState): string {

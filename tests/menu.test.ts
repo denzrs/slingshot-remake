@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, loadSettings } from '../src/settings';
 import { AIM } from '../src/config';
 import type { RoomRules } from '../src/net';
-import { rulesOf } from '../src/lobbyPrefs';
+import { rulesOf } from '../src/roomRules';
 import { indexAtFraction, positionOf, stepIndex } from '../src/ui/controls';
-import { defaultRoomRules } from '../src/lobbyPrefs';
+import { defaultRoomRules } from '../src/roomRules';
 import { CAP_STOPS, DEFAULT_CAP, powerModeOf, powerModePatch, RULE_GROUPS, ruleItems, ruleRows, rulesFor, type PowerMode, type RuleSource } from '../src/ui/rules';
 import { startPower } from '../src/settings';
 import { readFileSync } from 'node:fs';
@@ -120,11 +120,11 @@ describe('game rules in the menu', () => {
     }
   });
 
-  it('hides the Classic-only rules in Event Horizon', () => {
+  it('hides the rules Event Horizon plays without, and keeps them in the Classic family', () => {
     const horizon = rulesFor('horizon').map((row) => row.key);
-    for (const row of all.filter((r) => r.classicOnly)) {
+    for (const row of all.filter((r) => r.modes)) {
       expect(horizon).not.toContain(row.key);
-      expect(rulesFor('classic').map((r) => r.key)).toContain(row.key);
+      for (const mode of ['classic', 'solar'] as const) expect(rulesFor(mode).map((r) => r.key)).toContain(row.key);
     }
   });
 

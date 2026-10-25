@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { dailyChallenge } from '../src/challenge';
-import { createChallenge, createMatch, ClassicMatch, HorizonMatch, type GameEvent, type Match, type Mode, type VersusMode } from '../src/game';
+import { createChallenge, createMatch, ClassicMatch, HorizonMatch, type GameEvent, type Match, type Mode } from '../src/game';
+import type { GameMode } from '../src/modes';
 import { cloneWorld } from '../src/physics';
 import { SnapshotDecoder, SnapshotEncoder } from '../src/netsync';
 import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
 const dt = 1 / 60;
-const modes: VersusMode[] = ['classic', 'solar', 'horizon'];
+const modes: GameMode[] = ['classic', 'solar', 'horizon'];
 
 function make(mode: Mode, count = 2, salvo = false): Match {
   const seats: Seat[] = Array.from({ length: 6 }, (_, i) => i < count ? 'human' : 'off');
@@ -39,7 +40,7 @@ function fire(m: Match, angle = 0): void {
   }
 }
 
-function networkMatch(mode: VersusMode, count = 2): ClassicMatch | HorizonMatch {
+function networkMatch(mode: GameMode, count = 2): ClassicMatch | HorizonMatch {
   const m = make(mode, count);
   if (m instanceof ClassicMatch || m instanceof HorizonMatch) return m;
   throw new Error('Expected a network match');
@@ -137,7 +138,7 @@ describe('shared killcams', () => {
 });
 
 describe('killcam snapshots', () => {
-  it.each<VersusMode>(['classic', 'solar', 'horizon'])('restores the remaining %s post-flight delay', (mode) => {
+  it.each<GameMode>(['classic', 'solar', 'horizon'])('restores the remaining %s post-flight delay', (mode) => {
     const host = networkMatch(mode);
     fire(host);
     until(host, () => host.phase === 'flying' && !!host.volley?.done);
@@ -152,7 +153,7 @@ describe('killcam snapshots', () => {
     expect(guest.lastClip).toEqual(host.lastClip);
   });
 
-  it.each<VersusMode>(['classic', 'solar', 'horizon'])('restores %s splitter playback through encoded network patches', (mode) => {
+  it.each<GameMode>(['classic', 'solar', 'horizon'])('restores %s splitter playback through encoded network patches', (mode) => {
     const host = networkMatch(mode);
     host.players[0].powerUp = 'splitter';
     host.players[0].armed = true;
@@ -202,7 +203,7 @@ describe('killcam preferences', () => {
     expect(disabled.phase).not.toBe('killcam');
   });
 
-  it.each<VersusMode>(['classic', 'solar'])('automatically enables %s killcams when simultaneous shots are on', (mode) => {
+  it.each<GameMode>(['classic', 'solar'])('automatically enables %s killcams when simultaneous shots are on', (mode) => {
     const m = make(mode, 2, true);
     m.settings.killcam = 'auto';
     fire(m);
@@ -241,7 +242,7 @@ describe('killcam preferences', () => {
     expect(events.filter((event) => event.type === 'killcam' && event.active)).toHaveLength(1);
   });
 
-  it.each<VersusMode>(['classic', 'solar'])('waits through non-final %s kills and replays the final kill of the round', (mode) => {
+  it.each<GameMode>(['classic', 'solar'])('waits through non-final %s kills and replays the final kill of the round', (mode) => {
     const m = make(mode, 3);
     m.settings.killcam = 'round';
     Object.assign(m.world.ships[2], { x: 500, y: 100 });

@@ -1,5 +1,5 @@
 import type { GameEvent, Match } from './game';
-import { rulesOf } from './lobbyPrefs';
+import { rulesOf } from './roomRules';
 import { DEFAULT_SERVER } from './multiplayer';
 import { NetworkClient, type LocalGameReport } from './net';
 import type { RoundReport } from './roundReport';

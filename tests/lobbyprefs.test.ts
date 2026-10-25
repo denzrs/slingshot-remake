@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AIM } from '../src/config';
-import { defaultRoomRules, loadLobbyPrefs, rulesOf } from '../src/lobbyPrefs';
+import { loadLobbyPrefs } from '../src/lobbyPrefs';
+import { defaultRoomRules, rulesOf } from '../src/roomRules';
 import { DEFAULT_ROOM_LOOK } from '../src/roomLook';
 import { DEFAULT_SETTINGS } from '../src/settings';
 

@@ -1,20 +1,19 @@
 import type { ReplayTurn } from './game/replay';
 import type { Avatar } from './avatars';
+import type { GameMode } from './modes';
 import type { GameEvent } from './game';
 import type { StatePatch } from './netsync';
 import type { RoomColor, RoomLook, RoomSymbol } from './roomLook';
 import type { RoundReport, TurnReport } from './roundReport';
-import type { Settings } from './settings';
+import type { RoomRules } from './roomRules';
 import { packWireMessage, unpackWireMessage } from './messagepack';
 import { withBrowserId } from './browserId';
 
 export type RoomMode = 'ffa' | 'team';
-export type NetworkGameMode = 'classic' | 'solar' | 'horizon';
 /** The level of a CPU seat in an online room: the same CPUs as offline. */
 export type NetworkCpuLevel = 'easy' | 'medium' | 'hard' | 'hawking';
 
-/** The rules of an online game; a subset of the local `Settings`, so it can be spread straight into them. */
-export type RoomRules = Pick<Settings, 'rounds' | 'maxPlanets' | 'invisiblePlanets' | 'bounce' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'shotTime' | 'styleBonuses' | 'neighborGrace' | 'simultaneousShots' | 'killcam' | 'hiddenAim' | 'fadingTrails' | 'mayhem' | 'betting' | 'chatPlayersOnly' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'>;
+export type { RoomRules };
 
 export type ClientInput =
   | { kind: 'adjust'; dAngle: number; dPower: number }
@@ -35,7 +34,7 @@ export type ClientInput =
 
 type ClientMessage =
   | { type: 'lobby' }
-  | ({ type: 'create_room'; name: string; roomName?: string; mode: RoomMode; gameMode: NetworkGameMode; rules: RoomRules; maxPlayers: number; password?: string; avatar?: Avatar } & Partial<RoomLook>)
+  | ({ type: 'create_room'; name: string; roomName?: string; mode: RoomMode; gameMode: GameMode; rules: RoomRules; maxPlayers: number; password?: string; avatar?: Avatar } & Partial<RoomLook>)
   /** `spectate` takes a place in the stands instead of a seat: it works for a running game of a public room without a password, too. */
   | { type: 'join_room'; roomId: string; name: string; password?: string; avatar?: Avatar; spectate?: boolean }
   /** Your symbol in the game, while the room waits. */
@@ -44,7 +43,7 @@ type ClientMessage =
   | { type: 'set_name'; name: string }
   | { type: 'ready'; ready: boolean }
   /** `gameMode` changes the game the rules are for; without it the room keeps its own. */
-  | { type: 'set_rules'; rules: RoomRules; gameMode?: NetworkGameMode }
+  | { type: 'set_rules'; rules: RoomRules; gameMode?: GameMode }
   /** Host only, while waiting: how the room shows up in the lobby. */
   | { type: 'set_room'; look: RoomLook }
   /** Host only, while waiting: free for all or teams; the players are dealt out to the teams and confirm again. */
@@ -123,7 +122,7 @@ export interface StatsGame {
   id: string;
   /** Unix seconds of its first reported round. */
   at: number;
-  gameMode: NetworkGameMode;
+  gameMode: GameMode;
   mode: 'ffa' | 'team';
   humans: number;
   cpus: number;
@@ -137,7 +136,7 @@ export interface StatsGame {
 
 /** A game played on one device, as the relay is told of it when it is over. */
 export interface LocalGameReport {
-  gameMode: NetworkGameMode;
+  gameMode: GameMode;
   mode: RoomMode;
   rules: RoomRules;
   /** Who sat where: a CPU's level, or null for a person; the team in team games. */
@@ -148,7 +147,7 @@ export interface LocalGameReport {
 
 /** A recorded game as the relay hands it over: what it takes to fly it again (see `game/replay.ts`). */
 export interface StatsReplay {
-  gameMode: NetworkGameMode;
+  gameMode: GameMode;
   mode: RoomMode;
   rules: RoomRules;
   seed: number;
@@ -177,7 +176,7 @@ export interface LobbyRoom {
   symbol: RoomSymbol;
   color: RoomColor;
   mode: RoomMode;
-  gameMode: NetworkGameMode;
+  gameMode: GameMode;
   /** The room's chaos strength: above 0 it is a Mayhem room, played in `gameMode`. */
   mayhem: number;
   /** Seats taken, CPUs included. */
@@ -211,7 +210,7 @@ export interface RoomInfo extends RoomLook {
   /** The room's number, as the lobby lists it. */
   number: number;
   mode: RoomMode;
-  gameMode: NetworkGameMode;
+  gameMode: GameMode;
   rules: RoomRules;
   maxPlayers: number;
   status: 'waiting' | 'playing';
@@ -235,7 +234,7 @@ export type ServerMessage =
       type: 'game_start';
       roomId: string;
       mode: RoomMode;
-      gameMode: NetworkGameMode;
+      gameMode: GameMode;
       rules?: RoomRules;
       hostId: 0;
       seed: number;

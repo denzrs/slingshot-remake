@@ -41,7 +41,6 @@
 .menu-page__body--split { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 42px; }
 .menu-page__main, .menu-page__aside, .menu-group { min-width: 0; }
 .menu-page__aside { padding-left: 28px; border-left: 1px solid var(--menu-line); }
-.menu-page__art { height: 170px; margin: -12px 0 24px; }
 .menu-page .note { margin: 0 0 16px; line-height: 1.7; }
 .menu-page .setup__title { margin: 0 0 14px; color: var(--launch-accent); line-height: 1.5; }
 .menu-page .setup { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 40px; columns: auto; }
@@ -88,11 +87,6 @@
 .screen[data-rebuild] .menu-page__head > *,
 .screen[data-rebuild] .menu-page__head .mode-pager__viewport,
 .screen[data-rebuild] .menu-page__main { animation: none; }
-
-/* Device preferences: related controls share a group. */
-.preferences { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px 56px; }
-.preferences .item { padding: 12px 8px; min-height: 52px; border-bottom: 1px solid rgb(91 125 179 / 0.12); border-radius: 0; }
-.preferences [data-section='language'] .item { gap: 16px; }
 
 /* Pause: a quiet menu over the match. */
 .menu-page--pause,
@@ -168,12 +162,7 @@
 .menu-page .sectors { margin: 0; }
 .menu-page .sectors li { padding: 18px 0; gap: 10px 18px; }
 .menu-page .sectors__n { font-size: 24px; letter-spacing: 0.03em; }
-.menu-page .sectors__info { font-size: 12px; }
 .menu-page .chip { font-size: 9px; letter-spacing: 0.025em; border-color: rgb(111 227 200 / 0.28); color: var(--p2); }
-.menu-page .daily-stats { flex-wrap: wrap; gap: 18px; margin: 12px 0 24px; }
-.menu-page .daily-stats dt { margin-bottom: 6px; font-size: 10px; letter-spacing: 0.02em; }
-.menu-page .daily-stats dd { font-size: 26px; }
-.menu-page .daily-stats-none { margin-bottom: 20px; }
 .menu-page .daily-reset { color: var(--p2); font-size: 11px; }
 .menu-page .daily__score { margin: 0 0 12px; justify-content: flex-start; text-align: left; }
 .menu-page .daily__num { font-size: clamp(64px, 7vw, 100px); }
@@ -182,7 +171,6 @@
 .menu-page .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; line-height: 1.5; }
 .legend__entry { display: inline-flex; align-items: center; gap: 6px; }
 .menu-page .daily__new { display: block; }
-.menu-page .sectors--result li { grid-template-columns: 5.5em minmax(0, 1fr) auto; padding-block: 13px; }
 .menu-page .shots { flex-wrap: wrap; }
 .menu-page .lb { margin: 0; gap: 18px; }
 .menu-page--leaderboard .lb__kind { min-height: 1.7em; text-align: left; }
@@ -288,9 +276,7 @@
   padding: 8px 20px;
 }
 .menu-page .lobby__field { font-size: 12px; gap: 8px; }
-.menu-page .lobby__field input, .menu-page .lobby-room input, .menu-page .lobby__code-join input { min-height: 44px; padding: 10px 12px; border-color: var(--menu-line); background: var(--menu-surface); font-size: 14px; }
-.menu-page .lobby__bar { padding: 16px; gap: 16px 24px; border-color: var(--menu-line); background: transparent; }
-.menu-page .lobby__bar .lobby__link { flex-basis: 100%; }
+.menu-page .lobby__field input, .menu-page .lobby-room input { min-height: 44px; padding: 10px 12px; border-color: var(--menu-line); background: var(--menu-surface); font-size: 14px; }
 .menu-page .lobby__name { margin: 0; }
 .menu-page .lobby__avatar { margin-left: auto; }
 .menu-page .lobby__empty { padding: 42px 20px; gap: 12px; border: 0; background: none; }
@@ -298,27 +284,19 @@
 .menu-page .lobby__empty > span { max-width: 44ch; font-size: 13px; line-height: 1.7; }
 .menu-page .lobby-room { padding: 18px; gap: 18px; border-color: var(--menu-line); }
 .menu-page .lobby-room__info strong { font-size: 18px; }
-.menu-page .lobby__code-join { gap: 12px; padding-top: 20px; border-top: 1px solid var(--menu-line); }
 .menu-page .lobby__head .lobby__button { font-size: 22px; }
-.menu-page .lobby__basics { gap: 24px 40px; margin-bottom: 8px; }
 .menu-page .lobby__actions { align-items: center; gap: 10px; }
 .menu-page .lobby__actions .lobby__button { flex: 0 1 auto; min-height: 48px; }
 .menu-page .lobby__actions .lobby__button--primary { margin-left: auto; }
-.lobby__preset-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
-.lobby__presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 20px; }
 .menu-page .lobby__preset { display: flex; align-items: center; gap: 10px; padding: 10px; background: var(--menu-surface); text-align: left; }
 .lobby__preset > .item__icon { width: 62px; height: 44px; flex: none; }
 .lobby__preset > .item__title { font: 800 22px/1.2 var(--font-display); letter-spacing: 0.02em; text-transform: uppercase; }
 .menu-page .lobby__preset[aria-pressed='true'] { border-color: var(--launch-accent); color: var(--launch-accent); background: rgb(255 173 101 / 0.06); }
-.lobby__rule-details { min-width: 0; padding: 16px 0; border-top: 1px solid var(--menu-line); }
-.lobby__rule-details > summary { width: fit-content; padding: 4px 0; color: var(--p2); font-size: 13px; line-height: 1.6; cursor: pointer; }
-.lobby__rule-details[open] > summary { margin-bottom: 22px; }
 .menu-page .lobby__players { gap: 10px; }
 .menu-page .lobby__players li { min-height: 58px; padding: 14px 16px; border-color: var(--menu-line); background: rgb(10 24 42 / 0.6); }
 .menu-page .lobby__player-name { font-size: 15px; }
 .menu-page .lobby__tag { font-size: 10px; }
 .menu-page .lobby__code { flex-wrap: wrap; gap: 12px; padding: 14px 0; }
-.menu-page .look-summary { background: transparent; border-color: var(--menu-line); }
 .look-dialog { --launch-accent: #ffad65; }
 .look-dialog .look-dialog__card { width: min(520px, 100%); padding: 28px; gap: 18px; background: #0d1c31; border-color: var(--menu-line); }
 .look-dialog .setup__title { color: var(--launch-accent); }
@@ -331,7 +309,6 @@
   .tutorial__layout { grid-template-columns: minmax(0, 1fr) minmax(250px, 300px); gap: 20px; }
   .tutorial__preview { padding: 8px; }
   .menu-page .lobby__connect { gap: 24px; }
-  .lobby__presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
@@ -344,7 +321,6 @@
   .menu-page__body--split { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .menu-page--briefing .menu-page__body--split { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .menu-page__aside { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--menu-line); }
-  .menu-page__art { height: 130px; margin-bottom: 16px; }
   .menu-page__foot { gap: 12px 16px; margin: 24px -22px 0; padding: 16px 22px max(18px, env(safe-area-inset-bottom)); }
   .menu-page__foot > .keys { display: none; }
   .menu-page__actions { justify-content: flex-end; gap: 10px; }
@@ -352,7 +328,6 @@
   .menu-page--tutorial .menu-page__actions { justify-content: flex-end; }
   .menu-page__actions .item { min-height: 48px; padding: 10px 14px; font-size: 12px; }
   .menu-page__actions .item--primary { min-height: 48px; font-size: 23px; }
-  .preferences { gap: 28px; }
   .menu-page .setup { grid-template-columns: minmax(0, 1fr); }
   .menu-page--tutorial .menu-page__body { display: flex; flex-direction: column; gap: 24px; }
   .menu-page--tutorial .menu-page__aside { order: -1; padding: 0 0 20px; border: 0; border-bottom: 1px solid var(--menu-line); }
@@ -369,9 +344,7 @@
   .lobby__connect > .setup__title, .lobby__connect > .lobby__fields, .lobby__connect > .lobby__button { grid-column: 1; }
   .lobby__connect-art { grid-column: 1; grid-row: auto; }
   .lobby__connect-art .mode-art { height: 130px; }
-  .menu-page .lobby__bar { gap: 16px; }
   .menu-page .lobby__avatar { width: 100%; margin-left: 0; }
-  .menu-page .lobby__basics { gap: 24px; }
   .menu-page .lobby__actions .lobby__button { flex: 1 1 auto; }
 }
 
@@ -583,7 +556,6 @@
 }
 
 @media (max-width: 520px) {
-  .preferences { grid-template-columns: minmax(0, 1fr); }
   .menu-page__head .eyebrow { font-size: 9px; }
   .menu-page__actions .item--primary { flex: 1 1 100%; margin-left: 0; }
   .menu-page--settings .menu-page__actions .item--primary,
@@ -601,16 +573,9 @@
     white-space: nowrap;
   }
   .menu-page .sectors li { grid-template-columns: minmax(0, 1fr) auto; padding: 16px 0; gap: 10px; }
-  .menu-page .sectors__info { grid-column: 1 / -1; font-size: 11px; }
   .menu-page .chips { grid-column: 1 / -1; }
-  .menu-page .sectors--result li { grid-template-columns: minmax(0, 1fr) auto; }
-  .menu-page .sectors--result .shots { grid-column: 1 / -1; grid-row: 2; }
   .menu-page .sectors__points { grid-column: 2; grid-row: 1; }
-  .menu-page .lobby__basics { grid-template-columns: minmax(0, 1fr); }
   .menu-page .lobby__head { flex-wrap: wrap; gap: 12px; }
-  .menu-page .lobby__code-join { grid-template-columns: minmax(0, 1fr); }
-  .menu-page .lobby__code-join .lobby__code-label { grid-column: 1; }
-  .menu-page .lobby__code-join > * { min-width: 0; width: 100%; }
   .menu-page .lobby-room { flex-wrap: wrap; }
   .menu-page .lobby-room__actions { width: 100%; }
   .lobby__preset > .item__icon { width: 44px; height: 36px; }
@@ -627,24 +592,6 @@
   .menu-page, .menu-page__head > :not(.mode-carousel), .menu-page__head .mode-pager__viewport, .menu-page__main { animation: none; }
 }
 
-/* A destination is a card; configuration follows the decision. */
-.flight-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
-.flight-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; min-width: 0; padding: 20px; gap: 12px; border: 1px solid var(--menu-line); border-radius: 5px; background: rgb(14 32 55 / .62); color: var(--bone); text-align: left; cursor: pointer; transition: border-color 180ms, background 180ms, transform 180ms; }
-.flight-card__art { display: block; width: 100%; height: 170px; }
-.flight-card__title { font: 800 34px/1.1 var(--font-display); text-transform: uppercase; letter-spacing: .015em; }
-.flight-card__hint { max-width: 32ch; color: var(--bone-dim); font: 400 12px/1.7 var(--font-body); }
-.flight-card:hover { transform: translateY(-3px); border-color: var(--bone-dim); background: rgb(21 43 68 / .8); }
-.flight-card[aria-pressed='true'] { border-color: var(--launch-accent); background: rgb(255 173 101 / .055); }
-.flight-card[aria-pressed='true'] .flight-card__title { color: var(--launch-accent); }
-.online-create > .flight-cards { margin-bottom: 24px; }
-.online-options { padding-block: 20px; border-top: 1px solid var(--menu-line); }
-.online-options > summary { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px 20px; padding: 4px 0; color: var(--p2); font-size: 13px; cursor: pointer; }
-.online-options > summary::after { content: '+'; margin-left: auto; }
-.online-options[open] > summary::after { content: '−'; }
-.online-options > summary > span:nth-child(2) { color: var(--bone-dim); font-size: 11px; }
-.online-options[open] > summary { margin-bottom: 24px; }
-.online-options .lobby__basics { margin-top: 20px; }
-.online-options .lobby__look-row, .online-options .lobby__avatar { margin-top: 20px; }
 .online-rooms .lobby__head { margin-bottom: 20px; }
 
 /* Online flows: keep the action visible and the account details quiet. */
@@ -948,8 +895,6 @@
 .menu-page--lobby .lobby-room__info { gap: 5px; }
 .menu-page--lobby .lobby-room__info strong { font-size: 15px; }
 
-.online-create > .flight-cards { gap: 12px; margin-bottom: 18px; }
-.lobby__presets { gap: 8px; margin-bottom: 16px; }
 .menu-page--lobby .lobby__preset {
   position: relative;
   min-height: 54px;
@@ -965,8 +910,6 @@
 
 .menu-page--lobby .lobby__card--wide { padding: 22px; }
 .menu-page--lobby .lobby__card--wide > .setup__title { font-size: 27px; }
-.menu-page--lobby .online-options { padding-block: 15px; }
-.menu-page--lobby .online-options > summary { min-height: 38px; align-items: center; }
 /* Local crew shares the waiting room's fixed slot grid. */
 .menu-page--crew .menu-page__head { margin-bottom: clamp(16px, 2.5vh, 28px); }
 .crew-config { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; }
@@ -975,19 +918,13 @@
 .crew-config .item--segmented { padding: 0; }
 .crew-config .segmented { min-height: 42px; }
 .crew-config .segmented__option { font-size: 12px; }
-.menu-page--crew .team-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 0 0 14px; margin: 0; }
-.menu-page--crew .team-summary[hidden] { display: none; }
-.team-summary__label { color: var(--bone-dim); font: 9px/1.4 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
-.menu-page--crew .team-chip { gap: 8px; font-size: 12px; }
-.team-chip strong { color: var(--bone-dim); font: 400 11px/1 var(--font-mono); }
 .crew-roster__aside { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 16px; min-height: 38px; }
 .crew-actions { gap: 0; margin: 0; }
 .crew-actions .item { min-height: 38px; padding: 8px 12px; border-color: var(--menu-line); color: var(--p2); font-size: 11px; }
 .crew-roster { min-width: 0; }
 .crew-roster__heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 20px; margin-bottom: 12px; }
 .crew-roster__heading .setup__title { margin: 0; color: var(--bone); font: 800 26px/1.2 var(--font-display); letter-spacing: .02em; text-transform: uppercase; }
-.crew-roster__status, .crew-roster__note { margin: 0; color: var(--bone-dim); font-size: 11px; line-height: 1.6; }
-.crew-roster__note { margin-block: 14px; }
+.crew-roster__status { margin: 0; color: var(--bone-dim); font-size: 11px; line-height: 1.6; }
 .pilot-art { display: block; width: 100%; height: 100%; }
 .pilot__name { color: var(--slot-tone); font: 800 23px/1 var(--font-display); text-transform: uppercase; }
 .pilot__assignment { display: grid; gap: 6px; }
@@ -1005,7 +942,6 @@
   .pilot.is-cpu .pilot__body > .slot-card__portrait { padding-bottom: 44px; }
 }
 .pilot:not(.is-cpu) .pilot__options { visibility: hidden; opacity: 0; }
-.pilot__select { width: 100%; min-height: 36px; padding: 6px 8px; border: 1px solid var(--menu-line); border-radius: 3px; background: #081426; color: var(--bone); cursor: pointer; font: 12px/1.4 var(--font-body); letter-spacing: 0; text-transform: none; }
 .pilot__remove { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 28px; min-height: 28px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--bone-dim); font: 18px/1 var(--font-body); cursor: pointer; }
 .pilot__remove:hover:not(:disabled) { border-color: var(--menu-line); color: var(--bone); }
 .pilot__remove:disabled { opacity: .25; cursor: not-allowed; }
@@ -1033,9 +969,6 @@
 .mission-stats { display: flex; flex-wrap: wrap; gap: 30px; margin: 0; }
 .mission-stats dt { color: var(--bone-dim); font: 400 10px/1.6 var(--font-body); }
 .mission-stats dd { margin: 6px 0 0; color: var(--bone); font: 400 22px/1.5 var(--font-mono); }
-.mission-rules { max-width: 45ch; font-size: 11px; color: var(--bone-dim); line-height: 1.7; }
-.mission-rules summary { color: var(--p2); cursor: pointer; }
-.mission-rules .note { margin-top: 14px; font-size: 11px; }
 .menu-page--mission .daily-reset { font: 400 10px/1.7 var(--font-mono); color: var(--bone-dim); margin: 20px 0 0; }
 .mission-scorecards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; list-style: none; padding: 0; margin: 24px 0; }
 .mission-scorecards li { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; padding: 20px 16px; border: 1px solid var(--menu-line); border-top: 2px solid var(--p2); border-radius: 4px; background: rgb(14 32 55 / .6); }
@@ -1103,8 +1036,6 @@
 }
 
 @media (max-width: 900px) {
-  .flight-card__art { height: 130px; }
-  .flight-card__title { font-size: 29px; }
   .menu-page--crew { width: 100%; }
   .mission-route { gap: 10px; }
   .mission-route .item { padding: 12px; }
@@ -1112,11 +1043,6 @@
   .mission-scorecards li { padding: 16px 10px; }
 }
 @media (max-width: 760px) {
-  .flight-cards { gap: 12px; }
-  .flight-card { padding: 14px; }
-  .flight-card__title { font-size: 26px; }
-  .flight-card__hint { font-size: 11px; }
-  .flight-card__art { height: 100px; }
   .online-profile__fields { flex-direction: column; align-items: stretch; }
   .menu-page--lobby .menu-page__title { font-size: clamp(40px, 8vw, 58px); }
   .menu-page--lobby .online-identity { gap: 12px; padding: 14px 16px; }
@@ -1137,16 +1063,9 @@
 }
 @media (max-width: 520px) {
   .tutorial__selection-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .flight-cards { grid-template-columns: minmax(0, 1fr); }
-  .flight-card { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 6px 16px; padding: 16px 14px; }
-  .flight-card__art { grid-column: 1; grid-row: 1 / 3; height: 80px; }
-  .flight-card__title { grid-column: 2; align-self: end; font-size: 29px; }
-  .flight-card__hint { grid-column: 2; font-size: 11px; }
   .online-create .lobby__actions { justify-content: stretch; }
   .online-create .lobby__actions .lobby__button { flex: 1 1 100%; }
   .menu-page--lobby .menu-page__actions > .lobby__button:first-child { margin-right: 0; }
-  .online-options > summary > span:nth-child(2) { flex-basis: 90%; line-height: 1.6; }
-  .online-create .lobby__presets { gap: 8px; }
   .mission-route { gap: 6px; margin-top: 18px; }
   .mission-route .item { padding: 12px 3px; gap: 7px; }
   .mission-route .item > span:not([class]) { font-size: 18px; }
@@ -1157,12 +1076,6 @@
   .mission-scorecards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .mission-scorecards li { gap: 14px; }
   .mission-scorecards .sectors__n { font-size: 25px; }
-}
-@media (max-width: 380px) {
-}
-@media (prefers-reduced-motion: reduce) {
-  .flight-card { transition: none; }
-  .flight-card:hover { transform: none; }
 }
 
 /* Room creation follows the local match briefing: presets and quick rules beside room details. */
@@ -1185,7 +1098,6 @@
 .menu-page--lobby .briefing__cards .item__hint { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--bone-dim); font-size: 10px; line-height: 1.55; }
 .menu-page--room .briefing__quick { gap: 12px 22px; }
 .menu-page--room .briefing__quick .item { padding: 8px 0; }
-.menu-page--room .lobby__rule-details { margin-top: 20px; }
 /* A short window gives the room's preset cards less height; a tall one stops at 190px. */
 .menu-page--room .briefing__cards { --preset-card-height: clamp(150px, calc(30vh - 54px), 190px); }
 
@@ -1334,7 +1246,6 @@
   .online-create { gap: 8px clamp(24px, 4vw, 56px); margin: 0; }
   .online-code { margin: 0; }
   .online-create .lobby__field input { min-height: 38px; }
-  .online-create .look-summary { padding-block: 6px; }
   .menu-page--lobby .online-identity { padding: 8px 14px; }
   .online-profile__avatar { width: 36px; height: 36px; }
   .online-profile__avatar svg { width: 20px; height: 20px; }
@@ -1436,12 +1347,6 @@
 .menu-page--room .room-deck__briefing { gap: 0; }
 .menu-page--room .room-deck__briefing > .briefing__presets,
 .menu-page--room .room-deck__briefing .online-create__main { margin-bottom: 0; }
-.menu-page--room .lobby__rule-details,
-.menu-page--room .online-options { margin-top: 0; padding-block: 6px; }
-.menu-page--room .lobby__rule-details > summary,
-.menu-page--room .online-options > summary { min-height: 32px; display: flex; align-items: center; padding: 0; }
-.menu-page--room .lobby__rule-details[open] > summary,
-.menu-page--room .online-options[open] > summary { margin-bottom: 14px; }
 /* For everybody but the host the game is on show, not to be touched. */
 .menu-page .lobby__preset.is-readonly { cursor: default; }
 .menu-page .lobby__preset.is-readonly:hover { transform: none; }

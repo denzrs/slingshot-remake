@@ -6,7 +6,8 @@ import { applyTwists, MayhemDeck, type MayhemRound } from '../mayhem';
 import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../physics';
 import { createRng, randomSeed, type Rng } from '../rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
-import { seatTeamsFor, startPower, type KillcamPlayback, type Seat, type Settings } from '../settings';
+import type { KillcamPlayback } from '../roomRules';
+import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
 import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
 import { generateWorld } from '../world';
@@ -16,10 +17,10 @@ import { Crowd } from './crowd';
 import { Killcam } from './killcam';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField, type PlacementAim } from './powerup-field';
+import type { GameMode } from '../modes';
 
-export type Mode = 'classic' | 'solar' | 'horizon' | 'challenge';
-/** The modes you play against other ships, picked from the title menu. */
-export type VersusMode = Exclude<Mode, 'challenge'>;
+/** A game mode, or the daily challenge. */
+export type Mode = GameMode | 'challenge';
 export type Phase = 'aiming' | 'flying' | 'killcam' | 'collapse' | 'orbit' | 'roundOver' | 'gameOver';
 
 export interface PlayerState {
@@ -921,7 +922,7 @@ export abstract class Match {
       this.settings = this.baseSettings;
       return;
     }
-    this.mayhem = this.deck.draw({ base: this.baseSettings, mode: this.mode === 'horizon' ? 'horizon' : 'classic', round: this.round, rounds: this.totalRounds });
+    this.mayhem = this.deck.draw({ base: this.baseSettings, mode: this.mode === 'challenge' ? 'classic' : this.mode, round: this.round, rounds: this.totalRounds });
     this.settings = applyTwists(this.baseSettings, this.mayhem);
     this.revealEnd = this.clock + MAYHEM.REVEAL_TIME;
     // A match nobody is flying in (CPUs only) has no one to wait for.

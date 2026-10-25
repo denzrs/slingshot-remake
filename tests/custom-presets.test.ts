@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { clearOverride, deleteCustomPreset, loadCustomPresets, loadOverride, MAX_CUSTOM_PRESETS, MAX_PRESET_NAME, saveCustomPreset, saveOverride } from '../src/customPresets';
-import { defaultRoomRules } from '../src/lobbyPrefs';
+import { defaultRoomRules } from '../src/roomRules';
 import { isOverridden, matchingCustom, matchingPreset, presetRules, savedPresetRules } from '../src/ui/match-presets';
 
 const KEY = 'slingshot.presets.v2';

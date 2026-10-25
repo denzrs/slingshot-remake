@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MultiplayerSession, type Transport } from '../src/multiplayer';
-import { defaultRoomRules } from '../src/lobbyPrefs';
+import { defaultRoomRules } from '../src/roomRules';
 import { DEFAULT_SETTINGS } from '../src/settings';
 import { DEFAULT_ROOM_LOOK } from '../src/roomLook';
 import { ChatPanel, type ChatLocation } from '../src/ui/chat';

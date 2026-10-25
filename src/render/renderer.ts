@@ -1,6 +1,6 @@
 import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, SOLAR, WORMHOLE } from '../config';
 import type { Match, Scene, Trail } from '../game';
-import { t, type Key } from '../i18n';
+import { t } from '../i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../scorecard';
 import { aimDirection, inPowerUpNebula, isWormholeJump, nextWormholeId, stormCloudAt, type Wormhole, type World } from '../physics';
 import { POWER_UP, PREVIEW_POINTS } from '../powerups';
@@ -568,7 +568,7 @@ export class Renderer {
       ctx.globalAlpha = alpha * Math.min(1, pop);
       ctx.font = `700 11px ${FONTS.mono}`;
       ctx.fillStyle = color;
-      fillTextUpright(ctx, t(`powerup.${pick.kind}` as Key).toUpperCase(), pick.x, pick.y, 0, 20);
+      fillTextUpright(ctx, t(`powerup.${pick.kind}`).toUpperCase(), pick.x, pick.y, 0, 20);
       ctx.restore();
     }
     for (const id of this.pickupSeen.keys()) if (!present.has(id)) this.pickupSeen.delete(id);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, cloneSettings } from '../src/settings';
-import { rulesOf } from '../src/lobbyPrefs';
+import { rulesOf } from '../src/roomRules';
 import { presetsForMode, matchingPreset, presetRules, handpickedPresets, matchingHandpicked, pickOfTheDay, samePick, MAYHEM_PRESET_LEVEL } from '../src/ui/match-presets';
 import { rulesFor } from '../src/ui/rules';
 
@@ -14,7 +14,7 @@ describe('match presets', () => {
   it('offers complete rule sets that both modes can play with', () => {
     for (const mode of ['classic', 'horizon'] as const) {
       for (const preset of presetsForMode(mode)) {
-        const rules = presetRules(preset);
+        const rules = presetRules(preset, mode);
         expect(matchingPreset(rules, mode)).toBe(preset);
         for (const row of rulesFor(mode)) {
           if (!row.options.length || row.control === 'tiles' || row.key === 'fixedPower' || row.key === 'maxPower') continue;
@@ -26,7 +26,7 @@ describe('match presets', () => {
   });
 
   it('marks manually edited rules as custom, and recognises them again when restored', () => {
-    const rules = presetRules('simultaneous');
+    const rules = presetRules('simultaneous', 'classic');
     rules.rounds = 7;
     expect(matchingPreset(rules, 'classic')).toBeUndefined();
     rules.rounds = 5;
@@ -37,13 +37,13 @@ describe('match presets', () => {
   });
 
   it('does not label a Horizon match custom for Classic-only or online rules', () => {
-    const rules = { ...presetRules('standard'), invisiblePlanets: true, simultaneousShots: true, styleBonuses: true, betting: true, chatPlayersOnly: true };
+    const rules = { ...presetRules('standard', 'classic'), invisiblePlanets: true, simultaneousShots: true, styleBonuses: true, betting: true, chatPlayersOnly: true };
     expect(matchingPreset(rules, 'horizon')).toBe('standard');
     expect(matchingPreset(rules, 'classic')).toBeUndefined();
   });
 
   it('ignores power-up choices while they are off, but checks them while they are on', () => {
-    const rules = presetRules('standard');
+    const rules = presetRules('standard', 'classic');
     rules.powerUpAmount = 1;
     rules.powerUpKinds = ['shield'];
     expect(matchingPreset(rules, 'classic')).toBe('standard');
@@ -62,7 +62,7 @@ describe('match presets', () => {
     settings.fixedPower = true;
     settings.invisiblePlanets = true;
     const before = cloneSettings(settings);
-    Object.assign(settings, presetRules('mayhem'));
+    Object.assign(settings, presetRules('mayhem', 'classic'));
     expect(matchingPreset(rulesOf(settings), 'classic')).toBe('mayhem');
     for (const key of ['seats', 'seatTeams', 'teamMode', 'language', 'stickSide', 'menuSounds', 'gameSounds'] as const) {
       expect(settings[key]).toEqual(before[key]);
@@ -72,9 +72,9 @@ describe('match presets', () => {
   });
 
   it('gives every application its own power-up list', () => {
-    const first = presetRules('mayhem');
+    const first = presetRules('mayhem', 'classic');
     first.powerUpKinds.pop();
-    expect(presetRules('mayhem').powerUpKinds).toEqual(DEFAULT_SETTINGS.powerUpKinds);
+    expect(presetRules('mayhem', 'classic').powerUpKinds).toEqual(DEFAULT_SETTINGS.powerUpKinds);
   });
 });
 
@@ -85,14 +85,14 @@ describe('the Mayhem preset', () => {
       expect(presetsForMode(mode)).not.toContain('party');
     }
     expect(MAYHEM_PRESET_LEVEL).toBe(2);
-    expect(presetRules('mayhem')).toEqual({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2, styleBonuses: true, simultaneousShots: true });
+    expect(presetRules('mayhem', 'classic')).toEqual({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2, styleBonuses: true, simultaneousShots: true });
   });
 
   it('stays selected at any strength, and no other preset has twists', () => {
     for (const mode of ['classic', 'horizon'] as const) {
-      for (const mayhem of [1, 2, 3]) expect(matchingPreset({ ...presetRules('mayhem'), mayhem }, mode)).toBe('mayhem');
-      expect(matchingPreset({ ...presetRules('standard'), mayhem: 2 }, mode)).not.toBe('standard');
-      for (const preset of presetsForMode(mode)) expect(presetRules(preset).mayhem > 0).toBe(preset === 'mayhem');
+      for (const mayhem of [1, 2, 3]) expect(matchingPreset({ ...presetRules('mayhem', mode), mayhem }, mode)).toBe('mayhem');
+      expect(matchingPreset({ ...presetRules('standard', mode), mayhem: 2 }, mode)).not.toBe('standard');
+      for (const preset of presetsForMode(mode)) expect(presetRules(preset, mode).mayhem > 0).toBe(preset === 'mayhem');
     }
   });
 });
@@ -144,9 +144,8 @@ describe('handpicked combinations', () => {
       expect(picks.filter((pick) => pick.rules.mayhem > 0)).toHaveLength(2);
       expect(new Set(picks.map(({ id, mode }) => `${mode}.${id}`)).size).toBe(6);
       for (const pick of picks) {
-        expect(pick.base).toBe(mode);
         expect(samePick(matchingHandpicked(pick.rules, mode), pick)).toBe(true);
-        for (const row of rulesFor(pick.base)) {
+        for (const row of rulesFor(mode)) {
           if (!row.options.length || row.control === 'tiles' || row.key === 'fixedPower' || row.key === 'maxPower') continue;
           if (row.when && !row.when(pick.rules)) continue;
           expect(row.options.map(({ value }) => value), `${mode}/${pick.id}: ${row.key}`).toContain(pick.rules[row.key]);
@@ -181,7 +180,7 @@ describe('handpicked combinations', () => {
         const settings = cloneSettings(DEFAULT_SETTINGS);
         Object.assign(settings, pick.rules);
         expect(samePick(matchingHandpicked(rulesOf(settings), mode), pick)).toBe(true);
-        Object.assign(settings, presetRules('mayhem'), { mayhem: pick.rules.mayhem });
+        Object.assign(settings, presetRules('mayhem', mode), { mayhem: pick.rules.mayhem });
         expect(matchingHandpicked(rulesOf(settings), mode)).toBeUndefined();
       }
     }

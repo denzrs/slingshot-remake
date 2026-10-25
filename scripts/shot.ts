@@ -6,7 +6,7 @@
  *     --click "Einstellungen" --mark "Verfeinerter Look"
  *
  * Drives a headless Chrome over the DevTools protocol, so it needs Chrome installed
- * (set CHROME_PATH if it isn't where this script looks).
+ * (set CHROME_PATH if it isn't where `chrome.ts` looks).
  *
  *   --out <file>        where to write it; the format follows the extension (.webp, .png, .jpg)
  *   --url <url>         default http://localhost:5173/
@@ -16,20 +16,8 @@
  *   --mark <text>       draw a ring around the smallest element showing this text, once per flag
  *   --wait <ms>         how long to let the page settle before the shot, default 1500
  */
-import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import WebSocket from 'ws';
-
-const CHROME_CANDIDATES = [
-  process.env.CHROME_PATH,
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/usr/bin/google-chrome',
-  '/usr/bin/chromium',
-  '/usr/bin/chromium-browser',
-].filter((p): p is string => !!p);
+import { writeFileSync } from 'node:fs';
+import { launchChrome, sleep } from './chrome';
 
 interface Options {
   out: string;
@@ -68,102 +56,13 @@ function parseArgs(argv: string[]): Options {
   return o;
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address() as { port: number };
-      server.close(() => resolve(port));
-    });
-    server.on('error', reject);
-  });
-}
-
-/** A tiny DevTools-protocol client: one socket, numbered requests. */
-class Cdp {
-  private nextId = 1;
-  private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
-  private constructor(private readonly ws: WebSocket) {
-    ws.on('message', (data) => {
-      const msg = JSON.parse(String(data)) as { id?: number; result?: unknown; error?: { message: string } };
-      if (msg.id === undefined) return;
-      const waiting = this.pending.get(msg.id);
-      if (!waiting) return;
-      this.pending.delete(msg.id);
-      if (msg.error) waiting.reject(new Error(msg.error.message));
-      else waiting.resolve(msg.result);
-    });
-  }
-
-  static connect(url: string): Promise<Cdp> {
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(url);
-      ws.on('open', () => resolve(new Cdp(ws)));
-      ws.on('error', reject);
-    });
-  }
-
-  send<T = unknown>(method: string, params: object = {}): Promise<T> {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-      this.ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  async evaluate<T = unknown>(expression: string): Promise<T> {
-    const r = await this.send<{ result: { value: T }; exceptionDetails?: { text: string; exception?: { description?: string } } }>('Runtime.evaluate', {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  }
-
-  close(): void {
-    this.ws.close();
-  }
-}
-
-async function waitForDebugger(port: number): Promise<string> {
-  for (let i = 0; i < 100; i++) {
-    try {
-      const targets = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()) as { type: string; webSocketDebuggerUrl: string }[];
-      const page = targets.find((t) => t.type === 'page');
-      if (page) return page.webSocketDebuggerUrl;
-    } catch {
-      // Chrome is still starting.
-    }
-    await sleep(100);
-  }
-  throw new Error('Chrome did not come up');
-}
-
 const MARK_STYLE = 'outline: 3px solid #ffd27a; outline-offset: 4px; border-radius: 4px; box-shadow: 0 0 24px rgb(255 210 122 / 0.55);';
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
-  const chrome = CHROME_CANDIDATES.find((path) => existsSync(path));
-  if (!chrome) throw new Error('No Chrome found: set CHROME_PATH');
-  const port = await freePort();
-  const profile = mkdtempSync(join(tmpdir(), 'slingshot-shot-'));
-  const proc: ChildProcess = spawn(chrome, [
-    '--headless=new',
-    `--remote-debugging-port=${port}`,
-    `--user-data-dir=${profile}`,
-    `--window-size=${opts.width},${opts.height}`,
-    '--hide-scrollbars',
-    '--no-first-run',
-    '--disable-gpu-vsync',
-    'about:blank',
-  ], { stdio: 'ignore' });
+  const browser = await launchChrome(opts.width, opts.height);
   try {
-    const cdp = await Cdp.connect(await waitForDebugger(port));
-    await cdp.send('Page.enable');
-    await cdp.send('Emulation.setDeviceMetricsOverride', { width: opts.width, height: opts.height, deviceScaleFactor: 1, mobile: false });
+    const { cdp } = browser;
     // Seed the storage on the game's own origin, then load it for real.
     const origin = new URL(opts.url).origin;
     await cdp.send('Page.navigate', { url: `${origin}/favicon.svg` });
@@ -204,12 +103,8 @@ async function main(): Promise<void> {
     const { data } = await cdp.send<{ data: string }>('Page.captureScreenshot', { format, quality: 86 });
     writeFileSync(opts.out, Buffer.from(data, 'base64'));
     console.log(`Wrote ${opts.out} (${Math.round(Buffer.from(data, 'base64').length / 1024)} KB)`);
-    cdp.close();
   } finally {
-    proc.kill();
-    await new Promise((resolve) => (proc.exitCode === null ? proc.once('exit', resolve) : resolve(null)));
-    // Chrome may still be flushing its profile for a moment after it exits.
-    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    await browser.close();
   }
 }
 

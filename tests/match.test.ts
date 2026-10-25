@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createMatch, type CpuDecisionReport, type GameEvent, type Match, type VersusMode } from '../src/game';
+import { createMatch, type CpuDecisionReport, type GameEvent, type Match } from '../src/game';
+import type { GameMode } from '../src/modes';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
 import { AIM, FIELD, TRAIL_FADE } from '../src/config';
 import { cloneSettings, DEFAULT_SETTINGS, type Seat } from '../src/settings';
 
 /** Run a CPU-only match headlessly until the first round is decided. */
-function playRound(mode: VersusMode, seats: Seat[], maxSeconds = 600): Match {
+function playRound(mode: GameMode, seats: Seat[], maxSeconds = 600): Match {
   const match = createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 1, seats }, { seats });
   const dt = 1 / 30;
   for (let t = 0; t < maxSeconds && match.phase !== 'roundOver'; t += dt) {
@@ -19,7 +20,7 @@ function playRound(mode: VersusMode, seats: Seat[], maxSeconds = 600): Match {
 const cpus = (n: number, level: Seat = 'medium'): Seat[] => [...Array(n).fill(level), ...Array(6 - n).fill('off')];
 
 describe('Hawking CPU', () => {
-  it.each<VersusMode>(['classic', 'horizon'])('finishes a seeded %s match', (mode) => {
+  it.each<GameMode>(['classic', 'horizon'])('finishes a seeded %s match', (mode) => {
     const seats = cpus(2, 'hawking');
     const match = createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 1, maxPlanets: 0, seats }, {
       seats,

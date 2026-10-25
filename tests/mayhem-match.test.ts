@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { MAYHEM } from '../src/config';
 import { presetRules } from '../src/ui/match-presets';
-import { createMatch, type Match, type VersusMode } from '../src/game';
+import { createMatch, type Match } from '../src/game';
+import type { GameMode } from '../src/modes';
 import type { ClassicMatch } from '../src/game/classic';
 import type { HorizonMatch } from '../src/game/horizon';
 import { cloneSettings, DEFAULT_SETTINGS, type Seat, type Settings } from '../src/settings';
@@ -11,7 +12,7 @@ const cpus: Seat[] = ['medium', 'medium', 'medium', 'off', 'off', 'off'];
 
 const room = (patch: Partial<Settings> = {}, seats: Seat[] = humans): Settings => ({ ...cloneSettings(DEFAULT_SETTINGS), mayhem: 2, rounds: 4, seats, ...patch });
 
-const start = (mode: VersusMode, patch: Partial<Settings> = {}, seats: Seat[] = humans, seed = 11): Match => createMatch(mode, room(patch, seats), { seats, seed, deterministicCpu: true });
+const start = (mode: GameMode, patch: Partial<Settings> = {}, seats: Seat[] = humans, seed = 11): Match => createMatch(mode, room(patch, seats), { seats, seed, deterministicCpu: true });
 
 /** Lets the announcement of the round pass the way a player would: with the fire key. */
 const skipReveal = (match: Match): void => {
@@ -20,7 +21,7 @@ const skipReveal = (match: Match): void => {
 };
 
 describe('a match without Mayhem', () => {
-  it.each<VersusMode>(['classic', 'horizon'])('plays %s by the room rules, with no twists and no announcement', (mode) => {
+  it.each<GameMode>(['classic', 'horizon'])('plays %s by the room rules, with no twists and no announcement', (mode) => {
     const settings = room({ mayhem: 0 });
     const match = createMatch(mode, settings, { seats: humans, seed: 3 });
     expect(match.mayhem).toBeNull();
@@ -31,7 +32,7 @@ describe('a match without Mayhem', () => {
 });
 
 describe('a match with Mayhem', () => {
-  it.each<VersusMode>(['classic', 'horizon'])('announces the round before anybody may aim in %s, and the fire key ends the announcement', (mode) => {
+  it.each<GameMode>(['classic', 'horizon'])('announces the round before anybody may aim in %s, and the fire key ends the announcement', (mode) => {
     const match = start(mode);
     expect(match.mayhem).not.toBeNull();
     expect(match.revealing).toBe(true);
@@ -131,7 +132,7 @@ describe('a match with Mayhem', () => {
   });
 
   it('pays for trick shots in every round of a game from the Mayhem preset, in Classic too', () => {
-    const settings = { ...cloneSettings(DEFAULT_SETTINGS), ...presetRules('mayhem'), mayhem: 3, rounds: 4, shotTime: 10, seats: humans };
+    const settings = { ...cloneSettings(DEFAULT_SETTINGS), ...presetRules('mayhem', 'classic'), mayhem: 3, rounds: 4, shotTime: 10, seats: humans };
     const match = createMatch('classic', settings, { seats: humans, seed: 12 });
     for (let round = 1; round <= 4; round++) {
       expect(match.settings.styleBonuses).toBe(true);
@@ -163,7 +164,7 @@ describe('a match with Mayhem', () => {
 });
 
 /** The scores after one round of CPUs, with the round forced to be (or not be) a jackpot. */
-function scoresOf(mode: VersusMode, jackpot: boolean): number[] {
+function scoresOf(mode: GameMode, jackpot: boolean): number[] {
   const match = start(mode, { rounds: 1, maxPlanets: 2 }, cpus, 17);
   match.mayhem = { twists: [], finale: false, jackpot };
   skipReveal(match);
@@ -176,7 +177,7 @@ function scoresOf(mode: VersusMode, jackpot: boolean): number[] {
 }
 
 describe('jackpot rounds', () => {
-  it.each<VersusMode>(['classic', 'horizon'])('pay and cost double in %s', (mode) => {
+  it.each<GameMode>(['classic', 'horizon'])('pay and cost double in %s', (mode) => {
     const normal = scoresOf(mode, false);
     const jackpot = scoresOf(mode, true);
     expect(normal.some((n) => n !== 0)).toBe(true);
@@ -185,7 +186,7 @@ describe('jackpot rounds', () => {
 });
 
 describe('Mayhem online', () => {
-  it.each<VersusMode>(['classic', 'horizon'])('holds every player back in %s until somebody presses fire, which then does not lock in an aim', (mode) => {
+  it.each<GameMode>(['classic', 'horizon'])('holds every player back in %s until somebody presses fire, which then does not lock in an aim', (mode) => {
     const match = createMatch(mode, room(), { seats: humans, seed: 4, simultaneous: true }) as ClassicMatch | HorizonMatch;
     // Online Event Horizon everybody aims at once; Classic still goes by turns.
     const aimer = mode === 'horizon' ? 0 : match.current;

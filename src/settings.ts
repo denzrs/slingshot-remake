@@ -1,56 +1,20 @@
 import type { CpuLevel } from './ai';
-import { AIM, DEBRIS, GRACE, MAX_PLAYERS, MAYHEM, TRAIL_FADE, type Debris } from './config';
-import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from './powerups';
+import { AIM, DEBRIS, MAX_PLAYERS, type Debris } from './config';
 import { detectLang, isLang, type Lang } from './i18n';
 import { isLook, type Look } from './render/look';
+import { DEFAULT_ROOM_RULES, rulesOf, roomRulesFrom, type RoomRules } from './roomRules';
 
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
 export type Seat = 'human' | CpuLevel | 'off';
-
-export const KILLCAM_MODES = ['auto', 'off', 'every', 'round'] as const;
-export type KillcamMode = (typeof KILLCAM_MODES)[number];
-export type KillcamPlayback = Exclude<KillcamMode, 'auto'>;
-export const isKillcamMode = (value: unknown): value is KillcamMode => KILLCAM_MODES.some((mode) => mode === value);
 
 /**
  * One bag of settings, two homes in the UI: the rules of a game (seats, teams, rounds, planets, bounce,
  * flight time, …) are set on the setup screen right before it starts; the settings screen only keeps
  * what concerns this device (look, sound, language, and menu display).
  */
-export interface Settings {
+export interface Settings extends RoomRules {
   /** Always MAX_PLAYERS long; seats that aren't 'off' take part, keeping their number and colour. */
   seats: Seat[];
-  /** 0 = endless match. */
-  rounds: number;
-  maxPlanets: number;
-  invisiblePlanets: boolean;
-  bounce: boolean;
-  /** Every shot has the same power, `fixedPowerLevel`: only the angle can be aimed. Mutually exclusive with a cap in the menus. */
-  fixedPower: boolean;
-  fixedPowerLevel: number;
-  /** Shots can't be fired harder than this: a low cap favours trick shots over power shots. */
-  maxPower: number;
-  /** Seconds before a shot fizzles out. */
-  shotTime: number;
-  /** Classic only: swing-bys, grazes and the like multiply a hit's points, as they always do in Event Horizon. */
-  styleBonuses: boolean;
-  /** With four or more ships, each one's first this many shots of a round (0 = off) pass through its nearest enemy. */
-  neighborGrace: number;
-  /** Classic only: everybody aims, then all shots fly at once — as in Event Horizon — instead of one shot per turn. */
-  simultaneousShots: boolean;
-  /** Automatic: replays after kills in salvos, off for sequential shots. */
-  killcam: KillcamMode;
-  /** Pickups float on the field, and a shot that flies past one takes it (preview, teleport or splitter). */
-  powerUps: boolean;
-  /** Power-ups: the kinds that may turn up (never empty), and how many pickups lie on the field at once. */
-  powerUpKinds: PowerUpKind[];
-  powerUpAmount: number;
-  /** Mayhem: every round has twists of its own, laid over these rules. 0 = off, otherwise the chaos strength (1 mild, 2 wild, 3 insane). */
-  mayhem: number;
-  /** Other players' aim arrows, angles and ship headings stay hidden: you only see your own aim. */
-  hiddenAim: boolean;
-  /** Seconds a finished shot's flight path stays on the board before it has faded away; 0 = it stays. */
-  fadingTrails: number;
   /** The original classic plate, or the refined look (glowing ships, moving planets). */
   look: Look;
   contours: boolean;
@@ -67,10 +31,6 @@ export interface Settings {
   stickSide: 'left' | 'right';
   menuSounds: boolean;
   gameSounds: boolean;
-  /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
-  betting: boolean;
-  /** Online: only the people who play may write in the room's chat; spectators read along (a rule of the room). */
-  chatPlayersOnly: boolean;
   language: Lang;
   /** 0 = free for all, otherwise the number of teams (2 or 3). */
   teamMode: number;
@@ -79,27 +39,8 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  ...rulesOf(DEFAULT_ROOM_RULES),
   seats: ['human', 'human', 'off', 'off', 'off', 'off'],
-  rounds: 5,
-  maxPlanets: 4,
-  invisiblePlanets: false,
-  bounce: false,
-  fixedPower: false,
-  fixedPowerLevel: AIM.FIXED_POWER,
-  maxPower: AIM.MAX_POWER,
-  shotTime: 20,
-  styleBonuses: false,
-  neighborGrace: 0,
-  simultaneousShots: false,
-  killcam: 'auto',
-  powerUps: false,
-  powerUpKinds: [...POWER_UP_KINDS],
-  powerUpAmount: POWER_UP.DEFAULT_AMOUNT,
-  mayhem: 0,
-  hiddenAim: false,
-  fadingTrails: 0,
-  betting: false,
-  chatPlayersOnly: false,
   look: 'classic',
   contours: true,
   particles: true,
@@ -132,21 +73,11 @@ export function loadSettings(): Settings {
       for (const key of ['contours', 'particles', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'menuSounds', 'gameSounds'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
-      if (!isKillcamMode(s.killcam)) s.killcam = DEFAULT_SETTINGS.killcam;
       if (!isLook(s.look)) s.look = DEFAULT_SETTINGS.look;
       if (s.stickSide !== 'right') s.stickSide = 'left';
       if (!Object.hasOwn(DEBRIS, s.debris)) s.debris = DEFAULT_SETTINGS.debris;
-      // Power-up choices: only known kinds, in their usual order, and never none at all.
-      const kinds = POWER_UP_KINDS.filter((kind) => Array.isArray(parsed.powerUpKinds) && parsed.powerUpKinds.includes(kind));
-      s.powerUpKinds = kinds.length ? kinds : [...POWER_UP_KINDS];
-      if (!POWER_UP.AMOUNTS.includes(s.powerUpAmount)) s.powerUpAmount = POWER_UP.DEFAULT_AMOUNT;
-      if (!TRAIL_FADE.OPTIONS.includes(s.fadingTrails)) s.fadingTrails = 0;
-      if (!MAYHEM.LEVELS.includes(s.mayhem)) s.mayhem = 0;
-      if (!AIM.CAP_OPTIONS.includes(s.maxPower)) s.maxPower = AIM.MAX_POWER;
-      if (!AIM.FIXED_OPTIONS.includes(s.fixedPowerLevel)) s.fixedPowerLevel = AIM.FIXED_POWER;
-      // It used to be a plain on/off switch, "on" meaning two shots.
-      if ((s.neighborGrace as unknown) === true) s.neighborGrace = 2;
-      if (!GRACE.OPTIONS.includes(s.neighborGrace)) s.neighborGrace = 0;
+      // The rules of the game: only what the game still offers, anything else back to the standard ones.
+      Object.assign(s, roomRulesFrom(parsed));
       s.language = isLang(parsed.language) ? parsed.language : detectLang();
       if (activeSeats(s).length < 2) s.seats = [...DEFAULT_SETTINGS.seats];
       return s;

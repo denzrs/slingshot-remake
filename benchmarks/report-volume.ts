@@ -5,7 +5,8 @@
 //
 // Knobs (environment): MATCHES (6, per mode and table size), ROUNDS (5).
 
-import { createMatch, type VersusMode } from '../src/game';
+import { createMatch } from '../src/game';
+import type { GameMode } from '../src/modes';
 import { turnReport } from '../src/roundReport';
 import { cloneSettings, DEFAULT_SETTINGS, type Seat, type Settings } from '../src/settings';
 
@@ -18,11 +19,11 @@ const TABLES: Record<string, Seat[]> = {
   '6 ships': ['hard', 'hard', 'medium', 'medium', 'easy', 'easy'],
 };
 
-const settings = (mode: VersusMode, seats: Seat[]): Settings => ({
+const settings = (mode: GameMode, seats: Seat[]): Settings => ({
   ...cloneSettings(DEFAULT_SETTINGS), rounds: ROUNDS, seats, powerUps: true, maxPlanets: 5, simultaneousShots: mode === 'classic',
 });
 
-for (const mode of ['classic', 'horizon'] as VersusMode[]) {
+for (const mode of ['classic', 'horizon'] as GameMode[]) {
   for (const [table, seats] of Object.entries(TABLES)) {
     let turns = 0;
     let shots = 0;

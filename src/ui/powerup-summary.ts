@@ -1,10 +1,12 @@
-import { t, type Key } from '../i18n';
+import { t } from '../i18n';
 import { POWER_UP_KINDS, type PowerUpKind } from '../powerups';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import { h } from './dom';
 
 let powerUpTooltip: HTMLElement | null = null;
 let tooltipTarget: HTMLElement | null = null;
+/** Watches for the badge being taken out of the page: its pointerleave and blur never fire then, and the tooltip would stay. */
+let tooltipWatch: MutationObserver | null = null;
 
 /** All power-up kinds stay in place as a compact picker; Mayhem twists can use any kind when normal pickups are off. */
 export function powerUpSummary(
@@ -53,7 +55,7 @@ export function powerUpSummary(
 }
 
 function powerUpIcon(kind: PowerUpKind): HTMLButtonElement {
-  const name = t(`powerup.${kind}` as Key);
+  const name = t(`powerup.${kind}`);
   const canvasSize = 28;
   const dpr = typeof devicePixelRatio === 'number' ? Math.max(1, devicePixelRatio) : 1;
   const canvas = h('canvas.briefing__powerup-icon', {
@@ -91,6 +93,10 @@ function showPowerUpTooltip(target: HTMLElement, name: string): void {
     powerUpTooltip = h('div.powerup-tooltip', { role: 'tooltip' });
   }
   tooltipTarget = target;
+  tooltipWatch ??= new MutationObserver(() => {
+    if (tooltipTarget && !tooltipTarget.isConnected) hidePowerUpTooltip(tooltipTarget);
+  });
+  tooltipWatch.observe(document.body, { childList: true, subtree: true });
   powerUpTooltip.textContent = name;
   if (!powerUpTooltip.isConnected) document.body.append(powerUpTooltip);
 
@@ -108,5 +114,6 @@ function showPowerUpTooltip(target: HTMLElement, name: string): void {
 function hidePowerUpTooltip(target: HTMLElement): void {
   if (tooltipTarget !== target) return;
   tooltipTarget = null;
+  tooltipWatch?.disconnect();
   powerUpTooltip?.classList.remove('is-visible');
 }

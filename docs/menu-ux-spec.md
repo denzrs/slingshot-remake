@@ -1,5 +1,7 @@
 # Slingshot menu UX — implementation specification and agent handoff
 
+> **Historical handoff.** Written during the launcher redesign; the current structure is in `docs/menu-design.md`. Where they differ (Mayhem is now a preset, Solar System is a third mode, `src/ui/screens.ts` and `src/ui/lobby.ts` are split into folders, `prototypes/` is removed), `docs/menu-design.md` and the code win.
+
 Status: implementation revision, 23 October 2026. Packets 1–5 are implemented in the current worktree. Build and automated tests pass; the full manual viewport and multiplayer acceptance matrix remains to be completed. This target supersedes conflicting layout decisions in `docs/menu-design.md` and the experimental prototypes.
 
 ## 1. What the user actually requested
@@ -30,7 +32,7 @@ The first draft is committed as `70d4c94` (`Redesign game launcher and unify men
 
 | File | Responsibility / useful starting point |
 | --- | --- |
-| `src/ui/screens.ts` | `App` interface; `titleScreen`; local briefing; `playersScreen`; full rules; Mayhem; settings; tutorial; pause; match results |
+| `src/ui/screens/` | `App` interface; `titleScreen`; local briefing; players; full rules; settings; tutorial; pause; match results |
 | `src/ui/launcher.css` | Existing main menu and local briefing; use this as the primary visual reference |
 | `src/ui/lobby.ts` | Relay connection, room list, creation, code entry, waiting room, host/guest controls, invitation lifecycle |
 | `src/main.ts` | Actual `App` implementation; lazy `multiplayer()` session; `openLobby`, `toLobby`, `toTitle`; invite startup and online match callbacks |

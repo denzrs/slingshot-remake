@@ -448,13 +448,6 @@
   overflow: hidden;
 }
 
-.briefing__preset-note {
-  margin: 12px 0 22px;
-  color: var(--bone-dim);
-  font-size: 10px;
-  line-height: 1.6;
-}
-
 .briefing__quick {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -788,7 +781,6 @@
   .briefing__cards .item__icon { height: 70px; }
   .briefing__cards .item__title { align-self: flex-start; font-size: clamp(16px, 5vw, 19px); }
   .briefing__cards .item__hint { font-size: 10px; line-height: 1.6; }
-  .briefing__preset-note { margin-bottom: 16px; }
   .briefing__quick { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .menu-page--briefing .briefing__quick { grid-template-columns: minmax(0, 1fr); }
   .briefing__powerups { grid-column: auto; }

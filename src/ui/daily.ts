@@ -1,4 +1,4 @@
-import { dailyChallenge, dateKey, modifiersOf } from '../challenge';
+import { dailyChallenge, dateKey, modifiersOf, type ThemeId } from '../challenge';
 import { loadDay, loadStreak, type RunOutcome } from '../dailyStore';
 import type { ChallengeMatch, SectorResult, ShotLog } from '../game';
 import { fmtInt, t, tn, type Key } from '../i18n';
@@ -8,7 +8,7 @@ import { leaderboardAvailable, leaderboardScreen } from './leaderboard';
 import type { App } from './screens';
 import { menuPage } from './menu-page';
 
-const themeName = (theme: string) => t(`daily.theme.${theme}` as Key);
+const themeName = (theme: ThemeId) => t(`daily.theme.${theme}`);
 
 /** The one-line hint under the title-menu entry. */
 export function dailyMenuHint(key: string): string {
@@ -44,7 +44,7 @@ export function dailyScreen(app: App): Screen {
         h('strong', null, t('flow.sectorDetails', { n: selected + 1, difficulty: spec.difficulty })),
         h('span', null, `${tn('daily.targets', spec.targets)} · ${tn('daily.shots', spec.shots)}`),
       ),
-      h('span.chips', null, ...modifiersOf(spec).map((m) => h('span.chip', null, t(`daily.mod.${m}` as Key)))),
+      h('span.chips', null, ...modifiersOf(spec).map((m) => h('span.chip', null, t(`daily.mod.${m}`)))),
     );
   };
   const stat = (label: string, value: string) => h('div', null, h('dt', null, label), h('dd', null, value));
@@ -60,7 +60,7 @@ export function dailyScreen(app: App): Screen {
         title: themeName(challenge.theme), eyebrow: t('daily.eyebrow'),
         intro: challenge.theme === 'precision'
           ? undefined
-          : t(`daily.theme.${challenge.theme}.text` as Key),
+          : t(`daily.theme.${challenge.theme}.text`),
         className: 'menu-page--mission',
         body: [
           h('h3.setup__title', null, t('daily.routeHeading', { n: challenge.number, date: formatDay(key) })),

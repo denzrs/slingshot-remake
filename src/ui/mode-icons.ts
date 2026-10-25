@@ -1,15 +1,17 @@
+import type { GameMode } from '../modes';
+import type { MatchPreset } from './match-presets';
 import { nextSpaceArtId, spaceArt } from './space-art';
 
-export type ModeArt = 'daily' | 'classic' | 'solar' | 'horizon' | 'mayhem' | 'trickshot' | 'sniper' | 'party' | 'simultaneous' | 'rooms' | 'create' | 'code' | 'customAdd';
-export type MatchPresetArt = 'standard' | 'trickshot' | 'sniper' | 'party';
-export type MayhemPresetArt = 'wildClassic' | 'insaneClassic' | 'insaneClassicSimultaneous' | 'insaneHorizon';
+export type ModeArt = 'daily' | 'classic' | 'solar' | 'horizon' | 'trickshot' | 'simultaneous' | 'rooms' | 'create' | 'code' | 'customAdd';
+export type MatchPresetArt = 'standard' | 'trickshot';
+export type MayhemPresetArt = 'wildClassic' | 'insaneHorizon';
 export type SolarPresetArt = 'powerups' | 'mayhem';
 export type PresetArtTreatment =
   | { mode: 'horizon'; preset: MatchPresetArt }
   | { mode: 'solar'; preset: SolarPresetArt }
   | { mode: 'mayhem'; preset: MayhemPresetArt };
 /** The card of a regular preset in a mode: Event Horizon's own take on it, simultaneous fire, or the wild orbits of Mayhem. The Solar System has its own sun on all of them. */
-export function presetArt(preset: 'standard' | 'trickshot' | 'simultaneous' | 'powerups' | 'mayhem', mode: 'classic' | 'solar' | 'horizon'): SVGElement {
+export function presetArt(preset: MatchPreset, mode: GameMode): SVGElement {
   if (mode === 'solar') return modeArt('solar', preset === 'powerups' || preset === 'mayhem' ? { mode: 'solar', preset } : undefined);
   if (preset === 'mayhem') return modeArt(mode === 'horizon' ? 'horizon' : 'classic', { mode: 'mayhem', preset: mode === 'horizon' ? 'insaneHorizon' : 'wildClassic' });
   if (preset === 'simultaneous') return modeArt('simultaneous');
@@ -74,20 +76,6 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
         <path d="M71 141 C113 151 181 120 219 89" fill="none" stroke="#f4d2a0" stroke-width="1" opacity=".45"/>
         <path d="M34 43 Q111 8 128 54" fill="none" stroke="#6fe3c8" stroke-dasharray="3 4" opacity=".6"/>
         ${planet(267, 142, 10)}${ship(40, 40, 65, '#6fe3c8', .9)}${ship(244, 49, 155, '#ffad65', .75)}`;
-      break;
-    case 'mayhem':
-    case 'party':
-      scene = `${orbit(146, 43, -30, '#6fe3c8', '.65')}${orbit(120, 55, 30, '#ffad65', '.6')}${orbit(80, 79, -16, '#829fce', '.6')}
-        ${planet(153, 97, 25, true)}${planet(65, 127, 15)}${planet(241, 58, 12)}${planet(214, 154, 8, true)}
-        <g fill="#ffad65"><path d="m89 36 5 12 13-3-8 11 8 11-13-3-5 12-4-12-13 3 8-11-8-11 13 3Z"/><path d="m244 125 3 9 10 1-8 6 2 10-7-6-8 6 3-10-8-6 10-1Z"/></g>
-        <circle cx="207" cy="38" r="12" fill="#112c3c" stroke="#6fe3c8"/><path d="m209 29-8 11h6l-2 8 9-12h-6Z" fill="#6fe3c8"/>
-        ${ship(36, 147, 52, '#6fe3c8', .9)}${ship(261, 93, -48, '#ffad65', .9)}`;
-      break;
-    case 'sniper':
-      scene = `${planet(42, 165, 42)}${planet(266, 34, 18, true)}
-        <g fill="none" stroke="#6fe3c8" stroke-width="1.5"><circle cx="162" cy="95" r="38"/><path d="M162 43v35m0 34v35m-52-52h35m34 0h35"/></g>
-        <circle cx="162" cy="95" r="3" fill="#ffad65"/><path d="M56 152 138 109m46-27 59-35" stroke="#ffad65" stroke-dasharray="3 5" opacity=".7"/>
-        ${ship(66, 146, 57, '#e8e4d8', 1)}`;
       break;
     case 'trickshot':
       scene = `${planet(164, 101, 29)}${planet(255, 57, 11, true)}
@@ -155,21 +143,6 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
           <path d="M289 19v136" stroke="#ffad65" stroke-width="2" opacity=".7"/><path d="m282 31 7 5 7-5m-14 108 7 5 7-5" fill="none" stroke="#ffad65" stroke-width="1.5"/>
           <path d="m289 27 6 7-6 7-6-7Z" fill="#fff0cf"/>`;
         break;
-      case 'sniper':
-        scene = `${orbit(118, 40, -22, '#90c5cf', '.16')}${planet(47, 159, 29)}${planet(278, 38, 9, true)}
-          ${hole}
-          <path d="M63 145C111 143 129 121 142 108S165 89 183 84 224 69 270 42" fill="none" stroke="#f4d2a0" stroke-width="1.4" stroke-dasharray="3 5" opacity=".8"/>
-          <g fill="none" stroke="#6fe3c8" stroke-width="1.2"><circle cx="278" cy="38" r="22"/><path d="M278 7v18m0 26v18m-31-31h18m26 0h18"/></g>
-          <circle cx="278" cy="38" r="2.5" fill="#ffad65"/>${ship(63, 145, 57, '#e8e4d8', .9)}`;
-        break;
-      case 'party':
-        scene = `${orbit(143, 56, -23, '#90c5cf', '.22')}${orbit(113, 42, 31, '#ffad65', '.3')}
-          ${planet(61, 58, 9)}${planet(259, 45, 10, true)}${planet(260, 148, 8)}${planet(64, 148, 8, true)}
-          <path d="M30 134Q75 103 112 121T186 123 285 67M35 55Q96 83 110 64T195 61 283 126" fill="none" stroke="#6fe3c8" stroke-width="1.2" opacity=".62"/>
-          ${hole}${ship(30, 134, 43, '#6fe3c8', .75)}${ship(283, 67, -135, '#ffad65', .75)}
-          <g fill="#bc92ff"><path d="m93 28 3 7 8 1-6 5 2 8-7-4-7 4 2-8-6-5 8-1Z"/><path d="m224 151 2 5 6 1-5 4 1 6-5-3-5 3 1-6-5-4 6-1Z"/></g>
-          <circle cx="224" cy="34" r="7" fill="#102d3a" stroke="#6fe3c8"/><path d="m225 28-5 7h4l-1 5 6-8h-4Z" fill="#6fe3c8"/>`;
-        break;
     }
   } else if (treatment?.mode === 'mayhem') {
     switch (treatment.preset) {
@@ -181,24 +154,6 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
           <path d="M28 47C71 61 92 87 118 79s57-37 93-21 54 34 80 22" fill="none" stroke="#ff8660" stroke-width="1.5" stroke-dasharray="4 5"/>
           ${ship(21, 154, 62, '#6fe3c8', .9)}${ship(297, 62, -112, '#ffad65', .85)}
           <path d="m218 33 4 9 10 1-8 6 2 10-8-6-8 6 3-10-8-6 10-1Z" fill="#ffad65"/>`;
-        break;
-      case 'insaneClassic':
-        scene = `${orbit(147, 62, 37, '#ff8660', '.5')}${orbit(121, 42, -31, '#6fe3c8', '.55')}${orbit(74, 77, 18, '#bc92ff', '.42')}
-          ${planet(154, 100, 24, true)}${planet(62, 55, 9)}${planet(268, 151, 10)}${planet(274, 61, 7, true)}
-          <path d="M19 153Q73 165 94 120T146 91 183 123 236 91 302 118" fill="none" stroke="#ff8660" stroke-width="1.8"/>
-          <path d="M20 40Q78 26 111 64T168 89 222 49 300 35" fill="none" stroke="#6fe3c8" stroke-width="1.6" stroke-dasharray="3 4"/>
-          <path d="M44 175 88 128m143-91 42 43" stroke="#ffad65" stroke-width="1" opacity=".55"/>
-          ${ship(19, 153, 72, '#ffad65', .9)}${ship(300, 118, -55, '#6fe3c8', .82)}
-          <g fill="#ffad65"><path d="m101 27 3 8 9 1-7 5 2 9-7-5-7 5 2-9-7-5 9-1Z"/><path d="m236 147 3 7 8 1-6 5 1 8-6-4-6 4 1-8-6-5 8-1Z"/></g>`;
-        break;
-      case 'insaneClassicSimultaneous':
-        scene = `${orbit(142, 58, -25, '#6fe3c8', '.5')}${orbit(119, 49, 27, '#ff8660', '.5')}
-          ${planet(162, 98, 23, true)}${planet(61, 65, 9)}${planet(263, 55, 9)}${planet(257, 149, 8)}
-          <path d="M23 40Q79 58 122 89T215 102 292 57" fill="none" stroke="#6fe3c8" stroke-width="1.8"/>
-          <path d="M23 155Q84 131 119 111T197 91 294 143" fill="none" stroke="#ff8660" stroke-width="1.8"/>
-          <path d="M74 158Q91 134 129 109T177 74 247 20" fill="none" stroke="#bc92ff" stroke-width="1.5" stroke-dasharray="3 4"/>
-          ${ship(23, 40, 104, '#6fe3c8', .82)}${ship(23, 155, 66, '#ff8660', .82)}${ship(74, 158, -21, '#bc92ff', .82)}
-          <g fill="#fff0cf"><circle cx="123" cy="89" r="2.5"/><circle cx="119" cy="111" r="2.5"/><circle cx="129" cy="109" r="2.5"/></g>`;
         break;
       case 'insaneHorizon':
         scene = `${orbit(148, 61, -27, '#90c5cf', '.3')}${orbit(120, 42, 30, '#ff8660', '.48')}${orbit(84, 80, -13, '#bc92ff', '.4')}

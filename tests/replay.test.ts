@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createMatch, type Match, type VersusMode } from '../src/game';
+import { createMatch, type Match } from '../src/game';
+import type { GameMode } from '../src/modes';
 import { type ReplayScript } from '../src/game/replay';
 import { turnReport } from '../src/roundReport';
 import { cloneSettings, DEFAULT_SETTINGS, type Seat, type Settings } from '../src/settings';
@@ -57,7 +58,7 @@ const settingsOf = (patch: Partial<Settings>, seats: Seat[]): Settings => ({ ...
 
 interface Case {
   name: string;
-  mode: VersusMode;
+  mode: GameMode;
   patch: Partial<Settings>;
   seats: Seat[];
   seed: number;
