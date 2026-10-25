@@ -807,6 +807,19 @@
   .launcher__foot { margin-top: 14px; }
 }
 
+/* A short window (a phone held sideways): the frame no longer squeezes the cards into the footer — the page grows and scrolls. */
+@media (max-height: 620px) {
+  .screen--title { padding-top: max(12px, env(safe-area-inset-top)); }
+  .screen--title > .launcher { flex: 0 0 auto; height: auto; margin-top: 0; }
+  .launcher__body { flex: 0 0 auto; }
+  .launcher__head { margin-bottom: 14px; }
+  .launcher .wordmark { font-size: 56px; }
+  .launcher__nav { padding-top: 0; gap: 6px; }
+  .launcher__nav .item { min-height: 44px; font-size: 22px; }
+  .launcher__nav .item:nth-child(3) { margin-top: 8px; }
+  .launcher__foot { min-height: 0; margin-top: 20px; padding-top: 12px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .launcher, .launcher__head, .launcher__body { animation: none; }
   .launcher__modes .item, .launcher__online .item, .briefing__cards .item { transition: none; }

@@ -318,6 +318,17 @@
 .look-dialog .setup__title { color: var(--launch-accent); }
 .look-dialog .lobby__actions { margin-top: 8px; }
 
+/* A short window (a phone held sideways): the heading and the footer give up air so the body has room to scroll in. */
+@media (max-height: 620px) {
+  :root { --page-title-size: 30px; }
+  .screen--menu-page { padding-top: max(12px, env(safe-area-inset-top)); }
+  .menu-page { margin-top: 0; }
+  .menu-page__head { margin-bottom: 8px; }
+  .menu-page__head .eyebrow { margin-bottom: 4px; }
+  .menu-page__foot { min-height: 0; margin-top: 10px; padding-top: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .menu-page__actions .item { min-height: 44px; padding-block: 8px; }
+}
+
 @media (max-width: 1000px) {
   .menu-page__body--split { grid-template-columns: minmax(0, 1fr) 240px; gap: 28px; }
   .menu-page--briefing .menu-page__body--split { grid-template-columns: minmax(0, 1fr) 220px; gap: 24px; }
