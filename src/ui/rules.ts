@@ -8,12 +8,12 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from '../render/powerup-art';
 import type { MenuItem } from './menu';
 
 /** The blocks the setup screen and the lobby sort the rules into. */
-export type RuleGroup = 'match' | 'field' | 'shots' | 'twists' | 'powerups';
+export type RuleGroup = 'match' | 'field' | 'shots' | 'twists' | 'powerups' | 'online';
 
-export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists', 'powerups'];
+export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists', 'powerups', 'online'];
 
-/** The two columns of the rules page, balanced by height: the match and its field on the left, the shots and the power-ups on the right. */
-export const RULE_COLUMNS: readonly (readonly RuleGroup[])[] = [['match', 'field', 'twists'], ['shots', 'powerups']];
+/** The two columns of the rules page, balanced by height: the match and its field on the left, the shots and the power-ups on the right, with the online-only rules under them. */
+export const RULE_COLUMNS: readonly (readonly RuleGroup[])[] = [['match', 'field', 'twists'], ['shots', 'powerups', 'online']];
 
 export const groupTitle = (group: RuleGroup): string => t(`setup.group.${group}` as Key);
 
@@ -100,8 +100,8 @@ export function ruleRows(): RuleRow[] {
     { key: 'neighborGrace', group: 'twists', control: 'slider', label: t('settings.neighborGrace'), options: numbers(GRACE.OPTIONS, (n) => (n ? t(n === 1 ? 'settings.oneRound' : 'settings.nRounds', { n }) : t('common.off'))) },
     { key: 'hiddenAim', group: 'twists', control: 'toggle', label: t('settings.hiddenAim'), options: [] },
     { key: 'fadingTrails', group: 'twists', control: 'slider', label: t('settings.fadingTrails'), options: numbers(TRAIL_FADE.OPTIONS, (n) => (n ? seconds(n) : t('common.off'))) },
-    { key: 'betting', group: 'twists', control: 'toggle', label: t('settings.betting'), options: [], onlineOnly: true },
-    { key: 'chatPlayersOnly', group: 'twists', control: 'toggle', label: t('settings.chatPlayersOnly'), options: [], onlineOnly: true },
+    { key: 'betting', group: 'online', control: 'toggle', label: t('settings.betting'), options: [], onlineOnly: true },
+    { key: 'chatPlayersOnly', group: 'online', control: 'toggle', label: t('settings.chatPlayersOnly'), options: [], onlineOnly: true },
     { key: 'powerUpKinds', group: 'powerups', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}` as Key)) })) },
     { key: 'powerUpAmount', group: 'powerups', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps },
   ];

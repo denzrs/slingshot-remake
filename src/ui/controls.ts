@@ -541,7 +541,7 @@ function choiceControl(item: Item<'choice'>, env: Env): Control {
 export function optionSelector<T>(label: string, choices: readonly { value: T; label: string }[], get: () => T, change: (value: T) => void): Control {
   const el = h('div.option-selector', { role: 'radiogroup', 'aria-label': label });
   const buttons = choices.map((choice, index) => {
-    const button = h('button.option-selector__choice', { type: 'button', role: 'radio' },
+    const button = h('button.option-selector__choice', { type: 'button', role: 'radio', title: choice.label },
       h('span.option-selector__rank', { 'aria-hidden': 'true' }, ...choices.map((_, i) => h(i <= index ? 'i.is-on' : 'i', null))),
       h('span', null, choice.label),
     ) as HTMLButtonElement;

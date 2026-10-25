@@ -122,10 +122,17 @@
 .menu-page--tutorial .menu-page__body { grid-template-columns: 220px minmax(0, 1fr); gap: 36px; }
 .menu-page--tutorial .menu-page__main { grid-column: 2; }
 .menu-page--tutorial .menu-page__aside { grid-column: 1; grid-row: 1; padding: 0 24px 0 0; border: 0; border-right: 1px solid var(--menu-line); }
-.tutorial-chapters { gap: 5px; }
-.tutorial-chapters .item { min-height: 39px; padding: 8px 12px; border-radius: 0; border-left: 2px solid transparent; color: var(--bone-dim); font-size: 12px; font-weight: 400; line-height: 1.5; }
+/* The page frame bounds both columns: the chapter list gives its rows a little room back in a short window, and a long lesson scrolls on its own. */
+.menu-page--tutorial .menu-page__body { grid-template-rows: minmax(0, 1fr); }
+.menu-page--tutorial .menu-page__main { min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-inline: -6px; padding-inline: 6px; }
+.tutorial-chapters { display: flex; flex-direction: column; gap: 5px; height: 100%; }
+.tutorial-chapters .item { flex: 0 1 39px; min-height: 26px; padding: 4px 12px; border-radius: 0; border-left: 2px solid transparent; color: var(--bone-dim); font-size: 12px; font-weight: 400; line-height: 1.5; }
 .tutorial-chapters .is-selected { color: var(--launch-accent); border-color: var(--launch-accent); background: rgb(255 173 101 / 0.08); }
 .menu-page .tutorial { font-size: 13px; line-height: 1.8; }
+@media (max-height: 860px) {
+  .menu-page .tutorial { line-height: 1.65; }
+  .menu-page .tutorial__title { margin-bottom: 14px; font-size: 32px; }
+}
 .menu-page .tutorial__title { margin: 0 0 20px; font-size: 36px; }
 .menu-page .tutorial .eyebrow { font-size: 10px; color: var(--p2); }
 .tutorial__layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); align-items: start; gap: 24px; }
@@ -1050,11 +1057,11 @@
 .sheet .segmented__option { min-height: 32px; }
 .sheet .setup__rows > .item.is-readonly { padding-block: 7px; }
 /* The rules page is the tallest sheet, so its groups sit a little closer. A taller window gives its rows, groups and heading more air. */
-.menu-page--rules { --rules-row-pad: clamp(5px, calc(1.7vh - 9.5px), 9px); }
-.menu-page--rules .sheet__col { gap: clamp(12px, calc(3vh - 12.4px), 20px); }
+.menu-page--rules { --rules-row-pad: clamp(3px, calc(1.7vh - 11.5px), 4px); }
+.menu-page--rules .sheet__col { gap: clamp(10px, calc(3vh - 17px), 14px); }
 /* The heading closes nothing: the last row of a group has no line under it. */
 .menu-page--rules .sheet .setup__rows > .item:not(:has(~ .item:not([hidden]:not(.is-reserved)))) { border-bottom: 0; }
-.menu-page--rules .menu-page__head { margin-bottom: clamp(10px, calc(2.2vh - 4px), 22px); }
+.menu-page--rules .menu-page__head { margin-bottom: clamp(10px, calc(2.2vh - 4px), 14px); }
 .menu-page--rules .sheet .setup__title { margin-bottom: 2px; }
 .menu-page--rules .sheet .segmented__option { min-height: 28px; }
 /* In a narrow column the choices keep the name above the bar, and the power-up tiles take less room. */
@@ -1173,12 +1180,14 @@
   background: rgb(9 21 39 / .68);
   text-align: left;
 }
-.menu-page--lobby .briefing__cards .item__icon { width: 100%; height: clamp(62px, 9vh, 88px); }
+.menu-page--lobby .briefing__cards .item__icon { width: 100%; height: clamp(44px, calc(9vh - 18px), 88px); }
 .menu-page--lobby .briefing__cards .item__title { min-width: 0; font-size: clamp(17px, 1.65vw, 23px); }
 .menu-page--lobby .briefing__cards .item__hint { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--bone-dim); font-size: 10px; line-height: 1.55; }
 .menu-page--room .briefing__quick { gap: 12px 22px; }
 .menu-page--room .briefing__quick .item { padding: 8px 0; }
 .menu-page--room .lobby__rule-details { margin-top: 20px; }
+/* A short window gives the room's preset cards less height; a tall one stops at 190px. */
+.menu-page--room .briefing__cards { --preset-card-height: clamp(150px, calc(30vh - 54px), 190px); }
 
 @media (max-width: 1000px) {
   .menu-page--lobby .briefing__cards .item--card { padding: 10px; }
@@ -1377,7 +1386,26 @@
 }
 .menu-page .room-deck__crew .slot-grid[data-capacity], .menu-page .room-deck__crew .slot-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .menu-page .room-deck__crew .slot-card { min-height: 0; padding: 7px 10px; gap: 2px 10px; }
-.menu-page .room-deck__crew .player-slot { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-areas: "num icon id ready" ". . ctl ctl"; align-items: center; }
+.menu-page .room-deck__crew .player-slot { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-areas: "num icon id ready" "ctl ctl ctl ctl"; align-items: center; }
+/* A CPU seat's four strengths sit in one row under its name, so a full room of them stays on the page. */
+.menu-page .room-deck__crew .player-slot .option-selector { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.menu-page .room-deck__crew .player-slot .option-selector__choice { min-height: 30px; padding: 4px 6px; gap: 5px; }
+/* In a window that is not tall, a CPU seat is one line: name, the four strengths as bars (their names are the tooltips), ready. */
+@media (max-height: 999px) {
+  .menu-page .room-deck__crew .player-slot { grid-template-columns: auto auto minmax(0, 1fr) auto auto; grid-template-areas: "num icon id ctl ready"; }
+  .menu-page .room-deck__crew .player-slot .option-selector { grid-template-columns: repeat(4, 30px); gap: 3px; }
+  .menu-page .room-deck__crew .player-slot .option-selector__choice { min-height: 26px; padding: 3px 0; justify-content: center; }
+  .menu-page .room-deck__crew .player-slot .option-selector__choice > span:last-child { display: none; }
+  .menu-page .room-deck__crew .player-slot.is-cpu .lobby__ready { display: none; }
+  .menu-page--room .room-deck__crew .player-slot.has-remove.has-move { padding-right: 90px; }
+}
+/* In a team game the seats are one line at any height: the team columns add their own headings. */
+.menu-page .room-deck__crew .team-roster.has-teams .player-slot { grid-template-columns: auto auto minmax(0, 1fr) auto auto; grid-template-areas: "num icon id ctl ready"; }
+.menu-page .room-deck__crew .team-roster.has-teams .player-slot .option-selector { grid-template-columns: repeat(4, 30px); gap: 3px; }
+.menu-page .room-deck__crew .team-roster.has-teams .player-slot .option-selector__choice { min-height: 26px; padding: 3px 0; justify-content: center; }
+.menu-page .room-deck__crew .team-roster.has-teams .player-slot .option-selector__choice > span:last-child { display: none; }
+.menu-page .room-deck__crew .team-roster.has-teams .player-slot.is-cpu .lobby__ready { display: none; }
+.menu-page--room .room-deck__crew .team-roster.has-teams .player-slot.has-remove.has-move { padding-right: 90px; }
 .menu-page .room-deck__crew .player-slot > .slot-card__head { display: contents; }
 .menu-page .room-deck__crew .player-slot .slot-card__number { grid-area: num; font-size: 19px; }
 .menu-page .room-deck__crew .player-slot .slot-card__kind { display: none; }
@@ -1448,9 +1476,11 @@
 .menu-page--room .room-deck__crew .team-column__count { min-width: 22px; height: 20px; font-size: 10px; }
 .menu-page--room .room-deck__crew .roster-entry.has-move .player-slot,
 .menu-page--room .room-deck__crew .player-slot.has-move { padding-right: 50px; }
-/* The move handle sits in the right-hand column, where the remove button is: in line with it, and under it on a CPU. */
+/* The move handle sits in the right-hand column, where the remove button is: in line with it, and beside it on a CPU. */
 .menu-page--room .room-deck__crew .roster-move { right: 10px; top: 50%; transform: translateY(-50%); }
-.menu-page--room .room-deck__crew .player-slot:has(> .slot-card__head > .lobby__icon-button) .roster-move { top: 48px; transform: none; }
+.menu-page--room .room-deck__crew .player-slot:has(> .slot-card__head > .lobby__icon-button) .roster-move { top: 7px; right: 48px; transform: none; }
+.menu-page--room .room-deck__crew .player-slot.has-remove.has-move { padding-right: 10px; }
+.menu-page--room .room-deck__crew .player-slot.has-remove.has-move .lobby__ready { padding-right: 84px; }
 
 /* The rules of a room: the local rules page, laid over the lobby. */
 .rules-page { position: fixed; z-index: 50; background: #081426; }
@@ -1532,3 +1562,94 @@
   .menu-page--room .menu-page__head > :not(.stats-ticker) { grid-column: 1; }
   .menu-page--room .menu-page__head > .stats-ticker { grid-column: 2; grid-row: 1 / span 2; align-self: end; margin: 0 0 6px; }
 }
+
+/* The room's two columns sit a little closer than a full six-seat team game would otherwise allow; a short window adds more below. */
+@media all {
+  .room-deck__briefing .briefing__cards { margin-bottom: 12px; }
+  .menu-page .room-deck__crew { gap: 8px; }
+  .menu-page--room .room-deck__crew .team-roster.has-teams .team-roster__columns { gap: 6px; }
+  .menu-page--room .room-deck__crew .team-column__head { margin-bottom: 4px; }
+  .menu-page--room .room-deck__roster-head .lobby__note { min-height: 28px; }
+  .menu-page .room-deck__crew .slot-card { padding-block: 3px; }
+  .menu-page .room-deck__crew .slot-grid { gap: 3px; }
+  .menu-page .room-deck__crew .player-slot .option-selector__choice { min-height: 22px; }
+  .menu-page .room-deck__crew .player-slot .slot-card__portrait .player-icon { width: 22px; height: 22px; }
+  .menu-page .room-deck__crew .player-slot .slot-card__number { font-size: 17px; }
+  .menu-page .room-deck__crew .player-slot > .slot-card__head > .lobby__icon-button,
+  .menu-page .room-deck__crew .player-slot > .roster-move { width: 26px; height: 26px; }
+  .menu-page--room .room-deck__crew .player-slot:has(> .slot-card__head > .lobby__icon-button) .roster-move { top: 4px; right: 40px; }
+  .menu-page .room-deck__crew .player-slot .option-selector__choice { min-height: 20px; }
+  .menu-page .room-deck__crew .player-slot > .slot-card__head > .lobby__icon-button,
+  .menu-page .room-deck__crew .player-slot > .roster-move { width: 24px; height: 24px; }
+  .menu-page .room-deck__crew .team-roster .team-roster__grid { gap: 3px; }
+  .menu-page--room .room-deck__crew .team-column__head { min-height: 16px; }
+  .menu-page .room-deck__crew { gap: 6px; }
+  /* The hint under the teams is read out but not shown, and "move here" sits in the team's heading row: moving a seat adds no height. */
+  .menu-page--room .room-deck__crew .team-roster__hint { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .menu-page--room .room-deck__crew .team-column { position: relative; }
+  .menu-page--room .room-deck__crew .team-column__place { position: absolute; top: 0; right: 30px; width: auto; height: 20px; min-height: 0; margin: 0; padding: 0 10px; font-size: 10px; line-height: 18px; white-space: nowrap; z-index: 2; }
+}
+@media (max-height: 740px) {
+  .menu-page .room-deck__crew .slot-card { padding-block: 1px; }
+}
+
+/* The host's Mayhem row keeps its place whether or not Mayhem is chosen, so picking it moves nothing (a guest's read-only list has no spare row). */
+.menu-page--room .briefing__quick:not(:has(.item.is-readonly)) .briefing__mayhem:not(:has(> .item:not([hidden]))) { display: block; visibility: hidden; min-height: 50px; pointer-events: none; }
+.menu-page--room .briefing__quick:not(:has(.item.is-readonly)) .briefing__mayhem:not(:has(> .item:not([hidden]))) > .item { display: none; }
+/* In the room the Mayhem strength sits on one line, the name at the left and the bar beside it, so choosing Mayhem takes one slim row. */
+.menu-page--room .briefing__mayhem .item--segmented { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 16px; padding-block: 4px; }
+.menu-page--room .briefing__mayhem .item--segmented > .item__label { grid-column: 1; grid-row: 1; }
+.menu-page--room .briefing__mayhem .item--segmented > .segmented { grid-column: 2; grid-row: 1; justify-self: start; }
+@media (max-height: 999px) {
+  .menu-page--room .briefing__cards { --preset-card-height: clamp(136px, calc(30vh - 105px), 190px); }
+}
+@media (max-height: 1000px) {
+  .menu-page--room .briefing__cards .item__hint { display: none; }
+  .menu-page--room .room-deck__briefing .briefing__cards { margin-bottom: 8px; }
+  .menu-page--room .briefing__quick { row-gap: 6px; }
+}
+
+/* The rules page in a short window: tighter tracks and bars, so the longest set of rules (Mayhem, the online rules) still fits. */
+@media (max-height: 1000px) {
+  .menu-page--rules { --rules-row-pad: 3px; }
+  .menu-page--rules .sheet .setup__rows > .item { min-height: 28px; }
+  .menu-page--rules .sheet .slider__track { height: 20px; }
+  .menu-page--rules .sheet .segmented__option { min-height: 24px; }
+}
+@media (max-height: 800px) {
+  .menu-page--rules .sheet .slider__track { height: 18px; }
+  .menu-page--rules .sheet .segmented__option { min-height: 22px; }
+  .menu-page--rules .sheet__col { gap: 10px; }
+}
+
+/* A CPU seat's two buttons, move and remove, share one line in the middle of the row, the same size, side by side. */
+.menu-page--room .room-deck__crew .player-slot.has-remove > .slot-card__head > .lobby__icon-button,
+.menu-page--room .room-deck__crew .player-slot.has-remove > .roster-move { position: absolute; top: calc(50% - 13px); width: 26px; height: 26px; margin: 0; transform: none; }
+.menu-page--room .room-deck__crew .player-slot.has-remove > .slot-card__head > .lobby__icon-button { right: 8px; }
+.menu-page--room .room-deck__crew .player-slot.has-remove > .roster-move { right: 40px; }
+/* The room's team columns are one narrow column: their seats never go two or three across. */
+.menu-page .room-deck__crew .team-roster.has-teams .slot-grid.has-many,
+.menu-page .room-deck__crew .team-roster.has-teams .slot-grid.has-most { grid-template-columns: minmax(0, 1fr); }
+/* A CPU seat needs no name in the room: the seat number and the CPU tag say it, and the name was cut off anyway. */
+.menu-page--room .room-deck__crew .player-slot.is-cpu .player-slot__identity .lobby__player-name { display: none; }
+
+/* In the room the profile editor opens over the page, not inside the identity card: the card (and the page below it) keep their size. */
+.menu-page--room .lobby > .online-identity { position: relative; z-index: 6; }
+.menu-page--room .online-profile[open] .online-profile__fields {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  box-sizing: border-box;
+  width: min(560px, 100%);
+  margin: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--menu-line);
+  border-radius: 3px;
+  background: #0b1a33;
+  box-shadow: 0 18px 40px rgb(0 0 0 / .55);
+}
+/* One column for each button on every seat: move at the left of the pair, remove at the right edge; a human seat with only a move handle keeps it in the move column. */
+.menu-page--room .room-deck__crew .player-slot.roster-entry.has-move > .roster-move { position: absolute; top: calc(50% - 13px); right: 40px; width: 26px; height: 26px; margin: 0; transform: none; }
+.menu-page--room .room-deck__crew .player-slot.roster-entry.has-move:not(.has-remove) { padding-right: 78px; }
+.menu-page--room .room-deck__crew .player-slot.roster-entry.has-move:not(.has-remove) .lobby__ready { padding-right: 0; }

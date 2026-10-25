@@ -439,8 +439,8 @@ const en = {
   'settings.hiddenAim': 'Hidden aim',
   'room.betting': 'Betting',
   'room.chatPlayersOnly': 'Chat for players only',
-  'settings.betting': 'Betting on the round (online)',
-  'settings.chatPlayersOnly': 'Chat: players only (online)',
+  'settings.betting': 'Betting on the round',
+  'settings.chatPlayersOnly': 'Chat: players only',
   'settings.fadingTrails': 'Fading trails',
   // — mayhem —
   'settings.mayhem': 'Mayhem level',
@@ -513,6 +513,7 @@ const en = {
   'setup.group.shots': 'Shots',
   'setup.group.twists': 'Twists',
   'setup.group.powerups': 'Power-ups',
+  'setup.group.online': 'Online',
   'setup.reset': 'Reset rules',
   'setup.keys': '↑ ↓ select · ← → change · Enter confirm',
 
@@ -1415,8 +1416,8 @@ const de: Dict = {
   'settings.hiddenAim': 'Versteckte Zielpfeile',
   'room.betting': 'Wetten',
   'room.chatPlayersOnly': 'Chat nur für Mitspieler',
-  'settings.betting': 'Wetten auf die Runde (online)',
-  'settings.chatPlayersOnly': 'Chat: nur Spieler (online)',
+  'settings.betting': 'Wetten auf die Runde',
+  'settings.chatPlayersOnly': 'Chat: nur Spieler',
   'settings.fadingTrails': 'Verschwindende Bahnen',
   // — mayhem —
   'settings.mayhem': 'Mayhem-Stärke',
@@ -1489,6 +1490,7 @@ const de: Dict = {
   'setup.group.shots': 'Schüsse',
   'setup.group.twists': 'Extras',
   'setup.group.powerups': 'Power-ups',
+  'setup.group.online': 'Online',
   'setup.reset': 'Regeln zurücksetzen',
   'setup.keys': '↑ ↓ wählen · ← → ändern · Enter bestätigen',
 
