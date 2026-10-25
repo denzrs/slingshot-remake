@@ -992,7 +992,8 @@ function rulesScreen(app: App, mode: VersusMode, onReset?: (rules: ReturnType<ty
   return {
     build: () => menuPage({
       title: t(creator ? (creator.existing ? 'preset.creator.titleEdit' : 'preset.creator.title') : 'briefing.editRules'), eyebrow: modeName(mode), className: 'menu-page--rules',
-      body: [...(creator ? [presetNameField(creator.name, creator.defaultName, (name) => { creator.name = name; })] : []), h('div.sheet', null, ...columns.map((groups) => h('div.sheet__col', null, ...groups.map((group) => menuGroup(groupTitle(group), `rules-${group}`)))))],
+      headerAside: creator ? presetNameField(creator.name, creator.defaultName, (name) => { creator.name = name; }) : undefined,
+      body: [h('div.sheet', null, ...columns.map((groups) => h('div.sheet__col', null, ...groups.map((group) => menuGroup(groupTitle(group), `rules-${group}`)))))],
       keys: t('briefing.keys'),
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
     }),

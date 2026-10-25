@@ -1041,6 +1041,45 @@
 .sheet .setup__rows > .item--slider { padding-block: 8px 3px; }
 .sheet .segmented__option { min-height: 32px; }
 .sheet .setup__rows > .item.is-readonly { padding-block: 7px; }
+/* The rules page is the tallest sheet, so its groups sit a little closer. A taller window gives its rows, groups and heading more air. */
+.menu-page--rules { --rules-row-pad: clamp(5px, calc(1.7vh - 9.5px), 9px); }
+.menu-page--rules .sheet__col { gap: clamp(12px, calc(3vh - 12.4px), 20px); }
+/* The heading closes nothing: the last row of a group has no line under it. */
+.menu-page--rules .sheet .setup__rows > .item:not(:has(~ .item:not([hidden]:not(.is-reserved)))) { border-bottom: 0; }
+.menu-page--rules .menu-page__head { margin-bottom: clamp(10px, calc(2.2vh - 4px), 22px); }
+.menu-page--rules .sheet .setup__title { margin-bottom: 2px; }
+.menu-page--rules .sheet .segmented__option { min-height: 28px; }
+/* In a narrow column the choices keep the name above the bar, and the power-up tiles take less room. */
+.menu-page--rules .sheet .item--segmented { gap: 4px; padding-block: var(--rules-row-pad); }
+.menu-page--rules .sheet .item--tiles { gap: 4px; padding-block: var(--rules-row-pad); }
+.menu-page--rules .sheet .item--tiles .tile { padding: 4px 4px 3px; gap: 1px; }
+.menu-page--rules .sheet .item--tiles .tile__icon { width: 22px; height: 22px; }
+.menu-page--rules .sheet .item--tiles .tile__name { min-height: 2.3em; }
+/* Rules page: a slider sits level with its label where the column is wide enough: the name, a shorter track, the value. */
+@container (min-width: 420px) {
+  .menu-page--rules .sheet .item--slider { grid-template-columns: minmax(0, 12.5em) minmax(110px, 1fr) 4.4em; column-gap: 14px; padding-block: var(--rules-row-pad); }
+  .menu-page--rules .sheet .item--slider > .item__label { grid-column: 1; grid-row: 1; }
+  .menu-page--rules .sheet .item--slider > .slider__track { grid-column: 2; grid-row: 1; }
+  .menu-page--rules .sheet .item--slider > .slider__value { grid-column: 3; grid-row: 1; }
+}
+@container (min-width: 560px) {
+  /* A choice of options sits in the same place as a track: the name at the left, the bar from the track's edge to the right. */
+  .menu-page--rules .sheet .item--segmented { grid-template-columns: minmax(0, 12.5em) minmax(110px, 1fr) 4.4em; column-gap: 14px; align-items: center; padding-block: var(--rules-row-pad); }
+  .menu-page--rules .sheet .item--segmented > .item__label { grid-column: 1; grid-row: 1; }
+  .menu-page--rules .sheet .item--segmented > .segmented { grid-column: 2 / -1; grid-row: 1; }
+  .menu-page--rules .sheet .item--segmented .segmented__option { padding-inline: 4px; font-size: 12px; white-space: nowrap; }
+}
+/* A switch is an off / on bar here, like the other choices: the name at the left, the bar in the track's place. */
+.item--toggle > .toggle-bar { display: none; }
+.menu-page--rules .sheet .item--toggle:not(.is-readonly) .switch,
+.menu-page--rules .sheet .item--toggle:not(.is-readonly) .item__readout { display: none; }
+.menu-page--rules .sheet .item--toggle:not(.is-readonly) > .toggle-bar { display: grid; width: 160px; flex: none; }
+.menu-page--rules .sheet .item--toggle:not(.is-readonly) .segmented__option { padding-inline: 4px; font-size: 12px; }
+@container (min-width: 420px) {
+  .menu-page--rules .sheet .item--toggle:not(.is-readonly) { display: grid; grid-template-columns: minmax(0, 12.5em) minmax(110px, 1fr) 4.4em; column-gap: 14px; align-items: center; padding-block: var(--rules-row-pad); }
+  .menu-page--rules .sheet .item--toggle:not(.is-readonly) > .toggle-bar { grid-column: 2 / -1; grid-row: 1; width: auto; }
+  .menu-page--rules .sheet .item--toggle:not(.is-readonly) > .item__label { grid-column: 1; grid-row: 1; }
+}
 /* The power-up tiles: as many to a row as the column holds, so twelve fit in two rows. */
 .sheet .item--tiles .tile { padding: 7px 4px 6px; gap: 3px; }
 .sheet .item--tiles .tile__icon { width: 26px; height: 26px; }

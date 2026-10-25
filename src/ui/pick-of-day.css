@@ -168,6 +168,16 @@
   letter-spacing: .02em;
 }
 .preset-name input:focus-visible { outline: 2px solid var(--launch-accent, #ffad65); outline-offset: 2px; }
+/* In the rules page the name sits in the heading, level with the title, so it takes no height from the rules below. */
+.menu-page--rules .menu-page__head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 360px); column-gap: 32px; align-items: end; }
+.menu-page--rules .menu-page__head > :not(.preset-name, [hidden]) { grid-column: 1; }
+.menu-page--rules .menu-page__head > .preset-name, .menu-page--rules .menu-page__head > div:not(.menu-page__title) { grid-column: 2; grid-row: 1 / span 2; width: 100%; max-width: none; margin: 0; }
+.menu-page--rules .menu-page__head .preset-name { gap: 4px; max-width: none; margin: 0; }
+.menu-page--rules .menu-page__head .preset-name input { min-height: 40px; padding-block: 6px; }
+@media (max-width: 760px) {
+  .menu-page--rules .menu-page__head { display: block; }
+  .menu-page--rules .menu-page__head > .preset-name, .menu-page--rules .menu-page__head > div:not(.menu-page__title) { margin-top: 12px; }
+}
 
 /* The player's own presets: slim strips stacked in the column after the cards. */
 .briefing__own {

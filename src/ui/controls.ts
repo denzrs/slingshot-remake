@@ -221,7 +221,12 @@ export function sliderControl(item: Item<'slider'>, env: Env): Control {
 /** An on/off switch: the whole row is the button. */
 function toggleControl(item: Item<'toggle'>, env: Env): Control {
   const readout = h('span.item__readout', null);
-  const el = h('div.item.item--toggle', { role: 'switch', 'aria-label': item.label }, h('span.item__label', null, item.label), h('span.switch', { 'aria-hidden': 'true' }, h('span.switch__knob', null)), readout);
+  // The rules page shows the switch as an off / on bar like its other choices; every other page keeps the switch.
+  const offOption = h('span.segmented__option', null, t('common.off'));
+  const onOption = h('span.segmented__option', null, t('common.on'));
+  const bar = h('span.segmented.toggle-bar', { 'aria-hidden': 'true' }, h('span.segmented__marker', null), offOption, onOption);
+  bar.style.setProperty('--n', '2');
+  const el = h('div.item.item--toggle', { role: 'switch', 'aria-label': item.label }, h('span.item__label', null, item.label), h('span.switch', { 'aria-hidden': 'true' }, h('span.switch__knob', null)), bar, readout);
   focusable(el, env);
 
   let drawn = false;
@@ -232,6 +237,9 @@ function toggleControl(item: Item<'toggle'>, env: Env): Control {
     el.classList.toggle('is-on', on);
     el.setAttribute('aria-checked', String(on));
     readout.textContent = on ? t('common.on') : t('common.off');
+    bar.style.setProperty('--i', on ? '1' : '0');
+    offOption.classList.toggle('is-on', !on);
+    onOption.classList.toggle('is-on', on);
   };
   const set = (on: boolean): void => {
     if (on === item.get()) return;
@@ -244,6 +252,10 @@ function toggleControl(item: Item<'toggle'>, env: Env): Control {
 
   if (!env.readonly) {
     el.addEventListener('click', () => set(!item.get()));
+    // A click on one side of the bar picks that side, rather than flipping whatever is set.
+    for (const [option, on] of [[offOption, false], [onOption, true]] as const) {
+      option.addEventListener('click', (e) => { e.stopPropagation(); el.focus({ preventScroll: true }); set(on); });
+    }
     // ← switches off, → on: the arrows mean the same here as on a slider.
     keys(el, (e) => {
       switch (e.key) {

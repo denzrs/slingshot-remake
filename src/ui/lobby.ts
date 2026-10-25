@@ -581,7 +581,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   /** The page of the local briefing — the same frame, the same groups, the same footer — over the lobby. */
   const rulesDialog = menuPage({
     title: t('briefing.editRules'), eyebrow: '', className: 'menu-page--rules',
-    body: [creatorName, createRules],
+    headerAside: creatorName, body: [createRules],
     keys: t('briefing.keys'),
     footer: h('div.items.items--row.menu-page__actions', null, rulesReset, rulesDelete, rulesCancel, rulesDone),
   });
