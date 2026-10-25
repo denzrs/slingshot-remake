@@ -1,23 +1,23 @@
-import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../ai';
-import type { Avatar } from '../avatars';
-import { AIM, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../config';
-import { t } from '../i18n';
-import { applyTwists, MayhemDeck, type MayhemRound } from '../mayhem';
-import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../physics';
-import { createRng, randomSeed, type Rng } from '../rng';
-import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../stats';
-import type { KillcamPlayback } from '../roomRules';
-import { seatTeamsFor, startPower, type Seat, type Settings } from '../settings';
-import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../volley';
-import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type PowerUpKind } from '../powerups';
-import { generateWorld } from '../world';
-import { ShotLog } from '../shotLog';
+import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
+import type { Avatar } from '../platform/avatars';
+import { AIM, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../sim/config';
+import { t } from '../platform/i18n';
+import { applyTwists, MayhemDeck, type MayhemRound } from './mayhem';
+import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
+import { createRng, randomSeed, type Rng } from '../sim/rng';
+import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../data/stats';
+import type { KillcamPlayback } from '../data/roomRules';
+import { seatTeamsFor, startPower, type Seat, type Settings } from '../data/settings';
+import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../sim/volley';
+import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type PowerUpKind } from '../sim/powerups';
+import { generateWorld } from '../sim/world';
+import { ShotLog } from './shotLog';
 import { replayKey, RIDERS, type ReplayScript, type ReplayTurn } from './replay';
 import { Crowd } from './crowd';
 import { Killcam } from './killcam';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField, type PlacementAim } from './powerup-field';
-import type { GameMode } from '../modes';
+import type { GameMode } from '../sim/modes';
 
 /** A game mode, or the daily challenge. */
 export type Mode = GameMode | 'challenge';

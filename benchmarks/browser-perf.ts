@@ -23,11 +23,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { createMatch } from '../src/game';
-import type { GameMode } from '../src/modes';
+import type { GameMode } from '../src/sim/modes';
 import { RIDERS } from '../src/game/replay';
-import { rulesOf } from '../src/roomRules';
-import { turnReport } from '../src/roundReport';
-import { cloneSettings, DEFAULT_SETTINGS, type Seat } from '../src/settings';
+import { rulesOf } from '../src/data/roomRules';
+import { turnReport } from '../src/game/roundReport';
+import { cloneSettings, DEFAULT_SETTINGS, type Seat } from '../src/data/settings';
 
 const SECONDS = Number(process.env.SECONDS ?? 12);
 const MATCH_SECONDS = Number(process.env.MATCH_SECONDS ?? 60);

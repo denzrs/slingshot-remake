@@ -41,7 +41,7 @@ Die Online-Karten führen direkt zur Raumsuche, Raumerstellung oder Code-Eingabe
 
 Klassisch, Ereignishorizont und Solar System öffnen eine Vorbereitung mit Regelvorlagen, einem kompakten Regelüberblick und einer Aktion zum Ändern vollständiger Regeln. Vorlagen ersetzen Matchregeln ausdrücklich und behalten Crew, Teams und Geräteeinstellungen. Eigene Regeln bleiben beim Öffnen erhalten; die aktive Vorlage wird aus den tatsächlichen Werten bestimmt.
 
-Mayhem ist eine Vorlage in Klassisch und Ereignishorizont, kein eigener Modus: Solange sie aktiv ist, erscheint ein Stärkeregler. Lokale Vorbereitung und Online-Raum teilen sich dieselbe Kartenlogik (`src/ui/preset-cards.ts`); beide Abläufe unterscheiden sich nur über den `PresetHost`, der Regeln und Speicherung liefert.
+Mayhem ist eine Vorlage in Klassisch und Ereignishorizont, kein eigener Modus: Solange sie aktiv ist, erscheint ein Stärkeregler. Lokale Vorbereitung und Online-Raum teilen sich dieselbe Kartenlogik (`src/ui/presets/preset-cards.ts`); beide Abläufe unterscheiden sich nur über den `PresetHost`, der Regeln und Speicherung liefert.
 
 Die Crew-Seite zeigt Schiffe als kompakte Karten. Mensch oder CPU ist direkt wählbar; Schwierigkeitsgrad erscheint nur bei CPU. Teams, Hinzufügen und Entfernen bleiben sichtbar, ohne alle sechs Plätze mit bedingten Feldern gleichzeitig auszuschreiben.
 
@@ -57,12 +57,14 @@ Bei schmalen Viewports wird die Navigation kompakt und die Online-Karten werden 
 
 ## Wo der Code liegt
 
+Die Ordner von `src/` und ihre Abhängigkeiten stehen in [architecture.md](architecture.md). Für die Menüs sind wichtig:
+
 | Ort | Inhalt |
 | --- | --- |
-| `src/ui/screens/` | Seiten des Hauptmenüs: `title`, `setup`, `players`, `rules-page`, `settings`, `tutorial`, `pause`, `game-over`; `index.ts` exportiert nur `App` und die vier Einstiegsseiten |
+| `src/ui/screens/` | Seiten des Hauptmenüs; `index.ts` exportiert nur `App` und die vier Einstiegsseiten |
 | `src/ui/lobby/` | Online-Lobby: `index.ts` ist der Rahmen, dazu `connection`, `browse`, `open-room`, `room`, `briefing`, `rules-form`, `widgets` |
-| `src/ui/preset-cards.ts` | Gemeinsame Regelvorlagen-Karten für lokal und online |
-| `src/roomRules.ts` | Einzige Quelle für Regeltyp, Standardwerte, Kopieren und Prüfen |
-| `src/modes.ts` | `GameMode`, `GAME_MODES`, `CLASSIC_FAMILY` |
+| `src/ui/presets/preset-cards.ts` | Gemeinsame Regelvorlagen-Karten für lokal und online |
+| `src/data/roomRules.ts` | Einzige Quelle für Regeltyp, Standardwerte, Kopieren und Prüfen |
+| `src/sim/modes.ts` | `GameMode`, `GAME_MODES`, `CLASSIC_FAMILY` |
 
 Seitenvergleich im Browser: `npm run screens` (siehe `scripts/screens.ts`).

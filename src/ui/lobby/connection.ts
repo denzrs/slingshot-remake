@@ -1,13 +1,13 @@
-import type { Avatar } from '../../avatars';
-import { relayText, t } from '../../i18n';
-import type { Invite } from '../../invite';
-import type { LobbyPrefs } from '../../lobbyPrefs';
-import { DEFAULT_SERVER, type MultiplayerSession } from '../../multiplayer';
-import { ConnectError } from '../../net';
-import { avatarSvg } from '../avatars';
-import { h } from '../menu';
-import { modeArt } from '../mode-icons';
-import { picker } from '../roomLook';
+import type { Avatar } from '../../platform/avatars';
+import { relayText, t } from '../../platform/i18n';
+import type { Invite } from '../../net/invite';
+import type { LobbyPrefs } from '../../data/lobbyPrefs';
+import { DEFAULT_SERVER, type MultiplayerSession } from '../../net/multiplayer';
+import { ConnectError } from '../../net/net';
+import { avatarSvg } from '../room/avatars';
+import { h } from '../menu/menu';
+import { modeArt } from '../menu/mode-icons';
+import { picker } from '../room/roomLook';
 import type { App } from '../screens';
 import { avatarOptions, button, field, textInput } from './widgets';
 

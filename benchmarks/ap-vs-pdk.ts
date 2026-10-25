@@ -1,6 +1,6 @@
 import { createMatch, type Match } from '../src/game';
 import { PowerUpField } from '../src/game/powerup-field';
-import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
+import { DEFAULT_SETTINGS, type Seat } from '../src/data/settings';
 
 /**
  * Armor piercing against the planetary defense cannon (PDK): free-for-all classic games of six Einsteins whose

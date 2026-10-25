@@ -1,4 +1,4 @@
-import type { Planet } from '../physics';
+import type { Planet } from '../sim/physics';
 import { rgba } from './color';
 import { fbm } from './noise';
 

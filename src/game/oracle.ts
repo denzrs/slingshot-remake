@@ -1,4 +1,4 @@
-import { ORACLE } from '../config';
+import { ORACLE } from '../sim/config';
 
 /** What a tip is about: one shot ("will it hit?", turn by turn) or a whole salvo ("who gets hit?"). */
 export type OracleKind = 'shot' | 'salvo';

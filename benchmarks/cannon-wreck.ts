@@ -1,6 +1,6 @@
 import { createMatch, type Match } from '../src/game';
 import { PowerUpField } from '../src/game/powerup-field';
-import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
+import { DEFAULT_SETTINGS, type Seat } from '../src/data/settings';
 
 /**
  * How often an armor-piercing shot wrecks a planetary defense. Two runs:

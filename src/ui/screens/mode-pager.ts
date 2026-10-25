@@ -1,7 +1,7 @@
-import { t } from '../../i18n';
-import type { GameMode } from '../../modes';
-import { h } from '../menu';
-import { modeName } from '../mode-name';
+import { t } from '../../platform/i18n';
+import type { GameMode } from '../../sim/modes';
+import { h } from '../menu/menu';
+import { modeName } from '../menu/mode-name';
 
 export type ModeTransition = 'next' | 'previous';
 

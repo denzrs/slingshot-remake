@@ -1,5 +1,5 @@
-import { COLORS, DEBRIS, FIELD, FONTS, PHYSICS, type Debris } from '../config';
-import type { World } from '../physics';
+import { COLORS, DEBRIS, FIELD, FONTS, PHYSICS, type Debris } from '../sim/config';
+import type { World } from '../sim/physics';
 import { rgba } from './color';
 import { fillTextUpright, strokeTextUpright } from './orientation';
 

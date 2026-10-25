@@ -1,9 +1,9 @@
-import { DEBRIS, type Debris } from '../../config';
-import { LANGS, t, type Lang } from '../../i18n';
-import { isLook } from '../../render/look';
-import type { Settings } from '../../settings';
-import { h, type MenuItem, type Screen } from '../menu';
-import { menuGroup, menuPage } from '../menu-page';
+import { DEBRIS, type Debris } from '../../sim/config';
+import { LANGS, t, type Lang } from '../../platform/i18n';
+import { isLook } from '../../data/look';
+import type { Settings } from '../../data/settings';
+import { h, type MenuItem, type Screen } from '../menu/menu';
+import { menuGroup, menuPage } from '../menu/menu-page';
 import type { App } from './app';
 
 const LANG_NAMES: Record<Lang, string> = { de: 'Deutsch', en: 'English' };

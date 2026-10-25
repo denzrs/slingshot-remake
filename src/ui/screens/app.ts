@@ -1,9 +1,9 @@
 import type { Mode } from '../../game';
-import type { GameMode } from '../../modes';
-import type { StatsReplay } from '../../net';
-import type { Settings } from '../../settings';
+import type { GameMode } from '../../sim/modes';
+import type { StatsReplay } from '../../net/net';
+import type { Settings } from '../../data/settings';
 import type { LobbyEntry } from '../lobby';
-import type { Menu } from '../menu';
+import type { Menu } from '../menu/menu';
 
 export interface App {
   menu: Menu;

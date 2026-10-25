@@ -1,12 +1,12 @@
-import { COLORS, TEAMS } from '../../config';
+import { COLORS, TEAMS } from '../../sim/config';
 import { teamName, type Match } from '../../game';
 import { oracleAwards } from '../../game/oracle';
-import { fmtInt, t, tn } from '../../i18n';
-import { roundTitle } from '../../mayhem';
-import { awardLabel, awardValue, awardWho } from '../../scorecard';
-import { awards, type Award } from '../../stats';
-import { h, type MenuItem, type Screen } from '../menu';
-import { menuPage } from '../menu-page';
+import { fmtInt, t, tn } from '../../platform/i18n';
+import { roundTitle } from '../../game/mayhem';
+import { awardLabel, awardValue, awardWho } from '../../game/scorecard';
+import { awards, type Award } from '../../data/stats';
+import { h, type MenuItem, type Screen } from '../menu/menu';
+import { menuPage } from '../menu/menu-page';
 import type { App } from './app';
 import { enablePagerNavigation, pagePagerHeader, positionModeCarousel, type ModeTransition } from './mode-pager';
 

@@ -22,7 +22,7 @@ The user's attached design references establish visual direction, not executable
 
 Implement UI, navigation, explanatory copy, responsive behavior and accessibility. Preserve the game's rules and network contracts. No framework migration, new backend, new dependencies, new modes, scoring changes, or new account/profile system. Do not publish, deploy or push unless separately requested.
 
-Preserve local and online settings independently. Keep both German and English complete. User-visible text belongs in `src/i18n.ts`; use existing translation, pluralization and number-formatting functions. Labels below are German product copy; provide equivalent English.
+Preserve local and online settings independently. Keep both German and English complete. User-visible text belongs in `src/platform/i18n.ts`; use existing translation, pluralization and number-formatting functions. Labels below are German product copy; provide equivalent English.
 
 Do not remove a feature to reduce visual complexity. Put secondary settings behind a clearly named category or disclosure. Do not hide critical consequences such as a private room, password protection, teams or the number of seats entirely from the review summary.
 
@@ -33,23 +33,23 @@ The first draft is committed as `70d4c94` (`Redesign game launcher and unify men
 | File | Responsibility / useful starting point |
 | --- | --- |
 | `src/ui/screens/` | `App` interface; `titleScreen`; local briefing; players; full rules; settings; tutorial; pause; match results |
-| `src/ui/launcher.css` | Existing main menu and local briefing; use this as the primary visual reference |
+| `src/ui/menu/launcher.css` | Existing main menu and local briefing; use this as the primary visual reference |
 | `src/ui/lobby.ts` | Relay connection, room list, creation, code entry, waiting room, host/guest controls, invitation lifecycle |
 | `src/main.ts` | Actual `App` implementation; lazy `multiplayer()` session; `openLobby`, `toLobby`, `toTitle`; invite startup and online match callbacks |
-| `src/ui/menu.ts` | Screen stack, menu item placement, focus, directional keyboard navigation, persistent selection |
-| `src/ui/controls.ts` | Sliders, toggles, segmented controls, tiles; second-draft `seatControl` uses compact ship cards |
-| `src/ui/menu-page.ts` | Shared page frame and footer. Reuse where appropriate; it is not a requirement to make every screen look like the same form |
-| `src/ui/menu-page.css` | Shared page styling plus second-draft Multiplayer, crew, Daily and category styles |
+| `src/ui/menu/menu.ts` | Screen stack, menu item placement, focus, directional keyboard navigation, persistent selection |
+| `src/ui/menu/controls.ts` | Sliders, toggles, segmented controls, tiles; second-draft `seatControl` uses compact ship cards |
+| `src/ui/menu/menu-page.ts` | Shared page frame and footer. Reuse where appropriate; it is not a requirement to make every screen look like the same form |
+| `src/ui/menu/menu-page.css` | Shared page styling plus second-draft Multiplayer, crew, Daily and category styles |
 | `src/ui/flight-card.ts` | Native action card with illustration, title, hint and arrow |
-| `src/ui/mode-icons.ts` | Repo-native SVG art: modes, Daily, find/create/code; `pilotArt()` for crew |
-| `src/ui/match-presets.ts` | Four real rule presets and detection of custom rules |
-| `src/ui/rules.ts` | Authoritative UI rule inventory, groups, valid values and conditional visibility |
-| `src/settings.ts` | Local seats, teams and device preferences; add/remove/balance/validation helpers |
-| `src/lobbyPrefs.ts` | Separate online preferences, defaults, local storage, Mayhem rule normalization |
-| `src/ui/daily.ts` | Daily briefing, result, copy/share text; current implementation has a selectable route |
-| `src/ui/leaderboard.ts` | Explicit read/post flows and feature availability |
-| `src/invite.ts`, `src/multiplayer.ts` | Preserve tested invite and session semantics |
-| `src/ui/roomLook.ts` | Existing room visibility, symbol and color pickers / dialog |
+| `src/ui/menu/mode-icons.ts` | Repo-native SVG art: modes, Daily, find/create/code; `pilotArt()` for crew |
+| `src/ui/presets/match-presets.ts` | Four real rule presets and detection of custom rules |
+| `src/ui/menu/rules.ts` | Authoritative UI rule inventory, groups, valid values and conditional visibility |
+| `src/data/settings.ts` | Local seats, teams and device preferences; add/remove/balance/validation helpers |
+| `src/data/lobbyPrefs.ts` | Separate online preferences, defaults, local storage, Mayhem rule normalization |
+| `src/ui/daily/daily.ts` | Daily briefing, result, copy/share text; current implementation has a selectable route |
+| `src/ui/daily/leaderboard.ts` | Explicit read/post flows and feature availability |
+| `src/net/invite.ts`, `src/net/multiplayer.ts` | Preserve tested invite and session semantics |
+| `src/ui/room/roomLook.ts` | Existing room visibility, symbol and color pickers / dialog |
 
 Second draft already contains reusable pieces:
 
@@ -216,7 +216,7 @@ Prioritize the real room name, mode, invitation/code, crew and readiness. Put pi
 
 The standard configured secure relay connects in the background when needed. Local/self-hosted server configuration is secondary. A failed connection reveals a clear retry path with the selected child destination preserved.
 
-Preserve the tested invitation behavior in `src/invite.ts`: direct links can join the target room, password fragments are removed from history promptly, invitation attempts are consumed correctly, and a different relay requires the existing explicit confirmation interaction. No silent connection to an unrelated invitation relay. No new login step.
+Preserve the tested invitation behavior in `src/net/invite.ts`: direct links can join the target room, password fragments are removed from history promptly, invitation attempts are consumed correctly, and a different relay requires the existing explicit confirmation interaction. No silent connection to an unrelated invitation relay. No new login step.
 
 ## 7. Crew selection: choose pilots, not a matrix of options
 

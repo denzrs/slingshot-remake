@@ -1,6 +1,6 @@
-import { t } from '../../i18n';
+import { t } from '../../platform/i18n';
 import { heartIcon } from '../dom';
-import { h } from '../menu';
+import { h } from '../menu/menu';
 
 type BmcButtonWidget = (text: string, slug: string, color: string, emoji: string, font: string, fontColor: string, outlineColor: string, coffeeColor: string) => string;
 

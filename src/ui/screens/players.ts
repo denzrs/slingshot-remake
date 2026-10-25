@@ -1,9 +1,9 @@
-import { COLORS, MAX_PLAYERS } from '../../config';
-import { t, tn } from '../../i18n';
-import { activeSeats, addSeat, balanceTeams, MIN_SEATS, removeSeat, type Seat } from '../../settings';
-import { h, type MenuItem, type Screen } from '../menu';
-import { menuGroup, menuPage } from '../menu-page';
-import { teamRoster } from '../team-roster';
+import { COLORS, MAX_PLAYERS } from '../../sim/config';
+import { t, tn } from '../../platform/i18n';
+import { activeSeats, addSeat, balanceTeams, MIN_SEATS, removeSeat, type Seat } from '../../data/settings';
+import { h, type MenuItem, type Screen } from '../menu/menu';
+import { menuGroup, menuPage } from '../menu/menu-page';
+import { teamRoster } from '../room/team-roster';
 import type { App } from './app';
 
 function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {

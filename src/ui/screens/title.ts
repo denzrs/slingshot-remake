@@ -1,10 +1,10 @@
-import { t } from '../../i18n';
-import type { GameMode } from '../../modes';
-import { dailyMenuHint, dailyScreen } from '../daily';
-import { factTicker } from '../facts';
-import { h, type MenuItem, type Screen } from '../menu';
-import { modeArt } from '../mode-icons';
-import { modeName } from '../mode-name';
+import { t } from '../../platform/i18n';
+import type { GameMode } from '../../sim/modes';
+import { dailyMenuHint, dailyScreen } from '../daily/daily';
+import { factTicker } from '../stats/facts';
+import { h, type MenuItem, type Screen } from '../menu/menu';
+import { modeArt } from '../menu/mode-icons';
+import { modeName } from '../menu/mode-name';
 import type { App } from './app';
 import { coffeeButton, creditsBadge } from './credits';
 import { languageItem, settingsScreen } from './settings';

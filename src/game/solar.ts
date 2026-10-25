@@ -1,7 +1,7 @@
-import { FIELD, SOLAR, SOLAR_STORM } from '../config';
-import type { Nebula } from '../physics';
-import { createRng, intRange, range, type Rng } from '../rng';
-import { onOrbit, orbitOf, orbitTurn } from '../world';
+import { FIELD, SOLAR, SOLAR_STORM } from '../sim/config';
+import type { Nebula } from '../sim/physics';
+import { createRng, intRange, range, type Rng } from '../sim/rng';
+import { onOrbit, orbitOf, orbitTurn } from '../sim/world';
 import { ClassicMatch } from './classic';
 
 /**

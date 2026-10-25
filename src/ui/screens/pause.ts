@@ -1,9 +1,9 @@
-import { COLORS, TEAMS } from '../../config';
+import { COLORS, TEAMS } from '../../sim/config';
 import { ChallengeMatch, teamName, type Match } from '../../game';
-import { fmtInt, t, tn } from '../../i18n';
-import { h, type MenuItem, type Screen } from '../menu';
-import { menuPage } from '../menu-page';
-import { modeName } from '../mode-name';
+import { fmtInt, t, tn } from '../../platform/i18n';
+import { h, type MenuItem, type Screen } from '../menu/menu';
+import { menuPage } from '../menu/menu-page';
+import { modeName } from '../menu/mode-name';
 import type { App } from './app';
 import { scoreChart } from './game-over';
 import { settingsScreen } from './settings';

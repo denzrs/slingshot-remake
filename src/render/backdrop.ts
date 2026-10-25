@@ -1,5 +1,5 @@
-import { COLORS } from '../config';
-import { createRng } from '../rng';
+import { COLORS } from '../sim/config';
+import { createRng } from '../sim/rng';
 import { plateUnits } from './layout';
 import { rgba } from './color';
 

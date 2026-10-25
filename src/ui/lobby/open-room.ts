@@ -1,11 +1,11 @@
-import { MAX_PLAYERS } from '../../config';
-import { t } from '../../i18n';
-import type { LobbyPrefs } from '../../lobbyPrefs';
-import type { MultiplayerSession } from '../../multiplayer';
-import type { RoomLook } from '../../roomLook';
-import { sliderControl, type Env } from '../controls';
-import { h } from '../menu';
-import { lookDialog, roomIcon, visibilityControl, type LookDialog } from '../roomLook';
+import { MAX_PLAYERS } from '../../sim/config';
+import { t } from '../../platform/i18n';
+import type { LobbyPrefs } from '../../data/lobbyPrefs';
+import type { MultiplayerSession } from '../../net/multiplayer';
+import type { RoomLook } from '../../data/roomLook';
+import { sliderControl, type Env } from '../menu/controls';
+import { h } from '../menu/menu';
+import { lookDialog, roomIcon, visibilityControl, type LookDialog } from '../room/roomLook';
 import type { App } from '../screens';
 import { button, field, iconButton, passwordInput, secretField, textInput } from './widgets';
 

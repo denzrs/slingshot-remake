@@ -5,7 +5,7 @@
  * pick-ups in the same hands, and the next turn starts from there.
  */
 import type { PlacementKind } from './powerup-field';
-import type { PowerUpKind } from '../powerups';
+import type { PowerUpKind } from '../sim/powerups';
 
 /** The power-ups that ride on a single shot: they are armed (or not) when the shot is fired. */
 export type Rider = Extract<PowerUpKind, 'preview' | 'piercing' | 'plasma'>;

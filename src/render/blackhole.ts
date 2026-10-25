@@ -1,5 +1,5 @@
-import { COLORS } from '../config';
-import type { BlackHole } from '../physics';
+import { COLORS } from '../sim/config';
+import type { BlackHole } from '../sim/physics';
 import { rgba } from './color';
 
 /** Lens rings: radius (× lens radius) and how strongly the starfield behind them is magnified. */

@@ -1,11 +1,11 @@
-import { AIM, HORIZON, SCORING, COLORS, WORMHOLE } from '../config';
-import { t } from '../i18n';
-import type { ShotRules, StyleKind, World } from '../physics';
-import { POWER_UP, type Pickup } from '../powerups';
+import { AIM, HORIZON, SCORING, COLORS, WORMHOLE } from '../sim/config';
+import { t } from '../platform/i18n';
+import type { ShotRules, StyleKind, World } from '../sim/physics';
+import { POWER_UP, type Pickup } from '../sim/powerups';
 import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
-import { scoreHorizonKill } from '../scoring';
-import { Volley, type VolleyShot, type VolleySnapshot } from '../volley';
+import { scoreHorizonKill } from '../sim/scoring';
+import { Volley, type VolleyShot, type VolleySnapshot } from '../sim/volley';
 import { Match, type Phase, type RoundTitle, type SkipVote } from './match';
 import type { CrowdSeat } from './crowd';
 import type { OracleSnapshot } from './oracle';

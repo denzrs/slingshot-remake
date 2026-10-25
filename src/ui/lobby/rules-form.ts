@@ -1,7 +1,7 @@
-import type { GameMode } from '../../modes';
-import { buildControl, type Control, type Env } from '../controls';
-import { h } from '../menu';
-import { groupTitle, RULE_COLUMNS, RULE_GROUPS, ruleItems, type RuleSource } from '../rules';
+import type { GameMode } from '../../sim/modes';
+import { buildControl, type Control, type Env } from '../menu/controls';
+import { h } from '../menu/menu';
+import { groupTitle, RULE_COLUMNS, RULE_GROUPS, ruleItems, type RuleSource } from '../menu/rules';
 import type { App } from '../screens';
 
 export interface RulesForm {

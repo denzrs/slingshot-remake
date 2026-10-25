@@ -1,6 +1,6 @@
-import { COLORS } from '../config';
-import type { Planet } from '../physics';
-import { createRng, range } from '../rng';
+import { COLORS } from '../sim/config';
+import type { Planet } from '../sim/physics';
+import { createRng, range } from '../sim/rng';
 import { hexToRgb } from './color';
 import { fbm } from './noise';
 import { clamp01, mix, smoothstep, type PlanetSprite } from './planet-common';

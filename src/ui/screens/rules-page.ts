@@ -1,13 +1,13 @@
-import { t } from '../../i18n';
-import type { GameMode } from '../../modes';
-import { rulesOf } from '../../roomRules';
-import { resetRules } from '../match-presets';
-import { h, type MenuItem, type Screen } from '../menu';
-import { menuGroup, menuPage } from '../menu-page';
-import { modeName } from '../mode-name';
-import type { PresetCreator } from '../preset-cards';
-import { presetNameField } from '../preset-name';
-import { groupTitle, RULE_COLUMNS, ruleItems, type RuleSource } from '../rules';
+import { t } from '../../platform/i18n';
+import type { GameMode } from '../../sim/modes';
+import { rulesOf } from '../../data/roomRules';
+import { resetRules } from '../presets/match-presets';
+import { h, type MenuItem, type Screen } from '../menu/menu';
+import { menuGroup, menuPage } from '../menu/menu-page';
+import { modeName } from '../menu/mode-name';
+import type { PresetCreator } from '../presets/preset-cards';
+import { presetNameField } from '../presets/preset-name';
+import { groupTitle, RULE_COLUMNS, ruleItems, type RuleSource } from '../menu/rules';
 import type { App } from './app';
 
 /**

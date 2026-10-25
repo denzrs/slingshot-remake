@@ -1,15 +1,15 @@
-import { COLORS, GALLERY, TEAMS } from '../../config';
-import { t } from '../../i18n';
-import { canCopyInvite, inviteLink } from '../../invite';
-import type { MultiplayerSession } from '../../multiplayer';
-import type { RoomInfo, RoomMode } from '../../net';
-import type { RoomLook, RoomVisibility } from '../../roomLook';
-import { optionSelector, segmentedControl, type Control } from '../controls';
-import { playerIcon } from '../avatars';
-import { h } from '../menu';
-import { lookDialog, roomIcon, type LookDialog } from '../roomLook';
+import { COLORS, GALLERY, TEAMS } from '../../sim/config';
+import { t } from '../../platform/i18n';
+import { canCopyInvite, inviteLink } from '../../net/invite';
+import type { MultiplayerSession } from '../../net/multiplayer';
+import type { RoomInfo, RoomMode } from '../../net/net';
+import type { RoomLook, RoomVisibility } from '../../data/roomLook';
+import { optionSelector, segmentedControl, type Control } from '../menu/controls';
+import { playerIcon } from '../room/avatars';
+import { h } from '../menu/menu';
+import { lookDialog, roomIcon, type LookDialog } from '../room/roomLook';
 import type { App } from '../screens';
-import { teamRoster, type RosterCard } from '../team-roster';
+import { teamRoster, type RosterCard } from '../room/team-roster';
 import type { Briefing } from './briefing';
 import { button, CPU_LEVELS, ICON_CLOSE, ICON_COPY, ICON_KEY, ICON_LINK, iconButton, lockIcon, lookOf, matchTypeName } from './widgets';
 

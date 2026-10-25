@@ -1,10 +1,10 @@
-import type { ShotRules, StyleKind, World } from '../physics';
-import { scoreChallengeHit } from '../scoring';
-import { AIM, COLORS, HORIZON, SCORING } from '../config';
-import { t } from '../i18n';
-import { Volley, type VolleyShot } from '../volley';
+import type { ShotRules, StyleKind, World } from '../sim/physics';
+import { scoreChallengeHit } from '../sim/scoring';
+import { AIM, COLORS, HORIZON, SCORING } from '../sim/config';
+import { t } from '../platform/i18n';
+import { Volley, type VolleyShot } from '../sim/volley';
 import { Match, type RoundTitle, type SkipVote } from './match';
-import type { Pickup } from '../powerups';
+import type { Pickup } from '../sim/powerups';
 import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
 import type { CrowdSeat } from './crowd';

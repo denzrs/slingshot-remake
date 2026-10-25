@@ -1,15 +1,15 @@
-import { GALLERY } from '../../config';
-import { relayText, t } from '../../i18n';
-import type { Invite } from '../../invite';
-import type { LobbyPrefs } from '../../lobbyPrefs';
-import type { MultiplayerSession } from '../../multiplayer';
-import type { LobbyRoom } from '../../net';
-import { segmentedControl } from '../controls';
+import { GALLERY } from '../../sim/config';
+import { relayText, t } from '../../platform/i18n';
+import type { Invite } from '../../net/invite';
+import type { LobbyPrefs } from '../../data/lobbyPrefs';
+import type { MultiplayerSession } from '../../net/multiplayer';
+import type { LobbyRoom } from '../../net/net';
+import { segmentedControl } from '../menu/controls';
 import { eyeIcon } from '../dom';
-import { h } from '../menu';
-import { modeArt } from '../mode-icons';
-import { modeName } from '../mode-name';
-import { roomIcon } from '../roomLook';
+import { h } from '../menu/menu';
+import { modeArt } from '../menu/mode-icons';
+import { modeName } from '../menu/mode-name';
+import { roomIcon } from '../room/roomLook';
 import type { App } from '../screens';
 import { button, field, lockIcon, matchTypeName, passwordInput, pips, secretField, textInput } from './widgets';
 

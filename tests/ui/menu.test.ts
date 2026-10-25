@@ -1,0 +1,330 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_SETTINGS, loadSettings } from '../../src/data/settings';
+import { AIM } from '../../src/sim/config';
+import type { RoomRules } from '../../src/net/net';
+import { rulesOf } from '../../src/data/roomRules';
+import { indexAtFraction, positionOf, stepIndex } from '../../src/ui/menu/controls';
+import { defaultRoomRules } from '../../src/data/roomRules';
+import { CAP_STOPS, DEFAULT_CAP, powerModeOf, powerModePatch, RULE_GROUPS, ruleItems, ruleRows, rulesFor, type PowerMode, type RuleSource } from '../../src/ui/menu/rules';
+import { startPower } from '../../src/data/settings';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const relayContract = JSON.parse(readFileSync(fileURLToPath(new URL('../../server/protocol-contract.json', import.meta.url)), 'utf8')) as {
+  defaults: RoomRules;
+  options: Partial<Record<keyof RoomRules, readonly (number | string)[]>>;
+};
+
+describe('stepping through values', () => {
+  it('wraps around when asked to, in both directions', () => {
+    expect(stepIndex(2, 1, 3, true)).toBe(0);
+    expect(stepIndex(0, -1, 3, true)).toBe(2);
+    expect(stepIndex(1, 1, 3, true)).toBe(2);
+  });
+
+  it('stops at the ends of a slider', () => {
+    expect(stepIndex(2, 1, 3, false)).toBe(2);
+    expect(stepIndex(0, -1, 3, false)).toBe(0);
+    expect(stepIndex(1, -1, 3, false)).toBe(0);
+  });
+
+  it('copes with a list that has no values', () => {
+    expect(stepIndex(0, 1, 0, true)).toBe(0);
+    expect(stepIndex(0, 1, 0, false)).toBe(0);
+  });
+});
+
+describe('slider track', () => {
+  it('snaps a hit on the track to the nearest stop', () => {
+    // Ten stops, like the shot power cap: each one owns a ninth of the track.
+    expect(indexAtFraction(0, 10)).toBe(0);
+    expect(indexAtFraction(1, 10)).toBe(9);
+    expect(indexAtFraction(0.5, 10)).toBe(5);
+    expect(indexAtFraction(0.05, 10)).toBe(0);
+    expect(indexAtFraction(0.06, 10)).toBe(1);
+  });
+
+  it('clamps a drag that leaves the track', () => {
+    expect(indexAtFraction(-3, 8)).toBe(0);
+    expect(indexAtFraction(7, 8)).toBe(7);
+  });
+
+  it('puts the first stop at the left end and the last at the right end', () => {
+    expect(positionOf(0, 5)).toBe(0);
+    expect(positionOf(4, 5)).toBe(1);
+    expect(positionOf(1, 5)).toBe(0.25);
+    expect(positionOf(0, 1)).toBe(0);
+  });
+
+  it('lands on every stop when dragged to where it is drawn', () => {
+    for (const count of [2, 3, 4, 8, 10]) {
+      for (let i = 0; i < count; i++) expect(indexAtFraction(positionOf(i, count), count)).toBe(i);
+    }
+  });
+});
+
+describe('game rules in the menu', () => {
+  const all = ruleRows();
+  const valued = all.filter((row) => row.control !== 'toggle');
+
+  it('lists every rule the setup and online lobby share, once — the shot power one in three parts, and the power-up switch in the kinds', () => {
+    // Choosing kinds is what switches the power-ups on: no kinds, no power-ups. So the switch has no row of its own.
+    expect(all.map((row) => row.key).sort()).toEqual(Object.keys(relayContract.defaults).filter((key) => key !== 'powerUps').sort());
+  });
+
+  it('sorts every rule into a block of the setup screen', () => {
+    for (const row of all) expect(RULE_GROUPS).toContain(row.group);
+    for (const group of RULE_GROUPS) expect(all.some((row) => row.group === group)).toBe(true);
+  });
+
+  it('starts every slider on one of its stops', () => {
+    const defaults = rulesOf(DEFAULT_SETTINGS);
+    for (const row of all.filter((r) => r.control === 'slider')) {
+      // The cap's slider only has stops below "no cap": no cap is the power mode "free".
+      if (row.key === 'maxPower') continue;
+      // Mayhem's strength is out of sight while Mayhem is off, as it is by default.
+      if (row.when && !row.when(defaults)) continue;
+      expect(row.options.map((o) => o.value), row.key).toContain(defaults[row.key]);
+    }
+  });
+
+  it('offers only numeric values accepted by the relay contract', () => {
+    for (const row of all.filter((r) => r.control === 'slider')) {
+      for (const option of row.options) {
+        if (row.key === 'maxPower') expect(option.value).toBeLessThan(relayContract.defaults.maxPower);
+        else expect(relayContract.options[row.key], row.key).toContain(option.value);
+      }
+    }
+  });
+
+  it('keeps the fixed power slider on the relay-compatible five-point steps', () => {
+    const fixed = all.find((row) => row.key === 'fixedPowerLevel')!;
+    expect(fixed.options.map((option) => option.value)).toEqual(relayContract.options.fixedPowerLevel);
+  });
+
+  it('makes switches of the on/off rules, a bar of the few-choice rules and sliders of the rest', () => {
+    for (const row of all) {
+      if (row.key === 'fixedPower' || row.key === 'powerUpAmount' || row.key === 'mayhem' || row.key === 'killcam') expect(row.control, row.key).toBe('segmented');
+      else if (row.key === 'powerUpKinds') expect(row.control).toBe('tiles');
+      else if (row.options.length === 0) expect(row.control, row.key).toBe('toggle');
+      else expect(row.control, row.key).toBe('slider');
+    }
+  });
+
+  it('orders slider stops from low to high, endless rounds last', () => {
+    for (const row of valued.filter((r) => r.control === 'slider')) {
+      const values = row.options.map((o) => o.value as number);
+      const sorted = row.key === 'rounds' ? [...values.filter((n) => n > 0)].sort((a, b) => a - b).concat(values.filter((n) => n === 0)) : [...values].sort((a, b) => a - b);
+      expect(values, row.key).toEqual(sorted);
+      expect(new Set(values).size, row.key).toBe(values.length);
+    }
+  });
+
+  it('hides the rules Event Horizon plays without, and keeps them in the Classic family', () => {
+    const horizon = rulesFor('horizon').map((row) => row.key);
+    for (const row of all.filter((r) => r.modes)) {
+      expect(horizon).not.toContain(row.key);
+      for (const mode of ['classic', 'solar'] as const) expect(rulesFor(mode).map((r) => r.key)).toContain(row.key);
+    }
+  });
+
+  it('offers the power-up kinds and their amount in every mode, offline and in an online room', () => {
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      for (const online of [false, true]) expect(rulesFor(mode, online).map((r) => r.key)).toEqual(expect.arrayContaining(['powerUpKinds', 'powerUpAmount']));
+    }
+  });
+
+  it('hides the amount while power-ups are off', () => {
+    const source = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), powerUps: false }), patch() {} };
+    for (const { key, item } of ruleItems('classic', source).filter((r) => r.key === 'powerUpAmount')) {
+      expect(item.hidden?.(), key).toBe(true);
+    }
+  });
+
+  it('offers exactly the power-up amounts and kinds the relay accepts', () => {
+    expect(all.find((r) => r.key === 'powerUpAmount')!.options.map((o) => o.value)).toEqual(relayContract.options.powerUpAmount);
+    expect(all.find((r) => r.key === 'powerUpKinds')!.options.map((o) => o.value)).toEqual(relayContract.defaults.powerUpKinds);
+  });
+
+  it('shows the strength of Mayhem in both modes, among the match rules, only while Mayhem is on', () => {
+    for (const mode of ['classic', 'horizon'] as const) {
+      for (const online of [false, true]) {
+        const row = rulesFor(mode, online).find((r) => r.key === 'mayhem')!;
+        expect(row.group).toBe('match');
+        expect(row.when!({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 })).toBe(true);
+        expect(row.when!(rulesOf(DEFAULT_SETTINGS))).toBe(false);
+      }
+    }
+    let rules = { ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 };
+    const item = ruleItems('classic', { get: () => rules, patch: (v) => (rules = { ...rules, ...v }) }).find((i) => i.key === 'mayhem')!.item;
+    expect(item.kind).toBe('segmented');
+    expect(item.hidden?.()).toBe(false);
+    rules = { ...rules, mayhem: 0 };
+    expect(item.hidden?.()).toBe(true);
+  });
+
+  it('offers the shared killcam choices in every offline and online mode', () => {
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      for (const online of [false, true]) {
+        const row = rulesFor(mode, online).find((r) => r.key === 'killcam')!;
+        expect(row.options.map((o) => o.value)).toEqual(relayContract.options.killcam);
+        let rules = rulesOf(DEFAULT_SETTINGS);
+        const item = ruleItems(mode, { get: () => rules, patch: (value) => { rules = { ...rules, ...value }; } }, online).find((r) => r.key === 'killcam')!.item;
+        expect(item.kind).toBe('segmented');
+        if (item.kind !== 'segmented') throw new Error('Expected killcam options');
+        item.set('round');
+        expect(rules.killcam).toBe('round');
+      }
+    }
+  });
+
+  it('offers exactly the chaos strengths the relay accepts, bar "off", which is not a Mayhem game', () => {
+    expect(all.find((r) => r.key === 'mayhem')!.options.map((o) => o.value)).toEqual(relayContract.options.mayhem!.filter((n) => typeof n === 'number' && n > 0));
+    expect(relayContract.defaults.mayhem).toBe(0);
+  });
+
+  it('keeps the rules that only make sense online — betting and the chat limit — off the offline setup screen, in both modes', () => {
+    const online = all.filter((r) => r.onlineOnly);
+    expect(online.map((r) => r.key)).toEqual(['betting', 'chatPlayersOnly']);
+    for (const mode of ['classic', 'horizon'] as const) {
+      expect(rulesFor(mode).map((r) => r.key)).not.toContain('betting');
+      expect(rulesFor(mode, true).map((r) => r.key)).toContain('betting');
+    }
+    // As a switch in the lobby, and not on a screen for a game against the computer.
+    const source: RuleSource = { get: () => ({ ...defaultRoomRules(), betting: true }), patch: () => {} };
+    expect(ruleItems('classic', source).some((i) => /bet|wett/i.test(i.item.label))).toBe(false);
+    expect(ruleItems('classic', source, true).some((i) => /bet|wett/i.test(i.item.label))).toBe(true);
+  });
+
+  describe('saved settings', () => {
+    const saved = (value: unknown) => vi.stubGlobal('localStorage', { getItem: () => JSON.stringify(value), setItem: () => {} });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('keep a slider on the stop it was left on', () => {
+      saved({ maxPower: 30, fadingTrails: 2, neighborGrace: 1, fixedPowerLevel: 65 });
+      expect(loadSettings()).toMatchObject({ maxPower: 30, fadingTrails: 2, neighborGrace: 1, fixedPowerLevel: 65 });
+    });
+
+    it('drop a value no slider stop matches back to the default', () => {
+      saved({ maxPower: 75, fadingTrails: 3, neighborGrace: 5, fixedPowerLevel: 57 });
+      expect(loadSettings()).toMatchObject({ maxPower: 100, fadingTrails: 0, neighborGrace: 0, fixedPowerLevel: 55 });
+    });
+
+    it('from before the fixed level existed keep their classic 55', () => {
+      saved({ fixedPower: true });
+      const s = loadSettings();
+      expect(s.fixedPowerLevel).toBe(55);
+      expect(startPower(s)).toBe(55);
+    });
+
+    it('still read the old on/off neighbour grace as two shots', () => {
+      saved({ neighborGrace: true });
+      expect(loadSettings().neighborGrace).toBe(2);
+    });
+  });
+});
+
+describe('shot power: free, capped or fixed', () => {
+  const rules = (over: Partial<RoomRules> = {}): RoomRules => ({ ...rulesOf(DEFAULT_SETTINGS), ...over });
+
+  it('is exactly one of the three', () => {
+    expect(powerModeOf(rules())).toBe('free');
+    expect(powerModeOf(rules({ maxPower: 60 }))).toBe('cap');
+    expect(powerModeOf(rules({ fixedPower: true }))).toBe('fixed');
+    // Old saves could hold both; the fixed power wins.
+    expect(powerModeOf(rules({ fixedPower: true, maxPower: 40 }))).toBe('fixed');
+  });
+
+  it('never has a cap and a fixed power at once after a switch', () => {
+    for (const mode of ['free', 'cap', 'fixed'] as PowerMode[]) {
+      const after = rules(powerModePatch(mode));
+      expect(powerModeOf(after), mode).toBe(mode);
+      expect(after.fixedPower && after.maxPower < AIM.MAX_POWER, mode).toBe(false);
+    }
+  });
+
+  it('comes back to the cap it had', () => {
+    expect(powerModePatch('cap', 40)).toEqual({ fixedPower: false, maxPower: 40 });
+    expect(powerModePatch('cap')).toEqual({ fixedPower: false, maxPower: DEFAULT_CAP });
+  });
+
+  it('keeps the cap slider below "no cap", so dragging it can never drop out of the mode', () => {
+    expect(CAP_STOPS).toEqual([10, 20, 30, 35, 40, 45, 50, 60, 70, 80, 90]);
+    for (const n of CAP_STOPS) expect(powerModeOf(rules({ maxPower: n }))).toBe('cap');
+  });
+
+  it('fixes shots at the chosen level', () => {
+    expect(startPower({ fixedPower: true, fixedPowerLevel: 80, maxPower: 100 })).toBe(80);
+    expect(startPower({ fixedPower: true, fixedPowerLevel: 10, maxPower: 100 })).toBe(10);
+    expect(startPower({ fixedPower: false, fixedPowerLevel: 80, maxPower: 100 })).toBe(AIM.DEFAULT_POWER);
+    expect(startPower({ fixedPower: false, fixedPowerLevel: 80, maxPower: 30 })).toBe(30);
+  });
+
+  it('offers a fixed level every 5, the classic 55 among them', () => {
+    expect(AIM.FIXED_OPTIONS[0]).toBe(10);
+    expect(AIM.FIXED_OPTIONS.at(-1)).toBe(100);
+    expect(AIM.FIXED_OPTIONS).toContain(AIM.FIXED_POWER);
+    expect(AIM.FIXED_OPTIONS).toEqual(Array.from({ length: 19 }, (_, i) => 10 + i * 5));
+  });
+
+  describe('in the menu', () => {
+    const sourceOf = (start: RoomRules) => {
+      let current = start;
+      const source: RuleSource = { get: () => current, patch: (v) => (current = { ...current, ...v }) };
+      return { source, current: () => current };
+    };
+    /** The control with that label, seen through what every kind of control can do. */
+    type Any = { get(): unknown; set(v: unknown): void; hidden?: () => boolean; inactive?: () => boolean };
+    const find = (items: ReturnType<typeof ruleItems>, label: RegExp) => items.find((i) => label.test(i.item.label))!.item as Any;
+
+    it('shows one limit slot that never empties: the cap, dimmed while free, or the fixed level', () => {
+      const { source } = sourceOf(rules());
+      const items = ruleItems('classic', source);
+      const mode = find(items, /^(Schusskraft|Shot power)$/);
+      const cap = find(items, /^Max\. (Schusskraft|shot power)$/);
+      const fixed = find(items, /^(Feste Schusskraft|Fixed shot power)$/);
+      // [cap shown, cap dimmed, fixed shown]
+      const state = () => [!cap.hidden!(), cap.inactive?.() ?? false, !fixed.hidden!()];
+
+      expect(state()).toEqual([true, true, false]);
+      mode.set('cap');
+      expect(state()).toEqual([true, false, false]);
+      mode.set('fixed');
+      expect(state()).toEqual([false, false, true]);
+      mode.set('free');
+      expect(state()).toEqual([true, true, false]);
+    });
+
+    it('moves the right setting with each slider', () => {
+      const { source, current } = sourceOf(rules());
+      const items = ruleItems('classic', source);
+      const mode = find(items, /^(Schusskraft|Shot power)$/);
+      mode.set('cap');
+      expect(current()).toMatchObject({ fixedPower: false, maxPower: DEFAULT_CAP });
+      find(items, /^Max\. (Schusskraft|shot power)$/).set(40);
+      expect(current()).toMatchObject({ fixedPower: false, maxPower: 40 });
+      mode.set('fixed');
+      expect(current()).toMatchObject({ fixedPower: true, maxPower: 100 });
+      find(items, /^(Feste Schusskraft|Fixed shot power)$/).set(75);
+      expect(current()).toMatchObject({ fixedPower: true, fixedPowerLevel: 75 });
+    });
+
+    it('remembers the cap while another mode is tried', () => {
+      const { source, current } = sourceOf(rules());
+      const items = ruleItems('classic', source);
+      const mode = find(items, /^(Schusskraft|Shot power)$/);
+      mode.set('cap');
+      find(items, /^Max\. (Schusskraft|shot power)$/).set(30);
+      mode.set('fixed');
+      mode.set('cap');
+      expect(current().maxPower).toBe(30);
+    });
+
+    it('starts on the mode a game already has', () => {
+      const { source } = sourceOf(rules({ maxPower: 50 }));
+      const items = ruleItems('horizon', source);
+      expect(find(items, /^(Schusskraft|Shot power)$/).get()).toBe('cap');
+      expect(find(items, /^Max\. (Schusskraft|shot power)$/).hidden!()).toBe(false);
+    });
+  });
+});

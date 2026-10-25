@@ -1,5 +1,5 @@
-import type { Planet } from '../physics';
-import { range } from '../rng';
+import type { Planet } from '../sim/physics';
+import { range } from '../sim/rng';
 
 export type Vec3 = [number, number, number];
 

@@ -2,7 +2,7 @@
 // Usage: npx tsx benchmarks/relay-profile-load.ts ws://localhost:8080 msgpack|envelope [seconds]
 
 import WebSocket from 'ws';
-import { packMessage, packWireMessage, unpackMessage, unpackWireMessage } from '../src/messagepack';
+import { packMessage, packWireMessage, unpackMessage, unpackWireMessage } from '../src/net/messagepack';
 
 const url = process.argv[2] ?? 'ws://localhost:8080';
 const format = process.argv[3] ?? 'envelope';

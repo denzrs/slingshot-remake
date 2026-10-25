@@ -1,4 +1,4 @@
-import { FIELD } from '../config';
+import { FIELD } from '../sim/config';
 
 export interface Box {
   x: number;

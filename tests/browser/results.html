@@ -15,14 +15,14 @@
       import '@fontsource/b612-mono/400';
       import '@fontsource/b612-mono/700';
       import '/src/style.css';
-      import '/src/ui/launcher.css';
-      import '/src/ui/menu-page.css';
+      import '/src/ui/menu/launcher.css';
+      import '/src/ui/menu/menu-page.css';
       import { createMatch } from '/src/game/index.ts';
-      import { cloneSettings, DEFAULT_SETTINGS } from '/src/settings.ts';
-      import { Menu } from '/src/ui/menu.ts';
+      import { cloneSettings, DEFAULT_SETTINGS } from '/src/data/settings.ts';
+      import { Menu } from '/src/ui/menu/menu.ts';
       import { gameOverScreen } from '/src/ui/screens/index.ts';
-      import { Sound } from '/src/audio.ts';
-      import { setLang } from '/src/i18n.ts';
+      import { Sound } from '/src/platform/audio.ts';
+      import { setLang } from '/src/platform/i18n.ts';
 
       setLang('de');
       const settings = cloneSettings(DEFAULT_SETTINGS);

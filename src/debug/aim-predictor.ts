@@ -13,11 +13,11 @@ import '@fontsource/b612/700';
 import '@fontsource/b612-mono/400';
 import '@fontsource/b612-mono/700';
 
-import { AIM, COLORS, FONTS, GRACE, HORIZON, SCORING } from '../config';
-import { cloneWorld, Shot, type ShotEnd, type ShotRules, type StyleKind, type World } from '../physics';
-import { scoreChallengeHit, scoreHorizonKill } from '../scoring';
-import { generateWorld } from '../world';
-import { createRng, randomSeed, type Rng } from '../rng';
+import { AIM, COLORS, FONTS, GRACE, HORIZON, SCORING } from '../sim/config';
+import { cloneWorld, Shot, type ShotEnd, type ShotRules, type StyleKind, type World } from '../sim/physics';
+import { scoreChallengeHit, scoreHorizonKill } from '../sim/scoring';
+import { generateWorld } from '../sim/world';
+import { createRng, randomSeed, type Rng } from '../sim/rng';
 
 // ————————————————————————————— Setup —————————————————————————————
 

@@ -1,11 +1,11 @@
-import { modifiersOf } from '../challenge';
-import { AIM, COLORS, FIELD, FONTS, MAYHEM, TEAMS } from '../config';
+import { modifiersOf } from '../sim/challenge';
+import { AIM, COLORS, FIELD, FONTS, MAYHEM, TEAMS } from '../sim/config';
 import { ChallengeMatch, HorizonMatch, SKIP_VOTE_TIME, teamName, type KillRecord, type Match, type PlayerState } from '../game';
-import { fmt, fmtInt, t } from '../i18n';
-import { TWIST_IDS, twistName } from '../mayhem';
-import { awardLabel, awardValue, awardWho, spotlight } from '../scorecard';
-import { styleLabel } from '../scoring';
-import { awards } from '../stats';
+import { fmt, fmtInt, t } from '../platform/i18n';
+import { TWIST_IDS, twistName } from '../game/mayhem';
+import { awardLabel, awardValue, awardWho, spotlight } from '../game/scorecard';
+import { styleLabel } from '../sim/scoring';
+import { awards } from '../data/stats';
 import type { View } from './backdrop';
 import { drawAvatar } from './avatar';
 import { rgba } from './color';

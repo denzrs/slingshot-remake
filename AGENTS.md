@@ -2,9 +2,13 @@
 
 The README covers setup and releases.
 
+## Layout
+
+Where a file belongs, and which folder may import which: [`docs/architecture.md`](docs/architecture.md). `tests/layering.test.ts` fails on an import that points up.
+
 ## Language
 
-UI labels live in `src/i18n.ts` (every key in both languages).
+UI labels live in `src/platform/i18n.ts` (every key in both languages).
 
 ## Presets
 

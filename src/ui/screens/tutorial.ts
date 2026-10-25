@@ -1,12 +1,12 @@
-import { CHALLENGE, COLORS, HORIZON, SCORING } from '../../config';
-import { fmtNum, t } from '../../i18n';
-import type { StyleKind } from '../../physics';
-import type { PowerUpKind } from '../../powerups';
+import { CHALLENGE, COLORS, HORIZON, SCORING } from '../../sim/config';
+import { fmtNum, t } from '../../platform/i18n';
+import type { StyleKind } from '../../sim/physics';
+import type { PowerUpKind } from '../../sim/powerups';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../../render/powerup-art';
-import { STYLE_MULTIPLIER, styleLabel } from '../../scoring';
-import { h, type MenuItem, type Screen } from '../menu';
-import { menuPage } from '../menu-page';
-import { mountTutorialPreview, type TutorialPreviewKind } from '../tutorial-preview';
+import { STYLE_MULTIPLIER, styleLabel } from '../../sim/scoring';
+import { h, type MenuItem, type Screen } from '../menu/menu';
+import { menuPage } from '../menu/menu-page';
+import { mountTutorialPreview, type TutorialPreviewKind } from './tutorial-preview';
 import type { App } from './app';
 
 /** One page of the tutorial: a heading and what goes under it. */

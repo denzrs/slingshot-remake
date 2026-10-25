@@ -1,7 +1,7 @@
-import { COLORS, FONTS, HORIZON, ORACLE } from '../config';
+import { COLORS, FONTS, HORIZON, ORACLE } from '../sim/config';
 import type { Match } from '../game';
 import { oracleAwards, oracleMultiplier, stakeOptions, TIP_HIDDEN, TIP_HIT, TIP_MISS, TIP_NOBODY, type OracleKind, type OracleQuestion, type OracleResult, type RoundResult } from '../game/oracle';
-import { fmt, fmtInt, t } from '../i18n';
+import { fmt, fmtInt, t } from '../platform/i18n';
 import { rgba } from './color';
 import { fitText, setSpacing } from './text';
 

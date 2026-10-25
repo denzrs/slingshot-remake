@@ -18,13 +18,13 @@
 
 import { writeFileSync } from 'node:fs';
 import { createMatch, type Match } from '../src/game';
-import type { GameMode } from '../src/modes';
+import type { GameMode } from '../src/sim/modes';
 import { RIDERS, type ReplayScript } from '../src/game/replay';
-import { reportLocalGame, trackLocalGame } from '../src/localStats';
-import { packWireMessage } from '../src/messagepack';
-import { roundReport, turnReport, type TurnReport } from '../src/roundReport';
-import { cloneSettings, DEFAULT_SETTINGS, type Seat, type Settings } from '../src/settings';
-import { ShotLog } from '../src/shotLog';
+import { reportLocalGame, trackLocalGame } from '../src/net/localStats';
+import { packWireMessage } from '../src/net/messagepack';
+import { roundReport, turnReport, type TurnReport } from '../src/game/roundReport';
+import { cloneSettings, DEFAULT_SETTINGS, type Seat, type Settings } from '../src/data/settings';
+import { ShotLog } from '../src/game/shotLog';
 
 const MATCHES = Number(process.env.MATCHES ?? 4);
 const ROUNDS = Number(process.env.ROUNDS ?? 2);

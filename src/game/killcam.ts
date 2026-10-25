@@ -1,6 +1,6 @@
-import { PHYSICS } from '../config';
-import { cloneWorld, type ShotRules, type World } from '../physics';
-import { shotSource, Volley, type VolleyAim, type VolleyEvent, type VolleyScript, type VolleyShot, type VolleySnapshot } from '../volley';
+import { PHYSICS } from '../sim/config';
+import { cloneWorld, type ShotRules, type World } from '../sim/physics';
+import { shotSource, Volley, type VolleyAim, type VolleyEvent, type VolleyScript, type VolleyShot, type VolleySnapshot } from '../sim/volley';
 import type { Camera, KillRecord, Phase, Scene } from './match';
 
 /** Everything needed to replay one kill exactly — the physics is deterministic. */

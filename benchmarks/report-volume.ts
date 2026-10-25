@@ -6,9 +6,9 @@
 // Knobs (environment): MATCHES (6, per mode and table size), ROUNDS (5).
 
 import { createMatch } from '../src/game';
-import type { GameMode } from '../src/modes';
-import { turnReport } from '../src/roundReport';
-import { cloneSettings, DEFAULT_SETTINGS, type Seat, type Settings } from '../src/settings';
+import type { GameMode } from '../src/sim/modes';
+import { turnReport } from '../src/game/roundReport';
+import { cloneSettings, DEFAULT_SETTINGS, type Seat, type Settings } from '../src/data/settings';
 
 const MATCHES = Number(process.env.MATCHES ?? 6);
 const ROUNDS = Number(process.env.ROUNDS ?? 5);

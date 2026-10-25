@@ -1,7 +1,7 @@
-import { COLORS } from '../config';
-import type { Planet } from '../physics';
-import { createRng, range } from '../rng';
-import { isRefined } from './look';
+import { COLORS } from '../sim/config';
+import type { Planet } from '../sim/physics';
+import { createRng, range } from '../sim/rng';
+import { isRefined } from '../data/look';
 import { clamp01, crater, LIGHT, makeCraters, mix, smoothstep, type Crater, type PlanetSprite } from './planet-common';
 import { renderRefinedPlanet } from './planet-refined';
 import { hexToRgb } from './color';

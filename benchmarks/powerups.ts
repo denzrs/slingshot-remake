@@ -1,8 +1,8 @@
 import { createMatch } from '../src/game';
-import { Shot } from '../src/physics';
-import { POWER_UP } from '../src/powerups';
-import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
-import { Volley } from '../src/volley';
+import { Shot } from '../src/sim/physics';
+import { POWER_UP } from '../src/sim/powerups';
+import { DEFAULT_SETTINGS, type Seat } from '../src/data/settings';
+import { Volley } from '../src/sim/volley';
 
 /**
  * Measures the power-ups: how many pickups a round sees, how many get taken and used by CPUs,

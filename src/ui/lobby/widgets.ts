@@ -1,9 +1,9 @@
-import { AVATARS } from '../../avatars';
-import { t } from '../../i18n';
-import type { NetworkCpuLevel, RoomInfo, RoomMode } from '../../net';
-import type { RoomLook } from '../../roomLook';
-import { AVATAR_LABEL, avatarSvg } from '../avatars';
-import { h } from '../menu';
+import { AVATARS } from '../../platform/avatars';
+import { t } from '../../platform/i18n';
+import type { NetworkCpuLevel, RoomInfo, RoomMode } from '../../net/net';
+import type { RoomLook } from '../../data/roomLook';
+import { AVATAR_LABEL, avatarSvg } from '../room/avatars';
+import { h } from '../menu/menu';
 
 export const matchTypeName = (mode: RoomMode) => (mode === 'team' ? t('players.teams', { n: 2 }) : t('players.ffa'));
 /** The symbols a player can pick, as the choices of a picker. */

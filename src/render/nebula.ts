@@ -1,4 +1,4 @@
-import { COLORS } from '../config';
+import { COLORS } from '../sim/config';
 import { hexToRgb } from './color';
 import { fbm } from './noise';
 
