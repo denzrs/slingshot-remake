@@ -11,6 +11,8 @@ function table(humans: number, extra: Partial<typeof DEFAULT_SETTINGS> = {}): Cl
 }
 
 describe('a player leaving an online game', () => {
+  const afterVolley = (m: ClassicMatch) => (m as unknown as { afterVolley(): void }).afterVolley();
+
   it('takes the ship off the field and leaves the others aiming', () => {
     const m = table(3);
     expect(m.current).toBe(0);
@@ -74,6 +76,49 @@ describe('a player leaving an online game', () => {
     expect(n.oracle.question).toBeNull();
   });
 
+  it('ends the round as a walkover whenever their going settled it, mid-flight too', () => {
+    const m = table(3);
+    m.players[2].alive = false;
+    m.world.ships[2].alive = false;
+    (m as unknown as { setPhase(p: string): void }).setPhase('flying');
+    m.removePlayer(1);
+    expect(m.phase).toBe('flying');
+    afterVolley(m);
+    expect(m.summary).toMatchObject({ title: 'forfeit', survivor: 0 });
+    // A round settled by a shot keeps its own title, whoever left earlier.
+    const n = table(4);
+    n.removePlayer(3);
+    n.players[2].alive = false;
+    n.players[1].alive = false;
+    afterVolley(n);
+    expect(n.summary?.title).not.toBe('forfeit');
+  });
+
+  it('carries a vote that has enough yes once fewer are at the table', () => {
+    const m = table(4);
+    m.requestSkipRound(0);
+    m.voteSkipRound(1, true);
+    expect(m.summary).toBeNull();
+    m.removePlayer(3);
+    expect(m.summary?.title).toBe('skipped');
+    // A leaver's yes no longer counts.
+    const n = table(4);
+    n.requestSkipRound(0);
+    n.voteSkipRound(3, true);
+    n.removePlayer(3);
+    expect(n.skipVote?.yes).toEqual([0]);
+  });
+
+  it('cannot win the match after leaving it', () => {
+    const m = table(3);
+    m.players[1].score = 900;
+    m.players[0].score = 200;
+    m.removePlayer(1);
+    expect(m.leader).toBe(0);
+    expect(m.ranking().map((p) => p.id)).toEqual([0, 2, 1]);
+    expect(m.winner()?.name).toBe(m.players[0].name);
+  });
+
   it('does not hold up a volley that waits for everybody', () => {
     const seats: Seat[] = ['human', 'human', 'human', 'off', 'off', 'off'];
     const m = createMatch('classic', { ...DEFAULT_SETTINGS, simultaneousShots: true, seats }, { seats, oracle: true, simultaneous: true }) as ClassicMatch;
@@ -118,23 +163,93 @@ describe('a player whose connection dropped', () => {
   });
 
   it('is left as they were by a round that ends without them', () => {
-    const m = table(3);
+    const m = table(4);
     m.setAway(1, true);
-    // Anna shoots Cleo down: the round is hers, as if Ben had not been there.
-    m.players[2].alive = false;
-    m.world.ships[2].alive = false;
-    m.lastKill = { killer: 0, victim: 2, self: false, friendly: false, points: 0, combo: [], multiplier: 1, at: 0 } as unknown as ClassicMatch['lastKill'];
-    expect(m.decided).toBe(true);
-    afterVolley(m);
+    // Anna shoots Cleo and Dan down: the round is hers, as if Ben had not been there.
+    for (const id of [2, 3]) {
+      m.players[id].alive = false;
+      m.world.ships[id].alive = false;
+    }
+    m.removePlayer(1);
     expect(m.phase).toBe('roundOver');
     expect(m.summary).toMatchObject({ survivor: 0 });
     expect(m.players[0].score).toBe(SCORING.SURVIVOR);
     expect(m.players[1].score).toBe(0);
-    expect(m.players[1].alive).toBe(true);
     // Still away when the next round starts: still off the field.
-    startRound(m);
-    expect(m.world.ships[1].alive).toBe(false);
+    const n = table(3);
+    n.setAway(1, true);
+    startRound(n);
+    expect(n.players[1].alive).toBe(true);
+    expect(n.world.ships[1].alive).toBe(false);
+    expect(n.alive.map((p) => p.id)).toEqual([0, 2]);
+  });
+
+  it('is waited for when nobody else is left to play against, even after a kill', () => {
+    const m = table(3);
+    m.players[2].alive = false;
+    m.world.ships[2].alive = false;
+    m.lastKill = { killer: 0, victim: 2, self: false, friendly: false, points: 0, combo: [], multiplier: 1, at: 0 } as unknown as ClassicMatch['lastKill'];
+    // Ben's connection drops for a moment: that is no round lost.
+    m.setAway(1, true);
+    expect(m.decided).toBe(false);
+    expect(m.waitingForAway).toBe(true);
+    afterVolley(m);
+    expect(m.phase).toBe('aiming');
+    m.setAway(1, false);
+    expect(m.waitingForAway).toBe(false);
+    afterVolley(m);
+    expect(m.current).toBe(1);
+  });
+
+  it('wins the round when everybody else was shot down meanwhile', () => {
+    const m = table(3);
+    m.setAway(1, true);
+    m.players[0].alive = false;
+    m.players[2].alive = false;
+    expect(m.decided).toBe(true);
+    afterVolley(m);
+    expect(m.summary).toMatchObject({ survivor: 1 });
+  });
+
+  it('is still on the field for the shots already in the air', () => {
+    const m = table(3);
+    (m as unknown as { setPhase(p: string): void }).setPhase('flying');
+    m.setAway(1, true);
+    // Dropping out is no way to dodge a shot: the ship leaves the field when the next aiming starts.
+    expect(m.world.ships[1].alive).toBe(true);
     expect(m.alive.map((p) => p.id)).toEqual([0, 2]);
+    afterVolley(m);
+    expect(m.phase).toBe('aiming');
+    expect(m.world.ships[1].alive).toBe(false);
+  });
+
+  it('is nobody\'s neighbour while the ship is off the field', () => {
+    const seats: Seat[] = ['human', 'human', 'human', 'human', 'off', 'off'];
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, neighborGrace: 2 }, { seats, oracle: true }) as ClassicMatch;
+    m.world.planets = [];
+    [[100, 400], [300, 400], [700, 400], [1100, 400]].forEach(([x, y], i) => Object.assign(m.world.ships[i], { x, y }));
+    expect(m.sparedFor(0)).toEqual([1]);
+    m.setAway(1, true);
+    expect(m.sparedFor(0)).toEqual([2]);
+  });
+
+  it('takes the turn in its team\'s order when the turn waited with somebody away', () => {
+    const m = table(4, { teamMode: 2 } as Partial<typeof DEFAULT_SETTINGS>);
+    expect(m.teamMode).toBe(2);
+    const away = m.players.filter((p) => p.id !== 0);
+    // The host is shot down, and everybody else is away: the turn has nobody on the field to go to.
+    m.players[0].alive = false;
+    for (const p of away) m.setAway(p.id, true);
+    afterVolley(m);
+    // Somebody from the other team than the one the turn waited with is back first, then one of the waiting team.
+    const back = away.find((p) => p.team !== m.players[m.current].team)!;
+    m.setAway(back.id, false);
+    expect(m.current).toBe(back.id);
+    const next = away.find((p) => p.team !== back.team)!;
+    m.setAway(next.id, false);
+    // The teams go on taking turns from the one who took it.
+    afterVolley(m);
+    expect(m.current).toBe(next.id);
   });
 
   it('is waited for when nobody is left to play against, before anybody was shot down', () => {

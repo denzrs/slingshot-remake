@@ -60,6 +60,7 @@ impl RoomManager {
             token: String::new(),
             lost_at: None,
             left: false,
+            left_after_round: 0,
             came_from: None,
         });
         unready_humans(room);

@@ -332,7 +332,8 @@ export class ClassicMatch extends Match {
       this.planClock -= dt;
       if (this.planClock <= 0) this.commit();
     }
-    if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6 && this.betWindowDone) this.launchVolley();
+    // With every ship still in off the field (their people away), the volley waits for them rather than flying empty.
+    if (this.alive.length && this.alive.every((p) => p.locked) && this.phaseTime > 0.6 && this.betWindowDone) this.launchVolley();
   }
 
   protected playTurn(turn: ReplayTurn): void {
@@ -409,23 +410,22 @@ export class ClassicMatch extends Match {
 
   protected passTurnOf(id: number): void {
     // A salvo waits for the ships still in; the one that left (or is away) is not among them.
-    if (!this.salvo && this.current === id) this.afterVolley();
-    else if (this.salvo && !this.simultaneous) {
-      this.queue = this.queue.filter((q) => q !== id);
-      if (this.current === id) this.nextHuman();
-    }
+    if (this.salvo) super.passTurnOf(id);
+    else if (this.current === id) this.afterVolley();
   }
 
   protected giveTurnBackTo(id: number): void {
-    if (this.salvo && !this.simultaneous) {
-      // Its turn in this volley was passed over: it aims after those still waiting, or at once when nobody is.
-      if (this.current === id || this.queue.includes(id)) return;
-      this.queue.push(id);
-      if (this.current < 0) this.nextHuman();
-    } else if (!this.salvo && this.players[this.current]?.away) {
-      // The turn was waiting with somebody else who dropped out: whoever is back takes it.
-      this.setTurn(id);
-    }
+    if (this.salvo) super.giveTurnBackTo(id);
+    // The turn was waiting with somebody else who dropped out (nobody on the field could take it): whoever is back takes it.
+    else if (this.players[this.current]?.away) this.takeTurn(id);
+  }
+
+  protected volleyQueue(): number[] | null {
+    return this.salvo && !this.simultaneous ? this.queue : null;
+  }
+
+  protected nextInQueue(): void {
+    this.nextHuman();
   }
 
   /**
@@ -456,12 +456,20 @@ export class ClassicMatch extends Match {
         for (let i = 1; i <= members.length; i++) {
           const idx = (this.memberCursor[team] + i) % members.length;
           if (!members[idx].alive || (passOver && members[idx].away)) continue;
-          this.memberCursor[team] = idx;
-          this.teamCursor = (team + 1) % this.teamMode;
-          return this.setTurn(members[idx].id);
+          return this.takeTurn(members[idx].id);
         }
       }
     }
+  }
+
+  /** This ship takes the turn; in team mode its team and its place in the team are where the rotation goes on from. */
+  private takeTurn(id: number): void {
+    const team = this.players[id].team;
+    if (this.teamMode && team !== null) {
+      this.memberCursor[team] = this.players.filter((p) => p.team === team).findIndex((p) => p.id === id);
+      this.teamCursor = (team + 1) % this.teamMode;
+    }
+    this.setTurn(id);
   }
 
   private setTurn(id: number): void {

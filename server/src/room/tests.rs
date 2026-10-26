@@ -2429,22 +2429,54 @@ fn a_guest_who_drops_out_is_waited_for_minutes_and_then_counts_as_left() {
 }
 
 #[test]
-fn a_seat_held_past_the_end_of_its_game_goes_when_the_grace_runs_out() {
+fn a_seat_held_past_the_end_of_its_game_goes_with_it() {
     let (mut rooms, [mut host_rx, _ben_rx, _cleo_rx]) = started_three(RoomManager::new(), "team");
     // Host and Cleo are in team 0, Ben alone in team 1. Cleo drops out, then Ben leaves: the game is over.
     rooms.disconnect(3);
     rooms.handle(2, &json!({"type":"leave_room"}));
     let update = take_type(&drain_json(&mut host_rx), "room_update");
     assert_eq!(update["room"]["status"], "waiting");
-    assert_eq!(update["room"]["players"].as_array().unwrap().len(), 2);
-
-    // Nothing is left for the seat to keep a place in: it goes, rather than staying as a ghost.
-    rooms.expire_seats_at(std::time::Instant::now() + SEAT_GRACE);
-    let update = take_type(&drain_json(&mut host_rx), "room_update");
-    assert_eq!(update["room"]["status"], "waiting");
+    // Nothing is left for the held seat to keep a place in, and it would keep the next game from starting.
     let players = update["room"]["players"].as_array().unwrap();
     assert_eq!(players.len(), 1);
     assert_eq!(players[0]["name"], "Host");
+}
+
+#[test]
+fn a_guest_dropping_out_of_a_duel_is_waited_for_a_minute() {
+    let (mut rooms, [mut host_rx, _ben_rx, _cleo_rx]) = started_three(RoomManager::new(), "ffa");
+    rooms.disconnect(2);
+    drain_json(&mut host_rx);
+    // With Ben away, only the host is left at the table with Cleo: Cleo dropping out leaves the host shooting alone.
+    rooms.disconnect(3);
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "room_update")["notice"],
+        "Cleo lost the connection – the seat is held for 1 min"
+    );
+    rooms.expire_seats_at(std::time::Instant::now() + DUEL_SEAT_GRACE);
+    let notices: Vec<Value> = drain_json(&mut host_rx)
+        .into_iter()
+        .filter(|m| m["type"] == "room_update")
+        .map(|m| m["notice"].clone())
+        .collect();
+    // Ben's seat goes first and the game plays on with the seat Cleo may still come back to; then hers goes too.
+    assert_eq!(
+        notices,
+        [
+            json!("Ben did not come back"),
+            json!("Cleo did not come back – the game was ended")
+        ]
+    );
+}
+
+#[test]
+fn a_seat_left_empty_in_a_running_game_still_counts_as_taken_in_the_lobby() {
+    let (mut rooms, [_host_rx, _ben_rx, _cleo_rx]) = started_three(RoomManager::new(), "ffa");
+    let mut watcher = connect(&mut rooms, 9);
+    drain_json(&mut watcher);
+    rooms.handle(2, &json!({"type":"leave_room"}));
+    let lobby = take_type(&drain_json(&mut watcher), "lobby_update");
+    assert_eq!(lobby["rooms"][0]["players"], 3);
 }
 
 #[test]
@@ -2484,6 +2516,25 @@ async fn the_seat_of_somebody_who_left_still_counts_in_the_statistics() {
     rooms.handle(1, &round_report_message(1, 3));
     assert!(drain_json(&mut host_rx).is_empty());
     written(&stats, "stat_seats", 3).await;
+}
+
+#[tokio::test]
+async fn a_seat_left_in_an_earlier_round_is_written_as_nobody_s() {
+    let stats = Arc::new(Stats::in_memory().await);
+    let (mut rooms, [mut host_rx, _ben_rx, _cleo_rx]) =
+        started_three(RoomManager::new().with_stats(stats.clone()), "ffa");
+    rooms.handle(1, &round_report_message(1, 3));
+    written(&stats, "stat_seats", 3).await;
+    // Ben leaves during round 2: he played some of it, so it is his; round 3 he never played.
+    rooms.handle(2, &json!({"type":"leave_room"}));
+    drain_json(&mut host_rx);
+    rooms.handle(1, &round_report_message(2, 3));
+    written(&stats, "stat_seats", 6).await;
+    rooms.handle(1, &turn_report_message(3, 1, 3));
+    written(&stats, "stat_turns", 2).await;
+    rooms.handle(1, &round_report_message(3, 3));
+    written(&stats, "stat_seats", 8).await;
+    assert!(drain_json(&mut host_rx).is_empty());
 }
 
 #[test]

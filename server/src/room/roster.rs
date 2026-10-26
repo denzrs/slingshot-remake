@@ -31,6 +31,7 @@ impl RoomManager {
             token: URL_SAFE_NO_PAD.encode(rand::thread_rng().gen::<[u8; 16]>()),
             lost_at: None,
             left: false,
+            left_after_round: 0,
             came_from: None,
         });
         self.memberships.insert(
@@ -75,9 +76,12 @@ impl RoomManager {
         let Some(room) = self.rooms.get_mut(room_id) else {
             return;
         };
-        // The seats of those who left the game were kept for its player indexes only.
-        if room.players.iter().any(|p| p.left) {
-            room.players.retain(|p| !p.left);
+        // The seats of those who left the game were kept for its player indexes only, and those held
+        // for a dropped guest for a game to come back to: without one, they would only keep the
+        // room from starting the next. Whoever comes back finds the room open to join again.
+        let gone = |p: &Player| p.left || (p.lost_at.is_some() && p.id != 0);
+        if room.players.iter().any(gone) {
+            room.players.retain(|p| !gone(p));
             self.renumber(room_id);
         }
         let room = self.rooms.get_mut(room_id).unwrap();

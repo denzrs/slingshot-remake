@@ -655,14 +655,15 @@ export abstract class Match {
     return this.players.filter((p) => p.alive && !p.away);
   }
 
-  /** Players by score, best first. */
+  /** Players by score, best first; whoever left the game comes after those who played it out, score or not. */
   ranking(): PlayerState[] {
-    return [...this.players].sort((a, b) => b.score - a.score || a.seat - b.seat);
+    return [...this.players].sort((a, b) => Number(a.left) - Number(b.left) || b.score - a.score || a.seat - b.seat);
   }
 
-  /** The single leader, or null on a tie at the top. */
+  /** The single leader among those still in the game, or null on a tie at the top. */
   get leader(): number | null {
-    const [a, b] = this.ranking();
+    const [a, b] = this.ranking().filter((p) => !p.left);
+    if (!a) return null;
     return !b || a.score > b.score ? a.id : null;
   }
 
@@ -700,7 +701,8 @@ export abstract class Match {
     let best = Infinity;
     for (const p of this.players) {
       const ship = this.world.ships[p.id];
-      if (p.id === id || !p.alive || friends.includes(p.id)) continue;
+      // A ship off the field while its person is away is nobody's neighbour.
+      if (p.id === id || !p.alive || p.away || friends.includes(p.id)) continue;
       const d = Math.hypot(ship.x - from.x, ship.y - from.y);
       if (d < best) {
         best = d;
@@ -717,16 +719,22 @@ export abstract class Match {
   }
 
   /**
-   * The round is decided once at most one side — a team, or a lone player — has ships left. Not while that is only
-   * because the others dropped out before anybody was shot down: nobody wins a round against nobody, it waits for them.
+   * The round is decided once at most one side — a team, or a lone player — has ships left. A ship off the field while
+   * its person is away still counts: nobody wins a round against somebody whose connection dropped, it waits for them
+   * (until they are back, or their seat is given up).
    */
   get decided(): boolean {
-    return this.sidesIn <= 1 && !(this.lastKill === null && this.players.some((p) => p.alive && p.away));
+    return sidesOf(this.players.filter((p) => p.alive)) <= 1;
   }
 
   /** How many sides still have ships in the round: lone players in a free for all, whole teams in a team match. */
   get sidesIn(): number {
-    return new Set(this.alive.map((p) => (p.team === null ? `p${p.id}` : `t${p.team}`))).size;
+    return sidesOf(this.alive);
+  }
+
+  /** The round is only still on because a side whose people are all away has ships in it: the others wait for them. */
+  get waitingForAway(): boolean {
+    return this.sidesIn <= 1 && !this.decided;
   }
 
   scene(): Scene {
@@ -881,6 +889,7 @@ export abstract class Match {
     // one per turn adding up. A new round starts everyone over, so no round opens with a chain carried in.
     this.killChain.clear();
     this.skipVote = null;
+    this.forfeited = false;
     this.round++;
     // Stakes that were never paid out (a round cut short) go back to their owners.
     for (const [id, stake] of this.oracle.stakes) this.payInto(id, stake, false);
@@ -1067,14 +1076,22 @@ export abstract class Match {
   removePlayer(id: number): void {
     const p = this.players[id];
     if (!p || p.left) return;
+    const open = !this.decided;
     p.left = true;
     p.alive = false;
     p.locked = false;
     if (this.world.ships[id]) this.world.ships[id].alive = false;
+    // Their going is what settled the round, whenever it then ends: it is a walkover.
+    if (open && this.decided) this.forfeited = true;
+    // Fewer at the table may already carry a vote (which can end the round here).
+    this.tableChanged();
     if (this.phase !== 'aiming') return;
-    if (this.decided) this.endRound(true);
+    if (this.decided) this.endRound();
     else this.passTurnOf(id);
   }
+
+  /** The round was settled by somebody leaving it, not by a shot: it ends as a walkover. */
+  private forfeited = false;
 
   /**
    * Online (host): the person in this seat dropped out (`away`), or is back. Meanwhile their ship is off the field,
@@ -1086,8 +1103,10 @@ export abstract class Match {
     const p = this.players[id];
     if (!p || p.left || p.away === away) return;
     p.away = away;
+    this.tableChanged();
     if (!p.alive) return;
-    if (this.world.ships[id]) this.world.ships[id].alive = !away;
+    // Shots in the air still find the ship: dropping out is no way to dodge them. It leaves the field when the next aiming starts.
+    if (this.world.ships[id] && (!away || this.phase === 'aiming')) this.world.ships[id].alive = !away;
     p.locked = false;
     p.passed = false;
     if (this.phase !== 'aiming') return;
@@ -1095,11 +1114,60 @@ export abstract class Match {
     else this.giveTurnBackTo(id);
   }
 
-  /** A seat that just left (or dropped out) was on turn: the turn moves on as after its shot. Modes with turns override this. */
-  protected passTurnOf(_id: number): void {}
+  /** The ships of those away that were left on the field while shots were in the air go off it now. */
+  private parkAway(): void {
+    for (const p of this.players) if (p.alive && p.away && this.world.ships[p.id]) this.world.ships[p.id].alive = false;
+  }
 
-  /** A seat is back while aiming goes on: it gets its turn in what is still being aimed. Modes with turns override this. */
-  protected giveTurnBackTo(_id: number): void {}
+  /**
+   * Somebody left the table or came back to it: the votes are counted again for the people at it now. A vote that
+   * already has enough of them carries at once; a leaver's answer no longer counts.
+   */
+  private tableChanged(): void {
+    const k = this.killcam.active;
+    if (k) {
+      k.skipVotes = k.skipVotes.filter((id) => atTable(this.players[id]));
+      if (!k.recording && k.skipVotes.length && k.skipVotes.length >= this.skipsNeeded) this.endKillcam();
+    }
+    const vote = this.skipVote;
+    if (!vote) return;
+    vote.yes = vote.yes.filter((id) => this.voters.includes(id));
+    vote.no = vote.no.filter((id) => this.voters.includes(id));
+    if (!this.canSkipRound) return;
+    if (vote.yes.length && vote.yes.length >= this.skipVotesNeeded) this.skipRound();
+    else if (vote.no.length > this.voters.length - this.skipVotesNeeded) this.endSkipVote('skip.declined');
+  }
+
+  /**
+   * A seat that just left (or dropped out) is passed over: in a volley aimed one after another it leaves the
+   * queue, and the next in it aims when it was on turn. Modes with turns of their own override this.
+   */
+  protected passTurnOf(id: number): void {
+    const queue = this.volleyQueue();
+    if (!queue) return;
+    const at = queue.indexOf(id);
+    if (at >= 0) queue.splice(at, 1);
+    if (this.current === id) this.nextInQueue();
+  }
+
+  /**
+   * A seat is back while aiming goes on: its turn in the volley was passed over, so it aims after those still
+   * waiting, or at once when nobody is. Modes with turns of their own override this.
+   */
+  protected giveTurnBackTo(id: number): void {
+    const queue = this.volleyQueue();
+    if (!queue || this.current === id || queue.includes(id)) return;
+    queue.push(id);
+    if (this.current < 0) this.nextInQueue();
+  }
+
+  /** Who is still to aim in a volley aimed one after another, null when the volley is not aimed that way. */
+  protected volleyQueue(): number[] | null {
+    return null;
+  }
+
+  /** The next in `volleyQueue` takes the turn. */
+  protected nextInQueue(): void {}
 
   // ————————————————————————————— Skipping a round —————————————————————————————
 
@@ -1577,11 +1645,11 @@ export abstract class Match {
     this.emit({ type: 'kill', record });
   }
 
-  /** `forfeit`: nobody shot the round to its end, the others left it. */
-  protected endRound(forfeit = false): void {
+  protected endRound(): void {
     // A pending vote cannot change a round after its normal result has been recorded.
     this.skipVote = null;
-    const alive = this.alive;
+    // A ship whose person is away was never shot down: it is still in the round, and may have won it.
+    const alive = this.players.filter((p) => p.alive);
     const survivor = alive.length === 1 ? alive[0].id : null;
     // In team mode the whole winning team shares the bonus — fallen members included.
     const team = this.teamMode && alive.length > 0 && this.decided ? alive[0].team : null;
@@ -1591,7 +1659,7 @@ export abstract class Match {
     } else if (survivor !== null) {
       this.players[survivor].score += bonus;
     }
-    const title = team !== null ? 'teamWin' : forfeit ? 'forfeit' : this.roundTitle(survivor);
+    const title = team !== null ? 'teamWin' : this.forfeited ? 'forfeit' : this.roundTitle(survivor);
     this.summary = { title, survivor, team, bonus, lastKill: this.lastKill };
     // The oracle's question for the whole round: a lone survivor or a whole team won it, or nobody did.
     const winners = team !== null ? this.players.filter((p) => p.team === team).map((p) => p.id) : survivor !== null ? [survivor] : [];
@@ -1790,12 +1858,20 @@ export abstract class Match {
   protected setPhase(phase: Phase): void {
     this.phase = phase;
     this.phaseTime = 0;
-    if (phase === 'aiming') this.openRoundQuestion();
+    if (phase === 'aiming') {
+      this.parkAway();
+      this.openRoundQuestion();
+    }
   }
 
   protected emit(e: GameEvent): void {
     for (const l of this.listeners) l(e);
   }
+}
+
+/** How many sides these ships are on: lone players in a free for all, whole teams in a team match. */
+function sidesOf(ships: PlayerState[]): number {
+  return new Set(ships.map((p) => (p.team === null ? `p${p.id}` : `t${p.team}`))).size;
 }
 
 /** Whether the person of this seat is there to take part: not gone, and not dropped out for now. */

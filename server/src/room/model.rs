@@ -36,6 +36,9 @@ pub(super) struct Player {
     /// Set when the person chose to leave the running game: the seat stays (the game's player
     /// indexes are the seats) with nobody in it, and goes when the room waits again.
     pub(super) left: bool,
+    /// The last round the host had reported when the person left: the round after it they still
+    /// played some of, the ones after that nobody played in this seat.
+    pub(super) left_after_round: i64,
     /// Where the seat's person last came from, so the game's statistics can still name the seat
     /// while no connection is on it (held for a drop, or left).
     pub(super) came_from: Option<std::net::IpAddr>,
@@ -60,10 +63,22 @@ pub(super) const SEAT_GRACE: std::time::Duration = std::time::Duration::from_sec
 /// waits on a frozen field meanwhile, so this is much shorter.
 pub(super) const HOST_SEAT_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// How long a running game holds a guest's seat when at most one other person is still at the
+/// table: they are left shooting alone meanwhile, so this is shorter.
+pub(super) const DUEL_SEAT_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// How long a running game holds this seat for a dropped connection.
-pub(super) fn seat_grace(player_id: usize) -> std::time::Duration {
+pub(super) fn seat_grace(room: &Room, player_id: usize) -> std::time::Duration {
     if player_id == 0 {
-        HOST_SEAT_GRACE
+        return HOST_SEAT_GRACE;
+    }
+    let present = room
+        .players
+        .iter()
+        .filter(|p| p.id != player_id && p.conn.is_some() && !p.left)
+        .count();
+    if present <= 1 {
+        DUEL_SEAT_GRACE
     } else {
         SEAT_GRACE
     }

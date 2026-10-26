@@ -93,7 +93,8 @@ impl RoomManager {
                     "mayhem": room.rules.mayhem,
                     "status": room.status.as_str(),
                     "spectators": room.spectators.len(),
-                    "players": room.players.iter().filter(|p| !p.left).count(),
+                    // A seat left empty in a running game is still taken: nobody can join it before the game ends.
+                    "players": room.players.len(),
                     "cpus": room.players.iter().filter(|p| p.is_cpu()).count(),
                     "maxPlayers": room.max_players,
                     "locked": room.password.is_some(),
@@ -325,6 +326,7 @@ impl RoomManager {
             return;
         };
         player.left = true;
+        player.left_after_round = room.reported_round;
         player.conn = None;
         player.token.clear();
         player.lost_at = None;
@@ -426,18 +428,15 @@ impl RoomManager {
         player.conn = None;
         player.came_from = from;
         player.lost_at = Some(std::time::Instant::now());
-        let grace = seat_grace(player_id).as_secs();
+        let name = player.name.clone();
+        let grace = seat_grace(room, player_id).as_secs();
         let notice = if grace >= 60 {
             format!(
-                "{} lost the connection – the seat is held for {} min",
-                player.name,
+                "{name} lost the connection – the seat is held for {} min",
                 grace / 60
             )
         } else {
-            format!(
-                "{} lost the connection – the seat is held for {} s",
-                player.name, grace
-            )
+            format!("{name} lost the connection – the seat is held for {grace} s")
         };
         self.memberships.remove(&conn);
         info!(conn, room = %room_id, seat = player_id, "seat held for a dropped connection");
@@ -460,7 +459,7 @@ impl RoomManager {
                     .iter()
                     .filter(|p| {
                         p.lost_at
-                            .is_some_and(|at| now.duration_since(at) >= seat_grace(p.id))
+                            .is_some_and(|at| now.duration_since(at) >= seat_grace(room, p.id))
                     })
                     .map(|p| (room.id.clone(), p.token.clone()))
             })
