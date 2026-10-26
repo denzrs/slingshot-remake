@@ -28,6 +28,17 @@ describe('round report', () => {
     expect(report).toMatchObject({ round: 2, title: 'hit', survivor: 1, team: null, seconds: 41.3, planets: 3, turns: 4 });
   });
 
+  it("counts a seat's defense: missiles fired, shots brought down, ships hit by a stray", () => {
+    const match = source();
+    bump(match.roundStats.missiles, 1);
+    bump(match.roundStats.missiles, 1);
+    bump(match.roundStats.intercepts, 1);
+    bump(match.roundStats.strayKills, 1);
+    const report = roundReport(match);
+    expect(report.players[0]).toMatchObject({ missiles: 0, intercepts: 0, strayKills: 0 });
+    expect(report.players[1]).toMatchObject({ missiles: 2, intercepts: 1, strayKills: 1 });
+  });
+
   it('lists the judged tips of both tipping games, and leaves the field out when nobody tipped', () => {
     const match = source();
     expect(roundReport(match)).not.toHaveProperty('tips');
