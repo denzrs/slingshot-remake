@@ -947,11 +947,11 @@ export class Renderer {
     ctx.restore();
   }
 
-  /** Whether this ship is one the person at the screen plays, and the round is young enough to point it out. */
+  /** Whether this ship is the one the person at the screen aims, in the first seconds of its first turn of the round. */
   private isPinged(match: Match, id: number): boolean {
-    if (match.attract || match.spectating || match.roundSeconds >= LOCATE_PING.DURATION) return false;
     const player = match.players[id];
-    return id === (match.viewer ?? match.focus) && !player.cpu;
+    if (match.attract || match.spectating || player.cpu || player.shots > 0 || match.phaseTime >= LOCATE_PING.DURATION) return false;
+    return id === (match.viewer ?? match.focus);
   }
 
   /** Sonar rings sweeping in towards the ship so the eye finds it when a round begins; they fade out over the ping's last half second. */
@@ -1007,7 +1007,7 @@ export class Renderer {
         }
       }
 
-      if (planning && this.isPinged(match, i)) this.drawLocatePing(ship.x, ship.y, color, match.roundSeconds);
+      if (planning && this.isPinged(match, i)) this.drawLocatePing(ship.x, ship.y, color, match.phaseTime);
 
       const aimShown = match.aimVisible(i);
       if (planning && aimShown) {
