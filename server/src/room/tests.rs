@@ -2443,7 +2443,7 @@ fn a_seat_held_past_the_end_of_its_game_goes_with_it() {
 }
 
 #[test]
-fn a_guest_dropping_out_of_a_duel_is_waited_for_a_minute() {
+fn each_dropped_guest_keeps_the_grace_period_chosen_when_they_dropped() {
     let (mut rooms, [mut host_rx, _ben_rx, _cleo_rx]) = started_three(RoomManager::new(), "ffa");
     rooms.disconnect(2);
     drain_json(&mut host_rx);
@@ -2459,14 +2459,16 @@ fn a_guest_dropping_out_of_a_duel_is_waited_for_a_minute() {
         .filter(|m| m["type"] == "room_update")
         .map(|m| m["notice"].clone())
         .collect();
-    // Ben's seat goes first and the game plays on with the seat Cleo may still come back to; then hers goes too.
+    // Cleo's one-minute hold expires, but Ben keeps the five-minute grace announced when he dropped.
     assert_eq!(
         notices,
-        [
-            json!("Ben did not come back"),
-            json!("Cleo did not come back – the game was ended")
-        ]
+        [json!("Cleo did not come back")]
     );
+    assert_eq!(rooms.rooms.values().next().unwrap().players[1].left, false);
+    rooms.expire_seats_at(std::time::Instant::now() + SEAT_GRACE);
+    assert!(drain_json(&mut host_rx)
+        .iter()
+        .any(|m| m["notice"] == "Ben did not come back – the game was ended"));
 }
 
 #[test]

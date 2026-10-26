@@ -136,11 +136,11 @@ describe('a player whose connection dropped', () => {
   const afterVolley = (m: ClassicMatch) => (m as unknown as { afterVolley(): void }).afterVolley();
   const startRound = (m: ClassicMatch) => (m as unknown as { startRound(): void }).startRound();
 
-  it('is off the field, where nothing can hit the ship, and the turn passes them by', () => {
+  it('leaves the ship targetable until the volley starts and passes the turn by', () => {
     const m = table(3);
     m.setAway(1, true);
     expect(m.players[1]).toMatchObject({ away: true, alive: true, left: false });
-    expect(m.world.ships[1].alive).toBe(false);
+    expect(m.world.ships[1].alive).toBe(true);
     expect(m.alive.map((p) => p.id)).toEqual([0, 2]);
     // Anna on turn: the next turn goes to Cleo, not to Ben.
     afterVolley(m);
@@ -201,25 +201,28 @@ describe('a player whose connection dropped', () => {
     expect(m.current).toBe(1);
   });
 
-  it('wins the round when everybody else was shot down meanwhile', () => {
+  it('ends the round without a winner when everybody present is shot down', () => {
     const m = table(3);
     m.setAway(1, true);
     m.players[0].alive = false;
+    m.world.ships[0].alive = false;
     m.players[2].alive = false;
+    m.world.ships[2].alive = false;
     expect(m.decided).toBe(true);
     afterVolley(m);
-    expect(m.summary).toMatchObject({ survivor: 1 });
+    expect(m.phase).toBe('roundOver');
+    expect(m.summary).toMatchObject({ survivor: null, bonus: 0 });
+    expect(m.players[1].score).toBe(0);
   });
 
-  it('is still on the field for the shots already in the air', () => {
+  it('stays hittable during aiming and flight, then parks for the next aiming phase', () => {
     const m = table(3);
-    (m as unknown as { setPhase(p: string): void }).setPhase('flying');
     m.setAway(1, true);
-    // Dropping out is no way to dodge a shot: the ship leaves the field when the next aiming starts.
     expect(m.world.ships[1].alive).toBe(true);
-    expect(m.alive.map((p) => p.id)).toEqual([0, 2]);
+    m.commitPlayer(0);
+    expect(m.phase).toBe('flying');
+    expect(m.world.ships[1].alive).toBe(true);
     afterVolley(m);
-    expect(m.phase).toBe('aiming');
     expect(m.world.ships[1].alive).toBe(false);
   });
 
@@ -233,23 +236,17 @@ describe('a player whose connection dropped', () => {
     expect(m.sparedFor(0)).toEqual([2]);
   });
 
-  it('takes the turn in its team\'s order when the turn waited with somebody away', () => {
+  it('does not award the round to away teammates when the only present teammate is eliminated', () => {
     const m = table(4, { teamMode: 2 } as Partial<typeof DEFAULT_SETTINGS>);
     expect(m.teamMode).toBe(2);
     const away = m.players.filter((p) => p.id !== 0);
     // The host is shot down, and everybody else is away: the turn has nobody on the field to go to.
     m.players[0].alive = false;
+    m.world.ships[0].alive = false;
     for (const p of away) m.setAway(p.id, true);
     afterVolley(m);
-    // Somebody from the other team than the one the turn waited with is back first, then one of the waiting team.
-    const back = away.find((p) => p.team !== m.players[m.current].team)!;
-    m.setAway(back.id, false);
-    expect(m.current).toBe(back.id);
-    const next = away.find((p) => p.team !== back.team)!;
-    m.setAway(next.id, false);
-    // The teams go on taking turns from the one who took it.
-    afterVolley(m);
-    expect(m.current).toBe(next.id);
+    expect(m.phase).toBe('roundOver');
+    expect(m.summary).toMatchObject({ survivor: null, team: null, bonus: 0 });
   });
 
   it('is waited for when nobody is left to play against, before anybody was shot down', () => {

@@ -589,8 +589,8 @@ export class MultiplayerSession {
     if (this.reconnectLoop) return;
     this.reconnectLoop = true;
     try {
-      const window = this.isHost ? HOST_RESUME_WINDOW_MS : RESUME_WINDOW_MS;
-      for (let attempt = 0; this.reconnecting && Date.now() - this.lostAt < window; attempt++) {
+      const resumeWindowMs = this.isHost ? HOST_RESUME_WINDOW_MS : RESUME_WINDOW_MS;
+      for (let attempt = 0; this.reconnecting && Date.now() - this.lostAt < resumeWindowMs; attempt++) {
         try {
           await this.client.connect();
         } catch {

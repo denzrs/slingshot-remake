@@ -30,6 +30,7 @@ impl RoomManager {
             cpu: None,
             token: URL_SAFE_NO_PAD.encode(rand::thread_rng().gen::<[u8; 16]>()),
             lost_at: None,
+            seat_grace: None,
             left: false,
             left_after_round: 0,
             came_from: None,

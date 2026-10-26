@@ -33,6 +33,8 @@ pub(super) struct Player {
     pub(super) token: String,
     /// Set while a running game holds the seat for a connection that dropped.
     pub(super) lost_at: Option<std::time::Instant>,
+    /// Grace period chosen when the connection drops, so later drops cannot change this seat's deadline.
+    pub(super) seat_grace: Option<std::time::Duration>,
     /// Set when the person chose to leave the running game: the seat stays (the game's player
     /// indexes are the seats) with nobody in it, and goes when the room waits again.
     pub(super) left: bool,

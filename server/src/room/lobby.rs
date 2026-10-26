@@ -330,6 +330,7 @@ impl RoomManager {
         player.conn = None;
         player.token.clear();
         player.lost_at = None;
+        player.seat_grace = None;
         let name = player.name.clone();
         if playable_without_leavers(room) {
             self.broadcast_room_update(room_id, Some(&format!("{name} {went}")));
@@ -419,6 +420,7 @@ impl RoomManager {
         if room.status != RoomStatus::Playing {
             return false;
         }
+        let grace_duration = seat_grace(room, player_id);
         let Some(player) = room.players.iter_mut().find(|p| p.id == player_id) else {
             return false;
         };
@@ -429,7 +431,8 @@ impl RoomManager {
         player.came_from = from;
         player.lost_at = Some(std::time::Instant::now());
         let name = player.name.clone();
-        let grace = seat_grace(room, player_id).as_secs();
+        player.seat_grace = Some(grace_duration);
+        let grace = grace_duration.as_secs();
         let notice = if grace >= 60 {
             format!(
                 "{name} lost the connection – the seat is held for {} min",
@@ -458,8 +461,9 @@ impl RoomManager {
                 room.players
                     .iter()
                     .filter(|p| {
-                        p.lost_at
-                            .is_some_and(|at| now.duration_since(at) >= seat_grace(room, p.id))
+                        p.lost_at.is_some_and(|at| {
+                            now.duration_since(at) >= p.seat_grace.unwrap_or(SEAT_GRACE)
+                        })
                     })
                     .map(|p| (room.id.clone(), p.token.clone()))
             })
@@ -529,6 +533,7 @@ impl RoomManager {
         // A half-dead old connection may still be on the seat: the token wins.
         let old = player.conn.replace(conn);
         player.lost_at = None;
+        player.seat_grace = None;
         let notice = format!("{} is back", player.name);
         if let Some(old) = old {
             self.memberships.remove(&old);

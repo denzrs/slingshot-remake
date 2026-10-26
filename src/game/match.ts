@@ -719,12 +719,15 @@ export abstract class Match {
   }
 
   /**
-   * The round is decided once at most one side — a team, or a lone player — has ships left. A ship off the field while
-   * its person is away still counts: nobody wins a round against somebody whose connection dropped, it waits for them
-   * (until they are back, or their seat is given up).
+   * A drop does not hand the round to the other side. But if every present ship has been shot down, the round ends
+   * without awarding it to a ship whose person was absent. Otherwise an away ship still keeps the round open.
    */
   get decided(): boolean {
-    return sidesOf(this.players.filter((p) => p.alive)) <= 1;
+    const alive = this.players.filter((p) => p.alive);
+    const presentAlive = alive.some((p) => !p.away && !p.left);
+    // Away ships cannot win by default once nobody still at the table has survived.
+    if (!presentAlive && this.players.some((p) => !p.away && !p.left && !p.alive)) return true;
+    return sidesOf(alive) <= 1;
   }
 
   /** How many sides still have ships in the round: lone players in a free for all, whole teams in a team match. */
@@ -1105,8 +1108,8 @@ export abstract class Match {
     p.away = away;
     this.tableChanged();
     if (!p.alive) return;
-    // Shots in the air still find the ship: dropping out is no way to dodge them. It leaves the field when the next aiming starts.
-    if (this.world.ships[id] && (!away || this.phase === 'aiming')) this.world.ships[id].alive = !away;
+    // Keep the ship hittable until the next volley launches; a disconnect during aim cannot dodge the shot.
+    if (this.world.ships[id] && !away) this.world.ships[id].alive = true;
     p.locked = false;
     p.passed = false;
     if (this.phase !== 'aiming') return;
@@ -1648,8 +1651,8 @@ export abstract class Match {
   protected endRound(): void {
     // A pending vote cannot change a round after its normal result has been recorded.
     this.skipVote = null;
-    // A ship whose person is away was never shot down: it is still in the round, and may have won it.
-    const alive = this.players.filter((p) => p.alive);
+    // Away ships keep a round open, but do not win it if everybody present is eliminated.
+    const alive = this.players.filter((p) => p.alive && !p.away && !p.left);
     const survivor = alive.length === 1 ? alive[0].id : null;
     // In team mode the whole winning team shares the bonus — fallen members included.
     const team = this.teamMode && alive.length > 0 && this.decided ? alive[0].team : null;

@@ -1568,7 +1568,8 @@ describe('statistics and replays', () => {
     expect(host.session.room?.status).toBe('playing');
     expect(guest.session.match).not.toBeNull();
     expect(host.match().players[1]).toMatchObject({ away: true, alive: true });
-    expect(host.match().world.ships[1].alive).toBe(false);
+    // The seat stays targetable until the volley has resolved and the next aiming phase begins.
+    expect(host.match().world.ships[1].alive).toBe(true);
     await waitForSession(host.session, () => host.session.room?.players[1].connected === true);
     expect(host.match().players[1].away).toBe(false);
     expect(host.match().world.ships[1].alive).toBe(true);
