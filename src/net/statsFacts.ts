@@ -7,9 +7,29 @@ const clock = (seconds: number): string => `${Math.floor(seconds / 60)}:${String
 /** A percentage: whole from ten up, one decimal below (none when it is round), so "0.4" is not "0". */
 const percent = (n: number): string => (n >= 10 ? fmt(n, 0) : fmtNum(Math.round(n * 10) / 10));
 
+/** A power-up the relay names by its index in this list (the relay keeps the same one: `server/src/stats/facts.rs`). */
+const PLACED_KINDS = ['blackhole', 'wormhole', 'nebula', 'planetkiller', 'teleport', 'defense', 'antigravity'] as const;
+
+/** The name at an index: one this client does not know (a newer relay) has no sentence. */
+const named =
+  (prefix: string, names: readonly string[]) =>
+  (n: number): string => {
+    const name = names[n];
+    if (name === undefined) throw new RangeError(`no ${prefix} ${n}`);
+    return t(`${prefix}.${name}` as Key);
+  };
+
 /** How each fact shows its numbers, in the order the relay sends them. */
 const FORMATS: Record<string, ((n: number) => string)[]> = {
-  hitRate: [percent],
+  shotsPerKill: [(n) => fmt(n, 1)],
+  holeShots: [percent],
+  selfHighSolar: [percent, percent],
+  previewShots: [percent, percent],
+  comeback: [percent],
+  topPlacement: [named('powerup', PLACED_KINDS), fmtInt],
+  solarShare: [percent],
+  todayPlayers: [fmtInt, fmtInt],
+  dailyChallenge: [fmtInt, fmtInt],
   leftField: [percent],
   planetCrash: [percent],
   clash: [percent],
@@ -21,7 +41,6 @@ const FORMATS: Record<string, ((n: number) => string)[]> = {
   powerUpShots: [percent, percent],
   repeatMiss: [percent],
   rounds: [clock, clock],
-  longestRound: [fmtInt],
   selfHitRounds: [percent],
   noWinner: [percent],
   horizonShare: [percent],
@@ -31,7 +50,6 @@ const FORMATS: Record<string, ((n: number) => string)[]> = {
   bestHit: [fmtInt],
   fastestKill: [(n) => fmt(n, 1)],
   closeCall: [(n) => fmt(n, 1)],
-  today: [fmtInt, fmtInt],
   plasmaShots: [percent, percent],
   piercingShots: [percent, percent],
   splitterShots: [percent, percent],
@@ -41,13 +59,8 @@ const FORMATS: Record<string, ((n: number) => string)[]> = {
   sniper: [fmtInt],
   multiKill: [percent],
   bigKills: [fmtInt, fmtInt],
-  monsterKill: [fmtInt],
-  volleyKill: [percent],
   firstShotKill: [percent],
   seatAdvantage: [percent],
-  placedBlackhole: [fmtInt],
-  placedWormhole: [fmtInt],
-  placedNebula: [fmtInt],
   planetsDestroyed: [fmtInt],
   quickRound: [percent],
   soloVsCpu: [percent],
@@ -58,6 +71,8 @@ const FORMATS: Record<string, ((n: number) => string)[]> = {
   pickups: [(n) => fmt(n, 1)],
   grazes: [(n) => fmt(n, 2)],
   saves: [fmtInt],
+  intercepts: [percent],
+  strayKills: [fmtInt],
   ownGoals: [percent],
   weekTrend: [fmtInt, percent],
   weekend: [percent],
@@ -88,9 +103,9 @@ export function factParts(fact: StatsFact): FactPart[] | null {
   if (!formats || fact.values.length < formats.length) return null;
   // "0 % of shots hit the shooter" is no finding.
   if (fact.id.startsWith('selfHigh') && !(fact.values[0] > 0)) return null;
-  const [a, b] = formats.map((format, i) => OPEN + format(fact.values[i]) + CLOSE);
   let sentence: string;
   try {
+    const [a, b] = formats.map((format, i) => OPEN + format(fact.values[i]) + CLOSE);
     sentence = t(key, { a, b: b ?? '' });
   } catch {
     return null;

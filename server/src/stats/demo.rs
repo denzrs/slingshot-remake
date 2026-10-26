@@ -278,6 +278,13 @@ fn demo_round(index: usize, round: i64, team_mode: bool, local: bool) -> RoundRe
                 } else {
                     0
                 },
+                missiles: Some(((index + seat) % 5) as i64),
+                intercepts: Some(((index + seat) % 5 / 2) as i64),
+                stray_kills: Some(if (index + seat + round as usize).is_multiple_of(17) {
+                    1
+                } else {
+                    0
+                }),
                 alive: won,
             }
         })

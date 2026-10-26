@@ -2,22 +2,23 @@ import { t } from '../../platform/i18n';
 import { POWER_UP_KINDS, type PowerUpKind } from '../../sim/powerups';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../../render/powerup-art';
 import { h } from '../dom';
-
-let powerUpTooltip: HTMLElement | null = null;
-let tooltipTarget: HTMLElement | null = null;
-/** Watches for the badge being taken out of the page: its pointerleave and blur never fire then, and the tooltip would stay. */
-let tooltipWatch: MutationObserver | null = null;
+import { twistedRule } from '../menu/rules';
+import { twistMark } from '../menu/controls';
+import { attachTooltip } from '../menu/tooltip';
+import type { GameMode } from '../../sim/modes';
 
 /** All power-up kinds stay in place as a compact picker; Mayhem twists can use any kind when normal pickups are off. */
 export function powerUpSummary(
   getRules: () => { powerUps: boolean; powerUpKinds: readonly PowerUpKind[]; mayhem: number },
   options: {
+    /** The mode the rules are for: it decides which twists can lay other power-ups over them. */
+    mode: GameMode;
     /** Guests can see the host's choices, but cannot change them. */
     canChange?: () => boolean;
     patch?: (values: { powerUps: boolean; powerUpKinds: PowerUpKind[] }) => void;
-  } = {},
+  },
 ): { el: HTMLElement; update: () => void } {
-  const label = h('span.briefing__powerups-label', null, t('settings.powerUps'));
+  const label = h('span.briefing__powerups-label', null, t('settings.powerUps'), twistMark());
   const value = h('span.briefing__powerup-list', { 'aria-live': 'polite' });
   const el = h('div.briefing__powerups', { role: 'group', 'aria-label': t('settings.powerUps') }, label, value);
   const badges = new Map(POWER_UP_KINDS.map((kind) => [kind, powerUpIcon(kind)] as const));
@@ -39,6 +40,7 @@ export function powerUpSummary(
 
   const update = (): void => {
     const rules = getRules();
+    el.classList.toggle('is-twisted', twistedRule('powerUpKinds', options.mode, rules));
     const viaTwists = !rules.powerUps && rules.mayhem > 0;
     const canChange = !!options.patch && (options.canChange?.() ?? true);
     for (const kind of POWER_UP_KINDS) {
@@ -77,43 +79,6 @@ function powerUpIcon(kind: PowerUpKind): HTMLButtonElement {
     'aria-pressed': 'false',
   }, canvas) as HTMLButtonElement;
   badge.style.setProperty('--powerup-tone', POWER_UP_COLORS[kind]);
-  badge.addEventListener('pointerenter', () => showPowerUpTooltip(badge, name));
-  badge.addEventListener('pointerleave', () => {
-    if (!badge.matches(':focus')) hidePowerUpTooltip(badge);
-  });
-  badge.addEventListener('focus', () => showPowerUpTooltip(badge, name));
-  badge.addEventListener('blur', () => {
-    if (!badge.matches(':hover')) hidePowerUpTooltip(badge);
-  });
+  attachTooltip(badge, name);
   return badge;
-}
-
-function showPowerUpTooltip(target: HTMLElement, name: string): void {
-  if (!powerUpTooltip) {
-    powerUpTooltip = h('div.powerup-tooltip', { role: 'tooltip' });
-  }
-  tooltipTarget = target;
-  tooltipWatch ??= new MutationObserver(() => {
-    if (tooltipTarget && !tooltipTarget.isConnected) hidePowerUpTooltip(tooltipTarget);
-  });
-  tooltipWatch.observe(document.body, { childList: true, subtree: true });
-  powerUpTooltip.textContent = name;
-  if (!powerUpTooltip.isConnected) document.body.append(powerUpTooltip);
-
-  powerUpTooltip.classList.add('is-visible');
-  const anchor = target.getBoundingClientRect();
-  const tooltip = powerUpTooltip.getBoundingClientRect();
-  const inset = 12;
-  const left = Math.max(inset, Math.min(anchor.left + anchor.width / 2 - tooltip.width / 2, window.innerWidth - tooltip.width - inset));
-  const above = anchor.top - tooltip.height - 8;
-  const top = above >= inset ? above : Math.min(anchor.bottom + 8, window.innerHeight - tooltip.height - inset);
-  powerUpTooltip.style.left = `${left}px`;
-  powerUpTooltip.style.top = `${top}px`;
-}
-
-function hidePowerUpTooltip(target: HTMLElement): void {
-  if (tooltipTarget !== target) return;
-  tooltipTarget = null;
-  tooltipWatch?.disconnect();
-  powerUpTooltip?.classList.remove('is-visible');
 }

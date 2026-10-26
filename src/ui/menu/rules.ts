@@ -4,6 +4,7 @@ import { CLASSIC_FAMILY, type GameMode } from '../../sim/modes';
 import { t, type Key } from '../../platform/i18n';
 import type { RoomRules } from '../../net/net';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from '../../sim/powerups';
+import { twistedRules } from '../../game/mayhem';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../../render/powerup-art';
 import type { MenuItem } from './menu';
 
@@ -125,6 +126,36 @@ const capital = (text: string): string => text.charAt(0).toUpperCase() + text.sl
 export const rulesFor = (mode: GameMode, online = false): RuleRow[] =>
   ruleRows().filter((row) => (!row.modes || row.modes.includes(mode)) && (online || !row.onlineOnly));
 
+// ————————————————————————————— Mayhem's twists —————————————————————————————
+
+/** Rows that stand for several rules the twists lay over: the shot power is three of them, the power-ups three more. */
+const POWER_RULES = ['fixedPower', 'fixedPowerLevel', 'maxPower'];
+const POWER_UP_RULES = ['powerUps', 'powerUpKinds', 'powerUpAmount'];
+const TWIST_RULES: Partial<Record<keyof RoomRules, readonly string[]>> = {
+  fixedPower: POWER_RULES, fixedPowerLevel: POWER_RULES, maxPower: POWER_RULES,
+  powerUpKinds: POWER_UP_RULES, powerUpAmount: POWER_UP_RULES,
+};
+
+/**
+ * Whether Mayhem's twists may play another value than the one set here in some rounds (never while Mayhem is off).
+ *
+ * Design decision: these rules are marked, not greyed out, and nothing is hidden. A twist overrules a rule for one round only,
+ * so the value set here is still the base that most rounds play by (and that the twists are drawn against: a twist that
+ * would change nothing is skipped). Greying a row out would say "this has no effect", which is false for every rule here,
+ * and would lock a control players legitimately tune; a toast on change would be gone before it is read. A permanent sign
+ * on the row stays truthful and can be read before and after editing. The list is derived from the twist data, so it
+ * cannot drift from what the engine does, and it follows the strength (mild never draws the harsh twists).
+ */
+export function twistedRule(key: keyof RoomRules, mode: GameMode, rules: Pick<RoomRules, 'mayhem'>): boolean {
+  if (rules.mayhem <= 0) return false;
+  const twisted: ReadonlySet<string> = twistedRules(mode, rules.mayhem);
+  return (TWIST_RULES[key] ?? [key]).some((k) => twisted.has(k));
+}
+
+/** Whether any row of a mode's rules carries the sign: the cue to show what it means. */
+export const anyTwisted = (mode: GameMode, rules: Pick<RoomRules, 'mayhem'>, online = false): boolean =>
+  rulesFor(mode, online).some((row) => twistedRule(row.key, mode, rules));
+
 // ————————————————————————————— As controls —————————————————————————————
 
 /** Every rule a row can change. */
@@ -150,11 +181,12 @@ export function ruleItems(mode: GameMode, source: RuleSource, online = false): {
     const hidden = row.when ? () => !row.when!(source.get()) : undefined;
     const reserve = row.reserve ? () => row.reserve!(source.get()) : undefined;
     const inactive = row.inactive ? () => row.inactive!(source.get()) : undefined;
+    const twisted = () => twistedRule(row.key, mode, source.get());
     if (row.control === 'toggle') {
       return {
         key: row.key,
         group: row.group,
-        item: { kind: 'toggle', label: row.label, hidden, commit, get: () => source.get()[row.key] as boolean, set: (v) => source.patch({ [row.key]: v }) },
+        item: { kind: 'toggle', label: row.label, hidden, twisted, commit, get: () => source.get()[row.key] as boolean, set: (v) => source.patch({ [row.key]: v }) },
       };
     }
     if (row.control === 'tiles') {
@@ -168,6 +200,7 @@ export function ruleItems(mode: GameMode, source: RuleSource, online = false): {
           quick: { all: t('powerups.all'), none: t('powerups.none') },
           hidden,
           reserve,
+          twisted,
           commit,
           tiles: (row.options as { value: PowerUpKind; label: string }[]).map((o) => ({
             value: o.value,
@@ -194,6 +227,7 @@ export function ruleItems(mode: GameMode, source: RuleSource, online = false): {
           options: row.options,
           hidden,
           reserve,
+          twisted,
           commit,
           get: () => (mode ? powerModeOf(source.get()) : source.get()[row.key]),
           set: (v) => source.patch(mode ? powerModePatch(v as PowerMode, lastCap) : { [row.key]: v }),
@@ -210,6 +244,7 @@ export function ruleItems(mode: GameMode, source: RuleSource, online = false): {
         hidden,
         reserve,
         inactive,
+        twisted,
         commit,
         get: () => source.get()[row.key],
         set: (v) => {

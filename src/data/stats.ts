@@ -41,6 +41,12 @@ export interface StatBook {
   pickups: number[];
   /** Shots a player's shield bounced off. */
   saves: number[];
+  /** Missiles a player's planetary defenses fired at enemy shots. */
+  missiles: number[];
+  /** Enemy shots those missiles brought down. */
+  intercepts: number[];
+  /** Enemy ships hit by a missile of the player's that lost its shot and flew on (these count among `kills` too). */
+  strayKills: number[];
 }
 
 export interface Award {
@@ -69,6 +75,9 @@ export const newStatBook = (): StatBook => ({
   sniper: null,
   pickups: [],
   saves: [],
+  missiles: [],
+  intercepts: [],
+  strayKills: [],
 });
 
 /** Add one to a player's counter; the list grows as new players show up. */

@@ -1,7 +1,7 @@
 import type { GameMode } from '../../sim/modes';
-import { buildControl, type Control, type Env } from '../menu/controls';
+import { buildControl, twistNote, type Control, type Env } from '../menu/controls';
 import { h } from '../menu/menu';
-import { groupTitle, RULE_COLUMNS, RULE_GROUPS, ruleItems, type RuleSource } from '../menu/rules';
+import { anyTwisted, groupTitle, RULE_COLUMNS, RULE_GROUPS, ruleItems, type RuleSource } from '../menu/rules';
 import type { App } from '../screens';
 
 export interface RulesForm {
@@ -16,7 +16,11 @@ export interface RulesForm {
  */
 export function rulesForm(mode: GameMode, source: RuleSource, app: App, readonly = false, changed?: () => void): RulesForm {
   const controls: Control[] = [];
-  const refresh = () => controls.forEach((c) => c.refresh());
+  const note = twistNote();
+  const refresh = () => {
+    controls.forEach((c) => c.refresh());
+    note.update(anyTwisted(mode, source.get(), true));
+  };
   const env: Env = { sound: app.menu.sound, readonly, changed: () => { refresh(); changed?.(); } };
   const items = ruleItems(mode, source, true);
   const groups = new Map(RULE_GROUPS.filter((group) => items.some((i) => i.group === group)).map((group) => {
@@ -29,10 +33,12 @@ export function rulesForm(mode: GameMode, source: RuleSource, app: App, readonly
     }
     return [group, h('section.setup__group', null, h('h3.setup__title', null, groupTitle(group)), rows)] as const;
   }));
-  const el = h('div.sheet.rules-browser', null,
+  const sheet = h('div.sheet.rules-browser', null,
     ...RULE_COLUMNS.map((column) => column.filter((group) => groups.has(group))).filter((column) => column.length)
       .map((column) => h('div.sheet__col', null, ...column.map((group) => groups.get(group)!))),
   );
+  // The note stays out of the sheet's grid: a row of its own there would hold an empty column open.
+  const el = h('div.rules-form', null, note.el, sheet);
   refresh();
   return { el, refresh };
 }

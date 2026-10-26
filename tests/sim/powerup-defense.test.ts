@@ -8,6 +8,11 @@ import { DEFAULT_SETTINGS } from '../../src/data/settings';
 
 const rules = { bounce: false, timeLimit: 20 };
 
+/** Lets the current volley fly until the match is back on aiming (or the round ends). */
+function finishFlight(match: Match): void {
+  for (let t = 0; t < 120 && match.phase === 'flying'; t += 1 / 30) match.update(1 / 30);
+}
+
 function duel(seed = 7): Match {
   const seats = ['human', 'human', 'off', 'off', 'off', 'off'] as const;
   return createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed });
@@ -329,6 +334,47 @@ describe('planetary defense power-up', () => {
     expect(match.world.defenses[0].owner).toBe(b.id);
     expect(match.world.defenses[0].protects).toContain(b.id);
     expect(match.world.defenses[0].protects).not.toContain(a.id);
+  });
+
+  describe('in the round statistics', () => {
+    /** A duel with a defense of the target's, its area right in the shooter's line, and the shooter aiming through it. */
+    const guardedDuel = () => {
+      const match = duel();
+      const shooter = match.players[match.current];
+      const target = match.players[1 - match.current];
+      const from = match.world.ships[shooter.id];
+      const toward = shooter.id === 0 ? 1 : -1;
+      match.world.defenses = [{ x: from.x + toward * 300, y: from.y, radius: 150, planet: 9, owner: target.id, protects: [target.id] }];
+      shooter.angle = toward === 1 ? 0 : 180;
+      shooter.power = 60;
+      return { match, shooter, target, from };
+    };
+
+    it('counts each missile for the defense owner, and the shot it brings down', () => {
+      const { match, target } = guardedDuel();
+      const events: string[] = [];
+      match.on((e) => events.push(e.type));
+      match.commit();
+      finishFlight(match);
+      expect(match.roundStats.missiles[target.id]).toBe(1);
+      expect(match.roundStats.intercepts[target.id] ?? 0).toBe(events.includes('shotdown') ? 1 : 0);
+      expect(match.matchStats.missiles[target.id]).toBe(1);
+    });
+
+    it('counts a ship a stray missile hits as a kill of the defense owner, and a stray kill', () => {
+      const { match, shooter, target, from } = guardedDuel();
+      // The shot flies the other way, clear of the defense.
+      shooter.angle += 180;
+      match.commit();
+      // A missile that has lost its shot, heading straight for the shooter's ship.
+      const toward = shooter.id === 0 ? 1 : -1;
+      match.volley!.shots[0].shot.missiles.push({ defense: 0, x: from.x + toward * 100, y: from.y, heading: toward === 1 ? Math.PI : 0, speed: 1000, age: 5, roll: 1, chasing: true, trail: [from.x + toward * 100, from.y] });
+      finishFlight(match);
+      expect(shooter.alive).toBe(false);
+      expect(match.roundStats.kills[target.id]).toBe(1);
+      expect(match.roundStats.strayKills[target.id]).toBe(1);
+      expect(match.roundStats.strayKills[shooter.id] ?? 0).toBe(0);
+    });
   });
 
   describe('collateral damage', () => {

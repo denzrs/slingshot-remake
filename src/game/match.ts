@@ -1480,6 +1480,7 @@ export abstract class Match {
     if (e.type === 'intercept') {
       const d = volley.world.defenses[e.defense];
       if (d) this.emit({ type: 'defenseFire', player: d.owner, x: d.x, y: d.y, toX: e.x, toY: e.y });
+      if (d && live) this.record((book) => bump(book.missiles, d.owner));
       return;
     }
     if (e.type === 'interceptMiss') {
@@ -1532,9 +1533,12 @@ export abstract class Match {
         this.emit({ type: 'devour', x: e.x, y: e.y, toX: hole.x, toY: hole.y, color: COLORS.players[this.players[player].seat], vx: e.vx, vy: e.vy });
         break;
       }
-      case 'shotdown':
+      case 'shotdown': {
         this.emit({ type: 'shotdown', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy });
+        const d = volley.world.defenses[end.defense];
+        if (d && live) this.record((book) => bump(book.intercepts, d.owner));
         break;
+      }
       case 'clash': {
         if (e.index >= end.other) break;
         const otherOwner = volley.shots[end.other].owner;
@@ -1597,6 +1601,7 @@ export abstract class Match {
       const shot = { trail: vs.trail, at: { x: target.x, y: target.y } };
       this.record((book) => {
         bump(book.kills, killer);
+        if (vs.stray) bump(book.strayKills, killer);
         book.fastestKill = improve(book.fastestKill, killer, seconds, false, shot);
         book.bestHit = improve(book.bestHit, killer, score.points, true, shot);
         book.sniper = improve(book.sniper, killer, Math.hypot(target.x - from.x, target.y - from.y), true, shot);

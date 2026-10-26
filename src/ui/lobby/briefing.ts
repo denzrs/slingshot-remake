@@ -151,6 +151,7 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
     rulesTimer = setTimeout(pushRules, 250);
   };
   const createPowerups = powerUpSummary(() => prefs.rules, {
+    mode: prefs.gameMode,
     canChange: () => !readOnly(),
     patch: (values) => {
       if (readOnly()) return;

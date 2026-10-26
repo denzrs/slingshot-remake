@@ -20,6 +20,10 @@ export interface SeatReport {
   ownGoals: number;
   pickups: number;
   saves: number;
+  /** The seat's planetary defenses: missiles fired, enemy shots brought down, and ships hit by a missile that lost its shot. */
+  missiles: number;
+  intercepts: number;
+  strayKills: number;
   alive: boolean;
 }
 
@@ -131,6 +135,9 @@ export function roundReport(match: ReportSource): RoundReport {
       ownGoals: book.ownGoals[i] ?? 0,
       pickups: book.pickups?.[i] ?? 0,
       saves: book.saves?.[i] ?? 0,
+      missiles: book.missiles?.[i] ?? 0,
+      intercepts: book.intercepts?.[i] ?? 0,
+      strayKills: book.strayKills?.[i] ?? 0,
       alive: stillIn(p),
     })),
     ...(tips.length ? { tips } : {}),

@@ -78,6 +78,11 @@ pub struct SeatRound {
     pub own_goals: i64,
     pub pickups: i64,
     pub saves: i64,
+    /// The seat's planetary defenses: missiles fired, enemy shots brought down, ships hit by a missile that lost its shot.
+    /// None from a client that does not count them yet.
+    pub missiles: Option<i64>,
+    pub intercepts: Option<i64>,
+    pub stray_kills: Option<i64>,
     pub alive: bool,
 }
 
@@ -243,6 +248,9 @@ fn parse_seat(value: &Value) -> Option<SeatRound> {
         own_goals: count("ownGoals")?,
         pickups: count("pickups")?,
         saves: count("saves")?,
+        missiles: optional_int(value.get("missiles"), 0..=MAX_COUNT)?,
+        intercepts: optional_int(value.get("intercepts"), 0..=MAX_COUNT)?,
+        stray_kills: optional_int(value.get("strayKills"), 0..=MAX_COUNT)?,
         alive: value.get("alive")?.as_bool()?,
     })
 }
@@ -555,6 +563,17 @@ mod tests {
         assert_eq!(report.team, None);
         assert_eq!(report.seats.len(), 2);
         assert_eq!(report.seats[1].grazes, 2);
+        // A client that does not count its defenses yet leaves them out.
+        assert_eq!(report.seats[1].missiles, None);
+        let mut counted = sample();
+        counted["players"][1]["missiles"] = json!(3);
+        counted["players"][1]["intercepts"] = json!(1);
+        counted["players"][1]["strayKills"] = json!(0);
+        let seat = &parse_round_report(&counted).expect("a report").seats[1];
+        assert_eq!(
+            (seat.missiles, seat.intercepts, seat.stray_kills),
+            (Some(3), Some(1), Some(0))
+        );
         assert_eq!(
             report.records[2],
             Some(RecordRound {
@@ -582,6 +601,8 @@ mod tests {
         broken(&|r| r["players"][0]["kills"] = json!(1.5));
         broken(&|r| r["players"][0]["score"] = json!(1e12));
         broken(&|r| r["players"][0]["alive"] = json!(1));
+        broken(&|r| r["players"][0]["missiles"] = json!(-1));
+        broken(&|r| r["players"][0]["strayKills"] = json!("1"));
         broken(&|r| r["players"] = json!([r["players"][0].clone()]));
         broken(&|r| r["players"] = Value::Array(vec![r["players"][0].clone(); 7]));
         broken(&|r| r["records"]["bestHit"]["player"] = json!(5));

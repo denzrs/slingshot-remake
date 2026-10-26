@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAYHEM } from '../../src/sim/config';
-import { applyTwists, MayhemDeck, TWIST_IDS, type MayhemRound } from '../../src/game/mayhem';
+import { applyTwists, MayhemDeck, TWIST_IDS, twistedRules, type MayhemRound } from '../../src/game/mayhem';
 import { cloneSettings, DEFAULT_SETTINGS, type Settings } from '../../src/data/settings';
 
 const rules = (patch: Partial<Settings> = {}): Settings => ({ ...cloneSettings(DEFAULT_SETTINGS), mayhem: 2, ...patch });
@@ -127,5 +127,21 @@ describe('applying twists', () => {
   it('lets a cap replace fixed power', () => {
     const laid = applyTwists(rules({ fixedPower: true, fixedPowerLevel: 55 }), { twists: [{ id: 'shortBreath', n: 40 }] });
     expect(laid).toMatchObject({ fixedPower: false, maxPower: 40 });
+  });
+});
+
+describe('twisted rules', () => {
+  it('lists the rules some twist can lay over the room, and none of the others', () => {
+    const wild = twistedRules('classic', 2);
+    for (const key of ['maxPlanets', 'bounce', 'invisiblePlanets', 'fixedPower', 'maxPower', 'hiddenAim', 'fadingTrails', 'powerUps', 'powerUpKinds', 'powerUpAmount'] as const) expect(wild.has(key)).toBe(true);
+    // The rest of the rules (rounds, the shot clock, grace …) are never part of a twist.
+    expect([...wild].every((key) => ['maxPlanets', 'bounce', 'invisiblePlanets', 'fixedPower', 'fixedPowerLevel', 'maxPower', 'hiddenAim', 'fadingTrails', 'powerUps', 'powerUpKinds', 'powerUpAmount'].includes(key))).toBe(true);
+  });
+
+  it('leaves out what only the harsh twists change when the level is mild, and what a mode does not have', () => {
+    expect(twistedRules('classic', 1).has('invisiblePlanets')).toBe(false);
+    expect(twistedRules('classic', 1).has('fadingTrails')).toBe(false);
+    expect(twistedRules('classic', 1).has('maxPlanets')).toBe(true);
+    expect(twistedRules('horizon', 3).has('invisiblePlanets')).toBe(false);
   });
 });
