@@ -287,13 +287,24 @@ export function drawDefense(
 
 /**
  * The defense's missiles, drawn over the shots: each with its exhaust and a glowing head, and brackets closing
- * on the shot it is chasing, which turn hot when the missile is close.
+ * on the shot it is chasing, which turn hot when the missile is close. A missile flies straight through the rock
+ * from the far side of its planet, so it and its exhaust are cut out of every planet in `rocks` (none while they are hidden).
  */
-export function drawInterception(ctx: CanvasRenderingContext2D, color: string, view: DefenseView, time: number): void {
+export function drawInterception(ctx: CanvasRenderingContext2D, color: string, view: DefenseView, time: number, rocks: readonly Planet[]): void {
   if (!view.missiles.length) return;
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  if (rocks.length) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-1e5, -1e5, 2e5, 2e5);
+    for (const p of rocks) {
+      ctx.moveTo(p.x + p.radius, p.y);
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+    }
+    ctx.clip('evenodd');
+  }
   for (const m of view.missiles) {
     const fade = m.chasing ? 1 : Math.max(0, 1 - (m.age - DEFENSE.MISSILE_LIFE) / 0.4);
     // The exhaust: the track it has flown, brighter towards the head.
@@ -330,6 +341,7 @@ export function drawInterception(ctx: CanvasRenderingContext2D, color: string, v
     ctx.stroke();
     ctx.restore();
   }
+  if (rocks.length) ctx.restore();
   // Brackets round each shot a missile is after, closing in as it comes.
   for (const { missile, shot } of view.chases) {
     const gap = Math.hypot(shot.x - missile.x, shot.y - missile.y);

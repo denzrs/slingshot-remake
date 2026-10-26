@@ -527,7 +527,7 @@ export class Renderer {
       }
     }
     // What the planetary defenses do to the shots they track: the lock-on and the interceptor, over the shots.
-    match.world.defenses.forEach((d, i) => d.wrecked || drawInterception(ctx, match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, defenseView(scene.volley?.shots ?? [], d, i), this.time));
+    match.world.defenses.forEach((d, i) => d.wrecked || drawInterception(ctx, match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, defenseView(scene.volley?.shots ?? [], d, i), this.time, match.planetsVisible ? scene.world.planets : []));
   }
 
   /** Power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */
