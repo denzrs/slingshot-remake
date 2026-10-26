@@ -884,7 +884,7 @@ export abstract class Match {
       solar: this.mode === 'solar',
       teams: this.teamMode ? this.players.map((p) => p.team!) : null,
     });
-    this.hiddenPlanets = this.mode === 'classic' && this.settings.invisiblePlanets;
+    this.hiddenPlanets = (this.mode === 'classic' || this.mode === 'solar') && this.settings.invisiblePlanets;
     this.trails = [];
     this.volley = null;
     this.summary = null;
@@ -1053,7 +1053,9 @@ export abstract class Match {
   /** Whether a round is on that could be skipped right now. */
   get canSkipRound(): boolean {
     if (this.attract || this.replaying || this.mode === 'challenge' || this.revealing) return false;
-    return this.phase === 'aiming' || this.phase === 'flying' || this.phase === 'killcam' || this.phase === 'collapse';
+    // Only a killcam in the middle of a round returns to nothing; one that returns to a phase replays a round already decided.
+    if (this.phase === 'killcam') return this.killcam.active?.returnTo === null;
+    return this.phase === 'aiming' || this.phase === 'flying' || this.phase === 'collapse';
   }
 
   /** The people at the table: they are the ones who vote. */
@@ -1586,7 +1588,7 @@ export abstract class Match {
     let spot: { x: number; y: number };
     if (kind === 'defense') {
       // On the planet nearest its own ship, on the side that faces it: the shots coming at the CPU pass there.
-      const near = [...world.planets].sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))[0];
+      const near = world.planets.filter((planet) => !planet.sun).sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))[0];
       if (!near) return null;
       return { angle: normalizeAngle((Math.atan2(-(near.y - from.y), near.x - from.x) * 180) / Math.PI), power: 0 };
     }
@@ -1605,7 +1607,8 @@ export abstract class Match {
       if (!spots) return null;
       spot = spots[0];
     } else if (kind === 'planetkiller') {
-      const byGap = [...world.planets].sort((a, b) => laneGap(a) - laneGap(b));
+      // Never the sun: the aim passes over it, so a placement there meets nothing.
+      const byGap = world.planets.filter((planet) => !planet.sun).sort((a, b) => laneGap(a) - laneGap(b));
       if (!byGap.length) return null;
       spot = { x: byGap[0].x, y: byGap[0].y };
     } else {

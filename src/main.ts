@@ -268,10 +268,14 @@ function multiplayer(): MultiplayerSession {
   });
   chat = panel;
   session.subscribe(() => panel.update());
+  // Menu pages swapping, or the lobby turning into a room, move the chat: watched here rather than looked up every frame.
+  new MutationObserver(() => panel.update()).observe(overlay, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden'] });
   return session;
 }
 /** The chat of the room, once there is a session for it. */
 let chat: ChatPanel | null = null;
+/** What the chat last saw of the screen, the menu and the match, so the frame loop updates it only on a change. */
+let chatSeen: { screen: 'title' | 'play'; menuOpen: boolean; match: Match | null } = { screen, menuOpen: false, match: null };
 /** The online match on screen, if any. */
 const online = (): MultiplayerSession | null => (session?.match ? session : null);
 
@@ -905,7 +909,11 @@ function frame(now: number): void {
   if (screen === 'play' && m === match) announceOracle(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();
-  chat?.update();
+  // The overlay is watched; what else decides where the chat goes is cheap to compare each frame.
+  if (chat && (screen !== chatSeen.screen || menu.isOpen !== chatSeen.menuOpen || match !== chatSeen.match)) {
+    chatSeen = { screen, menuOpen: menu.isOpen, match };
+    chat.update();
+  }
   requestAnimationFrame(frame);
 }
 

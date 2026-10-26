@@ -373,7 +373,8 @@ export class Shot {
   private updateStormContacts(): void {
     if (this.plasma) return;
     const clouds = this.world.nebulae;
-    for (const [seed] of this.stormContacts) {
+    // The hottest loop of all: skip the map's iterator when no storm has been met (always, outside Solar).
+    if (this.stormContacts.size) for (const [seed] of this.stormContacts) {
       if (!clouds.some((cloud) => cloud.storm && cloud.seed === seed)) this.stormContacts.delete(seed);
     }
     for (const cloud of clouds) {
