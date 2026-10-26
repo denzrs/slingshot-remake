@@ -16,7 +16,7 @@ import type { Effects } from './effects';
 import { Hud } from './hud';
 import type { OracleTap } from './oracle';
 import { getLook, isRefined, type Look } from '../data/look';
-import type { PlanetSprite } from './planet-common';
+import { LIGHT, type PlanetSprite } from './planet-common';
 import { renderPlanet } from './planets';
 import { drawRefinedShip, SHIP_HULL } from './ship';
 import { drawNebula } from './nebula';
@@ -298,6 +298,7 @@ export class Renderer {
       this.spritePs = ps;
       this.spriteLook = getLook();
     }
+    const sun = match.mode === 'solar' ? world.planets.find((q) => q.sun) : undefined;
     for (const p of showPlanets ? world.planets : []) {
       if (p.sun) continue;
       let sprite = this.sprites.get(p.seed);
@@ -314,6 +315,13 @@ export class Renderer {
         ctx.rotate(Math.atan2(primary.y - p.y, primary.x - p.x));
         const shrink = 1 - eaten * 0.85;
         ctx.scale((1 + eaten * 1.8) * shrink, (1 - eaten * 0.6) * shrink);
+        sprite.draw(ctx, 0, 0, ps, this.time);
+        ctx.restore();
+      } else if (sun && !isRefined()) {
+        // A classic sprite is painted lit from one side; turn it so that side faces the sun it orbits.
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(Math.atan2(sun.y - p.y, sun.x - p.x) - SPRITE_LIGHT_ANGLE);
         sprite.draw(ctx, 0, 0, ps, this.time);
         ctx.restore();
       } else if (isTurned()) {
@@ -939,6 +947,31 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** Whether this ship is one the person at the screen plays, and the round is young enough to point it out. */
+  private isPinged(match: Match, id: number): boolean {
+    if (match.attract || match.spectating || match.roundSeconds >= LOCATE_PING.DURATION) return false;
+    const player = match.players[id];
+    return match.viewer !== null ? id === match.viewer : !player.cpu;
+  }
+
+  /** Sonar rings sweeping in towards the ship so the eye finds it when a round begins; they fade out over the ping's last half second. */
+  private drawLocatePing(x: number, y: number, color: string, age: number): void {
+    const { ctx } = this;
+    const fade = Math.min(1, (LOCATE_PING.DURATION - age) / 0.5);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.lineWidth = 2;
+    for (let k = 0; k < LOCATE_PING.RINGS; k++) {
+      const t = (age / LOCATE_PING.PERIOD + k / LOCATE_PING.RINGS) % 1;
+      ctx.globalAlpha = fade * t * 0.85;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, 0, LOCATE_PING.RADIUS * (1 - t) + 14, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   private drawShips(match: Match, scene: Scene): void {
     const { ctx } = this;
     const live = !scene.camera;
@@ -973,6 +1006,8 @@ export class Renderer {
           ctx.stroke();
         }
       }
+
+      if (planning && this.isPinged(match, i)) this.drawLocatePing(ship.x, ship.y, color, match.roundSeconds);
 
       const aimShown = match.aimVisible(i);
       if (planning && aimShown) {
@@ -1121,6 +1156,12 @@ function easeOutBack(t: number): number {
 let nextTrailId = 0;
 /** How far past the field's edge a cached trail is still kept, in field units: shots that fly off do so on the screen's margin. */
 const TRAIL_MARGIN = 200;
+
+/** Which way, in the field plane, a classic planet sprite is lit from. */
+const SPRITE_LIGHT_ANGLE = Math.atan2(LIGHT[1], LIGHT[0]);
+
+/** The rings that point out your ship when a round starts: how long they last (s), how many, seconds per sweep, and the radius they start from (field units). */
+const LOCATE_PING = { DURATION: 3, RINGS: 2, PERIOD: 1, RADIUS: 110 } as const;
 
 function strokeTrails(ctx: CanvasRenderingContext2D, match: Match, drawn: readonly { trail: Trail; rank: number; fade: number }[]): void {
   for (const { trail, rank: r, fade } of drawn) {
