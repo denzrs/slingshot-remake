@@ -80,10 +80,12 @@ export class SolarMatch extends ClassicMatch {
     // The clouds that were thinning away are gone.
     this.world.nebulae = this.world.nebulae.filter((n) => !n.fading);
     this.world.version++;
+    // A planted black hole may have come round onto a pickup.
+    this.power.sweep();
     super.afterVolley();
   }
 
-  /** Turns everything that rides an orbit by `share` of a step. */
+  /** Turns everything that rides an orbit by `share` of a step: the bodies, the ships, the pickups and what the power-ups planted. */
   private turn(share: number): void {
     const world = this.world;
     const move = (o: { x: number; y: number }, free = false): void => {
@@ -106,5 +108,14 @@ export class SolarMatch extends ClassicMatch {
     }
     for (const p of this.alive) move(world.ships[p.id], true);
     for (const pickup of this.pickups) move(pickup, true);
+    // What the power-ups planted rides along too; each wormhole mouth on its own orbit. The storm's clouds stay where they broke out.
+    for (const hole of world.holes) move(hole, true);
+    for (const n of world.nebulae) if (!n.storm) move(n, true);
+    for (const w of world.wormholes) {
+      const [a, b] = [{ x: w.ax, y: w.ay }, { x: w.bx, y: w.by }];
+      move(a, true);
+      move(b, true);
+      [w.ax, w.ay, w.bx, w.by] = [a.x, a.y, b.x, b.y];
+    }
   }
 }
