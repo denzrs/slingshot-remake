@@ -165,6 +165,24 @@ describe('a player whose connection dropped', () => {
     expect(m.players[2].shots).toBe(0);
   });
 
+  it.each(['classic', 'horizon'] as const)('gets a turn back in a %s volley aimed in turns, once back before it flies', (mode) => {
+    const seats: Seat[] = ['human', 'human', 'human', 'off', 'off', 'off'];
+    const m = createMatch(mode, { ...DEFAULT_SETTINGS, simultaneousShots: true, seats }, { seats, oracle: true }) as ClassicMatch;
+    // Whoever is on turn drops out: the turn moves on at once.
+    const first = m.current;
+    m.setAway(first, true);
+    expect(m.current).not.toBe(first);
+    expect(m.current).toBeGreaterThanOrEqual(0);
+    // The others lock in; back before the volley flies, the one who dropped out aims last.
+    while (m.current >= 0) m.commit();
+    m.setAway(first, false);
+    expect(m.current).toBe(first);
+    expect(m.canAim(first)).toBe(true);
+    m.commit();
+    for (let i = 0; i < 5 && m.phase === 'aiming'; i++) m.update(1);
+    expect(m.phase).toBe('flying');
+  });
+
   it('has no vote while away, and is still away in a rematch', () => {
     const m = table(4);
     m.setAway(3, true);

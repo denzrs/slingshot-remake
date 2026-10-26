@@ -47,6 +47,11 @@ impl RoomManager {
         if let Some(pos) = room.players.iter().position(|p| p.id == player_id) {
             room.players.remove(pos);
         }
+        self.renumber(room_id);
+    }
+
+    fn renumber(&mut self, room_id: &str) {
+        let room = self.rooms.get_mut(room_id).unwrap();
         // Room IDs must stay contiguous because they become game player indexes.
         // Everybody stays in the team they picked.
         for (id, remaining) in room.players.iter_mut().enumerate() {
@@ -67,17 +72,15 @@ impl RoomManager {
     }
 
     pub(super) fn reset_to_waiting(&mut self, room_id: &str) {
-        // The seats of those who left the game were kept for its player indexes only.
-        while let Some(seat) = self
-            .rooms
-            .get(room_id)
-            .and_then(|room| room.players.iter().rfind(|p| p.left).map(|p| p.id))
-        {
-            self.remove_player(room_id, seat);
-        }
         let Some(room) = self.rooms.get_mut(room_id) else {
             return;
         };
+        // The seats of those who left the game were kept for its player indexes only.
+        if room.players.iter().any(|p| p.left) {
+            room.players.retain(|p| !p.left);
+            self.renumber(room_id);
+        }
+        let room = self.rooms.get_mut(room_id).unwrap();
         room.status = RoomStatus::Waiting;
         for player in room.players.iter_mut() {
             player.ready = false;

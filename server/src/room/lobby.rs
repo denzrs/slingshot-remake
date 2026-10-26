@@ -403,7 +403,7 @@ impl RoomManager {
         self.broadcast_lobby();
     }
 
-    /// A connection dropped out of a running game: keep its seat for `SEAT_GRACE` so the same
+    /// A connection dropped out of a running game: keep its seat for `seat_grace` so the same
     /// player can come back with their token; the game goes on without them meanwhile. `from` is
     /// where the connection came from. False when there is no such seat to hold.
     pub(super) fn hold_seat(&mut self, conn: u64, from: Option<std::net::IpAddr>) -> bool {
@@ -426,19 +426,27 @@ impl RoomManager {
         player.conn = None;
         player.came_from = from;
         player.lost_at = Some(std::time::Instant::now());
-        let notice = format!(
-            "{} lost the connection – the seat is held for {} min",
-            player.name,
-            SEAT_GRACE.as_secs() / 60
-        );
+        let grace = seat_grace(player_id).as_secs();
+        let notice = if grace >= 60 {
+            format!(
+                "{} lost the connection – the seat is held for {} min",
+                player.name,
+                grace / 60
+            )
+        } else {
+            format!(
+                "{} lost the connection – the seat is held for {} s",
+                player.name, grace
+            )
+        };
         self.memberships.remove(&conn);
         info!(conn, room = %room_id, seat = player_id, "seat held for a dropped connection");
         self.broadcast_room_update(&room_id, Some(&notice));
         true
     }
 
-    /// Gives up the seats whose grace has run out: a guest's counts as left, the host's closes the
-    /// room. Called every few seconds.
+    /// Gives up the seats whose grace has run out: a guest's counts as left while the game runs and
+    /// goes once it is over, the host's closes the room. Called every few seconds.
     pub fn expire_seats(&mut self) {
         self.expire_seats_at(std::time::Instant::now());
     }
@@ -452,7 +460,7 @@ impl RoomManager {
                     .iter()
                     .filter(|p| {
                         p.lost_at
-                            .is_some_and(|at| now.duration_since(at) >= SEAT_GRACE)
+                            .is_some_and(|at| now.duration_since(at) >= seat_grace(p.id))
                     })
                     .map(|p| (room.id.clone(), p.token.clone()))
             })
@@ -467,7 +475,12 @@ impl RoomManager {
                 continue;
             };
             info!(room = %room_id, seat = player_id, "held seat expired");
-            if player_id == 0 {
+            // Once the game is over the seat has no game index to keep: it goes, as in a waiting room.
+            let playing = self
+                .rooms
+                .get(&room_id)
+                .is_some_and(|room| room.status == RoomStatus::Playing);
+            if player_id == 0 || !playing {
                 self.give_up_seat(&room_id, player_id, None, "A player disconnected");
             } else {
                 self.vacate_seat(

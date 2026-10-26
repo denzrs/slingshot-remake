@@ -1090,11 +1090,16 @@ export abstract class Match {
     if (this.world.ships[id]) this.world.ships[id].alive = !away;
     p.locked = false;
     p.passed = false;
-    if (away && this.phase === 'aiming') this.passTurnOf(id);
+    if (this.phase !== 'aiming') return;
+    if (away) this.passTurnOf(id);
+    else this.giveTurnBackTo(id);
   }
 
   /** A seat that just left (or dropped out) was on turn: the turn moves on as after its shot. Modes with turns override this. */
   protected passTurnOf(_id: number): void {}
+
+  /** A seat is back while aiming goes on: it gets its turn in what is still being aimed. Modes with turns override this. */
+  protected giveTurnBackTo(_id: number): void {}
 
   // ————————————————————————————— Skipping a round —————————————————————————————
 

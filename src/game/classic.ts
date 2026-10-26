@@ -416,6 +416,18 @@ export class ClassicMatch extends Match {
     }
   }
 
+  protected giveTurnBackTo(id: number): void {
+    if (this.salvo && !this.simultaneous) {
+      // Its turn in this volley was passed over: it aims after those still waiting, or at once when nobody is.
+      if (this.current === id || this.queue.includes(id)) return;
+      this.queue.push(id);
+      if (this.current < 0) this.nextHuman();
+    } else if (!this.salvo && this.players[this.current]?.away) {
+      // The turn was waiting with somebody else who dropped out: whoever is back takes it.
+      this.setTurn(id);
+    }
+  }
+
   /**
    * Free for all: hand the turn to the next living player starting at `from`, passing over those who
    * dropped out. When nobody else is there to shoot, the turn waits with one of them.

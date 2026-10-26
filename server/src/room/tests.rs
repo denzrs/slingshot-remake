@@ -2428,6 +2428,40 @@ fn a_guest_who_drops_out_is_waited_for_minutes_and_then_counts_as_left() {
     assert_eq!(update["room"]["players"].as_array().unwrap().len(), 3);
 }
 
+#[test]
+fn a_seat_held_past_the_end_of_its_game_goes_when_the_grace_runs_out() {
+    let (mut rooms, [mut host_rx, _ben_rx, _cleo_rx]) = started_three(RoomManager::new(), "team");
+    // Host and Cleo are in team 0, Ben alone in team 1. Cleo drops out, then Ben leaves: the game is over.
+    rooms.disconnect(3);
+    rooms.handle(2, &json!({"type":"leave_room"}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["status"], "waiting");
+    assert_eq!(update["room"]["players"].as_array().unwrap().len(), 2);
+
+    // Nothing is left for the seat to keep a place in: it goes, rather than staying as a ghost.
+    rooms.expire_seats_at(std::time::Instant::now() + SEAT_GRACE);
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["status"], "waiting");
+    let players = update["room"]["players"].as_array().unwrap();
+    assert_eq!(players.len(), 1);
+    assert_eq!(players[0]["name"], "Host");
+}
+
+#[test]
+fn a_dropped_host_is_waited_for_seconds_not_minutes() {
+    let (mut rooms, [mut host_rx, mut ben_rx, _cleo_rx]) = started_three(RoomManager::new(), "ffa");
+    drain_json(&mut host_rx);
+    rooms.disconnect(1);
+    assert_eq!(
+        take_type(&drain_json(&mut ben_rx), "room_update")["notice"],
+        "Host lost the connection – the seat is held for 30 s"
+    );
+    rooms.expire_seats_at(std::time::Instant::now() + HOST_SEAT_GRACE);
+    assert!(drain_json(&mut ben_rx)
+        .iter()
+        .any(|m| m["type"] == "room_closed"));
+}
+
 #[tokio::test]
 async fn a_seat_held_for_a_drop_still_counts_in_the_statistics() {
     let stats = Arc::new(Stats::in_memory().await);

@@ -274,6 +274,20 @@ export class HorizonMatch extends Match {
     if (this.current >= 0) this.emit({ type: 'turn', player: this.current });
   }
 
+  protected passTurnOf(id: number): void {
+    // The volley waits for the ships still in; the one that left (or is away) is not among them.
+    if (this.simultaneous) return;
+    this.queue = this.queue.filter((q) => q !== id);
+    if (this.current === id) this.nextHuman();
+  }
+
+  protected giveTurnBackTo(id: number): void {
+    // Its turn in this volley was passed over: it aims after those still waiting, or at once when nobody is.
+    if (this.simultaneous || this.current === id || this.queue.includes(id)) return;
+    this.queue.push(id);
+    if (this.current < 0) this.nextHuman();
+  }
+
   commit(): void {
     if (this.skipReveal()) return;
     // The fire key during a flight: an armed splitter forks the shot.

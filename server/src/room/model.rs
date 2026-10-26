@@ -56,6 +56,19 @@ impl Player {
 /// meanwhile, and after it the seat counts as left.
 pub(super) const SEAT_GRACE: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
+/// How long a running game holds the host's seat. The host's game is the game: everybody else
+/// waits on a frozen field meanwhile, so this is much shorter.
+pub(super) const HOST_SEAT_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// How long a running game holds this seat for a dropped connection.
+pub(super) fn seat_grace(player_id: usize) -> std::time::Duration {
+    if player_id == 0 {
+        HOST_SEAT_GRACE
+    } else {
+        SEAT_GRACE
+    }
+}
+
 /// The most people who may watch one room.
 pub(super) const MAX_SPECTATORS: usize = 20;
 
@@ -139,11 +152,11 @@ pub(super) fn smallest_team(room: &Room) -> u8 {
     }
 }
 
-/// A team game needs somebody in each team.
+/// A team game needs somebody in each team (a seat whose person left the game counts for none).
 pub(super) fn teams_playable(room: &Room) -> bool {
     room.mode != RoomMode::Team || {
         let mut present = [false; 2];
-        for p in &room.players {
+        for p in room.players.iter().filter(|p| !p.left) {
             present[p.team as usize] = true;
         }
         present[0] && present[1]
@@ -161,11 +174,7 @@ pub(super) fn humans(room: &Room) -> usize {
 /// Whether a running game can go on without the seats whose people left: two people still in it,
 /// and in teams somebody on each side.
 pub(super) fn playable_without_leavers(room: &Room) -> bool {
-    let mut present = [false; 2];
-    for p in room.players.iter().filter(|p| !p.left) {
-        present[p.team as usize] = true;
-    }
-    humans(room) >= 2 && (room.mode != RoomMode::Team || (present[0] && present[1]))
+    humans(room) >= 2 && teams_playable(room)
 }
 
 /// A human may join when a seat is free, or when a CPU seat can give way to them.
