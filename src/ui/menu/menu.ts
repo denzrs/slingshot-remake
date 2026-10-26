@@ -31,6 +31,8 @@ interface Live {
   reserve?: () => boolean;
   /** Shown, but dimmed and not changeable while this holds: a slider that has nothing to limit right now. */
   inactive?: () => boolean;
+  /** Marked with Mayhem's sign while this holds: the rule is the base the twists lay over, so some rounds play by another value. */
+  twisted?: () => boolean;
   /** An edit is over (a slider let go of, a switch flipped): save it, send it on. */
   commit?: () => void;
 }

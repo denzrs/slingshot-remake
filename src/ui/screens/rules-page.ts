@@ -3,11 +3,12 @@ import type { GameMode } from '../../sim/modes';
 import { rulesOf } from '../../data/roomRules';
 import { resetRules } from '../presets/match-presets';
 import { h, type MenuItem, type Screen } from '../menu/menu';
+import { twistNote } from '../menu/controls';
 import { menuGroup, menuPage } from '../menu/menu-page';
 import { modeName } from '../menu/mode-name';
 import type { PresetCreator } from '../presets/preset-cards';
 import { presetNameField } from '../presets/preset-name';
-import { groupTitle, RULE_COLUMNS, ruleItems, type RuleSource } from '../menu/rules';
+import { anyTwisted, groupTitle, RULE_COLUMNS, ruleItems, type RuleSource } from '../menu/rules';
 import type { App } from './app';
 
 /**
@@ -26,6 +27,7 @@ export function rulesScreen(app: App, mode: GameMode, { creator, reset }: { crea
     },
   };
   const rules = ruleItems(mode, source);
+  const note = twistNote();
   const columns = RULE_COLUMNS.map((groups) => groups.filter((group) => rules.some((r) => r.group === group))).filter((groups) => groups.length);
   // The keyboard walks the items in this order: down the left column, then down the right one.
   const order = columns.flat();
@@ -37,7 +39,7 @@ export function rulesScreen(app: App, mode: GameMode, { creator, reset }: { crea
     build: () => menuPage({
       title: t(creator ? (creator.existing ? 'preset.creator.titleEdit' : 'preset.creator.title') : 'briefing.editRules'), eyebrow: modeName(mode), className: 'menu-page--rules',
       headerAside: creator ? presetNameField(creator.name, creator.defaultName, (name) => { creator.name = name; }) : undefined,
-      body: [h('div.sheet', null, ...columns.map((groups) => h('div.sheet__col', null, ...groups.map((group) => menuGroup(groupTitle(group), `rules-${group}`)))))],
+      body: [note.el, h('div.sheet', null, ...columns.map((groups) => h('div.sheet__col', null, ...groups.map((group) => menuGroup(groupTitle(group), `rules-${group}`)))))],
       keys: t('briefing.keys'),
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
     }),
@@ -64,6 +66,7 @@ export function rulesScreen(app: App, mode: GameMode, { creator, reset }: { crea
         : [{ kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() } satisfies MenuItem]),
     ],
     focus: 0,
+    update: () => note.update(anyTwisted(mode, source.get())),
     // Back, Cancel and Esc all leave through here.
     onEscape: () => { restore(); },
   };

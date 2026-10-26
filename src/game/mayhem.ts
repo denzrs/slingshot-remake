@@ -96,6 +96,21 @@ const TWISTS: Record<TwistId, TwistDef> = {
 
 export const TWIST_IDS = Object.keys(TWISTS) as TwistId[];
 
+const twistedCache = new Map<string, ReadonlySet<keyof TwistRules>>();
+
+/** The rules some twist of a mode at a strength can lay over the room's: they hold in most rounds, but not in all of them. */
+export function twistedRules(mode: GameMode, level: number): ReadonlySet<keyof TwistRules> {
+  const id = `${mode}:${level > 1 ? 'wild' : 'mild'}`;
+  let keys = twistedCache.get(id);
+  if (!keys) {
+    keys = new Set(Object.values(TWISTS)
+      .filter((def) => (!def.modes || def.modes.includes(mode)) && !(def.harsh && level <= 1))
+      .flatMap((def) => Object.keys(def.apply(0)) as (keyof TwistRules)[]));
+    twistedCache.set(id, keys);
+  }
+  return keys;
+}
+
 /** One twist of a round, with the number it rolled (if it rolls one). */
 export interface RoundTwist {
   id: TwistId;

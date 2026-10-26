@@ -127,6 +127,7 @@ function setupScreen(app: App, mode: GameMode, transition?: ModeTransition): Scr
   const crewLabel = h('p.briefing__lineup', null);
   const quickKeys = ['rounds', 'shotTime'] as const;
   const powerups = powerUpSummary(() => s, {
+    mode,
     patch: (values) => {
       Object.assign(s, values);
       app.settingsChanged();
