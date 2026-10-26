@@ -2461,7 +2461,7 @@ fn each_dropped_guest_keeps_the_grace_period_chosen_when_they_dropped() {
         .collect();
     // Cleo's one-minute hold expires, but Ben keeps the five-minute grace announced when he dropped.
     assert_eq!(notices, [json!("Cleo did not come back")]);
-    assert_eq!(rooms.rooms.values().next().unwrap().players[1].left, false);
+    assert!(!rooms.rooms.values().next().unwrap().players[1].left);
     rooms.expire_seats_at(std::time::Instant::now() + SEAT_GRACE);
     assert!(drain_json(&mut host_rx)
         .iter()
