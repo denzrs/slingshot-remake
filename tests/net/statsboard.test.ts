@@ -63,7 +63,7 @@ describe('stats board', () => {
   });
 
   it('asks for the facts, and has none when the relay keeps no statistics', async () => {
-    const facts = [{ id: 'hitRate', values: [17.4] }];
+    const facts = [{ id: 'holeShots', values: [17.4] }];
     expect(await new StatsBoard(() => connection({ type: 'stats_facts', enabled: true, facts })).facts()).toEqual(facts);
     expect(await new StatsBoard(() => connection({ type: 'stats_facts', enabled: false, facts: [] })).facts()).toEqual([]);
   });

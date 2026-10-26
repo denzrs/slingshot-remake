@@ -69,6 +69,7 @@ const SCHEMA: [&str; 14] = [
          PRIMARY KEY (match_id, round)
      )",
     // One row per ship and round. `player` is the day's pseudonym of a person, NULL for a CPU.
+    // `missiles`, `intercepts` and `stray_kills` are the seat's planetary defenses, NULL from a client that does not count them.
     "CREATE TABLE IF NOT EXISTS stat_seats (
          match_id  TEXT    NOT NULL,
          round     INTEGER NOT NULL,
@@ -87,6 +88,9 @@ const SCHEMA: [&str; 14] = [
          own_goals INTEGER NOT NULL,
          pickups   INTEGER NOT NULL,
          saves     INTEGER NOT NULL,
+         missiles    INTEGER,
+         intercepts  INTEGER,
+         stray_kills INTEGER,
          PRIMARY KEY (match_id, round, seat)
      )",
     // One row per judged tip of the oracle game (the shot-down players' and the stands'), no names: how it came out.
@@ -209,8 +213,8 @@ const INSERT_ROUND: &str = "INSERT INTO stat_rounds (
 
 const INSERT_SEAT: &str = "INSERT INTO stat_seats (
          match_id, round, seat, at, player, cpu, team, won, alive,
-         score, shots, kills, swingbys, grazes, own_goals, pickups, saves)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)";
+         score, shots, kills, swingbys, grazes, own_goals, pickups, saves, missiles, intercepts, stray_kills)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)";
 
 const INSERT_TIP: &str = "INSERT OR IGNORE INTO stat_tips (match_id, round, n, at, kind, correct, stake, payout, underdog, stands)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)";
@@ -397,6 +401,9 @@ impl Store {
             ("stat_shots", "split_at", "INTEGER"),
             ("stat_shots", "rider", "TEXT"),
             ("stat_rounds", "turns", "INTEGER"),
+            ("stat_seats", "missiles", "INTEGER"),
+            ("stat_seats", "intercepts", "INTEGER"),
+            ("stat_seats", "stray_kills", "INTEGER"),
         ] {
             Self::ensure_column(&conn, table, column, declared).await?;
         }
@@ -756,6 +763,9 @@ impl Store {
                 Sql::Integer(ship.own_goals),
                 Sql::Integer(ship.pickups),
                 Sql::Integer(ship.saves),
+                optional(ship.missiles),
+                optional(ship.intercepts),
+                optional(ship.stray_kills),
             ];
             self.conn.execute(INSERT_SEAT, row).await?;
         }
@@ -1479,6 +1489,10 @@ impl Stats {
         let database = crate::db::open(":memory:")
             .await
             .expect("an in-memory database opens");
+        // The relay keeps the daily board in the same database, and a fact reads it.
+        crate::leaderboard::Leaderboard::open(&database, crate::leaderboard::DEFAULT_KEEP_DAYS)
+            .await
+            .expect("the daily board opens");
         Self::open(&database, DEFAULT_KEEP_DAYS)
             .await
             .expect("an in-memory store opens")
@@ -1621,7 +1635,7 @@ mod tests {
             "seconds": 30.5, "planets": 3, "turns": 2,
             "players": [
                 {"score": 0, "shots": 2, "kills": 0, "swingbys": 0, "grazes": 1, "ownGoals": 0, "pickups": 0, "saves": 0, "alive": false},
-                {"score": 500, "shots": 1, "kills": 1, "swingbys": 2, "grazes": 0, "ownGoals": 0, "pickups": 0, "saves": 0, "alive": true},
+                {"score": 500, "shots": 1, "kills": 1, "swingbys": 2, "grazes": 0, "ownGoals": 0, "pickups": 0, "saves": 0, "missiles": 3, "intercepts": 1, "strayKills": 1, "alive": true},
             ],
             "records": {"bestHit": {"player": 1, "value": 250.5}},
         }))
@@ -1706,6 +1720,15 @@ mod tests {
             )
             .await,
             [Some("0".into()), Some("1".into())]
+        );
+        // The defense counts, NULL for a seat whose client did not send them.
+        assert_eq!(
+            text(
+                &stats,
+                "SELECT missiles || '/' || intercepts || '/' || stray_kills FROM stat_seats ORDER BY seat"
+            )
+            .await,
+            [None, Some("3/1/1".into())]
         );
         assert_eq!(
             text(&stats, "SELECT room_id FROM stat_rounds").await,
@@ -2239,13 +2262,13 @@ mod tests {
 
         let facts = stats.facts().await;
         let ids: Vec<_> = facts.iter().map(|f| f.id).collect();
-        // Five round tips are enough for a fact; three bets and one shot tip, or no shots at all, are not.
+        // Five round tips are enough for a fact; three bets and one shot tip, or no shots at all, are not. None came from
+        // the stands, and a 0 % is no fact.
+        assert!(ids.contains(&"tipRound"), "{ids:?}");
         assert!(
-            ids.contains(&"tipRound") && ids.contains(&"tipStands"),
-            "{ids:?}"
-        );
-        assert!(
-            !ids.contains(&"betStake") && !ids.contains(&"hitRate"),
+            !ids.contains(&"betStake")
+                && !ids.contains(&"shotsPerKill")
+                && !ids.contains(&"tipStands"),
             "{ids:?}"
         );
         let round_tips = facts.iter().find(|f| f.id == "tipRound").unwrap();
