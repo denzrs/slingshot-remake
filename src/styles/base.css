@@ -21,6 +21,13 @@
 
 * {
   box-sizing: border-box;
+  /* No scroll bar anywhere: one that shows for a moment (a page sliding in, a list filling up) takes room and shifts the layout.
+   * What is taller than its frame still scrolls with the wheel, a drag or the keys. */
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
 }
 
 html,

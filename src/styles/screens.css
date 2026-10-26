@@ -4,6 +4,7 @@
   position: absolute;
   inset: 0;
   display: flex;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: max(24px, env(safe-area-inset-top)) 16px 24px;
 }

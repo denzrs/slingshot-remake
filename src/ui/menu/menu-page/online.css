@@ -24,8 +24,6 @@
 
 /* Swiping between the online pages moves the page, not the pilot card above it. In a room only the game on the left moves: the room's card and the crew stay put. */
 .menu-page--lobby .menu-page__main { animation: none; }
-.menu-page--lobby.menu-page--mode-enter-next .menu-page__body,
-.menu-page--lobby.menu-page--mode-enter-previous .menu-page__body { overflow-x: clip; }
 .menu-page--lobby.menu-page--mode-enter-next .lobby > :not(.online-identity):not(.room-deck),
 .menu-page--lobby.menu-page--mode-enter-next .room-deck__briefing { animation: mode-body-enter-next 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
 .menu-page--lobby.menu-page--mode-enter-previous .lobby > :not(.online-identity):not(.room-deck),

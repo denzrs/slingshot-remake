@@ -37,7 +37,7 @@
 .menu-page__intro { max-width: 76ch; margin: 8px 0 0; color: var(--bone-dim); font-size: 13px; line-height: 1.6; }
 /* A bounded, shared frame anchors every footer at the same height. Long bodies scroll within it.
  * The side padding leaves room for focus rings that the scroll box would otherwise clip. */
-.menu-page__body { flex: 1 1 0; min-width: 0; min-height: 0; margin-inline: -6px; padding-inline: 6px; overflow-y: auto; overscroll-behavior: contain; }
+.menu-page__body { flex: 1 1 0; min-width: 0; min-height: 0; margin-inline: -6px; padding-inline: 6px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .menu-page__body--split { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 42px; }
 .menu-page__main, .menu-page__aside, .menu-group { min-width: 0; }
 .menu-page__aside { padding-left: 28px; border-left: 1px solid var(--menu-line); }
@@ -118,7 +118,7 @@
 .menu-page--tutorial .menu-page__aside { grid-column: 1; grid-row: 1; padding: 0 24px 0 0; border: 0; border-right: 1px solid var(--menu-line); }
 /* The page frame bounds both columns: the chapter list gives its rows a little room back in a short window, and a long lesson scrolls on its own. */
 .menu-page--tutorial .menu-page__body { grid-template-rows: minmax(0, 1fr); }
-.menu-page--tutorial .menu-page__main { min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-inline: -6px; padding-inline: 6px; }
+.menu-page--tutorial .menu-page__main { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; margin-inline: -6px; padding-inline: 6px; }
 .tutorial-chapters { display: flex; flex-direction: column; gap: 5px; height: 100%; }
 .tutorial-chapters .item { flex: 0 1 39px; min-height: 26px; padding: 4px 12px; border-radius: 0; border-left: 2px solid transparent; color: var(--bone-dim); font-size: 12px; font-weight: 400; line-height: 1.5; }
 .tutorial-chapters .is-selected { color: var(--launch-accent); border-color: var(--launch-accent); background: rgb(255 173 101 / 0.08); }
@@ -245,8 +245,8 @@
   .match-report > :only-child { grid-column: 1 / -1; }
   .match-report__details { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .match-records { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
-  .match-report .match-records li { padding-block: 10px; }
-  .match-records .match-highlight__trail { height: 56px; margin-top: 4px; }
+  .match-report .match-records li { padding-block: clamp(4px, .6vh, 10px); }
+  .match-records .match-highlight__trail { height: clamp(40px, 5.2vh, 56px); margin-top: 4px; }
   .match-report .score-chart { max-width: 340px; margin-inline: 0; }
 }
 

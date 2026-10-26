@@ -68,7 +68,7 @@
 .chat__empty > .chat__icon { width: 30px; height: 30px; color: var(--p2); opacity: .6; }
 .chat__empty strong { color: var(--bone); font: 400 12px/1.5 var(--font-body); }
 .chat__empty p { margin: 0; color: var(--bone-dim); font: 10px/1.6 var(--font-body); }
-.chat__log { display: flex; flex: 1 1 250px; flex-direction: column; gap: 12px; min-height: 120px; margin: 0; padding: 16px 14px; overflow-y: auto; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; scrollbar-color: #38506e transparent; }
+.chat__log { display: flex; flex: 1 1 250px; flex-direction: column; gap: 12px; min-height: 120px; margin: 0; padding: 16px 14px; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
 .chat__line { display: grid; flex: none; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
 .chat__name { color: var(--speaker-tone, var(--bone-dim)); font: 700 10px/1.5 var(--font-body); }
 .chat__name .eye-icon { width: 12px; height: 12px; margin-right: 5px; vertical-align: -2px; }
