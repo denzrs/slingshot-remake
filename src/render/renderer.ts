@@ -15,6 +15,7 @@ import { renderContours } from './contours';
 import type { Effects } from './effects';
 import { Hud } from './hud';
 import type { OracleTap } from './oracle';
+import type { SkipAnswer } from './skip-vote';
 import { getLook, isRefined, type Look } from '../data/look';
 import { LIGHT, type PlanetSprite } from './planet-common';
 import { renderPlanet } from './planets';
@@ -101,6 +102,12 @@ export class Renderer {
   oracleHit(clientX: number, clientY: number): OracleTap | null {
     const rect = this.canvas.getBoundingClientRect();
     return this.hud.oracleHit(clientX - rect.left, clientY - rect.top);
+  }
+
+  /** The answer to the vote to skip the round under a pointer position (client px), if it is over one. */
+  skipVoteHit(clientX: number, clientY: number): SkipAnswer | null {
+    const rect = this.canvas.getBoundingClientRect();
+    return this.hud.skipVoteHit(clientX - rect.left, clientY - rect.top);
   }
 
   /** Convert a pointer position (client px) into field coordinates. */

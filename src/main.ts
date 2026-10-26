@@ -660,6 +660,8 @@ function aimAt(clientX: number, clientY: number): void {
 canvas.addEventListener('pointerdown', (e) => {
   sound.unlock();
   if (screen !== 'play' || !match || menu.isOpen) return;
+  const answer = renderer.skipVoteHit(e.clientX, e.clientY);
+  if (answer && match.canAnswerSkip(match.viewer) && online()) return dispatchInput({ kind: 'skipVote', yes: answer === 'yes' });
   const tip = oracleTap(e.clientX, e.clientY);
   if (tip) {
     oraclePointer = true;

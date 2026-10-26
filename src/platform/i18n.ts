@@ -977,11 +977,13 @@ const en = {
   'skip.confirm': 'PRESS N AGAIN TO SKIP THE ROUND',
   'skip.banner': 'SKIP THIS ROUND? NOBODY SCORES',
   'skip.votes': '{yes} / {needed} YES',
-  'skip.hostAsks': '{name} PROPOSES · Y = YES · N = NO',
-  'skip.waiting': 'WAITING FOR THE OTHERS …',
-  'skip.answered': 'YOU VOTED {answer}',
-  'skip.answerYes': 'YES',
-  'skip.answerNo': 'NO',
+  'skip.name': 'Vote',
+  'skip.q': '{name} wants to skip the round',
+  'skip.nobody': 'Nobody scores',
+  'skip.waiting': 'Waiting for the others …',
+  'skip.mine': 'Your vote: {answer}',
+  'skip.answerYes': 'Yes',
+  'skip.answerNo': 'No',
 } as const;
 
 export type Key = keyof typeof en;
@@ -1950,11 +1952,13 @@ const de: Dict = {
   'skip.confirm': 'N NOCH MAL DRÜCKEN, UM DIE RUNDE ZU ÜBERSPRINGEN',
   'skip.banner': 'RUNDE ÜBERSPRINGEN? NIEMAND PUNKTET',
   'skip.votes': '{yes} / {needed} JA',
-  'skip.hostAsks': '{name} SCHLÄGT VOR · J = JA · N = NEIN',
-  'skip.waiting': 'WARTE AUF DIE ANDEREN …',
-  'skip.answered': 'DEINE STIMME: {answer}',
-  'skip.answerYes': 'JA',
-  'skip.answerNo': 'NEIN',
+  'skip.name': 'Abstimmung',
+  'skip.q': '{name} will die Runde überspringen',
+  'skip.nobody': 'Niemand punktet',
+  'skip.waiting': 'Warte auf die anderen …',
+  'skip.mine': 'Deine Stimme: {answer}',
+  'skip.answerYes': 'Ja',
+  'skip.answerNo': 'Nein',
 };
 
 const DICTS: Record<Lang, Dict> = { de, en };
