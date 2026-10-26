@@ -51,6 +51,8 @@ export interface PlayerState {
   powerUp: PowerUpKind | null;
   /** The held preview or splitter is set to go off with the next shot. */
   armed: boolean;
+  /** Online: the person left the game. The ship is gone for the rest of the match; the score stays. */
+  left: boolean;
 }
 
 export interface Trail {
@@ -84,7 +86,7 @@ export interface KillRecord {
   at: number;
 }
 
-export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots' | 'skipped';
+export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots' | 'skipped' | 'forfeit';
 
 /** How long the people at the table have to answer a vote to skip the round, in seconds of match clock. */
 export const SKIP_VOTE_TIME = 20;
@@ -488,7 +490,7 @@ export abstract class Match {
   get ghost(): boolean {
     if (this.spectating) return !!this.options.oracle && !!this.crowd.seat(this.spectatorId)?.present;
     const me = this.viewer === null ? undefined : this.players[this.viewer];
-    return !!this.options.oracle && !!me && !me.alive && !me.cpu;
+    return !!this.options.oracle && !!me && shotDown(me);
   }
 
   get oracleEnabled(): boolean {
@@ -507,7 +509,7 @@ export abstract class Match {
     if (!o.question || o.question.locked) return false;
     if (crowd) return !!this.crowd.seat(id)?.present;
     const p = this.players[id];
-    return !!p && !p.alive && !p.cpu;
+    return !!p && shotDown(p);
   }
 
   /** Whether the oracle's minimum window for tipping and betting on this aiming phase has passed. */
@@ -536,7 +538,7 @@ export abstract class Match {
     if (!this.options.oracle || this.phase !== 'aiming' || !(crowd ? this.stands : this.oracle).roundQuestion) return false;
     if (crowd) return !!this.crowd.seat(id)?.present;
     const p = this.players[id];
-    return !!p && !p.alive && !p.cpu;
+    return !!p && shotDown(p);
   }
 
   /** The most this bettor could still stake on the round question: a share of their purse, once. 0 when there is no bet to make — or the room plays without betting. */
@@ -571,7 +573,7 @@ export abstract class Match {
    */
   private openRoundQuestion(): void {
     if (!this.options.oracle || this.attract || this.decided) return;
-    if (!this.oracle.roundQuestion && this.players.some((p) => !p.alive && !p.cpu)) this.oracle.openRound(this.alive.map((p) => p.id), this.simultaneous);
+    if (!this.oracle.roundQuestion && this.players.some(shotDown)) this.oracle.openRound(this.alive.map((p) => p.id), this.simultaneous);
     if (!this.stands.roundQuestion && this.crowd.watching) this.stands.openRound(this.alive.map((p) => p.id), this.simultaneous);
   }
 
@@ -585,7 +587,7 @@ export abstract class Match {
   protected openOracle(kind: OracleKind, shooter = -1): void {
     const live = !!this.options.oracle && !this.attract;
     const choices = kind === 'salvo' ? this.alive.map((p) => p.id) : [];
-    if (live && this.players.some((p) => !p.alive && !p.cpu)) this.oracle.open(kind, shooter, choices);
+    if (live && this.players.some(shotDown)) this.oracle.open(kind, shooter, choices);
     else this.oracle.close();
     if (live && this.crowd.watching) this.stands.open(kind, shooter, choices);
     else this.stands.close();
@@ -831,7 +833,10 @@ export abstract class Match {
     const taken = seats.flatMap((seat, i) => (seat === 'off' ? [] : [{ seat: i, kind: seat }]));
     const teams = this.attract ? null : (this.options.teams ?? seatTeamsFor(this.settings, taken.map((s) => s.seat)));
     this.teamMode = teams ? this.settings.teamMode : 0;
+    // Whoever left the game stays out of the rematch: the room keeps their seat empty.
+    const gone = new Set(this.players.filter((p) => p.left).map((p) => p.id));
     this.players = taken.map(({ seat, kind }, id) => newPlayer(id, seat, kind, teams?.[id] ?? null, false, this.options.names?.[id], this.options.avatars?.[id] ?? null));
+    for (const id of gone) if (this.players[id]) this.players[id].left = true;
     if (teams) {
       // Each team member gets its own shade of the team colour.
       const seen = new Map<number, number>();
@@ -896,7 +901,8 @@ export abstract class Match {
     for (const p of this.players) {
       const ship = this.world.ships[p.id];
       p.shots = 0;
-      p.alive = true;
+      p.alive = !p.left;
+      if (p.left) ship.alive = false;
       p.locked = false;
       p.passed = false;
       p.powerUp = null;
@@ -1005,15 +1011,15 @@ export abstract class Match {
     return this.killcam.info(this.skipsNeeded);
   }
 
-  /** At least half of the human players must want to skip; target drones and CPUs do not vote. */
+  /** At least half of the human players must want to skip; target drones, CPUs and whoever left do not vote. */
   private get skipsNeeded(): number {
-    return Math.ceil(this.players.filter((p) => !p.cpu && !p.target).length / 2);
+    return Math.ceil(this.players.filter((p) => !p.cpu && !p.target && !p.left).length / 2);
   }
 
   voteSkip(player: number): void {
     const k = this.killcam.active;
     const p = this.players[player];
-    if (!p || p.cpu || p.target || !k || k.recording || this.phaseTime <= 0.3 || k.skipVotes.includes(player)) return;
+    if (!p || p.cpu || p.target || p.left || !k || k.recording || this.phaseTime <= 0.3 || k.skipVotes.includes(player)) return;
     k.skipVotes.push(player);
     if (k.skipVotes.length >= this.skipsNeeded) this.endKillcam();
   }
@@ -1040,6 +1046,27 @@ export abstract class Match {
     else this.afterVolley();
   }
 
+  // ————————————————————————————— Leaving —————————————————————————————
+
+  /**
+   * Online (host): the person in this seat left the game. Their ship is gone at once and in every round
+   * after, their score stays as it was, and nobody waits for them: a round left with one side in it is over.
+   */
+  removePlayer(id: number): void {
+    const p = this.players[id];
+    if (!p || p.left) return;
+    p.left = true;
+    p.alive = false;
+    p.locked = false;
+    if (this.world.ships[id]) this.world.ships[id].alive = false;
+    if (this.phase !== 'aiming') return;
+    if (this.decided) this.endRound(true);
+    else this.passTurnOf(id);
+  }
+
+  /** A seat that just left was on turn: the turn moves on as after its shot. Modes with turns override this. */
+  protected passTurnOf(_id: number): void {}
+
   // ————————————————————————————— Skipping a round —————————————————————————————
 
   /** The vote to skip the round that is open, if any. Online only: offline the player simply skips. */
@@ -1060,7 +1087,7 @@ export abstract class Match {
 
   /** The people at the table: they are the ones who vote. */
   private get voters(): number[] {
-    return this.players.filter((p) => !p.cpu).map((p) => p.id);
+    return this.players.filter((p) => !p.cpu && !p.left).map((p) => p.id);
   }
 
   /** Yes votes it takes to skip: more than half of the people at the table. */
@@ -1097,7 +1124,7 @@ export abstract class Match {
 
   /** Whether this person may still answer the open vote. */
   canAnswerSkip(player: number | null): boolean {
-    return player !== null && !!this.skipVote && this.players[player]?.cpu === null && !this.skipAnswer(player);
+    return player !== null && !!this.skipVote && this.voters.includes(player) && !this.skipAnswer(player);
   }
 
   private endSkipVote(text: 'skip.declined' | 'skip.lapsed'): void {
@@ -1516,7 +1543,8 @@ export abstract class Match {
     this.emit({ type: 'kill', record });
   }
 
-  protected endRound(): void {
+  /** `forfeit`: nobody shot the round to its end, the others left it. */
+  protected endRound(forfeit = false): void {
     // A pending vote cannot change a round after its normal result has been recorded.
     this.skipVote = null;
     const alive = this.alive;
@@ -1529,7 +1557,7 @@ export abstract class Match {
     } else if (survivor !== null) {
       this.players[survivor].score += bonus;
     }
-    const title = team !== null ? 'teamWin' : this.roundTitle(survivor);
+    const title = team !== null ? 'teamWin' : forfeit ? 'forfeit' : this.roundTitle(survivor);
     this.summary = { title, survivor, team, bonus, lastKill: this.lastKill };
     // The oracle's question for the whole round: a lone survivor or a whole team won it, or nobody did.
     const winners = team !== null ? this.players.filter((p) => p.team === team).map((p) => p.id) : survivor !== null ? [survivor] : [];
@@ -1736,6 +1764,11 @@ export abstract class Match {
   }
 }
 
+/** Shot down this round with a person behind the ship: who tips in the oracle. Whoever left is not at the table. */
+function shotDown(p: PlayerState): boolean {
+  return !p.alive && !p.cpu && !p.left;
+}
+
 export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, team: number | null, target = false, fixedName?: string, avatar: Avatar | null = null): PlayerState {
   const cpu = kind === 'human' ? null : kind;
   return {
@@ -1761,5 +1794,6 @@ export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, 
     passed: false,
     powerUp: null,
     armed: false,
+    left: false,
   };
 }

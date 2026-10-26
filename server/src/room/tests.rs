@@ -2303,6 +2303,117 @@ fn a_token_that_is_not_held_any_more_is_turned_away() {
     );
 }
 
+/// A started room on `rooms`: the host on connection 1, Ben on 2 and Cleo on 3, every queue emptied.
+fn started_three(mut rooms: RoomManager, mode: &str) -> (RoomManager, [Inbox; 3]) {
+    let mut host_rx = connect(&mut rooms, 1);
+    drain_json(&mut host_rx);
+    rooms.handle(
+        1,
+        &json!({"type":"create_room","name":"Host","mode":mode,"gameMode":"classic","maxPlayers":4}),
+    );
+    let room_id = take_type(&drain_json(&mut host_rx), "room_update")["room"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut ben_rx = join(&mut rooms, 2, &room_id, "Ben");
+    let mut cleo_rx = join(&mut rooms, 3, &room_id, "Cleo");
+    for conn in [2, 3] {
+        rooms.handle(conn, &json!({"type":"ready","ready":true}));
+    }
+    rooms.handle(1, &json!({"type":"start_game"}));
+    for rx in [&mut host_rx, &mut ben_rx, &mut cleo_rx] {
+        assert!(drain_json(rx).iter().any(|m| m["type"] == "game_start"));
+    }
+    (rooms, [host_rx, ben_rx, cleo_rx])
+}
+
+#[test]
+fn a_guest_who_leaves_a_running_game_leaves_an_empty_seat_and_the_others_play_on() {
+    let (mut rooms, [mut host_rx, mut ben_rx, mut cleo_rx]) =
+        started_three(RoomManager::new(), "ffa");
+    let token = rooms.rooms.values().next().unwrap().players[1]
+        .token
+        .clone();
+
+    rooms.handle(2, &json!({"type":"leave_room"}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["status"], "playing");
+    assert_eq!(update["notice"], "Ben left the game");
+    // The seats keep their numbers: they are the game's player indexes.
+    let players = update["room"]["players"].as_array().unwrap();
+    assert_eq!(players.len(), 3);
+    assert_eq!(players[1]["name"], "Ben");
+    assert_eq!(players[1]["left"], true);
+    assert_eq!(players[2]["left"], false);
+    assert_eq!(update["you"]["playerId"], 0);
+    assert_eq!(
+        take_type(&drain_json(&mut cleo_rx), "room_update")["you"]["playerId"],
+        2
+    );
+    assert!(drain_json(&mut ben_rx)
+        .iter()
+        .any(|m| m["type"] == "lobby_update"));
+
+    // The host still reports every seat, and the seat is nobody's to take back.
+    rooms.handle(1, &round_report_message(1, 3));
+    assert!(drain_json(&mut host_rx).is_empty());
+    let mut back_rx = connect(&mut rooms, 7);
+    drain_json(&mut back_rx);
+    rooms.handle(7, &json!({"type":"resume","token":token}));
+    assert_eq!(
+        take_type(&drain_json(&mut back_rx), "resume_failed")["message"],
+        "Your seat was given up"
+    );
+
+    // With one person left there is nobody to play against: the room waits again, without the empty seat.
+    rooms.handle(3, &json!({"type":"leave_room"}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["status"], "waiting");
+    assert_eq!(update["notice"], "Cleo left – the game was ended");
+    assert_eq!(update["room"]["players"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn leaving_a_game_of_two_ends_it() {
+    let mut rooms = RoomManager::new();
+    let (_room_id, mut host_rx, _guest_rx) = started_room(&mut rooms, None, false);
+    rooms.handle(2, &json!({"type":"leave_room"}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["status"], "waiting");
+    assert_eq!(update["notice"], "Guest left – the game was ended");
+    assert_eq!(update["room"]["players"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn a_team_left_empty_ends_the_game_and_the_room_waits_with_the_rest() {
+    let (mut rooms, [mut host_rx, _ben_rx, mut cleo_rx]) =
+        started_three(RoomManager::new(), "team");
+    // Host and Cleo are in team 0, Ben alone in team 1.
+    rooms.handle(2, &json!({"type":"leave_room"}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["status"], "waiting");
+    let players = update["room"]["players"].as_array().unwrap();
+    assert_eq!(players.len(), 2);
+    assert_eq!(players[1]["name"], "Cleo");
+    assert_eq!(players[1]["id"], 1);
+    assert_eq!(
+        take_type(&drain_json(&mut cleo_rx), "room_update")["you"]["playerId"],
+        1
+    );
+}
+
+#[tokio::test]
+async fn the_seat_of_somebody_who_left_still_counts_in_the_statistics() {
+    let stats = Arc::new(Stats::in_memory().await);
+    let (mut rooms, [mut host_rx, _ben_rx, _cleo_rx]) =
+        started_three(RoomManager::new().with_stats(stats.clone()), "ffa");
+    rooms.handle(2, &json!({"type":"leave_room"}));
+    drain_json(&mut host_rx);
+    rooms.handle(1, &round_report_message(1, 3));
+    assert!(drain_json(&mut host_rx).is_empty());
+    written(&stats, "stat_seats", 3).await;
+}
+
 #[test]
 fn a_drop_in_a_waiting_room_still_frees_the_seat_at_once() {
     let mut rooms = RoomManager::new();

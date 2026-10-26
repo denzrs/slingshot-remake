@@ -407,6 +407,15 @@ export class ClassicMatch extends Match {
     else this.giveTurn(this.current + 1);
   }
 
+  protected passTurnOf(id: number): void {
+    // A salvo waits for the ships still in; the one that left is not among them.
+    if (!this.salvo && this.current === id) this.afterVolley();
+    else if (this.salvo && !this.simultaneous) {
+      this.queue = this.queue.filter((q) => q !== id);
+      if (this.current === id) this.nextHuman();
+    }
+  }
+
   /** Free for all: hand the turn to the next living player starting at `from`. */
   private giveTurn(from: number): void {
     const n = this.players.length;

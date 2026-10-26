@@ -33,6 +33,11 @@ pub(super) struct Player {
     pub(super) token: String,
     /// Set while a running game holds the seat for a connection that dropped.
     pub(super) lost_at: Option<std::time::Instant>,
+    /// Set when the person chose to leave the running game: the seat stays (the game's player
+    /// indexes are the seats) with nobody in it, and goes when the room waits again.
+    pub(super) left: bool,
+    /// Where the person who left came from, so the game's statistics can still name the seat.
+    pub(super) left_from: Option<std::net::IpAddr>,
 }
 
 impl Player {
@@ -145,7 +150,20 @@ pub(super) fn teams_playable(room: &Room) -> bool {
 
 /// The seats with a person in them. A game needs two of them; CPUs alone are played offline.
 pub(super) fn humans(room: &Room) -> usize {
-    room.players.iter().filter(|p| !p.is_cpu()).count()
+    room.players
+        .iter()
+        .filter(|p| !p.is_cpu() && !p.left)
+        .count()
+}
+
+/// Whether a running game can go on without the seats whose people left: two people still in it,
+/// and in teams somebody on each side.
+pub(super) fn playable_without_leavers(room: &Room) -> bool {
+    let mut present = [false; 2];
+    for p in room.players.iter().filter(|p| !p.left) {
+        present[p.team as usize] = true;
+    }
+    humans(room) >= 2 && (room.mode != RoomMode::Team || (present[0] && present[1]))
 }
 
 /// A human may join when a seat is free, or when a CPU seat can give way to them.

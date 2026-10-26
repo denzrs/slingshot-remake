@@ -30,6 +30,8 @@ impl RoomManager {
             cpu: None,
             token: URL_SAFE_NO_PAD.encode(rand::thread_rng().gen::<[u8; 16]>()),
             lost_at: None,
+            left: false,
+            left_from: None,
         });
         self.memberships.insert(
             conn,
@@ -65,6 +67,14 @@ impl RoomManager {
     }
 
     pub(super) fn reset_to_waiting(&mut self, room_id: &str) {
+        // The seats of those who left the game were kept for its player indexes only.
+        while let Some(seat) = self
+            .rooms
+            .get(room_id)
+            .and_then(|room| room.players.iter().rfind(|p| p.left).map(|p| p.id))
+        {
+            self.remove_player(room_id, seat);
+        }
         let Some(room) = self.rooms.get_mut(room_id) else {
             return;
         };
@@ -94,7 +104,7 @@ impl RoomManager {
             "players": room
                 .players
                 .iter()
-                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "ready": p.confirmed(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str), "connected": p.lost_at.is_none() }))
+                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "ready": p.confirmed(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str), "connected": p.lost_at.is_none(), "left": p.left }))
                 .collect::<Vec<_>>(),
             "spectators": room
                 .spectators

@@ -452,7 +452,7 @@ export class Hud {
       // An online player's symbol leads the card, in the player's colour; the name and score sit beside it.
       const textX = p.avatar ? x + 26 * k : x + 10 * k;
       if (p.avatar) drawAvatar(ctx, p.avatar, x + 17 * k, y + h / 2, 16 * k, p.color);
-      const status = !p.alive ? ['✕', COLORS.boneDim] : active ? [t('hud.aiming'), p.color] : planning && p.locked ? [t('hud.ready'), COLORS.boneDim] : null;
+      const status = p.left ? [t('hud.left'), COLORS.boneDim] : !p.alive ? ['✕', COLORS.boneDim] : active ? [t('hud.aiming'), p.color] : planning && p.locked ? [t('hud.ready'), COLORS.boneDim] : null;
       const name = p.name.toUpperCase();
       const room = w - (textX - x) - 4 * k;
       ctx.textAlign = 'left';

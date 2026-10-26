@@ -417,8 +417,12 @@ export class MultiplayerSession {
         if (this.match && message.notice) this.say(message.notice);
         // The room went back to waiting under a running game (somebody left): the game is over.
         if (this.match && message.room.status === 'waiting') this.endMatch();
-        // The host keeps the stands' accounts: people come and go, the points stay.
-        else if (this.match && this.isHost) this.match.crowdChanged(message.room.spectators ?? []);
+        else if (this.match && this.isHost) {
+          // The others play on without whoever left; their ship goes in the host's game, and with it on every screen.
+          for (const p of message.room.players) if (p.left) this.match.removePlayer(p.id);
+          // The host keeps the stands' accounts: people come and go, the points stay.
+          this.match.crowdChanged(message.room.spectators ?? []);
+        }
         break;
       case 'game_start':
         this.startMatch(message);

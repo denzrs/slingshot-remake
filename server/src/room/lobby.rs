@@ -93,7 +93,7 @@ impl RoomManager {
                     "mayhem": room.rules.mayhem,
                     "status": room.status.as_str(),
                     "spectators": room.spectators.len(),
-                    "players": room.players.len(),
+                    "players": room.players.iter().filter(|p| !p.left).count(),
                     "cpus": room.players.iter().filter(|p| p.is_cpu()).count(),
                     "maxPlayers": room.max_players,
                     "locked": room.password.is_some(),
@@ -283,16 +283,59 @@ impl RoomManager {
             self.error(conn, "You are not in a room");
             return;
         }
-        self.remove_from_room(conn, "A player left");
+        if !self.step_out_of_game(conn) {
+            self.remove_from_room(conn, "A player left");
+        }
         self.send_lobby(conn);
+    }
+
+    /// A guest chose to leave a running game: the seat stays in it with nobody in it, so the others
+    /// play on, unless too few are left to. False when there is no such game to step out of.
+    fn step_out_of_game(&mut self, conn: u64) -> bool {
+        let Some(membership) = self.memberships.get(&conn) else {
+            return false;
+        };
+        let (room_id, player_id) = (membership.room_id.clone(), membership.player_id);
+        let from = self.net.peer_ip(conn);
+        let Some(room) = self.rooms.get_mut(&room_id) else {
+            return false;
+        };
+        // The host's game is the game: without it there is nothing to play on.
+        if room.status != RoomStatus::Playing || player_id == 0 {
+            return false;
+        }
+        let Some(player) = room.players.iter_mut().find(|p| p.id == player_id) else {
+            return false;
+        };
+        player.left = true;
+        player.left_from = from;
+        player.conn = None;
+        player.token.clear();
+        player.lost_at = None;
+        let name = player.name.clone();
+        let goes_on = playable_without_leavers(room);
+        self.memberships.remove(&conn);
+        info!(conn, room = %room_id, seat = player_id, goes_on, "left a running game");
+        if goes_on {
+            self.broadcast_room_update(&room_id, Some(&format!("{name} left the game")));
+        } else {
+            self.reset_to_waiting(&room_id);
+            self.broadcast_room_update(
+                &room_id,
+                Some(&format!("{name} left – the game was ended")),
+            );
+        }
+        self.broadcast_lobby();
+        true
     }
 
     /**
      * Takes a connection out of its room.
      * - The host leaving closes the room; everybody else, the stands included, is sent back to the lobby.
      * - A spectator leaving changes nothing about the game.
-     * - Anyone else leaving a running game aborts that game; the remaining players land in the
-     *   waiting room again (the room itself survives).
+     * - Anyone else whose seat is given up in a running game (a drop whose grace ran out) aborts
+     *   that game; the remaining players land in the waiting room again (the room itself survives).
+     *   Choosing to leave does not come here while others can play on: see `step_out_of_game`.
      */
     pub(super) fn remove_from_room(&mut self, conn: u64, reason: &str) {
         if self.remove_spectator(conn) {
