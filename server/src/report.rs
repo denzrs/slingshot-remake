@@ -12,7 +12,7 @@ use crate::wire::{CpuLevel, GameMode, RoomMode, Wire};
 /// A room never seats more than this many ships.
 pub const MAX_SEATS: usize = 6;
 /// The titles a round can end under, as the client names them.
-const TITLES: [&str; 9] = [
+const TITLES: [&str; 10] = [
     "hit",
     "selfHit",
     "swallowed",
@@ -22,6 +22,7 @@ const TITLES: [&str; 9] = [
     "cleared",
     "outOfShots",
     "skipped",
+    "forfeit",
 ];
 /// The records a round keeps, in the order the columns hold them.
 pub const RECORD_KEYS: [&str; 5] = [

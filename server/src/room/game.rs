@@ -164,9 +164,14 @@ impl RoomManager {
     }
 
     /// The checks every report from the host has to pass: it comes from the host of a running game
-    /// and has one entry per seat. Gives the room, and what the statistics need to know about it
-    /// (nothing, when they are off, or when somebody has just left a seat).
-    fn reporter(&mut self, conn: u64, seats: usize) -> Option<(String, Option<Reporting>)> {
+    /// and has one entry per seat. Gives the room, and what the statistics need to know about
+    /// `round` in it (nothing, when they are off, or when somebody has just left a seat).
+    fn reporter(
+        &mut self,
+        conn: u64,
+        seats: usize,
+        round: i64,
+    ) -> Option<(String, Option<Reporting>)> {
         let Some(membership) = self.memberships.get(&conn) else {
             self.error(conn, "You are not in a running game");
             return None;
@@ -195,10 +200,25 @@ impl RoomManager {
                 .map(|player| {
                     let occupant = match (player.cpu, player.conn) {
                         (Some(level), _) => Occupant::Cpu(level.as_str()),
+                        // Left in an earlier round: nobody played this one in the seat.
+                        (None, None) if player.left && round > player.left_after_round + 1 => {
+                            Occupant::Empty
+                        }
                         (None, Some(conn)) => Occupant::Person {
                             ip: self.net.peer_ip(conn)?,
                             name: player.name.clone(),
                         },
+                        // Whoever dropped out, or left during this round, is still the one who played the seat;
+                        // without an address to name them by, the seat is written as nobody's rather than the round lost.
+                        (None, None) if player.left || player.lost_at.is_some() => {
+                            match player.came_from {
+                                Some(ip) => Occupant::Person {
+                                    ip,
+                                    name: player.name.clone(),
+                                },
+                                None => Occupant::Empty,
+                            }
+                        }
                         (None, None) => return None,
                     };
                     Some(SeatFacts {
@@ -231,7 +251,8 @@ impl RoomManager {
         let Some(report) = self.accept(conn, report) else {
             return;
         };
-        let Some((room_id, reporting)) = self.reporter(conn, report.seats.len()) else {
+        let Some((room_id, reporting)) = self.reporter(conn, report.seats.len(), report.round)
+        else {
             return;
         };
         let room = self.rooms.get_mut(&room_id).unwrap();
@@ -254,7 +275,8 @@ impl RoomManager {
         let Some(report) = self.accept(conn, report) else {
             return;
         };
-        let Some((room_id, reporting)) = self.reporter(conn, report.seats.len()) else {
+        let Some((room_id, reporting)) = self.reporter(conn, report.seats.len(), report.round)
+        else {
             return;
         };
         let room = self.rooms.get_mut(&room_id).unwrap();

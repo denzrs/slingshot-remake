@@ -325,8 +325,14 @@ pub struct Overview {
 /// Who sat in a ship: a person at an address under a name, or a CPU of some level.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Occupant {
-    Person { ip: IpAddr, name: String },
+    Person {
+        ip: IpAddr,
+        name: String,
+    },
     Cpu(&'static str),
+    /// Nobody: the person left the game in an earlier round. The seat keeps its place in the
+    /// report (the game's player indexes are the seats), but has no row of its own.
+    Empty,
 }
 
 /// What the relay knows about the seat; the report holds the rest.
@@ -565,6 +571,7 @@ impl Store {
                     Sql::Null,
                 ),
                 Occupant::Cpu(level) => (Sql::Null, Sql::Text((*level).into())),
+                Occupant::Empty => (Sql::Null, Sql::Null),
             })
             .collect()
     }
@@ -602,6 +609,9 @@ impl Store {
             self.conn.execute(INSERT_PLACEMENT, row).await?;
         }
         for (seat, ship) in report.seats.iter().enumerate() {
+            if facts.seats[seat].occupant == Occupant::Empty {
+                continue;
+            }
             let (player, cpu) = who[seat].clone();
             let row = vec![
                 Sql::Text(facts.match_id.clone()),
@@ -643,7 +653,7 @@ impl Store {
             .map(|seat| {
                 let cpu = match &seat.occupant {
                     Occupant::Cpu(level) => Value::from(*level),
-                    Occupant::Person { .. } => Value::Null,
+                    Occupant::Person { .. } | Occupant::Empty => Value::Null,
                 };
                 serde_json::json!({ "cpu": cpu, "team": seat.team })
             })
@@ -706,11 +716,17 @@ impl Store {
         at: i64,
     ) -> turso::Result<()> {
         self.write_match(facts, at).await?;
-        let humans = facts
-            .seats
-            .iter()
-            .filter(|s| matches!(s.occupant, Occupant::Person { .. }))
-            .count();
+        let count = |cpu: bool| {
+            facts
+                .seats
+                .iter()
+                .filter(|s| match s.occupant {
+                    Occupant::Person { .. } => !cpu,
+                    Occupant::Cpu(_) => cpu,
+                    Occupant::Empty => false,
+                })
+                .count() as i64
+        };
         let mut round = vec![
             Sql::Text(facts.match_id.clone()),
             Sql::Integer(report.round),
@@ -718,8 +734,8 @@ impl Store {
             Sql::Text(facts.game_mode.into()),
             Sql::Text(facts.mode.into()),
             Sql::Text(facts.rules.to_string()),
-            Sql::Integer(humans as i64),
-            Sql::Integer((facts.seats.len() - humans) as i64),
+            Sql::Integer(count(false)),
+            Sql::Integer(count(true)),
             Sql::Integer(facts.spectators as i64),
             Sql::Text(report.title.into()),
             optional(report.survivor.map(|s| s as i64)),
@@ -742,6 +758,9 @@ impl Store {
 
         let who = self.who(facts);
         for (seat, (sitter, ship)) in facts.seats.iter().zip(&report.seats).enumerate() {
+            if sitter.occupant == Occupant::Empty {
+                continue;
+            }
             let (player, cpu) = who[seat].clone();
             let won = report.survivor == Some(seat)
                 || (report.team.is_some() && report.team == sitter.team);
@@ -785,19 +804,35 @@ impl Store {
             self.conn.execute(INSERT_TIP, row).await?;
         }
         // What the seats earned this round: the scores rose by that much, less what betting moved.
+        // Only the seats somebody still sits in count, before as now: a score left behind earns nothing.
+        let present = |seat: usize| {
+            facts
+                .seats
+                .get(seat)
+                .is_some_and(|s| s.occupant != Occupant::Empty)
+        };
         let mut rows = self
             .conn
             .query(
-                "SELECT COALESCE(SUM(score), 0) FROM stat_seats WHERE match_id = ?1 AND round = ?2",
+                "SELECT seat, score FROM stat_seats WHERE match_id = ?1 AND round = ?2",
                 (facts.match_id.clone(), report.round - 1),
             )
             .await?;
-        let before: i64 = match rows.next().await? {
-            Some(row) => row.get(0)?,
-            None => 0,
-        };
+        let mut before: i64 = 0;
+        while let Some(row) = rows.next().await? {
+            let (seat, score): (i64, i64) = (row.get(0)?, row.get(1)?);
+            if present(seat as usize) {
+                before += score;
+            }
+        }
         drop(rows);
-        let now: i64 = report.seats.iter().map(|ship| ship.score).sum();
+        let now: i64 = report
+            .seats
+            .iter()
+            .enumerate()
+            .filter(|(seat, _)| present(*seat))
+            .map(|(_, ship)| ship.score)
+            .sum();
         let betting: i64 = report
             .tips
             .iter()

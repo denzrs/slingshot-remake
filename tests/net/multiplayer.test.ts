@@ -680,6 +680,31 @@ describe('the oracle online', () => {
     }
   };
 
+  it('plays on without a guest who leaves, on every screen that is left', async () => {
+    const [host, ben, cleo] = await startTable(['Anna', 'Ben', 'Cleo']);
+    await tick([host, ben, cleo], 3);
+    ben.session.leaveRoom();
+    await waitForSession(host.session, () => !!host.session.room?.players[1]?.left);
+    await tick([host, cleo], 5);
+
+    expect(ben.session.room).toBeNull();
+    expect(ben.session.match).toBeNull();
+    for (const client of [host, cleo]) {
+      expect(client.session.room?.status).toBe('playing');
+      expect(client.session.match).toBe(client.match());
+      expect(client.match().players[1]).toMatchObject({ left: true, alive: false });
+      expect(client.match().world.ships[1].alive).toBe(false);
+      expect(client.session.chat.at(-1)?.text).toBe('Ben left the game');
+    }
+    expect(host.match().phase).toBe('aiming');
+
+    // Cleo going too leaves Anna alone: that game is over, and the room waits without the empty seats.
+    cleo.session.leaveRoom();
+    await waitForSession(host.session, () => host.session.room?.status === 'waiting');
+    expect(host.session.match).toBeNull();
+    expect(host.session.room!.players.map((p) => p.name)).toEqual(['Anna']);
+  });
+
   it('lets a shot-down guest tip, judges it on the host, and shows everybody the verdict', async () => {
     const [host, ghost, shooter] = await startTable(['Anna', 'Ben', 'Cleo']);
     const hm = host.match();
@@ -1539,10 +1564,15 @@ describe('statistics and replays', () => {
     const held = waitForSession(host.session, () => host.session.room?.players[1].connected === false);
     guestTransport.rawSocket!.terminate();
     await held;
-    // The room and the game are still there, only the seat is marked.
+    // The room and the game are still there, only the seat is marked: the game goes on without it.
     expect(host.session.room?.status).toBe('playing');
     expect(guest.session.match).not.toBeNull();
+    expect(host.match().players[1]).toMatchObject({ away: true, alive: true });
+    // The seat stays targetable until the volley has resolved and the next aiming phase begins.
+    expect(host.match().world.ships[1].alive).toBe(true);
     await waitForSession(host.session, () => host.session.room?.players[1].connected === true);
+    expect(host.match().players[1].away).toBe(false);
+    expect(host.match().world.ships[1].alive).toBe(true);
     await waitForSession(guest.session, () => !guest.session.reconnecting && guest.session.connected);
     expect(guest.session.room?.status).toBe('playing');
     expect(guest.session.you.playerId).toBe(1);

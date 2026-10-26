@@ -30,6 +30,10 @@ impl RoomManager {
             cpu: None,
             token: URL_SAFE_NO_PAD.encode(rand::thread_rng().gen::<[u8; 16]>()),
             lost_at: None,
+            seat_grace: None,
+            left: false,
+            left_after_round: 0,
+            came_from: None,
         });
         self.memberships.insert(
             conn,
@@ -45,6 +49,11 @@ impl RoomManager {
         if let Some(pos) = room.players.iter().position(|p| p.id == player_id) {
             room.players.remove(pos);
         }
+        self.renumber(room_id);
+    }
+
+    fn renumber(&mut self, room_id: &str) {
+        let room = self.rooms.get_mut(room_id).unwrap();
         // Room IDs must stay contiguous because they become game player indexes.
         // Everybody stays in the team they picked.
         for (id, remaining) in room.players.iter_mut().enumerate() {
@@ -68,6 +77,15 @@ impl RoomManager {
         let Some(room) = self.rooms.get_mut(room_id) else {
             return;
         };
+        // The seats of those who left the game were kept for its player indexes only, and those held
+        // for a dropped guest for a game to come back to: without one, they would only keep the
+        // room from starting the next. Whoever comes back finds the room open to join again.
+        let gone = |p: &Player| p.left || (p.lost_at.is_some() && p.id != 0);
+        if room.players.iter().any(gone) {
+            room.players.retain(|p| !gone(p));
+            self.renumber(room_id);
+        }
+        let room = self.rooms.get_mut(room_id).unwrap();
         room.status = RoomStatus::Waiting;
         for player in room.players.iter_mut() {
             player.ready = false;
@@ -94,7 +112,7 @@ impl RoomManager {
             "players": room
                 .players
                 .iter()
-                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "ready": p.confirmed(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str), "connected": p.lost_at.is_none() }))
+                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "ready": p.confirmed(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str), "connected": p.lost_at.is_none(), "left": p.left }))
                 .collect::<Vec<_>>(),
             "spectators": room
                 .spectators

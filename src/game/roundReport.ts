@@ -70,9 +70,12 @@ export interface TurnReport {
   placements: ReplayPlacement[];
 }
 
+/** A ship whose person is away (`away`) is off the field: it is not reported as still in. */
+const stillIn = (p: { alive: boolean; away?: boolean }): boolean => p.alive && !p.away;
+
 export interface TurnSource {
   round: number;
-  players: readonly { score: number; alive: boolean }[];
+  players: readonly { score: number; alive: boolean; away?: boolean }[];
   shotLog: { turn: number; ofTurn(): ShotRecord[]; placementsOfTurn(): ReplayPlacement[] };
 }
 
@@ -80,7 +83,7 @@ export function turnReport(match: TurnSource): TurnReport {
   return {
     round: match.round,
     turn: match.shotLog.turn,
-    players: match.players.map((p) => ({ score: Math.round(p.score), alive: p.alive })),
+    players: match.players.map((p) => ({ score: Math.round(p.score), alive: stillIn(p) })),
     // The aim goes as it was aimed, to the last decimal: a replay has to fly the same flight.
     shots: match.shotLog.ofTurn().map((s) => ({ ...s, points: Math.round(s.points) })),
     placements: match.shotLog.placementsOfTurn(),
@@ -93,7 +96,7 @@ export interface ReportSource {
   roundSeconds: number;
   roundStats: StatBook;
   summary: { title: RoundTitle; survivor: number | null; team: number | null } | null;
-  players: readonly { score: number; shots: number; alive: boolean }[];
+  players: readonly { score: number; shots: number; alive: boolean; away?: boolean }[];
   world: { planets: readonly unknown[] };
   shotLog: { turn: number };
   /** The shot-down players' tipping game and the stands'. */
@@ -135,7 +138,7 @@ export function roundReport(match: ReportSource): RoundReport {
       missiles: book.missiles?.[i] ?? 0,
       intercepts: book.intercepts?.[i] ?? 0,
       strayKills: book.strayKills?.[i] ?? 0,
-      alive: p.alive,
+      alive: stillIn(p),
     })),
     ...(tips.length ? { tips } : {}),
     records,

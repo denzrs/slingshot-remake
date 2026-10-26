@@ -199,6 +199,8 @@ interface RoomPlayer {
   ready: boolean;
   /** False while a running game holds the seat for a connection that dropped. Absent counts as connected. */
   connected?: boolean;
+  /** The person left the running game: the seat stays empty until the room waits again. */
+  left?: boolean;
   team: 0 | 1;
   /** The level of a CPU seat; null for a person. */
   cpu: NetworkCpuLevel | null;

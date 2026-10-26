@@ -419,7 +419,8 @@ export class Hud {
 
       // Everybody still aiming counts as active when all aim at once.
       const active = planning && (match.simultaneous ? match.canAim(p.id) : match.current === p.id);
-      ctx.globalAlpha = p.alive ? 1 : 0.38;
+      // Shot down, or dropped out for now: the card steps back.
+      ctx.globalAlpha = p.alive && !p.away ? 1 : 0.38;
       ctx.fillStyle = rgba(COLORS.plate, 0.62);
       ctx.fillRect(x, y, w, h);
       ctx.fillStyle = p.color;
@@ -429,7 +430,7 @@ export class Hud {
       // An online player's symbol leads the card, in the player's colour; the name and score sit beside it.
       const textX = p.avatar ? x + 26 * k : x + 10 * k;
       if (p.avatar) drawAvatar(ctx, p.avatar, x + 17 * k, y + h / 2, 16 * k, p.color);
-      const status = !p.alive ? ['✕', COLORS.boneDim] : active ? [t('hud.aiming'), p.color] : planning && p.locked ? [t('hud.ready'), COLORS.boneDim] : null;
+      const status = p.left ? [t('hud.left'), COLORS.boneDim] : p.away ? [t('hud.away'), COLORS.boneDim] : !p.alive ? ['✕', COLORS.boneDim] : active ? [t('hud.aiming'), p.color] : planning && p.locked ? [t('hud.ready'), COLORS.boneDim] : null;
       const name = p.name.toUpperCase();
       const room = w - (textX - x) - 4 * k;
       ctx.textAlign = 'left';

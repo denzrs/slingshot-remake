@@ -157,7 +157,7 @@ export class HorizonMatch extends Match {
     if (this.replaying) return false;
     if (!this.simultaneous) return super.canAim(id);
     const p = this.players[id];
-    return this.phase === 'aiming' && !this.revealing && !!p && p.alive && !p.cpu && !p.locked;
+    return this.phase === 'aiming' && !this.revealing && !!p && p.alive && !p.away && !p.cpu && !p.locked;
   }
 
   adjustPlayer(id: number, dAngle: number, dPower: number): void {
@@ -274,6 +274,14 @@ export class HorizonMatch extends Match {
     if (this.current >= 0) this.emit({ type: 'turn', player: this.current });
   }
 
+  protected volleyQueue(): number[] | null {
+    return this.simultaneous ? null : this.queue;
+  }
+
+  protected nextInQueue(): void {
+    this.nextHuman();
+  }
+
   commit(): void {
     if (this.skipReveal()) return;
     // The fire key during a flight: an armed splitter forks the shot.
@@ -349,7 +357,8 @@ export class HorizonMatch extends Match {
       this.clock_ -= dt;
       if (this.clock_ <= 0) this.commit();
     }
-    if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6 && this.betWindowDone) this.launchVolley();
+    // With every ship still in off the field (their people away), the volley waits for them rather than flying empty.
+    if (this.alive.length && this.alive.every((p) => p.locked) && this.phaseTime > 0.6 && this.betWindowDone) this.launchVolley();
   }
 
   protected playTurn(turn: ReplayTurn): void {
@@ -479,7 +488,8 @@ export class HorizonMatch extends Match {
       this.emit({ type: 'devour', x: hole.x, y: hole.y, toX: hole.x, toY: hole.y, color: this.players[id].color, vx: 0, vy: 0 });
       this.recordKill({ killer: null, victim: id, points: 0, self: false, friendly: false, combo: [], multiplier: 1, shots: 0, power: 0, at: this.clock });
     }
-    for (const p of this.alive) p.score += SCORING.VOLLEY_SURVIVED * this.payFactor;
+    // Waiting for an opponent whose connection dropped is no volley survived.
+    if (!this.waitingForAway) for (const p of this.alive) p.score += SCORING.VOLLEY_SURVIVED * this.payFactor;
 
     if (this.decided) this.endRound();
     else this.startPlanning();

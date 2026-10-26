@@ -33,6 +33,17 @@ pub(super) struct Player {
     pub(super) token: String,
     /// Set while a running game holds the seat for a connection that dropped.
     pub(super) lost_at: Option<std::time::Instant>,
+    /// Grace period chosen when the connection drops, so later drops cannot change this seat's deadline.
+    pub(super) seat_grace: Option<std::time::Duration>,
+    /// Set when the person chose to leave the running game: the seat stays (the game's player
+    /// indexes are the seats) with nobody in it, and goes when the room waits again.
+    pub(super) left: bool,
+    /// The last round the host had reported when the person left: the round after it they still
+    /// played some of, the ones after that nobody played in this seat.
+    pub(super) left_after_round: i64,
+    /// Where the seat's person last came from, so the game's statistics can still name the seat
+    /// while no connection is on it (held for a drop, or left).
+    pub(super) came_from: Option<std::net::IpAddr>,
 }
 
 impl Player {
@@ -46,8 +57,34 @@ impl Player {
     }
 }
 
-/// How long a running game holds the seat of a dropped connection before giving it up.
-pub(super) const SEAT_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+/// How long a running game holds the seat of a dropped connection; the game goes on without it
+/// meanwhile, and after it the seat counts as left.
+pub(super) const SEAT_GRACE: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// How long a running game holds the host's seat. The host's game is the game: everybody else
+/// waits on a frozen field meanwhile, so this is much shorter.
+pub(super) const HOST_SEAT_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// How long a running game holds a guest's seat when at most one other person is still at the
+/// table: they are left shooting alone meanwhile, so this is shorter.
+pub(super) const DUEL_SEAT_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How long a running game holds this seat for a dropped connection.
+pub(super) fn seat_grace(room: &Room, player_id: usize) -> std::time::Duration {
+    if player_id == 0 {
+        return HOST_SEAT_GRACE;
+    }
+    let present = room
+        .players
+        .iter()
+        .filter(|p| p.id != player_id && p.conn.is_some() && !p.left)
+        .count();
+    if present <= 1 {
+        DUEL_SEAT_GRACE
+    } else {
+        SEAT_GRACE
+    }
+}
 
 /// The most people who may watch one room.
 pub(super) const MAX_SPECTATORS: usize = 20;
@@ -132,11 +169,11 @@ pub(super) fn smallest_team(room: &Room) -> u8 {
     }
 }
 
-/// A team game needs somebody in each team.
+/// A team game needs somebody in each team (a seat whose person left the game counts for none).
 pub(super) fn teams_playable(room: &Room) -> bool {
     room.mode != RoomMode::Team || {
         let mut present = [false; 2];
-        for p in &room.players {
+        for p in room.players.iter().filter(|p| !p.left) {
             present[p.team as usize] = true;
         }
         present[0] && present[1]
@@ -145,7 +182,16 @@ pub(super) fn teams_playable(room: &Room) -> bool {
 
 /// The seats with a person in them. A game needs two of them; CPUs alone are played offline.
 pub(super) fn humans(room: &Room) -> usize {
-    room.players.iter().filter(|p| !p.is_cpu()).count()
+    room.players
+        .iter()
+        .filter(|p| !p.is_cpu() && !p.left)
+        .count()
+}
+
+/// Whether a running game can go on without the seats whose people left: two people still in it,
+/// and in teams somebody on each side.
+pub(super) fn playable_without_leavers(room: &Room) -> bool {
+    humans(room) >= 2 && teams_playable(room)
 }
 
 /// A human may join when a seat is free, or when a CPU seat can give way to them.

@@ -67,9 +67,14 @@ export function isSecureRelay(address: string): boolean {
 /** What the session needs from a connection — the WebSocket client, or a stand-in in tests. */
 export type Transport = Pick<NetworkClient, 'address' | 'setAddress' | 'connect' | 'onMessage' | 'send' | 'close'> & Partial<Pick<NetworkClient, 'drop'>>;
 
-/** How long a dropped connection keeps trying to take its seat back; the relay holds the seat for the same time (plus a sweep). */
-const RESUME_WINDOW_MS = 30_000;
-const RESUME_RETRY_MS = [250, 500, 1000, 2000, 3000];
+/**
+ * How long a dropped connection keeps trying to take its seat back: the most the relay holds a guest's seat (`SEAT_GRACE`), or
+ * the host's (`HOST_SEAT_GRACE`), plus a sweep. The relay may give a seat up sooner; the first resume that gets through hears so.
+ */
+const RESUME_WINDOW_MS = 5 * 60_000 + 5_000;
+const HOST_RESUME_WINDOW_MS = 30_000 + 5_000;
+/** Pauses between tries: quick at first, then sparing, so a relay that is down for minutes is not hammered meanwhile. */
+const RESUME_RETRY_MS = [250, 500, 1000, 2000, 3000, 5000, 10_000];
 /** A guest that hears nothing from the host for this long treats its connection as dead and connects again. */
 const SILENCE_LIMIT = 6;
 /** How often a host that draws no frames (hidden tab) still sends its state. */
@@ -417,8 +422,16 @@ export class MultiplayerSession {
         if (this.match && message.notice) this.say(message.notice);
         // The room went back to waiting under a running game (somebody left): the game is over.
         if (this.match && message.room.status === 'waiting') this.endMatch();
-        // The host keeps the stands' accounts: people come and go, the points stay.
-        else if (this.match && this.isHost) this.match.crowdChanged(message.room.spectators ?? []);
+        else if (this.match && this.isHost) {
+          // The others play on without whoever left (the ship goes) or dropped out (the ship stays, the turns pass it by);
+          // the host's game says so on every screen.
+          for (const p of message.room.players) {
+            if (p.left) this.match.removePlayer(p.id);
+            else this.match.setAway(p.id, p.connected === false);
+          }
+          // The host keeps the stands' accounts: people come and go, the points stay.
+          this.match.crowdChanged(message.room.spectators ?? []);
+        }
         break;
       case 'game_start':
         this.startMatch(message);
@@ -576,7 +589,8 @@ export class MultiplayerSession {
     if (this.reconnectLoop) return;
     this.reconnectLoop = true;
     try {
-      for (let attempt = 0; this.reconnecting && Date.now() - this.lostAt < RESUME_WINDOW_MS; attempt++) {
+      const resumeWindowMs = this.isHost ? HOST_RESUME_WINDOW_MS : RESUME_WINDOW_MS;
+      for (let attempt = 0; this.reconnecting && Date.now() - this.lostAt < resumeWindowMs; attempt++) {
         try {
           await this.client.connect();
         } catch {

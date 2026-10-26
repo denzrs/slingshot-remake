@@ -164,7 +164,7 @@ export class ClassicMatch extends Match {
     if (this.replaying) return false;
     if (!(this.salvo && this.simultaneous)) return super.canAim(id);
     const p = this.players[id];
-    return this.phase === 'aiming' && !!p && p.alive && !p.cpu && !p.locked;
+    return this.phase === 'aiming' && !!p && p.alive && !p.away && !p.cpu && !p.locked;
   }
 
   get shotClock(): number | null {
@@ -332,7 +332,8 @@ export class ClassicMatch extends Match {
       this.planClock -= dt;
       if (this.planClock <= 0) this.commit();
     }
-    if (this.alive.every((p) => p.locked) && this.phaseTime > 0.6 && this.betWindowDone) this.launchVolley();
+    // With every ship still in off the field (their people away), the volley waits for them rather than flying empty.
+    if (this.alive.length && this.alive.every((p) => p.locked) && this.phaseTime > 0.6 && this.betWindowDone) this.launchVolley();
   }
 
   protected playTurn(turn: ReplayTurn): void {
@@ -407,12 +408,38 @@ export class ClassicMatch extends Match {
     else this.giveTurn(this.current + 1);
   }
 
-  /** Free for all: hand the turn to the next living player starting at `from`. */
+  protected passTurnOf(id: number): void {
+    // A salvo waits for the ships still in; the one that left (or is away) is not among them.
+    if (this.salvo) super.passTurnOf(id);
+    else if (this.current === id) this.afterVolley();
+  }
+
+  protected giveTurnBackTo(id: number): void {
+    if (this.salvo) super.giveTurnBackTo(id);
+    // The turn was waiting with somebody else who dropped out (nobody on the field could take it): whoever is back takes it.
+    else if (this.players[this.current]?.away) this.takeTurn(id);
+  }
+
+  protected volleyQueue(): number[] | null {
+    return this.salvo && !this.simultaneous ? this.queue : null;
+  }
+
+  protected nextInQueue(): void {
+    this.nextHuman();
+  }
+
+  /**
+   * Free for all: hand the turn to the next living player starting at `from`, passing over those who
+   * dropped out. When nobody else is there to shoot, the turn waits with one of them.
+   */
   private giveTurn(from: number): void {
     const n = this.players.length;
-    for (let i = 0; i < n; i++) {
-      const id = (from + i) % n;
-      if (this.players[id].alive) return this.setTurn(id);
+    for (const passOver of [true, false]) {
+      for (let i = 0; i < n; i++) {
+        const id = (from + i) % n;
+        const p = this.players[id];
+        if (p.alive && !(passOver && p.away)) return this.setTurn(id);
+      }
     }
   }
 
@@ -421,17 +448,28 @@ export class ClassicMatch extends Match {
    * team the living members rotate.
    */
   private giveTeamTurn(): void {
-    for (let k = 0; k < this.teamMode; k++) {
-      const team = (this.teamCursor + k) % this.teamMode;
-      const members = this.players.filter((p) => p.team === team);
-      for (let i = 1; i <= members.length; i++) {
-        const idx = (this.memberCursor[team] + i) % members.length;
-        if (!members[idx].alive) continue;
-        this.memberCursor[team] = idx;
-        this.teamCursor = (team + 1) % this.teamMode;
-        return this.setTurn(members[idx].id);
+    // As in a free for all: those who dropped out are passed over while anybody else can shoot.
+    for (const passOver of [true, false]) {
+      for (let k = 0; k < this.teamMode; k++) {
+        const team = (this.teamCursor + k) % this.teamMode;
+        const members = this.players.filter((p) => p.team === team);
+        for (let i = 1; i <= members.length; i++) {
+          const idx = (this.memberCursor[team] + i) % members.length;
+          if (!members[idx].alive || (passOver && members[idx].away)) continue;
+          return this.takeTurn(members[idx].id);
+        }
       }
     }
+  }
+
+  /** This ship takes the turn; in team mode its team and its place in the team are where the rotation goes on from. */
+  private takeTurn(id: number): void {
+    const team = this.players[id].team;
+    if (this.teamMode && team !== null) {
+      this.memberCursor[team] = this.players.filter((p) => p.team === team).findIndex((p) => p.id === id);
+      this.teamCursor = (team + 1) % this.teamMode;
+    }
+    this.setTurn(id);
   }
 
   private setTurn(id: number): void {

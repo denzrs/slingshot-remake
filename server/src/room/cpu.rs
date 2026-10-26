@@ -59,6 +59,10 @@ impl RoomManager {
             cpu: Some(level),
             token: String::new(),
             lost_at: None,
+            seat_grace: None,
+            left: false,
+            left_after_round: 0,
+            came_from: None,
         });
         unready_humans(room);
         self.broadcast_room_update(&room_id, None);

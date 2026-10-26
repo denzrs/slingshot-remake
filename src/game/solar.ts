@@ -106,7 +106,8 @@ export class SolarMatch extends ClassicMatch {
         d.y += p.y - oy;
       }
     }
-    for (const p of this.alive) move(world.ships[p.id], true);
+    // A ship whose person is away still rides along, so it is back where its orbit has taken it.
+    for (const p of this.players) if (p.alive) move(world.ships[p.id], true);
     for (const pickup of this.pickups) move(pickup, true);
     // What the power-ups planted rides along too; each wormhole mouth on its own orbit. The storm's clouds stay where they broke out.
     for (const hole of world.holes) move(hole, true);
