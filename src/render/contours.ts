@@ -1,5 +1,5 @@
-import { COLORS, PHYSICS } from '../config';
-import type { World } from '../physics';
+import { COLORS, PHYSICS } from '../sim/config';
+import type { World } from '../sim/physics';
 import { rgba } from './color';
 
 const GRID = 6;

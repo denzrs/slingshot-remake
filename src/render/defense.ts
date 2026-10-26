@@ -1,5 +1,5 @@
-import { COLORS, DEFENSE, FONTS } from '../config';
-import type { Defense, Missile, Planet } from '../physics';
+import { COLORS, DEFENSE, FONTS } from '../sim/config';
+import type { Defense, Missile, Planet } from '../sim/physics';
 import { rgba } from './color';
 import { fillTextUpright } from './orientation';
 

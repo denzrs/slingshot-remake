@@ -1,16 +1,17 @@
-import type { ShotRules, StyleKind, World } from '../physics';
-import { scoreChallengeHit } from '../scoring';
-import { AIM, COLORS, HORIZON, SCORING } from '../config';
-import { t } from '../i18n';
-import { Volley, type VolleyShot } from '../volley';
+import type { ShotRules, StyleKind, World } from '../sim/physics';
+import { scoreChallengeHit } from '../sim/scoring';
+import { AIM, COLORS, HORIZON, SCORING } from '../sim/config';
+import { t } from '../platform/i18n';
+import { Volley, type VolleyShot } from '../sim/volley';
 import { Match, type RoundTitle, type SkipVote } from './match';
-import type { Pickup } from '../powerups';
+import type { Pickup } from '../sim/powerups';
 import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
 import type { CrowdSeat } from './crowd';
 import type { OracleSnapshot } from './oracle';
+import type { KillcamSnapshot } from './killcam';
 
-export interface ClassicSnapshot {
+export interface ClassicSnapshot extends Partial<KillcamSnapshot> {
   phase: Match['phase'];
   phaseTime: number;
   clock: number;
@@ -55,7 +56,7 @@ export interface ClassicSnapshot {
  * A hit ship is out; the round ends when one ship — or one team — is left.
  */
 export class ClassicMatch extends Match {
-  readonly mode = 'classic';
+  readonly mode: 'classic' | 'solar' = 'classic';
 
   snapshot(): ClassicSnapshot {
     return {
@@ -91,6 +92,7 @@ export class ClassicMatch extends Match {
       skipVote: this.skipVote,
       planClock: this.planClock,
       flightDoneAt: this.flightDoneAt,
+      ...this.killcam.snapshot(),
       oracle: this.oracle.snapshot(),
       stands: this.stands.snapshot(),
       crowd: this.crowd.snapshot(),
@@ -139,6 +141,7 @@ export class ClassicMatch extends Match {
       volley.restore(snapshot.volley);
       this.volley = volley;
     }
+    this.killcam.restore(snapshot, this.rules);
     this.restarted();
     this.flightDoneAt = snapshot.flightDoneAt ?? null;
   }
@@ -297,7 +300,7 @@ export class ClassicMatch extends Match {
         const job = this.cpuJob(p.id);
         if (this.cpuRescueIfBlind(p, job)) continue;
         const place = this.cpuPlacementAim(p);
-        if (place && this.phaseTime >= 0.5) {
+        if (place && !job?.placeFailed && this.phaseTime >= 0.5) {
           // It lays the placement once its aim is on the spot; the placement spends its shot, so it fires nothing.
           if (!this.swingTowards(p, place, dt, 2)) continue;
           if (this.placeForCpu(p.id)) {
@@ -307,6 +310,7 @@ export class ClassicMatch extends Match {
             continue;
           }
           // Nowhere to lay it this volley: it keeps the power-up and aims a shot instead.
+          if (job) job.placeFailed = true;
         }
         if (!job?.target || this.phaseTime < 0.5) continue;
         if (this.swingTowards(p, job.target, dt, 2)) {
@@ -379,7 +383,7 @@ export class ClassicMatch extends Match {
     const job = this.cpuJob(p.id);
     if (this.cpuRescueIfBlind(p, job)) return;
     const place = this.cpuPlacementAim(p);
-    if (place && this.phaseTime >= 0.7) {
+    if (place && !job?.placeFailed && this.phaseTime >= 0.7) {
       // It lays the placement once its aim is on the spot; the placement spends its shot, so the turn moves on.
       if (!this.swingTowards(p, place, dt)) return;
       if (this.placeForCpu(p.id)) {
@@ -387,6 +391,7 @@ export class ClassicMatch extends Match {
         return;
       }
       // Nowhere to lay it this turn: it keeps the power-up and shoots instead.
+      if (job) job.placeFailed = true;
     }
     if (!job?.target || this.phaseTime < 0.7) return;
     if (this.swingTowards(p, job.target, dt)) {

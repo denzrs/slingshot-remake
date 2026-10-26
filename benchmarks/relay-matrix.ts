@@ -2,12 +2,12 @@
 // Usage: npx tsx benchmarks/relay-matrix.ts ws://localhost:8080 json|msgpack|envelope
 
 import WebSocket from 'ws';
-import { packMessage, packWireMessage, unpackMessage, unpackWireMessage } from '../src/messagepack';
+import { packMessage, packWireMessage, unpackMessage, unpackWireMessage } from '../src/net/messagepack';
 import { createMatch, type GameEvent } from '../src/game';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
-import { SnapshotDecoder, SnapshotEncoder } from '../src/netsync';
-import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
+import { SnapshotDecoder, SnapshotEncoder } from '../src/net/netsync';
+import { DEFAULT_SETTINGS, type Seat } from '../src/data/settings';
 
 type Format = 'json' | 'msgpack' | 'envelope';
 const URL = process.argv[2] ?? 'ws://localhost:8080';

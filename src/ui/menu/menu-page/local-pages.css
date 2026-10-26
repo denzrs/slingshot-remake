@@ -1,0 +1,167 @@
+/* Local crew shares the waiting room's fixed slot grid. */
+.menu-page--crew .menu-page__head { margin-bottom: clamp(16px, 2.5vh, 28px); }
+.crew-config { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 20px; }
+.crew-config > .menu-group { flex: 0 1 540px; }
+.crew-config > .menu-group .setup__title { margin-bottom: 8px; color: var(--bone-dim); font: 10px/1.5 var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
+.crew-config .item--segmented { padding: 0; }
+.crew-config .segmented { min-height: 42px; }
+.crew-config .segmented__option { font-size: 12px; }
+.crew-roster__aside { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 16px; min-height: 38px; }
+.crew-actions { gap: 0; margin: 0; }
+.crew-actions .item { min-height: 38px; padding: 8px 12px; border-color: var(--menu-line); color: var(--p2); font-size: 11px; }
+.crew-roster { min-width: 0; }
+.crew-roster__heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 20px; margin-bottom: 12px; }
+.crew-roster__heading .setup__title { margin: 0; color: var(--bone); font: 800 26px/1.2 var(--font-display); letter-spacing: .02em; text-transform: uppercase; }
+.crew-roster__status { margin: 0; color: var(--bone-dim); font-size: 11px; line-height: 1.6; }
+.pilot-art { display: block; width: 100%; height: 100%; }
+.pilot__name { color: var(--slot-tone); font: 800 23px/1 var(--font-display); text-transform: uppercase; }
+.pilot__assignment { display: grid; gap: 6px; }
+.pilot__section-label { display: none; }
+.pilot__types { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.pilot__type { min-height: 36px; padding: 6px 8px; border: 1px solid var(--menu-line); border-radius: 3px; background: rgb(5 15 29 / .7); color: var(--bone-dim); cursor: pointer; font: 700 12px/1.3 var(--font-body); }
+.pilot__type:hover { border-color: var(--slot-tone); }
+.pilot__type[aria-pressed='true'] { color: var(--slot-tone); border-color: var(--slot-tone); background: color-mix(in srgb, var(--slot-tone) 10%, transparent); }
+.pilot__body { position: relative; display: grid; flex: 1 0 118px; min-height: 118px; }
+.pilot__body > .slot-card__portrait { flex: none; min-height: 0; padding-bottom: 0; transition: padding-bottom .18s ease; }
+.pilot.is-cpu .pilot__body > .slot-card__portrait { padding-bottom: 52px; }
+.pilot__options { position: absolute; inset: auto 0 0; transition: opacity .18s ease; }
+@media (max-height: 960px) {
+  .pilot__body { flex-basis: 96px; min-height: 96px; }
+  .pilot.is-cpu .pilot__body > .slot-card__portrait { padding-bottom: 44px; }
+}
+.pilot:not(.is-cpu) .pilot__options { visibility: hidden; opacity: 0; }
+.pilot__remove { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 28px; min-height: 28px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--bone-dim); font: 18px/1 var(--font-body); cursor: pointer; }
+.pilot__remove:hover:not(:disabled) { border-color: var(--menu-line); color: var(--bone); }
+.pilot__remove:disabled { opacity: .25; cursor: not-allowed; }
+.pilot .slot-card__head { padding-right: 25px; }
+
+/* Five connected sectors form the Daily's route. Only the chosen sector shows its detail. */
+.menu-page--mission { max-width: none; }
+.mission-route { position: relative; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; margin: 24px 0 20px; }
+.mission-route::before { content: ''; position: absolute; left: 0; right: 0; top: 20px; height: 1px; background: var(--menu-line); }
+.mission-route .item { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 9px; padding: 16px; border: 1px solid var(--menu-line); border-radius: 4px; background: #0c1c31; text-align: left; }
+.mission-route .item > span:not([class]) { color: var(--bone); font: 800 26px/1.2 var(--font-display); text-transform: uppercase; }
+.mission-route .mission-difficulty--1 { --difficulty-color: #83cfa5; }
+.mission-route .mission-difficulty--2 { --difficulty-color: #bdcf80; }
+.mission-route .mission-difficulty--3 { --difficulty-color: #efcd75; }
+.mission-route .mission-difficulty--4 { --difficulty-color: #f3a15f; }
+.mission-route .mission-difficulty--5 { --difficulty-color: #ee7a78; }
+.mission-route .item .item__tag { color: var(--difficulty-color, var(--bone-dim)); font: 10px/1.5 var(--font-mono); letter-spacing: 3px; }
+.mission-route .item .item__hint { color: var(--bone-dim); font: 400 10px/1.7 var(--font-body); }
+.mission-route .item.is-selected { border-color: var(--launch-accent); background: #1d2532; }
+.mission-route .item.is-selected > span:not([class]) { color: var(--launch-accent); }
+.mission-detail { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--menu-line); }
+.mission-detail > div { display: grid; gap: 8px; font-size: 12px; }
+.mission-detail > div > span { color: var(--bone-dim); font-size: 11px; }
+.mission-bottom { display: flex; justify-content: space-between; gap: 30px; align-items: flex-start; margin-top: 24px; }
+.mission-stats { display: flex; flex-wrap: wrap; gap: 30px; margin: 0; }
+.mission-stats dt { color: var(--bone-dim); font: 400 10px/1.6 var(--font-body); }
+.mission-stats dd { margin: 6px 0 0; color: var(--bone); font: 400 22px/1.5 var(--font-mono); }
+.menu-page--mission .daily-reset { font: 400 10px/1.7 var(--font-mono); color: var(--bone-dim); margin: 20px 0 0; }
+.mission-scorecards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; list-style: none; padding: 0; margin: 24px 0; }
+.mission-scorecards li { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; padding: 20px 16px; border: 1px solid var(--menu-line); border-top: 2px solid var(--p2); border-radius: 4px; background: rgb(14 32 55 / .6); }
+.mission-scorecards li.is-failed { border-top-color: var(--p1); }
+.mission-scorecards .sectors__n { font: 800 27px/1 var(--font-display); text-transform: uppercase; }
+.mission-scorecards .sectors__points { font: 400 18px/1.5 var(--font-mono); }
+.menu-page--mission-result .daily__rank { margin-bottom: 0; }
+.menu-page--mission-result .daily__meta { margin-top: 20px; }
+
+/* Settings and rules: every group on one page. The columns sit side by side while the page is wide enough for two. */
+.sheet { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 22px clamp(28px, 4vw, 56px); align-items: start; }
+.sheet__col { display: flex; flex-direction: column; gap: 22px; min-width: 0; container-type: inline-size; }
+.sheet .menu-group, .sheet .setup__group { margin: 0; }
+.sheet .setup__title { margin: 0 0 4px; }
+.sheet .setup__rows { gap: 0; }
+.sheet .setup__rows > .item { min-height: 40px; padding: 8px 8px; border-bottom: 1px solid rgb(91 125 179 / .18); border-radius: 0; }
+.sheet .setup__rows > .item--segmented { padding-block: 8px; gap: 6px; }
+.sheet .setup__rows > .item--slider { padding-block: 8px 3px; }
+.sheet .segmented__option { min-height: 32px; }
+.sheet .setup__rows > .item.is-readonly { padding-block: 7px; }
+/* The rules page is the tallest sheet, so its groups sit a little closer. A taller window gives its rows, groups and heading more air. */
+.menu-page--rules { --rules-row-pad: clamp(3px, calc(1.7vh - 11.5px), 4px); }
+.menu-page--rules .sheet__col { gap: clamp(10px, calc(3vh - 17px), 14px); }
+/* The heading closes nothing: the last row of a group has no line under it. */
+.menu-page--rules .sheet .setup__rows > .item:not(:has(~ .item:not([hidden]:not(.is-reserved)))) { border-bottom: 0; }
+.menu-page--rules .menu-page__head { margin-bottom: clamp(10px, calc(2.2vh - 4px), 14px); }
+.menu-page--rules .sheet .setup__title { margin-bottom: 2px; }
+.menu-page--rules .sheet .segmented__option { min-height: 28px; }
+/* In a narrow column the choices keep the name above the bar, and the power-up tiles take less room. */
+.menu-page--rules .sheet .item--segmented { gap: 4px; padding-block: var(--rules-row-pad); }
+.menu-page--rules .sheet .item--tiles { gap: 4px; padding-block: var(--rules-row-pad); }
+.menu-page--rules .sheet .item--tiles .tile { padding: 4px 4px 3px; gap: 1px; }
+.menu-page--rules .sheet .item--tiles .tile__icon { width: 22px; height: 22px; }
+.menu-page--rules .sheet .item--tiles .tile__name { min-height: 2.3em; }
+/* Rules page: a slider sits level with its label where the column is wide enough: the name, a shorter track, the value. */
+@container (min-width: 420px) {
+  .menu-page--rules .sheet .item--slider { grid-template-columns: minmax(0, 12.5em) minmax(110px, 1fr) 4.4em; column-gap: 14px; padding-block: var(--rules-row-pad); }
+  .menu-page--rules .sheet .item--slider > .item__label { grid-column: 1; grid-row: 1; }
+  .menu-page--rules .sheet .item--slider > .slider__track { grid-column: 2; grid-row: 1; }
+  .menu-page--rules .sheet .item--slider > .slider__value { grid-column: 3; grid-row: 1; }
+}
+@container (min-width: 560px) {
+  /* A choice of options sits in the same place as a track: the name at the left, the bar from the track's edge to the right. */
+  .menu-page--rules .sheet .item--segmented { grid-template-columns: minmax(0, 12.5em) minmax(110px, 1fr) 4.4em; column-gap: 14px; align-items: center; padding-block: var(--rules-row-pad); }
+  .menu-page--rules .sheet .item--segmented > .item__label { grid-column: 1; grid-row: 1; }
+  .menu-page--rules .sheet .item--segmented > .segmented { grid-column: 2 / -1; grid-row: 1; }
+  .menu-page--rules .sheet .item--segmented .segmented__option { padding-inline: 4px; font-size: 12px; white-space: nowrap; }
+}
+/* A switch is an off / on bar here, like the other choices: the name at the left, the bar in the track's place. */
+.item--toggle > .toggle-bar { display: none; }
+.menu-page--rules .sheet .item--toggle:not(.is-readonly) .switch,
+.menu-page--rules .sheet .item--toggle:not(.is-readonly) .item__readout { display: none; }
+.menu-page--rules .sheet .item--toggle:not(.is-readonly) > .toggle-bar { display: grid; width: 160px; flex: none; }
+.menu-page--rules .sheet .item--toggle:not(.is-readonly) .segmented__option { padding-inline: 4px; font-size: 12px; }
+@container (min-width: 420px) {
+  .menu-page--rules .sheet .item--toggle:not(.is-readonly) { display: grid; grid-template-columns: minmax(0, 12.5em) minmax(110px, 1fr) 4.4em; column-gap: 14px; align-items: center; padding-block: var(--rules-row-pad); }
+  .menu-page--rules .sheet .item--toggle:not(.is-readonly) > .toggle-bar { grid-column: 2 / -1; grid-row: 1; width: auto; }
+  .menu-page--rules .sheet .item--toggle:not(.is-readonly) > .item__label { grid-column: 1; grid-row: 1; }
+}
+/* The power-up tiles: as many to a row as the column holds, so twelve fit in two rows. */
+.sheet .item--tiles .tile { padding: 7px 4px 6px; gap: 3px; }
+.sheet .item--tiles .tile__icon { width: 26px; height: 26px; }
+@container (min-width: 460px) {
+  .sheet .item--tiles .tile { flex-basis: calc(100% / 6 - 5px); }
+}
+
+@media (max-width: 900px) {
+  .menu-page--crew { width: 100%; }
+  .mission-route { gap: 10px; }
+  .mission-route .item { padding: 12px; }
+  .mission-scorecards { gap: 8px; }
+  .mission-scorecards li { padding: 16px 10px; }
+}
+@media (max-width: 760px) {
+  .online-profile__fields { flex-direction: column; align-items: stretch; }
+  .menu-page--lobby .menu-page__title { font-size: clamp(40px, 8vw, 58px); }
+  .menu-page--lobby .online-identity { gap: 12px; padding: 14px 16px; }
+  .menu-page--lobby .online-profile { flex-basis: 100%; }
+  .menu-page--lobby .online-profile > summary { width: 100%; }
+  .online-profile__text { flex: 1; }
+  .menu-page--lobby .online-connection { flex-basis: 100%; justify-content: space-between; margin-left: 0; padding-top: 10px; border-top: 1px solid var(--menu-line); text-align: left; }
+  .menu-page--lobby .online-connection__status { justify-content: flex-start; min-height: 0; }
+  .menu-page--lobby .online-connection__state { flex-direction: row-reverse; justify-content: flex-end; }
+  .menu-page--lobby .menu-page__actions > .lobby__button:first-child { margin-right: 0; }
+  .mission-route .item .item__hint { display: none; }
+  .mission-route .item { padding: 12px 8px; align-items: center; text-align: center; }
+  .mission-route .item .item__tag { font-size: 8px; letter-spacing: 0; }
+  .mission-route .item > span:not([class]) { font-size: 23px; }
+  .mission-scorecards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mission-scorecards li { padding: 16px 12px; }
+  .mission-bottom { flex-direction: column; gap: 20px; }
+}
+@media (max-width: 520px) {
+  .tutorial__selection-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .online-create .lobby__actions { justify-content: stretch; }
+  .online-create .lobby__actions .lobby__button { flex: 1 1 100%; }
+  .menu-page--lobby .menu-page__actions > .lobby__button:first-child { margin-right: 0; }
+  .mission-route { gap: 6px; margin-top: 18px; }
+  .mission-route .item { padding: 12px 3px; gap: 7px; }
+  .mission-route .item > span:not([class]) { font-size: 18px; }
+  .mission-route .item .item__tag { font-size: 7px; }
+  .mission-detail { padding: 16px 0; }
+  .mission-stats { gap: 20px; }
+  .mission-stats dd { font-size: 19px; }
+  .mission-scorecards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .mission-scorecards li { gap: 14px; }
+  .mission-scorecards .sectors__n { font-size: 25px; }
+}

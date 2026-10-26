@@ -1,0 +1,245 @@
+/* A fixed viewport keeps the active mode in one place while the three labels slide past. */
+.menu-page--mode-pager .menu-page__head { min-width: 0; }
+.menu-page--mode-pager .menu-page__head > .eyebrow { margin-bottom: 8px; }
+/* The hints occupy their own stable row; only the viewport of page labels moves. */
+.mode-carousel { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; min-width: 0; }
+.mode-pager__semantic-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.mode-pager__viewport {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  --mode-anchor: 0%;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(var(--page-title-size) * .94 + 8px);
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+}
+.mode-pager {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: clamp(16px, 2.5vw, 38px);
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  transition: transform 260ms cubic-bezier(.16, 1, .3, 1);
+  will-change: transform;
+}
+.mode-pager:not(.is-positioned) { transition: none; }
+.menu-page .mode-pager .item {
+  position: relative;
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  min-height: 0;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--bone);
+  font: 800 clamp(31px, 4.6vw, 62px)/.94 var(--font-display);
+  letter-spacing: .015em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: .2;
+  transition: color 180ms ease, opacity 180ms ease, font-size 220ms ease;
+}
+.menu-page .mode-pager .item::before { display: none; }
+.menu-page .mode-pager .mode-pager__item--near {
+  font-size: clamp(22px, 2.6vw, 34px);
+  opacity: .4;
+}
+.menu-page .mode-pager .mode-pager__item--far {
+  font-size: clamp(18px, 2.1vw, 26px);
+  opacity: .2;
+}
+.menu-page .mode-pager .mode-pager__item--active {
+  color: var(--bone);
+  font-size: var(--mode-active-size, var(--page-title-size));
+  font-weight: 900;
+  opacity: 1;
+  text-shadow: 0 0 22px rgb(255 173 101 / .12);
+}
+.menu-page .mode-pager .item:hover,
+.menu-page .mode-pager .item:focus { background: transparent; color: var(--bone); }
+.menu-page .mode-pager .item:focus-visible {
+  outline: none;
+  box-shadow: none;
+  text-decoration: underline;
+  text-decoration-color: var(--p2);
+  text-decoration-thickness: 2px;
+  text-underline-offset: .12em;
+}
+.mode-pager__keys {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: end;
+  align-self: start;
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 2px;
+  color: var(--bone-dim);
+  font: 9px/1.4 var(--font-mono);
+  opacity: .55;
+  user-select: none;
+}
+.menu-page--mode-pager .briefing__cards { touch-action: pan-y pinch-zoom; }
+
+@keyframes mode-header-enter-next {
+  from { opacity: .45; filter: blur(2px); transform: translateX(14px); }
+  to { opacity: 1; filter: blur(0); transform: translateX(0); }
+}
+@keyframes mode-header-enter-previous {
+  from { opacity: .45; filter: blur(2px); transform: translateX(-14px); }
+  to { opacity: 1; filter: blur(0); transform: translateX(0); }
+}
+@keyframes mode-body-enter-next {
+  from { opacity: 0; filter: blur(1px); transform: translateX(34px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes mode-body-enter-previous {
+  from { opacity: 0; filter: blur(1px); transform: translateX(-34px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes preset-enter-next {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes preset-enter-previous {
+  from { opacity: 0; transform: translateX(-18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.menu-page.menu-page--mode-enter-next,
+.menu-page.menu-page--mode-enter-previous,
+.menu-page.menu-page--entered { animation: none; }
+/* Once the switch is over, taking its animation away must not bring the page's plain entrance back: it would play the heading (and the content) a second time. The eyebrow keeps its one steady animation, so it never restarts. */
+.menu-page--entered .menu-page__head > .menu-page__title,
+.menu-page--entered .menu-page__head .mode-pager__viewport,
+.menu-page--entered .menu-page__main { animation: none; }
+.menu-page--mode-enter-next .menu-page__head .mode-pager__viewport,
+.menu-page--mode-enter-next .menu-page__head > .menu-page__title { animation: mode-header-enter-next 200ms cubic-bezier(.16, 1, .3, 1) both; }
+.menu-page--mode-enter-previous .menu-page__head .mode-pager__viewport,
+.menu-page--mode-enter-previous .menu-page__head > .menu-page__title { animation: mode-header-enter-previous 200ms cubic-bezier(.16, 1, .3, 1) both; }
+.menu-page--mode-enter-next .menu-page__main { animation: mode-body-enter-next 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
+.menu-page--mode-enter-previous .menu-page__main { animation: mode-body-enter-previous 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
+.menu-page--mode-enter-next .mode-pager__item--active,
+.menu-page--mode-enter-previous .mode-pager__item--active { animation: mode-title-flare 300ms ease-out both; }
+.menu-page--mode-enter-next .briefing__cards > :is(.item, .briefing__preset-shell) { animation: preset-enter-next 220ms cubic-bezier(.2, .7, .2, 1) 25ms both; }
+.menu-page--mode-enter-previous .briefing__cards > :is(.item, .briefing__preset-shell) { animation: preset-enter-previous 220ms cubic-bezier(.2, .7, .2, 1) 25ms both; }
+.menu-page--mode-enter-next .briefing__cards > .item:nth-child(2),
+.menu-page--mode-enter-previous .briefing__cards > .item:nth-child(2) { animation-delay: 95ms; }
+.menu-page--mode-enter-next .briefing__cards > .item:nth-child(3),
+.menu-page--mode-enter-previous .briefing__cards > .item:nth-child(3) { animation-delay: 145ms; }
+.menu-page--mode-enter-next .briefing__cards > .item:nth-child(4),
+.menu-page--mode-enter-previous .briefing__cards > .item:nth-child(4) { animation-delay: 195ms; }
+/* Keep the section label fixed while Q/E moves the selected local mode or daily-board date. */
+.menu-page--briefing.menu-page--mode-enter-next .menu-page__head > .eyebrow,
+.menu-page--briefing.menu-page--mode-enter-previous .menu-page__head > .eyebrow,
+.menu-page--leaderboard.menu-page--mode-enter-next .menu-page__head > .eyebrow,
+.menu-page--leaderboard.menu-page--mode-enter-previous .menu-page__head > .eyebrow { animation: none; }
+.launcher__content--enter-next .launcher__section-head { animation: mode-body-enter-next 200ms cubic-bezier(.16, 1, .3, 1) both; }
+.launcher__content--enter-previous .launcher__section-head { animation: mode-body-enter-previous 200ms cubic-bezier(.16, 1, .3, 1) both; }
+.launcher__content--enter-next .launcher__online > .item { animation: preset-enter-next 220ms cubic-bezier(.2, .7, .2, 1) 20ms both; }
+.launcher__content--enter-previous .launcher__modes > .item,
+.launcher__content--enter-previous .launcher__daily > .item { animation: preset-enter-previous 220ms cubic-bezier(.2, .7, .2, 1) 20ms both; }
+.launcher__content--enter-next .launcher__online > .item:nth-child(2),
+.launcher__content--enter-previous .launcher__modes > .item:nth-child(2) { animation-delay: 90ms; }
+.launcher__content--enter-next .launcher__online > .item:nth-child(3),
+.launcher__content--enter-previous .launcher__modes > .item:nth-child(3) { animation-delay: 145ms; }
+.launcher__content--enter-previous .launcher__daily > .item { animation-delay: 200ms; }
+
+@keyframes mode-title-flare {
+  from { filter: brightness(1.28); text-shadow: 0 0 34px rgb(255 173 101 / .42); }
+  to { filter: brightness(1); text-shadow: 0 0 22px rgb(255 173 101 / .12); }
+}
+
+@media (max-width: 1000px) {
+  .mode-pager__viewport { --mode-anchor: 0%; }
+  .menu-page .mode-pager .item { font-size: clamp(22px, 3.2vw, 32px); }
+  .menu-page .mode-pager .mode-pager__item--near { font-size: clamp(20px, 2.8vw, 28px); }
+  .menu-page .mode-pager .mode-pager__item--far { font-size: clamp(17px, 2.3vw, 24px); }
+  .menu-page .mode-pager .mode-pager__item--active { font-size: var(--mode-active-size, var(--page-title-size)); }
+}
+@media (max-width: 760px) {
+  .mode-pager__viewport { --mode-anchor: 0%; }
+  .mode-pager { gap: clamp(12px, 3vw, 20px); }
+  .menu-page .mode-pager .item { font-size: clamp(22px, 6vw, 36px); }
+  .menu-page .mode-pager .mode-pager__item--near { font-size: clamp(19px, 5vw, 31px); }
+  .menu-page .mode-pager .mode-pager__item--far { font-size: clamp(17px, 4.5vw, 28px); }
+  .menu-page .mode-pager .mode-pager__item--active { font-size: var(--mode-active-size, var(--page-title-size)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-page.menu-page--mode-enter-next,
+  .menu-page.menu-page--mode-enter-previous { animation: none; }
+  .menu-page--mode-enter-next .menu-page__head .mode-pager__viewport,
+  .menu-page--mode-enter-previous .menu-page__head .mode-pager__viewport,
+  .menu-page--mode-enter-next .menu-page__head > .menu-page__title,
+  .menu-page--mode-enter-previous .menu-page__head > .menu-page__title,
+.menu-page--mode-enter-next .briefing__cards > :is(.item, .briefing__preset-shell),
+.menu-page--mode-enter-previous .briefing__cards > :is(.item, .briefing__preset-shell),
+  .launcher__content--enter-next .launcher__section-head,
+  .launcher__content--enter-previous .launcher__section-head,
+  .launcher__content--enter-next .launcher__online > .item,
+  .launcher__content--enter-previous .launcher__modes > .item,
+  .launcher__content--enter-previous .launcher__daily > .item { animation: none; }
+  .menu-page--mode-enter-next .menu-page__main,
+  .menu-page--mode-enter-previous .menu-page__main,
+  .menu-page--mode-enter-next .mode-pager__item--active,
+  .menu-page--mode-enter-previous .mode-pager__item--active { animation: none; }
+  .mode-pager, .menu-page .mode-pager .item { transition: none; }
+}
+
+@media (max-width: 520px) {
+  .menu-page__head .eyebrow { font-size: 9px; }
+  .menu-page__actions .item--primary { flex: 1 1 100%; margin-left: 0; }
+  .menu-page--settings .menu-page__actions .item--primary,
+  .menu-page--tutorial .menu-page__actions .item--primary { flex: 0 1 auto; margin-left: auto; }
+  .menu-page--briefing .menu-page__actions { flex-wrap: nowrap; justify-content: flex-end; gap: 8px; }
+  .menu-page--briefing .menu-page__actions > .item { height: 48px; min-height: 48px; }
+  .menu-page--briefing .menu-page__actions > .item:first-child { flex: 0 0 auto; }
+  .menu-page--briefing .menu-page__actions > .item--primary {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 48px;
+    margin-left: 0;
+    padding: 10px 8px;
+    font-size: clamp(17px, 5.8vw, 22px);
+    white-space: nowrap;
+  }
+  .menu-page .sectors li { grid-template-columns: minmax(0, 1fr) auto; padding: 16px 0; gap: 10px; }
+  .menu-page .chips { grid-column: 1 / -1; }
+  .menu-page .sectors__points { grid-column: 2; grid-row: 1; }
+  .menu-page .lobby__head { flex-wrap: wrap; gap: 12px; }
+  .menu-page .lobby-room { flex-wrap: wrap; }
+  .menu-page .lobby-room__actions { width: 100%; }
+  .lobby__preset > .item__icon { width: 44px; height: 36px; }
+  .lobby__preset > .item__title { font-size: 21px; }
+  .menu-page .lobby__preset { gap: 6px; padding: 8px; }
+  .menu-page .lobby__players li { flex-wrap: wrap; gap: 10px; padding: 12px; }
+  .menu-page .lobby__name .lobby__field input { min-width: 0; }
+  .menu-page .room-pick { gap: 4px; }
+  .menu-page .room-pick__option { min-height: 30px; }
+  .look-dialog .look-dialog__card { padding: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-page, .menu-page__head > :not(.mode-carousel), .menu-page__head .mode-pager__viewport, .menu-page__main { animation: none; }
+}
+
+.online-rooms .lobby__head { margin-bottom: 20px; }

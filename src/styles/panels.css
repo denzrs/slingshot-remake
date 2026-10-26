@@ -1,0 +1,439 @@
+/* ——— Panels ——— */
+
+.panel {
+  position: relative;
+  width: min(380px, 100%);
+  padding: 30px 26px 24px;
+  background: rgb(11 26 51 / 0.94);
+  border: 1px solid rgb(91 125 179 / 0.45);
+  animation: rise 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* Rows can hide (a cap's slider while nothing is capped) or only show a value (the rules of somebody else's room). */
+
+.item[hidden] {
+  display: none !important;
+}
+
+/* A slider that is hidden but reserved keeps its space, unseen and out of reach: the settings don't change size. */
+.item--slider[hidden].is-reserved:not(.is-readonly),
+.item--segmented[hidden].is-reserved:not(.is-readonly),
+.item--tiles[hidden].is-reserved:not(.is-readonly) {
+  display: grid !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.item.is-readonly {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* A slider with nothing to limit right now: still there (so nothing moves), dimmed and out of reach. */
+.item--slider.is-inactive {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.item.is-readonly::before {
+  display: none;
+}
+
+/* Rebuilding a screen in place (a new row, another language) shouldn't replay its entrance. */
+.screen[data-rebuild] .panel {
+  animation: none;
+}
+
+/* The rules of somebody else's room: no track, switch or bar to suggest they can be moved — just what is set. */
+
+.item__readout {
+  display: none;
+  font: 700 14px/1.2 var(--font-mono);
+  white-space: nowrap;
+}
+
+.item.is-readonly {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 0;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgb(91 125 179 / 0.16);
+  border-radius: 0;
+}
+
+.item.is-readonly .item__label {
+  color: var(--bone-dim);
+  font-size: 14px;
+}
+
+.item.is-readonly .item__readout {
+  display: inline;
+  color: var(--bone);
+}
+
+.item.is-readonly .slider__value {
+  color: var(--bone);
+}
+
+.item.is-readonly .slider__track,
+.item.is-readonly .switch,
+.item.is-readonly .segmented {
+  display: none;
+}
+
+.item--toggle.is-readonly .item__readout {
+  color: var(--bone-dim);
+}
+
+.item--toggle.is-readonly.is-on .item__readout {
+  color: var(--p2);
+}
+
+/* Segmented rows: a bar with a segment per option and a marker that slides to the chosen one. */
+
+.item--segmented {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 7px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  cursor: default;
+}
+
+.segmented {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr));
+  padding: 2px;
+  border: 1px solid rgb(91 125 179 / 0.55);
+  border-radius: 3px;
+  background: rgb(6 15 31 / 0.55);
+  transition: border-color 140ms;
+}
+
+.item--segmented:focus .segmented {
+  border-color: var(--p1);
+}
+
+.segmented__marker {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / var(--n, 2));
+  border-radius: 2px;
+  background: rgb(111 227 200 / 0.16);
+  box-shadow: inset 0 0 0 1px var(--p2), 0 0 12px rgb(111 227 200 / 0.28);
+  transform: translateX(calc(var(--i, 0) * 100%));
+  transition: transform 280ms cubic-bezier(0.3, 1.45, 0.5, 1);
+}
+
+.segmented__option {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  padding: 4px 8px;
+  color: var(--bone-dim);
+  font: 700 13px/1.2 var(--font-body);
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  transition: color 160ms;
+}
+
+.segmented__option:hover {
+  color: var(--bone);
+}
+
+.segmented__option.is-on {
+  color: var(--p2);
+}
+
+/* Tiles: a row of symbols, each one on or off. */
+
+.item--tiles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  cursor: default;
+}
+
+.tiles {
+  /* Four to a row, so the kinds stack in tidy rows (ten make 4 + 4 + 2) whatever the width; a short
+     last row centres, which staggers it against the full one above. */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.tile {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  flex: 0 0 calc(25% - 4.5px);
+  min-width: 0;
+  padding: 10px 6px 8px;
+  border: 1px solid rgb(91 125 179 / 0.4);
+  border-radius: 3px;
+  background: rgb(6 15 31 / 0.45);
+  color: var(--bone-dim);
+  font: 700 11px/1.15 var(--font-body);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 140ms, background 140ms, color 140ms, box-shadow 200ms;
+}
+
+.tile__icon {
+  width: 34px;
+  height: 34px;
+}
+
+.tile__name {
+  max-width: 100%;
+  text-align: center;
+  /* A longer name takes a second line ("Planet killer") instead of being cut off, and the room is always
+     reserved, so all rows of the picker are the same height. A long word breaks only at the soft hyphens
+     the names carry, never in the middle of a syllable. */
+  white-space: normal;
+  overflow-wrap: break-word;
+  hyphens: manual;
+  min-height: 2.3em;
+}
+
+.tile.is-on {
+  border-color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  color: var(--bone);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--tone) 28%, transparent);
+}
+
+/* The all / none buttons beside a tile group's label. */
+.tiles__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tiles__quick-row {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.tiles__quick {
+  min-height: 26px;
+  padding: 3px 12px;
+  border: 1px solid rgb(91 125 179 / 0.5);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--bone-dim);
+  font: 700 11px/1.2 var(--font-body);
+  cursor: pointer;
+  transition: border-color 140ms, color 140ms, background 140ms;
+}
+
+.tiles__quick:hover {
+  border-color: var(--p2);
+  color: var(--bone);
+}
+
+.tiles__quick.is-on {
+  border-color: var(--p2);
+  background: rgb(111 227 200 / 0.12);
+  color: var(--p2);
+}
+
+@media (max-width: 520px) {
+  .tiles {
+    gap: 4px;
+  }
+
+  .tile {
+    flex-basis: calc(25% - 3px);
+    padding-inline: 2px;
+    font-size: 9.5px;
+    letter-spacing: 0;
+  }
+}
+
+.item--tiles:focus .tile.is-cursor {
+  outline: 2px solid var(--p1);
+  outline-offset: 1px;
+}
+
+/* Pills: the buttons of a line-up row. */
+
+.pill {
+  display: inline-grid;
+  place-items: center;
+  min-height: 30px;
+  padding: 4px 11px;
+  border: 1px solid rgb(91 125 179 / 0.45);
+  border-radius: 3px;
+  background: rgb(6 15 31 / 0.4);
+  color: var(--bone-dim);
+  font: 700 13px/1.2 var(--font-body);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: color 140ms, border-color 140ms, background 140ms, box-shadow 200ms;
+}
+
+.pill:hover {
+  border-color: rgb(91 125 179 / 0.95);
+  color: var(--bone);
+}
+
+.pill.is-on {
+  border-color: var(--p2);
+  background: rgb(111 227 200 / 0.16);
+  color: var(--p2);
+  box-shadow: 0 0 10px rgb(111 227 200 / 0.2);
+}
+
+.pill.is-disabled {
+  opacity: 0.32;
+  pointer-events: none;
+}
+
+/* Where ←/→ have taken the keyboard inside a row. */
+.item--seat:focus .pill.is-cursor {
+  outline: 2px solid var(--p1);
+  outline-offset: 2px;
+}
+
+/* Line-up rows: the ship, who flies it, its team, a way out. */
+
+.item--seat {
+  display: grid;
+  grid-template-columns: 8.2em minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 14px;
+  padding: 8px 12px 8px 22px;
+  border: 1px solid rgb(91 125 179 / 0.22);
+  background: rgb(19 39 70 / 0.3);
+  cursor: default;
+}
+
+/* Team play: the row wears its team's colour, and the team is picked from one joined bar of solid colour blocks. */
+
+.item--teamed {
+  border-left: 3px solid var(--team);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--team) 13%, transparent), rgb(19 39 70 / 0.3) 55%);
+  transition: border-color 160ms, background 160ms;
+}
+
+@media (max-width: 560px) {
+  .item--seat {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 8px 10px 8px 16px;
+  }
+
+  .pill {
+    padding: 4px 8px;
+    font-size: 12.5px;
+  }
+
+  .segmented__option {
+    padding: 4px;
+    font-size: 12px;
+  }
+}
+
+/* The rules of a game: a few blocks side by side instead of one long list. */
+
+.setup {
+  columns: 2;
+  column-gap: 44px;
+}
+
+.setup__group {
+  break-inside: avoid;
+  margin: 0 0 14px;
+}
+
+.setup__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 4px;
+  color: var(--p1);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.setup__title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgb(91 125 179 / 0.35);
+}
+
+.setup__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+@media (max-width: 720px) {
+  .setup {
+    columns: 1;
+  }
+
+}
+
+@media (pointer: coarse) {
+  :root {
+    --ui: 1.2;
+  }
+}
+
+/* Registration marks on the panel corners, echoing the play field frame. */
+.panel::before,
+.panel::after {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgb(232 228 216 / 0.45);
+}
+
+.panel::before {
+  top: -6px;
+  left: -6px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.panel::after {
+  right: -6px;
+  bottom: -6px;
+  border-left: 0;
+  border-top: 0;
+}
+
+.note {
+  margin: -6px 0 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--bone-dim);
+}
+
+/* How to play: a short tutorial, one page at a time. */
+.tutorial {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--bone-dim);
+  margin-bottom: 8px;
+}

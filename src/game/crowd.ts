@@ -1,4 +1,4 @@
-import { GALLERY } from '../config';
+import { GALLERY } from '../sim/config';
 
 /** One person in the stands, with the points they bet with. Those who leave keep their line until the match is over. */
 export interface CrowdSeat {

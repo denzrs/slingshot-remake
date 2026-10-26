@@ -1,11 +1,11 @@
-import { modifiersOf } from '../challenge';
-import { AIM, COLORS, FIELD, FONTS, MAYHEM, TEAMS } from '../config';
+import { modifiersOf } from '../sim/challenge';
+import { AIM, COLORS, FIELD, FONTS, MAYHEM, TEAMS } from '../sim/config';
 import { ChallengeMatch, HorizonMatch, SKIP_VOTE_TIME, teamName, type KillRecord, type Match, type PlayerState } from '../game';
-import { fmt, fmtInt, t, type Key } from '../i18n';
-import { TWIST_IDS, twistName } from '../mayhem';
-import { awardLabel, awardValue, awardWho, spotlight } from '../scorecard';
-import { styleLabel } from '../scoring';
-import { awards } from '../stats';
+import { fmt, fmtInt, t } from '../platform/i18n';
+import { TWIST_IDS, twistName } from '../game/mayhem';
+import { awardLabel, awardValue, awardWho, spotlight } from '../game/scorecard';
+import { styleLabel } from '../sim/scoring';
+import { awards } from '../data/stats';
 import type { View } from './backdrop';
 import { drawAvatar } from './avatar';
 import { rgba } from './color';
@@ -13,6 +13,9 @@ import { OracleHud, type OracleFrame, type OracleTap } from './oracle';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
 import type { DrawOptions } from './renderer';
 import { fitText, setSpacing } from './text';
+
+/** On a phone held upright the duel's two blocks start this far lower (field units before `k`), under the round label and the pause button beside it. */
+const DUEL_DROP = 24;
 
 type KeyItem = [key: string, label: string];
 type Segment = [text: string, color: string];
@@ -31,7 +34,12 @@ export class Hud {
   private time = 0;
   private k = 1;
   private field: Box = { x: 0, y: 0, w: 0, h: 0 };
+  /** The whole canvas, for what takes over the screen and not just the field. */
+  private screen = { w: 0, h: 0 };
   private readonly oracle = new OracleHud();
+
+  /** How far the duel's blocks sit lower on a phone held upright, where the round label's row is shared with the pause button. */
+  private drop = 0;
 
   private shipPos: (i: number) => { x: number; y: number } = () => ({ x: 0, y: 0 });
 
@@ -47,6 +55,7 @@ export class Hud {
     this.shipPos = shipPos;
     // On a phone the field is small, but its labels must stay readable: they get a higher floor.
     this.k = Math.min(1.2, Math.max(opts.touch ? 0.95 : 0.72, view.scale));
+    this.screen = { w: view.cssWidth, h: view.cssHeight };
     this.field = view.stage ?? { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
 
     const focus = match.focus;
@@ -60,7 +69,7 @@ export class Hud {
     const frame: OracleFrame = { ctx: this.ctx, k: this.k, field: this.field, time, shipPos, keyHints: opts.keyHints && !opts.touch };
     const ghost = match.ghost;
 
-    const killcam = match instanceof HorizonMatch ? match.killcamInfo : null;
+    const killcam = match.killcamInfo;
     if (killcam) {
       this.drawKillcam(match, killcam, opts);
       this.drawSkipVote(match);
@@ -74,6 +83,7 @@ export class Hud {
     }
 
     const duel = match.mode === 'classic' && match.players.length === 2;
+    this.drop = duel && view.stage ? DUEL_DROP * this.k : 0;
     this.drawRoundLabel(match);
     this.drawTwistChips(match);
     if (duel) {
@@ -176,7 +186,7 @@ export class Hud {
     // The duel has its blocks in the corners; with a scoreboard across the top the chips go under it (and under its power-up strip).
     const duel = match.mode === 'classic' && match.players.length === 2;
     const below = duel ? 34 : (match.teamMode ? 66 : 50) + 40 + (match.powerUps ? 32 : 10);
-    this.drawChips(labels, this.field.x + this.field.w / 2, this.field.y + (below + (duel ? 18 : 0)) * this.k, colors);
+    this.drawChips(labels, this.field.x + this.field.w / 2, this.field.y + (below + (duel ? 18 : 0)) * this.k + this.drop, colors);
   }
 
   /**
@@ -205,14 +215,7 @@ export class Hud {
     const stopAt = (i: number) => landed - 0.25 * (rows - 1 - i);
 
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = rgba(COLORS.plate, 0.55);
-    ctx.fillRect(field.x, field.y, field.w, field.h);
-    ctx.fillStyle = rgba(COLORS.plate, 0.92);
-    ctx.fillRect(field.x, top, field.w, h);
-    const edge = round.finale ? COLORS.danger : COLORS.sodium;
-    ctx.fillStyle = rgba(edge, 0.85);
-    ctx.fillRect(field.x, top, field.w, 1);
-    ctx.fillRect(field.x, top + h - 1, field.w, 1);
+    this.takeOver(top, h, round.finale ? COLORS.danger : COLORS.sodium, 0.62, 0.92);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -241,7 +244,7 @@ export class Hud {
         const face = Math.floor(age * 18 * (1 - progress * 0.65)) + i * 5;
         ctx.globalAlpha = alpha * 0.55;
         ctx.fillStyle = COLORS.bone;
-        const spinning = t(`mayhem.twist.${TWIST_IDS[face % TWIST_IDS.length]}` as Key);
+        const spinning = t(`mayhem.twist.${TWIST_IDS[face % TWIST_IDS.length]}`);
         this.fitDisplay(spinning, 40 * k, 4 * k, field.w - 32 * k);
         ctx.fillText(spinning, cx, y);
         setSpacing(ctx, 0);
@@ -256,7 +259,7 @@ export class Hud {
       setSpacing(ctx, 0);
       ctx.fillStyle = COLORS.boneDim;
       ctx.font = `400 ${13 * k}px ${FONTS.mono}`;
-      ctx.fillText(t(`mayhem.twist.${twist.id}.info` as Key, { n: twist.n ?? 0 }), cx, y + 34 * k);
+      ctx.fillText(t(`mayhem.twist.${twist.id}.info`, { n: twist.n ?? 0 }), cx, y + 34 * k);
     });
 
     if (round.jackpot && age > landed + 0.1) {
@@ -290,7 +293,7 @@ export class Hud {
   private drawDuelBlock(match: Match, p: PlayerState, align: 'left' | 'right'): void {
     const { ctx, k, field } = this;
     const x = align === 'left' ? field.x + 24 * k : field.x + field.w - 24 * k;
-    const y = field.y + 22 * k;
+    const y = field.y + 22 * k + this.drop;
     const active = (match.phase === 'aiming' || match.phase === 'flying') && match.focus === p.id;
     ctx.globalAlpha = active || match.phase === 'roundOver' || match.phase === 'gameOver' ? 1 : 0.55;
     ctx.textAlign = align;
@@ -367,7 +370,7 @@ export class Hud {
     }
     ctx.fillStyle = held ? color : COLORS.boneDim;
     ctx.font = `700 ${10 * k}px ${FONTS.body}`;
-    const name = held ? t(`powerup.${held}` as Key).toUpperCase() : t('hud.powerUp.title').toUpperCase();
+    const name = held ? t(`powerup.${held}`).toUpperCase() : t('hud.powerUp.title').toUpperCase();
     ctx.fillText(fitText(ctx, name, w - 24 * k - 42 * k), left + 24 * k, cy + 0.5 * k);
 
     // The key that uses it, at the right edge.
@@ -449,22 +452,38 @@ export class Hud {
       // An online player's symbol leads the card, in the player's colour; the name and score sit beside it.
       const textX = p.avatar ? x + 26 * k : x + 10 * k;
       if (p.avatar) drawAvatar(ctx, p.avatar, x + 17 * k, y + h / 2, 16 * k, p.color);
+      const status = !p.alive ? ['✕', COLORS.boneDim] : active ? [t('hud.aiming'), p.color] : planning && p.locked ? [t('hud.ready'), COLORS.boneDim] : null;
+      const name = p.name.toUpperCase();
+      const room = w - (textX - x) - 4 * k;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
+      ctx.font = `700 ${9.5 * k}px ${FONTS.mono}`;
+      const statusWidth = status ? ctx.measureText(status[0]).width + 8 * k : 0;
       ctx.font = `700 ${10 * k}px ${FONTS.body}`;
       setSpacing(ctx, 1.6 * k);
-      ctx.fillText(p.name.toUpperCase(), textX, y + 6 * k);
+      // Six cards across a phone are narrow: when the name and the status do not both fit, the status becomes a dot and the name shrinks to the room.
+      const roomy = ctx.measureText(name).width + statusWidth <= room;
+      if (!roomy) {
+        ctx.font = `700 ${9 * k}px ${FONTS.body}`;
+        setSpacing(ctx, 0.6 * k);
+      }
+      ctx.fillText(roomy ? name : fitText(ctx, name, room - (status ? 8 * k : 0)), textX, y + 6 * k);
       setSpacing(ctx, 0);
       ctx.fillStyle = COLORS.bone;
       ctx.font = `700 ${17 * k}px ${FONTS.mono}`;
       ctx.fillText(String(p.score), textX, y + 19 * k);
 
-      ctx.textAlign = 'right';
-      ctx.font = `700 ${9.5 * k}px ${FONTS.mono}`;
-      const status = !p.alive ? ['✕', COLORS.boneDim] : active ? [t('hud.aiming'), p.color] : planning && p.locked ? [t('hud.ready'), COLORS.boneDim] : null;
       if (status) {
         ctx.fillStyle = status[1];
-        ctx.fillText(status[0], x + w - 8 * k, y + 7 * k);
+        if (roomy) {
+          ctx.textAlign = 'right';
+          ctx.font = `700 ${9.5 * k}px ${FONTS.mono}`;
+          ctx.fillText(status[0], x + w - 8 * k, y + 7 * k);
+        } else {
+          ctx.beginPath();
+          ctx.arc(x + w - 6 * k, y + 9 * k, 2.4 * k, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
       // The power-up area under the card: what the ship holds, and its key. Dead ships keep theirs out of sight.
       if (match.powerUps && p.alive) this.drawPowerUpSlot(p, x, y + h + 4 * k, 'left', match.placing && match.focus === p.id, w);
@@ -510,7 +529,7 @@ export class Hud {
     let y = at.y - h / 2;
     x = Math.min(field.x + field.w - w - 6, Math.max(field.x + 6, x));
     const top = match.mode === 'classic' && match.players.length === 2 ? 130 : match.teamMode ? 114 : 98;
-    y = Math.min(field.y + field.h - h - 30 * k, Math.max(field.y + top * k, y));
+    y = Math.min(field.y + field.h - h - 30 * k, Math.max(field.y + top * k + this.drop, y));
 
     ctx.fillStyle = rgba(COLORS.plate, 0.78);
     ctx.fillRect(x, y, w, h);
@@ -572,7 +591,7 @@ export class Hud {
     ctx.fillStyle = COLORS.boneDim;
     ctx.font = `700 ${10.5 * k}px ${FONTS.body}`;
     setSpacing(ctx, 1.8 * k);
-    ctx.fillText(t(`daily.theme.${match.challenge.theme}` as Key).toUpperCase(), left, top + 28 * k);
+    ctx.fillText(t(`daily.theme.${match.challenge.theme}`).toUpperCase(), left, top + 28 * k);
 
     // Centre: the sector, and the rules it plays by.
     ctx.textAlign = 'center';
@@ -670,6 +689,30 @@ export class Hud {
   }
 
   /**
+   * What takes the screen over for a moment: the whole canvas dims (`dim`), HUD and field alike, and a band runs
+   * edge to edge at `top`, `h` tall, with a lit line at each edge in `edge` and a soft glow spilling out of it.
+   * Draw it with the global alpha of the moment's fade.
+   */
+  private takeOver(top: number, h: number, edge: string, dim: number, band: number): void {
+    const { ctx, screen } = this;
+    ctx.fillStyle = rgba(COLORS.plate, dim);
+    ctx.fillRect(0, 0, screen.w, screen.h);
+    ctx.fillStyle = rgba(COLORS.plate, band);
+    ctx.fillRect(0, top, screen.w, h);
+    for (const y of [top, top + h]) {
+      const glow = ctx.createLinearGradient(0, y - 14, 0, y + 14);
+      glow.addColorStop(0, rgba(edge, 0));
+      glow.addColorStop(0.5, rgba(edge, 0.22));
+      glow.addColorStop(1, rgba(edge, 0));
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, y - 14, screen.w, 28);
+    }
+    ctx.fillStyle = rgba(edge, 0.85);
+    ctx.fillRect(0, top, screen.w, 1);
+    ctx.fillRect(0, top + h - 1, screen.w, 1);
+  }
+
+  /**
    * Sets the display font at `size` with `spacing` between the letters — smaller, with the spacing, when `text`
    * would be wider than `maxWidth`: a narrow screen must not cut a headline off.
    */
@@ -697,11 +740,7 @@ export class Hud {
     const h = 150 * k;
 
     ctx.globalAlpha = fade;
-    ctx.fillStyle = rgba(COLORS.plate, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, h);
-    ctx.fillStyle = rgba(color, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, 1);
-    ctx.fillRect(field.x, cy + h / 2 - 1, field.w, 1);
+    this.takeOver(cy - h / 2, h, color, 0.45, 0.85);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
@@ -832,11 +871,7 @@ export class Hud {
     const h = 150 * k;
 
     ctx.globalAlpha = fade;
-    ctx.fillStyle = rgba(COLORS.plate, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, h);
-    ctx.fillStyle = rgba(color, 0.8);
-    ctx.fillRect(field.x, cy - h / 2, field.w, 1);
-    ctx.fillRect(field.x, cy + h / 2 - 1, field.w, 1);
+    this.takeOver(cy - h / 2, h, color, 0.45, 0.85);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
@@ -869,7 +904,7 @@ export class Hud {
 
   // ————————————————————————————— Killcam —————————————————————————————
 
-  private drawKillcam(match: Match, info: NonNullable<HorizonMatch['killcamInfo']>, opts: DrawOptions): void {
+  private drawKillcam(match: Match, info: NonNullable<Match['killcamInfo']>, opts: DrawOptions): void {
     const { recording, slow } = info;
     const record = info.clip.record;
     const { ctx, k, field } = this;
@@ -927,7 +962,8 @@ export class Hud {
   private drawHint(match: Match, touch: boolean): void {
     const { k, field } = this;
     const maxWidth = field.w - 48 * k;
-    const horizon = match instanceof HorizonMatch;
+    // Switching to a phone-sized window, the field can be narrower than the margins for a frame: there is no room for a hint.
+    if (maxWidth <= 0) return;
     let items: KeyItem[] = [];
     if (match.localCanAim) {
       if (touch) {
@@ -944,12 +980,14 @@ export class Hud {
       if (match.viewer !== null && match.simultaneous) items = [['', t('hud.waitingOthers')]];
       else if (match.viewer !== null && thinker && !thinker.cpu) items = [['', t('hud.waitingFor', { name: thinker.name })]];
       else items = [['', thinker?.cpu ? t('hud.thinking', { name: thinker.name }) : t('hud.cpusAiming')]];
+    } else if (match.phase === 'orbit') {
+      items = [['', t('hud.orbit')]];
     } else if (match.phase === 'collapse') {
       items = [['', t('hud.collapse')]];
     } else if (match.phase === 'roundOver' && match.phaseTime > 0.6) {
       const next = match.isLastRound ? t('hud.finalStandings') : match instanceof ChallengeMatch ? t('daily.hud.nextSector') : t('hud.nextRound');
       items = [match.canAdvance ? [touch ? '' : t('common.space'), next] : ['', t('hud.waitingHost')]];
-      if (horizon && match.lastClip && !touch) items.push(['C', t('hud.saveKillcam')]);
+      if (match.canSaveClip && !touch) items.push(['C', t('hud.saveKillcam')]);
     }
     if (!items.length) return;
     const width = this.measureKeyRow(items, k);
@@ -1023,7 +1061,7 @@ function killSegments(match: Match, r: KillRecord): Segment[] {
 
 /** Rule tags of the current daily sector, e.g. ["Bounce", "Fixed power"]. */
 function modifierLabels(match: ChallengeMatch): string[] {
-  return modifiersOf(match.spec).map((m) => t(`daily.mod.${m}` as Key));
+  return modifiersOf(match.spec).map((m) => t(`daily.mod.${m}`));
 }
 
 function nameLabel(p: PlayerState): string {

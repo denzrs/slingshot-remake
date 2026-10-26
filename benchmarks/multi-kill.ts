@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { createMatch } from '../src/game';
-import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
-import { SCORING } from '../src/config';
+import { DEFAULT_SETTINGS, type Seat } from '../src/data/settings';
+import { SCORING } from '../src/sim/config';
 
 /**
  * Plays six-CPU rounds and counts how often the multi-kill chain actually fires: how many turns take two,

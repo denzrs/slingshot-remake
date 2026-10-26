@@ -1,5 +1,5 @@
-import { WORMHOLE } from '../config';
-import type { PowerUpKind } from '../powerups';
+import { WORMHOLE } from '../sim/config';
+import type { PowerUpKind } from '../sim/powerups';
 
 /**
  * Each power-up has a colour and a symbol of its own, so it reads at a glance on the field and in the HUD.

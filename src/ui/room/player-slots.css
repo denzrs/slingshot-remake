@@ -1,0 +1,158 @@
+/* The same six-seat flight deck for local crews and relay waiting rooms. */
+.menu-page .slot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.menu-page .slot-card {
+  --slot-tone: var(--p2);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 9px;
+  min-width: 0;
+  min-height: 206px;
+  padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--slot-tone) 56%, #21344d);
+  border-radius: 4px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--slot-tone) 8%, #0d2036), #081426 75%);
+  box-shadow: inset 3px 0 var(--slot-tone), inset 0 0 22px color-mix(in srgb, var(--slot-tone) 4%, transparent);
+  font-size: 12px;
+  text-align: left;
+}
+.menu-page .slot-card.is-self { border-color: var(--slot-tone); }
+.slot-card__head { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 24px; color: var(--slot-tone); }
+.slot-card__number { font: 800 25px/1 var(--font-display); }
+.slot-card__kind { color: var(--slot-tone); font: 10px/1.4 var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+.slot-card__portrait { display: grid; place-items: center; flex: 1 0 68px; min-height: 68px; color: var(--slot-tone); }
+.slot-card__portrait > .pilot-art { width: 104px; height: 68px; }
+.slot-card__portrait .player-icon { width: 56px; height: 56px; border: 0; background: transparent; color: var(--slot-tone); }
+.slot-card__portrait .player-icon svg { width: 100%; height: 100%; }
+.menu-page .slot-card:focus-visible,
+.slot-card :is(button, select):focus-visible { outline: 2px solid var(--slot-tone); outline-offset: 3px; }
+.menu-page .slot-card--empty {
+  color: var(--bone-dim);
+  border: 1px dashed rgb(91 125 179 / .42);
+  background: rgb(8 20 38 / .38);
+  box-shadow: none;
+}
+.menu-page button.slot-card--empty { justify-content: center; align-items: center; text-align: center; cursor: pointer; }
+.menu-page button.slot-card--empty:hover,
+.slot-card--empty:has(.slot-card__join:hover:not(:disabled)) { border-color: var(--p2); background: rgb(111 227 200 / .035); }
+.menu-page .slot-card--empty.item--choice-card { align-items: center; justify-content: center; text-align: center; cursor: default; }
+.menu-page .slot-card--empty.item--choice-card:is(:hover, :focus-within) { border-color: var(--p2); background: rgb(111 227 200 / .035); }
+.slot-card--empty .slot-card__head { color: var(--bone-dim); }
+.slot-card--empty .slot-card__kind { margin-left: auto; color: var(--bone-dim); font-size: 9px; }
+.slot-card--empty > .item__tag { position: absolute; top: 14px; left: 14px; font: 800 21px/1 var(--font-display); text-transform: uppercase; }
+.slot-card--empty .item__icon { display: grid; place-items: center; width: auto; height: auto; margin: 0; }
+.slot-card__plus { display: block; color: var(--p2); font: 300 48px/1 var(--font-body); }
+.slot-card--empty .item__title { font: 800 24px/1.2 var(--font-display); text-transform: uppercase; }
+.slot-card--empty .item__hint,
+.slot-card__waiting { color: var(--bone-dim); font: 10px/1.5 var(--font-mono); text-align: center; }
+.slot-card__choices { position: absolute; inset: 48px 12px 12px; display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 8px; }
+.slot-card__choice { min-width: 0; min-height: 40px; padding: 7px 9px; border: 1px solid var(--menu-line); border-radius: 3px; background: rgb(5 15 29 / .85); color: var(--bone); cursor: pointer; font: 700 13px/1.3 var(--font-body); }
+.slot-card__choice:hover { border-color: var(--p2); color: var(--p2); background: rgb(111 227 200 / .08); }
+.slot-card__choice:focus-visible { outline: 2px solid var(--p2); outline-offset: 2px; }
+.slot-card--empty.item--choice-card:is(:hover, :focus-within) .slot-card__choices { display: grid; }
+.slot-card--empty.item--choice-card:is(:hover, :focus-within) > .item__icon,
+.slot-card--empty.item--choice-card:is(:hover, :focus-within) > .item__title,
+.slot-card--empty.item--choice-card:is(:hover, :focus-within) > .item__hint { visibility: hidden; }
+.slot-card__join { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 88px; padding: 0; border: 0; background: transparent; color: var(--p2); cursor: pointer; font: 800 24px/1.2 var(--font-display); text-transform: uppercase; }
+.slot-card__join .slot-card__plus { order: -1; }
+.slot-card__join:disabled { color: var(--bone-dim); cursor: default; }
+.slot-card__join:disabled .slot-card__plus { color: var(--bone-dim); opacity: .5; }
+.slot-card__add-cpu { align-self: center; min-height: 32px; padding: 5px 12px; border: 1px solid var(--menu-line); border-radius: 3px; background: transparent; color: var(--bone); font: 11px/1.5 var(--font-body); cursor: pointer; }
+.slot-card__add-cpu[hidden] { display: none; }
+.slot-card__add-cpu:hover { border-color: var(--p2); }
+.player-slot__identity { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding-block: 8px; border-block: 1px solid var(--menu-line); }
+.player-slot__identity .lobby__player-name { flex: 1 1 100%; font: 800 23px/1.1 var(--font-display); text-transform: uppercase; }
+.player-slot__identity .lobby__tag { padding: 2px 5px; font-size: 8px; letter-spacing: .03em; }
+.player-slot__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.player-slot__controls:empty { display: none; }
+.player-slot .lobby__ready { margin: auto 0 0; padding-top: 3px; font-size: 10px; }
+.player-slot .lobby__icon-button { margin-left: auto; width: 26px; min-height: 26px; }
+.menu-page--room .menu-page__head { margin-bottom: 18px; }
+.menu-page--room .menu-page__title { font-size: var(--page-title-size); }
+.menu-page--room .menu-page__intro { margin-top: 10px; font-size: 12px; }
+.menu-page--room .room-deck { gap: 0; padding: 0; border: 0; background: none; }
+.room-deck__heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
+.menu-page--room .room-deck__heading .setup__title { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--bone-dim); font: 12px/1.5 var(--font-body); }
+.menu-page--room .lobby__code { margin: 12px 0 18px; padding: 10px 16px; border: 1px solid var(--menu-line); border-radius: 3px; background: rgb(13 29 50 / .55); }
+.menu-page--room .lobby__code-value { font-size: 20px; }
+.menu-page--room .room-deck__roster-head { margin-bottom: 10px; }
+.room-deck__roster-head .lobby__note { color: var(--bone); font: 800 25px/1.2 var(--font-display); text-transform: uppercase; }
+/* Leaving sits left of the big action, where Back sits on every other page. */
+.menu-page--room .menu-page__actions > .lobby__button:last-child { order: -1; margin-right: 0; }
+@media (max-width: 900px) {
+  .menu-page .slot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* A short window packs the seats a little closer, so two rows of them still fit. */
+@media (max-height: 960px) {
+  .menu-page .slot-grid { gap: 10px; }
+  .menu-page .slot-card { gap: 6px; padding: 11px; min-height: 180px; }
+  .slot-card__portrait { flex-basis: 44px; min-height: 44px; }
+  .slot-card__portrait > .pilot-art { width: 70px; height: 44px; }
+  .team-column__head { margin-bottom: 8px; }
+  .slot-card__join { min-height: 70px; }
+  .pilot .option-selector__choice { min-height: 38px; gap: 3px; }
+}
+@media (max-width: 520px) {
+  .menu-page .slot-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .menu-page .slot-card { min-height: 190px; }
+  .menu-page button.slot-card--empty,
+  .menu-page .slot-card--empty.item--choice-card { min-height: 150px; }
+  .crew-config { gap: 10px; margin-bottom: 16px; }
+  .crew-config .segmented__option { font-size: 10px; }
+  .crew-roster__heading .setup__title { font-size: 24px; }
+  .menu-page--room .lobby__code { gap: 8px; }
+  .menu-page--room .lobby__code > .lobby__button { min-height: 34px; padding: 6px 8px; font-size: 10px; }
+}
+@media (hover: none) {
+  .slot-card--empty.item--choice-card .slot-card__choices { display: grid; }
+  .slot-card--empty.item--choice-card > .item__icon,
+  .slot-card--empty.item--choice-card > .item__title,
+  .slot-card--empty.item--choice-card > .item__hint { display: none; }
+}
+.crew-config .item__label { display: none; }
+
+@media (min-width: 901px) {
+  .menu-page--crew .menu-page__head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .95fr); gap: 0 32px; align-items: end; }
+  .menu-page--crew .menu-page__head > .eyebrow,
+  .menu-page--crew .menu-page__title { grid-column: 1; }
+  .menu-page--crew .menu-page__title { font-size: var(--page-title-size); }
+  .menu-page--crew .crew-config { grid-column: 2; grid-row: 1 / 3; margin: 0; gap: 8px; }
+  .crew-config > .menu-group { flex-basis: 100%; }
+  .crew-config .setup__title { display: none; }
+  .crew-config .setup__rows { margin: 0; }
+}
+
+.menu-page--room .online-section-keys[hidden] { display: none; }
+.menu-page--room .lobby__code > .lobby__button { min-height: 34px; padding: 7px 10px; font: 11px/1.4 var(--font-body); }
+.menu-page--room .lobby__code > .lobby__button--primary { border-color: var(--menu-line); background: transparent; color: var(--p2); box-shadow: none; }
+.menu-page--room .lobby__code > .lobby__button--primary:hover { border-color: var(--p2); background: rgb(111 227 200 / .06); }
+@media (min-width: 901px) {
+  .menu-page .slot-grid[data-capacity='4'],
+  .menu-page .slot-grid[data-capacity='2'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* Keep room metadata and player controls compact enough for two rows on a laptop. */
+.menu-page--room .room-deck__roster-head .lobby__button { min-height: 32px; padding: 6px 10px; font: 11px/1.4 var(--font-body); }
+.player-slot__identity .lobby__player-name { flex: 1 1 80px; min-width: 0; font-size: 21px; }
+.player-slot__identity { padding-block: 6px; }
+.player-slot__controls .pill { min-height: 28px; padding: 5px 8px; font-size: 11px; }
+/* An open seat confirms the copied invite itself: the card lights up, the check draws, the words rise in. */
+.slot-card--empty.is-copied { border-style: solid; border-color: var(--p2); background: rgb(111 227 200 / .07); animation: seat-copied 1.8s ease-out; }
+.slot-card__check { width: 22px; height: 22px; flex: none; fill: none; stroke: var(--p2); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.slot-card__check path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: seat-check .4s .05s ease-out forwards; }
+.slot-card__copied { color: var(--p2); animation: seat-copied-in .35s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes seat-copied { 0% { box-shadow: 0 0 0 0 rgb(111 227 200 / .5); } 35% { box-shadow: 0 0 0 7px rgb(111 227 200 / 0); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes seat-check { to { stroke-dashoffset: 0; } }
+@keyframes seat-copied-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .slot-card--empty.is-copied, .slot-card__check path, .slot-card__copied { animation: none; stroke-dashoffset: 0; }
+}

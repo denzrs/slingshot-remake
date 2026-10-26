@@ -1,0 +1,6 @@
+/* The menu pages' styles, one file per area. The order is the cascade: later files win ties, so keep it. */
+@import './menu-page/frame.css';
+@import './menu-page/mode-pager.css';
+@import './menu-page/online.css';
+@import './menu-page/local-pages.css';
+@import './menu-page/room.css';

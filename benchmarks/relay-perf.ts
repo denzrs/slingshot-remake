@@ -9,12 +9,12 @@
 // measurements here stay under that rate; aggregate load is created with several rooms instead.
 
 import WebSocket from 'ws';
-import { packMessage, packWireMessage, unpackMessage, unpackWireMessage } from '../src/messagepack';
+import { packMessage, packWireMessage, unpackMessage, unpackWireMessage } from '../src/net/messagepack';
 import { ClassicMatch } from '../src/game/classic';
 import { HorizonMatch } from '../src/game/horizon';
 import { createMatch, type GameEvent } from '../src/game';
-import { SnapshotEncoder } from '../src/netsync';
-import { DEFAULT_SETTINGS, type Seat } from '../src/settings';
+import { SnapshotEncoder } from '../src/net/netsync';
+import { DEFAULT_SETTINGS, type Seat } from '../src/data/settings';
 
 const URL = process.argv[2] ?? 'ws://localhost:8080';
 const BENCH_ORIGIN = process.env.BENCH_ORIGIN;

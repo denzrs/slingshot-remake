@@ -3,6 +3,7 @@
     "target": "es2022",
     "module": "esnext",
     "moduleResolution": "bundler",
+    "resolveJsonModule": true,
     "lib": ["es2022", "es2024.promise", "dom", "dom.iterable"],
     "types": ["vite/client", "node"],
     "strict": true,
@@ -13,5 +14,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "tests", "benchmarks"]
+  "include": ["src", "tests", "benchmarks", "scripts"]
 }

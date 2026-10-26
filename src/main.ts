@@ -4,44 +4,48 @@ import '@fontsource/b612/700';
 import '@fontsource/b612-mono/400';
 import '@fontsource/b612-mono/700';
 import './style.css';
+import './ui/menu/launcher.css';
+import './ui/menu/menu-page.css';
 
-import { Sound } from './audio';
-import { dailyChallenge, dateKey, isDateKey } from './challenge';
-import { ClipRecorder } from './clip';
-import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS } from './config';
-import { recordRun } from './dailyStore';
-import { ChallengeMatch, createChallenge, createMatch, HorizonMatch, type Match, type VersusMode } from './game';
+import { Sound } from './platform/audio';
+import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
+import { ClipRecorder } from './platform/clip';
+import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS } from './sim/config';
+import { createUiPreview, type UiPreview } from './debug/devPreview';
+import { recordRun } from './data/dailyStore';
+import { ChallengeMatch, createChallenge, createMatch, type Match } from './game';
+import type { GameMode } from './sim/modes';
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
 import type { OracleTap } from './render/oracle';
-import { readInvite } from './invite';
-import { MultiplayerSession } from './multiplayer';
-import type { ClientInput } from './net';
-import { inNebula } from './physics';
-import { POWER_UP } from './powerups';
+import { readInvite } from './net/invite';
+import { MultiplayerSession } from './net/multiplayer';
+import type { ClientInput } from './net/net';
+import { inPowerUpNebula } from './sim/physics';
+import { POWER_UP } from './sim/powerups';
 import { Effects } from './render/effects';
-import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './i18n';
+import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './platform/i18n';
+import { setLook } from './data/look';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
-import { STYLE_MULTIPLIER, styleLabel } from './scoring';
-import { mayhemRules } from './lobbyPrefs';
-import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings';
-import { dailyResultScreen } from './ui/daily';
+import { STYLE_MULTIPLIER, styleLabel } from './sim/scoring';
+import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './data/settings';
+import { dailyResultScreen } from './ui/daily/daily';
 import { eyeIcon } from './ui/dom';
-import { ChatPanel } from './ui/chat';
-import { Menu } from './ui/menu';
-import { lobbyScreen } from './ui/lobby';
-import { TouchControls } from './ui/touch-controls';
-import { TouchStick } from './ui/touch-stick';
+import { ChatPanel } from './ui/room/chat';
+import { Menu } from './ui/menu/menu';
+import { lobbyScreen, type LobbyEntry } from './ui/lobby';
+import { TouchPower } from './ui/touch/touch-power';
+import { TouchWheel } from './ui/touch/touch-wheel';
 import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, type App } from './ui/screens';
-import { statsAvailable, statsScreen } from './ui/stats';
-import { reportLocalGame, trackLocalGame } from './localStats';
-import { netMatch } from './netMatch';
-import type { StatsReplay } from './net';
+import { statsAvailable, statsScreen } from './ui/stats/stats';
+import { reportLocalGame, trackLocalGame } from './net/localStats';
+import { netMatch } from './net/netMatch';
+import type { StatsReplay } from './net/net';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
-const touchMenu = document.querySelector<HTMLButtonElement>('#touch-menu')!;
+const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
 /** How many are watching, for everybody who is not in the stands themselves. */
 const standsBadge = document.querySelector<HTMLElement>('#stands-badge')!;
@@ -49,10 +53,12 @@ const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 
 const settings = loadSettings();
+setLook(settings.look);
 setLang(settings.language);
 applyStaticTexts();
 const sound = new Sound();
-sound.enabled = settings.sound;
+sound.menuEnabled = settings.menuSounds;
+sound.gameEnabled = settings.gameSounds;
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const coarsePointer = matchMedia('(pointer: coarse)');
 const effects = new Effects(settings.particles, reducedMotion, settings.debris);
@@ -63,18 +69,21 @@ const recorder = new ClipRecorder();
 /** The title screen plays an Event Horizon match between four CPUs behind the menu. */
 const attract = createMatch(
   'horizon',
-  { ...DEFAULT_SETTINGS, maxPlanets: 4, contours: settings.contours, sound: false },
+  { ...DEFAULT_SETTINGS, maxPlanets: 4, contours: settings.contours },
   { attract: true, seats: ['medium', 'medium', 'medium', 'medium', 'off', 'off'] },
 );
 let match: Match | null = null;
 /** The game on screen when it is a replay, to watch it again. */
 let lastReplay: StatsReplay | null = null;
 let screen: 'title' | 'play' = 'title';
-let lastMode: VersusMode = 'classic';
-let lastMayhem = false;
+let lastMode: GameMode = 'classic';
 /** `?daily=YYYY-MM-DD` flies another day's challenge — handy for testing and for sharing an old one. */
 const requestedDay = new URLSearchParams(location.search).get('daily');
 const forcedDay = isDateKey(requestedDay) ? requestedDay : null;
+const requestedPreview = new URLSearchParams(location.search).get('preview');
+const uiPreview: UiPreview | null = import.meta.env.DEV && ['oracle-card', 'oracle-pause', 'stands-card', 'stands-pause'].includes(requestedPreview ?? '')
+  ? requestedPreview as UiPreview
+  : null;
 
 const active = (): Match => (screen === 'play' && match ? match : attract);
 
@@ -207,7 +216,7 @@ function wire(m: Match): void {
         if (audible) sound.volley();
         break;
       case 'lock':
-        if (audible) sound.blip();
+        if (audible) sound.gameBlip();
         break;
       case 'killcam':
         effects.clear();
@@ -247,16 +256,26 @@ function multiplayer(): MultiplayerSession {
       match = null;
       screen = 'title';
       effects.clear();
-      menu.open(() => lobbyScreen(app, multiplayer()));
+      const lobby = lobbyScreen(app, multiplayer());
+      menu.open(() => lobby);
     },
   });
-  const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session);
+  const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session, () => {
+    if (overlay.querySelector('.menu-page--room')) return { kind: 'lobby' };
+    const matchMenu = overlay.querySelector('.menu-page--pause, .menu-page--results');
+    if (screen === 'play' && session?.match && session.match === match && (!menu.isOpen || matchMenu)) return { kind: 'game' };
+    return null;
+  });
   chat = panel;
   session.subscribe(() => panel.update());
+  // Menu pages swapping, or the lobby turning into a room, move the chat: watched here rather than looked up every frame.
+  new MutationObserver(() => panel.update()).observe(overlay, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden'] });
   return session;
 }
 /** The chat of the room, once there is a session for it. */
 let chat: ChatPanel | null = null;
+/** What the chat last saw of the screen, the menu and the match, so the frame loop updates it only on a change. */
+let chatSeen: { screen: 'title' | 'play'; menuOpen: boolean; match: Match | null } = { screen, menuOpen: false, match: null };
 /** The online match on screen, if any. */
 const online = (): MultiplayerSession | null => (session?.match ? session : null);
 
@@ -314,6 +333,7 @@ const app: App = {
   menu,
   settings,
   get skipOffer() {
+    if (uiPreview) return null;
     const m = match;
     if (!m || m.replaying || screen !== 'play') return null;
     const net = online();
@@ -332,10 +352,13 @@ const app: App = {
   },
   settingsChanged() {
     saveSettings(settings);
-    applyStickSide();
-    sound.enabled = settings.sound;
+    applyWheelSide();
+    applyMenuMotion();
+    sound.menuEnabled = settings.menuSounds;
+    sound.gameEnabled = settings.gameSounds;
     effects.particles = settings.particles;
     effects.debrisLevel = settings.debris;
+    setLook(settings.look);
     attract.applySettings(settings);
     if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {
@@ -351,13 +374,11 @@ const app: App = {
     return screen === 'play' && !!match && match.settings.mayhem > 0;
   },
   today: () => forcedDay ?? dateKey(),
-  start(mode, mayhem = false) {
+  start(mode) {
     lastMode = mode;
-    lastMayhem = mayhem;
     match?.dispose();
-    // Mayhem is a game of its own: it plays by its two rules over the plain ones, whatever the other setups say.
-    const rules = cloneSettings(settings);
-    const played = mayhem ? { ...rules, ...mayhemRules(rules, mode) } : { ...rules, mayhem: 0 };
+    // Mayhem is a preset of the rules (the level of `mayhem`), not a mode of its own.
+    const played = cloneSettings(settings);
     match = createMatch(mode, played);
     // Where there is a relay, a game played here to its end is told to it, for its statistics.
     if (statsAvailable()) trackLocalGame(match, played, (report) => void reportLocalGame(report));
@@ -375,23 +396,28 @@ const app: App = {
     menu.close();
   },
   get online() {
-    return !!online();
+    return !!uiPreview || !!online();
   },
-  openLobby: () => menu.open(() => lobbyScreen(app, multiplayer())),
-  toLobby() {
+  openLobby(entry?: LobbyEntry) {
+    const lobby = lobbyScreen(app, multiplayer(), entry);
+    if (entry) menu.push(() => lobby);
+    else menu.open(() => lobby);
+  },
+  leaveOnlineRoom() {
     session?.leaveRoom();
     match?.dispose();
     match = null;
     screen = 'title';
     effects.clear();
-    menu.open(() => lobbyScreen(app, multiplayer()));
+    const lobby = lobbyScreen(app, multiplayer(), 'rooms');
+    menu.open(() => lobby);
   },
   resume() {
     voteMenuOpen = false;
     menu.close();
   },
   rematch() {
-    if (!match) return app.start(lastMode, lastMayhem);
+    if (!match) return app.start(lastMode);
     if (online()) {
       if (!match.canAdvance) return;
       advanceMatch();
@@ -444,7 +470,7 @@ const app: App = {
 
 /** Replay the last killcam while recording the canvas, then download the video. */
 function saveClip(): void {
-  if (!(match instanceof HorizonMatch) || !ClipRecorder.supported || recorder.recording) return;
+  if (!match?.canSaveClip || !ClipRecorder.supported || recorder.recording) return;
   match.replayLastKill(true);
 }
 
@@ -474,7 +500,7 @@ function escapeAction(): void {
     return;
   }
   // A clip records whatever is on screen — don't freeze it behind the menu.
-  if (!recorder.recording) menu.open(() => pauseScreen(app));
+  if (!recorder.recording) menu.open(() => pauseScreen(app, match));
 }
 
 // ————————————————————————————— Keyboard —————————————————————————————
@@ -652,7 +678,7 @@ const endDrag = () => (dragging = false);
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
 
-/** Aiming is dragging on the field or pulling the stick; the buttons are for the last half degree. */
+/** Aiming is dragging on the field, turning the wheel for the angle or sliding the bar for the power. */
 const touchAimHandlers = {
   aim(change: { angle?: number; power?: number }) {
     if (!match || !canAim()) return;
@@ -661,16 +687,23 @@ const touchAimHandlers = {
   },
   touched: () => sound.unlock(),
 };
-const touchControls = new TouchControls(document.querySelector<HTMLElement>('#touch-bar')!, touchAimHandlers);
-const touchStick = new TouchStick(touchAimHandlers);
-document.body.append(touchStick.el);
-/** The stick sits on the left of the screen, or — a setting on a touch screen — on the right. */
-function applyStickSide(): void {
-  document.documentElement.classList.toggle('stick-right', settings.stickSide === 'right');
+const touchBar = document.querySelector<HTMLElement>('#touch-bar')!;
+const powerBar = new TouchPower(touchAimHandlers);
+const touchWheel = new TouchWheel(touchAimHandlers);
+touchBar.prepend(powerBar.el);
+document.body.append(touchWheel.el);
+/** The wheel sits in the right corner of the screen, or — a setting on a touch screen — in the left one, and the power bar and the fire button follow. */
+function applyWheelSide(): void {
+  document.documentElement.classList.toggle('wheel-left', settings.wheelSide === 'left');
+  touchWheel.setSide(settings.wheelSide);
 }
-applyStickSide();
+applyWheelSide();
+function applyMenuMotion(): void {
+  document.documentElement.classList.toggle('menu-motion-less', settings.lessMenuMotion);
+}
+applyMenuMotion();
 
-touchMenu.addEventListener('click', () => {
+pauseButton.addEventListener('click', () => {
   sound.unlock();
   if (screen === 'play' && !menu.isOpen) escapeAction();
 });
@@ -694,9 +727,12 @@ document.addEventListener('fullscreenchange', () => menu.refresh());
 function syncButtons(): void {
   const playing = screen === 'play' && !menu.isOpen && !!match;
   const m = match;
-  const showMenu = playing && coarsePointer.matches;
-  if (touchMenu.hidden === showMenu) touchMenu.hidden = !showMenu;
-  if (showMenu && touchMenu.ariaLabel !== t('common.menu')) touchMenu.ariaLabel = t('common.menu');
+  // The way into the pause menu: a button for a thumb, and for a mouse too, where Esc does the same.
+  if (pauseButton.hidden === playing) pauseButton.hidden = !playing;
+  if (playing && pauseButton.ariaLabel !== t('pause.title')) {
+    pauseButton.ariaLabel = t('pause.title');
+    pauseButton.title = coarsePointer.matches ? '' : `${t('pause.title')} (Esc)`;
+  }
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
     // The announcement of a Mayhem round waits for a tap (online only the host's).
@@ -715,18 +751,19 @@ function syncButtons(): void {
   const power = holder && holder.powerUp && holder.powerUp !== 'splitter' && holder.powerUp !== 'shield' ? holder : null;
   if (touchPower.hidden !== !power) touchPower.hidden = !power;
   if (power) {
-    const label = `${power.armed || m!.placing ? '● ' : ''}${t(`powerup.${power.powerUp}` as Key).toUpperCase()}`;
+    const kind = power.powerUp!;
+    const label = `${power.armed || m!.placing ? '● ' : ''}${t(`powerup.${kind}`).toUpperCase()}`;
     if (touchPower.textContent !== label) touchPower.textContent = label;
-    touchPower.style.setProperty('--power', POWER_UP_COLORS[power.powerUp!]);
+    touchPower.style.setProperty('--power', POWER_UP_COLORS[kind]);
   }
 
-  // The dial and the slider aim for whoever is aiming; a placement is aimed on the field itself.
+  // The wheel and the bar aim for whoever is aiming; a placement is aimed on the field itself.
   const aiming = playing && coarsePointer.matches && canAim() && !m!.placing ? m!.players[m!.viewer ?? m!.current] : null;
   const aim = aiming && { angle: aiming.angle, power: aiming.power, maxPower: m!.settings.maxPower, fixedPower: m!.settings.fixedPower };
-  touchControls.update(aim);
-  touchStick.update(aim);
+  powerBar.update(aim);
+  touchWheel.update(aim);
 
-  const canClip = playing && m instanceof HorizonMatch && m.canReplay && ClipRecorder.supported && !recorder.recording;
+  const canClip = playing && m?.canSaveClip && ClipRecorder.supported && !recorder.recording;
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;
 }
 
@@ -825,7 +862,7 @@ function frame(now: number): void {
   }
   const net = online();
   // Online the others keep playing, so a menu on top doesn't stop the world.
-  const paused = screen === 'play' && menu.isOpen && !net;
+  const paused = screen === 'play' && !net && (menu.isOpen || (!!uiPreview && uiPreview.endsWith('card')));
   const empty = screen !== 'play' && !settings.menuBackground;
   if (!paused && !empty) {
     if (!net || net.isHost) m.update(dt);
@@ -834,7 +871,7 @@ function frame(now: number): void {
     if (m.world.nebulae.length) {
       for (const vs of m.scene().volley?.shots ?? []) {
         const s = vs.shot;
-        if (!s.end && s.inField && inNebula(m.world.nebulae, s.x, s.y)) effects.nebulaDrag(s.x, s.y, s.vx, s.vy, dt, POWER_UP_COLORS.nebula);
+        if (!s.end && s.inField && inPowerUpNebula(m.world.nebulae, s.x, s.y)) effects.nebulaDrag(s.x, s.y, s.vx, s.vy, dt, POWER_UP_COLORS.nebula);
       }
     }
   }
@@ -865,13 +902,18 @@ function frame(now: number): void {
     renderer.draw(
       m,
       effects,
-      { hud: screen === 'play', touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
+      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
       paused ? 0 : dt,
     );
   }
   if (screen === 'play' && m === match) announceOracle(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();
+  // The overlay is watched; what else decides where the chat goes is cheap to compare each frame.
+  if (chat && (screen !== chatSeen.screen || menu.isOpen !== chatSeen.menuOpen || match !== chatSeen.match)) {
+    chatSeen = { screen, menuOpen: menu.isOpen, match };
+    chat.update();
+  }
   requestAnimationFrame(frame);
 }
 
@@ -884,6 +926,15 @@ async function boot(): Promise<void> {
   // Canvas text needs the web fonts loaded before the first draw.
   const fonts = [`800 32px ${FONTS.display}`, `400 16px ${FONTS.body}`, `700 16px ${FONTS.body}`, `400 16px ${FONTS.mono}`, `700 16px ${FONTS.mono}`];
   await Promise.race([Promise.all(fonts.map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 1500))]);
+  if (uiPreview) {
+    match = createUiPreview(uiPreview);
+    screen = 'play';
+    wire(match);
+    effects.clear();
+    if (uiPreview.endsWith('pause')) menu.open(() => pauseScreen(app, match));
+    requestAnimationFrame(frame);
+    return;
+  }
   // An invite link opens the lobby by itself and joins the named room after connecting.
   if (readInvite(location.search, location.hash)) app.openLobby();
   else {

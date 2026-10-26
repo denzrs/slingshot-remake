@@ -1,9 +1,9 @@
-import { buildSector, rankOf, sectorRules, type Challenge, type Sector, type SectorSpec, type ThemeId } from '../challenge';
-import { AIM, CHALLENGE, FIELD } from '../config';
-import { cloneWorld, normalizeAngle, type ShotRules, type StyleKind } from '../physics';
-import { scoreChallengeHit } from '../scoring';
-import type { Settings } from '../settings';
-import type { VolleyAim, VolleyShot } from '../volley';
+import { buildSector, rankOf, sectorRules, type Challenge, type Sector, type SectorSpec, type ThemeId } from '../sim/challenge';
+import { AIM, CHALLENGE, FIELD } from '../sim/config';
+import { cloneWorld, normalizeAngle, type ShotRules, type StyleKind } from '../sim/physics';
+import { scoreChallengeHit } from '../sim/scoring';
+import type { Settings } from '../data/settings';
+import type { VolleyAim, VolleyShot } from '../sim/volley';
 import { Match, newPlayer, type KillRecord, type RoundTitle } from './match';
 
 export interface ShotLog {
@@ -107,6 +107,7 @@ export class ChallengeMatch extends Match {
   }
 
   startRound(): void {
+    this.killcam.reset();
     this.round++;
     const sector = this.sector(this.round - 1);
     this.spec = sector.spec;

@@ -1,0 +1,481 @@
+/* Room creation follows the local match briefing: presets and quick rules beside room details. */
+.room-deck__briefing .briefing__presets { min-width: 0; }
+.room-deck__briefing .briefing__cards { margin: 0 0 18px; }
+.menu-page--lobby .briefing__cards .item--card {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  border-color: rgb(91 125 179 / .24);
+  background: rgb(9 21 39 / .68);
+  text-align: left;
+}
+.menu-page--lobby .briefing__cards .item__icon { width: 100%; height: clamp(44px, calc(9vh - 18px), 88px); }
+.menu-page--lobby .briefing__cards .item__title { min-width: 0; font-size: clamp(17px, 1.65vw, 23px); }
+.menu-page--lobby .briefing__cards .item__hint { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--bone-dim); font-size: 10px; line-height: 1.55; }
+.menu-page--room .briefing__quick { gap: 12px 22px; }
+.menu-page--room .briefing__quick .item { padding: 8px 0; }
+/* A short window gives the room's preset cards less height; a tall one stops at 190px. */
+.menu-page--room .briefing__cards { --preset-card-height: clamp(150px, calc(30vh - 54px), 190px); }
+
+@media (max-width: 1000px) {
+  .menu-page--lobby .briefing__cards .item--card { padding: 10px; }
+}
+@media (max-width: 760px) {
+  .menu-page--lobby .briefing__cards .item__icon { height: 68px; }
+}
+@media (max-width: 520px) {
+  .menu-page--leaderboard .lb__kind { min-height: 5.1em; }
+  .menu-page--lobby .briefing__cards .item--card { gap: 5px; padding: 9px; }
+  .menu-page--lobby .briefing__cards .item__icon { height: 58px; }
+  .menu-page--lobby .briefing__cards .item__title { font-size: 16px; }
+  .menu-page--lobby .briefing__cards .item__hint { font-size: 9px; }
+  .menu-page--room .briefing__quick { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
+
+@media (min-width: 521px) and (max-width: 900px) {
+  .menu-page--leaderboard .lb__kind { min-height: 3.4em; }
+}
+@media (max-width: 380px) {
+  .menu-page--leaderboard .lb__kind { min-height: 6.8em; }
+}
+
+/* The start cards respond to pointer hover and keyboard focus in the same way. */
+.screen--title .launcher__modes .item--card,
+.screen--title .launcher__online .item--card {
+  transition: transform 220ms cubic-bezier(.2, .7, .2, 1), border-color 180ms ease, background-color 180ms ease, box-shadow 220ms ease;
+}
+.screen--title .launcher__modes .item--card .item__icon,
+.screen--title .launcher__online .item--card .item__icon {
+  transform-origin: center;
+  transition: transform 260ms cubic-bezier(.2, .7, .2, 1), filter 260ms ease;
+}
+/* The card that holds focus without a keyboard (the first one on opening) must not keep the base 1.06 zoom, or hovering it would shrink its art. */
+.screen--title .launcher__modes .item--card:focus .item__icon,
+.screen--title .launcher__online .item--card:focus .item__icon { transform: none; }
+.screen--title .launcher__modes .item--card .item__title,
+.screen--title .launcher__online .item--card .item__title { transition: color 180ms ease; }
+.screen--title .launcher__modes .item--card:is(:hover, :focus-visible),
+.screen--title .launcher__online .item--card:is(:hover, :focus-visible) {
+  transform: translateY(-3px);
+  border-color: var(--p2);
+  background: rgb(18 39 62 / .94);
+  box-shadow: 0 10px 28px rgb(0 0 0 / .18);
+}
+.screen--title .launcher__modes .item--card:is(:hover, :focus-visible) .item__icon,
+.screen--title .launcher__online .item--card:is(:hover, :focus-visible) .item__icon {
+  transform: translateY(-3px) scale(1.035);
+  filter: drop-shadow(0 0 9px rgb(111 227 200 / .2));
+}
+.screen--title .launcher__modes .item--card:is(:hover, :focus-visible) .item__title,
+.screen--title .launcher__online .item--card:is(:hover, :focus-visible) .item__title { color: var(--p2); }
+
+/* Preset art settles into its selected state once; it stays still until another preset is chosen. */
+.briefing__cards .item--card .item__icon,
+.menu-page--lobby .lobby__preset .item__icon {
+  transform-origin: center;
+  transition: transform 320ms cubic-bezier(.16, 1, .3, 1), filter 320ms ease;
+}
+.briefing__cards .item--card:is(.is-selected, [aria-pressed='true']) .item__icon,
+.menu-page--lobby .lobby__preset[aria-pressed='true'] .item__icon {
+  transform: translateY(-2px) scale(1.035);
+  filter: drop-shadow(0 0 10px rgb(255 173 101 / .2));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen--title .launcher__modes .item--card,
+  .screen--title .launcher__online .item--card,
+  .screen--title .launcher__modes .item--card .item__icon,
+  .screen--title .launcher__online .item--card .item__icon,
+  .briefing__cards .item--card .item__icon,
+  .menu-page--lobby .lobby__preset .item__icon { transition: none; }
+  .screen--title .launcher__modes .item--card:is(:hover, :focus-visible),
+  .screen--title .launcher__online .item--card:is(:hover, :focus-visible),
+  .screen--title .launcher__modes .item--card:is(:hover, :focus-visible) .item__icon,
+  .screen--title .launcher__online .item--card:is(:hover, :focus-visible) .item__icon,
+  .briefing__cards .item--card:is(.is-selected, [aria-pressed='true']) .item__icon,
+  .menu-page--lobby .lobby__preset[aria-pressed='true'] .item__icon {
+    transform: none;
+    filter: none;
+    box-shadow: none;
+  }
+}
+
+/* What the relay says sits at the foot of the page's content, out of the way of the heading. */
+.menu-page--lobby .lobby__status {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 10px 14px;
+  border: 1px solid var(--menu-line);
+  border-radius: 3px;
+  background: rgb(9 21 39 / .94);
+}
+.menu-page--lobby .lobby__status[hidden] { display: none; }
+
+/* Opening a room: everything at once, across the whole width, so nothing needs a scroll and nothing moves. */
+.online-create, .online-code { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 16px clamp(24px, 4vw, 56px); margin: 4px 0; padding: 14px 18px; border: 1px solid var(--menu-line); border-radius: 3px; background: rgb(13 29 50 / .55); }
+.online-forms { display: grid; }
+.online-forms[hidden] { display: none; }
+/* Both sit in the one cell: the one not shown only lends its height. */
+.online-forms > * { grid-area: 1 / 1; }
+.online-forms > [hidden] { display: grid; visibility: hidden; }
+.online-create > *, .online-code > * { min-width: 0; }
+.online-create .item { padding-block: 0; padding-inline: 0; }
+.online-create .item::before { display: none; }
+.online-create .segmented__option { padding-inline: 8px; white-space: nowrap; }
+.online-create__name { display: flex; gap: 8px; }
+.online-create__name > input { flex: 1; min-width: 0; }
+.online-create__look { width: 48px; height: auto; min-height: 48px; color: var(--bone); }
+.online-create__look .room-icon { margin: 0; vertical-align: 0; }
+.online-create__look .room-icon, .online-create__look svg { width: 24px; height: 24px; }
+@media (max-width: 900px) {
+  .online-create { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .online-create { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The room: what is played beside who plays it. */
+.room-deck__layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
+.room-deck__briefing, .room-deck__crew { display: grid; gap: 14px; min-width: 0; align-content: start; }
+.room-deck__briefing[hidden], .room-deck__briefing > [hidden] { display: none; }
+@media (min-width: 1001px) {
+  .room-deck__layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 32px; }
+  .room-deck__briefing { grid-column: 1; grid-row: 1; }
+  .room-deck__crew { grid-column: 2; grid-row: 1; }
+}
+
+/* Short windows: the online pages give up some air instead of growing a scroll bar. */
+@media (max-height: 620px) {
+  .menu-page--lobby .lobby { gap: 10px; }
+  .menu-page--lobby .online-identity { padding: 10px 16px; }
+  .menu-page--lobby .online-rooms .lobby__head { padding-bottom: 8px; margin-bottom: 8px; }
+  .menu-page--lobby .online-rooms .lobby__head .lobby__button { min-height: 36px; }
+  .menu-page--lobby .lobby__empty { gap: 4px; padding-block: 10px; }
+  .lobby__empty-radar { display: none; }
+  .menu-page--lobby .lobby__empty > span:not(.lobby__empty-radar) { max-width: none; }
+  .menu-page--lobby .lobby__empty strong { font-size: 18px; }
+  .menu-page--lobby .menu-page__head { margin-bottom: 10px; }
+  .menu-page--lobby .menu-page__intro { max-width: none; margin-top: 8px; }
+  .menu-page--lobby .menu-page__foot { padding-top: 12px; }
+  .menu-page--lobby .menu-page__actions .item, .menu-page--lobby .menu-page__actions .lobby__button { min-height: 42px; padding-block: 8px; }
+  .online-create { gap: 8px clamp(24px, 4vw, 56px); margin: 0; }
+  .online-code { margin: 0; }
+  .online-create .lobby__field input { min-height: 38px; }
+  .menu-page--lobby .online-identity { padding: 8px 14px; }
+  .online-profile__avatar { width: 36px; height: 36px; }
+  .online-profile__avatar svg { width: 20px; height: 20px; }
+  .online-profile__name { font-size: 17px; }
+  .menu-page--lobby .online-connection__status { min-height: 36px; }
+  .menu-page--lobby .mode-pager .mode-pager__item--active { font-size: 44px; }
+  .menu-page--lobby .mode-pager .mode-pager__item--near { font-size: 30px; }
+  .menu-page--lobby .mode-pager .mode-pager__item--far { font-size: 24px; }
+}
+
+.online-code .item { padding-block: 0; padding-inline: 0; min-height: 0; }
+.online-code .item::before { display: none; }
+/* The code is the whole point of this page: its symbol large beside an ordinary field, the two small choices underneath. */
+.online-code { grid-template-columns: clamp(160px, 20vw, 260px) minmax(0, 1fr); align-items: stretch; gap: 12px clamp(24px, 4vw, 56px); padding: 14px 18px; }
+.online-code__art { opacity: .9; }
+.online-code__form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px clamp(20px, 3vw, 40px); align-content: center; }
+.online-code__code { grid-column: 1 / -1; min-width: 0; }
+.online-code__code, .online-code__password { position: relative; }
+.online-code__password { margin: 0; }
+.online-code__password[hidden] { display: block; visibility: hidden; }
+/* Beside its neighbours the password keeps its place, so nothing shifts when the relay asks for it; stacked, it only takes room once shown. */
+@media (max-width: 760px) {
+  .online-code { grid-template-columns: minmax(0, 1fr); }
+  .online-code__art { display: none; }
+}
+@media (max-width: 560px) {
+  .online-code__form { grid-template-columns: minmax(0, 1fr); }
+  .online-code__password[hidden] { display: none; }
+}
+/* A refusal hangs under its field, in the gap, so the box is as tall as the one for opening a room with or without it. */
+.online-code__error { position: absolute; inset: calc(100% + 1px) 0 auto; margin: 0; font-size: 12px; line-height: 14px; }
+@media (max-height: 620px) {
+  .online-code { grid-template-columns: minmax(0, 1fr); padding-block: 14px; }
+  .online-code__art { display: none; }
+  .online-code__password .lobby__field input { min-height: 38px; }
+}
+
+/* The room follows the local briefing: the game and its rules on the left, a slim crew column on the right. */
+.room-deck__heading[hidden] { display: none; }
+.menu-page--room .online-identity { padding: 8px 16px; margin-bottom: 0; }
+.menu-page--room .online-profile__avatar { width: 34px; height: 34px; }
+.menu-page--room .online-profile__avatar svg { width: 19px; height: 19px; }
+.menu-page--room .online-profile > summary { gap: 12px; }
+.menu-page--room .online-profile__label { display: none; }
+.menu-page--room .online-profile__name { font-size: 16px; }
+.menu-page--room .online-connection__status { min-height: 0; }
+@media (min-width: 1001px) {
+  .room-deck__layout { grid-template-columns: minmax(0, 1fr) clamp(280px, 28vw, 340px); gap: 28px; }
+}
+.menu-page .room-deck__crew .slot-grid[data-capacity], .menu-page .room-deck__crew .slot-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.menu-page .room-deck__crew .slot-card { min-height: 0; padding: 7px 10px; gap: 2px 10px; }
+.menu-page .room-deck__crew .player-slot { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-areas: "num icon id ready" "ctl ctl ctl ctl"; align-items: center; }
+/* A CPU seat's four strengths sit in one row under its name, so a full room of them stays on the page. */
+.menu-page .room-deck__crew .player-slot .option-selector { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.menu-page .room-deck__crew .player-slot .option-selector__choice { min-height: 30px; padding: 4px 6px; gap: 5px; }
+/* In a window that is not tall, a CPU seat is one line: name, the four strengths as bars (their names are the tooltips), ready. */
+@media (max-height: 1000px) {
+  .menu-page .room-deck__crew .player-slot { grid-template-columns: auto auto minmax(0, 1fr) auto auto; grid-template-areas: "num icon id ctl ready"; }
+  .menu-page .room-deck__crew .player-slot .option-selector { grid-template-columns: repeat(4, 30px); gap: 3px; }
+  .menu-page .room-deck__crew .player-slot .option-selector__choice { min-height: 26px; padding: 3px 0; justify-content: center; }
+  .menu-page .room-deck__crew .player-slot .option-selector__choice > span:last-child { display: none; }
+  .menu-page .room-deck__crew .player-slot.is-cpu .lobby__ready { display: none; }
+  .menu-page--room .room-deck__crew .player-slot.has-remove.has-move { padding-right: 90px; }
+}
+/* In a team game the seats are one line at any height: the team columns add their own headings. */
+.menu-page .room-deck__crew .team-roster.has-teams .player-slot { grid-template-columns: auto auto minmax(0, 1fr) auto auto; grid-template-areas: "num icon id ctl ready"; }
+.menu-page .room-deck__crew .team-roster.has-teams .player-slot .option-selector { grid-template-columns: repeat(4, 30px); gap: 3px; }
+.menu-page .room-deck__crew .team-roster.has-teams .player-slot .option-selector__choice { min-height: 26px; padding: 3px 0; justify-content: center; }
+.menu-page .room-deck__crew .team-roster.has-teams .player-slot .option-selector__choice > span:last-child { display: none; }
+.menu-page .room-deck__crew .team-roster.has-teams .player-slot.is-cpu .lobby__ready { display: none; }
+.menu-page--room .room-deck__crew .team-roster.has-teams .player-slot.has-remove.has-move { padding-right: 90px; }
+.menu-page .room-deck__crew .player-slot > .slot-card__head { display: contents; }
+.menu-page .room-deck__crew .player-slot .slot-card__number { grid-area: num; font-size: 19px; }
+.menu-page .room-deck__crew .player-slot .slot-card__kind { display: none; }
+.menu-page .room-deck__crew .player-slot .slot-card__portrait { grid-area: icon; flex: none; min-height: 0; }
+.menu-page .room-deck__crew .player-slot .slot-card__portrait .player-icon { width: 26px; height: 26px; }
+.menu-page .room-deck__crew .player-slot .player-slot__identity { grid-area: id; flex-wrap: nowrap; padding: 0; border: 0; }
+.menu-page .room-deck__crew .player-slot .player-slot__identity .lobby__player-name { flex: 0 1 auto; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-page .room-deck__crew .player-slot .player-slot__controls { grid-area: ctl; }
+.menu-page .room-deck__crew .player-slot .lobby__ready { grid-area: ready; margin: 0; padding: 0 24px 0 0; font-size: 10px; }
+.menu-page .room-deck__crew .slot-card--empty { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; }
+.menu-page .room-deck__crew .slot-card--empty .slot-card__head { display: contents; }
+.menu-page .room-deck__crew .slot-card--empty .slot-card__number { font-size: 19px; }
+.menu-page .room-deck__crew .slot-card--empty .slot-card__kind { display: none; }
+.menu-page .room-deck__crew .slot-card--empty .slot-card__waiting { display: none; }
+.menu-page .room-deck__crew .slot-card__join { flex-direction: row; justify-content: flex-start; gap: 8px; min-height: 0; font-size: 15px; }
+.menu-page .room-deck__crew .slot-card__join .slot-card__plus { order: 0; font-size: 22px; }
+.menu-page .room-deck__crew .slot-card__add-cpu { align-self: center; min-height: 28px; }
+.menu-page--room .room-deck__roster-head .lobby__note { font-size: 20px; }
+
+/* The room's details in a card of their own, under the pilot: its code, who may come in, how to share it. */
+.menu-page--room .room-info { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0 14px; padding: 10px 16px; border: 1px solid var(--menu-line); border-radius: 3px; background: rgb(13 29 50 / .55); }
+.menu-page--room .room-info .lobby__code-value { font-size: 20px; }
+.menu-page--room .room-info > .lobby__tag { margin-left: 0; }
+
+/* The room's lower area: the start hint sits by the start button, and the two collapsibles are slim rows. */
+.lobby__start-hint { flex: 0 1 46ch; margin: 0 6px 0 0; color: var(--sodium); font-size: 11px; line-height: 1.45; text-align: right; white-space: pre-line; }
+.lobby__start-hint[hidden] { display: none; }
+.menu-page--room .room-deck__briefing { gap: 0; }
+.menu-page--room .room-deck__briefing > .briefing__presets,
+.menu-page--room .room-deck__briefing .online-create__main { margin-bottom: 0; }
+/* For everybody but the host the game is on show, not to be touched. */
+.menu-page .lobby__preset.is-readonly { cursor: default; }
+.menu-page .lobby__preset.is-readonly:hover { transform: none; }
+.menu-page--room .room-info__symbol { display: grid; place-items: center; }
+.menu-page--room .room-info__symbol .room-icon { margin: 0; width: 24px; height: 24px; vertical-align: 0; }
+
+/* The room options live in the banner: the symbol opens the look dialog, the visibility switches inline. */
+.menu-page--room .room-info__symbol { padding: 4px; border: 1px solid transparent; border-radius: 3px; background: transparent; cursor: pointer; }
+.menu-page--room .room-info__symbol:disabled { cursor: default; }
+.menu-page--room .room-info__symbol:not(:disabled):hover { border-color: var(--menu-line); background: rgb(111 227 200 / .06); }
+/* The visibility and match-type selectors sit in the banner beside the code. */
+.menu-page--room .room-info__switches { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.menu-page--room .room-info__switches .item--segmented,
+.menu-page--room .room-deck__mode .item--segmented { padding: 0; min-height: 0; }
+.menu-page--room .room-info__switches .item__label,
+.menu-page--room .room-info__switches .item__readout,
+.menu-page--room .room-deck__mode .item__label,
+.menu-page--room .room-deck__mode .item__readout { display: none; }
+.menu-page--room .room-info__switches .item--segmented,
+.menu-page--room .room-deck__mode .item--segmented { display: block; flex: none; width: auto; }
+.menu-page--room .room-info__switches .segmented { width: calc(var(--n) * 96px); min-height: 32px; }
+.menu-page--room .room-deck__mode .segmented { width: 100%; min-height: 32px; }
+.menu-page--room .room-deck__roster-head { flex-wrap: wrap; }
+.menu-page--room .room-deck__mode { order: 3; flex: 1 0 100%; }
+.menu-page--room .room-info__switches .segmented__option,
+.menu-page--room .room-deck__mode .segmented__option { padding-inline: 6px; font-size: 11px; white-space: nowrap; }
+/* Team rooms look like the free for all, in two colours: the seats stack under a slim team label. */
+.menu-page--room .room-deck__crew .team-roster.has-teams .team-roster__columns { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.menu-page--room .room-deck__crew .team-column { padding: 0; border: 0; border-radius: 0; background: none; }
+.menu-page--room .room-deck__crew .team-column__head { min-height: 20px; margin-bottom: 6px; gap: 8px; }
+.menu-page--room .room-deck__crew .team-column__head h3 { font-size: 15px; letter-spacing: .06em; }
+.menu-page--room .room-deck__crew .team-column__count { min-width: 22px; height: 20px; font-size: 10px; }
+.menu-page--room .room-deck__crew .roster-entry.has-move .player-slot,
+.menu-page--room .room-deck__crew .player-slot.has-move { padding-right: 50px; }
+/* The move handle sits in the right-hand column, where the remove button is: in line with it, and beside it on a CPU. */
+.menu-page--room .room-deck__crew .roster-move { right: 10px; top: 50%; transform: translateY(-50%); }
+.menu-page--room .room-deck__crew .player-slot:has(> .slot-card__head > .lobby__icon-button) .roster-move { top: 7px; right: 48px; transform: none; }
+.menu-page--room .room-deck__crew .player-slot.has-remove.has-move { padding-right: 10px; }
+.menu-page--room .room-deck__crew .player-slot.has-remove.has-move .lobby__ready { padding-right: 84px; }
+
+/* The rules of a room: the local rules page, laid over the lobby. */
+.rules-page { position: fixed; z-index: 50; background: #081426; }
+.rules-page[hidden] { display: none; }
+.room-deck__briefing .briefing__edit { margin: 8px 0 0; }
+
+/* Copying is an icon beside the code; what was copied appears beside it for a moment. The room's settings sit at the right. */
+.menu-page--room .room-info .lobby__icon-button { width: 34px; height: 34px; min-height: 0; }
+.menu-page--room .room-info .lobby__icon-button[hidden] { display: none; }
+.menu-page--room .room-info__share { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.menu-page--room .room-info { gap: 8px 16px; }
+.menu-page--room .room-info__switches { margin-left: auto; }
+.menu-page--room .room-info__share > .lobby__tag { margin-left: 0; }
+/* The pilot card and the room card sit side by side: same padding, same row height, every control on the middle line. */
+.menu-page--room .online-identity,
+.menu-page--room .room-info { box-sizing: border-box; min-height: 58px; padding: 10px 16px; align-items: center; }
+.menu-page--room .online-profile > summary { min-height: 34px; }
+.menu-page--room .online-profile__edit { display: inline-flex; align-items: center; min-height: 34px; box-sizing: border-box; padding-block: 0; }
+.menu-page--room .online-connection { align-items: center; }
+/* A guest cannot move the switch, so the card says it in words: the label dim, the setting in bone. */
+.menu-page--room .room-info__switches .item.is-readonly { display: flex; align-items: center; gap: 10px; min-height: 0; padding: 0; border: 0; }
+.menu-page--room .room-info__switches .item.is-readonly .item__label { display: inline; color: var(--bone-dim); font-size: 12px; }
+.menu-page--room .room-info__switches .item.is-readonly .item__readout { display: inline; font: 600 13px/1.2 var(--font-body); }
+.menu-page--room .room-info__switches .segmented { min-height: 34px; }
+.menu-page--room .room-info__switches .segmented__option { min-height: 34px; }
+.is-flash { position: relative; }
+.flash-note { position: absolute; top: calc(100% + 6px); left: 50%; z-index: 20; padding: 4px 9px; transform: translateX(-50%); border: 1px solid var(--p2); border-radius: 3px; background: #0d2035; color: var(--p2); font: 12px/1.4 var(--font-body); white-space: nowrap; pointer-events: none; }
+/* The copy button ends the password field at the right edge of the card: the note grows leftwards from it instead of running off the page. */
+.lobby__secret .flash-note { left: auto; right: 0; transform: none; }
+/* The same confirmation as an open seat gives, for the small icon buttons: the border lights, the check draws. */
+.lobby__icon-button.is-copied { border-color: var(--p2); background: rgb(111 227 200 / .07); color: var(--p2); animation: seat-copied 1.6s ease-out; }
+.lobby__icon-button.is-copied svg path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: seat-check .4s .05s ease-out forwards; }
+@media (prefers-reduced-motion: reduce) { .lobby__icon-button.is-copied, .lobby__icon-button.is-copied svg path { animation: none; stroke-dashoffset: 0; } }
+.menu-page--room .room-deck__crew .team-roster .team-roster__grid { min-height: 0; }
+.menu-page--room .room-deck__crew .team-roster .slot-card--empty { min-height: 0; }
+
+/* The heading row is as tall as its button, so "reset teams" appearing moves nothing. */
+.menu-page--room .room-deck__roster-head .lobby__note { display: flex; align-items: center; min-height: 32px; }
+.menu-page--room .room-deck__crew .player-slot.has-remove:not(.has-move) { padding-right: 52px; }
+.menu-page--room .room-deck__crew .player-slot > .slot-card__head > .lobby__icon-button,
+.menu-page--room .room-deck__crew .player-slot > .roster-move { width: 32px; height: 32px; min-height: 0; padding: 0; }
+
+/* The padlock replaces the emoji: a stroke icon in the text colour, lit amber where the rules are the host's alone. */
+.lock-icon { width: 1.1em; height: 1.1em; margin-right: .5em; vertical-align: -.17em; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+/* The room's rules for a guest sit above the divider of the rules link: they need no line of their own. */
+.room-deck__briefing .briefing__quick .item.is-readonly { border-bottom: 0; }
+/* A guest cannot pick: the presets that are not the room's are greyed out, and the chosen one stays lit.
+   Dimmed with a filter, not opacity: the entrance animation owns the opacity and would flash the cards at full strength. */
+.menu-page .lobby__preset.is-readonly[aria-pressed='false'] { filter: grayscale(.7) brightness(.55); }
+
+/* Settings → Less motion in menus: pages and cards appear in place, with no sliding, fading or flaring between them.
+   Spinners and status pings keep running; they report something rather than move you around. */
+.menu-motion-less :is(
+  .menu-page, .launcher, .panel, .menu-page__head, .launcher__head, .launcher__body,
+  .menu-page__head > *, .menu-page__head .mode-pager__viewport, .menu-page__main,
+  .mode-pager__item--active, .briefing__cards > *, .launcher__section-head,
+  .launcher__online > .item, .launcher__modes > .item, .launcher__daily > .item,
+  .menu-page--mode-enter-next .lobby > *, .menu-page--mode-enter-previous .lobby > *,
+  .room-deck__briefing, .lobby--linked > *
+) { animation: none !important; }
+.menu-motion-less #overlay :is(*, *::before, *::after) { transition: none !important; }
+
+/* The room on a wide screen: who you are and which room this is sit side by side, and the facts ticker moves up beside the title.
+   Two bars and a ticker used to stack above the crew and the game; this gives their height back. */
+@media (min-width: 1001px) {
+  .menu-page--room .lobby { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 14px 16px; align-items: stretch; }
+  .menu-page--room .lobby > * { grid-column: 1 / -1; }
+  .menu-page--room .lobby > .online-identity { grid-column: 1; grid-row: 1; gap: 8px 16px; }
+  .menu-page--room .lobby > .online-identity .online-profile { flex-basis: 200px; }
+  /* The room card has no frame of its own in a room, so its children join the page grid. */
+  .menu-page--room .lobby > .room-deck { display: contents; }
+  .menu-page--room .room-deck > .room-info { grid-column: 2; grid-row: 1; align-self: stretch; margin: 0; }
+  .menu-page--room .room-deck > .room-deck__layout { grid-column: 1 / -1; grid-row: 2; }
+  /* A spectator has no pilot card: the room card takes its place and the whole row. */
+  .menu-page--room .lobby:has(> .online-identity[hidden]) > .room-deck > .room-info { grid-column: 1 / -1; }
+}
+@media (min-width: 1101px) {
+  .menu-page--room .menu-page__head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 420px); align-items: end; gap: 0 32px; }
+  .menu-page--room .menu-page__head > :not(.stats-ticker) { grid-column: 1; }
+  .menu-page--room .menu-page__head > .stats-ticker { grid-column: 2; grid-row: 1 / span 2; align-self: end; margin: 0 0 6px; }
+}
+
+/* The room's two columns sit a little closer than a full six-seat team game would otherwise allow; a short window adds more below. */
+@media all {
+  .room-deck__briefing .briefing__cards { margin-bottom: 12px; }
+  .menu-page .room-deck__crew { gap: 8px; }
+  .menu-page--room .room-deck__crew .team-roster.has-teams .team-roster__columns { gap: 6px; }
+  .menu-page--room .room-deck__crew .team-column__head { margin-bottom: 4px; }
+  .menu-page--room .room-deck__roster-head .lobby__note { min-height: 28px; }
+  .menu-page .room-deck__crew .slot-card { padding-block: 3px; }
+  .menu-page .room-deck__crew .slot-grid { gap: 3px; }
+  .menu-page .room-deck__crew .player-slot .option-selector__choice { min-height: 22px; }
+  .menu-page .room-deck__crew .player-slot .slot-card__portrait .player-icon { width: 22px; height: 22px; }
+  .menu-page .room-deck__crew .player-slot .slot-card__number { font-size: 17px; }
+  .menu-page .room-deck__crew .player-slot > .slot-card__head > .lobby__icon-button,
+  .menu-page .room-deck__crew .player-slot > .roster-move { width: 26px; height: 26px; }
+  .menu-page--room .room-deck__crew .player-slot:has(> .slot-card__head > .lobby__icon-button) .roster-move { top: 4px; right: 40px; }
+  .menu-page .room-deck__crew .player-slot .option-selector__choice { min-height: 20px; }
+  .menu-page .room-deck__crew .player-slot > .slot-card__head > .lobby__icon-button,
+  .menu-page .room-deck__crew .player-slot > .roster-move { width: 24px; height: 24px; }
+  .menu-page .room-deck__crew .team-roster .team-roster__grid { gap: 3px; }
+  .menu-page--room .room-deck__crew .team-column__head { min-height: 16px; }
+  .menu-page .room-deck__crew { gap: 6px; }
+  /* The hint under the teams is read out but not shown, and "move here" sits in the team's heading row: moving a seat adds no height. */
+  .menu-page--room .room-deck__crew .team-roster__hint { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .menu-page--room .room-deck__crew .team-column { position: relative; }
+  .menu-page--room .room-deck__crew .team-column__place { position: absolute; top: 0; right: 30px; width: auto; height: 20px; min-height: 0; margin: 0; padding: 0 10px; font-size: 10px; line-height: 18px; white-space: nowrap; z-index: 2; }
+}
+@media (max-height: 740px) {
+  .menu-page .room-deck__crew .slot-card { padding-block: 1px; }
+}
+
+/* The host's Mayhem row keeps its place whether or not Mayhem is chosen, so picking it moves nothing (a guest's read-only list has no spare row). */
+.menu-page--room .briefing__quick:not(:has(.item.is-readonly)) .briefing__mayhem:not(:has(> .item:not([hidden]))) { display: block; visibility: hidden; min-height: 50px; pointer-events: none; }
+.menu-page--room .briefing__quick:not(:has(.item.is-readonly)) .briefing__mayhem:not(:has(> .item:not([hidden]))) > .item { display: none; }
+/* In the room the Mayhem strength sits on one line, the name at the left and the bar beside it, so choosing Mayhem takes one slim row. */
+.menu-page--room .briefing__mayhem .item--segmented { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 16px; padding-block: 4px; }
+.menu-page--room .briefing__mayhem .item--segmented > .item__label { grid-column: 1; grid-row: 1; }
+.menu-page--room .briefing__mayhem .item--segmented > .segmented { grid-column: 2; grid-row: 1; justify-self: start; }
+@media (max-height: 1000px) {
+  .menu-page--room .briefing__cards { --preset-card-height: clamp(136px, calc(30vh - 105px), 190px); }
+}
+/* In the room the cards are a name and a picture: the one line under the name never fit, and was cut off at any height. */
+.menu-page--room .briefing__cards .item__hint { display: none; }
+@media (max-height: 1000px) {
+  .menu-page--room .room-deck__briefing .briefing__cards { margin-bottom: 8px; }
+  .menu-page--room .briefing__quick { row-gap: 6px; }
+}
+
+/* The rules page in a short window: tighter tracks and bars, so the longest set of rules (Mayhem, the online rules) still fits. */
+@media (max-height: 1000px) {
+  .menu-page--rules { --rules-row-pad: 3px; }
+  .menu-page--rules .sheet .setup__rows > .item { min-height: 28px; }
+  .menu-page--rules .sheet .slider__track { height: 20px; }
+  .menu-page--rules .sheet .segmented__option { min-height: 24px; }
+}
+@media (max-height: 800px) {
+  .menu-page--rules .sheet .slider__track { height: 18px; }
+  .menu-page--rules .sheet .segmented__option { min-height: 22px; }
+  .menu-page--rules .sheet__col { gap: 10px; }
+}
+
+/* A CPU seat's two buttons, move and remove, share one line in the middle of the row, the same size, side by side. */
+.menu-page--room .room-deck__crew .player-slot.has-remove > .slot-card__head > .lobby__icon-button,
+.menu-page--room .room-deck__crew .player-slot.has-remove > .roster-move { position: absolute; top: calc(50% - 13px); width: 26px; height: 26px; margin: 0; transform: none; }
+.menu-page--room .room-deck__crew .player-slot.has-remove > .slot-card__head > .lobby__icon-button { right: 8px; }
+.menu-page--room .room-deck__crew .player-slot.has-remove > .roster-move { right: 40px; }
+/* The room's team columns are one narrow column: their seats never go two or three across. */
+.menu-page .room-deck__crew .team-roster.has-teams .slot-grid.has-many,
+.menu-page .room-deck__crew .team-roster.has-teams .slot-grid.has-most { grid-template-columns: minmax(0, 1fr); }
+/* A CPU seat needs no name in the room: the seat number and the CPU tag say it, and the name was cut off anyway. */
+.menu-page--room .room-deck__crew .player-slot.is-cpu .player-slot__identity .lobby__player-name { display: none; }
+
+/* In the room the profile editor opens over the page, not inside the identity card: the card (and the page below it) keep their size. */
+.menu-page--room .lobby > .online-identity { position: relative; z-index: 6; }
+.menu-page--room .online-profile[open] .online-profile__fields {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  box-sizing: border-box;
+  width: min(560px, 100%);
+  margin: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--menu-line);
+  border-radius: 3px;
+  background: #0b1a33;
+  box-shadow: 0 18px 40px rgb(0 0 0 / .55);
+}
+/* One column for each button on every seat: move at the left of the pair, remove at the right edge; a human seat with only a move handle keeps it in the move column. */
+.menu-page--room .room-deck__crew .player-slot.roster-entry.has-move > .roster-move { position: absolute; top: calc(50% - 13px); right: 40px; width: 26px; height: 26px; margin: 0; transform: none; }
+.menu-page--room .room-deck__crew .player-slot.roster-entry.has-move:not(.has-remove) { padding-right: 78px; }
+.menu-page--room .room-deck__crew .player-slot.roster-entry.has-move:not(.has-remove) .lobby__ready { padding-right: 0; }

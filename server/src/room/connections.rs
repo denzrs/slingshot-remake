@@ -12,7 +12,7 @@ use tracing::{info, warn};
 
 use crate::admission::{BrowserId, Who, CEILING};
 use crate::codec::{Frame, Outbound, OutboundPool, WireMessage};
-use crate::protocol::is_name_refusal;
+use crate::protocol::{is_name_refusal, is_password_refusal};
 
 use super::relay::RelaySlot;
 
@@ -456,6 +456,8 @@ impl Connections {
         // An error about the name says so, so the client can show it under the name field and nowhere else.
         let value = if is_name_refusal(message) {
             json!({ "type": "error", "message": message, "field": "name" })
+        } else if is_password_refusal(message) {
+            json!({ "type": "error", "message": message, "field": "password" })
         } else {
             json!({ "type": "error", "message": message })
         };

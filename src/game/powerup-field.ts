@@ -1,9 +1,9 @@
-import { nextWormholeId, portalFits, type ShotRules, type World } from '../physics';
-import { aimedPlanet, blackHoleFits, aimedSpot, aimedSurface, cpuWormholeSpots, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../powerups';
-import { NEBULA, WORMHOLE } from '../config';
-import type { Rng } from '../rng';
-import { bump, type StatBook } from '../stats';
-import type { Volley, VolleyAim } from '../volley';
+import { nextWormholeId, portalFits, type ShotRules, type World } from '../sim/physics';
+import { aimedPlanet, blackHoleFits, aimedSpot, aimedSurface, cpuWormholeSpots, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../sim/powerups';
+import { NEBULA, WORMHOLE } from '../sim/config';
+import type { Rng } from '../sim/rng';
+import { bump, type StatBook } from '../data/stats';
+import type { Volley, VolleyAim } from '../sim/volley';
 import type { GameEvent, Phase, PlayerState } from './match';
 import type { ReplayPlacement } from './replay';
 

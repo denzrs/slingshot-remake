@@ -1,4 +1,4 @@
-import { AVATAR_PATHS, type Avatar } from '../avatars';
+import { AVATAR_PATHS, type Avatar } from '../platform/avatars';
 
 const paths = new Map<Avatar, Path2D>();
 

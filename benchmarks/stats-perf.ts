@@ -23,7 +23,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
-import { packWireMessage, unpackWireMessage } from '../src/messagepack';
+import { packWireMessage, unpackWireMessage } from '../src/net/messagepack';
 
 const ROOMS = Number(process.env.ROOMS ?? 10);
 const SECONDS = Number(process.env.SECONDS ?? 10);

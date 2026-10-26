@@ -22,11 +22,12 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
-import { createMatch, type VersusMode } from '../src/game';
+import { createMatch } from '../src/game';
+import type { GameMode } from '../src/sim/modes';
 import { RIDERS } from '../src/game/replay';
-import { rulesOf } from '../src/lobbyPrefs';
-import { turnReport } from '../src/roundReport';
-import { cloneSettings, DEFAULT_SETTINGS, type Seat } from '../src/settings';
+import { rulesOf } from '../src/data/roomRules';
+import { turnReport } from '../src/game/roundReport';
+import { cloneSettings, DEFAULT_SETTINGS, type Seat } from '../src/data/settings';
 
 const SECONDS = Number(process.env.SECONDS ?? 12);
 const MATCH_SECONDS = Number(process.env.MATCH_SECONDS ?? 60);
@@ -236,7 +237,7 @@ async function measure(page: Page, run: () => Promise<void>): Promise<Measured> 
 /** A seeded match played in Node, as the host's reports hold it: what the page is given to replay. */
 function recordedMatch() {
   const seats: Seat[] = ['hard', 'medium', 'medium', 'hard', 'off', 'off'];
-  const mode: VersusMode = 'horizon';
+  const mode: GameMode = 'horizon';
   const settings = { ...cloneSettings(DEFAULT_SETTINGS), rounds: 2, seats, powerUps: true, maxPlanets: 5 };
   const match = createMatch(mode, settings, { seats, seed: 21, deterministicCpu: true, simultaneous: true });
   const reports: ReturnType<typeof turnReport>[] = [];

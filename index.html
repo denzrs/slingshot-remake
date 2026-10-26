@@ -5,14 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0b1a33" />
     <meta name="description" content="Slingshot – bis zu sechs Raumschiffe, ein paar Planeten, ein schwarzes Loch und viel Gravitation." />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico?v=2" sizes="16x16 32x32 48x48" />
+    <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" sizes="any" />
     <title>Slingshot</title>
   </head>
   <body>
     <canvas id="stage" aria-label="Spielfeld" data-i18n-aria="static.canvas"></canvas>
     <a id="debug-seed" hidden aria-label="Open this world in the aim predictor"></a>
     <div id="overlay" hidden></div>
-    <button id="touch-menu" type="button" hidden>☰</button>
+    <button id="pause-button" type="button" hidden><span class="pause-icon" aria-hidden="true"></span></button>
     <div id="stands-badge" hidden></div>
     <aside id="chat" hidden></aside>
     <div id="touch-bar">

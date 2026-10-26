@@ -1,7 +1,7 @@
-import { COLORS, FONTS, HORIZON, ORACLE } from '../config';
+import { COLORS, FONTS, HORIZON, ORACLE } from '../sim/config';
 import type { Match } from '../game';
 import { oracleAwards, oracleMultiplier, stakeOptions, TIP_HIDDEN, TIP_HIT, TIP_MISS, TIP_NOBODY, type OracleKind, type OracleQuestion, type OracleResult, type RoundResult } from '../game/oracle';
-import { fmt, fmtInt, t } from '../i18n';
+import { fmt, fmtInt, t } from '../platform/i18n';
 import { rgba } from './color';
 import { fitText, setSpacing } from './text';
 
@@ -562,23 +562,24 @@ export class OracleHud {
   }
 
   /** What the bet on the round question looks like for this screen: the stakes there are to choose from, what is staked, the pot. */
-  private betState(match: Match): { show: boolean; options: number[]; staked: number; pot: number; tipped: boolean } {
+  private betState(match: Match): { show: boolean; options: number[]; staked: number; pot: number; tipped: boolean; unavailable: boolean } {
     const o = match.betOracle;
     const viewer = match.bettor;
-    const none = { show: false, options: [], staked: 0, pot: o.pot, tipped: false };
+    const none = { show: false, options: [], staked: 0, pot: o.pot, tipped: false, unavailable: false };
     if (viewer === null || !match.ghost || !o.roundQuestion || !match.bettingOn) return none;
     const staked = o.stakeOf(viewer);
     const me = o.roundMine;
     const tipped = !!me && me.id === o.roundQuestion.id;
     const options = !staked && match.canBetRound(viewer) ? stakeOptions(match.purse(viewer)) : [];
-    return { show: options.length > 0 || staked > 0 || o.pot > 0, options, staked, pot: o.pot, tipped };
+    const unavailable = !staked && match.canBetRound(viewer) && options.length === 0;
+    return { show: options.length > 0 || staked > 0 || o.pot > 0 || unavailable, options, staked, pot: o.pot, tipped, unavailable };
   }
 
   /**
    * The bet on the round question: points of the match staked on the tip, once. A tip first, then the stake
    * — a share of the score, half of it or all — and the pot of everybody's stakes beside it.
    */
-  private drawBetRow(f: OracleFrame, match: Match, bet: { options: number[]; staked: number; pot: number; tipped: boolean }, left: number, right: number, mid: number, touch: boolean): void {
+  private drawBetRow(f: OracleFrame, match: Match, bet: { options: number[]; staked: number; pot: number; tipped: boolean; unavailable: boolean }, left: number, right: number, mid: number, touch: boolean): void {
     const { ctx } = f;
     const k = scaleOf(f);
     const z = sizes(touch);
@@ -605,7 +606,13 @@ export class OracleHud {
     if (!bet.tipped) {
       ctx.font = `400 ${13 * k}px ${FONTS.body}`;
       ctx.fillStyle = COLORS.boneDim;
-      ctx.fillText(fitText(ctx, t('oracle.betFirst'), Math.max(40 * k, edge - cx)), cx, mid + 0.5 * k);
+      ctx.fillText(fitText(ctx, t(bet.unavailable ? 'oracle.noStake' : 'oracle.betFirst'), Math.max(40 * k, edge - cx)), cx, mid + 0.5 * k);
+      return;
+    }
+    if (bet.unavailable) {
+      ctx.font = `400 ${13 * k}px ${FONTS.body}`;
+      ctx.fillStyle = COLORS.boneDim;
+      ctx.fillText(fitText(ctx, t('oracle.noStake'), Math.max(40 * k, edge - cx)), cx, mid + 0.5 * k);
       return;
     }
     const pick = match.betOracle.roundMine!.pick;

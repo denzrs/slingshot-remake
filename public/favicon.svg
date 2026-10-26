@@ -1,5 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#0b1a33"/>
-  <circle cx="18" cy="18" r="7" fill="none" stroke="#e8e4d8" stroke-width="1.5"/>
-  <path d="M3 27 C 10 22, 12 8, 28 5" fill="none" stroke="#ff8660" stroke-width="2" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="planet" cx="30%" cy="25%" r="85%">
+      <stop stop-color="#b9f1d9"/>
+      <stop offset=".55" stop-color="#6fe3c8"/>
+      <stop offset="1" stop-color="#2e8d89"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="#0b1a33"/>
+  <circle cx="27" cy="29" r="12" fill="url(#planet)"/>
+  <path d="M9 49C21 58 50 35 50 22Q50 18 47 15" fill="none" stroke="#ff8660" stroke-width="5" stroke-linecap="round"/>
+  <path d="M0-13 8 8 0 4-8 8Z" transform="translate(46 14) rotate(-45) scale(.8)" fill="#e8e4d8"/>
 </svg>
