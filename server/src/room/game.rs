@@ -199,11 +199,13 @@ impl RoomManager {
                             ip: self.net.peer_ip(conn)?,
                             name: player.name.clone(),
                         },
-                        // Whoever left the game is still the one who played the seat.
-                        (None, None) if player.left => Occupant::Person {
-                            ip: player.left_from?,
-                            name: player.name.clone(),
-                        },
+                        // Whoever dropped out or left is still the one who played the seat.
+                        (None, None) if player.left || player.lost_at.is_some() => {
+                            Occupant::Person {
+                                ip: player.came_from?,
+                                name: player.name.clone(),
+                            }
+                        }
                         (None, None) => return None,
                     };
                     Some(SeatFacts {

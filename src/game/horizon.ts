@@ -157,7 +157,7 @@ export class HorizonMatch extends Match {
     if (this.replaying) return false;
     if (!this.simultaneous) return super.canAim(id);
     const p = this.players[id];
-    return this.phase === 'aiming' && !this.revealing && !!p && p.alive && !p.cpu && !p.locked;
+    return this.phase === 'aiming' && !this.revealing && !!p && p.alive && !p.away && !p.cpu && !p.locked;
   }
 
   adjustPlayer(id: number, dAngle: number, dPower: number): void {

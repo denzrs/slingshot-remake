@@ -53,6 +53,11 @@ export interface PlayerState {
   armed: boolean;
   /** Online: the person left the game. The ship is gone for the rest of the match; the score stays. */
   left: boolean;
+  /**
+   * Online: the person's connection dropped and the seat is held for them. Until they are back the ship is off the
+   * field (nothing can hit it) and the round goes on as if they were not there; `alive` says whether it is still in the round.
+   */
+  away: boolean;
 }
 
 export interface Trail {
@@ -530,7 +535,7 @@ export abstract class Match {
 
   /** The ships a tip on who wins the round may name right now: the ones still in. */
   get roundChoices(): number[] {
-    return (this.betOracle.roundQuestion?.choices ?? []).filter((id) => this.players[id]?.alive);
+    return (this.betOracle.roundQuestion?.choices ?? []).filter((id) => this.alive.some((p) => p.id === id));
   }
 
   /** Whether this bettor may tip on who wins the round right now: the question is open, and the next shots have not flown yet. */
@@ -645,8 +650,9 @@ export abstract class Match {
     return this.totalRounds > 0 && this.round >= this.totalRounds;
   }
 
+  /** The ships in the round: not shot down, and not off the field while their person is away. */
   get alive(): PlayerState[] {
-    return this.players.filter((p) => p.alive);
+    return this.players.filter((p) => p.alive && !p.away);
   }
 
   /** Players by score, best first. */
@@ -710,9 +716,12 @@ export abstract class Match {
     return team === null ? [] : this.players.filter((p) => p.id !== id && p.team === team).map((p) => p.id);
   }
 
-  /** The round is decided once at most one side — a team, or a lone player — has ships left. */
+  /**
+   * The round is decided once at most one side — a team, or a lone player — has ships left. Not while that is only
+   * because the others dropped out before anybody was shot down: nobody wins a round against nobody, it waits for them.
+   */
   get decided(): boolean {
-    return this.sidesIn <= 1;
+    return this.sidesIn <= 1 && !(this.lastKill === null && this.players.some((p) => p.alive && p.away));
   }
 
   /** How many sides still have ships in the round: lone players in a free for all, whole teams in a team match. */
@@ -833,10 +842,13 @@ export abstract class Match {
     const taken = seats.flatMap((seat, i) => (seat === 'off' ? [] : [{ seat: i, kind: seat }]));
     const teams = this.attract ? null : (this.options.teams ?? seatTeamsFor(this.settings, taken.map((s) => s.seat)));
     this.teamMode = teams ? this.settings.teamMode : 0;
-    // Whoever left the game stays out of the rematch: the room keeps their seat empty.
-    const gone = new Set(this.players.filter((p) => p.left).map((p) => p.id));
+    // Whoever left the game stays out of the rematch, and whoever dropped out is still away: the room says so.
+    const before = this.players;
     this.players = taken.map(({ seat, kind }, id) => newPlayer(id, seat, kind, teams?.[id] ?? null, false, this.options.names?.[id], this.options.avatars?.[id] ?? null));
-    for (const id of gone) if (this.players[id]) this.players[id].left = true;
+    for (const p of this.players) {
+      p.left = !!before[p.id]?.left;
+      p.away = !!before[p.id]?.away;
+    }
     if (teams) {
       // Each team member gets its own shade of the team colour.
       const seen = new Map<number, number>();
@@ -902,7 +914,7 @@ export abstract class Match {
       const ship = this.world.ships[p.id];
       p.shots = 0;
       p.alive = !p.left;
-      if (p.left) ship.alive = false;
+      if (p.left || p.away) ship.alive = false;
       p.locked = false;
       p.passed = false;
       p.powerUp = null;
@@ -1011,15 +1023,15 @@ export abstract class Match {
     return this.killcam.info(this.skipsNeeded);
   }
 
-  /** At least half of the human players must want to skip; target drones, CPUs and whoever left do not vote. */
+  /** At least half of the human players must want to skip; target drones, CPUs and whoever is not at the table do not vote. */
   private get skipsNeeded(): number {
-    return Math.ceil(this.players.filter((p) => !p.cpu && !p.target && !p.left).length / 2);
+    return Math.ceil(this.players.filter((p) => !p.cpu && !p.target && atTable(p)).length / 2);
   }
 
   voteSkip(player: number): void {
     const k = this.killcam.active;
     const p = this.players[player];
-    if (!p || p.cpu || p.target || p.left || !k || k.recording || this.phaseTime <= 0.3 || k.skipVotes.includes(player)) return;
+    if (!p || p.cpu || p.target || !atTable(p) || !k || k.recording || this.phaseTime <= 0.3 || k.skipVotes.includes(player)) return;
     k.skipVotes.push(player);
     if (k.skipVotes.length >= this.skipsNeeded) this.endKillcam();
   }
@@ -1064,7 +1076,24 @@ export abstract class Match {
     else this.passTurnOf(id);
   }
 
-  /** A seat that just left was on turn: the turn moves on as after its shot. Modes with turns override this. */
+  /**
+   * Online (host): the person in this seat dropped out (`away`), or is back. Meanwhile their ship is off the field,
+   * where nothing can hit it, and the round goes on as if they were not there: their turns are passed over, a volley
+   * does not wait for them, and a round that ends without them leaves them as they were. Back in the same round, the
+   * ship is where it was and they play on — at once in a volley still being aimed, else from their next turn.
+   */
+  setAway(id: number, away: boolean): void {
+    const p = this.players[id];
+    if (!p || p.left || p.away === away) return;
+    p.away = away;
+    if (!p.alive) return;
+    if (this.world.ships[id]) this.world.ships[id].alive = !away;
+    p.locked = false;
+    p.passed = false;
+    if (away && this.phase === 'aiming') this.passTurnOf(id);
+  }
+
+  /** A seat that just left (or dropped out) was on turn: the turn moves on as after its shot. Modes with turns override this. */
   protected passTurnOf(_id: number): void {}
 
   // ————————————————————————————— Skipping a round —————————————————————————————
@@ -1087,7 +1116,7 @@ export abstract class Match {
 
   /** The people at the table: they are the ones who vote. */
   private get voters(): number[] {
-    return this.players.filter((p) => !p.cpu && !p.left).map((p) => p.id);
+    return this.players.filter((p) => !p.cpu && atTable(p)).map((p) => p.id);
   }
 
   /** Yes votes it takes to skip: more than half of the people at the table. */
@@ -1764,9 +1793,14 @@ export abstract class Match {
   }
 }
 
-/** Shot down this round with a person behind the ship: who tips in the oracle. Whoever left is not at the table. */
+/** Whether the person of this seat is there to take part: not gone, and not dropped out for now. */
+function atTable(p: PlayerState): boolean {
+  return !p.left && !p.away;
+}
+
+/** Shot down this round with a person behind the ship: who tips in the oracle. */
 function shotDown(p: PlayerState): boolean {
-  return !p.alive && !p.cpu && !p.left;
+  return !p.alive && !p.cpu && atTable(p);
 }
 
 export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, team: number | null, target = false, fixedName?: string, avatar: Avatar | null = null): PlayerState {
@@ -1795,5 +1829,6 @@ export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, 
     powerUp: null,
     armed: false,
     left: false,
+    away: false,
   };
 }

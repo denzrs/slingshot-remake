@@ -289,8 +289,8 @@ impl RoomManager {
         self.send_lobby(conn);
     }
 
-    /// A guest chose to leave a running game: the seat stays in it with nobody in it, so the others
-    /// play on, unless too few are left to. False when there is no such game to step out of.
+    /// A guest chose to leave a running game: see `vacate_seat`. False when there is no such game
+    /// to step out of.
     fn step_out_of_game(&mut self, conn: u64) -> bool {
         let Some(membership) = self.memberships.get(&conn) else {
             return false;
@@ -307,35 +307,47 @@ impl RoomManager {
         let Some(player) = room.players.iter_mut().find(|p| p.id == player_id) else {
             return false;
         };
+        player.came_from = from;
+        self.memberships.remove(&conn);
+        info!(conn, room = %room_id, seat = player_id, "left a running game");
+        self.vacate_seat(&room_id, player_id, "left the game", "left");
+        true
+    }
+
+    /// A guest's seat in a running game is nobody's any more: it stays in the game (the game's
+    /// player indexes are the seats) with nobody in it, so the others play on, unless too few are
+    /// left to. The notice names the person and what they did, then (`ended`) if the game is over.
+    fn vacate_seat(&mut self, room_id: &str, player_id: usize, went: &str, ended: &str) {
+        let Some(room) = self.rooms.get_mut(room_id) else {
+            return;
+        };
+        let Some(player) = room.players.iter_mut().find(|p| p.id == player_id) else {
+            return;
+        };
         player.left = true;
-        player.left_from = from;
         player.conn = None;
         player.token.clear();
         player.lost_at = None;
         let name = player.name.clone();
-        let goes_on = playable_without_leavers(room);
-        self.memberships.remove(&conn);
-        info!(conn, room = %room_id, seat = player_id, goes_on, "left a running game");
-        if goes_on {
-            self.broadcast_room_update(&room_id, Some(&format!("{name} left the game")));
+        if playable_without_leavers(room) {
+            self.broadcast_room_update(room_id, Some(&format!("{name} {went}")));
         } else {
-            self.reset_to_waiting(&room_id);
+            self.reset_to_waiting(room_id);
             self.broadcast_room_update(
-                &room_id,
-                Some(&format!("{name} left – the game was ended")),
+                room_id,
+                Some(&format!("{name} {ended} – the game was ended")),
             );
         }
         self.broadcast_lobby();
-        true
     }
 
     /**
      * Takes a connection out of its room.
      * - The host leaving closes the room; everybody else, the stands included, is sent back to the lobby.
      * - A spectator leaving changes nothing about the game.
-     * - Anyone else whose seat is given up in a running game (a drop whose grace ran out) aborts
-     *   that game; the remaining players land in the waiting room again (the room itself survives).
-     *   Choosing to leave does not come here while others can play on: see `step_out_of_game`.
+     * - Anyone else leaving a running game this way aborts it; the remaining players land in the
+     *   waiting room again (the room itself survives). Leaving on purpose or dropping out of a
+     *   running game does not come here: see `step_out_of_game` and `hold_seat`.
      */
     pub(super) fn remove_from_room(&mut self, conn: u64, reason: &str) {
         if self.remove_spectator(conn) {
@@ -392,8 +404,9 @@ impl RoomManager {
     }
 
     /// A connection dropped out of a running game: keep its seat for `SEAT_GRACE` so the same
-    /// player can come back with their token. False when there is no such seat to hold.
-    pub(super) fn hold_seat(&mut self, conn: u64) -> bool {
+    /// player can come back with their token; the game goes on without them meanwhile. `from` is
+    /// where the connection came from. False when there is no such seat to hold.
+    pub(super) fn hold_seat(&mut self, conn: u64, from: Option<std::net::IpAddr>) -> bool {
         let Some(membership) = self.memberships.get(&conn) else {
             return false;
         };
@@ -411,11 +424,12 @@ impl RoomManager {
             return false;
         }
         player.conn = None;
+        player.came_from = from;
         player.lost_at = Some(std::time::Instant::now());
         let notice = format!(
-            "{} lost the connection – the seat is held for {} s",
+            "{} lost the connection – the seat is held for {} min",
             player.name,
-            SEAT_GRACE.as_secs()
+            SEAT_GRACE.as_secs() / 60
         );
         self.memberships.remove(&conn);
         info!(conn, room = %room_id, seat = player_id, "seat held for a dropped connection");
@@ -423,7 +437,8 @@ impl RoomManager {
         true
     }
 
-    /// Gives up the seats whose grace has run out. Called every few seconds.
+    /// Gives up the seats whose grace has run out: a guest's counts as left, the host's closes the
+    /// room. Called every few seconds.
     pub fn expire_seats(&mut self) {
         self.expire_seats_at(std::time::Instant::now());
     }
@@ -452,7 +467,16 @@ impl RoomManager {
                 continue;
             };
             info!(room = %room_id, seat = player_id, "held seat expired");
-            self.give_up_seat(&room_id, player_id, None, "A player disconnected");
+            if player_id == 0 {
+                self.give_up_seat(&room_id, player_id, None, "A player disconnected");
+            } else {
+                self.vacate_seat(
+                    &room_id,
+                    player_id,
+                    "did not come back",
+                    "did not come back",
+                );
+            }
             self.sync_room(&room_id);
         }
     }

@@ -120,10 +120,11 @@ impl RoomManager {
 
     pub fn disconnect(&mut self, conn: u64) {
         let before = self.room_of(conn);
+        let from = self.net.peer_ip(conn);
         self.net.close(conn);
         self.last_rename.remove(&conn);
         // A dropped connection in a running game keeps its seat for a while: it may come back.
-        if !self.hold_seat(conn) {
+        if !self.hold_seat(conn, from) {
             self.remove_from_room(conn, "A player disconnected");
         }
         self.resync(before, conn);

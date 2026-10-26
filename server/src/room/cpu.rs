@@ -60,7 +60,7 @@ impl RoomManager {
             token: String::new(),
             lost_at: None,
             left: false,
-            left_from: None,
+            came_from: None,
         });
         unready_humans(room);
         self.broadcast_room_update(&room_id, None);

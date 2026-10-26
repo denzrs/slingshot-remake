@@ -1564,10 +1564,14 @@ describe('statistics and replays', () => {
     const held = waitForSession(host.session, () => host.session.room?.players[1].connected === false);
     guestTransport.rawSocket!.terminate();
     await held;
-    // The room and the game are still there, only the seat is marked.
+    // The room and the game are still there, only the seat is marked: the game goes on without it.
     expect(host.session.room?.status).toBe('playing');
     expect(guest.session.match).not.toBeNull();
+    expect(host.match().players[1]).toMatchObject({ away: true, alive: true });
+    expect(host.match().world.ships[1].alive).toBe(false);
     await waitForSession(host.session, () => host.session.room?.players[1].connected === true);
+    expect(host.match().players[1].away).toBe(false);
+    expect(host.match().world.ships[1].alive).toBe(true);
     await waitForSession(guest.session, () => !guest.session.reconnecting && guest.session.connected);
     expect(guest.session.room?.status).toBe('playing');
     expect(guest.session.you.playerId).toBe(1);

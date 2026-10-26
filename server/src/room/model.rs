@@ -36,8 +36,9 @@ pub(super) struct Player {
     /// Set when the person chose to leave the running game: the seat stays (the game's player
     /// indexes are the seats) with nobody in it, and goes when the room waits again.
     pub(super) left: bool,
-    /// Where the person who left came from, so the game's statistics can still name the seat.
-    pub(super) left_from: Option<std::net::IpAddr>,
+    /// Where the seat's person last came from, so the game's statistics can still name the seat
+    /// while no connection is on it (held for a drop, or left).
+    pub(super) came_from: Option<std::net::IpAddr>,
 }
 
 impl Player {
@@ -51,8 +52,9 @@ impl Player {
     }
 }
 
-/// How long a running game holds the seat of a dropped connection before giving it up.
-pub(super) const SEAT_GRACE: std::time::Duration = std::time::Duration::from_secs(30);
+/// How long a running game holds the seat of a dropped connection; the game goes on without it
+/// meanwhile, and after it the seat counts as left.
+pub(super) const SEAT_GRACE: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 /// The most people who may watch one room.
 pub(super) const MAX_SPECTATORS: usize = 20;

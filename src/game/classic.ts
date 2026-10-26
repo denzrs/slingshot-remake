@@ -164,7 +164,7 @@ export class ClassicMatch extends Match {
     if (this.replaying) return false;
     if (!(this.salvo && this.simultaneous)) return super.canAim(id);
     const p = this.players[id];
-    return this.phase === 'aiming' && !!p && p.alive && !p.cpu && !p.locked;
+    return this.phase === 'aiming' && !!p && p.alive && !p.away && !p.cpu && !p.locked;
   }
 
   get shotClock(): number | null {
@@ -408,7 +408,7 @@ export class ClassicMatch extends Match {
   }
 
   protected passTurnOf(id: number): void {
-    // A salvo waits for the ships still in; the one that left is not among them.
+    // A salvo waits for the ships still in; the one that left (or is away) is not among them.
     if (!this.salvo && this.current === id) this.afterVolley();
     else if (this.salvo && !this.simultaneous) {
       this.queue = this.queue.filter((q) => q !== id);
@@ -416,12 +416,18 @@ export class ClassicMatch extends Match {
     }
   }
 
-  /** Free for all: hand the turn to the next living player starting at `from`. */
+  /**
+   * Free for all: hand the turn to the next living player starting at `from`, passing over those who
+   * dropped out. When nobody else is there to shoot, the turn waits with one of them.
+   */
   private giveTurn(from: number): void {
     const n = this.players.length;
-    for (let i = 0; i < n; i++) {
-      const id = (from + i) % n;
-      if (this.players[id].alive) return this.setTurn(id);
+    for (const passOver of [true, false]) {
+      for (let i = 0; i < n; i++) {
+        const id = (from + i) % n;
+        const p = this.players[id];
+        if (p.alive && !(passOver && p.away)) return this.setTurn(id);
+      }
     }
   }
 
@@ -430,15 +436,18 @@ export class ClassicMatch extends Match {
    * team the living members rotate.
    */
   private giveTeamTurn(): void {
-    for (let k = 0; k < this.teamMode; k++) {
-      const team = (this.teamCursor + k) % this.teamMode;
-      const members = this.players.filter((p) => p.team === team);
-      for (let i = 1; i <= members.length; i++) {
-        const idx = (this.memberCursor[team] + i) % members.length;
-        if (!members[idx].alive) continue;
-        this.memberCursor[team] = idx;
-        this.teamCursor = (team + 1) % this.teamMode;
-        return this.setTurn(members[idx].id);
+    // As in a free for all: those who dropped out are passed over while anybody else can shoot.
+    for (const passOver of [true, false]) {
+      for (let k = 0; k < this.teamMode; k++) {
+        const team = (this.teamCursor + k) % this.teamMode;
+        const members = this.players.filter((p) => p.team === team);
+        for (let i = 1; i <= members.length; i++) {
+          const idx = (this.memberCursor[team] + i) % members.length;
+          if (!members[idx].alive || (passOver && members[idx].away)) continue;
+          this.memberCursor[team] = idx;
+          this.teamCursor = (team + 1) % this.teamMode;
+          return this.setTurn(members[idx].id);
+        }
       }
     }
   }

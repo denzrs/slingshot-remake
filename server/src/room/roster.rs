@@ -31,7 +31,7 @@ impl RoomManager {
             token: URL_SAFE_NO_PAD.encode(rand::thread_rng().gen::<[u8; 16]>()),
             lost_at: None,
             left: false,
-            left_from: None,
+            came_from: None,
         });
         self.memberships.insert(
             conn,

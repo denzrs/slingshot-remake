@@ -2402,6 +2402,44 @@ fn a_team_left_empty_ends_the_game_and_the_room_waits_with_the_rest() {
     );
 }
 
+#[test]
+fn a_guest_who_drops_out_is_waited_for_minutes_and_then_counts_as_left() {
+    let (mut rooms, [mut host_rx, _ben_rx, _cleo_rx]) = started_three(RoomManager::new(), "ffa");
+    rooms.disconnect(2);
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["status"], "playing");
+    assert_eq!(update["room"]["players"][1]["connected"], false);
+    assert_eq!(update["room"]["players"][1]["left"], false);
+    assert_eq!(
+        update["notice"],
+        "Ben lost the connection – the seat is held for 5 min"
+    );
+
+    let lost = std::time::Instant::now();
+    rooms.expire_seats_at(lost + std::time::Duration::from_secs(4 * 60));
+    assert!(drain_json(&mut host_rx).is_empty());
+
+    // The others play on; the seat is nobody's now.
+    rooms.expire_seats_at(lost + SEAT_GRACE);
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert_eq!(update["room"]["status"], "playing");
+    assert_eq!(update["notice"], "Ben did not come back");
+    assert_eq!(update["room"]["players"][1]["left"], true);
+    assert_eq!(update["room"]["players"].as_array().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn a_seat_held_for_a_drop_still_counts_in_the_statistics() {
+    let stats = Arc::new(Stats::in_memory().await);
+    let (mut rooms, [mut host_rx, _ben_rx, _cleo_rx]) =
+        started_three(RoomManager::new().with_stats(stats.clone()), "ffa");
+    rooms.disconnect(2);
+    drain_json(&mut host_rx);
+    rooms.handle(1, &round_report_message(1, 3));
+    assert!(drain_json(&mut host_rx).is_empty());
+    written(&stats, "stat_seats", 3).await;
+}
+
 #[tokio::test]
 async fn the_seat_of_somebody_who_left_still_counts_in_the_statistics() {
     let stats = Arc::new(Stats::in_memory().await);
