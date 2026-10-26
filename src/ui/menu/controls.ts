@@ -3,6 +3,7 @@ import { t } from '../../platform/i18n';
 import { h } from '../dom';
 import type { MenuItem } from './menu';
 import { pilotArt } from './mode-icons';
+import { attachTooltip } from './tooltip';
 import '../room/player-slots.css';
 
 /** One row that can be changed: what the menu (or the lobby) needs to keep it in sync. */
@@ -40,6 +41,29 @@ export function buildControl(item: Exclude<MenuItem, { kind: 'action' }>, env: E
     case 'choice':
       return choiceControl(item, env);
   }
+}
+
+// ————————————————————————————— Mayhem's sign —————————————————————————————
+
+/** The sign beside a rule that Mayhem's twists may overrule in single rounds; the row shows it while it is `is-twisted`. */
+export function twistMark(): HTMLElement {
+  const mark = h('span.item__twist', { role: 'img', 'aria-label': t('mayhem.twisted.hint') });
+  attachTooltip(mark, t('mayhem.twisted.hint'), 11);
+  return mark;
+}
+
+/** A row's name, with the sign of Mayhem after it (unseen until the row is twisted). */
+const label = (item: { label: string }): HTMLElement => h('span.item__label', null, item.label, twistMark());
+
+const syncTwisted = (el: HTMLElement, item: { twisted?: () => boolean }): void => {
+  el.classList.toggle('is-twisted', item.twisted?.() ?? false);
+};
+
+/** The line that explains the sign, for the top of a page of rules; shown while any rule carries it. */
+export function twistNote(): { el: HTMLElement; update: (show: boolean) => void } {
+  const el = h('p.rules-note', null, twistMark(), t('mayhem.twisted.note'));
+  el.hidden = true;
+  return { el, update: (show) => { el.hidden = !show; } };
 }
 
 // ————————————————————————————— Stepping —————————————————————————————
@@ -126,7 +150,7 @@ export function sliderControl(item: Item<'slider'>, env: Env): Control {
   }) : [];
   const rail = h('span.slider__rail', null, fill, ...ticks, thumb);
   const track = h('span.slider__track', null, rail);
-  const el = h('div.item.item--slider', { role: 'slider', 'aria-valuemin': '0', 'aria-valuemax': String(last), 'aria-label': item.label }, h('span.item__label', null, item.label), value, track);
+  const el = h('div.item.item--slider', { role: 'slider', 'aria-valuemin': '0', 'aria-valuemax': String(last), 'aria-label': item.label }, label(item), value, track);
   focusable(el, env);
   const inactive = (): boolean => item.inactive?.() ?? false;
 
@@ -134,6 +158,7 @@ export function sliderControl(item: Item<'slider'>, env: Env): Control {
   const draw = (): void => {
     const hidden = item.hidden?.() ?? false;
     syncHidden(el, hidden, shown >= 0);
+    syncTwisted(el, item);
     el.classList.toggle('is-reserved', hidden && (item.reserve?.() ?? false));
     const off = inactive();
     el.classList.toggle('is-inactive', off);
@@ -226,12 +251,13 @@ function toggleControl(item: Item<'toggle'>, env: Env): Control {
   const onOption = h('span.segmented__option', null, t('common.on'));
   const bar = h('span.segmented.toggle-bar', { 'aria-hidden': 'true' }, h('span.segmented__marker', null), offOption, onOption);
   bar.style.setProperty('--n', '2');
-  const el = h('div.item.item--toggle', { role: 'switch', 'aria-label': item.label }, h('span.item__label', null, item.label), h('span.switch', { 'aria-hidden': 'true' }, h('span.switch__knob', null)), bar, readout);
+  const el = h('div.item.item--toggle', { role: 'switch', 'aria-label': item.label }, label(item), h('span.switch', { 'aria-hidden': 'true' }, h('span.switch__knob', null)), bar, readout);
   focusable(el, env);
 
   let drawn = false;
   const draw = (): void => {
     syncHidden(el, item.hidden?.() ?? false, drawn);
+    syncTwisted(el, item);
     drawn = true;
     const on = item.get();
     el.classList.toggle('is-on', on);
@@ -293,13 +319,14 @@ export function segmentedControl(item: Item<'segmented'>, env: Env): Control {
   const bar = h('span.segmented', null, h('span.segmented__marker', { 'aria-hidden': 'true' }), ...segments);
   bar.style.setProperty('--n', String(options.length));
   const readout = h('span.item__readout', null);
-  const el = h('div.item.item--segmented', { role: 'radiogroup', 'aria-label': item.label }, h('span.item__label', null, item.label), bar, readout);
+  const el = h('div.item.item--segmented', { role: 'radiogroup', 'aria-label': item.label }, label(item), bar, readout);
   focusable(el, env);
 
   let drawn = false;
   const draw = (): void => {
     const hidden = item.hidden?.() ?? false;
     syncHidden(el, hidden, drawn);
+    syncTwisted(el, item);
     el.classList.toggle('is-reserved', hidden && (item.reserve?.() ?? false));
     drawn = true;
     const i = indexOf(options, item.get());
@@ -379,7 +406,7 @@ function tilesControl(item: Item<'tiles'>, env: Env): Control {
   };
   const quick = item.quick && !env.readonly ? { all: quickButton(item.quick.all, 'A', true), none: quickButton(item.quick.none, 'N', false) } : null;
   const el = h('div.item.item--tiles', { role: 'group', 'aria-label': item.label },
-    quick ? h('span.tiles__head', null, h('span.item__label', null, item.label), h('span.tiles__quick-row', null, quick.all, quick.none)) : h('span.item__label', null, item.label),
+    quick ? h('span.tiles__head', null, label(item), h('span.tiles__quick-row', null, quick.all, quick.none)) : label(item),
     row);
   focusable(el, env);
 
@@ -388,6 +415,7 @@ function tilesControl(item: Item<'tiles'>, env: Env): Control {
   const draw = (): void => {
     const hidden = item.hidden?.() ?? false;
     syncHidden(el, hidden, drawn);
+    syncTwisted(el, item);
     el.classList.toggle('is-reserved', hidden && (item.reserve?.() ?? false));
     drawn = true;
     cells.forEach(({ cell, icon }, i) => {
