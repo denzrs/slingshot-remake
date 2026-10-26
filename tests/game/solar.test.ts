@@ -229,6 +229,38 @@ describe('the sun\'s storm', () => {
   });
 });
 
+describe('what the power-ups planted', () => {
+  it('rides the system round with everything else, each on its own orbit', () => {
+    const seats = cpus(3);
+    const match = createMatch('solar', { ...DEFAULT_SETTINGS, rounds: 1, seats, powerUps: true }, { seats, seed: 6, deterministicCpu: true }) as SolarMatch;
+    try {
+      const world = match.world;
+      const near = onOrbit(SOLAR.INNER_ORBIT + 10, 0.5);
+      const far = onOrbit(SOLAR.OUTER_ORBIT - 10, 2);
+      world.holes.push({ ...near, radius: 12, mass: 1 });
+      world.nebulae.push({ ...far, radius: 40, seed: 0.3 });
+      world.wormholes.push({ id: 0, ax: near.x, ay: near.y + 40, bx: far.x, by: far.y - 40, radius: 14 });
+      const bodies = () => [world.holes[0], world.nebulae[0], { x: world.wormholes[0].ax, y: world.wormholes[0].ay }, { x: world.wormholes[0].bx, y: world.wormholes[0].by }].map((o) => ({ ...o }));
+      const before = bodies();
+      const inner = match as unknown as { fired: Set<number>; afterVolley(): void };
+      inner.fired = new Set(match.alive.map((p) => p.id));
+      inner.afterVolley();
+      expect(match.phase).toBe('orbit');
+      for (let t = 0; t < 10 && match.phase === 'orbit'; t += 1 / 30) match.update(1 / 30);
+      expect(match.phase).not.toBe('orbit');
+      bodies().forEach((o, i) => {
+        const from = orbitOf(before[i].x, before[i].y);
+        const to = orbitOf(o.x, o.y);
+        expect(to.r).toBeCloseTo(from.r, 3);
+        // A whole step on its own orbit, the way a planet there would go.
+        expect((to.a - from.a + Math.PI * 4) % (Math.PI * 2)).toBeCloseTo(orbitTurn(from.r), 3);
+      });
+    } finally {
+      match.dispose();
+    }
+  });
+});
+
 describe('a CPU holding a placement it cannot lay', () => {
   it('shoots with one smooth swing instead of twitching between the placement spot and its shot', () => {
     const seats = cpus(2);
