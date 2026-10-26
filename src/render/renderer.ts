@@ -951,7 +951,7 @@ export class Renderer {
   private isPinged(match: Match, id: number): boolean {
     if (match.attract || match.spectating || match.roundSeconds >= LOCATE_PING.DURATION) return false;
     const player = match.players[id];
-    return match.viewer !== null ? id === match.viewer : !player.cpu;
+    return id === (match.viewer ?? match.focus) && !player.cpu;
   }
 
   /** Sonar rings sweeping in towards the ship so the eye finds it when a round begins; they fade out over the ping's last half second. */
