@@ -331,7 +331,7 @@ jobs:
       - name: Determine version
         id: version
         # A pushed tag is released as it is. Otherwise: the tag on HEAD if there is one (already released,
-        # nothing to do), else the next minor (or major, see [major] below) after the latest tag, which the release job will create.
+        # nothing to do), else the next minor (or major, see [major] below; or patch, when only src/platform/i18n.ts changed) after the latest tag, which the release job will create.
         run: |
           semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
           release=false
@@ -344,10 +344,15 @@ jobs:
               latest=$(git tag -l 'v*' --sort=-v:refname | grep -E "$semver" | head -n 1 || true)
               # No release yet: start from the version in package.json.
               latest=${latest:-v$(node -p "require('./package.json').version")}
-              IFS=. read -r major minor _ <<< "${latest#v}"
+              IFS=. read -r major minor patch <<< "${latest#v}"
+              # Files changed since the latest tag (empty when that tag does not exist yet).
+              changed=$(git diff --name-only "$latest..HEAD" 2>/dev/null || true)
               # A commit since the latest tag with [major] in its message makes it the next major instead.
               if git log --format=%B "$latest..HEAD" 2>/dev/null | grep -qiF '[major]'; then
                 tag="v$((major + 1)).0.0"
+              # Only the UI copy changed: a patch release.
+              elif [ "$changed" = src/platform/i18n.ts ]; then
+                tag="v$major.$minor.$((patch + 1))"
               else
                 tag="v$major.$((minor + 1)).0"
               fi
