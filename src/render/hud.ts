@@ -881,7 +881,7 @@ export class Hud {
       line1 = `${t('hud.teamWinsRound', { team: teamName(s.team) })}${s.bonus ? `  ·  ${t('hud.perMember', { n: s.bonus })}` : ''}`;
       if (kill) line2 = killSegments(match, kill).map(([text]) => text).join('');
     } else {
-      line1 = survivor ? `${t('hud.winsRound', { name: survivor.name })}${s.bonus ? `  +${s.bonus}` : ''}` : match.alive.length ? t('hud.noWinner') : t('hud.noSurvivor');
+      line1 = survivor ? `${t('hud.winsRound', { name: survivor.name })}${s.bonus ? `  +${s.bonus}` : ''}` : match instanceof ClassicMatch && match.decidedBySuddenDeath && match.alive.length ? t('hud.noWinner') : t('hud.noSurvivor');
       if (kill) line2 = killSegments(match, kill).map(([text]) => text).join('');
     }
     ctx.fillStyle = COLORS.bone;
@@ -1037,7 +1037,7 @@ export class Hud {
 /** "Player 1 ▸ CPU 3  +1410  Swing-by · Bande ×1,88" as coloured pieces. */
 function killSegments(match: Match, r: KillRecord): Segment[] {
   const victim = match.players[r.victim];
-  if (r.killer === null) return [[t(match.mode === 'solar' ? 'hud.sun' : 'hud.horizon'), COLORS.danger], [' ▸ ', COLORS.boneDim], [victim.name, victim.color]];
+  if (r.killer === null) return [[t(r.source === 'sun' ? 'hud.sun' : 'hud.horizon'), COLORS.danger], [' ▸ ', COLORS.boneDim], [victim.name, victim.color]];
   if (r.self) return [[victim.name, victim.color], [t('hud.selfHit'), COLORS.boneDim], [`${r.points}`, COLORS.danger]];
   const killer = match.players[r.killer];
   if (r.friendly) {

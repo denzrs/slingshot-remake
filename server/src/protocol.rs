@@ -867,6 +867,25 @@ mod tests {
     }
 
     #[test]
+    fn sudden_death_defaults_on_and_takes_only_a_boolean() {
+        let parsed = parse_rules(&valid_rules()).expect("rules without suddenDeath accepted");
+        assert!(parsed.sudden_death);
+        let mut rules = valid_rules();
+        rules["suddenDeath"] = json!(false);
+        let parsed = parse_rules(&rules).expect("suddenDeath false accepted");
+        assert!(!parsed.sudden_death);
+        assert_eq!(rules_to_value(&parsed)["suddenDeath"], json!(false));
+        for invalid in [json!("true"), json!(1), json!([])] {
+            let mut rules = valid_rules();
+            rules["suddenDeath"] = invalid;
+            assert!(
+                parse_rules(&rules).is_none(),
+                "accepted invalid suddenDeath"
+            );
+        }
+    }
+
+    #[test]
     fn killcam_rules_preserve_choices_and_default_legacy_clients_to_auto() {
         for choice in ["auto", "off", "every", "round"] {
             let mut rules = valid_rules();

@@ -7,8 +7,6 @@ import { onOrbit } from '../sim/world';
 const PASS_PAUSE = 1;
 const REMNANT_SHOW = 9;
 
-type Inner = { passes: number; fired: Set<number>; afterVolley(): void };
-
 /**
  * Dev-only, opened with ?preview=supernova: a Solar System's sudden death plays out on its own, over and over, so the
  * red giant, the supernova and what it leaves can be looked at without playing a game to pass 13. Four ships that
@@ -24,10 +22,10 @@ export class SupernovaDemo {
     this.prime();
   }
 
-  /** The round starts a pass before sudden death, with one ship on an orbit the red giant will reach. */
+  /** The round skips on to two passes before sudden death, with one ship on an orbit the red giant will reach. */
   private prime(): void {
-    (this.match as unknown as Inner).passes = SUDDEN_DEATH.START_PASS - 2;
     Object.assign(this.match.world.ships[3], onOrbit(70, 2.2));
+    this.match.debugEndPass(SUDDEN_DEATH.START_PASS - 2);
     this.wait = 0;
   }
 
@@ -44,8 +42,6 @@ export class SupernovaDemo {
     }
     if (this.wait < PASS_PAUSE) return;
     this.wait = 0;
-    const inner = m as unknown as Inner;
-    inner.fired = new Set(m.alive.map((p) => p.id));
-    inner.afterVolley();
+    m.debugEndPass();
   }
 }

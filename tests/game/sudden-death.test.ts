@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ClassicMatch, createMatch, SolarMatch } from '../../src/game';
+import { ClassicMatch, createMatch, SolarMatch, type GameEvent } from '../../src/game';
 import { FIELD, SOLAR, SUDDEN_DEATH } from '../../src/sim/config';
 import { DEFAULT_SETTINGS, type Seat } from '../../src/data/settings';
 import { simulateShot, type Ship, type World } from '../../src/sim/physics';
 import { onOrbit } from '../../src/sim/world';
+import { t } from '../../src/platform/i18n';
 
 const cpus = (n: number): Seat[] => [...Array(n).fill('medium'), ...Array(6 - n).fill('off')];
 const play = (mode: 'classic' | 'solar', seed: number, players = 3, suddenDeath = true) => {
@@ -11,14 +12,8 @@ const play = (mode: 'classic' | 'solar', seed: number, players = 3, suddenDeath 
   return createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 1, seats, suddenDeath }, { seats, seed, deterministicCpu: true });
 };
 
-type Inner = { passes: number; fired: Set<number>; afterVolley(): void };
 /** Ends the pass under way, as if every ship still in had just fired. */
-const endPass = (match: ClassicMatch, passes: number): void => {
-  const inner = match as unknown as Inner;
-  inner.passes = passes - 1;
-  inner.fired = new Set(match.alive.map((p) => p.id));
-  inner.afterVolley();
-};
+const endPass = (match: ClassicMatch, passes: number): void => match.debugEndPass(passes);
 /** Lets the system turn until it has. */
 const turn = (match: ClassicMatch): void => {
   for (let t = 0; t < 10 && match.phase === 'orbit'; t += 1 / 30) match.update(1 / 30);
@@ -63,6 +58,35 @@ describe('sudden death in Classic', () => {
     }
   });
 
+  it('announces itself as a gravity well', () => {
+    const match = play('classic', 3) as ClassicMatch;
+    try {
+      const events: GameEvent[] = [];
+      match.on((e) => events.push(e));
+      endPass(match, SUDDEN_DEATH.START_PASS);
+      endPass(match, SUDDEN_DEATH.START_PASS + 1);
+      expect(events.filter((e) => e.type === 'suddenDeath')).toEqual([{ type: 'suddenDeath', kind: 'gravity' }]);
+      expect(match.notice?.text).toBe(t('notice.gravity'));
+    } finally {
+      match.dispose();
+    }
+  });
+
+  it('carries the pass count and who has fired through a snapshot', () => {
+    const match = play('classic', 3) as ClassicMatch;
+    const copy = play('classic', 3) as ClassicMatch;
+    try {
+      endPass(match, SUDDEN_DEATH.START_PASS - 2);
+      const snapshot = { ...match.snapshot(), fired: [1] };
+      copy.restoreSnapshot(snapshot);
+      expect(copy.suddenDeathIn).toBe(2);
+      expect(copy.snapshot()).toMatchObject({ passes: SUDDEN_DEATH.START_PASS - 2, fired: [1], suddenDeathKind: 'gravity', environmentDecided: false });
+    } finally {
+      match.dispose();
+      copy.dispose();
+    }
+  });
+
   it('never comes while the rule is off', () => {
     const match = play('classic', 3, 3, false) as ClassicMatch;
     try {
@@ -97,12 +121,13 @@ describe('sudden death in a Solar System', () => {
       Object.assign(match.world.ships[2], onOrbit(50, 1));
       endPass(match, SUDDEN_DEATH.START_PASS);
       expect(match.phase).toBe('orbit');
+      expect(match.notice?.text).toBe(t('notice.redGiant'));
       turn(match);
       expect(sun.radius).toBeCloseTo(SUDDEN_DEATH.GIANT_RADII[0], 6);
       expect(sun.mass).toBeCloseTo(SOLAR.SUN_MASS * SUDDEN_DEATH.GIANT_MASS, 3);
       expect(sun.giant).toBeCloseTo(1 / SUDDEN_DEATH.GIANT_RADII.length, 6);
       expect(match.players[2].alive).toBe(false);
-      expect(match.lastKill).toMatchObject({ killer: null, victim: 2, points: 0 });
+      expect(match.lastKill).toMatchObject({ killer: null, victim: 2, points: 0, source: 'sun' });
       // Nothing else is left inside it.
       for (const p of match.world.planets) if (!p.sun) expect(Math.hypot(p.x - sun.x, p.y - sun.y)).toBeGreaterThanOrEqual(sun.radius + p.radius * 0.5);
     } finally {
@@ -147,6 +172,24 @@ describe('sudden death in a Solar System', () => {
       expect(match.players.map((p) => p.score)).toEqual(scores);
     } finally {
       match.dispose();
+    }
+  });
+
+  it('keeps the blast going on a match restored from a snapshot mid-blast', () => {
+    const match = play('solar', 6, 3) as SolarMatch;
+    const copy = play('solar', 6, 3) as SolarMatch;
+    try {
+      endPass(match, SUDDEN_DEATH.START_PASS + SUDDEN_DEATH.GIANT_RADII.length);
+      match.update(0.5);
+      copy.restoreSnapshot(match.snapshot());
+      expect(copy.blasting).toBe(true);
+      expect(copy.decidedBySuddenDeath).toBe(true);
+      turn(copy);
+      expect(copy.phase).toBe('roundOver');
+      expect(copy.summary).toMatchObject({ title: 'supernova', survivor: null, bonus: 0 });
+    } finally {
+      match.dispose();
+      copy.dispose();
     }
   });
 

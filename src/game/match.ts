@@ -83,6 +83,8 @@ export interface KillRecord {
   friendly: boolean;
   /** A planetary defense's stray missile did it, not a shot. */
   collateral?: boolean;
+  /** No player did it (`killer` is null): what took the ship instead. */
+  source?: KillSource;
   combo: StyleKind[];
   multiplier: number;
   shots: number;
@@ -90,6 +92,14 @@ export interface KillRecord {
   /** Match clock when it happened — the kill feed fades entries by age. */
   at: number;
 }
+
+/** What takes a ship when no player does: the Event Horizon's hole, or a Solar System's sun in sudden death. */
+export const KILL_SOURCES = ['horizon', 'sun'] as const;
+export type KillSource = (typeof KILL_SOURCES)[number];
+
+/** The ways sudden death pushes a round to its end: enemy ships pull shots in (Classic), or the sun turns red giant (Solar System). */
+export const SUDDEN_DEATH_KINDS = ['gravity', 'redGiant'] as const;
+export type SuddenDeathKind = (typeof SUDDEN_DEATH_KINDS)[number];
 
 export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots' | 'skipped' | 'forfeit' | 'supernova';
 
@@ -177,8 +187,8 @@ export type GameEvent =
   /** One shot took more than one ship in this volley: the chain number and what it paid. */
   | { type: 'multiKill'; player: number; kills: number; points: number; x: number; y: number }
   | { type: 'collapse'; x: number; y: number }
-  /** Sudden death has set in: the ships pull shots in, or the sun has turned red giant. */
-  | { type: 'suddenDeath' }
+  /** Sudden death has set in, as this round's kind of it. */
+  | { type: 'suddenDeath'; kind: SuddenDeathKind }
   /** Sudden death: the red giant went supernova and took every ship with it. */
   | { type: 'supernova'; x: number; y: number; ships: { ship: number; x: number; y: number; angle: number }[]; planets: { x: number; y: number; radius: number; color: string }[] }
   | { type: 'killcam'; active: boolean; recording: boolean }
@@ -1657,7 +1667,7 @@ export abstract class Match {
     this.emit({ type: 'kill', record });
   }
 
-  /** Whether the round ends without a winner even though somebody is still in it (a Solar System's sun decided it). */
+  /** Whether the round ends without a winner even though somebody is still in it (sudden death decided it, not a player). */
   protected get noWinner(): boolean {
     return false;
   }

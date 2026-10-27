@@ -1,10 +1,24 @@
-import { COLORS, FIELD, PHYSICS, SOLAR, SOLAR_STORM, SUDDEN_DEATH } from '../sim/config';
-import { t } from '../platform/i18n';
+import { FIELD, PHYSICS, SOLAR, SOLAR_STORM, SUDDEN_DEATH } from '../sim/config';
 import type { Nebula, Planet } from '../sim/physics';
 import { createRng, intRange, range, type Rng } from '../sim/rng';
 import { onOrbit, orbitOf, orbitTurn } from '../sim/world';
-import { ClassicMatch } from './classic';
-import type { RoundTitle } from './match';
+import { ClassicMatch, type ClassicSnapshot } from './classic';
+import type { RoundTitle, SuddenDeathKind } from './match';
+
+/** How the red giant grows through the turn under way. */
+interface Swelling {
+  fromRadius: number;
+  toRadius: number;
+  fromMass: number;
+  toMass: number;
+  fromGiant: number;
+  toGiant: number;
+}
+
+export interface SolarSnapshot extends ClassicSnapshot {
+  /** Hosts from before sudden death send none. */
+  solar?: { turned: number; swelling: Swelling | null; nova: boolean; blasting: boolean };
+}
 
 /**
  * "Sonnensystem" — Classic's rules in a system that never stands still. A sun sits in the middle, the planets
@@ -23,23 +37,41 @@ export class SolarMatch extends ClassicMatch {
   private stormAt = 0;
   private stormRng: Rng = createRng(0);
   /** Sudden death: how the red giant grows through the turn under way. */
-  private swelling: { fromRadius: number; toRadius: number; fromMass: number; toMass: number; fromGiant: number; toGiant: number } | null = null;
+  private swelling: Swelling | null = null;
   /** Sudden death: the sun went supernova and took every ship with it. */
   private nova = false;
-  /** Sudden death: the red giant swallowed a ship and so decided the round; nobody wins it. */
-  private sunDecided = false;
   /** The supernova's shockwave is still sweeping the field: the round ends once it has. */
   blasting = false;
 
   startRound(): void {
     this.swelling = null;
     this.nova = false;
-    this.sunDecided = false;
     this.blasting = false;
     super.startRound();
-    // Its own stream, so the storm never changes what the world's generator or the twists draw.
+    this.drawStorm();
+  }
+
+  /** Its own stream, so the storm never changes what the world's generator or the twists draw. */
+  private drawStorm(): void {
     this.stormRng = createRng(this.worldSeed ^ 0x5702a);
     this.stormAt = intRange(this.stormRng, SOLAR_STORM.FIRST_PASS, SOLAR_STORM.LAST_PASS);
+  }
+
+  snapshot(): SolarSnapshot {
+    return { ...super.snapshot(), solar: { turned: this.turned, swelling: this.swelling, nova: this.nova, blasting: this.blasting } };
+  }
+
+  restoreSnapshot(snapshot: SolarSnapshot): void {
+    super.restoreSnapshot(snapshot);
+    this.drawStorm();
+    this.turned = snapshot.solar?.turned ?? 0;
+    this.swelling = snapshot.solar?.swelling ?? null;
+    this.nova = snapshot.solar?.nova ?? false;
+    this.blasting = snapshot.solar?.blasting ?? false;
+  }
+
+  protected get suddenDeathKinds(): readonly SuddenDeathKind[] {
+    return ['redGiant'];
   }
 
   /** The system turns once a pass is over (and only then; nothing turns once the round is decided). */
@@ -51,13 +83,19 @@ export class SolarMatch extends ClassicMatch {
     // The storm has run its course: the clouds thin away through this turn.
     if (this.passes === this.stormAt + SOLAR_STORM.LIFETIME) for (const n of this.world.nebulae) if (n.storm) n.fading = true;
     // Sudden death: the sun grows through the turns of its red giant, and at the pass after them goes supernova.
-    const step = this.settings.suddenDeath ? this.passes - SUDDEN_DEATH.START_PASS + 1 : 0;
-    if (step > SUDDEN_DEATH.GIANT_RADII.length) {
-      this.supernova();
-      return true;
-    }
-    if (step >= 1) this.swell(step);
+    if (super.endPass()) return true;
     this.setPhase('orbit');
+    return true;
+  }
+
+  protected suddenDeathPass(step: number): void {
+    if (this.suddenDeathKind !== 'redGiant') return super.suddenDeathPass(step);
+    if (step <= SUDDEN_DEATH.GIANT_RADII.length) this.swell(step);
+  }
+
+  protected finale(): boolean {
+    if (this.suddenDeathKind !== 'redGiant') return super.finale();
+    this.supernova();
     return true;
   }
 
@@ -65,7 +103,7 @@ export class SolarMatch extends ClassicMatch {
     return this.world.planets.find((p) => p.sun);
   }
 
-  /** The sun grows to its next size as the system turns; the first time, it announces the red giant. */
+  /** The sun grows to its next size as the system turns. */
   private swell(step: number): void {
     const sun = this.sun;
     if (!sun) return;
@@ -77,9 +115,6 @@ export class SolarMatch extends ClassicMatch {
       fromGiant: sun.giant ?? 0,
       toGiant: step / SUDDEN_DEATH.GIANT_RADII.length,
     };
-    if (step > 1) return;
-    this.notice = { text: t('notice.redGiant'), color: COLORS.danger, at: this.clock };
-    this.emit({ type: 'suddenDeath' });
   }
 
   /** What the growing sun touches is gone: planets (and the defenses on them), pickups, and ships. Checked all through its turn. */
@@ -103,16 +138,8 @@ export class SolarMatch extends ClassicMatch {
       // The hull bursts in the heat, and what is left of it is drawn into the sun.
       this.emit({ type: 'explode', x: ship.x, y: ship.y, ship: p.id, vx: 0, vy: 0 });
       this.emit({ type: 'devour', x: ship.x, y: ship.y, toX: sun.x, toY: sun.y, color: p.color, vx: 0, vy: 0 });
-      this.takeShip(p.id);
+      this.takeShip(p.id, 'sun');
     }
-  }
-
-  /** The ship is gone with nobody to blame: no points either way. */
-  private takeShip(id: number): void {
-    this.players[id].alive = false;
-    this.world.ships[id].alive = false;
-    if (this.decided) this.sunDecided = true;
-    this.recordKill({ killer: null, victim: id, points: 0, self: false, friendly: false, combo: [], multiplier: 1, shots: 0, power: 0, at: this.clock });
   }
 
   /**
@@ -137,7 +164,7 @@ export class SolarMatch extends ClassicMatch {
       this.sun.neutron = true;
       this.world.version++;
     }
-    for (const p of doomed) this.takeShip(p.id);
+    for (const p of doomed) this.takeShip(p.id, 'sun');
     this.blasting = true;
     this.setPhase('orbit');
   }
@@ -155,13 +182,9 @@ export class SolarMatch extends ClassicMatch {
   }
 
   /** A round the sun decides — by swallowing a ship, or going supernova — has no winner, even with a ship left in it. */
-  protected get noWinner(): boolean {
-    return this.sunDecided || this.nova;
-  }
-
   protected roundTitle(survivor: number | null): RoundTitle {
     if (this.nova) return 'supernova';
-    if (this.sunDecided) return 'swallowed';
+    if (this.environmentDecided) return 'swallowed';
     return super.roundTitle(survivor);
   }
 

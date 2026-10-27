@@ -742,7 +742,7 @@ const en = {
   'title.teamWin': 'TEAM {team}',
   'title.friendlyFire': 'FRIENDLY FIRE',
   'notice.volley': 'VOLLEY!',
-  'notice.suddenDeath': 'SUDDEN DEATH!',
+  'notice.gravity': 'SUDDEN DEATH!',
   'notice.redGiant': 'RED GIANT!',
 
   // — scorecard —
@@ -1735,7 +1735,7 @@ const de: Dict = {
   'title.teamWin': 'TEAM {team}',
   'title.friendlyFire': 'TEAMBESCHUSS',
   'notice.volley': 'SALVE!',
-  'notice.suddenDeath': 'SUDDEN DEATH!',
+  'notice.gravity': 'SUDDEN DEATH!',
   'notice.redGiant': 'ROTER RIESE!',
 
   'scorecard.round': 'Spielbilanz',

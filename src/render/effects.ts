@@ -337,7 +337,6 @@ export class Effects {
     }
   }
 
-  /** The horizon swelling: a ring that contracts onto the hole. */
   /**
    * The red giant blows apart. The screen goes white, the field quakes, a blinding core swells, and two shockwaves —
    * white-hot, then a slower one of red plasma — sweep out over the whole field, throwing a storm of debris. Each
@@ -352,12 +351,13 @@ export class Effects {
       doomed: doomed.map((d) => ({ ...d, at: at(d), done: false })),
       planets: planets.map((p) => ({ ...p, at: at(p), done: false })),
     });
-    this.whiteout = this.reducedMotion ? 0.5 : 1;
+    // With reduced motion there is no full-screen flash, and the field stays still.
     if (!this.reducedMotion) {
+      this.whiteout = 1;
+      this.flash = 1;
       this.quake = 1.8;
       this.shake = 30;
     }
-    this.flash = 1;
     this.ring(x, y, 1500, 2.6, COLORS.sodium);
     this.ring(x, y, 1100, 2.1, COLORS.danger);
     this.ring(x, y, 600, 1.4, COLORS.bone);
@@ -368,6 +368,7 @@ export class Effects {
     this.burst(x, y, 80, 20, 260, '#ffe9a8', 'small');
   }
 
+  /** The horizon swelling: a ring that contracts onto the hole. */
   collapse(x: number, y: number): void {
     this.rings.push({ x, y, radius: 220, life: 1.2, max: 1.2, color: COLORS.danger, inward: true });
     if (!this.reducedMotion) this.shake = Math.max(this.shake, 3);

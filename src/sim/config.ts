@@ -204,6 +204,10 @@ export const SUDDEN_DEATH = {
   START_PASS: 10,
   /** The round label counts down to it over the last this many passes. */
   WARNING: 3,
+  /** Its kind is drawn for each round from the round's seed, mixed with this. */
+  SALT: 0x5dead,
+  /** Its finale (if its kind has one) plays once this many of its passes are over: the pass after the red giant's last turn. */
+  FINALE_STEP: 4,
   /**
    * Classic: how heavy each ship is to its enemies' shots per pass of sudden death… A shot flying by keeps its swing, so
    * only a deep well catches it: at the limit (about two and a half suns) a shot that misses by a few ship lengths hits.

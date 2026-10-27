@@ -3,7 +3,8 @@ import { scoreChallengeHit } from '../sim/scoring';
 import { AIM, COLORS, HORIZON, SCORING, SUDDEN_DEATH } from '../sim/config';
 import { t } from '../platform/i18n';
 import { Volley, type VolleyShot } from '../sim/volley';
-import { Match, type RoundTitle, type SkipVote } from './match';
+import { createRng, pick } from '../sim/rng';
+import { Match, type KillSource, type RoundTitle, type SkipVote, type SuddenDeathKind } from './match';
 import type { Pickup } from '../sim/powerups';
 import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
@@ -47,6 +48,9 @@ export interface ClassicSnapshot extends Partial<KillcamSnapshot> {
   /** The passes the round has had, and the ships that have fired in the one under way. */
   passes?: number;
   fired?: number[];
+  /** Sudden death: this round's kind of it, and whether it (not a player) has decided the round. */
+  suddenDeathKind?: SuddenDeathKind;
+  environmentDecided?: boolean;
   /** Phase time when a finished volley began waiting for its post-flight delay. */
   flightDoneAt?: number | null;
   oracle: OracleSnapshot;
@@ -96,6 +100,8 @@ export class ClassicMatch extends Match {
       planClock: this.planClock,
       passes: this.passes,
       fired: [...this.fired],
+      suddenDeathKind: this.suddenDeathKind,
+      environmentDecided: this.environmentDecided,
       flightDoneAt: this.flightDoneAt,
       ...this.killcam.snapshot(),
       oracle: this.oracle.snapshot(),
@@ -138,6 +144,8 @@ export class ClassicMatch extends Match {
     this.planClock = snapshot.planClock;
     this.passes = snapshot.passes ?? 0;
     this.fired = new Set(snapshot.fired ?? []);
+    this.suddenDeathKind = snapshot.suddenDeathKind ?? this.suddenDeathKinds[0];
+    this.environmentDecided = snapshot.environmentDecided ?? false;
     // Hosts from before the oracle send none.
     if (snapshot.oracle) this.oracle.restore(snapshot.oracle);
     if (snapshot.stands) this.stands.restore(snapshot.stands);
@@ -165,6 +173,19 @@ export class ClassicMatch extends Match {
   /** The ships that have fired in the pass under way, and the passes the round has had (a pass: every ship still in has shot). */
   private fired = new Set<number>();
   protected passes = 0;
+  /** Sudden death: the kind this round gets (drawn from the round's seed), and whether it, not a player, decided the round. */
+  protected suddenDeathKind: SuddenDeathKind = 'gravity';
+  protected environmentDecided = false;
+
+  /** The kinds of sudden death a round of this mode draws from. */
+  protected get suddenDeathKinds(): readonly SuddenDeathKind[] {
+    return ['gravity'];
+  }
+
+  /** How many passes into sudden death the round is (1 the pass it sets in), or 0 before then or without the rule. */
+  protected get suddenDeathStep(): number {
+    return this.settings.suddenDeath ? Math.max(0, this.passes - SUDDEN_DEATH.START_PASS + 1) : 0;
+  }
 
   /** Passes left before sudden death sets in (0 once it has), or null when the room plays without it. */
   get suddenDeathIn(): number | null {
@@ -206,6 +227,9 @@ export class ClassicMatch extends Match {
   protected beginRound(): void {
     this.fired.clear();
     this.passes = 0;
+    this.environmentDecided = false;
+    // Its own stream, so the draw never changes what the world's generator, the storm or the twists draw.
+    this.suddenDeathKind = pick(createRng(this.worldSeed ^ SUDDEN_DEATH.SALT), this.suddenDeathKinds);
     if (this.salvo) {
       this.salvoNo = 0;
       return this.startPlanning();
@@ -436,10 +460,48 @@ export class ClassicMatch extends Match {
     return true;
   }
 
-  /** A pass is over. True when the mode moves the round on by itself (a Solar System turns first). */
+  /**
+   * A pass is over. True when the mode moves the round on by itself (a Solar System turns first, a finale plays).
+   * Sudden death is announced as it sets in, steps up every pass, and after its last pass plays its finale, if its kind has one.
+   */
   protected endPass(): boolean {
-    if (this.settings.suddenDeath && this.passes >= SUDDEN_DEATH.START_PASS) this.tightenPull();
+    const step = this.suddenDeathStep;
+    if (!step) return false;
+    if (step === 1) this.announceSuddenDeath();
+    this.suddenDeathPass(step);
+    return step === SUDDEN_DEATH.FINALE_STEP && this.finale();
+  }
+
+  private announceSuddenDeath(): void {
+    this.notice = { text: t(`notice.${this.suddenDeathKind}`), color: COLORS.danger, at: this.clock };
+    this.emit({ type: 'suddenDeath', kind: this.suddenDeathKind });
+  }
+
+  /** Sudden death's `step`th pass is over: it grows stronger. */
+  protected suddenDeathPass(step: number): void {
+    if (this.suddenDeathKind === 'gravity') this.tightenPull(step);
+  }
+
+  /** Sudden death's last pass is over. True when a finale plays that ends the round; the gravity well has none. */
+  protected finale(): boolean {
     return false;
+  }
+
+  /** Sudden death took the ship, not a player: no points either way, and if that decides the round, nobody wins it. */
+  protected takeShip(id: number, source: KillSource): void {
+    this.players[id].alive = false;
+    this.world.ships[id].alive = false;
+    if (this.decided) this.environmentDecided = true;
+    this.recordKill({ killer: null, victim: id, points: 0, self: false, friendly: false, source, combo: [], multiplier: 1, shots: 0, power: 0, at: this.clock });
+  }
+
+  protected get noWinner(): boolean {
+    return this.environmentDecided;
+  }
+
+  /** Whether sudden death, not a player, has decided the round (the HUD then says nobody wins it). */
+  get decidedBySuddenDeath(): boolean {
+    return this.environmentDecided;
   }
 
   /** The next turn, or the next volley's aiming. */
@@ -450,16 +512,20 @@ export class ClassicMatch extends Match {
   }
 
   /** Sudden death: every ship pulls its enemies' shots in, a little harder each pass, up to a limit. */
-  private tightenPull(): void {
-    const step = Math.min(this.passes - SUDDEN_DEATH.START_PASS + 1, SUDDEN_DEATH.PULL_STEPS);
+  private tightenPull(step: number): void {
+    const pull = Math.min(step, SUDDEN_DEATH.PULL_STEPS) * SUDDEN_DEATH.PULL_STEP;
     for (const p of this.players) {
       const ship = this.world.ships[p.id];
-      ship.pull = step * SUDDEN_DEATH.PULL_STEP;
+      ship.pull = pull;
       ship.team = p.team;
     }
-    if (step > 1) return;
-    this.notice = { text: t('notice.suddenDeath'), color: COLORS.danger, at: this.clock };
-    this.emit({ type: 'suddenDeath' });
+  }
+
+  /** Dev and tests: ends the pass under way as if every ship still in had fired, `passes` passes into the round. */
+  debugEndPass(passes = this.passes + 1): void {
+    this.passes = passes - 1;
+    for (const p of this.alive) this.fired.add(p.id);
+    this.afterVolley();
   }
 
   protected passTurnOf(id: number): void {

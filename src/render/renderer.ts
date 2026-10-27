@@ -191,12 +191,10 @@ export class Renderer {
       ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
     if (effects.whiteout > 0) {
-      // Added light, not a veil: the screen burns white rather than greying over.
+      // A plain fill: a full-screen 'lighter' blend stalled the first frames of the blast for most of a second.
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = rgba('#fff2d8', effects.whiteout ** 1.4);
+      ctx.fillStyle = rgba('#fff8ec', effects.whiteout ** 1.4);
       ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-      ctx.globalCompositeOperation = 'source-over';
     }
 
     if (opts.hud) {

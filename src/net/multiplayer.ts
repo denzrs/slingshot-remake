@@ -680,7 +680,7 @@ function isEventForMatch(event: import('../game').GameEvent, playerCount: number
     case 'clash':
       return event.players.every(inRange);
     case 'supernova':
-      return event.ships.every((s) => inRange(s.ship));
+      return event.ships.length <= playerCount && event.ships.every((s) => inRange(s.ship));
     case 'kill':
       return inRange(event.record.victim) && (event.record.killer === null || inRange(event.record.killer));
     default:
