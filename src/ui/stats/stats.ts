@@ -259,18 +259,21 @@ const statsPassword = (): string => String(import.meta.env.VITE_STATS_PASSWORD |
 
 const UNLOCK_KEY = 'slingshot.stats.unlocked';
 
-/** A correct password is remembered for the browser session only. */
-function unlocked(): boolean {
+/**
+ * The password that unlocked the page is kept for this tab's session, or in local storage across sessions when
+ * "remember me" was ticked. Keeping the password itself, not a flag, locks the page again once the build changes it.
+ */
+function unlocked(password: string): boolean {
   try {
-    return sessionStorage.getItem(UNLOCK_KEY) === '1';
+    return localStorage.getItem(UNLOCK_KEY) === password || sessionStorage.getItem(UNLOCK_KEY) === password;
   } catch {
     return false;
   }
 }
 
-function remember(): void {
+function remember(password: string, always: boolean): void {
   try {
-    sessionStorage.setItem(UNLOCK_KEY, '1');
+    (always ? localStorage : sessionStorage).setItem(UNLOCK_KEY, password);
   } catch {
     // Private mode: the password is asked for again next time.
   }
@@ -282,17 +285,18 @@ function remember(): void {
  */
 export function statsScreen(app: App): Screen {
   const password = statsPassword();
-  if (!password || unlocked()) return statsContent(app);
+  if (!password || unlocked(password)) return statsContent(app);
   const input = h('input',{ type: 'password', autocomplete: 'off', 'aria-label': t('stats.password') }) as HTMLInputElement;
   const error = h('p.lb__status.is-refused', { role: 'alert' }, t('stats.password.wrong'));
   error.hidden = true;
+  let always = false;
   const submit = (): void => {
     if (input.value !== password) {
       error.hidden = false;
       input.select();
       return;
     }
-    remember();
+    remember(password, always);
     app.menu.rebuild();
   };
   input.addEventListener('keydown', (event) => {
@@ -301,11 +305,12 @@ export function statsScreen(app: App): Screen {
   const root = h(
     'section.screen.screen--panel',
     { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('stats.title') },
-    h('div.panel', null, h('p.eyebrow', null, t('stats.eyebrow')), h('h2.daily__title', null, t('stats.title')), h('label.lobby__field', null, h('span', null, t('stats.password')), input), error, h('div.items.items--row', { 'data-items': '' })),
+    h('div.panel', null, h('p.eyebrow', null, t('stats.eyebrow')), h('h2.daily__title', null, t('stats.title')), h('label.lobby__field', null, h('span', null, t('stats.password')), input), error, h('div.items', { 'data-section': 'remember' }), h('div.items.items--row', { 'data-items': '' })),
   );
   return {
     build: () => root,
     items: [
+      { kind: 'toggle', section: 'remember', label: t('stats.password.remember'), get: () => always, set: (v) => (always = v) },
       { kind: 'action', label: t('stats.password.open'), primary: true, run: submit },
       { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
     ] satisfies MenuItem[],
