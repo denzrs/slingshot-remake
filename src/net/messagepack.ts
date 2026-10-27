@@ -103,8 +103,14 @@ function isGameEvent(value: unknown): boolean {
   const record = (candidate: unknown): candidate is Record<string, unknown> =>
     !!candidate && typeof candidate === 'object' && !Array.isArray(candidate);
   switch (event.type) {
-    case 'round': case 'gameOver': case 'roundEnd': case 'volley': case 'collapse':
+    case 'round': case 'gameOver': case 'roundEnd': case 'volley': case 'collapse': case 'suddenDeath':
       return true;
+    case 'supernova':
+      return finite('x') && finite('y') && Array.isArray(event.ships) && event.ships.every((ship) => record(ship)
+        && Number.isSafeInteger(ship.ship) && (ship.ship as number) >= 0
+        && [ship.x, ship.y, ship.angle].every((n) => typeof n === 'number' && Number.isFinite(n)))
+        && Array.isArray(event.planets) && event.planets.every((planet) => record(planet) && typeof planet.color === 'string'
+          && [planet.x, planet.y, planet.radius].every((n) => typeof n === 'number' && Number.isFinite(n)));
     case 'killcam':
       return typeof event.active === 'boolean' && typeof event.recording === 'boolean';
     case 'turn': case 'lock':

@@ -1,6 +1,6 @@
 import type { ShotRules, StyleKind, World } from '../sim/physics';
 import { scoreChallengeHit } from '../sim/scoring';
-import { AIM, COLORS, HORIZON, SCORING } from '../sim/config';
+import { AIM, COLORS, HORIZON, SCORING, SUDDEN_DEATH } from '../sim/config';
 import { t } from '../platform/i18n';
 import { Volley, type VolleyShot } from '../sim/volley';
 import { Match, type RoundTitle, type SkipVote } from './match';
@@ -44,6 +44,9 @@ export interface ClassicSnapshot extends Partial<KillcamSnapshot> {
   skipVote?: SkipVote | null;
   /** Simultaneous shots: seconds left to aim. */
   planClock: number;
+  /** The passes the round has had, and the ships that have fired in the one under way. */
+  passes?: number;
+  fired?: number[];
   /** Phase time when a finished volley began waiting for its post-flight delay. */
   flightDoneAt?: number | null;
   oracle: OracleSnapshot;
@@ -91,6 +94,8 @@ export class ClassicMatch extends Match {
       scoreHistory: this.scoreHistory,
       skipVote: this.skipVote,
       planClock: this.planClock,
+      passes: this.passes,
+      fired: [...this.fired],
       flightDoneAt: this.flightDoneAt,
       ...this.killcam.snapshot(),
       oracle: this.oracle.snapshot(),
@@ -131,6 +136,8 @@ export class ClassicMatch extends Match {
     this.scoreHistory = snapshot.scoreHistory;
     this.skipVote = snapshot.skipVote ?? null;
     this.planClock = snapshot.planClock;
+    this.passes = snapshot.passes ?? 0;
+    this.fired = new Set(snapshot.fired ?? []);
     // Hosts from before the oracle send none.
     if (snapshot.oracle) this.oracle.restore(snapshot.oracle);
     if (snapshot.stands) this.stands.restore(snapshot.stands);
@@ -154,6 +161,16 @@ export class ClassicMatch extends Match {
   private planClock: number = HORIZON.SHOT_CLOCK;
   private queue: number[] = [];
   private salvoNo = 0;
+
+  /** The ships that have fired in the pass under way, and the passes the round has had (a pass: every ship still in has shot). */
+  private fired = new Set<number>();
+  protected passes = 0;
+
+  /** Passes left before sudden death sets in (0 once it has), or null when the room plays without it. */
+  get suddenDeathIn(): number | null {
+    if (!this.settings.suddenDeath) return null;
+    return Math.max(0, SUDDEN_DEATH.START_PASS - this.passes);
+  }
 
   get salvo(): boolean {
     return this.settings.simultaneousShots;
@@ -187,6 +204,8 @@ export class ClassicMatch extends Match {
   }
 
   protected beginRound(): void {
+    this.fired.clear();
+    this.passes = 0;
     if (this.salvo) {
       this.salvoNo = 0;
       return this.startPlanning();
@@ -403,9 +422,44 @@ export class ClassicMatch extends Match {
 
   protected afterVolley(): void {
     if (this.decided) return this.endRound();
+    if (this.passOver() && this.endPass()) return;
+    this.nextTurn();
+  }
+
+  /** Whether this volley finished a pass: everybody still in has had a shot (with simultaneous shots, every volley does). */
+  private passOver(): boolean {
+    if (this.salvo) for (const p of this.alive) this.fired.add(p.id);
+    else this.fired.add(this.current);
+    if (this.alive.some((p) => !this.fired.has(p.id))) return false;
+    this.fired.clear();
+    this.passes++;
+    return true;
+  }
+
+  /** A pass is over. True when the mode moves the round on by itself (a Solar System turns first). */
+  protected endPass(): boolean {
+    if (this.settings.suddenDeath && this.passes >= SUDDEN_DEATH.START_PASS) this.tightenPull();
+    return false;
+  }
+
+  /** The next turn, or the next volley's aiming. */
+  protected nextTurn(): void {
     if (this.salvo) return this.startPlanning();
     if (this.teamMode) this.giveTeamTurn();
     else this.giveTurn(this.current + 1);
+  }
+
+  /** Sudden death: every ship pulls its enemies' shots in, a little harder each pass, up to a limit. */
+  private tightenPull(): void {
+    const step = Math.min(this.passes - SUDDEN_DEATH.START_PASS + 1, SUDDEN_DEATH.PULL_STEPS);
+    for (const p of this.players) {
+      const ship = this.world.ships[p.id];
+      ship.pull = step * SUDDEN_DEATH.PULL_STEP;
+      ship.team = p.team;
+    }
+    if (step > 1) return;
+    this.notice = { text: t('notice.suddenDeath'), color: COLORS.danger, at: this.clock };
+    this.emit({ type: 'suddenDeath' });
   }
 
   protected passTurnOf(id: number): void {

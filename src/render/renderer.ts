@@ -1,4 +1,4 @@
-import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, SOLAR, WORMHOLE } from '../sim/config';
+import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, SOLAR, SUDDEN_DEATH, WORMHOLE } from '../sim/config';
 import type { Match, Scene, Trail } from '../game';
 import { t } from '../platform/i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../game/scorecard';
@@ -7,7 +7,7 @@ import { POWER_UP, PREVIEW_POINTS } from '../sim/powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
 import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from './orientation';
-import { drawSun } from './sun';
+import { drawNeutronStar, drawSun } from './sun';
 import { orbitOf, solarCenter } from '../sim/world';
 import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
@@ -190,6 +190,14 @@ export class Renderer {
       ctx.fillStyle = rgba(COLORS.sodium, effects.flash * 0.1);
       ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
+    if (effects.whiteout > 0) {
+      // Added light, not a veil: the screen burns white rather than greying over.
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = rgba('#fff2d8', effects.whiteout ** 1.4);
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      ctx.globalCompositeOperation = 'source-over';
+    }
 
     if (opts.hud) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -237,6 +245,14 @@ export class Renderer {
 
   /** When this screen first saw each storm cloud, in renderer time: the burst plays from there, the same for every cloud of one storm. */
   private readonly stormSeen = new Map<number, number>();
+
+  /** When this screen first saw the neutron star a supernova left, in renderer time, so its nebula grows from there. */
+  private remnantSeen: { seed: number; at: number } | null = null;
+
+  private remnantAge(seed: number): number {
+    if (this.remnantSeen?.seed !== seed) this.remnantSeen = { seed, at: this.time };
+    return this.time - this.remnantSeen.at;
+  }
 
   /** When this screen first saw each storm cloud thinning away, in renderer time. */
   private readonly stormFading = new Map<number, number>();
@@ -345,7 +361,11 @@ export class Renderer {
     ctx.globalAlpha = 1;
 
     world.defenses.forEach((d, i) => d.wrecked || drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, 1, defenseView(scene.volley?.shots ?? [], d, i), false, !showPlanets));
-    for (const p of world.planets) if (p.sun) drawSun(ctx, p, this.time, alpha, stormFlare(this.stormAge(world)));
+    for (const p of world.planets) {
+      if (!p.sun) continue;
+      if (p.neutron) drawNeutronStar(ctx, p, this.time, this.remnantAge(p.seed), alpha);
+      else drawSun(ctx, p, this.time, alpha, stormFlare(this.stormAge(world)));
+    }
     for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
@@ -979,6 +999,23 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** Sudden death: rings that keep closing in on the ship, wider the harder it pulls its enemies' shots. */
+  private drawPull(x: number, y: number, pull: number, color: string): void {
+    const { ctx } = this;
+    const strength = Math.min(1, pull / (SUDDEN_DEATH.PULL_STEP * SUDDEN_DEATH.PULL_STEPS));
+    const reach = 40 + 60 * strength;
+    ctx.save();
+    ctx.lineWidth = 1.4;
+    for (let k = 0; k < 3; k++) {
+      const phase = (this.time * 0.6 + k / 3) % 1;
+      ctx.strokeStyle = rgba(color, (0.12 + 0.28 * strength) * phase);
+      ctx.beginPath();
+      ctx.arc(x, y, 18 + (reach - 18) * (1 - phase), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   private drawShips(match: Match, scene: Scene): void {
     const { ctx } = this;
     const live = !scene.camera;
@@ -991,6 +1028,7 @@ export class Renderer {
       const color = player.color;
       if (player.target) return this.drawTarget(ship.x, ship.y, color);
       const current = planning && match.focus === i;
+      if (ship.pull) this.drawPull(ship.x, ship.y, ship.pull, color);
 
       if (current) {
         ctx.save();

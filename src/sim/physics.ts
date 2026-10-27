@@ -18,6 +18,10 @@ export interface Planet {
   reversed?: boolean;
   /** The sun of the Solar System mode: the system turns around it, and no power-up can touch it. */
   sun?: boolean;
+  /** Sudden death: how far the sun has turned into a red giant (0 → 1), for its look. */
+  giant?: number;
+  /** Sudden death: the sun went supernova, and what is left is a neutron star in a planetary nebula. */
+  neutron?: boolean;
 }
 
 export interface Ship {
@@ -26,6 +30,10 @@ export interface Ship {
   alive: boolean;
   /** Power-ups: a shield soaks up the next shot that would hit the ship (it is used up doing so). */
   shield?: boolean;
+  /** Sudden death (Classic): how hard the ship pulls in its enemies' shots, as a mass. Its own side's shots don't feel it. */
+  pull?: number;
+  /** The ship's team while it pulls (null in a free for all), so its teammates' shots fly past unbent. */
+  team?: number | null;
 }
 
 export interface BlackHole {
@@ -454,6 +462,18 @@ export class Shot {
       const d2 = dx * dx + dy * dy;
       const d = Math.sqrt(d2);
       const a = (G * hole.mass) / d2;
+      ax += (a * dx) / d;
+      ay += (a * dy) / d;
+    }
+    // Sudden death: the enemy ships pull the shot in. Not its own ship, not a teammate, not one it is spared from.
+    for (let i = 0; i < ships.length; i++) {
+      const s = ships[i];
+      if (!s.pull || !s.alive || i === this.shooter || (s.team != null && s.team === ships[this.shooter]?.team) || this.spare.includes(i)) continue;
+      const dx = s.x - this.x;
+      const dy = s.y - this.y;
+      const d2 = dx * dx + dy * dy;
+      const d = Math.sqrt(d2);
+      const a = (G * s.pull) / d2;
       ax += (a * dx) / d;
       ay += (a * dy) / d;
     }

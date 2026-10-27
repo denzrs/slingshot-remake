@@ -45,7 +45,7 @@ const plasmas = new Map<number, Plasma>();
  * churns; it is hot and bright in the middle of a fold and cool and dark in the seams, and the edge is dimmed and
  * reddened as on a ball seen from outside. It is worked out per pixel, a few times a second, and kept per sun.
  */
-function plasma(seed: number, time: number): HTMLCanvasElement {
+function plasma(seed: number, time: number, giant = 0): HTMLCanvasElement {
   let p = plasmas.get(seed);
   if (!p) {
     if (plasmas.size > 8) plasmas.clear();
@@ -72,7 +72,8 @@ function plasma(seed: number, time: number): HTMLCanvasElement {
       const qx = fbm(x * 1.9 + t, y * 1.9, z * 1.9, seed, 3);
       const qy = fbm(x * 1.9, y * 1.9 + t * 0.8, z * 1.9 + 4, seed + 7, 3);
       const f = fbm(x * 2.8 + qx * 2.6 + 1.7, y * 2.8 + qy * 2.6 + 9.2, z * 2.8 + t * 0.6, seed + 13, 3);
-      const temp = (0.12 + 1.05 * Math.pow(f, 1.4)) * (0.5 + 0.5 * Math.pow(z, 0.5));
+      // A red giant is a cooler sun: its whole ramp slides down towards ember red.
+      const temp = (0.12 + 1.05 * Math.pow(f, 1.4)) * (0.5 + 0.5 * Math.pow(z, 0.5)) * (1 - 0.62 * giant);
       const [r, g, b] = heat(temp);
       data[i] = r;
       data[i + 1] = g;
@@ -139,19 +140,35 @@ const LOOPS = 4;
 /**
  * The sun of the Solar System mode: a ball of flowing plasma that folds and churns, a thin pink chromosphere round
  * it, magnetic loops that rise off the surface and fall back, a corona of curving rays, and a wide warm glow.
- * `flare` (0 → 1) is the storm breaking out: the glow swells, the loops leap high and the disc whitens.
+ * `flare` (0 → 1) is the storm breaking out: the glow swells, the loops leap high and the disc whitens. A sun turning
+ * into a red giant (`sun.giant`, 0 → 1) cools: its surface reddens, its middle dims and a deep red glow spreads round it.
  */
 export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha = 1, flare = 0): void {
   const R = sun.radius;
   const seed = sun.seed;
+  const giant = sun.giant ?? 0;
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(sun.x, sun.y);
   ctx.globalCompositeOperation = 'lighter';
 
+  if (giant > 0) {
+    const swollen = ctx.createRadialGradient(0, 0, R * 0.8, 0, 0, R * 2.4);
+    swollen.addColorStop(0, rgba('#c41e0c', 0.45 * giant));
+    swollen.addColorStop(1, rgba('#5a0804', 0));
+    ctx.fillStyle = swollen;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // The glow: a tight bright one under a wide, deeper red one.
   const swell = 1 + flare * 0.9;
-  for (const [reach, strength, inner, outer] of [[7, 0.2, '#ff7a24', '#a82410'], [3.2, 0.42, '#ffb347', '#ff6a1c'], [1.7, 0.5, '#ffe9a8', '#ffa03a']] as const) {
+  // A red giant's glow is deep red instead of gold.
+  const glows = giant > 0.3
+    ? ([[7, 0.2, '#ff3a1c', '#8a1008'], [3.2, 0.42, '#ff5a2a', '#c8200c'], [1.7, 0.5, '#ff8a5a', '#ff3a1c']] as const)
+    : ([[7, 0.2, '#ff7a24', '#a82410'], [3.2, 0.42, '#ffb347', '#ff6a1c'], [1.7, 0.5, '#ffe9a8', '#ffa03a']] as const);
+  for (const [reach, strength, inner, outer] of glows) {
     const halo = ctx.createRadialGradient(0, 0, R * 0.7, 0, 0, R * reach * (reach > 3 ? 1 : swell));
     halo.addColorStop(0, rgba(inner, Math.min(1, strength * swell)));
     halo.addColorStop(0.35, rgba(outer, strength * 0.3 * swell));
@@ -231,7 +248,17 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   ctx.fill();
 
   // The surface: flowing plasma.
-  ctx.drawImage(plasma(seed, time), -R, -R, R * 2, R * 2);
+  ctx.drawImage(plasma(seed, time, giant), -R, -R, R * 2, R * 2);
+  // A red giant's surface is red all through: tinted over (only the disc, so the field round it keeps its colour).
+  if (giant > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = rgba('#ff4a30', giant * 0.85);
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
   // Light from inside: a hot pulsing middle, a bright thin rim, and in a flare the whole disc whitens.
   ctx.save();
@@ -241,7 +268,7 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   ctx.globalCompositeOperation = 'lighter';
   const pulse = 0.85 + 0.15 * Math.sin(time * 1.3);
   const core = ctx.createRadialGradient(-R * 0.12, -R * 0.14, 0, 0, 0, R);
-  core.addColorStop(0, rgba('#fff4cc', (0.34 * pulse + flare * 0.5) * alpha));
+  core.addColorStop(0, rgba('#fff4cc', (0.34 * pulse * (1 - 0.7 * giant) + flare * 0.5) * alpha));
   core.addColorStop(0.55, rgba('#ffc04a', (0.1 + flare * 0.3) * alpha));
   core.addColorStop(1, rgba('#ff8a2e', 0));
   ctx.fillStyle = core;
@@ -252,5 +279,115 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   ctx.fillStyle = rim;
   ctx.fillRect(-R, -R, R * 2, R * 2);
   ctx.restore();
+  ctx.restore();
+}
+
+/** How many pixels across the planetary nebula's sprite is, and how far it reaches round its star when grown. */
+const NEBULA_TEX = 320;
+const NEBULA_REACH = 270;
+
+/**
+ * The planetary nebula, drawn once per star: a shell of glowing gas, thicker on two opposite sides so it reads as a
+ * ring seen at a slant. Faint blue-green gas fills the middle, the shell burns teal into pink, and its outer rim is
+ * deep red; noise tears the shell into knots and filaments, so no two look alike.
+ */
+function makePlanetaryNebula(seed: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = NEBULA_TEX;
+  const ctx = canvas.getContext('2d')!;
+  const img = ctx.createImageData(NEBULA_TEX, NEBULA_TEX);
+  for (let py = 0; py < NEBULA_TEX; py++) {
+    for (let px = 0; px < NEBULA_TEX; px++) {
+      const u = ((px + 0.5) / NEBULA_TEX) * 2 - 1;
+      const v = ((py + 0.5) / NEBULA_TEX) * 2 - 1;
+      const n = fbm(u * 2.4 + 3, v * 2.4, 0.7, seed + 31, 4);
+      const fine = fbm(u * 7, v * 7, 1.9, seed + 47, 3);
+      // A slanted ring: an ellipse, its radius pushed in and out by the noise.
+      const rr = Math.hypot(u, v / 0.78) * (0.92 + 0.22 * n);
+      if (rr >= 1) continue;
+      const shell = Math.exp(-(((rr - 0.62) / 0.16) ** 2));
+      const rim = Math.exp(-(((rr - 0.82) / 0.07) ** 2));
+      const core = 0.22 * smooth(0.65, 0.1, rr);
+      // Brighter where the ring is seen edge-on (left and right), torn into knots by the fine noise.
+      const ends = 0.6 + 0.4 * Math.abs(u) / Math.max(0.01, Math.hypot(u, v));
+      const knots = 0.45 + 0.9 * smooth(0.35, 0.75, fine);
+      const gas = shell * ends * knots;
+      const t = smooth(0.45, 0.8, rr);
+      const i = (py * NEBULA_TEX + px) * 4;
+      img.data[i] = Math.min(255, mix(90, 255, t) * gas + 255 * rim * 0.9 + 120 * core);
+      img.data[i + 1] = Math.min(255, mix(220, 90, t) * gas + 60 * rim + 200 * core);
+      img.data[i + 2] = Math.min(255, mix(210, 150, t) * gas + 90 * rim + 255 * core);
+      img.data[i + 3] = 255 * Math.min(1, gas * 0.85 + rim * 0.5 * knots + core) * smooth(1, 0.9, rr);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
+
+const planetaryNebulae = new Map<number, HTMLCanvasElement>();
+
+/**
+ * What a supernova leaves: a neutron star in a planetary nebula. `age` is the seconds since it was left. The nebula
+ * blows out fast from the blast and slows as it spreads, then drifts and breathes; the star is a tiny blue-white
+ * point with a halo that throbs, and two pulsar beams sweep round it like a lighthouse's.
+ */
+export function drawNeutronStar(ctx: CanvasRenderingContext2D, star: Planet, time: number, age: number, alpha = 1): void {
+  const seed = star.seed;
+  let nebula = planetaryNebulae.get(seed);
+  if (!nebula) {
+    if (planetaryNebulae.size > 8) planetaryNebulae.clear();
+    planetaryNebulae.set(seed, (nebula = makePlanetaryNebula(seed)));
+  }
+  ctx.save();
+  ctx.translate(star.x, star.y);
+  ctx.globalCompositeOperation = 'lighter';
+
+  // The nebula: out from the blast, easing to a stop, then slowly turning and breathing.
+  const grown = 1 - Math.pow(1 - Math.min(1, age / 3.5), 3);
+  const reach = NEBULA_REACH * (0.15 + 0.85 * grown) * (1 + 0.025 * Math.sin(time * 0.6));
+  ctx.save();
+  ctx.rotate(slot(seed, 7) * Math.PI + time * 0.015);
+  ctx.globalAlpha = alpha * Math.min(1, age / 0.8) * 0.9;
+  ctx.drawImage(nebula, -reach, -reach, reach * 2, reach * 2);
+  ctx.restore();
+
+  // The pulsar's beams: two narrow cones, opposite each other, sweeping round.
+  const turn = time * 2.6 + slot(seed, 3) * Math.PI;
+  const beam = 200;
+  ctx.globalAlpha = alpha * Math.min(1, age / 1.2);
+  for (const side of [0, Math.PI]) {
+    ctx.save();
+    ctx.rotate(turn + side);
+    const cone = ctx.createLinearGradient(0, 0, beam, 0);
+    cone.addColorStop(0, rgba('#e8f4ff', 0.55));
+    cone.addColorStop(0.4, rgba('#8ec8ff', 0.18));
+    cone.addColorStop(1, rgba('#62b6ff', 0));
+    ctx.fillStyle = cone;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(beam, -beam * 0.07);
+    ctx.lineTo(beam, beam * 0.07);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // The star: a hard white point in a blue halo that throbs with every sweep.
+  const R = star.radius;
+  const throb = 0.75 + 0.25 * Math.sin(time * 5.2);
+  const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 6);
+  halo.addColorStop(0, rgba('#ffffff', 0.95));
+  halo.addColorStop(0.18, rgba('#cfe6ff', 0.8 * throb));
+  halo.addColorStop(0.5, rgba('#62b6ff', 0.25 * throb));
+  halo.addColorStop(1, rgba('#3a6aff', 0));
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(0, 0, R * 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(0, 0, R * 0.55, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }

@@ -194,6 +194,35 @@ export const SOLAR_STORM = {
   LIFETIME: 3,
 } as const;
 
+/**
+ * Sudden death (Classic and Solar System, a rule of its own): a round that has gone on this long is pushed to an end.
+ * In Classic every ship starts to pull its enemies' shots in; in a Solar System the sun swells to a red giant that
+ * swallows what it reaches, and then goes supernova, which ends the round with nobody left.
+ */
+export const SUDDEN_DEATH = {
+  /** It sets in as this many passes of the round are over. */
+  START_PASS: 10,
+  /** The round label counts down to it over the last this many passes. */
+  WARNING: 3,
+  /**
+   * Classic: how heavy each ship is to its enemies' shots per pass of sudden death… A shot flying by keeps its swing, so
+   * only a deep well catches it: at the limit (about two and a half suns) a shot that misses by a few ship lengths hits.
+   */
+  PULL_STEP: 80_000,
+  /** …and after this many passes the pull grows no more. */
+  PULL_STEPS: 6,
+  /** Solar: the red giant's radius after each of the turns it grows through; at the pass after the last it goes supernova. */
+  GIANT_RADII: [80, 125, 170] as readonly number[],
+  /** Solar: the red giant's mass grows by this factor with every turn it grows. */
+  GIANT_MASS: 1.15,
+  /** Solar: what the supernova leaves: a neutron star this small. */
+  NEUTRON_RADIUS: 7,
+  /** Solar: the supernova's shockwave sweeps out this fast (px/s), blowing each ship up as it gets there… */
+  NOVA_SPEED: 520,
+  /** …and the round is over this many seconds after the blast, so it can be watched to the end. */
+  NOVA_HOLD: 2.6,
+} as const;
+
 /** "Ereignishorizont" — the gravity royale mode. */
 export const HORIZON = {
   START_RADIUS: 16,

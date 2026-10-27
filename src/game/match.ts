@@ -91,7 +91,7 @@ export interface KillRecord {
   at: number;
 }
 
-export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots' | 'skipped' | 'forfeit';
+export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots' | 'skipped' | 'forfeit' | 'supernova';
 
 /** How long the people at the table have to answer a vote to skip the round, in seconds of match clock. */
 export const SKIP_VOTE_TIME = 20;
@@ -177,6 +177,10 @@ export type GameEvent =
   /** One shot took more than one ship in this volley: the chain number and what it paid. */
   | { type: 'multiKill'; player: number; kills: number; points: number; x: number; y: number }
   | { type: 'collapse'; x: number; y: number }
+  /** Sudden death has set in: the ships pull shots in, or the sun has turned red giant. */
+  | { type: 'suddenDeath' }
+  /** Sudden death: the red giant went supernova and took every ship with it. */
+  | { type: 'supernova'; x: number; y: number; ships: { ship: number; x: number; y: number; angle: number }[]; planets: { x: number; y: number; radius: number; color: string }[] }
   | { type: 'killcam'; active: boolean; recording: boolean }
   | { type: 'roundEnd' }
   | { type: 'gameOver' };
@@ -1653,11 +1657,16 @@ export abstract class Match {
     this.emit({ type: 'kill', record });
   }
 
+  /** Whether the round ends without a winner even though somebody is still in it (a Solar System's sun decided it). */
+  protected get noWinner(): boolean {
+    return false;
+  }
+
   protected endRound(): void {
     // A pending vote cannot change a round after its normal result has been recorded.
     this.skipVote = null;
     // Away ships keep a round open, but do not win it if everybody present is eliminated.
-    const alive = this.players.filter((p) => p.alive && !p.away && !p.left);
+    const alive = this.noWinner ? [] : this.players.filter((p) => p.alive && !p.away && !p.left);
     const survivor = alive.length === 1 ? alive[0].id : null;
     // In team mode the whole winning team shares the bonus — fallen members included.
     const team = this.teamMode && alive.length > 0 && this.decided ? alive[0].team : null;

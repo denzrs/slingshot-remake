@@ -163,6 +163,22 @@ export class Sound {
     this.hiss(a.t, 0.14, 0.18, 7000, 1200);
   }
 
+  /** A supernova: a long, deep blast with a roar of noise, and a ship blowing up after each of `delays` (s). */
+  supernova(delays: readonly number[] = []): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(90, 18, 3.2, 1, 'sine', a.t);
+    this.tone(40, 22, 3.6, 0.7, 'sine', a.t + 0.05);
+    this.tone(220, 40, 0.9, 0.3, 'sawtooth', a.t);
+    // The noise lasts a second and a half: two of them, the second deeper, make the roar die away slowly.
+    this.hiss(a.t, 1.5, 0.9, 6000, 500);
+    this.hiss(a.t + 1.1, 1.5, 0.55, 1200, 60);
+    for (const delay of delays) {
+      this.tone(70, 24, 0.9, 0.7, 'sine', a.t + delay);
+      this.hiss(a.t + delay, 1, 0.5, 3000, 80);
+    }
+  }
+
   /** The horizon swells: deep sub rumble. */
   rumble(): void {
     const a = this.begin();
