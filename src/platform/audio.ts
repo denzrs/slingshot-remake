@@ -164,6 +164,31 @@ export class Sound {
   }
 
   /** A supernova: a long, deep blast with a roar of noise, and a ship blowing up after each of `delays` (s). */
+  /** A UFO invasion: a rising warble for each saucer as it flies in, and a zap when it fires (a blast too where it takes a ship). */
+  ufos(flights: readonly { delay: number; zap: number; doomed: boolean }[]): void {
+    const a = this.begin();
+    if (!a) return;
+    for (const f of flights) {
+      this.tone(220, 520, Math.max(0.4, f.zap - f.delay), 0.12, 'triangle', a.t + f.delay);
+      this.tone(1100, 70, 0.35, 0.35, 'sawtooth', a.t + f.zap);
+      this.hiss(a.t + f.zap, 0.4, 0.3, 6000, 600);
+      if (f.doomed) this.tone(80, 26, 0.8, 0.55, 'sine', a.t + f.zap + 0.05);
+    }
+  }
+
+  /** A meteor shower: a low rumble, a hiss for each meteor as it flies in, and a blast where a ship's meteor lands. */
+  meteors(flights: readonly { delay: number; land: number; doomed: boolean }[]): void {
+    const a = this.begin();
+    if (!a) return;
+    this.tone(60, 30, 2.6, 0.5, 'sine', a.t);
+    for (const f of flights) {
+      this.hiss(a.t + f.delay, Math.max(0.3, f.land - f.delay), 0.12, 5000, 700);
+      if (!f.doomed) continue;
+      this.tone(80, 26, 0.8, 0.6, 'sine', a.t + f.land);
+      this.hiss(a.t + f.land, 0.7, 0.4, 2800, 90);
+    }
+  }
+
   supernova(delays: readonly number[] = []): void {
     const a = this.begin();
     if (!a) return;

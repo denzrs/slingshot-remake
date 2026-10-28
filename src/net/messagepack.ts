@@ -1,5 +1,5 @@
 import { POWER_UP_KINDS } from '../sim/powerups';
-import { FIELD, KILL_SOURCES, MAX_PLAYERS, SUDDEN_DEATH_KINDS } from '../sim/config';
+import { FIELD, KILL_SOURCES, MAX_PLAYERS, SUDDEN_DEATH, SUDDEN_DEATH_KINDS } from '../sim/config';
 import { Packr, Unpackr } from 'msgpackr';
 
 // Records are a msgpackr extension, not plain MessagePack, and rmp-serde cannot decode them.
@@ -110,11 +110,35 @@ function isGameEvent(value: unknown): boolean {
     !!candidate && typeof candidate === 'object' && !Array.isArray(candidate);
   const within = (n: unknown, size: number) => typeof n === 'number' && n >= -NOVA_MARGIN && n <= size + NOVA_MARGIN;
   const onField = (x: unknown, y: unknown) => within(x, FIELD.width) && within(y, FIELD.height);
+  /** The planet a finale destroys: where it stands on the field and how big it is, or none. */
+  const planetOk = (planet: unknown): boolean => planet === null || (record(planet) && onField(planet.x, planet.y) && typeof planet.color === 'string'
+    && typeof planet.radius === 'number' && planet.radius > 0 && planet.radius <= NOVA_PLANET_RADIUS);
+  /** A finale's paths: a few, of which only as many destroy a planet as a field holds. */
+  const pathsOk = (paths: unknown, most: number): boolean => Array.isArray(paths) && paths.length <= most
+    && paths.filter((path) => record(path) && path.planet !== null).length <= NOVA_PLANETS;
   switch (event.type) {
     case 'round': case 'gameOver': case 'roundEnd': case 'volley': case 'collapse':
       return true;
     case 'suddenDeath':
       return (SUDDEN_DEATH_KINDS as readonly unknown[]).includes(event.kind);
+    case 'meteors':
+      // A shower is a handful of paths of a few hundred samples each, every one of them on or just outside the field.
+      return pathsOk(event.paths, SUDDEN_DEATH.METEORS.MAX_PATHS) && (event.paths as unknown[]).every((path) => record(path) && planetOk(path.planet)
+        && (path.ship === null || (Number.isSafeInteger(path.ship) && (path.ship as number) >= 0))
+        && typeof path.angle === 'number' && Number.isFinite(path.angle)
+        && typeof path.delay === 'number' && path.delay >= 0 && path.delay <= 10
+        && Array.isArray(path.points) && path.points.length >= 4 && path.points.length % 2 === 0 && path.points.length <= 2 * SUDDEN_DEATH.METEORS.MAX_SAMPLES
+        && (path.points as unknown[]).every((n, i, all) => (i % 2 ? onField(all[i - 1], n) : true)));
+    case 'ufos':
+      // A saucer's flight is a few hundred samples on or just outside the field, and its beam lands on the field.
+      return pathsOk(event.paths, SUDDEN_DEATH.UFOS.MAX_PATHS) && (event.paths as unknown[]).every((path) => record(path) && planetOk(path.planet)
+        && (path.ship === null || (Number.isSafeInteger(path.ship) && (path.ship as number) >= 0))
+        && typeof path.angle === 'number' && Number.isFinite(path.angle)
+        && typeof path.delay === 'number' && path.delay >= 0 && path.delay <= 10
+        && typeof path.charge === 'number' && path.charge >= 0 && path.charge <= 5
+        && Array.isArray(path.target) && path.target.length === 2 && onField(path.target[0], path.target[1])
+        && Array.isArray(path.points) && path.points.length >= 4 && path.points.length % 2 === 0 && path.points.length <= 2 * SUDDEN_DEATH.UFOS.MAX_SAMPLES
+        && (path.points as unknown[]).every((n, i, all) => (i % 2 ? onField(all[i - 1], n) : true)));
     case 'supernova':
       // Each ship sets off a blast of its own on screen and in the speakers: no more of them than a room seats.
       return onField(event.x, event.y) && Array.isArray(event.ships) && event.ships.length <= MAX_PLAYERS && event.ships.every((ship) => record(ship)

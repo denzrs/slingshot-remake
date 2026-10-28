@@ -17,7 +17,7 @@ interface Swelling {
 
 export interface SolarSnapshot extends ClassicSnapshot {
   /** Hosts from before sudden death send none. */
-  solar?: { turned: number; swelling: Swelling | null; nova: boolean; blasting: boolean };
+  solar?: { turned: number; swelling: Swelling | null; nova: boolean };
 }
 
 /**
@@ -40,13 +40,10 @@ export class SolarMatch extends ClassicMatch {
   private swelling: Swelling | null = null;
   /** Sudden death: the sun went supernova and took every ship with it. */
   private nova = false;
-  /** The supernova's shockwave is still sweeping the field: the round ends once it has. */
-  blasting = false;
 
   startRound(): void {
     this.swelling = null;
     this.nova = false;
-    this.blasting = false;
     super.startRound();
     this.drawStorm();
   }
@@ -58,7 +55,7 @@ export class SolarMatch extends ClassicMatch {
   }
 
   snapshot(): SolarSnapshot {
-    return { ...super.snapshot(), solar: { turned: this.turned, swelling: this.swelling, nova: this.nova, blasting: this.blasting } };
+    return { ...super.snapshot(), solar: { turned: this.turned, swelling: this.swelling, nova: this.nova } };
   }
 
   restoreSnapshot(snapshot: SolarSnapshot): void {
@@ -67,7 +64,6 @@ export class SolarMatch extends ClassicMatch {
     this.turned = snapshot.solar?.turned ?? 0;
     this.swelling = snapshot.solar?.swelling ?? null;
     this.nova = snapshot.solar?.nova ?? false;
-    this.blasting = snapshot.solar?.blasting ?? false;
   }
 
   protected get suddenDeathKinds(): readonly SuddenDeathKind[] {
@@ -165,6 +161,7 @@ export class SolarMatch extends ClassicMatch {
       this.world.version++;
     }
     for (const p of doomed) this.takeShip(p.id, 'sun');
+    this.finaleHold = SUDDEN_DEATH.NOVA_HOLD;
     this.blasting = true;
     this.setPhase('orbit');
   }
@@ -213,7 +210,7 @@ export class SolarMatch extends ClassicMatch {
     if (this.phase !== 'orbit') return super.updatePhase(dt);
     if (this.blasting) {
       this.shatter();
-      if (this.phaseTime < SUDDEN_DEATH.NOVA_HOLD) return;
+      if (this.phaseTime < this.finaleHold) return;
       this.blasting = false;
       return this.endRound();
     }

@@ -679,6 +679,10 @@ function isEventForMatch(event: import('../game').GameEvent, playerCount: number
       return inRange(event.ship);
     case 'clash':
       return event.players.every(inRange);
+    case 'meteors':
+      return event.paths.every((path) => path.ship === null || inRange(path.ship)) && event.paths.filter((path) => path.ship !== null).length <= playerCount;
+    case 'ufos':
+      return event.paths.every((path) => path.ship === null || inRange(path.ship)) && event.paths.filter((path) => path.ship !== null).length <= playerCount;
     case 'supernova':
       return event.ships.length <= playerCount && event.ships.every((s) => inRange(s.ship));
     case 'kill':

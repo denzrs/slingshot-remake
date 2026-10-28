@@ -997,6 +997,22 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** Sudden death, overcharge: the edge of where a shot already hits the ship, a faint dashed ring that grows with the reach. */
+  private drawReach(x: number, y: number, reach: number, color: string): void {
+    const { ctx } = this;
+    const strength = Math.min(1, reach / (SUDDEN_DEATH.OVERCHARGE.REACH_STEP * SUDDEN_DEATH.OVERCHARGE.STEPS));
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(this.time * 0.25);
+    ctx.setLineDash([5, 7]);
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = rgba(color, 0.22 + 0.3 * strength);
+    ctx.beginPath();
+    ctx.arc(0, 0, PHYSICS.SHIP_RADIUS + reach, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   /** Sudden death: rings that keep closing in on the ship, wider the harder it pulls its enemies' shots. */
   private drawPull(x: number, y: number, pull: number, color: string): void {
     const { ctx } = this;
@@ -1027,6 +1043,7 @@ export class Renderer {
       if (player.target) return this.drawTarget(ship.x, ship.y, color);
       const current = planning && match.focus === i;
       if (ship.pull) this.drawPull(ship.x, ship.y, ship.pull, color);
+      if (ship.reach) this.drawReach(ship.x, ship.y, ship.reach, color);
 
       if (current) {
         ctx.save();

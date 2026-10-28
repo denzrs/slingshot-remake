@@ -12,7 +12,8 @@ import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
 import { ClipRecorder } from './platform/clip';
 import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
 import { createUiPreview, type UiPreview } from './debug/devPreview';
-import { SupernovaDemo } from './debug/supernovaDemo';
+import { createSuddenDeathPreview, SUDDEN_DEATH_PREVIEWS } from './debug/suddenDeathDemo';
+import { mountPreviewPicker, type PreviewPicker } from './debug/previewPicker';
 import { recordRun } from './data/dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, type Match } from './game';
 import type { GameMode } from './sim/modes';
@@ -21,6 +22,8 @@ import type { OracleTap } from './render/oracle';
 import { readInvite } from './net/invite';
 import { MultiplayerSession } from './net/multiplayer';
 import type { ClientInput } from './net/net';
+import { landing } from './sim/meteors';
+import { zapAt } from './sim/ufos';
 import { inPowerUpNebula } from './sim/physics';
 import { POWER_UP } from './sim/powerups';
 import { Effects } from './render/effects';
@@ -85,8 +88,10 @@ const requestedPreview = new URLSearchParams(location.search).get('preview');
 const uiPreview: UiPreview | null = import.meta.env.DEV && ['oracle-card', 'oracle-pause', 'stands-card', 'stands-pause'].includes(requestedPreview ?? '')
   ? requestedPreview as UiPreview
   : null;
-/** `?preview=supernova` (dev only): a Solar System's sudden death on a loop, to look at without playing to it. */
-const supernovaDemo = import.meta.env.DEV && requestedPreview === 'supernova' ? new SupernovaDemo() : null;
+/** `?preview=supernova`, `gravity`, `collision`, `overcharge`, `meteors` or `ufos` (dev only): a kind of sudden death on a loop, to look at without playing to it. */
+let suddenDeathDemo = import.meta.env.DEV ? createSuddenDeathPreview(requestedPreview) : null;
+/** `?preview` or `?preview=sudden-death` (dev only): a card that lists those kinds, to click one instead of remembering its name. */
+const suddenDeathPicker = import.meta.env.DEV && (requestedPreview === '' || requestedPreview === 'sudden-death');
 
 const active = (): Match => (screen === 'play' && match ? match : attract);
 
@@ -217,6 +222,14 @@ function wire(m: Match): void {
         break;
       case 'suddenDeath':
         if (audible) sound.rumble();
+        break;
+      case 'meteors':
+        effects.meteors(e.paths.map((p) => ({ ...p, color: p.ship === null ? COLORS.sodium : color(p.ship) })));
+        if (audible) sound.meteors(e.paths.map((p) => ({ delay: p.delay, land: landing(p), doomed: p.ship !== null })));
+        break;
+      case 'ufos':
+        effects.ufos(e.paths.map((p) => ({ ...p, color: p.ship === null ? COLORS.sodium : color(p.ship) })));
+        if (audible) sound.ufos(e.paths.map((p) => ({ delay: p.delay, zap: zapAt(p), doomed: p.ship !== null })));
         break;
       case 'supernova':
         effects.supernova(e.x, e.y, e.ships.map((s) => ({ x: s.x, y: s.y, angle: s.angle, color: color(s.ship) })), e.planets);
@@ -834,6 +847,7 @@ let last = performance.now();
 /** The attract match behind the menu runs at 30 fps: nobody plays it, and every frame repaints the whole canvas. */
 const ATTRACT_FRAME_MS = 1000 / 30;
 function frame(now: number): void {
+  if (import.meta.env.DEV) syncPreviewPicker();
   // A few ms of slack, so a 60 Hz display draws every second frame rather than every third.
   if (screen !== 'play' && now - last < ATTRACT_FRAME_MS - 4) {
     requestAnimationFrame(frame);
@@ -878,7 +892,7 @@ function frame(now: number): void {
   const empty = screen !== 'play' && !settings.menuBackground;
   if (!paused && !empty) {
     if (!net || net.isHost) m.update(dt);
-    if (supernovaDemo && m === supernovaDemo.match) supernovaDemo.tick(dt);
+    if (suddenDeathDemo && m === suddenDeathDemo.match) suddenDeathDemo.tick(dt);
     effects.update(dt, m.world);
     // A shot flying through a nebula sheds wisps of gas, so its slowing down shows.
     if (m.world.nebulae.length) {
@@ -935,15 +949,53 @@ if (import.meta.env.DEV || import.meta.env.VITE_BENCH) {
   Object.assign(window, { slingshot: { app, attract, settings, get match() { return match; } } });
 }
 
+/** The picker of the sudden-death previews (dev only), while the page is still a preview; and whether one has been picked yet. */
+let previewPicker: PreviewPicker | null = null;
+let previewPicked = false;
+
+/**
+ * Keeps the picker to the preview: out of the way of a menu that is open, and gone for good once the page has left the
+ * preview (the pause menu's way back to the title screen) so it does not hang over the real menu.
+ */
+function syncPreviewPicker(): void {
+  if (!previewPicker) return;
+  const playing = screen === 'play' && !!suddenDeathDemo && match === suddenDeathDemo.match;
+  if (!playing && previewPicked) {
+    previewPicker.destroy();
+    previewPicker = null;
+    // The page is no longer a preview: a reload should open the game, not the demo it came from.
+    const url = new URL(location.href);
+    url.searchParams.delete('preview');
+    history.replaceState(null, '', url);
+    return;
+  }
+  previewPicker.show(!menu.isOpen);
+}
+
+/** Shows a sudden-death preview on screen (it plays itself: see `suddenDeathDemo.tick` in the frame loop). */
+function playSuddenDeathDemo(demo: NonNullable<typeof suddenDeathDemo>): void {
+  previewPicked = true;
+  match = demo.match;
+  screen = 'play';
+  wire(match);
+  effects.clear();
+}
+
 async function boot(): Promise<void> {
   // Canvas text needs the web fonts loaded before the first draw.
   const fonts = [`800 32px ${FONTS.display}`, `400 16px ${FONTS.body}`, `700 16px ${FONTS.body}`, `400 16px ${FONTS.mono}`, `700 16px ${FONTS.mono}`];
   await Promise.race([Promise.all(fonts.map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 1500))]);
-  if (supernovaDemo) {
-    match = supernovaDemo.match;
-    screen = 'play';
-    wire(match);
-    effects.clear();
+  if (import.meta.env.DEV && (suddenDeathDemo || suddenDeathPicker)) {
+    if (suddenDeathDemo) playSuddenDeathDemo(suddenDeathDemo);
+    previewPicker = mountPreviewPicker(SUDDEN_DEATH_PREVIEWS.find((name) => name === requestedPreview) ?? null, (name) => {
+      const demo = createSuddenDeathPreview(name);
+      if (!demo) return;
+      suddenDeathDemo?.match.dispose();
+      suddenDeathDemo = demo;
+      playSuddenDeathDemo(demo);
+      history.replaceState(null, '', `?preview=${name}`);
+      previewPicker?.select(name);
+    });
     requestAnimationFrame(frame);
     return;
   }

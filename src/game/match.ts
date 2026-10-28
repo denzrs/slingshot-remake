@@ -93,7 +93,15 @@ export interface KillRecord {
   at: number;
 }
 
-export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots' | 'skipped' | 'forfeit' | 'supernova';
+/** A planet a finale of sudden death destroys, as the screen needs it to blow it up. */
+export interface FinalePlanet {
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+}
+
+export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots' | 'skipped' | 'forfeit' | 'supernova' | 'meteors' | 'ufos';
 
 /** How long the people at the table have to answer a vote to skip the round, in seconds of match clock. */
 export const SKIP_VOTE_TIME = 20;
@@ -182,6 +190,10 @@ export type GameEvent =
   /** Sudden death has set in, as this round's kind of it. */
   | { type: 'suddenDeath'; kind: SuddenDeathKind }
   /** Sudden death: the red giant went supernova and took every ship with it. */
+  /** Sudden death: the meteor shower of the finale, one meteor for each ship it takes (`ship`, at `angle`) and one for each planet it destroys. */
+  | { type: 'meteors'; paths: { ship: number | null; planet: FinalePlanet | null; angle: number; delay: number; points: number[] }[] }
+  /** Sudden death: the UFO invasion of the finale, a saucer for each ship it takes (`ship`, at `angle`) and one for each planet it destroys: it flies `points`, charges for `charge` s and zaps `target`. */
+  | { type: 'ufos'; paths: { ship: number | null; planet: FinalePlanet | null; angle: number; delay: number; points: number[]; charge: number; target: [number, number] }[] }
   | { type: 'supernova'; x: number; y: number; ships: { ship: number; x: number; y: number; angle: number }[]; planets: { x: number; y: number; radius: number; color: string }[] }
   | { type: 'killcam'; active: boolean; recording: boolean }
   | { type: 'roundEnd' }

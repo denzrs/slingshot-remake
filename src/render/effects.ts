@@ -1,4 +1,6 @@
 import { COLORS, DEBRIS, FIELD, FONTS, PHYSICS, SUDDEN_DEATH, type Debris } from '../sim/config';
+import { landing } from '../sim/meteors';
+import { zapAt } from '../sim/ufos';
 import type { World } from '../sim/physics';
 import { rgba } from './color';
 import { SHIP_HULL } from './ship';
@@ -116,6 +118,52 @@ interface Nova {
 /** How long a supernova's light lasts on the field (s). */
 const NOVA_LIFE = 3.2;
 
+/** One meteor of a shower: its path, sampled `METEORS.RATE` times a second, from `delay` s into the shower. The ship it takes (if any) stands on, heating up, until it lands. */
+interface MeteorFlight {
+  points: number[];
+  delay: number;
+  at: number;
+  color: string;
+  angle: number;
+  doomed: boolean;
+  /** The planet it blows apart where it lands, if it is one's meteor. */
+  planet: { x: number; y: number; radius: number; color: string } | null;
+  done: boolean;
+}
+
+/** A meteor shower under way (`age` s into it). */
+interface Shower {
+  age: number;
+  flights: MeteorFlight[];
+}
+
+/** How many samples of its path a meteor trails behind its head. */
+const METEOR_TAIL = 18;
+
+/** One saucer of an invasion: its flight in (`points`, sampled `UFOS.RATE` times a second, from `delay` s), then it hovers and charges until `at`, when it zaps `target`. */
+interface UfoFlight {
+  points: number[];
+  delay: number;
+  charge: number;
+  at: number;
+  target: [number, number];
+  color: string;
+  angle: number;
+  doomed: boolean;
+  planet: { x: number; y: number; radius: number; color: string } | null;
+  done: boolean;
+}
+
+/** A UFO invasion under way (`age` s into it). */
+interface Invasion {
+  age: number;
+  flights: UfoFlight[];
+}
+
+/** The green of the saucers' lights and beams, and how long a saucer lingers (and fades) after its zap. */
+const UFO_GLOW = '#6dffb4';
+const UFO_LEAVE = 0.9;
+
 interface Callout {
   text: string;
   x: number;
@@ -135,6 +183,8 @@ export class Effects {
   private beams: Beam[] = [];
   private lasers: Laser[] = [];
   private novas: Nova[] = [];
+  private showers: Shower[] = [];
+  private invasions: Invasion[] = [];
   shake = 0;
   flash = 0;
   /** A supernova's white-out over the whole screen (0 → 1). */
@@ -161,6 +211,8 @@ export class Effects {
     this.beams = [];
     this.lasers = [];
     this.novas = [];
+    this.showers = [];
+    this.invasions = [];
     this.shake = 0;
     this.flash = 0;
     this.whiteout = 0;
@@ -446,6 +498,8 @@ export class Effects {
       this.shake = Math.max(this.shake, 4 + 10 * this.quake);
     }
     this.updateNovas(dt);
+    this.updateShowers(dt);
+    this.updateInvasions(dt);
     const fragments: Spark[] = [];
     const remaining: Spark[] = [];
     const steps = Math.max(1, Math.ceil(dt / PHYSICS.DT));
@@ -520,30 +574,213 @@ export class Effects {
     this.novas = this.novas.filter((nova) => nova.age < NOVA_LIFE || nova.doomed.some((d) => !d.done) || nova.planets.some((p) => !p.done));
   }
 
+  /** A ship that is as good as gone: its hull, glowing hotter (`heat`, 0 → 1) until what is coming for it gets there. */
+  private drawDoomed(ctx: CanvasRenderingContext2D, d: { x: number; y: number; angle: number; color: string }, heat: number): void {
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 22 + 26 * heat);
+    glow.addColorStop(0, rgba('#fff4cc', 0.7 * heat));
+    glow.addColorStop(1, rgba(COLORS.danger, 0));
+    ctx.fillStyle = glow;
+    ctx.fillRect(-50, -50, 100, 100);
+    ctx.rotate((-d.angle * Math.PI) / 180);
+    ctx.beginPath();
+    SHIP_HULL.forEach(([hx, hy], k) => (k ? ctx.lineTo(hx, hy) : ctx.moveTo(hx, hy)));
+    ctx.closePath();
+    ctx.fillStyle = d.color;
+    ctx.fill();
+    ctx.fillStyle = rgba('#fff4cc', heat * 0.85);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /**
+   * The meteor shower of sudden death's finale: each meteor flies its path with a streak behind it, and where it lands it
+   * blows up (a ship, if it is one's meteor; a small impact if not). The ships it takes stand on, glowing hotter, until then.
+   */
+  meteors(paths: { ship: number | null; planet: { x: number; y: number; radius: number; color: string } | null; angle: number; delay: number; points: number[]; color: string }[]): void {
+    this.showers.push({
+      age: 0,
+      flights: paths.map((p) => ({ points: p.points, delay: p.delay, at: landing(p), color: p.color, angle: p.angle, doomed: p.ship !== null, planet: p.planet, done: false })),
+    });
+  }
+
+  /** The meteors move on, and blow up where each lands. */
+  private updateShowers(dt: number): void {
+    for (const shower of this.showers) {
+      shower.age += dt;
+      for (const f of shower.flights) {
+        if (f.done || shower.age < f.at) continue;
+        f.done = true;
+        const [x, y] = [f.points[f.points.length - 2], f.points[f.points.length - 1]];
+        if (f.doomed) {
+          this.explode(x, y, f.color, 0, 0);
+          this.ring(x, y, 200, 0.9, COLORS.bone);
+          this.burst(x, y, 50, 60, 380, COLORS.sodium, 'medium');
+          if (!this.reducedMotion) this.shake = Math.max(this.shake, 12);
+        } else if (f.planet) {
+          this.shatter(f.planet.x, f.planet.y, f.planet.color, f.planet.radius);
+          if (!this.reducedMotion) this.shake = Math.max(this.shake, 9);
+        }
+      }
+    }
+    this.showers = this.showers.filter((shower) => shower.flights.some((f) => !f.done) || shower.age < Math.max(...shower.flights.map((f) => f.at)) + 0.4);
+  }
+
+  private drawShower(ctx: CanvasRenderingContext2D, shower: Shower): void {
+    for (const f of shower.flights) {
+      const t = shower.age - f.delay;
+      const last = f.points.length / 2 - 1;
+      if (f.doomed && !f.done) {
+        // Its ship waits at the end of the path.
+        this.drawDoomed(ctx, { x: f.points[f.points.length - 2], y: f.points[f.points.length - 1], angle: f.angle, color: f.color }, Math.max(0, Math.min(1, t / Math.max(0.01, f.at - f.delay))));
+      }
+      if (f.done || t < 0) continue;
+      const head = Math.min(last, t * SUDDEN_DEATH.METEORS.RATE);
+      const i = Math.floor(head);
+      const k = head - i;
+      const at = (n: number): [number, number] => [f.points[2 * n], f.points[2 * n + 1]];
+      const [x0, y0] = at(i);
+      const [x1, y1] = at(Math.min(last, i + 1));
+      const hx = x0 + (x1 - x0) * k;
+      const hy = y0 + (y1 - y0) * k;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+      // The streak: the samples behind the head, thinner and fainter the further back.
+      let [px, py] = [hx, hy];
+      for (let n = 0; n < METEOR_TAIL && i - n >= 0; n++) {
+        const [qx, qy] = at(i - n);
+        const fade = 1 - n / METEOR_TAIL;
+        ctx.strokeStyle = rgba(n < 3 ? '#fff4cc' : COLORS.sodium, 0.75 * fade);
+        ctx.lineWidth = 0.8 + 3.2 * fade;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(qx, qy);
+        ctx.stroke();
+        [px, py] = [qx, qy];
+      }
+      const glow = ctx.createRadialGradient(hx, hy, 0, hx, hy, 18);
+      glow.addColorStop(0, rgba('#ffffff', 0.95));
+      glow.addColorStop(0.35, rgba('#ffd79a', 0.5));
+      glow.addColorStop(1, rgba(COLORS.danger, 0));
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(hx, hy, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  /**
+   * The UFO invasion of sudden death's finale: a saucer flies in from outside the field for each ship, settles near it,
+   * charges, and zaps it (a few zap a planet instead). The ship it will take stands on, glowing hotter while it charges.
+   */
+  ufos(paths: { ship: number | null; planet: { x: number; y: number; radius: number; color: string } | null; angle: number; delay: number; points: number[]; charge: number; target: [number, number]; color: string }[]): void {
+    this.invasions.push({
+      age: 0,
+      flights: paths.map((p) => ({ points: p.points, delay: p.delay, charge: p.charge, at: zapAt(p), target: p.target, color: p.color, angle: p.angle, doomed: p.ship !== null, planet: p.planet, done: false })),
+    });
+  }
+
+  /** The saucers move on, and each zaps its target when it has charged. */
+  private updateInvasions(dt: number): void {
+    for (const invasion of this.invasions) {
+      invasion.age += dt;
+      for (const f of invasion.flights) {
+        if (f.done || invasion.age < f.at) continue;
+        f.done = true;
+        const [sx, sy] = [f.points[f.points.length - 2], f.points[f.points.length - 1] + 6];
+        const [tx, ty] = f.target;
+        this.lasers.push({ x1: sx, y1: sy, x2: tx, y2: ty, life: 0.5, max: 0.5, color: UFO_GLOW, width: 7 });
+        if (f.doomed) {
+          this.explode(tx, ty, f.color, 0, 0);
+          this.ring(tx, ty, 200, 0.9, COLORS.bone);
+          this.burst(tx, ty, 50, 60, 380, UFO_GLOW, 'medium');
+          if (!this.reducedMotion) this.shake = Math.max(this.shake, 12);
+        } else if (f.planet) {
+          this.shatter(f.planet.x, f.planet.y, f.planet.color, f.planet.radius);
+          if (!this.reducedMotion) this.shake = Math.max(this.shake, 9);
+        }
+      }
+    }
+    this.invasions = this.invasions.filter((invasion) => invasion.age < Math.max(...invasion.flights.map((f) => f.at)) + UFO_LEAVE);
+  }
+
+  private drawInvasion(ctx: CanvasRenderingContext2D, invasion: Invasion): void {
+    for (const f of invasion.flights) {
+      const t = invasion.age - f.delay;
+      if (t < 0) continue;
+      const last = f.points.length / 2 - 1;
+      const flight = last / SUDDEN_DEATH.UFOS.RATE;
+      const head = Math.min(last, t * SUDDEN_DEATH.UFOS.RATE);
+      const i = Math.floor(head);
+      const k = head - i;
+      const [x0, y0] = [f.points[2 * i], f.points[2 * i + 1]];
+      const [x1, y1] = [f.points[2 * Math.min(last, i + 1)], f.points[2 * Math.min(last, i + 1) + 1]];
+      // Charging starts when it has settled; after its zap it drifts up and fades.
+      const charging = Math.max(0, Math.min(1, (t - flight) / Math.max(0.01, f.charge)));
+      const gone = Math.max(0, invasion.age - f.at);
+      const bob = t > flight ? Math.sin(invasion.age * 3 + f.delay * 7) * 2 : 0;
+      const x = x0 + (x1 - x0) * k;
+      const y = y0 + (y1 - y0) * k + bob - gone * 70;
+      if (f.doomed && !f.done) this.drawDoomed(ctx, { x: f.target[0], y: f.target[1], angle: f.angle, color: f.color }, charging);
+      if (charging > 0 && !f.done) {
+        // The aim: a thin dashed line to the target that grows brighter as the beam charges.
+        ctx.save();
+        ctx.setLineDash([4, 6]);
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = rgba(UFO_GLOW, 0.12 + 0.5 * charging);
+        ctx.beginPath();
+        ctx.moveTo(x, y + 6);
+        ctx.lineTo(f.target[0], f.target[1]);
+        ctx.stroke();
+        ctx.restore();
+      }
+      this.drawSaucer(ctx, x, y, Math.max(0, 1 - gone / UFO_LEAVE), invasion.age, charging);
+    }
+  }
+
+  /** A flying saucer: a metal disc with a glass dome, blinking lights round its rim, and a glow beneath that swells as it charges. */
+  private drawSaucer(ctx: CanvasRenderingContext2D, x: number, y: number, alpha: number, time: number, charging: number): void {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = 'lighter';
+    const glow = ctx.createRadialGradient(0, 8, 0, 0, 8, 30 + 18 * charging);
+    glow.addColorStop(0, rgba(UFO_GLOW, 0.3 + 0.45 * charging));
+    glow.addColorStop(1, rgba(UFO_GLOW, 0));
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 8, 48, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    const body = ctx.createLinearGradient(0, -6, 0, 9);
+    body.addColorStop(0, '#c7d3ea');
+    body.addColorStop(0.55, '#6b7c9c');
+    body.addColorStop(1, '#2c3650');
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 24, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = rgba('#a8f5ff', 0.6);
+    ctx.beginPath();
+    ctx.ellipse(0, -3, 10, 8, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+    for (let n = 0; n < 5; n++) {
+      ctx.fillStyle = Math.sin(time * 6 + n * 1.3) > 0 ? rgba(UFO_GLOW, 0.95) : rgba('#ffe08a', 0.55);
+      ctx.beginPath();
+      ctx.arc(-16 + 8 * n, 2.6, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   private drawNova(ctx: CanvasRenderingContext2D, nova: Nova): void {
     const { x, y, age } = nova;
     const fade = Math.max(0, 1 - age / NOVA_LIFE);
     // The doomed ships, glowing hotter as the wave comes for them.
-    for (const d of nova.doomed) {
-      if (d.done) continue;
-      const heat = Math.min(1, age / Math.max(0.01, d.at));
-      ctx.save();
-      ctx.translate(d.x, d.y);
-      const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 22 + 26 * heat);
-      glow.addColorStop(0, rgba('#fff4cc', 0.7 * heat));
-      glow.addColorStop(1, rgba(COLORS.danger, 0));
-      ctx.fillStyle = glow;
-      ctx.fillRect(-50, -50, 100, 100);
-      ctx.rotate((-d.angle * Math.PI) / 180);
-      ctx.beginPath();
-      SHIP_HULL.forEach(([hx, hy], k) => (k ? ctx.lineTo(hx, hy) : ctx.moveTo(hx, hy)));
-      ctx.closePath();
-      ctx.fillStyle = d.color;
-      ctx.fill();
-      ctx.fillStyle = rgba('#fff4cc', heat * 0.85);
-      ctx.fill();
-      ctx.restore();
-    }
+    for (const d of nova.doomed) if (!d.done) this.drawDoomed(ctx, d, Math.min(1, age / Math.max(0.01, d.at)));
     if (fade <= 0) return;
     ctx.globalCompositeOperation = 'lighter';
     // The core: a blinding ball that swells fast and burns out.
@@ -607,6 +844,8 @@ export class Effects {
 
   draw(ctx: CanvasRenderingContext2D): void {
     for (const nova of this.novas) this.drawNova(ctx, nova);
+    for (const shower of this.showers) this.drawShower(ctx, shower);
+    for (const invasion of this.invasions) this.drawInvasion(ctx, invasion);
     for (const r of this.rings) {
       const t = 1 - r.life / r.max;
       const radius = r.inward ? r.radius * (1 - easeOut(t)) : r.radius * easeOut(t);

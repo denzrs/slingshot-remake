@@ -4,7 +4,10 @@ import { AIM, COLORS, HORIZON, SCORING, SUDDEN_DEATH, type KillSource, type Sudd
 import { t } from '../platform/i18n';
 import { Volley, type VolleyShot } from '../sim/volley';
 import { createRng, pick } from '../sim/rng';
-import { Match, type RoundTitle, type SkipVote } from './match';
+import { planCollision, type DriftMove } from '../sim/drift';
+import { landing, planMeteors } from '../sim/meteors';
+import { planUfos, zapAt } from '../sim/ufos';
+import { Match, type FinalePlanet, type RoundTitle, type SkipVote } from './match';
 import type { Pickup } from '../sim/powerups';
 import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
@@ -51,6 +54,13 @@ export interface ClassicSnapshot extends Partial<KillcamSnapshot> {
   /** Sudden death: this round's kind of it, and whether it (not a player) has decided the round. */
   suddenDeathKind?: SuddenDeathKind;
   environmentDecided?: boolean;
+  /** Sudden death, collision course: the drift of the pass under way (null when no ship is drifting). */
+  drift?: DriftMove[] | null;
+  /** Sudden death: a finale is playing (the round ends once its hold is over), and how long it holds (s). */
+  blasting?: boolean;
+  finaleHold?: number;
+  /** The planets a finale has yet to destroy (by seed), and when (s into it). */
+  doomedPlanets?: { seed: number; at: number }[];
   /** Phase time when a finished volley began waiting for its post-flight delay. */
   flightDoneAt?: number | null;
   oracle: OracleSnapshot;
@@ -102,6 +112,10 @@ export class ClassicMatch extends Match {
       fired: [...this.fired],
       suddenDeathKind: this.suddenDeathKind,
       environmentDecided: this.environmentDecided,
+      drift: this.drift,
+      blasting: this.blasting,
+      finaleHold: this.finaleHold,
+      doomedPlanets: this.doomedPlanets,
       flightDoneAt: this.flightDoneAt,
       ...this.killcam.snapshot(),
       oracle: this.oracle.snapshot(),
@@ -146,6 +160,10 @@ export class ClassicMatch extends Match {
     this.fired = new Set(snapshot.fired ?? []);
     this.suddenDeathKind = snapshot.suddenDeathKind ?? this.suddenDeathKinds[0];
     this.environmentDecided = snapshot.environmentDecided ?? false;
+    this.drift = snapshot.drift ?? null;
+    this.blasting = snapshot.blasting ?? false;
+    this.finaleHold = snapshot.finaleHold ?? 0;
+    this.doomedPlanets = snapshot.doomedPlanets ?? [];
     // Hosts from before the oracle send none.
     if (snapshot.oracle) this.oracle.restore(snapshot.oracle);
     if (snapshot.stands) this.stands.restore(snapshot.stands);
@@ -176,10 +194,17 @@ export class ClassicMatch extends Match {
   /** Sudden death: the kind this round gets (drawn from the round's seed), and whether it, not a player, decided the round. */
   protected suddenDeathKind: SuddenDeathKind = 'gravity';
   protected environmentDecided = false;
+  /** Sudden death, collision course: where each ship drifts from and to while the pass's drift plays (the 'orbit' phase). */
+  private drift: DriftMove[] | null = null;
+  /** A finale of sudden death is playing (a supernova's shockwave, a meteor shower): the round ends once `finaleHold` seconds have gone by. */
+  blasting = false;
+  protected finaleHold = 0;
+  private doomedPlanets: { seed: number; at: number }[] = [];
 
   /** The kinds of sudden death a round of this mode draws from. */
   protected get suddenDeathKinds(): readonly SuddenDeathKind[] {
-    return ['gravity'];
+    // The shower's bent paths would show where the planets are.
+    return this.hiddenPlanets ? ['gravity', 'collision', 'overcharge', 'ufos'] : ['gravity', 'collision', 'overcharge', 'meteors', 'ufos'];
   }
 
   /** How many passes into sudden death the round is (1 the pass it sets in), or 0 before then or without the rule. */
@@ -228,6 +253,9 @@ export class ClassicMatch extends Match {
     this.fired.clear();
     this.passes = 0;
     this.environmentDecided = false;
+    this.drift = null;
+    this.blasting = false;
+    this.doomedPlanets = [];
     // Its own stream, so the draw never changes what the world's generator, the storm or the twists draw.
     this.suddenDeathKind = pick(createRng(this.worldSeed ^ SUDDEN_DEATH.SALT), this.suddenDeathKinds);
     if (this.salvo) {
@@ -414,6 +442,7 @@ export class ClassicMatch extends Match {
   }
 
   protected updatePhase(dt: number): void {
+    if (this.phase === 'orbit') return this.blasting ? this.updateFinale() : this.updateDrift();
     if (this.phase !== 'aiming') return;
     if (this.salvo) return this.updatePlanning(dt);
     if (this.current < 0) return;
@@ -469,7 +498,8 @@ export class ClassicMatch extends Match {
     if (!step) return false;
     if (step === 1) this.announceSuddenDeath();
     this.suddenDeathPass(step);
-    return step === SUDDEN_DEATH.FINALE_STEP && this.finale();
+    if (step === SUDDEN_DEATH.FINALE_STEP && this.finale()) return true;
+    return this.startDrift();
   }
 
   private announceSuddenDeath(): void {
@@ -480,11 +510,83 @@ export class ClassicMatch extends Match {
   /** Sudden death's `step`th pass is over: it grows stronger. */
   protected suddenDeathPass(step: number): void {
     if (this.suddenDeathKind === 'gravity') this.tightenPull(step);
+    else if (this.suddenDeathKind === 'collision') this.planDrift(step);
+    else if (this.suddenDeathKind === 'overcharge') this.chargeUp(step);
   }
 
   /** Sudden death's last pass is over. True when a finale plays that ends the round; the gravity well has none. */
   protected finale(): boolean {
-    return false;
+    if (this.suddenDeathKind === 'meteors') this.meteorShower();
+    else if (this.suddenDeathKind === 'ufos') this.ufoInvasion();
+    else return false;
+    return true;
+  }
+
+  /**
+   * The finale of the meteor shower: a meteor flies in at every ship still in and at every planet (the paths are drawn
+   * from the round's seed), and the round ends without a winner once the last has landed. The ships are out at once;
+   * each planet is gone, and the screen blows each one up, as its meteor gets there.
+   */
+  private meteorShower(): void {
+    const paths = planMeteors(this.world, this.alive.map((p) => p.id), createRng(this.worldSeed ^ SUDDEN_DEATH.METEORS.SALT));
+    this.emit({ type: 'meteors', paths: paths.map((path) => ({ ship: path.ship, planet: this.planetFor(path.planet), angle: this.angleOf(path.ship), delay: path.delay, points: path.points })) });
+    this.endInFinale('meteor', paths.map((path) => ({ planet: path.planet, at: landing(path) })), SUDDEN_DEATH.METEORS.HOLD);
+  }
+
+  /** The finale of the UFO invasion: a saucer settles by every ship still in and zaps it, and one more for every planet zaps that; the round ends once the last has. */
+  private ufoInvasion(): void {
+    const paths = planUfos(this.world, this.alive.map((p) => p.id), createRng(this.worldSeed ^ SUDDEN_DEATH.UFOS.SALT));
+    this.emit({ type: 'ufos', paths: paths.map((path) => ({ ship: path.ship, planet: this.planetFor(path.planet), angle: this.angleOf(path.ship), delay: path.delay, points: path.points, charge: path.charge, target: path.target })) });
+    this.endInFinale('ufo', paths.map((path) => ({ planet: path.planet, at: zapAt(path) })), SUDDEN_DEATH.UFOS.HOLD);
+  }
+
+  /** What the screen needs to blow up planet number `index`, or null for none. */
+  private planetFor(index: number | null): FinalePlanet | null {
+    const planet = index === null ? undefined : this.world.planets[index];
+    return planet ? { x: planet.x, y: planet.y, radius: planet.radius, color: planet.tint } : null;
+  }
+
+  /** The way a ship points (the screen draws it as it is taken), or 0 for no ship. */
+  private angleOf(ship: number | null): number {
+    return ship === null ? 0 : this.players[ship].angle;
+  }
+
+  /**
+   * A finale takes every ship still in at once, and every planet as its `strikes` land (`at` seconds into it); the round is
+   * held `hold` seconds after the last, so it can be watched to the end.
+   */
+  private endInFinale(source: KillSource, strikes: { planet: number | null; at: number }[], hold: number): void {
+    for (const p of this.alive) this.takeShip(p.id, source);
+    this.doomedPlanets = strikes.flatMap((s) => (s.planet === null ? [] : [{ seed: this.world.planets[s.planet].seed, at: s.at }]));
+    this.finaleHold = Math.max(0, ...strikes.map((s) => s.at)) + hold;
+    this.blasting = true;
+    this.setPhase('orbit');
+  }
+
+  /** The finale plays on: each planet whose strike has landed is gone (and the cannons on it), and the round ends once the hold is over. */
+  private updateFinale(): void {
+    const gone = this.doomedPlanets.filter((d) => d.at <= this.phaseTime);
+    if (gone.length) {
+      this.doomedPlanets = this.doomedPlanets.filter((d) => !gone.includes(d));
+      this.world.planets = this.world.planets.filter((p) => !gone.some((d) => d.seed === p.seed));
+      this.world.defenses = this.world.defenses.filter((d) => this.world.planets.some((p) => p.seed === d.planet));
+      this.world.version++;
+    }
+    if (this.phaseTime < this.finaleHold) return;
+    this.blasting = false;
+    this.endRound();
+  }
+
+  /** Passes left before this round's finale plays, once sudden death has set in (null for a kind with none, or before then). */
+  get finaleIn(): number | null {
+    const step = this.suddenDeathStep;
+    if ((this.suddenDeathKind !== 'meteors' && this.suddenDeathKind !== 'ufos') || !step) return null;
+    return Math.max(0, SUDDEN_DEATH.FINALE_STEP - step);
+  }
+
+  /** This round's kind of sudden death (the HUD names what its countdown is for). */
+  get suddenDeathType(): SuddenDeathKind {
+    return this.suddenDeathKind;
   }
 
   /** Sudden death took the ship, not a player: no points either way, and if that decides the round, nobody wins it. */
@@ -519,6 +621,54 @@ export class ClassicMatch extends Match {
       ship.pull = pull;
       ship.team = p.team;
     }
+  }
+
+  /** Sudden death, overcharge: every ship's hit zone reaches a little further than the pass before, up to a limit. */
+  private chargeUp(step: number): void {
+    const reach = Math.min(step, SUDDEN_DEATH.OVERCHARGE.STEPS) * SUDDEN_DEATH.OVERCHARGE.REACH_STEP;
+    for (const ship of this.world.ships) ship.reach = reach;
+  }
+
+  /** Sudden death, collision course: the ships still in drift together a little further. Nothing moves once they can get no closer. */
+  private planDrift(step: number): void {
+    const moves = planCollision(this.world, this.alive.map((p) => p.id), step).filter((m) => Math.hypot(m.toX - m.fromX, m.toY - m.fromY) > 0.5);
+    this.drift = moves.length ? moves : null;
+  }
+
+  /** The drift is played as the pass's turn, in the 'orbit' phase. True when there is one. */
+  private startDrift(): boolean {
+    if (!this.drift) return false;
+    // The shots' trails point at where the ships were: they would mislead.
+    this.trails = [];
+    this.setPhase('orbit');
+    return true;
+  }
+
+  /** Whether the ships are drifting together right now (the HUD says so). */
+  get adrift(): boolean {
+    return this.drift !== null;
+  }
+
+  private updateDrift(): void {
+    const moves = this.drift;
+    if (!moves) return this.nextTurn();
+    const k = Math.min(1, this.phaseTime / SUDDEN_DEATH.COLLISION.DRIFT_TIME);
+    const eased = k * k * (3 - 2 * k);
+    for (const m of moves) {
+      if (!this.players[m.id].alive) continue;
+      const ship = this.world.ships[m.id];
+      ship.x = m.fromX + (m.toX - m.fromX) * eased;
+      ship.y = m.fromY + (m.toY - m.fromY) * eased;
+    }
+    if (k < 1) return;
+    this.drift = null;
+    if (this.decided) this.endRound();
+    else this.nextTurn();
+  }
+
+  /** Dev and tests: gives the round this kind of sudden death, whatever its seed drew. */
+  debugSuddenDeath(kind: SuddenDeathKind): void {
+    this.suddenDeathKind = kind;
   }
 
   /** Dev and tests: ends the pass under way as if every ship still in had fired, `passes` passes into the round. */
@@ -613,6 +763,7 @@ export class ClassicMatch extends Match {
   }
 
   protected roundTitle(survivor: number | null): RoundTitle {
+    if (this.environmentDecided && (this.suddenDeathKind === 'meteors' || this.suddenDeathKind === 'ufos')) return this.suddenDeathKind;
     // Only a volley can take every ship down at once.
     if (survivor === null) return 'noneLeft';
     return this.lastKill?.self ? 'selfHit' : 'hit';

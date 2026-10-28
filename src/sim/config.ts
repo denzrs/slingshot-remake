@@ -197,12 +197,17 @@ export const SOLAR_STORM = {
 /** Solar: the red giant's radius after each of the turns it grows through; at the pass after the last it goes supernova. */
 const GIANT_RADII: readonly number[] = [80, 125, 170];
 
-/** What takes a ship when no player does: the Event Horizon's hole, or a Solar System's sun in sudden death. */
-export const KILL_SOURCES = ['horizon', 'sun'] as const;
+/** What takes a ship when no player does: the Event Horizon's hole, a Solar System's sun, a meteor or a UFO, in sudden death. */
+export const KILL_SOURCES = ['horizon', 'sun', 'meteor', 'ufo'] as const;
 export type KillSource = (typeof KILL_SOURCES)[number];
 
-/** The ways sudden death pushes a round to its end: enemy ships pull shots in (Classic), or the sun turns red giant (Solar System). */
-export const SUDDEN_DEATH_KINDS = ['gravity', 'redGiant'] as const;
+/**
+ * The ways sudden death pushes a round to its end: enemy ships pull shots in, the ships drift together, or every ship's
+ * hit zone grows, or a meteor shower or a UFO invasion ends the round (Classic), or the sun turns red giant (Solar
+ * System). The shower and the invasion are finales, as the supernova is: they play once after the last pass of sudden
+ * death and take every ship.
+ */
+export const SUDDEN_DEATH_KINDS = ['gravity', 'collision', 'overcharge', 'meteors', 'ufos', 'redGiant'] as const;
 export type SuddenDeathKind = (typeof SUDDEN_DEATH_KINDS)[number];
 
 /**
@@ -226,6 +231,34 @@ export const SUDDEN_DEATH = {
   PULL_STEP: 80_000,
   /** …and after this many passes the pull grows no more. */
   PULL_STEPS: 6,
+  /**
+   * Classic, collision course: the engines fail and every ship drifts toward the middle. Each pass it closes this share
+   * of the way (so every gap shrinks by the same share), a little more each pass up to a limit, and no two ships
+   * come closer than `MIN_GAP`. A planet or a hole in the way stops the ship `MARGIN` short of its edge.
+   */
+  /**
+   * Classic, overcharge: every ship's hit zone grows this many px beyond its hull with each pass, until `STEPS` passes
+   * have gone by. At the limit a shot that misses a ship by about 60 px still hits it, and the aim stays straight.
+   */
+  OVERCHARGE: { REACH_STEP: 8, STEPS: 6 },
+  /**
+   * Classic, meteors (the finale, after pass `FINALE_STEP`): one meteor for every ship and one for every planet, flown
+   * backwards from its target under the field's own gravity so it arrives along a bent path (the paths are drawn from
+   * the round's seed mixed with `SALT`). `SPEED` px/s is how fast a meteor reaches
+   * the ship; the paths are sampled `RATE` times a second, start `MARGIN` px outside the field and last
+   * `MIN_TIME`–`MAX_TIME` s. The ships' meteors set off up to `DELAY_SHIP` s after the blast, the planets' up to `DELAY_PLANET`;
+   * the round ends `HOLD` s after the last one has landed. At most `MAX_PATHS` paths of `MAX_SAMPLES` samples go over the wire.
+   */
+  METEORS: { SALT: 0x3e7e0, SPEED: 420, RATE: 30, MARGIN: 70, MIN_TIME: 0.9, MAX_TIME: 6, ATTEMPTS: 40, DELAY_SHIP: 1.4, DELAY_PLANET: 2.6, HOLD: 1.6, MAX_PATHS: 24, MAX_SAMPLES: 200 },
+  /**
+   * Classic, UFOs (a finale, like the meteors): a saucer flies in from outside the field for every ship, settles
+   * `HOVER_MIN`–`HOVER_MAX` px from it with a clear line of fire, charges for `CHARGE` s and zaps it; one more for
+   * every planet zaps that. Saucers fly at `SPEED` px/s on paths sampled `RATE` times a second, start
+   * `MARGIN` px outside the field and set off up to `DELAY_SHIP` s (`DELAY_PLANET` for the planets') after the blast; the
+   * round ends `HOLD` s after the last zap. At most `MAX_PATHS` paths of `MAX_SAMPLES` samples go over the wire.
+   */
+  UFOS: { SALT: 0x0f0f0, SPEED: 280, RATE: 30, MARGIN: 90, MIN_TIME: 1.2, HOVER_MIN: 140, HOVER_MAX: 230, CHARGE: 1.1, DELAY_SHIP: 1.2, DELAY_PLANET: 2, HOLD: 1.6, MAX_PATHS: 24, MAX_SAMPLES: 200 },
+  COLLISION: { FRACTION: 0.12, FRACTION_STEP: 0.04, FRACTION_MAX: 0.32, MIN_GAP: 150, MARGIN: 6, DRIFT_TIME: 1.6 },
   GIANT_RADII,
   /** Solar: the red giant's mass grows by this factor with every turn it grows. */
   GIANT_MASS: 1.15,

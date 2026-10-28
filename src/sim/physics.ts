@@ -34,6 +34,8 @@ export interface Ship {
   pull?: number;
   /** The ship's team while it pulls (null in a free for all), so its teammates' shots fly past unbent. */
   team?: number | null;
+  /** Sudden death (Classic, overcharge): how far beyond the hull a shot already hits the ship (px). */
+  reach?: number;
 }
 
 export interface BlackHole {
@@ -324,6 +326,8 @@ export class Shot {
   readonly strays: { defense: number; x: number; y: number; vx: number; vy: number; trail: number[] }[] = [];
   /** The mouth (wormhole index * 2 + end) this shot last left by: it is ignored until the shot is clear of it, so it is not carried back at once. */
   private portal = -1;
+  /** Whether the shot has been outside its own ship's hit zone yet: before that it cannot hit it (see `reach`). */
+  private leftOwn = false;
   /** Ships already passed through, so one hull is only ever reported once. */
   private readonly pierced = new Set<number>();
   /** The cannons this armor-piercing shot has knocked out by striking their planet (an index into `world.defenses`); the volley marks them wrecked and clears this. */
@@ -424,6 +428,7 @@ export class Shot {
     copy.time = this.time;
     copy.swingbys = this.swingbys;
     copy.portal = this.portal;
+    copy.leftOwn = this.leftOwn;
     copy.fired.push(...this.fired);
     copy.missiles.push(...this.missiles.map((m) => ({ ...m, trail: [...m.trail] })));
     copy.seed = Math.imul(this.seed ^ Math.round(turn * 1e6), 16777619) >>> 0;
@@ -524,7 +529,12 @@ export class Shot {
       if (!s.alive || this.spare.includes(i)) continue;
       const dx = s.x - this.x;
       const dy = s.y - this.y;
-      if (dx * dx + dy * dy >= r2) continue;
+      if (dx * dx + dy * dy >= (s.reach ? (SHIP_RADIUS + s.reach) ** 2 : r2)) {
+        if (i === this.shooter) this.leftOwn = true;
+        continue;
+      }
+      // A shot that is still inside its own ship's zone (a grown one reaches past the muzzle) does not hit it.
+      if (i === this.shooter && !this.leftOwn) continue;
       // Armor piercing runs through a ship, shield or not: the hull is reported and the shot flies on. A
       // planet or a black hole still stops it, they are not hulls.
       if (this.pierce) {
@@ -719,7 +729,7 @@ export class Shot {
     const dot = this.vx * nx + this.vy * ny;
     this.vx -= 2 * dot * nx;
     this.vy -= 2 * dot * ny;
-    const out = SHIP_RADIUS + 0.5;
+    const out = SHIP_RADIUS + (this.world.ships[ship].reach ?? 0) + 0.5;
     this.x = cx + nx * out;
     this.y = cy + ny * out;
     this.reflects.push({ ship, x: this.x, y: this.y });
