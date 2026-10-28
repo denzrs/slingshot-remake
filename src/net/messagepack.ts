@@ -1,6 +1,5 @@
 import { POWER_UP_KINDS } from '../sim/powerups';
-import { MAX_PLAYERS } from '../sim/config';
-import { KILL_SOURCES, SUDDEN_DEATH_KINDS } from '../game/match';
+import { FIELD, KILL_SOURCES, MAX_PLAYERS, SUDDEN_DEATH_KINDS } from '../sim/config';
 import { Packr, Unpackr } from 'msgpackr';
 
 // Records are a msgpackr extension, not plain MessagePack, and rmp-serde cannot decode them.
@@ -14,6 +13,8 @@ const STATE_HEADER_BYTES = 14;
 /** A supernova shatters at most this many planets (the field holds 8, and a few planted by power-ups), none bigger than this. */
 const NOVA_PLANETS = 16;
 const NOVA_PLANET_RADIUS = 200;
+/** The blast and the ships it takes lie on the field, give or take this much: the sound times each blast by its distance. */
+const NOVA_MARGIN = 400;
 
 /** Match JSON.stringify's omission of optional object fields, recursively. */
 function normalizeMessagePackValue(value: unknown): unknown {
@@ -107,6 +108,8 @@ function isGameEvent(value: unknown): boolean {
   const kindOf = (kind: unknown): boolean => typeof kind === 'string' && (POWER_UP_KINDS as readonly string[]).includes(kind);
   const record = (candidate: unknown): candidate is Record<string, unknown> =>
     !!candidate && typeof candidate === 'object' && !Array.isArray(candidate);
+  const within = (n: unknown, size: number) => typeof n === 'number' && n >= -NOVA_MARGIN && n <= size + NOVA_MARGIN;
+  const onField = (x: unknown, y: unknown) => within(x, FIELD.width) && within(y, FIELD.height);
   switch (event.type) {
     case 'round': case 'gameOver': case 'roundEnd': case 'volley': case 'collapse':
       return true;
@@ -114,9 +117,9 @@ function isGameEvent(value: unknown): boolean {
       return (SUDDEN_DEATH_KINDS as readonly unknown[]).includes(event.kind);
     case 'supernova':
       // Each ship sets off a blast of its own on screen and in the speakers: no more of them than a room seats.
-      return finite('x') && finite('y') && Array.isArray(event.ships) && event.ships.length <= MAX_PLAYERS && event.ships.every((ship) => record(ship)
+      return onField(event.x, event.y) && Array.isArray(event.ships) && event.ships.length <= MAX_PLAYERS && event.ships.every((ship) => record(ship)
         && Number.isSafeInteger(ship.ship) && (ship.ship as number) >= 0
-        && [ship.x, ship.y, ship.angle].every((n) => typeof n === 'number' && Number.isFinite(n)))
+        && onField(ship.x, ship.y) && typeof ship.angle === 'number' && Number.isFinite(ship.angle))
         && Array.isArray(event.planets) && event.planets.length <= NOVA_PLANETS && event.planets.every((planet) => record(planet) && typeof planet.color === 'string'
           && [planet.x, planet.y, planet.radius].every((n) => typeof n === 'number' && Number.isFinite(n))
           && (planet.radius as number) > 0 && (planet.radius as number) <= NOVA_PLANET_RADIUS);

@@ -1,9 +1,9 @@
-import { FIELD, PHYSICS, SOLAR, SOLAR_STORM, SUDDEN_DEATH } from '../sim/config';
+import { FIELD, PHYSICS, SOLAR, SOLAR_STORM, SUDDEN_DEATH, type SuddenDeathKind } from '../sim/config';
 import type { Nebula, Planet } from '../sim/physics';
 import { createRng, intRange, range, type Rng } from '../sim/rng';
 import { onOrbit, orbitOf, orbitTurn } from '../sim/world';
 import { ClassicMatch, type ClassicSnapshot } from './classic';
-import type { RoundTitle, SuddenDeathKind } from './match';
+import type { RoundTitle } from './match';
 
 /** How the red giant grows through the turn under way. */
 interface Swelling {

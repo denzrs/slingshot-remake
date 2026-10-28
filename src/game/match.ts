@@ -1,6 +1,6 @@
 import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
 import type { Avatar } from '../platform/avatars';
-import { AIM, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE } from '../sim/config';
+import { AIM, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE, type KillSource, type SuddenDeathKind } from '../sim/config';
 import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, type MayhemRound } from './mayhem';
 import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
@@ -92,14 +92,6 @@ export interface KillRecord {
   /** Match clock when it happened — the kill feed fades entries by age. */
   at: number;
 }
-
-/** What takes a ship when no player does: the Event Horizon's hole, or a Solar System's sun in sudden death. */
-export const KILL_SOURCES = ['horizon', 'sun'] as const;
-export type KillSource = (typeof KILL_SOURCES)[number];
-
-/** The ways sudden death pushes a round to its end: enemy ships pull shots in (Classic), or the sun turns red giant (Solar System). */
-export const SUDDEN_DEATH_KINDS = ['gravity', 'redGiant'] as const;
-export type SuddenDeathKind = (typeof SUDDEN_DEATH_KINDS)[number];
 
 export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots' | 'skipped' | 'forfeit' | 'supernova';
 

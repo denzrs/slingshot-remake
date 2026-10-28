@@ -1,10 +1,10 @@
 import type { ShotRules, StyleKind, World } from '../sim/physics';
 import { scoreChallengeHit } from '../sim/scoring';
-import { AIM, COLORS, HORIZON, SCORING, SUDDEN_DEATH } from '../sim/config';
+import { AIM, COLORS, HORIZON, SCORING, SUDDEN_DEATH, type KillSource, type SuddenDeathKind } from '../sim/config';
 import { t } from '../platform/i18n';
 import { Volley, type VolleyShot } from '../sim/volley';
 import { createRng, pick } from '../sim/rng';
-import { Match, type KillSource, type RoundTitle, type SkipVote, type SuddenDeathKind } from './match';
+import { Match, type RoundTitle, type SkipVote } from './match';
 import type { Pickup } from '../sim/powerups';
 import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';

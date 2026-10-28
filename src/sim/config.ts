@@ -194,6 +194,17 @@ export const SOLAR_STORM = {
   LIFETIME: 3,
 } as const;
 
+/** Solar: the red giant's radius after each of the turns it grows through; at the pass after the last it goes supernova. */
+const GIANT_RADII: readonly number[] = [80, 125, 170];
+
+/** What takes a ship when no player does: the Event Horizon's hole, or a Solar System's sun in sudden death. */
+export const KILL_SOURCES = ['horizon', 'sun'] as const;
+export type KillSource = (typeof KILL_SOURCES)[number];
+
+/** The ways sudden death pushes a round to its end: enemy ships pull shots in (Classic), or the sun turns red giant (Solar System). */
+export const SUDDEN_DEATH_KINDS = ['gravity', 'redGiant'] as const;
+export type SuddenDeathKind = (typeof SUDDEN_DEATH_KINDS)[number];
+
 /**
  * Sudden death (Classic and Solar System, a rule of its own): a round that has gone on this long is pushed to an end.
  * In Classic every ship starts to pull its enemies' shots in; in a Solar System the sun swells to a red giant that
@@ -207,7 +218,7 @@ export const SUDDEN_DEATH = {
   /** Its kind is drawn for each round from the round's seed, mixed with this. */
   SALT: 0x5dead,
   /** Its finale (if its kind has one) plays once this many of its passes are over: the pass after the red giant's last turn. */
-  FINALE_STEP: 4,
+  FINALE_STEP: GIANT_RADII.length + 1,
   /**
    * Classic: how heavy each ship is to its enemies' shots per pass of sudden death… A shot flying by keeps its swing, so
    * only a deep well catches it: at the limit (about two and a half suns) a shot that misses by a few ship lengths hits.
@@ -215,8 +226,7 @@ export const SUDDEN_DEATH = {
   PULL_STEP: 80_000,
   /** …and after this many passes the pull grows no more. */
   PULL_STEPS: 6,
-  /** Solar: the red giant's radius after each of the turns it grows through; at the pass after the last it goes supernova. */
-  GIANT_RADII: [80, 125, 170] as readonly number[],
+  GIANT_RADII,
   /** Solar: the red giant's mass grows by this factor with every turn it grows. */
   GIANT_MASS: 1.15,
   /** Solar: what the supernova leaves: a neutron star this small. */

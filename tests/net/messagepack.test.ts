@@ -78,6 +78,9 @@ describe('state wire envelope', () => {
     expect(send(nova([], [{ ...planet, radius: 1e9 }]))).toThrow('Invalid state events');
     expect(send(nova([], [{ ...planet, radius: -5 }]))).toThrow('Invalid state events');
     expect(send(nova([{ ...ship(0), angle: Infinity }], []))).toThrow('Invalid state events');
+    expect(send({ ...nova([], []), x: 1e300 })).toThrow('Invalid state events');
+    expect(send({ ...nova([], []), y: -1e300 })).toThrow('Invalid state events');
+    expect(send(nova([{ ...ship(0), x: 1e300 }], []))).toThrow('Invalid state events');
   });
 
   it('accepts a kill by the sun or the horizon, and nothing else as a source', () => {
