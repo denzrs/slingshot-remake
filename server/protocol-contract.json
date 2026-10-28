@@ -14,6 +14,7 @@
     "killcam": "auto",
     "hiddenAim": false,
     "fadingTrails": 0,
+    "suddenDeath": true,
     "mayhem": 0,
     "betting": false,
     "chatPlayersOnly": false,

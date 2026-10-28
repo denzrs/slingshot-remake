@@ -531,6 +531,8 @@ pub struct RoomRules {
     pub hidden_aim: bool,
     /// Seconds a finished shot's flight path stays on the board (0 = for good).
     pub fading_trails: i64,
+    /// Classic and Solar System: a round that drags on ends in sudden death.
+    pub sudden_death: bool,
     /// Mayhem: every round has twists of its own (0 = off, then 1 mild, 2 wild, 3 insane).
     pub mayhem: i64,
     /// Online: eliminated players may bet points of the match on who wins the round.
@@ -560,6 +562,7 @@ pub const DEFAULT_RULES: RoomRules = RoomRules {
     killcam: KillcamMode::Auto,
     hidden_aim: false,
     fading_trails: 0,
+    sudden_death: true,
     mayhem: 0,
     betting: false,
     chat_players_only: false,
@@ -585,6 +588,7 @@ pub fn rules_to_value(rules: &RoomRules) -> Value {
         "killcam": rules.killcam.as_str(),
         "hiddenAim": rules.hidden_aim,
         "fadingTrails": rules.fading_trails,
+        "suddenDeath": rules.sudden_death,
         "mayhem": rules.mayhem,
         "betting": rules.betting,
         "chatPlayersOnly": rules.chat_players_only,
@@ -686,6 +690,10 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
     if !is_number_in(fading_trails, &[0, 1, 2, 4]) {
         return None;
     }
+    // Sudden death came later: a client that doesn't send it gets the default. A present value has to be a boolean.
+    if field("suddenDeath").is_some_and(|v| !v.is_boolean()) {
+        return None;
+    }
     if field("mayhem").is_some_and(|v| !is_number_in(v, &[0, 1, 2, 3])) {
         return None;
     }
@@ -723,6 +731,9 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
         killcam,
         hidden_aim: value.get("hiddenAim").unwrap().as_bool().unwrap(),
         fading_trails: i64_of(fading_trails),
+        sudden_death: field("suddenDeath")
+            .and_then(Value::as_bool)
+            .unwrap_or(DEFAULT_RULES.sudden_death),
         mayhem: field("mayhem").map(i64_of).unwrap_or(DEFAULT_RULES.mayhem),
         betting: field("betting")
             .and_then(Value::as_bool)
@@ -853,6 +864,25 @@ mod tests {
         assert_eq!(parsed.max_power, 100);
         assert_eq!(parsed.fixed_power_level, 55);
         assert!(!parsed.betting);
+    }
+
+    #[test]
+    fn sudden_death_defaults_on_and_takes_only_a_boolean() {
+        let parsed = parse_rules(&valid_rules()).expect("rules without suddenDeath accepted");
+        assert!(parsed.sudden_death);
+        let mut rules = valid_rules();
+        rules["suddenDeath"] = json!(false);
+        let parsed = parse_rules(&rules).expect("suddenDeath false accepted");
+        assert!(!parsed.sudden_death);
+        assert_eq!(rules_to_value(&parsed)["suddenDeath"], json!(false));
+        for invalid in [json!("true"), json!(1), json!([])] {
+            let mut rules = valid_rules();
+            rules["suddenDeath"] = invalid;
+            assert!(
+                parse_rules(&rules).is_none(),
+                "accepted invalid suddenDeath"
+            );
+        }
     }
 
     #[test]

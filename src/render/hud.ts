@@ -1,6 +1,6 @@
 import { modifiersOf } from '../sim/challenge';
-import { AIM, COLORS, FIELD, FONTS, MAYHEM, TEAMS } from '../sim/config';
-import { ChallengeMatch, HorizonMatch, teamName, type KillRecord, type Match, type PlayerState } from '../game';
+import { AIM, COLORS, FIELD, FONTS, MAYHEM, SUDDEN_DEATH, TEAMS } from '../sim/config';
+import { ChallengeMatch, ClassicMatch, HorizonMatch, SolarMatch, teamName, type KillRecord, type Match, type PlayerState } from '../game';
 import { fmt, fmtInt, t } from '../platform/i18n';
 import { TWIST_IDS, twistName } from '../game/mayhem';
 import { awardLabel, awardValue, awardWho, spotlight } from '../game/scorecard';
@@ -132,7 +132,20 @@ export class Hud {
     setSpacing(ctx, 2 * k);
     let label = match.totalRounds ? `${t('hud.round')} ${match.round} / ${match.totalRounds}` : `${t('hud.round')} ${match.round}`;
     if (match instanceof HorizonMatch) label += `  ·  ${t('hud.volley')} ${match.volleyNo}`;
-    ctx.fillText(label, field.x + field.w / 2, field.y + 18 * k);
+    // Sudden death: counted down over its last few passes, then shown in red for as long as the round lasts.
+    const left = match instanceof ClassicMatch && match.phase !== 'roundOver' && match.phase !== 'gameOver' ? match.suddenDeathIn : null;
+    const warning = left !== null && left <= SUDDEN_DEATH.WARNING ? `  ·  ${left ? t('hud.suddenDeathIn', { n: left }) : t('hud.suddenDeath')}` : '';
+    const cx = field.x + field.w / 2;
+    const y = field.y + 18 * k;
+    if (!warning) ctx.fillText(label, cx, y);
+    else {
+      const a = ctx.measureText(label).width;
+      const start = cx - (a + ctx.measureText(warning).width) / 2;
+      ctx.textAlign = 'left';
+      ctx.fillText(label, start, y);
+      ctx.fillStyle = left ? COLORS.sodium : rgba(COLORS.danger, 0.7 + 0.3 * Math.sin(this.time * 5));
+      ctx.fillText(warning, start + a, y);
+    }
     setSpacing(ctx, 0);
   }
 
@@ -868,7 +881,7 @@ export class Hud {
       line1 = `${t('hud.teamWinsRound', { team: teamName(s.team) })}${s.bonus ? `  ·  ${t('hud.perMember', { n: s.bonus })}` : ''}`;
       if (kill) line2 = killSegments(match, kill).map(([text]) => text).join('');
     } else {
-      line1 = survivor ? `${t('hud.winsRound', { name: survivor.name })}${s.bonus ? `  +${s.bonus}` : ''}` : t('hud.noSurvivor');
+      line1 = survivor ? `${t('hud.winsRound', { name: survivor.name })}${s.bonus ? `  +${s.bonus}` : ''}` : match instanceof ClassicMatch && match.decidedBySuddenDeath && match.alive.length ? t('hud.noWinner') : t('hud.noSurvivor');
       if (kill) line2 = killSegments(match, kill).map(([text]) => text).join('');
     }
     ctx.fillStyle = COLORS.bone;
@@ -958,7 +971,7 @@ export class Hud {
       if (match.viewer !== null && match.simultaneous) items = [['', t('hud.waitingOthers')]];
       else if (match.viewer !== null && thinker && !thinker.cpu) items = [['', t('hud.waitingFor', { name: thinker.name })]];
       else items = [['', thinker?.cpu ? t('hud.thinking', { name: thinker.name }) : t('hud.cpusAiming')]];
-    } else if (match.phase === 'orbit') {
+    } else if (match.phase === 'orbit' && !(match instanceof SolarMatch && match.blasting)) {
       items = [['', t('hud.orbit')]];
     } else if (match.phase === 'collapse') {
       items = [['', t('hud.collapse')]];
@@ -1024,7 +1037,7 @@ export class Hud {
 /** "Player 1 ▸ CPU 3  +1410  Swing-by · Bande ×1,88" as coloured pieces. */
 function killSegments(match: Match, r: KillRecord): Segment[] {
   const victim = match.players[r.victim];
-  if (r.killer === null) return [[t('hud.horizon'), COLORS.danger], [' ▸ ', COLORS.boneDim], [victim.name, victim.color]];
+  if (r.killer === null) return [[t(r.source === 'sun' ? 'hud.sun' : 'hud.horizon'), COLORS.danger], [' ▸ ', COLORS.boneDim], [victim.name, victim.color]];
   if (r.self) return [[victim.name, victim.color], [t('hud.selfHit'), COLORS.boneDim], [`${r.points}`, COLORS.danger]];
   const killer = match.players[r.killer];
   if (r.friendly) {

@@ -61,6 +61,38 @@ describe('state wire envelope', () => {
     expect(() => unpackWireMessage(frame)).toThrow('Invalid state events');
   });
 
+  it('checks sudden death events, and keeps a supernova to what a room can hold', () => {
+    const send = (event: Record<string, unknown>) => () => packWireMessage({ type: 'state', seq: 1, patch: {}, events: [event] });
+    const ship = (i: number) => ({ ship: i, x: 10, y: 20, angle: 45 });
+    const planet = { x: 300, y: 200, radius: 30, color: '#fff' };
+    const nova = (ships: unknown[], planets: unknown[]) => ({ type: 'supernova', x: 600, y: 400, ships, planets });
+
+    expect(send({ type: 'suddenDeath', kind: 'gravity' })).not.toThrow();
+    expect(send({ type: 'suddenDeath', kind: 'redGiant' })).not.toThrow();
+    expect(send({ type: 'suddenDeath' })).toThrow('Invalid state events');
+    expect(send({ type: 'suddenDeath', kind: 'meteors' })).toThrow('Invalid state events');
+
+    expect(send(nova([0, 1, 2, 3, 4, 5].map(ship), [planet]))).not.toThrow();
+    expect(send(nova([0, 1, 2, 3, 4, 5, 6].map(ship), []))).toThrow('Invalid state events');
+    expect(send(nova([], Array(17).fill(planet)))).toThrow('Invalid state events');
+    expect(send(nova([], [{ ...planet, radius: 1e9 }]))).toThrow('Invalid state events');
+    expect(send(nova([], [{ ...planet, radius: -5 }]))).toThrow('Invalid state events');
+    expect(send(nova([{ ...ship(0), angle: Infinity }], []))).toThrow('Invalid state events');
+    expect(send({ ...nova([], []), x: 1e300 })).toThrow('Invalid state events');
+    expect(send({ ...nova([], []), y: -1e300 })).toThrow('Invalid state events');
+    expect(send(nova([{ ...ship(0), x: 1e300 }], []))).toThrow('Invalid state events');
+  });
+
+  it('accepts a kill by the sun or the horizon, and nothing else as a source', () => {
+    const kill = (source?: unknown) => () => packWireMessage({ type: 'state', seq: 1, patch: {}, events: [{ type: 'kill', record: {
+      killer: null, victim: 0, points: 0, self: false, friendly: false, combo: [], multiplier: 1, shots: 0, power: 0, at: 1, ...(source === undefined ? {} : { source }),
+    } }] });
+    expect(kill()).not.toThrow();
+    expect(kill('sun')).not.toThrow();
+    expect(kill('horizon')).not.toThrow();
+    expect(kill('ufo')).toThrow('Invalid state events');
+  });
+
   it('rejects malformed and non-map envelope payloads', () => {
     const malformed = new Uint8Array([0x53, 0x4c, 0x4e, 0x47, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0xc1]);
     expect(() => unpackWireMessage(malformed)).toThrow();

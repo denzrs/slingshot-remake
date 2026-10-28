@@ -10,8 +10,9 @@ import './ui/menu/menu-page.css';
 import { Sound } from './platform/audio';
 import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
 import { ClipRecorder } from './platform/clip';
-import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS } from './sim/config';
+import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
 import { createUiPreview, type UiPreview } from './debug/devPreview';
+import { SupernovaDemo } from './debug/supernovaDemo';
 import { recordRun } from './data/dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, type Match } from './game';
 import type { GameMode } from './sim/modes';
@@ -84,6 +85,8 @@ const requestedPreview = new URLSearchParams(location.search).get('preview');
 const uiPreview: UiPreview | null = import.meta.env.DEV && ['oracle-card', 'oracle-pause', 'stands-card', 'stands-pause'].includes(requestedPreview ?? '')
   ? requestedPreview as UiPreview
   : null;
+/** `?preview=supernova` (dev only): a Solar System's sudden death on a loop, to look at without playing to it. */
+const supernovaDemo = import.meta.env.DEV && requestedPreview === 'supernova' ? new SupernovaDemo() : null;
 
 const active = (): Match => (screen === 'play' && match ? match : attract);
 
@@ -211,6 +214,13 @@ function wire(m: Match): void {
       case 'collapse':
         effects.collapse(e.x, e.y);
         if (audible) sound.rumble();
+        break;
+      case 'suddenDeath':
+        if (audible) sound.rumble();
+        break;
+      case 'supernova':
+        effects.supernova(e.x, e.y, e.ships.map((s) => ({ x: s.x, y: s.y, angle: s.angle, color: color(s.ship) })), e.planets);
+        if (audible) sound.supernova(e.ships.map((s) => Math.hypot(s.x - e.x, s.y - e.y) / SUDDEN_DEATH.NOVA_SPEED));
         break;
       case 'volley':
         if (audible) sound.volley();
@@ -868,6 +878,7 @@ function frame(now: number): void {
   const empty = screen !== 'play' && !settings.menuBackground;
   if (!paused && !empty) {
     if (!net || net.isHost) m.update(dt);
+    if (supernovaDemo && m === supernovaDemo.match) supernovaDemo.tick(dt);
     effects.update(dt, m.world);
     // A shot flying through a nebula sheds wisps of gas, so its slowing down shows.
     if (m.world.nebulae.length) {
@@ -928,6 +939,14 @@ async function boot(): Promise<void> {
   // Canvas text needs the web fonts loaded before the first draw.
   const fonts = [`800 32px ${FONTS.display}`, `400 16px ${FONTS.body}`, `700 16px ${FONTS.body}`, `400 16px ${FONTS.mono}`, `700 16px ${FONTS.mono}`];
   await Promise.race([Promise.all(fonts.map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 1500))]);
+  if (supernovaDemo) {
+    match = supernovaDemo.match;
+    screen = 'play';
+    wire(match);
+    effects.clear();
+    requestAnimationFrame(frame);
+    return;
+  }
   if (uiPreview) {
     match = createUiPreview(uiPreview);
     screen = 'play';

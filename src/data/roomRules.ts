@@ -35,6 +35,8 @@ export interface RoomRules {
   hiddenAim: boolean;
   /** Seconds a finished shot's flight path stays on the board before it has faded away; 0 = it stays. */
   fadingTrails: number;
+  /** Classic and Solar System: a round that drags on ends in sudden death (enemy ships pull shots in; the sun goes red giant, then supernova). */
+  suddenDeath: boolean;
   /** Mayhem: every round has twists of its own, laid over these rules. 0 = off, otherwise the chaos strength (1 mild, 2 wild, 3 insane). */
   mayhem: number;
   /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
@@ -64,6 +66,7 @@ const RULE_NAMES = {
   killcam: true,
   hiddenAim: true,
   fadingTrails: true,
+  suddenDeath: true,
   mayhem: true,
   betting: true,
   chatPlayersOnly: true,
@@ -90,6 +93,7 @@ export const DEFAULT_ROOM_RULES: Readonly<RoomRules> = {
   killcam: 'auto',
   hiddenAim: false,
   fadingTrails: 0,
+  suddenDeath: true,
   mayhem: 0,
   betting: false,
   chatPlayersOnly: false,
@@ -128,6 +132,8 @@ export function roomRulesFrom(saved: Partial<RoomRules> | undefined): RoomRules 
     ...known,
     killcam: isKillcamMode(saved?.killcam) ? saved.killcam : fresh.killcam,
     betting: saved?.betting === true,
+    // Rules saved before it existed play with it, as a new game does.
+    suddenDeath: saved?.suddenDeath !== false,
     chatPlayersOnly: saved?.chatPlayersOnly === true,
     powerUps: saved?.powerUps === true,
     powerUpKinds: powerUpKindsFrom(saved?.powerUpKinds) ?? fresh.powerUpKinds,

@@ -1,6 +1,7 @@
-import { COLORS, DEBRIS, FIELD, FONTS, PHYSICS, type Debris } from '../sim/config';
+import { COLORS, DEBRIS, FIELD, FONTS, PHYSICS, SUDDEN_DEATH, type Debris } from '../sim/config';
 import type { World } from '../sim/physics';
 import { rgba } from './color';
+import { SHIP_HULL } from './ship';
 import { fillTextUpright, strokeTextUpright } from './orientation';
 
 type SparkTier = 'large' | 'medium' | 'small';
@@ -83,6 +84,38 @@ interface Laser {
   width: number;
 }
 
+/** A ship the supernova has doomed: it stands on, heating up, until the shockwave gets to it (`at`, seconds into the blast). */
+interface Doomed {
+  x: number;
+  y: number;
+  angle: number;
+  color: string;
+  at: number;
+  done: boolean;
+}
+
+/** A planet the supernova's shockwave shatters when it gets there (`at`, seconds into the blast). */
+interface DoomedPlanet {
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+  at: number;
+  done: boolean;
+}
+
+/** A supernova under way: its core, two shockwaves sweeping the field, and the ships and planets waiting for them. */
+interface Nova {
+  x: number;
+  y: number;
+  age: number;
+  doomed: Doomed[];
+  planets: DoomedPlanet[];
+}
+
+/** How long a supernova's light lasts on the field (s). */
+const NOVA_LIFE = 3.2;
+
 interface Callout {
   text: string;
   x: number;
@@ -101,8 +134,13 @@ export class Effects {
   private motes: Mote[] = [];
   private beams: Beam[] = [];
   private lasers: Laser[] = [];
+  private novas: Nova[] = [];
   shake = 0;
   flash = 0;
+  /** A supernova's white-out over the whole screen (0 → 1). */
+  whiteout = 0;
+  /** Seconds the supernova's quake still keeps the field shaking. */
+  private quake = 0;
 
   constructor(
     public particles: boolean,
@@ -122,8 +160,11 @@ export class Effects {
     this.motes = [];
     this.beams = [];
     this.lasers = [];
+    this.novas = [];
     this.shake = 0;
     this.flash = 0;
+    this.whiteout = 0;
+    this.quake = 0;
   }
 
   explode(x: number, y: number, color: string, vx = 0, vy = 0): void {
@@ -296,6 +337,37 @@ export class Effects {
     }
   }
 
+  /**
+   * The red giant blows apart. The screen goes white, the field quakes, a blinding core swells, and two shockwaves —
+   * white-hot, then a slower one of red plasma — sweep out over the whole field, throwing a storm of debris. Each
+   * doomed ship glows hotter as the wave comes, and blows up as it gets there.
+   */
+  supernova(x: number, y: number, doomed: { x: number; y: number; angle: number; color: string }[], planets: { x: number; y: number; radius: number; color: string }[] = []): void {
+    const at = (o: { x: number; y: number }): number => Math.hypot(o.x - x, o.y - y) / SUDDEN_DEATH.NOVA_SPEED;
+    this.novas.push({
+      x,
+      y,
+      age: 0,
+      doomed: doomed.map((d) => ({ ...d, at: at(d), done: false })),
+      planets: planets.map((p) => ({ ...p, at: at(p), done: false })),
+    });
+    // With reduced motion there is no full-screen flash, and the field stays still.
+    if (!this.reducedMotion) {
+      this.whiteout = 1;
+      this.flash = 1;
+      this.quake = 1.8;
+      this.shake = 30;
+    }
+    this.ring(x, y, 1500, 2.6, COLORS.sodium);
+    this.ring(x, y, 1100, 2.1, COLORS.danger);
+    this.ring(x, y, 600, 1.4, COLORS.bone);
+    this.ring(x, y, 260, 0.8, COLORS.bone);
+    this.burst(x, y, 260, 120, 1100, COLORS.sodium, 'large');
+    this.burst(x, y, 180, 80, 800, COLORS.danger, 'large');
+    this.burst(x, y, 120, 40, 500, COLORS.bone, 'medium');
+    this.burst(x, y, 80, 20, 260, '#ffe9a8', 'small');
+  }
+
   /** The horizon swelling: a ring that contracts onto the hole. */
   collapse(x: number, y: number): void {
     this.rings.push({ x, y, radius: 220, life: 1.2, max: 1.2, color: COLORS.danger, inward: true });
@@ -312,7 +384,11 @@ export class Effects {
     const dy = toY - fromY;
     const d = Math.hypot(dx, dy) || 1;
     this.burst(fromX, fromY, 16, 60, 260, color, 'medium', (dx / d) * 90, (dy / d) * 90, 0.45);
-    // The rock breaking up: a wide shockwave, a bright core, and debris thrown in every direction.
+    this.shatter(toX, toY, color, radius);
+  }
+
+  /** A planet blowing apart: a wide shockwave, a bright core, and debris thrown in every direction. */
+  shatter(toX: number, toY: number, color: string, radius = 30): void {
     this.ring(toX, toY, radius * 3.2, 0.75, color);
     this.ring(toX, toY, radius * 1.6, 0.5, COLORS.bone);
     this.burst(toX, toY, 70, 90, radius * 12, COLORS.sodium, 'large', 0, 0, 1);
@@ -363,6 +439,13 @@ export class Effects {
   update(dt: number, world: World): void {
     this.shake = Math.max(0, this.shake - dt * 30);
     this.flash = Math.max(0, this.flash - dt * 2.5);
+    this.whiteout = Math.max(0, this.whiteout - dt * 0.9);
+    if (this.quake > 0) {
+      this.quake = Math.max(0, this.quake - dt);
+      // A rumble that dies down slowly, under the sharper jolts of the ships blowing up.
+      this.shake = Math.max(this.shake, 4 + 10 * this.quake);
+    }
+    this.updateNovas(dt);
     const fragments: Spark[] = [];
     const remaining: Spark[] = [];
     const steps = Math.max(1, Math.ceil(dt / PHYSICS.DT));
@@ -416,6 +499,81 @@ export class Effects {
     this.updateMotes(dt);
   }
 
+  /** The shockwaves move on, and blow up each doomed ship they get to. */
+  private updateNovas(dt: number): void {
+    for (const nova of this.novas) {
+      nova.age += dt;
+      for (const d of nova.doomed) {
+        if (d.done || nova.age < d.at) continue;
+        d.done = true;
+        const away = Math.atan2(d.y - nova.y, d.x - nova.x);
+        this.explode(d.x, d.y, d.color, Math.cos(away) * 260, Math.sin(away) * 260);
+        this.ring(d.x, d.y, 220, 1, COLORS.bone);
+        this.burst(d.x, d.y, 60, 60, 420, COLORS.sodium, 'medium', Math.cos(away) * 300, Math.sin(away) * 300);
+      }
+      for (const p of nova.planets) {
+        if (p.done || nova.age < p.at) continue;
+        p.done = true;
+        this.shatter(p.x, p.y, p.color, p.radius);
+      }
+    }
+    this.novas = this.novas.filter((nova) => nova.age < NOVA_LIFE || nova.doomed.some((d) => !d.done) || nova.planets.some((p) => !p.done));
+  }
+
+  private drawNova(ctx: CanvasRenderingContext2D, nova: Nova): void {
+    const { x, y, age } = nova;
+    const fade = Math.max(0, 1 - age / NOVA_LIFE);
+    // The doomed ships, glowing hotter as the wave comes for them.
+    for (const d of nova.doomed) {
+      if (d.done) continue;
+      const heat = Math.min(1, age / Math.max(0.01, d.at));
+      ctx.save();
+      ctx.translate(d.x, d.y);
+      const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 22 + 26 * heat);
+      glow.addColorStop(0, rgba('#fff4cc', 0.7 * heat));
+      glow.addColorStop(1, rgba(COLORS.danger, 0));
+      ctx.fillStyle = glow;
+      ctx.fillRect(-50, -50, 100, 100);
+      ctx.rotate((-d.angle * Math.PI) / 180);
+      ctx.beginPath();
+      SHIP_HULL.forEach(([hx, hy], k) => (k ? ctx.lineTo(hx, hy) : ctx.moveTo(hx, hy)));
+      ctx.closePath();
+      ctx.fillStyle = d.color;
+      ctx.fill();
+      ctx.fillStyle = rgba('#fff4cc', heat * 0.85);
+      ctx.fill();
+      ctx.restore();
+    }
+    if (fade <= 0) return;
+    ctx.globalCompositeOperation = 'lighter';
+    // The core: a blinding ball that swells fast and burns out.
+    const core = 40 + 340 * easeOut(Math.min(1, age / 0.7));
+    const ball = ctx.createRadialGradient(x, y, 0, x, y, core);
+    ball.addColorStop(0, rgba('#ffffff', fade));
+    ball.addColorStop(0.25, rgba('#fff0c0', 0.85 * fade));
+    ball.addColorStop(0.6, rgba(COLORS.sodium, 0.45 * fade));
+    ball.addColorStop(1, rgba(COLORS.danger, 0));
+    ctx.fillStyle = ball;
+    ctx.beginPath();
+    ctx.arc(x, y, core, 0, Math.PI * 2);
+    ctx.fill();
+    // The shockwaves: a white-hot front, and a slower, wider one of red plasma behind it.
+    for (const [speed, width, inner, edge, strength] of [[1, 70, COLORS.sodium, '#ffffff', 1], [0.62, 140, COLORS.danger, '#ff8a2e', 0.8]] as const) {
+      const front = SUDDEN_DEATH.NOVA_SPEED * speed * age;
+      if (front < 4) continue;
+      const band = ctx.createRadialGradient(x, y, Math.max(0, front - width), x, y, front + 12);
+      band.addColorStop(0, rgba(inner, 0));
+      band.addColorStop(0.7, rgba(inner, 0.45 * fade * strength));
+      band.addColorStop(0.93, rgba(edge, 0.95 * fade * strength));
+      band.addColorStop(1, rgba(edge, 0));
+      ctx.fillStyle = band;
+      ctx.beginPath();
+      ctx.arc(x, y, front + 12, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
   /** Pieces drift out for a moment, then steer at their ship and pulse on arrival. */
   private updateMotes(dt: number): void {
     const arrived: Mote[] = [];
@@ -448,6 +606,7 @@ export class Effects {
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
+    for (const nova of this.novas) this.drawNova(ctx, nova);
     for (const r of this.rings) {
       const t = 1 - r.life / r.max;
       const radius = r.inward ? r.radius * (1 - easeOut(t)) : r.radius * easeOut(t);
