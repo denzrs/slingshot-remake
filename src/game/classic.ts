@@ -203,8 +203,7 @@ export class ClassicMatch extends Match {
 
   /** The kinds of sudden death a round of this mode draws from. */
   protected get suddenDeathKinds(): readonly SuddenDeathKind[] {
-    // The shower's bent paths would show where the planets are.
-    return this.hiddenPlanets ? ['gravity', 'collision', 'overcharge', 'ufos'] : ['gravity', 'collision', 'overcharge', 'meteors', 'ufos'];
+    return ['gravity', 'collision', 'overcharge', 'meteors', 'ufos'];
   }
 
   /** How many passes into sudden death the round is (1 the pass it sets in), or 0 before then or without the rule. */

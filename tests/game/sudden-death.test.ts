@@ -399,15 +399,31 @@ describe('sudden death as a meteor shower', () => {
     }
   });
 
-  it('is never drawn when the planets are invisible (its bent paths would show them)', () => {
-    for (let seed = 1; seed <= 60; seed++) {
-      const seats = cpus(2);
-      const match = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, invisiblePlanets: true }, { seats, seed, deterministicCpu: true }) as ClassicMatch;
+  it('is drawn, and plays its finale, when the planets are invisible too (the round is over by then)', () => {
+    const seats = cpus(3);
+    const invisible = (seed: number) => createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, invisiblePlanets: true }, { seats, seed, deterministicCpu: true }) as ClassicMatch;
+    const kinds = new Set<SuddenDeathKind>();
+    for (let seed = 1; seed <= 80; seed++) {
+      const match = invisible(seed);
       try {
-        expect(match.snapshot().suddenDeathKind).not.toBe('meteors');
+        kinds.add(match.snapshot().suddenDeathKind!);
       } finally {
         match.dispose();
       }
+    }
+    expect(kinds.has('meteors')).toBe(true);
+    expect(kinds.has('ufos')).toBe(true);
+    const match = invisible(6);
+    try {
+      match.debugSuddenDeath('meteors');
+      expect(match.hiddenPlanets).toBe(true);
+      endPass(match, SUDDEN_DEATH.START_PASS + SUDDEN_DEATH.FINALE_STEP - 1);
+      turn(match);
+      expect(match.phase).toBe('roundOver');
+      expect(match.summary).toMatchObject({ title: 'meteors', survivor: null });
+      expect(match.world.planets).toHaveLength(0);
+    } finally {
+      match.dispose();
     }
   });
 });
@@ -492,7 +508,7 @@ describe('sudden death as a UFO invasion', () => {
     }
   });
 
-  it('draws the same invasion from the same seed, and is still drawn when the planets are invisible', () => {
+  it('draws the same invasion from the same seed', () => {
     const invasion = (): unknown => {
       const match = classic('ufos', 6);
       try {
@@ -505,18 +521,6 @@ describe('sudden death as a UFO invasion', () => {
       }
     };
     expect(invasion()).toEqual(invasion());
-    const kinds = new Set<SuddenDeathKind>();
-    for (let seed = 1; seed <= 80; seed++) {
-      const seats = cpus(2);
-      const match = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, invisiblePlanets: true }, { seats, seed, deterministicCpu: true }) as ClassicMatch;
-      try {
-        kinds.add(match.snapshot().suddenDeathKind!);
-      } finally {
-        match.dispose();
-      }
-    }
-    expect(kinds.has('ufos')).toBe(true);
-    expect(kinds.has('meteors')).toBe(false);
   });
 
   it('keeps the blast going on a match restored from a snapshot mid-invasion, and never comes while the rule is off', () => {
