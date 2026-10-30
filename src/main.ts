@@ -33,7 +33,7 @@ import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './d
 import { dailyResultScreen } from './ui/daily/daily';
 import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/room/chat';
-import { Menu } from './ui/menu/menu';
+import { Menu, h } from './ui/menu/menu';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
 import { TouchPower } from './ui/touch/touch-power';
 import { TouchWheel } from './ui/touch/touch-wheel';
@@ -50,6 +50,7 @@ const pauseButton = document.querySelector<HTMLButtonElement>('#pause-button')!;
 const touchFire = document.querySelector<HTMLButtonElement>('#touch-fire')!;
 /** How many are watching, for everybody who is not in the stands themselves. */
 const standsBadge = document.querySelector<HTMLElement>('#stands-badge')!;
+const pauseBanner = document.querySelector<HTMLElement>('#pause-banner')!;
 const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 
@@ -288,6 +289,21 @@ let chat: ChatPanel | null = null;
 let chatSeen: { screen: 'title' | 'play'; menuOpen: boolean; match: Match | null } = { screen, menuOpen: false, match: null };
 /** The online match on screen, if any. */
 const online = (): MultiplayerSession | null => (session?.match ? session : null);
+
+/** The host's pause over the field: who stopped the game, or the number the countdown is at. Cleared with the pause. */
+function paintPauseBanner(m: Match | null, host: boolean): void {
+  const pause = m?.pause;
+  const key = !pause ? '' : pause.resumeIn === null ? (host ? 'host' : 'guest') : String(Math.ceil(pause.resumeIn));
+  if (pauseBanner.dataset.key === key) return;
+  pauseBanner.dataset.key = key;
+  pauseBanner.hidden = !pause;
+  if (!pause) return;
+  pauseBanner.replaceChildren(
+    ...(pause.resumeIn === null
+      ? [h('div.pause-banner__title', null, t('pause.paused')), h('div.pause-banner__hint', null, host ? t('pause.hostHint') : t('pause.guestHint'))]
+      : [h('div.pause-banner__title', null, t('pause.resuming')), h('div.pause-banner__count', null, key)]),
+  );
+}
 
 /** Route a player input: online it goes through the session, offline straight to the match. */
 function dispatchInput(input: ClientInput): void {
@@ -901,6 +917,7 @@ function frame(now: number): void {
     voteMenuOpen = true;
     menu.open(() => skipVoteScreen(app));
   }
+  paintPauseBanner(screen === 'play' && net ? m : null, !!net?.isHost);
   const crowd = screen === 'play' && net && !net.isSpectator ? m.crowd.seats.filter((seat) => seat.present).length : 0;
   standsBadge.hidden = crowd === 0;
   if (crowd) {

@@ -43,6 +43,7 @@ export interface ClassicSnapshot extends Partial<KillcamSnapshot> {
   matchStats: Match['matchStats'];
   scoreHistory: number[][];
   skipVote?: SkipVote | null;
+  pause?: Match['pause'];
   /** Simultaneous shots: seconds left to aim. */
   planClock: number;
   /** The passes the round has had, and the ships that have fired in the one under way. */
@@ -97,6 +98,7 @@ export class ClassicMatch extends Match {
       matchStats: this.matchStats,
       scoreHistory: this.scoreHistory,
       skipVote: this.skipVote,
+      pause: this.pause,
       planClock: this.planClock,
       passes: this.passes,
       fired: [...this.fired],
@@ -141,6 +143,7 @@ export class ClassicMatch extends Match {
     this.matchStats = snapshot.matchStats;
     this.scoreHistory = snapshot.scoreHistory;
     this.skipVote = snapshot.skipVote ?? null;
+    this.pause = snapshot.pause ?? null;
     this.planClock = snapshot.planClock;
     this.passes = snapshot.passes ?? 0;
     this.fired = new Set(snapshot.fired ?? []);
