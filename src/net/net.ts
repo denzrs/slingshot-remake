@@ -78,6 +78,8 @@ type ClientMessage =
   | { type: 'stats_replay'; id: string }
   /** Something to say to everybody in the room. The relay cleans it and stars out profanity. */
   | { type: 'chat'; text: string }
+  /** Host only, in a running game: a taunt the host's CPU says, shown to the room as that seat's chat line. */
+  | { type: 'cpu_chat'; playerId: number; text: string }
   | { type: 'leave_room' }
   /** A new connection asks for the seat that `token` was given for, after the old connection dropped. */
   | { type: 'resume'; token: string };

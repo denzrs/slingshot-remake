@@ -2001,6 +2001,68 @@ fn chat_reaches_everybody_in_the_room_censored_and_names_the_sender() {
     assert!(chats(&mut host_rx).is_empty());
 }
 
+fn cpu_say(rooms: &mut RoomManager, conn: u64, seat: usize, text: &str) {
+    rooms.handle(
+        conn,
+        &json!({"type":"cpu_chat","playerId":seat,"text":text}),
+    );
+}
+
+#[test]
+fn the_host_speaks_for_a_cpu_seat_during_a_game_and_nobody_else_does() {
+    let (mut rooms, mut host_rx, room_id) = host_room("ffa", 4);
+    let mut guest_rx = join(&mut rooms, 2, &room_id, "Ben");
+    rooms.handle(1, &add_cpu("hard"));
+    drain_json(&mut host_rx);
+    rooms.handle(2, &json!({"type":"ready","ready":true}));
+
+    // While the room waits there is no game to talk in.
+    cpu_say(&mut rooms, 1, 2, "E = mc²");
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "You are not in a running game"
+    );
+
+    rooms.handle(1, &json!({"type":"start_game"}));
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
+
+    cpu_say(&mut rooms, 1, 2, "  God does not play dice, you shit  ");
+    for rx in [&mut host_rx, &mut guest_rx] {
+        let heard = chats(rx);
+        assert_eq!(heard.len(), 1);
+        assert_eq!(heard[0]["name"], "Einstein");
+        assert_eq!(heard[0]["id"], 2);
+        assert_eq!(heard[0]["spectator"], false);
+        let text = heard[0]["text"].as_str().unwrap();
+        assert!(
+            text.starts_with("God does not play dice, you ") && !text.contains("shit"),
+            "{text}"
+        );
+    }
+
+    // A guest cannot put words in a CPU's mouth, and a human seat is no CPU.
+    cpu_say(&mut rooms, 2, 2, "I am Einstein");
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "Only the room host can speak for the CPUs"
+    );
+    cpu_say(&mut rooms, 1, 1, "I am Ben");
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "No CPU sits in that seat"
+    );
+    assert!(chats(&mut guest_rx).is_empty());
+
+    // The CPUs cannot flood the room, and the host's own chat is not spent on them.
+    for _ in 0..10 {
+        cpu_say(&mut rooms, 1, 2, "again");
+    }
+    drain_json(&mut guest_rx);
+    say(&mut rooms, 1, "still here");
+    assert_eq!(chats(&mut guest_rx).len(), 1);
+}
+
 #[test]
 fn the_host_can_limit_chat_to_the_players_and_nobody_can_flood_it() {
     let mut rooms = RoomManager::new();

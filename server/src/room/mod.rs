@@ -259,6 +259,7 @@ impl RoomManager {
             RoomCommand::StartGame => self.start_game(conn),
             RoomCommand::Input(input) => self.relay_input(conn, input),
             RoomCommand::Chat(text) => self.chat(conn, text),
+            RoomCommand::CpuChat { seat, text } => self.cpu_chat(conn, seat, text),
             RoomCommand::RoundStats(report) => self.report_round(conn, report),
             RoomCommand::TurnStats(report) => self.report_turn(conn, report),
             RoomCommand::LeaveRoom => self.leave_room(conn),
