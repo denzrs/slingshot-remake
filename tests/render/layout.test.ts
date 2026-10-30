@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FIELD } from '../../src/sim/config';
-import { fieldTransform, plateUnits, portraitLayout } from '../../src/render/layout';
+import { fieldTransform, plateUnits, portraitLayout, rayHitsRect } from '../../src/render/layout';
 
 const NO_INSET = { top: 0, bottom: 0 };
 const UI = 1.2;
@@ -80,5 +80,26 @@ describe('the field transform', () => {
       expect(x).toBeCloseTo(2 * (30 + (u.w * 0.4) / 2));
       expect(y).toBeCloseTo(2 * (120 + (u.h * 0.4) / 2));
     }
+  });
+});
+
+describe('rayHitsRect', () => {
+  const from = { x: 100, y: 100 };
+
+  it('is true when the aim line runs through the card', () => {
+    expect(rayHitsRect(from, { x: 1, y: 0 }, 300, 160, 80, 100, 40)).toBe(true);
+  });
+
+  it('is false when the card is beside the line, behind the ship, or farther out than the line reaches', () => {
+    expect(rayHitsRect(from, { x: 1, y: 0 }, 300, 160, 200, 100, 40)).toBe(false);
+    expect(rayHitsRect(from, { x: 1, y: 0 }, 300, -100, 80, 100, 40)).toBe(false);
+    expect(rayHitsRect(from, { x: 1, y: 0 }, 50, 160, 80, 100, 40)).toBe(false);
+  });
+
+  it('works on a slant, and for lines straight up or down', () => {
+    const slant = { x: Math.SQRT1_2, y: -Math.SQRT1_2 };
+    expect(rayHitsRect(from, slant, 300, 150, 20, 40, 40)).toBe(true);
+    expect(rayHitsRect(from, { x: 0, y: -1 }, 300, 80, 0, 40, 40)).toBe(true);
+    expect(rayHitsRect(from, { x: 0, y: -1 }, 300, 160, 0, 40, 40)).toBe(false);
   });
 });

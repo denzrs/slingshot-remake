@@ -272,7 +272,7 @@ One category at a time, with a compact visible category navigator:
 
 | Category | Existing settings |
 | --- | --- |
-| Darstellung | Gravitational contours, particles, animated menu background |
+| Darstellung | Gravitational contours, particles, aim card steps aside, animated menu background |
 | Ton & Bildschirm | Sound, fullscreen |
 | Sprache | German / English, names recognizable in either language |
 | Touch controls | Stick side; only on coarse-pointer devices |

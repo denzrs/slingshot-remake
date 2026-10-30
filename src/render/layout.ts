@@ -111,3 +111,21 @@ export const touchScale = (): number => parseFloat(getComputedStyle(document.doc
 export function applyUpright(layout: PortraitLayout | null): void {
   document.documentElement.classList.toggle('upright', !!layout);
 }
+
+/** Whether the ray from `from` along `dir` crosses the rectangle within `length`. */
+export function rayHitsRect(from: { x: number; y: number }, dir: { x: number; y: number }, length: number, x: number, y: number, w: number, h: number): boolean {
+  let near = 0;
+  let far = length;
+  for (const [origin, d, lo, size] of [[from.x, dir.x, x, w], [from.y, dir.y, y, h]] as const) {
+    if (Math.abs(d) < 1e-9) {
+      if (origin < lo || origin > lo + size) return false;
+      continue;
+    }
+    const a = (lo - origin) / d;
+    const b = (lo + size - origin) / d;
+    near = Math.max(near, Math.min(a, b));
+    far = Math.min(far, Math.max(a, b));
+    if (near > far) return false;
+  }
+  return true;
+}

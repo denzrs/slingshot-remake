@@ -915,7 +915,7 @@ function frame(now: number): void {
     renderer.draw(
       m,
       effects,
-      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
+      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer, aimCardDodge: settings.aimCardDodge },
       paused ? 0 : dt,
     );
   }

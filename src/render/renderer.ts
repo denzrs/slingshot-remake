@@ -36,6 +36,8 @@ export interface DrawOptions {
   recording: boolean;
   /** Show the key caps in the oracle's choices. */
   keyHints: boolean;
+  /** The aim card steps aside when the aim line would run over it. */
+  aimCardDodge: boolean;
 }
 
 export class Renderer {
