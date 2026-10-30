@@ -1733,6 +1733,17 @@ fn a_spectator_joins_a_running_public_game_and_gets_the_start_and_a_keyframe_req
 }
 
 #[test]
+fn a_plain_join_to_a_running_public_game_lands_in_the_stands() {
+    let mut rooms = RoomManager::new();
+    let (room_id, _host_rx, _guest_rx) = started_room(&mut rooms, None, false);
+    let mut late_rx = join(&mut rooms, 3, &room_id, "Late");
+
+    let update = take_type(&drain_json(&mut late_rx), "room_update");
+    assert_eq!(update["you"]["spectator"], true);
+    assert_eq!(update["room"]["players"].as_array().unwrap().len(), 2);
+}
+
+#[test]
 fn walking_in_and_out_of_the_stands_is_rate_limited() {
     let mut rooms = RoomManager::new();
     let (room_id, mut host_rx, _guest_rx) = started_room(&mut rooms, None, false);
