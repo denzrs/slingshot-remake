@@ -181,9 +181,9 @@ describe('Hawking classic search', () => {
     expect(draws[0]).toEqual(draws[1]);
     const tail = draws[0].slice(-4);
     const errorRng = () => tail.shift()!;
-    const angleError = gaussian(errorRng) * 0.5;
-    const powerError = gaussian(errorRng) * 0.5;
-    const decayDifference = 0.45 ** attempt - 0.45 ** 30;
+    const angleError = gaussian(errorRng) * 1.8;
+    const powerError = gaussian(errorRng) * 1.8;
+    const decayDifference = 0.7 ** attempt - 0.7 ** 30;
     expect(normalizeAngle(launches[0].angle - launches[1].angle)).toBeCloseTo(normalizeAngle(angleError * decayDifference), 8);
     expect(launches[0].power - launches[1].power).toBeCloseTo(powerError * decayDifference, 8);
   });

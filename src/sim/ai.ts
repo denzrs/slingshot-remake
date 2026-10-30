@@ -32,19 +32,19 @@ interface CpuProfile {
 
 export const CPU_PROFILES: Readonly<Record<Exclude<CpuLevel, 'hawking'>, Readonly<CpuProfile>>> = {
   // Kepler: lazy and lucky. Goes for whoever is nearest, tolerates risk, learns slowly.
-  easy: { angle: 4.5, power: 4.5, decay: 0.8, selfMargin: 20, powerFrugality: 0, optimizeHitPower: false, distanceBias: 0.25, grudge: 0, pickupAppetite: 0 },
+  easy: { angle: 7, power: 7, decay: 0.85, selfMargin: 20, powerFrugality: 0, optimizeHitPower: false, distanceBias: 0.25, grudge: 0, pickupAppetite: 0 },
   // Newton: efficient and the sorest loser. Wastes no power, keeps a level head, remembers every hit longest.
-  medium: { angle: 1.6, power: 1.6, decay: 0.6, selfMargin: 45, powerFrugality: 0.01, optimizeHitPower: true, distanceBias: 0, grudge: 5, pickupAppetite: 0 },
+  medium: { angle: 3.5, power: 3.5, decay: 0.75, selfMargin: 45, powerFrugality: 0.01, optimizeHitPower: true, distanceBias: 0, grudge: 5, pickupAppetite: 0 },
   // Einstein: careful and precise, and always angling to scoop up a power-up.
-  hard: { angle: 0.5, power: 0.5, decay: 0.45, selfMargin: 60, powerFrugality: 0.002, optimizeHitPower: false, distanceBias: 0, grudge: 1, pickupAppetite: 350 },
+  hard: { angle: 1.8, power: 1.8, decay: 0.7, selfMargin: 60, powerFrugality: 0.002, optimizeHitPower: false, distanceBias: 0, grudge: 1, pickupAppetite: 350 },
 };
 
 /**
  * Hawking searches like Einstein (same aim error, safety and precision) but prefers swing-bys. It keeps
- * Einstein's original numbers, including the long memory for being shot at, unchanged by the newer profiles.
+ * Einstein's aim and his long memory for being shot at.
  */
 const HAWKING_PROFILE: Readonly<CpuProfile> = {
-  angle: 0.5, power: 0.5, decay: 0.45, selfMargin: 60, powerFrugality: 0.002, optimizeHitPower: false, distanceBias: 0, grudge: 3, pickupAppetite: 0,
+  angle: 1.8, power: 1.8, decay: 0.7, selfMargin: 60, powerFrugality: 0.002, optimizeHitPower: false, distanceBias: 0, grudge: 3, pickupAppetite: 0,
 };
 /** Planner result emitted for each menu CPU launch when AI decision logging is enabled. */
 export interface CpuDecision {

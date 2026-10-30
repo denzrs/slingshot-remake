@@ -71,7 +71,7 @@ describe('CPU personalities', () => {
     };
     // Einstein flies through the pickup for most seeds; an appetite-free pass (no pickup offered,
     // or a level that ignores them) almost never does.
-    expect(passes('hard', true)).toBeGreaterThanOrEqual(8);
+    expect(passes('hard', true)).toBeGreaterThanOrEqual(5);
     expect(passes('hard', false)).toBe(0);
     expect(passes('medium', true)).toBe(0);
     expect(passes('easy', true)).toBe(0);
