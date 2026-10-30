@@ -37,9 +37,9 @@ export function presetsForMode(mode: GameMode): readonly MatchPreset[] {
   return Object.keys(PRESET_GROUPS[mode]) as MatchPreset[];
 }
 
-/** The hint's text key: Classic Standard is the one preset where the ships take turns, and says so. */
+/** The hint's text key: each mode describes its own Standard, since Classic's is the one where the ships take turns. */
 export const presetHintKey = (preset: MatchPreset, mode: GameMode): Key =>
-  (mode === 'classic' && preset === 'standard' ? 'preset.standard.classic.hint' : `preset.${preset}.hint`);
+  (preset === 'standard' ? `preset.standard.${mode}.hint` : `preset.${preset}.hint`);
 
 export function presetRules(preset: MatchPreset, mode: GameMode): RoomRules {
   const factory = (PRESET_GROUPS[mode] as Record<string, PresetRuleFactory>)[preset];
