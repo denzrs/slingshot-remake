@@ -198,7 +198,12 @@ impl RoomManager {
             self.error(conn, "Leave your current room before joining another");
             return;
         }
-        if join.spectate {
+        // A game under way has no seat to take: whoever follows a link or code to it watches instead.
+        let running = self
+            .rooms
+            .get(join.room_id())
+            .is_some_and(|room| room.status == RoomStatus::Playing);
+        if join.spectate || running {
             return self.join_as_spectator(conn, join, preverified);
         }
         let Some(JoinTarget { room_id, name }) = self.accept(conn, join.target) else {
