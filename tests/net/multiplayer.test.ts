@@ -244,6 +244,16 @@ describe('online games', () => {
     await response;
   });
 
+  it('lets the host end a running game and puts everybody back in the waiting room', async () => {
+    const { host, guest } = await startRoom('classic');
+    guest.session.endGame();
+    host.session.endGame();
+    await waitForSession(host.session, () => host.session.match === null && host.session.room?.status === 'waiting');
+    await waitForSession(guest.session, () => guest.session.match === null && guest.session.room?.status === 'waiting');
+    expect(host.session.room!.players).toHaveLength(2);
+    expect(host.session.room!.players.every((player) => !player.ready)).toBe(true);
+  });
+
   it('forwards the envelope frame byte-for-byte to guests', async () => {
     const { host, guest } = await startRoom('classic');
     const hostSocket = (host.session.client as RustTransport).rawSocket!;

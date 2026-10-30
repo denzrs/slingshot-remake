@@ -80,6 +80,8 @@ type ClientMessage =
   | { type: 'chat'; text: string }
   /** Host only, in a running game: a taunt the host's CPU says, shown to the room as that seat's chat line. */
   | { type: 'cpu_chat'; playerId: number; text: string }
+  /** Host only, in a running game or on its results: the room goes back to waiting, with everybody still in it. */
+  | { type: 'end_game' }
   | { type: 'leave_room' }
   /** A new connection asks for the seat that `token` was given for, after the old connection dropped. */
   | { type: 'resume'; token: string };

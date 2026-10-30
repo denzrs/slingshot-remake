@@ -74,6 +74,8 @@ pub enum RoomCommand<'a> {
         seat: Parsed<usize>,
     },
     StartGame,
+    /// The host ends the running game and brings the room back to its waiting state.
+    EndGame,
     Input(Parsed<&'a Value>),
     /// Something to say to the room.
     Chat(Parsed<String>),
@@ -254,6 +256,7 @@ impl<'a> RoomCommand<'a> {
                 seat: cpu_seat(message),
             },
             "start_game" => RoomCommand::StartGame,
+            "end_game" => RoomCommand::EndGame,
             "input" => RoomCommand::Input(
                 message
                     .get("input")

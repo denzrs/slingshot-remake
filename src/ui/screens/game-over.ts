@@ -129,6 +129,7 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
           { kind: 'action', section: 'actions', label: t('replay.again'), primary: true, run: () => app.watchAgain() },
         ] satisfies MenuItem[]
       : [
+          ...(app.online && match.canAdvance ? [{ kind: 'action', section: 'actions', label: t('over.backToLobby'), run: () => app.backToLobby() } satisfies MenuItem] : []),
           app.online
             ? { kind: 'action', section: 'actions', label: t('multiplayer.leave'), run: () => app.leaveOnlineRoom() }
             : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: () => app.toTitle() },
@@ -137,7 +138,8 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
             : { kind: 'action', section: 'actions', label: t('over.rematch'), hint: t('over.hostRematch'), disabled: true, run: () => {} },
         ] satisfies MenuItem[]),
     ],
-    focus: 3,
+    // The way on is the last button: one more sits before it when the host can send the room back to the lobby.
+    focus: !match.replaying && app.online && match.canAdvance ? 4 : 3,
     onEscape: () => (match.replaying ? app.leaveReplay() : app.online ? app.leaveOnlineRoom() : app.toTitle()),
   };
 }

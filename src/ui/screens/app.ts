@@ -27,6 +27,8 @@ export interface App {
   /** Back to the statistics, from a replay. */
   leaveReplay(): void;
   openLobby(entry?: LobbyEntry): void;
+  /** Host only: end the online game and bring the whole room back to its lobby. */
+  backToLobby(): void;
   /** Leave the online game and its room for the room list, still connected. */
   leaveOnlineRoom(): void;
   resume(): void;
