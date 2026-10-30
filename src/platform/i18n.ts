@@ -463,7 +463,7 @@ const en = {
   // — settings —
   'setup.start': 'Start game',
   'setup.note': 'The rules of this game. They are remembered for the next one.',
-  'settings.note': 'Display and sound. The rules of a game are set up right before it starts.',
+  'settings.note': 'Global settings that shape your experience overall.',
   'settings.rounds': 'Rounds per game',
   'settings.endless': 'Endless',
   'settings.maxPlanets': 'Max. planets',
@@ -1542,7 +1542,7 @@ const de: Dict = {
 
   'setup.start': 'Spiel starten',
   'setup.note': 'Die Regeln für dieses Spiel. Sie werden fürs nächste Mal gemerkt.',
-  'settings.note': 'Darstellung und Ton. Die Regeln eines Spiels stellst du direkt vor dem Start ein.',
+  'settings.note': 'Globale Einstellungen, die dein gesamtes Spielerlebnis prägen.',
   'settings.rounds': 'Runden pro Spiel',
   'settings.endless': 'Endlos',
   'settings.maxPlanets': 'Max. Planeten',
