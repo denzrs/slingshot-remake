@@ -39,6 +39,8 @@ pub const MAX_SPECTATOR_INPUTS_PER_SECOND: usize = 8;
 /// Chat messages one connection may send in `CHAT_WINDOW`.
 pub const MAX_CHAT_MESSAGES: usize = 5;
 pub const CHAT_WINDOW: Duration = Duration::from_secs(10);
+/// Taunts a host may speak for its CPU seats in `CHAT_WINDOW`: its own chat budget stays its own.
+pub const MAX_CPU_CHAT_MESSAGES: usize = 4;
 /// Times one connection may walk into the stands in `SPECTATE_WINDOW`: every mid-game arrival costs the host a full frame.
 pub const MAX_SPECTATE_JOINS: usize = 3;
 pub const SPECTATE_WINDOW: Duration = Duration::from_secs(30);
@@ -196,6 +198,7 @@ pub struct Connections {
     db_requests_per_minute: usize,
     spectator_windows: HashMap<u64, VecDeque<Instant>>,
     chat_windows: HashMap<u64, VecDeque<Instant>>,
+    cpu_chat_windows: HashMap<u64, VecDeque<Instant>>,
     spectate_windows: HashMap<u64, VecDeque<Instant>>,
     /// What all the outbound queues may hold together.
     pool: OutboundPool,
@@ -217,6 +220,7 @@ impl Default for Connections {
             db_requests_per_minute: DEFAULT_DB_REQUESTS_PER_MINUTE,
             spectator_windows: HashMap::new(),
             chat_windows: HashMap::new(),
+            cpu_chat_windows: HashMap::new(),
             spectate_windows: HashMap::new(),
             pool: OutboundPool::default(),
         }
@@ -264,6 +268,7 @@ impl Connections {
         self.lobby_requests.forget(&conn);
         self.spectator_windows.remove(&conn);
         self.chat_windows.remove(&conn);
+        self.cpu_chat_windows.remove(&conn);
         self.spectate_windows.remove(&conn);
         self.ips.remove(&conn);
         self.browsers.remove(&conn);
@@ -324,6 +329,10 @@ impl Connections {
             window.retain(|at| now.duration_since(*at) < CHAT_WINDOW);
             !window.is_empty()
         });
+        self.cpu_chat_windows.retain(|_, window| {
+            window.retain(|at| now.duration_since(*at) < CHAT_WINDOW);
+            !window.is_empty()
+        });
         self.spectate_windows.retain(|_, window| {
             window.retain(|at| now.duration_since(*at) < SPECTATE_WINDOW);
             !window.is_empty()
@@ -349,15 +358,29 @@ impl Connections {
 
     /// Counts one more chat message from a connection; false when it is talking too much.
     pub fn allow_chat(&mut self, conn: u64) -> bool {
+        Self::admit_chat(
+            self.chat_windows.entry(conn).or_default(),
+            MAX_CHAT_MESSAGES,
+        )
+    }
+
+    /// Counts one more taunt a host speaks for a CPU seat; false when the CPUs are talking too much.
+    pub fn allow_cpu_chat(&mut self, conn: u64) -> bool {
+        Self::admit_chat(
+            self.cpu_chat_windows.entry(conn).or_default(),
+            MAX_CPU_CHAT_MESSAGES,
+        )
+    }
+
+    fn admit_chat(window: &mut VecDeque<Instant>, most: usize) -> bool {
         let now = Instant::now();
-        let window = self.chat_windows.entry(conn).or_default();
         while window
             .front()
             .is_some_and(|at| now.duration_since(*at) >= CHAT_WINDOW)
         {
             window.pop_front();
         }
-        if window.len() >= MAX_CHAT_MESSAGES {
+        if window.len() >= most {
             return false;
         }
         window.push_back(now);

@@ -12,6 +12,7 @@ import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../si
 import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type PowerUpKind } from '../sim/powerups';
 import { generateWorld } from '../sim/world';
 import { ShotLog } from './shotLog';
+import { NEAR_MISS_GAP, type BanterCue } from './banter';
 import { replayKey, RIDERS, type ReplayScript, type ReplayTurn } from './replay';
 import { Crowd } from './crowd';
 import { Killcam } from './killcam';
@@ -319,6 +320,7 @@ export abstract class Match {
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
   private turnListeners: (() => void)[] = [];
+  private banterListeners: ((cue: BanterCue) => void)[] = [];
 
   // ————————————————————————————— Replay —————————————————————————————
 
@@ -401,6 +403,16 @@ export abstract class Match {
 
   on(listener: (e: GameEvent) => void): void {
     this.listeners.push(listener);
+  }
+
+  /** Told when a CPU has something to say about how a shot went. Kept off the wire: the host is the one who speaks for the CPUs. */
+  onBanter(listener: (cue: BanterCue) => void): void {
+    this.banterListeners.push(listener);
+  }
+
+  private cue(kind: BanterCue['kind'], player: number, other: number | null): void {
+    if (!this.players[player]?.cpu) return;
+    for (const l of this.banterListeners) l({ kind, player, other });
   }
 
   /** Called when a turn's shots have all landed and the scores are settled, before the next phase begins. */
@@ -1584,6 +1596,11 @@ export abstract class Match {
     this.oracleKills.push({ killer, victim, self, friendly });
     this.players[killer].score += score.points;
     this.shotLog.hit(vs, victim, self ? 'self' : friendly ? 'friendly' : 'enemy', score.points);
+    if (self) this.cue('ownGoal', killer, null);
+    else if (!friendly) {
+      this.cue('kill', killer, victim);
+      this.cue('died', victim, killer);
+    }
     // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
     if (!self && !friendly) this.lastHitBy.set(victim, killer);
     const record: KillRecord = {
@@ -1637,12 +1654,15 @@ export abstract class Match {
       this.record((book) => (book.longestShot = improve(book.longestShot, vs.owner, pathLength(trail), true, { trail, at: end })));
       // Enemy ships still flying after the volley — the ones this shot missed.
       const friends = this.friendsOf(vs.owner);
+      let nearest: { id: number; gap: number } | null = null;
       volley.world.ships.forEach((ship, id) => {
         if (id === vs.owner || friends.includes(id) || !ship.alive) return;
         const { distance, at } = closestApproach(trail, ship);
         const gap = distance - PHYSICS.SHIP_RADIUS;
         if (gap > 0) this.record((book) => (book.closeCall = improve(book.closeCall, vs.owner, gap, false, { trail, at })));
+        if (gap > 0 && gap < NEAR_MISS_GAP && (!nearest || gap < nearest.gap)) nearest = { id, gap };
       });
+      if (nearest) this.cue('nearMiss', vs.owner, (nearest as { id: number }).id);
     }
   }
 

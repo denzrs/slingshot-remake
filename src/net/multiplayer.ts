@@ -5,6 +5,7 @@ import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkCpuLevel, 
 import type { GameMode } from '../sim/modes';
 import type { RoomLook } from '../data/roomLook';
 import type { Avatar } from '../platform/avatars';
+import { Banter } from '../game/banter';
 import { roundReport, turnReport } from '../game/roundReport';
 import { SnapshotDecoder, SnapshotEncoder } from './netsync';
 import { netMatch, type NetMatch } from './netMatch';
@@ -520,9 +521,26 @@ export class MultiplayerSession {
         if (event.type === 'roundEnd') this.send({ type: 'round_stats', ...roundReport(match) });
       });
       match.onTurnEnd(() => this.send({ type: 'turn_stats', ...turnReport(match) }));
+      this.speakForCpus(match);
       this.startHeartbeat(match);
     }
     this.hooks.matchStarted(match);
+  }
+
+  /** The host's CPUs talk back: a taunt for a near miss, a kill, a death, said in the host's language as that seat's chat line. */
+  private speakForCpus(match: NetMatch): void {
+    const banter = new Banter();
+    match.onBanter((cue) => {
+      const speaker = match.players[cue.player];
+      if (!speaker?.cpu) return;
+      const other = cue.other === null ? undefined : match.players[cue.other];
+      const text = banter.line(speaker.cpu, cue, other?.name ?? '', Date.now());
+      if (!text) return;
+      // A beat after the shot, as if it had to think of something.
+      setTimeout(() => {
+        if (this.match === match && this.isHost) this.send({ type: 'cpu_chat', playerId: cue.player, text });
+      }, 600 + Math.random() * 900);
+    });
   }
 
   private applyInput(match: NetMatch, id: number, input: ClientInput): void {

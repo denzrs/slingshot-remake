@@ -77,6 +77,11 @@ pub enum RoomCommand<'a> {
     Input(Parsed<&'a Value>),
     /// Something to say to the room.
     Chat(Parsed<String>),
+    /// The host speaks for a CPU seat: its taunt, sent as that seat's chat line.
+    CpuChat {
+        seat: Parsed<usize>,
+        text: Parsed<String>,
+    },
     /// The host's account of a round that just ended.
     RoundStats(Parsed<RoundReport>),
     /// The host's account of a turn that was just flown.
@@ -258,6 +263,10 @@ impl<'a> RoomCommand<'a> {
             "chat" => {
                 RoomCommand::Chat(clean_chat(message.get("text")).ok_or("Say something first"))
             }
+            "cpu_chat" => RoomCommand::CpuChat {
+                seat: cpu_seat(message),
+                text: clean_chat(message.get("text")).ok_or("Say something first"),
+            },
             "round_stats" => {
                 RoomCommand::RoundStats(parse_round_report(message).ok_or("Malformed round stats"))
             }
