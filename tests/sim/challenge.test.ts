@@ -176,9 +176,11 @@ describe('sector layout', () => {
     // The hazard sectors (flak, clouds, special ammo) are the costly ones: their shots go through the full simulation.
     const hazards = sectors.filter(({ spec }) => spec.flak || spec.nebulae || spec.ammo).slice(0, 40);
     expect(hazards.length).toBeGreaterThan(20);
-    const t0 = performance.now();
+    // CPU time of this process, not the clock: workers sharing a busy machine stretch the clock but not the work.
+    const t0 = process.cpuUsage();
     for (const { spec } of hazards) buildSector(spec);
-    expect((performance.now() - t0) / hazards.length).toBeLessThan(250);
+    const used = process.cpuUsage(t0);
+    expect((used.user + used.system) / 1000 / hazards.length).toBeLessThan(250);
   });
 });
 

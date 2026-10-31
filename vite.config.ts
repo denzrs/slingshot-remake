@@ -55,6 +55,12 @@ export default defineConfig({
   // `DEBUG_AIM` (which serves /debug-aim.html) also reaches the client, so the in-game seed badge can follow it.
   envPrefix: ['VITE_', 'DEBUG_'],
   plugins: [debugAimGate(), statsRoute()],
-  // Sibling git worktrees live under .claude/; their tests are not this checkout's.
-  test: { exclude: [...configDefaults.exclude, '.claude/**'] },
+  test: {
+    // Sibling git worktrees live under .claude/; their tests are not this checkout's.
+    exclude: [...configDefaults.exclude, '.claude/**'],
+    // Only a ceiling, so a run that passes is not slower for it. Whole simulated games and relay round trips take a few
+    // seconds when the workers share a small CI runner, which is longer than the 5 s default.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
+  },
 });
