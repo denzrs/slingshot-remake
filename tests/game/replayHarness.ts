@@ -73,43 +73,54 @@ const cases: Case[] = [
   { name: 'mayhem', mode: 'classic', patch: { mayhem: 2, powerUps: true }, seats: ['hard', 'medium', 'medium', 'off', 'off', 'off'], seed: 17 },
 ];
 
-/** What the recordings of the cases together held, to see that the test goes through every kind of thing a replay has to do. */
-const seen = { placements: new Set<string>(), splits: 0, riders: new Set<string>() };
+/** The seeds a case is flown with: one per file, so `replay-seed-N.test.ts` can run beside the others. */
+const SEED_STEP = 1000;
 
-describe('a recorded match flown again', () => {
-  it.each(cases.flatMap((c) => Array.from({ length: Number(process.env.REPLAY_SEEDS ?? 4) }, (_, i) => i * 1000).map((offset) => ({ ...c, seed: c.seed + offset, name: `${c.name} (seed ${c.seed + offset})` }))))('comes out the same: $name', ({ mode, patch, seats, seed }) => {
-    const settings = settingsOf(patch, seats);
-    const options = { seats, seed, deterministicCpu: true, simultaneous: mode === 'horizon' || settings.simultaneousShots, teams: settings.teamMode ? seats.map((_, i) => i % 2) : undefined };
+/**
+ * Registers the replay tests for one seed offset (`index` * 1000) of every case. Each file calls it once, so vitest runs
+ * the offsets in parallel workers; a replay is plain CPU work and tests inside one file never overlap.
+ * `REPLAY_SEEDS` still caps how many offsets are flown: a file whose index is not below it registers nothing.
+ */
+export function defineReplayTests(index: number): void {
+  if (index >= Number(process.env.REPLAY_SEEDS ?? 4)) return;
+  /** What the recordings of this file's cases held, to see that the test goes through every kind of thing a replay has to do. */
+  const seen = { placements: new Set<string>(), splits: 0, riders: new Set<string>() };
 
-    // Play it, and keep what the host would have reported.
-    const original = createMatch(mode, settings, options);
-    const reports: ReturnType<typeof turnReport>[] = [];
-    original.onTurnEnd(() => reports.push(turnReport(original)));
-    const first = run(original, () => original.phase === 'gameOver');
-    expect(original.phase).toBe('gameOver');
-    expect(first.traces.length).toBeGreaterThan(3);
+  describe(`a recorded match flown again (seed offset ${index * SEED_STEP})`, () => {
+    it.each(cases.map((c) => ({ ...c, seed: c.seed + index * SEED_STEP, name: `${c.name} (seed ${c.seed + index * SEED_STEP})` })))('comes out the same: $name', ({ mode, patch, seats, seed }) => {
+      const settings = settingsOf(patch, seats);
+      const options = { seats, seed, deterministicCpu: true, simultaneous: mode === 'horizon' || settings.simultaneousShots, teams: settings.teamMode ? seats.map((_, i) => i % 2) : undefined };
 
-    // Fly it again from the seed, the rules and the recording alone.
-    const script = recordingOf(original, JSON.parse(JSON.stringify(reports)));
-    for (const turn of script.turns) {
-      for (const placement of turn.placements) seen.placements.add(placement.kind);
-      for (const shot of turn.shots) {
-        if (shot.splitAt !== null) seen.splits++;
-        if (shot.rider) seen.riders.add(shot.rider);
+      // Play it, and keep what the host would have reported.
+      const original = createMatch(mode, settings, options);
+      const reports: ReturnType<typeof turnReport>[] = [];
+      original.onTurnEnd(() => reports.push(turnReport(original)));
+      const first = run(original, () => original.phase === 'gameOver');
+      expect(original.phase).toBe('gameOver');
+      expect(first.traces.length).toBeGreaterThan(3);
+
+      // Fly it again from the seed, the rules and the recording alone.
+      const script = recordingOf(original, JSON.parse(JSON.stringify(reports)));
+      for (const turn of script.turns) {
+        for (const placement of turn.placements) seen.placements.add(placement.kind);
+        for (const shot of turn.shots) {
+          if (shot.splitAt !== null) seen.splits++;
+          if (shot.rider) seen.riders.add(shot.rider);
+        }
       }
-    }
-    const again = createMatch(mode, settings, { ...options, script });
-    const second = run(again, () => again.replayState !== 'playing' || again.phase === 'gameOver');
+      const again = createMatch(mode, settings, { ...options, script });
+      const second = run(again, () => again.replayState !== 'playing' || again.phase === 'gameOver');
 
-    expect(again.replayState).not.toBe('drifted');
-    expect(second.traces).toEqual(first.traces);
-    expect(again.players.map((p) => p.score)).toEqual(original.players.map((p) => p.score));
-  }, 30_000);
-});
-
-describe('what the recordings held', () => {
-  it('went through placements, splits and riders', () => {
-    console.log('COVERAGE', JSON.stringify({ placements: [...seen.placements].sort(), splits: seen.splits, riders: [...seen.riders].sort() }));
-    expect(seen.splits).toBeGreaterThan(0);
+      expect(again.replayState).not.toBe('drifted');
+      expect(second.traces).toEqual(first.traces);
+      expect(again.players.map((p) => p.score)).toEqual(original.players.map((p) => p.score));
+    }, 30_000);
   });
-});
+
+  describe('what the recordings held', () => {
+    it('went through placements, splits and riders', () => {
+      console.log('COVERAGE', JSON.stringify({ placements: [...seen.placements].sort(), splits: seen.splits, riders: [...seen.riders].sort() }));
+      expect(seen.splits).toBeGreaterThan(0);
+    });
+  });
+}
