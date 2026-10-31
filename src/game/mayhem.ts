@@ -131,6 +131,9 @@ export function applyTwists<S extends TwistRules>(base: S, round: { twists: read
   return rules;
 }
 
+/** A round with a twist that names the planet count, which then holds in every mode (the Solar System would otherwise draw more). */
+export const setsPlanets = (round: { twists: readonly RoundTwist[] }): boolean => round.twists.some(({ id }) => TWISTS[id].slots.includes('planets'));
+
 const differs = (a: TwistRules, b: TwistRules): boolean => TWIST_RULE_KEYS.some((key) => JSON.stringify(a[key]) !== JSON.stringify(b[key]));
 
 /** A twist's name in the language of the UI. */
