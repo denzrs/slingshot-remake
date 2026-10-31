@@ -1,9 +1,7 @@
 import { COLORS } from '../sim/config';
 import type { Planet } from '../sim/physics';
 import { createRng, range } from '../sim/rng';
-import { isRefined } from '../data/look';
 import { clamp01, crater, LIGHT, makeCraters, mix, smoothstep, type Crater, type PlanetSprite } from './planet-common';
-import { renderRefinedPlanet } from './planet-refined';
 import { hexToRgb } from './color';
 import { fbm } from './noise';
 
@@ -12,9 +10,8 @@ const HATCH_A = (32 * Math.PI) / 180;
 const HATCH_B = (-40 * Math.PI) / 180;
 const HATCH_SPACING = 3.1;
 
-/** A planet's sprite in whichever look is on. The sprite may reach past the planet (a refined one has a glow): draw it with `draw`, centred. */
+/** A planet's sprite in the classic look. The sprite may reach past the planet (a luminous one has a glow): draw it with `draw`, centred. */
 export function renderPlanet(p: Planet, ps: number): PlanetSprite {
-  if (isRefined()) return renderRefinedPlanet(p, ps);
   const canvas = renderClassicPlanet(p, ps);
   return {
     size: canvas.width,

@@ -284,7 +284,7 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
 
 /** How many pixels across the planetary nebula's sprite is, and how far it reaches round its star when grown. */
 const NEBULA_TEX = 320;
-const NEBULA_REACH = 270;
+export const NEBULA_REACH = 270;
 
 /**
  * The planetary nebula, drawn once per star: a shell of glowing gas, thicker on two opposite sides so it reads as a

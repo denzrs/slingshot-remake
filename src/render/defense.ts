@@ -145,6 +145,51 @@ function area(color: string, radius: number, planetRadius: number): { image: HTM
   return made;
 }
 
+/** The chance of a hit in each zone, written along the line out from the planet. In the turret's frame. */
+function drawDefenseLabels(ctx: CanvasRenderingContext2D, d: Pick<Defense, 'radius'>, out: number, color: string): void {
+  // The chance of a hit in each zone, written along the line out from the planet.
+  ctx.font = `700 11px ${FONTS.mono}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.9;
+  let from = 0;
+  for (const zone of DEFENSE.ZONES) {
+    const to = d.radius * zone.reach;
+    const r = from === 0 ? Math.max(to * 0.62, 16) : (from + to) / 2;
+    fillTextUpright(ctx, `${Math.round(zone.chance * 100)}%`, Math.cos(out) * r + 14 * Math.cos(out + Math.PI / 2), Math.sin(out) * r + 14 * Math.sin(out + Math.PI / 2));
+    from = to;
+  }
+}
+
+/** What a look that draws a defense's body itself is given: the colour, the radii of the three zones and where the turret points. */
+export interface DefenseFrame {
+  color: string;
+  radius: number;
+  inner: number;
+  middle: number;
+  /** Half the angle, at the turret, of the sector the rock takes out of the inner zone. */
+  open: number;
+  /** The way out from the planet's middle, and where the turret is looking. */
+  out: number;
+  aim: number;
+  alert: boolean;
+  chasing: boolean;
+  /** How far a fresh launch kicks the barrel back (0 → 1). */
+  kick: number;
+  time: number;
+}
+
+/** How a look changes a defense. All of it is optional: with none, the engraved one is drawn. */
+export interface DefenseStyle {
+  /** The whole body, in the defense's frame (the turret at the origin) and clipped by the rock, in place of the engraved one. The chances are written after. */
+  body?(ctx: CanvasRenderingContext2D, frame: DefenseFrame): void;
+  /** Light over the area, in the frame turned so the planet's outside lies towards +x. */
+  glow?(ctx: CanvasRenderingContext2D, color: string, radius: number, inner: number, middle: number, open: number, time: number): void;
+  /** The turret in place of the engraved one, drawn in the defense's frame. False when it cannot be drawn (an image that has not loaded). */
+  turret?(ctx: CanvasRenderingContext2D, color: string, out: number, aim: number, kick: number, chasing: boolean, time: number): boolean;
+}
+
 /**
  * A planetary defense: its area in three zones with the turret on the planet's surface. The turret scans the area
  * with a sweeping beam, and turns to the shot its missile is after; the rims flare while an enemy is inside.
@@ -162,6 +207,7 @@ export function drawDefense(
   view?: DefenseView,
   labels = false,
   hideRock = false,
+  style: DefenseStyle = {},
 ): void {
   const out = planet ? Math.atan2(d.y - planet.y, d.x - planet.x) : -Math.PI / 2;
   // A hidden planet leaves no gap in the area, so the rings do not tell where it is.
@@ -173,12 +219,38 @@ export function drawDefense(
   const chasing = view?.chases[0];
   const aim = chasing ? Math.atan2(chasing.shot.y - d.y, chasing.shot.x - d.x) : out + Math.sin(time * 0.9) * 1.0;
 
+  // A kick: a fresh launch pushes the barrel back.
+  const kick = view?.chases.reduce((k, c) => Math.max(k, Math.max(0, 1 - c.missile.age / 0.12)), 0) ?? 0;
+
+  if (style.body) {
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    ctx.globalAlpha = alpha;
+    // The rock takes its share out of the area.
+    if (planet && rock > 0) {
+      ctx.beginPath();
+      ctx.rect(-1e5, -1e5, 2e5, 2e5);
+      ctx.moveTo(planet.x - d.x + rock, planet.y - d.y);
+      ctx.arc(planet.x - d.x, planet.y - d.y, rock, 0, Math.PI * 2);
+      ctx.clip('evenodd');
+    }
+    style.body(ctx, { color, radius: d.radius, inner, middle, open, out, aim, alert: !!view?.alert, chasing: !!chasing, kick, time });
+    ctx.restore();
+    if (labels) {
+      ctx.save();
+      ctx.translate(d.x, d.y);
+      drawDefenseLabels(ctx, d, out, color);
+      ctx.restore();
+    }
+    return;
+  }
   ctx.save();
   ctx.translate(d.x, d.y);
   ctx.save();
   ctx.rotate(out);
   ctx.globalAlpha = alpha * (0.85 + 0.15 * Math.sin(time * 2.4));
   ctx.drawImage(image, -half, -half, half * 2, half * 2);
+  style.glow?.(ctx, color, d.radius, inner, middle, open, time);
 
   ctx.lineCap = 'round';
   if (view?.alert) {
@@ -231,6 +303,11 @@ export function drawDefense(
 
   // The turret: a base plate on the surface, a round head, and the barrel pointing where it is looking.
   ctx.globalAlpha = alpha;
+  if (style.turret?.(ctx, color, out, aim, kick, !!chasing, time)) {
+    if (labels) drawDefenseLabels(ctx, d, out, color);
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.rotate(out);
   ctx.fillStyle = COLORS.plate;
@@ -247,8 +324,6 @@ export function drawDefense(
   ctx.restore();
   const headX = Math.cos(out) * 5.5;
   const headY = Math.sin(out) * 5.5;
-  // A fresh launch kicks the barrel back.
-  const kick = view?.chases.reduce((k, c) => Math.max(k, Math.max(0, 1 - c.missile.age / 0.12)), 0) ?? 0;
   ctx.strokeStyle = color;
   ctx.lineWidth = 3.2;
   ctx.lineCap = 'butt';
@@ -267,22 +342,20 @@ export function drawDefense(
   ctx.arc(headX, headY, 1.5, 0, Math.PI * 2);
   ctx.fill();
 
-  if (labels) {
-    // The chance of a hit in each zone, written along the line out from the planet.
-    ctx.font = `700 11px ${FONTS.mono}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.9;
-    let from = 0;
-    for (const zone of DEFENSE.ZONES) {
-      const to = d.radius * zone.reach;
-      const r = from === 0 ? Math.max(to * 0.62, 16) : (from + to) / 2;
-      fillTextUpright(ctx, `${Math.round(zone.chance * 100)}%`, Math.cos(out) * r + 14 * Math.cos(out + Math.PI / 2), Math.sin(out) * r + 14 * Math.sin(out + Math.PI / 2));
-      from = to;
-    }
-  }
+  if (labels) drawDefenseLabels(ctx, d, out, color);
   ctx.restore();
+}
+
+/** How a look changes the missiles and the brackets on their target. */
+export interface InterceptionStyle {
+  /** The missiles are drawn in light that adds up. */
+  additive?: boolean;
+  /** How wide the exhaust track is at `t` (0 at its tail, 1 at the head). */
+  trailWidth?(t: number): number;
+  /** The missile itself, pointing along +x, with its flame behind it. */
+  missile?(ctx: CanvasRenderingContext2D, color: string, time: number): void;
+  /** The brackets closing on a shot, `size` from it and turned by `turn`; draws with the stroke already set. */
+  brackets?(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, turn: number): void;
 }
 
 /**
@@ -290,9 +363,10 @@ export function drawDefense(
  * on the shot it is chasing, which turn hot when the missile is close. A missile flies straight through the rock
  * from the far side of its planet, so it and its exhaust are cut out of every planet in `rocks` (none while they are hidden).
  */
-export function drawInterception(ctx: CanvasRenderingContext2D, color: string, view: DefenseView, time: number, rocks: readonly Planet[]): void {
+export function drawInterception(ctx: CanvasRenderingContext2D, color: string, view: DefenseView, time: number, rocks: readonly Planet[], style: InterceptionStyle = {}): void {
   if (!view.missiles.length) return;
   ctx.save();
+  if (style.additive) ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   if (rocks.length) {
@@ -313,7 +387,7 @@ export function drawInterception(ctx: CanvasRenderingContext2D, color: string, v
       const t = i / pts.length;
       ctx.globalAlpha = fade * t * 0.8;
       ctx.strokeStyle = t > 0.7 ? '#ffffff' : color;
-      ctx.lineWidth = 1 + t * 2.2;
+      ctx.lineWidth = style.trailWidth ? style.trailWidth(t) : 1 + t * 2.2;
       ctx.beginPath();
       ctx.moveTo(pts[i - 2], pts[i - 1]);
       ctx.lineTo(pts[i], pts[i + 1]);
@@ -324,21 +398,25 @@ export function drawInterception(ctx: CanvasRenderingContext2D, color: string, v
     ctx.translate(m.x, m.y);
     ctx.rotate(m.heading);
     ctx.globalAlpha = fade;
-    ctx.fillStyle = COLORS.sodium;
-    ctx.beginPath();
-    ctx.arc(-6, 0, 1.8 + 1.2 * Math.abs(Math.sin(time * 50 + m.age * 40)), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(7, 0);
-    ctx.lineTo(-4, -2.8);
-    ctx.lineTo(-2, 0);
-    ctx.lineTo(-4, 2.8);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    if (style.missile) {
+      style.missile(ctx, color, time);
+    } else {
+      ctx.fillStyle = COLORS.sodium;
+      ctx.beginPath();
+      ctx.arc(-6, 0, 1.8 + 1.2 * Math.abs(Math.sin(time * 50 + m.age * 40)), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(7, 0);
+      ctx.lineTo(-4, -2.8);
+      ctx.lineTo(-2, 0);
+      ctx.lineTo(-4, 2.8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
     ctx.restore();
   }
   if (rocks.length) ctx.restore();
@@ -351,6 +429,10 @@ export function drawInterception(ctx: CanvasRenderingContext2D, color: string, v
     ctx.globalAlpha = 0.55 + 0.45 * near;
     ctx.lineWidth = 1.8;
     const turn = time * 2.5 * (1 - near);
+    if (style.brackets) {
+      style.brackets(ctx, shot.x, shot.y, size, turn);
+      continue;
+    }
     for (let k = 0; k < 4; k++) {
       const a = turn + (k * Math.PI) / 2;
       ctx.beginPath();

@@ -1,6 +1,6 @@
 import { DEBRIS, type Debris } from '../../sim/config';
 import { LANGS, t, type Lang } from '../../platform/i18n';
-import { isLook } from '../../data/look';
+import { isLook, LOOKS, lookLabelKey } from '../../data/look';
 import type { Settings } from '../../data/settings';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuGroup, menuPage } from '../menu/menu-page';
@@ -61,10 +61,7 @@ export function settingsScreen(app: App): Screen {
       inGroup({
         kind: 'segmented',
         label: t('settings.look'),
-        options: [
-          { value: 'refined', label: t('settings.lookRefined') },
-          { value: 'classic', label: t('settings.lookClassic') },
-        ],
+        options: LOOKS.map((look) => ({ value: look, label: t(lookLabelKey(look)) })),
         get: () => app.settings.look,
         set: (v: unknown) => {
           app.settings.look = isLook(v) ? v : 'classic';

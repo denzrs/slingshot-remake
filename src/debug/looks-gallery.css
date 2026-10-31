@@ -1,0 +1,51 @@
+/* The look gallery: one row per scene, one card per look, so the same moment can be compared left to right. Dev page. */
+:root {
+  --plate: #0b1a33;
+  --lift: #12284d;
+  --line: #5b7db3;
+  --bone: #e8e4d8;
+  --dim: #9aa6bd;
+  --sodium: #ffd27a;
+  --display: 'Big Shoulders Stencil Display', 'Arial Narrow', sans-serif;
+  --body: 'B612', system-ui, sans-serif;
+  --mono: 'B612 Mono', ui-monospace, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--plate);
+  color: var(--bone);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  padding-block: 40px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1500px; margin: 0 auto; display: grid; gap: 56px; }
+header { display: grid; gap: 20px; }
+h1 { font-family: var(--display); font-weight: 800; font-size: clamp(40px, 7vw, 72px); line-height: 0.95; margin: 0; letter-spacing: 0.02em; text-transform: uppercase; text-wrap: balance; }
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.legend li { border-top: 2px solid var(--line); padding-top: 10px; display: grid; gap: 2px; min-width: 0; }
+.legend b { font-family: var(--display); font-size: 22px; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 800; }
+.legend span { color: var(--dim); font-size: 13px; }
+.tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+button { font: inherit; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--bone); background: var(--lift); border: 1px solid var(--line); padding: 8px 14px; cursor: pointer; border-radius: 2px; }
+button:hover { border-color: var(--bone); }
+button:focus-visible { outline: 2px solid var(--sodium); outline-offset: 2px; }
+main { display: grid; gap: 56px; min-width: 0; }
+section { display: grid; gap: 16px; }
+h2 { font-family: var(--display); font-size: 30px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin: 0; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+h2 small { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--dim); letter-spacing: 0.04em; text-transform: none; }
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 14px; }
+.row.big { grid-template-columns: minmax(0, 1fr); }
+h2 .size { margin-left: auto; }
+figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+.stage { aspect-ratio: 4 / 3; min-width: 0; overflow: hidden; background: var(--plate); border: 1px solid var(--lift); border-radius: 2px; }
+.stage canvas { display: block; }
+figcaption { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+figcaption b { font-family: var(--mono); font-weight: 700; color: var(--sodium); }
+figcaption span { color: var(--dim); }
+.tools output { font-family: var(--mono); font-size: 12px; color: var(--dim); min-width: 0; overflow-wrap: anywhere; }
+button:disabled { opacity: 0.5; cursor: progress; }

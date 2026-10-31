@@ -1,9 +1,9 @@
-import { COLORS } from '../sim/config';
-import type { Planet } from '../sim/physics';
-import { createRng, range } from '../sim/rng';
-import { hexToRgb } from './color';
-import { fbm } from './noise';
-import { clamp01, mix, smoothstep, type PlanetSprite } from './planet-common';
+import { COLORS } from '../../sim/config';
+import type { Planet } from '../../sim/physics';
+import { createRng, range } from '../../sim/rng';
+import { hexToRgb } from '../color';
+import { fbm } from '../noise';
+import { clamp01, mix, smoothstep, type PlanetSprite } from '../planet-common';
 
 type Rgb = [number, number, number];
 
@@ -21,7 +21,7 @@ const STRIP = 3.6;
  * moves — gas giants as bands that run in turn against each other, other planets as mottling drifting slowly
  * round — so the field is never quite still. The sphere and its finish are painted once; only the strip slides.
  */
-export function renderRefinedPlanet(p: Planet, ps: number): PlanetSprite {
+export function renderLuminousPlanet(p: Planet, ps: number): PlanetSprite {
   const R = p.radius * ps;
   const reach = R * (1 + GLOW);
   const size = Math.ceil(reach * 2 + 4);

@@ -76,32 +76,18 @@ function sprite(color: string, radius: number): Sprite {
   return made;
 }
 
-/**
- * One portal: an oval doorway turned to face its partner, floating a little, a swirl turning in its mouth. The
- * sprite does the plasma drawing; this adds only the motion, a few strokes per frame. Both portals of a
- * wormhole are drawn alike, because a shot goes through either one the same way.
- */
-export function drawPortal(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  facing: number,
-  radius: number,
-  color: string,
-  time: number,
-  alpha = 1,
-  phase = 0,
-  size = 1,
-): void {
+/** How a look draws a portal: the doorway itself, and the thread between a pair. */
+export interface PortalStyle {
+  /** The doorway, in its own frame: its middle at the origin, `rx` and `ry` the half-axes of the oval, `radius` the wormhole's. */
+  paint(ctx: CanvasRenderingContext2D, rx: number, ry: number, radius: number, color: string, time: number, alpha: number, phase: number): void;
+  /** The thread between a pair of portals. */
+  threadAlpha: number;
+  threadDash: number[];
+}
+
+/** The engraved doorway: the sprite (glow, dark mouth, rim), a swirl turning in its mouth and sparks drifting round the rim. */
+function paintClassicPortal(ctx: CanvasRenderingContext2D, rx: number, ry: number, radius: number, color: string, time: number, alpha: number, phase: number): void {
   const { image, half } = sprite(color, radius);
-  const rx = radius * WIDTH;
-  const ry = radius * HEIGHT;
-  const breathe = (1 + 0.04 * Math.sin(time * 2.3 + phase)) * size;
-  ctx.save();
-  ctx.translate(x, y + 1.6 * Math.sin(time * 1.7 + phase));
-  ctx.rotate(facing);
-  ctx.scale(breathe, breathe);
-  ctx.globalAlpha = alpha;
   ctx.drawImage(image, -half, -half, half * 2, half * 2);
 
   // A swirl in the mouth: three arcs of different size turning together.
@@ -126,6 +112,40 @@ export function drawPortal(
     ctx.arc(Math.cos(a) * rx * 1.12, Math.sin(a) * ry * 1.12, 1.1, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+export const CLASSIC_PORTAL: PortalStyle = { paint: paintClassicPortal, threadAlpha: 0.22, threadDash: [2, 8] };
+
+/** The classic doorway, for a look that adds to it. */
+export const paintPortal = paintClassicPortal;
+
+/**
+ * One portal: an oval doorway turned to face its partner, floating a little, a swirl turning in its mouth. The
+ * sprite does the plasma drawing; this adds only the motion, a few strokes per frame. Both portals of a
+ * wormhole are drawn alike, because a shot goes through either one the same way.
+ */
+export function drawPortal(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  facing: number,
+  radius: number,
+  color: string,
+  time: number,
+  alpha = 1,
+  phase = 0,
+  size = 1,
+  style: PortalStyle = CLASSIC_PORTAL,
+): void {
+  const rx = radius * WIDTH;
+  const ry = radius * HEIGHT;
+  const breathe = (1 + 0.04 * Math.sin(time * 2.3 + phase)) * size;
+  ctx.save();
+  ctx.translate(x, y + 1.6 * Math.sin(time * 1.7 + phase));
+  ctx.rotate(facing);
+  ctx.scale(breathe, breathe);
+  ctx.globalAlpha = alpha;
+  style.paint(ctx, rx, ry, radius, color, time, alpha, phase);
   ctx.restore();
 }
 
@@ -133,21 +153,21 @@ export function drawPortal(
  * Both portals of a wormhole, turned to face each other, in the wormhole's own colour. `eaten` (0 to 1) is how
  * far the black hole has taken it: the portals shrink and fade as they fall in.
  */
-export function drawWormhole(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, radius: number, time: number, id: number, eaten = 0): void {
+export function drawWormhole(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, radius: number, time: number, id: number, eaten = 0, style: PortalStyle = CLASSIC_PORTAL): void {
   const color = portalColor(id);
   const fade = 1 - eaten;
   const toB = Math.atan2(by - ay, bx - ax);
   ctx.save();
   // A faint thread between the pair, in their colour, so which portals belong together can be followed.
-  ctx.globalAlpha = 0.22 * fade;
+  ctx.globalAlpha = style.threadAlpha * fade;
   ctx.strokeStyle = color;
   ctx.lineWidth = 1;
-  ctx.setLineDash([2, 8]);
+  ctx.setLineDash(style.threadDash);
   ctx.beginPath();
   ctx.moveTo(ax, ay);
   ctx.lineTo(bx, by);
   ctx.stroke();
   ctx.restore();
-  drawPortal(ctx, ax, ay, toB, radius, color, time, fade, 0, 1 - eaten * 0.7);
-  drawPortal(ctx, bx, by, toB + Math.PI, radius, color, time, fade, 0.5, 1 - eaten * 0.7);
+  drawPortal(ctx, ax, ay, toB, radius, color, time, fade, 0, 1 - eaten * 0.7, style);
+  drawPortal(ctx, bx, by, toB + Math.PI, radius, color, time, fade, 0.5, 1 - eaten * 0.7, style);
 }

@@ -2,7 +2,7 @@
  * Screenshots of the running game.
  *
  *   npm run dev                      # in another terminal
- *   npm run shot -- --out refined-look.webp --settings '{"look":"refined"}' \
+ *   npm run shot -- --out luminous-look.webp --settings '{"look":"luminous"}' \
  *     --click "Einstellungen" --mark "Verfeinerter Look"
  *
  * Drives a headless Chrome over the DevTools protocol, so it needs Chrome installed

@@ -153,7 +153,7 @@ export function drawNebula(ctx: CanvasRenderingContext2D, n: { x: number; y: num
 }
 
 /** `a` eased towards `b` by `t`, as a hex colour. */
-function blend(a: string, b: string, t: number): string {
+export function blend(a: string, b: string, t: number): string {
   const x = hexToRgb(a);
   const y = hexToRgb(b);
   const c = (i: number): string =>

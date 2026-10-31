@@ -50,6 +50,8 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 | `npm run build:server` | Build the Rust relay in release mode |
 | `npm run bench:relay -- ws://localhost:8080` | Measure Rust relay latency, fan-out, real 30 Hz snapshots and synthetic large payloads |
 
+**Look gallery.** `npm run dev` also serves `/looks.html`: the real field renderer once per look on the same scenes (field, Solar System, event horizon, power-ups, effects), to compare the looks side by side. It is not part of the build. It can also remember the pixels of every scene and list what changed after an edit, to check a refactor of the drawing code.
+
 **Debug aim.** `DEBUG_AIM=1 npm run dev` serves the aim-predictor page at `/debug-aim.html`, and shows the in-game seed badge that links to it with the seed, mode and aim of the round on screen. Without the variable the page 404s and the badge stays hidden.
 
 **Tests.** `npm test` builds and tests the Rust relay, so install the stable Rust toolchain (including Cargo) first; `npx vitest` runs only the TypeScript tests and expects the Rust test binary to have been built. The suites take roughly one minute on 8 cores. Vitest runs test files in parallel but the tests inside one file one after the other, so put a long-running test in a file of its own instead of adding it to a big one. Under Vitest every read of an imported binding goes through a getter, which doubled the cost of `Shot.step` until it read its `PHYSICS` constants once into locals; do the same in other hot loops. Comparing huge snapshots with `toEqual` is slow too, so `tests/netsync.test.ts` only falls back to it to explain a mismatch.
