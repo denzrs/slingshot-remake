@@ -4,11 +4,13 @@ import { ChallengeMatch, ClassicMatch, HorizonMatch, SolarMatch, teamName, type 
 import { fmt, fmtInt, t } from '../platform/i18n';
 import { TWIST_IDS, twistName } from '../game/mayhem';
 import { awardLabel, awardValue, awardWho, spotlight } from '../game/scorecard';
+import { aimDirection } from '../sim/physics';
 import { styleLabel } from '../sim/scoring';
 import { awards } from '../data/stats';
 import type { View } from './backdrop';
 import { drawAvatar } from './avatar';
 import { rgba } from './color';
+import { rayHitsRect } from './layout';
 import { OracleHud, type OracleFrame, type OracleTap } from './oracle';
 import { SkipVoteHud, type SkipAnswer } from './skip-vote';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
@@ -43,6 +45,8 @@ export class Hud {
   /** How far the duel's blocks sit lower on a phone held upright, where the round label's row is shared with the pause button. */
   private drop = 0;
 
+  /** Where the aim card stands: the ship it belongs to, its place around the ship, and where it was last drawn. */
+  private readoutSlot = { id: -1, slot: 0, x: 0, y: 0, seen: -1 };
   private shipPos: (i: number) => { x: number; y: number } = () => ({ x: 0, y: 0 });
 
   constructor(private readonly ctx: CanvasRenderingContext2D) {}
@@ -101,7 +105,7 @@ export class Hud {
       this.drawScoreboard(match);
       this.drawKillFeed(match);
     }
-    if (match.phase === 'aiming' && focus >= 0 && match.aimVisible(focus)) this.drawReadout(match, match.players[focus], shipPos(focus));
+    if (match.phase === 'aiming' && focus >= 0 && match.aimVisible(focus)) this.drawReadout(match, match.players[focus], shipPos(focus), opts.aimCardDodge);
     this.drawNotice(match);
     this.skipVote.draw(frame, match, opts.touch);
     // The oracle's card holds the question — or the round's summary — at the bottom edge; it already names whose shot it is.
@@ -511,16 +515,41 @@ export class Hud {
   }
 
   /** Angle / power next to the aiming ship, plus the shot clock in Event Horizon. */
-  private drawReadout(match: Match, p: PlayerState, at: { x: number; y: number }): void {
+  private drawReadout(match: Match, p: PlayerState, at: { x: number; y: number }, dodge: boolean): void {
     const { ctx, k, field } = this;
     const towardsCentre = at.x < field.x + field.w / 2 ? 1 : -1;
     const w = 112 * k;
     const h = 44 * k;
-    let x = at.x + towardsCentre * 40 * k - (towardsCentre < 0 ? w : 0);
-    let y = at.y - h / 2;
-    x = Math.min(field.x + field.w - w - 6, Math.max(field.x + 6, x));
     const top = match.mode === 'classic' && match.players.length === 2 ? 130 : match.teamMode ? 114 : 98;
-    y = Math.min(field.y + field.h - h - 30 * k, Math.max(field.y + top * k + this.drop, y));
+    // Where the card goes for each place it may stand: beside the ship towards the middle, beside it on the far side, above, below.
+    const place = (slot: number): { x: number; y: number } => {
+      const side = slot === 1 ? -towardsCentre : towardsCentre;
+      let px = at.x + side * 40 * k - (side < 0 ? w : 0);
+      let py = at.y - h / 2;
+      if (slot >= 2) {
+        px = at.x - w / 2;
+        py = slot === 2 ? at.y - 40 * k - h : at.y + 40 * k;
+      }
+      px = Math.min(field.x + field.w - w - 6, Math.max(field.x + 6, px));
+      py = Math.min(field.y + field.h - h - 30 * k, Math.max(field.y + top * k + this.drop, py));
+      return { x: px, y: py };
+    };
+    // The aim is a line out of the ship: the card steps aside when it would sit on it, and stays there until that place is in the way too.
+    const aimed = (slot: number): boolean => {
+      const pos = place(slot);
+      return rayHitsRect(at, aimDirection(p.angle), AIM_CLEAR * k, pos.x - 8 * k, pos.y - 8 * k, w + 16 * k, h + 16 * k);
+    };
+    let slot = this.readoutSlot.id === p.id ? this.readoutSlot.slot : 0;
+    if (dodge && aimed(slot)) slot = [0, 1, 2, 3].find((s) => !aimed(s)) ?? slot;
+    if (!dodge) slot = 0;
+    const target = place(slot);
+    // It glides to its new place rather than jumping, but starts from the right one when it was not on screen a moment ago.
+    const fresh = this.readoutSlot.id !== p.id || this.time - this.readoutSlot.seen > 0.25;
+    const dt = Math.max(0, Math.min(0.1, this.time - this.readoutSlot.seen));
+    const glide = fresh ? 1 : Math.min(1, dt * 16);
+    const x = fresh ? target.x : this.readoutSlot.x + (target.x - this.readoutSlot.x) * glide;
+    const y = fresh ? target.y : this.readoutSlot.y + (target.y - this.readoutSlot.y) * glide;
+    this.readoutSlot = { id: p.id, slot, x, y, seen: this.time };
 
     ctx.fillStyle = rgba(COLORS.plate, 0.78);
     ctx.fillRect(x, y, w, h);
@@ -608,7 +637,7 @@ export class Hud {
     this.drawPipRow(t('daily.hud.targets'), right, top + 54 * k, match.targetsTotal, match.targetsLeft, 'diamond', COLORS.danger);
     this.drawPipRow(t('daily.hud.shots'), right, top + 72 * k, match.spec.shots, match.shotsLeft, 'dot', COLORS.bone);
 
-    if (match.phase === 'aiming' && match.current >= 0) this.drawReadout(match, match.pilot, this.shipPos(match.current));
+    if (match.phase === 'aiming' && match.current >= 0) this.drawReadout(match, match.pilot, this.shipPos(match.current), opts.aimCardDodge);
     if (match.phase === 'roundOver' && match.summary) this.drawChallengeBanner(match);
     this.drawHint(match, opts.touch);
   }
@@ -1033,6 +1062,9 @@ export class Hud {
     });
   }
 }
+
+/** How far out of the ship the aim line counts as the player's view of the shot (px at scale 1): what the aim card must not cover. */
+const AIM_CLEAR = 420;
 
 /** "Player 1 ▸ CPU 3  +1410  Swing-by · Bande ×1,88" as coloured pieces. */
 function killSegments(match: Match, r: KillRecord): Segment[] {

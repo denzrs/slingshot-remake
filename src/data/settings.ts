@@ -19,6 +19,8 @@ export interface Settings extends RoomRules {
   look: Look;
   contours: boolean;
   particles: boolean;
+  /** The card with the angle and power steps aside when the aim line would run over it. */
+  aimCardDodge: boolean;
   /** How far the sparks of explosions and wreckage coast before they come to rest. */
   debris: Debris;
   /** The title screen and menus show a CPU match playing behind them; off leaves the plate empty. */
@@ -44,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   look: 'classic',
   contours: true,
   particles: true,
+  aimCardDodge: true,
   debris: 'medium',
   menuBackground: true,
   statsTicker: true,
@@ -70,7 +73,7 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
-      for (const key of ['contours', 'particles', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'menuSounds', 'gameSounds'] as const) {
+      for (const key of ['contours', 'particles', 'aimCardDodge', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'menuSounds', 'gameSounds'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
       if (!isLook(s.look)) s.look = DEFAULT_SETTINGS.look;
