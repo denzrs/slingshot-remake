@@ -2728,6 +2728,39 @@ fn a_new_game_in_the_room_starts_the_state_sequence_over() {
 }
 
 #[test]
+fn the_host_ends_a_running_game_and_the_room_waits_again() {
+    let mut rooms = RoomManager::new();
+    let (room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);
+
+    // A guest has no say, and the game goes on.
+    rooms.handle(2, &json!({"type":"end_game"}));
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "Only the room host can end the game"
+    );
+    assert_eq!(rooms.rooms[&room_id].status.as_str(), "playing");
+
+    rooms.handle(1, &json!({"type":"end_game"}));
+    for rx in [&mut host_rx, &mut guest_rx] {
+        let update = take_type(&drain_json(rx), "room_update");
+        assert_eq!(update["room"]["status"], "waiting");
+        assert_eq!(update["room"]["players"].as_array().unwrap().len(), 2);
+        assert_eq!(update["room"]["players"][1]["ready"], false);
+        assert_eq!(update["notice"], "The host ended the game");
+    }
+
+    // Nothing is running any more: a second call is refused, and the room can start again.
+    rooms.handle(1, &json!({"type":"end_game"}));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "No game is running"
+    );
+    rooms.handle(2, &json!({"type":"ready","ready":true}));
+    rooms.handle(1, &json!({"type":"start_game"}));
+    assert_eq!(rooms.rooms[&room_id].status.as_str(), "playing");
+}
+
+#[test]
 fn a_seat_token_is_found_without_looking_through_the_rooms_and_forgotten_with_its_room() {
     let mut rooms = RoomManager::new();
     let (room_id, mut host_rx, mut guest_rx) = started_room(&mut rooms, None, false);

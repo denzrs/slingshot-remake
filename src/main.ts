@@ -413,6 +413,9 @@ const app: App = {
     if (entry) menu.push(() => lobby);
     else menu.open(() => lobby);
   },
+  backToLobby() {
+    session?.endGame();
+  },
   leaveOnlineRoom() {
     session?.leaveRoom();
     match?.dispose();

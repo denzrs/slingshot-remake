@@ -78,6 +78,31 @@ impl RoomManager {
         self.begin_game(&room_id);
     }
 
+    /// The host ends a running game, or sends the room back from its results: everybody lands in the
+    /// waiting room again, with the same seats and rules, and nobody is ready.
+    pub(super) fn end_game(&mut self, conn: u64) {
+        let Some(membership) = self.memberships.get(&conn) else {
+            self.error(conn, "Only the room host can end the game");
+            return;
+        };
+        let (room_id, is_host) = (membership.room_id.clone(), membership.player_id == 0);
+        if !is_host {
+            self.error(conn, "Only the room host can end the game");
+            return;
+        }
+        let playing = self
+            .rooms
+            .get(&room_id)
+            .is_some_and(|room| room.status == RoomStatus::Playing);
+        if !playing {
+            self.error(conn, "No game is running");
+            return;
+        }
+        self.reset_to_waiting(&room_id);
+        self.broadcast_room_update(&room_id, Some("The host ended the game"));
+        self.broadcast_lobby();
+    }
+
     pub(super) fn begin_game(&mut self, room_id: &str) {
         let Some(room) = self.rooms.get_mut(room_id) else {
             return;
