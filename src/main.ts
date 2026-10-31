@@ -169,6 +169,7 @@ function wire(m: Match): void {
       case 'shotdown':
         effects.intercepted(e.x, e.y, POWER_UP_COLORS.defense, color(e.player), e.vx, e.vy);
         if (audible) sound.intercepted();
+        if (e.points > 0) effects.callout(`${t('hud.intercepted')} +${e.points}`, e.x, e.y - 14, POWER_UP_COLORS.defense, true);
         break;
       case 'split':
         effects.split(e.x, e.y, POWER_UP_COLORS.splitter);

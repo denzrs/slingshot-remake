@@ -1,5 +1,6 @@
 import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
 import type { Avatar } from '../platform/avatars';
+import { interceptPoints } from '../sim/scoring';
 import { AIM, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE, type KillSource, type SuddenDeathKind } from '../sim/config';
 import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
@@ -174,8 +175,8 @@ export type GameEvent =
   | { type: 'defenseMiss'; player: number; x: number; y: number }
   /** An armor-piercing shot wrecked a planetary defense (`player` set it, `by` fired the shot). */
   | { type: 'defenseWrecked'; player: number; by: number; x: number; y: number }
-  /** A planetary defense shot a flying shot down. */
-  | { type: 'shotdown'; player: number; x: number; y: number; vx: number; vy: number }
+  /** A planetary defense shot a flying shot down, and what that paid its owner. */
+  | { type: 'shotdown'; player: number; x: number; y: number; vx: number; vy: number; points: number }
   | { type: 'split'; player: number; x: number; y: number }
   | { type: 'shield'; ship: number; x: number; y: number }
   | { type: 'kill'; record: KillRecord }
@@ -1582,9 +1583,13 @@ export abstract class Match {
         break;
       }
       case 'shotdown': {
-        this.emit({ type: 'shotdown', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy });
         const d = volley.world.defenses[end.defense];
-        if (d && live) this.record((book) => bump(book.intercepts, d.owner));
+        const points = d ? interceptPoints(end.chance) * this.payFactor : 0;
+        this.emit({ type: 'shotdown', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy, points });
+        if (d && live) {
+          this.record((book) => bump(book.intercepts, d.owner));
+          this.players[d.owner].score += points;
+        }
         break;
       }
       case 'clash': {

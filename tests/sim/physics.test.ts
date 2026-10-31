@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FIELD, HORIZON, PHYSICS } from '../../src/sim/config';
 import { cloneWorld, Shot, simulateShot, type Planet, type World } from '../../src/sim/physics';
 import { createRng } from '../../src/sim/rng';
-import { comboMultiplier, scoreChallengeHit, scoreHorizonKill } from '../../src/sim/scoring';
+import { comboMultiplier, interceptPoints, scoreChallengeHit, scoreHorizonKill } from '../../src/sim/scoring';
 import { Volley } from '../../src/sim/volley';
 import { generateWorld } from '../../src/sim/world';
 import { planShotNow } from '../helpers';
@@ -168,6 +168,10 @@ describe('scoring', () => {
     expect(points(2, 50, false)).toBeGreaterThan(points(5, 50, false));
     expect(points(20, 100, false)).toBeGreaterThan(0);
     expect(points(1, 90, true)).toBe(1000);
+  });
+
+  it('pays a defense more for a shot down at worse odds', () => {
+    expect([1, 0.5, 0.25].map(interceptPoints)).toEqual([50, 100, 200]);
   });
 });
 

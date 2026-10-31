@@ -202,8 +202,8 @@ export type ShotEnd =
   | { kind: 'planet'; planet: number }
   /** Which black hole swallowed it, as an index into `world.holes`. */
   | { kind: 'hole'; hole: number }
-  /** Which defense shot it down, as an index into `world.defenses`. */
-  | { kind: 'shotdown'; defense: number }
+  /** Which defense shot it down, as an index into `world.defenses`, and the odds its missile had where it caught the shot. */
+  | { kind: 'shotdown'; defense: number; chance: number }
   | { kind: 'clash'; other: number }
   | { kind: 'lost' }
   | { kind: 'timeout' };
@@ -584,9 +584,10 @@ export class Shot {
       if (missile.chasing) {
         // Wide enough for the two to close in by one step's travel, or a fast pair could jump clean over each other.
         if (Math.hypot(this.x - missile.x, this.y - missile.y) < Math.max(DEFENSE.HIT_RADIUS, (missile.speed + Math.hypot(this.vx, this.vy)) * dt)) {
-          if (missile.roll < defenseChance(d, Math.hypot(missile.x - d.x, missile.y - d.y))) {
+          const chance = defenseChance(d, Math.hypot(missile.x - d.x, missile.y - d.y));
+          if (missile.roll < chance) {
             this.missiles.splice(k, 1);
-            return this.finish({ kind: 'shotdown', defense: missile.defense });
+            return this.finish({ kind: 'shotdown', defense: missile.defense, chance });
           }
           this.lose(missile, k);
         } else if (missile.age > DEFENSE.MISSILE_LIFE || Math.hypot(missile.x - d.x, missile.y - d.y) > d.radius * 1.5) {

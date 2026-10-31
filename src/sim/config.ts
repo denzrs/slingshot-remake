@@ -114,6 +114,8 @@ export const SCORING = {
   BASE: 1000,
   /** A defense's stray missile hitting an enemy: what its owner gets, in place of the base score. */
   COLLATERAL: 500,
+  /** A defense shooting a shot down pays its owner this divided by the odds its missile had: 50 at a sure hit, 100 at one in two, 200 at one in four. */
+  INTERCEPT: 50,
   /** Penalty for destroying your own ship. */
   SELF_HIT: 300,
   /** Classic: bonus for the last ship standing. */
