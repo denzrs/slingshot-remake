@@ -41,6 +41,8 @@ export function pauseScreen(app: App, match: Match | null): Screen {
       onEscape: () => app.resume(),
     };
   }
+  // Online the host can stop the game for everybody; offline, opening the menu already does.
+  const hostPause = app.online && !!match?.canAdvance;
   const daily = app.mode === 'challenge';
   const mode = app.mode === 'classic' || app.mode === 'solar' || app.mode === 'horizon' ? app.mode : null;
   // The way on is the last button, at the right edge, where the eye ends up.
@@ -57,7 +59,10 @@ export function pauseScreen(app: App, match: Match | null): Screen {
     app.online
       ? { kind: 'action', section: 'actions', label: t('multiplayer.leave'), run: () => app.leaveOnlineRoom() }
       : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: () => app.toTitle() },
-    { kind: 'action', section: 'actions', label: t('pause.resume'), primary: true, run: () => app.resume() },
+    ...(hostPause && !match!.pause ? [{ kind: 'action', section: 'actions', label: t('pause.pause'), run: () => (match!.pauseGame(), app.resume()) } satisfies MenuItem] : []),
+    hostPause && match!.pause?.resumeIn === null
+      ? { kind: 'action', section: 'actions', label: t('pause.resumeGame'), primary: true, run: () => (match!.resumeGame(), app.resume()) }
+      : { kind: 'action', section: 'actions', label: t('pause.resume'), primary: true, run: () => app.resume() },
   ];
   return {
     build: () => menuPage({

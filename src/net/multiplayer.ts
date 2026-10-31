@@ -322,6 +322,7 @@ export class MultiplayerSession {
       if (input.kind === 'bet' && match.placeBet(this.you.spectatorId ?? -1, input.pick, !!input.round, input.stake ?? 0, true)) this.send({ type: 'input', input });
       return;
     }
+    if (match.pause) return;
     const id = this.you.playerId;
     if (this.isHost) {
       this.applyInput(match, id, input);
@@ -549,6 +550,8 @@ export class MultiplayerSession {
   }
 
   private applyInput(match: NetMatch, id: number, input: ClientInput): void {
+    // The host's pause holds everything: an input that was on its way when it began is dropped.
+    if (match.pause) return;
     if (input.kind === 'adjust') match.adjustPlayer(id, input.dAngle, input.dPower);
     else if (input.kind === 'aim') match.setPlayerAim(id, input.angle, input.power);
     // The announcement of a Mayhem round is the host's to dismiss; a guest's fire key does nothing until the ships are free.

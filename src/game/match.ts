@@ -98,6 +98,8 @@ export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'none
 
 /** How long the people at the table have to answer a vote to skip the round, in seconds of match clock. */
 export const SKIP_VOTE_TIME = 20;
+/** Seconds of 3-2-1 between the host resuming a paused game and play going on. */
+export const PAUSE_COUNTDOWN = 3;
 
 /** An open vote to skip the round: who called it, who has answered how, and when it lapses. */
 export interface SkipVote {
@@ -1192,6 +1194,31 @@ export abstract class Match {
 
   // ————————————————————————————— Skipping a round —————————————————————————————
 
+  /**
+   * The host's pause, online only: while it is set nothing moves anywhere (no clocks, no shots, no CPUs) and no input is taken.
+   * `resumeIn` is null while the game waits for the host, then the seconds of the 3-2-1 left before play goes on.
+   * It rides along in the snapshot, so the guests and the stands see it too.
+   */
+  pause: { resumeIn: number | null } | null = null;
+
+  /** Host only: stop the game for everybody until it is resumed. */
+  pauseGame(): void {
+    if (this.canAdvance && this.online && !this.replaying && !this.pause) this.pause = { resumeIn: null };
+  }
+
+  /** Host only: start the countdown that ends the pause. */
+  resumeGame(): void {
+    if (this.pause && this.pause.resumeIn === null) this.pause = { resumeIn: PAUSE_COUNTDOWN };
+  }
+
+  private tickPause(dt: number): void {
+    const pause = this.pause;
+    if (!pause || pause.resumeIn === null) return;
+    // A new object each time: the sync sends a field that changed, and compares it by value.
+    const left = pause.resumeIn - dt;
+    this.pause = left > 0 ? { resumeIn: left } : null;
+  }
+
   /** The vote to skip the round that is open, if any. Online only: offline the player simply skips. */
   skipVote: SkipVote | null = null;
 
@@ -1287,6 +1314,7 @@ export abstract class Match {
 
   /** Space / "continue": next round, final screen, or a new match. */
   advance(): void {
+    if (this.pause) return;
     if (this.phase === 'killcam') {
       if (!this.killcam.active!.recording && this.phaseTime > 0.3) this.endKillcam();
       return;
@@ -1306,6 +1334,7 @@ export abstract class Match {
 
   update(dt: number): void {
     if (this.disposed) return;
+    if (this.pause) return this.tickPause(dt);
     this.clock += dt;
     this.phaseTime += dt;
     if (this.notice && this.clock - this.notice.at > 1.4) this.notice = null;
@@ -1448,7 +1477,7 @@ export abstract class Match {
    */
   extrapolate(dt: number): void {
     const volley = this.volley;
-    if (this.phase !== 'flying' || !volley) return;
+    if (this.pause || this.phase !== 'flying' || !volley) return;
     this.phaseTime += dt;
     this.simClock += dt * this.flightSpeed;
     while (this.simClock >= PHYSICS.DT && !volley.done) {

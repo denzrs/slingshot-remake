@@ -541,6 +541,39 @@ html.upright #clip-save {
   min-height: 36px;
 }
 
+/* The host has paused an online game: what it says, and the 3-2-1 before play goes on. */
+#pause-banner[hidden] {
+  display: none;
+}
+
+#pause-banner {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  text-align: center;
+  background: rgb(11 26 51 / 0.55);
+  color: var(--bone);
+  pointer-events: none;
+}
+
+#pause-banner .pause-banner__title {
+  font: 600 clamp(20px, 4vw, 32px)/1.2 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+#pause-banner .pause-banner__hint {
+  color: var(--bone-dim);
+  font: 14px/1.3 var(--font-mono);
+}
+
+#pause-banner .pause-banner__count {
+  font: 700 clamp(72px, 16vw, 160px)/1 var(--font-mono);
+}
+
 /* How many people are watching, for everybody who is not in the stands. */
 #stands-badge[hidden] {
   display: none;
