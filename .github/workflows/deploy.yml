@@ -48,7 +48,8 @@ jobs:
       - run: npm test
 
   server-x86_64:
-    needs: test
+    # Builds beside the tests, not after them: nothing ships on this job alone (the relay deploy, the Pages deploy and the
+    # release all also wait for `test`, directly or through `build`), so a red `test` still stops everything.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -64,7 +65,7 @@ jobs:
           CC_x86_64_unknown_linux_musl: musl-gcc
         run: |
           sudo apt-get update
-          sudo apt-get install --yes musl-tools
+          sudo apt-get install --yes --no-install-recommends musl-tools
           cargo build --locked --release --target x86_64-unknown-linux-musl
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -331,7 +332,7 @@ jobs:
       - name: Determine version
         id: version
         # A pushed tag is released as it is. Otherwise: the tag on HEAD if there is one (already released,
-        # nothing to do), else the next minor (or major, see [major] below; or patch, when only src/platform/i18n.ts changed) after the latest tag, which the release job will create.
+        # nothing to do), else the next minor (or major, see [major] below; or patch, when only UI copy, Markdown files, GitHub Actions files or tests changed) after the latest tag, which the release job will create.
         run: |
           semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
           release=false
@@ -350,8 +351,8 @@ jobs:
               # A commit since the latest tag with [major] in its message makes it the next major instead.
               if git log --format=%B "$latest..HEAD" 2>/dev/null | grep -qiF '[major]'; then
                 tag="v$((major + 1)).0.0"
-              # Only the UI copy changed: a patch release.
-              elif [ "$changed" = src/platform/i18n.ts ]; then
+              # Only the UI copy, Markdown files, GitHub Actions files (.github/) or tests (any tests/ folder) changed: a patch release.
+              elif [ -n "$changed" ] && [ -z "$(printf '%s\n' "$changed" | grep -vE '^src/platform/i18n\.ts$|\.md$|^\.github/|(^|/)tests?/')" ]; then
                 tag="v$major.$minor.$((patch + 1))"
               else
                 tag="v$major.$((minor + 1)).0"

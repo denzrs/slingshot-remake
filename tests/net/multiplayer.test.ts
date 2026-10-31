@@ -218,6 +218,14 @@ async function framesUntil(host: Client, guest: Client, done: () => boolean, mos
   for (let i = 0; i < most && !done(); i++) await frame(host, guest);
 }
 
+/**
+ * Runs `frame` until `done` holds. A guest's input still has to cross the relay to the host, and a fixed number of frames
+ * only waits for the host's state to reach the guests, not for that: on a loaded machine the frames win the race.
+ */
+async function frameUntil(frame: () => Promise<void>, done: () => boolean, limit = 300): Promise<void> {
+  for (let i = 0; i < limit && !done(); i++) await frame();
+}
+
 describe('online games', () => {
   it('tracks when the room list is ready and when it is being refreshed', async () => {
     const session = await connectSession();
@@ -901,7 +909,7 @@ describe('the oracle online', () => {
     for (let i = 0; i < 60 && ben.match().players[1].score !== 400; i++) await tick(everybody);
     expect(ben.match().players[1].score).toBe(400);
     ben.session.input({ kind: 'bet', pick: 2, round: true, stake: 200 });
-    await tick(everybody, 5);
+    await frameUntil(() => tick(everybody), () => everybody.every((client) => client.match().oracle.pot === 200 && client.match().players[1].score === 200));
     for (const client of everybody) {
       expect(client.match().oracle.stakeOf(1)).toBe(200);
       expect(client.match().oracle.pot).toBe(200);
@@ -917,7 +925,7 @@ describe('the oracle online', () => {
     for (let i = 0; i < 60 && dora.match().players[3].score !== 800; i++) await tick(everybody);
     expect(dora.match().players[3].score).toBe(800);
     dora.session.input({ kind: 'bet', pick: 0, round: true, stake: 400 });
-    await tick(everybody, 5);
+    await frameUntil(() => tick(everybody), () => everybody.every((client) => client.match().oracle.pot === 600));
     for (const client of everybody) expect(client.match().oracle.pot).toBe(600);
     // A stake the tampered client has no points for is not taken.
     ben.session.client.send({ type: 'input', input: { kind: 'bet', pick: 2, round: true, stake: 100 } });
@@ -960,7 +968,7 @@ describe('the oracle online', () => {
     for (let i = 0; i < 60 && ben.match().players[1].score !== 400; i++) await tick(everybody);
     expect(ben.match().players[1].score).toBe(400);
     ben.session.input({ kind: 'bet', pick: 2, round: true, stake: 200 });
-    await tick(everybody, 5);
+    await frameUntil(() => tick(everybody), () => everybody.every((client) => client.match().oracle.roundTippers.has(1)));
     for (const client of everybody) {
       expect([...client.match().oracle.roundTippers]).toEqual([1]);
       expect(client.match().oracle.pot).toBe(0);
@@ -1437,7 +1445,7 @@ describe('spectators online', () => {
     const [fanId, gusId] = [fan.session.you.spectatorId!, gus.session.you.spectatorId!];
     fan.session.input({ kind: 'bet', pick: 1, round: true, stake: 250 });
     gus.session.input({ kind: 'bet', pick: 0, round: true, stake: 120 });
-    await tick(everybody, 5);
+    await frameUntil(() => tick(everybody), () => [hm, fan.match(), gus.match()].every((watcher) => watcher.stands.pot === 370 && watcher.crowd.seat(fanId)?.balance === 250 && watcher.stands.roundTippers.has(gusId)));
     // The odds are the pot over what is on a side, and every screen can work them out.
     for (const watcher of [hm, fan.match(), gus.match()]) {
       expect(watcher.stands.pot).toBe(370);
@@ -1485,6 +1493,8 @@ describe('statistics and replays', () => {
     await waitForSession(hostSession, () => hostSession.room?.players.length === 3);
     guestSession.setReady(true);
     await waitForSession(hostSession, () => hostSession.room!.players.slice(1).every((player) => player.ready));
+    // The relay has kept the games of the tests before this one, newest first: only a game that began from here on is ours.
+    const startedAt = Math.floor(Date.now() / 1000);
     hostSession.startGame();
     await waitForSession(hostSession, () => hostMatch !== null);
     const match = hostMatch!;
@@ -1525,7 +1535,7 @@ describe('statistics and replays', () => {
     for (let i = 0; i < 100 && !game; i++) {
       await new Promise((resolve) => setTimeout(resolve, 100));
       const overview = await board().overview();
-      game = overview.games.find((g) => g.replay);
+      game = overview.games.find((g) => g.replay && g.at >= startedAt);
     }
     expect(game, 'the game is on the list and can be flown again').toBeDefined();
     expect(game!.rounds).toBe(2);
@@ -1536,7 +1546,7 @@ describe('statistics and replays', () => {
     // Fly it from what the relay has: the same ships end up with the same scores.
     const again = netMatch({ ...data!, players: data!.seats }, DEFAULT_SETTINGS, { script: { turns: data!.turns } })!;
     for (let i = 0; i < 60_000 && again.replayState === 'playing' && again.phase !== 'gameOver'; i++) again.update(dt);
-    expect(again.replayState).not.toBe('drifted');
+    expect(again.replayState, `replay of ${data!.turns.length} turns, ${data!.seats.length} seats: the host ended in round ${match.round}, the replay in round ${again.round} (${again.phase})`).not.toBe('drifted');
     expect(again.phase).toBe('gameOver');
     expect(again.players.map((p) => Math.round(p.score))).toEqual(match.players.map((p) => Math.round(p.score)));
     expect(again.round).toBe(match.round);

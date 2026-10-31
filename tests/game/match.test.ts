@@ -7,8 +7,12 @@ import { AIM, FIELD, TRAIL_FADE } from '../../src/sim/config';
 import { cloneSettings, DEFAULT_SETTINGS, type Seat } from '../../src/data/settings';
 
 /** Run a CPU-only match headlessly until the first round is decided. */
-function playRound(mode: GameMode, seats: Seat[], maxSeconds = 600): Match {
-  const match = createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 1, seats }, { seats });
+/**
+ * Plays a round of CPUs to its end. Seeded, with the CPUs thinking a fixed amount instead of for a stretch of the clock:
+ * a CPU on a busy machine would get fewer tries per shot and aim worse, and the counts these tests make would move with the load.
+ */
+function playRound(mode: GameMode, seats: Seat[], seed = 1, maxSeconds = 600): Match {
+  const match = createMatch(mode, { ...DEFAULT_SETTINGS, rounds: 1, seats }, { seats, seed, deterministicCpu: true });
   const dt = 1 / 30;
   for (let t = 0; t < maxSeconds && match.phase !== 'roundOver'; t += dt) {
     match.update(dt);
@@ -286,7 +290,7 @@ describe('event horizon match', () => {
 
   it('always ends: the growing hole guarantees a decision', () => {
     for (let i = 0; i < 3; i++) {
-      const m = playRound('horizon', cpus(4));
+      const m = playRound('horizon', cpus(4), i + 1);
       expect(m.phase).toBe('roundOver');
       expect(m.alive.length).toBeLessThanOrEqual(1);
     }
@@ -296,7 +300,7 @@ describe('event horizon match', () => {
     let kills = 0;
     let selfKills = 0;
     for (let i = 0; i < 4; i++) {
-      const m = playRound('horizon', cpus(5, 'hard'));
+      const m = playRound('horizon', cpus(5, 'hard'), i + 1);
       kills += m.killFeed.filter((k) => k.killer !== null).length;
       selfKills += m.killFeed.filter((k) => k.self).length;
     }
