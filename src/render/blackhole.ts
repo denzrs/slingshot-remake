@@ -38,14 +38,34 @@ export function drawLens(ctx: CanvasRenderingContext2D, hole: BlackHole, backdro
   ctx.restore();
 }
 
+/** How a look changes the hole: both parts draw in the disk's own tilted frame, the horizon at the middle. */
+export interface BlackHoleStyle {
+  /** Draws the hole in place of the engraved one. False when it cannot (an image that has not loaded), and the engraved one is drawn. */
+  body?(ctx: CanvasRenderingContext2D, R: number, time: number): boolean;
+  /** Light over the finished hole, drawn after `body`, or after the engraved hole. */
+  glow?(ctx: CanvasRenderingContext2D, R: number, time: number): void;
+}
+
 /**
  * The hole itself: accretion disk (back half), the black horizon, photon ring,
  * the lensed far side of the disk arching over the top, then the disk's front half.
  */
-export function drawBlackHole(ctx: CanvasRenderingContext2D, hole: BlackHole, time: number): void {
+export function drawBlackHole(ctx: CanvasRenderingContext2D, hole: BlackHole, time: number, style: BlackHoleStyle = {}): void {
   const R = hole.radius;
   ctx.save();
   ctx.translate(hole.x, hole.y);
+
+  if (style.body) {
+    ctx.save();
+    ctx.rotate(TILT);
+    const drawn = style.body(ctx, R, time);
+    if (drawn) style.glow?.(ctx, R, time);
+    ctx.restore();
+    if (drawn) {
+      ctx.restore();
+      return;
+    }
+  }
 
   const halo = ctx.createRadialGradient(0, 0, R, 0, 0, R * 5);
   halo.addColorStop(0, rgba(COLORS.sodium, 0.22));
@@ -78,6 +98,7 @@ export function drawBlackHole(ctx: CanvasRenderingContext2D, hole: BlackHole, ti
   ctx.stroke();
 
   drawDisk(ctx, R, time, 0, Math.PI);
+  style.glow?.(ctx, R, time);
   ctx.restore();
 }
 

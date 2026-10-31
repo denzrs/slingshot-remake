@@ -1,30 +1,28 @@
-import { AIM, COLORS, FIELD, FONTS, HORIZON, NEBULA, PHYSICS, SOLAR, SUDDEN_DEATH, WORMHOLE } from '../sim/config';
+import { COLORS, FIELD, FONTS, NEBULA, PHYSICS, SOLAR, SUDDEN_DEATH, WORMHOLE } from '../sim/config';
 import type { Match, Scene, Trail } from '../game';
 import { t } from '../platform/i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../game/scorecard';
-import { aimDirection, inPowerUpNebula, isWormholeJump, nextWormholeId, stormCloudAt, type Wormhole, type World } from '../sim/physics';
+import { aimDirection, inPowerUpNebula, nextWormholeId, stormCloudAt, type World } from '../sim/physics';
 import { POWER_UP, PREVIEW_POINTS } from '../sim/powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
 import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from './orientation';
-import { drawNeutronStar, drawSun } from './sun';
 import { orbitOf, solarCenter } from '../sim/world';
-import { drawBlackHole, drawDangerRing, drawLens } from './blackhole';
+import { drawDangerRing, drawLens } from './blackhole';
 import { rgba } from './color';
 import { renderContours } from './contours';
 import type { Effects } from './effects';
 import { Hud } from './hud';
 import type { OracleTap } from './oracle';
 import type { SkipAnswer } from './skip-vote';
-import { getLook, isRefined, type Look } from '../data/look';
+import { getLook, type Look } from '../data/look';
 import { LIGHT, type PlanetSprite } from './planet-common';
-import { renderPlanet } from './planets';
-import { drawRefinedShip, SHIP_HULL } from './ship';
-import { drawNebula } from './nebula';
-import { drawStormBurst, drawStormCloud, drawStormSparks, stormFlare } from './storm';
-import { drawPortal, drawWormhole } from './wormhole';
-import { defensePlanet, defenseView, drawDefense, drawInterception } from './defense';
-import { drawPowerUpSymbol, portalColor, POWER_UP_COLORS } from './powerup-art';
+import { stormFlare } from './storm';
+import { defensePlanet, defenseView } from './defense';
+import { classic } from './looks/classic';
+import { painterFor, type LookPainter } from './looks';
+import { LOCATE_PING } from './looks/painter';
+import { portalColor, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
   hud: boolean;
@@ -39,6 +37,14 @@ export interface DrawOptions {
   /** The aim card steps aside when the aim line would run over it. */
   aimCardDodge: boolean;
 }
+
+/** The CSS-pixel box the field is fitted into: the window, unless a page draws several fields (see `debug/looks-gallery.ts`). */
+export interface Viewport {
+  width: number;
+  height: number;
+}
+
+const windowViewport = (): Viewport => ({ width: window.innerWidth, height: window.innerHeight });
 
 export class Renderer {
   view!: View;
@@ -56,19 +62,20 @@ export class Renderer {
   private readonly trailIds = new WeakMap<Trail, number>();
   private spritePs = 0;
   private spriteLook: Look = getLook();
+  /** How the chosen look draws each element, read once a frame so a frame is never drawn in two looks. */
+  private painter: LookPainter = classic;
   private time = 0;
   /** When each power-up pickup was first drawn, for its pop-in. */
   private readonly pickupSeen = new Map<number, number>();
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
+  constructor(private readonly canvas: HTMLCanvasElement, private readonly viewport: () => Viewport = windowViewport) {
     this.ctx = canvas.getContext('2d')!;
     this.hud = new Hud(this.ctx);
     this.resize();
   }
 
   resize(): void {
-    const cssWidth = window.innerWidth;
-    const cssHeight = window.innerHeight;
+    const { width: cssWidth, height: cssHeight } = this.viewport();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const coarse = window.matchMedia('(pointer: coarse)').matches;
     // Held upright a phone gets its own layout: HUD on top, the field, the thumbs' controls underneath.
@@ -131,7 +138,8 @@ export class Renderer {
   /** Catches window resizes, zoom and moving to a screen with another pixel ratio. */
   private resizeIfNeeded(): void {
     const v = this.view;
-    if (v.cssWidth !== window.innerWidth || v.cssHeight !== window.innerHeight || v.dpr !== Math.min(window.devicePixelRatio || 1, 2)) {
+    const { width, height } = this.viewport();
+    if (v.cssWidth !== width || v.cssHeight !== height || v.dpr !== Math.min(window.devicePixelRatio || 1, 2)) {
       this.resize();
     }
   }
@@ -150,6 +158,7 @@ export class Renderer {
     this.resizeIfNeeded();
     this.emptyDrawn = false;
     this.time += dt;
+    this.painter = painterFor(getLook());
     const { ctx } = this;
     const view = this.view;
     const fieldView = opts.fullScreen ? this.fullScreenView() : view;
@@ -184,7 +193,7 @@ export class Renderer {
     this.drawSpotlight(match, scene);
     this.drawShips(match, scene);
     this.drawPowerUps(match, scene);
-    effects.draw(ctx);
+    effects.draw(ctx, this.painter.effects);
     ctx.restore();
 
     if (effects.flash > 0) {
@@ -309,24 +318,24 @@ export class Renderer {
       ctx.globalAlpha = 1;
       const sun = world.planets.find((p) => p.sun);
       for (const n of world.nebulae) {
-        if (n.storm && sun) drawStormCloud(ctx, n, sun, this.stormAge(world, n.seed), this.time, this.stormDissolve(n));
-        else drawNebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
+        if (n.storm && sun) this.painter.stormCloud(ctx, n, sun, this.stormAge(world, n.seed), this.time, this.stormDissolve(n));
+        else this.painter.nebula(ctx, n, POWER_UP_COLORS.nebula, this.time);
       }
-      if (sun) drawStormBurst(ctx, sun, this.stormAge(world));
+      if (sun) this.painter.stormBurst(ctx, sun, this.stormAge(world));
       ctx.globalAlpha = 1;
     }
 
-    if (this.spritePs !== ps || this.spriteLook !== getLook() || this.sprites.size > 64) {
+    if (this.spritePs !== ps || this.spriteLook !== this.painter.id || this.sprites.size > 64) {
       this.sprites.clear();
       this.spritePs = ps;
-      this.spriteLook = getLook();
+      this.spriteLook = this.painter.id;
     }
     const sun = match.mode === 'solar' ? world.planets.find((q) => q.sun) : undefined;
     for (const p of showPlanets ? world.planets : []) {
       if (p.sun) continue;
       let sprite = this.sprites.get(p.seed);
       if (!sprite) {
-        sprite = renderPlanet(p, ps);
+        sprite = this.painter.planet(p, ps);
         this.sprites.set(p.seed, sprite);
       }
       const eaten = scene.camera ? 0 : match.devourProgress(p.seed);
@@ -340,7 +349,7 @@ export class Renderer {
         ctx.scale((1 + eaten * 1.8) * shrink, (1 - eaten * 0.6) * shrink);
         sprite.draw(ctx, 0, 0, ps, this.time);
         ctx.restore();
-      } else if (sun && !isRefined()) {
+      } else if (sun && this.painter.planetsTurnToSun) {
         // A classic sprite is painted lit from one side; turn it so that side faces the sun it orbits.
         ctx.save();
         ctx.translate(p.x, p.y);
@@ -360,15 +369,15 @@ export class Renderer {
     }
     ctx.globalAlpha = 1;
 
-    world.defenses.forEach((d, i) => d.wrecked || drawDefense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, 1, defenseView(scene.volley?.shots ?? [], d, i), false, !showPlanets));
+    world.defenses.forEach((d, i) => d.wrecked || this.painter.defense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, 1, defenseView(scene.volley?.shots ?? [], d, i), false, !showPlanets));
     for (const p of world.planets) {
       if (!p.sun) continue;
-      if (p.neutron) drawNeutronStar(ctx, p, this.time, this.remnantAge(p.seed), alpha);
-      else drawSun(ctx, p, this.time, alpha, stormFlare(this.stormAge(world)));
+      if (p.neutron) this.painter.neutronStar(ctx, p, this.time, this.remnantAge(p.seed), alpha);
+      else this.painter.sun(ctx, p, this.time, alpha, stormFlare(this.stormAge(world)));
     }
-    for (const hole of world.holes) drawBlackHole(ctx, hole, this.time);
+    for (const hole of world.holes) this.painter.blackHole(ctx, hole, this.time);
     // Each wormhole has a colour of its own, shared by its two portals.
-    for (const w of world.wormholes) drawWormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
+    for (const w of world.wormholes) this.painter.wormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
     const next = match.nextHoleRadius;
     if (next && primary && !scene.camera) drawDangerRing(ctx, primary, next, this.time);
   }
@@ -389,25 +398,9 @@ export class Renderer {
     ctx.globalAlpha = Math.max(0, fade);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.strokeStyle = rgba(color, 0.22);
-    ctx.lineWidth = 8;
-    strokePolyline(ctx, part);
-    ctx.strokeStyle = rgba(COLORS.bone, 0.95);
-    ctx.lineWidth = 2.4;
-    strokePolyline(ctx, part);
+    this.painter.spotlightPath(ctx, part, color);
     const at = lit.award.at;
-    if (at && drawn >= 1) {
-      const pulse = (lit.age * 1.6) % 1;
-      ctx.strokeStyle = rgba(color, 1 - pulse);
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(at.x, at.y, 8 + pulse * 18, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = rgba(COLORS.bone, 0.95);
-      ctx.beginPath();
-      ctx.arc(at.x, at.y, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    if (at && drawn >= 1) this.painter.spotlightMark(ctx, at.x, at.y, color, (lit.age * 1.6) % 1);
     ctx.restore();
   }
 
@@ -418,7 +411,7 @@ export class Renderer {
       if (id === undefined) this.trailIds.set(d.trail, (id = nextTrailId++));
       return `${id}:${Math.min(d.rank, 2)}`;
     });
-    const key = `${ps}|${ids.join(',')}`;
+    const key = `${ps}|${this.painter.id}|${ids.join(',')}`;
     const cached = this.trailLayer;
     if (cached && cached.key === key && cached.world === match.world) return cached.canvas;
     const canvas = cached?.canvas ?? document.createElement('canvas');
@@ -428,9 +421,15 @@ export class Renderer {
     c.setTransform(ps, 0, 0, ps, TRAIL_MARGIN * ps, TRAIL_MARGIN * ps);
     c.lineJoin = 'round';
     c.lineCap = 'round';
-    strokeTrails(c, match, drawn as { trail: Trail; rank: number; fade: number }[]);
+    this.strokeTrails(c, match, drawn as { trail: Trail; rank: number; fade: number }[]);
     this.trailLayer = { key, world: match.world, canvas };
     return canvas;
+  }
+
+  /** Strokes finished trails, each in its owner's colour. */
+  private strokeTrails(ctx: CanvasRenderingContext2D, match: Match, drawn: readonly { trail: Trail; rank: number; fade: number }[]): void {
+    for (const { trail, rank, fade } of drawn) this.painter.trail(ctx, trail.points, match.world.wormholes, match.players[trail.owner].color, rank, fade);
+    ctx.setLineDash([]);
   }
 
   private drawTrails(match: Match, scene: Scene, ps: number): void {
@@ -458,32 +457,18 @@ export class Renderer {
       const layer = this.trailLayerFor(match, drawn, ps);
       ctx.drawImage(layer, -TRAIL_MARGIN, -TRAIL_MARGIN, FIELD.width + 2 * TRAIL_MARGIN, FIELD.height + 2 * TRAIL_MARGIN);
     } else {
-      strokeTrails(ctx, match, drawn);
+      this.strokeTrails(ctx, match, drawn);
     }
 
     for (const vs of scene.volley?.shots ?? []) {
       const color = match.players[vs.owner].color;
       const shot = vs.shot;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = vs.plasma ? 1 : 2;
-      if (vs.plasma) ctx.globalAlpha = 0.45;
-      strokePolyline(ctx, vs.trail, match.world.wormholes);
-      ctx.globalAlpha = 1;
-      if (vs.plasma) this.drawPlasmaTrail(vs.trail, match.world.wormholes);
+      this.painter.liveTrail(ctx, vs.trail, match.world.wormholes, color, !!vs.plasma, this.time);
       if (shot.end) continue;
       if (shot.inField) {
         const owner = match.players[vs.owner];
         // A shot that can still be split carries a gold ring.
-        if (match.powerUps && owner.armed && owner.powerUp === 'splitter') {
-          ctx.save();
-          ctx.strokeStyle = POWER_UP_COLORS.splitter;
-          ctx.lineWidth = 1.5;
-          ctx.globalAlpha = 0.55 + 0.45 * Math.sin(this.time * 8);
-          ctx.beginPath();
-          ctx.arc(shot.x, shot.y, 12, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.restore();
-        }
+        if (match.powerUps && owner.armed && owner.powerUp === 'splitter') this.painter.splitterRing(ctx, shot.x, shot.y, this.time);
         // A shot in a nebula pushes against the gas: a ring spreads from it (the wisps it sheds are the Effects').
         if (!vs.plasma && inPowerUpNebula(match.world.nebulae, shot.x, shot.y)) {
           ctx.save();
@@ -496,65 +481,19 @@ export class Renderer {
           ctx.stroke();
           ctx.restore();
         }
-        const glow = ctx.createRadialGradient(shot.x, shot.y, 0, shot.x, shot.y, 9);
-        glow.addColorStop(0, rgba(COLORS.bone, 0.95));
-        glow.addColorStop(0.3, rgba(color, 0.6));
-        glow.addColorStop(1, rgba(color, 0));
-        ctx.fillStyle = glow;
-        ctx.fillRect(shot.x - 9, shot.y - 9, 18, 18);
+        this.painter.shot(ctx, shot.x, shot.y, color, vs.trail, this.time);
         const storm = !vs.plasma ? stormCloudAt(match.world.nebulae, shot.x, shot.y) : undefined;
-        if (storm) drawStormSparks(ctx, shot.x, shot.y, this.time, storm.seed);
+        if (storm) this.painter.stormSparks(ctx, shot.x, shot.y, this.time, storm.seed);
         // A plasma shot is a pulsing cyan blob: a wide soft halo, a wobbling body and a bright core.
-        if (vs.plasma) {
-          ctx.save();
-          const pulse = 1 + 0.12 * Math.sin(this.time * 14);
-          const halo = ctx.createRadialGradient(shot.x, shot.y, 0, shot.x, shot.y, 15 * pulse);
-          halo.addColorStop(0, rgba(POWER_UP_COLORS.plasma, 0.55));
-          halo.addColorStop(1, rgba(POWER_UP_COLORS.plasma, 0));
-          ctx.fillStyle = halo;
-          ctx.fillRect(shot.x - 16, shot.y - 16, 32, 32);
-          ctx.fillStyle = rgba(POWER_UP_COLORS.plasma, 0.9);
-          ctx.beginPath();
-          for (let i = 0; i <= 16; i++) {
-            const a = (i / 16) * Math.PI * 2;
-            const rr = 5.5 * pulse + 1.2 * Math.sin(a * 3 + this.time * 10);
-            if (i === 0) ctx.moveTo(shot.x + Math.cos(a) * rr, shot.y + Math.sin(a) * rr);
-            else ctx.lineTo(shot.x + Math.cos(a) * rr, shot.y + Math.sin(a) * rr);
-          }
-          ctx.closePath();
-          ctx.fill();
-          ctx.fillStyle = rgba('#e6ffff', 0.95);
-          ctx.beginPath();
-          ctx.arc(shot.x, shot.y, 2.4, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
+        if (vs.plasma) this.painter.plasmaShot(ctx, shot.x, shot.y, this.time);
         // An armor-piercing round is an arrowhead pointing where it flies, glowing like the plain shot.
-        if (vs.pierce) {
-          ctx.save();
-          ctx.translate(shot.x, shot.y);
-          ctx.rotate(Math.atan2(shot.vy, shot.vx));
-          ctx.beginPath();
-          ctx.moveTo(13, 0);
-          ctx.lineTo(-6, -4);
-          ctx.lineTo(-3, 0);
-          ctx.lineTo(-6, 4);
-          ctx.closePath();
-          // A wide, faint outline in the owner's colour is the glow: shadowBlur costs far more on a phone.
-          ctx.lineJoin = 'round';
-          ctx.lineWidth = 6;
-          ctx.strokeStyle = rgba(color, 0.35);
-          ctx.stroke();
-          ctx.fillStyle = rgba(COLORS.bone, 0.98);
-          ctx.fill();
-          ctx.restore();
-        }
+        if (vs.pierce) this.painter.piercer(ctx, shot.x, shot.y, Math.atan2(shot.vy, shot.vx), color);
       } else {
         this.drawOffscreenMarker(shot.x, shot.y, color);
       }
     }
     // What the planetary defenses do to the shots they track: the lock-on and the interceptor, over the shots.
-    match.world.defenses.forEach((d, i) => d.wrecked || drawInterception(ctx, match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, defenseView(scene.volley?.shots ?? [], d, i), this.time, match.planetsVisible ? scene.world.planets : []));
+    match.world.defenses.forEach((d, i) => d.wrecked || this.painter.interception(ctx, match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, defenseView(scene.volley?.shots ?? [], d, i), this.time, match.planetsVisible ? scene.world.planets : []));
   }
 
   /** Power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */
@@ -583,21 +522,7 @@ export class Renderer {
       ctx.translate(pick.x, pick.y);
       uprightFrame(ctx);
       ctx.scale(pop, pop);
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 14 + 8 * pulse;
-      ctx.fillStyle = COLORS.plate;
-      ctx.beginPath();
-      ctx.arc(0, 0, 15, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(0, 0, 15, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = color;
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      drawPowerUpSymbol(ctx, pick.kind, 0, 0, 8);
+      this.painter.pickup(ctx, pick.kind, color, this.time, pulse);
       ctx.restore();
       ctx.save();
       ctx.globalAlpha = alpha * Math.min(1, pop);
@@ -613,18 +538,7 @@ export class Renderer {
       // the impact away before it happens.
       const span = POWER_UP.PREVIEW_FADE_AT * (PREVIEW_POINTS - 1);
       const last = Math.min(scene.preview.length / 2 - 1, Math.ceil(span));
-      ctx.save();
-      ctx.strokeStyle = POWER_UP_COLORS.preview;
-      ctx.lineWidth = 1.6;
-      ctx.setLineDash([3, 5]);
-      for (let i = 0; i < last; i++) {
-        ctx.globalAlpha = 0.9 * Math.max(0, 1 - i / span);
-        ctx.beginPath();
-        ctx.moveTo(scene.preview[i * 2], scene.preview[i * 2 + 1]);
-        ctx.lineTo(scene.preview[i * 2 + 2], scene.preview[i * 2 + 3]);
-        ctx.stroke();
-      }
-      ctx.restore();
+      this.painter.previewPath(ctx, scene.preview, last, span, POWER_UP_COLORS.preview);
     }
     // A ship aiming a placement: a marker at the spot — a teleport door, or where a black hole, nebula or planet killer would land — with a line from the ship.
     if (scene.placement?.kind === 'planetkiller' || scene.placement?.kind === 'antigravity') {
@@ -639,15 +553,7 @@ export class Renderer {
       ctx.save();
       ctx.strokeStyle = color;
       ctx.lineCap = 'round';
-      ctx.setLineDash(planet ? [10, 7] : [3, 9]);
-      ctx.lineDashOffset = -this.time * (planet ? 70 : 20);
-      ctx.globalAlpha = planet ? 0.9 : 0.35;
-      ctx.lineWidth = planet ? 2 : 1;
-      ctx.beginPath();
-      ctx.moveTo(from.x + dir.x * 22, from.y + dir.y * 22);
-      ctx.lineTo(from.x + dir.x * length, from.y + dir.y * length);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      this.painter.aimRay(ctx, from.x + dir.x * 22, from.y + dir.y * 22, from.x + dir.x * length, from.y + dir.y * length, !!planet, this.time);
       if (planet) {
         const r = planet.radius + 9 + 3 * pulse;
         ctx.fillStyle = color;
@@ -657,13 +563,7 @@ export class Renderer {
         ctx.fill();
         // Four brackets turning slowly round the planet: it is locked.
         ctx.globalAlpha = 0.95;
-        ctx.lineWidth = 2.5;
-        for (let k = 0; k < 4; k++) {
-          const a = this.time * 0.8 + (k * Math.PI) / 2;
-          ctx.beginPath();
-          ctx.arc(planet.x, planet.y, r, a - 0.32, a + 0.32);
-          ctx.stroke();
-        }
+        this.painter.lockBrackets(ctx, planet.x, planet.y, r, this.time);
         if (kind === 'antigravity') {
           // Rays pushing out, or pulling in when the planet is turned already: what the planet will do to shots.
           const back = !!planet.reversed;
@@ -719,7 +619,7 @@ export class Renderer {
         // one defense, so one already there is marked: this one will replace it.
         const planet = defensePlanet(match.world.planets, target);
         if (planet) {
-          drawDefense(ctx, { x: target.x, y: target.y, radius: planet.radius * POWER_UP.DEFENSE_RADIUS_SHARE }, planet, color, this.time, 1, undefined, true);
+          this.painter.defense(ctx, { x: target.x, y: target.y, radius: planet.radius * POWER_UP.DEFENSE_RADIUS_SHARE }, planet, color, this.time, 1, undefined, true, false);
           const standing = match.world.defenses.find((o) => o.planet === planet.seed && !o.wrecked);
           if (standing) {
             ctx.globalAlpha = 1;
@@ -752,9 +652,7 @@ export class Renderer {
           ctx.setLineDash([]);
           ctx.lineWidth = 2;
         }
-        ctx.beginPath();
-        ctx.arc(target.x, target.y, r + 4 + 2.5 * pulse, 0, Math.PI * 2);
-        ctx.stroke();
+        this.painter.blackHoleGhost(ctx, target.x, target.y, r, pulse, this.time);
         if (blocked) {
           ctx.globalAlpha = 1;
           ctx.font = `700 11px ${FONTS.mono}`;
@@ -800,9 +698,9 @@ export class Renderer {
           ctx.lineTo(target.x, target.y);
           ctx.stroke();
           ctx.restore();
-          drawPortal(ctx, first.x, first.y, facing, WORMHOLE.RADIUS, color, this.time);
+          this.painter.portal(ctx, first.x, first.y, facing, WORMHOLE.RADIUS, color, this.time, 1, 0, 1);
         }
-        drawPortal(ctx, target.x, target.y, first ? facing + Math.PI : facing, WORMHOLE.RADIUS, color, this.time, blocked ? 0.3 : 0.7, 1);
+        this.painter.portal(ctx, target.x, target.y, first ? facing + Math.PI : facing, WORMHOLE.RADIUS, color, this.time, blocked ? 0.3 : 0.7, 1, 1);
         ctx.globalAlpha = 1;
         ctx.font = `700 11px ${FONTS.mono}`;
         ctx.textAlign = 'center';
@@ -818,10 +716,7 @@ export class Renderer {
       } else if (kind === 'nebula') {
         // The reach of the cloud as a plain ring: it must not wobble while the aim moves. The cloud that
         // lands gets its own random outline (its seed is drawn when it is laid).
-        ctx.setLineDash([6, 5]);
-        ctx.beginPath();
-        ctx.arc(target.x, target.y, NEBULA.RADIUS, 0, Math.PI * 2);
-        ctx.stroke();
+        this.painter.nebulaReach(ctx, target.x, target.y, NEBULA.RADIUS);
         ctx.setLineDash([]);
         ctx.globalAlpha *= 0.45;
         ctx.beginPath();
@@ -829,22 +724,7 @@ export class Renderer {
         ctx.stroke();
       } else {
         // The door: a ring with a solid core and a crosshair.
-        ctx.beginPath();
-        ctx.arc(target.x, target.y, 17 + 2.5 * pulse, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(target.x, target.y, 11, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = COLORS.plate;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(target.x - 4, target.y);
-        ctx.lineTo(target.x + 4, target.y);
-        ctx.moveTo(target.x, target.y - 4);
-        ctx.lineTo(target.x, target.y + 4);
-        ctx.stroke();
+        this.painter.teleportGhost(ctx, target.x, target.y, color, pulse, this.time);
       }
       ctx.restore();
     }
@@ -852,66 +732,12 @@ export class Renderer {
     for (const p of match.players) {
       if (!p.powerUp || !p.alive) continue;
       const ship = match.world.ships[p.id];
-      ctx.save();
-      ctx.strokeStyle = POWER_UP_COLORS[p.powerUp];
-      ctx.fillStyle = POWER_UP_COLORS[p.powerUp];
-      ctx.lineWidth = 1.8;
-      ctx.lineCap = 'round';
-      drawPowerUpSymbol(ctx, p.powerUp, ship.x, ship.y - 30, 5);
-      ctx.restore();
+      this.painter.heldSymbol(ctx, p.powerUp, POWER_UP_COLORS[p.powerUp], ship.x, ship.y);
       // A shield is a bubble round the ship.
-      if (p.powerUp === 'shield') {
-        ctx.save();
-        ctx.strokeStyle = POWER_UP_COLORS.shield;
-        ctx.fillStyle = POWER_UP_COLORS.shield;
-        ctx.lineWidth = 1.6;
-        ctx.globalAlpha = 0.5 + 0.2 * pulse;
-        ctx.beginPath();
-        ctx.arc(ship.x, ship.y, 21, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.globalAlpha = 0.07 + 0.05 * pulse;
-        ctx.fill();
-        ctx.restore();
-      }
+      if (p.powerUp === 'shield') this.painter.shield(ctx, ship.x, ship.y, pulse, this.time);
     }
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'start';
-  }
-
-  /** Plasma shot: a tapering cyan ribbon that swells toward the blob, with sparks that drift off the trail and die. */
-  private drawPlasmaTrail(pts: number[], wormholes: readonly Wormhole[]): void {
-    const { ctx } = this;
-    const n = pts.length / 2;
-    if (n < 2) return;
-    const from = Math.max(1, n - 48);
-    ctx.save();
-    ctx.lineCap = 'round';
-    for (let pass = 0; pass < 2; pass++) {
-      for (let k = from; k < n; k++) {
-        if (wormholes.length && isWormholeJump(pts, k * 2, wormholes)) continue;
-        const f = (k - from + 1) / (n - from);
-        ctx.strokeStyle = pass === 0 ? rgba(POWER_UP_COLORS.plasma, 0.22 * f) : rgba('#e6ffff', 0.8 * f * f);
-        ctx.lineWidth = (pass === 0 ? 9 : 2.4) * f;
-        ctx.beginPath();
-        ctx.moveTo(pts[k * 2 - 2], pts[k * 2 - 1]);
-        ctx.lineTo(pts[k * 2], pts[k * 2 + 1]);
-        ctx.stroke();
-      }
-    }
-    // Sparks: every few points a speck sits off the line, drifting sideways as it ages and shrinking away.
-    for (let k = from; k < n; k += 3) {
-      const age = (n - k) / 48;
-      const side = Math.sin(k * 12.9898) > 0 ? 1 : -1;
-      const dx = pts[k * 2] - pts[k * 2 - 2];
-      const dy = pts[k * 2 + 1] - pts[k * 2 - 1];
-      const len = Math.hypot(dx, dy) || 1;
-      const off = side * (2 + age * 9 + 1.5 * Math.sin(this.time * 6 + k));
-      ctx.fillStyle = rgba(POWER_UP_COLORS.plasma, 0.7 * (1 - age));
-      ctx.beginPath();
-      ctx.arc(pts[k * 2] - (dy / len) * off, pts[k * 2 + 1] + (dx / len) * off, 1.8 * (1 - age) + 0.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
   }
 
   /** A planet whose gravity is turned round sends out rings that spread away from it, for as long as it pushes. */
@@ -931,9 +757,7 @@ export class Renderer {
       for (let k = 0; k < 3; k++) {
         const phase = (this.time * 0.7 + k / 3) % 1;
         ctx.globalAlpha = 0.6 * (1 - phase);
-        ctx.beginPath();
-        ctx.arc(planet.x, planet.y, planet.radius + 6 + phase * 80, 0, Math.PI * 2);
-        ctx.stroke();
+        this.painter.repelRing(ctx, planet.x, planet.y, planet.radius + 6 + phase * 80, phase);
       }
     }
     ctx.restore();
@@ -954,17 +778,7 @@ export class Renderer {
     const danger = left < 0.25;
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.save();
-    ctx.rotate(a);
-    ctx.scale(1.5, 1.5);
-    ctx.beginPath();
-    ctx.moveTo(8, 0);
-    ctx.lineTo(-5, -6);
-    ctx.lineTo(-5, 6);
-    ctx.closePath();
-    ctx.fillStyle = rgba(danger ? COLORS.bone : color, 0.9);
-    ctx.fill();
-    ctx.restore();
+    this.painter.offscreenArrow(ctx, color, danger, a);
     ctx.font = `600 15px ${FONTS.mono}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -981,41 +795,6 @@ export class Renderer {
     return id === (match.viewer ?? match.focus);
   }
 
-  /** Sonar rings sweeping in towards the ship so the eye finds it when a round begins; they fade out over the ping's last half second. */
-  private drawLocatePing(x: number, y: number, color: string, age: number): void {
-    const { ctx } = this;
-    const fade = Math.min(1, (LOCATE_PING.DURATION - age) / 0.5);
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.lineWidth = 2;
-    for (let k = 0; k < LOCATE_PING.RINGS; k++) {
-      const t = (age / LOCATE_PING.PERIOD + k / LOCATE_PING.RINGS) % 1;
-      ctx.globalAlpha = fade * t * 0.85;
-      ctx.strokeStyle = color;
-      ctx.beginPath();
-      ctx.arc(0, 0, LOCATE_PING.RADIUS * (1 - t) + 14, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  /** Sudden death: rings that keep closing in on the ship, wider the harder it pulls its enemies' shots. */
-  private drawPull(x: number, y: number, pull: number, color: string): void {
-    const { ctx } = this;
-    const strength = Math.min(1, pull / (SUDDEN_DEATH.PULL_STEP * SUDDEN_DEATH.PULL_STEPS));
-    const reach = 40 + 60 * strength;
-    ctx.save();
-    ctx.lineWidth = 1.4;
-    for (let k = 0; k < 3; k++) {
-      const phase = (this.time * 0.6 + k / 3) % 1;
-      ctx.strokeStyle = rgba(color, (0.12 + 0.28 * strength) * phase);
-      ctx.beginPath();
-      ctx.arc(x, y, 18 + (reach - 18) * (1 - phase), 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
   private drawShips(match: Match, scene: Scene): void {
     const { ctx } = this;
     const live = !scene.camera;
@@ -1026,61 +805,37 @@ export class Renderer {
       if (!ship.alive) return;
       const player = match.players[i];
       const color = player.color;
-      if (player.target) return this.drawTarget(ship.x, ship.y, color);
+      if (player.target) return this.painter.target(ctx, ship.x, ship.y, color, this.time);
       const current = planning && match.focus === i;
-      if (ship.pull) this.drawPull(ship.x, ship.y, ship.pull, color);
+      if (ship.pull) {
+        const strength = Math.min(1, ship.pull / (SUDDEN_DEATH.PULL_STEP * SUDDEN_DEATH.PULL_STEPS));
+        this.painter.pull(ctx, ship.x, ship.y, color, this.time, strength, 40 + 60 * strength);
+      }
 
       if (current) {
         ctx.save();
         ctx.translate(ship.x, ship.y);
-        ctx.rotate(this.time * 0.8);
-        ctx.setLineDash([3, 5]);
-        ctx.strokeStyle = rgba(color, 0.7);
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.arc(0, 0, 25, 0, Math.PI * 2);
-        ctx.stroke();
+        this.painter.selection(ctx, color, this.time);
         ctx.restore();
-        const clock = match.shotClock;
-        if (clock !== null) {
-          // Shot clock: an arc around the ship that runs down.
-          ctx.strokeStyle = clock < 4 ? COLORS.danger : rgba(color, 0.9);
-          ctx.lineWidth = 2.2;
-          ctx.beginPath();
-          ctx.arc(ship.x, ship.y, 30, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * clock) / HORIZON.SHOT_CLOCK);
-          ctx.stroke();
-        }
+        // Shot clock: an arc around the ship that runs down.
+        if (match.shotClock !== null) this.painter.shotClock(ctx, ship.x, ship.y, color, match.shotClock);
       }
 
-      if (planning && this.isPinged(match, i)) this.drawLocatePing(ship.x, ship.y, color, match.phaseTime);
+      if (planning && this.isPinged(match, i)) this.painter.locatePing(ctx, ship.x, ship.y, color, match.phaseTime);
 
       const aimShown = match.aimVisible(i);
       if (planning && aimShown) {
-        if (current) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'full');
-        else if (match.salvo && player.locked) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'ghost');
-        else if (match.salvo && player.cpu) this.drawAimVector(ship.x, ship.y, player.angle, player.power, color, 'thin');
+        const aim = current ? 'full' : match.salvo && player.locked ? 'ghost' : match.salvo && player.cpu ? 'thin' : null;
+        if (aim) this.painter.aimVector(ctx, ship.x, ship.y, player.angle, player.power, color, aim, this.time);
       }
       if (planning && match.salvo && player.locked) {
         ctx.strokeStyle = rgba(color, 0.55);
         ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.arc(ship.x, ship.y, 21, 0, Math.PI * 2);
-        ctx.stroke();
+        this.painter.lockedRing(ctx, ship.x, ship.y);
       }
 
       // Neighbour grace period: the ship that the aiming player's shot flies through gets a shield.
-      if (planning && match.focus >= 0 && match.sparedFor(match.focus).includes(i)) {
-        ctx.save();
-        ctx.translate(ship.x, ship.y);
-        ctx.rotate(-this.time * 0.5);
-        ctx.setLineDash([2, 4]);
-        ctx.strokeStyle = rgba(COLORS.bone, 0.7);
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.arc(0, 0, 19, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
+      if (planning && match.focus >= 0 && match.sparedFor(match.focus).includes(i)) this.painter.sparedRing(ctx, ship.x, ship.y, this.time);
 
       const swallow = live ? match.swallowProgress(i) : 0;
       ctx.save();
@@ -1095,99 +850,9 @@ export class Renderer {
       const hideHeading = planning && !aimShown;
       const heading = hideHeading ? (Math.atan2(ship.y - scene.world.height / 2, scene.world.width / 2 - ship.x) * 180) / Math.PI : player.angle;
       ctx.rotate((-heading * Math.PI) / 180);
-      if (isRefined()) {
-        drawRefinedShip(ctx, color, this.time, current && aimShown ? 1 : 0, i * 1.7);
-      } else {
-        if (current && aimShown) {
-          const flicker = 0.6 + 0.4 * Math.sin(this.time * 31) * Math.sin(this.time * 17);
-          ctx.fillStyle = rgba(COLORS.sodium, 0.55 * flicker);
-          ctx.beginPath();
-          ctx.moveTo(-10, -2.5);
-          ctx.lineTo(-16 - 4 * flicker, 0);
-          ctx.lineTo(-10, 2.5);
-          ctx.fill();
-        }
-        ctx.beginPath();
-        SHIP_HULL.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-        ctx.closePath();
-        ctx.fillStyle = color;
-        ctx.fill();
-        ctx.strokeStyle = COLORS.plate;
-        ctx.lineWidth = 1.4;
-        ctx.stroke();
-        ctx.fillStyle = COLORS.plate;
-        ctx.beginPath();
-        ctx.ellipse(4, 0, 3.2, 1.8, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      this.painter.ship(ctx, color, this.time, current && aimShown ? 1 : 0, i * 1.7);
       ctx.restore();
     });
-  }
-
-  /** Daily challenge target: a diamond inside a ring the size of the hit box, with slowly turning brackets. */
-  private drawTarget(x: number, y: number, color: string): void {
-    const { ctx } = this;
-    const pulse = 0.5 + 0.5 * Math.sin(this.time * 2.4 + x * 0.01);
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.strokeStyle = rgba(color, 0.5 + 0.3 * pulse);
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.arc(0, 0, PHYSICS.SHIP_RADIUS, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.rotate(this.time * 0.5);
-    ctx.setLineDash([7, 8]);
-    ctx.strokeStyle = rgba(color, 0.45);
-    ctx.beginPath();
-    ctx.arc(0, 0, 21, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-    ctx.setLineDash([]);
-
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.beginPath();
-    ctx.moveTo(0, -7);
-    ctx.lineTo(7, 0);
-    ctx.lineTo(0, 7);
-    ctx.lineTo(-7, 0);
-    ctx.closePath();
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.strokeStyle = COLORS.plate;
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  private drawAimVector(x: number, y: number, angle: number, power: number, color: string, style: 'full' | 'ghost' | 'thin'): void {
-    const { ctx } = this;
-    const d = aimDirection(angle);
-    const start = PHYSICS.MUZZLE + 8;
-    const len = start + 18 + (power / AIM.MAX_POWER) * 110;
-    const ex = x + d.x * len;
-    const ey = y + d.y * len;
-    const alpha = style === 'full' ? 0.9 : style === 'ghost' ? 0.4 : 0.45;
-    ctx.strokeStyle = rgba(color, alpha);
-    ctx.lineWidth = style === 'full' ? 1.3 : 1;
-    ctx.setLineDash(style === 'ghost' ? [] : [4, 4]);
-    ctx.lineDashOffset = -this.time * 12;
-    ctx.beginPath();
-    ctx.moveTo(x + d.x * start, y + d.y * start);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.lineDashOffset = 0;
-    // Arrowhead.
-    const px = -d.y;
-    const py = d.x;
-    ctx.fillStyle = rgba(color, style === 'full' ? 1 : alpha);
-    ctx.beginPath();
-    ctx.moveTo(ex + d.x * 7, ey + d.y * 7);
-    ctx.lineTo(ex + px * 4, ey + py * 4);
-    ctx.lineTo(ex - px * 4, ey - py * 4);
-    ctx.closePath();
-    ctx.fill();
   }
 }
 
@@ -1204,28 +869,3 @@ const TRAIL_MARGIN = 200;
 
 /** Which way, in the field plane, a classic planet sprite is lit from. */
 const SPRITE_LIGHT_ANGLE = Math.atan2(LIGHT[1], LIGHT[0]);
-
-/** The rings that point out your ship when a round starts: how long they last (s), how many, seconds per sweep, and the radius they start from (field units). */
-const LOCATE_PING = { DURATION: 3, RINGS: 2, PERIOD: 1, RADIUS: 110 } as const;
-
-function strokeTrails(ctx: CanvasRenderingContext2D, match: Match, drawn: readonly { trail: Trail; rank: number; fade: number }[]): void {
-  for (const { trail, rank: r, fade } of drawn) {
-    ctx.strokeStyle = rgba(match.players[trail.owner].color, (r === 0 ? 0.75 : r === 1 ? 0.38 : 0.2) * fade);
-    ctx.lineWidth = r === 0 ? 1.6 : 1;
-    ctx.setLineDash(r === 0 ? [] : [1.5, 4]);
-    strokePolyline(ctx, trail.points, match.world.wormholes);
-  }
-  ctx.setLineDash([]);
-}
-
-function strokePolyline(ctx: CanvasRenderingContext2D, pts: number[], wormholes: readonly Wormhole[] = []): void {
-  if (pts.length < 4) return;
-  ctx.beginPath();
-  ctx.moveTo(pts[0], pts[1]);
-  for (let i = 2; i < pts.length; i += 2) {
-    // The segment between the two mouths of a wormhole is no flight: the line breaks there.
-    if (wormholes.length && isWormholeJump(pts, i, wormholes)) ctx.moveTo(pts[i], pts[i + 1]);
-    else ctx.lineTo(pts[i], pts[i + 1]);
-  }
-  ctx.stroke();
-}

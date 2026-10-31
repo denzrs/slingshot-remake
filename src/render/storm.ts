@@ -6,7 +6,7 @@ const FLIGHT = 1.5;
 const DELAY = 0.12;
 const FLARE_RISE = 0.3;
 
-const smooth = (e0: number, e1: number, x: number): number => {
+export const smooth = (e0: number, e1: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
   return t * t * (3 - 2 * t);
 };
@@ -15,7 +15,7 @@ const smooth = (e0: number, e1: number, x: number): number => {
 export const stormFlare = (age: number): number => (age < 0 ? 0 : age < FLARE_RISE ? age / FLARE_RISE : Math.exp(-(age - FLARE_RISE) * 1.3));
 
 /** A pseudo-random [0, 1) from a cloud's seed and a slot, so every screen draws the same wisps and embers. */
-const slot = (seed: number, k: number): number => {
+export const slot = (seed: number, k: number): number => {
   const h = Math.sin((seed * 1000 + k * 0.618) * 127.1) * 43758.5453;
   return h - Math.floor(h);
 };
@@ -166,6 +166,15 @@ export function drawStormSparks(ctx: CanvasRenderingContext2D, x: number, y: num
   ctx.restore();
 }
 
+/** A storm cloud `age` seconds into its flight from the sun: how far along it is (`p`, 0 → 1, eased to `ease`), where it is and how big. Null while it has not left yet. */
+export function stormFlight(cloud: { x: number; y: number; radius: number }, sun: { x: number; y: number }, age: number): { p: number; ease: number; x: number; y: number; r: number } | null {
+  const p = Math.min(1, (age - DELAY) / FLIGHT);
+  if (p <= 0) return null;
+  const ease = 1 - (1 - p) ** 3;
+  const size = 0.2 + 0.8 * ease + 0.1 * Math.sin(p * Math.PI);
+  return { p, ease, x: sun.x + (cloud.x - sun.x) * ease, y: sun.y + (cloud.y - sun.y) * ease, r: cloud.radius * size };
+}
+
 /**
  * One cloud of the sun's storm. It is flung out of the sun trailing fire, swelling
  * past its size and settling; after that it lies in place, a nebula's haze of plasma lit from inside, with a
@@ -180,18 +189,14 @@ export function drawStormCloud(
   time: number,
   dissolve = 0,
 ): void {
-  const p = Math.min(1, (age - DELAY) / FLIGHT);
-  if (p <= 0) return;
+  const flight = stormFlight(cloud, sun, age);
+  if (!flight) return;
+  const { p, ease, x, y, r } = flight;
   let image = sprites.get(cloud.seed);
   if (!image) {
     if (sprites.size >= 16) sprites.delete(sprites.keys().next().value as number);
     sprites.set(cloud.seed, (image = paint(cloud.seed)));
   }
-  const ease = 1 - (1 - p) ** 3;
-  const size = 0.2 + 0.8 * ease + 0.1 * Math.sin(p * Math.PI);
-  const x = sun.x + (cloud.x - sun.x) * ease;
-  const y = sun.y + (cloud.y - sun.y) * ease;
-  const r = cloud.radius * size;
   const base = ctx.globalAlpha;
   ctx.save();
 

@@ -62,8 +62,10 @@ export function settingsScreen(app: App): Screen {
         kind: 'segmented',
         label: t('settings.look'),
         options: [
-          { value: 'refined', label: t('settings.lookRefined') },
           { value: 'classic', label: t('settings.lookClassic') },
+          { value: 'luminous', label: t('settings.lookLuminous') },
+          { value: 'forged', label: t('settings.lookForged') },
+          { value: 'holo', label: t('settings.lookHolo') },
         ],
         get: () => app.settings.look,
         set: (v: unknown) => {

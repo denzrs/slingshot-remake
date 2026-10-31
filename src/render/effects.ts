@@ -1,7 +1,7 @@
 import { COLORS, DEBRIS, FIELD, FONTS, PHYSICS, SUDDEN_DEATH, type Debris } from '../sim/config';
 import type { World } from '../sim/physics';
 import { rgba } from './color';
-import { SHIP_HULL } from './ship';
+import type { EffectStyle } from './looks/painter';
 import { fillTextUpright, strokeTextUpright } from './orientation';
 
 type SparkTier = 'large' | 'medium' | 'small';
@@ -105,7 +105,7 @@ interface DoomedPlanet {
 }
 
 /** A supernova under way: its core, two shockwaves sweeping the field, and the ships and planets waiting for them. */
-interface Nova {
+export interface Nova {
   x: number;
   y: number;
   age: number;
@@ -114,7 +114,7 @@ interface Nova {
 }
 
 /** How long a supernova's light lasts on the field (s). */
-const NOVA_LIFE = 3.2;
+export const NOVA_LIFE = 3.2;
 
 interface Callout {
   text: string;
@@ -137,7 +137,7 @@ export class Effects {
   private novas: Nova[] = [];
   shake = 0;
   flash = 0;
-  /** A supernova's white-out over the whole screen (0 → 1). */
+    /** A supernova's white-out over the whole screen (0 → 1). */
   whiteout = 0;
   /** Seconds the supernova's quake still keeps the field shaking. */
   private quake = 0;
@@ -520,60 +520,6 @@ export class Effects {
     this.novas = this.novas.filter((nova) => nova.age < NOVA_LIFE || nova.doomed.some((d) => !d.done) || nova.planets.some((p) => !p.done));
   }
 
-  private drawNova(ctx: CanvasRenderingContext2D, nova: Nova): void {
-    const { x, y, age } = nova;
-    const fade = Math.max(0, 1 - age / NOVA_LIFE);
-    // The doomed ships, glowing hotter as the wave comes for them.
-    for (const d of nova.doomed) {
-      if (d.done) continue;
-      const heat = Math.min(1, age / Math.max(0.01, d.at));
-      ctx.save();
-      ctx.translate(d.x, d.y);
-      const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 22 + 26 * heat);
-      glow.addColorStop(0, rgba('#fff4cc', 0.7 * heat));
-      glow.addColorStop(1, rgba(COLORS.danger, 0));
-      ctx.fillStyle = glow;
-      ctx.fillRect(-50, -50, 100, 100);
-      ctx.rotate((-d.angle * Math.PI) / 180);
-      ctx.beginPath();
-      SHIP_HULL.forEach(([hx, hy], k) => (k ? ctx.lineTo(hx, hy) : ctx.moveTo(hx, hy)));
-      ctx.closePath();
-      ctx.fillStyle = d.color;
-      ctx.fill();
-      ctx.fillStyle = rgba('#fff4cc', heat * 0.85);
-      ctx.fill();
-      ctx.restore();
-    }
-    if (fade <= 0) return;
-    ctx.globalCompositeOperation = 'lighter';
-    // The core: a blinding ball that swells fast and burns out.
-    const core = 40 + 340 * easeOut(Math.min(1, age / 0.7));
-    const ball = ctx.createRadialGradient(x, y, 0, x, y, core);
-    ball.addColorStop(0, rgba('#ffffff', fade));
-    ball.addColorStop(0.25, rgba('#fff0c0', 0.85 * fade));
-    ball.addColorStop(0.6, rgba(COLORS.sodium, 0.45 * fade));
-    ball.addColorStop(1, rgba(COLORS.danger, 0));
-    ctx.fillStyle = ball;
-    ctx.beginPath();
-    ctx.arc(x, y, core, 0, Math.PI * 2);
-    ctx.fill();
-    // The shockwaves: a white-hot front, and a slower, wider one of red plasma behind it.
-    for (const [speed, width, inner, edge, strength] of [[1, 70, COLORS.sodium, '#ffffff', 1], [0.62, 140, COLORS.danger, '#ff8a2e', 0.8]] as const) {
-      const front = SUDDEN_DEATH.NOVA_SPEED * speed * age;
-      if (front < 4) continue;
-      const band = ctx.createRadialGradient(x, y, Math.max(0, front - width), x, y, front + 12);
-      band.addColorStop(0, rgba(inner, 0));
-      band.addColorStop(0.7, rgba(inner, 0.45 * fade * strength));
-      band.addColorStop(0.93, rgba(edge, 0.95 * fade * strength));
-      band.addColorStop(1, rgba(edge, 0));
-      ctx.fillStyle = band;
-      ctx.beginPath();
-      ctx.arc(x, y, front + 12, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalCompositeOperation = 'source-over';
-  }
-
   /** Pieces drift out for a moment, then steer at their ship and pulse on arrival. */
   private updateMotes(dt: number): void {
     const arrived: Mote[] = [];
@@ -605,26 +551,14 @@ export class Effects {
     for (const m of arrived) this.ring(m.target.x, m.target.y, 16, 0.28, m.color);
   }
 
-  draw(ctx: CanvasRenderingContext2D): void {
-    for (const nova of this.novas) this.drawNova(ctx, nova);
+  draw(ctx: CanvasRenderingContext2D, style: EffectStyle): void {
+    for (const nova of this.novas) style.nova(ctx, nova);
     for (const r of this.rings) {
       const t = 1 - r.life / r.max;
       const radius = r.inward ? r.radius * (1 - easeOut(t)) : r.radius * easeOut(t);
-      ctx.beginPath();
-      ctx.arc(r.x, r.y, Math.max(0, radius), 0, Math.PI * 2);
-      ctx.strokeStyle = rgba(r.color, 0.8 * (1 - t));
-      ctx.lineWidth = 1.5 + 2 * (1 - t);
-      ctx.stroke();
+      style.ring(ctx, r, radius, 1.5 + 2 * (1 - t), t);
     }
-    for (const b of this.beams) {
-      const t = 1 - b.life / b.max;
-      ctx.beginPath();
-      ctx.moveTo(b.x1, b.y1);
-      ctx.lineTo(b.x2, b.y2);
-      ctx.strokeStyle = rgba(b.color, 0.7 * (1 - t));
-      ctx.lineWidth = 3 * (1 - t) + 0.5;
-      ctx.stroke();
-    }
+    for (const b of this.beams) style.beam(ctx, b, 1 - b.life / b.max);
     ctx.globalCompositeOperation = 'lighter';
     for (const l of this.lasers) {
       const t = 1 - l.life / l.max;
@@ -646,10 +580,23 @@ export class Effects {
       line(w, rgba(l.color, 0.85 * a));
       line(Math.max(1, w * 0.34), rgba(COLORS.bone, 0.95 * a));
     }
+    if (style.streak) ctx.lineCap = 'round';
     for (const s of this.sparks) {
       ctx.globalAlpha = s.life !== undefined ? Math.min(1, s.life / 0.35) : 1;
-      ctx.fillStyle = s.color;
-      ctx.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size);
+      const speed = style.streak ? Math.hypot(s.vx, s.vy) : 0;
+      const streak = speed > 8 ? style.streak?.(speed, s.size) : null;
+      if (streak) {
+        // A streak along the spark's flight, longer the faster it goes.
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = streak.width;
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(s.x - (s.vx / speed) * streak.length, s.y - (s.vy / speed) * streak.length);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = s.color;
+        ctx.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size);
+      }
     }
     ctx.globalAlpha = 1;
     for (const m of this.motes) {
@@ -754,4 +701,4 @@ export class Effects {
   }
 }
 
-const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+export const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);

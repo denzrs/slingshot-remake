@@ -1,7 +1,7 @@
 import type { CpuLevel } from '../sim/ai';
 import { AIM, DEBRIS, MAX_PLAYERS, type Debris } from '../sim/config';
 import { detectLang, isLang, type Lang } from '../platform/i18n';
-import { isLook, type Look } from './look';
+import { lookFrom, type Look } from './look';
 import { DEFAULT_ROOM_RULES, rulesOf, roomRulesFrom, type RoomRules } from './roomRules';
 
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
@@ -15,7 +15,7 @@ export type Seat = 'human' | CpuLevel | 'off';
 export interface Settings extends RoomRules {
   /** Always MAX_PLAYERS long; seats that aren't 'off' take part, keeping their number and colour. */
   seats: Seat[];
-  /** The original classic plate, or the refined look (glowing ships, moving planets). */
+  /** The field's graphics: the original classic plate, or luminous (glowing ships, moving planets), forged (rendered ships and planets) or holo (a projection in lines). */
   look: Look;
   contours: boolean;
   particles: boolean;
@@ -76,7 +76,7 @@ export function loadSettings(): Settings {
       for (const key of ['contours', 'particles', 'aimCardDodge', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'menuSounds', 'gameSounds'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
-      if (!isLook(s.look)) s.look = DEFAULT_SETTINGS.look;
+      s.look = lookFrom(s.look) ?? DEFAULT_SETTINGS.look;
       if (s.wheelSide !== 'left') s.wheelSide = 'right';
       if (!Object.hasOwn(DEBRIS, s.debris)) s.debris = DEFAULT_SETTINGS.debris;
       // The rules of the game: only what the game still offers, anything else back to the standard ones.

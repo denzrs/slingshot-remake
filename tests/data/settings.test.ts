@@ -186,12 +186,33 @@ describe('Graphics look', () => {
     expect(loadSettings().look).toBe('classic');
   });
 
-  it('keeps the refined look after saving and reloading', () => {
+  it('keeps the luminous look after saving and reloading', () => {
     storage();
     const settings = cloneSettings(DEFAULT_SETTINGS);
-    settings.look = 'refined';
+    settings.look = 'luminous';
     saveSettings(settings);
-    expect(loadSettings().look).toBe('refined');
+    expect(loadSettings().look).toBe('luminous');
+  });
+
+  it('keeps the forged look after saving and reloading', () => {
+    storage();
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.look = 'forged';
+    saveSettings(settings);
+    expect(loadSettings().look).toBe('forged');
+  });
+
+  it('keeps the holo look after saving and reloading', () => {
+    storage();
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.look = 'holo';
+    saveSettings(settings);
+    expect(loadSettings().look).toBe('holo');
+  });
+
+  it('carries the old name of the luminous look over', () => {
+    storage({ look: 'refined' });
+    expect(loadSettings().look).toBe('luminous');
   });
 
   it('falls back to the classic look for a value it does not know', () => {
