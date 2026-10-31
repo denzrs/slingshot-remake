@@ -73,6 +73,7 @@ export function settingsScreen(app: App): Screen {
       }, 'display'),
       inGroup(settingToggle(app, t('settings.contours'), 'contours'), 'display'),
       inGroup(settingToggle(app, t('settings.particles'), 'particles'), 'display'),
+      inGroup(settingToggle(app, t('settings.aimCardDodge'), 'aimCardDodge'), 'display'),
       inGroup({
         kind: 'segmented',
         label: t('settings.debris'),

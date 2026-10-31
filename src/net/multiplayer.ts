@@ -268,6 +268,11 @@ export class MultiplayerSession {
     if (trimmed && this.canChat) this.send({ type: 'chat', text: trimmed });
   }
 
+  /** Host only: end the game and bring everybody back to the room's lobby. The room's reply ends the match on every screen, ours included. */
+  endGame(): void {
+    if (this.isHost && this.match) this.send({ type: 'end_game' });
+  }
+
   /** Leave the room (and any running game) but stay connected to the lobby. */
   leaveRoom(): void {
     if (this.room) this.send({ type: 'leave_room' });

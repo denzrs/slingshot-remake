@@ -257,6 +257,7 @@ impl RoomManager {
             RoomCommand::SetCpu { seat, level, team } => self.set_cpu(conn, seat, level, team),
             RoomCommand::RemoveCpu { seat } => self.remove_cpu(conn, seat),
             RoomCommand::StartGame => self.start_game(conn),
+            RoomCommand::EndGame => self.end_game(conn),
             RoomCommand::Input(input) => self.relay_input(conn, input),
             RoomCommand::Chat(text) => self.chat(conn, text),
             RoomCommand::CpuChat { seat, text } => self.cpu_chat(conn, seat, text),

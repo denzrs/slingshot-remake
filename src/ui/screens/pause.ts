@@ -55,6 +55,7 @@ export function pauseScreen(app: App, match: Match | null): Screen {
       : []),
     ...(app.skipOffer === 'answer' ? skipAnswerItems(app, 'actions') : []),
     { kind: 'action', section: 'actions', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
+    ...(app.online && match?.canAdvance ? [{ kind: 'action', section: 'actions', label: t('over.backToLobby'), run: () => app.backToLobby() } satisfies MenuItem] : []),
     app.online
       ? { kind: 'action', section: 'actions', label: t('multiplayer.leave'), run: () => app.leaveOnlineRoom() }
       : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: () => app.toTitle() },

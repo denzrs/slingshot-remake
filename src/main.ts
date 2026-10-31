@@ -429,6 +429,9 @@ const app: App = {
     if (entry) menu.push(() => lobby);
     else menu.open(() => lobby);
   },
+  backToLobby() {
+    session?.endGame();
+  },
   leaveOnlineRoom() {
     session?.leaveRoom();
     match?.dispose();
@@ -932,7 +935,7 @@ function frame(now: number): void {
     renderer.draw(
       m,
       effects,
-      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer },
+      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer, aimCardDodge: settings.aimCardDodge },
       paused ? 0 : dt,
     );
   }
