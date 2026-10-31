@@ -38,6 +38,14 @@ describe('solar system world', () => {
     }
   });
 
+  it('draws at most `maxPlanets` planets when the count is exact, and at least that many otherwise', () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const planets = (exactPlanets: boolean) => generateWorld(seed, { maxPlanets: 1, players: 3, blackHole: false, solar: true, exactPlanets }).planets.filter((p) => !p.sun).length;
+      expect(planets(true)).toBe(1);
+      expect(planets(false)).toBeGreaterThanOrEqual(1);
+    }
+  });
+
   it('turns a circle in 12 steps near the sun, 8 in the middle and 4 far out', () => {
     const third = (SOLAR.OUTER_ORBIT - SOLAR.INNER_ORBIT) / 3;
     for (const [r, steps] of [[SOLAR.INNER_ORBIT + 1, 12], [SOLAR.INNER_ORBIT + third * 0.9, 12], [SOLAR.INNER_ORBIT + third * 1.5, 8], [SOLAR.OUTER_ORBIT - third * 0.1, 4], [SOLAR.OUTER_ORBIT, 4]] as const) {

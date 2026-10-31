@@ -2,7 +2,7 @@ import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
 import type { Avatar } from '../platform/avatars';
 import { AIM, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE, type KillSource, type SuddenDeathKind } from '../sim/config';
 import { t } from '../platform/i18n';
-import { applyTwists, MayhemDeck, type MayhemRound } from './mayhem';
+import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
 import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
 import { createRng, randomSeed, type Rng } from '../sim/rng';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../data/stats';
@@ -931,6 +931,7 @@ export abstract class Match {
       players: this.players.length,
       blackHole: this.mode === 'horizon',
       solar: this.mode === 'solar',
+      exactPlanets: this.mayhem !== null && setsPlanets(this.mayhem),
       teams: this.teamMode ? this.players.map((p) => p.team!) : null,
     });
     this.hiddenPlanets = (this.mode === 'classic' || this.mode === 'solar') && this.settings.invisiblePlanets;

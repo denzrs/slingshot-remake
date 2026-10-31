@@ -24,6 +24,8 @@ interface WorldOptions {
   teams?: readonly number[] | null;
   /** Solar System: a sun in the middle, planets and ships on orbits round it. */
   solar?: boolean;
+  /** Solar System: `maxPlanets` is a ceiling, as on an open field, not the least the mode draws. */
+  exactPlanets?: boolean;
 }
 
 /**
@@ -150,8 +152,13 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
   const bands = Math.min(3, opts.players);
 
   const bodies: Body[] = [];
-  // The mode's own planets are small, so more of them fit than on an open field: the setting is the least it draws.
-  const wanted = opts.maxPlanets === 0 ? 0 : intRange(rng, Math.max(opts.maxPlanets, 2), Math.max(opts.maxPlanets, 2) + 3);
+  // The mode's own planets are small, so more of them fit than on an open field: the setting is the least it draws,
+  // unless a round caps it (a Mayhem twist that names the count).
+  const wanted = opts.maxPlanets === 0
+    ? 0
+    : opts.exactPlanets
+      ? intRange(rng, Math.min(2, opts.maxPlanets), opts.maxPlanets)
+      : intRange(rng, Math.max(opts.maxPlanets, 2), Math.max(opts.maxPlanets, 2) + 3);
   const radii = Array.from({ length: wanted }, () => SOLAR.MIN_PLANET + (SOLAR.MAX_PLANET - SOLAR.MIN_PLANET) * Math.pow(rng(), 1.8));
   // A ship's orbit may carry a planet too: same speed, so it keeps its distance from the ships for good.
   const lanes: Body[] = Array.from({ length: bands }, () => ({ kind: 'ships', guests: radii.length > 2 && rng() < 0.7 ? [radii.pop()!] : [] }));

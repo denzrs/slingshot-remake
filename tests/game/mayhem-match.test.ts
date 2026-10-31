@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MAYHEM } from '../../src/sim/config';
+import { setsPlanets } from '../../src/game/mayhem';
 import { presetRules } from '../../src/ui/presets/match-presets';
 import { createMatch, type Match } from '../../src/game';
 import type { GameMode } from '../../src/sim/modes';
@@ -103,6 +104,21 @@ describe('a match with Mayhem', () => {
       match.update(1);
       match.advance();
     }
+  });
+
+  it('keeps a twist\'s planet count in the Solar System, where the room setting is otherwise the least it draws', () => {
+    const match = createMatch('solar', room({ mayhem: 3, rounds: 60, maxPlanets: 4 }), { seats: cpus, seed: 4, deterministicCpu: true });
+    let capped = 0;
+    for (let round = 1; round <= 60; round++) {
+      if (setsPlanets(match.mayhem!)) {
+        capped++;
+        expect(match.world.planets.filter((p) => !p.sun).length).toBeLessThanOrEqual(match.settings.maxPlanets);
+      }
+      (match as unknown as { endRound(): void }).endRound();
+      match.update(1);
+      match.advance();
+    }
+    expect(capped).toBeGreaterThan(5);
   });
 
   it('draws the same rounds from the same seed', () => {
