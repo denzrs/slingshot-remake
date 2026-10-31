@@ -50,7 +50,7 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 | `npm run build:server` | Build the Rust relay in release mode |
 | `npm run bench:relay -- ws://localhost:8080` | Measure Rust relay latency, fan-out, real 30 Hz snapshots and synthetic large payloads |
 
-**Look gallery.** `npm run dev` also serves `/looks.html`: the real field renderer once per look on the same scenes (field, Solar System, event horizon, power-ups, effects), to compare the looks side by side. It is not part of the build.
+**Look gallery.** `npm run dev` also serves `/looks.html`: the real field renderer once per look on the same scenes (field, Solar System, event horizon, power-ups, effects), to compare the looks side by side. It is not part of the build. It can also remember the pixels of every scene and list what changed after an edit, to check a refactor of the drawing code.
 
 **Debug aim.** `DEBUG_AIM=1 npm run dev` serves the aim-predictor page at `/debug-aim.html`, and shows the in-game seed badge that links to it with the seed, mode and aim of the round on screen. Without the variable the page 404s and the badge stays hidden.
 

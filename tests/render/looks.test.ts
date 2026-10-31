@@ -2,7 +2,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { LOOKS } from '../../src/data/look';
+import { LOOKS, lookLabelKey } from '../../src/data/look';
+import { getLang, setLang, t } from '../../src/platform/i18n';
 import { painterFor } from '../../src/render/looks';
 import { classic } from '../../src/render/looks/classic';
 
@@ -35,5 +36,22 @@ describe('looks', () => {
       for (const name of names) if (text.includes(name)) bad.push(`${relative(render, file)} mentions ${name}`);
     }
     expect(bad).toEqual([]);
+  });
+});
+
+describe('registering a look', () => {
+  it('gives every look a note for the gallery', () => {
+    for (const look of LOOKS) expect(painterFor(look).note.length).toBeGreaterThan(10);
+  });
+
+  it('names every look in the settings in both languages', () => {
+    const language = getLang();
+    for (const look of LOOKS) {
+      for (const lang of ['en', 'de'] as const) {
+        setLang(lang);
+        expect(t(lookLabelKey(look)), `${look} in ${lang}`).not.toBe(lookLabelKey(look));
+      }
+    }
+    setLang(language);
   });
 });

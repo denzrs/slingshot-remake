@@ -91,6 +91,7 @@ const holoEffects: EffectStyle = {
 };
 
 const holoParts: Partial<LookPainter> = {
+  note: 'A projection of thin lines and hexagons.',
   planet: renderHoloPlanet,
   effects: holoEffects,
   trail: (ctx, points, wormholes, color, rank, fade) => {

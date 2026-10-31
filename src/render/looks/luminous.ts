@@ -101,6 +101,7 @@ const luminousEffects: EffectStyle = {
 
 /** The elements the luminous look draws itself. */
 export const luminousParts: Partial<LookPainter> = {
+  note: 'Light instead of ink: glows, waves, comet tails.',
   planet: renderLuminousPlanet,
   planetsTurnToSun: true,
   effects: luminousEffects,

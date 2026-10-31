@@ -47,3 +47,5 @@ figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
 figcaption { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
 figcaption b { font-family: var(--mono); font-weight: 700; color: var(--sodium); }
 figcaption span { color: var(--dim); }
+.tools output { font-family: var(--mono); font-size: 12px; color: var(--dim); min-width: 0; overflow-wrap: anywhere; }
+button:disabled { opacity: 0.5; cursor: progress; }

@@ -41,7 +41,9 @@ A look is how every element of the playing field is drawn (menus, HUD and the tu
 | `holo.ts`, `holo-art.ts` | The projection of lines and hexagons |
 | `index.ts` | `painterFor(look)` |
 
-To add a look: write a painter file that builds on one (`engraved(...)`, spreading what it extends) and list it in `index.ts` and `data/look.ts`. To change how an element looks in one look: edit that look's file only. The gallery at `/looks.html` shows every look side by side.
+To add a look: write a painter file that builds on one (`engraved(...)`, spreading what it extends, with a `note`), list its id in `LOOKS` in `data/look.ts` and its painter in `index.ts` (the types fail until both are done), and give it a name in the settings, `settings.look<Name>`, in both languages. The settings picker and the gallery are built from that list. To change how an element looks in one look: edit that look's file only.
+
+The gallery at `/looks.html` shows every look side by side. "Pixel-Stand merken" remembers the pixels of every scene in every look and "Mit Stand vergleichen" lists what changed since, which catches a drawing change you did not mean to make (the browser keeps the stand, so it survives a reload).
 
 ## Tests
 

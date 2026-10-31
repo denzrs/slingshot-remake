@@ -6,25 +6,25 @@ import '@fontsource/b612-mono/700';
 import './looks-gallery.css';
 import { createMatch, type Match, type Scene as FieldScene } from '../game';
 import { DEFAULT_SETTINGS, type Seat } from '../data/settings';
-import { setLook, type Look } from '../data/look';
+import { LOOKS as LOOK_IDS, lookLabelKey, setLook, type Look } from '../data/look';
+import { t } from '../platform/i18n';
 import { FIELD, NEBULA, WORMHOLE } from '../sim/config';
 import type { Missile } from '../sim/physics';
 import type { VolleyShot } from '../sim/volley';
 import { POWER_UP_KINDS } from '../sim/powerups';
 import { Effects } from '../render/effects';
+import { painterFor } from '../render/looks';
 import { Renderer, type DrawOptions } from '../render/renderer';
 
 /**
  * Dev-only page (`/looks.html`, never part of a build): the real field renderer, once per look, on the same scene, so the
- * looks can be compared side by side and talked about. A new look only needs adding to `LOOKS` below; a new scene to `SCENES`.
+ * looks can be compared side by side and talked about. A new look shows up by itself (see `data/look.ts`); a new scene goes
+ * into `SCENES`. "Pixel-Stand merken" and "Mit Stand vergleichen" catch a drawing change you did not mean to make: remember
+ * the pixels of every scene in every look, change the code, compare.
  */
 
-const LOOKS: { look: Look; name: string; note: string }[] = [
-  { look: 'classic', name: 'Einfach', note: 'Der gravierte Plan, unverändert.' },
-  { look: 'luminous', name: 'Luminous', note: 'Licht statt Tinte: Glow, Wellen, Funkenschweife.' },
-  { look: 'forged', name: 'Forged', note: 'Renders aus Blender für Schiffe, Planeten, Schwarzes Loch und Münzen, das Licht von Luminous darüber.' },
-  { look: 'holo', name: 'Holo', note: 'Projektion aus dünnen Linien und Sechsecken.' },
-];
+/** Every look, named as in the settings and described by its own painter: a new look shows up here without a change. */
+const LOOKS: { look: Look; name: string; note: string }[] = LOOK_IDS.map((look) => ({ look, name: t(lookLabelKey(look)), note: painterFor(look).note }));
 
 /** The seconds a scene's card has run, handed to the scene override of that match. */
 const shotClock = new WeakMap<Match, { t: number }>();
@@ -332,7 +332,12 @@ main.innerHTML = `
   <header>
     <h1>Look<br>Galerie</h1>
     <ul class="legend">${LOOKS.map((l) => `<li><b>${l.name}</b><span>${l.note}</span></li>`).join('')}</ul>
-    <div class="tools"><button id="pause" type="button">Animation pausieren</button></div>
+    <div class="tools">
+      <button id="pause" type="button">Animation pausieren</button>
+      <button id="remember" type="button">Pixel-Stand merken</button>
+      <button id="compare" type="button">Mit Stand vergleichen</button>
+      <output id="result"></output>
+    </div>
   </header>
   <main id="scenes"></main>`;
 document.body.append(main);
@@ -394,3 +399,91 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// ------------------------------------------------------------ pixel snapshot ----
+
+const SNAPSHOT_KEY = 'looks-gallery-pixels';
+/** Moments of each scene that are hashed: the scenes loop, so a few spread out catch what changes over time. */
+const SNAPSHOT_TIMES = [0.4, 2.2, 5.5];
+
+/** A deterministic random generator, so the particles of a scene are the same every time it is hashed. */
+function seeded(seed: number): () => number {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** A hash of every scene in every look at a few fixed moments, drawn fresh with seeded randomness. */
+async function pixelHashes(): Promise<Record<string, number>> {
+  paused = true;
+  const realRandom = Math.random;
+  await document.fonts.ready;
+  const out: Record<string, number> = {};
+  // The first pass only starts the images that load on first use; the second one is hashed.
+  for (const pass of ['warm', 'real']) {
+    for (const { scene, match, card } of cards) {
+      card.clock = 0;
+      card.step = -1;
+      card.effects = new Effects(true, false, 'medium');
+      card.renderer = new Renderer(card.canvas, () => ({ width: Math.max(1, card.stage.clientWidth), height: Math.max(1, card.stage.clientHeight) }));
+      let at = 0;
+      for (const time of SNAPSHOT_TIMES) {
+        Math.random = seeded(1234);
+        card.clock = time;
+        scene.tick?.(match, card, 0);
+        card.effects.update(0.016, match.world);
+        setLook(card.look);
+        card.renderer.draw(match, card.effects, OPTIONS, time - at);
+        at = time;
+        if (pass === 'real') {
+          const data = card.canvas.getContext('2d')!.getImageData(0, 0, card.canvas.width, card.canvas.height).data;
+          let hash = 2166136261;
+          for (let i = 0; i < data.length; i += 3) hash = Math.imul(hash ^ data[i], 16777619);
+          out[`${scene.title} · ${card.look} · ${time}s`] = hash >>> 0;
+        }
+      }
+    }
+    if (pass === 'warm') await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  Math.random = realRandom;
+  return out;
+}
+
+const result = main.querySelector<HTMLOutputElement>('#result')!;
+const busy = (on: boolean): void => {
+  for (const id of ['#remember', '#compare']) main.querySelector<HTMLButtonElement>(id)!.disabled = on;
+  if (on) result.textContent = 'Rechne …';
+};
+
+main.querySelector('#remember')!.addEventListener('click', async () => {
+  busy(true);
+  const hashes = await pixelHashes();
+  try {
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(hashes));
+    result.textContent = `${Object.keys(hashes).length} Bilder gemerkt.`;
+  } catch {
+    result.textContent = 'Konnte den Stand nicht speichern.';
+  }
+  busy(false);
+});
+
+main.querySelector('#compare')!.addEventListener('click', async () => {
+  let before: Record<string, number> | null = null;
+  try {
+    before = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) ?? 'null');
+  } catch {
+    before = null;
+  }
+  if (!before) {
+    result.textContent = 'Noch kein Stand gemerkt.';
+    return;
+  }
+  busy(true);
+  const now = await pixelHashes();
+  const changed = Object.keys({ ...before, ...now }).filter((key) => before![key] !== now[key]);
+  result.textContent = changed.length ? `${changed.length} von ${Object.keys(now).length} Bildern anders: ${changed.join(', ')}` : `Alle ${Object.keys(now).length} Bilder gleich.`;
+  busy(false);
+});

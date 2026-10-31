@@ -21,6 +21,8 @@ import type { PortalStyle } from '../wormhole';
  */
 export interface LookPainter {
   readonly id: Look;
+  /** One line on what the look is, for the gallery. */
+  readonly note: string;
   /** A planet's sprite is painted lit from one side, and turned in the Solar System so that side faces the sun it orbits; false for a look whose planets are not lit from one side (the wireframe). */
   readonly planetsTurnToSun: boolean;
 

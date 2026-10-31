@@ -24,6 +24,7 @@ export function engraved(id: Look, styles: Styles = {}, parts: Partial<LookPaint
   const portal = styles.portal ?? CLASSIC_PORTAL;
   return {
     id,
+    note: '',
     planetsTurnToSun: false,
     planet: renderPlanet,
     sun: drawSun,
@@ -624,4 +625,4 @@ export const ENGRAVED_EFFECTS: EffectStyle = {
   },
 };
 
-export const classic = engraved('classic', {}, { planetsTurnToSun: true });
+export const classic = engraved('classic', {}, { note: 'The engraved plan, unchanged.', planetsTurnToSun: true });

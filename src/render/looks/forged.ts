@@ -331,6 +331,7 @@ export const forgedStyles: Styles = {
 
 export const forged = engraved('forged', forgedStyles, {
   ...luminousParts,
+  note: 'Blender renders for ships, planets, the black hole, coins and the turret, with the light of Luminous over them.',
   planet: renderForgedPlanet,
   ship: drawForgedShip,
   pickup: (ctx, kind, color, time, pulse) => drawLuminousPickup(ctx, kind, color, time, pulse, forgedCoin(), COIN_SPAN),
