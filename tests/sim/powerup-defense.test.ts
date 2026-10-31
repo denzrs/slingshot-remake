@@ -133,7 +133,7 @@ describe('planetary defense power-up', () => {
       }
       if (entered === null && Math.hypot(shot.x - d.x, shot.y - d.y) < d.radius) entered = shot.x;
     }
-    expect(end).toEqual({ kind: 'shotdown', defense: 0 });
+    expect(end).toMatchObject({ kind: 'shotdown', defense: 0 });
     // It flew on into the area after entering: it was not struck down at the edge.
     expect(shot.x - entered!).toBeGreaterThan(20);
     expect(Math.hypot(shot.x - d.x, shot.y - d.y)).toBeLessThan(d.radius);
@@ -353,9 +353,17 @@ describe('planetary defense power-up', () => {
     it('counts each missile for the defense owner, and the shot it brings down', () => {
       const { match, target } = guardedDuel();
       const events: string[] = [];
-      match.on((e) => events.push(e.type));
+      let paid = 0;
+      match.on((e) => {
+        events.push(e.type);
+        if (e.type === 'shotdown') paid = e.points;
+      });
+      const before = target.score;
       match.commit();
       finishFlight(match);
+      // A shot brought down pays the defense's owner 50, 100 or 200 by the odds.
+      expect(events.includes('shotdown') ? [50, 100, 200] : [0]).toContain(paid);
+      expect(target.score - before).toBeGreaterThanOrEqual(paid);
       expect(match.roundStats.missiles[target.id]).toBe(1);
       expect(match.roundStats.intercepts[target.id] ?? 0).toBe(events.includes('shotdown') ? 1 : 0);
       expect(match.matchStats.missiles[target.id]).toBe(1);

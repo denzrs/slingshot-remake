@@ -184,7 +184,7 @@ function isGameEvent(value: unknown): boolean {
     case 'defenseWrecked':
       return index('player') && index('by') && finite('x') && finite('y');
     case 'shotdown':
-      return index('player') && finite('x') && finite('y') && finite('vx') && finite('vy');
+      return index('player') && finite('x') && finite('y') && finite('vx') && finite('vy') && finite('points');
     case 'multiKill':
       return index('player') && finite('kills') && finite('points') && finite('x') && finite('y');
     case 'split':

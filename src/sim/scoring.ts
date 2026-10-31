@@ -20,6 +20,11 @@ export function comboMultiplier(kinds: StyleKind[]): number {
   return Math.min(SCORING.MAX_COMBO, m);
 }
 
+/** What a defense's owner gets for shooting a shot down: the rarer the hit (`chance`, 0 to 1), the more it pays. */
+export function interceptPoints(chance: number): number {
+  return Math.round(SCORING.INTERCEPT / chance);
+}
+
 /** Event Horizon: a kill is worth base × power factor × trick-shot combo. */
 export function scoreHorizonKill(power: number, kinds: StyleKind[], fixedPower: boolean): { points: number; combo: number } {
   const powerFactor = fixedPower ? 1 : 1.5 - power / AIM.MAX_POWER;
