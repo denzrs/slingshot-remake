@@ -1670,7 +1670,7 @@ const de: Dict = {
   'mayhem.recap': 'Die Runden des Matches',
   'settings.look': 'Grafik',
   'settings.lookClassic': 'Einfach',
-  'settings.lookLuminous': 'Luminous',
+  'settings.lookLuminous': 'Leuchtend',
   'settings.lookForged': 'Forged',
   'settings.lookHolo': 'Holo',
   'settings.contours': 'Gravitationslinien',
