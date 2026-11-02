@@ -213,6 +213,10 @@ function wire(m: Match): void {
         if (audible) sound.combo();
         break;
       }
+      case 'bonus':
+        // Stacked above the kill's points and a multi-kill's callout.
+        e.bonuses.forEach((b, i) => effects.callout(`${t(`bonus.${b.kind}`).toUpperCase()} +${b.points}`, e.x, e.y - 64 - i * 18, COLORS.sodium, true));
+        break;
       case 'collapse':
         effects.collapse(e.x, e.y);
         if (audible) sound.rumble();

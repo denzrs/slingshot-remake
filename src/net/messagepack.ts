@@ -1,5 +1,5 @@
 import { POWER_UP_KINDS } from '../sim/powerups';
-import { FIELD, KILL_SOURCES, MAX_PLAYERS, SUDDEN_DEATH_KINDS } from '../sim/config';
+import { BONUS_KINDS, FIELD, KILL_SOURCES, MAX_PLAYERS, SUDDEN_DEATH_KINDS } from '../sim/config';
 import { Packr, Unpackr } from 'msgpackr';
 
 // Records are a msgpackr extension, not plain MessagePack, and rmp-serde cannot decode them.
@@ -187,6 +187,9 @@ function isGameEvent(value: unknown): boolean {
       return index('player') && finite('x') && finite('y') && finite('vx') && finite('vy') && finite('points');
     case 'multiKill':
       return index('player') && finite('kills') && finite('points') && finite('x') && finite('y');
+    case 'bonus':
+      return index('player') && finite('x') && finite('y') && Array.isArray(event.bonuses) && event.bonuses.length <= BONUS_KINDS.length
+        && event.bonuses.every((b) => record(b) && (BONUS_KINDS as readonly unknown[]).includes(b.kind) && typeof b.points === 'number' && Number.isFinite(b.points));
     case 'split':
       return index('player') && finite('x') && finite('y');
     case 'shield':

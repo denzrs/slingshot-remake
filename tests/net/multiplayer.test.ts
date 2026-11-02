@@ -10,6 +10,7 @@ import { packMessage, packWireMessage, unpackWireMessage } from '../../src/net/m
 import { presetRules } from '../../src/ui/presets/match-presets';
 import { MultiplayerSession, type NetMatch, type Transport } from '../../src/net/multiplayer';
 import type { RoomRules, ServerMessage } from '../../src/net/net';
+import { SCORING } from '../../src/sim/config';
 import { TIP_HIDDEN } from '../../src/game/oracle';
 import { cloneSettings, DEFAULT_SETTINGS } from '../../src/data/settings';
 import { netMatch } from '../../src/net/netMatch';
@@ -1473,7 +1474,7 @@ describe('spectators online', () => {
       expect(watcher.stands.roundResult?.winners).toEqual([0]);
       expect(watcher.crowd.seats.map((seat) => seat.balance)).toEqual([250, 750]);
     }
-    expect(hm.players[0].score).toBe(1000);
+    expect(hm.players[0].score).toBe(1000 + SCORING.FIRST_BLOOD + SCORING.OPENER);
     expect(hm.players[1].score).toBe(0);
   }, 90_000);
 });

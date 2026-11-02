@@ -3,7 +3,7 @@ import { createMatch, type CpuDecisionReport, type GameEvent, type Match } from 
 import type { GameMode } from '../../src/sim/modes';
 import { ClassicMatch } from '../../src/game/classic';
 import { HorizonMatch } from '../../src/game/horizon';
-import { AIM, FIELD, TRAIL_FADE } from '../../src/sim/config';
+import { AIM, FIELD, SCORING, TRAIL_FADE } from '../../src/sim/config';
 import { cloneSettings, DEFAULT_SETTINGS, type Seat } from '../../src/data/settings';
 
 /** Run a CPU-only match headlessly until the first round is decided. */
@@ -135,7 +135,7 @@ describe('classic trick-shot bonuses', () => {
   it('multiply the hit once switched on', () => {
     const m = slowHit(true);
     expect(m.lastKill).toMatchObject({ victim: 1, points: 1560, multiplier: 1.2, combo: ['airtime'] });
-    expect(m.players[0].score).toBe(1560);
+    expect(m.players[0].score).toBe(1560 + SCORING.FIRST_BLOOD + SCORING.OPENER);
   });
 });
 

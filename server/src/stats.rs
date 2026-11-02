@@ -40,7 +40,7 @@ const OVERVIEW_GAMES: i64 = 50;
 const PRUNE_INTERVAL_SECS: i64 = 6 * 60 * 60;
 const DAY_SECS: i64 = 24 * 60 * 60;
 
-const SCHEMA: [&str; 14] = [
+const SCHEMA: [&str; 15] = [
     // What the statistics remember between runs: the key their players are hashed with.
     "CREATE TABLE IF NOT EXISTS stat_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     // One row per round. `match_id` is random per game and `room_id` random per room; neither is reused.
@@ -92,6 +92,18 @@ const SCHEMA: [&str; 14] = [
          intercepts  INTEGER,
          stray_kills INTEGER,
          PRIMARY KEY (match_id, round, seat)
+     )",
+    // One row per extra paid on top of the points (first blood, a bounty, a revenge …), in the order the round paid them.
+    // How many a round paid is `stat_rounds.bonuses`, NULL from a client that does not pay them.
+    "CREATE TABLE IF NOT EXISTS stat_bonuses (
+         match_id TEXT    NOT NULL,
+         round    INTEGER NOT NULL,
+         n        INTEGER NOT NULL,
+         at       INTEGER NOT NULL,
+         seat     INTEGER NOT NULL,
+         kind     TEXT    NOT NULL,
+         points   INTEGER NOT NULL,
+         PRIMARY KEY (match_id, round, n)
      )",
     // One row per judged tip of the oracle game (the shot-down players' and the stands'), no names: how it came out.
     "CREATE TABLE IF NOT EXISTS stat_tips (
@@ -216,6 +228,10 @@ const INSERT_SEAT: &str = "INSERT INTO stat_seats (
          score, shots, kills, swingbys, grazes, own_goals, pickups, saves, missiles, intercepts, stray_kills)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)";
 
+const INSERT_BONUS: &str =
+    "INSERT OR IGNORE INTO stat_bonuses (match_id, round, n, at, seat, kind, points)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)";
+
 const INSERT_TIP: &str = "INSERT OR IGNORE INTO stat_tips (match_id, round, n, at, kind, correct, stake, payout, underdog, stands)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)";
 
@@ -250,6 +266,7 @@ const ADD_LOCAL_DAY_PLAYER: &str =
     "INSERT OR IGNORE INTO stat_local_day_players (day, player) VALUES (date(?1, 'unixepoch'), ?2)";
 
 const SET_TURNS: &str = "UPDATE stat_rounds SET turns = ?3 WHERE match_id = ?1 AND round = ?2";
+const SET_BONUSES: &str = "UPDATE stat_rounds SET bonuses = ?3 WHERE match_id = ?1 AND round = ?2";
 
 const PRUNE_LOCAL_DAYS: &str = "DELETE FROM stat_local_days WHERE day < date(?1, 'unixepoch')";
 const PRUNE_LOCAL_DAY_PLAYERS: &str =
@@ -264,6 +281,7 @@ const PRUNE_SHOTS: &str = "DELETE FROM stat_shots WHERE at < ?1";
 const PRUNE_ROUNDS: &str = "DELETE FROM stat_rounds WHERE at < ?1";
 const PRUNE_SEATS: &str = "DELETE FROM stat_seats WHERE at < ?1";
 const PRUNE_TIPS: &str = "DELETE FROM stat_tips WHERE at < ?1";
+const PRUNE_BONUSES: &str = "DELETE FROM stat_bonuses WHERE at < ?1";
 
 /// One day of the heatmap.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -410,6 +428,7 @@ impl Store {
             ("stat_seats", "missiles", "INTEGER"),
             ("stat_seats", "intercepts", "INTEGER"),
             ("stat_seats", "stray_kills", "INTEGER"),
+            ("stat_rounds", "bonuses", "INTEGER"),
         ] {
             Self::ensure_column(&conn, table, column, declared).await?;
         }
@@ -755,6 +774,26 @@ impl Store {
                 .execute(SET_TURNS, (facts.match_id.clone(), report.round, turns))
                 .await?;
         }
+        if let Some(bonuses) = &report.bonuses {
+            self.conn
+                .execute(
+                    SET_BONUSES,
+                    (facts.match_id.clone(), report.round, bonuses.len() as i64),
+                )
+                .await?;
+            for (n, bonus) in bonuses.iter().enumerate() {
+                let row = vec![
+                    Sql::Text(facts.match_id.clone()),
+                    Sql::Integer(report.round),
+                    Sql::Integer(n as i64 + 1),
+                    Sql::Integer(at),
+                    Sql::Integer(bonus.seat as i64),
+                    Sql::Text(bonus.kind.into()),
+                    Sql::Integer(bonus.points),
+                ];
+                self.conn.execute(INSERT_BONUS, row).await?;
+            }
+        }
 
         let who = self.who(facts);
         for (seat, (sitter, ship)) in facts.seats.iter().zip(&report.seats).enumerate() {
@@ -875,6 +914,7 @@ impl Store {
     async fn prune_before(&self, cutoff: i64) -> turso::Result<u64> {
         self.conn.execute(PRUNE_SEATS, (cutoff,)).await?;
         self.conn.execute(PRUNE_TIPS, (cutoff,)).await?;
+        self.conn.execute(PRUNE_BONUSES, (cutoff,)).await?;
         self.conn.execute(PRUNE_PLACEMENTS, (cutoff,)).await?;
         self.conn.execute(PRUNE_MATCHES, (cutoff,)).await?;
         self.conn.execute(PRUNE_SHOTS, (cutoff,)).await?;
@@ -1672,6 +1712,7 @@ mod tests {
                 {"score": 0, "shots": 2, "kills": 0, "swingbys": 0, "grazes": 1, "ownGoals": 0, "pickups": 0, "saves": 0, "alive": false},
                 {"score": 500, "shots": 1, "kills": 1, "swingbys": 2, "grazes": 0, "ownGoals": 0, "pickups": 0, "saves": 0, "missiles": 3, "intercepts": 1, "strayKills": 1, "alive": true},
             ],
+            "bonuses": [{"player": 1, "kind": "firstBlood", "points": 100}, {"player": 1, "kind": "opener", "points": 100}],
             "records": {"bestHit": {"player": 1, "value": 250.5}},
         }))
         .unwrap()
@@ -1764,6 +1805,19 @@ mod tests {
             )
             .await,
             [None, Some("3/1/1".into())]
+        );
+        // The extras the round paid, one row each, and how many there were.
+        assert_eq!(
+            text(
+                &stats,
+                "SELECT seat || '/' || kind || '/' || points FROM stat_bonuses ORDER BY n"
+            )
+            .await,
+            [Some("1/firstBlood/100".into()), Some("1/opener/100".into())]
+        );
+        assert_eq!(
+            text(&stats, "SELECT CAST(bonuses AS TEXT) FROM stat_rounds").await,
+            [Some("2".into())]
         );
         assert_eq!(
             text(&stats, "SELECT room_id FROM stat_rounds").await,

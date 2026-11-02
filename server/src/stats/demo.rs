@@ -5,13 +5,14 @@ use std::net::IpAddr;
 
 use crate::protocol::{rules_to_value, DEFAULT_RULES};
 use crate::report::{
-    PlacementReport, RecordRound, RoundReport, SeatRound, SeatTurn, ShotRound, TipRound,
-    TurnReport, RECORD_KEYS,
+    BonusRound, PlacementReport, RecordRound, RoundReport, SeatRound, SeatTurn, ShotRound,
+    TipRound, TurnReport, RECORD_KEYS,
 };
 
 use super::{now_unix, Job, Occupant, RoundFacts, SeatFacts, Stats, DAY_SECS};
 
-const DEMO_TABLES: [&str; 11] = [
+const DEMO_TABLES: [&str; 12] = [
+    "stat_bonuses",
     "stat_tips",
     "stat_placements",
     "stat_shots",
@@ -339,6 +340,28 @@ fn demo_round(index: usize, round: i64, team_mode: bool, local: bool) -> RoundRe
         ]
     };
 
+    // The round's winner drew first blood and opened with it; now and then a bounty, a revenge or a comeback on top.
+    let mut bonuses = vec![BonusRound {
+        seat: winning_seat,
+        kind: "firstBlood",
+        points: 100,
+    }];
+    for (kind, every, points) in [
+        ("opener", 3, 100),
+        ("bounty", 5, 50 + (index % 19) as i64 * 40),
+        ("revenge", 7, 200),
+        ("domination", 23, 300),
+        ("comeback", 13, 300),
+    ] {
+        if (index + round as usize).is_multiple_of(every) {
+            bonuses.push(BonusRound {
+                seat: winning_seat,
+                kind,
+                points,
+            });
+        }
+    }
+
     RoundReport {
         round,
         title: if team_mode {
@@ -353,6 +376,7 @@ fn demo_round(index: usize, round: i64, team_mode: bool, local: bool) -> RoundRe
         seats,
         turns: Some(2),
         tips,
+        bonuses: Some(bonuses),
         records,
     }
 }

@@ -2,6 +2,7 @@
  * What happened during a round (or a whole match), kept just so the scorecard can hand out awards.
  * Pure data and pure functions — the matches feed it, the HUD and the final screen read it.
  */
+import type { BonusKind } from '../sim/config';
 
 export type AwardKind = 'longestShot' | 'fastestKill' | 'swingbys' | 'grazes' | 'bestHit' | 'kills' | 'closeCall' | 'sniper' | 'ownGoals' | 'pickups' | 'saves';
 
@@ -47,6 +48,15 @@ export interface StatBook {
   intercepts: number[];
   /** Enemy ships hit by a missile of the player's that lost its shot and flew on (these count among `kills` too). */
   strayKills: number[];
+  /** The extras paid on top of the points (first blood, a bounty, revenge …), in the order they were paid. */
+  bonuses: BonusRecord[];
+}
+
+/** An extra paid to a player, and what it paid. */
+export interface BonusRecord {
+  player: number;
+  kind: BonusKind;
+  points: number;
 }
 
 export interface Award {
@@ -78,6 +88,7 @@ export const newStatBook = (): StatBook => ({
   missiles: [],
   intercepts: [],
   strayKills: [],
+  bonuses: [],
 });
 
 /** Add one to a player's counter; the list grows as new players show up. */

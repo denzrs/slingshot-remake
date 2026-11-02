@@ -1,4 +1,5 @@
 import { fmt, fmtInt, fmtNum, t, type Key } from '../platform/i18n';
+import { BONUS_KINDS, SCORING } from '../sim/config';
 import type { StatsFact } from './net';
 
 /** A length of time as 1:05. */
@@ -73,6 +74,15 @@ const FORMATS: Record<string, ((n: number) => string)[]> = {
   saves: [fmtInt],
   intercepts: [percent],
   strayKills: [fmtInt],
+  firstBlood: [percent],
+  bounties: [fmtInt, fmtInt],
+  revenges: [percent],
+  topBonus: [named('bonus', BONUS_KINDS), fmtInt],
+  bonusPoints: [fmtInt, fmtInt],
+  dominations: [fmtInt],
+  posthumous: [fmtInt],
+  shutdowns: [fmtInt],
+  lastToFirst: [fmtInt],
   ownGoals: [percent],
   weekTrend: [fmtInt, percent],
   weekend: [percent],
@@ -106,7 +116,7 @@ export function factParts(fact: StatsFact): FactPart[] | null {
   let sentence: string;
   try {
     const [a, b] = formats.map((format, i) => OPEN + format(fact.values[i]) + CLOSE);
-    sentence = t(key, { a, b: b ?? '' });
+    sentence = t(key, { a, b: b ?? '', rounds: SCORING.DOMINATION_ROUNDS });
   } catch {
     return null;
   }

@@ -1,12 +1,12 @@
 import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
 import type { Avatar } from '../platform/avatars';
-import { interceptPoints } from '../sim/scoring';
-import { AIM, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE, type KillSource, type SuddenDeathKind } from '../sim/config';
+import { bountyPoints, interceptPoints, underdogPoints } from '../sim/scoring';
+import { AIM, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE, type BonusKind, type KillSource, type SuddenDeathKind } from '../sim/config';
 import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
 import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
 import { createRng, randomSeed, type Rng } from '../sim/rng';
-import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../data/stats';
+import { bump, closestApproach, improve, newStatBook, pathLength, type BonusRecord, type StatBook } from '../data/stats';
 import type { KillcamPlayback } from '../data/roomRules';
 import { seatTeamsFor, startPower, type Seat, type Settings } from '../data/settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../sim/volley';
@@ -182,6 +182,8 @@ export type GameEvent =
   | { type: 'kill'; record: KillRecord }
   /** One shot took more than one ship in this volley: the chain number and what it paid. */
   | { type: 'multiKill'; player: number; kills: number; points: number; x: number; y: number }
+  /** Extras paid to a player — for a kill (first blood, a bounty on the leader, revenge …) or at the end of the round (a comeback) — each with what it paid, shown at (x, y). */
+  | { type: 'bonus'; player: number; bonuses: Bonus[]; x: number; y: number }
   | { type: 'collapse'; x: number; y: number }
   /** Sudden death has set in, as this round's kind of it. */
   | { type: 'suddenDeath'; kind: SuddenDeathKind }
@@ -199,6 +201,9 @@ export interface CpuDecisionReport extends CpuDecision {
   shot: number;
 }
 
+
+/** An extra paid on top of the points, and what it paid. */
+export type Bonus = Omit<BonusRecord, 'player'>;
 
 export interface MatchOptions {
   /** Attract mode (title screen): rounds continue on their own, forever. */
@@ -319,6 +324,14 @@ export abstract class Match {
   private oracleKills: { killer: number; victim: number; self: boolean; friendly: boolean }[] = [];
   /** The enemies each player has taken in the round being played, for the multi-kill chain. */
   private killChain = new Map<number, number>();
+  /** Whether an enemy ship has been taken this round yet: the first one is first blood. */
+  private firstBloodDrawn = false;
+  /** Who shot each ship down this round, and in the rounds before, latest first (revenge and domination read them). */
+  private killedBy = new Map<number, number>();
+  private killedBefore: Map<number, number>[] = [];
+  /** Everybody's score as the volley in the air went up (the bounty and the underdog read it), and as the round began (the comeback). */
+  private launchScores: number[] = [];
+  private roundScores: number[] = [];
   private disposed = false;
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
@@ -396,10 +409,10 @@ export abstract class Match {
     return true;
   }
   /**
-   * Whether back-to-back kills pay the multi-kill chain. The daily challenge keeps a score of its own and
-   * runs a target per round rather than a round per volley, so the chain has no meaning there.
+   * Whether kills pay the extras on top: the multi-kill chain, first blood, the bounty and revenge. The daily challenge
+   * keeps a score of its own and runs a target per round rather than a round per volley, so they have no meaning there.
    */
-  protected get paysKillChain(): boolean {
+  protected get paysKillBonuses(): boolean {
     return this.mode !== 'challenge';
   }
   protected abstract roundTitle(survivor: number | null): RoundTitle;
@@ -870,6 +883,8 @@ export abstract class Match {
     this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
     this.plannerRngs.clear();
     this.lastHitBy.clear();
+    this.killedBy.clear();
+    this.killedBefore = [];
     const seats = this.options.seats ?? this.settings.seats;
     const taken = seats.flatMap((seat, i) => (seat === 'off' ? [] : [{ seat: i, kind: seat }]));
     const teams = this.attract ? null : (this.options.teams ?? seatTeamsFor(this.settings, taken.map((s) => s.seat)));
@@ -912,6 +927,10 @@ export abstract class Match {
     // The chain counts a round's kills: several in one turn (a splitter's forks, an armor-piercing round) or
     // one per turn adding up. A new round starts everyone over, so no round opens with a chain carried in.
     this.killChain.clear();
+    this.firstBloodDrawn = false;
+    // Who shot you down last round is the one revenge is taken on in this one; domination looks two rounds further back.
+    this.killedBefore = [this.killedBy, ...this.killedBefore].slice(0, SCORING.DOMINATION_ROUNDS);
+    this.killedBy = new Map();
     this.skipVote = null;
     this.forfeited = false;
     this.round++;
@@ -957,6 +976,7 @@ export abstract class Match {
       p.angle = duel ? (p.id === 0 ? 0 : 180) : normalizeAngle(Math.round((Math.atan2(ship.y - FIELD.height / 2, FIELD.width / 2 - ship.x) * 180) / Math.PI));
       p.power = startPower(this.settings);
     }
+    this.roundScores = this.players.map((p) => p.score);
     this.power.startRound();
     this.emit({ type: 'round' });
     this.beginRound();
@@ -1306,6 +1326,10 @@ export abstract class Match {
     this.stands.rollbackRound();
     this.oracle.startRound();
     this.stands.startRound();
+    // The extras went back with the points, and the round's kills are no grudge: revenge and domination read the rounds as if this one was never played.
+    this.matchStats.bonuses.splice(this.matchStats.bonuses.length - this.roundStats.bonuses.length);
+    this.roundStats.bonuses = [];
+    this.killedBy = this.killedBefore.shift() ?? new Map();
     this.summary = { title: 'skipped', survivor: null, team: null, bonus: 0, lastKill: null };
     this.scoreHistory.push(before.slice());
     if (this.mayhem) this.mayhemHistory.push(this.mayhem);
@@ -1362,6 +1386,7 @@ export abstract class Match {
     this.killcam.capture(this.world, aims);
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
     this.shotLog.launched(this.volley.shots, aims);
+    this.launchScores = this.players.map((p) => p.score);
     this.simClock = 0;
     this.flightDoneAt = null;
     this.cpuJobs.clear();
@@ -1636,8 +1661,15 @@ export abstract class Match {
       this.cue('kill', killer, victim);
       this.cue('died', victim, killer);
     }
-    // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
-    if (!self && !friendly) this.lastHitBy.set(victim, killer);
+    const enemyKill = !self && !friendly;
+    const paysExtras = enemyKill && this.paysKillBonuses;
+    const bonuses = paysExtras ? this.killBonuses(vs, victim) : [];
+    if (enemyKill) {
+      // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
+      this.lastHitBy.set(victim, killer);
+      this.firstBloodDrawn = true;
+      this.killedBy.set(victim, killer);
+    }
     const record: KillRecord = {
       killer,
       victim,
@@ -1652,7 +1684,7 @@ export abstract class Match {
       at: this.clock,
     };
     if (self) this.record((book) => bump(book.ownGoals, killer));
-    if (!self && !friendly) {
+    if (enemyKill) {
       const seconds = this.clock - this.roundStartedAt;
       const from = volley.world.ships[killer];
       const target = volley.world.ships[victim];
@@ -1667,7 +1699,7 @@ export abstract class Match {
     }
     this.recordKill(record);
     // The kill chain: a second enemy in the round pays extra, whether it came in this turn or an earlier one.
-    if (!self && !friendly && this.paysKillChain) {
+    if (paysExtras) {
       const kills = (this.killChain.get(killer) ?? 0) + 1;
       this.killChain.set(killer, kills);
       const bonus = SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)] * this.payFactor;
@@ -1677,7 +1709,62 @@ export abstract class Match {
         this.emit({ type: 'multiKill', player: killer, kills, points: bonus, x: volley.world.ships[victim].x, y: volley.world.ships[victim].y });
       }
     }
+    if (bonuses.length) this.shotLog.bonus(vs, this.payBonuses(killer, bonuses, volley.world.ships[victim]));
     this.killcam.record(record, volley.shots.indexOf(vs), volley.steps);
+  }
+
+  /** Pays a player extras, notes them for the round's report and shows them at `at`; returns what they paid. */
+  private payBonuses(player: number, bonuses: Bonus[], at: { x: number; y: number }): number {
+    const points = bonuses.reduce((sum, b) => sum + b.points, 0);
+    this.players[player].score += points;
+    this.record((book) => book.bonuses.push(...bonuses.map((b) => ({ player, ...b }))));
+    this.emit({ type: 'bonus', player, bonuses, x: at.x, y: at.y });
+    return points;
+  }
+
+  /** The extras a kill of an enemy pays, taken before the kill is noted (it is no longer the round's first after that). */
+  private killBonuses(vs: VolleyShot, victim: number): Bonus[] {
+    const killer = vs.owner;
+    const pay = this.payFactor;
+    const bonuses: Bonus[] = [];
+    const add = (kind: BonusKind, points: number) => {
+      if (points > 0) bonuses.push({ kind, points });
+    };
+    /** Whether `by` shot `ship` down in each of the last `rounds` rounds before this one. */
+    const shotDownBy = (ship: number, by: number, rounds: number) => this.killedBefore.length >= rounds && this.killedBefore.slice(0, rounds).every((round) => round.get(ship) === by);
+    if (!this.firstBloodDrawn) add('firstBlood', SCORING.FIRST_BLOOD * pay);
+    // Not times the jackpot, these two: the points of the lead and the gap they are a share of were paid at the round's rate already.
+    const standings = this.standingsAtLaunch();
+    if (standings[0]?.id === victim && standings[1]) add('bounty', bountyPoints(standings[0].score - standings[1].score));
+    const last = standings.at(-1)!;
+    const victimScore = standings.find((s) => s.id === victim)?.score;
+    if (standings.length >= 3 && last.id === killer && last.score < standings.at(-2)!.score && victimScore !== undefined) add('underdog', underdogPoints(victimScore - last.score));
+    // Revenge on the one who shot you down last round — double on one who did it the last few rounds running.
+    if (shotDownBy(killer, victim, 1)) add('revenge', SCORING.REVENGE * pay * (shotDownBy(killer, victim, SCORING.DOMINATION_ROUNDS) ? 2 : 1));
+    if (shotDownBy(victim, killer, SCORING.DOMINATION_ROUNDS - 1)) add('domination', SCORING.DOMINATION * pay);
+    const spree = this.killChain.get(victim) ?? 0;
+    if (spree >= 2) add('shutdown', SCORING.SHUTDOWN_PER_KILL * spree * pay);
+    const team = this.players[killer].team;
+    if (team !== null && [...this.killedBy].some(([ship, by]) => by === victim && ship !== killer && this.players[ship].team === team)) add('avenger', SCORING.AVENGER * pay);
+    // Posthumous is for a ship that was shot down, not one whose player left the game with the shot in the air.
+    if (!this.players[killer].alive && !this.players[killer].left) add('posthumous', SCORING.POSTHUMOUS * pay);
+    // Once for the first shot, however many ships it takes: the chain is still empty for the first of them.
+    if (!vs.stray && this.players[killer].shots === 1 && !this.killChain.has(killer)) add('opener', SCORING.OPENER * pay);
+    return bonuses;
+  }
+
+  /** Everybody still in the game by their score as the volley went up, best first. Whoever left the game is not in the race. */
+  private standingsAtLaunch(): { id: number; score: number }[] {
+    return this.players.flatMap((p) => (p.left ? [] : [{ id: p.id, score: this.launchScores[p.id] ?? p.score }])).sort((a, b) => b.score - a.score);
+  }
+
+  /** The extra the end of a round pays: the survivor won it from alone in last place at its start. */
+  private roundBonuses(survivor: number | null): void {
+    if (!this.paysKillBonuses || this.forfeited || survivor === null) return;
+    const others = this.players.filter((q) => q.id !== survivor && !q.left).map((q) => this.roundScores[q.id] ?? 0);
+    if (others.length && others.every((score) => score > (this.roundScores[survivor] ?? 0))) {
+      this.payBonuses(survivor, [{ kind: 'comeback', points: SCORING.COMEBACK * this.payFactor }], this.world.ships[survivor]);
+    }
   }
 
   /** What the finished shots tell the scorecard: how far they flew and whom they narrowly missed. */
@@ -1733,6 +1820,7 @@ export abstract class Match {
     } else if (survivor !== null) {
       this.players[survivor].score += bonus;
     }
+    this.roundBonuses(survivor);
     const title = team !== null ? 'teamWin' : this.forfeited ? 'forfeit' : this.roundTitle(survivor);
     this.summary = { title, survivor, team, bonus, lastKill: this.lastKill };
     // The oracle's question for the whole round: a lone survivor or a whole team won it, or nobody did.

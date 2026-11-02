@@ -49,6 +49,15 @@ macro_rules! placed_kind {
     };
 }
 
+/// A fact that names an extra sends it as its index in this list: the client keeps the same one, in the same order
+/// (`BONUS_KINDS` in `src/sim/config.ts`, and `report::BONUS_KINDS` here), so a new kind goes at the end of all three
+/// (a test below holds this one to `report::BONUS_KINDS`).
+macro_rules! bonus_kind {
+    () => {
+        "CASE kind WHEN 'firstBlood' THEN 0 WHEN 'bounty' THEN 1 WHEN 'revenge' THEN 2 WHEN 'shutdown' THEN 3 WHEN 'underdog' THEN 4 WHEN 'avenger' THEN 5 WHEN 'posthumous' THEN 6 WHEN 'domination' THEN 7 WHEN 'opener' THEN 8 WHEN 'comeback' THEN 9 END"
+    };
+}
+
 /// An id, the fewest things it needs to have looked at, and the query: `n` first, then the numbers.
 ///
 /// Stats are reported by the hosts and taken at face value, so a fact that names a single record (a best, a biggest) asks for
@@ -231,6 +240,46 @@ const QUERIES: &[Query] = &[
     // stray, and may still hit a ship. Rows from clients that do not count them yet are NULL and left out.
     ("intercepts", 10, concat!("SELECT SUM(missiles), ", pct!("intercepts", "missiles"), " FROM stat_seats WHERE missiles IS NOT NULL")),
     ("strayKills", 2, "SELECT SUM(stray_kills), SUM(stray_kills) FROM stat_seats"),
+    // — Extras paid on top of the points; rounds from clients that do not pay them have no `bonuses` and are left out —
+    // How often first blood goes on to win the round, where there were more than two ships (in a duel it always does).
+    (
+        "firstBlood",
+        10,
+        concat!(
+            "SELECT COUNT(*), ", pct!("s.won = 1", "1"),
+            " FROM stat_bonuses b
+               JOIN stat_seats s ON s.match_id = b.match_id AND s.round = b.round AND s.seat = b.seat
+               JOIN stat_rounds r ON r.match_id = b.match_id AND r.round = b.round
+              WHERE b.kind = 'firstBlood' AND r.humans + r.cpus >= 3"
+        ),
+    ),
+    // The biggest bounty is a record.
+    ("bounties", 25, "SELECT COUNT(*), COUNT(*), MAX(points) FROM stat_bonuses WHERE kind = 'bounty'"),
+    (
+        "revenges",
+        20,
+        "SELECT SUM(s.kills), 100.0 * (SELECT COUNT(*) FROM stat_bonuses WHERE kind = 'revenge') / NULLIF(SUM(s.kills), 0)
+           FROM stat_seats s JOIN stat_rounds r ON r.match_id = s.match_id AND r.round = s.round WHERE r.bonuses IS NOT NULL",
+    ),
+    // First blood is paid nearly every round, so it is not in the race.
+    (
+        "topBonus",
+        10,
+        concat!(
+            "SELECT (SELECT COUNT(*) FROM stat_bonuses WHERE kind <> 'firstBlood'), ", bonus_kind!(), ", COUNT(*) FROM stat_bonuses
+              WHERE kind <> 'firstBlood' GROUP BY kind ORDER BY COUNT(*) DESC, kind LIMIT 1"
+        ),
+    ),
+    (
+        "bonusPoints",
+        10,
+        "SELECT n, p, 1.0 * p / n FROM (SELECT (SELECT COUNT(*) FROM stat_rounds WHERE bonuses IS NOT NULL) AS n,
+                                              (SELECT COALESCE(SUM(points), 0) FROM stat_bonuses) AS p)",
+    ),
+    ("dominations", 2, "SELECT COUNT(*), COUNT(*) FROM stat_bonuses WHERE kind = 'domination'"),
+    ("posthumous", 2, "SELECT COUNT(*), COUNT(*) FROM stat_bonuses WHERE kind = 'posthumous'"),
+    ("shutdowns", 2, "SELECT COUNT(*), COUNT(*) FROM stat_bonuses WHERE kind = 'shutdown'"),
+    ("lastToFirst", 2, "SELECT COUNT(*), COUNT(*) FROM stat_bonuses WHERE kind = 'comeback'"),
     (
         "ownGoals",
         10,
@@ -378,6 +427,8 @@ mod tests {
             "INSERT INTO stat_seats (match_id, round, seat, at, player, cpu, team, won, alive, score, shots, kills, swingbys, grazes, own_goals, pickups, saves, missiles, intercepts, stray_kills)
              VALUES ('m', 1, 0, 0, 'p', NULL, NULL, 1, 1, 500, 2, 1, 0, 0, 0, 0, 0, 2, 1, 0),
                     ('m', 1, 1, 0, NULL, 'easy', NULL, 0, 0, 100, 2, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL)",
+            "UPDATE stat_rounds SET bonuses = 3",
+            "INSERT INTO stat_bonuses VALUES ('m', 1, 1, 0, 0, 'firstBlood', 100), ('m', 1, 2, 0, 0, 'bounty', 120), ('m', 1, 3, 0, 0, 'opener', 100)",
             "INSERT INTO stat_turns VALUES ('m', 1, 1, 0, 0, 'p', NULL, 1, 0), ('m', 1, 1, 1, 0, NULL, 'easy', 1, 100)",
             "INSERT INTO stat_shots (match_id, round, turn, n, at, seat, player, cpu, angle, power, power_up, fork, fan, split_at, rider, resolution, hits, hit_seat, hit_kind, points)
              VALUES ('m', 1, 1, 1, 0, 0, 'p', NULL, 10, 50, NULL, 0, NULL, NULL, NULL, 'lost', 0, NULL, NULL, 0),
@@ -431,6 +482,42 @@ mod tests {
             stats.fact(query("topPlacement"), 0).await.unwrap(),
             Some(vec![4.0, 1.0])
         );
+    }
+
+    #[tokio::test]
+    async fn the_extras_read_the_rounds_that_report_them() {
+        let stats = played().await;
+        let query = |id: &str| QUERIES.iter().find(|(q, _, _)| *q == id).unwrap().2;
+        // The one bounty, and what it paid. The one kill was no revenge, and 0 % is no fact.
+        assert_eq!(
+            stats.fact(query("bounties"), 0).await.unwrap(),
+            Some(vec![1.0, 120.0])
+        );
+        // Two extras besides first blood, the bounty first on a tie of one each (a tie goes by name); 320 points in the one round.
+        assert_eq!(
+            stats
+                .fact(query("topBonus"), 0)
+                .await
+                .unwrap()
+                .map(|v| v[1]),
+            Some(1.0)
+        );
+        assert_eq!(
+            stats.fact(query("bonusPoints"), 0).await.unwrap(),
+            Some(vec![320.0, 320.0])
+        );
+        assert_eq!(stats.fact(query("revenges"), 0).await.unwrap(), None);
+        // A duel's first blood always wins, so it is not asked about.
+        assert_eq!(stats.fact(query("firstBlood"), 0).await.unwrap(), None);
+    }
+
+    #[test]
+    fn the_bonus_kinds_are_numbered_as_the_report_lists_them() {
+        let case = bonus_kind!();
+        for (i, kind) in crate::report::BONUS_KINDS.iter().enumerate() {
+            assert!(case.contains(&format!("WHEN '{kind}' THEN {i} ")), "{kind} is not {i}");
+        }
+        assert_eq!(case.matches(" WHEN ").count(), crate::report::BONUS_KINDS.len());
     }
 
     #[tokio::test]

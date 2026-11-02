@@ -39,6 +39,16 @@ describe('round report', () => {
     expect(report.players[1]).toMatchObject({ missiles: 2, intercepts: 1, strayKills: 1 });
   });
 
+  it('lists the extras the round paid, always, rounded', () => {
+    const match = source();
+    expect(roundReport(match).bonuses).toEqual([]);
+    match.roundStats.bonuses.push({ player: 1, kind: 'firstBlood', points: 100 }, { player: 1, kind: 'bounty', points: 237.5 });
+    expect(roundReport(match).bonuses).toEqual([
+      { player: 1, kind: 'firstBlood', points: 100 },
+      { player: 1, kind: 'bounty', points: 238 },
+    ]);
+  });
+
   it('lists the judged tips of both tipping games, and leaves the field out when nobody tipped', () => {
     const match = source();
     expect(roundReport(match)).not.toHaveProperty('tips');
