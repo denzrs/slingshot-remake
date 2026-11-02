@@ -25,6 +25,16 @@ export function interceptPoints(chance: number): number {
   return Math.round(SCORING.INTERCEPT / chance);
 }
 
+/** What shooting down the leader pays, for the `lead` (points) they had over the second. */
+export function bountyPoints(lead: number): number {
+  return lead < SCORING.BOUNTY_MIN_LEAD ? 0 : Math.min(SCORING.BOUNTY_MAX, Math.round(lead * SCORING.BOUNTY_SHARE));
+}
+
+/** What the ship in last place gets for taking one `gap` points above it. */
+export function underdogPoints(gap: number): number {
+  return gap < SCORING.UNDERDOG_MIN_GAP ? 0 : Math.min(SCORING.UNDERDOG_MAX, Math.round(gap * SCORING.UNDERDOG_SHARE));
+}
+
 /** Event Horizon: a kill is worth base × power factor × trick-shot combo. */
 export function scoreHorizonKill(power: number, kinds: StyleKind[], fixedPower: boolean): { points: number; combo: number } {
   const powerFactor = fixedPower ? 1 : 1.5 - power / AIM.MAX_POWER;

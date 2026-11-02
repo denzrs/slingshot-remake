@@ -40,6 +40,23 @@ const RESOLUTIONS: [&str; 7] = [
 ];
 /// The power-ups that ride on one shot.
 const RIDERS: [&str; 3] = ["preview", "piercing", "plasma"];
+/// The extras paid on top of the points, in the client's order (`BONUS_KINDS` in `src/sim/config.ts`): a fact names one
+/// by its index here, so a new kind goes at the end of both.
+pub const BONUS_KINDS: [&str; 11] = [
+    "firstBlood",
+    "bounty",
+    "revenge",
+    "shutdown",
+    "underdog",
+    "avenger",
+    "posthumous",
+    "domination",
+    "opener",
+    "comeback",
+    "sweep",
+];
+/// Extras in one round: a handful per kill, a few at its end.
+const MAX_BONUSES: usize = 200;
 /// The power-ups that are laid on the field, as a placement names them.
 const PLACEMENT_KINDS: [&str; 7] = [
     "teleport",
@@ -85,6 +102,25 @@ pub struct SeatRound {
     pub intercepts: Option<i64>,
     pub stray_kills: Option<i64>,
     pub alive: bool,
+}
+
+/// One extra paid on top of the points: to whom, what for, and how much.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BonusRound {
+    pub seat: usize,
+    pub kind: &'static str,
+    pub points: i64,
+}
+
+fn parse_bonus(value: &Value, seats: usize) -> Option<BonusRound> {
+    if !is_record(value) {
+        return None;
+    }
+    Some(BonusRound {
+        seat: seat(value.get("player"), seats)??,
+        kind: choice(value.get("kind"), &BONUS_KINDS)??,
+        points: int(value.get("points"), 0..=MAX_SCORE)?,
+    })
 }
 
 /// One judged tip of the oracle game: a hit/miss or salvo tip, or a bet on who wins the round.
@@ -166,6 +202,8 @@ pub struct RoundReport {
     pub turns: Option<i64>,
     /// The tips and bets judged in the round; empty from a client that does not say, or when nobody tipped.
     pub tips: Vec<TipRound>,
+    /// The extras paid in the round, in order; None from a client that does not pay them.
+    pub bonuses: Option<Vec<BonusRound>>,
     /// Indexed like `RECORD_KEYS`.
     pub records: [Option<RecordRound>; RECORD_KEYS.len()],
 }
@@ -259,7 +297,7 @@ fn parse_seat(value: &Value) -> Option<SeatRound> {
 impl RoundReport {
     /// The rows writing it down takes: the round's, one per ship and one per tip.
     pub fn rows(&self) -> u64 {
-        (1 + self.seats.len() + self.tips.len()) as u64
+        (1 + self.seats.len() + self.tips.len() + self.bonuses.as_ref().map_or(0, Vec::len)) as u64
     }
 }
 
@@ -316,6 +354,16 @@ pub fn parse_round_report(value: &Value) -> Option<RoundReport> {
             .map(parse_tip)
             .collect::<Option<_>>()?,
     };
+    let bonuses: Option<Vec<BonusRound>> = match value.get("bonuses") {
+        None | Some(Value::Null) => None,
+        Some(list) => Some(
+            list.as_array()
+                .filter(|list| list.len() <= MAX_BONUSES)?
+                .iter()
+                .map(|bonus| parse_bonus(bonus, seats.len()))
+                .collect::<Option<_>>()?,
+        ),
+    };
     Some(RoundReport {
         round: int(value.get("round"), 1..=MAX_ROUND)?,
         title,
@@ -326,6 +374,7 @@ pub fn parse_round_report(value: &Value) -> Option<RoundReport> {
         seats,
         turns: optional_int(value.get("turns"), 0..=MAX_TURN)?,
         tips,
+        bonuses,
         records,
     })
 }
@@ -575,6 +624,17 @@ mod tests {
             (seat.missiles, seat.intercepts, seat.stray_kills),
             (Some(3), Some(1), Some(0))
         );
+        // A client that does not pay the extras leaves them out; one that does sends the list, empty or not.
+        assert_eq!(report.bonuses, None);
+        counted["bonuses"] = json!([{"player": 1, "kind": "bounty", "points": 250}]);
+        assert_eq!(
+            parse_round_report(&counted).expect("a report").bonuses,
+            Some(vec![BonusRound {
+                seat: 1,
+                kind: "bounty",
+                points: 250
+            }])
+        );
         assert_eq!(
             report.records[2],
             Some(RecordRound {
@@ -604,6 +664,9 @@ mod tests {
         broken(&|r| r["players"][0]["alive"] = json!(1));
         broken(&|r| r["players"][0]["missiles"] = json!(-1));
         broken(&|r| r["players"][0]["strayKills"] = json!("1"));
+        broken(&|r| r["bonuses"] = json!([{"player": 0, "kind": "luck", "points": 100}]));
+        broken(&|r| r["bonuses"] = json!([{"player": 2, "kind": "bounty", "points": 100}]));
+        broken(&|r| r["bonuses"] = json!([{"player": 0, "kind": "bounty", "points": -100}]));
         broken(&|r| r["players"] = json!([r["players"][0].clone()]));
         broken(&|r| r["players"] = Value::Array(vec![r["players"][0].clone(); 7]));
         broken(&|r| r["records"]["bestHit"]["player"] = json!(5));

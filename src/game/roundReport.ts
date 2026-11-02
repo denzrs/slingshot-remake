@@ -8,6 +8,7 @@ import type { TipReport } from './oracle';
 import type { ReplayPlacement } from './replay';
 import type { ShotRecord } from './shotLog';
 import type { Best, StatBook } from '../data/stats';
+import type { BonusKind } from '../sim/config';
 
 /** One seat's round. Indexed like the players of the match. */
 export interface SeatReport {
@@ -49,6 +50,8 @@ export interface RoundReport {
   players: SeatReport[];
   /** The tips and bets of the shot-down players and of the stands that were judged in this round; left out when there were none. */
   tips?: TipReport[];
+  /** The extras paid in the round (first blood, a bounty …), in the order they were paid: always sent, empty when there were none. */
+  bonuses: { player: number; kind: BonusKind; points: number }[];
   records: {
     longestShot?: RecordReport;
     fastestKill?: RecordReport;
@@ -141,6 +144,7 @@ export function roundReport(match: ReportSource): RoundReport {
       alive: stillIn(p),
     })),
     ...(tips.length ? { tips } : {}),
+    bonuses: (book.bonuses ?? []).map((b) => ({ ...b, points: Math.round(b.points) })),
     records,
   };
 }

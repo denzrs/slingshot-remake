@@ -131,6 +131,35 @@ export const SCORING = {
    * round going through hulls) pays a bonus for every enemy after the first. Indexed by the kill it pays for.
    */
   MULTI_KILL: [0, 0, 250, 500, 750, 1000] as readonly number[],
+  /** The first enemy ship taken in a round. */
+  FIRST_BLOOD: 100,
+  /**
+   * Shooting down the leader, alone in front when the volley went up, pays a share of the lead they had over the second,
+   * nothing for a lead under the least, and never more than the cap.
+   */
+  BOUNTY_SHARE: 0.25,
+  BOUNTY_MIN_LEAD: 100,
+  BOUNTY_MAX: 1000,
+  /** Revenge: taking the enemy who shot your ship down in the round before — twice that on one who dominated you. */
+  REVENGE: 200,
+  /** Shutdown: taking a ship on a spree (two enemies or more this round) pays this for every enemy it has taken. */
+  SHUTDOWN_PER_KILL: 100,
+  /** Underdog: the ship alone in last place as the volley went up takes one above it — a share of the gap, as the bounty is of the lead. */
+  UNDERDOG_SHARE: 0.2,
+  UNDERDOG_MIN_GAP: 100,
+  UNDERDOG_MAX: 500,
+  /** Avenger (teams): taking the enemy who shot a teammate down earlier in the round. */
+  AVENGER: 150,
+  /** Posthumous: a kill landing after the shooter's own ship is gone. */
+  POSTHUMOUS: 200,
+  /** Domination: the same enemy shot down this many rounds running, this one included; it pays again every round the run goes on. */
+  DOMINATION: 300,
+  DOMINATION_ROUNDS: 3,
+  /** Opener: a kill with the shooter's first shot of the round. */
+  OPENER: 100,
+  /** At the end of a round: winning it from alone in last place at its start, and taking every enemy of the round yourself (at least two). */
+  COMEBACK: 300,
+  SWEEP: 500,
   /** Combo multipliers can't run away completely. */
   MAX_COMBO: 12,
 } as const;
@@ -202,6 +231,12 @@ const GIANT_RADII: readonly number[] = [80, 125, 170];
 /** What takes a ship when no player does: the Event Horizon's hole, or a Solar System's sun in sudden death. */
 export const KILL_SOURCES = ['horizon', 'sun'] as const;
 export type KillSource = (typeof KILL_SOURCES)[number];
+/**
+ * The extras on top of the points (see `SCORING`): those a kill of an enemy can pay, then those the end of a round pays.
+ * The relay keeps the same list for the facts that name one (`server/src/report.rs`), so a new kind goes at the end of both.
+ */
+export const BONUS_KINDS = ['firstBlood', 'bounty', 'revenge', 'shutdown', 'underdog', 'avenger', 'posthumous', 'domination', 'opener', 'comeback', 'sweep'] as const;
+export type BonusKind = (typeof BONUS_KINDS)[number];
 
 /** The ways sudden death pushes a round to its end: enemy ships pull shots in (Classic), or the sun turns red giant (Solar System). */
 export const SUDDEN_DEATH_KINDS = ['gravity', 'redGiant'] as const;

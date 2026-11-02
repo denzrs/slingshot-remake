@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createMatch, type GameEvent, type Match } from '../../src/game';
 import type { ClassicMatch } from '../../src/game/classic';
 import type { Planet } from '../../src/sim/physics';
+import { SCORING } from '../../src/sim/config';
 import { matchMoments, spotlight } from '../../src/game/scorecard';
 import { awards, bump, closestApproach, improve, newStatBook, pathLength, thinTrail } from '../../src/data/stats';
 import { DEFAULT_SETTINGS, type Seat } from '../../src/data/settings';
@@ -245,7 +246,8 @@ describe('scorecard in a match', () => {
         hitSeat: 1,
         hitKind: 'enemy',
       });
-      expect(m.shotLog.shots[0].points).toBe(m.lastKill!.points);
+      // The round's first kill, with the shooter's first shot: first blood and an opener on top.
+      expect(m.shotLog.shots[0].points).toBe(m.lastKill!.points + SCORING.FIRST_BLOOD + SCORING.OPENER);
     expect(m.shotLog.shots[0].turn).toBe(1);
     expect(m.shotLog.ofTurn()).toEqual(m.shotLog.shots);
     });

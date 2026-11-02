@@ -85,7 +85,7 @@ pub enum RoomCommand<'a> {
         text: Parsed<String>,
     },
     /// The host's account of a round that just ended.
-    RoundStats(Parsed<RoundReport>),
+    RoundStats(Box<Parsed<RoundReport>>),
     /// The host's account of a turn that was just flown.
     TurnStats(Parsed<TurnReport>),
     LeaveRoom,
@@ -270,9 +270,9 @@ impl<'a> RoomCommand<'a> {
                 seat: cpu_seat(message),
                 text: clean_chat(message.get("text")).ok_or("Say something first"),
             },
-            "round_stats" => {
-                RoomCommand::RoundStats(parse_round_report(message).ok_or("Malformed round stats"))
-            }
+            "round_stats" => RoomCommand::RoundStats(Box::new(
+                parse_round_report(message).ok_or("Malformed round stats"),
+            )),
             "turn_stats" => {
                 RoomCommand::TurnStats(parse_turn_report(message).ok_or("Malformed turn stats"))
             }

@@ -119,6 +119,21 @@ const TUTORIAL: (() => Lesson)[] = [
       para(t('tutorial.round.2')),
       para(t('tutorial.round.3', { selfHit: SCORING.SELF_HIT, survivor: SCORING.SURVIVOR })),
       para(t('tutorial.round.4')),
+      para(
+        t('tutorial.round.5', {
+          firstBlood: SCORING.FIRST_BLOOD,
+          opener: SCORING.OPENER,
+          revenge: SCORING.REVENGE,
+          rounds: SCORING.DOMINATION_ROUNDS,
+          domination: SCORING.DOMINATION,
+          shutdown: SCORING.SHUTDOWN_PER_KILL,
+          avenger: SCORING.AVENGER,
+          posthumous: SCORING.POSTHUMOUS,
+          bountyMax: SCORING.BOUNTY_MAX,
+          underdogMax: SCORING.UNDERDOG_MAX,
+        }),
+      ),
+      para(t('tutorial.round.6', { comeback: SCORING.COMEBACK, sweep: SCORING.SWEEP })),
     ],
   }),
   () => ({

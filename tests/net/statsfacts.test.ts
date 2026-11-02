@@ -16,6 +16,12 @@ describe('facts for the menu', () => {
     expect(factText({ id: 'weekTrend', values: [140, 112.5] })).toBe('The last 7 days: 140 rounds – 113% of the week before.');
     expect(factText({ id: 'intercepts', values: [37.5] })).toBe('Planetary defenses bring down 38% of the shots they fire at.');
     expect(factText({ id: 'strayKills', values: [3] })).toBe('Defense missiles that lost their target have destroyed 3 ships.');
+    expect(factText({ id: 'firstBlood', values: [61.2] })).toBe('Whoever draws first blood goes on to win the round 61% of the time.');
+    expect(factText({ id: 'bounties', values: [42, 875] })).toBe('42 leaders have been shot down for the bounty on their head – the biggest paid 875 points.');
+    expect(factText({ id: 'revenges', values: [8.4] })).toBe('8.4% of kills are revenge on the ship that shot the shooter down the round before.');
+    expect(factText({ id: 'topBonus', values: [7, 12] })).toBe('Besides first blood, the extra paid most often is Domination: 12 times.');
+    expect(factText({ id: 'topBonus', values: [99, 12] })).toBeNull();
+    expect(factText({ id: 'sweeps', values: [4] })).toBe('In 4% of rounds with three or more ships, one ship takes every enemy itself.');
   });
 
   it('has nothing to say about a fact it does not know, one with numbers missing, or a harmless 0% self hit', () => {

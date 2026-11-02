@@ -1,4 +1,5 @@
 import { fmt, fmtInt, fmtNum, t, type Key } from '../platform/i18n';
+import { BONUS_KINDS } from '../sim/config';
 import type { StatsFact } from './net';
 
 /** A length of time as 1:05. */
@@ -73,6 +74,16 @@ const FORMATS: Record<string, ((n: number) => string)[]> = {
   saves: [fmtInt],
   intercepts: [percent],
   strayKills: [fmtInt],
+  firstBlood: [percent],
+  bounties: [fmtInt, fmtInt],
+  revenges: [percent],
+  topBonus: [named('bonus', BONUS_KINDS), fmtInt],
+  bonusPoints: [fmtInt, fmtInt],
+  dominations: [fmtInt],
+  posthumous: [fmtInt],
+  shutdowns: [fmtInt],
+  lastToFirst: [fmtInt],
+  sweeps: [percent],
   ownGoals: [percent],
   weekTrend: [fmtInt, percent],
   weekend: [percent],
