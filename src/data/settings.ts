@@ -15,7 +15,7 @@ export type Seat = 'human' | CpuLevel | 'off';
 export interface Settings extends RoomRules {
   /** Always MAX_PLAYERS long; seats that aren't 'off' take part, keeping their number and colour. */
   seats: Seat[];
-  /** The field's graphics: the original classic plate, or luminous (glowing ships, moving planets), forged (rendered ships and planets) or holo (a projection in lines). */
+  /** The field's graphics: the original classic plate, or forged (glowing, rendered ships and planets) or holo (a projection in lines). */
   look: Look;
   contours: boolean;
   particles: boolean;

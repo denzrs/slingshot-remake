@@ -21,7 +21,7 @@ const STRIP = 3.6;
  * moves — gas giants as bands that run in turn against each other, other planets as mottling drifting slowly
  * round — so the field is never quite still. The sphere and its finish are painted once; only the strip slides.
  */
-export function renderLuminousPlanet(p: Planet, ps: number): PlanetSprite {
+export function renderLitPlanet(p: Planet, ps: number): PlanetSprite {
   const R = p.radius * ps;
   const reach = R * (1 + GLOW);
   const size = Math.ceil(reach * 2 + 4);

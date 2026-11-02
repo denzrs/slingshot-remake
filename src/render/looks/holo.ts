@@ -29,10 +29,12 @@ import {
   drawHoloNova,
   drawHoloPlasmaTrail,
 } from './holo-art';
+import { holoPost, paintHoloBackdrop, paintHoloBorder } from './holo-field';
 
 /**
- * The holo look: the engraved plan as a projection. Every element is drawn by `holo-art.ts`; this file says which element
- * is drawn how, and is the one place to look when something in this look should change.
+ * The holo look: the engraved plan as a projection. Every element is drawn by `holo-art.ts` and the field as a whole (the
+ * glass, the frame, the glow) by `holo-field.ts`; this file says which is drawn how, and is the one
+ * place to look when something in this look should change.
  */
 
 // ---------------------------------------------------------------- the painter ----
@@ -91,9 +93,12 @@ const holoEffects: EffectStyle = {
 };
 
 const holoParts: Partial<LookPainter> = {
-  note: 'A projection of thin lines and hexagons.',
+  note: 'A projection on dark glass: thin lines and hexagons, corner brackets, a faint hex lattice round the field and a soft glow.',
   planet: renderHoloPlanet,
   effects: holoEffects,
+  backdropArt: paintHoloBackdrop,
+  border: paintHoloBorder,
+  post: holoPost,
   trail: (ctx, points, wormholes, color, rank, fade) => {
     ctx.strokeStyle = rgba(color, (rank === 0 ? 0.75 : rank === 1 ? 0.38 : 0.2) * fade);
     ctx.lineWidth = rank === 0 ? 1 : 0.8;

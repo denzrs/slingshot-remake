@@ -34,11 +34,10 @@ A look is how every element of the playing field is drawn (menus, HUD and the tu
 
 | File | |
 | --- | --- |
-| `painter.ts` | The interface: one method per element (ship, planet, shot, portal, defense, aim, effects, …). Start here to add or change an element |
+| `painter.ts` | The interface: one method per element (ship, planet, shot, portal, defense, aim, effects, …), and the whole-frame hooks (`begin`, `backdropArt`, `border`, `sky`, `post`) that a look can use to light or grade the field as a whole. Start here to add or change an element |
 | `classic.ts` | The engraved plan, and `engraved(id, styles, parts)`, which builds every other look: a look is the engraved painter with some `styles` (a hook inside an element, such as light over the black hole) and some `parts` (elements it draws itself) |
-| `luminous.ts`, `luminous-art.ts`, `luminous-planet.ts` | The look in light: what it changes, and how it draws it |
-| `forged.ts`, `forged/` | The luminous look with the Blender renders put in (`scripts/forged/` makes them) |
-| `holo.ts`, `holo-art.ts` | The projection of lines and hexagons |
+| `forged.ts`, `forged/`, `forged-*.ts` | The engraved plan in light (`forged-parts` the parts and styles, `forged-light` and `forged-lit-planet` their drawing) with the Blender renders put in (`scripts/forged/` makes them: `render_assets.py` the ship, turret, hole and first three planet maps, `render_planets.py` thirteen more planet maps by style), and what is drawn over them: `forged-planet` (turning clouds, dusk, city lights, rings), `forged-blast` (fireballs, shrapnel), `forged-sky` (nebula, drifting stars, bloom and grade), `forged-shots` (shots, tracks, the sun's rays), `forged-gas` (nebula, storm clouds, portals), `forged-assets` (image loading) |
+| `holo.ts`, `holo-art.ts`, `holo-field.ts` | The projection: lines and hexagons, and the glass, frame and glow of the whole field |
 | `index.ts` | `painterFor(look)` |
 
 To add a look: write a painter file that builds on one (`engraved(...)`, spreading what it extends, with a `note`), list its id in `LOOKS` in `data/look.ts` and its painter in `index.ts` (the types fail until both are done), and give it a name in the settings, `settings.look<Name>`, in both languages. The settings picker and the gallery are built from that list. To change how an element looks in one look: edit that look's file only.

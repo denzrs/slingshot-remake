@@ -186,14 +186,6 @@ describe('Graphics look', () => {
     expect(loadSettings().look).toBe('classic');
   });
 
-  it('keeps the luminous look after saving and reloading', () => {
-    storage();
-    const settings = cloneSettings(DEFAULT_SETTINGS);
-    settings.look = 'luminous';
-    saveSettings(settings);
-    expect(loadSettings().look).toBe('luminous');
-  });
-
   it('keeps the forged look after saving and reloading', () => {
     storage();
     const settings = cloneSettings(DEFAULT_SETTINGS);
@@ -210,9 +202,11 @@ describe('Graphics look', () => {
     expect(loadSettings().look).toBe('holo');
   });
 
-  it('carries the old name of the luminous look over', () => {
+  it('carries the luminous look, taken out, and its old name over to forged', () => {
+    storage({ look: 'luminous' });
+    expect(loadSettings().look).toBe('forged');
     storage({ look: 'refined' });
-    expect(loadSettings().look).toBe('luminous');
+    expect(loadSettings().look).toBe('forged');
   });
 
   it('falls back to the classic look for a value it does not know', () => {

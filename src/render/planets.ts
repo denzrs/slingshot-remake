@@ -10,7 +10,7 @@ const HATCH_A = (32 * Math.PI) / 180;
 const HATCH_B = (-40 * Math.PI) / 180;
 const HATCH_SPACING = 3.1;
 
-/** A planet's sprite in the classic look. The sprite may reach past the planet (a luminous one has a glow): draw it with `draw`, centred. */
+/** A planet's sprite in the classic look. The sprite may reach past the planet (a forged one has a glow): draw it with `draw`, centred. */
 export function renderPlanet(p: Planet, ps: number): PlanetSprite {
   const canvas = renderClassicPlanet(p, ps);
   return {

@@ -15,6 +15,8 @@ interface Spark {
   color: string;
   drag: number;
   tier: SparkTier;
+  /** A number of its own, for a look that gives each spark a shape or a spin. */
+  seed: number;
   /** Seconds left before the spark is gone; sparks without one drift on until the round ends. */
   life?: number;
 }
@@ -58,6 +60,18 @@ interface Ring {
   color: string;
   /** Contracting instead of expanding. */
   inward: boolean;
+}
+
+/** A fireball: a blast of light that grows and dies away where something exploded. */
+interface Blast {
+  x: number;
+  y: number;
+  /** Width in field units at its fullest. */
+  size: number;
+  life: number;
+  max: number;
+  color: string;
+  seed: number;
 }
 
 /** A bright line that fades: the streak of a teleport. */
@@ -130,6 +144,7 @@ interface Callout {
 export class Effects {
   private sparks: Spark[] = [];
   private rings: Ring[] = [];
+  private blasts: Blast[] = [];
   private callouts: Callout[] = [];
   private motes: Mote[] = [];
   private beams: Beam[] = [];
@@ -156,6 +171,7 @@ export class Effects {
   clear(): void {
     this.sparks = [];
     this.rings = [];
+    this.blasts = [];
     this.callouts = [];
     this.motes = [];
     this.beams = [];
@@ -170,6 +186,7 @@ export class Effects {
   explode(x: number, y: number, color: string, vx = 0, vy = 0): void {
     this.ring(x, y, 90, 0.7, color);
     this.ring(x, y, 150, 1.1, COLORS.sodium);
+    this.blast(x, y, 150, 0.95, color);
     this.burst(x, y, 110, 40, 360, color, 'large', vx, vy);
     this.burst(x, y, 70, 20, 220, COLORS.sodium, 'medium', vx, vy);
     this.burst(x, y, 30, 10, 90, COLORS.bone, 'small', vx, vy);
@@ -179,6 +196,7 @@ export class Effects {
 
   impact(x: number, y: number, color: string, vx = 0, vy = 0): void {
     this.ring(x, y, 26, 0.45, COLORS.bone);
+    this.blast(x, y, 44, 0.5, color);
     this.burst(x, y, 26, 20, 140, color, 'large', vx, vy);
     this.burst(x, y, 12, 10, 70, COLORS.boneDim, 'medium', vx, vy);
     if (!this.reducedMotion) this.shake = Math.max(this.shake, 2.5);
@@ -197,6 +215,7 @@ export class Effects {
   /** Two projectiles annihilating each other. */
   clash(x: number, y: number, a: string, b: string, velocities: [{ x: number; y: number }, { x: number; y: number }] = [{ x: 0, y: 0 }, { x: 0, y: 0 }]): void {
     this.ring(x, y, 46, 0.5, COLORS.bone);
+    this.blast(x, y, 80, 0.65, COLORS.bone);
     this.burst(x, y, 30, 40, 260, a, 'large', velocities[0].x, velocities[0].y);
     this.burst(x, y, 30, 40, 260, b, 'large', velocities[1].x, velocities[1].y);
     this.flash = Math.max(this.flash, 0.45);
@@ -264,6 +283,7 @@ export class Effects {
   shieldHit(x: number, y: number, color: string): void {
     this.ring(x, y, 44, 0.45, color);
     this.ring(x, y, 24, 0.3, COLORS.bone);
+    this.blast(x, y, 50, 0.5, color);
     this.burst(x, y, 24, 50, 220, color, 'large', 0, 0, 0.8);
     this.burst(x, y, 10, 30, 120, COLORS.bone, 'small', 0, 0, 0.6);
     this.flash = Math.max(this.flash, 0.25);
@@ -292,6 +312,7 @@ export class Effects {
   intercepted(x: number, y: number, defenseColor: string, shotColor: string, vx = 0, vy = 0): void {
     this.ring(x, y, 40, 0.42, defenseColor);
     this.ring(x, y, 20, 0.28, COLORS.bone);
+    this.blast(x, y, 60, 0.55, defenseColor);
     this.burst(x, y, 22, 40, 200, defenseColor, 'large', 0, 0, 0.75);
     this.burst(x, y, 14, 30, 130, shotColor, 'medium', vx * 0.2, vy * 0.2, 0.7);
     this.burst(x, y, 8, 20, 90, COLORS.bone, 'small', 0, 0, 0.5);
@@ -333,6 +354,7 @@ export class Effects {
         color: Math.random() < 0.3 ? COLORS.sodium : color,
         drag: 2 * this.sparkDrag,
         tier: 'medium',
+        seed: Math.random(),
       });
     }
   }
@@ -358,6 +380,7 @@ export class Effects {
       this.quake = 1.8;
       this.shake = 30;
     }
+    this.blast(x, y, 520, 2.4, COLORS.sodium);
     this.ring(x, y, 1500, 2.6, COLORS.sodium);
     this.ring(x, y, 1100, 2.1, COLORS.danger);
     this.ring(x, y, 600, 1.4, COLORS.bone);
@@ -391,6 +414,7 @@ export class Effects {
   shatter(toX: number, toY: number, color: string, radius = 30): void {
     this.ring(toX, toY, radius * 3.2, 0.75, color);
     this.ring(toX, toY, radius * 1.6, 0.5, COLORS.bone);
+    this.blast(toX, toY, radius * 6, 1.1, color);
     this.burst(toX, toY, 70, 90, radius * 12, COLORS.sodium, 'large', 0, 0, 1);
     this.burst(toX, toY, 44, 60, radius * 9, color, 'large', 0, 0, 0.9);
     this.burst(toX, toY, 22, 30, radius * 5, COLORS.bone, 'small', 0, 0, 0.7);
@@ -490,6 +514,8 @@ export class Effects {
     this.sparks.push(...fragments.slice(0, MAX_SPARKS - remaining.length));
     for (const r of this.rings) r.life -= dt;
     this.rings = this.rings.filter((r) => r.life > 0);
+    for (const b of this.blasts) b.life -= dt;
+    this.blasts = this.blasts.filter((b) => b.life > 0);
     for (const c of this.callouts) c.life -= dt;
     this.callouts = this.callouts.filter((c) => c.life > 0);
     for (const b of this.beams) b.life -= dt;
@@ -558,6 +584,7 @@ export class Effects {
       const radius = r.inward ? r.radius * (1 - easeOut(t)) : r.radius * easeOut(t);
       style.ring(ctx, r, radius, 1.5 + 2 * (1 - t), t);
     }
+    if (style.blast) for (const b of this.blasts) style.blast(ctx, b, 1 - b.life / b.max);
     for (const b of this.beams) style.beam(ctx, b, 1 - b.life / b.max);
     ctx.globalCompositeOperation = 'lighter';
     for (const l of this.lasers) {
@@ -583,9 +610,12 @@ export class Effects {
     if (style.streak) ctx.lineCap = 'round';
     for (const s of this.sparks) {
       ctx.globalAlpha = s.life !== undefined ? Math.min(1, s.life / 0.35) : 1;
-      const speed = style.streak ? Math.hypot(s.vx, s.vy) : 0;
+      const speed = style.streak || style.spark ? Math.hypot(s.vx, s.vy) : 0;
       const streak = speed > 8 ? style.streak?.(speed, s.size) : null;
-      if (streak) {
+      if (style.spark) {
+        style.spark(ctx, { x: s.x, y: s.y, vx: s.vx, vy: s.vy, size: s.size, color: s.color, large: s.tier === 'large', seed: s.seed }, speed);
+        ctx.globalCompositeOperation = 'lighter';
+      } else if (streak) {
         // A streak along the spark's flight, longer the faster it goes.
         ctx.strokeStyle = s.color;
         ctx.lineWidth = streak.width;
@@ -624,6 +654,12 @@ export class Effects {
     }
   }
 
+  /** A fireball, with particles on: like the sparks it is only cosmetic. */
+  private blast(x: number, y: number, size: number, life: number, color: string): void {
+    if (!this.particles) return;
+    this.blasts.push({ x, y, size, life, max: life, color, seed: Math.random() });
+  }
+
   private burst(x: number, y: number, count: number, minSpeed: number, maxSpeed: number, color: string, tier: SparkTier = 'medium', inheritedVx = 0, inheritedVy = 0, life?: number): void {
     if (!this.particles) return;
     for (let i = 0; i < count && this.sparks.length < MAX_SPARKS; i++) {
@@ -657,7 +693,7 @@ export class Effects {
 
   private spark(x: number, y: number, vx: number, vy: number, color: string, tier: SparkTier): Spark {
     const size = tier === 'large' ? 2.4 + Math.random() * 2 : tier === 'medium' ? 1.6 + Math.random() * 1.5 : 0.8 + Math.random() * 1.2;
-    return { x, y, vx, vy, size, color, drag: this.sparkDrag, tier };
+    return { x, y, vx, vy, size, color, drag: this.sparkDrag, tier, seed: Math.random() };
   }
 
   private fragment(spark: Spark, into: Spark[], body: GravityBody): void {

@@ -2,6 +2,7 @@ import { COLORS } from '../sim/config';
 import { createRng } from '../sim/rng';
 import { plateUnits } from './layout';
 import { rgba } from './color';
+import type { LookPainter } from './looks/painter';
 
 export interface View {
   /** CSS pixel size of the canvas. */
@@ -19,10 +20,11 @@ export interface View {
 }
 
 /**
- * The static plate behind everything: ink gradient, stars, emulsion grain and
- * the plotter frame with registration marks. Rebuilt only on resize or when edges change.
+ * The static plate behind everything: ink gradient, stars, emulsion grain, whatever the look adds behind them and its
+ * border (the plotter frame with registration marks, in the engraved plan). Rebuilt only on resize, when edges change or
+ * the look does.
  */
-export function renderBackdrop(view: View, walls: boolean, drawFrame = true): HTMLCanvasElement {
+export function renderBackdrop(view: View, walls: boolean, painter: Pick<LookPainter, 'backdropArt' | 'border'>, drawFrame = true): HTMLCanvasElement {
   const { cssWidth, cssHeight, dpr, scale, offsetX, offsetY } = view;
   const plate = plateUnits(!!view.rotated);
   const canvas = document.createElement('canvas');
@@ -66,11 +68,13 @@ export function renderBackdrop(view: View, walls: boolean, drawFrame = true): HT
     ctx.fill();
   }
 
-  if (drawFrame) drawPlotterFrame(ctx, scale, offsetX, offsetY, walls, plate);
+  painter.backdropArt(ctx, cssWidth, cssHeight);
+  if (drawFrame) painter.border(ctx, { scale, offsetX, offsetY, plate, cssWidth, cssHeight }, walls);
   return canvas;
 }
 
-function drawPlotterFrame(ctx: CanvasRenderingContext2D, scale: number, ox: number, oy: number, walls: boolean, plate: { w: number; h: number }): void {
+/** The engraved border: ruler ticks, registration marks in the corners, a line along the wall when shots bounce. */
+export function drawPlotterFrame(ctx: CanvasRenderingContext2D, { scale, offsetX: ox, offsetY: oy, plate }: { scale: number; offsetX: number; offsetY: number; plate: { w: number; h: number } }, walls: boolean): void {
   const W = plate.w * scale;
   const H = plate.h * scale;
   ctx.save();
