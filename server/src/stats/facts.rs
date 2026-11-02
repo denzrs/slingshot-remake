@@ -50,7 +50,8 @@ macro_rules! placed_kind {
 }
 
 /// A fact that names an extra sends it as its index in this list: the client keeps the same one, in the same order
-/// (`BONUS_KINDS` in `src/sim/config.ts`, and `report::BONUS_KINDS` here), so a new kind goes at the end of all three.
+/// (`BONUS_KINDS` in `src/sim/config.ts`, and `report::BONUS_KINDS` here), so a new kind goes at the end of all three
+/// (a test below holds this one to `report::BONUS_KINDS`).
 macro_rules! bonus_kind {
     () => {
         "CASE kind WHEN 'firstBlood' THEN 0 WHEN 'bounty' THEN 1 WHEN 'revenge' THEN 2 WHEN 'shutdown' THEN 3 WHEN 'underdog' THEN 4 WHEN 'avenger' THEN 5 WHEN 'posthumous' THEN 6 WHEN 'domination' THEN 7 WHEN 'opener' THEN 8 WHEN 'comeback' THEN 9 END"
@@ -266,8 +267,7 @@ const QUERIES: &[Query] = &[
         10,
         concat!(
             "SELECT (SELECT COUNT(*) FROM stat_bonuses WHERE kind <> 'firstBlood'), ", bonus_kind!(), ", COUNT(*) FROM stat_bonuses
-              WHERE kind IN ('bounty', 'revenge', 'shutdown', 'underdog', 'avenger', 'posthumous', 'domination', 'opener', 'comeback')
-              GROUP BY kind ORDER BY COUNT(*) DESC LIMIT 1"
+              WHERE kind <> 'firstBlood' GROUP BY kind ORDER BY COUNT(*) DESC, kind LIMIT 1"
         ),
     ),
     (
@@ -493,7 +493,7 @@ mod tests {
             stats.fact(query("bounties"), 0).await.unwrap(),
             Some(vec![1.0, 120.0])
         );
-        // Two extras besides first blood, the bounty listed first on a tie of one each; 320 points in the one round.
+        // Two extras besides first blood, the bounty first on a tie of one each (a tie goes by name); 320 points in the one round.
         assert_eq!(
             stats
                 .fact(query("topBonus"), 0)
@@ -509,6 +509,15 @@ mod tests {
         assert_eq!(stats.fact(query("revenges"), 0).await.unwrap(), None);
         // A duel's first blood always wins, so it is not asked about.
         assert_eq!(stats.fact(query("firstBlood"), 0).await.unwrap(), None);
+    }
+
+    #[test]
+    fn the_bonus_kinds_are_numbered_as_the_report_lists_them() {
+        let case = bonus_kind!();
+        for (i, kind) in crate::report::BONUS_KINDS.iter().enumerate() {
+            assert!(case.contains(&format!("WHEN '{kind}' THEN {i} ")), "{kind} is not {i}");
+        }
+        assert_eq!(case.matches(" WHEN ").count(), crate::report::BONUS_KINDS.len());
     }
 
     #[tokio::test]

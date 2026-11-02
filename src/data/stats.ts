@@ -49,7 +49,14 @@ export interface StatBook {
   /** Enemy ships hit by a missile of the player's that lost its shot and flew on (these count among `kills` too). */
   strayKills: number[];
   /** The extras paid on top of the points (first blood, a bounty, revenge …), in the order they were paid. */
-  bonuses: { player: number; kind: BonusKind; points: number }[];
+  bonuses: BonusRecord[];
+}
+
+/** An extra paid to a player, and what it paid. */
+export interface BonusRecord {
+  player: number;
+  kind: BonusKind;
+  points: number;
 }
 
 export interface Award {

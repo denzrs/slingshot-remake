@@ -6,7 +6,7 @@ import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
 import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
 import { createRng, randomSeed, type Rng } from '../sim/rng';
-import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../data/stats';
+import { bump, closestApproach, improve, newStatBook, pathLength, type BonusRecord, type StatBook } from '../data/stats';
 import type { KillcamPlayback } from '../data/roomRules';
 import { seatTeamsFor, startPower, type Seat, type Settings } from '../data/settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../sim/volley';
@@ -203,10 +203,7 @@ export interface CpuDecisionReport extends CpuDecision {
 
 
 /** An extra paid on top of the points, and what it paid. */
-export interface Bonus {
-  kind: BonusKind;
-  points: number;
-}
+export type Bonus = Omit<BonusRecord, 'player'>;
 
 export interface MatchOptions {
   /** Attract mode (title screen): rounds continue on their own, forever. */
@@ -1329,6 +1326,10 @@ export abstract class Match {
     this.stands.rollbackRound();
     this.oracle.startRound();
     this.stands.startRound();
+    // The extras went back with the points, and the round's kills are no grudge: revenge and domination read the rounds as if this one was never played.
+    this.matchStats.bonuses.splice(this.matchStats.bonuses.length - this.roundStats.bonuses.length);
+    this.roundStats.bonuses = [];
+    this.killedBy = this.killedBefore.shift() ?? new Map();
     this.summary = { title: 'skipped', survivor: null, team: null, bonus: 0, lastKill: null };
     this.scoreHistory.push(before.slice());
     if (this.mayhem) this.mayhemHistory.push(this.mayhem);
@@ -1660,10 +1661,12 @@ export abstract class Match {
       this.cue('kill', killer, victim);
       this.cue('died', victim, killer);
     }
-    // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
-    if (!self && !friendly) this.lastHitBy.set(victim, killer);
-    const bonuses = !self && !friendly && this.paysKillBonuses ? this.killBonuses(vs, victim) : [];
-    if (!self && !friendly) {
+    const enemyKill = !self && !friendly;
+    const paysExtras = enemyKill && this.paysKillBonuses;
+    const bonuses = paysExtras ? this.killBonuses(vs, victim) : [];
+    if (enemyKill) {
+      // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
+      this.lastHitBy.set(victim, killer);
       this.firstBloodDrawn = true;
       this.killedBy.set(victim, killer);
     }
@@ -1681,7 +1684,7 @@ export abstract class Match {
       at: this.clock,
     };
     if (self) this.record((book) => bump(book.ownGoals, killer));
-    if (!self && !friendly) {
+    if (enemyKill) {
       const seconds = this.clock - this.roundStartedAt;
       const from = volley.world.ships[killer];
       const target = volley.world.ships[victim];
@@ -1696,7 +1699,7 @@ export abstract class Match {
     }
     this.recordKill(record);
     // The kill chain: a second enemy in the round pays extra, whether it came in this turn or an earlier one.
-    if (!self && !friendly && this.paysKillBonuses) {
+    if (paysExtras) {
       const kills = (this.killChain.get(killer) ?? 0) + 1;
       this.killChain.set(killer, kills);
       const bonus = SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)] * this.payFactor;
@@ -1706,18 +1709,17 @@ export abstract class Match {
         this.emit({ type: 'multiKill', player: killer, kills, points: bonus, x: volley.world.ships[victim].x, y: volley.world.ships[victim].y });
       }
     }
-    if (bonuses.length) {
-      this.shotLog.bonus(vs, bonuses.reduce((sum, b) => sum + b.points, 0));
-      this.payBonuses(killer, bonuses, volley.world.ships[victim]);
-    }
+    if (bonuses.length) this.shotLog.bonus(vs, this.payBonuses(killer, bonuses, volley.world.ships[victim]));
     this.killcam.record(record, volley.shots.indexOf(vs), volley.steps);
   }
 
-  /** Pays a player extras, notes them for the round's report and shows them at `at`. */
-  private payBonuses(player: number, bonuses: Bonus[], at: { x: number; y: number }): void {
-    this.players[player].score += bonuses.reduce((sum, b) => sum + b.points, 0);
+  /** Pays a player extras, notes them for the round's report and shows them at `at`; returns what they paid. */
+  private payBonuses(player: number, bonuses: Bonus[], at: { x: number; y: number }): number {
+    const points = bonuses.reduce((sum, b) => sum + b.points, 0);
+    this.players[player].score += points;
     this.record((book) => book.bonuses.push(...bonuses.map((b) => ({ player, ...b }))));
     this.emit({ type: 'bonus', player, bonuses, x: at.x, y: at.y });
+    return points;
   }
 
   /** The extras a kill of an enemy pays, taken before the kill is noted (it is no longer the round's first after that). */
@@ -1744,8 +1746,10 @@ export abstract class Match {
     if (spree >= 2) add('shutdown', SCORING.SHUTDOWN_PER_KILL * spree * pay);
     const team = this.players[killer].team;
     if (team !== null && [...this.killedBy].some(([ship, by]) => by === victim && ship !== killer && this.players[ship].team === team)) add('avenger', SCORING.AVENGER * pay);
-    if (!this.players[killer].alive) add('posthumous', SCORING.POSTHUMOUS * pay);
-    if (!vs.stray && this.players[killer].shots === 1) add('opener', SCORING.OPENER * pay);
+    // Posthumous is for a ship that was shot down, not one whose player left the game with the shot in the air.
+    if (!this.players[killer].alive && !this.players[killer].left) add('posthumous', SCORING.POSTHUMOUS * pay);
+    // Once for the first shot, however many ships it takes: the chain is still empty for the first of them.
+    if (!vs.stray && this.players[killer].shots === 1 && !this.killChain.has(killer)) add('opener', SCORING.OPENER * pay);
     return bonuses;
   }
 

@@ -25,14 +25,19 @@ export function interceptPoints(chance: number): number {
   return Math.round(SCORING.INTERCEPT / chance);
 }
 
+/** A `share` of `points`, nothing below `min` of them, and at most `max`. */
+function sharePoints(points: number, share: number, min: number, max: number): number {
+  return points < min ? 0 : Math.min(max, Math.round(points * share));
+}
+
 /** What shooting down the leader pays, for the `lead` (points) they had over the second. */
 export function bountyPoints(lead: number): number {
-  return lead < SCORING.BOUNTY_MIN_LEAD ? 0 : Math.min(SCORING.BOUNTY_MAX, Math.round(lead * SCORING.BOUNTY_SHARE));
+  return sharePoints(lead, SCORING.BOUNTY_SHARE, SCORING.BOUNTY_MIN_LEAD, SCORING.BOUNTY_MAX);
 }
 
 /** What the ship in last place gets for taking one `gap` points above it. */
 export function underdogPoints(gap: number): number {
-  return gap < SCORING.UNDERDOG_MIN_GAP ? 0 : Math.min(SCORING.UNDERDOG_MAX, Math.round(gap * SCORING.UNDERDOG_SHARE));
+  return sharePoints(gap, SCORING.UNDERDOG_SHARE, SCORING.UNDERDOG_MIN_GAP, SCORING.UNDERDOG_MAX);
 }
 
 /** Event Horizon: a kill is worth base × power factor × trick-shot combo. */

@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Bonus, type Match } from '../../src/game';
-import { DEFAULT_SETTINGS, type Seat } from '../../src/data/settings';
+import { DEFAULT_SETTINGS, type Seat, type Settings } from '../../src/data/settings';
 import { SCORING, type BonusKind } from '../../src/sim/config';
 import { bountyPoints, underdogPoints } from '../../src/sim/scoring';
 
 /** `ships` ships on an empty field, no grace period, no trick shots: a straight shot hits what it is aimed at. */
-function field(ships: number, teams = 0): { m: Match; paid: Bonus[][] } {
+function field(ships: number, teams = 0, rules: Partial<Settings> = {}): { m: Match; paid: Bonus[][] } {
   const seats = Array.from({ length: 6 }, (_, i): Seat => (i < ships ? 'human' : 'off'));
-  const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 9, seats, styleBonuses: false, neighborGrace: 0, teamMode: teams }, { seats });
+  const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 9, seats, styleBonuses: false, neighborGrace: 0, teamMode: teams, ...rules }, { seats });
   const paid: Bonus[][] = [];
   m.on((e) => {
     if (e.type === 'bonus') paid.push(e.bonuses);
@@ -142,6 +142,48 @@ describe('extras', () => {
     const { m, paid } = field(3);
     shoot(m, 0, 1, () => (m.players[0].alive = false));
     expect(pointsOf(paid[0], 'posthumous')).toBe(SCORING.POSTHUMOUS);
+  });
+
+  it('pay one opener for a first shot that takes several ships', () => {
+    const { m, paid } = field(4, 0, { powerUps: true });
+    m.world.planets = [];
+    m.world.ships.forEach((ship, id) => Object.assign(ship, [{ x: 400, y: 400 }, { x: 700, y: 400 }, { x: 1000, y: 400 }, { x: 1200, y: 700 }][id]));
+    m.players[0].powerUp = 'piercing';
+    m.players[0].armed = true;
+    m.current = 0;
+    m.setAim(0, 40);
+    m.commit();
+    for (let t = 0; t < 30 && m.phase === 'flying'; t += 1 / 30) m.update(1 / 30);
+    expect([m.players[1].alive, m.players[2].alive]).toEqual([false, false]);
+    expect(paid.flat().filter((b) => b.kind === 'opener')).toHaveLength(1);
+  });
+
+  it('pay no posthumous kill to a player who left the game with the shot in the air', () => {
+    const { m, paid } = field(3);
+    shoot(m, 0, 1, () => Object.assign(m.players[0], { alive: false, left: true }));
+    expect(kinds(paid[0])).not.toContain('posthumous');
+  });
+
+  it('forget the extras and the kills of a skipped round', () => {
+    const { m, paid } = field(3);
+    shoot(m, 0, 1);
+    m.requestSkipRound(0);
+    expect(m.roundStats.bonuses).toEqual([]);
+    expect(m.matchStats.bonuses).toEqual([]);
+    m.startRound();
+    // The kill that would be avenged was in the skipped round.
+    shoot(m, 1, 0);
+    expect(kinds(paid.at(-1))).not.toContain('revenge');
+  });
+
+  it('read revenge across a skipped round as if it was never played', () => {
+    const { m, paid } = field(3);
+    shoot(m, 0, 1);
+    m.startRound();
+    m.requestSkipRound(0);
+    m.startRound();
+    shoot(m, 1, 0);
+    expect(pointsOf(paid.at(-1), 'revenge')).toBe(SCORING.REVENGE);
   });
 
   it('pay a comeback at the end of the round', () => {
