@@ -515,9 +515,15 @@ mod tests {
     fn the_bonus_kinds_are_numbered_as_the_report_lists_them() {
         let case = bonus_kind!();
         for (i, kind) in crate::report::BONUS_KINDS.iter().enumerate() {
-            assert!(case.contains(&format!("WHEN '{kind}' THEN {i} ")), "{kind} is not {i}");
+            assert!(
+                case.contains(&format!("WHEN '{kind}' THEN {i} ")),
+                "{kind} is not {i}"
+            );
         }
-        assert_eq!(case.matches(" WHEN ").count(), crate::report::BONUS_KINDS.len());
+        assert_eq!(
+            case.matches(" WHEN ").count(),
+            crate::report::BONUS_KINDS.len()
+        );
     }
 
     #[tokio::test]
