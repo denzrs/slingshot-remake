@@ -340,7 +340,7 @@ fn demo_round(index: usize, round: i64, team_mode: bool, local: bool) -> RoundRe
         ]
     };
 
-    // The round's winner drew first blood and opened with it; now and then a bounty, a revenge or a sweep on top.
+    // The round's winner drew first blood and opened with it; now and then a bounty, a revenge or a comeback on top.
     let mut bonuses = vec![BonusRound {
         seat: winning_seat,
         kind: "firstBlood",
@@ -352,7 +352,6 @@ fn demo_round(index: usize, round: i64, team_mode: bool, local: bool) -> RoundRe
         ("revenge", 7, 200),
         ("domination", 23, 300),
         ("comeback", 13, 300),
-        ("sweep", 11, 500),
     ] {
         if (index + round as usize).is_multiple_of(every) {
             bonuses.push(BonusRound {

@@ -182,7 +182,7 @@ export type GameEvent =
   | { type: 'kill'; record: KillRecord }
   /** One shot took more than one ship in this volley: the chain number and what it paid. */
   | { type: 'multiKill'; player: number; kills: number; points: number; x: number; y: number }
-  /** Extras paid to a player — for a kill (first blood, a bounty on the leader, revenge …) or at the end of the round (a comeback, a sweep) — each with what it paid, shown at (x, y). */
+  /** Extras paid to a player — for a kill (first blood, a bounty on the leader, revenge …) or at the end of the round (a comeback) — each with what it paid, shown at (x, y). */
   | { type: 'bonus'; player: number; bonuses: Bonus[]; x: number; y: number }
   | { type: 'collapse'; x: number; y: number }
   /** Sudden death has set in, as this round's kind of it. */
@@ -335,8 +335,6 @@ export abstract class Match {
   /** Everybody's score as the volley in the air went up (the bounty and the underdog read it), and as the round began (the comeback). */
   private launchScores: number[] = [];
   private roundScores: number[] = [];
-  /** The ships that started the round, for the sweep. */
-  private roundShips: number[] = [];
   private disposed = false;
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
@@ -982,7 +980,6 @@ export abstract class Match {
       p.power = startPower(this.settings);
     }
     this.roundScores = this.players.map((p) => p.score);
-    this.roundShips = this.players.filter((p) => p.alive && !p.away).map((p) => p.id);
     this.power.startRound();
     this.emit({ type: 'round' });
     this.beginRound();
@@ -1757,18 +1754,12 @@ export abstract class Match {
     return this.players.flatMap((p) => (p.left ? [] : [{ id: p.id, score: this.launchScores[p.id] ?? p.score }])).sort((a, b) => b.score - a.score);
   }
 
-  /** The extras the end of a round pays: winning it from alone in last place, and having taken every enemy that started it. */
+  /** The extra the end of a round pays: the survivor won it from alone in last place at its start. */
   private roundBonuses(survivor: number | null): void {
-    if (!this.paysKillBonuses || this.forfeited) return;
-    for (const p of this.players) {
-      const bonuses: Bonus[] = [];
-      const enemies = this.roundShips.filter((id) => id !== p.id && !this.friendsOf(p.id).includes(id)).length;
-      if (enemies >= 2 && this.killChain.get(p.id) === enemies) bonuses.push({ kind: 'sweep', points: SCORING.SWEEP * this.payFactor });
-      if (p.id === survivor) {
-        const others = this.players.filter((q) => q.id !== p.id && !q.left).map((q) => this.roundScores[q.id] ?? 0);
-        if (others.length && others.every((score) => score > (this.roundScores[p.id] ?? 0))) bonuses.push({ kind: 'comeback', points: SCORING.COMEBACK * this.payFactor });
-      }
-      if (bonuses.length) this.payBonuses(p.id, bonuses, this.world.ships[p.id]);
+    if (!this.paysKillBonuses || this.forfeited || survivor === null) return;
+    const others = this.players.filter((q) => q.id !== survivor && !q.left).map((q) => this.roundScores[q.id] ?? 0);
+    if (others.length && others.every((score) => score > (this.roundScores[survivor] ?? 0))) {
+      this.payBonuses(survivor, [{ kind: 'comeback', points: SCORING.COMEBACK * this.payFactor }], this.world.ships[survivor]);
     }
   }
 

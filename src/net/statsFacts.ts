@@ -83,7 +83,6 @@ const FORMATS: Record<string, ((n: number) => string)[]> = {
   posthumous: [fmtInt],
   shutdowns: [fmtInt],
   lastToFirst: [fmtInt],
-  sweeps: [percent],
   ownGoals: [percent],
   weekTrend: [fmtInt, percent],
   weekend: [percent],

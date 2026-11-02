@@ -157,9 +157,8 @@ export const SCORING = {
   DOMINATION_ROUNDS: 3,
   /** Opener: a kill with the shooter's first shot of the round. */
   OPENER: 100,
-  /** At the end of a round: winning it from alone in last place at its start, and taking every enemy of the round yourself (at least two). */
+  /** At the end of a round: winning it from alone in last place at its start. */
   COMEBACK: 300,
-  SWEEP: 500,
   /** Combo multipliers can't run away completely. */
   MAX_COMBO: 12,
 } as const;
@@ -235,7 +234,7 @@ export type KillSource = (typeof KILL_SOURCES)[number];
  * The extras on top of the points (see `SCORING`): those a kill of an enemy can pay, then those the end of a round pays.
  * The relay keeps the same list for the facts that name one (`server/src/report.rs`), so a new kind goes at the end of both.
  */
-export const BONUS_KINDS = ['firstBlood', 'bounty', 'revenge', 'shutdown', 'underdog', 'avenger', 'posthumous', 'domination', 'opener', 'comeback', 'sweep'] as const;
+export const BONUS_KINDS = ['firstBlood', 'bounty', 'revenge', 'shutdown', 'underdog', 'avenger', 'posthumous', 'domination', 'opener', 'comeback'] as const;
 export type BonusKind = (typeof BONUS_KINDS)[number];
 
 /** The ways sudden death pushes a round to its end: enemy ships pull shots in (Classic), or the sun turns red giant (Solar System). */

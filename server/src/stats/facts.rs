@@ -53,7 +53,7 @@ macro_rules! placed_kind {
 /// (`BONUS_KINDS` in `src/sim/config.ts`, and `report::BONUS_KINDS` here), so a new kind goes at the end of all three.
 macro_rules! bonus_kind {
     () => {
-        "CASE kind WHEN 'firstBlood' THEN 0 WHEN 'bounty' THEN 1 WHEN 'revenge' THEN 2 WHEN 'shutdown' THEN 3 WHEN 'underdog' THEN 4 WHEN 'avenger' THEN 5 WHEN 'posthumous' THEN 6 WHEN 'domination' THEN 7 WHEN 'opener' THEN 8 WHEN 'comeback' THEN 9 WHEN 'sweep' THEN 10 END"
+        "CASE kind WHEN 'firstBlood' THEN 0 WHEN 'bounty' THEN 1 WHEN 'revenge' THEN 2 WHEN 'shutdown' THEN 3 WHEN 'underdog' THEN 4 WHEN 'avenger' THEN 5 WHEN 'posthumous' THEN 6 WHEN 'domination' THEN 7 WHEN 'opener' THEN 8 WHEN 'comeback' THEN 9 END"
     };
 }
 
@@ -266,7 +266,7 @@ const QUERIES: &[Query] = &[
         10,
         concat!(
             "SELECT (SELECT COUNT(*) FROM stat_bonuses WHERE kind <> 'firstBlood'), ", bonus_kind!(), ", COUNT(*) FROM stat_bonuses
-              WHERE kind IN ('bounty', 'revenge', 'shutdown', 'underdog', 'avenger', 'posthumous', 'domination', 'opener', 'comeback', 'sweep')
+              WHERE kind IN ('bounty', 'revenge', 'shutdown', 'underdog', 'avenger', 'posthumous', 'domination', 'opener', 'comeback')
               GROUP BY kind ORDER BY COUNT(*) DESC LIMIT 1"
         ),
     ),
@@ -280,14 +280,6 @@ const QUERIES: &[Query] = &[
     ("posthumous", 2, "SELECT COUNT(*), COUNT(*) FROM stat_bonuses WHERE kind = 'posthumous'"),
     ("shutdowns", 2, "SELECT COUNT(*), COUNT(*) FROM stat_bonuses WHERE kind = 'shutdown'"),
     ("lastToFirst", 2, "SELECT COUNT(*), COUNT(*) FROM stat_bonuses WHERE kind = 'comeback'"),
-    (
-        "sweeps",
-        10,
-        concat!(
-            "SELECT COUNT(*), ", pct!("EXISTS (SELECT 1 FROM stat_bonuses b WHERE b.match_id = r.match_id AND b.round = r.round AND b.kind = 'sweep')", "1"),
-            " FROM stat_rounds r WHERE r.bonuses IS NOT NULL AND r.humans + r.cpus >= 3"
-        ),
-    ),
     (
         "ownGoals",
         10,

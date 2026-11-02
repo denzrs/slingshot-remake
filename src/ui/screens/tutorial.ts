@@ -133,7 +133,7 @@ const TUTORIAL: (() => Lesson)[] = [
           underdogMax: SCORING.UNDERDOG_MAX,
         }),
       ),
-      para(t('tutorial.round.6', { comeback: SCORING.COMEBACK, sweep: SCORING.SWEEP })),
+      para(t('tutorial.round.6', { comeback: SCORING.COMEBACK })),
     ],
   }),
   () => ({

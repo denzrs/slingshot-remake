@@ -144,7 +144,7 @@ describe('extras', () => {
     expect(pointsOf(paid[0], 'posthumous')).toBe(SCORING.POSTHUMOUS);
   });
 
-  it('pay a comeback and a clean sweep at the end of the round', () => {
+  it('pay a comeback at the end of the round', () => {
     const { m, paid } = field(3);
     m.players[1].score = 500;
     m.players[2].score = 400;
@@ -152,15 +152,6 @@ describe('extras', () => {
     shoot(m, 0, 1);
     shoot(m, 0, 2);
     expect(m.phase).not.toBe('aiming');
-    expect(paid.at(-1)).toEqual([
-      { kind: 'sweep', points: SCORING.SWEEP },
-      { kind: 'comeback', points: SCORING.COMEBACK },
-    ]);
-  });
-
-  it('pay no sweep in a duel', () => {
-    const { m, paid } = field(2);
-    shoot(m, 0, 1);
-    expect(paid.flat().map((b) => b.kind)).not.toContain('sweep');
+    expect(paid.at(-1)).toEqual([{ kind: 'comeback', points: SCORING.COMEBACK }]);
   });
 });

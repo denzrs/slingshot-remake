@@ -42,7 +42,7 @@ const RESOLUTIONS: [&str; 7] = [
 const RIDERS: [&str; 3] = ["preview", "piercing", "plasma"];
 /// The extras paid on top of the points, in the client's order (`BONUS_KINDS` in `src/sim/config.ts`): a fact names one
 /// by its index here, so a new kind goes at the end of both.
-pub const BONUS_KINDS: [&str; 11] = [
+pub const BONUS_KINDS: [&str; 10] = [
     "firstBlood",
     "bounty",
     "revenge",
@@ -53,7 +53,6 @@ pub const BONUS_KINDS: [&str; 11] = [
     "domination",
     "opener",
     "comeback",
-    "sweep",
 ];
 /// Extras in one round: a handful per kill, a few at its end.
 const MAX_BONUSES: usize = 200;
