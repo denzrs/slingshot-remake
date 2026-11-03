@@ -1,6 +1,6 @@
 import { modifiersOf } from '../sim/challenge';
 import { AIM, COLORS, FIELD, FONTS, MAYHEM, SUDDEN_DEATH, TEAMS } from '../sim/config';
-import { ChallengeMatch, ClassicMatch, HorizonMatch, SolarMatch, teamName, type KillRecord, type Match, type PlayerState } from '../game';
+import { ChallengeMatch, ClassicMatch, HorizonMatch, SolarMatch, teamName, type KillRecord, type Mark, type Match, type PlayerState } from '../game';
 import { fmt, fmtInt, t } from '../platform/i18n';
 import { TWIST_IDS, twistName } from '../game/mayhem';
 import { awardLabel, awardValue, awardWho, spotlight } from '../game/scorecard';
@@ -13,12 +13,26 @@ import { rgba } from './color';
 import { rayHitsRect } from './layout';
 import { OracleHud, type OracleFrame, type OracleTap } from './oracle';
 import { SkipVoteHud, type SkipAnswer } from './skip-vote';
+import { drawMarkSymbol, MARK_COLORS } from './mark-art';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
 import type { DrawOptions } from './renderer';
 import { fitText, setSpacing } from './text';
 
 /** On a phone held upright the duel's two blocks start this far lower (field units before `k`), under the round label and the pause button beside it. */
 const DUEL_DROP = 24;
+
+/** Cards narrower than this (field units) have no room for marks beside the score: they grow a row of their own for them, of this height. */
+const MARK_ROOM = 132;
+const MARK_ROW = 15;
+
+/** The least a kill must pay beyond its points for the card to be outlined as the one worth the most. */
+const MARK_STANDOUT = 200;
+
+/** What a kill of a ship pays on top of its points, by the marks on its card: the comeback it may be in line for is not part of that. */
+const killPayout = (marks: Mark[]): number => marks.reduce((sum, m) => sum + (m.kind === 'comeback' ? 0 : m.points), 0);
+
+/** The mark that pays most, which gives the card's total its colour. */
+const topMark = (marks: Mark[]): Mark => marks.reduce((a, b) => (b.points > a.points ? b : a));
 
 type KeyItem = [key: string, label: string];
 type Segment = [text: string, color: string];
@@ -179,7 +193,7 @@ export class Hud {
     }
     // The duel has its blocks in the corners; with a scoreboard across the top the chips go under it (and under its power-up strip).
     const duel = match.mode === 'classic' && match.players.length === 2;
-    const below = duel ? 34 : (match.teamMode ? 66 : 50) + 40 + (match.powerUps ? 32 : 10);
+    const below = duel ? 34 : (match.teamMode ? 66 : 50) + 40 + this.markRowHeight(match) + (match.powerUps ? 32 : 10);
     this.drawChips(labels, this.field.x + this.field.w / 2, this.field.y + (below + (duel ? 18 : 0)) * this.k + this.drop, colors);
   }
 
@@ -321,6 +335,12 @@ export class Hud {
     if (!hidden) this.drawGauge(align === 'left' ? x : x - 128 * k, y + 86 * k, 128 * k, p, align === 'right', match.settings.maxPower);
     ctx.globalAlpha = 1;
     if (match.powerUps) this.drawPowerUpSlot(p, x, y + 104 * k, align, match.placing && match.focus === p.id);
+    // The marks a duel has (a bounty on the leader, revenge, domination, a comeback, and on your own side first blood and an opener) hang under the block.
+    if (match.phase === 'aiming' && p.alive) {
+      const width = 128 * k;
+      const marks = match.cardMarks[p.id] ?? [];
+      if (marks.length) this.drawMarkRow(marks, p.id === match.markViewer, align === 'left' ? x : x - width, align === 'left' ? x + width : x, y + (match.powerUps ? 138 : 112) * k, 6 * k, 16 * k, 11 * k, align === 'right');
+    }
   }
 
   /**
@@ -408,12 +428,19 @@ export class Hud {
     // Teams get a wider gap between groups.
     const groupGap = match.teamMode ? 22 * k : gap;
     const groups = match.teamMode ? new Set(players.map((p) => p.team)).size : 1;
-    const w = Math.min(172 * k, (field.w - 48 * k - gap * (n - groups) - groupGap * (groups - 1)) / n);
-    const h = 40 * k;
+    const w = this.cardWidth(match);
+    const row = this.markRowHeight(match) * k;
+    const h = 40 * k + row;
     const y = field.y + (match.teamMode ? 66 : 50) * k;
     const total = w * n + gap * (n - groups) + groupGap * (groups - 1);
     let x = field.x + (field.w - total) / 2;
     const planning = match.phase === 'aiming';
+    // What a kill of each ship pays beyond its points, for the person at the screen; the card that pays most gets an outline.
+    const marks = planning ? match.cardMarks : [];
+    const viewer = match.markViewer;
+    const payout = (id: number) => (id === viewer ? 0 : killPayout(marks[id] ?? []));
+    const best = Math.max(0, ...players.map((p) => payout(p.id)));
+    const standout = best >= MARK_STANDOUT && players.filter((p) => payout(p.id) === best).length === 1 ? players.find((p) => payout(p.id) === best)!.id : -1;
 
     players.forEach((p, i) => {
       const firstOfTeam = match.teamMode && (i === 0 || players[i - 1].team !== p.team);
@@ -467,6 +494,12 @@ export class Hud {
       ctx.fillStyle = COLORS.bone;
       ctx.font = `700 ${17 * k}px ${FONTS.mono}`;
       ctx.fillText(String(p.score), textX, y + 19 * k);
+      if (planning && p.alive && !p.away) this.drawCardMarks(marks[p.id] ?? [], p.id === viewer, x, y, w, h, row > 0 ? null : textX + ctx.measureText(String(p.score)).width);
+      if (p.id === standout) {
+        ctx.strokeStyle = rgba(MARK_COLORS[topMark(marks[p.id]).kind], 0.8);
+        ctx.lineWidth = 1.5 * k;
+        ctx.strokeRect(x + 0.75 * k, y + 0.75 * k, w - 1.5 * k, h - 1.5 * k);
+      }
 
       if (status) {
         ctx.fillStyle = status[1];
@@ -487,11 +520,102 @@ export class Hud {
     });
   }
 
+  /** How wide the scoreboard's cards are: as wide as the field allows, at most 172. */
+  private cardWidth(match: Match): number {
+    const { k, field } = this;
+    const n = match.players.length;
+    const gap = 8 * k;
+    const groups = match.teamMode ? new Set(match.players.map((p) => p.team)).size : 1;
+    const groupGap = match.teamMode ? 22 * k : gap;
+    return Math.min(172 * k, (field.w - 48 * k - gap * (n - groups) - groupGap * (groups - 1)) / n);
+  }
+
+  /** The height (field units) the scoreboard's cards grow by when they are too narrow to hold their marks beside the score; the same for the whole round, so nothing below jumps. */
+  private markRowHeight(match: Match): number {
+    return match.mode !== 'challenge' && this.cardWidth(match) < MARK_ROOM * this.k ? MARK_ROW : 0;
+  }
+
+  /**
+   * The marks on a ship's card: the symbols (most valuable first) and, on the card of a target, what a kill of it pays on top of its points.
+   * On your own card they are what any kill of yours pays now. Where the card is wide they sit along its bottom edge from the right, beside
+   * the score (`scoreRight`, where the score ends); a narrow card has a row for them under the score (`scoreRight` null).
+   */
+  private drawCardMarks(marks: Mark[], own: boolean, x: number, y: number, w: number, h: number, scoreRight: number | null): void {
+    if (!marks.length) return;
+    const { ctx, k } = this;
+    if (scoreRight === null) {
+      this.drawMarkRow(marks, own, x + 5 * k, x + w - 5 * k, y + h - (MARK_ROW / 2 + 1) * k, 5 * k, 13 * k, 8.5 * k, false);
+      return;
+    }
+    const r = 5.8 * k;
+    const pitch = 15.5 * k;
+    const cy = y + h - 10.5 * k;
+    const right = x + w - 9 * k;
+    const left = scoreRight + 6 * k;
+    const sorted = [...marks].sort((a, b) => b.points - a.points);
+    const fit = Math.max(0, Math.min(sorted.length, Math.floor((right - left + pitch - 2 * r) / pitch)));
+    if (!fit) return;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 1.4 * k;
+    sorted.slice(0, fit).forEach((mark, i) => {
+      ctx.strokeStyle = ctx.fillStyle = MARK_COLORS[mark.kind];
+      drawMarkSymbol(ctx, mark.kind, right - r - i * pitch, cy, r);
+    });
+    // The sum of the extras of a kill: only on a target's card, and only where it fits beside the symbols.
+    const total = own ? 0 : killPayout(marks);
+    if (total > 0) {
+      ctx.font = `700 ${9.5 * k}px ${FONTS.mono}`;
+      const text = `+${total}`;
+      const edge = right - fit * pitch + (pitch - 2 * r) / 2;
+      if (edge - ctx.measureText(text).width >= left) {
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = MARK_COLORS[topMark(marks).kind];
+        ctx.fillText(text, edge - 2 * k, cy + 0.5 * k);
+      }
+    }
+    ctx.restore();
+  }
+
+  /**
+   * A row of marks between `from` and `to` at height `cy`: the symbols from one end (the left, or the right when `mirror`), most valuable
+   * first, and at the other end the sum a kill pays on top (not on your own card), when there is room for it beside at least one symbol.
+   */
+  private drawMarkRow(marks: Mark[], own: boolean, from: number, to: number, cy: number, r: number, pitch: number, font: number, mirror: boolean): void {
+    const { ctx, k } = this;
+    const total = own ? 0 : killPayout(marks);
+    const text = `+${total}`;
+    ctx.save();
+    ctx.font = `700 ${font}px ${FONTS.mono}`;
+    const textWidth = ctx.measureText(text).width;
+    const sorted = [...marks].sort((a, b) => b.points - a.points);
+    const fits = (room: number) => Math.max(0, Math.min(sorted.length, Math.floor((room + pitch - 2 * r) / pitch)));
+    // The sum is what says which ship to take: it keeps its place, and the symbols share what is left.
+    const withTotal = total > 0 && fits(to - from - textWidth - 4 * k) > 0;
+    const fit = fits(withTotal ? to - from - textWidth - 4 * k : to - from);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 1.4 * k;
+    sorted.slice(0, fit).forEach((mark, i) => {
+      ctx.strokeStyle = ctx.fillStyle = MARK_COLORS[mark.kind];
+      drawMarkSymbol(ctx, mark.kind, mirror ? to - r - i * pitch : from + r + i * pitch, cy, r);
+    });
+    if (withTotal) {
+      ctx.fillStyle = MARK_COLORS[topMark(marks).kind];
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = mirror ? 'left' : 'right';
+      ctx.fillText(text, mirror ? from : to, cy + 0.5 * k);
+    }
+    ctx.restore();
+  }
+
   private drawKillFeed(match: Match): void {
     const { ctx, k, field } = this;
     const entries = match.killFeed.filter((r) => match.clock - r.at < 6).slice(-4);
     // Under the scoreboard's cards the power-up areas take a line, so the feed starts below them.
-    let y = field.y + (match.teamMode ? 118 : 102) * k + (match.powerUps ? 30 * k : 0);
+    let y = field.y + (match.teamMode ? 118 : 102) * k + this.markRowHeight(match) * k + (match.powerUps ? 30 * k : 0);
     ctx.textBaseline = 'top';
     ctx.font = `700 ${11.5 * k}px ${FONTS.mono}`;
     for (const r of entries) {

@@ -11,7 +11,7 @@ import { Sound } from './platform/audio';
 import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
 import { ClipRecorder } from './platform/clip';
 import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
-import { createUiPreview, type UiPreview } from './debug/devPreview';
+import { createUiPreview, UI_PREVIEWS, type UiPreview } from './debug/devPreview';
 import { SupernovaDemo } from './debug/supernovaDemo';
 import { recordRun } from './data/dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, type Match } from './game';
@@ -83,7 +83,7 @@ let lastMode: GameMode = 'classic';
 const requestedDay = new URLSearchParams(location.search).get('daily');
 const forcedDay = isDateKey(requestedDay) ? requestedDay : null;
 const requestedPreview = new URLSearchParams(location.search).get('preview');
-const uiPreview: UiPreview | null = import.meta.env.DEV && ['oracle-card', 'oracle-pause', 'stands-card', 'stands-pause'].includes(requestedPreview ?? '')
+const uiPreview: UiPreview | null = import.meta.env.DEV && (UI_PREVIEWS as readonly string[]).includes(requestedPreview ?? '')
   ? requestedPreview as UiPreview
   : null;
 /** `?preview=supernova` (dev only): a Solar System's sudden death on a loop, to look at without playing to it. */

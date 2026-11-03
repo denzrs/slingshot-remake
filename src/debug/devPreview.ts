@@ -1,8 +1,10 @@
 import { createMatch, type Match } from '../game';
 import { DEFAULT_SETTINGS } from '../data/settings';
 
-/** Dev-only screens opened with ?preview=oracle-card|oracle-pause|stands-card|stands-pause. */
-export type UiPreview = 'oracle-card' | 'oracle-pause' | 'stands-card' | 'stands-pause';
+/** Dev-only screens opened with ?preview=oracle-card|oracle-pause|stands-card|stands-pause|card-marks. */
+export type UiPreview = 'oracle-card' | 'oracle-pause' | 'stands-card' | 'stands-pause' | 'card-marks';
+
+export const UI_PREVIEWS: readonly UiPreview[] = ['oracle-card', 'oracle-pause', 'stands-card', 'stands-pause', 'card-marks'];
 
 const ORACLE_SCORES = [
   { player: 0, points: 420, right: 3, total: 5 },
@@ -46,6 +48,8 @@ export function createUiPreview(mode: UiPreview): Match {
     player.score = matchScores[id];
   });
 
+  if (mode === 'card-marks') return cardMarks(match);
+
   match.oracle.open('shot', 1, []);
   match.oracle.openRound(alive, false);
   const roundId = match.oracle.roundQuestion!.id;
@@ -70,5 +74,23 @@ export function createUiPreview(mode: UiPreview): Match {
     Object.assign(match.stands.scores[0], { points: 180, right: 2, total: 3 });
   }
 
+  return match;
+}
+
+/**
+ * Everything a card can say, at once: you (ship 0) are alone in last place and aim first, Mira leads, Nia shot you down last round,
+ * you shot Oskar down twice running and Vega is on a spree. The history is the match's own private state, set the way a played round would.
+ */
+function cardMarks(match: Match): Match {
+  match.current = 0;
+  match.players.forEach((player, id) => {
+    player.alive = true;
+    player.shots = 0;
+    player.score = [900, 3400, 2100, 1800, 1500, 2300][id];
+  });
+  const grudges = match as unknown as { killedBefore: Map<number, number>[]; killChain: Map<number, number>; roundScores: number[] };
+  grudges.killedBefore = [new Map([[0, 3], [4, 0]]), new Map([[4, 0]])];
+  grudges.killChain = new Map([[5, 2]]);
+  grudges.roundScores = match.players.map((player) => player.score);
   return match;
 }

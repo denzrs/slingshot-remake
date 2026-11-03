@@ -6,6 +6,7 @@ import { menuPage } from '../menu/menu-page';
 import { modeName } from '../menu/mode-name';
 import type { App } from './app';
 import { scoreChart } from './game-over';
+import { marksLegend } from './mark-help';
 import { settingsScreen } from './settings';
 import { prepareModeScreen } from './setup';
 
@@ -68,7 +69,8 @@ export function pauseScreen(app: App, match: Match | null): Screen {
     build: () => menuPage({
       title: t('pause.title'), eyebrow: app.mode === 'challenge' ? t('mode.daily') : `${modeName(app.mode === 'horizon' || app.mode === 'solar' ? app.mode : 'classic')}${app.mayhem ? ` · ${t('mode.mayhem')}` : ''}`,
       className: 'menu-page--pause',
-      body: match ? [h('div.pause-standing', null, ...pauseStanding(match, app.online))] : [],
+      // Beside the standings, what the symbols on the cards mean right now.
+      body: match ? [h('div.pause-standing', null, ...pauseStanding(match, app.online)), ...(match instanceof ChallengeMatch ? [] : legend(match))] : [],
       footer: h('nav.items.items--row.pause-actions.menu-page__actions', { 'data-section': 'actions', 'aria-label': t('pause.title') }),
     }),
     items,
@@ -76,6 +78,12 @@ export function pauseScreen(app: App, match: Match | null): Screen {
     onEscape: () => app.resume(),
   };
 }
+
+/** The explanation of the symbols on the cards, as far as there are any. */
+const legend = (match: Match): Node[] => {
+  const block = marksLegend(match);
+  return block ? [block] : [];
+};
 
 /** The pause menu's middle: where the match stands right now. */
 function pauseStanding(match: Match, online: boolean): Node[] {

@@ -3,18 +3,23 @@ import { fmtNum, t } from '../../platform/i18n';
 import type { StyleKind } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../../render/powerup-art';
+import { MARK_COLORS } from '../../render/mark-art';
+import type { MarkKind } from '../../game';
 import { STYLE_MULTIPLIER, styleLabel } from '../../sim/scoring';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
+import { MARK_KINDS, markIcon, markName, markText } from './mark-help';
 import { mountTutorialPreview, type TutorialPreviewKind } from './tutorial-preview';
 import type { App } from './app';
 
 /** One page of the tutorial: a heading and what goes under it. */
 interface Lesson {
   title: string;
-  demo: TutorialPreviewKind;
+  /** The miniature scene beside the text, or none: the page is text and a selection only. */
+  demo: TutorialPreviewKind | null;
   body: (Node | string)[];
   powerUps?: readonly PowerUpKind[];
+  marks?: readonly MarkKind[];
   tricks?: readonly StyleKind[];
 }
 
@@ -137,6 +142,12 @@ const TUTORIAL: (() => Lesson)[] = [
     ],
   }),
   () => ({
+    title: t('tutorial.marks.title'),
+    demo: null,
+    marks: MARK_KINDS,
+    body: [para(t('tutorial.marks.1'))],
+  }),
+  () => ({
     title: t('tutorial.horizon.title'),
     demo: 'horizon',
     body: [
@@ -203,14 +214,17 @@ export function tutorialScreen(app: App): () => Screen {
   let page = 0;
   let selectedPowerUp: PowerUpKind = POWER_PAGES[0][0];
   let selectedTrick: StyleKind = TRICKS[0];
+  let selectedMark: MarkKind = MARK_KINDS[0];
   let preview: ReturnType<typeof mountTutorialPreview> | null = null;
   return (): Screen => {
     const lessons = TUTORIAL.map((lesson) => lesson());
-    const hasPreview = page !== 0 && page !== lessons.length - 1;
+    const hasPreview = page !== 0 && page !== lessons.length - 1 && lessons[page].demo !== null;
     const powerUps = lessons[page].powerUps ?? [];
     const tricks = lessons[page].tricks ?? [];
+    const marks = lessons[page].marks ?? [];
     if (powerUps.length && !powerUps.includes(selectedPowerUp)) selectedPowerUp = powerUps[0];
     if (tricks.length && !tricks.includes(selectedTrick)) selectedTrick = tricks[0];
+    if (marks.length && !marks.includes(selectedMark)) selectedMark = marks[0];
     const canvas = hasPreview ? h('canvas.tutorial__canvas', { 'aria-hidden': 'true' }) as HTMLCanvasElement : null;
     const timeline = hasPreview ? h('input.tutorial__timeline', {
       type: 'range', min: '0', max: '1000', step: '1', value: '0',
@@ -235,7 +249,7 @@ export function tutorialScreen(app: App): () => Screen {
           ),
         ) : null;
         if (canvas && timeline) {
-          preview = mountTutorialPreview(canvas, lessons[page].demo, (progress) => {
+          preview = mountTutorialPreview(canvas, lessons[page].demo!, (progress) => {
             timeline.value = String(Math.round(progress * 1000));
           }, powerUps.length ? selectedPowerUp : undefined, tricks.length ? selectedTrick : undefined);
         }
@@ -268,12 +282,25 @@ export function tutorialScreen(app: App): () => Screen {
               ),
             ]
           : [];
+        const markContent: (Node | string)[] = marks.length
+          ? [
+              h('p.tutorial__selection-prompt', null, t('tutorial.marks.choose')),
+              h('nav.tutorial__selection-grid.items', { 'data-section': 'marks', 'aria-label': t('tutorial.marks.choose') }),
+              h('section.tutorial__selection-info', { 'aria-live': 'polite' },
+                h('div.tutorial__selection-icon', null, markIcon(selectedMark)),
+                h('div', null,
+                  h('h4', { style: `color: ${MARK_COLORS[selectedMark]}` }, markName(selectedMark)),
+                  h('p', null, markText(selectedMark)),
+                ),
+              ),
+            ]
+          : [];
         return menuPage({
           title: t('common.help'), eyebrow: t('shell.flightSchool'), className: 'menu-page--tutorial',
           body: [h('article.tutorial', { 'aria-live': 'polite' },
             h('h3.tutorial__title', null, lessons[page].title),
             h(`div.tutorial__layout${hasPreview ? '' : '.tutorial__layout--text-only'}`, null,
-              h('div.tutorial__copy', null, ...lessons[page].body, ...powerContent, ...trickContent),
+              h('div.tutorial__copy', null, ...lessons[page].body, ...powerContent, ...trickContent, ...markContent),
               ...(previewPanel ? [previewPanel] : []),
             ),
           )],
@@ -295,6 +322,11 @@ export function tutorialScreen(app: App): () => Screen {
           kind: 'action', section: 'tricks', label: styleLabel(kind),
           icon: () => trickIcon(kind), selected: () => selectedTrick === kind,
           run: () => { selectedTrick = kind; app.menu.rebuild(); },
+        })),
+        ...marks.map((kind): MenuItem => ({
+          kind: 'action', section: 'marks', label: markName(kind),
+          icon: () => markIcon(kind), selected: () => selectedMark === kind,
+          run: () => { selectedMark = kind; app.menu.rebuild(); },
         })),
         ...(hasPreview ? [{ kind: 'action' as const, section: 'preview-action', label: t('tutorial.preview.replay'), run: () => { if (timeline) timeline.value = '0'; preview?.replay(); } }] : []),
         { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },

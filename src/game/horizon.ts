@@ -6,7 +6,7 @@ import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
 import { scoreHorizonKill } from '../sim/scoring';
 import { Volley, type VolleyShot, type VolleySnapshot } from '../sim/volley';
-import { Match, type Phase, type RoundTitle, type SkipVote } from './match';
+import { Match, type Mark, type Phase, type RoundTitle, type SkipVote } from './match';
 import type { CrowdSeat } from './crowd';
 import type { OracleSnapshot } from './oracle';
 import type { KillcamSnapshot } from './killcam';
@@ -48,6 +48,8 @@ export interface HorizonSnapshot extends KillcamSnapshot {
   oracle: OracleSnapshot;
   stands?: OracleSnapshot;
   crowd?: CrowdSeat[];
+  /** What the cards say, for every seat's point of view: the host's grudges are not on the guests' side. */
+  marks?: Mark[][][];
   pickups?: Pickup[];
   power?: PowerUpState;
 }
@@ -117,6 +119,7 @@ export class HorizonMatch extends Match {
       oracle: this.oracle.snapshot(),
       stands: this.stands.snapshot(),
       crowd: this.crowd.snapshot(),
+      marks: this.marksForAll(),
       pickups: this.pickups,
       power: this.powerState,
     };
@@ -146,6 +149,7 @@ export class HorizonMatch extends Match {
     if (s.oracle) this.oracle.restore(s.oracle);
     if (s.stands) this.stands.restore(s.stands);
     this.crowd.restore(s.crowd);
+    this.restoreMarks(s.marks);
     this.pickups = s.pickups ?? [];
     this.power.restoreState(s.power);
     this.killcam.restore(s, this.rules);

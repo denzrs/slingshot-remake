@@ -205,6 +205,16 @@ export interface CpuDecisionReport extends CpuDecision {
 /** An extra paid on top of the points, and what it paid. */
 export type Bonus = Omit<BonusRecord, 'player'>;
 
+/**
+ * What a ship's card says before the shot: an extra a kill would pay, or the next step of the kill chain (which is not a logged kind).
+ * A posthumous kill has no mark: the ship that would make it is gone, and its card is dimmed.
+ */
+export type MarkKind = Exclude<BonusKind, 'posthumous'> | 'chain';
+export interface Mark {
+  kind: MarkKind;
+  points: number;
+}
+
 export interface MatchOptions {
   /** Attract mode (title screen): rounds continue on their own, forever. */
   attract?: boolean;
@@ -1730,22 +1740,8 @@ export abstract class Match {
     const add = (kind: BonusKind, points: number) => {
       if (points > 0) bonuses.push({ kind, points });
     };
-    /** Whether `by` shot `ship` down in each of the last `rounds` rounds before this one. */
-    const shotDownBy = (ship: number, by: number, rounds: number) => this.killedBefore.length >= rounds && this.killedBefore.slice(0, rounds).every((round) => round.get(ship) === by);
     if (!this.firstBloodDrawn) add('firstBlood', SCORING.FIRST_BLOOD * pay);
-    // Not times the jackpot, these two: the points of the lead and the gap they are a share of were paid at the round's rate already.
-    const standings = this.standingsAtLaunch();
-    if (standings[0]?.id === victim && standings[1]) add('bounty', bountyPoints(standings[0].score - standings[1].score));
-    const last = standings.at(-1)!;
-    const victimScore = standings.find((s) => s.id === victim)?.score;
-    if (standings.length >= 3 && last.id === killer && last.score < standings.at(-2)!.score && victimScore !== undefined) add('underdog', underdogPoints(victimScore - last.score));
-    // Revenge on the one who shot you down last round — double on one who did it the last few rounds running.
-    if (shotDownBy(killer, victim, 1)) add('revenge', SCORING.REVENGE * pay * (shotDownBy(killer, victim, SCORING.DOMINATION_ROUNDS) ? 2 : 1));
-    if (shotDownBy(victim, killer, SCORING.DOMINATION_ROUNDS - 1)) add('domination', SCORING.DOMINATION * pay);
-    const spree = this.killChain.get(victim) ?? 0;
-    if (spree >= 2) add('shutdown', SCORING.SHUTDOWN_PER_KILL * spree * pay);
-    const team = this.players[killer].team;
-    if (team !== null && [...this.killedBy].some(([ship, by]) => by === victim && ship !== killer && this.players[ship].team === team)) add('avenger', SCORING.AVENGER * pay);
+    bonuses.push(...this.targetExtras(killer, victim, this.standingsAtLaunch()));
     // Posthumous is for a ship that was shot down, not one whose player left the game with the shot in the air.
     if (!this.players[killer].alive && !this.players[killer].left) add('posthumous', SCORING.POSTHUMOUS * pay);
     // Once for the first shot, however many ships it takes: the chain is still empty for the first of them.
@@ -1753,18 +1749,118 @@ export abstract class Match {
     return bonuses;
   }
 
+  /**
+   * The extras a kill pays for who the victim is, read from the `standings` it is taken at (the cards read the ones of the moment, the payout those of the launch).
+   * Without a `killer` only what is true of the victim for everybody is left: the bounty and a shutdown.
+   */
+  private targetExtras(killer: number | null, victim: number, standings: { id: number; score: number }[]): { kind: Exclude<MarkKind, 'chain'>; points: number }[] {
+    const pay = this.payFactor;
+    const bonuses: { kind: Exclude<MarkKind, 'chain'>; points: number }[] = [];
+    const add = (kind: Exclude<MarkKind, 'chain'>, points: number) => {
+      if (points > 0) bonuses.push({ kind, points });
+    };
+    /** Whether `by` shot `ship` down in each of the last `rounds` rounds before this one. */
+    const shotDownBy = (ship: number, by: number, rounds: number) => this.killedBefore.length >= rounds && this.killedBefore.slice(0, rounds).every((round) => round.get(ship) === by);
+    // Not times the jackpot, these two: the points of the lead and the gap they are a share of were paid at the round's rate already.
+    if (standings[0]?.id === victim && standings[1]) add('bounty', bountyPoints(standings[0].score - standings[1].score));
+    const last = standings.at(-1)!;
+    const victimScore = standings.find((s) => s.id === victim)?.score;
+    if (killer !== null && standings.length >= 3 && last.id === killer && last.score < standings.at(-2)!.score && victimScore !== undefined) add('underdog', underdogPoints(victimScore - last.score));
+    // Revenge on the one who shot you down last round — double on one who did it the last few rounds running.
+    if (killer !== null && shotDownBy(killer, victim, 1)) add('revenge', SCORING.REVENGE * pay * (shotDownBy(killer, victim, SCORING.DOMINATION_ROUNDS) ? 2 : 1));
+    if (killer !== null && shotDownBy(victim, killer, SCORING.DOMINATION_ROUNDS - 1)) add('domination', SCORING.DOMINATION * pay);
+    const spree = this.killChain.get(victim) ?? 0;
+    if (spree >= 2) add('shutdown', SCORING.SHUTDOWN_PER_KILL * spree * pay);
+    const team = killer === null ? null : this.players[killer].team;
+    if (killer !== null && team !== null && [...this.killedBy].some(([ship, by]) => by === victim && ship !== killer && this.players[ship].team === team)) add('avenger', SCORING.AVENGER * pay);
+    return bonuses;
+  }
+
   /** Everybody still in the game by their score as the volley went up, best first. Whoever left the game is not in the race. */
   private standingsAtLaunch(): { id: number; score: number }[] {
-    return this.players.flatMap((p) => (p.left ? [] : [{ id: p.id, score: this.launchScores[p.id] ?? p.score }])).sort((a, b) => b.score - a.score);
+    return this.standings((p) => this.launchScores[p.id] ?? p.score);
+  }
+
+  private standings(score: (p: PlayerState) => number): { id: number; score: number }[] {
+    return this.players.flatMap((p) => (p.left ? [] : [{ id: p.id, score: score(p) }])).sort((a, b) => b.score - a.score);
+  }
+
+  /** The ship that was alone in last place as the round began: winning the round from there pays a comeback. */
+  private comebackCandidate(): number | null {
+    const field = this.players.filter((p) => !p.left).sort((a, b) => (this.roundScores[a.id] ?? 0) - (this.roundScores[b.id] ?? 0));
+    return field.length >= 2 && (this.roundScores[field[0].id] ?? 0) < (this.roundScores[field[1].id] ?? 0) ? field[0].id : null;
   }
 
   /** The extra the end of a round pays: the survivor won it from alone in last place at its start. */
   private roundBonuses(survivor: number | null): void {
     if (!this.paysKillBonuses || this.forfeited || survivor === null) return;
-    const others = this.players.filter((q) => q.id !== survivor && !q.left).map((q) => this.roundScores[q.id] ?? 0);
-    if (others.length && others.every((score) => score > (this.roundScores[survivor] ?? 0))) {
+    if (this.comebackCandidate() === survivor) {
       this.payBonuses(survivor, [{ kind: 'comeback', points: SCORING.COMEBACK * this.payFactor }], this.world.ships[survivor]);
     }
+  }
+
+  // ————————————————————————————— Marks on the cards —————————————————————————————
+
+  /** What the host worked out for every seat's point of view (a guest cannot: the grudges it is read from stay with the host); null on the host itself. */
+  private syncedMarks: Mark[][][] | null = null;
+
+  /**
+   * Whose point of view the cards take: the seat at this screen, the one person at a table of CPUs,
+   * whoever is on turn at a shared keyboard — and nobody's for the stands.
+   */
+  get markViewer(): number | null {
+    if (this.spectating) return null;
+    if (this.viewer !== null) return this.viewer;
+    const humans = this.players.filter((p) => !p.cpu && !p.left);
+    if (humans.length === 1) return humans[0].id;
+    const focus = this.focus;
+    return focus >= 0 && !this.players[focus].cpu ? focus : null;
+  }
+
+  /**
+   * The marks on every card (by ship) for the person at this screen, while the aim is being set: what a kill of that ship would pay them
+   * beyond its points, a comeback it is in line for, and on their own card what any kill of theirs would pay now.
+   */
+  get cardMarks(): Mark[][] {
+    const viewer = this.markViewer;
+    return this.syncedMarks ? this.syncedMarks[viewer ?? this.players.length] ?? [] : this.marksFor(viewer);
+  }
+
+  /** The marks for every seat's point of view, the last entry being the stands': what goes to the guests. */
+  protected marksForAll(): Mark[][][] {
+    if (this.phase !== 'aiming' || !this.paysKillBonuses || this.forfeited) return [];
+    return [...this.players.map((p) => this.marksFor(p.id)), this.marksFor(null)];
+  }
+
+  protected restoreMarks(marks: Mark[][][] | undefined): void {
+    this.syncedMarks = marks ?? [];
+  }
+
+  /** The marks on each ship's card, by ship, as `shooter` (or the stands, for null) sees them. The payout reads the same rules (`targetExtras`). */
+  private marksFor(shooter: number | null): Mark[][] {
+    const marks: Mark[][] = this.players.map(() => []);
+    if (this.phase !== 'aiming' || !this.paysKillBonuses || this.forfeited) return marks;
+    const pay = this.payFactor;
+    const me = shooter === null ? null : this.players[shooter];
+    // A shooter who is out of the round, or away, has no kills to plan: they see what is true for everybody.
+    const aiming = me !== null && me.alive && !me.away && !me.left ? me : null;
+    const standings = this.standings((p) => p.score);
+    const comeback = this.comebackCandidate();
+    for (const p of this.players) {
+      if (!p.alive || p.away || p.left) continue;
+      const here = marks[p.id];
+      if (aiming && p.id === aiming.id) {
+        if (!this.firstBloodDrawn) here.push({ kind: 'firstBlood', points: SCORING.FIRST_BLOOD * pay });
+        if (aiming.shots === 0 && !this.killChain.has(aiming.id)) here.push({ kind: 'opener', points: SCORING.OPENER * pay });
+        const next = (this.killChain.get(aiming.id) ?? 0) + 1;
+        const chain = SCORING.MULTI_KILL[Math.min(next, SCORING.MULTI_KILL.length - 1)] * pay;
+        if (chain > 0) here.push({ kind: 'chain', points: chain });
+      } else if (!aiming || !this.friendsOf(aiming.id).includes(p.id)) {
+        here.push(...this.targetExtras(aiming ? aiming.id : null, p.id, standings));
+      }
+      if (p.id === comeback) here.push({ kind: 'comeback', points: SCORING.COMEBACK * pay });
+    }
+    return marks;
   }
 
   /** What the finished shots tell the scorecard: how far they flew and whom they narrowly missed. */

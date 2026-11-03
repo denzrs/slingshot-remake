@@ -185,4 +185,19 @@ The **multi-kill chain** (250 / 500 / 750 / 1000 for the second to the fifth ene
 | The shooter | Opener, posthumous, the next step of the multi-kill chain |
 | The round | First blood (until the first kill) |
 
+**Marks on the cards.** While you aim, the scoreboard's cards tell who is worth shooting at (the numbers above, read the way the payout reads them: `targetExtras` in `src/game/match.ts`, drawn by `drawCardMarks` in `src/render/hud.ts`, symbols in `src/render/mark-art.ts`). Every extra has a symbol and a colour of its own, drawn as vector shapes:
+
+| Symbol | Extra | On the card of |
+| --- | --- | --- |
+| Crown (gold) | Bounty | the leader, for everybody |
+| Flame (orange) | Shutdown | a ship on a spree, for everybody |
+| Swing arrow (blue) | Comeback | the ship alone in last place at the round's start, for everybody |
+| Return arrow (red) | Revenge | the ship that shot you down last round, for you |
+| Claws (magenta) | Domination | a ship you have shot down the last two rounds, for you |
+| Crossed blades (cyan) | Avenger | a ship that took a teammate this round, for your team |
+| Arrow up (green) | Underdog | every ship above you while you are alone in last place, for you |
+| Drop, bolt, chain | First blood, opener, chain | your own card: what any kill of yours pays now (the chain from your second kill on) |
+
+Beside the symbols a target's card shows the sum of what a kill of it pays on top of its points (the comeback is not part of it), and the card that pays most is outlined (from 200 up, when no other pays as much). Teammates, ships that are out or away and ships that are not in the round carry no marks; the stands see only what is true for everybody. Cards too narrow for marks beside the score (a phone held upright) grow a row for them, the sum and the most valuable symbol. In a duel, which has a block in each corner instead of cards, the marks hang in a row under the block (below the power-up area when there is one). Marks show only while aiming. The flight training has a page for them (*Marken auf den Karten*, a symbol grid like the power-ups' with what each means), and the pause menu lists *Card symbols* beside the standings, only while marks are on the cards: just the ones on them right now and whose card has each (`src/ui/screens/mark-help.ts`, `visibleMarks` in `src/game/markLegend.ts`). Online, the host works them out for every seat and sends them with the state (`marks` in the snapshot), because the grudges they are read from stay on its side. Check them in `npm run dev` at `/marks.html`: every symbol large and at card size with what it pays and who sees it, the real scoreboard through the eyes of each seat (and the stands), a narrow card and a team. `?preview=card-marks` opens the same match as a playable screen.
+
 **Scorecard:** at the end of every round a row of cards under the banner hands out awards – longest shot, fastest kill (timed from the start of the round), most swing-bys, most grazes, best hit and most kills (two or more). Three more cards appear when they were earned: the **closest call** (the narrowest miss of an enemy ship, under 40 px), the **sniper** (a hit from 500 px or more) and the **own-goal king**. The cards that come with a shot take turns: the card is outlined and its shot is redrawn in bright on the field. With power-ups on, two more cards can appear: **most power-ups** (taken) and the **lifesaver** (shots a shield bounced off). Only awards somebody actually earned show up, and a tie shares the card. The final screen lists the same awards for the whole match, plus a chart of everybody's score over the rounds. In Classic, swing-bys and grazes are counted even when trick-shot bonuses are off.
