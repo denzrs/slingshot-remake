@@ -204,30 +204,6 @@ export function drawLightDefenseGlow(ctx: CanvasRenderingContext2D, color: strin
   ctx.restore();
 }
 
-/** The photon ring's bloom, and matter spiralling in over the disk's plane, in light. Drawn in the disk's frame. */
-export function drawLightHoleGlow(ctx: CanvasRenderingContext2D, R: number, time: number): void {
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  for (const [width, alpha] of [[R * 0.3, 0.07], [R * 0.18, 0.14], [R * 0.08, 0.3]] as const) {
-    ctx.strokeStyle = rgba(COLORS.bone, alpha);
-    ctx.lineWidth = width;
-    ctx.beginPath();
-    ctx.arc(0, 0, R * 1.12, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  const motes = 18;
-  for (let i = 0; i < motes; i++) {
-    const age = (time * 0.22 + i / motes) % 1;
-    const angle = i * 2.4 + age * 5;
-    const reach = R * (4.2 - 3 * age);
-    ctx.fillStyle = rgba(COLORS.sodium, 0.7 * Math.sin(age * Math.PI));
-    ctx.beginPath();
-    ctx.arc(Math.cos(angle) * reach, Math.sin(angle) * reach * 0.2, Math.max(0.8, R * 0.05), 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
 /**
  * A ship in light, in its own frame (centred, nose along +x): the classic hull in its solid colour, glowing the way
  * the player arrows of the menus do — a soft halo that breathes, a bloom hugging the silhouette and blinking wing lights — with an engine

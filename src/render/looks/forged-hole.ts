@@ -1,5 +1,6 @@
 import { fbm } from '../noise';
 import { smoothstep } from '../planet-common';
+import { sparePace } from './forged-sky';
 
 /**
  * The forged black hole, as light really bends round one: a thin accretion disk seen nearly edge on, its far side lifted
@@ -10,13 +11,14 @@ import { smoothstep } from '../planet-common';
  * ray's path depends only on how near it passes (its impact parameter `b`), so the paths are traced once for a range of
  * `b` (`paths`) and every pixel looks its own up: where it crosses the disk's plane follows from its direction on the
  * screen alone. What a pixel sees (up to three crossings, front first, and whether it falls in) is baked per size; the
- * disk's streaks are painted from it again ten times a second as it turns.
+ * disk's streaks are painted from it again ten times a second as it turns. The time that takes is not counted in the post
+ * pass's pace (`sparePace`): stepping the post pass down would not save it.
  */
 
 /** The black hole's image, the shadow at the middle, covers this many shadow radii across. */
 export const HOLE_SPAN = 8.2;
 /** The shadow's radius, in the hole's mass: the image is scaled so that this is the hole's radius on the field. */
-const SHADOW = 3 * Math.sqrt(3);
+export const SHADOW = 3 * Math.sqrt(3);
 /** The disk's inner and outer edge (masses). The inner edge sits inside the last stable orbit of a still hole, as round a spinning one. */
 const DISK_IN = 3.6;
 const DISK_OUT = 17;
@@ -32,13 +34,13 @@ const MAX_SIZE = 640;
 // ------------------------------------------------------------------ paths ----
 
 /** Impact parameters traced (masses), evenly from 0, and the angle step along a path (radians) and how far a path is followed. */
-const B_MAX = 32;
-const B_STEPS = 1200;
-const PHI_STEP = 0.02;
+export const B_MAX = 32;
+export const B_STEPS = 1200;
+export const PHI_STEP = 0.02;
 const PHI_MAX = 3.2 * Math.PI;
 const PHI_STEPS = Math.ceil(PHI_MAX / PHI_STEP);
 
-interface Paths {
+export interface Paths {
   /** 1/r along each path, `PHI_STEPS` values a path, by the angle swept since it left the eye. */
   u: Float32Array;
   /** How far (radians) each path goes before it falls in or leaves for good. */
@@ -50,7 +52,7 @@ let traced: Paths | null = null;
  * The paths, traced once: the orbit equation of light, u'' = 3u² − u (u = 1/r), from far away inwards, step by step
  * (fourth-order Runge–Kutta in the angle), until the path falls through the horizon (r < 2) or runs back out.
  */
-function paths(): Paths {
+export function paths(): Paths {
   if (traced) return traced;
   const u = new Float32Array(B_STEPS * PHI_STEPS);
   const end = new Float32Array(B_STEPS);
@@ -88,7 +90,7 @@ function paths(): Paths {
 }
 
 /** 1/r of the path with impact parameter `b` after sweeping `phi`, between the traced paths and steps; -1 past its end. */
-function uAt(p: Paths, b: number, phi: number): number {
+export function uAt(p: Paths, b: number, phi: number): number {
   const fi = Math.min(B_STEPS - 1.001, (b / B_MAX) * (B_STEPS - 1));
   const i = Math.floor(fi);
   const t = fi - i;
@@ -157,30 +159,32 @@ interface Hole {
   spin: Float32Array;
   /** How much of each pixel the shadow covers, 0 → 1: black behind the disk's light, which covers the stars only as far as it shines. */
   shadow: Float32Array;
+  /** The pixels that have a crossing or any shadow: the only ones painted. */
+  active: Int32Array;
   at: number;
 }
 
+/** The sizes baked, least recently used first. */
 const holes = new Map<number, Hole>();
+/** How many sizes are kept; each is a few MB at the largest size. */
+const KEEP = 3;
 
 function bake(size: number): Hole {
+  const started = performance.now();
   const p = paths();
   const per = SHADOW / (size / HOLE_SPAN);
   const sin = Math.sin(ELEVATION);
   const cos = Math.cos(ELEVATION);
   const n = size * size;
-  const hole: Hole = {
-    size,
-    canvas: Object.assign(document.createElement('canvas'), { width: size, height: size }),
-    image: new ImageData(size, size),
-    count: 0,
-    pixel: new Int32Array(n * 3),
-    colour: new Float32Array(n * 9),
-    row: new Uint16Array(n * 3),
-    angle: new Float32Array(n * 3),
-    spin: new Float32Array(n * 3),
-    shadow: new Float32Array(n),
-    at: -1,
-  };
+  // Up to three crossings a pixel are found, far fewer kept: baked into rooms of that size, then cut down to what was used.
+  const pixel = new Int32Array(n * 3);
+  const colour = new Float32Array(n * 9);
+  const row = new Uint16Array(n * 3);
+  const angle = new Float32Array(n * 3);
+  const spin = new Float32Array(n * 3);
+  const shadow = new Float32Array(n);
+  const active: number[] = [];
+  let count = 0;
   const half = size / 2;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -196,6 +200,7 @@ function bake(size: number): Hole {
       // It crosses the disk's plane (y = 0) where cos φ · sin + sin φ · ey = 0: every half turn from the first such angle.
       const first = Math.atan2(sin, -ey);
       let seen = 1;
+      const before = count;
       for (let k = 0; k < 3; k++) {
         const phi = first + k * Math.PI;
         const uu = uAt(p, b, phi);
@@ -213,27 +218,61 @@ function bake(size: number): Hole {
         const opacity = 0.92 * smoothstep(DISK_IN * 0.9, DISK_IN * 1.05, r) * (1 - smoothstep(DISK_OUT * 0.8, DISK_OUT, r));
         const [cr, cg, cb] = diskColour(Math.max(0, t));
         const w = seen * light * beaming * Math.max(opacity, 0.25);
-        const h = hole.count++;
-        hole.pixel[h] = y * size + x;
-        hole.colour[h * 3] = cr * w;
-        hole.colour[h * 3 + 1] = cg * w;
-        hole.colour[h * 3 + 2] = cb * w;
-        hole.row[h] = Math.min(MAP_R - 1, Math.max(0, Math.floor(t * MAP_R)));
-        hole.angle[h] = psi / (Math.PI * 2);
-        hole.spin[h] = (DISK_IN / r) ** 1.5 / INNER_TURN;
+        const h = count++;
+        pixel[h] = y * size + x;
+        colour[h * 3] = cr * w;
+        colour[h * 3 + 1] = cg * w;
+        colour[h * 3 + 2] = cb * w;
+        row[h] = Math.min(MAP_R - 1, Math.max(0, Math.floor(t * MAP_R)));
+        angle[h] = psi / (Math.PI * 2);
+        spin[h] = (DISK_IN / r) ** 1.5 / INNER_TURN;
         seen *= 1 - opacity;
       }
       // What falls in (every path nearer than the shadow's edge) is black, its edge softened over a pixel.
-      hole.shadow[y * size + x] = 1 - smoothstep(SHADOW - per * 0.7, SHADOW + per * 0.7, b);
+      const dark = 1 - smoothstep(SHADOW - per * 0.7, SHADOW + per * 0.7, b);
+      shadow[y * size + x] = dark;
+      if (count > before || dark > 0) active.push(y * size + x);
     }
   }
+  const hole: Hole = {
+    size,
+    canvas: Object.assign(document.createElement('canvas'), { width: size, height: size }),
+    image: new ImageData(size, size),
+    count,
+    pixel: pixel.slice(0, count),
+    colour: colour.slice(0, count * 3),
+    row: row.slice(0, count),
+    angle: angle.slice(0, count),
+    spin: spin.slice(0, count),
+    shadow,
+    active: Int32Array.from(active),
+    at: -1,
+  };
+  sparePace(performance.now() - started);
   return hole;
 }
 
+/** The sum of the light a frame paints, kept between paints (a pixel's three channels) and cleared only where it was used. */
+let sum = new Float32Array(0);
+
+/** The tone curve 1 − e^(−1.4 x), looked up: `TONE_STEPS` steps over the sums that are not yet white. */
+const TONE_MAX = 6;
+const TONE_STEPS = 4096;
+const TONE = Float32Array.from({ length: TONE_STEPS + 1 }, (_, i) => 1 - Math.exp((-1.4 * i * TONE_MAX) / TONE_STEPS));
+const toned = (x: number): number => TONE[Math.min(TONE_STEPS, Math.round((x * TONE_STEPS) / TONE_MAX))];
+
 /** Paints the disk as it has turned by `time`: each crossing's streak, lit, summed and toned so the hottest parts run to white. */
 function paint(hole: Hole, time: number): void {
+  const started = performance.now();
   const map = streakMap();
-  const sum = new Float32Array(hole.size * hole.size * 3);
+  if (sum.length < hole.size * hole.size * 3) sum = new Float32Array(hole.size * hole.size * 3);
+  const { active } = hole;
+  for (let a = 0; a < active.length; a++) {
+    const i = active[a] * 3;
+    sum[i] = 0;
+    sum[i + 1] = 0;
+    sum[i + 2] = 0;
+  }
   for (let h = 0; h < hole.count; h++) {
     let turn = hole.angle[h] - hole.spin[h] * time;
     turn -= Math.floor(turn);
@@ -243,12 +282,14 @@ function paint(hole: Hole, time: number): void {
     sum[i + 1] += hole.colour[h * 3 + 1] * s;
     sum[i + 2] += hole.colour[h * 3 + 2] * s;
   }
+  // The pixels with nothing to paint stay clear from the image's creation; only these are written.
   const data = hole.image.data;
-  for (let k = 0; k < hole.size * hole.size; k++) {
+  for (let a = 0; a < active.length; a++) {
+    const k = active[a];
     // The light, toned so the hottest runs to white; it covers the stars as far as it shines, the shadow under it wholly.
-    const r = 1 - Math.exp(-sum[k * 3] * 1.4);
-    const g = 1 - Math.exp(-sum[k * 3 + 1] * 1.4);
-    const b = 1 - Math.exp(-sum[k * 3 + 2] * 1.4);
+    const r = toned(sum[k * 3]);
+    const g = toned(sum[k * 3 + 1]);
+    const b = toned(sum[k * 3 + 2]);
     const shadow = hole.shadow[k];
     const alpha = shadow + (1 - shadow) * Math.max(r, g, b);
     if (alpha <= 0.002) {
@@ -261,21 +302,25 @@ function paint(hole: Hole, time: number): void {
     data[k * 4 + 3] = 255 * alpha;
   }
   hole.canvas.getContext('2d')!.putImageData(hole.image, 0, 0);
+  sparePace(performance.now() - started);
 }
 
 /** Draws the hole of `radius` (field units) centred, in the frame the caller has set (the disk's tilt applied). */
 export function drawLensedHole(ctx: CanvasRenderingContext2D, radius: number, time: number): void {
   const m = ctx.getTransform();
   const span = radius * HOLE_SPAN;
-  // Baked in steps of a quarter octave and scaled between them, so a killcam zooming in does not bake it again every frame.
+  // Baked in steps of half an octave and scaled between them, so a killcam zooming in does not bake it again every frame.
   const wanted = span * Math.hypot(m.a, m.b);
-  const size = Math.min(MAX_SIZE, Math.max(32, Math.round(2 ** (Math.round(Math.log2(wanted) * 4) / 4))));
+  const size = Math.min(MAX_SIZE, Math.max(32, Math.round(2 ** (Math.round(Math.log2(wanted) * 2) / 2))));
   let hole = holes.get(size);
-  if (!hole) {
-    if (holes.size > 5) holes.clear();
+  if (hole) {
+    // Used now: last in line to be dropped.
+    holes.delete(size);
+  } else {
     hole = bake(size);
-    holes.set(size, hole);
+    if (holes.size >= KEEP) holes.delete(holes.keys().next().value!);
   }
+  holes.set(size, hole);
   if (hole.at < 0 || time - hole.at >= REPAINT || time < hole.at) {
     hole.at = time;
     paint(hole, time);
