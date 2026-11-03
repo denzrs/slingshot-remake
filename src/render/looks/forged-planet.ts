@@ -55,22 +55,6 @@ function texture(name: Name): Texture | null {
   return made;
 }
 
-/** The map's colour at a longitude `u` (0 → 1, wrapping) and a latitude row `v` (0 north → 1 south), smoothly between four texels. */
-function sample(t: Texture, u: number, v: number, out: Rgb): void {
-  const x = (((u * t.width - 0.5) % t.width) + t.width) % t.width;
-  const y = Math.min(t.height - 1.001, Math.max(0, v * t.height - 0.5));
-  const x0 = Math.floor(x);
-  const y0 = Math.floor(y);
-  const x1 = (x0 + 1) % t.width;
-  const fx = x - x0;
-  const fy = y - y0;
-  for (let k = 0; k < 3; k++) {
-    const a = mix(t.data[(y0 * t.width + x0) * 4 + k], t.data[(y0 * t.width + x1) * 4 + k], fx);
-    const b = mix(t.data[((y0 + 1) * t.width + x0) * 4 + k], t.data[((y0 + 1) * t.width + x1) * 4 + k], fx);
-    out[k] = mix(a, b, fy);
-  }
-}
-
 /** The procedural maps are this big (a power of two in width, so a wrap is a mask). */
 const MAP_W = 256;
 const MAP_H = 128;
@@ -137,11 +121,14 @@ function variantOf(p: Planet): Variant & { index: number } {
 /** Every pixel of the disc, with where on the map it lies and how it is lit: what the surface and the cloud layer need to be painted again cheaply as the planet turns. */
 interface Surface {
   count: number;
-  /** Index into the sprite's pixels, longitude (turns), latitude (0 north → 1 south), map row, light (0 → 1) and how much of the pixel the disc covers. */
+  /** Index into the sprite's pixels, longitude (turns), map row, light (0 → 1) and how much of the pixel the disc covers. */
   index: Int32Array;
   lon: Float32Array;
-  lat: Float32Array;
   row: Uint8Array;
+  /** The pixel's latitude on the planet's map, which never changes as it turns: where the map's rows above and below it start in its data, and how far it lies between them. */
+  above: Int32Array;
+  below: Int32Array;
+  between: Float32Array;
   lit: Float32Array;
   cover: Float32Array;
   /** What is added to the map's colour whatever turns: the sheen of ice, the rim of the atmosphere, dusk (three values a pixel). */
@@ -210,8 +197,10 @@ function bake(p: Planet, ps: number): Baked | null {
     count: 0,
     index: new Int32Array(size * size),
     lon: new Float32Array(size * size),
-    lat: new Float32Array(size * size),
     row: new Uint8Array(size * size),
+    above: new Int32Array(size * size),
+    below: new Int32Array(size * size),
+    between: new Float32Array(size * size),
     lit: new Float32Array(size * size),
     cover: new Float32Array(size * size),
     add: new Float32Array(size * size * 3),
@@ -242,8 +231,12 @@ function bake(p: Planet, ps: number): Baked | null {
       const n = surface.count++;
       surface.index[n] = y * size + x;
       surface.lon[n] = u;
-      surface.lat[n] = v;
       surface.row[n] = Math.min(MAP_H - 1, Math.floor(v * MAP_H));
+      const ty0 = Math.min(map.height - 1.001, Math.max(0, v * map.height - 0.5));
+      const y0 = Math.floor(ty0);
+      surface.above[n] = y0 * map.width * 4;
+      surface.below[n] = (y0 + 1) * map.width * 4;
+      surface.between[n] = ty0 - y0;
       surface.lit[n] = lit;
       surface.cover[n] = coverage;
       for (let k = 0; k < 3; k++) surface.add[n * 3 + k] = spec * 255 + rim[k] * fresnel * 0.55 + dusk[k] * twilight;
@@ -319,11 +312,21 @@ function paintSurface(b: Baked, time: number): void {
   for (let r = 0; r < MAP_H; r++) shift[r] = cloud.kind === 'band' ? turn * (1 + 0.5 * Math.sin((r / MAP_H) * Math.PI * 3 + cloud.phase)) : turn;
   const cloudMap = proceduralMap(cloud.kind);
   const data = sphere.image.data;
-  const colour: Rgb = [0, 0, 0];
+  const { data: texels, width } = sphere.map;
   for (let k = 0; k < surface.count; k++) {
     const row = surface.row[k];
     const u = surface.lon[k] + shift[row];
-    sample(sphere.map, u, surface.lat[k], colour);
+    // The map's colour here, smoothly between the four texels round it (the longitude wraps).
+    const tx = u * width - 0.5;
+    const tx0 = Math.floor(tx);
+    const fx = tx - tx0;
+    const x0 = (((tx0 % width) + width) % width) * 4;
+    const x1 = x0 + 4 === width * 4 ? 0 : x0 + 4;
+    const a0 = surface.above[k] + x0;
+    const a1 = surface.above[k] + x1;
+    const b0 = surface.below[k] + x0;
+    const b1 = surface.below[k] + x1;
+    const fy = surface.between[k];
     const lit = surface.lit[k];
     const night = surface.night[k];
     const lights = night && sphere.city ? (sphere.city[row * MAP_W + (Math.floor((u - Math.floor(u)) * MAP_W) & (MAP_W - 1))] / 255) * night : 0;
@@ -333,7 +336,9 @@ function paintSurface(b: Baked, time: number): void {
     const shadow = !cloud.enabled ? 1 : 1 - SHADOW_DEPTH * (cloudMap[row * MAP_W + (Math.floor(uc * MAP_W) & (MAP_W - 1))] / 255) * (0.4 + 0.6 * lit);
     const i = surface.index[k] * 4;
     for (let c = 0; c < 3; c++) {
-      const albedo = Math.min(255, colour[c] * sphere.gain[c]) * shadow;
+      const top = texels[a0 + c] + (texels[a1 + c] - texels[a0 + c]) * fx;
+      const bottom = texels[b0 + c] + (texels[b1 + c] - texels[b0 + c]) * fx;
+      const albedo = Math.min(255, (top + (bottom - top) * fy) * sphere.gain[c]) * shadow;
       data[i + c] = Math.min(255, mix(NIGHT[c], albedo, lit) + surface.add[k * 3 + c] + CITY[c] * lights);
     }
     data[i + 3] = 255 * surface.cover[k];
@@ -480,16 +485,18 @@ function drawLightning(ctx: CanvasRenderingContext2D, x: number, y: number, p: P
 
 /** A planet's sprite in the forged look: baked on first draw once its map has loaded, the lit planet of `forged-lit-planet.ts` until then. */
 export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
-  const fallback = renderLitPlanet(p, ps);
+  // The stand-in is made only if it is drawn: once the map has loaded (nearly always, after the first planets) it never is.
+  let fallback: PlanetSprite | null = null;
   let baked: Baked | null = null;
   const place = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, x: number, y: number, scale: number): void => {
     ctx.drawImage(canvas, x - canvas.width / scale / 2, y - canvas.height / scale / 2, canvas.width / scale, canvas.height / scale);
   };
   return {
-    size: fallback.size,
+    size: Math.ceil(p.radius * ps * (1 + GLOW) * 2 + 4),
     draw(ctx, x, y, scale, time) {
       baked ??= bake(p, ps);
       if (!baked) {
+        fallback ??= renderLitPlanet(p, ps);
         fallback.draw(ctx, x, y, scale, time);
         return;
       }

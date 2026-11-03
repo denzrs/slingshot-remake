@@ -28,7 +28,18 @@ const SHIP_CENTRE = -1.5;
 
 /** The lit hull is painted on a canvas this many pixels across (the ship's image covers `SHIP_SPAN` units of it). */
 const LIT = 128;
-let lit: HTMLCanvasElement | null = null;
+/** Each colour's lit hull, and the light it was painted in: painted again only when that light changes, not every frame. */
+const lit = new Map<string, { canvas: HTMLCanvasElement; light: string }>();
+/** Directions are kept to this many steps a turn, and a planet's strength to this many steps: finer than shows, coarse enough that a ship standing still keeps its hull. */
+const TURN_STEPS = 256;
+const STRENGTH_STEPS = 32;
+
+/** A unit vector turned to the nearest of `TURN_STEPS` directions, and that step. */
+function stepped([x, y]: [number, number]): { dir: [number, number]; step: number } {
+  const step = Math.round((Math.atan2(y, x) / (Math.PI * 2)) * TURN_STEPS);
+  const a = (step / TURN_STEPS) * Math.PI * 2;
+  return { dir: [Math.cos(a), Math.sin(a)], step };
+}
 
 /** A direction on the screen, as one in the frame of whatever is being drawn (`m` its transform), as a unit vector. */
 function inFrame(m: DOMMatrix, dx: number, dy: number): [number, number] {
@@ -78,9 +89,22 @@ function nearPlanets(ctx: CanvasRenderingContext2D): { dir: [number, number]; ti
 
 /** The hull, lit again: shaded away from the light, glinting towards it, and rimmed in the player's colour by the engine at the back. */
 function litHull(ctx: CanvasRenderingContext2D, hull: HTMLCanvasElement, color: string): HTMLCanvasElement {
-  lit ??= Object.assign(document.createElement('canvas'), { width: LIT, height: LIT });
-  const c = lit.getContext('2d')!;
-  const [lx, ly] = lightInFrame(ctx);
+  const light = stepped(lightInFrame(ctx));
+  const planets = nearPlanets(ctx).map((planet) => {
+    const { dir, step } = stepped(planet.dir);
+    return { dir, step, tint: planet.tint, strength: Math.round(planet.strength * STRENGTH_STEPS) / STRENGTH_STEPS };
+  });
+  const key = `${light.step}|${planets.map((planet) => `${planet.step},${planet.tint},${planet.strength}`).join('|')}`;
+  let known = lit.get(color);
+  if (known?.light === key) return known.canvas;
+  if (!known) {
+    if (lit.size > 16) lit.clear();
+    known = { canvas: Object.assign(document.createElement('canvas'), { width: LIT, height: LIT }), light: key };
+    lit.set(color, known);
+  }
+  known.light = key;
+  const c = known.canvas.getContext('2d')!;
+  const [lx, ly] = light.dir;
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.clearRect(0, 0, LIT, LIT);
   c.setTransform(LIT / SHIP_SPAN, 0, 0, LIT / SHIP_SPAN, LIT / 2, LIT / 2);
@@ -103,7 +127,7 @@ function litHull(ctx: CanvasRenderingContext2D, hull: HTMLCanvasElement, color: 
   c.fillStyle = rim;
   c.fillRect(-SHIP_SPAN, -SHIP_SPAN, SHIP_SPAN * 2, SHIP_SPAN * 2);
   // A planet close by throws its own colour on the side of the hull that faces it.
-  for (const planet of nearPlanets(ctx)) {
+  for (const planet of planets) {
     const [px, py] = planet.dir;
     const glow = c.createLinearGradient(px * 13, py * 13, -px * 4, -py * 4);
     glow.addColorStop(0, rgba(planet.tint, planet.strength));
@@ -112,7 +136,7 @@ function litHull(ctx: CanvasRenderingContext2D, hull: HTMLCanvasElement, color: 
     c.fillRect(-SHIP_SPAN, -SHIP_SPAN, SHIP_SPAN * 2, SHIP_SPAN * 2);
   }
   c.globalCompositeOperation = 'source-over';
-  return lit;
+  return known.canvas;
 }
 
 /** A ship: the rendered hull in its player's colour, lit from the field's light, over the engine flame and a halo, wing lights blinking. In the ship's frame, nose along +x. */

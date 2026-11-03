@@ -212,9 +212,15 @@ function shrink(from: CanvasImageSource, to: Level): void {
 let vignette: { key: string; gradient: CanvasGradient } | null = null;
 
 /**
+ * On a phone the grade and the grain are left out. Each is one more blend over the whole screen, and soft-light and overlay
+ * have to read back what lies under them, which a phone's GPU pays for dearly at its pixel density; for a tint of a few percent.
+ */
+const phone = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
+/**
  * Bloom: the picture is shrunk, its dull parts are dropped (raised to the eighth power, so only what is nearly white stays), and what
  * is left is blurred by shrinking it further, then added back over the picture on the way up. A vignette, a grade
- * and grain over it. The flash and the supernova's white-out make it bloom wider.
+ * and grain over it (not on a phone). The flash and the supernova's white-out make it bloom wider.
  */
 export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   const main = ctx.canvas;
@@ -254,6 +260,10 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   }
   ctx.fillStyle = vignette.gradient;
   ctx.fillRect(0, 0, main.width, main.height);
+  if (phone) {
+    ctx.restore();
+    return;
+  }
 
   // The grade: cool in the high lights of the top, warm in the low ones.
   ctx.globalCompositeOperation = 'soft-light';
