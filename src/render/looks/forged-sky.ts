@@ -5,7 +5,7 @@ import type { FrameInfo } from './painter';
 
 /**
  * What the forged look puts behind and over the field as a whole: a nebula and dust lanes baked into the backdrop, layers
- * of stars and dust drifting at depths of their own, and over the finished field a bloom (the bright parts, blurred
+ * of stars drifting at depths of their own, and over the finished field a bloom (the bright parts, blurred
  * wide and added back), a vignette, a grade and a little film grain.
  */
 
@@ -76,7 +76,7 @@ export function paintNebula(ctx: CanvasRenderingContext2D, w: number, h: number)
 
 const TILE = 512;
 
-/** A star or a mote of dust: its own little picture, and where its middle lies in the tile. */
+/** A star: its own little picture, and where its middle lies in the tile. */
 interface Speck {
   sprite: HTMLCanvasElement;
   x: number;
@@ -92,7 +92,6 @@ interface Tiles {
   dpr: number;
   farA: Speck[];
   farB: Speck[];
-  near: Speck[];
   grain: CanvasPattern;
 }
 let tiles: Tiles | null = null;
@@ -132,23 +131,6 @@ function buildTiles(ctx: CanvasRenderingContext2D, dpr: number): Tiles {
       });
     });
   };
-  // Out-of-focus motes, close to the eye.
-  const motes = (): Speck[] => {
-    const rng = createRng(0xf0c3);
-    return Array.from({ length: 9 }, () => {
-      const x = rng() * TILE;
-      const y = rng() * TILE;
-      const r = (2 + rng() * 3.5) * dpr;
-      const alpha = 0.05 + rng() * 0.07;
-      return speck(r, x, y, (c) => {
-        const glow = c.createRadialGradient(0, 0, 0, 0, 0, r);
-        glow.addColorStop(0, `rgba(190,220,255,${alpha})`);
-        glow.addColorStop(1, 'rgba(190,220,255,0)');
-        c.fillStyle = glow;
-        c.fillRect(-r, -r, r * 2, r * 2);
-      });
-    });
-  };
   const grain = document.createElement('canvas');
   grain.width = grain.height = 128;
   const g = grain.getContext('2d')!;
@@ -160,7 +142,7 @@ function buildTiles(ctx: CanvasRenderingContext2D, dpr: number): Tiles {
     img.data[i + 3] = 255;
   }
   g.putImageData(img, 0, 0);
-  return { dpr, farA: stars(26, 0xf0a1), farB: stars(26, 0xf0b2), near: motes(), grain: ctx.createPattern(grain, 'repeat')! };
+  return { dpr, farA: stars(26, 0xf0a1), farB: stars(26, 0xf0b2), grain: ctx.createPattern(grain, 'repeat')! };
 }
 
 function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: FrameInfo, alpha: number, vx: number, vy: number, depth: number): void {
@@ -183,7 +165,7 @@ function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: Frame
   }
 }
 
-/** Stars that twinkle in turn and drift at two depths, and a few motes of dust close up, over the plate. */
+/** Stars that twinkle in turn and drift at two depths, over the plate. */
 export function forgedSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   if (!tiles || tiles.dpr !== f.dpr) tiles = buildTiles(ctx, f.dpr);
   ctx.save();
@@ -194,7 +176,6 @@ export function forgedSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   const pulse = Math.sin(f.time * 1.3);
   layer(ctx, tiles.farA, f, 0.55 + 0.4 * pulse, 1.2, 0.4, 0.2);
   layer(ctx, tiles.farB, f, 0.55 - 0.4 * pulse, -0.8, 0.5, 0.2);
-  layer(ctx, tiles.near, f, 0.7, 7, 2.5, 0.55);
   ctx.restore();
 }
 
