@@ -135,11 +135,10 @@ export const SCORING = {
   FIRST_BLOOD: 100,
   /**
    * Shooting down the leader, alone in front when the volley went up, pays a share of the lead they had over the second,
-   * nothing for a lead under the least, and never more than the cap.
+   * nothing for a lead under the least. There is no cap: the bigger the lead, the bigger the bounty.
    */
   BOUNTY_SHARE: 0.25,
   BOUNTY_MIN_LEAD: 100,
-  BOUNTY_MAX: 1000,
   /** Revenge: taking the enemy who shot your ship down in the round before — twice that on one who dominated you. */
   REVENGE: 200,
   /** Shutdown: taking a ship on a spree (two enemies or more this round) pays this for every enemy it has taken. */

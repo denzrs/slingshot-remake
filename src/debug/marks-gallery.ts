@@ -31,7 +31,7 @@ interface MarkEntry {
 
 /** What each mark pays and where it stands; the page's notes are German, as the looks gallery's are. The names are the game's. */
 const SYMBOLS: Record<MarkKind, MarkEntry> = {
-  bounty: { pays: `+25 % des Vorsprungs, höchstens ${SCORING.BOUNTY_MAX}`, where: 'Krone auf dem Führenden (Vorsprung ab 100). Für alle.', alias: 'Champion' },
+  bounty: { pays: `+25 % des Vorsprungs, ohne Obergrenze`, where: 'Krone auf dem Führenden (Vorsprung ab 100). Für alle.', alias: 'Champion' },
   shutdown: { pays: `+${SCORING.SHUTDOWN_PER_KILL} je Gegner, den das Schiff genommen hat`, where: 'Flamme auf einem Schiff mit zwei oder mehr Abschüssen in der Runde. Für alle.' },
   comeback: { pays: `+${SCORING.COMEBACK} am Rundenende`, where: 'Auf dem einzigen Letzten bei Rundenbeginn: gewinnt er die Runde, zahlt es. Für alle.' },
   revenge: { pays: `+${SCORING.REVENGE}, doppelt nach ${SCORING.DOMINATION_ROUNDS} Runden in Folge`, where: 'Auf dem, der dich in der Runde davor abgeschossen hat. Nur für dich.' },

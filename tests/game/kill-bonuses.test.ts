@@ -61,14 +61,14 @@ describe('extras', () => {
     expect(pointsOf(paid[0], 'bounty')).toBe(bountyPoints(800));
   });
 
-  it('pay no bounty on a tie at the top, nor for a small lead; cap a big one', () => {
+  it('pay no bounty on a tie at the top, nor for a small lead; never cap a big one', () => {
     const { m, paid } = field(3);
     m.players[1].score = 1000;
     m.players[2].score = 1000;
     shoot(m, 0, 1);
     expect(kinds(paid[0])).not.toContain('bounty');
     expect(bountyPoints(SCORING.BOUNTY_MIN_LEAD - 1)).toBe(0);
-    expect(bountyPoints(100_000)).toBe(SCORING.BOUNTY_MAX);
+    expect(bountyPoints(100_000)).toBe(25_000);
   });
 
   it('pay the underdog alone in last place a share of the gap to the ship it takes', () => {

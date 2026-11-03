@@ -136,7 +136,6 @@ const TUTORIAL: (() => Lesson)[] = [
           shutdown: SCORING.SHUTDOWN_PER_KILL,
           avenger: SCORING.AVENGER,
           posthumous: SCORING.POSTHUMOUS,
-          bountyMax: SCORING.BOUNTY_MAX,
           underdogMax: SCORING.UNDERDOG_MAX,
         }),
       ),
