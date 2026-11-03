@@ -8,7 +8,7 @@ import { h } from '../menu/menu';
 /** What a mark means, with the numbers of the rules in it. */
 export function markText(kind: MarkKind): string {
   const points: Record<MarkKind, number> = {
-    bounty: SCORING.BOUNTY_MAX,
+    bounty: 0,
     shutdown: SCORING.SHUTDOWN_PER_KILL,
     comeback: SCORING.COMEBACK,
     revenge: SCORING.REVENGE,

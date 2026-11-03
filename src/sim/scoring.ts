@@ -25,14 +25,14 @@ export function interceptPoints(chance: number): number {
   return Math.round(SCORING.INTERCEPT / chance);
 }
 
-/** A `share` of `points`, nothing below `min` of them, and at most `max`. */
-function sharePoints(points: number, share: number, min: number, max: number): number {
+/** A `share` of `points`, nothing below `min` of them, and at most `max` (no cap by default). */
+function sharePoints(points: number, share: number, min: number, max = Infinity): number {
   return points < min ? 0 : Math.min(max, Math.round(points * share));
 }
 
 /** What shooting down the leader pays, for the `lead` (points) they had over the second. */
 export function bountyPoints(lead: number): number {
-  return sharePoints(lead, SCORING.BOUNTY_SHARE, SCORING.BOUNTY_MIN_LEAD, SCORING.BOUNTY_MAX);
+  return sharePoints(lead, SCORING.BOUNTY_SHARE, SCORING.BOUNTY_MIN_LEAD);
 }
 
 /** What the ship in last place gets for taking one `gap` points above it. */
