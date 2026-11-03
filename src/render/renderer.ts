@@ -1,5 +1,5 @@
 import { COLORS, FIELD, FONTS, NEBULA, PHYSICS, SOLAR, SUDDEN_DEATH, WORMHOLE } from '../sim/config';
-import type { Match, Scene, Trail } from '../game';
+import type { Camera, Match, Scene, Trail } from '../game';
 import { t } from '../platform/i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../game/scorecard';
 import { aimDirection, inPowerUpNebula, nextWormholeId, stormCloudAt, type World } from '../sim/physics';
@@ -42,6 +42,8 @@ export interface DrawOptions {
 export interface Viewport {
   width: number;
   height: number;
+  /** Turn the field a quarter round (or not) whatever the device is, instead of leaving it to the phone layout: for a page that draws a fixed picture. */
+  rotated?: boolean;
 }
 
 const windowViewport = (): Viewport => ({ width: window.innerWidth, height: window.innerHeight });
@@ -77,17 +79,17 @@ export class Renderer {
   }
 
   resize(): void {
-    const { width: cssWidth, height: cssHeight } = this.viewport();
+    const { width: cssWidth, height: cssHeight, rotated: forced } = this.viewport();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const coarse = window.matchMedia('(pointer: coarse)').matches;
     // Held upright a phone gets its own layout: HUD on top, the field, the thumbs' controls underneath.
-    const portrait = coarse && cssHeight > cssWidth ? portraitLayout(cssWidth, cssHeight, safeArea(), touchScale()) : null;
-    applyUpright(portrait);
+    const portrait = forced === undefined && coarse && cssHeight > cssWidth ? portraitLayout(cssWidth, cssHeight, safeArea(), touchScale()) : null;
+    if (forced === undefined) applyUpright(portrait);
     // On a touch screen the field is height-limited and small: give it every pixel.
     const margin = coarse ? 4 : Math.min(28, cssWidth * 0.03);
-    const scale = portrait?.scale ?? Math.min((cssWidth - margin * 2) / FIELD.width, (cssHeight - margin * 2) / FIELD.height);
-    const rotated = !!portrait?.rotated;
+    const rotated = forced ?? !!portrait?.rotated;
     const plate = plateUnits(rotated);
+    const scale = portrait?.scale ?? Math.min((cssWidth - margin * 2) / plate.w, (cssHeight - margin * 2) / plate.h);
     this.view = {
       cssWidth,
       cssHeight,
@@ -129,6 +131,13 @@ export class Renderer {
     const sy = (clientY - rect.top - v.offsetY) / v.scale;
     // Turned, the field's y runs to the right on the screen and its x up.
     return v.rotated ? { x: FIELD.width - sy, y: sx } : { x: sx, y: sy };
+  }
+
+  /** Where a field point lands on the canvas (CSS px) when `draw` is told to look at `camera`, the way it fills the viewport (`fullScreen`) or fits the plate in it. */
+  project(x: number, y: number, camera: Camera | null, fullScreen: boolean): { x: number; y: number } {
+    const view = fullScreen ? this.fullScreenView() : this.view;
+    const [a, b, c, d, e, f] = fieldTransform(view, camera ?? undefined);
+    return { x: (a * x + c * y + e) / view.dpr, y: (b * x + d * y + f) / view.dpr };
   }
 
   /** Where a field point is on the screen (CSS px on the canvas). */
