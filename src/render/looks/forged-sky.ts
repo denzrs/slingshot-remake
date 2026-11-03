@@ -14,6 +14,7 @@ let current: FrameInfo | null = null;
 /** Keeps the frame for the calls that follow it: the sky, the ships' light and the post pass read it. */
 export function forgedBegin(frame: FrameInfo): void {
   current = frame;
+  keepPace();
 }
 
 /** The frame being drawn, null before the first one. */
@@ -75,101 +76,120 @@ export function paintNebula(ctx: CanvasRenderingContext2D, w: number, h: number)
 
 const TILE = 512;
 
+/** A star or a mote of dust: its own little picture, and where its middle lies in the tile. */
+interface Speck {
+  sprite: HTMLCanvasElement;
+  x: number;
+  y: number;
+}
+
+/**
+ * Each layer is a tile of specks repeated over the plate. The specks are drawn one by one rather than the tile filled in
+ * as a pattern: the tile is nearly all empty, and a pattern laid at a fraction of a pixel has every pixel of the plate
+ * sampled from it, which a canvas drawn without a GPU (Firefox on many machines) paid for with most of its frame.
+ */
 interface Tiles {
   dpr: number;
-  farA: CanvasPattern;
-  farB: CanvasPattern;
-  near: CanvasPattern;
+  farA: Speck[];
+  farB: Speck[];
+  near: Speck[];
   grain: CanvasPattern;
 }
 let tiles: Tiles | null = null;
 
-function tile(draw: (c: CanvasRenderingContext2D, rng: () => number) => void, seed: number, ctx: CanvasRenderingContext2D, size = TILE): CanvasPattern {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  draw(canvas.getContext('2d')!, createRng(seed));
-  return ctx.createPattern(canvas, 'repeat')!;
+/** A speck's picture, `reach` pixels out from its middle each way; `draw` paints it round (0, 0). */
+function speck(reach: number, x: number, y: number, draw: (c: CanvasRenderingContext2D) => void): Speck {
+  const sprite = document.createElement('canvas');
+  sprite.width = sprite.height = Math.ceil(reach) * 2 + 2;
+  const c = sprite.getContext('2d')!;
+  c.translate(sprite.width / 2, sprite.height / 2);
+  draw(c);
+  return { sprite, x, y };
 }
 
 function buildTiles(ctx: CanvasRenderingContext2D, dpr: number): Tiles {
-  const stars = (count: number, seed: number): CanvasPattern =>
-    tile(
-      (c, rng) => {
-        for (let i = 0; i < count; i++) {
-          const x = rng() * TILE;
-          const y = rng() * TILE;
-          const m = rng() ** 2;
-          const r = (0.5 + m * 0.9) * dpr;
-          const warm = rng();
-          const [cr, cg, cb] = warm < 0.2 ? [255, 214, 160] : warm < 0.45 ? [170, 210, 255] : [232, 236, 248];
-          if (m > 0.75) {
-            const halo = c.createRadialGradient(x, y, 0, x, y, r * 5);
-            halo.addColorStop(0, `rgba(${cr},${cg},${cb},0.16)`);
-            halo.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
-            c.fillStyle = halo;
-            c.fillRect(x - r * 5, y - r * 5, r * 10, r * 10);
-          }
-          c.fillStyle = `rgba(${cr},${cg},${cb},${0.45 + m * 0.5})`;
-          c.beginPath();
-          c.arc(x, y, r, 0, Math.PI * 2);
-          c.fill();
+  const stars = (count: number, seed: number): Speck[] => {
+    const rng = createRng(seed);
+    return Array.from({ length: count }, () => {
+      const x = rng() * TILE;
+      const y = rng() * TILE;
+      const m = rng() ** 2;
+      const r = (0.5 + m * 0.9) * dpr;
+      const warm = rng();
+      const [cr, cg, cb] = warm < 0.2 ? [255, 214, 160] : warm < 0.45 ? [170, 210, 255] : [232, 236, 248];
+      return speck(m > 0.75 ? r * 5 : r, x, y, (c) => {
+        if (m > 0.75) {
+          const halo = c.createRadialGradient(0, 0, 0, 0, 0, r * 5);
+          halo.addColorStop(0, `rgba(${cr},${cg},${cb},0.16)`);
+          halo.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+          c.fillStyle = halo;
+          c.fillRect(-r * 5, -r * 5, r * 10, r * 10);
         }
-      },
-      seed,
-      ctx,
-    );
-  return {
-    dpr,
-    farA: stars(26, 0xf0a1),
-    farB: stars(26, 0xf0b2),
-    // Out-of-focus motes, close to the eye.
-    near: tile(
-      (c, rng) => {
-        for (let i = 0; i < 9; i++) {
-          const x = rng() * TILE;
-          const y = rng() * TILE;
-          const r = (2 + rng() * 3.5) * dpr;
-          const glow = c.createRadialGradient(x, y, 0, x, y, r);
-          glow.addColorStop(0, `rgba(190,220,255,${0.05 + rng() * 0.07})`);
-          glow.addColorStop(1, 'rgba(190,220,255,0)');
-          c.fillStyle = glow;
-          c.fillRect(x - r, y - r, r * 2, r * 2);
-        }
-      },
-      0xf0c3,
-      ctx,
-    ),
-    grain: tile(
-      (c, rng) => {
-        const img = c.createImageData(128, 128);
-        for (let i = 0; i < img.data.length; i += 4) {
-          const v = rng() * 255;
-          img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
-          img.data[i + 3] = 255;
-        }
-        c.putImageData(img, 0, 0);
-      },
-      0xf0d4,
-      ctx,
-      128,
-    ),
+        c.fillStyle = `rgba(${cr},${cg},${cb},${0.45 + m * 0.5})`;
+        c.beginPath();
+        c.arc(0, 0, r, 0, Math.PI * 2);
+        c.fill();
+      });
+    });
   };
+  // Out-of-focus motes, close to the eye.
+  const motes = (): Speck[] => {
+    const rng = createRng(0xf0c3);
+    return Array.from({ length: 9 }, () => {
+      const x = rng() * TILE;
+      const y = rng() * TILE;
+      const r = (2 + rng() * 3.5) * dpr;
+      const alpha = 0.05 + rng() * 0.07;
+      return speck(r, x, y, (c) => {
+        const glow = c.createRadialGradient(0, 0, 0, 0, 0, r);
+        glow.addColorStop(0, `rgba(190,220,255,${alpha})`);
+        glow.addColorStop(1, 'rgba(190,220,255,0)');
+        c.fillStyle = glow;
+        c.fillRect(-r, -r, r * 2, r * 2);
+      });
+    });
+  };
+  const grain = document.createElement('canvas');
+  grain.width = grain.height = 128;
+  const g = grain.getContext('2d')!;
+  const img = g.createImageData(128, 128);
+  const rng = createRng(0xf0d4);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = rng() * 255;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  return { dpr, farA: stars(26, 0xf0a1), farB: stars(26, 0xf0b2), near: motes(), grain: ctx.createPattern(grain, 'repeat')! };
 }
 
-function layer(ctx: CanvasRenderingContext2D, pattern: CanvasPattern, f: FrameInfo, alpha: number, vx: number, vy: number, depth: number): void {
+function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: FrameInfo, alpha: number, vx: number, vy: number, depth: number): void {
   // The layer drifts, and slides against the field as the camera or the shake moves the field: the nearer, the more.
   const ox = f.time * vx * f.dpr + (f.field.e - f.plate.x) * depth;
   const oy = f.time * vy * f.dpr + (f.field.f - f.plate.y) * depth;
-  pattern.setTransform(new DOMMatrix().translate(ox, oy));
+  const { x: px, y: py, w, h } = f.plate;
   ctx.globalAlpha = alpha;
-  ctx.fillStyle = pattern;
-  ctx.fillRect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
+  // Every copy of the tile that reaches the plate, starting a tile early for the specks that hang over its edge.
+  for (let ty = oy + (Math.floor((py - oy) / TILE) - 1) * TILE; ty < py + h; ty += TILE) {
+    for (let tx = ox + (Math.floor((px - ox) / TILE) - 1) * TILE; tx < px + w; tx += TILE) {
+      for (const s of specks) {
+        const half = s.sprite.width / 2;
+        const x = tx + s.x;
+        const y = ty + s.y;
+        if (x + half < px || x - half > px + w || y + half < py || y - half > py + h) continue;
+        ctx.drawImage(s.sprite, x - half, y - half);
+      }
+    }
+  }
 }
 
 /** Stars that twinkle in turn and drift at two depths, and a few motes of dust close up, over the plate. */
 export function forgedSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   if (!tiles || tiles.dpr !== f.dpr) tiles = buildTiles(ctx, f.dpr);
   ctx.save();
+  ctx.beginPath();
+  ctx.rect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
+  ctx.clip();
   ctx.globalCompositeOperation = 'lighter';
   const pulse = Math.sin(f.time * 1.3);
   layer(ctx, tiles.farA, f, 0.55 + 0.4 * pulse, 1.2, 0.4, 0.2);
@@ -212,17 +232,50 @@ function shrink(from: CanvasImageSource, to: Level): void {
 let vignette: { key: string; gradient: CanvasGradient } | null = null;
 
 /**
- * On a phone the grade and the grain are left out. Each is one more blend over the whole screen, and soft-light and overlay
- * have to read back what lies under them, which a phone's GPU pays for dearly at its pixel density; for a tint of a few percent.
+ * How much of the post pass a machine that cannot keep up is spared: 0 all of it is drawn; 1 not the grade and the grain;
+ * 2 not the bloom either; 3 not the vignette either. Each is a pass over the whole screen, which a phone's GPU at its pixel
+ * density, or a canvas drawn without a GPU, pays for dearly. It steps down after frames have come slowly for a while, and
+ * never back up: a look that kept changing would be worse than one a little plainer.
  */
-const phone = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+let lean = 0;
+/** Frames slower than this (s), on average, count as not keeping up; for this long (s) in a row, it steps down. */
+const SLOW_FRAME = 1 / 40;
+const SLOW_FOR = 2;
+let pace = { last: 0, frame: 1 / 60, slow: 0 };
+
+/** Times the frames by the clock on the wall (the game's own time slows in a replay) and steps the post pass down when they lag. */
+function keepPace(): void {
+  const now = performance.now();
+  const dt = (now - pace.last) / 1000;
+  pace.last = now;
+  // A pause (a hidden tab, a menu over a still field) says nothing about how fast frames are drawn.
+  if (dt <= 0 || dt > 0.25) return;
+  pace.frame += (dt - pace.frame) * 0.1;
+  pace.slow = pace.frame > SLOW_FRAME ? pace.slow + dt : 0;
+  if (pace.slow > SLOW_FOR && lean < 3) {
+    lean++;
+    pace = { last: now, frame: 1 / 60, slow: 0 };
+  }
+}
 
 /**
  * Bloom: the picture is shrunk, its dull parts are dropped (raised to the eighth power, so only what is nearly white stays), and what
  * is left is blurred by shrinking it further, then added back over the picture on the way up. A vignette, a grade
- * and grain over it (not on a phone). The flash and the supernova's white-out make it bloom wider.
+ * and grain over it, as much of it as the machine keeps up with (`lean`). The flash and the supernova's white-out make it bloom wider.
  */
 export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (lean < 2) bloom(ctx, f);
+  if (lean < 3) drawVignette(ctx, f);
+  if (lean < 1) {
+    grade(ctx, f);
+    grain(ctx, f);
+  }
+  ctx.restore();
+}
+
+function bloom(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   const main = ctx.canvas;
   const [c2, c4, c8, c16] = chainFor(main.width, main.height);
   shrink(main, c2);
@@ -240,14 +293,15 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   c4.ctx.drawImage(c8.canvas, 0, 0, c4.canvas.width, c4.canvas.height);
   c4.ctx.globalCompositeOperation = 'source-over';
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = 'lighter';
   ctx.globalAlpha = Math.min(1, 0.35 + 0.4 * f.flash + 0.3 * f.whiteout);
   ctx.drawImage(c4.canvas, 0, 0, main.width, main.height);
+  ctx.restore();
+}
 
-  // The vignette: the plate's corners fall into shadow.
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = 'source-over';
+/** The vignette: the plate's corners fall into shadow. */
+function drawVignette(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
+  const main = ctx.canvas;
   const key = `${main.width}×${main.height}|${f.plate.x}|${f.plate.y}`;
   if (vignette?.key !== key) {
     const cx = f.plate.x + f.plate.w / 2;
@@ -260,27 +314,29 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   }
   ctx.fillStyle = vignette.gradient;
   ctx.fillRect(0, 0, main.width, main.height);
-  if (phone) {
-    ctx.restore();
-    return;
-  }
+}
 
-  // The grade: cool in the high lights of the top, warm in the low ones.
+/** The grade: cool in the high lights of the top, warm in the low ones. */
+function grade(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
+  ctx.save();
   ctx.globalCompositeOperation = 'soft-light';
-  const grade = ctx.createLinearGradient(0, f.plate.y, 0, f.plate.y + f.plate.h);
-  grade.addColorStop(0, 'rgba(70,130,255,0.14)');
-  grade.addColorStop(1, 'rgba(255,150,70,0.1)');
-  ctx.fillStyle = grade;
+  const gradient = ctx.createLinearGradient(0, f.plate.y, 0, f.plate.y + f.plate.h);
+  gradient.addColorStop(0, 'rgba(70,130,255,0.14)');
+  gradient.addColorStop(1, 'rgba(255,150,70,0.1)');
+  ctx.fillStyle = gradient;
   ctx.fillRect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
+  ctx.restore();
+}
 
-  // Film grain: a tile of noise laid at a new place about fifteen times a second.
-  if (tiles) {
-    const step = Math.floor(f.time * 15);
-    tiles.grain.setTransform(new DOMMatrix().translate((step * 37) % 128, (step * 91) % 128));
-    ctx.globalCompositeOperation = 'overlay';
-    ctx.globalAlpha = 0.05;
-    ctx.fillStyle = tiles.grain;
-    ctx.fillRect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
-  }
+/** Film grain: a tile of noise laid at a new place about fifteen times a second. */
+function grain(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
+  if (!tiles) return;
+  const step = Math.floor(f.time * 15);
+  tiles.grain.setTransform(new DOMMatrix().translate((step * 37) % 128, (step * 91) % 128));
+  ctx.save();
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = 0.05;
+  ctx.fillStyle = tiles.grain;
+  ctx.fillRect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
   ctx.restore();
 }
