@@ -121,7 +121,7 @@ function streakMap(): Float32Array {
       const lines = smoothstep(0.55, 0.9, filament);
       const gaps = 1 - smoothstep(0.1, 0.4, fbm(ca * 3, sa * 3, r * 22, 71, 3));
       const arms = 0.5 + 0.5 * Math.cos(2 * a - r * 14);
-      streaks[j * MAP_A + i] = 0.45 + 0.7 * clump + 0.5 * lines - 0.35 * gaps + 0.3 * arms * (0.4 + clump);
+      streaks[j * MAP_A + i] = 0.2 + 1.2 * clump + 0.95 * lines - 0.55 * gaps + 0.55 * arms * (0.4 + clump);
     }
   }
   return streaks;
@@ -205,7 +205,7 @@ export function bake(size: number): Hole {
         const pz = r * (Math.cos(phi) * cos + Math.sin(phi) * ez);
         const t = (r - DISK_IN) / (DISK_OUT - DISK_IN);
         // Light: hottest just outside the inner edge, falling off outwards, both edges soft.
-        const light = 4.2 * (DISK_IN / r) ** 1.8 * smoothstep(DISK_IN * 0.9, DISK_IN * 1.15, r) * (1 - smoothstep(DISK_OUT * 0.7, DISK_OUT, r));
+        const light = 3.4 * (DISK_IN / r) ** 1.8 * smoothstep(DISK_IN * 0.9, DISK_IN * 1.15, r) * (1 - smoothstep(DISK_OUT * 0.7, DISK_OUT, r));
         // The side of the disk that comes towards the eye a little brighter.
         const psi = Math.atan2(pz, px);
         const beaming = 1 + 0.22 * Math.cos(psi) * cos * Math.sqrt(DISK_IN / r);
@@ -247,13 +247,13 @@ const SHADOW_CUT = 0.18;
 /**
  * The disk as it has turned by `time`: each crossing's streak, lit, summed and toned so the hottest parts run to white.
  * RGBA, straight (not premultiplied). With `loop` (s), every ring turns a whole number of times in it (the nearest to its
- * own speed; the outer ones, too slow to turn once, stand still), so the picture at `loop` is the one at 0.
+ * own speed, once at the least), so the picture at `loop` is the one at 0.
  */
 export function paint(hole: Hole, time: number, loop: number): Uint8ClampedArray {
   const map = streakMap();
   const sum = new Float32Array(hole.size * hole.size * 3);
   for (let h = 0; h < hole.count; h++) {
-    const spin = Math.round(hole.spin[h] * loop) / loop;
+    const spin = Math.max(1, Math.round(hole.spin[h] * loop)) / loop;
     let turn = hole.angle[h] - spin * time;
     turn -= Math.floor(turn);
     // The streak map between its cells, round the disk and across it.
