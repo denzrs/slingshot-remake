@@ -16,7 +16,6 @@ let current: FrameInfo | null = null;
 export function forgedBegin(frame: FrameInfo): void {
   current = frame;
   started = performance.now();
-  spared = 0;
   afterBloom.length = 0;
 }
 
@@ -24,11 +23,6 @@ export function forgedBegin(frame: FrameInfo): void {
 const afterBloom: ((ctx: CanvasRenderingContext2D) => void)[] = [];
 export function redrawAfterBloom(redraw: (ctx: CanvasRenderingContext2D) => void): void {
   afterBloom.push(redraw);
-}
-
-/** Time (ms) in this frame that drawing the post pass would not have saved, such as the black hole's repaint; the pace leaves it out. */
-export function sparePace(ms: number): void {
-  spared += ms;
 }
 
 /** The frame being drawn, null before the first one. */
@@ -263,7 +257,6 @@ interface Pace {
 const paces = new WeakMap<HTMLCanvasElement, Pace>();
 const LEAN: Record<PostLevel, number> = { high: 0, medium: 1, low: 2, off: 3 };
 let started = 0;
-let spared = 0;
 /** Pinned to the full pass, whatever the machine: the gallery's pixel snapshots must not depend on how fast it drew. */
 let steady = false;
 export function holdPostPass(on: boolean): void {
@@ -340,7 +333,7 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
     grain(ctx, f);
   }
   ctx.restore();
-  if (!steady) keepPace(pace, (performance.now() - started - spared) / 1000);
+  if (!steady) keepPace(pace, (performance.now() - started) / 1000);
 }
 
 function bloom(ctx: CanvasRenderingContext2D, f: FrameInfo): void {

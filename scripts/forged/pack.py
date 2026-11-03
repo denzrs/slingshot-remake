@@ -1,4 +1,4 @@
-"""Packs the PNGs `render_assets.py` and `render_planets.py` wrote into the WebP files the game loads: `python3 scripts/forged/pack.py <png dir>`."""
+"""Packs the PNGs `render_assets.py`, `render_planets.py` and `hole-frames.mjs` wrote into the WebP files the game loads: `python3 scripts/forged/pack.py <png dir>`."""
 import sys
 from pathlib import Path
 

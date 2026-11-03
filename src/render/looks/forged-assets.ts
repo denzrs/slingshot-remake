@@ -1,4 +1,5 @@
 import coinUrl from './forged/coin.webp';
+import holeUrl from './forged/hole.webp';
 import shipUrl from './forged/ship.webp';
 import shipMaskUrl from './forged/ship-mask.webp';
 import texGasUrl from './forged/tex-gas.webp';
@@ -26,6 +27,7 @@ import turretMaskUrl from './forged/turret-mask.webp';
 
 const URLS = {
   coin: coinUrl,
+  hole: holeUrl,
   ship: shipUrl,
   shipMask: shipMaskUrl,
   turretBase: turretBaseUrl,

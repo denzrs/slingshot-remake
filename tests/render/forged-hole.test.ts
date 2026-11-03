@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { B_MAX, B_STEPS, PHI_STEP, SHADOW, paths } from '../../src/render/looks/forged-hole';
+import { B_MAX, B_STEPS, PHI_STEP, SHADOW, paths } from '../../scripts/forged/hole-trace';
 
 /** The path table of the forged black hole needs no canvas: light past a still hole, by its impact parameter b (in masses). */
 const index = (b: number): number => Math.round((b / B_MAX) * (B_STEPS - 1));

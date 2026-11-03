@@ -1,10 +1,10 @@
 """
-Renders the images of the forged look: the ship and its team-colour mask, the defense turret (body, mask, barrel), the pickup coin, the black hole, and the
+Renders the images of the forged look: the ship and its team-colour mask, the defense turret (body, mask, barrel), the pickup coin and the
 albedo maps of the three planet styles. Run it inside Blender 4.2+ (e.g. through the Blender MCP server):
 
     exec(open('scripts/forged/render_assets.py').read()); main('/abs/path/to/out', only=None)
 
-`only` is a list of 'ship', 'turret', 'coin', 'hole', 'rock', 'gas', 'ice' (None renders all). It works in a scene of its own,
+`only` is a list of 'ship', 'turret', 'coin', 'rock', 'gas', 'ice' (None renders all). It works in a scene of its own,
 `slingshot_forged`, and leaves the open file's other scenes alone. `scripts/forged/pack.py` turns the PNGs it writes
 into the WebP files the game loads from `src/render/forged/`.
 """
@@ -233,7 +233,7 @@ def build_coin(out):
     render(sc, out + '/coin.png', 128)
 
 
-# ----------------------------------------------------------- black hole ----
+# ----------------------------------------------------------- shared nodes ----
 
 def ramp_node(nt, stops):
     n = nt.nodes.new('ShaderNodeValToRGB')
@@ -258,83 +258,6 @@ def math_node(nt, op, a=None, b=None, c=None):
         else:
             nt.links.new(v, n.inputs[i])
     return n
-
-
-def annulus(sc, name, radius, r_in, r_out, stops, strength, rot=(0, 0, 0), loc=(0, 0, 0), doppler=True, top_only=False):
-    bpy.ops.mesh.primitive_circle_add(vertices=128, radius=radius, fill_type='NGON', location=loc, rotation=rot)
-    o = bpy.context.active_object
-    m = bpy.data.materials.new(name)
-    m.use_nodes = True
-    nt = m.node_tree
-    for n in list(nt.nodes):
-        nt.nodes.remove(n)
-    out = nt.nodes.new('ShaderNodeOutputMaterial')
-    mix = nt.nodes.new('ShaderNodeMixShader')
-    tr = nt.nodes.new('ShaderNodeBsdfTransparent')
-    em = nt.nodes.new('ShaderNodeEmission')
-    tc = nt.nodes.new('ShaderNodeTexCoord')
-    vl = nt.nodes.new('ShaderNodeVectorMath')
-    vl.operation = 'LENGTH'
-    nt.links.new(tc.outputs['Object'], vl.inputs[0])
-    mr = nt.nodes.new('ShaderNodeMapRange')
-    mr.inputs['From Min'].default_value = r_in
-    mr.inputs['From Max'].default_value = r_out
-    mr.clamp = True
-    nt.links.new(vl.outputs['Value'], mr.inputs['Value'])
-    nz = nt.nodes.new('ShaderNodeTexNoise')
-    nz.inputs['Scale'].default_value = 1.6
-    nz.inputs['Detail'].default_value = 4
-    nt.links.new(tc.outputs['Object'], nz.inputs['Vector'])
-    streak = math_node(nt, 'MULTIPLY_ADD', nz.outputs['Fac'], 0.7, 0.65)
-    rr = vl.outputs['Value']
-    lo = nt.nodes.new('ShaderNodeMapRange')
-    lo.inputs['From Min'].default_value = r_in
-    lo.inputs['From Max'].default_value = r_in + (r_out - r_in) * 0.12
-    lo.clamp = True
-    nt.links.new(rr, lo.inputs['Value'])
-    hi = nt.nodes.new('ShaderNodeMapRange')
-    hi.inputs['From Min'].default_value = r_out
-    hi.inputs['From Max'].default_value = r_in + (r_out - r_in) * 0.4
-    hi.clamp = True
-    nt.links.new(rr, hi.inputs['Value'])
-    a = math_node(nt, 'MULTIPLY', lo.outputs['Result'], hi.outputs['Result'])
-    sep = nt.nodes.new('ShaderNodeSeparateXYZ')
-    nt.links.new(tc.outputs['Object'], sep.inputs['Vector'])
-    if doppler:
-        dn = math_node(nt, 'DIVIDE', sep.outputs['X'], math_node(nt, 'MAXIMUM', rr, 0.001).outputs[0])
-        bright = math_node(nt, 'MULTIPLY_ADD', dn.outputs[0], -0.45, 1.0)
-    else:
-        bright = math_node(nt, 'ADD', 1.0, 0.0)
-    if top_only:
-        dn2 = math_node(nt, 'DIVIDE', sep.outputs['Y'], math_node(nt, 'MAXIMUM', rr, 0.001).outputs[0])
-        bright = math_node(nt, 'MULTIPLY', bright.outputs[0], math_node(nt, 'MULTIPLY_ADD', dn2.outputs[0], 0.5, 0.55).outputs[0])
-    col = ramp_node(nt, stops)
-    nt.links.new(mr.outputs['Result'], col.inputs['Fac'])
-    nt.links.new(col.outputs['Color'], em.inputs['Color'])
-    st = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', bright.outputs[0], streak.outputs[0]).outputs[0], strength)
-    nt.links.new(st.outputs[0], em.inputs['Strength'])
-    nt.links.new(a.outputs[0], mix.inputs['Fac'])
-    nt.links.new(tr.outputs[0], mix.inputs[1])
-    nt.links.new(em.outputs[0], mix.inputs[2])
-    nt.links.new(mix.outputs[0], out.inputs['Surface'])
-    try:
-        m.surface_render_method = 'BLENDED'
-    except Exception:
-        pass
-    o.data.materials.append(m)
-    return o
-
-
-def build_hole(out):
-    sc = scene()
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, segments=64, ring_count=32)
-    bpy.context.active_object.data.materials.append(emissive('horizon', (0, 0, 0, 1), 0.0))
-    annulus(sc, 'disk', 3.6, 1.3, 3.6, [(0.0, '#ffe9b8'), (0.25, '#ffa940'), (0.6, '#e8501a'), (1.0, '#5a0f06')], 2.6)
-    annulus(sc, 'lensed', 1.9, 1.0, 1.9, [(0.0, '#ffe9b8'), (0.3, '#ffa940'), (1.0, '#e8501a')], 2.4, rot=(math.radians(90), 0, 0), loc=(0, 0.6, 0), top_only=True)
-    annulus(sc, 'photon', 1.05, 1.0, 1.05, [(0.0, '#ffffff'), (1.0, '#fff0c8')], 5.0, rot=(math.radians(90), 0, 0), loc=(0, -0.2, 0), doppler=False)
-    camera(sc, (0, -8, 2.3), 8.2, target=(0, 0, 0))
-    world(sc, '#000000', 0.0)
-    render(sc, out + '/hole.png', 512)
 
 
 # -------------------------------------------------------- planet albedo ----
@@ -601,7 +524,6 @@ BUILDERS = {
     'turret': lambda out: (build_turret(out), build_barrel(out)),
     'ship': build_ship,
     'coin': build_coin,
-    'hole': build_hole,
     'rock': lambda out: build_albedo(out, 'rock'),
     'gas': lambda out: build_albedo(out, 'gas'),
     'ice': lambda out: build_albedo(out, 'ice'),

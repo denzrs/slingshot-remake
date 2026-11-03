@@ -230,11 +230,8 @@ export function drawForgedTurret(ctx: CanvasRenderingContext2D, color: string, o
   return true;
 }
 
-/** The black hole, traced as light bends round it (`forged-hole.ts`), in the disk's own tilt (the caller has applied it). */
-export function drawForgedHole(ctx: CanvasRenderingContext2D, radius: number, time: number): boolean {
-  drawLensedHole(ctx, radius, time);
-  return true;
-}
+/** The black hole, traced as light bends round it and played as a loop (`forged-hole.ts`), in the disk's own tilt (the caller has applied it). False until the image has loaded. */
+export const drawForgedHole = drawLensedHole;
 
 /** The power-up coin, drawn over the plate under its ring: the rendered metal, about as wide as the ring. */
 export function forgedCoin(): HTMLImageElement | null {
