@@ -130,4 +130,59 @@ Before every round the twists are announced on a band across the field: each one
 
 **Multi-kill chain:** the chain counts the enemies you take in a round, however they come: several in one turn — a splitter's three forks, or an armor-piercing round going through hull after hull — or one per turn adding up. The second pays 250, the third 500, the fourth 750 and the fifth 1000 (six ships are the most on the field, so five is as far as a round can go). A new round starts you over. The announcer names the run: DOUBLE KILL, MULTI KILL, MEGA KILL, MONSTER KILL.
 
+### Bonus points at a glance
+
+Every point a ship can earn or lose, and what it means. The numbers live in `SCORING` in `src/sim/config.ts`; the payout of the kill extras is `killBonuses` in `src/game/match.ts`.
+
+**Points for a shot**
+
+| Source | Points | Meaning |
+| --- | --- | --- |
+| Hit | `1000 × shot factor × power factor × combo` | The base score of an enemy kill. The combo is the product of the trick shots on the way: swing-by ×1.5, bank shot ×1.25, graze ×1.3, photon ring ×3, airtime ×1.2 (at most ×12). Where trick-shot bonuses are off, the combo is 1. |
+| Self hit | −300 | Shooting your own ship, or a teammate's. No extras are paid for it. |
+| Collateral | 500 | A planetary defense's stray missile hits an enemy: its owner gets this in place of the base score. |
+| Intercept | 50 / 100 / 200 | A defense shoots a shot down: `50 / chance`, so the rarer the hit the more it pays. |
+| High-five | 50 (enemy), 100 (teammate) | Two shots meet in mid-air; both shooters score. Event Horizon always pays it, Classic only with trick-shot bonuses. |
+
+**Extras for a kill.** Paid on top of the hit, only for an enemy ship (not a self hit, not a teammate), in every mode except the Daily Challenge. One kill can pay several. Each is logged as a `stat_bonuses` row of its own kind ([multiplayer.md](multiplayer.md#what-is-stored)) and called out above the ship as its name and points (`bonus.<kind>` in `src/platform/i18n.ts`).
+
+| Extra (German) | Points | Paid when |
+| --- | --- | --- |
+| **First blood** (*Erstes Blut*) | 100 | The first enemy ship taken in the round. |
+| **Bounty** (*Kopfgeld*) | 25% of the lead, at most 1000 | The victim was alone in front when the volley went up, with a lead of at least 100 over the second. |
+| **Underdog** | 20% of the gap, at most 500 | With three or more ships, the killer was alone in last place when the volley went up, and the victim stood above them (the gap is at least 100). |
+| **Revenge** (*Rache*) | 200, 400 against a ship that did it three rounds running | The victim shot the killer's ship down in the round before. |
+| **Domination** (*Dominanz*) | 300, again every round the run goes on | The killer has now shot the same victim down three rounds running, this one included. |
+| **Shutdown** (*Serie gestoppt*) | 100 per ship the victim took | The victim was on a spree: two enemies or more this round. |
+| **Avenger** (*Rächer*) | 150 | Teams only: the victim shot a teammate of the killer down earlier in the round. |
+| **Opener** (*Auftakt*) | 100 | The killer's first shot of the round took a ship. Paid once, however many it takes; a defense's stray missile does not count. |
+| **Posthumous** (*Posthum*) | 200 | The kill landed after the killer's own ship was destroyed (not when their player left the game). |
+
+The **multi-kill chain** (250 / 500 / 750 / 1000 for the second to the fifth enemy of a round, see above) is paid along with them, but is not one of the logged kinds.
+
+**Extras at the end of a round and a match**
+
+| Source | Points | Meaning |
+| --- | --- | --- |
+| **Comeback** | 300 | Winning a round from alone in last place at its start. A logged kind of its own. |
+| Last survivor (Classic) | 250 | With three or more ships; in team mode every member of the winning team gets it, fallen ones included. |
+| Volley survived (Event Horizon) | 50 | Every ship still in orbit after a volley. |
+| Last in orbit (Event Horizon) | 500 | The last ship in orbit at the end of a round. |
+
+**Rules that apply to all of them**
+
+- **Jackpot (Mayhem):** in a jackpot round every point counts twice, the extras too. Bounty and underdog are the exceptions: they are shares of scores that were doubled already.
+- **Skipped round:** a round skipped by vote takes its extras back with its points; revenge and domination read the rounds as if it was never played.
+- **Bounty and underdog read the standings as the volley went up**, not as the shot lands, so two kills in one volley see the same scores. A player who left the game is not in the race.
+- **Oracle:** the tips and bets of eliminated players are a side standing and never count towards winning (see [multiplayer.md](multiplayer.md#playing-online)).
+
+**What a player can know before shooting.** Some extras belong to the target, some to the shooter, some to the round. This is what a ship's card can show:
+
+| Belongs to | Extras |
+| --- | --- |
+| The target, the same for everybody | Bounty (the leader), shutdown (a ship on a spree), comeback (the ship in last place) |
+| The target, but only for you | Revenge, domination, underdog, avenger |
+| The shooter | Opener, posthumous, the next step of the multi-kill chain |
+| The round | First blood (until the first kill) |
+
 **Scorecard:** at the end of every round a row of cards under the banner hands out awards – longest shot, fastest kill (timed from the start of the round), most swing-bys, most grazes, best hit and most kills (two or more). Three more cards appear when they were earned: the **closest call** (the narrowest miss of an enemy ship, under 40 px), the **sniper** (a hit from 500 px or more) and the **own-goal king**. The cards that come with a shot take turns: the card is outlined and its shot is redrawn in bright on the field. With power-ups on, two more cards can appear: **most power-ups** (taken) and the **lifesaver** (shots a shield bounced off). Only awards somebody actually earned show up, and a tie shares the card. The final screen lists the same awards for the whole match, plus a chart of everybody's score over the rounds. In Classic, swing-bys and grazes are counted even when trick-shot bonuses are off.
