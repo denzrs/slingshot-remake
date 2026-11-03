@@ -8,7 +8,10 @@ import { clamp01, mix, smoothstep, type PlanetSprite } from '../planet-common';
 type Rgb = [number, number, number];
 
 /** A glow past the limb, as a share of the radius. */
-const GLOW = 0.22;
+export const GLOW = 0.22;
+
+/** How many pixels across a planet's sprite is, glow and all, in either forged painting of it. */
+export const spriteSize = (p: Planet, ps: number): number => Math.ceil(p.radius * ps * (1 + GLOW) * 2 + 4);
 
 const lift = (c: Rgb, to: Rgb, t: number): Rgb => [mix(c[0], to[0], t), mix(c[1], to[1], t), mix(c[2], to[2], t)];
 const css = (c: Rgb, a = 1): string => `rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${a})`;
@@ -24,7 +27,7 @@ const STRIP = 3.6;
 export function renderLitPlanet(p: Planet, ps: number): PlanetSprite {
   const R = p.radius * ps;
   const reach = R * (1 + GLOW);
-  const size = Math.ceil(reach * 2 + 4);
+  const size = spriteSize(p, ps);
   const half = size / 2;
   const rng = createRng(p.seed);
   // The engraved tints are muted paper tones; on a sphere they want a little more colour.

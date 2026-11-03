@@ -14,6 +14,7 @@ import type { VolleyShot } from '../sim/volley';
 import { POWER_UP_KINDS } from '../sim/powerups';
 import { Effects } from '../render/effects';
 import { painterFor } from '../render/looks';
+import { holdPostPass } from '../render/looks/forged-sky';
 import { Renderer, type DrawOptions } from '../render/renderer';
 
 /**
@@ -419,6 +420,7 @@ function seeded(seed: number): () => number {
 /** A hash of every scene in every look at a few fixed moments, drawn fresh with seeded randomness. */
 async function pixelHashes(): Promise<Record<string, number>> {
   paused = true;
+  holdPostPass(true);
   const realRandom = Math.random;
   await document.fonts.ready;
   const out: Record<string, number> = {};
@@ -449,6 +451,7 @@ async function pixelHashes(): Promise<Record<string, number>> {
     if (pass === 'warm') await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   Math.random = realRandom;
+  holdPostPass(false);
   return out;
 }
 
