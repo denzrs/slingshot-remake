@@ -8,7 +8,7 @@ import { renderBackdrop, type View } from './backdrop';
 import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
 import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from './orientation';
 import { orbitOf, solarCenter } from '../sim/world';
-import { drawDangerRing, drawLens } from './blackhole';
+import { drawLens } from './blackhole';
 import { rgba } from './color';
 import { renderContours } from './contours';
 import type { Effects } from './effects';
@@ -404,7 +404,7 @@ export class Renderer {
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) this.painter.wormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
     const next = match.nextHoleRadius;
-    if (next && primary && !scene.camera) drawDangerRing(ctx, primary, next, this.time);
+    if (next && primary && !scene.camera) this.painter.dangerRing(ctx, primary, next, this.time);
   }
 
   /** Round over: the shot behind the scorecard's current award is drawn in bright, from muzzle to where it counted. */

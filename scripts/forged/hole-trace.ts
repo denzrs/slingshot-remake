@@ -25,7 +25,7 @@ const DISK_OUT = 17;
 /** How far above the disk's plane the eye is (radians): nearly edge on. */
 const ELEVATION = 0.13;
 /** A turn of the disk's inner edge takes this many seconds; further out, slower (Kepler). */
-const INNER_TURN = 5;
+const INNER_TURN = 6;
 
 // ------------------------------------------------------------------ paths ----
 
@@ -113,9 +113,15 @@ function streakMap(): Float32Array {
     for (let i = 0; i < MAP_A; i++) {
       const a = (i / MAP_A) * Math.PI * 2;
       // On a circle, so the map wraps round the disk without a seam; the radius changes it fast, the angle slowly.
-      const n = fbm(Math.cos(a) * 1.6, Math.sin(a) * 1.6, r * 12, 61, 5);
-      const fine = fbm(Math.cos(a) * 5, Math.sin(a) * 5, r * 30, 67, 3);
-      streaks[j * MAP_A + i] = 0.88 + 0.28 * smoothstep(0.2, 0.8, n) * (0.85 + 0.3 * fine);
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      // Clumps of hot gas, long along the orbit; thin filaments between them; two spiral arms that the differential turning shears.
+      const clump = smoothstep(0.25, 0.8, fbm(ca * 1.8, sa * 1.8, r * 10, 61, 5));
+      const filament = fbm(ca * 6, sa * 6, r * 46, 67, 4);
+      const lines = smoothstep(0.55, 0.9, filament);
+      const gaps = 1 - smoothstep(0.1, 0.4, fbm(ca * 3, sa * 3, r * 22, 71, 3));
+      const arms = 0.5 + 0.5 * Math.cos(2 * a - r * 14);
+      streaks[j * MAP_A + i] = 0.45 + 0.7 * clump + 0.5 * lines - 0.35 * gaps + 0.3 * arms * (0.4 + clump);
     }
   }
   return streaks;

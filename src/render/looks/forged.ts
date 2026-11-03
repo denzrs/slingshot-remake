@@ -271,6 +271,8 @@ export const forged = engraved('forged', forgedStyles, {
   ...lightParts,
   note: 'Blender renders with light over them: turning clouds and rings, fireballs and tumbling shrapnel, comet shots, a sun with rays, a deep sky, bloom.',
   postLevels: true,
+  // The halo and the disk's light already say where the hole is; a red dashed circle over them only muddies it.
+  dangerRing: () => {},
   planet: renderForgedPlanet,
   sun: drawForgedSun,
   nebula: drawForgedNebula,
