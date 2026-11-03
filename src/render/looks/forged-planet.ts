@@ -147,7 +147,25 @@ interface Baked {
   moon: Moon | null;
   /** Where on a gas giant's night side lightning strikes are shown. */
   storms: boolean;
+  /** Light over the poles of some gas giants. */
+  aurora: Aurora | null;
+  /** The planet's tilt, which sets where its poles stand in the sprite. */
+  tilt: number;
 }
+
+/** An aurora: a ring round each pole at `latitude` (radians from the equator), in `colour`, how tall its curtains stand and where in its beat it starts. */
+interface Aurora {
+  latitude: number;
+  colour: Rgb;
+  height: number;
+  phase: number;
+}
+
+const AURORA_COLOURS: Rgb[] = [
+  [90, 255, 160],
+  [170, 120, 255],
+  [255, 110, 160],
+];
 
 /** A moon on a slanted orbit round a planet, in field units: how far out and how flat the orbit, its tilt, size, period (s), where it starts and which way it goes, and its colour. */
 interface Moon {
@@ -161,6 +179,44 @@ interface Moon {
   colour: Rgb;
 }
 
+/** Everything about a planet that its seed decides, rolled in a fixed order so the same seed is the same planet on every screen. */
+function rollPlanet(p: Planet, variant: Variant) {
+  const rng = createRng(p.seed);
+  const spin = rng() * Math.PI * 2;
+  const tilt = range(rng, -0.35, 0.35);
+  const direction = rng() < 0.5 ? -1 : 1;
+  const phase = rng() * Math.PI * 2;
+  const ringed = rng() < (p.style === 'gas' ? 0.7 : p.style === 'ice' ? 0.2 : 0);
+  const settled = !!variant.cities && rng() < 0.75;
+  const rings = ringed ? rollRings(rng) : null;
+  // A planet without rings may have a moon: small, on a slanted orbit.
+  const moon: Omit<Moon, 'colour'> | null =
+    !ringed && rng() < 0.3
+      ? {
+          orbit: p.radius * range(rng, 1.55, 2),
+          squash: range(rng, 0.25, 0.4),
+          tilt: range(rng, -0.6, 0.6),
+          radius: p.radius * range(rng, 0.08, 0.13),
+          period: range(rng, 30, 70),
+          start: rng() * Math.PI * 2,
+          direction: rng() < 0.5 ? -1 : 1,
+        }
+      : null;
+  // Rolled after the moon's draws so the planets that already exist keep their looks.
+  const aurora: Aurora | null =
+    p.style === 'gas' && rng() < 0.5
+      ? { latitude: range(rng, 1.18, 1.32), colour: AURORA_COLOURS[Math.floor(rng() * AURORA_COLOURS.length)], height: range(rng, 0.09, 0.15), phase: rng() * 100 }
+      : null;
+  return { spin, tilt, direction, phase, rings, settled, moon, aurora };
+}
+
+/** What a planet's seed gives it in the forged look, for the look gallery to pick seeds that show every kind. */
+export function forgedPlanetTraits(p: Planet): { map: string; index: number; clouds: boolean; settled: boolean; ringed: boolean; moon: boolean; aurora: boolean; storms: boolean } {
+  const variant = variantOf(p);
+  const roll = rollPlanet(p, variant);
+  return { map: variant.name, index: variant.index, clouds: variant.clouds !== false, settled: roll.settled, ringed: !!roll.rings, moon: !!roll.moon, aurora: !!roll.aurora, storms: p.style === 'gas' };
+}
+
 function bake(p: Planet, ps: number): Baked | null {
   const variant = variantOf(p);
   const map = texture(variant.name);
@@ -169,13 +225,7 @@ function bake(p: Planet, ps: number): Baked | null {
   const reach = R * (1 + GLOW);
   const size = spriteSize(p, ps);
   const half = size / 2;
-  const rng = createRng(p.seed);
-  const spin = rng() * Math.PI * 2;
-  const tilt = range(rng, -0.35, 0.35);
-  const direction = rng() < 0.5 ? -1 : 1;
-  const phase = rng() * Math.PI * 2;
-  const ringed = rng() < (p.style === 'gas' ? 0.7 : p.style === 'ice' ? 0.2 : 0);
-  const settled = !!variant.cities && rng() < 0.75;
+  const { spin, tilt, direction, phase, rings: ringSpec, settled, moon: moonRoll, aurora } = rollPlanet(p, variant);
   const [tr, tg, tb] = hexToRgb(p.tint);
   const mean = (tr + tg + tb) / 3 || 1;
   // The map's own colours, nudged towards the planet's tint so two planets of a style are not twins; a map with a palette of its own (toxic green, crimson) barely.
@@ -272,21 +322,9 @@ function bake(p: Planet, ps: number): Baked | null {
   const colour2: Rgb = p.style === 'gas' ? [mix(tr, 255, 0.55), mix(tg, 245, 0.55), mix(tb, 230, 0.55)] : p.style === 'ice' ? [235, 245, 255] : [255, 236, 215];
   const cloudCanvas = document.createElement('canvas');
   cloudCanvas.width = cloudCanvas.height = size;
-  const rings = ringed ? bakeRings(R, tr, tg, tb, rng) : null;
-  // A planet without rings may have a moon: small, grey with a hint of the planet's colour, on a slanted orbit.
-  const moon: Moon | null =
-    !ringed && rng() < 0.3
-      ? {
-          orbit: p.radius * range(rng, 1.55, 2),
-          squash: range(rng, 0.25, 0.4),
-          tilt: range(rng, -0.6, 0.6),
-          radius: p.radius * range(rng, 0.08, 0.13),
-          period: range(rng, 30, 70),
-          start: rng() * Math.PI * 2,
-          direction: rng() < 0.5 ? -1 : 1,
-          colour: [mix(190, tr, 0.25), mix(186, tg, 0.25), mix(180, tb, 0.25)],
-        }
-      : null;
+  const rings = ringSpec ? bakeRings(R, tr, tg, tb, ringSpec) : null;
+  // Grey with a hint of the planet's colour.
+  const moon: Moon | null = moonRoll ? { ...moonRoll, colour: [mix(190, tr, 0.25), mix(186, tg, 0.25), mix(180, tb, 0.25)] } : null;
   return {
     size,
     glow,
@@ -296,6 +334,8 @@ function bake(p: Planet, ps: number): Baked | null {
     rings,
     moon,
     storms: p.style === 'gas',
+    aurora,
+    tilt,
   };
 }
 
@@ -377,20 +417,31 @@ function paintClouds(b: Baked): void {
   cloud.canvas.getContext('2d')!.putImageData(cloud.image, 0, 0);
 }
 
-/** The rings, as two layers of one flat disc seen at a slant: the half behind the planet and the half in front of it. */
-function bakeRings(R: number, tr: number, tg: number, tb: number, rng: () => number): Baked['rings'] {
-  const span = Math.ceil(R * 2 * RING_OUT + 6);
-  const middle = span / 2;
+/** What a planet's rings are made of: how flat they lie, how they are turned, and their bands (in planet radii). */
+interface RingSpec {
+  slant: number;
+  turn: number;
+  bands: { from: number; to: number; alpha: number; warm: number }[];
+}
+
+function rollRings(rng: () => number): RingSpec {
   const slant = range(rng, 0.2, 0.36);
   const turn = range(rng, -0.55, 0.55);
-  const sand: Rgb = [235, 220, 190];
-  const bands: { from: number; to: number; alpha: number; warm: number }[] = [];
+  const bands: RingSpec['bands'] = [];
   for (let r = 1.3; r < RING_OUT - 0.1; ) {
     const width = range(rng, 0.03, 0.12);
     // Some stretches are left empty: the gaps between bands.
     if (rng() > 0.25) bands.push({ from: r, to: r + width, alpha: range(rng, 0.25, 0.65), warm: rng() });
     r += width + range(rng, 0, 0.05);
   }
+  return { slant, turn, bands };
+}
+
+/** The rings, as two layers of one flat disc seen at a slant: the half behind the planet and the half in front of it. */
+function bakeRings(R: number, tr: number, tg: number, tb: number, { slant, turn, bands }: RingSpec): Baked['rings'] {
+  const span = Math.ceil(R * 2 * RING_OUT + 6);
+  const middle = span / 2;
+  const sand: Rgb = [235, 220, 190];
   const half = (from: number, to: number): HTMLCanvasElement => {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = span;
@@ -428,15 +479,68 @@ function bakeRings(R: number, tr: number, tg: number, tb: number, rng: () => num
 }
 
 /** Where a moon is at `time`, in the sprite's frame (field units from the planet's middle), and whether it is on the near side. */
-function moonAt(m: Moon, time: number): { x: number; y: number; front: boolean } {
+function moonAt(m: Moon, time: number): MoonAt {
   const a = m.start + (time / m.period) * Math.PI * 2 * m.direction;
   const ex = Math.cos(a) * m.orbit;
   const ey = Math.sin(a) * m.orbit * m.squash;
-  return { x: ex * Math.cos(m.tilt) - ey * Math.sin(m.tilt), y: ex * Math.sin(m.tilt) + ey * Math.cos(m.tilt), front: Math.sin(a) * m.direction > 0 };
+  // The orbit is a circle seen at a slant: what the squash takes off its height is its depth.
+  const z = Math.sin(a) * m.direction * m.orbit * Math.sqrt(1 - m.squash * m.squash);
+  return { x: ex * Math.cos(m.tilt) - ey * Math.sin(m.tilt), y: ex * Math.sin(m.tilt) + ey * Math.cos(m.tilt), z, front: z > 0 };
+}
+
+interface MoonAt {
+  x: number;
+  y: number;
+  /** Towards the viewer. */
+  z: number;
+  front: boolean;
+}
+
+/** How much of the sun the planet leaves a moon: 0 when it is deep in the planet's shadow. */
+function moonLight(m: MoonAt, planetRadius: number): number {
+  const along = m.x * LIGHT[0] + m.y * LIGHT[1] + m.z * LIGHT[2];
+  if (along >= 0) return 1;
+  const off = Math.sqrt(Math.max(0, m.x * m.x + m.y * m.y + m.z * m.z - along * along));
+  return smoothstep(planetRadius * 0.85, planetRadius * 1.15, off);
+}
+
+/** The moon's shadow on the planet's disc, where the ray from the moon away from the light meets the sphere. Only the lit, near side is painted. */
+function drawMoonShadow(ctx: CanvasRenderingContext2D, x: number, y: number, planetRadius: number, m: Moon, at: MoonAt): void {
+  const dot = at.x * LIGHT[0] + at.y * LIGHT[1] + at.z * LIGHT[2];
+  const disc = dot * dot - (at.x * at.x + at.y * at.y + at.z * at.z) + planetRadius * planetRadius;
+  if (disc <= 0) return;
+  const t = dot - Math.sqrt(disc);
+  if (t <= 0) return;
+  const px = at.x - t * LIGHT[0];
+  const py = at.y - t * LIGHT[1];
+  const pz = at.z - t * LIGHT[2];
+  if (pz <= 0) return;
+  // Where the surface turns from the light the shadow thins out; the skin of the limb stays clear.
+  const facing = (px * LIGHT[0] + py * LIGHT[1] + pz * LIGHT[2]) / planetRadius;
+  if (facing <= 0.05) return;
+  const nz = pz / planetRadius;
+  const stretch = Math.min(2.2, 1 / facing);
+  const radial = Math.atan2(py, px);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, planetRadius * 0.97, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.translate(x + px, y + py);
+  ctx.rotate(radial);
+  // Across the radial direction it is as wide as the moon; along it the sphere's curve squeezes it, the slant of the light stretches it.
+  ctx.scale(Math.max(0.2, Math.min(1, nz * stretch)), 1);
+  const r = m.radius * 1.15;
+  const g = ctx.createRadialGradient(0, 0, r * 0.35, 0, 0, r);
+  const a = 0.6 * smoothstep(0.05, 0.4, facing);
+  g.addColorStop(0, `rgba(3,6,16,${a})`);
+  g.addColorStop(1, 'rgba(3,6,16,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(-r, -r, r * 2, r * 2);
+  ctx.restore();
 }
 
 /** A moon: a small grey ball lit from the same side as the planet, dark on the other. */
-function drawMoon(ctx: CanvasRenderingContext2D, x: number, y: number, m: Moon, at: { x: number; y: number }): void {
+function drawMoon(ctx: CanvasRenderingContext2D, x: number, y: number, m: Moon, at: MoonAt, planetRadius: number): void {
   const mx = x + at.x;
   const my = y + at.y;
   const [r, g, b] = m.colour;
@@ -448,6 +552,12 @@ function drawMoon(ctx: CanvasRenderingContext2D, x: number, y: number, m: Moon, 
   ctx.beginPath();
   ctx.arc(mx, my, m.radius, 0, Math.PI * 2);
   ctx.fill();
+  // In the planet's shadow the moon goes dark.
+  const lit = moonLight(at, planetRadius);
+  if (lit < 1) {
+    ctx.fillStyle = `rgba(6,10,22,${0.85 * (1 - lit)})`;
+    ctx.fill();
+  }
 }
 
 /** Lightning in a gas giant's night side: now and then a flash, sometimes twice, lighting the cloud round it. */
@@ -481,6 +591,65 @@ function drawLightning(ctx: CanvasRenderingContext2D, x: number, y: number, p: P
   ctx.restore();
 }
 
+const AURORA_RAYS = 56;
+
+/** Curtains of light over a gas giant's poles: a glowing ring at the magnetic latitude and rays standing off it, rippling along the ring. Stronger on the night side. */
+function drawAurora(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, a: Aurora, tilt: number, time: number): void {
+  const ct = Math.cos(tilt);
+  const st = Math.sin(tilt);
+  const [r, g, b] = a.colour;
+  const ring = new Path2D();
+  const dim = new Path2D();
+  const bright = new Path2D();
+  for (const sign of [-1, 1]) {
+    const ty = Math.sin(a.latitude) * sign;
+    const cl = Math.cos(a.latitude);
+    let pen = false;
+    for (let k = 0; k <= AURORA_RAYS; k++) {
+      const lon = (k / AURORA_RAYS) * Math.PI * 2;
+      const tz = Math.cos(lon) * cl;
+      // The point on the sphere in screen terms: undo the tilt.
+      const dy = ty * ct - tz * st;
+      const nz = ty * st + tz * ct;
+      if (nz <= 0.03) {
+        pen = false;
+        continue;
+      }
+      const dx = Math.sin(lon) * cl;
+      const px = x + dx * R;
+      const py = y + dy * R;
+      if (pen) ring.lineTo(px, py);
+      else ring.moveTo(px, py);
+      pen = true;
+      if (k === AURORA_RAYS) continue;
+      // The curtain's height ripples along the ring and over time.
+      const wave = 0.5 + 0.5 * Math.sin(time * 1.1 + lon * 4 + a.phase + Math.sin(time * 0.6 + lon * 2.5) * 1.8);
+      const reach = a.height * R * (0.25 + 0.75 * wave) * (0.6 + 0.4 * nz);
+      // Outwards from the surface: the normal, seen from the side.
+      const path = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2] > 0.35 ? dim : bright;
+      path.moveTo(px, py);
+      path.lineTo(px + dx * reach, py + dy * reach);
+    }
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const sway = 0.8 + 0.2 * Math.sin(time * 0.9 + a.phase);
+  ctx.strokeStyle = `rgba(${r},${g},${b},${0.06 * sway})`;
+  ctx.lineWidth = R * 0.13;
+  ctx.stroke(ring);
+  ctx.strokeStyle = `rgba(${r},${g},${b},${0.16 * sway})`;
+  ctx.lineWidth = R * 0.05;
+  ctx.stroke(ring);
+  ctx.lineWidth = R * 0.02;
+  ctx.strokeStyle = `rgba(${r},${g},${b},${0.14 * sway})`;
+  ctx.stroke(dim);
+  ctx.strokeStyle = `rgba(${r},${g},${b},${0.4 * sway})`;
+  ctx.stroke(bright);
+  ctx.restore();
+}
+
 /** A planet's sprite in the forged look: baked on first draw once its map has loaded, the lit planet of `forged-lit-planet.ts` until then. */
 export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
   // The stand-in is made only if it is drawn: once the map has loaded (nearly always, after the first planets) it never is.
@@ -508,13 +677,15 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
       }
       const moon = baked.moon ? moonAt(baked.moon, time) : null;
       place(ctx, baked.glow, x, y, scale);
-      if (moon && !moon.front) drawMoon(ctx, x, y, baked.moon!, moon);
+      if (moon && !moon.front) drawMoon(ctx, x, y, baked.moon!, moon, p.radius);
       if (baked.rings) place(ctx, baked.rings.back, x, y, scale);
       place(ctx, baked.sphere.canvas, x, y, scale);
       if (baked.cloud.enabled) place(ctx, baked.cloud.canvas, x, y, scale);
+      if (moon?.front) drawMoonShadow(ctx, x, y, p.radius, baked.moon!, moon);
       if (baked.storms) drawLightning(ctx, x, y, p, time);
+      if (baked.aurora) drawAurora(ctx, x, y, p.radius, baked.aurora, baked.tilt, time);
       if (baked.rings) place(ctx, baked.rings.front, x, y, scale);
-      if (moon?.front) drawMoon(ctx, x, y, baked.moon!, moon);
+      if (moon?.front) drawMoon(ctx, x, y, baked.moon!, moon, p.radius);
     },
   };
 }
