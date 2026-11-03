@@ -4,7 +4,7 @@ import { AIM, COLORS, HORIZON, SCORING, SUDDEN_DEATH, type KillSource, type Sudd
 import { t } from '../platform/i18n';
 import { Volley, type VolleyShot } from '../sim/volley';
 import { createRng, pick } from '../sim/rng';
-import { Match, type RoundTitle, type SkipVote } from './match';
+import { Match, type MarkState, type RoundTitle, type SkipVote } from './match';
 import type { Pickup } from '../sim/powerups';
 import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
@@ -57,6 +57,8 @@ export interface ClassicSnapshot extends Partial<KillcamSnapshot> {
   oracle: OracleSnapshot;
   stands?: OracleSnapshot;
   crowd?: CrowdSeat[];
+  /** What the marks on the cards are read from. */
+  marks?: MarkState;
 }
 
 /**
@@ -109,6 +111,7 @@ export class ClassicMatch extends Match {
       oracle: this.oracle.snapshot(),
       stands: this.stands.snapshot(),
       crowd: this.crowd.snapshot(),
+      marks: this.markState(),
     };
   }
 
@@ -153,6 +156,7 @@ export class ClassicMatch extends Match {
     if (snapshot.oracle) this.oracle.restore(snapshot.oracle);
     if (snapshot.stands) this.stands.restore(snapshot.stands);
     this.crowd.restore(snapshot.crowd);
+    this.restoreMarkState(snapshot.marks);
     this.volley = null;
     if (snapshot.volley) {
       const volley = new Volley(snapshot.world, snapshot.volley.aims, this.rules, true);

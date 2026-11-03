@@ -107,6 +107,17 @@
 .pause-standing__round { margin: 0 0 14px; font: 700 13px/1.4 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--bone-dim); }
 .pause-standing__score { margin: 0; font: 800 64px/1 var(--font-display); }
 .pause-standing__meta { margin: 8px 0 0; color: var(--bone-dim); font-size: 13px; }
+/* The pause menu's explanation of the symbols on the cards, beside the standings: one row each, its symbol in a ring like the tutorial's. */
+.pause-marks { width: min(480px, 100%); }
+.mark-legend { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.mark-legend__item { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: start; gap: 12px; padding: 9px 12px; border-left: 2px solid var(--p2); background: rgb(14 30 51 / 0.55); }
+.mark-legend__icon { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--menu-line); border-radius: 50%; background: #081426; }
+.mark-legend__icon canvas { display: block; width: 26px; height: 26px; }
+.mark-legend h4 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin: 0 0 2px; font: 700 13px/1.4 var(--font-body); }
+.mark-legend p { margin: 0; color: var(--bone-dim); font-size: 11px; line-height: 1.55; }
+.mark-legend .mark-legend__where { color: var(--bone); font: 700 11px/1.5 var(--font-mono); }
+/* With a legend beside it the standings make room for it; on a narrow screen it goes underneath. */
+.menu-page--pause .menu-page__main:has(.pause-marks) { gap: 40px; flex-wrap: wrap; align-items: safe center; align-content: safe center; overflow-y: auto; }
 .pause-actions { gap: 8px; }
 .pause-actions .item { min-height: 48px; padding: 12px 16px; border: 1px solid var(--menu-line); border-radius: 3px; font-size: 13px; }
 .pause-actions .item--primary { font-size: 26px; }
