@@ -25,7 +25,7 @@ import { inPowerUpNebula } from './sim/physics';
 import { POWER_UP } from './sim/powerups';
 import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './platform/i18n';
-import { setLook } from './data/look';
+import { setLook, setPostLevel } from './data/look';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './sim/scoring';
@@ -56,6 +56,7 @@ const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 
 const settings = loadSettings();
 setLook(settings.look);
+setPostLevel(settings.postLevel);
 setLang(settings.language);
 applyStaticTexts();
 const sound = new Sound();
@@ -390,6 +391,7 @@ const app: App = {
     effects.particles = settings.particles;
     effects.debrisLevel = settings.debris;
     setLook(settings.look);
+    setPostLevel(settings.postLevel);
     attract.applySettings(settings);
     if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {

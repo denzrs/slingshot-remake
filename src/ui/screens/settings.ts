@@ -1,6 +1,7 @@
 import { DEBRIS, type Debris } from '../../sim/config';
 import { LANGS, t, type Lang } from '../../platform/i18n';
-import { isLook, LOOKS, lookLabelKey } from '../../data/look';
+import { isLook, isPostLevel, LOOKS, lookLabelKey, POST_LEVELS } from '../../data/look';
+import { painterFor } from '../../render/looks';
 import type { Settings } from '../../data/settings';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuGroup, menuPage } from '../menu/menu-page';
@@ -65,6 +66,18 @@ export function settingsScreen(app: App): Screen {
         get: () => app.settings.look,
         set: (v: unknown) => {
           app.settings.look = isLook(v) ? v : 'classic';
+          app.settingsChanged();
+        },
+      }, 'display'),
+      inGroup({
+        kind: 'segmented',
+        label: t('settings.postLevel'),
+        options: POST_LEVELS.map((value) => ({ value, label: t(`settings.postLevel.${value}`) })),
+        // Only a look that lays light over the whole field has anything to turn down.
+        hidden: () => !painterFor(app.settings.look).postLevels,
+        get: () => app.settings.postLevel,
+        set: (v: unknown) => {
+          app.settings.postLevel = isPostLevel(v) ? v : 'high';
           app.settingsChanged();
         },
       }, 'display'),

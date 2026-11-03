@@ -25,6 +25,8 @@ export interface LookPainter {
   readonly note: string;
   /** A planet's sprite is painted lit from one side, and turned in the Solar System so that side faces the sun it orbits; false for a look whose planets are not lit from one side (the wireframe). */
   readonly planetsTurnToSun: boolean;
+  /** `post` heeds the post level (`getPostLevel`): the settings offer it while this look is chosen. */
+  readonly postLevels: boolean;
 
   /** A planet's sprite at `ps` device pixels per field unit. */
   planet(p: Planet, ps: number): PlanetSprite;

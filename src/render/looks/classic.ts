@@ -27,6 +27,7 @@ export function engraved(id: Look, styles: Styles = {}, parts: Partial<LookPaint
     id,
     note: '',
     planetsTurnToSun: false,
+    postLevels: false,
     planet: renderPlanet,
     sun: drawSun,
     neutronStar: drawNeutronStar,

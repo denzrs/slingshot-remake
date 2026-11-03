@@ -312,6 +312,7 @@ export const forgedStyles: Styles = {
 export const forged = engraved('forged', forgedStyles, {
   ...lightParts,
   note: 'Blender renders with light over them: turning clouds and rings, fireballs and tumbling shrapnel, comet shots, a sun with rays, a deep sky, bloom.',
+  postLevels: true,
   planet: renderForgedPlanet,
   sun: drawForgedSun,
   nebula: drawForgedNebula,
