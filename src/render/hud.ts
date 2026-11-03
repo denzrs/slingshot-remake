@@ -432,11 +432,7 @@ export class Hud {
     const { ctx, k, field } = this;
     const players = match.teamMode ? [...match.players].sort((a, b) => a.team! - b.team! || a.seat - b.seat) : match.players;
     const n = players.length;
-    const gap = 8 * k;
-    // Teams get a wider gap between groups.
-    const groupGap = match.teamMode ? 22 * k : gap;
-    const groups = match.teamMode ? new Set(players.map((p) => p.team)).size : 1;
-    const w = this.cardWidth(match);
+    const { w, gap, groupGap, groups } = this.cardLayout(match);
     const row = this.markRowHeight(match) * k;
     const h = 40 * k + row;
     const y = field.y + (match.teamMode ? 66 : 50) * k;
@@ -478,9 +474,9 @@ export class Hud {
       ctx.fillRect(x, y, 3 * k, h);
       if (active) ctx.fillRect(x, y + h - 2 * k, w, 2 * k);
 
-      // An online player's symbol leads the card, in the player's colour; the name and score sit beside it.
+      // An online player's symbol leads the card, in the player's colour; the name and score sit beside it, above any mark row.
       const textX = p.avatar ? x + 26 * k : x + 10 * k;
-      if (p.avatar) drawAvatar(ctx, p.avatar, x + 17 * k, y + h / 2, 16 * k, p.color);
+      if (p.avatar) drawAvatar(ctx, p.avatar, x + 17 * k, y + (h - row) / 2, 16 * k, p.color);
       const status = p.left ? [t('hud.left'), COLORS.boneDim] : p.away ? [t('hud.away'), COLORS.boneDim] : !p.alive ? ['✕', COLORS.boneDim] : active ? [t('hud.aiming'), p.color] : planning && p.locked ? [t('hud.ready'), COLORS.boneDim] : null;
       const name = p.name.toUpperCase();
       const room = w - (textX - x) - 4 * k;
@@ -527,19 +523,19 @@ export class Hud {
     });
   }
 
-  /** How wide the scoreboard's cards are: as wide as the field allows, at most 172. */
-  private cardWidth(match: Match): number {
+  /** How wide the scoreboard's cards are (as wide as the field allows, at most 172) and the gaps between them; teams get a wider gap between groups. */
+  private cardLayout(match: Match): { w: number; gap: number; groupGap: number; groups: number } {
     const { k, field } = this;
     const n = match.players.length;
     const gap = 8 * k;
     const groups = match.teamMode ? new Set(match.players.map((p) => p.team)).size : 1;
     const groupGap = match.teamMode ? 22 * k : gap;
-    return Math.min(172 * k, (field.w - 48 * k - gap * (n - groups) - groupGap * (groups - 1)) / n);
+    return { w: Math.min(172 * k, (field.w - 48 * k - gap * (n - groups) - groupGap * (groups - 1)) / n), gap, groupGap, groups };
   }
 
   /** The height (field units) the scoreboard's cards grow by when they are too narrow to hold their marks beside the score; the same for the whole round, so nothing below jumps. */
   private markRowHeight(match: Match): number {
-    return match.paysKillBonuses && this.cardWidth(match) < MARK_ROOM * this.k ? MARK_ROW : 0;
+    return match.paysKillBonuses && this.cardLayout(match).w < MARK_ROOM * this.k ? MARK_ROW : 0;
   }
 
   /**
@@ -644,13 +640,22 @@ export class Hud {
     }
   }
 
+  /**
+   * How far below the field's top (field units, before the duel's drop) the readout stays: clear of the duel blocks and the marks under them,
+   * or of the cards and their mark row. Fixed for the match, so the card does not jump when marks come and go.
+   */
+  private readoutTop(match: Match): number {
+    if (match.mode === 'classic' && match.players.length === 2) return match.paysKillBonuses ? (match.powerUps ? 172 : 146) : 130;
+    return (match.teamMode ? 114 : 98) + this.markRowHeight(match);
+  }
+
   /** Angle / power next to the aiming ship, plus the shot clock in Event Horizon. */
   private drawReadout(match: Match, p: PlayerState, at: { x: number; y: number }, dodge: boolean): void {
     const { ctx, k, field } = this;
     const towardsCentre = at.x < field.x + field.w / 2 ? 1 : -1;
     const w = 112 * k;
     const h = 44 * k;
-    const top = match.mode === 'classic' && match.players.length === 2 ? 130 : match.teamMode ? 114 : 98;
+    const top = this.readoutTop(match);
     // Where the card goes for each place it may stand: beside the ship towards the middle, beside it on the far side, above, below.
     const place = (slot: number): { x: number; y: number } => {
       const side = slot === 1 ? -towardsCentre : towardsCentre;
