@@ -14,7 +14,7 @@ let current: FrameInfo | null = null;
 /** Keeps the frame for the calls that follow it: the sky, the ships' light and the post pass read it. */
 export function forgedBegin(frame: FrameInfo): void {
   current = frame;
-  keepPace();
+  started = performance.now();
 }
 
 /** The frame being drawn, null before the first one. */
@@ -234,36 +234,93 @@ let vignette: { key: string; gradient: CanvasGradient } | null = null;
 /**
  * How much of the post pass a machine that cannot keep up is spared: 0 all of it is drawn; 1 not the grade and the grain;
  * 2 not the bloom either; 3 not the vignette either. Each is a pass over the whole screen, which a phone's GPU at its pixel
- * density, or a canvas drawn without a GPU, pays for dearly. It steps down after frames have come slowly for a while, and
- * never back up: a look that kept changing would be worse than one a little plainer.
+ * density, or a canvas drawn without a GPU, pays for dearly.
+ *
+ * It goes by how long a frame takes to draw (from `forgedBegin` to the end of the post pass), not by how far apart frames
+ * come: a browser that hands out thirty frames a second to save the battery, a hidden tab or a menu over a still field
+ * say nothing about the drawing. Each canvas keeps its own, so the gallery's cards do not judge each other. A step down
+ * that saved nothing (the field itself is what is slow) is taken back and not tried again; one that did is undone once
+ * the frames have room for what it saved, so a slow stretch from elsewhere does not strip the look for good.
  */
-let lean = 0;
-/** Frames slower than this (s), on average, count as not keeping up; for this long (s) in a row, it steps down. */
-const SLOW_FRAME = 1 / 40;
-const SLOW_FOR = 2;
-let pace = { last: 0, frame: 1 / 60, slow: 0 };
+interface Pace {
+  lean: number;
+  /** Seconds a frame takes to draw, on average. */
+  draw: number;
+  /** Frames in a row that were slow, or had room to spare. */
+  slow: number;
+  fast: number;
+  /** Seconds each step down saved, by the level it stepped down from (unknown until measured). */
+  saved: number[];
+  /** Set just after a step down: the average before it, and the frames left until its saving is measured. */
+  check: { before: number; frames: number } | null;
+  /** A step down saved nothing: the post pass is not what is slow, so it stops stepping down. */
+  stuck: boolean;
+}
 
-/** Times the frames by the clock on the wall (the game's own time slows in a replay) and steps the post pass down when they lag. */
-function keepPace(): void {
-  const now = performance.now();
-  const dt = (now - pace.last) / 1000;
-  pace.last = now;
-  // A pause (a hidden tab, a menu over a still field) says nothing about how fast frames are drawn.
-  if (dt <= 0 || dt > 0.25) return;
-  pace.frame += (dt - pace.frame) * 0.1;
-  pace.slow = pace.frame > SLOW_FRAME ? pace.slow + dt : 0;
-  if (pace.slow > SLOW_FOR && lean < 3) {
-    lean++;
-    pace = { last: now, frame: 1 / 60, slow: 0 };
+const paces = new WeakMap<HTMLCanvasElement, Pace>();
+let started = 0;
+/** Pinned to the full pass, whatever the machine: the gallery's pixel snapshots must not depend on how fast it drew. */
+let steady = false;
+export function holdPostPass(on: boolean): void {
+  steady = on;
+}
+
+/** Drawing slower than this (s), on average, does not leave room for sixty frames a second; for this many frames in a row, it steps down. */
+const SLOW_DRAW = 1 / 60;
+const SLOW_FOR = 120;
+/** It steps back up after this many frames in a row with room for what the step saved, and a margin. */
+const ROOM_FOR = 600;
+const MARGIN = 0.8;
+/** Frames after a step down before its saving is measured, and how much it must save (of the average before) to count. */
+const SETTLE = 60;
+const WORTH = 0.15;
+
+function paceOf(canvas: HTMLCanvasElement): Pace {
+  let pace = paces.get(canvas);
+  if (!pace) {
+    pace = { lean: 0, draw: 0, slow: 0, fast: 0, saved: [], check: null, stuck: false };
+    paces.set(canvas, pace);
+  }
+  return pace;
+}
+
+/** Times the frame just drawn and steps the post pass down, or back up, by it. */
+function keepPace(pace: Pace, drawn: number): void {
+  pace.draw = pace.draw ? pace.draw + (drawn - pace.draw) * 0.1 : drawn;
+  if (pace.check) {
+    if (--pace.check.frames > 0) return;
+    const saving = pace.check.before - pace.draw;
+    const before = pace.check.before;
+    pace.check = null;
+    if (saving < before * WORTH) {
+      pace.lean--;
+      pace.stuck = true;
+    } else {
+      pace.saved[pace.lean - 1] = saving;
+    }
+    return;
+  }
+  const room = pace.lean > 0 && pace.draw + (pace.saved[pace.lean - 1] ?? Infinity) < SLOW_DRAW * MARGIN;
+  pace.slow = pace.draw > SLOW_DRAW ? pace.slow + 1 : 0;
+  pace.fast = room ? pace.fast + 1 : 0;
+  if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < 3) {
+    pace.check = { before: pace.draw, frames: SETTLE };
+    pace.lean++;
+    pace.slow = 0;
+  } else if (pace.fast >= ROOM_FOR) {
+    pace.lean--;
+    pace.fast = 0;
   }
 }
 
 /**
  * Bloom: the picture is shrunk, its dull parts are dropped (raised to the eighth power, so only what is nearly white stays), and what
  * is left is blurred by shrinking it further, then added back over the picture on the way up. A vignette, a grade
- * and grain over it, as much of it as the machine keeps up with (`lean`). The flash and the supernova's white-out make it bloom wider.
+ * and grain over it, as much of it as the machine keeps up with (`Pace`). The flash and the supernova's white-out make it bloom wider.
  */
 export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
+  const pace = paceOf(ctx.canvas);
+  const lean = steady ? 0 : pace.lean;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   if (lean < 2) bloom(ctx, f);
@@ -273,6 +330,7 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
     grain(ctx, f);
   }
   ctx.restore();
+  if (!steady) keepPace(pace, (performance.now() - started) / 1000);
 }
 
 function bloom(ctx: CanvasRenderingContext2D, f: FrameInfo): void {

@@ -28,8 +28,10 @@ const SHIP_CENTRE = -1.5;
 
 /** The lit hull is painted on a canvas this many pixels across (the ship's image covers `SHIP_SPAN` units of it). */
 const LIT = 128;
-/** Each colour's lit hull, and the light it was painted in: painted again only when that light changes, not every frame. */
-const lit = new Map<string, { canvas: HTMLCanvasElement; light: string }>();
+/** The lit hulls by colour and light, the most recently drawn last: two ships of one colour in different light each keep theirs. */
+const lit = new Map<string, HTMLCanvasElement>();
+/** Past this many, the hull drawn longest ago gives up its canvas. */
+const LIT_KEPT = 48;
 /** Directions are kept to this many steps a turn, and a planet's strength to this many steps: finer than shows, coarse enough that a ship standing still keeps its hull. */
 const TURN_STEPS = 256;
 const STRENGTH_STEPS = 32;
@@ -95,15 +97,23 @@ function litHull(ctx: CanvasRenderingContext2D, hull: HTMLCanvasElement, color: 
     return { dir, step, tint: planet.tint, strength: Math.round(planet.strength * STRENGTH_STEPS) / STRENGTH_STEPS };
   });
   const key = `${light.step}|${planets.map((planet) => `${planet.step},${planet.tint},${planet.strength}`).join('|')}`;
-  let known = lit.get(color);
-  if (known?.light === key) return known.canvas;
-  if (!known) {
-    if (lit.size > 16) lit.clear();
-    known = { canvas: Object.assign(document.createElement('canvas'), { width: LIT, height: LIT }), light: key };
-    lit.set(color, known);
+  const id = `${color}|${key}`;
+  const known = lit.get(id);
+  if (known) {
+    lit.delete(id);
+    lit.set(id, known);
+    return known;
   }
-  known.light = key;
-  const c = known.canvas.getContext('2d')!;
+  let canvas: HTMLCanvasElement;
+  if (lit.size >= LIT_KEPT) {
+    const [oldest, reused] = lit.entries().next().value!;
+    lit.delete(oldest);
+    canvas = reused;
+  } else {
+    canvas = Object.assign(document.createElement('canvas'), { width: LIT, height: LIT });
+  }
+  lit.set(id, canvas);
+  const c = canvas.getContext('2d')!;
   const [lx, ly] = light.dir;
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.clearRect(0, 0, LIT, LIT);
@@ -136,7 +146,7 @@ function litHull(ctx: CanvasRenderingContext2D, hull: HTMLCanvasElement, color: 
     c.fillRect(-SHIP_SPAN, -SHIP_SPAN, SHIP_SPAN * 2, SHIP_SPAN * 2);
   }
   c.globalCompositeOperation = 'source-over';
-  return known.canvas;
+  return canvas;
 }
 
 /** A ship: the rendered hull in its player's colour, lit from the field's light, over the engine flame and a halo, wing lights blinking. In the ship's frame, nose along +x. */

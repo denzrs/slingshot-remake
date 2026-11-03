@@ -4,7 +4,7 @@ import { hexToRgb, rgba } from '../color';
 import { fbm } from '../noise';
 import { clamp01, LIGHT, mix, smoothstep, type PlanetSprite } from '../planet-common';
 import { image, type Name } from './forged-assets';
-import { renderLitPlanet } from './forged-lit-planet';
+import { GLOW, renderLitPlanet, spriteSize } from './forged-lit-planet';
 
 /**
  * A planet in the forged look: the Blender map wrapped round a sphere and lit from the upper left, with what a still
@@ -15,8 +15,6 @@ import { renderLitPlanet } from './forged-lit-planet';
 
 type Rgb = [number, number, number];
 
-/** A glow past the limb, as a share of the radius. */
-const GLOW = 0.22;
 const ATMOSPHERE: Record<string, Rgb> = { gas: [255, 214, 160], ice: [191, 230, 255], rocky: [255, 176, 122] };
 /** The light of dusk, added along the terminator. */
 const DUSK: Record<string, Rgb> = { gas: [255, 150, 90], ice: [140, 190, 255], rocky: [255, 110, 50] };
@@ -169,7 +167,7 @@ function bake(p: Planet, ps: number): Baked | null {
   if (!map) return null;
   const R = p.radius * ps;
   const reach = R * (1 + GLOW);
-  const size = Math.ceil(reach * 2 + 4);
+  const size = spriteSize(p, ps);
   const half = size / 2;
   const rng = createRng(p.seed);
   const spin = rng() * Math.PI * 2;
@@ -492,7 +490,7 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
     ctx.drawImage(canvas, x - canvas.width / scale / 2, y - canvas.height / scale / 2, canvas.width / scale, canvas.height / scale);
   };
   return {
-    size: Math.ceil(p.radius * ps * (1 + GLOW) * 2 + 4),
+    size: spriteSize(p, ps),
     draw(ctx, x, y, scale, time) {
       baked ??= bake(p, ps);
       if (!baked) {
