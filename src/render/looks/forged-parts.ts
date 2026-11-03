@@ -21,46 +21,46 @@ import {
   drawEngravedTrail,
   drawGlowingLiveTrail,
   ENGRAVED_EFFECTS,
-  engraved,
   shotClockEnd,
 } from './classic';
 import {
-  drawLuminousPickup,
-  drawLuminousSelection,
-  drawLuminousShot,
-  drawLuminousShield,
-  drawLuminousPortalGlow,
-  drawLuminousNebulaGlow,
-  drawLuminousDefenseGlow,
-  drawLuminousHoleGlow,
-  drawLuminousShip,
-} from './luminous-art';
-import { renderLuminousPlanet } from './luminous-planet';
+  drawLightPickup,
+  drawLightSelection,
+  drawLightShot,
+  drawLightShield,
+  drawLightPortalGlow,
+  drawLightNebulaGlow,
+  drawLightDefenseGlow,
+  drawLightHoleGlow,
+  drawLightShip,
+} from './forged-light';
+import { renderLitPlanet } from './forged-lit-planet';
 import { LOCATE_PING, type EffectStyle, type LookPainter, type Styles } from './painter';
 
 /**
- * The luminous look: the engraved plan in light. The drawing lives in `luminous-art.ts`; this file says which element is
- * drawn how, and is the one place to look when something in this look should change. Forged builds on it.
+ * The light the forged look is built on: the engraved plan in light. The drawing lives in `forged-light.ts` and the lit
+ * planet in `forged-lit-planet.ts`; this file says which element is drawn how. `forged.ts` spreads these parts and puts the
+ * renders over them; the rest of Forged is in the `forged-*.ts` files beside it.
  */
 
-/** What the luminous look changes in the engraved elements: light over the hole, the doorways and the defense's rims, missiles that add up. */
-export const luminousStyles: Styles = {
-  hole: { glow: drawLuminousHoleGlow },
+/** What the light changes in the engraved elements: light over the hole, the doorways and the defense's rims, missiles that add up. */
+export const lightStyles: Styles = {
+  hole: { glow: drawLightHoleGlow },
   portal: {
     paint: (ctx, rx, ry, radius, color, time, alpha, phase) => {
       paintPortal(ctx, rx, ry, radius, color, time, alpha, phase);
       ctx.globalAlpha = alpha;
-      drawLuminousPortalGlow(ctx, rx, ry, color, time + phase);
+      drawLightPortalGlow(ctx, rx, ry, color, time + phase);
     },
     threadAlpha: CLASSIC_PORTAL.threadAlpha,
     threadDash: CLASSIC_PORTAL.threadDash,
   },
-  defense: { glow: drawLuminousDefenseGlow },
+  defense: { glow: drawLightDefenseGlow },
   interception: { additive: true },
 };
 
 /** Shockwaves, beams and streaks of light that add up. */
-const luminousEffects: EffectStyle = {
+const lightEffects: EffectStyle = {
   ...ENGRAVED_EFFECTS,
   ring: (ctx, r, radius, width, t) => {
     ctx.beginPath();
@@ -99,12 +99,12 @@ const luminousEffects: EffectStyle = {
   streak: (speed, size) => ({ length: Math.min(speed * 0.035, 9) + size * 0.5, width: Math.max(0.8, size * 0.7) }),
 };
 
-/** The elements the luminous look draws itself. */
-export const luminousParts: Partial<LookPainter> = {
+/** The elements the light draws itself. */
+export const lightParts: Partial<LookPainter> = {
   note: 'Light instead of ink: glows, waves, comet tails.',
-  planet: renderLuminousPlanet,
+  planet: renderLitPlanet,
   planetsTurnToSun: true,
-  effects: luminousEffects,
+  effects: lightEffects,
   trail: (ctx, points, wormholes, color, rank, fade) => {
     if (rank === 0) {
       // A soft glow under the line itself.
@@ -126,12 +126,12 @@ export const luminousParts: Partial<LookPainter> = {
     ctx.restore();
     drawGlowingLiveTrail(ctx, points, wormholes, color, plasma, time);
   },
-  shot: (ctx, x, y, color, trail) => drawLuminousShot(ctx, x, y, color, trail),
+  shot: (ctx, x, y, color, trail) => drawLightShot(ctx, x, y, color, trail),
   plasmaShot: (ctx, x, y, time) => drawEngravedPlasmaShot(ctx, x, y, time, true),
   piercer: (ctx, x, y, heading, color) => drawEngravedPiercer(ctx, x, y, heading, color, 9),
   splitterRing: (ctx, x, y, time) => drawEngravedSplitterRing(ctx, x, y, time, true),
   spotlightPath: (ctx, part, color) => drawEngravedSpotlightPath(ctx, part, color, true),
-  pickup: (ctx, kind, color, time, pulse) => drawLuminousPickup(ctx, kind, color, time, pulse),
+  pickup: (ctx, kind, color, time, pulse) => drawLightPickup(ctx, kind, color, time, pulse),
   previewPath: (ctx, pts, last, span, color) => {
     ctx.save();
     ctx.strokeStyle = color;
@@ -187,8 +187,8 @@ export const luminousParts: Partial<LookPainter> = {
     ctx.restore();
     drawEngravedRepelRing(ctx, x, y, radius);
   },
-  ship: drawLuminousShip,
-  selection: drawLuminousSelection,
+  ship: drawLightShip,
+  selection: drawLightSelection,
   shotClock: (ctx, x, y, color, clock) => {
     drawEngravedShotClock(ctx, x, y, color, clock);
     ctx.save();
@@ -318,7 +318,7 @@ export const luminousParts: Partial<LookPainter> = {
   shield: (ctx, x, y, pulse) => {
     ctx.save();
     ctx.translate(x, y);
-    drawLuminousShield(ctx, POWER_UP_COLORS.shield, pulse);
+    drawLightShield(ctx, POWER_UP_COLORS.shield, pulse);
     ctx.restore();
   },
   offscreenArrow: (ctx, color, danger, angle) => {
@@ -334,8 +334,6 @@ export const luminousParts: Partial<LookPainter> = {
   },
   nebula: (ctx, n, color, time) => {
     drawNebula(ctx, n, color, time);
-    drawLuminousNebulaGlow(ctx, n, color, time);
+    drawLightNebulaGlow(ctx, n, color, time);
   },
 };
-
-export const luminous = engraved('luminous', luminousStyles, luminousParts);

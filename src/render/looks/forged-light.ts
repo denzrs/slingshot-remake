@@ -6,13 +6,13 @@ import { drawPowerUpSymbol } from '../powerup-art';
 import { drawEngineFlame, hullPath } from '../ship';
 
 /**
- * Field pieces of the luminous look that have no classic counterpart to branch inside: they draw light (additive
+ * Field pieces of the forged look's light that have no classic counterpart to branch inside: they draw light (additive
  * halos, stacked strokes) where the classic look draws a plate and a line. Each draws round the origin, in the
  * caller's frame.
  */
 
 /** A power-up lying on the field: a glowing ring with a pulsing halo, a dot circling it and the symbol lit from within. */
-export function drawLuminousPickup(ctx: CanvasRenderingContext2D, kind: PowerUpKind, color: string, time: number, pulse: number, coin: CanvasImageSource | null = null, coinSpan = 0): void {
+export function drawLightPickup(ctx: CanvasRenderingContext2D, kind: PowerUpKind, color: string, time: number, pulse: number, coin: CanvasImageSource | null = null, coinSpan = 0): void {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const halo = ctx.createRadialGradient(0, 0, 4, 0, 0, 34);
@@ -55,7 +55,7 @@ export function drawLuminousPickup(ctx: CanvasRenderingContext2D, kind: PowerUpK
 }
 
 /** The ship whose turn it is: a ring of dots circling it, each swelling in turn as a wave runs round the ring. */
-export function drawLuminousSelection(ctx: CanvasRenderingContext2D, color: string, time: number): void {
+export function drawLightSelection(ctx: CanvasRenderingContext2D, color: string, time: number): void {
   const dots = 12;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
@@ -83,7 +83,7 @@ export function drawLuminousSelection(ctx: CanvasRenderingContext2D, color: stri
 }
 
 /** A shot in flight: a bright core in a wide halo, and a short comet tail of the points it has just flown through. */
-export function drawLuminousShot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, trail: readonly number[]): void {
+export function drawLightShot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, trail: readonly number[]): void {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = 'round';
@@ -108,7 +108,7 @@ export function drawLuminousShot(ctx: CanvasRenderingContext2D, x: number, y: nu
 }
 
 /** The shield round a ship: a ring in light with a faint glow inside it. */
-export function drawLuminousShield(ctx: CanvasRenderingContext2D, color: string, pulse: number): void {
+export function drawLightShield(ctx: CanvasRenderingContext2D, color: string, pulse: number): void {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const glow = ctx.createRadialGradient(0, 0, 10, 0, 0, 27);
@@ -128,7 +128,7 @@ export function drawLuminousShield(ctx: CanvasRenderingContext2D, color: string,
 }
 
 /** A portal's bloom: a pulsing halo squeezed to the doorway's oval and a double rim in light. In the portal's frame. */
-export function drawLuminousPortalGlow(ctx: CanvasRenderingContext2D, rx: number, ry: number, color: string, time: number): void {
+export function drawLightPortalGlow(ctx: CanvasRenderingContext2D, rx: number, ry: number, color: string, time: number): void {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.scale(rx / ry, 1);
@@ -154,7 +154,7 @@ export function drawLuminousPortalGlow(ctx: CanvasRenderingContext2D, rx: number
 }
 
 /** A nebula lit from inside: a soft tinted glow over the haze and motes that drift and twinkle in it. */
-export function drawLuminousNebulaGlow(ctx: CanvasRenderingContext2D, n: { x: number; y: number; radius: number; seed: number }, color: string, time: number): void {
+export function drawLightNebulaGlow(ctx: CanvasRenderingContext2D, n: { x: number; y: number; radius: number; seed: number }, color: string, time: number): void {
   const rng = createRng(n.seed);
   ctx.save();
   ctx.translate(n.x, n.y);
@@ -179,7 +179,7 @@ export function drawLuminousNebulaGlow(ctx: CanvasRenderingContext2D, n: { x: nu
 }
 
 /** A planetary defense's bloom, in the defense's frame (turret at the origin, outside of the planet towards +x): the zones' rims in light. */
-export function drawLuminousDefenseGlow(ctx: CanvasRenderingContext2D, color: string, radius: number, inner: number, middle: number, open: number, time: number): void {
+export function drawLightDefenseGlow(ctx: CanvasRenderingContext2D, color: string, radius: number, inner: number, middle: number, open: number, time: number): void {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const breathe = 0.7 + 0.3 * Math.sin(time * 2.4);
@@ -205,7 +205,7 @@ export function drawLuminousDefenseGlow(ctx: CanvasRenderingContext2D, color: st
 }
 
 /** The photon ring's bloom, and matter spiralling in over the disk's plane, in light. Drawn in the disk's frame. */
-export function drawLuminousHoleGlow(ctx: CanvasRenderingContext2D, R: number, time: number): void {
+export function drawLightHoleGlow(ctx: CanvasRenderingContext2D, R: number, time: number): void {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   for (const [width, alpha] of [[R * 0.3, 0.07], [R * 0.18, 0.14], [R * 0.08, 0.3]] as const) {
@@ -229,12 +229,12 @@ export function drawLuminousHoleGlow(ctx: CanvasRenderingContext2D, R: number, t
 }
 
 /**
- * A ship, luminous, in its own frame (centred, nose along +x): the classic hull in its solid colour, glowing the way
+ * A ship in light, in its own frame (centred, nose along +x): the classic hull in its solid colour, glowing the way
  * the player arrows of the menus do — a soft halo that breathes, a bloom hugging the silhouette and blinking wing lights — with an engine
  * plume behind it: a flame in three layers, always idling and roaring while the ship aims, and embers that fly off
  * the end and die. `thrust` is 0 (idle) to 1 (aiming); `phase` keeps the ships from flickering in step.
  */
-export function drawLuminousShip(ctx: CanvasRenderingContext2D, color: string, time: number, thrust: number, phase: number): void {
+export function drawLightShip(ctx: CanvasRenderingContext2D, color: string, time: number, thrust: number, phase: number): void {
   const breathe = 0.85 + 0.15 * Math.sin(time * 2.2 + phase);
 
   ctx.save();

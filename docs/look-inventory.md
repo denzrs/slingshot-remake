@@ -1,5 +1,7 @@
 # Look inventory: what is drawn on the playing field
 
+> **2026-11-02:** Luminous is no longer a selectable look. Its code is now the light under Forged (`forged-parts.ts`, `forged-light.ts`, `forged-lit-planet.ts`), and a stored `luminous` or `refined` setting loads as Forged. Read "Luminous" below as that layer.
+
 As of: `main` at `4b99c9b`, 2026-10-31. Basis for the four selectable looks **Simple** (*Einfach*), **Luminous**, **Forged**, **Holo**.
 
 - **Simple** is today's `classic` and stays unchanged.
@@ -202,4 +204,4 @@ Columns: **Proto** = shown in the prototype gallery (yes / partly / no). **Forge
 
 **Still classic or only partly done:** Luminous leaves storm clouds, the neutron star and the supernova as they are (they already consist of light). Planet shatter and the planet-killer laser run through the effects' rings and sparks but have no drawing of their own. Sun, red giant and flare appear in the gallery only as the Solar System and the supernova.
 
-**Forged:** The images come from Blender (`scripts/forged/render_assets.py`, packed with `scripts/forged/pack.py` into `src/render/looks/forged/`, about 60 KB together). Drawn as images are the ship (hull in the player's colour over a mask, flame and wing lights in code), planets (rock, gas, ice: albedo map, wrapped round the sphere in the renderer, lit and given an atmosphere rim), the black hole (disk and horizon), the power-up coin and the turret of the planetary defense (a hexagonal plinth in the owner's colour, on it a mount with twin barrels as its own image that follows the target and recoils on launch; sensor and muzzle glow in code). Forged draws everything else like Luminous. Until an image has loaded, the Luminous drawing stands in.
+**Forged:** The images come from Blender (`scripts/forged/render_assets.py` and `render_planets.py`, packed with `scripts/forged/pack.py` into `src/render/looks/forged/`, about 270 KB together). Drawn as images are the ship (hull in the player's colour over a mask, flame and wing lights in code), planets (rock, gas, ice, each in four to six maps chosen by the planet's seed: desert, ocean, moon and alien rock; Neptune, violet, toxic, crimson and stormy gas; glacier, methane, dusty and rose ice. The albedo map is wrapped round the sphere in the renderer, turned, lit and given an atmosphere rim, clouds, rings or moons), the black hole (disk and horizon), the power-up coin and the turret of the planetary defense (a hexagonal plinth in the owner's colour, on it a mount with twin barrels as its own image that follows the target and recoils on launch; sensor and muzzle glow in code). Forged draws everything else like Luminous. Until an image has loaded, the Luminous drawing stands in.

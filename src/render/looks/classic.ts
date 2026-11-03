@@ -1,6 +1,7 @@
 import { AIM, COLORS, HORIZON, PHYSICS, SUDDEN_DEATH } from '../../sim/config';
 import { aimDirection, isWormholeJump, type Wormhole } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
+import { drawPlotterFrame } from '../backdrop';
 import { drawBlackHole } from '../blackhole';
 import { rgba } from '../color';
 import { drawDefense, drawInterception } from '../defense';
@@ -67,6 +68,11 @@ export function engraved(id: Look, styles: Styles = {}, parts: Partial<LookPaint
     nebulaReach: drawEngravedNebulaReach,
     repelRing: drawEngravedRepelRing,
     effects: ENGRAVED_EFFECTS,
+    begin: () => {},
+    backdropArt: () => {},
+    border: drawPlotterFrame,
+    sky: () => {},
+    post: () => {},
     ...parts,
   };
 }

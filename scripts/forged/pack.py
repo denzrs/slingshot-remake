@@ -1,4 +1,4 @@
-"""Packs the PNGs `render_assets.py` wrote into the WebP files the game loads: `python3 scripts/forged/pack.py <png dir>`."""
+"""Packs the PNGs `render_assets.py` and `render_planets.py` wrote into the WebP files the game loads: `python3 scripts/forged/pack.py <png dir>`."""
 import sys
 from pathlib import Path
 
@@ -22,8 +22,13 @@ FILES = {
     'tex-gas': ((512, 256), 85),
     'tex-ice': ((512, 256), 85),
 }
+# The planet variants `render_planets.py` paints.
+for variant in ('rock-desert', 'rock-ocean', 'rock-moon', 'rock-alien', 'gas-neptune', 'gas-violet', 'gas-toxic', 'gas-crimson', 'gas-stormy', 'ice-glacier', 'ice-methane', 'ice-dusty', 'ice-rose'):
+    FILES['tex-' + variant] = ((512, 256), 85)
 
 for name, (size, quality) in FILES.items():
+    if not (SRC / f'{name}.png').exists():
+        continue  # a folder with only some of the images packs just those
     image = Image.open(SRC / f'{name}.png').convert('RGBA')
     if size:
         image = image.convert('RGB').resize(size, Image.LANCZOS)

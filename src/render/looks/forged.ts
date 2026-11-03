@@ -1,99 +1,125 @@
 import { COLORS } from '../../sim/config';
-import type { Planet } from '../../sim/physics';
-import { createRng, range } from '../../sim/rng';
-import { hexToRgb, rgba } from '../color';
-import coinUrl from './forged/coin.webp';
-import holeUrl from './forged/hole.webp';
-import shipUrl from './forged/ship.webp';
-import shipMaskUrl from './forged/ship-mask.webp';
-import texGasUrl from './forged/tex-gas.webp';
-import texIceUrl from './forged/tex-ice.webp';
-import texRockUrl from './forged/tex-rock.webp';
-import turretBarrelUrl from './forged/turret-barrel.webp';
-import turretBarrelMaskUrl from './forged/turret-barrel-mask.webp';
-import turretBaseUrl from './forged/turret-base.webp';
-import turretMaskUrl from './forged/turret-mask.webp';
+import { rgba } from '../color';
 import { drawEngineFlame } from '../ship';
-import { clamp01, LIGHT, mix, smoothstep, type PlanetSprite } from '../planet-common';
-import { renderLuminousPlanet } from './luminous-planet';
+import { LIGHT } from '../planet-common';
 import { engraved } from './classic';
-import { luminousParts, luminousStyles } from './luminous';
-import { drawLuminousHoleGlow, drawLuminousPickup, drawLuminousShip } from './luminous-art';
+import { drawBlast, drawShrapnel, warmBlasts } from './forged-blast';
+import { image, painted } from './forged-assets';
+import { renderForgedPlanet } from './forged-planet';
+import { drawForgedNebula, drawForgedStormCloud, paintForgedPortal } from './forged-gas';
+import { drawForgedLiveTrail, drawForgedPlasmaShot, drawForgedShot, drawForgedSun } from './forged-shots';
+import { forgedBegin, forgedFrame, forgedPost, forgedSky, paintNebula } from './forged-sky';
+import { lightParts, lightStyles } from './forged-parts';
+import { drawLightHoleGlow, drawLightPickup, drawLightShip } from './forged-light';
 import type { Styles } from './painter';
 
 /**
- * The forged look: what Blender rendered, with the light of the luminous look drawn over it. The images are made by
- * `scripts/forged/render_assets.py` and packed into `./forged/` (see `scripts/forged/pack.py`). They load on first use;
- * until one is there the luminous drawing stands in, so a frame is never empty.
+ * The forged look: what Blender rendered, with light drawn over it (`forged-parts.ts`, `forged-light.ts`) and a good deal more: the
+ * planets turn their clouds and show their dusk, the ships are lit by the field's own light, blasts are fireballs,
+ * shrapnel tumbles, the sky has depth and the whole picture blooms. The images are
+ * made by `scripts/forged/render_assets.py` and packed into `./forged/` (see `scripts/forged/pack.py`); `forged-*.ts` say
+ * what is drawn over them. The images load on first use; until one is there the drawing in light stands in, so a frame is
+ * never empty.
  */
-
-const URLS = {
-  coin: coinUrl,
-  hole: holeUrl,
-  ship: shipUrl,
-  shipMask: shipMaskUrl,
-  turretBase: turretBaseUrl,
-  turretMask: turretMaskUrl,
-  turretBarrel: turretBarrelUrl,
-  turretBarrelMask: turretBarrelMaskUrl,
-  gas: texGasUrl,
-  ice: texIceUrl,
-  rock: texRockUrl,
-};
-type Name = keyof typeof URLS;
-
-const images = new Map<Name, HTMLImageElement>();
-
-/** The image of `name`, once it has loaded; null before (the first call starts the load). */
-function image(name: Name): HTMLImageElement | null {
-  let img = images.get(name);
-  if (!img) {
-    img = new Image();
-    img.src = URLS[name];
-    images.set(name, img);
-  }
-  return img.complete && img.naturalWidth > 0 ? img : null;
-}
 
 /** The ship's image covers this many field units across, with the origin of the ship this far in from its centre. */
 const SHIP_SPAN = 32;
 const SHIP_CENTRE = -1.5;
 
-const tinted = new Map<string, HTMLCanvasElement>();
+/** The lit hull is painted on a canvas this many pixels across (the ship's image covers `SHIP_SPAN` units of it). */
+const LIT = 128;
+let lit: HTMLCanvasElement | null = null;
 
-/** A render's picture with its paint in `color`: the near-white paint (where `maskName` is white) multiplied, so the lighting of the render stays. */
-function painted(name: Name, maskName: Name, color: string): HTMLCanvasElement | null {
-  const key = `${name}:${color}`;
-  const known = tinted.get(key);
-  if (known) return known;
-  const ship = image(name);
-  const mask = image(maskName);
-  if (!ship || !mask) return null;
-  const layer = document.createElement('canvas');
-  layer.width = mask.naturalWidth;
-  layer.height = mask.naturalHeight;
-  const lctx = layer.getContext('2d')!;
-  lctx.drawImage(mask, 0, 0);
-  lctx.globalCompositeOperation = 'source-in';
-  lctx.fillStyle = color;
-  lctx.fillRect(0, 0, layer.width, layer.height);
-  const canvas = document.createElement('canvas');
-  canvas.width = ship.naturalWidth;
-  canvas.height = ship.naturalHeight;
-  const ctx = canvas.getContext('2d')!;
-  ctx.drawImage(ship, 0, 0);
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.drawImage(layer, 0, 0);
-  if (tinted.size > 48) tinted.clear();
-  tinted.set(key, canvas);
-  return canvas;
+/** A direction on the screen, as one in the frame of whatever is being drawn (`m` its transform), as a unit vector. */
+function inFrame(m: DOMMatrix, dx: number, dy: number): [number, number] {
+  const lx = (dx * m.a + dy * m.b) / (Math.hypot(m.a, m.b) || 1);
+  const ly = (dx * m.c + dy * m.d) / (Math.hypot(m.c, m.d) || 1);
+  const l = Math.hypot(lx, ly) || 1;
+  return [lx / l, ly / l];
 }
 
-/** A ship: the rendered hull in its player's colour over the engine flame and a halo, wing lights blinking. In the ship's frame, nose along +x. */
+/**
+ * Which way the field's light comes from, in the frame of whatever is being drawn: from the nearest sun of a Solar
+ * System, otherwise from the upper left as the planets are lit. A render has its light baked in, turning with the hull;
+ * this is how the hull is lit again from where the light really is, however it is turned.
+ */
+function lightInFrame(ctx: CanvasRenderingContext2D): [number, number] {
+  const m = ctx.getTransform();
+  const frame = forgedFrame();
+  let dx = LIGHT[0];
+  let dy = LIGHT[1];
+  const sun = frame?.suns[0];
+  if (frame && sun) {
+    const at = frame.field.transformPoint(new DOMPoint(sun.x, sun.y));
+    dx = at.x - m.e;
+    dy = at.y - m.f;
+  }
+  return inFrame(m, dx, dy);
+}
+
+/** The planets a ship is close to, with the way each lies in the ship's frame and how strongly it lights the hull (0 → 1): nearer and bigger, stronger. */
+function nearPlanets(ctx: CanvasRenderingContext2D): { dir: [number, number]; tint: string; strength: number }[] {
+  const frame = forgedFrame();
+  if (!frame || !frame.planets.length) return [];
+  const m = ctx.getTransform();
+  const scale = Math.hypot(frame.field.a, frame.field.b);
+  const out: { dir: [number, number]; tint: string; strength: number }[] = [];
+  for (const p of frame.planets) {
+    const at = frame.field.transformPoint(new DOMPoint(p.x, p.y));
+    const dx = at.x - m.e;
+    const dy = at.y - m.f;
+    const gap = Math.hypot(dx, dy) - p.radius * scale;
+    const reach = p.radius * scale * 2.4;
+    const strength = Math.min(1, Math.max(0, 1 - gap / reach)) * 0.55;
+    if (strength > 0.02) out.push({ dir: inFrame(m, dx, dy), tint: p.tint, strength });
+  }
+  return out;
+}
+
+/** The hull, lit again: shaded away from the light, glinting towards it, and rimmed in the player's colour by the engine at the back. */
+function litHull(ctx: CanvasRenderingContext2D, hull: HTMLCanvasElement, color: string): HTMLCanvasElement {
+  lit ??= Object.assign(document.createElement('canvas'), { width: LIT, height: LIT });
+  const c = lit.getContext('2d')!;
+  const [lx, ly] = lightInFrame(ctx);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, LIT, LIT);
+  c.setTransform(LIT / SHIP_SPAN, 0, 0, LIT / SHIP_SPAN, LIT / 2, LIT / 2);
+  c.drawImage(hull, SHIP_CENTRE - SHIP_SPAN / 2, -SHIP_SPAN / 2, SHIP_SPAN, SHIP_SPAN);
+  c.globalCompositeOperation = 'source-atop';
+  const shade = c.createLinearGradient(lx * 12, ly * 12, -lx * 12, -ly * 12);
+  shade.addColorStop(0, 'rgba(255,248,235,0.2)');
+  shade.addColorStop(0.45, 'rgba(255,255,255,0)');
+  shade.addColorStop(1, 'rgba(4,8,20,0.5)');
+  c.fillStyle = shade;
+  c.fillRect(-SHIP_SPAN, -SHIP_SPAN, SHIP_SPAN * 2, SHIP_SPAN * 2);
+  const glint = c.createRadialGradient(lx * 6, ly * 6, 0, lx * 6, ly * 6, 9);
+  glint.addColorStop(0, 'rgba(255,255,255,0.32)');
+  glint.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = glint;
+  c.fillRect(-SHIP_SPAN, -SHIP_SPAN, SHIP_SPAN * 2, SHIP_SPAN * 2);
+  const rim = c.createRadialGradient(-15, 0, 0, -15, 0, 15);
+  rim.addColorStop(0, rgba(color, 0.4));
+  rim.addColorStop(1, rgba(color, 0));
+  c.fillStyle = rim;
+  c.fillRect(-SHIP_SPAN, -SHIP_SPAN, SHIP_SPAN * 2, SHIP_SPAN * 2);
+  // A planet close by throws its own colour on the side of the hull that faces it.
+  for (const planet of nearPlanets(ctx)) {
+    const [px, py] = planet.dir;
+    const glow = c.createLinearGradient(px * 13, py * 13, -px * 4, -py * 4);
+    glow.addColorStop(0, rgba(planet.tint, planet.strength));
+    glow.addColorStop(1, rgba(planet.tint, 0));
+    c.fillStyle = glow;
+    c.fillRect(-SHIP_SPAN, -SHIP_SPAN, SHIP_SPAN * 2, SHIP_SPAN * 2);
+  }
+  c.globalCompositeOperation = 'source-over';
+  return lit;
+}
+
+/** A ship: the rendered hull in its player's colour, lit from the field's light, over the engine flame and a halo, wing lights blinking. In the ship's frame, nose along +x. */
 export function drawForgedShip(ctx: CanvasRenderingContext2D, color: string, time: number, thrust: number, phase: number): void {
   const hull = painted('ship', 'shipMask', color);
   if (!hull) {
-    drawLuminousShip(ctx, color, time, thrust, phase);
+    drawLightShip(ctx, color, time, thrust, phase);
     return;
   }
   const breathe = 0.85 + 0.15 * Math.sin(time * 2.2 + phase);
@@ -106,7 +132,7 @@ export function drawForgedShip(ctx: CanvasRenderingContext2D, color: string, tim
   ctx.fillRect(-30, -30, 60, 60);
   drawEngineFlame(ctx, color, time, thrust, phase);
   ctx.restore();
-  ctx.drawImage(hull, SHIP_CENTRE - SHIP_SPAN / 2, -SHIP_SPAN / 2, SHIP_SPAN, SHIP_SPAN);
+  ctx.drawImage(litHull(ctx, hull, color), -SHIP_SPAN / 2, -SHIP_SPAN / 2, SHIP_SPAN, SHIP_SPAN);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   for (const side of [-1, 1]) {
@@ -188,151 +214,85 @@ export function forgedCoin(): HTMLImageElement | null {
 /** The coin's image is this many times the coin across, a little wider for its bevel. */
 export const COIN_SPAN = 34.5;
 
-// ---------------------------------------------------------------- planets ----
+/**
+ * Light over the rendered hole, in the disk's own frame: the glow, a halo that breathes, hot spots racing round the
+ * disk (brighter on the side that comes towards us), the far side of the disk bent over the top and a faint echo of it below.
+ */
+export function drawForgedHoleGlow(ctx: CanvasRenderingContext2D, R: number, time: number): void {
+  drawLightHoleGlow(ctx, R, time);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const breathe = 0.85 + 0.15 * Math.sin(time * 1.7);
+  const halo = ctx.createRadialGradient(0, 0, R * 1.1, 0, 0, R * 6);
+  halo.addColorStop(0, rgba(COLORS.sodium, 0.16 * breathe));
+  halo.addColorStop(1, rgba(COLORS.sodium, 0));
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(0, 0, R * 6, 0, Math.PI * 2);
+  ctx.fill();
 
-/** A glow past the limb, as a share of the radius. */
-const GLOW = 0.22;
-const ATMOSPHERE: Record<string, [number, number, number]> = { gas: [255, 214, 160], ice: [191, 230, 255], rocky: [255, 176, 122] };
-const NIGHT: [number, number, number] = [16, 30, 60];
-
-interface Texture {
-  data: Uint8ClampedArray;
-  width: number;
-  height: number;
-}
-const textures = new Map<Name, Texture>();
-
-function texture(name: Name): Texture | null {
-  const known = textures.get(name);
-  if (known) return known;
-  const img = image(name);
-  if (!img) return null;
-  const canvas = document.createElement('canvas');
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
-  const c = canvas.getContext('2d')!;
-  c.drawImage(img, 0, 0);
-  const made = { data: c.getImageData(0, 0, canvas.width, canvas.height).data, width: canvas.width, height: canvas.height };
-  textures.set(name, made);
-  return made;
-}
-
-/** The map's colour at a longitude `u` (0 → 1, wrapping) and a latitude row `v` (0 north → 1 south), smoothly between four texels. */
-function sample(t: Texture, u: number, v: number, out: [number, number, number]): void {
-  const x = (((u * t.width - 0.5) % t.width) + t.width) % t.width;
-  const y = Math.min(t.height - 1.001, Math.max(0, v * t.height - 0.5));
-  const x0 = Math.floor(x);
-  const y0 = Math.floor(y);
-  const x1 = (x0 + 1) % t.width;
-  const fx = x - x0;
-  const fy = y - y0;
-  for (let k = 0; k < 3; k++) {
-    const a = mix(t.data[(y0 * t.width + x0) * 4 + k], t.data[(y0 * t.width + x1) * 4 + k], fx);
-    const b = mix(t.data[((y0 + 1) * t.width + x0) * 4 + k], t.data[((y0 + 1) * t.width + x1) * 4 + k], fx);
-    out[k] = mix(a, b, fy);
+  // The far side of the disk, lensed over the top, and its fainter echo under the horizon.
+  ctx.lineCap = 'round';
+  for (const [ry, from, to, alpha] of [[1.42, 1.08, 1.92, 0.3], [1.3, 0.12, 0.88, 0.1]] as const) {
+    ctx.strokeStyle = rgba(COLORS.sodium, alpha * breathe);
+    ctx.lineWidth = R * 0.13;
+    ctx.beginPath();
+    ctx.ellipse(0, from < 1 ? R * 0.08 : -R * 0.08, R * 1.55, R * ry, 0, Math.PI * from, Math.PI * to);
+    ctx.stroke();
+    ctx.strokeStyle = rgba(COLORS.bone, alpha * 0.8);
+    ctx.lineWidth = Math.max(0.8, R * 0.025);
+    ctx.stroke();
   }
-}
 
-/** Paints the planet: the style's map wrapped round a sphere turned by the planet's seed, lit from the upper left, with a rim of atmosphere. Null until the map is there. */
-function bake(p: Planet, ps: number): HTMLCanvasElement | null {
-  const map = texture(p.style === 'gas' ? 'gas' : p.style === 'ice' ? 'ice' : 'rock');
-  if (!map) return null;
-  const R = p.radius * ps;
-  const reach = R * (1 + GLOW);
-  const size = Math.ceil(reach * 2 + 4);
-  const half = size / 2;
-  const rng = createRng(p.seed);
-  const spin = rng() * Math.PI * 2;
-  const tilt = range(rng, -0.35, 0.35);
-  const [tr, tg, tb] = hexToRgb(p.tint);
-  const mean = (tr + tg + tb) / 3 || 1;
-  // The map's own colours, nudged towards the planet's tint so two planets of a style are not twins.
-  const gain = [mix(1, tr / mean, 0.45), mix(1, tg / mean, 0.45), mix(1, tb / mean, 0.45)];
-  const rim = ATMOSPHERE[p.style] ?? ATMOSPHERE.rocky;
-  const specular = p.style === 'ice' ? 0.35 : 0;
-
-  const sphere = document.createElement('canvas');
-  sphere.width = sphere.height = size;
-  const sctx = sphere.getContext('2d')!;
-  const img = sctx.createImageData(size, size);
-  const cs = Math.cos(spin);
-  const sn = Math.sin(spin);
-  const ct = Math.cos(tilt);
-  const st = Math.sin(tilt);
-  const half3 = [LIGHT[0], LIGHT[1], LIGHT[2] + 1];
-  const hl = Math.hypot(half3[0], half3[1], half3[2]);
-  const colour: [number, number, number] = [0, 0, 0];
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = (x + 0.5 - half) / R;
-      const dy = (y + 0.5 - half) / R;
-      const rr = dx * dx + dy * dy;
-      const dist = Math.sqrt(rr);
-      const coverage = smoothstep(1 + 1 / R, 1 - 1 / R, dist);
-      if (coverage <= 0) continue;
-      const nz = Math.sqrt(Math.max(0, 1 - rr));
-      // The point on the sphere, turned about the vertical by the seed and tipped by the tilt, as longitude and latitude.
-      const ty = dy * ct + nz * st;
-      const tz = -dy * st + nz * ct;
-      const tx = dx * cs + tz * sn;
-      const tzz = -dx * sn + tz * cs;
-      sample(map, Math.atan2(tx, tzz) / (Math.PI * 2) + 0.5, 0.5 + Math.asin(Math.max(-1, Math.min(1, ty))) / Math.PI, colour);
-      const lam = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2];
-      const lit = clamp01(0.06 + 0.98 * Math.max(0, lam) ** 0.85);
-      const spec = specular ? specular * Math.max(0, (dx * half3[0] + dy * half3[1] + nz * half3[2]) / hl) ** 36 : 0;
-      const fresnel = (1 - nz) ** 2.6 * (0.3 + 0.7 * smoothstep(-0.25, 0.6, lam));
-      const i = (y * size + x) * 4;
-      for (let k = 0; k < 3; k++) {
-        const albedo = Math.min(255, colour[k] * gain[k]);
-        img.data[i + k] = Math.min(255, mix(NIGHT[k], albedo, lit) + spec * 255 + rim[k] * fresnel * 0.55);
-      }
-      img.data[i + 3] = 255 * coverage;
+  // Hot spots on three orbits, the inner ones quicker, each with a short tail.
+  for (let i = 0; i < 3; i++) {
+    const rx = R * (1.9 + 0.75 * i);
+    const ry = rx * 0.2;
+    const speed = 1.5 / (0.6 + i * 0.5);
+    for (let k = 0; k < 7; k++) {
+      const a = time * speed + i * 2.1 - k * 0.07;
+      const x = Math.cos(a) * rx;
+      const y = Math.sin(a) * ry;
+      // Behind the horizon the spot is hidden.
+      if (y < 0 && Math.abs(x) < R * 1.1) continue;
+      const toward = 0.55 + 0.45 * -Math.cos(a);
+      const r = R * (0.34 - k * 0.035);
+      const spot = ctx.createRadialGradient(x, y, 0, x, y, r);
+      spot.addColorStop(0, rgba(i === 0 ? COLORS.bone : COLORS.sodium, 0.7 * toward * (1 - k / 7)));
+      spot.addColorStop(1, rgba(COLORS.sodium, 0));
+      ctx.fillStyle = spot;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
   }
-  sctx.putImageData(img, 0, 0);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const c = canvas.getContext('2d')!;
-  const glow = c.createRadialGradient(half, half, R * 0.9, half, half, reach);
-  glow.addColorStop(0, rgba(`#${rim.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`, 0.2));
-  glow.addColorStop(1, rgba(`#${rim.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`, 0));
-  c.fillStyle = glow;
-  c.beginPath();
-  c.arc(half, half, reach, 0, Math.PI * 2);
-  c.fill();
-  c.drawImage(sphere, 0, 0);
-  return canvas;
+  ctx.restore();
 }
 
-/** A planet's sprite in the forged look: baked on first draw once its map has loaded, the luminous planet until then. */
-export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
-  const fallback = renderLuminousPlanet(p, ps);
-  let baked: HTMLCanvasElement | null = null;
-  return {
-    size: fallback.size,
-    draw(ctx, x, y, scale, time) {
-      baked ??= bake(p, ps);
-      if (!baked) {
-        fallback.draw(ctx, x, y, scale, time);
-        return;
-      }
-      ctx.drawImage(baked, x - baked.width / scale / 2, y - baked.height / scale / 2, baked.width / scale, baked.height / scale);
-    },
-  };
-}
-
-/** The forged look is the luminous one with the rendered images put in. */
+/** The forged look is the engraved plan in light with the rendered images put in. */
 export const forgedStyles: Styles = {
-  ...luminousStyles,
-  hole: { body: drawForgedHole, glow: drawLuminousHoleGlow },
-  defense: { ...luminousStyles.defense, turret: drawForgedTurret },
+  ...lightStyles,
+  hole: { body: drawForgedHole, glow: drawForgedHoleGlow },
+  portal: { ...lightStyles.portal!, paint: paintForgedPortal },
+  defense: { ...lightStyles.defense, turret: drawForgedTurret },
 };
 
 export const forged = engraved('forged', forgedStyles, {
-  ...luminousParts,
-  note: 'Blender renders for ships, planets, the black hole, coins and the turret, with the light of Luminous over them.',
+  ...lightParts,
+  note: 'Blender renders with light over them: turning clouds and rings, fireballs and tumbling shrapnel, comet shots, a sun with rays, a deep sky, bloom.',
   planet: renderForgedPlanet,
+  sun: drawForgedSun,
+  nebula: drawForgedNebula,
+  stormCloud: drawForgedStormCloud,
+  shot: drawForgedShot,
+  liveTrail: drawForgedLiveTrail,
+  plasmaShot: drawForgedPlasmaShot,
   ship: drawForgedShip,
-  pickup: (ctx, kind, color, time, pulse) => drawLuminousPickup(ctx, kind, color, time, pulse, forgedCoin(), COIN_SPAN),
+  pickup: (ctx, kind, color, time, pulse) => drawLightPickup(ctx, kind, color, time, pulse, forgedCoin(), COIN_SPAN),
+  effects: { ...lightParts.effects!, blast: drawBlast, spark: drawShrapnel },
+  begin: (frame) => {
+    forgedBegin(frame);
+    warmBlasts();
+  },
+  backdropArt: paintNebula,
+  sky: forgedSky,
+  post: forgedPost,
 });

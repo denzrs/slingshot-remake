@@ -10,7 +10,7 @@ import type { PortalStyle } from '../wormhole';
 
 /**
  * A look is how every element of the playing field is drawn. The renderer asks the chosen painter for each element and
- * never asks which look it is, so a look lives in one file (`classic.ts`, `luminous.ts`, `forged.ts`, `holo.ts`) and
+ * never asks which look it is, so a look lives in one file (`classic.ts`, `forged.ts`, `holo.ts`) and
  * the renderer does not change when one is added or adjusted.
  *
  * To add an element: put it here, draw it in `classic.ts` (the engraved plan, which every other look falls back on),
@@ -107,6 +107,53 @@ export interface LookPainter {
 
   /** How the cosmetic effects (shockwaves, beams, sparks, a supernova) are drawn. */
   readonly effects: EffectStyle;
+
+  /** Called once at the start of every frame with what the frame is: a look that lights or lays things out across the whole field keeps it for the calls that follow. */
+  begin(frame: FrameInfo): void;
+  /** Painted once onto the finished backdrop (the plate and its stars), before the border: `ctx` is scaled to CSS pixels, `w` × `h` the canvas in them. */
+  backdropArt(ctx: CanvasRenderingContext2D, w: number, h: number): void;
+  /** The border round the plate, painted onto the backdrop: its ruler, its marks, the wall when shots bounce. `ctx` is in CSS pixels; `view` places the plate in them. */
+  border(ctx: CanvasRenderingContext2D, view: BorderView, walls: boolean): void;
+  /** Painted every frame over the backdrop, under the field: what moves behind the game (device pixels, no transform). */
+  sky(ctx: CanvasRenderingContext2D, frame: FrameInfo): void;
+  /** Painted every frame over the finished field, under the HUD: whole-frame light and grading (device pixels, no transform). */
+  post(ctx: CanvasRenderingContext2D, frame: FrameInfo): void;
+}
+
+/** What a look is told about the frame it is about to draw. Pixels are device pixels of the canvas. */
+export interface FrameInfo {
+  /** Seconds the renderer has run. */
+  time: number;
+  dpr: number;
+  /** The canvas. */
+  width: number;
+  height: number;
+  /** The plate (the field and its edge) on the canvas. */
+  plate: { x: number; y: number; w: number; h: number };
+  /** The field's transform onto the canvas, as the world is drawn with it (killcam camera and shake included). */
+  field: DOMMatrix;
+  /** The killcam's camera, null on the live field. */
+  camera: { x: number; y: number; zoom: number } | null;
+  /** This frame's screen shake. */
+  shake: { x: number; y: number };
+  /** Every sun on the field, in field units. */
+  suns: readonly { x: number; y: number }[];
+  /** The planets that can be seen, in field units (none while they are hidden, and not the suns). */
+  planets: readonly { x: number; y: number; radius: number; tint: string }[];
+  /** The light the effects throw over the whole screen: a flash and the supernova's white-out, each 0 → 1. */
+  flash: number;
+  whiteout: number;
+}
+
+/** The plate's place in CSS pixels, for a look's border: its top-left, the CSS pixels per field unit and its size in field units. */
+export interface BorderView {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  plate: { w: number; h: number };
+  /** The canvas in CSS pixels. */
+  cssWidth: number;
+  cssHeight: number;
 }
 
 /** How a look draws the `Effects`. */
@@ -117,6 +164,10 @@ export interface EffectStyle {
   beam(ctx: CanvasRenderingContext2D, beam: { x1: number; y1: number; x2: number; y2: number; color: string }, t: number): void;
   /** A spark flying at `speed` is a streak this long and wide; without it every spark is a plain square, as in the engraved look. */
   streak?(speed: number, size: number): { length: number; width: number };
+  /** Draws a spark itself, in place of the square or the streak; the caller has set `lighter`. */
+  spark?(ctx: CanvasRenderingContext2D, spark: { x: number; y: number; vx: number; vy: number; size: number; color: string; large: boolean; seed: number }, speed: number): void;
+  /** A fireball `size` wide, `t` (0 → 1) of the way through its life; a look that draws none leaves it out. */
+  blast?(ctx: CanvasRenderingContext2D, blast: { x: number; y: number; size: number; color: string; seed: number }, t: number): void;
 }
 
 /** How an aim is shown. */

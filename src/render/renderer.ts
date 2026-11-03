@@ -21,7 +21,7 @@ import { stormFlare } from './storm';
 import { defensePlanet, defenseView } from './defense';
 import { classic } from './looks/classic';
 import { painterFor, type LookPainter } from './looks';
-import { LOCATE_PING } from './looks/painter';
+import { LOCATE_PING, type FrameInfo } from './looks/painter';
 import { portalColor, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
@@ -52,7 +52,9 @@ export class Renderer {
   private readonly hud: Hud;
   /** The empty plate is on the canvas already; it stays until the canvas is resized or a match is drawn over it. */
   private emptyDrawn = false;
-  private backdrop: { canvas: HTMLCanvasElement; walls: boolean; fullScreen: boolean } | null = null;
+  /** The look the empty plate on the canvas is in. */
+  private emptyLook: Look | null = null;
+  private backdrop: { canvas: HTMLCanvasElement; walls: boolean; fullScreen: boolean; look: Look } | null = null;
   /** Per world (live or killcam replay), rebuilt when the world's version or the pixel scale changes. */
   private contours = new WeakMap<World, { version: number; ps: number; canvas: HTMLCanvasElement }>();
   /** Planet sprites by seed at `spritePs` device pixels per field unit. */
@@ -147,9 +149,13 @@ export class Renderer {
   /** Just the empty plate, for menus that show no game behind them. */
   drawEmpty(): void {
     this.resizeIfNeeded();
-    if (this.emptyDrawn) return;
+    this.painter = painterFor(getLook());
+    if (this.emptyDrawn && this.emptyLook === this.painter.id) return;
     this.emptyDrawn = true;
-    if (!this.backdrop || this.backdrop.walls || this.backdrop.fullScreen) this.backdrop = { canvas: renderBackdrop(this.view, false), walls: false, fullScreen: false };
+    this.emptyLook = this.painter.id;
+    if (!this.backdrop || this.backdrop.walls || this.backdrop.fullScreen || this.backdrop.look !== this.painter.id) {
+      this.backdrop = { canvas: renderBackdrop(this.view, false, this.painter), walls: false, fullScreen: false, look: this.painter.id };
+    }
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.drawImage(this.backdrop.canvas, 0, 0);
   }
@@ -166,11 +172,9 @@ export class Renderer {
     const scene = match.scene();
     const walls = match.rules.bounce;
 
-    if (!this.backdrop || this.backdrop.walls !== walls || this.backdrop.fullScreen !== opts.fullScreen) {
-      this.backdrop = { canvas: renderBackdrop(fieldView, walls, !opts.fullScreen), walls, fullScreen: opts.fullScreen };
+    if (!this.backdrop || this.backdrop.walls !== walls || this.backdrop.fullScreen !== opts.fullScreen || this.backdrop.look !== this.painter.id) {
+      this.backdrop = { canvas: renderBackdrop(fieldView, walls, this.painter, !opts.fullScreen), walls, fullScreen: opts.fullScreen, look: this.painter.id };
     }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(this.backdrop.canvas, 0, 0);
 
     const base = dpr * scale;
     const cam = scene.camera;
@@ -179,6 +183,24 @@ export class Renderer {
     const [a, b, c, d, e, f] = fieldTransform(fieldView, cam ?? undefined);
     const shakeX = effects.shake ? (Math.random() - 0.5) * 2 * effects.shake : 0;
     const shakeY = effects.shake ? (Math.random() - 0.5) * 2 * effects.shake : 0;
+    const frame: FrameInfo = {
+      time: this.time,
+      dpr,
+      width: this.canvas.width,
+      height: this.canvas.height,
+      plate: { x: dpr * offsetX, y: dpr * offsetY, w: plate.w * base, h: plate.h * base },
+      field: new DOMMatrix([a, b, c, d, e + shakeX * P, f + shakeY * P]),
+      camera: cam ? { ...cam } : null,
+      shake: { x: shakeX * P, y: shakeY * P },
+      suns: scene.world.planets.filter((p) => p.sun),
+      planets: match.planetsVisible ? scene.world.planets.filter((p) => !p.sun) : [],
+      flash: effects.flash,
+      whiteout: effects.whiteout,
+    };
+    this.painter.begin(frame);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(this.backdrop.canvas, 0, 0);
+    this.painter.sky(ctx, frame);
 
     ctx.save();
     if (cam) {
@@ -195,6 +217,9 @@ export class Renderer {
     this.drawPowerUps(match, scene);
     effects.draw(ctx, this.painter.effects);
     ctx.restore();
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.painter.post(ctx, frame);
 
     if (effects.flash > 0) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
