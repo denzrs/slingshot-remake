@@ -1,3 +1,4 @@
+import { getPostLevel, type PostLevel } from '../../data/look';
 import { createRng } from '../../sim/rng';
 import { fbm } from '../noise';
 import { smoothstep } from '../planet-common';
@@ -222,9 +223,13 @@ let vignette: { key: string; gradient: CanvasGradient } | null = null;
  * say nothing about the drawing. Each canvas keeps its own, so the gallery's cards do not judge each other. A step down
  * that saved nothing (the field itself is what is slow) is taken back and not tried again; one that did is undone once
  * the frames have room for what it saved, so a slow stretch from elsewhere does not strip the look for good.
+ *
+ * The post level chosen in the settings is where it starts and the most it ever draws; it only steps down from there.
  */
 interface Pace {
   lean: number;
+  /** The lean the settings ask for: it never steps up past it. */
+  floor: number;
   /** Seconds a frame takes to draw, on average. */
   draw: number;
   /** Frames in a row that were slow, or had room to spare. */
@@ -239,6 +244,7 @@ interface Pace {
 }
 
 const paces = new WeakMap<HTMLCanvasElement, Pace>();
+const LEAN: Record<PostLevel, number> = { high: 0, medium: 1, low: 2, off: 3 };
 let started = 0;
 /** Pinned to the full pass, whatever the machine: the gallery's pixel snapshots must not depend on how fast it drew. */
 let steady = false;
@@ -256,10 +262,12 @@ const MARGIN = 0.8;
 const SETTLE = 60;
 const WORTH = 0.15;
 
-function paceOf(canvas: HTMLCanvasElement): Pace {
+export function paceOf(canvas: HTMLCanvasElement): Pace {
+  const floor = LEAN[getPostLevel()];
   let pace = paces.get(canvas);
-  if (!pace) {
-    pace = { lean: 0, draw: 0, slow: 0, fast: 0, saved: [], check: null, stuck: false };
+  // A new setting starts over from it: what was learnt about the other levels no longer holds.
+  if (pace?.floor !== floor) {
+    pace = { lean: floor, floor, draw: 0, slow: 0, fast: 0, saved: [], check: null, stuck: false };
     paces.set(canvas, pace);
   }
   return pace;
@@ -281,7 +289,7 @@ function keepPace(pace: Pace, drawn: number): void {
     }
     return;
   }
-  const room = pace.lean > 0 && pace.draw + (pace.saved[pace.lean - 1] ?? Infinity) < SLOW_DRAW * MARGIN;
+  const room = pace.lean > pace.floor && pace.draw + (pace.saved[pace.lean - 1] ?? Infinity) < SLOW_DRAW * MARGIN;
   pace.slow = pace.draw > SLOW_DRAW ? pace.slow + 1 : 0;
   pace.fast = room ? pace.fast + 1 : 0;
   if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < 3) {

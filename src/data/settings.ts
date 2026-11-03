@@ -1,7 +1,7 @@
 import type { CpuLevel } from '../sim/ai';
 import { AIM, DEBRIS, MAX_PLAYERS, type Debris } from '../sim/config';
 import { detectLang, isLang, type Lang } from '../platform/i18n';
-import { lookFrom, type Look } from './look';
+import { isPostLevel, lookFrom, type Look, type PostLevel } from './look';
 import { DEFAULT_ROOM_RULES, rulesOf, roomRulesFrom, type RoomRules } from './roomRules';
 
 /** Who flies a seat: a person at the keyboard, a CPU of some strength, or nobody. */
@@ -17,6 +17,8 @@ export interface Settings extends RoomRules {
   seats: Seat[];
   /** The field's graphics: the original classic plate, or forged (glowing, rendered ships and planets) or holo (a projection in lines). */
   look: Look;
+  /** How much of a look's whole-frame light (bloom, grade, …) is drawn, for looks that have it. */
+  postLevel: PostLevel;
   contours: boolean;
   particles: boolean;
   /** The card with the angle and power steps aside when the aim line would run over it. */
@@ -44,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ...rulesOf(DEFAULT_ROOM_RULES),
   seats: ['human', 'human', 'off', 'off', 'off', 'off'],
   look: 'classic',
+  postLevel: 'high',
   contours: true,
   particles: true,
   aimCardDodge: true,
@@ -77,6 +80,7 @@ export function loadSettings(): Settings {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
       s.look = lookFrom(s.look) ?? DEFAULT_SETTINGS.look;
+      if (!isPostLevel(s.postLevel)) s.postLevel = DEFAULT_SETTINGS.postLevel;
       if (s.wheelSide !== 'left') s.wheelSide = 'right';
       if (!Object.hasOwn(DEBRIS, s.debris)) s.debris = DEFAULT_SETTINGS.debris;
       // The rules of the game: only what the game still offers, anything else back to the standard ones.
