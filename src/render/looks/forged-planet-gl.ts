@@ -40,8 +40,8 @@ export interface GlConstants {
 }
 
 export interface ForgedPlanetGl {
-  /** Shades `p` at `time` and returns the canvas it is on, and where on it (the source rectangle to copy, `size` square). */
-  shade(p: GlPlanet, time: number): { canvas: HTMLCanvasElement; x: number; y: number };
+  /** Shades `p` at `time`, its moon's shadow on it, and returns the canvas it is on, and where on it (the source rectangle to copy, `size` square). */
+  shade(p: GlPlanet, time: number, moon: { x: number; y: number; z: number; radius: number } | null): { canvas: HTMLCanvasElement; x: number; y: number };
 }
 
 const VERTEX = `#version 300 es
@@ -54,9 +54,12 @@ uniform sampler2D map, cloudMap, cityMap;
 uniform float size, radius, specular, settled, cloudOn, banded, phase, surfaceTurn, cloudTurn, shadowAt, shadowDepth, mapH;
 uniform vec2 spin, tilt; // cos, sin
 uniform vec3 light, rim, dusk, gain, night, cityLight, cloudColour;
+// The moon's middle and radius in the planet's radii (radius 0: no moon).
+uniform vec4 moon;
 out vec4 colour;
 
 const float PI = 3.14159265358979;
+const float MOON_SHADOW = 0.85;
 
 float smooth01(float a, float b, float x) { float t = clamp((x - a) / (b - a), 0.0, 1.0); return t * t * (3.0 - 2.0 * t); }
 // A band of a gas giant turns at a speed of its own, by the map's row.
@@ -84,6 +87,15 @@ void main() {
 
   float lam = d.x * light.x + d.y * light.y + nz * light.z;
   float lit = clamp(0.06 + 0.98 * pow(max(0.0, lam), 0.85), 0.0, 1.0);
+  if (moon.w > 0.0) {
+    // The moon's shadow: dark where the way to the light runs through it, soft at the edge.
+    vec3 toMoon = moon.xyz - vec3(d, nz);
+    float along = dot(toMoon, light);
+    if (along > 0.0) {
+      float miss = sqrt(max(0.0, dot(toMoon, toMoon) - along * along));
+      lit *= 1.0 - MOON_SHADOW * (1.0 - smooth01(moon.w * 0.75, moon.w * 1.3, miss));
+    }
+  }
   vec3 halfway = normalize(light + vec3(0.0, 0.0, 1.0));
   float spec = specular * pow(max(0.0, dot(vec3(d, nz), halfway)), 36.0);
   float fresnel = pow(1.0 - nz, 2.6) * (0.3 + 0.7 * smooth01(-0.25, 0.6, lam));
@@ -111,7 +123,7 @@ void main() {
   colour = vec4(cloud * ca + ground * cover * (1.0 - ca), ca + cover * (1.0 - ca));
 }`;
 
-const NAMES = ['size', 'radius', 'specular', 'settled', 'cloudOn', 'banded', 'phase', 'surfaceTurn', 'cloudTurn', 'shadowAt', 'shadowDepth', 'mapH', 'spin', 'tilt', 'light', 'rim', 'dusk', 'gain', 'night', 'cityLight', 'cloudColour', 'map', 'cloudMap', 'cityMap'] as const;
+const NAMES = ['size', 'radius', 'specular', 'settled', 'cloudOn', 'banded', 'phase', 'surfaceTurn', 'cloudTurn', 'shadowAt', 'shadowDepth', 'mapH', 'spin', 'tilt', 'light', 'rim', 'dusk', 'gain', 'night', 'cityLight', 'cloudColour', 'moon', 'map', 'cloudMap', 'cityMap'] as const;
 
 let made: ForgedPlanetGl | null | undefined;
 
@@ -172,7 +184,7 @@ export function forgedPlanetGl(k: GlConstants): ForgedPlanetGl | null {
     });
 
   made = {
-    shade(p, time) {
+    shade(p, time, moon) {
       if (p.size > canvas.width) {
         canvas.width = canvas.height = Math.ceil(p.size / 64) * 64;
       }
@@ -202,6 +214,7 @@ export function forgedPlanetGl(k: GlConstants): ForgedPlanetGl | null {
       gl.uniform3fv(at.dusk, p.dusk.map((c) => c / 255));
       gl.uniform3fv(at.gain, p.gain);
       gl.uniform3fv(at.cloudColour, p.cloud.colour.map((c) => c / 255));
+      gl.uniform4f(at.moon, moon?.x ?? 0, moon?.y ?? 0, moon?.z ?? 0, moon?.radius ?? 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       return { canvas, x: 0, y: canvas.height - p.size };
     },

@@ -134,6 +134,8 @@ interface Surface {
   add: Float32Array;
   /** How dark the night is where settlements would shine (0 where there are none). */
   night: Float32Array;
+  /** The pixel's point on the sphere (radii; y down, z towards the viewer), where a moon's shadow is looked for. */
+  normal: Float32Array;
 }
 
 interface Baked {
@@ -284,6 +286,7 @@ function bakeSurface(b: Baked): Surface {
     cover: new Float32Array(size * size),
     add: new Float32Array(size * size * 3),
     night: new Float32Array(size * size),
+    normal: new Float32Array(size * size * 3),
   };
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -317,6 +320,9 @@ function bakeSurface(b: Baked): Surface {
       surface.below[n] = (y0 + 1) * map.width * 4;
       surface.between[n] = ty0 - y0;
       surface.lit[n] = lit;
+      surface.normal[n * 3] = dx;
+      surface.normal[n * 3 + 1] = dy;
+      surface.normal[n * 3 + 2] = nz;
       surface.cover[n] = coverage;
       for (let k = 0; k < 3; k++) surface.add[n * 3 + k] = spec * 255 + rim[k] * fresnel * 0.55 + dusk[k] * twilight;
       // On the night side, the lights of settlements.
@@ -330,7 +336,7 @@ function bakeSurface(b: Baked): Surface {
  * Paints the sphere as it stands at `time`: the map turned about the axis by how far the planet has come round, lit as
  * it was. A gas giant's bands turn at speeds of their own (faster towards the equator), so they slide against each other.
  */
-function paintSurface(b: Baked, time: number): void {
+function paintSurface(b: Baked, time: number, moon: MoonShadow | null): void {
   b.surface ??= bakeSurface(b);
   const { sphere, surface, cloud } = b;
   const turn = time * SURFACE_RATE * cloud.direction;
@@ -353,7 +359,7 @@ function paintSurface(b: Baked, time: number): void {
     const b0 = surface.below[k] + x0;
     const b1 = surface.below[k] + x1;
     const fy = surface.between[k];
-    const lit = surface.lit[k];
+    const lit = moon ? surface.lit[k] * moonLight(moon, surface.normal, k) : surface.lit[k];
     const night = surface.night[k];
     const lights = night && sphere.city ? (sphere.city[row * MAP_W + (Math.floor((u - Math.floor(u)) * MAP_W) & (MAP_W - 1))] / 255) * night : 0;
     // The cloud's shadow: the same map as the cloud layer, read a little to the side, darkens the ground under it.
@@ -384,7 +390,7 @@ function cloudShifts(b: Baked, time: number): void {
 }
 
 /** Paints the cloud layer as `cloudShifts` left it: the map turned round by how far it has drifted, lit like the sphere under it. */
-function paintClouds(b: Baked): void {
+function paintClouds(b: Baked, moon: MoonShadow | null): void {
   b.surface ??= bakeSurface(b);
   const { cloud, surface } = b;
   const map = proceduralMap(cloud.kind);
@@ -395,7 +401,7 @@ function paintClouds(b: Baked): void {
     let u = surface.lon[k] + cloud.shift[row];
     u -= Math.floor(u);
     const a = map[row * MAP_W + (Math.floor(u * MAP_W) & (MAP_W - 1))];
-    const lit = surface.lit[k];
+    const lit = moon ? surface.lit[k] * moonLight(moon, surface.normal, k) : surface.lit[k];
     const shade = 0.12 + 0.88 * lit;
     const i = surface.index[k] * 4;
     data[i] = cr * shade;
@@ -462,6 +468,37 @@ function moonAt(m: Moon, time: number): { x: number; y: number; front: boolean }
   const ex = Math.cos(a) * m.orbit;
   const ey = Math.sin(a) * m.orbit * m.squash;
   return { x: ex * Math.cos(m.tilt) - ey * Math.sin(m.tilt), y: ex * Math.sin(m.tilt) + ey * Math.cos(m.tilt), front: Math.sin(a) * m.direction > 0 };
+}
+
+/** A moon as its shadow needs it: its middle and radius in the planet's radii, from the planet's middle (y down, z towards the viewer). */
+interface MoonShadow {
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+}
+
+/**
+ * Where the moon is in depth as well: its orbit is a circle seen slanted, flattened to `squash`, so the part of the orbit
+ * that is hidden in the flattening is depth, towards the viewer on the near side.
+ */
+function moonShadow(m: Moon, time: number, planetRadius: number): MoonShadow {
+  const at = moonAt(m, time);
+  const a = m.start + (time / m.period) * Math.PI * 2 * m.direction;
+  const z = Math.sin(a) * m.direction * m.orbit * Math.sqrt(1 - m.squash * m.squash);
+  return { x: at.x / planetRadius, y: at.y / planetRadius, z: z / planetRadius, radius: m.radius / planetRadius };
+}
+
+/** How much of the light reaches the pixel past the moon (1 → `1 - MOON_SHADOW`): dark where the way to the light runs through it, soft at the edge. */
+const MOON_SHADOW = 0.85;
+function moonLight(moon: MoonShadow, normal: Float32Array, k: number): number {
+  const sx = moon.x - normal[k * 3];
+  const sy = moon.y - normal[k * 3 + 1];
+  const sz = moon.z - normal[k * 3 + 2];
+  const along = sx * LIGHT[0] + sy * LIGHT[1] + sz * LIGHT[2];
+  if (along <= 0) return 1;
+  const miss = Math.sqrt(Math.max(0, sx * sx + sy * sy + sz * sz - along * along));
+  return 1 - MOON_SHADOW * (1 - smoothstep(moon.radius * 0.75, moon.radius * 1.3, miss));
 }
 
 /** A moon: a small grey ball lit from the same side as the planet, dark on the other. */
@@ -546,8 +583,9 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
         if (baked.cloud.at < 0) baked.cloud.at = time - ((p.seed % 7) / 7) * CLOUD_EVERY;
         else baked.cloud.at = time;
         cloudShifts(baked, time);
-        paintSurface(baked, time);
-        if (baked.cloud.enabled) paintClouds(baked);
+        const shadow = baked.moon ? moonShadow(baked.moon, time, p.radius) : null;
+        paintSurface(baked, time, shadow);
+        if (baked.cloud.enabled) paintClouds(baked, shadow);
       }
       const moon = baked.moon ? moonAt(baked.moon, time) : null;
       place(ctx, baked.glow, x, y, scale);
@@ -555,7 +593,7 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
       if (baked.rings) place(ctx, baked.rings.back, x, y, scale);
       if (gpu) {
         // The sphere and its cloud in one, shaded for this very frame.
-        const shaded = gpu.shade(baked.shading, time);
+        const shaded = gpu.shade(baked.shading, time, baked.moon ? moonShadow(baked.moon, time, p.radius) : null);
         const side = baked.size / scale;
         ctx.drawImage(shaded.canvas, shaded.x, shaded.y, baked.size, baked.size, x - side / 2, y - side / 2, side, side);
       } else {
