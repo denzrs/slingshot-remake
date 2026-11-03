@@ -8,7 +8,9 @@ import type { MarkKind } from '../../game';
 import { STYLE_MULTIPLIER, styleLabel } from '../../sim/scoring';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
-import { MARK_KINDS, markIcon, markName, markText } from './mark-help';
+import { MARK_KINDS, markName } from '../../game/markLegend';
+import { markIcon } from '../../render/mark-art';
+import { markText } from './mark-help';
 import { mountTutorialPreview, type TutorialPreviewKind } from './tutorial-preview';
 import type { App } from './app';
 

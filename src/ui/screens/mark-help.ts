@@ -1,29 +1,9 @@
 import { SCORING } from '../../sim/config';
 import { t } from '../../platform/i18n';
 import type { MarkKind, Match } from '../../game';
-import { visibleMarks } from '../../game/markLegend';
-import { drawMarkSymbol, MARK_COLORS } from '../../render/mark-art';
+import { markName, visibleMarks } from '../../game/markLegend';
+import { MARK_COLORS, markIcon } from '../../render/mark-art';
 import { h } from '../menu/menu';
-
-/** Every mark, in the order the tutorial lists them. */
-export const MARK_KINDS: readonly MarkKind[] = ['bounty', 'shutdown', 'comeback', 'revenge', 'domination', 'avenger', 'underdog', 'firstBlood', 'opener', 'chain'];
-
-/** The mark's symbol, drawn small on a canvas in its own colour, as on a card. */
-export function markIcon(kind: MarkKind, size = 22): HTMLCanvasElement {
-  const dpr = typeof devicePixelRatio === 'number' ? Math.max(1, devicePixelRatio) : 1;
-  const icon = h('canvas.power-icon', { width: String(Math.round(size * dpr)), height: String(Math.round(size * dpr)), 'aria-hidden': 'true' }) as HTMLCanvasElement;
-  const ctx = icon.getContext('2d');
-  if (ctx) {
-    ctx.scale(dpr, dpr);
-    ctx.strokeStyle = ctx.fillStyle = MARK_COLORS[kind];
-    ctx.lineWidth = 1.7;
-    ctx.lineCap = ctx.lineJoin = 'round';
-    drawMarkSymbol(ctx, kind, size / 2, size / 2, size * 0.36);
-  }
-  return icon;
-}
-
-export const markName = (kind: MarkKind): string => (kind === 'chain' ? t('marks.chain') : t(`bonus.${kind}`));
 
 /** What a mark means, with the numbers of the rules in it. */
 export function markText(kind: MarkKind): string {

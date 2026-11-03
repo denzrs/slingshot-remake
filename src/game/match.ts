@@ -215,6 +215,19 @@ export interface Mark {
   points: number;
 }
 
+/**
+ * What the marks are read from, for a guest to read them as the host does: the round's kills so far, who shot whom in it and the rounds
+ * before, and the scores it began with. All of it is on the screen already (kill feed, scoreboard), so it is sent to everybody; what
+ * stays private is only which marks each person is shown.
+ */
+export interface MarkState {
+  chain: [number, number][];
+  firstBlood: boolean;
+  killedBy: [number, number][];
+  before: [number, number][][];
+  roundScores: number[];
+}
+
 export interface MatchOptions {
   /** Attract mode (title screen): rounds continue on their own, forever. */
   attract?: boolean;
@@ -422,7 +435,7 @@ export abstract class Match {
    * Whether kills pay the extras on top: the multi-kill chain, first blood, the bounty and revenge. The daily challenge
    * keeps a score of its own and runs a target per round rather than a round per volley, so they have no meaning there.
    */
-  protected get paysKillBonuses(): boolean {
+  get paysKillBonuses(): boolean {
     return this.mode !== 'challenge';
   }
   protected abstract roundTitle(survivor: number | null): RoundTitle;
@@ -1801,9 +1814,6 @@ export abstract class Match {
 
   // ————————————————————————————— Marks on the cards —————————————————————————————
 
-  /** What the host worked out for every seat's point of view (a guest cannot: the grudges it is read from stay with the host); null on the host itself. */
-  private syncedMarks: Mark[][][] | null = null;
-
   /**
    * Whose point of view the cards take: the seat at this screen, the one person at a table of CPUs,
    * whoever is on turn at a shared keyboard — and nobody's for the stands.
@@ -1819,21 +1829,31 @@ export abstract class Match {
 
   /**
    * The marks on every card (by ship) for the person at this screen, while the aim is being set: what a kill of that ship would pay them
-   * beyond its points, a comeback it is in line for, and on their own card what any kill of theirs would pay now.
+   * beyond its points, a comeback it is in line for, and on their own card what any kill of theirs would pay now. Worked out on each call:
+   * read it once a frame.
    */
   get cardMarks(): Mark[][] {
-    const viewer = this.markViewer;
-    return this.syncedMarks ? this.syncedMarks[viewer ?? this.players.length] ?? [] : this.marksFor(viewer);
+    return this.marksFor(this.markViewer);
   }
 
-  /** The marks for every seat's point of view, the last entry being the stands': what goes to the guests. */
-  protected marksForAll(): Mark[][][] {
-    if (this.phase !== 'aiming' || !this.paysKillBonuses || this.forfeited) return [];
-    return [...this.players.map((p) => this.marksFor(p.id)), this.marksFor(null)];
+  /** What the guests read their marks from (see `MarkState`). */
+  protected markState(): MarkState {
+    return {
+      chain: [...this.killChain],
+      firstBlood: this.firstBloodDrawn,
+      killedBy: [...this.killedBy],
+      before: this.killedBefore.map((round) => [...round]),
+      roundScores: this.roundScores,
+    };
   }
 
-  protected restoreMarks(marks: Mark[][][] | undefined): void {
-    this.syncedMarks = marks ?? [];
+  protected restoreMarkState(state: MarkState | undefined): void {
+    if (!state) return;
+    this.killChain = new Map(state.chain);
+    this.firstBloodDrawn = state.firstBlood;
+    this.killedBy = new Map(state.killedBy);
+    this.killedBefore = state.before.map((round) => new Map(round));
+    this.roundScores = [...state.roundScores];
   }
 
   /** The marks on each ship's card, by ship, as `shooter` (or the stands, for null) sees them. The payout reads the same rules (`targetExtras`). */

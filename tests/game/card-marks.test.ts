@@ -126,10 +126,11 @@ describe('marks on the cards', () => {
     expect(paid[0].filter((bonus) => !own.has(bonus.kind))).toHaveLength(promised.length);
   });
 
-  it('reach a guest the way the host sees them: for every seat, and the stands', () => {
+  it('read on a guest as on the host: for every seat, and the stands', () => {
     const host = field(4).m as ClassicMatch;
     host.players.forEach((p, i) => (p.score = [500, 3000, 1800, 1200][i]));
-    grudges(host, { before: [[[0, 3]]] });
+    grudges(host, { before: [[[0, 3]]], chain: [[2, 2]] });
+    Object.assign(host, { firstBloodDrawn: true, roundScores: host.players.map((p) => p.score) });
     const guest = field(4).m as ClassicMatch;
     guest.restoreSnapshot(host.snapshot());
     for (const viewer of [0, 1, 2, 3]) {

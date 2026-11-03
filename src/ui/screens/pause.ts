@@ -70,7 +70,7 @@ export function pauseScreen(app: App, match: Match | null): Screen {
       title: t('pause.title'), eyebrow: app.mode === 'challenge' ? t('mode.daily') : `${modeName(app.mode === 'horizon' || app.mode === 'solar' ? app.mode : 'classic')}${app.mayhem ? ` · ${t('mode.mayhem')}` : ''}`,
       className: 'menu-page--pause',
       // Beside the standings, what the symbols on the cards mean right now.
-      body: match ? [h('div.pause-standing', null, ...pauseStanding(match, app.online)), ...(match instanceof ChallengeMatch ? [] : legend(match))] : [],
+      body: match ? [h('div.pause-standing', null, ...pauseStanding(match, app.online)), ...[marksLegend(match)].filter((block) => block !== null)] : [],
       footer: h('nav.items.items--row.pause-actions.menu-page__actions', { 'data-section': 'actions', 'aria-label': t('pause.title') }),
     }),
     items,
@@ -78,12 +78,6 @@ export function pauseScreen(app: App, match: Match | null): Screen {
     onEscape: () => app.resume(),
   };
 }
-
-/** The explanation of the symbols on the cards, as far as there are any. */
-const legend = (match: Match): Node[] => {
-  const block = marksLegend(match);
-  return block ? [block] : [];
-};
 
 /** The pause menu's middle: where the match stands right now. */
 function pauseStanding(match: Match, online: boolean): Node[] {

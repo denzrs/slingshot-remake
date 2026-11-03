@@ -8,52 +8,40 @@ import './marks-gallery.css';
 import { createMatch, type MarkKind, type Match } from '../game';
 import { DEFAULT_SETTINGS, type Seat } from '../data/settings';
 import { SCORING } from '../sim/config';
-import { t } from '../platform/i18n';
 import { Effects } from '../render/effects';
-import { drawMarkSymbol, MARK_COLORS } from '../render/mark-art';
+import { MARK_KINDS, markName } from '../game/markLegend';
+import { MARK_COLORS, markIcon } from '../render/mark-art';
 import { Renderer, type DrawOptions } from '../render/renderer';
 import { createUiPreview } from './devPreview';
 
 /**
  * Dev-only page (`/marks.html`, never part of a build): every symbol the scoreboard's cards carry, large and at the size they are
  * drawn, and the real HUD with them, through the eyes of each seat (the buttons), on a narrow card (a phone held upright) and in a team.
- * A new mark shows up here by being added to `MARK_COLORS` and to `SYMBOLS` below.
+ * A new mark shows up here by being added to `MARK_KINDS` (game/markLegend.ts), with its texts in `SYMBOLS` below.
  */
 
 const OPTIONS: DrawOptions = { hud: true, fullScreen: false, touch: false, recording: false, keyHints: false, aimCardDodge: false };
 
 interface MarkEntry {
-  kind: MarkKind;
-  name: string;
   pays: string;
   where: string;
+  /** Said after the mark's name. */
+  alias?: string;
 }
 
-const SYMBOLS: MarkEntry[] = [
-  { kind: 'bounty', name: `${t('bonus.bounty')} · Champion`, pays: `+25 % des Vorsprungs, höchstens ${SCORING.BOUNTY_MAX}`, where: 'Krone auf dem Führenden (Vorsprung ab 100). Für alle.' },
-  { kind: 'shutdown', name: t('bonus.shutdown'), pays: `+${SCORING.SHUTDOWN_PER_KILL} je Gegner, den das Schiff genommen hat`, where: 'Flamme auf einem Schiff mit zwei oder mehr Abschüssen in der Runde. Für alle.' },
-  { kind: 'comeback', name: t('bonus.comeback'), pays: `+${SCORING.COMEBACK} am Rundenende`, where: 'Auf dem einzigen Letzten bei Rundenbeginn: gewinnt er die Runde, zahlt es. Für alle.' },
-  { kind: 'revenge', name: t('bonus.revenge'), pays: `+${SCORING.REVENGE}, doppelt nach ${SCORING.DOMINATION_ROUNDS} Runden in Folge`, where: 'Auf dem, der dich in der Runde davor abgeschossen hat. Nur für dich.' },
-  { kind: 'domination', name: t('bonus.domination'), pays: `+${SCORING.DOMINATION}`, where: `Auf einem Schiff, das du ${SCORING.DOMINATION_ROUNDS - 1} Runden in Folge abgeschossen hast. Nur für dich.` },
-  { kind: 'avenger', name: t('bonus.avenger'), pays: `+${SCORING.AVENGER}`, where: 'Auf dem Gegner, der diese Runde einen Teamkameraden genommen hat. Fürs Team.' },
-  { kind: 'underdog', name: t('bonus.underdog'), pays: `+20 % des Abstands, höchstens ${SCORING.UNDERDOG_MAX}`, where: 'Auf jedem Schiff über dir, solange du allein Letzter bist (ab drei Schiffen). Nur für dich.' },
-  { kind: 'firstBlood', name: t('bonus.firstBlood'), pays: `+${SCORING.FIRST_BLOOD}`, where: 'Auf deiner eigenen Karte, bis der erste Abschuss der Runde gefallen ist.' },
-  { kind: 'opener', name: t('bonus.opener'), pays: `+${SCORING.OPENER}`, where: 'Auf deiner eigenen Karte, solange du in der Runde noch nicht geschossen hast.' },
-  { kind: 'chain', name: 'Abschussserie', pays: `+${SCORING.MULTI_KILL[2]} bis +${SCORING.MULTI_KILL[5]}`, where: 'Auf deiner eigenen Karte, ab dem zweiten Abschuss der Runde: das nächste Kettenglied.' },
-];
-
-/** Draws one symbol into a canvas of `size` CSS pixels, `r` big, with the line the HUD would use scaled to it. */
-function paint(canvas: HTMLCanvasElement, kind: MarkKind, size: number, r: number, line: number): void {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = canvas.height = Math.round(size * dpr);
-  const ctx = canvas.getContext('2d')!;
-  ctx.scale(dpr, dpr);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = line;
-  ctx.strokeStyle = ctx.fillStyle = MARK_COLORS[kind];
-  drawMarkSymbol(ctx, kind, size / 2, size / 2, r);
-}
+/** What each mark pays and where it stands; the page's notes are German, as the looks gallery's are. The names are the game's. */
+const SYMBOLS: Record<MarkKind, MarkEntry> = {
+  bounty: { pays: `+25 % des Vorsprungs, höchstens ${SCORING.BOUNTY_MAX}`, where: 'Krone auf dem Führenden (Vorsprung ab 100). Für alle.', alias: 'Champion' },
+  shutdown: { pays: `+${SCORING.SHUTDOWN_PER_KILL} je Gegner, den das Schiff genommen hat`, where: 'Flamme auf einem Schiff mit zwei oder mehr Abschüssen in der Runde. Für alle.' },
+  comeback: { pays: `+${SCORING.COMEBACK} am Rundenende`, where: 'Auf dem einzigen Letzten bei Rundenbeginn: gewinnt er die Runde, zahlt es. Für alle.' },
+  revenge: { pays: `+${SCORING.REVENGE}, doppelt nach ${SCORING.DOMINATION_ROUNDS} Runden in Folge`, where: 'Auf dem, der dich in der Runde davor abgeschossen hat. Nur für dich.' },
+  domination: { pays: `+${SCORING.DOMINATION}`, where: `Auf einem Schiff, das du ${SCORING.DOMINATION_ROUNDS - 1} Runden in Folge abgeschossen hast. Nur für dich.` },
+  avenger: { pays: `+${SCORING.AVENGER}`, where: 'Auf dem Gegner, der diese Runde einen Teamkameraden genommen hat. Fürs Team.' },
+  underdog: { pays: `+20 % des Abstands, höchstens ${SCORING.UNDERDOG_MAX}`, where: 'Auf jedem Schiff über dir, solange du allein Letzter bist (ab drei Schiffen). Nur für dich.' },
+  firstBlood: { pays: `+${SCORING.FIRST_BLOOD}`, where: 'Auf deiner eigenen Karte, bis der erste Abschuss der Runde gefallen ist.' },
+  opener: { pays: `+${SCORING.OPENER}`, where: 'Auf deiner eigenen Karte, solange du in der Runde noch nicht geschossen hast.' },
+  chain: { pays: `+${SCORING.MULTI_KILL[2]} bis +${SCORING.MULTI_KILL[5]}`, where: 'Auf deiner eigenen Karte, ab dem zweiten Abschuss der Runde: das nächste Kettenglied.' },
+};
 
 /** Six ships on the dev preview's field (see `cardMarks` in devPreview.ts): you are last, Mira leads, Nia has a grudge, Vega is on a spree. */
 function freeForAll(): Match {
@@ -130,14 +118,15 @@ root.innerHTML = `
 document.body.append(root);
 
 const list = root.querySelector<HTMLUListElement>('.symbols')!;
-for (const symbol of SYMBOLS) {
+for (const kind of MARK_KINDS) {
+  const { pays, where, alias } = SYMBOLS[kind];
   const item = document.createElement('li');
-  item.style.setProperty('--mark', MARK_COLORS[symbol.kind]);
-  item.innerHTML = `<canvas aria-hidden="true"></canvas><b>${symbol.name}</b><span class="pays">${symbol.pays}</span><span class="where">${symbol.where}</span><span class="actual"><canvas aria-hidden="true"></canvas>auf der Karte</span>`;
+  item.style.setProperty('--mark', MARK_COLORS[kind]);
+  item.innerHTML = `<b>${markName(kind)}${alias ? ` · ${alias}` : ''}</b><span class="pays">${pays}</span><span class="where">${where}</span><span class="actual">auf der Karte</span>`;
+  // Large, and at the size and line the HUD draws it.
+  item.prepend(markIcon(kind, 96, 38, 4.6));
+  item.querySelector('.actual')!.prepend(markIcon(kind, 24, 5.8, 1.4));
   list.append(item);
-  const [big, small] = item.querySelectorAll('canvas');
-  paint(big, symbol.kind, 96, 38, 4.6);
-  paint(small, symbol.kind, 24, 5.8, 1.4);
 }
 
 // One real scoreboard, seen by each seat in turn.

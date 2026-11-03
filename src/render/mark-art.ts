@@ -133,3 +133,21 @@ export function drawMarkSymbol(ctx: CanvasRenderingContext2D, kind: MarkKind, x:
     ctx.stroke();
   }
 }
+
+/** The mark's symbol on a canvas of its own, `size` CSS pixels and `r` big (a little over a third of it unless said), in its own colour as on a card. */
+export function markIcon(kind: MarkKind, size = 22, r = size * 0.36, line = 1.7): HTMLCanvasElement {
+  const dpr = typeof devicePixelRatio === 'number' ? Math.max(1, devicePixelRatio) : 1;
+  const icon = document.createElement('canvas');
+  icon.className = 'power-icon';
+  icon.width = icon.height = Math.round(size * dpr);
+  icon.setAttribute('aria-hidden', 'true');
+  const ctx = icon.getContext('2d');
+  if (ctx) {
+    ctx.scale(dpr, dpr);
+    ctx.strokeStyle = ctx.fillStyle = MARK_COLORS[kind];
+    ctx.lineWidth = line;
+    ctx.lineCap = ctx.lineJoin = 'round';
+    drawMarkSymbol(ctx, kind, size / 2, size / 2, r);
+  }
+  return icon;
+}

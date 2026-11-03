@@ -31,8 +31,14 @@ const MARK_STANDOUT = 200;
 /** What a kill of a ship pays on top of its points, by the marks on its card: the comeback it may be in line for is not part of that. */
 const killPayout = (marks: Mark[]): number => marks.reduce((sum, m) => sum + (m.kind === 'comeback' ? 0 : m.points), 0);
 
-/** The mark that pays most, which gives the card's total its colour. */
-const topMark = (marks: Mark[]): Mark => marks.reduce((a, b) => (b.points > a.points ? b : a));
+/** The marks most valuable first, a comeback (paid for the round, not for a kill) after every extra a kill pays. */
+const byValue = (marks: Mark[]): Mark[] => [...marks].sort((a, b) => Number(a.kind === 'comeback') - Number(b.kind === 'comeback') || b.points - a.points);
+
+/** The extra of a kill that pays most, which gives the card's total and outline their colour; call it only where a kill pays one. */
+const topMark = (marks: Mark[]): Mark => byValue(marks)[0];
+
+/** How many of `count` symbols, `r` big and `pitch` apart, fit in `room`. */
+const fitMarks = (count: number, room: number, r: number, pitch: number): number => Math.max(0, Math.min(count, Math.floor((room + pitch - 2 * r) / pitch)));
 
 type KeyItem = [key: string, label: string];
 type Segment = [text: string, color: string];
@@ -112,11 +118,13 @@ export class Hud {
     this.drop = duel && view.stage ? DUEL_DROP * this.k : 0;
     this.drawRoundLabel(match);
     this.drawTwistChips(match);
+    // Worked out once a frame: the blocks, the cards and their outline all read the same.
+    const marks = match.phase === 'aiming' ? match.cardMarks : [];
     if (duel) {
-      this.drawDuelBlock(match, match.players[0], 'left');
-      this.drawDuelBlock(match, match.players[1], 'right');
+      this.drawDuelBlock(match, match.players[0], 'left', marks);
+      this.drawDuelBlock(match, match.players[1], 'right', marks);
     } else {
-      this.drawScoreboard(match);
+      this.drawScoreboard(match, marks);
       this.drawKillFeed(match);
     }
     if (match.phase === 'aiming' && focus >= 0 && match.aimVisible(focus)) this.drawReadout(match, match.players[focus], shipPos(focus), opts.aimCardDodge);
@@ -298,7 +306,7 @@ export class Hud {
   }
 
   /** Classic two-player layout: big blocks in the top corners, as in the original. */
-  private drawDuelBlock(match: Match, p: PlayerState, align: 'left' | 'right'): void {
+  private drawDuelBlock(match: Match, p: PlayerState, align: 'left' | 'right', cardMarks: Mark[][]): void {
     const { ctx, k, field } = this;
     const x = align === 'left' ? field.x + 24 * k : field.x + field.w - 24 * k;
     const y = field.y + 22 * k + this.drop;
@@ -338,7 +346,7 @@ export class Hud {
     // The marks a duel has (a bounty on the leader, revenge, domination, a comeback, and on your own side first blood and an opener) hang under the block.
     if (match.phase === 'aiming' && p.alive) {
       const width = 128 * k;
-      const marks = match.cardMarks[p.id] ?? [];
+      const marks = cardMarks[p.id] ?? [];
       if (marks.length) this.drawMarkRow(marks, p.id === match.markViewer, align === 'left' ? x : x - width, align === 'left' ? x + width : x, y + (match.powerUps ? 138 : 112) * k, 6 * k, 16 * k, 11 * k, align === 'right');
     }
   }
@@ -420,7 +428,7 @@ export class Hud {
    * Three to six players: a row of chips under the round label. In team mode the chips are
    * grouped by team, each group under a header with the team's name and total.
    */
-  private drawScoreboard(match: Match): void {
+  private drawScoreboard(match: Match, marks: Mark[][]): void {
     const { ctx, k, field } = this;
     const players = match.teamMode ? [...match.players].sort((a, b) => a.team! - b.team! || a.seat - b.seat) : match.players;
     const n = players.length;
@@ -436,7 +444,6 @@ export class Hud {
     let x = field.x + (field.w - total) / 2;
     const planning = match.phase === 'aiming';
     // What a kill of each ship pays beyond its points, for the person at the screen; the card that pays most gets an outline.
-    const marks = planning ? match.cardMarks : [];
     const viewer = match.markViewer;
     const payout = (id: number) => (id === viewer ? 0 : killPayout(marks[id] ?? []));
     const best = Math.max(0, ...players.map((p) => payout(p.id)));
@@ -532,7 +539,7 @@ export class Hud {
 
   /** The height (field units) the scoreboard's cards grow by when they are too narrow to hold their marks beside the score; the same for the whole round, so nothing below jumps. */
   private markRowHeight(match: Match): number {
-    return match.mode !== 'challenge' && this.cardWidth(match) < MARK_ROOM * this.k ? MARK_ROW : 0;
+    return match.paysKillBonuses && this.cardWidth(match) < MARK_ROOM * this.k ? MARK_ROW : 0;
   }
 
   /**
@@ -552,17 +559,11 @@ export class Hud {
     const cy = y + h - 10.5 * k;
     const right = x + w - 9 * k;
     const left = scoreRight + 6 * k;
-    const sorted = [...marks].sort((a, b) => b.points - a.points);
-    const fit = Math.max(0, Math.min(sorted.length, Math.floor((right - left + pitch - 2 * r) / pitch)));
+    const sorted = byValue(marks);
+    const fit = fitMarks(sorted.length, right - left, r, pitch);
     if (!fit) return;
     ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 1.4 * k;
-    sorted.slice(0, fit).forEach((mark, i) => {
-      ctx.strokeStyle = ctx.fillStyle = MARK_COLORS[mark.kind];
-      drawMarkSymbol(ctx, mark.kind, right - r - i * pitch, cy, r);
-    });
+    this.drawMarkSymbols(sorted.slice(0, fit), (i) => right - r - i * pitch, cy, r);
     // The sum of the extras of a kill: only on a target's card, and only where it fits beside the symbols.
     const total = own ? 0 : killPayout(marks);
     if (total > 0) {
@@ -590,18 +591,11 @@ export class Hud {
     ctx.save();
     ctx.font = `700 ${font}px ${FONTS.mono}`;
     const textWidth = ctx.measureText(text).width;
-    const sorted = [...marks].sort((a, b) => b.points - a.points);
-    const fits = (room: number) => Math.max(0, Math.min(sorted.length, Math.floor((room + pitch - 2 * r) / pitch)));
+    const sorted = byValue(marks);
     // The sum is what says which ship to take: it keeps its place, and the symbols share what is left.
-    const withTotal = total > 0 && fits(to - from - textWidth - 4 * k) > 0;
-    const fit = fits(withTotal ? to - from - textWidth - 4 * k : to - from);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 1.4 * k;
-    sorted.slice(0, fit).forEach((mark, i) => {
-      ctx.strokeStyle = ctx.fillStyle = MARK_COLORS[mark.kind];
-      drawMarkSymbol(ctx, mark.kind, mirror ? to - r - i * pitch : from + r + i * pitch, cy, r);
-    });
+    const withTotal = total > 0 && fitMarks(sorted.length, to - from - textWidth - 4 * k, r, pitch) > 0;
+    const fit = fitMarks(sorted.length, withTotal ? to - from - textWidth - 4 * k : to - from, r, pitch);
+    this.drawMarkSymbols(sorted.slice(0, fit), (i) => (mirror ? to - r - i * pitch : from + r + i * pitch), cy, r);
     if (withTotal) {
       ctx.fillStyle = MARK_COLORS[topMark(marks).kind];
       ctx.textBaseline = 'middle';
@@ -609,6 +603,18 @@ export class Hud {
       ctx.fillText(text, mirror ? from : to, cy + 0.5 * k);
     }
     ctx.restore();
+  }
+
+  /** The symbols of `marks` in a line at height `cy`, the i-th centred at `x(i)`. */
+  private drawMarkSymbols(marks: Mark[], x: (i: number) => number, cy: number, r: number): void {
+    const { ctx, k } = this;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 1.4 * k;
+    marks.forEach((mark, i) => {
+      ctx.strokeStyle = ctx.fillStyle = MARK_COLORS[mark.kind];
+      drawMarkSymbol(ctx, mark.kind, x(i), cy, r);
+    });
   }
 
   private drawKillFeed(match: Match): void {
