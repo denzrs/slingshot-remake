@@ -5,6 +5,7 @@ import { fbm } from '../noise';
 import { clamp01, LIGHT, mix, smoothstep, type PlanetSprite } from '../planet-common';
 import { image, type Name } from './forged-assets';
 import { GLOW, renderLitPlanet, spriteSize } from './forged-lit-planet';
+import { forgedPlanetGl, type GlConstants, type GlPlanet } from './forged-planet-gl';
 
 /**
  * A planet in the forged look: the Blender map wrapped round a sphere and lit from the upper left, with what a still
@@ -139,7 +140,9 @@ interface Baked {
   size: number;
   /** The glow past the limb, painted once. */
   glow: HTMLCanvasElement;
-  surface: Surface;
+  /** How the planet is turned and lit, as the GPU shades it; the CPU bakes `surface` from it the first time it paints. */
+  shading: GlPlanet;
+  surface: Surface | null;
   /** The sphere itself, painted again as it turns. */
   sphere: { canvas: HTMLCanvasElement; image: ImageData; map: Texture; gain: number[]; city: Uint8Array | null; shift: Float32Array };
   cloud: { kind: MapKind; enabled: boolean; colour: Rgb; canvas: HTMLCanvasElement; image: ImageData; shift: Float32Array; direction: number; phase: number; at: number };
@@ -185,6 +188,84 @@ function bake(p: Planet, ps: number): Baked | null {
   const dusk = DUSK[p.style] ?? DUSK.rocky;
   const specular = p.style === 'ice' ? 0.35 : 0;
 
+  const sphere = document.createElement('canvas');
+  sphere.width = sphere.height = size;
+
+  const glow = document.createElement('canvas');
+  glow.width = glow.height = size;
+  const c = glow.getContext('2d')!;
+  const glowColor = `#${rim.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
+  const gradient = c.createRadialGradient(half, half, R * 0.9, half, half, reach);
+  gradient.addColorStop(0, rgba(glowColor, 0.07));
+  gradient.addColorStop(1, rgba(glowColor, 0));
+  c.fillStyle = gradient;
+  c.beginPath();
+  c.arc(half, half, reach, 0, Math.PI * 2);
+  c.fill();
+  // Light scattered in the atmosphere: more of it on the side the sun is on.
+  const lx = LIGHT[0] / Math.hypot(LIGHT[0], LIGHT[1]);
+  const ly = LIGHT[1] / Math.hypot(LIGHT[0], LIGHT[1]);
+  const scatter = c.createRadialGradient(half + lx * R * 0.3, half + ly * R * 0.3, R * 0.7, half + lx * R * 0.3, half + ly * R * 0.3, reach);
+  scatter.addColorStop(0, rgba(glowColor, 0.09));
+  scatter.addColorStop(1, rgba(glowColor, 0));
+  c.fillStyle = scatter;
+  c.beginPath();
+  c.arc(half, half, reach, 0, Math.PI * 2);
+  c.fill();
+
+  // Cloud: wisps over rock, haze over ice, long streaks over a gas giant.
+  const kind: MapKind = p.style === 'gas' ? 'band' : p.style === 'ice' ? 'haze' : 'wisp';
+  const colour2: Rgb = p.style === 'gas' ? [mix(tr, 255, 0.55), mix(tg, 245, 0.55), mix(tb, 230, 0.55)] : p.style === 'ice' ? [235, 245, 255] : [255, 236, 215];
+  const cloudCanvas = document.createElement('canvas');
+  cloudCanvas.width = cloudCanvas.height = size;
+  const rings = ringed ? bakeRings(R, tr, tg, tb, rng) : null;
+  // A planet without rings may have a moon: small, grey with a hint of the planet's colour, on a slanted orbit.
+  const moon: Moon | null =
+    !ringed && rng() < 0.3
+      ? {
+          orbit: p.radius * range(rng, 1.55, 2),
+          squash: range(rng, 0.25, 0.4),
+          tilt: range(rng, -0.6, 0.6),
+          radius: p.radius * range(rng, 0.08, 0.13),
+          period: range(rng, 30, 70),
+          start: rng() * Math.PI * 2,
+          direction: rng() < 0.5 ? -1 : 1,
+          colour: [mix(190, tr, 0.25), mix(186, tg, 0.25), mix(180, tb, 0.25)],
+        }
+      : null;
+  const kindData = proceduralMap(kind);
+  return {
+    size,
+    glow,
+    shading: {
+      size,
+      radius: R,
+      spin,
+      tilt,
+      specular,
+      rim,
+      dusk,
+      gain,
+      settled,
+      map: image(variant.name)!,
+      mapName: variant.name,
+      cloud: { kind, data: kindData, enabled: variant.clouds !== false, colour: colour2, banded: kind === 'band', direction, phase },
+      city: settled ? proceduralMap('city') : null,
+    },
+    surface: null,
+    sphere: { canvas: sphere, image: sphere.getContext('2d')!.createImageData(size, size), map, gain, city: settled ? proceduralMap('city') : null, shift: new Float32Array(MAP_H) },
+    cloud: { kind, enabled: variant.clouds !== false, colour: colour2, canvas: cloudCanvas, image: cloudCanvas.getContext('2d')!.createImageData(size, size), shift: new Float32Array(MAP_H), direction, phase, at: -1 },
+    rings,
+    moon,
+    storms: p.style === 'gas',
+  };
+}
+
+/** Every pixel of the disc, with where on the map it lies and how it is lit, for the CPU to paint it from (see `Surface`). */
+function bakeSurface(b: Baked): Surface {
+  const { size, radius: R, spin, tilt, specular, rim, dusk, settled } = b.shading;
+  const half = size / 2;
+  const map = b.sphere.map;
   const cs = Math.cos(spin);
   const sn = Math.sin(spin);
   const ct = Math.cos(tilt);
@@ -242,61 +323,7 @@ function bake(p: Planet, ps: number): Baked | null {
       surface.night[n] = settled ? smoothstep(0.05, -0.3, lam) * 0.95 : 0;
     }
   }
-  const sphere = document.createElement('canvas');
-  sphere.width = sphere.height = size;
-
-  const glow = document.createElement('canvas');
-  glow.width = glow.height = size;
-  const c = glow.getContext('2d')!;
-  const glowColor = `#${rim.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`;
-  const gradient = c.createRadialGradient(half, half, R * 0.9, half, half, reach);
-  gradient.addColorStop(0, rgba(glowColor, 0.07));
-  gradient.addColorStop(1, rgba(glowColor, 0));
-  c.fillStyle = gradient;
-  c.beginPath();
-  c.arc(half, half, reach, 0, Math.PI * 2);
-  c.fill();
-  // Light scattered in the atmosphere: more of it on the side the sun is on.
-  const lx = LIGHT[0] / Math.hypot(LIGHT[0], LIGHT[1]);
-  const ly = LIGHT[1] / Math.hypot(LIGHT[0], LIGHT[1]);
-  const scatter = c.createRadialGradient(half + lx * R * 0.3, half + ly * R * 0.3, R * 0.7, half + lx * R * 0.3, half + ly * R * 0.3, reach);
-  scatter.addColorStop(0, rgba(glowColor, 0.09));
-  scatter.addColorStop(1, rgba(glowColor, 0));
-  c.fillStyle = scatter;
-  c.beginPath();
-  c.arc(half, half, reach, 0, Math.PI * 2);
-  c.fill();
-
-  // Cloud: wisps over rock, haze over ice, long streaks over a gas giant.
-  const kind: MapKind = p.style === 'gas' ? 'band' : p.style === 'ice' ? 'haze' : 'wisp';
-  const colour2: Rgb = p.style === 'gas' ? [mix(tr, 255, 0.55), mix(tg, 245, 0.55), mix(tb, 230, 0.55)] : p.style === 'ice' ? [235, 245, 255] : [255, 236, 215];
-  const cloudCanvas = document.createElement('canvas');
-  cloudCanvas.width = cloudCanvas.height = size;
-  const rings = ringed ? bakeRings(R, tr, tg, tb, rng) : null;
-  // A planet without rings may have a moon: small, grey with a hint of the planet's colour, on a slanted orbit.
-  const moon: Moon | null =
-    !ringed && rng() < 0.3
-      ? {
-          orbit: p.radius * range(rng, 1.55, 2),
-          squash: range(rng, 0.25, 0.4),
-          tilt: range(rng, -0.6, 0.6),
-          radius: p.radius * range(rng, 0.08, 0.13),
-          period: range(rng, 30, 70),
-          start: rng() * Math.PI * 2,
-          direction: rng() < 0.5 ? -1 : 1,
-          colour: [mix(190, tr, 0.25), mix(186, tg, 0.25), mix(180, tb, 0.25)],
-        }
-      : null;
-  return {
-    size,
-    glow,
-    surface,
-    sphere: { canvas: sphere, image: sphere.getContext('2d')!.createImageData(size, size), map, gain, city: settled ? proceduralMap('city') : null, shift: new Float32Array(MAP_H) },
-    cloud: { kind, enabled: variant.clouds !== false, colour: colour2, canvas: cloudCanvas, image: cloudCanvas.getContext('2d')!.createImageData(size, size), shift: new Float32Array(MAP_H), direction, phase, at: -1 },
-    rings,
-    moon,
-    storms: p.style === 'gas',
-  };
+  return surface;
 }
 
 /**
@@ -304,6 +331,7 @@ function bake(p: Planet, ps: number): Baked | null {
  * it was. A gas giant's bands turn at speeds of their own (faster towards the equator), so they slide against each other.
  */
 function paintSurface(b: Baked, time: number): void {
+  b.surface ??= bakeSurface(b);
   const { sphere, surface, cloud } = b;
   const turn = time * SURFACE_RATE * cloud.direction;
   const shift = sphere.shift;
@@ -357,6 +385,7 @@ function cloudShifts(b: Baked, time: number): void {
 
 /** Paints the cloud layer as `cloudShifts` left it: the map turned round by how far it has drifted, lit like the sphere under it. */
 function paintClouds(b: Baked): void {
+  b.surface ??= bakeSurface(b);
   const { cloud, surface } = b;
   const map = proceduralMap(cloud.kind);
   const data = cloud.image.data;
@@ -481,6 +510,19 @@ function drawLightning(ctx: CanvasRenderingContext2D, x: number, y: number, p: P
   ctx.restore();
 }
 
+/** What the GPU's shader shares with the CPU's painting, so the two draw the same planet. */
+const GL_CONSTANTS: GlConstants = {
+  light: LIGHT,
+  night: NIGHT,
+  cityLight: CITY,
+  surfaceRate: SURFACE_RATE,
+  cloudRate: CLOUD_RATE,
+  shadow: SHADOW,
+  shadowDepth: SHADOW_DEPTH,
+  mapW: MAP_W,
+  mapH: MAP_H,
+};
+
 /** A planet's sprite in the forged look: baked on first draw once its map has loaded, the lit planet of `forged-lit-planet.ts` until then. */
 export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
   // The stand-in is made only if it is drawn: once the map has loaded (nearly always, after the first planets) it never is.
@@ -498,8 +540,9 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
         fallback.draw(ctx, x, y, scale, time);
         return;
       }
+      const gpu = forgedPlanetGl(GL_CONSTANTS);
       // Each planet is painted again on its own beat, so they do not all fall in one frame.
-      if (baked.cloud.at < 0 || time - baked.cloud.at >= CLOUD_EVERY) {
+      if (!gpu && (baked.cloud.at < 0 || time - baked.cloud.at >= CLOUD_EVERY)) {
         if (baked.cloud.at < 0) baked.cloud.at = time - ((p.seed % 7) / 7) * CLOUD_EVERY;
         else baked.cloud.at = time;
         cloudShifts(baked, time);
@@ -510,8 +553,15 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
       place(ctx, baked.glow, x, y, scale);
       if (moon && !moon.front) drawMoon(ctx, x, y, baked.moon!, moon);
       if (baked.rings) place(ctx, baked.rings.back, x, y, scale);
-      place(ctx, baked.sphere.canvas, x, y, scale);
-      if (baked.cloud.enabled) place(ctx, baked.cloud.canvas, x, y, scale);
+      if (gpu) {
+        // The sphere and its cloud in one, shaded for this very frame.
+        const shaded = gpu.shade(baked.shading, time);
+        const side = baked.size / scale;
+        ctx.drawImage(shaded.canvas, shaded.x, shaded.y, baked.size, baked.size, x - side / 2, y - side / 2, side, side);
+      } else {
+        place(ctx, baked.sphere.canvas, x, y, scale);
+        if (baked.cloud.enabled) place(ctx, baked.cloud.canvas, x, y, scale);
+      }
       if (baked.storms) drawLightning(ctx, x, y, p, time);
       if (baked.rings) place(ctx, baked.rings.front, x, y, scale);
       if (moon?.front) drawMoon(ctx, x, y, baked.moon!, moon);
