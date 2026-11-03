@@ -25,7 +25,7 @@ const DISK_OUT = 17;
 /** How far above the disk's plane the eye is (radians): nearly edge on. */
 const ELEVATION = 0.13;
 /** A turn of the disk's inner edge takes this many seconds; further out, slower (Kepler). */
-const INNER_TURN = 6;
+const INNER_TURN = 3;
 
 // ------------------------------------------------------------------ paths ----
 
