@@ -9,7 +9,6 @@ import { aimAlpha, aimGeometry, ENGRAVED_EFFECTS, engraved, shotClockEnd } from 
 import { LOCATE_PING, type EffectStyle, type LookPainter, type Styles } from './painter';
 import {
   holoPolygon,
-  drawHoloShip,
   renderHoloPlanet,
   drawHoloSun,
   drawHoloBlackHole,
@@ -29,11 +28,13 @@ import {
   drawHoloNova,
   drawHoloPlasmaTrail,
 } from './holo-art';
-import { holoPost, paintHoloBackdrop, paintHoloBorder } from './holo-field';
+import { drawHoloBlast, drawHoloPackets, drawHoloShard, drawHoloShipScanned } from './holo-events';
+import { holoBegin, holoPost, holoSky, paintHoloBackdrop, paintHoloBorder, startRipple } from './holo-field';
 
 /**
- * The holo look: the engraved plan as a projection. Every element is drawn by `holo-art.ts` and the field as a whole (the
- * glass, the frame, the glow) by `holo-field.ts`; this file says which is drawn how, and is the one
+ * The holo look: the engraved plan as a projection. Every element is drawn by `holo-art.ts`, what happens in a moment
+ * (a burst, a ship scanning in, a stream of packets) by `holo-events.ts` and the field as a whole (the glass, the frame, the
+ * glow, the lattice's wave) by `holo-field.ts`; this file says which is drawn how, and is the one
  * place to look when something in this look should change.
  */
 
@@ -89,15 +90,21 @@ const holoEffects: EffectStyle = {
     ctx.stroke();
     ctx.setLineDash([]);
   },
-  streak: (speed) => ({ length: Math.min(speed * 0.03, 8) + 1.2, width: 0.9 }),
+  blast: (ctx, blast, t) => {
+    drawHoloBlast(ctx, blast, t);
+    startRipple(blast);
+  },
+  spark: drawHoloShard,
 };
 
 const holoParts: Partial<LookPainter> = {
   note: 'A projection on dark glass: thin lines and hexagons, corner brackets, a faint hex lattice round the field and a soft glow.',
   planet: renderHoloPlanet,
   effects: holoEffects,
+  begin: holoBegin,
   backdropArt: paintHoloBackdrop,
   border: paintHoloBorder,
+  sky: holoSky,
   post: holoPost,
   trail: (ctx, points, wormholes, color, rank, fade) => {
     ctx.strokeStyle = rgba(color, (rank === 0 ? 0.75 : rank === 1 ? 0.38 : 0.2) * fade);
@@ -108,11 +115,11 @@ const holoParts: Partial<LookPainter> = {
   },
   liveTrail: (ctx, points, wormholes, color, plasma) => {
     ctx.strokeStyle = color;
-    ctx.lineWidth = plasma ? 0.8 : 1.2;
-    if (plasma) ctx.globalAlpha = 0.45;
+    ctx.lineWidth = plasma ? 0.8 : 0.9;
+    ctx.globalAlpha = plasma ? 0.45 : 0.3;
     strokePolyline(ctx, points, wormholes);
     ctx.globalAlpha = 1;
-    if (!plasma) holoTrailNodes(ctx, points, color, 0.7);
+    if (!plasma) drawHoloPackets(ctx, points, color);
     if (plasma) drawHoloPlasmaTrail(ctx, points, wormholes);
   },
   shot: (ctx, x, y, color, _trail, time) => drawHoloShot(ctx, x, y, color, time),
@@ -255,7 +262,7 @@ const holoParts: Partial<LookPainter> = {
     ctx.stroke();
     ctx.restore();
   },
-  ship: drawHoloShip,
+  ship: drawHoloShipScanned,
   selection: drawHoloSelection,
   shotClock: (ctx, x, y, color, clock) => {
     const end = shotClockEnd(clock);

@@ -118,18 +118,32 @@ function planetColor(p: Planet): string {
   return '#ffb066';
 }
 
+/** How far above the planet's equator the projection looks, so the north pole tips towards us. */
+const GLOBE_ELEVATION = 0.38;
+/** A parallel or a meridian is drawn from this many short segments. */
+const GLOBE_STEPS = 40;
+
 /**
- * A planet as a wireframe globe: parallels, meridians that turn, a sweeping scanline, a dotted ring round it. It sits on
- * a plate-coloured disc, so neither the gravity contours nor the stars run through it. Drawn live, in field units.
+ * A planet as a wireframe globe that really turns: parallels and meridians seen from a little above, the near side
+ * bright and the far side faint, the axis tilted and sticking out past the poles, a dotted ring round it. It turns at a
+ * pace of its own (a turn takes twenty seconds or so). It sits on a plate-coloured disc, so neither the gravity
+ * contours nor the stars run through it. Drawn live, in field units.
  */
 export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
   const R = p.radius;
   const color = planetColor(p);
-  const phase = (p.seed % 97) / 97 * 6;
+  const phase = ((p.seed % 97) / 97) * TAU;
+  // Turns per second, either way round, and the axis' lean (radians) from the vertical.
+  const spin = (0.035 + (((p.seed * 7) % 13) / 13) * 0.04) * (p.seed % 2 ? 1 : -1);
+  const tilt = (((p.seed * 3) % 11) / 11 - 0.5) * 0.9;
+  const parallels = p.style === 'gas' ? [-0.78, -0.52, -0.26, 0, 0.26, 0.52, 0.78] : [-0.7, -0.35, 0, 0.35, 0.7];
+  const meridians = p.style === 'ice' ? 8 : 12;
+  const cosE = Math.cos(GLOBE_ELEVATION);
+  const sinE = Math.sin(GLOBE_ELEVATION);
   return {
     size: Math.ceil(R * 2 * ps + 4),
     draw(ctx, x, y, _ps, time) {
-      const t = time + phase;
+      const lon = phase + time * spin * TAU;
       ctx.save();
       ctx.translate(x, y);
       ctx.fillStyle = rgba(COLORS.plate, 0.92);
@@ -139,36 +153,69 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = rgba(color, 0.07);
       ctx.fill();
-      ctx.save();
-      ctx.clip();
-      ctx.strokeStyle = rgba(color, 0.5);
+      ctx.rotate(tilt);
+
+      // A point of the sphere (X right, Y up, Z towards us) on the screen, and how far in front it is.
+      const near = new Path2D();
+      const far = new Path2D();
+      let px = 0;
+      let py = 0;
+      let pz = 0;
+      const line = (X: number, Y: number, Z: number, first: boolean): void => {
+        const sx = X * R;
+        const sy = -(Y * cosE - Z * sinE) * R;
+        const sz = Z * cosE + Y * sinE;
+        if (!first) {
+          const path = sz + pz > 0 ? near : far;
+          path.moveTo(px, py);
+          path.lineTo(sx, sy);
+        }
+        px = sx;
+        py = sy;
+        pz = sz;
+      };
+      for (const sinLat of parallels) {
+        const cosLat = Math.sqrt(1 - sinLat * sinLat);
+        for (let i = 0; i <= GLOBE_STEPS; i++) {
+          const a = lon + (i / GLOBE_STEPS) * TAU;
+          line(cosLat * Math.sin(a), sinLat, cosLat * Math.cos(a), i === 0);
+        }
+      }
+      for (let k = 0; k < meridians; k++) {
+        const a = lon + (k / meridians) * TAU;
+        for (let i = 0; i <= 24; i++) {
+          const lat = -Math.PI / 2 + (i / 24) * Math.PI;
+          line(Math.cos(lat) * Math.sin(a), Math.sin(lat), Math.cos(lat) * Math.cos(a), i === 0);
+        }
+      }
+      ctx.strokeStyle = rgba(color, 0.13);
+      ctx.lineWidth = 0.5;
+      ctx.stroke(far);
+      ctx.strokeStyle = rgba(color, 0.55);
       ctx.lineWidth = p.style === 'gas' ? 1 : 0.7;
+      ctx.stroke(near);
+
+      // The axis, sticking out past both poles, and the north pole marked.
+      ctx.strokeStyle = rgba(color, 0.5);
+      ctx.lineWidth = 0.8;
       ctx.beginPath();
-      for (const lat of [-0.75, -0.45, -0.15, 0.15, 0.45, 0.75]) {
-        const rx = R * Math.sqrt(1 - lat * lat);
-        ctx.moveTo(rx, lat * R);
-        ctx.ellipse(0, lat * R, rx, rx * 0.2, 0, 0, TAU);
-      }
+      ctx.moveTo(0, -R * 0.96);
+      ctx.lineTo(0, -R * 1.3);
+      ctx.moveTo(0, R * 0.96);
+      ctx.lineTo(0, R * 1.3);
       ctx.stroke();
-      ctx.strokeStyle = rgba(color, 0.35);
-      ctx.lineWidth = 0.6;
+      ctx.fillStyle = rgba(COLORS.bone, 0.9);
       ctx.beginPath();
-      for (let k = 0; k < 6; k++) {
-        const a = t * 0.35 + (k * Math.PI) / 6;
-        ctx.moveTo(Math.abs(Math.cos(a)) * R, 0);
-        ctx.ellipse(0, 0, Math.abs(Math.cos(a)) * R, R, 0, 0, TAU);
-      }
-      ctx.stroke();
-      ctx.fillStyle = rgba(color, 0.35);
-      ctx.fillRect(-R, -R + ((t * 0.5) % 1) * R * 2, R * 2, 1.2);
-      ctx.restore();
+      ctx.arc(0, -cosE * R, 1.2, 0, TAU);
+      ctx.fill();
+
       ctx.beginPath();
       ctx.arc(0, 0, R, 0, TAU);
       glowLine(ctx, color, 1.1);
       ctx.strokeStyle = rgba(color, 0.35);
       ctx.lineWidth = 0.7;
       ctx.setLineDash([1.5, 3.5]);
-      ctx.lineDashOffset = -t * 2;
+      ctx.lineDashOffset = -time * 2;
       ctx.beginPath();
       ctx.arc(0, 0, R + 4, 0, TAU);
       ctx.stroke();
@@ -382,20 +429,15 @@ export function drawHoloShot(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.save();
   ctx.translate(x, y);
   ctx.globalCompositeOperation = 'lighter';
-  ctx.rotate(time * 1.2);
-  holoPolygon(ctx, 4.2, 4);
-  ctx.fillStyle = rgba(color, 0.35);
-  ctx.fill();
-  glowLine(ctx, color, 1.1);
-  ctx.strokeStyle = rgba(COLORS.bone, 0.9);
-  ctx.lineWidth = 0.8;
-  ctx.beginPath();
-  for (let k = 0; k < 4; k++) {
-    const a = (k * Math.PI) / 2 + Math.PI / 4;
-    ctx.moveTo(Math.cos(a) * 6.5, Math.sin(a) * 6.5);
-    ctx.lineTo(Math.cos(a) * 9.5, Math.sin(a) * 9.5);
-  }
+  holoPolygon(ctx, 6, 6, -time * 0.8);
+  ctx.strokeStyle = rgba(color, 0.22);
+  ctx.lineWidth = 0.6;
   ctx.stroke();
+  ctx.rotate(time * 1.2);
+  holoPolygon(ctx, 3.2, 4);
+  ctx.fillStyle = rgba(color, 0.25);
+  ctx.fill();
+  glowLine(ctx, color, 0.9);
   ctx.restore();
 }
 
