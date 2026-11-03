@@ -159,6 +159,15 @@ describe('display settings', () => {
     expect(loadSettings().wheelSide).toBe('right');
   });
 
+  it('falls back to the full post pass for a stored glow level that is not one', () => {
+    storage({ postLevel: 'medium' });
+    expect(loadSettings().postLevel).toBe('medium');
+    storage({ postLevel: 'ultra' });
+    expect(loadSettings().postLevel).toBe('high');
+    storage({ postLevel: 3 });
+    expect(loadSettings().postLevel).toBe('high');
+  });
+
   it('ignores stored display flags that are not booleans', () => {
     storage({ menuBackground: 'false', particles: 0, contours: null });
     const s = loadSettings();

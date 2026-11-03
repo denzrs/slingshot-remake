@@ -262,7 +262,7 @@ const MARGIN = 0.8;
 const SETTLE = 60;
 const WORTH = 0.15;
 
-function paceOf(canvas: HTMLCanvasElement): Pace {
+export function paceOf(canvas: HTMLCanvasElement): Pace {
   const floor = LEAN[getPostLevel()];
   let pace = paces.get(canvas);
   // A new setting starts over from it: what was learnt about the other levels no longer holds.
