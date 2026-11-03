@@ -248,12 +248,16 @@ export function drawForgedHoleGlow(ctx: CanvasRenderingContext2D, R: number, tim
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const breathe = 0.85 + 0.15 * Math.sin(time * 1.7);
-  const halo = ctx.createRadialGradient(0, 0, R * 1.1, 0, 0, R * 5);
-  halo.addColorStop(0, rgba(COLORS.sodium, 0.12 * breathe));
+  // Nothing inside the shadow: light added there would grey the black of the hole.
+  const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 6.5);
+  halo.addColorStop(0, rgba(COLORS.sodium, 0));
+  halo.addColorStop(1 / 6.5, rgba(COLORS.sodium, 0));
+  halo.addColorStop(1.25 / 6.5, rgba(COLORS.sodium, 0.3 * breathe));
+  halo.addColorStop(2 / 6.5, rgba(COLORS.sodium, 0.14 * breathe));
   halo.addColorStop(1, rgba(COLORS.sodium, 0));
   ctx.fillStyle = halo;
   ctx.beginPath();
-  ctx.arc(0, 0, R * 5, 0, Math.PI * 2);
+  ctx.arc(0, 0, R * 6.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }

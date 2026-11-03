@@ -6,7 +6,7 @@ import type { FrameInfo } from './painter';
 
 /**
  * What the forged look puts behind and over the field as a whole: a nebula and dust lanes baked into the backdrop, layers
- * of stars drifting at depths of their own, and over the finished field a bloom (the bright parts, blurred
+ * of stars drifting, and over the finished field a bloom (the bright parts, blurred
  * wide and added back), a vignette, a grade and a little film grain.
  */
 
@@ -17,6 +17,13 @@ export function forgedBegin(frame: FrameInfo): void {
   current = frame;
   started = performance.now();
   spared = 0;
+  afterBloom.length = 0;
+}
+
+/** Drawings of this frame to put back over the bloom (which would grey what must stay black), in the post pass's own pixels. */
+const afterBloom: ((ctx: CanvasRenderingContext2D) => void)[] = [];
+export function redrawAfterBloom(redraw: (ctx: CanvasRenderingContext2D) => void): void {
+  afterBloom.push(redraw);
 }
 
 /** Time (ms) in this frame that drawing the post pass would not have saved, such as the black hole's repaint; the pace leaves it out. */
@@ -152,10 +159,14 @@ function buildTiles(ctx: CanvasRenderingContext2D, dpr: number): Tiles {
   return { dpr, farA: stars(26, 0xf0a1), farB: stars(26, 0xf0b2), grain: ctx.createPattern(grain, 'repeat')! };
 }
 
-function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: FrameInfo, alpha: number, vx: number, vy: number, depth: number): void {
-  // The layer drifts, and slides against the field as the camera or the shake moves the field: the nearer, the more.
-  const ox = f.time * vx * f.dpr + (f.field.e - f.plate.x) * depth;
-  const oy = f.time * vy * f.dpr + (f.field.f - f.plate.y) * depth;
+/** How fast the stars drift (CSS pixels a second). */
+const DRIFT_X = 1;
+const DRIFT_Y = 0.45;
+
+function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: FrameInfo, alpha: number): void {
+  // Both layers drift the same way and stay put against the field: stars sliding at depths of their own read as separate sheets, most in the killcam.
+  const ox = f.time * DRIFT_X * f.dpr;
+  const oy = f.time * DRIFT_Y * f.dpr;
   const { x: px, y: py, w, h } = f.plate;
   ctx.globalAlpha = alpha;
   // Every copy of the tile that reaches the plate, starting a tile early for the specks that hang over its edge.
@@ -172,7 +183,7 @@ function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: Frame
   }
 }
 
-/** Stars that twinkle in turn and drift at two depths, over the plate. */
+/** Stars that twinkle in turn and drift together, over the plate. */
 export function forgedSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   if (!tiles || tiles.dpr !== f.dpr) tiles = buildTiles(ctx, f.dpr);
   ctx.save();
@@ -181,8 +192,8 @@ export function forgedSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   ctx.clip();
   ctx.globalCompositeOperation = 'lighter';
   const pulse = Math.sin(f.time * 1.3);
-  layer(ctx, tiles.farA, f, 0.55 + 0.4 * pulse, 1.2, 0.4, 0.2);
-  layer(ctx, tiles.farB, f, 0.55 - 0.4 * pulse, -0.8, 0.5, 0.2);
+  layer(ctx, tiles.farA, f, 0.55 + 0.4 * pulse);
+  layer(ctx, tiles.farB, f, 0.55 - 0.4 * pulse);
   ctx.restore();
 }
 
@@ -319,7 +330,10 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   const lean = steady ? 0 : pace.lean;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (lean < 2) bloom(ctx, f);
+  if (lean < 2) {
+    bloom(ctx, f);
+    for (const redraw of afterBloom) redraw(ctx);
+  }
   if (lean < 3) drawVignette(ctx, f);
   if (lean < 1) {
     grade(ctx, f);

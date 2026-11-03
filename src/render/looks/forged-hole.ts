@@ -1,6 +1,6 @@
 import { fbm } from '../noise';
 import { smoothstep } from '../planet-common';
-import { sparePace } from './forged-sky';
+import { redrawAfterBloom, sparePace } from './forged-sky';
 
 /**
  * The forged black hole, as light really bends round one: a thin accretion disk seen nearly edge on, its far side lifted
@@ -11,7 +11,7 @@ import { sparePace } from './forged-sky';
  * ray's path depends only on how near it passes (its impact parameter `b`), so the paths are traced once for a range of
  * `b` (`paths`) and every pixel looks its own up: where it crosses the disk's plane follows from its direction on the
  * screen alone. What a pixel sees (up to three crossings, front first, and whether it falls in) is baked per size; the
- * disk's streaks are painted from it again ten times a second as it turns. The time that takes is not counted in the post
+ * disk's streaks are painted from it again thirty times a second as it turns. The time that takes is not counted in the post
  * pass's pace (`sparePace`): stepping the post pass down would not save it.
  */
 
@@ -26,10 +26,12 @@ const DISK_OUT = 17;
 const ELEVATION = 0.13;
 /** A turn of the disk's inner edge takes this many seconds; further out, slower (Kepler). */
 const INNER_TURN = 5;
-/** How often the disk is painted again (s). */
-const REPAINT = 1 / 10;
+/** How often the disk is painted again (s): often enough that its turning does not step. */
+const REPAINT = 1 / 30;
 /** The image is at most this many pixels across; a bigger hole is this image scaled. */
 const MAX_SIZE = 640;
+/** The image is baked this many times wider than it is drawn. */
+const SUPERSAMPLE = 2;
 
 // ------------------------------------------------------------------ paths ----
 
@@ -117,9 +119,9 @@ function streakMap(): Float32Array {
     for (let i = 0; i < MAP_A; i++) {
       const a = (i / MAP_A) * Math.PI * 2;
       // On a circle, so the map wraps round the disk without a seam; the radius changes it fast, the angle slowly.
-      const n = fbm(Math.cos(a) * 1.6, Math.sin(a) * 1.6, r * 22, 61, 5);
-      const fine = fbm(Math.cos(a) * 5, Math.sin(a) * 5, r * 70, 67, 3);
-      streaks[j * MAP_A + i] = 0.62 + 0.6 * smoothstep(0.3, 0.75, n) * (0.75 + 0.5 * fine);
+      const n = fbm(Math.cos(a) * 1.6, Math.sin(a) * 1.6, r * 12, 61, 5);
+      const fine = fbm(Math.cos(a) * 5, Math.sin(a) * 5, r * 30, 67, 3);
+      streaks[j * MAP_A + i] = 0.88 + 0.28 * smoothstep(0.2, 0.8, n) * (0.85 + 0.3 * fine);
     }
   }
   return streaks;
@@ -154,7 +156,7 @@ interface Hole {
   count: number;
   pixel: Int32Array;
   colour: Float32Array;
-  row: Uint16Array;
+  row: Float32Array;
   angle: Float32Array;
   spin: Float32Array;
   /** How much of each pixel the shadow covers, 0 → 1: black behind the disk's light, which covers the stars only as far as it shines. */
@@ -179,7 +181,7 @@ function bake(size: number): Hole {
   // Up to three crossings a pixel are found, far fewer kept: baked into rooms of that size, then cut down to what was used.
   const pixel = new Int32Array(n * 3);
   const colour = new Float32Array(n * 9);
-  const row = new Uint16Array(n * 3);
+  const row = new Float32Array(n * 3);
   const angle = new Float32Array(n * 3);
   const spin = new Float32Array(n * 3);
   const shadow = new Float32Array(n);
@@ -211,7 +213,7 @@ function bake(size: number): Hole {
         const pz = r * (Math.cos(phi) * cos + Math.sin(phi) * ez);
         const t = (r - DISK_IN) / (DISK_OUT - DISK_IN);
         // Light: hottest just outside the inner edge, falling off outwards, both edges soft.
-        const light = 3.2 * (DISK_IN / r) ** 1.8 * smoothstep(DISK_IN * 0.9, DISK_IN * 1.15, r) * (1 - smoothstep(DISK_OUT * 0.7, DISK_OUT, r));
+        const light = 4.2 * (DISK_IN / r) ** 1.8 * smoothstep(DISK_IN * 0.9, DISK_IN * 1.15, r) * (1 - smoothstep(DISK_OUT * 0.7, DISK_OUT, r));
         // The side of the disk that comes towards the eye a little brighter.
         const psi = Math.atan2(pz, px);
         const beaming = 1 + 0.22 * Math.cos(psi) * cos * Math.sqrt(DISK_IN / r);
@@ -223,7 +225,7 @@ function bake(size: number): Hole {
         colour[h * 3] = cr * w;
         colour[h * 3 + 1] = cg * w;
         colour[h * 3 + 2] = cb * w;
-        row[h] = Math.min(MAP_R - 1, Math.max(0, Math.floor(t * MAP_R)));
+        row[h] = Math.min(MAP_R - 1.001, Math.max(0, t * MAP_R - 0.5));
         angle[h] = psi / (Math.PI * 2);
         spin[h] = (DISK_IN / r) ** 1.5 / INNER_TURN;
         seen *= 1 - opacity;
@@ -256,6 +258,8 @@ function bake(size: number): Hole {
 let sum = new Float32Array(0);
 
 /** The tone curve 1 − e^(−1.4 x), looked up: `TONE_STEPS` steps over the sums that are not yet white. */
+/** Light (summed, before toning) below this is not shown over the shadow. */
+const SHADOW_CUT = 0.18;
 const TONE_MAX = 6;
 const TONE_STEPS = 4096;
 const TONE = Float32Array.from({ length: TONE_STEPS + 1 }, (_, i) => 1 - Math.exp((-1.4 * i * TONE_MAX) / TONE_STEPS));
@@ -276,7 +280,17 @@ function paint(hole: Hole, time: number): void {
   for (let h = 0; h < hole.count; h++) {
     let turn = hole.angle[h] - hole.spin[h] * time;
     turn -= Math.floor(turn);
-    const s = map[hole.row[h] * MAP_A + Math.floor(turn * MAP_A)];
+    // The streak map between its cells, round the disk and across it, so the streaks do not step or crawl as they turn.
+    const fa = turn * MAP_A;
+    const a0 = Math.floor(fa);
+    const a1 = a0 + 1 === MAP_A ? 0 : a0 + 1;
+    const ta = fa - a0;
+    const fr = hole.row[h];
+    const r0 = Math.floor(fr);
+    const tr = fr - r0;
+    const m0 = r0 * MAP_A;
+    const m1 = m0 + MAP_A;
+    const s = (map[m0 + a0] * (1 - ta) + map[m0 + a1] * ta) * (1 - tr) + (map[m1 + a0] * (1 - ta) + map[m1 + a1] * ta) * tr;
     const i = hole.pixel[h] * 3;
     sum[i] += hole.colour[h * 3] * s;
     sum[i + 1] += hole.colour[h * 3 + 1] * s;
@@ -287,10 +301,12 @@ function paint(hole: Hole, time: number): void {
   for (let a = 0; a < active.length; a++) {
     const k = active[a];
     // The light, toned so the hottest runs to white; it covers the stars as far as it shines, the shadow under it wholly.
-    const r = toned(sum[k * 3]);
-    const g = toned(sum[k * 3 + 1]);
-    const b = toned(sum[k * 3 + 2]);
     const shadow = hole.shadow[k];
+    // Faint light inside the shadow is dropped: dim orange over black reads as mud, not as the disk.
+    const cut = SHADOW_CUT * shadow;
+    const r = toned(Math.max(0, sum[k * 3] - cut));
+    const g = toned(Math.max(0, sum[k * 3 + 1] - cut));
+    const b = toned(Math.max(0, sum[k * 3 + 2] - cut));
     const alpha = shadow + (1 - shadow) * Math.max(r, g, b);
     if (alpha <= 0.002) {
       data[k * 4 + 3] = 0;
@@ -310,7 +326,8 @@ export function drawLensedHole(ctx: CanvasRenderingContext2D, radius: number, ti
   const m = ctx.getTransform();
   const span = radius * HOLE_SPAN;
   // Baked in steps of half an octave and scaled between them, so a killcam zooming in does not bake it again every frame.
-  const wanted = span * Math.hypot(m.a, m.b);
+  // Twice as wide as it is drawn, then drawn smaller: the shadow's edge and the disk's rim come out smooth, not stepped.
+  const wanted = span * Math.hypot(m.a, m.b) * SUPERSAMPLE;
   const size = Math.min(MAX_SIZE, Math.max(32, Math.round(2 ** (Math.round(Math.log2(wanted) * 2) / 2))));
   let hole = holes.get(size);
   if (hole) {
@@ -325,5 +342,20 @@ export function drawLensedHole(ctx: CanvasRenderingContext2D, radius: number, ti
     hole.at = time;
     paint(hole, time);
   }
+  ctx.save();
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(hole.canvas, -span / 2, -span / 2, span, span);
+  ctx.restore();
+  // The bloom adds the disk's light over the shadow too, greying it: the shadow is drawn again over the bloom.
+  const canvas = hole.canvas;
+  redrawAfterBloom((post) => {
+    post.save();
+    post.setTransform(m);
+    post.beginPath();
+    post.arc(0, 0, radius * 0.99, 0, Math.PI * 2);
+    post.clip();
+    post.imageSmoothingQuality = 'high';
+    post.drawImage(canvas, -span / 2, -span / 2, span, span);
+    post.restore();
+  });
 }
