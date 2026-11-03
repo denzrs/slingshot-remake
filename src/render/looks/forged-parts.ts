@@ -31,7 +31,6 @@ import {
   drawLightPortalGlow,
   drawLightNebulaGlow,
   drawLightDefenseGlow,
-  drawLightHoleGlow,
   drawLightShip,
 } from './forged-light';
 import { renderLitPlanet } from './forged-lit-planet';
@@ -43,9 +42,8 @@ import { LOCATE_PING, type EffectStyle, type LookPainter, type Styles } from './
  * renders over them; the rest of Forged is in the `forged-*.ts` files beside it.
  */
 
-/** What the light changes in the engraved elements: light over the hole, the doorways and the defense's rims, missiles that add up. */
+/** What the light changes in the engraved elements: light over the doorways and the defense's rims, missiles that add up. */
 export const lightStyles: Styles = {
-  hole: { glow: drawLightHoleGlow },
   portal: {
     paint: (ctx, rx, ry, radius, color, time, alpha, phase) => {
       paintPortal(ctx, rx, ry, radius, color, time, alpha, phase);

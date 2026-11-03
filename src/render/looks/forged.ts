@@ -10,7 +10,8 @@ import { drawForgedNebula, drawForgedStormCloud, paintForgedPortal } from './for
 import { drawForgedLiveTrail, drawForgedPlasmaShot, drawForgedShot, drawForgedSun } from './forged-shots';
 import { forgedBegin, forgedFrame, forgedPost, forgedSky, paintNebula } from './forged-sky';
 import { lightParts, lightStyles } from './forged-parts';
-import { drawLightHoleGlow, drawLightPickup, drawLightShip } from './forged-light';
+import { drawLightPickup, drawLightShip } from './forged-light';
+import { drawLensedHole } from './forged-hole';
 import type { Styles } from './painter';
 
 /**
@@ -229,17 +230,8 @@ export function drawForgedTurret(ctx: CanvasRenderingContext2D, color: string, o
   return true;
 }
 
-/** The black hole's image, horizon at the middle, covers this many horizon radii across. */
-const HOLE_SPAN = 8.2;
-
-/** The rendered disk and horizon of a black hole of `radius`, centred, in the disk's own tilt (the caller has applied it). False while the image is not there yet. */
-export function drawForgedHole(ctx: CanvasRenderingContext2D, radius: number): boolean {
-  const img = image('hole');
-  if (!img) return false;
-  const span = radius * HOLE_SPAN;
-  ctx.drawImage(img, -span / 2, -span / 2, span, span);
-  return true;
-}
+/** The black hole, traced as light bends round it and played as a loop (`forged-hole.ts`), in the disk's own tilt (the caller has applied it). False until the image has loaded. */
+export const drawForgedHole = drawLensedHole;
 
 /** The power-up coin, drawn over the plate under its ring: the rendered metal, about as wide as the ring. */
 export function forgedCoin(): HTMLImageElement | null {
@@ -248,56 +240,22 @@ export function forgedCoin(): HTMLImageElement | null {
 /** The coin's image is this many times the coin across, a little wider for its bevel. */
 export const COIN_SPAN = 34.5;
 
-/**
- * Light over the rendered hole, in the disk's own frame: the glow, a halo that breathes, hot spots racing round the
- * disk (brighter on the side that comes towards us), the far side of the disk bent over the top and a faint echo of it below.
- */
+/** A warm haze round the hole, breathing a little: the disk's light scattered round it. */
 export function drawForgedHoleGlow(ctx: CanvasRenderingContext2D, R: number, time: number): void {
-  drawLightHoleGlow(ctx, R, time);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const breathe = 0.85 + 0.15 * Math.sin(time * 1.7);
-  const halo = ctx.createRadialGradient(0, 0, R * 1.1, 0, 0, R * 6);
-  halo.addColorStop(0, rgba(COLORS.sodium, 0.16 * breathe));
+  // Nothing inside the shadow: light added there would grey the black of the hole.
+  const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 6.5);
+  halo.addColorStop(0, rgba(COLORS.sodium, 0));
+  halo.addColorStop(1 / 6.5, rgba(COLORS.sodium, 0));
+  halo.addColorStop(1.25 / 6.5, rgba(COLORS.sodium, 0.3 * breathe));
+  halo.addColorStop(2 / 6.5, rgba(COLORS.sodium, 0.14 * breathe));
   halo.addColorStop(1, rgba(COLORS.sodium, 0));
   ctx.fillStyle = halo;
   ctx.beginPath();
-  ctx.arc(0, 0, R * 6, 0, Math.PI * 2);
+  ctx.arc(0, 0, R * 6.5, 0, Math.PI * 2);
   ctx.fill();
-
-  // The far side of the disk, lensed over the top, and its fainter echo under the horizon.
-  ctx.lineCap = 'round';
-  for (const [ry, from, to, alpha] of [[1.42, 1.08, 1.92, 0.3], [1.3, 0.12, 0.88, 0.1]] as const) {
-    ctx.strokeStyle = rgba(COLORS.sodium, alpha * breathe);
-    ctx.lineWidth = R * 0.13;
-    ctx.beginPath();
-    ctx.ellipse(0, from < 1 ? R * 0.08 : -R * 0.08, R * 1.55, R * ry, 0, Math.PI * from, Math.PI * to);
-    ctx.stroke();
-    ctx.strokeStyle = rgba(COLORS.bone, alpha * 0.8);
-    ctx.lineWidth = Math.max(0.8, R * 0.025);
-    ctx.stroke();
-  }
-
-  // Hot spots on three orbits, the inner ones quicker, each with a short tail.
-  for (let i = 0; i < 3; i++) {
-    const rx = R * (1.9 + 0.75 * i);
-    const ry = rx * 0.2;
-    const speed = 1.5 / (0.6 + i * 0.5);
-    for (let k = 0; k < 7; k++) {
-      const a = time * speed + i * 2.1 - k * 0.07;
-      const x = Math.cos(a) * rx;
-      const y = Math.sin(a) * ry;
-      // Behind the horizon the spot is hidden.
-      if (y < 0 && Math.abs(x) < R * 1.1) continue;
-      const toward = 0.55 + 0.45 * -Math.cos(a);
-      const r = R * (0.34 - k * 0.035);
-      const spot = ctx.createRadialGradient(x, y, 0, x, y, r);
-      spot.addColorStop(0, rgba(i === 0 ? COLORS.bone : COLORS.sodium, 0.7 * toward * (1 - k / 7)));
-      spot.addColorStop(1, rgba(COLORS.sodium, 0));
-      ctx.fillStyle = spot;
-      ctx.fillRect(x - r, y - r, r * 2, r * 2);
-    }
-  }
   ctx.restore();
 }
 
@@ -313,6 +271,8 @@ export const forged = engraved('forged', forgedStyles, {
   ...lightParts,
   note: 'Blender renders with light over them: turning clouds and rings, fireballs and tumbling shrapnel, comet shots, a sun with rays, a deep sky, bloom.',
   postLevels: true,
+  // The halo and the disk's light already say where the hole is; a red dashed circle over them only muddies it.
+  dangerRing: () => {},
   planet: renderForgedPlanet,
   sun: drawForgedSun,
   nebula: drawForgedNebula,

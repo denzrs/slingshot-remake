@@ -34,6 +34,8 @@ export interface LookPainter {
   /** What a supernova leaves, `age` seconds after it. */
   neutronStar(ctx: CanvasRenderingContext2D, star: Planet, time: number, age: number, alpha: number): void;
   blackHole(ctx: CanvasRenderingContext2D, hole: BlackHole, time: number): void;
+  /** Where the horizon will be after the next collapse (`radius`): the zone everyone must stay out of. */
+  dangerRing(ctx: CanvasRenderingContext2D, hole: BlackHole, radius: number, time: number): void;
   /** Both portals of a wormhole and the thread between them; `eaten` (0 → 1) is how far a black hole has taken it. */
   wormhole(ctx: CanvasRenderingContext2D, ax: number, ay: number, bx: number, by: number, radius: number, time: number, id: number, eaten: number): void;
   /** One portal, facing `facing`. */

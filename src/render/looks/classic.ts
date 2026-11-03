@@ -2,7 +2,7 @@ import { AIM, COLORS, HORIZON, PHYSICS, SUDDEN_DEATH } from '../../sim/config';
 import { aimDirection, isWormholeJump, type Wormhole } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
 import { drawPlotterFrame } from '../backdrop';
-import { drawBlackHole } from '../blackhole';
+import { drawBlackHole, drawDangerRing } from '../blackhole';
 import { rgba } from '../color';
 import { drawDefense, drawInterception } from '../defense';
 import { easeOut, NOVA_LIFE, type Nova } from '../effects';
@@ -32,6 +32,7 @@ export function engraved(id: Look, styles: Styles = {}, parts: Partial<LookPaint
     sun: drawSun,
     neutronStar: drawNeutronStar,
     blackHole: (ctx, hole, time) => drawBlackHole(ctx, hole, time, styles.hole),
+    dangerRing: drawDangerRing,
     wormhole: (ctx, ax, ay, bx, by, radius, time, wormholeId, eaten) => drawWormhole(ctx, ax, ay, bx, by, radius, time, wormholeId, eaten, portal),
     portal: (ctx, x, y, facing, radius, color, time, alpha, phase, size) => drawPortal(ctx, x, y, facing, radius, color, time, alpha, phase, size, portal),
     nebula: drawNebula,
