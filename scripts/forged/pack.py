@@ -17,7 +17,7 @@ FILES = {
     'turret-barrel': (None, 90),
     'turret-barrel-mask': (None, 90),
     'coin': (None, 90),
-    'hole': (None, 78),
+    'hole': (None, 70),
     'tex-rock': ((512, 256), 85),
     'tex-gas': ((512, 256), 85),
     'tex-ice': ((512, 256), 85),

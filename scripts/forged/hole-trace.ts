@@ -160,6 +160,10 @@ export interface Hole {
   spin: Float32Array;
   /** How much of each pixel the shadow covers, 0 → 1: black behind the disk's light, which covers the stars only as far as it shines. */
   shadow: Float32Array;
+  /** How deep in the shadow each pixel is, 0 (at its edge) → 1: the faint light that is dropped over the shadow is dropped by this much, so the disk does not change where the shadow begins. */
+  depth: Float32Array;
+  /** The thin photon ring's light at each pixel: a clean line just outside the shadow, where the traced paths leave a dim, dashed gap. */
+  ring: Float32Array;
   /** The pixels that have a crossing or any shadow: the only ones painted. */
   active: Int32Array;
 }
@@ -177,6 +181,8 @@ export function bake(size: number): Hole {
   const angle = new Float32Array(n * 3);
   const spin = new Float32Array(n * 3);
   const shadow = new Float32Array(n);
+  const depth = new Float32Array(n);
+  const ring = new Float32Array(n);
   const active: number[] = [];
   let count = 0;
   const half = size / 2;
@@ -225,7 +231,11 @@ export function bake(size: number): Hole {
       // What falls in (every path nearer than the shadow's edge) is black, its edge softened over a pixel.
       const dark = 1 - smoothstep(SHADOW - per * 0.7, SHADOW + per * 0.7, b);
       shadow[y * size + x] = dark;
-      if (count > before || dark > 0) active.push(y * size + x);
+      depth[y * size + x] = 1 - smoothstep(SHADOW * (1 - DEPTH), SHADOW, b);
+      const off = (b - SHADOW - per * RING_AT) / (per * RING_WIDTH);
+      // The ring is behind the disk's near side, which hides it as far as it is opaque.
+      ring[y * size + x] = Math.exp(-off * off) * seen;
+      if (count > before || dark > 0 || ring[y * size + x] > 0.01) active.push(y * size + x);
     }
   }
   return {
@@ -237,12 +247,20 @@ export function bake(size: number): Hole {
     angle: angle.slice(0, count),
     spin: spin.slice(0, count),
     shadow,
+    depth,
+    ring,
     active: Int32Array.from(active),
   };
 }
 
-/** Light (summed, before toning) below this is not shown over the shadow. */
+/** Light (summed, before toning) below this is not shown over the shadow, fully at `DEPTH` of the shadow's radius in. */
 const SHADOW_CUT = 0.18;
+const DEPTH = 0.2;
+/** The photon ring: this many pixels outside the shadow's edge, this wide (pixels), this bright (summed light, white-warm). */
+const RING_AT = 1.6;
+const RING_WIDTH = 1.5;
+const RING_LIGHT = 1.9;
+const RING_COLOUR = [1, 0.93, 0.8];
 
 /**
  * The disk as it has turned by `time`: each crossing's streak, lit, summed and toned so the hottest parts run to white.
@@ -277,10 +295,11 @@ export function paint(hole: Hole, time: number, loop: number): Uint8ClampedArray
   for (const k of hole.active) {
     const shadow = hole.shadow[k];
     // Faint light inside the shadow is dropped: dim orange over black reads as mud, not as the disk.
-    const cut = SHADOW_CUT * shadow;
-    const r = tone(Math.max(0, sum[k * 3] - cut));
-    const g = tone(Math.max(0, sum[k * 3 + 1] - cut));
-    const b = tone(Math.max(0, sum[k * 3 + 2] - cut));
+    const cut = SHADOW_CUT * hole.depth[k];
+    const ring = RING_LIGHT * hole.ring[k];
+    const r = tone(Math.max(0, sum[k * 3] - cut) + ring * RING_COLOUR[0]);
+    const g = tone(Math.max(0, sum[k * 3 + 1] - cut) + ring * RING_COLOUR[1]);
+    const b = tone(Math.max(0, sum[k * 3 + 2] - cut) + ring * RING_COLOUR[2]);
     // It covers the stars as far as it shines, the shadow under it wholly.
     const alpha = shadow + (1 - shadow) * Math.max(r, g, b);
     if (alpha <= 0.002) continue;

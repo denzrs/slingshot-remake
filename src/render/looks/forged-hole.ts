@@ -1,5 +1,5 @@
 import { image } from './forged-assets';
-import { COLUMNS, FRAME, FRAMES, HOLE_SPAN, LOOP } from './forged-hole-sheet';
+import { BAND_TOP, COLUMNS, FRAME, FRAME_H, FRAMES, HOLE_SPAN, LOOP } from './forged-hole-sheet';
 import { redrawAfterBloom } from './forged-sky';
 
 /**
@@ -16,17 +16,18 @@ function drawMixed(ctx: CanvasRenderingContext2D, sheet: HTMLImageElement, time:
   const first = Math.floor(at) % FRAMES;
   const next = (first + 1) % FRAMES;
   const mix = at - Math.floor(at);
-  scratch ??= Object.assign(document.createElement('canvas'), { width: FRAME, height: FRAME });
+  scratch ??= Object.assign(document.createElement('canvas'), { width: FRAME, height: FRAME_H });
   const s = scratch.getContext('2d')!;
   // The frames' premultiplied light added by their shares: a true mix, which keeps the shadow's soft edge from thickening.
   s.globalCompositeOperation = 'copy';
   s.globalAlpha = 1 - mix;
-  s.drawImage(sheet, (first % COLUMNS) * FRAME, Math.floor(first / COLUMNS) * FRAME, FRAME, FRAME, 0, 0, FRAME, FRAME);
+  s.drawImage(sheet, (first % COLUMNS) * FRAME, Math.floor(first / COLUMNS) * FRAME_H, FRAME, FRAME_H, 0, 0, FRAME, FRAME_H);
   s.globalCompositeOperation = 'lighter';
   s.globalAlpha = mix;
-  s.drawImage(sheet, (next % COLUMNS) * FRAME, Math.floor(next / COLUMNS) * FRAME, FRAME, FRAME, 0, 0, FRAME, FRAME);
+  s.drawImage(sheet, (next % COLUMNS) * FRAME, Math.floor(next / COLUMNS) * FRAME_H, FRAME, FRAME_H, 0, 0, FRAME, FRAME_H);
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(scratch, -span / 2, -span / 2, span, span);
+  const k = span / FRAME;
+  ctx.drawImage(scratch, -span / 2, -span / 2 + BAND_TOP * k, span, FRAME_H * k);
 }
 
 /** Draws the hole of `radius` (field units) centred, in the frame the caller has set (the disk's tilt applied). False until the sheet has loaded. */

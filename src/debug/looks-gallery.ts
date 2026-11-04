@@ -205,6 +205,25 @@ const SCENES: Scene[] = [
     },
   },
   {
+    title: 'Schwarze Löcher in allen Größen',
+    sub: 'Vom Power-up-Loch (18) bis zum späten Ereignishorizont (110): die Scheibe darf beim Vergrößern nicht weich werden',
+    build: () => {
+      const match = aiming('horizon', 5);
+      match.world.planets.length = 0;
+      match.world.holes.length = 0;
+      const sizes: [number, number, number][] = [
+        [18, 110, 190],
+        [30, 300, 190],
+        [48, 560, 190],
+        [72, 930, 190],
+        [110, 360, 610],
+      ];
+      for (const [radius, x, y] of sizes) match.world.holes.push({ x, y, radius, mass: 1 });
+      for (const ship of match.world.ships) ship.alive = false;
+      return match;
+    },
+  },
+  {
     title: 'Power-ups',
     sub: 'Alle zwölf auf dem Feld, dazu ein Schild und ein gehaltenes Symbol',
     build: () => {
