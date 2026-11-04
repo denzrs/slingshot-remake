@@ -1,4 +1,4 @@
-import { AIM, HORIZON, SCORING, COLORS, WORMHOLE } from '../sim/config';
+import { AIM, HORIZON, PHYSICS, SCORING, COLORS, WORMHOLE } from '../sim/config';
 import { t } from '../platform/i18n';
 import type { ShotRules, StyleKind, World } from '../sim/physics';
 import { POWER_UP, type Pickup } from '../sim/powerups';
@@ -6,7 +6,7 @@ import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
 import { scoreHorizonKill } from '../sim/scoring';
 import { Volley, type VolleyShot, type VolleySnapshot } from '../sim/volley';
-import { Match, type MarkState, type Phase, type RoundTitle, type SkipVote } from './match';
+import { infallAt, Match, type Falling, type MarkState, type Phase, type RoundTitle, type SkipVote } from './match';
 import type { CrowdSeat } from './crowd';
 import type { OracleSnapshot } from './oracle';
 import type { KillcamSnapshot } from './killcam';
@@ -231,6 +231,30 @@ export class HorizonMatch extends Match {
     return this.collapse?.wormholes.some((w) => w.id === id) ? this.collapseT : 0;
   }
 
+  falling(): Falling[] {
+    const c = this.collapse;
+    if (!c) return [];
+    const t = this.collapseT;
+    const list: Falling[] = [];
+    const add = (key: string, at: { x: number; y: number }, d: Drift, radius: number, color: string): void => {
+      list.push({ key, x: at.x, y: at.y, fromX: d.fromX, fromY: d.fromY, toX: d.toX, toY: d.toY, radius, color, t });
+    };
+    // A planet that cannot be seen falls unseen.
+    if (this.planetsVisible) {
+      for (const p of this.world.planets) {
+        const d = c.planets.get(p.seed);
+        if (d?.lost) add(`planet${p.seed}`, p, d, p.radius, p.tint);
+      }
+    }
+    for (const [id, d] of c.ships) if (d.lost) add(`ship${id}`, this.world.ships[id], d, PHYSICS.SHIP_RADIUS, this.players[id].color);
+    return list;
+  }
+
+  /** Dev only: the hole grows now, as after a volley. */
+  debugCollapse(): void {
+    this.startCollapse();
+  }
+
   private get collapseT(): number {
     return Math.min(1, this.phaseTime / HORIZON.COLLAPSE_TIME);
   }
@@ -416,7 +440,9 @@ export class HorizonMatch extends Match {
     const ships = new Map<number, Drift>();
     for (const p of this.alive) {
       const s = this.world.ships[p.id];
-      ships.set(p.id, pull(s.x, s.y, 1, SWALLOW_MARGIN));
+      const drift = pull(s.x, s.y, 1, SWALLOW_MARGIN);
+      if (drift.lost) this.emit({ type: 'devour', x: s.x, y: s.y, toX: hole.x, toY: hole.y, color: p.color, vx: 0, vy: 0 });
+      ships.set(p.id, drift);
     }
     // Pickups drift in like planets (a little faster), and the hole eats those that come too close.
     const pickups = new Map<number, Drift>();
@@ -490,7 +516,6 @@ export class HorizonMatch extends Match {
       if (!d.lost) continue;
       this.players[id].alive = false;
       this.world.ships[id].alive = false;
-      this.emit({ type: 'devour', x: hole.x, y: hole.y, toX: hole.x, toY: hole.y, color: this.players[id].color, vx: 0, vy: 0 });
       this.recordKill({ killer: null, victim: id, points: 0, self: false, friendly: false, source: 'horizon', combo: [], multiplier: 1, shots: 0, power: 0, at: this.clock });
     }
     // Waiting for an opponent whose connection dropped is no volley survived.
@@ -506,9 +531,12 @@ export class HorizonMatch extends Match {
   }
 }
 
-/** Ease towards the drift target; things falling into the hole accelerate (quadratic). */
+/** Ease towards the drift target; things falling into the hole spiral in. */
 function move(o: { x: number; y: number }, d: Drift, e: number, t: number): void {
-  const k = d.lost ? t * t : e;
-  o.x = d.fromX + (d.toX - d.fromX) * k;
-  o.y = d.fromY + (d.toY - d.fromY) * k;
+  if (d.lost) {
+    Object.assign(o, infallAt(d.fromX, d.fromY, d.toX, d.toY, t));
+    return;
+  }
+  o.x = d.fromX + (d.toX - d.fromX) * e;
+  o.y = d.fromY + (d.toY - d.fromY) * e;
 }

@@ -12,6 +12,8 @@ import {
   renderHoloPlanet,
   drawHoloSun,
   drawHoloBlackHole,
+  drawHoloHoleFlare,
+  drawHoloInfall,
   drawHoloPickup,
   drawHoloSelection,
   drawHoloShot,
@@ -106,6 +108,8 @@ const holoParts: Partial<LookPainter> = {
   border: paintHoloBorder,
   sky: holoSky,
   post: holoPost,
+  holeFlare: (ctx, hole, strength, color, time) => drawHoloHoleFlare(ctx, hole, strength, color, time),
+  infall: (ctx, stream, time) => drawHoloInfall(ctx, stream, time),
   trail: (ctx, points, wormholes, color, rank, fade) => {
     ctx.strokeStyle = rgba(color, (rank === 0 ? 0.75 : rank === 1 ? 0.38 : 0.2) * fade);
     ctx.lineWidth = rank === 0 ? 1 : 0.8;

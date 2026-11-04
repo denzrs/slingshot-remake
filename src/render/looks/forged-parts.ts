@@ -1,4 +1,6 @@
 import { COLORS } from '../../sim/config';
+import { TILT } from '../blackhole';
+import { streamPath, strokeTapered } from '../infall';
 import { drawNebula } from '../nebula';
 import { rgba } from '../color';
 import { strokePolyline } from '../polyline';
@@ -123,6 +125,48 @@ export const lightParts: Partial<LookPainter> = {
     strokePolyline(ctx, points, wormholes);
     ctx.restore();
     drawGlowingLiveTrail(ctx, points, wormholes, color, plasma, time);
+  },
+  holeFlare: (ctx, hole, strength, color) => {
+    const R = hole.radius;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.translate(hole.x, hole.y);
+    const halo = ctx.createRadialGradient(0, 0, R, 0, 0, R * 4.5);
+    halo.addColorStop(0, rgba(COLORS.bone, 0.2 * strength));
+    halo.addColorStop(0.25, rgba(color, 0.18 * strength));
+    halo.addColorStop(1, rgba(color, 0));
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 4.5, 0, Math.PI * 2);
+    ctx.arc(0, 0, R, 0, Math.PI * 2, true);
+    ctx.fill();
+    // The disk itself, flattened as it lies.
+    ctx.rotate(TILT);
+    ctx.scale(1, 0.2);
+    const disk = ctx.createRadialGradient(0, 0, R * 1.2, 0, 0, R * 5.5);
+    disk.addColorStop(0, rgba(COLORS.sodium, 0.35 * strength));
+    disk.addColorStop(1, rgba(COLORS.sodium, 0));
+    ctx.fillStyle = disk;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  },
+  infall: (ctx, stream, time) => {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    strokeTapered(ctx, stream, 2.4, stream.color, 0.14);
+    strokeTapered(ctx, stream, 1, stream.color, 0.5);
+    strokeTapered(ctx, stream, 0.35, COLORS.sodium, 0.8);
+    // Knots of brighter matter running down it.
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(1, stream.width * 0.3);
+    ctx.strokeStyle = rgba(COLORS.bone, 0.7 * stream.strength);
+    ctx.setLineDash([3, 22]);
+    ctx.lineDashOffset = -time * 170;
+    streamPath(ctx, stream);
+    ctx.stroke();
+    ctx.restore();
   },
   shot: (ctx, x, y, color, trail) => drawLightShot(ctx, x, y, color, trail),
   plasmaShot: (ctx, x, y, time) => drawEngravedPlasmaShot(ctx, x, y, time, true),

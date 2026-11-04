@@ -13,6 +13,7 @@ import { rgba } from './color';
 import { renderContours } from './contours';
 import type { Effects } from './effects';
 import { Hud } from './hud';
+import { infallStream } from './infall';
 import type { OracleTap } from './oracle';
 import type { SkipAnswer } from './skip-vote';
 import { getLook, type Look } from '../data/look';
@@ -219,7 +220,7 @@ export class Renderer {
       ctx.clip();
     }
     ctx.setTransform(a, b, c, d, e + shakeX * P, f + shakeY * P);
-    this.drawWorld(match, scene, base);
+    this.drawWorld(match, scene, base, effects);
     this.drawTrails(match, scene, base);
     this.drawSpotlight(match, scene);
     this.drawShips(match, scene);
@@ -323,7 +324,7 @@ export class Renderer {
     return this.time - first;
   }
 
-  private drawWorld(match: Match, scene: Scene, ps: number): void {
+  private drawWorld(match: Match, scene: Scene, ps: number, effects: Effects): void {
     const { ctx } = this;
     const world = scene.world;
     const primary = world.holes[0];
@@ -364,6 +365,8 @@ export class Renderer {
       this.spritePs = ps;
       this.spriteLook = this.painter.id;
     }
+    // Under the planets, which it streams from, and under the hole, which takes the end of it.
+    if (!scene.camera) for (const f of match.falling()) this.painter.infall(ctx, infallStream(f), this.time);
     const sun = match.mode === 'solar' ? world.planets.find((q) => q.sun) : undefined;
     for (const p of showPlanets ? world.planets : []) {
       if (p.sun) continue;
@@ -378,9 +381,13 @@ export class Renderer {
         // Spaghettification: stretched towards the hole, squeezed across, shrinking.
         ctx.save();
         ctx.translate(p.x, p.y);
-        ctx.rotate(Math.atan2(primary.y - p.y, primary.x - p.x));
+        const toHole = Math.atan2(primary.y - p.y, primary.x - p.x);
+        ctx.rotate(toHole);
         const shrink = 1 - eaten * 0.85;
         ctx.scale((1 + eaten * 1.8) * shrink, (1 - eaten * 0.6) * shrink);
+        // Only the shape stretches: the light stays where it was painted.
+        ctx.rotate(-toHole);
+        uprightFrame(ctx);
         sprite.draw(ctx, 0, 0, ps, this.time);
         ctx.restore();
       } else if (sun && this.painter.planetsTurnToSun) {
@@ -409,7 +416,13 @@ export class Renderer {
       if (p.neutron) this.painter.neutronStar(ctx, p, this.time, this.remnantAge(p.seed), alpha);
       else this.painter.sun(ctx, p, this.time, alpha, stormFlare(this.stormAge(world)));
     }
-    for (const hole of world.holes) this.painter.blackHole(ctx, hole, this.time);
+    for (const hole of world.holes) {
+      // The hole the flare belongs to gulps: it is drawn a little bigger for a moment, its horizon in the world unchanged.
+      const feed = hole === primary && !scene.camera ? effects.holeFeed : 0;
+      const drawn = feed > 0 ? { ...hole, radius: hole.radius * (1 + 0.08 * feed * feed) } : hole;
+      this.painter.blackHole(ctx, drawn, this.time);
+      if (feed > 0) this.painter.holeFlare(ctx, drawn, feed, effects.holeFeedColor, this.time);
+    }
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) this.painter.wormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
     const next = match.nextHoleRadius;

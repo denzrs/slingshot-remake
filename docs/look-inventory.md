@@ -31,7 +31,7 @@ Columns: **Proto** = shown in the prototype gallery (yes / partly / no). **Forge
 | 2.2 | Planet, style **gas** | same | refined: bands in opposite directions | R | yes | |
 | 2.3 | Planet, style **ice** | same | cracks, craters | R | **no** | Missing from the prototype. |
 | 2.4 | Planet lighting in the Solar System | `renderer.ts:343` | classic turns the sprite towards the sun, refined does not | R (light fixed in the render, or rotatable) | no | Decided: Simple, Luminous and Forged turn the planet's lit side towards the sun it orbits (`planetsTurnToSun` in the painter); Holo is a wireframe and has no lit side. |
-| 2.5 | Planet gets devoured (stretched towards the hole) | `renderer.ts:331` | transform, no graphic of its own | – | – | Must work with the new sprites. |
+| 2.5 | Planet gets devoured (spirals in, stretched towards the hole, its light staying put) | `renderer.ts` | transform, no graphic of its own | – | – | Must work with the new sprites. |
 | 2.6 | Hidden planets: fade in after the round | `renderer.ts:299` | alpha | – | – | Check only. |
 | 2.7 | **Sun** (Solar System): plasma surface, chromosphere, magnetic loops, corona rays, glow | `sun.ts` `drawSun` | same | R+C | partly | The prototype shows only the calm sun. |
 | 2.8 | Sun in a **flare** (storm breaks out: glow, loops, white) | `sun.ts` `flare` | same | C | **no** | State 0 to 1. |
@@ -116,7 +116,7 @@ Columns: **Proto** = shown in the prototype gallery (yes / partly / no). **Forge
 | 6.8 | **Antigravity** on/off (`antigravity`) | `effects.ts` | C | **no** | |
 | 6.9 | **Defense fires** (`defenseFire`), **intercepted** (`intercepted`), **missile lost** (`missileLost`) | `effects.ts` | C | **no** | |
 | 6.10 | **Splitter** (`split`) | `effects.ts` | C | **no** | |
-| 6.11 | **Devouring**: matter spirals into the hole (`devour`), **horizon swells** (`collapse`) | `effects.ts` | C | **no** | |
+| 6.11 | **Devouring**: matter spirals into the hole (`devour`, `infall`), **horizon swells** (`collapse`), the hole gulps and flares as something crosses it (`holeFlare`) | `effects.ts`, `infall.ts` | C | **no** | The stream along the fall is `infall` in each look. |
 | 6.12 | **Supernova**: core, two shockwaves, white-out, quake, ships and planets break up | `effects.ts` (`Nova`) | C | **no** | Its own hull drawing (3.16). |
 | 6.13 | **Planet-killer laser** (`laser`) and **planet shatters** (`shatter`) | `effects.ts` | C | **no** | |
 | 6.14 | **Nebula wisps** (`nebulaDrag`) | `effects.ts` | C | **no** | |

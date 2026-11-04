@@ -12,6 +12,7 @@ import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
 import { ClipRecorder } from './platform/clip';
 import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
 import { createUiPreview, UI_PREVIEWS, type UiPreview } from './debug/devPreview';
+import { InfallDemo } from './debug/infallDemo';
 import { SupernovaDemo } from './debug/supernovaDemo';
 import { recordRun } from './data/dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, type Match } from './game';
@@ -89,6 +90,8 @@ const uiPreview: UiPreview | null = import.meta.env.DEV && (UI_PREVIEWS as reado
   : null;
 /** `?preview=supernova` (dev only): a Solar System's sudden death on a loop, to look at without playing to it. */
 const supernovaDemo = import.meta.env.DEV && requestedPreview === 'supernova' ? new SupernovaDemo() : null;
+/** `?preview=infall` (dev only): planets and a ship falling into the black hole on a loop. */
+const infallDemo = import.meta.env.DEV && requestedPreview === 'infall' ? new InfallDemo() : null;
 
 const active = (): Match => (screen === 'play' && match ? match : attract);
 
@@ -906,6 +909,8 @@ function frame(now: number): void {
     if (!net || net.isHost) m.update(dt);
     if (supernovaDemo && m === supernovaDemo.match) supernovaDemo.tick(dt);
     effects.update(dt, m.world);
+    effects.infall(m.falling(), m.world.holes[0], dt);
+    if (infallDemo && m === infallDemo.match) infallDemo.tick(dt);
     // A shot flying through a nebula sheds wisps of gas, so its slowing down shows.
     if (m.world.nebulae.length) {
       for (const vs of m.scene().volley?.shots ?? []) {
@@ -966,8 +971,8 @@ async function boot(): Promise<void> {
   // Canvas text needs the web fonts loaded before the first draw.
   const fonts = [`800 32px ${FONTS.display}`, `400 16px ${FONTS.body}`, `700 16px ${FONTS.body}`, `400 16px ${FONTS.mono}`, `700 16px ${FONTS.mono}`];
   await Promise.race([Promise.all(fonts.map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 1500))]);
-  if (supernovaDemo) {
-    match = supernovaDemo.match;
+  if (supernovaDemo || infallDemo) {
+    match = (supernovaDemo ?? infallDemo)!.match;
     screen = 'play';
     wire(match);
     effects.clear();

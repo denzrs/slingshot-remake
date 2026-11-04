@@ -291,6 +291,8 @@ export const HORIZON = {
   SIMULTANEOUS_CLOCK: 15,
   SHOT_TIME: 10,
   COLLAPSE_TIME: 1.5,
+  /** How far (radians) what the hole eats turns round it on the way in, the way the disk turns. */
+  INFALL_TURN: 2.6,
 } as const;
 
 /** Killcams pause on the finished flight before cutting to the replay. */

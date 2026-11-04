@@ -11,7 +11,7 @@ const LENS_STEPS = [
   [0.4, 1.9],
 ] as const;
 
-const TILT = -0.2;
+export const TILT = -0.2;
 
 /**
  * Gravitational lensing: re-draws the static backdrop around the hole in nested discs,
@@ -120,6 +120,27 @@ function drawDisk(ctx: CanvasRenderingContext2D, R: number, time: number, from: 
   }
   ctx.setLineDash([]);
   ctx.lineDashOffset = 0;
+}
+
+/** The hole answering what it swallowed: light round the horizon and along the disk, in that thing's colour. */
+export function drawHoleFlare(ctx: CanvasRenderingContext2D, hole: BlackHole, strength: number, color: string): void {
+  const R = hole.radius;
+  ctx.save();
+  ctx.translate(hole.x, hole.y);
+  const halo = ctx.createRadialGradient(0, 0, R, 0, 0, R * 3.4);
+  halo.addColorStop(0, rgba(color, 0.5 * strength));
+  halo.addColorStop(1, rgba(color, 0));
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(0, 0, R * 3.4, 0, Math.PI * 2);
+  ctx.arc(0, 0, R, 0, Math.PI * 2, true);
+  ctx.fill();
+  ctx.strokeStyle = rgba(COLORS.bone, strength);
+  ctx.lineWidth = Math.max(1, R * 0.1);
+  ctx.beginPath();
+  ctx.arc(0, 0, R * 1.08, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 /** Where the horizon will be after the next collapse — the "zone" everyone must stay out of. */
