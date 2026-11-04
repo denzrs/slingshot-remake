@@ -20,6 +20,8 @@ export const SETTINGS = { language: 'en', menuBackground: false, statsTicker: fa
 export type Target = string | { sel: string; text?: string; nth?: number };
 export type Step =
   | { click: Target }
+  /** Phones show one rules/settings category; desktop keeps the overview. */
+  | { category: string }
   /** Types into the first visible field that matches. */
   | { type: { sel: string; text: string } }
   | { key: string }
@@ -54,7 +56,7 @@ const PRESETS = [0, 1, 2, 3];
 const badge: Target = { sel: '.item__status-reset' };
 const keep: Target = { sel: '.item__status-save' };
 /** A rule changed on the rules page, which is then left. */
-const tweak: Step[] = [click('Adjust rules'), click('Hidden aim'), click('Done')];
+const tweak: Step[] = [click('Adjust rules'), { category: 'rules-twists' }, click('Hidden aim'), click('Done')];
 const NAME: Step = { type: { sel: 'input[type=text], input:not([type])', text: 'My test rule' } };
 /** What the player does with the cards: change a preset, go back, keep the change, restore the original; then make one of their own, change it and delete it. */
 const handling = (open: Step[], card: Target): Step[][] => [
@@ -63,7 +65,7 @@ const handling = (open: Step[], card: Target): Step[][] => [
     ...open, click('New rule'), NAME, click('Save rule'), { snap: 'made' }, ...tweak, { snap: 'edited' }, click(keep), { snap: 'kept' },
     click(badge), { snap: 'changing' }, click('Delete rule'), { snap: 'asking' }, click('Really delete?'), { snap: 'deleted' },
   ],
-  [...open, click('New rule'), click('Hidden aim'), { snap: 'edited' }, click('Cancel'), { snap: 'cancelled' }],
+  [...open, click('New rule'), { category: 'rules-twists' }, click('Hidden aim'), { snap: 'edited' }, click('Cancel'), { snap: 'cancelled' }],
 ];
 
 export const PAGES: Page[] = [
@@ -88,7 +90,7 @@ export const PAGES: Page[] = [
   ]),
   ...(['classic', 'horizon', 'solar'] as const).flatMap((mode, nth): Page[] =>
     handling(local(nth), preset(1)).map((steps, i) => ({ name: `cards-${mode}-${['edit', 'mine', 'cancel'][i]}`, steps }))),
-  { name: 'settings', steps: [click('Settings')] },
+  { name: 'settings', steps: [click('Settings'), { snap: 'display' }, { category: 'prefs-device' }, { snap: 'device' }, { category: 'prefs-language' }, { snap: 'language' }] },
   { name: 'training', steps: [click('Flight training')] },
   { name: 'daily', steps: [{ click: { sel: '[data-section="daily"] .item' } }] },
   { name: 'game-pause', steps: [...local(0), click('Start game'), { wait: 600 }, { key: 'Escape' }, { wait: 400 }] },

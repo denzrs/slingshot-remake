@@ -76,6 +76,7 @@
 .sheet .setup__rows > .item--segmented { padding-block: 8px; gap: 6px; }
 .sheet .setup__rows > .item--slider { padding-block: 8px 3px; }
 .sheet .segmented__option { min-height: 32px; }
+.sheet-nav { display: none; }
 .sheet .setup__rows > .item.is-readonly { padding-block: 7px; }
 /* The rules page is the tallest sheet, so its groups sit a little closer. A taller window gives its rows, groups and heading more air. */
 .menu-page--rules { --rules-row-pad: clamp(3px, calc(1.7vh - 11.5px), 4px); }
@@ -131,6 +132,43 @@
   .mission-scorecards li { padding: 16px 10px; }
 }
 @media (max-width: 760px) {
+  .sheet-nav:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: none; gap: 6px; margin-bottom: 18px; }
+  .sheet-nav__button { min-width: 0; min-height: 44px; padding: 9px 10px; border: 1px solid var(--menu-line); border-radius: 3px; background: var(--menu-surface); color: var(--bone-dim); font: 700 12px/1.4 var(--font-body); cursor: pointer; }
+  .sheet-nav__button[aria-pressed='true'] { border-color: var(--p2); background: rgb(111 227 200 / .08); color: var(--p2); }
+  .sheet--mobile-categories { display: block; }
+  .sheet--mobile-categories > .sheet__col { gap: 0; }
+  .sheet--mobile-categories .menu-group[hidden] { display: none; }
+  .sheet--mobile-categories .setup__title { margin-bottom: 8px; }
+  .sheet--mobile-categories .setup__rows { gap: 0; }
+  .sheet--mobile-categories .setup__rows > .item { min-height: 52px; padding: 12px 2px; }
+  .menu-page--rules .sheet--mobile-categories .setup__rows > .item--segmented,
+  .menu-page--rules .sheet--mobile-categories .setup__rows > .item--tiles { gap: 8px; padding-block: 12px; }
+  .menu-page .sheet.sheet--mobile-categories .segmented__option { min-height: 44px; padding: 8px 5px; font-size: 12px; white-space: normal; }
+  .menu-page--rules .sheet--mobile-categories .item--toggle:not(.is-readonly) > .toggle-bar { width: 136px; }
+  .menu-page--rules .sheet--mobile-categories .item--tiles .tile { min-height: 68px; padding: 8px 4px; }
+  .menu-page--rules .menu-page__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .menu-page--rules .menu-page__actions > .item--primary { grid-column: 1 / -1; }
+  .menu-page--crew .pilot.slot-card { display: grid; grid-template-columns: 52px minmax(0, 1fr); grid-template-areas: 'head head' 'pic assign' 'level level'; min-height: 0; gap: 8px 12px; padding: 12px; }
+  .menu-page--crew .pilot > .slot-card__head { grid-area: head; min-height: 32px; padding-right: 36px; }
+  .menu-page--crew .pilot__body { display: contents; }
+  .menu-page--crew .pilot__body > .slot-card__portrait { grid-area: pic; min-height: 44px; padding: 0; }
+  .menu-page--crew .pilot__picture > .pilot-art { width: 52px; height: 44px; }
+  .menu-page--crew .pilot__assignment { grid-area: assign; }
+  .menu-page--crew .pilot__type { min-height: 44px; }
+  .menu-page--crew .pilot__options { position: static; grid-area: level; }
+  .menu-page--crew .pilot:not(.is-cpu) .pilot__options { display: none; }
+  .menu-page--crew .pilot .option-selector__choice { min-height: 48px; font-size: 11px; }
+  .menu-page--crew .pilot__remove { top: 6px; right: 6px; width: 44px; min-height: 44px; }
+  .menu-page--crew .roster-move { top: 6px; right: 50px; width: 44px; height: 44px; }
+  .menu-page--crew .roster-entry.has-move .slot-card__head { padding-right: 86px; }
+  .menu-page--crew .crew-config { margin: 14px 0 0; }
+  .menu-page--crew .crew-roster__heading { gap: 4px 12px; }
+  .menu-page.menu-page--crew .slot-card--empty.item--choice-card { min-height: 100px; }
+  .menu-page--crew .slot-card--empty > .item__tag { top: 10px; left: 12px; font-size: 18px; }
+  .menu-page--crew .slot-card__choices { inset: 38px 12px 12px; }
+  .menu-page--crew .slot-card__choice { min-height: 44px; }
+  .menu-page--crew .crew-slot:has(> .slot-card--empty) ~ .crew-slot:has(> .slot-card--empty) { display: none; }
+  .menu-page--crew .team-column__place { min-height: 44px; }
   .online-profile__fields { flex-direction: column; align-items: stretch; }
   .menu-page--lobby .menu-page__title { font-size: clamp(40px, 8vw, 58px); }
   .menu-page--lobby .online-identity { gap: 12px; padding: 14px 16px; }
@@ -148,6 +186,9 @@
   .mission-scorecards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .mission-scorecards li { padding: 16px 12px; }
   .mission-bottom { flex-direction: column; gap: 20px; }
+}
+@media (min-width: 381px) and (max-width: 760px) {
+  .sheet-nav--rules:not([hidden]) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 520px) {
   .tutorial__selection-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

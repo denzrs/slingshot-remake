@@ -7,7 +7,7 @@ import { modeArt } from '../menu/mode-icons';
 import { modeName } from '../menu/mode-name';
 import type { App } from './app';
 import { coffeeButton, creditsBadge } from './credits';
-import { languageItem, settingsScreen } from './settings';
+import { languageItem, openSettings } from './settings';
 import { prepareModeScreen } from './setup';
 import { tutorialScreen } from './tutorial';
 
@@ -104,7 +104,7 @@ export function titleScreen(app: App): Screen {
       { kind: 'action', section: 'navigation', label: t('launcher.local'), selected: () => launcherSection === 'local', run: () => chooseSection('local') },
       { kind: 'action', section: 'navigation', label: t('launcher.online'), selected: () => launcherSection === 'online', run: () => chooseSection('online') },
       { kind: 'action', section: 'navigation', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
-      { kind: 'action', section: 'navigation', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
+      { kind: 'action', section: 'navigation', label: t('common.settings'), run: () => openSettings(app) },
       modeCard('classic'),
       modeCard('horizon'),
       modeCard('solar'),

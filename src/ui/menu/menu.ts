@@ -208,7 +208,7 @@ export class Menu {
 
   /** Move from the navigation rail into a screen's choices. */
   focusSection(section: string): void {
-    this.focusables.find((el) => el.parentElement?.dataset.section === section && !el.hidden)?.focus();
+    this.focusables.find((el) => el.parentElement?.dataset.section === section && this.isVisible(el))?.focus();
   }
 
   /** Returns true if the key was consumed. */
@@ -259,7 +259,7 @@ export class Menu {
     const n = this.focusables.length;
     for (let step = 1; step <= n; step++) {
       const i = (index + dir * step + n * step) % n;
-      if (!this.focusables[i].hidden) return i;
+      if (this.isVisible(this.focusables[i])) return i;
     }
     return Math.max(0, index);
   }

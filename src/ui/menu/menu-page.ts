@@ -7,6 +7,7 @@ interface MenuPage {
   intro?: string;
   headerTitle?: Node;
   headerAside?: Node;
+  navigation?: Node;
   className?: string;
   body: Node[];
   aside?: Node[];
@@ -16,7 +17,7 @@ interface MenuPage {
 }
 
 /** The shared page frame for menus: one heading, a reading area and actions that stay in reach. */
-export function menuPage({ title, eyebrow = 'Slingshot', intro, headerTitle, headerAside, className = '', body, aside, footer, keys = t('shell.keys') }: MenuPage): HTMLElement {
+export function menuPage({ title, eyebrow = 'Slingshot', intro, headerTitle, headerAside, navigation, className = '', body, aside, footer, keys = t('shell.keys') }: MenuPage): HTMLElement {
   return h('section.screen.screen--panel.screen--menu-page', { role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
     h(`div.menu-page${className ? `.${className}` : ''}`, null,
       h('header.menu-page__head', null,
@@ -25,6 +26,7 @@ export function menuPage({ title, eyebrow = 'Slingshot', intro, headerTitle, hea
         ...(intro ? [h('p.menu-page__intro', null, intro)] : []),
         ...(headerAside ? [headerAside] : []),
       ),
+      ...(navigation ? [navigation] : []),
       h(`div.menu-page__body${aside ? '.menu-page__body--split' : ''}`, null,
         h('div.menu-page__main', null, ...body),
         ...(aside ? [h('aside.menu-page__aside', null, ...aside)] : []),

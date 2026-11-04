@@ -53,7 +53,13 @@ Das Ergebnis stellt Punktzahl und Rang vor die fünf echten Sektorverläufe. Kop
 
 ## Kleine Bildschirme
 
-Bei schmalen Viewports wird die Navigation kompakt und die Online-Karten werden zu illustrierten Zeilen. Crew-Karten wechseln bei 320 px in eine Spalte; die fünf Daily-Sektoren bleiben in einer Reihe erkennbar. Seitenabstände, berührbare Ziele, fokussierte Eingaben und Sprache bleiben nutzbar.
+Bei schmalen Viewports füllt der Seitenrahmen die verfügbare Höhe; die Aktionen bleiben am unteren Rand erreichbar. Einstellungen und vollständige Regeln zeigen jeweils eine Kategorie, mit sichtbarer Kategorienavigation. Auf Desktop bleiben alle Gruppen im Überblick. Ein Sprachwechsel behält die gewählte Einstellungskategorie.
+
+Regelvorlagen bilden auf dem Handy eine horizontal wischbare Kartenreihe mit einer sichtbaren Kante der nächsten Karte. Wischen und die Pfeile blättern; erst Tippen auf eine Karte übernimmt ihre Regeln. Moduswechsel per Wischen greifen deshalb nicht innerhalb der Vorlagen. Eigene Regeln und die neue Vorlage gehören zur selben Reihe, auch im Online-Raum. Änderungsaktionen sind ohne Hover erreichbar.
+
+Die Crew verwendet auf Handys kurze Schiffskarten mit direkt wählbarem Mensch/CPU und allen vier CPU-Stärken. Pro Team bleibt nur der nächste freie Platz sichtbar. Die fünf Daily-Sektoren bleiben in einer Reihe erkennbar. Tastaturhinweise einschließlich Q/E entfallen auf Touch-Geräten. Seitenabstände, berührbare Ziele, fokussierte Eingaben und Sprache bleiben nutzbar.
+
+`npx tsx scripts/mobile-check.ts` prüft gegen den laufenden Dev-Server Retina-Auflösung, echte Touch-Swipes, Kategorien und Sprachwechsel, Vorlagen speichern/abbrechen sowie Crew-Bedienung bei 320 und 430 px. `npm run screens` prüft zusätzlich die Seitengeometrie; `--png` liefert die Screenshots zur visuellen Abnahme.
 
 ## Wo der Code liegt
 

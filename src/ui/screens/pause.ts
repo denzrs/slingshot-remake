@@ -7,7 +7,7 @@ import { modeName } from '../menu/mode-name';
 import type { App } from './app';
 import { scoreChart } from './game-over';
 import { marksLegend } from './mark-help';
-import { settingsScreen } from './settings';
+import { openSettings } from './settings';
 import { prepareModeScreen } from './setup';
 
 const skipAnswerItems = (app: App, section?: string): MenuItem[] => [
@@ -28,7 +28,7 @@ export function pauseScreen(app: App, match: Match | null): Screen {
   if (app.replaying) {
     const items: MenuItem[] = [
       { kind: 'action', section: 'actions', label: t('replay.back'), run: () => app.leaveReplay() },
-      { kind: 'action', section: 'actions', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
+      { kind: 'action', section: 'actions', label: t('common.settings'), run: () => openSettings(app) },
       { kind: 'action', section: 'actions', label: t('replay.again'), run: () => app.watchAgain() },
       { kind: 'action', section: 'actions', label: t('pause.resume'), primary: true, run: () => app.resume() },
     ];
@@ -55,7 +55,7 @@ export function pauseScreen(app: App, match: Match | null): Screen {
       ? [{ kind: 'action', section: 'actions', label: t(app.skipOffer === 'skip' ? 'skip.action' : 'skip.call'), run: () => app.skipRound() } satisfies MenuItem]
       : []),
     ...(app.skipOffer === 'answer' ? skipAnswerItems(app, 'actions') : []),
-    { kind: 'action', section: 'actions', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
+    { kind: 'action', section: 'actions', label: t('common.settings'), run: () => openSettings(app) },
     ...(app.online && match?.canAdvance ? [{ kind: 'action', section: 'actions', label: t('over.backToLobby'), run: () => app.backToLobby() } satisfies MenuItem] : []),
     app.online
       ? { kind: 'action', section: 'actions', label: t('multiplayer.leave'), run: () => app.leaveOnlineRoom() }

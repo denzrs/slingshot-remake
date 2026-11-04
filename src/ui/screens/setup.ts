@@ -15,6 +15,7 @@ import type { App } from './app';
 import { enablePagerNavigation, modePagerHeader, positionModeCarousel, type ModeTransition } from './mode-pager';
 import { openPlayers } from './players';
 import { rulesScreen } from './rules-page';
+import { presetCarousel } from '../presets/preset-carousel';
 
 /** One ship per seat; when teams are in play the ships group under their team's colour. */
 function crewMarkers(s: Settings): HTMLElement[] {
@@ -109,7 +110,7 @@ function enableModeSwipe(root: HTMLElement, app: App, current: GameMode): () => 
     const index = GAME_MODES.indexOf(current);
     const next = GAME_MODES[(index + (direction === 'next' ? 1 : -1) + GAME_MODES.length) % GAME_MODES.length];
     changeLocalMode(app, current, next, direction);
-  }, '.briefing__quick, .briefing__players, .briefing__edit');
+  }, '.briefing__cards, .preset-carousel__nav, .briefing__quick, .briefing__players, .briefing__edit');
 }
 
 /** A concise briefing; rule and crew subpages preserve edits made after entering the mode. */
@@ -166,14 +167,16 @@ function setupScreen(app: App, mode: GameMode, transition?: ModeTransition): Scr
   ];
   return {
     build: () => {
+      const cards = h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') },
+        h('div.briefing__own', { 'data-section': 'presets-own', 'data-own': String(customs.length) }));
+      const carousel = presetCarousel(cards);
       const page = menuPage({
         title: modeName(mode), eyebrow: t('launcher.prepare'),
         headerTitle: modePagerHeader(mode, transition),
         className: `menu-page--briefing menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
         body: [
           h('section.briefing__presets', null,
-            h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') },
-              h('div.briefing__own', { 'data-section': 'presets-own', 'data-own': String(customs.length) })),
+            cards, carousel.navigation,
             h('div.briefing__quick', null,
               h('div.briefing__quick-controls', { 'data-section': 'quick' }),
               h('div.briefing__mayhem', { 'data-section': 'quick-mayhem' }),
@@ -194,7 +197,7 @@ function setupScreen(app: App, mode: GameMode, transition?: ModeTransition): Scr
       });
       const stopCarousel = positionModeCarousel(page);
       const stopNavigation = enableModeSwipe(page, app, mode);
-      disposeModeCarousel = () => { stopNavigation(); stopCarousel(); };
+      disposeModeCarousel = () => { stopNavigation(); stopCarousel(); carousel.dispose(); };
       return page;
     },
     dispose: () => disposeModeCarousel(),

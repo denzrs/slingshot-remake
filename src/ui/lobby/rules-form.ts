@@ -1,13 +1,17 @@
 import type { GameMode } from '../../sim/modes';
 import { buildControl, twistNote, type Control, type Env } from '../menu/controls';
 import { h } from '../menu/menu';
-import { anyTwisted, groupTitle, RULE_COLUMNS, RULE_GROUPS, ruleItems, type RuleSource } from '../menu/rules';
+import { mobileSheet } from '../menu/mobile-sheet';
+import { anyTwisted, groupTitle, RULE_COLUMNS, ruleItems, type RuleSource } from '../menu/rules';
+import { t } from '../../platform/i18n';
 import type { App } from '../screens';
 
 export interface RulesForm {
   el: HTMLElement;
+  navigation: HTMLElement;
   /** Show the rules as they are now. */
   refresh(): void;
+  dispose(): void;
 }
 
 /**
@@ -23,22 +27,16 @@ export function rulesForm(mode: GameMode, source: RuleSource, app: App, readonly
   };
   const env: Env = { sound: app.menu.sound, readonly, changed: () => { refresh(); changed?.(); } };
   const items = ruleItems(mode, source, true);
-  const groups = new Map(RULE_GROUPS.filter((group) => items.some((i) => i.group === group)).map((group) => {
-    const rows = h('div.setup__rows', null);
-    for (const { group: g, item } of items) {
-      if (g !== group) continue;
-      const control = buildControl(item, env);
-      controls.push(control);
-      rows.append(control.el);
-    }
-    return [group, h('section.setup__group', null, h('h3.setup__title', null, groupTitle(group)), rows)] as const;
-  }));
-  const sheet = h('div.sheet.rules-browser', null,
-    ...RULE_COLUMNS.map((column) => column.filter((group) => groups.has(group))).filter((column) => column.length)
-      .map((column) => h('div.sheet__col', null, ...column.map((group) => groups.get(group)!))),
-  );
+  const columns = RULE_COLUMNS.map((column) => column.filter((group) => items.some((item) => item.group === group))).filter((column) => column.length);
+  const sheet = mobileSheet(columns.map((column) => column.map((group) => ({ id: `rules-${group}`, title: groupTitle(group) }))), t('briefing.rules'), refresh);
+  sheet.el.classList.add('rules-browser');
+  for (const { group, item } of items) {
+    const control = buildControl(sheet.bind({ ...item, section: `rules-${group}` }), env);
+    controls.push(control);
+    sheet.el.querySelector(`[data-section="rules-${group}"]`)!.append(control.el);
+  }
   // The note stays out of the sheet's grid: a row of its own there would hold an empty column open.
-  const el = h('div.rules-form', null, note.el, sheet);
+  const el = h('div.rules-form', null, note.el, sheet.el);
   refresh();
-  return { el, refresh };
+  return { el, refresh, navigation: sheet.navigation, dispose: sheet.dispose };
 }

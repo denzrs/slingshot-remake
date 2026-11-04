@@ -350,20 +350,21 @@
 }
 
 @media (max-width: 760px) {
-  .screen--menu-page { padding: max(26px, env(safe-area-inset-top)) 22px 0; }
-  .menu-page { margin-top: 0; }
-  .menu-page__body { padding-right: 22px; }
-  .menu-page__head { margin-bottom: 26px; }
+  .screen--menu-page { padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 0 max(20px, env(safe-area-inset-left)); }
+  .menu-page { flex: 1 1 0; height: auto; margin-top: 0; }
+  .menu-page__body { padding-inline: 6px; padding-bottom: 12px; }
+  .menu-page__head { margin-bottom: 20px; }
   .menu-page__title { font-size: clamp(40px, 8vw, 58px); line-height: 0.95; }
   .menu-page__intro { margin-top: 12px; font-size: 12px; }
   .menu-page__body--split { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .menu-page--briefing .menu-page__body--split { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .menu-page__aside { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--menu-line); }
-  .menu-page__foot { gap: 12px 16px; margin: 24px -22px 0; padding: 16px 22px max(18px, env(safe-area-inset-bottom)); }
+  .menu-page__foot { min-height: 0; gap: 12px 16px; margin: 12px 0 0; padding: 12px 0 max(12px, env(safe-area-inset-bottom)); }
   .menu-page__foot > .keys { display: none; }
   .menu-page__actions { justify-content: flex-end; gap: 10px; }
   .menu-page--settings .menu-page__actions,
   .menu-page--tutorial .menu-page__actions { justify-content: flex-end; }
+  .menu-page--settings .menu-page__actions > .item--primary { width: 100%; }
   .menu-page__actions .item { min-height: 48px; padding: 10px 14px; font-size: 12px; }
   .menu-page__actions .item--primary { min-height: 48px; font-size: 23px; }
   .menu-page .setup { grid-template-columns: minmax(0, 1fr); }

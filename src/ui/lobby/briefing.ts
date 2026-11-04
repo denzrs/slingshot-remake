@@ -11,6 +11,7 @@ import { modeName } from '../menu/mode-name';
 import { powerUpSummary } from '../presets/powerup-summary';
 import { PresetCards, type PresetCard, type PresetCreator, type PresetSelection } from '../presets/preset-cards';
 import { presetNameField } from '../presets/preset-name';
+import { presetCarousel } from '../presets/preset-carousel';
 import { ruleItems } from '../menu/rules';
 import type { App } from '../screens';
 import { rulesForm, type RulesForm } from './rules-form';
@@ -53,6 +54,7 @@ export interface Briefing {
 export function createBriefing({ app, session, prefs, save }: BriefingContext): Briefing {
   const sound = app.menu.sound;
   const createPresetCards = h('div.items.items--row.briefing__cards', { role: 'group', 'aria-label': t('preset.choose') });
+  const carousel = presetCarousel(createPresetCards);
   /** The card chosen in the room's briefing, for as long as the lobby is open. */
   const presetState: { current?: PresetSelection } = {};
   const createQuick = h('div.briefing__quick', null);
@@ -67,10 +69,11 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
   /** Set while the page is the preset creator: the rules as they were when it opened, to go back to unless the preset is kept. */
   let creator: PresetCreator | null = null;
   const creatorName = h('div', { hidden: '' });
+  const rulesNavigation = h('div.rules-navigation', null);
   /** The page of the local briefing — the same frame, the same groups, the same footer — over the lobby. */
   const rulesDialog = menuPage({
     title: t('briefing.editRules'), eyebrow: '', className: 'menu-page--rules',
-    headerAside: creatorName, body: [createRules],
+    headerAside: creatorName, navigation: rulesNavigation, body: [createRules],
     keys: t('briefing.keys'),
     footer: h('div.items.items--row.menu-page__actions', null, rulesReset, rulesDelete, rulesCancel, rulesDone),
   });
@@ -183,6 +186,7 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
   }, presetState);
   const buildCreateRules = () => {
     if (readOnly() || !presetCards.selection()) presetCards.detect();
+    createRulesForm?.dispose();
     createRulesForm = rulesForm(prefs.gameMode, {
       get: () => prefs.rules,
       patch: (v) => (prefs.rules = { ...prefs.rules, ...v }),
@@ -193,6 +197,7 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
       createQuickControls.forEach((control) => control.refresh());
     });
     createRules.replaceChildren(createRulesForm.el);
+    rulesNavigation.replaceChildren(createRulesForm.navigation);
     const cards = presetCards.cards();
     const choices: { card: PresetCard; element: HTMLButtonElement; shell: HTMLDivElement; status: HTMLButtonElement; save: HTMLButtonElement; count: HTMLSpanElement }[] = [];
     const addCard = (card: PresetCard) => {
@@ -309,6 +314,7 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
   const createSetupMain = h('div.online-create__main', null,
     h('section.briefing__presets', null,
       createPresetCards,
+      carousel.navigation,
       createQuick,
     ),
   );
@@ -362,6 +368,8 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
     closeDialog: dismissRulesDialog,
     dispose: () => {
       if (rulesTimer) pushRules();
+      createRulesForm?.dispose();
+      carousel.dispose();
       rulesDialog.remove();
     },
   };
