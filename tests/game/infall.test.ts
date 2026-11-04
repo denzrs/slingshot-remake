@@ -23,7 +23,7 @@ describe('falling into the black hole', () => {
     expect(end.x).toBeCloseTo(0);
     expect(end.y).toBeCloseTo(0);
     const mid = infallAt(100, 0, 0, 0, 0.7);
-    expect(Math.hypot(mid.x, mid.y)).toBeCloseTo(100 * (1 - 0.49));
+    expect(Math.hypot(mid.x, mid.y)).toBeCloseTo(100 * (1 - 0.7 ** 2.5));
     // Clockwise on the screen: from +x towards +y, y running down.
     expect(mid.y).toBeGreaterThan(0);
   });
@@ -36,6 +36,7 @@ describe('falling into the black hole', () => {
     const falling = match.falling();
     expect(falling.map((f) => f.key).sort()).toEqual([`planet${match.world.planets[0].seed}`, 'ship2'].sort());
     const ship = falling.find((f) => f.key === 'ship2')!;
+    expect(ship.ship).toBe(2);
     expect(ship.color).toBe(match.players[2].color);
     expect({ x: ship.x, y: ship.y }).toEqual({ x: match.world.ships[2].x, y: match.world.ships[2].y });
     for (let t = 0; t < 5 && match.phase === 'collapse'; t += 1 / 30) match.update(1 / 30);
@@ -43,15 +44,16 @@ describe('falling into the black hole', () => {
     expect(match.players[2].alive).toBe(false);
   });
 
-  it('marks a falling ship when it starts down, from where it is', () => {
+  it('says when a planet or a ship starts down, and only then', () => {
     const match = doomed();
-    const { x, y } = match.world.ships[2];
-    const devoured: { x: number; y: number }[] = [];
-    match.on((e) => e.type === 'devour' && devoured.push({ x: e.x, y: e.y }));
+    let falls = 0;
+    match.on((e) => {
+      if (e.type === 'fall') falls++;
+    });
     match.debugCollapse();
-    expect(devoured).toContainEqual({ x, y });
-    const count = devoured.length;
+    // The planet and the ship.
+    expect(falls).toBe(2);
     for (let t = 0; t < 5 && match.phase === 'collapse'; t += 1 / 30) match.update(1 / 30);
-    expect(devoured.length).toBe(count);
+    expect(falls).toBe(2);
   });
 });

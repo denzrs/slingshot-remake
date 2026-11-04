@@ -196,6 +196,9 @@ function wire(m: Match): void {
         if (audible) sound.clash();
         if (e.points > 0) effects.callout(`${t('hud.highFive')} +${e.points}`, e.x, e.y, COLORS.sodium, true);
         break;
+      case 'fall':
+        if (audible) sound.devour();
+        break;
       case 'devour':
         effects.devour(e.x, e.y, e.toX, e.toY, e.color, e.vx, e.vy);
         if (audible) sound.devour();

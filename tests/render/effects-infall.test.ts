@@ -9,14 +9,16 @@ const fall = (x: number, t: number): Falling => ({ key: 'planet1', x, y: hole.y,
 const sparks = (effects: Effects) => (effects as unknown as { sparks: { x: number; y: number; falling?: boolean }[] }).sparks;
 
 describe('effects of a fall', () => {
-  it('sheds matter from a falling body, more the deeper it is', () => {
+  it('sheds a little dust from a falling body, and more the deeper it is', () => {
     const count = (t: number): number => {
       const effects = new Effects(true, false, 'low');
       for (let i = 0; i < 60; i++) effects.infall([fall(700, t)], hole, 1 / 60);
       return sparks(effects).length;
     };
-    expect(count(0.1)).toBeGreaterThan(0);
-    expect(count(0.9)).toBeGreaterThan(count(0.1));
+    expect(count(0.1)).toBe(0);
+    expect(count(0.5)).toBeGreaterThan(0);
+    expect(count(0.95)).toBeGreaterThan(count(0.5) * 0.9);
+    expect(count(0.95)).toBeLessThan(80);
   });
 
   it('answers once when something crosses the horizon, and again in the next fall', () => {
@@ -24,14 +26,16 @@ describe('effects of a fall', () => {
     effects.infall([fall(700, 0.2)], hole, 1 / 60);
     expect(effects.holeFeed).toBe(0);
     effects.infall([fall(hole.x + 10, 0.9)], hole, 1 / 60);
-    const first = effects.holeFeed;
-    expect(first).toBeGreaterThan(0);
+    expect(effects.holeFeed).toBe(1);
+    expect(effects.holeFeedAngle).toBeCloseTo(0);
     effects.update(0.2, world());
+    const fading = effects.holeFeed;
+    expect(fading).toBeLessThan(1);
     effects.infall([fall(hole.x + 5, 0.95)], hole, 1 / 60);
-    expect(effects.holeFeed).toBeLessThan(first);
+    expect(effects.holeFeed).toBe(fading);
     effects.infall([], hole, 1 / 60);
     effects.infall([fall(hole.x + 5, 0.95)], hole, 1 / 60);
-    expect(effects.holeFeed).toBeCloseTo(first);
+    expect(effects.holeFeed).toBe(1);
   });
 
   it('keeps the matter of a devoured body alive on the body it left', () => {

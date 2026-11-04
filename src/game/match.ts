@@ -109,12 +109,14 @@ export interface Falling {
   color: string;
   /** How far through its fall (0 → 1). */
   t: number;
+  /** The ship it is, when it is one. */
+  ship?: number;
 }
 
-/** Where a fall from one point to the middle of a hole has got to at `t` (0 → 1): it quickens and tightens, turning the way the disk does. */
+/** Where a fall from one point to the middle of a hole has got to at `t` (0 → 1): it swings round first, the way the disk turns, then sinks. */
 export function infallAt(fromX: number, fromY: number, toX: number, toY: number, t: number): { x: number; y: number } {
-  const left = 1 - t * t;
-  const turn = HORIZON.INFALL_TURN * t * t * t;
+  const left = 1 - t ** 2.5;
+  const turn = HORIZON.INFALL_TURN * t * t;
   const dx = (fromX - toX) * left;
   const dy = (fromY - toY) * left;
   return { x: toX + dx * Math.cos(turn) - dy * Math.sin(turn), y: toY + dx * Math.sin(turn) + dy * Math.cos(turn) };
@@ -180,6 +182,8 @@ export type GameEvent =
   | { type: 'impact'; player: number; x: number; y: number; vx: number; vy: number }
   | { type: 'fizzle'; player: number; x: number; y: number; vx: number; vy: number; lost: boolean }
   | { type: 'clash'; x: number; y: number; players: [number, number]; velocities: [{ x: number; y: number }, { x: number; y: number }]; points: number }
+  /** A planet or a ship starts to fall into the hole. */
+  | { type: 'fall' }
   | { type: 'devour'; x: number; y: number; toX: number; toY: number; color: string; vx: number; vy: number }
   | { type: 'style'; player: number; kind: StyleKind; x: number; y: number }
   | { type: 'explode'; x: number; y: number; ship: number; vx: number; vy: number }

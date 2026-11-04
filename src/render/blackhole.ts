@@ -122,24 +122,21 @@ function drawDisk(ctx: CanvasRenderingContext2D, R: number, time: number, from: 
   ctx.lineDashOffset = 0;
 }
 
-/** The hole answering what it swallowed: light round the horizon and along the disk, in that thing's colour. */
-export function drawHoleFlare(ctx: CanvasRenderingContext2D, hole: BlackHole, strength: number, color: string): void {
-  const R = hole.radius;
+/** The light that runs round a horizon from where something went in, as a fading tail behind its head. `strength` falls from 1 to 0. */
+export function strokeHoleFlare(ctx: CanvasRenderingContext2D, hole: BlackHole, strength: number, color: string, angle: number, width: number, alpha: number): void {
+  const head = angle + (1 - strength) * 5.5;
+  const R = hole.radius * 1.08;
+  const parts = 14;
   ctx.save();
-  ctx.translate(hole.x, hole.y);
-  const halo = ctx.createRadialGradient(0, 0, R, 0, 0, R * 3.4);
-  halo.addColorStop(0, rgba(color, 0.5 * strength));
-  halo.addColorStop(1, rgba(color, 0));
-  ctx.fillStyle = halo;
-  ctx.beginPath();
-  ctx.arc(0, 0, R * 3.4, 0, Math.PI * 2);
-  ctx.arc(0, 0, R, 0, Math.PI * 2, true);
-  ctx.fill();
-  ctx.strokeStyle = rgba(COLORS.bone, strength);
-  ctx.lineWidth = Math.max(1, R * 0.1);
-  ctx.beginPath();
-  ctx.arc(0, 0, R * 1.08, 0, Math.PI * 2);
-  ctx.stroke();
+  ctx.lineCap = 'butt';
+  for (let i = 0; i < parts; i++) {
+    const k = i / parts;
+    ctx.strokeStyle = rgba(color, alpha * strength * (1 - k) ** 2);
+    ctx.lineWidth = width * (1 - k * 0.6);
+    ctx.beginPath();
+    ctx.arc(hole.x, hole.y, R, head - (k + 1 / parts) * 2.1, head - k * 2.1);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 

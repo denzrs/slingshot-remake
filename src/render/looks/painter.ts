@@ -3,7 +3,6 @@ import type { BlackHole, Planet } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
 import type { Wormhole } from '../../sim/physics';
 import type { BlackHoleStyle } from '../blackhole';
-import type { InfallStream } from '../infall';
 import type { DefenseStyle, DefenseView, InterceptionStyle } from '../defense';
 import type { Nova } from '../effects';
 import type { PlanetSprite } from '../planet-common';
@@ -35,10 +34,8 @@ export interface LookPainter {
   /** What a supernova leaves, `age` seconds after it. */
   neutronStar(ctx: CanvasRenderingContext2D, star: Planet, time: number, age: number, alpha: number): void;
   blackHole(ctx: CanvasRenderingContext2D, hole: BlackHole, time: number): void;
-  /** The disk flaring as the hole swallows something of `color`; `strength` falls from 1 to 0. */
-  holeFlare(ctx: CanvasRenderingContext2D, hole: BlackHole, strength: number, color: string, time: number): void;
-  /** The stream of matter drawn from something falling into a hole, along the way it has left to go. */
-  infall(ctx: CanvasRenderingContext2D, stream: InfallStream, time: number): void;
+  /** The light running round a horizon after it swallowed something of `color` at `angle`; `strength` falls from 1 to 0. */
+  holeFlare(ctx: CanvasRenderingContext2D, hole: BlackHole, strength: number, color: string, angle: number): void;
   /** Where the horizon will be after the next collapse (`radius`): the zone everyone must stay out of. */
   dangerRing(ctx: CanvasRenderingContext2D, hole: BlackHole, radius: number, time: number): void;
   /** Both portals of a wormhole and the thread between them; `eaten` (0 → 1) is how far a black hole has taken it. */

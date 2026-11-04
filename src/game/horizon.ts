@@ -236,8 +236,8 @@ export class HorizonMatch extends Match {
     if (!c) return [];
     const t = this.collapseT;
     const list: Falling[] = [];
-    const add = (key: string, at: { x: number; y: number }, d: Drift, radius: number, color: string): void => {
-      list.push({ key, x: at.x, y: at.y, fromX: d.fromX, fromY: d.fromY, toX: d.toX, toY: d.toY, radius, color, t });
+    const add = (key: string, at: { x: number; y: number }, d: Drift, radius: number, color: string, ship?: number): void => {
+      list.push({ key, x: at.x, y: at.y, fromX: d.fromX, fromY: d.fromY, toX: d.toX, toY: d.toY, radius, color, t, ship });
     };
     // A planet that cannot be seen falls unseen.
     if (this.planetsVisible) {
@@ -246,7 +246,7 @@ export class HorizonMatch extends Match {
         if (d?.lost) add(`planet${p.seed}`, p, d, p.radius, p.tint);
       }
     }
-    for (const [id, d] of c.ships) if (d.lost) add(`ship${id}`, this.world.ships[id], d, PHYSICS.SHIP_RADIUS, this.players[id].color);
+    for (const [id, d] of c.ships) if (d.lost) add(`ship${id}`, this.world.ships[id], d, PHYSICS.SHIP_RADIUS, this.players[id].color, id);
     return list;
   }
 
@@ -433,7 +433,7 @@ export class HorizonMatch extends Match {
       const drift = pull(p.x, p.y, 0.6, p.radius * 0.6);
       if (drift.lost) {
         toMass += p.mass * HORIZON.FEED;
-        this.emit({ type: 'devour', x: p.x, y: p.y, toX: hole.x, toY: hole.y, color: p.tint, vx: 0, vy: 0 });
+        this.emit({ type: 'fall' });
       }
       planets.set(p.seed, drift);
     }
@@ -441,7 +441,7 @@ export class HorizonMatch extends Match {
     for (const p of this.alive) {
       const s = this.world.ships[p.id];
       const drift = pull(s.x, s.y, 1, SWALLOW_MARGIN);
-      if (drift.lost) this.emit({ type: 'devour', x: s.x, y: s.y, toX: hole.x, toY: hole.y, color: p.color, vx: 0, vy: 0 });
+      if (drift.lost) this.emit({ type: 'fall' });
       ships.set(p.id, drift);
     }
     // Pickups drift in like planets (a little faster), and the hole eats those that come too close.

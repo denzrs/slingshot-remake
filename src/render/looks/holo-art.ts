@@ -3,7 +3,6 @@ import { isWormholeJump, type Planet, type Wormhole } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
 import { createRng } from '../../sim/rng';
 import { rgba } from '../color';
-import { streamPath, type InfallStream } from '../infall';
 import type { PlanetSprite } from '../planet-common';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../powerup-art';
 import { SHIP_HULL } from '../ship';
@@ -295,30 +294,6 @@ export function drawHoloSun(ctx: CanvasRenderingContext2D, sun: Planet, time: nu
     ctx.arc(0, 0, R * (1.3 + 2.2 * (1 - flare)), 0, TAU);
     ctx.stroke();
   }
-  ctx.restore();
-}
-
-/** The hole answering what it swallowed: rings of light scanning out from the horizon. */
-export function drawHoloHoleFlare(ctx: CanvasRenderingContext2D, hole: { x: number; y: number; radius: number }, strength: number, color: string, time: number): void {
-  ctx.save();
-  ctx.translate(hole.x, hole.y);
-  ctx.setLineDash([hole.radius * 0.4, hole.radius * 0.2]);
-  for (let i = 0; i < 3; i++) {
-    ctx.lineDashOffset = -time * 90 * (i + 1);
-    ctx.beginPath();
-    ctx.arc(0, 0, hole.radius * (1.1 + (1 - strength) * (0.7 + i * 0.7)), 0, TAU);
-    glowLine(ctx, i === 0 ? COLORS.bone : color, 1, strength);
-  }
-  ctx.restore();
-}
-
-/** The stream of matter into a hole as a dashed line of packets running down it. */
-export function drawHoloInfall(ctx: CanvasRenderingContext2D, stream: InfallStream, time: number): void {
-  ctx.save();
-  ctx.setLineDash([6, 5]);
-  ctx.lineDashOffset = -time * 120;
-  streamPath(ctx, stream);
-  glowLine(ctx, stream.color, 0.9, stream.strength);
   ctx.restore();
 }
 
