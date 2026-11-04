@@ -80,7 +80,7 @@ export class Renderer {
 
   resize(): void {
     const { width: cssWidth, height: cssHeight, rotated: forced } = this.viewport();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = window.devicePixelRatio || 1;
     const coarse = window.matchMedia('(pointer: coarse)').matches;
     // Held upright a phone gets its own layout: HUD on top, the field, the thumbs' controls underneath.
     const portrait = forced === undefined && coarse && cssHeight > cssWidth ? portraitLayout(cssWidth, cssHeight, safeArea(), touchScale()) : null;
@@ -150,7 +150,7 @@ export class Renderer {
   private resizeIfNeeded(): void {
     const v = this.view;
     const { width, height } = this.viewport();
-    if (v.cssWidth !== width || v.cssHeight !== height || v.dpr !== Math.min(window.devicePixelRatio || 1, 2)) {
+    if (v.cssWidth !== width || v.cssHeight !== height || v.dpr !== (window.devicePixelRatio || 1)) {
       this.resize();
     }
   }
