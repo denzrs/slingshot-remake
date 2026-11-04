@@ -373,13 +373,13 @@ export class Effects {
   }
 
   /** One frame of what is falling into `hole`: each sheds a little dust, and the hole answers as each crosses its horizon. */
-  infall(falling: readonly Falling[], hole: BlackHole | undefined, dt: number): void {
+  infall(falling: readonly Falling[], hole: BlackHole | undefined, dt: number, dust = true): void {
     if (!falling.length || !hole) {
       this.fallen.clear();
       return;
     }
     for (const f of falling) {
-      this.shed(f, hole, dt);
+      if (dust) this.shed(f, hole, dt);
       if (this.fallen.has(f.key) || Math.hypot(f.x - hole.x, f.y - hole.y) > hole.radius) continue;
       this.fallen.add(f.key);
       // A light runs round the horizon from where it went in; a planet makes the field tremble.

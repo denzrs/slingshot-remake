@@ -26,7 +26,8 @@ import { inPowerUpNebula } from './sim/physics';
 import { POWER_UP } from './sim/powerups';
 import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './platform/i18n';
-import { setLook, setPostLevel } from './data/look';
+import { getLook, setLook, setPostLevel } from './data/look';
+import { painterFor } from './render/looks';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './sim/scoring';
@@ -912,7 +913,7 @@ function frame(now: number): void {
     if (!net || net.isHost) m.update(dt);
     if (supernovaDemo && m === supernovaDemo.match) supernovaDemo.tick(dt);
     effects.update(dt, m.world);
-    effects.infall(m.falling(), m.world.holes[0], dt);
+    effects.infall(m.falling(), m.world.holes[0], dt, painterFor(getLook()).fallDust);
     if (infallDemo && m === infallDemo.match) infallDemo.tick(dt);
     // A shot flying through a nebula sheds wisps of gas, so its slowing down shows.
     if (m.world.nebulae.length) {

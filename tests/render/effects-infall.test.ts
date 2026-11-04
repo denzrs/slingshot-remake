@@ -21,6 +21,12 @@ describe('effects of a fall', () => {
     expect(count(0.95)).toBeLessThan(80);
   });
 
+  it('sheds no dust when the look draws the fall whole', () => {
+    const effects = new Effects(true, false, 'low');
+    for (let i = 0; i < 60; i++) effects.infall([fall(700, 0.5)], hole, 1 / 60, false);
+    expect(sparks(effects).length).toBe(0);
+  });
+
   it('answers once when something crosses the horizon, and again in the next fall', () => {
     const effects = new Effects(false, false, 'low');
     effects.infall([fall(700, 0.2)], hole, 1 / 60);

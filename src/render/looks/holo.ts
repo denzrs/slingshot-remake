@@ -1,5 +1,4 @@
 import { COLORS, PHYSICS } from '../../sim/config';
-import { strokeHoleFlare } from '../blackhole';
 import { rgba } from '../color';
 import { blend } from '../nebula';
 import { strokePolyline } from '../polyline';
@@ -29,6 +28,7 @@ import {
   drawHoloNova,
   drawHoloPlasmaTrail,
 } from './holo-art';
+import { drawHoloFall, drawHoloFlare } from './falls';
 import { drawHoloBlast, drawHoloPackets, drawHoloShard, drawHoloShipScanned } from './holo-events';
 import { holoBegin, holoPost, holoSky, paintHoloBackdrop, paintHoloBorder, startRipple } from './holo-field';
 
@@ -107,7 +107,9 @@ const holoParts: Partial<LookPainter> = {
   border: paintHoloBorder,
   sky: holoSky,
   post: holoPost,
-  holeFlare: (ctx, hole, strength, color, angle) => strokeHoleFlare(ctx, hole, strength, color, angle, 1.4, 1),
+  fallDust: true,
+  falling: drawHoloFall,
+  holeFlare: drawHoloFlare,
   trail: (ctx, points, wormholes, color, rank, fade) => {
     ctx.strokeStyle = rgba(color, (rank === 0 ? 0.75 : rank === 1 ? 0.38 : 0.2) * fade);
     ctx.lineWidth = rank === 0 ? 1 : 0.8;

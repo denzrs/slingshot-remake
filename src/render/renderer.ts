@@ -13,7 +13,6 @@ import { rgba } from './color';
 import { renderContours } from './contours';
 import type { Effects } from './effects';
 import { Hud } from './hud';
-import { drawFalling } from './infall';
 import type { OracleTap } from './oracle';
 import type { SkipAnswer } from './skip-vote';
 import { getLook, type Look } from '../data/look';
@@ -377,7 +376,7 @@ export class Renderer {
       const fall = falling.get(`planet${p.seed}`);
       ctx.globalAlpha = alpha;
       if (fall) {
-        drawFalling(ctx, fall, p.radius * 2.6, ps, (c) => {
+        this.painter.falling(ctx, fall, p.radius * 2.6, ps, (c) => {
           // The light stays where it was painted: upright on the screen.
           uprightFrame(c);
           sprite.draw(c, 0, 0, ps, this.time);
@@ -405,7 +404,7 @@ export class Renderer {
     for (const f of falling.values()) {
       if (f.ship === undefined) continue;
       const { ship: id, color } = f;
-      drawFalling(ctx, f, PHYSICS.SHIP_RADIUS * 2.6, ps, (c) => {
+      this.painter.falling(ctx, f, PHYSICS.SHIP_RADIUS * 2.6, ps, (c) => {
         c.rotate((-match.players[id].angle * Math.PI) / 180);
         this.painter.ship(c, color, this.time, 0, id * 1.7);
       });

@@ -1,5 +1,6 @@
 import { COLORS } from '../../sim/config';
 import { rgba } from '../color';
+import { drawFalling } from '../infall';
 import { drawEngineFlame } from '../ship';
 import { LIGHT } from '../planet-common';
 import { engraved } from './classic';
@@ -274,6 +275,8 @@ export const forged = engraved('forged', forgedStyles, {
   // The halo and the disk's light already say where the hole is; a red dashed circle over them only muddies it.
   dangerRing: () => {},
   planet: renderForgedPlanet,
+  // Painted light can be cut into slices and bent round the hole.
+  falling: drawFalling,
   sun: drawForgedSun,
   nebula: drawForgedNebula,
   stormCloud: drawForgedStormCloud,
