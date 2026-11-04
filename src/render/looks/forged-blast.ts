@@ -1,13 +1,15 @@
 import { rgba } from '../color';
 import { fbm } from '../noise';
 import { clamp01, smoothstep } from '../planet-common';
+import { canShade, GLSL_HEAD, pixelsOf, place, seedOffset, shade } from './forged-gl';
 import type { EffectStyle } from './painter';
 
 /**
- * Fireballs and shrapnel for the forged look. A fireball is a sheet of frames of burning gas — noise pushed out into a
- * ball that swells, whitens at its core, turns orange and red and thins to embers — drawn once, a couple of frames each
- * time the look draws anything, so the first blast finds the sheet finished and the game never stalls to make it. Until it
- * is finished the blasts are left to the rings and sparks that go with them.
+ * Fireballs and shrapnel for the forged look. A fireball is burning gas — noise pushed out into a ball that swells, whitens
+ * at its core, turns orange and red and thins to embers — worked out by a shader as it is drawn. Without shaders it is a
+ * sheet of frames of the same, drawn once, a couple of frames each time the look draws anything, so the first blast finds
+ * the sheet finished and the game never stalls to make it. Until it is finished the blasts are left to the rings and
+ * sparks that go with them.
  */
 
 const COLS = 5;
@@ -80,9 +82,41 @@ function paintFrame(c: CanvasRenderingContext2D, index: number): void {
   c.putImageData(img, (index % COLS) * CELL, Math.floor(index / COLS) * CELL);
 }
 
-/** Paints the next frames of the fireball sheet, until there are all of them. Called every frame the look draws. */
+/** The same ball of burning gas as `paintFrame`, worked out at the size it is drawn, for the moment it is at. */
+const BLAST_SHADER = `${GLSL_HEAD}
+uniform float uT;
+uniform float uSeed;
+vec3 ramp(float h) {
+  vec3 c = mix(vec3(120, 20, 10), vec3(200, 40, 20), smoothstep(0.0, 0.12, h));
+  c = mix(c, vec3(255, 120, 35), smoothstep(0.12, 0.35, h));
+  c = mix(c, vec3(255, 205, 90), smoothstep(0.35, 0.6, h));
+  c = mix(c, vec3(255, 250, 220), smoothstep(0.6, 0.85, h));
+  return mix(c, vec3(255), smoothstep(0.85, 1.0, h)) / 255.0;
+}
+void main() {
+  vec2 d = vUv * 2.0 - 1.0;
+  float r = length(d);
+  float t = uT;
+  float reach = 0.28 + 0.66 * (1.0 - pow(1.0 - t, 2.4));
+  float fuel = pow(1.0 - t, 1.15);
+  // The noise is read on a ball pushed out from the middle, so the fire billows from its heart.
+  vec3 ball = vec3(d, sqrt(max(0.0, 1.0 - r * r)));
+  vec3 warp = vec3(fbm(ball * 1.6 + uSeed + t, 3), fbm(ball * 1.6 + uSeed + 31.0 - t, 3), 0.0) - 0.5;
+  float n = fbm(ball * 2.3 + warp * 0.9 + vec3(uSeed, 5.0, t * 1.4), 4);
+  float fine = fbm(ball * 6.5 + warp * 1.6 + vec3(9.0, uSeed, t * 2.2), 4);
+  float body = reach * (0.42 + 1.15 * n) + 0.1 * (fine - 0.5) - r;
+  float density = smoothstep(0.0, 0.5 * reach, body);
+  float core = pow(clamp(1.0 - r / (reach * 0.42), 0.0, 1.0), 2.0) * pow(1.0 - t, 1.8);
+  float heat = clamp(density * fuel * (0.3 + 0.95 * fine) + core * 0.85, 0.0, 1.0);
+  float a = clamp(heat * 1.6, 0.0, 1.0) * (1.0 - smoothstep(0.8, 1.0, r)) * step(0.0, body);
+  outColor = vec4(ramp(heat) * a, a);
+}`;
+/** The largest a fireball is worked out at, in pixels; past that it is drawn up. */
+const BLAST_LIMIT = 512;
+
+/** Paints the next frames of the fireball sheet, until there are all of them, unless the shader draws the fireballs. Called every frame the look draws. */
 export function warmBlasts(): void {
-  if (drawn >= FRAMES) return;
+  if (drawn >= FRAMES || canShade()) return;
   if (!sheet) {
     sheet = document.createElement('canvas');
     sheet.width = COLS * CELL;
@@ -94,11 +128,16 @@ export function warmBlasts(): void {
 
 /** A fireball `size` wide, `t` (0 → 1) through its life: two neighbouring frames blended, turned by its seed, with a glow of its own colour under it. */
 export const drawBlast: NonNullable<EffectStyle['blast']> = (ctx, blast, t) => {
-  if (!sheet || drawn < FRAMES) return;
+  const size = blast.size * (0.8 + 0.25 * t);
+  const pixels = pixelsOf(ctx, size);
+  const shaded = shade(BLAST_SHADER, pixels, pixels, BLAST_LIMIT, (u) => {
+    u.f('uT', clamp01(t));
+    u.f('uSeed', seedOffset(blast.seed));
+  });
+  if (!shaded && (!sheet || drawn < FRAMES)) return;
   const at = clamp01(t) * (FRAMES - 1);
   const first = Math.floor(at);
   const frac = at - first;
-  const size = blast.size * (0.8 + 0.25 * t);
   ctx.save();
   ctx.translate(blast.x, blast.y);
   ctx.globalCompositeOperation = 'lighter';
@@ -109,10 +148,14 @@ export const drawBlast: NonNullable<EffectStyle['blast']> = (ctx, blast, t) => {
   ctx.fillRect(-size, -size, size * 2, size * 2);
   ctx.rotate(blast.seed * Math.PI * 2);
   const half = size / 2;
-  for (const [index, alpha] of [[first, 1 - frac], [Math.min(FRAMES - 1, first + 1), frac]] as const) {
-    if (alpha <= 0.01) continue;
-    ctx.globalAlpha = alpha;
-    ctx.drawImage(sheet, (index % COLS) * CELL, Math.floor(index / COLS) * CELL, CELL, CELL, -half, -half, size, size);
+  if (shaded) {
+    place(ctx, shaded, -half, -half, size, size);
+  } else {
+    for (const [index, alpha] of [[first, 1 - frac], [Math.min(FRAMES - 1, first + 1), frac]] as const) {
+      if (alpha <= 0.01) continue;
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(sheet!, (index % COLS) * CELL, Math.floor(index / COLS) * CELL, CELL, CELL, -half, -half, size, size);
+    }
   }
   ctx.restore();
 };

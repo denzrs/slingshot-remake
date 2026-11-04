@@ -2,6 +2,8 @@ import { getPostLevel, type PostLevel } from '../../data/look';
 import { createRng } from '../../sim/rng';
 import { fbm } from '../noise';
 import { smoothstep } from '../planet-common';
+import { closeShaderFrame, setShaderDetail } from './forged-gl';
+import { shadePost } from './forged-post-gl';
 import type { FrameInfo } from './painter';
 
 /**
@@ -314,7 +316,7 @@ function keepPace(pace: Pace, drawn: number): void {
 }
 
 /**
- * Bloom: the picture is shrunk, its dull parts are dropped (raised to the eighth power, so only what is nearly white stays), and what
+ * The post pass: as shaders where there are any (`forged-post-gl.ts`), otherwise on the canvas. Bloom: the picture is shrunk, its dull parts are dropped (raised to the eighth power, so only what is nearly white stays), and what
  * is left is blurred by shrinking it further, then added back over the picture on the way up. A vignette, a grade
  * and grain over it, as much of it as the machine keeps up with (`Pace`). The flash and the supernova's white-out make it bloom wider.
  */
@@ -323,18 +325,31 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   const lean = steady ? 0 : pace.lean;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (lean < 2) {
+  const shaded = lean < 2 && shadePost(ctx, f, afterBloom, lean < 1);
+  if (lean < 2 && !shaded) {
     bloom(ctx, f);
     for (const redraw of afterBloom) redraw(ctx);
   }
-  if (lean < 3) drawVignette(ctx, f);
-  if (lean < 1) {
+  // The shader has the vignette, the grade and the grain in it, when it was asked for them.
+  const whole = shaded && lean < 1;
+  if (lean < 3 && !whole) drawVignette(ctx, f);
+  if (lean < 1 && !whole) {
     grade(ctx, f);
     grain(ctx, f);
   }
   ctx.restore();
-  if (!steady) keepPace(pace, (performance.now() - started) / 1000);
+  const gpu = closeShaderFrame();
+  if (steady) {
+    setShaderDetail(1);
+  } else {
+    // The CPU and the GPU work side by side: whichever is slower sets the pace. Only a browser with the GPU's timer can tell.
+    keepPace(pace, Math.max((performance.now() - started) / 1000, gpu));
+    setShaderDetail(DETAIL[Math.min(DETAIL.length - 1, pace.lean - pace.floor)]);
+  }
 }
+
+/** How much of its size a shaded sprite is drawn at, by how many steps the pace has gone down from the level in the settings. */
+const DETAIL = [1, 0.8, 0.65, 0.5];
 
 function bloom(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   const main = ctx.canvas;

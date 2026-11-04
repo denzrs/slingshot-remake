@@ -4,13 +4,17 @@ import { hexToRgb, rgba } from '../color';
 import { fbm } from '../noise';
 import { clamp01, LIGHT, mix, smoothstep, type PlanetSprite } from '../planet-common';
 import { image, type Name } from './forged-assets';
+import { place as placeShaded } from './forged-gl';
 import { GLOW, renderLitPlanet, spriteSize } from './forged-lit-planet';
+import { shadePlanet, type PlanetShade } from './forged-planet-gl';
 
 /**
  * A planet in the forged look: the Blender map wrapped round a sphere and lit from the upper left, with what a still
  * texture cannot give it: a surface that turns, with a layer of cloud sliding over it (a gas giant's bands run at different
  * speeds), the warm band of dusk along the terminator, the lights of settlements on the night side of rock, and rings
- * on most gas giants. What does not move (the light, the rim, the glow) is baked once; the sphere and its cloud are painted again ten times a second.
+ * on most gas giants. The sphere and its cloud are painted again ten times a second: by a shader (`forged-planet-gl.ts`), which
+ * adds a lit atmosphere and relief, or without shaders on the CPU, from what does not move (the light, the rim), baked once on
+ * first use. The glow is baked once either way.
  */
 
 type Rgb = [number, number, number];
@@ -20,6 +24,8 @@ const ATMOSPHERE: Record<string, Rgb> = { gas: [255, 214, 160], ice: [191, 230, 
 const DUSK: Record<string, Rgb> = { gas: [255, 150, 90], ice: [140, 190, 255], rocky: [255, 110, 50] };
 const NIGHT: Rgb = [16, 30, 60];
 const CITY: Rgb = [255, 196, 120];
+/** How strongly a map's light and dark are read as height: gas has none. */
+const RELIEF: Record<string, number> = { gas: 0, ice: 1.4, rocky: 3 };
 
 /** How often the sphere and its cloud are painted again (s), and how fast the cloud turns (turns per second). */
 const CLOUD_EVERY = 1 / 10;
@@ -135,14 +141,23 @@ interface Surface {
   night: Float32Array;
 }
 
-interface Baked {
-  size: number;
-  /** The glow past the limb, painted once. */
-  glow: HTMLCanvasElement;
+/** What is painted on the CPU when there are no shaders, made the first time it is needed. */
+interface Soft {
   surface: Surface;
   /** The sphere itself, painted again as it turns. */
   sphere: { canvas: HTMLCanvasElement; image: ImageData; map: Texture; gain: number[]; city: Uint8Array | null; shift: Float32Array };
   cloud: { kind: MapKind; enabled: boolean; colour: Rgb; canvas: HTMLCanvasElement; image: ImageData; shift: Float32Array; direction: number; phase: number; at: number };
+}
+
+interface Baked {
+  size: number;
+  /** The glow past the limb, painted once. */
+  glow: HTMLCanvasElement;
+  /** What the shader draws the sphere and its cloud from. */
+  shade: PlanetShade;
+  /** The shader's latest picture of it, and when that was. */
+  still: { canvas: HTMLCanvasElement | null; at: number };
+  soft: () => Soft | null;
   rings: { back: HTMLCanvasElement; front: HTMLCanvasElement } | null;
   moon: Moon | null;
   /** Where on a gas giant's night side lightning strikes are shown. */
@@ -219,8 +234,8 @@ export function forgedPlanetTraits(p: Planet): { map: string; index: number; clo
 
 function bake(p: Planet, ps: number): Baked | null {
   const variant = variantOf(p);
-  const map = texture(variant.name);
-  if (!map) return null;
+  const mapImage = image(variant.name);
+  if (!mapImage) return null;
   const R = p.radius * ps;
   const reach = R * (1 + GLOW);
   const size = spriteSize(p, ps);
@@ -235,65 +250,84 @@ function bake(p: Planet, ps: number): Baked | null {
   const dusk = DUSK[p.style] ?? DUSK.rocky;
   const specular = p.style === 'ice' ? 0.35 : 0;
 
-  const cs = Math.cos(spin);
-  const sn = Math.sin(spin);
-  const ct = Math.cos(tilt);
-  const st = Math.sin(tilt);
-  const half3 = [LIGHT[0], LIGHT[1], LIGHT[2] + 1];
-  const hl = Math.hypot(half3[0], half3[1], half3[2]);
-  const surface: Surface = {
-    count: 0,
-    index: new Int32Array(size * size),
-    lon: new Float32Array(size * size),
-    row: new Uint8Array(size * size),
-    above: new Int32Array(size * size),
-    below: new Int32Array(size * size),
-    between: new Float32Array(size * size),
-    lit: new Float32Array(size * size),
-    cover: new Float32Array(size * size),
-    add: new Float32Array(size * size * 3),
-    night: new Float32Array(size * size),
-  };
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = (x + 0.5 - half) / R;
-      const dy = (y + 0.5 - half) / R;
-      const rr = dx * dx + dy * dy;
-      const dist = Math.sqrt(rr);
-      const coverage = smoothstep(1 + 1 / R, 1 - 1 / R, dist);
-      if (coverage <= 0) continue;
-      const nz = Math.sqrt(Math.max(0, 1 - rr));
-      // The point on the sphere, turned about the vertical by the seed and tipped by the tilt, as longitude and latitude.
-      const ty = dy * ct + nz * st;
-      const tz = -dy * st + nz * ct;
-      const tx = dx * cs + tz * sn;
-      const tzz = -dx * sn + tz * cs;
-      const u = Math.atan2(tx, tzz) / (Math.PI * 2) + 0.5;
-      const v = 0.5 + Math.asin(Math.max(-1, Math.min(1, ty))) / Math.PI;
-      const lam = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2];
-      const lit = clamp01(0.06 + 0.98 * Math.max(0, lam) ** 0.85);
-      const spec = specular ? specular * Math.max(0, (dx * half3[0] + dy * half3[1] + nz * half3[2]) / hl) ** 36 : 0;
-      const fresnel = (1 - nz) ** 2.6 * (0.3 + 0.7 * smoothstep(-0.25, 0.6, lam));
-      // Dusk: a warm band just on the lit side of the terminator.
-      const twilight = smoothstep(-0.14, 0, lam) * (1 - smoothstep(0, 0.32, lam)) * 0.22;
-      const n = surface.count++;
-      surface.index[n] = y * size + x;
-      surface.lon[n] = u;
-      surface.row[n] = Math.min(MAP_H - 1, Math.floor(v * MAP_H));
-      const ty0 = Math.min(map.height - 1.001, Math.max(0, v * map.height - 0.5));
-      const y0 = Math.floor(ty0);
-      surface.above[n] = y0 * map.width * 4;
-      surface.below[n] = (y0 + 1) * map.width * 4;
-      surface.between[n] = ty0 - y0;
-      surface.lit[n] = lit;
-      surface.cover[n] = coverage;
-      for (let k = 0; k < 3; k++) surface.add[n * 3 + k] = spec * 255 + rim[k] * fresnel * 0.55 + dusk[k] * twilight;
-      // On the night side, the lights of settlements.
-      surface.night[n] = settled ? smoothstep(0.05, -0.3, lam) * 0.95 : 0;
+  // Cloud: wisps over rock, haze over ice, long streaks over a gas giant.
+  const kind: MapKind = p.style === 'gas' ? 'band' : p.style === 'ice' ? 'haze' : 'wisp';
+  const colour2: Rgb = p.style === 'gas' ? [mix(tr, 255, 0.55), mix(tg, 245, 0.55), mix(tb, 230, 0.55)] : p.style === 'ice' ? [235, 245, 255] : [255, 236, 215];
+
+  let soft: Soft | null = null;
+  /** Every pixel of the disc worked out once, for painting on the CPU. */
+  const makeSoft = (): Soft | null => {
+    if (soft) return soft;
+    const map = texture(variant.name);
+    if (!map) return null;
+    const cs = Math.cos(spin);
+    const sn = Math.sin(spin);
+    const ct = Math.cos(tilt);
+    const st = Math.sin(tilt);
+    const half3 = [LIGHT[0], LIGHT[1], LIGHT[2] + 1];
+    const hl = Math.hypot(half3[0], half3[1], half3[2]);
+    const surface: Surface = {
+      count: 0,
+      index: new Int32Array(size * size),
+      lon: new Float32Array(size * size),
+      row: new Uint8Array(size * size),
+      above: new Int32Array(size * size),
+      below: new Int32Array(size * size),
+      between: new Float32Array(size * size),
+      lit: new Float32Array(size * size),
+      cover: new Float32Array(size * size),
+      add: new Float32Array(size * size * 3),
+      night: new Float32Array(size * size),
+    };
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = (x + 0.5 - half) / R;
+        const dy = (y + 0.5 - half) / R;
+        const rr = dx * dx + dy * dy;
+        const dist = Math.sqrt(rr);
+        const coverage = smoothstep(1 + 1 / R, 1 - 1 / R, dist);
+        if (coverage <= 0) continue;
+        const nz = Math.sqrt(Math.max(0, 1 - rr));
+        // The point on the sphere, turned about the vertical by the seed and tipped by the tilt, as longitude and latitude.
+        const ty = dy * ct + nz * st;
+        const tz = -dy * st + nz * ct;
+        const tx = dx * cs + tz * sn;
+        const tzz = -dx * sn + tz * cs;
+        const u = Math.atan2(tx, tzz) / (Math.PI * 2) + 0.5;
+        const v = 0.5 + Math.asin(Math.max(-1, Math.min(1, ty))) / Math.PI;
+        const lam = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2];
+        const lit = clamp01(0.06 + 0.98 * Math.max(0, lam) ** 0.85);
+        const spec = specular ? specular * Math.max(0, (dx * half3[0] + dy * half3[1] + nz * half3[2]) / hl) ** 36 : 0;
+        const fresnel = (1 - nz) ** 2.6 * (0.3 + 0.7 * smoothstep(-0.25, 0.6, lam));
+        // Dusk: a warm band just on the lit side of the terminator.
+        const twilight = smoothstep(-0.14, 0, lam) * (1 - smoothstep(0, 0.32, lam)) * 0.22;
+        const n = surface.count++;
+        surface.index[n] = y * size + x;
+        surface.lon[n] = u;
+        surface.row[n] = Math.min(MAP_H - 1, Math.floor(v * MAP_H));
+        const ty0 = Math.min(map.height - 1.001, Math.max(0, v * map.height - 0.5));
+        const y0 = Math.floor(ty0);
+        surface.above[n] = y0 * map.width * 4;
+        surface.below[n] = (y0 + 1) * map.width * 4;
+        surface.between[n] = ty0 - y0;
+        surface.lit[n] = lit;
+        surface.cover[n] = coverage;
+        for (let k = 0; k < 3; k++) surface.add[n * 3 + k] = spec * 255 + rim[k] * fresnel * 0.55 + dusk[k] * twilight;
+        // On the night side, the lights of settlements.
+        surface.night[n] = settled ? smoothstep(0.05, -0.3, lam) * 0.95 : 0;
+      }
     }
-  }
-  const sphere = document.createElement('canvas');
-  sphere.width = sphere.height = size;
+    const sphere = document.createElement('canvas');
+    sphere.width = sphere.height = size;
+    const cloudCanvas = document.createElement('canvas');
+    cloudCanvas.width = cloudCanvas.height = size;
+    soft = {
+      surface,
+      sphere: { canvas: sphere, image: sphere.getContext('2d')!.createImageData(size, size), map, gain, city: settled ? proceduralMap('city') : null, shift: new Float32Array(MAP_H) },
+      cloud: { kind, enabled: variant.clouds !== false, colour: colour2, canvas: cloudCanvas, image: cloudCanvas.getContext('2d')!.createImageData(size, size), shift: new Float32Array(MAP_H), direction, phase, at: -1 },
+    };
+    return soft;
+  };
 
   const glow = document.createElement('canvas');
   glow.width = glow.height = size;
@@ -317,20 +351,41 @@ function bake(p: Planet, ps: number): Baked | null {
   c.arc(half, half, reach, 0, Math.PI * 2);
   c.fill();
 
-  // Cloud: wisps over rock, haze over ice, long streaks over a gas giant.
-  const kind: MapKind = p.style === 'gas' ? 'band' : p.style === 'ice' ? 'haze' : 'wisp';
-  const colour2: Rgb = p.style === 'gas' ? [mix(tr, 255, 0.55), mix(tg, 245, 0.55), mix(tb, 230, 0.55)] : p.style === 'ice' ? [235, 245, 255] : [255, 236, 215];
-  const cloudCanvas = document.createElement('canvas');
-  cloudCanvas.width = cloudCanvas.height = size;
   const rings = ringSpec ? bakeRings(R, tr, tg, tb, ringSpec) : null;
   // Grey with a hint of the planet's colour.
   const moon: Moon | null = moonRoll ? { ...moonRoll, colour: [mix(190, tr, 0.25), mix(186, tg, 0.25), mix(180, tb, 0.25)] } : null;
   return {
     size,
     glow,
-    surface,
-    sphere: { canvas: sphere, image: sphere.getContext('2d')!.createImageData(size, size), map, gain, city: settled ? proceduralMap('city') : null, shift: new Float32Array(MAP_H) },
-    cloud: { kind, enabled: variant.clouds !== false, colour: colour2, canvas: cloudCanvas, image: cloudCanvas.getContext('2d')!.createImageData(size, size), shift: new Float32Array(MAP_H), direction, phase, at: -1 },
+    shade: {
+      mapName: variant.name,
+      map: mapImage,
+      cloudName: kind,
+      cloud: () => proceduralMap(kind),
+      city: settled ? () => proceduralMap('city') : null,
+      mapSize: [MAP_W, MAP_H],
+      radius: R,
+      half,
+      spin,
+      tilt,
+      gain,
+      rim: rim.map((v) => v / 255),
+      dusk: dusk.map((v) => v / 255),
+      night: NIGHT.map((v) => v / 255),
+      cityLight: CITY.map((v) => v / 255),
+      specular,
+      relief: RELIEF[p.style] ?? RELIEF.rocky,
+      air: variant.clouds !== false,
+      cloudColour: colour2.map((v) => v / 255),
+      band: kind === 'band',
+      surfaceRate: SURFACE_RATE * direction,
+      cloudRate: CLOUD_RATE * direction,
+      phase,
+      shadow: SHADOW,
+      shadowDepth: SHADOW_DEPTH,
+    },
+    still: { canvas: null, at: -1 },
+    soft: makeSoft,
     rings,
     moon,
     storms: p.style === 'gas',
@@ -343,7 +398,7 @@ function bake(p: Planet, ps: number): Baked | null {
  * Paints the sphere as it stands at `time`: the map turned about the axis by how far the planet has come round, lit as
  * it was. A gas giant's bands turn at speeds of their own (faster towards the equator), so they slide against each other.
  */
-function paintSurface(b: Baked, time: number): void {
+function paintSurface(b: Soft, time: number): void {
   const { sphere, surface, cloud } = b;
   const turn = time * SURFACE_RATE * cloud.direction;
   const shift = sphere.shift;
@@ -389,14 +444,14 @@ const SHADOW = 0.012;
 const SHADOW_DEPTH = 0.5;
 
 /** Where each row of the cloud has turned to at `time`: the gas giant's bands at speeds of their own, other cloud as one. */
-function cloudShifts(b: Baked, time: number): void {
+function cloudShifts(b: Soft, time: number): void {
   const { cloud } = b;
   const turn = time * CLOUD_RATE * cloud.direction;
   for (let r = 0; r < MAP_H; r++) cloud.shift[r] = cloud.kind === 'band' ? turn * (1 + 0.8 * Math.sin((r / MAP_H) * Math.PI * 3 + cloud.phase)) : turn;
 }
 
 /** Paints the cloud layer as `cloudShifts` left it: the map turned round by how far it has drifted, lit like the sphere under it. */
-function paintClouds(b: Baked): void {
+function paintClouds(b: Soft): void {
   const { cloud, surface } = b;
   const map = proceduralMap(cloud.kind);
   const data = cloud.image.data;
@@ -667,20 +722,46 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
         fallback.draw(ctx, x, y, scale, time);
         return;
       }
-      // Each planet is painted again on its own beat, so they do not all fall in one frame.
-      if (baked.cloud.at < 0 || time - baked.cloud.at >= CLOUD_EVERY) {
-        if (baked.cloud.at < 0) baked.cloud.at = time - ((p.seed % 7) / 7) * CLOUD_EVERY;
-        else baked.cloud.at = time;
-        cloudShifts(baked, time);
-        paintSurface(baked, time);
-        if (baked.cloud.enabled) paintClouds(baked);
-      }
       const moon = baked.moon ? moonAt(baked.moon, time) : null;
       place(ctx, baked.glow, x, y, scale);
       if (moon && !moon.front) drawMoon(ctx, x, y, baked.moon!, moon, p.radius);
       if (baked.rings) place(ctx, baked.rings.back, x, y, scale);
-      place(ctx, baked.sphere.canvas, x, y, scale);
-      if (baked.cloud.enabled) place(ctx, baked.cloud.canvas, x, y, scale);
+      // A planet turns slowly: the shader's picture is kept and worked out again on the planet's own beat, so they do not all fall in one frame.
+      const still = baked.still;
+      if (!still.canvas || still.at < 0 || time < still.at || time - still.at >= CLOUD_EVERY) {
+        still.at = still.at < 0 ? time - ((p.seed % 7) / 7) * CLOUD_EVERY : time;
+        const shaded = shadePlanet(baked.shade, time);
+        if (shaded) {
+          still.canvas ??= document.createElement('canvas');
+          if (still.canvas.width !== shaded.w || still.canvas.height !== shaded.h) {
+            still.canvas.width = shaded.w;
+            still.canvas.height = shaded.h;
+          }
+          const c = still.canvas.getContext('2d')!;
+          c.globalCompositeOperation = 'copy';
+          placeShaded(c, shaded, 0, 0, shaded.w, shaded.h);
+        } else {
+          still.canvas = null;
+        }
+      }
+      if (still.canvas) {
+        const span = baked.size / scale;
+        ctx.drawImage(still.canvas, x - span / 2, y - span / 2, span, span);
+      } else {
+        const soft = baked.soft();
+        if (soft) {
+          // Each planet is painted again on its own beat, so they do not all fall in one frame.
+          if (soft.cloud.at < 0 || time - soft.cloud.at >= CLOUD_EVERY) {
+            if (soft.cloud.at < 0) soft.cloud.at = time - ((p.seed % 7) / 7) * CLOUD_EVERY;
+            else soft.cloud.at = time;
+            cloudShifts(soft, time);
+            paintSurface(soft, time);
+            if (soft.cloud.enabled) paintClouds(soft);
+          }
+          place(ctx, soft.sphere.canvas, x, y, scale);
+          if (soft.cloud.enabled) place(ctx, soft.cloud.canvas, x, y, scale);
+        }
+      }
       if (moon?.front) drawMoonShadow(ctx, x, y, p.radius, baked.moon!, moon);
       if (baked.storms) drawLightning(ctx, x, y, p, time);
       if (baked.aurora) drawAurora(ctx, x, y, p.radius, baked.aurora, baked.tilt, time);
