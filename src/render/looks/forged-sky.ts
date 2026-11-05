@@ -220,8 +220,9 @@ let vignette: { key: string; gradient: CanvasGradient } | null = null;
  * It goes by how long a frame takes to draw (from `forgedBegin` to the end of the post pass), not by how far apart frames
  * come: a browser that hands out thirty frames a second to save the battery, a hidden tab or a menu over a still field
  * say nothing about the drawing. Each canvas keeps its own, so the gallery's cards do not judge each other. A step down
- * that saved nothing (the field itself is what is slow) is taken back and not tried again; one that did is undone once
- * the frames have room for what it saved, so a slow stretch from elsewhere does not strip the look for good.
+ * that saved nothing (the field itself is what is slow) is taken back and not tried again until the frames have recovered;
+ * one that did is undone once the frames have room for what it saved, so a slow stretch from elsewhere does not strip the
+ * look for good.
  *
  * The post level chosen in the settings is where it starts and the most it ever draws; it only steps down from there.
  */
@@ -238,7 +239,7 @@ interface Pace {
   saved: number[];
   /** Set just after a step down: the average before it, and the frames left until its saving is measured. */
   check: { before: number; frames: number } | null;
-  /** A step down saved nothing: the post pass is not what is slow, so it stops stepping down. */
+  /** A step down saved nothing: the post pass is not what is slow, so it stops stepping down until the frames recover. */
   stuck: boolean;
 }
 
@@ -251,10 +252,13 @@ export function holdPostPass(on: boolean): void {
   steady = on;
 }
 
-/** Drawing slower than this (s), on average, does not leave room for sixty frames a second; for this many frames in a row, it steps down. */
-const SLOW_DRAW = 1 / 60;
-const SLOW_FOR = 120;
-/** It steps back up after this many frames in a row with room for what the step saved, and a margin. */
+/**
+ * Drawing slower than this (s), on average, for this many frames in a row, it steps down. The bloom goes first and it can be
+ * seen going, so a frame only just over a sixtieth of a second or a short busy stretch keeps it.
+ */
+const SLOW_DRAW = 1 / 50;
+const SLOW_FOR = 300;
+/** It steps back up after this many frames in a row with room for what the step saved, and a margin: sixty frames a second with it back. */
 const ROOM_FOR = 600;
 const MARGIN = 0.8;
 /** Frames after a step down before its saving is measured, and how much it must save (of the average before) to count. */
@@ -273,7 +277,7 @@ export function paceOf(canvas: HTMLCanvasElement): Pace {
 }
 
 /** Times the frame just drawn and steps the post pass down, or back up, by it. */
-function keepPace(pace: Pace, drawn: number): void {
+export function keepPace(pace: Pace, drawn: number): void {
   pace.draw = pace.draw ? pace.draw + (drawn - pace.draw) * 0.1 : drawn;
   if (pace.check) {
     if (--pace.check.frames > 0) return;
@@ -288,10 +292,11 @@ function keepPace(pace: Pace, drawn: number): void {
     }
     return;
   }
+  if (pace.draw <= SLOW_DRAW) pace.stuck = false;
   const room = pace.lean > pace.floor && pace.draw + (pace.saved[pace.lean - 1] ?? Infinity) < SLOW_DRAW * MARGIN;
   pace.slow = pace.draw > SLOW_DRAW ? pace.slow + 1 : 0;
   pace.fast = room ? pace.fast + 1 : 0;
-  if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < 2) {
+  if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < LEAN.off) {
     pace.check = { before: pace.draw, frames: SETTLE };
     pace.lean++;
     pace.slow = 0;
@@ -311,11 +316,11 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   const lean = steady ? 0 : pace.lean;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (lean < 1) {
+  if (lean < LEAN.low) {
     bloom(ctx, f);
     for (const redraw of afterBloom) redraw(ctx);
   }
-  if (lean < 2) drawVignette(ctx, f);
+  if (lean < LEAN.off) drawVignette(ctx, f);
   ctx.restore();
   if (!steady) keepPace(pace, (performance.now() - started) / 1000);
 }

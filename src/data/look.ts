@@ -21,8 +21,8 @@ export function setLook(look: Look): void {
 
 /**
  * How much of its whole-frame light a look with a post pass lays over the finished field (Forged: `high` bloom and
- * vignette; `low` only the vignette; `off` none), for a device that cannot
- * afford all of it. A ceiling: the look may still step down further on its own when frames lag.
+ * vignette; `low` only the vignette; `off` none), for a device that cannot afford all of it. A ceiling: the look may still
+ * step down further on its own when frames lag.
  */
 export const POST_LEVELS = ['off', 'low', 'high'] as const;
 export type PostLevel = (typeof POST_LEVELS)[number];
