@@ -31,6 +31,9 @@ function untilMidnight(): string {
 
 // ————————————————————————————— Briefing —————————————————————————————
 
+/** The shot of the day last fetched. The page is built anew on the way back from its replay, and the focus returns to a Watch row that has to be there by then. */
+let fetchedShot: { day: string; shot: ShotOfDay } | null = null;
+
 /** Today's challenge at a glance: theme, the five sectors and how hard each one is, your best so far. */
 export function dailyScreen(app: App): Screen {
   const key = app.today();
@@ -53,15 +56,21 @@ export function dailyScreen(app: App): Screen {
   const stat = (label: string, value: string) => h('div', null, h('dt', null, label), h('dd', null, value));
   const hasBoard = leaderboardAvailable();
   /** Today's shot of the day. It gives away a way through the sectors, so only a player who has flown them and posted the run gets it. */
-  let shot: ShotOfDay | null = null;
+  let shot: ShotOfDay | null = fetchedShot?.day === key ? fetchedShot.shot : null;
   let open = true;
   const shotCard = h('section.daily-shot', { hidden: 'hidden' });
+  const showShot = (next: ShotOfDay) => {
+    shotCard.replaceChildren(...shotOfDayPreview(next));
+    shotCard.hidden = false;
+  };
+  if (shot) showShot(shot);
   if (hasBoard && day?.posted) {
     void new Leaderboard().top(key).then((board) => {
+      if (!board.shot) return;
       shot = board.shot;
-      if (!open || !shot) return;
-      shotCard.replaceChildren(...shotOfDayPreview(shot));
-      shotCard.hidden = false;
+      fetchedShot = { day: key, shot };
+      if (!open) return;
+      showShot(shot);
       app.menu.refresh();
     }).catch(() => {});
   }
