@@ -55,10 +55,6 @@ void main() {
   vec3 outer = uRim * haze;
   float outerA = haze;
   float cover = 1.0 - smoothstep(1.0 - 1.0 / uR, 1.0 + 1.0 / uR, dist);
-  if (cover <= 0.0) {
-    outColor = vec4(outer, outerA);
-    return;
-  }
   float nz = sqrt(max(0.0, 1.0 - rr));
   vec3 n = vec3(p, nz);
   // The point on the sphere, turned about the vertical by the seed and tipped by the tilt, as longitude and latitude.
@@ -71,12 +67,16 @@ void main() {
   float wave = sin(v * 9.424778 + uPhase);
   float surfaceU = u + uSurfaceTurn * (1.0 + uBand * 0.5 * wave);
   float cloudU = u + uCloudTurn * (1.0 + uBand * 0.8 * wave);
-  vec3 albedo = min(vec3(1.0), textureLod(uMap, vec2(surfaceU, v), uLod).rgb * uGain);
 
-  // Relief: the map's brightness taken as height, its slope on the screen tilting the surface towards or from the light. Read from a blurred level of the map: its sharp coasts would speckle.
+  // Relief: the map's brightness taken as height, its slope on the screen tilting the surface towards or from the light. Read from a blurred level of the map: its sharp coasts would speckle. The derivatives are taken before anything returns: they need every pixel of a quad to be here.
   float height = luma(textureLod(uMap, vec2(surfaceU, v), uLod + 2.0).rgb);
   float slopeX = dFdx(height) * uR * 0.04;
   float slopeY = -dFdy(height) * uR * 0.04;
+  if (cover <= 0.0) {
+    outColor = vec4(outer, outerA);
+    return;
+  }
+  vec3 albedo = min(vec3(1.0), textureLod(uMap, vec2(surfaceU, v), uLod).rgb * uGain);
   vec3 bumped = normalize(n - vec3(slopeX, slopeY, 0.0) * uRelief);
   float lam = dot(n, uLight);
   float lamBumped = dot(bumped, uLight);

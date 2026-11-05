@@ -2,7 +2,7 @@ import { getPostLevel, type PostLevel } from '../../data/look';
 import { createRng } from '../../sim/rng';
 import { fbm } from '../noise';
 import { smoothstep } from '../planet-common';
-import { closeShaderFrame, setShaderDetail } from './forged-gl';
+import { canShade, closeShaderFrame, setShaderDetail } from './forged-gl';
 import { shadePost } from './forged-post-gl';
 import type { FrameInfo } from './painter';
 
@@ -18,8 +18,17 @@ let current: FrameInfo | null = null;
 export function forgedBegin(frame: FrameInfo): void {
   current = frame;
   started = performance.now();
+  // The time since the last frame began: what the GPU's work and the copies between canvases add up to where no timer sees them. A pause (a hidden tab, a menu) is no measure.
+  const gap = lastBegin ? (started - lastBegin) / 1000 : 0;
+  lastBegin = started;
+  interval = gap < PAUSE ? gap : 0;
   afterBloom.length = 0;
 }
+
+let lastBegin = 0;
+let interval = 0;
+/** A gap longer than this (s) between two frames is a pause, not a slow frame. */
+const PAUSE = 0.25;
 
 /** Drawings of this frame to put back over the bloom (which would grey what must stay black), in the post pass's own pixels. */
 const afterBloom: ((ctx: CanvasRenderingContext2D) => void)[] = [];
@@ -268,6 +277,8 @@ export function holdPostPass(on: boolean): void {
 /** Drawing slower than this (s), on average, does not leave room for sixty frames a second; for this many frames in a row, it steps down. */
 const SLOW_DRAW = 1 / 60;
 const SLOW_FOR = 120;
+/** A gap between frames counts as slow only past this many times `SLOW_DRAW`. */
+const LATE = 1.2;
 /** It steps back up after this many frames in a row with room for what the step saved, and a margin. */
 const ROOM_FOR = 600;
 const MARGIN = 0.8;
@@ -342,8 +353,10 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   if (steady) {
     setShaderDetail(1);
   } else {
-    // The CPU and the GPU work side by side: whichever is slower sets the pace. Only a browser with the GPU's timer can tell.
-    keepPace(pace, Math.max((performance.now() - started) / 1000, gpu));
+    // The CPU and the GPU work side by side: whichever is slower sets the pace. A browser with the GPU's timer says how long the GPU took; without one, while shaders draw, the time between frames stands in for it. A frame rate the browser holds down on its own saves nothing when stepped down, and the pace takes such a step back.
+    // A frame on a sixty hertz screen takes a sixtieth, give or take: only clearly longer counts.
+    const waited = gpu === 0 && canShade() && interval > SLOW_DRAW * LATE ? interval : 0;
+    keepPace(pace, Math.max((performance.now() - started) / 1000, gpu, waited));
     setShaderDetail(DETAIL[Math.min(DETAIL.length - 1, pace.lean - pace.floor)]);
   }
 }

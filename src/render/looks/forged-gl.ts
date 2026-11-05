@@ -253,9 +253,16 @@ export class Stage {
   }
 }
 
-/** The URL's switch for the shaders (see the top of the file). */
+/** The URL's switch for the shaders (see the top of the file); read once per search string, as it is asked for several times a frame. */
+let switchFor: string | null = null;
+let switchKnown: string | null = null;
 function switchValue(): string | null {
-  return typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('forgedgl');
+  if (typeof location === 'undefined') return null;
+  if (switchFor !== location.search) {
+    switchFor = location.search;
+    switchKnown = new URLSearchParams(location.search).get('forgedgl');
+  }
+  return switchKnown;
 }
 
 let spriteStage: Stage | null = null;
@@ -297,6 +304,22 @@ export function pixelsOf(ctx: CanvasRenderingContext2D, length: number): number 
   return length * Math.hypot(m.a, m.b);
 }
 
+/** Whether the square of side `reach * 2` round (x, y) in the current frame of `ctx` is at least in part on its canvas; what is off it need not be shaded. */
+export function onScreen(ctx: CanvasRenderingContext2D, x: number, y: number, reach: number): boolean {
+  const m = ctx.getTransform();
+  const cx = m.a * x + m.c * y + m.e;
+  const cy = m.b * x + m.d * y + m.f;
+  const r = reach * Math.hypot(m.a, m.b) * Math.SQRT2;
+  return cx + r >= 0 && cy + r >= 0 && cx - r <= ctx.canvas.width && cy - r <= ctx.canvas.height;
+}
+
+/** The biggest sprite asked for since the sprite canvas was last sized: it shrinks back after a stretch with only small ones. */
+let peakW = 0;
+let peakH = 0;
+let frames = 0;
+const SHRINK_EVERY = 300;
+const pow2 = (n: number): number => 2 ** Math.ceil(Math.log2(Math.max(64, n)));
+
 /**
  * Paints `fragment` as a sprite `width` × `height` pixels (at most `limit` on its long side, and less while the frame is short
  * of time). Null when it cannot, and the caller draws its own way. The shader's output is premultiplied.
@@ -309,13 +332,59 @@ export function shade(fragment: string, width: number, height: number, limit: nu
   const w = Math.max(2, Math.ceil(width * k));
   const h = Math.max(2, Math.ceil(height * k));
   const canvas = stage.canvas;
-  // It only grows, by powers of two: resizing throws its buffer away.
+  peakW = Math.max(peakW, w);
+  peakH = Math.max(peakH, h);
+  // It grows by powers of two: resizing throws its buffer away.
   if (canvas.width < w || canvas.height < h) {
-    canvas.width = Math.max(canvas.width, 2 ** Math.ceil(Math.log2(w)));
-    canvas.height = Math.max(canvas.height, 2 ** Math.ceil(Math.log2(h)));
+    canvas.width = Math.max(canvas.width, pow2(w));
+    canvas.height = Math.max(canvas.height, pow2(h));
   }
   gl.viewport(0, canvas.height - h, w, h);
   return stage.run(fragment, (u) => set(u, stage)) ? { canvas, w, h } : null;
+}
+
+/** A shaded picture kept in a canvas of its own between beats. */
+interface Kept {
+  canvas: HTMLCanvasElement | null;
+  /** When it was last worked out (s). */
+  at: number;
+}
+const kept = new Map<string, Kept>();
+const KEPT_MAX = 48;
+
+/** A stable [0, 1) for a key, to stagger the beats of things that appear together. */
+function spread(key: string): number {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return (h % 997) / 997;
+}
+
+/**
+ * Like `shade`, for something that moves slowly: the picture is worked out again `hz` times a second and kept in between (a
+ * 2D canvas of its own, which costs the GPU a copy, not a shader), each key on a beat of its own so they do not all fall in one frame.
+ */
+export function shadeKept(key: string, time: number, hz: number, fragment: string, width: number, height: number, limit: number, set: (u: Uniforms, stage: Stage) => void): Shaded | null {
+  let keep = kept.get(key);
+  if (!keep) {
+    if (kept.size >= KEPT_MAX) kept.clear();
+    keep = { canvas: null, at: -1 };
+    kept.set(key, keep);
+  }
+  const every = 1 / hz;
+  if (!keep.canvas || time < keep.at || time - keep.at >= every) {
+    const shaded = shade(fragment, width, height, limit, set);
+    if (!shaded) return null;
+    keep.canvas ??= document.createElement('canvas');
+    if (keep.canvas.width !== shaded.w || keep.canvas.height !== shaded.h) {
+      keep.canvas.width = shaded.w;
+      keep.canvas.height = shaded.h;
+    }
+    const c = keep.canvas.getContext('2d')!;
+    c.globalCompositeOperation = 'copy';
+    c.drawImage(shaded.canvas, 0, 0, shaded.w, shaded.h, 0, 0, shaded.w, shaded.h);
+    keep.at = keep.at < 0 ? time - spread(key) * every : time;
+  }
+  return { canvas: keep.canvas, w: keep.canvas.width, h: keep.canvas.height };
 }
 
 /** Draws a shaded picture over the given rectangle of `ctx`. */
@@ -325,5 +394,21 @@ export function place(ctx: CanvasRenderingContext2D, picture: Shaded, x: number,
 
 /** Closes the frame on both stages and says how long the GPU took for the latest frame measured (s). */
 export function closeShaderFrame(): number {
-  return Math.max(spriteStage?.closeFrame() ?? 0, postStage?.closeFrame() ?? 0);
+  if (spriteStage && ++frames >= SHRINK_EVERY) {
+    // Between frames, so nothing is lost: a planet's 1536² once made the canvas that big for good.
+    const canvas = spriteStage.canvas;
+    const w = pow2(peakW);
+    const h = pow2(peakH);
+    if (canvas.width > w * 2 || canvas.height > h * 2) {
+      canvas.width = Math.min(canvas.width, w);
+      canvas.height = Math.min(canvas.height, h);
+    }
+    peakW = peakH = frames = 0;
+  }
+  lastGpu = Math.max(spriteStage?.closeFrame() ?? 0, postStage?.closeFrame() ?? 0);
+  return lastGpu;
 }
+
+let lastGpu = 0;
+/** The GPU time of the latest frame the timer has answered for (s), 0 where the browser has no timer; for the gallery's readout. */
+export const shaderGpuSeconds = (): number => lastGpu;

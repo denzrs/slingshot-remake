@@ -8,6 +8,7 @@ import type { FrameInfo } from './painter';
  * the grain, as `forged-sky.ts` draws them, with a touch of dither so the deep blues do not band.
  *
  * The frame has to cross to the GPU as a texture, once, or twice while something must go over the bloom but under the grade.
+ * The first time, when only the bloom wants it, it crosses at half the size: the blur cannot tell, and the copy is a quarter.
  */
 
 /** Keeps what is nearly white. Luma, not the brightest channel: a ship's strong colour must not bloom, only what is nearly white. */
@@ -104,6 +105,8 @@ interface Level {
 interface Chain {
   levels: Level[];
   scene: WebGLTexture;
+  /** The frame at half size, for the bloom alone. */
+  small: WebGLTexture;
 }
 
 /** Each frame size's blur levels, at ½ to 1/32; made again when the context comes back. */
@@ -129,6 +132,7 @@ function chainFor(stage: Stage, gl: WebGL2RenderingContext, w: number, h: number
   if (chains.size >= 4) {
     for (const chain of chains.values()) {
       gl.deleteTexture(chain.scene);
+      gl.deleteTexture(chain.small);
       for (const level of chain.levels) {
         gl.deleteTexture(level.texture);
         gl.deleteFramebuffer(level.buffer);
@@ -156,23 +160,44 @@ function chainFor(stage: Stage, gl: WebGL2RenderingContext, w: number, h: number
   }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   const scene = gl.createTexture();
-  if (!scene) return null;
+  const small = gl.createTexture();
+  if (!scene || !small) return null;
   gl.bindTexture(gl.TEXTURE_2D, scene);
   linear(gl);
-  const made = { levels, scene };
+  gl.bindTexture(gl.TEXTURE_2D, small);
+  linear(gl);
+  const made = { levels, scene, small };
   chains.set(key, made);
   return made;
 }
 
-function upload(gl: WebGL2RenderingContext, scene: WebGLTexture, frame: HTMLCanvasElement): void {
+function upload(gl: WebGL2RenderingContext, scene: WebGLTexture, frame: HTMLCanvasElement | OffscreenCanvas): void {
   gl.bindTexture(gl.TEXTURE_2D, scene);
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, frame);
 }
 
-/** Runs the threshold and the blur over the texture of the frame: the result is in the first level. */
-function blur(stage: Stage, gl: WebGL2RenderingContext, chain: Chain): boolean {
-  const { levels, scene } = chain;
+/** The frame shrunk to half, for the 2D canvas does that on its own GPU path, cheaper than moving the whole frame across. */
+let halfFrame: HTMLCanvasElement | null = null;
+function halved(main: HTMLCanvasElement): HTMLCanvasElement | null {
+  halfFrame ??= document.createElement('canvas');
+  const w = Math.max(1, Math.ceil(main.width / 2));
+  const h = Math.max(1, Math.ceil(main.height / 2));
+  if (halfFrame.width !== w || halfFrame.height !== h) {
+    halfFrame.width = w;
+    halfFrame.height = h;
+  }
+  const c = halfFrame.getContext('2d');
+  if (!c) return null;
+  c.globalCompositeOperation = 'copy';
+  c.imageSmoothingQuality = 'low';
+  c.drawImage(main, 0, 0, w, h);
+  return halfFrame;
+}
+
+/** Runs the threshold and the blur over a texture of the frame: the result is in the first level. */
+function blur(stage: Stage, gl: WebGL2RenderingContext, chain: Chain, scene: WebGLTexture): boolean {
+  const { levels } = chain;
   const pass = (fragment: string, to: Level, set: Parameters<Stage['run']>[1]): boolean => {
     gl.bindFramebuffer(gl.FRAMEBUFFER, to.buffer);
     gl.viewport(0, 0, to.w, to.h);
@@ -216,8 +241,12 @@ export function shadePost(ctx: CanvasRenderingContext2D, f: FrameInfo, redraws: 
   }
   const chain = chainFor(stage, gl, main.width, main.height);
   if (!chain) return false;
-  upload(gl, chain.scene, main);
-  if (!blur(stage, gl, chain)) {
+  // Whole and with nothing between, the composite wants the frame at full size anyway; otherwise the bloom takes a half-size copy.
+  const direct = whole && redraws.length === 0;
+  const half = direct ? null : halved(main);
+  if (half) upload(gl, chain.small, half);
+  else upload(gl, chain.scene, main);
+  if (!blur(stage, gl, chain, half ? chain.small : chain.scene)) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     return false;
   }
@@ -226,7 +255,6 @@ export function shadePost(ctx: CanvasRenderingContext2D, f: FrameInfo, redraws: 
   const bloom = chain.levels[0];
 
   // The frame comes back whole when nothing has to go between the bloom and the grade.
-  const direct = whole && redraws.length === 0;
   if (!direct) {
     gl.viewport(0, main.height - bloom.h, bloom.w, bloom.h);
     if (!stage.run(SHOW_BLOOM, (u) => {

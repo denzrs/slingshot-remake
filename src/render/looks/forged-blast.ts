@@ -1,7 +1,7 @@
 import { rgba } from '../color';
 import { fbm } from '../noise';
 import { clamp01, smoothstep } from '../planet-common';
-import { canShade, GLSL_HEAD, pixelsOf, place, seedOffset, shade } from './forged-gl';
+import { canShade, GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shade } from './forged-gl';
 import type { EffectStyle } from './painter';
 
 /**
@@ -86,6 +86,8 @@ function paintFrame(c: CanvasRenderingContext2D, index: number): void {
 const BLAST_SHADER = `${GLSL_HEAD}
 uniform float uT;
 uniform float uSeed;
+// 1 while the ball is drawn small, where its finest turbulence is smaller than a pixel and costs the most.
+uniform float uSmall;
 vec3 ramp(float h) {
   vec3 c = mix(vec3(120, 20, 10), vec3(200, 40, 20), smoothstep(0.0, 0.12, h));
   c = mix(c, vec3(255, 120, 35), smoothstep(0.12, 0.35, h));
@@ -101,9 +103,10 @@ void main() {
   float fuel = pow(1.0 - t, 1.15);
   // The noise is read on a ball pushed out from the middle, so the fire billows from its heart.
   vec3 ball = vec3(d, sqrt(max(0.0, 1.0 - r * r)));
-  vec3 warp = vec3(fbm(ball * 1.6 + uSeed + t, 3), fbm(ball * 1.6 + uSeed + 31.0 - t, 3), 0.0) - 0.5;
-  float n = fbm(ball * 2.3 + warp * 0.9 + vec3(uSeed, 5.0, t * 1.4), 4);
-  float fine = fbm(ball * 6.5 + warp * 1.6 + vec3(9.0, uSeed, t * 2.2), 4);
+  int low = uSmall > 0.5 ? 1 : 0;
+  vec3 warp = vec3(fbm(ball * 1.6 + uSeed + t, 3 - low), fbm(ball * 1.6 + uSeed + 31.0 - t, 3 - low), 0.0) - 0.5;
+  float n = fbm(ball * 2.3 + warp * 0.9 + vec3(uSeed, 5.0, t * 1.4), 4 - low);
+  float fine = fbm(ball * 6.5 + warp * 1.6 + vec3(9.0, uSeed, t * 2.2), 4 - 2 * low);
   float body = reach * (0.42 + 1.15 * n) + 0.1 * (fine - 0.5) - r;
   float density = smoothstep(0.0, 0.5 * reach, body);
   float core = pow(clamp(1.0 - r / (reach * 0.42), 0.0, 1.0), 2.0) * pow(1.0 - t, 1.8);
@@ -112,11 +115,15 @@ void main() {
   outColor = vec4(ramp(heat) * a, a);
 }`;
 /** The largest a fireball is worked out at, in pixels; past that it is drawn up. */
-const BLAST_LIMIT = 512;
+const BLAST_LIMIT = 256;
+/** Below this many pixels across, a fireball is worked out with fewer octaves. */
+const SMALL_BLAST = 120;
+/** Set when the fireball shader would not compile: the sheet is painted after all. */
+let shaderFailed = false;
 
 /** Paints the next frames of the fireball sheet, until there are all of them, unless the shader draws the fireballs. Called every frame the look draws. */
 export function warmBlasts(): void {
-  if (drawn >= FRAMES || canShade()) return;
+  if (drawn >= FRAMES || (canShade() && !shaderFailed)) return;
   if (!sheet) {
     sheet = document.createElement('canvas');
     sheet.width = COLS * CELL;
@@ -129,11 +136,15 @@ export function warmBlasts(): void {
 /** A fireball `size` wide, `t` (0 → 1) through its life: two neighbouring frames blended, turned by its seed, with a glow of its own colour under it. */
 export const drawBlast: NonNullable<EffectStyle['blast']> = (ctx, blast, t) => {
   const size = blast.size * (0.8 + 0.25 * t);
+  if (!shaderFailed && !onScreen(ctx, blast.x, blast.y, size)) return;
   const pixels = pixelsOf(ctx, size);
-  const shaded = shade(BLAST_SHADER, pixels, pixels, BLAST_LIMIT, (u) => {
+  const shaded = shaderFailed ? null : shade(BLAST_SHADER, pixels, pixels, BLAST_LIMIT, (u) => {
     u.f('uT', clamp01(t));
     u.f('uSeed', seedOffset(blast.seed));
+    u.f('uSmall', pixels < SMALL_BLAST ? 1 : 0);
   });
+  // A stage that is there but did not make the picture: the shader is what is wrong, so the sheet has to be painted.
+  if (!shaded && canShade()) shaderFailed = true;
   if (!shaded && (!sheet || drawn < FRAMES)) return;
   const at = clamp01(t) * (FRAMES - 1);
   const first = Math.floor(at);

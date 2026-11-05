@@ -3,7 +3,7 @@ import { isWormholeJump, type Planet, type Wormhole } from '../../sim/physics';
 import { rgba } from '../color';
 import { strokePolyline } from '../polyline';
 import { drawSun, type SunStyle } from '../sun';
-import { canShade, GLSL_HEAD, pixelsOf, place, seedOffset, shade } from './forged-gl';
+import { canShade, GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept } from './forged-gl';
 import { lightParts } from './forged-parts';
 
 /**
@@ -241,15 +241,18 @@ void main() {
 }`;
 
 /** The largest the ball and the corona are worked out at, in pixels. */
-const SURFACE_LIMIT = 768;
-const CORONA_LIMIT = 900;
+const SURFACE_LIMIT = 512;
+const CORONA_LIMIT = 512;
+/** How often they are worked out again: both churn slowly, and what is between is the picture kept. */
+const SUN_HZ = 20;
 /** The corona's reach in radii when calm, as in `sun.ts`: the shader's own coordinates. */
 const CORONA_REACH = 3.6;
 
 const sunStyle: SunStyle = {
   corona(ctx, seed, reach, time, flare, giant) {
+    if (!onScreen(ctx, 0, 0, reach)) return true;
     const pixels = pixelsOf(ctx, reach * 2);
-    const shaded = shade(CORONA_SHADER, pixels, pixels, CORONA_LIMIT, (u) => {
+    const shaded = shadeKept(`corona:${seed}`, time, SUN_HZ, CORONA_SHADER, pixels, pixels, CORONA_LIMIT, (u) => {
       u.f('uTime', time);
       u.f('uSeed', seedOffset(seed));
       u.f('uReach', CORONA_REACH);
@@ -261,8 +264,9 @@ const sunStyle: SunStyle = {
     return true;
   },
   surface(ctx, seed, R, time, giant) {
+    if (!onScreen(ctx, 0, 0, R)) return true;
     const pixels = pixelsOf(ctx, R * 2);
-    const shaded = shade(SURFACE_SHADER, pixels, pixels, SURFACE_LIMIT, (u) => {
+    const shaded = shadeKept(`surface:${seed}`, time, SUN_HZ, SURFACE_SHADER, pixels, pixels, SURFACE_LIMIT, (u) => {
       u.f('uTime', time);
       u.f('uSeed', seedOffset(seed));
       u.f('uGiant', giant);
