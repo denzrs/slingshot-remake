@@ -17,7 +17,7 @@ export interface Settings extends RoomRules {
   seats: Seat[];
   /** The field's graphics: the original classic plate, or forged (glowing, rendered ships and planets) or holo (a projection in lines). */
   look: Look;
-  /** How much of a look's whole-frame light (bloom, grade, …) is drawn, for looks that have it. */
+  /** How much of a look's whole-frame light (bloom, vignette, …) is drawn, for looks that have it. */
   postLevel: PostLevel;
   contours: boolean;
   particles: boolean;

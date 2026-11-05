@@ -7,7 +7,7 @@ import type { FrameInfo } from './painter';
 /**
  * What the forged look puts behind and over the field as a whole: a nebula and dust lanes baked into the backdrop, layers
  * of stars drifting, and over the finished field a bloom (the bright parts, blurred
- * wide and added back), a vignette, a grade and a little film grain.
+ * wide and added back) and a vignette.
  */
 
 let current: FrameInfo | null = null;
@@ -100,7 +100,6 @@ interface Tiles {
   dpr: number;
   farA: Speck[];
   farB: Speck[];
-  grain: CanvasPattern;
 }
 let tiles: Tiles | null = null;
 
@@ -114,7 +113,7 @@ function speck(reach: number, x: number, y: number, draw: (c: CanvasRenderingCon
   return { sprite, x, y };
 }
 
-function buildTiles(ctx: CanvasRenderingContext2D, dpr: number): Tiles {
+function buildTiles(dpr: number): Tiles {
   const stars = (count: number, seed: number): Speck[] => {
     const rng = createRng(seed);
     return Array.from({ length: count }, () => {
@@ -139,18 +138,7 @@ function buildTiles(ctx: CanvasRenderingContext2D, dpr: number): Tiles {
       });
     });
   };
-  const grain = document.createElement('canvas');
-  grain.width = grain.height = 128;
-  const g = grain.getContext('2d')!;
-  const img = g.createImageData(128, 128);
-  const rng = createRng(0xf0d4);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const v = rng() * 255;
-    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
-    img.data[i + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-  return { dpr, farA: stars(26, 0xf0a1), farB: stars(26, 0xf0b2), grain: ctx.createPattern(grain, 'repeat')! };
+  return { dpr, farA: stars(26, 0xf0a1), farB: stars(26, 0xf0b2) };
 }
 
 /** How fast the stars drift (CSS pixels a second). */
@@ -179,7 +167,7 @@ function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: Frame
 
 /** Stars that twinkle in turn and drift together, over the plate. */
 export function forgedSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
-  if (!tiles || tiles.dpr !== f.dpr) tiles = buildTiles(ctx, f.dpr);
+  if (!tiles || tiles.dpr !== f.dpr) tiles = buildTiles(f.dpr);
   ctx.save();
   ctx.beginPath();
   ctx.rect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
@@ -225,8 +213,8 @@ function shrink(from: CanvasImageSource, to: Level): void {
 let vignette: { key: string; gradient: CanvasGradient } | null = null;
 
 /**
- * How much of the post pass a machine that cannot keep up is spared: 0 all of it is drawn; 1 not the grade and the grain;
- * 2 not the bloom either; 3 not the vignette either. Each is a pass over the whole screen, which a phone's GPU at its pixel
+ * How much of the post pass a machine that cannot keep up is spared: 0 all of it is drawn; 1 not the bloom;
+ * 2 not the vignette either. Each is a pass over the whole screen, which a phone's GPU at its pixel
  * density, or a canvas drawn without a GPU, pays for dearly.
  *
  * It goes by how long a frame takes to draw (from `forgedBegin` to the end of the post pass), not by how far apart frames
@@ -255,7 +243,7 @@ interface Pace {
 }
 
 const paces = new WeakMap<HTMLCanvasElement, Pace>();
-const LEAN: Record<PostLevel, number> = { high: 0, medium: 1, low: 2, off: 3 };
+const LEAN: Record<PostLevel, number> = { high: 0, low: 1, off: 2 };
 let started = 0;
 /** Pinned to the full pass, whatever the machine: the gallery's pixel snapshots must not depend on how fast it drew. */
 let steady = false;
@@ -303,7 +291,7 @@ function keepPace(pace: Pace, drawn: number): void {
   const room = pace.lean > pace.floor && pace.draw + (pace.saved[pace.lean - 1] ?? Infinity) < SLOW_DRAW * MARGIN;
   pace.slow = pace.draw > SLOW_DRAW ? pace.slow + 1 : 0;
   pace.fast = room ? pace.fast + 1 : 0;
-  if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < 3) {
+  if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < 2) {
     pace.check = { before: pace.draw, frames: SETTLE };
     pace.lean++;
     pace.slow = 0;
@@ -315,23 +303,19 @@ function keepPace(pace: Pace, drawn: number): void {
 
 /**
  * Bloom: the picture is shrunk, its dull parts are dropped (raised to the eighth power, so only what is nearly white stays), and what
- * is left is blurred by shrinking it further, then added back over the picture on the way up. A vignette, a grade
- * and grain over it, as much of it as the machine keeps up with (`Pace`). The flash and the supernova's white-out make it bloom wider.
+ * is left is blurred by shrinking it further, then added back over the picture on the way up. A vignette
+ * over it, as much of it as the machine keeps up with (`Pace`). The flash and the supernova's white-out make it bloom wider.
  */
 export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   const pace = paceOf(ctx.canvas);
   const lean = steady ? 0 : pace.lean;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (lean < 2) {
+  if (lean < 1) {
     bloom(ctx, f);
     for (const redraw of afterBloom) redraw(ctx);
   }
-  if (lean < 3) drawVignette(ctx, f);
-  if (lean < 1) {
-    grade(ctx, f);
-    grain(ctx, f);
-  }
+  if (lean < 2) drawVignette(ctx, f);
   ctx.restore();
   if (!steady) keepPace(pace, (performance.now() - started) / 1000);
 }
@@ -375,29 +359,4 @@ function drawVignette(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   }
   ctx.fillStyle = vignette.gradient;
   ctx.fillRect(0, 0, main.width, main.height);
-}
-
-/** The grade: cool in the high lights of the top, warm in the low ones. */
-function grade(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
-  ctx.save();
-  ctx.globalCompositeOperation = 'soft-light';
-  const gradient = ctx.createLinearGradient(0, f.plate.y, 0, f.plate.y + f.plate.h);
-  gradient.addColorStop(0, 'rgba(70,130,255,0.14)');
-  gradient.addColorStop(1, 'rgba(255,150,70,0.1)');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
-  ctx.restore();
-}
-
-/** Film grain: a tile of noise laid at a new place about fifteen times a second. */
-function grain(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
-  if (!tiles) return;
-  const step = Math.floor(f.time * 15);
-  tiles.grain.setTransform(new DOMMatrix().translate((step * 37) % 128, (step * 91) % 128));
-  ctx.save();
-  ctx.globalCompositeOperation = 'overlay';
-  ctx.globalAlpha = 0.05;
-  ctx.fillStyle = tiles.grain;
-  ctx.fillRect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
-  ctx.restore();
 }

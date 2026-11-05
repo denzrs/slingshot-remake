@@ -9,24 +9,24 @@ afterEach(() => setPostLevel('high'));
 describe('forged post pass pace', () => {
   it('starts at the lean the post level asks for', () => {
     setPostLevel('low');
-    expect(paceOf(canvas())).toMatchObject({ lean: 2, floor: 2 });
+    expect(paceOf(canvas())).toMatchObject({ lean: 1, floor: 1 });
   });
 
   it('keeps what it learnt while the setting stays', () => {
     const c = canvas();
-    setPostLevel('medium');
+    setPostLevel('low');
     paceOf(c).lean = 2;
     expect(paceOf(c)).toMatchObject({ lean: 2, floor: 1 });
   });
 
   it('starts over from the new level when the setting changes, up or down', () => {
     const c = canvas();
-    setPostLevel('medium');
+    setPostLevel('low');
     paceOf(c).lean = 2;
     setPostLevel('high');
     expect(paceOf(c)).toMatchObject({ lean: 0, floor: 0 });
     setPostLevel('off');
-    expect(paceOf(c)).toMatchObject({ lean: 3, floor: 3 });
+    expect(paceOf(c)).toMatchObject({ lean: 2, floor: 2 });
   });
 
   it('judges each canvas on its own', () => {

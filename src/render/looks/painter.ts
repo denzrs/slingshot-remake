@@ -120,7 +120,7 @@ export interface LookPainter {
   border(ctx: CanvasRenderingContext2D, view: BorderView, walls: boolean): void;
   /** Painted every frame over the backdrop, under the field: what moves behind the game (device pixels, no transform). */
   sky(ctx: CanvasRenderingContext2D, frame: FrameInfo): void;
-  /** Painted every frame over the finished field, under the HUD: whole-frame light and grading (device pixels, no transform). */
+  /** Painted every frame over the finished field, under the HUD: whole-frame light (device pixels, no transform). */
   post(ctx: CanvasRenderingContext2D, frame: FrameInfo): void;
 }
 
