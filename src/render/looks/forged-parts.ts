@@ -1,4 +1,5 @@
 import { COLORS } from '../../sim/config';
+import { strokeHoleFlare } from '../blackhole';
 import { drawNebula } from '../nebula';
 import { rgba } from '../color';
 import { strokePolyline } from '../polyline';
@@ -123,6 +124,13 @@ export const lightParts: Partial<LookPainter> = {
     strokePolyline(ctx, points, wormholes);
     ctx.restore();
     drawGlowingLiveTrail(ctx, points, wormholes, color, plasma, time);
+  },
+  holeFlare: (ctx, hole, strength, color, angle) => {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    strokeHoleFlare(ctx, hole, strength, color, angle, Math.max(3, hole.radius * 0.3), 0.3);
+    strokeHoleFlare(ctx, hole, strength, COLORS.bone, angle, Math.max(1.2, hole.radius * 0.08), 0.8);
+    ctx.restore();
   },
   shot: (ctx, x, y, color, trail) => drawLightShot(ctx, x, y, color, trail),
   plasmaShot: (ctx, x, y, time) => drawEngravedPlasmaShot(ctx, x, y, time, true),

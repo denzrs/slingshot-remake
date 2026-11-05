@@ -290,7 +290,9 @@ export const HORIZON = {
   /** Online, everybody aims at once, so the shared clock is a little longer than one hot-seat turn. */
   SIMULTANEOUS_CLOCK: 15,
   SHOT_TIME: 10,
-  COLLAPSE_TIME: 1.5,
+  COLLAPSE_TIME: 2,
+  /** How far (radians) what the hole eats turns round it on the way in, the way the disk turns. */
+  INFALL_TURN: 3.6,
 } as const;
 
 /** Killcams pause on the finished flight before cutting to the replay. */
