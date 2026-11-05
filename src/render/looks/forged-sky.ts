@@ -14,10 +14,10 @@ let current: FrameInfo | null = null;
 /** Keeps the frame for the calls that follow it: the sky, the ships' light and the post pass read it. */
 export function forgedBegin(frame: FrameInfo): void {
   current = frame;
-  started = performance.now();
+  const now = performance.now();
   // A pause (a hidden tab, a menu) is no measure of the frames.
-  const since = lastBegin ? (started - lastBegin) / 1000 : 0;
-  lastBegin = started;
+  const since = lastBegin ? (now - lastBegin) / 1000 : 0;
+  lastBegin = now;
   gap = since < PAUSE ? since : 0;
 }
 
@@ -178,23 +178,20 @@ export function forgedSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
 
 let vignette: { key: string; gradient: CanvasGradient } | null = null;
 
+/** How much of its size a shaded sprite is drawn at, at each step of `Pace`. */
+const DETAIL = [1, 0.8, 0.65];
+
 /**
- * How much of the post pass a machine that cannot keep up is spared: 0 the vignette is drawn; 1 it is not. It is a pass
- * over the whole screen, which a phone's GPU at its pixel density, or a canvas drawn without a GPU, pays for dearly.
- *
- * It goes by how long a frame takes to draw (from `forgedBegin` to the end of the post pass), not by how far apart frames
- * come: a browser that hands out thirty frames a second to save the battery, a hidden tab or a menu over a still field
- * say nothing about the drawing. Each canvas keeps its own, so the gallery's cards do not judge each other. A step down
- * that saved nothing (the field itself is what is slow) is taken back and not tried again until the frames have recovered;
- * one that did is undone once the frames have room for what it saved, so a slow stretch from elsewhere does not strip the
- * look for good.
+ * How far a machine that cannot keep up steps the shaded sprites down, by the time between frames, as no timer sees all their
+ * work on every browser (the copies into the 2D frame least of all). A step down that saved nothing (the sprites are not what
+ * is slow, or a browser is holding thirty frames a second) is taken back and not tried again until the frames have recovered,
+ * so that browser keeps its full detail; one that did is undone once the frames have room for what it saved, though a
+ * screen's refresh can hide that room, and then it stays.
  */
 interface Pace {
   lean: number;
-  /** The last step down there is. */
-  most: number;
-  /** Seconds a frame takes to draw, on average. */
-  draw: number;
+  /** Seconds between frames, on average. */
+  time: number;
   /** Frames in a row that were slow, or had room to spare. */
   slow: number;
   fast: number;
@@ -202,34 +199,24 @@ interface Pace {
   saved: number[];
   /** Set just after a step down: the average before it, and the frames left until its saving is measured. */
   check: { before: number; frames: number } | null;
-  /** A step down saved nothing: the post pass is not what is slow, so it stops stepping down until the frames recover. */
+  /** A step down saved nothing: the sprites are not what is slow, so it stops stepping down until the frames recover. */
   stuck: boolean;
 }
 
-export const newPace = (most: number): Pace => ({ lean: 0, most, draw: 0, slow: 0, fast: 0, saved: [], check: null, stuck: false });
+export const newPace = (): Pace => ({ lean: 0, time: 0, slow: 0, fast: 0, saved: [], check: null, stuck: false });
 
-const paces = new WeakMap<HTMLCanvasElement, Pace>();
-/** How much of its size a shaded sprite is drawn at, at each step of `spritePace`. */
-const DETAIL = [1, 0.8, 0.65];
-/**
- * The shaded sprites step down on a pace of their own, by the time between frames, as no timer sees all their work on every
- * browser (the copies into the 2D frame least of all). Dropping the vignette would not lighten them, and a browser's own frame
- * rate must not cost the vignette. A step that saved nothing is taken back here too, so a browser holding thirty frames a
- * second keeps its full detail. A screen's refresh hides any room to step up again, so one that helped stays.
- */
-const spritePace = newPace(DETAIL.length - 1);
-let started = 0;
-/** Pinned to the full pass, whatever the machine: the gallery's pixel snapshots must not depend on how fast it drew. */
+const spritePace = newPace();
+/** Pinned to full detail, whatever the machine: the gallery's pixel snapshots must not depend on how fast it drew. */
 let steady = false;
-export function holdPostPass(on: boolean): void {
+export function holdShaderDetail(on: boolean): void {
   steady = on;
 }
 
 /**
- * Drawing slower than this (s), on average, for this many frames in a row, it steps down. A frame only just over a sixtieth
- * of a second or a short busy stretch keeps the vignette.
+ * Frames further apart than this (s), on average, for this many frames in a row, it steps down. A frame only just over a
+ * sixtieth of a second or a short busy stretch keeps the detail.
  */
-const SLOW_DRAW = 1 / 50;
+const SLOW_FRAME = 1 / 50;
 const SLOW_FOR = 300;
 /** It steps back up after this many frames in a row with room for what the step saved, and a margin: sixty frames a second with it back. */
 const ROOM_FOR = 600;
@@ -238,21 +225,12 @@ const MARGIN = 0.8;
 const SETTLE = 60;
 const WORTH = 0.15;
 
-export function paceOf(canvas: HTMLCanvasElement): Pace {
-  let pace = paces.get(canvas);
-  if (!pace) {
-    pace = newPace(1);
-    paces.set(canvas, pace);
-  }
-  return pace;
-}
-
-/** Times the frame just drawn and steps the post pass down, or back up, by it. */
-export function keepPace(pace: Pace, drawn: number): void {
-  pace.draw = pace.draw ? pace.draw + (drawn - pace.draw) * 0.1 : drawn;
+/** Takes in the time since the last frame and steps the detail down, or back up, by it. */
+export function keepPace(pace: Pace, since: number): void {
+  pace.time = pace.time ? pace.time + (since - pace.time) * 0.1 : since;
   if (pace.check) {
     if (--pace.check.frames > 0) return;
-    const saving = pace.check.before - pace.draw;
+    const saving = pace.check.before - pace.time;
     const before = pace.check.before;
     pace.check = null;
     if (saving < before * WORTH) {
@@ -263,12 +241,12 @@ export function keepPace(pace: Pace, drawn: number): void {
     }
     return;
   }
-  if (pace.draw <= SLOW_DRAW) pace.stuck = false;
-  const room = pace.lean > 0 && pace.draw + (pace.saved[pace.lean - 1] ?? Infinity) < SLOW_DRAW * MARGIN;
-  pace.slow = pace.draw > SLOW_DRAW ? pace.slow + 1 : 0;
+  if (pace.time <= SLOW_FRAME) pace.stuck = false;
+  const room = pace.lean > 0 && pace.time + (pace.saved[pace.lean - 1] ?? Infinity) < SLOW_FRAME * MARGIN;
+  pace.slow = pace.time > SLOW_FRAME ? pace.slow + 1 : 0;
   pace.fast = room ? pace.fast + 1 : 0;
-  if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < pace.most) {
-    pace.check = { before: pace.draw, frames: SETTLE };
+  if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < DETAIL.length - 1) {
+    pace.check = { before: pace.time, frames: SETTLE };
     pace.lean++;
     pace.slow = 0;
   } else if (pace.fast >= ROOM_FOR) {
@@ -277,15 +255,12 @@ export function keepPace(pace: Pace, drawn: number): void {
   }
 }
 
-/** The vignette over the finished field, if the machine keeps up with it (`Pace`). */
+/** The vignette over the finished field. */
 export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
-  const pace = paceOf(ctx.canvas);
-  const lean = steady ? 0 : pace.lean;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (lean === 0) drawVignette(ctx, f);
+  drawVignette(ctx, f);
   ctx.restore();
-  if (!steady) keepPace(pace, (performance.now() - started) / 1000);
   closeShaderFrame();
   if (!steady && gap) keepPace(spritePace, gap);
   setShaderDetail(steady ? 1 : DETAIL[spritePace.lean]);

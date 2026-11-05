@@ -17,7 +17,7 @@ import { painterFor } from '../render/looks';
 import { forgedPlanetTraits } from '../render/looks/forged-planet';
 import type { Planet, PlanetStyle } from '../sim/physics';
 import { shaderGpuSeconds } from '../render/looks/forged-gl';
-import { holdPostPass } from '../render/looks/forged-sky';
+import { holdShaderDetail } from '../render/looks/forged-sky';
 import { Renderer, type DrawOptions } from '../render/renderer';
 
 /**
@@ -526,7 +526,7 @@ function seeded(seed: number): () => number {
 /** A hash of every scene in every look at a few fixed moments, drawn fresh with seeded randomness. */
 async function pixelHashes(): Promise<Record<string, number>> {
   paused = true;
-  holdPostPass(true);
+  holdShaderDetail(true);
   const realRandom = Math.random;
   await document.fonts.ready;
   const out: Record<string, number> = {};
@@ -557,7 +557,7 @@ async function pixelHashes(): Promise<Record<string, number>> {
     if (pass === 'warm') await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   Math.random = realRandom;
-  holdPostPass(false);
+  holdShaderDetail(false);
   return out;
 }
 
