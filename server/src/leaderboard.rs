@@ -213,8 +213,11 @@ impl Leaderboard {
         self.conn
             .execute(UPSERT, (day, player.as_str(), name, score, now_unix()))
             .await?;
+        // The run is on the board by now: a shot that cannot be kept must not report the post as failed.
         if let Some(shot) = shot {
-            self.submit_shot(day, name, shot).await?;
+            if let Err(err) = self.submit_shot(day, name, shot).await {
+                warn!(%err, "shot of the day write failed");
+            }
         }
         // The poster sees their own run on the list.
         self.tops.lock().remove(day);
@@ -597,6 +600,26 @@ mod tests {
             .unwrap()
             .shot
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn a_shot_that_cannot_be_written_does_not_fail_the_run() {
+        let board = Leaderboard::in_memory().await;
+        board
+            .conn
+            .execute(
+                "CREATE TRIGGER no_shots BEFORE INSERT ON daily_shots BEGIN SELECT RAISE(ABORT, 'no'); END",
+                (),
+            )
+            .await
+            .unwrap();
+
+        let seen = board
+            .submit(DAY, "Ada", 1200, Some(&shot(500)), ip(1))
+            .await
+            .unwrap();
+        assert_eq!(seen.you.unwrap().score, 1200);
+        assert!(seen.shot.is_none());
     }
 
     #[tokio::test]
