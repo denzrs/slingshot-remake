@@ -2,13 +2,15 @@ import { COLORS } from '../../sim/config';
 import { isWormholeJump, type Planet, type Wormhole } from '../../sim/physics';
 import { rgba } from '../color';
 import { strokePolyline } from '../polyline';
-import { drawSun } from '../sun';
+import { drawSun, type SunStyle } from '../sun';
+import { GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept } from './forged-gl';
 import { lightParts } from './forged-parts';
 
 /**
  * What flies in the forged look, and the sun it flies past. A shot is a white-hot core in a halo, with a glint across it
  * and a tapering tail of heat that sheds embers; its track cools towards where it began and is run along by pulses of
- * light; a plasma shot crackles. The sun gets rays of light over the plasma and corona it already has.
+ * light; a plasma shot crackles. The sun's surface and corona are shaders, at the size they are drawn and moving every frame;
+ * without shaders it has its sprites and rays of light over them.
  */
 
 /** A seeded [0, 1) for one slot, the same every frame. */
@@ -176,11 +178,114 @@ export function drawForgedPlasmaShot(ctx: CanvasRenderingContext2D, x: number, y
   ctx.restore();
 }
 
+/** The ball: the same folding gas as the sprite in `sun.ts`, with fine cells of rising gas and slow dark spots on it, read on a sphere and dimmed to the edge. */
+const SURFACE_SHADER = `${GLSL_HEAD}
+uniform float uTime;
+uniform float uSeed;
+uniform float uGiant;
+vec3 ramp(float h) {
+  vec3 c = mix(vec3(120, 26, 8), vec3(226, 76, 14), smoothstep(0.0, 0.3, h));
+  c = mix(c, vec3(255, 150, 30), smoothstep(0.3, 0.58, h));
+  c = mix(c, vec3(255, 214, 90), smoothstep(0.58, 0.82, h));
+  return mix(c, vec3(255, 248, 200), smoothstep(0.82, 1.0, h)) / 255.0;
+}
+void main() {
+  vec2 p = vUv * 2.0 - 1.0;
+  float rr = dot(p, p);
+  float r = sqrt(rr);
+  if (r >= 1.0) {
+    outColor = vec4(0.0);
+    return;
+  }
+  float z = sqrt(1.0 - rr);
+  vec3 n = vec3(p, z);
+  float t = uTime * 0.16;
+  vec3 o = vec3(uSeed);
+  vec2 q = vec2(fbm(n * 1.9 + o + vec3(t, 0.0, 0.0), 4), fbm(n * 1.9 - o + vec3(0.0, t * 0.8, 4.0), 4));
+  float f = fbm(n * 2.8 + vec3(q * 2.6, t * 0.6) + o, 5);
+  // The cells are ridges of a fine noise, carried along by the same flow.
+  float cells = 1.0 - abs(2.0 * fbm(n * 16.0 + vec3(q * 5.0, t * 3.0) + o, 3) - 1.0);
+  float spots = smoothstep(0.66, 0.74, fbm(n * 3.4 + vec3(-t * 0.25, 0.0, 7.0) + o, 3));
+  float temp = (0.12 + 1.05 * pow(f, 1.4) + 0.16 * (cells - 0.7)) * (0.5 + 0.5 * sqrt(z)) * (1.0 - 0.62 * uGiant) * (1.0 - 0.45 * spots);
+  float a = 1.0 - smoothstep(0.97, 1.0, r);
+  outColor = vec4(ramp(temp) * a, a);
+}`;
+
+/** The corona: streamers that bend with the distance and run outwards, over a glow that thins out. White-gold at the surface, orange, then deep red. */
+const CORONA_SHADER = `${GLSL_HEAD}
+uniform float uTime;
+uniform float uSeed;
+uniform float uReach;
+uniform float uFlare;
+uniform float uGiant;
+void main() {
+  vec2 p = (vUv * 2.0 - 1.0) * uReach;
+  float rho = length(p);
+  float outward = rho - uTime * 0.09;
+  float a0 = atan(p.y, p.x);
+  float a1 = a0 + rho * 0.22 + uTime * 0.02;
+  float a2 = a0 - rho * 0.16 - uTime * 0.034;
+  // On a circle, so the angle has no seam.
+  float broad = fbm(vec3(cos(a1) * 1.7 + uSeed, sin(a1) * 1.7, outward * 0.22), 4);
+  float fine = fbm(vec3(cos(a2) * 5.2, sin(a2) * 5.2 + uSeed, outward * 0.5), 4);
+  float ray = pow(smoothstep(0.3, 0.76, broad * 0.62 + fine * 0.38), 1.5);
+  float falloff = exp(-(rho - 1.0) * 1.1);
+  float glow = 0.16 * exp(-(rho - 1.0) * 1.9);
+  float fade = (1.0 - smoothstep(uReach * 0.7, uReach, rho)) * smoothstep(0.85, 1.05, rho);
+  float k = min(1.0, (ray * falloff * 1.15 + glow) * (1.0 + uFlare * 0.7) * fade);
+  float h = min(1.0, (rho - 1.0) / 1.9);
+  vec3 near = mix(vec3(255, 222, 150), vec3(255, 150, 110), uGiant);
+  vec3 far = mix(vec3(214, 74, 26), vec3(170, 30, 16), uGiant);
+  vec3 c = mix(near, far, h) / 255.0;
+  outColor = vec4(c * k, k);
+}`;
+
+/** The largest the ball and the corona are worked out at, in pixels. */
+const SURFACE_LIMIT = 512;
+const CORONA_LIMIT = 512;
+/** How often they are worked out again: both churn slowly, and what is between is the picture kept. */
+const SUN_HZ = 20;
+/** The corona's reach in radii when calm, as in `sun.ts`: the shader's own coordinates. */
+const CORONA_REACH = 3.6;
+
+/** Whether the corona just drawn is the shader's: that one has streamers of its own, so no rays go over it. */
+let streamers = false;
+
+const sunStyle: SunStyle = {
+  corona(ctx, seed, reach, time, flare, giant) {
+    streamers = true;
+    if (!onScreen(ctx, 0, 0, reach)) return true;
+    const pixels = pixelsOf(ctx, reach * 2);
+    const shaded = shadeKept(`corona:${seed}`, time, SUN_HZ, CORONA_SHADER, pixels, pixels, CORONA_LIMIT, (u) => {
+      u.f('uTime', time);
+      u.f('uSeed', seedOffset(seed));
+      u.f('uReach', CORONA_REACH);
+      u.f('uFlare', flare);
+      u.f('uGiant', giant);
+    });
+    if (!shaded) return (streamers = false);
+    place(ctx, shaded, -reach, -reach, reach * 2, reach * 2);
+    return true;
+  },
+  surface(ctx, seed, R, time, giant) {
+    if (!onScreen(ctx, 0, 0, R)) return true;
+    const pixels = pixelsOf(ctx, R * 2);
+    const shaded = shadeKept(`surface:${seed}`, time, SUN_HZ, SURFACE_SHADER, pixels, pixels, SURFACE_LIMIT, (u) => {
+      u.f('uTime', time);
+      u.f('uSeed', seedOffset(seed));
+      u.f('uGiant', giant);
+    });
+    if (!shaded) return false;
+    place(ctx, shaded, -R, -R, R * 2, R * 2);
+    return true;
+  },
+};
+
 /**
- * The sun with light thrown off it: rays that turn slowly against each other and a wide warm wash over the field round it. `flare` (the storm) makes it all stronger.
+ * The sun with light thrown off it: a wide warm wash over the field round it and, without shaders, rays that turn slowly against each other. `flare` (the storm) makes it all stronger.
  */
 export function drawForgedSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha: number, flare: number): void {
-  drawSun(ctx, sun, time, alpha, flare);
+  drawSun(ctx, sun, time, alpha, flare, sunStyle);
   const R = sun.radius;
   const giant = sun.giant ?? 0;
   const warm = giant > 0.3 ? '255,90,60' : '255,196,110';
@@ -195,7 +300,7 @@ export function drawForgedSun(ctx: CanvasRenderingContext2D, sun: Planet, time: 
   ctx.fillStyle = wash;
   ctx.fillRect(-R * 15, -R * 15, R * 30, R * 30);
   // The rays: tapering wedges of light out of the middle, in two layers that turn against each other.
-  for (const [count, spin, reach, base] of [[11, 0.018, 9, 0.028], [7, -0.027, 6.5, 0.02]] as const) {
+  for (const [count, spin, reach, base] of streamers ? [] : ([[11, 0.018, 9, 0.028], [7, -0.027, 6.5, 0.02]] as const)) {
     ctx.save();
     ctx.rotate(time * spin + count);
     for (let k = 0; k < count; k++) {

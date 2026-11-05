@@ -21,7 +21,8 @@ export const slot = (seed: number, k: number): number => {
 };
 
 /** The sprite reaches this many cloud radii either side of the middle, and its fields are worked out on a coarse grid. */
-const REACH = 1.35;
+export const STORM_SPRITE_REACH = 1.35;
+const REACH = STORM_SPRITE_REACH;
 const GRID = 96;
 const SIZE = 288;
 /** How opaque the thickest plasma gets: a haze like a nebula's, so ships and shots read over it. */
@@ -188,15 +189,12 @@ export function drawStormCloud(
   age: number,
   time: number,
   dissolve = 0,
+  /** The gas itself, at (x, y) reaching `half` either way, if a look draws it; says false when it could not, and the sprite is drawn instead. */
+  gas?: (ctx: CanvasRenderingContext2D, x: number, y: number, half: number, fade: number) => boolean,
 ): void {
   const flight = stormFlight(cloud, sun, age);
   if (!flight) return;
   const { p, ease, x, y, r } = flight;
-  let image = sprites.get(cloud.seed);
-  if (!image) {
-    if (sprites.size >= 16) sprites.delete(sprites.keys().next().value as number);
-    sprites.set(cloud.seed, (image = paint(cloud.seed)));
-  }
   const base = ctx.globalAlpha;
   ctx.save();
 
@@ -222,16 +220,23 @@ export function drawStormCloud(
   // Two layers of the same gas turning against each other, once plainly and once glowing.
   const fade = base * smooth(0, 0.3, p) * (1 - dissolve);
   const half = r * REACH;
-  for (const [angle, scale, alpha] of [
-    [slot(cloud.seed, 4) * 6.3 + time * 0.02, 1, 1],
-    [slot(cloud.seed, 5) * 6.3 - time * 0.03, 0.82, 0.55],
-  ] as const) {
-    ctx.save();
-    ctx.globalAlpha = fade * alpha;
-    ctx.translate(x, y);
-    ctx.rotate(angle);
-    ctx.drawImage(image, -half * scale, -half * scale, half * 2 * scale, half * 2 * scale);
-    ctx.restore();
+  if (!gas?.(ctx, x, y, half, fade)) {
+    let image = sprites.get(cloud.seed);
+    if (!image) {
+      if (sprites.size >= 16) sprites.delete(sprites.keys().next().value as number);
+      sprites.set(cloud.seed, (image = paint(cloud.seed)));
+    }
+    for (const [angle, scale, alpha] of [
+      [slot(cloud.seed, 4) * 6.3 + time * 0.02, 1, 1],
+      [slot(cloud.seed, 5) * 6.3 - time * 0.03, 0.82, 0.55],
+    ] as const) {
+      ctx.save();
+      ctx.globalAlpha = fade * alpha;
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.drawImage(image, -half * scale, -half * scale, half * 2 * scale, half * 2 * scale);
+      ctx.restore();
+    }
   }
 
   // A heart of hot plasma, and embers drifting in the gas.

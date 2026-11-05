@@ -2,6 +2,7 @@ import { getPostLevel, type PostLevel } from '../../data/look';
 import { createRng } from '../../sim/rng';
 import { fbm } from '../noise';
 import { smoothstep } from '../planet-common';
+import { closeShaderFrame, setShaderDetail } from './forged-gl';
 import type { FrameInfo } from './painter';
 
 /**
@@ -16,8 +17,18 @@ let current: FrameInfo | null = null;
 export function forgedBegin(frame: FrameInfo): void {
   current = frame;
   started = performance.now();
+  // A pause (a hidden tab, a menu) is no measure of the frames.
+  const since = lastBegin ? (started - lastBegin) / 1000 : 0;
+  lastBegin = started;
+  gap = since < PAUSE ? since : 0;
   afterBloom.length = 0;
 }
+
+let lastBegin = 0;
+/** The time since the last frame began (s), 0 when there was a pause. */
+let gap = 0;
+/** A gap longer than this (s) between two frames is a pause, not a slow frame. */
+const PAUSE = 0.25;
 
 /** Drawings of this frame to put back over the bloom (which would grey what must stay black), in the post pass's own pixels. */
 const afterBloom: ((ctx: CanvasRenderingContext2D) => void)[] = [];
@@ -236,8 +247,19 @@ interface Pace {
   stuck: boolean;
 }
 
+const newPace = (floor: number): Pace => ({ lean: floor, floor, draw: 0, slow: 0, fast: 0, saved: [], check: null, stuck: false });
+
 const paces = new WeakMap<HTMLCanvasElement, Pace>();
 const LEAN: Record<PostLevel, number> = { high: 0, low: 1, off: 2 };
+/**
+ * The shaded sprites step down on a pace of their own, by the time between frames, as no timer sees all their work on every
+ * browser (the copies into the 2D frame least of all). Dropping the bloom would not lighten them, and a browser's own frame
+ * rate must not cost the bloom. A step that saved nothing is taken back here too, so a browser holding thirty frames a
+ * second keeps its full detail. A screen's refresh hides any room to step up again, so one that helped stays.
+ */
+const spritePace = newPace(0);
+/** How much of its size a shaded sprite is drawn at, at each step of `spritePace`. */
+const DETAIL = [1, 0.8, 0.65];
 let started = 0;
 /** Pinned to the full pass, whatever the machine: the gallery's pixel snapshots must not depend on how fast it drew. */
 let steady = false;
@@ -263,7 +285,7 @@ export function paceOf(canvas: HTMLCanvasElement): Pace {
   let pace = paces.get(canvas);
   // A new setting starts over from it: what was learnt about the other levels no longer holds.
   if (pace?.floor !== floor) {
-    pace = { lean: floor, floor, draw: 0, slow: 0, fast: 0, saved: [], check: null, stuck: false };
+    pace = newPace(floor);
     paces.set(canvas, pace);
   }
   return pace;
@@ -316,6 +338,9 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   if (lean < LEAN.off) drawVignette(ctx, f);
   ctx.restore();
   if (!steady) keepPace(pace, (performance.now() - started) / 1000);
+  closeShaderFrame();
+  if (!steady && gap) keepPace(spritePace, gap);
+  setShaderDetail(steady ? 1 : DETAIL[spritePace.lean]);
 }
 
 function bloom(ctx: CanvasRenderingContext2D, f: FrameInfo): void {

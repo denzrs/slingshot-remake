@@ -11,7 +11,7 @@ import { fbm } from './noise';
  */
 
 /** Three stable [0, 2π) phases for one cloud's seed, so no two directions of its edge match. */
-function phases(seed: number): [number, number, number] {
+export function phases(seed: number): [number, number, number] {
   const at = (k: number): number => {
     const h = Math.sin((seed + k * 0.618) * 127.1) * 43758.5453;
     return (h - Math.floor(h)) * Math.PI * 2;
@@ -25,7 +25,8 @@ function wobble(angle: number, [p0, p1, p2]: readonly [number, number, number]):
 }
 
 /** Half the sprite's width in cloud radii: room for the widest bulge of the edge. */
-const REACH = 1.4;
+export const NEBULA_SPRITE_REACH = 1.4;
+const REACH = NEBULA_SPRITE_REACH;
 /** The thickness field is worked out on a coarse grid of this many cells, then sampled smoothly. */
 const GRID = 160;
 /** How opaque the thickest gas gets. Low, so the cloud is a haze and never a wall. */
