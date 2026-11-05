@@ -26,8 +26,6 @@ export interface LookPainter {
   readonly note: string;
   /** A planet's sprite is painted lit from one side, and turned in the Solar System so that side faces the sun it orbits; false for a look whose planets are not lit from one side (the wireframe). */
   readonly planetsTurnToSun: boolean;
-  /** `post` heeds the post level (`getPostLevel`): the settings offer it while this look is chosen. */
-  readonly postLevels: boolean;
   /** Whether a body falling into a black hole sheds dust on the way (a look that draws the fall as lines of its own may want it, one that draws it whole does not). */
   readonly fallDust: boolean;
 

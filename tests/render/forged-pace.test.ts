@@ -1,6 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { setPostLevel } from '../../src/data/look';
-import { keepPace, paceOf } from '../../src/render/looks/forged-sky';
+import { describe, expect, it } from 'vitest';
+import { keepPace, newPace, paceOf } from '../../src/render/looks/forged-sky';
 
 const canvas = () => ({}) as HTMLCanvasElement;
 
@@ -11,45 +10,26 @@ const draw = (pace: Pace, frames: number, ms: number): void => {
   for (let i = 0; i < frames; i++) keepPace(pace, ms / 1000);
 };
 
-afterEach(() => setPostLevel('high'));
-
 describe('forged post pass pace', () => {
-  it('starts at the lean the post level asks for', () => {
-    setPostLevel('low');
-    expect(paceOf(canvas())).toMatchObject({ lean: 1, floor: 1 });
-  });
-
-  it('keeps what it learnt while the setting stays', () => {
+  it('keeps what it learnt about a canvas', () => {
     const c = canvas();
-    setPostLevel('low');
-    paceOf(c).lean = 2;
-    expect(paceOf(c)).toMatchObject({ lean: 2, floor: 1 });
-  });
-
-  it('starts over from the new level when the setting changes, up or down', () => {
-    const c = canvas();
-    setPostLevel('low');
-    paceOf(c).lean = 2;
-    setPostLevel('high');
-    expect(paceOf(c)).toMatchObject({ lean: 0, floor: 0 });
-    setPostLevel('off');
-    expect(paceOf(c)).toMatchObject({ lean: 2, floor: 2 });
+    paceOf(c).lean = 1;
+    expect(paceOf(c).lean).toBe(1);
   });
 
   it('judges each canvas on its own', () => {
-    setPostLevel('high');
     const a = canvas();
     paceOf(a).lean = 1;
     expect(paceOf(canvas()).lean).toBe(0);
   });
 
-  it('keeps the bloom on a frame only just over a sixtieth of a second', () => {
+  it('keeps the vignette on a frame only just over a sixtieth of a second', () => {
     const pace = paceOf(canvas());
     draw(pace, 2000, 17);
     expect(pace.lean).toBe(0);
   });
 
-  it('keeps the bloom through a short busy stretch', () => {
+  it('keeps the vignette through a short busy stretch', () => {
     const pace = paceOf(canvas());
     draw(pace, 200, 30);
     draw(pace, 100, 10);
@@ -61,10 +41,19 @@ describe('forged post pass pace', () => {
     const pace = paceOf(canvas());
     draw(pace, 300, 40);
     draw(pace, 60, 25);
+    expect(pace).toMatchObject({ lean: 1, stuck: false });
+    draw(pace, 1000, 25);
+    expect(pace.lean).toBe(1);
+  });
+
+  it('steps as far as a pace with more steps has them', () => {
+    const pace = newPace(2);
+    draw(pace, 300, 40);
+    draw(pace, 60, 25);
     expect(pace.lean).toBe(1);
     draw(pace, 300, 25);
     draw(pace, 60, 20);
-    expect(pace).toMatchObject({ lean: 2, stuck: false });
+    expect(pace.lean).toBe(2);
     draw(pace, 1000, 25);
     expect(pace.lean).toBe(2);
   });
@@ -82,11 +71,10 @@ describe('forged post pass pace', () => {
     expect(pace.lean).toBe(0);
   });
 
-  it('never steps up past the level the settings ask for', () => {
-    setPostLevel('low');
+  it('never steps up past the full pass', () => {
     const pace = paceOf(canvas());
     draw(pace, 2000, 1);
-    expect(pace.lean).toBe(1);
+    expect(pace.lean).toBe(0);
   });
 
   it('takes back a step that saved nothing, and tries again only after the frames recover', () => {
