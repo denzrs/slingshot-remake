@@ -41,6 +41,7 @@ export function shotReplayScreen(app: App, match: ShotReplay): Screen {
       { kind: 'action', label: t('replay.again'), primary: true, run: () => app.watchAgain() },
     ],
     focus: 1,
-    onEscape: () => app.leaveReplay(),
+    // Leaving puts the challenge's page back: Esc is spent, the menu must not pop that page too.
+    onEscape: () => { app.leaveReplay(); return true; },
   };
 }
