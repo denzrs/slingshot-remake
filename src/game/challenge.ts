@@ -293,6 +293,11 @@ export class ShotReplay extends ChallengeMatch {
     if (this.stageTurn(turn, [this.pilot])) this.fire();
   }
 
+  /** The hit is what there is to see: it gets its moment before the end card covers the field. */
+  protected get afterVolleyDelay(): number {
+    return CHALLENGE.SHOT_LINGER;
+  }
+
   /** One shot is all there is. */
   protected afterVolley(): void {
     this.current = -1;

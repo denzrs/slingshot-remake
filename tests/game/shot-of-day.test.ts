@@ -84,6 +84,21 @@ describe('the shot of the day', () => {
     expect([...replay.trails].reverse().find((trail) => trail.owner === 0)!.points.at(-1)).toBeCloseTo(shot.trail.at(-1)!, 0);
   });
 
+  it('lets the shot land before its end card comes up', () => {
+    const match = createChallenge(settings(), dailyChallenge(DAY));
+    clearSector(match, 0);
+    const replay = createShotReplay(settings(), dailyChallenge(DAY), { ...match.bestShot!, name: 'Ada' });
+    let landed = 0;
+    let over = 0;
+    replay.on((event) => {
+      if (event.type === 'kill') landed = replay.clock;
+      if (event.type === 'gameOver') over = replay.clock;
+    });
+    runUntil(replay, () => replay.phase === 'gameOver');
+    expect(landed).toBeGreaterThan(0);
+    expect(over - landed).toBeGreaterThanOrEqual(CHALLENGE.SHOT_LINGER);
+  });
+
   it('a target already down is not there to be hit a second time', () => {
     const match = createChallenge(settings(), dailyChallenge(DAY));
     clearSector(match, 0);
