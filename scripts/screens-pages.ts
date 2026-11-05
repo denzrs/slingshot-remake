@@ -53,8 +53,8 @@ const IN_ROOM = "!!document.querySelector('.menu-page--room')";
 const connect: Step[] = [click('Connect'), { until: CONNECTED }];
 const PRESETS = [0, 1, 2, 3];
 /** The badge on the chosen card that goes back to what it gave, and the one that keeps the changes. */
-const badge: Target = { sel: '.item__status-reset' };
-const keep: Target = { sel: '.item__status-save' };
+const badge: Target = { sel: '.item__status-reset, .preset-carousel__action--restore' };
+const keep: Target = { sel: '.item__status-save, .preset-carousel__action--save' };
 /** A rule changed on the rules page, which is then left. */
 const tweak: Step[] = [click('Adjust rules'), { category: 'rules-twists' }, click('Hidden aim'), click('Done')];
 const NAME: Step = { type: { sel: 'input[type=text], input:not([type])', text: 'My test rule' } };

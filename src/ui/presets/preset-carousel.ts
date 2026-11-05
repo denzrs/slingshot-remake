@@ -7,8 +7,14 @@ export function presetCarousel(cards: HTMLElement) {
   const previous = h('button.preset-carousel__arrow', { type: 'button', 'aria-label': t('preset.previous') }, '‹') as HTMLButtonElement;
   const next = h('button.preset-carousel__arrow', { type: 'button', 'aria-label': t('preset.next') }, '›') as HTMLButtonElement;
   const counter = h('span.preset-carousel__count', { 'aria-live': 'polite', 'aria-atomic': 'true' });
-  const navigation = h('nav.preset-carousel__nav', { 'aria-label': t('preset.choose') }, previous, counter, next);
+  const restore = h('button.preset-carousel__action.preset-carousel__action--restore', { type: 'button', 'aria-label': t('preset.resetAction') }) as HTMLButtonElement;
+  const save = h('button.preset-carousel__action.preset-carousel__action--save', { type: 'button', 'aria-label': t('preset.custom.save') }) as HTMLButtonElement;
+  restore.disabled = save.disabled = true;
+  const tools = h('div.preset-carousel__tools', null, restore, save);
+  const navigation = h('nav.preset-carousel__nav', { 'aria-label': t('preset.choose') }, tools, previous, counter, next);
   const listeners = new AbortController();
+  let restoreSource: HTMLButtonElement | null = null;
+  let saveSource: HTMLButtonElement | null = null;
   let frame = 0;
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
   let dragging = false;
@@ -44,6 +50,18 @@ export function presetCarousel(cards: HTMLElement) {
     counter.textContent = t('preset.position', { n: index + 1, total: all.length });
     previous.disabled = index === 0;
     next.disabled = index === all.length - 1;
+    // Reuse the actual card actions in a fixed-size toolbar. Showing edits never adds a row to the page.
+    const active = all[index].querySelector('.item[aria-pressed="true"]');
+    const shell = active?.closest('.briefing__preset-shell');
+    restoreSource = shell?.querySelector<HTMLButtonElement>(':scope > .item__status-reset') ?? null;
+    saveSource = shell?.querySelector<HTMLButtonElement>(':scope > .item__status-save') ?? null;
+    restore.disabled = !restoreSource || !!restoreSource.hidden;
+    save.disabled = !saveSource || !!saveSource.hidden;
+    const label = restoreSource?.title || t('preset.resetAction');
+    restore.setAttribute('aria-label', label);
+    restore.title = label;
+    save.title = t('preset.custom.save');
+    restore.classList.toggle('is-edit', !!active?.closest('.briefing__own') && !active.classList.contains('is-modified'));
   };
   const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
   const settle = () => {
@@ -65,6 +83,8 @@ export function presetCarousel(cards: HTMLElement) {
   };
   previous.addEventListener('click', () => move(-1), { signal: listeners.signal });
   next.addEventListener('click', () => move(1), { signal: listeners.signal });
+  restore.addEventListener('click', () => { if (!restore.disabled) restoreSource?.click(); }, { signal: listeners.signal });
+  save.addEventListener('click', () => { if (!save.disabled) saveSource?.click(); }, { signal: listeners.signal });
   cards.addEventListener('scroll', afterScroll, { passive: true, signal: listeners.signal });
   cards.addEventListener('scrollend', settle, { signal: listeners.signal });
   cards.addEventListener('pointerdown', () => { dragging = true; }, { passive: true, signal: listeners.signal });
@@ -72,7 +92,7 @@ export function presetCarousel(cards: HTMLElement) {
   cards.addEventListener('pointerup', release, { passive: true, signal: listeners.signal });
   cards.addEventListener('pointercancel', release, { passive: true, signal: listeners.signal });
   const observer = new MutationObserver(schedule);
-  observer.observe(cards, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-pressed'] });
+  observer.observe(cards, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-pressed', 'hidden'] });
   const size = new ResizeObserver(schedule);
   size.observe(cards);
   narrow.addEventListener('change', schedule);

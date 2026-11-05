@@ -292,7 +292,7 @@
 /* A phone shows one illustrated card and a glimpse of the next; the rules below stay near the top. */
 @media (max-width: 760px) {
   .menu-page .briefing__cards {
-    --preset-card-height: 224px;
+    --preset-card-height: clamp(144px, 18vh, 176px);
     display: flex;
     flex-wrap: nowrap;
     justify-content: flex-start;
@@ -319,36 +319,37 @@
   }
   .menu-page .briefing__cards .item.item--card {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 82px auto 1fr;
+    grid-template-columns: 52px minmax(0, 1fr);
+    grid-template-rows: 52px 1fr;
     align-items: start;
     align-content: start;
-    gap: 6px;
+    gap: 6px 12px;
     min-height: var(--preset-card-height);
-    padding: 14px 16px;
+    padding: 12px;
     text-align: left;
   }
   .menu-page .briefing__cards .item__icon {
     grid-column: 1;
     grid-row: 1;
     width: 100%;
-    height: 82px;
+    height: 52px;
+    align-self: center;
     margin: 0;
   }
   .briefing__cards .item.item--card .item__title {
-    grid-column: 1;
-    grid-row: 2;
-    align-self: end;
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
     min-height: 0;
     max-height: none;
-    font-size: 26px;
+    font-size: 24px;
     line-height: 1.15;
     display: block;
     text-align: left;
   }
   .briefing__cards .item.item--card .item__hint {
-    grid-column: 1;
-    grid-row: 3;
+    grid-column: 1 / -1;
+    grid-row: 2;
     align-self: start;
     min-height: 0;
     max-height: none;
@@ -359,42 +360,36 @@
   }
   .briefing__cards .item--pick .item__tag {
     position: absolute;
-    top: 12px;
-    left: 14px;
+    top: 10px;
+    left: 76px;
     right: auto;
     max-width: 100%;
     padding: 3px 5px;
     font-size: 9px;
     line-height: 1.3;
   }
-  .briefing__cards .item--pick .item__icon { padding-top: 18px; }
-  .briefing__cards .item.item--pick .item__title { grid-row: 2; }
-  .briefing__cards .item.item--pick .item__hint { grid-row: 3; }
-  /* Edited cards have a separate action row. Touch never has to reveal controls by hovering. */
-  .briefing__cards > .briefing__preset-shell { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .briefing__cards > .briefing__preset-shell > .item--card { grid-column: 1 / -1; }
-  .briefing__cards > .briefing__preset-shell > .item__status {
-    position: static;
-    grid-row: 2;
-    min-height: 44px;
-    max-width: none;
-    opacity: 1;
-    transform: none;
-    pointer-events: auto;
-    font-size: 11px;
-  }
-  .briefing__cards > .briefing__preset-shell .item__status-count { display: none; }
-  .briefing__cards > .briefing__preset-shell .item__status-action { opacity: 1; transform: none; }
+  .briefing__cards .item.item--pick .item__title { grid-row: 1; padding-top: 14px; }
+  .briefing__cards .item.item--pick .item__hint { grid-row: 2; }
+  /* The toolbar owns mobile preset actions; the original buttons remain the action source on each card. */
+  .menu-page .briefing__cards .item__status { display: none; }
+  .briefing__preset-shell:is(:hover, :focus-within) > .item--card { transform: none; }
   .briefing__cards .item__selection { top: 7px; right: 7px; }
   .briefing__own .item__status { width: 44px; height: 44px; }
   .briefing__own .item--strip { min-height: var(--preset-card-height); padding: 24px 50px 24px 16px; }
   .briefing__own .item--strip .item__title { white-space: normal; overflow-wrap: anywhere; font-size: 26px; line-height: 1.2; }
   .briefing__own .briefing__preset-shell.is-modified .item__status-reset { right: 50px; }
   .briefing__own .briefing__preset-shell.is-modified .item--strip { padding-right: 96px; }
-  .preset-carousel__nav:not([hidden]) { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-height: 44px; margin: 0 0 8px; }
+  .preset-carousel__nav:not([hidden]) { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-height: 44px; margin: 0; }
   .preset-carousel__arrow { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--menu-line); border-radius: 3px; background: var(--menu-surface); color: var(--bone); font: 26px/1 var(--font-body); cursor: pointer; }
   .preset-carousel__arrow:disabled { opacity: .35; cursor: default; }
   .preset-carousel__count { min-width: 5em; color: var(--bone-dim); font: 11px/1.4 var(--font-mono); text-align: center; }
+  .preset-carousel__tools { display: flex; flex: none; gap: 6px; margin-right: auto; }
+  .preset-carousel__action { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border: 1px solid var(--menu-line); border-radius: var(--phone-radius, 3px); background: var(--menu-surface); color: #ffe58c; cursor: pointer; }
+  .preset-carousel__action::before { content: ''; width: 18px; height: 18px; background: currentColor; mask: var(--preset-action-icon) center / contain no-repeat; -webkit-mask: var(--preset-action-icon) center / contain no-repeat; }
+  .preset-carousel__action--restore { --preset-action-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9h10a6 6 0 0 1 0 12H8'/%3E%3Cpath d='m8 5-4 4 4 4'/%3E%3C/svg%3E"); }
+  .preset-carousel__action--restore.is-edit { --preset-action-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z'/%3E%3C/svg%3E"); }
+  .preset-carousel__action--save { color: #a3eddb; --preset-action-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7'/%3E%3C/svg%3E"); }
+  .preset-carousel__action:disabled { color: var(--bone-dim); opacity: .3; cursor: default; }
   .menu-page .briefing__quick { gap: 20px; padding-top: 16px; }
   .menu-page .briefing__quick .item__label { font-size: 14px; }
   .menu-page .briefing__quick .item--slider { min-height: 76px; padding-block: 12px; }

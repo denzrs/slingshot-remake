@@ -644,6 +644,9 @@
   font-size: 13px;
 }
 
+.briefing__crew-section, .briefing__rules-section { display: contents; }
+.briefing__rules-label { display: none; }
+
 .briefing__players {
   margin: 10px 0 28px;
 }

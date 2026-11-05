@@ -45,6 +45,30 @@
   .screen--menu-page .menu-page .briefing__quick { gap: var(--phone-gap); }
   .screen--menu-page .menu-page .briefing__lineup { font-size: 14px; }
 
+  /* A complete match briefing, not a long form: presets, quick rules and both editors fit together. */
+  .screen--menu-page .menu-page--briefing .menu-page__head { margin-bottom: 16px; }
+  .screen--menu-page .menu-page--briefing .menu-page__body { padding-bottom: 0; }
+  .screen--menu-page .menu-page--briefing .menu-page__body--split { gap: 12px; align-content: start; }
+  .screen--menu-page .menu-page--briefing .briefing__quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; padding-top: 8px; }
+  .screen--menu-page .menu-page--briefing .briefing__quick .item--slider { min-height: 64px; padding: 8px 0; column-gap: 8px; align-self: stretch; grid-template-rows: 1fr 26px; }
+  .screen--menu-page .menu-page--briefing .briefing__quick .slider__value { min-width: 0; }
+  .screen--menu-page .menu-page--briefing .briefing__quick .item__label { font-size: 13px; }
+  .screen--menu-page .menu-page--briefing .briefing__powerups,
+  .screen--menu-page .menu-page--briefing .briefing__mayhem { grid-column: 1 / -1; grid-row: auto; }
+  .screen--menu-page .menu-page--briefing .briefing__powerups-label { font-size: 13px; }
+  .screen--menu-page .menu-page--briefing .menu-page__aside { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-top: 12px; }
+  .screen--menu-page .menu-page--briefing .briefing__crew-section,
+  .screen--menu-page .menu-page--briefing .briefing__rules-section { display: grid; grid-template-rows: minmax(20px, auto) auto; align-content: start; gap: 8px; }
+  .screen--menu-page .menu-page--briefing .menu-page__aside .setup__title,
+  .screen--menu-page .menu-page--briefing .briefing__crew,
+  .screen--menu-page .menu-page--briefing .briefing__facts { display: none; }
+  .screen--menu-page .menu-page--briefing .briefing__lineup,
+  .screen--menu-page .menu-page--briefing .briefing__rules-label { display: block; margin: 0; color: var(--bone-dim); font: 400 13px/1.5 var(--font-body); }
+  .screen--menu-page .menu-page--briefing .briefing__players,
+  .screen--menu-page .menu-page--briefing .briefing__edit { margin: 0; }
+  .screen--menu-page .menu-page--briefing .briefing__players .item,
+  .screen--menu-page .menu-page--briefing .briefing__edit .item { min-height: 44px; padding: 10px 8px; font-size: 13px; border-radius: var(--phone-radius); }
+
   /* The crew uses the same choice sizes as settings; it never inherits the desktop room's compact rows. */
   .screen--menu-page .menu-page--crew .pilot.slot-card { padding: 16px; gap: 12px; border-radius: var(--phone-radius); }
   .screen--menu-page .menu-page--crew .pilot__type { font-size: 13px; border-radius: var(--phone-radius); }

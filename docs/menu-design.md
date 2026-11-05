@@ -61,7 +61,11 @@ Regelvorlagen bilden auf dem Handy eine horizontal wischbare Kartenreihe mit ein
 
 Die Kategorienavigation läuft als eine horizontal scrollbare Zeile; die aktive Kategorie bleibt nach einem Sprachwechsel sichtbar. Größere Zeilenabstände und mindestens 44 px hohe Power-up-Schalter geben den Bedienelementen Platz. Die Crew verwendet auf Handys kurze Schiffskarten mit direkt wählbarem Mensch/CPU und allen vier CPU-Stärken. Pro Team bleibt nur der nächste freie Platz sichtbar. Die fünf Daily-Sektoren bleiben in einer Reihe erkennbar. Tastaturhinweise einschließlich Q/E entfallen auf Touch-Geräten. Die Zielsteuerung bietet neben dem voreingestellten Winkelrad mit Kraftregler wieder den Stick aus dem Stand vor `0f0da52`, inklusive Wahl der Bedienseite.
 
+Die Matchvorbereitung hält die wesentlichen Entscheidungen im sichtbaren Bereich: eine kompakte illustrierte Vorlage, Runden und Flugzeit nebeneinander, alle Power-up-Schalter sowie zwei kurze Zusammenfassungen mit den sichtbaren Aktionen zum Ändern von Crew und vollständigen Regeln. Der ausführliche Regelvergleich bleibt auf Desktop neben der Vorbereitung stehen; auf dem Handy führt „Regeln anpassen“ zu allen Werten. Zurücksetzen/Bearbeiten und Speichern liegen auf Handys in festen 44-px-Plätzen der vorhandenen Karussell-Werkzeugleiste. Änderungen aktivieren die Aktionen, ohne eine weitere Zeile einzublenden oder den Seiteninhalt zu verschieben.
+
 `npx tsx scripts/mobile-check.ts` prüft gegen den laufenden Dev-Server Retina-Auflösung, echte Touch-Swipes, Kategorien und Sprachwechsel, Vorlagen speichern/abbrechen sowie Crew-Bedienung bei 320 und 430 px. `npm run screens` prüft zusätzlich die Seitengeometrie; `--png` liefert die Screenshots zur visuellen Abnahme.
+
+`npx tsx scripts/setup-check.ts` misst zusätzlich die unveränderten Positionen beim Ändern, Speichern und Zurücksetzen einer Vorlage sowie die Sichtbarkeit von Crew-, Regel- und Startaktionen bei 440×956, 390×844 und 320×740. Am großen Telefon prüft es auch die zusätzliche Mayhem-Stärke in allen drei Spielmodi.
 
 ## Wo der Code liegt
 
