@@ -9,7 +9,7 @@ import { lightParts } from './forged-parts';
 /**
  * What flies in the forged look, and the sun it flies past. A shot is a white-hot core in a halo, with a glint across it
  * and a tapering tail of heat that sheds embers; its track cools towards where it began and is run along by pulses of
- * light; a plasma shot crackles. The sun's surface and corona are shaders, at the size they are drawn and moving every frame;
+ * light; a plasma shot has wisps of charge orbiting it. The sun's surface and corona are shaders, at the size they are drawn and moving every frame;
  * without shaders it has its sprites and rays of light over them.
  */
 
@@ -144,7 +144,7 @@ export function drawForgedLiveTrail(ctx: CanvasRenderingContext2D, pts: number[]
   ctx.restore();
 }
 
-/** A plasma shot: a halo, a lumpy body that wobbles, a white core and arcs of lightning that jump about it. */
+/** A plasma shot: a halo, a lumpy body that wobbles, a white core and wisps of charge that orbit it. */
 export function drawForgedPlasmaShot(ctx: CanvasRenderingContext2D, x: number, y: number, time: number): void {
   lightParts.plasmaShot!(ctx, x, y, time);
   ctx.save();
@@ -154,26 +154,28 @@ export function drawForgedPlasmaShot(ctx: CanvasRenderingContext2D, x: number, y
   heat.addColorStop(1, 'rgba(34,228,255,0)');
   ctx.fillStyle = heat;
   ctx.fillRect(x - 26, y - 26, 52, 52);
-  // The arcs change about twenty times a second: lightning does not glide.
-  const beat = Math.floor(time * 20);
+  // Wisps of charge orbit the core: each a curved tail that thins and fades behind a bright head, on its own slowly breathing orbit.
   ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  for (let arc = 0; arc < 3; arc++) {
-    let a = slot(beat * 7 + arc * 3.1) * Math.PI * 2;
-    let r = 4;
-    ctx.beginPath();
-    ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
-    for (let s = 1; s <= 5; s++) {
-      a += (slot(beat * 11 + arc * 5 + s) - 0.5) * 1.3;
-      r += 2.2 + slot(beat + arc + s * 1.7) * 2.2;
-      ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+  const WISPS = 3;
+  const STEPS = 9;
+  for (let w = 0; w < WISPS; w++) {
+    const dir = w % 2 ? -1 : 1;
+    const head = time * (3.2 + w * 0.7) * dir + (w / WISPS) * Math.PI * 2;
+    const orbit = 9 + w * 2.2 + Math.sin(time * 2.3 + w * 2.1) * 1.6;
+    for (let k = 0; k < STEPS; k++) {
+      const f = 1 - k / STEPS;
+      const a0 = head - dir * k * 0.17;
+      const a1 = head - dir * (k + 1) * 0.17;
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(a0) * orbit, y + Math.sin(a0) * orbit * 0.85);
+      ctx.lineTo(x + Math.cos(a1) * orbit, y + Math.sin(a1) * orbit * 0.85);
+      ctx.strokeStyle = `rgba(34,228,255,${0.4 * f * f})`;
+      ctx.lineWidth = 2.6 * f;
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(224,255,255,${0.85 * f * f})`;
+      ctx.lineWidth = 0.9 * f;
+      ctx.stroke();
     }
-    ctx.strokeStyle = 'rgba(34,228,255,0.35)';
-    ctx.lineWidth = 3.2;
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(224,255,255,0.9)';
-    ctx.lineWidth = 0.9;
-    ctx.stroke();
   }
   ctx.restore();
 }
