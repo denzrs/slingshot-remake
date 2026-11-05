@@ -1080,6 +1080,11 @@ export abstract class Match {
     return true;
   }
 
+  /** The fire key while a replay holds a finished shot on the field ends the hold. True when it did. */
+  skipHold(): boolean {
+    return false;
+  }
+
   /** Mayhem: what every point of this round is worth — a jackpot round pays and costs double. */
   protected get payFactor(): number {
     return this.mayhem?.jackpot ? MAYHEM.JACKPOT_FACTOR : 1;

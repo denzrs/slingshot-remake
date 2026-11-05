@@ -262,6 +262,10 @@ export class ChallengeMatch extends Match {
 
 /** The shot of a day flown again on the full field: its sector as it stood, the shot, and no more. */
 export class ShotReplay extends ChallengeMatch {
+  /** When the shot hit, in phase time. Null until it does. */
+  private landedAt: number | null = null;
+  private holdSkipped = false;
+
   constructor(
     settings: Settings,
     challenge: Challenge,
@@ -276,6 +280,8 @@ export class ShotReplay extends ChallengeMatch {
   }
 
   protected beginRound(): void {
+    this.landedAt = null;
+    this.holdSkipped = false;
     for (const id of this.shot.down) {
       if (!this.players[id]?.target) continue;
       this.players[id].alive = false;
@@ -293,9 +299,21 @@ export class ShotReplay extends ChallengeMatch {
     if (this.stageTurn(turn, [this.pilot])) this.fire();
   }
 
-  /** The hit is what there is to see: it gets its moment before the end card covers the field. */
+  protected recordKill(record: KillRecord): void {
+    this.landedAt = this.phaseTime;
+    super.recordKill(record);
+  }
+
+  /** The end card waits for the hit's moment, which stray missiles may already have used up; a miss gets it once the flight has ended. */
   protected get afterVolleyDelay(): number {
-    return CHALLENGE.SHOT_LINGER;
+    if (this.holdSkipped) return 0;
+    return CHALLENGE.SHOT_LINGER - (this.landedAt === null ? 0 : this.flightDoneAt! - this.landedAt);
+  }
+
+  skipHold(): boolean {
+    if (this.phase !== 'flying' || this.flightDoneAt === null) return false;
+    this.holdSkipped = true;
+    return true;
   }
 
   /** One shot is all there is. */
