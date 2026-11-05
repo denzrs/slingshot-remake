@@ -3,22 +3,6 @@
 .menu-page--mode-pager .menu-page__head > .eyebrow { margin-bottom: 8px; }
 /* The hints occupy their own stable row; only the viewport of page labels moves. */
 .mode-carousel { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; min-width: 0; }
-.mobile-mode-picker { display: none; }
-@media (max-width: 760px) {
-  .mode-carousel--with-picker .mode-pager__viewport { display: none; }
-  .mobile-mode-picker {
-    display: block;
-    grid-column: 1 / -1;
-    width: 100%;
-    min-height: 52px;
-    padding: 10px 14px;
-    border: 1px solid var(--menu-line);
-    border-radius: 6px;
-    background: var(--menu-surface);
-    color: var(--bone);
-    font: 700 20px/1.4 var(--font-body);
-  }
-}
 .mode-pager__semantic-title {
   position: absolute;
   width: 1px;

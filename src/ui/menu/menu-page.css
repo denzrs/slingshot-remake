@@ -4,3 +4,5 @@
 @import './menu-page/online.css';
 @import './menu-page/local-pages.css';
 @import './menu-page/room.css';
+/* One shared phone contract, after component layout. Desktop geometry stays in the files above. */
+@import './menu-page/mobile.css';

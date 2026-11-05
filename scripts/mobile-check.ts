@@ -98,6 +98,18 @@ try {
     for (const language of ['en', 'de']) {
       await visit(width, 844, language);
       await click({ sel: '[data-section="modes"] .item', nth: 0 });
+      if (width === 430 && language === 'en') {
+        await check(`!!document.querySelector('.mode-pager__viewport') && !document.querySelector('.mobile-mode-picker')`, 'Mode swiping was replaced by a dropdown');
+        const header = await cdp.evaluate<{ x: number; y: number; distance: number }>(`(() => { const r = document.querySelector('.mode-pager__viewport').getBoundingClientRect(); return { x: r.left + r.width * .8, y: r.top + r.height / 2, distance: r.width * .6 }; })()`);
+        for (const direction of [-1, 1]) {
+          const x = direction < 0 ? header.x : header.x - header.distance;
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: header.y }] });
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + direction * header.distance, y: header.y }] });
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+          await sleep(300);
+          await check(`document.querySelector('.mode-pager__item--active').textContent.trim() === ${JSON.stringify(direction < 0 ? 'Event Horizon' : 'Classic')}`, 'Mode heading no longer changes by swiping');
+        }
+      }
       const initial = await cdp.evaluate<{ count: string; [key: string]: unknown }>(`(() => { const c = document.querySelector('.briefing__cards'); return { count: document.querySelector('.preset-carousel__count').textContent, scroll: c.scrollLeft, slides: [...c.querySelectorAll(':scope > .briefing__preset-shell, :scope > .briefing__own > *')].map(el => ({ title: el.textContent.trim().slice(0, 30), left: el.getBoundingClientRect().left, width: el.getBoundingClientRect().width, order: getComputedStyle(el).order })) }; })()`);
       assert.equal(initial.count, '1 / 5', `Initial carousel order: ${JSON.stringify(initial)}`);
       await check(`getComputedStyle(document.querySelector('.mode-pager__keys')).display === 'none'`, 'Keyboard hints are visible on touch');

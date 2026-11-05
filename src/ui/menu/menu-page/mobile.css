@@ -1,0 +1,94 @@
+/* The phone UI's shared contract. Component files own layout; this owns type, spacing and control geometry.
+ * Keeping the contract here prevents settings, crew, missions and online rooms from each shrinking differently. */
+@media (max-width: 760px) {
+  :root {
+    --phone-edge: 20px;
+    --phone-gap: 24px;
+    --phone-radius: 6px;
+    --page-title-size: 36px;
+  }
+
+  .screen--title,
+  .screen--menu-page {
+    background: rgb(8 20 38 / .96);
+    padding-inline: max(var(--phone-edge), env(safe-area-inset-left)) max(var(--phone-edge), env(safe-area-inset-right));
+    padding-top: max(24px, env(safe-area-inset-top));
+  }
+  .screen--menu-page .menu-page { font: 14px/1.5 var(--font-body); }
+  .screen--menu-page .menu-page__head { margin-bottom: var(--phone-gap); }
+  .screen--menu-page .menu-page__head .eyebrow { margin: 0 0 10px; font: 700 10px/1.5 var(--font-body); letter-spacing: .14em; }
+  .screen--menu-page .menu-page__title { color: var(--bone); font: 800 var(--page-title-size)/1.1 var(--font-display); letter-spacing: .01em; text-transform: uppercase; }
+  .screen--menu-page .menu-page__intro { margin: 12px 0 0; font: 400 14px/1.65 var(--font-body); }
+  .screen--menu-page .menu-page__body { padding-bottom: var(--phone-gap); }
+  .screen--menu-page .menu-page__aside { padding-top: var(--phone-gap); }
+  .screen--menu-page .menu-page__foot { margin-top: 12px; padding-top: 12px; background: #081426; }
+  .screen--menu-page .menu-page__actions .lobby__chat-slot:empty { display: none; }
+
+  /* Short display headings carry the game identity; action and form text use the more readable body face. */
+  .screen--menu-page .menu-page .menu-page__actions .item,
+  .screen--menu-page .menu-page .menu-page__actions .lobby__button { min-height: 48px; padding: 12px 16px; border-radius: var(--phone-radius); font: 700 14px/1.4 var(--font-body); letter-spacing: 0; }
+  .screen--menu-page .menu-page .menu-page__actions .item--primary,
+  .screen--menu-page .menu-page .menu-page__actions .lobby__button--primary { flex: 1 1 0; min-height: 52px; font: 700 16px/1.4 var(--font-body); letter-spacing: 0; text-transform: none; }
+  .screen--menu-page .menu-page .item__label { font-size: 14px; line-height: 1.5; }
+  .screen--menu-page .menu-page .segmented { border-radius: var(--phone-radius); }
+  .screen--menu-page .menu-page .segmented__option { min-height: 44px; padding: 10px 6px; font: 700 13px/1.4 var(--font-body); letter-spacing: 0; white-space: normal; }
+  .screen--menu-page .menu-page .item--toggle { min-height: 56px; }
+  .screen--menu-page .menu-page .item--slider { min-height: 76px; }
+  .screen--menu-page .menu-page input,
+  .screen--menu-page .menu-page select { min-height: 48px; border-radius: var(--phone-radius); font: 400 16px/1.5 var(--font-body); }
+  .screen--menu-page .menu-page .menu-page__head .preset-name input { min-height: 48px; padding: 10px 12px; }
+  .screen--menu-page .menu-page .setup__title { color: var(--bone-dim); font: 700 11px/1.5 var(--font-body); letter-spacing: .1em; }
+  .screen--menu-page .menu-page .note,
+  .screen--menu-page .menu-page .lobby__note { font-size: 13px; line-height: 1.65; }
+  .screen--menu-page .menu-page .briefing__cards .item--card { border-radius: var(--phone-radius); }
+  .screen--menu-page .menu-page .briefing__cards .item__hint { font: 400 13px/1.55 var(--font-body); }
+  .screen--menu-page .menu-page .briefing__quick { gap: var(--phone-gap); }
+  .screen--menu-page .menu-page .briefing__lineup { font-size: 14px; }
+
+  /* The crew uses the same choice sizes as settings; it never inherits the desktop room's compact rows. */
+  .screen--menu-page .menu-page--crew .pilot.slot-card { padding: 16px; gap: 12px; border-radius: var(--phone-radius); }
+  .screen--menu-page .menu-page--crew .pilot__type { font-size: 13px; border-radius: var(--phone-radius); }
+  .screen--menu-page .menu-page--crew .crew-roster__heading .setup__title { font: 800 24px/1.2 var(--font-display); color: var(--bone); }
+  .screen--menu-page .menu-page--crew .crew-config { margin: 16px 0 0; }
+  .screen--menu-page .menu-page--crew .crew-roster__status { font-size: 12px; }
+
+  /* All five mission stops stay in view. Their full sector labels remain available to assistive technology. */
+  .screen--menu-page .mission-route { counter-reset: sector; gap: 6px; margin: 20px 0; }
+  .screen--menu-page .mission-route .item { counter-increment: sector; min-height: 80px; padding: 12px 3px; border-radius: var(--phone-radius); }
+  .screen--menu-page .mission-route .item > span:not([class]) { font-size: 0; }
+  .screen--menu-page .mission-route .item > span:not([class])::after { content: counter(sector); font: 700 22px/1.3 var(--font-mono); }
+  .screen--menu-page .mission-route .item .item__tag { font-size: 9px; }
+  .screen--menu-page .mission-detail { padding: 20px 0; }
+  .screen--menu-page .mission-detail > div { font-size: 14px; }
+  .screen--menu-page .mission-detail > div > span { font-size: 13px; }
+  .screen--menu-page .mission-stats dt { font-size: 12px; }
+
+  /* Online identity is one quiet utility strip, rather than a second competing page heading. */
+  .screen--menu-page .menu-page--lobby .online-identity { padding: 12px 0; border: 0; border-bottom: 1px solid var(--menu-line); border-radius: 0; background: transparent; gap: 16px; }
+  .screen--menu-page .menu-page--lobby .online-profile__name { font-size: 16px; }
+  .screen--menu-page .menu-page--lobby .online-profile__avatar { width: 36px; height: 36px; }
+  .screen--menu-page .menu-page--lobby .online-profile__edit { min-height: 44px; display: inline-flex; align-items: center; gap: 4px; padding: 8px 12px; border-radius: var(--phone-radius); }
+  .screen--menu-page .menu-page--lobby .online-connection { padding-top: 12px; }
+  .screen--menu-page .menu-page--lobby .lobby__button { min-height: 44px; padding: 10px 14px; border-radius: var(--phone-radius); font: 700 13px/1.4 var(--font-body); }
+  .screen--menu-page .menu-page--lobby .room-info { padding: 16px; margin: 8px 0 24px; border-radius: var(--phone-radius); }
+  .screen--menu-page .menu-page--room .room-deck__crew .slot-card { min-height: 56px; padding: 12px; gap: 10px; border-radius: var(--phone-radius); }
+  .screen--menu-page .menu-page--room .room-deck__crew .player-slot { grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-areas: 'num icon id ready' 'ctl ctl ctl ctl'; }
+  .screen--menu-page .menu-page--room .room-deck__crew .player-slot .option-selector { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .screen--menu-page .menu-page--room .room-deck__crew .option-selector__choice { min-height: 44px; padding: 8px 3px; font-size: 11px; }
+  .screen--menu-page .menu-page--room .room-deck__crew .option-selector__choice > span:last-child { display: block; }
+  .screen--menu-page .menu-page--room .room-deck__crew .slot-card__join { min-height: 44px; font: 700 13px/1.4 var(--font-body); }
+  .screen--menu-page .menu-page--room .room-deck__crew .slot-card__add-cpu { min-height: 44px; }
+  .screen--menu-page .menu-page--room .lobby__start-hint { font-size: 12px; line-height: 1.5; }
+
+  .screen--title .launcher__nav { gap: 8px; }
+  .screen--title .launcher__nav .item { min-height: 48px; border-radius: var(--phone-radius); }
+  .screen--title .launcher__modes .item--card,
+  .screen--title .launcher__online .item--card,
+  .screen--title .launcher__daily .item--card { padding: 16px; border-radius: var(--phone-radius); }
+  .screen--title .launcher__modes .item__title,
+  .screen--title .launcher__online .item__title,
+  .screen--title .launcher__daily .item__title { font: 800 24px/1.15 var(--font-display); }
+  .screen--title .launcher__modes .item__hint,
+  .screen--title .launcher__online .item__hint,
+  .screen--title .launcher__daily .item__hint { font: 400 13px/1.5 var(--font-body); }
+}
