@@ -231,11 +231,50 @@ describe('daily leaderboard', () => {
   });
 });
 
+describe('the shot of the day', () => {
+  const shot = (points: number) => ({ points, sector: 2, down: [1], attempt: 2, left: 1, angle: 123.25, power: 61.5, trail: [10.5, 20, 30, 40.5] });
+
+  it('keeps one shot for a day across all players, the one that paid the most', async () => {
+    const boards = onRelay();
+    const day = daysAgo(4);
+    expect((await boards.top(day)).shot).toBeNull();
+
+    // The board comes back with the shot, whole, however a number crossed the wire.
+    const posted = await boards.submit(day, 'Ada', 500, shot(800));
+    expect(posted.shot).toEqual({ ...shot(800), name: 'Ada' });
+
+    // The run counts apart from its shot: a higher score with a weaker shot takes the board, not the shot.
+    const stronger = await boards.submit(day, 'Ada', 900, shot(100));
+    expect(stronger.you?.score).toBe(900);
+    expect(stronger.shot?.points).toBe(800);
+
+    const noShot = await boards.submit(day, 'Ada', 950);
+    expect(noShot.shot?.points).toBe(800);
+
+    const better = await boards.submit(day, 'Ada', 10, shot(1200));
+    expect(better.shot).toEqual({ ...shot(1200), name: 'Ada' });
+    expect(better.you?.score).toBe(950);
+  });
+
+  it('refuses a run with a broken shot', async () => {
+    const boards = onRelay();
+    await expect(boards.submit(daysAgo(6), 'Ada', 100, { ...shot(100), sector: CHALLENGE.SECTORS })).rejects.toThrow(/Invalid daily run/);
+    await expect(boards.submit(daysAgo(6), 'Ada', 100, { ...shot(100), trail: [1, 2, 3] })).rejects.toThrow(/Invalid daily run/);
+    await expect(boards.submit(daysAgo(6), 'Ada', 100, { ...shot(100), trail: new Array(CHALLENGE.SHOT_TRAIL * 2 + 2).fill(1) })).rejects.toThrow(/Invalid daily run/);
+    expect((await boards.top(daysAgo(6))).entries).toEqual([]);
+  });
+});
+
 describe('paging through past boards', () => {
-  const contract = JSON.parse(readFileSync(fileURLToPath(new URL('../../server/protocol-contract.json', import.meta.url)), 'utf8')) as { daily: { keepDays: number } };
+  const contract = JSON.parse(readFileSync(fileURLToPath(new URL('../../server/protocol-contract.json', import.meta.url)), 'utf8')) as { daily: { keepDays: number; sectors: number; shotTrail: number } };
 
   it('keeps as many days as the relay does', () => {
     expect(BOARD_KEEP_DAYS).toBe(contract.daily.keepDays);
+  });
+
+  it('holds a shot to what the relay takes', () => {
+    expect(CHALLENGE.SECTORS).toBe(contract.daily.sectors);
+    expect(CHALLENGE.SHOT_TRAIL).toBe(contract.daily.shotTrail);
   });
 
   it('stops at the oldest day the relay still holds', () => {

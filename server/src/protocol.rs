@@ -333,13 +333,24 @@ fn days_in_month(year: i32, month: u32) -> u32 {
     }
 }
 
+/// How many sectors a daily challenge has.
+pub const DAILY_SECTORS: i64 = 5;
+/// The most points of a path a daily shot may bring along.
+pub const MAX_SHOT_TRAIL: usize = 240;
+/// A path stays near the field; a shot that left it comes back or times out.
+const MAX_SHOT_COORD: f64 = 100_000.0;
+/// More than any sector has targets or shots; the client fills the fields, this only bounds them.
+const MAX_SECTOR_COUNT: i64 = 32;
+
 /// A daily run a client wants on the board: the day it was flown, the name to post it under, and
-/// the total. The name is cleaned like any other player name, and the day has to be a real one.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// the total, with the run's best shot if it hit anything. The name is cleaned like any other
+/// player name, and the day has to be a real one.
+#[derive(Clone, Debug, PartialEq)]
 pub struct DailyScore {
     pub day: String,
     pub name: String,
     pub score: i64,
+    pub shot: Option<crate::leaderboard::Shot>,
 }
 
 /// The `day` of a `daily_top`: which day's board is wanted.
@@ -351,7 +362,50 @@ pub fn parse_daily_day(value: &Value) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// A `daily_submit`, or None when the day, the name or the score will not do.
+/// An integer in a range, as a client sent it.
+fn bounded_integer(value: Option<&Value>, range: std::ops::RangeInclusive<i64>) -> Option<i64> {
+    let number = value.filter(|v| is_safe_integer(v))?.as_f64()? as i64;
+    range.contains(&number).then_some(number)
+}
+
+/// A number in a range, as a client sent it.
+fn bounded_number(value: Option<&Value>, range: std::ops::RangeInclusive<f64>) -> Option<f64> {
+    value?.as_f64().filter(|number| range.contains(number))
+}
+
+/// The shot a `daily_submit` brought along, or None when it is not one.
+fn parse_daily_shot(value: &Value) -> Option<crate::leaderboard::Shot> {
+    if !is_record(value) {
+        return None;
+    }
+    let down = value.get("down")?.as_array()?;
+    let trail = value.get("trail")?.as_array()?;
+    if down.len() > MAX_SECTOR_COUNT as usize
+        || trail.len() < 4
+        || trail.len() > MAX_SHOT_TRAIL * 2
+        || trail.len() % 2 != 0
+    {
+        return None;
+    }
+    Some(crate::leaderboard::Shot {
+        points: bounded_integer(value.get("points"), 1..=MAX_DAILY_SCORE)?,
+        sector: bounded_integer(value.get("sector"), 0..=DAILY_SECTORS - 1)?,
+        down: down
+            .iter()
+            .map(|target| bounded_integer(Some(target), 1..=MAX_SECTOR_COUNT))
+            .collect::<Option<Vec<_>>>()?,
+        attempt: bounded_integer(value.get("attempt"), 1..=MAX_SECTOR_COUNT)?,
+        left: bounded_integer(value.get("left"), 0..=MAX_SECTOR_COUNT)?,
+        angle: bounded_number(value.get("angle"), -360.0..=720.0)?,
+        power: bounded_number(value.get("power"), 0.0..=100.0)?,
+        trail: trail
+            .iter()
+            .map(|point| bounded_number(Some(point), -MAX_SHOT_COORD..=MAX_SHOT_COORD))
+            .collect::<Option<Vec<_>>>()?,
+    })
+}
+
+/// A `daily_submit`, or None when the day, the name, the score or a shot it brought will not do.
 pub fn parse_daily_submit(value: &Value) -> Option<DailyScore> {
     if !is_record(value) {
         return None;
@@ -362,9 +416,18 @@ pub fn parse_daily_submit(value: &Value) -> Option<DailyScore> {
         .get("score")
         .filter(|score| is_safe_integer(score))?
         .as_f64()? as i64;
+    let shot = match value.get("shot") {
+        None | Some(Value::Null) => None,
+        Some(shot) => Some(parse_daily_shot(shot)?),
+    };
     (0..=MAX_DAILY_SCORE)
         .contains(&score)
-        .then_some(DailyScore { day, name, score })
+        .then_some(DailyScore {
+            day,
+            name,
+            score,
+            shot,
+        })
 }
 
 /// German words the English dictionary takes for something else: "brauchen" and its kin contain
@@ -1138,6 +1201,7 @@ mod tests {
                 day: "2026-10-19".into(),
                 name: "Ada".into(),
                 score: 4200,
+                shot: None,
             }
         );
         assert_eq!(
@@ -1325,6 +1389,54 @@ mod tests {
     }
 
     #[test]
+    fn a_daily_shot_is_bounded_and_a_bad_one_takes_the_run_with_it() {
+        let run = |shot: Value| json!({"day":"2026-10-19","name":"Ada","score":10,"shot":shot});
+        let good = json!({"points":800,"sector":4,"down":[1,2],"attempt":2,"left":1,"angle":12.5,"power":61.25,"trail":[1.5,2,3,4.5]});
+        let parsed = parse_daily_submit(&run(good.clone()))
+            .unwrap()
+            .shot
+            .unwrap();
+        assert_eq!(parsed.sector, 4);
+        assert_eq!(parsed.down, [1, 2]);
+        assert_eq!(parsed.trail, [1.5, 2.0, 3.0, 4.5]);
+        // Whole numbers come through the wire as integers.
+        let whole = json!({"points":800,"sector":0,"down":[],"attempt":1,"left":0,"angle":90,"power":100,"trail":[1,2,3,4]});
+        assert_eq!(
+            parse_daily_submit(&run(whole)).unwrap().shot.unwrap().angle,
+            90.0
+        );
+        // A run without one is a run; so is a null.
+        assert!(parse_daily_submit(&run(Value::Null))
+            .unwrap()
+            .shot
+            .is_none());
+
+        let long: Vec<f64> = vec![1.0; MAX_SHOT_TRAIL * 2 + 2];
+        for (field, bad) in [
+            ("points", json!(0)),
+            ("points", json!(MAX_DAILY_SCORE + 1)),
+            ("points", json!(1.5)),
+            ("sector", json!(DAILY_SECTORS)),
+            ("sector", json!(-1)),
+            ("down", json!([0])),
+            ("down", json!("1")),
+            ("attempt", json!(0)),
+            ("left", json!(-1)),
+            ("angle", json!("up")),
+            ("power", json!(101)),
+            ("trail", json!([1, 2])),
+            ("trail", json!([1, 2, 3])),
+            ("trail", json!([1, 2, 3, 1e9])),
+            ("trail", json!(long)),
+        ] {
+            let mut shot = good.clone();
+            shot[field] = bad;
+            assert!(parse_daily_submit(&run(shot.clone())).is_none(), "{shot}");
+        }
+        assert!(parse_daily_submit(&run(json!("shot"))).is_none());
+    }
+
+    #[test]
     fn shared_daily_contract_matches_relay_limits() {
         let contract: Value =
             serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
@@ -1333,5 +1445,7 @@ mod tests {
         assert_eq!(daily["maxScore"], MAX_DAILY_SCORE);
         assert_eq!(daily["nameLength"], MAX_NAME_LENGTH);
         assert_eq!(daily["keepDays"], crate::leaderboard::DEFAULT_KEEP_DAYS);
+        assert_eq!(daily["sectors"], DAILY_SECTORS);
+        assert_eq!(daily["shotTrail"], MAX_SHOT_TRAIL);
     }
 }

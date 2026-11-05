@@ -4,6 +4,8 @@ import { shiftDate } from '../sim/challenge';
 interface DayRecord {
   best: number;
   attempts: number;
+  /** A run of this day went up on the leaderboard from this browser: the day's shot of the day is open to you. */
+  posted?: true;
 }
 
 export interface RunOutcome {
@@ -30,7 +32,7 @@ function read(): Store {
     for (const [day, rec] of Object.entries(parsed)) {
       const r = rec as Partial<DayRecord> | null;
       if (/^\d{4}-\d{2}-\d{2}$/.test(day) && r && Number.isFinite(r.best) && Number.isFinite(r.attempts)) {
-        store[day] = { best: r.best!, attempts: r.attempts! };
+        store[day] = { best: r.best!, attempts: r.attempts!, ...(r.posted ? { posted: true } : {}) };
       }
     }
     return store;
@@ -71,8 +73,16 @@ export function loadStreak(day: string): number {
 export function recordRun(day: string, total: number): RunOutcome {
   const store = read();
   const prev = store[day];
-  const record: DayRecord = { best: prev ? Math.max(prev.best, total) : total, attempts: (prev?.attempts ?? 0) + 1 };
+  const record: DayRecord = { ...prev, best: prev ? Math.max(prev.best, total) : total, attempts: (prev?.attempts ?? 0) + 1 };
   store[day] = record;
   write(store);
   return { record, newBest: !!prev && total > prev.best, streak: streakAt(day, store) };
+}
+
+/** A run of `day` made it onto the leaderboard. A day never flown here has no record to mark. */
+export function markPosted(day: string): void {
+  const store = read();
+  if (!store[day]) return;
+  store[day].posted = true;
+  write(store);
 }

@@ -1,5 +1,6 @@
 import type { ReplayTurn } from '../game/replay';
 import type { Avatar } from '../platform/avatars';
+import type { DailyShot } from '../sim/challenge';
 import type { GameMode } from '../sim/modes';
 import type { GameEvent } from '../game';
 import type { StatePatch } from './netsync';
@@ -66,7 +67,7 @@ type ClientMessage =
   /** Host only: the shots of a turn that has just been flown, and the scores after them. */
   | ({ type: 'turn_stats' } & TurnReport)
   /** Post a daily-challenge run to the day's leaderboard; the board comes back either way. */
-  | { type: 'daily_submit'; day: string; name: string; score: number }
+  | { type: 'daily_submit'; day: string; name: string; score: number; shot?: DailyShot }
   /** Look at a day's leaderboard without posting anything. */
   | { type: 'daily_top'; day: string }
   /** The numbers behind the stats page: the totals of every day, and the latest games. */
@@ -170,6 +171,9 @@ export interface DailyEntry {
   score: number;
 }
 
+/** The one shot of a day that paid the most across every run posted, and who fired it. */
+export type ShotOfDay = DailyShot & { name: string };
+
 export interface LobbyRoom {
   id: string;
   /** What the host called the room ("Ada's room" if they didn't). */
@@ -261,6 +265,8 @@ export type ServerMessage =
       entries: DailyEntry[];
       /** Your own run, wherever it sits — null when you have not posted one for that day. */
       you: DailyEntry | null;
+      /** The shot of that day, once a run has brought one; a relay from before it leaves it out. */
+      shot?: ShotOfDay | null;
     }
   | {
       type: 'stats_overview';

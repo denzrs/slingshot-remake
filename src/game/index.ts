@@ -1,13 +1,13 @@
-import type { Challenge } from '../sim/challenge';
+import type { Challenge, DailyShot } from '../sim/challenge';
 import type { Settings } from '../data/settings';
-import { ChallengeMatch } from './challenge';
+import { ChallengeMatch, ShotReplay } from './challenge';
 import { ClassicMatch } from './classic';
 import { HorizonMatch } from './horizon';
 import { SolarMatch } from './solar';
 import type { Match, MatchOptions } from './match';
 import type { GameMode } from '../sim/modes';
 
-export { ChallengeMatch, type ChallengeResult, type SectorResult, type ShotLog } from './challenge';
+export { ChallengeMatch, ShotReplay, type ChallengeResult, type SectorResult, type ShotLog } from './challenge';
 export { ClassicMatch } from './classic';
 export { HorizonMatch } from './horizon';
 export { SolarMatch } from './solar';
@@ -21,6 +21,13 @@ export function createMatch(mode: GameMode, settings: Settings, options: MatchOp
 
 export function createChallenge(settings: Settings, challenge: Challenge): ChallengeMatch {
   const match = new ChallengeMatch(settings, challenge);
+  match.newMatch();
+  return match;
+}
+
+/** The shot of a day, flown again. */
+export function createShotReplay(settings: Settings, challenge: Challenge, shot: DailyShot & { name: string }): ShotReplay {
+  const match = new ShotReplay(settings, challenge, shot);
   match.newMatch();
   return match;
 }

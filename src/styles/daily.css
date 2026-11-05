@@ -180,6 +180,65 @@
   color: var(--p2);
 }
 
+/* ——— Shot of the day ——— */
+
+/* The shot of the day: its path small, who fired it and what it paid. */
+.daily-shot {
+  flex: 1;
+  max-width: 560px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 16px;
+  padding: 10px 14px;
+  border: 1px solid rgb(255 210 122 / 0.32);
+  border-radius: 3px;
+  background: rgb(19 39 70 / 0.35);
+}
+
+.daily-shot[hidden] {
+  display: none;
+}
+
+.daily-shot .ranking-label {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.daily-shot .match-highlight__trail {
+  grid-column: auto;
+  height: 84px;
+  margin: 0;
+}
+
+.daily-shot__caption {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  min-width: 0;
+  max-width: 16ch;
+}
+
+.daily-shot__who {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--bone);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-shot__points {
+  color: var(--p2);
+  font: 700 18px/1 var(--font-body);
+}
+
+.daily-shot__where {
+  color: var(--bone-dim);
+  font-size: 12px;
+}
+
 /* ——— Daily leaderboard ——— */
 
 .lb {

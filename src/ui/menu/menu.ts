@@ -129,6 +129,9 @@ interface Level {
   focus: number;
 }
 
+/** The pages of an open menu, set aside. */
+export type MenuPages = readonly Level[];
+
 /**
  * DOM menu stack with retro keyboard navigation: ↑/↓ move, ←/→ change a setting,
  * Enter/Space activate, Esc goes back. Mouse and touch work as normal buttons, sliders and switches.
@@ -175,6 +178,20 @@ export class Menu {
     level.screen = screen;
     level.focus = focusIndex;
     this.render(focusIndex);
+  }
+
+  /** Close the menu but keep its pages, for `restore` to put back as they were. */
+  setAside(): MenuPages {
+    this.rememberFocus();
+    const pages = this.stack;
+    this.close();
+    return pages;
+  }
+
+  /** Open the pages `setAside` kept, built anew, on the row each had the focus on. */
+  restore(pages: MenuPages): void {
+    this.stack = [...pages];
+    this.render(this.stack[this.stack.length - 1].focus);
   }
 
   /** Build the current screen again (e.g. after a language switch or a new row), without the screen's entrance. The focus stays on its row, or goes to row `focus`. */

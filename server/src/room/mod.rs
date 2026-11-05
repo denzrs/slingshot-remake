@@ -295,6 +295,11 @@ impl RoomManager {
                 "day": day,
                 "entries": board.entries.iter().map(entry).collect::<Vec<_>>(),
                 "you": board.you.as_ref().map(entry),
+                "shot": board.shot.as_ref().map(|s| json!({
+                    "name": s.name, "points": s.shot.points, "sector": s.shot.sector, "down": s.shot.down,
+                    "attempt": s.shot.attempt, "left": s.shot.left, "angle": s.shot.angle, "power": s.shot.power,
+                    "trail": s.shot.trail,
+                })),
             }),
         );
     }

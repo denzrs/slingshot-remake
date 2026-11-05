@@ -54,7 +54,9 @@
     "boardSize": 50,
     "maxScore": 10000000,
     "nameLength": 24,
-    "keepDays": 7
+    "keepDays": 7,
+    "sectors": 5,
+    "shotTrail": 240
   },
   "spectators": {
     "max": 20

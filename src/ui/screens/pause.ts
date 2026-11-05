@@ -1,5 +1,5 @@
 import { COLORS, TEAMS } from '../../sim/config';
-import { ChallengeMatch, teamName, type Match } from '../../game';
+import { ChallengeMatch, ShotReplay, teamName, type Match } from '../../game';
 import { fmtInt, t, tn } from '../../platform/i18n';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
@@ -27,14 +27,14 @@ export function skipVoteScreen(app: App): Screen {
 export function pauseScreen(app: App, match: Match | null): Screen {
   if (app.replaying) {
     const items: MenuItem[] = [
-      { kind: 'action', section: 'actions', label: t('replay.back'), run: () => app.leaveReplay() },
+      { kind: 'action', section: 'actions', label: t(match instanceof ShotReplay ? 'daily.shot.back' : 'replay.back'), run: () => app.leaveReplay() },
       { kind: 'action', section: 'actions', label: t('common.settings'), run: () => app.menu.push(() => settingsScreen(app)) },
       { kind: 'action', section: 'actions', label: t('replay.again'), run: () => app.watchAgain() },
       { kind: 'action', section: 'actions', label: t('pause.resume'), primary: true, run: () => app.resume() },
     ];
     return {
       build: () => menuPage({
-        title: t('replay.title'), eyebrow: t('pause.title'), className: 'menu-page--pause', body: [],
+        title: t(match instanceof ShotReplay ? 'daily.shot.title' : 'replay.title'), eyebrow: t('pause.title'), className: 'menu-page--pause', body: [],
         footer: h('nav.items.items--row.pause-actions.menu-page__actions', { 'data-section': 'actions', 'aria-label': t('pause.title') }),
       }),
       items,

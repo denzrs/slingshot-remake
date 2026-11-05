@@ -2,8 +2,11 @@ import { dailyChallenge, dateKey, modifiersOf, type ThemeId } from '../../sim/ch
 import { loadDay, loadStreak, type RunOutcome } from '../../data/dailyStore';
 import type { ChallengeMatch, SectorResult, ShotLog } from '../../game';
 import { fmtInt, t, tn, type Key } from '../../platform/i18n';
+import { Leaderboard } from '../../net/leaderboard';
+import type { ShotOfDay } from '../../net/net';
 import { formatDay } from './dayFormat';
 import { h, type MenuItem, type Screen } from '../menu/menu';
+import { shotOfDayPreview } from './shot';
 import { leaderboardAvailable, leaderboardScreen } from './leaderboard';
 import type { App } from '../screens';
 import { menuPage } from '../menu/menu-page';
@@ -49,6 +52,19 @@ export function dailyScreen(app: App): Screen {
   };
   const stat = (label: string, value: string) => h('div', null, h('dt', null, label), h('dd', null, value));
   const hasBoard = leaderboardAvailable();
+  /** Today's shot of the day. It gives away a way through the sectors, so only a player who has flown them and posted the run gets it. */
+  let shot: ShotOfDay | null = null;
+  let open = true;
+  const shotCard = h('section.daily-shot', { hidden: 'hidden' });
+  if (hasBoard && day?.posted) {
+    void new Leaderboard().top(key).then((board) => {
+      shot = board.shot;
+      if (!open || !shot) return;
+      shotCard.replaceChildren(...shotOfDayPreview(shot));
+      shotCard.hidden = false;
+      app.menu.refresh();
+    }).catch(() => {});
+  }
   return {
     build: () => {
       const stats = h('dl.mission-stats', null,
@@ -65,7 +81,7 @@ export function dailyScreen(app: App): Screen {
         body: [
           h('h3.setup__title', null, t('daily.routeHeading', { n: challenge.number, date: formatDay(key) })),
           h('div.items.items--row.mission-route', { 'data-section': 'route' }), detail,
-          h('div.mission-bottom', null, stats),
+          h('div.mission-bottom', null, stats, shotCard),
           ...(key === dateKey() ? [h('p.daily-reset', null, t('daily.resets', { time: untilMidnight() }))] : []),
         ],
       });
@@ -81,11 +97,13 @@ export function dailyScreen(app: App): Screen {
         run: () => { selected = spec.index; app.menu.refresh(); },
       })),
       { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
+      { kind: 'action', label: t('daily.shot.watch'), hidden: () => !shot, run: () => { if (shot) app.watchShot(key, shot); } },
       ...(hasBoard ? [{ kind: 'action', label: t('daily.board.view'), run: () => app.menu.push(() => leaderboardScreen(app, key, formatDay(key), null)) } satisfies MenuItem] : []),
       { kind: 'action', label: t('daily.start'), primary: true, run: () => app.startDaily() },
     ],
-    focus: challenge.sectors.length + (hasBoard ? 2 : 1),
+    focus: challenge.sectors.length + (hasBoard ? 3 : 2),
     update,
+    dispose: () => { open = false; },
   };
 }
 
@@ -175,7 +193,7 @@ export function dailyResultScreen(app: App, match: ChallengeMatch, outcome: RunO
             {
               kind: 'action',
               label: t('daily.board.add'),
-              run: () => app.menu.push(() => leaderboardScreen(app, result.dateKey, t('daily.board.yourRun', { score: fmtInt(result.total) }), result.total)),
+              run: () => app.menu.push(() => leaderboardScreen(app, result.dateKey, t('daily.board.yourRun', { score: fmtInt(result.total) }), { score: result.total, shot: match.bestShot })),
             } satisfies MenuItem,
           ]
         : []),

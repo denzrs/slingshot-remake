@@ -1,6 +1,7 @@
-import { dailyChallenge, dateKey, shiftDate } from '../../sim/challenge';
+import { dailyChallenge, dateKey, shiftDate, type DailyShot } from '../../sim/challenge';
 import { fmtInt, t } from '../../platform/i18n';
 import { Leaderboard, BoardRejected, oldestBoardDay, type DailyBoard } from '../../net/leaderboard';
+import { markPosted } from '../../data/dailyStore';
 import { loadLobbyPrefs, saveLobbyPrefs } from '../../data/lobbyPrefs';
 import { DEFAULT_SERVER } from '../../net/multiplayer';
 import type { DailyEntry } from '../../net/net';
@@ -81,16 +82,22 @@ function boardRow(entry: DailyEntry, yours: boolean): HTMLElement {
   );
 }
 
+/** A run on its way to the board: its total, and its best shot if it hit anything. */
+export interface PostableRun {
+  score: number;
+  shot: DailyShot | null;
+}
+
 /**
  * A day's leaderboard. Reached with a run in hand from the result card, it offers to put that run
- * up under a name; reached with `score` null — from the daily challenge itself — it just shows the
+ * up under a name; reached with `run` null — from the daily challenge itself — it just shows the
  * board, so the day's standing can be looked at before or without flying it.
  */
 export function leaderboardScreen(
   app: App,
   day: string,
   caption: string,
-  score: number | null,
+  run: PostableRun | null,
   initialDay = day,
   transition?: 'next' | 'previous',
   initialName?: string,
@@ -167,7 +174,7 @@ export function leaderboardScreen(
       : 0;
     // Replace only this board page so Back still returns to the screen that opened it.
     app.menu.replace(
-      () => leaderboardScreen(app, day, caption, score, key, direction, name),
+      () => leaderboardScreen(app, day, caption, run, key, direction, name),
       focusIndex,
     );
   };
@@ -225,11 +232,11 @@ export function leaderboardScreen(
   };
 
   const submit = async (): Promise<void> => {
-    if (score === null) return;
+    if (run === null) return;
     if (shown !== day) {
       const direction = day > shown ? 'next' : 'previous';
       app.menu.replace(
-        () => leaderboardScreen(app, day, caption, score, day, direction, name, true),
+        () => leaderboardScreen(app, day, caption, run, day, direction, name, true),
         direction === 'next' && canView(shiftDate(day, 1)) ? 1 : 0,
       );
       return;
@@ -252,7 +259,8 @@ export function leaderboardScreen(
     refused = false;
     paint();
     try {
-      const posted = await boards.submit(day, name, score);
+      const posted = await boards.submit(day, name, run.score, run.shot);
+      markPosted(day);
       if (mine !== pending) return;
       board = posted;
       message = t('daily.board.posted', { rank: posted.you?.rank ?? 0 });
@@ -303,7 +311,7 @@ export function leaderboardScreen(
   // The board is there before the player decides anything about it.
   void load();
 
-  const goesUp = score !== null;
+  const goesUp = run !== null;
   const root = menuPage({
     title: shown === day ? caption : formatDay(shown),
     eyebrow: t('daily.board.eyebrow'), headerTitle: carousel,

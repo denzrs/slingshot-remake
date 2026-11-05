@@ -14,7 +14,7 @@ import {
   weekday,
 } from '../../src/sim/challenge';
 import { AIM, CHALLENGE, SCORING } from '../../src/sim/config';
-import { loadDay, loadStreak, recordRun } from '../../src/data/dailyStore';
+import { loadDay, loadStreak, markPosted, recordRun } from '../../src/data/dailyStore';
 import { createChallenge, type ChallengeMatch } from '../../src/game';
 import { cloneWorld, simulateShot } from '../../src/sim/physics';
 import { hashSeed } from '../../src/sim/rng';
@@ -355,6 +355,18 @@ describe('daily store', () => {
   });
   afterEach(() => {
     delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+
+  it('remembers that a run of the day was posted, through later runs of it', () => {
+    markPosted('2026-08-02');
+    expect(loadDay('2026-08-02')).toBeNull();
+
+    recordRun('2026-08-01', 4000);
+    expect(loadDay('2026-08-01')?.posted).toBeUndefined();
+    markPosted('2026-08-01');
+    expect(loadDay('2026-08-01')?.posted).toBe(true);
+    recordRun('2026-08-01', 3000);
+    expect(loadDay('2026-08-01')).toEqual({ best: 4000, attempts: 2, posted: true });
   });
 
   it('keeps the best run of a day and counts attempts', () => {
