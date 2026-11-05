@@ -546,9 +546,9 @@ function saveClip(): void {
 /** Enter / Space / the touch button: fire or lock in, continue, or skip the killcam. */
 function primaryAction(): void {
   if (!match) return;
-  // A replay only goes on past the round's end and the killcams.
+  // A replay only goes on past the round's end, the killcams and a held shot.
   if (match.replaying) {
-    if (match.skipReveal()) return;
+    if (match.skipReveal() || match.skipHold()) return;
     if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
     return;
   }
@@ -738,6 +738,7 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   // A tap dismisses the announcement only once its twists have landed, so a double tap at the round change can't skip it unread.
   if (match.revealing) return match.revealAge >= MAYHEM.LANDED ? primaryAction() : undefined;
+  if (match.skipHold()) return;
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
   if (!canAim()) return;
   dragging = true;

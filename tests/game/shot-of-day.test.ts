@@ -31,14 +31,24 @@ function fire(match: ChallengeMatch, angle: number, power: number): void {
 
 const targetsOf = (match: ChallengeMatch): number[] => match.players.filter((p) => p.target).map((p) => p.id);
 
-/** Flies a replay to its end; what it killed, and how often it asked for the end screen. */
-function watch(day: string, shot: DailyShot) {
+/** A replay ready to fly; what it killed, how often it asked for the end screen, and when each event last came. */
+function start(day: string, shot: DailyShot) {
   const replay = createShotReplay(settings(), dailyChallenge(day), { ...shot, name: 'Ada' });
   const events: GameEvent[] = [];
-  replay.on((event) => events.push(event));
+  const at: Partial<Record<GameEvent['type'], number>> = {};
+  replay.on((event) => {
+    events.push(event);
+    at[event.type] = replay.clock;
+  });
   const before = replay.players.filter((p) => p.target && p.alive).length;
-  runUntil(replay, () => replay.phase === 'gameOver');
-  return { replay, events, before };
+  return { replay, events, at, before };
+}
+
+/** Flies a replay to its end. */
+function watch(day: string, shot: DailyShot) {
+  const watched = start(day, shot);
+  runUntil(watched.replay, () => watched.replay.phase === 'gameOver');
+  return watched;
 }
 
 describe('the shot of the day', () => {
@@ -82,6 +92,57 @@ describe('the shot of the day', () => {
     expect(replay.targetsLeft).toBe(before - 1);
     expect(replay.shotsLeft).toBe(shot.left);
     expect([...replay.trails].reverse().find((trail) => trail.owner === 0)!.points.at(-1)).toBeCloseTo(shot.trail.at(-1)!, 0);
+  });
+
+  it('lets the shot land before its end card comes up', () => {
+    const match = createChallenge(settings(), dailyChallenge(DAY));
+    clearSector(match, 0);
+    const { replay, at } = start(DAY, match.bestShot!);
+    runUntil(replay, () => at.kill !== undefined);
+    runUntil(replay, () => replay.clock - at.kill! >= CHALLENGE.SHOT_LINGER - 0.5);
+    // Still on the field, not on the card.
+    expect(replay.phase).toBe('flying');
+    expect(replay.volley).not.toBeNull();
+    runUntil(replay, () => replay.phase === 'gameOver');
+    expect(at.gameOver! - at.kill!).toBeCloseTo(CHALLENGE.SHOT_LINGER, 1);
+  });
+
+  it('counts the hold from the hit, not from the stray missiles that outlive it', () => {
+    const day = '2026-10-29';
+    const sector = 3;
+    const spec = dailyChallenge(day).sectors[sector];
+    const shot: DailyShot = { sector, down: [], attempt: 1, left: spec.shots - 1, angle: 356, power: 30, points: 0, trail: [] };
+    const { replay, at } = start(day, shot);
+    runUntil(replay, () => !!replay.volley?.done);
+    expect(replay.clock - at.kill!).toBeGreaterThan(0.5);
+    runUntil(replay, () => replay.phase === 'gameOver');
+    expect(at.gameOver! - at.kill!).toBeCloseTo(CHALLENGE.SHOT_LINGER, 1);
+  });
+
+  it('lets a miss end its flight before the end card comes up', () => {
+    const match = createChallenge(settings(), dailyChallenge(DAY));
+    clearSector(match, 0);
+    const shot = match.bestShot!;
+    const { replay, events, at } = start(DAY, { ...shot, angle: shot.angle + 180, power: 5 });
+    runUntil(replay, () => !!replay.volley?.done);
+    const ended = replay.clock;
+    runUntil(replay, () => replay.phase === 'gameOver');
+    expect(events.some((event) => event.type === 'kill')).toBe(false);
+    expect(at.gameOver! - ended).toBeCloseTo(CHALLENGE.SHOT_LINGER, 1);
+  });
+
+  it('a key press ends the hold, but not the flight', () => {
+    const match = createChallenge(settings(), dailyChallenge(DAY));
+    clearSector(match, 0);
+    const { replay } = start(DAY, match.bestShot!);
+    expect(replay.skipHold()).toBe(false);
+    runUntil(replay, () => replay.phase === 'flying');
+    expect(replay.skipHold()).toBe(false);
+    runUntil(replay, () => !!replay.volley?.done);
+    expect(replay.skipHold()).toBe(true);
+    replay.update(DT);
+    expect(replay.phase).toBe('gameOver');
+    expect(replay.skipHold()).toBe(false);
   });
 
   it('a target already down is not there to be hit a second time', () => {

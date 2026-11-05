@@ -369,6 +369,8 @@ export const CHALLENGE = {
   SECTORS: 5,
   /** The most points of its path a shot takes to the leaderboard (`daily.shotTrail` in `server/protocol-contract.json`). */
   SHOT_TRAIL: 240,
+  /** Seconds the shot of the day's replay stays on the field after its hit (after the flight, on a miss) before its end card comes up. */
+  SHOT_LINGER: 2,
   /** Seconds a shot may fly before it fizzles out. */
   FLIGHT_TIME: 15,
   /** Bonus for clearing every target of a sector. */
