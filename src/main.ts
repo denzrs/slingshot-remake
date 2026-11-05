@@ -15,7 +15,7 @@ import { createUiPreview, UI_PREVIEWS, type UiPreview } from './debug/devPreview
 import { InfallDemo } from './debug/infallDemo';
 import { SupernovaDemo } from './debug/supernovaDemo';
 import { recordRun } from './data/dailyStore';
-import { ChallengeMatch, createChallenge, createMatch, type Match } from './game';
+import { ChallengeMatch, createChallenge, createMatch, createShotReplay, ShotReplay, type Match } from './game';
 import type { GameMode } from './sim/modes';
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
 import type { OracleTap } from './render/oracle';
@@ -33,6 +33,7 @@ import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './sim/scoring';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './data/settings';
 import { dailyResultScreen } from './ui/daily/daily';
+import { shotReplayScreen } from './ui/daily/shot';
 import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/room/chat';
 import { Menu, h } from './ui/menu/menu';
@@ -43,7 +44,8 @@ import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, type App } fr
 import { statsAvailable, statsScreen } from './ui/stats/stats';
 import { reportLocalGame, trackLocalGame } from './net/localStats';
 import { netMatch } from './net/netMatch';
-import type { StatsReplay } from './net/net';
+import type { MenuPages } from './ui/menu/menu';
+import type { ShotOfDay, StatsReplay } from './net/net';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
@@ -80,6 +82,10 @@ const attract = createMatch(
 let match: Match | null = null;
 /** The game on screen when it is a replay, to watch it again. */
 let lastReplay: StatsReplay | null = null;
+/** The shot of the day on screen, to watch it again. */
+let lastShot: { day: string; shot: ShotOfDay } | null = null;
+/** The menu the shot of the day on screen was started from, to go back to. */
+let shotCameFrom: MenuPages | null = null;
 let screen: 'title' | 'play' = 'title';
 let lastMode: GameMode = 'classic';
 /** `?daily=YYYY-MM-DD` flies another day's challenge — handy for testing and for sharing an old one. */
@@ -248,7 +254,9 @@ function wire(m: Match): void {
         if (!e.active && e.recording) void recorder.stopAndSave();
         break;
       case 'gameOver':
-        if (m instanceof ChallengeMatch) {
+        if (m instanceof ShotReplay) {
+          menu.open(() => shotReplayScreen(app, m));
+        } else if (m instanceof ChallengeMatch) {
           const outcome = recordRun(m.challenge.dateKey, m.total);
           menu.open(() => dailyResultScreen(app, m, outcome));
         } else {
@@ -485,14 +493,32 @@ const app: App = {
     effects.clear();
     menu.close();
   },
+  watchShot(day, shot) {
+    const replay = createShotReplay(cloneSettings(settings), dailyChallenge(day), shot);
+    shotCameFrom ??= menu.setAside();
+    match?.dispose();
+    lastShot = { day, shot };
+    match = replay;
+    wire(match);
+    screen = 'play';
+    effects.clear();
+    menu.close();
+  },
   watchAgain() {
-    if (lastReplay) app.watchReplay(lastReplay);
+    if (lastShot) app.watchShot(lastShot.day, lastShot.shot);
+    else if (lastReplay) app.watchReplay(lastReplay);
   },
   leaveReplay() {
     match?.dispose();
     match = null;
     screen = 'title';
     effects.clear();
+    if (shotCameFrom) {
+      menu.restore(shotCameFrom);
+      shotCameFrom = null;
+      lastShot = null;
+      return;
+    }
     menu.open(() => titleScreen(app));
     menu.push(() => statsScreen(app));
   },

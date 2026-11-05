@@ -114,7 +114,7 @@ export function matchMomentReel(match: Match, moments: readonly Award[]): { elem
 }
 
 /** The match record's saved path, drawn across as a small, replay-like trajectory highlight. */
-export function matchShotTrail(award: Award, color: string, label: string, featured = false): SVGSVGElement {
+export function matchShotTrail(award: Pick<Award, 'trail' | 'at'>, color: string, label: string, featured = false): SVGSVGElement {
   const points = award.trail!;
   const size = featured ? 640 : 320;
   const height = featured ? 270 : 100;
@@ -130,7 +130,7 @@ export function matchShotTrail(award: Award, color: string, label: string, featu
   const scale = Math.min((size - pad * 2) / spanX, (height - pad * 2) / spanY);
   const project = (x: number, y: number): [number, number] => [
     (size - spanX * scale) / 2 + (x - minX) * scale,
-    (height + spanY * scale) / 2 - (y - minY) * scale,
+    (height - spanY * scale) / 2 + (y - minY) * scale,
   ];
   const point = (i: number) => project(points[i], points[i + 1]);
   const pathData = Array.from({ length: points.length / 2 }, (_, i) => {

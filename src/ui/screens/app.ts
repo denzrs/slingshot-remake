@@ -1,6 +1,6 @@
 import type { Mode } from '../../game';
 import type { GameMode } from '../../sim/modes';
-import type { StatsReplay } from '../../net/net';
+import type { ShotOfDay, StatsReplay } from '../../net/net';
 import type { Settings } from '../../data/settings';
 import type { LobbyEntry } from '../lobby';
 import type { Menu } from '../menu/menu';
@@ -22,9 +22,11 @@ export interface App {
   /** True while a recorded game is being flown again. */
   readonly replaying: boolean;
   watchReplay(data: StatsReplay): void;
+  /** Fly a day's shot of the day on the full field, from the daily challenge's page; `leaveReplay` comes back to it. */
+  watchShot(day: string, shot: ShotOfDay): void;
   /** Fly the replay on screen again from the start. */
   watchAgain(): void;
-  /** Back to the statistics, from a replay. */
+  /** Back to where the replay was started from: the statistics, or the daily challenge for a shot of the day. */
   leaveReplay(): void;
   openLobby(entry?: LobbyEntry): void;
   /** Host only: end the online game and bring the whole room back to its lobby. */

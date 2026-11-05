@@ -367,6 +367,8 @@ export const GALLERY = {
 /** Daily challenge: a fixed run of sectors against stationary targets, the same for everyone on a given day. */
 export const CHALLENGE = {
   SECTORS: 5,
+  /** The most points of its path a shot takes to the leaderboard (`daily.shotTrail` in `server/protocol-contract.json`). */
+  SHOT_TRAIL: 240,
   /** Seconds a shot may fly before it fizzles out. */
   FLIGHT_TIME: 15,
   /** Bonus for clearing every target of a sector. */
