@@ -160,8 +160,11 @@ describe('display settings', () => {
   });
 
   it('falls back to the full post pass for a stored glow level that is not one', () => {
+    storage({ postLevel: 'low' });
+    expect(loadSettings().postLevel).toBe('low');
+    // Taken out when it came to draw the same as `high`.
     storage({ postLevel: 'medium' });
-    expect(loadSettings().postLevel).toBe('medium');
+    expect(loadSettings().postLevel).toBe('high');
     storage({ postLevel: 'ultra' });
     expect(loadSettings().postLevel).toBe('high');
     storage({ postLevel: 3 });

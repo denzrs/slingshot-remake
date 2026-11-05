@@ -6,7 +6,7 @@ import '@fontsource/b612-mono/700';
 import './looks-gallery.css';
 import { createMatch, type Match, type Scene as FieldScene } from '../game';
 import { DEFAULT_SETTINGS, type Seat } from '../data/settings';
-import { LOOKS as LOOK_IDS, lookLabelKey, setLook, type Look } from '../data/look';
+import { getPostLevel, isPostLevel, LOOKS as LOOK_IDS, lookLabelKey, POST_LEVELS, setLook, setPostLevel, type Look } from '../data/look';
 import { t } from '../platform/i18n';
 import { FIELD, NEBULA, WORMHOLE } from '../sim/config';
 import type { Missile } from '../sim/physics';
@@ -425,6 +425,7 @@ main.innerHTML = `
     <ul class="legend">${LOOKS.map((l) => `<li><b>${l.name}</b><span>${l.note}</span></li>`).join('')}</ul>
     <div class="tools">
       <button id="pause" type="button">Animation pausieren</button>
+      <label>${t('settings.postLevel')} <select id="post-level">${POST_LEVELS.map((level) => `<option value="${level}">${t(`settings.postLevel.${level}`)}</option>`).join('')}</select></label>
       <button id="remember" type="button">Pixel-Stand merken</button>
       <button id="compare" type="button">Mit Stand vergleichen</button>
       <output id="result"></output>
@@ -467,6 +468,12 @@ label();
 pauseButton.addEventListener('click', () => {
   paused = !paused;
   label();
+});
+
+const postLevel = main.querySelector<HTMLSelectElement>('#post-level')!;
+postLevel.value = getPostLevel();
+postLevel.addEventListener('change', () => {
+  if (isPostLevel(postLevel.value)) setPostLevel(postLevel.value);
 });
 
 const visible = new Set<Element>();

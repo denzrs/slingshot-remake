@@ -7,7 +7,7 @@ import type { FrameInfo } from './painter';
 /**
  * What the forged look puts behind and over the field as a whole: a nebula and dust lanes baked into the backdrop, layers
  * of still, twinkling stars, and over the finished field a bloom (the bright parts, blurred
- * wide and added back), a vignette, a grade and a little film grain.
+ * wide and added back) and a vignette.
  */
 
 let current: FrameInfo | null = null;
@@ -100,7 +100,6 @@ interface Tiles {
   dpr: number;
   farA: Speck[];
   farB: Speck[];
-  grain: CanvasPattern;
 }
 let tiles: Tiles | null = null;
 
@@ -114,7 +113,7 @@ function speck(reach: number, x: number, y: number, draw: (c: CanvasRenderingCon
   return { sprite, x, y };
 }
 
-function buildTiles(ctx: CanvasRenderingContext2D, dpr: number): Tiles {
+function buildTiles(dpr: number): Tiles {
   const stars = (count: number, seed: number): Speck[] => {
     const rng = createRng(seed);
     return Array.from({ length: count }, () => {
@@ -139,18 +138,7 @@ function buildTiles(ctx: CanvasRenderingContext2D, dpr: number): Tiles {
       });
     });
   };
-  const grain = document.createElement('canvas');
-  grain.width = grain.height = 128;
-  const g = grain.getContext('2d')!;
-  const img = g.createImageData(128, 128);
-  const rng = createRng(0xf0d4);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const v = rng() * 255;
-    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
-    img.data[i + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-  return { dpr, farA: stars(26, 0xf0a1), farB: stars(26, 0xf0b2), grain: ctx.createPattern(grain, 'repeat')! };
+  return { dpr, farA: stars(26, 0xf0a1), farB: stars(26, 0xf0b2) };
 }
 
 function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: FrameInfo, alpha: number): void {
@@ -172,7 +160,7 @@ function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: Frame
 
 /** Stars that twinkle in turn, over the plate. */
 export function forgedSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
-  if (!tiles || tiles.dpr !== f.dpr) tiles = buildTiles(ctx, f.dpr);
+  if (!tiles || tiles.dpr !== f.dpr) tiles = buildTiles(f.dpr);
   ctx.save();
   ctx.beginPath();
   ctx.rect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
@@ -218,15 +206,16 @@ function shrink(from: CanvasImageSource, to: Level): void {
 let vignette: { key: string; gradient: CanvasGradient } | null = null;
 
 /**
- * How much of the post pass a machine that cannot keep up is spared: 0 all of it is drawn; 1 not the grade and the grain;
- * 2 not the bloom either; 3 not the vignette either. Each is a pass over the whole screen, which a phone's GPU at its pixel
+ * How much of the post pass a machine that cannot keep up is spared: 0 all of it is drawn; 1 not the bloom;
+ * 2 not the vignette either. Each is a pass over the whole screen, which a phone's GPU at its pixel
  * density, or a canvas drawn without a GPU, pays for dearly.
  *
  * It goes by how long a frame takes to draw (from `forgedBegin` to the end of the post pass), not by how far apart frames
  * come: a browser that hands out thirty frames a second to save the battery, a hidden tab or a menu over a still field
  * say nothing about the drawing. Each canvas keeps its own, so the gallery's cards do not judge each other. A step down
- * that saved nothing (the field itself is what is slow) is taken back and not tried again; one that did is undone once
- * the frames have room for what it saved, so a slow stretch from elsewhere does not strip the look for good.
+ * that saved nothing (the field itself is what is slow) is taken back and not tried again until the frames have recovered;
+ * one that did is undone once the frames have room for what it saved, so a slow stretch from elsewhere does not strip the
+ * look for good.
  *
  * The post level chosen in the settings is where it starts and the most it ever draws; it only steps down from there.
  */
@@ -243,12 +232,12 @@ interface Pace {
   saved: number[];
   /** Set just after a step down: the average before it, and the frames left until its saving is measured. */
   check: { before: number; frames: number } | null;
-  /** A step down saved nothing: the post pass is not what is slow, so it stops stepping down. */
+  /** A step down saved nothing: the post pass is not what is slow, so it stops stepping down until the frames recover. */
   stuck: boolean;
 }
 
 const paces = new WeakMap<HTMLCanvasElement, Pace>();
-const LEAN: Record<PostLevel, number> = { high: 0, medium: 1, low: 2, off: 3 };
+const LEAN: Record<PostLevel, number> = { high: 0, low: 1, off: 2 };
 let started = 0;
 /** Pinned to the full pass, whatever the machine: the gallery's pixel snapshots must not depend on how fast it drew. */
 let steady = false;
@@ -256,10 +245,13 @@ export function holdPostPass(on: boolean): void {
   steady = on;
 }
 
-/** Drawing slower than this (s), on average, does not leave room for sixty frames a second; for this many frames in a row, it steps down. */
-const SLOW_DRAW = 1 / 60;
-const SLOW_FOR = 120;
-/** It steps back up after this many frames in a row with room for what the step saved, and a margin. */
+/**
+ * Drawing slower than this (s), on average, for this many frames in a row, it steps down. The bloom goes first and it can be
+ * seen going, so a frame only just over a sixtieth of a second or a short busy stretch keeps it.
+ */
+const SLOW_DRAW = 1 / 50;
+const SLOW_FOR = 300;
+/** It steps back up after this many frames in a row with room for what the step saved, and a margin: sixty frames a second with it back. */
 const ROOM_FOR = 600;
 const MARGIN = 0.8;
 /** Frames after a step down before its saving is measured, and how much it must save (of the average before) to count. */
@@ -278,7 +270,7 @@ export function paceOf(canvas: HTMLCanvasElement): Pace {
 }
 
 /** Times the frame just drawn and steps the post pass down, or back up, by it. */
-function keepPace(pace: Pace, drawn: number): void {
+export function keepPace(pace: Pace, drawn: number): void {
   pace.draw = pace.draw ? pace.draw + (drawn - pace.draw) * 0.1 : drawn;
   if (pace.check) {
     if (--pace.check.frames > 0) return;
@@ -293,10 +285,11 @@ function keepPace(pace: Pace, drawn: number): void {
     }
     return;
   }
+  if (pace.draw <= SLOW_DRAW) pace.stuck = false;
   const room = pace.lean > pace.floor && pace.draw + (pace.saved[pace.lean - 1] ?? Infinity) < SLOW_DRAW * MARGIN;
   pace.slow = pace.draw > SLOW_DRAW ? pace.slow + 1 : 0;
   pace.fast = room ? pace.fast + 1 : 0;
-  if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < 3) {
+  if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < LEAN.off) {
     pace.check = { before: pace.draw, frames: SETTLE };
     pace.lean++;
     pace.slow = 0;
@@ -308,23 +301,19 @@ function keepPace(pace: Pace, drawn: number): void {
 
 /**
  * Bloom: the picture is shrunk, its dull parts are dropped (raised to the eighth power, so only what is nearly white stays), and what
- * is left is blurred by shrinking it further, then added back over the picture on the way up. A vignette, a grade
- * and grain over it, as much of it as the machine keeps up with (`Pace`). The flash and the supernova's white-out make it bloom wider.
+ * is left is blurred by shrinking it further, then added back over the picture on the way up. A vignette
+ * over it, as much of it as the machine keeps up with (`Pace`). The flash and the supernova's white-out make it bloom wider.
  */
 export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   const pace = paceOf(ctx.canvas);
   const lean = steady ? 0 : pace.lean;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (lean < 2) {
+  if (lean < LEAN.low) {
     bloom(ctx, f);
     for (const redraw of afterBloom) redraw(ctx);
   }
-  if (lean < 3) drawVignette(ctx, f);
-  if (lean < 1) {
-    grade(ctx, f);
-    grain(ctx, f);
-  }
+  if (lean < LEAN.off) drawVignette(ctx, f);
   ctx.restore();
   if (!steady) keepPace(pace, (performance.now() - started) / 1000);
 }
@@ -368,29 +357,4 @@ function drawVignette(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   }
   ctx.fillStyle = vignette.gradient;
   ctx.fillRect(0, 0, main.width, main.height);
-}
-
-/** The grade: cool in the high lights of the top, warm in the low ones. */
-function grade(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
-  ctx.save();
-  ctx.globalCompositeOperation = 'soft-light';
-  const gradient = ctx.createLinearGradient(0, f.plate.y, 0, f.plate.y + f.plate.h);
-  gradient.addColorStop(0, 'rgba(70,130,255,0.14)');
-  gradient.addColorStop(1, 'rgba(255,150,70,0.1)');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
-  ctx.restore();
-}
-
-/** Film grain: a tile of noise laid at a new place about fifteen times a second. */
-function grain(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
-  if (!tiles) return;
-  const step = Math.floor(f.time * 15);
-  tiles.grain.setTransform(new DOMMatrix().translate((step * 37) % 128, (step * 91) % 128));
-  ctx.save();
-  ctx.globalCompositeOperation = 'overlay';
-  ctx.globalAlpha = 0.05;
-  ctx.fillStyle = tiles.grain;
-  ctx.fillRect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
-  ctx.restore();
 }
