@@ -1,4 +1,3 @@
-import { getPostLevel, type PostLevel } from '../../data/look';
 import { createRng } from '../../sim/rng';
 import { fbm } from '../noise';
 import { smoothstep } from '../planet-common';
@@ -7,8 +6,7 @@ import type { FrameInfo } from './painter';
 
 /**
  * What the forged look puts behind and over the field as a whole: a nebula and dust lanes baked into the backdrop, layers
- * of still, twinkling stars, and over the finished field a bloom (the bright parts, blurred
- * wide and added back) and a vignette.
+ * of still, twinkling stars, and over the finished field a vignette.
  */
 
 let current: FrameInfo | null = null;
@@ -16,12 +14,11 @@ let current: FrameInfo | null = null;
 /** Keeps the frame for the calls that follow it: the sky, the ships' light and the post pass read it. */
 export function forgedBegin(frame: FrameInfo): void {
   current = frame;
-  started = performance.now();
+  const now = performance.now();
   // A pause (a hidden tab, a menu) is no measure of the frames.
-  const since = lastBegin ? (started - lastBegin) / 1000 : 0;
-  lastBegin = started;
+  const since = lastBegin ? (now - lastBegin) / 1000 : 0;
+  lastBegin = now;
   gap = since < PAUSE ? since : 0;
-  afterBloom.length = 0;
 }
 
 let lastBegin = 0;
@@ -29,12 +26,6 @@ let lastBegin = 0;
 let gap = 0;
 /** A gap longer than this (s) between two frames is a pause, not a slow frame. */
 const PAUSE = 0.25;
-
-/** Drawings of this frame to put back over the bloom (which would grey what must stay black), in the post pass's own pixels. */
-const afterBloom: ((ctx: CanvasRenderingContext2D) => void)[] = [];
-export function redrawAfterBloom(redraw: (ctx: CanvasRenderingContext2D) => void): void {
-  afterBloom.push(redraw);
-}
 
 /** The frame being drawn, null before the first one. */
 export const forgedFrame = (): FrameInfo | null => current;
@@ -185,57 +176,22 @@ export function forgedSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
 
 // ------------------------------------------------------------------- post ----
 
-interface Level {
-  canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
-}
-/** The bloom's work canvases at ½, ¼, ⅛ and 1/16 of the screen, kept for each size that is drawn. */
-const chains = new Map<string, Level[]>();
-
-function chainFor(w: number, h: number): Level[] {
-  const key = `${w}×${h}`;
-  let chain = chains.get(key);
-  if (!chain) {
-    if (chains.size >= 4) chains.clear();
-    chain = [2, 4, 8, 16].map((d) => {
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.ceil(w / d));
-      canvas.height = Math.max(1, Math.ceil(h / d));
-      return { canvas, ctx: canvas.getContext('2d')! };
-    });
-    chains.set(key, chain);
-  }
-  return chain;
-}
-
-function shrink(from: CanvasImageSource, to: Level): void {
-  to.ctx.globalCompositeOperation = 'copy';
-  to.ctx.drawImage(from, 0, 0, to.canvas.width, to.canvas.height);
-  to.ctx.globalCompositeOperation = 'source-over';
-}
-
 let vignette: { key: string; gradient: CanvasGradient } | null = null;
 
+/** How much of its size a shaded sprite is drawn at, at each step of `Pace`. */
+const DETAIL = [1, 0.8, 0.65];
+
 /**
- * How much of the post pass a machine that cannot keep up is spared: 0 all of it is drawn; 1 not the bloom;
- * 2 not the vignette either. Each is a pass over the whole screen, which a phone's GPU at its pixel
- * density, or a canvas drawn without a GPU, pays for dearly.
- *
- * It goes by how long a frame takes to draw (from `forgedBegin` to the end of the post pass), not by how far apart frames
- * come: a browser that hands out thirty frames a second to save the battery, a hidden tab or a menu over a still field
- * say nothing about the drawing. Each canvas keeps its own, so the gallery's cards do not judge each other. A step down
- * that saved nothing (the field itself is what is slow) is taken back and not tried again until the frames have recovered;
- * one that did is undone once the frames have room for what it saved, so a slow stretch from elsewhere does not strip the
- * look for good.
- *
- * The post level chosen in the settings is where it starts and the most it ever draws; it only steps down from there.
+ * How far a machine that cannot keep up steps the shaded sprites down, by the time between frames, as no timer sees all their
+ * work on every browser (the copies into the 2D frame least of all). A step down that saved nothing (the sprites are not what
+ * is slow, or a browser is holding thirty frames a second) is taken back and not tried again until the frames have recovered,
+ * so that browser keeps its full detail; one that did is undone once the frames have room for what it saved, though a
+ * screen's refresh can hide that room, and then it stays.
  */
 interface Pace {
   lean: number;
-  /** The lean the settings ask for: it never steps up past it. */
-  floor: number;
-  /** Seconds a frame takes to draw, on average. */
-  draw: number;
+  /** Seconds between frames, on average. */
+  time: number;
   /** Frames in a row that were slow, or had room to spare. */
   slow: number;
   fast: number;
@@ -243,35 +199,24 @@ interface Pace {
   saved: number[];
   /** Set just after a step down: the average before it, and the frames left until its saving is measured. */
   check: { before: number; frames: number } | null;
-  /** A step down saved nothing: the post pass is not what is slow, so it stops stepping down until the frames recover. */
+  /** A step down saved nothing: the sprites are not what is slow, so it stops stepping down until the frames recover. */
   stuck: boolean;
 }
 
-const newPace = (floor: number): Pace => ({ lean: floor, floor, draw: 0, slow: 0, fast: 0, saved: [], check: null, stuck: false });
+export const newPace = (): Pace => ({ lean: 0, time: 0, slow: 0, fast: 0, saved: [], check: null, stuck: false });
 
-const paces = new WeakMap<HTMLCanvasElement, Pace>();
-const LEAN: Record<PostLevel, number> = { high: 0, low: 1, off: 2 };
-/**
- * The shaded sprites step down on a pace of their own, by the time between frames, as no timer sees all their work on every
- * browser (the copies into the 2D frame least of all). Dropping the bloom would not lighten them, and a browser's own frame
- * rate must not cost the bloom. A step that saved nothing is taken back here too, so a browser holding thirty frames a
- * second keeps its full detail. A screen's refresh hides any room to step up again, so one that helped stays.
- */
-const spritePace = newPace(0);
-/** How much of its size a shaded sprite is drawn at, at each step of `spritePace`. */
-const DETAIL = [1, 0.8, 0.65];
-let started = 0;
-/** Pinned to the full pass, whatever the machine: the gallery's pixel snapshots must not depend on how fast it drew. */
+const spritePace = newPace();
+/** Pinned to full detail, whatever the machine: the gallery's pixel snapshots must not depend on how fast it drew. */
 let steady = false;
-export function holdPostPass(on: boolean): void {
+export function holdShaderDetail(on: boolean): void {
   steady = on;
 }
 
 /**
- * Drawing slower than this (s), on average, for this many frames in a row, it steps down. The bloom goes first and it can be
- * seen going, so a frame only just over a sixtieth of a second or a short busy stretch keeps it.
+ * Frames further apart than this (s), on average, for this many frames in a row, it steps down. A frame only just over a
+ * sixtieth of a second or a short busy stretch keeps the detail.
  */
-const SLOW_DRAW = 1 / 50;
+const SLOW_FRAME = 1 / 50;
 const SLOW_FOR = 300;
 /** It steps back up after this many frames in a row with room for what the step saved, and a margin: sixty frames a second with it back. */
 const ROOM_FOR = 600;
@@ -280,23 +225,12 @@ const MARGIN = 0.8;
 const SETTLE = 60;
 const WORTH = 0.15;
 
-export function paceOf(canvas: HTMLCanvasElement): Pace {
-  const floor = LEAN[getPostLevel()];
-  let pace = paces.get(canvas);
-  // A new setting starts over from it: what was learnt about the other levels no longer holds.
-  if (pace?.floor !== floor) {
-    pace = newPace(floor);
-    paces.set(canvas, pace);
-  }
-  return pace;
-}
-
-/** Times the frame just drawn and steps the post pass down, or back up, by it. */
-export function keepPace(pace: Pace, drawn: number): void {
-  pace.draw = pace.draw ? pace.draw + (drawn - pace.draw) * 0.1 : drawn;
+/** Takes in the time since the last frame and steps the detail down, or back up, by it. */
+export function keepPace(pace: Pace, since: number): void {
+  pace.time = pace.time ? pace.time + (since - pace.time) * 0.1 : since;
   if (pace.check) {
     if (--pace.check.frames > 0) return;
-    const saving = pace.check.before - pace.draw;
+    const saving = pace.check.before - pace.time;
     const before = pace.check.before;
     pace.check = null;
     if (saving < before * WORTH) {
@@ -307,12 +241,12 @@ export function keepPace(pace: Pace, drawn: number): void {
     }
     return;
   }
-  if (pace.draw <= SLOW_DRAW) pace.stuck = false;
-  const room = pace.lean > pace.floor && pace.draw + (pace.saved[pace.lean - 1] ?? Infinity) < SLOW_DRAW * MARGIN;
-  pace.slow = pace.draw > SLOW_DRAW ? pace.slow + 1 : 0;
+  if (pace.time <= SLOW_FRAME) pace.stuck = false;
+  const room = pace.lean > 0 && pace.time + (pace.saved[pace.lean - 1] ?? Infinity) < SLOW_FRAME * MARGIN;
+  pace.slow = pace.time > SLOW_FRAME ? pace.slow + 1 : 0;
   pace.fast = room ? pace.fast + 1 : 0;
-  if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < LEAN.off) {
-    pace.check = { before: pace.draw, frames: SETTLE };
+  if (pace.slow >= SLOW_FOR && !pace.stuck && pace.lean < DETAIL.length - 1) {
+    pace.check = { before: pace.time, frames: SETTLE };
     pace.lean++;
     pace.slow = 0;
   } else if (pace.fast >= ROOM_FOR) {
@@ -321,50 +255,15 @@ export function keepPace(pace: Pace, drawn: number): void {
   }
 }
 
-/**
- * Bloom: the picture is shrunk, its dull parts are dropped (raised to the eighth power, so only what is nearly white stays), and what
- * is left is blurred by shrinking it further, then added back over the picture on the way up. A vignette
- * over it, as much of it as the machine keeps up with (`Pace`). The flash and the supernova's white-out make it bloom wider.
- */
+/** The vignette over the finished field. */
 export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
-  const pace = paceOf(ctx.canvas);
-  const lean = steady ? 0 : pace.lean;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (lean < LEAN.low) {
-    bloom(ctx, f);
-    for (const redraw of afterBloom) redraw(ctx);
-  }
-  if (lean < LEAN.off) drawVignette(ctx, f);
+  drawVignette(ctx, f);
   ctx.restore();
-  if (!steady) keepPace(pace, (performance.now() - started) / 1000);
   closeShaderFrame();
   if (!steady && gap) keepPace(spritePace, gap);
   setShaderDetail(steady ? 1 : DETAIL[spritePace.lean]);
-}
-
-function bloom(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
-  const main = ctx.canvas;
-  const [c2, c4, c8, c16] = chainFor(main.width, main.height);
-  shrink(main, c2);
-  shrink(c2.canvas, c4);
-  // Squared three times (to the eighth power): a colour that is merely bright, like a ship's, falls away; only near-white blooms.
-  c4.ctx.globalCompositeOperation = 'multiply';
-  for (let i = 0; i < 3; i++) c4.ctx.drawImage(c4.canvas, 0, 0);
-  c4.ctx.globalCompositeOperation = 'source-over';
-  shrink(c4.canvas, c8);
-  shrink(c8.canvas, c16);
-  c8.ctx.globalCompositeOperation = 'lighter';
-  c8.ctx.drawImage(c16.canvas, 0, 0, c8.canvas.width, c8.canvas.height);
-  c8.ctx.globalCompositeOperation = 'source-over';
-  c4.ctx.globalCompositeOperation = 'lighter';
-  c4.ctx.drawImage(c8.canvas, 0, 0, c4.canvas.width, c4.canvas.height);
-  c4.ctx.globalCompositeOperation = 'source-over';
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = Math.min(1, 0.35 + 0.4 * f.flash + 0.3 * f.whiteout);
-  ctx.drawImage(c4.canvas, 0, 0, main.width, main.height);
-  ctx.restore();
 }
 
 /** The vignette: the plate's corners fall into shadow. */

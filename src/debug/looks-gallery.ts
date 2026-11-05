@@ -6,7 +6,7 @@ import '@fontsource/b612-mono/700';
 import './looks-gallery.css';
 import { createMatch, type Match, type Scene as FieldScene } from '../game';
 import { DEFAULT_SETTINGS, type Seat } from '../data/settings';
-import { getPostLevel, isPostLevel, LOOKS as LOOK_IDS, lookLabelKey, POST_LEVELS, setLook, setPostLevel, type Look } from '../data/look';
+import { LOOKS as LOOK_IDS, lookLabelKey, setLook, type Look } from '../data/look';
 import { t } from '../platform/i18n';
 import { FIELD, NEBULA, WORMHOLE } from '../sim/config';
 import type { Missile } from '../sim/physics';
@@ -17,7 +17,7 @@ import { painterFor } from '../render/looks';
 import { forgedPlanetTraits } from '../render/looks/forged-planet';
 import type { Planet, PlanetStyle } from '../sim/physics';
 import { shaderGpuSeconds } from '../render/looks/forged-gl';
-import { holdPostPass } from '../render/looks/forged-sky';
+import { holdShaderDetail } from '../render/looks/forged-sky';
 import { Renderer, type DrawOptions } from '../render/renderer';
 
 /**
@@ -426,7 +426,6 @@ main.innerHTML = `
     <ul class="legend">${LOOKS.map((l) => `<li><b>${l.name}</b><span>${l.note}</span></li>`).join('')}</ul>
     <div class="tools">
       <button id="pause" type="button">Animation pausieren</button>
-      <label>${t('settings.postLevel')} <select id="post-level">${POST_LEVELS.map((level) => `<option value="${level}">${t(`settings.postLevel.${level}`)}</option>`).join('')}</select></label>
       <button id="remember" type="button">Pixel-Stand merken</button>
       <button id="compare" type="button">Mit Stand vergleichen</button>
       <output id="result"></output>
@@ -470,12 +469,6 @@ label();
 pauseButton.addEventListener('click', () => {
   paused = !paused;
   label();
-});
-
-const postLevel = main.querySelector<HTMLSelectElement>('#post-level')!;
-postLevel.value = getPostLevel();
-postLevel.addEventListener('change', () => {
-  if (isPostLevel(postLevel.value)) setPostLevel(postLevel.value);
 });
 
 const visible = new Set<Element>();
@@ -533,7 +526,7 @@ function seeded(seed: number): () => number {
 /** A hash of every scene in every look at a few fixed moments, drawn fresh with seeded randomness. */
 async function pixelHashes(): Promise<Record<string, number>> {
   paused = true;
-  holdPostPass(true);
+  holdShaderDetail(true);
   const realRandom = Math.random;
   await document.fonts.ready;
   const out: Record<string, number> = {};
@@ -564,7 +557,7 @@ async function pixelHashes(): Promise<Record<string, number>> {
     if (pass === 'warm') await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   Math.random = realRandom;
-  holdPostPass(false);
+  holdShaderDetail(false);
   return out;
 }
 

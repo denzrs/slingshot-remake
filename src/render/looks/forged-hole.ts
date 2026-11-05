@@ -1,6 +1,5 @@
 import { image } from './forged-assets';
 import { BAND_TOP, COLUMNS, FRAME, FRAME_H, FRAMES, HOLE_SPAN, LOOP } from './forged-hole-sheet';
-import { redrawAfterBloom } from './forged-sky';
 
 /**
  * The forged black hole: a sheet of frames of its disk turning (`forged/hole.webp`, traced by `scripts/forged/hole-trace.ts`
@@ -35,19 +34,8 @@ export function drawLensedHole(ctx: CanvasRenderingContext2D, radius: number, ti
   const sheet = image('hole');
   if (!sheet) return false;
   const span = radius * HOLE_SPAN;
-  const m = ctx.getTransform();
   ctx.save();
   drawMixed(ctx, sheet, time, span);
   ctx.restore();
-  // The bloom adds the disk's light over the shadow too, greying it: the shadow is drawn again over the bloom.
-  redrawAfterBloom((post) => {
-    post.save();
-    post.setTransform(m);
-    post.beginPath();
-    post.arc(0, 0, radius * 0.99, 0, Math.PI * 2);
-    post.clip();
-    drawMixed(post, sheet, time, span);
-    post.restore();
-  });
   return true;
 }
