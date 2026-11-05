@@ -12,6 +12,7 @@ import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
 import { ClipRecorder } from './platform/clip';
 import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
 import { createUiPreview, UI_PREVIEWS, type UiPreview } from './debug/devPreview';
+import { InfallDemo } from './debug/infallDemo';
 import { SupernovaDemo } from './debug/supernovaDemo';
 import { recordRun } from './data/dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, type Match } from './game';
@@ -25,7 +26,8 @@ import { inPowerUpNebula } from './sim/physics';
 import { POWER_UP } from './sim/powerups';
 import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './platform/i18n';
-import { setLook, setPostLevel } from './data/look';
+import { getLook, setLook, setPostLevel } from './data/look';
+import { painterFor } from './render/looks';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './sim/scoring';
@@ -89,6 +91,8 @@ const uiPreview: UiPreview | null = import.meta.env.DEV && (UI_PREVIEWS as reado
   : null;
 /** `?preview=supernova` (dev only): a Solar System's sudden death on a loop, to look at without playing to it. */
 const supernovaDemo = import.meta.env.DEV && requestedPreview === 'supernova' ? new SupernovaDemo() : null;
+/** `?preview=infall` (dev only): planets and a ship falling into the black hole on a loop. */
+const infallDemo = import.meta.env.DEV && requestedPreview === 'infall' ? new InfallDemo() : null;
 
 const active = (): Match => (screen === 'play' && match ? match : attract);
 
@@ -192,6 +196,9 @@ function wire(m: Match): void {
         effects.clash(e.x, e.y, color(e.players[0]), color(e.players[1]), e.velocities);
         if (audible) sound.clash();
         if (e.points > 0) effects.callout(`${t('hud.highFive')} +${e.points}`, e.x, e.y, COLORS.sodium, true);
+        break;
+      case 'fall':
+        if (audible) sound.devour();
         break;
       case 'devour':
         effects.devour(e.x, e.y, e.toX, e.toY, e.color, e.vx, e.vy);
@@ -906,6 +913,8 @@ function frame(now: number): void {
     if (!net || net.isHost) m.update(dt);
     if (supernovaDemo && m === supernovaDemo.match) supernovaDemo.tick(dt);
     effects.update(dt, m.world);
+    effects.infall(m.falling(), m.world.holes[0], dt, painterFor(getLook()).fallDust);
+    if (infallDemo && m === infallDemo.match) infallDemo.tick(dt);
     // A shot flying through a nebula sheds wisps of gas, so its slowing down shows.
     if (m.world.nebulae.length) {
       for (const vs of m.scene().volley?.shots ?? []) {
@@ -966,8 +975,8 @@ async function boot(): Promise<void> {
   // Canvas text needs the web fonts loaded before the first draw.
   const fonts = [`800 32px ${FONTS.display}`, `400 16px ${FONTS.body}`, `700 16px ${FONTS.body}`, `400 16px ${FONTS.mono}`, `700 16px ${FONTS.mono}`];
   await Promise.race([Promise.all(fonts.map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 1500))]);
-  if (supernovaDemo) {
-    match = supernovaDemo.match;
+  if (supernovaDemo || infallDemo) {
+    match = (supernovaDemo ?? infallDemo)!.match;
     screen = 'play';
     wire(match);
     effects.clear();

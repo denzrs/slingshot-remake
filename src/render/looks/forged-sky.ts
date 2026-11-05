@@ -6,7 +6,7 @@ import type { FrameInfo } from './painter';
 
 /**
  * What the forged look puts behind and over the field as a whole: a nebula and dust lanes baked into the backdrop, layers
- * of stars drifting, and over the finished field a bloom (the bright parts, blurred
+ * of still, twinkling stars, and over the finished field a bloom (the bright parts, blurred
  * wide and added back) and a vignette.
  */
 
@@ -93,7 +93,7 @@ interface Speck {
 
 /**
  * Each layer is a tile of specks repeated over the plate. The specks are drawn one by one rather than the tile filled in
- * as a pattern: the tile is nearly all empty, and a pattern laid at a fraction of a pixel has every pixel of the plate
+ * as a pattern: the tile is nearly all empty, and a pattern has every pixel of the plate
  * sampled from it, which a canvas drawn without a GPU (Firefox on many machines) paid for with most of its frame.
  */
 interface Tiles {
@@ -141,19 +141,12 @@ function buildTiles(dpr: number): Tiles {
   return { dpr, farA: stars(26, 0xf0a1), farB: stars(26, 0xf0b2) };
 }
 
-/** How fast the stars drift (CSS pixels a second). */
-const DRIFT_X = 1;
-const DRIFT_Y = 0.45;
-
 function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: FrameInfo, alpha: number): void {
-  // Both layers drift the same way and stay put against the field: stars sliding at depths of their own read as separate sheets, most in the killcam.
-  const ox = f.time * DRIFT_X * f.dpr;
-  const oy = f.time * DRIFT_Y * f.dpr;
   const { x: px, y: py, w, h } = f.plate;
   ctx.globalAlpha = alpha;
   // Every copy of the tile that reaches the plate, starting a tile early for the specks that hang over its edge.
-  for (let ty = oy + (Math.floor((py - oy) / TILE) - 1) * TILE; ty < py + h; ty += TILE) {
-    for (let tx = ox + (Math.floor((px - ox) / TILE) - 1) * TILE; tx < px + w; tx += TILE) {
+  for (let ty = (Math.floor(py / TILE) - 1) * TILE; ty < py + h; ty += TILE) {
+    for (let tx = (Math.floor(px / TILE) - 1) * TILE; tx < px + w; tx += TILE) {
       for (const s of specks) {
         const half = s.sprite.width / 2;
         const x = tx + s.x;
@@ -165,7 +158,7 @@ function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: Frame
   }
 }
 
-/** Stars that twinkle in turn and drift together, over the plate. */
+/** Stars that twinkle in turn, over the plate. */
 export function forgedSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   if (!tiles || tiles.dpr !== f.dpr) tiles = buildTiles(f.dpr);
   ctx.save();

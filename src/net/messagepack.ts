@@ -111,7 +111,7 @@ function isGameEvent(value: unknown): boolean {
   const within = (n: unknown, size: number) => typeof n === 'number' && n >= -NOVA_MARGIN && n <= size + NOVA_MARGIN;
   const onField = (x: unknown, y: unknown) => within(x, FIELD.width) && within(y, FIELD.height);
   switch (event.type) {
-    case 'round': case 'gameOver': case 'roundEnd': case 'volley': case 'collapse':
+    case 'round': case 'gameOver': case 'roundEnd': case 'volley': case 'collapse': case 'fall':
       return true;
     case 'suddenDeath':
       return (SUDDEN_DEATH_KINDS as readonly unknown[]).includes(event.kind);
