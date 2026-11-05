@@ -118,6 +118,18 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
       ...(touch
         ? [inGroup({
             kind: 'segmented',
+            label: t('settings.touchControls'),
+            options: [
+              { value: 'wheel', label: t('settings.touchControls.wheel') },
+              { value: 'stick', label: t('settings.touchControls.stick') },
+            ],
+            get: () => app.settings.touchControls,
+            set: (v: unknown) => {
+              app.settings.touchControls = v === 'stick' ? 'stick' : 'wheel';
+              app.settingsChanged();
+            },
+          }, 'touch'), inGroup({
+            kind: 'segmented',
             label: t('settings.wheelSide'),
             options: [
               { value: 'left', label: t('settings.wheelLeft') },

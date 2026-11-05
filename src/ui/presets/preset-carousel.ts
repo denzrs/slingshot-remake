@@ -1,7 +1,7 @@
 import { t } from '../../platform/i18n';
 import { h } from '../menu/menu';
 
-/** Native horizontal scrolling on phones; swiping browses, tapping a card applies its rules. */
+/** Native scrolling on phones; the preset at rest is the active one. The creation card still needs an explicit tap. */
 export function presetCarousel(cards: HTMLElement) {
   const narrow = matchMedia('(max-width: 760px)');
   const previous = h('button.preset-carousel__arrow', { type: 'button', 'aria-label': t('preset.previous') }, '‹') as HTMLButtonElement;
@@ -10,8 +10,11 @@ export function presetCarousel(cards: HTMLElement) {
   const navigation = h('nav.preset-carousel__nav', { 'aria-label': t('preset.choose') }, previous, counter, next);
   const listeners = new AbortController();
   let frame = 0;
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  let dragging = false;
   let selected: Element | null = null;
-  const leftOf = (slide: HTMLElement) => slide.getBoundingClientRect().left - cards.getBoundingClientRect().left + cards.scrollLeft;
+  const leftOf = (slide: HTMLElement) => Math.max(0, Math.min(cards.scrollWidth - cards.clientWidth,
+    slide.getBoundingClientRect().left - cards.getBoundingClientRect().left + cards.scrollLeft - parseFloat(getComputedStyle(cards).paddingLeft)));
   const slides = () => Array.from(cards.querySelectorAll<HTMLElement>(':scope > .briefing__preset-shell, :scope > .item--card, :scope > .briefing__own > *')).sort((a, b) => leftOf(a) - leftOf(b));
   const nearest = (all: HTMLElement[]) => all.reduce((best, slide, index) => Math.abs(leftOf(slide) - cards.scrollLeft) < Math.abs(leftOf(all[best]) - cards.scrollLeft) ? index : best, 0);
   const move = (direction: number) => {
@@ -24,10 +27,14 @@ export function presetCarousel(cards: HTMLElement) {
     frame = 0;
     navigation.hidden = !narrow.matches;
     if (!narrow.matches || !cards.isConnected) return;
+    // Menu rows are inserted after their section placeholders. Keep DOM order and swipe order identical,
+    // rather than relying on CSS order through display:contents (which can put the first cards out of reach).
+    const own = cards.querySelector<HTMLElement>(':scope > .briefing__own');
+    if (own && own !== cards.lastElementChild) cards.append(own);
     const all = slides();
     if (!all.length) return;
     const chosen = cards.querySelector('[aria-pressed="true"]');
-    // Reopening a briefing or choosing a preset brings its card back into view, without applying a rule on scroll.
+    // External selection (a tap or a reopened briefing) brings that card into view.
     if (chosen !== selected) {
       selected = chosen;
       const slide = all.find((el) => el === chosen || (chosen && el.contains(chosen)));
@@ -39,9 +46,31 @@ export function presetCarousel(cards: HTMLElement) {
     next.disabled = index === all.length - 1;
   };
   const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+  const settle = () => {
+    clearTimeout(settleTimer);
+    if (!narrow.matches || dragging || !cards.isConnected) return;
+    const all = slides();
+    if (!all.length) return;
+    const card = all[nearest(all)].querySelector<HTMLButtonElement>('.item[aria-pressed]');
+    if (card && card.getAttribute('aria-pressed') !== 'true' && card.getAttribute('aria-disabled') !== 'true') {
+      selected = card;
+      card.click();
+    }
+  };
+  const afterScroll = () => {
+    schedule();
+    clearTimeout(settleTimer);
+    // Also handles browsers without scrollend, after momentum and snapping have stopped.
+    settleTimer = setTimeout(settle, 180);
+  };
   previous.addEventListener('click', () => move(-1), { signal: listeners.signal });
   next.addEventListener('click', () => move(1), { signal: listeners.signal });
-  cards.addEventListener('scroll', schedule, { passive: true, signal: listeners.signal });
+  cards.addEventListener('scroll', afterScroll, { passive: true, signal: listeners.signal });
+  cards.addEventListener('scrollend', settle, { signal: listeners.signal });
+  cards.addEventListener('pointerdown', () => { dragging = true; }, { passive: true, signal: listeners.signal });
+  const release = () => { dragging = false; afterScroll(); };
+  cards.addEventListener('pointerup', release, { passive: true, signal: listeners.signal });
+  cards.addEventListener('pointercancel', release, { passive: true, signal: listeners.signal });
   const observer = new MutationObserver(schedule);
   observer.observe(cards, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-pressed'] });
   const size = new ResizeObserver(schedule);
@@ -55,6 +84,7 @@ export function presetCarousel(cards: HTMLElement) {
       observer.disconnect();
       size.disconnect();
       narrow.removeEventListener('change', schedule);
+      clearTimeout(settleTimer);
       if (frame) cancelAnimationFrame(frame);
     },
   };

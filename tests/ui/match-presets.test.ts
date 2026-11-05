@@ -57,6 +57,7 @@ describe('match presets', () => {
     settings.teamMode = 2;
     settings.language = 'en';
     settings.wheelSide = 'left';
+    settings.touchControls = 'stick';
     settings.menuSounds = false;
     settings.gameSounds = false;
     settings.fixedPower = true;
@@ -64,7 +65,7 @@ describe('match presets', () => {
     const before = cloneSettings(settings);
     Object.assign(settings, presetRules('mayhem', 'classic'));
     expect(matchingPreset(rulesOf(settings), 'classic')).toBe('mayhem');
-    for (const key of ['seats', 'seatTeams', 'teamMode', 'language', 'wheelSide', 'menuSounds', 'gameSounds'] as const) {
+    for (const key of ['seats', 'seatTeams', 'teamMode', 'language', 'wheelSide', 'touchControls', 'menuSounds', 'gameSounds'] as const) {
       expect(settings[key]).toEqual(before[key]);
     }
     expect(settings.fixedPower).toBe(false);

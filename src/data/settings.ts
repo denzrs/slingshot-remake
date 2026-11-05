@@ -31,8 +31,10 @@ export interface Settings extends RoomRules {
   statsTicker: boolean;
   /** Menus change pages without sliding, fading or flaring: moving through them is instant. */
   lessMenuMotion: boolean;
-  /** Touch screens: the side of the screen the angle wheel sits on, the power bar on the other. */
+  /** Touch screens: the side of the screen the aiming control sits on. The wheel's power bar is opposite. */
   wheelSide: 'left' | 'right';
+  /** The wheel and power bar remain the default; the pull-back stick controls both together. */
+  touchControls: 'wheel' | 'stick';
   menuSounds: boolean;
   gameSounds: boolean;
   language: Lang;
@@ -55,6 +57,7 @@ export const DEFAULT_SETTINGS: Settings = {
   statsTicker: true,
   lessMenuMotion: false,
   wheelSide: 'right',
+  touchControls: 'wheel',
   menuSounds: true,
   gameSounds: true,
   language: 'de',
@@ -82,6 +85,7 @@ export function loadSettings(): Settings {
       s.look = lookFrom(s.look) ?? DEFAULT_SETTINGS.look;
       if (!isPostLevel(s.postLevel)) s.postLevel = DEFAULT_SETTINGS.postLevel;
       if (s.wheelSide !== 'left') s.wheelSide = 'right';
+      if (s.touchControls !== 'stick') s.touchControls = 'wheel';
       if (!Object.hasOwn(DEBRIS, s.debris)) s.debris = DEFAULT_SETTINGS.debris;
       // The rules of the game: only what the game still offers, anything else back to the standard ones.
       Object.assign(s, roomRulesFrom(parsed));

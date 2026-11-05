@@ -21,7 +21,11 @@ const ready = async (selector: string) => {
   }
   throw new Error(`Page did not show ${selector}`);
 };
-const category = (id: string) => click({ sel: `.sheet-nav:not([hidden]) [aria-controls$="-${id}"]` });
+const category = async (id: string) => {
+  if (await cdp.evaluate<boolean>(`!!document.querySelector('.sheet-nav:not([hidden])')`)) {
+    await click({ sel: `.sheet-nav:not([hidden]) [aria-controls$="-${id}"]` });
+  }
+};
 const stored = () => cdp.evaluate<string>(`localStorage.getItem('slingshot.settings.v1')`);
 const screenshot = async (name: string) => {
   const { data } = await cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'png' });
@@ -59,6 +63,37 @@ try {
   await check(`!document.querySelector('[data-section="prefs-language"]').closest('.menu-group').hidden`, 'Phone resize lost the selected category');
   console.log('PASS Retina resolution, touch settings, language rebuild, responsive categories');
 
+  await visit(430, 932);
+  await click('Settings');
+  await category('prefs-touch');
+  await check(`JSON.parse(localStorage.getItem('slingshot.settings.v1')).touchControls !== 'stick'`, 'Stick unexpectedly became the default');
+  await click({ sel: '[data-section="prefs-touch"] .item--segmented:first-child .segmented__option', nth: 1 });
+  await check(`JSON.parse(localStorage.getItem('slingshot.settings.v1')).touchControls === 'stick'`, 'Stick choice was not saved');
+  await screenshot('touch-settings');
+  await click('Done');
+  await click({ sel: '[data-section="modes"] .item', nth: 0 });
+  await click('Start game');
+  await ready('#touch-stick:not([hidden])');
+  await check(`document.querySelector('.twheel').hidden && document.querySelector('.pbar').hidden`, 'Wheel controls still overlap the stick');
+  await check(`(() => { const c = document.querySelector('#touch-stick canvas'); return c.width === Math.round(c.clientWidth * devicePixelRatio); })()`, 'Stick canvas is blurry');
+  const stick = await cdp.evaluate<{ x: number; y: number; radius: number }>(`(() => { const r = document.querySelector('#touch-stick').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, radius: r.width * .38 }; })()`);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: stick.x, y: stick.y + stick.radius * .5 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: stick.x + stick.radius * .65, y: stick.y }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await screenshot('stick-portrait');
+  await browser.resize(932, 430, true);
+  await sleep(250);
+  await screenshot('stick-landscape');
+  await click({ sel: '#pause-button' });
+  await click('Settings');
+  await category('prefs-touch');
+  await click({ sel: '[data-section="prefs-touch"] .item--segmented:first-child .segmented__option', nth: 0 });
+  await click('Done');
+  await click('Resume');
+  await ready('.twheel:not([hidden])');
+  await check(`document.querySelector('#touch-stick').hidden && !document.querySelector('.pbar').hidden`, 'Switching back to wheel controls failed');
+  console.log('PASS optional stick, native-resolution drawing, touch drag, orientation changes, switch back to wheel');
+
   for (const width of [430, 320]) {
     for (const language of ['en', 'de']) {
       await visit(width, 844, language);
@@ -66,20 +101,36 @@ try {
       const initial = await cdp.evaluate<{ count: string; [key: string]: unknown }>(`(() => { const c = document.querySelector('.briefing__cards'); return { count: document.querySelector('.preset-carousel__count').textContent, scroll: c.scrollLeft, slides: [...c.querySelectorAll(':scope > .briefing__preset-shell, :scope > .briefing__own > *')].map(el => ({ title: el.textContent.trim().slice(0, 30), left: el.getBoundingClientRect().left, width: el.getBoundingClientRect().width, order: getComputedStyle(el).order })) }; })()`);
       assert.equal(initial.count, '1 / 5', `Initial carousel order: ${JSON.stringify(initial)}`);
       await check(`getComputedStyle(document.querySelector('.mode-pager__keys')).display === 'none'`, 'Keyboard hints are visible on touch');
-      const before = await stored();
       await click({ sel: '.preset-carousel__arrow', nth: 1 });
       await sleep(650);
       await check(`document.querySelector('.briefing__cards').scrollLeft > 100`, 'Carousel next button did not move the cards');
-      assert.equal(await stored(), before, 'Browsing presets applied rules without a tap');
+      await check(`JSON.parse(localStorage.getItem('slingshot.settings.v1')).simultaneousShots === true`, 'Settling on preset 2 did not activate its simultaneous-shot rules');
+      await click({ sel: '.preset-carousel__arrow', nth: 1 });
+      await sleep(650);
+      await check(`document.querySelector('.preset-carousel__count').textContent === '3 / 5' && JSON.parse(localStorage.getItem('slingshot.settings.v1')).mayhem > 0`, 'Cannot activate preset 3');
+      if (width === 430 && language === 'en') {
+        await browser.resize(932, 430, true);
+        await sleep(200);
+        await browser.resize(width, 844, true);
+        await sleep(300);
+        await check(`document.querySelector('.preset-carousel__count').textContent === '3 / 5' && JSON.parse(localStorage.getItem('slingshot.settings.v1')).mayhem > 0`, 'Orientation change lost the selected preset or its scroll position');
+      }
+      await click({ sel: '.preset-carousel__arrow', nth: 0 });
+      await sleep(650);
+      await check(`document.querySelector('.preset-carousel__count').textContent === '2 / 5' && JSON.parse(localStorage.getItem('slingshot.settings.v1')).mayhem === 0`, 'Cannot go backward from preset 3 to preset 2');
+      await click({ sel: '.preset-carousel__arrow', nth: 0 });
+      await sleep(650);
+      await check(`document.querySelector('.preset-carousel__count').textContent === '1 / 5' && JSON.parse(localStorage.getItem('slingshot.settings.v1')).simultaneousShots === false`, 'Cannot return from preset 2 to preset 1');
       const point = await cdp.evaluate<{ x: number; y: number }>(`(() => { const r = document.querySelector('.briefing__cards').getBoundingClientRect(); return { x: r.left + r.width * .8, y: r.top + r.height / 2 }; })()`);
       await cdp.send('Input.synthesizeScrollGesture', { ...point, xDistance: -220, yDistance: 0, gestureSourceType: 'touch', speed: 600 });
       await sleep(400);
       await check(`document.querySelector('.mode-pager__item--active').textContent.trim() === ${JSON.stringify(language === 'en' ? 'Classic' : 'Klassisch')}`, 'Swiping a preset switched the game mode');
       await check(`document.querySelector('.briefing__cards').scrollLeft > 200`, 'Native swipe did not scroll the preset cards');
+      await check(`(() => { const cards = document.querySelector('.briefing__cards'); const active = cards.querySelector('[aria-pressed="true"]'); const viewport = cards.getBoundingClientRect(); const card = active.getBoundingClientRect(); return card.left >= viewport.left - 10 && card.left < viewport.left + 20; })()`, 'Native swipe left the visible preset inactive');
       await screenshot(`presets-${width}-${language}`);
     }
   }
-  console.log('PASS native preset swipes, arrows, tap-only selection, hidden shortcuts at 320/430 in EN/DE');
+  console.log('PASS native preset swipes, automatic selection, backward navigation, hidden shortcuts at 320/430 in EN/DE');
 
   await visit(430, 932);
   await click({ sel: '[data-section="modes"] .item', nth: 0 });

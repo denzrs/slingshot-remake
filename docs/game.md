@@ -28,6 +28,8 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 | F | Fullscreen |
 | ↑ ↓ ← → Enter (in menus) | Pick a row, change its value (sliders, switches and lists alike), confirm. Home / End jump a slider to its ends; Esc goes back to the row you came from |
 
+On touch screens, **Settings → Touch controls → Aiming controls** switches between the default angle wheel with power bar and the restored **Stick**. Pull the stick back like a slingshot: the shot travels the other way, and a longer pull adds power. Releasing keeps the aim; firing stays a separate button. The stick respects capped and fixed power. Either control scheme can sit on the left or right, and the browser remembers the choice.
+
 ## Game modes
 
 The title screen keeps Local / Solo and Online in one shell. Click the Classic or Event Horizon card to open that mode's briefing directly; the Daily Challenge card opens its mission. Online replaces only the right-hand content with *Find a room*, *Create a room* and *Enter a code*, each opening its flow directly. *Settings* and *How to play* remain in the navigation rail. Keyboard focus has a light outline; selected navigation choices use an orange marker.

@@ -159,6 +159,19 @@ describe('display settings', () => {
     expect(loadSettings().wheelSide).toBe('right');
   });
 
+  it('defaults to wheel controls and remembers an optional aiming stick', () => {
+    storage();
+    expect(loadSettings().touchControls).toBe('wheel');
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.touchControls = 'stick';
+    saveSettings(settings);
+    expect(loadSettings().touchControls).toBe('stick');
+    storage({ touchControls: 'unknown' });
+    expect(loadSettings().touchControls).toBe('wheel');
+    storage({ wheelSide: 'left' });
+    expect(loadSettings()).toMatchObject({ touchControls: 'wheel', wheelSide: 'left' });
+  });
+
   it('falls back to the full post pass for a stored glow level that is not one', () => {
     storage({ postLevel: 'medium' });
     expect(loadSettings().postLevel).toBe('medium');

@@ -1,12 +1,25 @@
 import { t } from '../../platform/i18n';
 import type { GameMode } from '../../sim/modes';
+import { GAME_MODES } from '../../sim/modes';
 import { h } from '../menu/menu';
 import { modeName } from '../menu/mode-name';
 
 export type ModeTransition = 'next' | 'previous';
 
-export function modePagerHeader(current: GameMode, transition?: ModeTransition): HTMLElement {
-  return pagePagerHeader(modeName(current), t('launcher.switchMode'), transition);
+export function modePagerHeader(current: GameMode, transition?: ModeTransition, change?: (mode: GameMode) => void): HTMLElement {
+  const header = pagePagerHeader(modeName(current), t('launcher.switchMode'), transition);
+  if (change) {
+    header.classList.add('mode-carousel--with-picker');
+    const select = h('select.mobile-mode-picker', { 'aria-label': t('launcher.switchMode') },
+      ...GAME_MODES.map((mode) => h('option', { value: mode }, modeName(mode)))) as HTMLSelectElement;
+    select.value = current;
+    select.addEventListener('change', () => {
+      const mode = GAME_MODES.find((mode) => mode === select.value);
+      if (mode && mode !== current) change(mode);
+    });
+    header.append(select);
+  }
+  return header;
 }
 
 export function pagePagerHeader(title: string, label: string, transition?: ModeTransition): HTMLElement {

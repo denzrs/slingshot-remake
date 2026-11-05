@@ -172,7 +172,7 @@ function setupScreen(app: App, mode: GameMode, transition?: ModeTransition): Scr
       const carousel = presetCarousel(cards);
       const page = menuPage({
         title: modeName(mode), eyebrow: t('launcher.prepare'),
-        headerTitle: modePagerHeader(mode, transition),
+        headerTitle: modePagerHeader(mode, transition, (next) => changeLocalMode(app, mode, next, 'next')),
         className: `menu-page--briefing menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
         body: [
           h('section.briefing__presets', null,

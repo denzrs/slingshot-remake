@@ -35,14 +35,20 @@ export function mobileSheet(columns: SheetGroup[][], label: string, changed: () 
     return button;
   });
   const navigation = h('nav.sheet-nav', { 'aria-label': label }, ...buttons);
-  navigation.classList.toggle('sheet-nav--rules', groups.length > 4);
   const el = h('div.sheet.sheet--mobile-categories', null, ...columns.map((column) => h('div.sheet__col', null, ...column.map(({ id }) => panels.get(id)!))));
   const isHidden = (id: string) => narrow.matches && selection.current !== id;
+  let scrollFrame = 0;
   const paint = () => {
     navigation.hidden = !narrow.matches;
     groups.forEach(({ id }, i) => {
       panels.get(id)!.hidden = isHidden(id);
       buttons[i].setAttribute('aria-pressed', String(selection.current === id));
+    });
+    cancelAnimationFrame(scrollFrame);
+    scrollFrame = requestAnimationFrame(() => {
+      if (!narrow.matches || !navigation.isConnected) return;
+      const button = buttons[groups.findIndex(({ id }) => id === selection.current)];
+      button?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     });
   };
   const resize = () => {
@@ -66,6 +72,6 @@ export function mobileSheet(columns: SheetGroup[][], label: string, changed: () 
         ...('reserve' in item ? { reserve: () => !isHidden(id) && (item.reserve?.() ?? false) } : {}),
       };
     },
-    dispose: () => narrow.removeEventListener('change', resize),
+    dispose: () => { narrow.removeEventListener('change', resize); cancelAnimationFrame(scrollFrame); },
   };
 }
