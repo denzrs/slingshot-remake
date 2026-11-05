@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { canShade, onScreen, seedOffset, shade, shadeKept, unit } from '../../src/render/looks/forged-gl';
-import { shadePost } from '../../src/render/looks/forged-post-gl';
+import { onScreen, seedOffset, shade, shadeKept, unit } from '../../src/render/looks/forged-gl';
 
 describe('forged shaders', () => {
   it('says there is nothing to shade with where there is no WebGL, so every element draws its own way', () => {
-    expect(canShade()).toBe(false);
     expect(shade('', 64, 64, 64, () => {})).toBeNull();
-    expect(shadePost({} as CanvasRenderingContext2D, {} as Parameters<typeof shadePost>[1], [], true)).toBe(false);
   });
 
   it('keeps a slow picture only where there are shaders', () => {

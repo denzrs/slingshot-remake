@@ -3,7 +3,7 @@ import { isWormholeJump, type Planet, type Wormhole } from '../../sim/physics';
 import { rgba } from '../color';
 import { strokePolyline } from '../polyline';
 import { drawSun, type SunStyle } from '../sun';
-import { canShade, GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept } from './forged-gl';
+import { GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept } from './forged-gl';
 import { lightParts } from './forged-parts';
 
 /**
@@ -248,8 +248,12 @@ const SUN_HZ = 20;
 /** The corona's reach in radii when calm, as in `sun.ts`: the shader's own coordinates. */
 const CORONA_REACH = 3.6;
 
+/** Whether the corona just drawn is the shader's: that one has streamers of its own, so no rays go over it. */
+let streamers = false;
+
 const sunStyle: SunStyle = {
   corona(ctx, seed, reach, time, flare, giant) {
+    streamers = true;
     if (!onScreen(ctx, 0, 0, reach)) return true;
     const pixels = pixelsOf(ctx, reach * 2);
     const shaded = shadeKept(`corona:${seed}`, time, SUN_HZ, CORONA_SHADER, pixels, pixels, CORONA_LIMIT, (u) => {
@@ -259,7 +263,7 @@ const sunStyle: SunStyle = {
       u.f('uFlare', flare);
       u.f('uGiant', giant);
     });
-    if (!shaded) return false;
+    if (!shaded) return (streamers = false);
     place(ctx, shaded, -reach, -reach, reach * 2, reach * 2);
     return true;
   },
@@ -295,8 +299,8 @@ export function drawForgedSun(ctx: CanvasRenderingContext2D, sun: Planet, time: 
   wash.addColorStop(1, `rgba(${warm},0)`);
   ctx.fillStyle = wash;
   ctx.fillRect(-R * 15, -R * 15, R * 30, R * 30);
-  // The rays: tapering wedges of light out of the middle, in two layers that turn against each other. The shaded corona has streamers of its own.
-  for (const [count, spin, reach, base] of canShade() ? [] : ([[11, 0.018, 9, 0.028], [7, -0.027, 6.5, 0.02]] as const)) {
+  // The rays: tapering wedges of light out of the middle, in two layers that turn against each other.
+  for (const [count, spin, reach, base] of streamers ? [] : ([[11, 0.018, 9, 0.028], [7, -0.027, 6.5, 0.02]] as const)) {
     ctx.save();
     ctx.rotate(time * spin + count);
     for (let k = 0; k < count; k++) {

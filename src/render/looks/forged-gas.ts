@@ -4,15 +4,15 @@ import { blend, drawNebula, NEBULA_SPRITE_REACH, phases } from '../nebula';
 import { LIGHT } from '../planet-common';
 import { drawStormCloud, slot, smooth, STORM_SPRITE_REACH, stormFlight } from '../storm';
 import { paintPortal } from '../wormhole';
-import { GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shade, shadeKept, unit } from './forged-gl';
+import { GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept, unit } from './forged-gl';
 import { drawLightNebulaGlow, drawLightPortalGlow } from './forged-light';
 import { lightParts } from './forged-parts';
 import { forgedFrame } from './forged-sky';
 
 /**
  * The forged look's gas and gateways: the nebula and the sun's storm clouds are gas that moves, lit from the side the sun is
- * on, with light moving inside them, and a portal pours light into its middle. Each builds on what the light draws
- * (`forged-parts.ts`) and adds over it, and each falls back to its sprites and strokes without shaders (`forged-gl.ts`).
+ * on, with light moving inside them (shaders, `forged-gl.ts`, or without them their sprites), and a portal pours light into
+ * its middle. Each builds on what the light draws (`forged-parts.ts`) and adds over it.
  */
 
 /** A seeded [0, 1) for one slot of a cloud, the same on every screen. */
@@ -208,46 +208,11 @@ export function drawForgedStormCloud(ctx: CanvasRenderingContext2D, cloud: { x: 
   ctx.restore();
 }
 
-/** A portal's vortex: noise in log-polar terms, so it pours towards the middle and turns as it goes, with three arms riding on it. */
-const PORTAL_SHADER = `${GLSL_HEAD}
-uniform float uTime;
-uniform vec3 uColor;
-void main() {
-  vec2 p = vUv * 2.0 - 1.0;
-  float r = length(p);
-  float depth = log(r + 0.04);
-  float a = atan(p.y, p.x) + depth * 1.6 + uTime * 1.2;
-  // On a circle, so the angle has no seam.
-  vec3 at = vec3(cos(a) * 1.6, sin(a) * 1.6, depth * 1.4 + uTime * 0.9);
-  float gas = fbm(at, 4);
-  float arms = pow(0.5 + 0.5 * cos(3.0 * a + gas * 2.6), 3.0);
-  float deep = 1.0 - smoothstep(0.0, 1.0, r);
-  float rim = 1.0 - smoothstep(0.82, 1.0, r);
-  float glow = (0.1 + 0.55 * gas * gas + 0.6 * arms * (0.25 + 0.75 * gas)) * (0.35 + 1.1 * deep) * rim;
-  float heart = pow(max(0.0, 1.0 - r * 2.1), 2.0);
-  vec3 c = uColor * glow + mix(uColor, vec3(1.0), 0.6) * smoothstep(0.5, 1.2, glow) * 0.5 + vec3(0.75) * heart;
-  outColor = vec4(c, max(c.r, max(c.g, c.b)));
-}`;
-const PORTAL_LIMIT = 256;
-
-/** A portal's mouth, in its own frame (`rx`, `ry` its half-axes): the doorway with light pouring into the middle, a vortex or without shaders three spiralling arms. */
+/** A portal's mouth, in its own frame (`rx`, `ry` its half-axes): the doorway with three arms of light spiralling into the middle. */
 export function paintForgedPortal(ctx: CanvasRenderingContext2D, rx: number, ry: number, radius: number, color: string, time: number, alpha: number, phase: number): void {
   paintPortal(ctx, rx, ry, radius, color, time, alpha, phase);
   ctx.globalAlpha = alpha;
   drawLightPortalGlow(ctx, rx, ry, color, time + phase);
-  if (!onScreen(ctx, 0, 0, Math.max(rx, ry))) return;
-  const vortex = shade(PORTAL_SHADER, pixelsOf(ctx, rx * 2), pixelsOf(ctx, ry * 2), PORTAL_LIMIT, (u) => {
-    u.f('uTime', time + phase * 7);
-    u.v3('uColor', unit(hexToRgb(color)));
-  });
-  if (vortex) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.globalCompositeOperation = 'lighter';
-    place(ctx, vortex, -rx, -ry, rx * 2, ry * 2);
-    ctx.restore();
-    return;
-  }
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.globalCompositeOperation = 'lighter';

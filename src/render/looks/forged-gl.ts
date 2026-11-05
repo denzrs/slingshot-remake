@@ -1,10 +1,9 @@
 /**
  * The forged look's shaders: an offscreen WebGL2 canvas that paints a picture, which the caller then draws into the 2D frame
- * with `drawImage`, so the shaders sit in the same order and transforms as everything else. There are two: one for sprites
- * (small, shared by every element and every canvas, as a browser allows only a few contexts) and one for the post pass (as
- * big as the frame). Every caller keeps its Canvas 2D drawing for when a stage is not to be had: no WebGL2, a context
- * lost, a shader that fails to compile, or a GPU the browser says is slow (a software renderer would pay more for these
- * than for what they replace).
+ * with `drawImage`, so the shaders sit in the same order and transforms as everything else. There is one, small and shared
+ * by every element and every canvas, as a browser allows only a few contexts. Every caller keeps its Canvas 2D drawing for
+ * when the stage is not to be had: no WebGL2, a context lost, a shader that fails to compile, or a GPU the browser says is
+ * slow (a software renderer would pay more for these than for what they replace).
  *
  * `?forgedgl=off` draws without shaders, for comparing; `?forgedgl=soft` allows a software renderer, for headless shots.
  */
@@ -12,11 +11,10 @@
 const VERTEX = `#version 300 es
 in vec2 aAt;
 out vec2 vUv;
-uniform float uFlip;
 void main() {
-  // vUv runs from the top left, as a canvas does; into a framebuffer it is flipped, so its rows also start from the top.
+  // vUv runs from the top left, as a canvas does.
   vUv = vec2(aAt.x * 0.5 + 0.5, 0.5 - aAt.y * 0.5);
-  gl_Position = vec4(aAt.x, aAt.y * uFlip, 0.0, 1.0);
+  gl_Position = vec4(aAt, 0.0, 1.0);
 }`;
 
 /** What every fragment shader starts with: value noise and fractal noise, in the same shape as `render/noise.ts`. */
@@ -82,9 +80,6 @@ export class Uniforms {
   v3(name: string, v: readonly number[]): void {
     this.gl.uniform3f(this.spot(name), v[0], v[1], v[2]);
   }
-  v4(name: string, x: number, y: number, z: number, w: number): void {
-    this.gl.uniform4f(this.spot(name), x, y, z, w);
-  }
   /** Binds a texture to texture unit `slot` for the sampler `name`. */
   tex(name: string, slot: number, texture: WebGLTexture): void {
     this.gl.activeTexture(this.gl.TEXTURE0 + slot);
@@ -96,7 +91,6 @@ export class Uniforms {
 interface Program {
   program: WebGLProgram;
   uniforms: Uniforms;
-  flip: WebGLUniformLocation | null;
 }
 
 /** An upload a stage keeps: pixels or an image, and how it is sampled. */
@@ -190,11 +184,11 @@ export class Stage {
       if (!gl.isContextLost()) console.error('forged shader:', gl.getProgramInfoLog(program));
       return null;
     }
-    return { program, uniforms: new Uniforms(gl, program), flip: gl.getUniformLocation(program, 'uFlip') };
+    return { program, uniforms: new Uniforms(gl, program) };
   }
 
-  /** Runs a fragment shader over the viewport already set, into the framebuffer already bound (`into`: one of ours, not the canvas). False when it does not compile. */
-  run(fragment: string, set: (u: Uniforms) => void, into = false): boolean {
+  /** Runs a fragment shader over the viewport already set. False when it does not compile. */
+  run(fragment: string, set: (u: Uniforms) => void): boolean {
     const gl = this.gl!;
     let program = this.programs.get(fragment);
     if (program === undefined) {
@@ -204,7 +198,6 @@ export class Stage {
     if (!program) return false;
     this.startTimer();
     gl.useProgram(program.program);
-    gl.uniform1f(program.flip, into ? -1 : 1);
     set(program.uniforms);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     return true;
@@ -266,24 +259,13 @@ function switchValue(): string | null {
 }
 
 let spriteStage: Stage | null = null;
-let postStage: Stage | null = null;
 const usable = (): boolean => typeof document !== 'undefined' && switchValue() !== 'off';
-
-/** The stage of the post pass: as big as the frame. */
-export function postStageOf(): Stage | null {
-  if (!usable()) return null;
-  postStage ??= new Stage();
-  return postStage.context() ? postStage : null;
-}
 
 function sprites(): Stage | null {
   if (!usable()) return null;
   spriteStage ??= new Stage();
   return spriteStage.context() ? spriteStage : null;
 }
-
-/** Whether sprites can be shaded now: the fireball sheet need not be painted while they can. */
-export const canShade = (): boolean => sprites() !== null;
 
 /** How much of its full size a shaded sprite is drawn at: lowered when the frame cannot keep up (`forged-sky.ts`). */
 let detail = 1;
@@ -392,8 +374,8 @@ export function place(ctx: CanvasRenderingContext2D, picture: Shaded, x: number,
   ctx.drawImage(picture.canvas, 0, 0, picture.w, picture.h, x, y, w, h);
 }
 
-/** Closes the frame on both stages and says how long the GPU took for the latest frame measured (s). */
-export function closeShaderFrame(): number {
+/** Closes the frame on the stage. */
+export function closeShaderFrame(): void {
   if (spriteStage && ++frames >= SHRINK_EVERY) {
     // Between frames, so nothing is lost: a planet's 1536² once made the canvas that big for good.
     const canvas = spriteStage.canvas;
@@ -405,8 +387,7 @@ export function closeShaderFrame(): number {
     }
     peakW = peakH = frames = 0;
   }
-  lastGpu = Math.max(spriteStage?.closeFrame() ?? 0, postStage?.closeFrame() ?? 0);
-  return lastGpu;
+  lastGpu = spriteStage?.closeFrame() ?? 0;
 }
 
 let lastGpu = 0;
