@@ -1,5 +1,6 @@
 import { COLORS, DEBRIS, FIELD, FONTS, PHYSICS, SUDDEN_DEATH, type Debris } from '../sim/config';
-import type { World } from '../sim/physics';
+import type { Falling } from '../game';
+import type { BlackHole, World } from '../sim/physics';
 import { rgba } from './color';
 import type { EffectStyle } from './looks/painter';
 import { fillTextUpright, strokeTextUpright } from './orientation';
@@ -19,6 +20,8 @@ interface Spark {
   seed: number;
   /** Seconds left before the spark is gone; sparks without one drift on until the round ends. */
   life?: number;
+  /** Matter on its way into a hole: only a horizon stops it, so it does not break up on the body it came from. */
+  falling?: boolean;
 }
 
 interface GravityBody {
@@ -150,6 +153,12 @@ export class Effects {
   private beams: Beam[] = [];
   private lasers: Laser[] = [];
   private novas: Nova[] = [];
+  /** What has crossed the horizon in the fall going on now. */
+  private fallen = new Set<string>();
+  /** The light running round the horizon after a swallow: what is left of it (1 → 0), its colour and where it set off. */
+  holeFeed = 0;
+  holeFeedColor: string = COLORS.sodium;
+  holeFeedAngle = 0;
   shake = 0;
   flash = 0;
     /** A supernova's white-out over the whole screen (0 → 1). */
@@ -177,6 +186,8 @@ export class Effects {
     this.beams = [];
     this.lasers = [];
     this.novas = [];
+    this.fallen.clear();
+    this.holeFeed = 0;
     this.shake = 0;
     this.flash = 0;
     this.whiteout = 0;
@@ -355,7 +366,49 @@ export class Effects {
         drag: 2 * this.sparkDrag,
         tier: 'medium',
         seed: Math.random(),
+        life: 0.9 + Math.random() * 0.9,
+        falling: true,
       });
+    }
+  }
+
+  /** One frame of what is falling into `hole`: each sheds a little dust, and the hole answers as each crosses its horizon. */
+  infall(falling: readonly Falling[], hole: BlackHole | undefined, dt: number, dust = true): void {
+    if (!falling.length || !hole) {
+      this.fallen.clear();
+      return;
+    }
+    for (const f of falling) {
+      if (dust) this.shed(f, hole, dt);
+      if (this.fallen.has(f.key) || Math.hypot(f.x - hole.x, f.y - hole.y) > hole.radius) continue;
+      this.fallen.add(f.key);
+      // A light runs round the horizon from where it went in; a planet makes the field tremble.
+      this.holeFeed = 1;
+      this.holeFeedColor = f.color;
+      this.holeFeedAngle = Math.atan2(f.y - hole.y, f.x - hole.x);
+      if (!this.reducedMotion) this.shake = Math.max(this.shake, 3 * Math.min(1, f.radius / 45));
+    }
+  }
+
+  /** Dust off a falling body, in its own colour, once the pull has begun to tear at it. */
+  private shed(f: Falling, hole: BlackHole, dt: number): void {
+    if (!this.particles || f.t < 0.25) return;
+    const dx = hole.x - f.x;
+    const dy = hole.y - f.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const nx = dx / d;
+    const ny = dy / d;
+    // Round the hole the way the disk turns.
+    const tx = ny;
+    const ty = -nx;
+    const want = dt * 45 * f.t * Math.min(1.4, f.radius / 30);
+    const count = Math.floor(want) + (Math.random() < want % 1 ? 1 : 0);
+    for (let i = 0; i < count && this.sparks.length < MAX_SPARKS; i++) {
+      const across = (Math.random() - 0.5) * f.radius * (1.4 - f.t);
+      const spark = this.spark(f.x + nx * across, f.y + ny * across, tx * (40 + Math.random() * 70), ty * (40 + Math.random() * 70), f.color, 'small');
+      spark.life = 0.35 + Math.random() * 0.4;
+      spark.falling = true;
+      this.sparks.push(spark);
     }
   }
 
@@ -470,6 +523,7 @@ export class Effects {
       this.shake = Math.max(this.shake, 4 + 10 * this.quake);
     }
     this.updateNovas(dt);
+    this.holeFeed = Math.max(0, this.holeFeed - dt / 0.9);
     const fragments: Spark[] = [];
     const remaining: Spark[] = [];
     const steps = Math.max(1, Math.ceil(dt / PHYSICS.DT));
@@ -501,7 +555,12 @@ export class Effects {
         s.vy = (s.vy + ay * step) * drag;
         s.x += s.vx * step;
         s.y += s.vy * step;
-        const body = this.collidingBody(s, world);
+        // A horizon takes a spark whole; only a rock breaks it up.
+        if (world.holes.some((hole) => Math.hypot(hole.x - s.x, hole.y - s.y) <= hole.radius)) {
+          collided = true;
+          break;
+        }
+        const body = s.falling ? null : this.collidingBody(s, world);
         if (body) {
           this.fragment(s, fragments, body);
           collided = true;
@@ -726,10 +785,7 @@ export class Effects {
   }
 
   private collidingBody(spark: Spark, world: World): GravityBody | null {
-    for (const body of world.planets) {
-      if (Math.hypot(body.x - spark.x, body.y - spark.y) <= body.radius) return body;
-    }
-    return world.holes.find((hole) => Math.hypot(hole.x - spark.x, hole.y - spark.y) <= hole.radius) ?? null;
+    return world.planets.find((body) => Math.hypot(body.x - spark.x, body.y - spark.y) <= body.radius) ?? null;
   }
 
   private ring(x: number, y: number, radius: number, life: number, color: string): void {

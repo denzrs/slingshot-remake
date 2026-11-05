@@ -1,4 +1,5 @@
 import type { Look } from '../../data/look';
+import type { Falling } from '../../game';
 import type { BlackHole, Planet } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
 import type { Wormhole } from '../../sim/physics';
@@ -27,6 +28,8 @@ export interface LookPainter {
   readonly planetsTurnToSun: boolean;
   /** `post` heeds the post level (`getPostLevel`): the settings offer it while this look is chosen. */
   readonly postLevels: boolean;
+  /** Whether a body falling into a black hole sheds dust on the way (a look that draws the fall as lines of its own may want it, one that draws it whole does not). */
+  readonly fallDust: boolean;
 
   /** A planet's sprite at `ps` device pixels per field unit. */
   planet(p: Planet, ps: number): PlanetSprite;
@@ -34,6 +37,10 @@ export interface LookPainter {
   /** What a supernova leaves, `age` seconds after it. */
   neutronStar(ctx: CanvasRenderingContext2D, star: Planet, time: number, age: number, alpha: number): void;
   blackHole(ctx: CanvasRenderingContext2D, hole: BlackHole, time: number): void;
+  /** The light running round a horizon after it swallowed something of `color` at `angle`; `strength` falls from 1 to 0. */
+  holeFlare(ctx: CanvasRenderingContext2D, hole: BlackHole, strength: number, color: string, angle: number): void;
+  /** A planet or ship on its way into the hole, at `f.t` (0 → 1). `paint` draws the body round (0, 0), `reach` (field units) being as far as it goes; the look decides how it is bent, drawn out or left behind. */
+  falling(ctx: CanvasRenderingContext2D, f: Falling, reach: number, ps: number, paint: (c: CanvasRenderingContext2D) => void): void;
   /** Where the horizon will be after the next collapse (`radius`): the zone everyone must stay out of. */
   dangerRing(ctx: CanvasRenderingContext2D, hole: BlackHole, radius: number, time: number): void;
   /** Both portals of a wormhole and the thread between them; `eaten` (0 → 1) is how far a black hole has taken it. */

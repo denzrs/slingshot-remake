@@ -1,7 +1,7 @@
 import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
 import type { Avatar } from '../platform/avatars';
 import { bountyPoints, interceptPoints, underdogPoints } from '../sim/scoring';
-import { AIM, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE, type BonusKind, type KillSource, type SuddenDeathKind } from '../sim/config';
+import { AIM, COLORS, FIELD, GRACE, HORIZON, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE, type BonusKind, type KillSource, type SuddenDeathKind } from '../sim/config';
 import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
 import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
@@ -95,6 +95,33 @@ export interface KillRecord {
   at: number;
 }
 
+/** Something on its way into a black hole, as the picture needs it. */
+export interface Falling {
+  /** Stays the same for as long as it falls. */
+  key: string;
+  x: number;
+  y: number;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  radius: number;
+  color: string;
+  /** How far through its fall (0 → 1). */
+  t: number;
+  /** The ship it is, when it is one. */
+  ship?: number;
+}
+
+/** Where a fall from one point to the middle of a hole has got to at `t` (0 → 1): it swings round first, the way the disk turns, then sinks. */
+export function infallAt(fromX: number, fromY: number, toX: number, toY: number, t: number): { x: number; y: number } {
+  const left = 1 - t ** 2.5;
+  const turn = HORIZON.INFALL_TURN * t * t;
+  const dx = (fromX - toX) * left;
+  const dy = (fromY - toY) * left;
+  return { x: toX + dx * Math.cos(turn) - dy * Math.sin(turn), y: toY + dx * Math.sin(turn) + dy * Math.cos(turn) };
+}
+
 export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots' | 'skipped' | 'forfeit' | 'supernova';
 
 /** How long the people at the table have to answer a vote to skip the round, in seconds of match clock. */
@@ -155,6 +182,8 @@ export type GameEvent =
   | { type: 'impact'; player: number; x: number; y: number; vx: number; vy: number }
   | { type: 'fizzle'; player: number; x: number; y: number; vx: number; vy: number; lost: boolean }
   | { type: 'clash'; x: number; y: number; players: [number, number]; velocities: [{ x: number; y: number }, { x: number; y: number }]; points: number }
+  /** A planet or a ship starts to fall into the hole. */
+  | { type: 'fall' }
   | { type: 'devour'; x: number; y: number; toX: number; toY: number; color: string; vx: number; vy: number }
   | { type: 'style'; player: number; kind: StyleKind; x: number; y: number }
   | { type: 'explode'; x: number; y: number; ship: number; vx: number; vy: number }
@@ -884,6 +913,10 @@ export abstract class Match {
   }
 
   // Event Horizon hooks the renderer asks about; classic answers "nothing".
+  /** What is falling into a black hole right now. */
+  falling(): Falling[] {
+    return [];
+  }
   devourProgress(_planetSeed: number): number {
     return 0;
   }

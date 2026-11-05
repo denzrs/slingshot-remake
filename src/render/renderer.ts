@@ -219,7 +219,7 @@ export class Renderer {
       ctx.clip();
     }
     ctx.setTransform(a, b, c, d, e + shakeX * P, f + shakeY * P);
-    this.drawWorld(match, scene, base);
+    this.drawWorld(match, scene, base, effects);
     this.drawTrails(match, scene, base);
     this.drawSpotlight(match, scene);
     this.drawShips(match, scene);
@@ -323,7 +323,7 @@ export class Renderer {
     return this.time - first;
   }
 
-  private drawWorld(match: Match, scene: Scene, ps: number): void {
+  private drawWorld(match: Match, scene: Scene, ps: number, effects: Effects): void {
     const { ctx } = this;
     const world = scene.world;
     const primary = world.holes[0];
@@ -364,6 +364,7 @@ export class Renderer {
       this.spritePs = ps;
       this.spriteLook = this.painter.id;
     }
+    const falling = new Map(scene.camera ? [] : match.falling().map((f) => [f.key, f]));
     const sun = match.mode === 'solar' ? world.planets.find((q) => q.sun) : undefined;
     for (const p of showPlanets ? world.planets : []) {
       if (p.sun) continue;
@@ -372,17 +373,14 @@ export class Renderer {
         sprite = this.painter.planet(p, ps);
         this.sprites.set(p.seed, sprite);
       }
-      const eaten = scene.camera ? 0 : match.devourProgress(p.seed);
-      ctx.globalAlpha = alpha * (1 - eaten * 0.4);
-      if (eaten > 0 && primary) {
-        // Spaghettification: stretched towards the hole, squeezed across, shrinking.
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(Math.atan2(primary.y - p.y, primary.x - p.x));
-        const shrink = 1 - eaten * 0.85;
-        ctx.scale((1 + eaten * 1.8) * shrink, (1 - eaten * 0.6) * shrink);
-        sprite.draw(ctx, 0, 0, ps, this.time);
-        ctx.restore();
+      const fall = falling.get(`planet${p.seed}`);
+      ctx.globalAlpha = alpha;
+      if (fall) {
+        this.painter.falling(ctx, fall, p.radius * 2.6, ps, (c) => {
+          // The light stays where it was painted: upright on the screen.
+          uprightFrame(c);
+          sprite.draw(c, 0, 0, ps, this.time);
+        });
       } else if (sun && this.painter.planetsTurnToSun) {
         // A classic sprite is painted lit from one side; turn it so that side faces the sun it orbits.
         ctx.save();
@@ -402,6 +400,15 @@ export class Renderer {
       }
     }
     ctx.globalAlpha = 1;
+    // Falling ships go under the hole too, which takes them bit by bit.
+    for (const f of falling.values()) {
+      if (f.ship === undefined) continue;
+      const { ship: id, color } = f;
+      this.painter.falling(ctx, f, PHYSICS.SHIP_RADIUS * 2.6, ps, (c) => {
+        c.rotate((-match.players[id].angle * Math.PI) / 180);
+        this.painter.ship(c, color, this.time, 0, id * 1.7);
+      });
+    }
 
     world.defenses.forEach((d, i) => d.wrecked || this.painter.defense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, 1, defenseView(scene.volley?.shots ?? [], d, i), false, !showPlanets));
     for (const p of world.planets) {
@@ -410,6 +417,7 @@ export class Renderer {
       else this.painter.sun(ctx, p, this.time, alpha, stormFlare(this.stormAge(world)));
     }
     for (const hole of world.holes) this.painter.blackHole(ctx, hole, this.time);
+    if (primary && effects.holeFeed > 0 && !scene.camera) this.painter.holeFlare(ctx, primary, effects.holeFeed, effects.holeFeedColor, effects.holeFeedAngle);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) this.painter.wormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));
     const next = match.nextHoleRadius;
@@ -833,7 +841,6 @@ export class Renderer {
     const { ctx } = this;
     const live = !scene.camera;
     const planning = live && match.phase === 'aiming';
-    const hole = scene.world.holes[0];
 
     scene.world.ships.forEach((ship, i) => {
       if (!ship.alive) return;
@@ -871,15 +878,10 @@ export class Renderer {
       // Neighbour grace period: the ship that the aiming player's shot flies through gets a shield.
       if (planning && match.focus >= 0 && match.sparedFor(match.focus).includes(i)) this.painter.sparedRing(ctx, ship.x, ship.y, this.time);
 
-      const swallow = live ? match.swallowProgress(i) : 0;
+      // A falling ship is drawn with the world, under the hole.
+      if (live && match.swallowProgress(i) > 0) return;
       ctx.save();
       ctx.translate(ship.x, ship.y);
-      if (swallow > 0 && hole) {
-        ctx.rotate(Math.atan2(hole.y - ship.y, hole.x - ship.x));
-        const shrink = 1 - swallow * 0.85;
-        ctx.scale((1 + swallow * 2) * shrink, (1 - swallow * 0.6) * shrink);
-        ctx.rotate(-Math.atan2(hole.y - ship.y, hole.x - ship.x));
-      }
       // Hidden aim: a ship that is aiming must not give its heading away — it keeps pointing at the middle.
       const hideHeading = planning && !aimShown;
       const heading = hideHeading ? (Math.atan2(ship.y - scene.world.height / 2, scene.world.width / 2 - ship.x) * 180) / Math.PI : player.angle;
