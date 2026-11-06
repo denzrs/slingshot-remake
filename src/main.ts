@@ -280,7 +280,8 @@ function multiplayer(): MultiplayerSession {
   });
   const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session, () => {
     if (overlay.querySelector('.menu-page--room')) return { kind: 'lobby' };
-    const matchMenu = overlay.querySelector('.menu-page--pause, .menu-page--results');
+    if (screen === 'play' && session?.match && session.match === match && overlay.querySelector('.menu-page--results')) return { kind: 'results' };
+    const matchMenu = overlay.querySelector('.menu-page--pause');
     if (screen === 'play' && session?.match && session.match === match && (!menu.isOpen || matchMenu)) return { kind: 'game' };
     return null;
   });

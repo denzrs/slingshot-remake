@@ -134,7 +134,9 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
     'section.lobby__card.lobby__card--wide.room-deck',
     null,
     h('div.lobby__code.room-info', null, roomSymbol,
-      h('div.room-info__share', null, h('span.lobby__code-label', null, t('multiplayer.code')), roomCode, copyCode, copyInvite, lockTag, copyPassword),
+      h('div.room-info__share', null,
+        h('span.room-info__code', null, h('span.lobby__code-label', null, t('multiplayer.code')), roomCode),
+        copyCode, copyInvite, lockTag, copyPassword),
       roomSwitches),
     h('div.room-deck__layout', null, roomCrew, roomBriefing),
   );

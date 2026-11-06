@@ -21,7 +21,7 @@ const TILT = -0.2;
 export function drawLens(ctx: CanvasRenderingContext2D, hole: BlackHole, backdrop: HTMLCanvasElement): void {
   const m = ctx.getTransform();
   const c = m.transformPoint(new DOMPoint(hole.x, hole.y));
-  const lens = (hole.radius * 5 + 34) * m.a;
+  const lens = (hole.radius * 5 + 34) * Math.hypot(m.a, m.b);
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   for (const [r, mag] of LENS_STEPS) {

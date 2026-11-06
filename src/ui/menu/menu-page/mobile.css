@@ -29,6 +29,19 @@
   .screen--menu-page .menu-page .menu-page__actions .lobby__button { min-height: 48px; padding: 12px 16px; border-radius: var(--phone-radius); font: 700 14px/1.4 var(--font-body); letter-spacing: 0; }
   .screen--menu-page .menu-page .menu-page__actions .item--primary,
   .screen--menu-page .menu-page .menu-page__actions .lobby__button--primary { flex: 1 1 0; min-height: 52px; font: 700 16px/1.4 var(--font-body); letter-spacing: 0; text-transform: none; }
+  /* Keep the way back to the game prominent; the other actions read as a compact menu. */
+  .menu-page--pause { position: relative; }
+  .menu-page--pause .menu-page__head { padding-right: 88px; }
+  .screen--menu-page .menu-page--pause .pause-actions .pause-tool { position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 40px; height: 40px; min-height: 40px; padding: 0; border: 1px solid rgb(91 125 179 / .42); border-radius: 4px; background: transparent; color: var(--bone-dim); font-size: 0; }
+  .screen--menu-page .menu-page--pause .pause-actions .pause-tool--settings:has(~ .pause-tool--home) { right: 48px; }
+  .menu-page .pause-tool::before { content: ''; display: block; position: absolute; left: 50%; top: 50%; width: 23px; height: 23px; border: 0; background: currentColor; opacity: 1; transform: translate(-50%, -50%); mask: center / contain no-repeat; }
+  .menu-page .pause-tool--settings::before { content: '⚙'; width: auto; height: auto; background: none; mask: none; font-size: 26px; line-height: 1; }
+  .menu-page .pause-tool--home::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5M9.5 21v-7h5v7'/%3E%3C/svg%3E"); }
+  .screen--menu-page .menu-page--pause .pause-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 8px; }
+  .screen--menu-page .menu-page--pause .pause-actions .item { min-width: 0; padding: 8px; text-align: center; white-space: normal; }
+  .screen--menu-page .menu-page--pause .pause-actions .item:not(.item--primary, .pause-tool) { border-color: transparent; background: transparent; }
+  .screen--menu-page .menu-page--pause .pause-actions .item:nth-child(1 of .item:not(.pause-tool)):nth-last-child(2 of .item:not(.pause-tool)) { grid-column: 1 / -1; border-color: var(--menu-line); }
+  .screen--menu-page .menu-page--pause .pause-actions .item--primary { grid-column: 1 / -1; margin-top: 8px; }
   .screen--menu-page .menu-page .item__label { font-size: 14px; line-height: 1.5; }
   .screen--menu-page .menu-page .segmented { border-radius: var(--phone-radius); }
   .screen--menu-page .menu-page .segmented__option { min-height: 44px; padding: 10px 6px; font: 700 13px/1.4 var(--font-body); letter-spacing: 0; white-space: normal; }
@@ -50,9 +63,9 @@
   .screen--menu-page .menu-page--briefing .menu-page__body { padding-bottom: 0; }
   .screen--menu-page .menu-page--briefing .menu-page__body--split { gap: 12px; align-content: start; }
   .screen--menu-page .menu-page--briefing .briefing__quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; padding-top: 8px; }
-  .screen--menu-page .menu-page--briefing .briefing__quick .item--slider { min-height: 64px; padding: 8px 0; column-gap: 8px; align-self: stretch; grid-template-rows: 1fr 26px; }
-  .screen--menu-page .menu-page--briefing .briefing__quick .slider__value { min-width: 0; }
-  .screen--menu-page .menu-page--briefing .briefing__quick .item__label { font-size: 13px; }
+  .screen--menu-page :is(.menu-page--briefing, .menu-page--room) .briefing__quick .item--slider { min-height: 64px; padding: 8px 0; column-gap: 8px; align-self: stretch; grid-template-rows: 1fr 26px; }
+  .screen--menu-page :is(.menu-page--briefing, .menu-page--room) .briefing__quick .slider__value { min-width: 0; }
+  .screen--menu-page :is(.menu-page--briefing, .menu-page--room) .briefing__quick .item__label { font-size: 13px; }
   .screen--menu-page .menu-page--briefing .briefing__powerups,
   .screen--menu-page .menu-page--briefing .briefing__mayhem { grid-column: 1 / -1; grid-row: auto; }
   .screen--menu-page .menu-page--briefing .briefing__powerups-label { font-size: 13px; }
@@ -88,6 +101,12 @@
   .screen--menu-page .mission-stats dt { font-size: 12px; }
 
   /* Online identity is one quiet utility strip, rather than a second competing page heading. */
+  .screen--menu-page .menu-page--lobby:not(.menu-page--room) .online-section-viewport { min-height: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .screen--menu-page .menu-page--lobby:not(.menu-page--room) .online-section-viewport::-webkit-scrollbar { display: none; }
+  .screen--menu-page .menu-page--lobby:not(.menu-page--room) .online-section-pager { gap: 12px; transform: none !important; }
+  .screen--menu-page .menu-page--lobby:not(.menu-page--room) .online-section-pager .item { min-height: 48px; padding: 10px 8px; border-bottom: 2px solid transparent; color: var(--bone-dim); font: 700 13px/1.4 var(--font-body); letter-spacing: 0; text-transform: none; opacity: 1; }
+  .screen--menu-page .menu-page--lobby:not(.menu-page--room) .online-section-pager .mode-pager__item--active { border-bottom-color: var(--p2); color: var(--p2); text-shadow: none; }
+  .screen--menu-page .menu-page--lobby .online-section-keys { display: none; }
   .screen--menu-page .menu-page--lobby .online-identity { padding: 12px 0; border: 0; border-bottom: 1px solid var(--menu-line); border-radius: 0; background: transparent; gap: 16px; }
   .screen--menu-page .menu-page--lobby .online-profile__name { font-size: 16px; }
   .screen--menu-page .menu-page--lobby .online-profile__avatar { width: 36px; height: 36px; }
@@ -103,6 +122,46 @@
   .screen--menu-page .menu-page--room .room-deck__crew .slot-card__join { min-height: 44px; font: 700 13px/1.4 var(--font-body); }
   .screen--menu-page .menu-page--room .room-deck__crew .slot-card__add-cpu { min-height: 44px; }
   .screen--menu-page .menu-page--room .lobby__start-hint { font-size: 12px; line-height: 1.5; }
+
+  /* The waiting room is a compact flight deck: keep the crew and game close together. */
+  .screen--menu-page .menu-page--room .menu-page__head { margin-bottom: 10px; }
+  .screen--menu-page .menu-page--room .lobby { gap: 8px; }
+  .screen--menu-page .menu-page--room .room-mobile-tabs { display: grid; grid-column: 1 / -1; grid-row: 1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-bottom: 8px; padding: 4px; border: 1px solid var(--menu-line); border-radius: var(--phone-radius); background: rgb(13 29 50 / .7); }
+  .screen--menu-page .menu-page--room .room-mobile-tabs__button { min-height: 44px; padding: 8px 6px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--bone-dim); font: 700 13px/1.3 var(--font-body); cursor: pointer; }
+  .screen--menu-page .menu-page--room .room-mobile-tabs__button[aria-pressed='true'] { border-color: var(--p2); background: rgb(111 227 200 / .1); color: var(--p2); }
+  .screen--menu-page .menu-page--room .online-section-viewport { grid-row: 2; }
+  .screen--menu-page .menu-page--room[data-room-tab='setup'] .online-identity,
+  .screen--menu-page .menu-page--room[data-room-tab='setup'] .room-info,
+  .screen--menu-page .menu-page--room[data-room-tab='setup'] .room-deck__crew,
+  .screen--menu-page .menu-page--room[data-room-tab='lobby'] .room-deck__briefing,
+  .screen--menu-page .menu-page--room[data-room-tab='lobby'] .online-section-viewport { display: none; }
+  .screen--menu-page .menu-page--room .online-identity { gap: 8px; padding-block: 6px; }
+  .screen--menu-page .menu-page--room .online-connection { padding-top: 8px; }
+  .screen--menu-page .menu-page--room .room-info { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 6px; margin: 0 0 8px; padding: 6px 8px; }
+  .screen--menu-page .menu-page--room .room-info__symbol { width: 44px; height: 44px; }
+  .screen--menu-page .menu-page--room .room-info__share { min-width: 0; gap: 4px; }
+  .screen--menu-page .menu-page--room .room-info__code { display: grid; flex: 1 0 auto; gap: 0; }
+  .screen--menu-page .menu-page--room .room-info__code .lobby__code-label { font-size: 10px; line-height: 1.2; }
+  .screen--menu-page .menu-page--room .room-info__code .lobby__code-value { font-size: 16px; }
+  .screen--menu-page .menu-page--room .room-info .lobby__icon-button { flex: none; width: 44px; height: 44px; }
+  .screen--menu-page .menu-page--room .room-info__switches { grid-column: 1 / -1; margin: 0; }
+  .screen--menu-page .menu-page--room .room-info__switches .segmented { width: 100%; }
+  .screen--menu-page .menu-page--room .room-info__switches .item--segmented { width: 100%; }
+  .screen--menu-page .menu-page--room .room-deck__layout { gap: 12px; }
+  .screen--menu-page .menu-page--room .room-deck__roster-head { gap: 4px 10px; margin-bottom: 2px; }
+  .screen--menu-page .menu-page--room .room-deck__crew .slot-card { min-height: 48px; padding: 2px 8px; }
+  .screen--menu-page .menu-page--room .room-deck__crew .slot-card__join,
+  .screen--menu-page .menu-page--room .room-deck__crew .slot-card__add-cpu { min-height: 44px; }
+  .screen--menu-page .menu-page--room .briefing__cards { --preset-card-height: 144px; }
+  .screen--menu-page .menu-page--room .briefing__quick { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; padding-top: 8px; }
+  .screen--menu-page .menu-page--room .briefing__mayhem,
+  .screen--menu-page .menu-page--room .briefing__powerups { grid-column: 1 / -1; grid-row: auto; }
+  .screen--menu-page .menu-page--room .briefing__quick:not(:has(.item.is-readonly)) .briefing__mayhem:not(:has(> .item:not([hidden]))) { display: none; }
+  .screen--menu-page .menu-page--room .briefing__switches { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .screen--menu-page .menu-page--room .briefing__switch-action { grid-column: 1 / -1; }
+  .screen--menu-page .menu-page--room .menu-page__foot { margin-top: 6px; padding-top: 8px; }
+  .screen--menu-page .menu-page--room .menu-page__actions { gap: 6px; }
+  .screen--menu-page .menu-page--room .lobby__start-hint { flex-basis: 100%; margin: 0; font-size: 11px; line-height: 1.35; }
 
   .screen--title .launcher__nav { gap: 8px; }
   .screen--title .launcher__nav .item { min-height: 48px; border-radius: var(--phone-radius); }

@@ -145,11 +145,11 @@ describe('settings', () => {
     const m = createMatch('classic', cloneSettings(live));
     live.bounce = true;
     live.fixedPower = true;
-    live.seats[2] = 'human';
+    live.seats[4] = 'human';
     m.applySettings(live);
     expect(m.settings.bounce).toBe(false);
     expect(m.settings.fixedPower).toBe(false);
-    expect(m.settings.seats[2]).toBe('off');
+    expect(m.settings.seats[4]).toBe('off');
   });
 
   it('display options follow along live', () => {

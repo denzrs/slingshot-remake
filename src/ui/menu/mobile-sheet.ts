@@ -30,11 +30,27 @@ export function mobileSheet(columns: SheetGroup[][], label: string, changed: () 
       event.stopPropagation();
       const next = buttons[(groups.findIndex((group) => group.id === id) + direction + groups.length) % groups.length];
       next.click();
-      next.focus();
+      next.focus({ preventScroll: true });
+      revealTab(next);
     });
     return button;
   });
-  const navigation = h('nav.sheet-nav', { 'aria-label': label }, ...buttons);
+  const tabs = h('div.sheet-nav__tabs', null, ...buttons);
+  const navigation = h('nav.sheet-nav', { 'aria-label': label }, tabs);
+  const updateOverflow = () => {
+    const maxScroll = tabs.scrollWidth - tabs.clientWidth;
+    navigation.classList.toggle('sheet-nav--more-left', tabs.scrollLeft > 1);
+    navigation.classList.toggle('sheet-nav--more-right', maxScroll > 1 && tabs.scrollLeft < maxScroll - 1);
+  };
+  const revealTab = (button: HTMLElement) => {
+    const tabsRect = tabs.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    if (buttonRect.left < tabsRect.left) tabs.scrollLeft -= tabsRect.left - buttonRect.left;
+    else if (buttonRect.right > tabsRect.right) tabs.scrollLeft += buttonRect.right - tabsRect.right;
+    updateOverflow();
+  };
+  tabs.addEventListener('scroll', updateOverflow, { passive: true });
+  window.addEventListener('resize', updateOverflow);
   const el = h('div.sheet.sheet--mobile-categories', null, ...columns.map((column) => h('div.sheet__col', null, ...column.map(({ id }) => panels.get(id)!))));
   const isHidden = (id: string) => narrow.matches && selection.current !== id;
   let scrollFrame = 0;
@@ -47,8 +63,7 @@ export function mobileSheet(columns: SheetGroup[][], label: string, changed: () 
     cancelAnimationFrame(scrollFrame);
     scrollFrame = requestAnimationFrame(() => {
       if (!narrow.matches || !navigation.isConnected) return;
-      const button = buttons[groups.findIndex(({ id }) => id === selection.current)];
-      button?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      updateOverflow();
     });
   };
   const resize = () => {
@@ -72,6 +87,11 @@ export function mobileSheet(columns: SheetGroup[][], label: string, changed: () 
         ...('reserve' in item ? { reserve: () => !isHidden(id) && (item.reserve?.() ?? false) } : {}),
       };
     },
-    dispose: () => { narrow.removeEventListener('change', resize); cancelAnimationFrame(scrollFrame); },
+    dispose: () => {
+      narrow.removeEventListener('change', resize);
+      tabs.removeEventListener('scroll', updateOverflow);
+      window.removeEventListener('resize', updateOverflow);
+      cancelAnimationFrame(scrollFrame);
+    },
   };
 }

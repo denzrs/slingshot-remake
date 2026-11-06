@@ -4,8 +4,9 @@ import { activeSeats, addSeat, balanceTeams, cloneSettings, DEFAULT_SETTINGS, fr
 const lineup = (seats: Seat[], over: Partial<Settings> = {}): Settings => cloneSettings({ ...DEFAULT_SETTINGS, ...over, seats: [...seats, ...Array<Seat>(6 - seats.length).fill('off')] });
 
 describe('the line-up', () => {
-  it('starts with two humans', () => {
-    expect(activeSeats(DEFAULT_SETTINGS)).toEqual([0, 1]);
+  it('starts with you against three medium CPUs', () => {
+    expect(activeSeats(DEFAULT_SETTINGS)).toEqual([0, 1, 2, 3]);
+    expect(DEFAULT_SETTINGS.seats.slice(0, 4)).toEqual(['human', 'medium', 'medium', 'medium']);
   });
 
   it('puts a new ship into the first free seat', () => {

@@ -1,7 +1,7 @@
 import { t } from '../../platform/i18n';
 import { h } from '../menu/menu';
 
-/** Native scrolling on phones; the preset at rest is the active one. The creation card still needs an explicit tap. */
+/** Native scrolling on phones; settling on a preset selects it, and settling on the creation card opens it. */
 export function presetCarousel(cards: HTMLElement) {
   const narrow = matchMedia('(max-width: 760px)');
   const previous = h('button.preset-carousel__arrow', { type: 'button', 'aria-label': t('preset.previous') }, '‹') as HTMLButtonElement;
@@ -69,8 +69,12 @@ export function presetCarousel(cards: HTMLElement) {
     if (!narrow.matches || dragging || !cards.isConnected) return;
     const all = slides();
     if (!all.length) return;
-    const card = all[nearest(all)].querySelector<HTMLButtonElement>('.item[aria-pressed]');
-    if (card && card.getAttribute('aria-pressed') !== 'true' && card.getAttribute('aria-disabled') !== 'true') {
+    const slide = all[nearest(all)];
+    // Offline's creation card is the slide itself, while online wraps it in a preset shell.
+    const card = slide.matches('.item--custom-empty, .item--strip-empty')
+      ? slide as HTMLButtonElement
+      : slide.querySelector<HTMLButtonElement>('.item[aria-pressed]');
+    if (card && !card.disabled && card.getAttribute('aria-pressed') !== 'true' && card.getAttribute('aria-disabled') !== 'true') {
       selected = card;
       card.click();
     }

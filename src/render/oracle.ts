@@ -73,6 +73,15 @@ function sizes(touch: boolean) {
 /** The oracle is read at a glance, so it never gets smaller than this, however small the field is drawn. */
 const MIN_SCALE = 0.9;
 const scaleOf = (f: OracleFrame) => Math.max(f.k, MIN_SCALE);
+const narrowRound = (f: OracleFrame) => f.field.w < 600 * scaleOf(f);
+
+/** Give the question and the choices separate lines on narrow fields. */
+function roundHeight(f: OracleFrame, match: Match, touch: boolean): number {
+  const z = sizes(touch);
+  if (!narrowRound(f)) return z.round;
+  const count = match.phase === 'aiming' ? match.roundChoices.length + (match.betOracle.roundQuestion?.draw ? 1 : 0) : 1;
+  return 30 + Math.max(1, Math.ceil(count / 3)) * z.round;
+}
 
 /** Every phase in which a question can be on screen. */
 const ASKING = new Set(['aiming', 'flying']);
@@ -157,7 +166,7 @@ export class OracleHud {
         height = z.pad * 2 + z.verdict + z.line;
       } else if (o.question || o.roundQuestion) {
         this.mode = 'question';
-        height = z.pad * 2 + z.head + (o.question ? z.choice : 0) + (o.roundQuestion ? z.round : 0) + (this.betState(match).show ? z.stake : 0);
+        height = z.pad * 2 + z.head + (o.question ? z.choice : 0) + (o.roundQuestion ? roundHeight(f, match, touch) : 0) + (this.betState(match).show ? z.stake : 0);
       }
     }
     if (this.mode === 'none') return;
@@ -445,8 +454,8 @@ export class OracleHud {
 
     if (rq) {
       if (q) this.hairline(f, left, y, right - left);
-      this.drawRoundRow(f, match, left, right, y + (z.round * k) / 2, touch);
-      y += z.round * k;
+      this.drawRoundRow(f, match, left, right, y, touch);
+      y += roundHeight(f, match, touch) * k;
       const bet = this.betState(match);
       if (bet.show) {
         this.hairline(f, left, y, right - left);
@@ -514,11 +523,13 @@ export class OracleHud {
   }
 
   /** "Who wins the round?" as a quieter row of its own at the bottom of the card. */
-  private drawRoundRow(f: OracleFrame, match: Match, left: number, right: number, mid: number, touch: boolean): void {
+  private drawRoundRow(f: OracleFrame, match: Match, left: number, right: number, top: number, touch: boolean): void {
     const { ctx } = f;
     const k = scaleOf(f);
     const z = sizes(touch);
     const rq = match.betOracle.roundQuestion!;
+    const narrow = narrowRound(f);
+    const mid = top + (narrow ? 15 : z.round / 2) * k;
     let cx = this.rowLabel(f, t('oracle.roundName'), left, mid, rgba(COLORS.sodium, 0.75));
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
@@ -535,6 +546,15 @@ export class OracleHud {
       ? match.roundChoices.map((id, i): Chip => ({ label: this.withOdds(match, id, match.players[id].name), pick: id, round: true, color: match.players[id].color, key: `⇧${i + 1}` }))
       : [];
     if (aiming && rq.draw) chips.push({ label: this.withOdds(match, TIP_NOBODY, t('oracle.roundDraw')), pick: TIP_NOBODY, round: true, key: '⇧0' });
+
+    if (narrow) {
+      const choiceMid = top + (30 + z.round / 2) * k;
+      if (!aiming) this.drawTipChip(f, mine === null ? null : this.roundPickLabel(match, mine), left, choiceMid, right - left, z.roundChip, 13);
+      else for (let i = 0; i < chips.length; i += 3) {
+        this.drawChips(f, chips.slice(i, i + 3), mine, left, choiceMid + (i / 3) * z.round * k, right - left, z.roundChip, 13);
+      }
+      return;
+    }
 
     // How many have tipped goes at the right edge — if the choices keep their names without it.
     let edge = right;

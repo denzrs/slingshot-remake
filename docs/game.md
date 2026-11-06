@@ -48,11 +48,13 @@ Classic and Event Horizon open a match briefing with four rule presets: today's 
 
 | Preset | Rules |
 | --- | --- |
-| Today's pick | One of the handpicked combinations (Orbit Express, Ghost Protocol, Gravity Garden, Supernova), a new one every day. Each mode rotates its own four and two Mayhem ones played in it. |
+| Today's pick | A daily handpicked combination from each mode's own rotation: eight in Classic, seven in Solar System and seven in Event Horizon, including two Mayhem combinations per mode. |
 | Standard | Original defaults: 5 rounds, up to 4 planets, 20-second flights, no power-ups or reflecting edges. |
 | Simultaneous (Classic) | Standard with everybody firing at once. |
 | Trickshot (Event Horizon) | Standard with power capped at 60, reflecting edges and trick-shot bonuses. |
 | Mayhem | Standard with twists every round (see [Mayhem](#mayhem)), at strength *Wild*, with trick-shot bonuses. |
+
+The daily rotation also includes **Bubble Wrap** (Classic: shields and splitters, reflecting edges and trick-shot scoring), **Hostile Architecture** (Classic: planetary defenses and planet killers, up to six planets and power capped at 45), **No Forwarding Address** (Event Horizon: teleports only, hidden aim and trails fading after one second), and **The Unlearning** (Solar System: anti-gravity only, fixed power at 60 and trails fading after two seconds). All four use simultaneous shots and play five rounds.
 
 Rounds and planet count can be changed directly in the briefing. It also shows the active power-ups as icons; hover an icon to read its effect. While Mayhem is on, the *Mayhem level* (Mild, Wild, Insane) sits under the sliders. *Edit players* opens the crew; *Adjust rules* opens all rules in five categories (match, field, shots, twists and power-ups). *Done* returns to the briefing with the changes kept. *Start game* is initially focused, so Enter starts the match. Everything is remembered for the next game, and *Reset rules* in the full rules screen puts the defaults back.
 

@@ -12,9 +12,10 @@ export const MAYHEM_PRESET_LEVEL = 2;
 type PresetRuleFactory = (base: RoomRules) => RoomRules;
 /** Each game mode owns its regular preset group, even when two groups currently share entries. */
 const PRESET_GROUPS = {
+  // The first preset is what a new setup starts on: all ships at once plays smoothly against CPUs, taking turns follows.
   classic: {
-    standard: (base) => base,
     simultaneous: (base) => ({ ...base, simultaneousShots: true }),
+    standard: (base) => base,
     mayhem: (base) => ({ ...base, mayhem: MAYHEM_PRESET_LEVEL, styleBonuses: true, simultaneousShots: true }),
   },
   // Every Solar System preset fires simultaneously, so it has no separate "All at once" card.
@@ -36,6 +37,10 @@ export type MatchPreset = { [Mode in GameMode]: keyof typeof PRESET_GROUPS[Mode]
 export function presetsForMode(mode: GameMode): readonly MatchPreset[] {
   return Object.keys(PRESET_GROUPS[mode]) as MatchPreset[];
 }
+
+/** The card's name: each mode names its Standard for what sets it apart (turns, the black hole, the orbit). */
+export const presetLabelKey = (preset: MatchPreset, mode: GameMode): Key =>
+  (preset === 'standard' ? `preset.standard.${mode}` : `preset.${preset}`);
 
 /** The hint's text key: each mode describes its own Standard, since Classic's is the one where the ships take turns. */
 export const presetHintKey = (preset: MatchPreset, mode: GameMode): Key =>
@@ -120,6 +125,7 @@ export const HANDPICKED_IDS = [
   'pinballRiot', 'blindSonar', 'siegeRun', 'spacetimeRift', 'nebulaLock', 'singlePlanetMayhem',
   'orbitalSniper', 'solarSailer', 'eclipseRicochet', 'totalEclipse', 'cosmicMaelstrom', 'hyperOrbit',
   'escapeVelocity', 'horizonShadow', 'gravityCentrifuge', 'planetEater', 'singularityBlitz', 'deathSpiral',
+  'bubbleWrap', 'hostileArchitecture', 'noForwardingAddress', 'theUnlearning',
 ] as const;
 export type HandpickedId = (typeof HANDPICKED_IDS)[number];
 export interface HandpickedPreset {
@@ -132,7 +138,7 @@ export interface HandpickedPreset {
 type HandpickedSpec = { id: HandpickedId; patch: Partial<RoomRules> };
 const pickups = (powerUpKinds: PowerUpKind[], powerUpAmount: number): Partial<RoomRules> => ({ powerUps: true, powerUpKinds, powerUpAmount });
 
-/** Each mode has six authored daily combinations; all Classic and Solar picks use simultaneous shots. */
+/** Each mode owns its authored daily combinations; every pick uses simultaneous shots. */
 const HANDPICKED: Record<GameMode, readonly HandpickedSpec[]> = {
   classic: [
     { id: 'pinballRiot', patch: { rounds: 3, shotTime: 20, maxPlanets: 2, bounce: true, fixedPower: true, fixedPowerLevel: 95, fadingTrails: 1, ...pickups(['splitter', 'antigravity', 'shield'], 3) } },
@@ -141,6 +147,8 @@ const HANDPICKED: Record<GameMode, readonly HandpickedSpec[]> = {
     { id: 'spacetimeRift', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, bounce: true, hiddenAim: true, fadingTrails: 2, ...pickups(['wormhole', 'blackhole', 'teleport', 'splitter'], 4) } },
     { id: 'nebulaLock', patch: { rounds: 5, shotTime: 30, maxPlanets: 5, maxPower: 70, mayhem: 1, ...pickups(['nebula', 'plasma', 'antigravity', 'blackhole'], 4) } },
     { id: 'singlePlanetMayhem', patch: { rounds: 7, shotTime: 20, maxPlanets: 1, fixedPower: true, fixedPowerLevel: 60, hiddenAim: true, neighborGrace: 1, mayhem: 3 } },
+    { id: 'bubbleWrap', patch: { rounds: 5, shotTime: 30, maxPlanets: 3, bounce: true, styleBonuses: true, ...pickups(['shield', 'splitter'], 4) } },
+    { id: 'hostileArchitecture', patch: { rounds: 5, shotTime: 30, maxPlanets: 6, maxPower: 45, ...pickups(['defense', 'planetkiller'], 4) } },
   ],
   solar: [
     { id: 'orbitalSniper', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, fixedPower: true, fixedPowerLevel: 55, ...pickups(['defense', 'piercing', 'antigravity'], 3) } },
@@ -149,6 +157,7 @@ const HANDPICKED: Record<GameMode, readonly HandpickedSpec[]> = {
     { id: 'totalEclipse', patch: { rounds: 5, shotTime: 20, maxPlanets: 7, invisiblePlanets: true, fadingTrails: 4, ...pickups(['planetkiller', 'splitter'], 2) } },
     { id: 'cosmicMaelstrom', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, mayhem: 2, fixedPower: true, fixedPowerLevel: 75, ...pickups(['blackhole', 'teleport', 'antigravity'], 3) } },
     { id: 'hyperOrbit', patch: { rounds: 7, shotTime: 10, maxPlanets: 2, bounce: true, fixedPower: true, fixedPowerLevel: 90, mayhem: 3 } },
+    { id: 'theUnlearning', patch: { rounds: 5, shotTime: 30, maxPlanets: 5, fixedPower: true, fixedPowerLevel: 60, fadingTrails: 2, ...pickups(['antigravity'], 4) } },
   ],
   horizon: [
     { id: 'escapeVelocity', patch: { rounds: 3, shotTime: 30, maxPlanets: 2, maxPower: 40, ...pickups(['antigravity', 'teleport'], 2) } },
@@ -157,6 +166,7 @@ const HANDPICKED: Record<GameMode, readonly HandpickedSpec[]> = {
     { id: 'planetEater', patch: { rounds: 5, shotTime: 20, maxPlanets: 6, maxPower: 65, ...pickups(['defense', 'planetkiller', 'blackhole', 'teleport'], 4) } },
     { id: 'singularityBlitz', patch: { rounds: 3, shotTime: 10, maxPlanets: 1, bounce: true, hiddenAim: true, mayhem: 2, ...pickups(['teleport', 'splitter', 'shield'], 3) } },
     { id: 'deathSpiral', patch: { rounds: 7, shotTime: 20, maxPlanets: 3, maxPower: 50, fadingTrails: 2, mayhem: 3, ...pickups(['blackhole', 'wormhole', 'nebula', 'piercing'], 4) } },
+    { id: 'noForwardingAddress', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, hiddenAim: true, fadingTrails: 1, ...pickups(['teleport'], 4) } },
   ],
 };
 

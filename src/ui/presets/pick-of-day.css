@@ -393,8 +393,17 @@
   .menu-page .briefing__quick { gap: 20px; padding-top: 16px; }
   .menu-page .briefing__quick .item__label { font-size: 14px; }
   .menu-page .briefing__quick .item--slider { min-height: 76px; padding-block: 12px; }
-  .menu-page .briefing__powerup-list { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); width: 100%; gap: 8px; }
-  .menu-page .briefing__powerup { width: 100%; height: 44px; min-height: 44px; }
+  .menu-page .briefing__powerup-summary { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; border: 1px solid var(--menu-line); border-radius: 3px; background: var(--menu-surface); color: var(--bone); font: inherit; text-align: left; cursor: pointer; }
+  .menu-page .briefing__powerup-summary::after { content: '▾'; flex: none; margin-left: auto; }
+  .menu-page .briefing__powerups.is-open .briefing__powerup-summary::after { content: '▴'; }
+  .menu-page .briefing__powerup-summary-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu-page .briefing__powerup-list { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 8px; }
+  .menu-page .briefing__powerups.is-open .briefing__powerup-list { display: grid; }
+  .menu-page .briefing__powerup { display: flex; justify-content: flex-start; gap: 8px; width: 100%; height: auto; min-height: 48px; padding: 6px 8px; text-align: left; }
+  .menu-page .briefing__powerup-icon { flex: none; }
+  .menu-page .briefing__powerup-name { display: block; flex: 1; min-width: 0; color: var(--bone); font-size: 12px; line-height: 1.25; overflow-wrap: anywhere; }
+  .menu-page .briefing__powerup.is-inactive { opacity: 1; }
+  .menu-page .briefing__powerup[aria-pressed='true']::after { content: '✓'; flex: none; color: var(--bone); font-size: 14px; }
 }
 
 /* The empty slot, while there is no preset of your own: one card that fills the column, with a plus. */

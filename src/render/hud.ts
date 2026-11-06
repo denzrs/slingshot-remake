@@ -59,6 +59,7 @@ export class Hud {
   private field: Box = { x: 0, y: 0, w: 0, h: 0 };
   /** The whole canvas, for what takes over the screen and not just the field. */
   private screen = { w: 0, h: 0 };
+  private portrait = false;
   private readonly oracle = new OracleHud();
   private readonly skipVote = new SkipVoteHud();
 
@@ -84,6 +85,7 @@ export class Hud {
   draw(match: Match, view: View, opts: DrawOptions, time: number, shipPos: (i: number) => { x: number; y: number }): void {
     this.time = time;
     this.shipPos = shipPos;
+    this.portrait = !!view.stage;
     // On a phone the field is small, but its labels must stay readable: they get a higher floor.
     this.k = Math.min(1.2, Math.max(opts.touch ? 0.95 : 0.72, view.scale));
     this.screen = { w: view.cssWidth, h: view.cssHeight };
@@ -161,7 +163,9 @@ export class Hud {
     // Sudden death: counted down over its last few passes, then shown in red for as long as the round lasts.
     const left = match instanceof ClassicMatch && match.phase !== 'roundOver' && match.phase !== 'gameOver' ? match.suddenDeathIn : null;
     const warning = left !== null && left <= SUDDEN_DEATH.WARNING ? `  ·  ${left ? t('hud.suddenDeathIn', { n: left }) : t('hud.suddenDeath')}` : '';
-    const cx = field.x + field.w / 2;
+    const headerWidth = ctx.measureText(label).width + (warning ? ctx.measureText(warning).width : 0);
+    // On a narrow phone the centered heading can reach into the pause button's expanded hit area.
+    const cx = this.portrait ? Math.max(field.x + field.w / 2, 58 + headerWidth / 2) : field.x + field.w / 2;
     const y = field.y + 18 * k;
     if (!warning) ctx.fillText(label, cx, y);
     else {
@@ -435,7 +439,8 @@ export class Hud {
     const { w, gap, groupGap, groups } = this.cardLayout(match);
     const row = this.markRowHeight(match) * k;
     const h = 40 * k + row;
-    const y = field.y + (match.teamMode ? 66 : 50) * k;
+    // On a phone the first team heading would sit under the pause button's lower edge.
+    const y = field.y + (match.teamMode ? (this.portrait ? 74 : 66) : 50) * k;
     const total = w * n + gap * (n - groups) + groupGap * (groups - 1);
     let x = field.x + (field.w - total) / 2;
     const planning = match.phase === 'aiming';
@@ -732,9 +737,13 @@ export class Hud {
 
   private drawChallenge(match: ChallengeMatch, opts: DrawOptions): void {
     const { ctx, k, field } = this;
-    const left = field.x + 24 * k;
+    // Reserve 60 px for the pause button: its 12 px inset, 36 px body, 6 px
+    // touch-target inset, and a 6 px gap before the title.
+    const left = Math.max(field.x + 24 * k, 60);
     const right = field.x + field.w - 24 * k;
     const top = field.y + 18 * k;
+    const label = t('daily.hud.label', { n: match.challenge.number });
+    const sector = `${t('daily.hud.sector')} ${match.round} / ${match.totalRounds}`;
     ctx.textBaseline = 'top';
 
     // Left: which challenge, which theme.
@@ -742,7 +751,8 @@ export class Hud {
     ctx.fillStyle = COLORS.sodium;
     ctx.font = `800 ${22 * k}px ${FONTS.display}`;
     setSpacing(ctx, 2 * k);
-    ctx.fillText(t('daily.hud.label', { n: match.challenge.number }), left, top);
+    const labelWidth = ctx.measureText(label).width;
+    ctx.fillText(label, left, top);
     ctx.fillStyle = COLORS.boneDim;
     ctx.font = `700 ${10.5 * k}px ${FONTS.body}`;
     setSpacing(ctx, 1.8 * k);
@@ -751,9 +761,31 @@ export class Hud {
     // Centre: the sector, and the rules it plays by.
     ctx.textAlign = 'center';
     ctx.fillStyle = COLORS.bone;
-    ctx.font = `800 ${24 * k}px ${FONTS.display}`;
+    const sectorFont = 24 * k;
+    ctx.font = `800 ${sectorFont}px ${FONTS.display}`;
     setSpacing(ctx, 2 * k);
-    ctx.fillText(`${t('daily.hud.sector')} ${match.round} / ${match.totalRounds}`, field.x + field.w / 2, top);
+    let sectorWidth = ctx.measureText(sector).width;
+    const sectorLeft = left + labelWidth + 8 * k;
+    ctx.font = `700 ${10 * k}px ${FONTS.body}`;
+    setSpacing(ctx, 1.8 * k);
+    const scoreLabelWidth = ctx.measureText(t('daily.hud.score')).width;
+    const sectorRight = right - scoreLabelWidth - 8 * k;
+    const sectorRoom = sectorRight - sectorLeft;
+    let sectorScale = 1;
+    if (sectorRoom > 0 && sectorWidth > sectorRoom) {
+      sectorScale = Math.max(0.55, sectorRoom / sectorWidth);
+      ctx.font = `800 ${sectorFont * sectorScale}px ${FONTS.display}`;
+      setSpacing(ctx, 2 * k * sectorScale);
+      sectorWidth = ctx.measureText(sector).width;
+    }
+    const centerMin = sectorLeft + sectorWidth / 2;
+    const centerMax = sectorRight - sectorWidth / 2;
+    const centerX = sectorRoom > 0
+      ? Math.min(Math.max(field.x + field.w / 2, centerMin), Math.max(centerMin, centerMax))
+      : field.x + field.w / 2;
+    ctx.font = `800 ${sectorFont * sectorScale}px ${FONTS.display}`;
+    setSpacing(ctx, 2 * k * sectorScale);
+    ctx.fillText(sector, centerX, top);
     setSpacing(ctx, 0);
     this.drawChips(modifierLabels(match), field.x + field.w / 2, top + 34 * k);
 
@@ -964,8 +996,11 @@ export class Hud {
 
     const gap = 10 * k;
     const cardH = 68 * k;
-    // Up to five cards to a row; more wrap into a second row, each row centred.
-    const perRow = list.length > 5 ? Math.ceil(list.length / 2) : list.length;
+    // On a tall phone, use two rows before the cards become too narrow to read.
+    // Keep the space below clear when the oracle also has a round summary there.
+    const oracleSummary = (match.betOracle.roundResult?.round === match.round || match.betOracle.roundRanking().length > 0);
+    const narrow = field.w < 650 * k && field.h >= 650 * k && !oracleSummary;
+    const perRow = list.length > 5 || (narrow && list.length > 3) ? Math.ceil(list.length / 2) : list.length;
     const cardW = Math.min(196 * k, (field.w - 48 * k - gap * (perRow - 1)) / perRow);
     const y = field.y + field.h / 2 + 75 * k + 30 * k;
     const lit = spotlight(match);
@@ -1005,7 +1040,8 @@ export class Hud {
       setSpacing(ctx, 0);
       ctx.fillStyle = COLORS.bone;
       ctx.font = `700 ${20 * k}px ${FONTS.mono}`;
-      ctx.fillText(awardValue(award), x + 11 * k, top + 22 * k);
+      // Keep the complete value and unit within its card, even for large records.
+      ctx.fillText(awardValue(award), x + 11 * k, top + 22 * k, Math.max(1, cardW - 18 * k));
       ctx.fillStyle = who.color;
       ctx.font = `700 ${11.5 * k}px ${FONTS.body}`;
       ctx.fillText(fitText(ctx, who.name, cardW - 18 * k), x + 11 * k, top + 48 * k);
@@ -1064,28 +1100,31 @@ export class Hud {
     const record = info.clip.record;
     const { ctx, k, field } = this;
     const bar = Math.max(34 * k, field.h * 0.09);
+    // Touch controls occupy the top row. Put both killcam labels below them.
+    const topBar = opts.touch ? Math.max(bar, 104 * k) : bar;
+    const headerY = field.y + (opts.touch ? topBar - 17 * k : topBar / 2);
     ctx.fillStyle = rgba(COLORS.plate, 0.88);
-    ctx.fillRect(field.x, field.y, field.w, bar);
+    ctx.fillRect(field.x, field.y, field.w, topBar);
     ctx.fillRect(field.x, field.y + field.h - bar, field.w, bar);
 
     const pulse = 0.55 + 0.45 * Math.sin(this.time * 6);
     ctx.fillStyle = rgba(COLORS.danger, pulse);
     ctx.beginPath();
-    ctx.arc(field.x + 26 * k, field.y + bar / 2, 6 * k, 0, Math.PI * 2);
+    ctx.arc(field.x + 26 * k, headerY, 6 * k, 0, Math.PI * 2);
     ctx.fill();
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
     ctx.fillStyle = COLORS.bone;
     ctx.font = `800 ${24 * k}px ${FONTS.display}`;
     setSpacing(ctx, 3 * k);
-    ctx.fillText(recording ? t('hud.recClip') : t('hud.killcam'), field.x + 40 * k, field.y + bar / 2 + 1);
+    ctx.fillText(recording ? t('hud.recClip') : t('hud.killcam'), field.x + 40 * k, headerY + 1);
     setSpacing(ctx, 0);
 
     if (slow) {
       ctx.textAlign = 'right';
       ctx.font = `700 ${14 * k}px ${FONTS.mono}`;
       ctx.fillStyle = COLORS.sodium;
-      ctx.fillText(`${fmt(0.2, 1)}×`, field.x + field.w - 24 * k, field.y + bar / 2);
+      ctx.fillText(`${fmt(0.2, 1)}×`, field.x + field.w - 24 * k, headerY);
     }
 
     ctx.font = `700 ${13 * k}px ${FONTS.mono}`;

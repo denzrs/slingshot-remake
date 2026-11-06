@@ -130,6 +130,7 @@
 /* The page frame bounds both columns: the chapter list gives its rows a little room back in a short window, and a long lesson scrolls on its own. */
 .menu-page--tutorial .menu-page__body { grid-template-rows: minmax(0, 1fr); }
 .menu-page--tutorial .menu-page__main { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; margin-inline: -6px; padding-inline: 6px; }
+.tutorial-chapter-rail { height: 100%; min-height: 0; }
 .tutorial-chapters { display: flex; flex-direction: column; gap: 5px; height: 100%; }
 .tutorial-chapters .item { flex: 0 1 39px; min-height: 26px; padding: 4px 12px; border-radius: 0; border-left: 2px solid transparent; color: var(--bone-dim); font-size: 12px; font-weight: 400; line-height: 1.5; }
 .tutorial-chapters .is-selected { color: var(--launch-accent); border-color: var(--launch-accent); background: rgb(255 173 101 / 0.08); }
@@ -368,14 +369,70 @@
   .menu-page__actions .item { min-height: 48px; padding: 10px 14px; font-size: 12px; }
   .menu-page__actions .item--primary { min-height: 48px; font-size: 23px; }
   .menu-page .setup { grid-template-columns: minmax(0, 1fr); }
-  .menu-page--tutorial .menu-page__body { display: flex; flex-direction: column; gap: 24px; }
-  .menu-page--tutorial .menu-page__aside { order: -1; padding: 0 0 20px; border: 0; border-bottom: 1px solid var(--menu-line); }
+  .menu-page--tutorial .menu-page__body { display: flex; flex-direction: column; gap: 18px; }
+  .menu-page--tutorial .menu-page__aside { order: -1; overflow: hidden; padding: 0; border: 0; border-bottom: 1px solid var(--menu-line); }
   .tutorial__layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .tutorial__preview { position: static; grid-row: 1; width: min(100%, 480px); margin-inline: auto; }
   .tutorial__copy { grid-row: 2; }
   .tutorial__canvas { height: clamp(170px, 36vw, 270px); }
-  .tutorial-chapters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
-  .tutorial-chapters .item { min-height: 44px; padding: 8px; font-size: 10px; }
+  .tutorial-chapter-rail {
+    position: relative;
+    height: auto;
+    min-width: 0;
+  }
+  .tutorial-chapter-rail::before,
+  .tutorial-chapter-rail::after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 1;
+    display: grid;
+    width: 32px;
+    place-items: center;
+    color: var(--p2);
+    font: 22px/1 var(--font-body);
+    pointer-events: none;
+    transition: opacity 160ms ease;
+  }
+  .tutorial-chapter-rail::before { content: '‹'; left: 0; background: linear-gradient(90deg, var(--menu-surface), transparent); }
+  .tutorial-chapter-rail::after { content: '›'; right: 0; background: linear-gradient(270deg, var(--menu-surface), transparent); }
+  .tutorial-chapter-rail[data-at-start='true']::before,
+  .tutorial-chapter-rail[data-at-end='true']::after { opacity: 0; }
+  .tutorial-chapters {
+    display: flex;
+    flex-direction: row;
+    width: auto;
+    height: auto;
+    gap: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    padding: 0;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tutorial-chapters::-webkit-scrollbar { display: none; }
+  .menu-page .tutorial-chapters .item {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 48px;
+    padding: 12px 8px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--bone-dim);
+    font: 700 13px/1.4 var(--font-body);
+    white-space: nowrap;
+  }
+  .menu-page .tutorial-chapters .item.is-selected {
+    border-bottom-color: var(--p2);
+    color: var(--p2);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tutorial-chapters { scroll-behavior: auto; }
+    .tutorial-chapter-rail::before,
+    .tutorial-chapter-rail::after { transition: none; }
+  }
   .menu-page .tutorial__title { font-size: 32px; }
   .menu-page--lobby .lobby { gap: 16px; }
   .menu-page--lobby .lobby__card { padding: 16px; }
@@ -386,3 +443,10 @@
   .menu-page .lobby__avatar { width: 100%; margin-left: 0; }
   .menu-page .lobby__actions .lobby__button { flex: 1 1 auto; }
 }
+
+/* Simplified, non-interactive examples; the accompanying text describes each control. */
+.tutorial__touch-example { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 14px 0; color: var(--bone); }
+.tutorial__touch-control { display: grid; place-items: center; min-width: 76px; min-height: 48px; padding: 6px 12px; border: 1px solid var(--menu-line); border-radius: 24px; background: #081426; font: 18px/1 var(--font-mono); }
+.tutorial__touch-example--stick .tutorial__touch-control { min-width: 72px; min-height: 72px; border-radius: 50%; }
+.tutorial__touch-fire { padding: 10px 16px; border: 1px solid var(--launch-accent); color: var(--launch-accent); font: 700 12px/1.3 var(--font-body); text-transform: uppercase; }
+.tutorial__keyboard summary { cursor: pointer; color: var(--p2); }

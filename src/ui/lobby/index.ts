@@ -123,8 +123,11 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const onlineSectionKeys = h('div.mode-pager__keys.online-section-keys', { 'aria-hidden': 'true' },
     h('span', null, '‹ (Q)'), h('span', null, '(E) ›'),
   );
+  const setupTab = h('button.room-mobile-tabs__button', { type: 'button', 'aria-pressed': 'true' }, t('multiplayer.roomSetup')) as HTMLButtonElement;
+  const lobbyTab = h('button.room-mobile-tabs__button', { type: 'button', 'aria-pressed': 'false' }, t('multiplayer.roomLobby')) as HTMLButtonElement;
+  const roomTabs = h('nav.room-mobile-tabs', { 'aria-label': t('multiplayer.roomLobby') }, setupTab, lobbyTab);
   const onlineHeading = h('h2.menu-page__title.online-view-title', { tabindex: '-1', 'aria-live': 'polite' });
-  const onlineHeader = h('div.mode-carousel.online-section-header', null, onlineSectionViewport, onlineSectionKeys, onlineHeading);
+  const onlineHeader = h('div.mode-carousel.online-section-header', null, roomTabs, onlineSectionViewport, onlineSectionKeys, onlineHeading);
 
   const lobbyEl = h('div.lobby', null, connection.bar, connection.slot, browse.roomsView, openForms, roomView.el, status);
   const root = menuPage({
@@ -134,6 +137,16 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     body: [lobbyEl], footer: footerActions, keys: t('flow.tabKeys'),
   });
   const page = root.querySelector<HTMLElement>('.menu-page')!;
+  const selectRoomTab = (tab: 'setup' | 'lobby') => {
+    page.dataset.roomTab = tab;
+    setupTab.setAttribute('aria-pressed', String(tab === 'setup'));
+    lobbyTab.setAttribute('aria-pressed', String(tab === 'lobby'));
+    const body = page.querySelector<HTMLElement>('.menu-page__body');
+    if (body) body.scrollTop = 0;
+  };
+  setupTab.addEventListener('click', () => selectRoomTab('setup'));
+  lobbyTab.addEventListener('click', () => selectRoomTab('lobby'));
+  selectRoomTab('setup');
   const eyebrow = root.querySelector<HTMLElement>('.menu-page__head .eyebrow')!;
   const heading = onlineHeading;
   let pendingContentDirection: OnlineSectionDirection | null = null;
@@ -255,6 +268,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     openRoom.el.hidden = !(browsing && view === 'create');
     openForms.hidden = browse.codeView.hidden && openRoom.el.hidden;
     roomView.el.hidden = !room;
+    if (!room && page.dataset.roomTab !== 'setup') selectRoomTab('setup');
+    if (room) lobbyTab.textContent = `${t('multiplayer.roomLobby')} · ${room.players.length}/${room.maxPlayers}`;
     connection.bar.hidden = !!room && !!session.you.spectator;
     backButton.hidden = !!room;
     openRoom.createButton.hidden = !(browsing && view === 'create');

@@ -401,11 +401,11 @@ html.upright #pause-button {
   height: 36px;
 }
 
-/* Its touch target reaches past what is drawn. */
+/* A 48 × 44 px touch target expands above and beside the button, clear of the HUD below it. */
 html.upright #pause-button::after {
   content: '';
   position: absolute;
-  inset: -6px;
+  inset: -8px -6px 0;
 }
 
 #pause-button[hidden],

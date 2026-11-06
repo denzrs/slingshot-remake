@@ -85,6 +85,7 @@ try {
   await sleep(250);
   await screenshot('stick-landscape');
   await click({ sel: '#pause-button' });
+  await check(`(() => { const tools = [...document.querySelectorAll('.pause-tool')]; return tools.length === 2 && tools.every(el => { const icon = getComputedStyle(el, '::before'); return icon.display !== 'none' && icon.opacity !== '0' && (icon.maskImage !== 'none' || icon.content !== 'none' && icon.content !== '""'); }); })()`, 'Pause settings and main menu icons are missing');
   await click('Settings');
   await category('prefs-touch');
   await click({ sel: '[data-section="prefs-touch"] .item--segmented:first-child .segmented__option', nth: 0 });
@@ -143,6 +144,18 @@ try {
     }
   }
   console.log('PASS native preset swipes, automatic selection, backward navigation, hidden shortcuts at 320/430 in EN/DE');
+
+  await visit(430, 932);
+  await click({ sel: '[data-section="modes"] .item', nth: 0 });
+  const presetPoint = await cdp.evaluate<{ x: number; y: number }>(`(() => { const r = document.querySelector('.briefing__cards').getBoundingClientRect(); return { x: r.left + r.width * .8, y: r.top + r.height / 2 }; })()`);
+  for (let i = 0; i < 4; i++) {
+    await cdp.send('Input.synthesizeScrollGesture', { ...presetPoint, xDistance: -250, yDistance: 0, gestureSourceType: 'touch', speed: 600 });
+    await sleep(650);
+  }
+  await check(`!!document.querySelector('.menu-page--rules .preset-name input')`, 'Swiping to New rule did not open the creator');
+  await click('Cancel');
+  await check(`!!document.querySelector('.menu-page--briefing')`, 'Cancel did not return to the briefing');
+  console.log('PASS swiping to New rule opens the creator and cancel returns to the briefing');
 
   await visit(430, 932);
   await click({ sel: '[data-section="modes"] .item', nth: 0 });
