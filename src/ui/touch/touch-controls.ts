@@ -49,3 +49,33 @@ export function holdToRepeat(button: HTMLButtonElement, run: () => void, touched
   button.addEventListener('contextmenu', (e) => e.preventDefault());
   return held;
 }
+
+/** A click that follows a press this recently is the same press, seen twice. */
+const SAME_PRESS = 700;
+
+/**
+ * Makes a button act when a finger (or the mouse) is lifted on it, without waiting for the browser's `click`. The wheel, the
+ * bar and the field all take their touches as pointer events and work in an iPhone's home-screen web app, where the buttons
+ * that waited for a `click` did not answer. A `click` that comes on its own (the keyboard, a screen reader) still runs it.
+ */
+export function onPress(button: HTMLElement, run: () => void): void {
+  let down: number | null = null;
+  let last = -Infinity;
+  button.addEventListener('pointerdown', (e) => {
+    if (e.isPrimary && e.button === 0) down = e.pointerId;
+  });
+  button.addEventListener('pointerup', (e) => {
+    if (e.pointerId !== down) return;
+    down = null;
+    // Slid off the button before lifting: not a press.
+    const box = button.getBoundingClientRect();
+    if (e.clientX < box.left - 8 || e.clientX > box.right + 8 || e.clientY < box.top - 8 || e.clientY > box.bottom + 8) return;
+    last = e.timeStamp;
+    run();
+  });
+  button.addEventListener('pointercancel', () => (down = null));
+  button.addEventListener('click', (e) => {
+    if (e.timeStamp - last < SAME_PRESS) return;
+    run();
+  });
+}

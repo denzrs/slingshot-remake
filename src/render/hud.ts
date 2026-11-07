@@ -64,6 +64,8 @@ export class Hud {
   /** The whole canvas, for what takes over the screen and not just the field. */
   private screen = { w: 0, h: 0 };
   private portrait = false;
+  /** Whether the field is turned a quarter on screen (a phone held upright): aim directions then need turning with it. */
+  private rotated = false;
   private readonly oracle = new OracleHud();
   private readonly skipVote = new SkipVoteHud();
 
@@ -90,6 +92,7 @@ export class Hud {
     this.time = time;
     this.shipPos = shipPos;
     this.portrait = !!view.stage;
+    this.rotated = !!view.rotated;
     // On a phone the field is small, but its labels must stay readable: they get a higher floor.
     this.k = Math.min(1.2, Math.max(opts.touch ? 0.95 : 0.72, view.scale));
     this.screen = { w: view.cssWidth, h: view.cssHeight };
@@ -310,15 +313,22 @@ export class Hud {
       return kept;
     };
     const info = wrap(t('anomaly.alertInfo').toUpperCase(), 11 * k, 2 * k);
-    const hints = anomalies.map((anomaly) => wrap(t(`anomaly.${anomaly}.hint`), 11.5 * k));
-    const head = stripe + 80 * k + info.length * lineH;
-    const rows = hints.map((lines) => 34 * k + lines.length * lineH + 8 * k);
     const foot = match.mayhem ? 16 * k : 40 * k;
-    const h = head + rows.reduce((sum, row) => sum + row, 0) + foot;
+    const head = stripe + 80 * k + info.length * lineH;
+    // Room the band may take: below the round label and chips at the field's top, above the controls at its bottom.
+    const room = field.h - 110 * k;
+    const lay = (explain: boolean) => {
+      const hints = anomalies.map((anomaly) => (explain ? wrap(t(`anomaly.${anomaly}.hint`), 11.5 * k) : []));
+      const rows = hints.map((lines) => (explain ? 34 * k + lines.length * lineH + 8 * k : 40 * k));
+      return { hints, rows, h: head + rows.reduce((sum, row) => sum + row, 0) + foot };
+    };
+    // Many anomalies on a small screen: say what each one is, not what it does (the rules page has the rest).
+    let { hints, rows, h } = lay(true);
+    if (h > room) ({ hints, rows, h } = lay(false));
     const middle = field.y + field.h / 2;
     const top = match.mayhem
       ? Math.max(8 * k, middle - this.revealHeight(match.mayhem) / 2 - 14 * k - h)
-      : middle - h / 2;
+      : Math.max(field.y + 56 * k, middle - h / 2);
     const pulse = 0.5 + 0.5 * Math.sin(age * 7.5);
     const ink = '#14070c';
 
@@ -1408,9 +1418,12 @@ export class Hud {
       return { x: px, y: py };
     };
     // The aim is a line out of the ship: the card steps aside when it would sit on it, and stays there until that place is in the way too.
+    // `at` is on screen, so the direction is too: a rotated field maps field (x, y) to screen (y, -x).
+    const fieldDir = aimDirection(p.angle);
+    const dir = this.rotated ? { x: fieldDir.y, y: -fieldDir.x } : fieldDir;
     const aimed = (slot: number): boolean => {
       const pos = place(slot);
-      return rayHitsRect(at, aimDirection(p.angle), AIM_CLEAR * k, pos.x - 8 * k, pos.y - 8 * k, w + 16 * k, h + 16 * k);
+      return rayHitsRect(at, dir, AIM_CLEAR * k, pos.x - 8 * k, pos.y - 8 * k, w + 16 * k, h + 16 * k);
     };
     let slot = this.readoutSlot.id === p.id ? this.readoutSlot.slot : 0;
     if (dodge && aimed(slot)) slot = [0, 1, 2, 3].find((s) => !aimed(s)) ?? slot;
@@ -1570,49 +1583,63 @@ export class Hud {
     setSpacing(ctx, 1.4 * k);
     const padX = 7 * k;
     const gap = 6 * k;
+    const rowGap = 5 * k;
     const widths = labels.map((l) => ctx.measureText(l.toUpperCase()).width + padX * 2);
-    let x = cx - (widths.reduce((a, b) => a + b, 0) + gap * (labels.length - 1)) / 2;
+    // Chips that don't fit side by side in the field wrap onto further rows, each row centred.
+    const room = this.field.w - 16 * k;
+    const rows: number[][] = [[]];
+    let used = 0;
+    widths.forEach((w, i) => {
+      const row = rows[rows.length - 1];
+      if (row.length && used + gap + w > room) {
+        rows.push([i]);
+        used = w;
+      } else {
+        used += (row.length ? gap : 0) + w;
+        row.push(i);
+      }
+    });
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    labels.forEach((label, i) => {
-      const color = colors[i] ?? COLORS.sodium;
-      const glitch = i < glitching ? this.glitchOf(i) : 0;
-      if (glitch > 0) {
-        // Torn: the chip is drawn three times, a cyan and a red copy thrown apart sideways, and the real one shaken a little.
-        const shift = glitch * 6.5 * k;
-        const shake = glitch * 3 * k * Math.sin(this.time * 97 + i * 5);
-        const rise = glitch * 2 * k * Math.cos(this.time * 83 + i);
-        for (const [tint, dx] of [['#3ff0ff', -shift], [COLORS.danger, shift]] as const) {
-          ctx.globalAlpha = 0.65 * glitch;
-          ctx.strokeStyle = tint;
-          ctx.fillStyle = tint;
-          ctx.beginPath();
-          ctx.roundRect(x + dx + 0.5, y + 0.5, widths[i], 17 * k, 3 * k);
-          ctx.stroke();
-          ctx.fillText(label.toUpperCase(), x + dx + padX, y + 9.5 * k);
-        }
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = rgba(color, 0.6);
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(x + shake + 0.5, y + rise + 0.5, widths[i], 17 * k, 3 * k);
-        ctx.stroke();
-        ctx.fillStyle = color;
-        ctx.fillText(label.toUpperCase(), x + shake + padX, y + rise + 9.5 * k);
+    rows.forEach((row, r) => {
+      const top = y + r * (17 * k + rowGap);
+      let x = cx - (row.reduce((sum, i) => sum + widths[i], 0) + gap * (row.length - 1)) / 2;
+      for (const i of row) {
+        this.drawChip(labels[i], x, top, widths[i], padX, colors[i] ?? COLORS.sodium, i < glitching ? this.glitchOf(i) : 0, i);
         x += widths[i] + gap;
-        return;
       }
-      ctx.strokeStyle = rgba(color, 0.6);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(x + 0.5, y + 0.5, widths[i], 17 * k, 3 * k);
-      ctx.stroke();
-      ctx.fillStyle = color;
-      ctx.fillText(label.toUpperCase(), x + padX, y + 9.5 * k);
-      x += widths[i] + gap;
     });
     setSpacing(ctx, 0);
     ctx.textBaseline = 'top';
+  }
+
+  private drawChip(label: string, x: number, y: number, width: number, padX: number, color: string, glitch: number, i: number): void {
+    const { ctx, k } = this;
+    if (glitch > 0) {
+      // Torn: the chip is drawn three times, a cyan and a red copy thrown apart sideways, and the real one shaken a little.
+      const shift = glitch * 6.5 * k;
+      const shake = glitch * 3 * k * Math.sin(this.time * 97 + i * 5);
+      const rise = glitch * 2 * k * Math.cos(this.time * 83 + i);
+      for (const [tint, dx] of [['#3ff0ff', -shift], [COLORS.danger, shift]] as const) {
+        ctx.globalAlpha = 0.65 * glitch;
+        ctx.strokeStyle = tint;
+        ctx.fillStyle = tint;
+        ctx.beginPath();
+        ctx.roundRect(x + dx + 0.5, y + 0.5, width, 17 * k, 3 * k);
+        ctx.stroke();
+        ctx.fillText(label.toUpperCase(), x + dx + padX, y + 9.5 * k);
+      }
+      ctx.globalAlpha = 1;
+      x += shake;
+      y += rise;
+    }
+    ctx.strokeStyle = rgba(color, 0.6);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x + 0.5, y + 0.5, width, 17 * k, 3 * k);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.fillText(label.toUpperCase(), x + padX, y + 9.5 * k);
   }
 
   /** "TARGETS ◆ ◆ ◇": `left` of `total` pips are filled, the rest hollow. Right-aligned at `right`. */

@@ -97,15 +97,15 @@ export function titleScreen(app: App): Screen {
         h('footer.launcher__foot', null,
           h('p.keys', null, t('launcher.keys')),
           h('div.items.launcher__language', { 'data-section': 'language' }),
-          ...(import.meta.env.DEV ? [
-            h('a.launcher__debug', {
-              href: `/dev/?lang=${getLang()}`,
-              'aria-label': 'Dev Dashboard',
-            }, 'Debug'),
-          ] : []),
           h('div.title-foot', null,
             creditsBadge(),
-            ...(import.meta.env.VITE_COFFEE_URL ? [coffeeButton()] : []),
+            // The local dev build shows the dev dashboard link where the coffee button sits in production.
+            ...(import.meta.env.DEV
+              ? [h('a.launcher__debug', {
+                href: `/dev/?lang=${getLang()}`,
+                'aria-label': 'Dev Dashboard',
+              }, 'Debug')]
+              : import.meta.env.VITE_COFFEE_URL ? [coffeeButton()] : []),
           ),
         ),
       ),

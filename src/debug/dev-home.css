@@ -13,7 +13,4 @@ body.dev-home-page { margin: 0; background: #0b1a33; color: #e8e4d8; font: 14px/
 .dev-home__page p { margin: 0; color: #9aa6bd; font-size: 12px; line-height: 1.45; }
 .dev-home__page > code { margin-top: auto; padding-top: 4px; }
 .dev-home code { font: 11px/1.5 'B612 Mono', monospace; color: #a3eddb; overflow-wrap: anywhere; }
-.dev-home__page.is-disabled { border-top-color: #8f7b57; }
-.dev-home__page.is-disabled .dev-home__number { color: #cfb585; }
-.dev-home__page .dev-home__gate { padding-top: 6px; border-top: 1px solid #294364; color: #cfb585; }
 .dev-home__foot { margin: 16px 0 0; color: #9aa6bd; font: 11px/1.5 'B612 Mono', monospace; }

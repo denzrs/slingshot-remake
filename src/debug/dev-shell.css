@@ -14,7 +14,6 @@ html:has(.dev-shell) { scroll-padding-top: calc(var(--dev-header-height, 64px) +
 .dev-shell__links > :is(a, span) { flex: none; padding: 8px 10px; border: 1px solid transparent; border-radius: 3px; white-space: nowrap; }
 .dev-shell__links a:hover { background: #132746; }
 .dev-shell__links [aria-current='page'] { color: #ffca9b; border-color: #a0653c; background: #302333; }
-.dev-shell__links [aria-disabled='true'] { color: #8791a3; font-size: 11px; }
 .dev-shell .dev-shell__game { white-space: nowrap; color: #6fe3c8; padding: 8px 4px; }
 .dev-shell a:focus-visible { outline: 2px solid #ffd27a; outline-offset: -2px; }
 .dev-page .looks-gallery > .tools,

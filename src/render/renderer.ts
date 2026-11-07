@@ -87,15 +87,22 @@ export class Renderer {
   private time = 0;
   /** When each power-up pickup was first drawn, for its pop-in. */
   private readonly pickupSeen = new Map<number, number>();
-  /** Whether the last frame filled the viewport behind a menu (see `nudgeLayer`). */
+  /** Whether the last frame filled the viewport behind a menu (see `refreshLayer`). */
   private lastFullScreen = true;
-  /** Frames left before the narrowed canvas gets its width back. */
-  private nudgeFrames = 0;
+  /** Frames since the field came out from under a menu, while `refreshLayer` still has work to do. */
+  private revealedFor = -1;
+  /** Fingers (or the mouse) down on the canvas: taking it out of the page would end their drag. */
+  private readonly pointersDown = new Set<number>();
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly viewport: () => Viewport = windowViewport) {
     this.ctx = canvas.getContext('2d')!;
     this.hud = new Hud(this.ctx);
     this.resize();
+    // A stand-in canvas in a test may not take listeners.
+    canvas.addEventListener?.('pointerdown', (e) => this.pointersDown.add(e.pointerId));
+    for (const end of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) {
+      canvas.addEventListener?.(end, (e) => this.pointersDown.delete(e.pointerId));
+    }
   }
 
   resize(): void {
@@ -192,23 +199,32 @@ export class Renderer {
   }
 
   /**
-   * Safari on the iPhone sometimes shows the canvas at a pixel ratio of 1 once a menu closes over it, so the field turns
-   * blurry, and only a change of the canvas's size makes it sharp again. So when the field comes out from under a menu, the
-   * canvas is made 1px narrower for two frames, which has Safari build its layer anew.
+   * Safari on the iPhone sometimes shows the canvas at a pixel ratio of 1 once a menu closes over it: the bitmap has the full
+   * size, yet the field is blurry until the phone is turned. Taking the canvas out of the page and putting it back has
+   * Safari build its layer anew, sharp; a new bitmap or a change of its size does not. So it is done when the field comes
+   * out from under a menu: a few frames later, and once more half a second on, in case Safari settled on the layer late.
+   * Never under a finger, though, since a canvas taken out of the page drops the drag on it.
    */
-  private nudgeLayer(fullScreen: boolean): void {
-    if (this.nudgeFrames > 0) {
-      if (--this.nudgeFrames === 0) this.canvas.style.width = `${this.view.cssWidth}px`;
-    } else if (this.lastFullScreen && !fullScreen) {
-      this.nudgeFrames = 2;
-      this.canvas.style.width = `${this.view.cssWidth - 1}px`;
-    }
+  private refreshLayer(fullScreen: boolean): void {
+    if (this.lastFullScreen && !fullScreen) this.revealedFor = 0;
     this.lastFullScreen = fullScreen;
+    // A drag on the canvas waits it out: the refresh comes once the finger is lifted.
+    if (this.revealedFor < 0 || fullScreen || this.pointersDown.size) return;
+    this.revealedFor++;
+    if (this.revealedFor === 3 || this.revealedFor === 30) {
+      const parent = this.canvas.parentNode;
+      const next = this.canvas.nextSibling;
+      if (parent) {
+        this.canvas.remove();
+        parent.insertBefore(this.canvas, next);
+      }
+    }
+    if (this.revealedFor >= 30) this.revealedFor = -1;
   }
 
   draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
     this.resizeIfNeeded();
-    this.nudgeLayer(opts.fullScreen);
+    this.refreshLayer(opts.fullScreen);
     this.emptyDrawn = false;
     this.time += dt;
     this.painter = painterFor(getLook());
@@ -262,7 +278,7 @@ export class Renderer {
     this.drawSpotlight(match, scene);
     this.drawShips(match, scene);
     this.drawPowerUps(match, scene);
-    effects.draw(ctx, this.painter.effects);
+    effects.draw(ctx, this.painter.effects, scale * (cam?.zoom ?? 1));
     ctx.restore();
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);

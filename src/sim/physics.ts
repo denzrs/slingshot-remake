@@ -369,6 +369,8 @@ export class Shot {
   readonly warnings: { ship: number; x: number; y: number }[] = [];
   /** Where the shot came off a planet since the caller last cleared this (Pinball). */
   readonly bumps: { planet: number; x: number; y: number }[] = [];
+  /** When (shot time) this shot last came off each planet, by planet index, within ANOMALY.BUMP_WINDOW: a shot that rattles on one planet goes off. */
+  private readonly bumpTimes = new Map<number, number[]>();
   /** Ships an unarmed shot has flown through already, so each is warned once. */
   private readonly warned = new Set<number>();
   /** How many times this shot has entered each storm cloud, and whether it is there now. */
@@ -509,6 +511,7 @@ export class Shot {
     copy.stormUntil = this.stormUntil;
     copy.whiteExit = this.whiteExit ? { ...this.whiteExit } : undefined;
     for (const [seed, damage] of this.damage) copy.damage.set(seed, damage);
+    for (const [planet, times] of this.bumpTimes) copy.bumpTimes.set(planet, [...times]);
     copy.broken = this.broken;
     copy.fired.push(...this.fired);
     copy.missiles.push(...this.missiles.map((m) => ({ ...m, trail: [...m.trail] })));
@@ -655,7 +658,7 @@ export class Shot {
         if (damage >= planetDurability(p)) this.break(p);
       }
       if (!this.rules.pinball) return this.finish({ kind: 'planet', planet: i, ...(this.rules.unstable ? { surface: { x: p.x, y: p.y, radius: p.radius } } : {}) });
-      this.bounceOff(i, p);
+      if (this.bounceOff(i, p)) return this.detonate();
     }
     for (let i = 0; i < holes.length; i++) {
       const hole = holes[i];
@@ -756,8 +759,9 @@ export class Shot {
   /**
    * Pinball: the shot comes off the planet's surface like a ball off a bumper. The velocity is mirrored about the
    * surface normal (only when it is heading in, so a shot never sticks), and the shot set just outside the rock.
+   * Returns whether the shot has rattled on this planet too often in a short time and must go off.
    */
-  private bounceOff(index: number, p: Planet): void {
+  private bounceOff(index: number, p: Planet): boolean {
     const dx = this.x - p.x;
     const dy = this.y - p.y;
     const d = Math.hypot(dx, dy);
@@ -778,6 +782,10 @@ export class Shot {
     }
     this.bumps.push({ planet: index, x: this.x, y: this.y });
     this.arm();
+    const recent = (this.bumpTimes.get(index) ?? []).filter((at) => this.time - at <= ANOMALY.BUMP_WINDOW);
+    recent.push(this.time);
+    this.bumpTimes.set(index, recent);
+    return recent.length > ANOMALY.BUMP_LIMIT;
   }
 
   /**
