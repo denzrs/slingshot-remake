@@ -11,3 +11,11 @@ export const HOLE_SPAN = 8.2;
 export const FRAMES = 96;
 export const COLUMNS = 6;
 export const LOOP = 6;
+
+/**
+ * The white hole's light (`forged/white.webp`, made by the same script): only the shadow, cut out of each frame as a square
+ * `WHITE_FRAME` across round the middle, at the hole's own scale, and as many frames on the same loop, so the two play in
+ * step. `WHITE_COLUMNS` to a row.
+ */
+export const WHITE_FRAME = 136;
+export const WHITE_COLUMNS = 12;

@@ -1,4 +1,5 @@
 import { drawForgedGate } from './forged-gate';
+import { drawForgedWhiteCore, drawForgedWhiteJump, warmEruptions } from './forged-white';
 import { COLORS } from '../../sim/config';
 import { rgba } from '../color';
 import { drawFalling } from '../infall';
@@ -8,6 +9,7 @@ import { engraved } from './classic';
 import { drawBlast, drawShrapnel, warmBlasts } from './forged-blast';
 import { image, painted } from './forged-assets';
 import { renderForgedPlanet } from './forged-planet';
+import { instabilityPulse } from './instability';
 import { drawForgedNebula, drawForgedStormCloud, paintForgedPortal } from './forged-gas';
 import { drawForgedLiveTrail, drawForgedPlasmaShot, drawForgedShot, drawForgedSun } from './forged-shots';
 import { forgedBegin, forgedFrame, forgedPost, forgedSky, paintNebula } from './forged-sky';
@@ -275,6 +277,26 @@ export const forged = engraved('forged', forgedStyles, {
   // The halo and the disk's light already say where the hole is; a red dashed circle over them only muddies it.
   dangerRing: () => {},
   planet: renderForgedPlanet,
+  planetInstability: (ctx, planet, time) => {
+    const warning = instabilityPulse(planet, time);
+    if (!warning) return;
+    const { pulse, danger } = warning;
+    const r = planet.radius;
+    ctx.save(); ctx.translate(planet.x, planet.y);
+    // Deep crimson pressure under the surface, breathing into a wide atmospheric bloom.
+    const bloom = ctx.createRadialGradient(0, 0, r * .7, 0, 0, r * (1.4 + pulse * .12));
+    bloom.addColorStop(0, rgba('#69091c', .07 + pulse * .12));
+    bloom.addColorStop(.3, rgba('#ae1632', .12 + pulse * (.25 + danger * .15)));
+    bloom.addColorStop(.65, rgba('#8b1029', pulse * .17));
+    bloom.addColorStop(1, rgba('#59091c', 0));
+    ctx.fillStyle = bloom; ctx.beginPath(); ctx.arc(0, 0, r * 1.55, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.shadowColor = '#b51b36'; ctx.shadowBlur = r * .2;
+    ctx.strokeStyle = rgba('#b91e34', .1 + pulse * (.38 + danger * .2));
+    ctx.lineWidth = 1 + pulse * 1.5;
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.015, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  },
   // Painted light can be cut into slices and bent round the hole.
   falling: drawFalling,
   sun: drawForgedSun,
@@ -282,6 +304,8 @@ export const forged = engraved('forged', forgedStyles, {
   stormCloud: drawForgedStormCloud,
   shot: drawForgedShot,
   loopGate: drawForgedGate,
+  whiteCore: drawForgedWhiteCore,
+  whiteJump: drawForgedWhiteJump,
   liveTrail: drawForgedLiveTrail,
   plasmaShot: drawForgedPlasmaShot,
   ship: drawForgedShip,
@@ -290,6 +314,7 @@ export const forged = engraved('forged', forgedStyles, {
   begin: (frame) => {
     forgedBegin(frame);
     warmBlasts();
+    warmEruptions();
   },
   backdropArt: paintNebula,
   sky: forgedSky,

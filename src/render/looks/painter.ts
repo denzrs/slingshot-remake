@@ -32,6 +32,8 @@ export interface LookPainter {
 
   /** A planet's sprite at `ps` device pixels per field unit. */
   planet(p: Planet, ps: number): PlanetSprite;
+  /** Unstable: a red warning glow whose pulse accelerates as the planet nears destruction. */
+  planetInstability(ctx: CanvasRenderingContext2D, planet: Planet, time: number): void;
   sun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha: number, flare: number): void;
   /** What a supernova leaves, `age` seconds after it. */
   neutronStar(ctx: CanvasRenderingContext2D, star: Planet, time: number, age: number, alpha: number): void;
@@ -40,6 +42,10 @@ export interface LookPainter {
   holeFlare(ctx: CanvasRenderingContext2D, hole: BlackHole, strength: number, color: string, angle: number): void;
   /** A planet or ship on its way into the hole, at `f.t` (0 → 1). `paint` draws the body round (0, 0), `reach` (field units) being as far as it goes; the look decides how it is bent, drawn out or left behind. */
   falling(ctx: CanvasRenderingContext2D, f: Falling, reach: number, ps: number, paint: (c: CanvasRenderingContext2D) => void): void;
+  /** Anomaly White Hole: the white core drawn over a black hole, which says that what falls in comes back out. */
+  whiteCore(ctx: CanvasRenderingContext2D, hole: BlackHole, time: number): void;
+  /** A shot the white hole has just given back: swallowed at the hole, a fountain where it comes out (see `WHITE_JUMP`). */
+  whiteJump(ctx: CanvasRenderingContext2D, jump: WhiteJump): void;
   /** Where the horizon will be after the next collapse (`radius`): the zone everyone must stay out of. */
   dangerRing(ctx: CanvasRenderingContext2D, hole: BlackHole, radius: number, time: number): void;
   /** Both portals of a wormhole and the thread between them; `eaten` (0 → 1) is how far a black hole has taken it. */
@@ -168,6 +174,29 @@ export interface LoopGate {
   strength: number;
   time: number;
 }
+
+/** A shot coming back out of the white hole, in field units, `age` seconds after it fell in. */
+export interface WhiteJump {
+  /** The hole it fell into; null when that hole is gone, and only the way out is drawn. */
+  hole: { x: number; y: number; radius: number } | null;
+  /** Where it comes out, on the field's edge. */
+  x: number;
+  y: number;
+  /** The direction out of the field at that edge, in radians. */
+  out: number;
+  /** Where the shot is now. */
+  shotX: number;
+  shotY: number;
+  color: string;
+  age: number;
+  time: number;
+}
+
+/**
+ * The beats of a white-hole jump, in seconds after the shot fell in: the hole swallows it (`SWALLOW`), the shot glows white
+ * until `GLOW` and the fountain at the edge is gone at `LIFE`, when the renderer stops asking.
+ */
+export const WHITE_JUMP = { SWALLOW: 0.35, GLOW: 0.55, LIFE: 0.9 } as const;
 
 export interface BorderView {
   scale: number;

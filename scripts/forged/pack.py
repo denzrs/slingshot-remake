@@ -1,4 +1,4 @@
-"""Packs the PNGs `render_assets.py`, `render_planets.py` and `hole-frames.mjs` wrote into the WebP files the game loads: `python3 scripts/forged/pack.py <png dir>`."""
+"""Packs the PNGs `render_assets.py`, `render_planets.py`, `render_cracks.py` and `hole-frames.mjs` wrote (`hole`, `white`) into the WebP files the game loads: `python3 scripts/forged/pack.py <png dir>`."""
 import sys
 from pathlib import Path
 
@@ -18,9 +18,12 @@ FILES = {
     'turret-barrel-mask': (None, 90),
     'coin': (None, 90),
     'hole': (None, 70),
+    'white': (None, 80),
     'tex-rock': ((512, 256), 85),
     'tex-gas': ((512, 256), 85),
     'tex-ice': ((512, 256), 85),
+    # Data for the shader (`render_cracks.py`), at full size: its thin fissures would blur away at half.
+    'tex-cracks': ((1024, 512), 75),
 }
 # The planet variants `render_planets.py` paints.
 for variant in ('rock-desert', 'rock-ocean', 'rock-moon', 'rock-alien', 'gas-neptune', 'gas-violet', 'gas-toxic', 'gas-crimson', 'gas-stormy', 'ice-glacier', 'ice-methane', 'ice-dusty', 'ice-rose'):

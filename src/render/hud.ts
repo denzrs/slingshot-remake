@@ -1,20 +1,22 @@
 import { modifiersOf } from '../sim/challenge';
-import { AIM, COLORS, FIELD, FONTS, MAYHEM, SUDDEN_DEATH, TEAMS } from '../sim/config';
+import { AIM, COLORS, FONTS, MAYHEM, SUDDEN_DEATH, TEAMS, type Anomaly } from '../sim/config';
 import { ChallengeMatch, ClassicMatch, HorizonMatch, SolarMatch, teamName, type KillRecord, type Mark, type Match, type PlayerState } from '../game';
 import { fmt, fmtInt, t } from '../platform/i18n';
 import { TWIST_IDS, twistName } from '../game/mayhem';
 import { awardLabel, awardValue, awardWho, spotlight } from '../game/scorecard';
-import { aimDirection } from '../sim/physics';
+import { aimDirection, hasTrickShotSources } from '../sim/physics';
 import { styleLabel } from '../sim/scoring';
 import { awards } from '../data/stats';
 import type { View } from './backdrop';
 import { drawAvatar } from './avatar';
 import { rgba } from './color';
-import { rayHitsRect } from './layout';
+import { plateUnits, rayHitsRect } from './layout';
 import { OracleHud, type OracleFrame, type OracleTap } from './oracle';
 import { SkipVoteHud, type SkipAnswer } from './skip-vote';
 import { drawMarkSymbol, MARK_COLORS } from './mark-art';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
+import { ANOMALY_COLORS, drawAnomalySymbol } from './anomaly-art';
+import { anomaliesOf } from '../sim/anomalies';
 import type { DrawOptions } from './renderer';
 import { fitText, setSpacing } from './text';
 
@@ -55,6 +57,8 @@ export class Hud {
   private lastTurn = -1;
   private turnAt = -10;
   private time = 0;
+  /** The player asks for less motion: nothing tears or shakes. Read once. */
+  private readonly calm = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   private k = 1;
   private field: Box = { x: 0, y: 0, w: 0, h: 0 };
   /** The whole canvas, for what takes over the screen and not just the field. */
@@ -89,7 +93,8 @@ export class Hud {
     // On a phone the field is small, but its labels must stay readable: they get a higher floor.
     this.k = Math.min(1.2, Math.max(opts.touch ? 0.95 : 0.72, view.scale));
     this.screen = { w: view.cssWidth, h: view.cssHeight };
-    this.field = view.stage ?? { x: view.offsetX, y: view.offsetY, w: FIELD.width * view.scale, h: FIELD.height * view.scale };
+    const plate = plateUnits(!!view.rotated);
+    this.field = view.stage ?? { x: view.offsetX, y: view.offsetY, w: plate.w * view.scale, h: plate.h * view.scale };
 
     const focus = match.focus;
     if (focus !== this.lastTurn) {
@@ -145,7 +150,17 @@ export class Hud {
     }
     this.oracle.drawCard(frame, match, opts.touch);
     if (!asking && !match.revealing) this.drawHint(match, opts.touch);
-    if (match.revealing) this.drawReveal(match);
+    if (match.revealing) {
+      const hasMayhem = match.mayhem !== null;
+      const hasAnomalies = match.anomalyAlert && anomaliesOf(match.rules).length > 0;
+      if (hasMayhem && hasAnomalies) {
+        this.drawCombinedReveal(match);
+      } else if (hasMayhem) {
+        this.drawReveal(match);
+      } else if (hasAnomalies) {
+        this.drawAnomalyAlert(match);
+      }
+    }
     if (opts.recording) this.drawRec();
   }
 
@@ -181,45 +196,259 @@ export class Hud {
 
   // ————————————————————————————— Mayhem —————————————————————————————
 
-  /** The round's twists as chips under the round label, so nobody forgets what this round is about. */
+  /**
+   * The round's twists and the match's anomalies as chips under the round label, so nobody forgets what this round is
+   * about. The Zeitzünder chip says how long this round's fuse burns.
+   */
   private drawTwistChips(match: Match): void {
     const round = match.mayhem;
-    if (!round) return;
+    const rules = match.rules;
     const labels: string[] = [];
     const colors: string[] = [];
-    if (round.finale) {
+    if (rules.trickShots || match.settings.anomalies?.includes('trickShots')) {
+      const active = hasTrickShotSources(match.world, rules);
+      labels.push(active ? t('anomaly.trickShots') : t('notice.freeFire'));
+      colors.push(active ? ANOMALY_COLORS.trickShots : COLORS.danger);
+    }
+    if (rules.pinball) {
+      labels.push(t('anomaly.pinball'));
+      colors.push(ANOMALY_COLORS.pinball);
+    }
+    if (rules.fuse) {
+      labels.push(t('anomaly.fuseIn', { n: fmt(rules.fuse, 1) }));
+      colors.push(ANOMALY_COLORS.fuse);
+    }
+    if (rules.fusion) {
+      labels.push(t('anomaly.fusion'));
+      colors.push(ANOMALY_COLORS.fusion);
+    }
+    for (const anomaly of ['whiteHole', 'unstable'] as const) {
+      if (!rules[anomaly]) continue;
+      labels.push(t(`anomaly.${anomaly}`));
+      colors.push(ANOMALY_COLORS[anomaly]);
+    }
+    // The anomalies' chips are the first of them: they tear now and then, like the alarm's headline.
+    const anomalyChips = labels.length;
+    if (!round && !labels.length) return;
+    if (round?.finale) {
       labels.push(t('mayhem.finale'));
       colors.push(COLORS.danger);
     }
-    for (const twist of round.twists) {
+    for (const twist of round?.twists ?? []) {
       labels.push(twistName(twist));
       colors.push(COLORS.sodium);
     }
-    if (round.jackpot) {
+    if (round?.jackpot) {
       labels.push(t('mayhem.jackpot', { n: MAYHEM.JACKPOT_FACTOR }));
       colors.push(COLORS.danger);
     }
-    if (!round.twists.length && !round.finale && !round.jackpot) {
+    if (round && !round.twists.length && !round.finale && !round.jackpot) {
       labels.push(t('mayhem.quiet'));
       colors.push(COLORS.boneDim);
     }
     // The duel has its blocks in the corners; with a scoreboard across the top the chips go under it (and under its power-up strip).
     const duel = match.mode === 'classic' && match.players.length === 2;
     const below = duel ? 34 : (match.teamMode ? 66 : 50) + 40 + this.markRowHeight(match) + (match.powerUps ? 32 : 10);
-    this.drawChips(labels, this.field.x + this.field.w / 2, this.field.y + (below + (duel ? 18 : 0)) * this.k + this.drop, colors);
+    this.drawChips(labels, this.field.x + this.field.w / 2, this.field.y + (below + (duel ? 18 : 0)) * this.k + this.drop, colors, anomalyChips);
   }
 
   /**
    * The announcement of a Mayhem round: a band over the field in which each twist spins like a reel, slows down
    * and lands on its name, one after the other; the last lands together with the thud of the sound.
    */
+  /** How tall the band of a Mayhem round's announcement is. */
+  private revealHeight(round: NonNullable<Match['mayhem']>): number {
+    const { k } = this;
+    return 62 * k + Math.max(1, round.twists.length) * 76 * k + (round.jackpot ? 40 * k : 0) + 38 * k;
+  }
+
+  /**
+   * The opacity and elapsed time of a round announcement / anomaly alert:
+   * smoothstep fade-in over 0.4 s (matching banners), and a fade-out over 0.35 s when closing.
+   */
+  private revealAlpha(match: Match): { alpha: number; age: number } {
+    const left = match.revealEnd - match.clock;
+    const age = MAYHEM.REVEAL_TIME - left;
+    const fadeIn = Math.min(1, Math.max(0, age / 0.4));
+    const easeIn = fadeIn * fadeIn * (3 - 2 * fadeIn);
+    const fadeOut = match.held ? 1 : Math.max(0, Math.min(1, left / 0.35));
+    return { alpha: easeIn * fadeOut, age };
+  }
+
+  /**
+   * Anomalies: the alarm that opens a match that plays by them, like a ship's red alert. The screen flushes red at its
+   * edges and pulses with the klaxon, a dark band with red edges and scanlines goes across, the headline comes in on a
+   * broken signal (its colours torn apart and jittering, then holding, and now and then tearing again), and the
+   * anomalies come up one after another, typed out in their colours. With Mayhem's reel it stands right above it.
+   */
+  private drawAnomalyAlert(match: Match): void {
+    const anomalies = anomaliesOf(match.rules);
+    const { ctx, k, field, screen } = this;
+    const { alpha, age } = this.revealAlpha(match);
+    if (alpha <= 0 || !anomalies.length) return;
+    const cx = field.x + field.w / 2;
+    // The band's red edges, and the space kept inside them.
+    const stripe = 4 * k;
+    const lineH = 15 * k;
+    /** Small print broken into as many lines as the field needs, four at most, each cut short only if a single word is too wide. */
+    const wrap = (text: string, size: number, spacing = 0): string[] => {
+      const width = field.w - 40 * k;
+      ctx.font = `400 ${size}px ${FONTS.mono}`;
+      setSpacing(ctx, spacing);
+      const lines: string[] = [];
+      let line = '';
+      for (const word of text.split(' ')) {
+        const longer = line ? `${line} ${word}` : word;
+        if (line && ctx.measureText(longer).width > width) {
+          lines.push(line);
+          line = word;
+        } else line = longer;
+      }
+      if (line) lines.push(line);
+      const kept = lines.slice(0, 4).map((l) => fitText(ctx, l, width));
+      setSpacing(ctx, 0);
+      return kept;
+    };
+    const info = wrap(t('anomaly.alertInfo').toUpperCase(), 11 * k, 2 * k);
+    const hints = anomalies.map((anomaly) => wrap(t(`anomaly.${anomaly}.hint`), 11.5 * k));
+    const head = stripe + 80 * k + info.length * lineH;
+    const rows = hints.map((lines) => 34 * k + lines.length * lineH + 8 * k);
+    const foot = match.mayhem ? 16 * k : 40 * k;
+    const h = head + rows.reduce((sum, row) => sum + row, 0) + foot;
+    const middle = field.y + field.h / 2;
+    const top = match.mayhem
+      ? Math.max(8 * k, middle - this.revealHeight(match.mayhem) / 2 - 14 * k - h)
+      : middle - h / 2;
+    const pulse = 0.5 + 0.5 * Math.sin(age * 7.5);
+    const ink = '#14070c';
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // The red alert: unless Mayhem's announcement has dimmed the field already, it goes dark, and red creeps in from the edges.
+    if (!match.mayhem) {
+      ctx.fillStyle = rgba(COLORS.plate, 0.6);
+      ctx.fillRect(0, 0, screen.w, screen.h);
+    }
+    const reach = Math.max(screen.w, screen.h);
+    const flush = ctx.createRadialGradient(screen.w / 2, screen.h / 2, reach * 0.18, screen.w / 2, screen.h / 2, reach * 0.72);
+    flush.addColorStop(0, rgba(COLORS.danger, 0));
+    flush.addColorStop(1, rgba(COLORS.danger, 0.16 + 0.24 * pulse));
+    ctx.fillStyle = flush;
+    ctx.fillRect(0, 0, screen.w, screen.h);
+
+    // The band: dark red glass between two glowing red edges, scanlines drifting down over it.
+    ctx.fillStyle = rgba(ink, 0.95);
+    ctx.fillRect(0, top, screen.w, h);
+    for (const y of [top, top + h]) {
+      const glow = ctx.createLinearGradient(0, y - 16 * k, 0, y + 16 * k);
+      glow.addColorStop(0, rgba(COLORS.danger, 0));
+      glow.addColorStop(0.5, rgba(COLORS.danger, 0.22 + 0.18 * pulse));
+      glow.addColorStop(1, rgba(COLORS.danger, 0));
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, y - 16 * k, screen.w, 32 * k);
+      ctx.fillStyle = rgba(COLORS.danger, 0.9);
+      ctx.fillRect(0, y - 1, screen.w, 2);
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.24)';
+    const line = Math.max(3, 3 * k);
+    for (let y = top + stripe + ((age * 36) % line); y < top + h - stripe; y += line) ctx.fillRect(0, y, screen.w, 1);
+
+    // The headline comes in on a broken signal: the colours torn apart and shaking, settling within a second, and tearing again now and then.
+    const title = t('anomaly.alert').toUpperCase();
+    const ty = top + stripe + 40 * k;
+    const calm = this.calm;
+    const settle = calm ? 0 : Math.max(0, 1 - age / 0.9);
+    const tear = calm ? 0 : (Math.sin(age * 5.3) > 0.93 ? 1 : 0);
+    const jitter = (settle + tear * 0.7) * 7 * k;
+    const dx = jitter * Math.sin(age * 83);
+    const dy = jitter * 0.35 * Math.cos(age * 71);
+    const flicker = !calm && age < 0.45 && Math.sin(age * 95) < -0.35 ? 0.3 : 1;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    this.fitDisplay(title, 46 * k, 6 * k, field.w - 140 * k);
+    const titleW = ctx.measureText(title).width;
+    ctx.globalAlpha = alpha * flicker * 0.75;
+    ctx.fillStyle = '#3ff0ff';
+    ctx.fillText(title, cx - 3 * k - dx, ty - dy);
+    ctx.fillStyle = COLORS.danger;
+    ctx.fillText(title, cx + 3 * k + dx, ty + dy);
+    ctx.globalAlpha = alpha * flicker;
+    ctx.fillStyle = '#ffe3e6';
+    ctx.fillText(title, cx + dx * 0.3, ty);
+    setSpacing(ctx, 0);
+    // Warning signs either side of it, blinking with the klaxon.
+    ctx.globalAlpha = alpha * (0.45 + 0.55 * pulse);
+    for (const side of [-1, 1]) this.warningSign(cx + side * (titleW / 2 + 34 * k), ty, 15 * k);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#ff8d99';
+    ctx.font = `400 ${11 * k}px ${FONTS.mono}`;
+    setSpacing(ctx, 2 * k);
+    info.forEach((text, n) => ctx.fillText(text, cx, ty + 36 * k + n * lineH));
+    setSpacing(ctx, 0);
+
+    // The anomalies come up one after another, each typed out in its colour, its symbol beside it and what it does beneath.
+    let rowTop = top + head;
+    anomalies.forEach((anomaly, i) => {
+      const y = rowTop + 14 * k;
+      rowTop += rows[i];
+      const at = 0.5 + i * 0.22;
+      if (age < at) return;
+      const name = t(`anomaly.${anomaly}`).toUpperCase();
+      const typed = Math.min(name.length, Math.floor((age - at) * 34));
+      const color = ANOMALY_COLORS[anomaly];
+      ctx.globalAlpha = alpha;
+      this.fitDisplay(name, 26 * k, 3 * k, field.w - 160 * k);
+      const nameW = ctx.measureText(name).width;
+      const x0 = cx - nameW / 2;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = color;
+      ctx.fillText(name.slice(0, typed) + (typed < name.length ? '▌' : ''), x0, y);
+      setSpacing(ctx, 0);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.8 * k;
+      drawAnomalySymbol(ctx, anomaly, x0 - 24 * k, y, 10 * k);
+      if (typed < name.length) return;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = COLORS.boneDim;
+      ctx.font = `400 ${11.5 * k}px ${FONTS.mono}`;
+      hints[i].forEach((text, n) => ctx.fillText(text, cx, y + 24 * k + n * lineH));
+    });
+
+    // Alone it says how to go on; with Mayhem's reel below, the reel does.
+    if (!match.mayhem && age > MAYHEM.LANDED) {
+      ctx.globalAlpha = alpha * (0.7 + 0.3 * Math.sin(age * 4));
+      ctx.textAlign = 'center';
+      ctx.fillStyle = COLORS.boneDim;
+      ctx.font = `700 ${11 * k}px ${FONTS.body}`;
+      setSpacing(ctx, 2 * k);
+      ctx.fillText(t(match.canAdvance ? 'mayhem.skip' : 'hud.waitingHost').toUpperCase(), cx, top + h - stripe - foot / 2);
+      setSpacing(ctx, 0);
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    ctx.textBaseline = 'top';
+  }
+
+  /** A warning sign centred on (x, y), `r` from its middle to a corner: a red triangle with an exclamation mark. */
+  private warningSign(x: number, y: number, r: number): void {
+    const { ctx } = this;
+    ctx.beginPath();
+    ctx.moveTo(x, y - r);
+    ctx.lineTo(x + r * 1.1, y + r * 0.8);
+    ctx.lineTo(x - r * 1.1, y + r * 0.8);
+    ctx.closePath();
+    ctx.fillStyle = COLORS.danger;
+    ctx.fill();
+    ctx.fillStyle = '#14070c';
+    ctx.fillRect(x - r * 0.09, y - r * 0.45, r * 0.18, r * 0.75);
+    ctx.fillRect(x - r * 0.09, y + r * 0.45, r * 0.18, r * 0.18);
+  }
+
   private drawReveal(match: Match): void {
     const round = match.mayhem;
     if (!round) return;
     const { ctx, k, field } = this;
-    const left = match.revealEnd - match.clock;
-    const age = MAYHEM.REVEAL_TIME - left;
-    const alpha = Math.max(0, Math.min(1, age / 0.2, match.held ? 1 : left / 0.35));
+    const { alpha, age } = this.revealAlpha(match);
     if (alpha <= 0) return;
     const cx = field.x + field.w / 2;
     const cy = field.y + field.h / 2;
@@ -228,7 +457,7 @@ export class Hud {
     const head = 62 * k;
     const foot = 38 * k;
     const jackpotH = round.jackpot ? 40 * k : 0;
-    const h = head + rows * rowH + jackpotH + foot;
+    const h = this.revealHeight(round);
     const top = cy - h / 2;
     // The reels stop one after another, the last one at the thud.
     const landed = MAYHEM.LANDED;
@@ -305,6 +534,510 @@ export class Hud {
       ctx.fillText(t(match.canAdvance ? 'mayhem.skip' : 'hud.waitingHost').toUpperCase(), cx, top + h - foot / 2);
       setSpacing(ctx, 0);
     }
+    ctx.globalAlpha = 1;
+    ctx.textBaseline = 'top';
+  }
+
+  /**
+   * Combined round announcement: when the round brings both Mayhem twists and match anomalies.
+   * Instead of two independent overlapping full-screen bands, renders a unified tactical briefing:
+   * on desktop / wide fields, a two-column briefing (Sector Anomalies on the left with emergency glitch/hazard,
+   * Round Twists on the right with the spinning reel); on narrow / portrait fields, a compact integrated stack.
+   */
+  private drawCombinedReveal(match: Match): void {
+    const round = match.mayhem;
+    const anomalies = anomaliesOf(match.rules);
+    if (!round && !anomalies.length) return;
+    if (!round) {
+      this.drawAnomalyAlert(match);
+      return;
+    }
+    if (!anomalies.length) {
+      this.drawReveal(match);
+      return;
+    }
+
+    const { ctx, k, field, screen } = this;
+    const { alpha, age } = this.revealAlpha(match);
+    if (alpha <= 0) return;
+
+    const cx = field.x + field.w / 2;
+    const cy = field.y + field.h / 2;
+    const landed = MAYHEM.LANDED;
+    const pulse = 0.5 + 0.5 * Math.sin(age * 7.5);
+    const isWide = field.w >= 660 * k && !this.portrait;
+
+    const wrap = (text: string, size: number, maxWidth: number, maxLines = 3): string[] => {
+      ctx.font = `400 ${size}px ${FONTS.mono}`;
+      setSpacing(ctx, 0);
+      const words = text.split(' ');
+      const lines: string[] = [];
+      let line = '';
+      for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (line && ctx.measureText(candidate).width > maxWidth) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = candidate;
+        }
+      }
+      if (line) lines.push(line);
+      return lines.slice(0, maxLines).map((l) => fitText(ctx, l, maxWidth));
+    };
+
+    const aCount = anomalies.length;
+    const twists = round.twists;
+    const tCount = Math.max(1, twists.length);
+    const rightEdgeColor = round.finale ? COLORS.danger : COLORS.sodium;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Ambient red alert flush vignette at screen edges
+    const reach = Math.max(screen.w, screen.h);
+    const flush = ctx.createRadialGradient(screen.w / 2, screen.h / 2, reach * 0.18, screen.w / 2, screen.h / 2, reach * 0.72);
+    flush.addColorStop(0, rgba(COLORS.danger, 0));
+    flush.addColorStop(1, rgba(COLORS.danger, 0.12 + 0.16 * pulse));
+    ctx.fillStyle = flush;
+    ctx.fillRect(0, 0, screen.w, screen.h);
+
+    if (isWide) {
+      // -------------------------------------------------------------
+      // WIDE LAYOUT: Two-Column Tactical Briefing
+      // -------------------------------------------------------------
+      const briefingW = Math.min(field.w - 32 * k, 1140 * k);
+      const colGap = 40 * k;
+      const colW = (briefingW - colGap) / 2;
+      const leftColX = cx - colGap / 2 - colW;
+      const rightColX = cx + colGap / 2;
+
+      const headH = 32 * k;
+      const footH = 36 * k;
+
+      // Anomalies sizing
+      const aRowH = aCount === 1 ? 66 * k : aCount <= 3 ? 52 * k : 42 * k;
+      const aNameSize = (aCount === 1 ? 22 : aCount <= 3 ? 17 : 14) * k;
+      const aHintSize = (aCount === 1 ? 12 : aCount <= 3 ? 11 : 10) * k;
+      const aLineH = (aCount <= 3 ? 14 : 12.5) * k;
+      const aHints = anomalies.map((a) => wrap(t(`anomaly.${a}.hint`), aHintSize, colW - 32 * k, aCount > 3 ? 2 : 3));
+      const leftListH = headH + aCount * aRowH + 8 * k;
+
+      // Twists sizing
+      const tRowH = twists.length === 0 ? 58 * k : twists.length === 1 ? 72 * k : twists.length === 2 ? 60 * k : 46 * k;
+      const tNameSize = (twists.length <= 1 ? 38 : twists.length === 2 ? 28 : 22) * k;
+      const tInfoSize = (twists.length <= 2 ? 12 : 10.5) * k;
+      const jackpotH = round.jackpot ? 34 * k : 0;
+      const rightListH = headH + (twists.length === 0 ? 58 * k : twists.length * tRowH) + jackpotH + 8 * k;
+
+      const bodyH = Math.max(leftListH, rightListH);
+      const h = bodyH + footH + 16 * k;
+      const top = Math.max(field.y + 60 * k, Math.min(field.y + field.h - h - 36 * k, cy - h / 2));
+
+      // Container band background
+      ctx.fillStyle = 'rgba(8, 11, 20, 0.95)';
+      ctx.fillRect(0, top, screen.w, h);
+
+      // Glowing edge lines: gradient from Danger (left) to Sodium/Danger (right)
+      const edgeGrad = ctx.createLinearGradient(leftColX, 0, rightColX + colW, 0);
+      edgeGrad.addColorStop(0, COLORS.danger);
+      edgeGrad.addColorStop(0.42, COLORS.danger);
+      edgeGrad.addColorStop(0.58, rightEdgeColor);
+      edgeGrad.addColorStop(1, rightEdgeColor);
+
+      for (const y of [top, top + h]) {
+        const glow = ctx.createLinearGradient(0, y - 14 * k, 0, y + 14 * k);
+        glow.addColorStop(0, 'rgba(0,0,0,0)');
+        glow.addColorStop(0.5, rgba(COLORS.plate, 0.35));
+        glow.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, y - 14 * k, screen.w, 28 * k);
+
+        ctx.fillStyle = edgeGrad;
+        ctx.fillRect(0, y - 1, screen.w, 2);
+      }
+
+      // Scanlines drifting across
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+      const scanStep = Math.max(3, 3 * k);
+      for (let y = top + 3 * k + ((age * 36) % scanStep); y < top + h - 3 * k; y += scanStep) {
+        ctx.fillRect(0, y, screen.w, 1);
+      }
+
+      // Center vertical divider between columns
+      const divGrad = ctx.createLinearGradient(0, top + 14 * k, 0, top + h - footH);
+      divGrad.addColorStop(0, 'rgba(255, 255, 255, 0.02)');
+      divGrad.addColorStop(0.2, 'rgba(255, 255, 255, 0.12)');
+      divGrad.addColorStop(0.8, 'rgba(255, 255, 255, 0.12)');
+      divGrad.addColorStop(1, 'rgba(255, 255, 255, 0.02)');
+      ctx.fillStyle = divGrad;
+      ctx.fillRect(cx - 0.5, top + 14 * k, 1, h - footH - 14 * k);
+
+      const headY = top + 22 * k;
+
+      // --- Left Column: Anomalies ---
+      const aTitle = (aCount > 1 ? t('setup.group.anomalies') : t('anomaly.alert')).toUpperCase();
+      const settle = Math.max(0, 1 - age / 0.8);
+      const tear = Math.sin(age * 5.3) > 0.94 ? 1 : 0;
+      const jitter = (settle + tear * 0.7) * 3 * k;
+      const dx = jitter * Math.sin(age * 83);
+      const dy = jitter * 0.3 * Math.cos(age * 71);
+      const flicker = age < 0.4 && Math.sin(age * 95) < -0.3 ? 0.2 : 1;
+
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+
+      ctx.globalAlpha = alpha * (0.45 + 0.55 * pulse);
+      this.warningSign(leftColX + 10 * k, headY, 8.5 * k);
+      ctx.globalAlpha = alpha;
+
+      ctx.font = `800 ${14 * k}px ${FONTS.display}`;
+      setSpacing(ctx, 3 * k);
+      if (flicker < 1) {
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.fillStyle = '#3ff0ff';
+        ctx.fillText(aTitle, leftColX + 26 * k - dx, headY - dy);
+        ctx.fillStyle = COLORS.danger;
+        ctx.fillText(aTitle, leftColX + 26 * k + dx, headY + dy);
+        ctx.globalAlpha = alpha;
+      }
+      ctx.fillStyle = '#ffe3e6';
+      ctx.fillText(aTitle, leftColX + 26 * k, headY);
+      setSpacing(ctx, 0);
+
+      const aListTop = headY + 18 * k;
+      const aStagger = Math.min(0.18, 0.65 / Math.max(1, aCount));
+      anomalies.forEach((anomaly, i) => {
+        const at = 0.3 + i * aStagger;
+        if (age < at) return;
+        const itemY = aListTop + i * aRowH + 10 * k;
+        const name = t(`anomaly.${anomaly}`).toUpperCase();
+        const typed = Math.min(name.length, Math.floor((age - at) * 38));
+        const color = ANOMALY_COLORS[anomaly];
+
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 1.6 * k;
+        drawAnomalySymbol(ctx, anomaly, leftColX + 10 * k, itemY, 8 * k);
+
+        ctx.font = `800 ${aNameSize}px ${FONTS.display}`;
+        setSpacing(ctx, 2 * k);
+        ctx.fillStyle = color;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(name.slice(0, typed) + (typed < name.length ? '▌' : ''), leftColX + 24 * k, itemY);
+        setSpacing(ctx, 0);
+
+        if (typed >= name.length) {
+          ctx.fillStyle = '#c8d2e8';
+          ctx.font = `400 ${aHintSize}px ${FONTS.mono}`;
+          ctx.textBaseline = 'top';
+          aHints[i].forEach((line, lineIdx) => {
+            ctx.fillText(line, leftColX + 24 * k, itemY + (aCount <= 3 ? 12 : 9) * k + lineIdx * aLineH);
+          });
+        }
+      });
+
+      // --- Right Column: Mayhem Twists ---
+      const rHeadTitle = round.finale ? t('mayhem.finale').toUpperCase() : t('mayhem.round', { n: match.round }).toUpperCase();
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = round.finale ? COLORS.danger : COLORS.boneDim;
+      ctx.font = `800 ${14 * k}px ${FONTS.display}`;
+      setSpacing(ctx, 3 * k);
+      ctx.fillText(rHeadTitle, rightColX, headY);
+      setSpacing(ctx, 0);
+
+      const rListTop = headY + 18 * k;
+      const stopAt = (i: number) => landed - 0.2 * (tCount - 1 - i);
+
+      if (!twists.length) {
+        const y = rListTop + 14 * k;
+        ctx.fillStyle = COLORS.bone;
+        ctx.font = `800 ${26 * k}px ${FONTS.display}`;
+        setSpacing(ctx, 3 * k);
+        ctx.fillText(t('mayhem.quiet'), rightColX, y);
+        setSpacing(ctx, 0);
+        ctx.fillStyle = COLORS.boneDim;
+        ctx.font = `400 ${12 * k}px ${FONTS.mono}`;
+        ctx.textBaseline = 'top';
+        ctx.fillText(t('mayhem.quietInfo'), rightColX, y + 16 * k);
+      } else {
+        twists.forEach((twist, i) => {
+          const itemY = rListTop + i * tRowH + 12 * k;
+          const stop = stopAt(i);
+          if (age < stop) {
+            const progress = age / stop;
+            const face = Math.floor(age * 18 * (1 - progress * 0.65)) + i * 5;
+            ctx.globalAlpha = alpha * 0.6;
+            ctx.fillStyle = COLORS.bone;
+            const spinning = t(`mayhem.twist.${TWIST_IDS[face % TWIST_IDS.length]}`);
+            this.fitDisplay(spinning, tNameSize * 0.9, 3 * k, colW - 16 * k);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(spinning, rightColX, itemY);
+            setSpacing(ctx, 0);
+            ctx.globalAlpha = alpha;
+            return;
+          }
+
+          const since = age - stop;
+          const pop = since < 0.14 ? 1.25 - (since / 0.14) * 0.25 : 1;
+          ctx.fillStyle = COLORS.sodium;
+          this.fitDisplay(twistName(twist), tNameSize * pop, 3 * k, colW - 16 * k);
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(twistName(twist), rightColX, itemY);
+          setSpacing(ctx, 0);
+
+          ctx.fillStyle = COLORS.boneDim;
+          ctx.font = `400 ${tInfoSize}px ${FONTS.mono}`;
+          ctx.textBaseline = 'top';
+          const info = t(`mayhem.twist.${twist.id}.info`, { n: twist.n ?? 0 });
+          const infoLines = wrap(info, tInfoSize, colW - 16 * k, 2);
+          infoLines.forEach((line, lineIdx) => {
+            ctx.fillText(line, rightColX, itemY + (tCount <= 2 ? 14 : 10) * k + lineIdx * (tInfoSize + 3 * k));
+          });
+        });
+      }
+
+      if (round.jackpot && age > landed + 0.1) {
+        const jPulse = 0.75 + 0.25 * Math.sin(age * 9);
+        const jY = rListTop + (twists.length === 0 ? 58 * k : twists.length * tRowH) + 12 * k;
+        ctx.globalAlpha = alpha * jPulse;
+        ctx.fillStyle = COLORS.danger;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const jackpotLabel = t('mayhem.jackpot', { n: MAYHEM.JACKPOT_FACTOR });
+        this.fitDisplay(jackpotLabel, 18 * k, 3 * k, colW - 16 * k);
+        ctx.fillText(jackpotLabel, rightColX, jY);
+        setSpacing(ctx, 0);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = COLORS.boneDim;
+        ctx.font = `400 ${10.5 * k}px ${FONTS.mono}`;
+        ctx.textBaseline = 'top';
+        ctx.fillText(t('mayhem.jackpotInfo'), rightColX, jY + 12 * k);
+      }
+
+      // Unified skip footer
+      if (age > landed) {
+        ctx.globalAlpha = alpha * (0.7 + 0.3 * Math.sin(age * 4));
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = COLORS.boneDim;
+        ctx.font = `700 ${11 * k}px ${FONTS.body}`;
+        setSpacing(ctx, 2 * k);
+        ctx.fillText(t(match.canAdvance ? 'mayhem.skip' : 'hud.waitingHost').toUpperCase(), cx, top + h - 16 * k);
+        setSpacing(ctx, 0);
+      }
+    } else {
+      // -------------------------------------------------------------
+      // NARROW / PORTRAIT LAYOUT: Integrated Centered Stacked Briefing
+      // -------------------------------------------------------------
+      const maxTextW = field.w - 36 * k;
+      const headH = 36 * k;
+      const footH = 34 * k;
+
+      // Anomalies sizing
+      const aHints = anomalies.map((a) => wrap(t(`anomaly.${a}.hint`), 10.5 * k, maxTextW, aCount <= 2 ? 2 : 1));
+      const aHintLineH = 13.5 * k;
+      const aRowH = aCount === 1 ? 58 * k : aCount === 2 ? 50 * k : 38 * k;
+      const aNameSize = (aCount === 1 ? 20 : aCount === 2 ? 16 : 13.5) * k;
+      const aHintSize = (aCount <= 2 ? 11 : 10) * k;
+      const aSectionH = aCount * aRowH + 6 * k;
+
+      // Twists sizing
+      const tInfoLines = twists.map((twist) => wrap(t(`mayhem.twist.${twist.id}.info`, { n: twist.n ?? 0 }), 10.5 * k, maxTextW, twists.length <= 2 ? 2 : 1));
+      const tRowH = twists.length === 0 ? 46 * k : twists.length === 1 ? 64 * k : twists.length === 2 ? 52 * k : 40 * k;
+      const tNameSize = (twists.length <= 1 ? 28 : twists.length === 2 ? 22 : 18) * k;
+      const tInfoSize = (twists.length <= 2 ? 11 : 10) * k;
+      const jackpotH = round.jackpot ? 32 * k : 0;
+      const tSectionH = (twists.length === 0 ? 46 * k : twists.length * tRowH) + jackpotH + 6 * k;
+
+      const totalContentH = headH + aSectionH + 14 * k + tSectionH + footH;
+      const h = Math.min(field.h - 60 * k, totalContentH);
+      const top = Math.max(field.y + 40 * k, cy - h / 2);
+
+      // Band background & glowing edges
+      ctx.fillStyle = 'rgba(8, 11, 20, 0.95)';
+      ctx.fillRect(0, top, screen.w, h);
+
+      // Red alert top border with glow
+      const topGlow = ctx.createLinearGradient(0, top - 12 * k, 0, top + 12 * k);
+      topGlow.addColorStop(0, 'rgba(0,0,0,0)');
+      topGlow.addColorStop(0.5, rgba(COLORS.danger, 0.28));
+      topGlow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = topGlow;
+      ctx.fillRect(0, top - 12 * k, screen.w, 24 * k);
+      ctx.fillStyle = COLORS.danger;
+      ctx.fillRect(0, top - 1, screen.w, 2);
+
+      // Sodium bottom border with glow
+      const botGlow = ctx.createLinearGradient(0, top + h - 12 * k, 0, top + h + 12 * k);
+      botGlow.addColorStop(0, 'rgba(0,0,0,0)');
+      botGlow.addColorStop(0.5, rgba(rightEdgeColor, 0.28));
+      botGlow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = botGlow;
+      ctx.fillRect(0, top + h - 12 * k, screen.w, 24 * k);
+      ctx.fillStyle = rightEdgeColor;
+      ctx.fillRect(0, top + h - 1, screen.w, 2);
+
+      // Scanlines drifting across
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+      const scanStep = Math.max(3, 3 * k);
+      for (let y = top + 3 * k + ((age * 36) % scanStep); y < top + h - 3 * k; y += scanStep) {
+        ctx.fillRect(0, y, screen.w, 1);
+      }
+
+      // Title with warning signs
+      const unifiedTitle = `${round.finale ? t('mayhem.finale') : t('mayhem.round', { n: match.round })} · ${t('setup.group.anomalies')}`.toUpperCase();
+      const titleY = top + 20 * k;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffe3e6';
+      ctx.font = `800 ${14 * k}px ${FONTS.display}`;
+      setSpacing(ctx, 3 * k);
+      this.fitDisplay(unifiedTitle, 14 * k, 3 * k, maxTextW - 40 * k);
+      const titleW = ctx.measureText(unifiedTitle).width;
+      ctx.fillText(unifiedTitle, cx, titleY);
+      setSpacing(ctx, 0);
+
+      ctx.globalAlpha = alpha * (0.45 + 0.55 * pulse);
+      this.warningSign(cx - titleW / 2 - 12 * k, titleY, 6.5 * k);
+      this.warningSign(cx + titleW / 2 + 12 * k, titleY, 6.5 * k);
+      ctx.globalAlpha = alpha;
+
+      // Anomalies (centered icon + name, centered hint)
+      let curY = titleY + 18 * k;
+      const aStagger = Math.min(0.15, 0.5 / Math.max(1, aCount));
+      anomalies.forEach((anomaly, i) => {
+        const at = 0.3 + i * aStagger;
+        if (age < at) return;
+        const name = t(`anomaly.${anomaly}`).toUpperCase();
+        const typed = Math.min(name.length, Math.floor((age - at) * 38));
+        const color = ANOMALY_COLORS[anomaly];
+        const itemY = curY + 10 * k;
+
+        ctx.font = `800 ${aNameSize}px ${FONTS.display}`;
+        setSpacing(ctx, 1.8 * k);
+        const nameW = ctx.measureText(name.slice(0, typed) + (typed < name.length ? '▌' : '')).width;
+        const symbolR = (aCount <= 2 ? 8 : 6.5) * k;
+        const iconGap = 8 * k;
+        const totalW = symbolR * 2 + iconGap + nameW;
+        const startX = cx - totalW / 2;
+        const iconX = startX + symbolR;
+        const textX = startX + symbolR * 2 + iconGap;
+
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 1.6 * k;
+        drawAnomalySymbol(ctx, anomaly, iconX, itemY, symbolR);
+
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(name.slice(0, typed) + (typed < name.length ? '▌' : ''), textX, itemY);
+        setSpacing(ctx, 0);
+
+        if (typed >= name.length) {
+          ctx.fillStyle = '#c8d2e8';
+          ctx.font = `400 ${aHintSize}px ${FONTS.mono}`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          aHints[i].forEach((line, lineIdx) => {
+            ctx.fillText(line, cx, itemY + (aCount <= 2 ? 14 : 10) * k + lineIdx * aHintLineH);
+          });
+        }
+        curY += aRowH;
+      });
+
+      // Subtle horizontal divider
+      const divW = Math.min(maxTextW, 300 * k);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.fillRect(cx - divW / 2, curY + 2 * k, divW, 1);
+      curY += 12 * k;
+
+      // Mayhem Twists (centered)
+      const stopAt = (i: number) => landed - 0.2 * (tCount - 1 - i);
+      if (!twists.length) {
+        ctx.fillStyle = COLORS.bone;
+        ctx.font = `800 ${22 * k}px ${FONTS.display}`;
+        setSpacing(ctx, 3 * k);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(t('mayhem.quiet'), cx, curY + 12 * k);
+        setSpacing(ctx, 0);
+        ctx.fillStyle = COLORS.boneDim;
+        ctx.font = `400 ${tInfoSize}px ${FONTS.mono}`;
+        ctx.textBaseline = 'top';
+        ctx.fillText(t('mayhem.quietInfo'), cx, curY + 24 * k);
+      } else {
+        twists.forEach((twist, i) => {
+          const itemY = curY + 12 * k;
+          const stop = stopAt(i);
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          if (age < stop) {
+            const progress = age / stop;
+            const face = Math.floor(age * 18 * (1 - progress * 0.65)) + i * 5;
+            ctx.globalAlpha = alpha * 0.6;
+            ctx.fillStyle = COLORS.bone;
+            const spinning = t(`mayhem.twist.${TWIST_IDS[face % TWIST_IDS.length]}`);
+            this.fitDisplay(spinning, tNameSize, 2 * k, maxTextW);
+            ctx.fillText(spinning, cx, itemY);
+            setSpacing(ctx, 0);
+            ctx.globalAlpha = alpha;
+          } else {
+            const since = age - stop;
+            const pop = since < 0.14 ? 1.25 - (since / 0.14) * 0.25 : 1;
+            ctx.fillStyle = COLORS.sodium;
+            this.fitDisplay(twistName(twist), tNameSize * pop, 2 * k, maxTextW);
+            ctx.fillText(twistName(twist), cx, itemY);
+            setSpacing(ctx, 0);
+
+            ctx.fillStyle = COLORS.boneDim;
+            ctx.font = `400 ${tInfoSize}px ${FONTS.mono}`;
+            ctx.textBaseline = 'top';
+            tInfoLines[i].forEach((line, lineIdx) => {
+              ctx.fillText(line, cx, itemY + (twists.length <= 2 ? 14 : 10) * k + lineIdx * (tInfoSize + 3 * k));
+            });
+          }
+          curY += tRowH;
+        });
+      }
+
+      // Jackpot banner (centered)
+      if (round.jackpot && age > landed + 0.1) {
+        const jPulse = 0.75 + 0.25 * Math.sin(age * 9);
+        const jY = curY + 8 * k;
+        ctx.globalAlpha = alpha * jPulse;
+        ctx.fillStyle = COLORS.danger;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const jackpotLabel = t('mayhem.jackpot', { n: MAYHEM.JACKPOT_FACTOR });
+        this.fitDisplay(jackpotLabel, 18 * k, 2 * k, maxTextW);
+        ctx.fillText(jackpotLabel, cx, jY);
+        setSpacing(ctx, 0);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = COLORS.boneDim;
+        ctx.font = `400 ${10.5 * k}px ${FONTS.mono}`;
+        ctx.textBaseline = 'top';
+        ctx.fillText(t('mayhem.jackpotInfo'), cx, jY + 12 * k);
+      }
+
+      // Footer (centered)
+      if (age > landed) {
+        ctx.globalAlpha = alpha * (0.7 + 0.3 * Math.sin(age * 4));
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = COLORS.boneDim;
+        ctx.font = `700 ${11 * k}px ${FONTS.body}`;
+        setSpacing(ctx, 2 * k);
+        ctx.fillText(t(match.canAdvance ? 'mayhem.skip' : 'hud.waitingHost').toUpperCase(), cx, top + h - 16 * k);
+        setSpacing(ctx, 0);
+      }
+    }
+
+    ctx.restore();
     ctx.globalAlpha = 1;
     ctx.textBaseline = 'top';
   }
@@ -787,7 +1520,8 @@ export class Hud {
     setSpacing(ctx, 2 * k * sectorScale);
     ctx.fillText(sector, centerX, top);
     setSpacing(ctx, 0);
-    this.drawChips(modifierLabels(match), field.x + field.w / 2, top + 34 * k);
+    const chips = modifierChips(match);
+    this.drawChips(chips.labels, field.x + field.w / 2, top + 34 * k, chips.colors, chips.glitching);
 
     // Right: points, targets left, shots left.
     ctx.textAlign = 'right';
@@ -806,11 +1540,30 @@ export class Hud {
 
     if (match.phase === 'aiming' && match.current >= 0) this.drawReadout(match, match.pilot, this.shipPos(match.current), opts.aimCardDodge);
     if (match.phase === 'roundOver' && match.summary) this.drawChallengeBanner(match);
-    this.drawHint(match, opts.touch);
+    if (!match.revealing) this.drawHint(match, opts.touch);
+    if (match.revealing && match.anomalyAlert && anomaliesOf(match.rules).length > 0) {
+      this.drawAnomalyAlert(match);
+    }
   }
 
   /** Small outlined tags centred on `cx`, e.g. "BOUNCE". */
-  private drawChips(labels: string[], cx: number, y: number, colors: string[] = []): void {
+  /**
+   * How far a chip is torn apart right now, 0 to 1: each of the first `glitching` chips has a signal of its own that breaks
+   * for a few tenths of a second every few seconds, at times that differ from chip to chip. Nothing for people who ask
+   * for less motion.
+   */
+  private glitchOf(i: number): number {
+    if (this.calm) return 0;
+    const period = 3.4 + i * 0.9;
+    const phase = ((this.time + i * 1.3) % period) / period;
+    const window = 0.13;
+    if (phase > window) return 0;
+    // Strongest at the start, dying out, with a stutter in it.
+    const fade = 1 - phase / window;
+    return fade * (Math.sin(this.time * 61 + i) > -0.4 ? 1 : 0.35);
+  }
+
+  private drawChips(labels: string[], cx: number, y: number, colors: string[] = [], glitching = 0): void {
     if (!labels.length) return;
     const { ctx, k } = this;
     ctx.font = `700 ${9.5 * k}px ${FONTS.body}`;
@@ -823,6 +1576,32 @@ export class Hud {
     ctx.textBaseline = 'middle';
     labels.forEach((label, i) => {
       const color = colors[i] ?? COLORS.sodium;
+      const glitch = i < glitching ? this.glitchOf(i) : 0;
+      if (glitch > 0) {
+        // Torn: the chip is drawn three times, a cyan and a red copy thrown apart sideways, and the real one shaken a little.
+        const shift = glitch * 6.5 * k;
+        const shake = glitch * 3 * k * Math.sin(this.time * 97 + i * 5);
+        const rise = glitch * 2 * k * Math.cos(this.time * 83 + i);
+        for (const [tint, dx] of [['#3ff0ff', -shift], [COLORS.danger, shift]] as const) {
+          ctx.globalAlpha = 0.65 * glitch;
+          ctx.strokeStyle = tint;
+          ctx.fillStyle = tint;
+          ctx.beginPath();
+          ctx.roundRect(x + dx + 0.5, y + 0.5, widths[i], 17 * k, 3 * k);
+          ctx.stroke();
+          ctx.fillText(label.toUpperCase(), x + dx + padX, y + 9.5 * k);
+        }
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = rgba(color, 0.6);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x + shake + 0.5, y + rise + 0.5, widths[i], 17 * k, 3 * k);
+        ctx.stroke();
+        ctx.fillStyle = color;
+        ctx.fillText(label.toUpperCase(), x + shake + padX, y + rise + 9.5 * k);
+        x += widths[i] + gap;
+        return;
+      }
       ctx.strokeStyle = rgba(color, 0.6);
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -1256,9 +2035,17 @@ function killSegments(match: Match, r: KillRecord): Segment[] {
   return out;
 }
 
-/** Rule tags of the current daily sector, e.g. ["Bounce", "Fixed power"]. */
-function modifierLabels(match: ChallengeMatch): string[] {
-  return modifiersOf(match.spec).map((m) => t(`daily.mod.${m}`));
+/** Rule tags and anomaly colors of the current daily sector. */
+function modifierChips(match: ChallengeMatch): { labels: string[]; colors: string[]; glitching: number } {
+  const mods = modifiersOf(match.spec);
+  const anomalies = mods.filter((m): m is Anomaly => m in ANOMALY_COLORS);
+  const others = mods.filter((m) => !(m in ANOMALY_COLORS));
+  const ordered = [...anomalies, ...others];
+  return {
+    labels: ordered.map((m) => t(`daily.mod.${m}`)),
+    colors: ordered.map((m) => (m in ANOMALY_COLORS ? ANOMALY_COLORS[m as Anomaly] : COLORS.boneDim)),
+    glitching: anomalies.length,
+  };
 }
 
 function nameLabel(p: PlayerState): string {

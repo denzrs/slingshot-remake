@@ -3,6 +3,7 @@ import { isTrailBreak, type Planet, type Wormhole } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
 import { createRng } from '../../sim/rng';
 import { rgba } from '../color';
+import { instabilityPulse } from './instability';
 import type { PlanetSprite } from '../planet-common';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../powerup-art';
 import { SHIP_HULL } from '../ship';
@@ -131,7 +132,7 @@ const GLOBE_STEPS = 40;
  */
 export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
   const R = p.radius;
-  const color = planetColor(p);
+  const normalColor = planetColor(p);
   const phase = ((p.seed % 97) / 97) * TAU;
   // Turns per second, either way round, and the axis' lean (radians) from the vertical.
   const spin = (0.035 + (((p.seed * 7) % 13) / 13) * 0.04) * (p.seed % 2 ? 1 : -1);
@@ -142,7 +143,11 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
   const sinE = Math.sin(GLOBE_ELEVATION);
   return {
     size: Math.ceil(R * 2 * ps + 4),
-    draw(ctx, x, y, _ps, time) {
+    draw(ctx, x, y, _ps, time, planet = p) {
+      // Read the live planet: cached sprites also serve freshly restored online snapshots.
+      const warning = instabilityPulse(planet, time);
+      const signal = warning ? [96 + warning.pulse * 108, 10 + warning.pulse * 18, 22 + warning.pulse * 26] : null;
+      const color = signal ? `#${signal.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}` : normalColor;
       const lon = phase + time * spin * TAU;
       ctx.save();
       ctx.translate(x, y);
@@ -191,8 +196,9 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
       ctx.strokeStyle = rgba(color, 0.13);
       ctx.lineWidth = 0.5;
       ctx.stroke(far);
-      ctx.strokeStyle = rgba(color, 0.55);
-      ctx.lineWidth = p.style === 'gas' ? 1 : 0.7;
+      ctx.strokeStyle = rgba(color, warning ? .48 + warning.pulse * .42 : .55);
+      ctx.lineWidth = (p.style === 'gas' ? 1 : .7) + (warning ? warning.pulse * .45 : 0);
+      ctx.shadowColor = color; ctx.shadowBlur = warning ? 2 + warning.pulse * 7 : 0;
       ctx.stroke(near);
 
       // The axis, sticking out past both poles, and the north pole marked.

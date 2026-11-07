@@ -31,6 +31,8 @@ import {
 import { drawHoloFall, drawHoloFlare } from './falls';
 import { drawHoloBlast, drawHoloPackets, drawHoloShard, drawHoloShipScanned } from './holo-events';
 import { drawHoloGate } from './holo-gate';
+import { drawHoloWhiteCore, drawHoloWhiteJump } from './holo-white';
+import { instabilityPulse } from './instability';
 import { holoBegin, holoPost, holoSky, paintHoloBackdrop, paintHoloBorder, startRipple } from './holo-field';
 
 /**
@@ -102,11 +104,30 @@ const holoEffects: EffectStyle = {
 const holoParts: Partial<LookPainter> = {
   note: 'A projection on dark glass: thin lines and hexagons, corner brackets, a faint hex lattice round the field and a soft glow.',
   planet: renderHoloPlanet,
+  planetInstability: (ctx, planet, time) => {
+    const warning = instabilityPulse(planet, time);
+    if (!warning) return;
+    const { pulse, danger } = warning;
+    const r = planet.radius;
+    ctx.save(); ctx.translate(planet.x, planet.y);
+    // The globe itself changes to red in holo-art; its diagnostic ring broadcasts the same beat.
+    const halo = ctx.createRadialGradient(0, 0, r * .8, 0, 0, r * 1.4);
+    halo.addColorStop(0, rgba('#7f1027', 0));
+    halo.addColorStop(.4, rgba('#ac1633', .04 + pulse * .16));
+    halo.addColorStop(1, rgba('#7f1027', 0));
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(0, 0, r * 1.4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = rgba('#c42b47', .18 + pulse * .58); ctx.lineWidth = .8;
+    ctx.setLineDash([3, 5]); ctx.lineDashOffset = -time * (2 + danger * 6);
+    ctx.beginPath(); ctx.arc(0, 0, r * (1.08 + pulse * .08), 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  },
   effects: holoEffects,
   begin: holoBegin,
   backdropArt: paintHoloBackdrop,
   border: paintHoloBorder,
   loopGate: drawHoloGate,
+  whiteCore: drawHoloWhiteCore,
+  whiteJump: drawHoloWhiteJump,
   sky: holoSky,
   post: holoPost,
   fallDust: true,

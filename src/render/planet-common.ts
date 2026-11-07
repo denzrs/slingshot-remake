@@ -6,7 +6,8 @@ export type Vec3 = [number, number, number];
 /** A planet ready to draw. `size` is its width in device pixels; `draw` puts it centred on a point, `ps` device pixels per field unit. */
 export interface PlanetSprite {
   size: number;
-  draw(ctx: CanvasRenderingContext2D, x: number, y: number, ps: number, time: number): void;
+  /** The live planet carries current damage even when this sprite was cached before the hit. */
+  draw(ctx: CanvasRenderingContext2D, x: number, y: number, ps: number, time: number, planet?: Planet): void;
 }
 
 /** Light comes from the upper left, slightly in front. */
