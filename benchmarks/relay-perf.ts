@@ -15,10 +15,15 @@ import { HorizonMatch } from '../src/game/horizon';
 import { createMatch, type GameEvent } from '../src/game';
 import { SnapshotEncoder } from '../src/net/netsync';
 import { DEFAULT_SETTINGS, type Seat } from '../src/data/settings';
+import { isAnomaly, type Anomaly } from '../src/sim/config';
 
 const URL = process.argv[2] ?? 'ws://localhost:8080';
 const BENCH_ORIGIN = process.env.BENCH_ORIGIN;
 const WIRE_FORMAT = process.argv[3] ?? process.env.RELAY_WIRE ?? 'envelope';
+/** Anomalies the real-snapshot runs play by, e.g. `ANOMALIES=fusion,pinball` (none by default). */
+const ANOMALIES: Anomaly[] = (process.env.ANOMALIES ?? '').split(',').filter(isAnomaly);
+/** `REAL_ONLY=1` skips the synthetic sections and runs only the real-snapshot ones. */
+const REAL_ONLY = !!process.env.REAL_ONLY;
 
 // The window of the wire message we actually read (never the raw client input).
 interface WireState {
@@ -220,11 +225,13 @@ async function realSnapshotRun(url: string, mode: 'classic' | 'horizon', duratio
     maxPlanets: 4,
     shotTime: 20,
     simultaneousShots: mode === 'horizon',
+    anomalies: ANOMALIES,
   };
   const created = createMatch(mode, settings, {
     seats,
     names: ['Host', 'G0', 'G1', 'G2'],
-    simultaneous: mode === 'horizon',
+    // As `netMatch` makes an online game: Event Horizon and Fusion fly as a salvo.
+    simultaneous: mode === 'horizon' || ANOMALIES.includes('fusion'),
     oracle: true,
     seed: 7139,
   });
@@ -256,15 +263,20 @@ async function realSnapshotRun(url: string, mode: 'classic' | 'horizon', duratio
   let nextAt = startedAt;
   let lastShotTick = 0;
   let horizonLocked = false;
+  const encodeMs: number[] = [];
   let seq = 0;
   let tick = 0;
   while (performance.now() - startedAt < durationMs) {
     match.update(dt);
-    if (mode === 'classic' && match.phase === 'aiming' && match.current >= 0 && tick - lastShotTick >= 45) {
+    // The anomalies' alarm holds the ships back until somebody dismisses it: a player would.
+    if (match.revealing) match.skipReveal();
+    // Fusion flies every turn as a salvo, so everyone aims at once, as in Event Horizon.
+    const salvo = mode === 'horizon' || match.salvo;
+    if (!salvo && match.phase === 'aiming' && match.current >= 0 && tick - lastShotTick >= 45) {
       match.setPlayerAim(match.current, (tick * 37) % 360, 55);
       match.commitPlayer(match.current);
       lastShotTick = tick;
-    } else if (mode === 'horizon' && match.phase === 'aiming' && !horizonLocked && tick >= 30) {
+    } else if (salvo && match.phase === 'aiming' && !horizonLocked && tick >= 30) {
       for (const player of match.players) {
         if (match.canAim(player.id)) {
           match.setPlayerAim(player.id, (tick * 37 + player.id * 61) % 360, 55);
@@ -272,14 +284,16 @@ async function realSnapshotRun(url: string, mode: 'classic' | 'horizon', duratio
         }
       }
       horizonLocked = true;
-    } else if (mode === 'horizon' && match.phase !== 'aiming') {
+    } else if (salvo && match.phase !== 'aiming') {
       horizonLocked = false;
     }
     if ((match.phase === 'roundOver' || match.phase === 'gameOver' || match.phase === 'killcam') && match.phaseTime > 1.2) {
       match.advance();
     }
 
+    const encodeAt = performance.now();
     const patch = encoder.encode(match.snapshot());
+    encodeMs.push(performance.now() - encodeAt);
     const message = { type: 'state', seq: ++seq, patch, events: events.splice(0) };
     const sentAt = performance.now();
     const frame = send(host, message);
@@ -304,6 +318,7 @@ async function realSnapshotRun(url: string, mode: 'classic' | 'horizon', duratio
     firstWireBytes: frames[0]?.frameBytes ?? 0,
     jsonSizes,
     wireSizes,
+    encodeMs: [...encodeMs].sort((a, b) => a - b),
     guestFrameBytes: deliveredFrameBytes.reduce((sum, size) => sum + size, 0),
   };
   await closeRoom(host, guests);
@@ -319,13 +334,14 @@ async function reportRealSnapshots(url: string, mode: 'classic' | 'horizon') {
   const p99Change = (1 - msgpack.p99 / json.p99) * 100;
   const envelopeBytes = WIRE_FORMAT === 'envelope' ? 14 : 0;
   const payloadMean = wireMean - envelopeBytes;
-  console.log(`\n### real ${mode} snapshots, 30 Hz (4 human players, 8 s)`);
+  console.log(`\n### real ${mode} snapshots, 30 Hz (4 human players, 8 s${ANOMALIES.length ? `, anomalies: ${ANOMALIES.join('+')}` : ''})`);
   console.log(`  ticks ${result.ticks}, guest deliveries ${result.delivered}`);
   console.log(`  first/full frame ${fmt(result.firstJsonBytes)} B JSON reference → ${fmt(result.firstWireBytes)} B ${WIRE_FORMAT} wire frame`);
   console.log(`  mean frame ${fmt(logicalMean)} B JSON reference → ${fmt(wireMean)} B wire (${fmt(payloadMean)} B payload + ${envelopeBytes} B envelope)`);
   console.log(`  frame size percentiles (JSON reference → ${WIRE_FORMAT} wire frame)`);
   console.log(`    p50 ${fmt(json.p50)} → ${fmt(msgpack.p50)} B; p95 ${fmt(json.p95)} → ${fmt(msgpack.p95)} B`);
   console.log(`    p99 ${fmt(json.p99)} → ${fmt(msgpack.p99)} B (${p99Change >= 0 ? `${fmt(p99Change, 1)}% smaller` : `${fmt(-p99Change, 1)}% larger`}); max ${fmt(json.max)} → ${fmt(msgpack.max)} B`);
+  console.log(`  host snapshot+encode p50 ${fmtLat(result.encodeMs, 0.5)} ms, p95 ${fmtLat(result.encodeMs, 0.95)} ms, max ${fmtLat(result.encodeMs, 1)} ms`);
   console.log(`  host→guest latency p50 ${fmtLat(result.latency, 0.5)} ms, p95 ${fmtLat(result.latency, 0.95)} ms, max ${fmtLat(result.latency, 1)} ms`);
 }
 
@@ -367,6 +383,7 @@ async function run(url: string) {
   const largeBytes = size({ type: 'state', seq: 1, patch: largePatch, events: [] });
   const mediumBytes = size({ type: 'state', seq: 1, patch: mediumPatch, events: [] });
 
+  if (!REAL_ONLY) {
   const lobby = await lobbyThroughput(url, 2000, 200);
   console.log(`\n### lobby request/response (1 client, paced 200/s)`);
   console.log(`  replies: ${lobby.repliesPerSec.toFixed(0)}/s (sent ${lobby.sent}, got ${lobby.replies})`);
@@ -401,6 +418,8 @@ async function run(url: string) {
     const result = await aggregateLoad(4, 3, 280, 2000);
     const guestDeliveriesPerSec = result.received / result.wall * 1000;
     console.log(`  ${fmt(result.sent)} host sends → ${fmt(result.received)} guest deliveries; ${fmt(guestDeliveriesPerSec)}/s, p95 ${fmtLat(result.lats, 0.95)} ms`);
+  }
+
   }
 
   console.log(`\n### real game snapshots at 30 Hz`);
