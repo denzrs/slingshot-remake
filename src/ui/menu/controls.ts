@@ -388,6 +388,7 @@ function tilesControl(item: Item<'tiles'>, env: Env): Control {
     const icon = h('canvas.tile__icon', { width: String(Math.round(TILE_ICON * dpr)), height: String(Math.round(TILE_ICON * dpr)), 'aria-hidden': 'true' }) as HTMLCanvasElement;
     const cell = h('span.tile', { role: 'checkbox', 'aria-label': tile.label }, icon, h('span.tile__name', null, tile.label));
     cell.style.setProperty('--tone', tile.color);
+    if (tile.hint) attachTooltip(cell, tile.hint, 0, tile.label);
     if (!env.readonly) cell.addEventListener('click', () => {
       el.focus({ preventScroll: true });
       cursor = i;

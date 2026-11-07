@@ -63,6 +63,7 @@
   position: relative;
   display: grid;
   min-width: 0;
+  container-type: inline-size;
 }
 .briefing__preset-shell > .item--card { width: 100%; min-width: 0; }
 .briefing__preset-shell:is(:hover, :focus-within) > .item--card {
@@ -119,13 +120,104 @@
   filter: drop-shadow(0 0 11px rgb(243 211 106 / .38));
 }
 
+/* A card that plays by an anomaly wears a red badge in its top left corner, and glows red instead of orange (or the gold of edits). */
+:is(.briefing__cards, .mission-route) .item__flag {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  left: 8px;
+  max-width: calc(50% - 12px);
+  overflow: hidden;
+  padding: 3px 6px;
+  border: 1px solid rgb(255 90 110 / .72);
+  border-radius: 2px;
+  background: rgb(52 12 24 / .94);
+  color: #ff8d99;
+  font: 700 8px/1.2 var(--font-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+:is(.briefing__cards, .mission-route) .item__flag[hidden] { display: none; }
+/*
+ * The anomalies' tear, like the alarm's headline in the match, on one clock for everything that tears. The cards' container runs
+ * a single animation over four numbers (how far the picture is thrown sideways and up, how strong the cyan and red copies are,
+ * how much it flickers), and the badge, the chosen card and what is on it all work out their share from those. Started by
+ * separate animations they would drift apart, as each begins when its own selector first holds: the badge when the page is built,
+ * the card when it is chosen.
+ */
+@property --tear-x { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --tear-y { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --tear-a { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --tear-o { syntax: '<number>'; inherits: true; initial-value: 1; }
+:is(.briefing__cards, .mission-route) { animation: anomaly-clock 4.6s steps(1, end) infinite; }
+@keyframes anomaly-clock {
+  0%, 9%, 100% { --tear-x: 0; --tear-y: 0; --tear-a: 0; --tear-o: 1; }
+  1% { --tear-x: 3; --tear-y: -1; --tear-a: .6; --tear-o: 1; }
+  2.5% { --tear-x: -4; --tear-y: 1; --tear-a: .55; --tear-o: .5; }
+  4% { --tear-x: 2; --tear-y: 0; --tear-a: .5; --tear-o: 1; }
+  5.5% { --tear-x: -3; --tear-y: -1; --tear-a: .45; --tear-o: 1; }
+  7% { --tear-x: 1; --tear-y: 1; --tear-a: .35; --tear-o: .7; }
+}
+/* The summary's anomaly row ("Anomalien +N") tears on the same clock, in red, like everything else that belongs to an anomaly. */
+.briefing__facts > .is-anomaly {
+  animation: anomaly-clock 4.6s steps(1, end) infinite;
+  translate: calc(var(--tear-x) * .7px) calc(var(--tear-y) * 1px);
+  opacity: var(--tear-o);
+}
+.briefing__facts > .is-anomaly :is(dt, dd) {
+  color: #ff9aa5;
+  text-shadow: calc(var(--tear-x) * -1px) 0 rgb(63 240 255 / var(--tear-a)), calc(var(--tear-x) * 1px) 0 rgb(255 90 110 / var(--tear-a));
+}
+@media (prefers-reduced-motion: reduce) { .briefing__facts > .is-anomaly { animation: none; } }
+/* The badge: a cyan and a red copy of its text and frame thrown apart, and it shakes. */
+:is(.briefing__cards, .mission-route) .item__flag {
+  translate: calc(var(--tear-x) * .8px) calc(var(--tear-y) * 1px);
+  opacity: var(--tear-o);
+  text-shadow: calc(var(--tear-x) * -1px) 0 rgb(63 240 255 / var(--tear-a)), calc(var(--tear-x) * 1px) 0 rgb(255 90 110 / var(--tear-a));
+  box-shadow: calc(var(--tear-x) * -1px) 0 0 rgb(63 240 255 / calc(var(--tear-a) * .9)), calc(var(--tear-x) * 1px) 0 0 rgb(255 90 110 / calc(var(--tear-a) * .9));
+}
+/* The chosen card: the whole card thrown apart the same way, and what is on it tears on its own besides. */
+.briefing__cards .item.item--card.is-anomaly[aria-pressed='true'] {
+  translate: calc(var(--tear-x) * .7px) calc(var(--tear-y) * 1px);
+  filter: drop-shadow(calc(var(--tear-x) * -1px) 0 0 rgb(63 240 255 / var(--tear-a))) drop-shadow(calc(var(--tear-x) * 1px) 0 0 rgb(255 90 110 / var(--tear-a)));
+}
+.briefing__cards .item.item--card.is-anomaly[aria-pressed='true'] :is(.item__title, .item__hint) {
+  translate: calc(var(--tear-x) * .6px) calc(var(--tear-y) * .6px);
+  text-shadow: calc(var(--tear-x) * -1px) 0 rgb(63 240 255 / var(--tear-a)), calc(var(--tear-x) * 1px) 0 rgb(255 90 110 / var(--tear-a));
+}
+.briefing__cards .item.item--card.is-anomaly[aria-pressed='true'] .item__icon {
+  translate: calc(var(--tear-x) * -.8px) calc(var(--tear-y) * .8px);
+}
+.briefing__cards .item.item--card.is-anomaly { border-color: rgb(255 90 110 / .42); }
+.briefing__cards .item.item--card.is-anomaly[aria-pressed='true'],
+.briefing__cards .item.item--pick.item--card.is-anomaly[aria-pressed='true'],
+.briefing__cards .item--card.is-modified.is-anomaly[aria-pressed='true'] {
+  border-color: #ff5a6e;
+  background: radial-gradient(ellipse at 50% 0, rgb(255 90 110 / .17), transparent 76%), #2a1c27;
+  box-shadow: inset 0 3px #ff5a6e, 0 0 16px rgb(255 90 110 / .16);
+  animation: preset-anomaly-glow 2.8s ease-in-out infinite;
+}
+.briefing__cards .item.item--card.is-anomaly[aria-pressed='true'] .item__title,
+.briefing__cards .item.item--card.is-anomaly[aria-pressed='true'] .item__tag { color: #ff9aa5; }
+.briefing__cards .item.item--card.is-anomaly[aria-pressed='true'] .item__icon { filter: drop-shadow(0 0 11px rgb(255 90 110 / .36)); }
+
+@keyframes preset-anomaly-glow {
+  0%, 100% { box-shadow: inset 0 3px #ff5a6e, 0 0 10px rgb(255 90 110 / .12); }
+  50% { box-shadow: inset 0 3px #ff8d99, 0 0 20px rgb(255 90 110 / .28); }
+}
+
 @keyframes preset-modified-glow {
   0%, 100% { box-shadow: inset 0 3px #f3d36a, 0 0 10px rgb(243 211 106 / .1); }
   50% { box-shadow: inset 0 3px #ffe58c, 0 0 19px rgb(243 211 106 / .24); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .briefing__cards .item--card.is-modified[aria-pressed='true'] { animation: none; }
+  :is(.briefing__cards, .mission-route) { animation: none; }
+  .briefing__cards .item--card.is-modified[aria-pressed='true'],
+  .briefing__cards .item--card.is-anomaly[aria-pressed='true'] { animation: none; }
   .briefing__cards .item__status-reset,
   .briefing__cards .item__status-reset > span { transition: none; }
   .briefing__preset-shell:is(:hover, :focus-within) > .item--card,
@@ -153,6 +245,23 @@
 .briefing__cards .item__status-save:is(:hover, :focus-visible) { border-color: #a3eddb; box-shadow: 0 0 14px rgb(111 227 200 / .2); }
 .briefing__cards .item__status-save:focus-visible { outline: 2px solid var(--bone); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .briefing__cards .item__status-save { transition: none; } }
+
+/*
+ * On narrow cards the badges stack so the anomaly stays legible beside edits and daily picks. The anomaly badge and the edits
+ * badge share the top row as long as both fit (reset in the corner as on every other card, save under it); only below that, or
+ * next to the day's badge, do they get a row each.
+ */
+@container (max-width: 184px) {
+  .briefing__preset-shell.is-anomaly > .item--card .item__flag { letter-spacing: .08em; }
+  .briefing__preset-shell.is-anomaly > .item--pick .item__tag { top: 36px; }
+  .briefing__preset-shell.is-anomaly:has(> .item--pick) > .item__status-reset { top: 63px; }
+  .briefing__preset-shell.is-anomaly:has(> .item--pick) > .item__status-save { top: 90px; }
+}
+@container (max-width: 164px) {
+  .briefing__preset-shell.is-anomaly > .item--card .item__flag { max-width: calc(100% - 16px); }
+  .briefing__preset-shell.is-anomaly:not(:has(> .item--pick)) > .item__status-reset { top: 36px; }
+  .briefing__preset-shell.is-anomaly:not(:has(> .item--pick)) > .item__status-save { top: 63px; }
+}
 
 /* The name field at the top of the preset creator. */
 .preset-name { display: grid; gap: 6px; max-width: 420px; margin: 0 0 18px; }

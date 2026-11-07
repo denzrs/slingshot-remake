@@ -60,7 +60,6 @@
   justify-content: space-between;
   gap: 24px;
   padding: 14px 0 max(14px, env(safe-area-inset-bottom));
-  margin-top: 32px;
   border-top: 1px solid var(--menu-line);
   background: transparent;
 }
@@ -93,7 +92,7 @@
 .menu-page--briefing,
 .menu-page--leaderboard,
 .menu-page--lobby { width: min(1280px, 100%); }
-.menu-page--pause .menu-page__main { display: flex; align-items: center; justify-content: center; height: 100%; }
+.menu-page--pause .menu-page__main { position: relative; display: flex; align-items: center; justify-content: center; height: 100%; }
 .pause-standing { width: min(520px, 100%); }
 .menu-page--pause .ranking, .menu-page--pause .score-chart { max-width: none; margin-top: 0; margin-bottom: 22px; }
 .menu-page--pause .ranking li { padding: 11px 0; gap: 12px; }
@@ -109,6 +108,31 @@
 .pause-standing__meta { margin: 8px 0 0; color: var(--bone-dim); font-size: 13px; }
 /* The pause menu's explanation of the symbols on the cards, beside the standings: one row each, its symbol in a ring like the tutorial's. */
 .pause-marks { width: min(480px, 100%); }
+/* The anomalies and twists in play: only their badges, with the explanation while the pointer is on one. They hang at the top of the page's middle, from the left edge of the standings to the right edge of the legend, in the room the centred standings leave free, and push nothing down; the anomalies tear on the cards' clock. */
+.pause-rules { position: absolute; top: 6px; left: 50%; translate: -50% 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 14px 40px; width: min(1040px, 100%); }
+/* Alone, a block sits in the middle. */
+.pause-rules__block:only-child { margin-inline: auto; }
+.pause-rules__block--anomalies { animation: anomaly-clock 4.6s steps(1, end) infinite; }
+.menu-page--pause .pause-rules .ranking-label { margin: 0 0 6px; }
+.pause-rules__block--anomalies .ranking-label { color: #ff9aa5; translate: calc(var(--tear-x) * .6px) calc(var(--tear-y) * .6px); text-shadow: calc(var(--tear-x) * -1px) 0 rgb(63 240 255 / var(--tear-a)), calc(var(--tear-x) * 1px) 0 rgb(255 90 110 / var(--tear-a)); }
+.pause-rules__block { min-width: 0; }
+.pause-rules__block--anomalies { flex: none; }
+.pause-rules__list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+/* The anomalies share one row; the twists beside them take what is left, and wrap if they need to. */
+.pause-rules__block--anomalies .pause-rules__list { flex-wrap: nowrap; }
+.pause-rules__badge { display: flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid rgb(243 211 106 / .5); border-radius: 3px; background: rgb(243 211 106 / .08); color: #ffe58c; font: 700 10px/1.3 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; cursor: default; }
+.pause-rules__badge--anomaly { border-color: color-mix(in srgb, var(--badge-tone) 60%, transparent); background: color-mix(in srgb, var(--badge-tone) 12%, transparent); color: var(--bone); translate: calc(var(--tear-x) * .7px) calc(var(--tear-y) * 1px); opacity: var(--tear-o); filter: drop-shadow(calc(var(--tear-x) * -1px) 0 0 rgb(63 240 255 / var(--tear-a))) drop-shadow(calc(var(--tear-x) * 1px) 0 0 rgb(255 90 110 / var(--tear-a))); }
+.pause-rules__badge:hover, .pause-rules__badge:focus-visible { border-color: var(--bone); }
+.pause-rules__badge:focus-visible { outline: 2px solid var(--bone); outline-offset: 2px; }
+.pause-rules__icon { display: block; flex: none; width: 18px; height: 18px; }
+/* The same room above and below keeps the standings in the middle, and when they grow (the score chart) they make way for the badges instead of running into them. */
+.menu-page--pause .menu-page__main:has(.pause-rules) { padding-block: 72px; }
+/* Where the legend has to go under the standings there is no free room over them: the badges join the flow then. */
+@media (max-width: 1100px) {
+  .pause-rules { position: static; translate: none; flex: 0 0 100%; flex-wrap: wrap; }
+  .menu-page--pause .menu-page__main:has(.pause-rules) { padding-block: 0; gap: 40px; flex-wrap: wrap; align-items: safe center; align-content: safe center; overflow-y: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .pause-rules__block--anomalies { animation: none; } }
 .mark-legend { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .mark-legend__item { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: start; gap: 12px; padding: 9px 12px; border-left: 2px solid var(--p2); background: rgb(14 30 51 / 0.55); }
 .mark-legend__icon { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--menu-line); border-radius: 50%; background: #081426; }
@@ -337,7 +361,7 @@
   .menu-page { margin-top: 0; }
   .menu-page__head { margin-bottom: 8px; }
   .menu-page__head .eyebrow { margin-bottom: 4px; }
-  .menu-page__foot { min-height: 0; margin-top: 10px; padding-top: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .menu-page__foot { min-height: 0; padding-top: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   .menu-page__actions .item { min-height: 44px; padding-block: 8px; }
 }
 

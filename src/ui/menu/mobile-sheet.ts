@@ -6,9 +6,10 @@ interface SheetGroup { id: string; title: string }
 let nextId = 0;
 
 /** A desktop overview becomes one subject at a time on phones, without losing any controls or their conditions. */
-export function mobileSheet(columns: SheetGroup[][], label: string, changed: () => void, selection: SheetSelection = {}) {
-  const narrow = matchMedia('(max-width: 760px)');
-  const groups = columns.flat();
+export function mobileSheet(columns: SheetGroup[][], label: string, changed: () => void, selection: SheetSelection = {}, groupOrder?: (groups: SheetGroup[]) => SheetGroup[]) {
+  const narrow = typeof matchMedia === 'function' ? matchMedia('(max-width: 760px)') : { matches: false, addEventListener() {}, removeEventListener() {} } as unknown as MediaQueryList;
+  const allGroups = columns.flat();
+  const groups = groupOrder ? groupOrder(allGroups) : allGroups;
   const prefix = `sheet-${++nextId}`;
   if (!groups.some(({ id }) => id === selection.current)) selection.current = groups[0]?.id;
   const panels = new Map(groups.map(({ id, title }) => {

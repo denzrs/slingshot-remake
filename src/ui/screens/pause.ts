@@ -7,6 +7,7 @@ import { modeName } from '../menu/mode-name';
 import type { App } from './app';
 import { scoreChart } from './game-over';
 import { marksLegend } from './mark-help';
+import { rulesBadges } from './rules-badges';
 import { openSettings } from './settings';
 import { prepareModeScreen } from './setup';
 
@@ -69,14 +70,19 @@ export function pauseScreen(app: App, match: Match | null): Screen {
     build: () => menuPage({
       title: t('pause.title'), eyebrow: app.mode === 'challenge' ? t('mode.daily') : `${modeName(app.mode === 'horizon' || app.mode === 'solar' ? app.mode : 'classic')}${app.mayhem ? ` · ${t('mode.mayhem')}` : ''}`,
       className: 'menu-page--pause',
-      // Beside the standings, what the symbols on the cards mean right now.
-      body: match ? [h('div.pause-standing', null, ...pauseStanding(match, app.online)), ...[marksLegend(match)].filter((block) => block !== null)] : [],
+      // Over the standings, in the room they leave free, what bends the rules right now; beside them, what the symbols on the cards mean.
+      body: match ? pauseBody(match, app.online) : [],
       footer: h('nav.items.items--row.pause-actions.menu-page__actions', { 'data-section': 'actions', 'aria-label': t('pause.title') }),
     }),
     items,
     focus: items.length - 1,
     onEscape: () => app.resume(),
   };
+}
+
+/** The standings with the legend of the card symbols beside them; the anomalies and twists in play hang over them without taking any room. */
+function pauseBody(match: Match, online: boolean): HTMLElement[] {
+  return [rulesBadges(match), h('div.pause-standing', null, ...pauseStanding(match, online)), marksLegend(match)].filter((block): block is HTMLElement => block !== null);
 }
 
 /** The pause menu's middle: where the match stands right now. */

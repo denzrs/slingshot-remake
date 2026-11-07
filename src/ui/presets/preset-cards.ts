@@ -69,6 +69,8 @@ export interface PresetCard {
   status(): string;
   /** Whether the rules have been changed from what the card gave. */
   modified(): boolean;
+  /** Whether the card plays by an anomaly: the chosen card as its rules play now, any other as it would. It wears a red badge and glows red. */
+  anomalous(): boolean;
   actionLabel(): string;
   action(): void;
   /** A second action under the badge, while it holds: keeping the edits. */
@@ -134,6 +136,11 @@ export class PresetCards {
     this.state.current = id ? { id, mode, rules: rulesOf(rules) } : undefined;
   }
 
+  /** Whether a card plays by an anomaly: the chosen one by the rules as they play now, with any edits, the others by their own. */
+  private anomalous(id: string, own: () => RoomRules): boolean {
+    return (this.selection()?.id === id ? this.host.rules() : own()).anomalies.length > 0;
+  }
+
   /** How many rules differ from what the chosen card gave; none for the other cards. */
   changes(id: string): number {
     const selection = this.selection();
@@ -182,6 +189,7 @@ export class PresetCards {
       // Edits come first; with none, a card the player changed and kept says so.
       status: () => this.modifiedText(preset) || (isOverridden(preset, mode) ? t('preset.overridden') : ''),
       modified: () => this.changes(preset) > 0,
+      anomalous: () => this.anomalous(preset, () => savedPresetRules(preset, mode)),
       actionLabel: () => t(this.changes(preset) ? 'preset.resetAction' : 'preset.restoreOriginal'),
       action: () => {
         if (this.changes(preset)) return this.reset(preset);
@@ -211,6 +219,7 @@ export class PresetCards {
       selected: () => this.selection()?.id === 'handpicked',
       status: () => this.modifiedText('handpicked'),
       modified: () => this.changes('handpicked') > 0,
+      anomalous: () => this.anomalous('handpicked', () => pick.rules),
       actionLabel: () => t('preset.resetAction'),
       action: () => this.reset('handpicked'),
       choose: () => this.play('handpicked', this.withTable(pick.rules)),
@@ -228,6 +237,7 @@ export class PresetCards {
         selected: () => this.selection()?.id === id,
         status: () => t(this.changes(id) ? 'preset.custom.modified' : 'preset.custom.edit'),
         modified: () => this.changes(id) > 0,
+        anomalous: () => this.anomalous(id, () => preset.rules),
         actionLabel: () => t(this.changes(id) ? 'preset.resetAction' : 'preset.custom.edit'),
         action: () => (this.changes(id) ? this.reset(id) : this.openCreator(preset)),
         secondary: {
@@ -256,6 +266,7 @@ export class PresetCards {
       selected: () => false,
       status: () => '',
       modified: () => false,
+      anomalous: () => false,
       actionLabel: () => '',
       action: () => {},
       choose: () => {},

@@ -8,6 +8,7 @@ import { buildControl, type Control } from '../menu/controls';
 import { h } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
 import { modeName } from '../menu/mode-name';
+import { anomalySummary } from '../presets/anomaly-summary';
 import { powerUpSummary } from '../presets/powerup-summary';
 import { PresetCards, type PresetCard, type PresetCreator, type PresetSelection } from '../presets/preset-cards';
 import { presetNameField } from '../presets/preset-name';
@@ -80,6 +81,7 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
   rulesDialog.classList.add('rules-page');
   rulesDialog.hidden = true;
   const closeRulesDialog = () => {
+    createRulesForm?.closePicker();
     creator = null;
     rulesDialog.hidden = true;
     rulesDialog.remove();
@@ -165,6 +167,8 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
       paintCreatePresetState();
     },
   });
+  /** What anomalies are in play, for the host and everybody else in the room. */
+  const createAnomalies = anomalySummary(() => prefs.rules.anomalies);
   /** Plays these rules from now on, and redraws everything that shows them. */
   const playRules = (rules: RoomRules) => {
     prefs.rules = rulesOf(rules);
@@ -172,7 +176,7 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
     createRulesForm?.refresh();
     createQuickControls.forEach((control) => control.refresh());
     paintCreatePresetState();
-    createPowerups.update();
+    createPowerups.update(); createAnomalies.update();
   };
   const presetCards = new PresetCards({
     mode: () => prefs.gameMode,
@@ -193,13 +197,18 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
       commit: commitRules,
     }, app, readOnly(), () => {
       paintCreatePresetState();
-      createPowerups.update();
+      createPowerups.update(); createAnomalies.update();
       createQuickControls.forEach((control) => control.refresh());
     });
     createRules.replaceChildren(createRulesForm.el);
+    // The anomalies' tiles open in a sheet over the whole page, as on the local rules page.
+    if (createRulesForm.picker) {
+      createRulesForm.setFrame(rulesDialog.querySelector<HTMLElement>('.menu-page'));
+      rulesDialog.append(createRulesForm.picker);
+    }
     rulesNavigation.replaceChildren(createRulesForm.navigation);
     const cards = presetCards.cards();
-    const choices: { card: PresetCard; element: HTMLButtonElement; shell: HTMLDivElement; status: HTMLButtonElement; save: HTMLButtonElement; count: HTMLSpanElement }[] = [];
+    const choices: { card: PresetCard; element: HTMLButtonElement; shell: HTMLDivElement; status: HTMLButtonElement; save: HTMLButtonElement; count: HTMLSpanElement; flag: HTMLElement }[] = [];
     const addCard = (card: PresetCard) => {
       // The player's own presets are slim strips; the first empty slot is a card of its own.
       const strip = card.kind === 'custom' || (card.kind === 'new' && !card.art);
@@ -222,6 +231,9 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
         element.classList.add('item--pick');
         element.prepend(h('span.item__tag', null, t('preset.pick.today')));
       }
+      // A card that plays by an anomaly wears a red badge, and glows red rather than orange.
+      const flag = h('span.item__flag', { hidden: '' }, t('anomaly.badge'));
+      element.prepend(flag);
       if (card.kind === 'new') element.classList.add(card.art ? 'item--custom-empty' : 'item--strip-empty');
       element.classList.toggle('is-readonly', readOnly());
       status.addEventListener('click', (event) => {
@@ -248,7 +260,7 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
         focusPresetCard();
         sound.select();
       });
-      choices.push({ card, element, shell, status, save, count });
+      choices.push({ card, element, shell, status, save, count, flag });
     };
     cards.forEach(addCard);
     const own = (card: PresetCard) => card.kind === 'custom' || card.kind === 'new';
@@ -257,8 +269,12 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
       h('div.briefing__own', { 'data-own': String(cards.filter((card) => card.kind === 'custom').length) }, ...choices.filter(({ card }) => own(card)).map(({ shell }) => shell)),
     );
     paintCreatePresetState = () => {
-      choices.forEach(({ card, element, shell, status, save, count }) => {
+      choices.forEach(({ card, element, shell, status, save, count, flag }) => {
         const modified = card.modified();
+        const anomalous = card.anomalous();
+        flag.hidden = !anomalous;
+        element.classList.toggle('is-anomaly', anomalous);
+        shell.classList.toggle('is-anomaly', anomalous);
         const text = card.status();
         const label = card.actionLabel();
         count.textContent = text;
@@ -294,7 +310,7 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
     }, true);
     const env = { sound, readonly: readOnly(), changed: () => {
       paintCreatePresetState();
-      createPowerups.update();
+      createPowerups.update(); createAnomalies.update();
       createRulesForm?.refresh();
     } };
     createQuickControls = all
@@ -307,8 +323,8 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
     createQuickControls.push(...switches);
     const sliders = createQuickControls.slice(0, createQuickControls.length - switches.length).map(({ el }) => el);
     const mayhem = sliders.pop()!;
-    createQuick.replaceChildren(...sliders, h('div.briefing__mayhem', null, mayhem), createPowerups.el, h('div.briefing__switches', null, ...switches.map(({ el }) => el), rulesLink));
-    createPowerups.update();
+    createQuick.replaceChildren(...sliders, h('div.briefing__mayhem', null, mayhem), createPowerups.el, createAnomalies.el, h('div.briefing__switches', null, ...switches.map(({ el }) => el), rulesLink));
+    createPowerups.update(); createAnomalies.update();
   };
 
   const createSetupMain = h('div.online-create__main', null,
@@ -344,13 +360,13 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
       const sameGame = followed.startsWith(`${room.id}|${room.gameMode}|`);
       followed = `${room.id}|${room.gameMode}|${JSON.stringify(room.rules)}`;
       prefs.gameMode = room.gameMode;
-      prefs.rules = { ...prefs.rules, ...room.rules, powerUpKinds: [...room.rules.powerUpKinds] };
+      prefs.rules = { ...prefs.rules, ...room.rules, powerUpKinds: [...room.rules.powerUpKinds], anomalies: [...(room.rules.anomalies ?? [])] };
       if (sameGame) {
         presetCards.detect();
         createRulesForm?.refresh();
         createQuickControls.forEach((control) => control.refresh());
         paintCreatePresetState();
-        createPowerups.update();
+        createPowerups.update(); createAnomalies.update();
       } else {
         rebuild();
       }
@@ -365,7 +381,8 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
       rebuild();
     },
     dialogOpen: () => !rulesDialog.hidden,
-    closeDialog: dismissRulesDialog,
+    // Escape closes the anomalies' sheet first.
+    closeDialog: () => { if (!createRulesForm?.closePicker()) dismissRulesDialog(); },
     dispose: () => {
       if (rulesTimer) pushRules();
       createRulesForm?.dispose();

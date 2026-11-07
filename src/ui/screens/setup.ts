@@ -152,7 +152,10 @@ function setupScreen(app: App, mode: GameMode, transition?: ModeTransition): Scr
     rulesHeading.textContent = t(changes.length ? 'briefing.rulesChanged' : 'briefing.rules');
     rulesLabel.textContent = changes.length === 1 ? t('preset.modified.one') : changes.length > 1 ? t('preset.modified.many', { n: changes.length }) : t('briefing.rulesStandard');
     summary.replaceChildren(...(changes.length
-      ? changes.map((row) => h('div', null, h('dt', null, row.label), h('dd', null, ruleValueText(row, rules))))
+      ? changes.map((row) => h(row.key === 'anomalies' ? 'div.is-anomaly' : 'div', null,
+        h('dt', null, row.key === 'anomalies' ? t('setup.group.anomalies') : row.label),
+        h('dd', null, row.key === 'anomalies' ? `+${rules.anomalies.length}` : ruleValueText(row, rules)),
+      ))
       : [h('div', null, h('dt', null, t('briefing.rulesStandard')))]));
     powerups.update();
   };
@@ -227,6 +230,7 @@ function presetItem(card: PresetCard): MenuItem {
     ...(card.art ? { icon: card.art } : {}),
     status: card.status,
     modified: card.modified,
+    flag: { label: t('anomaly.badge'), on: card.anomalous },
     statusActionLabel: card.actionLabel,
     statusAction: card.action,
     ...(card.secondary ? { statusSecondaryLabel: t('preset.custom.save'), statusSecondaryVisible: card.secondary.visible, statusSecondary: card.secondary.run } : {}),
