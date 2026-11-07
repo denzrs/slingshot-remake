@@ -6,7 +6,7 @@ import { Volley } from '../../src/sim/volley';
 import { DEFENSE } from '../../src/sim/config';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 
-const rules = { bounce: false, timeLimit: 20 };
+const rules = { edges: 'void' as const, timeLimit: 20 };
 
 /** Lets the current volley fly until the match is back on aiming (or the round ends). */
 function finishFlight(match: Match): void {
@@ -411,7 +411,7 @@ describe('planetary defense power-up', () => {
 
     it('bends in gravity and runs out its time like any shot', () => {
       const world = overhead([1], 30);
-      const volley = new Volley(world, [{ player: 0, angle: 0, power: 60 }], { bounce: false, timeLimit: 3 }, false);
+      const volley = new Volley(world, [{ player: 0, angle: 0, power: 60 }], { edges: 'void' as const, timeLimit: 3 }, false);
       const shot = volley.shots[0].shot;
       shot.missiles.push({ defense: 0, x: 400, y: 100, heading: 0, speed: 1000, age: 5, roll: 1, chasing: true, trail: [400, 100] });
       for (let i = 0; i < 10 && volley.shots.length < 2; i++) volley.step();

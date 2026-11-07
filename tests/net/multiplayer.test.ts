@@ -158,7 +158,7 @@ interface Client {
   syncElapsed: number;
 }
 
-const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, bounce: true, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, killcam: 'auto', hiddenAim: false, fadingTrails: 0, suddenDeath: true, mayhem: 0, betting: false, chatPlayersOnly: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'antigravity', 'shield'], powerUpAmount: 2 };
+const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, edges: 'wall' as const, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, killcam: 'auto', hiddenAim: false, fadingTrails: 0, suddenDeath: true, mayhem: 0, betting: false, chatPlayersOnly: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'antigravity', 'shield'], powerUpAmount: 2 };
 
 async function connectSession(hooks: Partial<ConstructorParameters<typeof MultiplayerSession>[0]> = {}, settings = DEFAULT_SETTINGS, edit?: (message: ServerMessage) => ServerMessage): Promise<MultiplayerSession> {
   const session = new MultiplayerSession({ settings: () => cloneSettings(settings), matchStarted() {}, matchRestarted() {}, matchEnded() {}, ...hooks }, new RustTransport(edit));
@@ -673,7 +673,7 @@ describe('the oracle online', () => {
       clients.push({ session, match: () => matches[index]!, syncElapsed: 0 });
     }
     const host = clients[0].session;
-    host.createRoom({ name: names[0], mode: 'ffa', gameMode: 'classic', rules: { ...rules, fixedPower: false, bounce: false, betting }, maxPlayers: names.length });
+    host.createRoom({ name: names[0], mode: 'ffa', gameMode: 'classic', rules: { ...rules, fixedPower: false, edges: 'void' as const, betting }, maxPlayers: names.length });
     await waitForSession(host, () => host.room !== null);
     for (let index = 1; index < names.length; index++) {
       const guest = clients[index].session;
@@ -1332,7 +1332,7 @@ describe('CPU seats online', () => {
 describe('spectators online', () => {
   /** Two players and any number of spectators who walk into the running, public room. */
   async function startStands(fans: string[], roomRules: Partial<RoomRules> = {}): Promise<{ players: Client[]; stands: Client[] }> {
-    const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], { ...rules, fixedPower: false, bounce: false, ...roomRules });
+    const { host, guest } = await startRoom('classic', ['Anna', 'Ben'], { ...rules, fixedPower: false, edges: 'void' as const, ...roomRules });
     const stands: Client[] = [];
     for (const name of fans) {
       let fanMatch: NetMatch | null = null;
@@ -1484,7 +1484,7 @@ describe('statistics and replays', () => {
     let hostMatch: NetMatch | null = null;
     const hostSession = await connectSession({ matchStarted: (match) => { hostMatch = match; } });
     const guestSession = await connectSession();
-    const playRules: RoomRules = { ...rules, rounds: 2, maxPlanets: 5, bounce: false, fixedPower: false, powerUps: true, powerUpAmount: 4, powerUpKinds: [...POWER_UP_KINDS] };
+    const playRules: RoomRules = { ...rules, rounds: 2, maxPlanets: 5, edges: 'void' as const, fixedPower: false, powerUps: true, powerUpAmount: 4, powerUpKinds: [...POWER_UP_KINDS] };
     hostSession.createRoom({ name: 'Anna', mode: 'ffa', gameMode: 'classic', rules: playRules, maxPlayers: 3 });
     await waitForSession(hostSession, () => hostSession.room !== null);
     await waitForSession(guestSession, () => guestSession.rooms.some((room) => room.id === hostSession.room!.id));

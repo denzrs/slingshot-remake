@@ -8,7 +8,7 @@ import { Shot, type World } from '../../src/sim/physics';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 import { Volley } from '../../src/sim/volley';
 
-const rules = { bounce: false, timeLimit: 20 };
+const rules = { edges: 'void' as const, timeLimit: 20 };
 
 function emptyWorld(ships: [number, number][] = [[300, 400], [900, 400]]): World {
   return { width: 1280, height: 800, planets: [], ships: ships.map(([x, y]) => ({ x, y, alive: true })), holes: [], nebulae: [], wormholes: [], defenses: [], version: 0 };

@@ -13,7 +13,7 @@ import '@fontsource/b612/700';
 import '@fontsource/b612-mono/400';
 import '@fontsource/b612-mono/700';
 
-import { AIM, COLORS, FONTS, GRACE, HORIZON, SCORING } from '../sim/config';
+import { AIM, COLORS, EDGE_MODES, FONTS, GRACE, HORIZON, SCORING, isEdgeMode, type EdgeMode } from '../sim/config';
 import { cloneWorld, Shot, type ShotEnd, type ShotRules, type StyleKind, type World } from '../sim/physics';
 import { scoreChallengeHit, scoreHorizonKill } from '../sim/scoring';
 import { generateWorld } from '../sim/world';
@@ -139,7 +139,7 @@ const elements = {
   horizon: document.createElement('input'),
   collapses: document.createElement('select'),
   shotTime: document.createElement('select'),
-  bounce: document.createElement('input'),
+  edges: document.createElement('select'),
   ships: document.createElement('select'),
   maxPlanets: document.createElement('select'),
   teams: document.createElement('select'),
@@ -215,7 +215,7 @@ function refreshShips(): void {
 
 // ————————————————————————————— Sampling —————————————————————————————
 
-let rules: ShotRules = { bounce: false, timeLimit: 20 };
+let rules: ShotRules = { edges: 'void', timeLimit: 20 };
 
 export interface Sample {
   angle: number;
@@ -786,7 +786,7 @@ async function run(): Promise<void> {
   const minPower = Math.min(AIM.MAX_POWER - 1, Math.max(0, Math.round(Number(elements.minPower.value) || 0)));
   elements.minPower.value = String(minPower);
   horizonMode = elements.horizon.checked;
-  rules = { bounce: elements.bounce.checked, timeLimit: Number(elements.shotTime.value) };
+  rules = { edges: elements.edges.value as EdgeMode, timeLimit: Number(elements.shotTime.value) };
   firstShotGrace = Number(elements.grace.value) || 0;
   styleBonuses = elements.styleBonuses.checked;
   const maxPlanets = Number(elements.maxPlanets.value) || 4;
@@ -844,7 +844,7 @@ async function run(): Promise<void> {
   updateStats(scoringSamples);
   const seconds = ((performance.now() - started) / 1000).toFixed(1);
   const holeState = world.holes[0] ? `, black hole r=${world.holes[0].radius.toFixed(1)} m=${Math.round(world.holes[0].mass)}` : '';
-  elements.status.textContent = `${samples.length} trajectories in ${seconds}s (seed ${seed}, ${horizonMode ? 'Event Horizon snapshot' : 'classic'}, ship ${from}, ${shipCount} ships, max ${maxPlanets} planets${teamSeats ? `, team IDs ${teamSeats.join('-')}` : ''}, power ${fixedPower ? `fixed ${fixedPowerLevel}` : `0-${powerCap}`}${holeState}, ${rules.timeLimit}s shot timeout, edges ${rules.bounce ? 'reflective' : 'open'}, first-shot grace ${spared.length ? `through ship ${spared[0]}` : 'off'}, style bonuses ${styleBonuses ? 'on' : 'off'}, min power ${minPower})`;
+  elements.status.textContent = `${samples.length} trajectories in ${seconds}s (seed ${seed}, ${horizonMode ? 'Event Horizon snapshot' : 'classic'}, ship ${from}, ${shipCount} ships, max ${maxPlanets} planets${teamSeats ? `, team IDs ${teamSeats.join('-')}` : ''}, power ${fixedPower ? `fixed ${fixedPowerLevel}` : `0-${powerCap}`}${holeState}, ${rules.timeLimit}s shot timeout, edges ${rules.edges}, first-shot grace ${spared.length ? `through ship ${spared[0]}` : 'off'}, style bonuses ${styleBonuses ? 'on' : 'off'}, min power ${minPower})`;
   elements.run.disabled = false;
   elements.png.disabled = false;
 }
@@ -1007,10 +1007,10 @@ elements.shotTime.replaceChildren(...[10, 20, 30, 60].map((seconds) => new Optio
 elements.shotTime.value = params.get('shotTime') ?? '20';
 elements.shotTime.title = 'Seconds before a shot fizzles out';
 elements.shotTime.addEventListener('change', run);
-elements.bounce.type = 'checkbox';
-elements.bounce.checked = params.get('bounce') === 'true';
-elements.bounce.title = 'Reflect shots off the field edges';
-elements.bounce.addEventListener('change', run);
+elements.edges.replaceChildren(...EDGE_MODES.map((mode) => new Option(mode, mode)));
+elements.edges.value = isEdgeMode(params.get('edges')) ? params.get('edges')! : 'void';
+elements.edges.title = 'What the field edge does to a shot: void (lost), wall (bounces back), loop (comes out on the opposite side)';
+elements.edges.addEventListener('change', run);
 elements.styleBonuses.type = 'checkbox';
 elements.styleBonuses.checked = params.has('style') ? params.get('style') === 'true' : true;
 elements.styleBonuses.title = 'Include Classic trick-shot multipliers in first-shot point estimates';
@@ -1129,12 +1129,12 @@ bar.append(
   field('Exact power', elements.exactPower),
   field('Shooter', elements.shooter),
   field('Shot timeout', elements.shotTime),
+  field('Field edges', elements.edges),
   field('Sample count', elements.flights),
   field('Minimum power', elements.minPower),
   field('Event Horizon state', elements.collapses),
   field('First-round grace', elements.grace),
   checkField('Event Horizon', elements.horizon),
-  checkField('Reflective edges', elements.bounce),
   checkField('Pay trick-shot bonuses', elements.styleBonuses),
   checkField('Color by flight time', elements.colorFlightTime),
 );

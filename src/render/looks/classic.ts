@@ -1,5 +1,5 @@
-import { AIM, COLORS, HORIZON, PHYSICS, SUDDEN_DEATH } from '../../sim/config';
-import { aimDirection, isWormholeJump, type Wormhole } from '../../sim/physics';
+import { AIM, COLORS, HORIZON, PHYSICS, SUDDEN_DEATH, WORMHOLE } from '../../sim/config';
+import { aimDirection, isTrailBreak, type Wormhole } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
 import { drawPlotterFrame } from '../backdrop';
 import { drawBlackHole, drawDangerRing, strokeHoleFlare } from '../blackhole';
@@ -16,7 +16,7 @@ import { drawNeutronStar, drawSun } from '../sun';
 import { drawStormBurst, drawStormCloud, drawStormSparks } from '../storm';
 import { CLASSIC_PORTAL, drawPortal, drawWormhole } from '../wormhole';
 import type { Look } from '../../data/look';
-import { LOCATE_PING, type AimStyle, type EffectStyle, type LookPainter, type Styles } from './painter';
+import { LOCATE_PING, type AimStyle, type EffectStyle, type LookPainter, type LoopGate, type Styles } from './painter';
 
 /**
  * The engraved plan: every element drawn the way the game always drew it. Every other look is this painter with some
@@ -76,6 +76,7 @@ export function engraved(id: Look, styles: Styles = {}, parts: Partial<LookPaint
     begin: () => {},
     backdropArt: () => {},
     border: drawPlotterFrame,
+    loopGate: drawEngravedGate,
     sky: () => {},
     post: () => {},
     ...parts,
@@ -300,6 +301,14 @@ export function drawEngravedTrail(ctx: CanvasRenderingContext2D, points: number[
   strokePolyline(ctx, points, wormholes);
 }
 
+/** A gate of a loop in the engraved plan: a doorway in the wormhole's drawing, glowing, that opens as the shot dives towards it. */
+export function drawEngravedGate(ctx: CanvasRenderingContext2D, { x, y, out, color, strength, time }: LoopGate): void {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  drawPortal(ctx, x, y, out, WORMHOLE.RADIUS * 1.35, color, time, Math.min(1, strength * 1.2), 0, 0.35 + 0.65 * strength);
+  ctx.restore();
+}
+
 /** The track of a shot in flight; a plasma shot's is faint with a ribbon over it (`additive` adds the ribbon up as light). */
 export function drawEngravedLiveTrail(ctx: CanvasRenderingContext2D, points: number[], wormholes: readonly Wormhole[], color: string, plasma: boolean, time: number, additive = false): void {
   ctx.strokeStyle = color;
@@ -320,7 +329,7 @@ function drawEngravedPlasmaTrail(ctx: CanvasRenderingContext2D, pts: number[], w
   if (additive) ctx.globalCompositeOperation = 'lighter';
   for (let pass = 0; pass < 2; pass++) {
     for (let k = from; k < n; k++) {
-      if (wormholes.length && isWormholeJump(pts, k * 2, wormholes)) continue;
+      if (isTrailBreak(pts, k * 2, wormholes)) continue;
       const f = (k - from + 1) / (n - from);
       ctx.strokeStyle = pass === 0 ? rgba(POWER_UP_COLORS.plasma, 0.22 * f) : rgba('#e6ffff', 0.8 * f * f);
       ctx.lineWidth = (pass === 0 ? 9 : 2.4) * f;

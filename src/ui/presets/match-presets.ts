@@ -26,7 +26,7 @@ const PRESET_GROUPS = {
   },
   horizon: {
     standard: (base) => base,
-    trickshot: (base) => ({ ...base, maxPower: 60, bounce: true, styleBonuses: true }),
+    trickshot: (base) => ({ ...base, maxPower: 60, edges: 'wall', styleBonuses: true }),
     mayhem: (base) => ({ ...base, mayhem: MAYHEM_PRESET_LEVEL, styleBonuses: true }),
   },
 } satisfies Record<GameMode, Record<string, PresetRuleFactory>>;
@@ -126,6 +126,7 @@ export const HANDPICKED_IDS = [
   'orbitalSniper', 'solarSailer', 'eclipseRicochet', 'totalEclipse', 'cosmicMaelstrom', 'hyperOrbit',
   'escapeVelocity', 'horizonShadow', 'gravityCentrifuge', 'planetEater', 'singularityBlitz', 'deathSpiral',
   'bubbleWrap', 'hostileArchitecture', 'noForwardingAddress', 'theUnlearning',
+  'ringRoad', 'lapRecord', 'eventLoop',
 ] as const;
 export type HandpickedId = (typeof HANDPICKED_IDS)[number];
 export interface HandpickedPreset {
@@ -141,32 +142,35 @@ const pickups = (powerUpKinds: PowerUpKind[], powerUpAmount: number): Partial<Ro
 /** Each mode owns its authored daily combinations; every pick uses simultaneous shots. */
 const HANDPICKED: Record<GameMode, readonly HandpickedSpec[]> = {
   classic: [
-    { id: 'pinballRiot', patch: { rounds: 3, shotTime: 20, maxPlanets: 2, bounce: true, fixedPower: true, fixedPowerLevel: 95, fadingTrails: 1, ...pickups(['splitter', 'antigravity', 'shield'], 3) } },
-    { id: 'blindSonar', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, invisiblePlanets: true, bounce: true, fixedPower: true, fixedPowerLevel: 65, hiddenAim: true, fadingTrails: 2, styleBonuses: true, ...pickups(['splitter', 'piercing'], 2) } },
+    { id: 'pinballRiot', patch: { rounds: 3, shotTime: 20, maxPlanets: 2, edges: 'wall', fixedPower: true, fixedPowerLevel: 95, fadingTrails: 1, ...pickups(['splitter', 'antigravity', 'shield'], 3) } },
+    { id: 'blindSonar', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, invisiblePlanets: true, edges: 'wall', fixedPower: true, fixedPowerLevel: 65, hiddenAim: true, fadingTrails: 2, styleBonuses: true, ...pickups(['splitter', 'piercing'], 2) } },
     { id: 'siegeRun', patch: { rounds: 5, shotTime: 30, maxPlanets: 6, maxPower: 45, hiddenAim: true, neighborGrace: 1, ...pickups(['defense', 'planetkiller', 'piercing', 'shield'], 4) } },
-    { id: 'spacetimeRift', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, bounce: true, hiddenAim: true, fadingTrails: 2, ...pickups(['wormhole', 'blackhole', 'teleport', 'splitter'], 4) } },
+    { id: 'spacetimeRift', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, edges: 'wall', hiddenAim: true, fadingTrails: 2, ...pickups(['wormhole', 'blackhole', 'teleport', 'splitter'], 4) } },
     { id: 'nebulaLock', patch: { rounds: 5, shotTime: 30, maxPlanets: 5, maxPower: 70, mayhem: 1, ...pickups(['nebula', 'plasma', 'antigravity', 'blackhole'], 4) } },
     { id: 'singlePlanetMayhem', patch: { rounds: 7, shotTime: 20, maxPlanets: 1, fixedPower: true, fixedPowerLevel: 60, hiddenAim: true, neighborGrace: 1, mayhem: 3 } },
-    { id: 'bubbleWrap', patch: { rounds: 5, shotTime: 30, maxPlanets: 3, bounce: true, styleBonuses: true, ...pickups(['shield', 'splitter'], 4) } },
+    { id: 'bubbleWrap', patch: { rounds: 5, shotTime: 30, maxPlanets: 3, edges: 'wall', styleBonuses: true, ...pickups(['shield', 'splitter'], 4) } },
     { id: 'hostileArchitecture', patch: { rounds: 5, shotTime: 30, maxPlanets: 6, maxPower: 45, ...pickups(['defense', 'planetkiller'], 4) } },
+    { id: 'ringRoad', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, edges: 'loop', styleBonuses: true, fadingTrails: 2 } },
   ],
   solar: [
     { id: 'orbitalSniper', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, fixedPower: true, fixedPowerLevel: 55, ...pickups(['defense', 'piercing', 'antigravity'], 3) } },
     { id: 'solarSailer', patch: { rounds: 5, shotTime: 30, maxPlanets: 5, maxPower: 35, ...pickups(['nebula', 'plasma', 'preview'], 3) } },
-    { id: 'eclipseRicochet', patch: { rounds: 3, shotTime: 20, maxPlanets: 3, bounce: true, hiddenAim: true, fadingTrails: 1, ...pickups(['splitter', 'wormhole', 'shield'], 3) } },
+    { id: 'eclipseRicochet', patch: { rounds: 3, shotTime: 20, maxPlanets: 3, edges: 'wall', hiddenAim: true, fadingTrails: 1, ...pickups(['splitter', 'wormhole', 'shield'], 3) } },
     { id: 'totalEclipse', patch: { rounds: 5, shotTime: 20, maxPlanets: 7, invisiblePlanets: true, fadingTrails: 4, ...pickups(['planetkiller', 'splitter'], 2) } },
     { id: 'cosmicMaelstrom', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, mayhem: 2, fixedPower: true, fixedPowerLevel: 75, ...pickups(['blackhole', 'teleport', 'antigravity'], 3) } },
-    { id: 'hyperOrbit', patch: { rounds: 7, shotTime: 10, maxPlanets: 2, bounce: true, fixedPower: true, fixedPowerLevel: 90, mayhem: 3 } },
+    { id: 'hyperOrbit', patch: { rounds: 7, shotTime: 10, maxPlanets: 2, edges: 'wall', fixedPower: true, fixedPowerLevel: 90, mayhem: 3 } },
     { id: 'theUnlearning', patch: { rounds: 5, shotTime: 30, maxPlanets: 5, fixedPower: true, fixedPowerLevel: 60, fadingTrails: 2, ...pickups(['antigravity'], 4) } },
+    { id: 'lapRecord', patch: { rounds: 5, shotTime: 30, maxPlanets: 4, edges: 'loop', ...pickups(['preview', 'splitter', 'plasma'], 3) } },
   ],
   horizon: [
     { id: 'escapeVelocity', patch: { rounds: 3, shotTime: 30, maxPlanets: 2, maxPower: 40, ...pickups(['antigravity', 'teleport'], 2) } },
     { id: 'horizonShadow', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, hiddenAim: true, fadingTrails: 1, fixedPower: true, fixedPowerLevel: 60, ...pickups(['wormhole', 'shield', 'piercing'], 3) } },
-    { id: 'gravityCentrifuge', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, bounce: true, fixedPower: true, fixedPowerLevel: 85, ...pickups(['antigravity', 'nebula', 'plasma', 'splitter'], 4) } },
+    { id: 'gravityCentrifuge', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, edges: 'wall', fixedPower: true, fixedPowerLevel: 85, ...pickups(['antigravity', 'nebula', 'plasma', 'splitter'], 4) } },
     { id: 'planetEater', patch: { rounds: 5, shotTime: 20, maxPlanets: 6, maxPower: 65, ...pickups(['defense', 'planetkiller', 'blackhole', 'teleport'], 4) } },
-    { id: 'singularityBlitz', patch: { rounds: 3, shotTime: 10, maxPlanets: 1, bounce: true, hiddenAim: true, mayhem: 2, ...pickups(['teleport', 'splitter', 'shield'], 3) } },
+    { id: 'singularityBlitz', patch: { rounds: 3, shotTime: 10, maxPlanets: 1, edges: 'wall', hiddenAim: true, mayhem: 2, ...pickups(['teleport', 'splitter', 'shield'], 3) } },
     { id: 'deathSpiral', patch: { rounds: 7, shotTime: 20, maxPlanets: 3, maxPower: 50, fadingTrails: 2, mayhem: 3, ...pickups(['blackhole', 'wormhole', 'nebula', 'piercing'], 4) } },
     { id: 'noForwardingAddress', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, hiddenAim: true, fadingTrails: 1, ...pickups(['teleport'], 4) } },
+    { id: 'eventLoop', patch: { rounds: 5, shotTime: 30, maxPlanets: 3, edges: 'loop', maxPower: 60, fadingTrails: 1, ...pickups(['antigravity', 'splitter', 'shield'], 3) } },
   ],
 };
 

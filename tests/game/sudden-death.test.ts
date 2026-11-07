@@ -21,7 +21,7 @@ const turn = (match: ClassicMatch): void => {
 
 describe('a ship pulling shots in', () => {
   const world = (ships: Ship[]): World => ({ width: FIELD.width, height: FIELD.height, planets: [], ships, holes: [], nebulae: [], wormholes: [], defenses: [], version: 0 });
-  const rules = { bounce: false, timeLimit: 20 };
+  const rules = { edges: 'void' as const, timeLimit: 20 };
   // A shot straight to the right, passing well above the second ship.
   const closest = (pull: number | undefined, teams: [number | null, number | null] = [null, null]): number =>
     simulateShot(world([

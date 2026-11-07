@@ -6,9 +6,15 @@ import { cloneWorld, simulateShot } from '../../src/sim/physics';
 /** The first day with the flak, nebula and ammo variations. */
 export const VARIANTS = '2026-10-22';
 const days = (n: number, from: string = CHALLENGE.EPOCH) => Array.from({ length: n }, (_, i) => shiftDate(from, i));
+/** The days from `a` up to, not including, `b`. */
+const shiftDays = (a: string, b: string): number => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
 
-/** Every day for five weeks, every sector: the whole point is that none of them can be broken. */
-export const allSectors = () => [...days(35), ...days(33, VARIANTS)].flatMap((d) => dailyChallenge(d).sectors.map((spec) => ({ day: d, spec })));
+/** The first day with the loop themes, and the last day of the first full cycle of them. */
+export const LOOP_DAY = '2026-11-11';
+const AFTER_VARIANT_DAYS = shiftDate(VARIANTS, 33);
+
+/** Every day for five weeks, every sector, and a whole cycle of the loop themes: the whole point is that none of them can be broken. */
+export const allSectors = () => [...days(35), ...days(33, VARIANTS), ...days(shiftDays(AFTER_VARIANT_DAYS, shiftDate(LOOP_DAY, 21)), AFTER_VARIANT_DAYS)].flatMap((d) => dailyChallenge(d).sectors.map((spec) => ({ day: d, spec })));
 
 /** Building all 175 sectors costs seconds, so each file builds and sweeps its own share of them and vitest runs the files side by side. */
 export const SWEEP_FILES = 4;

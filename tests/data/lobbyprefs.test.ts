@@ -11,7 +11,7 @@ const stored = (values: Record<string, unknown>) =>
 afterEach(() => vi.unstubAllGlobals());
 
 /** What a player has set up for offline games: nothing like the standard rules. */
-const OFFLINE = { rounds: 20, maxPlanets: 8, bounce: true, fixedPower: true, fixedPowerLevel: 90, maxPower: 30, shotTime: 60, hiddenAim: true, fadingTrails: 4, neighborGrace: 2 };
+const OFFLINE = { rounds: 20, maxPlanets: 8, edges: 'wall' as const, fixedPower: true, fixedPowerLevel: 90, maxPower: 30, shotTime: 60, hiddenAim: true, fadingTrails: 4, neighborGrace: 2 };
 
 describe('Mayhem rules', () => {
   it('keep a saved chaos strength, and fall back to off for one nobody offers', () => {

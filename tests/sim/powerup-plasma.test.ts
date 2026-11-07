@@ -6,7 +6,7 @@ import { Shot, simulateShot, type World } from '../../src/sim/physics';
 import { Volley } from '../../src/sim/volley';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 
-const rules = { bounce: false, timeLimit: 20 };
+const rules = { edges: 'void' as const, timeLimit: 20 };
 
 const rock = { radius: 30, mass: 20_000, seed: 3, style: 'rocky', tint: '#fff' } as const;
 

@@ -219,7 +219,7 @@ export class ClassicMatch extends Match {
   }
 
   get rules(): ShotRules {
-    return { bounce: this.settings.bounce, timeLimit: this.settings.shotTime };
+    return { edges: this.settings.edges, timeLimit: this.settings.shotTime };
   }
 
   protected get stylePays(): boolean {

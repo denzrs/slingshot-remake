@@ -926,7 +926,7 @@ function frame(now: number): void {
       angle: String(shooter?.angle ?? 0),
       power: String(shooter?.power ?? 50),
       aimPower: String(shooter?.power ?? 50),
-      bounce: String(current.rules.bounce),
+      edges: current.rules.edges,
       shotTime: String(current.rules.timeLimit),
       grace: String(activeGrace),
       style: String(current.settings.styleBonuses),

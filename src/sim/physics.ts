@@ -1,4 +1,4 @@
-import { DEFENSE, PLASMA, NEBULA, PHYSICS, SOLAR_STORM, WORMHOLE } from './config';
+import { DEFENSE, FIELD, LOOP_MARGIN, PLASMA, NEBULA, PHYSICS, SOLAR_STORM, WORMHOLE, type EdgeMode } from './config';
 
 // Read once: Shot.step is the innermost loop of every CPU search and killcam, and an imported binding is slower to read than a local one.
 const { DT, G, SHIP_RADIUS, OUT_MARGIN } = PHYSICS;
@@ -104,6 +104,16 @@ export function isWormholeJump(points: readonly number[], i: number, wormholes: 
   return wormholes.some((w) => (near(x0, y0, w.ax, w.ay) && near(x1, y1, w.bx, w.by)) || (near(x0, y0, w.bx, w.by) && near(x1, y1, w.ax, w.ay)));
 }
 
+/**
+ * Whether the trail segment ending at point `i` is no flight and must not be drawn as a line: a jump between the two
+ * mouths of a wormhole, or a jump across the field where a shot came out beyond the opposite edge of a loop. A shot never
+ * flies more than a few pixels between two trail points, so more than half the field is always a jump.
+ */
+export function isTrailBreak(points: readonly number[], i: number, wormholes: readonly Wormhole[]): boolean {
+  if (Math.abs(points[i] - points[i - 2]) > FIELD.width / 2 || Math.abs(points[i + 1] - points[i - 1]) > FIELD.height / 2) return true;
+  return wormholes.length > 0 && isWormholeJump(points, i, wormholes);
+}
+
 /** A planetary defense the power-up has set on a planet's surface: it tracks every shot that flies through its dome, bar its owner's side, and shoots it down. */
 export interface Defense {
   /** Where it stands: on the planet's surface. */
@@ -192,7 +202,8 @@ export interface World {
 }
 
 export interface ShotRules {
-  bounce: boolean;
+  /** What the edge of the field does to a shot: it flies out and is lost, bounces back, or comes out on the opposite side. */
+  edges: EdgeMode;
   /** Seconds of flight before a shot fizzles out. */
   timeLimit: number;
 }
@@ -508,11 +519,18 @@ export class Shot {
     this.time += dt;
 
     let bounced = false;
-    if (this.rules.bounce) {
+    if (this.rules.edges === 'wall') {
       if (this.x < 0) { this.x = -this.x; this.vx = -this.vx; bounced = true; }
       else if (this.x > width) { this.x = 2 * width - this.x; this.vx = -this.vx; bounced = true; }
       if (this.y < 0) { this.y = -this.y; this.vy = -this.vy; bounced = true; }
       else if (this.y > height) { this.y = 2 * height - this.y; this.vy = -this.vy; bounced = true; }
+    } else if (this.rules.edges === 'loop') {
+      // The field closes on itself: a shot flies out beyond the edge to where it is carried across, and from beyond the opposite edge it comes back in, with its velocity unchanged.
+      const m = LOOP_MARGIN;
+      if (this.x < -m) this.x += width + 2 * m;
+      else if (this.x > width + m) this.x -= width + 2 * m;
+      if (this.y < -m) this.y += height + 2 * m;
+      else if (this.y > height + m) this.y -= height + 2 * m;
     }
     if (this.encounters) this.trackStyle(hx, hy, bounced);
     if (this.world.wormholes.length) this.warp();

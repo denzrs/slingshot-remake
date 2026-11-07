@@ -1,5 +1,6 @@
 import { rgba } from '../color';
 import type { BorderView, FrameInfo } from './painter';
+import type { EdgeMode } from '../../sim/config';
 
 /**
  * What the holo look puts behind and over the field as a whole, so the field is a projection and not the engraved plate
@@ -77,20 +78,22 @@ function paintLattice(ctx: CanvasRenderingContext2D, w: number, h: number, plate
 
 // ------------------------------------------------------------------- border ----
 
-/** The frame: brackets in the corners, an outline only where shots bounce off the edge, and the lattice round it. */
-export function paintHoloBorder(ctx: CanvasRenderingContext2D, view: BorderView, walls: boolean): void {
+/** The frame: brackets in the corners, an outline where shots bounce off the edge (dashed for a loop), and the lattice round it. */
+export function paintHoloBorder(ctx: CanvasRenderingContext2D, view: BorderView, edges: EdgeMode): void {
   const { scale, offsetX: ox, offsetY: oy, plate } = view;
   const W = plate.w * scale;
   const H = plate.h * scale;
   paintLattice(ctx, view.cssWidth, view.cssHeight, { x: ox, y: oy, w: W, h: H });
   ctx.save();
-  // Only a wall is a line: where shots fly out there is no outline, so nothing looks like something they would bounce off.
-  if (walls) {
+  // A wall is a solid line and the edge of a loop a dashed one; where shots fly out there is no outline, so nothing looks like something they would bounce off.
+  if (edges !== 'void') {
+    if (edges === 'loop') ctx.setLineDash([10, 8]);
     for (const [width, alpha] of [[4, 0.04], [1, 0.7]] as const) {
       ctx.strokeStyle = rgba(GLOW, alpha);
       ctx.lineWidth = width;
       ctx.strokeRect(ox, oy, W, H);
     }
+    ctx.setLineDash([]);
   }
 
   const arm = 22;

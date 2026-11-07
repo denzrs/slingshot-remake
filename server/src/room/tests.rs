@@ -770,7 +770,7 @@ fn host_cannot_change_rules_after_start_and_invalid_rule_types_are_rejected() {
 #[test]
 fn the_host_can_change_the_game_with_the_rules_and_nobody_else_can() {
     let rules = json!({
-        "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"bounce":false,
+        "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"edges":"void",
         "fixedPower":false,"fixedPowerLevel":55,"maxPower":100,"shotTime":20,
         "styleBonuses":false,"neighborGrace":0,"simultaneousShots":false,
         "hiddenAim":false,"fadingTrails":0
@@ -2070,7 +2070,7 @@ fn the_host_can_limit_chat_to_the_players_and_nobody_can_flood_it() {
     drain_json(&mut host_rx);
     let mut message = create("Host", None);
     message["rules"] = json!({
-        "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"bounce":false,
+        "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"edges":"void",
         "fixedPower":false,"fixedPowerLevel":55,"maxPower":100,"shotTime":20,
         "styleBonuses":false,"neighborGrace":0,"simultaneousShots":false,
         "hiddenAim":false,"fadingTrails":0,"chatPlayersOnly":true

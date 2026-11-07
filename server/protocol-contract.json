@@ -3,7 +3,7 @@
     "rounds": 5,
     "maxPlanets": 4,
     "invisiblePlanets": false,
-    "bounce": false,
+    "edges": "void",
     "fixedPower": false,
     "fixedPowerLevel": 55,
     "maxPower": 100,
@@ -32,7 +32,8 @@
     "fadingTrails": [0, 1, 2, 4],
     "mayhem": [0, 1, 2, 3],
     "powerUpAmount": [1, 2, 3, 4],
-    "killcam": ["auto", "off", "every", "round"]
+    "killcam": ["auto", "off", "every", "round"],
+    "edges": ["void", "wall", "loop"]
   },
   "room": {
     "defaults": {

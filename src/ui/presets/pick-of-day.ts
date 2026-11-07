@@ -30,6 +30,9 @@ const COLORS: Record<HandpickedId, string> = {
   hostileArchitecture: '#ff806e',
   noForwardingAddress: '#8ec3df',
   theUnlearning: '#c29aff',
+  ringRoad: '#6fe3c8',
+  lapRecord: '#f2c46d',
+  eventLoop: '#b99cff',
 };
 
 /** Original flight chart for each authored daily combination. */
@@ -108,6 +111,9 @@ export function pickArt(pick: HandpickedPreset): SVGElement {
       ${trace('M190 49Q192 31 213 23T290 29', 2, '', '#6fe3c8')}
       ${trace('m280 24 10 5-11 2', 1.6, '', '#6fe3c8')}
       ${ship(29, 149, 70, '#6fe3c8')}${ship(278, 138, -85, c, .7)}`,
+    ringRoad: `${line('M25 44 295 44 295 150 25 150 25 44', 1.5, '5 7')}${planet(135, 84, 14)}${planet(213, 122, 12)}<path d="M295 62q11 16 0 32M25 62q-11 16 0 32" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"/>${line('M62 132Q148 160 232 112T295 78')}${line('M25 78Q58 62 100 70', 2)}<path d="m92 62 10 8-12 3" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>${ship(62, 132, -18)}${ship(114, 70, 170, '#ffad65')}`,
+    lapRecord: `${line('M25 44 295 44 295 150 25 150 25 44', 1.5, '5 7')}${planet(78, 100, 13)}${planet(252, 96, 15, false, true)}<path d="M198 44q16 -11 32 0M198 150q16 11 32 0" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"/>${line('M52 124Q118 96 168 66T214 44')}${line('M214 150Q226 134 241 112', 2)}<path d="m232 118 9-8 2 12" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>${ship(52, 124, 28)}${ship(248, 96, 105, '#ffad65')}`,
+    eventLoop: `${line('M25 44 295 44 295 150 25 150 25 44', 1.5, '5 7')}${planet(86, 66, 11)}<path d="M25 100q-11 16 0 32M295 100q11 16 0 32" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"/>${line('M70 140Q50 126 25 116')}${line('M295 116Q250 112 224 94T186 84', 2)}<path d="m196 80-11 5 8 8" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/><g fill="${c}" opacity=".5"><circle cx="205" cy="92" r="1.6"/><circle cx="214" cy="97" r="1.1"/></g>${ship(70, 140, 175)}`,
   };
 
   const background = '<g fill="#e8e4d8" opacity=".4"><circle cx="32" cy="25" r="1"/><circle cx="107" cy="33" r="1.5"/><circle cx="281" cy="99" r="1"/><circle cx="190" cy="169" r="1"/><circle cx="65" cy="176" r="1"/></g>';

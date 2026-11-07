@@ -106,7 +106,7 @@ function supply(label: string, seats: Seat[]): void {
 
 /** How many sampled shots from ship 0 touch each pickup, against how many touch the enemy ship. */
 function reach(): void {
-  const rules = { bounce: false, timeLimit: 20 };
+  const rules = { edges: 'void' as const, timeLimit: 20 };
   const powers = [20, 35, 50, 65, 80, 100];
   const pickupShare: number[] = [];
   const enemyShare: number[] = [];

@@ -101,7 +101,7 @@ export class HorizonMatch extends Match {
   private collapse: CollapseState | null = null;
 
   get rules(): ShotRules {
-    return { bounce: this.settings.bounce, timeLimit: this.settings.shotTime };
+    return { edges: this.settings.edges, timeLimit: this.settings.shotTime };
   }
 
   snapshot(): HorizonSnapshot {

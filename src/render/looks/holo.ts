@@ -30,6 +30,7 @@ import {
 } from './holo-art';
 import { drawHoloFall, drawHoloFlare } from './falls';
 import { drawHoloBlast, drawHoloPackets, drawHoloShard, drawHoloShipScanned } from './holo-events';
+import { drawHoloGate } from './holo-gate';
 import { holoBegin, holoPost, holoSky, paintHoloBackdrop, paintHoloBorder, startRipple } from './holo-field';
 
 /**
@@ -105,6 +106,7 @@ const holoParts: Partial<LookPainter> = {
   begin: holoBegin,
   backdropArt: paintHoloBackdrop,
   border: paintHoloBorder,
+  loopGate: drawHoloGate,
   sky: holoSky,
   post: holoPost,
   fallDust: true,

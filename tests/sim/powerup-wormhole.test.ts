@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS } from '../../src/data/settings';
 import { portalColor } from '../../src/render/powerup-art';
 import { CPU_IGNORES, cpuWormholeSpots } from '../../src/sim/powerups';
 
-const rules = { bounce: false, timeLimit: 20 };
+const rules = { edges: 'void' as const, timeLimit: 20 };
 
 const world = (): World => ({
   width: FIELD.width,

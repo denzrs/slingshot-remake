@@ -138,12 +138,14 @@ describe('handpicked combinations', () => {
   });
 
   it('provides distinct, selectable, mode-specific daily combinations with valid settings', () => {
-    const counts = { classic: 8, solar: 7, horizon: 7 };
+    const counts = { classic: 9, solar: 8, horizon: 8 };
     for (const mode of ['classic', 'solar', 'horizon'] as const) {
       const picks = handpickedPresets(mode);
       expect(picks).toHaveLength(counts[mode]);
       expect(picks.every((pick) => pick.mode === mode)).toBe(true);
       expect(picks.filter((pick) => pick.rules.mayhem > 0)).toHaveLength(2);
+      // Each mode has a pick that plays on a loop.
+      expect(picks.filter((pick) => pick.rules.edges === 'loop')).toHaveLength(1);
       expect(new Set(picks.map(({ id, mode }) => `${mode}.${id}`)).size).toBe(picks.length);
       for (const pick of picks) {
         expect(samePick(matchingHandpicked(pick.rules, mode), pick)).toBe(true);

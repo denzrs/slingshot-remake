@@ -1,5 +1,6 @@
 import type { Look } from '../../data/look';
 import type { Falling } from '../../game';
+import type { EdgeMode } from '../../sim/config';
 import type { BlackHole, Planet } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
 import type { Wormhole } from '../../sim/physics';
@@ -122,7 +123,9 @@ export interface LookPainter {
   /** Painted once onto the finished backdrop (the plate and its stars), before the border: `ctx` is scaled to CSS pixels, `w` × `h` the canvas in them. */
   backdropArt(ctx: CanvasRenderingContext2D, w: number, h: number): void;
   /** The border round the plate, painted onto the backdrop: its ruler, its marks, the wall when shots bounce. `ctx` is in CSS pixels; `view` places the plate in them. */
-  border(ctx: CanvasRenderingContext2D, view: BorderView, walls: boolean): void;
+  border(ctx: CanvasRenderingContext2D, view: BorderView, edges: EdgeMode): void;
+  /** A gate of a loop: where a shot is carried across, a doorway opens, in the shooter's colour, `strength` (0 → 1) being how far. `out` points out of the field. */
+  loopGate(ctx: CanvasRenderingContext2D, gate: LoopGate): void;
   /** Painted every frame over the backdrop, under the field: what moves behind the game (device pixels, no transform). */
   sky(ctx: CanvasRenderingContext2D, frame: FrameInfo): void;
   /** Painted every frame over the finished field, under the HUD: whole-frame light (device pixels, no transform). */
@@ -155,6 +158,17 @@ export interface FrameInfo {
 }
 
 /** The plate's place in CSS pixels, for a look's border: its top-left, the CSS pixels per field unit and its size in field units. */
+/** One gate of a loop, in field units. */
+export interface LoopGate {
+  x: number;
+  y: number;
+  /** The direction out of the field at that edge, in radians: the way a shot arriving there is flying. */
+  out: number;
+  color: string;
+  strength: number;
+  time: number;
+}
+
 export interface BorderView {
   scale: number;
   offsetX: number;

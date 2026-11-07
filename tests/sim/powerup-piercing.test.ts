@@ -6,7 +6,7 @@ import { simulateShot, type World } from '../../src/sim/physics';
 import { Volley } from '../../src/sim/volley';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 
-const rules = { bounce: false, timeLimit: 20 };
+const rules = { edges: 'void' as const, timeLimit: 20 };
 
 const world3 = (shields = false): World => ({
   width: 1280,

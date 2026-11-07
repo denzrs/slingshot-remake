@@ -53,14 +53,25 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 // ————————————————————————————— Themes —————————————————————————————
 
 export type ThemeId = 'classic' | 'billiard' | 'blind' | 'singularity' | 'heavy' | 'precision' | 'sniper' | 'bastion' | 'nebula' | 'hammerhead'
-  | 'nebulaBilliard' | 'flakRain' | 'blackBilliards' | 'plasmaStorm' | 'gravityLadder' | 'shortFuse' | 'noReserve';
+  | 'nebulaBilliard' | 'flakRain' | 'blackBilliards' | 'plasmaStorm' | 'gravityLadder' | 'shortFuse' | 'noReserve'
+  | 'loopRoad' | 'loopHole' | 'loopFlak' | 'loopLap';
 
 /** The seven themes of the first weeks: days before `VARIANTS_FROM` keep their old rotation, so no past or running day changes. */
 const CLASSIC_THEMES: readonly ThemeId[] = ['classic', 'billiard', 'blind', 'singularity', 'heavy', 'precision', 'sniper'];
 
 const VARIANT_THEMES: readonly ThemeId[] = [...CLASSIC_THEMES, 'bastion', 'nebula', 'hammerhead'];
 
+/** The seventeen themes of the rotation from #24 to the day before `LOOP_THEMES_FROM`. */
 export const THEMES: readonly ThemeId[] = [...VARIANT_THEMES, 'nebulaBilliard', 'flakRain', 'blackBilliards', 'plasmaStorm', 'gravityLadder', 'shortFuse', 'noReserve'];
+
+/** The themes that play on a loop (the field's edges carry a shot to the opposite side). */
+export const LOOP_THEMES: readonly ThemeId[] = ['loopRoad', 'loopHole', 'loopFlak', 'loopLap'];
+
+/** Every theme, as the rotation plays them from `LOOP_THEMES_FROM` on. */
+export const ALL_THEMES: readonly ThemeId[] = [...THEMES, ...LOOP_THEMES];
+
+/** Challenge #41 (2026-11-11), the first day with the loop themes: the days before keep their rotation, so no past or running day changes. */
+export const LOOP_THEMES_FROM = 41;
 
 /** Challenge #21 (2026-10-22), the first day with the flak, nebula and ammo variations. */
 const VARIANTS_FROM = 21;
@@ -94,6 +105,8 @@ interface ThemeRule {
   noReserve?: boolean;
   gravityLadder?: boolean;
   flightTime?: number;
+  /** The field's edges close into a loop: a shot that leaves on one side comes out on the other. */
+  loop?: Rate;
 }
 
 const THEME_RULES: Record<ThemeId, ThemeRule> = {
@@ -114,6 +127,10 @@ const THEME_RULES: Record<ThemeId, ThemeRule> = {
   gravityLadder: { gravityLadder: true },
   shortFuse: { flightTime: 9 },
   noReserve: { noReserve: true },
+  loopRoad: { loop: { from: 0, p: 1 } },
+  loopHole: { loop: { from: 0, p: 1 }, hole: { from: 1, p: 1 } },
+  loopFlak: { loop: { from: 0, p: 1 }, flak: { from: 1, p: 1 } },
+  loopLap: { loop: { from: 0, p: 1 }, fixedPower: { from: 1, p: 1 } },
 };
 
 /** Classic dailies from the variations on may spice a sector with a flak cannon or a cloud, never with fixed ammo. */
@@ -124,6 +141,7 @@ const CLASSIC_VARIANTS: Pick<ThemeRule, 'flak' | 'nebula'> = { nebula: { from: 1
  * spread instead of the clumps pure randomness gives — and never the same theme twice in a row.
  */
 export function themeFor(number: number): ThemeId {
+  if (number >= LOOP_THEMES_FROM) return loopEraTheme(number - LOOP_THEMES_FROM);
   // The days up to the variations keep the old seven-day cycles, so nobody's past (or today's) challenge changes.
   if (number < VARIANTS_FROM) return cycleTheme(number - 1, CLASSIC_THEMES, 'slingshot-themes');
   if (number < EXPANDED_THEMES_FROM) return cycleTheme(number - VARIANTS_FROM, VARIANT_THEMES, 'slingshot-themes-v2');
@@ -134,6 +152,17 @@ export function themeFor(number: number): ThemeId {
     return firstOrder[idx];
   }
   return cycleTheme(idx, THEMES, 'slingshot-themes-v3');
+}
+
+/** The rotation from the loop themes on: all themes once per cycle in a seeded order, never the same theme twice in a row. */
+function loopEraTheme(idx: number): ThemeId {
+  const n = ALL_THEMES.length;
+  const cycle = Math.floor(idx / n);
+  const order = cycleOrder(cycle, ALL_THEMES, 'slingshot-themes-v4');
+  // Don't open a cycle with the theme that closed the last one, or the first with the one of the day before.
+  const before = cycle === 0 ? themeFor(LOOP_THEMES_FROM - 1) : cycleOrder(cycle - 1, ALL_THEMES, 'slingshot-themes-v4')[n - 1];
+  if (order[0] === before) [order[0], order[1]] = [order[1], order[0]];
+  return order[idx % n];
 }
 
 function cycleTheme(idx: number, themes: readonly ThemeId[], salt: string): ThemeId {
@@ -153,7 +182,7 @@ function cycleOrder(cycle: number, themes: readonly ThemeId[], salt: string): Th
 // ————————————————————————————— Sector specs —————————————————————————————
 
 type Difficulty = 1 | 2 | 3 | 4 | 5;
-type Modifier = 'bounce' | 'invisible' | 'fixedPower' | 'hole' | 'heavy' | 'flak' | 'nebula' | 'plasma' | 'gravityLadder' | 'shortFuse' | 'noReserve';
+type Modifier = 'bounce' | 'loop' | 'invisible' | 'fixedPower' | 'hole' | 'heavy' | 'flak' | 'nebula' | 'plasma' | 'gravityLadder' | 'shortFuse' | 'noReserve';
 
 export interface SectorSpec {
   index: number;
@@ -165,6 +194,8 @@ export interface SectorSpec {
   /** Shots the player gets for the whole sector. */
   shots: number;
   bounce: boolean;
+  /** The edges close into a loop. Left out on the sectors of the days before the loop themes, so their data stays as it was. */
+  loop?: boolean;
   invisible: boolean;
   fixedPower: boolean;
   /** A black hole sits in the middle (it does not grow, unlike Event Horizon). */
@@ -246,13 +277,17 @@ function sectorSpec(rule: ThemeRule, index: number, difficulty: Difficulty, rng:
   const invisible = on(rule.invisible, roll.invisible);
   // A hidden hole would hide planets and hole alike — that is cruel, not clever.
   const hole = !invisible && on(rule.hole, roll.hole);
-  const bounce = on(rule.bounce, roll.bounce);
   const fixedPower = on(rule.fixedPower, roll.fixedPower);
   const heavy = on(rule.heavy, roll.heavy);
   // The variations roll on a stream of their own, so adding them never shifts the dice of the older rules.
   const variant = createRng(hashSeed(seed, 'variants'));
   const rollFlak = variant();
   const rollNebula = variant();
+  // The loop draws after the others on the same stream, so it never shifts their dice.
+  const rollLoop = variant();
+  const loop = on(rule.loop, rollLoop);
+  // The edges are one rule: a loop takes the place of a wall.
+  const bounce = !loop && on(rule.bounce, roll.bounce);
   // A cannon on a hidden planet would be a cannon out of nowhere — cruel, not clever.
   const flak = !invisible && on(rule.flak, rollFlak);
   const nebulae = on(rule.nebula, rollNebula) ? 1 + +(difficulty >= 4) : 0;
@@ -274,6 +309,7 @@ function sectorSpec(rule: ThemeRule, index: number, difficulty: Difficulty, rng:
   return {
     index, seed, difficulty, targets, planets, shots: targets + slack, bounce, invisible, fixedPower, hole, gravity,
     flak, nebulae, ammo,
+    ...(loop ? { loop: true } : {}),
     ...(rule.flightTime ? { flightTime: rule.flightTime } : {}),
     ...(rule.gravityLadder ? { gravityLadder: true } : {}),
     ...(rule.noReserve ? { noReserve: true } : {}),
@@ -283,6 +319,7 @@ function sectorSpec(rule: ThemeRule, index: number, difficulty: Difficulty, rng:
 export function modifiersOf(spec: SectorSpec): Modifier[] {
   const out: Modifier[] = [];
   if (spec.bounce) out.push('bounce');
+  if (spec.loop) out.push('loop');
   if (spec.invisible) out.push('invisible');
   if (spec.fixedPower) out.push('fixedPower');
   if (spec.hole) out.push('hole');
@@ -297,7 +334,7 @@ export function modifiersOf(spec: SectorSpec): Modifier[] {
 }
 
 export function sectorRules(spec: SectorSpec): ShotRules {
-  return { bounce: spec.bounce, timeLimit: spec.flightTime ?? CHALLENGE.FLIGHT_TIME };
+  return { edges: spec.loop ? 'loop' : spec.bounce ? 'wall' : 'void', timeLimit: spec.flightTime ?? CHALLENGE.FLIGHT_TIME };
 }
 
 /** What the pilot fires in a sector: the rules of the flight, and the kind of shot. */

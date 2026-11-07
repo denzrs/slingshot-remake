@@ -11,7 +11,7 @@ const modes: GameMode[] = ['classic', 'solar', 'horizon'];
 
 function make(mode: Mode, count = 2, salvo = false): Match {
   const seats: Seat[] = Array.from({ length: 6 }, (_, i) => i < count ? 'human' : 'off');
-  const settings = { ...DEFAULT_SETTINGS, seats, rounds: 1, maxPlanets: 0, neighborGrace: 0, bounce: false, fixedPower: false, shotTime: 3, simultaneousShots: salvo, powerUps: true, killcam: 'every' as const };
+  const settings = { ...DEFAULT_SETTINGS, seats, rounds: 1, maxPlanets: 0, neighborGrace: 0, edges: 'void' as const, fixedPower: false, shotTime: 3, simultaneousShots: salvo, powerUps: true, killcam: 'every' as const };
   const m = mode === 'challenge' ? createChallenge(settings, dailyChallenge('2026-10-09')) : createMatch(mode, settings, { seats, seed: 7, simultaneous: true });
   m.world.planets = [];
   m.world.nebulae = [];

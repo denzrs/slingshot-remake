@@ -4,7 +4,7 @@ import { simulateShot, type World } from '../../src/sim/physics';
 import { createRng } from '../../src/sim/rng';
 import { planShotNow } from '../helpers';
 
-const rules = { bounce: false, timeLimit: 20 };
+const rules = { edges: 'void' as const, timeLimit: 20 };
 
 function emptyWorld(ships: [number, number][]): World {
   return {
@@ -57,7 +57,7 @@ describe('CPU personalities', () => {
     // Enemy far out of reach within the horizon, so every shot is a miss; a pickup sits off the
     // direct line where only an appetite for it will bend the shot. Everything else aims straight.
     const world = emptyWorld([[100, 400], [1180, 400]]);
-    const shortRules = { bounce: false, timeLimit: 1 };
+    const shortRules = { edges: 'void' as const, timeLimit: 1 };
     const gate = { x: 250, y: 300, r: 16 };
     const passes = (level: 'easy' | 'medium' | 'hard', offered: boolean): number => {
       let hits = 0;
