@@ -951,9 +951,7 @@ mod tests {
         assert_eq!(parsed.rounds, 5);
         assert_eq!(parsed.fixed_power_level, 70);
         assert_eq!(parsed.max_power, 80);
-        assert!(
-            parsed.edges == EdgeMode::Wall && parsed.fixed_power && parsed.style_bonuses
-        );
+        assert!(parsed.edges == EdgeMode::Wall && parsed.fixed_power && parsed.style_bonuses);
         assert!(parsed.simultaneous_shots);
         assert!(parsed.betting);
 
