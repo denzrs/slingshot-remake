@@ -84,6 +84,10 @@ export class Renderer {
   private time = 0;
   /** When each power-up pickup was first drawn, for its pop-in. */
   private readonly pickupSeen = new Map<number, number>();
+  /** Whether the last frame filled the viewport behind a menu (see `nudgeLayer`). */
+  private lastFullScreen = true;
+  /** Frames left before the narrowed canvas gets its width back. */
+  private nudgeFrames = 0;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly viewport: () => Viewport = windowViewport) {
     this.ctx = canvas.getContext('2d')!;
@@ -183,8 +187,24 @@ export class Renderer {
     this.ctx.drawImage(this.backdrop.canvas, 0, 0);
   }
 
+  /**
+   * Safari on the iPhone sometimes shows the canvas at a pixel ratio of 1 once a menu closes over it, so the field turns
+   * blurry, and only a change of the canvas's size makes it sharp again. So when the field comes out from under a menu, the
+   * canvas is made 1px narrower for two frames, which has Safari build its layer anew.
+   */
+  private nudgeLayer(fullScreen: boolean): void {
+    if (this.nudgeFrames > 0) {
+      if (--this.nudgeFrames === 0) this.canvas.style.width = `${this.view.cssWidth}px`;
+    } else if (this.lastFullScreen && !fullScreen) {
+      this.nudgeFrames = 2;
+      this.canvas.style.width = `${this.view.cssWidth - 1}px`;
+    }
+    this.lastFullScreen = fullScreen;
+  }
+
   draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
     this.resizeIfNeeded();
+    this.nudgeLayer(opts.fullScreen);
     this.emptyDrawn = false;
     this.time += dt;
     this.painter = painterFor(getLook());
