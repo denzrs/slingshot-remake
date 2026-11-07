@@ -295,11 +295,15 @@ impl RoomManager {
                 "day": day,
                 "entries": board.entries.iter().map(entry).collect::<Vec<_>>(),
                 "you": board.you.as_ref().map(entry),
-                "shot": board.shot.as_ref().map(|s| json!({
+                "shot": board.shot.as_ref().map(|s| {
+                    let mut value = json!({
                     "name": s.name, "points": s.shot.points, "sector": s.shot.sector, "down": s.shot.down,
                     "attempt": s.shot.attempt, "left": s.shot.left, "angle": s.shot.angle, "power": s.shot.power,
                     "trail": s.shot.trail,
-                })),
+                    });
+                    if !s.shot.terrain.is_empty() { value["terrain"] = json!(s.shot.terrain); }
+                    value
+                }),
             }),
         );
     }

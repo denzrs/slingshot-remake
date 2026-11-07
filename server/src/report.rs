@@ -35,8 +35,8 @@ pub const RECORD_KEYS: [&str; 5] = [
 ];
 
 /// The ways a shot ends, as the client names them.
-const RESOLUTIONS: [&str; 7] = [
-    "ship", "planet", "hole", "shotdown", "clash", "lost", "timeout",
+const RESOLUTIONS: [&str; 9] = [
+    "ship", "planet", "hole", "shotdown", "clash", "lost", "timeout", "blast", "fused",
 ];
 /// The power-ups that ride on one shot.
 const RIDERS: [&str; 3] = ["preview", "piercing", "plasma"];
