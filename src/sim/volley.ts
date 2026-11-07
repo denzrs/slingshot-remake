@@ -1,5 +1,5 @@
 import { PHYSICS } from './config';
-import { Shot, type Missile, type ShotEnd, type ShotRules, type StormContactSnapshot, type StyleEvent, type World } from './physics';
+import { Shot, planetDurability, type WhiteExit, type Missile, type ShotEnd, type ShotRules, type StormContactSnapshot, type StyleEvent, type World } from './physics';
 
 export interface VolleyAim {
   player: number;
@@ -15,6 +15,10 @@ export interface VolleyAim {
   plasma?: boolean;
   /** A defense's missile that lost its shot and flies on as a shot of its own: the index of the shot it left. Made by the volley, never aimed. */
   stray?: number;
+  /** Fusion: a shot two others melted into. Made by the volley, never aimed. */
+  fused?: boolean;
+  /** Fusion: the second player the melted shot belongs to, beside `player`. */
+  partner?: number;
 }
 
 export interface VolleyShot {
@@ -28,6 +32,10 @@ export interface VolleyShot {
   plasma?: boolean;
   /** True for a defense's missile that lost its shot: it counts for the defense's owner, not as one of their shots. */
   stray?: boolean;
+  /** Fusion: a shot two others melted into. */
+  fused?: boolean;
+  /** Fusion: the second player a melted shot belongs to (the first is `owner`). Both share what it scores. */
+  partner?: number;
   /** Flat [x0, y0, x1, y1, …] polyline in field units. */
   trail: number[];
 }
@@ -38,7 +46,7 @@ export interface VolleySnapshot {
   aims: VolleyAim[];
   steps: number;
   script?: VolleyScript[];
-  shots: { owner: number; trail: number[]; x: number; y: number; vx: number; vy: number; time: number; end: ShotEnd | null; style: StyleEvent[] | null; fired?: boolean[]; missiles?: Missile[]; seed?: number; stormContacts?: StormContactSnapshot[] }[];
+  shots: { owner: number; trail: number[]; x: number; y: number; vx: number; vy: number; time: number; end: ShotEnd | null; style: StyleEvent[] | null; fired?: boolean[]; missiles?: Missile[]; seed?: number; stormContacts?: StormContactSnapshot[]; armed?: boolean; stormUntil?: number; whiteExit?: WhiteExit }[];
 }
 
 /** Something done to a flight after it started, so a replay can do it at the same step: a split, or a shield put on or taken off. */
@@ -71,7 +79,17 @@ export type VolleyEvent =
   /** A planetary defense fired a missile at the shot, which is at (x, y). */
   | { type: 'intercept'; index: number; defense: number; x: number; y: number }
   /** A defense's missile lost its shot at (x, y) and flies on. */
-  | { type: 'interceptMiss'; index: number; defense: number; x: number; y: number };
+  | { type: 'interceptMiss'; index: number; defense: number; x: number; y: number }
+  /** Trick Shots Only: the shot was armed at (x, y), and can kill from now on. */
+  | { type: 'arm'; index: number; x: number; y: number }
+  /** Trick Shots Only: an unarmed shot flew through a ship, which it only warned. */
+  | { type: 'warn'; index: number; ship: number; x: number; y: number }
+  /** Pinball: the shot came off a planet at (x, y). */
+  | { type: 'bump'; index: number; planet: number; x: number; y: number; vx: number; vy: number }
+  /** Unstable: shot `index` broke a planet (at x, y) open for good. */
+  | { type: 'planetShatter'; index: number; x: number; y: number; radius: number; color: string }
+  /** Fusion: shots `from` met and melted into shot `index`, at (x, y). */
+  | { type: 'fusion'; index: number; from: [number, number]; x: number; y: number };
 
 const TRAIL_EVERY = 2;
 let nextVolleyId = 1;
@@ -103,7 +121,8 @@ export class Volley {
     this.aims = aims.map((aim) => ({ ...aim }));
     this.shots = aims.map((a) => {
       const shot = new Shot(world, a.player, a.angle, a.power, rules, trackStyle, a.spare, a.pierce, a.plasma);
-      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan, pierce: a.pierce, plasma: a.plasma, stray: a.stray !== undefined };
+      shot.fused = a.fused === true;
+      return { shot, owner: a.player, trail: [shot.x, shot.y], fan: a.fan, pierce: a.pierce, plasma: a.plasma, stray: a.stray !== undefined, fused: a.fused, partner: a.partner };
     });
   }
 
@@ -124,6 +143,9 @@ export class Volley {
         missiles: shot.missiles.map((m) => ({ ...m, trail: [...m.trail] })),
         seed: shot.seed,
         stormContacts: shot.snapshotStormContacts(),
+        armed: shot.armed,
+        stormUntil: shot.stormUntil,
+        whiteExit: shot.whiteExit ? { ...shot.whiteExit } : undefined,
       })),
     };
   }
@@ -141,6 +163,9 @@ export class Volley {
       current.shot.fired.splice(0, Infinity, ...(saved.fired ?? []));
       current.shot.missiles.splice(0, Infinity, ...(saved.missiles ?? []).map((m) => ({ ...m, trail: [...m.trail] })));
       if (saved.seed !== undefined) current.shot.seed = saved.seed;
+      if (saved.armed !== undefined) current.shot.armed = saved.armed;
+      current.shot.stormUntil = saved.stormUntil ?? 0;
+      current.shot.whiteExit = saved.whiteExit ? { ...saved.whiteExit } : undefined;
       current.shot.restoreStormContacts(saved.stormContacts);
     });
   }
@@ -187,6 +212,42 @@ export class Volley {
     this.shots.push({ shot, owner: d.owner, trail: [...lost.trail, lost.x, lost.y], stray: true });
   }
 
+  /**
+   * Fusion: shots `i` and `j` have met and melt into one, from the point between them, with the speed of both
+   * (their momentum shared, as two equal masses that stick). It belongs to both shooters, carries on the longer
+   * flight's clock, and is armed if either was. Live flight and replay both make it at the same step.
+   */
+  private fuse(i: number, j: number, events: VolleyEvent[]): void {
+    const first = this.shots[i];
+    const second = this.shots[j];
+    const a = first.shot;
+    const b = second.shot;
+    const into = this.shots.length;
+    const endA: ShotEnd = { kind: 'fused', into };
+    const endB: ShotEnd = { kind: 'fused', into };
+    a.terminate(endA);
+    b.terminate(endB);
+    events.push(
+      { type: 'end', index: i, end: endA, x: a.x, y: a.y, vx: a.vx, vy: a.vy },
+      { type: 'end', index: j, end: endB, x: b.x, y: b.y, vx: b.vx, vy: b.vy },
+    );
+    const owner = first.owner;
+    const partner = second.owner !== owner ? second.owner : undefined;
+    const aim: VolleyAim = { player: owner, angle: 0, power: 0, fused: true, ...(partner !== undefined ? { partner } : {}) };
+    const shot = new Shot(this.world, owner, 0, 0, this.rules, this.trackStyle);
+    shot.x = (a.x + b.x) / 2;
+    shot.y = (a.y + b.y) / 2;
+    shot.vx = (a.vx + b.vx) / 2;
+    shot.vy = (a.vy + b.vy) / 2;
+    shot.time = Math.max(a.time, b.time);
+    shot.armed = a.armed || b.armed;
+    shot.fused = true;
+    shot.seed = Math.imul(a.seed ^ Math.imul(b.seed, 0x9e3779b1), 16777619) >>> 0;
+    this.aims.push(aim);
+    this.shots.push({ shot, owner, partner, fused: true, trail: [shot.x, shot.y] });
+    events.push({ type: 'fusion', index: into, from: [i, j], x: shot.x, y: shot.y });
+  }
+
   /** A replay does what was done to the original flight, right before the step it was done after. */
   private runScript(): void {
     if (!this.replaying) return;
@@ -219,6 +280,12 @@ export class Volley {
       shot.misses.length = 0;
       for (const lost of shot.strays) this.release(i, lost);
       shot.strays.length = 0;
+      for (const arm of shot.arms) events.push({ type: 'arm', index: i, x: arm.x, y: arm.y });
+      shot.arms.length = 0;
+      for (const warning of shot.warnings) events.push({ type: 'warn', index: i, ship: warning.ship, x: warning.x, y: warning.y });
+      shot.warnings.length = 0;
+      for (const bump of shot.bumps) events.push({ type: 'bump', index: i, planet: bump.planet, x: bump.x, y: bump.y, vx: shot.vx, vy: shot.vy });
+      shot.bumps.length = 0;
       if (end || this.steps % TRAIL_EVERY === 0) vs.trail.push(shot.x, shot.y);
       // A shield bounces the shot off: it is spent doing so, here where a live flight and a replay agree.
       for (const r of shot.reflects) {
@@ -246,9 +313,23 @@ export class Volley {
         if (end.kind === 'ship') this.world.ships[end.ship].alive = false;
         events.push({ type: 'end', index: i, end, x: shot.x, y: shot.y, vx: shot.vx, vy: shot.vy });
       }
+      for (const hit of shot.planetHits) {
+        const index = this.world.planets.findIndex((p) => p.seed === hit.seed);
+        const planet = this.world.planets[index];
+        if (!planet || planet.sun) continue;
+        (planet.fractures ??= []).push(hit.angle);
+        this.world.version++;
+        if (planet.fractures.length < planetDurability(planet)) continue;
+        this.world.planets.splice(index, 1);
+        // Keep defense indices stable while missiles are in flight; the destroyed turret stops firing.
+        for (const d of this.world.defenses) if (d.planet === planet.seed) d.wrecked = true;
+        for (const other of this.shots) other.shot.forgetPlanet(index);
+        events.push({ type: 'planetShatter', index: i, x: planet.x, y: planet.y, radius: planet.radius, color: planet.tint });
+      }
+      shot.planetHits.length = 0;
     }
 
-    // Projectiles that meet head-on cancel each other out.
+    // Projectiles that meet head-on cancel each other out, or (Fusion) melt into one. A melted shot never melts again: it cancels out what it meets.
     const r2 = PHYSICS.CLASH_RADIUS * PHYSICS.CLASH_RADIUS;
     for (let i = 0; i < this.shots.length; i++) {
       const a = this.shots[i].shot;
@@ -265,6 +346,10 @@ export class Volley {
         const dx = a.x - b.x;
         const dy = a.y - b.y;
         if (dx * dx + dy * dy >= r2) continue;
+        if (this.rules.fusion && !a.fused && !b.fused) {
+          this.fuse(i, j, events);
+          break;
+        }
         const endA: ShotEnd = { kind: 'clash', other: j };
         const endB: ShotEnd = { kind: 'clash', other: i };
         a.terminate(endA);

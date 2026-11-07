@@ -1,4 +1,4 @@
-import { AIM, EDGE_MODES, GRACE, MAYHEM, TRAIL_FADE, isEdgeMode, type EdgeMode } from '../sim/config';
+import { AIM, ANOMALIES, EDGE_MODES, GRACE, MAYHEM, TRAIL_FADE, isEdgeMode, type Anomaly, type EdgeMode } from '../sim/config';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from '../sim/powerups';
 
 export const KILLCAM_MODES = ['auto', 'off', 'every', 'round'] as const;
@@ -6,7 +6,7 @@ export type KillcamMode = (typeof KILLCAM_MODES)[number];
 export type KillcamPlayback = Exclude<KillcamMode, 'auto'>;
 export const isKillcamMode = (value: unknown): value is KillcamMode => KILLCAM_MODES.some((mode) => mode === value);
 
-export { EDGE_MODES, isEdgeMode, type EdgeMode };
+export { ANOMALIES, EDGE_MODES, isEdgeMode, type Anomaly, type EdgeMode };
 
 /**
  * The rules of a game: what a room is set up with, and the match part of the local settings. They are sent over the
@@ -51,6 +51,8 @@ export interface RoomRules {
   /** Power-ups: the kinds that may turn up (never empty), and how many pickups lie on the field at once. */
   powerUpKinds: PowerUpKind[];
   powerUpAmount: number;
+  /** The anomalies the match plays by, in their usual order: any of them, all of them or none. */
+  anomalies: Anomaly[];
 }
 
 /** Every rule, in the order they are kept in. Naming one that `RoomRules` lacks, or missing one it has, does not compile. */
@@ -76,6 +78,7 @@ const RULE_NAMES = {
   powerUps: true,
   powerUpKinds: true,
   powerUpAmount: true,
+  anomalies: true,
 } satisfies Record<keyof RoomRules, true>;
 
 export const RULE_KEYS = Object.keys(RULE_NAMES) as (keyof RoomRules)[];
@@ -103,6 +106,7 @@ export const DEFAULT_ROOM_RULES: Readonly<RoomRules> = {
   powerUps: false,
   powerUpKinds: [...POWER_UP_KINDS],
   powerUpAmount: POWER_UP.DEFAULT_AMOUNT,
+  anomalies: [],
 };
 
 /** The rules out of anything that has them, such as a set of settings: a copy that shares nothing with it. */
@@ -125,6 +129,11 @@ function powerUpKindsFrom(value: unknown): PowerUpKind[] | null {
   return kinds.length ? kinds : null;
 }
 
+/** A saved list of anomalies: only known ones, each once, in the usual order. Anything else is none. */
+export function anomaliesFrom(value: unknown): Anomaly[] {
+  return Array.isArray(value) ? ANOMALIES.filter((anomaly) => value.includes(anomaly)) : [];
+}
+
 /** Saved rules made safe to play: what is missing or no longer offered falls back to the standard rules. */
 export function roomRulesFrom(saved: Partial<RoomRules> | undefined): RoomRules {
   const fresh = defaultRoomRules();
@@ -142,6 +151,7 @@ export function roomRulesFrom(saved: Partial<RoomRules> | undefined): RoomRules 
     chatPlayersOnly: saved?.chatPlayersOnly === true,
     powerUps: saved?.powerUps === true,
     powerUpKinds: powerUpKindsFrom(saved?.powerUpKinds) ?? fresh.powerUpKinds,
+    anomalies: anomaliesFrom(saved?.anomalies),
     powerUpAmount: POWER_UP.AMOUNTS.includes(saved?.powerUpAmount as number) ? saved!.powerUpAmount! : fresh.powerUpAmount,
     maxPower: AIM.CAP_OPTIONS.includes(saved?.maxPower as number) ? saved!.maxPower! : fresh.maxPower,
     fixedPowerLevel: AIM.FIXED_OPTIONS.includes(saved?.fixedPowerLevel as number) ? saved!.fixedPowerLevel! : fresh.fixedPowerLevel,

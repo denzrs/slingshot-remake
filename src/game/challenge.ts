@@ -1,6 +1,6 @@
 import { buildSector, rankOf, sectorRules, type Challenge, type DailyShot, type Sector, type SectorSpec, type ThemeId } from '../sim/challenge';
-import { AIM, CHALLENGE, FIELD } from '../sim/config';
-import { cloneWorld, normalizeAngle, type ShotRules, type StyleKind } from '../sim/physics';
+import { AIM, CHALLENGE, FIELD, MAYHEM } from '../sim/config';
+import { cloneWorld, normalizeAngle, planetDurability, type ShotRules, type StyleKind } from '../sim/physics';
 import { scoreChallengeHit } from '../sim/scoring';
 import type { Settings } from '../data/settings';
 import { thinTrail } from '../data/stats';
@@ -144,6 +144,15 @@ export class ChallengeMatch extends Match {
     const ship = this.world.ships[0];
     this.pilot.angle = normalizeAngle(Math.round((Math.atan2(ship.y - FIELD.height / 2, FIELD.width / 2 - ship.x) * 180) / Math.PI));
     this.pilot.power = this.settings.fixedPower ? AIM.FIXED_POWER : AIM.DEFAULT_POWER;
+    const hasAnomalies = (this.spec.anomalies?.length ?? 0) > 0;
+    this.anomalyAlert = hasAnomalies && !this.replaying;
+    if (this.anomalyAlert) {
+      this.revealEnd = this.clock + MAYHEM.REVEAL_TIME;
+      this.revealHeld = true;
+    } else {
+      this.revealEnd = 0;
+      this.revealHeld = false;
+    }
     this.emit({ type: 'round' });
     this.beginRound();
   }
@@ -155,7 +164,7 @@ export class ChallengeMatch extends Match {
 
   /** The sector's own rules win over whatever the player has set up for free play. */
   private effectiveSettings(): Settings {
-    return { ...this.user, maxPower: AIM.MAX_POWER, fixedPower: this.spec.fixedPower, edges: this.spec.loop ? 'loop' : this.spec.bounce ? 'wall' : 'void', invisiblePlanets: this.spec.invisible };
+    return { ...this.user, maxPower: AIM.MAX_POWER, fixedPower: this.spec.fixedPower, edges: this.spec.loop ? 'loop' : this.spec.bounce ? 'wall' : 'void', invisiblePlanets: this.spec.invisible, anomalies: [...(this.spec.anomalies ?? [])] };
   }
 
   private sector(index: number): Sector {
@@ -174,6 +183,7 @@ export class ChallengeMatch extends Match {
   }
 
   commit(): void {
+    if (this.skipReveal()) return;
     if (this.isHumanTurn) this.fire();
   }
 
@@ -190,6 +200,10 @@ export class ChallengeMatch extends Match {
       left: this.shotsLeft,
       angle: p.angle,
       power: p.power,
+      ...(this.rules.unstable ? { terrain: this.sector(this.spec.index).world.planets.map((original) => {
+        const planet = this.world.planets.find((p) => p.seed === original.seed);
+        return planet ? planet.fractures?.length ?? 0 : planetDurability(original);
+      }) } : {}),
     };
     // The sector's ammo: plasma bends little and ignores clouds.
     const aim: VolleyAim = { player: 0, angle: p.angle, power: p.power, ...(this.spec.ammo === 'plasma' ? { plasma: true } : {}) };
@@ -286,6 +300,19 @@ export class ShotReplay extends ChallengeMatch {
       if (!this.players[id]?.target) continue;
       this.players[id].alive = false;
       this.world.ships[id].alive = false;
+    }
+    const terrain = this.shot.terrain;
+    if (this.rules.unstable && terrain) {
+      this.world.planets = this.world.planets.filter((planet, index) => {
+        const hits = terrain[index] ?? 0;
+        if (hits >= planetDurability(planet)) {
+          for (const defense of this.world.defenses) if (defense.planet === planet.seed) defense.wrecked = true;
+          return false;
+        }
+        if (hits) planet.fractures = Array(hits).fill(0);
+        return true;
+      });
+      this.world.version++;
     }
     // The hit pays what it paid: the shot's factor comes from the shots before it.
     this.attempt = this.shot.attempt - 1;

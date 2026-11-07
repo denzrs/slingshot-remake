@@ -210,6 +210,19 @@ export class Sound {
     if (jackpot) for (const [i, hz] of [660, 880, 1320].entries()) this.tone(hz, hz, 0.5, 0.07, 'triangle', a.t + at + 0.1 + i * 0.09);
   }
 
+  /** Anomalies: the alarm that opens the match. A klaxon wails three times over a low rumble, and static crackles under it. */
+  alarm(): void {
+    const a = this.begin();
+    if (!a) return;
+    for (let i = 0; i < 3; i++) {
+      const at = a.t + i * 0.46;
+      this.tone(640, 430, 0.36, 0.06, 'sawtooth', at);
+      this.tone(321, 214, 0.36, 0.05, 'square', at);
+    }
+    this.tone(52, 30, 1.6, 0.5, 'sine', a.t);
+    this.hiss(a.t, 0.5, 0.22, 4200, 900);
+  }
+
   select(): void {
     const a = this.begin('menu');
     if (!a) return;

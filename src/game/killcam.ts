@@ -37,7 +37,7 @@ export interface KillcamSnapshot {
   aims: VolleyAim[];
   volleyKills: { record: KillRecord; shotIndex: number; step: number }[];
   killcamClip: KillcamClip | null;
-  killcam: null | Omit<KillcamState, 'clip' | 'replay'> & { replay: VolleySnapshot; world?: Pick<World, 'ships' | 'defenses' | 'version'> };
+  killcam: null | Omit<KillcamState, 'clip' | 'replay'> & { replay: VolleySnapshot; world?: Pick<World, 'ships' | 'defenses' | 'version'> & Partial<Pick<World, 'planets'>> };
   lastClip: KillcamClip | null;
 }
 
@@ -98,7 +98,7 @@ export class Killcam {
       snapshot: this.world, aims: this.aims, volleyKills: this.kills,
       killcamClip: k?.clip ?? null,
       killcam: k ? {
-        world: { ships: k.replay.world.ships, defenses: k.replay.world.defenses, version: k.replay.world.version },
+        world: { planets: k.replay.world.planets, ships: k.replay.world.ships, defenses: k.replay.world.defenses, version: k.replay.world.version },
         replay: k.replay.snapshot(), simClock: k.simClock, hold: k.hold,
         camera: k.camera, returnTo: k.returnTo, recording: k.recording, skipVotes: [...k.skipVotes],
       } : null,

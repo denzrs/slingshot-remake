@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 import { ChallengeMatch, createChallenge, createShotReplay, type GameEvent, type Match } from '../../src/game';
 import { buildSector, dailyChallenge, type DailyShot } from '../../src/sim/challenge';
+import { planetDurability } from '../../src/sim/physics';
 import { CHALLENGE } from '../../src/sim/config';
 
 const DAY = '2026-10-19';
@@ -22,6 +23,7 @@ function clearSector(match: ChallengeMatch, sector: number, wasteFirst = false):
 }
 
 function fire(match: ChallengeMatch, angle: number, power: number): void {
+  if (match.revealing) match.skipReveal();
   match.pilot.angle = angle;
   match.pilot.power = power;
   match.commit();
@@ -92,6 +94,29 @@ describe('the shot of the day', () => {
     expect(replay.targetsLeft).toBe(before - 1);
     expect(replay.shotsLeft).toBe(shot.left);
     expect([...replay.trails].reverse().find((trail) => trail.owner === 0)!.points.at(-1)).toBeCloseTo(shot.trail.at(-1)!, 0);
+  });
+
+  it.each([1, 2])('replays Instabil after %i real planet impacts, including a destroyed planet', (impacts) => {
+    const day = '2026-11-15';
+    const challenge = dailyChallenge(day);
+    const match = createChallenge(settings(), challenge);
+    const original = match.world.planets[0];
+    expect(planetDurability(original)).toBe(2);
+    // This aim hits the small planet without hitting either ship.
+    for (let i = 0; i < impacts; i++) fire(match, 19, 60);
+    const terrainBefore = match.world.planets.map((p) => [p.seed, p.fractures?.length ?? 0]);
+    expect(match.world.planets.some((p) => p.seed === original.seed)).toBe(impacts < 2);
+    const solution = buildSector(challenge.sectors[0]).solutions.at(-1)!;
+    fire(match, solution.angle, solution.power);
+    const shot = match.bestShot!;
+    expect(shot.terrain).toEqual([impacts, 0, 0]);
+    const { replay, events } = start(day, shot);
+    expect(replay.world.planets.map((p) => [p.seed, p.fractures?.length ?? 0])).toEqual(terrainBefore);
+    runUntil(replay, () => replay.phase === 'gameOver');
+    const kills = events.flatMap((e) => e.type === 'kill' ? [e.record] : []);
+    expect(kills).toHaveLength(1);
+    expect(kills[0].points).toBe(shot.points);
+    expect(replay.trails.find((trail) => trail.owner === 0)!.points.at(-1)).toBeCloseTo(shot.trail.at(-1)!, 0);
   });
 
   it('lets the shot land before its end card comes up', () => {

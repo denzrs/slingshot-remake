@@ -58,7 +58,7 @@ const readMode = (mode: GameMode): SavedMode => {
 
 const stored = (rules: RoomRules): Partial<RoomRules> => {
   const { betting: _betting, chatPlayersOnly: _chat, ...kept } = rules;
-  return { ...kept, powerUpKinds: [...kept.powerUpKinds] };
+  return { ...kept, powerUpKinds: [...kept.powerUpKinds], anomalies: [...kept.anomalies] };
 };
 
 const restored = (saved: Partial<RoomRules>): RoomRules => ({ ...roomRulesFrom(saved), betting: false, chatPlayersOnly: false });

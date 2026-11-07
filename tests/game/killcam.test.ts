@@ -47,6 +47,22 @@ function networkMatch(mode: GameMode, count = 2): ClassicMatch | HorizonMatch {
 }
 
 describe('shared killcams', () => {
+  it('restores terrain already shattered during an Unstable Pinball replay', () => {
+    const m = networkMatch('classic');
+    if (!(m instanceof ClassicMatch)) throw new Error('Classic match required');
+    m.settings.anomalies = ['pinball', 'unstable'];
+    m.world.planets.push({ x: 220, y: 100, radius: 24, mass: 0, seed: 7, style: 'rocky', tint: '#ccc', fractures: [0] });
+    fire(m);
+    until(m, () => m.phase === 'killcam');
+    until(m, () => m.scene().world.planets.length === 0);
+    const guest = networkMatch('classic');
+    if (!(guest instanceof ClassicMatch)) throw new Error('Classic match required');
+    guest.restoreSnapshot(structuredClone(m.snapshot()));
+    expect(guest.scene().world.planets).toEqual([]);
+    expect(guest.scene().world).toEqual(m.scene().world);
+    expect(m.world.planets).toHaveLength(0);
+  });
+
   it.each(modes)('replays a %s kill automatically and resumes without scoring it twice', (mode) => {
     const m = make(mode);
     const events: GameEvent[] = [];

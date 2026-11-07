@@ -1,5 +1,6 @@
-import { AIM, CHALLENGE, FIELD, NEBULA, SCORING } from './config';
+import { AIM, CHALLENGE, FIELD, NEBULA, SCORING, type Anomaly } from './config';
 import { Shot, simulateShot, type Planet, type Ship, type ShotEnd, type ShotRules, type World } from './physics';
+import { anomalyRules } from './anomalies';
 import { POWER_UP } from './powerups';
 import { createRng, hashSeed, pick, range, shuffle, type Rng } from './rng';
 import { generateWorld } from './world';
@@ -54,7 +55,8 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 
 export type ThemeId = 'classic' | 'billiard' | 'blind' | 'singularity' | 'heavy' | 'precision' | 'sniper' | 'bastion' | 'nebula' | 'hammerhead'
   | 'nebulaBilliard' | 'flakRain' | 'blackBilliards' | 'plasmaStorm' | 'gravityLadder' | 'shortFuse' | 'noReserve'
-  | 'loopRoad' | 'loopHole' | 'loopFlak' | 'loopLap';
+  | 'loopRoad' | 'loopHole' | 'loopFlak' | 'loopLap'
+  | 'pinballRun' | 'whiteHoleRun' | 'unstableRun';
 
 /** The seven themes of the first weeks: days before `VARIANTS_FROM` keep their old rotation, so no past or running day changes. */
 const CLASSIC_THEMES: readonly ThemeId[] = ['classic', 'billiard', 'blind', 'singularity', 'heavy', 'precision', 'sniper'];
@@ -67,8 +69,14 @@ export const THEMES: readonly ThemeId[] = [...VARIANT_THEMES, 'nebulaBilliard', 
 /** The themes that play on a loop (the field's edges carry a shot to the opposite side). */
 export const LOOP_THEMES: readonly ThemeId[] = ['loopRoad', 'loopHole', 'loopFlak', 'loopLap'];
 
-/** Every theme, as the rotation plays them from `LOOP_THEMES_FROM` on. */
-export const ALL_THEMES: readonly ThemeId[] = [...THEMES, ...LOOP_THEMES];
+/** Anomaly themes get their own weekend rotation. */
+export const ANOMALY_THEMES: readonly ThemeId[] = ['pinballRun', 'whiteHoleRun', 'unstableRun'];
+/** Challenge #38 (2026-11-08): leave every already-published day through November 7 unchanged. */
+export const ANOMALY_THEMES_FROM = 38;
+/** Regular themes fill the weekdays once the loop themes join. */
+export const REGULAR_THEMES: readonly ThemeId[] = [...THEMES, ...LOOP_THEMES];
+/** All themes, across the independent weekday and weekend rotations. */
+export const ALL_THEMES: readonly ThemeId[] = [...REGULAR_THEMES, ...ANOMALY_THEMES];
 
 /** Challenge #41 (2026-11-11), the first day with the loop themes: the days before keep their rotation, so no past or running day changes. */
 export const LOOP_THEMES_FROM = 41;
@@ -107,6 +115,7 @@ interface ThemeRule {
   flightTime?: number;
   /** The field's edges close into a loop: a shot that leaves on one side comes out on the other. */
   loop?: Rate;
+  anomalies?: { from: number; active: readonly Anomaly[] };
 }
 
 const THEME_RULES: Record<ThemeId, ThemeRule> = {
@@ -131,16 +140,26 @@ const THEME_RULES: Record<ThemeId, ThemeRule> = {
   loopHole: { loop: { from: 0, p: 1 }, hole: { from: 1, p: 1 } },
   loopFlak: { loop: { from: 0, p: 1 }, flak: { from: 1, p: 1 } },
   loopLap: { loop: { from: 0, p: 1 }, fixedPower: { from: 1, p: 1 } },
+  pinballRun: { anomalies: { from: 1, active: ['pinball'] }, bounce: { from: 2, p: 1 } },
+  whiteHoleRun: { anomalies: { from: 1, active: ['whiteHole'] }, hole: { from: 1, p: 1 } },
+  unstableRun: { anomalies: { from: 0, active: ['unstable'] }, bounce: { from: 1, p: 1 } },
 };
 
 /** Classic dailies from the variations on may spice a sector with a flak cannon or a cloud, never with fixed ammo. */
 const CLASSIC_VARIANTS: Pick<ThemeRule, 'flak' | 'nebula'> = { nebula: { from: 1, p: 0.2 }, flak: { from: 3, p: 0.25 } };
 
 /**
- * One theme per day, every theme once per cycle of seven days in a seeded order — an even
+ * One theme per day, balanced cycles within each rotation — an even
  * spread instead of the clumps pure randomness gives — and never the same theme twice in a row.
  */
 export function themeFor(number: number): ThemeId {
+  // The epoch is a Friday. Anomalies belong only to Saturday and Sunday, starting November 8.
+  const day = ((number + 3) % 7 + 7) % 7;
+  if (number >= ANOMALY_THEMES_FROM && day >= 5) {
+    const elapsed = number - ANOMALY_THEMES_FROM; // The first eligible day is a Sunday.
+    const weekend = Math.floor(elapsed / 7) * 2 + +(elapsed % 7 === 6);
+    return ANOMALY_THEMES[weekend % ANOMALY_THEMES.length];
+  }
   if (number >= LOOP_THEMES_FROM) return loopEraTheme(number - LOOP_THEMES_FROM);
   // The days up to the variations keep the old seven-day cycles, so nobody's past (or today's) challenge changes.
   if (number < VARIANTS_FROM) return cycleTheme(number - 1, CLASSIC_THEMES, 'slingshot-themes');
@@ -154,13 +173,15 @@ export function themeFor(number: number): ThemeId {
   return cycleTheme(idx, THEMES, 'slingshot-themes-v3');
 }
 
-/** The rotation from the loop themes on: all themes once per cycle in a seeded order, never the same theme twice in a row. */
+/** Weekday rotation: every regular theme once per cycle, with weekends reserved for anomalies. */
 function loopEraTheme(idx: number): ThemeId {
-  const n = ALL_THEMES.length;
+  // The first day of this era is a Wednesday: skip the Saturday/Sunday slots when counting weekdays.
+  idx = Math.floor(idx / 7) * 5 + Math.min(idx % 7, 3) + Math.max(0, idx % 7 - 5);
+  const n = REGULAR_THEMES.length;
   const cycle = Math.floor(idx / n);
-  const order = cycleOrder(cycle, ALL_THEMES, 'slingshot-themes-v4');
+  const order = cycleOrder(cycle, REGULAR_THEMES, 'slingshot-themes-v4');
   // Don't open a cycle with the theme that closed the last one, or the first with the one of the day before.
-  const before = cycle === 0 ? themeFor(LOOP_THEMES_FROM - 1) : cycleOrder(cycle - 1, ALL_THEMES, 'slingshot-themes-v4')[n - 1];
+  const before = cycle === 0 ? themeFor(LOOP_THEMES_FROM - 1) : cycleOrder(cycle - 1, REGULAR_THEMES, 'slingshot-themes-v4')[n - 1];
   if (order[0] === before) [order[0], order[1]] = [order[1], order[0]];
   return order[idx % n];
 }
@@ -182,7 +203,7 @@ function cycleOrder(cycle: number, themes: readonly ThemeId[], salt: string): Th
 // ————————————————————————————— Sector specs —————————————————————————————
 
 type Difficulty = 1 | 2 | 3 | 4 | 5;
-type Modifier = 'bounce' | 'loop' | 'invisible' | 'fixedPower' | 'hole' | 'heavy' | 'flak' | 'nebula' | 'plasma' | 'gravityLadder' | 'shortFuse' | 'noReserve';
+export type Modifier = 'bounce' | 'loop' | 'invisible' | 'fixedPower' | 'hole' | 'heavy' | 'flak' | 'nebula' | 'plasma' | 'gravityLadder' | 'shortFuse' | 'noReserve' | Anomaly;
 
 export interface SectorSpec {
   index: number;
@@ -214,6 +235,8 @@ export interface SectorSpec {
   gravityLadder?: boolean;
   /** Marks the exact-target shot budget theme. */
   noReserve?: boolean;
+  /** Omitted on historical and ordinary sectors. */
+  anomalies?: Anomaly[];
 }
 
 /**
@@ -235,6 +258,8 @@ export interface DailyShot {
   power: number;
   /** Its path, thinned out: flat [x0, y0, x1, y1, …]. */
   trail: number[];
+  /** Hits per original planet, in layout order; a destroyed planet has its full durability. Instabil sectors only. */
+  terrain?: number[];
 }
 
 export interface Challenge {
@@ -310,6 +335,7 @@ function sectorSpec(rule: ThemeRule, index: number, difficulty: Difficulty, rng:
     index, seed, difficulty, targets, planets, shots: targets + slack, bounce, invisible, fixedPower, hole, gravity,
     flak, nebulae, ammo,
     ...(loop ? { loop: true } : {}),
+    ...(rule.anomalies && index >= rule.anomalies.from ? { anomalies: [...rule.anomalies.active] } : {}),
     ...(rule.flightTime ? { flightTime: rule.flightTime } : {}),
     ...(rule.gravityLadder ? { gravityLadder: true } : {}),
     ...(rule.noReserve ? { noReserve: true } : {}),
@@ -330,11 +356,13 @@ export function modifiersOf(spec: SectorSpec): Modifier[] {
   if (spec.gravityLadder) out.push('gravityLadder');
   if (spec.flightTime) out.push('shortFuse');
   if (spec.noReserve) out.push('noReserve');
+  out.push(...(spec.anomalies ?? []));
   return out;
 }
 
 export function sectorRules(spec: SectorSpec): ShotRules {
-  return { edges: spec.loop ? 'loop' : spec.bounce ? 'wall' : 'void', timeLimit: spec.flightTime ?? CHALLENGE.FLIGHT_TIME };
+  const timeLimit = spec.flightTime ?? CHALLENGE.FLIGHT_TIME;
+  return { edges: spec.loop ? 'loop' : spec.bounce ? 'wall' : 'void', timeLimit, ...anomalyRules(spec.anomalies ?? [], timeLimit, spec.seed) };
 }
 
 /** What the pilot fires in a sector: the rules of the flight, and the kind of shot. */

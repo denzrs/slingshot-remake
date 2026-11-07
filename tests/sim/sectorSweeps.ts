@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSector, dailyChallenge, sectorRules, shiftDate, type SectorSpec } from '../../src/sim/challenge';
+import { REGULAR_THEMES, buildSector, dailyChallenge, sectorRules, shiftDate, type SectorSpec } from '../../src/sim/challenge';
 import { CHALLENGE, FIELD, PHYSICS } from '../../src/sim/config';
 import { cloneWorld, simulateShot } from '../../src/sim/physics';
 
@@ -14,7 +14,7 @@ export const LOOP_DAY = '2026-11-11';
 const AFTER_VARIANT_DAYS = shiftDate(VARIANTS, 33);
 
 /** Every day for five weeks, every sector, and a whole cycle of the loop themes: the whole point is that none of them can be broken. */
-export const allSectors = () => [...days(35), ...days(33, VARIANTS), ...days(shiftDays(AFTER_VARIANT_DAYS, shiftDate(LOOP_DAY, 21)), AFTER_VARIANT_DAYS)].flatMap((d) => dailyChallenge(d).sectors.map((spec) => ({ day: d, spec })));
+export const allSectors = () => [...days(35), ...days(33, VARIANTS), ...days(shiftDays(AFTER_VARIANT_DAYS, shiftDate(LOOP_DAY, Math.ceil(REGULAR_THEMES.length / 5) * 7)), AFTER_VARIANT_DAYS)].flatMap((d) => dailyChallenge(d).sectors.map((spec) => ({ day: d, spec })));
 
 /** Building all 175 sectors costs seconds, so each file builds and sweeps its own share of them and vitest runs the files side by side. */
 export const SWEEP_FILES = 4;

@@ -1,11 +1,12 @@
 import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
 import type { Avatar } from '../platform/avatars';
 import { bountyPoints, interceptPoints, underdogPoints } from '../sim/scoring';
-import { AIM, COLORS, FIELD, GRACE, HORIZON, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE, type BonusKind, type KillSource, type SuddenDeathKind } from '../sim/config';
+import { AIM, ANOMALY, COLORS, FIELD, GRACE, HORIZON, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE, type BonusKind, type KillSource, type SuddenDeathKind } from '../sim/config';
 import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
-import { normalizeAngle, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
+import { normalizeAngle, hasTrickShotSources, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
 import { createRng, randomSeed, type Rng } from '../sim/rng';
+import { anomalyRules } from '../sim/anomalies';
 import { bump, closestApproach, improve, newStatBook, pathLength, type BonusRecord, type StatBook } from '../data/stats';
 import type { KillcamPlayback } from '../data/roomRules';
 import { seatTeamsFor, startPower, type Seat, type Settings } from '../data/settings';
@@ -192,6 +193,7 @@ export type GameEvent =
   | { type: 'pickupFade'; kind: PowerUpKind; x: number; y: number }
   | { type: 'teleport'; player: number; fromX: number; fromY: number; toX: number; toY: number }
   | { type: 'blackhole'; player: number; x: number; y: number }
+  | { type: 'planetShatter'; x: number; y: number; radius: number; color: string }
   | { type: 'planetKiller'; player: number; x: number; y: number; radius: number }
   | { type: 'nebula'; player: number; x: number; y: number }
   | { type: 'wormhole'; player: number; x: number; y: number; toX: number; toY: number }
@@ -208,6 +210,14 @@ export type GameEvent =
   | { type: 'shotdown'; player: number; x: number; y: number; vx: number; vy: number; points: number }
   | { type: 'split'; player: number; x: number; y: number }
   | { type: 'shield'; ship: number; x: number; y: number }
+  /** Trick Shots Only: a shot was armed at (x, y) and can kill from now on. */
+  | { type: 'armed'; player: number; x: number; y: number }
+  /** Trick Shots Only: an unarmed shot flew through a ship and only warned it. */
+  | { type: 'warning'; player: number; ship: number; x: number; y: number }
+  /** Zeitzünder: a shot's fuse burnt down at (x, y). */
+  | { type: 'blast'; player: number; x: number; y: number }
+  /** Fusion: the shots of two players melted into one at (x, y). */
+  | { type: 'fusion'; players: [number, number]; x: number; y: number }
   | { type: 'kill'; record: KillRecord }
   /** One shot took more than one ship in this volley: the chain number and what it paid. */
   | { type: 'multiKill'; player: number; kills: number; points: number; x: number; y: number }
@@ -219,6 +229,7 @@ export type GameEvent =
   /** Sudden death: the red giant went supernova and took every ship with it. */
   | { type: 'supernova'; x: number; y: number; ships: { ship: number; x: number; y: number; angle: number }[]; planets: { x: number; y: number; radius: number; color: string }[] }
   | { type: 'killcam'; active: boolean; recording: boolean }
+  | { type: 'freeFire' }
   | { type: 'roundEnd' }
   | { type: 'gameOver' };
 
@@ -352,6 +363,12 @@ export abstract class Match {
   revealEnd = 0;
   /** Mayhem: once the twists have landed, the announcement stays up until somebody dismisses it, so they can be read. */
   revealHeld = false;
+  /**
+   * Anomalies: the first round of a match that plays by them opens with an alarm, which names them. It is part of the
+   * round's announcement (it holds the ships back, and the fire key dismisses it), with Mayhem's twists if there are any.
+   */
+  anomalyAlert = false;
+  freeFireAnnounced = false;
   /** Mayhem: how every round of the match so far was played, for the recap. */
   mayhemHistory: MayhemRound[] = [];
   /** Mayhem: the rules the room was set up with. `settings` is these with the round's twists laid over them. */
@@ -428,7 +445,10 @@ export abstract class Match {
     kinds: () => this.settings.powerUpKinds,
     amount: () => this.settings.powerUpAmount,
     emit: (event) => this.emit(event),
-    placed: (placement) => this.shotLog.placed(placement),
+    placed: (placement) => {
+      this.shotLog.placed(placement);
+      if (placement.kind === 'planetkiller') this.checkFreeFire();
+    },
     clearCpuJobs: () => this.cpuJobs.clear(),
     record: (update) => this.record(update),
   });
@@ -448,7 +468,22 @@ export abstract class Match {
     }
   }
 
-  abstract get rules(): ShotRules;
+  /** Rebuilt only when what it is made from changes: the renderer asks for it every frame. */
+  private rulesMemo: { rules: ShotRules; edges: string; shotTime: number; powerCap: number; anomalies: readonly string[]; seed: number; world: World | undefined; version: number; sources: number } | null = null;
+
+  /** What a flight plays by: the edges and shot time, with the anomalies on top. Trick Shots Only gives way to direct fire once the field offers nothing to arm a shot with. */
+  get rules(): ShotRules {
+    const { edges, shotTime, anomalies } = this.settings;
+    const powerCap = this.settings.fixedPower ? this.settings.fixedPowerLevel : this.settings.maxPower;
+    const { world, worldSeed } = this;
+    const sources = world ? world.planets.length + world.holes.length + world.wormholes.length : 0;
+    const memo = this.rulesMemo;
+    if (memo && memo.edges === edges && memo.shotTime === shotTime && memo.powerCap === powerCap && memo.anomalies === anomalies && memo.seed === worldSeed && memo.world === world && memo.version === (world?.version ?? 0) && memo.sources === sources) return memo.rules;
+    const rules: ShotRules = { edges, timeLimit: shotTime, ...anomalyRules(anomalies, shotTime, worldSeed, powerCap) };
+    if (rules.trickShots && world && !hasTrickShotSources(world, rules)) rules.trickShots = false;
+    this.rulesMemo = { rules, edges, shotTime, powerCap, anomalies, seed: worldSeed, world, version: world?.version ?? 0, sources };
+    return rules;
+  }
   /** Enter / "ready": classic fires, Event Horizon locks the aim in. */
   abstract commit(): void;
   protected abstract beginRound(): void;
@@ -1002,6 +1037,7 @@ export abstract class Match {
     this.roundStartedAt = this.clock;
     this.worldSeed = Math.floor(this.worldRng() * 2 ** 32);
     this.rollTwists();
+    this.raiseAnomalyAlert();
     this.world = generateWorld(this.worldSeed, {
       maxPlanets: this.settings.maxPlanets,
       players: this.players.length,
@@ -1033,6 +1069,8 @@ export abstract class Match {
       p.power = startPower(this.settings);
     }
     this.roundScores = this.players.map((p) => p.score);
+    this.freeFireAnnounced = false;
+    this.checkFreeFire();
     this.power.startRound();
     this.emit({ type: 'round' });
     this.beginRound();
@@ -1057,6 +1095,30 @@ export abstract class Match {
     this.revealHeld = this.players.some((p) => !p.cpu);
   }
 
+  /** Whether this match plays by anomalies: some are on, in a game against other ships and not on the title screen. */
+  private get anomaliesOn(): boolean {
+    return this.baseSettings.anomalies.length > 0 && !this.attract && this.mode !== 'challenge';
+  }
+
+  /** Anomalies: the first round sounds the alarm (and in Mayhem every round), for as long as an announcement of Mayhem's lasts (sharing it when there is one). */
+  private raiseAnomalyAlert(): void {
+    this.anomalyAlert = (this.round === 1 || this.mayhemOn) && this.anomaliesOn;
+    if (!this.anomalyAlert) return;
+    this.revealEnd = this.clock + MAYHEM.REVEAL_TIME;
+    // A match nobody is flying in (CPUs only) has no one to wait for.
+    this.revealHeld = this.players.some((p) => !p.cpu);
+  }
+
+  /** Trick Shots Only: when the battlefield has no trick-shot sources left, direct fire is armed and announced. */
+  checkFreeFire(): void {
+    if (this.freeFireAnnounced || this.decided || !this.settings.anomalies?.includes('trickShots') || !this.world) return;
+    if (!hasTrickShotSources(this.world, { edges: this.settings.edges, timeLimit: this.settings.shotTime })) {
+      this.freeFireAnnounced = true;
+      this.notice = { text: t('notice.freeFire'), color: COLORS.danger, at: this.clock };
+      this.emit({ type: 'freeFire' });
+    }
+  }
+
   /** Mayhem: the announcement is waiting for somebody to dismiss it (and gives up after `HELD_MAX`). */
   get held(): boolean {
     return this.revealHeld && this.clock < this.revealEnd + MAYHEM.HELD_MAX;
@@ -1067,9 +1129,9 @@ export abstract class Match {
     return this.clock - (this.revealEnd - MAYHEM.REVEAL_TIME);
   }
 
-  /** Mayhem: the round has been announced, but the ships are still held back. */
+  /** Mayhem or the anomalies' alarm: the round has been announced, but the ships are still held back. */
   get revealing(): boolean {
-    return this.mayhem !== null && (this.clock < this.revealEnd || this.held);
+    return (this.mayhem !== null || this.anomalyAlert) && (this.clock < this.revealEnd || this.held);
   }
 
   /** The fire key during the announcement ends it instead of firing. True when it did. */
@@ -1639,9 +1701,30 @@ export abstract class Match {
       return;
     }
     if (e.type === 'pierce') {
-      // Armor piercing went through the hull: the ship is out, and the shot flies on.
+      // Armor piercing went through the hull (or a blast took it): the ship is out, and the shot flies on.
       this.emit({ type: 'explode', x: e.x, y: e.y, ship: e.ship, vx: e.vx, vy: e.vy });
-      if (live) this.registerKill(vs, e.ship, volley);
+      if (live) this.creditKill(vs, e.ship, volley);
+      return;
+    }
+    if (e.type === 'arm') {
+      this.emit({ type: 'armed', player, x: e.x, y: e.y });
+      return;
+    }
+    if (e.type === 'warn') {
+      this.emit({ type: 'warning', player, ship: e.ship, x: e.x, y: e.y });
+      return;
+    }
+    if (e.type === 'planetShatter') {
+      this.emit({ type: 'planetShatter', x: e.x, y: e.y, radius: e.radius, color: e.color });
+      this.checkFreeFire();
+      return;
+    }
+    if (e.type === 'bump') {
+      this.emit({ type: 'impact', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy });
+      return;
+    }
+    if (e.type === 'fusion') {
+      this.emit({ type: 'fusion', players: [volley.shots[e.from[0]].owner, volley.shots[e.from[1]].owner], x: e.x, y: e.y });
       return;
     }
     const end = e.end;
@@ -1650,11 +1733,18 @@ export abstract class Match {
       case 'ship': {
         const ship = volley.world.ships[end.ship];
         this.emit({ type: 'explode', x: ship.x, y: ship.y, ship: end.ship, vx: e.vx, vy: e.vy });
-        if (live) this.registerKill(vs, end.ship, volley);
+        if (live) this.creditKill(vs, end.ship, volley);
         break;
       }
+      case 'blast':
+        // Its victims were taken a moment before, as the blast's own events.
+        this.emit({ type: 'blast', player, x: e.x, y: e.y });
+        break;
+      case 'fused':
+        // The melting was shown by the shot it made.
+        break;
       case 'planet': {
-        const planet = volley.world.planets[end.planet];
+        const planet = end.surface ?? volley.world.planets[end.planet];
         const dx = e.x - planet.x;
         const dy = e.y - planet.y;
         const distance = Math.hypot(dx, dy) || 1;
@@ -1707,14 +1797,28 @@ export abstract class Match {
     }
   }
 
-  private registerKill(vs: VolleyShot, victim: number, volley: Volley): void {
-    const killer = vs.owner;
+  /**
+   * A shot took a ship: its owner's kill, or (Fusion) one the two owners of a melted shot share, each at half. A melted
+   * shot that takes one of its own owners is no own goal for them: the other owner has the kill, still at half.
+   */
+  private creditKill(vs: VolleyShot, victim: number, volley: Volley): void {
+    if (vs.partner === undefined) return this.registerKill(vs, victim, volley);
+    const owners = [vs.owner, vs.partner];
+    const killers = owners.includes(victim) ? owners.filter((owner) => owner !== victim) : owners;
+    killers.forEach((killer, i) => this.registerKill(vs, victim, volley, killer, ANOMALY.FUSION_SHARE, i > 0));
+  }
+
+  /**
+   * Notes a kill and pays for it. `killer` is the shot's owner, unless a melted shot is shared out (`share` of every
+   * point to each owner); the second of those is an `echo`, which the killcam and the oracle have already seen.
+   */
+  private registerKill(vs: VolleyShot, victim: number, volley: Volley, killer = vs.owner, share = 1, echo = false): void {
     const self = killer === victim;
     const friendly = !self && this.players[killer].team !== null && this.players[killer].team === this.players[victim].team;
     const hit = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : vs.stray ? { points: SCORING.COLLATERAL, combo: [], multiplier: 1 } : this.killPoints(vs);
-    const score = { ...hit, points: hit.points * this.payFactor };
+    const score = { ...hit, points: Math.round(hit.points * this.payFactor * share) };
     this.players[victim].alive = false;
-    this.oracleKills.push({ killer, victim, self, friendly });
+    if (!echo) this.oracleKills.push({ killer, victim, self, friendly });
     this.players[killer].score += score.points;
     this.shotLog.hit(vs, victim, self ? 'self' : friendly ? 'friendly' : 'enemy', score.points);
     if (self) this.cue('ownGoal', killer, null);
@@ -1724,7 +1828,7 @@ export abstract class Match {
     }
     const enemyKill = !self && !friendly;
     const paysExtras = enemyKill && this.paysKillBonuses;
-    const bonuses = paysExtras ? this.killBonuses(vs, victim) : [];
+    const bonuses = paysExtras ? this.killBonuses(vs, victim, killer).map((b) => ({ ...b, points: Math.round(b.points * share) })) : [];
     if (enemyKill) {
       // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
       this.lastHitBy.set(victim, killer);
@@ -1763,7 +1867,7 @@ export abstract class Match {
     if (paysExtras) {
       const kills = (this.killChain.get(killer) ?? 0) + 1;
       this.killChain.set(killer, kills);
-      const bonus = SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)] * this.payFactor;
+      const bonus = Math.round(SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)] * this.payFactor * share);
       if (bonus > 0) {
         this.players[killer].score += bonus;
         this.shotLog.bonus(vs, bonus);
@@ -1771,7 +1875,7 @@ export abstract class Match {
       }
     }
     if (bonuses.length) this.shotLog.bonus(vs, this.payBonuses(killer, bonuses, volley.world.ships[victim]));
-    this.killcam.record(record, volley.shots.indexOf(vs), volley.steps);
+    if (!echo) this.killcam.record(record, volley.shots.indexOf(vs), volley.steps);
   }
 
   /** Pays a player extras, notes them for the round's report and shows them at `at`; returns what they paid. */
@@ -1784,8 +1888,7 @@ export abstract class Match {
   }
 
   /** The extras a kill of an enemy pays, taken before the kill is noted (it is no longer the round's first after that). */
-  private killBonuses(vs: VolleyShot, victim: number): Bonus[] {
-    const killer = vs.owner;
+  private killBonuses(vs: VolleyShot, victim: number, killer = vs.owner): Bonus[] {
     const pay = this.payFactor;
     const bonuses: Bonus[] = [];
     const add = (kind: BonusKind, points: number) => {

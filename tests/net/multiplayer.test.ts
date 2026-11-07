@@ -158,7 +158,7 @@ interface Client {
   syncElapsed: number;
 }
 
-const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, edges: 'wall' as const, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, killcam: 'auto', hiddenAim: false, fadingTrails: 0, suddenDeath: true, mayhem: 0, betting: false, chatPlayersOnly: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'antigravity', 'shield'], powerUpAmount: 2 };
+const rules: RoomRules = { rounds: 2, maxPlanets: 3, invisiblePlanets: false, edges: 'wall' as const, fixedPower: true, fixedPowerLevel: 55, maxPower: 100, shotTime: 30, styleBonuses: true, neighborGrace: 0, simultaneousShots: false, killcam: 'auto', hiddenAim: false, fadingTrails: 0, suddenDeath: true, mayhem: 0, betting: false, chatPlayersOnly: false, powerUps: false, powerUpKinds: ['preview', 'teleport', 'splitter', 'antigravity', 'shield'], powerUpAmount: 2, anomalies: [] };
 
 async function connectSession(hooks: Partial<ConstructorParameters<typeof MultiplayerSession>[0]> = {}, settings = DEFAULT_SETTINGS, edit?: (message: ServerMessage) => ServerMessage): Promise<MultiplayerSession> {
   const session = new MultiplayerSession({ settings: () => cloneSettings(settings), matchStarted() {}, matchRestarted() {}, matchEnded() {}, ...hooks }, new RustTransport(edit));
@@ -228,6 +228,14 @@ async function frameUntil(frame: () => Promise<void>, done: () => boolean, limit
 }
 
 describe('online games', () => {
+  it('keeps White Hole and Unstable when a room starts on the host and guest', async () => {
+    const { host, guest } = await startRoom('horizon', ['Anna', 'Ben'], { ...rules, anomalies: ['whiteHole', 'unstable'] });
+    for (const client of [host, guest]) {
+      expect(client.match().settings.anomalies).toEqual(['whiteHole', 'unstable']);
+      expect(client.match().rules).toMatchObject({ whiteHole: true, unstable: true });
+    }
+  });
+
   it('tracks when the room list is ready and when it is being refreshed', async () => {
     const session = await connectSession();
     await waitForSession(session, () => session.roomListLoaded);

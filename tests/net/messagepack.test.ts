@@ -2,6 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { packMessage, packWireMessage, readStateEnvelope, unpackWireMessage } from '../../src/net/messagepack';
 
 describe('state wire envelope', () => {
+  it('carries a shattered planet event and persistent terrain damage', () => {
+    const state = { type: 'state', seq: 3, patch: { planets: [{ seed: 7, fractures: [0, 1.2] }] },
+      events: [{ type: 'planetShatter', x: 640, y: 400, radius: 30, color: '#ef8469' }] };
+    expect(unpackWireMessage(packWireMessage(state))).toEqual(state);
+  });
+
+  it('refuses a shattered planet whose colour is no colour', () => {
+    const state = { type: 'state', seq: 4, patch: {}, events: [{ type: 'planetShatter', x: 640, y: 400, radius: 30, color: '#'.padEnd(200, 'f') }] };
+    expect(() => unpackWireMessage(packWireMessage(state))).toThrow();
+  });
+
   it('keeps sequence in the header and preserves the MessagePack payload bytes', () => {
     const state = { type: 'state', seq: 0x010203040506, patch: { t: 7, board: [1, 2] }, events: [] };
     const frame = packWireMessage(state);
@@ -69,6 +80,7 @@ describe('state wire envelope', () => {
 
     expect(send({ type: 'suddenDeath', kind: 'gravity' })).not.toThrow();
     expect(send({ type: 'suddenDeath', kind: 'redGiant' })).not.toThrow();
+    expect(send({ type: 'freeFire' })).not.toThrow();
     expect(send({ type: 'suddenDeath' })).toThrow('Invalid state events');
     expect(send({ type: 'suddenDeath', kind: 'meteors' })).toThrow('Invalid state events');
 
