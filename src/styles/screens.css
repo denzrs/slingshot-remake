@@ -159,11 +159,18 @@
   border: 0;
 }
 
+.stats-ticker__toggle { display: none; }
+
 @media (max-width: 520px) {
-  .stats-ticker { min-height: 46px; gap: 10px; }
+  .stats-ticker { min-height: 36px; gap: 10px; padding-right: 30px; }
   .stats-ticker__label { padding-inline: 12px 10px; font-size: 8px; letter-spacing: 0.06em; }
-  .stats-ticker__fact { font-size: 10px; }
+  .stats-ticker__fact { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  .stats-ticker.is-expanded .stats-ticker__fact { white-space: normal; }
   .stats-ticker__dots { display: none; }
+  .stats-ticker__toggle { position: absolute; inset: 0; display: block; width: 100%; padding: 0; border: 0; background: transparent; color: var(--bone-dim); cursor: pointer; }
+  .stats-ticker__toggle::after { position: absolute; top: 50%; right: 12px; width: 6px; height: 6px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; content: ''; transform: translateY(-70%) rotate(45deg); }
+  .stats-ticker.is-expanded .stats-ticker__toggle::after { transform: translateY(-25%) rotate(225deg); }
+  .stats-ticker__toggle:focus-visible { outline: 2px solid var(--sodium); outline-offset: -2px; }
 }
 
 /* Stillness keeps the rotation but swaps facts at once instead of fading. */

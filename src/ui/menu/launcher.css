@@ -750,7 +750,6 @@
 
 @media (max-width: 760px) {
   .screen--title > .launcher { flex: 1 0 auto; height: auto; margin: 0 auto; }
-  .launcher__body { flex: 0 0 auto; }
   .launcher__head { margin-bottom: 26px; }
   .launcher__brand { gap: 8px; }
   .launcher .wordmark { flex: 0 1 auto; min-width: 0; font-size: clamp(52px, 15vw, 68px); white-space: nowrap; }
@@ -782,7 +781,7 @@
     line-height: 1;
     text-align: center;
   }
-  .launcher__body { display: flex; flex-direction: column; gap: 24px; }
+  .launcher__body { display: flex; flex: 0 0 auto; flex-direction: column; gap: 24px; margin-bottom: 16px; }
   .launcher__nav { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0; }
   .launcher__nav .item { padding: 8px 12px; min-height: 44px; font-size: 23px; }
   .launcher__nav .item__hint { display: none; }
@@ -864,6 +863,23 @@
   .launcher__modes .item__icon { height: 76px; }
   .launcher__online .item--card { grid-template-columns: 72px minmax(0, 1fr); gap: 3px 12px; padding: 12px; }
   .launcher__online .item__icon { height: 76px; }
+}
+
+/* Keep all launcher choices and the footer in view on typical phone browser viewports. */
+@media (max-width: 520px) and (max-height: 960px) {
+  .screen--title { padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .launcher__head { margin-bottom: 14px; }
+  .launcher__head .stats-ticker { margin-top: 12px; }
+  .launcher__body { gap: 12px; margin-bottom: 12px; }
+  .launcher__section-head { margin-bottom: 8px; }
+  .launcher__modes, .launcher__online { gap: 8px; }
+  .launcher__modes .item--card, .launcher__online .item--card { padding: 8px 12px; }
+  .launcher__modes .item__icon, .launcher__online .item__icon { height: 56px; }
+  .launcher__modes .item__title, .launcher__online .item__title { font-size: 22px; }
+  .launcher__modes .item__hint, .launcher__online .item__hint { line-height: 1.35; }
+  .launcher__daily { margin-top: 8px; }
+  .launcher__daily .item--card { padding-block: 8px; }
+  .launcher__foot { min-height: 54px; margin-top: 0; padding-block: 10px; }
 }
 
 @media (max-height: 780px) and (max-width: 380px) {
