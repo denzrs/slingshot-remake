@@ -196,7 +196,7 @@ Columns: **Proto** = shown in the prototype gallery (yes / partly / no). **Forge
 
 **Code structure (after the rebuild):** Every look is a painter in `src/render/looks/` (`classic`, `luminous`, `forged`, `holo`), with one method per element, defined in `painter.ts`. The renderer asks the painter and knows no look name; a test (`tests/render/looks.test.ts`) enforces it. A look builds on another (`engraved(id, styles, parts)`): Forged is Luminous plus images, Luminous is Simple plus light. The Holo grid is gone, and the lens round the black hole bends the background in all looks.
 
-**Look gallery (dev):** `npm run dev`, then `/looks.html`. The real renderer, once per look, on five scenes (field with a sonar loop, Solar System, event horizon, all twelve power-ups, effects loop). New looks go into `LOOKS`, new scenes into `SCENES` in `src/debug/looks-gallery.ts`.
+**Look gallery (dev):** `npm run dev`, then `/dev/looks.html`. The real renderer, once per look, on five scenes (field with a sonar loop, Solar System, event horizon, all twelve power-ups, effects loop). New looks go into `LOOKS`, new scenes into `SCENES` in `src/debug/looks-gallery.ts`.
 
 **Second round (Luminous and Holo):** Shots (head, trail, finished trails, plasma, armor-piercing, splitter ring), shield, wormhole portals, nebula cloud, planetary defense with missile and brackets, antigravity waves, aiming for teleport, black hole, nebula (reach), wormhole ghost and defense ghost, teleport beam. The gallery has three new scenes for this: Shots, Effect of the power-ups, Aiming.
 
