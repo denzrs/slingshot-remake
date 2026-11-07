@@ -1,6 +1,18 @@
 /** Logical play field. Physics runs in these units; rendering scales to the window. */
 export const FIELD = { width: 1280, height: 800 } as const;
 
+/** What the edge of the field does to a shot: lets it fly out and lose itself (void), throws it back (wall), or closes the field into a loop, so it comes out on the opposite side. */
+export const EDGE_MODES = ['void', 'wall', 'loop'] as const;
+export type EdgeMode = (typeof EDGE_MODES)[number];
+export const isEdgeMode = (value: unknown): value is EdgeMode => EDGE_MODES.some((mode) => mode === value);
+
+/**
+ * A shot that leaves a loop's field flies on this far (field units) beyond the edge, where it is carried across: it is gone
+ * there and comes out the same distance beyond the opposite edge. The strip between edge and that line is empty space: only
+ * gravity reaches it.
+ */
+export const LOOP_MARGIN = 28;
+
 export const MAX_PLAYERS = 6;
 
 export const PHYSICS = {

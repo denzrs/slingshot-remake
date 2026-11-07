@@ -4,7 +4,7 @@ import { aimedSpot, blackHoleFits, POWER_UP } from '../../src/sim/powerups';
 import { Shot, type World } from '../../src/sim/physics';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 
-const rules = { bounce: false, timeLimit: 20 };
+const rules = { edges: 'void' as const, timeLimit: 20 };
 
 /** A human duel with power-ups on, no planets, so flights are straight and predictable. */
 function duel(seed = 7): Match {

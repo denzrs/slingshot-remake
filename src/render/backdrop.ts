@@ -1,4 +1,4 @@
-import { COLORS } from '../sim/config';
+import { COLORS, type EdgeMode } from '../sim/config';
 import { createRng } from '../sim/rng';
 import { plateUnits } from './layout';
 import { rgba } from './color';
@@ -24,7 +24,7 @@ export interface View {
  * border (the plotter frame with registration marks, in the engraved plan). Rebuilt only on resize, when edges change or
  * the look does.
  */
-export function renderBackdrop(view: View, walls: boolean, painter: Pick<LookPainter, 'backdropArt' | 'border'>, drawFrame = true): HTMLCanvasElement {
+export function renderBackdrop(view: View, edges: EdgeMode, painter: Pick<LookPainter, 'backdropArt' | 'border'>, drawFrame = true): HTMLCanvasElement {
   const { cssWidth, cssHeight, dpr, scale, offsetX, offsetY } = view;
   const plate = plateUnits(!!view.rotated);
   const canvas = document.createElement('canvas');
@@ -69,22 +69,25 @@ export function renderBackdrop(view: View, walls: boolean, painter: Pick<LookPai
   }
 
   painter.backdropArt(ctx, cssWidth, cssHeight);
-  if (drawFrame) painter.border(ctx, { scale, offsetX, offsetY, plate, cssWidth, cssHeight }, walls);
+  if (drawFrame) painter.border(ctx, { scale, offsetX, offsetY, plate, cssWidth, cssHeight }, edges);
   return canvas;
 }
 
-/** The engraved border: ruler ticks, registration marks in the corners, a line along the wall when shots bounce. */
-export function drawPlotterFrame(ctx: CanvasRenderingContext2D, { scale, offsetX: ox, offsetY: oy, plate }: { scale: number; offsetX: number; offsetY: number; plate: { w: number; h: number } }, walls: boolean): void {
+/** The engraved border: ruler ticks, registration marks in the corners, a solid line along the wall when shots bounce, a dashed one along the edge of a loop. */
+export function drawPlotterFrame(ctx: CanvasRenderingContext2D, { scale, offsetX: ox, offsetY: oy, plate }: { scale: number; offsetX: number; offsetY: number; plate: { w: number; h: number } }, edges: EdgeMode): void {
   const W = plate.w * scale;
   const H = plate.h * scale;
   ctx.save();
   ctx.translate(ox, oy);
   ctx.lineWidth = 1;
 
-  if (walls) {
-    ctx.strokeStyle = rgba(COLORS.line, 0.6);
+  // A wall is a solid line; the edge of a loop is dashed, because a shot flies through it.
+  if (edges !== 'void') {
+    ctx.strokeStyle = rgba(COLORS.line, edges === 'wall' ? 0.6 : 0.5);
     ctx.lineWidth = 1.5;
+    if (edges === 'loop') ctx.setLineDash([9, 7]);
     ctx.strokeRect(0.75, 0.75, W - 1.5, H - 1.5);
+    ctx.setLineDash([]);
     ctx.lineWidth = 1;
   }
 

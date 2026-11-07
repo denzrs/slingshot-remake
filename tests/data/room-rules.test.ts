@@ -29,4 +29,16 @@ describe('the rules of a game', () => {
     expect(rules.rounds).toBe(7);
     expect(Object.keys(rules).sort()).toEqual([...RULE_KEYS].sort());
   });
+
+  it('keeps the three edges and starts in the void', () => {
+    expect(DEFAULT_ROOM_RULES.edges).toBe('void');
+    for (const edges of ['void', 'wall', 'loop'] as const) expect(roomRulesFrom({ edges }).edges).toBe(edges);
+  });
+
+  it('reads the old yes/no for reflective edges as a wall or the void, and an unknown edge as the void', () => {
+    expect(roomRulesFrom({ bounce: true } as Parameters<typeof roomRulesFrom>[0]).edges).toBe('wall');
+    expect(roomRulesFrom({ bounce: false } as Parameters<typeof roomRulesFrom>[0]).edges).toBe('void');
+    expect(roomRulesFrom({ edges: 'ring' } as unknown as Parameters<typeof roomRulesFrom>[0]).edges).toBe('void');
+    expect(Object.keys(roomRulesFrom({ bounce: true } as Parameters<typeof roomRulesFrom>[0])).sort()).toEqual([...RULE_KEYS].sort());
+  });
 });

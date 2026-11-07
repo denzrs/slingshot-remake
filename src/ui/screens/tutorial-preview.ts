@@ -57,7 +57,7 @@ export interface TutorialPreviewController {
 }
 
 const PLAY_SECONDS = 4.8;
-const SHOT_RULES = { bounce: false, timeLimit: 6 } as const;
+const SHOT_RULES = { edges: 'void', timeLimit: 6 } as const;
 
 function planet(x: number, y: number, radius: number, style: 'rocky' | 'gas' | 'ice', tint: string, seed: number): World['planets'][number] {
   return { x, y, radius, mass: radius ** 3, style, tint, seed };
@@ -207,7 +207,7 @@ function finishFlight(flight: Flight, shot: Shot): Flight {
 }
 
 function trace(world: World, shooter: number, angle: number, power: number, ghost = false, options: TraceOptions = {}): Flight {
-  const rules = { bounce: options.bounce ?? SHOT_RULES.bounce, timeLimit: options.timeLimit ?? SHOT_RULES.timeLimit };
+  const rules = { edges: options.bounce ? ('wall' as const) : SHOT_RULES.edges, timeLimit: options.timeLimit ?? SHOT_RULES.timeLimit };
   const shot = new Shot(world, shooter, angle, power, rules, true, options.spare ?? [], options.pierce, options.plasma);
   const flight = startFlight(shot, shooter, options);
   const counts = { hits: 0, reflects: 0, warps: 0, style: 0 };
@@ -246,7 +246,7 @@ interface TrickCandidate { angle: number; power: number; }
 
 function findTrickFlight(world: World, kind: StyleKind, candidates: readonly TrickCandidate[], options: TraceOptions = {}, hitShip?: number): Flight | null {
   const timeLimit = options.timeLimit ?? SHOT_RULES.timeLimit;
-  const rules = { bounce: options.bounce ?? false, timeLimit };
+  const rules = { edges: options.bounce ? ('wall' as const) : ('void' as const), timeLimit };
   const maxSteps = Math.ceil(timeLimit * 240) + 4;
   for (const candidate of candidates) {
     const shot = new Shot(world, 0, candidate.angle, candidate.power, rules, true, options.spare ?? [], options.pierce, options.plasma);

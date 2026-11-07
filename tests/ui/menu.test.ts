@@ -104,7 +104,7 @@ describe('game rules in the menu', () => {
 
   it('makes switches of the on/off rules, a bar of the few-choice rules and sliders of the rest', () => {
     for (const row of all) {
-      if (row.key === 'fixedPower' || row.key === 'powerUpAmount' || row.key === 'mayhem' || row.key === 'killcam') expect(row.control, row.key).toBe('segmented');
+      if (row.key === 'fixedPower' || row.key === 'powerUpAmount' || row.key === 'mayhem' || row.key === 'killcam' || row.key === 'edges') expect(row.control, row.key).toBe('segmented');
       else if (row.key === 'powerUpKinds') expect(row.control).toBe('tiles');
       else if (row.options.length === 0) expect(row.control, row.key).toBe('toggle');
       else expect(row.control, row.key).toBe('slider');
@@ -161,6 +161,15 @@ describe('game rules in the menu', () => {
     expect(item.hidden?.()).toBe(false);
     rules = { ...rules, mayhem: 0 };
     expect(item.hidden?.()).toBe(true);
+  });
+
+  it('offers the three field edges the relay knows, in every mode', () => {
+    expect(relayContract.defaults.edges).toBe('void');
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      const row = rulesFor(mode, false).find((r) => r.key === 'edges')!;
+      expect(row.control).toBe('segmented');
+      expect(row.options.map((o) => o.value)).toEqual(relayContract.options.edges);
+    }
   });
 
   it('offers the shared killcam choices in every offline and online mode', () => {

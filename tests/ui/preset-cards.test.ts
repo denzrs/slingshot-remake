@@ -79,7 +79,7 @@ describe('the preset cards', () => {
     picked.cards.detect();
     expect(picked.state.current?.id).toBe('handpicked');
 
-    const odd = setup('classic', false, { ...defaultRoomRules(), rounds: 15, bounce: true });
+    const odd = setup('classic', false, { ...defaultRoomRules(), rounds: 15, edges: 'wall' });
     odd.cards.detect();
     expect(odd.state.current).toBeUndefined();
   });

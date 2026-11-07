@@ -344,6 +344,26 @@ const SCENES: Scene[] = [
     },
   },
   {
+    title: 'Loop',
+    sub: 'Hinter dem Rand öffnet sich ein Tor im Wurmloch-Stil der Look, wo der Schuss hindurchgeht; gegenüber öffnet sich das zweite. Der Schweif reißt am Sprung ab, es blitzt keine Linie über das Feld',
+    build: () => {
+      const match = aiming('classic', 11, { edges: 'loop', maxPlanets: 3 });
+      overrideScene(match, () => ({
+        volley: {
+          shots: [
+            // Leaving to the right, halfway between the edge and its gate.
+            flying(0, [1150, 300, 1200, 303, 1240, 306, 1280, 308, 1300, 309]),
+            // Coming out of the left gate: the trail is the other side's, so it breaks at the jump.
+            flying(1, [1210, 560, 1250, 556, 1285, 551, -24, 548, -16, 547, -9, 546]),
+            // Through the top gate and on out of the bottom one.
+            flying(2, [640, 60, 640, 20, 640, -18, 640, 822, 640, 814]),
+          ],
+        } as unknown as FieldScene['volley'],
+      }));
+      return match;
+    },
+  },
+  {
     title: 'Sonnensturm',
     sub: 'Der Ausbruch der Sonne: Plasmawolken fliegen hinaus, Schockringe, Funken um einen Schuss im Sturm (Schleife)',
     build: () => {

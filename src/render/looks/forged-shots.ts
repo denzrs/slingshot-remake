@@ -1,5 +1,5 @@
 import { COLORS } from '../../sim/config';
-import { isWormholeJump, type Planet, type Wormhole } from '../../sim/physics';
+import { isTrailBreak, type Planet, type Wormhole } from '../../sim/physics';
 import { rgba } from '../color';
 import { strokePolyline } from '../polyline';
 import { drawSun, type SunStyle } from '../sun';
@@ -34,6 +34,8 @@ export function drawForgedShot(ctx: CanvasRenderingContext2D, x: number, y: numb
     const from = Math.floor(tail * reach);
     for (let k = 0; k < from; k++) {
       const i = trail.length - 2 - k * 2;
+      // A shot that was carried across a loop's edge has no tail across the field.
+      if (i < 2 || isTrailBreak(trail, i, [])) continue;
       const f = 1 - k / from;
       ctx.strokeStyle = white ? rgba(COLORS.bone, alpha * f * f * f) : rgba(color, alpha * f * f);
       ctx.lineWidth = width * f;
@@ -116,7 +118,7 @@ export function drawForgedLiveTrail(ctx: CanvasRenderingContext2D, pts: number[]
   // The recent track: hotter and thicker the nearer the shot.
   ctx.globalCompositeOperation = 'lighter';
   for (let k = split; k < n; k++) {
-    if (wormholes.length && isWormholeJump(pts, k * 2, wormholes)) continue;
+    if (isTrailBreak(pts, k * 2, wormholes)) continue;
     const f = (k - split + 1) / (n - split);
     ctx.strokeStyle = rgba(color, 0.08 + 0.2 * f);
     ctx.lineWidth = 2 + 2.2 * f;
@@ -133,7 +135,7 @@ export function drawForgedLiveTrail(ctx: CanvasRenderingContext2D, pts: number[]
   for (let p = 0; p < 3; p++) {
     const at = n - 1 - span + ((time * 38 + (p * span) / 3) % span);
     const k = Math.min(n - 1, Math.max(1, Math.floor(at)));
-    if (wormholes.length && isWormholeJump(pts, k * 2, wormholes)) continue;
+    if (isTrailBreak(pts, k * 2, wormholes)) continue;
     const f = (k - (n - 1 - span)) / span;
     const bead = ctx.createRadialGradient(pts[k * 2], pts[k * 2 + 1], 0, pts[k * 2], pts[k * 2 + 1], 3);
     bead.addColorStop(0, rgba(COLORS.bone, 0.75 * f));

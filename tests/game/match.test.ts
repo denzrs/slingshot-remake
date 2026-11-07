@@ -143,11 +143,11 @@ describe('settings', () => {
   it('a match plays by its own copy, so editing the setup mid-game changes nothing', () => {
     const live = { ...DEFAULT_SETTINGS, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams] };
     const m = createMatch('classic', cloneSettings(live));
-    live.bounce = true;
+    live.edges = 'wall';
     live.fixedPower = true;
     live.seats[4] = 'human';
     m.applySettings(live);
-    expect(m.settings.bounce).toBe(false);
+    expect(m.settings.edges).toBe('void');
     expect(m.settings.fixedPower).toBe(false);
     expect(m.settings.seats[4]).toBe('off');
   });
@@ -283,9 +283,9 @@ describe('event horizon match', () => {
     expect(guest.current).toBe(host.current);
   });
 
-  it('uses the configured bounce and shot timeout settings', () => {
-    const m = createMatch('horizon', { ...DEFAULT_SETTINGS, bounce: true, shotTime: 60 }, { seats: cpus(2) });
-    expect(m.rules).toEqual({ bounce: true, timeLimit: 60 });
+  it('uses the configured edges and shot timeout settings', () => {
+    const m = createMatch('horizon', { ...DEFAULT_SETTINGS, edges: 'wall' as const, shotTime: 60 }, { seats: cpus(2) });
+    expect(m.rules).toEqual({ edges: 'wall' as const, timeLimit: 60 });
   });
 
   it('always ends: the growing hole guarantees a decision', () => {

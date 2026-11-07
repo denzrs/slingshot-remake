@@ -566,6 +566,24 @@ impl KillcamMode {
     }
 }
 
+/// What the edge of the field does to a shot: it flies out and is lost, bounces back, or comes out on the opposite side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdgeMode {
+    Void,
+    Wall,
+    Loop,
+}
+
+impl EdgeMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Void => "void",
+            Self::Wall => "wall",
+            Self::Loop => "loop",
+        }
+    }
+}
+
 /// The rules of an online game, chosen by whoever creates (and later edits) the room.
 #[derive(Clone, Debug)]
 pub struct RoomRules {
@@ -573,7 +591,7 @@ pub struct RoomRules {
     pub rounds: i64,
     pub max_planets: i64,
     pub invisible_planets: bool,
-    pub bounce: bool,
+    pub edges: EdgeMode,
     /// Every shot flies with `fixed_power_level`.
     pub fixed_power: bool,
     /// The power of a fixed shot, 10 to 100 in steps of 5.
@@ -614,7 +632,7 @@ pub const DEFAULT_RULES: RoomRules = RoomRules {
     rounds: 5,
     max_planets: 4,
     invisible_planets: false,
-    bounce: false,
+    edges: EdgeMode::Void,
     fixed_power: false,
     fixed_power_level: 55,
     max_power: 100,
@@ -640,7 +658,7 @@ pub fn rules_to_value(rules: &RoomRules) -> Value {
         "rounds": rules.rounds,
         "maxPlanets": rules.max_planets,
         "invisiblePlanets": rules.invisible_planets,
-        "bounce": rules.bounce,
+        "edges": rules.edges.as_str(),
         "fixedPower": rules.fixed_power,
         "fixedPowerLevel": rules.fixed_power_level,
         "maxPower": rules.max_power,
@@ -701,7 +719,6 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
     }
     for key in [
         "invisiblePlanets",
-        "bounce",
         "fixedPower",
         "styleBonuses",
         "simultaneousShots",
@@ -711,6 +728,25 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
             return None;
         }
     }
+    // Clients from before the loop existed send a yes/no `bounce` instead: yes is a wall.
+    let edges = match field("edges") {
+        Some(v) => match v.as_str()? {
+            "void" => EdgeMode::Void,
+            "wall" => EdgeMode::Wall,
+            "loop" => EdgeMode::Loop,
+            _ => return None,
+        },
+        None => match field("bounce") {
+            Some(v) => {
+                if v.as_bool()? {
+                    EdgeMode::Wall
+                } else {
+                    EdgeMode::Void
+                }
+            }
+            None => EdgeMode::Void,
+        },
+    };
     let killcam = match field("killcam") {
         None => KillcamMode::Auto,
         Some(v) => match v.as_str()? {
@@ -779,7 +815,7 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
         rounds: i64_of(rounds),
         max_planets: i64_of(max_planets),
         invisible_planets: value.get("invisiblePlanets").unwrap().as_bool().unwrap(),
-        bounce: value.get("bounce").unwrap().as_bool().unwrap(),
+        edges,
         fixed_power: value.get("fixedPower").unwrap().as_bool().unwrap(),
         fixed_power_level: field("fixedPowerLevel")
             .map(i64_of)
@@ -884,7 +920,7 @@ mod tests {
 
     fn valid_rules() -> Value {
         json!({
-            "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"bounce":true,
+            "rounds":5,"maxPlanets":4,"invisiblePlanets":false,"edges":"wall",
             "fixedPower":true,"fixedPowerLevel":70,"maxPower":80,"shotTime":20,
             "styleBonuses":true,"neighborGrace":1,"simultaneousShots":true,
             "hiddenAim":false,"fadingTrails":2,"mayhem":2,"betting":true,"chatPlayersOnly":true,
@@ -915,7 +951,7 @@ mod tests {
         assert_eq!(parsed.rounds, 5);
         assert_eq!(parsed.fixed_power_level, 70);
         assert_eq!(parsed.max_power, 80);
-        assert!(parsed.bounce && parsed.fixed_power && parsed.style_bonuses);
+        assert!(parsed.edges == EdgeMode::Wall && parsed.fixed_power && parsed.style_bonuses);
         assert!(parsed.simultaneous_shots);
         assert!(parsed.betting);
 
@@ -963,6 +999,29 @@ mod tests {
         for invalid in [json!(true), json!(1), json!("always"), json!([])] {
             let mut rules = valid_rules();
             rules["killcam"] = invalid;
+            assert!(parse_rules(&rules).is_none());
+        }
+    }
+
+    #[test]
+    fn edge_rules_preserve_choices_and_read_the_old_bounce_switch() {
+        for choice in ["void", "wall", "loop"] {
+            let mut rules = valid_rules();
+            rules["edges"] = json!(choice);
+            let parsed = parse_rules(&rules).expect("edge choice accepted");
+            assert_eq!(rules_to_value(&parsed)["edges"], json!(choice));
+        }
+        // A client from before the loop sends a yes/no `bounce`: yes is a wall, no is the void.
+        for (bounce, expected) in [(true, "wall"), (false, "void")] {
+            let mut rules = valid_rules();
+            rules.as_object_mut().unwrap().remove("edges");
+            rules["bounce"] = json!(bounce);
+            let parsed = parse_rules(&rules).expect("legacy bounce accepted");
+            assert_eq!(rules_to_value(&parsed)["edges"], json!(expected));
+        }
+        for invalid in [json!(true), json!(1), json!("ring"), json!([])] {
+            let mut rules = valid_rules();
+            rules["edges"] = invalid;
             assert!(parse_rules(&rules).is_none());
         }
     }
@@ -1057,7 +1116,6 @@ mod tests {
         }
         for key in [
             "invisiblePlanets",
-            "bounce",
             "fixedPower",
             "styleBonuses",
             "simultaneousShots",

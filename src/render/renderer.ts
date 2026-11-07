@@ -1,4 +1,4 @@
-import { COLORS, FIELD, FONTS, NEBULA, PHYSICS, SOLAR, SUDDEN_DEATH, WORMHOLE } from '../sim/config';
+import { COLORS, FIELD, FONTS, NEBULA, PHYSICS, SOLAR, SUDDEN_DEATH, WORMHOLE, type EdgeMode } from '../sim/config';
 import type { Camera, Match, Scene, Trail } from '../game';
 import { t } from '../platform/i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../game/scorecard';
@@ -10,6 +10,7 @@ import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from
 import { orbitOf, solarCenter } from '../sim/world';
 import { drawLens } from './blackhole';
 import { rgba } from './color';
+import { acrossOf, gatePoint, lensAt, type Lens } from './loop-gate';
 import { renderContours } from './contours';
 import type { Effects } from './effects';
 import { Hud } from './hud';
@@ -66,7 +67,7 @@ export class Renderer {
   private emptyDrawn = false;
   /** The look the empty plate on the canvas is in. */
   private emptyLook: Look | null = null;
-  private backdrop: { canvas: HTMLCanvasElement; walls: boolean; fullScreen: boolean; look: Look } | null = null;
+  private backdrop: { canvas: HTMLCanvasElement; edges: EdgeMode; fullScreen: boolean; look: Look } | null = null;
   /** Per world (live or killcam replay), rebuilt when the world's version or the pixel scale changes. */
   private contours = new WeakMap<World, { version: number; ps: number; canvas: HTMLCanvasElement }>();
   /** Planet sprites by seed at `spritePs` device pixels per field unit. */
@@ -175,8 +176,8 @@ export class Renderer {
     if (this.emptyDrawn && this.emptyLook === this.painter.id) return;
     this.emptyDrawn = true;
     this.emptyLook = this.painter.id;
-    if (!this.backdrop || this.backdrop.walls || this.backdrop.fullScreen || this.backdrop.look !== this.painter.id) {
-      this.backdrop = { canvas: renderBackdrop(this.view, false, this.painter), walls: false, fullScreen: false, look: this.painter.id };
+    if (!this.backdrop || this.backdrop.edges !== 'void' || this.backdrop.fullScreen || this.backdrop.look !== this.painter.id) {
+      this.backdrop = { canvas: renderBackdrop(this.view, 'void', this.painter), edges: 'void', fullScreen: false, look: this.painter.id };
     }
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.drawImage(this.backdrop.canvas, 0, 0);
@@ -192,10 +193,10 @@ export class Renderer {
     const fieldView = opts.fullScreen ? this.fullScreenView() : view;
     const { dpr, scale, offsetX, offsetY } = fieldView;
     const scene = match.scene();
-    const walls = match.rules.bounce;
+    const edges = match.rules.edges;
 
-    if (!this.backdrop || this.backdrop.walls !== walls || this.backdrop.fullScreen !== opts.fullScreen || this.backdrop.look !== this.painter.id) {
-      this.backdrop = { canvas: renderBackdrop(fieldView, walls, this.painter, !opts.fullScreen), walls, fullScreen: opts.fullScreen, look: this.painter.id };
+    if (!this.backdrop || this.backdrop.edges !== edges || this.backdrop.fullScreen !== opts.fullScreen || this.backdrop.look !== this.painter.id) {
+      this.backdrop = { canvas: renderBackdrop(fieldView, edges, this.painter, !opts.fullScreen), edges, fullScreen: opts.fullScreen, look: this.painter.id };
     }
 
     const base = dpr * scale;
@@ -529,7 +530,13 @@ export class Renderer {
       const shot = vs.shot;
       this.painter.liveTrail(ctx, vs.trail, match.world.wormholes, color, !!vs.plasma, this.time);
       if (shot.end) continue;
-      if (shot.inField) {
+      // In a loop a shot flies on beyond the edge and fades out towards the line where it is carried across, and a gate opens there: the opposite one gives it back.
+      const loop = match.rules.edges === 'loop';
+      const lens = loop ? lensAt(shot.x, shot.y, match.world.width, match.world.height) : null;
+      const depth = lens?.depth ?? 0;
+      if (shot.inField || loop) {
+        ctx.save();
+        ctx.globalAlpha = 1 - depth;
         const owner = match.players[vs.owner];
         // A shot that can still be split carries a gold ring.
         if (match.powerUps && owner.armed && owner.powerUp === 'splitter') this.painter.splitterRing(ctx, shot.x, shot.y, this.time);
@@ -552,6 +559,8 @@ export class Renderer {
         if (vs.plasma) this.painter.plasmaShot(ctx, shot.x, shot.y, this.time);
         // An armor-piercing round is an arrowhead pointing where it flies, glowing like the plain shot.
         if (vs.pierce) this.painter.piercer(ctx, shot.x, shot.y, Math.atan2(shot.vy, shot.vx), color);
+        ctx.restore();
+        if (lens) this.drawLoopGates(ctx, lens, color, match.world.width, match.world.height);
       } else {
         this.drawOffscreenMarker(shot.x, shot.y, color);
       }
@@ -831,6 +840,18 @@ export class Renderer {
    * Chevron on the field edge pointing at a shot that has left the plate, with how far outside the field it is (0 at the edge,
    * counting up until it counts as lost). The chevron turns white in the last stretch.
    */
+  /**
+   * The gate a shot flies at in a loop: where it is carried across, a doorway opens in the look's own wormhole style, in the
+   * shooter's colour, and the shot fades into it. Across the field the gate it will come out of opens too, a little less.
+   */
+  private drawLoopGates(ctx: CanvasRenderingContext2D, lens: Lens, color: string, width: number, height: number): void {
+    const open = (x: number, y: number, out: number, strength: number): void => this.painter.loopGate(ctx, { x, y, out, color, strength, time: this.time });
+    open(lens.x, lens.y, lens.out, lens.strength);
+    const out = acrossOf(lens.out);
+    const across = gatePoint(out, lens.at, width, height);
+    open(across.x, across.y, out, lens.strength * 0.7);
+  }
+
   private drawOffscreenMarker(x: number, y: number, color: string): void {
     const { ctx } = this;
     const inset = 18;

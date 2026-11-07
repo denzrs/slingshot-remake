@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { FIELD, HORIZON, PHYSICS } from '../../src/sim/config';
-import { cloneWorld, Shot, simulateShot, type Planet, type World } from '../../src/sim/physics';
+import { FIELD, HORIZON, LOOP_MARGIN, PHYSICS } from '../../src/sim/config';
+import { cloneWorld, isTrailBreak, Shot, simulateShot, type Planet, type World } from '../../src/sim/physics';
 import { createRng } from '../../src/sim/rng';
 import { comboMultiplier, interceptPoints, scoreChallengeHit, scoreHorizonKill } from '../../src/sim/scoring';
 import { Volley } from '../../src/sim/volley';
 import { generateWorld } from '../../src/sim/world';
 import { planShotNow } from '../helpers';
 
-const rules = { bounce: false, timeLimit: 20 };
+const rules = { edges: 'void' as const, timeLimit: 20 };
 
 function emptyWorld(ships: [number, number][] = [[100, 400], [1180, 400]]): World {
   return {
@@ -53,8 +53,53 @@ describe('shot physics', () => {
 
   it('counts a shot as lost once it leaves the field, unless edges reflect', () => {
     expect(simulateShot(emptyWorld(), 0, 90, 60, rules).end.kind).toBe('lost');
-    const bounced = simulateShot(emptyWorld(), 0, 90, 60, { bounce: true, timeLimit: 3 });
+    const bounced = simulateShot(emptyWorld(), 0, 90, 60, { edges: 'wall' as const, timeLimit: 3 });
     expect(['timeout', 'ship']).toContain(bounced.end.kind);
+  });
+
+  it('comes out on the opposite side of a loop, with its velocity unchanged', () => {
+    const loop = { edges: 'loop' as const, timeLimit: 3 };
+    // Flying left from the left ship, it leaves the field, comes in on the right and hits the ship there.
+    expect(simulateShot(emptyWorld(), 0, 180, 50, rules).end.kind).toBe('lost');
+    expect(simulateShot(emptyWorld(), 0, 180, 50, loop).end).toEqual({ kind: 'ship', ship: 1 });
+    const shot = new Shot(emptyWorld([[100, 700], [1180, 700]]), 0, 90, 60, loop);
+    const [vx, vy] = [shot.vx, shot.vy];
+    let wrapped = false;
+    let end = null;
+    let lastY = shot.y;
+    while (!end) {
+      end = shot.step();
+      if (Math.abs(shot.y - lastY) > FIELD.height / 2) wrapped = true;
+      lastY = shot.y;
+    }
+    expect(wrapped).toBe(true);
+    expect(end.kind).not.toBe('lost');
+    expect([shot.vx, shot.vy]).toEqual([vx, vy]);
+    // It never goes further out than the seam beyond the edge, where it is carried across.
+    expect(shot.x).toBeGreaterThanOrEqual(-LOOP_MARGIN);
+    expect(shot.x).toBeLessThanOrEqual(FIELD.width + LOOP_MARGIN);
+  });
+
+  it('flies on beyond the edge to where it is carried across, and comes out beyond the opposite edge', () => {
+    const loop = { edges: 'loop' as const, timeLimit: 3 };
+    const shot = new Shot(emptyWorld([[100, 700], [1180, 700]]), 0, 180, 50, loop);
+    let deepest = 0;
+    let wrapAt = -1;
+    let lastX = shot.x;
+    for (let step = 0; step < 240 * 3 && !shot.end; step++) {
+      shot.step();
+      deepest = Math.min(deepest, shot.x);
+      if (wrapAt < 0 && shot.x - lastX > FIELD.width / 2) wrapAt = lastX;
+      lastX = shot.x;
+    }
+    expect(deepest).toBeLessThan(-LOOP_MARGIN + 3);
+    expect(wrapAt).toBeLessThan(-LOOP_MARGIN + 3);
+  });
+
+  it('breaks a drawn trail where a shot crossed the loop, and nowhere else', () => {
+    expect(isTrailBreak([100, 400, 110, 400], 2, [])).toBe(false);
+    expect(isTrailBreak([4, 400, 1276, 400], 2, [])).toBe(true);
+    expect(isTrailBreak([640, 3, 640, 797], 2, [])).toBe(true);
   });
 
   it('passes through ships that are already destroyed', () => {
@@ -82,13 +127,13 @@ describe('trick-shot detection', () => {
   it('logs a swing-by when a planet bends the shot hard', () => {
     const world = emptyWorld();
     world.planets.push(planet(640, 500, 45));
-    const shot = new Shot(world, 0, 0, 45, { bounce: false, timeLimit: 10 }, true);
+    const shot = new Shot(world, 0, 0, 45, { edges: 'void' as const, timeLimit: 10 }, true);
     while (!shot.step());
     expect(shot.style!.map((e) => e.kind)).toContain('swingby');
   });
 
   it('logs every bank off a reflecting edge', () => {
-    const shot = new Shot(emptyWorld(), 0, 80, 70, { bounce: true, timeLimit: 3 }, true);
+    const shot = new Shot(emptyWorld(), 0, 80, 70, { edges: 'wall' as const, timeLimit: 3 }, true);
     while (!shot.step());
     expect(shot.style!.filter((e) => e.kind === 'bank').length).toBeGreaterThanOrEqual(2);
   });
@@ -120,7 +165,7 @@ describe('volleys', () => {
     const world = generateWorld(77, { maxPlanets: 6, players: 5, blackHole: true });
     const aims = world.ships.map((_, i) => ({ player: i, angle: i * 61 + 13.37, power: 35 + i * 9 }));
     const run = () => {
-      const v = new Volley(cloneWorld(world), aims, { bounce: true, timeLimit: HORIZON.SHOT_TIME }, true);
+      const v = new Volley(cloneWorld(world), aims, { edges: 'wall' as const, timeLimit: HORIZON.SHOT_TIME }, true);
       const log: string[] = [];
       while (!v.done) for (const e of v.step()) log.push(`${v.steps}:${e.index}:${e.type === 'end' ? e.end.kind : e.type === 'style' ? e.event.kind : e.type}`);
       return { log, ends: v.shots.map((s) => [s.shot.x, s.shot.y]), alive: v.world.ships.map((s) => s.alive) };
@@ -197,7 +242,7 @@ describe('cpu planner', () => {
   });
 
   it('hits some enemy in a crowded black-hole arena', () => {
-    const horizonRules = { bounce: true, timeLimit: HORIZON.SHOT_TIME };
+    const horizonRules = { edges: 'wall' as const, timeLimit: HORIZON.SHOT_TIME };
     let hits = 0;
     const seeds = 10;
     for (let seed = 1; seed <= seeds; seed++) {

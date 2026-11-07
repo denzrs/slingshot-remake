@@ -94,7 +94,7 @@ describe('mayhem deck', () => {
   });
 
   it('skips a twist the room already plays by', () => {
-    const base = rules({ mayhem: 3, bounce: true, maxPlanets: 8, powerUps: true, powerUpKinds: ['plasma', 'piercing'], powerUpAmount: 3 });
+    const base = rules({ mayhem: 3, edges: 'wall' as const, maxPlanets: 8, powerUps: true, powerUpKinds: ['plasma', 'piercing'], powerUpAmount: 3 });
     for (let seed = 1; seed <= 40; seed++) {
       for (const round of play(seed, base, 'classic', 10)) {
         for (const { id, n } of round.twists) {
@@ -110,8 +110,8 @@ describe('applying twists', () => {
   it('lays the twists over the room rules and leaves the rest and the original alone', () => {
     const base = rules({ maxPlanets: 5, shotTime: 30, rounds: 7 });
     const laid = applyTwists(base, { twists: [{ id: 'billiard', n: 3 }, { id: 'precision', n: 45 }] });
-    expect(laid).toMatchObject({ bounce: true, maxPlanets: 3, fixedPower: true, fixedPowerLevel: 45, maxPower: 100, shotTime: 30, rounds: 7 });
-    expect(base).toMatchObject({ bounce: false, maxPlanets: 5, fixedPower: false });
+    expect(laid).toMatchObject({ edges: 'wall' as const, maxPlanets: 3, fixedPower: true, fixedPowerLevel: 45, maxPower: 100, shotTime: 30, rounds: 7 });
+    expect(base).toMatchObject({ edges: 'void' as const, maxPlanets: 5, fixedPower: false });
   });
 
   it('plays a quiet round by the room rules as they are', () => {
@@ -133,9 +133,9 @@ describe('applying twists', () => {
 describe('twisted rules', () => {
   it('lists the rules some twist can lay over the room, and none of the others', () => {
     const wild = twistedRules('classic', 2);
-    for (const key of ['maxPlanets', 'bounce', 'invisiblePlanets', 'fixedPower', 'maxPower', 'hiddenAim', 'fadingTrails', 'powerUps', 'powerUpKinds', 'powerUpAmount'] as const) expect(wild.has(key)).toBe(true);
+    for (const key of ['maxPlanets', 'edges', 'invisiblePlanets', 'fixedPower', 'maxPower', 'hiddenAim', 'fadingTrails', 'powerUps', 'powerUpKinds', 'powerUpAmount'] as const) expect(wild.has(key)).toBe(true);
     // The rest of the rules (rounds, the shot clock, grace …) are never part of a twist.
-    expect([...wild].every((key) => ['maxPlanets', 'bounce', 'invisiblePlanets', 'fixedPower', 'fixedPowerLevel', 'maxPower', 'hiddenAim', 'fadingTrails', 'powerUps', 'powerUpKinds', 'powerUpAmount'].includes(key))).toBe(true);
+    expect([...wild].every((key) => ['maxPlanets', 'edges', 'invisiblePlanets', 'fixedPower', 'fixedPowerLevel', 'maxPower', 'hiddenAim', 'fadingTrails', 'powerUps', 'powerUpKinds', 'powerUpAmount'].includes(key))).toBe(true);
   });
 
   it('leaves out what only the harsh twists change when the level is mild, and what a mode does not have', () => {

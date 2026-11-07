@@ -1,4 +1,4 @@
-import { AIM, GRACE, MAYHEM, TRAIL_FADE } from '../../sim/config';
+import { AIM, EDGE_MODES, GRACE, MAYHEM, TRAIL_FADE, type EdgeMode } from '../../sim/config';
 import { KILLCAM_MODES, type KillcamMode } from '../../data/roomRules';
 import { CLASSIC_FAMILY, type GameMode } from '../../sim/modes';
 import { t, type Key } from '../../platform/i18n';
@@ -56,7 +56,7 @@ export interface RuleRow {
   key: keyof RoomRules;
   label: string;
   /** Every value the rule can take — for a slider, its stops from lowest to highest. */
-  options: { value: number | boolean | PowerMode | PowerUpKind | KillcamMode; label: string }[];
+  options: { value: number | boolean | PowerMode | PowerUpKind | KillcamMode | EdgeMode; label: string }[];
   /** Switches for on/off rules, sliders for numbers, a segmented bar for a choice between a few words, tiles for several that can each be on or off. */
   control: 'toggle' | 'slider' | 'segmented' | 'tiles';
   group: RuleGroup;
@@ -85,7 +85,7 @@ export function ruleRows(): RuleRow[] {
     { key: 'killcam', group: 'match', control: 'segmented', label: t('settings.killcam'), options: KILLCAM_MODES.map((value) => ({ value, label: t(`settings.killcam.${value}`) })) },
     { key: 'maxPlanets', group: 'field', control: 'slider', label: t('settings.maxPlanets'), options: numbers([1, 2, 3, 4, 5, 6, 7, 8]) },
     { key: 'invisiblePlanets', group: 'field', control: 'toggle', label: t('settings.invisible'), options: [], modes: CLASSIC_FAMILY },
-    { key: 'bounce', group: 'field', control: 'toggle', label: t('settings.bounce'), options: [] },
+    { key: 'edges', group: 'field', control: 'segmented', label: t('settings.edges'), options: EDGE_MODES.map((value) => ({ value, label: t(`settings.edges.${value}`) })) },
     {
       key: 'fixedPower',
       group: 'shots',

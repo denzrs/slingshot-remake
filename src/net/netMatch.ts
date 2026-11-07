@@ -1,7 +1,7 @@
 import { MAX_PLAYERS } from '../sim/config';
 import { createMatch, type ClassicMatch, type HorizonMatch, type MatchOptions } from '../game';
 import type { ReplayScript } from '../game/replay';
-import { defaultRoomRules } from '../data/roomRules';
+import { roomRulesFrom } from '../data/roomRules';
 import type { Avatar } from '../platform/avatars';
 import type { NetworkCpuLevel, RoomMode, RoomRules } from './net';
 import type { GameMode } from '../sim/modes';
@@ -29,8 +29,8 @@ export function netMatch(game: NetGame, base: Settings, extra: Pick<MatchOptions
   const seats: Seat[] = Array.from({ length: MAX_PLAYERS }, (_, i) => (i < game.players.length ? (game.players[i].cpu ?? 'human') : 'off'));
   const settings: Settings = {
     ...base,
-    ...defaultRoomRules(),
-    ...game.rules,
+    // Through `roomRulesFrom`, so a stored game from before the loop (a yes/no `bounce`) still plays by its walls.
+    ...roomRulesFrom(game.rules),
     seats,
     seatTeams: [...base.seatTeams],
     teamMode: game.mode === 'team' ? 2 : 0,

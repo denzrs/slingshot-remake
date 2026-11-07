@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  ALL_THEMES,
   baselineScore,
   buildSector,
   challengeNumber,
   dailyChallenge,
   isDateKey,
+  LOOP_THEMES,
+  LOOP_THEMES_FROM,
   modifiersOf,
   rankOf,
   sectorRules,
@@ -20,7 +23,7 @@ import { cloneWorld, simulateShot } from '../../src/sim/physics';
 import { hashSeed } from '../../src/sim/rng';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 import { shareText } from '../../src/ui/daily/daily';
-import { allSectors, VARIANTS } from './sectorSweeps';
+import { allSectors, LOOP_DAY, VARIANTS } from './sectorSweeps';
 
 const START = CHALLENGE.EPOCH;
 const days = (n: number, from: string = START) => Array.from({ length: n }, (_, i) => shiftDate(from, i));
@@ -52,11 +55,25 @@ describe('themes', () => {
   it('plays every theme once per cycle', () => {
     // Challenges 21–23 were already live when the expanded 17-theme pool was introduced at #24.
     expect([themeFor(first), themeFor(first + 1), themeFor(first + 2)]).toEqual(['singularity', 'precision', 'bastion']);
+    // The seventeen themes fill the days from #24 until the loop themes join.
+    const start = first + 3;
+    expect(start + THEMES.length).toBe(LOOP_THEMES_FROM);
+    const seen = Array.from({ length: THEMES.length }, (_, i) => themeFor(start + i));
+    expect(new Set(seen).size).toBe(THEMES.length);
+  });
+
+  it('plays every theme, the loop themes with them, once per cycle from the loop themes on', () => {
     for (let cycle = 0; cycle < 12; cycle++) {
-      const start = first + 3 + cycle * THEMES.length;
-      const seen = Array.from({ length: THEMES.length }, (_, i) => themeFor(start + i));
-      expect(new Set(seen).size).toBe(THEMES.length);
+      const start = LOOP_THEMES_FROM + cycle * ALL_THEMES.length;
+      const seen = Array.from({ length: ALL_THEMES.length }, (_, i) => themeFor(start + i));
+      expect(new Set(seen).size).toBe(ALL_THEMES.length);
+      for (const theme of LOOP_THEMES) expect(seen).toContain(theme);
     }
+  });
+
+  it('leaves the days before the loop themes without any loop', () => {
+    for (let n = 1; n < LOOP_THEMES_FROM; n++) expect(LOOP_THEMES).not.toContain(themeFor(n));
+    for (const d of days(LOOP_THEMES_FROM - 1)) for (const s of dailyChallenge(d).sectors) expect(s.loop).toBeUndefined();
   });
 
   it('leaves the days before the variations as they were', () => {
@@ -104,6 +121,13 @@ describe('daily challenge', () => {
     expect(saturday.sectors[4].difficulty).toBe(5);
   });
 
+  it('plays a loop sector on the loop rules', () => {
+    const sector = dailyChallenge(shiftDate(CHALLENGE.EPOCH, LOOP_THEMES_FROM - 1)).sectors[0];
+    expect(sectorRules({ ...sector, loop: true }).edges).toBe('loop');
+    expect(sectorRules({ ...sector, loop: undefined, bounce: true }).edges).toBe('wall');
+    expect(sectorRules({ ...sector, loop: undefined, bounce: false }).edges).toBe('void');
+  });
+
   it('applies the theme of the day', () => {
     const all = days(110).map((d) => dailyChallenge(d));
     for (const ch of all) {
@@ -116,6 +140,11 @@ describe('daily challenge', () => {
       if (ch.theme === 'bastion') expect(mods.slice(1).every((m) => m.includes('flak'))).toBe(true);
       if (ch.theme === 'nebula') expect(mods.slice(1).every((m) => m.includes('nebula'))).toBe(true);
       if (ch.theme === 'hammerhead') expect(mods.slice(1).every((m) => m.includes('plasma'))).toBe(true);
+      // The loop themes loop in every sector, and the edges are one rule: never a wall as well.
+      if (LOOP_THEMES.includes(ch.theme)) expect(mods.every((m) => m.includes('loop') && !m.includes('bounce'))).toBe(true);
+      if (ch.theme === 'loopHole') expect(mods.slice(1).every((m) => m.includes('hole'))).toBe(true);
+      if (ch.theme === 'loopFlak') expect(mods.slice(1).every((m) => m.includes('flak'))).toBe(true);
+      if (ch.theme === 'loopLap') expect(mods.slice(1).every((m) => m.includes('fixedPower'))).toBe(true);
     }
   });
 
@@ -197,6 +226,31 @@ describe('variations in play', () => {
           if (m.phase !== 'aiming') break;
           const target = m.world.ships[s.target];
           if (!target.alive) continue;
+          m.setAim(s.angle, s.power);
+          m.commit();
+          settle(m);
+        }
+        expect(m.summary?.title, `sector ${i}`).toBe('cleared');
+        pass(m);
+      }
+      expect(m.phase).toBe('gameOver');
+    }, 60_000);
+  }
+});
+
+describe('loop themes in play', () => {
+  const dayOf = (theme: string) => days(25, LOOP_DAY).find((d) => dailyChallenge(d).theme === theme)!;
+
+  for (const theme of LOOP_THEMES) {
+    it(`flies on the loop and can be won by flying the known solutions: ${theme}`, () => {
+      const ch = dailyChallenge(dayOf(theme));
+      const m = createChallenge(DEFAULT_SETTINGS, ch);
+      for (let i = 0; i < ch.sectors.length; i++) {
+        expect(m.rules.edges, `sector ${i}`).toBe('loop');
+        const sector = buildSector(ch.sectors[i]);
+        for (const s of sector.solutions) {
+          if (m.phase !== 'aiming') break;
+          if (!m.world.ships[s.target].alive) continue;
           m.setAim(s.angle, s.power);
           m.commit();
           settle(m);

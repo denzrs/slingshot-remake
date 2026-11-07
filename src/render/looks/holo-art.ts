@@ -1,5 +1,5 @@
 import { COLORS, SUDDEN_DEATH } from '../../sim/config';
-import { isWormholeJump, type Planet, type Wormhole } from '../../sim/physics';
+import { isTrailBreak, type Planet, type Wormhole } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
 import { createRng } from '../../sim/rng';
 import { rgba } from '../color';
@@ -823,7 +823,7 @@ export function drawHoloPlasmaTrail(ctx: CanvasRenderingContext2D, pts: number[]
   ctx.setLineDash([4, 3]);
   ctx.beginPath();
   for (let k = from; k < n; k++) {
-    if (wormholes.length && isWormholeJump(pts, k * 2, wormholes)) ctx.moveTo(pts[k * 2], pts[k * 2 + 1]);
+    if (isTrailBreak(pts, k * 2, wormholes)) ctx.moveTo(pts[k * 2], pts[k * 2 + 1]);
     else if (k === from) ctx.moveTo(pts[k * 2 - 2], pts[k * 2 - 1]);
     else ctx.lineTo(pts[k * 2], pts[k * 2 + 1]);
   }

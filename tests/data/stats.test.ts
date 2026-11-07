@@ -132,7 +132,7 @@ describe('scorecard in a match', () => {
   });
 
   it('keep self-hits out of the kill records', () => {
-    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, bounce: true, fixedPower: true }, { seats }) as ClassicMatch;
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, edges: 'wall' as const, fixedPower: true }, { seats }) as ClassicMatch;
     m.world.planets = [];
     Object.assign(m.world.ships[0], { x: 100, y: 400 });
     Object.assign(m.world.ships[1], { x: 1100, y: 700 });
@@ -186,7 +186,7 @@ describe('scorecard in a match', () => {
   });
 
   it('counts own goals', () => {
-    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, bounce: true, fixedPower: true }, { seats }) as ClassicMatch;
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, edges: 'wall' as const, fixedPower: true }, { seats }) as ClassicMatch;
     m.world.planets = [];
     Object.assign(m.world.ships[0], { x: 100, y: 400 });
     Object.assign(m.world.ships[1], { x: 1100, y: 700 });
@@ -253,7 +253,7 @@ describe('scorecard in a match', () => {
     });
 
     it('records a shot that hit nothing, and a hit on oneself', () => {
-      const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, bounce: true, fixedPower: true }, { seats }) as ClassicMatch;
+      const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, edges: 'wall' as const, fixedPower: true }, { seats }) as ClassicMatch;
       m.world.planets = [];
       Object.assign(m.world.ships[0], { x: 100, y: 400 });
       Object.assign(m.world.ships[1], { x: 1100, y: 700 });

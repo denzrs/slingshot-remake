@@ -130,7 +130,7 @@ function turnReport(round: number, turn: number, first: number) {
   };
 }
 
-const roomRules = (rounds: number) => ({ rounds, maxPlanets: 4, invisiblePlanets: false, bounce: true, fixedPower: false, fixedPowerLevel: 55, maxPower: 100, shotTime: 20, styleBonuses: false, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, mayhem: 0, betting: false, chatPlayersOnly: false, powerUps: false, powerUpKinds: ['teleport'], powerUpAmount: 2 });
+const roomRules = (rounds: number) => ({ rounds, maxPlanets: 4, invisiblePlanets: false, edges: 'wall' as const, fixedPower: false, fixedPowerLevel: 55, maxPower: 100, shotTime: 20, styleBonuses: false, neighborGrace: 0, simultaneousShots: false, hiddenAim: false, fadingTrails: 0, mayhem: 0, betting: false, chatPlayersOnly: false, powerUps: false, powerUpKinds: ['teleport'], powerUpAmount: 2 });
 
 /** A game played on one device, as a client reports it when it is over: three rounds. */
 function localGame() {

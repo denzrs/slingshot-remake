@@ -1,3 +1,4 @@
+import { drawForgedGate } from './forged-gate';
 import { COLORS } from '../../sim/config';
 import { rgba } from '../color';
 import { drawFalling } from '../infall';
@@ -280,6 +281,7 @@ export const forged = engraved('forged', forgedStyles, {
   nebula: drawForgedNebula,
   stormCloud: drawForgedStormCloud,
   shot: drawForgedShot,
+  loopGate: drawForgedGate,
   liveTrail: drawForgedLiveTrail,
   plasmaShot: drawForgedPlasmaShot,
   ship: drawForgedShip,

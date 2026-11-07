@@ -5,7 +5,7 @@ import { cloneWorld, Shot, type Planet, type World } from '../../src/sim/physics
 import { Volley } from '../../src/sim/volley';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 
-const rules = { bounce: false, timeLimit: 20 };
+const rules = { edges: 'void' as const, timeLimit: 20 };
 
 function emptyWorld(ships: [number, number][]): World {
   return { width: 1280, height: 800, planets: [], ships: ships.map(([x, y]) => ({ x, y, alive: true })), holes: [], nebulae: [], wormholes: [], defenses: [], version: 0 };

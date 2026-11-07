@@ -8,7 +8,7 @@ import { cloneWorld, nextWormholeId, type World } from '../../src/sim/physics';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 import { shotSource, Volley, type VolleyScript } from '../../src/sim/volley';
 
-const rules = { bounce: false, timeLimit: 20 };
+const rules = { edges: 'void' as const, timeLimit: 20 };
 
 /** A human duel in Event Horizon with power-ups on and no planets, so flights are straight. */
 function duel(seed = 7): HorizonMatch {

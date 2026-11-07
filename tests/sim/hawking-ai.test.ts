@@ -6,7 +6,7 @@ import * as physics from '../../src/sim/physics';
 import { createRng, gaussian, type Rng } from '../../src/sim/rng';
 import { planShotNow } from '../helpers';
 
-const rules = { bounce: false, timeLimit: 12 };
+const rules = { edges: 'void' as const, timeLimit: 12 };
 const emptyWorld = (): World => ({
   ...FIELD, planets: [], holes: [], version: 0,
   nebulae: [], wormholes: [], defenses: [],
@@ -71,13 +71,13 @@ describe('Hawking production flight metrics', () => {
     world.width = 100_000;
     world.height = 100_000;
     world.ships[1] = { x: 90_000, y: 90_000, alive: true };
-    const flight = finish(simulateStyledShot(world, 0, 0, 15, { bounce: false, timeLimit: 60 }));
+    const flight = finish(simulateStyledShot(world, 0, 0, 15, { edges: 'void' as const, timeLimit: 60 }));
     expect(flight.result.end.kind).toBe('timeout');
     expect(flight.result.flightTime).toBeGreaterThanOrEqual(60);
     expect(flight.result.pathLength).toBeGreaterThan(7_000);
     expect(flight.yields).toBeGreaterThanOrEqual(59);
     const planner = planShot(world, 0, {
-      level: 'hawking', rules: { bounce: false, timeLimit: 60 }, lookahead: 12,
+      level: 'hawking', rules: { edges: 'void' as const, timeLimit: 60 }, lookahead: 12,
       attempt: 30, fixedPower: 15, effort: 0.01, rng: () => 0,
     });
     // The first launch follows the target diagonal and remains in this large world.
@@ -121,7 +121,7 @@ describe('Hawking classic search', () => {
     world.height = 100_000;
     world.ships[1] = { x: 90_000, y: 90_000, alive: true };
     const aim = planShotNow(world, 0, {
-      level: 'hawking', rules: { bounce: false, timeLimit: 20 }, lookahead: 0.1,
+      level: 'hawking', rules: { edges: 'void' as const, timeLimit: 20 }, lookahead: 0.1,
       attempt: 0, fixedPower: 55, maxPower: 10, effort: 0.01, rng: createRng(42),
     });
     expect(aim.power).toBe(10);

@@ -6,7 +6,7 @@ import { cloneWorld, Shot, type World } from '../../src/sim/physics';
 import { Volley } from '../../src/sim/volley';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 
-const rules = { bounce: false, timeLimit: 20 };
+const rules = { edges: 'void' as const, timeLimit: 20 };
 
 /** A human duel with power-ups on and no planets, so flights are straight and predictable. */
 function duel(seed = 7, maxPlanets = 0): Match {
@@ -124,7 +124,7 @@ describe('nebula power-up', () => {
       ships: [{ x: 200, y: 400, alive: true }], holes: [], version: 0,
       nebulae: [{ x: 640, y: 400, radius: 4000, seed: 0.37 }], wormholes: [], defenses: [],
     };
-    const roomy = { bounce: false, timeLimit: 60 };
+    const roomy = { edges: 'void' as const, timeLimit: 60 };
     const shot = new Shot(world, 0, 0, 40, roomy);
     let slowest = Infinity;
     let end = null;

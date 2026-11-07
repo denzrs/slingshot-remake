@@ -571,7 +571,7 @@ mod tests {
     #[test]
     fn a_local_game_has_rounds_in_order_for_every_seat_and_rules_that_will_do() {
         let rules = json!({
-            "rounds":2,"maxPlanets":4,"invisiblePlanets":false,"bounce":true,
+            "rounds":2,"maxPlanets":4,"invisiblePlanets":false,"edges":"wall",
             "fixedPower":false,"fixedPowerLevel":55,"maxPower":100,"shotTime":20,
             "styleBonuses":false,"neighborGrace":0,"simultaneousShots":false,
             "hiddenAim":false,"fadingTrails":0,"mayhem":0,"betting":false,

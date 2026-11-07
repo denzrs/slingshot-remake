@@ -1,5 +1,6 @@
 import { COLORS } from '../../sim/config';
 import type { PowerUpKind } from '../../sim/powerups';
+import { isTrailBreak } from '../../sim/physics';
 import { createRng } from '../../sim/rng';
 import { rgba } from '../color';
 import { drawPowerUpSymbol } from '../powerup-art';
@@ -90,6 +91,8 @@ export function drawLightShot(ctx: CanvasRenderingContext2D, x: number, y: numbe
   const tail = Math.min(12, trail.length / 2 - 1);
   for (let k = 0; k < tail; k++) {
     const i = trail.length - 2 - k * 2;
+    // A shot that was carried across a loop's edge has no tail across the field.
+    if (i < 2 || isTrailBreak(trail, i, [])) continue;
     const f = 1 - k / tail;
     ctx.strokeStyle = rgba(color, 0.55 * f * f);
     ctx.lineWidth = 3.2 * f;

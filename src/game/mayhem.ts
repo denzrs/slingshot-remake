@@ -33,13 +33,13 @@ export type TwistId =
 /** The rules a twist may change. */
 export type TwistRules = Pick<
   Settings,
-  'maxPlanets' | 'bounce' | 'invisiblePlanets' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'hiddenAim' | 'fadingTrails' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'
+  'maxPlanets' | 'edges' | 'invisiblePlanets' | 'fixedPower' | 'fixedPowerLevel' | 'maxPower' | 'hiddenAim' | 'fadingTrails' | 'powerUps' | 'powerUpKinds' | 'powerUpAmount'
 >;
 
-const TWIST_RULE_KEYS: readonly (keyof TwistRules)[] = ['maxPlanets', 'bounce', 'invisiblePlanets', 'fixedPower', 'fixedPowerLevel', 'maxPower', 'hiddenAim', 'fadingTrails', 'powerUps', 'powerUpKinds', 'powerUpAmount'];
+const TWIST_RULE_KEYS: readonly (keyof TwistRules)[] = ['maxPlanets', 'edges', 'invisiblePlanets', 'fixedPower', 'fixedPowerLevel', 'maxPower', 'hiddenAim', 'fadingTrails', 'powerUps', 'powerUpKinds', 'powerUpAmount'];
 
 /** What a twist takes hold of: two twists that share a slot never come together in one round. */
-type Slot = 'planets' | 'bounce' | 'power' | 'sight' | 'pickups';
+type Slot = 'planets' | 'edges' | 'power' | 'sight' | 'pickups';
 
 interface TwistDef {
   slots: readonly Slot[];
@@ -55,7 +55,7 @@ interface TwistDef {
 const pickups = (kinds: readonly PowerUpKind[], amount: number): Partial<TwistRules> => ({ powerUps: true, powerUpKinds: [...kinds], powerUpAmount: amount });
 
 const TWISTS: Record<TwistId, TwistDef> = {
-  billiard: { slots: ['bounce', 'planets'], roll: (rng) => intRange(rng, 2, 3), apply: (n) => ({ bounce: true, maxPlanets: n }) },
+  billiard: { slots: ['edges', 'planets'], roll: (rng) => intRange(rng, 2, 3), apply: (n) => ({ edges: 'wall', maxPlanets: n }) },
   blind: { slots: ['sight'], modes: CLASSIC_FAMILY, harsh: true, apply: () => ({ invisiblePlanets: true }) },
   memory: { slots: ['sight'], harsh: true, apply: () => ({ hiddenAim: true, fadingTrails: 1 }) },
   precision: { slots: ['power'], harsh: true, roll: (rng) => 35 + 5 * intRange(rng, 0, 9), apply: (n) => ({ fixedPower: true, fixedPowerLevel: n, maxPower: 100 }) },
@@ -68,9 +68,9 @@ const TWISTS: Record<TwistId, TwistDef> = {
   fortress: { slots: ['pickups'], apply: () => pickups(['shield', 'defense'], 3) },
   teleportChaos: { slots: ['pickups'], apply: () => pickups(['teleport', 'wormhole', 'splitter'], 3) },
   ricochetOverdrive: {
-    slots: ['bounce', 'power', 'sight'],
+    slots: ['edges', 'power', 'sight'],
     harsh: true,
-    apply: () => ({ bounce: true, fixedPower: true, fixedPowerLevel: 90, maxPower: 100, fadingTrails: 2 }),
+    apply: () => ({ edges: 'wall', fixedPower: true, fixedPowerLevel: 90, maxPower: 100, fadingTrails: 2 }),
   },
   nebulaLock: {
     slots: ['pickups', 'power'],

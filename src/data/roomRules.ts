@@ -1,10 +1,12 @@
-import { AIM, GRACE, MAYHEM, TRAIL_FADE } from '../sim/config';
+import { AIM, EDGE_MODES, GRACE, MAYHEM, TRAIL_FADE, isEdgeMode, type EdgeMode } from '../sim/config';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from '../sim/powerups';
 
 export const KILLCAM_MODES = ['auto', 'off', 'every', 'round'] as const;
 export type KillcamMode = (typeof KILLCAM_MODES)[number];
 export type KillcamPlayback = Exclude<KillcamMode, 'auto'>;
 export const isKillcamMode = (value: unknown): value is KillcamMode => KILLCAM_MODES.some((mode) => mode === value);
+
+export { EDGE_MODES, isEdgeMode, type EdgeMode };
 
 /**
  * The rules of a game: what a room is set up with, and the match part of the local settings. They are sent over the
@@ -15,7 +17,8 @@ export interface RoomRules {
   rounds: number;
   maxPlanets: number;
   invisiblePlanets: boolean;
-  bounce: boolean;
+  /** What the edge of the field does to a shot. */
+  edges: EdgeMode;
   /** Every shot has the same power, `fixedPowerLevel`: only the angle can be aimed. Mutually exclusive with a cap in the menus. */
   fixedPower: boolean;
   fixedPowerLevel: number;
@@ -55,7 +58,7 @@ const RULE_NAMES = {
   rounds: true,
   maxPlanets: true,
   invisiblePlanets: true,
-  bounce: true,
+  edges: true,
   fixedPower: true,
   fixedPowerLevel: true,
   maxPower: true,
@@ -82,7 +85,7 @@ export const DEFAULT_ROOM_RULES: Readonly<RoomRules> = {
   rounds: 5,
   maxPlanets: 4,
   invisiblePlanets: false,
-  bounce: false,
+  edges: 'void',
   fixedPower: false,
   fixedPowerLevel: AIM.FIXED_POWER,
   maxPower: AIM.MAX_POWER,
@@ -131,6 +134,8 @@ export function roomRulesFrom(saved: Partial<RoomRules> | undefined): RoomRules 
     ...fresh,
     ...known,
     killcam: isKillcamMode(saved?.killcam) ? saved.killcam : fresh.killcam,
+    // Rules saved before the loop existed had a plain yes/no for reflective edges.
+    edges: isEdgeMode(saved?.edges) ? saved.edges : (saved as { bounce?: unknown } | undefined)?.bounce === true ? 'wall' : fresh.edges,
     betting: saved?.betting === true,
     // Rules saved before it existed play with it, as a new game does.
     suddenDeath: saved?.suddenDeath !== false,

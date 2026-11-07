@@ -25,7 +25,7 @@ describe('the player\'s own presets', () => {
 
   it('keep a named list per mode, in the order they were made', () => {
     storage();
-    const classic = { ...defaultRoomRules(), rounds: 7, bounce: true };
+    const classic = { ...defaultRoomRules(), rounds: 7, edges: 'wall' as const };
     const horizon = { ...defaultRoomRules(), shotTime: 10, powerUps: true, powerUpKinds: ['shield' as const] };
     const first = saveCustomPreset('classic', { name: 'Blitz', rules: classic })!;
     const second = saveCustomPreset('classic', { name: 'Marathon', rules: { ...classic, rounds: 20 } })!;
