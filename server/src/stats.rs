@@ -1957,7 +1957,10 @@ mod tests {
             .unwrap();
         let stats = Stats::open(&database, DEFAULT_KEEP_DAYS).await.unwrap();
         let ip = IpAddr::from([10, 0, 0, 1]);
-        board.submit("2026-10-23", "ann", 100, ip).await.unwrap();
+        board
+            .submit("2026-10-23", "ann", 100, None, ip)
+            .await
+            .unwrap();
         stats.record(&round_job([10, 0, 0, 1], 1)).await.unwrap();
         assert_eq!(stats.count("stat_rounds").await, 1);
         assert_eq!(
@@ -1985,7 +1988,10 @@ mod tests {
         };
         let ip = IpAddr::from([10, 0, 0, 2]);
         for score in 1..=200 {
-            board.submit("2026-10-23", "ann", score, ip).await.unwrap();
+            board
+                .submit("2026-10-23", "ann", score, None, ip)
+                .await
+                .unwrap();
         }
         writer.await.unwrap();
         assert_eq!(stats.count("stat_turns").await, 80);

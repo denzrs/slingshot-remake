@@ -148,7 +148,10 @@ async fn daily_submit(
             .error(conn_id, "That day's board is not open");
         return;
     }
-    match boards.submit(&run.day, &run.name, run.score, ip).await {
+    match boards
+        .submit(&run.day, &run.name, run.score, run.shot.as_ref(), ip)
+        .await
+    {
         Ok(board) => manager.lock().daily_board(conn_id, &run.day, &board),
         Err(err) => {
             warn!(%err, "leaderboard write failed");
@@ -180,6 +183,7 @@ async fn daily_top(
         let empty = crate::leaderboard::Board {
             entries: Vec::new(),
             you: None,
+            shot: None,
         };
         manager.lock().daily_board(conn_id, &day, &empty);
         return;

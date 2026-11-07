@@ -290,7 +290,9 @@ export const HORIZON = {
   /** Online, everybody aims at once, so the shared clock is a little longer than one hot-seat turn. */
   SIMULTANEOUS_CLOCK: 15,
   SHOT_TIME: 10,
-  COLLAPSE_TIME: 1.5,
+  COLLAPSE_TIME: 2,
+  /** How far (radians) what the hole eats turns round it on the way in, the way the disk turns. */
+  INFALL_TURN: 3.6,
 } as const;
 
 /** Killcams pause on the finished flight before cutting to the replay. */
@@ -365,6 +367,10 @@ export const GALLERY = {
 /** Daily challenge: a fixed run of sectors against stationary targets, the same for everyone on a given day. */
 export const CHALLENGE = {
   SECTORS: 5,
+  /** The most points of its path a shot takes to the leaderboard (`daily.shotTrail` in `server/protocol-contract.json`). */
+  SHOT_TRAIL: 240,
+  /** Seconds the shot of the day's replay stays on the field after its hit (after the flight, on a miss) before its end card comes up. */
+  SHOT_LINGER: 2,
   /** Seconds a shot may fly before it fizzles out. */
   FLIGHT_TIME: 15,
   /** Bonus for clearing every target of a sector. */

@@ -137,13 +137,21 @@ const slot = (seed: number, k: number): number => {
 
 const LOOPS = 4;
 
+/** Parts of the sun a look draws itself, in the sun's frame; each says false when it could not, and the sprite is drawn instead. */
+export interface SunStyle {
+  /** The corona, out to `reach` from the middle, added up as light. */
+  corona(ctx: CanvasRenderingContext2D, seed: number, reach: number, time: number, flare: number, giant: number): boolean;
+  /** The ball, of radius `R`. */
+  surface(ctx: CanvasRenderingContext2D, seed: number, R: number, time: number, giant: number): boolean;
+}
+
 /**
  * The sun of the Solar System mode: a ball of flowing plasma that folds and churns, a thin pink chromosphere round
  * it, magnetic loops that rise off the surface and fall back, a corona of curving rays, and a wide warm glow.
  * `flare` (0 → 1) is the storm breaking out: the glow swells, the loops leap high and the disc whitens. A sun turning
  * into a red giant (`sun.giant`, 0 → 1) cools: its surface reddens, its middle dims and a deep red glow spreads round it.
  */
-export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha = 1, flare = 0): void {
+export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha = 1, flare = 0, style?: SunStyle): void {
   const R = sun.radius;
   const seed = sun.seed;
   const giant = sun.giant ?? 0;
@@ -180,18 +188,20 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   }
 
   // The corona: its rays turn slowly, two layers against each other, and swell and ebb.
-  let corona = coronas.get(seed);
-  if (!corona) {
-    if (coronas.size > 8) coronas.clear();
-    coronas.set(seed, (corona = makeCorona(seed)));
-  }
   const reach = R * CORONA_REACH * (1 + flare * 0.45);
-  for (const [spin, turn0, strength] of [[0.02, 0, 0.9], [-0.034, 2.1, 0.55]] as const) {
-    ctx.save();
-    ctx.rotate(time * spin + turn0);
-    ctx.globalAlpha = alpha * Math.min(1, strength * (0.82 + 0.18 * Math.sin(time * 0.5 + turn0 * 3)) * (1 + flare * 0.7));
-    ctx.drawImage(corona, -reach, -reach, reach * 2, reach * 2);
-    ctx.restore();
+  if (!style?.corona(ctx, seed, reach, time, flare, giant)) {
+    let corona = coronas.get(seed);
+    if (!corona) {
+      if (coronas.size > 8) coronas.clear();
+      coronas.set(seed, (corona = makeCorona(seed)));
+    }
+    for (const [spin, turn0, strength] of [[0.02, 0, 0.9], [-0.034, 2.1, 0.55]] as const) {
+      ctx.save();
+      ctx.rotate(time * spin + turn0);
+      ctx.globalAlpha = alpha * Math.min(1, strength * (0.82 + 0.18 * Math.sin(time * 0.5 + turn0 * 3)) * (1 + flare * 0.7));
+      ctx.drawImage(corona, -reach, -reach, reach * 2, reach * 2);
+      ctx.restore();
+    }
   }
   ctx.globalAlpha = alpha;
 
@@ -248,7 +258,7 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   ctx.fill();
 
   // The surface: flowing plasma.
-  ctx.drawImage(plasma(seed, time, giant), -R, -R, R * 2, R * 2);
+  if (!style?.surface(ctx, seed, R, time, giant)) ctx.drawImage(plasma(seed, time, giant), -R, -R, R * 2, R * 2);
   // A red giant's surface is red all through: tinted over (only the disc, so the field round it keeps its colour).
   if (giant > 0) {
     ctx.save();

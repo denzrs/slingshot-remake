@@ -1,7 +1,7 @@
-import { challengeNumber, shiftDate } from '../sim/challenge';
+import { challengeNumber, shiftDate, type DailyShot } from '../sim/challenge';
 import { CHALLENGE } from '../sim/config';
 import { DEFAULT_SERVER } from './multiplayer';
-import { NetworkClient, type DailyEntry } from './net';
+import { NetworkClient, type DailyEntry, type ShotOfDay } from './net';
 
 /** A day's leaderboard as the relay hands it over. */
 export interface DailyBoard {
@@ -9,6 +9,8 @@ export interface DailyBoard {
   entries: DailyEntry[];
   /** Your own run, wherever it sits; null when you have not posted one for that day. */
   you: DailyEntry | null;
+  /** The best shot of that day across every run posted; null while no run has brought one. */
+  shot: ShotOfDay | null;
 }
 
 /** What the leaderboard needs from a connection — the WebSocket client, or a stand-in in tests. */
@@ -35,9 +37,9 @@ export class Leaderboard {
     return this.ask({ type: 'daily_top', day }, day);
   }
 
-  /** Post a run under a name, and get the board it landed on back. */
-  submit(day: string, name: string, score: number): Promise<DailyBoard> {
-    return this.ask({ type: 'daily_submit', day, name, score }, day);
+  /** Post a run under a name, with its best shot if it hit anything, and get the board it landed on back. */
+  submit(day: string, name: string, score: number, shot: DailyShot | null = null): Promise<DailyBoard> {
+    return this.ask({ type: 'daily_submit', day, name, score, ...(shot ? { shot } : {}) }, day);
   }
 
   private async ask(request: Parameters<NetworkClient['send']>[0], day: string): Promise<DailyBoard> {
@@ -49,7 +51,7 @@ export class Leaderboard {
       connection.onMessage((message) => {
         if (message.type === 'daily_board' && message.day === day) {
           clearTimeout(timer);
-          resolve({ day: message.day, entries: message.entries, you: message.you });
+          resolve({ day: message.day, entries: message.entries, you: message.you, shot: message.shot ?? null });
         } else if (message.type === 'error') {
           clearTimeout(timer);
           reject(new BoardRejected(message.message));

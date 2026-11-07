@@ -1,5 +1,6 @@
 import { COLORS } from '../../sim/config';
 import { rgba } from '../color';
+import { drawFalling } from '../infall';
 import { drawEngineFlame } from '../ship';
 import { LIGHT } from '../planet-common';
 import { engraved } from './classic';
@@ -17,7 +18,7 @@ import type { Styles } from './painter';
 /**
  * The forged look: what Blender rendered, with light drawn over it (`forged-parts.ts`, `forged-light.ts`) and a good deal more: the
  * planets turn their clouds and show their dusk, the ships are lit by the field's own light, blasts are fireballs,
- * shrapnel tumbles, the sky has depth and the whole picture blooms. The images are
+ * shrapnel tumbles and the sky has depth. The images are
  * made by `scripts/forged/render_assets.py` and packed into `./forged/` (see `scripts/forged/pack.py`); `forged-*.ts` say
  * what is drawn over them. The images load on first use; until one is there the drawing in light stands in, so a frame is
  * never empty.
@@ -269,11 +270,12 @@ export const forgedStyles: Styles = {
 
 export const forged = engraved('forged', forgedStyles, {
   ...lightParts,
-  note: 'Blender renders with light over them: turning clouds and rings, fireballs and tumbling shrapnel, comet shots, a sun with rays, a deep sky, bloom.',
-  postLevels: true,
+  note: 'Blender renders with light over them: turning clouds and rings, fireballs and tumbling shrapnel, comet shots, a sun with rays, a deep sky.',
   // The halo and the disk's light already say where the hole is; a red dashed circle over them only muddies it.
   dangerRing: () => {},
   planet: renderForgedPlanet,
+  // Painted light can be cut into slices and bent round the hole.
+  falling: drawFalling,
   sun: drawForgedSun,
   nebula: drawForgedNebula,
   stormCloud: drawForgedStormCloud,

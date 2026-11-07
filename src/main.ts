@@ -12,9 +12,10 @@ import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
 import { ClipRecorder } from './platform/clip';
 import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
 import { createUiPreview, UI_PREVIEWS, type UiPreview } from './debug/devPreview';
+import { InfallDemo } from './debug/infallDemo';
 import { SupernovaDemo } from './debug/supernovaDemo';
 import { recordRun } from './data/dailyStore';
-import { ChallengeMatch, createChallenge, createMatch, type Match } from './game';
+import { ChallengeMatch, createChallenge, createMatch, createShotReplay, ShotReplay, type Match } from './game';
 import type { GameMode } from './sim/modes';
 import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
 import type { OracleTap } from './render/oracle';
@@ -25,12 +26,14 @@ import { inPowerUpNebula } from './sim/physics';
 import { POWER_UP } from './sim/powerups';
 import { Effects } from './render/effects';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './platform/i18n';
-import { setLook, setPostLevel } from './data/look';
+import { getLook, setLook } from './data/look';
+import { painterFor } from './render/looks';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './sim/scoring';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './data/settings';
 import { dailyResultScreen } from './ui/daily/daily';
+import { shotReplayScreen } from './ui/daily/shot';
 import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/room/chat';
 import { Menu, h } from './ui/menu/menu';
@@ -42,7 +45,8 @@ import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, type App } fr
 import { statsAvailable, statsScreen } from './ui/stats/stats';
 import { reportLocalGame, trackLocalGame } from './net/localStats';
 import { netMatch } from './net/netMatch';
-import type { StatsReplay } from './net/net';
+import type { MenuPages } from './ui/menu/menu';
+import type { ShotOfDay, StatsReplay } from './net/net';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const debugSeedBadge = document.querySelector<HTMLAnchorElement>('#debug-seed')!;
@@ -57,7 +61,6 @@ const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 
 const settings = loadSettings();
 setLook(settings.look);
-setPostLevel(settings.postLevel);
 setLang(settings.language);
 applyStaticTexts();
 const sound = new Sound();
@@ -79,6 +82,10 @@ const attract = createMatch(
 let match: Match | null = null;
 /** The game on screen when it is a replay, to watch it again. */
 let lastReplay: StatsReplay | null = null;
+/** The shot of the day on screen, to watch it again. */
+let lastShot: { day: string; shot: ShotOfDay } | null = null;
+/** The menu the shot of the day on screen was started from, to go back to. */
+let shotCameFrom: MenuPages | null = null;
 let screen: 'title' | 'play' = 'title';
 let lastMode: GameMode = 'classic';
 /** `?daily=YYYY-MM-DD` flies another day's challenge — handy for testing and for sharing an old one. */
@@ -90,6 +97,8 @@ const uiPreview: UiPreview | null = import.meta.env.DEV && (UI_PREVIEWS as reado
   : null;
 /** `?preview=supernova` (dev only): a Solar System's sudden death on a loop, to look at without playing to it. */
 const supernovaDemo = import.meta.env.DEV && requestedPreview === 'supernova' ? new SupernovaDemo() : null;
+/** `?preview=infall` (dev only): planets and a ship falling into the black hole on a loop. */
+const infallDemo = import.meta.env.DEV && requestedPreview === 'infall' ? new InfallDemo() : null;
 
 const active = (): Match => (screen === 'play' && match ? match : attract);
 
@@ -194,6 +203,9 @@ function wire(m: Match): void {
         if (audible) sound.clash();
         if (e.points > 0) effects.callout(`${t('hud.highFive')} +${e.points}`, e.x, e.y, COLORS.sodium, true);
         break;
+      case 'fall':
+        if (audible) sound.devour();
+        break;
       case 'devour':
         effects.devour(e.x, e.y, e.toX, e.toY, e.color, e.vx, e.vy);
         if (audible) sound.devour();
@@ -242,7 +254,9 @@ function wire(m: Match): void {
         if (!e.active && e.recording) void recorder.stopAndSave();
         break;
       case 'gameOver':
-        if (m instanceof ChallengeMatch) {
+        if (m instanceof ShotReplay) {
+          menu.open(() => shotReplayScreen(app, m));
+        } else if (m instanceof ChallengeMatch) {
           const outcome = recordRun(m.challenge.dateKey, m.total);
           menu.open(() => dailyResultScreen(app, m, outcome));
         } else {
@@ -393,7 +407,6 @@ const app: App = {
     effects.particles = settings.particles;
     effects.debrisLevel = settings.debris;
     setLook(settings.look);
-    setPostLevel(settings.postLevel);
     attract.applySettings(settings);
     if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {
@@ -480,14 +493,32 @@ const app: App = {
     effects.clear();
     menu.close();
   },
+  watchShot(day, shot) {
+    const replay = createShotReplay(cloneSettings(settings), dailyChallenge(day), shot);
+    shotCameFrom ??= menu.setAside();
+    match?.dispose();
+    lastShot = { day, shot };
+    match = replay;
+    wire(match);
+    screen = 'play';
+    effects.clear();
+    menu.close();
+  },
   watchAgain() {
-    if (lastReplay) app.watchReplay(lastReplay);
+    if (lastShot) app.watchShot(lastShot.day, lastShot.shot);
+    else if (lastReplay) app.watchReplay(lastReplay);
   },
   leaveReplay() {
     match?.dispose();
     match = null;
     screen = 'title';
     effects.clear();
+    if (shotCameFrom) {
+      menu.restore(shotCameFrom);
+      shotCameFrom = null;
+      lastShot = null;
+      return;
+    }
     menu.open(() => titleScreen(app));
     menu.push(() => statsScreen(app));
   },
@@ -515,9 +546,9 @@ function saveClip(): void {
 /** Enter / Space / the touch button: fire or lock in, continue, or skip the killcam. */
 function primaryAction(): void {
   if (!match) return;
-  // A replay only goes on past the round's end and the killcams.
+  // A replay only goes on past the round's end, the killcams and a held shot.
   if (match.replaying) {
-    if (match.skipReveal()) return;
+    if (match.skipReveal() || match.skipHold()) return;
     if (match.phase === 'roundOver' || match.phase === 'killcam') advanceMatch();
     return;
   }
@@ -707,6 +738,7 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   // A tap dismisses the announcement only once its twists have landed, so a double tap at the round change can't skip it unread.
   if (match.revealing) return match.revealAge >= MAYHEM.LANDED ? primaryAction() : undefined;
+  if (match.skipHold()) return;
   if (match.phase === 'roundOver' || match.phase === 'killcam') return advanceMatch();
   if (!canAim()) return;
   dragging = true;
@@ -912,6 +944,8 @@ function frame(now: number): void {
     if (!net || net.isHost) m.update(dt);
     if (supernovaDemo && m === supernovaDemo.match) supernovaDemo.tick(dt);
     effects.update(dt, m.world);
+    effects.infall(m.falling(), m.world.holes[0], dt, painterFor(getLook()).fallDust);
+    if (infallDemo && m === infallDemo.match) infallDemo.tick(dt);
     // A shot flying through a nebula sheds wisps of gas, so its slowing down shows.
     if (m.world.nebulae.length) {
       for (const vs of m.scene().volley?.shots ?? []) {
@@ -972,8 +1006,8 @@ async function boot(): Promise<void> {
   // Canvas text needs the web fonts loaded before the first draw.
   const fonts = [`800 32px ${FONTS.display}`, `400 16px ${FONTS.body}`, `700 16px ${FONTS.body}`, `400 16px ${FONTS.mono}`, `700 16px ${FONTS.mono}`];
   await Promise.race([Promise.all(fonts.map((f) => document.fonts.load(f))), new Promise((r) => setTimeout(r, 1500))]);
-  if (supernovaDemo) {
-    match = supernovaDemo.match;
+  if (supernovaDemo || infallDemo) {
+    match = (supernovaDemo ?? infallDemo)!.match;
     screen = 'play';
     wire(match);
     effects.clear();

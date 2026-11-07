@@ -19,24 +19,6 @@ export function setLook(look: Look): void {
   current = look;
 }
 
-/**
- * How much of its whole-frame light a look with a post pass lays over the finished field (Forged: `high` bloom, vignette,
- * grade and grain; `medium` without the grade and grain; `low` only the vignette; `off` none), for a device that cannot
- * afford all of it. A ceiling: the look may still step down further on its own when frames lag.
- */
-export const POST_LEVELS = ['off', 'low', 'medium', 'high'] as const;
-export type PostLevel = (typeof POST_LEVELS)[number];
-
-let post: PostLevel = 'high';
-
-export const getPostLevel = (): PostLevel => post;
-
-export function setPostLevel(level: PostLevel): void {
-  post = level;
-}
-
-export const isPostLevel = (value: unknown): value is PostLevel => (POST_LEVELS as readonly unknown[]).includes(value);
-
 export const isLook = (value: unknown): value is Look => (LOOKS as readonly unknown[]).includes(value);
 
 /** The look a stored value names, if it names one: `luminous` (taken out) and `refined` (its old name) carry over to `forged`, which is built on it. */

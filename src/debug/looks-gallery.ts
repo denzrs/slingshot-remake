@@ -16,7 +16,8 @@ import { Effects } from '../render/effects';
 import { painterFor } from '../render/looks';
 import { forgedPlanetTraits } from '../render/looks/forged-planet';
 import type { Planet, PlanetStyle } from '../sim/physics';
-import { holdPostPass } from '../render/looks/forged-sky';
+import { shaderGpuSeconds } from '../render/looks/forged-gl';
+import { holdShaderDetail } from '../render/looks/forged-sky';
 import { Renderer, type DrawOptions } from '../render/renderer';
 
 /**
@@ -428,6 +429,7 @@ main.innerHTML = `
       <button id="remember" type="button">Pixel-Stand merken</button>
       <button id="compare" type="button">Mit Stand vergleichen</button>
       <output id="result"></output>
+      <output id="cost" title="Mittel über etwa eine Sekunde: Zeichenzeit (CPU) aller sichtbaren Karten, GPU-Zeit der Shader (nur mit Zeitmesser), Abstand der Bilder"></output>
     </div>
   </header>
   <main id="scenes"></main>`;
@@ -475,10 +477,18 @@ const observer = new IntersectionObserver((entries) => {
 });
 for (const { card } of cards) observer.observe(card.stage);
 
+// A cheap readout, so a regression shows without a profiler: smoothed over about a second.
+const cost = main.querySelector<HTMLOutputElement>('#cost')!;
+const smooth = { cpu: 0, gpu: 0, gap: 0 };
+let costShown = 0;
+const ease = (was: number, now: number): number => (was ? was + (now - was) * 0.05 : now);
+
 let last = performance.now();
 function frame(now: number): void {
   const dt = paused ? 0 : Math.min(0.05, (now - last) / 1000);
+  smooth.gap = ease(smooth.gap, Math.min(250, now - last));
   last = now;
+  const began = performance.now();
   for (const { scene, match, card } of cards) {
     if (!visible.has(card.stage)) continue;
     card.clock += dt;
@@ -486,6 +496,12 @@ function frame(now: number): void {
     card.effects.update(dt, match.world);
     setLook(card.look);
     card.renderer.draw(match, card.effects, OPTIONS, dt * (scene.speed ?? 1));
+  }
+  smooth.cpu = ease(smooth.cpu, performance.now() - began);
+  smooth.gpu = ease(smooth.gpu, shaderGpuSeconds() * 1000);
+  if (now - costShown > 500) {
+    costShown = now;
+    cost.value = `CPU ${smooth.cpu.toFixed(1)} ms · GPU ${smooth.gpu ? `${smooth.gpu.toFixed(1)} ms` : '–'} · Abstand ${smooth.gap.toFixed(1)} ms`;
   }
   requestAnimationFrame(frame);
 }
@@ -510,7 +526,7 @@ function seeded(seed: number): () => number {
 /** A hash of every scene in every look at a few fixed moments, drawn fresh with seeded randomness. */
 async function pixelHashes(): Promise<Record<string, number>> {
   paused = true;
-  holdPostPass(true);
+  holdShaderDetail(true);
   const realRandom = Math.random;
   await document.fonts.ready;
   const out: Record<string, number> = {};
@@ -541,7 +557,7 @@ async function pixelHashes(): Promise<Record<string, number>> {
     if (pass === 'warm') await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   Math.random = realRandom;
-  holdPostPass(false);
+  holdShaderDetail(false);
   return out;
 }
 

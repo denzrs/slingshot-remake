@@ -185,6 +185,27 @@ export interface SectorSpec {
   noReserve?: boolean;
 }
 
+/**
+ * One shot of a run, all it takes to fly it again: the sector comes from the date, and the rest is what had
+ * happened in it by then and how the shot was aimed. It goes to the leaderboard as the run's best.
+ */
+export interface DailyShot {
+  /** What it paid. */
+  points: number;
+  /** The sector it was fired in, from 0. */
+  sector: number;
+  /** The targets already down (their ships' numbers). */
+  down: number[];
+  /** Shots spent on the target so far, this one included: what the shot's factor is read from. */
+  attempt: number;
+  /** Shots the sector still had after this one. */
+  left: number;
+  angle: number;
+  power: number;
+  /** Its path, thinned out: flat [x0, y0, x1, y1, …]. */
+  trail: number[];
+}
+
 export interface Challenge {
   dateKey: string;
   number: number;
