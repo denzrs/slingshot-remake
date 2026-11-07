@@ -59,7 +59,13 @@ export function factTicker(enabled = true, board = new StatsBoard()): HTMLElemen
   const viewport = h('span.stats-ticker__viewport', null, h('span.stats-ticker__loading', null, t('stats.loading')));
   const dots = h('span.stats-ticker__dots', { 'aria-hidden': 'true' });
   const accessibleFacts = h('span.stats-ticker__a11y', null);
-  ticker.append(label, viewport, dots, accessibleFacts);
+  const toggle = h('button.stats-ticker__toggle', { type: 'button', 'aria-expanded': 'false', 'aria-label': t('stats.ticker.expand') });
+  toggle.addEventListener('click', () => {
+    const expanded = ticker.classList.toggle('is-expanded');
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.setAttribute('aria-label', t(expanded ? 'stats.ticker.collapse' : 'stats.ticker.expand'));
+  });
+  ticker.append(label, viewport, dots, accessibleFacts, toggle);
 
   if (!enabled || !leaderboardAvailable()) {
     ticker.hidden = true;
@@ -99,7 +105,7 @@ export function factTicker(enabled = true, board = new StatsBoard()): HTMLElemen
     const timer = setInterval(() => {
       // The menu page this lives on is gone once it has left the document.
       if (!ticker.isConnected) return clearInterval(timer);
-      if (held || document.hidden) return;
+      if (held || ticker.classList.contains('is-expanded') || document.hidden) return;
       show((current + 1) % items.length);
     }, FACT_MS);
   });
