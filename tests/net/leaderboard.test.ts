@@ -251,8 +251,10 @@ describe('the shot of the day', () => {
     const noShot = await boards.submit(day, 'Ada', 950);
     expect(noShot.shot?.points).toBe(800);
 
-    const better = await boards.submit(day, 'Ada', 10, shot(1200));
-    expect(better.shot).toEqual({ ...shot(1200), name: 'Ada' });
+    const damaged = { ...shot(1200), terrain: [0, 1, 5] };
+    const better = await boards.submit(day, 'Ada', 10, damaged);
+    expect(better.shot).toEqual({ ...damaged, name: 'Ada' });
+    expect((await onRelay().top(day)).shot).toEqual({ ...damaged, name: 'Ada' });
     expect(better.you?.score).toBe(950);
   });
 
@@ -261,6 +263,7 @@ describe('the shot of the day', () => {
     await expect(boards.submit(daysAgo(6), 'Ada', 100, { ...shot(100), sector: CHALLENGE.SECTORS })).rejects.toThrow(/Invalid daily run/);
     await expect(boards.submit(daysAgo(6), 'Ada', 100, { ...shot(100), trail: [1, 2, 3] })).rejects.toThrow(/Invalid daily run/);
     await expect(boards.submit(daysAgo(6), 'Ada', 100, { ...shot(100), trail: new Array(CHALLENGE.SHOT_TRAIL * 2 + 2).fill(1) })).rejects.toThrow(/Invalid daily run/);
+    await expect(boards.submit(daysAgo(6), 'Ada', 100, { ...shot(100), terrain: [-1] })).rejects.toThrow(/Invalid daily run/);
     expect((await boards.top(daysAgo(6))).entries).toEqual([]);
   });
 });

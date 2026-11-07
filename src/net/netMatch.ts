@@ -42,7 +42,7 @@ export function netMatch(game: NetGame, base: Settings, extra: Pick<MatchOptions
     names: names.every((name) => name !== undefined) ? (names as string[]) : undefined,
     avatars: game.players.every((p) => p.avatar !== undefined) ? game.players.map((p) => p.avatar!) : undefined,
     teams: game.mode === 'team' ? game.players.map((p) => p.team ?? 0) : undefined,
-    simultaneous: game.gameMode === 'horizon' || settings.simultaneousShots,
+    simultaneous: game.gameMode === 'horizon' || settings.simultaneousShots || settings.anomalies.includes('fusion'),
     seed: game.seed,
     ...extra,
   });

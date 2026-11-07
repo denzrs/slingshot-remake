@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  ALL_THEMES,
+  REGULAR_THEMES,
+  ANOMALY_THEMES,
+  ANOMALY_THEMES_FROM,
   baselineScore,
   buildSector,
   challengeNumber,
@@ -55,20 +57,38 @@ describe('themes', () => {
   it('plays every theme once per cycle', () => {
     // Challenges 21–23 were already live when the expanded 17-theme pool was introduced at #24.
     expect([themeFor(first), themeFor(first + 1), themeFor(first + 2)]).toEqual(['singularity', 'precision', 'bastion']);
-    // The seventeen themes fill the days from #24 until the loop themes join.
+    // Keep the published part of the seventeen-theme cycle; anomalies start on the next weekend.
     const start = first + 3;
     expect(start + THEMES.length).toBe(LOOP_THEMES_FROM);
-    const seen = Array.from({ length: THEMES.length }, (_, i) => themeFor(start + i));
-    expect(new Set(seen).size).toBe(THEMES.length);
+    const seen = Array.from({ length: ANOMALY_THEMES_FROM - start }, (_, i) => themeFor(start + i));
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(seen.every((theme) => THEMES.includes(theme))).toBe(true);
+
   });
 
-  it('plays every theme, the loop themes with them, once per cycle from the loop themes on', () => {
-    for (let cycle = 0; cycle < 12; cycle++) {
-      const start = LOOP_THEMES_FROM + cycle * ALL_THEMES.length;
-      const seen = Array.from({ length: ALL_THEMES.length }, (_, i) => themeFor(start + i));
-      expect(new Set(seen).size).toBe(ALL_THEMES.length);
-      for (const theme of LOOP_THEMES) expect(seen).toContain(theme);
+  it('rotates all regular themes on weekdays, with anomalies only on weekends', () => {
+    const weekdays: string[] = [];
+    const weekends: string[] = [];
+    for (const day of days(400, '2026-11-11')) {
+      const ch = dailyChallenge(day);
+      if (weekday(day) >= 5) {
+        expect(ANOMALY_THEMES).toContain(ch.theme);
+        expect(ch.sectors.some((s) => s.anomalies?.length)).toBe(true);
+        weekends.push(ch.theme);
+      } else {
+        expect(REGULAR_THEMES).toContain(ch.theme);
+        expect(ch.sectors.every((s) => s.anomalies === undefined)).toBe(true);
+        weekdays.push(ch.theme);
+      }
     }
+    for (let start = 0; start + REGULAR_THEMES.length <= weekdays.length; start += REGULAR_THEMES.length) {
+      expect(new Set(weekdays.slice(start, start + REGULAR_THEMES.length)).size).toBe(REGULAR_THEMES.length);
+    }
+    for (let start = 0; start + ANOMALY_THEMES.length <= weekends.length; start += ANOMALY_THEMES.length) {
+      expect(new Set(weekends.slice(start, start + ANOMALY_THEMES.length)).size).toBe(ANOMALY_THEMES.length);
+    }
+    // Monday and Tuesday before the loop launch stay ordinary too.
+    for (const day of ['2026-11-09', '2026-11-10']) expect(dailyChallenge(day).sectors.every((s) => s.anomalies === undefined)).toBe(true);
   });
 
   it('leaves the days before the loop themes without any loop', () => {
@@ -239,7 +259,7 @@ describe('variations in play', () => {
 });
 
 describe('loop themes in play', () => {
-  const dayOf = (theme: string) => days(25, LOOP_DAY).find((d) => dailyChallenge(d).theme === theme)!;
+  const dayOf = (theme: string) => days(35, LOOP_DAY).find((d) => dailyChallenge(d).theme === theme)!;
 
   for (const theme of LOOP_THEMES) {
     it(`flies on the loop and can be won by flying the known solutions: ${theme}`, () => {
@@ -256,6 +276,44 @@ describe('loop themes in play', () => {
           settle(m);
         }
         expect(m.summary?.title, `sector ${i}`).toBe('cleared');
+        pass(m);
+      }
+      expect(m.phase).toBe('gameOver');
+    }, 60_000);
+  }
+});
+
+describe('anomaly themes in play', () => {
+  it('leaves all published days without anomalies and enables them sector by sector', () => {
+    for (const day of days(ANOMALY_THEMES_FROM - 1)) {
+      expect(dailyChallenge(day).sectors.every((s) => s.anomalies === undefined)).toBe(true);
+    }
+    const debut = ['2026-11-08', '2026-11-14', '2026-11-15'].map(dailyChallenge);
+    expect(debut.map((ch) => ch.theme)).toEqual(ANOMALY_THEMES);
+    expect(debut[0].sectors.map((s) => s.anomalies ?? [])).toEqual([[], ['pinball'], ['pinball'], ['pinball'], ['pinball']]);
+    expect(debut[1].sectors.slice(1).every((s) => s.hole && sectorRules(s).whiteHole)).toBe(true);
+    expect(debut[2].sectors.every((s) => sectorRules(s).unstable && modifiersOf(s).includes('unstable'))).toBe(true);
+  });
+
+  for (const [i, theme] of ANOMALY_THEMES.entries()) {
+    it(`uses its own anomalies, stays deterministic and can be cleared: ${theme}`, () => {
+      const ch = dailyChallenge(['2026-11-08', '2026-11-14', '2026-11-15'][i]);
+      const m = createChallenge({ ...DEFAULT_SETTINGS, anomalies: ['fuse', 'fusion', 'trickShots'] }, ch);
+      for (const spec of ch.sectors) {
+        const sector = buildSector(spec);
+        expect(buildSector(spec)).toEqual(sector);
+        expect(m.settings.anomalies).toEqual(spec.anomalies ?? []);
+        expect(m.rules.fuse).toBeFalsy();
+        expect(m.rules.trickShots).toBeFalsy();
+        if (m.revealing) m.skipReveal();
+        for (const s of sector.solutions) {
+          if (m.phase !== 'aiming') break;
+          if (!m.world.ships[s.target].alive) continue;
+          m.setAim(s.angle, s.power);
+          m.commit();
+          settle(m);
+        }
+        expect(m.summary?.title, `sector ${spec.index}`).toBe('cleared');
         pass(m);
       }
       expect(m.phase).toBe('gameOver');
@@ -472,5 +530,23 @@ describe('the daily challenge and a fixed power level', () => {
     m.startRound();
     expect(m.spec.fixedPower).toBe(true);
     expect(m.pilot.power).toBe(AIM.FIXED_POWER);
+  });
+
+  it('triggers anomaly alerts for sectors with anomalies, and skipReveal dismisses it', () => {
+    const ch = dailyChallenge('2026-11-08'); // pinballRun: sector 0 clean, sector 1 has pinball
+    const m = createChallenge(DEFAULT_SETTINGS, ch);
+    // Sector 0: clean
+    expect(m.anomalyAlert).toBe(false);
+    expect(m.revealing).toBe(false);
+
+    // Advance to sector 1: has pinball anomaly
+    m.startRound();
+    expect(m.spec.anomalies).toContain('pinball');
+    expect(m.anomalyAlert).toBe(true);
+    expect(m.revealing).toBe(true);
+
+    // skipReveal dismisses it
+    expect(m.skipReveal()).toBe(true);
+    expect(m.revealing).toBe(false);
   });
 });

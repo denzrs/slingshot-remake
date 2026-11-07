@@ -6,7 +6,9 @@ import { clamp01, LIGHT, mix, smoothstep, type PlanetSprite } from '../planet-co
 import { image, type Name } from './forged-assets';
 import { place as placeShaded } from './forged-gl';
 import { GLOW, renderLitPlanet, spriteSize } from './forged-lit-planet';
-import { shadePlanet, type PlanetShade } from './forged-planet-gl';
+import { MAX_IMPACTS, shadePlanet, type PlanetCracks, type PlanetShade } from './forged-planet-gl';
+import { instabilityPulse } from './instability';
+import { screenOffset } from '../orientation';
 
 /**
  * A planet in the forged look: the Blender map wrapped round a sphere and lit from the upper left, with what a still
@@ -32,6 +34,10 @@ const CLOUD_EVERY = 1 / 10;
 const CLOUD_RATE = 0.018;
 /** How fast the planet itself turns (turns per second): a little slower than its cloud, which slides over it. */
 const SURFACE_RATE = 0.012;
+/** An unstable planet is painted again this often (s): its magma pulses faster than the cloud turns. */
+const CRACKS_EVERY = 1 / 30;
+/** Where a hit is shown striking, in radii from the middle: on the near side, just in from the limb. */
+const IMPACT_AT = 0.86;
 /** The rings reach this many radii from the planet's middle, at most. */
 const RING_OUT = 2.05;
 
@@ -156,7 +162,7 @@ interface Baked {
   /** What the shader draws the sphere and its cloud from. */
   shade: PlanetShade;
   /** The shader's latest picture of it, and when that was. */
-  still: { canvas: HTMLCanvasElement | null; at: number };
+  still: { canvas: HTMLCanvasElement | null; at: number; hits: number };
   soft: () => Soft | null;
   rings: { back: HTMLCanvasElement; front: HTMLCanvasElement } | null;
   moon: Moon | null;
@@ -384,7 +390,7 @@ function bake(p: Planet, ps: number): Baked | null {
       shadow: SHADOW,
       shadowDepth: SHADOW_DEPTH,
     },
-    still: { canvas: null, at: -1 },
+    still: { canvas: null, at: -1, hits: 0 },
     soft: makeSoft,
     rings,
     moon,
@@ -710,12 +716,35 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
   // The stand-in is made only if it is drawn: once the map has loaded (nearly always, after the first planets) it never is.
   let fallback: PlanetSprite | null = null;
   let baked: Baked | null = null;
+  /** When each of the planet's hits was first drawn, so its crack turns away with the surface from where it struck, and when it flared (long ago for the hits it already had when the sprite was made). */
+  const hitAt: { at: number; flare: number }[] = [];
+  let seen = false;
+  const impacts = new Float32Array(MAX_IMPACTS * 4);
+  /** The damage of `planet` as the shader takes it, or null while it is whole or the crack map is still loading. */
+  const cracksOf = (planet: Planet, time: number, surfaceRate: number): PlanetCracks | null => {
+    const hits = planet.fractures ?? [];
+    if (hits.length < hitAt.length) hitAt.length = hits.length;
+    // A sprite made after the hits (a new size, a new look) shows them settled, not flaring all at once.
+    while (hitAt.length < hits.length) hitAt.push({ at: time, flare: seen ? time : time - 10 });
+    seen = true;
+    const warning = instabilityPulse(planet, time);
+    const map = warning ? image('cracks') : null;
+    if (!warning || !map) return null;
+    const shown = Math.min(hits.length, MAX_IMPACTS);
+    for (let i = 0; i < shown; i++) {
+      // The latest hits, if there are more than the shader takes. The angle is the field's; the sprite stands upright on the screen.
+      const k = hits.length - shown + i;
+      const [dx, dy] = screenOffset(Math.cos(hits[k]), Math.sin(hits[k]));
+      impacts.set([dx * IMPACT_AT, dy * IMPACT_AT, hitAt[k].at * surfaceRate, time - hitAt[k].flare], i * 4);
+    }
+    return { map, impacts, hits: shown, danger: warning.danger, glow: warning.pulse };
+  };
   const place = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, x: number, y: number, scale: number): void => {
     ctx.drawImage(canvas, x - canvas.width / scale / 2, y - canvas.height / scale / 2, canvas.width / scale, canvas.height / scale);
   };
   return {
     size: spriteSize(p, ps),
-    draw(ctx, x, y, scale, time) {
+    draw(ctx, x, y, scale, time, planet = p) {
       baked ??= bake(p, ps);
       if (!baked) {
         fallback ??= renderLitPlanet(p, ps);
@@ -728,9 +757,13 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
       if (baked.rings) place(ctx, baked.rings.back, x, y, scale);
       // A planet turns slowly: the shader's picture is kept and worked out again on the planet's own beat, so they do not all fall in one frame.
       const still = baked.still;
-      if (!still.canvas || still.at < 0 || time < still.at || time - still.at >= CLOUD_EVERY) {
+      const cracks = cracksOf(planet, time, baked.shade.surfaceRate);
+      const every = cracks ? CRACKS_EVERY : CLOUD_EVERY;
+      const struck = (planet.fractures?.length ?? 0) !== still.hits;
+      if (!still.canvas || still.at < 0 || time < still.at || time - still.at >= every || struck) {
         still.at = still.at < 0 ? time - ((p.seed % 7) / 7) * CLOUD_EVERY : time;
-        const shaded = shadePlanet(baked.shade, time);
+        still.hits = planet.fractures?.length ?? 0;
+        const shaded = shadePlanet(baked.shade, time, cracks);
         if (shaded) {
           still.canvas ??= document.createElement('canvas');
           if (still.canvas.width !== shaded.w || still.canvas.height !== shaded.h) {

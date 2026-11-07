@@ -1,4 +1,4 @@
-import type { ShotRules, StyleKind, World } from '../sim/physics';
+import type { StyleKind, World } from '../sim/physics';
 import { scoreChallengeHit } from '../sim/scoring';
 import { AIM, COLORS, HORIZON, SCORING, SUDDEN_DEATH, type KillSource, type SuddenDeathKind } from '../sim/config';
 import { t } from '../platform/i18n';
@@ -38,6 +38,7 @@ export interface ClassicSnapshot extends Partial<KillcamSnapshot> {
   mayhem?: Match['mayhem'];
   revealEnd?: number;
   revealHeld?: boolean;
+  anomalyAlert?: boolean;
   mayhemHistory?: Match['mayhemHistory'];
   roundStats: Match['roundStats'];
   matchStats: Match['matchStats'];
@@ -52,6 +53,7 @@ export interface ClassicSnapshot extends Partial<KillcamSnapshot> {
   /** Sudden death: this round's kind of it, and whether it (not a player) has decided the round. */
   suddenDeathKind?: SuddenDeathKind;
   environmentDecided?: boolean;
+  freeFireAnnounced?: boolean;
   /** Phase time when a finished volley began waiting for its post-flight delay. */
   flightDoneAt?: number | null;
   oracle: OracleSnapshot;
@@ -95,6 +97,7 @@ export class ClassicMatch extends Match {
       mayhem: this.mayhem,
       revealEnd: this.revealEnd,
       revealHeld: this.revealHeld,
+      anomalyAlert: this.anomalyAlert,
       mayhemHistory: this.mayhemHistory,
       roundStats: this.roundStats,
       matchStats: this.matchStats,
@@ -106,6 +109,7 @@ export class ClassicMatch extends Match {
       fired: [...this.fired],
       suddenDeathKind: this.suddenDeathKind,
       environmentDecided: this.environmentDecided,
+      freeFireAnnounced: this.freeFireAnnounced,
       flightDoneAt: this.flightDoneAt,
       ...this.killcam.snapshot(),
       oracle: this.oracle.snapshot(),
@@ -121,6 +125,7 @@ export class ClassicMatch extends Match {
     this.mayhem = snapshot.mayhem ?? null;
     this.revealEnd = snapshot.revealEnd ?? 0;
     this.revealHeld = snapshot.revealHeld ?? false;
+    this.anomalyAlert = snapshot.anomalyAlert ?? false;
     this.mayhemHistory = snapshot.mayhemHistory ?? [];
     this.phase = snapshot.phase;
     this.phaseTime = snapshot.phaseTime;
@@ -152,6 +157,7 @@ export class ClassicMatch extends Match {
     this.fired = new Set(snapshot.fired ?? []);
     this.suddenDeathKind = snapshot.suddenDeathKind ?? this.suddenDeathKinds[0];
     this.environmentDecided = snapshot.environmentDecided ?? false;
+    this.freeFireAnnounced = snapshot.freeFireAnnounced ?? false;
     // Hosts from before the oracle send none.
     if (snapshot.oracle) this.oracle.restore(snapshot.oracle);
     if (snapshot.stands) this.stands.restore(snapshot.stands);
@@ -201,7 +207,8 @@ export class ClassicMatch extends Match {
   }
 
   get salvo(): boolean {
-    return this.settings.simultaneousShots;
+    // Fusion needs shots in the air together: it flies every turn as a salvo.
+    return this.settings.simultaneousShots || this.settings.anomalies.includes('fusion');
   }
 
   /** Online salvos have no turns: everyone who hasn't locked in may aim. */
@@ -216,10 +223,6 @@ export class ClassicMatch extends Match {
     if (!this.salvo || this.phase !== 'aiming') return null;
     const aiming = this.simultaneous ? this.players.some((p) => this.canAim(p.id)) : this.isHumanTurn;
     return aiming ? Math.max(0, this.planClock) : null;
-  }
-
-  get rules(): ShotRules {
-    return { edges: this.settings.edges, timeLimit: this.settings.shotTime };
   }
 
   protected get stylePays(): boolean {
@@ -453,6 +456,7 @@ export class ClassicMatch extends Match {
 
   protected afterVolley(): void {
     if (this.decided) return this.endRound();
+    this.checkFreeFire();
     if (this.passOver() && this.endPass()) return;
     this.nextTurn();
   }

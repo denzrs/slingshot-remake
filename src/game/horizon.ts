@@ -1,6 +1,6 @@
 import { AIM, HORIZON, PHYSICS, SCORING, COLORS, WORMHOLE } from '../sim/config';
 import { t } from '../platform/i18n';
-import type { ShotRules, StyleKind, World } from '../sim/physics';
+import type { StyleKind, World } from '../sim/physics';
 import { POWER_UP, type Pickup } from '../sim/powerups';
 import type { PowerUpState } from './powerup-field';
 import type { ReplayTurn } from './replay';
@@ -35,6 +35,7 @@ export interface HorizonSnapshot extends KillcamSnapshot {
   mayhem?: Match['mayhem'];
   revealEnd?: number;
   revealHeld?: boolean;
+  anomalyAlert?: boolean;
   mayhemHistory?: Match['mayhemHistory'];
   roundStats: Match['roundStats'];
   matchStats: Match['matchStats'];
@@ -100,10 +101,6 @@ export class HorizonMatch extends Match {
   private queue: number[] = [];
   private collapse: CollapseState | null = null;
 
-  get rules(): ShotRules {
-    return { edges: this.settings.edges, timeLimit: this.settings.shotTime };
-  }
-
   snapshot(): HorizonSnapshot {
     return {
       phase: this.phase, phaseTime: this.phaseTime, clock: this.clock, round: this.round, worldSeed: this.worldSeed,
@@ -111,7 +108,7 @@ export class HorizonMatch extends Match {
       players: this.players.map((player) => ({ ...player })), current: this.current, world: this.world,
       trails: this.trails, volley: this.volley?.snapshot() ?? null, flightDoneAt: this.flightDoneAt, killFeed: this.killFeed,
       lastKill: this.lastKill, summary: this.summary, notice: this.notice, settings: this.settings,
-      mayhem: this.mayhem, revealEnd: this.revealEnd, revealHeld: this.revealHeld, mayhemHistory: this.mayhemHistory,
+      mayhem: this.mayhem, revealEnd: this.revealEnd, revealHeld: this.revealHeld, anomalyAlert: this.anomalyAlert, mayhemHistory: this.mayhemHistory,
       roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory, skipVote: this.skipVote, pause: this.pause,
       volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue,
       ...this.killcam.snapshot(),
@@ -131,6 +128,7 @@ export class HorizonMatch extends Match {
     this.mayhem = s.mayhem ?? null;
     this.revealEnd = s.revealEnd ?? 0;
     this.revealHeld = s.revealHeld ?? false;
+    this.anomalyAlert = s.anomalyAlert ?? false;
     this.mayhemHistory = s.mayhemHistory ?? [];
     this.phase = s.phase; this.phaseTime = s.phaseTime; this.clock = s.clock; this.round = s.round;
     this.worldSeed = s.worldSeed ?? 0;

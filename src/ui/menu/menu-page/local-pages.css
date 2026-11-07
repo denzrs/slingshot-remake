@@ -59,9 +59,15 @@
 .mission-stats dd { margin: 6px 0 0; color: var(--bone); font: 400 22px/1.5 var(--font-mono); }
 .menu-page--mission .daily-reset { font: 400 10px/1.7 var(--font-mono); color: var(--bone-dim); margin: 20px 0 0; }
 .mission-scorecards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; list-style: none; padding: 0; margin: 24px 0; }
-.mission-scorecards li { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; padding: 20px 16px; border: 1px solid var(--menu-line); border-top: 2px solid var(--p2); border-radius: 4px; background: rgb(14 32 55 / .6); }
+.mission-scorecards li { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 18px 16px; border: 1px solid var(--menu-line); border-top: 2px solid var(--p2); border-radius: 4px; background: rgb(14 32 55 / .6); }
 .mission-scorecards li.is-failed { border-top-color: var(--p1); }
+.mission-scorecards .sectors__head { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.mission-scorecards .sectors__title-row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 6px; }
 .mission-scorecards .sectors__n { font: 800 27px/1 var(--font-display); text-transform: uppercase; }
+.mission-scorecards .sectors__flag { font: 700 9px/1.2 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: #ff5566; border: 1px solid rgba(255, 85, 102, 0.45); background: rgba(255, 85, 102, 0.12); padding: 2px 5px; border-radius: 2px; white-space: nowrap; }
+.mission-scorecards .sectors__mods { display: flex; flex-wrap: wrap; gap: 4px; }
+.mission-scorecards .sectors__tag { font: 700 9.5px/1.3 var(--font-body); letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 5px; border-radius: 2px; border: 1px solid rgba(184, 199, 220, 0.25); color: var(--bone-dim); }
+.mission-scorecards .sectors__tag--anomaly { border-color: rgba(74, 124, 224, 0.55); color: #8bb2ff; background: rgba(74, 124, 224, 0.12); }
 .mission-scorecards .sectors__points { font: 400 18px/1.5 var(--font-mono); }
 .menu-page--mission-result .daily__rank { margin-bottom: 0; }
 .menu-page--mission-result .daily__meta { margin-top: 20px; }
@@ -74,6 +80,7 @@
 .sheet .setup__title { margin: 0 0 4px; }
 .sheet .setup__rows { gap: 0; }
 .sheet .setup__rows > .item { min-height: 40px; padding: 8px 8px; border-bottom: 1px solid rgb(91 125 179 / .18); border-radius: 0; }
+.sheet .setup__rows > .item--tiles { border-bottom: 0; }
 .sheet .setup__rows > .item--segmented { padding-block: 8px; gap: 6px; }
 .sheet .setup__rows > .item--slider { padding-block: 8px 3px; }
 .sheet .segmented__option { min-height: 32px; }
@@ -89,7 +96,7 @@
 .menu-page--rules .sheet .segmented__option { min-height: 28px; }
 /* In a narrow column the choices keep the name above the bar, and the power-up tiles take less room. */
 .menu-page--rules .sheet .item--segmented { gap: 4px; padding-block: var(--rules-row-pad); }
-.menu-page--rules .sheet .item--tiles { gap: 4px; padding-block: var(--rules-row-pad); }
+.menu-page--rules .sheet .item--tiles { gap: 4px; padding-block: var(--rules-row-pad); border-bottom: 0; }
 .menu-page--rules .sheet .item--tiles .tile { padding: 4px 4px 3px; gap: 1px; }
 .menu-page--rules .sheet .item--tiles .tile__icon { width: 22px; height: 22px; }
 .menu-page--rules .sheet .item--tiles .tile__name { min-height: 2.3em; }
@@ -228,4 +235,141 @@
   .mission-scorecards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .mission-scorecards li { gap: 14px; }
   .mission-scorecards .sectors__n { font-size: 25px; }
+}
+
+/*
+ * The anomalies' section: its heading and rule in red, and the tiles that are on tear with the preset cards' badge, on the
+ * same clock (`anomaly-clock`, see the preset cards): the whole tile is thrown apart in cyan and red, and its name and symbol
+ * with it.
+ */
+/* With no anomaly chosen the section stays light and still; the red and the tear come with the first one. */
+.menu-group[id$='-rules-anomalies'].has-anomalies { animation: anomaly-clock 4.6s steps(1, end) infinite; }
+.menu-group[id$='-rules-anomalies'].has-anomalies .setup__title { color: #d24a5e; }
+.menu-group[id$='-rules-anomalies'].has-anomalies .setup__title::after { background: rgb(210 74 94 / .5); }
+:is(.menu-group[id$='-rules-anomalies'], .anomaly-picker) .tile.is-on {
+  translate: calc(var(--tear-x) * .7px) calc(var(--tear-y) * 1px);
+  filter: drop-shadow(calc(var(--tear-x) * -1px) 0 0 rgb(63 240 255 / var(--tear-a))) drop-shadow(calc(var(--tear-x) * 1px) 0 0 rgb(255 90 110 / var(--tear-a)));
+}
+:is(.menu-group[id$='-rules-anomalies'], .anomaly-picker) .tile.is-on .tile__name {
+  translate: calc(var(--tear-x) * .6px) calc(var(--tear-y) * .6px);
+  text-shadow: calc(var(--tear-x) * -1px) 0 rgb(63 240 255 / var(--tear-a)), calc(var(--tear-x) * 1px) 0 rgb(255 90 110 / var(--tear-a));
+}
+:is(.menu-group[id$='-rules-anomalies'], .anomaly-picker) .tile.is-on .tile__icon { translate: calc(var(--tear-x) * -.8px) calc(var(--tear-y) * .8px); }
+@media (prefers-reduced-motion: reduce) { .menu-group[id$='-rules-anomalies'].has-anomalies { animation: none; } }
+
+/* An ordinary menu entry opens the anomaly selection from the bottom. */
+.anomaly-menu > .setup__title { display: none; }
+.menu-page--rules .anomaly-menu__trigger {
+  width: 100%;
+  padding: 12px;
+  gap: 12px;
+  border: 1px solid rgb(255 255 255 / .16);
+  border-radius: 3px;
+  background: rgb(255 255 255 / .05);
+  color: var(--bone);
+  text-align: left;
+  text-shadow: calc(var(--tear-x) * -1px) 0 rgb(63 240 255 / var(--tear-a)), calc(var(--tear-x) * 1px) 0 rgb(255 90 110 / var(--tear-a));
+  translate: calc(var(--tear-x) * .7px) calc(var(--tear-y) * 1px);
+}
+.anomaly-menu.has-anomalies .anomaly-menu__trigger {
+  border-color: rgb(210 74 94 / .5);
+  background: linear-gradient(90deg, rgb(58 14 28 / .75), rgb(14 24 52 / .75));
+  color: #ff9aa5;
+}
+.anomaly-menu__label { flex: none; color: var(--bone); font-weight: 700; }
+.anomaly-menu__active { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
+.anomaly-menu__active[hidden] { display: none; }
+.anomaly-menu__active canvas { display: block; width: 22px; height: 22px; flex: none; }
+.menu-page--rules .anomaly-menu__trigger::after { content: ' ↗'; }
+.anomaly-picker-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(3 8 19 / .72);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 260ms ease, visibility 0s linear 260ms;
+}
+.anomaly-picker-layer.is-open { opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s; }
+.anomaly-picker {
+  width: min(900px, 100%);
+  max-height: 80dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: clamp(16px, 3vw, 28px);
+  border: 1px solid rgb(255 255 255 / .18);
+  border-radius: 5px;
+  background: linear-gradient(120deg, #1d2336, #121a2e);
+  box-shadow: 0 -12px 60px rgb(0 0 0 / .45);
+  transform: translateY(calc(100% + 20px));
+  transition: transform 300ms cubic-bezier(.2, .75, .25, 1);
+}
+/* Like the entry in the menu: light and still until an anomaly is chosen, then red and tearing. */
+.anomaly-picker-layer.has-anomalies .anomaly-picker {
+  border-color: rgb(210 74 94 / .6);
+  background: linear-gradient(120deg, #340e1d, #0e1834);
+  animation: anomaly-clock 4.6s steps(1, end) infinite;
+}
+.anomaly-picker-layer.is-open .anomaly-picker { transform: none; }
+.anomaly-picker > .setup__title { margin: 0; }
+.anomaly-picker-layer.has-anomalies .anomaly-picker > .setup__title { color: #ff9aa5; }
+/* The focus outline and selected tiles' glitch extend beyond the tile's border. */
+.anomaly-picker > .setup__rows { min-height: 0; overflow-y: auto; padding: 8px; margin: -8px; }
+.anomaly-picker .item--tiles { padding: 0; gap: 14px; }
+.anomaly-picker .item--tiles:focus, .anomaly-picker .item--tiles:hover { background: transparent; }
+.anomaly-picker .item--tiles:focus-visible { outline: none; box-shadow: none; }
+.anomaly-picker .item::before { display: none; }
+.anomaly-picker .item__label { font-size: 13px; }
+.anomaly-picker .tile { flex-basis: calc(100% / 3 - 4px); padding: 16px 8px; }
+.anomaly-picker__actions { justify-content: flex-end; margin: 0; }
+.anomaly-picker__actions .item { min-height: 44px; padding: 10px 24px; }
+.anomaly-picker__actions .item--primary { background: var(--launch-accent); border-color: var(--launch-accent); color: var(--menu-surface); font: 800 24px/1.1 var(--font-display); text-transform: uppercase; }
+.anomaly-picker button:focus-visible { outline: 2px solid var(--bone); outline-offset: 2px; }
+@media (max-width: 760px) {
+  .menu-page--rules .anomaly-menu__trigger { display: none !important; }
+  .menu-page--rules .anomaly-picker-layer { display: none !important; }
+  :is(.menu-group[id$='-rules-anomalies'], .anomaly-picker) .tile { flex-basis: calc(50% - 4px); min-height: 68px; }
+}
+@media (max-height: 620px) {
+  .anomaly-picker { gap: 10px; padding-block: 16px; }
+  .anomaly-picker .item--tiles { gap: 8px; }
+  .anomaly-picker .tile { padding-block: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .anomaly-picker-layer, .anomaly-picker { transition: none; animation: none; }
+}
+
+/* Active sector anomalies tear on the same clock as the preset cards, including before selection. */
+.mission-route:has(.is-anomaly) .item { padding-bottom: 42px; }
+.screen--menu-page .mission-route .item__flag {
+  top: auto;
+  bottom: 10px;
+  left: 10px;
+  max-width: calc(100% - 20px);
+  letter-spacing: .04em;
+}
+.mission-route .item.is-anomaly {
+  border-color: rgb(255 90 110 / .55);
+  background: linear-gradient(120deg, #30121f, #101c34);
+  translate: calc(var(--tear-x) * .7px) calc(var(--tear-y) * 1px);
+  filter: drop-shadow(calc(var(--tear-x) * -1px) 0 0 rgb(63 240 255 / var(--tear-a))) drop-shadow(calc(var(--tear-x) * 1px) 0 0 rgb(255 90 110 / var(--tear-a)));
+}
+.mission-route .item.is-anomaly :is(span:not([class]), .item__hint) {
+  translate: calc(var(--tear-x) * .6px) calc(var(--tear-y) * .6px);
+  text-shadow: calc(var(--tear-x) * -1px) 0 rgb(63 240 255 / var(--tear-a)), calc(var(--tear-x) * 1px) 0 rgb(255 90 110 / var(--tear-a));
+}
+.mission-route .item.is-anomaly.is-selected {
+  border-color: #ff5a6e;
+  box-shadow: inset 0 3px #ff5a6e, 0 0 16px rgb(255 90 110 / .16);
+}
+.mission-route .item.is-anomaly.is-selected > span:not([class]) { color: #ff9aa5; }
+@media (max-width: 760px) {
+  .screen--menu-page .mission-route:has(.is-anomaly) .item { padding-bottom: 32px; }
+  .screen--menu-page .mission-route .item__flag { left: 3px; max-width: calc(100% - 6px); padding: 3px 2px; font-size: 7px; }
 }

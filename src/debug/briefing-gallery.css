@@ -1,0 +1,243 @@
+/* Briefing Playground: Interactive testing tool for Mayhem twists and Anomaly alerts */
+:root {
+  --plate: #080c18;
+  --lift: #101a30;
+  --panel: #0d1627;
+  --line: #22385c;
+  --line-bright: #3c5d94;
+  --bone: #e8ecf4;
+  --dim: #9aa7c0;
+  --sodium: #f4be42;
+  --danger: #ff4757;
+  --display: 'Big Shoulders Stencil Display', 'Arial Narrow', sans-serif;
+  --body: 'B612', system-ui, sans-serif;
+  --mono: 'B612 Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--plate); color: var(--bone); font-family: var(--body); }
+
+.briefing-tool {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 32px 20px 80px;
+  display: grid;
+  gap: 24px;
+}
+
+.briefing-tool header {
+  display: grid;
+  gap: 8px;
+}
+
+.briefing-tool h1 {
+  font-family: var(--display);
+  font-size: clamp(32px, 5vw, 54px);
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bone);
+}
+
+.briefing-tool .desc {
+  color: var(--dim);
+  font-size: 14px;
+  max-width: 80ch;
+  margin: 0;
+}
+
+/* Control Panel */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 20px;
+  display: grid;
+  gap: 20px;
+}
+
+.section-title {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.presets-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.btn {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 8px 14px;
+  background: var(--lift);
+  border: 1px solid var(--line);
+  color: var(--bone);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn:hover {
+  border-color: var(--line-bright);
+  background: #172746;
+}
+
+.btn.active, .btn[aria-pressed='true'] {
+  background: #1b2f56;
+  border-color: var(--sodium);
+  color: var(--sodium);
+}
+
+.btn-danger.active {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.config-group {
+  display: grid;
+  gap: 8px;
+}
+
+.chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 6px 12px;
+  background: rgba(16, 26, 48, 0.7);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--dim);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.chip:hover {
+  border-color: var(--line-bright);
+  color: var(--bone);
+}
+
+.chip.active {
+  background: rgba(30, 50, 90, 0.7);
+  border-color: var(--chip-color, var(--sodium));
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(var(--chip-glow, 244, 190, 66), 0.25);
+}
+
+.chip .indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--chip-color, var(--dim));
+}
+
+/* Playback & Viewport Bar */
+.toolbar-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #09101e;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 280px;
+}
+
+.playback-controls input[type="range"] {
+  flex: 1;
+  max-width: 380px;
+  accent-color: var(--sodium);
+  cursor: pointer;
+}
+
+.time-label {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--dim);
+  min-width: 85px;
+}
+
+.view-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Stage Area */
+.stage-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #04060c;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 24px 16px;
+  overflow: auto;
+  min-height: 520px;
+}
+
+.stage-container {
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  transition: width 0.2s ease, height 0.2s ease;
+  background: #000;
+}
+
+.stage-container canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.metrics-pill {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dim);
+  background: #0a1120;
+  border: 1px solid var(--line);
+  padding: 8px 16px;
+  border-radius: 20px;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}

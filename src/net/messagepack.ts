@@ -111,7 +111,7 @@ function isGameEvent(value: unknown): boolean {
   const within = (n: unknown, size: number) => typeof n === 'number' && n >= -NOVA_MARGIN && n <= size + NOVA_MARGIN;
   const onField = (x: unknown, y: unknown) => within(x, FIELD.width) && within(y, FIELD.height);
   switch (event.type) {
-    case 'round': case 'gameOver': case 'roundEnd': case 'volley': case 'collapse': case 'fall':
+    case 'round': case 'gameOver': case 'roundEnd': case 'volley': case 'collapse': case 'fall': case 'freeFire':
       return true;
     case 'suddenDeath':
       return (SUDDEN_DEATH_KINDS as readonly unknown[]).includes(event.kind);
@@ -167,6 +167,8 @@ function isGameEvent(value: unknown): boolean {
       return index('player') && finite('fromX') && finite('fromY') && finite('toX') && finite('toY');
     case 'blackhole':
       return index('player') && finite('x') && finite('y');
+    case 'planetShatter':
+      return finite('x') && finite('y') && finite('radius') && typeof event.color === 'string' && event.color.length <= 32;
     case 'planetKiller':
       return index('player') && finite('x') && finite('y') && finite('radius');
     case 'wormhole':
@@ -194,6 +196,13 @@ function isGameEvent(value: unknown): boolean {
       return index('player') && finite('x') && finite('y');
     case 'shield':
       return index('ship') && finite('x') && finite('y');
+    case 'armed': case 'blast':
+      return index('player') && finite('x') && finite('y');
+    case 'warning':
+      return index('player') && index('ship') && finite('x') && finite('y');
+    case 'fusion':
+      return finite('x') && finite('y')
+        && Array.isArray(event.players) && event.players.length === 2 && event.players.every((id) => Number.isSafeInteger(id) && (id as number) >= 0);
     default:
       return false;
   }

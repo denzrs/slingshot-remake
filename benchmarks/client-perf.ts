@@ -25,14 +25,17 @@ import { packWireMessage } from '../src/net/messagepack';
 import { roundReport, turnReport, type TurnReport } from '../src/game/roundReport';
 import { cloneSettings, DEFAULT_SETTINGS, type Seat, type Settings } from '../src/data/settings';
 import { ShotLog } from '../src/game/shotLog';
+import { isAnomaly, type Anomaly } from '../src/sim/config';
 
 const MATCHES = Number(process.env.MATCHES ?? 4);
 const ROUNDS = Number(process.env.ROUNDS ?? 2);
+/** Anomalies every match plays by, e.g. `ANOMALIES=fusion,pinball` (none by default). */
+const ANOMALIES: Anomaly[] = (process.env.ANOMALIES ?? '').split(',').filter(isAnomaly);
 const DT = 1 / 60;
 const FRAME_MS = 1000 / 60;
 
 const seats: Seat[] = ['hard', 'medium', 'medium', 'off', 'off', 'off'];
-const settings = (mode: GameMode): Settings => ({ ...cloneSettings(DEFAULT_SETTINGS), rounds: ROUNDS, seats, powerUps: true, maxPlanets: 5, simultaneousShots: mode === 'classic' });
+const settings = (mode: GameMode): Settings => ({ ...cloneSettings(DEFAULT_SETTINGS), rounds: ROUNDS, seats, powerUps: true, maxPlanets: 5, simultaneousShots: mode === 'classic', anomalies: [...ANOMALIES] });
 
 const pct = (sorted: number[], p: number) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] : NaN);
 const fmt = (v: number, digits = 2) => (Number.isFinite(v) ? v.toLocaleString('en-US', { maximumFractionDigits: digits }) : 'n/a');
@@ -125,6 +128,9 @@ interface Row {
   wall: number;
   reportsMs: number;
   reportKb: number;
+  /** Updates per match, and the time per update spent outside a flight (CPU thinking and the rest), in ms. */
+  updates: number;
+  otherMsPerUpdate: number;
 }
 
 function summarize(label: string, runs: Figures[]): Row {
@@ -139,13 +145,15 @@ function summarize(label: string, runs: Figures[]): Row {
     wall: runs.reduce((sum, r) => sum + r.wall, 0) / runs.length,
     reportsMs: runs.reduce((sum, r) => sum + r.reportsMs, 0) / runs.length,
     reportKb: runs.reduce((sum, r) => sum + r.reportBytes, 0) / runs.length / 1024,
+    updates: runs.reduce((sum, r) => sum + r.updates, 0) / runs.length,
+    otherMsPerUpdate: runs.reduce((sum, r) => sum + (r.wall - r.flight.reduce((a, b) => a + b, 0)) / Math.max(1, r.updates - r.flight.length), 0) / runs.length,
   };
 }
 
 const results: Record<string, Row[]> = {};
 
 for (const mode of ['classic', 'horizon'] as GameMode[]) {
-  console.log(`\n${mode}: ${MATCHES} seeded matches of ${ROUNDS} rounds, three CPUs${settings(mode).simultaneousShots ? ', everybody at once' : ''}, power-ups on`);
+  console.log(`\n${mode}${ANOMALIES.length ? ` [${ANOMALIES.join('+')}]` : ''}: ${MATCHES} seeded matches of ${ROUNDS} rounds, three CPUs${settings(mode).simultaneousShots ? ', everybody at once' : ''}, power-ups on`);
   // Warm up: the first matches pay for the engine's own start-up.
   for (const variant of VARIANTS) play(mode, 1, variant);
   const runs = new Map<string, Figures[]>(VARIANTS.map((v) => [v, []]));
@@ -168,6 +176,7 @@ for (const mode of ['classic', 'horizon'] as GameMode[]) {
   line('', 'flight p50 ms', 'flight p95 ms', 'flight p99 ms', 'flight max ms', `> ${fmt(FRAME_MS, 1)} ms`, 'match s', 'reports ms', 'reports KB');
   for (const r of rows) line(r.label, fmt(r.flightP50, 3), fmt(r.flightP95, 3), fmt(r.flightP99, 3), fmt(r.flightMax, 2), fmt(r.over, 0), fmt(r.wall / 1000, 2), fmt(r.reportsMs, 2), fmt(r.reportKb, 1));
   const local = rows[3];
+  console.log(`updates per match ${fmt(local.updates, 0)}; outside a flight ${fmt(local.otherMsPerUpdate, 3)} ms per update (CPU thinking and the rest)`);
   console.log(`vs baseline: flight p50 ${fmt(((rows[1].flightP50 - base.flightP50) / base.flightP50) * 100, 1)} % (shot log), ${fmt(((local.flightP50 - base.flightP50) / base.flightP50) * 100, 1)} % (everything); match time ${fmt(((local.wall - base.wall) / base.wall) * 100, 1)} %; replay takes ${fmt((rows[4].wall / rows[1].wall) * 100, 0)} % of the live match's time`);
 }
 if (process.env.BENCH_JSON) writeFileSync(process.env.BENCH_JSON, JSON.stringify(results, null, 2));

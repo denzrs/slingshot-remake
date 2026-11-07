@@ -31,6 +31,10 @@ h1 { font-family: var(--display); font-weight: 800; font-size: clamp(40px, 7vw, 
 .legend b { font-family: var(--display); font-size: 22px; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 800; }
 .legend span { color: var(--dim); font-size: 13px; }
 .tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+/* The toolbar is a sibling of the header, so it stays pinned throughout the scenes below. */
+.looks-gallery { gap: 20px; }
+.looks-gallery > .tools { position: sticky; top: 0; z-index: 2; padding-block: 12px; background: var(--plate); border-bottom: 1px solid var(--lift); }
+.looks-gallery > main { margin-top: 36px; }
 button { font: inherit; font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--bone); background: var(--lift); border: 1px solid var(--line); padding: 8px 14px; cursor: pointer; border-radius: 2px; }
 button:hover { border-color: var(--bone); }
 button:focus-visible { outline: 2px solid var(--sodium); outline-offset: 2px; }

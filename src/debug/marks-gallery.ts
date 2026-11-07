@@ -15,7 +15,7 @@ import { Renderer, type DrawOptions } from '../render/renderer';
 import { createUiPreview } from './devPreview';
 
 /**
- * Dev-only page (`/marks.html`, never part of a build): every symbol the scoreboard's cards carry, large and at the size they are
+ * Dev-only page (`/dev/marks.html`, never part of a build): every symbol the scoreboard's cards carry, large and at the size they are
  * drawn, and the real HUD with them, through the eyes of each seat (the buttons), on a narrow card (a phone held upright) and in a team.
  * A new mark shows up here by being added to `MARK_KINDS` (game/markLegend.ts), with its texts in `SYMBOLS` below.
  */

@@ -30,6 +30,16 @@ pub const POWER_UP_KINDS: [&str; 12] = [
 pub const ALL_POWER_UP_KINDS: u16 = u16::MAX >> (16 - POWER_UP_KINDS.len());
 /// How many pickups may lie on the field.
 const POWER_UP_AMOUNTS: [i64; 4] = [1, 2, 3, 4];
+/// The anomalies a room can play by, in the order the client lists them (`ANOMALIES` in `src/sim/config.ts`).
+/// A room's anomalies are kept as a bitmask over this list; none at all is the default.
+pub const ANOMALIES: [&str; 6] = [
+    "trickShots",
+    "pinball",
+    "fuse",
+    "fusion",
+    "whiteHole",
+    "unstable",
+];
 
 /// The most points one stake may name on the wire; the host holds a player to what they actually have.
 const MAX_STAKE: f64 = 1_000_000.0;
@@ -387,7 +397,22 @@ fn parse_daily_shot(value: &Value) -> Option<crate::leaderboard::Shot> {
     {
         return None;
     }
+    let terrain = match value.get("terrain") {
+        None => Vec::new(),
+        Some(value) => {
+            let values = value.as_array()?;
+            // One entry per planet: a daily sector has at most 7 (`PLANETS` in `src/sim/challenge.ts`).
+            if values.len() > 7 {
+                return None;
+            }
+            values
+                .iter()
+                .map(|hit| bounded_integer(Some(hit), 0..=32))
+                .collect::<Option<Vec<_>>>()?
+        }
+    };
     Some(crate::leaderboard::Shot {
+        terrain,
         points: bounded_integer(value.get("points"), 1..=MAX_DAILY_SCORE)?,
         sector: bounded_integer(value.get("sector"), 0..=DAILY_SECTORS - 1)?,
         down: down
@@ -626,6 +651,8 @@ pub struct RoomRules {
     pub power_up_kinds: u16,
     /// How many pickups lie on the field.
     pub power_up_amount: i64,
+    /// The anomalies the match plays by: a bitmask over `ANOMALIES`, empty for none.
+    pub anomalies: u8,
 }
 
 pub const DEFAULT_RULES: RoomRules = RoomRules {
@@ -650,6 +677,7 @@ pub const DEFAULT_RULES: RoomRules = RoomRules {
     power_ups: false,
     power_up_kinds: ALL_POWER_UP_KINDS,
     power_up_amount: 2,
+    anomalies: 0,
 };
 
 /// The rules as they leave the relay, keyed like the client-side `RoomRules` object.
@@ -681,7 +709,29 @@ pub fn rules_to_value(rules: &RoomRules) -> Value {
             .map(|(_, kind)| *kind)
             .collect::<Vec<_>>(),
         "powerUpAmount": rules.power_up_amount,
+        "anomalies": ANOMALIES
+            .iter()
+            .enumerate()
+            .filter(|(bit, _)| rules.anomalies & (1u8 << bit) != 0)
+            .map(|(_, anomaly)| *anomaly)
+            .collect::<Vec<_>>(),
     })
+}
+
+/// A client's `anomalies`: a list of distinct known anomalies (none is fine), as a bitmask.
+fn parse_anomalies(value: &Value) -> Option<u8> {
+    let list = value.as_array()?;
+    let mut mask = 0u8;
+    for anomaly in list {
+        let bit = ANOMALIES
+            .iter()
+            .position(|a| Some(*a) == anomaly.as_str())?;
+        if mask & (1u8 << bit) != 0 {
+            return None;
+        }
+        mask |= 1u8 << bit;
+    }
+    Some(mask)
 }
 
 /// The kinds of a client's `powerUpKinds`: a non-empty list of distinct known kinds, as a bitmask.
@@ -807,6 +857,11 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
     if field("powerUpAmount").is_some_and(|v| !is_number_in(v, &POWER_UP_AMOUNTS)) {
         return None;
     }
+    // Anomalies came later: a client that doesn't send them plays without.
+    let anomalies = match field("anomalies") {
+        Some(v) => parse_anomalies(v)?,
+        None => DEFAULT_RULES.anomalies,
+    };
 
     fn i64_of(value: &Value) -> i64 {
         value.as_f64().unwrap() as i64
@@ -847,6 +902,7 @@ pub fn parse_rules(value: &Value) -> Option<RoomRules> {
         power_up_amount: field("powerUpAmount")
             .map(i64_of)
             .unwrap_or(DEFAULT_RULES.power_up_amount),
+        anomalies,
     })
 }
 
@@ -1022,6 +1078,44 @@ mod tests {
         for invalid in [json!(true), json!(1), json!("ring"), json!([])] {
             let mut rules = valid_rules();
             rules["edges"] = invalid;
+            assert!(parse_rules(&rules).is_none());
+        }
+    }
+
+    #[test]
+    fn anomalies_default_to_none_and_take_a_list_of_known_ones() {
+        let parsed = parse_rules(&valid_rules()).expect("complete rules accepted");
+        assert_eq!(parsed.anomalies, 0);
+        assert_eq!(rules_to_value(&parsed)["anomalies"], json!([]));
+
+        let mut rules = valid_rules();
+        rules["anomalies"] = json!(["fusion", "trickShots"]);
+        let parsed = parse_rules(&rules).expect("known anomalies accepted");
+        assert_eq!(parsed.anomalies, 0b1001);
+        // They leave the relay in the client's order, whatever order they came in.
+        assert_eq!(
+            rules_to_value(&parsed)["anomalies"],
+            json!(["trickShots", "fusion"])
+        );
+
+        rules["anomalies"] = json!(["whiteHole", "unstable"]);
+        let parsed = parse_rules(&rules).expect("new anomalies accepted");
+        assert_eq!(parsed.anomalies, 0b110000);
+        assert_eq!(
+            rules_to_value(&parsed)["anomalies"],
+            json!(["whiteHole", "unstable"])
+        );
+
+        rules["anomalies"] = json!([]);
+        assert_eq!(parse_rules(&rules).expect("none accepted").anomalies, 0);
+
+        for invalid in [
+            json!("pinball"),
+            json!(["pinball", "pinball"]),
+            json!(["gravityStrike"]),
+            json!([1]),
+        ] {
+            rules["anomalies"] = invalid;
             assert!(parse_rules(&rules).is_none());
         }
     }
@@ -1457,6 +1551,16 @@ mod tests {
         assert_eq!(parsed.sector, 4);
         assert_eq!(parsed.down, [1, 2]);
         assert_eq!(parsed.trail, [1.5, 2.0, 3.0, 4.5]);
+        let mut damaged = good.clone();
+        damaged["terrain"] = json!([0, 1, 5]);
+        assert_eq!(
+            parse_daily_submit(&run(damaged))
+                .unwrap()
+                .shot
+                .unwrap()
+                .terrain,
+            [0, 1, 5]
+        );
         // Whole numbers come through the wire as integers.
         let whole = json!({"points":800,"sector":0,"down":[],"attempt":1,"left":0,"angle":90,"power":100,"trail":[1,2,3,4]});
         assert_eq!(
@@ -1486,6 +1590,11 @@ mod tests {
             ("trail", json!([1, 2, 3])),
             ("trail", json!([1, 2, 3, 1e9])),
             ("trail", json!(long)),
+            ("terrain", json!([-1])),
+            ("terrain", json!([33])),
+            ("terrain", json!([0.5])),
+            ("terrain", json!([0, 0, 0, 0, 0, 0, 0, 0])),
+            ("terrain", json!("broken")),
         ] {
             let mut shot = good.clone();
             shot[field] = bad;

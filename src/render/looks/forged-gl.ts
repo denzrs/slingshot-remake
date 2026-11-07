@@ -74,11 +74,18 @@ export class Uniforms {
   f(name: string, x: number): void {
     this.gl.uniform1f(this.spot(name), x);
   }
+  i(name: string, x: number): void {
+    this.gl.uniform1i(this.spot(name), x);
+  }
   v2(name: string, x: number, y: number): void {
     this.gl.uniform2f(this.spot(name), x, y);
   }
   v3(name: string, v: readonly number[]): void {
     this.gl.uniform3f(this.spot(name), v[0], v[1], v[2]);
+  }
+  /** An array of vec4, four numbers each. */
+  v4s(name: string, v: Float32Array): void {
+    this.gl.uniform4fv(this.spot(name), v);
   }
   /** Binds a texture to texture unit `slot` for the sampler `name`. */
   tex(name: string, slot: number, texture: WebGLTexture): void {

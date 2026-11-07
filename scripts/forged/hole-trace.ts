@@ -85,6 +85,13 @@ export function paths(): Paths {
   return traced;
 }
 
+/** How far (radians) the path with impact parameter `b` sweeps before it falls in or leaves, between the traced paths. */
+export function endAt(p: Paths, b: number): number {
+  const fi = Math.min(B_STEPS - 1.001, (b / B_MAX) * (B_STEPS - 1));
+  const i = Math.floor(fi);
+  return p.end[i] + (p.end[i + 1] - p.end[i]) * (fi - i);
+}
+
 /** 1/r of the path with impact parameter `b` after sweeping `phi`, between the traced paths and steps; -1 past its end. */
 export function uAt(p: Paths, b: number, phi: number): number {
   const fi = Math.min(B_STEPS - 1.001, (b / B_MAX) * (B_STEPS - 1));
@@ -166,6 +173,14 @@ export interface Hole {
   ring: Float32Array;
   /** The pixels that have a crossing or any shadow: the only ones painted. */
   active: Int32Array;
+  /**
+   * For the white hole, what each pixel in the shadow sees of the horizon its path ends on: how far round the path swept
+   * before it got there (radians: 0 is the point facing the eye, past π the far side, wound into thin rings at the edge),
+   * where round the screen it is (radians), and how much of it the disk in front lets through.
+   */
+  sweep: Float32Array;
+  around: Float32Array;
+  through: Float32Array;
 }
 
 /** What every pixel of a `size` square image sees: the hole spans `HOLE_SPAN` shadow radii across it. */
@@ -183,6 +198,9 @@ export function bake(size: number): Hole {
   const shadow = new Float32Array(n);
   const depth = new Float32Array(n);
   const ring = new Float32Array(n);
+  const sweep = new Float32Array(n);
+  const around = new Float32Array(n);
+  const through = new Float32Array(n);
   const active: number[] = [];
   let count = 0;
   const half = size / 2;
@@ -231,6 +249,11 @@ export function bake(size: number): Hole {
       // What falls in (every path nearer than the shadow's edge) is black, its edge softened over a pixel.
       const dark = 1 - smoothstep(SHADOW - per * 0.7, SHADOW + per * 0.7, b);
       shadow[y * size + x] = dark;
+      if (dark > 0) {
+        sweep[y * size + x] = endAt(p, b);
+        around[y * size + x] = Math.atan2(c, a);
+        through[y * size + x] = seen;
+      }
       depth[y * size + x] = 1 - smoothstep(SHADOW * (1 - DEPTH), SHADOW, b);
       const off = (b - SHADOW - per * RING_AT) / (per * RING_WIDTH);
       // The ring is behind the disk's near side, which hides it as far as it is opaque.
@@ -250,6 +273,9 @@ export function bake(size: number): Hole {
     depth,
     ring,
     active: Int32Array.from(active),
+    sweep,
+    around,
+    through,
   };
 }
 
@@ -341,4 +367,64 @@ export function shrink(image: Uint8ClampedArray, from: number, factor: number): 
     }
   }
   return out;
+}
+
+// ------------------------------------------------------------------ the white hole ----
+
+/** The light that runs out of the white hole's horizon: how far it gets in a loop (radians of sweep), and its colour: blue where it is faint, burning to white where it is bright. */
+const OUTFLOW = 2.2;
+const WHITE_COLOUR = [0.55, 0.78, 1.15];
+
+/**
+ * The horizon's plasma at `sweep` (radians from the point facing the eye) and `around` (radians round the screen), moved
+ * `flow` radians outwards. It is looked up on the horizon as a sphere, so the middle, where every direction meets, has no seam.
+ */
+function plasma(sweep: number, around: number, flow: number): number {
+  const s = sweep - flow;
+  const x = Math.sin(s) * Math.cos(around);
+  const y = Math.sin(s) * Math.sin(around);
+  const z = Math.cos(s);
+  // Broad fronts of hot gas, cells inside them, and thin bright filaments; dark lanes between.
+  const fronts = smoothstep(0.38, 0.8, fbm(x * 1.7, y * 1.7, z * 1.7, 83, 4));
+  const cells = smoothstep(0.42, 0.75, fbm(x * 4.2, y * 4.2, z * 4.2, 89, 3));
+  const threads = smoothstep(0.62, 0.9, fbm(x * 9, y * 9, z * 9, 97, 3));
+  return 0.25 + 1.5 * fronts * (0.45 + 0.75 * cells) + 0.7 * threads * (0.3 + fronts);
+}
+
+/**
+ * The white hole: time run backwards, so every path that would fall into the shadow comes out of the horizon instead, and
+ * the shadow is filled with the horizon's light. The paths that skim the photon sphere wind round it, so the far side of
+ * the horizon shows as thin rings packed at the edge; the plasma runs from the middle out and the rings carry it round.
+ * Only the light in the shadow, RGBA, straight; it is added over the black hole's frame, which stays as it is. With `loop`
+ * (s), the picture at `loop` is the one at 0: two passes of the flow, a loop apart, are mixed by how far through it is.
+ */
+export function paintWhite(hole: Hole, time: number, loop: number): Uint8ClampedArray {
+  const data = new Uint8ClampedArray(hole.size * hole.size * 4);
+  const tone = (x: number): number => 1 - Math.exp(-x * 1.4);
+  const per = SHADOW / (hole.size / HOLE_SPAN);
+  const half = hole.size / 2;
+  const mix = time / loop;
+  const flow = (OUTFLOW * time) / loop;
+  for (const k of hole.active) {
+    const shadow = hole.shadow[k];
+    if (shadow <= 0) continue;
+    const sweep = hole.sweep[k];
+    const around = hole.around[k];
+    const b = Math.hypot((k % hole.size) + 0.5 - half, Math.floor(k / hole.size) + 0.5 - half) * per;
+    const lit = (1 - mix) * plasma(sweep, around, flow) + mix * plasma(sweep, around, flow - OUTFLOW);
+    // Hottest in the middle, where the light comes straight at the eye; brighter again where the far side is packed in at the edge.
+    const centre = 1 + 4 * (1 - b / SHADOW) ** 2.5;
+    const edge = 1 + 0.8 * smoothstep(0.82, 1, b / SHADOW);
+    const light = 1.6 * lit * centre * edge * hole.through[k] * shadow;
+    const r = tone(light * WHITE_COLOUR[0]);
+    const g = tone(light * WHITE_COLOUR[1]);
+    const bl = tone(light * WHITE_COLOUR[2]);
+    const alpha = Math.max(r, g, bl);
+    if (alpha <= 0.002) continue;
+    data[k * 4] = (255 * r) / alpha;
+    data[k * 4 + 1] = (255 * g) / alpha;
+    data[k * 4 + 2] = (255 * bl) / alpha;
+    data[k * 4 + 3] = 255 * alpha;
+  }
+  return data;
 }

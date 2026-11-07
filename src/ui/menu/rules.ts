@@ -1,4 +1,4 @@
-import { AIM, EDGE_MODES, GRACE, MAYHEM, TRAIL_FADE, type EdgeMode } from '../../sim/config';
+import { AIM, ANOMALIES, EDGE_MODES, GRACE, MAYHEM, TRAIL_FADE, type Anomaly, type EdgeMode } from '../../sim/config';
 import { KILLCAM_MODES, type KillcamMode } from '../../data/roomRules';
 import { CLASSIC_FAMILY, type GameMode } from '../../sim/modes';
 import { t, type Key } from '../../platform/i18n';
@@ -6,17 +6,64 @@ import type { RoomRules } from '../../net/net';
 import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from '../../sim/powerups';
 import { twistedRules } from '../../game/mayhem';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../../render/powerup-art';
+import { ANOMALY_COLORS, drawAnomalySymbol } from '../../render/anomaly-art';
 import type { MenuItem } from './menu';
 
 /** The blocks the setup screen and the lobby sort the rules into. */
-export type RuleGroup = 'match' | 'field' | 'shots' | 'twists' | 'powerups' | 'online';
+export type RuleGroup = 'match' | 'field' | 'shots' | 'twists' | 'anomalies' | 'powerups' | 'online';
 
-export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists', 'powerups', 'online'];
+export const RULE_GROUPS: readonly RuleGroup[] = ['match', 'field', 'shots', 'twists', 'anomalies', 'powerups', 'online'];
 
-/** The two columns of the rules page, balanced by height: the match and its field on the left, the shots and the power-ups on the right, with the online-only rules under them. */
-export const RULE_COLUMNS: readonly (readonly RuleGroup[])[] = [['match', 'field', 'twists'], ['shots', 'powerups', 'online']];
+/** The two columns of the rules page, balanced by height: the match and its field on the left, the shots and the power-ups on the right, with the online-only rules under them. The anomalies open their own picker from a menu entry below the twists. */
+export const RULE_COLUMNS: readonly (readonly RuleGroup[])[] = [['match', 'field', 'twists', 'anomalies'], ['shots', 'powerups', 'online']];
 
 export const groupTitle = (group: RuleGroup): string => t(`setup.group.${group}`);
+
+/** Mobile navigation tabs always place anomalies last so they don't interrupt the core rule categories. */
+export function orderRulesForMobile<T extends { id: string }>(groups: readonly T[]): T[] {
+  return [...groups.filter((g) => g.id !== 'rules-anomalies'), ...groups.filter((g) => g.id === 'rules-anomalies')];
+}
+
+/**
+ * Height score for a column's rules to balance the two columns on desktop.
+ * Each section title counts as 1 unit, regular rows count as 1, and the power-up tile grid counts as 3.
+ */
+export function columnHeightScore(columnGroups: readonly RuleGroup[], rules: readonly { group: RuleGroup; item: MenuItem }[]): number {
+  let score = 0;
+  for (const group of columnGroups) {
+    if (group === 'anomalies') continue;
+    const groupItems = rules.filter((r) => r.group === group);
+    if (!groupItems.length) continue;
+    score += 1;
+    for (const { item } of groupItems) {
+      if (item.kind === 'tiles') {
+        score += 3;
+      } else {
+        const isHidden = item.hidden?.() ?? false;
+        const isReserved = ('reserve' in item && typeof item.reserve === 'function') ? item.reserve() : false;
+        if (!isHidden || isReserved) score += 1;
+      }
+    }
+  }
+  return score;
+}
+
+/** Balance rule columns for desktop display, placing anomalies on whichever side has enough room. */
+export function balanceRuleColumns(columns: RuleGroup[][], rules: readonly { group: RuleGroup; item: MenuItem }[]): RuleGroup[][] {
+  const result = columns.map((col) => [...col]);
+  const anomalyColumn = result.find((groups) => groups.includes('anomalies'));
+  const powerUpColumn = result.find((groups) => groups.includes('powerups'));
+  if (!anomalyColumn || !powerUpColumn) return result;
+
+  const leftScore = columnHeightScore(result[0] ?? [], rules);
+  const rightScore = columnHeightScore(result[1] ?? [], rules);
+
+  if (leftScore > 13 && leftScore > rightScore) {
+    anomalyColumn.splice(anomalyColumn.indexOf('anomalies'), 1);
+    powerUpColumn.splice(powerUpColumn.indexOf('powerups') + 1, 0, 'anomalies');
+  }
+  return result;
+}
 
 // ————————————————————————————— Shot power —————————————————————————————
 
@@ -56,7 +103,7 @@ export interface RuleRow {
   key: keyof RoomRules;
   label: string;
   /** Every value the rule can take — for a slider, its stops from lowest to highest. */
-  options: { value: number | boolean | PowerMode | PowerUpKind | KillcamMode | EdgeMode; label: string }[];
+  options: { value: number | boolean | PowerMode | PowerUpKind | KillcamMode | EdgeMode | Anomaly; label: string }[];
   /** Switches for on/off rules, sliders for numbers, a segmented bar for a choice between a few words, tiles for several that can each be on or off. */
   control: 'toggle' | 'slider' | 'segmented' | 'tiles';
   group: RuleGroup;
@@ -104,8 +151,9 @@ export function ruleRows(): RuleRow[] {
     { key: 'fadingTrails', group: 'twists', control: 'slider', label: t('settings.fadingTrails'), options: numbers(TRAIL_FADE.OPTIONS, (n) => (n ? seconds(n) : t('common.off'))) },
     { key: 'betting', group: 'online', control: 'toggle', label: t('settings.betting'), options: [], onlineOnly: true },
     { key: 'chatPlayersOnly', group: 'online', control: 'toggle', label: t('settings.chatPlayersOnly'), options: [], onlineOnly: true },
+    { key: 'anomalies', group: 'anomalies', control: 'tiles', label: t('anomalies.kinds'), options: ANOMALIES.map((anomaly) => ({ value: anomaly, label: t(`anomaly.${anomaly}`) })) },
     { key: 'powerUpKinds', group: 'powerups', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}`)) })) },
-    { key: 'powerUpAmount', group: 'powerups', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps },
+    { key: 'powerUpAmount', group: 'powerups', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps, reserve: (r) => r.mayhem > 0 },
   ];
 }
 
@@ -117,6 +165,7 @@ export function ruleValueText(row: RuleRow, rules: RoomRules): string {
     return mode === 'cap' ? `${option(mode)} ${rules.maxPower}` : mode === 'fixed' ? `${option(mode)} ${rules.fixedPowerLevel}` : option(mode);
   }
   if (row.key === 'powerUpKinds') return rules.powerUps ? `${rules.powerUpKinds.length}/${POWER_UP_KINDS.length}` : t('common.off');
+  if (row.key === 'anomalies') return rules.anomalies.length ? rules.anomalies.map((anomaly) => t(`anomaly.${anomaly}`)).join(', ') : t('common.off');
   if (row.control === 'toggle') return t(rules[row.key] ? 'common.on' : 'common.off');
   return option(rules[row.key]);
 }
@@ -188,6 +237,31 @@ export function ruleItems(mode: GameMode, source: RuleSource, online = false): {
         key: row.key,
         group: row.group,
         item: { kind: 'toggle', label: row.label, hidden, twisted, commit, get: () => source.get()[row.key] as boolean, set: (v) => source.patch({ [row.key]: v }) },
+      };
+    }
+    if (row.control === 'tiles' && row.key === 'anomalies') {
+      return {
+        key: row.key,
+        group: row.group,
+        item: {
+          kind: 'tiles',
+          label: row.label,
+          allowEmpty: true,
+          quick: { all: t('powerups.all'), none: t('powerups.none') },
+          hidden,
+          reserve,
+          twisted,
+          commit,
+          tiles: (row.options as { value: Anomaly; label: string }[]).map((o) => ({
+            value: o.value,
+            label: o.label,
+            hint: t(`anomaly.${o.value}.hint`),
+            color: ANOMALY_COLORS[o.value],
+            draw: (ctx, r) => drawAnomalySymbol(ctx, o.value, 0, 0, r),
+          })),
+          get: () => source.get().anomalies,
+          set: (list) => source.patch({ anomalies: ANOMALIES.filter((anomaly) => list.includes(anomaly)) }),
+        },
       };
     }
     if (row.control === 'tiles') {

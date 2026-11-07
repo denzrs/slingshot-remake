@@ -1,6 +1,8 @@
 import { t, type Key } from '../../platform/i18n';
 import type { HandpickedId, HandpickedPreset } from './match-presets';
 import { nextSpaceArtId, spaceArt } from '../menu/space-art';
+import { ANOMALY_COLORS } from '../../render/anomaly-art';
+import type { Anomaly } from '../../sim/config';
 import './pick-of-day.css';
 
 export const pickName = (pick: HandpickedPreset): string => t(`preset.pick.${pick.id}`);
@@ -33,6 +35,13 @@ const COLORS: Record<HandpickedId, string> = {
   ringRoad: '#6fe3c8',
   lapRecord: '#f2c46d',
   eventLoop: '#b99cff',
+  // The anomaly combinations share the red of an anomaly.
+  pinballKing: '#ff6f6f',
+  supernova: '#ff6f6f',
+  bigBang: '#ff6f6f',
+  theCollapse: '#ff6f6f',
+  chainReaction: '#e57474',
+  secondChance: '#d0dfff',
 };
 
 /** Original flight chart for each authored daily combination. */
@@ -42,7 +51,8 @@ export function pickArt(pick: HandpickedPreset): SVGElement {
   svg.setAttribute('class', 'mode-art');
   svg.setAttribute('aria-hidden', 'true');
 
-  const art = spaceArt(nextSpaceArtId('pick'));
+  const artId = nextSpaceArtId('pick');
+  const art = spaceArt(artId);
   const c = COLORS[pick.id];
   const line = (d: string, width = 2, dash = '') => `<path d="${d}" fill="none" stroke="${c}" stroke-width="${width}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
   const planet = (x: number, y: number, r: number, ghost = false, warm = false) => art.planet(x, y, r, warm, ghost);
@@ -52,6 +62,36 @@ export function pickArt(pick: HandpickedPreset): SVGElement {
   const cloud = (x: number, y: number, rx: number, ry: number) => `<ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" fill="${c}" fill-opacity=".11" stroke="${c}" stroke-opacity=".6" stroke-dasharray="4 5"/><ellipse cx="${x}" cy="${y}" rx="${rx * .65}" ry="${ry * .55}" fill="none" stroke="${c}" stroke-opacity=".28"/>`;
 
   const trace = (d: string, width = 2, dash = '', color = c, opacity = 1) => `<path d="${d}" fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
+  const unstablePlanet = (x: number, y: number, r: number) => `${planet(x, y, r)}
+    <circle cx="${x}" cy="${y}" r="${r * 1.7}" fill="url(#${artId}-unstable)"/>
+    <circle cx="${x}" cy="${y}" r="${r + 2}" fill="none" stroke="#c32440" stroke-width="1.8"/>
+    <circle cx="${x}" cy="${y}" r="${r + 8}" fill="none" stroke="#c32440" stroke-opacity=".3"/>`;
+  const whiteHole = (x: number, y: number, r: number) => `${art.singularity(x, y, r)}
+    <ellipse cx="${x}" cy="${y}" rx="${r * .38}" ry="${r * .72}" transform="rotate(24 ${x} ${y})" fill="#edf7ff" fill-opacity=".16" stroke="#edf7ff" stroke-width="2"/>
+    <ellipse cx="${x}" cy="${y}" rx="${r * .17}" ry="${r * .48}" transform="rotate(24 ${x} ${y})" fill="#fff" fill-opacity=".75"/>`;
+  const modeMark = pick.mode === 'solar' ? art.sun(267, 40, .48) : pick.mode === 'horizon' ? art.singularity(267, 40, 12) : '';
+  /** A stroke for each anomaly in play, each in its own corner of the chart. */
+  const anomalyMarks = (anomalies: readonly Anomaly[]): string => {
+    const marks: Record<Anomaly, string> = {
+      whiteHole: `<ellipse cx="160" cy="100" rx="12" ry="24" fill="none" stroke="#d9e6ff"/>`,
+      unstable: unstablePlanet(88, 132, 17),
+      // Trick Shots Only: up to the wall, off it with a flash, and only then on to the target.
+      trickShots: `<path d="M300 22v124" stroke="${ANOMALY_COLORS.trickShots}" stroke-width="2" opacity=".6"/>
+        ${trace('M34 150Q170 76 300 56L236 28', 1.8, '', ANOMALY_COLORS.trickShots)}${spark(300, 56)}${ship(34, 150, 70, '#e8e4d8')}`,
+      // Pinball: a ball comes off a planet in a V.
+      pinball: `${planet(92, 60, 12)}${trace('M28 22L84 50L134 22', 1.8, '', ANOMALY_COLORS.pinball)}
+        <circle cx="84" cy="50" r="9" fill="none" stroke="${ANOMALY_COLORS.pinball}" opacity=".6"/>`,
+      // Time Fuse: a dashed flight that ends in a blast, with nothing hit.
+      fuse: `${trace('M108 182Q150 150 222 160', 1.6, '4 4', ANOMALY_COLORS.fuse)}
+        <circle cx="236" cy="160" r="16" fill="${ANOMALY_COLORS.fuse}" opacity=".18"/><circle cx="236" cy="160" r="10" fill="none" stroke="${ANOMALY_COLORS.fuse}" stroke-width="2"/>
+        <path d="M236 138v-8M236 182v8M214 160h-8M258 160h8" stroke="${ANOMALY_COLORS.fuse}" stroke-width="2"/>`,
+      // Fusion: two shots meet, and one heavier shot in both colours flies on.
+      fusion: `${trace('M196 30L232 64', 1.5, '', '#6fe3c8')}${trace('M268 22L232 64', 1.5, '', '#ffad65')}
+        ${trace('M232 64L270 104', 4, '', ANOMALY_COLORS.fusion)}
+        <circle cx="270" cy="104" r="6" fill="${ANOMALY_COLORS.fusion}"/><circle cx="270" cy="104" r="10" fill="none" stroke="#ffad65" opacity=".7"/>`,
+    };
+    return anomalies.map((anomaly) => marks[anomaly]).join('');
+  };
   const spark = (x: number, y: number, color = '#ffe4a7') => `<g transform="translate(${x} ${y})" stroke="${color}" stroke-width="1.5"><path d="M-7 0H7M0-7V7m-4-4 8 8m0-8-8 8"/><circle r="2.5" fill="${color}"/></g>`;
 
   const scenes: Record<HandpickedId, string> = {
@@ -113,20 +153,43 @@ export function pickArt(pick: HandpickedPreset): SVGElement {
       ${ship(29, 149, 70, '#6fe3c8')}${ship(278, 138, -85, c, .7)}`,
     ringRoad: `${line('M25 44 295 44 295 150 25 150 25 44', 1.5, '5 7')}${planet(135, 84, 14)}${planet(213, 122, 12)}<path d="M295 62q11 16 0 32M25 62q-11 16 0 32" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"/>${line('M62 132Q148 160 232 112T295 78')}${line('M25 78Q58 62 100 70', 2)}<path d="m92 62 10 8-12 3" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>${ship(62, 132, -18)}${ship(114, 70, 170, '#ffad65')}`,
     lapRecord: `${line('M25 44 295 44 295 150 25 150 25 44', 1.5, '5 7')}${planet(78, 100, 13)}${planet(252, 96, 15, false, true)}<path d="M198 44q16 -11 32 0M198 150q16 11 32 0" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"/>${line('M52 124Q118 96 168 66T214 44')}${line('M214 150Q226 134 241 112', 2)}<path d="m232 118 9-8 2 12" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>${ship(52, 124, 28)}${ship(248, 96, 105, '#ffad65')}`,
+    pinballKing: anomalyMarks(pick.rules.anomalies),
+    supernova: anomalyMarks(pick.rules.anomalies),
+    bigBang: `${modeMark}${unstablePlanet(78, 120, 18)}${unstablePlanet(247, 96, 15)}
+      ${trace('M27 38Q66 10 116 71L158 98', 2, '', '#6fe3c8')}${trace('M37 167Q117 173 158 98', 2, '', '#ffad65')}
+      <circle cx="158" cy="98" r="34" fill="#b02f47" fill-opacity=".15"/><circle cx="158" cy="98" r="23" fill="none" stroke="#d44960" stroke-dasharray="4 4"/>
+      ${spark(158, 98)}${trace('M158 49V34M158 147v17M109 98H93M207 98h17M123 63l-12-12M193 133l12 12M193 63l12-12M123 133l-12 12', 2)}
+      ${ship(27, 38, 55, '#6fe3c8')}${ship(37, 167, -45, '#ffad65')}`,
+    theCollapse: `${whiteHole(160, 98, 26)}${anomalyMarks(pick.rules.anomalies)}
+      ${trace('M112 90Q104 127 150 136T203 97Q202 60 163 60', 1.3, '3 5', '#edf7ff', .55)}`,
+    chainReaction: `${modeMark}${unstablePlanet(91, 78, 20)}${unstablePlanet(232, 124, 23)}${unstablePlanet(166, 49, 11)}
+      ${trace('M30 152L77 97L145 154L212 103L288 44', 2.3, '', ANOMALY_COLORS.pinball)}
+      ${trace('M77 97L125 26M212 103L283 162', 1.4, '4 4', '#ffad65')}
+      ${spark(77, 97, '#e57474')}${spark(212, 103, '#e57474')}${ship(30, 152, 42)}`,
+    secondChance: `${modeMark}${whiteHole(160, 98, 29)}${planet(82, 60, 12)}${planet(237, 145, 15)}
+      ${trace('M28 158Q72 172 105 136T154 101', 2, '', '#8fa3c4')}
+      <ellipse cx="295" cy="64" rx="7" ry="26" fill="#edf7ff" fill-opacity=".18" stroke="#edf7ff" stroke-width="2"/>
+      ${trace('M291 64Q257 35 224 65T176 159', 2.4, '', '#edf7ff')}
+      ${trace('M190 150L176 161L173 143', 2, '', '#edf7ff')}${spark(286, 64, '#edf7ff')}${ship(28, 158, 60)}`,
+
     eventLoop: `${line('M25 44 295 44 295 150 25 150 25 44', 1.5, '5 7')}${planet(86, 66, 11)}<path d="M25 100q-11 16 0 32M295 100q11 16 0 32" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"/>${line('M70 140Q50 126 25 116')}${line('M295 116Q250 112 224 94T186 84', 2)}<path d="m196 80-11 5 8 8" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/><g fill="${c}" opacity=".5"><circle cx="205" cy="92" r="1.6"/><circle cx="214" cy="97" r="1.1"/></g>${ship(70, 140, 175)}`,
   };
 
   const background = '<g fill="#e8e4d8" opacity=".4"><circle cx="32" cy="25" r="1"/><circle cx="107" cy="33" r="1.5"/><circle cx="281" cy="99" r="1"/><circle cx="190" cy="169" r="1"/><circle cx="65" cy="176" r="1"/></g>';
   // Scenes with their own field already include any sun, singularity or open space they need.
-  const hasOwnField = ['bubbleWrap', 'hostileArchitecture', 'noForwardingAddress', 'theUnlearning'].includes(pick.id);
+  const hasOwnField = ['bubbleWrap', 'hostileArchitecture', 'noForwardingAddress', 'theUnlearning', 'bigBang', 'theCollapse', 'chainReaction', 'secondChance'].includes(pick.id);
   const modeField = hasOwnField ? '' : pick.mode === 'horizon'
     ? art.singularity(160, 98, 27)
     : pick.mode === 'solar'
       ? `<g fill="none" stroke="#f2c46d" stroke-opacity=".23"><ellipse cx="160" cy="98" rx="62" ry="34"/><ellipse cx="160" cy="98" rx="104" ry="56"/></g>${art.sun(160, 98)}`
       : '<ellipse cx="160" cy="98" rx="110" ry="58" fill="none" stroke="#b4c8d4" stroke-opacity=".14"/>';
+  // An anomaly bends the chart itself: a red ring round the field, tilted the other way from Mayhem's.
+  const anomaly = pick.rules.anomalies.length
+    ? '<ellipse cx="160" cy="98" rx="138" ry="52" transform="rotate(-24 160 98)" fill="none" stroke="#ff5a6e" stroke-dasharray="2 7" stroke-opacity=".6"/>'
+    : '';
   const mayhem = pick.rules.mayhem > 0
     ? '<ellipse cx="160" cy="98" rx="135" ry="48" transform="rotate(32 160 98)" fill="none" stroke="#ff8660" stroke-dasharray="4 9" stroke-opacity=".65"/>'
     : '';
-  svg.innerHTML = `${art.defs}${art.glow}${background}${modeField}${mayhem}<g>${scenes[pick.id]}</g>`;
+  svg.innerHTML = `${art.defs}<defs><radialGradient id="${artId}-unstable"><stop offset=".35" stop-color="#740b20" stop-opacity=".05"/><stop offset=".6" stop-color="#ae1532" stop-opacity=".4"/><stop offset="1" stop-color="#740b20" stop-opacity="0"/></radialGradient></defs>${art.glow}${background}${modeField}${mayhem}${anomaly}<g>${scenes[pick.id]}</g>`;
   return svg;
 }

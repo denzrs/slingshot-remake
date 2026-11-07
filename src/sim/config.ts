@@ -13,6 +13,34 @@ export const isEdgeMode = (value: unknown): value is EdgeMode => EDGE_MODES.some
  */
 export const LOOP_MARGIN = 28;
 
+/**
+ * Anomalies: rules that each turn one law of the flight round, for the whole match, on top of the mode and its
+ * rules. Any of them can be on at once. In this order they are listed, kept and sent over the wire.
+ * - `trickShots` (Trick Shots Only): a shot kills only once it is armed, by a bounce, a wormhole, a loop's edge or a swing-by.
+ * - `pinball`: planets throw shots back instead of stopping them.
+ * - `fuse` (Zeitzünder): every shot goes off where it is when its fuse burns down, and takes the ships close by with it.
+ * - `fusion`: two shots that meet melt into one, which both shooters own.
+ * - `whiteHole`: black holes return shots through a random edge.
+ * - `unstable`: impacts crack planets until they shatter; smaller bodies take fewer hits.
+ */
+export const ANOMALIES = ['trickShots', 'pinball', 'fuse', 'fusion', 'whiteHole', 'unstable'] as const;
+export type Anomaly = (typeof ANOMALIES)[number];
+export const isAnomaly = (value: unknown): value is Anomaly => ANOMALIES.some((anomaly) => anomaly === value);
+
+export const ANOMALY = {
+  /** Zeitzünder: each round the fuse burns between these shares of the shot time, drawn from the round's seed (so every client knows it). */
+  FUSE_MIN: 0.25,
+  FUSE_MAX: 0.5,
+  /** Zeitzünder: a fuse never burns shorter than this, however short the shot time (s). */
+  FUSE_FLOOR: 2,
+  /** Zeitzünder: a blast takes every ship whose centre is this close. */
+  BLAST_RADIUS: 48,
+  /** Fusion: a melted shot is this much wider for the ships it hits (added to the ship's radius). */
+  FUSED_REACH: 6,
+  /** Fusion: the share of a kill (its points and extras) each owner of a melted shot gets. */
+  FUSION_SHARE: 0.5,
+} as const;
+
 export const MAX_PLAYERS = 6;
 
 export const PHYSICS = {

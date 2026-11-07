@@ -1,0 +1,19 @@
+body.dev-home-page { margin: 0; background: #0b1a33; color: #e8e4d8; font: 14px/1.5 'B612', system-ui, sans-serif; color-scheme: dark; }
+.dev-home, .dev-home * { box-sizing: border-box; }
+.dev-home { max-width: 1280px; margin: 0 auto; padding: clamp(16px, 2.5vw, 28px) max(16px, 3vw) 28px; }
+.dev-home__eyebrow { margin: 0 0 4px; color: #ffad65; font: 700 10px/1.4 'B612 Mono', monospace; letter-spacing: .18em; }
+.dev-home h1 { margin: 0; font: 800 clamp(28px, 4vw, 42px)/1 'Big Shoulders Stencil Display', sans-serif; text-transform: uppercase; }
+.dev-home__intro { color: #9aa6bd; max-width: 65ch; margin: 6px 0 18px; font-size: 13px; }
+.dev-home__pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 12px; }
+.dev-home__page { display: flex; flex-direction: column; min-width: 0; gap: 6px; border: 1px solid #365175; border-top: 2px solid #6fe3c8; padding: 14px 16px; color: inherit; text-decoration: none; background: #0d1e37; }
+.dev-home__page:is(:hover, :focus-visible) { background: #132746; border-color: #6fe3c8; }
+.dev-home__page:focus-visible { outline: 2px solid #ffd27a; outline-offset: 3px; }
+.dev-home__number { color: #6fe3c8; font: 11px/1.2 'B612 Mono', monospace; }
+.dev-home h2 { margin: 0; font: 800 22px/1.1 'Big Shoulders Stencil Display', sans-serif; text-transform: uppercase; }
+.dev-home__page p { margin: 0; color: #9aa6bd; font-size: 12px; line-height: 1.45; }
+.dev-home__page > code { margin-top: auto; padding-top: 4px; }
+.dev-home code { font: 11px/1.5 'B612 Mono', monospace; color: #a3eddb; overflow-wrap: anywhere; }
+.dev-home__page.is-disabled { border-top-color: #8f7b57; }
+.dev-home__page.is-disabled .dev-home__number { color: #cfb585; }
+.dev-home__page .dev-home__gate { padding-top: 6px; border-top: 1px solid #294364; color: #cfb585; }
+.dev-home__foot { margin: 16px 0 0; color: #9aa6bd; font: 11px/1.5 'B612 Mono', monospace; }

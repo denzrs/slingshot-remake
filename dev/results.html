@@ -1,4 +1,4 @@
-<!-- Browser regression: npm run dev, then open /tests/browser/results.html?check.
+<!-- Browser regression: npm run dev, then open /dev/results.html?check.
      Uses the real Menu and result screen, including shortcuts outside the screen DOM. -->
 <!doctype html>
 <html lang="de">
@@ -20,7 +20,7 @@
       import { createMatch } from '/src/game/index.ts';
       import { cloneSettings, DEFAULT_SETTINGS } from '/src/data/settings.ts';
       import { Menu } from '/src/ui/menu/menu.ts';
-      import { gameOverScreen } from '/src/ui/screens/index.ts';
+      import { gameOverScreen } from '/src/ui/screens/game-over.ts';
       import { Sound } from '/src/platform/audio.ts';
       import { setLang } from '/src/platform/i18n.ts';
 
@@ -99,11 +99,12 @@
         match.dispose();
         const output = document.createElement('pre');
         output.textContent = status;
-        output.style.cssText = 'position:fixed;inset:20px;z-index:999;background:#081426;color:#6fe3c8;padding:24px;white-space:pre-wrap';
+        output.style.cssText = 'position:fixed;inset:calc(var(--dev-header-height, 0px) + 20px) 20px 20px;z-index:999;overflow:auto;background:#081426;color:#6fe3c8;padding:24px;white-space:pre-wrap';
         document.querySelector('.screen')?.setAttribute('aria-modal', 'false');
         document.body.append(output);
         document.title = status.split('\n')[0];
       }
     </script>
+    <script type="module" src="/src/debug/dev-shell.ts"></script>
   </body>
 </html>

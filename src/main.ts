@@ -10,7 +10,7 @@ import './ui/menu/menu-page.css';
 import { Sound } from './platform/audio';
 import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
 import { ClipRecorder } from './platform/clip';
-import { AIM, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
+import { AIM, ANOMALY, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
 import { createUiPreview, UI_PREVIEWS, type UiPreview } from './debug/devPreview';
 import { InfallDemo } from './debug/infallDemo';
 import { SupernovaDemo } from './debug/supernovaDemo';
@@ -32,7 +32,7 @@ import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './sim/scoring';
 import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './data/settings';
-import { dailyResultScreen } from './ui/daily/daily';
+import { dailyResultScreen, dailyScreen } from './ui/daily/daily';
 import { shotReplayScreen } from './ui/daily/shot';
 import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/room/chat';
@@ -102,17 +102,23 @@ const infallDemo = import.meta.env.DEV && requestedPreview === 'infall' ? new In
 
 const active = (): Match => (screen === 'play' && match ? match : attract);
 
+/** The sound of a round's announcement: the anomalies' alarm, then Mayhem's reel if the round has twists too. */
+function announce(m: Match): void {
+  if (m.anomalyAlert) sound.alarm();
+  if (m.mayhem) sound.reveal(m.mayhem.jackpot);
+}
+
 function wire(m: Match): void {
   const audible = m !== attract;
   const color = (id: number) => m.players[id].color;
-  // The first round of a Mayhem match is announced before anybody is listening for the round event.
-  if (audible && m.revealing) sound.reveal(m.mayhem!.jackpot);
+  // The first round of a Mayhem match, or of one with anomalies, is announced before anybody is listening for the round event.
+  if (audible && m.revealing) announce(m);
   m.on((e) => {
     if (active() !== m) return;
     switch (e.type) {
       case 'round':
         effects.clear();
-        if (audible && m.revealing) sound.reveal(m.mayhem!.jackpot);
+        if (audible && m.revealing) announce(m);
         break;
       case 'fire':
         effects.muzzle(e.x, e.y, e.angle, color(e.player));
@@ -142,6 +148,10 @@ function wire(m: Match): void {
       case 'blackhole':
         effects.collapse(e.x, e.y);
         if (audible) sound.devour();
+        break;
+      case 'planetShatter':
+        effects.shatter(e.x, e.y, e.color, e.radius);
+        if (audible) sound.explode();
         break;
       case 'planetKiller': {
         const ship = m.world.ships[e.player];
@@ -194,6 +204,23 @@ function wire(m: Match): void {
         effects.explode(e.x, e.y, color(e.ship), e.vx, e.vy);
         if (audible) sound.explode();
         break;
+      case 'armed':
+        effects.armed(e.x, e.y, color(e.player));
+        effects.callout(t('anomaly.armed'), e.x, e.y - 14, color(e.player));
+        if (audible) sound.split();
+        break;
+      case 'warning':
+        effects.warning(e.x, e.y, color(e.player));
+        if (audible) sound.blip();
+        break;
+      case 'blast':
+        effects.detonation(e.x, e.y, ANOMALY.BLAST_RADIUS, color(e.player));
+        if (audible) sound.explode();
+        break;
+      case 'fusion':
+        effects.fusion(e.x, e.y, color(e.players[0]), color(e.players[1]));
+        if (audible) sound.clash();
+        break;
       case 'fizzle':
         if (!e.lost) effects.fizzle(e.x, e.y, color(e.player), e.vx, e.vy);
         if (audible) sound.fizzle();
@@ -236,6 +263,9 @@ function wire(m: Match): void {
         if (audible) sound.rumble();
         break;
       case 'suddenDeath':
+        if (audible) sound.rumble();
+        break;
+      case 'freeFire':
         if (audible) sound.rumble();
         break;
       case 'supernova':
@@ -906,7 +936,7 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const m = active();
-  // The seed badge (a shortcut into debug-aim.html) follows the same switch that serves the page.
+  // The seed badge (a shortcut into /dev/aim.html) follows the same switch that serves the page.
   debugSeedBadge.hidden = !import.meta.env.DEBUG_AIM || screen !== 'play' || !match;
   if (!debugSeedBadge.hidden) {
     const current = match!;
@@ -934,7 +964,7 @@ function frame(now: number): void {
       fixedPower: String(current.settings.fixedPowerLevel),
       maxPower: String(current.settings.maxPower),
     });
-    debugSeedBadge.href = `/debug-aim.html?${query}`;
+    debugSeedBadge.href = `/dev/aim.html?${query}`;
   }
   const net = online();
   // Online the others keep playing, so a menu on top doesn't stop the world.
@@ -1029,6 +1059,13 @@ async function boot(): Promise<void> {
     app.toTitle();
     // The statistics page has no menu entry: it is at /stats.
     if (statsAvailable() && /\/stats\/?$/.test(location.pathname)) menu.push(() => statsScreen(app));
+    else if (forcedDay) {
+      if (new URLSearchParams(location.search).has('start')) {
+        app.startDaily();
+      } else {
+        menu.push(() => dailyScreen(app));
+      }
+    }
   }
   requestAnimationFrame(frame);
 }

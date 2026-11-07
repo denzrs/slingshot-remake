@@ -1,6 +1,6 @@
-import { COLORS, FIELD, HORIZON, NEBULA, SOLAR, WORMHOLE } from '../../sim/config';
+import { ANOMALY, COLORS, FIELD, HORIZON, NEBULA, SOLAR, WORMHOLE, type Anomaly } from '../../sim/config';
 import { t } from '../../platform/i18n';
-import { cloneWorld, Shot, type ShotEnd, type StyleEvent, type StyleKind, type World } from '../../sim/physics';
+import { cloneWorld, Shot, type ShotEnd, type ShotRules, type StyleEvent, type StyleKind, type World } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
 import { drawBlackHole } from '../../render/blackhole';
 import { drawDefense } from '../../render/defense';
@@ -8,10 +8,11 @@ import { drawNebula } from '../../render/nebula';
 import { drawStormCloud } from '../../render/storm';
 import { drawSun } from '../../render/sun';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../../render/powerup-art';
+import { ANOMALY_COLORS } from '../../render/anomaly-art';
 import type { PlanetSprite } from '../../render/planet-common';
 import { renderPlanet } from '../../render/planets';
 
-export type TutorialPreviewKind = 'welcome' | 'aim' | 'gravity' | 'round' | 'horizon' | 'solar' | 'powerups' | 'powerupsField' | 'tricks' | 'daily' | 'keys';
+export type TutorialPreviewKind = 'welcome' | 'aim' | 'gravity' | 'horizon' | 'solar' | 'powerups' | 'powerupsField' | 'tricks' | 'daily' | 'keys' | 'anomalies';
 
 interface Point {
   x: number;
@@ -29,11 +30,15 @@ interface Flight {
   reflects: ({ ship: number } & Point & { time: number })[];
   warps: { from: Point; to: Point; time: number }[];
   missiles: { points: Point[]; times: number[] }[];
+  arms?: { x: number; y: number; time: number }[];
+  warnings?: { ship: number; x: number; y: number; time: number }[];
+  bumps?: { planet: number; x: number; y: number; time: number }[];
   end: ShotEnd | null;
   duration: number;
   startTime: number;
   ghost?: boolean;
   dashed?: boolean;
+  thick?: boolean;
 }
 
 interface Demo {
@@ -44,10 +49,13 @@ interface Demo {
   target?: Point;
   powerUp?: PowerUpKind;
   trick?: StyleKind;
+  anomaly?: Anomaly;
   teleport?: { from: Point; to: Point };
   removedPlanet?: World['planets'][number];
   split?: { point: Point; time: number };
   duration: number;
+  unstablePlanet?: { planet: World['planets'][number]; crackTime: number; shatterTime: number };
+  fusionPoint?: { point: Point; time: number };
 }
 
 export interface TutorialPreviewController {
@@ -64,7 +72,7 @@ function planet(x: number, y: number, radius: number, style: 'rocky' | 'gas' | '
 }
 
 function createWorld(kind: TutorialPreviewKind, powerUp?: PowerUpKind): World {
-  const players = kind === 'round' || kind === 'horizon' ? 4 : 2;
+  const players = kind === 'horizon' ? 4 : 2;
   const ships = [
     { x: 130, y: 550, alive: true },
     { x: 1150, y: 245, alive: true },
@@ -139,6 +147,8 @@ interface TraceOptions {
   spare?: readonly number[];
   color?: string;
   dashed?: boolean;
+  thick?: boolean;
+  rules?: Partial<ShotRules>;
 }
 
 function startFlight(shot: Shot, shooter: number, options: TraceOptions = {}): Flight {
@@ -153,15 +163,19 @@ function startFlight(shot: Shot, shooter: number, options: TraceOptions = {}): F
     reflects: [],
     warps: [],
     missiles: [],
+    arms: [],
+    warnings: [],
+    bumps: [],
     end: null,
     duration: shot.time,
     startTime: 0,
     ghost: false,
     dashed: options.dashed,
+    thick: options.thick,
   };
 }
 
-function recordStep(flight: Flight, shot: Shot, step: number, counts: { hits: number; reflects: number; warps: number; style: number }): ShotEnd | null {
+function recordStep(flight: Flight, shot: Shot, step: number, counts: { hits: number; reflects: number; warps: number; style: number; arms: number; warnings: number; bumps: number }): ShotEnd | null {
   const end = shot.step();
   const time = shot.time;
   while (counts.hits < shot.hits.length) {
@@ -181,6 +195,18 @@ function recordStep(flight: Flight, shot: Shot, step: number, counts: { hits: nu
   while (shot.style && counts.style < shot.style.length) {
     flight.style.push({ ...shot.style[counts.style], time });
     counts.style++;
+  }
+  while (counts.arms < shot.arms.length) {
+    flight.arms?.push({ ...shot.arms[counts.arms], time });
+    counts.arms++;
+  }
+  while (counts.warnings < shot.warnings.length) {
+    flight.warnings?.push({ ...shot.warnings[counts.warnings], time });
+    counts.warnings++;
+  }
+  while (counts.bumps < shot.bumps.length) {
+    flight.bumps?.push({ ...shot.bumps[counts.bumps], time });
+    counts.bumps++;
   }
   for (const missile of shot.missiles) {
     const path = flight.missiles[missile.defense] ?? (flight.missiles[missile.defense] = { points: [], times: [] });
@@ -207,10 +233,14 @@ function finishFlight(flight: Flight, shot: Shot): Flight {
 }
 
 function trace(world: World, shooter: number, angle: number, power: number, ghost = false, options: TraceOptions = {}): Flight {
-  const rules = { edges: options.bounce ? ('wall' as const) : SHOT_RULES.edges, timeLimit: options.timeLimit ?? SHOT_RULES.timeLimit };
+  const rules = {
+    edges: options.bounce ? ('wall' as const) : SHOT_RULES.edges,
+    timeLimit: options.timeLimit ?? SHOT_RULES.timeLimit,
+    ...options.rules,
+  };
   const shot = new Shot(world, shooter, angle, power, rules, true, options.spare ?? [], options.pierce, options.plasma);
   const flight = startFlight(shot, shooter, options);
-  const counts = { hits: 0, reflects: 0, warps: 0, style: 0 };
+  const counts = { hits: 0, reflects: 0, warps: 0, style: 0, arms: 0, warnings: 0, bumps: 0 };
   for (let step = 0; step < Math.ceil(rules.timeLimit * 240) + 4; step++) {
     if (recordStep(flight, shot, step, counts)) break;
   }
@@ -221,7 +251,7 @@ function trace(world: World, shooter: number, angle: number, power: number, ghos
 function traceSplit(world: World, angle: number, power: number): { flights: Flight[]; split: { point: Point; time: number } } {
   const shot = new Shot(world, 0, angle, power, SHOT_RULES, true);
   const main = startFlight(shot, 0);
-  const mainCounts = { hits: 0, reflects: 0, warps: 0, style: 0 };
+  const mainCounts = { hits: 0, reflects: 0, warps: 0, style: 0, arms: 0, warnings: 0, bumps: 0 };
   const splitAt = Math.round(0.62 / (1 / 240));
   for (let step = 0; step < splitAt; step++) {
     if (recordStep(main, shot, step, mainCounts)) break;
@@ -230,7 +260,7 @@ function traceSplit(world: World, angle: number, power: number): { flights: Flig
   const branches = [-5, 5].map((turn) => {
     const fork = shot.fork((turn * Math.PI) / 180);
     const branch = startFlight(fork, 0);
-    const counts = { hits: 0, reflects: 0, warps: 0, style: fork.style?.length ?? 0 };
+    const counts = { hits: 0, reflects: 0, warps: 0, style: fork.style?.length ?? 0, arms: 0, warnings: 0, bumps: 0 };
     for (let step = 0; step < 1100; step++) {
       if (recordStep(branch, fork, step, counts)) break;
     }
@@ -305,8 +335,106 @@ function buildTrickDemo(trick: StyleKind): Demo {
   return completedDemo({ kind: 'tricks', world, flights, pickups: [], trick });
 }
 
-function buildDemo(kind: TutorialPreviewKind, powerUp?: PowerUpKind, trick?: StyleKind): Demo {
+function buildAnomalyDemo(anomaly: Anomaly): Demo {
+  const world = createWorld('anomalies');
+  const flights: Flight[] = [];
+  const pickups: Demo['pickups'] = [];
+  let unstablePlanet: Demo['unstablePlanet'];
+  let fusionPoint: Demo['fusionPoint'];
+
+  switch (anomaly) {
+    case 'trickShots': {
+      const host = planet(640, 550, 60, 'gas', '#b99cff', 171);
+      duel(world, [ship(130, 400), ship(1150, 400)], [host]);
+      const direct = trace(world, 0, 0, 50, false, { color: '#b8c7dc', dashed: true, rules: { trickShots: true } });
+      direct.hits = [];
+      direct.startTime = 0;
+      const trickFlight = trace(world, 0, -41.5, 39, false, { rules: { trickShots: true } });
+      trickFlight.startTime = 0.35;
+      flights.push(direct, trickFlight);
+      break;
+    }
+    case 'pinball': {
+      const bumper = planet(640, 360, 60, 'rocky', '#c78f6d', 100);
+      duel(world, [ship(130, 520), ship(1150, 520)], [bumper]);
+      const normal = cloneWorld(world);
+      normal.ships[1].alive = false;
+      const direct = trace(normal, 0, 5, 38, false, { color: '#b8c7dc', dashed: true, rules: { pinball: false } });
+      const bounce = trace(world, 0, 5, 38, false, { color: ANOMALY_COLORS.pinball, rules: { pinball: true } });
+      flights.push(direct, bounce);
+      break;
+    }
+    case 'fuse': {
+      duel(world, [ship(130, 400), ship(680, 440)]);
+      const fuseTime = 1.7;
+      const shot = trace(world, 0, 0, 38, false, { color: ANOMALY_COLORS.fuse, rules: { fuse: fuseTime } });
+      flights.push(shot);
+      break;
+    }
+    case 'whiteHole': {
+      duel(world, [ship(130, 400), ship(1072, 328)]);
+      world.holes.push({ x: 500, y: 400, radius: 28, mass: 260_000 });
+      const shot = trace(world, 0, 0, 40, false, { color: ANOMALY_COLORS.whiteHole, rules: { whiteHole: true } });
+      flights.push(shot);
+      break;
+    }
+    case 'unstable': {
+      const targetPlanet = planet(640, 400, 24, 'rocky', '#ee8469', 505);
+      duel(world, [ship(130, 400), ship(1150, 400)], [targetPlanet]);
+
+      const shot1 = trace(world, 0, 0, 50, false, { color: COLORS.players[0] });
+      const crackTime = shot1.duration;
+
+      const shot2 = trace(world, 0, 0, 50, false, { color: COLORS.players[0] });
+      shot2.startTime = crackTime + 0.45;
+      const shatterTime = shot2.startTime + shot2.duration;
+
+      const openWorld = cloneWorld(world);
+      openWorld.planets = [];
+      const shot3 = trace(openWorld, 0, 0, 50, false, { color: ANOMALY_COLORS.unstable });
+      shot3.startTime = shatterTime + 0.35;
+
+      unstablePlanet = { planet: targetPlanet, crackTime, shatterTime };
+      flights.push(shot1, shot2, shot3);
+      break;
+    }
+    case 'fusion': {
+      duel(world, [ship(130, 300), ship(1150, 400), ship(130, 500)]);
+      const angle0 = -15.12;
+      const angle2 = 15.12;
+      const power = 50;
+      const mergeX = 487;
+      const mergeY = 400;
+      const mergeTime = 0.875;
+
+      const f0 = trace(world, 0, angle0, power, false, { timeLimit: mergeTime });
+      const f2 = trace(world, 2, angle2, power, false, { timeLimit: mergeTime, color: COLORS.players[2] });
+
+      const fusedWorld = cloneWorld(world);
+      fusedWorld.ships[0] = ship(mergeX - 20, mergeY);
+      const fusedFlight = trace(fusedWorld, 0, 0, power, false, { color: ANOMALY_COLORS.fusion, thick: true });
+      fusedFlight.startTime = mergeTime;
+
+      fusionPoint = { point: { x: mergeX, y: mergeY }, time: mergeTime };
+      flights.push(f0, f2, fusedFlight);
+      break;
+    }
+  }
+
+  return completedDemo({
+    kind: 'anomalies',
+    world,
+    flights,
+    pickups,
+    anomaly,
+    unstablePlanet,
+    fusionPoint,
+  });
+}
+
+function buildDemo(kind: TutorialPreviewKind, powerUp?: PowerUpKind, trick?: StyleKind, anomaly?: Anomaly): Demo {
   if (kind === 'tricks' && trick) return buildTrickDemo(trick);
+  if (kind === 'anomalies') return buildAnomalyDemo(anomaly ?? 'trickShots');
   const world = createWorld(kind, powerUp);
   const flights: Flight[] = [];
   const pickups: Demo['pickups'] = [];
@@ -433,20 +561,6 @@ function buildDemo(kind: TutorialPreviewKind, powerUp?: PowerUpKind, trick?: Sty
         flights.push(trace(world, 0, 0, 50));
         break;
       }
-      case 'round': {
-        duel(world, [ship(130, 400), ship(1150, 400), ship(1150, 700), ship(130, 700)]);
-        const turns: [number, number][] = [[0, 1], [2, 3], [0, 2]];
-        let start = 0;
-        for (const [shooter, victim] of turns) {
-          const shot = trace(world, shooter, angleTo(world.ships[shooter], world.ships[victim]), 50);
-          shot.startTime = start;
-          flights.push(shot);
-          start += shot.duration;
-          world.ships[victim].alive = false;
-        }
-        world.ships.forEach((player) => { player.alive = true; });
-        break;
-      }
       case 'horizon':
         world.planets = [];
         for (let i = 0; i < world.ships.length; i++) flights.push(trace(world, i, angleTo(world.ships[i], world.holes[0]), 48));
@@ -568,7 +682,7 @@ function drawTrack(ctx: CanvasRenderingContext2D, flight: Flight, localTime: num
   ctx.save();
   ctx.globalAlpha = faint ? 0.22 : flight.ghost ? 0.42 : flight.dashed ? 0.78 : 0.96;
   ctx.strokeStyle = flight.color;
-  ctx.lineWidth = faint ? 2 : flight.ghost || flight.dashed ? 2.7 : 4.5;
+  ctx.lineWidth = faint ? 2 : flight.ghost || flight.dashed ? 2.7 : flight.thick ? 6.5 : 4.5;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   if (faint || flight.ghost || flight.dashed) ctx.setLineDash([9, 13]);
@@ -584,7 +698,7 @@ function drawTrack(ctx: CanvasRenderingContext2D, flight: Flight, localTime: num
   if (!faint && !flight.ghost) {
     const p = points[visible - 1];
     ctx.beginPath();
-    ctx.arc(p.x, p.y, flight.dashed ? 6 : 8, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, flight.dashed ? 6 : flight.thick ? 10 : 8, 0, Math.PI * 2);
     ctx.fillStyle = flight.color;
     ctx.shadowColor = flight.color;
     ctx.shadowBlur = 18;
@@ -737,6 +851,14 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
     ctx.save();
     if (demo.powerUp === 'blackhole') ctx.globalAlpha = Math.min(1, simTime / 0.45);
     drawBlackHole(ctx, hole, time);
+    if (demo.anomaly === 'whiteHole') {
+      ctx.beginPath();
+      ctx.arc(hole.x, hole.y, Math.max(4, hole.radius * 0.4), 0, Math.PI * 2);
+      ctx.fillStyle = '#edf7ff';
+      ctx.shadowColor = '#edf7ff';
+      ctx.shadowBlur = 12;
+      ctx.fill();
+    }
     ctx.restore();
   }
   for (const cloud of demo.world.nebulae) {
@@ -751,6 +873,7 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
     ctx.restore();
   }
   for (const p of demo.world.planets) {
+    if (demo.unstablePlanet && p.seed === demo.unstablePlanet.planet.seed) continue;
     if (p.sun) {
       drawSun(ctx, p, time);
       continue;
@@ -761,6 +884,71 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
       sprites.set(p.seed, sprite);
     }
     sprite.draw(ctx, p.x, p.y, 1, time);
+  }
+  if (demo.unstablePlanet) {
+    const { planet: p, crackTime, shatterTime } = demo.unstablePlanet;
+    if (simTime < shatterTime) {
+      let sprite = sprites.get(p.seed);
+      if (!sprite) {
+        sprite = renderPlanet(p, 1);
+        sprites.set(p.seed, sprite);
+      }
+      sprite.draw(ctx, p.x, p.y, 1, time);
+
+      if (simTime >= crackTime) {
+        const crackAge = simTime - crackTime;
+        const pulse = 0.5 + 0.5 * Math.sin(crackAge * 10);
+        ctx.save();
+        ctx.strokeStyle = ANOMALY_COLORS.unstable;
+        ctx.fillStyle = ANOMALY_COLORS.unstable;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = ANOMALY_COLORS.unstable;
+        ctx.shadowBlur = 8 + pulse * 6;
+        ctx.globalAlpha = 0.75 + pulse * 0.25;
+
+        ctx.beginPath();
+        ctx.moveTo(p.x - p.radius * 0.8, p.y - p.radius * 0.2);
+        ctx.lineTo(p.x - p.radius * 0.2, p.y);
+        ctx.lineTo(p.x + p.radius * 0.1, p.y - p.radius * 0.5);
+        ctx.lineTo(p.x + p.radius * 0.7, p.y - p.radius * 0.3);
+        ctx.moveTo(p.x - p.radius * 0.2, p.y);
+        ctx.lineTo(p.x + p.radius * 0.3, p.y + p.radius * 0.4);
+        ctx.lineTo(p.x + p.radius * 0.8, p.y + p.radius * 0.6);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius + 4 + pulse * 3, 0, Math.PI * 2);
+        ctx.setLineDash([4, 6]);
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+      }
+    } else {
+      const age = simTime - shatterTime;
+      if (age < 0.65) {
+        const life = 1 - age / 0.65;
+        ctx.save();
+        ctx.strokeStyle = ANOMALY_COLORS.unstable;
+        ctx.shadowColor = ANOMALY_COLORS.unstable;
+        ctx.shadowBlur = 16;
+        ctx.lineWidth = 3 * life + 1;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius + age * 110, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = p.tint;
+        for (let i = 0; i < 8; i++) {
+          const angle = (i * Math.PI) / 4 + 0.3;
+          const dist = p.radius * 0.6 + age * (70 + (i % 3) * 30);
+          const dx = p.x + Math.cos(angle) * dist;
+          const dy = p.y + Math.sin(angle) * dist;
+          ctx.beginPath();
+          ctx.arc(dx, dy, Math.max(1.5, (4 - (i % 2)) * life), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
   }
   if (demo.removedPlanet) {
     const p = demo.removedPlanet;
@@ -823,6 +1011,64 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
       ctx.arc(demo.split.point.x, demo.split.point.y, 12 + age * 95, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
+    }
+  }
+  if (demo.fusionPoint && simTime >= demo.fusionPoint.time) {
+    const age = simTime - demo.fusionPoint.time;
+    if (age < 0.6) {
+      const life = 1 - age / 0.6;
+      const { point } = demo.fusionPoint;
+      ctx.save();
+      ctx.globalAlpha = life;
+      ctx.strokeStyle = ANOMALY_COLORS.fusion;
+      ctx.shadowColor = ANOMALY_COLORS.fusion;
+      ctx.shadowBlur = 20;
+      ctx.lineWidth = 3.5 * life + 1;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 8 + age * 85, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3 + age * 5;
+        const dist = 12 + age * 50;
+        ctx.beginPath();
+        ctx.arc(point.x + Math.cos(a) * dist, point.y + Math.sin(a) * dist, 2.5 * life, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+  if (demo.anomaly === 'fuse' && demo.flights[0]) {
+    const flight = demo.flights[0];
+    const detonateTime = flight.startTime + flight.duration;
+    if (simTime >= detonateTime) {
+      const age = simTime - detonateTime;
+      if (age < 0.6) {
+        const life = 1 - age / 0.6;
+        const blastCenter = flight.points[flight.points.length - 1];
+        ctx.save();
+        ctx.globalAlpha = life * 0.35;
+        ctx.fillStyle = ANOMALY_COLORS.fuse;
+        ctx.beginPath();
+        ctx.arc(blastCenter.x, blastCenter.y, ANOMALY.BLAST_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.globalAlpha = life;
+        ctx.strokeStyle = ANOMALY_COLORS.fuse;
+        ctx.shadowColor = ANOMALY_COLORS.fuse;
+        ctx.shadowBlur = 18;
+        ctx.lineWidth = 3 * life + 1;
+        ctx.beginPath();
+        ctx.arc(blastCenter.x, blastCenter.y, 10 + age * 65, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(blastCenter.x, blastCenter.y, ANOMALY.BLAST_RADIUS, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
   if (demo.powerUp === 'antigravity') {
@@ -899,6 +1145,76 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
       ctx.beginPath(); ctx.arc(head.x, head.y, 6, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
+    for (const bump of flight.bumps ?? []) {
+      const age = simTime - atTime(flight, bump.time);
+      if (age >= 0 && age < 0.45) {
+        const life = 1 - age / 0.45;
+        ctx.save();
+        ctx.globalAlpha = life;
+        ctx.strokeStyle = ANOMALY_COLORS.pinball;
+        ctx.shadowColor = ANOMALY_COLORS.pinball;
+        ctx.shadowBlur = 14;
+        ctx.lineWidth = 3 * life + 1;
+        ctx.beginPath();
+        ctx.arc(bump.x, bump.y, 10 + age * 70, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    for (const arm of flight.arms ?? []) {
+      const age = simTime - atTime(flight, arm.time);
+      if (age >= 0 && age < 0.8) {
+        const life = Math.min(1, Math.max(0, 1 - age / 0.8));
+        ctx.save();
+        ctx.globalAlpha = life;
+        ctx.strokeStyle = ANOMALY_COLORS.trickShots;
+        ctx.fillStyle = ANOMALY_COLORS.trickShots;
+        ctx.shadowColor = ANOMALY_COLORS.trickShots;
+        ctx.shadowBlur = 16;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(arm.x, arm.y, 8 + age * 40, 0, Math.PI * 2);
+        ctx.stroke();
+        if (age < 0.6) {
+          ctx.font = 'bold 9px "B612 Mono", monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('ARMED', arm.x, arm.y - 14 - age * 15);
+        }
+        ctx.restore();
+      }
+    }
+    for (const warn of flight.warnings ?? []) {
+      const age = simTime - atTime(flight, warn.time);
+      if (age >= 0 && age < 0.6) {
+        const life = 1 - age / 0.6;
+        ctx.save();
+        ctx.globalAlpha = life;
+        ctx.strokeStyle = '#b8c7dc';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(warn.x, warn.y, 22 + age * 30, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    if (demo.anomaly === 'whiteHole') {
+      for (const warp of flight.warps) {
+        ctx.save();
+        const pulse = 0.8 + 0.2 * Math.sin(time * 6);
+        ctx.globalAlpha = pulse;
+        ctx.strokeStyle = ANOMALY_COLORS.whiteHole;
+        ctx.fillStyle = 'rgba(217,230,255,.2)';
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = ANOMALY_COLORS.whiteHole;
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.arc(warp.to.x, warp.to.y, 16, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
     if (demo.kind === 'tricks') {
       for (const moment of flight.style.filter((event) => !demo.trick || event.kind === demo.trick)) {
         const age = simTime - atTime(flight, moment.time);
@@ -932,9 +1248,7 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
     if (flight) while (pointIndex + 1 < flight.times.length && flight.times[pointIndex + 1] <= localTime) pointIndex++;
     const next = flight?.points[Math.min(pointIndex + 1, flight.points.length - 1)];
     const angle = flight && next ? angleTo(ship, next) : 0;
-    const active = demo.kind === 'round'
-      ? Boolean(flight && localTime <= flight.duration)
-      : demo.kind === 'horizon';
+    const active = demo.kind === 'horizon';
     const shieldSpent = demo.flights.some((candidate) => candidate.reflects.some((event) => event.ship === i && atTime(candidate, event.time) <= simTime));
     drawShip(ctx, ship, angle, COLORS.players[i], active, Boolean(ship.shield && !shieldSpent));
   });
@@ -992,12 +1306,27 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
       ctx.fillText(item.label.toUpperCase(), x + 20, canvasHeight - 13);
       x += 26 + ctx.measureText(item.label.toUpperCase()).width;
     }
+  } else if (demo.anomaly === 'trickShots' || demo.anomaly === 'pinball' || demo.anomaly === 'fusion') {
+    const labels = demo.anomaly === 'trickShots'
+      ? [{ color: '#b8c7dc', label: t('tutorial.preview.unarmed') }, { color: ANOMALY_COLORS.trickShots, label: t('tutorial.preview.armedShot') }]
+      : demo.anomaly === 'pinball'
+      ? [{ color: '#b8c7dc', label: t('tutorial.preview.normalShot') }, { color: ANOMALY_COLORS.pinball, label: t('tutorial.preview.bouncedShot') }]
+      : [{ color: COLORS.players[0], label: t('tutorial.preview.shot1') }, { color: COLORS.players[2], label: t('tutorial.preview.shot2') }, { color: ANOMALY_COLORS.fusion, label: t('tutorial.preview.fused') }];
+    ctx.font = '8px "B612 Mono", monospace';
+    let x = 13;
+    for (const item of labels) {
+      ctx.fillStyle = item.color;
+      ctx.fillRect(x, canvasHeight - 17, 15, 2);
+      ctx.fillStyle = COLORS.boneDim;
+      ctx.fillText(item.label.toUpperCase(), x + 20, canvasHeight - 13);
+      x += 26 + ctx.measureText(item.label.toUpperCase()).width;
+    }
   }
 }
 
 /** Mounts a deterministic miniature scene that uses the same projectile physics as a match. */
-export function mountTutorialPreview(canvas: HTMLCanvasElement, kind: TutorialPreviewKind, onProgress: (progress: number) => void, powerUp?: PowerUpKind, trick?: StyleKind): TutorialPreviewController {
-  const demo = buildDemo(kind, powerUp, trick);
+export function mountTutorialPreview(canvas: HTMLCanvasElement, kind: TutorialPreviewKind, onProgress: (progress: number) => void, powerUp?: PowerUpKind, trick?: StyleKind, anomaly?: Anomaly): TutorialPreviewController {
+  const demo = buildDemo(kind, powerUp, trick, anomaly);
   const sprites = new Map<number, PlanetSprite>();
   const ctx = canvas.getContext('2d');
   let observer: ResizeObserver | null = null;
@@ -1011,7 +1340,7 @@ export function mountTutorialPreview(canvas: HTMLCanvasElement, kind: TutorialPr
     if (!ctx || disposed) return;
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
     const width = Math.round(rect.width * dpr);
     const height = Math.round(rect.height * dpr);
     if (canvas.width !== width || canvas.height !== height) {
@@ -1027,7 +1356,7 @@ export function mountTutorialPreview(canvas: HTMLCanvasElement, kind: TutorialPr
     started = performance.now();
     progress = 0;
     time = 0;
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduced) {
       progress = 1;
       onProgress(progress);

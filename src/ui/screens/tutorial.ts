@@ -1,8 +1,9 @@
-import { CHALLENGE, COLORS, HORIZON, SCORING } from '../../sim/config';
+import { ANOMALIES, CHALLENGE, COLORS, HORIZON, SCORING, type Anomaly } from '../../sim/config';
 import { fmtNum, t } from '../../platform/i18n';
 import type { StyleKind } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../../render/powerup-art';
+import { ANOMALY_COLORS, drawAnomalySymbol } from '../../render/anomaly-art';
 import { MARK_COLORS } from '../../render/mark-art';
 import type { MarkKind } from '../../game';
 import { STYLE_MULTIPLIER, styleLabel } from '../../sim/scoring';
@@ -23,6 +24,7 @@ interface Lesson {
   powerUps?: readonly PowerUpKind[];
   marks?: readonly MarkKind[];
   tricks?: readonly StyleKind[];
+  anomalies?: readonly Anomaly[];
 }
 
 const kbd = (k: string) => h('kbd', null, k);
@@ -85,6 +87,23 @@ function trickIcon(kind: StyleKind): HTMLCanvasElement {
   return icon;
 }
 
+/** The anomaly's symbol, drawn on a canvas in its own colour. */
+function anomalyIcon(kind: Anomaly): HTMLCanvasElement {
+  const dpr = typeof devicePixelRatio === 'number' ? Math.max(1, devicePixelRatio) : 1;
+  const size = 22;
+  const icon = h('canvas.anomaly-icon', { width: String(Math.round(size * dpr)), height: String(Math.round(size * dpr)), 'aria-hidden': 'true' }) as HTMLCanvasElement;
+  const ctx = icon.getContext('2d');
+  if (ctx) {
+    ctx.scale(dpr, dpr);
+    ctx.translate(size / 2, size / 2);
+    ctx.strokeStyle = ctx.fillStyle = ANOMALY_COLORS[kind];
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = ctx.lineJoin = 'round';
+    drawAnomalySymbol(ctx, kind, 0, 0, 8);
+  }
+  return icon;
+}
+
 /** The kinds each power-up page lists: first the ones for your own shot, then the ones that go on the field. */
 const POWER_PAGES: readonly [readonly PowerUpKind[], readonly PowerUpKind[]] = [
   ['preview', 'teleport', 'splitter', 'antigravity', 'piercing', 'plasma'],
@@ -106,10 +125,10 @@ function keyboardAim(): HTMLElement[] {
 }
 
 /** The pages of the tutorial, in order. Each one is built when it is shown, so its texts follow the language. */
-const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
+export const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
   (touch) => ({
     title: t('tutorial.welcome.title'),
-    demo: 'welcome',
+    demo: null,
     body: [para(t('tutorial.welcome.1')), para(t('tutorial.welcome.2')), para(t(touch ? 'tutorial.welcome.touch' : 'tutorial.welcome.3'))],
   }),
   (touch, stick) => ({
@@ -131,30 +150,6 @@ const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
     title: t('tutorial.gravity.title'),
     demo: 'gravity',
     body: [para(t('tutorial.gravity.1')), para(t('tutorial.gravity.2')), para(t('tutorial.gravity.3')), h('p.tutorial__tip', null, t('tutorial.gravity.tip'))],
-  }),
-  () => ({
-    title: t('tutorial.round.title'),
-    demo: 'round',
-    body: [
-      para(t('tutorial.round.1')),
-      para(t('tutorial.round.2')),
-      para(t('tutorial.round.3', { selfHit: SCORING.SELF_HIT, survivor: SCORING.SURVIVOR })),
-      para(t('tutorial.round.4')),
-      para(
-        t('tutorial.round.5', {
-          firstBlood: SCORING.FIRST_BLOOD,
-          opener: SCORING.OPENER,
-          revenge: SCORING.REVENGE,
-          rounds: SCORING.DOMINATION_ROUNDS,
-          domination: SCORING.DOMINATION,
-          shutdown: SCORING.SHUTDOWN_PER_KILL,
-          avenger: SCORING.AVENGER,
-          posthumous: SCORING.POSTHUMOUS,
-          underdogMax: SCORING.UNDERDOG_MAX,
-        }),
-      ),
-      para(t('tutorial.round.6', { comeback: SCORING.COMEBACK })),
-    ],
   }),
   () => ({
     title: t('tutorial.marks.title'),
@@ -207,7 +202,7 @@ const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
   }),
   (touch) => ({
     title: t('tutorial.keys.title'),
-    demo: 'keys',
+    demo: null,
     body: [
       ...(touch ? [para(t('tutorial.keys.touch'))] : []),
       para(t('tutorial.keys.1')),
@@ -219,6 +214,12 @@ const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
       ),
       para(t('tutorial.keys.2')),
     ],
+  }),
+  () => ({
+    title: t('tutorial.anomalies.title'),
+    demo: 'anomalies',
+    anomalies: ANOMALIES,
+    body: [para(t('tutorial.anomalies.1'))],
   }),
 ];
 
@@ -232,17 +233,20 @@ export function tutorialScreen(app: App): () => Screen {
   let selectedPowerUp: PowerUpKind = POWER_PAGES[0][0];
   let selectedTrick: StyleKind = TRICKS[0];
   let selectedMark: MarkKind = MARK_KINDS[0];
+  let selectedAnomaly: Anomaly = ANOMALIES[0];
   let preview: ReturnType<typeof mountTutorialPreview> | null = null;
   return (): Screen => {
     const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
     const lessons = TUTORIAL.map((lesson) => lesson(touch, app.settings.touchControls === 'stick'));
-    const hasPreview = page !== 0 && page !== lessons.length - 1 && lessons[page].demo !== null;
+    const hasPreview = lessons[page].demo !== null;
     const powerUps = lessons[page].powerUps ?? [];
     const tricks = lessons[page].tricks ?? [];
     const marks = lessons[page].marks ?? [];
+    const anomalies = lessons[page].anomalies ?? [];
     if (powerUps.length && !powerUps.includes(selectedPowerUp)) selectedPowerUp = powerUps[0];
     if (tricks.length && !tricks.includes(selectedTrick)) selectedTrick = tricks[0];
     if (marks.length && !marks.includes(selectedMark)) selectedMark = marks[0];
+    if (anomalies.length && !anomalies.includes(selectedAnomaly)) selectedAnomaly = anomalies[0];
     const canvas = hasPreview ? h('canvas.tutorial__canvas', { 'aria-hidden': 'true' }) as HTMLCanvasElement : null;
     const timeline = hasPreview ? h('input.tutorial__timeline', {
       type: 'range', min: '0', max: '1000', step: '1', value: '0',
@@ -266,7 +270,8 @@ export function tutorialScreen(app: App): () => Screen {
           h('div.tutorial__preview-head', null,
             h('span.tutorial__preview-label', null, t('tutorial.preview.label')),
             powerUps.length ? h('span.tutorial__preview-choice', null, t(`powerup.${selectedPowerUp}`))
-              : tricks.length ? h('span.tutorial__preview-choice', null, styleLabel(selectedTrick)) : '',
+              : tricks.length ? h('span.tutorial__preview-choice', null, styleLabel(selectedTrick))
+              : anomalies.length ? h('span.tutorial__preview-choice', null, t(`anomaly.${selectedAnomaly}`)) : '',
           ),
           canvas,
           h('div.tutorial__transport', null,
@@ -277,7 +282,7 @@ export function tutorialScreen(app: App): () => Screen {
         if (canvas && timeline) {
           preview = mountTutorialPreview(canvas, lessons[page].demo!, (progress) => {
             timeline.value = String(Math.round(progress * 1000));
-          }, powerUps.length ? selectedPowerUp : undefined, tricks.length ? selectedTrick : undefined);
+          }, powerUps.length ? selectedPowerUp : undefined, tricks.length ? selectedTrick : undefined, anomalies.length ? selectedAnomaly : undefined);
         }
         const powerContent: (Node | string)[] = powerUps.length
           ? [
@@ -321,12 +326,25 @@ export function tutorialScreen(app: App): () => Screen {
               ),
             ]
           : [];
+        const anomalyContent: (Node | string)[] = anomalies.length
+          ? [
+              h('p.tutorial__selection-prompt', null, t('tutorial.anomalies.choose')),
+              h('nav.tutorial__selection-grid.items', { 'data-section': 'anomalies', 'aria-label': t('tutorial.anomalies.choose') }),
+              h('section.tutorial__selection-info', { 'aria-live': 'polite' },
+                h('div.tutorial__selection-icon', null, anomalyIcon(selectedAnomaly)),
+                h('div', null,
+                  h('h4', { style: `color: ${ANOMALY_COLORS[selectedAnomaly]}` }, t(`anomaly.${selectedAnomaly}`)),
+                  h('p', null, t(`anomaly.${selectedAnomaly}.hint`)),
+                ),
+              ),
+            ]
+          : [];
         return menuPage({
           title: t('common.help'), eyebrow: t('shell.flightSchool'), className: 'menu-page--tutorial',
           body: [h('article.tutorial', { 'aria-live': 'polite' },
             h('h3.tutorial__title', null, lessons[page].title),
             h(`div.tutorial__layout${hasPreview ? '' : '.tutorial__layout--text-only'}`, null,
-              h('div.tutorial__copy', null, ...lessons[page].body, ...powerContent, ...trickContent, ...markContent),
+              h('div.tutorial__copy', null, ...lessons[page].body, ...powerContent, ...trickContent, ...markContent, ...anomalyContent),
               ...(previewPanel ? [previewPanel] : []),
             ),
           )],
@@ -359,6 +377,11 @@ export function tutorialScreen(app: App): () => Screen {
           kind: 'action', section: 'marks', label: markName(kind),
           icon: () => markIcon(kind), selected: () => selectedMark === kind,
           run: () => { selectedMark = kind; app.menu.rebuild(); },
+        })),
+        ...anomalies.map((kind): MenuItem => ({
+          kind: 'action', section: 'anomalies', label: t(`anomaly.${kind}`),
+          icon: () => anomalyIcon(kind), selected: () => selectedAnomaly === kind,
+          run: () => { selectedAnomaly = kind; app.menu.rebuild(); },
         })),
         ...(hasPreview ? [{ kind: 'action' as const, section: 'preview-action', label: t('tutorial.preview.replay'), run: () => { if (timeline) timeline.value = '0'; preview?.replay(); } }] : []),
         { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },

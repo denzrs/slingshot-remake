@@ -11,10 +11,12 @@ import { drawNebula } from '../nebula';
 import { strokePolyline } from '../polyline';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../powerup-art';
 import { renderPlanet } from '../planets';
+import { instabilityPulse } from './instability';
 import { SHIP_HULL } from '../ship';
 import { drawNeutronStar, drawSun } from '../sun';
 import { drawStormBurst, drawStormCloud, drawStormSparks } from '../storm';
 import { CLASSIC_PORTAL, drawPortal, drawWormhole } from '../wormhole';
+import { drawEngravedWhiteCore, drawEngravedWhiteJump } from './classic-white';
 import type { Look } from '../../data/look';
 import { LOCATE_PING, type AimStyle, type EffectStyle, type LookPainter, type LoopGate, type Styles } from './painter';
 
@@ -30,11 +32,29 @@ export function engraved(id: Look, styles: Styles = {}, parts: Partial<LookPaint
     planetsTurnToSun: false,
     fallDust: false,
     planet: renderPlanet,
+    planetInstability: (ctx, planet, time) => {
+      const warning = instabilityPulse(planet, time);
+      if (!warning) return;
+      const { pulse, danger } = warning;
+      const r = planet.radius;
+      ctx.save(); ctx.translate(planet.x, planet.y);
+      // A printed warning heating up under the engraving, with a fine red limb.
+      const glow = ctx.createRadialGradient(0, 0, r * .55, 0, 0, r * 1.35);
+      glow.addColorStop(0, rgba('#640c20', .06 + pulse * .13));
+      glow.addColorStop(.45, rgba('#a71b34', .12 + pulse * (.2 + danger * .15)));
+      glow.addColorStop(1, rgba('#640c20', 0));
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(0, 0, r * 1.35, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = rgba('#b72338', .18 + pulse * .65); ctx.lineWidth = .65 + pulse * .6;
+      ctx.beginPath(); ctx.arc(0, 0, r + .6, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    },
     sun: drawSun,
     neutronStar: drawNeutronStar,
     blackHole: (ctx, hole, time) => drawBlackHole(ctx, hole, time, styles.hole),
     falling: drawInkFall,
     holeFlare: (ctx, hole, strength, color, angle) => strokeHoleFlare(ctx, hole, strength, color, angle, Math.max(1.5, hole.radius * 0.12), 0.9),
+    whiteCore: drawEngravedWhiteCore,
+    whiteJump: drawEngravedWhiteJump,
     dangerRing: drawDangerRing,
     wormhole: (ctx, ax, ay, bx, by, radius, time, wormholeId, eaten) => drawWormhole(ctx, ax, ay, bx, by, radius, time, wormholeId, eaten, portal),
     portal: (ctx, x, y, facing, radius, color, time, alpha, phase, size) => drawPortal(ctx, x, y, facing, radius, color, time, alpha, phase, size, portal),

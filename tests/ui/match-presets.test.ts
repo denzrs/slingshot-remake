@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { ANOMALIES } from '../../src/sim/config';
+import { getLang, setLang, t } from '../../src/platform/i18n';
+import { pickHint, pickName } from '../../src/ui/presets/pick-of-day';
 import { DEFAULT_SETTINGS, cloneSettings } from '../../src/data/settings';
 import { rulesOf } from '../../src/data/roomRules';
 import { presetsForMode, matchingPreset, presetRules, handpickedPresets, matchingHandpicked, pickOfTheDay, samePick, MAYHEM_PRESET_LEVEL } from '../../src/ui/presets/match-presets';
@@ -138,7 +141,7 @@ describe('handpicked combinations', () => {
   });
 
   it('provides distinct, selectable, mode-specific daily combinations with valid settings', () => {
-    const counts = { classic: 9, solar: 8, horizon: 8 };
+    const counts = { classic: 15, solar: 14, horizon: 14 };
     for (const mode of ['classic', 'solar', 'horizon'] as const) {
       const picks = handpickedPresets(mode);
       expect(picks).toHaveLength(counts[mode]);
@@ -211,5 +214,77 @@ describe('handpicked combinations', () => {
     const first = handpickedPresets('classic')[2];
     first.rules.powerUpKinds.pop();
     expect(handpickedPresets('classic')[2].rules.powerUpKinds).toHaveLength(4);
+  });
+});
+
+describe('anomaly combinations', () => {
+  it('rotate through today\'s pick of every mode, all ships at once, and are found again from their rules', () => {
+    const expected = {
+      pinballKing: ['trickShots', 'pinball'], supernova: ['fuse', 'fusion'], bigBang: ['fuse', 'fusion', 'unstable'],
+      theCollapse: [...ANOMALIES], chainReaction: ['pinball', 'unstable'], secondChance: ['trickShots', 'whiteHole'],
+    };
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      const picks = handpickedPresets(mode);
+      for (const [id, anomalies] of Object.entries(expected)) {
+        const pick = picks.find((candidate) => candidate.id === id)!;
+        expect(pick.rules.anomalies, `${mode}/${id}`).toEqual(anomalies);
+        expect(pick.rules.simultaneousShots).toBe(true);
+        expect(samePick(matchingHandpicked(pick.rules, mode), pick)).toBe(true);
+      }
+      // Only those six play by anomalies; switching one off makes them no pick at all.
+      expect(picks.filter((pick) => pick.rules.anomalies.length).map((pick) => pick.id).sort()).toEqual(Object.keys(expected).sort());
+      const bigBang = picks.find((pick) => pick.id === 'bigBang')!;
+      expect(matchingHandpicked({ ...bigBang.rules, anomalies: ['fuse', 'fusion'] }, mode)).toBeUndefined();
+    }
+  });
+
+  it('gives White Hole combinations black-hole pickups in every mode and keeps Big Bang explosive', () => {
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      const picks = handpickedPresets(mode);
+      for (const id of ['theCollapse', 'secondChance']) {
+        const pick = picks.find((p) => p.id === id)!;
+        expect(pick.rules.powerUps).toBe(true);
+        expect(pick.rules.powerUpKinds).toContain('blackhole');
+      }
+      const bang = picks.find((p) => p.id === 'bigBang')!;
+      expect(bang.rules.powerUpKinds).toEqual(['splitter']);
+      expect(bang.rules.anomalies).not.toContain('whiteHole');
+      const collapse = picks.find((p) => p.id === 'theCollapse')!;
+      collapse.rules.anomalies.pop();
+      expect(handpickedPresets(mode).find((p) => p.id === 'theCollapse')!.rules.anomalies).toEqual(ANOMALIES);
+    }
+  });
+
+  it('names every anomaly recommendation and describes its mode in both languages', () => {
+    const before = getLang();
+    try {
+      for (const language of ['de', 'en'] as const) {
+        setLang(language);
+        for (const mode of ['classic', 'solar', 'horizon'] as const) {
+          for (const pick of handpickedPresets(mode).filter((p) => p.rules.anomalies.length)) {
+            expect(pickName(pick)).not.toContain('preset.pick.');
+            expect(pickHint(pick)).not.toContain('preset.pick.');
+            expect(pickHint(pick).length).toBeGreaterThan(10);
+          }
+        }
+      }
+      setLang('de'); expect(t('preset.pick.theCollapse')).toBe('Der Kollaps');
+      setLang('en'); expect(t('preset.pick.theCollapse')).toBe('The Collapse');
+    } finally { setLang(before); }
+  });
+
+  it('never take over today\'s pick of every mode at once', () => {
+    const modes = ['classic', 'solar', 'horizon'] as const;
+    for (let i = 0; i < 180; i++) {
+      const day = new Date(Date.UTC(2026, 10, 7 + i)).toISOString().slice(0, 10);
+      const anomalous = modes.filter((mode) => pickOfTheDay(mode, day).rules.anomalies.length > 0);
+      expect(anomalous.length, day).toBeLessThan(modes.length);
+    }
+  });
+
+  it('are no regular presets: those play without anomalies', () => {
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      for (const preset of presetsForMode(mode)) expect(presetRules(preset, mode).anomalies, `${mode}/${preset}`).toEqual([]);
+    }
   });
 });

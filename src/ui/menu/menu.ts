@@ -12,6 +12,7 @@ export interface Choice<T> {
 export interface Tile {
   value: unknown;
   label: string;
+  hint?: string;
   /** The tile's colour while it is on. */
   color: string;
   /** Draws its symbol centred on the origin, about `r` in size, in the colour the tile is drawn with. */
@@ -38,7 +39,7 @@ interface Live {
 }
 
 export type MenuItem =
-  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; className?: string; /** Small second line under the label. */ hint?: string; /** A status line below the hint, refreshed with the rest of the menu. */ status?: () => string; /** Turn the status badge into a separate reset action. */ statusAction?: () => void; statusActionLabel?: string | (() => string); /** Whether the status counts as edits to the row, which light it up in gold; any status does by default. */ modified?: () => boolean; /** A second action beside the status badge, shown while `statusSecondaryVisible` holds. */ statusSecondary?: () => void; statusSecondaryLabel?: string; statusSecondaryVisible?: () => boolean; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** Actions revealed inside a card on hover or keyboard focus. */ choices?: { label: string; run: () => void }[]; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; /** Keeps conditional actions out of both sight and keyboard focus. */ hidden?: () => boolean; disabled?: boolean | (() => boolean) })
+  | (Placed & { kind: 'action'; label: string; run: () => void; primary?: boolean; className?: string; /** Small second line under the label. */ hint?: string; /** A status line below the hint, refreshed with the rest of the menu. */ status?: () => string; /** Turn the status badge into a separate reset action. */ statusAction?: () => void; statusActionLabel?: string | (() => string); /** Whether the status counts as edits to the row, which light it up in gold; any status does by default. */ modified?: () => boolean; /** A second action beside the status badge, shown while `statusSecondaryVisible` holds. */ statusSecondary?: () => void; statusSecondaryLabel?: string; statusSecondaryVisible?: () => boolean; /** Makes the button a card: a drawing above its label and hint. */ icon?: () => Node; /** Short category above a card's title. */ tag?: string; /** A red badge on a card while `on` holds, which also turns the card's glow red: an anomaly is in play. */ flag?: { label: string; on: () => boolean }; /** Actions revealed inside a card on hover or keyboard focus. */ choices?: { label: string; run: () => void }[]; /** A persistent selection, independent of keyboard focus. */ selected?: () => boolean; /** Keeps conditional actions out of both sight and keyboard focus. */ hidden?: () => boolean; disabled?: boolean | (() => boolean) })
   | (Placed &
       Live & {
         /** Cycles through its options; the arrows at its sides go back and forth. */
@@ -345,7 +346,7 @@ export class Menu {
   }
 
   private isVisible(el: HTMLElement): boolean {
-    return !el.hidden && !el.closest('[hidden]') && el.getClientRects().length > 0;
+    return !el.hidden && !el.closest('[hidden], [inert]') && el.getClientRects().length > 0;
   }
 
   /** Pick the closest visible row in the requested direction, using the layout's actual geometry. */
@@ -449,6 +450,8 @@ export class Menu {
         refresh();
         this.actionRefresh.push(refresh);
         if (item.tag) b.prepend(Object.assign(document.createElement('span'), { className: 'item__tag', textContent: item.tag }));
+        const flag = item.flag ? Object.assign(document.createElement('span'), { className: 'item__flag', textContent: item.flag.label, hidden: true }) : null;
+        if (flag) b.prepend(flag);
         if (choiceCard) {
           const choices = document.createElement('div');
           choices.className = 'slot-card__choices';
@@ -521,7 +524,7 @@ export class Menu {
         }
         const status = item.status && !item.statusAction ? Object.assign(document.createElement('span'), { className: 'item__status' }) : null;
         if (status) b.append(status);
-        if (item.selected || item.status || item.hidden) {
+        if (item.selected || item.status || item.hidden || item.flag) {
           const marker = document.createElement('span');
           marker.className = 'item__selection';
           marker.textContent = '✓';
@@ -529,6 +532,12 @@ export class Menu {
           if (item.selected && item.icon) b.append(marker);
           this.controls.push({ el: b, refresh: () => {
             b.hidden = item.hidden?.() ?? false;
+            if (item.flag && flag) {
+              const on = item.flag.on();
+              flag.hidden = !on;
+              b.classList.toggle('is-anomaly', on);
+              shell?.classList.toggle('is-anomaly', on);
+            }
             if (item.selected) {
               const selected = item.selected();
               b.classList.toggle('is-selected', selected);

@@ -5,7 +5,7 @@ import type { RoomRules } from '../../src/net/net';
 import { rulesOf } from '../../src/data/roomRules';
 import { indexAtFraction, positionOf, stepIndex } from '../../src/ui/menu/controls';
 import { defaultRoomRules } from '../../src/data/roomRules';
-import { CAP_STOPS, DEFAULT_CAP, powerModeOf, powerModePatch, RULE_GROUPS, ruleItems, ruleRows, rulesFor, type PowerMode, type RuleSource } from '../../src/ui/menu/rules';
+import { balanceRuleColumns, CAP_STOPS, DEFAULT_CAP, orderRulesForMobile, powerModeOf, powerModePatch, RULE_COLUMNS, RULE_GROUPS, ruleItems, ruleRows, rulesFor, type PowerMode, type RuleGroup, type RuleSource } from '../../src/ui/menu/rules';
 import { startPower } from '../../src/data/settings';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -105,7 +105,7 @@ describe('game rules in the menu', () => {
   it('makes switches of the on/off rules, a bar of the few-choice rules and sliders of the rest', () => {
     for (const row of all) {
       if (row.key === 'fixedPower' || row.key === 'powerUpAmount' || row.key === 'mayhem' || row.key === 'killcam' || row.key === 'edges') expect(row.control, row.key).toBe('segmented');
-      else if (row.key === 'powerUpKinds') expect(row.control).toBe('tiles');
+      else if (row.key === 'powerUpKinds' || row.key === 'anomalies') expect(row.control, row.key).toBe('tiles');
       else if (row.options.length === 0) expect(row.control, row.key).toBe('toggle');
       else expect(row.control, row.key).toBe('slider');
     }
@@ -139,6 +139,15 @@ describe('game rules in the menu', () => {
     for (const { key, item } of ruleItems('classic', source).filter((r) => r.key === 'powerUpAmount')) {
       expect(item.hidden?.(), key).toBe(true);
     }
+  });
+
+  it('reserves space for power-up amount while Mayhem is on to prevent layout shifts', () => {
+    const mayhemOff = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 0, powerUps: false }), patch() {} };
+    const mayhemOn = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2, powerUps: false }), patch() {} };
+    const offItem = ruleItems('classic', mayhemOff).find((r) => r.key === 'powerUpAmount')!.item;
+    const onItem = ruleItems('classic', mayhemOn).find((r) => r.key === 'powerUpAmount')!.item;
+    expect(offItem.reserve?.()).toBe(false);
+    expect(onItem.reserve?.()).toBe(true);
   });
 
   it('offers exactly the power-up amounts and kinds the relay accepts', () => {
@@ -334,6 +343,76 @@ describe('shot power: free, capped or fixed', () => {
       const items = ruleItems('horizon', source);
       expect(find(items, /^(Schusskraft|Shot power)$/).get()).toBe('cap');
       expect(find(items, /^Max\. (Schusskraft|shot power)$/).hidden!()).toBe(false);
+    });
+  });
+
+  describe('desktop rule column balancing', () => {
+    const rawCols = (rules: { group: RuleGroup }[]): RuleGroup[][] =>
+      RULE_COLUMNS.map((groups) => groups.filter((g) => rules.some((r) => r.group === g))).filter((g) => g.length) as RuleGroup[][];
+
+    it('keeps anomalies on the left in Event Horizon even with Mayhem because left has enough space', () => {
+      const source = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 }), patch() {} };
+      const items = ruleItems('horizon', source);
+      const cols = balanceRuleColumns(rawCols(items), items);
+      expect(cols[0]).toContain('anomalies');
+      expect(cols[1]).not.toContain('anomalies');
+    });
+
+    it('moves anomalies to the right in Classic Mayhem to avoid crowding the taller left column', () => {
+      const source = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 2 }), patch() {} };
+      const items = ruleItems('classic', source);
+      const cols = balanceRuleColumns(rawCols(items), items);
+      expect(cols[0]).not.toContain('anomalies');
+      expect(cols[1]).toContain('anomalies');
+      expect(cols[1].indexOf('anomalies')).toBe(cols[1].indexOf('powerups') + 1);
+    });
+
+    it('keeps anomalies on the left in Classic without Mayhem', () => {
+      const source = { get: () => ({ ...rulesOf(DEFAULT_SETTINGS), mayhem: 0 }), patch() {} };
+      const items = ruleItems('classic', source);
+      const cols = balanceRuleColumns(rawCols(items), items);
+      expect(cols[0]).toContain('anomalies');
+      expect(cols[1]).not.toContain('anomalies');
+    });
+  });
+
+  describe('mobile rule tab ordering', () => {
+    it('always puts anomalies at the end of the mobile tabs', () => {
+      const groups = [
+        { id: 'rules-match' },
+        { id: 'rules-field' },
+        { id: 'rules-twists' },
+        { id: 'rules-anomalies' },
+        { id: 'rules-shots' },
+        { id: 'rules-powerups' },
+      ];
+      expect(orderRulesForMobile(groups).map((g) => g.id)).toEqual([
+        'rules-match',
+        'rules-field',
+        'rules-twists',
+        'rules-shots',
+        'rules-powerups',
+        'rules-anomalies',
+      ]);
+    });
+
+    it('keeps anomalies last even when mayhem places them under power-ups', () => {
+      const groups = [
+        { id: 'rules-match' },
+        { id: 'rules-field' },
+        { id: 'rules-twists' },
+        { id: 'rules-shots' },
+        { id: 'rules-powerups' },
+        { id: 'rules-anomalies' },
+      ];
+      expect(orderRulesForMobile(groups).map((g) => g.id)).toEqual([
+        'rules-match',
+        'rules-field',
+        'rules-twists',
+        'rules-shots',
+        'rules-powerups',
+        'rules-anomalies',
+      ]);
     });
   });
 });

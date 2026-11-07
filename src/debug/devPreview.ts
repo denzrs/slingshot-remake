@@ -1,10 +1,11 @@
 import { createMatch, type Match } from '../game';
 import { DEFAULT_SETTINGS } from '../data/settings';
+import type { Anomaly } from '../sim/config';
 
-/** Dev-only screens opened with ?preview=oracle-card|oracle-pause|stands-card|stands-pause|card-marks. */
-export type UiPreview = 'oracle-card' | 'oracle-pause' | 'stands-card' | 'stands-pause' | 'card-marks';
+/** Dev-only screens opened with ?preview=oracle-card|oracle-pause|stands-card|stands-pause|card-marks|mayhem-anomalies|mayhem-extreme. */
+export type UiPreview = 'oracle-card' | 'oracle-pause' | 'stands-card' | 'stands-pause' | 'card-marks' | 'mayhem-anomalies' | 'mayhem-extreme';
 
-export const UI_PREVIEWS: readonly UiPreview[] = ['oracle-card', 'oracle-pause', 'stands-card', 'stands-pause', 'card-marks'];
+export const UI_PREVIEWS: readonly UiPreview[] = ['oracle-card', 'oracle-pause', 'stands-card', 'stands-pause', 'card-marks', 'mayhem-anomalies', 'mayhem-extreme'];
 
 const ORACLE_SCORES = [
   { player: 0, points: 420, right: 3, total: 5 },
@@ -16,6 +17,11 @@ const ORACLE_SCORES = [
 export function createUiPreview(mode: UiPreview): Match {
   const seats = ['human', 'human', 'medium', 'medium', 'medium', 'medium'] as const;
   const names = ['Du', 'Mira', 'Rook', 'Nia', 'Oskar', 'Vega'];
+  const anomalies: Anomaly[] = mode === 'mayhem-anomalies'
+    ? ['pinball']
+    : mode === 'mayhem-extreme'
+    ? ['trickShots', 'pinball', 'fuse', 'fusion', 'whiteHole', 'unstable']
+    : [];
   const settings = {
     ...DEFAULT_SETTINGS,
     seats: [...seats],
@@ -24,6 +30,7 @@ export function createUiPreview(mode: UiPreview): Match {
     menuBackground: false,
     menuSounds: false,
     gameSounds: false,
+    anomalies,
   };
   const match = createMatch('classic', settings, {
     seats: [...seats],
@@ -49,6 +56,35 @@ export function createUiPreview(mode: UiPreview): Match {
   });
 
   if (mode === 'card-marks') return cardMarks(match);
+
+  if (mode === 'mayhem-anomalies') {
+    match.round = 1;
+    match.totalRounds = 5;
+    match.mayhem = { twists: [{ id: 'billiard', n: 2 }], finale: false, jackpot: false };
+    match.anomalyAlert = true;
+    match.revealHeld = true;
+    match.revealEnd = match.clock + 999;
+    return match;
+  }
+
+  if (mode === 'mayhem-extreme') {
+    match.round = 1;
+    match.totalRounds = 5;
+    match.mayhem = {
+      twists: [
+        { id: 'billiard', n: 2 },
+        { id: 'plasmaStorm' },
+        { id: 'minefield' },
+        { id: 'precision', n: 85 },
+      ],
+      finale: true,
+      jackpot: true,
+    };
+    match.anomalyAlert = true;
+    match.revealHeld = true;
+    match.revealEnd = match.clock + 999;
+    return match;
+  }
 
   match.oracle.open('shot', 1, []);
   match.oracle.openRound(alive, false);

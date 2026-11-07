@@ -1,4 +1,5 @@
-import { dailyChallenge, dateKey, modifiersOf, type ThemeId } from '../../sim/challenge';
+import { dailyChallenge, dateKey, modifiersOf, type SectorSpec, type ThemeId } from '../../sim/challenge';
+import type { Anomaly } from '../../sim/config';
 import { loadDay, loadStreak, type RunOutcome } from '../../data/dailyStore';
 import type { ChallengeMatch, SectorResult, ShotLog } from '../../game';
 import { fmtInt, t, tn, type Key } from '../../platform/i18n';
@@ -100,6 +101,7 @@ export function dailyScreen(app: App): Screen {
       ...challenge.sectors.map((spec): MenuItem => ({
         kind: 'action', section: 'route', label: t('daily.sector', { n: spec.index + 1 }),
         className: `mission-difficulty--${spec.difficulty}`,
+        flag: { label: t('anomaly.badge'), on: () => !!spec.anomalies?.length },
         tag: `${'●'.repeat(spec.difficulty)}${'○'.repeat(5 - spec.difficulty)}`,
         hint: `${tn('daily.targets', spec.targets)} · ${tn('daily.shots', spec.shots)}`,
         selected: () => selected === spec.index,
@@ -135,15 +137,25 @@ export function shareText(match: ChallengeMatch): string {
   ].join('\n');
 }
 
-function sectorLine(s: SectorResult): HTMLElement {
+function sectorLine(s: SectorResult, spec?: SectorSpec): HTMLElement {
   const squares = s.shots.map((x) => h(`span.shot.shot--${glyphOf(x)}`, null));
   // Unused shots stay as hollow squares, so the budget reads at a glance.
   const unused = Array.from({ length: Math.max(0, s.budget - s.shots.length) }, () => h('span.shot.shot--unused', null));
   const points = s.points < 0 ? `−${fmtInt(-s.points)}` : s.points > 0 ? `+${fmtInt(s.points)}` : '0';
+  const anomalies = spec?.anomalies ?? [];
+  const mods = spec ? modifiersOf(spec) : [];
+  const tags = mods.map((m) => {
+    const isAnomaly = anomalies.includes(m as Anomaly);
+    return h(`span.sectors__tag${isAnomaly ? '.sectors__tag--anomaly' : ''}`, null, t(`daily.mod.${m}`));
+  });
+  const titleChildren: (Node | string)[] = [h('span.sectors__n', null, t('daily.sector', { n: s.index + 1 }))];
+  if (anomalies.length > 0) titleChildren.push(h('span.sectors__flag', null, t('anomaly.badge')));
+  const headChildren: (Node | string)[] = [h('div.sectors__title-row', null, ...titleChildren)];
+  if (tags.length > 0) headChildren.push(h('div.sectors__mods', null, ...tags));
   return h(
     'li',
     s.cleared ? null : { class: 'is-failed' },
-    h('span.sectors__n', null, t('daily.sector', { n: s.index + 1 })),
+    h('div.sectors__head', null, ...headChildren),
     h('span.shots', null, ...squares, ...unused),
     h('span.sectors__points', null, s.cleared ? points : `✕ ${points}`),
   );
@@ -189,7 +201,7 @@ export function dailyResultScreen(app: App, match: ChallengeMatch, outcome: RunO
         body: [
           h('p.daily__score', null, h('span.daily__num', null, fmtInt(result.total)), h('span.daily__unit', null, t('daily.result.points'))),
           h('p.daily__rank', { 'data-rank': String(result.rank) }, t(`daily.rank.${result.rank}` as Key)),
-          h('ol.mission-scorecards', null, ...result.sectors.map(sectorLine)),
+          h('ol.mission-scorecards', null, ...result.sectors.map((s) => sectorLine(s, match.challenge.sectors[s.index]))),
           legend,
           h('p.daily__meta', null, meta, outcome.newBest ? h('strong.daily__new', null, `  ${t('daily.result.newBest')}`) : ''), status,
         ],

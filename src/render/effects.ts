@@ -345,6 +345,40 @@ export class Effects {
     this.flash = Math.max(this.flash, 0.2);
   }
 
+  /** Trick Shots Only: a shot armed, the moment it turns lethal: a sharp double ring and a spray of sparks. */
+  armed(x: number, y: number, color: string): void {
+    this.ring(x, y, 30, 0.35, COLORS.bone);
+    this.ring(x, y, 18, 0.25, color);
+    this.burst(x, y, 14, 60, 200, color, 'medium', 0, 0, 0.6);
+    this.flash = Math.max(this.flash, 0.12);
+  }
+
+  /** Trick Shots Only: an unarmed shot flew through a ship. A ring closes on the hull, and no harm is done. */
+  warning(x: number, y: number, color: string): void {
+    this.rings.push({ x, y, radius: 34, life: 0.45, max: 0.45, color, inward: true });
+    this.burst(x, y, 8, 20, 80, COLORS.boneDim, 'small', 0, 0, 0.5);
+  }
+
+  /** Zeitzünder: a shot going off, a fireball as wide as the blast reaches. */
+  detonation(x: number, y: number, radius: number, color: string): void {
+    this.ring(x, y, radius, 0.55, color);
+    this.ring(x, y, radius * 1.6, 0.8, COLORS.sodium);
+    this.blast(x, y, radius * 1.8, 0.75, color);
+    this.burst(x, y, 60, 40, 300, color, 'large');
+    this.burst(x, y, 30, 20, 180, COLORS.sodium, 'medium');
+    if (!this.reducedMotion) this.shake = Math.max(this.shake, 7);
+    this.flash = Math.max(this.flash, 0.6);
+  }
+
+  /** Fusion: two shots melting into one. Rings drawn in, in both colours, and sparks of both. */
+  fusion(x: number, y: number, a: string, b: string): void {
+    this.rings.push({ x, y, radius: 50, life: 0.45, max: 0.45, color: a, inward: true });
+    this.rings.push({ x, y, radius: 36, life: 0.4, max: 0.4, color: b, inward: true });
+    this.burst(x, y, 16, 30, 160, a, 'medium', 0, 0, 0.6);
+    this.burst(x, y, 16, 30, 160, b, 'medium', 0, 0, 0.6);
+    this.flash = Math.max(this.flash, 0.3);
+  }
+
   /** Matter spiralling into the black hole. */
   devour(x: number, y: number, toX: number, toY: number, color: string, vx = 0, vy = 0): void {
     if (!this.particles) return;

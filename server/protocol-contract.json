@@ -20,7 +20,8 @@
     "chatPlayersOnly": false,
     "powerUps": false,
     "powerUpKinds": ["preview", "teleport", "splitter", "antigravity", "shield", "blackhole", "planetkiller", "nebula", "piercing", "wormhole", "defense", "plasma"],
-    "powerUpAmount": 2
+    "powerUpAmount": 2,
+    "anomalies": []
   },
   "options": {
     "rounds": [0, 1, 3, 5, 7, 10, 15, 20],

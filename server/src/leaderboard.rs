@@ -67,16 +67,16 @@ const UPSERT: &str =
 
 /// One row per day: a shot only takes the day from one that paid less, so of equals the first stays.
 const SHOT_UPSERT: &str =
-    "INSERT INTO daily_shots (day, name, points, sector, down, attempt, left, angle, power, trail, at)
- VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+    "INSERT INTO daily_shots (day, name, points, sector, down, attempt, left, angle, power, trail, at, terrain)
+ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
  ON CONFLICT(day) DO UPDATE
      SET name = excluded.name, points = excluded.points, sector = excluded.sector, down = excluded.down,
          attempt = excluded.attempt, left = excluded.left, angle = excluded.angle, power = excluded.power,
-         trail = excluded.trail, at = excluded.at
+         trail = excluded.trail, at = excluded.at, terrain = excluded.terrain
      WHERE excluded.points > daily_shots.points";
 
 const SHOT_OF_DAY: &str =
-    "SELECT name, points, sector, down, attempt, left, angle, power, trail FROM daily_shots WHERE day = ?1";
+    "SELECT name, points, sector, down, attempt, left, angle, power, trail, terrain FROM daily_shots WHERE day = ?1";
 
 /// The same total order the caller's own rank is counted with, so the two can never disagree.
 const TOP_LIST: &str = "SELECT name, score FROM daily_scores WHERE day = ?1
@@ -116,6 +116,8 @@ pub struct Shot {
     pub power: f64,
     /// Its path, flat `[x0, y0, x1, y1, …]`.
     pub trail: Vec<f64>,
+    /// Instabil damage, in the original layout's planet order.
+    pub terrain: Vec<i64>,
 }
 
 /// The shot of a day, and who fired it.
@@ -171,6 +173,20 @@ impl Leaderboard {
         conn.busy_timeout(Duration::from_secs(2))?;
         conn.execute(SCHEMA, ()).await?;
         conn.execute(SHOT_SCHEMA, ()).await?;
+        // Upgrade existing boards as well as fresh databases; old shots keep an empty damage map.
+        let mut columns = conn.query("PRAGMA table_info(daily_shots)", ()).await?;
+        let mut has_terrain = false;
+        while let Some(column) = columns.next().await? {
+            has_terrain |= column.get::<String>(1)? == "terrain";
+        }
+        drop(columns);
+        if !has_terrain {
+            conn.execute(
+                "ALTER TABLE daily_shots ADD COLUMN terrain TEXT NOT NULL DEFAULT '[]'",
+                (),
+            )
+            .await?;
+        }
         Ok(Self {
             _database: database,
             conn,
@@ -240,6 +256,7 @@ impl Leaderboard {
                     shot.power,
                     Value::from(shot.trail.clone()).to_string(),
                     now_unix(),
+                    Value::from(shot.terrain.clone()).to_string(),
                 ),
             )
             .await?;
@@ -300,6 +317,7 @@ impl Leaderboard {
                 angle: row.get::<f64>(6)?,
                 power: row.get::<f64>(7)?,
                 trail: serde_json::from_str(&row.get::<String>(8)?).unwrap_or_default(),
+                terrain: serde_json::from_str(&row.get::<String>(9)?).unwrap_or_default(),
             },
         }))
     }
@@ -540,7 +558,37 @@ mod tests {
             angle: 123.25,
             power: 61.5,
             trail: vec![10.5, 20.0, 30.0, 40.5],
+            terrain: vec![0, 2, 5],
         }
+    }
+
+    #[tokio::test]
+    async fn old_boards_gain_terrain_without_losing_their_shot() {
+        let database = crate::db::open(":memory:").await.unwrap();
+        let conn = database.connect().unwrap();
+        conn.execute(SHOT_SCHEMA, ()).await.unwrap();
+        conn.execute("INSERT INTO daily_shots VALUES (?1, 'Ada', 800, 2, '[1,3]', 2, 1, 123.25, 61.5, '[10.5,20,30,40.5]', 1)", (DAY,)).await.unwrap();
+        let board = Leaderboard::open(&database, DEFAULT_KEEP_DAYS)
+            .await
+            .unwrap();
+        let old = board.board(DAY, ip(1)).await.unwrap().shot.unwrap().shot;
+        let mut expected = shot(800);
+        expected.terrain.clear();
+        assert_eq!(old, expected);
+        let damaged = shot(900);
+        let seen = board
+            .submit(DAY, "Ada", 1000, Some(&damaged), ip(1))
+            .await
+            .unwrap();
+        assert_eq!(seen.shot.unwrap().shot, damaged);
+        // Opening an upgraded database again is harmless.
+        let reopened = Leaderboard::open(&database, DEFAULT_KEEP_DAYS)
+            .await
+            .unwrap();
+        assert_eq!(
+            reopened.board(DAY, ip(2)).await.unwrap().shot.unwrap().shot,
+            damaged
+        );
     }
 
     #[tokio::test]

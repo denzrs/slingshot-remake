@@ -103,7 +103,7 @@ export function loadSettings(): Settings {
   } catch {
     // Storage blocked or corrupt — fall back to defaults.
   }
-  return { ...DEFAULT_SETTINGS, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams], powerUpKinds: [...DEFAULT_SETTINGS.powerUpKinds], language: detectLang() };
+  return { ...DEFAULT_SETTINGS, seats: [...DEFAULT_SETTINGS.seats], seatTeams: [...DEFAULT_SETTINGS.seatTeams], powerUpKinds: [...DEFAULT_SETTINGS.powerUpKinds], anomalies: [...DEFAULT_SETTINGS.anomalies], language: detectLang() };
 }
 
 /** The power a ship starts a round with — or shoots with when it is fixed — never above the cap. */
@@ -111,7 +111,7 @@ export const startPower = (s: Pick<Settings, 'fixedPower' | 'fixedPowerLevel' | 
 
 /** The copy a match plays by, so changing the setup later never alters a game in progress. */
 export function cloneSettings(s: Settings): Settings {
-  return { ...s, seats: [...s.seats], seatTeams: [...s.seatTeams], powerUpKinds: [...s.powerUpKinds] };
+  return { ...s, seats: [...s.seats], seatTeams: [...s.seatTeams], powerUpKinds: [...s.powerUpKinds], anomalies: [...s.anomalies] };
 }
 
 export function saveSettings(s: Settings): void {

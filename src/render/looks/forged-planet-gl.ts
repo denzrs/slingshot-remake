@@ -1,10 +1,14 @@
 import { LIGHT } from '../planet-common';
 import { GLSL_HEAD, shade, type Shaded, type Stage } from './forged-gl';
 
+/** The most hits an unstable planet shows cracks for: the biggest planet breaks at its ninth. */
+export const MAX_IMPACTS = 8;
+
 /**
  * The sphere and cloud of a forged planet as a shader, the same picture as `paintSurface` and `paintClouds` in
  * `forged-planet.ts`, with what those could not afford: the limb lit by the depth of air the
  * eye looks through (out past the disc too), and the map's own light and dark read as relief where the light comes low.
+ * An unstable planet's crust breaks open round where it was hit, along the fissures of the Blender crack map, with magma glowing in them.
  */
 const PLANET_SHADER = `${GLSL_HEAD}
 uniform sampler2D uMap;
@@ -33,12 +37,36 @@ uniform float uCloudTurn;
 uniform float uPhase;
 uniform float uShadow;
 uniform float uShadowDepth;
+uniform sampler2D uCracks;
+uniform float uCrackLod;
+uniform int uHits;
+/** Each hit: where it struck, as a point on the disc (x, y), how far the surface had turned then (z) and how long ago it was (w, s). */
+uniform vec4 uImpact[${MAX_IMPACTS}];
+/** How near the planet is to breaking (0 → 1), and how bright its magma is now: the warning's pulse. */
+uniform float uDanger;
+uniform float uGlow;
 
 /** How high the air reaches, in radii. */
 const float SHELL = 0.1;
 
 float luma(vec3 c) {
   return dot(c, vec3(0.3, 0.55, 0.15));
+}
+
+/** A point of the disc (p, its depth nz) as longitude and latitude of the map, before the planet's turn. */
+vec2 mapAt(vec2 p, float nz) {
+  float ty = p.y * uTilt.x + nz * uTilt.y;
+  float tz = -p.y * uTilt.y + nz * uTilt.x;
+  float tx = p.x * uSpin.x + tz * uSpin.y;
+  float tzz = -p.x * uSpin.y + tz * uSpin.x;
+  return vec2(atan(tx, tzz) / 6.2831853 + 0.5, 0.5 + asin(clamp(ty, -1.0, 1.0)) / 3.1415927);
+}
+
+/** A place on the map as a point of the unit sphere. */
+vec3 onSphere(float u, float v) {
+  float lon = u * 6.2831853;
+  float lat = (v - 0.5) * 3.1415927;
+  return vec3(cos(lat) * cos(lon), sin(lat), cos(lat) * sin(lon));
 }
 
 void main() {
@@ -58,12 +86,9 @@ void main() {
   float nz = sqrt(max(0.0, 1.0 - rr));
   vec3 n = vec3(p, nz);
   // The point on the sphere, turned about the vertical by the seed and tipped by the tilt, as longitude and latitude.
-  float ty = p.y * uTilt.x + nz * uTilt.y;
-  float tz = -p.y * uTilt.y + nz * uTilt.x;
-  float tx = p.x * uSpin.x + tz * uSpin.y;
-  float tzz = -p.x * uSpin.y + tz * uSpin.x;
-  float u = atan(tx, tzz) / 6.2831853 + 0.5;
-  float v = 0.5 + asin(clamp(ty, -1.0, 1.0)) / 3.1415927;
+  vec2 at = mapAt(p, nz);
+  float u = at.x;
+  float v = at.y;
   float wave = sin(v * 9.424778 + uPhase);
   float surfaceU = u + uSurfaceTurn * (1.0 + uBand * 0.5 * wave);
   float cloudU = u + uCloudTurn * (1.0 + uBand * 0.8 * wave);
@@ -72,6 +97,9 @@ void main() {
   float height = luma(textureLod(uMap, vec2(surfaceU, v), uLod + 2.0).rgb);
   float slopeX = dFdx(height) * uR * 0.04;
   float slopeY = -dFdy(height) * uR * 0.04;
+  // The crack map turns with the surface. Its edges are kept a pixel wide, whatever the planet's size.
+  vec3 crack = uHits > 0 ? textureLod(uCracks, vec2(surfaceU, v), uCrackLod).rgb : vec3(1.0);
+  vec2 crackAa = max(fwidth(crack.rg), vec2(1e-3));
   if (cover <= 0.0) {
     outColor = vec4(outer, outerA);
     return;
@@ -105,6 +133,39 @@ void main() {
   col += uDusk * dusk * 0.22;
   vec3 halfway = normalize(uLight + vec3(0.0, 0.0, 1.0));
   col += vec3(uSpecular * pow(max(0.0, dot(bumped, halfway)), 36.0));
+
+  if (uHits > 0) {
+    // How far the crust has given way here: round each hit, out to a reach that grows as the planet nears breaking, with a
+    // ragged front (the map's slow noise), and near the end all over.
+    vec3 here = onSphere(surfaceU, v);
+    float reach = 0.4 + 1.2 * uDanger;
+    float open = smoothstep(0.55, 1.0, uDanger) * smoothstep(0.6, 0.4, crack.b);
+    float flash = 0.0;
+    for (int i = 0; i < ${MAX_IMPACTS}; i++) {
+      if (i >= uHits) break;
+      vec4 hit = uImpact[i];
+      vec2 hitAt = mapAt(hit.xy, sqrt(max(0.0, 1.0 - dot(hit.xy, hit.xy))));
+      float hitWave = sin(hitAt.y * 9.424778 + uPhase);
+      vec3 struck = onSphere(hitAt.x + hit.z * (1.0 + uBand * 0.5 * hitWave), hitAt.y);
+      float away = acos(clamp(dot(here, struck), -1.0, 1.0));
+      open = max(open, 1.0 - smoothstep(reach * 0.3, reach, away + (crack.b - 0.5) * 0.8));
+      // A fresh hit flares white where it struck, then settles.
+      flash += exp(-hit.w * 2.2) * (1.0 - smoothstep(0.0, 0.32, away));
+    }
+    // Great fissures widen as the crust opens; the fine cracks branch off them only where it is well open.
+    float width = mix(0.035, 0.11, open);
+    float great = (1.0 - smoothstep(width - crackAa.x, width + crackAa.x, crack.r)) * smoothstep(0.03, 0.2, open);
+    float fine = (1.0 - smoothstep(0.05 - crackAa.y, 0.05 + crackAa.y, crack.g)) * smoothstep(0.45, 0.95, open);
+    float heat = (1.0 - smoothstep(0.0, 0.35, crack.r)) * smoothstep(0.03, 0.3, open);
+    // The plates char along their broken edges; the magma lights them from beneath, whatever the sun does.
+    col *= 1.0 - 0.5 * heat;
+    float core = 1.0 - smoothstep(0.0, width * 0.6 + crackAa.x, crack.r);
+    vec3 lava = mix(vec3(0.95, 0.16, 0.06), vec3(1.0, 0.82, 0.5), core * (0.35 + 0.65 * uGlow));
+    col = mix(col, lava * (0.55 + 0.75 * uGlow), great);
+    col += vec3(0.85, 0.2, 0.06) * fine * (0.3 + 0.5 * uGlow);
+    col += vec3(0.75, 0.08, 0.06) * heat * heat * (0.25 + 0.6 * uGlow);
+    col += vec3(1.0, 0.75, 0.45) * min(flash, 1.0) * 0.9;
+  }
 
   float a = max(cover, outerA);
   outColor = vec4(col * cover + outer * (1.0 - cover), a);
@@ -140,12 +201,39 @@ export interface PlanetShade {
   shadowDepth: number;
 }
 
+/** An unstable planet's damage, as the shader shows it. */
+export interface PlanetCracks {
+  map: HTMLImageElement;
+  /** Each hit: where it struck on the disc (x, y), how far the surface had turned then and how long ago it was (s). */
+  impacts: Float32Array;
+  hits: number;
+  danger: number;
+  glow: number;
+}
+
 /** A planet's map: turning round means repeating sideways; mipmaps, read at the level the planet's size calls for. */
 function mapTexture(stage: Stage, s: PlanetShade): WebGLTexture | null {
   return stage.texture(`map:${s.mapName}`, {
     upload(gl) {
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, s.map);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    },
+  });
+}
+
+/** The crack map: data read as it is, mipmapped for small planets. */
+function crackTexture(stage: Stage, map: HTMLImageElement): WebGLTexture | null {
+  return stage.texture('cracks', {
+    upload(gl) {
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, map);
+      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.BROWSER_DEFAULT_WEBGL);
       gl.generateMipmap(gl.TEXTURE_2D);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -171,8 +259,8 @@ function greyTexture(stage: Stage, name: string, size: readonly [number, number]
 /** The largest a planet is worked out at, in pixels: a map has only so much in it. */
 const PLANET_LIMIT = 1536;
 
-/** Paints the sphere and its cloud as they stand at `time`, a sprite as wide as `half * 2`; the caller keeps it between beats. Null without shaders. */
-export function shadePlanet(s: PlanetShade, time: number): Shaded | null {
+/** Paints the sphere and its cloud as they stand at `time`, a sprite as wide as `half * 2`, cracked open where `cracks` says; the caller keeps it between beats. Null without shaders. */
+export function shadePlanet(s: PlanetShade, time: number, cracks: PlanetCracks | null = null): Shaded | null {
   const size = s.half * 2;
   return shade(PLANET_SHADER, size, size, PLANET_LIMIT, (u, stage) => {
     const map = mapTexture(stage, s);
@@ -205,5 +293,16 @@ export function shadePlanet(s: PlanetShade, time: number): Shaded | null {
     u.f('uPhase', s.phase);
     u.f('uShadow', s.shadow);
     u.f('uShadowDepth', s.shadowDepth);
+    const crackMap = cracks ? crackTexture(stage, cracks.map) : null;
+    if (cracks && crackMap) {
+      u.tex('uCracks', 3, crackMap);
+      u.f('uCrackLod', Math.max(0, Math.log2(cracks.map.naturalWidth / (Math.PI * 2 * s.radius))));
+      u.v4s('uImpact', cracks.impacts);
+      u.f('uDanger', cracks.danger);
+      u.f('uGlow', cracks.glow);
+    }
+    // The sampler is bound to the map without cracks, so it never reads a unit left over from another shader.
+    else u.tex('uCracks', 3, map);
+    u.i('uHits', cracks && crackMap ? Math.min(cracks.hits, MAX_IMPACTS) : 0);
   });
 }

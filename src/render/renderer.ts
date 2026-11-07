@@ -3,6 +3,7 @@ import type { Camera, Match, Scene, Trail } from '../game';
 import { t } from '../platform/i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../game/scorecard';
 import { aimDirection, inPowerUpNebula, nextWormholeId, stormCloudAt, type World } from '../sim/physics';
+import { anomaliesOf } from '../sim/anomalies';
 import { POWER_UP, PREVIEW_POINTS } from '../sim/powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
@@ -22,7 +23,7 @@ import { stormFlare } from './storm';
 import { defensePlanet, defenseView } from './defense';
 import { classic } from './looks/classic';
 import { painterFor, type LookPainter } from './looks';
-import { LOCATE_PING, type FrameInfo } from './looks/painter';
+import { LOCATE_PING, WHITE_JUMP, type FrameInfo } from './looks/painter';
 import { portalColor, POWER_UP_COLORS } from './powerup-art';
 
 export interface DrawOptions {
@@ -45,6 +46,8 @@ export interface Viewport {
   height: number;
   /** Turn the field a quarter round (or not) whatever the device is, instead of leaving it to the phone layout: for a page that draws a fixed picture. */
   rotated?: boolean;
+  /** Explicit stage box, e.g. when simulating a phone screen in dev galleries. */
+  stage?: { x: number; y: number; w: number; h: number };
 }
 
 const windowViewport = (): Viewport => ({ width: window.innerWidth, height: window.innerHeight });
@@ -84,6 +87,10 @@ export class Renderer {
   private time = 0;
   /** When each power-up pickup was first drawn, for its pop-in. */
   private readonly pickupSeen = new Map<number, number>();
+  /** Whether the last frame filled the viewport behind a menu (see `nudgeLayer`). */
+  private lastFullScreen = true;
+  /** Frames left before the narrowed canvas gets its width back. */
+  private nudgeFrames = 0;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly viewport: () => Viewport = windowViewport) {
     this.ctx = canvas.getContext('2d')!;
@@ -92,7 +99,8 @@ export class Renderer {
   }
 
   resize(): void {
-    const { width: cssWidth, height: cssHeight, rotated: forced } = this.viewport();
+    const vp = this.viewport();
+    const { width: cssWidth, height: cssHeight, rotated: forced } = vp;
     const dpr = window.devicePixelRatio || 1;
     const coarse = window.matchMedia('(pointer: coarse)').matches;
     // Held upright a phone gets its own layout: HUD on top, the field, the thumbs' controls underneath.
@@ -111,7 +119,7 @@ export class Renderer {
       scale,
       offsetX: portrait?.offsetX ?? (cssWidth - plate.w * scale) / 2,
       offsetY: portrait?.offsetY ?? (cssHeight - plate.h * scale) / 2,
-      stage: portrait?.stage,
+      stage: vp.stage ?? portrait?.stage,
       rotated,
     };
     setTurned(rotated);
@@ -183,8 +191,24 @@ export class Renderer {
     this.ctx.drawImage(this.backdrop.canvas, 0, 0);
   }
 
+  /**
+   * Safari on the iPhone sometimes shows the canvas at a pixel ratio of 1 once a menu closes over it, so the field turns
+   * blurry, and only a change of the canvas's size makes it sharp again. So when the field comes out from under a menu, the
+   * canvas is made 1px narrower for two frames, which has Safari build its layer anew.
+   */
+  private nudgeLayer(fullScreen: boolean): void {
+    if (this.nudgeFrames > 0) {
+      if (--this.nudgeFrames === 0) this.canvas.style.width = `${this.view.cssWidth}px`;
+    } else if (this.lastFullScreen && !fullScreen) {
+      this.nudgeFrames = 2;
+      this.canvas.style.width = `${this.view.cssWidth - 1}px`;
+    }
+    this.lastFullScreen = fullScreen;
+  }
+
   draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
     this.resizeIfNeeded();
+    this.nudgeLayer(opts.fullScreen);
     this.emptyDrawn = false;
     this.time += dt;
     this.painter = painterFor(getLook());
@@ -393,7 +417,8 @@ export class Renderer {
         this.painter.falling(ctx, fall, p.radius * 2.6, ps, (c) => {
           // The light stays where it was painted: upright on the screen.
           uprightFrame(c);
-          sprite.draw(c, 0, 0, ps, this.time);
+          sprite.draw(c, 0, 0, ps, this.time, p);
+          this.painter.planetInstability(c, { ...p, x: 0, y: 0 }, this.time);
         });
       } else if (sun && this.painter.planetsTurnToSun) {
         // A classic sprite is painted lit from one side; turn it so that side faces the sun it orbits.
@@ -401,18 +426,19 @@ export class Renderer {
         ctx.translate(p.x, p.y);
         ctx.rotate(Math.atan2(sun.y - p.y, sun.x - p.x) - SPRITE_LIGHT_ANGLE);
         if (this.keepCelestialArtworkUpright) uprightFrame(ctx);
-        sprite.draw(ctx, 0, 0, ps, this.time);
+        sprite.draw(ctx, 0, 0, ps, this.time, p);
         ctx.restore();
       } else if (isTurned()) {
         // The light stays where it was painted: upright on the screen.
         ctx.save();
         ctx.translate(p.x, p.y);
         uprightFrame(ctx);
-        sprite.draw(ctx, 0, 0, ps, this.time);
+        sprite.draw(ctx, 0, 0, ps, this.time, p);
         ctx.restore();
       } else {
-        sprite.draw(ctx, p.x, p.y, ps, this.time);
+        sprite.draw(ctx, p.x, p.y, ps, this.time, p);
       }
+      if (!fall) this.painter.planetInstability(ctx, p, this.time);
     }
     ctx.globalAlpha = 1;
     // Falling ships go under the hole too, which takes them bit by bit.
@@ -436,9 +462,13 @@ export class Renderer {
       else draw();
     }
     for (const hole of world.holes) {
-      if (this.keepCelestialArtworkUpright) {
-        drawUprightFieldArtwork(ctx, hole.x, hole.y, () => this.painter.blackHole(ctx, hole, this.time));
-      } else this.painter.blackHole(ctx, hole, this.time);
+      // The white core sits in the hole's own picture, so it turns with it.
+      const draw = (): void => {
+        this.painter.blackHole(ctx, hole, this.time);
+        if (match.rules.whiteHole) this.painter.whiteCore(ctx, hole, this.time);
+      };
+      if (this.keepCelestialArtworkUpright) drawUprightFieldArtwork(ctx, hole.x, hole.y, draw);
+      else draw();
     }
     if (primary && effects.holeFeed > 0 && !scene.camera) this.painter.holeFlare(ctx, primary, effects.holeFeed, effects.holeFeedColor, effects.holeFeedAngle);
     // Each wormhole has a colour of its own, shared by its two portals.
@@ -500,8 +530,9 @@ export class Renderer {
   private drawTrails(match: Match, scene: Scene, ps: number): void {
     const { ctx } = this;
     const rank = new Map<number, number>();
-    // In salvo modes, and while aiming, previous trails step back as dashed lines so the next or live shots read clearly.
-    const firstRank = match.salvo || match.phase === 'aiming' ? 1 : 0;
+    // In salvo modes and while aiming, previous trails step back as dashed lines so the next or live shots read clearly. A match that plays by anomalies does so in flight too: its shots draw more lines of their own.
+    const inFlight = (match.phase === 'flying' || scene.volley !== null) && anomaliesOf(match.rules).length > 0;
+    const firstRank = match.salvo || match.phase === 'aiming' || inFlight ? 1 : 0;
     const lastFan = new Map<number, number | undefined>();
     const drawn: { trail: Trail; rank: number; fade: number }[] = [];
     // The shots of one splitter fan count as one flight: they share a rank.
@@ -529,6 +560,11 @@ export class Renderer {
       const color = match.players[vs.owner].color;
       const shot = vs.shot;
       this.painter.liveTrail(ctx, vs.trail, match.world.wormholes, color, !!vs.plasma, this.time);
+      if (!shot.end && shot.whiteExit && shot.time - shot.whiteExit.at < WHITE_JUMP.LIFE) {
+        const exit = shot.whiteExit;
+        const hole = match.world.holes[exit.hole] ?? null;
+        this.painter.whiteJump(ctx, { hole, x: exit.x, y: exit.y, out: exit.out, shotX: shot.x, shotY: shot.y, color, age: shot.time - exit.at, time: this.time });
+      }
       if (shot.end) continue;
       // In a loop a shot flies on beyond the edge and fades out towards the line where it is carried across, and a gate opens there: the opposite one gives it back.
       const loop = match.rules.edges === 'loop';
@@ -552,9 +588,14 @@ export class Renderer {
           ctx.stroke();
           ctx.restore();
         }
+        // Trick Shots Only: a shot that cannot kill yet flies dimmed, and lights up once something has armed it.
+        const harmless = match.rules.trickShots && !shot.armed;
+        if (harmless) ctx.globalAlpha *= 0.45;
         this.painter.shot(ctx, shot.x, shot.y, color, vs.trail, this.time);
+        if (harmless) ctx.globalAlpha /= 0.45;
+        this.drawAnomalyMarks(ctx, match, vs, color);
         const storm = !vs.plasma ? stormCloudAt(match.world.nebulae, shot.x, shot.y) : undefined;
-        if (storm) this.painter.stormSparks(ctx, shot.x, shot.y, this.time, storm.seed);
+        if (storm || shot.time < shot.stormUntil) this.painter.stormSparks(ctx, shot.x, shot.y, this.time, storm?.seed ?? shot.seed);
         // A plasma shot is a pulsing cyan blob: a wide soft halo, a wobbling body and a bright core.
         if (vs.plasma) this.painter.plasmaShot(ctx, shot.x, shot.y, this.time);
         // An armor-piercing round is an arrowhead pointing where it flies, glowing like the plain shot.
@@ -567,6 +608,49 @@ export class Renderer {
     }
     // What the planetary defenses do to the shots they track: the lock-on and the interceptor, over the shots.
     match.world.defenses.forEach((d, i) => d.wrecked || this.painter.interception(ctx, match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, defenseView(scene.volley?.shots ?? [], d, i), this.time, match.planetsVisible ? scene.world.planets : []));
+  }
+
+  /**
+   * What an anomaly shows on a shot in flight, the same in every look: an armed shot's warning ring (The Long Way
+   * Home), the fuse burning down round it (Zeitzünder) and the second owner's ring on a melted one (Fusion).
+   */
+  private drawAnomalyMarks(ctx: CanvasRenderingContext2D, match: Match, vs: NonNullable<Scene['volley']>['shots'][number], color: string): void {
+    const { shot } = vs;
+    const rules = match.rules;
+    ctx.save();
+    const ambient = ctx.globalAlpha;
+    ctx.lineWidth = 1.5;
+    if (vs.fused) {
+      const partner = vs.partner !== undefined ? match.players[vs.partner]?.color ?? color : color;
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.arc(shot.x, shot.y, 9, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = partner;
+      ctx.beginPath();
+      ctx.arc(shot.x, shot.y, 12.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (rules.trickShots && shot.armed) {
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * 12);
+      ctx.strokeStyle = COLORS.danger;
+      ctx.globalAlpha = ambient * (0.45 + 0.4 * pulse);
+      ctx.beginPath();
+      ctx.arc(shot.x, shot.y, 6 + pulse * 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = ambient;
+    }
+    if (rules.fuse) {
+      // What is left of the fuse runs round the shot as an arc, and turns hot in its last second.
+      const left = Math.max(0, rules.fuse - shot.time);
+      const share = Math.min(1, left / rules.fuse);
+      ctx.strokeStyle = left < 1 ? COLORS.danger : COLORS.sodium;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(shot.x, shot.y, 16, -Math.PI / 2, -Math.PI / 2 + share * Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   /** Power-ups: the pickups on the field, the path of an armed preview, and the symbol each ship holds. */

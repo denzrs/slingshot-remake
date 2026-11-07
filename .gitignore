@@ -10,3 +10,5 @@ slingshot-stats-demo.db*
 # What `npm run screens -- --compare` keeps and writes.
 .screens-baseline/
 .screens-current/
+# Scratch captures (preset previews and their scripts).
+/output/

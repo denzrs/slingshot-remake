@@ -1,4 +1,4 @@
-import { DEFENSE, FIELD, LOOP_MARGIN, PLASMA, NEBULA, PHYSICS, SOLAR_STORM, WORMHOLE, type EdgeMode } from './config';
+import { ANOMALY, DEFENSE, LOOP_MARGIN, PLASMA, NEBULA, PHYSICS, SOLAR_STORM, WORMHOLE, type EdgeMode } from './config';
 
 // Read once: Shot.step is the innermost loop of every CPU search and killcam, and an imported binding is slower to read than a local one.
 const { DT, G, SHIP_RADIUS, OUT_MARGIN } = PHYSICS;
@@ -16,6 +16,8 @@ export interface Planet {
   tint: string;
   /** The antigravity power-up has turned this planet's gravity round: it pushes shots away instead of pulling them in. */
   reversed?: boolean;
+  /** Unstable: impact angles retained as the round’s hit log; its length sets the damage. */
+  fractures?: number[];
   /** The sun of the Solar System mode: the system turns around it, and no power-up can touch it. */
   sun?: boolean;
   /** Sudden death: how far the sun has turned into a red giant (0 → 1), for its look. */
@@ -23,6 +25,12 @@ export interface Planet {
   /** Sudden death: the sun went supernova, and what is left is a neutron star in a planetary nebula. */
   neutron?: boolean;
 }
+
+/** Unstable: small moons take two hits, larger worlds proportionally more. */
+export const planetDurability = (planet: Pick<Planet, 'radius'>): number => Math.max(2, Math.ceil(planet.radius / 12));
+
+/** Where a shot came back out of the white hole: on the edge, the way out of the field there, when, and which hole it fell into. */
+export interface WhiteExit { x: number; y: number; out: number; at: number; hole: number }
 
 export interface Ship {
   x: number;
@@ -107,10 +115,10 @@ export function isWormholeJump(points: readonly number[], i: number, wormholes: 
 /**
  * Whether the trail segment ending at point `i` is no flight and must not be drawn as a line: a jump between the two
  * mouths of a wormhole, or a jump across the field where a shot came out beyond the opposite edge of a loop. A shot never
- * flies more than a few pixels between two trail points, so more than half the field is always a jump.
+ * flies more than a few pixels between two trail points, so more than 60 field units is a portal jump, including a White Hole return.
  */
 export function isTrailBreak(points: readonly number[], i: number, wormholes: readonly Wormhole[]): boolean {
-  if (Math.abs(points[i] - points[i - 2]) > FIELD.width / 2 || Math.abs(points[i + 1] - points[i - 1]) > FIELD.height / 2) return true;
+  if (Math.hypot(points[i] - points[i - 2], points[i + 1] - points[i - 1]) > 60) return true;
   return wormholes.length > 0 && isWormholeJump(points, i, wormholes);
 }
 
@@ -206,18 +214,32 @@ export interface ShotRules {
   edges: EdgeMode;
   /** Seconds of flight before a shot fizzles out. */
   timeLimit: number;
+  /** Anomaly Trick Shots Only: a shot flies through ships harmlessly until a bounce, a wormhole, a loop's edge or a swing-by arms it. */
+  trickShots?: boolean;
+  /** Anomaly Pinball: a planet throws a shot back off its surface instead of stopping it. */
+  pinball?: boolean;
+  /** Anomaly Zeitzünder: seconds after which a shot goes off where it is (0 or none: it never does). */
+  fuse?: number;
+  /** Anomaly Fusion: two shots that meet melt into one instead of cancelling each other out (the volley does it). */
+  fusion?: boolean;
+  whiteHole?: boolean;
+  unstable?: boolean;
 }
 
 export type ShotEnd =
   | { kind: 'ship'; ship: number }
-  | { kind: 'planet'; planet: number }
+  | { kind: 'planet'; planet: number; surface?: { x: number; y: number; radius: number } }
   /** Which black hole swallowed it, as an index into `world.holes`. */
   | { kind: 'hole'; hole: number }
   /** Which defense shot it down, as an index into `world.defenses`, and the odds its missile had where it caught the shot. */
   | { kind: 'shotdown'; defense: number; chance: number }
   | { kind: 'clash'; other: number }
   | { kind: 'lost' }
-  | { kind: 'timeout' };
+  | { kind: 'timeout' }
+  /** Zeitzünder: the fuse burnt down and the shot went off where it was. */
+  | { kind: 'blast' }
+  /** Fusion: the shot met another and melted into a new one, `into` (an index into the volley's shots). */
+  | { kind: 'fused'; into: number };
 
 /** Trick-shot moments a projectile can rack up on its way. */
 export type StyleKind = 'swingby' | 'bank' | 'graze' | 'photon' | 'airtime';
@@ -234,6 +256,18 @@ const SWING_TURN = (40 * Math.PI) / 180;
 const GRAZE_GAP = 5;
 /** Flight time in seconds that earns the airtime bonus on a hit. */
 const AIRTIME = 6;
+
+/**
+ * Whether the world and rules still offer any way to arm a trick shot:
+ * reflecting or looping edges, a planet (for swing-bys or pinball), a black hole (swing-bys, photon rings),
+ * or a wormhole. When none exist, Trick Shots Only cannot be satisfied.
+ */
+export function hasTrickShotSources(world: World, rules: ShotRules): boolean {
+  if (rules.edges === 'wall' || rules.edges === 'loop') return true;
+  if (world.planets.length > 0 || world.holes.length > 0) return true;
+  if (world.wormholes.length > 0) return true;
+  return false;
+}
 
 interface Encounter {
   inside: boolean;
@@ -278,7 +312,7 @@ export function normalizeAngle(deg: number): number {
 export function cloneWorld(w: World): World {
   return {
     ...w,
-    planets: w.planets.map((p) => ({ ...p })),
+    planets: w.planets.map((p) => ({ ...p, ...(p.fractures ? { fractures: [...p.fractures] } : {}) })),
     ships: w.ships.map((s) => ({ ...s })),
     holes: w.holes.map((h) => ({ ...h })),
     nebulae: w.nebulae.map((n) => ({ ...n })),
@@ -286,6 +320,9 @@ export function cloneWorld(w: World): World {
     defenses: w.defenses.map((d) => ({ ...d, protects: [...d.protects] })),
   };
 }
+
+/** Where a broken planet is kept in a shot's view: so far off that its (no) pull cannot divide by a distance of nothing. */
+const GONE = 1e9;
 
 /**
  * One projectile, advanced in fixed steps with semi-implicit Euler (stable for orbits).
@@ -322,6 +359,18 @@ export class Shot {
   readonly missiles: Missile[] = [];
   /** The dice of this shot, the same on every replay: it is made from the aim, so identical shots meet identical luck. */
   seed: number;
+  /** Whether the shot can kill. Always, unless Trick Shots Only is on: then only once something has armed it. */
+  armed: boolean;
+  /** Fusion: this shot is two melted into one. It is wider for the ships it meets, and never melts again. */
+  fused = false;
+  /** Where the shot was armed since the caller last cleared this (Trick Shots Only): the volley turns it into an event. */
+  readonly arms: { x: number; y: number }[] = [];
+  /** Ships an unarmed shot flew through since the caller last cleared this (Trick Shots Only): a warning, no kill. */
+  readonly warnings: { ship: number; x: number; y: number }[] = [];
+  /** Where the shot came off a planet since the caller last cleared this (Pinball). */
+  readonly bumps: { planet: number; x: number; y: number }[] = [];
+  /** Ships an unarmed shot has flown through already, so each is warned once. */
+  private readonly warned = new Set<number>();
   /** How many times this shot has entered each storm cloud, and whether it is there now. */
   private readonly stormContacts = new Map<number, { inside: boolean; entries: number }>();
   /** The defenses that fired at this shot since the caller last cleared this. */
@@ -335,6 +384,24 @@ export class Shot {
   readonly strays: { defense: number; x: number; y: number; vx: number; vy: number; trail: number[] }[] = [];
   /** The mouth (wormhole index * 2 + end) this shot last left by: it is ignored until the shot is clear of it, so it is not carried back at once. */
   private portal = -1;
+  /** Presentation state follows shot time, so replay and restored guests agree. */
+  stormUntil = 0;
+  whiteExit?: WhiteExit;
+  readonly planetHits: { seed: number; angle: number }[] = [];
+  private readonly damage = new Map<number, number>();
+  /**
+   * Unstable: this shot's own view of the planets once it has broken one open, with the broken planet left in place
+   * as a body without radius or mass, far off the field (so the indices stay put, and the hot loops need no check of their own). Null
+   * until then: the shot reads the world's planets.
+   */
+  private broken: Planet[] | null = null;
+
+  /** A live volley has taken a planet out of the world: the shot reads the world again, and its encounter indices follow. */
+  forgetPlanet(index: number): void {
+    this.broken = null;
+    this.encounters?.splice(index, 1);
+  }
+
   /** Ships already passed through, so one hull is only ever reported once. */
   private readonly pierced = new Set<number>();
   /** The cannons this armor-piercing shot has knocked out by striking their planet (an index into `world.defenses`); the volley marks them wrecked and clears this. */
@@ -369,8 +436,10 @@ export class Shot {
     let seed = 0x811c9dc5;
     for (const n of [shooter, Math.round(angle * 1000), Math.round(power * 1000)]) seed = Math.imul(seed ^ (n | 0), 16777619);
     this.seed = seed >>> 0;
+    this.armed = !rules.trickShots;
     this.style = trackStyle === true ? [] : null;
-    this.encounters = trackStyle
+    // Trick Shots Only needs the swing-bys of every flight, a CPU's samples included: one arms the shot.
+    this.encounters = trackStyle || rules.trickShots
       ? Array.from({ length: world.planets.length + world.holes.length }, () => ({ inside: false, turn: 0, minGap: Infinity, photons: 0 }))
       : null;
   }
@@ -435,6 +504,12 @@ export class Shot {
     copy.time = this.time;
     copy.swingbys = this.swingbys;
     copy.portal = this.portal;
+    copy.armed = this.armed;
+    copy.fused = this.fused;
+    copy.stormUntil = this.stormUntil;
+    copy.whiteExit = this.whiteExit ? { ...this.whiteExit } : undefined;
+    for (const [seed, damage] of this.damage) copy.damage.set(seed, damage);
+    copy.broken = this.broken;
     copy.fired.push(...this.fired);
     copy.missiles.push(...this.missiles.map((m) => ({ ...m, trail: [...m.trail] })));
     copy.seed = Math.imul(this.seed ^ Math.round(turn * 1e6), 16777619) >>> 0;
@@ -451,7 +526,8 @@ export class Shot {
   step(): ShotEnd | null {
     if (this.end) return this.end;
     const dt = DT;
-    const { planets, ships, holes, nebulae, defenses, width, height } = this.world;
+    const { ships, holes, nebulae, defenses, width, height } = this.world;
+    const planets = this.broken ?? this.world.planets;
     const hx = this.vx;
     const hy = this.vy;
     this.updateStormContacts();
@@ -519,6 +595,7 @@ export class Shot {
     this.time += dt;
 
     let bounced = false;
+    let wrapped = false;
     if (this.rules.edges === 'wall') {
       if (this.x < 0) { this.x = -this.x; this.vx = -this.vx; bounced = true; }
       else if (this.x > width) { this.x = 2 * width - this.x; this.vx = -this.vx; bounced = true; }
@@ -527,22 +604,32 @@ export class Shot {
     } else if (this.rules.edges === 'loop') {
       // The field closes on itself: a shot flies out beyond the edge to where it is carried across, and from beyond the opposite edge it comes back in, with its velocity unchanged.
       const m = LOOP_MARGIN;
-      if (this.x < -m) this.x += width + 2 * m;
-      else if (this.x > width + m) this.x -= width + 2 * m;
-      if (this.y < -m) this.y += height + 2 * m;
-      else if (this.y > height + m) this.y -= height + 2 * m;
+      if (this.x < -m) { this.x += width + 2 * m; wrapped = true; }
+      else if (this.x > width + m) { this.x -= width + 2 * m; wrapped = true; }
+      if (this.y < -m) { this.y += height + 2 * m; wrapped = true; }
+      else if (this.y > height + m) { this.y -= height + 2 * m; wrapped = true; }
     }
+    if (bounced || wrapped) this.arm();
     if (this.encounters) this.trackStyle(hx, hy, bounced);
     if (this.world.wormholes.length) this.warp();
 
     if (this.pierce) this.strikeCannons();
-    const r2 = SHIP_RADIUS * SHIP_RADIUS;
+    const reach = this.fused ? SHIP_RADIUS + ANOMALY.FUSED_REACH : SHIP_RADIUS;
+    const r2 = reach * reach;
     for (let i = 0; i < ships.length; i++) {
       const s = ships[i];
       if (!s.alive || this.spare.includes(i)) continue;
       const dx = s.x - this.x;
       const dy = s.y - this.y;
       if (dx * dx + dy * dy >= r2) continue;
+      // Trick Shots Only: an unarmed shot is only a warning. It flies on through the hull, shield and all.
+      if (!this.armed) {
+        if (!this.warned.has(i)) {
+          this.warned.add(i);
+          this.warnings.push({ ship: i, x: this.x, y: this.y });
+        }
+        continue;
+      }
       // Armor piercing runs through a ship, shield or not: the hull is reported and the shot flies on. A
       // planet or a black hole still stops it, they are not hulls.
       if (this.pierce) {
@@ -560,13 +647,24 @@ export class Shot {
       const p = planets[i];
       const dx = p.x - this.x;
       const dy = p.y - this.y;
-      if (dx * dx + dy * dy < p.radius * p.radius) return this.finish({ kind: 'planet', planet: i });
+      if (dx * dx + dy * dy >= p.radius * p.radius) continue;
+      if (this.rules.unstable && !p.sun) {
+        const damage = Math.max(this.damage.get(p.seed) ?? 0, p.fractures?.length ?? 0) + 1;
+        this.damage.set(p.seed, damage);
+        this.planetHits.push({ seed: p.seed, angle: Math.atan2(this.y - p.y, this.x - p.x) });
+        if (damage >= planetDurability(p)) this.break(p);
+      }
+      if (!this.rules.pinball) return this.finish({ kind: 'planet', planet: i, ...(this.rules.unstable ? { surface: { x: p.x, y: p.y, radius: p.radius } } : {}) });
+      this.bounceOff(i, p);
     }
     for (let i = 0; i < holes.length; i++) {
       const hole = holes[i];
       const dx = hole.x - this.x;
       const dy = hole.y - this.y;
-      if (dx * dx + dy * dy < hole.radius * hole.radius) return this.finish({ kind: 'hole', hole: i });
+      if (dx * dx + dy * dy < hole.radius * hole.radius) {
+        if (this.rules.whiteHole) this.escapeHole(i);
+        else return this.finish({ kind: 'hole', hole: i });
+      }
     }
     // Planetary defenses: a shot that flies into a defense's area (bar its own side's, and an armor-piercing shot, which the cannon cannot lock onto) gets a missile after it,
     // once per defense. The defense foresees the shot's path and holds its fire until a missile launched now
@@ -615,8 +713,93 @@ export class Shot {
     }
     const m = OUT_MARGIN;
     if (this.x < -m || this.x > width + m || this.y < -m || this.y > height + m) return this.finish({ kind: 'lost' });
+    if (this.rules.fuse && this.time >= this.rules.fuse) return this.detonate();
     if (this.time >= this.rules.timeLimit) return this.finish({ kind: 'timeout' });
     return null;
+  }
+
+  /** Unstable: the shot has broken `planet` open for good. For this shot it is gone from here on. */
+  private break(planet: Planet): void {
+    this.broken = (this.broken ?? this.world.planets).map((p) => (p.seed === planet.seed ? { ...p, x: -GONE, y: -GONE, radius: 0, mass: 0 } : p));
+  }
+
+  /** Trick Shots Only: the shot can kill from now on. Noted once, where it happened, for the flash. */
+  private arm(): void {
+    if (this.armed) return;
+    this.armed = true;
+    this.arms.push({ x: this.x, y: this.y });
+  }
+
+  /** White Hole: the shot comes back out at a seeded side and position of the edge (no shared RNG is consumed by planning, guests or replay), and is armed by the jump. */
+  private escapeHole(index: number): void {
+    const { width, height } = this.world;
+    const salt = Math.round(this.time / DT) * 17 + index;
+    let side = Math.floor(dice(this.seed, salt) * 4);
+    const along = .08 + dice(this.seed, salt + 1) * .84;
+    let x = side === 0 ? .5 : side === 1 ? width - .5 : along * width;
+    let y = side === 2 ? .5 : side === 3 ? height - .5 : along * height;
+    if (Math.hypot(x - this.x, y - this.y) < 64) {
+      side ^= 1;
+      x = side === 0 ? .5 : side === 1 ? width - .5 : along * width;
+      y = side === 2 ? .5 : side === 3 ? height - .5 : along * height;
+    }
+    this.warps.push({ fromX: this.x, fromY: this.y, toX: x, toY: y });
+    const inward = [0, Math.PI, Math.PI / 2, -Math.PI / 2][side];
+    const angle = inward + (dice(this.seed, salt + 2) - .5) * Math.PI * .65;
+    const speed = Math.hypot(this.vx, this.vy);
+    this.x = x; this.y = y;
+    this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
+    this.whiteExit = { x, y, out: inward + Math.PI, at: this.time, hole: index };
+    this.arm();
+  }
+
+  /**
+   * Pinball: the shot comes off the planet's surface like a ball off a bumper. The velocity is mirrored about the
+   * surface normal (only when it is heading in, so a shot never sticks), and the shot set just outside the rock.
+   */
+  private bounceOff(index: number, p: Planet): void {
+    const dx = this.x - p.x;
+    const dy = this.y - p.y;
+    const d = Math.hypot(dx, dy);
+    const nx = d > 0 ? dx / d : 1;
+    const ny = d > 0 ? dy / d : 0;
+    const dot = this.vx * nx + this.vy * ny;
+    if (dot < 0) {
+      this.vx -= 2 * dot * nx;
+      this.vy -= 2 * dot * ny;
+    }
+    this.x = p.x + nx * (p.radius + 0.5);
+    this.y = p.y + ny * (p.radius + 0.5);
+    if (p.sun && !this.plasma) {
+      this.kickFromStorm({ ...p, seed: p.seed / 0x1_0000_0000 }, Math.round(this.time / DT));
+      const inward = this.vx * nx + this.vy * ny;
+      if (inward < 0) { this.vx -= 2 * inward * nx; this.vy -= 2 * inward * ny; }
+      this.stormUntil = this.time + .7;
+    }
+    this.bumps.push({ planet: index, x: this.x, y: this.y });
+    this.arm();
+  }
+
+  /**
+   * Zeitzünder: the fuse has burnt down and the shot goes off where it is. Every ship in reach is out (the volley
+   * kills them, as it does for an armor-piercing shot, so a planner's sample never touches the world); a shield
+   * soaks the blast up instead and is spent. Timing the blast is itself a trick shot, which arms the shot.
+   */
+  private detonate(): ShotEnd {
+    this.arm();
+    const reach2 = ANOMALY.BLAST_RADIUS * ANOMALY.BLAST_RADIUS;
+    const { ships } = this.world;
+    for (let i = 0; i < ships.length; i++) {
+      const s = ships[i];
+      if (!s.alive || this.spare.includes(i) || this.pierced.has(i)) continue;
+      if ((s.x - this.x) ** 2 + (s.y - this.y) ** 2 >= reach2) continue;
+      if (s.shield) this.reflects.push({ ship: i, x: s.x, y: s.y });
+      else {
+        this.pierced.add(i);
+        this.hits.push({ ship: i, x: s.x, y: s.y });
+      }
+    }
+    return this.finish({ kind: 'blast' });
   }
 
   /**
@@ -714,6 +897,7 @@ export class Shot {
         this.x = tx;
         this.y = ty;
         this.portal = id ^ 1;
+        this.arm();
         return;
       }
     }
@@ -742,6 +926,7 @@ export class Shot {
     this.x = cx + nx * out;
     this.y = cy + ny * out;
     this.reflects.push({ ship, x: this.x, y: this.y });
+    this.arm();
   }
 
   private finish(end: ShotEnd): ShotEnd {
@@ -759,10 +944,12 @@ export class Shot {
     if (bounced) this.recordStyle('bank');
     // How far gravity turned the velocity this step (a bounce is not a turn).
     const turn = bounced ? 0 : Math.atan2(hx * this.vy - hy * this.vx, hx * this.vx + hy * this.vy);
-    const { planets, holes } = this.world;
+    const { holes } = this.world;
+    const planets = this.broken ?? this.world.planets;
 
     for (let i = 0; i < planets.length; i++) {
       const p = planets[i];
+      if (p.radius <= 0) continue;
       const d = Math.hypot(p.x - this.x, p.y - this.y);
       const e = encs[i];
       if (d < p.radius * 2.5 + 25) {
@@ -802,6 +989,7 @@ export class Shot {
 
   private recordStyle(kind: StyleKind): void {
     if (kind === 'swingby') this.swingbys++;
+    if (kind === 'swingby' || kind === 'photon') this.arm();
     this.style?.push({ kind, x: this.x, y: this.y });
   }
 }
@@ -856,6 +1044,8 @@ export function simulateShot(
   const taken = new Set<number>();
   const cannons = pierce ? world.defenses.filter((d) => !d.wrecked && !d.protects.includes(shooter)).map((d) => cannonHead(world, d)) : [];
   let cannon2 = Infinity;
+  // Trick Shots Only: an unarmed pass is no near miss. It only counts as a long way off, so the search looks for the shots that get armed.
+  let unarmed2 = Infinity;
   while (!end) {
     end = shot.step();
     for (const c of cannons) cannon2 = Math.min(cannon2, (c.x - shot.x) ** 2 + (c.y - shot.y) ** 2);
@@ -863,7 +1053,8 @@ export function simulateShot(
       const dx = t.x - shot.x;
       const dy = t.y - shot.y;
       const d2 = dx * dx + dy * dy;
-      if (d2 < closest2) closest2 = d2;
+      if (!shot.armed) unarmed2 = Math.min(unarmed2, d2);
+      else if (d2 < closest2) closest2 = d2;
     }
     for (const m of shot.time > 0.25 ? [own, ...mates] : mates) {
       const dx = m.x - shot.x;
@@ -880,8 +1071,12 @@ export function simulateShot(
       }
     });
   }
-  return { end, closest: Math.sqrt(closest2), selfClosest: Math.sqrt(self2), gates: passed, pierced: shot.hits.map((hit) => hit.ship), wrecked: shot.wrecks.map((w) => w.defense), cannonClosest: Math.sqrt(cannon2) };
+  const closest = Math.min(Math.sqrt(closest2), Math.sqrt(unarmed2) + UNARMED_MISS);
+  return { end, closest, selfClosest: Math.sqrt(self2), gates: passed, pierced: shot.hits.map((hit) => hit.ship), wrecked: shot.wrecks.map((w) => w.defense), cannonClosest: Math.sqrt(cannon2) };
 }
+
+/** Trick Shots Only: how much further off than it is an unarmed shot's closest pass counts for a planner. */
+const UNARMED_MISS = 150;
 
 export interface StyledShotOutcome extends ShotOutcome {
   swingbys: number;
