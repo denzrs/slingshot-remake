@@ -8,7 +8,7 @@ import { createMatch, type Match, type Scene as FieldScene } from '../game';
 import { DEFAULT_SETTINGS, type Seat } from '../data/settings';
 import { LOOKS as LOOK_IDS, lookLabelKey, setLook, type Look } from '../data/look';
 import { t } from '../platform/i18n';
-import { FIELD, NEBULA, WORMHOLE } from '../sim/config';
+import { FIELD, NEBULA, SUDDEN_DEATH, WORMHOLE } from '../sim/config';
 import type { Missile } from '../sim/physics';
 import type { VolleyShot } from '../sim/volley';
 import { POWER_UP_KINDS } from '../sim/powerups';
@@ -21,7 +21,7 @@ import { holdShaderDetail } from '../render/looks/forged-sky';
 import { Renderer, type DrawOptions } from '../render/renderer';
 
 /**
- * Dev-only page (`/looks.html`, never part of a build): the real field renderer, once per look, on the same scene, so the
+ * Dev-only page (`/dev/looks.html`, never part of a build): the real field renderer, once per look, on the same scene, so the
  * looks can be compared side by side and talked about. A new look shows up by itself (see `data/look.ts`); a new scene goes
  * into `SCENES`. "Pixel-Stand merken" and "Mit Stand vergleichen" catch a drawing change you did not mean to make: remember
  * the pixels of every scene in every look, change the code, compare.
@@ -32,6 +32,9 @@ const LOOKS: { look: Look; name: string; note: string }[] = LOOK_IDS.map((look) 
 
 /** The seconds a scene's card has run, handed to the scene override of that match. */
 const shotClock = new WeakMap<Match, { t: number }>();
+
+/** The planets a match started with, for a scene where a wave takes them and the loop brings them back. */
+const allPlanets = new WeakMap<Match, Planet[]>();
 
 const OPTIONS: DrawOptions = { hud: false, fullScreen: false, touch: false, recording: false, keyHints: false, aimCardDodge: false };
 
@@ -388,21 +391,42 @@ const SCENES: Scene[] = [
   },
   {
     title: 'Supernova',
-    sub: 'Roter Riese, Explosion, Neutronenstern im Nebel (Schleife)',
-    build: () => aiming('solar', 7, { maxPlanets: 6 }),
+    sub: 'Roter Riese, Explosion, Welle zerlegt die Planeten, Neutronenstern im Nebel (Schleife)',
+    build: () => {
+      const match = aiming('solar', 7, { maxPlanets: 6 });
+      allPlanets.set(match, [...match.world.planets]);
+      return match;
+    },
     tick: (match, card) => {
       const sun = match.world.planets.find((p) => p.sun);
       if (!sun) return;
+      const world = match.world;
       const t = card.clock % 14;
       sun.giant = t < 4 ? t / 4 : 0;
       if (t < 4) {
         sun.neutron = false;
         card.step = -1;
-      } else if (card.step !== 1) {
-        card.step = 1;
-        sun.neutron = true;
-        const doomed = match.world.ships.map((s, i) => ({ x: s.x, y: s.y, angle: match.players[i].angle, color: match.players[i].color }));
-        card.effects.supernova(sun.x, sun.y, doomed.slice(0, 3), []);
+        // A new loop: the planets the last wave took are back.
+        const planets = allPlanets.get(match);
+        if (planets && world.planets.length !== planets.length) {
+          world.planets = [...planets];
+          world.version++;
+        }
+      } else {
+        if (card.step !== 1) {
+          card.step = 1;
+          sun.neutron = true;
+          const doomed = world.ships.map((s, i) => ({ x: s.x, y: s.y, angle: match.players[i].angle, color: match.players[i].color }));
+          const rocks = world.planets.filter((p) => !p.sun).map((p) => ({ x: p.x, y: p.y, radius: p.radius, color: p.tint }));
+          card.effects.supernova(sun.x, sun.y, doomed.slice(0, 3), rocks);
+        }
+        // The shockwave takes each planet as it gets there, as in the game (`SolarMatch.shatter`).
+        const front = SUDDEN_DEATH.NOVA_SPEED * (t - 4);
+        const kept = world.planets.filter((p) => p.sun || Math.hypot(p.x - sun.x, p.y - sun.y) > front);
+        if (kept.length !== world.planets.length) {
+          world.planets = kept;
+          world.version++;
+        }
       }
     },
   },
@@ -436,22 +460,77 @@ const SCENES: Scene[] = [
       if (clock) clock.t = card.clock;
     },
   },
+  {
+    title: 'Instabil · Warnpuls',
+    sub: 'Ein, drei und fünf Treffer: Je näher am Zerbrechen, desto schneller der dunkelrote Puls. Holo-Linien glühen rot.',
+    build: () => {
+      const match = aiming('classic', 17, { anomalies: ['unstable', 'pinball'] });
+      match.world.planets = [1, 3, 5].map((hits, i) => ({
+        x: 300 + i * 340, y: 400, radius: 72, mass: 72 ** 3, seed: 1701 + i,
+        style: 'rocky' as const, tint: '#a89880',
+        fractures: Array.from({ length: hits }, (_, j) => -.8 + j * 2.4),
+      }));
+      return match;
+    },
+  },
+  {
+    title: 'Weißes Loch',
+    sub: 'Anomalie Weißes Loch: der Horizont leuchtet, Licht läuft aus ihm heraus (Forged: mit dem Loch geraytract); beim Hineinfliegen schließt sich ein Ring und der Kern blitzt, am Ausgang öffnet sich eine Fontäne und der Schuss glüht weiß (Schleife, zwei Schüsse versetzt)',
+    build: () => {
+      const match = aiming('horizon', 5, { anomalies: ['whiteHole'] });
+      const world = match.world;
+      world.holes.length = 0;
+      world.holes.push({ x: FIELD.width / 2, y: FIELD.height / 2, radius: 34, mass: 1 });
+      const hole = world.holes[0];
+      const clock = { t: 0 };
+      shotClock.set(match, clock);
+      const PERIOD = 3.2;
+      const IN = 1.3;
+      const SPEED = 320;
+      /** One shot's loop: flying into the hole, then out of `exit` at angle `heading`, `offset` seconds behind the clock. */
+      const loop = (owner: number, from: [number, number], lift: number, exit: { x: number; y: number; out: number; heading: number }, offset: number): unknown => {
+        const t = (clock.t + offset) % PERIOD;
+        const going = arc(from[0], from[1], hole.x, hole.y, lift, Math.min(1, t / IN));
+        if (t < IN) return flying(owner, going);
+        const out = t - IN;
+        const trail = [...going];
+        for (let s = 0; s <= out + 1e-6; s += 1 / 30) trail.push(exit.x + Math.cos(exit.heading) * SPEED * s, exit.y + Math.sin(exit.heading) * SPEED * s);
+        const n = trail.length;
+        const shot = { x: trail[n - 2], y: trail[n - 1], vx: Math.cos(exit.heading) * SPEED, vy: Math.sin(exit.heading) * SPEED, inField: true, end: null, missiles: [], time: t, whiteExit: { x: exit.x, y: exit.y, out: exit.out, at: IN, hole: 0 } };
+        return { owner, trail, shot };
+      };
+      overrideScene(match, () => ({
+        volley: {
+          shots: [
+            loop(0, [180, 680], 260, { x: 0.5, y: 250, out: Math.PI, heading: -0.25 }, 0),
+            loop(1, [1110, 640], 180, { x: 820, y: 0.5, out: -Math.PI / 2, heading: Math.PI / 2 + 0.35 }, PERIOD / 2),
+          ],
+        } as unknown as FieldScene['volley'],
+      }));
+      match.phase = 'flying';
+      return match;
+    },
+    tick: (match, card) => {
+      const clock = shotClock.get(match);
+      if (clock) clock.t = card.clock;
+    },
+  },
 ];
 
 const main = document.createElement('div');
-main.className = 'wrap';
+main.className = 'wrap looks-gallery';
 main.innerHTML = `
   <header>
     <h1>Look<br>Galerie</h1>
     <ul class="legend">${LOOKS.map((l) => `<li><b>${l.name}</b><span>${l.note}</span></li>`).join('')}</ul>
-    <div class="tools">
-      <button id="pause" type="button">Animation pausieren</button>
-      <button id="remember" type="button">Pixel-Stand merken</button>
-      <button id="compare" type="button">Mit Stand vergleichen</button>
-      <output id="result"></output>
-      <output id="cost" title="Mittel über etwa eine Sekunde: Zeichenzeit (CPU) aller sichtbaren Karten, GPU-Zeit der Shader (nur mit Zeitmesser), Abstand der Bilder"></output>
-    </div>
   </header>
+  <div class="tools">
+    <button id="pause" type="button">Animation pausieren</button>
+    <button id="remember" type="button">Pixel-Stand merken</button>
+    <button id="compare" type="button">Mit Stand vergleichen</button>
+    <output id="result"></output>
+    <output id="cost" title="Mittel über etwa eine Sekunde: Zeichenzeit (CPU) aller sichtbaren Karten, GPU-Zeit der Shader (nur mit Zeitmesser), Abstand der Bilder"></output>
+  </div>
   <main id="scenes"></main>`;
 document.body.append(main);
 

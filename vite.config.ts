@@ -1,34 +1,21 @@
 import type { Plugin } from 'vite';
 import { configDefaults, defineConfig } from 'vitest/config';
+import { devRoute } from './dev/routes';
 
-/**
- * The debug aim predictor (`/debug-aim.html`) answers 404 unless the server was
- * started with `DEBUG_AIM` set to any non-empty value. It gates the dev and preview
- * servers; `vite build` bundles only `index.html`, so the page never ships in a build.
- */
-function debugAimGate(): Plugin {
-  const enabled = !!process.env.DEBUG_AIM;
-  return {
-    name: 'debug-aim-gate',
-    configureServer(server) {
-      if (!enabled) blockDebugAim(server);
-    },
-    configurePreviewServer(server) {
-      if (!enabled) blockDebugAim(server);
-    },
+/** The dev hub and its tools never resolve through the production SPA fallback. */
+function devPagesGate(): Plugin {
+  const gate = (development: boolean) => (req: { url?: string }, res: { statusCode: number; setHeader: (name: string, value: string) => void; end: (body?: string) => void }, next: () => void) => {
+    const route = devRoute(req.url ?? '/', development, !!process.env.DEBUG_AIM);
+    if (!route) return next();
+    res.statusCode = route.status;
+    if ('location' in route) res.setHeader('Location', route.location);
+    res.end('message' in route ? route.message : undefined);
   };
-}
-
-/** 404 every request below /debug-aim while the gate is off. */
-function blockDebugAim(server: { middlewares: { use: (fn: (req: { url?: string }, res: { statusCode: number; end: (body: string) => void }, next: () => void) => void) => void } }): void {
-  server.middlewares.use((req, res, next) => {
-    if (req.url?.startsWith('/debug-aim')) {
-      res.statusCode = 404;
-      res.end('debug aim predictor disabled: start the server with DEBUG_AIM set');
-      return;
-    }
-    next();
-  });
+  return {
+    name: 'dev-pages-gate',
+    configureServer(server) { server.middlewares.use(gate(true)); },
+    configurePreviewServer(server) { server.middlewares.use(gate(false)); },
+  };
 }
 
 /**
@@ -52,9 +39,12 @@ function statsRoute(): Plugin {
 // (e.g. https://<user>.github.io/<repo>/).
 export default defineConfig({
   base: './',
-  // `DEBUG_AIM` (which serves /debug-aim.html) also reaches the client, so the in-game seed badge can follow it.
+  // `DEBUG_AIM` (which serves /dev/aim.html) also reaches the client, so the in-game seed badge can follow it.
   envPrefix: ['VITE_', 'DEBUG_'],
-  plugins: [debugAimGate(), statsRoute()],
+  plugins: [devPagesGate(), statsRoute()],
+  optimizeDeps: {
+    include: ['msgpackr'],
+  },
   test: {
     // Sibling git worktrees live under .claude/; their tests are not this checkout's.
     exclude: [...configDefaults.exclude, '.claude/**'],
