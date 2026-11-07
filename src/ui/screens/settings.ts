@@ -3,7 +3,8 @@ import { LANGS, t, type Lang } from '../../platform/i18n';
 import { isLook, LOOKS, lookLabelKey } from '../../data/look';
 import type { Settings } from '../../data/settings';
 import { h, type MenuItem, type Screen } from '../menu/menu';
-import { menuGroup, menuPage } from '../menu/menu-page';
+import { menuPage } from '../menu/menu-page';
+import { mobileSheet, type SheetSelection } from '../menu/mobile-sheet';
 import type { App } from './app';
 
 const LANG_NAMES: Record<Lang, string> = { de: 'Deutsch', en: 'English' };
@@ -38,26 +39,33 @@ function settingToggle(app: App, label: string, key: BooleanSetting): MenuItem {
   };
 }
 
-/** Only what concerns this device; the rules of a game live on the setup screen. Everything on one page, in two columns. */
-export function settingsScreen(app: App): Screen {
+/** Keep the selected subject through language rebuilds within one settings visit. */
+export function openSettings(app: App): void {
+  const selection: SheetSelection = {};
+  app.menu.push(() => settingsScreen(app, selection));
+}
+
+/** Only what concerns this device; the rules of a game live on the setup screen. */
+function settingsScreen(app: App, selection: SheetSelection): Screen {
   const touch = matchMedia('(pointer: coarse)').matches;
+  const sheet = mobileSheet([
+    [{ id: 'prefs-display', title: t('shell.display') }],
+    [
+      { id: 'prefs-device', title: t('shell.soundDevice') },
+      { id: 'prefs-language', title: t('common.language') },
+      ...(touch ? [{ id: 'prefs-touch', title: t('shell.touch') }] : []),
+    ],
+  ], t('common.settings'), () => app.menu.refresh(), selection);
   const inGroup = (item: MenuItem, group: 'display' | 'device' | 'language' | 'touch'): MenuItem => ({ ...item, section: `prefs-${group}` } as MenuItem);
   return {
     build: () => menuPage({
       title: t('common.settings'), intro: t('settings.note'), className: 'menu-page--settings',
-      body: [h('div.sheet', null,
-        h('div.sheet__col', null, menuGroup(t('shell.display'), 'prefs-display')),
-        h('div.sheet__col', null,
-          menuGroup(t('shell.soundDevice'), 'prefs-device'),
-          menuGroup(t('common.language'), 'prefs-language'),
-          // Only a touch screen has the stick.
-          ...(touch ? [menuGroup(t('shell.touch'), 'prefs-touch')] : []),
-        ),
-      )],
+      navigation: sheet.navigation,
+      body: [sheet.el],
       keys: t('briefing.keys'),
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
     }),
-    items: [
+    items: ([
       inGroup({
         kind: 'segmented',
         label: t('settings.look'),
@@ -97,6 +105,18 @@ export function settingsScreen(app: App): Screen {
       ...(touch
         ? [inGroup({
             kind: 'segmented',
+            label: t('settings.touchControls'),
+            options: [
+              { value: 'wheel', label: t('settings.touchControls.wheel') },
+              { value: 'stick', label: t('settings.touchControls.stick') },
+            ],
+            get: () => app.settings.touchControls,
+            set: (v: unknown) => {
+              app.settings.touchControls = v === 'stick' ? 'stick' : 'wheel';
+              app.settingsChanged();
+            },
+          }, 'touch'), inGroup({
+            kind: 'segmented',
             label: t('settings.wheelSide'),
             options: [
               { value: 'left', label: t('settings.wheelLeft') },
@@ -110,6 +130,7 @@ export function settingsScreen(app: App): Screen {
           }, 'touch')]
         : []),
       { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },
-    ],
+    ] satisfies MenuItem[]).map(sheet.bind),
+    dispose: sheet.dispose,
   };
 }

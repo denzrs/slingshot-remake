@@ -93,25 +93,39 @@ const POWER_PAGES: readonly [readonly PowerUpKind[], readonly PowerUpKind[]] = [
 
 const TRICKS = Object.keys(STYLE_MULTIPLIER) as StyleKind[];
 
+function keyboardAim(): HTMLElement[] {
+  return [
+    para(t('tutorial.aim.1')),
+    keysTable(
+      keyRow([kbd('←'), ' ', kbd('→')], t('tutorial.aim.rotate')),
+      keyRow([kbd('↑'), ' ', kbd('↓')], t('tutorial.aim.power')),
+      keyRow([kbd('Enter')], t('tutorial.aim.fire')),
+    ),
+    para(t('tutorial.aim.2')),
+  ];
+}
+
 /** The pages of the tutorial, in order. Each one is built when it is shown, so its texts follow the language. */
-const TUTORIAL: (() => Lesson)[] = [
-  () => ({
+const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
+  (touch) => ({
     title: t('tutorial.welcome.title'),
     demo: 'welcome',
-    body: [para(t('tutorial.welcome.1')), para(t('tutorial.welcome.2')), para(t('tutorial.welcome.3'))],
+    body: [para(t('tutorial.welcome.1')), para(t('tutorial.welcome.2')), para(t(touch ? 'tutorial.welcome.touch' : 'tutorial.welcome.3'))],
   }),
-  () => ({
+  (touch, stick) => ({
     title: t('tutorial.aim.title'),
     demo: 'aim',
-    body: [
-      para(t('tutorial.aim.1')),
-      keysTable(
-        keyRow([kbd('←'), ' ', kbd('→')], t('tutorial.aim.rotate')),
-        keyRow([kbd('↑'), ' ', kbd('↓')], t('tutorial.aim.power')),
-        keyRow([kbd('Enter')], t('tutorial.aim.fire')),
+    body: touch ? [
+      para(t(stick ? 'tutorial.aim.touchStick' : 'tutorial.aim.touchWheel')),
+      h(`div.tutorial__touch-example${stick ? '.tutorial__touch-example--stick' : ''}`, { 'aria-hidden': 'true' },
+        h('span.tutorial__touch-control', null, stick ? '↙ ◉ ↗' : '◔ ↻'),
+        ...(stick ? [] : [h('span.tutorial__touch-control', null, '− ━●━━ +')]),
+        h('span.tutorial__touch-fire', null, t('common.fire')),
       ),
-      para(t('tutorial.aim.2')),
-    ],
+      para(t('tutorial.aim.touchFire')),
+      para(t('tutorial.aim.touchSettings')),
+      h('details.tutorial__keyboard', null, h('summary', null, t('tutorial.keyboard.more')), ...keyboardAim()),
+    ] : keyboardAim(),
   }),
   () => ({
     title: t('tutorial.gravity.title'),
@@ -191,10 +205,11 @@ const TUTORIAL: (() => Lesson)[] = [
       para(t('tutorial.daily.4')),
     ],
   }),
-  () => ({
+  (touch) => ({
     title: t('tutorial.keys.title'),
     demo: 'keys',
     body: [
+      ...(touch ? [para(t('tutorial.keys.touch'))] : []),
       para(t('tutorial.keys.1')),
       keysTable(
         keyRow([kbd(t('common.space'))], t('tutorial.keys.space')),
@@ -213,12 +228,14 @@ const TUTORIAL: (() => Lesson)[] = [
  */
 export function tutorialScreen(app: App): () => Screen {
   let page = 0;
+  let chapterNav: HTMLElement | null = null;
   let selectedPowerUp: PowerUpKind = POWER_PAGES[0][0];
   let selectedTrick: StyleKind = TRICKS[0];
   let selectedMark: MarkKind = MARK_KINDS[0];
   let preview: ReturnType<typeof mountTutorialPreview> | null = null;
   return (): Screen => {
-    const lessons = TUTORIAL.map((lesson) => lesson());
+    const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    const lessons = TUTORIAL.map((lesson) => lesson(touch, app.settings.touchControls === 'stick'));
     const hasPreview = page !== 0 && page !== lessons.length - 1 && lessons[page].demo !== null;
     const powerUps = lessons[page].powerUps ?? [];
     const tricks = lessons[page].tricks ?? [];
@@ -231,6 +248,14 @@ export function tutorialScreen(app: App): () => Screen {
       type: 'range', min: '0', max: '1000', step: '1', value: '0',
       'aria-label': t('tutorial.preview.timeline'),
     }) as HTMLInputElement : null;
+    const currentChapterNav = h('nav.items.tutorial-chapters', { 'data-section': 'chapters', 'aria-label': t('shell.chapters') });
+    const currentChapterRail = h('div.tutorial-chapter-rail', { 'data-at-start': 'true', 'data-at-end': 'false' }, currentChapterNav);
+    currentChapterNav.addEventListener('scroll', () => {
+      const maxScroll = currentChapterNav.scrollWidth - currentChapterNav.clientWidth;
+      currentChapterRail.dataset.atStart = String(currentChapterNav.scrollLeft <= 1);
+      currentChapterRail.dataset.atEnd = String(currentChapterNav.scrollLeft >= maxScroll - 1);
+    }, { passive: true });
+    chapterNav = currentChapterNav;
     timeline?.addEventListener('input', (event) => {
       const range = event.currentTarget as HTMLInputElement;
       preview?.seek(Number(range.value) / 1000);
@@ -305,14 +330,20 @@ export function tutorialScreen(app: App): () => Screen {
               ...(previewPanel ? [previewPanel] : []),
             ),
           )],
-          aside: [h('nav.items.tutorial-chapters', { 'data-section': 'chapters', 'aria-label': t('shell.chapters') })],
+          aside: [currentChapterRail],
           footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
         });
       },
       items: [
         ...lessons.map((lesson, i): MenuItem => ({
           kind: 'action', section: 'chapters', label: lesson.title, selected: () => page === i,
-          run: () => { page = i; app.menu.rebuild(); },
+          run: () => {
+            page = i;
+            app.menu.rebuild();
+            if (typeof matchMedia === 'function' && matchMedia('(max-width: 760px)').matches) {
+              chapterNav?.querySelector<HTMLElement>('.is-selected')?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });
+            }
+          },
         })),
         ...powerUps.map((kind): MenuItem => ({
           kind: 'action', section: 'powerups', label: t(`powerup.${kind}`),

@@ -111,6 +111,7 @@ async function visit(browser: Browser, opts: Options, base: string, size: string
   const { cdp } = browser;
   const [width, height] = size.split('x').map(Number);
   await browser.resize(width, height, width < 768);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: width < 768 });
   const fail = (problem: string): void => {
     results.push({ size, page: page.name, problems: [problem] });
   };
@@ -153,6 +154,17 @@ async function visit(browser: Browser, opts: Options, base: string, size: string
   for (const step of page.steps) {
     if ('click' in step) {
       if (!(await cdp.evaluate<boolean>(press(step.click)))) return fail(`nothing to press for ${JSON.stringify(step.click)}`);
+      await cdp.evaluate(SETTLE);
+    } else if ('category' in step) {
+      const opened = await cdp.evaluate<boolean>(`(() => {
+        const navigation = [...document.querySelectorAll('.sheet-nav')].find((el) => !el.hidden);
+        if (!navigation) return true;
+        const button = navigation.querySelector('[aria-controls$="-${step.category}"]');
+        if (!button) return false;
+        button.click();
+        return true;
+      })()`);
+      if (!opened) return fail(`no category ${step.category}`);
       await cdp.evaluate(SETTLE);
     } else if ('type' in step) {
       const typed = await cdp.evaluate<boolean>(`(() => {

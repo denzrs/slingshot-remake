@@ -40,6 +40,7 @@ import { Menu, h } from './ui/menu/menu';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
 import { TouchPower } from './ui/touch/touch-power';
 import { TouchWheel } from './ui/touch/touch-wheel';
+import { TouchStick } from './ui/touch/touch-stick';
 import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, type App } from './ui/screens';
 import { statsAvailable, statsScreen } from './ui/stats/stats';
 import { reportLocalGame, trackLocalGame } from './net/localStats';
@@ -293,7 +294,8 @@ function multiplayer(): MultiplayerSession {
   });
   const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session, () => {
     if (overlay.querySelector('.menu-page--room')) return { kind: 'lobby' };
-    const matchMenu = overlay.querySelector('.menu-page--pause, .menu-page--results');
+    if (screen === 'play' && session?.match && session.match === match && overlay.querySelector('.menu-page--results')) return { kind: 'results' };
+    const matchMenu = overlay.querySelector('.menu-page--pause');
     if (screen === 'play' && session?.match && session.match === match && (!menu.isOpen || matchMenu)) return { kind: 'game' };
     return null;
   });
@@ -760,11 +762,13 @@ const touchAimHandlers = {
 const touchBar = document.querySelector<HTMLElement>('#touch-bar')!;
 const powerBar = new TouchPower(touchAimHandlers);
 const touchWheel = new TouchWheel(touchAimHandlers);
+const touchStick = new TouchStick(touchAimHandlers);
 touchBar.prepend(powerBar.el);
-document.body.append(touchWheel.el);
+document.body.append(touchWheel.el, touchStick.el);
 /** The wheel sits in the right corner of the screen, or — a setting on a touch screen — in the left one, and the power bar and the fire button follow. */
 function applyWheelSide(): void {
   document.documentElement.classList.toggle('wheel-left', settings.wheelSide === 'left');
+  document.documentElement.classList.toggle('touch-stick-mode', settings.touchControls === 'stick');
   touchWheel.setSide(settings.wheelSide);
 }
 applyWheelSide();
@@ -830,8 +834,10 @@ function syncButtons(): void {
   // The wheel and the bar aim for whoever is aiming; a placement is aimed on the field itself.
   const aiming = playing && coarsePointer.matches && canAim() && !m!.placing ? m!.players[m!.viewer ?? m!.current] : null;
   const aim = aiming && { angle: aiming.angle, power: aiming.power, maxPower: m!.settings.maxPower, fixedPower: m!.settings.fixedPower };
-  powerBar.update(aim);
-  touchWheel.update(aim);
+  const stick = settings.touchControls === 'stick';
+  powerBar.update(stick ? null : aim);
+  touchWheel.update(stick ? null : aim);
+  touchStick.update(stick ? aim : null);
 
   const canClip = playing && m?.canSaveClip && ClipRecorder.supported && !recorder.recording;
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;

@@ -1,4 +1,5 @@
 /* Room creation follows the local match briefing: presets and quick rules beside room details. */
+.room-mobile-tabs { display: none; }
 .room-deck__briefing .briefing__presets { min-width: 0; }
 .room-deck__briefing .briefing__cards { margin: 0 0 18px; }
 .menu-page--lobby .briefing__cards .item--card {
@@ -171,9 +172,9 @@
   .online-profile__avatar svg { width: 20px; height: 20px; }
   .online-profile__name { font-size: 17px; }
   .menu-page--lobby .online-connection__status { min-height: 36px; }
-  .menu-page--lobby .mode-pager .mode-pager__item--active { font-size: 44px; }
-  .menu-page--lobby .mode-pager .mode-pager__item--near { font-size: 30px; }
-  .menu-page--lobby .mode-pager .mode-pager__item--far { font-size: 24px; }
+  .menu-page--lobby:not(.menu-page--room) .mode-pager .mode-pager__item--active { font-size: 44px; }
+  .menu-page--lobby:not(.menu-page--room) .mode-pager .mode-pager__item--near { font-size: 30px; }
+  .menu-page--lobby:not(.menu-page--room) .mode-pager .mode-pager__item--far { font-size: 24px; }
 }
 
 .online-code .item { padding-block: 0; padding-inline: 0; min-height: 0; }
@@ -316,6 +317,7 @@
 .menu-page--room .room-info .lobby__icon-button { width: 34px; height: 34px; min-height: 0; }
 .menu-page--room .room-info .lobby__icon-button[hidden] { display: none; }
 .menu-page--room .room-info__share { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.menu-page--room .room-info__code { display: inline-flex; align-items: baseline; gap: 12px; }
 .menu-page--room .room-info { gap: 8px 16px; }
 .menu-page--room .room-info__switches { margin-left: auto; }
 .menu-page--room .room-info__share > .lobby__tag { margin-left: 0; }

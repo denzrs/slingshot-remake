@@ -48,6 +48,16 @@ export interface Viewport {
 
 const windowViewport = (): Viewport => ({ width: window.innerWidth, height: window.innerHeight });
 
+/** Keep one celestial body's artwork screen-upright while its position stays in field coordinates. */
+function drawUprightFieldArtwork(ctx: CanvasRenderingContext2D, x: number, y: number, draw: () => void): void {
+  ctx.save();
+  ctx.translate(x, y);
+  uprightFrame(ctx);
+  ctx.translate(-x, -y);
+  draw();
+  ctx.restore();
+}
+
 export class Renderer {
   view!: View;
   private readonly ctx: CanvasRenderingContext2D;
@@ -66,6 +76,8 @@ export class Renderer {
   private readonly trailIds = new WeakMap<Trail, number>();
   private spritePs = 0;
   private spriteLook: Look = getLook();
+  /** Suns and black holes counter-turn only in the rotated mobile portrait layout. */
+  private keepCelestialArtworkUpright = false;
   /** How the chosen look draws each element, read once a frame so a frame is never drawn in two looks. */
   private painter: LookPainter = classic;
   private time = 0;
@@ -80,10 +92,11 @@ export class Renderer {
 
   resize(): void {
     const { width: cssWidth, height: cssHeight, rotated: forced } = this.viewport();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = window.devicePixelRatio || 1;
     const coarse = window.matchMedia('(pointer: coarse)').matches;
     // Held upright a phone gets its own layout: HUD on top, the field, the thumbs' controls underneath.
     const portrait = forced === undefined && coarse && cssHeight > cssWidth ? portraitLayout(cssWidth, cssHeight, safeArea(), touchScale()) : null;
+    this.keepCelestialArtworkUpright = forced === undefined && coarse && !!portrait?.rotated;
     if (forced === undefined) applyUpright(portrait);
     // On a touch screen the field is height-limited and small: give it every pixel.
     const margin = coarse ? 4 : Math.min(28, cssWidth * 0.03);
@@ -150,7 +163,7 @@ export class Renderer {
   private resizeIfNeeded(): void {
     const v = this.view;
     const { width, height } = this.viewport();
-    if (v.cssWidth !== width || v.cssHeight !== height || v.dpr !== Math.min(window.devicePixelRatio || 1, 2)) {
+    if (v.cssWidth !== width || v.cssHeight !== height || v.dpr !== (window.devicePixelRatio || 1)) {
       this.resize();
     }
   }
@@ -386,6 +399,7 @@ export class Renderer {
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.rotate(Math.atan2(sun.y - p.y, sun.x - p.x) - SPRITE_LIGHT_ANGLE);
+        if (this.keepCelestialArtworkUpright) uprightFrame(ctx);
         sprite.draw(ctx, 0, 0, ps, this.time);
         ctx.restore();
       } else if (isTurned()) {
@@ -413,10 +427,18 @@ export class Renderer {
     world.defenses.forEach((d, i) => d.wrecked || this.painter.defense(ctx, d, defensePlanet(world.planets, d), match.players[d.owner]?.color ?? POWER_UP_COLORS.defense, this.time, 1, defenseView(scene.volley?.shots ?? [], d, i), false, !showPlanets));
     for (const p of world.planets) {
       if (!p.sun) continue;
-      if (p.neutron) this.painter.neutronStar(ctx, p, this.time, this.remnantAge(p.seed), alpha);
-      else this.painter.sun(ctx, p, this.time, alpha, stormFlare(this.stormAge(world)));
+      const draw = (): void => {
+        if (p.neutron) this.painter.neutronStar(ctx, p, this.time, this.remnantAge(p.seed), alpha);
+        else this.painter.sun(ctx, p, this.time, alpha, stormFlare(this.stormAge(world)));
+      };
+      if (this.keepCelestialArtworkUpright) drawUprightFieldArtwork(ctx, p.x, p.y, draw);
+      else draw();
     }
-    for (const hole of world.holes) this.painter.blackHole(ctx, hole, this.time);
+    for (const hole of world.holes) {
+      if (this.keepCelestialArtworkUpright) {
+        drawUprightFieldArtwork(ctx, hole.x, hole.y, () => this.painter.blackHole(ctx, hole, this.time));
+      } else this.painter.blackHole(ctx, hole, this.time);
+    }
     if (primary && effects.holeFeed > 0 && !scene.camera) this.painter.holeFlare(ctx, primary, effects.holeFeed, effects.holeFeedColor, effects.holeFeedAngle);
     // Each wormhole has a colour of its own, shared by its two portals.
     for (const w of world.wormholes) this.painter.wormhole(ctx, w.ax, w.ay, w.bx, w.by, w.radius, this.time, w.id, scene.camera ? 0 : match.devourWormhole(w.id));

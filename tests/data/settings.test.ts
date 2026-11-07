@@ -36,6 +36,27 @@ describe('CPU settings', () => {
   });
 });
 
+describe('the default line-up', () => {
+  const twoHumans = ['human', 'human', 'off', 'off', 'off', 'off'];
+
+  it('is you against three medium CPUs for a player with nothing saved', () => {
+    storage();
+    expect(loadSettings().seats).toEqual(['human', 'medium', 'medium', 'medium', 'off', 'off']);
+  });
+
+  it('replaces a saved copy of the old default (two humans) once', () => {
+    storage({ seats: twoHumans });
+    expect(loadSettings().seats).toEqual(['human', 'medium', 'medium', 'medium', 'off', 'off']);
+  });
+
+  it('keeps a line-up the player chose, also two humans, once the new default has been through', () => {
+    storage({ seats: twoHumans, crewDefault: 2 });
+    expect(loadSettings().seats).toEqual(twoHumans);
+    storage({ seats: ['human', 'easy', 'off', 'off', 'off', 'off'] });
+    expect(loadSettings().seats).toEqual(['human', 'easy', 'off', 'off', 'off', 'off']);
+  });
+});
+
 describe('Mayhem settings', () => {
   it('start off', () => {
     storage();
@@ -157,6 +178,19 @@ describe('display settings', () => {
     expect(loadSettings().wheelSide).toBe('left');
     storage({ wheelSide: 'top' });
     expect(loadSettings().wheelSide).toBe('right');
+  });
+
+  it('defaults to wheel controls and remembers an optional aiming stick', () => {
+    storage();
+    expect(loadSettings().touchControls).toBe('wheel');
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.touchControls = 'stick';
+    saveSettings(settings);
+    expect(loadSettings().touchControls).toBe('stick');
+    storage({ touchControls: 'unknown' });
+    expect(loadSettings().touchControls).toBe('wheel');
+    storage({ wheelSide: 'left' });
+    expect(loadSettings()).toMatchObject({ touchControls: 'wheel', wheelSide: 'left' });
   });
 
   it('ignores stored display flags that are not booleans', () => {

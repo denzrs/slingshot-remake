@@ -228,6 +228,10 @@ describe('the player\'s own presets', () => {
     expect(s.rules.rounds).toBe(20);
     creator.remove();
     expect(loadCustomPresets('classic')).toEqual([]);
+    creator.cancel();
+    expect(s.rules.rounds).toBe(20);
+    expect(card(s, 'simultaneous').selected()).toBe(true);
+    expect(card(s, 'simultaneous').modified()).toBe(true);
   });
 
   it('keep the table\'s switches when one is chosen, and stop offering the slot once the list is full', () => {
@@ -247,11 +251,23 @@ describe('the player\'s own presets', () => {
     expect(card(s, 'custom:new').art).toBeDefined();
   });
 
-  it('show today\'s pick of the chosen mode', () => {
-    const s = setup('horizon');
-    const pick = handpickedPresets('horizon').find(({ id }) => id === pickOfTheDay('horizon', DAY).id)!;
-    card(s, 'handpicked').choose();
-    expect(s.rules).toEqual({ ...pick.rules, betting: false, chatPlayersOnly: false });
-    expect(s.state.current?.id).toBe('handpicked');
+  it('show and apply every daily pick in local and online setup', () => {
+    const days = Array.from({ length: 90 }, (_, i) => new Date(Date.UTC(2026, 10, i + 1)).toISOString().slice(0, 10));
+    for (const mode of ['classic', 'solar', 'horizon'] as const) {
+      for (const pick of handpickedPresets(mode)) {
+        const day = days.find((day) => pickOfTheDay(mode, day).id === pick.id);
+        expect(day, `${mode}/${pick.id} enters the rotation`).toBeDefined();
+        for (const online of [false, true]) {
+          const s = setup(mode, online, { ...defaultRoomRules(), betting: online, chatPlayersOnly: online });
+          s.host.today = () => day!;
+          const daily = card(s, 'handpicked');
+          expect(daily.label).toBe(t(`preset.pick.${pick.id}`));
+          daily.choose();
+          expect(s.rules).toEqual({ ...pick.rules, betting: online, chatPlayersOnly: online });
+          expect(s.state.current?.id).toBe('handpicked');
+          expect(card(s, 'handpicked').selected()).toBe(true);
+        }
+      }
+    }
   });
 });

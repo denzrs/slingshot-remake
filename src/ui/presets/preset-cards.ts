@@ -4,7 +4,7 @@ import { t } from '../../platform/i18n';
 import { rulesOf, type RoomRules } from '../../data/roomRules';
 import { presetArt, modeArt } from '../menu/mode-icons';
 import {
-  isOverridden, matchingCustom, matchingHandpicked, matchingPreset, pickOfTheDay, presetChangeCount, presetHintKey, presetRules, presetsForMode, resetRules, samePick, savedPresetRules,
+  isOverridden, matchingCustom, matchingHandpicked, matchingPreset, pickOfTheDay, presetChangeCount, presetHintKey, presetLabelKey, presetRules, presetsForMode, resetRules, samePick, savedPresetRules,
   type MatchPreset,
 } from './match-presets';
 import { pickArt, pickHint, pickName } from './pick-of-day';
@@ -175,7 +175,7 @@ export class PresetCards {
     return presetsForMode(mode).map((preset: MatchPreset): PresetCard => ({
       id: preset,
       kind: 'preset',
-      label: t(`preset.${preset}`),
+      label: t(presetLabelKey(preset, mode)),
       hint: t(presetHintKey(preset, mode)),
       art: () => presetArt(preset, mode),
       selected: () => this.selection()?.id === preset,
@@ -283,7 +283,12 @@ export class PresetCards {
         return true;
       },
       remove: () => {
-        if (existing) deleteCustomPreset(mode, existing.id);
+        if (!existing) return;
+        deleteCustomPreset(mode, existing.id);
+        if (this.selection()?.id === customId(existing)) {
+          const first = presetsForMode(mode)[0];
+          this.state.current = { id: first, mode, rules: this.withTable(savedPresetRules(first, mode)) };
+        }
       },
       cancel: () => {
         if (!creator.saved) this.host.apply(rulesOf(creator.before));

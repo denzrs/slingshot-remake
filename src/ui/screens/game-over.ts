@@ -131,7 +131,7 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
       : [
           ...(app.online && match.canAdvance ? [{ kind: 'action', section: 'actions', label: t('over.backToLobby'), run: () => app.backToLobby() } satisfies MenuItem] : []),
           app.online
-            ? { kind: 'action', section: 'actions', label: t('multiplayer.leave'), run: () => app.leaveOnlineRoom() }
+            ? { kind: 'action', section: 'actions', className: 'result-leave', label: t('multiplayer.leave'), run: () => app.leaveOnlineRoom() }
             : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: () => app.toTitle() },
           match.canAdvance
             ? { kind: 'action', section: 'actions', label: t('over.rematch'), primary: true, run: () => app.rematch() }

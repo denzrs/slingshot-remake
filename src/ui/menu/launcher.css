@@ -35,6 +35,16 @@
   margin-bottom: clamp(24px, 4vh, 44px);
 }
 
+.launcher__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.launcher__tutorial-mobile,
+.launcher__settings-mobile { display: none; }
+
 .launcher__head .stats-ticker {
   margin-top: clamp(18px, 2.4vh, 28px);
 }
@@ -519,6 +529,14 @@
 .menu-page--briefing .briefing__quick { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .menu-page--briefing .briefing__mayhem { grid-column: 4; grid-row: 1; }
 
+/* Wide screens: the four settings share the row in equal columns, with the cards' gap between them and each filling its column, so the spaces match the cards above. */
+@media (min-width: 1101px) {
+  .menu-page--briefing .briefing__quick { gap: 12px; }
+  .menu-page--briefing .briefing__mayhem .segmented { width: 100%; }
+  .menu-page--briefing .briefing__powerup-list { grid-template-columns: repeat(6, minmax(0, 1fr)); justify-content: stretch; }
+  .menu-page--briefing .briefing__powerup { width: 100%; height: auto; aspect-ratio: 1; }
+}
+
 .briefing__powerups-label {
   color: var(--bone);
   font-size: 12px;
@@ -526,7 +544,7 @@
 
 .briefing__powerup-list {
   display: grid;
-  grid-template-columns: repeat(7, 28px);
+  grid-template-columns: repeat(6, 28px);
   align-items: center;
   justify-content: start;
   gap: 4px;
@@ -586,6 +604,9 @@
   height: 20px;
 }
 
+.briefing__powerup-name { display: none; }
+.briefing__powerup-summary { display: none; }
+
 .powerup-tooltip {
   position: fixed;
   z-index: 1200;
@@ -643,6 +664,8 @@
   margin: 12px 0 6px;
   font-size: 13px;
 }
+.briefing__crew-section, .briefing__rules-section { display: contents; }
+.briefing__rules-label { display: none; }
 
 .briefing__players {
   margin: 10px 0 28px;
@@ -726,14 +749,42 @@
 }
 
 @media (max-width: 760px) {
-  .screen--title > .launcher { flex: 0 0 auto; height: auto; margin: 0 auto; }
+  .screen--title > .launcher { flex: 1 0 auto; height: auto; margin: 0 auto; }
   .launcher__body { flex: 0 0 auto; }
   .launcher__head { margin-bottom: 26px; }
-  .launcher .wordmark { font-size: clamp(68px, 17vw, 116px); }
+  .launcher__brand { gap: 8px; }
+  .launcher .wordmark { flex: 0 1 auto; min-width: 0; font-size: clamp(52px, 15vw, 68px); white-space: nowrap; }
+  .launcher__tutorial-mobile { margin-left: auto; }
+  .launcher__tutorial-mobile,
+  .launcher__settings-mobile { display: block; flex: 0 0 auto; width: max-content; }
+  .launcher__settings-button,
+  .launcher__tutorial-button {
+    width: auto;
+    min-height: 40px;
+    padding: 8px 10px;
+    border: 1px solid rgb(91 125 179 / 0.42);
+    border-radius: 4px;
+    color: var(--bone-dim);
+    font-size: 12px;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  .launcher__tutorial-nav,
+  .launcher__settings-nav { display: none; }
+  .launcher__tutorial-button { position: relative; width: 40px; justify-content: center; overflow: hidden; padding: 0; font-size: 0; }
+  .launcher__tutorial-button::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    content: '?';
+    font-size: 20px;
+    line-height: 1;
+    text-align: center;
+  }
   .launcher__body { display: flex; flex-direction: column; gap: 24px; }
   .launcher__nav { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0; }
   .launcher__nav .item { padding: 8px 12px; min-height: 44px; font-size: 23px; }
-  .launcher__nav .item:nth-child(3) { margin: 0; }
   .launcher__nav .item__hint { display: none; }
   .launcher__modes { gap: 10px; }
   .launcher__online { gap: 10px; }
@@ -742,9 +793,11 @@
   .launcher__online .item__hint { font-size: 11.5px; }
   .launcher__modes .item--card { padding: 12px; }
   .launcher__modes .item__title { font-size: 24px; }
-  .launcher__foot { margin-top: 20px; padding-top: 16px; gap: 10px 16px; }
+  .launcher__foot { margin-top: auto; padding-top: 16px; gap: 10px 16px; }
   .launcher__foot .keys { display: none; }
-  .launcher__language { margin-left: 0; width: 200px; }
+  .launcher__language { margin-left: 0; width: auto; }
+  .launcher__language .item { width: auto; justify-content: flex-start; padding-left: 0; }
+  .launcher__language .item__name { display: none; }
   .briefing__crew { margin-top: 14px; }
   .briefing__players { margin-bottom: 20px; }
 }
@@ -789,6 +842,20 @@
   .menu-page--briefing .briefing__powerups { grid-column: auto; grid-row: auto; }
   .briefing__quick .item { padding-block: 10px; }
   .briefing__switches { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 460px) {
+  .launcher__settings-button { position: relative; width: 40px; justify-content: center; overflow: hidden; padding: 0; font-size: 0; }
+  .launcher__settings-button::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    content: '⚙';
+    font-size: 26px;
+    line-height: 1;
+    text-align: center;
+  }
 }
 
 @media (max-width: 380px) {

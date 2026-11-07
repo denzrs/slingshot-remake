@@ -28,6 +28,8 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 | F | Fullscreen |
 | ↑ ↓ ← → Enter (in menus) | Pick a row, change its value (sliders, switches and lists alike), confirm. Home / End jump a slider to its ends; Esc goes back to the row you came from |
 
+On touch screens, **Settings → Touch controls → Aiming controls** switches between the default angle wheel with power bar and the restored **Stick**. Pull the stick back like a slingshot: the shot travels the other way, and a longer pull adds power. Releasing keeps the aim; firing stays a separate button. The stick respects capped and fixed power. Either control scheme can sit on the left or right, and the browser remembers the choice.
+
 ## Game modes
 
 The title screen keeps Local / Solo and Online in one shell. Click the Classic or Event Horizon card to open that mode's briefing directly; the Daily Challenge card opens its mission. Online replaces only the right-hand content with *Find a room*, *Create a room* and *Enter a code*, each opening its flow directly. *Settings* and *How to play* remain in the navigation rail. Keyboard focus has a light outline; selected navigation choices use an orange marker.
@@ -46,11 +48,13 @@ Classic and Event Horizon open a match briefing with four rule presets: today's 
 
 | Preset | Rules |
 | --- | --- |
-| Today's pick | One of the handpicked combinations (Orbit Express, Ghost Protocol, Gravity Garden, Supernova), a new one every day. Each mode rotates its own four and two Mayhem ones played in it. |
+| Today's pick | A daily handpicked combination from each mode's own rotation: eight in Classic, seven in Solar System and seven in Event Horizon, including two Mayhem combinations per mode. |
 | Standard | Original defaults: 5 rounds, up to 4 planets, 20-second flights, no power-ups or reflecting edges. |
 | Simultaneous (Classic) | Standard with everybody firing at once. |
 | Trickshot (Event Horizon) | Standard with power capped at 60, reflecting edges and trick-shot bonuses. |
 | Mayhem | Standard with twists every round (see [Mayhem](#mayhem)), at strength *Wild*, with trick-shot bonuses. |
+
+The daily rotation also includes **Bubble Wrap** (Classic: shields and splitters, reflecting edges and trick-shot scoring), **Hostile Architecture** (Classic: planetary defenses and planet killers, up to six planets and power capped at 45), **No Forwarding Address** (Event Horizon: teleports only, hidden aim and trails fading after one second), and **The Unlearning** (Solar System: anti-gravity only, fixed power at 60 and trails fading after two seconds). All four use simultaneous shots and play five rounds.
 
 Rounds and planet count can be changed directly in the briefing. It also shows the active power-ups as icons; hover an icon to read its effect. While Mayhem is on, the *Mayhem level* (Mild, Wild, Insane) sits under the sliders. *Edit players* opens the crew; *Adjust rules* opens all rules in five categories (match, field, shots, twists and power-ups). *Done* returns to the briefing with the changes kept. *Start game* is initially focused, so Enter starts the match. Everything is remembered for the next game, and *Reset rules* in the full rules screen puts the defaults back.
 

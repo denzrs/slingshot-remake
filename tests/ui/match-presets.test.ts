@@ -57,6 +57,7 @@ describe('match presets', () => {
     settings.teamMode = 2;
     settings.language = 'en';
     settings.wheelSide = 'left';
+    settings.touchControls = 'stick';
     settings.menuSounds = false;
     settings.gameSounds = false;
     settings.fixedPower = true;
@@ -64,7 +65,7 @@ describe('match presets', () => {
     const before = cloneSettings(settings);
     Object.assign(settings, presetRules('mayhem', 'classic'));
     expect(matchingPreset(rulesOf(settings), 'classic')).toBe('mayhem');
-    for (const key of ['seats', 'seatTeams', 'teamMode', 'language', 'wheelSide', 'menuSounds', 'gameSounds'] as const) {
+    for (const key of ['seats', 'seatTeams', 'teamMode', 'language', 'wheelSide', 'touchControls', 'menuSounds', 'gameSounds'] as const) {
       expect(settings[key]).toEqual(before[key]);
     }
     expect(settings.fixedPower).toBe(false);
@@ -131,18 +132,19 @@ describe('handpicked combinations', () => {
     }
   });
 
-  it('offers Standard, the mode’s own preset and Mayhem as the regular choices', () => {
-    expect(presetsForMode('classic')).toEqual(['standard', 'simultaneous', 'mayhem']);
+  it('offers the mode’s own presets and Mayhem as the regular choices, Classic starting on all at once', () => {
+    expect(presetsForMode('classic')).toEqual(['simultaneous', 'standard', 'mayhem']);
     expect(presetsForMode('horizon')).toEqual(['standard', 'trickshot', 'mayhem']);
   });
 
-  it('provides six distinct, selectable, mode-specific daily combinations with valid settings', () => {
+  it('provides distinct, selectable, mode-specific daily combinations with valid settings', () => {
+    const counts = { classic: 8, solar: 7, horizon: 7 };
     for (const mode of ['classic', 'solar', 'horizon'] as const) {
       const picks = handpickedPresets(mode);
-      expect(picks).toHaveLength(6);
+      expect(picks).toHaveLength(counts[mode]);
       expect(picks.every((pick) => pick.mode === mode)).toBe(true);
       expect(picks.filter((pick) => pick.rules.mayhem > 0)).toHaveLength(2);
-      expect(new Set(picks.map(({ id, mode }) => `${mode}.${id}`)).size).toBe(6);
+      expect(new Set(picks.map(({ id, mode }) => `${mode}.${id}`)).size).toBe(picks.length);
       for (const pick of picks) {
         expect(samePick(matchingHandpicked(pick.rules, mode), pick)).toBe(true);
         for (const row of rulesFor(mode)) {
@@ -160,7 +162,7 @@ describe('handpicked combinations', () => {
     const key = (pick: { id: string; mode: string }) => `${pick.mode}.${pick.id}`;
     for (const mode of modes) {
       const keys = days.map((day) => key(pickOfTheDay(mode, day)));
-      expect(new Set(keys).size).toBe(6);
+      expect(new Set(keys).size).toBe(handpickedPresets(mode).length);
       expect(keys.some((k, i) => i > 0 && k === keys[i - 1])).toBe(false);
     }
     for (const day of days) {

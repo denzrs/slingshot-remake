@@ -65,6 +65,7 @@
 .mission-scorecards .sectors__points { font: 400 18px/1.5 var(--font-mono); }
 .menu-page--mission-result .daily__rank { margin-bottom: 0; }
 .menu-page--mission-result .daily__meta { margin-top: 20px; }
+.menu-page--mission-result .menu-page__head { position: relative; padding-right: 52px; }
 
 /* Settings and rules: every group on one page. The columns sit side by side while the page is wide enough for two. */
 .sheet { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 22px clamp(28px, 4vw, 56px); align-items: start; }
@@ -76,6 +77,7 @@
 .sheet .setup__rows > .item--segmented { padding-block: 8px; gap: 6px; }
 .sheet .setup__rows > .item--slider { padding-block: 8px 3px; }
 .sheet .segmented__option { min-height: 32px; }
+.sheet-nav { display: none; }
 .sheet .setup__rows > .item.is-readonly { padding-block: 7px; }
 /* The rules page is the tallest sheet, so its groups sit a little closer. A taller window gives its rows, groups and heading more air. */
 .menu-page--rules { --rules-row-pad: clamp(3px, calc(1.7vh - 11.5px), 4px); }
@@ -131,7 +133,55 @@
   .mission-scorecards li { padding: 16px 10px; }
 }
 @media (max-width: 760px) {
-  .online-profile__fields { flex-direction: column; align-items: stretch; }
+  .sheet-nav:not([hidden]) { position: relative; display: block; flex: none; margin-bottom: 20px; border-bottom: 1px solid var(--menu-line); }
+  .sheet-nav__tabs { display: flex; flex-wrap: nowrap; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .sheet-nav__tabs::-webkit-scrollbar { display: none; }
+  .sheet-nav--more-left::before, .sheet-nav--more-right::after { position: absolute; top: 0; bottom: 1px; z-index: 1; display: grid; width: 32px; place-items: center; color: var(--p2); font: 22px/1 var(--font-body); pointer-events: none; }
+  .sheet-nav--more-left::before { content: '‹'; left: 0; background: linear-gradient(90deg, var(--menu-surface), transparent); }
+  .sheet-nav--more-right::after { content: '›'; right: 0; background: linear-gradient(270deg, var(--menu-surface), transparent); }
+  .sheet-nav__button { flex: 0 0 auto; min-height: 48px; padding: 12px 8px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--bone-dim); font: 700 13px/1.4 var(--font-body); cursor: pointer; white-space: nowrap; }
+  .sheet-nav__button[aria-pressed='true'] { border-bottom-color: var(--p2); color: var(--p2); }
+  .sheet--mobile-categories { display: block; }
+  .sheet--mobile-categories > .sheet__col { gap: 0; }
+  .sheet--mobile-categories .menu-group[hidden] { display: none; }
+  .sheet--mobile-categories .setup__title { display: none; }
+  .sheet--mobile-categories .setup__rows { gap: 0; }
+  .sheet--mobile-categories .setup__rows > .item { min-height: 60px; padding: 16px 2px; }
+  .menu-page--settings .menu-page__intro { display: none; }
+  .sheet--mobile-categories .item__label { font-size: 14px; }
+  .menu-page--rules .sheet--mobile-categories .setup__rows > .item--segmented,
+  .menu-page--rules .sheet--mobile-categories .setup__rows > .item--tiles { gap: 8px; padding-block: 12px; }
+  .menu-page .sheet.sheet--mobile-categories .segmented__option { min-height: 44px; padding: 8px 5px; font-size: 12px; white-space: normal; }
+  .menu-page--rules .sheet--mobile-categories .item--toggle:not(.is-readonly) > .toggle-bar { width: 136px; }
+  .menu-page--rules .sheet--mobile-categories .item--tiles .tile { min-height: 68px; padding: 8px 4px; }
+  .menu-page--rules .menu-page__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .menu-page--rules .menu-page__actions > .item--primary { grid-column: 1 / -1; }
+  .menu-page--rules .menu-page__actions:has(> .item:not([hidden]) ~ .item:not([hidden])):not(:has(> .item:not([hidden]) ~ .item:not([hidden]) ~ .item:not([hidden]))) > .item--primary { grid-column: auto; }
+  .menu-page--crew .pilot.slot-card { display: grid; grid-template-columns: 52px minmax(0, 1fr); grid-template-areas: 'head head' 'pic assign' 'level level'; min-height: 0; gap: 8px 12px; padding: 12px; }
+  .menu-page--crew .pilot > .slot-card__head { grid-area: head; min-height: 32px; padding-right: 36px; }
+  .menu-page--crew .pilot__body { display: contents; }
+  .menu-page--crew .pilot__body > .slot-card__portrait { grid-area: pic; min-height: 44px; padding: 0; }
+  .menu-page--crew .pilot__picture > .pilot-art { width: 52px; height: 44px; }
+  .menu-page--crew .pilot__assignment { grid-area: assign; }
+  .menu-page--crew .pilot__type { min-height: 44px; }
+  .menu-page--crew .pilot__options { position: static; grid-area: level; }
+  .menu-page--crew .pilot:not(.is-cpu) .pilot__options { display: none; }
+  .menu-page--crew .pilot .option-selector__choice { min-height: 48px; font-size: 11px; }
+  .menu-page--crew .pilot__remove { top: 6px; right: 6px; width: 44px; min-height: 44px; }
+  .menu-page--crew .roster-move { top: 6px; right: 50px; width: 44px; height: 44px; }
+  .menu-page--crew .roster-entry.has-move .slot-card__head { padding-right: 86px; }
+  .menu-page--crew .crew-config { margin: 14px 0 0; }
+  .menu-page--crew .crew-roster__heading { gap: 4px 12px; }
+  .menu-page.menu-page--crew .slot-card--empty.item--choice-card { min-height: 100px; }
+  .menu-page--crew .slot-card--empty > .item__tag { top: 10px; left: 12px; font-size: 18px; }
+  .menu-page--crew .slot-card__choices { inset: 38px 12px 12px; }
+  .menu-page--crew .slot-card__choice { min-height: 44px; }
+  .menu-page--crew .crew-slot:has(> .slot-card--empty) ~ .crew-slot:has(> .slot-card--empty) { display: none; }
+  .menu-page--crew .team-column__place { min-height: 44px; }
+  .menu-page--lobby .online-profile__fields { flex-direction: column; align-items: stretch; }
+  .menu-page--lobby .online-profile__fields .lobby__name { flex: 0 0 auto; width: 100%; }
+  .menu-page--lobby .online-profile__fields .lobby__avatar .room-pick { grid-template-columns: repeat(4, 44px); }
+  .menu-page--lobby .online-profile__fields .lobby__avatar .room-pick__option { width: 44px; height: 44px; }
   .menu-page--lobby .menu-page__title { font-size: clamp(40px, 8vw, 58px); }
   .menu-page--lobby .online-identity { gap: 12px; padding: 14px 16px; }
   .menu-page--lobby .online-profile { flex-basis: 100%; }
@@ -150,10 +200,24 @@
   .mission-bottom { flex-direction: column; gap: 20px; }
 }
 @media (max-width: 520px) {
+  .screen--menu-page .menu-page--mission-result .menu-page__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .screen--menu-page .menu-page--mission-result .menu-page__actions > .item { min-width: 0; padding-inline: 8px; text-align: center; white-space: normal; }
+  .screen--menu-page .menu-page--mission-result .menu-page__actions > .item:first-child:nth-last-child(3) { grid-column: 1 / -1; }
   .tutorial__selection-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .online-create .lobby__actions { justify-content: stretch; }
   .online-create .lobby__actions .lobby__button { flex: 1 1 100%; }
   .menu-page--lobby .menu-page__actions > .lobby__button:first-child { margin-right: 0; }
+  .menu-page--mission .menu-page__actions { flex-wrap: nowrap; gap: 8px; }
+  .menu-page--mission .menu-page__actions > .item { height: 48px; min-height: 48px; }
+  .menu-page--mission .menu-page__actions > .item:first-child { flex: 0 0 auto; }
+  .menu-page--mission .menu-page__actions > .item--primary {
+    flex: 1 1 0;
+    min-width: 0;
+    margin-left: 0;
+    padding: 10px 8px;
+    font-size: clamp(17px, 5.8vw, 22px);
+    white-space: nowrap;
+  }
   .mission-route { gap: 6px; margin-top: 18px; }
   .mission-route .item { padding: 12px 3px; gap: 7px; }
   .mission-route .item > span:not([class]) { font-size: 18px; }

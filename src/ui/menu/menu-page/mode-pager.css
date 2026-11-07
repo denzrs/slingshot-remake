@@ -100,6 +100,11 @@
   user-select: none;
 }
 .menu-page--mode-pager .briefing__cards { touch-action: pan-y pinch-zoom; }
+@media (pointer: coarse) {
+  .mode-pager__keys,
+  .menu-page__foot > .keys,
+  .launcher__foot .keys { display: none; }
+}
 
 @keyframes mode-header-enter-next {
   from { opacity: .45; filter: blur(2px); transform: translateX(14px); }

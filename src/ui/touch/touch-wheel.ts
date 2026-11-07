@@ -129,12 +129,12 @@ export class TouchWheel {
   private draw(): void {
     const size = this.canvas.clientWidth;
     if (!size) return;
+    const dpr = window.devicePixelRatio || 1;
     const shown = this.finger === null ? this.angle : this.raw;
-    const key = `${size}|${this.side}|${this.band}|${Math.round(shown * 8)}|${this.angle}|${t('touch.wheel')}`;
+    const key = `${size}|${dpr}|${this.side}|${this.band}|${Math.round(shown * 8)}|${this.angle}|${t('touch.wheel')}`;
     if (key === this.drawn) return;
     this.drawn = key;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     if (this.canvas.width !== Math.round(size * dpr)) this.canvas.width = this.canvas.height = Math.round(size * dpr);
     const ctx = this.canvas.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

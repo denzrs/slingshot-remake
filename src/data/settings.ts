@@ -29,8 +29,10 @@ export interface Settings extends RoomRules {
   statsTicker: boolean;
   /** Menus change pages without sliding, fading or flaring: moving through them is instant. */
   lessMenuMotion: boolean;
-  /** Touch screens: the side of the screen the angle wheel sits on, the power bar on the other. */
+  /** Touch screens: the side of the screen the aiming control sits on. The wheel's power bar is opposite. */
   wheelSide: 'left' | 'right';
+  /** The wheel and power bar remain the default; the pull-back stick controls both together. */
+  touchControls: 'wheel' | 'stick';
   menuSounds: boolean;
   gameSounds: boolean;
   language: Lang;
@@ -38,11 +40,18 @@ export interface Settings extends RoomRules {
   teamMode: number;
   /** Team per seat (0-based), MAX_PLAYERS long; only read in team mode. */
   seatTeams: number[];
+  /** Which default line-up this copy was saved under, so a saved copy of an older default can follow the new one once. */
+  crewDefault: number;
 }
+
+/** 2: a new setup starts with you against three CPUs (it was two humans before). */
+const CREW_DEFAULT = 2;
+const CREW_DEFAULT_1: readonly Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
 
 export const DEFAULT_SETTINGS: Settings = {
   ...rulesOf(DEFAULT_ROOM_RULES),
-  seats: ['human', 'human', 'off', 'off', 'off', 'off'],
+  // Most players start alone: you against three CPUs. Playing with friends changes the crew once and the choice is kept.
+  seats: ['human', 'medium', 'medium', 'medium', 'off', 'off'],
   look: 'classic',
   contours: true,
   particles: true,
@@ -52,11 +61,13 @@ export const DEFAULT_SETTINGS: Settings = {
   statsTicker: true,
   lessMenuMotion: false,
   wheelSide: 'right',
+  touchControls: 'wheel',
   menuSounds: true,
   gameSounds: true,
   language: 'de',
   teamMode: 0,
   seatTeams: [0, 1, 0, 1, 0, 1],
+  crewDefault: CREW_DEFAULT,
 };
 
 export const SETTINGS_KEY = 'slingshot.settings.v1';
@@ -78,11 +89,15 @@ export function loadSettings(): Settings {
       }
       s.look = lookFrom(s.look) ?? DEFAULT_SETTINGS.look;
       if (s.wheelSide !== 'left') s.wheelSide = 'right';
+      if (s.touchControls !== 'stick') s.touchControls = 'wheel';
       if (!Object.hasOwn(DEBRIS, s.debris)) s.debris = DEFAULT_SETTINGS.debris;
       // The rules of the game: only what the game still offers, anything else back to the standard ones.
       Object.assign(s, roomRulesFrom(parsed));
       s.language = isLang(parsed.language) ? parsed.language : detectLang();
       if (activeSeats(s).length < 2) s.seats = [...DEFAULT_SETTINGS.seats];
+      // A copy still holding the old default line-up was never changed by the player: it moves to the new one, once.
+      if (parsed.crewDefault !== CREW_DEFAULT && s.teamMode === 0 && s.seats.every((seat, i) => seat === CREW_DEFAULT_1[i])) s.seats = [...DEFAULT_SETTINGS.seats];
+      s.crewDefault = CREW_DEFAULT;
       return s;
     }
   } catch {

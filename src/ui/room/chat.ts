@@ -7,7 +7,7 @@ import './chat.css';
 
 const KEY = 'slingshot.chat.collapsed';
 
-export type ChatLocation = { kind: 'lobby' } | { kind: 'game' } | null;
+export type ChatLocation = { kind: 'lobby' } | { kind: 'game' } | { kind: 'results' } | null;
 
 function remembered(): boolean {
   try { return localStorage.getItem(KEY) !== '0'; } catch { return true; }
@@ -151,9 +151,15 @@ export class ChatPanel {
     return !this.root.hidden && target instanceof Node && this.root.contains(target);
   }
 
-  /** The waiting room hosts the chat in its footer row; everywhere else it floats over the page. */
-  private mount(lobby: boolean): void {
-    const host = (lobby && document.querySelector<HTMLElement>('.lobby__chat-slot')) || document.body;
+  /** The waiting room and results host the collapsed chat alongside their actions. */
+  private mount(location: ChatLocation): void {
+    const leave = location?.kind === 'results' ? document.querySelector<HTMLElement>('.menu-page--results .result-leave') : null;
+    let slot = document.querySelector<HTMLElement>('.result-chat-slot');
+    if (leave && !slot) {
+      slot = h('div.result-chat-slot', null);
+      leave.before(slot);
+    }
+    const host = (location?.kind === 'lobby' && document.querySelector<HTMLElement>('.lobby__chat-slot')) || (leave && slot) || document.body;
     if (this.root.parentElement !== host) host.append(this.root);
   }
 
@@ -163,7 +169,7 @@ export class ChatPanel {
     const location = this.location();
     const visible = !!room && !!location;
     if (this.root.hidden === visible) this.root.hidden = !visible;
-    this.mount(location?.kind === 'lobby');
+    this.mount(location);
     if (!room) {
       this.shown = '';
       this.seen = 0;
@@ -183,6 +189,7 @@ export class ChatPanel {
     if (key === this.shown) return;
     this.shown = key;
     this.root.classList.toggle('is-lobby', location.kind === 'lobby');
+    this.root.classList.toggle('is-results', location.kind === 'results');
     this.root.classList.toggle('is-collapsed', collapsed);
     this.toggle.hidden = !collapsed;
     this.body.hidden = collapsed;

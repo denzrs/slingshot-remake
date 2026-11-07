@@ -20,7 +20,13 @@ export function powerUpSummary(
 ): { el: HTMLElement; update: () => void } {
   const label = h('span.briefing__powerups-label', null, t('settings.powerUps'), twistMark());
   const value = h('span.briefing__powerup-list', { 'aria-live': 'polite' });
-  const el = h('div.briefing__powerups', { role: 'group', 'aria-label': t('settings.powerUps') }, label, value);
+  const summaryText = h('span.briefing__powerup-summary-text', null);
+  const summary = h('button.briefing__powerup-summary', { type: 'button', 'aria-expanded': 'false' }, summaryText) as HTMLButtonElement;
+  const el = h('div.briefing__powerups', { role: 'group', 'aria-label': t('settings.powerUps') }, label, summary, value);
+  summary.addEventListener('click', () => {
+    const open = el.classList.toggle('is-open');
+    summary.setAttribute('aria-expanded', String(open));
+  });
   const badges = new Map(POWER_UP_KINDS.map((kind) => [kind, powerUpIcon(kind)] as const));
   value.replaceChildren(...badges.values());
   for (const [kind, badge] of badges) {
@@ -43,6 +49,9 @@ export function powerUpSummary(
     el.classList.toggle('is-twisted', twistedRule('powerUpKinds', options.mode, rules));
     const viaTwists = !rules.powerUps && rules.mayhem > 0;
     const canChange = !!options.patch && (options.canChange?.() ?? true);
+    summaryText.textContent = rules.powerUps
+      ? POWER_UP_KINDS.filter((kind) => rules.powerUpKinds.includes(kind)).map((kind) => t(`powerup.${kind}`)).join(', ')
+      : t(viaTwists ? 'powerups.all' : 'common.off');
     for (const kind of POWER_UP_KINDS) {
       const badge = badges.get(kind)!;
       const selected = rules.powerUps && rules.powerUpKinds.includes(kind);
@@ -77,7 +86,7 @@ function powerUpIcon(kind: PowerUpKind): HTMLButtonElement {
     type: 'button',
     'aria-label': name,
     'aria-pressed': 'false',
-  }, canvas) as HTMLButtonElement;
+  }, canvas, h('span.briefing__powerup-name', { 'aria-hidden': 'true' }, name)) as HTMLButtonElement;
   badge.style.setProperty('--powerup-tone', POWER_UP_COLORS[kind]);
   attachTooltip(badge, name);
   return badge;

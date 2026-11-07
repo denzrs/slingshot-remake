@@ -1011,7 +1011,7 @@ export function mountTutorialPreview(canvas: HTMLCanvasElement, kind: TutorialPr
     if (!ctx || disposed) return;
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = window.devicePixelRatio || 1;
     const width = Math.round(rect.width * dpr);
     const height = Math.round(rect.height * dpr);
     if (canvas.width !== width || canvas.height !== height) {

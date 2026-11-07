@@ -15,6 +15,7 @@ import type { App } from './app';
 import { enablePagerNavigation, modePagerHeader, positionModeCarousel, type ModeTransition } from './mode-pager';
 import { openPlayers } from './players';
 import { rulesScreen } from './rules-page';
+import { presetCarousel } from '../presets/preset-carousel';
 
 /** One ship per seat; when teams are in play the ships group under their team's colour. */
 function crewMarkers(s: Settings): HTMLElement[] {
@@ -109,7 +110,7 @@ function enableModeSwipe(root: HTMLElement, app: App, current: GameMode): () => 
     const index = GAME_MODES.indexOf(current);
     const next = GAME_MODES[(index + (direction === 'next' ? 1 : -1) + GAME_MODES.length) % GAME_MODES.length];
     changeLocalMode(app, current, next, direction);
-  }, '.briefing__quick, .briefing__players, .briefing__edit');
+  }, '.briefing__cards, .preset-carousel__nav, .briefing__quick, .briefing__players, .briefing__edit');
 }
 
 /** A concise briefing; rule and crew subpages preserve edits made after entering the mode. */
@@ -119,6 +120,7 @@ function setupScreen(app: App, mode: GameMode, transition?: ModeTransition): Scr
   const presets: PresetCards = localPresetCards(app, mode, (creator) => app.menu.push(() => rulesScreen(app, mode, { creator })));
   if (!presets.selection()) presets.detect();
   const summary = h('dl.briefing__facts', { 'aria-live': 'polite' });
+  const rulesLabel = h('p.briefing__rules-label', { 'aria-live': 'polite' });
   const rulesHeading = h('h3.setup__title', null, t('briefing.rules'));
   // The rounds, the shot clock and the power-ups sit in the page itself: the summary lists what else differs from the standard.
   const shownInPage: readonly string[] = ['rounds', 'shotTime', 'powerUpKinds', 'powerUpAmount'];
@@ -148,6 +150,7 @@ function setupScreen(app: App, mode: GameMode, transition?: ModeTransition): Scr
     const rules = rulesOf(s);
     const changes = changedRules(rules, standard, mode).filter(({ key }) => !shownInPage.includes(key));
     rulesHeading.textContent = t(changes.length ? 'briefing.rulesChanged' : 'briefing.rules');
+    rulesLabel.textContent = changes.length === 1 ? t('preset.modified.one') : changes.length > 1 ? t('preset.modified.many', { n: changes.length }) : t('briefing.rulesStandard');
     summary.replaceChildren(...(changes.length
       ? changes.map((row) => h('div', null, h('dt', null, row.label), h('dd', null, ruleValueText(row, rules))))
       : [h('div', null, h('dt', null, t('briefing.rulesStandard')))]));
@@ -166,14 +169,16 @@ function setupScreen(app: App, mode: GameMode, transition?: ModeTransition): Scr
   ];
   return {
     build: () => {
+      const cards = h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') },
+        h('div.briefing__own', { 'data-section': 'presets-own', 'data-own': String(customs.length) }));
+      const carousel = presetCarousel(cards);
       const page = menuPage({
         title: modeName(mode), eyebrow: t('launcher.prepare'),
         headerTitle: modePagerHeader(mode, transition),
         className: `menu-page--briefing menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
         body: [
           h('section.briefing__presets', null,
-            h('div.items.items--row.briefing__cards', { 'data-section': 'presets', role: 'group', 'aria-label': t('preset.choose') },
-              h('div.briefing__own', { 'data-section': 'presets-own', 'data-own': String(customs.length) })),
+            cards, carousel.navigation,
             h('div.briefing__quick', null,
               h('div.briefing__quick-controls', { 'data-section': 'quick' }),
               h('div.briefing__mayhem', { 'data-section': 'quick-mayhem' }),
@@ -182,19 +187,19 @@ function setupScreen(app: App, mode: GameMode, transition?: ModeTransition): Scr
           ),
         ],
         aside: [
-          h('h3.setup__title', null, t('briefing.crew')),
-          crew, crewLabel,
-          h('div.items.briefing__players', { 'data-section': 'players' }),
-          rulesHeading,
-          summary,
-          h('div.items.briefing__edit', { 'data-section': 'edit' }),
+          h('section.briefing__crew-section', null,
+            h('h3.setup__title', null, t('briefing.crew')), crew, crewLabel,
+            h('div.items.briefing__players', { 'data-section': 'players' })),
+          h('section.briefing__rules-section', null,
+            rulesHeading, rulesLabel, summary,
+            h('div.items.briefing__edit', { 'data-section': 'edit' })),
         ],
         keys: t('briefing.keys'),
         footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
       });
       const stopCarousel = positionModeCarousel(page);
       const stopNavigation = enableModeSwipe(page, app, mode);
-      disposeModeCarousel = () => { stopNavigation(); stopCarousel(); };
+      disposeModeCarousel = () => { stopNavigation(); stopCarousel(); carousel.dispose(); };
       return page;
     },
     dispose: () => disposeModeCarousel(),

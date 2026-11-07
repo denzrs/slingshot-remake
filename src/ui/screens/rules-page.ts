@@ -4,7 +4,8 @@ import { rulesOf } from '../../data/roomRules';
 import { resetRules } from '../presets/match-presets';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { twistNote } from '../menu/controls';
-import { menuGroup, menuPage } from '../menu/menu-page';
+import { menuPage } from '../menu/menu-page';
+import { mobileSheet } from '../menu/mobile-sheet';
 import { modeName } from '../menu/mode-name';
 import type { PresetCreator } from '../presets/preset-cards';
 import { presetNameField } from '../presets/preset-name';
@@ -31,15 +32,17 @@ export function rulesScreen(app: App, mode: GameMode, { creator, reset }: { crea
   const columns = RULE_COLUMNS.map((groups) => groups.filter((group) => rules.some((r) => r.group === group))).filter((groups) => groups.length);
   // The keyboard walks the items in this order: down the left column, then down the right one.
   const order = columns.flat();
+  const sheet = mobileSheet(columns.map((groups) => groups.map((group) => ({ id: `rules-${group}`, title: groupTitle(group) }))), t('briefing.rules'), () => app.menu.refresh());
   const rows: MenuItem[] = rules
     .filter(({ group }) => order.includes(group))
     .sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group))
-    .map(({ group, item }): MenuItem => ({ ...item, section: `rules-${group}` }));
+    .map(({ group, item }): MenuItem => sheet.bind({ ...item, section: `rules-${group}` }));
   return {
     build: () => menuPage({
       title: t(creator ? (creator.existing ? 'preset.creator.titleEdit' : 'preset.creator.title') : 'briefing.editRules'), eyebrow: modeName(mode), className: 'menu-page--rules',
       headerAside: creator ? presetNameField(creator.name, creator.defaultName, (name) => { creator.name = name; }) : undefined,
-      body: [note.el, h('div.sheet', null, ...columns.map((groups) => h('div.sheet__col', null, ...groups.map((group) => menuGroup(groupTitle(group), `rules-${group}`)))))],
+      navigation: sheet.navigation,
+      body: [note.el, sheet.el],
       keys: t('briefing.keys'),
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
     }),
@@ -69,5 +72,6 @@ export function rulesScreen(app: App, mode: GameMode, { creator, reset }: { crea
     update: () => note.update(anyTwisted(mode, source.get())),
     // Back, Cancel and Esc all leave through here.
     onEscape: () => { restore(); },
+    dispose: sheet.dispose,
   };
 }
