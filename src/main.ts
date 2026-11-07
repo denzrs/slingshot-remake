@@ -38,6 +38,7 @@ import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/room/chat';
 import { Menu, h } from './ui/menu/menu';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
+import { onPress } from './ui/touch/touch-controls';
 import { TouchPower } from './ui/touch/touch-power';
 import { TouchWheel } from './ui/touch/touch-wheel';
 import { TouchStick } from './ui/touch/touch-stick';
@@ -807,19 +808,19 @@ function applyMenuMotion(): void {
 }
 applyMenuMotion();
 
-pauseButton.addEventListener('click', () => {
+onPress(pauseButton, () => {
   sound.unlock();
   if (screen === 'play' && !menu.isOpen) escapeAction();
 });
-touchFire.addEventListener('click', () => {
+onPress(touchFire, () => {
   sound.unlock();
   primaryAction();
 });
-touchPower.addEventListener('click', () => {
+onPress(touchPower, () => {
   sound.unlock();
   if (match?.powerUps) dispatchInput({ kind: 'power' });
 });
-clipButton.addEventListener('click', () => {
+onPress(clipButton, () => {
   sound.unlock();
   saveClip();
 });
