@@ -24,10 +24,9 @@ if (import.meta.env.DEV && location.pathname.startsWith('/dev/')) {
   const render = () => {
     if (isLang(document.documentElement.lang)) setLang(document.documentElement.lang);
     header.innerHTML = `<a class="dev-shell__brand" href="${devHref('/dev/')}">SLINGSHOT <span>DEV</span></a>
-      <nav class="dev-shell__links" aria-label="${t('dev.navigation')}">${DEV_PAGES.map((page) => devPageEnabled(page)
-        ? `<a href="${devHref(page.path)}"${page.id === current.id ? ' aria-current="page"' : ''}>${t(page.title)}</a>`
-        : `<span aria-disabled="true" title="DEBUG_AIM=1 npm run dev">${t(page.title)} · DEBUG_AIM</span>`).join('')}</nav>
-      <a class="dev-shell__game" href="/">${t('dev.game')} ↗</a>`;
+      <nav class="dev-shell__links" aria-label="${t('dev.navigation')}">${DEV_PAGES.filter(devPageEnabled).map((page) =>
+        `<a href="${devHref(page.path)}"${page.id === current.id ? ' aria-current="page"' : ''}>${t(page.title)}</a>`).join('')}</nav>
+      <a class="dev-shell__game" href="/">${t('dev.game')}</a>`;
     header.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   };
   render();
