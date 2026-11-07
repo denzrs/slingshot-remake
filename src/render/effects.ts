@@ -130,6 +130,9 @@ export interface Nova {
   planets: DoomedPlanet[];
 }
 
+/** Callouts are drawn at least this big on screen, in pixels per field unit: below it the text is scaled up. */
+const CALLOUT_MIN_SCALE = 0.8;
+
 /** How long a supernova's light lasts on the field (s). */
 export const NOVA_LIFE = 3.2;
 
@@ -137,6 +140,8 @@ interface Callout {
   text: string;
   x: number;
   y: number;
+  /** How far above the spot (towards the top of the screen, field units) the callout floats. */
+  up: number;
   color: string;
   life: number;
   max: number;
@@ -542,9 +547,9 @@ export class Effects {
     }
   }
 
-  /** Floating text, e.g. "SWING-BY ×1,5" or "+820". */
-  callout(text: string, x: number, y: number, color: string, big = false): void {
-    this.callouts.push({ text, x, y, color, life: big ? 1.8 : 1.4, max: big ? 1.8 : 1.4, big });
+  /** Floating text, e.g. "SWING-BY ×1,5" or "+820". `up` lifts it towards the top of the screen (negative: below), whichever way the field is turned. */
+  callout(text: string, x: number, y: number, color: string, big = false, up = 0): void {
+    this.callouts.push({ text, x, y, up, color, life: big ? 1.8 : 1.4, max: big ? 1.8 : 1.4, big });
   }
 
   update(dt: number, world: World): void {
@@ -670,7 +675,7 @@ export class Effects {
     for (const m of arrived) this.ring(m.target.x, m.target.y, 16, 0.28, m.color);
   }
 
-  draw(ctx: CanvasRenderingContext2D, style: EffectStyle): void {
+  draw(ctx: CanvasRenderingContext2D, style: EffectStyle, scale = 1): void {
     for (const nova of this.novas) style.nova(ctx, nova);
     for (const r of this.rings) {
       const t = 1 - r.life / r.max;
@@ -732,18 +737,21 @@ export class Effects {
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    // On a small screen the field is shrunk, and text sized in field units shrinks with it: grow text and spacing back.
+    const k = Math.max(1, CALLOUT_MIN_SCALE / scale);
     for (const c of this.callouts) {
       const t = 1 - c.life / c.max;
       const pop = t < 0.12 ? 1.35 - (t / 0.12) * 0.35 : 1;
       const alpha = t > 0.6 ? 1 - (t - 0.6) / 0.4 : 1;
-      const size = (c.big ? 22 : 15) * pop;
+      const size = (c.big ? 22 : 15) * pop * k;
       ctx.font = `800 ${size}px ${FONTS.display}`;
-      const y = c.y - 18 - t * 26;
-      ctx.lineWidth = 3;
+      // Screen-up is not field-up when the field is turned: lift by screen offset.
+      const oy = -(18 + c.up) * k - t * 26 * k;
+      ctx.lineWidth = 3 * k;
       ctx.strokeStyle = rgba(COLORS.plate, 0.85 * alpha);
-      strokeTextUpright(ctx, c.text, c.x, y);
+      strokeTextUpright(ctx, c.text, c.x, c.y, 0, oy);
       ctx.fillStyle = rgba(c.color, alpha);
-      fillTextUpright(ctx, c.text, c.x, y);
+      fillTextUpright(ctx, c.text, c.x, c.y, 0, oy);
     }
   }
 

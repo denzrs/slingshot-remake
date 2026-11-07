@@ -262,7 +262,7 @@ export class Renderer {
     this.drawSpotlight(match, scene);
     this.drawShips(match, scene);
     this.drawPowerUps(match, scene);
-    effects.draw(ctx, this.painter.effects);
+    effects.draw(ctx, this.painter.effects, scale * (cam?.zoom ?? 1));
     ctx.restore();
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);

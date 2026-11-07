@@ -190,7 +190,7 @@ function wire(m: Match): void {
       case 'shotdown':
         effects.intercepted(e.x, e.y, POWER_UP_COLORS.defense, color(e.player), e.vx, e.vy);
         if (audible) sound.intercepted();
-        if (e.points > 0) effects.callout(`${t('hud.intercepted')} +${e.points}`, e.x, e.y - 14, POWER_UP_COLORS.defense, true);
+        if (e.points > 0) effects.callout(`${t('hud.intercepted')} +${e.points}`, e.x, e.y, POWER_UP_COLORS.defense, true, 14);
         break;
       case 'split':
         effects.split(e.x, e.y, POWER_UP_COLORS.splitter);
@@ -206,7 +206,7 @@ function wire(m: Match): void {
         break;
       case 'armed':
         effects.armed(e.x, e.y, color(e.player));
-        effects.callout(t('anomaly.armed'), e.x, e.y - 14, color(e.player));
+        effects.callout(t('anomaly.armed'), e.x, e.y, color(e.player), false, 14);
         if (audible) sound.split();
         break;
       case 'warning':
@@ -244,19 +244,19 @@ function wire(m: Match): void {
       case 'kill': {
         const r = e.record;
         const ship = m.world.ships[r.victim];
-        if (r.friendly) effects.callout(`${t('title.friendlyFire')} ${r.points}`, ship.x, ship.y - 10, COLORS.danger, true);
-        else if (r.killer !== null && !r.self) effects.callout(`+${r.points}`, ship.x, ship.y - 10, color(r.killer), true);
+        if (r.friendly) effects.callout(`${t('title.friendlyFire')} ${r.points}`, ship.x, ship.y, COLORS.danger, true, 10);
+        else if (r.killer !== null && !r.self) effects.callout(`+${r.points}`, ship.x, ship.y, color(r.killer), true, 10);
         break;
       }
       case 'multiKill': {
         const name = t(`multiKill.${Math.min(e.kills, 5)}` as Key);
-        effects.callout(`${name} ×${e.kills}  +${e.points}`, e.x, e.y - 46, COLORS.sodium, true);
+        effects.callout(`${name} ×${e.kills}  +${e.points}`, e.x, e.y, COLORS.sodium, true, 46);
         if (audible) sound.combo();
         break;
       }
       case 'bonus':
         // Stacked above the kill's points and a multi-kill's callout.
-        e.bonuses.forEach((b, i) => effects.callout(`${t(`bonus.${b.kind}`).toUpperCase()} +${b.points}`, e.x, e.y - 64 - i * 18, COLORS.sodium, true));
+        e.bonuses.forEach((b, i) => effects.callout(`${t(`bonus.${b.kind}`).toUpperCase()} +${b.points}`, e.x, e.y, COLORS.sodium, true, 72 + i * 24));
         break;
       case 'collapse':
         effects.collapse(e.x, e.y);
@@ -890,7 +890,7 @@ function announceOracle(m: Match): void {
   const seen = judged.get(m)!;
   const crowd = (verdict: 'wrong' | 'right' | undefined, at: { x: number; y: number }, lift: number) => {
     if (!verdict || m.bettor === null) return;
-    effects.callout(t(verdict === 'wrong' ? 'oracle.crowd.wrong' : 'oracle.crowd.right'), at.x, at.y - lift, COLORS.sodium, true);
+    effects.callout(t(verdict === 'wrong' ? 'oracle.crowd.wrong' : 'oracle.crowd.right'), at.x, at.y, COLORS.sodium, true, lift);
   };
 
   const r = m.betOracle.result;
@@ -899,7 +899,7 @@ function announceOracle(m: Match): void {
     const tip = m.ghost ? r.tips.find((x) => x.player === m.bettor) : undefined;
     const at = r.kind === 'shot' ? m.world.ships[r.shooter] : tip && tip.pick >= 0 ? m.world.ships[tip.pick] : { x: FIELD.width / 2, y: FIELD.height / 2 };
     if (tip) {
-      effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), at.x, at.y - 34, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right);
+      effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), at.x, at.y, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right, 34);
       if (tip.right) sound.combo();
     }
     crowd(r.crowd, at, tip ? 72 : 40);
@@ -912,13 +912,13 @@ function announceOracle(m: Match): void {
     const winner = round.winners.length ? m.world.ships[round.winners[0]] : { x: FIELD.width / 2, y: FIELD.height / 2 };
     if (tip) {
       // Below the ship: the shot's own verdict may be floating above it.
-      effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), winner.x, winner.y + 48, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right);
+      effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), winner.x, winner.y, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right, -48);
       if (tip.right) sound.combo();
     }
     // What the bet on it came to, below that.
     if (tip?.stake) {
       const net = (tip.payout ?? 0) - tip.stake;
-      effects.callout(`${t('oracle.stake')} ${net > 0 ? '+' : net < 0 ? '−' : '±'}${Math.abs(net)}`, winner.x, winner.y + 84, net > 0 ? COLORS.sodium : COLORS.boneDim, net > 0);
+      effects.callout(`${t('oracle.stake')} ${net > 0 ? '+' : net < 0 ? '−' : '±'}${Math.abs(net)}`, winner.x, winner.y, net > 0 ? COLORS.sodium : COLORS.boneDim, net > 0, -84);
     }
     crowd(round.crowd, winner, tip ? -86 : -54);
   }
