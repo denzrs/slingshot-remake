@@ -35,6 +35,9 @@ export const ANOMALY = {
   FUSE_FLOOR: 2,
   /** Zeitzünder: a blast takes every ship whose centre is this close. */
   BLAST_RADIUS: 48,
+  /** Pinball: a shot that comes off the same planet more than this many times within BUMP_WINDOW seconds goes off on the spot: it is rattling on the rock (a slow shot can do it a thousand times). */
+  BUMP_LIMIT: 5,
+  BUMP_WINDOW: 1,
   /** Fusion: a melted shot is this much wider for the ships it hits (added to the ship's radius). */
   FUSED_REACH: 6,
   /** Fusion: the share of a kill (its points and extras) each owner of a melted shot gets. */

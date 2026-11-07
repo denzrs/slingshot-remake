@@ -99,6 +99,38 @@ describe('Pinball', () => {
     expect(shot.vx).toBeLessThan(0);
   });
 
+  it('sets a shot off that rattles on one planet, however slowly it flies', () => {
+    const world = emptyWorld([[100, 400], [1180, 100]]);
+    world.planets.push(planet(640, 400, 40, 400000));
+    // Hardly any power: gravity pulls the shot back onto the rock again and again, every few tenths of a second.
+    const shot = new Shot(world, 0, 0, 1, { ...open, pinball: true });
+    shot.x = 640 - 60;
+    shot.y = 400;
+    shot.vx = 0;
+    shot.vy = 0;
+    let bumped = 0;
+    while (!shot.step()) {
+      bumped += shot.bumps.length;
+      shot.bumps.length = 0;
+    }
+    bumped += shot.bumps.length;
+    expect(shot.end?.kind).toBe('blast');
+    expect(bumped).toBe(ANOMALY.BUMP_LIMIT + 1);
+    expect(shot.time).toBeLessThan(ANOMALY.BUMP_WINDOW);
+  });
+
+  it('lets a shot that bounces off a planet now and then fly on', () => {
+    const world = emptyWorld([[100, 400], [1180, 100]]);
+    world.planets.push(planet(640, 400, 40, 4000));
+    const shot = new Shot(world, 0, 0, 1, { ...open, pinball: true });
+    shot.x = 640 - 60;
+    shot.y = 400;
+    shot.vx = 0;
+    shot.vy = 0;
+    while (!shot.step());
+    expect(shot.end?.kind).toBe('timeout');
+  });
+
   it('stops a shot on a planet without the anomaly', () => {
     const world = emptyWorld([[100, 400], [1180, 100]]);
     world.planets.push(planet(640, 400, 40, 1));
