@@ -64,6 +64,8 @@ export class Hud {
   /** The whole canvas, for what takes over the screen and not just the field. */
   private screen = { w: 0, h: 0 };
   private portrait = false;
+  /** Whether the field is turned a quarter on screen (a phone held upright): aim directions then need turning with it. */
+  private rotated = false;
   private readonly oracle = new OracleHud();
   private readonly skipVote = new SkipVoteHud();
 
@@ -90,6 +92,7 @@ export class Hud {
     this.time = time;
     this.shipPos = shipPos;
     this.portrait = !!view.stage;
+    this.rotated = !!view.rotated;
     // On a phone the field is small, but its labels must stay readable: they get a higher floor.
     this.k = Math.min(1.2, Math.max(opts.touch ? 0.95 : 0.72, view.scale));
     this.screen = { w: view.cssWidth, h: view.cssHeight };
@@ -1415,9 +1418,12 @@ export class Hud {
       return { x: px, y: py };
     };
     // The aim is a line out of the ship: the card steps aside when it would sit on it, and stays there until that place is in the way too.
+    // `at` is on screen, so the direction is too: a rotated field maps field (x, y) to screen (y, -x).
+    const fieldDir = aimDirection(p.angle);
+    const dir = this.rotated ? { x: fieldDir.y, y: -fieldDir.x } : fieldDir;
     const aimed = (slot: number): boolean => {
       const pos = place(slot);
-      return rayHitsRect(at, aimDirection(p.angle), AIM_CLEAR * k, pos.x - 8 * k, pos.y - 8 * k, w + 16 * k, h + 16 * k);
+      return rayHitsRect(at, dir, AIM_CLEAR * k, pos.x - 8 * k, pos.y - 8 * k, w + 16 * k, h + 16 * k);
     };
     let slot = this.readoutSlot.id === p.id ? this.readoutSlot.slot : 0;
     if (dodge && aimed(slot)) slot = [0, 1, 2, 3].find((s) => !aimed(s)) ?? slot;
