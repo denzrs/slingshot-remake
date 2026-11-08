@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { setLang } from '../../src/platform/i18n';
-import { factParts, factText, factTexts } from '../../src/net/statsFacts';
+import { factLinesInOrder, factParts, factText, factTexts } from '../../src/net/statsFacts';
 
 describe('facts for the menu', () => {
   beforeAll(() => setLang('en'));
@@ -51,6 +51,15 @@ describe('facts for the menu', () => {
     const texts = factTexts(facts, () => 0);
     expect(texts).toHaveLength(2);
     expect(new Set(texts)).toEqual(new Set(facts.slice(0, 2).map((f) => factText(f))));
+  });
+
+  it('lists every fact it can word in the order the relay sent them, for the page of all facts', () => {
+    const facts = [
+      { id: 'leftField', values: [52] },
+      { id: 'nope', values: [] },
+      { id: 'holeShots', values: [17] },
+    ];
+    expect(factLinesInOrder(facts).map((parts) => parts.map((part) => part.text).join(''))).toEqual([factText(facts[0]), factText(facts[2])]);
   });
 });
 
