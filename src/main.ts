@@ -43,7 +43,8 @@ import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/room/chat';
 import { Menu, h } from './ui/menu/menu';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
-import { Gamepads, pressMenuKey } from './ui/gamepad/gamepad';
+import { fromNavigator, Gamepads, pressMenuKey } from './ui/gamepad/gamepad';
+import { FAKE_PAD, fakePadOn, mountDevToggles } from './debug/dev-toggles';
 import { onPress } from './ui/touch/touch-controls';
 import { TouchPower } from './ui/touch/touch-power';
 import { TouchWheel } from './ui/touch/touch-wheel';
@@ -107,6 +108,8 @@ const attract = createMatch(
   { attract: true, seats: ['medium', 'medium', 'medium', 'medium', 'off', 'off'] },
 );
 let match: Match | null = null;
+/** The dev build's switches (see `debug/dev-toggles.ts`). */
+let devToggles: ReturnType<typeof mountDevToggles> | undefined;
 /** The game on screen when it is a replay, to watch it again. */
 let lastReplay: StatsReplay | null = null;
 /** The shot of the day on screen, to watch it again. */
@@ -469,6 +472,7 @@ const app: App = {
     effects.debrisLevel = settings.debris;
     setLook(settings.look);
     setPalette(settings.colorblind ? 'colorblind' : 'standard');
+    devToggles?.sync();
     attract.applySettings(settings);
     if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {
@@ -810,10 +814,15 @@ window.addEventListener('pointerdown', () => markInput('pointer'), true);
  * again to say so — but not on a pointer press, which would swap the button out from under the finger, nor while typing.
  */
 function markInput(device: 'keyboard' | 'pointer' | 'pad'): void {
+  // The dev build's pretend pad keeps the hints on its buttons whatever is pressed.
+  if (devPadHints && device !== 'pad') return;
   if (noteInput(device) && device !== 'pointer' && menu.isOpen && !isTyping(document.activeElement)) menu.rebuild();
 }
 
 // ————————————————————————————— Gamepad —————————————————————————————
+
+/** Dev build: the pretend pad is on, so the hints speak of the controller until it is switched off. */
+let devPadHints = false;
 
 /**
  * A pad with the standard layout, looked at once per frame. It only ever aims for whoever is aiming (`canAim`), so at a
@@ -844,7 +853,7 @@ const gamepads = new Gamepads({
     // A pad unplugged (or out of battery) in the middle of a game that was played with it stops the game; a keyboard player's is none of its business.
     } else if (settings.gamepad && lastInput() === 'pad' && screen === 'play' && match && !menu.isOpen) openPause();
   },
-});
+}, import.meta.env.DEV ? () => (fakePadOn() ? [...Array.from(fromNavigator()), FAKE_PAD] : fromNavigator()) : undefined);
 gamepads.enabled = settings.gamepad;
 
 // ————————————————————————————— Pointer aiming —————————————————————————————
@@ -1148,6 +1157,27 @@ function frame(now: number): void {
 if (import.meta.env.DEV || import.meta.env.VITE_BENCH) {
   // Handle for poking at the running game from the dev console, and for the browser benchmark (a build made with VITE_BENCH set).
   Object.assign(window, { slingshot: { app, attract, settings, get match() { return match; } } });
+}
+
+if (import.meta.env.DEV) {
+  // Switches for the accessibility modes in the dev build; a change made in the settings shows in them too (see `settingsChanged`).
+  devToggles = mountDevToggles({
+    colorblind: {
+      get: () => settings.colorblind,
+      set(on) {
+        settings.colorblind = on;
+        app.settingsChanged();
+        if (menu.isOpen && !isTyping(document.activeElement)) menu.rebuild();
+      },
+    },
+    pad: {
+      set(on) {
+        devPadHints = false;
+        markInput(on ? 'pad' : 'keyboard');
+        devPadHints = on;
+      },
+    },
+  });
 }
 
 async function boot(): Promise<void> {

@@ -73,6 +73,8 @@ const en = {
   'dev.results': 'Results screen',
   'dev.results.text': 'Inspect results, highlights and statistics. Add ?check to run the browser regression checks.',
   'dev.only': 'Available in development only. These pages are excluded from the production build.',
+  'dev.toggles.colorblind': 'Colour-blind mode',
+  'dev.toggles.pad': 'Pretend controller',
 
   'gallery.presets.title': 'Preset gallery',
   'gallery.presets.intro': 'Every card with its illustration, anomalies and complete game rules. Saved custom presets from this browser are included.',
@@ -1450,6 +1452,8 @@ const de: Dict = {
   'dev.results': 'Ergebnisanzeige',
   'dev.results.text': 'Ergebnisse, Highlights und Statistik prüfen. Mit ?check laufen die Browser-Regressionstests.',
   'dev.only': 'Nur im Dev-Modus verfügbar. Diese Seiten sind nicht Teil des Produktionsbuilds.',
+  'dev.toggles.colorblind': 'Farbenblind-Modus',
+  'dev.toggles.pad': 'Pad simulieren',
 
   'gallery.presets.title': 'Preset-Galerie',
   'gallery.presets.intro': 'Alle Karten mit Bildern, Anomalien und vollständigen Spielregeln. Eigene Vorlagen aus diesem Browser sind ebenfalls dabei.',

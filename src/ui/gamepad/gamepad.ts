@@ -27,7 +27,7 @@ export interface GamepadHandlers {
 /** Where the pads come from: `navigator.getGamepads` in a browser. */
 export type PadSource = () => ArrayLike<PadLike | null | undefined>;
 
-const fromNavigator: PadSource = () => (typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : []);
+export const fromNavigator: PadSource = () => (typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : []);
 
 /**
  * Looks at the connected pads once per frame and hands what they ask for to the handlers. Only pads with the standard
