@@ -84,6 +84,11 @@ export class ShotLog {
     this.carried.clear();
   }
 
+  /** Whether this is a shot a player fired as the volley launched: not a splitter's fork, a stray missile or a melted shot. */
+  fired(vs: VolleyShot): boolean {
+    return this.bySource.get(vs)?.fork === false;
+  }
+
   /** The line of a shot, if it is one a player fired: a splitter's fork gets one when it first shows up. */
   of(vs: VolleyShot): ShotRecord | null {
     if (vs.stray) return null;

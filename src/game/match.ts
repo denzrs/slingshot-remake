@@ -1708,7 +1708,8 @@ export abstract class Match {
     }
     if (e.type === 'arm') {
       this.emit({ type: 'armed', player, x: e.x, y: e.y });
-      if (live) this.record((book) => bump(book.arms, player));
+      // A fork, a stray missile or a melted shot is armed on its own: only the shots a player fired count, a share of `shots`.
+      if (live && this.shotLog.fired(vs)) this.record((book) => bump(book.arms, player));
       return;
     }
     if (e.type === 'warn') {

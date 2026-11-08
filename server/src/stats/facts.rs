@@ -58,21 +58,26 @@ macro_rules! bonus_kind {
     };
 }
 
-/// Whether a game's rules (`rules` as `rules_to_value` writes it, compact) play by this anomaly; a game from before them has none.
+/// Whether a round's rules (`rules` as `rules_to_value` writes it) play by this anomaly; a round from before them has none.
+/// Only the `anomalies` list is searched, so another rule that happens to share a name never counts.
 macro_rules! plays {
     ($anomaly:literal) => {
-        concat!("(rules LIKE '%\"anomalies\":[%\"", $anomaly, "\"%')")
+        concat!(
+            "(COALESCE(instr(json_extract(rules, '$.anomalies'), '\"",
+            $anomaly,
+            "\"'), 0) > 0)"
+        )
     };
 }
 
-/// Whether a game's rules play by any anomaly at all.
+/// Whether a round's rules play by any anomaly at all.
 macro_rules! anomalous {
     () => {
-        "(rules LIKE '%\"anomalies\":[\"%')"
+        "(COALESCE(json_array_length(rules, '$.anomalies'), 0) > 0)"
     };
 }
 
-/// The field's edge in a game's rules. Games from before the loop say `bounce` instead: true was a wall, false the void.
+/// The field's edge in a round's rules. Rounds from before the loop say `bounce` instead: true was a wall, false the void.
 macro_rules! walled {
     () => {
         "(rules LIKE '%\"edges\":\"wall\"%' OR rules LIKE '%\"bounce\":true%')"
@@ -89,41 +94,38 @@ macro_rules! open_edge {
     };
 }
 
-/// Over a table with a `match_id`, unaliased: whether the row's game has rules that meet `cond`.
-macro_rules! in_games {
-    ($cond:expr) => {
+/// Joins a table with a `match_id` and a `round` to the rules that round was played by, as `rules` (a game's rounds can
+/// differ, and a round outlives its game's row when the statistics are pruned). The table's own columns that `stat_rounds`
+/// shares (`round`, `at`, `team` …) then need its name.
+macro_rules! with_rules {
+    ($table:literal) => {
         concat!(
-            "match_id IN (SELECT match_id FROM stat_matches WHERE ",
-            $cond,
-            ")"
+            " JOIN stat_rounds g ON g.match_id = ",
+            $table,
+            ".match_id AND g.round = ",
+            $table,
+            ".round"
         )
     };
 }
 
-/// A fact that names an anomaly sends it as its index in this list: the client keeps the same one, in the same order
-/// (`ANOMALIES` in `src/sim/config.ts`, and `protocol::ANOMALIES` here), so a new one goes at the end of all three
-/// (a test below holds this one to `protocol::ANOMALIES`).
+/// A fact that names an anomaly sends it as its index in this list (`c0`, `c1` …): the client keeps the same one, in the same
+/// order (`ANOMALIES` in `src/sim/config.ts`, and `protocol::ANOMALIES` here), so a new one goes at the end of all three
+/// (a test below holds this one to `protocol::ANOMALIES`). One pass over the rounds counts them all, and the rounds with any.
 macro_rules! anomaly_counts {
     () => {
         concat!(
-            "SELECT 0 AS k, SUM(",
-            plays!("trickShots"),
-            ") AS n FROM stat_rounds",
-            " UNION ALL SELECT 1, SUM(",
-            plays!("pinball"),
-            ") FROM stat_rounds",
-            " UNION ALL SELECT 2, SUM(",
-            plays!("fuse"),
-            ") FROM stat_rounds",
-            " UNION ALL SELECT 3, SUM(",
-            plays!("fusion"),
-            ") FROM stat_rounds",
-            " UNION ALL SELECT 4, SUM(",
-            plays!("whiteHole"),
-            ") FROM stat_rounds",
-            " UNION ALL SELECT 5, SUM(",
-            plays!("unstable"),
-            ") FROM stat_rounds"
+            "WITH c AS (SELECT SUM(", anomalous!(), ") AS rounds",
+            ", SUM(", plays!("trickShots"), ") AS c0",
+            ", SUM(", plays!("pinball"), ") AS c1",
+            ", SUM(", plays!("fuse"), ") AS c2",
+            ", SUM(", plays!("fusion"), ") AS c3",
+            ", SUM(", plays!("whiteHole"), ") AS c4",
+            ", SUM(", plays!("unstable"), ") AS c5",
+            " FROM stat_rounds)",
+            " SELECT rounds, k, n FROM (SELECT rounds, 0 AS k, c0 AS n FROM c UNION ALL SELECT rounds, 1, c1 FROM c",
+            " UNION ALL SELECT rounds, 2, c2 FROM c UNION ALL SELECT rounds, 3, c3 FROM c",
+            " UNION ALL SELECT rounds, 4, c4 FROM c UNION ALL SELECT rounds, 5, c5 FROM c)"
         )
     };
 }
@@ -146,7 +148,7 @@ const QUERIES: &[Query] = &[
         "SELECT SUM(fork = 0), 1.0 * SUM(fork = 0) / NULLIF(SUM(CASE WHEN hit_kind = 'enemy' THEN hits ELSE 0 END), 0) FROM stat_shots",
     ),
     // Only an open edge loses shots: a wall throws them back, a loop carries them across.
-    ("leftField", 20, concat!("SELECT COUNT(*), ", pct!("resolution = 'lost'", "1"), " FROM stat_shots WHERE fork = 0 AND ", in_games!(open_edge!()))),
+    ("leftField", 20, concat!("SELECT COUNT(*), ", pct!("resolution = 'lost'", "1"), " FROM stat_shots", with_rules!("stat_shots"), " WHERE fork = 0 AND ", open_edge!())),
     ("planetCrash", 20, concat!("SELECT COUNT(*), ", pct!("resolution = 'planet'", "1"), " FROM stat_shots WHERE fork = 0")),
     ("holeShots", 20, concat!("SELECT COUNT(*), ", pct!("resolution = 'hole'", "1"), " FROM stat_shots WHERE fork = 0")),
     ("clash", 20, concat!("SELECT COUNT(*), ", pct!("resolution = 'clash'", "1"), " FROM stat_shots WHERE fork = 0")),
@@ -274,45 +276,39 @@ const QUERIES: &[Query] = &[
     ),
     // A planet of -1 is a planet killer that found its planet already gone.
     ("planetsDestroyed", 2, "SELECT COUNT(*), COUNT(*) FROM stat_placements WHERE kind = 'planetkiller' AND planet >= 0"),
-    // — Anomalies and the field's edge: what only some of them do is counted over the games that play by them —
-    // A blast takes every enemy ship in reach; its first victim is its hit.
+    // — Anomalies and the field's edge: what only some of them do is counted over the rounds that play by them, and a
+    // comparison's other side is the rounds with no anomaly at all, so another anomaly never tips it —
+    // A blast takes every ship in reach; its first victim is its hit.
     (
         "blastShots",
         20,
         concat!(
-            "SELECT COUNT(*), ", pct!("resolution = 'blast'", "1"), ", ", pct!("resolution = 'blast' AND hit_kind = 'enemy'", "resolution = 'blast'"),
-            " FROM stat_shots WHERE fork = 0 AND ", in_games!(plays!("fuse"))
+            "SELECT COUNT(*), ", pct!("resolution = 'blast'", "1"), ", ", pct!("resolution = 'blast' AND hit_kind IS NOT NULL", "resolution = 'blast'"),
+            " FROM stat_shots", with_rules!("stat_shots"), " WHERE fork = 0 AND ", plays!("fuse")
         ),
     ),
-    ("fusedShots", 20, concat!("SELECT COUNT(*), ", pct!("resolution = 'fused'", "1"), " FROM stat_shots WHERE fork = 0 AND ", in_games!(plays!("fusion")))),
+    ("fusedShots", 20, concat!("SELECT COUNT(*), ", pct!("resolution = 'fused'", "1"), " FROM stat_shots", with_rules!("stat_shots"), " WHERE fork = 0 AND ", plays!("fusion"))),
     ("anomalyShare", 10, concat!("SELECT COUNT(*), ", pct!(anomalous!(), "1"), " FROM stat_rounds")),
     // A round with two anomalies counts for both.
-    (
-        "topAnomaly",
-        10,
-        concat!(
-            "SELECT (SELECT COUNT(*) FROM stat_rounds WHERE ", anomalous!(), "), k, n FROM (", anomaly_counts!(), ")
-              WHERE n > 0 ORDER BY n DESC, k LIMIT 1"
-        ),
-    ),
+    ("topAnomaly", 10, concat!(anomaly_counts!(), " WHERE n > 0 ORDER BY n DESC, k LIMIT 1")),
     (
         "trickShotHits",
         20,
         concat!(
-            "SELECT SUM(", in_games!(plays!("trickShots")), "), ",
-            pct!(concat!(hit!(), " AND ", in_games!(plays!("trickShots"))), in_games!(plays!("trickShots"))), ", ",
-            pct!(concat!(hit!(), " AND NOT ", in_games!(plays!("trickShots"))), concat!("NOT ", in_games!(plays!("trickShots")))),
-            " FROM stat_shots WHERE fork = 0"
+            "SELECT SUM(", plays!("trickShots"), "), ",
+            pct!(concat!(hit!(), " AND ", plays!("trickShots")), plays!("trickShots")), ", ",
+            pct!(concat!(hit!(), " AND NOT ", anomalous!()), concat!("NOT ", anomalous!())),
+            " FROM stat_shots", with_rules!("stat_shots"), " WHERE fork = 0"
         ),
     ),
     (
         "anomalyShotsPerKill",
         20,
         concat!(
-            "SELECT SUM(fork = 0 AND ", in_games!(anomalous!()), "),
-                    1.0 * SUM(fork = 0 AND ", in_games!(anomalous!()), ") / NULLIF(SUM(CASE WHEN hit_kind = 'enemy' AND ", in_games!(anomalous!()), " THEN hits ELSE 0 END), 0),
-                    1.0 * SUM(fork = 0 AND NOT ", in_games!(anomalous!()), ") / NULLIF(SUM(CASE WHEN hit_kind = 'enemy' AND NOT ", in_games!(anomalous!()), " THEN hits ELSE 0 END), 0)
-               FROM stat_shots"
+            "SELECT SUM(fork = 0 AND ", anomalous!(), "),
+                    1.0 * SUM(fork = 0 AND ", anomalous!(), ") / NULLIF(SUM(CASE WHEN hit_kind = 'enemy' AND ", anomalous!(), " THEN hits ELSE 0 END), 0),
+                    1.0 * SUM(fork = 0 AND NOT ", anomalous!(), ") / NULLIF(SUM(CASE WHEN hit_kind = 'enemy' AND NOT ", anomalous!(), " THEN hits ELSE 0 END), 0)
+               FROM stat_shots", with_rules!("stat_shots")
         ),
     ),
     (
@@ -320,7 +316,7 @@ const QUERIES: &[Query] = &[
         10,
         concat!(
             "SELECT SUM(", plays!("pinball"), "), ", pct!(concat!("title = 'selfHit' AND ", plays!("pinball")), plays!("pinball")), ", ",
-            pct!(concat!("title = 'selfHit' AND NOT ", plays!("pinball")), concat!("NOT ", plays!("pinball"))), " FROM stat_rounds"
+            pct!(concat!("title = 'selfHit' AND NOT ", anomalous!()), concat!("NOT ", anomalous!())), " FROM stat_rounds"
         ),
     ),
     (
@@ -332,12 +328,14 @@ const QUERIES: &[Query] = &[
         ),
     ),
     ("loopShare", 10, concat!("SELECT COUNT(*), ", pct!(looped!(), "1"), " FROM stat_rounds")),
+    // Walls against an open edge in rounds without anomalies: Trick Shots Only, say, arms a shot at a wall.
     (
         "wallHits",
         20,
         concat!(
-            "SELECT SUM(", in_games!(walled!()), "), ", pct!(concat!(hit!(), " AND ", in_games!(walled!())), in_games!(walled!())), ", ",
-            pct!(concat!(hit!(), " AND ", in_games!(open_edge!())), in_games!(open_edge!())), " FROM stat_shots WHERE fork = 0"
+            "SELECT SUM(", walled!(), "), ", pct!(concat!(hit!(), " AND ", walled!()), walled!()), ", ",
+            pct!(concat!(hit!(), " AND ", open_edge!()), open_edge!()),
+            " FROM stat_shots", with_rules!("stat_shots"), " WHERE fork = 0 AND NOT ", anomalous!()
         ),
     ),
     // What the anomalies and the loop do to a seat's shots, from clients that count it (NULL from older ones).
@@ -345,18 +343,21 @@ const QUERIES: &[Query] = &[
         "planetsShattered",
         2,
         concat!(
-            "SELECT SUM(shatters), SUM(shatters), 1.0 * SUM(shatters) / COUNT(DISTINCT match_id || ':' || round)
-               FROM stat_seats WHERE shatters IS NOT NULL AND ", in_games!(plays!("unstable"))
+            "SELECT SUM(shatters), SUM(shatters), 1.0 * SUM(shatters) / COUNT(DISTINCT stat_seats.match_id || ':' || stat_seats.round)
+               FROM stat_seats", with_rules!("stat_seats"), " WHERE shatters IS NOT NULL AND ", plays!("unstable")
         ),
     ),
-    ("pinballBumps", 20, concat!("SELECT COUNT(*), 1.0 * SUM(bumps) / COUNT(*) FROM stat_seats WHERE bumps IS NOT NULL AND ", in_games!(plays!("pinball")))),
-    // A fork or a stray missile is armed on its own too, so the share is held to a whole.
+    ("pinballBumps", 20, concat!("SELECT COUNT(*), 1.0 * SUM(bumps) / COUNT(*) FROM stat_seats", with_rules!("stat_seats"), " WHERE bumps IS NOT NULL AND ", plays!("pinball"))),
+    // `arms` counts the seat's fired shots that got armed, not their forks or stray missiles, so it is a share of `shots`.
     (
         "armedShots",
         20,
-        concat!("SELECT SUM(shots), MIN(100.0, 100.0 * SUM(arms) / NULLIF(SUM(shots), 0)) FROM stat_seats WHERE arms IS NOT NULL AND ", in_games!(plays!("trickShots"))),
+        concat!(
+            "SELECT SUM(shots), 100.0 * SUM(arms) / NULLIF(SUM(shots), 0) FROM stat_seats", with_rules!("stat_seats"),
+            " WHERE arms IS NOT NULL AND ", plays!("trickShots")
+        ),
     ),
-    ("loopCrossings", 20, concat!("SELECT COUNT(*), 1.0 * SUM(loops) / COUNT(*) FROM stat_seats WHERE loops IS NOT NULL AND ", in_games!(looped!()))),
+    ("loopCrossings", 20, concat!("SELECT COUNT(*), 1.0 * SUM(loops) / COUNT(*) FROM stat_seats", with_rules!("stat_seats"), " WHERE loops IS NOT NULL AND ", looped!())),
     ("whiteHoleReturns", 2, "SELECT SUM(returns), SUM(returns) FROM stat_seats WHERE returns IS NOT NULL"),
     // — Rounds and games —
     ("rounds", 5, "SELECT COUNT(*), AVG(seconds), MAX(seconds) FROM stat_rounds WHERE seconds > 0"),
@@ -683,37 +684,76 @@ mod tests {
 
     #[test]
     fn the_anomalies_are_numbered_as_the_protocol_lists_them() {
-        let counts: Vec<&str> = anomaly_counts!().split(" UNION ALL ").collect();
-        assert_eq!(counts.len(), crate::protocol::ANOMALIES.len());
-        for (i, (anomaly, count)) in crate::protocol::ANOMALIES.iter().zip(counts).enumerate() {
+        let sql = anomaly_counts!();
+        assert_eq!(
+            sql.matches(") AS c").count(),
+            crate::protocol::ANOMALIES.len()
+        );
+        for (i, anomaly) in crate::protocol::ANOMALIES.iter().enumerate() {
             assert!(
-                count.starts_with(&format!("SELECT {i}"))
-                    && count.contains(&format!("\"{anomaly}\"")),
+                sql.contains(&format!("'\"{anomaly}\"'), 0) > 0)) AS c{i}"))
+                    && sql.contains(&format!("SELECT rounds, {i}")),
                 "{anomaly} is not {i}"
             );
         }
     }
 
-    /// Three more games beside the plain one of `played` (open edge, no anomalies, 40 s):
+    #[tokio::test]
+    async fn an_anomaly_is_only_looked_for_in_the_anomalies() {
+        let stats = Stats::in_memory().await;
+        let rules = r#"{"anomalies":["pinball"],"powerUpKinds":["fuse"]}"#;
+        let count = |cond: &str| {
+            format!("SELECT COUNT(*), COUNT(*) FROM (SELECT '{rules}' AS rules) WHERE {cond}")
+        };
+        assert_eq!(
+            stats.fact(&count(plays!("pinball")), 0).await.unwrap(),
+            Some(vec![1.0])
+        );
+        assert_eq!(stats.fact(&count(plays!("fuse")), 0).await.unwrap(), None);
+        assert_eq!(
+            stats.fact(&count(anomalous!()), 0).await.unwrap(),
+            Some(vec![1.0])
+        );
+        let none = "SELECT COUNT(*), COUNT(*) FROM (SELECT '{\"anomalies\":[]}' AS rules UNION ALL SELECT '{}') WHERE ";
+        assert_eq!(
+            stats
+                .fact(&format!("{none}{}", anomalous!()), 0)
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            stats
+                .fact(&format!("{none}NOT {}", anomalous!()), 0)
+                .await
+                .unwrap(),
+            Some(vec![2.0])
+        );
+    }
+
+    /// Four more games beside the plain one of `played` (open edge, no anomalies, 40 s):
     /// - `a` by Time Fuse and Fusion, open edge, 30 s: a blast that takes a ship, a fused shot, a miss and a blast that takes none;
     /// - `b` by Pinball, looped, 20 s, a self-hit round: no shots logged, but its seats' bumps and crossings;
-    /// - `c` by Trick Shots Only, Unstable and White Hole, walled, 50 s: two shots that both kill, and its seats' counts.
+    /// - `c` by Trick Shots Only, Unstable and White Hole, walled, 50 s: two shots that both kill, and its seats' counts;
+    /// - `d` by no anomalies, walled, 40 s: a shot that kills and one that hits a planet.
     async fn anomalies() -> Stats {
         let stats = played().await;
         let both = r#"{"rounds":1,"edges":"void","anomalies":["fuse","fusion"]}"#;
         let pinball = r#"{"rounds":1,"edges":"loop","anomalies":["pinball"]}"#;
         let tricks =
             r#"{"rounds":1,"edges":"wall","anomalies":["trickShots","whiteHole","unstable"]}"#;
+        let walls = r#"{"rounds":1,"edges":"wall","anomalies":[]}"#;
         let rows = [
             format!(
                 "INSERT INTO stat_matches VALUES ('a', 0, 2, 'classic', 'ffa', '{both}', '[]', 1, 'online'), ('b', 0, 3, 'classic', 'ffa', '{pinball}', '[]', 1, 'local'),
-                                                 ('c', 0, 4, 'classic', 'ffa', '{tricks}', '[]', 1, 'online')"
+                                                 ('c', 0, 4, 'classic', 'ffa', '{tricks}', '[]', 1, 'online'), ('d', 0, 5, 'classic', 'ffa', '{walls}', '[]', 1, 'online')"
             ),
             format!(
                 "INSERT INTO stat_rounds (match_id, room_id, round, at, day, game_mode, mode, rules, humans, cpus, spectators, title, survivor, team, seconds, planets, turns)
                  VALUES ('a', 'r', 1, 0, date('now'), 'classic', 'ffa', '{both}', 2, 0, 0, 'hit', 0, NULL, 30.0, 3, 1),
                         ('b', 'r', 1, 0, date('now'), 'classic', 'ffa', '{pinball}', 1, 1, 0, 'selfHit', 0, NULL, 20.0, 3, 1),
-                        ('c', 'r', 1, 0, date('now'), 'classic', 'ffa', '{tricks}', 2, 0, 0, 'hit', 0, NULL, 50.0, 3, 1)"
+                        ('c', 'r', 1, 0, date('now'), 'classic', 'ffa', '{tricks}', 2, 0, 0, 'hit', 0, NULL, 50.0, 3, 1),
+                        ('d', 'r', 1, 0, date('now'), 'classic', 'ffa', '{walls}', 2, 0, 0, 'hit', 0, NULL, 40.0, 3, 1)"
             ),
             "INSERT INTO stat_shots (match_id, round, turn, n, at, seat, player, cpu, angle, power, power_up, fork, fan, split_at, rider, resolution, hits, hit_seat, hit_kind, points)
              VALUES ('a', 1, 1, 1, 0, 0, 'p', NULL, 10, 50, NULL, 0, NULL, NULL, NULL, 'blast', 1, 1, 'enemy', 500),
@@ -721,7 +761,9 @@ mod tests {
                     ('a', 1, 1, 3, 0, 1, 'q', NULL, 190, 50, NULL, 0, NULL, NULL, NULL, 'lost', 0, NULL, NULL, 0),
                     ('a', 1, 1, 4, 0, 1, 'q', NULL, 190, 50, NULL, 0, NULL, NULL, NULL, 'blast', 0, NULL, NULL, 0),
                     ('c', 1, 1, 1, 0, 0, 'p', NULL, 10, 50, NULL, 0, NULL, NULL, NULL, 'ship', 1, 1, 'enemy', 500),
-                    ('c', 1, 1, 2, 0, 1, 'q', NULL, 190, 50, NULL, 0, NULL, NULL, NULL, 'ship', 1, 0, 'enemy', 500)"
+                    ('c', 1, 1, 2, 0, 1, 'q', NULL, 190, 50, NULL, 0, NULL, NULL, NULL, 'ship', 1, 0, 'enemy', 500),
+                    ('d', 1, 1, 1, 0, 0, 'p', NULL, 10, 50, NULL, 0, NULL, NULL, NULL, 'ship', 1, 1, 'enemy', 500),
+                    ('d', 1, 1, 2, 0, 1, 'q', NULL, 190, 50, NULL, 0, NULL, NULL, NULL, 'planet', 0, NULL, NULL, 0)"
                 .to_string(),
             "INSERT INTO stat_seats (match_id, round, seat, at, player, cpu, team, won, alive, score, shots, kills, swingbys, grazes, own_goals, pickups, saves,
                                      shatters, bumps, arms, loops, returns)
@@ -752,21 +794,22 @@ mod tests {
         // Of the Time Fuse game's four shots two went off, one of them taking a ship; the other games' shots are not asked.
         assert_eq!(fact("blastShots").await, Some(vec![50.0, 50.0]));
         assert_eq!(fact("fusedShots").await, Some(vec![25.0]));
-        // Three of the four rounds play by anomalies, each anomaly one round: the first in the list wins the tie.
-        assert_eq!(fact("anomalyShare").await, Some(vec![75.0]));
+        // Three of the five rounds play by anomalies, each anomaly one round: the first in the list wins the tie.
+        assert_eq!(fact("anomalyShare").await, Some(vec![60.0]));
         assert_eq!(fact("topAnomaly").await, Some(vec![0.0, 1.0]));
-        // Both Trick Shots Only shots killed; of the seven others two did (the splitter's fork and the blast).
-        assert_eq!(fact("trickShotHits").await, Some(vec![100.0, 200.0 / 7.0]));
-        // Six shots and three kills with anomalies, three shots and one kill without.
-        assert_eq!(fact("anomalyShotsPerKill").await, Some(vec![2.0, 3.0]));
+        // Both Trick Shots Only shots killed; of the five in games without anomalies two did (the splitter's fork and one of `d`).
+        // The blast of `a` is in neither: its game plays by other anomalies.
+        assert_eq!(fact("trickShotHits").await, Some(vec![100.0, 40.0]));
+        // Six shots and three kills with anomalies, five shots and two kills without.
+        assert_eq!(fact("anomalyShotsPerKill").await, Some(vec![2.0, 2.5]));
         assert_eq!(fact("pinballSelfHits").await, Some(vec![100.0, 0.0]));
         assert_eq!(
             fact("anomalyRoundLength").await,
             Some(vec![100.0 / 3.0, 40.0])
         );
-        assert_eq!(fact("loopShare").await, Some(vec![25.0]));
-        // Walled: the two kills of `c`; open: the plain game and `a`, two hits in seven. The looped game is in neither.
-        assert_eq!(fact("wallHits").await, Some(vec![100.0, 200.0 / 7.0]));
+        assert_eq!(fact("loopShare").await, Some(vec![20.0]));
+        // In games without anomalies, walled: one kill in the two shots of `d`; open: one in the plain game's three.
+        assert_eq!(fact("wallHits").await, Some(vec![50.0, 100.0 / 3.0]));
         // Only an open edge loses shots: two in the plain game and one in `a`, of seven.
         assert_eq!(fact("leftField").await, Some(vec![300.0 / 7.0]));
         assert_eq!(fact("planetsShattered").await, Some(vec![2.0, 2.0]));
@@ -782,25 +825,53 @@ mod tests {
             .2;
         assert_eq!(stats.fact(top, 4).await.unwrap(), None);
         assert!(stats.fact(top, 3).await.unwrap().is_some());
+        // A round is read by its own rules, so it keeps them when its game's row is pruned before it.
+        stats
+            .conn
+            .execute("DELETE FROM stat_matches", ())
+            .await
+            .unwrap();
+        assert_eq!(fact("leftField").await, Some(vec![300.0 / 7.0]));
+        assert_eq!(fact("blastShots").await, Some(vec![50.0, 50.0]));
+        assert_eq!(fact("armedShots").await, Some(vec![50.0]));
     }
 
     #[tokio::test]
-    async fn a_game_from_before_the_loop_keeps_its_wall() {
+    async fn a_blast_that_takes_a_teammate_or_its_shooter_takes_a_ship() {
+        let stats = anomalies().await;
+        stats
+            .conn
+            .execute(
+                "UPDATE stat_shots SET hit_kind = 'team' WHERE match_id = 'a' AND n = 1",
+                (),
+            )
+            .await
+            .unwrap();
+        let sql = QUERIES
+            .iter()
+            .find(|(q, _, _)| *q == "blastShots")
+            .unwrap()
+            .2;
+        assert_eq!(stats.fact(sql, 0).await.unwrap(), Some(vec![50.0, 50.0]));
+    }
+
+    #[tokio::test]
+    async fn a_round_from_before_the_loop_keeps_its_wall() {
         let stats = played().await;
         stats
             .conn
             .execute(
-                "UPDATE stat_matches SET rules = '{\"rounds\":1,\"bounce\":true}'",
+                "UPDATE stat_rounds SET rules = '{\"rounds\":1,\"bounce\":true}'",
                 (),
             )
             .await
             .unwrap();
         let walled = concat!(
-            "SELECT COUNT(*), COUNT(*) FROM stat_matches WHERE ",
+            "SELECT COUNT(*), COUNT(*) FROM stat_rounds WHERE ",
             walled!()
         );
         let open = concat!(
-            "SELECT COUNT(*), COUNT(*) FROM stat_matches WHERE ",
+            "SELECT COUNT(*), COUNT(*) FROM stat_rounds WHERE ",
             open_edge!()
         );
         assert_eq!(stats.fact(walled, 0).await.unwrap(), Some(vec![1.0]));
