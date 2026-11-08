@@ -596,10 +596,11 @@ def build_drone(out):
         bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=0.085, radius2=0.01, depth=0.05, location=(ca * 0.88, sa * 0.88, zc + 0.02), rotation=(0, math.radians(90), a))
         bpy.context.active_object.data.materials.append(bright)
 
+    # soft, mostly overhead light: the drone turns in the game, so `forged.ts` adds the field's own light over the render
     camera(sc, (0, 0, 8), 2.6)
-    light(sc, 'key', (-3, 3.5, 5), 520, hex2c('#fff1d6'), 4)
-    light(sc, 'rim', (3, -3, 3), 220, hex2c('#ffffff'), 3)
-    world(sc, '#808a99', 0.35)
+    light(sc, 'key', (-1.2, 1.4, 6), 330, hex2c('#fff1d6'), 6)
+    light(sc, 'rim', (1.2, -1.4, 5), 150, hex2c('#ffffff'), 6)
+    world(sc, '#808a99', 0.6)
     try:
         sc.eevee.use_raytracing = True
     except Exception:

@@ -191,10 +191,44 @@ const DRONE_SPAN = 32.5;
 const DRONE_LAMP = 14.5;
 const DRONE_PYLONS = [90, 210, 330];
 
+/** The drone is turned and lit on this canvas (`DRONE_PX` across) before it is drawn: the field's light does not turn with it. */
+const DRONE_PX = 256;
+let droneCanvas: HTMLCanvasElement | null = null;
+
+/** The hull turned by `angle`, shaded away from the field's light and glinting towards it. The shared canvas is only good until the next call. */
+function turnedDrone(ctx: CanvasRenderingContext2D, hull: HTMLCanvasElement, angle: number): HTMLCanvasElement {
+  const [lx, ly] = lightInFrame(ctx);
+  droneCanvas ??= Object.assign(document.createElement('canvas'), { width: DRONE_PX, height: DRONE_PX });
+  const c = droneCanvas.getContext('2d')!;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over';
+  c.clearRect(0, 0, DRONE_PX, DRONE_PX);
+  const k = DRONE_PX / DRONE_SPAN;
+  c.setTransform(k, 0, 0, k, DRONE_PX / 2, DRONE_PX / 2);
+  c.save();
+  c.rotate(angle);
+  c.drawImage(hull, -DRONE_SPAN / 2, -DRONE_SPAN / 2, DRONE_SPAN, DRONE_SPAN);
+  c.restore();
+  c.globalCompositeOperation = 'source-atop';
+  const shade = c.createLinearGradient(lx * 13, ly * 13, -lx * 13, -ly * 13);
+  shade.addColorStop(0, 'rgba(255,248,235,0.22)');
+  shade.addColorStop(0.5, 'rgba(255,255,255,0)');
+  shade.addColorStop(1, 'rgba(4,8,20,0.5)');
+  c.fillStyle = shade;
+  c.fillRect(-DRONE_SPAN, -DRONE_SPAN, DRONE_SPAN * 2, DRONE_SPAN * 2);
+  const glint = c.createRadialGradient(lx * 6, ly * 6, 0, lx * 6, ly * 6, 9);
+  glint.addColorStop(0, 'rgba(255,255,255,0.3)');
+  glint.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = glint;
+  c.fillRect(-DRONE_SPAN, -DRONE_SPAN, DRONE_SPAN * 2, DRONE_SPAN * 2);
+  c.globalCompositeOperation = 'source-over';
+  return droneCanvas;
+}
+
 /**
  * The target of a daily challenge: a rendered space drone, an armoured orb with a lens, three blade pylons and an orbit
- * ring, in the target's colour and hovering in the ring of its hit box. The hull keeps the light it was rendered in; the
- * lens breathes and the pylon lamps blink in code. Until the images have loaded, the engraved diamond stands in.
+ * ring, in the target's colour, hovering and turning slowly in the ring of its hit box. The field's light is put over the hull
+ * in code, so it stays where it is as the drone turns; the lens breathes and the pylon lamps blink. Until the images have loaded, the engraved diamond stands in.
  */
 export function drawForgedTarget(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, time: number): void {
   const hull = painted('drone', 'droneMask', color);
@@ -228,9 +262,12 @@ export function drawForgedTarget(ctx: CanvasRenderingContext2D, x: number, y: nu
 
   ctx.save();
   ctx.translate(x, y);
-  // the field's light does not turn with the drone, so the hull stays where it was rendered; a slow hover is all it does
+  // a slow hover, and a slow turn (every drone its own way and pace)
   ctx.translate(0, Math.sin(time * 1.6 + phase) * 0.7);
-  ctx.drawImage(hull, -DRONE_SPAN / 2, -DRONE_SPAN / 2, DRONE_SPAN, DRONE_SPAN);
+  const turn = ((Math.floor(x / 7) + Math.floor(y / 5)) % 2 ? 1 : -1) * (0.16 + 0.05 * ((Math.abs(x * 3 + y) % 7) / 7));
+  const angle = time * turn + phase * 40;
+  ctx.drawImage(turnedDrone(ctx, hull, angle), -DRONE_SPAN / 2, -DRONE_SPAN / 2, DRONE_SPAN, DRONE_SPAN);
+  ctx.rotate(angle);
   ctx.globalCompositeOperation = 'lighter';
   // the lens in the orb's top: a lit eye that breathes
   const eye = ctx.createRadialGradient(0, 0, 0, 0, 0, 4.2);
