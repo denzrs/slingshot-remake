@@ -537,6 +537,9 @@ export class Shot {
     const planets = this.broken ?? this.world.planets;
     const hx = this.vx;
     const hy = this.vy;
+    // Where the step starts: a shot that falls into a white hole is reckoned from here, before the last steep kick of the well.
+    const fromX = this.x;
+    const fromY = this.y;
     this.updateStormContacts();
 
     let ax = 0;
@@ -670,7 +673,7 @@ export class Shot {
       const dx = hole.x - this.x;
       const dy = hole.y - this.y;
       if (dx * dx + dy * dy < hole.radius * hole.radius) {
-        if (this.rules.whiteHole) this.escapeHole(i);
+        if (this.rules.whiteHole) this.escapeHole(i, fromX, fromY, hx, hy);
         else return this.finish({ kind: 'hole', hole: i });
       }
     }
@@ -738,8 +741,20 @@ export class Shot {
     this.arms.push({ x: this.x, y: this.y });
   }
 
-  /** White Hole: the shot comes back out at a seeded side and position of the edge (no shared RNG is consumed by planning, guests or replay), and is armed by the jump. */
-  private escapeHole(index: number): void {
+  /** Gravitational potential per unit mass at (x, y) from what pulls (or, reversed, pushes) this shot: planets and black holes. */
+  private potential(x: number, y: number): number {
+    let phi = 0;
+    for (const p of this.broken ?? this.world.planets) phi -= ((p.reversed ? -G : G) * p.mass) / Math.max(Math.hypot(p.x - x, p.y - y), p.radius);
+    for (const h of this.world.holes) phi -= (G * h.mass) / Math.max(Math.hypot(h.x - x, h.y - y), h.radius);
+    return this.plasma ? phi * PLASMA.GRAVITY : phi;
+  }
+
+  /**
+   * White Hole: the shot comes back out at a seeded side and position of the edge (no shared RNG is consumed by planning, guests or replay), and is armed by the jump.
+   * Its energy goes through the jump unchanged: what it gained falling into the hole it pays back climbing out to the edge,
+   * so it does not come out at the hole's rim speed, too fast for any planet (pulling or reversed) to bend.
+   */
+  private escapeHole(index: number, fromX: number, fromY: number, fromVx: number, fromVy: number): void {
     const { width, height } = this.world;
     const salt = Math.round(this.time / DT) * 17 + index;
     let side = Math.floor(dice(this.seed, salt) * 4);
@@ -754,7 +769,8 @@ export class Shot {
     this.warps.push({ fromX: this.x, fromY: this.y, toX: x, toY: y });
     const inward = [0, Math.PI, Math.PI / 2, -Math.PI / 2][side];
     const angle = inward + (dice(this.seed, salt + 2) - .5) * Math.PI * .65;
-    const speed = Math.hypot(this.vx, this.vy);
+    const speed2 = fromVx * fromVx + fromVy * fromVy + 2 * (this.potential(fromX, fromY) - this.potential(x, y));
+    const speed = Math.max(ANOMALY.WHITE_EXIT_MIN_SPEED, Math.sqrt(Math.max(0, speed2)));
     this.x = x; this.y = y;
     this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
     this.whiteExit = { x, y, out: inward + Math.PI, at: this.time, hole: index };

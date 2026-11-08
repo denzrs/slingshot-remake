@@ -42,6 +42,8 @@ export const ANOMALY = {
   FUSED_REACH: 6,
   /** Fusion: the share of a kill (its points and extras) each owner of a melted shot gets. */
   FUSION_SHARE: 0.5,
+  /** White Hole: a shot never comes back out of the edge slower than this (px/s), however deep the well it climbed out of. */
+  WHITE_EXIT_MIN_SPEED: 160,
 } as const;
 
 export const MAX_PLAYERS = 6;
