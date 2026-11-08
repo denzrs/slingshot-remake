@@ -6,6 +6,7 @@ import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
 import { mobileSheet, type SheetSelection } from '../menu/mobile-sheet';
 import type { App } from './app';
+import { keysLine } from '../../platform/input-device';
 
 const LANG_NAMES: Record<Lang, string> = { de: 'Deutsch', en: 'English' };
 
@@ -54,15 +55,17 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
       { id: 'prefs-device', title: t('shell.soundDevice') },
       { id: 'prefs-language', title: t('common.language') },
       ...(touch ? [{ id: 'prefs-touch', title: t('shell.touch') }] : []),
+      // Only while a pad is there: until one is pressed the browser does not even say there is one.
+      ...(app.gamepadConnected ? [{ id: 'prefs-controller', title: t('shell.controller') }] : []),
     ],
   ], t('common.settings'), () => app.menu.refresh(), selection);
-  const inGroup = (item: MenuItem, group: 'display' | 'device' | 'language' | 'touch'): MenuItem => ({ ...item, section: `prefs-${group}` } as MenuItem);
+  const inGroup = (item: MenuItem, group: 'display' | 'device' | 'language' | 'touch' | 'controller'): MenuItem => ({ ...item, section: `prefs-${group}` } as MenuItem);
   return {
     build: () => menuPage({
       title: t('common.settings'), intro: t('settings.note'), className: 'menu-page--settings',
       navigation: sheet.navigation,
       body: [sheet.el],
-      keys: t('briefing.keys'),
+      keys: keysLine('briefing.keys'),
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
     }),
     items: ([
@@ -132,6 +135,7 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
             },
           }, 'touch')]
         : []),
+      ...(app.gamepadConnected ? [inGroup(settingToggle(app, t('settings.gamepad'), 'gamepad'), 'controller')] : []),
       { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },
     ] satisfies MenuItem[]).map(sheet.bind),
     dispose: sheet.dispose,

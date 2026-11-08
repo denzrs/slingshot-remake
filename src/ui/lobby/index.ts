@@ -14,6 +14,7 @@ import { createConnection } from './connection';
 import { createOpenRoom } from './open-room';
 import { createRoomView } from './room';
 import { button, flashCopied } from './widgets';
+import { keysLine } from '../../platform/input-device';
 
 /** Direct child views reachable from the Online section of the main launcher. */
 export type LobbyEntry = 'rooms' | 'create' | 'code';
@@ -134,7 +135,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     title: t(({ rooms: 'flow.find', create: 'flow.create', code: 'flow.code' } as const)[view]), eyebrow: t('launcher.online'), className: 'menu-page--lobby menu-page--mode-enter-next',
     headerTitle: onlineHeader,
     headerAside: factTicker(app.settings.statsTicker),
-    body: [lobbyEl], footer: footerActions, keys: t('flow.tabKeys'),
+    body: [lobbyEl], footer: footerActions, keys: keysLine('flow.tabKeys'),
   });
   const page = root.querySelector<HTMLElement>('.menu-page')!;
   const selectRoomTab = (tab: 'setup' | 'lobby') => {

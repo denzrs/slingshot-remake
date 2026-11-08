@@ -33,6 +33,8 @@ export interface Settings extends RoomRules {
   wheelSide: 'left' | 'right';
   /** The wheel and power bar remain the default; the pull-back stick controls both together. */
   touchControls: 'wheel' | 'stick';
+  /** A game controller (standard layout) aims, fires and moves about the menus. Only a setting of this browser, never part of a room. */
+  gamepad: boolean;
   menuSounds: boolean;
   gameSounds: boolean;
   language: Lang;
@@ -62,6 +64,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lessMenuMotion: false,
   wheelSide: 'right',
   touchControls: 'wheel',
+  gamepad: true,
   menuSounds: true,
   gameSounds: true,
   language: 'de',
@@ -84,7 +87,7 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
-      for (const key of ['contours', 'particles', 'aimCardDodge', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'menuSounds', 'gameSounds'] as const) {
+      for (const key of ['contours', 'particles', 'aimCardDodge', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'gamepad', 'menuSounds', 'gameSounds'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
       s.look = lookFrom(s.look) ?? DEFAULT_SETTINGS.look;
