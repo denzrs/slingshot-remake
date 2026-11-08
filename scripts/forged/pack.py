@@ -12,6 +12,8 @@ OUT.mkdir(parents=True, exist_ok=True)
 FILES = {
     'ship': (None, 90),
     'ship-mask': (None, 90),
+    'drone': (None, 90),
+    'drone-mask': (None, 90),
     'turret-base': (None, 90),
     'turret-mask': (None, 90),
     'turret-barrel': (None, 90),
