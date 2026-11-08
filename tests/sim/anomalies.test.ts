@@ -419,6 +419,32 @@ describe('White Hole and solar Pinball', () => {
     expect(exits[0]).toEqual(exits[1]);
   });
 
+  it('lets a shot out of the edge with the energy it fell in with, not at the hole\'s rim speed', () => {
+    const world = emptyWorld(); world.holes.push({ x: 640, y: 400, radius: 18, mass: 260_000 });
+    const shot = new Shot(world, 0, 0, 50, { ...open, whiteHole: true });
+    // Fired at 400 px/s from far off, it reaches the rim at about 1480 px/s.
+    Object.assign(shot, { x: 640 - 17.9, y: 400, vx: Math.sqrt(400 ** 2 + 2 * 70 * 260_000 / 18), vy: 0 });
+    shot.step();
+    expect(shot.whiteExit).toBeDefined();
+    expect(Math.hypot(shot.vx, shot.vy)).toBeLessThan(600);
+    expect(Math.hypot(shot.vx, shot.vy)).toBeGreaterThanOrEqual(ANOMALY.WHITE_EXIT_MIN_SPEED);
+  });
+
+  it('turns a returned shot away from a reversed planet it flies straight at', () => {
+    const world = emptyWorld();
+    world.holes.push({ x: 640, y: 400, radius: 18, mass: 260_000 });
+    world.planets.push({ ...planet(200, 400, 45), reversed: true });
+    const shot = new Shot(world, 0, 0, 50, { ...open, whiteHole: true });
+    Object.assign(shot, { x: 640 - 17.9, y: 400, vx: Math.sqrt(400 ** 2 + 2 * 70 * 260_000 / 18), vy: 0 });
+    shot.step();
+    // Aim the returned shot dead at the planet, at the speed the jump left it.
+    const speed = Math.hypot(shot.vx, shot.vy);
+    const d = Math.hypot(200 - shot.x, 400 - shot.y);
+    Object.assign(shot, { vx: (200 - shot.x) / d * speed, vy: (400 - shot.y) / d * speed });
+    while (!shot.step() && shot.time < 20) { /* fly */ }
+    expect(shot.end?.kind).not.toBe('planet');
+  });
+
   it('tells the volley of each return, so the statistics can count it', () => {
     const world = emptyWorld(); world.holes.push({ x: 640, y: 400, radius: 22, mass: 0 });
     const volley = new Volley(world, [{ player: 0, angle: 0, power: 50 }], { ...open, whiteHole: true }, true);
