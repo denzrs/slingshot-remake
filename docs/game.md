@@ -19,7 +19,7 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 | Drag (mouse/touch) | Aim directly, the arrow tip follows the pointer |
 | Space | Next round, skip the killcam |
 | N | Skip the round – nobody scores in it. Offline: press it twice (or use *Skip round* in the pause menu). Online: see [Skipping a round](multiplayer.md#skipping-a-round) – Y / N answer a vote |
-| C | Save the last killcam as a video |
+| C | Save the last killcam as a video (on a touch screen the clip button records it, then *Share clip* opens the device's share sheet; where files cannot be shared the video is downloaded instead) |
 | ← → / 1–5, 0 | Oracle, once you are shot down online: tip hit or miss (turn by turn) / name the ship that gets hit, or 0 for nobody. You can also tap the choices or the ships |
 | Shift + 1–5, 0 | Oracle, who wins the round: the ship still in (0 for a draw, where one is possible). You can also tap it |
 | B / Shift + B | Oracle, bet points of the match on your tip on the round: the smaller / the larger stake. You can also tap the stake |
@@ -29,6 +29,8 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 | ↑ ↓ ← → Enter (in menus) | Pick a row, change its value (sliders, switches and lists alike), confirm. Home / End jump a slider to its ends; Esc goes back to the row you came from |
 
 On touch screens, **Settings → Touch controls → Aiming controls** switches between the default angle wheel with power bar and the restored **Stick**. Pull the stick back like a slingshot: the shot travels the other way, and a longer pull adds power. Releasing keeps the aim; firing stays a separate button. The stick respects capped and fixed power. Either control scheme can sit on the left or right, and the browser remembers the choice.
+
+While a match is on screen the game asks the browser to keep the screen on (Screen Wake Lock), so a phone does not dim between shots. The title screen and the results let it dim again; a browser without the API behaves as before.
 
 ## Game modes
 

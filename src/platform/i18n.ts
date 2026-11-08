@@ -35,6 +35,7 @@ const en = {
   'static.description': 'Slingshot – up to six spaceships, a few planets, a black hole and lots of gravity.',
   'static.canvas': 'Playfield',
   'static.clipSave': 'Save clip',
+  'static.clipShare': 'Share clip',
 
   // — common —
   // — developer tools —
@@ -792,7 +793,7 @@ const en = {
   'tutorial.aim.touchFire': 'When you are ready, tap Fire. In Event Horizon, tap Ready to lock in your shot. You can also drag on the playfield to aim.',
   'tutorial.aim.touchSettings': 'Choose Wheel & power bar or Stick, and the control side, in Settings. Some match rules fix or limit power.',
   'tutorial.keyboard.more': 'Keyboard controls',
-  'tutorial.keys.touch': 'During a match, tap the pause button for the menu. Use Next or Skip when shown; tap the clip button to save an available killcam. Tap the named power-up button to activate a held power-up; you can also press P on a keyboard.',
+  'tutorial.keys.touch': 'During a match, tap the pause button for the menu. Use Next or Skip when shown; tap the clip button to record an available killcam, then Share clip to send it on. Tap the named power-up button to activate a held power-up; you can also press P on a keyboard.',
   'tutorial.aim.title': 'Aim and fire',
   'tutorial.aim.1': 'Drag with the mouse or your finger on the playfield – the arrow tip follows your pointer. On the keyboard it works like this:',
   'tutorial.aim.rotate': 'Turn your ship',
@@ -1379,6 +1380,7 @@ const de: Dict = {
   'static.description': 'Slingshot – bis zu sechs Raumschiffe, ein paar Planeten, ein schwarzes Loch und viel Gravitation.',
   'static.canvas': 'Spielfeld',
   'static.clipSave': 'Clip speichern',
+  'static.clipShare': 'Clip teilen',
 
   // — Entwicklerwerkzeuge —
   'dev.home': 'Übersicht',
@@ -2130,7 +2132,7 @@ const de: Dict = {
   'tutorial.aim.touchFire': 'Wenn du bereit bist, tippe auf Feuer. Im Ereignishorizont bestätigst du deinen Schuss mit Bereit. Du kannst auch auf dem Spielfeld ziehen, um zu zielen.',
   'tutorial.aim.touchSettings': 'Unter Einstellungen wählst du Winkelrad & Kraftregler oder Stick sowie die Seite der Steuerung. Manche Spielregeln legen die Kraft fest oder begrenzen sie.',
   'tutorial.keyboard.more': 'Tastatursteuerung',
-  'tutorial.keys.touch': 'Tippe im Spiel auf die Pausentaste für das Menü. Nutze Weiter oder Überspringen, wenn angezeigt; mit der Clip-Taste speicherst du eine verfügbare Killcam. Tippe auf die Taste mit dem Namen deines Power-ups, um es zu aktivieren; auf der Tastatur geht auch P.',
+  'tutorial.keys.touch': 'Tippe im Spiel auf die Pausentaste für das Menü. Nutze Weiter oder Überspringen, wenn angezeigt; mit der Clip-Taste nimmst du eine verfügbare Killcam auf und schickst sie danach mit Clip teilen weiter. Tippe auf die Taste mit dem Namen deines Power-ups, um es zu aktivieren; auf der Tastatur geht auch P.',
   'tutorial.aim.title': 'Zielen und feuern',
   'tutorial.aim.1': 'Mit Maus oder Finger ziehst du auf dem Spielfeld – die Pfeilspitze folgt deinem Zeiger. Auf der Tastatur geht es so:',
   'tutorial.aim.rotate': 'Schiff drehen',

@@ -9,7 +9,8 @@ import './ui/menu/menu-page.css';
 
 import { Sound } from './platform/audio';
 import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
-import { ClipRecorder } from './platform/clip';
+import { canShareClip, type Clip, ClipRecorder, downloadClip, shareClip } from './platform/clip';
+import { ScreenWake } from './platform/wakelock';
 import { AIM, ANOMALY, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
 import { createUiPreview, UI_PREVIEWS, type UiPreview } from './debug/devPreview';
 import { InfallDemo } from './debug/infallDemo';
@@ -59,6 +60,7 @@ const standsBadge = document.querySelector<HTMLElement>('#stands-badge')!;
 const pauseBanner = document.querySelector<HTMLElement>('#pause-banner')!;
 const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
+const clipShareButton = document.querySelector<HTMLButtonElement>('#clip-share')!;
 
 const settings = loadSettings();
 setLook(settings.look);
@@ -73,6 +75,12 @@ const effects = new Effects(settings.particles, reducedMotion, settings.debris);
 const renderer = new Renderer(canvas);
 const menu = new Menu(overlay, sound);
 const recorder = new ClipRecorder();
+const screenWake = new ScreenWake();
+
+/** How long a finished clip waits on the touch screen to be shared. */
+const CLIP_OFFER_MS = 30_000;
+/** The clip a phone can share, held until it is tapped, the match changes or the time is up: the share sheet opens only from a tap. */
+let clipOffer: { clip: Clip; match: Match; until: number } | null = null;
 
 /** The title screen plays an Event Horizon match between four CPUs behind the menu. */
 const attract = createMatch(
@@ -282,7 +290,7 @@ function wire(m: Match): void {
       case 'killcam':
         effects.clear();
         if (e.active && e.recording) recorder.start(canvas);
-        if (!e.active && e.recording) void recorder.stopAndSave();
+        if (!e.active && e.recording) void finishClip(m);
         break;
       case 'gameOver':
         if (m instanceof ShotReplay) {
@@ -568,7 +576,29 @@ const app: App = {
   isFullscreen: () => !!document.fullscreenElement,
 };
 
-/** Replay the last killcam while recording the canvas, then download the video. */
+/**
+ * A clip is done. A phone offers it to the share sheet, which opens only from a tap; everywhere else it is saved as a
+ * download straight away.
+ */
+async function finishClip(m: Match): Promise<void> {
+  const clip = await recorder.stop();
+  if (!clip) return;
+  if (coarsePointer.matches && canShareClip(clip)) clipOffer = { clip, match: m, until: Date.now() + CLIP_OFFER_MS };
+  else downloadClip(clip);
+}
+
+/** The share button was tapped: open the sheet, and fall back to a download when the browser cannot share it. */
+function shareOfferedClip(): void {
+  const offer = clipOffer;
+  if (!offer) return;
+  clipOffer = null;
+  clipShareButton.hidden = true;
+  void shareClip(offer.clip).then((result) => {
+    if (result === 'failed') downloadClip(offer.clip);
+  });
+}
+
+/** Replay the last killcam while recording the canvas, then save or share the video. */
 function saveClip(): void {
   if (!match?.canSaveClip || !ClipRecorder.supported || recorder.recording) return;
   match.replayLastKill(true);
@@ -824,6 +854,8 @@ onPress(clipButton, () => {
   sound.unlock();
   saveClip();
 });
+// A plain click: the share sheet needs the browser's own user activation.
+clipShareButton.addEventListener('click', shareOfferedClip);
 
 // ————————————————————————————— Loop —————————————————————————————
 
@@ -870,7 +902,10 @@ function syncButtons(): void {
   touchWheel.update(stick ? null : aim);
   touchStick.update(stick ? aim : null);
 
-  const canClip = playing && m?.canSaveClip && ClipRecorder.supported && !recorder.recording;
+  if (clipOffer && (clipOffer.match !== m || Date.now() > clipOffer.until)) clipOffer = null;
+  const canShare = playing && !!clipOffer;
+  if (clipShareButton.hidden === canShare) clipShareButton.hidden = !canShare;
+  const canClip = playing && !canShare && m?.canSaveClip && ClipRecorder.supported && !recorder.recording;
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;
 }
 
@@ -937,6 +972,8 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const m = active();
+  // Nobody should watch the screen dim in the middle of a match; the title screen and the results let it.
+  screenWake.set(screen === 'play' && m.phase !== 'gameOver');
   // The seed badge (a shortcut into /dev/aim.html) follows the same switch that serves the page.
   debugSeedBadge.hidden = !import.meta.env.DEBUG_AIM || screen !== 'play' || !match;
   if (!debugSeedBadge.hidden) {
