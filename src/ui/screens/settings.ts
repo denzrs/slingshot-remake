@@ -6,6 +6,7 @@ import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
 import { mobileSheet, type SheetSelection } from '../menu/mobile-sheet';
 import type { App } from './app';
+import { hintText } from '../../platform/input-device';
 
 const LANG_NAMES: Record<Lang, string> = { de: 'Deutsch', en: 'English' };
 
@@ -49,20 +50,23 @@ export function openSettings(app: App): void {
 function settingsScreen(app: App, selection: SheetSelection): Screen {
   const touch = matchMedia('(pointer: coarse)').matches;
   const sheet = mobileSheet([
-    [{ id: 'prefs-display', title: t('shell.display') }],
+    [
+      { id: 'prefs-display', title: t('shell.display') },
+      { id: 'prefs-language', title: t('common.language') },
+    ],
     [
       { id: 'prefs-device', title: t('shell.soundDevice') },
-      { id: 'prefs-language', title: t('common.language') },
+      { id: 'prefs-access', title: t('shell.accessibility') },
       ...(touch ? [{ id: 'prefs-touch', title: t('shell.touch') }] : []),
     ],
   ], t('common.settings'), () => app.menu.refresh(), selection);
-  const inGroup = (item: MenuItem, group: 'display' | 'device' | 'language' | 'touch'): MenuItem => ({ ...item, section: `prefs-${group}` } as MenuItem);
+  const inGroup = (item: MenuItem, group: 'display' | 'device' | 'language' | 'access' | 'touch'): MenuItem => ({ ...item, section: `prefs-${group}` } as MenuItem);
   return {
     build: () => menuPage({
       title: t('common.settings'), intro: t('settings.note'), className: 'menu-page--settings',
       navigation: sheet.navigation,
       body: [sheet.el],
-      keys: t('briefing.keys'),
+      keys: hintText('briefing.keys'),
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
     }),
     items: ([
@@ -90,9 +94,8 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
           app.settingsChanged();
         },
       }, 'display'),
-      inGroup(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'display'),
       inGroup(settingToggle(app, t('settings.statsTicker'), 'statsTicker'), 'display'),
-      inGroup(settingToggle(app, t('settings.lessMenuMotion'), 'lessMenuMotion'), 'display'),
+      inGroup(languageItem(app), 'language'),
       inGroup(settingToggle(app, t('settings.menuSounds'), 'menuSounds'), 'device'),
       inGroup(settingToggle(app, t('settings.gameSounds'), 'gameSounds'), 'device'),
       // Not on a touch device: a phone's browser has no fullscreen to offer a page (and the F key is a keyboard's).
@@ -104,7 +107,11 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
             get: () => app.isFullscreen(),
             set: () => app.toggleFullscreen(),
           }, 'device')]),
-      inGroup(languageItem(app), 'language'),
+      inGroup(settingToggle(app, t('settings.colorblind'), 'colorblind'), 'access'),
+      inGroup(settingToggle(app, t('settings.lessMenuMotion'), 'lessMenuMotion'), 'access'),
+      inGroup(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'access'),
+      // Always listed: until a button is pressed, the browser does not say whether a pad is there.
+      inGroup(settingToggle(app, t('settings.gamepad'), 'gamepad'), 'access'),
       ...(touch
         ? [inGroup({
             kind: 'segmented',

@@ -1,5 +1,6 @@
 import { modifiersOf } from '../sim/challenge';
-import { AIM, COLORS, FONTS, MAYHEM, SUDDEN_DEATH, TEAMS, type Anomaly } from '../sim/config';
+import { AIM, COLORS, FONTS, MAYHEM, SUDDEN_DEATH, type Anomaly } from '../sim/config';
+import { dangerColor, teamColor } from '../data/palette';
 import { ChallengeMatch, ClassicMatch, HorizonMatch, SolarMatch, teamName, type KillRecord, type Mark, type Match, type PlayerState } from '../game';
 import { fmt, fmtInt, t } from '../platform/i18n';
 import { TWIST_IDS, twistName } from '../game/mayhem';
@@ -19,6 +20,7 @@ import { ANOMALY_COLORS, drawAnomalySymbol } from './anomaly-art';
 import { anomaliesOf } from '../sim/anomalies';
 import type { DrawOptions } from './renderer';
 import { fitText, setSpacing } from './text';
+import { cap, padMode } from '../platform/input-device';
 
 /** On a phone held upright the duel's two blocks start this far lower (field units before `k`), under the round label and the pause button beside it. */
 const DUEL_DROP = 24;
@@ -1199,7 +1201,7 @@ export class Hud {
         if (i > 0) x += groupGap - gap;
         const team = match.teamRanking().find((r) => r.team === p.team)!;
         const width = w * team.members.length + gap * (team.members.length - 1);
-        ctx.fillStyle = TEAMS[p.team!][0];
+        ctx.fillStyle = teamColor(p.team!);
         ctx.fillRect(x, y - 5 * k, width, 1.5 * k);
         ctx.textBaseline = 'bottom';
         ctx.textAlign = 'left';
@@ -1861,7 +1863,7 @@ export class Hud {
     const fade = Math.min(1, Math.max(0, (match.phaseTime - 0.35) / 0.4));
     if (fade <= 0) return;
     const survivor = s.survivor !== null ? match.players[s.survivor] : null;
-    const color = s.team !== null ? TEAMS[s.team][0] : survivor?.color ?? COLORS.danger;
+    const color = s.team !== null ? teamColor(s.team) : survivor?.color ?? dangerColor();
     const title = s.title === 'teamWin' ? t('title.teamWin', { team: teamName(s.team!).toUpperCase() }) : t(`title.${s.title}`);
     const cx = field.x + field.w / 2;
     const cy = field.y + field.h / 2;
@@ -1941,7 +1943,7 @@ export class Hud {
     if (!recording && !opts.touch) {
       // Online, skipping is a vote: show how many are in favour.
       const skip = match.viewer !== null && info ? `${t('hud.skip')} ${info.votes}/${info.needed}` : t('hud.skip');
-      this.drawKeyRow([[t('common.space'), skip], ['C', t('hud.saveClip')]], field.x + field.w / 2, field.y + field.h - bar - 18 * k, this.k * 0.9);
+      this.drawKeyRow([[cap(t('common.space')), skip], [cap('C'), t('hud.saveClip')]], field.x + field.w / 2, field.y + field.h - bar - 18 * k, this.k * 0.9);
     }
   }
 
@@ -1969,10 +1971,13 @@ export class Hud {
       if (touch) {
         items = [['', match.salvo ? t('hud.touch.horizon') : t('hud.touch.classic')]];
       } else {
-        const power: KeyItem = ['↑ ↓', match.settings.fixedPower ? t('hud.powerFixed') : t('hud.powerLabel')];
-        const commit: KeyItem = ['Enter', match.salvo ? t('common.ready') : t('common.fire')];
-        items = [['← →', t('hud.rotate')], power, commit, [`Shift · Alt · ${t('common.ctrl')}`, t('hud.stepSize')], ['Esc', t('hud.menu')]];
-        if (this.measureKeyRow(items, k) > maxWidth) items = [['← →', t('hud.rotate')], power, commit];
+        const power: KeyItem = [cap('↑ ↓'), match.settings.fixedPower ? t('hud.powerFixed') : t('hud.powerLabel')];
+        const commit: KeyItem = [cap('Enter'), match.salvo ? t('common.ready') : t('common.fire')];
+        const rotate: KeyItem = [cap('← →'), t('hud.rotate')];
+        // The shoulder buttons are the controller's Shift and Alt.
+        const steps: KeyItem = [padMode() ? 'LB · RB' : `Shift · Alt · ${t('common.ctrl')}`, t('hud.stepSize')];
+        items = [rotate, power, commit, steps, [cap('Esc'), t('hud.menu')]];
+        if (this.measureKeyRow(items, k) > maxWidth) items = [rotate, power, commit];
       }
     } else if (match.phase === 'aiming') {
       const thinker = match.current >= 0 ? match.players[match.current] : null;
@@ -1986,8 +1991,8 @@ export class Hud {
       items = [['', t('hud.collapse')]];
     } else if (match.phase === 'roundOver' && match.phaseTime > 0.6) {
       const next = match.isLastRound ? t('hud.finalStandings') : match instanceof ChallengeMatch ? t('daily.hud.nextSector') : t('hud.nextRound');
-      items = [match.canAdvance ? [touch ? '' : t('common.space'), next] : ['', t('hud.waitingHost')]];
-      if (match.canSaveClip && !touch) items.push(['C', t('hud.saveKillcam')]);
+      items = [match.canAdvance ? [touch ? '' : cap(t('common.space')), next] : ['', t('hud.waitingHost')]];
+      if (match.canSaveClip && !touch) items.push([cap('C'), t('hud.saveKillcam')]);
     }
     if (!items.length) return;
     const width = this.measureKeyRow(items, k);

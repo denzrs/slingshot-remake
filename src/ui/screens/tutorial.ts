@@ -14,6 +14,7 @@ import { markIcon } from '../../render/mark-art';
 import { markText } from './mark-help';
 import { installNote } from '../menu/pwa-banner';
 import { mountTutorialPreview, type TutorialPreviewKind } from './tutorial-preview';
+import { cap, hintText, padMode } from '../../platform/input-device';
 import type { App } from './app';
 
 /** One page of the tutorial: a heading and what goes under it. */
@@ -125,17 +126,26 @@ function keyboardAim(): HTMLElement[] {
   ];
 }
 
-/** The pages of the tutorial, in order. Each one is built when it is shown, so its texts follow the language. */
-export const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
-  (touch) => ({
-    title: t('tutorial.welcome.title'),
-    demo: null,
-    body: [para(t('tutorial.welcome.1')), para(t('tutorial.welcome.2')), para(t(touch ? 'tutorial.welcome.touch' : 'tutorial.welcome.3'))],
-  }),
-  (touch, stick) => ({
-    title: t('tutorial.aim.title'),
-    demo: 'aim',
-    body: touch ? [
+/** What a connected controller does, under the keyboard's keys; only shown while the browser reports a pad. */
+function padAim(): HTMLElement[] {
+  return [
+    para(t('tutorial.pad.1')),
+    keysTable(
+      keyRow([kbd(t('tutorial.pad.stick')), ' ', kbd('D-Pad')], t('tutorial.pad.aim')),
+      keyRow([kbd('LB'), ' ', kbd('RB')], t('tutorial.pad.steps')),
+      keyRow([kbd('A')], t('tutorial.pad.fire')),
+      keyRow([kbd('X')], t('tutorial.pad.power')),
+      keyRow([kbd('Y')], t('tutorial.pad.skip')),
+      keyRow([kbd('B'), ' ', kbd('Start')], t('tutorial.pad.pause')),
+    ),
+  ];
+}
+
+/** The aiming page: the touch controls or the keyboard's keys, and the controller's buttons while one is connected (first, when it was used last). */
+function aimBody(touch: boolean, stick: boolean, pad: boolean): (Node | string)[] {
+  const keyboard = h('details.tutorial__keyboard', null, h('summary', null, t('tutorial.keyboard.more')), ...keyboardAim());
+  if (touch) {
+    const controls = [
       para(t(stick ? 'tutorial.aim.touchStick' : 'tutorial.aim.touchWheel')),
       h(`div.tutorial__touch-example${stick ? '.tutorial__touch-example--stick' : ''}`, { 'aria-hidden': 'true' },
         h('span.tutorial__touch-control', null, stick ? '↙ ◉ ↗' : '◔ ↻'),
@@ -144,8 +154,24 @@ export const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
       ),
       para(t('tutorial.aim.touchFire')),
       para(t('tutorial.aim.touchSettings')),
-      h('details.tutorial__keyboard', null, h('summary', null, t('tutorial.keyboard.more')), ...keyboardAim()),
-    ] : keyboardAim(),
+    ];
+    return [...controls, keyboard, ...(pad ? padAim() : [])];
+  }
+  if (pad && padMode()) return [...padAim(), keyboard];
+  return [...keyboardAim(), ...(pad ? padAim() : [])];
+}
+
+/** The pages of the tutorial, in order. Each one is built when it is shown, so its texts follow the language. */
+export const TUTORIAL: ((touch: boolean, stick: boolean, pad?: boolean) => Lesson)[] = [
+  (touch) => ({
+    title: t('tutorial.welcome.title'),
+    demo: null,
+    body: [para(t('tutorial.welcome.1')), para(t('tutorial.welcome.2')), para(touch ? t('tutorial.welcome.touch') : hintText('tutorial.welcome.3'))],
+  }),
+  (touch, stick, pad = false) => ({
+    title: t('tutorial.aim.title'),
+    demo: 'aim',
+    body: aimBody(touch, stick, pad),
   }),
   () => ({
     title: t('tutorial.gravity.title'),
@@ -177,7 +203,7 @@ export const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
     title: t('tutorial.powerups.title'),
     demo: 'powerups',
     powerUps: POWER_PAGES[0],
-    body: [para(t('tutorial.powerups.1'))],
+    body: [para(hintText('tutorial.powerups.1'))],
   }),
   () => ({
     title: t('tutorial.powerups.title2'),
@@ -208,10 +234,11 @@ export const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
       ...(touch ? [para(t('tutorial.keys.touch'))] : []),
       para(t('tutorial.keys.1')),
       keysTable(
-        keyRow([kbd(t('common.space'))], t('tutorial.keys.space')),
-        keyRow([kbd('C')], t('tutorial.keys.clip')),
-        keyRow([kbd('Esc')], t('tutorial.keys.menu')),
-        keyRow([kbd('F')], t('tutorial.keys.fullscreen')),
+        keyRow([kbd(padMode() ? cap('Space') : t('common.space'))], t('tutorial.keys.space')),
+        keyRow([kbd(cap('C'))], t('tutorial.keys.clip')),
+        keyRow([kbd(cap('Esc'))], t('tutorial.keys.menu')),
+        // The controller has no key for it.
+        ...(padMode() ? [] : [keyRow([kbd('F')], t('tutorial.keys.fullscreen'))]),
       ),
       para(t('tutorial.keys.2')),
     ],
@@ -238,7 +265,7 @@ export function tutorialScreen(app: App): () => Screen {
   let preview: ReturnType<typeof mountTutorialPreview> | null = null;
   return (): Screen => {
     const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-    const lessons = TUTORIAL.map((lesson) => lesson(touch, app.settings.touchControls === 'stick'));
+    const lessons = TUTORIAL.map((lesson) => lesson(touch, app.settings.touchControls === 'stick', app.gamepadConnected));
     const hasPreview = lessons[page].demo !== null;
     const powerUps = lessons[page].powerUps ?? [];
     const tricks = lessons[page].tricks ?? [];

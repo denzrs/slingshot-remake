@@ -1,8 +1,9 @@
-import { TEAMS } from '../../sim/config';
+import { teamColor } from '../../data/palette';
 import { teamName } from '../../game';
 import { t } from '../../platform/i18n';
 import { h } from '../dom';
 import './team-roster.css';
+import { hintText } from '../../platform/input-device';
 
 interface TeamSeat { team: number | null }
 
@@ -56,7 +57,7 @@ export function teamRoster(label: string) {
     }
     destinations.forEach((button, team) => { button.hidden = !current || current.team === team; });
     hint.hidden = count < 2 || !cards.some((card) => card.move);
-    hint.textContent = current ? t('players.moveTarget', { name: current.label }) : t('players.moveHint');
+    hint.textContent = current ? hintText('players.moveTarget', { name: current.label }) : t('players.moveHint');
   };
   const cancel = () => {
     selected = null;
@@ -104,7 +105,7 @@ export function teamRoster(label: string) {
       const column = h('section.team-column', { 'aria-label': teamName(team) },
         h('div.team-column__head', null, h('h3', null, teamName(team)), total), destination, grid,
       );
-      column.style.setProperty('--team-tone', TEAMS[team][0]);
+      column.style.setProperty('--team-tone', teamColor(team));
       column.addEventListener('dragover', (event) => {
         if (!dragging || !selection() || selection()!.team === team) return;
         event.preventDefault();

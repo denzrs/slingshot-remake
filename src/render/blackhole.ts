@@ -1,4 +1,5 @@
 import { COLORS } from '../sim/config';
+import { seatColor } from '../data/palette';
 import type { BlackHole } from '../sim/physics';
 import { rgba } from './color';
 
@@ -109,7 +110,7 @@ function drawDisk(ctx: CanvasRenderingContext2D, R: number, time: number, from: 
     const t = i / (rings - 1);
     const rx = R * (1.5 + t * 2.1);
     const ry = rx * 0.2;
-    const color = t < 0.25 ? COLORS.bone : t < 0.6 ? COLORS.sodium : COLORS.players[0];
+    const color = t < 0.25 ? COLORS.bone : t < 0.6 ? COLORS.sodium : seatColor(0);
     ctx.strokeStyle = rgba(color, 0.85 - t * 0.6);
     ctx.lineWidth = Math.max(0.8, R * (0.16 - t * 0.08));
     ctx.setLineDash([R * (0.6 + t), R * (0.3 + t * 0.5)]);

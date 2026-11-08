@@ -1,7 +1,8 @@
 import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
 import type { Avatar } from '../platform/avatars';
 import { bountyPoints, interceptPoints, underdogPoints } from '../sim/scoring';
-import { AIM, ANOMALY, COLORS, FIELD, GRACE, HORIZON, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TEAMS, TRAIL_FADE, type BonusKind, type KillSource, type SuddenDeathKind } from '../sim/config';
+import { AIM, ANOMALY, COLORS, FIELD, GRACE, HORIZON, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TRAIL_FADE, type BonusKind, type KillSource, type SuddenDeathKind } from '../sim/config';
+import { dangerColor, seatColor, teamColor } from '../data/palette';
 import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
 import { normalizeAngle, hasTrickShotSources, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
@@ -35,7 +36,10 @@ export interface PlayerState {
   /** The symbol the player picked for an online game; null offline. */
   avatar: Avatar | null;
   cpu: CpuLevel | null;
-  color: string;
+  /** Follows from the seat, the team and its shade, so a different palette shows at once. */
+  readonly color: string;
+  /** Which shade of the team colour this member has (team mode only). */
+  shade: number;
   /** Team index in team mode, null in free for all. */
   team: number | null;
   /** Daily challenge: a stationary target drone rather than a ship that shoots. */
@@ -604,7 +608,7 @@ export abstract class Match {
   tipster(id: number): { name: string; color: string } | undefined {
     if (!this.spectating) return this.players[id];
     const seat = this.crowd.seat(id);
-    return seat && { name: seat.name, color: COLORS.players[id % COLORS.players.length] };
+    return seat && { name: seat.name, color: seatColor(id) };
   }
 
   /** Which side a ship is on: its team, or itself. Teammates win and lose together. */
@@ -803,7 +807,7 @@ export abstract class Match {
   winner(): { name: string; color: string } | null {
     if (this.teamMode) {
       const [a, b] = this.teamRanking();
-      return !b || a.score > b.score ? { name: teamName(a.team), color: TEAMS[a.team][0] } : null;
+      return !b || a.score > b.score ? { name: teamName(a.team), color: teamColor(a.team) } : null;
     }
     const leader = this.leader;
     return leader === null ? null : { name: this.players[leader].name, color: this.players[leader].color };
@@ -993,7 +997,7 @@ export abstract class Match {
       for (const p of this.players) {
         const n = seen.get(p.team!) ?? 0;
         seen.set(p.team!, n + 1);
-        p.color = TEAMS[p.team!][n % TEAMS[p.team!].length];
+        p.shade = n;
       }
     }
     this.round = 0;
@@ -1763,7 +1767,7 @@ export abstract class Match {
       }
       case 'hole': {
         const hole = volley.world.holes[end.hole];
-        this.emit({ type: 'devour', x: e.x, y: e.y, toX: hole.x, toY: hole.y, color: COLORS.players[this.players[player].seat], vx: e.vx, vy: e.vy });
+        this.emit({ type: 'devour', x: e.x, y: e.y, toX: hole.x, toY: hole.y, color: seatColor(this.players[player].seat), vx: e.vx, vy: e.vy });
         break;
       }
       case 'shotdown': {
@@ -2324,7 +2328,11 @@ export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, 
       return cpu ? `CPU ${seat + 1}` : t('players.player', { n: seat + 1 });
     },
     cpu,
-    color: target ? COLORS.danger : COLORS.players[seat],
+    shade: 0,
+    get color() {
+      if (target) return dangerColor();
+      return this.team === null ? seatColor(seat) : teamColor(this.team, this.shade);
+    },
     team,
     target,
     score: 0,

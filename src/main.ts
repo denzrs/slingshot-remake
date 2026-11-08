@@ -11,6 +11,7 @@ import { Sound } from './platform/audio';
 import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
 import { canShareClip, type Clip, ClipRecorder, downloadClip, shareClip } from './platform/clip';
 import { ScreenWake } from './platform/wakelock';
+import { cap, hintText, lastInput, noteInput, padMode } from './platform/input-device';
 import { AIM, ANOMALY, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
 import { createUiPreview, UI_PREVIEWS, type UiPreview } from './debug/devPreview';
 import { InfallDemo } from './debug/infallDemo';
@@ -30,6 +31,7 @@ import { Pwa } from './platform/pwa';
 import { PwaBanner } from './ui/menu/pwa-banner';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './platform/i18n';
 import { getLook, setLook } from './data/look';
+import { setPalette } from './data/palette';
 import { painterFor } from './render/looks';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
@@ -41,6 +43,8 @@ import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/room/chat';
 import { Menu, h } from './ui/menu/menu';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
+import { fromNavigator, Gamepads, pressMenuKey } from './ui/gamepad/gamepad';
+import { FAKE_PAD, fakePadOn, mountDevToggles } from './debug/dev-toggles';
 import { onPress } from './ui/touch/touch-controls';
 import { TouchPower } from './ui/touch/touch-power';
 import { TouchWheel } from './ui/touch/touch-wheel';
@@ -67,6 +71,7 @@ const pwaBanner = document.querySelector<HTMLElement>('#pwa-banner')!;
 
 const settings = loadSettings();
 setLook(settings.look);
+setPalette(settings.colorblind ? 'colorblind' : 'standard');
 setLang(settings.language);
 applyStaticTexts();
 const sound = new Sound();
@@ -103,6 +108,8 @@ const attract = createMatch(
   { attract: true, seats: ['medium', 'medium', 'medium', 'medium', 'off', 'off'] },
 );
 let match: Match | null = null;
+/** The dev build's switches (see `debug/dev-toggles.ts`). */
+let devToggles: ReturnType<typeof mountDevToggles> | undefined;
 /** The game on screen when it is a replay, to watch it again. */
 let lastReplay: StatsReplay | null = null;
 /** The shot of the day on screen, to watch it again. */
@@ -426,7 +433,7 @@ function skipKey(): void {
     match.requestSkipRound(0);
   } else {
     skipAskedAt = performance.now() / 1000;
-    match.notice = { text: t('skip.confirm'), color: COLORS.boneDim, at: match.clock };
+    match.notice = { text: hintText('skip.confirm'), color: COLORS.boneDim, at: match.clock };
   }
 }
 
@@ -456,11 +463,16 @@ const app: App = {
     saveSettings(settings);
     applyWheelSide();
     applyMenuMotion();
+    gamepads.enabled = settings.gamepad;
+    // Switched off by hand: the hints go back to keys at once.
+    if (!settings.gamepad && padMode()) markInput('keyboard');
     sound.menuEnabled = settings.menuSounds;
     sound.gameEnabled = settings.gameSounds;
     effects.particles = settings.particles;
     effects.debrisLevel = settings.debris;
     setLook(settings.look);
+    setPalette(settings.colorblind ? 'colorblind' : 'standard');
+    devToggles?.sync();
     attract.applySettings(settings);
     if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {
@@ -589,6 +601,9 @@ const app: App = {
     else void document.documentElement.requestFullscreen?.().catch(() => {});
   },
   isFullscreen: () => !!document.fullscreenElement,
+  get gamepadConnected() {
+    return gamepads.connected;
+  },
 };
 
 /**
@@ -644,6 +659,10 @@ function escapeAction(): void {
     dispatchInput({ kind: 'cancel' });
     return;
   }
+  openPause();
+}
+
+function openPause(): void {
   // A clip records whatever is on screen — don't freeze it behind the menu.
   if (!recorder.recording) menu.open(() => pauseScreen(app, match));
 }
@@ -715,6 +734,8 @@ function placeTip(tip: OracleTap): void {
 
 window.addEventListener('keydown', (e) => {
   sound.unlock();
+  // The keys the pad presses for the menus are not the keyboard's: the hints keep speaking of the pad.
+  if (e.isTrusted) markInput('keyboard');
   // Typing in the chat is typing: no aiming, no menu keys, no fullscreen. Escape gives the keyboard back to the game.
   if (chat?.owns(e.target)) {
     if (e.code === 'Escape') (e.target as HTMLElement).blur();
@@ -784,6 +805,56 @@ window.addEventListener('keydown', (e) => {
   }
   if (handled) e.preventDefault();
 });
+
+// A mouse or a finger was used last: the hints speak of keys again (the pad's own words are for after it was touched).
+window.addEventListener('pointerdown', () => markInput('pointer'), true);
+
+/**
+ * Notes what was used last. When that turns the hints on screen from keys to buttons (or back), the open menu is built
+ * again to say so — but not on a pointer press, which would swap the button out from under the finger, nor while typing.
+ */
+function markInput(device: 'keyboard' | 'pointer' | 'pad'): void {
+  // The dev build's pretend pad keeps the hints on its buttons whatever is pressed.
+  if (devPadHints && device !== 'pad') return;
+  if (noteInput(device) && device !== 'pointer' && menu.isOpen && !isTyping(document.activeElement)) menu.rebuild();
+}
+
+// ————————————————————————————— Gamepad —————————————————————————————
+
+/** Dev build: the pretend pad is on, so the hints speak of the controller until it is switched off. */
+let devPadHints = false;
+
+/**
+ * A pad with the standard layout, looked at once per frame. It only ever aims for whoever is aiming (`canAim`), so at a
+ * hot seat it steers the current player and nobody else. The menus take it as key presses on the focused row.
+ */
+const gamepads = new Gamepads({
+  // The chat has the keyboard while it is being typed in; the pad leaves it alone.
+  context: () => (chat?.owns(document.activeElement) ? null : screen === 'play' && match && !menu.isOpen ? 'game' : 'menu'),
+  adjust(dAngle, dPower) {
+    if (canAim()) dispatchInput({ kind: 'adjust', dAngle, dPower });
+  },
+  primary: () => primaryAction(),
+  escape: () => escapeAction(),
+  power() {
+    if (match?.powerUps) dispatchInput({ kind: 'power' });
+  },
+  skip: () => skipKey(),
+  clip: () => saveClip(),
+  key: (key, repeat) => pressMenuKey(key, repeat),
+  touched() {
+    sound.unlock();
+    markInput('pad');
+  },
+  connection(event) {
+    // The settings list a pad only while there is one: a menu that is open is built again to show it.
+    if (event === 'connected') {
+      if (menu.isOpen && !isTyping(document.activeElement)) menu.rebuild();
+    // A pad unplugged (or out of battery) in the middle of a game that was played with it stops the game; a keyboard player's is none of its business.
+    } else if (settings.gamepad && lastInput() === 'pad' && screen === 'play' && match && !menu.isOpen) openPause();
+  },
+}, import.meta.env.DEV ? () => (fakePadOn() ? [...Array.from(fromNavigator()), FAKE_PAD] : fromNavigator()) : undefined);
+gamepads.enabled = settings.gamepad;
 
 // ————————————————————————————— Pointer aiming —————————————————————————————
 
@@ -881,9 +952,10 @@ function syncButtons(): void {
   const m = match;
   // The way into the pause menu: a button for a thumb, and for a mouse too, where Esc does the same.
   if (pauseButton.hidden === playing) pauseButton.hidden = !playing;
-  if (playing && pauseButton.ariaLabel !== t('pause.title')) {
+  const pauseTitle = coarsePointer.matches ? '' : `${t('pause.title')} (${cap('Esc')})`;
+  if (playing && (pauseButton.ariaLabel !== t('pause.title') || pauseButton.title !== pauseTitle)) {
     pauseButton.ariaLabel = t('pause.title');
-    pauseButton.title = coarsePointer.matches ? '' : `${t('pause.title')} (Esc)`;
+    pauseButton.title = pauseTitle;
   }
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {
@@ -980,6 +1052,7 @@ let last = performance.now();
 /** The attract match behind the menu runs at 30 fps: nobody plays it, and every frame repaints the whole canvas. */
 const ATTRACT_FRAME_MS = 1000 / 30;
 function frame(now: number): void {
+  gamepads.poll(now);
   // A few ms of slack, so a 60 Hz display draws every second frame rather than every third.
   if (screen !== 'play' && now - last < ATTRACT_FRAME_MS - 4) {
     requestAnimationFrame(frame);
@@ -1045,7 +1118,7 @@ function frame(now: number): void {
     voteMenuOpen = false;
     menu.close();
   }
-  if (screen === 'play' && net && coarsePointer.matches && !menu.isOpen && m.canAnswerSkip(m.viewer) && (m !== askedVoteMatch || m.skipVote!.until !== askedVote)) {
+  if (screen === 'play' && net && (coarsePointer.matches || lastInput() === 'pad') && !menu.isOpen && m.canAnswerSkip(m.viewer) && (m !== askedVoteMatch || m.skipVote!.until !== askedVote)) {
     askedVote = m.skipVote!.until;
     askedVoteMatch = m;
     voteMenuOpen = true;
@@ -1066,7 +1139,7 @@ function frame(now: number): void {
     renderer.draw(
       m,
       effects,
-      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer, aimCardDodge: settings.aimCardDodge },
+      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer && lastInput() !== 'pad', aimCardDodge: settings.aimCardDodge, seatNumbers: settings.colorblind },
       paused ? 0 : dt,
     );
   }
@@ -1084,6 +1157,27 @@ function frame(now: number): void {
 if (import.meta.env.DEV || import.meta.env.VITE_BENCH) {
   // Handle for poking at the running game from the dev console, and for the browser benchmark (a build made with VITE_BENCH set).
   Object.assign(window, { slingshot: { app, attract, settings, get match() { return match; } } });
+}
+
+if (import.meta.env.DEV) {
+  // Switches for the accessibility modes in the dev build; a change made in the settings shows in them too (see `settingsChanged`).
+  devToggles = mountDevToggles({
+    colorblind: {
+      get: () => settings.colorblind,
+      set(on) {
+        settings.colorblind = on;
+        app.settingsChanged();
+        if (menu.isOpen && !isTyping(document.activeElement)) menu.rebuild();
+      },
+    },
+    pad: {
+      set(on) {
+        devPadHints = false;
+        markInput(on ? 'pad' : 'keyboard');
+        devPadHints = on;
+      },
+    },
+  });
 }
 
 async function boot(): Promise<void> {

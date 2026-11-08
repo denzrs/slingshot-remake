@@ -1,4 +1,5 @@
-import { COLORS, TEAMS } from '../../sim/config';
+import { COLORS } from '../../sim/config';
+import { teamColor } from '../../data/palette';
 import { ChallengeMatch, ShotReplay, teamName, type Match } from '../../game';
 import { fmtInt, t, tn } from '../../platform/i18n';
 import { h, type MenuItem, type Screen } from '../menu/menu';
@@ -103,7 +104,7 @@ function pauseStanding(match: Match, online: boolean): Node[] {
   const nodes: Node[] = [h('p.ranking-label', null, t('pause.standings'))];
   nodes.push(h('p.pause-standing__round', null, match.totalRounds ? `${t('hud.round')} ${match.round} / ${match.totalRounds}` : `${t('hud.round')} ${match.round}`));
   if (match.teamMode) {
-    nodes.push(h('ol.ranking', null, ...match.teamRanking().map((r, i) => row(i + 1, t('team.name', { team: teamName(r.team) }), TEAMS[r.team][0], r.score))));
+    nodes.push(h('ol.ranking', null, ...match.teamRanking().map((r, i) => row(i + 1, t('team.name', { team: teamName(r.team) }), teamColor(r.team), r.score))));
     nodes.push(h('p.ranking-label', null, t('over.players')));
     nodes.push(h('ol.ranking.ranking--small', null, ...match.ranking().map((p, i) => row(i + 1, p.name, p.color, p.score))));
   } else {

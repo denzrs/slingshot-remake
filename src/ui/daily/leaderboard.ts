@@ -9,6 +9,7 @@ import { h, type MenuItem, type Screen } from '../menu/menu';
 import { formatDay } from './dayFormat';
 import type { App } from '../screens';
 import { menuPage } from '../menu/menu-page';
+import { cap } from '../../platform/input-device';
 
 /**
  * Whether the daily leaderboard can be reached at all. It lives on the multiplayer relay, so a
@@ -157,7 +158,7 @@ export function leaderboardScreen(
     pagerViewport,
     date,
     h('div.mode-pager__keys.daily-board-pager__keys', { 'aria-hidden': 'true' },
-      h('span', null, '‹ (Q)'), h('span', null, '(E) ›'),
+      h('span', null, `‹ (${cap('Q')})`), h('span', null, `(${cap('E')}) ›`),
     ),
   );
   let stopPager = (): void => {};

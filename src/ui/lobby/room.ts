@@ -1,4 +1,5 @@
-import { COLORS, GALLERY, TEAMS } from '../../sim/config';
+import { GALLERY } from '../../sim/config';
+import { seatColor, teamColor } from '../../data/palette';
 import { t } from '../../platform/i18n';
 import { canCopyInvite, inviteLink } from '../../net/invite';
 import type { MultiplayerSession } from '../../net/multiplayer';
@@ -192,7 +193,7 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
             h('span.slot-card__kind', null, t(cpu !== null ? 'players.cpu' : mine ? 'slots.local' : 'slots.online')),
             ...(removeButton ? [removeButton] : []),
           ),
-          h('div.slot-card__portrait', { 'aria-hidden': 'true' }, playerIcon(player.avatar, COLORS.players[player.id])),
+          h('div.slot-card__portrait', { 'aria-hidden': 'true' }, playerIcon(player.avatar, seatColor(player.id))),
           h('div.player-slot__identity', null,
             h('span.lobby__player-name', { title: player.name }, player.name),
             ...(mine ? [h('span.lobby__tag', null, t('multiplayer.you'))] : []),
@@ -203,7 +204,7 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
           h(player.ready ? 'span.lobby__ready.lobby__ready--on' : 'span.lobby__ready', null,
             player.id === 0 ? t('multiplayer.host') : player.ready ? `✓ ${t('multiplayer.ready')}` : t('multiplayer.notReady')),
         );
-        card.style.setProperty('--slot-tone', teamGame ? TEAMS[player.team][0] : COLORS.players[player.id]);
+        card.style.setProperty('--slot-tone', teamGame ? teamColor(player.team) : seatColor(player.id));
         card.classList.toggle('is-self', mine);
         card.classList.toggle('is-cpu', cpu !== null);
         card.classList.toggle('has-remove', !!removeButton);

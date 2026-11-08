@@ -1,4 +1,5 @@
-import { COLORS, TEAMS } from '../../sim/config';
+import { COLORS } from '../../sim/config';
+import { teamColor } from '../../data/palette';
 import { teamName, type Match } from '../../game';
 import { oracleAwards } from '../../game/oracle';
 import { fmtInt, t, tn } from '../../platform/i18n';
@@ -10,6 +11,7 @@ import { menuPage } from '../menu/menu-page';
 import type { App } from './app';
 import { matchMomentReel, matchShotTrail } from './match-moments';
 import { enablePagerNavigation, pagePagerHeader, positionModeCarousel, type ModeTransition } from './mode-pager';
+import { hintText } from '../../platform/input-device';
 
 type ResultPage = 'result' | 'stats';
 
@@ -29,7 +31,7 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
     return row;
   };
   const playerRanking = () => h('ol.ranking', null, ...match.ranking().map((p, i) => entry(i + 1, p.name, p.color, p.score, p.id)));
-  const teamRanking = () => h('ol.ranking', null, ...match.teamRanking().map((r, i) => entry(i + 1, t('team.name', { team: teamName(r.team) }), TEAMS[r.team][0], r.score)));
+  const teamRanking = () => h('ol.ranking', null, ...match.teamRanking().map((r, i) => entry(i + 1, t('team.name', { team: teamName(r.team) }), teamColor(r.team), r.score)));
   const section = (title: string, ...content: Node[]) => h('section.report-section', null, h('h3.ranking-label', null, title), ...content);
   let page: HTMLElement;
   let disposeCarousel = (): void => {};
@@ -101,7 +103,7 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
               ...(!highlights.length && !lists.length ? [h('p.note', null, t('over.noStats'))] : []),
             )],
         footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
-        keys: t('over.keys'),
+        keys: hintText('over.keys'),
       });
       if (winner) page.style.setProperty('--winner', winner.color);
       const stopCarousel = positionModeCarousel(page);

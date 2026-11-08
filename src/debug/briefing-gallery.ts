@@ -396,6 +396,7 @@ const drawOptions: DrawOptions = {
   recording: false,
   keyHints: true,
   aimCardDodge: false,
+  seatNumbers: false,
 };
 
 function loop(): void {

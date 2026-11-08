@@ -14,6 +14,7 @@ import { createConnection } from './connection';
 import { createOpenRoom } from './open-room';
 import { createRoomView } from './room';
 import { button, flashCopied } from './widgets';
+import { cap, hintText } from '../../platform/input-device';
 
 /** Direct child views reachable from the Online section of the main launcher. */
 export type LobbyEntry = 'rooms' | 'create' | 'code';
@@ -121,7 +122,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   onlineSectionNav.append(...onlineSectionButtons);
   const onlineSectionViewport = h('div.mode-pager__viewport.online-section-viewport', null, onlineSectionNav);
   const onlineSectionKeys = h('div.mode-pager__keys.online-section-keys', { 'aria-hidden': 'true' },
-    h('span', null, '‹ (Q)'), h('span', null, '(E) ›'),
+    h('span', null, `‹ (${cap('Q')})`), h('span', null, `(${cap('E')}) ›`),
   );
   const setupTab = h('button.room-mobile-tabs__button', { type: 'button', 'aria-pressed': 'true' }, t('multiplayer.roomSetup')) as HTMLButtonElement;
   const lobbyTab = h('button.room-mobile-tabs__button', { type: 'button', 'aria-pressed': 'false' }, t('multiplayer.roomLobby')) as HTMLButtonElement;
@@ -134,7 +135,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     title: t(({ rooms: 'flow.find', create: 'flow.create', code: 'flow.code' } as const)[view]), eyebrow: t('launcher.online'), className: 'menu-page--lobby menu-page--mode-enter-next',
     headerTitle: onlineHeader,
     headerAside: factTicker(app.settings.statsTicker),
-    body: [lobbyEl], footer: footerActions, keys: t('flow.tabKeys'),
+    body: [lobbyEl], footer: footerActions, keys: hintText('flow.tabKeys'),
   });
   const page = root.querySelector<HTMLElement>('.menu-page')!;
   const selectRoomTab = (tab: 'setup' | 'lobby') => {

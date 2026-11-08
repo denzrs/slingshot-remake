@@ -1,4 +1,4 @@
-import { COLORS, TEAMS } from '../../sim/config';
+import { seatColor, teamColor } from '../../data/palette';
 import { loadCustomPresets } from '../../data/customPresets';
 import { t, tn } from '../../platform/i18n';
 import { GAME_MODES, type GameMode } from '../../sim/modes';
@@ -16,6 +16,7 @@ import { enablePagerNavigation, modePagerHeader, positionModeCarousel, type Mode
 import { openPlayers } from './players';
 import { rulesScreen } from './rules-page';
 import { presetCarousel } from '../presets/preset-carousel';
+import { hintText } from '../../platform/input-device';
 
 /** One ship per seat; when teams are in play the ships group under their team's colour. */
 function crewMarkers(s: Settings): HTMLElement[] {
@@ -26,12 +27,12 @@ function crewMarkers(s: Settings): HTMLElement[] {
     return marker;
   };
   const teams = seatTeamsFor(s, seats);
-  if (!teams) return seats.map((i) => ship(COLORS.players[i]));
+  if (!teams) return seats.map((i) => ship(seatColor(i)));
   return Array.from({ length: s.teamMode }, (_, team) => {
     const members = seats.filter((_, k) => teams[k] === team);
     if (!members.length) return null;
-    const group = h('span.briefing__team', null, ...members.map((_, k) => ship(TEAMS[team][k % 3])));
-    group.style.setProperty('--team-tone', TEAMS[team][0]);
+    const group = h('span.briefing__team', null, ...members.map((_, k) => ship(teamColor(team, k))));
+    group.style.setProperty('--team-tone', teamColor(team));
     return group;
   }).filter((group): group is HTMLElement => group !== null);
 }
@@ -197,7 +198,7 @@ function setupScreen(app: App, mode: GameMode, transition?: ModeTransition): Scr
             rulesHeading, rulesLabel, summary,
             h('div.items.briefing__edit', { 'data-section': 'edit' })),
         ],
-        keys: t('briefing.keys'),
+        keys: hintText('briefing.keys'),
         footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
       });
       const stopCarousel = positionModeCarousel(page);

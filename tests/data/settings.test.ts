@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CpuLevel } from '../../src/sim/ai';
 import { AIM } from '../../src/sim/config';
 import { POWER_UP, POWER_UP_KINDS } from '../../src/sim/powerups';
+import { rulesOf } from '../../src/data/roomRules';
 import { activeSeats, addSeat, cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings, startPower } from '../../src/data/settings';
 
 const CPU_LEVELS: CpuLevel[] = ['easy', 'medium', 'hard', 'hawking'];
@@ -193,6 +194,21 @@ describe('display settings', () => {
     expect(loadSettings()).toMatchObject({ touchControls: 'wheel', wheelSide: 'left' });
   });
 
+  it('has the controller on by default, remembers it off, and mistrusts anything that is not a boolean', () => {
+    storage();
+    expect(loadSettings().gamepad).toBe(true);
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.gamepad = false;
+    saveSettings(settings);
+    expect(loadSettings().gamepad).toBe(false);
+    storage({ gamepad: 'no' });
+    expect(loadSettings().gamepad).toBe(true);
+  });
+
+  it('keeps the controller out of a room\'s rules: it is a matter of this device', () => {
+    expect(rulesOf(DEFAULT_SETTINGS)).not.toHaveProperty('gamepad');
+  });
+
   it('ignores stored display flags that are not booleans', () => {
     storage({ menuBackground: 'false', particles: 0, contours: null });
     const s = loadSettings();
@@ -268,3 +284,18 @@ describe('killcam settings', () => {
     expect(loadSettings().killcam).toBe('auto');
   });
 });
+
+describe('the colour-blind setting', () => {
+  it('is off until it is switched on, and is kept', () => {
+    storage();
+    expect(loadSettings().colorblind).toBe(false);
+    saveSettings({ ...cloneSettings(DEFAULT_SETTINGS), colorblind: true });
+    expect(loadSettings().colorblind).toBe(true);
+  });
+
+  it('falls back to off when what is stored is not a switch', () => {
+    storage({ colorblind: 'yes' });
+    expect(loadSettings().colorblind).toBe(false);
+  });
+});
+
