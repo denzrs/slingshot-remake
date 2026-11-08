@@ -95,12 +95,15 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
       inGroup(settingToggle(app, t('settings.lessMenuMotion'), 'lessMenuMotion'), 'display'),
       inGroup(settingToggle(app, t('settings.menuSounds'), 'menuSounds'), 'device'),
       inGroup(settingToggle(app, t('settings.gameSounds'), 'gameSounds'), 'device'),
-      inGroup({
-        kind: 'toggle',
-        label: t('settings.fullscreen'),
-        get: () => app.isFullscreen(),
-        set: () => app.toggleFullscreen(),
-      }, 'device'),
+      // Not on a touch device: a phone's browser has no fullscreen to offer a page (and the F key is a keyboard's).
+      ...(touch
+        ? []
+        : [inGroup({
+            kind: 'toggle',
+            label: t('settings.fullscreen'),
+            get: () => app.isFullscreen(),
+            set: () => app.toggleFullscreen(),
+          }, 'device')]),
       inGroup(languageItem(app), 'language'),
       ...(touch
         ? [inGroup({
