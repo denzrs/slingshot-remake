@@ -59,9 +59,11 @@ export function dailyScreen(app: App): Screen {
   /** Today's shot of the day. It gives away a way through the sectors, so only a player who has flown them and posted the run gets it. */
   let shot: ShotOfDay | null = fetchedShot?.day === key ? fetchedShot.shot : null;
   let open = true;
-  const shotCard = h('section.daily-shot', { hidden: 'hidden' });
+  // The card keeps its action row (the menu puts the Watch button there when it builds the page); only the preview inside it is swapped.
+  const shotBody = h('div.daily-shot__body', null);
+  const shotCard = h('section.daily-shot', { hidden: 'hidden' }, shotBody, h('div.daily-shot__actions', { 'data-section': 'shot' }));
   const showShot = (next: ShotOfDay) => {
-    shotCard.replaceChildren(...shotOfDayPreview(next));
+    shotBody.replaceChildren(...shotOfDayPreview(next));
     shotCard.hidden = false;
   };
   if (shot) showShot(shot);
@@ -107,8 +109,8 @@ export function dailyScreen(app: App): Screen {
         selected: () => selected === spec.index,
         run: () => { selected = spec.index; app.menu.refresh(); },
       })),
+      { kind: 'action', section: 'shot', label: t('daily.shot.watch'), hidden: () => !shot, run: () => { if (shot) app.watchShot(key, shot); } },
       { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
-      { kind: 'action', label: t('daily.shot.watch'), hidden: () => !shot, run: () => { if (shot) app.watchShot(key, shot); } },
       ...(hasBoard ? [{ kind: 'action', label: t('daily.board.view'), run: () => app.menu.push(() => leaderboardScreen(app, key, formatDay(key), null)) } satisfies MenuItem] : []),
       { kind: 'action', label: t('daily.start'), primary: true, run: () => app.startDaily() },
     ],

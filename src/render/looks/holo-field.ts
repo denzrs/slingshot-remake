@@ -17,13 +17,19 @@ const GLASS = '0,10,18';
 
 // ----------------------------------------------------------------- backdrop ----
 
-/** A hex of this many CSS pixels from its middle to a corner makes the lattice; a column is `COL` wide and a row `ROW` apart. */
-const CELL = 26;
-const COL = Math.sqrt(3) * CELL;
-const ROW = CELL * 1.5;
+/** A hex of `cell` CSS pixels from its middle to a corner makes the lattice; a column is `col` wide and a row `row` apart. Smaller on a phone, where the margin is narrow and the same cells would look huge. */
+interface Lattice {
+  cell: number;
+  col: number;
+  row: number;
+}
+function latticeFor(width: number): Lattice {
+  const cell = width < 600 ? 15 : 26;
+  return { cell, col: Math.sqrt(3) * cell, row: cell * 1.5 };
+}
 
 /** The middle of the lattice's cell in column `c` and row `r` (every other row is pushed half a column over). */
-const cellX = (c: number, r: number): number => c * COL + (r % 2 ? COL / 2 : 0);
+const cellX = (lat: Lattice, c: number, r: number): number => c * lat.col + (r % 2 ? lat.col / 2 : 0);
 
 /** A pointy-topped hexagon of `radius` round (x, y), added to `path`. */
 function hexAt(path: Path2D, x: number, y: number, radius: number): void {
@@ -55,9 +61,10 @@ function paintLattice(ctx: CanvasRenderingContext2D, w: number, h: number, plate
   margin.rect(plate.x, plate.y, plate.w, plate.h);
   ctx.clip(margin, 'evenodd');
 
+  const lat = latticeFor(w);
   const lattice = new Path2D();
-  for (let r = 0; r <= Math.ceil(h / ROW); r++) {
-    for (let c = 0; c <= Math.ceil(w / COL); c++) hexAt(lattice, cellX(c, r), r * ROW, CELL);
+  for (let r = 0; r <= Math.ceil(h / lat.row); r++) {
+    for (let c = 0; c <= Math.ceil(w / lat.col); c++) hexAt(lattice, cellX(lat, c, r), r * lat.row, lat.cell);
   }
   // Brightest next to the plate and fading out towards the edges of the screen; a wide faint pass under the line makes it glow.
   const cx = plate.x + plate.w / 2;
@@ -156,9 +163,10 @@ export function holoSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   margin.rect(plate.x, plate.y, plate.w, plate.h);
   ctx.clip(margin, 'evenodd');
   ctx.globalCompositeOperation = 'lighter';
-  const rows = Math.ceil(f.height / dpr / ROW);
-  const cols = Math.ceil(f.width / dpr / COL);
-  const inner = CELL * dpr;
+  const lat = latticeFor(f.width / dpr);
+  const rows = Math.ceil(f.height / dpr / lat.row);
+  const cols = Math.ceil(f.width / dpr / lat.col);
+  const inner = lat.cell * dpr;
   for (const ripple of ripples) {
     const at = f.field.transformPoint(new DOMPoint(ripple.x, ripple.y));
     const age = f.time - ripple.born;
@@ -167,14 +175,14 @@ export function holoSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
     const fade = (1 - age / RIPPLE_LIFE) ** 1.5 * ripple.strength;
     for (let r = 0; r <= rows; r++) {
       for (let c = 0; c <= cols; c++) {
-        const x = cellX(c, r) * dpr;
-        const y = r * ROW * dpr;
+        const x = cellX(lat, c, r) * dpr;
+        const y = r * lat.row * dpr;
         // Cells well inside the plate are under the field's clear glass: nothing to light.
         if (x > plate.x + inner && x < plate.x + plate.w - inner && y > plate.y + inner && y < plate.y + plate.h - inner) continue;
         const lit = Math.exp(-(((Math.hypot(x - at.x, y - at.y) - radius) / band) ** 2)) * fade;
         if (lit < 0.03) continue;
         const cell = new Path2D();
-        hexAt(cell, x, y, CELL * dpr);
+        hexAt(cell, x, y, lat.cell * dpr);
         ctx.fillStyle = rgba(GLOW, 0.08 * lit);
         ctx.fill(cell);
         ctx.strokeStyle = rgba(GLOW, 0.6 * lit);
