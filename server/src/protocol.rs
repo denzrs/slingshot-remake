@@ -8,6 +8,11 @@ use serde_json::Value;
 use crate::wire::{Avatar, CpuLevel, RoomColor, RoomSymbol, Visibility, Wire};
 
 /// Tips name a ship; there are at most six.
+/// The version of the wire protocol the relay speaks. A client says which one it was built for (`?v=` on its address); one built
+/// for an older protocol is told to reload and let go. Not raised by hand: a TypeScript test notices when the wire changed and
+/// `npm run protocol` raises it here, in `src/net/net.ts` and in `server/protocol-contract.json`.
+pub const PROTOCOL_VERSION: u32 = 1;
+
 pub const MAX_TIP: i64 = 6;
 /// A teleport offers a few spots to choose from; a pick names one by its place in the list.
 const MAX_SPOT: usize = 8;
@@ -1284,6 +1289,13 @@ mod tests {
         assert_eq!(parse_avatar(Some(&json!("gem"))), Some(Avatar::Gem));
         assert!(parse_avatar(Some(&json!("planet"))).is_none());
         assert!(parse_avatar(Some(&json!(3))).is_none());
+    }
+
+    #[test]
+    fn shared_contract_names_the_protocol_version_the_relay_speaks() {
+        let contract: Value =
+            serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
+        assert_eq!(contract["protocolVersion"], PROTOCOL_VERSION);
     }
 
     #[test]

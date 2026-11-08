@@ -4,9 +4,12 @@ import type { ShotOfDay, StatsReplay } from '../../net/net';
 import type { Settings } from '../../data/settings';
 import type { LobbyEntry } from '../lobby';
 import type { Menu } from '../menu/menu';
+import type { Pwa } from '../../platform/pwa';
 
 export interface App {
   menu: Menu;
+  /** The installed-app side of the game: the browser's install offer and a waiting new version. */
+  readonly pwa: Pwa;
   settings: Settings;
   settingsChanged(): void;
   /** The mode being played right now, null on the title screen. */

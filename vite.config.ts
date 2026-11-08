@@ -1,6 +1,9 @@
+import { existsSync, readdirSync, readFileSync, type Dirent } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import type { Plugin } from 'vite';
 import { configDefaults, defineConfig } from 'vitest/config';
 import { devRoute } from './dev/routes';
+import { buildWorker } from './scripts/pwa/worker';
 
 /** The dev hub and its tools never resolve through the production SPA fallback. */
 function devPagesGate(): Plugin {
@@ -35,13 +38,40 @@ function statsRoute(): Plugin {
   };
 }
 
+/**
+ * The service worker (`scripts/pwa/sw.js`) with the build's file list in it, emitted as `sw.js` at the root so its scope is the
+ * whole game, on `/` and on `/stats`. It has to come after `statsRoute`, whose page it lists. The dev server has none.
+ */
+function pwaWorker(): Plugin {
+  let publicDir = '';
+  return {
+    name: 'pwa-worker',
+    apply: 'build',
+    enforce: 'post',
+    configResolved(config) { publicDir = config.publicDir; },
+    generateBundle(_options, bundle) {
+      const files: Record<string, string | Uint8Array> = {};
+      if (publicDir && existsSync(publicDir)) {
+        for (const entry of readdirSync(publicDir, { recursive: true, withFileTypes: true }) as Dirent<string>[]) {
+          if (!entry.isFile()) continue;
+          const path = join(entry.parentPath, entry.name);
+          files[relative(publicDir, path).split(sep).join('/')] = readFileSync(path);
+        }
+      }
+      for (const [name, file] of Object.entries(bundle)) files[name] = file.type === 'chunk' ? file.code : file.source;
+      const template = readFileSync(new URL('./scripts/pwa/sw.js', import.meta.url), 'utf8');
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source: buildWorker(template, files).source });
+    },
+  };
+}
+
 // Relative base so the build works under any GitHub Pages sub-path
 // (e.g. https://<user>.github.io/<repo>/).
 export default defineConfig({
   base: './',
   // `DEBUG_AIM` (which serves /dev/aim.html) also reaches the client, so the in-game seed badge can follow it.
   envPrefix: ['VITE_', 'DEBUG_'],
-  plugins: [devPagesGate(), statsRoute()],
+  plugins: [devPagesGate(), statsRoute(), pwaWorker()],
   optimizeDeps: {
     include: ['msgpackr'],
   },

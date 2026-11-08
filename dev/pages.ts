@@ -5,6 +5,7 @@ export const DEV_PAGES = [
   { id: 'presets', path: '/dev/presets.html', legacy: '/preset-gallery.html', title: 'dev.presets', description: 'dev.presets.text' },
   { id: 'daily', path: '/dev/daily.html', legacy: '/daily.html', title: 'dev.daily', description: 'dev.daily.text' },
   { id: 'marks', path: '/dev/marks.html', legacy: '/marks.html', title: 'dev.marks', description: 'dev.marks.text' },
+  { id: 'pwa', path: '/dev/pwa.html', legacy: '/pwa.html', title: 'dev.pwa', description: 'dev.pwa.text' },
   { id: 'briefing', path: '/dev/briefing.html', legacy: '/briefing.html', title: 'dev.briefing', description: 'dev.briefing.text' },
   { id: 'aim', path: '/dev/aim.html', legacy: '/debug-aim.html', title: 'dev.aim', description: 'dev.aim.text', debugAim: true },
   { id: 'results', path: '/dev/results.html', legacy: '/tests/browser/results.html', title: 'dev.results', description: 'dev.results.text' },

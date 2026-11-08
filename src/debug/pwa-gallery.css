@@ -1,0 +1,11 @@
+/* The app hints gallery: the game's own menu in frames, one per hint. Dev page; the rest comes from looks-gallery.css. */
+.note { color: var(--dim); font-size: 13px; max-width: 78ch; margin: 0; }
+.phones { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+figure { margin: 0; display: grid; gap: 12px; }
+.phones figure { width: 375px; max-width: 100%; }
+figcaption { display: grid; gap: 4px; }
+figcaption b { font-family: var(--display); font-size: 22px; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 800; }
+figcaption span { color: var(--dim); font-size: 13px; }
+iframe { display: block; border: 0; max-width: 100%; background: var(--plate); }
+.phone, .screen { border: 1px solid var(--line); border-radius: 2px; overflow: hidden; width: fit-content; max-width: 100%; }
+.screen { overflow-x: auto; }

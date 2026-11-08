@@ -473,8 +473,21 @@ html.upright #pause-button::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .panel {
+  .panel,
+  #pwa-banner,
+  :is(#pwa-banner, .install-note) .pwa-banner__logo--turns .pwa-banner__icon,
+  :is(#pwa-banner, .install-note) .pwa-banner__glyph-tile {
     animation: none;
+  }
+  :is(#pwa-banner, .install-note) .pwa-banner__glyph-tile {
+    inset: auto -9px -9px auto;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+  }
+  :is(#pwa-banner, .install-note) .pwa-banner__glyph {
+    width: 16px;
+    height: 16px;
   }
   .item::before,
   .item__arrow,
@@ -558,6 +571,303 @@ html.upright #clip-share {
   left: auto;
   right: max(12px, env(safe-area-inset-right));
   min-height: 36px;
+}
+
+#pwa-banner[hidden] {
+  display: none;
+}
+
+/* The notice of a new version and the install hint: one strip above the menus, at the foot of the window. Glowing edge and a
+   shadow lift it off the menu behind it. */
+#pwa-banner {
+  position: fixed;
+  left: 50%;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  /* One height for every hint, so the strip always looks the same: room for three lines of text. */
+  height: 84px;
+  width: min(480px, calc(100% - 24px));
+  padding: 10px 12px 10px 10px;
+  border: 1px solid var(--p2);
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgb(18 40 77 / 0.98), rgb(11 26 51 / 0.98));
+  color: var(--bone);
+  box-shadow:
+    0 0 0 1px rgb(111 227 200 / 0.25),
+    0 0 14px 1px rgb(111 227 200 / 0.55),
+    0 0 38px 4px rgb(111 227 200 / 0.22),
+    0 14px 30px rgb(0 0 0 / 0.65);
+  transform: translateX(-50%);
+  animation: pwa-glow 2.8s ease-in-out infinite;
+}
+
+@keyframes pwa-glow {
+  50% {
+    box-shadow:
+      0 0 0 1px rgb(111 227 200 / 0.4),
+      0 0 22px 3px rgb(111 227 200 / 0.8),
+      0 0 52px 8px rgb(111 227 200 / 0.3),
+      0 14px 30px rgb(0 0 0 / 0.65);
+  }
+}
+
+/* The logo. On iOS (the share button) and for an update (a turning arrow) a symbol takes its place in turns: the logo drops back into a blur, the button comes forward, and back. */
+:is(#pwa-banner, .install-note) .pwa-banner__logo {
+  position: relative;
+  flex: none;
+  width: 48px;
+  height: 48px;
+}
+
+:is(#pwa-banner, .install-note) .pwa-banner__logo--turns .pwa-banner__icon {
+  animation: pwa-logo-turn 5s ease-in-out infinite;
+}
+
+:is(#pwa-banner, .install-note) .pwa-banner__glyph-tile {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border: 1px solid var(--p2);
+  border-radius: 11px;
+  background: linear-gradient(160deg, rgb(24 52 98), rgb(11 26 51));
+  box-shadow: 0 0 12px rgb(111 227 200 / 0.55), 0 2px 8px rgb(0 0 0 / 0.55);
+  animation: pwa-share-turn 5s ease-in-out infinite;
+}
+
+:is(#pwa-banner, .install-note) .pwa-banner__glyph {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: var(--p2);
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@keyframes pwa-logo-turn {
+  0%,
+  35%,
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+  47%,
+  83% {
+    opacity: 0;
+    filter: blur(7px);
+    transform: scale(0.7);
+  }
+}
+
+@keyframes pwa-share-turn {
+  0%,
+  35%,
+  100% {
+    opacity: 0;
+    filter: blur(7px);
+    transform: scale(0.8);
+  }
+  47%,
+  83% {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+
+/* A window wide enough for the menu's own footer and the foot of its frame: the strip goes top right, where the menu is empty. */
+@media (min-width: 761px) {
+  #pwa-banner {
+    top: max(16px, env(safe-area-inset-top));
+    right: max(16px, env(safe-area-inset-right));
+    bottom: auto;
+    left: auto;
+    width: min(400px, calc(100% - 32px));
+    transform: none;
+  }
+}
+
+:is(#pwa-banner, .install-note) .pwa-banner__icon {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 11px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.55);
+}
+
+#pwa-banner p {
+  display: -webkit-box;
+  flex: 1;
+  margin: 0;
+  overflow: hidden;
+  font: 14px/1.35 var(--font-body);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+@media (max-width: 380px) {
+  #pwa-banner p {
+    font-size: 13px;
+  }
+}
+
+#pwa-banner button {
+  min-height: calc(40px * var(--ui));
+  border: 1px solid rgb(111 227 200 / 0.7);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--bone);
+  font: 700 14px/1 var(--font-body);
+  cursor: pointer;
+}
+
+#pwa-banner .pwa-banner__action {
+  padding: 0 14px;
+}
+
+#pwa-banner .pwa-banner__close {
+  min-width: calc(40px * var(--ui));
+  border-color: transparent;
+  color: var(--bone-dim);
+  font-size: 20px;
+}
+
+#pwa-banner button:hover,
+#pwa-banner button:focus-visible {
+  outline: none;
+  background: rgb(111 227 200 / 0.16);
+}
+
+/* On a desktop with a mouse both notices are a small card. The install offer is a suggestion, so it is quiet: no glow, no pulse. The
+   notice of a new version is the same size and keeps the glow. */
+@media (min-width: 761px) and (pointer: fine) {
+  #pwa-banner[data-kind='android'],
+  #pwa-banner[data-kind='update'] {
+    width: auto;
+    max-width: calc(100% - 32px);
+    height: 44px;
+    gap: 10px;
+    padding: 6px 6px 6px 8px;
+    border-radius: 3px;
+  }
+
+  #pwa-banner[data-kind='android'] .pwa-banner__logo,
+  #pwa-banner[data-kind='android'] .pwa-banner__icon,
+  #pwa-banner[data-kind='update'] .pwa-banner__logo,
+  #pwa-banner[data-kind='update'] .pwa-banner__icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  #pwa-banner[data-kind='android'] .pwa-banner__icon,
+  #pwa-banner[data-kind='update'] .pwa-banner__icon {
+    border-radius: 7px;
+    box-shadow: none;
+  }
+
+  #pwa-banner[data-kind='android'] p,
+  #pwa-banner[data-kind='update'] p {
+    min-width: 0;
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+
+  #pwa-banner[data-kind='android'] button,
+  #pwa-banner[data-kind='update'] button {
+    min-height: 28px;
+    font-size: 12px;
+  }
+
+  #pwa-banner[data-kind='android'] .pwa-banner__action,
+  #pwa-banner[data-kind='update'] .pwa-banner__action {
+    padding: 0 10px;
+  }
+
+  #pwa-banner[data-kind='android'] .pwa-banner__close {
+    min-width: 28px;
+    border-color: transparent;
+    font-size: 16px;
+  }
+
+  #pwa-banner[data-kind='android'] {
+    border-color: rgb(91 125 179 / 0.5);
+    background: rgb(11 26 51 / 0.92);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
+    animation: none;
+  }
+
+  #pwa-banner[data-kind='android'] p {
+    color: var(--bone-dim);
+  }
+
+  #pwa-banner[data-kind='android'] button {
+    border-color: rgb(91 125 179 / 0.55);
+  }
+}
+
+/* The symbol that takes the logo's place in turns, at the logo's small size (with movement allowed; without it the symbol is a badge). */
+@media (min-width: 761px) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  #pwa-banner[data-kind='android'] .pwa-banner__glyph-tile,
+  #pwa-banner[data-kind='update'] .pwa-banner__glyph-tile {
+    border-radius: 7px;
+  }
+
+  #pwa-banner[data-kind='android'] .pwa-banner__glyph,
+  #pwa-banner[data-kind='update'] .pwa-banner__glyph {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* The quiet offer keeps its symbol's tile quiet too. */
+  #pwa-banner[data-kind='android'] .pwa-banner__glyph-tile {
+    border-color: rgb(91 125 179 / 0.55);
+    box-shadow: none;
+  }
+}
+
+/* The install offer as a note on a page (the tutorial's first): the same logo as the strip, in a quiet frame. */
+.install-note {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-sizing: border-box;
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid rgb(111 227 200 / 0.45);
+  border-radius: 3px;
+  background: rgb(111 227 200 / 0.06);
+  box-shadow: 0 0 18px rgb(111 227 200 / 0.12);
+}
+
+.install-note p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.install-note__action {
+  flex: none;
+  min-height: calc(36px * var(--ui));
+  padding: 0 14px;
+  border: 1px solid rgb(111 227 200 / 0.7);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--bone);
+  font: 700 14px/1 var(--font-body);
+  cursor: pointer;
+}
+
+.install-note__action:hover,
+.install-note__action:focus-visible {
+  outline: none;
+  background: rgb(111 227 200 / 0.16);
 }
 
 /* The host has paused an online game: what it says, and the 3-2-1 before play goes on. */
