@@ -49,6 +49,18 @@ describe('round report', () => {
     ]);
   });
 
+  it("counts what the anomalies and the loop did to a seat's shots", () => {
+    const match = source();
+    bump(match.roundStats.shatters, 1);
+    bump(match.roundStats.bumps, 0, 3);
+    bump(match.roundStats.arms, 1);
+    bump(match.roundStats.loops, 0, 2);
+    bump(match.roundStats.returns, 1);
+    const report = roundReport(match);
+    expect(report.players[0]).toMatchObject({ shatters: 0, bumps: 3, arms: 0, loops: 2, returns: 0 });
+    expect(report.players[1]).toMatchObject({ shatters: 1, bumps: 0, arms: 1, loops: 0, returns: 1 });
+  });
+
   it('lists the judged tips of both tipping games, and leaves the field out when nobody tipped', () => {
     const match = source();
     expect(roundReport(match)).not.toHaveProperty('tips');

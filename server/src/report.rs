@@ -100,6 +100,14 @@ pub struct SeatRound {
     pub missiles: Option<i64>,
     pub intercepts: Option<i64>,
     pub stray_kills: Option<i64>,
+    /// The anomalies' and the loop's counts: planets the seat's shots broke apart (Unstable), times they came off a planet
+    /// (Pinball), shots armed (Trick Shots Only), times carried across the field (Loop) and sent back by a black hole
+    /// (White Hole). None from a client that does not count them yet.
+    pub shatters: Option<i64>,
+    pub bumps: Option<i64>,
+    pub arms: Option<i64>,
+    pub loops: Option<i64>,
+    pub returns: Option<i64>,
     pub alive: bool,
 }
 
@@ -289,6 +297,11 @@ fn parse_seat(value: &Value) -> Option<SeatRound> {
         missiles: optional_int(value.get("missiles"), 0..=MAX_COUNT)?,
         intercepts: optional_int(value.get("intercepts"), 0..=MAX_COUNT)?,
         stray_kills: optional_int(value.get("strayKills"), 0..=MAX_COUNT)?,
+        shatters: optional_int(value.get("shatters"), 0..=MAX_COUNT)?,
+        bumps: optional_int(value.get("bumps"), 0..=MAX_COUNT)?,
+        arms: optional_int(value.get("arms"), 0..=MAX_COUNT)?,
+        loops: optional_int(value.get("loops"), 0..=MAX_COUNT)?,
+        returns: optional_int(value.get("returns"), 0..=MAX_COUNT)?,
         alive: value.get("alive")?.as_bool()?,
     })
 }
@@ -623,6 +636,28 @@ mod tests {
             (seat.missiles, seat.intercepts, seat.stray_kills),
             (Some(3), Some(1), Some(0))
         );
+        // Likewise the anomalies' and the loop's counts.
+        assert_eq!(report.seats[1].shatters, None);
+        for (key, n) in [
+            ("shatters", 1),
+            ("bumps", 4),
+            ("arms", 2),
+            ("loops", 3),
+            ("returns", 0),
+        ] {
+            counted["players"][1][key] = json!(n);
+        }
+        let seat = &parse_round_report(&counted).expect("a report").seats[1];
+        assert_eq!(
+            (
+                seat.shatters,
+                seat.bumps,
+                seat.arms,
+                seat.loops,
+                seat.returns
+            ),
+            (Some(1), Some(4), Some(2), Some(3), Some(0))
+        );
         // A client that does not pay the extras leaves them out; one that does sends the list, empty or not.
         assert_eq!(report.bonuses, None);
         counted["bonuses"] = json!([{"player": 1, "kind": "bounty", "points": 250}]);
@@ -663,6 +698,8 @@ mod tests {
         broken(&|r| r["players"][0]["alive"] = json!(1));
         broken(&|r| r["players"][0]["missiles"] = json!(-1));
         broken(&|r| r["players"][0]["strayKills"] = json!("1"));
+        broken(&|r| r["players"][0]["shatters"] = json!(-1));
+        broken(&|r| r["players"][0]["loops"] = json!(1.5));
         broken(&|r| r["bonuses"] = json!([{"player": 0, "kind": "luck", "points": 100}]));
         broken(&|r| r["bonuses"] = json!([{"player": 2, "kind": "bounty", "points": 100}]));
         broken(&|r| r["bonuses"] = json!([{"player": 0, "kind": "bounty", "points": -100}]));

@@ -21,6 +21,16 @@ describe('facts for the menu', () => {
     expect(factText({ id: 'revenges', values: [8.4] })).toBe('8.4% of kills are revenge on the ship that shot the shooter down the round before.');
     expect(factText({ id: 'topBonus', values: [7, 12] })).toBe('Besides first blood, the extra paid most often is Domination: 12 times.');
     expect(factText({ id: 'topBonus', values: [99, 12] })).toBeNull();
+    expect(factText({ id: 'blastShots', values: [62.5, 18] })).toBe('With Time Fuse, 63% of shots burn down their fuse – 18% of those blasts take out a ship.');
+    expect(factText({ id: 'fusedShots', values: [7.25] })).toBe('With Fusion, 7.3% of shots melt into another one in flight.');
+    expect(factText({ id: 'anomalyShare', values: [21] })).toBe('21% of all rounds are played with anomalies.');
+    expect(factText({ id: 'topAnomaly', values: [1, 40] })).toBe('The most-played anomaly is Pinball: 40 rounds so far.');
+    expect(factText({ id: 'topAnomaly', values: [99, 40] })).toBeNull();
+    expect(factText({ id: 'trickShotHits', values: [12, 30.4] })).toBe('With Trick Shots Only, 12% of shots hit – without it, 30%.');
+    expect(factText({ id: 'anomalyShotsPerKill', values: [6.25, 9] })).toBe('With anomalies it takes 6.3 shots to destroy a ship, without them 9.0.');
+    expect(factText({ id: 'anomalyRoundLength', values: [95, 70] })).toBe('A round with anomalies takes 1:35 on average, one without 1:10.');
+    expect(factText({ id: 'planetsShattered', values: [42, 1.5] })).toBe('42 planets have broken apart under Unstable – 1.5 a round.');
+    expect(factText({ id: 'whiteHoleReturns', values: [17] })).toBe('White holes have sent 17 shots back into the field.');
   });
 
   it('has nothing to say about a fact it does not know, one with numbers missing, or a harmless 0% self hit', () => {

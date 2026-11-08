@@ -369,6 +369,10 @@ export class Shot {
   readonly warnings: { ship: number; x: number; y: number }[] = [];
   /** Where the shot came off a planet since the caller last cleared this (Pinball). */
   readonly bumps: { planet: number; x: number; y: number }[] = [];
+  /** Loop edge: how often the shot was carried across the field since the caller last cleared this. */
+  wraps = 0;
+  /** White Hole: how often a black hole sent the shot back since the caller last cleared this. */
+  returns = 0;
   /** When (shot time) this shot last came off each planet, by planet index, within ANOMALY.BUMP_WINDOW: a shot that rattles on one planet goes off. */
   private readonly bumpTimes = new Map<number, number[]>();
   /** Ships an unarmed shot has flown through already, so each is warned once. */
@@ -612,6 +616,7 @@ export class Shot {
       if (this.y < -m) { this.y += height + 2 * m; wrapped = true; }
       else if (this.y > height + m) { this.y -= height + 2 * m; wrapped = true; }
     }
+    if (wrapped) this.wraps++;
     if (bounced || wrapped) this.arm();
     if (this.encounters) this.trackStyle(hx, hy, bounced);
     if (this.world.wormholes.length) this.warp();
@@ -753,6 +758,7 @@ export class Shot {
     this.x = x; this.y = y;
     this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
     this.whiteExit = { x, y, out: inward + Math.PI, at: this.time, hole: index };
+    this.returns++;
     this.arm();
   }
 

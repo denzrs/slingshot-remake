@@ -1,5 +1,5 @@
 import { fmt, fmtInt, fmtNum, t, type Key } from '../platform/i18n';
-import { BONUS_KINDS, SCORING } from '../sim/config';
+import { ANOMALIES, BONUS_KINDS, SCORING } from '../sim/config';
 import type { StatsFact } from './net';
 
 /** A length of time as 1:05. */
@@ -63,6 +63,21 @@ const FORMATS: Record<string, ((n: number) => string)[]> = {
   firstShotKill: [percent],
   seatAdvantage: [percent],
   planetsDestroyed: [fmtInt],
+  blastShots: [percent, percent],
+  fusedShots: [percent],
+  anomalyShare: [percent],
+  topAnomaly: [named('anomaly', ANOMALIES), fmtInt],
+  trickShotHits: [percent, percent],
+  anomalyShotsPerKill: [(n) => fmt(n, 1), (n) => fmt(n, 1)],
+  pinballSelfHits: [percent, percent],
+  anomalyRoundLength: [clock, clock],
+  loopShare: [percent],
+  wallHits: [percent, percent],
+  planetsShattered: [fmtInt, (n) => fmt(n, 1)],
+  pinballBumps: [(n) => fmt(n, 1)],
+  armedShots: [percent],
+  loopCrossings: [(n) => fmt(n, 1)],
+  whiteHoleReturns: [fmtInt],
   quickRound: [percent],
   soloVsCpu: [percent],
   spectated: [percent],

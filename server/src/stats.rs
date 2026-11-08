@@ -69,7 +69,9 @@ const SCHEMA: [&str; 15] = [
          PRIMARY KEY (match_id, round)
      )",
     // One row per ship and round. `player` is the day's pseudonym of a person, NULL for a CPU.
-    // `missiles`, `intercepts` and `stray_kills` are the seat's planetary defenses, NULL from a client that does not count them.
+    // `missiles`, `intercepts` and `stray_kills` are the seat's planetary defenses, NULL from a client that does not count them;
+    // `shatters`, `bumps`, `arms`, `loops` and `returns` its anomaly and loop counts (planets broken apart, bounces off planets,
+    // shots armed, crossings of the field, returns from a white hole), NULL likewise.
     "CREATE TABLE IF NOT EXISTS stat_seats (
          match_id  TEXT    NOT NULL,
          round     INTEGER NOT NULL,
@@ -91,6 +93,11 @@ const SCHEMA: [&str; 15] = [
          missiles    INTEGER,
          intercepts  INTEGER,
          stray_kills INTEGER,
+         shatters    INTEGER,
+         bumps       INTEGER,
+         arms        INTEGER,
+         loops       INTEGER,
+         returns     INTEGER,
          PRIMARY KEY (match_id, round, seat)
      )",
     // One row per extra paid on top of the points (first blood, a bounty, a revenge …), in the order the round paid them.
@@ -225,8 +232,9 @@ const INSERT_ROUND: &str = "INSERT INTO stat_rounds (
 
 const INSERT_SEAT: &str = "INSERT INTO stat_seats (
          match_id, round, seat, at, player, cpu, team, won, alive,
-         score, shots, kills, swingbys, grazes, own_goals, pickups, saves, missiles, intercepts, stray_kills)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)";
+         score, shots, kills, swingbys, grazes, own_goals, pickups, saves, missiles, intercepts, stray_kills,
+         shatters, bumps, arms, loops, returns)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)";
 
 const INSERT_BONUS: &str =
     "INSERT OR IGNORE INTO stat_bonuses (match_id, round, n, at, seat, kind, points)
@@ -428,6 +436,11 @@ impl Store {
             ("stat_seats", "missiles", "INTEGER"),
             ("stat_seats", "intercepts", "INTEGER"),
             ("stat_seats", "stray_kills", "INTEGER"),
+            ("stat_seats", "shatters", "INTEGER"),
+            ("stat_seats", "bumps", "INTEGER"),
+            ("stat_seats", "arms", "INTEGER"),
+            ("stat_seats", "loops", "INTEGER"),
+            ("stat_seats", "returns", "INTEGER"),
             ("stat_rounds", "bonuses", "INTEGER"),
         ] {
             Self::ensure_column(&conn, table, column, declared).await?;
@@ -824,6 +837,11 @@ impl Store {
                 optional(ship.missiles),
                 optional(ship.intercepts),
                 optional(ship.stray_kills),
+                optional(ship.shatters),
+                optional(ship.bumps),
+                optional(ship.arms),
+                optional(ship.loops),
+                optional(ship.returns),
             ];
             self.conn.execute(INSERT_SEAT, row).await?;
         }

@@ -286,6 +286,12 @@ fn demo_round(index: usize, round: i64, team_mode: bool, local: bool) -> RoundRe
                 } else {
                     0
                 }),
+                // The demo's games play by no anomalies.
+                shatters: None,
+                bumps: None,
+                arms: None,
+                loops: None,
+                returns: None,
                 alive: won,
             }
         })

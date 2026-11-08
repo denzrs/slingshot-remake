@@ -1708,6 +1708,7 @@ export abstract class Match {
     }
     if (e.type === 'arm') {
       this.emit({ type: 'armed', player, x: e.x, y: e.y });
+      if (live) this.record((book) => bump(book.arms, player));
       return;
     }
     if (e.type === 'warn') {
@@ -1716,11 +1717,17 @@ export abstract class Match {
     }
     if (e.type === 'planetShatter') {
       this.emit({ type: 'planetShatter', x: e.x, y: e.y, radius: e.radius, color: e.color });
+      if (live) this.record((book) => bump(book.shatters, player));
       this.checkFreeFire();
       return;
     }
     if (e.type === 'bump') {
       this.emit({ type: 'impact', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy });
+      if (live) this.record((book) => bump(book.bumps, player));
+      return;
+    }
+    if (e.type === 'loop' || e.type === 'whiteHole') {
+      if (live) this.record((book) => bump(e.type === 'loop' ? book.loops : book.returns, player, e.count));
       return;
     }
     if (e.type === 'fusion') {
