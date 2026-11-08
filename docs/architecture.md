@@ -4,7 +4,7 @@
 
 | Folder | What lives there | May import |
 | --- | --- | --- |
-| `platform/` | Language (`i18n`), sound, emoji, avatars, clip recording. Nothing of the game itself | — |
+| `platform/` | Language (`i18n`), sound, emoji, avatars, clip recording, the installed app (`pwa`: service worker registration, the update and install hints). Nothing of the game itself | — |
 | `sim/` | The physics and rules of a flight: `physics`, `world`, `rng`, `scoring`, `powerups`, `volley`, the CPU's `ai`, the daily `challenge` specs, `config`, `modes`. No DOM | platform |
 | `data/` | What is configured and remembered: `settings`, `roomRules` (the one owner of a room's rule set), `roomLook`, `look`, `customPresets`, `dailyStore`, `lobbyPrefs`, `stats`, `browserId` | platform, sim |
 | `game/` | A match: its modes (`classic`, `horizon`, `solar`), `mayhem`, the killcam and replay, `oracle`, and the records of a game (`shotLog`, `roundReport`, `scorecard`) | platform, sim, data |
@@ -14,6 +14,8 @@
 | `ui/` | Menus, lobby and controls, grouped by feature (below) | everything below |
 
 `main.ts` wires the lot together.
+
+The service worker is a template, `scripts/pwa/sw.js`: `vite.config.ts` fills in the build's file list (`scripts/pwa/worker.ts`) and emits it as `sw.js` at the build root, so it covers the game and `/stats` under any sub-path. A file added to the build is cached without further work; a change to how files are named or served has to keep that list true.
 
 ## `ui/`
 

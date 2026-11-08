@@ -290,8 +290,38 @@ export type ServerMessage =
   | { type: 'resume_failed'; message: string }
   /** `field` names what the error is about, when it is about one thing the player typed. */
   | { type: 'error'; message: string; field?: 'name' | 'password' }
+  /** The relay speaks a newer protocol than this client was built for, and lets go of it: reload to get the new build. */
+  | { type: 'outdated'; protocol: number }
   /** Local only: the connection to the server is gone. */
   | { type: 'closed'; message: string };
+
+/**
+ * The version of the wire protocol this client speaks, sent with every connection (`?v=`). A relay on a newer one answers with
+ * `outdated` and lets go, so a client left open across a deploy is told to reload and never plays on a misread protocol. Not raised
+ * by hand: a test notices when the wire changed (the messages, the state patches, the rules) and `npm run protocol` raises it here, in
+ * `server/src/protocol.rs` and in `server/protocol-contract.json`.
+ */
+export const PROTOCOL_VERSION = 1;
+
+/** The address to open a socket on, with the protocol this client speaks added. */
+export function withProtocol(url: string): string {
+  try {
+    const address = new URL(url);
+    address.searchParams.set('v', String(PROTOCOL_VERSION));
+    return address.toString();
+  } catch {
+    return url;
+  }
+}
+
+/** Called when a relay turns this client away for being out of date, whichever connection it was. */
+const outdatedListeners = new Set<() => void>();
+
+/** Listen for the relay saying this build is out of date. Returns how to stop. */
+export function onOutdated(listener: () => void): () => void {
+  outdatedListeners.add(listener);
+  return () => outdatedListeners.delete(listener);
+}
 
 const CONNECT_TIMEOUT_MS = 10_000;
 
@@ -331,7 +361,7 @@ export class NetworkClient {
 
     let socket: WebSocket;
     try {
-      socket = new WebSocket(withBrowserId(this.url));
+      socket = new WebSocket(withProtocol(withBrowserId(this.url)));
       socket.binaryType = 'arraybuffer';
     } catch (error) {
       return Promise.reject(error instanceof Error ? error : new Error(String(error)));
@@ -446,6 +476,7 @@ export class NetworkClient {
       this.deliver({ type: 'error', message: 'Received malformed response from the server (expected a MessagePack object).' });
       return;
     }
+    if ((parsed as { type?: unknown }).type === 'outdated') for (const listener of [...outdatedListeners]) listener();
     this.deliver(parsed as ServerMessage);
   }
 

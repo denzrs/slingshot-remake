@@ -22,10 +22,12 @@ import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
 import type { OracleTap } from './render/oracle';
 import { readInvite } from './net/invite';
 import { MultiplayerSession } from './net/multiplayer';
-import type { ClientInput } from './net/net';
+import { onOutdated, type ClientInput } from './net/net';
 import { inPowerUpNebula } from './sim/physics';
 import { POWER_UP } from './sim/powerups';
 import { Effects } from './render/effects';
+import { Pwa } from './platform/pwa';
+import { PwaBanner } from './ui/menu/pwa-banner';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './platform/i18n';
 import { getLook, setLook } from './data/look';
 import { painterFor } from './render/looks';
@@ -61,6 +63,7 @@ const pauseBanner = document.querySelector<HTMLElement>('#pause-banner')!;
 const touchPower = document.querySelector<HTMLButtonElement>('#touch-power')!;
 const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 const clipShareButton = document.querySelector<HTMLButtonElement>('#clip-share')!;
+const pwaBanner = document.querySelector<HTMLElement>('#pwa-banner')!;
 
 const settings = loadSettings();
 setLook(settings.look);
@@ -76,6 +79,17 @@ const renderer = new Renderer(canvas);
 const menu = new Menu(overlay, sound);
 const recorder = new ClipRecorder();
 const screenWake = new ScreenWake();
+const pwa = new Pwa();
+/** `?preview=pwa-update`, `pwa-android` or `pwa-ios` (dev only): the strip of that hint on the menu, for /dev/pwa.html. */
+const pwaPreview = import.meta.env.DEV ? (['update', 'outdated', 'android', 'ios'] as const).find((hint) => new URLSearchParams(location.search).get('preview') === `pwa-${hint}`) ?? null : null;
+const banner = new PwaBanner(pwaBanner, pwa, pwaPreview);
+// A previewed hint is there at the first paint, not after the fonts and the first frame (the dev page loads many of these at once).
+if (pwaPreview) banner.update(false, true);
+// The worker sits at the root of the build, one step above the scripts in assets/ (a variable, so the bundler leaves the URL alone).
+// This way it works under a sub-path and on /stats alike. The dev server has none.
+onOutdated(() => banner.setOutdated(true));
+const moduleUrl = import.meta.url;
+if (import.meta.env.PROD && !import.meta.env.VITE_BENCH) pwa.register(new URL('../sw.js', moduleUrl).href);
 
 /** How long a finished clip waits on the touch screen to be shared. */
 const CLIP_OFFER_MS = 30_000;
@@ -418,6 +432,7 @@ function skipKey(): void {
 
 const app: App = {
   menu,
+  pwa,
   settings,
   get skipOffer() {
     if (uiPreview) return null;
@@ -907,6 +922,7 @@ function syncButtons(): void {
   if (clipShareButton.hidden === canShare) clipShareButton.hidden = !canShare;
   const canClip = playing && !canShare && m?.canSaveClip && ClipRecorder.supported && !recorder.recording;
   if (clipButton.hidden === canClip) clipButton.hidden = !canClip;
+  banner.update(screen === 'play', !!overlay.querySelector('.screen--title'));
 }
 
 /** The vote to skip the round (by when it lapses) that the touch menu has already been put up for. */

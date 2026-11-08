@@ -37,6 +37,16 @@ const en = {
   'static.clipSave': 'Save clip',
   'static.clipShare': 'Share clip',
 
+  // — app (install and update) —
+  'pwa.update': 'A new version is ready.',
+  'pwa.reload': 'Reload',
+  'pwa.outdated': 'This version is out of date. Reload to play online.',
+  'pwa.install': 'Install Slingshot as an app.',
+  'pwa.tip': 'Tip: install Slingshot as an app and start it like any other game.',
+  'pwa.installButton': 'Install',
+  'pwa.iosHint': 'Add Slingshot to your home screen: tap Share, then “Add to Home Screen”.',
+  'pwa.dismiss': 'Close',
+
   // — common —
   // — developer tools —
   'dev.home': 'Overview',
@@ -52,6 +62,8 @@ const en = {
   'dev.daily.text': 'Inspect past, current and upcoming challenges, their 5 sectors, known solutions and anomalies. Test and play them directly.',
   'dev.marks': 'Card symbols',
   'dev.marks.text': 'Score symbols, bonuses and the scoreboard through the eyes of each player.',
+  'dev.pwa': 'App hints',
+  'dev.pwa.text': 'The install hints for Android and iOS and the new-version notice, on the real menu, on a phone and on a desktop.',
   'dev.briefing': 'Round briefings',
   'dev.briefing.text': 'Test and tune round announcements, Mayhem twists and anomaly alerts across layouts, timings and rule combinations.',
   'dev.aim': 'Aim predictor',
@@ -1382,6 +1394,15 @@ const de: Dict = {
   'static.clipSave': 'Clip speichern',
   'static.clipShare': 'Clip teilen',
 
+  'pwa.update': 'Eine neue Version ist bereit.',
+  'pwa.reload': 'Neu laden',
+  'pwa.outdated': 'Diese Version ist veraltet. Lade neu, um online zu spielen.',
+  'pwa.install': 'Installiere Slingshot als App.',
+  'pwa.tip': 'Tipp: Installiere Slingshot als App und starte es wie jedes andere Spiel.',
+  'pwa.installButton': 'Installieren',
+  'pwa.iosHint': 'Leg Slingshot auf den Home-Bildschirm: Teilen antippen, dann „Zum Home-Bildschirm“.',
+  'pwa.dismiss': 'Schließen',
+
   // — Entwicklerwerkzeuge —
   'dev.home': 'Übersicht',
   'dev.title': 'Dev-Zentrale',
@@ -1396,6 +1417,8 @@ const de: Dict = {
   'dev.daily.text': 'Vergangene, aktuelle und künftige Herausforderungen, ihre 5 Sektoren, Lösungen und Anomalien einsehen. Direkt testen und spielen.',
   'dev.marks': 'Kartensymbole',
   'dev.marks.text': 'Symbole, Punkteboni und die Spielerkarten aus Sicht jedes Mitspielers vergleichen.',
+  'dev.pwa': 'App-Hinweise',
+  'dev.pwa.text': 'Die Installations-Hinweise für Android und iOS und der Hinweis auf eine neue Version, im echten Menü, auf dem Handy und am Desktop.',
   'dev.briefing': 'Runden-Briefings',
   'dev.briefing.text': 'Rundenankündigungen, Mayhem-Twists und Anomalie-Alarme in verschiedenen Layouts, Zeitpunkten und Regelkombinationen testen.',
   'dev.aim': 'Zielsimulator',

@@ -12,6 +12,7 @@ import { menuPage } from '../menu/menu-page';
 import { MARK_KINDS, markName } from '../../game/markLegend';
 import { markIcon } from '../../render/mark-art';
 import { markText } from './mark-help';
+import { installNote } from '../menu/pwa-banner';
 import { mountTutorialPreview, type TutorialPreviewKind } from './tutorial-preview';
 import type { App } from './app';
 
@@ -264,6 +265,8 @@ export function tutorialScreen(app: App): () => Screen {
       const range = event.currentTarget as HTMLInputElement;
       preview?.seek(Number(range.value) / 1000);
     });
+    // The browser may offer the install (or the player may take it) while the page is open: show or drop the note then.
+    const stopWatchingInstall = app.pwa.onChange(() => { if (page === 0) app.menu.rebuild(); });
     return {
       build: () => {
         const previewPanel = hasPreview && canvas && timeline ? h('section.tutorial__preview', { 'aria-label': t('tutorial.preview.aria') },
@@ -344,7 +347,7 @@ export function tutorialScreen(app: App): () => Screen {
           body: [h('article.tutorial', { 'aria-live': 'polite' },
             h('h3.tutorial__title', null, lessons[page].title),
             h(`div.tutorial__layout${hasPreview ? '' : '.tutorial__layout--text-only'}`, null,
-              h('div.tutorial__copy', null, ...lessons[page].body, ...powerContent, ...trickContent, ...markContent, ...anomalyContent),
+              h('div.tutorial__copy', null, ...lessons[page].body, ...(page === 0 ? [installNote(app.pwa)].filter((note) => note !== null) : []), ...powerContent, ...trickContent, ...markContent, ...anomalyContent),
               ...(previewPanel ? [previewPanel] : []),
             ),
           )],
@@ -391,6 +394,7 @@ export function tutorialScreen(app: App): () => Screen {
       dispose: () => {
         preview?.dispose();
         preview = null;
+        stopWatchingInstall();
       },
     };
   };

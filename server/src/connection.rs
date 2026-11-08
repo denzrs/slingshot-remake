@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
+use serde_json::json;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
@@ -19,9 +20,10 @@ use tracing::{debug, info, instrument, warn, Instrument};
 
 use crate::admission::{AdmissionGuard, BrowserId};
 use crate::auth::ScryptSlots;
-use crate::codec::WireMessage;
+use crate::codec::{Frame, WireMessage};
 use crate::config::{HANDSHAKE_TIMEOUT, HEARTBEAT_MISSES, HEARTBEAT_MS, MAX_PAYLOAD};
 use crate::leaderboard::Leaderboard;
+use crate::protocol::PROTOCOL_VERSION;
 use crate::room::RoomManager;
 use crate::router::deliver;
 
@@ -134,7 +136,7 @@ where
         accept_with_negotiation(stream, Some(config), &allowed_origins),
     )
     .await;
-    let (ws, browser) = match handshake {
+    let (ws, browser, protocol) = match handshake {
         Ok(Ok(accepted)) => accepted,
         Ok(Err(error)) => {
             warn!(%error, "websocket handshake rejected");
@@ -148,6 +150,28 @@ where
 
     let (writer, mut reader) = ws.split();
     let (tx, rx) = mpsc::channel::<WireMessage>(crate::codec::OUTBOUND_QUEUE);
+    // A client built for an older protocol is told so and let go before the relay knows it: it would only misread what comes next,
+    // and what it sends. Nothing else is said to it, not even the lobby.
+    if is_outdated(protocol, browser.is_some()) {
+        info!(
+            ?protocol,
+            "client built for an older protocol; asking it to reload"
+        );
+        let writer_task =
+            tokio::spawn(writer_task(rx, writer).instrument(tracing::Span::current()));
+        if let Ok(bytes) =
+            rmp_serde::to_vec_named(&json!({ "type": "outdated", "protocol": PROTOCOL_VERSION }))
+        {
+            let _ = tx.try_send(WireMessage::Binary(Frame::from(bytes), None));
+        }
+        let _ = tx.try_send(WireMessage::CloseWith {
+            code: OUTDATED_CLOSE_CODE,
+            reason: "Client outdated",
+        });
+        drop(tx);
+        let _ = tokio::time::timeout(Duration::from_millis(500), writer_task).await;
+        return;
+    }
     let (slow_tx, mut slow_rx) = tokio::sync::watch::channel(false);
     let relay = {
         let mut manager = manager.lock();
@@ -267,16 +291,18 @@ async fn accept_with_negotiation<S>(
     stream: S,
     config: Option<WebSocketConfig>,
     allowed_origins: &[String],
-) -> Result<(WebSocketStream<S>, Option<BrowserId>), WsError>
+) -> Result<(WebSocketStream<S>, Option<BrowserId>, Option<u32>), WsError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let origins: Vec<String> = allowed_origins.to_vec();
     let mut browser = None;
+    let mut protocol = None;
     let ws = accept_hdr_async_with_config(
         stream,
         |request: &Request, response: Response| {
             browser = BrowserId::from_query(request.uri().query());
+            protocol = client_protocol(request.uri().query());
             if !origins.is_empty() {
                 let origin = request
                     .headers()
@@ -298,7 +324,29 @@ where
         config,
     )
     .await?;
-    Ok((ws, browser))
+    Ok((ws, browser, protocol))
+}
+
+/// The close code of a client the relay turned away for being built for an older protocol (the 4000s are the application's own).
+const OUTDATED_CLOSE_CODE: u16 = 4001;
+
+/// The protocol a client says it was built for (`?v=` on its address), or None when it says nothing: a tool, or a build from before
+/// this was asked. Those are let in as before.
+fn client_protocol(query: Option<&str>) -> Option<u32> {
+    query?
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("v="))?
+        .parse()
+        .ok()
+}
+
+/// Whether a client's protocol is older than the one the relay speaks. A browser (it sends its id, `?b=`) that names no version was
+/// built before versions were asked for, which makes it protocol 1; tools say nothing and are let in.
+fn is_outdated(protocol: Option<u32>, is_browser: bool) -> bool {
+    match protocol {
+        Some(version) => version < PROTOCOL_VERSION,
+        None => is_browser && PROTOCOL_VERSION > 1,
+    }
 }
 
 /// Consume a rate-limited peer's still-arriving flood while the connection is still ACTIVE
@@ -379,6 +427,29 @@ mod tests {
         let later = start + Duration::from_secs(2);
         assert!(budget.take(2000, later));
         assert!(!budget.take(1, later));
+    }
+
+    #[test]
+    fn the_protocol_a_client_names_is_read_from_the_query() {
+        assert_eq!(client_protocol(Some("v=3")), Some(3));
+        assert_eq!(
+            client_protocol(Some("b=AAECAwQFBgcICQoLDA0ODw&v=7")),
+            Some(7)
+        );
+        assert_eq!(client_protocol(None), None);
+        assert_eq!(client_protocol(Some("b=x")), None);
+        assert_eq!(client_protocol(Some("v=")), None);
+        assert_eq!(client_protocol(Some("v=latest")), None);
+    }
+
+    #[test]
+    fn only_a_client_built_for_an_older_protocol_is_turned_away() {
+        assert!(is_outdated(Some(PROTOCOL_VERSION - 1), false));
+        assert!(!is_outdated(Some(PROTOCOL_VERSION), true));
+        assert!(!is_outdated(Some(PROTOCOL_VERSION + 1), true));
+        // Tools say nothing and are let in. A browser that says nothing is a build from before versions: protocol 1.
+        assert!(!is_outdated(None, false));
+        assert_eq!(is_outdated(None, true), PROTOCOL_VERSION > 1);
     }
 
     #[test]
