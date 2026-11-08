@@ -50,10 +50,12 @@ export function openSettings(app: App): void {
 function settingsScreen(app: App, selection: SheetSelection): Screen {
   const touch = matchMedia('(pointer: coarse)').matches;
   const sheet = mobileSheet([
-    [{ id: 'prefs-display', title: t('shell.display') }],
+    [
+      { id: 'prefs-display', title: t('shell.display') },
+      { id: 'prefs-language', title: t('common.language') },
+    ],
     [
       { id: 'prefs-device', title: t('shell.soundDevice') },
-      { id: 'prefs-language', title: t('common.language') },
       { id: 'prefs-access', title: t('shell.accessibility') },
       ...(touch ? [{ id: 'prefs-touch', title: t('shell.touch') }] : []),
     ],
@@ -93,6 +95,7 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
         },
       }, 'display'),
       inGroup(settingToggle(app, t('settings.statsTicker'), 'statsTicker'), 'display'),
+      inGroup(languageItem(app), 'language'),
       inGroup(settingToggle(app, t('settings.menuSounds'), 'menuSounds'), 'device'),
       inGroup(settingToggle(app, t('settings.gameSounds'), 'gameSounds'), 'device'),
       // Not on a touch device: a phone's browser has no fullscreen to offer a page (and the F key is a keyboard's).
@@ -104,7 +107,6 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
             get: () => app.isFullscreen(),
             set: () => app.toggleFullscreen(),
           }, 'device')]),
-      inGroup(languageItem(app), 'language'),
       inGroup(settingToggle(app, t('settings.colorblind'), 'colorblind'), 'access'),
       inGroup(settingToggle(app, t('settings.lessMenuMotion'), 'lessMenuMotion'), 'access'),
       inGroup(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'access'),
