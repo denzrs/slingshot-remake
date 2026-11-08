@@ -53,10 +53,11 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
     [
       { id: 'prefs-device', title: t('shell.soundDevice') },
       { id: 'prefs-language', title: t('common.language') },
+      { id: 'prefs-access', title: t('shell.accessibility') },
       ...(touch ? [{ id: 'prefs-touch', title: t('shell.touch') }] : []),
     ],
   ], t('common.settings'), () => app.menu.refresh(), selection);
-  const inGroup = (item: MenuItem, group: 'display' | 'device' | 'language' | 'touch'): MenuItem => ({ ...item, section: `prefs-${group}` } as MenuItem);
+  const inGroup = (item: MenuItem, group: 'display' | 'device' | 'language' | 'access' | 'touch'): MenuItem => ({ ...item, section: `prefs-${group}` } as MenuItem);
   return {
     build: () => menuPage({
       title: t('common.settings'), intro: t('settings.note'), className: 'menu-page--settings',
@@ -93,7 +94,6 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
       inGroup(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'display'),
       inGroup(settingToggle(app, t('settings.statsTicker'), 'statsTicker'), 'display'),
       inGroup(settingToggle(app, t('settings.lessMenuMotion'), 'lessMenuMotion'), 'display'),
-      inGroup(settingToggle(app, t('settings.colorblind'), 'colorblind'), 'display'),
       inGroup(settingToggle(app, t('settings.menuSounds'), 'menuSounds'), 'device'),
       inGroup(settingToggle(app, t('settings.gameSounds'), 'gameSounds'), 'device'),
       // Not on a touch device: a phone's browser has no fullscreen to offer a page (and the F key is a keyboard's).
@@ -106,6 +106,7 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
             set: () => app.toggleFullscreen(),
           }, 'device')]),
       inGroup(languageItem(app), 'language'),
+      inGroup(settingToggle(app, t('settings.colorblind'), 'colorblind'), 'access'),
       ...(touch
         ? [inGroup({
             kind: 'segmented',
