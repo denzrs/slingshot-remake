@@ -19,6 +19,15 @@
   color-scheme: dark;
 }
 
+/* Installed as an app on a phone, with no browser bar: the menus' frame fills the screen, so the footer sits at the bottom of it
+ * rather than where a fixed frame happens to end (the frame is made for a browser's shorter viewport). */
+@media (display-mode: standalone) and (max-width: 760px), (display-mode: fullscreen) and (max-width: 760px) {
+  :root {
+    --menu-frame-height: 100%;
+    --menu-frame-offset: 0px;
+  }
+}
+
 * {
   box-sizing: border-box;
   /* No scroll bar anywhere: one that shows for a moment (a page sliding in, a list filling up) takes room and shifts the layout.
