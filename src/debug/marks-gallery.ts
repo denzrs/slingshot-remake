@@ -20,7 +20,7 @@ import { createUiPreview } from './devPreview';
  * A new mark shows up here by being added to `MARK_KINDS` (game/markLegend.ts), with its texts in `SYMBOLS` below.
  */
 
-const OPTIONS: DrawOptions = { hud: true, fullScreen: false, touch: false, recording: false, keyHints: false, aimCardDodge: false };
+const OPTIONS: DrawOptions = { hud: true, fullScreen: false, touch: false, recording: false, keyHints: false, aimCardDodge: false, seatNumbers: false };
 
 interface MarkEntry {
   pays: string;

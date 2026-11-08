@@ -1,6 +1,6 @@
 import { modifiersOf } from '../sim/challenge';
 import { AIM, COLORS, FONTS, MAYHEM, SUDDEN_DEATH, type Anomaly } from '../sim/config';
-import { teamColor } from '../data/palette';
+import { dangerColor, teamColor } from '../data/palette';
 import { ChallengeMatch, ClassicMatch, HorizonMatch, SolarMatch, teamName, type KillRecord, type Mark, type Match, type PlayerState } from '../game';
 import { fmt, fmtInt, t } from '../platform/i18n';
 import { TWIST_IDS, twistName } from '../game/mayhem';
@@ -1862,7 +1862,7 @@ export class Hud {
     const fade = Math.min(1, Math.max(0, (match.phaseTime - 0.35) / 0.4));
     if (fade <= 0) return;
     const survivor = s.survivor !== null ? match.players[s.survivor] : null;
-    const color = s.team !== null ? teamColor(s.team) : survivor?.color ?? COLORS.danger;
+    const color = s.team !== null ? teamColor(s.team) : survivor?.color ?? dangerColor();
     const title = s.title === 'teamWin' ? t('title.teamWin', { team: teamName(s.team!).toUpperCase() }) : t(`title.${s.title}`);
     const cx = field.x + field.w / 2;
     const cy = field.y + field.h / 2;

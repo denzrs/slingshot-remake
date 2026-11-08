@@ -29,6 +29,8 @@ export interface Settings extends RoomRules {
   statsTicker: boolean;
   /** Menus change pages without sliding, fading or flaring: moving through them is instant. */
   lessMenuMotion: boolean;
+  /** Colours of the ships and teams that stay apart for every kind of colour blindness. */
+  colorblind: boolean;
   /** Touch screens: the side of the screen the aiming control sits on. The wheel's power bar is opposite. */
   wheelSide: 'left' | 'right';
   /** The wheel and power bar remain the default; the pull-back stick controls both together. */
@@ -60,6 +62,7 @@ export const DEFAULT_SETTINGS: Settings = {
   menuBackground: true,
   statsTicker: true,
   lessMenuMotion: false,
+  colorblind: false,
   wheelSide: 'right',
   touchControls: 'wheel',
   menuSounds: true,
@@ -84,7 +87,7 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
-      for (const key of ['contours', 'particles', 'aimCardDodge', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'menuSounds', 'gameSounds'] as const) {
+      for (const key of ['contours', 'particles', 'aimCardDodge', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'colorblind', 'menuSounds', 'gameSounds'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
       s.look = lookFrom(s.look) ?? DEFAULT_SETTINGS.look;

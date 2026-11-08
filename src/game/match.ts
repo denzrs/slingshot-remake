@@ -2,7 +2,7 @@ import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
 import type { Avatar } from '../platform/avatars';
 import { bountyPoints, interceptPoints, underdogPoints } from '../sim/scoring';
 import { AIM, ANOMALY, COLORS, FIELD, GRACE, HORIZON, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TRAIL_FADE, type BonusKind, type KillSource, type SuddenDeathKind } from '../sim/config';
-import { seatColor, teamColor } from '../data/palette';
+import { dangerColor, seatColor, teamColor } from '../data/palette';
 import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
 import { normalizeAngle, hasTrickShotSources, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
@@ -2330,7 +2330,7 @@ export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, 
     cpu,
     shade: 0,
     get color() {
-      if (target) return COLORS.danger;
+      if (target) return dangerColor();
       return this.team === null ? seatColor(seat) : teamColor(this.team, this.shade);
     },
     team,

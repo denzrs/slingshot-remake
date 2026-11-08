@@ -37,7 +37,7 @@ const shotClock = new WeakMap<Match, { t: number }>();
 /** The planets a match started with, for a scene where a wave takes them and the loop brings them back. */
 const allPlanets = new WeakMap<Match, Planet[]>();
 
-const OPTIONS: DrawOptions = { hud: false, fullScreen: false, touch: false, recording: false, keyHints: false, aimCardDodge: false };
+const OPTIONS: DrawOptions = { hud: false, fullScreen: false, touch: false, recording: false, keyHints: false, aimCardDodge: false, seatNumbers: false };
 
 const settings = (seats: Seat[], extra: Partial<typeof DEFAULT_SETTINGS> = {}) => ({
   ...DEFAULT_SETTINGS,

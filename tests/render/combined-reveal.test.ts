@@ -42,7 +42,7 @@ describe('combined Mayhem + Anomalies reveal', () => {
     const match = createUiPreview('mayhem-anomalies');
     const hud = new Hud(mockCtx());
     const view = { cssWidth: 1280, cssHeight: 800, scale: 1, offsetX: 0, offsetY: 0, dpr: 1 };
-    const opts = { touch: false, fullScreen: false, recording: false, keyHints: true, aimCardDodge: false, hud: true };
+    const opts = { touch: false, fullScreen: false, recording: false, keyHints: true, aimCardDodge: false, seatNumbers: false, hud: true };
     const shipPos = () => ({ x: 100, y: 100 });
 
     for (const age of [0.05, 0.4, 0.9, 1.3, MAYHEM.LANDED + 0.5, MAYHEM.REVEAL_TIME]) {
@@ -56,7 +56,7 @@ describe('combined Mayhem + Anomalies reveal', () => {
     const match = createUiPreview('mayhem-extreme');
     const hud = new Hud(mockCtx());
     const view = { cssWidth: 1280, cssHeight: 800, scale: 1, offsetX: 0, offsetY: 0, dpr: 1 };
-    const opts = { touch: false, fullScreen: false, recording: false, keyHints: true, aimCardDodge: false, hud: true };
+    const opts = { touch: false, fullScreen: false, recording: false, keyHints: true, aimCardDodge: false, seatNumbers: false, hud: true };
     const shipPos = () => ({ x: 100, y: 100 });
 
     for (const age of [0.05, 0.5, 1.0, MAYHEM.LANDED + 0.2, MAYHEM.REVEAL_TIME]) {
@@ -78,7 +78,7 @@ describe('combined Mayhem + Anomalies reveal', () => {
       dpr: 2,
       stage: { x: 10, y: 50, w: 370, h: 700 },
     };
-    const opts = { touch: true, fullScreen: false, recording: false, keyHints: false, aimCardDodge: false, hud: true };
+    const opts = { touch: true, fullScreen: false, recording: false, keyHints: false, aimCardDodge: false, seatNumbers: false, hud: true };
     const shipPos = () => ({ x: 50, y: 50 });
 
     for (const age of [0.1, 0.8, MAYHEM.LANDED + 0.3]) {
@@ -94,7 +94,7 @@ describe('combined Mayhem + Anomalies reveal', () => {
     match.anomalyAlert = true;
     const hud = new Hud(mockCtx());
     const view = { cssWidth: 1280, cssHeight: 800, scale: 1, offsetX: 0, offsetY: 0, dpr: 1 };
-    const opts = { touch: false, fullScreen: false, recording: false, keyHints: true, aimCardDodge: false, hud: true };
+    const opts = { touch: false, fullScreen: false, recording: false, keyHints: true, aimCardDodge: false, seatNumbers: false, hud: true };
     const shipPos = () => ({ x: 100, y: 100 });
 
     for (const age of [0.1, 0.8, MAYHEM.LANDED + 0.3]) {
@@ -109,7 +109,7 @@ describe('combined Mayhem + Anomalies reveal', () => {
     match.anomalyAlert = false; // Anomalies are OFF
     const hud = new Hud(mockCtx());
     const view = { cssWidth: 1280, cssHeight: 800, scale: 1, offsetX: 0, offsetY: 0, dpr: 1 };
-    const opts = { touch: false, fullScreen: false, recording: false, keyHints: true, aimCardDodge: false, hud: true };
+    const opts = { touch: false, fullScreen: false, recording: false, keyHints: true, aimCardDodge: false, seatNumbers: false, hud: true };
     const shipPos = () => ({ x: 100, y: 100 });
 
     for (const age of [0.1, 0.8, MAYHEM.LANDED + 0.3]) {

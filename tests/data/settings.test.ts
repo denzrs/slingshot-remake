@@ -268,3 +268,18 @@ describe('killcam settings', () => {
     expect(loadSettings().killcam).toBe('auto');
   });
 });
+
+describe('the colour-blind setting', () => {
+  it('is off until it is switched on, and is kept', () => {
+    storage();
+    expect(loadSettings().colorblind).toBe(false);
+    saveSettings({ ...cloneSettings(DEFAULT_SETTINGS), colorblind: true });
+    expect(loadSettings().colorblind).toBe(true);
+  });
+
+  it('falls back to off when what is stored is not a switch', () => {
+    storage({ colorblind: 'yes' });
+    expect(loadSettings().colorblind).toBe(false);
+  });
+});
+

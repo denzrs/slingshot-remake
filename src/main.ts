@@ -30,6 +30,7 @@ import { Pwa } from './platform/pwa';
 import { PwaBanner } from './ui/menu/pwa-banner';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './platform/i18n';
 import { getLook, setLook } from './data/look';
+import { setPalette } from './data/palette';
 import { painterFor } from './render/looks';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
@@ -67,6 +68,7 @@ const pwaBanner = document.querySelector<HTMLElement>('#pwa-banner')!;
 
 const settings = loadSettings();
 setLook(settings.look);
+setPalette(settings.colorblind ? 'colorblind' : 'standard');
 setLang(settings.language);
 applyStaticTexts();
 const sound = new Sound();
@@ -461,6 +463,7 @@ const app: App = {
     effects.particles = settings.particles;
     effects.debrisLevel = settings.debris;
     setLook(settings.look);
+    setPalette(settings.colorblind ? 'colorblind' : 'standard');
     attract.applySettings(settings);
     if (!online()) match?.applySettings(settings);
     if (settings.language !== getLang()) {
@@ -1066,7 +1069,7 @@ function frame(now: number): void {
     renderer.draw(
       m,
       effects,
-      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer, aimCardDodge: settings.aimCardDodge },
+      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer, aimCardDodge: settings.aimCardDodge, seatNumbers: settings.colorblind },
       paused ? 0 : dt,
     );
   }

@@ -7,10 +7,10 @@ import { anomaliesOf } from '../sim/anomalies';
 import { POWER_UP, PREVIEW_POINTS } from '../sim/powerups';
 import { renderBackdrop, type View } from './backdrop';
 import { applyUpright, fieldTransform, plateUnits, portraitLayout, safeArea, touchScale } from './layout';
-import { fillTextUpright, isTurned, screenOffset, setTurned, uprightFrame } from './orientation';
+import { fillTextUpright, isTurned, strokeTextUpright, screenOffset, setTurned, uprightFrame } from './orientation';
 import { orbitOf, solarCenter } from '../sim/world';
 import { drawLens } from './blackhole';
-import { rgba } from './color';
+import { lighten, rgba } from './color';
 import { acrossOf, gatePoint, lensAt, type Lens } from './loop-gate';
 import { renderContours } from './contours';
 import type { Effects } from './effects';
@@ -38,6 +38,8 @@ export interface DrawOptions {
   keyHints: boolean;
   /** The aim card steps aside when the aim line would run over it. */
   aimCardDodge: boolean;
+  /** A ship's seat number beside it, so it can be told apart without its colour. */
+  seatNumbers: boolean;
 }
 
 /** The CSS-pixel box the field is fitted into: the window, unless a page draws several fields (see `debug/looks-gallery.ts`). */
@@ -276,7 +278,7 @@ export class Renderer {
     this.drawWorld(match, scene, base, effects);
     this.drawTrails(match, scene, base);
     this.drawSpotlight(match, scene);
-    this.drawShips(match, scene);
+    this.drawShips(match, scene, opts.seatNumbers);
     this.drawPowerUps(match, scene);
     effects.draw(ctx, this.painter.effects, scale * (cam?.zoom ?? 1));
     ctx.restore();
@@ -980,7 +982,24 @@ export class Renderer {
     return id === (match.viewer ?? match.focus);
   }
 
-  private drawShips(match: Match, scene: Scene): void {
+  /** The number of a ship's seat, upright above it, in a light shade of its colour and edged dark so it reads on any ground. */
+  private seatNumber(n: number, x: number, y: number, color: string): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.font = `700 15px ${FONTS.mono}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = rgba(COLORS.plate, 0.9);
+    strokeTextUpright(ctx, String(n), x, y, 0, -34);
+    // Lighter than the ship, so the dimmer colours still read against the dark ground.
+    ctx.fillStyle = lighten(color, 0.45);
+    fillTextUpright(ctx, String(n), x, y, 0, -34);
+    ctx.restore();
+  }
+
+  private drawShips(match: Match, scene: Scene, seatNumbers: boolean): void {
     const { ctx } = this;
     const live = !scene.camera;
     const planning = live && match.phase === 'aiming';
@@ -1031,6 +1050,7 @@ export class Renderer {
       ctx.rotate((-heading * Math.PI) / 180);
       this.painter.ship(ctx, color, this.time, current && aimShown ? 1 : 0, i * 1.7);
       ctx.restore();
+      if (seatNumbers) this.seatNumber(player.seat + 1, ship.x, ship.y, color);
     });
   }
 }
