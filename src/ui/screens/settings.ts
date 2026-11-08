@@ -6,7 +6,7 @@ import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
 import { mobileSheet, type SheetSelection } from '../menu/mobile-sheet';
 import type { App } from './app';
-import { keysLine } from '../../platform/input-device';
+import { hintText } from '../../platform/input-device';
 
 const LANG_NAMES: Record<Lang, string> = { de: 'Deutsch', en: 'English' };
 
@@ -65,7 +65,7 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
       title: t('common.settings'), intro: t('settings.note'), className: 'menu-page--settings',
       navigation: sheet.navigation,
       body: [sheet.el],
-      keys: keysLine('briefing.keys'),
+      keys: hintText('briefing.keys'),
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
     }),
     items: ([

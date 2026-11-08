@@ -2,6 +2,7 @@ import { t } from '../../platform/i18n';
 import type { GameMode } from '../../sim/modes';
 import { h } from '../menu/menu';
 import { modeName } from '../menu/mode-name';
+import { cap } from '../../platform/input-device';
 
 export type ModeTransition = 'next' | 'previous';
 
@@ -18,8 +19,8 @@ export function pagePagerHeader(title: string, label: string, transition?: ModeT
       }),
     ),
     h('div.mode-pager__keys', { 'aria-hidden': 'true' },
-      h('span', null, '‹ (Q)'),
-      h('span', null, '(E) ›'),
+      h('span', null, `‹ (${cap('Q')})`),
+      h('span', null, `(${cap('E')}) ›`),
     ),
   );
 }

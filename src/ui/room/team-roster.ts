@@ -3,6 +3,7 @@ import { teamName } from '../../game';
 import { t } from '../../platform/i18n';
 import { h } from '../dom';
 import './team-roster.css';
+import { hintText } from '../../platform/input-device';
 
 interface TeamSeat { team: number | null }
 
@@ -56,7 +57,7 @@ export function teamRoster(label: string) {
     }
     destinations.forEach((button, team) => { button.hidden = !current || current.team === team; });
     hint.hidden = count < 2 || !cards.some((card) => card.move);
-    hint.textContent = current ? t('players.moveTarget', { name: current.label }) : t('players.moveHint');
+    hint.textContent = current ? hintText('players.moveTarget', { name: current.label }) : t('players.moveHint');
   };
   const cancel = () => {
     selected = null;
