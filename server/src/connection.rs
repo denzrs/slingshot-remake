@@ -153,12 +153,21 @@ where
     // A client built for an older protocol is told so and let go before the relay knows it: it would only misread what comes next,
     // and what it sends. Nothing else is said to it, not even the lobby.
     if is_outdated(protocol, browser.is_some()) {
-        info!(?protocol, "client built for an older protocol; asking it to reload");
-        let writer_task = tokio::spawn(writer_task(rx, writer).instrument(tracing::Span::current()));
-        if let Ok(bytes) = rmp_serde::to_vec_named(&json!({ "type": "outdated", "protocol": PROTOCOL_VERSION })) {
+        info!(
+            ?protocol,
+            "client built for an older protocol; asking it to reload"
+        );
+        let writer_task =
+            tokio::spawn(writer_task(rx, writer).instrument(tracing::Span::current()));
+        if let Ok(bytes) =
+            rmp_serde::to_vec_named(&json!({ "type": "outdated", "protocol": PROTOCOL_VERSION }))
+        {
             let _ = tx.try_send(WireMessage::Binary(Frame::from(bytes), None));
         }
-        let _ = tx.try_send(WireMessage::CloseWith { code: OUTDATED_CLOSE_CODE, reason: "Client outdated" });
+        let _ = tx.try_send(WireMessage::CloseWith {
+            code: OUTDATED_CLOSE_CODE,
+            reason: "Client outdated",
+        });
         drop(tx);
         let _ = tokio::time::timeout(Duration::from_millis(500), writer_task).await;
         return;
@@ -324,7 +333,11 @@ const OUTDATED_CLOSE_CODE: u16 = 4001;
 /// The protocol a client says it was built for (`?v=` on its address), or None when it says nothing: a tool, or a build from before
 /// this was asked. Those are let in as before.
 fn client_protocol(query: Option<&str>) -> Option<u32> {
-    query?.split('&').find_map(|pair| pair.strip_prefix("v="))?.parse().ok()
+    query?
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("v="))?
+        .parse()
+        .ok()
 }
 
 /// Whether a client's protocol is older than the one the relay speaks. A browser (it sends its id, `?b=`) that names no version was
@@ -419,7 +432,10 @@ mod tests {
     #[test]
     fn the_protocol_a_client_names_is_read_from_the_query() {
         assert_eq!(client_protocol(Some("v=3")), Some(3));
-        assert_eq!(client_protocol(Some("b=AAECAwQFBgcICQoLDA0ODw&v=7")), Some(7));
+        assert_eq!(
+            client_protocol(Some("b=AAECAwQFBgcICQoLDA0ODw&v=7")),
+            Some(7)
+        );
         assert_eq!(client_protocol(None), None);
         assert_eq!(client_protocol(Some("b=x")), None);
         assert_eq!(client_protocol(Some("v=")), None);
