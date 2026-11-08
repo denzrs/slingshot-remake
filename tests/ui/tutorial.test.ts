@@ -129,4 +129,18 @@ describe('flight training tutorial', () => {
     expect(lastLesson.demo).toBe('anomalies');
     expect(lastLesson.anomalies).toEqual(ANOMALIES);
   });
+
+  it('explains the controller on the aiming page only while one is connected', () => {
+    const aim = TUTORIAL[1];
+    expect(aim(false, false).body).toHaveLength(aim(false, false, false).body.length);
+    for (const touch of [false, true]) {
+      const without = aim(touch, false, false).body.length;
+      const withPad = aim(touch, false, true).body;
+      // The intro and the table of buttons come on top, and nothing else on the page changes.
+      expect(withPad.length).toBe(without + 2);
+    }
+    for (const [i, lesson] of TUTORIAL.entries()) {
+      if (i !== 1) expect(lesson(false, false, true).body.length).toBe(lesson(false, false, false).body.length);
+    }
+  });
 });
