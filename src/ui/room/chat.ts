@@ -1,4 +1,4 @@
-import { COLORS } from '../../sim/config';
+import { seatColor } from '../../data/palette';
 import { applySuggestion, emojify, suggest, type Suggestion } from '../../platform/emoji';
 import { getLang, relayText, t } from '../../platform/i18n';
 import type { MultiplayerSession } from '../../net/multiplayer';
@@ -212,7 +212,7 @@ export class ChatPanel {
       if (line.system) return h('li.chat__line.chat__line--system', null, relayText(line.text));
       const mine = line.spectator === !!this.session.you.spectator && line.id === (line.spectator ? this.session.you.spectatorId : this.session.you.playerId);
       const name = h(`span.chat__name${line.spectator ? '.chat__name--watcher' : ''}`, line.spectator ? { title: t('chat.watcher') } : null, ...(line.spectator ? [eyeIcon()] : []), line.name);
-      if (!line.spectator) name.style.setProperty('--speaker-tone', COLORS.players[line.id % COLORS.players.length]);
+      if (!line.spectator) name.style.setProperty('--speaker-tone', seatColor(line.id));
       return h(`li.chat__line${mine ? '.chat__line--self' : ''}`, null, name, h('span.chat__text', null, line.text));
     }));
     if (stuck) this.log.scrollTop = this.log.scrollHeight;

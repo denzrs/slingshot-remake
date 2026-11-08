@@ -1,4 +1,5 @@
-import { COLORS, TEAMS } from '../../sim/config';
+import { COLORS } from '../../sim/config';
+import { teamColor } from '../../data/palette';
 import { teamName, type Match } from '../../game';
 import { oracleAwards } from '../../game/oracle';
 import { fmtInt, t, tn } from '../../platform/i18n';
@@ -29,7 +30,7 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
     return row;
   };
   const playerRanking = () => h('ol.ranking', null, ...match.ranking().map((p, i) => entry(i + 1, p.name, p.color, p.score, p.id)));
-  const teamRanking = () => h('ol.ranking', null, ...match.teamRanking().map((r, i) => entry(i + 1, t('team.name', { team: teamName(r.team) }), TEAMS[r.team][0], r.score)));
+  const teamRanking = () => h('ol.ranking', null, ...match.teamRanking().map((r, i) => entry(i + 1, t('team.name', { team: teamName(r.team) }), teamColor(r.team), r.score)));
   const section = (title: string, ...content: Node[]) => h('section.report-section', null, h('h3.ranking-label', null, title), ...content);
   let page: HTMLElement;
   let disposeCarousel = (): void => {};

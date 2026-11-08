@@ -1,4 +1,5 @@
 import { ANOMALY, COLORS, FIELD, HORIZON, NEBULA, SOLAR, WORMHOLE, type Anomaly } from '../../sim/config';
+import { seatColor } from '../../data/palette';
 import { t } from '../../platform/i18n';
 import { cloneWorld, Shot, type ShotEnd, type ShotRules, type StyleEvent, type StyleKind, type World } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
@@ -154,7 +155,7 @@ interface TraceOptions {
 function startFlight(shot: Shot, shooter: number, options: TraceOptions = {}): Flight {
   return {
     shooter,
-    color: options.color ?? COLORS.players[shooter],
+    color: options.color ?? seatColor(shooter),
     points: [{ x: shot.x, y: shot.y }],
     times: [shot.time],
     breaks: [],
@@ -382,10 +383,10 @@ function buildAnomalyDemo(anomaly: Anomaly): Demo {
       const targetPlanet = planet(640, 400, 24, 'rocky', '#ee8469', 505);
       duel(world, [ship(130, 400), ship(1150, 400)], [targetPlanet]);
 
-      const shot1 = trace(world, 0, 0, 50, false, { color: COLORS.players[0] });
+      const shot1 = trace(world, 0, 0, 50, false, { color: seatColor(0) });
       const crackTime = shot1.duration;
 
-      const shot2 = trace(world, 0, 0, 50, false, { color: COLORS.players[0] });
+      const shot2 = trace(world, 0, 0, 50, false, { color: seatColor(0) });
       shot2.startTime = crackTime + 0.45;
       const shatterTime = shot2.startTime + shot2.duration;
 
@@ -408,7 +409,7 @@ function buildAnomalyDemo(anomaly: Anomaly): Demo {
       const mergeTime = 0.875;
 
       const f0 = trace(world, 0, angle0, power, false, { timeLimit: mergeTime });
-      const f2 = trace(world, 2, angle2, power, false, { timeLimit: mergeTime, color: COLORS.players[2] });
+      const f2 = trace(world, 2, angle2, power, false, { timeLimit: mergeTime, color: seatColor(2) });
 
       const fusedWorld = cloneWorld(world);
       fusedWorld.ships[0] = ship(mergeX - 20, mergeY);
@@ -1103,7 +1104,7 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
     ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.quadraticCurveTo((from.x + to.x) / 2, Math.min(from.y, to.y) - 90, to.x, to.y); ctx.stroke();
     ctx.setLineDash([]);
     drawEvent(ctx, from, POWER_UP_COLORS.teleport, time);
-    drawShip(ctx, from, 0, COLORS.players[0], false, false, 1 - phase);
+    drawShip(ctx, from, 0, seatColor(0), false, false, 1 - phase);
     drawShip(ctx, to, 0, POWER_UP_COLORS.teleport, true, false, phase);
     ctx.restore();
   }
@@ -1250,7 +1251,7 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
     const angle = flight && next ? angleTo(ship, next) : 0;
     const active = demo.kind === 'horizon';
     const shieldSpent = demo.flights.some((candidate) => candidate.reflects.some((event) => event.ship === i && atTime(candidate, event.time) <= simTime));
-    drawShip(ctx, ship, angle, COLORS.players[i], active, Boolean(ship.shield && !shieldSpent));
+    drawShip(ctx, ship, angle, seatColor(i), active, Boolean(ship.shield && !shieldSpent));
   });
 
   for (const pickup of demo.pickups) {
@@ -1284,7 +1285,7 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
     ctx.font = '9px "B612 Mono", monospace';
     ctx.fillText('ANGLE  /  POWER', 13, 20);
     ctx.fillStyle = 'rgba(91,125,179,.55)'; ctx.fillRect(13, 27, 92, 2);
-    ctx.fillStyle = COLORS.players[0]; ctx.fillRect(13, 27, 92 * (0.5 + Math.sin(progress * Math.PI * 2) * 0.35), 2);
+    ctx.fillStyle = seatColor(0); ctx.fillRect(13, 27, 92 * (0.5 + Math.sin(progress * Math.PI * 2) * 0.35), 2);
   } else if (demo.kind === 'keys') {
     const key = progress < 0.33 ? '←  →' : progress < 0.66 ? '↑  ↓' : 'ENTER';
     ctx.textAlign = 'right';
@@ -1311,7 +1312,7 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
       ? [{ color: '#b8c7dc', label: t('tutorial.preview.unarmed') }, { color: ANOMALY_COLORS.trickShots, label: t('tutorial.preview.armedShot') }]
       : demo.anomaly === 'pinball'
       ? [{ color: '#b8c7dc', label: t('tutorial.preview.normalShot') }, { color: ANOMALY_COLORS.pinball, label: t('tutorial.preview.bouncedShot') }]
-      : [{ color: COLORS.players[0], label: t('tutorial.preview.shot1') }, { color: COLORS.players[2], label: t('tutorial.preview.shot2') }, { color: ANOMALY_COLORS.fusion, label: t('tutorial.preview.fused') }];
+      : [{ color: seatColor(0), label: t('tutorial.preview.shot1') }, { color: seatColor(2), label: t('tutorial.preview.shot2') }, { color: ANOMALY_COLORS.fusion, label: t('tutorial.preview.fused') }];
     ctx.font = '8px "B612 Mono", monospace';
     let x = 13;
     for (const item of labels) {

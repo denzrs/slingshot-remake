@@ -14,6 +14,7 @@ import '@fontsource/b612-mono/400';
 import '@fontsource/b612-mono/700';
 
 import { AIM, COLORS, EDGE_MODES, FONTS, GRACE, HORIZON, SCORING, isEdgeMode, type EdgeMode } from '../sim/config';
+import { seatColor } from '../data/palette';
 import { cloneWorld, Shot, type ShotEnd, type ShotRules, type StyleKind, type World } from '../sim/physics';
 import { scoreChallengeHit, scoreHorizonKill } from '../sim/scoring';
 import { generateWorld } from '../sim/world';
@@ -38,7 +39,7 @@ html.style.color = bone;
 const style = document.createElement('style');
 style.textContent = `
   :root { color-scheme: dark; --plate: ${plate}; --lift: ${plateLift}; --line: ${line}; --bone: ${bone};
-    --muted: ${boneDim}; --accent: ${COLORS.players[0]}; --mint: ${COLORS.players[1]}; --gold: ${sodium};
+    --muted: ${boneDim}; --accent: ${seatColor(0)}; --mint: ${seatColor(1)}; --gold: ${sodium};
     --body: ${FONTS.body}; --display: ${FONTS.display}; --mono: ${FONTS.mono}; }
   *, *::before, *::after { box-sizing: border-box; }
   html { min-height: 100%; background: radial-gradient(ellipse at 50% -25%, #1c3967 0%, var(--plate) 58%); }
@@ -110,7 +111,7 @@ style.textContent = `
   .tooltip { position: fixed; z-index: 10; display: none; padding: 7px 10px; border: 1px solid var(--line); border-radius: 3px;
     background: var(--plate); color: var(--bone); font: 11px/1.5 var(--mono); white-space: pre; pointer-events: none; }
   .heat-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 12px; color: var(--muted); font-size: 10px; }
-  .heat-ramp { width: 110px; height: 8px; border: 1px solid rgb(91 125 179 / .4); background: linear-gradient(90deg, ${danger}, ${plate}, ${COLORS.players[1]}); }
+  .heat-ramp { width: 110px; height: 8px; border: 1px solid rgb(91 125 179 / .4); background: linear-gradient(90deg, ${danger}, ${plate}, ${seatColor(1)}); }
   .time-ramp { width: 110px; height: 8px; border: 1px solid rgb(91 125 179 / .4); background: linear-gradient(90deg, #62b6ff, #6fe3c8, #ffd27a, #ff5a6e); }
   .heat-note { color: var(--muted); font: 10px var(--mono); }
   .top-shots { margin-top: 14px; padding: 12px; border: 1px solid rgb(91 125 179 / .28); background: rgb(11 26 51 / .65); }
@@ -512,7 +513,7 @@ function draw(samples: readonly Sample[], scoredSamples: readonly Sample[] = sam
       color = flightTimeColor(t);
       if (s.end.kind === 'ship') size = s.end.ship === shooter ? 3.4 : 3;
     } else if (s.end.kind === 'ship') {
-      color = s.end.ship === shooter ? danger : COLORS.players[s.end.ship % COLORS.players.length];
+      color = s.end.ship === shooter ? danger : seatColor(s.end.ship);
       size = s.end.ship === shooter ? 3.4 : 3;
     }
     const { x, y } = polarPoint(s.angle, s.power, centerX, centerY, radius);
@@ -602,7 +603,7 @@ function drawMap(path: readonly number[] | null, pathColor: string | null): void
 
   for (const [i, s] of world.ships.entries()) {
     const own = i === shooter;
-    ctx.fillStyle = own ? bone : COLORS.players[i % COLORS.players.length];
+    ctx.fillStyle = own ? bone : seatColor(i);
     ctx.beginPath();
     ctx.arc(s.x, s.y, own ? 14 : 11, 0, Math.PI * 2);
     ctx.fill();
@@ -641,7 +642,7 @@ function showTrajectory(s: Sample): void {
     path.push(shot.x, shot.y);
   }
   const color =
-    end.kind === 'ship' ? (end.ship === shooter ? danger : COLORS.players[end.ship % COLORS.players.length]) : boneDim;
+    end.kind === 'ship' ? (end.ship === shooter ? danger : seatColor(end.ship)) : boneDim;
   drawMap(path, color);
   const styleText = s.styles.length && styleBonuses ? ` · ${s.styles.join(', ')}` : '';
   elements.note.textContent = `${outcomeLabel(s)} · ${s.points > 0 ? `+${s.points}` : s.points} pts${styleText} — angle ${displayAngle(s.angle).toFixed(2)}°, power ${s.power.toFixed(1)}, ${shot.time.toFixed(2)}s`;
@@ -760,7 +761,7 @@ function legend(): void {
   const entries: [string, string][] = [
     ['self-hit', danger],
     ...ships
-      .map((_, i): [string, string] | null => (i === shooter ? null : [`hit ship ${i}`, COLORS.players[i % COLORS.players.length]]))
+      .map((_, i): [string, string] | null => (i === shooter ? null : [`hit ship ${i}`, seatColor(i)]))
       .filter((e): e is [string, string] => e !== null),
     ['planet / lost / timeout', boneDim],
   ];

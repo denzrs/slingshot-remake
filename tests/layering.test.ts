@@ -64,3 +64,13 @@ describe('layers of src/', () => {
     expect([...areas].filter((name) => !(name in RANK))).toEqual([]);
   });
 });
+
+describe('player colours', () => {
+  it('are read from data/palette.ts only, never from the lists in sim/config.ts', () => {
+    const bad = sources(src)
+      .filter((file) => !['sim/config.ts', 'data/palette.ts'].includes(relative(src, file)))
+      .filter((file) => /COLORS\.players|\bTEAMS\[|import\s*\{[^}]*\bTEAMS\b/.test(readFileSync(file, 'utf8')))
+      .map((file) => relative(src, file));
+    expect(bad).toEqual([]);
+  });
+});

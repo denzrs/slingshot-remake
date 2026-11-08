@@ -1,4 +1,5 @@
-import { COLORS, MAX_PLAYERS } from '../../sim/config';
+import { MAX_PLAYERS } from '../../sim/config';
+import { seatColor } from '../../data/palette';
 import { t, tn } from '../../platform/i18n';
 import { activeSeats, addSeat, balanceTeams, MIN_SEATS, removeSeat, type Seat } from '../../data/settings';
 import { h, type MenuItem, type Screen } from '../menu/menu';
@@ -41,7 +42,7 @@ function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {
     kind: 'seat',
     section: `seat-${i}`,
     label: t('players.player', { n: i + 1 }),
-    swatch: COLORS.players[i],
+    swatch: seatColor(i),
     fliers,
     cpuCaption: t('players.cpu'),
     lastCpu: () => lastCpuBySeat.get(i),

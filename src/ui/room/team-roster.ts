@@ -1,4 +1,4 @@
-import { TEAMS } from '../../sim/config';
+import { teamColor } from '../../data/palette';
 import { teamName } from '../../game';
 import { t } from '../../platform/i18n';
 import { h } from '../dom';
@@ -104,7 +104,7 @@ export function teamRoster(label: string) {
       const column = h('section.team-column', { 'aria-label': teamName(team) },
         h('div.team-column__head', null, h('h3', null, teamName(team)), total), destination, grid,
       );
-      column.style.setProperty('--team-tone', TEAMS[team][0]);
+      column.style.setProperty('--team-tone', teamColor(team));
       column.addEventListener('dragover', (event) => {
         if (!dragging || !selection() || selection()!.team === team) return;
         event.preventDefault();
