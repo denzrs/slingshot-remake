@@ -283,3 +283,31 @@
     justify-self: stretch;
   }
 }
+
+/* Every fact, one to a line: a list to read through, so it reads left to right and no wider than a comfortable line. */
+.st__factsView {
+  max-width: 760px;
+  margin: 18px auto 0;
+  text-align: left;
+}
+
+.st__factsView[hidden] {
+  display: none;
+}
+
+.st__facts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.st__fact {
+  padding: 8px 12px;
+  border: 1px solid rgb(91 125 179 / 0.22);
+  border-radius: 3px;
+  background: rgb(19 39 70 / 0.35);
+  font-size: 14px;
+  line-height: 1.45;
+}

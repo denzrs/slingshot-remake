@@ -165,7 +165,12 @@ export function factTexts(facts: readonly StatsFact[], random: () => number = Ma
   return shuffled(facts.map(factText).filter((text): text is string => text !== null), random);
 }
 
-/** The same, in parts, for a line that sets its numbers apart. */
+/** Every fact this client can word, in parts, in the order the relay sends them (grouped by what they are about). */
+export function factLinesInOrder(facts: readonly StatsFact[]): FactPart[][] {
+  return facts.map(factParts).filter((parts): parts is FactPart[] => parts !== null);
+}
+
+/** The same as `factTexts`, in parts, for a line that sets its numbers apart. */
 export function factLines(facts: readonly StatsFact[], random: () => number = Math.random): FactPart[][] {
-  return shuffled(facts.map(factParts).filter((parts): parts is FactPart[] => parts !== null), random);
+  return shuffled(factLinesInOrder(facts), random);
 }

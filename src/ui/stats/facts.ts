@@ -32,8 +32,8 @@ function remember(): void {
   }
 }
 
-/** The findings of the relay, shared by menus that open one after the other. */
-async function load(board: StatsBoard): Promise<StatsFact[]> {
+/** The findings of the relay, shared by menus that open one after the other, and the statistics page. */
+export async function loadFacts(board: StatsBoard): Promise<StatsFact[]> {
   if (kept && Date.now() - kept.at < KEEP_MS) return kept.facts;
   loading ??= board
     .facts()
@@ -73,7 +73,7 @@ export function factTicker(enabled = true, board = new StatsBoard()): HTMLElemen
     return ticker;
   }
 
-  void load(board).then((facts) => {
+  void loadFacts(board).then((facts) => {
     const lines = factLines(facts).slice(0, TICKER_FACTS);
     if (!lines.length) {
       ticker.hidden = true;

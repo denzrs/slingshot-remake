@@ -168,6 +168,7 @@ The title menu has a **Statistics** entry wherever the build has a relay (`VITE_
 
 - **Days and games.** The per-day totals live in `stat_days` (rounds; the points the seats earned: each round adds what the scores rose by, betting left out) and `stat_day_players` (the hashes of the people who played that day, counted once per day) and are pruned with everything else after `STATS_KEEP_DAYS`, so the heatmap spans as much as is kept (at most the year it draws). Days are UTC dates. The table lists the latest 50 games.
 - **Points** are the points the seats earned: what their scores rose by, round after round, less what betting moved (the shot-down players' tips and bets; the stands' bankroll never counted). A game's points are the seats' final scores less the same.
+- **All facts.** A switch at the top turns the page from this overview to **All facts** (German: **Alle Fakten**): every fact the menus' ticker draws from (see *Facts in the menus*), one per line in the relay's order, which groups them by topic. It asks with `stats_facts` and shares the ticker's ten-minute cache, whether or not the ticker is switched on.
 - **Rewatch flies the game again** – see *Replays* below. The button is on when the relay has the whole game, and its tooltip says why it is off otherwise.
 
 ### Replays

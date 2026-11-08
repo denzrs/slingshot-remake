@@ -4,6 +4,9 @@ import { buildHeatmap, METRICS, SOURCES, StatsBoard, type Metric, type Source, t
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { leaderboardAvailable } from '../daily/leaderboard';
 import type { App } from '../screens';
+import { factLinesInOrder, type FactPart } from '../../net/statsFacts';
+import type { StatsFact } from '../../net/net';
+import { loadFacts } from './facts';
 
 /** The statistics live on the multiplayer relay, like the daily board: a build without one has none to show. */
 export const statsAvailable = leaderboardAvailable;
@@ -114,6 +117,13 @@ function gameRow(game: StatsGame, watch: (game: StatsGame, button: HTMLButtonEle
   );
 }
 
+/** What the page shows: the overview of days and games, or every fact the statistics make. */
+const TABS = ['overview', 'facts'] as const;
+type Tab = (typeof TABS)[number];
+
+/** A fact as a line of the list, its numbers set apart as in the ticker. */
+const factItem = (parts: FactPart[]): HTMLElement => h('li.st__fact', null, ...parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text)));
+
 const rate = (part: number, of: number): string => (of > 0 ? `${fmt((100 * part) / of, 0)}%` : '–');
 
 /** The tips and bets as a title and a row of figures. */
@@ -143,11 +153,15 @@ function bettingView(b: StatsBetting): HTMLElement[] {
  */
 function statsContent(app: App): Screen {
   const board = new StatsBoard();
+  let tab: Tab = 'overview';
   let metric: Metric = 'rounds';
   let source: Source = 'online';
   let overview: StatsOverview | null = null;
   let view: ReturnType<typeof heatmapView> | null = null;
   let failed = false;
+  /** The facts, asked for when the tab is first opened: null until they come. */
+  let facts: StatsFact[] | null = null;
+  let factsAsked = false;
 
   const status = h('p.lb__status', { role: 'status' }, t('stats.loading'));
   const heat = h('div.st__heat', null);
@@ -155,6 +169,9 @@ function statsContent(app: App): Screen {
   const head = h('div.st__head', null, h('span', null, t('stats.col.when')), h('span', null, t('stats.col.mode')), h('span', null, t('stats.col.players')), h('span.st__num', null, t('stats.col.rounds')), h('span.st__num', null, t('stats.col.points')), h('span', null));
   const betting = h('div.st__betting', null);
   const table = h('div.st__table', null, h('h3.st__title', null, t('stats.games')), head, games);
+  const factsTitle = h('h3.st__title', null, t('stats.tab.facts'));
+  const factList = h('ol.st__facts', null);
+  const factsView = h('div.st__factsView', null, factsTitle, factList);
 
   /** Fetches a game and flies it: the button says so while it waits, and the page says if it could not. */
   const watch = (game: StatsGame, button: HTMLButtonElement): void => {
@@ -170,7 +187,25 @@ function statsContent(app: App): Screen {
     board.replay(game.id).then((replay) => (!root.isConnected ? undefined : replay ? app.watchReplay(replay) : failedToLoad()), () => root.isConnected && failedToLoad());
   };
 
+  const paintFacts = (): void => {
+    heat.hidden = table.hidden = betting.hidden = true;
+    if (!factsAsked) {
+      factsAsked = true;
+      void loadFacts(board).then((seen) => {
+        facts = seen;
+        if (tab === 'facts') paint();
+      });
+    }
+    const lines = facts ? factLinesInOrder(facts) : [];
+    status.textContent = !facts ? t('stats.loading') : lines.length ? '' : t('stats.facts.none');
+    factsView.hidden = !lines.length;
+    factsTitle.textContent = `${t('stats.tab.facts')} · ${fmtInt(lines.length)}`;
+    factList.replaceChildren(...lines.map(factItem));
+  };
+
   const paint = (): void => {
+    if (tab === 'facts') return paintFacts();
+    factsView.hidden = true;
     status.textContent = failed ? t('stats.failed') : !overview ? t('stats.loading') : !overview.enabled ? t('stats.off') : '';
     const shown = !!overview?.enabled;
     heat.hidden = !shown;
@@ -213,12 +248,14 @@ function statsContent(app: App): Screen {
       null,
       h('p.eyebrow', null, t('stats.eyebrow')),
       h('h2.daily__title', null, t('stats.title')),
+      h('div.items.items--row', { 'data-section': 'tab' }),
       h('div.items.items--row', { 'data-section': 'source' }),
       h('div.items.items--row', { 'data-section': 'metric' }),
       status,
       heat,
       table,
       betting,
+      factsView,
       h('div.items.items--row', { 'data-items': '' }),
     ),
   );
@@ -229,7 +266,19 @@ function statsContent(app: App): Screen {
     items: [
       {
         kind: 'segmented',
+        section: 'tab',
+        label: t('stats.tab'),
+        options: TABS.map((value) => ({ value, label: t(`stats.tab.${value}`) })),
+        get: () => tab,
+        set: (v) => {
+          tab = v as Tab;
+          paint();
+        },
+      },
+      {
+        kind: 'segmented',
         section: 'source',
+        hidden: () => tab !== 'overview',
         label: t('stats.source'),
         options: SOURCES.map((s) => ({ value: s, label: t(`stats.source.${s}`) })),
         get: () => source,
@@ -241,6 +290,7 @@ function statsContent(app: App): Screen {
       {
         kind: 'segmented',
         section: 'metric',
+        hidden: () => tab !== 'overview',
         label: t('stats.metric'),
         options: METRICS.map((m) => ({ value: m, label: metricLabel(m) })),
         get: () => metric,
