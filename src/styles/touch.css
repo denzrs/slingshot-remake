@@ -411,11 +411,13 @@ html.upright #pause-button::after {
 #pause-button[hidden],
 #touch-fire[hidden],
 #touch-power[hidden],
-#clip-save[hidden] {
+#clip-save[hidden],
+#clip-share[hidden] {
   display: none;
 }
 
-#clip-save {
+#clip-save,
+#clip-share {
   position: fixed;
   left: max(16px, env(safe-area-inset-left));
   bottom: max(16px, env(safe-area-inset-bottom));
@@ -430,7 +432,12 @@ html.upright #pause-button::after {
   cursor: pointer;
 }
 
-#clip-save::before {
+#clip-share {
+  border-color: rgb(111 227 200 / 0.7);
+}
+
+#clip-save::before,
+#clip-share::before {
   content: '';
   position: absolute;
   left: 14px;
@@ -442,10 +449,20 @@ html.upright #pause-button::after {
   transform: translateY(-50%);
 }
 
+#clip-share::before {
+  background: var(--p2);
+}
+
 #clip-save:hover,
 #clip-save:focus-visible {
   outline: none;
   background: rgb(255 90 110 / 0.16);
+}
+
+#clip-share:hover,
+#clip-share:focus-visible {
+  outline: none;
+  background: rgb(111 227 200 / 0.16);
 }
 
 @keyframes rise {
@@ -527,14 +544,16 @@ html.upright .twheel {
 
 /* The clip button sits in the top row, beside the menu button. */
 @media (pointer: coarse) {
-  #clip-save {
+  #clip-save,
+  #clip-share {
     top: max(12px, env(safe-area-inset-top));
     bottom: auto;
     left: calc(max(12px, env(safe-area-inset-left)) + var(--menu) + 10px);
   }
 }
 
-html.upright #clip-save {
+html.upright #clip-save,
+html.upright #clip-share {
   top: calc(max(12px, env(safe-area-inset-top)) + 6px);
   left: auto;
   right: max(12px, env(safe-area-inset-right));
