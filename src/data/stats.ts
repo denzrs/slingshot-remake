@@ -48,6 +48,16 @@ export interface StatBook {
   intercepts: number[];
   /** Enemy ships hit by a missile of the player's that lost its shot and flew on (these count among `kills` too). */
   strayKills: number[];
+  /** Unstable: planets a player's shots broke apart. */
+  shatters: number[];
+  /** Pinball: times a player's shots came off a planet. */
+  bumps: number[];
+  /** Trick Shots Only: a player's shots that were armed. */
+  arms: number[];
+  /** Loop edge: times a player's shots were carried across the field. */
+  loops: number[];
+  /** White Hole: times a black hole sent a player's shot back. */
+  returns: number[];
   /** The extras paid on top of the points (first blood, a bounty, revenge …), in the order they were paid. */
   bonuses: BonusRecord[];
 }
@@ -88,13 +98,18 @@ export const newStatBook = (): StatBook => ({
   missiles: [],
   intercepts: [],
   strayKills: [],
+  shatters: [],
+  bumps: [],
+  arms: [],
+  loops: [],
+  returns: [],
   bonuses: [],
 });
 
-/** Add one to a player's counter; the list grows as new players show up. */
-export function bump(counts: number[], player: number): void {
+/** Add to a player's counter (one, unless told more); the list grows as new players show up. */
+export function bump(counts: number[], player: number, by = 1): void {
   while (counts.length <= player) counts.push(0);
-  counts[player]++;
+  counts[player] += by;
 }
 
 /** Keep the better of the current record and a new value (`higher`: bigger is better). Earlier holders keep a tie. */

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type GameEvent, type Match } from '../../src/game';
 import type { ClassicMatch } from '../../src/game/classic';
-import type { Planet } from '../../src/sim/physics';
+import type { Planet, Shot } from '../../src/sim/physics';
+import type { VolleyShot } from '../../src/sim/volley';
+import { ShotLog } from '../../src/game/shotLog';
 import { SCORING } from '../../src/sim/config';
 import { matchMoments, spotlight } from '../../src/game/scorecard';
 import { awards, bump, closestApproach, improve, newStatBook, pathLength, thinTrail } from '../../src/data/stats';
@@ -309,5 +311,18 @@ describe('match moments', () => {
     bump(book.kills, 0);
     book.bestHit = { player: 0, value: 100 };
     expect(matchMoments(awards(book))).toEqual([]);
+  });
+});
+
+describe('shot log', () => {
+  it("tells a fired shot from a splitter's fork, a stray missile and a shot two others melted into", () => {
+    const log = new ShotLog();
+    const shot = (extra: Partial<VolleyShot> = {}) => ({ shot: {} as Shot, owner: 0, trail: [], ...extra }) as VolleyShot;
+    const aim = { player: 0, angle: 0, power: 50 };
+    const [fired, stray] = [shot(), shot({ stray: true })];
+    log.launched([fired, stray], [aim, aim]);
+    const [fork, fused] = [shot({ fan: 1 }), shot({ fused: true })];
+    log.of(fork);
+    expect([fired, stray, fork, fused].map((vs) => log.fired(vs))).toEqual([true, false, false, false]);
   });
 });

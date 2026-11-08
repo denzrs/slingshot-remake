@@ -24,6 +24,13 @@ export interface SeatReport {
   missiles: number;
   intercepts: number;
   strayKills: number;
+  /** The anomalies' and the loop's counts: planets the seat's shots broke apart (Unstable), times they came off a planet
+   * (Pinball), shots armed (Trick Shots Only), times carried across the field (Loop) and sent back by a black hole (White Hole). */
+  shatters: number;
+  bumps: number;
+  arms: number;
+  loops: number;
+  returns: number;
   alive: boolean;
 }
 
@@ -140,6 +147,11 @@ export function roundReport(match: ReportSource): RoundReport {
       missiles: book.missiles?.[i] ?? 0,
       intercepts: book.intercepts?.[i] ?? 0,
       strayKills: book.strayKills?.[i] ?? 0,
+      shatters: book.shatters?.[i] ?? 0,
+      bumps: book.bumps?.[i] ?? 0,
+      arms: book.arms?.[i] ?? 0,
+      loops: book.loops?.[i] ?? 0,
+      returns: book.returns?.[i] ?? 0,
       alive: stillIn(p),
     })),
     ...(tips.length ? { tips } : {}),

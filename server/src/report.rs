@@ -100,6 +100,14 @@ pub struct SeatRound {
     pub missiles: Option<i64>,
     pub intercepts: Option<i64>,
     pub stray_kills: Option<i64>,
+    /// The anomalies' and the loop's counts: planets the seat's shots broke apart (Unstable), times they came off a planet
+    /// (Pinball), shots armed (Trick Shots Only), times carried across the field (Loop) and sent back by a black hole
+    /// (White Hole). None from a client that does not count them yet.
+    pub shatters: Option<i64>,
+    pub bumps: Option<i64>,
+    pub arms: Option<i64>,
+    pub loops: Option<i64>,
+    pub returns: Option<i64>,
     pub alive: bool,
 }
 
@@ -223,6 +231,12 @@ fn optional_int(value: Option<&Value>, range: RangeInclusive<i64>) -> Option<Opt
     }
 }
 
+/// An optional count that only informs (a fast shot on a Loop edge crosses it many times): as `optional_int`, but one above
+/// `MAX_COUNT` is held to it instead of throwing out the round with it.
+fn optional_tally(value: Option<&Value>) -> Option<Option<i64>> {
+    optional_int(value, 0..=i64::MAX).map(|n| n.map(|n| n.min(MAX_COUNT)))
+}
+
 fn real(value: Option<&Value>, max: f64) -> Option<f64> {
     let f = value?.as_f64()?;
     (f.is_finite() && (0.0..=max).contains(&f)).then_some(f)
@@ -289,6 +303,11 @@ fn parse_seat(value: &Value) -> Option<SeatRound> {
         missiles: optional_int(value.get("missiles"), 0..=MAX_COUNT)?,
         intercepts: optional_int(value.get("intercepts"), 0..=MAX_COUNT)?,
         stray_kills: optional_int(value.get("strayKills"), 0..=MAX_COUNT)?,
+        shatters: optional_tally(value.get("shatters"))?,
+        bumps: optional_tally(value.get("bumps"))?,
+        arms: optional_tally(value.get("arms"))?,
+        loops: optional_tally(value.get("loops"))?,
+        returns: optional_tally(value.get("returns"))?,
         alive: value.get("alive")?.as_bool()?,
     })
 }
@@ -623,6 +642,33 @@ mod tests {
             (seat.missiles, seat.intercepts, seat.stray_kills),
             (Some(3), Some(1), Some(0))
         );
+        // Likewise the anomalies' and the loop's counts.
+        assert_eq!(report.seats[1].shatters, None);
+        for (key, n) in [
+            ("shatters", 1),
+            ("bumps", 4),
+            ("arms", 2),
+            ("loops", 3),
+            ("returns", 0),
+        ] {
+            counted["players"][1][key] = json!(n);
+        }
+        let seat = &parse_round_report(&counted).expect("a report").seats[1];
+        assert_eq!(
+            (
+                seat.shatters,
+                seat.bumps,
+                seat.arms,
+                seat.loops,
+                seat.returns
+            ),
+            (Some(1), Some(4), Some(2), Some(3), Some(0))
+        );
+        // One that runs past the cap is held to it, and the round is kept.
+        counted["players"][1]["loops"] = json!(MAX_COUNT * 3);
+        let seat = &parse_round_report(&counted).expect("a report").seats[1];
+        assert_eq!(seat.loops, Some(MAX_COUNT));
+        counted["players"][1]["loops"] = json!(3);
         // A client that does not pay the extras leaves them out; one that does sends the list, empty or not.
         assert_eq!(report.bonuses, None);
         counted["bonuses"] = json!([{"player": 1, "kind": "bounty", "points": 250}]);
@@ -663,6 +709,8 @@ mod tests {
         broken(&|r| r["players"][0]["alive"] = json!(1));
         broken(&|r| r["players"][0]["missiles"] = json!(-1));
         broken(&|r| r["players"][0]["strayKills"] = json!("1"));
+        broken(&|r| r["players"][0]["shatters"] = json!(-1));
+        broken(&|r| r["players"][0]["loops"] = json!(1.5));
         broken(&|r| r["bonuses"] = json!([{"player": 0, "kind": "luck", "points": 100}]));
         broken(&|r| r["bonuses"] = json!([{"player": 2, "kind": "bounty", "points": 100}]));
         broken(&|r| r["bonuses"] = json!([{"player": 0, "kind": "bounty", "points": -100}]));

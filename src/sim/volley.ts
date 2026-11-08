@@ -89,7 +89,11 @@ export type VolleyEvent =
   /** Unstable: shot `index` broke a planet (at x, y) open for good. */
   | { type: 'planetShatter'; index: number; x: number; y: number; radius: number; color: string }
   /** Fusion: shots `from` met and melted into shot `index`, at (x, y). */
-  | { type: 'fusion'; index: number; from: [number, number]; x: number; y: number };
+  | { type: 'fusion'; index: number; from: [number, number]; x: number; y: number }
+  /** Loop edge: the shot was carried across the field `count` times in one step. */
+  | { type: 'loop'; index: number; count: number }
+  /** White Hole: a black hole sent the shot back `count` times in one step. */
+  | { type: 'whiteHole'; index: number; count: number };
 
 const TRAIL_EVERY = 2;
 let nextVolleyId = 1;
@@ -286,6 +290,10 @@ export class Volley {
       shot.warnings.length = 0;
       for (const bump of shot.bumps) events.push({ type: 'bump', index: i, planet: bump.planet, x: bump.x, y: bump.y, vx: shot.vx, vy: shot.vy });
       shot.bumps.length = 0;
+      if (shot.wraps) events.push({ type: 'loop', index: i, count: shot.wraps });
+      shot.wraps = 0;
+      if (shot.returns) events.push({ type: 'whiteHole', index: i, count: shot.returns });
+      shot.returns = 0;
       if (end || this.steps % TRAIL_EVERY === 0) vs.trail.push(shot.x, shot.y);
       // A shield bounces the shot off: it is spent doing so, here where a live flight and a replay agree.
       for (const r of shot.reflects) {

@@ -68,6 +68,13 @@ describe('Trick Shots Only', () => {
     expect(shot.end).toEqual({ kind: 'ship', ship: 1 });
   });
 
+  it('tells the volley each time a shot is carried across the loop', () => {
+    const volley = new Volley(emptyWorld([[300, 400], [1180, 400]]), [{ player: 0, angle: 180, power: 50 }], { edges: 'loop', timeLimit: 20 }, true);
+    let crossings = 0;
+    while (!volley.shots[0].shot.end) for (const e of volley.step()) if (e.type === 'loop') crossings += e.count;
+    expect(crossings).toBe(1);
+  });
+
   it('arms a shot that swings round a planet', () => {
     const world = emptyWorld([[100, 400], [1180, 700]]);
     world.planets.push(planet(640, 520, 40));
@@ -410,6 +417,14 @@ describe('White Hole and solar Pinball', () => {
       exits.push(run()); expect(run()).toEqual(exits.at(-1));
     }
     expect(exits[0]).toEqual(exits[1]);
+  });
+
+  it('tells the volley of each return, so the statistics can count it', () => {
+    const world = emptyWorld(); world.holes.push({ x: 640, y: 400, radius: 22, mass: 0 });
+    const volley = new Volley(world, [{ player: 0, angle: 0, power: 50 }], { ...open, whiteHole: true }, true);
+    Object.assign(volley.shots[0].shot, { x: 639, y: 400, vx: 400, vy: 0 });
+    expect(volley.step()).toContainEqual({ type: 'whiteHole', index: 0, count: 1 });
+    expect(volley.shots[0].shot.returns).toBe(0);
   });
 
   it('gives a sun bounce a storm kick and sparks, while a normal planet reflects plainly', () => {
