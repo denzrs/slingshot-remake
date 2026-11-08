@@ -1,5 +1,5 @@
 import { h } from '../dom';
-import { keysLine } from '../../platform/input-device';
+import { hintText } from '../../platform/input-device';
 
 interface MenuPage {
   title: string;
@@ -17,7 +17,7 @@ interface MenuPage {
 }
 
 /** The shared page frame for menus: one heading, a reading area and actions that stay in reach. */
-export function menuPage({ title, eyebrow = 'Slingshot', intro, headerTitle, headerAside, navigation, className = '', body, aside, footer, keys = keysLine('shell.keys') }: MenuPage): HTMLElement {
+export function menuPage({ title, eyebrow = 'Slingshot', intro, headerTitle, headerAside, navigation, className = '', body, aside, footer, keys = hintText('shell.keys') }: MenuPage): HTMLElement {
   return h('section.screen.screen--panel.screen--menu-page', { role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
     h(`div.menu-page${className ? `.${className}` : ''}`, null,
       h('header.menu-page__head', null,

@@ -14,6 +14,8 @@ export interface GamepadHandlers {
   power(): void;
   /** Y: skip the round. */
   skip(): void;
+  /** Back: record the last killcam. */
+  clip(): void;
   /** A key a menu understands, pressed by the pad. */
   key(key: PadKey, repeat: boolean): void;
   /** The pad was used: browsers want a touch before they play sound, and hints should speak of the pad. */
@@ -87,6 +89,8 @@ export class Gamepads {
         return h.power();
       case 'skip':
         return h.skip();
+      case 'clip':
+        return h.clip();
       case 'key':
         return h.key(action.key, action.repeat);
     }

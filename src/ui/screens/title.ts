@@ -10,7 +10,7 @@ import { coffeeButton, creditsBadge } from './credits';
 import { languageItem, openSettings } from './settings';
 import { prepareModeScreen } from './setup';
 import { tutorialScreen } from './tutorial';
-import { keysLine } from '../../platform/input-device';
+import { hintText } from '../../platform/input-device';
 
 type LauncherSection = 'local' | 'online';
 
@@ -96,7 +96,7 @@ export function titleScreen(app: App): Screen {
           content,
         ),
         h('footer.launcher__foot', null,
-          h('p.keys', null, keysLine('launcher.keys')),
+          h('p.keys', null, hintText('launcher.keys')),
           h('div.items.launcher__language', { 'data-section': 'language' }),
           h('div.title-foot', null,
             creditsBadge(),

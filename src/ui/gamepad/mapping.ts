@@ -14,7 +14,7 @@ export interface PadLike {
 }
 
 /** Button numbers of the standard layout. */
-export const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, START: 9, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 } as const;
+export const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, BACK: 8, START: 9, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 } as const;
 
 /** Where the pad's input goes: aiming a match, or moving about a menu. */
 export type PadContext = 'game' | 'menu';
@@ -28,6 +28,7 @@ export type PadAction =
   | { kind: 'escape' }
   | { kind: 'power' }
   | { kind: 'skip' }
+  | { kind: 'clip' }
   | { kind: 'key'; key: PadKey; repeat: boolean };
 
 /** What one look at a pad found: what to do, and whether the pad was in use at all (a button down, a stick pushed). */
@@ -163,6 +164,7 @@ export class PadMapper {
     if (edge(PAD.B) || edge(PAD.START)) actions.push({ kind: 'escape' });
     if (edge(PAD.X)) actions.push({ kind: 'power' });
     if (edge(PAD.Y)) actions.push({ kind: 'skip' });
+    if (edge(PAD.BACK)) actions.push({ kind: 'clip' });
 
     const size = stepSize(buttons.has(PAD.LB), buttons.has(PAD.RB));
     let dAngle = 0;

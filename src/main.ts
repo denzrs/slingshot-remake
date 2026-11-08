@@ -11,7 +11,7 @@ import { Sound } from './platform/audio';
 import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
 import { canShareClip, type Clip, ClipRecorder, downloadClip, shareClip } from './platform/clip';
 import { ScreenWake } from './platform/wakelock';
-import { lastInput, noteInput } from './platform/input-device';
+import { cap, hintText, lastInput, noteInput, padMode } from './platform/input-device';
 import { AIM, ANOMALY, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
 import { createUiPreview, UI_PREVIEWS, type UiPreview } from './debug/devPreview';
 import { InfallDemo } from './debug/infallDemo';
@@ -430,7 +430,7 @@ function skipKey(): void {
     match.requestSkipRound(0);
   } else {
     skipAskedAt = performance.now() / 1000;
-    match.notice = { text: t(lastInput() === 'pad' ? 'skip.confirm.pad' : 'skip.confirm'), color: COLORS.boneDim, at: match.clock };
+    match.notice = { text: hintText('skip.confirm'), color: COLORS.boneDim, at: match.clock };
   }
 }
 
@@ -461,6 +461,8 @@ const app: App = {
     applyWheelSide();
     applyMenuMotion();
     gamepads.enabled = settings.gamepad;
+    // Switched off by hand: the hints go back to keys at once.
+    if (!settings.gamepad && padMode()) markInput('keyboard');
     sound.menuEnabled = settings.menuSounds;
     sound.gameEnabled = settings.gameSounds;
     effects.particles = settings.particles;
@@ -729,7 +731,7 @@ function placeTip(tip: OracleTap): void {
 window.addEventListener('keydown', (e) => {
   sound.unlock();
   // The keys the pad presses for the menus are not the keyboard's: the hints keep speaking of the pad.
-  if (e.isTrusted) noteInput('keyboard');
+  if (e.isTrusted) markInput('keyboard');
   // Typing in the chat is typing: no aiming, no menu keys, no fullscreen. Escape gives the keyboard back to the game.
   if (chat?.owns(e.target)) {
     if (e.code === 'Escape') (e.target as HTMLElement).blur();
@@ -801,7 +803,15 @@ window.addEventListener('keydown', (e) => {
 });
 
 // A mouse or a finger was used last: the hints speak of keys again (the pad's own words are for after it was touched).
-window.addEventListener('pointerdown', () => noteInput('pointer'), true);
+window.addEventListener('pointerdown', () => markInput('pointer'), true);
+
+/**
+ * Notes what was used last. When that turns the hints on screen from keys to buttons (or back), the open menu is built
+ * again to say so — but not on a pointer press, which would swap the button out from under the finger, nor while typing.
+ */
+function markInput(device: 'keyboard' | 'pointer' | 'pad'): void {
+  if (noteInput(device) && device !== 'pointer' && menu.isOpen && !isTyping(document.activeElement)) menu.rebuild();
+}
 
 // ————————————————————————————— Gamepad —————————————————————————————
 
@@ -821,10 +831,11 @@ const gamepads = new Gamepads({
     if (match?.powerUps) dispatchInput({ kind: 'power' });
   },
   skip: () => skipKey(),
+  clip: () => saveClip(),
   key: (key, repeat) => pressMenuKey(key, repeat),
   touched() {
     sound.unlock();
-    noteInput('pad');
+    markInput('pad');
   },
   connection(event) {
     // The settings list a pad only while there is one: a menu that is open is built again to show it.
@@ -932,9 +943,10 @@ function syncButtons(): void {
   const m = match;
   // The way into the pause menu: a button for a thumb, and for a mouse too, where Esc does the same.
   if (pauseButton.hidden === playing) pauseButton.hidden = !playing;
-  if (playing && pauseButton.ariaLabel !== t('pause.title')) {
+  const pauseTitle = coarsePointer.matches ? '' : `${t('pause.title')} (${cap('Esc')})`;
+  if (playing && (pauseButton.ariaLabel !== t('pause.title') || pauseButton.title !== pauseTitle)) {
     pauseButton.ariaLabel = t('pause.title');
-    pauseButton.title = coarsePointer.matches ? '' : `${t('pause.title')} (Esc)`;
+    pauseButton.title = pauseTitle;
   }
   let touchLabel: string | null = null;
   if (playing && coarsePointer.matches && m) {

@@ -20,6 +20,7 @@ import { ANOMALY_COLORS, drawAnomalySymbol } from './anomaly-art';
 import { anomaliesOf } from '../sim/anomalies';
 import type { DrawOptions } from './renderer';
 import { fitText, setSpacing } from './text';
+import { cap, padMode } from '../platform/input-device';
 
 /** On a phone held upright the duel's two blocks start this far lower (field units before `k`), under the round label and the pause button beside it. */
 const DUEL_DROP = 24;
@@ -1942,7 +1943,7 @@ export class Hud {
     if (!recording && !opts.touch) {
       // Online, skipping is a vote: show how many are in favour.
       const skip = match.viewer !== null && info ? `${t('hud.skip')} ${info.votes}/${info.needed}` : t('hud.skip');
-      this.drawKeyRow([[t('common.space'), skip], ['C', t('hud.saveClip')]], field.x + field.w / 2, field.y + field.h - bar - 18 * k, this.k * 0.9);
+      this.drawKeyRow([[cap(t('common.space')), skip], [cap('C'), t('hud.saveClip')]], field.x + field.w / 2, field.y + field.h - bar - 18 * k, this.k * 0.9);
     }
   }
 
@@ -1970,10 +1971,13 @@ export class Hud {
       if (touch) {
         items = [['', match.salvo ? t('hud.touch.horizon') : t('hud.touch.classic')]];
       } else {
-        const power: KeyItem = ['↑ ↓', match.settings.fixedPower ? t('hud.powerFixed') : t('hud.powerLabel')];
-        const commit: KeyItem = ['Enter', match.salvo ? t('common.ready') : t('common.fire')];
-        items = [['← →', t('hud.rotate')], power, commit, [`Shift · Alt · ${t('common.ctrl')}`, t('hud.stepSize')], ['Esc', t('hud.menu')]];
-        if (this.measureKeyRow(items, k) > maxWidth) items = [['← →', t('hud.rotate')], power, commit];
+        const power: KeyItem = [cap('↑ ↓'), match.settings.fixedPower ? t('hud.powerFixed') : t('hud.powerLabel')];
+        const commit: KeyItem = [cap('Enter'), match.salvo ? t('common.ready') : t('common.fire')];
+        const rotate: KeyItem = [cap('← →'), t('hud.rotate')];
+        // The shoulder buttons are the controller's Shift and Alt.
+        const steps: KeyItem = [padMode() ? 'LB · RB' : `Shift · Alt · ${t('common.ctrl')}`, t('hud.stepSize')];
+        items = [rotate, power, commit, steps, [cap('Esc'), t('hud.menu')]];
+        if (this.measureKeyRow(items, k) > maxWidth) items = [rotate, power, commit];
       }
     } else if (match.phase === 'aiming') {
       const thinker = match.current >= 0 ? match.players[match.current] : null;
@@ -1987,8 +1991,8 @@ export class Hud {
       items = [['', t('hud.collapse')]];
     } else if (match.phase === 'roundOver' && match.phaseTime > 0.6) {
       const next = match.isLastRound ? t('hud.finalStandings') : match instanceof ChallengeMatch ? t('daily.hud.nextSector') : t('hud.nextRound');
-      items = [match.canAdvance ? [touch ? '' : t('common.space'), next] : ['', t('hud.waitingHost')]];
-      if (match.canSaveClip && !touch) items.push(['C', t('hud.saveKillcam')]);
+      items = [match.canAdvance ? [touch ? '' : cap(t('common.space')), next] : ['', t('hud.waitingHost')]];
+      if (match.canSaveClip && !touch) items.push([cap('C'), t('hud.saveKillcam')]);
     }
     if (!items.length) return;
     const width = this.measureKeyRow(items, k);

@@ -11,7 +11,7 @@ import { menuPage } from '../menu/menu-page';
 import type { App } from './app';
 import { matchMomentReel, matchShotTrail } from './match-moments';
 import { enablePagerNavigation, pagePagerHeader, positionModeCarousel, type ModeTransition } from './mode-pager';
-import { keysLine } from '../../platform/input-device';
+import { hintText } from '../../platform/input-device';
 
 type ResultPage = 'result' | 'stats';
 
@@ -103,7 +103,7 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
               ...(!highlights.length && !lists.length ? [h('p.note', null, t('over.noStats'))] : []),
             )],
         footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
-        keys: keysLine('over.keys'),
+        keys: hintText('over.keys'),
       });
       if (winner) page.style.setProperty('--winner', winner.color);
       const stopCarousel = positionModeCarousel(page);

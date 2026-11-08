@@ -50,10 +50,10 @@ describe('the step size', () => {
 });
 
 describe('the buttons in a match', () => {
-  it('turns A, B, Start, X and Y into one action each, on the press only', () => {
+  it('turns A, B, Start, X, Y and Back into one action each, on the press only', () => {
     const m = new PadMapper();
-    const frames = run(m, 'game', [pad(), pad([PAD.A]), pad([PAD.A]), pad(), pad([PAD.B]), pad([PAD.START]), pad([PAD.X]), pad([PAD.Y])]);
-    expect(frames.map((f) => f.map((a) => a.kind))).toEqual([[], ['primary'], [], [], ['escape'], ['escape'], ['power'], ['skip']]);
+    const frames = run(m, 'game', [pad(), pad([PAD.A]), pad([PAD.A]), pad(), pad([PAD.B]), pad([PAD.START]), pad([PAD.X]), pad([PAD.Y]), pad([PAD.BACK])]);
+    expect(frames.map((f) => f.map((a) => a.kind))).toEqual([[], ['primary'], [], [], ['escape'], ['escape'], ['power'], ['skip'], ['clip']]);
   });
 
   it('presses again only after a button was let go', () => {
@@ -263,6 +263,7 @@ describe('the pads the browser reports', () => {
       escape: () => calls.push('escape'),
       power: () => calls.push('power'),
       skip: () => calls.push('skip'),
+      clip: () => calls.push('clip'),
       key: (k, r) => calls.push(`key ${k}${r ? '*' : ''}`),
       touched: () => calls.push('touched'),
       connection: (e) => calls.push(e),

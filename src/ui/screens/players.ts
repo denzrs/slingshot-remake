@@ -6,7 +6,7 @@ import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuGroup, menuPage } from '../menu/menu-page';
 import { teamRoster } from '../room/team-roster';
 import type { App } from './app';
-import { keysLine } from '../../platform/input-device';
+import { hintText } from '../../platform/input-device';
 
 function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {
   const s = app.settings;
@@ -121,7 +121,7 @@ function playersScreen(app: App, lastCpuBySeat: Map<number, Seat>): Screen {
         title: t('flow.crewTitle'), className: 'menu-page--crew',
         headerAside: h('div.crew-config', null, menuGroup(t('players.group.mode'), 'mode')),
         body: [roster],
-        keys: keysLine('flow.tabKeys'),
+        keys: hintText('flow.tabKeys'),
         footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
       });
     },

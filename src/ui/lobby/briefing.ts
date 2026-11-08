@@ -16,7 +16,7 @@ import { presetCarousel } from '../presets/preset-carousel';
 import { ruleItems } from '../menu/rules';
 import type { App } from '../screens';
 import { rulesForm, type RulesForm } from './rules-form';
-import { keysLine } from '../../platform/input-device';
+import { hintText } from '../../platform/input-device';
 
 
 /** What the briefing needs of the lobby around it. */
@@ -76,7 +76,7 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
   const rulesDialog = menuPage({
     title: t('briefing.editRules'), eyebrow: '', className: 'menu-page--rules',
     headerAside: creatorName, navigation: rulesNavigation, body: [createRules],
-    keys: keysLine('briefing.keys'),
+    keys: hintText('briefing.keys'),
     footer: h('div.items.items--row.menu-page__actions', null, rulesReset, rulesDelete, rulesCancel, rulesDone),
   });
   rulesDialog.classList.add('rules-page');

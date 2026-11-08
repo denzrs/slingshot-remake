@@ -16,7 +16,7 @@ import { enablePagerNavigation, modePagerHeader, positionModeCarousel, type Mode
 import { openPlayers } from './players';
 import { rulesScreen } from './rules-page';
 import { presetCarousel } from '../presets/preset-carousel';
-import { keysLine } from '../../platform/input-device';
+import { hintText } from '../../platform/input-device';
 
 /** One ship per seat; when teams are in play the ships group under their team's colour. */
 function crewMarkers(s: Settings): HTMLElement[] {
@@ -198,7 +198,7 @@ function setupScreen(app: App, mode: GameMode, transition?: ModeTransition): Scr
             rulesHeading, rulesLabel, summary,
             h('div.items.briefing__edit', { 'data-section': 'edit' })),
         ],
-        keys: keysLine('briefing.keys'),
+        keys: hintText('briefing.keys'),
         footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
       });
       const stopCarousel = positionModeCarousel(page);
