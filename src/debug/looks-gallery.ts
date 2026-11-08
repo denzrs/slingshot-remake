@@ -5,6 +5,7 @@ import '@fontsource/b612-mono/400';
 import '@fontsource/b612-mono/700';
 import './looks-gallery.css';
 import { createMatch, type Match, type Scene as FieldScene } from '../game';
+import { newPlayer } from '../game/match';
 import { DEFAULT_SETTINGS, type Seat } from '../data/settings';
 import { LOOKS as LOOK_IDS, lookLabelKey, setLook, type Look } from '../data/look';
 import { t } from '../platform/i18n';
@@ -49,6 +50,7 @@ const settings = (seats: Seat[], extra: Partial<typeof DEFAULT_SETTINGS> = {}) =
 });
 
 const HUMANS: Seat[] = ['human', 'human', 'human', 'off', 'off', 'off'];
+const SIX: Seat[] = ['human', 'human', 'human', 'human', 'human', 'human'];
 
 interface Card {
   look: Look;
@@ -326,7 +328,7 @@ const SCENES: Scene[] = [
   },
   {
     title: 'Zielhilfen',
-    sub: 'Zielvektor, Vorschau-Pfad, Schussuhr, gesperrtes Schiff, Schonfrist, Sudden-Death-Zug, Ziel der Tagesaufgabe, Schuss außerhalb des Felds',
+    sub: 'Zielvektor, Vorschau-Pfad, Schussuhr, gesperrtes Schiff, Schonfrist, Sudden-Death-Zug, Schuss außerhalb des Felds',
     build: () => {
       const match = aiming('classic', 11, { powerUps: true });
       match.pickups = [];
@@ -343,6 +345,17 @@ const SCENES: Scene[] = [
         preview,
         volley: { shots: [{ owner: 1, trail: [1200, 400, 1330, 360], shot: { x: 1330, y: 360, vx: 80, vy: -30, inField: false, end: null, missiles: [] } }] } as unknown as FieldScene['volley'],
       }));
+      return match;
+    },
+  },
+  {
+    title: 'Ziele',
+    sub: 'Die Zielscheiben der Tagesaufgabe: das eigene Schiff und fünf stillstehende Drohnen, so wie das Spiel sie anlegt (rot, mit Trefferring)',
+    build: () => {
+      const match = createMatch('classic', settings(SIX), { seats: SIX, names: ['Ash', 'Bo', 'Cy', 'Di', 'Ed', 'Flo'], seed: 11 });
+      match.phase = 'aiming';
+      // As `ChallengeMatch` does: ship 0 is the pilot, every other ship a target drone.
+      match.players = match.players.map((p, id) => (id === 0 ? p : newPlayer(id, id, 'easy', null, true)));
       return match;
     },
   },

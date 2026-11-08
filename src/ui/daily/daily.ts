@@ -197,7 +197,6 @@ export function dailyResultScreen(app: App, match: ChallengeMatch, outcome: RunO
       status = h('p.daily__status', { role: 'status' }, '');
       return menuPage({
         title: `#${result.number} · ${themeName(result.theme)}`, eyebrow: t('daily.result.eyebrow'), intro: formatDay(result.dateKey), className: 'menu-page--daily-result.menu-page--mission-result',
-        headerAside: h('div.pause-tools', { 'data-section': 'result-tools' }),
         body: [
           h('p.daily__score', null, h('span.daily__num', null, fmtInt(result.total)), h('span.daily__unit', null, t('daily.result.points'))),
           h('p.daily__rank', { 'data-rank': String(result.rank) }, t(`daily.rank.${result.rank}` as Key)),
@@ -219,7 +218,7 @@ export function dailyResultScreen(app: App, match: ChallengeMatch, outcome: RunO
             } satisfies MenuItem,
           ]
         : []),
-      { kind: 'action', section: 'result-tools', className: 'pause-tool pause-tool--home', label: t('common.mainMenu'), run: () => app.toTitle() },
+      { kind: 'action', className: 'pause-tool pause-tool--home', label: t('common.mainMenu'), run: () => app.toTitle() },
       { kind: 'action', label: t('daily.result.copy'), run: () => void copy() },
       { kind: 'action', label: t('daily.retry'), primary: true, run: () => app.rematch() },
     ] satisfies MenuItem[],

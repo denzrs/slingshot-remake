@@ -1,10 +1,10 @@
 """
-Renders the images of the forged look: the ship and its team-colour mask, the defense turret (body, mask, barrel), the pickup coin and the
+Renders the images of the forged look: the ship and its team-colour mask, the daily challenge's target drone (body and mask), the defense turret (body, mask, barrel), the pickup coin and the
 albedo maps of the three planet styles. Run it inside Blender 4.2+ (e.g. through the Blender MCP server):
 
     exec(open('scripts/forged/render_assets.py').read()); main('/abs/path/to/out', only=None)
 
-`only` is a list of 'ship', 'turret', 'coin', 'rock', 'gas', 'ice' (None renders all). It works in a scene of its own,
+`only` is a list of 'ship', 'drone', 'turret', 'coin', 'rock', 'gas', 'ice' (None renders all). It works in a scene of its own,
 `slingshot_forged`, and leaves the open file's other scenes alone. `scripts/forged/pack.py` turns the PNGs it writes
 into the WebP files the game loads from `src/render/forged/`.
 """
@@ -24,7 +24,8 @@ def hex2c(h, a=1.0):
 
 def scene():
     sc = bpy.data.scenes.get('slingshot_forged') or bpy.data.scenes.new('slingshot_forged')
-    bpy.context.window.scene = sc
+    if bpy.context.window:  # there is none when Blender runs in the background (`-b`)
+        bpy.context.window.scene = sc
     for o in list(sc.objects):
         bpy.data.objects.remove(o, do_unlink=True)
     for m in list(bpy.data.materials):
@@ -520,7 +521,102 @@ def build_barrel(out):
     render(sc, out + '/turret-barrel-mask.png', 384)
 
 
+# --------------------------------------------------------------- drone ----
+
+DRONE_PYLONS = (90, 210, 330)  # degrees, in the picture's frame (y up); `forged.ts` draws the lamps at their tips
+
+
+def build_drone(out):
+    """The target drone of the daily challenge: an armoured sentinel orb seen from above, a big lens in its top, three blade
+    pylons, a thin orbit ring through them and three sensor stalks between. Centred on the origin. The paint is near-white:
+    the target's colour is multiplied over it."""
+    sc = scene()
+    paint = mat('drone_paint', PAINT, 0.15, 0.45)
+    steel = mat('drone_steel', STEEL, 0.9, 0.32)
+    bright = mat('drone_bright', (0.72, 0.76, 0.82, 1), 0.9, 0.25)
+    dark = mat('drone_dark', hex2c('#04080f'), 0.3, 0.6)
+    glass = mat('drone_glass', hex2c('#050a14'), 0.0, 0.04)
+    beacon = emissive('drone_beacon', (1, 0.95, 0.85, 1), 9.0)
+    painted = []
+    zc = 0.15
+
+    # the orb: a slightly flattened sphere of armour, a steel band round its middle
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.5, location=(0, 0, zc), segments=64, ring_count=32)
+    orb = bpy.context.active_object
+    orb.scale = (1, 1, 0.8)
+    orb.data.materials.append(paint)
+    bpy.ops.object.shade_smooth()
+    painted.append(orb)
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.5, minor_radius=0.045, location=(0, 0, zc), major_segments=64, minor_segments=16)
+    bpy.context.active_object.data.materials.append(steel)
+    # seams down the armour, between the pylons
+    for deg in (30, 150, 270):
+        a = math.radians(deg)
+        box((math.cos(a) * 0.3, math.sin(a) * 0.3, zc + 0.37), (0.34, 0.014, 0.012), dark, rot=(0, 0, a))
+    # the lens in its top: a steel bezel, dark glass, a bright inner ring
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.26, depth=0.06, vertices=48, location=(0, 0, zc + 0.37))
+    bezel = bevelled(bpy.context.active_object, 0.018, 2)
+    bezel.data.materials.append(steel)
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.2, minor_radius=0.012, location=(0, 0, zc + 0.405), major_segments=48, minor_segments=8)
+    bpy.context.active_object.data.materials.append(bright)
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.17, location=(0, 0, zc + 0.39), segments=32, ring_count=16)
+    lens = bpy.context.active_object
+    lens.scale = (1, 1, 0.5)
+    lens.data.materials.append(glass)
+
+    # three blade pylons: a steel collar on the orb, a long painted spike out to a lamp
+    for deg in DRONE_PYLONS:
+        a = math.radians(deg)
+        ca, sa = math.cos(a), math.sin(a)
+        bpy.ops.mesh.primitive_cone_add(vertices=6, radius1=0.2, radius2=0.035, depth=0.68, location=(ca * 0.8, sa * 0.8, zc - 0.02), rotation=(0, math.radians(90), a))
+        blade = bpy.context.active_object
+        blade.data.materials.append(paint)
+        painted.append(blade)
+        bpy.ops.mesh.primitive_cylinder_add(radius=0.25, depth=0.12, vertices=6, location=(ca * 0.5, sa * 0.5, zc - 0.02), rotation=(0, math.radians(90), a))
+        collar = bevelled(bpy.context.active_object, 0.02, 2)
+        collar.data.materials.append(steel)
+        # a dark vent along the blade's back, and the lamp at its tip
+        box((ca * 0.82, sa * 0.82, zc + 0.115), (0.34, 0.03, 0.012), dark, rot=(0, 0, a))
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=0.045, location=(ca * 1.16, sa * 1.16, zc - 0.02), segments=16, ring_count=8)
+        bpy.context.active_object.data.materials.append(beacon)
+
+    # the orbit ring, held to the pylons by clamps
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.82, minor_radius=0.028, location=(0, 0, zc - 0.02), major_segments=96, minor_segments=12)
+    bpy.context.active_object.data.materials.append(steel)
+    for deg in DRONE_PYLONS:
+        a = math.radians(deg)
+        box((math.cos(a) * 0.82, math.sin(a) * 0.82, zc - 0.02), (0.1, 0.1, 0.1), bright, rot=(0, 0, a), bevel=0.02)
+
+    # sensor stalks between the pylons, a small dish on each
+    for deg in (30, 150, 270):
+        a = math.radians(deg)
+        ca, sa = math.cos(a), math.sin(a)
+        bpy.ops.mesh.primitive_cylinder_add(radius=0.016, depth=0.5, vertices=12, location=(ca * 0.62, sa * 0.62, zc + 0.02), rotation=(0, math.radians(90), a))
+        bpy.context.active_object.data.materials.append(steel)
+        bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=0.085, radius2=0.01, depth=0.05, location=(ca * 0.88, sa * 0.88, zc + 0.02), rotation=(0, math.radians(90), a))
+        bpy.context.active_object.data.materials.append(bright)
+
+    # soft, mostly overhead light: the drone turns in the game, so `forged.ts` adds the field's own light over the render
+    camera(sc, (0, 0, 8), 2.6)
+    light(sc, 'key', (-1.2, 1.4, 6), 330, hex2c('#fff1d6'), 6)
+    light(sc, 'rim', (1.2, -1.4, 5), 150, hex2c('#ffffff'), 6)
+    world(sc, '#808a99', 0.6)
+    try:
+        sc.eevee.use_raytracing = True
+    except Exception:
+        pass
+    render(sc, out + '/drone.png', 256)
+    for o in sc.objects:
+        if o.type == 'MESH' and o not in painted:
+            o.hide_render = True
+    em = emissive('mask', (1, 1, 1, 1), 1.0)
+    for o in painted:
+        o.data.materials[0] = em
+    render(sc, out + '/drone-mask.png', 256)
+
+
 BUILDERS = {
+    'drone': build_drone,
     'turret': lambda out: (build_turret(out), build_barrel(out)),
     'ship': build_ship,
     'coin': build_coin,

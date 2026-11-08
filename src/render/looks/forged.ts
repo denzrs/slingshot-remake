@@ -1,11 +1,11 @@
 import { drawForgedGate } from './forged-gate';
 import { drawForgedWhiteCore, drawForgedWhiteJump, warmEruptions } from './forged-white';
-import { COLORS } from '../../sim/config';
+import { COLORS, PHYSICS } from '../../sim/config';
 import { rgba } from '../color';
 import { drawFalling } from '../infall';
 import { drawEngineFlame } from '../ship';
 import { LIGHT } from '../planet-common';
-import { engraved } from './classic';
+import { drawEngravedTarget, engraved } from './classic';
 import { drawBlast, drawShrapnel, warmBlasts } from './forged-blast';
 import { image, painted } from './forged-assets';
 import { renderForgedPlanet } from './forged-planet';
@@ -186,6 +186,112 @@ export function drawForgedShip(ctx: CanvasRenderingContext2D, color: string, tim
   ctx.restore();
 }
 
+/** The drone's image covers this many field units across (12.5 a Blender unit); its pylons' lamps sit this far from the middle, in these directions (degrees, y up as in the picture). */
+const DRONE_SPAN = 32.5;
+const DRONE_LAMP = 14.5;
+const DRONE_PYLONS = [90, 210, 330];
+
+/** The drone is turned and lit on this canvas (`DRONE_PX` across) before it is drawn: the field's light does not turn with it. */
+const DRONE_PX = 256;
+let droneCanvas: HTMLCanvasElement | null = null;
+
+/** The hull turned by `angle`, shaded away from the field's light and glinting towards it. The shared canvas is only good until the next call. */
+function turnedDrone(ctx: CanvasRenderingContext2D, hull: HTMLCanvasElement, angle: number): HTMLCanvasElement {
+  const [lx, ly] = lightInFrame(ctx);
+  droneCanvas ??= Object.assign(document.createElement('canvas'), { width: DRONE_PX, height: DRONE_PX });
+  const c = droneCanvas.getContext('2d')!;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over';
+  c.clearRect(0, 0, DRONE_PX, DRONE_PX);
+  const k = DRONE_PX / DRONE_SPAN;
+  c.setTransform(k, 0, 0, k, DRONE_PX / 2, DRONE_PX / 2);
+  c.save();
+  c.rotate(angle);
+  c.drawImage(hull, -DRONE_SPAN / 2, -DRONE_SPAN / 2, DRONE_SPAN, DRONE_SPAN);
+  c.restore();
+  c.globalCompositeOperation = 'source-atop';
+  const shade = c.createLinearGradient(lx * 13, ly * 13, -lx * 13, -ly * 13);
+  shade.addColorStop(0, 'rgba(255,248,235,0.22)');
+  shade.addColorStop(0.5, 'rgba(255,255,255,0)');
+  shade.addColorStop(1, 'rgba(4,8,20,0.5)');
+  c.fillStyle = shade;
+  c.fillRect(-DRONE_SPAN, -DRONE_SPAN, DRONE_SPAN * 2, DRONE_SPAN * 2);
+  const glint = c.createRadialGradient(lx * 6, ly * 6, 0, lx * 6, ly * 6, 9);
+  glint.addColorStop(0, 'rgba(255,255,255,0.3)');
+  glint.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = glint;
+  c.fillRect(-DRONE_SPAN, -DRONE_SPAN, DRONE_SPAN * 2, DRONE_SPAN * 2);
+  c.globalCompositeOperation = 'source-over';
+  return droneCanvas;
+}
+
+/**
+ * The target of a daily challenge: a rendered space drone, an armoured orb with a lens, three blade pylons and an orbit
+ * ring, in the target's colour, hovering and turning slowly in the ring of its hit box. The field's light is put over the hull
+ * in code, so it stays where it is as the drone turns; the lens breathes and the pylon lamps blink. Until the images have loaded, the engraved diamond stands in.
+ */
+export function drawForgedTarget(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, time: number): void {
+  const hull = painted('drone', 'droneMask', color);
+  const phase = x * 0.01;
+  const pulse = 0.5 + 0.5 * Math.sin(time * 2.4 + phase);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const halo = ctx.createRadialGradient(x, y, 4, x, y, 34);
+  halo.addColorStop(0, rgba(color, 0.3 + 0.1 * pulse));
+  halo.addColorStop(1, rgba(color, 0));
+  ctx.fillStyle = halo;
+  ctx.fillRect(x - 34, y - 34, 68, 68);
+  ctx.restore();
+  if (!hull) return drawEngravedTarget(ctx, x, y, color, time);
+
+  // the hit box's ring, and a dashed one turning round the drone
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = rgba(color, 0.4 + 0.3 * pulse);
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(0, 0, PHYSICS.SHIP_RADIUS, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.rotate(time * 0.5);
+  ctx.setLineDash([7, 8]);
+  ctx.strokeStyle = rgba(color, 0.4);
+  ctx.beginPath();
+  ctx.arc(0, 0, 21, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(x, y);
+  // a slow hover, and a slow turn (every drone its own way and pace)
+  ctx.translate(0, Math.sin(time * 1.6 + phase) * 0.7);
+  const turn = ((Math.floor(x / 7) + Math.floor(y / 5)) % 2 ? 1 : -1) * (0.16 + 0.05 * ((Math.abs(x * 3 + y) % 7) / 7));
+  const angle = time * turn + phase * 40;
+  ctx.drawImage(turnedDrone(ctx, hull, angle), -DRONE_SPAN / 2, -DRONE_SPAN / 2, DRONE_SPAN, DRONE_SPAN);
+  ctx.rotate(angle);
+  ctx.globalCompositeOperation = 'lighter';
+  // the lens in the orb's top: a lit eye that breathes
+  const eye = ctx.createRadialGradient(0, 0, 0, 0, 0, 4.2);
+  eye.addColorStop(0, rgba(COLORS.bone, 0.9 * (0.55 + 0.45 * pulse)));
+  eye.addColorStop(0.35, rgba(color, 0.75 * (0.6 + 0.4 * pulse)));
+  eye.addColorStop(1, rgba(color, 0));
+  ctx.fillStyle = eye;
+  ctx.fillRect(-4.5, -4.5, 9, 9);
+  // a lamp at the tip of every pylon, blinking in turn
+  DRONE_PYLONS.forEach((deg, k) => {
+    const a = (deg * Math.PI) / 180;
+    const lx = Math.cos(a) * DRONE_LAMP;
+    const ly = -Math.sin(a) * DRONE_LAMP;
+    const on = 0.5 + 0.5 * Math.sin(time * 4 + phase + k * ((Math.PI * 2) / 3));
+    const lamp = ctx.createRadialGradient(lx, ly, 0, lx, ly, 3.2);
+    lamp.addColorStop(0, rgba(COLORS.bone, 0.9 * on));
+    lamp.addColorStop(0.4, rgba(color, 0.6 * on));
+    lamp.addColorStop(1, rgba(color, 0));
+    ctx.fillStyle = lamp;
+    ctx.fillRect(lx - 3.2, ly - 3.2, 6.4, 6.4);
+  });
+  ctx.restore();
+}
+
 /** The turret's images cover this many field units across: the body with the surface point at its middle, the mount with its pivot there. */
 const TURRET_SPAN = 32;
 /** The mount turns this far out from the surface, and the barrels run this far from it. */
@@ -309,6 +415,7 @@ export const forged = engraved('forged', forgedStyles, {
   liveTrail: drawForgedLiveTrail,
   plasmaShot: drawForgedPlasmaShot,
   ship: drawForgedShip,
+  target: drawForgedTarget,
   pickup: (ctx, kind, color, time, pulse) => drawLightPickup(ctx, kind, color, time, pulse, forgedCoin(), COIN_SPAN),
   effects: { ...lightParts.effects!, blast: drawBlast, spark: drawShrapnel },
   begin: (frame) => {

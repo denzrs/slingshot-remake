@@ -20,6 +20,8 @@ import texIceGlacierUrl from './forged/tex-ice-glacier.webp';
 import texIceMethaneUrl from './forged/tex-ice-methane.webp';
 import texIceDustyUrl from './forged/tex-ice-dusty.webp';
 import texIceRoseUrl from './forged/tex-ice-rose.webp';
+import droneUrl from './forged/drone.webp';
+import droneMaskUrl from './forged/drone-mask.webp';
 import turretBarrelUrl from './forged/turret-barrel.webp';
 import turretBarrelMaskUrl from './forged/turret-barrel-mask.webp';
 import turretBaseUrl from './forged/turret-base.webp';
@@ -34,6 +36,8 @@ const URLS = {
   white: whiteUrl,
   ship: shipUrl,
   shipMask: shipMaskUrl,
+  drone: droneUrl,
+  droneMask: droneMaskUrl,
   turretBase: turretBaseUrl,
   turretMask: turretMaskUrl,
   turretBarrel: turretBarrelUrl,
