@@ -92,9 +92,7 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
           app.settingsChanged();
         },
       }, 'display'),
-      inGroup(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'display'),
       inGroup(settingToggle(app, t('settings.statsTicker'), 'statsTicker'), 'display'),
-      inGroup(settingToggle(app, t('settings.lessMenuMotion'), 'lessMenuMotion'), 'display'),
       inGroup(settingToggle(app, t('settings.menuSounds'), 'menuSounds'), 'device'),
       inGroup(settingToggle(app, t('settings.gameSounds'), 'gameSounds'), 'device'),
       // Not on a touch device: a phone's browser has no fullscreen to offer a page (and the F key is a keyboard's).
@@ -108,6 +106,8 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
           }, 'device')]),
       inGroup(languageItem(app), 'language'),
       inGroup(settingToggle(app, t('settings.colorblind'), 'colorblind'), 'access'),
+      inGroup(settingToggle(app, t('settings.lessMenuMotion'), 'lessMenuMotion'), 'access'),
+      inGroup(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'access'),
       // Always listed: until a button is pressed, the browser does not say whether a pad is there.
       inGroup(settingToggle(app, t('settings.gamepad'), 'gamepad'), 'access'),
       ...(touch
