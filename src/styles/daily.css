@@ -188,14 +188,23 @@
   max-width: 560px;
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 2px 16px;
+  gap: 10px;
   padding: 10px 14px;
   border: 1px solid rgb(255 210 122 / 0.32);
   border-radius: 3px;
   background: rgb(19 39 70 / 0.35);
 }
+
+.daily-shot__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 16px;
+}
+
+/* Watching the shot belongs to the card, not to the page's footer. */
+.daily-shot__actions { display: grid; }
+.daily-shot__actions .item { width: 100%; min-height: 44px; padding: 10px 16px; color: var(--bone-dim); border: 1px solid var(--menu-line); border-radius: 2px; font-size: 13px; }
 
 .daily-shot[hidden] {
   display: none;
