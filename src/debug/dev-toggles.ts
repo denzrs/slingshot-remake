@@ -18,9 +18,12 @@ export interface DevTogglesHost {
 /**
  * The dev build's switches for the two accessibility modes, on the game's own page, so any screen can be looked at
  * either way: the colour-blind colours with seat numbers, and a controller that is plugged in (and was used last).
- * `?colorblind=1` and `?pad=1` start them on, for links and screenshots.
+ * The panel only shows when the page was opened with `?debug` (or one of the two below); `?colorblind=1` and `?pad=1`
+ * start them on, for links and screenshots.
  */
 export function mountDevToggles(host: DevTogglesHost): { sync(): void } {
+  const params = new URLSearchParams(location.search);
+  if (!['debug', 'colorblind', 'pad'].some((name) => params.has(name))) return { sync() {} };
   const box = (label: string): { row: HTMLLabelElement; input: HTMLInputElement } => {
     const input = document.createElement('input');
     input.type = 'checkbox';
@@ -37,7 +40,6 @@ export function mountDevToggles(host: DevTogglesHost): { sync(): void } {
   panel.append(summary, colorblind.row, pad.row);
   document.body.append(panel);
 
-  const params = new URLSearchParams(location.search);
   colorblind.input.addEventListener('change', () => {
     host.colorblind.set(colorblind.input.checked);
     colorblind.input.blur();
