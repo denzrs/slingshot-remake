@@ -4,7 +4,7 @@
 
 | Folder | What lives there | May import |
 | --- | --- | --- |
-| `platform/` | Language (`i18n`), sound, emoji, avatars, clip recording, the installed app (`pwa`: service worker registration, the update and install hints). Nothing of the game itself | — |
+| `platform/` | Language (`i18n`), sound, emoji, avatars, clip recording, the installed app (`pwa`: service worker registration, the update and install hints), which device was used last (`input-device`: the key hints name its keys). Nothing of the game itself | — |
 | `sim/` | The physics and rules of a flight: `physics`, `world`, `rng`, `scoring`, `powerups`, `volley`, the CPU's `ai`, the daily `challenge` specs, `config`, `modes`. No DOM | platform |
 | `data/` | What is configured and remembered: `settings`, `roomRules` (the one owner of a room's rule set), `roomLook`, `look`, `customPresets`, `dailyStore`, `lobbyPrefs`, `stats`, `browserId` | platform, sim |
 | `game/` | A match: its modes (`classic`, `horizon`, `solar`), `mayhem`, the killcam and replay, `oracle`, and the records of a game (`shotLog`, `roundReport`, `scorecard`) | platform, sim, data |
@@ -27,6 +27,7 @@ The service worker is a template, `scripts/pwa/sw.js`: `vite.config.ts` fills in
 | `lobby/` | Online: `index.ts` is the frame, with `connection`, `browse`, `open-room`, `room`, `briefing`, `rules-form`, `widgets` |
 | `room/` | What a room shows: seats, teams, chat, the room's symbol |
 | `daily/`, `stats/`, `touch/` | The daily challenge and its board, the statistics and the fact ticker, touch controls |
+| `gamepad/` | A game controller (standard layout): `mapping` turns a snapshot of the pad into actions (dead zone, edges, hold to repeat) with no browser in it, `gamepad` looks at `navigator.getGamepads()` once per frame and calls `GamepadHandlers`; menus are moved by key events pressed on the focused row |
 
 Each folder's CSS sits beside its code; `src/style.css` and `src/ui/menu/menu-page.css` list the files in cascade order (see the comments there). Window-size breakpoints are fixed in `tests/css-breakpoints.test.ts`.
 

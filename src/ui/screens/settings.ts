@@ -6,6 +6,7 @@ import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
 import { mobileSheet, type SheetSelection } from '../menu/mobile-sheet';
 import type { App } from './app';
+import { keysLine } from '../../platform/input-device';
 
 const LANG_NAMES: Record<Lang, string> = { de: 'Deutsch', en: 'English' };
 
@@ -63,7 +64,7 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
       title: t('common.settings'), intro: t('settings.note'), className: 'menu-page--settings',
       navigation: sheet.navigation,
       body: [sheet.el],
-      keys: t('briefing.keys'),
+      keys: keysLine('briefing.keys'),
       footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
     }),
     items: ([
@@ -107,6 +108,8 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
           }, 'device')]),
       inGroup(languageItem(app), 'language'),
       inGroup(settingToggle(app, t('settings.colorblind'), 'colorblind'), 'access'),
+      // Always listed: until a button is pressed, the browser does not say whether a pad is there.
+      inGroup(settingToggle(app, t('settings.gamepad'), 'gamepad'), 'access'),
       ...(touch
         ? [inGroup({
             kind: 'segmented',

@@ -13,6 +13,7 @@ import type { PresetCreator } from '../presets/preset-cards';
 import { presetNameField } from '../presets/preset-name';
 import { anyTwisted, balanceRuleColumns, groupTitle, orderRulesForMobile, RULE_COLUMNS, ruleItems, type RuleGroup, type RuleSource } from '../menu/rules';
 import type { App } from './app';
+import { keysLine } from '../../platform/input-device';
 
 /**
  * All rules on one page, grouped by subject in two columns. As the preset creator it has a name above it, and leaving it any
@@ -65,7 +66,7 @@ export function rulesScreen(app: App, mode: GameMode, { creator, reset }: { crea
         headerAside: creator ? presetNameField(creator.name, creator.defaultName, (name) => { creator.name = name; }) : undefined,
         navigation: sheet.navigation,
         body: [note.el, sheet.el],
-        keys: t('briefing.keys'),
+        keys: keysLine('briefing.keys'),
         footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
       });
       picker.setFrame(page.querySelector<HTMLElement>('.menu-page'));

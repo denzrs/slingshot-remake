@@ -30,6 +30,7 @@ const en = {
   'flow.sectorDetails': 'Sector {n} · difficulty {difficulty}/5',
   'flow.dailyIntro': 'Five sectors. The same mission for everyone. How clean can you fly?',
   'flow.tabKeys': 'Tab move · Enter choose · Esc back',
+  'flow.tabKeys.pad': 'D-pad move · A choose · B back',
 
   // — static page (index.html) —
   'static.description': 'Slingshot – up to six spaceships, a few planets, a black hole and lots of gravity.',
@@ -303,6 +304,7 @@ const en = {
   // — title screen —
   // — match launcher —
   'shell.keys': '↑ ↓ navigate · Enter select · Esc back',
+  'shell.keys.pad': 'D-pad navigate · A select · B back',
   'shell.display': 'Display',
   'shell.soundDevice': 'Sound & screen',
   'shell.touch': 'Touch controls',
@@ -321,6 +323,7 @@ const en = {
   'launcher.prepare': 'Local / Solo',
   'launcher.switchMode': 'Swipe or choose another game mode',
   'launcher.keys': '↑ ↓ navigate · ← → modes · Enter select',
+  'launcher.keys.pad': 'D-pad navigate · A select',
   'preset.choose': 'How do you want to play?',
   'preset.previous': 'Previous preset',
   'preset.next': 'Next preset',
@@ -442,10 +445,12 @@ const en = {
   'briefing.editRules': 'Adjust rules',
   'briefing.done': 'Done',
   'briefing.keys': '↑ ↓ navigate · ← → change · Esc back',
+  'briefing.keys.pad': 'D-pad ↑ ↓ navigate · ← → change · B back',
 
   'title.lede': 'Spaceships, with planets in between. Every shot follows gravity – read your old trails and feel your way towards the hit.',
   'title.menuLabel': 'Main menu',
   'title.keys': '↑ ↓ select · Enter confirm',
+  'title.keys.pad': 'D-pad select · A confirm',
   'title.local': 'Local',
   'title.local.hint': 'Daily challenge, Classic, Event Horizon',
   'title.coffee': 'Buy me a coffee',
@@ -756,6 +761,7 @@ const en = {
   'settings.menuSounds': 'Menu sounds',
   'settings.gameSounds': 'Game sounds',
   'settings.fullscreen': 'Fullscreen',
+  'settings.gamepad': 'Use controller',
   'settings.seconds': '{n} s',
   'setup.group.match': 'Match',
   'setup.group.field': 'Battlefield',
@@ -784,6 +790,7 @@ const en = {
   'anomaly.fuseIn': 'Fuse {n} s',
   'setup.reset': 'Reset rules',
   'setup.keys': '↑ ↓ select · ← → change · Enter confirm',
+  'setup.keys.pad': 'D-pad ↑ ↓ select · ← → change · A confirm',
 
   // — how to play: a short tutorial, page by page —
   'tutorial.done': "Let's go!",
@@ -814,6 +821,14 @@ const en = {
   'tutorial.aim.power': 'Change the shot power',
   'tutorial.aim.fire': 'Fire or "Ready" (Space works too)',
   'tutorial.aim.2': 'Hold Shift for big steps (×10), Alt for small ones (×0.1) and Ctrl for very fine ones (×0.01).',
+  'tutorial.pad.1': 'A controller is connected. It works like this:',
+  'tutorial.pad.stick': 'Left stick',
+  'tutorial.pad.aim': 'Turn your ship (left, right) and change the power (up, down)',
+  'tutorial.pad.steps': 'Hold for fine (LB) or coarse (RB) steps, both for the finest',
+  'tutorial.pad.fire': 'Fire or "Ready", and carry on',
+  'tutorial.pad.power': 'Use the power-up',
+  'tutorial.pad.skip': 'Skip the round',
+  'tutorial.pad.pause': 'Pause, or think again while placing',
   'tutorial.gravity.title': 'Gravity',
   'tutorial.gravity.1': 'Every planet pulls your shot towards it – big ones harder than small ones. That is why a shot almost never flies in a straight line.',
   'tutorial.gravity.2': 'Use it: a planet can bend your shot around the corner – onto a target you could never reach directly. If it bends the shot sharply, that is a swing-by.',
@@ -925,6 +940,7 @@ const en = {
   'over.spotlightOf': 'Highlight {n} of {total}',
   'over.switchPage': 'Switch between result and statistics',
   'over.keys': 'Q E pages · ↑ ↓ navigate · Enter select · Esc back',
+  'over.keys.pad': 'LB RB pages · D-pad navigate · A select · B back',
 
   // — HUD —
   'hud.round': 'ROUND',
@@ -1349,6 +1365,7 @@ const en = {
   'skip.yes': 'Vote yes',
   'skip.no': 'Vote no',
   'skip.confirm': 'PRESS N AGAIN TO SKIP THE ROUND',
+  'skip.confirm.pad': 'PRESS Y AGAIN TO SKIP THE ROUND',
   'skip.banner': 'SKIP THIS ROUND? NOBODY SCORES',
   'skip.votes': '{yes} / {needed} YES',
   'skip.name': 'Vote',
@@ -1390,6 +1407,7 @@ const de: Dict = {
   'flow.sectorDetails': 'Sektor {n} · Schwierigkeit {difficulty}/5',
   'flow.dailyIntro': 'Fünf Sektoren. Heute für alle dieselbe Mission. Wie sauber fliegst du?',
   'flow.tabKeys': 'Tab navigieren · Enter wählen · Esc zurück',
+  'flow.tabKeys.pad': 'D-Pad bewegen · A wählen · B zurück',
 
   'static.description': 'Slingshot – bis zu sechs Raumschiffe, ein paar Planeten, ein schwarzes Loch und viel Gravitation.',
   'static.canvas': 'Spielfeld',
@@ -1659,6 +1677,7 @@ const de: Dict = {
 
   // — match launcher —
   'shell.keys': '↑ ↓ navigieren · Enter wählen · Esc zurück',
+  'shell.keys.pad': 'D-Pad navigieren · A wählen · B zurück',
   'shell.display': 'Darstellung',
   'shell.soundDevice': 'Ton & Bildschirm',
   'shell.touch': 'Touchscreen',
@@ -1677,6 +1696,7 @@ const de: Dict = {
   'launcher.prepare': 'Lokal / Solo',
   'launcher.switchMode': 'Wischen oder anderen Spielmodus wählen',
   'launcher.keys': '↑ ↓ navigieren · ← → Modi · Enter wählen',
+  'launcher.keys.pad': 'D-Pad navigieren · A wählen',
   'preset.choose': 'Wie wollt ihr spielen?',
   'preset.previous': 'Vorherige Vorlage',
   'preset.next': 'Nächste Vorlage',
@@ -1798,10 +1818,12 @@ const de: Dict = {
   'briefing.editRules': 'Regeln anpassen',
   'briefing.done': 'Fertig',
   'briefing.keys': '↑ ↓ navigieren · ← → ändern · Esc zurück',
+  'briefing.keys.pad': 'D-Pad ↑ ↓ navigieren · ← → ändern · B zurück',
 
   'title.lede': 'Raumschiffe, dazwischen Planeten. Jeder Schuss folgt der Schwerkraft – lies deine alten Bahnen und tast dich an den Treffer heran.',
   'title.menuLabel': 'Hauptmenü',
   'title.keys': '↑ ↓ wählen · Enter bestätigen',
+  'title.keys.pad': 'D-Pad wählen · A bestätigen',
   'title.local': 'Lokal',
   'title.local.hint': 'Tägliche Herausforderung, Klassisch, Ereignishorizont',
   'title.coffee': 'Buy me a coffee',
@@ -2109,6 +2131,7 @@ const de: Dict = {
   'settings.menuSounds': 'Menütöne',
   'settings.gameSounds': 'Spieltöne',
   'settings.fullscreen': 'Vollbild',
+  'settings.gamepad': 'Controller verwenden',
   'settings.seconds': '{n} s',
   'setup.group.match': 'Spiel',
   'setup.group.field': 'Spielfeld',
@@ -2137,6 +2160,7 @@ const de: Dict = {
   'anomaly.fuseIn': 'Lunte {n} s',
   'setup.reset': 'Regeln zurücksetzen',
   'setup.keys': '↑ ↓ wählen · ← → ändern · Enter bestätigen',
+  'setup.keys.pad': 'D-Pad ↑ ↓ wählen · ← → ändern · A bestätigen',
 
   'tutorial.done': 'Los geht’s!',
   'tutorial.preview.aria': 'Spielsimulation',
@@ -2166,6 +2190,14 @@ const de: Dict = {
   'tutorial.aim.power': 'Schusskraft ändern',
   'tutorial.aim.fire': 'Feuer bzw. „Bereit“ (auch Leertaste)',
   'tutorial.aim.2': 'Halte Shift für große Schritte (×10), Alt für kleine (×0,1) und Strg für ganz feine (×0,01).',
+  'tutorial.pad.1': 'Ein Controller ist verbunden. So ist er belegt:',
+  'tutorial.pad.stick': 'Linker Stick',
+  'tutorial.pad.aim': 'Schiff drehen (links, rechts) und Kraft ändern (oben, unten)',
+  'tutorial.pad.steps': 'Halten für feine (LB) oder grobe (RB) Schritte, beide für die feinsten',
+  'tutorial.pad.fire': 'Feuer bzw. „Bereit“, und weiter',
+  'tutorial.pad.power': 'Power-up einsetzen',
+  'tutorial.pad.skip': 'Runde überspringen',
+  'tutorial.pad.pause': 'Pause, oder beim Platzieren neu überlegen',
   'tutorial.gravity.title': 'Die Schwerkraft',
   'tutorial.gravity.1': 'Jeder Planet zieht deinen Schuss an – große stärker als kleine. Deshalb fliegt ein Schuss fast nie geradeaus.',
   'tutorial.gravity.2': 'Nutze das: Ein Planet lenkt deinen Schuss um die Ecke – auch auf ein Ziel, das du direkt nie erreichen würdest. Biegt er ihn stark ab, ist das ein Swing-by.',
@@ -2276,6 +2308,7 @@ const de: Dict = {
   'over.spotlightOf': 'Highlight {n} von {total}',
   'over.switchPage': 'Zwischen Ergebnis und Statistik wechseln',
   'over.keys': 'Q E Seiten · ↑ ↓ navigieren · Enter wählen · Esc zurück',
+  'over.keys.pad': 'LB RB Seiten · D-Pad navigieren · A wählen · B zurück',
 
   'hud.round': 'RUNDE',
   'hud.volley': 'SALVE',
@@ -2697,6 +2730,7 @@ const de: Dict = {
   'skip.yes': 'Mit Ja stimmen',
   'skip.no': 'Mit Nein stimmen',
   'skip.confirm': 'N NOCH MAL DRÜCKEN, UM DIE RUNDE ZU ÜBERSPRINGEN',
+  'skip.confirm.pad': 'Y NOCH MAL DRÜCKEN, UM DIE RUNDE ZU ÜBERSPRINGEN',
   'skip.banner': 'RUNDE ÜBERSPRINGEN? NIEMAND PUNKTET',
   'skip.votes': '{yes} / {needed} JA',
   'skip.name': 'Abstimmung',

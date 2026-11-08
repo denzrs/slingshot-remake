@@ -125,17 +125,32 @@ function keyboardAim(): HTMLElement[] {
   ];
 }
 
+/** What a connected controller does, under the keyboard's keys; only shown while the browser reports a pad. */
+function padAim(): HTMLElement[] {
+  return [
+    para(t('tutorial.pad.1')),
+    keysTable(
+      keyRow([kbd(t('tutorial.pad.stick')), ' ', kbd('D-Pad')], t('tutorial.pad.aim')),
+      keyRow([kbd('LB'), ' ', kbd('RB')], t('tutorial.pad.steps')),
+      keyRow([kbd('A')], t('tutorial.pad.fire')),
+      keyRow([kbd('X')], t('tutorial.pad.power')),
+      keyRow([kbd('Y')], t('tutorial.pad.skip')),
+      keyRow([kbd('B'), ' ', kbd('Start')], t('tutorial.pad.pause')),
+    ),
+  ];
+}
+
 /** The pages of the tutorial, in order. Each one is built when it is shown, so its texts follow the language. */
-export const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
+export const TUTORIAL: ((touch: boolean, stick: boolean, pad?: boolean) => Lesson)[] = [
   (touch) => ({
     title: t('tutorial.welcome.title'),
     demo: null,
     body: [para(t('tutorial.welcome.1')), para(t('tutorial.welcome.2')), para(t(touch ? 'tutorial.welcome.touch' : 'tutorial.welcome.3'))],
   }),
-  (touch, stick) => ({
+  (touch, stick, pad = false) => ({
     title: t('tutorial.aim.title'),
     demo: 'aim',
-    body: touch ? [
+    body: (touch ? [
       para(t(stick ? 'tutorial.aim.touchStick' : 'tutorial.aim.touchWheel')),
       h(`div.tutorial__touch-example${stick ? '.tutorial__touch-example--stick' : ''}`, { 'aria-hidden': 'true' },
         h('span.tutorial__touch-control', null, stick ? '↙ ◉ ↗' : '◔ ↻'),
@@ -145,7 +160,7 @@ export const TUTORIAL: ((touch: boolean, stick: boolean) => Lesson)[] = [
       para(t('tutorial.aim.touchFire')),
       para(t('tutorial.aim.touchSettings')),
       h('details.tutorial__keyboard', null, h('summary', null, t('tutorial.keyboard.more')), ...keyboardAim()),
-    ] : keyboardAim(),
+    ] : keyboardAim()).concat(pad ? padAim() : []),
   }),
   () => ({
     title: t('tutorial.gravity.title'),
@@ -238,7 +253,7 @@ export function tutorialScreen(app: App): () => Screen {
   let preview: ReturnType<typeof mountTutorialPreview> | null = null;
   return (): Screen => {
     const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-    const lessons = TUTORIAL.map((lesson) => lesson(touch, app.settings.touchControls === 'stick'));
+    const lessons = TUTORIAL.map((lesson) => lesson(touch, app.settings.touchControls === 'stick', app.gamepadConnected));
     const hasPreview = lessons[page].demo !== null;
     const powerUps = lessons[page].powerUps ?? [];
     const tricks = lessons[page].tricks ?? [];

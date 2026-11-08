@@ -11,6 +11,7 @@ import { Sound } from './platform/audio';
 import { dailyChallenge, dateKey, isDateKey } from './sim/challenge';
 import { canShareClip, type Clip, ClipRecorder, downloadClip, shareClip } from './platform/clip';
 import { ScreenWake } from './platform/wakelock';
+import { lastInput, noteInput } from './platform/input-device';
 import { AIM, ANOMALY, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
 import { createUiPreview, UI_PREVIEWS, type UiPreview } from './debug/devPreview';
 import { InfallDemo } from './debug/infallDemo';
@@ -42,6 +43,7 @@ import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/room/chat';
 import { Menu, h } from './ui/menu/menu';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
+import { Gamepads, pressMenuKey } from './ui/gamepad/gamepad';
 import { onPress } from './ui/touch/touch-controls';
 import { TouchPower } from './ui/touch/touch-power';
 import { TouchWheel } from './ui/touch/touch-wheel';
@@ -428,7 +430,7 @@ function skipKey(): void {
     match.requestSkipRound(0);
   } else {
     skipAskedAt = performance.now() / 1000;
-    match.notice = { text: t('skip.confirm'), color: COLORS.boneDim, at: match.clock };
+    match.notice = { text: t(lastInput() === 'pad' ? 'skip.confirm.pad' : 'skip.confirm'), color: COLORS.boneDim, at: match.clock };
   }
 }
 
@@ -458,6 +460,7 @@ const app: App = {
     saveSettings(settings);
     applyWheelSide();
     applyMenuMotion();
+    gamepads.enabled = settings.gamepad;
     sound.menuEnabled = settings.menuSounds;
     sound.gameEnabled = settings.gameSounds;
     effects.particles = settings.particles;
@@ -592,6 +595,9 @@ const app: App = {
     else void document.documentElement.requestFullscreen?.().catch(() => {});
   },
   isFullscreen: () => !!document.fullscreenElement,
+  get gamepadConnected() {
+    return gamepads.connected;
+  },
 };
 
 /**
@@ -647,6 +653,10 @@ function escapeAction(): void {
     dispatchInput({ kind: 'cancel' });
     return;
   }
+  openPause();
+}
+
+function openPause(): void {
   // A clip records whatever is on screen — don't freeze it behind the menu.
   if (!recorder.recording) menu.open(() => pauseScreen(app, match));
 }
@@ -718,6 +728,8 @@ function placeTip(tip: OracleTap): void {
 
 window.addEventListener('keydown', (e) => {
   sound.unlock();
+  // The keys the pad presses for the menus are not the keyboard's: the hints keep speaking of the pad.
+  if (e.isTrusted) noteInput('keyboard');
   // Typing in the chat is typing: no aiming, no menu keys, no fullscreen. Escape gives the keyboard back to the game.
   if (chat?.owns(e.target)) {
     if (e.code === 'Escape') (e.target as HTMLElement).blur();
@@ -787,6 +799,42 @@ window.addEventListener('keydown', (e) => {
   }
   if (handled) e.preventDefault();
 });
+
+// A mouse or a finger was used last: the hints speak of keys again (the pad's own words are for after it was touched).
+window.addEventListener('pointerdown', () => noteInput('pointer'), true);
+
+// ————————————————————————————— Gamepad —————————————————————————————
+
+/**
+ * A pad with the standard layout, looked at once per frame. It only ever aims for whoever is aiming (`canAim`), so at a
+ * hot seat it steers the current player and nobody else. The menus take it as key presses on the focused row.
+ */
+const gamepads = new Gamepads({
+  // The chat has the keyboard while it is being typed in; the pad leaves it alone.
+  context: () => (chat?.owns(document.activeElement) ? null : screen === 'play' && match && !menu.isOpen ? 'game' : 'menu'),
+  adjust(dAngle, dPower) {
+    if (canAim()) dispatchInput({ kind: 'adjust', dAngle, dPower });
+  },
+  primary: () => primaryAction(),
+  escape: () => escapeAction(),
+  power() {
+    if (match?.powerUps) dispatchInput({ kind: 'power' });
+  },
+  skip: () => skipKey(),
+  key: (key, repeat) => pressMenuKey(key, repeat),
+  touched() {
+    sound.unlock();
+    noteInput('pad');
+  },
+  connection(event) {
+    // The settings list a pad only while there is one: a menu that is open is built again to show it.
+    if (event === 'connected') {
+      if (menu.isOpen && !isTyping(document.activeElement)) menu.rebuild();
+    // A pad unplugged (or out of battery) in the middle of a game that was played with it stops the game; a keyboard player's is none of its business.
+    } else if (settings.gamepad && lastInput() === 'pad' && screen === 'play' && match && !menu.isOpen) openPause();
+  },
+});
+gamepads.enabled = settings.gamepad;
 
 // ————————————————————————————— Pointer aiming —————————————————————————————
 
@@ -983,6 +1031,7 @@ let last = performance.now();
 /** The attract match behind the menu runs at 30 fps: nobody plays it, and every frame repaints the whole canvas. */
 const ATTRACT_FRAME_MS = 1000 / 30;
 function frame(now: number): void {
+  gamepads.poll(now);
   // A few ms of slack, so a 60 Hz display draws every second frame rather than every third.
   if (screen !== 'play' && now - last < ATTRACT_FRAME_MS - 4) {
     requestAnimationFrame(frame);
@@ -1048,7 +1097,7 @@ function frame(now: number): void {
     voteMenuOpen = false;
     menu.close();
   }
-  if (screen === 'play' && net && coarsePointer.matches && !menu.isOpen && m.canAnswerSkip(m.viewer) && (m !== askedVoteMatch || m.skipVote!.until !== askedVote)) {
+  if (screen === 'play' && net && (coarsePointer.matches || lastInput() === 'pad') && !menu.isOpen && m.canAnswerSkip(m.viewer) && (m !== askedVoteMatch || m.skipVote!.until !== askedVote)) {
     askedVote = m.skipVote!.until;
     askedVoteMatch = m;
     voteMenuOpen = true;
@@ -1069,7 +1118,7 @@ function frame(now: number): void {
     renderer.draw(
       m,
       effects,
-      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer, aimCardDodge: settings.aimCardDodge, seatNumbers: settings.colorblind },
+      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer && lastInput() !== 'pad', aimCardDodge: settings.aimCardDodge, seatNumbers: settings.colorblind },
       paused ? 0 : dt,
     );
   }
