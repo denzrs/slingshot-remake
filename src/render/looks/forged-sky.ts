@@ -211,6 +211,14 @@ let steady = false;
 export function holdShaderDetail(on: boolean): void {
   steady = on;
 }
+/** The player's setting: off, the sprites keep their full detail however slow the frames run. */
+let stepDown = true;
+export function allowShaderStepDown(on: boolean): void {
+  if (on === stepDown) return;
+  stepDown = on;
+  // Turned back on, it starts again from full detail.
+  Object.assign(spritePace, newPace());
+}
 
 /**
  * Frames further apart than this (s), on average, for this many frames in a row, it steps down. A frame only just over a
@@ -262,8 +270,9 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   drawVignette(ctx, f);
   ctx.restore();
   closeShaderFrame();
-  if (!steady && gap) keepPace(spritePace, gap);
-  setShaderDetail(steady ? 1 : DETAIL[spritePace.lean]);
+  const full = steady || !stepDown;
+  if (!full && gap) keepPace(spritePace, gap);
+  setShaderDetail(full ? 1 : DETAIL[spritePace.lean]);
 }
 
 /** The vignette: the plate's corners fall into shadow. */

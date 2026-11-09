@@ -81,6 +81,8 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
         },
       }, 'display'),
       inGroup(settingToggle(app, t('settings.contours'), 'contours'), 'display'),
+      // Only Forged draws with shaders that step down.
+      inGroup({ ...settingToggle(app, t('settings.stepDownDetail'), 'stepDownDetail'), hidden: () => app.settings.look !== 'forged' }, 'display'),
       inGroup(settingToggle(app, t('settings.particles'), 'particles'), 'display'),
       inGroup(settingToggle(app, t('settings.aimCardDodge'), 'aimCardDodge'), 'display'),
       inGroup({

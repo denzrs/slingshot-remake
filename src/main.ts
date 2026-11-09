@@ -32,7 +32,7 @@ import { PwaBanner } from './ui/menu/pwa-banner';
 import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './platform/i18n';
 import { getLook, setLook } from './data/look';
 import { setPalette } from './data/palette';
-import { painterFor } from './render/looks';
+import { allowDetailStepDown, painterFor } from './render/looks';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './sim/scoring';
@@ -71,6 +71,7 @@ const pwaBanner = document.querySelector<HTMLElement>('#pwa-banner')!;
 
 const settings = loadSettings();
 setLook(settings.look);
+allowDetailStepDown(settings.stepDownDetail);
 setPalette(settings.colorblind ? 'colorblind' : 'standard');
 setLang(settings.language);
 applyStaticTexts();
@@ -471,6 +472,7 @@ const app: App = {
     effects.particles = settings.particles;
     effects.debrisLevel = settings.debris;
     setLook(settings.look);
+    allowDetailStepDown(settings.stepDownDetail);
     setPalette(settings.colorblind ? 'colorblind' : 'standard');
     devToggles?.sync();
     attract.applySettings(settings);
