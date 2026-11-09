@@ -31,6 +31,7 @@ export function engraved(id: Look, styles: Styles = {}, parts: Partial<LookPaint
     note: '',
     planetsTurnToSun: false,
     fallDust: false,
+    stepsDownDetail: false,
     planet: renderPlanet,
     planetInstability: (ctx, planet, time) => {
       const warning = instabilityPulse(planet, time);

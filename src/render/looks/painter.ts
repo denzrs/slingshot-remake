@@ -29,6 +29,8 @@ export interface LookPainter {
   readonly planetsTurnToSun: boolean;
   /** Whether a body falling into a black hole sheds dust on the way (a look that draws the fall as lines of its own may want it, one that draws it whole does not). */
   readonly fallDust: boolean;
+  /** Whether it draws its costliest parts at less detail while frames run slow, which the player may turn off (the settings show the switch only then). */
+  readonly stepsDownDetail: boolean;
 
   /** A planet's sprite at `ps` device pixels per field unit. */
   planet(p: Planet, ps: number): PlanetSprite;

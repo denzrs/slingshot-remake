@@ -382,6 +382,7 @@ export const forged = engraved('forged', forgedStyles, {
   note: 'Blender renders with light over them: turning clouds and rings, fireballs and tumbling shrapnel, comet shots, a sun with rays, a deep sky.',
   // The halo and the disk's light already say where the hole is; a red dashed circle over them only muddies it.
   dangerRing: () => {},
+  stepsDownDetail: true,
   planet: renderForgedPlanet,
   planetInstability: (ctx, planet, time) => {
     const warning = instabilityPulse(planet, time);

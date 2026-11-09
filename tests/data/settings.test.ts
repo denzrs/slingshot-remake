@@ -210,11 +210,18 @@ describe('display settings', () => {
   });
 
   it('ignores stored display flags that are not booleans', () => {
-    storage({ menuBackground: 'false', particles: 0, contours: null });
+    storage({ menuBackground: 'false', particles: 0, contours: null, stepDownDetail: 'no' });
     const s = loadSettings();
     expect(s.menuBackground).toBe(true);
     expect(s.particles).toBe(true);
     expect(s.contours).toBe(true);
+    expect(s.stepDownDetail).toBe(true);
+  });
+
+  it('lets a slow machine step the detail down unless the player keeps it full, and remembers that', () => {
+    expect(DEFAULT_SETTINGS.stepDownDetail).toBe(true);
+    storage({ stepDownDetail: false });
+    expect(loadSettings().stepDownDetail).toBe(false);
   });
 });
 

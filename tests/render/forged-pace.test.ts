@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keepPace, newPace } from '../../src/render/looks/forged-sky';
+import { keepPace, newPace, resumePace } from '../../src/render/looks/forged-sky';
 
 type Pace = ReturnType<typeof newPace>;
 
@@ -64,5 +64,25 @@ describe('forged sprite pace', () => {
     expect(pace.stuck).toBe(false);
     draw(pace, 330, 40);
     expect(pace.lean).toBe(1);
+  });
+
+  it('starts again from full detail after a stretch held there, but remembers a step that saved nothing', () => {
+    const pace = newPace();
+    draw(pace, 400, 40);
+    expect(pace.stuck).toBe(true);
+    resumePace(pace);
+    draw(pace, 1000, 40);
+    expect(pace).toMatchObject({ lean: 0, stuck: true });
+  });
+
+  it('starts again from full detail after a stretch held there, keeping what a step saved', () => {
+    const pace = newPace();
+    draw(pace, 300, 40);
+    draw(pace, 60, 25);
+    expect(pace.lean).toBe(1);
+    const saved = pace.saved[0];
+    resumePace(pace);
+    expect(pace).toMatchObject({ lean: 0, check: null });
+    expect(pace.saved[0]).toBe(saved);
   });
 });

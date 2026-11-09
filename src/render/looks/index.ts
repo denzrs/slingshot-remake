@@ -1,7 +1,6 @@
 import { getLook, type Look } from '../../data/look';
 import { classic } from './classic';
 import { forged } from './forged';
-import { allowShaderStepDown } from './forged-sky';
 import { holo } from './holo';
 import type { LookPainter } from './painter';
 
@@ -15,8 +14,8 @@ export const painterFor = (look: Look): LookPainter => PAINTERS[look];
 /** The painter of the look the player has chosen. */
 export const chosenPainter = (): LookPainter => painterFor(getLook());
 
-/** Whether a look may draw its costliest parts at less detail while frames run slow (the player's setting). */
-export const allowDetailStepDown = (on: boolean): void => allowShaderStepDown(on);
+/** Whether a look that steps its detail down (`stepsDownDetail`) may do so while frames run slow: the player's setting. */
+export { allowShaderStepDown as allowDetailStepDown } from './forged-sky';
 
 /** The engraved plan, for screens that stay as they are in every look (the tutorial, the menus). */
 export { classic };

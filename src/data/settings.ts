@@ -19,7 +19,7 @@ export interface Settings extends RoomRules {
   look: Look;
   contours: boolean;
   particles: boolean;
-  /** Forged's shaded planets, sun and nebula are drawn smaller while frames run slow; off keeps them at full detail. */
+  /** Forged's shaded planets, sun, gas clouds and storm clouds are drawn smaller while frames run slow; off keeps them at full detail. */
   stepDownDetail: boolean;
   /** The card with the angle and power steps aside when the aim line would run over it. */
   aimCardDodge: boolean;
