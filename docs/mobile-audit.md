@@ -48,3 +48,10 @@ Text drawn on the canvas (the HUD, scores, the killcam strip) is not in the page
 ## What it is not
 
 Chrome's phone emulation, not iOS Safari: the sizes, the touch screen and the safe area are the phones', but Safari's address bar, the keyboard, the home-screen app's own window and Safari's layout quirks are not in it. A change that matters on a phone still wants a look on one.
+
+## Ships under the controls
+
+`npx tsx scripts/controls-overlap.ts` plays 40 fresh boards per mode (Classic, Event Horizon, Solar System, and a daily challenge for 40 different days) on both phones, upright and sideways, with the wheel and with the stick, and tests where every ship (and drone) lies against the wheel, the power bar, the fire button, the stick and the pause button. `--png` keeps a screenshot of the board with the most overlap per setup. Without any mitigation a ship was under a control on up to 83 % of the boards (Classic, iPhone 16, sideways, wheel). A control over a ship now fades (`ui/touch/ship-cover.ts`), and the script counts a ship as hidden only under a control that has not.
+
+It does not look at the HUD: the player cards at the top of the field, drawn on the canvas, can still cover a ship when the phone is held sideways.
+
