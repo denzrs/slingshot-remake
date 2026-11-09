@@ -32,17 +32,21 @@ function remember(): void {
   }
 }
 
-/** The findings of the relay, shared by menus that open one after the other, and the statistics page. */
+/**
+ * The findings of the relay, shared by menus that open one after the other, and the statistics page.
+ * Rejects when the relay cannot be reached, and keeps nothing then: the next one to ask tries again.
+ */
 export async function loadFacts(board: StatsBoard): Promise<StatsFact[]> {
   if (kept && Date.now() - kept.at < KEEP_MS) return kept.facts;
   loading ??= board
     .facts()
-    .catch(() => [] as StatsFact[])
+    .then((facts) => {
+      kept = { at: Date.now(), facts };
+      remember();
+      return facts;
+    })
     .finally(() => (loading = null));
-  const facts = await loading;
-  kept = { at: Date.now(), facts };
-  remember();
-  return facts;
+  return loading;
 }
 
 /** How long one fact stays before the next one fades in. */
@@ -73,13 +77,13 @@ export function factTicker(enabled = true, board = new StatsBoard()): HTMLElemen
     return ticker;
   }
 
-  void loadFacts(board).then((facts) => {
+  const hide = (): void => {
+    ticker.hidden = true;
+    ticker.removeAttribute('aria-busy');
+  };
+  loadFacts(board).then((facts) => {
     const lines = factLines(facts).slice(0, TICKER_FACTS);
-    if (!lines.length) {
-      ticker.hidden = true;
-      ticker.removeAttribute('aria-busy');
-      return;
-    }
+    if (!lines.length) return hide();
 
     const items = lines.map(factLine);
     const marks = lines.map(() => h('span.stats-ticker__dot', null));
@@ -108,6 +112,6 @@ export function factTicker(enabled = true, board = new StatsBoard()): HTMLElemen
       if (held || ticker.classList.contains('is-expanded') || document.hidden) return;
       show((current + 1) % items.length);
     }, FACT_MS);
-  });
+  }, hide);
   return ticker;
 }
