@@ -439,28 +439,31 @@ export class Renderer {
       }
       const fall = falling.get(`planet${p.seed}`);
       const scars = effects.scarsOn(p.seed);
+      // How far uprightFrame turns the frame from the field, so a sprite can put a hit where it struck.
+      const upright = isTurned() ? Math.PI / 2 : 0;
       ctx.globalAlpha = alpha;
       if (fall) {
         this.painter.falling(ctx, fall, p.radius * 2.6, ps, (c) => {
           // The light stays where it was painted: upright on the screen.
           uprightFrame(c);
-          sprite.draw(c, 0, 0, ps, this.time, p);
+          sprite.draw(c, 0, 0, ps, this.time, p, undefined, upright);
           this.painter.planetInstability(c, { ...p, x: 0, y: 0 }, this.time);
         });
       } else if (sun && this.painter.planetsTurnToSun) {
         // A classic sprite is painted lit from one side; turn it so that side faces the sun it orbits.
+        const turn = Math.atan2(sun.y - p.y, sun.x - p.x) - SPRITE_LIGHT_ANGLE;
         ctx.save();
         ctx.translate(p.x, p.y);
-        ctx.rotate(Math.atan2(sun.y - p.y, sun.x - p.x) - SPRITE_LIGHT_ANGLE);
+        ctx.rotate(turn);
         if (this.keepCelestialArtworkUpright) uprightFrame(ctx);
-        sprite.draw(ctx, 0, 0, ps, this.time, p, scars);
+        sprite.draw(ctx, 0, 0, ps, this.time, p, scars, turn + (this.keepCelestialArtworkUpright ? upright : 0));
         ctx.restore();
       } else if (isTurned()) {
         // The light stays where it was painted: upright on the screen.
         ctx.save();
         ctx.translate(p.x, p.y);
         uprightFrame(ctx);
-        sprite.draw(ctx, 0, 0, ps, this.time, p, scars);
+        sprite.draw(ctx, 0, 0, ps, this.time, p, scars, upright);
         ctx.restore();
       } else {
         sprite.draw(ctx, p.x, p.y, ps, this.time, p, scars);

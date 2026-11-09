@@ -13,8 +13,11 @@ export interface Scar {
 /** A planet ready to draw. `size` is its width in device pixels; `draw` puts it centred on a point, `ps` device pixels per field unit. */
 export interface PlanetSprite {
   size: number;
-  /** The live planet carries current damage even when this sprite was cached before the hit; `scars` are where shots struck it, for a look that shows them. */
-  draw(ctx: CanvasRenderingContext2D, x: number, y: number, ps: number, time: number, planet?: Planet, scars?: readonly Scar[]): void;
+  /**
+   * The live planet carries current damage even when this sprite was cached before the hit; `scars` are where shots struck it, for a look that shows them.
+   * `turn` is how far `ctx` is turned from the field (rad): a field angle `a` points along `a - turn` in the sprite, so a hit lands where it struck.
+   */
+  draw(ctx: CanvasRenderingContext2D, x: number, y: number, ps: number, time: number, planet?: Planet, scars?: readonly Scar[], turn?: number): void;
 }
 
 /** Light comes from the upper left, slightly in front. */
