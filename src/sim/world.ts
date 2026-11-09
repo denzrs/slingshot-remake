@@ -8,6 +8,13 @@ export const PLANET_TINTS: Record<PlanetStyle, readonly string[]> = {
   gas: ['#d8b98a', '#9c8bb5', '#c9a0a0', '#b7c28f'],
   ice: ['#9fc3d6', '#bcd3dc', '#8fb3b0'],
   lava: ['#d9572b', '#c4432c', '#e2763a'],
+  ocean: ['#3f7fc0', '#2f6aa8', '#4a94b8'],
+  desert: ['#d9a560', '#c98a4a', '#e0b878'],
+  acid: ['#b8c23a', '#9fb03a', '#c8b040'],
+  carbon: ['#4a4650', '#3c3a42', '#55505a'],
+  crystal: ['#b48ad8', '#8ac0e0', '#d890c0'],
+  living: ['#5aa860', '#4a9a78', '#78b048'],
+  machine: ['#8a929c', '#9a8a78', '#7a8a98'],
   star: ['#f2c46d'],
 };
 
@@ -16,14 +23,30 @@ function styleFor(rng: Rng, radius: number, big: number): PlanetStyle {
   return radius > big ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
 }
 
+/** What a rocky world may turn out to be instead, and the share of rocky worlds each takes: a small one, and a big one. */
+const SMALL_ROCK: readonly [PlanetStyle, number][] = [
+  ['lava', 0.25], ['ocean', 0.1], ['desert', 0.08], ['acid', 0.05], ['carbon', 0.04], ['crystal', 0.04], ['living', 0.04], ['machine', 0.04],
+];
+const BIG_ROCK: readonly [PlanetStyle, number][] = [['ocean', 0.3], ['acid', 0.15]];
+
 /**
- * A planet's seed, style and tint, drawn after its mass. One small rocky world in four turns out molten, decided from its
- * own seed rather than the world's rng, so every planet a seed gave before lava came keeps its look.
+ * A planet's seed, style and tint, drawn after its mass. A rocky world may turn out molten (one small one in four), wet,
+ * dry or stranger, decided from its own seed rather than the world's rng, so every planet a seed gave before keeps its place,
+ * and every one that stays rock its look.
  */
 function dress(rng: Rng, style: PlanetStyle, small: boolean): Pick<Planet, 'seed' | 'style' | 'tint'> {
   const seed = Math.floor(rng() * 2 ** 31);
-  const molten = small && style === 'rocky' && createRng(seed ^ 0x2c1b3c6d)() < 0.25;
-  const look: PlanetStyle = molten ? 'lava' : style;
+  let look: PlanetStyle = style;
+  if (style === 'rocky') {
+    let roll = createRng(seed ^ 0x2c1b3c6d)();
+    for (const [other, share] of small ? SMALL_ROCK : BIG_ROCK) {
+      if (roll < share) {
+        look = other;
+        break;
+      }
+      roll -= share;
+    }
+  }
   return { seed, style: look, tint: pick(rng, PLANET_TINTS[look]) };
 }
 

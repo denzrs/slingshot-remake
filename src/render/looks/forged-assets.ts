@@ -23,6 +23,23 @@ import texIceRoseUrl from './forged/tex-ice-rose.webp';
 import texLavaRiversUrl from './forged/tex-lava-rivers.webp';
 import texLavaMagmaUrl from './forged/tex-lava-magma.webp';
 import texLavaAshUrl from './forged/tex-lava-ash.webp';
+import texLavaLockedUrl from './forged/tex-lava-locked.webp';
+import texIceLockedUrl from './forged/tex-ice-locked.webp';
+import texIceCryoUrl from './forged/tex-ice-cryo.webp';
+import texOceanDeepUrl from './forged/tex-ocean-deep.webp';
+import texOceanReefUrl from './forged/tex-ocean-reef.webp';
+import texDesertDunesUrl from './forged/tex-desert-dunes.webp';
+import texDesertSaltUrl from './forged/tex-desert-salt.webp';
+import texAcidLakesUrl from './forged/tex-acid-lakes.webp';
+import texAcidSulfurUrl from './forged/tex-acid-sulfur.webp';
+import texCarbonGraphiteUrl from './forged/tex-carbon-graphite.webp';
+import texCarbonTarUrl from './forged/tex-carbon-tar.webp';
+import texCrystalAmethystUrl from './forged/tex-crystal-amethyst.webp';
+import texCrystalQuartzUrl from './forged/tex-crystal-quartz.webp';
+import texLivingMossUrl from './forged/tex-living-moss.webp';
+import texLivingCoralUrl from './forged/tex-living-coral.webp';
+import texMachinePanelsUrl from './forged/tex-machine-panels.webp';
+import texMachineHiveUrl from './forged/tex-machine-hive.webp';
 import droneUrl from './forged/drone.webp';
 import droneMaskUrl from './forged/drone-mask.webp';
 import turretBarrelUrl from './forged/turret-barrel.webp';
@@ -64,6 +81,23 @@ const URLS = {
   lavaRivers: texLavaRiversUrl,
   lavaMagma: texLavaMagmaUrl,
   lavaAsh: texLavaAshUrl,
+  lavaLocked: texLavaLockedUrl,
+  iceLocked: texIceLockedUrl,
+  iceCryo: texIceCryoUrl,
+  oceanDeep: texOceanDeepUrl,
+  oceanReef: texOceanReefUrl,
+  desertDunes: texDesertDunesUrl,
+  desertSalt: texDesertSaltUrl,
+  acidLakes: texAcidLakesUrl,
+  acidSulfur: texAcidSulfurUrl,
+  carbonGraphite: texCarbonGraphiteUrl,
+  carbonTar: texCarbonTarUrl,
+  crystalAmethyst: texCrystalAmethystUrl,
+  crystalQuartz: texCrystalQuartzUrl,
+  livingMoss: texLivingMossUrl,
+  livingCoral: texLivingCoralUrl,
+  machinePanels: texMachinePanelsUrl,
+  machineHive: texMachineHiveUrl,
 };
 export type Name = keyof typeof URLS;
 

@@ -3,9 +3,11 @@ import { createRng, range } from '../../sim/rng';
 import { clamp01, LIGHT, smoothstep } from '../planet-common';
 
 /**
- * Meteors striking a lava world now and then, drawn over its sphere like the lightning of a gas giant: a streak, a flash, a
- * ring of dust, impact melt cooling, and a crater that fades. It follows from the seed and the time, so every screen shows
- * the same strike at the same moment, and it sits on the surface: a crater turns away with the planet as it turns.
+ * What happens on a planet's surface in the forged look, drawn over its sphere like the lightning of a gas giant: meteors
+ * striking a lava world (a streak, a flash, a ring of dust, melt cooling, a crater that fades), its volcanoes and an icy
+ * moon's geysers, a desert's dust storms, an ocean's hurricanes, the glints of carbon and crystal, a machine world's trains
+ * of light, heat haze over molten rock, a comet passing now and then, and the scars shots leave. It all follows from the seed
+ * and the time, so every screen shows the same at the same moment, and what lies on the surface turns away with it.
  */
 
 /** How the planet's surface lies, as the shader turns it: the seed's spin and tilt, and how fast it turns (turns per second). */
@@ -215,4 +217,433 @@ function drawStrike(ctx: CanvasRenderingContext2D, x: number, y: number, R: numb
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
     ctx.restore();
   }
+}
+
+// ------------------------------------------------------------------- plumes ----
+
+/** Where a world's vents stand on its map, how often one goes off (s between beats), and what it throws up. */
+export interface Vents {
+  spots: { u: number; v: number }[];
+  every: number;
+  offset: number;
+  /** Ash and fire (a lava world's volcano), or a jet of ice (a cryovolcano's geyser). */
+  kind: 'ash' | 'ice';
+}
+
+/** How long a plume stands (s), by kind. */
+const PLUME_LIFE = { ash: 7, ice: 4.5 };
+
+/**
+ * A lava world's volcanoes, anywhere off its poles, or an icy moon's geysers along the fissures round its south pole (the
+ * lower part of the map, where `render_planets.py` draws its stripes).
+ */
+export function rollVents(p: Planet, kind: Vents['kind']): Vents {
+  const rng = createRng(p.seed ^ 0x2c1b3c6d);
+  const spots = Array.from({ length: kind === 'ash' ? 5 : 7 }, () => ({ u: rng(), v: kind === 'ash' ? range(rng, 0.25, 0.75) : range(rng, 0.8, 0.93) }));
+  return { spots, every: kind === 'ash' ? range(rng, 9, 15) : range(rng, 3.5, 6), offset: rng(), kind };
+}
+
+/**
+ * The plumes standing now: a column off the vent along the surface's normal, so one near the middle of the disc is seen from
+ * above as a spreading cloud and one near the limb stands up off it, and one just round the back shows only above the limb.
+ */
+export function drawPlumes(ctx: CanvasRenderingContext2D, x: number, y: number, p: Planet, s: Surface, vents: Vents, time: number): void {
+  const R = p.radius;
+  const life = PLUME_LIFE[vents.kind];
+  const now = time / vents.every + vents.offset;
+  const last = Math.floor(now);
+  for (let beat = last - Math.ceil(life / vents.every); beat <= last; beat++) {
+    if (hash(p.seed, beat, 10) < 0.25) continue;
+    const at = (beat + 0.6 * hash(p.seed, beat, 11) - vents.offset) * vents.every;
+    const age = time - at;
+    if (age < 0 || age > life) continue;
+    const spot = vents.spots[Math.floor(hash(p.seed, beat, 12) * vents.spots.length)];
+    const n = onDisc(s, spot.u, spot.v, time);
+    if (n.nz < -0.35) continue;
+    drawPlume(ctx, x, y, R, n, age / life, vents.kind, hash(p.seed, beat, 13));
+  }
+}
+
+function drawPlume(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, n: Seen, k: number, kind: Vents['kind'], seed: number): void {
+  const ash = kind === 'ash';
+  const lit = clamp01(lightOn(n));
+  // It rises fast and spreads, then thins away.
+  const rise = 1 - (1 - Math.min(1, k * 2.2)) ** 2;
+  const fade = 1 - smoothstep(0.55, 1, k);
+  const height = R * (ash ? 0.45 : 0.6) * rise;
+  const puffs = ash ? 9 : 12;
+  ctx.save();
+  for (let i = 0; i < puffs; i++) {
+    const t = (i + 0.5) / puffs;
+    const h = height * t;
+    // Off to the side a little as it rises: the wind, and the plume's own churn.
+    const drift = (Math.sin(seed * 40 + i * 1.7) * 0.3 + (ash ? 0.25 : 0.05)) * h * 0.5;
+    const px = x + n.dx * (R + h) - n.dy * drift;
+    const py = y + n.dy * (R + h) + n.dx * drift;
+    // What is round the back shows only where it stands clear of the limb.
+    if (n.nz < 0 && Math.hypot(px - x, py - y) < R) continue;
+    const r = R * (ash ? 0.05 + 0.1 * t : 0.04 + 0.08 * t) * (0.6 + 0.4 * rise);
+    const a = fade * (ash ? 0.55 : 0.65) * (1 - t * 0.6);
+    const g = ctx.createRadialGradient(px, py, 0, px, py, r);
+    if (ash) {
+      const shade = 40 + 60 * lit;
+      g.addColorStop(0, `rgba(${shade + 10},${shade},${shade - 6},${a})`);
+      g.addColorStop(1, `rgba(${shade},${shade - 6},${shade - 10},0)`);
+    } else {
+      const shade = 150 + 105 * lit;
+      g.addColorStop(0, `rgba(${shade},${Math.min(255, shade + 8)},255,${a})`);
+      g.addColorStop(1, `rgba(${shade},${shade},255,0)`);
+    }
+    ctx.fillStyle = g;
+    ctx.fillRect(px - r, py - r, r * 2, r * 2);
+  }
+  // At the vent, fire under the ash: it lights the plume's foot from below.
+  if (ash && n.nz > 0) {
+    const vx = x + n.dx * R;
+    const vy = y + n.dy * R;
+    const r = R * 0.12;
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(vx, vy, 0, vx, vy, r);
+    const heat = (1 - smoothstep(0.1, 0.9, k)) * 0.8;
+    g.addColorStop(0, `rgba(255,190,90,${heat})`);
+    g.addColorStop(0.4, `rgba(240,90,20,${heat * 0.5})`);
+    g.addColorStop(1, 'rgba(200,40,10,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(vx - r, vy - r, r * 2, r * 2);
+  }
+  ctx.restore();
+}
+
+// --------------------------------------------------------------- dust storms ----
+
+/** A desert world's dust storms: how often a beat comes round (s), and where in it the first is. */
+export interface Dust {
+  every: number;
+  offset: number;
+}
+
+const DUST_LIFE = 16;
+
+export function rollDust(p: Planet): Dust {
+  const rng = createRng(p.seed ^ 0x68e31da4);
+  return { every: range(rng, 20, 30), offset: rng() };
+}
+
+/** A storm front of dust sweeping round a desert world: a wall of tan cloud along a latitude, rolling east as it grows and settles. */
+export function drawDust(ctx: CanvasRenderingContext2D, x: number, y: number, p: Planet, s: Surface, d: Dust, time: number): void {
+  const R = p.radius;
+  const now = time / d.every + d.offset;
+  const last = Math.floor(now);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, R * 0.995, 0, Math.PI * 2);
+  ctx.clip();
+  for (let beat = last - Math.ceil(DUST_LIFE / d.every); beat <= last; beat++) {
+    if (hash(p.seed, beat, 20) < 0.2) continue;
+    const at = (beat + 0.5 * hash(p.seed, beat, 21) - d.offset) * d.every;
+    const age = time - at;
+    if (age < 0 || age > DUST_LIFE) continue;
+    const k = age / DUST_LIFE;
+    const strength = smoothstep(0, 0.2, k) * (1 - smoothstep(0.6, 1, k));
+    const v0 = 0.3 + 0.4 * hash(p.seed, beat, 22);
+    const u0 = hash(p.seed, beat, 23) + k * 0.12;
+    const span = 0.1 + 0.15 * smoothstep(0, 0.5, k);
+    const puffs = 16;
+    for (let i = 0; i < puffs; i++) {
+      const t = i / (puffs - 1);
+      const wobble = Math.sin(t * 9 + beat) * 0.03;
+      const n = onDisc(s, u0 + (t - 0.5) * span, v0 + wobble + (hash(p.seed, beat * 31 + i, 24) - 0.5) * 0.05, time);
+      if (n.nz <= 0) continue;
+      const lit = 0.25 + 0.75 * clamp01(lightOn(n));
+      const r = R * (0.12 + 0.08 * hash(p.seed, beat * 17 + i, 25)) * (0.6 + 0.4 * strength);
+      const px = x + n.dx * R;
+      const py = y + n.dy * R;
+      const a = 0.4 * strength * smoothstep(0, 0.3, n.nz) * (1 - Math.abs(t - 0.5));
+      const g = ctx.createRadialGradient(px, py, 0, px, py, r);
+      g.addColorStop(0, `rgba(${Math.round(225 * lit)},${Math.round(178 * lit)},${Math.round(120 * lit)},${a})`);
+      g.addColorStop(1, `rgba(${Math.round(225 * lit)},${Math.round(178 * lit)},${Math.round(120 * lit)},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(px - r, py - r, r * 2, r * 2);
+    }
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- hurricanes ----
+
+/** An ocean world's great storms: where each sits on the map, how big it is (radii) and which way it winds. */
+export type Storms = { u: number; v: number; size: number; turn: number }[];
+
+/** One or two, off the equator; they wind the other way in the other hemisphere. */
+export function rollStorms(p: Planet): Storms {
+  const rng = createRng(p.seed ^ 0x1b873593);
+  return Array.from({ length: rng() < 0.5 ? 1 : 2 }, () => {
+    const north = rng() < 0.5;
+    return { u: rng(), v: north ? range(rng, 0.28, 0.4) : range(rng, 0.6, 0.72), size: range(rng, 0.14, 0.22), turn: north ? 1 : -1 };
+  });
+}
+
+/** Each storm: arms of white cloud winding in to a clear eye, lying on the surface (squashed towards the limb) and turning slowly. */
+export function drawStorms(ctx: CanvasRenderingContext2D, x: number, y: number, p: Planet, s: Surface, storms: Storms, time: number): void {
+  const R = p.radius;
+  for (const st of storms) {
+    // They wander west a little faster than the ground turns.
+    const n = onDisc(s, st.u - time * 0.002, st.v, time);
+    if (n.nz <= 0.05) continue;
+    const lit = 0.15 + 0.85 * clamp01(lightOn(n));
+    const size = st.size * R;
+    const turn = Math.atan2(n.dy, n.dx);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, R * 0.995, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(x + n.dx * R, y + n.dy * R);
+    ctx.rotate(turn);
+    ctx.scale(Math.max(0.15, n.nz), 1);
+    ctx.rotate(time * 0.25 * st.turn);
+    const a = 0.55 * lit * smoothstep(0.05, 0.35, n.nz);
+    ctx.lineCap = 'round';
+    const shade = Math.round(255 * (0.3 + 0.7 * lit));
+    for (let arm = 0; arm < 3; arm++) {
+      ctx.beginPath();
+      for (let k = 0; k <= 24; k++) {
+        const t = k / 24;
+        const r = size * (0.18 + 0.82 * t);
+        const a0 = (arm / 3) * Math.PI * 2 + st.turn * t * 3.2;
+        if (k === 0) ctx.moveTo(Math.cos(a0) * r, Math.sin(a0) * r);
+        else ctx.lineTo(Math.cos(a0) * r, Math.sin(a0) * r);
+      }
+      ctx.strokeStyle = `rgba(${shade},${shade},${shade},${a})`;
+      ctx.lineWidth = size * 0.22;
+      ctx.stroke();
+    }
+    // The bank round the eye.
+    ctx.strokeStyle = `rgba(${shade},${shade},${shade},${a})`;
+    ctx.lineWidth = size * 0.16;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// -------------------------------------------------------------------- glints ----
+
+/** Points of a surface that flash as they turn to mirror the sun: diamonds in carbon, a crystal's facets. */
+export interface Glints {
+  spots: { u: number; v: number; tilt: [number, number, number]; phase: number }[];
+  /** How sharp a flash is (higher: shorter), how big (radii) and its colour. */
+  power: number;
+  size: number;
+  colour: [number, number, number];
+}
+
+export function rollGlints(p: Planet, crystal: boolean, colour: [number, number, number]): Glints {
+  const rng = createRng(p.seed ^ 0x7f4a7c15);
+  const spots = Array.from({ length: crystal ? 26 : 44 }, () => ({
+    u: rng(),
+    v: range(rng, 0.08, 0.92),
+    tilt: [range(rng, -0.5, 0.5), range(rng, -0.5, 0.5), range(rng, -0.5, 0.5)] as [number, number, number],
+    phase: rng() * Math.PI * 2,
+  }));
+  return crystal ? { spots, power: 60, size: 0.16, colour } : { spots, power: 140, size: 0.08, colour };
+}
+
+/** Each glint whose facet mirrors the light towards the eye just now: a four-pointed star and a small halo. */
+export function drawGlints(ctx: CanvasRenderingContext2D, x: number, y: number, p: Planet, s: Surface, g: Glints, time: number): void {
+  const R = p.radius;
+  // The direction halfway between the light and the eye: a facet facing it sends the sun to us.
+  const hl = Math.hypot(LIGHT[0], LIGHT[1], LIGHT[2] + 1);
+  const hx = LIGHT[0] / hl;
+  const hy = LIGHT[1] / hl;
+  const hz = (LIGHT[2] + 1) / hl;
+  const [cr, cg, cb] = g.colour;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  for (const spot of g.spots) {
+    const n = onDisc(s, spot.u, spot.v, time);
+    if (n.nz <= 0.05) continue;
+    const fx = n.dx + spot.tilt[0];
+    const fy = n.dy + spot.tilt[1];
+    const fz = n.nz + spot.tilt[2];
+    const fl = Math.hypot(fx, fy, fz) || 1;
+    const facing = Math.max(0, (fx * hx + fy * hy + fz * hz) / fl);
+    // A slow shimmer on top, so a glint that holds still a while still lives.
+    const f = facing ** g.power * (0.75 + 0.25 * Math.sin(time * 5 + spot.phase)) * smoothstep(0.05, 0.3, n.nz);
+    if (f < 0.02) continue;
+    const px = x + n.dx * R;
+    const py = y + n.dy * R;
+    const len = R * g.size * (0.4 + 0.6 * f);
+    ctx.strokeStyle = `rgba(${cr},${cg},${cb},${0.9 * f})`;
+    ctx.lineWidth = Math.max(0.35, R * 0.012);
+    ctx.beginPath();
+    ctx.moveTo(px - len, py);
+    ctx.lineTo(px + len, py);
+    ctx.moveTo(px, py - len);
+    ctx.lineTo(px, py + len);
+    ctx.stroke();
+    const r = len * 0.6;
+    const halo = ctx.createRadialGradient(px, py, 0, px, py, r);
+    halo.addColorStop(0, `rgba(255,255,255,${0.8 * f})`);
+    halo.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+    ctx.fillStyle = halo;
+    ctx.fillRect(px - r, py - r, r * 2, r * 2);
+  }
+  ctx.restore();
+}
+
+// ------------------------------------------------------------ running lights ----
+
+/** A machine world's trains of light along its lanes: the lanes' latitudes, and on each, where its trains start and how fast they run (turns per second). */
+export type Lanes = { v: number; trains: { u: number; speed: number }[] }[];
+
+export function rollLanes(p: Planet): Lanes {
+  const rng = createRng(p.seed ^ 0x3c6ef372);
+  return Array.from({ length: 6 }, (_, i) => ({
+    v: 0.2 + (i + range(rng, 0.2, 0.8)) * (0.6 / 6),
+    trains: Array.from({ length: 3 }, () => ({ u: rng(), speed: (rng() < 0.5 ? -1 : 1) * range(rng, 0.03, 0.07) })),
+  }));
+}
+
+/** Each train: a bright head and a trail behind it, amber, strongest on the night side where the plating is dark. */
+export function drawLanes(ctx: CanvasRenderingContext2D, x: number, y: number, p: Planet, s: Surface, lanes: Lanes, time: number): void {
+  const R = p.radius;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  for (const lane of lanes) {
+    for (const train of lane.trains) {
+      const head = train.u + time * train.speed;
+      let prev: Seen | null = null;
+      for (let k = 0; k <= 6; k++) {
+        const n = onDisc(s, head - Math.sign(train.speed) * k * 0.012, lane.v, time);
+        if (prev && n.nz > 0.02 && prev.nz > 0.02) {
+          const night = 0.3 + 0.7 * smoothstep(0.1, -0.3, lightOn(n));
+          const a = (1 - k / 7) * 0.8 * night * smoothstep(0.02, 0.25, n.nz);
+          ctx.strokeStyle = `rgba(255,${Math.round(170 + 50 * (1 - k / 6))},90,${a})`;
+          ctx.lineWidth = Math.max(0.4, R * (k === 1 ? 0.03 : 0.018));
+          ctx.beginPath();
+          ctx.moveTo(x + prev.dx * R, y + prev.dy * R);
+          ctx.lineTo(x + n.dx * R, y + n.dy * R);
+          ctx.stroke();
+        }
+        prev = n;
+      }
+    }
+  }
+  ctx.restore();
+}
+
+// ------------------------------------------------------------------ shimmer ----
+
+/** Heat haze over a molten world's limb: thin rings of warm light just off the disc, wavering. */
+export function drawShimmer(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, seed: number, time: number): void {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const steps = 72;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    for (let k = 0; k <= steps; k++) {
+      const a = (k / steps) * Math.PI * 2;
+      const r = R * (1.012 + 0.014 * i + 0.007 * Math.sin(a * (6 + i * 3) + time * (2.2 + i) + seed + i) * Math.sin(a * 3 - time * 1.3 + i));
+      if (k === 0) ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+      else ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+    }
+    ctx.strokeStyle = `rgba(255,${140 - i * 25},60,${0.11 - i * 0.03})`;
+    ctx.lineWidth = Math.max(0.5, R * 0.018);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// -------------------------------------------------------------------- comets ----
+
+/** How long a comet takes to cross past a planet (s). */
+const COMET_PASS = 7;
+
+/** Now and then a comet passes a planet, its tail turned away from the light whichever way it flies. Seeded, like the rest. */
+export function drawComet(ctx: CanvasRenderingContext2D, x: number, y: number, p: Planet, time: number): void {
+  const R = p.radius;
+  const every = 50 + (p.seed % 37);
+  const now = time / every + ((p.seed >>> 5) % 100) / 100;
+  const beat = Math.floor(now);
+  if (hash(p.seed, beat, 40) < 0.5) return;
+  const age = (now - beat) * every - 3;
+  if (age < 0 || age > COMET_PASS) return;
+  const k = age / COMET_PASS;
+  // A straight pass at some distance off the middle, from one side to the other.
+  const dir = hash(p.seed, beat, 41) * Math.PI * 2;
+  const miss = R * (1.35 + 0.8 * hash(p.seed, beat, 42)) * (hash(p.seed, beat, 43) < 0.5 ? -1 : 1);
+  const along = (k - 0.5) * R * 7;
+  const cx = x + Math.cos(dir) * along - Math.sin(dir) * miss;
+  const cy = y + Math.sin(dir) * along + Math.cos(dir) * miss;
+  const show = smoothstep(0, 0.15, k) * (1 - smoothstep(0.85, 1, k));
+  // The tail points away from the light (in the sprite's frame, which turns with a solar system's sun).
+  const tl = Math.hypot(LIGHT[0], LIGHT[1]);
+  const tx = -LIGHT[0] / tl;
+  const ty = -LIGHT[1] / tl;
+  const tail = R * 1.1;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createLinearGradient(cx, cy, cx + tx * tail, cy + ty * tail);
+  g.addColorStop(0, `rgba(200,235,255,${0.55 * show})`);
+  g.addColorStop(1, 'rgba(120,180,255,0)');
+  ctx.strokeStyle = g;
+  ctx.lineCap = 'round';
+  for (const [w, spread] of [[0.09, 0], [0.04, 0.12]] as const) {
+    ctx.lineWidth = Math.max(0.5, R * w);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + (tx - ty * spread) * tail, cy + (ty + tx * spread) * tail);
+    ctx.stroke();
+  }
+  const r = Math.max(1.2, R * 0.06);
+  const head = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  head.addColorStop(0, `rgba(255,255,255,${show})`);
+  head.addColorStop(1, 'rgba(180,220,255,0)');
+  ctx.fillStyle = head;
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  ctx.restore();
+}
+
+// --------------------------------------------------------------------- scars ----
+
+/**
+ * Where a shot struck a planet, kept on its surface as it turns: a burn that glows a moment, then a dark scorch that heals
+ * over in `life` seconds. `at` is the struck point as it lay on the disc when it struck (x, y in radii).
+ */
+export function drawScar(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, s: Surface, at: { x: number; y: number }, age: number, life: number, time: number): void {
+  const spot = onMap(s, at.x, at.y, time - age);
+  const n = onDisc(s, spot.u, spot.v, time);
+  if (n.nz <= 0.02) return;
+  const size = R * 0.13;
+  const heal = 1 - smoothstep(life * 0.4, life, age);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, R * 0.995, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.translate(x + n.dx * R, y + n.dy * R);
+  ctx.rotate(Math.atan2(n.dy, n.dx));
+  ctx.scale(Math.max(0.12, n.nz), 1);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+  g.addColorStop(0, `rgba(10,8,8,${0.6 * heal})`);
+  g.addColorStop(0.6, `rgba(20,14,12,${0.35 * heal})`);
+  g.addColorStop(1, 'rgba(20,14,12,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, size, 0, Math.PI * 2);
+  ctx.fill();
+  const ember = 1 - smoothstep(0, 4, age);
+  if (ember > 0) {
+    ctx.globalCompositeOperation = 'lighter';
+    const e = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 0.6);
+    e.addColorStop(0, `rgba(255,${Math.round(140 + 100 * ember)},60,${0.8 * ember})`);
+    e.addColorStop(1, 'rgba(220,60,10,0)');
+    ctx.fillStyle = e;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }

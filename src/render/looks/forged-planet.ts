@@ -1,13 +1,18 @@
-import type { Planet } from '../../sim/physics';
+import type { Planet, PlanetStyle } from '../../sim/physics';
 import { createRng, range } from '../../sim/rng';
 import { hexToRgb, rgba } from '../color';
 import { fbm } from '../noise';
-import { clamp01, LIGHT, mix, smoothstep, type PlanetSprite } from '../planet-common';
+import { clamp01, isLocked, LIGHT, mix, smoothstep, type PlanetSprite, type Scar } from '../planet-common';
 import { image, type Name } from './forged-assets';
 import { place as placeShaded } from './forged-gl';
 import { GLOW, renderLitPlanet, spriteSize } from './forged-lit-planet';
-import { MAX_IMPACTS, MOLTEN_FROM, MOLTEN_FULL, shadePlanet, type PlanetCracks, type PlanetShade } from './forged-planet-gl';
-import { drawMeteors, rollMeteors, type Meteors } from './forged-planet-events';
+import { EMIT_FROM, EMIT_FULL, emitBreath, GLINT_POWER, MAX_IMPACTS, shadePlanet, WET_FROM, WET_FULL, type PlanetCracks, type PlanetShade } from './forged-planet-gl';
+import {
+  drawComet, drawDust, drawGlints, drawLanes, drawMeteors, drawPlumes, drawScar, drawShimmer, drawStorms,
+  rollDust, rollGlints, rollLanes, rollMeteors, rollStorms, rollVents,
+  type Dust, type Glints, type Lanes, type Meteors, type Storms, type Surface as Turning, type Vents,
+} from './forged-planet-events';
+import { SCAR_LIFE } from '../effects';
 import { instabilityPulse } from './instability';
 import { screenOffset } from '../orientation';
 
@@ -22,13 +27,46 @@ import { screenOffset } from '../orientation';
 
 type Rgb = [number, number, number];
 
-const ATMOSPHERE: Record<string, Rgb> = { gas: [255, 214, 160], ice: [191, 230, 255], rocky: [255, 176, 122], lava: [255, 112, 52] };
-/** The light of dusk, added along the terminator. */
-const DUSK: Record<string, Rgb> = { gas: [255, 150, 90], ice: [140, 190, 255], rocky: [255, 110, 50], lava: [255, 80, 30] };
 const NIGHT: Rgb = [16, 30, 60];
 const CITY: Rgb = [255, 196, 120];
-/** How strongly a map's light and dark are read as height: gas has none, and lava's is turned over (its bright parts are the low channels). */
-const RELIEF: Record<string, number> = { gas: 0, ice: 1.4, rocky: 3, lava: -1 };
+
+/** Weights on a map's colour (0 → 1 a channel): red above blue (what is molten, a lamp), blue above red (a sea, ice, a living world's veins), green above red (an acid lake). */
+const HOT: Rgb = [1, 0, -1];
+const BLUE: Rgb = [-1, 0, 1];
+const ACID: Rgb = [-1, 1.5, -0.5];
+
+/**
+ * How a style is dressed in the forged look. `rim` is its air's colour, `dusk` the light along its terminator; `relief` how
+ * strongly the map's light and dark are read as height (gas none, lava's turned over: its bright parts are the low channels); the cloud
+ * over it (its colour null: from the tint, as a gas giant's); the sheen of ice; what of the map glows (`emit`: by its key,
+ * at night only or always, breathing or steady) and what is water (`wet`); and how often it has rings.
+ */
+interface Dress {
+  rim: Rgb;
+  dusk: Rgb;
+  relief: number;
+  cloud: MapKind;
+  cloudColour: Rgb | null;
+  specular: number;
+  emit?: { key: Rgb; night?: boolean; pulse?: number };
+  wet?: { key: Rgb; strength: number };
+  rings: number;
+}
+const DRESS: Record<Exclude<PlanetStyle, 'star'>, Dress> = {
+  rocky: { rim: [255, 176, 122], dusk: [255, 110, 50], relief: 3, cloud: 'wisp', cloudColour: [255, 236, 215], specular: 0, rings: 0.08 },
+  gas: { rim: [255, 214, 160], dusk: [255, 150, 90], relief: 0, cloud: 'band', cloudColour: null, specular: 0, rings: 0.7 },
+  ice: { rim: [191, 230, 255], dusk: [140, 190, 255], relief: 1.4, cloud: 'haze', cloudColour: [235, 245, 255], specular: 0.35, rings: 0.2 },
+  lava: { rim: [255, 112, 52], dusk: [255, 80, 30], relief: -1, cloud: 'wisp', cloudColour: [96, 84, 78], specular: 0, emit: { key: HOT }, rings: 0.08 },
+  ocean: { rim: [150, 200, 255], dusk: [255, 140, 90], relief: 0.6, cloud: 'wisp', cloudColour: [250, 252, 255], specular: 0, wet: { key: BLUE, strength: 1.4 }, rings: 0.05 },
+  desert: { rim: [255, 200, 140], dusk: [255, 120, 60], relief: 2.5, cloud: 'haze', cloudColour: [230, 200, 160], specular: 0, rings: 0.08 },
+  acid: { rim: [210, 230, 110], dusk: [230, 180, 60], relief: 1.2, cloud: 'haze', cloudColour: [222, 222, 150], specular: 0, wet: { key: ACID, strength: 1.1 }, rings: 0.05 },
+  carbon: { rim: [150, 150, 170], dusk: [200, 140, 100], relief: 2, cloud: 'haze', cloudColour: [62, 54, 48], specular: 0.12, rings: 0.15 },
+  crystal: { rim: [210, 170, 255], dusk: [255, 150, 200], relief: 1.2, cloud: 'wisp', cloudColour: [240, 230, 255], specular: 0.45, rings: 0.25 },
+  living: { rim: [140, 255, 200], dusk: [255, 150, 90], relief: 1.5, cloud: 'wisp', cloudColour: [245, 255, 248], specular: 0, emit: { key: BLUE, night: true, pulse: 0.7 }, rings: 0.05 },
+  machine: { rim: [180, 200, 220], dusk: [255, 170, 90], relief: 1.5, cloud: 'haze', cloudColour: [190, 195, 205], specular: 0.15, emit: { key: HOT, night: true }, rings: 0.12 },
+};
+/** A locked world's ice and molten rock: the melt glows day and night, the ice mirrors the sun, steam drifts over both. */
+const LOCKED: Partial<Dress> = { relief: 1, specular: 0, cloud: 'haze', cloudColour: [228, 226, 230], emit: { key: HOT }, wet: { key: BLUE, strength: 0.6 } };
 
 /** How often the sphere and its cloud are painted again (s), and how fast the cloud turns (turns per second). */
 const CLOUD_EVERY = 1 / 10;
@@ -107,26 +145,55 @@ function proceduralMap(kind: MapKind): Uint8Array {
 
 /**
  * The maps a planet of each style may wear (painted by `scripts/forged/render_planets.py`; the first of each is the original).
- * `cities`: settlements may light its night side. `clouds: false`: it has no air.
+ * `cities`: settlements may light its night side. `clouds: false`: it has no air. `geysers`: an icy moon's cryovolcanoes.
+ * The last of lava and of ice, `locked`, is worn only by a tidally locked world (`isLocked`), and by every one of them.
  */
 interface Variant {
   name: Name;
   cities?: boolean;
   clouds?: boolean;
+  geysers?: boolean;
+  locked?: boolean;
 }
-const VARIANTS: Record<string, readonly Variant[]> = {
+const VARIANTS: Record<Exclude<PlanetStyle, 'star'>, readonly Variant[]> = {
   rocky: [{ name: 'rock', cities: true }, { name: 'rockDesert', cities: true }, { name: 'rockOcean', cities: true }, { name: 'rockMoon', clouds: false }, { name: 'rockAlien' }],
   gas: [{ name: 'gas' }, { name: 'gasNeptune' }, { name: 'gasViolet' }, { name: 'gasToxic' }, { name: 'gasCrimson' }, { name: 'gasStormy' }],
-  ice: [{ name: 'ice' }, { name: 'iceGlacier' }, { name: 'iceMethane' }, { name: 'iceDusty' }, { name: 'iceRose' }],
-  lava: [{ name: 'lavaRivers' }, { name: 'lavaMagma', clouds: false }, { name: 'lavaAsh' }],
+  ice: [{ name: 'ice' }, { name: 'iceGlacier' }, { name: 'iceMethane' }, { name: 'iceDusty' }, { name: 'iceRose' }, { name: 'iceCryo', clouds: false, geysers: true }, { name: 'iceLocked', locked: true }],
+  lava: [{ name: 'lavaRivers' }, { name: 'lavaMagma', clouds: false }, { name: 'lavaAsh' }, { name: 'lavaLocked', locked: true }],
+  ocean: [{ name: 'oceanDeep' }, { name: 'oceanReef', cities: true }],
+  desert: [{ name: 'desertDunes' }, { name: 'desertSalt', cities: true }],
+  acid: [{ name: 'acidLakes' }, { name: 'acidSulfur' }],
+  carbon: [{ name: 'carbonGraphite', clouds: false }, { name: 'carbonTar' }],
+  crystal: [{ name: 'crystalAmethyst', clouds: false }, { name: 'crystalQuartz', clouds: false }],
+  living: [{ name: 'livingMoss' }, { name: 'livingCoral' }],
+  machine: [{ name: 'machinePanels', clouds: false }, { name: 'machineHive' }],
 };
+
+const dressOf = (p: Planet): Dress => DRESS[p.style as keyof typeof DRESS] ?? DRESS.rocky;
 
 /** The map this planet wears, by its seed (the same on every screen), and its place in the style's list. */
 function variantOf(p: Planet): Variant & { index: number } {
-  const list = VARIANTS[p.style] ?? VARIANTS.rocky;
-  const index = (Math.imul(p.seed ^ 0x9e3779b9, 0x85ebca6b) >>> 8) % list.length;
+  const list = VARIANTS[p.style as keyof typeof VARIANTS] ?? VARIANTS.rocky;
+  const locked = isLocked(p);
+  if (locked) {
+    const index = list.findIndex((v) => v.locked);
+    return { ...list[index], index };
+  }
+  const free = list.filter((v) => !v.locked).length;
+  const index = (Math.imul(p.seed ^ 0x9e3779b9, 0x85ebca6b) >>> 8) % free;
   return { ...list[index], index };
 }
+
+/**
+ * How a locked world is turned: the middle of its map (where its melt is) straight away from the light. Its tilt tips the
+ * point away from the light onto the equator, its spin then turns it to longitude ½ (the shader's `mapAt` undone).
+ */
+const LOCKED_TURN = (() => {
+  const [ax, ay, az] = [-LIGHT[0], -LIGHT[1], -LIGHT[2]];
+  const tilt = Math.atan2(-ay, az);
+  const tz = -ay * Math.sin(tilt) + az * Math.cos(tilt);
+  return { tilt, spin: Math.atan2(-ax, tz) };
+})();
 
 // ---------------------------------------------------------------- a planet ----
 
@@ -147,13 +214,17 @@ interface Surface {
   add: Float32Array;
   /** How dark the night is where settlements would shine (0 where there are none). */
   night: Float32Array;
+  /** How dark the night is, settled or not, for what glows only at night. */
+  dark: Float32Array;
+  /** The sun's glint on water here, were it water. */
+  glint: Float32Array;
 }
 
 /** What is painted on the CPU when there are no shaders, made the first time it is needed. */
 interface Soft {
   surface: Surface;
   /** The sphere itself, painted again as it turns. */
-  sphere: { canvas: HTMLCanvasElement; image: ImageData; map: Texture; gain: number[]; city: Uint8Array | null; molten: boolean; shift: Float32Array };
+  sphere: { canvas: HTMLCanvasElement; image: ImageData; map: Texture; gain: number[]; city: Uint8Array | null; emit: Dress['emit'] | null; wet: Dress['wet'] | null; rate: number; phase: number; shift: Float32Array };
   cloud: { kind: MapKind; enabled: boolean; colour: Rgb; canvas: HTMLCanvasElement; image: ImageData; shift: Float32Array; direction: number; phase: number; at: number };
 }
 
@@ -174,6 +245,15 @@ interface Baked {
   aurora: Aurora | null;
   /** A lava world's meteor strikes. */
   meteors: Meteors | null;
+  /** Its volcanoes, or an icy moon's geysers. */
+  vents: Vents | null;
+  /** A desert's dust storms, an ocean's hurricanes, the glints of carbon and crystal, a machine world's trains of light. */
+  dust: Dust | null;
+  hurricanes: Storms | null;
+  glints: Glints | null;
+  lanes: Lanes | null;
+  /** Heat haze over the limb of a molten world. */
+  hot: boolean;
   /** The planet's tilt, which sets where its poles stand in the sprite. */
   tilt: number;
 }
@@ -211,7 +291,7 @@ function rollPlanet(p: Planet, variant: Variant) {
   const tilt = range(rng, -0.35, 0.35);
   const direction = rng() < 0.5 ? -1 : 1;
   const phase = rng() * Math.PI * 2;
-  const ringed = rng() < (p.style === 'gas' ? 0.7 : p.style === 'ice' ? 0.2 : 0);
+  const ringed = rng() < dressOf(p).rings;
   const settled = !!variant.cities && rng() < 0.75;
   const rings = ringed ? rollRings(rng) : null;
   // A planet without rings may have a moon: small, on a slanted orbit.
@@ -232,14 +312,16 @@ function rollPlanet(p: Planet, variant: Variant) {
     p.style === 'gas' && rng() < 0.5
       ? { latitude: range(rng, 1.18, 1.32), colour: AURORA_COLOURS[Math.floor(rng() * AURORA_COLOURS.length)], height: range(rng, 0.09, 0.15), phase: rng() * 100 }
       : null;
-  return { spin, tilt, direction, phase, rings, settled, moon, aurora };
+  // A locked world's face is set by the light, not the seed; it rolled the same draws all the same, so the rest are as they were.
+  const turn = variant.locked ? LOCKED_TURN : { spin, tilt };
+  return { ...turn, direction, phase, rings, settled, moon, aurora };
 }
 
 /** What a planet's seed gives it in the forged look, for the look gallery to pick seeds that show every kind. */
-export function forgedPlanetTraits(p: Planet): { map: string; index: number; clouds: boolean; settled: boolean; ringed: boolean; moon: boolean; aurora: boolean; storms: boolean } {
+export function forgedPlanetTraits(p: Planet): { map: string; index: number; clouds: boolean; settled: boolean; ringed: boolean; moon: boolean; aurora: boolean; storms: boolean; locked: boolean } {
   const variant = variantOf(p);
   const roll = rollPlanet(p, variant);
-  return { map: variant.name, index: variant.index, clouds: variant.clouds !== false, settled: roll.settled, ringed: !!roll.rings, moon: !!roll.moon, aurora: !!roll.aurora, storms: p.style === 'gas' };
+  return { map: variant.name, index: variant.index, clouds: variant.clouds !== false, settled: roll.settled, ringed: !!roll.rings, moon: !!roll.moon, aurora: !!roll.aurora, storms: p.style === 'gas', locked: !!variant.locked };
 }
 
 function bake(p: Planet, ps: number): Baked | null {
@@ -256,14 +338,14 @@ function bake(p: Planet, ps: number): Baked | null {
   // The map's own colours, nudged towards the planet's tint so two planets of a style are not twins; a map with a palette of its own (toxic green, crimson) barely.
   const nudge = variant.index === 0 ? 0.45 : 0.12;
   const gain = [mix(1, tr / mean, nudge), mix(1, tg / mean, nudge), mix(1, tb / mean, nudge)];
-  const rim = ATMOSPHERE[p.style] ?? ATMOSPHERE.rocky;
-  const dusk = DUSK[p.style] ?? DUSK.rocky;
-  const specular = p.style === 'ice' ? 0.35 : 0;
-  const molten = p.style === 'lava';
+  const dress: Dress = variant.locked ? { ...dressOf(p), ...LOCKED } : dressOf(p);
+  const { rim, dusk, specular, emit, wet } = dress;
+  // A locked world does not turn under its sun; its steam still drifts.
+  const surfaceRate = variant.locked ? 0 : SURFACE_RATE * direction;
 
-  // Cloud: wisps over rock, haze over ice, long streaks over a gas giant, smoke over lava.
-  const kind: MapKind = p.style === 'gas' ? 'band' : p.style === 'ice' ? 'haze' : 'wisp';
-  const colour2: Rgb = p.style === 'gas' ? [mix(tr, 255, 0.55), mix(tg, 245, 0.55), mix(tb, 230, 0.55)] : p.style === 'ice' ? [235, 245, 255] : molten ? [96, 84, 78] : [255, 236, 215];
+  // Cloud: wisps over rock, haze over ice, long streaks over a gas giant, smoke over lava, dust over a desert.
+  const kind = dress.cloud;
+  const colour2: Rgb = dress.cloudColour ?? [mix(tr, 255, 0.55), mix(tg, 245, 0.55), mix(tb, 230, 0.55)];
 
   let soft: Soft | null = null;
   /** Every pixel of the disc worked out once, for painting on the CPU. */
@@ -289,6 +371,8 @@ function bake(p: Planet, ps: number): Baked | null {
       cover: new Float32Array(size * size),
       add: new Float32Array(size * size * 3),
       night: new Float32Array(size * size),
+      dark: new Float32Array(size * size),
+      glint: new Float32Array(size * size),
     };
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
@@ -326,6 +410,8 @@ function bake(p: Planet, ps: number): Baked | null {
         for (let k = 0; k < 3; k++) surface.add[n * 3 + k] = spec * 255 + rim[k] * fresnel * 0.55 + dusk[k] * twilight;
         // On the night side, the lights of settlements.
         surface.night[n] = settled ? smoothstep(0.05, -0.3, lam) * 0.95 : 0;
+        surface.dark[n] = smoothstep(0.05, -0.3, lam);
+        surface.glint[n] = wet ? wet.strength * 255 * Math.max(0, (dx * half3[0] + dy * half3[1] + nz * half3[2]) / hl) ** GLINT_POWER : 0;
       }
     }
     const sphere = document.createElement('canvas');
@@ -334,7 +420,7 @@ function bake(p: Planet, ps: number): Baked | null {
     cloudCanvas.width = cloudCanvas.height = size;
     soft = {
       surface,
-      sphere: { canvas: sphere, image: sphere.getContext('2d')!.createImageData(size, size), map, gain, city: settled ? proceduralMap('city') : null, molten, shift: new Float32Array(MAP_H) },
+      sphere: { canvas: sphere, image: sphere.getContext('2d')!.createImageData(size, size), map, gain, city: settled ? proceduralMap('city') : null, emit: emit ?? null, wet: wet ?? null, rate: surfaceRate, phase, shift: new Float32Array(MAP_H) },
       cloud: { kind, enabled: variant.clouds !== false, colour: colour2, canvas: cloudCanvas, image: cloudCanvas.getContext('2d')!.createImageData(size, size), shift: new Float32Array(MAP_H), direction, phase, at: -1 },
     };
     return soft;
@@ -385,12 +471,17 @@ function bake(p: Planet, ps: number): Baked | null {
       night: NIGHT.map((v) => v / 255),
       cityLight: CITY.map((v) => v / 255),
       specular,
-      molten: molten ? 1 : 0,
-      relief: RELIEF[p.style] ?? RELIEF.rocky,
+      emitKey: emit?.key ?? HOT,
+      emit: emit ? 1 : 0,
+      emitNight: !!emit?.night,
+      emitPulse: emit?.pulse ?? 0,
+      wetKey: wet?.key ?? BLUE,
+      wet: wet?.strength ?? 0,
+      relief: dress.relief,
       air: variant.clouds !== false,
       cloudColour: colour2.map((v) => v / 255),
       band: kind === 'band',
-      surfaceRate: SURFACE_RATE * direction,
+      surfaceRate,
       cloudRate: CLOUD_RATE * direction,
       phase,
       shadow: SHADOW,
@@ -403,6 +494,12 @@ function bake(p: Planet, ps: number): Baked | null {
     storms: p.style === 'gas',
     aurora,
     meteors: p.style === 'lava' ? rollMeteors(p) : null,
+    vents: p.style === 'lava' && !variant.locked ? rollVents(p, 'ash') : variant.geysers ? rollVents(p, 'ice') : null,
+    dust: p.style === 'desert' ? rollDust(p) : null,
+    hurricanes: p.style === 'ocean' ? rollStorms(p) : null,
+    glints: p.style === 'carbon' ? rollGlints(p, false, [255, 255, 255]) : p.style === 'crystal' ? rollGlints(p, true, [mix(tr, 255, 0.5), mix(tg, 255, 0.5), mix(tb, 255, 0.5)]) : null,
+    lanes: p.style === 'machine' ? rollLanes(p) : null,
+    hot: p.style === 'lava',
     tilt,
   };
 }
@@ -413,8 +510,11 @@ function bake(p: Planet, ps: number): Baked | null {
  */
 function paintSurface(b: Soft, time: number): void {
   const { sphere, surface, cloud } = b;
-  const turn = time * SURFACE_RATE * cloud.direction;
+  const turn = time * sphere.rate;
   const shift = sphere.shift;
+  const emit = sphere.emit;
+  const wet = sphere.wet;
+  const breath = emit ? emitBreath(emit.pulse ?? 0, time, sphere.phase) : 0;
   for (let r = 0; r < MAP_H; r++) shift[r] = cloud.kind === 'band' ? turn * (1 + 0.5 * Math.sin((r / MAP_H) * Math.PI * 3 + cloud.phase)) : turn;
   const cloudMap = proceduralMap(cloud.kind);
   const data = sphere.image.data;
@@ -447,10 +547,12 @@ function paintSurface(b: Soft, time: number): void {
       const bottom = texels[b0 + c] + (texels[b1 + c] - texels[b0 + c]) * fx;
       albedo[c] = Math.min(255, (top + (bottom - top) * fy) * sphere.gain[c]);
     }
-    // A lava planet: what is molten shines by itself, by day and by night (as in the shader).
-    const glow = sphere.molten ? smoothstep(MOLTEN_FROM, MOLTEN_FULL, (albedo[0] - albedo[2]) / 255) * 1.1 : 0;
+    // What of the map shines by itself, and what is water mirroring the sun (as in the shader).
+    const keyed = (key: Rgb): number => (albedo[0] * key[0] + albedo[1] * key[1] + albedo[2] * key[2]) / 255;
+    const glow = emit ? smoothstep(EMIT_FROM, EMIT_FULL, keyed(emit.key)) * 1.1 * breath * (emit.night ? surface.dark[k] : 1) : 0;
+    const glint = wet ? surface.glint[k] * smoothstep(WET_FROM, WET_FULL, keyed(wet.key)) : 0;
     for (let c = 0; c < 3; c++) {
-      data[i + c] = Math.min(255, Math.max(mix(NIGHT[c], albedo[c] * shadow, lit) + CITY[c] * lights, albedo[c] * glow) + surface.add[k * 3 + c]);
+      data[i + c] = Math.min(255, Math.max(mix(NIGHT[c], albedo[c] * shadow, lit) + CITY[c] * lights, albedo[c] * glow) + surface.add[k * 3 + c] + glint);
     }
     data[i + 3] = 255 * surface.cover[k];
   }
@@ -723,6 +825,8 @@ function drawAurora(ctx: CanvasRenderingContext2D, x: number, y: number, R: numb
   ctx.restore();
 }
 
+const NO_SCARS: readonly Scar[] = [];
+
 /** A planet's sprite in the forged look: baked on first draw once its map has loaded, the lit planet of `forged-lit-planet.ts` until then. */
 export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
   // The stand-in is made only if it is drawn: once the map has loaded (nearly always, after the first planets) it never is.
@@ -756,7 +860,7 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
   };
   return {
     size: spriteSize(p, ps),
-    draw(ctx, x, y, scale, time, planet = p) {
+    draw(ctx, x, y, scale, time, planet = p, scars = NO_SCARS) {
       baked ??= bake(p, ps);
       if (!baked) {
         fallback ??= renderLitPlanet(p, ps);
@@ -809,10 +913,25 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
       }
       if (moon?.front) drawMoonShadow(ctx, x, y, p.radius, baked.moon!, moon);
       if (baked.storms) drawLightning(ctx, x, y, p, time);
-      if (baked.meteors) drawMeteors(ctx, x, y, p, { spin: baked.shade.spin, tilt: baked.shade.tilt, rate: baked.shade.surfaceRate }, baked.meteors, time);
+      const turning: Turning = { spin: baked.shade.spin, tilt: baked.shade.tilt, rate: baked.shade.surfaceRate };
+      for (const scar of scars) drawScarOf(ctx, x, y, p.radius, turning, scar, time);
+      if (baked.dust) drawDust(ctx, x, y, p, turning, baked.dust, time);
+      if (baked.hurricanes) drawStorms(ctx, x, y, p, turning, baked.hurricanes, time);
+      if (baked.lanes) drawLanes(ctx, x, y, p, turning, baked.lanes, time);
+      if (baked.glints) drawGlints(ctx, x, y, p, turning, baked.glints, time);
+      if (baked.meteors) drawMeteors(ctx, x, y, p, turning, baked.meteors, time);
+      if (baked.vents) drawPlumes(ctx, x, y, p, turning, baked.vents, time);
+      if (baked.hot) drawShimmer(ctx, x, y, p.radius, p.seed, time);
       if (baked.aurora) drawAurora(ctx, x, y, p.radius, baked.aurora, baked.tilt, time);
       if (baked.rings) place(ctx, baked.rings.front, x, y, scale);
       if (moon?.front) drawMoon(ctx, x, y, baked.moon!, moon, p.radius);
+      drawComet(ctx, x, y, p, time);
     },
   };
+}
+
+/** A shot's scar, struck where the shot met the rim (the field's angle, turned upright on the screen), just in from the limb. */
+function drawScarOf(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, s: Turning, scar: Scar, time: number): void {
+  const [dx, dy] = screenOffset(Math.cos(scar.angle), Math.sin(scar.angle));
+  drawScar(ctx, x, y, R, s, { x: dx * IMPACT_AT, y: dy * IMPACT_AT }, scar.age, SCAR_LIFE, time);
 }
