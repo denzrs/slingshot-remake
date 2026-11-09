@@ -231,8 +231,14 @@
   .menu-page .chips { grid-column: 1 / -1; }
   .menu-page .sectors__points { grid-column: 2; grid-row: 1; }
   .menu-page .lobby__head { flex-wrap: wrap; gap: 12px; }
-  .menu-page .lobby-room { flex-wrap: wrap; }
+  /* A room's card is a grid, so it does not wrap: on a phone the name and the host take the whole card, and Join and Watch sit under them side by side, instead of two tall columns that squeeze the name to a few letters. */
+  .menu-page .lobby-room { grid-template-columns: minmax(0, 1fr); }
+  .menu-page .lobby-room .lobby__button,
+  .menu-page .lobby-room input + .lobby__button,
+  .menu-page .lobby-room__actions { grid-column: 1; grid-row: auto; }
   .menu-page .lobby-room__actions { width: 100%; }
+  .menu-page .lobby-room__actions .lobby__button { flex: 1 1 0; min-height: 48px; }
+  .menu-page .lobby-room__info strong { display: -webkit-box; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
   .lobby__preset > .item__icon { width: 44px; height: 36px; }
   .lobby__preset > .item__title { font-size: 21px; }
   .menu-page .lobby__preset { gap: 6px; padding: 8px; }
