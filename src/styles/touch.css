@@ -694,6 +694,20 @@ html.upright #clip-share {
   }
 }
 
+/* …unless the window is short (a phone held sideways): there the top right is the menu's own, and the strip goes back to the foot, smaller and clear of the notch. */
+@media (min-width: 761px) and (max-height: 620px) and (pointer: coarse) {
+  #pwa-banner {
+    top: auto;
+    right: auto;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    left: 50%;
+    height: 64px;
+    width: min(480px, calc(100% - 2 * max(16px, env(safe-area-inset-left), env(safe-area-inset-right))));
+    transform: translateX(-50%);
+  }
+  #pwa-banner p { -webkit-line-clamp: 2; }
+}
+
 :is(#pwa-banner, .install-note) .pwa-banner__icon {
   flex: none;
   width: 48px;

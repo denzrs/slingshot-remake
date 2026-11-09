@@ -16,6 +16,16 @@
   backdrop-filter: none;
 }
 
+/* A phone held sideways has the notch (and the rounded corners) at its sides: the page keeps clear of them. Narrower windows
+   take this from the phone rules below and in mobile.css. */
+@media (min-width: 761px) {
+  .screen--menu-page,
+  .screen--title {
+    padding-left: max(clamp(22px, 5vw, 88px), env(safe-area-inset-left));
+    padding-right: max(clamp(22px, 5vw, 88px), env(safe-area-inset-right));
+  }
+}
+
 .menu-page {
   display: flex;
   flex: 0 1 auto;
@@ -92,7 +102,7 @@
 .menu-page--briefing,
 .menu-page--leaderboard,
 .menu-page--lobby { width: min(1280px, 100%); }
-.menu-page--pause .menu-page__main { position: relative; display: flex; align-items: center; justify-content: center; height: 100%; }
+.menu-page--pause .menu-page__main { position: relative; display: flex; align-items: safe center; justify-content: safe center; height: 100%; overflow-y: auto; }
 .pause-standing { width: min(520px, 100%); }
 .menu-page--pause .ranking, .menu-page--pause .score-chart { max-width: none; margin-top: 0; margin-bottom: 22px; }
 .menu-page--pause .ranking li { padding: 11px 0; gap: 12px; }
@@ -363,6 +373,12 @@
   .menu-page__head .eyebrow { margin-bottom: 4px; }
   .menu-page__foot { min-height: 0; padding-top: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   .menu-page__actions .item { min-height: 44px; padding-block: 8px; }
+  /* The standings of a finished game and of the pause menu: closer rows and a smaller winner, so more of them are in view. */
+  .result-standing__winner { margin-bottom: 12px; font-size: 32px; }
+  .result-standing .ranking li { padding-block: 7px; }
+  .menu-page--pause .ranking li { padding-block: 6px; }
+  .menu-page--pause .ranking, .menu-page--pause .score-chart { margin-bottom: 10px; }
+  .menu-page--pause .ranking-label, .pause-standing__round { margin-bottom: 6px; }
 }
 
 @media (max-width: 1000px) {
