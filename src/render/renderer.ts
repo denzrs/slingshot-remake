@@ -196,8 +196,21 @@ export class Renderer {
     return `${top}|${bottom}|${touchScale()}`;
   }
 
+  /**
+   * The page never scrolls (`html` and `body` are `overflow: hidden`), yet turning an iPhone in the home-screen app can leave it
+   * scrolled by the landscape status-bar inset, 62 px, with nothing to scroll: the picture is where it should be but the layout
+   * viewport is 62 px off it, so everything fixed to the screen (the pause button, the controls) has its hit box 62 px above
+   * where it is drawn and the top of the screen stops taking taps. Put it back whenever it is found off. Only for the window
+   * itself: a page that draws into a box of its own scrolls by design.
+   */
+  private unshiftPage(): void {
+    if (this.viewport !== windowViewport) return;
+    if (window.scrollX || window.scrollY || window.visualViewport?.offsetTop) window.scrollTo(0, 0);
+  }
+
   /** Catches window resizes, zoom, moving to a screen with another pixel ratio, a change of pointer and a safe area that settled late. */
   private resizeIfNeeded(): void {
+    this.unshiftPage();
     const v = this.view;
     const { width, height, rotated } = this.viewport();
     // The pointer type can change with no resize (an emulator turning touch on, a keyboard or mouse joining a tablet), and the layout follows it.

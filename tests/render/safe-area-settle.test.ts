@@ -44,3 +44,30 @@ describe('the phone layout and a safe area that settles late', () => {
     expect(renderer.view).toBe(settled);
   });
 });
+
+describe('a page that iOS left scrolled after a turn', () => {
+  const canvas = () => ({ width: 0, height: 0, style: {}, getContext: () => ({}) }) as unknown as HTMLCanvasElement;
+
+  it('is put back at the top, so the pause button is where it is drawn', () => {
+    const scrollTo = vi.fn();
+    vi.stubGlobal('window', {
+      devicePixelRatio: 3, matchMedia: () => ({ matches: true }), scrollX: 0, scrollY: 62, visualViewport: { offsetTop: 62 }, scrollTo,
+      innerWidth: 402, innerHeight: 812,
+    });
+    const renderer = new Renderer(canvas());
+    (renderer as unknown as { resizeIfNeeded(): void }).resizeIfNeeded();
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+  });
+
+  it('is left alone when it is not scrolled, and when the renderer draws into a box of its own', () => {
+    const scrollTo = vi.fn();
+    vi.stubGlobal('window', {
+      devicePixelRatio: 3, matchMedia: () => ({ matches: true }), scrollX: 0, scrollY: 0, visualViewport: { offsetTop: 0 }, scrollTo,
+      innerWidth: 402, innerHeight: 812,
+    });
+    (new Renderer(canvas()) as unknown as { resizeIfNeeded(): void }).resizeIfNeeded();
+    vi.stubGlobal('window', { devicePixelRatio: 3, matchMedia: () => ({ matches: true }), scrollX: 0, scrollY: 300, visualViewport: { offsetTop: 300 }, scrollTo });
+    (new Renderer(canvas(), () => ({ width: 402, height: 812, rotated: false })) as unknown as { resizeIfNeeded(): void }).resizeIfNeeded();
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+});
