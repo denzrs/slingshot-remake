@@ -2,6 +2,7 @@ import { getLang, t } from '../../platform/i18n';
 import type { GameMode } from '../../sim/modes';
 import { dailyMenuHint, dailyScreen } from '../daily/daily';
 import { factTicker } from '../stats/facts';
+import { statsAvailable, statsScreen } from '../stats/stats';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { modeArt } from '../menu/mode-icons';
 import { modeName } from '../menu/mode-name';
@@ -86,6 +87,7 @@ export function titleScreen(app: App): Screen {
         h('header.launcher__head', null,
           h('div.launcher__brand', null,
             h('h1.wordmark', { id: 'wordmark' }, 'Slingshot'),
+            h('div.launcher__stats-mobile', { 'data-section': 'stats-mobile' }),
             h('div.launcher__tutorial-mobile', { 'data-section': 'tutorial-mobile' }),
             h('div.launcher__settings-mobile', { 'data-section': 'settings-mobile' }),
           ),
@@ -114,10 +116,12 @@ export function titleScreen(app: App): Screen {
     items: [
       { kind: 'action', section: 'navigation', label: t('launcher.local'), selected: () => launcherSection === 'local', run: () => chooseSection('local') },
       { kind: 'action', section: 'navigation', label: t('launcher.online'), selected: () => launcherSection === 'online', run: () => chooseSection('online') },
+      { kind: 'action', section: 'navigation', className: 'launcher__stats-nav', hidden: () => !statsAvailable(), label: t('stats.title'), run: () => app.menu.push(() => statsScreen(app)) },
       { kind: 'action', section: 'navigation', className: 'launcher__tutorial-nav', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
       { kind: 'action', section: 'navigation', className: 'launcher__settings-nav', label: t('common.settings'), run: () => openSettings(app) },
       { kind: 'action', section: 'tutorial-mobile', className: 'launcher__tutorial-button', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
       { kind: 'action', section: 'settings-mobile', className: 'launcher__settings-button', label: t('common.settings'), run: () => openSettings(app) },
+      { kind: 'action', section: 'stats-mobile', className: 'launcher__stats-button', hidden: () => !statsAvailable(), label: t('stats.title'), run: () => app.menu.push(() => statsScreen(app)) },
       modeCard('classic'),
       modeCard('horizon'),
       modeCard('solar'),
@@ -127,7 +131,7 @@ export function titleScreen(app: App): Screen {
       { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.code'), hint: t('flow.codeHint'), icon: () => modeArt('code'), run: () => app.openLobby('code') },
       { ...languageItem(app), section: 'language' },
     ],
-    focus: launcherSection === 'local' ? 6 : 10,
+    focus: launcherSection === 'local' ? 8 : 12,
     update,
     dispose: () => {
       window.removeEventListener('resize', onResize);

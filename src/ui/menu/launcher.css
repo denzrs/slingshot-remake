@@ -42,6 +42,7 @@
   min-width: 0;
 }
 
+.launcher__stats-mobile,
 .launcher__tutorial-mobile,
 .launcher__settings-mobile { display: none; }
 
@@ -832,10 +833,12 @@
   .launcher__head { margin-bottom: 26px; }
   .launcher__brand { gap: 8px; }
   .launcher .wordmark { flex: 0 1 auto; min-width: 0; font-size: clamp(52px, 15vw, 68px); white-space: nowrap; }
-  .launcher__tutorial-mobile { margin-left: auto; }
+  .launcher__stats-mobile { margin-left: auto; }
+  .launcher__stats-mobile,
   .launcher__tutorial-mobile,
   .launcher__settings-mobile { display: block; flex: 0 0 auto; width: max-content; }
   .launcher__settings-button,
+  .launcher__stats-button,
   .launcher__tutorial-button {
     width: auto;
     min-height: 40px;
@@ -849,6 +852,20 @@
   }
   .launcher__tutorial-nav,
   .launcher__settings-nav { display: none; }
+  .launcher__stats-nav { display: none; }
+  /* A bar chart, beside help and settings up by the wordmark. */
+  .launcher__stats-button { position: relative; width: 40px; justify-content: center; overflow: hidden; padding: 0; font-size: 0; }
+  .launcher__stats-button::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    content: '';
+    width: 22px;
+    height: 22px;
+    background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M4 20h16M7 16v-4M12 16V6M17 16v-7'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
   .launcher__tutorial-button { position: relative; width: 40px; justify-content: center; overflow: hidden; padding: 0; font-size: 0; }
   .launcher__tutorial-button::after {
     position: absolute;
@@ -924,6 +941,8 @@
 }
 
 @media (max-width: 460px) {
+  /* Three icon buttons share the line with it: it takes what they leave (it is about 3.9 times as wide as its font size). */
+  .launcher .wordmark { font-size: min(58px, calc((100vw - 184px) / 4.1)); }
   .launcher__settings-button { position: relative; width: 40px; justify-content: center; overflow: hidden; padding: 0; font-size: 0; }
   .launcher__settings-button::after {
     position: absolute;
