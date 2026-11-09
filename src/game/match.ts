@@ -844,14 +844,16 @@ export abstract class Match {
   }
 
   /**
-   * A drop does not hand the round to the other side. But if every present ship has been shot down, the round ends
-   * without awarding it to a ship whose person was absent. Otherwise an away ship still keeps the round open.
+   * The round is settled by the ships of those at the table: one whose person is away does not keep it open, so a
+   * round left with one side at the table is over, and it never goes to the away ship. Only with nobody at the table
+   * in the round, and nobody there shot down either, does it wait for those away.
    */
   get decided(): boolean {
     const alive = this.players.filter((p) => p.alive);
-    const presentAlive = alive.some((p) => !p.away && !p.left);
+    const present = alive.filter(atTable);
+    if (present.length) return sidesOf(present) <= 1;
     // Away ships cannot win by default once nobody still at the table has survived.
-    if (!presentAlive && this.players.some((p) => !p.away && !p.left && !p.alive)) return true;
+    if (this.players.some((p) => atTable(p) && !p.alive)) return true;
     return sidesOf(alive) <= 1;
   }
 
@@ -860,7 +862,7 @@ export abstract class Match {
     return sidesOf(this.alive);
   }
 
-  /** The round is only still on because a side whose people are all away has ships in it: the others wait for them. */
+  /** The round is only still on because those away have ships in it, and nobody at the table has: it waits for them. */
   get waitingForAway(): boolean {
     return this.sidesIn <= 1 && !this.decided;
   }
@@ -1282,7 +1284,9 @@ export abstract class Match {
     p.locked = false;
     p.passed = false;
     if (this.phase !== 'aiming') return;
-    if (away) this.passTurnOf(id);
+    // Their dropping out may leave one side at the table: that round is over.
+    if (away && this.decided) this.endRound();
+    else if (away) this.passTurnOf(id);
     else this.giveTurnBackTo(id);
   }
 
