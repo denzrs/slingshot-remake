@@ -93,6 +93,8 @@ export class Renderer {
   private lastFullScreen = true;
   /** Whether the pointer was coarse when the layout was last made: the phone layout depends on it. */
   private coarse = false;
+  /** The safe area and touch scale the phone layout was last made with (see `layoutInputs`). */
+  private layoutKey = '';
   /** Frames since the field came out from under a menu, while `refreshLayer` still has work to do. */
   private revealedFor = -1;
   /** Fingers (or the mouse) down on the canvas: taking it out of the page would end their drag. */
@@ -115,6 +117,7 @@ export class Renderer {
     const dpr = window.devicePixelRatio || 1;
     const coarse = window.matchMedia('(pointer: coarse)').matches;
     this.coarse = coarse;
+    this.layoutKey = this.layoutInputs(coarse, forced);
     // Held upright a phone gets its own layout: HUD on top, the field, the thumbs' controls underneath.
     const portrait = forced === undefined && coarse && cssHeight > cssWidth ? portraitLayout(cssWidth, cssHeight, safeArea(), touchScale()) : null;
     this.keepCelestialArtworkUpright = forced === undefined && coarse && !!portrait?.rotated;
@@ -180,12 +183,25 @@ export class Renderer {
     return rotated ? { x: offsetX + y * scale, y: offsetY + (FIELD.width - x) * scale } : { x: offsetX + x * scale, y: offsetY + y * scale };
   }
 
-  /** Catches window resizes, zoom, moving to a screen with another pixel ratio and a change of pointer. */
+  /**
+   * What the phone layout reads from the page besides the window's size: the notch and home bar, and the touch scale. iOS
+   * settles these a moment after the window has its new size when a phone is turned (in the home-screen app the window is
+   * first as tall as the screen with the inset at the status bar, then shorter with the inset still there, then the inset
+   * drops to 0 with the size unchanged), so a layout made on the resize alone keeps a stale top. Empty where the layout does
+   * not use them: off a touch screen, and for a viewport whose turn is fixed by whoever made it.
+   */
+  private layoutInputs(coarse: boolean, forced: boolean | undefined): string {
+    if (!coarse || forced !== undefined) return '';
+    const { top, bottom } = safeArea();
+    return `${top}|${bottom}|${touchScale()}`;
+  }
+
+  /** Catches window resizes, zoom, moving to a screen with another pixel ratio, a change of pointer and a safe area that settled late. */
   private resizeIfNeeded(): void {
     const v = this.view;
-    const { width, height } = this.viewport();
+    const { width, height, rotated } = this.viewport();
     // The pointer type can change with no resize (an emulator turning touch on, a keyboard or mouse joining a tablet), and the layout follows it.
-    if (v.cssWidth !== width || v.cssHeight !== height || v.dpr !== (window.devicePixelRatio || 1) || this.coarse !== window.matchMedia('(pointer: coarse)').matches) {
+    if (v.cssWidth !== width || v.cssHeight !== height || v.dpr !== (window.devicePixelRatio || 1) || this.coarse !== window.matchMedia('(pointer: coarse)').matches || this.layoutKey !== this.layoutInputs(this.coarse, rotated)) {
       this.resize();
     }
   }
