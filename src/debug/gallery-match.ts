@@ -39,5 +39,10 @@ export const STYLE_NAMES: Record<PlanetStyle, string> = {
   crystal: 'Kristall',
   living: 'Lebend',
   machine: 'Maschine',
+  iron: 'Eisen',
+  eyeball: 'Augapfel',
+  hycean: 'Hycean',
+  fungal: 'Pilz',
+  volcanic: 'Vulkanmond',
   star: 'Stern',
 };

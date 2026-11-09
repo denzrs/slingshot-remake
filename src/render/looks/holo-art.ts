@@ -123,9 +123,16 @@ const PLANET_HUES: Partial<Record<Planet['style'], string>> = {
   crystal: '#d8a0ff',
   living: '#60ffb0',
   machine: '#a8c4dc',
+  iron: '#d4dae4',
+  eyeball: '#b8e4ff',
+  hycean: '#60e8d0',
+  fungal: '#e090ff',
+  volcanic: '#ffe066',
 };
 const LAVA_HUE = '#ff6a4d';
 const ICE_HUE = '#b8e4ff';
+/** An eyeball world's open sea, in place of a locked world's melt. */
+const SEA_HUE = '#3a8cff';
 
 function planetColor(p: Planet): string {
   return p.style === 'gas' ? HOLO_COLOR : PLANET_HUES[p.style] ?? '#ffb066';
@@ -135,6 +142,7 @@ function planetColor(p: Planet): string {
 function globeLines(p: Planet): { parallels: number[]; meridians: number } {
   if (p.style === 'gas') return { parallels: [-0.78, -0.52, -0.26, 0, 0.26, 0.52, 0.78], meridians: 12 };
   if (p.style === 'crystal') return { parallels: [-0.5, 0, 0.5], meridians: 6 };
+  if (p.style === 'hycean') return { parallels: [-0.6, -0.2, 0.2, 0.6], meridians: 10 };
   if (p.style === 'machine') return { parallels: [-0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8], meridians: 24 };
   return { parallels: [-0.7, -0.35, 0, 0.35, 0.7], meridians: p.style === 'ice' ? 8 : 12 };
 }
@@ -155,8 +163,9 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
   const normalColor = planetColor(p);
   const phase = ((p.seed % 97) / 97) * TAU;
   // Turns per second, either way round, and the axis' lean (radians) from the vertical.
-  // A tidally locked world does not turn, and stands upright: its far side, away from the light, is projected as lava, the near as ice.
+  // A tidally locked world does not turn, and stands upright: its side towards the light is projected as lava (an eyeball world's as sea), the far side as ice.
   const locked = isLocked(p);
+  const hotHue = p.style === 'eyeball' ? SEA_HUE : LAVA_HUE;
   const spin = locked ? 0 : (0.035 + (((p.seed * 7) % 13) / 13) * 0.04) * (p.seed % 2 ? 1 : -1);
   const tilt = locked ? 0 : (((p.seed * 3) % 11) / 11 - 0.5) * 0.9;
   const { parallels, meridians } = globeLines(p);
@@ -180,12 +189,12 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
       ctx.fillStyle = rgba(color, 0.07);
       ctx.fill();
       if (locked && !signal) {
-        // The molten side glows through the plate where it shows, round the limb away from the light.
-        const lx = -LIGHT[0] * R;
-        const ly = -LIGHT[1] * R;
+        // The molten side glows through the plate where it shows, round the limb towards the light.
+        const lx = LIGHT[0] * R;
+        const ly = LIGHT[1] * R;
         const melt = ctx.createRadialGradient(lx, ly, 0, lx, ly, R * 1.1);
-        melt.addColorStop(0, rgba(LAVA_HUE, 0.32));
-        melt.addColorStop(1, rgba(LAVA_HUE, 0));
+        melt.addColorStop(0, rgba(hotHue, 0.32));
+        melt.addColorStop(1, rgba(hotHue, 0));
         ctx.fillStyle = melt;
         ctx.fill();
       }
@@ -204,8 +213,8 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
         const sy = -(Y * cosE - Z * sinE) * R;
         const sz = Z * cosE + Y * sinE;
         if (!first) {
-          // Which side of a locked world the segment lies on: away from the light (the screen's y runs down, as LIGHT's does).
-          const hot = locked && -(((sx + px) / 2 / R) * LIGHT[0] + ((sy + py) / 2 / R) * LIGHT[1] + ((sz + pz) / 2) * LIGHT[2]) > 0;
+          // Which side of a locked world the segment lies on: towards the light (the screen's y runs down, as LIGHT's does).
+          const hot = locked && ((sx + px) / 2 / R) * LIGHT[0] + ((sy + py) / 2 / R) * LIGHT[1] + ((sz + pz) / 2) * LIGHT[2] > 0;
           const path = sz + pz > 0 ? (hot ? nearHot : near) : hot ? farHot : far;
           path.moveTo(px, py);
           path.lineTo(sx, sy);
@@ -229,7 +238,7 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
         }
       }
       const cold = locked && !signal ? ICE_HUE : color;
-      const molten = locked && !signal ? LAVA_HUE : color;
+      const molten = locked && !signal ? hotHue : color;
       ctx.lineWidth = 0.5;
       ctx.strokeStyle = rgba(cold, 0.13);
       ctx.stroke(far);

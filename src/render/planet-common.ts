@@ -21,10 +21,13 @@ export interface PlanetSprite {
 export const LIGHT: Vec3 = normalize([-0.62, -0.5, 0.6]);
 
 /**
- * A lava or ice world turned for good with one face to its sun (tidally locked): ice on that face, molten rock on the one
- * away from it, and it does not turn. One in four of them, by the seed, so every look and every screen agree.
+ * A lava or ice world turned for good with one face to its sun (tidally locked): molten rock on that face, ice on the one
+ * away from it in the dark, and it does not turn. One in four of them, by the seed, so every look and every screen agree;
+ * and every eyeball world (an open sea under its sun, ice all round).
  */
 export function isLocked(p: Planet): boolean {
+  // An eyeball world always is: its open sea is the face to its sun.
+  if (p.style === 'eyeball') return true;
   if (p.style !== 'lava' && p.style !== 'ice') return false;
   return ((Math.imul(p.seed ^ 0x27d4eb2f, 0x165667b1) >>> 8) & 255) < 64;
 }

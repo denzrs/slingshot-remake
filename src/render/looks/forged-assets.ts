@@ -28,6 +28,19 @@ import texIceLockedUrl from './forged/tex-ice-locked.webp';
 import texIceCryoUrl from './forged/tex-ice-cryo.webp';
 import texOceanDeepUrl from './forged/tex-ocean-deep.webp';
 import texOceanReefUrl from './forged/tex-ocean-reef.webp';
+import texRockJungleUrl from './forged/tex-rock-jungle.webp';
+import texRockTundraUrl from './forged/tex-rock-tundra.webp';
+import texRockSavannaUrl from './forged/tex-rock-savanna.webp';
+import texRockAutumnUrl from './forged/tex-rock-autumn.webp';
+import texIronCoreUrl from './forged/tex-iron-core.webp';
+import texIronRustUrl from './forged/tex-iron-rust.webp';
+import texEyeballUrl from './forged/tex-eyeball.webp';
+import texHyceanTealUrl from './forged/tex-hycean-teal.webp';
+import texHyceanDeepUrl from './forged/tex-hycean-deep.webp';
+import texFungalCapsUrl from './forged/tex-fungal-caps.webp';
+import texFungalMyceliumUrl from './forged/tex-fungal-mycelium.webp';
+import texVolcanicIoUrl from './forged/tex-volcanic-io.webp';
+import texVolcanicRedUrl from './forged/tex-volcanic-red.webp';
 import texDesertDunesUrl from './forged/tex-desert-dunes.webp';
 import texDesertSaltUrl from './forged/tex-desert-salt.webp';
 import texAcidLakesUrl from './forged/tex-acid-lakes.webp';
@@ -98,6 +111,19 @@ const URLS = {
   livingCoral: texLivingCoralUrl,
   machinePanels: texMachinePanelsUrl,
   machineHive: texMachineHiveUrl,
+  rockJungle: texRockJungleUrl,
+  rockTundra: texRockTundraUrl,
+  rockSavanna: texRockSavannaUrl,
+  rockAutumn: texRockAutumnUrl,
+  ironCore: texIronCoreUrl,
+  ironRust: texIronRustUrl,
+  eyeball: texEyeballUrl,
+  hyceanTeal: texHyceanTealUrl,
+  hyceanDeep: texHyceanDeepUrl,
+  fungalCaps: texFungalCapsUrl,
+  fungalMycelium: texFungalMyceliumUrl,
+  volcanicIo: texVolcanicIoUrl,
+  volcanicRed: texVolcanicRedUrl,
 };
 export type Name = keyof typeof URLS;
 
