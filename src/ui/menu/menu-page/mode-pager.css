@@ -75,8 +75,8 @@
   opacity: 1;
   text-shadow: 0 0 22px rgb(255 173 101 / .12);
 }
-.menu-page .mode-pager .item:hover,
 .menu-page .mode-pager .item:focus { background: transparent; color: var(--bone); }
+@media (hover: hover) { .menu-page .mode-pager .item:hover { background: transparent; color: var(--bone); } }
 .menu-page .mode-pager .item:focus-visible {
   outline: none;
   box-shadow: none;
