@@ -3,6 +3,9 @@ import { GLSL_HEAD, shade, type Shaded, type Stage } from './forged-gl';
 
 /** The most hits an unstable planet shows cracks for: the biggest planet breaks at its ninth. */
 export const MAX_IMPACTS = 8;
+/** A lava planet's map shines by itself where red stands this far above blue (0 → 1): from the first, in full at the second. */
+export const MOLTEN_FROM = 0.3;
+export const MOLTEN_FULL = 0.75;
 
 /**
  * The sphere and cloud of a forged planet as a shader, the same picture as `paintSurface` and `paintClouds` in
@@ -31,6 +34,7 @@ uniform float uRelief;
 uniform float uAir;
 uniform float uHasCloud;
 uniform float uHasCity;
+uniform float uMolten;
 uniform float uBand;
 uniform float uSurfaceTurn;
 uniform float uCloudTurn;
@@ -135,6 +139,8 @@ void main() {
   // Night: the lights of settlements, under the cloud.
   float night = (1.0 - smoothstep(-0.3, 0.05, lam)) * 0.95;
   ground += uCityLight * uHasCity * texture(uCity, vec2(surfaceU, v)).r * night;
+  // A lava planet: what is molten (red well above blue on its map) shines by itself, by day and by night, under its smoke.
+  ground = max(ground, albedo * uMolten * smoothstep(${MOLTEN_FROM.toFixed(2)}, ${MOLTEN_FULL.toFixed(2)}, albedo.r - albedo.b) * 1.1);
 
   // The cloud, lit like the sphere under it.
   float shadeCloud = 0.12 + 0.88 * lit;
@@ -208,6 +214,8 @@ export interface PlanetShade {
   night: readonly number[];
   cityLight: readonly number[];
   specular: number;
+  /** A lava planet: its map's hot colours glow (0 or 1). */
+  molten: number;
   relief: number;
   air: boolean;
   cloudColour: readonly number[];
@@ -301,6 +309,7 @@ export function shadePlanet(s: PlanetShade, time: number, cracks: PlanetCracks |
     u.v3('uCityLight', s.cityLight);
     u.v3('uCloudColour', s.cloudColour);
     u.f('uSpecular', s.specular);
+    u.f('uMolten', s.molten);
     u.f('uRelief', s.relief);
     u.f('uAir', s.air ? 1 : 0);
     u.f('uHasCloud', s.air ? 1 : 0);

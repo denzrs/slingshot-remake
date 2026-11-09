@@ -86,7 +86,9 @@ export function renderLitPlanet(p: Planet, ps: number): PlanetSprite {
   strip.height = H;
   const sctx = strip.getContext('2d')!;
   const img = sctx.createImageData(W, H);
-  const veil = lift(tint, bone, 0.62);
+  // On lava the light veil is the glow of its veins.
+  const lava = p.style === 'lava';
+  const veil: Rgb = lava ? [255, 150, 70] : lift(tint, bone, 0.62);
   const shade = lift(tint, plate, 0.7);
   const bandFreq = range(rng, 7, 12);
   const seed = p.seed;
@@ -103,6 +105,10 @@ export function renderLitPlanet(p: Planet, ps: number): PlanetSprite {
         const turb = fbm(cx * 1.5, lat * 1.2, cz * 1.5, seed, 3);
         v = 0.5 + 0.5 * Math.sin(lat * bandFreq + turb * 3.6);
         v = clamp01(v * 0.8 + (turb - 0.5) * 0.8 + 0.1);
+      } else if (lava) {
+        // Thin veins where the noise crosses its middle, over a crust kept a little dark.
+        const n = fbm(cx * 2.2, lat * 2.2, cz * 2.2, seed, 4);
+        v = Math.max(0.35, 0.5 + 0.5 * smoothstep(0.05, 0.015, Math.abs(n - 0.5)));
       } else {
         v = smoothstep(0.25, 0.8, fbm(cx * 1.9, lat * 1.9, cz * 1.9, seed, 4));
       }
@@ -114,7 +120,7 @@ export function renderLitPlanet(p: Planet, ps: number): PlanetSprite {
       img.data[o] = c[0];
       img.data[o + 1] = c[1];
       img.data[o + 2] = c[2];
-      img.data[o + 3] = 255 * Math.max(up, down) * (up > down ? strength * 0.55 : strength * 1.6) * edge;
+      img.data[o + 3] = 255 * Math.max(up, down) * (up > down ? (lava ? 0.9 : strength * 0.55) : strength * 1.6) * edge;
     }
   }
   sctx.putImageData(img, 0, 0);

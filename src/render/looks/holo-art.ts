@@ -116,6 +116,7 @@ export function drawHoloShip(ctx: CanvasRenderingContext2D, color: string, time:
 function planetColor(p: Planet): string {
   if (p.style === 'gas') return HOLO_COLOR;
   if (p.style === 'ice') return '#b8e4ff';
+  if (p.style === 'lava') return '#ff6a4d';
   return '#ffb066';
 }
 

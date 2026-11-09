@@ -20,6 +20,9 @@ import texIceGlacierUrl from './forged/tex-ice-glacier.webp';
 import texIceMethaneUrl from './forged/tex-ice-methane.webp';
 import texIceDustyUrl from './forged/tex-ice-dusty.webp';
 import texIceRoseUrl from './forged/tex-ice-rose.webp';
+import texLavaRiversUrl from './forged/tex-lava-rivers.webp';
+import texLavaMagmaUrl from './forged/tex-lava-magma.webp';
+import texLavaAshUrl from './forged/tex-lava-ash.webp';
 import droneUrl from './forged/drone.webp';
 import droneMaskUrl from './forged/drone-mask.webp';
 import turretBarrelUrl from './forged/turret-barrel.webp';
@@ -58,6 +61,9 @@ const URLS = {
   iceMethane: texIceMethaneUrl,
   iceDusty: texIceDustyUrl,
   iceRose: texIceRoseUrl,
+  lavaRivers: texLavaRiversUrl,
+  lavaMagma: texLavaMagmaUrl,
+  lavaAsh: texLavaAshUrl,
 };
 export type Name = keyof typeof URLS;
 

@@ -2,6 +2,7 @@
 export const DEV_PAGES = [
   { id: 'home', path: '/dev/', legacy: '/dev.html', title: 'dev.home', description: 'dev.intro' },
   { id: 'looks', path: '/dev/looks.html', legacy: '/looks.html', title: 'dev.looks', description: 'dev.looks.text' },
+  { id: 'planets', path: '/dev/planets.html', legacy: '/planets.html', title: 'dev.planets', description: 'dev.planets.text' },
   { id: 'presets', path: '/dev/presets.html', legacy: '/preset-gallery.html', title: 'dev.presets', description: 'dev.presets.text' },
   { id: 'daily', path: '/dev/daily.html', legacy: '/daily.html', title: 'dev.daily', description: 'dev.daily.text' },
   { id: 'marks', path: '/dev/marks.html', legacy: '/marks.html', title: 'dev.marks', description: 'dev.marks.text' },

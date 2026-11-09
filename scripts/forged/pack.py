@@ -28,7 +28,7 @@ FILES = {
     'tex-cracks': ((1024, 512), 75),
 }
 # The planet variants `render_planets.py` paints.
-for variant in ('rock-desert', 'rock-ocean', 'rock-moon', 'rock-alien', 'gas-neptune', 'gas-violet', 'gas-toxic', 'gas-crimson', 'gas-stormy', 'ice-glacier', 'ice-methane', 'ice-dusty', 'ice-rose'):
+for variant in ('rock-desert', 'rock-ocean', 'rock-moon', 'rock-alien', 'gas-neptune', 'gas-violet', 'gas-toxic', 'gas-crimson', 'gas-stormy', 'ice-glacier', 'ice-methane', 'ice-dusty', 'ice-rose', 'lava-rivers', 'lava-magma', 'lava-ash'):
     FILES['tex-' + variant] = ((512, 256), 85)
 
 for name, (size, quality) in FILES.items():

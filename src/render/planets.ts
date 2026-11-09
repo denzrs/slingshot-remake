@@ -9,6 +9,8 @@ import { fbm } from './noise';
 const HATCH_A = (32 * Math.PI) / 180;
 const HATCH_B = (-40 * Math.PI) / 180;
 const HATCH_SPACING = 3.1;
+/** The glow of a lava planet's molten veins: the same by day and by night, laid over the hatching. */
+const MOLTEN: [number, number, number] = [255, 168, 84];
 
 /** A planet's sprite in the classic look. The sprite may reach past the planet (a forged one has a glow): draw it with `draw`, centred. */
 export function renderPlanet(p: Planet, ps: number): PlanetSprite {
@@ -42,6 +44,7 @@ function renderClassicPlanet(p: Planet, ps: number): HTMLCanvasElement {
   const bandFreq = range(rng, 9, 16);
   const craters = makeCraters(p, rng);
   const albedo = albedoFn(p, seed, tilt, bandFreq, craters);
+  const heat = p.style === 'lava' ? moltenFn(seed) : null;
 
   const cs = Math.cos(spin);
   const sn = Math.sin(spin);
@@ -82,9 +85,10 @@ function renderClassicPlanet(p: Planet, ps: number): HTMLCanvasElement {
       // Lit paper brightens towards bone; the ink is the plate itself, so shadows melt into space.
       const lift = 0.72 + 0.4 * v;
       const i = (y * size + x) * 4;
-      data[i] = mix(Math.min(255, tint[0] * lift), ink[0], inkAmt);
-      data[i + 1] = mix(Math.min(255, tint[1] * lift), ink[1], inkAmt);
-      data[i + 2] = mix(Math.min(255, tint[2] * lift), ink[2], inkAmt);
+      const glow = heat ? heat(tx, dy, tz) : 0;
+      data[i] = mix(mix(Math.min(255, tint[0] * lift), ink[0], inkAmt), MOLTEN[0], glow);
+      data[i + 1] = mix(mix(Math.min(255, tint[1] * lift), ink[1], inkAmt), MOLTEN[1], glow);
+      data[i + 2] = mix(mix(Math.min(255, tint[2] * lift), ink[2], inkAmt), MOLTEN[2], glow);
       data[i + 3] = 255 * coverage;
     }
   }
@@ -114,6 +118,9 @@ function albedoFn(p: Planet, seed: number, tilt: number, bandFreq: number, crate
         const crack = Math.abs(n - 0.5) < 0.018 ? 0.72 : 1;
         return (0.86 + 0.18 * (n - 0.5)) * crack * crater(x, y, z, craters);
       };
+    case 'lava':
+      // A dark crust: the veins between its plates glow on their own (`moltenFn`).
+      return (x: number, y: number, z: number) => 0.5 + 0.3 * (fbm(x * 3.2, y * 3.2, z * 3.2, seed + 7, 3) - 0.5);
     default:
       return (x: number, y: number, z: number) => {
         const n = fbm(x * 2.4, y * 2.4, z * 2.4, seed, 4);
@@ -122,3 +129,13 @@ function albedoFn(p: Planet, seed: number, tilt: number, bandFreq: number, crate
   }
 }
 
+
+/** How much a lava planet's surface glows at a point of the sphere (0 → 1): thin veins where the noise crosses its middle, wider where they meet. */
+function moltenFn(seed: number) {
+  return (x: number, y: number, z: number) => {
+    const n = fbm(x * 2.2, y * 2.2, z * 2.2, seed, 4);
+    const pool = fbm(x * 1.3, y * 1.3, z * 1.3, seed + 31, 2);
+    const width = 0.03 + 0.05 * smoothstep(0.55, 0.75, pool);
+    return 0.9 * smoothstep(width, width * 0.35, Math.abs(n - 0.5));
+  };
+}

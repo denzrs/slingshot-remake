@@ -233,6 +233,66 @@ def rose(k):
     return k.mix(base, '#5a2a50', k.m('MULTIPLY', crack, 0.6))
 
 
+# Lava: the game reads the hot parts of these maps as light (red well above blue), so a crust is kept dark and only what is
+# molten runs to orange and yellow. The map comes out in sRGB of the colours as given, so `shown` names a colour as it
+# should end up on the map: the dark crust would otherwise come out mid grey.
+
+def shown(h):
+    def lin(c):
+        c /= 255
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    h = h.lstrip('#')
+    return '#' + ''.join('%02x' % round(lin(int(h[i:i + 2], 16)) * 255) for i in (0, 2, 4))
+
+
+def hot(stops):
+    return [(at, shown(c)) for at, c in stops]
+
+
+def warped_voronoi(k, scale, warp, feature='DISTANCE_TO_EDGE'):
+    """Voronoi cells on the sphere point pushed about by noise, so their edges wander like flows rather than tiles."""
+    n = k.nt.nodes.new('ShaderNodeTexNoise')
+    n.inputs['Scale'].default_value = 2.5
+    n.inputs['Detail'].default_value = 4
+    k.nt.links.new(k.vec, n.inputs['Vector'])
+    push = k.nt.nodes.new('ShaderNodeVectorMath')
+    push.operation = 'MULTIPLY_ADD'
+    k.nt.links.new(n.outputs['Color'], push.inputs[0])
+    push.inputs[1].default_value = (warp, warp, warp)
+    k.nt.links.new(k.vec, push.inputs[2])
+    v = k.nt.nodes.new('ShaderNodeTexVoronoi')
+    v.feature = feature
+    v.inputs['Scale'].default_value = scale
+    k.nt.links.new(push.outputs[0], v.inputs['Vector'])
+    return v.outputs['Distance']
+
+
+def rivers(k):
+    crust = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(3.0, 10), 0.5), 2.2, 0.5)), hot([(0.0, '#0e0a09'), (0.5, '#241b18'), (1.0, '#3e322c')]))
+    vein = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 2.6, 0.45), 11.0)))
+    heat = k.m('MULTIPLY', vein, k.clamp01(k.m('MULTIPLY_ADD', k.noise(1.4, 4), 1.6, -0.2)))
+    glow = k.ramp(heat, hot([(0.0, '#3a0904'), (0.35, '#9a1e08'), (0.7, '#f25a12'), (1.0, '#ffc870')]))
+    return k.mix(crust, glow, k.clamp01(k.m('MULTIPLY', heat, 1.6)))
+
+
+def magma(k):
+    sea = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.6, 8, 0.6), 0.5), 2.0, 0.5)), hot([(0.0, '#7a1205'), (0.4, '#d23a0c'), (0.75, '#ff8a20'), (1.0, '#ffd27a')]))
+    plates = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.6, 6), 0.47), 14.0))
+    tone = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(5.0, 8), 0.5), 2.0, 0.5)), hot([(0.0, '#100b09'), (0.6, '#2a201b'), (1.0, '#463830')]))
+    seams = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 5.0, 0.25), 14.0)))
+    crust = k.mix(tone, shown('#e84a10'), k.m('MULTIPLY', seams, 0.8))
+    return k.mix(sea, crust, plates)
+
+
+def ash(k):
+    base = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.4, 10), 0.5), 2.4, 0.5)), hot([(0.0, '#15110f'), (0.5, '#2e2723'), (1.0, '#52463e')]))
+    pools = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(4.0, 6), 0.62), 10.0))
+    fissure = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SUBTRACT', k.stretched(2.0, 1.0, 3.0, 8), 0.5)), 30.0)))
+    heat = k.m('MAXIMUM', pools, k.m('MULTIPLY', fissure, 0.8))
+    glow = k.ramp(heat, hot([(0.0, '#4a0b04'), (0.5, '#e03a0a'), (1.0, '#ffbe5a')]))
+    return k.mix(base, glow, heat)
+
+
 RECIPES = {
     'rock-desert': desert,
     'rock-ocean': ocean,
@@ -247,6 +307,9 @@ RECIPES = {
     'ice-methane': methane,
     'ice-dusty': dusty,
     'ice-rose': rose,
+    'lava-rivers': rivers,
+    'lava-magma': magma,
+    'lava-ash': ash,
 }
 
 
