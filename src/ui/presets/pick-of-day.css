@@ -469,7 +469,7 @@
   }
   .briefing__cards .item--pick .item__tag {
     position: absolute;
-    top: 10px;
+    top: 8px;
     left: 76px;
     right: auto;
     max-width: 100%;
@@ -477,6 +477,8 @@
     font-size: 9px;
     line-height: 1.3;
   }
+  /* Beside the anomaly badge the day's badge sits in the opposite corner, on the badge's row: the badge's width changes with the language, so no fixed offset can clear it. */
+  .briefing__preset-shell.is-anomaly > .item--pick .item__tag { left: auto; right: 8px; max-width: calc(100% - 100px); }
   /* The anomaly badge is as tall as the day's badge beside it. */
   .briefing__cards .item__flag { padding: 3px 5px; font-size: 9px; line-height: 1.3; }
   .briefing__cards .item.item--pick .item__title { grid-row: 1; padding-top: 14px; }

@@ -1373,14 +1373,26 @@ export class Hud {
     for (const r of entries) {
       const age = match.clock - r.at;
       ctx.globalAlpha = age > 5 ? 6 - age : 1;
-      this.drawSegmentsRight(killSegments(match, r), field.x + field.w - 24 * k, y);
+      this.drawSegmentsRight(killSegments(match, r), field.x + field.w - 24 * k, y, field.w - 48 * k);
       y += 17 * k;
     }
     ctx.globalAlpha = 1;
   }
 
-  private drawSegmentsRight(segments: Segment[], right: number, y: number): void {
+  /** The pieces cut down to fit `maxWidth`: the longest one (a long trick list) is shortened with an ellipsis, the names and points stay whole. */
+  private fitSegments(segments: Segment[], maxWidth: number): Segment[] {
     const { ctx } = this;
+    const total = segments.reduce((s, [t]) => s + ctx.measureText(t).width, 0);
+    if (total <= maxWidth || maxWidth <= 0) return segments;
+    let longest = 0;
+    segments.forEach(([t], i) => { if (t.length > segments[longest][0].length) longest = i; });
+    const others = total - ctx.measureText(segments[longest][0]).width;
+    return segments.map((seg, i) => (i === longest ? [fitText(ctx, seg[0], Math.max(0, maxWidth - others)), seg[1]] : seg));
+  }
+
+  private drawSegmentsRight(segments: Segment[], right: number, y: number, maxWidth = Infinity): void {
+    const { ctx } = this;
+    segments = this.fitSegments(segments, maxWidth);
     let x = right - segments.reduce((s, [t]) => s + ctx.measureText(t).width, 0);
     ctx.textAlign = 'left';
     for (const [text, color] of segments) {
@@ -1936,7 +1948,8 @@ export class Hud {
     }
 
     ctx.font = `700 ${13 * k}px ${FONTS.mono}`;
-    const segments = killSegments(match, record);
+    // On a phone the strip is wider than the field: keep it inside, with the same margin as the header.
+    const segments = this.fitSegments(killSegments(match, record), field.w - 32 * k);
     const width = segments.reduce((s, [t]) => s + ctx.measureText(t).width, 0);
     this.drawSegmentsRight(segments, field.x + field.w / 2 + width / 2, field.y + field.h - bar / 2 - 6 * k);
 
@@ -2062,7 +2075,9 @@ function killSegments(match: Match, r: KillRecord): Segment[] {
   }
   const out: Segment[] = [[killer.name, killer.color], [' ▸ ', COLORS.boneDim], [victim.name, victim.color], [`  +${r.points}`, COLORS.bone]];
   if (r.combo.length) {
-    out.push([`  ${r.combo.map((c) => styleLabel(c)).join(' · ')}`, COLORS.boneDim], [` ×${fmt(r.multiplier, 2)}`, COLORS.sodium]);
+    // A shot that bounced six times says "6× Bande" once rather than six times: the line must fit a phone.
+    const tricks = [...new Set(r.combo)].map((c) => { const n = r.combo.filter((x) => x === c).length; return n > 1 ? `${n}× ${styleLabel(c)}` : styleLabel(c); });
+    out.push([`  ${tricks.join(' · ')}`, COLORS.boneDim], [` ×${fmt(r.multiplier, 2)}`, COLORS.sodium]);
   }
   return out;
 }
