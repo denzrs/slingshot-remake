@@ -91,6 +91,8 @@ export class Renderer {
   private readonly pickupSeen = new Map<number, number>();
   /** Whether the last frame filled the viewport behind a menu (see `refreshLayer`). */
   private lastFullScreen = true;
+  /** Whether the pointer was coarse when the layout was last made: the phone layout depends on it. */
+  private coarse = false;
   /** Frames since the field came out from under a menu, while `refreshLayer` still has work to do. */
   private revealedFor = -1;
   /** Fingers (or the mouse) down on the canvas: taking it out of the page would end their drag. */
@@ -112,6 +114,7 @@ export class Renderer {
     const { width: cssWidth, height: cssHeight, rotated: forced } = vp;
     const dpr = window.devicePixelRatio || 1;
     const coarse = window.matchMedia('(pointer: coarse)').matches;
+    this.coarse = coarse;
     // Held upright a phone gets its own layout: HUD on top, the field, the thumbs' controls underneath.
     const portrait = forced === undefined && coarse && cssHeight > cssWidth ? portraitLayout(cssWidth, cssHeight, safeArea(), touchScale()) : null;
     this.keepCelestialArtworkUpright = forced === undefined && coarse && !!portrait?.rotated;
@@ -177,11 +180,12 @@ export class Renderer {
     return rotated ? { x: offsetX + y * scale, y: offsetY + (FIELD.width - x) * scale } : { x: offsetX + x * scale, y: offsetY + y * scale };
   }
 
-  /** Catches window resizes, zoom and moving to a screen with another pixel ratio. */
+  /** Catches window resizes, zoom, moving to a screen with another pixel ratio and a change of pointer. */
   private resizeIfNeeded(): void {
     const v = this.view;
     const { width, height } = this.viewport();
-    if (v.cssWidth !== width || v.cssHeight !== height || v.dpr !== (window.devicePixelRatio || 1)) {
+    // The pointer type can change with no resize (an emulator turning touch on, a keyboard or mouse joining a tablet), and the layout follows it.
+    if (v.cssWidth !== width || v.cssHeight !== height || v.dpr !== (window.devicePixelRatio || 1) || this.coarse !== window.matchMedia('(pointer: coarse)').matches) {
       this.resize();
     }
   }
