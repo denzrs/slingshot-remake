@@ -19,7 +19,7 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
 import { ANOMALY_COLORS, drawAnomalySymbol } from './anomaly-art';
 import { anomaliesOf } from '../sim/anomalies';
 import type { DrawOptions } from './renderer';
-import { fitText, setSpacing } from './text';
+import { fitText, setSpacing, wrapParts } from './text';
 import { cap, padMode } from '../platform/input-device';
 
 /** On a phone held upright the duel's two blocks start this far lower (field units before `k`), under the round label and the pause button beside it. */
@@ -1807,6 +1807,16 @@ export class Hud {
     ctx.globalAlpha = 1;
   }
 
+  /**
+   * Where the round's banner and the scorecard under it go. A short field (a phone held sideways) has no room for the usual
+   * band in the middle with the cards below it: the band is lower in height and higher up, and the cards are smaller (`scale`).
+   */
+  private roundOverBox(): { short: boolean; cy: number; h: number; scale: number } {
+    const { k, field } = this;
+    const short = field.h < 520 * k;
+    return short ? { short, cy: field.y + field.h * 0.34, h: 110 * k, scale: 0.78 } : { short, cy: field.y + field.h / 2, h: 150 * k, scale: 1 };
+  }
+
   /** The round's awards as a row of cards under the banner: longest shot, fastest kill, most swing-bys, … */
   private drawScorecard(match: Match): void {
     const { ctx, k, field } = this;
@@ -1814,24 +1824,44 @@ export class Hud {
     const fade = Math.min(1, Math.max(0, (match.phaseTime - 0.9) / 0.5));
     if (!list.length || fade <= 0) return;
 
-    const gap = 10 * k;
-    const cardH = 68 * k;
+    const box = this.roundOverBox();
+    const s = box.scale;
+    const gap = (box.short ? 8 : 10) * k;
     // On a tall phone, use two rows before the cards become too narrow to read.
     // Keep the space below clear when the oracle also has a round summary there.
     const oracleSummary = (match.betOracle.roundResult?.round === match.round || match.betOracle.roundRanking().length > 0);
-    const narrow = field.w < 650 * k && field.h >= 650 * k && !oracleSummary;
-    const perRow = list.length > 5 || (narrow && list.length > 3) ? Math.ceil(list.length / 2) : list.length;
+    const narrow = !box.short && field.w < 650 * k && field.h >= 650 * k && !oracleSummary;
+    const perRow = !box.short && (list.length > 5 || (narrow && list.length > 3)) ? Math.ceil(list.length / 2) : list.length;
     const cardW = Math.min(196 * k, (field.w - 48 * k - gap * (perRow - 1)) / perRow);
-    const y = field.y + field.h / 2 + 75 * k + 30 * k;
+    const inner = cardW - 18 * k;
+    const y = box.cy + box.h / 2 + 30 * k;
     const lit = spotlight(match);
+
+    // A label or a name that does not fit a narrow card goes on a second line, not into an ellipsis.
+    const labelFont = `700 ${9 * s * k}px ${FONTS.body}`;
+    const nameFont = `700 ${11.5 * s * k}px ${FONTS.body}`;
+    const wrapped = list.map((award) => {
+      ctx.font = labelFont;
+      setSpacing(ctx, 1.4 * s * k);
+      const label = wrapParts(ctx, awardLabel(award.kind).toUpperCase().split(' '), ' ', inner, 2);
+      setSpacing(ctx, 0);
+      ctx.font = nameFont;
+      const names = wrapParts(ctx, awardWho(match, award).name.split(' · '), ' · ', inner, 2);
+      return { label, names };
+    });
+    const labelLine = 11 * s * k;
+    const nameLine = 14 * s * k;
+    const extraLabel = (Math.max(...wrapped.map((w) => w.label.length)) - 1) * labelLine;
+    const extraName = (Math.max(...wrapped.map((w) => w.names.length)) - 1) * nameLine;
+    const cardH = 68 * s * k + extraLabel + extraName;
 
     ctx.globalAlpha = fade;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = COLORS.boneDim;
-    ctx.font = `700 ${10.5 * k}px ${FONTS.body}`;
+    ctx.font = `700 ${10.5 * s * k}px ${FONTS.body}`;
     setSpacing(ctx, 2.4 * k);
-    ctx.fillText(t('scorecard.round').toUpperCase(), field.x + field.w / 2 + 1.2 * k, y - 11 * k);
+    ctx.fillText(t('scorecard.round').toUpperCase(), field.x + field.w / 2 + 1.2 * k, y - 11 * s * k);
     setSpacing(ctx, 0);
 
     list.forEach((award, i) => {
@@ -1854,17 +1884,17 @@ export class Hud {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillStyle = COLORS.boneDim;
-      ctx.font = `700 ${9 * k}px ${FONTS.body}`;
-      setSpacing(ctx, 1.4 * k);
-      ctx.fillText(fitText(ctx, awardLabel(award.kind).toUpperCase(), cardW - 18 * k), x + 11 * k, top + 8 * k);
+      ctx.font = labelFont;
+      setSpacing(ctx, 1.4 * s * k);
+      wrapped[i].label.forEach((line, n) => ctx.fillText(line, x + 11 * k, top + (8 * s * k) + n * labelLine));
       setSpacing(ctx, 0);
       ctx.fillStyle = COLORS.bone;
-      ctx.font = `700 ${20 * k}px ${FONTS.mono}`;
+      ctx.font = `700 ${20 * s * k}px ${FONTS.mono}`;
       // Keep the complete value and unit within its card, even for large records.
-      ctx.fillText(awardValue(award), x + 11 * k, top + 22 * k, Math.max(1, cardW - 18 * k));
+      ctx.fillText(awardValue(award), x + 11 * k, top + 22 * s * k + extraLabel, Math.max(1, inner));
       ctx.fillStyle = who.color;
-      ctx.font = `700 ${11.5 * k}px ${FONTS.body}`;
-      ctx.fillText(fitText(ctx, who.name, cardW - 18 * k), x + 11 * k, top + 48 * k);
+      ctx.font = nameFont;
+      wrapped[i].names.forEach((line, n) => ctx.fillText(line, x + 11 * k, top + 48 * s * k + extraLabel + n * nameLine));
     });
     ctx.globalAlpha = 1;
   }
@@ -1878,8 +1908,7 @@ export class Hud {
     const color = s.team !== null ? teamColor(s.team) : survivor?.color ?? dangerColor();
     const title = s.title === 'teamWin' ? t('title.teamWin', { team: teamName(s.team!).toUpperCase() }) : t(`title.${s.title}`);
     const cx = field.x + field.w / 2;
-    const cy = field.y + field.h / 2;
-    const h = 150 * k;
+    const { cy, h, scale } = this.roundOverBox();
 
     ctx.globalAlpha = fade;
     this.takeOver(cy - h / 2, h, color, 0.45, 0.85);
@@ -1887,8 +1916,8 @@ export class Hud {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = color;
-    this.fitDisplay(title, (title.length > 10 ? 70 : 84) * k, 6 * k, field.w - 32 * k);
-    ctx.fillText(title, cx + 3 * k, cy + 12 * k);
+    this.fitDisplay(title, (title.length > 10 ? 70 : 84) * scale * k, 6 * scale * k, field.w - 32 * k);
+    ctx.fillText(title, cx + 3 * k, cy + 12 * scale * k);
     setSpacing(ctx, 0);
 
     const kill = s.lastKill;
@@ -1905,11 +1934,11 @@ export class Hud {
       if (kill) line2 = killSegments(match, kill).map(([text]) => text).join('');
     }
     ctx.fillStyle = COLORS.bone;
-    ctx.font = `700 ${17 * k}px ${FONTS.body}`;
-    ctx.fillText(fitText(ctx, line1, field.w - 32 * k), cx, cy + 42 * k);
+    ctx.font = `700 ${17 * scale * k}px ${FONTS.body}`;
+    ctx.fillText(fitText(ctx, line1, field.w - 32 * k), cx, cy + 42 * scale * k);
     ctx.fillStyle = COLORS.boneDim;
-    ctx.font = `400 ${12.5 * k}px ${FONTS.mono}`;
-    ctx.fillText(fitText(ctx, line2, field.w - 32 * k), cx, cy + 62 * k);
+    ctx.font = `400 ${12.5 * scale * k}px ${FONTS.mono}`;
+    ctx.fillText(fitText(ctx, line2, field.w - 32 * k), cx, cy + 62 * scale * k);
     ctx.globalAlpha = 1;
   }
 
@@ -1949,9 +1978,11 @@ export class Hud {
 
     ctx.font = `700 ${13 * k}px ${FONTS.mono}`;
     // On a phone the strip is wider than the field: keep it inside, with the same margin as the header.
-    const segments = this.fitSegments(killSegments(match, record), field.w - 32 * k);
+    // Held sideways, the touch Skip button sits over the strip's right end (it is left of the aim wheel, and does not move with the field): keep clear of it.
+    const keepClear = opts.touch && field.h < 520 * k ? this.screen.w - 352 * k : Infinity;
+    const segments = this.fitSegments(killSegments(match, record), Math.min(field.w - 32 * k, keepClear - (field.x + 16 * k)));
     const width = segments.reduce((s, [t]) => s + ctx.measureText(t).width, 0);
-    this.drawSegmentsRight(segments, field.x + field.w / 2 + width / 2, field.y + field.h - bar / 2 - 6 * k);
+    this.drawSegmentsRight(segments, Math.min(field.x + field.w / 2 + width / 2, keepClear), field.y + field.h - bar / 2 - 6 * k);
 
     if (!recording && !opts.touch) {
       // Online, skipping is a vote: show how many are in favour.
