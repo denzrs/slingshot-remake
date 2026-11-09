@@ -28,7 +28,7 @@ import { connect as tcp } from 'node:net';
 import { availableParallelism } from 'node:os';
 import { join, relative } from 'node:path';
 import { launchChrome, type Browser } from './chrome';
-import { DAY, MEASURE, PAGES, perform, QUICK_SIZES, SETTLE, SETTINGS, SIZES, steady, steadyStorage, until, type Page } from './screens-pages';
+import { DAY, MEASURE, PAGES, perform, press, QUICK_SIZES, SETTLE, SETTINGS, SIZES, steady, steadyStorage, until, type Page } from './screens-pages';
 import { buildCommit, buildWorkingTree, resolveRef, ROOT, serve } from './serve';
 
 interface Options {
@@ -102,6 +102,8 @@ async function visit(browser: Browser, opts: Options, base: string, size: string
   }
   await browser.playbackRate(ANIMATION_RATE);
   await cdp.evaluate(SETTLE);
+  // A game started with a day in its address shows that day's daily challenge over the title (an earlier commit does not): Back reaches the title.
+  if (await cdp.evaluate<boolean>(press({ sel: 'button, a, [role=button]', text: 'Back' }))) await cdp.evaluate(SETTLE);
 
   const snap = async (label: string): Promise<void> => {
     await cdp.evaluate(SETTLE);
