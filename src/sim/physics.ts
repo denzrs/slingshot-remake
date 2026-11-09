@@ -3,7 +3,7 @@ import { ANOMALY, DEFENSE, LOOP_MARGIN, PLASMA, NEBULA, PHYSICS, SOLAR_STORM, WO
 // Read once: Shot.step is the innermost loop of every CPU search and killcam, and an imported binding is slower to read than a local one.
 const { DT, G, SHIP_RADIUS, OUT_MARGIN } = PHYSICS;
 
-export type PlanetStyle = 'rocky' | 'gas' | 'ice' | 'star';
+export type PlanetStyle = 'rocky' | 'gas' | 'ice' | 'lava' | 'ocean' | 'desert' | 'acid' | 'carbon' | 'crystal' | 'living' | 'machine' | 'star';
 
 export interface Planet {
   x: number;

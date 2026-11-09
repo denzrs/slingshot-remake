@@ -2,6 +2,7 @@ import { COLORS, DEBRIS, FIELD, FONTS, PHYSICS, SUDDEN_DEATH, type Debris } from
 import type { Falling } from '../game';
 import type { BlackHole, World } from '../sim/physics';
 import { rgba } from './color';
+import type { Scar } from './planet-common';
 import type { EffectStyle } from './looks/painter';
 import { fillTextUpright, strokeTextUpright } from './orientation';
 
@@ -148,6 +149,10 @@ interface Callout {
   big: boolean;
 }
 
+/** How long the mark a shot leaves on a planet takes to heal over (s). */
+export const SCAR_LIFE = 45;
+const NO_SCARS: readonly Scar[] = [];
+
 /** Cosmetic particles, shockwaves, floating callouts and screen shake. Lives in field coordinates. */
 export class Effects {
   private sparks: Spark[] = [];
@@ -160,6 +165,9 @@ export class Effects {
   private novas: Nova[] = [];
   /** What has crossed the horizon in the fall going on now. */
   private fallen = new Set<string>();
+  /** Impacts not yet matched to the planet they struck, and the marks shots left on each planet (by its seed). */
+  private struck: { x: number; y: number }[] = [];
+  private scars = new Map<number, Scar[]>();
   /** The light running round the horizon after a swallow: what is left of it (1 → 0), its colour and where it set off. */
   holeFeed = 0;
   holeFeedColor: string = COLORS.sodium;
@@ -192,6 +200,8 @@ export class Effects {
     this.lasers = [];
     this.novas = [];
     this.fallen.clear();
+    this.struck = [];
+    this.scars.clear();
     this.holeFeed = 0;
     this.shake = 0;
     this.flash = 0;
@@ -211,6 +221,7 @@ export class Effects {
   }
 
   impact(x: number, y: number, color: string, vx = 0, vy = 0): void {
+    this.struck.push({ x, y });
     this.ring(x, y, 26, 0.45, COLORS.bone);
     this.blast(x, y, 44, 0.5, color);
     this.burst(x, y, 26, 20, 140, color, 'large', vx, vy);
@@ -552,7 +563,31 @@ export class Effects {
     this.callouts.push({ text, x, y, up, color, life: big ? 1.8 : 1.4, max: big ? 1.8 : 1.4, big });
   }
 
+  /** The marks shots have left on the planet of `seed`, the newest last. */
+  scarsOn(seed: number): readonly Scar[] {
+    return this.scars.get(seed) ?? NO_SCARS;
+  }
+
+  /** Ages the planets' scars, and gives each impact since the last frame to the planet it struck, if it struck one. */
+  private updateScars(dt: number, world: World): void {
+    for (const [seed, list] of this.scars) {
+      for (const s of list) s.age += dt;
+      const kept = list.filter((s) => s.age < SCAR_LIFE);
+      if (kept.length) this.scars.set(seed, kept);
+      else this.scars.delete(seed);
+    }
+    for (const hit of this.struck) {
+      const planet = world.planets.find((p) => !p.sun && Math.hypot(hit.x - p.x, hit.y - p.y) <= p.radius + 6);
+      if (!planet) continue;
+      const list = this.scars.get(planet.seed) ?? [];
+      list.push({ angle: Math.atan2(hit.y - planet.y, hit.x - planet.x), age: 0 });
+      this.scars.set(planet.seed, list.slice(-12));
+    }
+    this.struck = [];
+  }
+
   update(dt: number, world: World): void {
+    this.updateScars(dt, world);
     this.shake = Math.max(0, this.shake - dt * 30);
     this.flash = Math.max(0, this.flash - dt * 2.5);
     this.whiteout = Math.max(0, this.whiteout - dt * 0.9);

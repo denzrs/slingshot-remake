@@ -3,6 +3,14 @@ import { GLSL_HEAD, shade, type Shaded, type Stage } from './forged-gl';
 
 /** The most hits an unstable planet shows cracks for: the biggest planet breaks at its ninth. */
 export const MAX_IMPACTS = 8;
+/** A map shines by itself where its colour, weighed by the planet's key (red above blue for lava), stands this high (0 → 1): from the first, in full at the second. */
+export const EMIT_FROM = 0.3;
+export const EMIT_FULL = 0.75;
+/** A map is water, and mirrors the sun, where its colour weighed by the wet key (blue above red for a sea) stands this high. */
+export const WET_FROM = 0.08;
+export const WET_FULL = 0.25;
+/** How tight the sun's glint on water is. */
+export const GLINT_POWER = 90;
 
 /**
  * The sphere and cloud of a forged planet as a shader, the same picture as `paintSurface` and `paintClouds` in
@@ -31,6 +39,11 @@ uniform float uRelief;
 uniform float uAir;
 uniform float uHasCloud;
 uniform float uHasCity;
+uniform vec3 uEmitKey;
+uniform float uEmit;
+uniform float uEmitNight;
+uniform vec3 uWetKey;
+uniform float uWet;
 uniform float uBand;
 uniform float uSurfaceTurn;
 uniform float uCloudTurn;
@@ -117,7 +130,7 @@ void main() {
   // blurred level apart, so it runs smoothly from texel to texel; the screen's derivatives held it flat over each texel and
   // each block of 2 × 2 pixels, which tiled a big planet in squares.
   vec2 slope = vec2(0.0);
-  if (uRelief > 0.0) {
+  if (uRelief != 0.0) {
     float apart = 6.2831853 * exp2(uLod + 2.0) / float(textureSize(uMap, 0).x);
     vec2 dx = vec2(apart, 0.0);
     vec2 dy = vec2(0.0, apart);
@@ -135,6 +148,9 @@ void main() {
   // Night: the lights of settlements, under the cloud.
   float night = (1.0 - smoothstep(-0.3, 0.05, lam)) * 0.95;
   ground += uCityLight * uHasCity * texture(uCity, vec2(surfaceU, v)).r * night;
+  // What of the map shines by itself (lava's melt, by day and by night; a machine's lamps and a living world's veins, at night), under its smoke.
+  float emit = uEmit * smoothstep(${EMIT_FROM.toFixed(2)}, ${EMIT_FULL.toFixed(2)}, dot(albedo, uEmitKey)) * mix(1.0, night / 0.95, uEmitNight);
+  ground = max(ground, albedo * emit * 1.1);
 
   // The cloud, lit like the sphere under it.
   float shadeCloud = 0.12 + 0.88 * lit;
@@ -151,6 +167,9 @@ void main() {
   col += uDusk * dusk * 0.22;
   vec3 halfway = normalize(uLight + vec3(0.0, 0.0, 1.0));
   col += vec3(uSpecular * pow(max(0.0, dot(bumped, halfway)), 36.0));
+  // Water mirrors the sun: a tight glint, on the flat sphere (a sea has no relief), under the cloud.
+  float wet = uWet * smoothstep(${WET_FROM.toFixed(2)}, ${WET_FULL.toFixed(2)}, dot(albedo, uWetKey));
+  col += vec3(1.0, 0.96, 0.88) * wet * pow(max(0.0, dot(n, halfway)), ${GLINT_POWER}.0) * (1.0 - cloudA);
 
   if (uHits > 0) {
     // How far the crust has given way here: round each hit, out to a reach that grows as the planet nears breaking, with a
@@ -195,7 +214,9 @@ export interface PlanetShade {
   map: HTMLImageElement;
   cloudName: string;
   cloud: () => Uint8Array;
+  /** The lights of its night side, if it has any, and which map they are. */
   city: (() => Uint8Array) | null;
+  cityName: string;
   mapSize: readonly [number, number];
   /** The planet's radius and the sprite's half width, in pixels. */
   radius: number;
@@ -208,6 +229,15 @@ export interface PlanetShade {
   night: readonly number[];
   cityLight: readonly number[];
   specular: number;
+  /** What of the map glows by itself: its colour weighed by `emitKey` (lava: red above blue), how strongly (0 none), and whether only on the night side. */
+  emitKey: readonly number[];
+  emit: number;
+  emitNight: boolean;
+  /** How deeply the glow breathes (0 steady → 1 out at its lowest), a living world's slow pulse. */
+  emitPulse: number;
+  /** What of the map is water and mirrors the sun: its colour weighed by `wetKey`, and how brightly (0 none). */
+  wetKey: readonly number[];
+  wet: number;
   relief: number;
   air: boolean;
   cloudColour: readonly number[];
@@ -227,6 +257,13 @@ export interface PlanetCracks {
   hits: number;
   danger: number;
   glow: number;
+}
+
+/** How bright a breathing glow is at `time` (0 → 1): slow, and never quite in step from one planet to the next. */
+export function emitBreath(pulse: number, time: number, phase: number): number {
+  if (!pulse) return 1;
+  const wave = 0.5 + 0.5 * Math.sin(time * 0.9 + phase) * Math.sin(time * 0.37 + phase * 2);
+  return 1 - pulse * (1 - wave);
 }
 
 /** A planet's map: turning round means repeating sideways; mipmaps, read at the level the planet's size calls for. */
@@ -283,7 +320,7 @@ export function shadePlanet(s: PlanetShade, time: number, cracks: PlanetCracks |
   return shade(PLANET_SHADER, size, size, PLANET_LIMIT, (u, stage) => {
     const map = mapTexture(stage, s);
     const cloud = greyTexture(stage, s.cloudName, s.mapSize, s.cloud);
-    const city = s.city ? greyTexture(stage, 'city', s.mapSize, s.city) : cloud;
+    const city = s.city ? greyTexture(stage, s.cityName, s.mapSize, s.city) : cloud;
     if (!map || !cloud || !city) return;
     u.tex('uMap', 0, map);
     u.tex('uCloud', 1, cloud);
@@ -301,6 +338,11 @@ export function shadePlanet(s: PlanetShade, time: number, cracks: PlanetCracks |
     u.v3('uCityLight', s.cityLight);
     u.v3('uCloudColour', s.cloudColour);
     u.f('uSpecular', s.specular);
+    u.v3('uEmitKey', s.emitKey);
+    u.f('uEmit', s.emit * emitBreath(s.emitPulse, time, s.phase));
+    u.f('uEmitNight', s.emitNight ? 1 : 0);
+    u.v3('uWetKey', s.wetKey);
+    u.f('uWet', s.wet);
     u.f('uRelief', s.relief);
     u.f('uAir', s.air ? 1 : 0);
     u.f('uHasCloud', s.air ? 1 : 0);

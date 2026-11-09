@@ -2,12 +2,53 @@ import { FIELD, HORIZON, SOLAR } from './config';
 import type { BlackHole, Planet, PlanetStyle, Ship, World } from './physics';
 import { createRng, intRange, pick, range, shuffle, type Rng } from './rng';
 
-const TINTS: Record<PlanetStyle, readonly string[]> = {
+/** The colours a planet of each style may be tinted. */
+export const PLANET_TINTS: Record<PlanetStyle, readonly string[]> = {
   rocky: ['#c9a77c', '#b8664a', '#a39a8a', '#c78f6d'],
   gas: ['#d8b98a', '#9c8bb5', '#c9a0a0', '#b7c28f'],
   ice: ['#9fc3d6', '#bcd3dc', '#8fb3b0'],
+  lava: ['#d9572b', '#c4432c', '#e2763a'],
+  ocean: ['#3f7fc0', '#2f6aa8', '#4a94b8'],
+  desert: ['#d9a560', '#c98a4a', '#e0b878'],
+  acid: ['#b8c23a', '#9fb03a', '#c8b040'],
+  carbon: ['#4a4650', '#3c3a42', '#55505a'],
+  crystal: ['#b48ad8', '#8ac0e0', '#d890c0'],
+  living: ['#5aa860', '#4a9a78', '#78b048'],
+  machine: ['#8a929c', '#9a8a78', '#7a8a98'],
   star: ['#f2c46d'],
 };
+
+/** A planet's style by its size: the big ones are mostly gas giants, the small ones rock and ice. */
+function styleFor(rng: Rng, radius: number, big: number): PlanetStyle {
+  return radius > big ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
+}
+
+/** What a rocky world may turn out to be instead, and the share of rocky worlds each takes: a small one, and a big one. */
+const SMALL_ROCK: readonly [PlanetStyle, number][] = [
+  ['lava', 0.25], ['ocean', 0.1], ['desert', 0.08], ['acid', 0.05], ['carbon', 0.04], ['crystal', 0.04], ['living', 0.04], ['machine', 0.04],
+];
+const BIG_ROCK: readonly [PlanetStyle, number][] = [['ocean', 0.3], ['acid', 0.15]];
+
+/**
+ * A planet's seed, style and tint, drawn after its mass. A rocky world may turn out molten (one small one in four), wet,
+ * dry or stranger, decided from its own seed rather than the world's rng, so every planet a seed gave before keeps its place,
+ * and every one that stays rock its look.
+ */
+function dress(rng: Rng, style: PlanetStyle, small: boolean): Pick<Planet, 'seed' | 'style' | 'tint'> {
+  const seed = Math.floor(rng() * 2 ** 31);
+  let look: PlanetStyle = style;
+  if (style === 'rocky') {
+    let roll = createRng(seed ^ 0x2c1b3c6d)();
+    for (const [other, share] of small ? SMALL_ROCK : BIG_ROCK) {
+      if (roll < share) {
+        look = other;
+        break;
+      }
+      roll -= share;
+    }
+  }
+  return { seed, style: look, tint: pick(rng, PLANET_TINTS[look]) };
+}
 
 const SHIP_CLEARANCE = 110;
 const PLANET_GAP = 24;
@@ -63,16 +104,14 @@ export function generateWorld(seed: number, opts: WorldOptions): World {
     const clearOfHoles = holes.every((h) => Math.hypot(h.x - x, h.y - y) > radius + h.radius + HOLE_CLEARANCE);
     if (!clearOfShips || !clearOfPlanets || !clearOfHoles) continue;
 
-    const style: PlanetStyle = radius > 40 ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
+    const style = styleFor(rng, radius, 40);
     const density = range(rng, 0.75, 1.3);
     planets.push({
       x,
       y,
       radius,
       mass: density * radius ** 3,
-      seed: Math.floor(rng() * 2 ** 31),
-      style,
-      tint: pick(rng, TINTS[style]),
+      ...dress(rng, style, radius <= 40),
     });
   }
 
@@ -208,14 +247,12 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
     const turn = rng() * Math.PI * 2;
     body.radii.forEach((radius, k) => {
       const a = turn + (k * Math.PI * 2) / body.radii.length;
-      const style: PlanetStyle = radius > 24 ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
+      const style = styleFor(rng, radius, 24);
       planets.push({
         ...onOrbit(r, a),
         radius,
         mass: range(rng, 0.75, 1.3) * radius ** 3 * SOLAR.PLANET_HEAVY,
-        seed: Math.floor(rng() * 2 ** 31),
-        style,
-        tint: pick(rng, TINTS[style]),
+        ...dress(rng, style, radius <= 24),
       });
     });
   }
@@ -248,8 +285,8 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
       });
       const spot = onOrbit(bandRadii[lane], at);
       if (ships.some((sh) => Math.hypot(sh.x - spot.x, sh.y - spot.y) < radius + SOLAR.SHIP_CLEARANCE)) continue;
-      const style: PlanetStyle = radius > 24 ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
-      planets.push({ ...spot, radius, mass: range(rng, 0.75, 1.3) * radius ** 3 * SOLAR.PLANET_HEAVY, seed: Math.floor(rng() * 2 ** 31), style, tint: pick(rng, TINTS[style]) });
+      const style = styleFor(rng, radius, 24);
+      planets.push({ ...spot, radius, mass: range(rng, 0.75, 1.3) * radius ** 3 * SOLAR.PLANET_HEAVY, ...dress(rng, style, radius <= 24) });
       angles[lane].push(at);
     }
   });

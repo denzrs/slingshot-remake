@@ -1,0 +1,12 @@
+/* The planet gallery: every style at every size, a tab per look. Builds on the look gallery's page. Dev page. */
+.planet-gallery .lead { margin: 0; color: var(--dim); max-width: 70ch; }
+.planet-gallery .tabs { display: flex; flex-wrap: wrap; gap: 0; }
+.planet-gallery .tabs button + button { border-left-width: 0; }
+.planet-gallery .tabs [aria-selected='true'] { background: var(--line); color: var(--plate); }
+.planet-gallery #cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 14px; }
+.planet-gallery #cards.single { grid-template-columns: minmax(0, 1fr); }
+.planet-gallery .stage { position: relative; aspect-ratio: 16 / 10; }
+.planet-gallery .labels { position: absolute; inset: 0; pointer-events: none; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.planet-gallery .labels span { position: absolute; white-space: nowrap; }
+.planet-gallery .labels .style { transform: translate(-100%, -50%); color: var(--sodium); }
+.planet-gallery .labels .size { transform: translate(-50%, -100%); }

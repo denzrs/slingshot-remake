@@ -6,7 +6,7 @@ describe('development page access', () => {
   it('excludes every tool, its source namespace and its legacy route from production preview', () => {
     for (const page of DEV_PAGES) {
       expect(devRoute(page.path, false, true)?.status).toBe(404);
-      expect(devRoute(page.legacy, false, true)?.status).toBe(404);
+      if ('legacy' in page) expect(devRoute(page.legacy, false, true)?.status).toBe(404);
     }
     for (const path of ['/dev', '/dev/index.html', '/dev/pages.ts', '/dev/missing.html']) expect(devRoute(path, false, false)?.status).toBe(404);
     expect(devRoute('/', false, false)).toBeNull();
@@ -15,7 +15,7 @@ describe('development page access', () => {
 
   it('preserves seed, aim and language parameters through legacy redirects', () => {
     for (const page of DEV_PAGES) {
-      expect(devRoute(page.legacy + '?seed=31&angle=72&lang=en', true, true)).toEqual({ status: 307, location: page.path + '?seed=31&angle=72&lang=en' });
+      if ('legacy' in page) expect(devRoute(page.legacy + '?seed=31&angle=72&lang=en', true, true)).toEqual({ status: 307, location: page.path + '?seed=31&angle=72&lang=en' });
       expect(devRoute(page.path, true, true)).toBeNull();
     }
     expect(devRoute('/dev?lang=de', true, false)).toEqual({ status: 307, location: '/dev/?lang=de' });

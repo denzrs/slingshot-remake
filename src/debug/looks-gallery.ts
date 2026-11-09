@@ -6,7 +6,7 @@ import '@fontsource/b612-mono/700';
 import './looks-gallery.css';
 import { createMatch, type Match, type Scene as FieldScene } from '../game';
 import { newPlayer } from '../game/match';
-import { DEFAULT_SETTINGS, type Seat } from '../data/settings';
+import type { Seat } from '../data/settings';
 import { LOOKS as LOOK_IDS, lookLabelKey, setLook, type Look } from '../data/look';
 import { t } from '../platform/i18n';
 import { FIELD, NEBULA, SUDDEN_DEATH, WORMHOLE } from '../sim/config';
@@ -17,9 +17,11 @@ import { Effects } from '../render/effects';
 import { painterFor } from '../render/looks';
 import { forgedPlanetTraits } from '../render/looks/forged-planet';
 import type { Planet, PlanetStyle } from '../sim/physics';
+import { PLANET_TINTS } from '../sim/world';
 import { shaderGpuSeconds } from '../render/looks/forged-gl';
 import { holdShaderDetail } from '../render/looks/forged-sky';
-import { Renderer, type DrawOptions } from '../render/renderer';
+import { Renderer } from '../render/renderer';
+import { aiming, GALLERY_OPTIONS, gallerySettings, STYLE_NAMES } from './gallery-match';
 
 /**
  * Dev-only page (`/dev/looks.html`, never part of a build): the real field renderer, once per look, on the same scene, so the
@@ -37,19 +39,6 @@ const shotClock = new WeakMap<Match, { t: number }>();
 /** The planets a match started with, for a scene where a wave takes them and the loop brings them back. */
 const allPlanets = new WeakMap<Match, Planet[]>();
 
-const OPTIONS: DrawOptions = { hud: false, fullScreen: false, touch: false, recording: false, keyHints: false, aimCardDodge: false, seatNumbers: false };
-
-const settings = (seats: Seat[], extra: Partial<typeof DEFAULT_SETTINGS> = {}) => ({
-  ...DEFAULT_SETTINGS,
-  seats,
-  rounds: 5,
-  menuBackground: false,
-  menuSounds: false,
-  gameSounds: false,
-  ...extra,
-});
-
-const HUMANS: Seat[] = ['human', 'human', 'human', 'off', 'off', 'off'];
 const SIX: Seat[] = ['human', 'human', 'human', 'human', 'human', 'human'];
 
 interface Card {
@@ -72,13 +61,6 @@ interface Scene {
   speed?: number;
   /** Called every frame for every card of the scene, before it draws. */
   tick?(match: Match, card: Card, dt: number): void;
-}
-
-/** A match standing at the start of a round's aiming, with nobody steering. */
-function aiming(mode: 'classic' | 'horizon' | 'solar', seed: number, extra: Partial<typeof DEFAULT_SETTINGS> = {}): Match {
-  const match = createMatch(mode, settings(HUMANS, extra), { seats: HUMANS, names: ['Ash', 'Bo', 'Cy'], seed });
-  match.phase = 'aiming';
-  return match;
 }
 
 /** The match's scene with some of it replaced, so a page can show a state the game would only reach mid-flight. */
@@ -106,60 +88,93 @@ function flying(owner: number, trail: number[], extra: Partial<VolleyShot> = {},
   return { owner, trail, shot: shot as unknown as VolleyShot['shot'], ...extra };
 }
 
-/**
- * A field of planets that shows every map of every style, and what a seed may add to it: rings, a moon (and so its shadow on
- * the planet, and the planet's on the moon), an aurora over a gas giant's poles. The seeds are searched for in the forged
- * look's own rolls, so this stays true when the rolls change. Lightning (gas), clouds and their shadows, and city lights
- * come with the maps.
- */
-function planetField(): { planets: Planet[]; rows: string[] } {
-  interface Want {
-    ring?: boolean;
-    moon?: boolean;
-    aurora?: boolean;
+/** What a picked planet should have besides its map. */
+interface Want {
+  ring?: boolean;
+  moon?: boolean;
+  aurora?: boolean;
+}
+/** A planet in a planet scene: its style, which of the style's maps, and what else. */
+type Pick = [PlanetStyle, number, Want];
+
+const probe = (seed: number, style: PlanetStyle): Planet => ({ x: 0, y: 0, radius: 30, mass: 1, seed, style, tint: '#ffffff' });
+
+/** How many maps a style has (a tidally locked world's among them, last). */
+function maps(style: PlanetStyle): number {
+  let n = 0;
+  for (let seed = 1; seed < 3000; seed++) n = Math.max(n, forgedPlanetTraits(probe(seed, style)).index + 1);
+  return n;
+}
+
+/** Seeds already in a scene: the renderer keeps a planet's sprite by its seed, so no two planets of the galleries may share one. */
+const taken = new Set<number>();
+
+/** The first free seed whose planet wears map `index` and has what is wanted (and nothing of the rest it is not asked for). */
+function find(style: PlanetStyle, index: number, want: Want): number {
+  let fallback = 0;
+  for (let seed = 1; seed < 20000; seed++) {
+    if (taken.has(seed)) continue;
+    const t = forgedPlanetTraits(probe(seed, style));
+    if (t.index !== index) continue;
+    fallback ||= seed;
+    if (!!want.ring === t.ringed && !!want.moon === t.moon && (style !== 'gas' || !!want.aurora === t.aurora)) return seed;
   }
-  const TINT: Record<string, string[]> = { rocky: ['#c9a77c', '#b8664a', '#a39a8a', '#c78f6d'], gas: ['#d8b98a', '#9c8bb5', '#c9a0a0', '#b7c28f'], ice: ['#9fc3d6', '#bcd3dc', '#8fb3b0'] };
-  const probe = (seed: number, style: PlanetStyle): Planet => ({ x: 0, y: 0, radius: 30, mass: 1, seed, style, tint: '#ffffff' });
-  /** How many maps a style has. */
-  const maps = (style: PlanetStyle): number => {
-    let n = 0;
-    for (let seed = 1; seed < 300; seed++) n = Math.max(n, forgedPlanetTraits(probe(seed, style)).index + 1);
-    return n;
-  };
-  /** The first seed whose planet wears map `index` and has what is wanted (and nothing of the rest it is not asked for); the lit-up city side wherever the map has one. */
-  const find = (style: PlanetStyle, index: number, want: Want): number => {
-    let fallback = 0;
-    for (let seed = 1; seed < 20000; seed++) {
-      const t = forgedPlanetTraits(probe(seed, style));
-      if (t.index !== index) continue;
-      fallback ||= seed;
-      if (!!want.ring === t.ringed && !!want.moon === t.moon && (style !== 'gas' || !!want.aurora === t.aurora)) return seed;
-    }
-    return fallback;
-  };
-  const rows: { style: PlanetStyle; picks: [number, Want][] }[] = [];
-  const all = (style: PlanetStyle, want: (i: number) => Want): [number, Want][] => Array.from({ length: maps(style) }, (_, i) => [i, want(i)]);
-  rows.push({ style: 'rocky', picks: [...all('rocky', () => ({})), [0, { moon: true }], [2, { moon: true }], [4, { moon: true }]] });
-  rows.push({ style: 'gas', picks: [...all('gas', (i) => ({ aurora: true, ring: i % 2 === 0 })), [5, { ring: true }], [3, { aurora: true, moon: true }]] });
-  rows.push({ style: 'ice', picks: [...all('ice', () => ({})), [2, { ring: true }], [0, { moon: true }], [4, { moon: true }]] });
+  return fallback;
+}
+
+/** Every map of `style` up to `count` (all of them when left out), each with what `want` gives it. */
+const all = (style: PlanetStyle, want: (i: number) => Want = () => ({}), count = maps(style)): Pick[] => Array.from({ length: count }, (_, i) => [style, i, want(i)]);
+
+/**
+ * A field of planets, a row each of up to eight, that shows the maps of some styles and what a seed may add to them: rings, a
+ * moon (and so its shadow on the planet, and the planet's on the moon), an aurora over a gas giant's poles. The seeds are
+ * searched for in the forged look's own rolls, so this stays true when the rolls change. Lightning (gas), clouds and their
+ * shadows, city lights and what happens on a surface (meteors, volcanoes, geysers, dust, hurricanes, glints, trains of
+ * light) come with the maps.
+ */
+function planetField(rows: Pick[][]): { planets: Planet[]; rows: string[] } {
   const planets: Planet[] = [];
   const names: string[] = [];
-  rows.forEach(({ style, picks }, r) => {
+  rows.forEach((picks, r) => {
     const label: string[] = [];
-    picks.forEach(([index, want], c) => {
+    picks.forEach(([style, index, want], c) => {
       const seed = find(style, index, want);
+      taken.add(seed);
       const probed = probe(seed, style);
       const t = forgedPlanetTraits(probed);
-      const tint = TINT[style][seed % TINT[style].length];
-      planets.push({ ...probed, x: 85 + c * 158, y: 150 + r * 210, mass: 30 ** 3, tint });
-      label.push([t.map, t.ringed && 'Ringe', t.moon && 'Mond', t.aurora && 'Polarlicht', t.settled && 'Stadtlichter'].filter(Boolean).join(' + '));
+      const tint = PLANET_TINTS[style][seed % PLANET_TINTS[style].length];
+      planets.push({ ...probed, x: 85 + c * 158, y: 110 + r * 190, mass: 30 ** 3, tint });
+      label.push([`${STYLE_NAMES[style]} ${t.map}`, t.locked && 'gebunden', t.ringed && 'Ringe', t.moon && 'Mond', t.aurora && 'Polarlicht', t.settled && 'Stadtlichter'].filter(Boolean).join(' + '));
     });
-    names.push(`Reihe ${r + 1} (${({ rocky: 'Fels', gas: 'Gas', ice: 'Eis' } as Record<string, string>)[style]}): ${label.join(' · ')}`);
+    names.push(`Reihe ${r + 1}: ${label.join(' · ')}`);
   });
   return { planets, rows: names };
 }
 
-const PLANETS = planetField();
+/** The first four styles; their tidally locked maps are in `NEW_PLANETS`. */
+const PLANETS = planetField([
+  [...all('rocky'), ['rocky', 0, { moon: true }], ['rocky', 2, { moon: true }], ['rocky', 4, { moon: true }]],
+  [...all('gas', (i) => ({ aurora: true, ring: i % 2 === 0 })), ['gas', 5, { ring: true }], ['gas', 3, { aurora: true, moon: true }]],
+  [...all('ice', () => ({}), maps('ice') - 1), ['ice', 2, { ring: true }], ['ice', 0, { moon: true }]],
+  [...all('lava', () => ({}), maps('lava') - 1), ['lava', 0, { moon: true }], ['lava', 1, { ring: true }], ['rocky', 0, { ring: true }]],
+]);
+
+/** The styles after them, two to a row, and the tidally locked lava and ice worlds. */
+const NEW_PLANETS = planetField([
+  [...all('ocean'), ['ocean', 0, { moon: true }], ...all('desert'), ['desert', 1, { ring: true }]],
+  [...all('acid'), ['acid', 0, { moon: true }], ...all('carbon'), ['carbon', 0, { ring: true }]],
+  [...all('crystal'), ['crystal', 1, { ring: true }], ...all('living'), ['living', 0, { moon: true }]],
+  [...all('machine'), ['machine', 0, { ring: true }], ['lava', maps('lava') - 1, {}], ['lava', maps('lava') - 1, { moon: true }], ['ice', maps('ice') - 1, {}], ['ice', maps('ice') - 1, { ring: true }]],
+]);
+
+/** A field of nothing but `planets`. */
+function planetScene(planets: Planet[]): Match {
+  const match = aiming('classic', 11);
+  match.world.planets.length = 0;
+  match.world.planets.push(...planets.map((p) => ({ ...p })));
+  for (const ship of match.world.ships) ship.alive = false;
+  return match;
+}
 
 const EFFECTS: ((e: Effects, m: Match) => void)[] = [
   (e, m) => e.explode(m.world.ships[1].x, m.world.ships[1].y, m.players[1].color),
@@ -186,15 +201,15 @@ const SCENES: Scene[] = [
   },
   {
     title: 'Planeten',
-    sub: `Jede Karte jeder Art, dazu Ringe, Monde mit Schatten, Polarlicht, Blitze, Wolkenschatten und Stadtlichter; vierfache Geschwindigkeit. ${PLANETS.rows.join('. ')}`,
+    sub: `Jede Karte von Fels, Gas, Eis und Lava, dazu Ringe, Monde mit Schatten, Polarlicht, Blitze, Wolkenschatten, Stadtlichter, Meteore, Vulkane und Geysire; vierfache Geschwindigkeit. ${PLANETS.rows.join('. ')}`,
     speed: 4,
-    build: () => {
-      const match = aiming('classic', 11);
-      match.world.planets.length = 0;
-      match.world.planets.push(...PLANETS.planets);
-      for (const ship of match.world.ships) ship.alive = false;
-      return match;
-    },
+    build: () => planetScene(PLANETS.planets),
+  },
+  {
+    title: 'Neue Welten',
+    sub: `Ozean, Wüste, Säure, Kohlenstoff, Kristall, Lebend und Maschine, dazu die gebundenen Lava- und Eiswelten: Hurrikane, Staubstürme, Glitzern, Leuchten bei Nacht, Lichterzüge, Hitzeflimmern; vierfache Geschwindigkeit. ${NEW_PLANETS.rows.join('. ')}`,
+    speed: 4,
+    build: () => planetScene(NEW_PLANETS.planets),
   },
   {
     title: 'Sonnensystem',
@@ -352,7 +367,7 @@ const SCENES: Scene[] = [
     title: 'Ziele',
     sub: 'Die Zielscheiben der Tagesaufgabe: das eigene Schiff und fünf stillstehende Drohnen, so wie das Spiel sie anlegt (rot, mit Trefferring)',
     build: () => {
-      const match = createMatch('classic', settings(SIX), { seats: SIX, names: ['Ash', 'Bo', 'Cy', 'Di', 'Ed', 'Flo'], seed: 11 });
+      const match = createMatch('classic', gallerySettings(SIX), { seats: SIX, names: ['Ash', 'Bo', 'Cy', 'Di', 'Ed', 'Flo'], seed: 11 });
       match.phase = 'aiming';
       // As `ChallengeMatch` does: ship 0 is the pilot, every other ship a target drone.
       match.players = match.players.map((p, id) => (id === 0 ? p : newPlayer(id, id, 'easy', null, true)));
@@ -607,7 +622,7 @@ function frame(now: number): void {
     scene.tick?.(match, card, dt);
     card.effects.update(dt, match.world);
     setLook(card.look);
-    card.renderer.draw(match, card.effects, OPTIONS, dt * (scene.speed ?? 1));
+    card.renderer.draw(match, card.effects, GALLERY_OPTIONS, dt * (scene.speed ?? 1));
   }
   smooth.cpu = ease(smooth.cpu, performance.now() - began);
   smooth.gpu = ease(smooth.gpu, shaderGpuSeconds() * 1000);
@@ -656,7 +671,7 @@ async function pixelHashes(): Promise<Record<string, number>> {
         scene.tick?.(match, card, 0);
         card.effects.update(0.016, match.world);
         setLook(card.look);
-        card.renderer.draw(match, card.effects, OPTIONS, time - at);
+        card.renderer.draw(match, card.effects, GALLERY_OPTIONS, time - at);
         at = time;
         if (pass === 'real') {
           const data = card.canvas.getContext('2d')!.getImageData(0, 0, card.canvas.width, card.canvas.height).data;
