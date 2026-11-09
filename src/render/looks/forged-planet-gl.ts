@@ -69,6 +69,18 @@ vec3 onSphere(float u, float v) {
   return vec3(cos(lat) * cos(lon), sin(lat), cos(lat) * sin(lon));
 }
 
+/** A point of the disc on the turning surface's map. */
+vec2 surfaceAt(vec2 p) {
+  vec2 at = mapAt(p, sqrt(max(0.0, 1.0 - dot(p, p))));
+  float wave = sin(at.y * 9.424778 + uPhase);
+  return vec2(at.x + uSurfaceTurn * (1.0 + uBand * 0.5 * wave), at.y);
+}
+
+/** The map's brightness at a point of the disc, taken as height. Read from a blurred level of the map: its sharp coasts would speckle. */
+float heightAt(vec2 p) {
+  return luma(textureLod(uMap, surfaceAt(p), uLod + 2.0).rgb);
+}
+
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * uHalf;
   float rr = dot(p, p);
@@ -93,11 +105,7 @@ void main() {
   float surfaceU = u + uSurfaceTurn * (1.0 + uBand * 0.5 * wave);
   float cloudU = u + uCloudTurn * (1.0 + uBand * 0.8 * wave);
 
-  // Relief: the map's brightness taken as height, its slope on the screen tilting the surface towards or from the light. Read from a blurred level of the map: its sharp coasts would speckle. The derivatives are taken before anything returns: they need every pixel of a quad to be here.
-  float height = luma(textureLod(uMap, vec2(surfaceU, v), uLod + 2.0).rgb);
-  float slopeX = dFdx(height) * uR * 0.04;
-  float slopeY = -dFdy(height) * uR * 0.04;
-  // The crack map turns with the surface. Its edges are kept a pixel wide, whatever the planet's size.
+  // The crack map turns with the surface. Its edges are kept a pixel wide, whatever the planet's size. The derivatives are taken before anything returns: they need every pixel of a quad to be here.
   vec3 crack = uHits > 0 ? textureLod(uCracks, vec2(surfaceU, v), uCrackLod).rgb : vec3(1.0);
   vec2 crackAa = max(fwidth(crack.rg), vec2(1e-3));
   if (cover <= 0.0) {
@@ -105,7 +113,17 @@ void main() {
     return;
   }
   vec3 albedo = min(vec3(1.0), textureLod(uMap, vec2(surfaceU, v), uLod).rgb * uGain);
-  vec3 bumped = normalize(n - vec3(slopeX, slopeY, 0.0) * uRelief);
+  // Relief: the height's slope across the disc tilts the surface towards or from the light. It is measured a texel of the
+  // blurred level apart, so it runs smoothly from texel to texel; the screen's derivatives held it flat over each texel and
+  // each block of 2 × 2 pixels, which tiled a big planet in squares.
+  vec2 slope = vec2(0.0);
+  if (uRelief > 0.0) {
+    float apart = 6.2831853 * exp2(uLod + 2.0) / float(textureSize(uMap, 0).x);
+    vec2 dx = vec2(apart, 0.0);
+    vec2 dy = vec2(0.0, apart);
+    slope = vec2(heightAt(p + dx) - heightAt(p - dx), heightAt(p + dy) - heightAt(p - dy)) / (2.0 * apart) * 0.04;
+  }
+  vec3 bumped = normalize(n - vec3(slope, 0.0) * uRelief);
   float lam = dot(n, uLight);
   float lamBumped = dot(bumped, uLight);
   float lit = clamp(0.06 + 0.98 * pow(max(0.0, lamBumped), 0.85), 0.0, 1.0);
