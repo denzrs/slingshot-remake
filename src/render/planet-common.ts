@@ -1,5 +1,6 @@
 import type { Planet } from '../sim/physics';
 import { range } from '../sim/rng';
+import { fbm } from './noise';
 
 export type Vec3 = [number, number, number];
 
@@ -21,7 +22,8 @@ export interface Crater {
 }
 
 export function makeCraters(p: Planet, rng: () => number): Crater[] {
-  if (p.style === 'gas') return [];
+  // Gas has no ground, and lava's crust is too young to keep a crater.
+  if (p.style === 'gas' || p.style === 'lava') return [];
   const count = p.style === 'rocky' ? 6 + Math.floor(rng() * 8) : 2 + Math.floor(rng() * 3);
   const out: Crater[] = [];
   for (let i = 0; i < count; i++) {
@@ -30,6 +32,11 @@ export function makeCraters(p: Planet, rng: () => number): Crater[] {
     out.push({ c, cosR: Math.cos(r), depth: range(rng, 0.25, 0.5) });
   }
   return out;
+}
+
+/** A lava world's glowing veins (0 → 1) at a point of the unit sphere: where its noise crosses the middle, `width` wide. */
+export function lavaVeins(x: number, y: number, z: number, seed: number, width: number): number {
+  return smoothstep(width, width * 0.35, Math.abs(fbm(x * 2.2, y * 2.2, z * 2.2, seed, 4) - 0.5));
 }
 
 /** Bowl shading with a bright rim, 1 outside every crater. */

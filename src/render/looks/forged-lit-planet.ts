@@ -3,7 +3,7 @@ import type { Planet } from '../../sim/physics';
 import { createRng, range } from '../../sim/rng';
 import { hexToRgb } from '../color';
 import { fbm } from '../noise';
-import { clamp01, mix, smoothstep, type PlanetSprite } from '../planet-common';
+import { clamp01, lavaVeins, mix, smoothstep, type PlanetSprite } from '../planet-common';
 
 type Rgb = [number, number, number];
 
@@ -106,9 +106,8 @@ export function renderLitPlanet(p: Planet, ps: number): PlanetSprite {
         v = 0.5 + 0.5 * Math.sin(lat * bandFreq + turb * 3.6);
         v = clamp01(v * 0.8 + (turb - 0.5) * 0.8 + 0.1);
       } else if (lava) {
-        // Thin veins where the noise crosses its middle, over a crust kept a little dark.
-        const n = fbm(cx * 2.2, lat * 2.2, cz * 2.2, seed, 4);
-        v = Math.max(0.35, 0.5 + 0.5 * smoothstep(0.05, 0.015, Math.abs(n - 0.5)));
+        // Thin veins over a crust kept a little dark: below the middle, so the dark veil shows.
+        v = mix(0.35, 1, lavaVeins(cx, lat, cz, seed, 0.05));
       } else {
         v = smoothstep(0.25, 0.8, fbm(cx * 1.9, lat * 1.9, cz * 1.9, seed, 4));
       }

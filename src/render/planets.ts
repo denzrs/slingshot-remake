@@ -1,7 +1,7 @@
 import { COLORS } from '../sim/config';
 import type { Planet } from '../sim/physics';
 import { createRng, range } from '../sim/rng';
-import { clamp01, crater, LIGHT, makeCraters, mix, smoothstep, type Crater, type PlanetSprite } from './planet-common';
+import { clamp01, crater, lavaVeins, LIGHT, makeCraters, mix, smoothstep, type Crater, type PlanetSprite } from './planet-common';
 import { hexToRgb } from './color';
 import { fbm } from './noise';
 
@@ -133,9 +133,7 @@ function albedoFn(p: Planet, seed: number, tilt: number, bandFreq: number, crate
 /** How much a lava planet's surface glows at a point of the sphere (0 → 1): thin veins where the noise crosses its middle, wider where they meet. */
 function moltenFn(seed: number) {
   return (x: number, y: number, z: number) => {
-    const n = fbm(x * 2.2, y * 2.2, z * 2.2, seed, 4);
     const pool = fbm(x * 1.3, y * 1.3, z * 1.3, seed + 31, 2);
-    const width = 0.03 + 0.05 * smoothstep(0.55, 0.75, pool);
-    return 0.9 * smoothstep(width, width * 0.35, Math.abs(n - 0.5));
+    return 0.9 * lavaVeins(x, y, z, seed, 0.03 + 0.05 * smoothstep(0.55, 0.75, pool));
   };
 }

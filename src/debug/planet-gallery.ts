@@ -111,7 +111,9 @@ function placeLabels(card: Card): void {
     const at = card.renderer.project(p.x, p.y + FIELD.height / STYLES.length / 2 - 6, null, false);
     marks.push(`<span class="size" style="left:${at.x}px;top:${at.y}px">r ${radius}</span>`);
   });
-  card.labels.innerHTML = marks.join('');
+  // Written only when a reroll or a resize moved them, not every frame.
+  const html = marks.join('');
+  if (card.labels.innerHTML !== html) card.labels.innerHTML = html;
 }
 
 function show(): void {

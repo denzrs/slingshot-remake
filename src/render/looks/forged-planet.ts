@@ -27,8 +27,8 @@ const ATMOSPHERE: Record<string, Rgb> = { gas: [255, 214, 160], ice: [191, 230, 
 const DUSK: Record<string, Rgb> = { gas: [255, 150, 90], ice: [140, 190, 255], rocky: [255, 110, 50], lava: [255, 80, 30] };
 const NIGHT: Rgb = [16, 30, 60];
 const CITY: Rgb = [255, 196, 120];
-/** How strongly a map's light and dark are read as height: gas has none, and lava little (its bright parts are the low ones). */
-const RELIEF: Record<string, number> = { gas: 0, ice: 1.4, rocky: 3, lava: 1 };
+/** How strongly a map's light and dark are read as height: gas has none, and lava's is turned over (its bright parts are the low channels). */
+const RELIEF: Record<string, number> = { gas: 0, ice: 1.4, rocky: 3, lava: -1 };
 
 /** How often the sphere and its cloud are painted again (s), and how fast the cloud turns (turns per second). */
 const CLOUD_EVERY = 1 / 10;

@@ -121,7 +121,7 @@ void main() {
   // blurred level apart, so it runs smoothly from texel to texel; the screen's derivatives held it flat over each texel and
   // each block of 2 × 2 pixels, which tiled a big planet in squares.
   vec2 slope = vec2(0.0);
-  if (uRelief > 0.0) {
+  if (uRelief != 0.0) {
     float apart = 6.2831853 * exp2(uLod + 2.0) / float(textureSize(uMap, 0).x);
     vec2 dx = vec2(apart, 0.0);
     vec2 dy = vec2(0.0, apart);

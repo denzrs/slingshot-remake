@@ -11,12 +11,20 @@ export const PLANET_TINTS: Record<PlanetStyle, readonly string[]> = {
   star: ['#f2c46d'],
 };
 
-/**
- * A planet's style by its size: the big ones are mostly gas giants, the small ones rock and ice, now and then molten. One
- * draw of the rng either way, so a seed's layout does not move whatever the lists hold.
- */
+/** A planet's style by its size: the big ones are mostly gas giants, the small ones rock and ice. */
 function styleFor(rng: Rng, radius: number, big: number): PlanetStyle {
-  return radius > big ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'rocky', 'ice', 'ice', 'lava']);
+  return radius > big ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'ice']);
+}
+
+/**
+ * A planet's seed, style and tint, drawn after its mass. One small rocky world in four turns out molten, decided from its
+ * own seed rather than the world's rng, so every planet a seed gave before lava came keeps its look.
+ */
+function dress(rng: Rng, style: PlanetStyle, small: boolean): Pick<Planet, 'seed' | 'style' | 'tint'> {
+  const seed = Math.floor(rng() * 2 ** 31);
+  const molten = small && style === 'rocky' && createRng(seed ^ 0x2c1b3c6d)() < 0.25;
+  const look: PlanetStyle = molten ? 'lava' : style;
+  return { seed, style: look, tint: pick(rng, PLANET_TINTS[look]) };
 }
 
 const SHIP_CLEARANCE = 110;
@@ -80,9 +88,7 @@ export function generateWorld(seed: number, opts: WorldOptions): World {
       y,
       radius,
       mass: density * radius ** 3,
-      seed: Math.floor(rng() * 2 ** 31),
-      style,
-      tint: pick(rng, PLANET_TINTS[style]),
+      ...dress(rng, style, radius <= 40),
     });
   }
 
@@ -223,9 +229,7 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
         ...onOrbit(r, a),
         radius,
         mass: range(rng, 0.75, 1.3) * radius ** 3 * SOLAR.PLANET_HEAVY,
-        seed: Math.floor(rng() * 2 ** 31),
-        style,
-        tint: pick(rng, PLANET_TINTS[style]),
+        ...dress(rng, style, radius <= 24),
       });
     });
   }
@@ -259,7 +263,7 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
       const spot = onOrbit(bandRadii[lane], at);
       if (ships.some((sh) => Math.hypot(sh.x - spot.x, sh.y - spot.y) < radius + SOLAR.SHIP_CLEARANCE)) continue;
       const style = styleFor(rng, radius, 24);
-      planets.push({ ...spot, radius, mass: range(rng, 0.75, 1.3) * radius ** 3 * SOLAR.PLANET_HEAVY, seed: Math.floor(rng() * 2 ** 31), style, tint: pick(rng, PLANET_TINTS[style]) });
+      planets.push({ ...spot, radius, mass: range(rng, 0.75, 1.3) * radius ** 3 * SOLAR.PLANET_HEAVY, ...dress(rng, style, radius <= 24) });
       angles[lane].push(at);
     }
   });

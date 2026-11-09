@@ -65,7 +65,7 @@ function hash(seed: number, beat: number, key: number): number {
 /** How long the streak falls before it strikes, the flash, the melt cooling and the crater fading (s). */
 const STREAK = 0.35;
 const FLASH = 0.45;
-const COOL = 3.5;
+const COOL = 5.6;
 const CRATER = 28;
 
 /** A planet's meteor strikes: how often (s between beats) and where in its beat the first one falls. */
@@ -74,7 +74,7 @@ export interface Meteors {
   offset: number;
 }
 
-/** Only lava worlds are struck, and often. */
+/** How often a lava world is struck (only lava worlds are: the caller bakes meteors for no other). */
 export function rollMeteors(p: Planet): Meteors {
   const rng = createRng(p.seed ^ 0x5bd1e995);
   return { every: range(rng, 11, 19), offset: rng() };
@@ -88,7 +88,8 @@ export function drawMeteors(ctx: CanvasRenderingContext2D, x: number, y: number,
   const R = p.radius;
   const now = time / m.every + m.offset;
   const last = Math.floor(now);
-  const back = Math.ceil((CRATER + COOL) / m.every);
+  // A strike falls up to 0.85 of the way into its beat and shows until its crater is gone.
+  const back = Math.ceil(CRATER / m.every + 0.85);
   for (let beat = last - back; beat <= last + 1; beat++) {
     if (hash(p.seed, beat, 0) < 0.3) continue;
     // Somewhere in the beat, so two strikes are never the same distance apart.
@@ -103,7 +104,7 @@ export function drawMeteors(ctx: CanvasRenderingContext2D, x: number, y: number,
     const size = R * (0.07 + 0.08 * hash(p.seed, beat, 4));
     const from = hash(p.seed, beat, 5) * Math.PI * 2;
     if (age < 0) drawStreak(ctx, x, y, R, n, from, 1 + age / STREAK);
-    else drawStrike(ctx, x, y, R, n, size, age, p.style === 'lava');
+    else drawStrike(ctx, x, y, R, n, size, age);
   }
 }
 
@@ -132,7 +133,7 @@ function drawStreak(ctx: CanvasRenderingContext2D, x: number, y: number, R: numb
 }
 
 /** What a strike leaves at `age` seconds: the flash, a ring of dust running out, melt glowing and cooling, the crater. */
-function drawStrike(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, n: Seen, size: number, age: number, lava: boolean): void {
+function drawStrike(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, n: Seen, size: number, age: number): void {
   if (n.nz <= 0.02) return;
   const cx = x + n.dx * R;
   const cy = y + n.dy * R;
@@ -171,9 +172,9 @@ function drawStrike(ctx: CanvasRenderingContext2D, x: number, y: number, R: numb
   }
 
   ctx.globalCompositeOperation = 'lighter';
-  // Melt: white-hot at first, cooling through orange to a dull red. On lava it stays hot longer and never quite goes out while the crater shows.
-  const cool = age / (lava ? COOL * 1.6 : COOL);
-  const melt = Math.max(1 - smoothstep(0, 1, cool), lava ? 0.25 * fade : 0);
+  // Melt: white-hot at first, cooling through orange to a dull red, and never quite going out while the crater shows.
+  const cool = age / COOL;
+  const melt = Math.max(1 - smoothstep(0, 1, cool), 0.25 * fade);
   if (melt > 0) {
     const r = size * 0.8;
     const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
@@ -202,6 +203,9 @@ function drawStrike(ctx: CanvasRenderingContext2D, x: number, y: number, R: numb
     const f = Math.sin((1 - age / FLASH) * Math.PI * 0.5) ** 2;
     const r = R * 0.55;
     ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, R * 0.97, 0, Math.PI * 2);
+    ctx.clip();
     ctx.globalCompositeOperation = 'lighter';
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
     g.addColorStop(0, `rgba(255,250,235,${0.95 * f})`);
