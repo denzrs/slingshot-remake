@@ -13,8 +13,8 @@ use crate::protocol::{
     DailyScore, RoomLook, RoomName, RoomRules, NAME_REQUIRED,
 };
 use crate::report::{
-    parse_local_game, parse_round_report, parse_seat_report, parse_turn_report, LocalGame, RoundReport, SeatReport,
-    TurnReport,
+    parse_local_game, parse_round_report, parse_seat_report, parse_turn_report, LocalGame,
+    RoundReport, SeatReport, TurnReport,
 };
 use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
 

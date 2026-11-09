@@ -2198,7 +2198,10 @@ mod tests {
     }
 
     fn seat_job(ip: [u8; 4], message: Value) -> Job {
-        Job::Seat(facts(ip, "ann"), crate::report::parse_seat_report(&message).unwrap())
+        Job::Seat(
+            facts(ip, "ann"),
+            crate::report::parse_seat_report(&message).unwrap(),
+        )
     }
 
     #[tokio::test]
@@ -2209,7 +2212,13 @@ mod tests {
         // A game without changes at the table says nothing of them.
         stats.record(&turn_job(ann, 1, 2)).await.unwrap();
         stats.record(&round_job(ann, 1)).await.unwrap();
-        assert!(stats.replay("0123456789abcdef").await.unwrap().unwrap().get("seatChanges").is_none());
+        assert!(stats
+            .replay("0123456789abcdef")
+            .await
+            .unwrap()
+            .unwrap()
+            .get("seatChanges")
+            .is_none());
 
         let stats = Stats::in_memory().await;
         stats.record(&turn_job(ann, 1, 1)).await.unwrap();
@@ -2234,7 +2243,14 @@ mod tests {
         );
         // They are the game's rows like any other: they go with the rest when it is pruned.
         stats.prune_before(now_unix() + 10).await.unwrap();
-        assert_eq!(text(&stats, "SELECT CAST(COUNT(*) AS TEXT) FROM stat_seat_changes").await, vec![Some("0".to_string())]);
+        assert_eq!(
+            text(
+                &stats,
+                "SELECT CAST(COUNT(*) AS TEXT) FROM stat_seat_changes"
+            )
+            .await,
+            vec![Some("0".to_string())]
+        );
     }
 
     #[test]
