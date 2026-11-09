@@ -7,15 +7,27 @@ npm run mobile:audit                                   # both phones, both ways 
 npm run mobile:audit -- --only game                    # the screens whose name contains "game"
 npm run mobile:audit -- --devices iphone-16 --orientations portrait
 npm run mobile:audit -- --url http://localhost:5173/   # a game that is already running (`npm run dev`)
-npm run mobile:audit -- --relay ws://localhost:8080    # include the online screens (`npm run dev:server` starts a relay; without one they are left out)
+npm run mobile:audit -- --relay ws://localhost:8080    # the relay the online screens use; without one they are left out (see below)
 ```
 
 The result is in `output/mobile-audit/` (not tracked): `index.html` shows every screenshot with its findings beside it (red border: a failure, amber: warnings only), `report.md` and `report.json` list the same. The exit code is 1 when anything fails.
 
+## The online screens need a relay
+
+The audit serves the game on a port of its own, which the relay's development allowlist (ports 5173, 5174, 4173) refuses with a 403. Start a relay that takes any origin, on this machine only:
+
+```
+cargo build --manifest-path server/Cargo.toml
+ALLOW_ALL_ORIGINS=1 server/target/debug/slingshot-server        # listens on 8080
+```
+
+With a relay up the audit also opens four rooms (long host names, every mode, 2 to 6 seats), each from a browser of its own since a room closes with its host, and looks at the room list with them in it.
+
 ## What it visits
 
 - **Menu pages** — the title, every mode's setup and presets, one mode's rules, crew and rule maker, settings, flight training, the daily challenge. They come from `scripts/screens-pages.ts`, the list `npm run screens` uses; a page added there is visited here too.
-- **A match** (`game`, and `game-stick` with the stick instead of the wheel) — played as a person would, one round against CPUs: aiming, the shot in flight, the pause menu, the killcam, the round's end, the result page.
+- **A match** (`game`, and `game-stick` with the stick instead of the wheel) — played as a person would, one round against CPUs: aiming, the shot in flight, the pause menu, the killcam (the wheel match sets the killcam to every kill, since a turn-based game shows none by default), the round's end, the result page.
+- **Online** (with a relay) — find, enter a code, create, and a host's room with its presets and rules, and the list of open rooms.
 - **Turning** (`turning`, `turning-pointer-flip`) — the phone is turned portrait → landscape → portrait six times in a running match. After every turn the page must catch up: the canvas as big as the window and sharp (its bitmap is the window times the pixel ratio), and the upright layout on exactly when the window is tall. The second run also switches the browser's touch pointer off and on around each turn, which is what the in-app browser's phone emulation does, and what once left the upright layout missing (issue 214).
 
 ## What counts

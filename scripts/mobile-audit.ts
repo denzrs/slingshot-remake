@@ -16,7 +16,8 @@
  *   --devices <a,b>        iphone-16, iphone-16-pro-max (default both)
  *   --orientations <a,b>   portrait, landscape (default both)
  *   --only <text>          only the screens whose name contains this
- *   --relay <url>          the relay the online screens connect to, default ws://localhost:8080; without one they are left out
+ *   --relay <url>          the relay the online screens connect to, default ws://localhost:8080; without one they are left out. It must take any origin
+ *                          (ALLOW_ALL_ORIGINS=1): the game is served on a port of its own. See docs/mobile-audit.md
  *   --dpr <n>              screenshot pixel ratio, default 2 (the phones are 3: it changes file sizes, not the layout)
  *   --lang <en|de>         the game's language, default en
  *   --jobs <n>             browsers at once, default 4
@@ -263,6 +264,50 @@ async function visitMenuPage(ctx: Context, page: Page, relay: string): Promise<v
   if (!snapped || !('snap' in page.steps[page.steps.length - 1])) await snap(ctx, page.name);
 }
 
+// ————————————————————————————— Rooms to find —————————————————————————————
+
+/** The people hosting the rooms the "find a room" page lists: long names and every mode and size, as the list meets them in play. */
+const HOSTS = [
+  { name: 'Maximiliane-Alexandrina', gameMode: 'classic', capacity: 4, symbol: 'planet', color: '#ff8660' },
+  { name: 'Bartholomäus von Hohenzollern', gameMode: 'horizon', capacity: 6, symbol: 'blackhole', color: '#b99cff' },
+  { name: 'Jo', gameMode: 'solar', capacity: 2, symbol: 'sun', color: '#ffd27a' },
+  { name: 'WWWWWWWWWWWWWWWWWWWW', gameMode: 'classic', capacity: 3, symbol: 'ufo', color: '#6fe3c8' },
+];
+
+/** Opens a room for each host, each in a browser of its own (a room closes with its host), and returns what closes them. */
+async function startHosts(base: string, relay: string, lang: string): Promise<() => Promise<void>> {
+  const browsers: Browser[] = [];
+  for (const host of HOSTS) {
+    const browser = await launchChrome(1280, 800);
+    browsers.push(browser);
+    const { cdp } = browser;
+    const lobby = { server: relay, name: host.name, gameMode: host.gameMode, capacity: host.capacity, look: { visibility: 'public', symbol: host.symbol, color: host.color } };
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `localStorage.clear(); localStorage.setItem('slingshot.settings.v1', ${JSON.stringify(JSON.stringify({ ...SETTINGS, language: lang }))}); localStorage.setItem('slingshot.lobby.v1', ${JSON.stringify(JSON.stringify(lobby))});`,
+    });
+    await cdp.send('Page.navigate', { url: base });
+    await cdp.evaluate(until(`!!document.querySelector('#overlay .item')`));
+    for (const step of [
+      { click: 'Play online' }, { click: 'Create a room' }, { click: 'Connect' },
+      { until: "!!document.querySelector('.online-connection.is-connected')" }, { click: 'Create room' }, { until: "!!document.querySelector('.menu-page--room')" },
+    ] as const) {
+      const problem = await perform(cdp, step);
+      if (problem) throw new Error(`host ${host.name}: ${problem}`);
+    }
+  }
+  return async () => { await Promise.all(browsers.map((b) => b.close())); };
+}
+
+/** The room list with the hosts' rooms in it. */
+const ROOMS_PAGE: Page = {
+  name: 'online-find-rooms',
+  online: true,
+  steps: [
+    { click: 'Play online' }, { click: 'Find a room' }, { click: 'Connect' },
+    { until: `document.querySelectorAll('.lobby__rooms > *').length >= ${HOSTS.length}` },
+  ],
+};
+
 // ————————————————————————————— A running match —————————————————————————————
 
 const PHASE = `(() => { const s = window.slingshot; const m = s && s.match; return m ? m.phase + (m.revealing ? '+reveal' : '') + (m.isHumanTurn ? '+you' : '') : 'none'; })()`;
@@ -273,7 +318,8 @@ async function playMatch(ctx: Context, controls: 'wheel' | 'stick'): Promise<voi
   const tag = controls === 'wheel' ? 'game' : 'game-stick';
   if (!(await open(ctx, { touchControls: controls }))) return fail(ctx, tag, 'did not load', 'the menu did not come up');
   if (!ctx.handle || !(await cdp.evaluate<boolean>(`!!window.slingshot`))) return fail(ctx, tag, 'no game handle', 'the match screens need a build made with VITE_BENCH=1 or `npm run dev`');
-  await cdp.evaluate(`(() => { const s = window.slingshot; Object.assign(s.settings, { seats: ['human', 'hard', 'medium', 'medium', 'off', 'off'], rounds: 1, maxPlanets: 4 }); s.app.start('classic'); return true; })()`);
+  // The killcam is off in a turn-based game unless asked for; the wheel match asks for it, so one is on screen.
+  await cdp.evaluate(`(() => { const s = window.slingshot; Object.assign(s.settings, { seats: ['human', 'hard', 'medium', 'medium', 'off', 'off'], rounds: 1, maxPlanets: 4, ${controls === 'wheel' ? "killcam: 'every'" : "killcam: 'auto'"} }); s.app.start('classic'); return true; })()`);
   const seen = new Set<string>();
   let paused = false;
   const deadline = Date.now() + 120_000;
@@ -440,12 +486,12 @@ function reachable(address: string): Promise<boolean> {
   });
 }
 
-async function visitConfig(config: Config, opts: Options, base: string, relayUp: boolean, handle: boolean, shots: Shot[]): Promise<void> {
+async function visitConfig(config: Config, opts: Options, base: string, relayUp: boolean, handle: boolean, shots: Shot[], hosted: boolean): Promise<void> {
   const browser = await launchChrome(config.width, config.height);
   const ctx: Context = { browser, config, base, opts, shots, handle };
   const wanted = (name: string): boolean => !opts.only || name.includes(opts.only);
   try {
-    for (const page of MENU_PAGES) {
+    for (const page of hosted ? [...MENU_PAGES, ROOMS_PAGE] : MENU_PAGES) {
       if (page.online && !relayUp) continue;
       if (!wanted(page.name)) continue;
       try {
@@ -520,12 +566,15 @@ async function main(): Promise<void> {
   const server = opts.url ? null : await serve(buildWorkingTree({ VITE_BENCH: '1' }));
   const base = opts.url ? new URL(opts.url).href : server!.url;
   const shots: Shot[] = [];
+  let stopHosts: (() => Promise<void>) | null = null;
   try {
+    if (relayUp && (!opts.only || 'online-find-rooms'.includes(opts.only) || opts.only.includes('online'))) stopHosts = await startHosts(base, opts.relay, opts.lang);
     let next = 0;
     await Promise.all(Array.from({ length: Math.min(opts.jobs, configs.length) }, async () => {
-      while (next < configs.length) await visitConfig(configs[next++], opts, base, relayUp, true, shots);
+      while (next < configs.length) await visitConfig(configs[next++], opts, base, relayUp, true, shots, stopHosts !== null);
     }));
   } finally {
+    await stopHosts?.();
     await server?.close();
   }
   const { fails, warns } = writeReport(opts, configs, shots);
