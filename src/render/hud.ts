@@ -1978,9 +1978,11 @@ export class Hud {
 
     ctx.font = `700 ${13 * k}px ${FONTS.mono}`;
     // On a phone the strip is wider than the field: keep it inside, with the same margin as the header.
-    const segments = this.fitSegments(killSegments(match, record), field.w - 32 * k);
+    // Held sideways, the touch Skip button sits over the strip's right end (it is left of the aim wheel, and does not move with the field): keep clear of it.
+    const keepClear = opts.touch && field.h < 520 * k ? this.screen.w - 352 * k : Infinity;
+    const segments = this.fitSegments(killSegments(match, record), Math.min(field.w - 32 * k, keepClear - (field.x + 16 * k)));
     const width = segments.reduce((s, [t]) => s + ctx.measureText(t).width, 0);
-    this.drawSegmentsRight(segments, field.x + field.w / 2 + width / 2, field.y + field.h - bar / 2 - 6 * k);
+    this.drawSegmentsRight(segments, Math.min(field.x + field.w / 2 + width / 2, keepClear), field.y + field.h - bar / 2 - 6 * k);
 
     if (!recording && !opts.touch) {
       // Online, skipping is a vote: show how many are in favour.
