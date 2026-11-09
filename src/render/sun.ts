@@ -1,32 +1,13 @@
 import type { Planet } from '../sim/physics';
 import { rgba } from './color';
 import { fbm } from './noise';
+import { sunBeat, sunHeat, sunKind, towardsGiant } from './sun-kinds';
 
 const smooth = (e0: number, e1: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
   return t * t * (3 - 2 * t);
 };
 const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
-
-/** The colour of the surface by temperature (0 cool, 1 hot): ember red, orange, gold, and nearly white where it is hottest. */
-const RAMP: readonly (readonly [number, number, number, number])[] = [
-  [0, 120, 26, 8],
-  [0.3, 226, 76, 14],
-  [0.58, 255, 150, 30],
-  [0.82, 255, 214, 90],
-  [1, 255, 248, 200],
-];
-function heat(t: number): [number, number, number] {
-  const x = Math.min(1, Math.max(0, t));
-  for (let i = 1; i < RAMP.length; i++) {
-    if (x > RAMP[i][0]) continue;
-    const [t0, r0, g0, b0] = RAMP[i - 1];
-    const [t1, r1, g1, b1] = RAMP[i];
-    const k = (x - t0) / (t1 - t0);
-    return [mix(r0, r1, k), mix(g0, g1, k), mix(b0, b1, k)];
-  }
-  return [255, 248, 200];
-}
 
 /** The plasma is worked out on a small grid and drawn up to the sun's size: it is all soft flow, so nothing is lost. */
 const PLASMA = 120;
@@ -46,6 +27,7 @@ const plasmas = new Map<number, Plasma>();
  * reddened as on a ball seen from outside. It is worked out per pixel, a few times a second, and kept per sun.
  */
 function plasma(seed: number, time: number, giant = 0): HTMLCanvasElement {
+  const kind = towardsGiant(sunKind({ seed }), giant);
   let p = plasmas.get(seed);
   if (!p) {
     if (plasmas.size > 8) plasmas.clear();
@@ -56,7 +38,8 @@ function plasma(seed: number, time: number, giant = 0): HTMLCanvasElement {
   }
   if (time >= p.at && time - p.at < PLASMA_STEP) return p.canvas;
   p.at = time;
-  const t = time * 0.16;
+  const t = time * 0.16 * kind.churn;
+  const g = kind.grain;
   const data = p.img.data;
   for (let py = 0; py < PLASMA; py++) {
     for (let px = 0; px < PLASMA; px++) {
@@ -69,14 +52,16 @@ function plasma(seed: number, time: number, giant = 0): HTMLCanvasElement {
         continue;
       }
       const z = Math.sqrt(1 - rr * rr);
-      const qx = fbm(x * 1.9 + t, y * 1.9, z * 1.9, seed, 3);
-      const qy = fbm(x * 1.9, y * 1.9 + t * 0.8, z * 1.9 + 4, seed + 7, 3);
-      const f = fbm(x * 2.8 + qx * 2.6 + 1.7, y * 2.8 + qy * 2.6 + 9.2, z * 2.8 + t * 0.6, seed + 13, 3);
+      const qx = fbm(x * 1.9 * g + t, y * 1.9 * g, z * 1.9 * g, seed, 3);
+      const qy = fbm(x * 1.9 * g, y * 1.9 * g + t * 0.8, z * 1.9 * g + 4, seed + 7, 3);
+      const f = fbm(x * 2.8 * g + qx * 2.6 + 1.7, y * 2.8 * g + qy * 2.6 + 9.2, z * 2.8 * g + t * 0.6, seed + 13, 3);
+      // Dark spots, drifting slowly: a red dwarf is freckled with them.
+      const spot = kind.spots > 0 ? kind.spots * smooth(0.6 + 0.08 * (1 - kind.spots), 0.7, fbm(x * 3.4 - t * 0.25, y * 3.4, z * 3.4 + 7, seed + 21, 3)) : 0;
       // A red giant is a cooler sun: its whole ramp slides down towards ember red.
-      const temp = (0.12 + 1.05 * Math.pow(f, 1.4)) * (0.5 + 0.5 * Math.pow(z, 0.5)) * (1 - 0.62 * giant);
-      const [r, g, b] = heat(temp);
+      const temp = (0.12 + 1.05 * Math.pow(f, 1.4)) * (0.5 + 0.5 * Math.pow(z, 0.5)) * (1 - 0.62 * giant) * (1 - 0.5 * spot);
+      const [r, gr, b] = sunHeat(kind, temp);
       data[i] = r;
-      data[i + 1] = g;
+      data[i + 1] = gr;
       data[i + 2] = b;
       data[i + 3] = 255 * smooth(1, 0.97, rr);
     }
@@ -93,7 +78,8 @@ const CORONA_TEX = 400;
  * The corona, drawn once per sun in polar terms: a soft glow that thins out with distance, and rays of gas along it that
  * bend a little with the distance, from a noise on the angle. White-gold at the surface, orange, then deep red.
  */
-function makeCorona(seed: number): HTMLCanvasElement {
+function makeCorona(seed: number, giant: number): HTMLCanvasElement {
+  const [near, far] = towardsGiant(sunKind({ seed }), giant).corona;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = CORONA_TEX;
   const ctx = canvas.getContext('2d')!;
@@ -117,9 +103,9 @@ function makeCorona(seed: number): HTMLCanvasElement {
       const a = Math.min(1, (ray * falloff * 0.9 + glow) * smooth(CORONA_REACH, CORONA_REACH * 0.7, rho) * smooth(0.85, 1.05, rho));
       const t = Math.min(1, (rho - 1) / 1.9);
       const i = (py * CORONA_TEX + px) * 4;
-      img.data[i] = mix(255, 214, t);
-      img.data[i + 1] = mix(222, 74, t);
-      img.data[i + 2] = mix(150, 26, t);
+      img.data[i] = mix(near[0], far[0], t);
+      img.data[i + 1] = mix(near[1], far[1], t);
+      img.data[i + 2] = mix(near[2], far[2], t);
       img.data[i + 3] = 255 * a;
     }
   }
@@ -127,7 +113,7 @@ function makeCorona(seed: number): HTMLCanvasElement {
   return canvas;
 }
 
-const coronas = new Map<number, HTMLCanvasElement>();
+const coronas = new Map<string, HTMLCanvasElement>();
 
 /** A seeded [0, 1) for one slot of a sun's loose parts (streamers, loops), the same on every screen. */
 const slot = (seed: number, k: number): number => {
@@ -146,15 +132,19 @@ export interface SunStyle {
 }
 
 /**
- * The sun of the Solar System mode: a ball of flowing plasma that folds and churns, a thin pink chromosphere round
- * it, magnetic loops that rise off the surface and fall back, a corona of curving rays, and a wide warm glow.
+ * The sun of the Solar System mode: a ball of flowing plasma that folds and churns, a thin chromosphere round it,
+ * magnetic loops that rise off the surface and fall back, a corona of curving rays, and a wide glow, all in the colours
+ * of its kind (`sun-kinds`: yellow, orange, a red dwarf that flares on its own, a hot blue-white star, a pulsing one).
  * `flare` (0 → 1) is the storm breaking out: the glow swells, the loops leap high and the disc whitens. A sun turning
- * into a red giant (`sun.giant`, 0 → 1) cools: its surface reddens, its middle dims and a deep red glow spreads round it.
+ * into a red giant (`sun.giant`, 0 → 1) cools whatever its kind: its surface reddens, its middle dims and a deep red glow spreads round it.
  */
-export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha = 1, flare = 0, style?: SunStyle): void {
+export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha = 1, stormFlare = 0, style?: SunStyle): void {
   const R = sun.radius;
   const seed = sun.seed;
   const giant = sun.giant ?? 0;
+  const kind = towardsGiant(sunKind(sun), giant);
+  const beat = sunBeat(kind, seed, time);
+  const flare = Math.max(stormFlare, beat.flare);
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(sun.x, sun.y);
@@ -170,16 +160,17 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
     ctx.fill();
   }
 
-  // The glow: a tight bright one under a wide, deeper red one.
+  // The glow: a tight bright one under a wide, deeper one; a pulsing star's breathes with it.
   const swell = 1 + flare * 0.9;
-  // A red giant's glow is deep red instead of gold.
+  // A red giant's glow is deep red whatever the star was.
   const glows = giant > 0.3
     ? ([[7, 0.2, '#ff3a1c', '#8a1008'], [3.2, 0.42, '#ff5a2a', '#c8200c'], [1.7, 0.5, '#ff8a5a', '#ff3a1c']] as const)
-    : ([[7, 0.2, '#ff7a24', '#a82410'], [3.2, 0.42, '#ffb347', '#ff6a1c'], [1.7, 0.5, '#ffe9a8', '#ffa03a']] as const);
+    : ([[7, 0.2, ...kind.glows[0]], [3.2, 0.42, ...kind.glows[1]], [1.7, 0.5, ...kind.glows[2]]] as const);
   for (const [reach, strength, inner, outer] of glows) {
+    const s = strength * beat.glow;
     const halo = ctx.createRadialGradient(0, 0, R * 0.7, 0, 0, R * reach * (reach > 3 ? 1 : swell));
-    halo.addColorStop(0, rgba(inner, Math.min(1, strength * swell)));
-    halo.addColorStop(0.35, rgba(outer, strength * 0.3 * swell));
+    halo.addColorStop(0, rgba(inner, Math.min(1, s * swell)));
+    halo.addColorStop(0.35, rgba(outer, s * 0.3 * swell));
     halo.addColorStop(1, rgba(outer, 0));
     ctx.fillStyle = halo;
     ctx.beginPath();
@@ -188,17 +179,20 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   }
 
   // The corona: its rays turn slowly, two layers against each other, and swell and ebb.
-  const reach = R * CORONA_REACH * (1 + flare * 0.45);
+  const reach = R * CORONA_REACH * kind.reach * (1 + flare * 0.45) * (0.9 + 0.1 * beat.glow);
   if (!style?.corona(ctx, seed, reach, time, flare, giant)) {
-    let corona = coronas.get(seed);
+    // Its colours slide to a red giant's in a few steps, each drawn once.
+    const step = Math.round(Math.min(1, giant * 1.6) * 4) / 4;
+    const key = `${seed}:${step}`;
+    let corona = coronas.get(key);
     if (!corona) {
       if (coronas.size > 8) coronas.clear();
-      coronas.set(seed, (corona = makeCorona(seed)));
+      coronas.set(key, (corona = makeCorona(seed, step / 1.6)));
     }
     for (const [spin, turn0, strength] of [[0.02, 0, 0.9], [-0.034, 2.1, 0.55]] as const) {
       ctx.save();
-      ctx.rotate(time * spin + turn0);
-      ctx.globalAlpha = alpha * Math.min(1, strength * (0.82 + 0.18 * Math.sin(time * 0.5 + turn0 * 3)) * (1 + flare * 0.7));
+      ctx.rotate(time * spin * kind.churn + turn0);
+      ctx.globalAlpha = alpha * Math.min(1, strength * beat.glow * (0.82 + 0.18 * Math.sin(time * 0.5 + turn0 * 3)) * (1 + flare * 0.7));
       ctx.drawImage(corona, -reach, -reach, reach * 2, reach * 2);
       ctx.restore();
     }
@@ -207,6 +201,7 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
 
   // Magnetic loops: arches that rise off the surface, hang there a while, and sink back, each on its own beat.
   ctx.lineCap = 'round';
+  const [loopBody, loopMid, loopThread] = kind.loops;
   for (let i = 0; i < LOOPS; i++) {
     const period = 11 + slot(seed, i + 80) * 9;
     const cycle = (time / period + slot(seed, i + 90)) % 1;
@@ -226,20 +221,20 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
     ctx.beginPath();
     ctx.moveTo(x0, y0);
     ctx.bezierCurveTo(cx0, cy0, cx1, cy1, x1, y1);
-    ctx.strokeStyle = rgba('#ff5a1a', 0.14 * lift);
+    ctx.strokeStyle = rgba(loopBody, 0.14 * lift);
     ctx.lineWidth = R * 0.34;
     ctx.stroke();
-    ctx.strokeStyle = rgba('#ff8a2e', 0.5 * lift);
+    ctx.strokeStyle = rgba(loopMid, 0.5 * lift);
     ctx.lineWidth = R * 0.12;
     ctx.stroke();
-    ctx.strokeStyle = rgba('#ffe2a6', 0.45 * lift);
+    ctx.strokeStyle = rgba(loopThread, 0.45 * lift);
     ctx.lineWidth = R * 0.04;
     ctx.stroke();
     // A glint where the arch peaks.
     const [px, py] = base(mid, R + rise);
     const spark = ctx.createRadialGradient(px, py, 0, px, py, R * 0.3);
-    spark.addColorStop(0, rgba('#fff0c0', 0.55 * lift));
-    spark.addColorStop(1, rgba('#ff8a2e', 0));
+    spark.addColorStop(0, rgba(loopThread, 0.55 * lift));
+    spark.addColorStop(1, rgba(loopMid, 0));
     ctx.fillStyle = spark;
     ctx.beginPath();
     ctx.arc(px, py, R * 0.3, 0, Math.PI * 2);
@@ -247,11 +242,11 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   }
   ctx.globalCompositeOperation = 'source-over';
 
-  // The chromosphere: a thin pink-red rim just outside the ball.
+  // The chromosphere: a thin rim just outside the ball.
   const chromo = ctx.createRadialGradient(0, 0, R * 0.96, 0, 0, R * 1.14);
-  chromo.addColorStop(0, rgba('#ff3d28', 0));
-  chromo.addColorStop(0.3, rgba('#ff4a2c', 0.8));
-  chromo.addColorStop(1, rgba('#ff3d28', 0));
+  chromo.addColorStop(0, rgba(kind.chromosphere, 0));
+  chromo.addColorStop(0.3, rgba(kind.chromosphere, 0.8));
+  chromo.addColorStop(1, rgba(kind.chromosphere, 0));
   ctx.fillStyle = chromo;
   ctx.beginPath();
   ctx.arc(0, 0, R * 1.14, 0, Math.PI * 2);
@@ -276,16 +271,17 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   ctx.arc(0, 0, R, 0, Math.PI * 2);
   ctx.clip();
   ctx.globalCompositeOperation = 'lighter';
-  const pulse = 0.85 + 0.15 * Math.sin(time * 1.3);
+  const pulse = (0.85 + 0.15 * Math.sin(time * 1.3)) * beat.glow;
+  const [centre, half, edge] = kind.core;
   const core = ctx.createRadialGradient(-R * 0.12, -R * 0.14, 0, 0, 0, R);
-  core.addColorStop(0, rgba('#fff4cc', (0.34 * pulse * (1 - 0.7 * giant) + flare * 0.5) * alpha));
-  core.addColorStop(0.55, rgba('#ffc04a', (0.1 + flare * 0.3) * alpha));
-  core.addColorStop(1, rgba('#ff8a2e', 0));
+  core.addColorStop(0, rgba(centre, Math.min(1, (0.34 * pulse * (1 - 0.7 * giant) + flare * 0.5) * alpha)));
+  core.addColorStop(0.55, rgba(half, (0.1 + flare * 0.3) * alpha));
+  core.addColorStop(1, rgba(edge, 0));
   ctx.fillStyle = core;
   ctx.fillRect(-R, -R, R * 2, R * 2);
   const rim = ctx.createRadialGradient(0, 0, R * 0.78, 0, 0, R);
-  rim.addColorStop(0, rgba('#ff7a24', 0));
-  rim.addColorStop(1, rgba('#ffb45a', 0.32 * alpha));
+  rim.addColorStop(0, rgba(edge, 0));
+  rim.addColorStop(1, rgba(half, 0.32 * alpha));
   ctx.fillStyle = rim;
   ctx.fillRect(-R, -R, R * 2, R * 2);
   ctx.restore();

@@ -9,6 +9,7 @@ import { drawPowerUpSymbol, POWER_UP_COLORS } from '../powerup-art';
 import { SHIP_HULL } from '../ship';
 import type { DefenseFrame } from '../defense';
 import { easeOut, NOVA_LIFE, type Nova } from '../effects';
+import { sunBeat, sunKind } from '../sun-kinds';
 
 /**
  * The holo look: the field as a projection. Thin bright lines over a faint fill, scanlines, dashed rings, hexagons
@@ -280,11 +281,17 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
   };
 }
 
-/** The sun as a projected star: a scanned disc, a ring of ticks, dashed orbits turning against each other and a crosshair. */
-export function drawHoloSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha: number, flare: number): void {
+/**
+ * The sun as a projected star: a scanned disc, a ring of ticks, dashed orbits turning against each other and a crosshair,
+ * in its kind's colour; a pulsing star's disc brightens and dims, a red dwarf's flares light it up now and then.
+ */
+export function drawHoloSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha: number, stormFlare: number): void {
   const R = sun.radius;
   const giant = sun.giant ?? 0;
-  const color = giant > 0.5 ? COLORS.danger : COLORS.sodium;
+  const kind = sunKind(sun);
+  const beat = sunBeat(kind, sun.seed, time);
+  const flare = Math.max(stormFlare, beat.flare);
+  const color = giant > 0.5 ? COLORS.danger : kind.holo;
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(sun.x, sun.y);
@@ -294,8 +301,8 @@ export function drawHoloSun(ctx: CanvasRenderingContext2D, sun: Planet, time: nu
   ctx.fill();
   // Warmer towards the middle, so the disc reads as a hot body and not as a grey plate.
   const heat = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
-  heat.addColorStop(0, rgba(color, 0.42 + 0.3 * flare));
-  heat.addColorStop(1, rgba(color, 0.1 + 0.2 * flare));
+  heat.addColorStop(0, rgba(color, Math.min(1, (0.42 + 0.3 * flare) * beat.glow)));
+  heat.addColorStop(1, rgba(color, (0.1 + 0.2 * flare) * beat.glow));
   ctx.fillStyle = heat;
   ctx.fill();
   ctx.globalCompositeOperation = 'lighter';

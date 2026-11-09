@@ -1,0 +1,6 @@
+/* The sun gallery: every kind of sun, a tab per look. Builds on the planet gallery's page. Dev page. */
+.sun-gallery .giant { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--dim); }
+.sun-gallery .giant input { width: 160px; }
+.sun-gallery .note { margin: 0; color: var(--dim); font-size: 13px; }
+.sun-gallery #nova[aria-pressed='true'] { background: var(--line); color: var(--plate); }
+.sun-gallery .labels .beat { transform: translate(-50%, 0); color: var(--sodium); }

@@ -349,12 +349,16 @@ export class Renderer {
   /** When this screen first saw each storm cloud, in renderer time: the burst plays from there, the same for every cloud of one storm. */
   private readonly stormSeen = new Map<number, number>();
 
-  /** When this screen first saw the neutron star a supernova left, in renderer time, so its nebula grows from there. */
-  private remnantSeen: { seed: number; at: number } | null = null;
+  /** When this screen first saw each neutron star a supernova left, by its seed, in renderer time, so its nebula grows from there. */
+  private readonly remnantSeen = new Map<number, number>();
 
   private remnantAge(seed: number): number {
-    if (this.remnantSeen?.seed !== seed) this.remnantSeen = { seed, at: this.time };
-    return this.time - this.remnantSeen.at;
+    if (!this.remnantSeen.has(seed)) {
+      // One a round at most: the old ones are long gone.
+      if (this.remnantSeen.size > 16) this.remnantSeen.clear();
+      this.remnantSeen.set(seed, this.time);
+    }
+    return this.time - this.remnantSeen.get(seed)!;
   }
 
   /** When this screen first saw each storm cloud thinning away, in renderer time. */

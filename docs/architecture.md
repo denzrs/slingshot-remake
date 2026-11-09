@@ -43,9 +43,11 @@ A look is how every element of the playing field is drawn (menus, HUD and the tu
 | `holo.ts`, `holo-art.ts`, `holo-events.ts`, `holo-field.ts` | The projection: lines and hexagons (`holo-art`), bursts, the ship scanning in and shot packets (`holo-events`), the glass, frame, glow and the lattice's wave of the whole field (`holo-field`), the White Hole anomaly (`holo-white`) |
 | `index.ts` | `painterFor(look)` |
 
+What kind of star a Solar System's sun is (yellow, orange, a red dwarf that flares, blue-white, pulsing) is `render/sun-kinds.ts`, read from the sun's seed like a planet's lock: only the picture changes, so the sim and the wire know nothing of it. Each look draws every kind from its colours and its beat (`sunBeat`); a sun swelling to a red giant turns into the same one whatever its kind (`towardsGiant`).
+
 To add a look: write a painter file that builds on one (`engraved(...)`, spreading what it extends, with a `note`), list its id in `LOOKS` in `data/look.ts` and its painter in `index.ts` (the types fail until both are done), and give it a name in the settings, `settings.look<Name>`, in both languages. The settings picker and the gallery are built from that list. To change how an element looks in one look: edit that look's file only.
 
-The gallery at `/dev/looks.html` shows every look side by side; `/dev/planets.html` shows every style of planet at every size, four styles to a page and a page for the variants (tidally locked, geysers), a tab per look. "Pixel-Stand merken" remembers the pixels of every scene in every look and "Mit Stand vergleichen" lists what changed since, which catches a drawing change you did not mean to make (the browser keeps the stand, so it survives a reload).
+The gallery at `/dev/looks.html` shows every look side by side; `/dev/planets.html` shows every style of planet at every size, four styles to a page and a page for the variants (tidally locked, geysers), a tab per look; `/dev/suns.html` shows every kind of sun, calm, swelling to a red giant, in a storm or gone supernova. "Pixel-Stand merken" remembers the pixels of every scene in every look and "Mit Stand vergleichen" lists what changed since, which catches a drawing change you did not mean to make (the browser keeps the stand, so it survives a reload).
 
 ## Tests
 

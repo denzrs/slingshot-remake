@@ -3,7 +3,8 @@ import { isTrailBreak, type Planet, type Wormhole } from '../../sim/physics';
 import { rgba } from '../color';
 import { strokePolyline } from '../polyline';
 import { drawSun, type SunStyle } from '../sun';
-import { GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept } from './forged-gl';
+import { RAMP_STEPS, sunBeat, sunKind, towardsGiant, type SunKind } from '../sun-kinds';
+import { GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept, unit, type Uniforms } from './forged-gl';
 import { lightParts } from './forged-parts';
 
 /**
@@ -182,16 +183,20 @@ export function drawForgedPlasmaShot(ctx: CanvasRenderingContext2D, x: number, y
   ctx.restore();
 }
 
-/** The ball: the same folding gas as the sprite in `sun.ts`, with fine cells of rising gas and slow dark spots on it, read on a sphere and dimmed to the edge. */
+/** The ball: the same folding gas as the sprite in `sun.ts`, with fine cells of rising gas and slow dark spots on it, read on a sphere and dimmed to the edge, in the colours of the sun's kind. */
 const SURFACE_SHADER = `${GLSL_HEAD}
 uniform float uTime;
 uniform float uSeed;
 uniform float uGiant;
+uniform vec3 uRamp[5];
+uniform float uSpots;
+uniform float uGrain;
+uniform float uChurn;
 vec3 ramp(float h) {
-  vec3 c = mix(vec3(120, 26, 8), vec3(226, 76, 14), smoothstep(0.0, 0.3, h));
-  c = mix(c, vec3(255, 150, 30), smoothstep(0.3, 0.58, h));
-  c = mix(c, vec3(255, 214, 90), smoothstep(0.58, 0.82, h));
-  return mix(c, vec3(255, 248, 200), smoothstep(0.82, 1.0, h)) / 255.0;
+  vec3 c = mix(uRamp[0], uRamp[1], smoothstep(${RAMP_STEPS[0].toFixed(2)}, ${RAMP_STEPS[1].toFixed(2)}, h));
+  c = mix(c, uRamp[2], smoothstep(${RAMP_STEPS[1].toFixed(2)}, ${RAMP_STEPS[2].toFixed(2)}, h));
+  c = mix(c, uRamp[3], smoothstep(${RAMP_STEPS[2].toFixed(2)}, ${RAMP_STEPS[3].toFixed(2)}, h));
+  return mix(c, uRamp[4], smoothstep(${RAMP_STEPS[3].toFixed(2)}, ${RAMP_STEPS[4].toFixed(2)}, h));
 }
 void main() {
   vec2 p = vUv * 2.0 - 1.0;
@@ -203,29 +208,38 @@ void main() {
   }
   float z = sqrt(1.0 - rr);
   vec3 n = vec3(p, z);
-  float t = uTime * 0.16;
+  vec3 ng = n * uGrain;
+  float t = uTime * 0.16 * uChurn;
   vec3 o = vec3(uSeed);
-  vec2 q = vec2(fbm(n * 1.9 + o + vec3(t, 0.0, 0.0), 4), fbm(n * 1.9 - o + vec3(0.0, t * 0.8, 4.0), 4));
-  float f = fbm(n * 2.8 + vec3(q * 2.6, t * 0.6) + o, 5);
+  vec2 q = vec2(fbm(ng * 1.9 + o + vec3(t, 0.0, 0.0), 4), fbm(ng * 1.9 - o + vec3(0.0, t * 0.8, 4.0), 4));
+  float f = fbm(ng * 2.8 + vec3(q * 2.6, t * 0.6) + o, 5);
   // The cells are ridges of a fine noise, carried along by the same flow.
-  float cells = 1.0 - abs(2.0 * fbm(n * 16.0 + vec3(q * 5.0, t * 3.0) + o, 3) - 1.0);
-  float spots = smoothstep(0.66, 0.74, fbm(n * 3.4 + vec3(-t * 0.25, 0.0, 7.0) + o, 3));
-  float temp = (0.12 + 1.05 * pow(f, 1.4) + 0.16 * (cells - 0.7)) * (0.5 + 0.5 * sqrt(z)) * (1.0 - 0.62 * uGiant) * (1.0 - 0.45 * spots);
+  float cells = 1.0 - abs(2.0 * fbm(ng * 16.0 + vec3(q * 5.0, t * 3.0) + o, 3) - 1.0);
+  // Spots: a few small ones on any star, wide dark freckles on a spotted one, each with a lighter rim round its dark middle.
+  float field = fbm(n * 3.4 + vec3(-t * 0.25, 0.0, 7.0) + o, 3);
+  float from = mix(0.66, 0.58, uSpots);
+  float umbra = smoothstep(from + 0.04, from + 0.1, field);
+  float penumbra = smoothstep(from, from + 0.04, field);
+  float spots = penumbra * 0.45 + umbra * 0.55;
+  float temp = (0.12 + 1.05 * pow(f, 1.4) + 0.16 * (cells - 0.7)) * (0.5 + 0.5 * sqrt(z)) * (1.0 - 0.62 * uGiant) * (1.0 - mix(0.45, 0.65, uSpots) * spots);
   float a = 1.0 - smoothstep(0.97, 1.0, r);
   outColor = vec4(ramp(temp) * a, a);
 }`;
 
-/** The corona: streamers that bend with the distance and run outwards, over a glow that thins out. White-gold at the surface, orange, then deep red. */
+/** The corona: streamers that bend with the distance and run outwards, over a glow that thins out, from the kind's colour at the surface to its colour far out (a yellow sun's white-gold, orange, then deep red). */
 const CORONA_SHADER = `${GLSL_HEAD}
 uniform float uTime;
 uniform float uSeed;
 uniform float uReach;
 uniform float uFlare;
 uniform float uGiant;
+uniform vec3 uNear;
+uniform vec3 uFar;
+uniform float uChurn;
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * uReach;
   float rho = length(p);
-  float outward = rho - uTime * 0.09;
+  float outward = rho - uTime * 0.09 * uChurn;
   float a0 = atan(p.y, p.x);
   float a1 = a0 + rho * 0.22 + uTime * 0.02;
   float a2 = a0 - rho * 0.16 - uTime * 0.034;
@@ -238,9 +252,9 @@ void main() {
   float fade = (1.0 - smoothstep(uReach * 0.7, uReach, rho)) * smoothstep(0.85, 1.05, rho);
   float k = min(1.0, (ray * falloff * 1.15 + glow) * (1.0 + uFlare * 0.7) * fade);
   float h = min(1.0, (rho - 1.0) / 1.9);
-  vec3 near = mix(vec3(255, 222, 150), vec3(255, 150, 110), uGiant);
-  vec3 far = mix(vec3(214, 74, 26), vec3(170, 30, 16), uGiant);
-  vec3 c = mix(near, far, h) / 255.0;
+  vec3 near = mix(uNear, vec3(255, 150, 110) / 255.0, uGiant);
+  vec3 far = mix(uFar, vec3(170, 30, 16) / 255.0, uGiant);
+  vec3 c = mix(near, far, h);
   outColor = vec4(c * k, k);
 }`;
 
@@ -255,12 +269,23 @@ const CORONA_REACH = 3.6;
 /** Whether the corona just drawn is the shader's: that one has streamers of its own, so no rays go over it. */
 let streamers = false;
 
+/** A kind's colours and pace, set for both shaders. */
+function setKind(u: Uniforms, kind: SunKind): void {
+  kind.ramp.forEach((c, i) => u.v3(`uRamp[${i}]`, unit(c)));
+  u.v3('uNear', unit(kind.corona[0]));
+  u.v3('uFar', unit(kind.corona[1]));
+  u.f('uSpots', kind.spots);
+  u.f('uGrain', kind.grain);
+  u.f('uChurn', kind.churn);
+}
+
 const sunStyle: SunStyle = {
   corona(ctx, seed, reach, time, flare, giant) {
     streamers = true;
     if (!onScreen(ctx, 0, 0, reach)) return true;
     const pixels = pixelsOf(ctx, reach * 2);
     const shaded = shadeKept(`corona:${seed}`, time, SUN_HZ, CORONA_SHADER, pixels, pixels, CORONA_LIMIT, (u) => {
+      setKind(u, towardsGiant(sunKind({ seed }), giant));
       u.f('uTime', time);
       u.f('uSeed', seedOffset(seed));
       u.f('uReach', CORONA_REACH);
@@ -275,6 +300,7 @@ const sunStyle: SunStyle = {
     if (!onScreen(ctx, 0, 0, R)) return true;
     const pixels = pixelsOf(ctx, R * 2);
     const shaded = shadeKept(`surface:${seed}`, time, SUN_HZ, SURFACE_SHADER, pixels, pixels, SURFACE_LIMIT, (u) => {
+      setKind(u, towardsGiant(sunKind({ seed }), giant));
       u.f('uTime', time);
       u.f('uSeed', seedOffset(seed));
       u.f('uGiant', giant);
@@ -286,17 +312,20 @@ const sunStyle: SunStyle = {
 };
 
 /**
- * The sun with light thrown off it: a wide warm wash over the field round it and, without shaders, rays that turn slowly against each other. `flare` (the storm) makes it all stronger.
+ * The sun with light thrown off it, in its kind's colour: a wide wash over the field round it and, without shaders, rays that turn slowly against each other. `flare` (the storm) makes it all stronger.
  */
-export function drawForgedSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha: number, flare: number): void {
-  drawSun(ctx, sun, time, alpha, flare, sunStyle);
+export function drawForgedSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha: number, stormFlare: number): void {
+  drawSun(ctx, sun, time, alpha, stormFlare, sunStyle);
   const R = sun.radius;
   const giant = sun.giant ?? 0;
-  const warm = giant > 0.3 ? '255,90,60' : '255,196,110';
+  const kind = sunKind(sun);
+  const beat = sunBeat(kind, sun.seed, time);
+  const flare = Math.max(stormFlare, beat.flare);
+  const warm = giant > 0.3 ? '255,90,60' : kind.wash;
   ctx.save();
   ctx.translate(sun.x, sun.y);
   ctx.globalCompositeOperation = 'lighter';
-  const strength = alpha * (1 + flare * 0.9);
+  const strength = alpha * (1 + flare * 0.9) * beat.glow;
   // The wash: light the sun throws over the whole neighbourhood.
   const wash = ctx.createRadialGradient(0, 0, R, 0, 0, R * 15);
   wash.addColorStop(0, `rgba(${warm},${0.045 * strength})`);
