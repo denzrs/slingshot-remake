@@ -22,7 +22,7 @@ use turso::{Connection, Database, Value as Sql};
 
 use crate::admission::{Who, CEILING};
 use crate::pseudonym::Identities;
-use crate::report::{LocalGame, RoundReport, ShotRound, TurnReport, RECORD_KEYS};
+use crate::report::{LocalGame, RoundReport, SeatReport, ShotRound, TurnReport, RECORD_KEYS};
 
 mod demo;
 mod facts;
@@ -40,7 +40,7 @@ const OVERVIEW_GAMES: i64 = 50;
 const PRUNE_INTERVAL_SECS: i64 = 6 * 60 * 60;
 const DAY_SECS: i64 = 24 * 60 * 60;
 
-const SCHEMA: [&str; 15] = [
+const SCHEMA: [&str; 16] = [
     // What the statistics remember between runs: the key their players are hashed with.
     "CREATE TABLE IF NOT EXISTS stat_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
     // One row per round. `match_id` is random per game and `room_id` random per room; neither is reused.
@@ -195,6 +195,21 @@ const SCHEMA: [&str; 15] = [
          planet   INTEGER,
          PRIMARY KEY (match_id, round, turn, n)
      )",
+    // One row per change at the table, in the order it came (`n` counts them in the game): a person dropped out, came back or
+    // left. It names the turn it belongs to, which may never have gone off. Not a shot and not a placement, but it changes who
+    // is on turn and which ships are on the field, so a replay has to make it too.
+    "CREATE TABLE IF NOT EXISTS stat_seat_changes (
+         match_id TEXT    NOT NULL,
+         n        INTEGER NOT NULL,
+         at       INTEGER NOT NULL,
+         round    INTEGER NOT NULL,
+         turn     INTEGER NOT NULL,
+         seat     INTEGER NOT NULL,
+         change   TEXT    NOT NULL,
+         moment   TEXT    NOT NULL,
+         step     INTEGER,
+         PRIMARY KEY (match_id, n)
+     )",
     // One row per day: rounds played, and the points the seats earned (each round adds what the scores rose by,
     // betting left out, so the day's total is a plain sum). Kept as long as the rows above, and quick to read.
     "CREATE TABLE IF NOT EXISTS stat_days (
@@ -257,6 +272,10 @@ const INSERT_PLACEMENT: &str =
     "INSERT INTO stat_placements (match_id, round, turn, n, at, seat, kind, x, y, x2, y2, planet)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)";
 
+const INSERT_SEAT_CHANGE: &str =
+    "INSERT INTO stat_seat_changes (match_id, n, at, round, turn, seat, change, moment, step)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
+
 const INSERT_TURN: &str = "INSERT INTO stat_turns (
          match_id, round, turn, seat, at, player, cpu, alive, score)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
@@ -283,6 +302,7 @@ const PRUNE_DAYS: &str = "DELETE FROM stat_days WHERE day < date(?1, 'unixepoch'
 const PRUNE_DAY_PLAYERS: &str = "DELETE FROM stat_day_players WHERE day < date(?1, 'unixepoch')";
 
 const PRUNE_PLACEMENTS: &str = "DELETE FROM stat_placements WHERE at < ?1";
+const PRUNE_SEAT_CHANGES: &str = "DELETE FROM stat_seat_changes WHERE at < ?1";
 const PRUNE_MATCHES: &str = "DELETE FROM stat_matches WHERE at < ?1";
 const PRUNE_TURNS: &str = "DELETE FROM stat_turns WHERE at < ?1";
 const PRUNE_SHOTS: &str = "DELETE FROM stat_shots WHERE at < ?1";
@@ -575,6 +595,7 @@ impl Store {
         let written = match job {
             Job::Round(facts, report) => self.write_round(facts, report, at).await,
             Job::Turn(facts, report) => self.write_turn(facts, report, at).await,
+            Job::Seat(facts, report) => self.write_seat(facts, report, at).await,
             Job::Local(facts, rounds) => self.write_local(facts, rounds, at).await,
         };
         match written {
@@ -606,6 +627,41 @@ impl Store {
                 Occupant::Empty => (Sql::Null, Sql::Null),
             })
             .collect()
+    }
+
+    async fn write_seat(
+        &self,
+        facts: &RoundFacts,
+        report: &SeatReport,
+        at: i64,
+    ) -> turso::Result<()> {
+        self.write_match(facts, at).await?;
+        // One writer, one transaction at a time: counting what is there is safe.
+        let mut rows = self
+            .conn
+            .query(
+                "SELECT COUNT(*) FROM stat_seat_changes WHERE match_id = ?1",
+                (facts.match_id.clone(),),
+            )
+            .await?;
+        let before: i64 = match rows.next().await? {
+            Some(row) => row.get(0)?,
+            None => 0,
+        };
+        drop(rows);
+        let row = vec![
+            Sql::Text(facts.match_id.clone()),
+            Sql::Integer(before + 1),
+            Sql::Integer(at),
+            Sql::Integer(report.round),
+            Sql::Integer(report.turn),
+            Sql::Integer(report.seat as i64),
+            Sql::Text(report.change.into()),
+            Sql::Text(report.when.into()),
+            optional(report.at),
+        ];
+        self.conn.execute(INSERT_SEAT_CHANGE, row).await?;
+        Ok(())
     }
 
     async fn write_turn(
@@ -934,6 +990,7 @@ impl Store {
         self.conn.execute(PRUNE_TIPS, (cutoff,)).await?;
         self.conn.execute(PRUNE_BONUSES, (cutoff,)).await?;
         self.conn.execute(PRUNE_PLACEMENTS, (cutoff,)).await?;
+        self.conn.execute(PRUNE_SEAT_CHANGES, (cutoff,)).await?;
         self.conn.execute(PRUNE_MATCHES, (cutoff,)).await?;
         self.conn.execute(PRUNE_SHOTS, (cutoff,)).await?;
         self.conn.execute(PRUNE_TURNS, (cutoff,)).await?;
@@ -1357,6 +1414,30 @@ impl Store {
                 turns[i].2.push(placement);
             }
         }
+        // Who left the table and came back, in the order it came: the replay makes the same changes at the same turns.
+        let mut seat_changes: Vec<Value> = Vec::new();
+        let mut rows = self
+            .replay_reader
+            .query(
+                "SELECT round, turn, seat, change, moment, step FROM stat_seat_changes
+                 WHERE match_id = ?1 ORDER BY n",
+                (match_id.to_string(),),
+            )
+            .await?;
+        while let Some(row) = rows.next().await? {
+            let mut change = serde_json::json!({
+                "round": row.get::<i64>(0)?,
+                "turn": row.get::<i64>(1)?,
+                "player": row.get::<i64>(2)?,
+                "change": row.get::<String>(3)?,
+                "when": row.get::<String>(4)?,
+            });
+            if let Ok(step) = row.get::<i64>(5) {
+                change["at"] = Value::from(step);
+            }
+            seat_changes.push(change);
+        }
+        drop(rows);
         // The rounds the room skipped by vote: they end after their last turn.
         let mut skipped: Vec<i64> = Vec::new();
         let mut rows = self
@@ -1370,7 +1451,7 @@ impl Store {
             skipped.push(row.get(0)?);
         }
         drop(rows);
-        Ok(Some(serde_json::json!({
+        let mut replay = serde_json::json!({
             "skipped": skipped,
             "seed": header.0,
             "gameMode": header.1,
@@ -1380,7 +1461,12 @@ impl Store {
             "turns": turns.into_iter().map(|(round, turn, placements, shots)| serde_json::json!({
                 "round": round, "turn": turn, "placements": placements, "shots": shots,
             })).collect::<Vec<_>>(),
-        })))
+        });
+        // Left out when nobody left the table, as it is from a client that did not record them.
+        if !seat_changes.is_empty() {
+            replay["seatChanges"] = Value::from(seat_changes);
+        }
+        Ok(Some(replay))
     }
 
     /// Called from the relay's sweep: prune once in a while, and never let a failure stop the relay.
@@ -1416,6 +1502,8 @@ const QUEUE: usize = 1024;
 pub enum Job {
     Round(RoundFacts, RoundReport),
     Turn(RoundFacts, TurnReport),
+    /// A person at the table dropped out, came back or left.
+    Seat(RoundFacts, SeatReport),
     /// A whole game played on one device.
     Local(RoundFacts, Vec<RoundReport>),
 }
@@ -2107,6 +2195,77 @@ mod tests {
         );
         // The list says so too.
         assert!(stats.overview().await.unwrap().games[0].replay);
+    }
+
+    fn seat_job(ip: [u8; 4], message: Value) -> Job {
+        Job::Seat(facts(ip, "ann"), crate::report::parse_seat_report(&message).unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_replay_hands_back_who_left_the_table_and_when_in_the_order_it_came() {
+        let stats = Stats::in_memory().await;
+        let ann = [10, 0, 0, 1];
+        stats.record(&turn_job(ann, 1, 1)).await.unwrap();
+        // A game without changes at the table says nothing of them.
+        stats.record(&turn_job(ann, 1, 2)).await.unwrap();
+        stats.record(&round_job(ann, 1)).await.unwrap();
+        assert!(stats.replay("0123456789abcdef").await.unwrap().unwrap().get("seatChanges").is_none());
+
+        let stats = Stats::in_memory().await;
+        stats.record(&turn_job(ann, 1, 1)).await.unwrap();
+        // One in flight (with the step it came at), one while a turn was aimed that never went off, one for the round after.
+        for message in [
+            json!({"round": 1, "turn": 1, "player": 1, "change": "away", "when": "flight", "at": 120}),
+            json!({"round": 1, "turn": 2, "player": 1, "change": "back", "when": "aiming"}),
+            json!({"round": 2, "turn": 1, "player": 0, "change": "left", "when": "between"}),
+        ] {
+            stats.record(&seat_job(ann, message)).await.unwrap();
+        }
+        stats.record(&turn_job(ann, 1, 2)).await.unwrap();
+        stats.record(&round_job(ann, 1)).await.unwrap();
+        let replay = stats.replay("0123456789abcdef").await.unwrap().unwrap();
+        assert_eq!(
+            replay["seatChanges"],
+            json!([
+                {"round": 1, "turn": 1, "player": 1, "change": "away", "when": "flight", "at": 120},
+                {"round": 1, "turn": 2, "player": 1, "change": "back", "when": "aiming"},
+                {"round": 2, "turn": 1, "player": 0, "change": "left", "when": "between"},
+            ])
+        );
+        // They are the game's rows like any other: they go with the rest when it is pruned.
+        stats.prune_before(now_unix() + 10).await.unwrap();
+        assert_eq!(text(&stats, "SELECT CAST(COUNT(*) AS TEXT) FROM stat_seat_changes").await, vec![Some("0".to_string())]);
+    }
+
+    #[test]
+    fn a_seat_report_must_make_sense_or_is_turned_away() {
+        let parse = |change: Value| crate::report::parse_seat_report(&change);
+        let good = json!({"round": 1, "turn": 3, "player": 1, "change": "away", "when": "flight", "at": 5});
+        assert!(parse(good.clone()).is_some());
+        // The step is only for a flight, but the relay does not insist: it keeps what it is told, within bounds.
+        let mut no_step = good.clone();
+        no_step.as_object_mut().unwrap().remove("at");
+        assert_eq!(parse(no_step).unwrap().at, None);
+        for (key, wrong) in [
+            ("round", json!(0)),
+            ("turn", json!(1001)),
+            ("player", json!(6)),
+            ("player", json!(-1)),
+            ("change", json!("dozed")),
+            ("when", json!("lunch")),
+            ("at", json!(-1)),
+            ("at", json!(1_000_001)),
+        ] {
+            let mut bad = good.clone();
+            bad[key] = wrong;
+            assert!(parse(bad).is_none(), "{key} should be refused");
+        }
+        for missing in ["round", "turn", "player", "change", "when"] {
+            let mut bad = good.clone();
+            bad.as_object_mut().unwrap().remove(missing);
+            assert!(parse(bad).is_none(), "{missing} is needed");
+        }
+        assert!(parse(json!("away")).is_none());
     }
 
     #[tokio::test]

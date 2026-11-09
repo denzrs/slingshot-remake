@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use crate::command::Parsed;
 use crate::protocol::rules_to_value;
-use crate::report::{RoundReport, TurnReport};
+use crate::report::{RoundReport, SeatReport, TurnReport};
 use crate::stats::{Job, Occupant, RoundFacts, SeatFacts, Stats};
 use crate::wire::{CpuLevel, RoomMode};
 
@@ -194,7 +194,7 @@ impl RoomManager {
     fn reporter(
         &mut self,
         conn: u64,
-        seats: usize,
+        seats: Option<usize>,
         round: i64,
     ) -> Option<(String, Option<Reporting>)> {
         let Some(membership) = self.memberships.get(&conn) else {
@@ -214,7 +214,7 @@ impl RoomManager {
             self.error(conn, "Only the room host can report stats");
             return None;
         }
-        if seats != room.players.len() {
+        if seats.is_some_and(|seats| seats != room.players.len()) {
             self.error(conn, "Stats do not match the seats");
             return None;
         }
@@ -276,7 +276,8 @@ impl RoomManager {
         let Some(report) = self.accept(conn, report) else {
             return;
         };
-        let Some((room_id, reporting)) = self.reporter(conn, report.seats.len(), report.round)
+        let Some((room_id, reporting)) =
+            self.reporter(conn, Some(report.seats.len()), report.round)
         else {
             return;
         };
@@ -300,7 +301,8 @@ impl RoomManager {
         let Some(report) = self.accept(conn, report) else {
             return;
         };
-        let Some((room_id, reporting)) = self.reporter(conn, report.seats.len(), report.round)
+        let Some((room_id, reporting)) =
+            self.reporter(conn, Some(report.seats.len()), report.round)
         else {
             return;
         };
@@ -317,6 +319,31 @@ impl RoomManager {
         if let Some(Reporting { stats, facts, host }) = reporting {
             if stats.admit(host, report.rows(), std::time::Instant::now()) {
                 stats.submit(Job::Turn(facts, report));
+            }
+        }
+    }
+
+    /// The host says a person at the table dropped out, came back or left, and the turn it came at, so that the game
+    /// can be flown again as it was played. It is kept in the order it came, and only while its round is still on.
+    pub(super) fn report_seat(&mut self, conn: u64, report: Parsed<SeatReport>) {
+        let Some(report) = self.accept(conn, report) else {
+            return;
+        };
+        let Some((room_id, reporting)) = self.reporter(conn, None, report.round) else {
+            return;
+        };
+        let room = self.rooms.get(&room_id).unwrap();
+        if report.seat >= room.players.len() {
+            self.error(conn, "Stats do not match the seats");
+            return;
+        }
+        if report.round <= room.reported_round {
+            self.error(conn, "That round is already over");
+            return;
+        }
+        if let Some(Reporting { stats, facts, host }) = reporting {
+            if stats.admit(host, report.rows(), std::time::Instant::now()) {
+                stats.submit(Job::Seat(facts, report));
             }
         }
     }

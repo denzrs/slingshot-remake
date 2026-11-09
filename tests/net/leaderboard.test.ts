@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { BOARD_KEEP_DAYS, Leaderboard, BoardRejected, oldestBoardDay, type BoardConnection } from '../../src/net/leaderboard';
+import { withProtocol } from '../../src/net/net';
 import { shiftDate } from '../../src/sim/challenge';
 import { CHALLENGE } from '../../src/sim/config';
 import { readFileSync } from 'node:fs';
@@ -199,7 +200,7 @@ describe('daily leaderboard', () => {
   });
 
   it('answers a connection that names its browser, as the game connects', async () => {
-    const boards = new Leaderboard(() => new RelayConnection(`${serverUrl}/?b=AAECAwQFBgcICQoLDA0ODw`));
+    const boards = new Leaderboard(() => new RelayConnection(withProtocol(`${serverUrl}/?b=AAECAwQFBgcICQoLDA0ODw`)));
     expect((await boards.top(TODAY)).day).toBe(TODAY);
   });
 

@@ -40,6 +40,31 @@ export interface ReplayPlacement {
   planet?: number;
 }
 
+/** What happened to a seat's person: dropped out (`away`), is back, or left the game for good. */
+export type SeatChangeKind = 'away' | 'back' | 'left';
+
+/**
+ * Where in its turn it came: the game answers a change differently at each of them (who is on turn, which ships are on the field,
+ * whether a round is settled), so a replay has to make it at the same one. `flight`: while the shots of the turn were in the air,
+ * before the next turn was given out. `aiming`: while the turn was being aimed. `between`: any other time before the launch, such
+ * as the pause between two rounds.
+ */
+export type SeatChangeWhen = 'flight' | 'aiming' | 'between';
+
+/**
+ * The person of a seat dropped out, came back or left: what the room told the host. A replay has no room, so it is part of the
+ * recording. It belongs to a `turn` of a `round` even if that turn never went off: a drop can settle the round before it does.
+ */
+export interface SeatChange {
+  round: number;
+  turn: number;
+  player: number;
+  change: SeatChangeKind;
+  when: SeatChangeWhen;
+  /** For `flight`: the physics step of the flight it came at (as for a split), because the flight goes on differently from there. */
+  at?: number;
+}
+
 /** One turn (one volley): the placements made before it, and the shots that went off. A turn nobody shot in is empty. */
 export interface ReplayTurn {
   round: number;
@@ -52,6 +77,8 @@ export interface ReplayScript {
   turns: ReplayTurn[];
   /** The rounds that were skipped by vote: they end after their last turn, and nobody scored in them. */
   skipped?: number[];
+  /** The changes at the table, in the order they came. Absent when there were none, and from a client that did not record them. */
+  seatChanges?: SeatChange[];
 }
 
 export const replayKey = (round: number, turn: number): string => `${round}:${turn}`;

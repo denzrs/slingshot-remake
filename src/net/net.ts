@@ -1,4 +1,4 @@
-import type { ReplayTurn } from '../game/replay';
+import type { ReplayTurn, SeatChange } from '../game/replay';
 import type { Avatar } from '../platform/avatars';
 import type { DailyShot } from '../sim/challenge';
 import type { GameMode } from '../sim/modes';
@@ -66,6 +66,8 @@ type ClientMessage =
   | ({ type: 'round_stats' } & RoundReport)
   /** Host only: the shots of a turn that has just been flown, and the scores after them. */
   | ({ type: 'turn_stats' } & TurnReport)
+  /** Host only: a person at the table dropped out, came back or left, and the turn it came at. A replay has no room to hear it from. */
+  | ({ type: 'seat_stats' } & SeatChange)
   /** Post a daily-challenge run to the day's leaderboard; the board comes back either way. */
   | { type: 'daily_submit'; day: string; name: string; score: number; shot?: DailyShot }
   /** Look at a day's leaderboard without posting anything. */
@@ -161,6 +163,8 @@ export interface StatsReplay {
   turns: ReplayTurn[];
   /** The rounds the room skipped by vote. */
   skipped?: number[];
+  /** Who dropped out, came back or left, in the order it came; absent when nobody did. */
+  seatChanges?: SeatChange[];
 }
 
 /** One run on a daily leaderboard, as the relay ranks it. */
@@ -301,7 +305,7 @@ export type ServerMessage =
  * by hand: a test notices when the wire changed (the messages, the state patches, the rules) and `npm run protocol` raises it here, in
  * `server/src/protocol.rs` and in `server/protocol-contract.json`.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** The address to open a socket on, with the protocol this client speaks added. */
 export function withProtocol(url: string): string {

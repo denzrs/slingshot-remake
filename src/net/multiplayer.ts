@@ -527,6 +527,7 @@ export class MultiplayerSession {
         if (event.type === 'roundEnd') this.send({ type: 'round_stats', ...roundReport(match) });
       });
       match.onTurnEnd(() => this.send({ type: 'turn_stats', ...turnReport(match) }));
+      match.onSeatChange((change) => this.send({ type: 'seat_stats', ...change }));
       this.speakForCpus(match);
       this.startHeartbeat(match);
     }

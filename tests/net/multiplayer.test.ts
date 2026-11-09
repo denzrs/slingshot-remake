@@ -19,6 +19,7 @@ import { StatsBoard } from '../../src/net/statsBoard';
 import { createMatch } from '../../src/game';
 import { reportLocalGame, trackLocalGame } from '../../src/net/localStats';
 import type { LocalGameReport } from '../../src/net/net';
+import type { SeatChange } from '../../src/game/replay';
 
 const activeTransports = new Set<RustTransport>();
 let serverProcess: ChildProcess;
@@ -1488,7 +1489,7 @@ describe('spectators online', () => {
 });
 
 describe('statistics and replays', () => {
-  it('a game played on the relay can be flown again from what the relay kept, with the same result', async () => {
+  async function flyAgainFromTheRelay(dropGuest: boolean): Promise<void> {
     let hostMatch: NetMatch | null = null;
     const hostSession = await connectSession({ matchStarted: (match) => { hostMatch = match; } });
     const guestSession = await connectSession();
@@ -1502,11 +1503,16 @@ describe('statistics and replays', () => {
     await waitForSession(hostSession, () => hostSession.room?.players.length === 3);
     guestSession.setReady(true);
     await waitForSession(hostSession, () => hostSession.room!.players.slice(1).every((player) => player.ready));
-    // The relay has kept the games of the tests before this one, newest first: only a game that began from here on is ours.
-    const startedAt = Math.floor(Date.now() / 1000);
+    // The relay has kept the games of the tests before this one: only a game that is not among them is ours (a clock is no help
+    // when the test before ended in the same second).
+    const board = () => new StatsBoard(() => { const transport = new RustTransport(); transport.setAddress(serverUrl); return transport; });
+    const known = new Set((await board().overview()).games.map((g) => g.id));
     hostSession.startGame();
     await waitForSession(hostSession, () => hostMatch !== null);
     const match = hostMatch!;
+    const changes: SeatChange[] = [];
+    match.onSeatChange((change) => changes.push(change));
+    let dropped = false;
 
     // Both people shoot towards the nearest ship still flying, a little further off with every shot; the CPU thinks for itself.
     // (The offset follows the shot count and not the clock: a flight takes the same number of frames every time, so a
@@ -1529,6 +1535,11 @@ describe('statistics and replays', () => {
         match.setPlayerAim(p.id, bearing(p.id) + (((n * 37 + p.id * 91) % 41) - 20), 35 + ((n * 13 + p.id * 29) % 55));
         match.commitPlayer(p.id);
       }
+      // The guest's connection is cut while the second turn of the game is being aimed: the room tells the host, which passes the seat over.
+      if (dropGuest && !dropped && match.phase === 'aiming' && match.round === 1 && match.shotLog.turn === 2) {
+        dropped = true;
+        (guestSession.client as RustTransport).rawSocket!.terminate();
+      }
       match.update(dt);
       hostSession.update(dt);
       if (match.phase === 'roundOver' && match.phaseTime > 1) match.advance();
@@ -1537,14 +1548,18 @@ describe('statistics and replays', () => {
       if (i % 200 === 199) await new Promise((resolve) => setImmediate(resolve));
     }
     expect(match.phase).toBe('gameOver');
+    // What the room told the host went to the relay with the rest, and the game flies as it was played.
+    if (dropGuest) {
+      expect(dropped).toBe(true);
+      expect(changes.some((c) => c.change === 'away'), 'the host passed the seat over').toBe(true);
+    }
 
     // The relay writes behind a queue: ask until the game is on the list and flyable.
-    const board = () => new StatsBoard(() => { const transport = new RustTransport(); transport.setAddress(serverUrl); return transport; });
     let game;
     for (let i = 0; i < 100 && !game; i++) {
       await new Promise((resolve) => setTimeout(resolve, 100));
       const overview = await board().overview();
-      game = overview.games.find((g) => g.replay && g.at >= startedAt);
+      game = overview.games.find((g) => g.replay && !known.has(g.id));
     }
     expect(game, 'the game is on the list and can be flown again').toBeDefined();
     expect(game!.rounds).toBe(2);
@@ -1553,13 +1568,18 @@ describe('statistics and replays', () => {
     expect(data!.seats).toHaveLength(3);
 
     // Fly it from what the relay has: the same ships end up with the same scores.
-    const again = netMatch({ ...data!, players: data!.seats }, DEFAULT_SETTINGS, { script: { turns: data!.turns } })!;
+    if (dropGuest) expect(data!.seatChanges?.some((c) => c.change === 'away'), 'the relay kept that the guest dropped out').toBe(true);
+    const again = netMatch({ ...data!, players: data!.seats }, DEFAULT_SETTINGS, { script: { turns: data!.turns, seatChanges: data!.seatChanges } })!;
     for (let i = 0; i < 60_000 && again.replayState === 'playing' && again.phase !== 'gameOver'; i++) again.update(dt);
     expect(again.replayState, `replay of ${data!.turns.length} turns, ${data!.seats.length} seats: the host ended in round ${match.round}, the replay in round ${again.round} (${again.phase})`).not.toBe('drifted');
     expect(again.phase).toBe('gameOver');
     expect(again.players.map((p) => Math.round(p.score))).toEqual(match.players.map((p) => Math.round(p.score)));
     expect(again.round).toBe(match.round);
-  }, 120_000);
+  }
+
+  it('a game played on the relay can be flown again from what the relay kept, with the same result', () => flyAgainFromTheRelay(false), 120_000);
+
+  it('and so can one in which a guest lost the connection, so that the seat was passed over', () => flyAgainFromTheRelay(true), 120_000);
 
   it('keeps a game played on one device, without turns, and lists it as local and not to be watched again', async () => {
     const seats = ['medium', 'hard', 'off', 'off', 'off', 'off'] as const;

@@ -551,7 +551,7 @@ const app: App = {
     return screen === 'play' && !!match?.replaying;
   },
   watchReplay(data) {
-    const replay = netMatch({ ...data, players: data.seats }, settings, { script: { turns: data.turns, skipped: data.skipped } });
+    const replay = netMatch({ ...data, players: data.seats }, settings, { script: { turns: data.turns, skipped: data.skipped, seatChanges: data.seatChanges } });
     if (!replay) return;
     lastReplay = data;
     match?.dispose();

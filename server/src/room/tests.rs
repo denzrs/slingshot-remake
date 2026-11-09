@@ -2239,6 +2239,52 @@ async fn only_the_host_of_a_running_game_may_report_and_only_for_its_own_seats()
     assert_eq!(stats.count("stat_turns").await, 0);
 }
 
+fn seat_report_message(round: i64, turn: i64, player: i64, change: &str, when: &str) -> Value {
+    json!({"type": "seat_stats", "round": round, "turn": turn, "player": player, "change": change, "when": when})
+}
+
+#[tokio::test]
+async fn a_change_at_the_table_is_kept_for_the_host_of_a_running_game_in_the_order_it_came() {
+    let (mut rooms, stats, [mut host_rx, mut guest_rx]) = running_game_with_stats();
+    // Only the host knows what the room told it; only for a seat of the room; only in a well-formed message.
+    rooms.handle(2, &seat_report_message(1, 1, 1, "away", "aiming"));
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "Only the room host can report stats"
+    );
+    rooms.handle(1, &seat_report_message(1, 1, 5, "away", "aiming"));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "Stats do not match the seats"
+    );
+    for bad in [
+        json!({"type": "seat_stats", "round": 1, "turn": 1, "player": 1, "change": "dozed", "when": "aiming"}),
+        json!({"type": "seat_stats", "round": 1, "turn": 1, "player": 1, "change": "away", "when": "lunch"}),
+        json!({"type": "seat_stats", "round": 1, "player": 1, "change": "away", "when": "aiming"}),
+    ] {
+        rooms.handle(1, &bad);
+        assert_eq!(
+            take_type(&drain_json(&mut host_rx), "error")["message"],
+            "Malformed seat stats"
+        );
+    }
+    // It names its turn, which need not ever go off: the round may be settled before. Two in a turn keep their order.
+    rooms.handle(1, &seat_report_message(1, 3, 1, "away", "aiming"));
+    rooms.handle(1, &seat_report_message(1, 3, 1, "back", "aiming"));
+    assert!(drain_json(&mut host_rx).is_empty());
+    // Once the round is reported it is closed, but what belongs to the next one is still welcome.
+    rooms.handle(1, &round_report_message(1, 2));
+    rooms.handle(1, &seat_report_message(1, 4, 1, "away", "flight"));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "That round is already over"
+    );
+    rooms.handle(1, &seat_report_message(2, 1, 1, "away", "between"));
+    assert!(drain_json(&mut host_rx).is_empty());
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(stats.count("stat_seat_changes").await, 3);
+}
+
 #[test]
 fn without_statistics_reports_are_checked_and_dropped() {
     let mut rooms = RoomManager::new();
