@@ -95,7 +95,8 @@
 
 .panel--stats [data-items] {
   position: sticky;
-  bottom: -1px;
+  /* The screen pads 24px below the panel; stuck at its content edge the bar would leave that strip showing the cards behind it. */
+  bottom: -24px;
   padding: 12px 0;
   background: var(--plate);
 }
