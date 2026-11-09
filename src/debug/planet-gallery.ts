@@ -37,7 +37,8 @@ const row = (style: PlanetStyle, name = STYLE_NAMES[style], fits: (p: Planet) =>
 const PAGES: { name: string; rows: Row[] }[] = [
   { name: 'Fels · Gas · Eis · Lava', rows: [row('rocky'), row('gas'), row('ice'), row('lava')] },
   { name: 'Ozean · Wüste · Säure · Kohlenstoff', rows: [row('ocean'), row('desert'), row('acid'), row('carbon')] },
-  { name: 'Kristall · Lebend · Maschine', rows: [row('crystal'), row('living'), row('machine')] },
+  { name: 'Kristall · Lebend · Maschine · Eisen', rows: [row('crystal'), row('living'), row('machine'), row('iron')] },
+  { name: 'Augapfel · Hycean · Pilz · Vulkanmond', rows: [row('eyeball', STYLE_NAMES.eyeball, () => true), row('hycean'), row('fungal'), row('volcanic')] },
   {
     name: 'Varianten',
     rows: [row('lava', 'Lava, gebunden', isLocked), row('ice', 'Eis, gebunden', isLocked), row('ice', 'Eis, Geysire', (p) => forgedPlanetTraits(p).map === 'iceCryo')],

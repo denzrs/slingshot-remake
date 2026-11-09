@@ -5,11 +5,14 @@ Run it in the background, no addon needed:
 
     blender -b --python scripts/forged/render_planets.py -- /abs/path/to/out [name ...]
 
+(`FORGED_ENGINE=CYCLES` in front if EEVEE cannot start: no GL context.)
+
 It writes `tex-<name>.png` (1024 × 512) for every variant below, or only for the names given. `scripts/forged/pack.py` turns them
 into the WebP files the game loads, and `src/render/looks/forged-assets.ts` lists which a planet of each style may wear.
 """
 import importlib.util
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -28,7 +31,9 @@ def background_scene():
     sc = bpy.data.scenes.get('slingshot_forged') or bpy.data.scenes.new('slingshot_forged')
     for o in list(sc.objects):
         bpy.data.objects.remove(o, do_unlink=True)
-    for engine in ('BLENDER_EEVEE', 'BLENDER_EEVEE_NEXT', 'CYCLES'):
+    # FORGED_ENGINE=CYCLES renders on the CPU, where Blender cannot open a GL context (EEVEE needs one).
+    engines = (os.environ['FORGED_ENGINE'],) if os.environ.get('FORGED_ENGINE') else ('BLENDER_EEVEE', 'BLENDER_EEVEE_NEXT', 'CYCLES')
+    for engine in engines:
         try:
             sc.render.engine = engine
             break
@@ -297,6 +302,8 @@ def ash(k):
 # them as light or water: what glows is red well above blue (lava, a machine's lamps) or blue well above red (a living
 # world's veins), and what shines like a sea is blue above red (ocean) or green above red (acid lakes).
 
+# Anything wound round the map's longitude (`k.sep.outputs['X']`, 0 → 1) must come round a whole number of times, or the map has a seam.
+
 def grid(k, across, down):
     """0 on the seams of a grid of `across` × `down` panels in the map's own longitude and latitude, 1 inside a panel; and a value per panel."""
     u = k.m('FRACT', k.m('MULTIPLY', k.sep.outputs['X'], across))
@@ -337,7 +344,7 @@ def reef(k):
 
 def dunes(k):
     field = k.stretched(1.6, 1.0, 2.2, 6)
-    ridge = k.m('MULTIPLY_ADD', k.m('SINE', k.m('MULTIPLY_ADD', field, 22.0, k.m('MULTIPLY', k.sep.outputs['X'], 60.0))), 0.5, 0.5)
+    ridge = k.m('MULTIPLY_ADD', k.m('SINE', k.m('MULTIPLY_ADD', field, 22.0, k.m('MULTIPLY', k.sep.outputs['X'], 20.0 * math.pi))), 0.5, 0.5)
     tone = k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.0, 8), 0.5), 1.2, k.m('MULTIPLY', ridge, 0.5))
     sand = k.ramp(k.clamp01(k.m('ADD', tone, 0.2)), hot([(0.0, '#6a3e1c'), (0.35, '#b47234'), (0.65, '#dca05a'), (1.0, '#f4d290')]))
     rock = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.3, 6), 0.62), 10.0))
@@ -434,15 +441,15 @@ def cryo(k):
     base = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(3.0, 9), 0.5), 1.8, 0.5)), hot([(0.0, '#b8d4e4'), (0.6, '#e4f0f8'), (1.0, '#ffffff')]))
     # Tiger stripes: long fissures across the south pole, where the geysers stand.
     south = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.m('MULTIPLY', k.lat, -1.0), 0.75), 3.0))
-    stripes = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SINE', k.m('MULTIPLY_ADD', k.noise(2.0, 4), 2.0, k.m('MULTIPLY', k.sep.outputs['X'], 25.0)))), 6.0)))
+    stripes = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SINE', k.m('MULTIPLY_ADD', k.noise(2.0, 4), 2.0, k.m('MULTIPLY', k.sep.outputs['X'], 8.0 * math.pi)))), 6.0)))
     frost = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(5.0, 'DISTANCE_TO_EDGE'), 18.0)))
     face = k.mix(base, shown('#7aa8c4'), k.m('MULTIPLY', frost, 0.4))
     return k.mix(face, shown('#2a6070'), k.m('MULTIPLY', stripes, south))
 
 
 def locked(edge):
-    """A world turned for good one face to its sun: ice on that face, molten rock on the one away from it (map middle,
-    where the game turns it), cracked dark rock between. `edge` (−1 → 1) is how far the melt reaches round."""
+    """A world turned for good one face to its sun: molten rock on that face (map middle,
+    where the game turns it towards the light), ice on the dark one away from it, cracked dark rock between. `edge` (−1 → 1) is how far the melt reaches round."""
     def recipe(k):
         sx = k.nt.nodes.new('ShaderNodeSeparateXYZ')
         k.nt.links.new(k.vec, sx.inputs['Vector'])
@@ -460,6 +467,153 @@ def locked(edge):
         ice = k.mix(ice, shown('#3a70a0'), k.m('MULTIPLY', crevasse, 0.5))
         return k.mix(k.mix(crust, lava, melt), ice, frozen)
     return recipe
+
+
+
+# More earth-like rock: continents and seas, each world its own climate. Settlements may light their night sides.
+
+def continents(k, scale=1.7, detail=9):
+    """0 → 1 height of land and sea, sea below 0.5."""
+    return k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(scale, detail, 0.58), 0.5), 1.9, 0.5))
+
+
+def jungle(k):
+    height = continents(k, 1.5)
+    land = k.ramp(height, [(0.0, '#06203e'), (0.35, '#0c3a6a'), (0.47, '#1a6a90'), (0.5, '#c8b878'), (0.52, '#1e5a1e'), (0.7, '#14461a'), (0.88, '#3a5a24'), (1.0, '#8a8a6a')])
+    river = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 5.0, 0.4), 26.0)))
+    onland = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', height, 0.53), 20.0))
+    return k.mix(k.mix(land, '#1a5a80', k.m('MULTIPLY', river, k.m('MULTIPLY', onland, 0.7))), '#f4fbff', k.cap(1.25, 1.45))
+
+
+def tundra(k):
+    height = continents(k, 1.9)
+    land = k.ramp(height, [(0.0, '#0a1e34'), (0.4, '#183452'), (0.48, '#2a5070'), (0.5, '#8a8676'), (0.6, '#6a7a5a'), (0.75, '#8a8a74'), (0.9, '#c8ccc8'), (1.0, '#ffffff')])
+    snow = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(4.0, 6), 0.55), 6.0))
+    return k.mix(k.mix(land, '#e8f0f4', k.m('MULTIPLY', snow, k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', height, 0.52), 10.0)))), '#f4fbff', k.cap(0.7, 1.05))
+
+
+def savanna(k):
+    height = continents(k, 1.4, 8)
+    wet = k.noise(2.6, 6)
+    dry = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', wet, 0.5), 3.0, 0.5)), [(0.0, '#b88a40'), (0.5, '#a89040'), (1.0, '#5a7a2a')])
+    sea = k.ramp(height, [(0.0, '#0a3050'), (0.38, '#145a80'), (0.48, '#2aa0b0'), (0.5, '#e8d8a0')])
+    onland = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', height, 0.5), 30.0))
+    return k.mix(k.mix(sea, dry, onland), '#f4fbff', k.cap(1.3, 1.5))
+
+
+def autumn(k):
+    height = continents(k, 1.8)
+    leaves = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(3.4, 7), 0.5), 2.6, 0.5)), [(0.0, '#6a1e10'), (0.35, '#a83a14'), (0.65, '#d8782a'), (1.0, '#e8b440')])
+    sea = k.ramp(height, [(0.0, '#081a3a'), (0.4, '#12306a'), (0.49, '#2a5a96'), (0.5, '#c8b080')])
+    onland = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', height, 0.51), 30.0))
+    peaks = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', height, 0.85), 8.0))
+    return k.mix(k.mix(k.mix(sea, leaves, onland), '#e8e4dc', peaks), '#f4fbff', k.cap(1.2, 1.4))
+
+
+# Iron: a bare metal core, its crust long gone. Polished where it is bare, rust where it has weathered.
+
+def iron_core(k):
+    brushed = k.stretched(2.2, 1.0, 3.5, 8)
+    tone = k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.0, 9), 0.5), 2.2, k.m('MULTIPLY', brushed, 0.5))
+    base = k.ramp(k.clamp01(k.m('ADD', tone, 0.25)), [(0.0, '#2a2c30'), (0.4, '#5a5e66'), (0.75, '#9aa0aa'), (1.0, '#e0e4ea')])
+    d = k.voronoi(5.0)
+    some = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.7, 4), 0.45), 6.0))
+    pit = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 0.3, d), 10.0))
+    rim = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SUBTRACT', d, 0.33)), 18.0)))
+    face = k.mix(base, '#f0f4f8', k.m('MULTIPLY', rim, k.m('MULTIPLY', some, 0.6)))
+    return k.mix(face, '#1a1a1e', k.m('MULTIPLY', pit, k.m('MULTIPLY', some, 0.75)))
+
+
+def iron_rust(k):
+    steel = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.stretched(2.4, 1.0, 6.0, 8), 0.5), 2.0, 0.5)), [(0.0, '#3a3c40'), (0.5, '#70747a'), (1.0, '#b0b4ba')])
+    rust = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(5.0, 8), 0.5), 2.4, 0.5)), [(0.0, '#3a1a0e'), (0.5, '#7a3a1a'), (1.0, '#b06a34')])
+    patch = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.8, 7), 0.47), 8.0))
+    seams = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 3.0, 0.2), 24.0)))
+    return k.mix(k.mix(steel, rust, patch), '#1a1210', k.m('MULTIPLY', seams, 0.6))
+
+
+# An eyeball world: locked to its sun, one round open sea under it (map middle, which the game turns to the light), ice all round.
+
+def eyeball(k):
+    sx = k.nt.nodes.new('ShaderNodeSeparateXYZ')
+    k.nt.links.new(k.vec, sx.inputs['Vector'])
+    reach = k.m('ADD', sx.outputs['X'], k.m('MULTIPLY', k.m('SUBTRACT', k.noise(2.4, 6), 0.5), 0.35))
+    sea = k.ramp(k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', reach, 0.35), 1.6)), hot([(0.0, '#2a8ab8'), (0.25, '#14609a'), (1.0, '#062a5a')]))
+    open_ = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', reach, 0.35), 14.0))
+    shore = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SUBTRACT', reach, 0.3)), 14.0)))
+    floes = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(9.0, 6), 0.5), 8.0))
+    ice = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.6, 9), 0.5), 2.0, 0.5)), hot([(0.0, '#9ab0c0'), (0.5, '#d8e4ec'), (1.0, '#ffffff')]))
+    crevasse = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(3.0, 'DISTANCE_TO_EDGE'), 18.0)))
+    ice = k.mix(ice, shown('#7a96aa'), k.m('MULTIPLY', crevasse, 0.4))
+    ice = k.mix(ice, shown('#6a6050'), k.m('MULTIPLY', shore, 0.6))
+    return k.mix(ice, k.mix(sea, shown('#e8f2f8'), k.m('MULTIPLY', floes, k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 0.55, reach), 6.0)))), open_)
+
+
+# Hycean: a deep hydrogen sky over an ocean that covers everything: soft wide bands, the sea showing through between them.
+
+def hycean_teal(k):
+    bands = k.band(1.6, 1.6, 5.0, 7, 0.5)
+    sea = k.ramp(k.clamp01(k.noise(2.2, 6)), hot([(0.0, '#0a3a4a'), (0.6, '#14606a'), (1.0, '#2a8a88')]))
+    sky = k.ramp(bands, hot([(0.0, '#2a7a80'), (0.5, '#6ab8a8'), (1.0, '#c8ecdc')]))
+    gaps = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(2.8, 6), 0.56), 7.0))
+    return k.mix(sky, sea, gaps)
+
+
+def hycean_deep(k):
+    bands = k.band(1.4, 2.0, 4.0, 7, 0.55)
+    sea = k.ramp(k.clamp01(k.noise(2.0, 6)), hot([(0.0, '#081e48'), (0.6, '#123a78'), (1.0, '#1e5a9a')]))
+    sky = k.ramp(bands, hot([(0.0, '#2a4a8a'), (0.5, '#5a8ac0'), (1.0, '#b8d8ec')]))
+    gaps = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(2.4, 6), 0.54), 6.0))
+    return k.mix(sky, sea, gaps)
+
+
+# Fungal: caps and the mycelium between them; their gills glow cyan in the dark (blue well above red: read as light at night).
+
+def fungal_caps(k):
+    ground = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(3.0, 8), 0.5), 2.0, 0.5)), hot([(0.0, '#1e1218'), (0.5, '#3a2430'), (1.0, '#5a3a40')]))
+    d = k.voronoi(4.0)
+    cap = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 0.4, d), 12.0))
+    tone = k.ramp(k.clamp01(k.m('MULTIPLY', d, 2.5)), hot([(0.0, '#f0d8a8'), (0.5, '#c8905a'), (1.0, '#7a4430')]))
+    glow = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SUBTRACT', d, 0.4)), 22.0)))
+    patch = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.6, 5), 0.38), 6.0))
+    face = k.mix(ground, tone, k.m('MULTIPLY', cap, patch))
+    return k.mix(face, shown('#30e8d0'), k.m('MULTIPLY', glow, patch))
+
+
+def fungal_mycelium(k):
+    ground = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.4, 9), 0.5), 2.2, 0.5)), hot([(0.0, '#2a1a3a'), (0.5, '#5a3a6a'), (1.0, '#9a6a9a')]))
+    thread = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 6.0, 0.6), 18.0)))
+    fine = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 14.0, 0.4), 22.0)))
+    lit = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(2.0, 4), 0.52), 8.0))
+    face = k.mix(ground, shown('#e0d0b8'), k.m('MULTIPLY', k.m('MAXIMUM', thread, k.m('MULTIPLY', fine, 0.5)), 0.7))
+    return k.mix(face, shown('#40f0c0'), k.m('MULTIPLY', thread, lit))
+
+
+# A volcanic moon: sulphur and its frost, dark calderas with molten floors (red well above green: read as light).
+
+def calderas(k, face, scale):
+    d = k.voronoi(scale)
+    pit = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 0.28, d), 12.0))
+    melt = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 0.17, d), 14.0))
+    ring = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SUBTRACT', d, 0.42)), 7.0)))
+    some = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.4, 4), 0.38), 6.0))
+    face = k.mix(face, shown('#a04a18'), k.m('MULTIPLY', ring, k.m('MULTIPLY', some, 0.5)))
+    face = k.mix(face, shown('#1a120c'), k.m('MULTIPLY', pit, some))
+    return k.mix(face, shown('#ff3a0a'), k.m('MULTIPLY', melt, some))
+
+
+def volcanic_io(k):
+    base = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.6, 9), 0.5), 2.6, 0.5)), hot([(0.0, '#a87a28'), (0.35, '#d8b440'), (0.65, '#ecd870'), (1.0, '#f8f0c8')]))
+    frost = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(3.6, 6), 0.6), 6.0))
+    base = k.mix(base, shown('#f0f0e0'), k.m('MULTIPLY', frost, 0.7))
+    return calderas(k, base, 3.5)
+
+
+def volcanic_red(k):
+    base = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.2, 9), 0.5), 2.4, 0.5)), hot([(0.0, '#6a3a1a'), (0.35, '#a8642a'), (0.65, '#d8a050'), (1.0, '#f0d890')]))
+    streak = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.stretched(2.0, 1.0, 3.0, 7), 0.55), 6.0))
+    base = k.mix(base, shown('#e8d880'), k.m('MULTIPLY', streak, 0.6))
+    return calderas(k, base, 2.8)
 
 
 RECIPES = {
@@ -482,6 +636,19 @@ RECIPES = {
     'lava-locked': locked(-0.35),
     'ice-locked': locked(0.15),
     'ice-cryo': cryo,
+    'rock-jungle': jungle,
+    'rock-tundra': tundra,
+    'rock-savanna': savanna,
+    'rock-autumn': autumn,
+    'iron-core': iron_core,
+    'iron-rust': iron_rust,
+    'eyeball': eyeball,
+    'hycean-teal': hycean_teal,
+    'hycean-deep': hycean_deep,
+    'fungal-caps': fungal_caps,
+    'fungal-mycelium': fungal_mycelium,
+    'volcanic-io': volcanic_io,
+    'volcanic-red': volcanic_red,
     'ocean-deep': deep,
     'ocean-reef': reef,
     'desert-dunes': dunes,

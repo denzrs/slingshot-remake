@@ -14,7 +14,9 @@ const MOLTEN: [number, number, number] = [255, 168, 84];
 /** What glows only in the dark: a living world's veins, a machine world's lamps. */
 const BLOOM: [number, number, number] = [110, 240, 225];
 const LAMPS: [number, number, number] = [255, 190, 100];
-/** A locked world's face to the light is ice whatever its style; how far round its melt reaches (in light, −1 → 1) is its style's. */
+/** An eyeball world's open sea, laid over its ice. */
+const SEA: [number, number, number] = [40, 110, 190];
+/** A locked world's face away from the light is ice whatever its style; how far round its melt reaches (in light, −1 → 1) is its style's. */
 const LOCKED_ICE = '#bcd3dc';
 const MELT_REACH: Partial<Record<Planet['style'], number>> = { lava: 0.2, ice: 0 };
 
@@ -51,8 +53,9 @@ function renderClassicPlanet(p: Planet, ps: number): HTMLCanvasElement {
   const bandFreq = range(rng, 9, 16);
   const craters = makeCraters(p, rng);
   const reach = MELT_REACH[p.style] ?? 0;
-  const albedo = locked ? lockedAlbedo(seed, reach) : albedoFn(p, seed, tilt, bandFreq, craters);
-  const glowing = glowFn(p, seed, locked, reach);
+  const eyeball = p.style === 'eyeball';
+  const albedo = eyeball ? eyeballAlbedo(seed) : locked ? lockedAlbedo(seed, reach) : albedoFn(p, seed, tilt, bandFreq, craters);
+  const glowing = glowFn(p, seed, locked && !eyeball, reach);
 
   const cs = Math.cos(spin);
   const sn = Math.sin(spin);
@@ -168,6 +171,32 @@ function albedoFn(p: Planet, seed: number, tilt: number, bandFreq: number, crate
       };
     case 'machine':
       return panelFn(seed);
+    case 'iron':
+      // Bare metal, brushed along its latitude, pitted by craters; bright where it is polished.
+      return (x: number, y: number, z: number) => {
+        const brushed = Math.sin(y * 40 + 6 * fbm(x * 1.5, y * 6, z * 1.5, seed, 3));
+        return (0.82 + 0.06 * brushed + 0.25 * (fbm(x * 2.2, y * 2.2, z * 2.2, seed + 3, 4) - 0.5)) * crater(x, y, z, craters);
+      };
+    case 'hycean':
+      // Soft, wide bands of a deep sky, the sea dark in the gaps between them.
+      return (x: number, y: number, z: number) => {
+        const lat = y * Math.cos(tilt) + x * Math.sin(tilt);
+        const band = Math.sin(lat * bandFreq * 0.45 + fbm(x * 1.6, y * 1.6, z * 1.6, seed, 3) * 2.4);
+        const gap = smoothstep(0.58, 0.66, fbm(x * 2.8, y * 2.8, z * 2.8, seed + 6, 3));
+        return 0.8 + 0.1 * band - 0.3 * gap;
+      };
+    case 'fungal':
+      // Pale caps on a dark ground, in patches.
+      return (x: number, y: number, z: number) => {
+        const cap = fungalCap(x, y, z, seed);
+        return mix(0.5 + 0.12 * (fbm(x * 3, y * 3, z * 3, seed, 3) - 0.5), 0.95, smoothstep(0.62, 0.66, cap));
+      };
+    case 'volcanic':
+      // Mottled sulphur and frost, dark calderas (their molten floors glow: `glowFn`).
+      return (x: number, y: number, z: number) => {
+        const tone = 0.86 + 0.25 * (fbm(x * 2.6, y * 2.6, z * 2.6, seed, 4) - 0.5);
+        return tone * (1 - 0.6 * smoothstep(0.66, 0.7, calderaFn(x, y, z, seed)));
+      };
     default:
       return (x: number, y: number, z: number) => {
         const n = fbm(x * 2.4, y * 2.4, z * 2.4, seed, 4);
@@ -209,25 +238,45 @@ function panelFn(seed: number) {
   };
 }
 
-/** A tidally locked world, as seen (it does not turn): ice towards the light, a dark crust round the terminator, and on the far side the melt (`glowFn`). */
-function lockedAlbedo(seed: number, reach: number) {
+/** How much a fungal world's caps rise at a point of the sphere: past 0.62 a cap, its rim (gills) just round 0.62. */
+function fungalCap(x: number, y: number, z: number, seed: number): number {
+  return fbm(x * 4.5, y * 4.5, z * 4.5, seed + 17, 2) + 0.2 * (fbm(x * 1.4, y * 1.4, z * 1.4, seed + 19, 2) - 0.5);
+}
+
+/** A volcanic moon's calderas: past 0.66 a dark pit, past 0.72 its molten floor. */
+function calderaFn(x: number, y: number, z: number, seed: number): number {
+  return fbm(x * 5, y * 5, z * 5, seed + 23, 2);
+}
+
+/** An eyeball world, as seen (it does not turn): a round open sea towards the light, a dark shore round it, ice beyond. */
+function eyeballAlbedo(seed: number) {
   return (dx: number, dy: number, nz: number) => {
-    const towards = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2] + 0.25 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
-    const ice = 0.92 + 0.12 * (fbm(dx * 3, dy * 3, nz * 3, seed + 9, 3) - 0.5);
-    return mix(0.4, ice, smoothstep(reach - 0.05, reach + 0.15, towards));
+    const towards = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2] + 0.2 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
+    const ice = 0.95 + 0.1 * (fbm(dx * 3, dy * 3, nz * 3, seed + 9, 3) - 0.5);
+    const shore = smoothstep(0.08, 0, Math.abs(towards - 0.45));
+    return mix(mix(ice, 0.5, smoothstep(0.42, 0.5, towards)), 0.35, shore * 0.7);
   };
 }
 
-/** What of a planet glows of itself in the engraving, and in what colour: a lava world's veins, a locked world's far side, a living world's veins and a machine world's lamps at night. */
+/** A tidally locked world, as seen (it does not turn): the melt towards the light (`glowFn`), a dark crust round the terminator, and ice on the far, dark side. */
+function lockedAlbedo(seed: number, reach: number) {
+  return (dx: number, dy: number, nz: number) => {
+    const away = -(dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2]) + 0.25 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
+    const ice = 0.92 + 0.12 * (fbm(dx * 3, dy * 3, nz * 3, seed + 9, 3) - 0.5);
+    return mix(0.4, ice, smoothstep(reach - 0.05, reach + 0.15, away));
+  };
+}
+
+/** What of a planet glows of itself in the engraving, and in what colour: a lava world's veins, a locked world's sunny side, a living world's veins and a machine world's lamps at night. */
 function glowFn(p: Planet, seed: number, locked: boolean, reach: number) {
   if (locked) {
     return {
       colour: MOLTEN,
-      // Looked up on the sphere as seen (`dy` is the same either way): the melt lies away from the light, not on the turned map.
+      // Looked up on the sphere as seen (`dy` is the same either way): the melt lies towards the light, not on the turned map.
       at: (_tx: number, dy: number, _tz: number, dx: number, nz: number) => {
-        const away = -(dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2]) + 0.25 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
-        const sea = smoothstep(0.05 - reach, 0.25 - reach, away);
-        const crack = smoothstep(0.04, 0.012, Math.abs(fbm(dx * 3.5, dy * 3.5, nz * 3.5, seed + 4, 3) - 0.5)) * smoothstep(-0.15 - reach, 0.05 - reach, away);
+        const towards = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2] + 0.25 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
+        const sea = smoothstep(0.05 - reach, 0.25 - reach, towards);
+        const crack = smoothstep(0.04, 0.012, Math.abs(fbm(dx * 3.5, dy * 3.5, nz * 3.5, seed + 4, 3) - 0.5)) * smoothstep(-0.15 - reach, 0.05 - reach, towards);
         return 0.9 * Math.max(sea * (0.75 + 0.25 * fbm(dx * 5, dy * 5, nz * 5, seed + 2, 2)), crack);
       },
     };
@@ -244,6 +293,27 @@ function glowFn(p: Planet, seed: number, locked: boolean, reach: number) {
         return 0.85 * vein * smoothstep(0.5, 0.52, fbm(x * 2, y * 2, z * 2, seed, 4)) * smoothstep(0.15, -0.1, lambert);
       },
     };
+  }
+  if (p.style === 'eyeball') {
+    // The engraving has one tint, ice's: its sea is laid over it in blue, as seen (it lies under the sun, so always lit).
+    return {
+      colour: SEA,
+      at: (_tx: number, dy: number, _tz: number, dx: number, nz: number) => {
+        const towards = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2] + 0.2 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
+        return 0.7 * smoothstep(0.44, 0.52, towards);
+      },
+    };
+  }
+  if (p.style === 'fungal') {
+    // The gills round each cap glow at night.
+    return {
+      colour: BLOOM,
+      at: (x: number, y: number, z: number, _dx: number, _nz: number, lambert: number) =>
+        0.85 * smoothstep(0.025, 0.006, Math.abs(fungalCap(x, y, z, seed) - 0.62)) * smoothstep(0.15, -0.1, lambert),
+    };
+  }
+  if (p.style === 'volcanic') {
+    return { colour: MOLTEN, at: (x: number, y: number, z: number) => 0.9 * smoothstep(0.71, 0.74, calderaFn(x, y, z, seed)) };
   }
   if (p.style === 'machine') {
     return {

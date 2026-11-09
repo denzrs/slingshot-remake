@@ -5,7 +5,7 @@ import { clamp01, LIGHT, smoothstep } from '../planet-common';
 /**
  * What happens on a planet's surface in the forged look, drawn over its sphere like the lightning of a gas giant: meteors
  * striking a lava world (a streak, a flash, a ring of dust, melt cooling, a crater that fades), its volcanoes and an icy
- * moon's geysers, a desert's dust storms, an ocean's hurricanes, the glints of carbon and crystal, a machine world's trains
+ * moon's geysers, a desert's dust storms, where an ocean's hurricanes stand, the glints of carbon and crystal, a machine world's trains
  * of light, heat haze over molten rock, and the scars shots leave. It all follows from the seed
  * and the time, so every screen shows the same at the same moment, and what lies on the surface turns away with it.
  */
@@ -226,12 +226,12 @@ export interface Vents {
   spots: { u: number; v: number }[];
   every: number;
   offset: number;
-  /** Ash and fire (a lava world's volcano), or a jet of ice (a cryovolcano's geyser). */
-  kind: 'ash' | 'ice';
+  /** Ash and fire (a lava world's volcano), a jet of ice (a cryovolcano's geyser), or a volcanic moon's tall umbrella of sulphur. */
+  kind: 'ash' | 'ice' | 'sulfur';
 }
 
 /** How long a plume stands (s), by kind. */
-const PLUME_LIFE = { ash: 7, ice: 4.5 };
+const PLUME_LIFE = { ash: 7, ice: 4.5, sulfur: 8 };
 
 /**
  * A lava world's volcanoes, anywhere off its poles, or an icy moon's geysers along the fissures round its south pole (the
@@ -239,8 +239,8 @@ const PLUME_LIFE = { ash: 7, ice: 4.5 };
  */
 export function rollVents(p: Planet, kind: Vents['kind']): Vents {
   const rng = createRng(p.seed ^ 0x2c1b3c6d);
-  const spots = Array.from({ length: kind === 'ash' ? 5 : 7 }, () => ({ u: rng(), v: kind === 'ash' ? range(rng, 0.25, 0.75) : range(rng, 0.8, 0.93) }));
-  return { spots, every: kind === 'ash' ? range(rng, 9, 15) : range(rng, 3.5, 6), offset: rng(), kind };
+  const spots = Array.from({ length: kind === 'ice' ? 7 : 5 }, () => ({ u: rng(), v: kind === 'ice' ? range(rng, 0.8, 0.93) : range(rng, 0.25, 0.75) }));
+  return { spots, every: kind === 'ash' ? range(rng, 9, 15) : kind === 'sulfur' ? range(rng, 5, 8) : range(rng, 3.5, 6), offset: rng(), kind };
 }
 
 /**
@@ -266,11 +266,12 @@ export function drawPlumes(ctx: CanvasRenderingContext2D, x: number, y: number, 
 
 function drawPlume(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, n: Seen, k: number, kind: Vents['kind'], seed: number): void {
   const ash = kind === 'ash';
+  const sulfur = kind === 'sulfur';
   const lit = clamp01(lightOn(n));
   // It rises fast and spreads, then thins away.
   const rise = 1 - (1 - Math.min(1, k * 2.2)) ** 2;
   const fade = 1 - smoothstep(0.55, 1, k);
-  const height = R * (ash ? 0.45 : 0.6) * rise;
+  const height = R * (ash ? 0.45 : sulfur ? 0.75 : 0.6) * rise;
   const puffs = ash ? 9 : 12;
   ctx.save();
   for (let i = 0; i < puffs; i++) {
@@ -282,13 +283,18 @@ function drawPlume(ctx: CanvasRenderingContext2D, x: number, y: number, R: numbe
     const py = y + n.dy * (R + h) + n.dx * drift;
     // What is round the back shows only where it stands clear of the limb.
     if (n.nz < 0 && Math.hypot(px - x, py - y) < R) continue;
-    const r = R * (ash ? 0.05 + 0.1 * t : 0.04 + 0.08 * t) * (0.6 + 0.4 * rise);
-    const a = fade * (ash ? 0.55 : 0.65) * (1 - t * 0.6);
+    // Sulphur rises thin and opens into an umbrella at the top, where it falls back in a ring.
+    const r = R * (ash ? 0.05 + 0.1 * t : sulfur ? 0.03 + 0.2 * t ** 3 : 0.04 + 0.08 * t) * (0.6 + 0.4 * rise);
+    const a = fade * (ash ? 0.55 : sulfur ? 0.5 : 0.65) * (1 - t * (sulfur ? 0.3 : 0.6));
     const g = ctx.createRadialGradient(px, py, 0, px, py, r);
     if (ash) {
       const shade = 40 + 60 * lit;
       g.addColorStop(0, `rgba(${shade + 10},${shade},${shade - 6},${a})`);
       g.addColorStop(1, `rgba(${shade},${shade - 6},${shade - 10},0)`);
+    } else if (sulfur) {
+      const shade = 150 + 100 * lit;
+      g.addColorStop(0, `rgba(${shade},${Math.round(shade * 0.92)},${Math.round(shade * 0.55)},${a})`);
+      g.addColorStop(1, `rgba(${shade},${Math.round(shade * 0.9)},${Math.round(shade * 0.5)},0)`);
     } else {
       const shade = 150 + 105 * lit;
       g.addColorStop(0, `rgba(${shade},${Math.min(255, shade + 8)},255,${a})`);
@@ -371,10 +377,10 @@ export function drawDust(ctx: CanvasRenderingContext2D, x: number, y: number, p:
 
 // ---------------------------------------------------------------- hurricanes ----
 
-/** An ocean world's great storms: where each sits on the map, how big it is (radii) and which way it winds. */
+/** An ocean or hycean world's great storms: where each sits on the map, how big it is and which way it winds. `forged-planet` paints them into its cloud layer. */
 export type Storms = { u: number; v: number; size: number; turn: number }[];
 
-/** One or two, off the equator; they wind the other way in the other hemisphere. */
+/** One or two, off the equator; they wind the other way in the other hemisphere (`turn` 1: the north's). */
 export function rollStorms(p: Planet): Storms {
   const rng = createRng(p.seed ^ 0x1b873593);
   return Array.from({ length: rng() < 0.5 ? 1 : 2 }, () => {
@@ -383,48 +389,61 @@ export function rollStorms(p: Planet): Storms {
   });
 }
 
-/** Each storm: arms of white cloud winding in to a clear eye, lying on the surface (squashed towards the limb) and turning slowly. */
-export function drawStorms(ctx: CanvasRenderingContext2D, x: number, y: number, p: Planet, s: Surface, storms: Storms, time: number): void {
+/**
+ * Lightning in each hurricane, as in a gas giant's storms: bursts of two or three strikes every few seconds, each a
+ * blue-white glow lighting the cloud from inside, somewhere round the eye. `s` turns as the cloud layer does (its `rate`
+ * the cloud's), and `band` is how a banded layer's rows run faster or slower (null: as one).
+ */
+export function drawStormLightning(ctx: CanvasRenderingContext2D, x: number, y: number, p: Planet, s: Surface, storms: Storms, time: number, band: { phase: number } | null): void {
   const R = p.radius;
-  for (const st of storms) {
-    // They wander west a little faster than the ground turns.
-    const n = onDisc(s, st.u - time * 0.002, st.v, time);
-    if (n.nz <= 0.05) continue;
-    const lit = 0.15 + 0.85 * clamp01(lightOn(n));
-    const size = st.size * R;
-    const turn = Math.atan2(n.dy, n.dx);
+  storms.forEach((st, k) => {
+    const every = 2.2 + 1.6 * hash(p.seed, k, 31);
+    const cycle = time / every + hash(p.seed, k, 32);
+    const beat = Math.floor(cycle);
+    const phase = (cycle - beat) * every;
+    // Up to three strikes a burst, a fraction of a second apart.
+    let flash = 0;
+    let strike = -1;
+    for (let i = 0; i < 3; i++) {
+      if (i > 0 && hash(p.seed, beat * 3 + i, 33 + k) < 0.4) break;
+      const at = i * (0.18 + 0.2 * hash(p.seed, beat * 3 + i, 34 + k));
+      const age = phase - at;
+      const f = age < 0 || age > 0.14 ? 0 : Math.sin((age / 0.14) * Math.PI) * (age < 0.05 ? 1 : 0.7 + 0.3 * Math.sin(age * 90));
+      if (f > flash) {
+        flash = f;
+        strike = i;
+      }
+    }
+    if (flash <= 0) return;
+    const rate = band ? s.rate * (1 + 0.8 * Math.sin(st.v * Math.PI * 3 + band.phase)) : s.rate;
+    const n = onDisc({ ...s, rate }, st.u, st.v, time);
+    if (n.nz <= 0.1) return;
+    // Brightest seen against the night; by day the cloud tops all but hide it.
+    const dark = 1 - 0.75 * clamp01(lightOn(n) * 1.5);
+    const a = flash * dark * smoothstep(0.1, 0.4, n.nz);
+    if (a < 0.02) return;
+    // Somewhere round the eye, in the storm's bands, foreshortened as the storm is.
+    const angle = hash(p.seed, beat * 3 + strike, 35 + k) * Math.PI * 2;
+    const reach = st.size * 3.4 * R * (0.1 + 0.4 * hash(p.seed, beat * 3 + strike, 36 + k));
+    const out = Math.atan2(n.dy, n.dx);
+    const along = Math.cos(angle) * reach * n.nz;
+    const across = Math.sin(angle) * reach;
+    const fx = x + n.dx * R + Math.cos(out) * along - Math.sin(out) * across;
+    const fy = y + n.dy * R + Math.sin(out) * along + Math.cos(out) * across;
+    const r = st.size * R * (1.1 + 0.6 * hash(p.seed, beat, 37 + k));
     ctx.save();
     ctx.beginPath();
-    ctx.arc(x, y, R * 0.995, 0, Math.PI * 2);
+    ctx.arc(x, y, R * 0.97, 0, Math.PI * 2);
     ctx.clip();
-    ctx.translate(x + n.dx * R, y + n.dy * R);
-    ctx.rotate(turn);
-    ctx.scale(Math.max(0.15, n.nz), 1);
-    ctx.rotate(time * 0.25 * st.turn);
-    const a = 0.55 * lit * smoothstep(0.05, 0.35, n.nz);
-    ctx.lineCap = 'round';
-    const shade = Math.round(255 * (0.3 + 0.7 * lit));
-    for (let arm = 0; arm < 3; arm++) {
-      ctx.beginPath();
-      for (let k = 0; k <= 24; k++) {
-        const t = k / 24;
-        const r = size * (0.18 + 0.82 * t);
-        const a0 = (arm / 3) * Math.PI * 2 + st.turn * t * 3.2;
-        if (k === 0) ctx.moveTo(Math.cos(a0) * r, Math.sin(a0) * r);
-        else ctx.lineTo(Math.cos(a0) * r, Math.sin(a0) * r);
-      }
-      ctx.strokeStyle = `rgba(${shade},${shade},${shade},${a})`;
-      ctx.lineWidth = size * 0.22;
-      ctx.stroke();
-    }
-    // The bank round the eye.
-    ctx.strokeStyle = `rgba(${shade},${shade},${shade},${a})`;
-    ctx.lineWidth = size * 0.16;
-    ctx.beginPath();
-    ctx.arc(0, 0, size * 0.22, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    const glow = ctx.createRadialGradient(fx, fy, 0, fx, fy, r);
+    glow.addColorStop(0, `rgba(225,238,255,${0.8 * a})`);
+    glow.addColorStop(0.25, `rgba(160,198,255,${0.32 * a})`);
+    glow.addColorStop(1, 'rgba(150,190,255,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(fx - r, fy - r, r * 2, r * 2);
     ctx.restore();
-  }
+  });
 }
 
 // -------------------------------------------------------------------- glints ----

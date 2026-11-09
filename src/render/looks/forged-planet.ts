@@ -8,7 +8,7 @@ import { place as placeShaded } from './forged-gl';
 import { GLOW, renderLitPlanet, spriteSize } from './forged-lit-planet';
 import { EMIT_FROM, EMIT_FULL, emitBreath, GLINT_POWER, MAX_IMPACTS, shadePlanet, WET_FROM, WET_FULL, type PlanetCracks, type PlanetShade } from './forged-planet-gl';
 import {
-  drawDust, drawGlints, drawLanes, drawMeteors, drawPlumes, drawScar, drawShimmer, drawStorms,
+  drawDust, drawGlints, drawLanes, drawMeteors, drawPlumes, drawScar, drawShimmer, drawStormLightning,
   rollDust, rollGlints, rollLanes, rollMeteors, rollStorms, rollVents,
   type Dust, type Glints, type Lanes, type Meteors, type Storms, type Surface as Turning, type Vents,
 } from './forged-planet-events';
@@ -34,6 +34,8 @@ const CITY: Rgb = [255, 196, 120];
 const HOT: Rgb = [1, 0, -1];
 const BLUE: Rgb = [-1, 0, 1];
 const ACID: Rgb = [-1, 1.5, -0.5];
+/** Red well above green: a volcanic moon's molten caldera floors, and not its sulphur, which is red and green alike. */
+const RED: Rgb = [1, -1.3, 0];
 
 /**
  * How a style is dressed in the forged look. `rim` is its air's colour, `dusk` the light along its terminator; `relief` how
@@ -64,8 +66,13 @@ const DRESS: Record<Exclude<PlanetStyle, 'star'>, Dress> = {
   crystal: { rim: [210, 170, 255], dusk: [255, 150, 200], relief: 1.2, cloud: 'wisp', cloudColour: [240, 230, 255], specular: 0.45, rings: 0.25 },
   living: { rim: [140, 255, 200], dusk: [255, 150, 90], relief: 1.5, cloud: 'wisp', cloudColour: [245, 255, 248], specular: 0, emit: { key: BLUE, night: true, pulse: 0.7 }, rings: 0.05 },
   machine: { rim: [180, 200, 220], dusk: [255, 170, 90], relief: 1.5, cloud: 'haze', cloudColour: [190, 195, 205], specular: 0.15, emit: { key: HOT, night: true, strength: 1.8 }, rings: 0.12 },
+  iron: { rim: [200, 210, 225], dusk: [255, 170, 110], relief: 2, cloud: 'haze', cloudColour: [200, 200, 205], specular: 0.55, rings: 0.1 },
+  eyeball: { rim: [150, 200, 255], dusk: [255, 150, 100], relief: 0.5, cloud: 'wisp', cloudColour: [250, 252, 255], specular: 0.3, wet: { key: BLUE, strength: 1.4 }, rings: 0.05 },
+  hycean: { rim: [140, 230, 220], dusk: [255, 170, 120], relief: 0, cloud: 'band', cloudColour: null, specular: 0, wet: { key: BLUE, strength: 0.8 }, rings: 0.25 },
+  fungal: { rim: [220, 170, 255], dusk: [255, 140, 110], relief: 1.2, cloud: 'haze', cloudColour: [200, 180, 170], specular: 0, emit: { key: BLUE, night: true, pulse: 0.6 }, rings: 0.05 },
+  volcanic: { rim: [255, 220, 120], dusk: [255, 140, 60], relief: 1.6, cloud: 'haze', cloudColour: [240, 220, 150], specular: 0, emit: { key: RED }, rings: 0.05 },
 };
-/** A locked world's ice and molten rock: the melt glows day and night, the ice mirrors the sun, steam drifts over both. */
+/** A locked world's ice and molten rock: the melt faces the sun and glows, the ice lies in the dark, steam drifts over both. */
 const LOCKED: Partial<Dress> = { relief: 1, specular: 0, cloud: 'haze', cloudColour: [228, 226, 230], emit: { key: HOT }, wet: { key: BLUE, strength: 0.6 } };
 
 /** How often the sphere and its cloud are painted again (s), and how fast the cloud turns (turns per second). */
@@ -110,6 +117,85 @@ const MAP_H = 128;
 type MapKind = 'wisp' | 'band' | 'haze' | 'city' | 'works';
 const maps = new Map<MapKind, Uint8Array>();
 
+/** A procedural map's value (0 → 1) at a point of the unit sphere. */
+function mapValue(kind: MapKind, x: number, y: number, z: number): number {
+  if (kind === 'wisp') return smoothstep(0.5, 0.72, fbm(x * 2.6 + 3, y * 3.6 + 7, z * 2.6 + 1, 5, 4)) * 0.9;
+  if (kind === 'band') return smoothstep(0.44, 0.68, fbm(x * 1.2 + 4, y * 10, z * 1.2, 17, 4)) * 0.6;
+  if (kind === 'haze') return smoothstep(0.5, 0.78, fbm(x * 1.8, y * 2.2, z * 1.8, 29, 3)) * 0.5;
+  if (kind === 'works') return Math.min(1, smoothstep(0.4, 0.56, fbm(x * 3, y * 3, z * 3, 51, 3)) * (0.3 + 0.7 * smoothstep(0.48, 0.66, fbm(x * 40, y * 40, z * 40, 53, 2))) * 1.5);
+  return Math.min(1, smoothstep(0.6, 0.78, fbm(x * 4.5 + 2, y * 4.5, z * 4.5, 41, 4)) * smoothstep(0.55, 0.75, fbm(x * 26, y * 26, z * 26, 43, 2)) * 2.2);
+}
+
+/** A cloud map with a world's hurricanes in it is this much finer than the shared maps, so their bands show. */
+const STORM_FINE = 2;
+
+/**
+ * A planet's cloud layer with its hurricanes in it, so they drift, are lit and cast their shadows as the rest of its
+ * cloud: each a dense overcast round a clear eye, its rain bands winding out of it in a logarithmic spiral (anticlockwise
+ * seen from above in the north, the upper half of the map's rows, clockwise in the south), the ordinary cloud
+ * cleared round it.
+ */
+function stormMap(kind: MapKind, storms: Storms, seed: number): Uint8Array {
+  const W = MAP_W * STORM_FINE;
+  const H = MAP_H * STORM_FINE;
+  const out = new Uint8Array(W * H);
+  const centres = storms.map((st) => {
+    const lon = st.u * Math.PI * 2;
+    const lat = (st.v - 0.5) * Math.PI;
+    const [cl, sl, co, so] = [Math.cos(lat), Math.sin(lat), Math.cos(lon), Math.sin(lon)];
+    return {
+      c: [cl * co, sl, cl * so],
+      // East and the way of rising latitude there: the map's own frame round the storm (the latter runs down the screen).
+      east: [-so, 0, co],
+      up: [-sl * co, cl, -sl * so],
+      span: st.size * 3.4,
+      turn: st.turn,
+    };
+  });
+  for (let j = 0; j < H; j++) {
+    const lat = ((j + 0.5) / H - 0.5) * Math.PI;
+    const cl = Math.cos(lat);
+    const y = Math.sin(lat);
+    for (let i = 0; i < W; i++) {
+      const lon = ((i + 0.5) / W) * Math.PI * 2;
+      const x = cl * Math.cos(lon);
+      const z = cl * Math.sin(lon);
+      let v = mapValue(kind, x, y, z);
+      for (const st of centres) {
+        const dot = x * st.c[0] + y * st.c[1] + z * st.c[2];
+        const r = Math.acos(Math.max(-1, Math.min(1, dot))) / st.span;
+        if (r > 1.5) continue;
+        const theta = Math.atan2(x * st.up[0] + y * st.up[1] + z * st.up[2], x * st.east[0] + y * st.east[1] + z * st.east[2]);
+        const rag = fbm(x * 9, y * 9, z * 9, seed + 61, 3);
+        // Three rain bands, wound out of the eye.
+        const spiral = 0.5 + 0.5 * Math.cos(3 * (theta - st.turn * 2.4 * Math.log(Math.max(r, 0.02))) + 3 * (rag - 0.5));
+        const bands = spiral ** 2 * smoothstep(1.1, 0.3, r) * (0.8 + 0.6 * (rag - 0.5));
+        const overcast = smoothstep(0.6, 0.15, r) * (0.85 + 0.3 * (rag - 0.5));
+        const wall = 0.25 * smoothstep(0.06, 0, Math.abs(r - 0.1));
+        const storm = Math.min(1, Math.max(overcast, bands) + wall) * smoothstep(0.03, 0.065, r);
+        v = Math.max(v * (1 - 0.8 * smoothstep(1.45, 0.95, r)), storm);
+      }
+      out[j * W + i] = Math.round(Math.min(1, v) * 255);
+    }
+  }
+  return out;
+}
+
+/** A planet's cloud layer: its map, and how many texels wide and high it is. */
+interface CloudMap {
+  name: string;
+  data: () => Uint8Array;
+  width: number;
+  height: number;
+}
+
+/** The cloud layer a planet wears: the shared map of its kind, or one of its own with its hurricanes in it. */
+function cloudMapOf(kind: MapKind, storms: Storms | null, seed: number): CloudMap {
+  if (!storms) return { name: kind, data: () => proceduralMap(kind), width: MAP_W, height: MAP_H };
+  let made: Uint8Array | null = null;
+  return { name: `${kind}:storms:${seed}`, data: () => (made ??= stormMap(kind, storms, seed)), width: MAP_W * STORM_FINE, height: MAP_H * STORM_FINE };
+}
+
 /** A map of cloud, or of the lights of settlements (`works`: a machine world's, over most of it), over a whole sphere (no seam: it is noise on the sphere, not on the strip). */
 function proceduralMap(kind: MapKind): Uint8Array {
   const known = maps.get(kind);
@@ -129,13 +215,7 @@ function proceduralMap(kind: MapKind): Uint8Array {
     for (let i = 0; i < MAP_W; i++) {
       const x = cl * cosLon[i];
       const z = cl * sinLon[i];
-      let v: number;
-      if (kind === 'wisp') v = smoothstep(0.5, 0.72, fbm(x * 2.6 + 3, y * 3.6 + 7, z * 2.6 + 1, 5, 4)) * 0.9;
-      else if (kind === 'band') v = smoothstep(0.44, 0.68, fbm(x * 1.2 + 4, y * 10, z * 1.2, 17, 4)) * 0.6;
-      else if (kind === 'haze') v = smoothstep(0.5, 0.78, fbm(x * 1.8, y * 2.2, z * 1.8, 29, 3)) * 0.5;
-      else if (kind === 'works') v = Math.min(1, smoothstep(0.4, 0.56, fbm(x * 3, y * 3, z * 3, 51, 3)) * (0.3 + 0.7 * smoothstep(0.48, 0.66, fbm(x * 40, y * 40, z * 40, 53, 2))) * 1.5);
-      else v = Math.min(1, smoothstep(0.6, 0.78, fbm(x * 4.5 + 2, y * 4.5, z * 4.5, 41, 4)) * smoothstep(0.55, 0.75, fbm(x * 26, y * 26, z * 26, 43, 2)) * 2.2);
-      out[j * MAP_W + i] = Math.round(v * 255);
+      out[j * MAP_W + i] = Math.round(mapValue(kind, x, y, z) * 255);
     }
   }
   maps.set(kind, out);
@@ -147,7 +227,7 @@ function proceduralMap(kind: MapKind): Uint8Array {
 /**
  * The maps a planet of each style may wear (painted by `scripts/forged/render_planets.py`; the first of each is the original).
  * `cities`: settlements may light its night side (`lit`: always do). `clouds: false`: it has no air. `geysers`: an icy moon's cryovolcanoes.
- * The last of lava and of ice, `locked`, is worn only by a tidally locked world (`isLocked`), and by every one of them.
+ * The last of lava and of ice, `locked`, is worn only by a tidally locked world (`isLocked`), and by every one of them; an eyeball world is never anything else.
  */
 interface Variant {
   name: Name;
@@ -158,7 +238,10 @@ interface Variant {
   locked?: boolean;
 }
 const VARIANTS: Record<Exclude<PlanetStyle, 'star'>, readonly Variant[]> = {
-  rocky: [{ name: 'rock', cities: true }, { name: 'rockDesert', cities: true }, { name: 'rockOcean', cities: true }, { name: 'rockMoon', clouds: false }, { name: 'rockAlien' }],
+  rocky: [
+    { name: 'rock', cities: true }, { name: 'rockDesert', cities: true }, { name: 'rockOcean', cities: true }, { name: 'rockMoon', clouds: false }, { name: 'rockAlien' },
+    { name: 'rockJungle', cities: true }, { name: 'rockTundra', cities: true }, { name: 'rockSavanna', cities: true }, { name: 'rockAutumn', cities: true },
+  ],
   gas: [{ name: 'gas' }, { name: 'gasNeptune' }, { name: 'gasViolet' }, { name: 'gasToxic' }, { name: 'gasCrimson' }, { name: 'gasStormy' }],
   ice: [{ name: 'ice' }, { name: 'iceGlacier' }, { name: 'iceMethane' }, { name: 'iceDusty' }, { name: 'iceRose' }, { name: 'iceCryo', clouds: false, geysers: true }, { name: 'iceLocked', locked: true }],
   lava: [{ name: 'lavaRivers' }, { name: 'lavaMagma', clouds: false }, { name: 'lavaAsh' }, { name: 'lavaLocked', locked: true }],
@@ -169,6 +252,11 @@ const VARIANTS: Record<Exclude<PlanetStyle, 'star'>, readonly Variant[]> = {
   crystal: [{ name: 'crystalAmethyst', clouds: false }, { name: 'crystalQuartz', clouds: false }],
   living: [{ name: 'livingMoss' }, { name: 'livingCoral' }],
   machine: [{ name: 'machinePanels', clouds: false, lit: true }, { name: 'machineHive', lit: true }],
+  iron: [{ name: 'ironCore', clouds: false }, { name: 'ironRust', clouds: false }],
+  eyeball: [{ name: 'eyeball', locked: true }],
+  hycean: [{ name: 'hyceanTeal' }, { name: 'hyceanDeep' }],
+  fungal: [{ name: 'fungalCaps' }, { name: 'fungalMycelium' }],
+  volcanic: [{ name: 'volcanicIo', clouds: false }, { name: 'volcanicRed', clouds: false }],
 };
 
 const dressOf = (p: Planet): Dress => DRESS[p.style as keyof typeof DRESS] ?? DRESS.rocky;
@@ -187,11 +275,11 @@ function variantOf(p: Planet): Variant & { index: number } {
 }
 
 /**
- * How a locked world is turned: the middle of its map (where its melt is) straight away from the light. Its tilt tips the
- * point away from the light onto the equator, its spin then turns it to longitude ½ (the shader's `mapAt` undone).
+ * How a locked world is turned: the middle of its map (where its melt is) straight at the light. Its tilt tips the
+ * point under the sun onto the equator, its spin then turns it to longitude ½ (the shader's `mapAt` undone).
  */
 const LOCKED_TURN = (() => {
-  const [ax, ay, az] = [-LIGHT[0], -LIGHT[1], -LIGHT[2]];
+  const [ax, ay, az] = [LIGHT[0], LIGHT[1], LIGHT[2]];
   const tilt = Math.atan2(-ay, az);
   const tz = -ay * Math.sin(tilt) + az * Math.cos(tilt);
   return { tilt, spin: Math.atan2(-ax, tz) };
@@ -227,7 +315,7 @@ interface Soft {
   surface: Surface;
   /** The sphere itself, painted again as it turns. */
   sphere: { canvas: HTMLCanvasElement; image: ImageData; map: Texture; gain: number[]; city: Uint8Array | null; emit: Dress['emit'] | null; wet: Dress['wet'] | null; rate: number; phase: number; shift: Float32Array };
-  cloud: { kind: MapKind; enabled: boolean; colour: Rgb; canvas: HTMLCanvasElement; image: ImageData; shift: Float32Array; direction: number; phase: number; at: number };
+  cloud: { kind: MapKind; map: CloudMap; enabled: boolean; colour: Rgb; canvas: HTMLCanvasElement; image: ImageData; shift: Float32Array; direction: number; phase: number; at: number };
 }
 
 interface Baked {
@@ -249,11 +337,12 @@ interface Baked {
   meteors: Meteors | null;
   /** Its volcanoes, or an icy moon's geysers. */
   vents: Vents | null;
-  /** A desert's dust storms, an ocean's hurricanes, the glints of carbon and crystal, a machine world's trains of light. */
+  /** A desert's dust storms, the glints of carbon and crystal, a machine world's trains of light (an ocean's hurricanes are in its cloud map). */
   dust: Dust | null;
-  hurricanes: Storms | null;
   glints: Glints | null;
   lanes: Lanes | null;
+  /** An ocean's or hycean world's hurricanes (painted in its cloud layer), for the lightning in them. */
+  hurricanes: Storms | null;
   /** Heat haze over the limb of a molten world. */
   hot: boolean;
   /** The planet's tilt, which sets where its poles stand in the sprite. */
@@ -341,13 +430,17 @@ function bake(p: Planet, ps: number): Baked | null {
   // The map's own colours, nudged towards the planet's tint so two planets of a style are not twins; a map with a palette of its own (toxic green, crimson) barely.
   const nudge = variant.index === 0 ? 0.45 : 0.12;
   const gain = [mix(1, tr / mean, nudge), mix(1, tg / mean, nudge), mix(1, tb / mean, nudge)];
-  const dress: Dress = variant.locked ? { ...dressOf(p), ...LOCKED } : dressOf(p);
+  // An eyeball world's sea and ice are dressed as its own; a locked lava or ice world's melt and ice as `LOCKED`.
+  const dress: Dress = variant.locked && p.style !== 'eyeball' ? { ...dressOf(p), ...LOCKED } : dressOf(p);
   const { rim, dusk, specular, emit, wet } = dress;
   // A locked world does not turn under its sun; its steam still drifts.
   const surfaceRate = variant.locked ? 0 : SURFACE_RATE * direction;
 
   // Cloud: wisps over rock, haze over ice, long streaks over a gas giant, smoke over lava, dust over a desert.
   const kind = dress.cloud;
+  // An ocean's or hycean world's hurricanes are part of its cloud layer.
+  const hurricanes = p.style === 'ocean' || p.style === 'hycean' ? rollStorms(p) : null;
+  const clouds = cloudMapOf(kind, hurricanes, p.seed);
   const lights: MapKind = variant.lit ? 'works' : 'city';
   const colour2: Rgb = dress.cloudColour ?? [mix(tr, 255, 0.55), mix(tg, 245, 0.55), mix(tb, 230, 0.55)];
 
@@ -425,7 +518,7 @@ function bake(p: Planet, ps: number): Baked | null {
     soft = {
       surface,
       sphere: { canvas: sphere, image: sphere.getContext('2d')!.createImageData(size, size), map, gain, city: settled ? proceduralMap(lights) : null, emit: emit ?? null, wet: wet ?? null, rate: surfaceRate, phase, shift: new Float32Array(MAP_H) },
-      cloud: { kind, enabled: variant.clouds !== false, colour: colour2, canvas: cloudCanvas, image: cloudCanvas.getContext('2d')!.createImageData(size, size), shift: new Float32Array(MAP_H), direction, phase, at: -1 },
+      cloud: { kind, map: clouds, enabled: variant.clouds !== false, colour: colour2, canvas: cloudCanvas, image: cloudCanvas.getContext('2d')!.createImageData(size, size), shift: new Float32Array(MAP_H), direction, phase, at: -1 },
     };
     return soft;
   };
@@ -461,8 +554,9 @@ function bake(p: Planet, ps: number): Baked | null {
     shade: {
       mapName: variant.name,
       map: mapImage,
-      cloudName: kind,
-      cloud: () => proceduralMap(kind),
+      cloudName: clouds.name,
+      cloud: clouds.data,
+      cloudSize: [clouds.width, clouds.height],
       city: settled ? () => proceduralMap(lights) : null,
       cityName: lights,
       mapSize: [MAP_W, MAP_H],
@@ -499,11 +593,11 @@ function bake(p: Planet, ps: number): Baked | null {
     storms: p.style === 'gas',
     aurora,
     meteors: p.style === 'lava' ? rollMeteors(p) : null,
-    vents: p.style === 'lava' && !variant.locked ? rollVents(p, 'ash') : variant.geysers ? rollVents(p, 'ice') : null,
+    vents: p.style === 'lava' && !variant.locked ? rollVents(p, 'ash') : p.style === 'volcanic' ? rollVents(p, 'sulfur') : variant.geysers ? rollVents(p, 'ice') : null,
     dust: p.style === 'desert' ? rollDust(p) : null,
-    hurricanes: p.style === 'ocean' ? rollStorms(p) : null,
-    glints: p.style === 'carbon' ? rollGlints(p, false, [255, 255, 255]) : p.style === 'crystal' ? rollGlints(p, true, [mix(tr, 255, 0.5), mix(tg, 255, 0.5), mix(tb, 255, 0.5)]) : null,
+    glints: p.style === 'carbon' || p.style === 'iron' ? rollGlints(p, false, [255, 255, 255]) : p.style === 'crystal' ? rollGlints(p, true, [mix(tr, 255, 0.5), mix(tg, 255, 0.5), mix(tb, 255, 0.5)]) : null,
     lanes: p.style === 'machine' ? rollLanes(p) : null,
+    hurricanes,
     hot: p.style === 'lava',
     tilt,
   };
@@ -521,7 +615,9 @@ function paintSurface(b: Soft, time: number): void {
   const wet = sphere.wet;
   const breath = emit ? emitBreath(emit.pulse ?? 0, time, sphere.phase) : 0;
   for (let r = 0; r < MAP_H; r++) shift[r] = cloud.kind === 'band' ? turn * (1 + 0.5 * Math.sin((r / MAP_H) * Math.PI * 3 + cloud.phase)) : turn;
-  const cloudMap = proceduralMap(cloud.kind);
+  const { width: cloudW, height: cloudH } = cloud.map;
+  const cloudMap = cloud.map.data();
+  const fine = cloudH / MAP_H;
   const data = sphere.image.data;
   const { data: texels, width } = sphere.map;
   const albedo = [0, 0, 0];
@@ -545,7 +641,7 @@ function paintSurface(b: Soft, time: number): void {
     // The cloud's shadow: the same map as the cloud layer, read a little to the side, darkens the ground under it.
     let uc = surface.lon[k] + cloud.shift[row] - SHADOW;
     uc -= Math.floor(uc);
-    const shadow = !cloud.enabled ? 1 : 1 - SHADOW_DEPTH * (cloudMap[row * MAP_W + (Math.floor(uc * MAP_W) & (MAP_W - 1))] / 255) * (0.4 + 0.6 * lit);
+    const shadow = !cloud.enabled ? 1 : 1 - SHADOW_DEPTH * (cloudMap[row * fine * cloudW + (Math.floor(uc * cloudW) & (cloudW - 1))] / 255) * (0.4 + 0.6 * lit);
     const i = surface.index[k] * 4;
     for (let c = 0; c < 3; c++) {
       const top = texels[a0 + c] + (texels[a1 + c] - texels[a0 + c]) * fx;
@@ -578,14 +674,16 @@ function cloudShifts(b: Soft, time: number): void {
 /** Paints the cloud layer as `cloudShifts` left it: the map turned round by how far it has drifted, lit like the sphere under it. */
 function paintClouds(b: Soft): void {
   const { cloud, surface } = b;
-  const map = proceduralMap(cloud.kind);
+  const { width: cloudW, height: cloudH } = cloud.map;
+  const map = cloud.map.data();
+  const fine = cloudH / MAP_H;
   const data = cloud.image.data;
   const [cr, cg, cb] = cloud.colour;
   for (let k = 0; k < surface.count; k++) {
     const row = surface.row[k];
     let u = surface.lon[k] + cloud.shift[row];
     u -= Math.floor(u);
-    const a = map[row * MAP_W + (Math.floor(u * MAP_W) & (MAP_W - 1))];
+    const a = map[row * fine * cloudW + (Math.floor(u * cloudW) & (cloudW - 1))];
     const lit = surface.lit[k];
     const shade = 0.12 + 0.88 * lit;
     const i = surface.index[k] * 4;
@@ -921,7 +1019,10 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
       const turning: Turning = { spin: baked.shade.spin, tilt: baked.shade.tilt, rate: baked.shade.surfaceRate };
       for (const scar of scars) drawScarOf(ctx, x, y, p.radius, turning, scar, time);
       if (baked.dust) drawDust(ctx, x, y, p, turning, baked.dust, time);
-      if (baked.hurricanes) drawStorms(ctx, x, y, p, turning, baked.hurricanes, time);
+      if (baked.hurricanes) {
+        const drifting: Turning = { ...turning, rate: baked.shade.cloudRate };
+        drawStormLightning(ctx, x, y, p, drifting, baked.hurricanes, time, baked.shade.band ? { phase: baked.shade.phase } : null);
+      }
       if (baked.lanes) drawLanes(ctx, x, y, p, turning, baked.lanes, time);
       if (baked.glints) drawGlints(ctx, x, y, p, turning, baked.glints, time);
       if (baked.meteors) drawMeteors(ctx, x, y, p, turning, baked.meteors, time);

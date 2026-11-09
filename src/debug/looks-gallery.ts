@@ -167,6 +167,13 @@ const NEW_PLANETS = planetField([
   [...all('machine'), ['machine', 0, { ring: true }], ['lava', maps('lava') - 1, {}], ['lava', maps('lava') - 1, { moon: true }], ['ice', maps('ice') - 1, {}], ['ice', maps('ice') - 1, { ring: true }]],
 ]);
 
+/** The worlds after those, and the rocky maps past the first five. */
+const MORE_PLANETS = planetField([
+  [...all('iron'), ['iron', 0, { moon: true }], ...all('eyeball'), ['eyeball', 0, { moon: true }], ...all('hycean'), ['hycean', 0, { ring: true }]],
+  [...all('fungal'), ['fungal', 1, { moon: true }], ...all('volcanic'), ['volcanic', 0, { moon: true }]],
+  [['rocky', 5, {}], ['rocky', 6, {}], ['rocky', 7, {}], ['rocky', 8, {}], ['rocky', 5, { moon: true }], ['rocky', 7, { ring: true }]],
+]);
+
 /** A field of nothing but `planets`. */
 function planetScene(planets: Planet[]): Match {
   const match = aiming('classic', 11);
@@ -210,6 +217,12 @@ const SCENES: Scene[] = [
     sub: `Ozean, Wüste, Säure, Kohlenstoff, Kristall, Lebend und Maschine, dazu die gebundenen Lava- und Eiswelten: Hurrikane, Staubstürme, Glitzern, Leuchten bei Nacht, Lichterzüge, Hitzeflimmern; vierfache Geschwindigkeit. ${NEW_PLANETS.rows.join('. ')}`,
     speed: 4,
     build: () => planetScene(NEW_PLANETS.planets),
+  },
+  {
+    title: 'Weitere Welten',
+    sub: `Eisen, Augapfel, Hycean, Pilz und Vulkanmond, dazu die erdähnlichen Felskarten (Dschungel, Tundra, Savanne, Herbst): Glitzern, Hurrikane, Schwefelfontänen, Pilzleuchten bei Nacht; vierfache Geschwindigkeit. ${MORE_PLANETS.rows.join('. ')}`,
+    speed: 4,
+    build: () => planetScene(MORE_PLANETS.planets),
   },
   {
     title: 'Sonnensystem',

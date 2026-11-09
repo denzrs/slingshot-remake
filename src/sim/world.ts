@@ -15,6 +15,11 @@ export const PLANET_TINTS: Record<PlanetStyle, readonly string[]> = {
   crystal: ['#b48ad8', '#8ac0e0', '#d890c0'],
   living: ['#5aa860', '#4a9a78', '#78b048'],
   machine: ['#8a929c', '#9a8a78', '#7a8a98'],
+  iron: ['#9aa0a8', '#a8826a', '#8c9098'],
+  eyeball: ['#3f7fc0', '#4a94b8', '#5a8cc8'],
+  hycean: ['#5ab0b0', '#4a98b8', '#6ac0a8'],
+  fungal: ['#a878b8', '#c8a060', '#9a7ac0'],
+  volcanic: ['#e0c050', '#d8a840', '#e8d070'],
   star: ['#f2c46d'],
 };
 
@@ -25,9 +30,10 @@ function styleFor(rng: Rng, radius: number, big: number): PlanetStyle {
 
 /** What a rocky world may turn out to be instead, and the share of rocky worlds each takes: a small one, and a big one. */
 const SMALL_ROCK: readonly [PlanetStyle, number][] = [
-  ['lava', 0.25], ['ocean', 0.1], ['desert', 0.08], ['acid', 0.05], ['carbon', 0.04], ['crystal', 0.04], ['living', 0.04], ['machine', 0.04],
+  ['lava', 0.2], ['ocean', 0.08], ['desert', 0.07], ['acid', 0.04], ['carbon', 0.04], ['crystal', 0.04], ['living', 0.04], ['machine', 0.04],
+  ['iron', 0.04], ['eyeball', 0.04], ['fungal', 0.04], ['volcanic', 0.05],
 ];
-const BIG_ROCK: readonly [PlanetStyle, number][] = [['ocean', 0.3], ['acid', 0.15]];
+const BIG_ROCK: readonly [PlanetStyle, number][] = [['ocean', 0.22], ['acid', 0.12], ['hycean', 0.18], ['eyeball', 0.06]];
 
 /**
  * A planet's seed, style and tint, drawn after its mass. A rocky world may turn out molten (one small one in four), wet,

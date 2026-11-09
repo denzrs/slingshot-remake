@@ -214,6 +214,8 @@ export interface PlanetShade {
   map: HTMLImageElement;
   cloudName: string;
   cloud: () => Uint8Array;
+  /** The cloud map's size: the shared maps', or finer for one with hurricanes in it. */
+  cloudSize: readonly [number, number];
   /** The lights of its night side, if it has any, and which map they are. */
   city: (() => Uint8Array) | null;
   cityName: string;
@@ -319,7 +321,7 @@ export function shadePlanet(s: PlanetShade, time: number, cracks: PlanetCracks |
   const size = s.half * 2;
   return shade(PLANET_SHADER, size, size, PLANET_LIMIT, (u, stage) => {
     const map = mapTexture(stage, s);
-    const cloud = greyTexture(stage, s.cloudName, s.mapSize, s.cloud);
+    const cloud = greyTexture(stage, s.cloudName, s.cloudSize, s.cloud);
     const city = s.city ? greyTexture(stage, s.cityName, s.mapSize, s.city) : cloud;
     if (!map || !cloud || !city) return;
     u.tex('uMap', 0, map);
