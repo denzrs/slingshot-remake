@@ -951,3 +951,17 @@ html.upright #clip-share {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+/* A control that is over a ship fades, so the ship shows through; it still takes the touch (see `ui/touch/ship-cover.ts`). */
+.over-ship {
+  opacity: 0.38;
+}
+
+#pause-button,
+#touch-fire,
+#touch-power,
+.pbar,
+.twheel,
+#touch-stick {
+  transition: opacity 140ms;
+}

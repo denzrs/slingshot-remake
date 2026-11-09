@@ -49,6 +49,7 @@ import { onPress } from './ui/touch/touch-controls';
 import { TouchPower } from './ui/touch/touch-power';
 import { TouchWheel } from './ui/touch/touch-wheel';
 import { TouchStick } from './ui/touch/touch-stick';
+import { clearFade, fadeOverShips } from './ui/touch/ship-cover';
 import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, type App } from './ui/screens';
 import { statsAvailable, statsScreen } from './ui/stats/stats';
 import { reportLocalGame, trackLocalGame } from './net/localStats';
@@ -949,6 +950,9 @@ clipShareButton.addEventListener('click', shareOfferedClip);
 
 document.addEventListener('fullscreenchange', () => menu.refresh());
 
+/** When the controls were last checked against the ships. */
+let coverAt = 0;
+
 function syncButtons(): void {
   const playing = screen === 'play' && !menu.isOpen && !!match;
   const m = match;
@@ -990,6 +994,19 @@ function syncButtons(): void {
   powerBar.update(stick ? null : aim);
   touchWheel.update(stick ? null : aim);
   touchStick.update(stick ? aim : null);
+
+  // A control over a ship fades, so the ship shows through (a few times a second is plenty: ships and controls hardly move).
+  const now = performance.now();
+  if (now - coverAt > 100) {
+    coverAt = now;
+    const controls = [pauseButton, touchFire, touchPower, powerBar.el, touchWheel.el, touchStick.el];
+    if (playing && coarsePointer.matches && m && m.phase !== 'killcam') {
+      const points = m.world.ships.flatMap((ship) => (ship.alive ? [renderer.project(ship.x, ship.y, null, false)] : []));
+      fadeOverShips(controls, points, innerWidth);
+    } else {
+      clearFade(controls);
+    }
+  }
 
   if (clipOffer && (clipOffer.match !== m || Date.now() > clipOffer.until)) clipOffer = null;
   const canShare = playing && !!clipOffer;
@@ -1158,7 +1175,7 @@ function frame(now: number): void {
 
 if (import.meta.env.DEV || import.meta.env.VITE_BENCH) {
   // Handle for poking at the running game from the dev console, and for the browser benchmark (a build made with VITE_BENCH set).
-  Object.assign(window, { slingshot: { app, attract, settings, get match() { return match; } } });
+  Object.assign(window, { slingshot: { app, attract, settings, renderer, get match() { return match; } } });
 }
 
 if (import.meta.env.DEV) {
