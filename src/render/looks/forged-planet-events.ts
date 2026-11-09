@@ -6,7 +6,7 @@ import { clamp01, LIGHT, smoothstep } from '../planet-common';
  * What happens on a planet's surface in the forged look, drawn over its sphere like the lightning of a gas giant: meteors
  * striking a lava world (a streak, a flash, a ring of dust, melt cooling, a crater that fades), its volcanoes and an icy
  * moon's geysers, a desert's dust storms, an ocean's hurricanes, the glints of carbon and crystal, a machine world's trains
- * of light, heat haze over molten rock, a comet passing now and then, and the scars shots leave. It all follows from the seed
+ * of light, heat haze over molten rock, and the scars shots leave. It all follows from the seed
  * and the time, so every screen shows the same at the same moment, and what lies on the surface turns away with it.
  */
 
@@ -495,15 +495,26 @@ export function drawGlints(ctx: CanvasRenderingContext2D, x: number, y: number, 
 
 // ------------------------------------------------------------ running lights ----
 
-/** A machine world's trains of light along its lanes: the lanes' latitudes, and on each, where its trains start and how fast they run (turns per second). */
-export type Lanes = { v: number; trains: { u: number; speed: number }[] }[];
+/**
+ * A machine world's trains of light: lanes round its latitudes, where the trains run east or west, and lanes along its
+ * meridians, where they run from pole to pole. Each lane is where it lies (a latitude, or a longitude in turns), and each
+ * train where it starts and how fast it runs (turns, or pole to pole, per second).
+ */
+export type Lanes = { across: boolean; at: number; trains: { from: number; speed: number }[] }[];
 
 export function rollLanes(p: Planet): Lanes {
   const rng = createRng(p.seed ^ 0x3c6ef372);
-  return Array.from({ length: 6 }, (_, i) => ({
-    v: 0.2 + (i + range(rng, 0.2, 0.8)) * (0.6 / 6),
-    trains: Array.from({ length: 3 }, () => ({ u: rng(), speed: (rng() < 0.5 ? -1 : 1) * range(rng, 0.03, 0.07) })),
-  }));
+  const train = (fast: number, slow: number) => ({ from: rng(), speed: (rng() < 0.5 ? -1 : 1) * range(rng, fast, slow) });
+  const across = Array.from({ length: 6 }, (_, i) => ({ across: true, at: 0.2 + (i + range(rng, 0.2, 0.8)) * (0.6 / 6), trains: Array.from({ length: 3 }, () => train(0.03, 0.07)) }));
+  const along = Array.from({ length: 6 }, (_, i) => ({ across: false, at: (i + range(rng, 0.2, 0.8)) / 6, trains: Array.from({ length: 2 }, () => train(0.05, 0.1)) }));
+  return [...across, ...along];
+}
+
+/** Where on the map a train's point is, `back` behind its head: round a latitude it wraps; along a meridian it runs between the poles' rings of plating. */
+function laneAt(lane: Lanes[number], head: number, back: number): { u: number; v: number } {
+  if (lane.across) return { u: head - back, v: lane.at };
+  const k = head - back;
+  return { u: lane.at, v: 0.08 + 0.84 * (k - Math.floor(k)) };
 }
 
 /** Each train: a bright head and a trail behind it, amber, strongest on the night side where the plating is dark. */
@@ -514,15 +525,22 @@ export function drawLanes(ctx: CanvasRenderingContext2D, x: number, y: number, p
   ctx.lineCap = 'round';
   for (const lane of lanes) {
     for (const train of lane.trains) {
-      const head = train.u + time * train.speed;
+      const head = train.from + time * train.speed;
+      // A train along a meridian fades in and out at the poles, where it wraps round to start again.
+      const k = head - Math.floor(head);
+      const ends = lane.across ? 1 : smoothstep(0, 0.08, k) * smoothstep(1, 0.92, k);
       let prev: Seen | null = null;
-      for (let k = 0; k <= 6; k++) {
-        const n = onDisc(s, head - Math.sign(train.speed) * k * 0.012, lane.v, time);
+      for (let step = 0; step <= 6; step++) {
+        const back = Math.sign(train.speed) * step * (lane.across ? 0.012 : 0.02);
+        // Along a meridian the trail stops at the pole it came from, instead of wrapping round to the other.
+        if (!lane.across && (k - back < 0 || k - back > 1)) break;
+        const at = laneAt(lane, head, back);
+        const n = onDisc(s, at.u, at.v, time);
         if (prev && n.nz > 0.02 && prev.nz > 0.02) {
           const night = 0.3 + 0.7 * smoothstep(0.1, -0.3, lightOn(n));
-          const a = (1 - k / 7) * 0.8 * night * smoothstep(0.02, 0.25, n.nz);
-          ctx.strokeStyle = `rgba(255,${Math.round(170 + 50 * (1 - k / 6))},90,${a})`;
-          ctx.lineWidth = Math.max(0.4, R * (k === 1 ? 0.03 : 0.018));
+          const a = Math.min(1, (1 - step / 7) * night * ends * smoothstep(0.02, 0.25, n.nz));
+          ctx.strokeStyle = `rgba(255,${Math.round(170 + 50 * (1 - step / 6))},90,${a})`;
+          ctx.lineWidth = Math.max(0.5, R * (step === 1 ? 0.04 : 0.025));
           ctx.beginPath();
           ctx.moveTo(x + prev.dx * R, y + prev.dy * R);
           ctx.lineTo(x + n.dx * R, y + n.dy * R);
@@ -554,56 +572,6 @@ export function drawShimmer(ctx: CanvasRenderingContext2D, x: number, y: number,
     ctx.lineWidth = Math.max(0.5, R * 0.018);
     ctx.stroke();
   }
-  ctx.restore();
-}
-
-// -------------------------------------------------------------------- comets ----
-
-/** How long a comet takes to cross past a planet (s). */
-const COMET_PASS = 7;
-
-/** Now and then a comet passes a planet, its tail turned away from the light whichever way it flies. Seeded, like the rest. */
-export function drawComet(ctx: CanvasRenderingContext2D, x: number, y: number, p: Planet, time: number): void {
-  const R = p.radius;
-  const every = 50 + (p.seed % 37);
-  const now = time / every + ((p.seed >>> 5) % 100) / 100;
-  const beat = Math.floor(now);
-  if (hash(p.seed, beat, 40) < 0.5) return;
-  const age = (now - beat) * every - 3;
-  if (age < 0 || age > COMET_PASS) return;
-  const k = age / COMET_PASS;
-  // A straight pass at some distance off the middle, from one side to the other.
-  const dir = hash(p.seed, beat, 41) * Math.PI * 2;
-  const miss = R * (1.35 + 0.8 * hash(p.seed, beat, 42)) * (hash(p.seed, beat, 43) < 0.5 ? -1 : 1);
-  const along = (k - 0.5) * R * 7;
-  const cx = x + Math.cos(dir) * along - Math.sin(dir) * miss;
-  const cy = y + Math.sin(dir) * along + Math.cos(dir) * miss;
-  const show = smoothstep(0, 0.15, k) * (1 - smoothstep(0.85, 1, k));
-  // The tail points away from the light (in the sprite's frame, which turns with a solar system's sun).
-  const tl = Math.hypot(LIGHT[0], LIGHT[1]);
-  const tx = -LIGHT[0] / tl;
-  const ty = -LIGHT[1] / tl;
-  const tail = R * 1.1;
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  const g = ctx.createLinearGradient(cx, cy, cx + tx * tail, cy + ty * tail);
-  g.addColorStop(0, `rgba(200,235,255,${0.55 * show})`);
-  g.addColorStop(1, 'rgba(120,180,255,0)');
-  ctx.strokeStyle = g;
-  ctx.lineCap = 'round';
-  for (const [w, spread] of [[0.09, 0], [0.04, 0.12]] as const) {
-    ctx.lineWidth = Math.max(0.5, R * w);
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + (tx - ty * spread) * tail, cy + (ty + tx * spread) * tail);
-    ctx.stroke();
-  }
-  const r = Math.max(1.2, R * 0.06);
-  const head = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-  head.addColorStop(0, `rgba(255,255,255,${show})`);
-  head.addColorStop(1, 'rgba(180,220,255,0)');
-  ctx.fillStyle = head;
-  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
   ctx.restore();
 }
 

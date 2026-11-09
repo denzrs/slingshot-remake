@@ -214,7 +214,9 @@ export interface PlanetShade {
   map: HTMLImageElement;
   cloudName: string;
   cloud: () => Uint8Array;
+  /** The lights of its night side, if it has any, and which map they are. */
   city: (() => Uint8Array) | null;
+  cityName: string;
   mapSize: readonly [number, number];
   /** The planet's radius and the sprite's half width, in pixels. */
   radius: number;
@@ -318,7 +320,7 @@ export function shadePlanet(s: PlanetShade, time: number, cracks: PlanetCracks |
   return shade(PLANET_SHADER, size, size, PLANET_LIMIT, (u, stage) => {
     const map = mapTexture(stage, s);
     const cloud = greyTexture(stage, s.cloudName, s.mapSize, s.cloud);
-    const city = s.city ? greyTexture(stage, 'city', s.mapSize, s.city) : cloud;
+    const city = s.city ? greyTexture(stage, s.cityName, s.mapSize, s.city) : cloud;
     if (!map || !cloud || !city) return;
     u.tex('uMap', 0, map);
     u.tex('uCloud', 1, cloud);

@@ -207,7 +207,7 @@ const SCENES: Scene[] = [
   },
   {
     title: 'Neue Welten',
-    sub: `Ozean, Wüste, Säure, Kohlenstoff, Kristall, Lebend und Maschine, dazu die gebundenen Lava- und Eiswelten: Hurrikane, Staubstürme, Glitzern, Leuchten bei Nacht, Lichterzüge, Hitzeflimmern, ab und zu ein Komet; vierfache Geschwindigkeit. ${NEW_PLANETS.rows.join('. ')}`,
+    sub: `Ozean, Wüste, Säure, Kohlenstoff, Kristall, Lebend und Maschine, dazu die gebundenen Lava- und Eiswelten: Hurrikane, Staubstürme, Glitzern, Leuchten bei Nacht, Lichterzüge, Hitzeflimmern; vierfache Geschwindigkeit. ${NEW_PLANETS.rows.join('. ')}`,
     speed: 4,
     build: () => planetScene(NEW_PLANETS.planets),
   },

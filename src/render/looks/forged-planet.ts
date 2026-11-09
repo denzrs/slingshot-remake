@@ -8,7 +8,7 @@ import { place as placeShaded } from './forged-gl';
 import { GLOW, renderLitPlanet, spriteSize } from './forged-lit-planet';
 import { EMIT_FROM, EMIT_FULL, emitBreath, GLINT_POWER, MAX_IMPACTS, shadePlanet, WET_FROM, WET_FULL, type PlanetCracks, type PlanetShade } from './forged-planet-gl';
 import {
-  drawComet, drawDust, drawGlints, drawLanes, drawMeteors, drawPlumes, drawScar, drawShimmer, drawStorms,
+  drawDust, drawGlints, drawLanes, drawMeteors, drawPlumes, drawScar, drawShimmer, drawStorms,
   rollDust, rollGlints, rollLanes, rollMeteors, rollStorms, rollVents,
   type Dust, type Glints, type Lanes, type Meteors, type Storms, type Surface as Turning, type Vents,
 } from './forged-planet-events';
@@ -48,7 +48,7 @@ interface Dress {
   cloud: MapKind;
   cloudColour: Rgb | null;
   specular: number;
-  emit?: { key: Rgb; night?: boolean; pulse?: number };
+  emit?: { key: Rgb; night?: boolean; pulse?: number; strength?: number };
   wet?: { key: Rgb; strength: number };
   rings: number;
 }
@@ -63,7 +63,7 @@ const DRESS: Record<Exclude<PlanetStyle, 'star'>, Dress> = {
   carbon: { rim: [150, 150, 170], dusk: [200, 140, 100], relief: 2, cloud: 'haze', cloudColour: [62, 54, 48], specular: 0.12, rings: 0.15 },
   crystal: { rim: [210, 170, 255], dusk: [255, 150, 200], relief: 1.2, cloud: 'wisp', cloudColour: [240, 230, 255], specular: 0.45, rings: 0.25 },
   living: { rim: [140, 255, 200], dusk: [255, 150, 90], relief: 1.5, cloud: 'wisp', cloudColour: [245, 255, 248], specular: 0, emit: { key: BLUE, night: true, pulse: 0.7 }, rings: 0.05 },
-  machine: { rim: [180, 200, 220], dusk: [255, 170, 90], relief: 1.5, cloud: 'haze', cloudColour: [190, 195, 205], specular: 0.15, emit: { key: HOT, night: true }, rings: 0.12 },
+  machine: { rim: [180, 200, 220], dusk: [255, 170, 90], relief: 1.5, cloud: 'haze', cloudColour: [190, 195, 205], specular: 0.15, emit: { key: HOT, night: true, strength: 1.8 }, rings: 0.12 },
 };
 /** A locked world's ice and molten rock: the melt glows day and night, the ice mirrors the sun, steam drifts over both. */
 const LOCKED: Partial<Dress> = { relief: 1, specular: 0, cloud: 'haze', cloudColour: [228, 226, 230], emit: { key: HOT }, wet: { key: BLUE, strength: 0.6 } };
@@ -107,10 +107,10 @@ function texture(name: Name): Texture | null {
 /** The procedural maps are this big (a power of two in width, so a wrap is a mask). */
 const MAP_W = 256;
 const MAP_H = 128;
-type MapKind = 'wisp' | 'band' | 'haze' | 'city';
+type MapKind = 'wisp' | 'band' | 'haze' | 'city' | 'works';
 const maps = new Map<MapKind, Uint8Array>();
 
-/** A map of cloud, or of the lights of settlements, over a whole sphere (no seam: it is noise on the sphere, not on the strip). */
+/** A map of cloud, or of the lights of settlements (`works`: a machine world's, over most of it), over a whole sphere (no seam: it is noise on the sphere, not on the strip). */
 function proceduralMap(kind: MapKind): Uint8Array {
   const known = maps.get(kind);
   if (known) return known;
@@ -133,6 +133,7 @@ function proceduralMap(kind: MapKind): Uint8Array {
       if (kind === 'wisp') v = smoothstep(0.5, 0.72, fbm(x * 2.6 + 3, y * 3.6 + 7, z * 2.6 + 1, 5, 4)) * 0.9;
       else if (kind === 'band') v = smoothstep(0.44, 0.68, fbm(x * 1.2 + 4, y * 10, z * 1.2, 17, 4)) * 0.6;
       else if (kind === 'haze') v = smoothstep(0.5, 0.78, fbm(x * 1.8, y * 2.2, z * 1.8, 29, 3)) * 0.5;
+      else if (kind === 'works') v = Math.min(1, smoothstep(0.4, 0.56, fbm(x * 3, y * 3, z * 3, 51, 3)) * (0.3 + 0.7 * smoothstep(0.48, 0.66, fbm(x * 40, y * 40, z * 40, 53, 2))) * 1.5);
       else v = Math.min(1, smoothstep(0.6, 0.78, fbm(x * 4.5 + 2, y * 4.5, z * 4.5, 41, 4)) * smoothstep(0.55, 0.75, fbm(x * 26, y * 26, z * 26, 43, 2)) * 2.2);
       out[j * MAP_W + i] = Math.round(v * 255);
     }
@@ -145,12 +146,13 @@ function proceduralMap(kind: MapKind): Uint8Array {
 
 /**
  * The maps a planet of each style may wear (painted by `scripts/forged/render_planets.py`; the first of each is the original).
- * `cities`: settlements may light its night side. `clouds: false`: it has no air. `geysers`: an icy moon's cryovolcanoes.
+ * `cities`: settlements may light its night side (`lit`: always do). `clouds: false`: it has no air. `geysers`: an icy moon's cryovolcanoes.
  * The last of lava and of ice, `locked`, is worn only by a tidally locked world (`isLocked`), and by every one of them.
  */
 interface Variant {
   name: Name;
   cities?: boolean;
+  lit?: boolean;
   clouds?: boolean;
   geysers?: boolean;
   locked?: boolean;
@@ -166,7 +168,7 @@ const VARIANTS: Record<Exclude<PlanetStyle, 'star'>, readonly Variant[]> = {
   carbon: [{ name: 'carbonGraphite', clouds: false }, { name: 'carbonTar' }],
   crystal: [{ name: 'crystalAmethyst', clouds: false }, { name: 'crystalQuartz', clouds: false }],
   living: [{ name: 'livingMoss' }, { name: 'livingCoral' }],
-  machine: [{ name: 'machinePanels', clouds: false }, { name: 'machineHive' }],
+  machine: [{ name: 'machinePanels', clouds: false, lit: true }, { name: 'machineHive', lit: true }],
 };
 
 const dressOf = (p: Planet): Dress => DRESS[p.style as keyof typeof DRESS] ?? DRESS.rocky;
@@ -292,7 +294,8 @@ function rollPlanet(p: Planet, variant: Variant) {
   const direction = rng() < 0.5 ? -1 : 1;
   const phase = rng() * Math.PI * 2;
   const ringed = rng() < dressOf(p).rings;
-  const settled = !!variant.cities && rng() < 0.75;
+  // A world that is always lit draws no more than one that never is, so the rolls after stay where they were.
+  const settled = (!!variant.cities && rng() < 0.75) || !!variant.lit;
   const rings = ringed ? rollRings(rng) : null;
   // A planet without rings may have a moon: small, on a slanted orbit.
   const moon: Omit<Moon, 'colour'> | null =
@@ -345,6 +348,7 @@ function bake(p: Planet, ps: number): Baked | null {
 
   // Cloud: wisps over rock, haze over ice, long streaks over a gas giant, smoke over lava, dust over a desert.
   const kind = dress.cloud;
+  const lights: MapKind = variant.lit ? 'works' : 'city';
   const colour2: Rgb = dress.cloudColour ?? [mix(tr, 255, 0.55), mix(tg, 245, 0.55), mix(tb, 230, 0.55)];
 
   let soft: Soft | null = null;
@@ -420,7 +424,7 @@ function bake(p: Planet, ps: number): Baked | null {
     cloudCanvas.width = cloudCanvas.height = size;
     soft = {
       surface,
-      sphere: { canvas: sphere, image: sphere.getContext('2d')!.createImageData(size, size), map, gain, city: settled ? proceduralMap('city') : null, emit: emit ?? null, wet: wet ?? null, rate: surfaceRate, phase, shift: new Float32Array(MAP_H) },
+      sphere: { canvas: sphere, image: sphere.getContext('2d')!.createImageData(size, size), map, gain, city: settled ? proceduralMap(lights) : null, emit: emit ?? null, wet: wet ?? null, rate: surfaceRate, phase, shift: new Float32Array(MAP_H) },
       cloud: { kind, enabled: variant.clouds !== false, colour: colour2, canvas: cloudCanvas, image: cloudCanvas.getContext('2d')!.createImageData(size, size), shift: new Float32Array(MAP_H), direction, phase, at: -1 },
     };
     return soft;
@@ -459,7 +463,8 @@ function bake(p: Planet, ps: number): Baked | null {
       map: mapImage,
       cloudName: kind,
       cloud: () => proceduralMap(kind),
-      city: settled ? () => proceduralMap('city') : null,
+      city: settled ? () => proceduralMap(lights) : null,
+      cityName: lights,
       mapSize: [MAP_W, MAP_H],
       radius: R,
       half,
@@ -472,7 +477,7 @@ function bake(p: Planet, ps: number): Baked | null {
       cityLight: CITY.map((v) => v / 255),
       specular,
       emitKey: emit?.key ?? HOT,
-      emit: emit ? 1 : 0,
+      emit: emit ? (emit.strength ?? 1) : 0,
       emitNight: !!emit?.night,
       emitPulse: emit?.pulse ?? 0,
       wetKey: wet?.key ?? BLUE,
@@ -549,7 +554,7 @@ function paintSurface(b: Soft, time: number): void {
     }
     // What of the map shines by itself, and what is water mirroring the sun (as in the shader).
     const keyed = (key: Rgb): number => (albedo[0] * key[0] + albedo[1] * key[1] + albedo[2] * key[2]) / 255;
-    const glow = emit ? smoothstep(EMIT_FROM, EMIT_FULL, keyed(emit.key)) * 1.1 * breath * (emit.night ? surface.dark[k] : 1) : 0;
+    const glow = emit ? smoothstep(EMIT_FROM, EMIT_FULL, keyed(emit.key)) * 1.1 * (emit.strength ?? 1) * breath * (emit.night ? surface.dark[k] : 1) : 0;
     const glint = wet ? surface.glint[k] * smoothstep(WET_FROM, WET_FULL, keyed(wet.key)) : 0;
     for (let c = 0; c < 3; c++) {
       data[i + c] = Math.min(255, Math.max(mix(NIGHT[c], albedo[c] * shadow, lit) + CITY[c] * lights, albedo[c] * glow) + surface.add[k * 3 + c] + glint);
@@ -925,7 +930,6 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
       if (baked.aurora) drawAurora(ctx, x, y, p.radius, baked.aurora, baked.tilt, time);
       if (baked.rings) place(ctx, baked.rings.front, x, y, scale);
       if (moon?.front) drawMoon(ctx, x, y, baked.moon!, moon, p.radius);
-      drawComet(ctx, x, y, p, time);
     },
   };
 }
