@@ -14,7 +14,6 @@ import {
 } from './forged-planet-events';
 import { SCAR_LIFE } from '../effects';
 import { instabilityPulse } from './instability';
-import { screenOffset } from '../orientation';
 
 /**
  * A planet in the forged look: the Blender map wrapped round a sphere and lit from the upper left, with what a still
@@ -940,7 +939,7 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
   let seen = false;
   const impacts = new Float32Array(MAX_IMPACTS * 4);
   /** The damage of `planet` as the shader takes it, or null while it is whole or the crack map is still loading. */
-  const cracksOf = (planet: Planet, time: number, surfaceRate: number): PlanetCracks | null => {
+  const cracksOf = (planet: Planet, time: number, surfaceRate: number, turn: number): PlanetCracks | null => {
     const hits = planet.fractures ?? [];
     if (hits.length < hitAt.length) hitAt.length = hits.length;
     // A sprite made after the hits (a new size, a new look) shows them settled, not flaring all at once.
@@ -951,10 +950,10 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
     if (!warning || !map) return null;
     const shown = Math.min(hits.length, MAX_IMPACTS);
     for (let i = 0; i < shown; i++) {
-      // The latest hits, if there are more than the shader takes. The angle is the field's; the sprite stands upright on the screen.
+      // The latest hits, if there are more than the shader takes. The angle is the field's, turned into the sprite's frame.
       const k = hits.length - shown + i;
-      const [dx, dy] = screenOffset(Math.cos(hits[k]), Math.sin(hits[k]));
-      impacts.set([dx * IMPACT_AT, dy * IMPACT_AT, hitAt[k].at * surfaceRate, time - hitAt[k].flare], i * 4);
+      const a = hits[k] - turn;
+      impacts.set([Math.cos(a) * IMPACT_AT, Math.sin(a) * IMPACT_AT, hitAt[k].at * surfaceRate, time - hitAt[k].flare], i * 4);
     }
     return { map, impacts, hits: shown, danger: warning.danger, glow: warning.pulse };
   };
@@ -963,7 +962,7 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
   };
   return {
     size: spriteSize(p, ps),
-    draw(ctx, x, y, scale, time, planet = p, scars = NO_SCARS) {
+    draw(ctx, x, y, scale, time, planet = p, scars = NO_SCARS, turn = 0) {
       baked ??= bake(p, ps);
       if (!baked) {
         fallback ??= renderLitPlanet(p, ps);
@@ -976,7 +975,7 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
       if (baked.rings) place(ctx, baked.rings.back, x, y, scale);
       // A planet turns slowly: the shader's picture is kept and worked out again on the planet's own beat, so they do not all fall in one frame.
       const still = baked.still;
-      const cracks = cracksOf(planet, time, baked.shade.surfaceRate);
+      const cracks = cracksOf(planet, time, baked.shade.surfaceRate, turn);
       const every = cracks ? CRACKS_EVERY : CLOUD_EVERY;
       const struck = (planet.fractures?.length ?? 0) !== still.hits;
       if (!still.canvas || still.at < 0 || time < still.at || time - still.at >= every || struck) {
@@ -1017,7 +1016,7 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
       if (moon?.front) drawMoonShadow(ctx, x, y, p.radius, baked.moon!, moon);
       if (baked.storms) drawLightning(ctx, x, y, p, time);
       const turning: Turning = { spin: baked.shade.spin, tilt: baked.shade.tilt, rate: baked.shade.surfaceRate };
-      for (const scar of scars) drawScarOf(ctx, x, y, p.radius, turning, scar, time);
+      for (const scar of scars) drawScarOf(ctx, x, y, p.radius, turning, scar, turn, time);
       if (baked.dust) drawDust(ctx, x, y, p, turning, baked.dust, time);
       if (baked.hurricanes) {
         const drifting: Turning = { ...turning, rate: baked.shade.cloudRate };
@@ -1035,8 +1034,8 @@ export function renderForgedPlanet(p: Planet, ps: number): PlanetSprite {
   };
 }
 
-/** A shot's scar, struck where the shot met the rim (the field's angle, turned upright on the screen), just in from the limb. */
-function drawScarOf(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, s: Turning, scar: Scar, time: number): void {
-  const [dx, dy] = screenOffset(Math.cos(scar.angle), Math.sin(scar.angle));
-  drawScar(ctx, x, y, R, s, { x: dx * IMPACT_AT, y: dy * IMPACT_AT }, scar.age, SCAR_LIFE, time);
+/** A shot's scar, struck where the shot met the rim (the field's angle, turned into the sprite's frame by `turn`), just in from the limb. */
+function drawScarOf(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, s: Turning, scar: Scar, turn: number, time: number): void {
+  const a = scar.angle - turn;
+  drawScar(ctx, x, y, R, s, { x: Math.cos(a) * IMPACT_AT, y: Math.sin(a) * IMPACT_AT }, scar.age, SCAR_LIFE, time);
 }
