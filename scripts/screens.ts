@@ -28,7 +28,7 @@ import { connect as tcp } from 'node:net';
 import { availableParallelism } from 'node:os';
 import { join, relative } from 'node:path';
 import { launchChrome, type Browser } from './chrome';
-import { DAY, MEASURE, PAGES, press, QUICK_SIZES, SETTINGS, SIZES, steady, steadyStorage, type Page } from './screens-pages';
+import { DAY, MEASURE, PAGES, perform, QUICK_SIZES, SETTLE, SETTINGS, SIZES, steady, steadyStorage, until, type Page } from './screens-pages';
 import { buildCommit, buildWorkingTree, resolveRef, ROOT, serve } from './serve';
 
 interface Options {
@@ -78,32 +78,6 @@ interface Result {
   problems: string[];
 }
 
-/** Resolves once nothing on the page moves any more: its animations are over and its markup and size have held still for a few frames. */
-const SETTLE = `new Promise((done) => {
-  const root = document.getElementById('overlay');
-  const t0 = performance.now();
-  let last = '', still = 0;
-  const tick = () => {
-    const busy = document.getAnimations().some((a) => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity);
-    const sig = root.innerHTML.length + ':' + root.scrollHeight + ':' + Math.round(root.getBoundingClientRect().height);
-    if (!busy && sig === last) still++; else { still = 0; last = sig; }
-    if (still >= 6 || performance.now() - t0 > 3000) return done(still >= 6);
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-})`;
-
-/** Resolves true once the expression holds, false if it does not within the time. */
-const until = (expression: string, ms = 8000): string => `new Promise((done) => {
-  const t0 = performance.now();
-  const tick = () => {
-    if (${expression}) return done(true);
-    if (performance.now() - t0 > ${ms}) return done(false);
-    setTimeout(tick, 20);
-  };
-  tick();
-})`;
-
 /** Speed of the page's animations while it is looked at: they still end, and fire what waits for them, only sooner. */
 const ANIMATION_RATE = 20;
 
@@ -152,42 +126,13 @@ async function visit(browser: Browser, opts: Options, base: string, size: string
 
   let snapped = false;
   for (const step of page.steps) {
-    if ('click' in step) {
-      if (!(await cdp.evaluate<boolean>(press(step.click)))) return fail(`nothing to press for ${JSON.stringify(step.click)}`);
-      await cdp.evaluate(SETTLE);
-    } else if ('category' in step) {
-      const opened = await cdp.evaluate<boolean>(`(() => {
-        const navigation = [...document.querySelectorAll('.sheet-nav')].find((el) => !el.hidden);
-        if (!navigation) return true;
-        const button = navigation.querySelector('[aria-controls$="-${step.category}"]');
-        if (!button) return false;
-        button.click();
-        return true;
-      })()`);
-      if (!opened) return fail(`no category ${step.category}`);
-      await cdp.evaluate(SETTLE);
-    } else if ('type' in step) {
-      const typed = await cdp.evaluate<boolean>(`(() => {
-        const el = [...document.querySelectorAll(${JSON.stringify(step.type.sel)})].find((e) => e.getClientRects().length > 0);
-        if (!el) return false;
-        el.focus();
-        el.value = ${JSON.stringify(step.type.text)};
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        return true;
-      })()`);
-      if (!typed) return fail(`no field for ${step.type.sel}`);
-    } else if ('key' in step) {
-      await cdp.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(step.key)}, bubbles: true }))`);
-      await cdp.evaluate(SETTLE);
-    } else if ('until' in step) {
-      if (!(await cdp.evaluate<boolean>(until(step.until)))) return fail(`never became true: ${step.until}`);
-      await cdp.evaluate(SETTLE);
-    } else if ('wait' in step) {
-      await new Promise((r) => setTimeout(r, step.wait));
-    } else {
+    if ('snap' in step) {
       await snap(step.snap);
       snapped = true;
+      continue;
     }
+    const problem = await perform(cdp, step);
+    if (problem) return fail(problem);
   }
   if (!snapped || !('snap' in page.steps[page.steps.length - 1])) await snap('');
 }

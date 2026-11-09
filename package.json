@@ -13,6 +13,7 @@
     "shot": "tsx scripts/shot.ts",
     "screens": "tsx scripts/screens.ts",
     "screens:quick": "tsx scripts/screens.ts --quick",
+    "mobile:audit": "tsx scripts/mobile-audit.ts",
     "dev:server": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml",
     "dev:server:stats": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml -- --stats",
     "dev:server:stats-demo": "DEV_SERVER=1 cargo run --release --manifest-path server/Cargo.toml -- --stats-demo",

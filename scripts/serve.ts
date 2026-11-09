@@ -31,14 +31,14 @@ function git(...args: string[]): string {
 /** The full commit a name (a branch, a tag, HEAD) stands for. */
 export const resolveRef = (ref: string): string => git('rev-parse', '--verify', `${ref}^{commit}`);
 
-function build(cwd: string, outDir: string): void {
-  execFileSync(join(ROOT, 'node_modules', '.bin', 'vite'), ['build', '--outDir', outDir, '--emptyOutDir', '--logLevel', 'error'], { cwd, stdio: ['ignore', 'ignore', 'inherit'] });
+function build(cwd: string, outDir: string, env: NodeJS.ProcessEnv = {}): void {
+  execFileSync(join(ROOT, 'node_modules', '.bin', 'vite'), ['build', '--outDir', outDir, '--emptyOutDir', '--logLevel', 'error'], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'ignore', 'inherit'] });
 }
 
-/** Builds the working tree into a fresh folder and returns it. */
-export function buildWorkingTree(): string {
+/** Builds the working tree into a fresh folder and returns it. `env` adds to the build's environment (`VITE_BENCH=1` keeps the `window.slingshot` handle in a production build). */
+export function buildWorkingTree(env: NodeJS.ProcessEnv = {}): string {
   const out = mkdtempSync(join(tmpdir(), 'slingshot-build-'));
-  build(ROOT, out);
+  build(ROOT, out, env);
   return out;
 }
 

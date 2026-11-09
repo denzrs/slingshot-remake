@@ -3,6 +3,8 @@
  * markup so two runs can be compared.
  */
 
+import type { Cdp } from './chrome';
+
 /** The sizes people use, and the ones just either side of a breakpoint, where a layout changes. */
 export const SIZES = [
   '1920x1080', '1440x900', '1280x800', '1024x720', '768x1024', '390x844', '360x640',
@@ -206,3 +208,152 @@ export function steadyStorage(storage: Record<string, string>): Record<string, u
     }
   }));
 }
+
+/** Resolves once nothing on the page moves any more: its animations are over and its markup and size have held still for a few frames. */
+export const SETTLE = `new Promise((done) => {
+  const root = document.getElementById('overlay');
+  const t0 = performance.now();
+  let last = '', still = 0;
+  const tick = () => {
+    const busy = document.getAnimations().some((a) => a.playState === 'running' && a.effect && a.effect.getTiming().iterations !== Infinity);
+    const sig = root.innerHTML.length + ':' + root.scrollHeight + ':' + Math.round(root.getBoundingClientRect().height);
+    if (!busy && sig === last) still++; else { still = 0; last = sig; }
+    if (still >= 6 || performance.now() - t0 > 3000) return done(still >= 6);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+})`;
+
+/** Resolves true once the expression holds, false if it does not within the time. */
+export const until = (expression: string, ms = 8000): string => `new Promise((done) => {
+  const t0 = performance.now();
+  const tick = () => {
+    if (${expression}) return done(true);
+    if (performance.now() - t0 > ${ms}) return done(false);
+    setTimeout(tick, 20);
+  };
+  tick();
+})`;
+
+/** Does one step on the page: null when it went well, what went wrong otherwise. (A `snap` is the caller's to take.) */
+export async function perform(cdp: Cdp, step: Exclude<Step, { snap: string }>): Promise<string | null> {
+  if ('click' in step) {
+    if (!(await cdp.evaluate<boolean>(press(step.click)))) return `nothing to press for ${JSON.stringify(step.click)}`;
+    await cdp.evaluate(SETTLE);
+  } else if ('category' in step) {
+    const opened = await cdp.evaluate<boolean>(`(() => {
+      const navigation = [...document.querySelectorAll('.sheet-nav')].find((el) => !el.hidden);
+      if (!navigation) return true;
+      const button = navigation.querySelector('[aria-controls$="-${step.category}"]');
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    if (!opened) return `no category ${step.category}`;
+    await cdp.evaluate(SETTLE);
+  } else if ('type' in step) {
+    const typed = await cdp.evaluate<boolean>(`(() => {
+      const el = [...document.querySelectorAll(${JSON.stringify(step.type.sel)})].find((e) => e.getClientRects().length > 0);
+      if (!el) return false;
+      el.focus();
+      el.value = ${JSON.stringify(step.type.text)};
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    })()`);
+    if (!typed) return `no field for ${step.type.sel}`;
+  } else if ('key' in step) {
+    await cdp.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(step.key)}, bubbles: true }))`);
+    await cdp.evaluate(SETTLE);
+  } else if ('until' in step) {
+    if (!(await cdp.evaluate<boolean>(until(step.until)))) return `never became true: ${step.until}`;
+    await cdp.evaluate(SETTLE);
+  } else {
+    await new Promise((r) => setTimeout(r, step.wait));
+  }
+  return null;
+}
+
+/**
+ * What the mobile audit looks for on a phone, as a function (given the safe area the phone has) to run in the page: the
+ * whole page, not only the menu, since a match has its controls outside it. Lists, as short descriptions, what is cut off
+ * by the window's edge, what is under the notch or the home bar, what text is shortened or runs out of its box, and which
+ * tap targets are small.
+ */
+export const MEASURE_PHONE = `(insets) => {
+  const vw = innerWidth, vh = innerHeight;
+  const shown = (el) => {
+    if (el.getClientRects().length === 0 || el.closest('[hidden]')) return false;
+    const s = getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none' && parseFloat(s.opacity) > 0.05;
+  };
+  const name = (el) => {
+    const text = (el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 40);
+    return el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + [...el.classList].slice(0, 2).map((c) => '.' + c).join('') + (text ? ' "' + text + '"' : '');
+  };
+  /** Whether an ancestor holds the element back on this axis: it scrolls or clips there, so what lies beyond is not lost. */
+  const held = (el, axis) => {
+    for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) if (getComputedStyle(a)[axis] !== 'visible') return true;
+    return false;
+  };
+  const all = [...document.body.querySelectorAll('*')].filter((el) => !(el instanceof SVGElement && !(el instanceof SVGSVGElement)) && el.id !== 'stage' && !el.closest('#stage, #debug-seed, #chat[hidden]') && shown(el));
+  const sized = all.filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+  const rect = (el) => { const r = el.getBoundingClientRect(); return Math.round(r.left) + ',' + Math.round(r.top) + ',' + Math.round(r.right) + ',' + Math.round(r.bottom); };
+  const hasText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+
+  const cutOff = sized.filter((el) => {
+    const r = el.getBoundingClientRect();
+    return ((r.right > vw + 1 || r.left < -1) && !held(el, 'overflowX')) || ((r.bottom > vh + 1 || r.top < -1) && !held(el, 'overflowY'));
+  }).map((el) => name(el) + ' [' + rect(el) + '] in ' + vw + 'x' + vh);
+
+  /** Whether the element is inside something that really scrolls sideways (a carousel): what scrolls may pass under the notch. */
+  const sideways = (el) => {
+    for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) if (/auto|scroll/.test(getComputedStyle(a).overflowX) && a.scrollWidth > a.clientWidth + 1) return true;
+    return false;
+  };
+  const interactive = (el) => el.matches('button, a[href], input, select, textarea, [role=button], [role=tab], [role=switch], summary, .item');
+  const fixedEdge = (el) => { for (let a = el; a && a !== document.body; a = a.parentElement) if (getComputedStyle(a).position === 'fixed') return true; return false; };
+  // Inside a side safe area (landscape): a failure around the middle of the screen, where the Dynamic Island is; in a corner only a warning, the rounded corner being the least of it. A peek past the screen's edge (a neighbouring tab) is on purpose.
+  const island = (r) => r.bottom > vh / 2 - 70 && r.top < vh / 2 + 70;
+  const inSide = (el) => {
+    if (!hasText(el) && !interactive(el)) return null;
+    const r = el.getBoundingClientRect();
+    if (sideways(el) || r.left < -1 || r.right > vw + 1) return null;
+    return (insets.left > 0 && r.left < insets.left - 1) || (insets.right > 0 && r.right > vw - insets.right + 1) ? r : null;
+  };
+  const edgeHit = (el) => {
+    const r = el.getBoundingClientRect();
+    return fixedEdge(el) && !held(el, 'overflowY') && interactive(el) && (r.top < insets.top - 1 || r.bottom > vh - insets.bottom + 1);
+  };
+  const detail = (el) => name(el) + ' [' + rect(el) + '] safe: top ' + insets.top + ', bottom ' + insets.bottom + ', sides ' + insets.left + '/' + insets.right;
+  const unsafe = sized.filter((el) => { const r = inSide(el); return edgeHit(el) || (r && island(r)); }).map(detail);
+  const cornerUnsafe = sized.filter((el) => { const r = inSide(el); return r && !island(r) && !edgeHit(el); }).map(detail);
+
+  const shortened = sized.filter((el) => {
+    const s = getComputedStyle(el);
+    if (!hasText(el)) return false;
+    if (s.textOverflow === 'ellipsis' && el.scrollWidth > el.clientWidth + 1) return true;
+    const clamp = s.webkitLineClamp;
+    return !!clamp && clamp !== 'none' && el.scrollHeight > el.clientHeight + 1;
+  }).map((el) => name(el) + ' (' + el.scrollWidth + '/' + el.clientWidth + ' wide, ' + el.scrollHeight + '/' + el.clientHeight + ' high)');
+
+  const overflowing = sized.filter((el) => {
+    if (!hasText(el)) return false;
+    const s = getComputedStyle(el);
+    if (s.textOverflow === 'ellipsis' || s.overflowX === 'auto' || s.overflowX === 'scroll') return false;
+    return el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 4 && (s.overflowX === 'hidden' || s.overflowX === 'clip' || s.whiteSpace === 'nowrap');
+  }).map((el) => name(el) + ' (' + el.scrollWidth + ' of ' + el.clientWidth + ')');
+
+  const smallTargets = sized.filter((el) => {
+    if (!interactive(el) || el.matches('input[type=hidden], .sheet-nav *')) return false;
+    const r = el.getBoundingClientRect();
+    return Math.min(r.width, r.height) < 44 && !el.closest('[inert]');
+  }).slice(0, 12).map((el) => { const r = el.getBoundingClientRect(); return name(el) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height); });
+
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+  document.body.append(probe);
+  const ps = getComputedStyle(probe);
+  const envInsets = { top: parseFloat(ps.paddingTop) || 0, right: parseFloat(ps.paddingRight) || 0, bottom: parseFloat(ps.paddingBottom) || 0, left: parseFloat(ps.paddingLeft) || 0 };
+  probe.remove();
+  return { viewport: [vw, vh], envInsets, cutOff: cutOff.slice(0, 10), unsafe: unsafe.slice(0, 10), cornerUnsafe: cornerUnsafe.slice(0, 6), shortened: shortened.slice(0, 12), overflowing: overflowing.slice(0, 10), smallTargets };
+}`;
