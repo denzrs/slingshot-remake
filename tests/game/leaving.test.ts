@@ -184,21 +184,20 @@ describe('a player whose connection dropped', () => {
     expect(n.alive.map((p) => p.id)).toEqual([0, 2]);
   });
 
-  it('is waited for when nobody else is left to play against, even after a kill', () => {
+  it('does not hold the round open for them once one player is left at the table', () => {
     const m = table(3);
-    m.players[2].alive = false;
-    m.world.ships[2].alive = false;
-    m.lastKill = { killer: 0, victim: 2, self: false, friendly: false, points: 0, combo: [], multiplier: 1, at: 0 } as unknown as ClassicMatch['lastKill'];
-    // Ben's connection drops for a moment: that is no round lost.
     m.setAway(1, true);
     expect(m.decided).toBe(false);
-    expect(m.waitingForAway).toBe(true);
-    afterVolley(m);
-    expect(m.phase).toBe('aiming');
-    m.setAway(1, false);
+    // Ann shoots Cid down: Ben is still away, so nobody at the table is left to play against.
+    m.players[2].alive = false;
+    m.world.ships[2].alive = false;
+    expect(m.decided).toBe(true);
     expect(m.waitingForAway).toBe(false);
     afterVolley(m);
-    expect(m.current).toBe(1);
+    expect(m.phase).toBe('roundOver');
+    expect(m.summary).toMatchObject({ survivor: 0 });
+    expect(m.players[0].score).toBe(SCORING.SURVIVOR);
+    expect(m.players[1].score).toBe(0);
   });
 
   it('ends the round without a winner when everybody present is shot down', () => {
@@ -249,16 +248,11 @@ describe('a player whose connection dropped', () => {
     expect(m.summary).toMatchObject({ survivor: null, team: null, bonus: 0 });
   });
 
-  it('is waited for when nobody is left to play against, before anybody was shot down', () => {
+  it('ends a duel at once when the other one drops out on the aim', () => {
     const duel = table(2);
     duel.setAway(1, true);
-    expect(duel.decided).toBe(false);
-    afterVolley(duel);
-    expect(duel.phase).toBe('aiming');
-    expect(duel.current).toBe(0);
-    duel.setAway(1, false);
-    afterVolley(duel);
-    expect(duel.current).toBe(1);
+    expect(duel.phase).toBe('roundOver');
+    expect(duel.summary).toMatchObject({ survivor: 0 });
   });
 
   it('is not waited for in a volley, and may still aim it once back', () => {
