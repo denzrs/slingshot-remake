@@ -58,17 +58,31 @@
   display: none;
 }
 
-.item:hover,
 .item:focus-visible,
 .item:focus {
   outline: none;
   background: rgb(91 125 179 / 0.16);
 }
 
-.item:focus::before,
-.item:hover::before {
+/* Hover only where there is something to hover with: on a touch screen the last place a finger went down stays "hovered", and after a
+   page changes under it the row that happens to be there looks picked (Back in a page, and the language row of the title is lit). */
+@media (hover: hover) {
+  .item:hover {
+    outline: none;
+    background: rgb(91 125 179 / 0.16);
+  }
+}
+
+.item:focus::before {
   opacity: 1;
   transform: translate(0, -50%);
+}
+
+@media (hover: hover) {
+  .item:hover::before {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
 }
 
 .item:focus-visible {
@@ -121,10 +135,16 @@
   transition: opacity 120ms, transform 160ms;
 }
 
-.item--card:hover .item__icon,
 .item--card:focus .item__icon {
   opacity: 1;
   transform: scale(1.06);
+}
+
+@media (hover: hover) {
+  .item--card:hover .item__icon {
+    opacity: 1;
+    transform: scale(1.06);
+  }
 }
 
 .item--card .item__title {
@@ -135,9 +155,14 @@
   text-transform: uppercase;
 }
 
-.items--row .item--card:hover,
 .items--row .item--card:focus {
   border-color: var(--p1);
+}
+
+@media (hover: hover) {
+  .items--row .item--card:hover {
+    border-color: var(--p1);
+  }
 }
 
 .item__label {

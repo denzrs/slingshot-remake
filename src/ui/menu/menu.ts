@@ -1,3 +1,4 @@
+import { rowToRemember } from './menu-focus';
 import type { Sound } from '../../platform/audio';
 import { buildControl, type Control } from './controls';
 
@@ -126,7 +127,7 @@ export interface Screen {
 
 interface Level {
   screen: ScreenFactory;
-  /** The row that had the focus when a screen was opened on top, so going back lands where you left. */
+  /** The row that had the focus when a screen was opened on top, so going back lands where you left; -1 when none is known (see `rowToRemember`). */
   focus: number;
 }
 
@@ -146,11 +147,20 @@ export class Menu {
   private focusables: HTMLElement[] = [];
   private controls: Control[] = [];
   private actionRefresh: (() => void)[] = [];
+  /** The last row a finger or the mouse went down on, on the screen on display (an index into `focusables`, or -1). */
+  private pressed = -1;
 
   constructor(
     private readonly root: HTMLElement,
     readonly sound: Sound,
-  ) {}
+  ) {
+    // A tapped button does not take the focus in Safari: this is how the screen opened on top of this one knows which row was used.
+    root.addEventListener('pointerdown', (e) => {
+      const target = e.target as Node | null;
+      const row = target ? this.focusables.findIndex((el) => el.contains(target)) : -1;
+      if (row >= 0) this.pressed = row;
+    }, true);
+  }
 
   get isOpen(): boolean {
     return this.stack.length > 0;
@@ -198,7 +208,7 @@ export class Menu {
   /** Build the current screen again (e.g. after a language switch or a new row), without the screen's entrance. The focus stays on its row, or goes to row `focus`. */
   rebuild(focus?: number): void {
     if (!this.isOpen) return;
-    this.render(focus ?? Math.max(0, this.focusedIndex()), true);
+    this.render(focus ?? rowToRemember(this.focusedIndex(), this.pressed), true);
   }
 
   back(): void {
@@ -289,7 +299,7 @@ export class Menu {
 
   private rememberFocus(): void {
     const level = this.stack[this.stack.length - 1];
-    if (level) level.focus = Math.max(0, this.focusedIndex());
+    if (level) level.focus = rowToRemember(this.focusedIndex(), this.pressed);
   }
 
   /** ←/→ on a button laid out in a row (the choices under a result, say) move to its neighbour. */
@@ -393,6 +403,7 @@ export class Menu {
     const list = el.querySelector<HTMLElement>('[data-items]') ?? el;
     this.current = screen;
     this.focusables = [];
+    this.pressed = -1;
     this.controls = [];
     this.actionRefresh = [];
     const env = { sound: this.sound, changed: () => this.refresh() };
@@ -581,6 +592,8 @@ export class Menu {
     this.root.replaceChildren(el);
     this.root.hidden = false;
     this.refresh();
-    this.focusables[focusIndex ?? (screen.focusItem !== undefined ? firstFocusable[screen.focusItem] : screen.focus) ?? 0]?.focus({ preventScroll: true });
+    // -1: no row is known to have been in use (coming back by touch): none is picked out.
+    const wanted = focusIndex ?? (screen.focusItem !== undefined ? firstFocusable[screen.focusItem] : screen.focus) ?? 0;
+    if (wanted >= 0) this.focusables[wanted]?.focus({ preventScroll: true });
   }
 }

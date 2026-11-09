@@ -239,16 +239,18 @@
 
 .item__selection[hidden] { display: none; }
 
-.launcher__modes .item:hover,
-.launcher__online .item:hover {
-  border-color: var(--bone-dim);
-  transform: translateY(-2px);
-}
+@media (hover: hover) {
+  .launcher__modes .item:hover,
+  .launcher__online .item:hover {
+    border-color: var(--bone-dim);
+    transform: translateY(-2px);
+  }
 
-.briefing__cards .item--card:hover {
-  z-index: 1;
-  border-color: var(--bone-dim);
-  transform: translateY(-2px);
+  .briefing__cards .item--card:hover {
+    z-index: 1;
+    border-color: var(--bone-dim);
+    transform: translateY(-2px);
+  }
 }
 
 .launcher .item:focus-visible,
