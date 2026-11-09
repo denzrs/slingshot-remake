@@ -4,7 +4,7 @@ import type { PowerUpKind } from '../../sim/powerups';
 import { createRng } from '../../sim/rng';
 import { rgba } from '../color';
 import { instabilityPulse } from './instability';
-import type { PlanetSprite } from '../planet-common';
+import { isLocked, LIGHT, type PlanetSprite } from '../planet-common';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../powerup-art';
 import { SHIP_HULL } from '../ship';
 import type { DefenseFrame } from '../defense';
@@ -112,12 +112,31 @@ export function drawHoloShip(ctx: CanvasRenderingContext2D, color: string, time:
   ctx.restore();
 }
 
-/** What hue a planet is projected in. */
+/** What hue a planet of each style is projected in. */
+const PLANET_HUES: Partial<Record<Planet['style'], string>> = {
+  ice: '#b8e4ff',
+  lava: '#ff6a4d',
+  ocean: '#5ab8ff',
+  desert: '#ffc878',
+  acid: '#c8f050',
+  carbon: '#b4b4cc',
+  crystal: '#d8a0ff',
+  living: '#60ffb0',
+  machine: '#a8c4dc',
+};
+const LAVA_HUE = '#ff6a4d';
+const ICE_HUE = '#b8e4ff';
+
 function planetColor(p: Planet): string {
-  if (p.style === 'gas') return HOLO_COLOR;
-  if (p.style === 'ice') return '#b8e4ff';
-  if (p.style === 'lava') return '#ff6a4d';
-  return '#ffb066';
+  return p.style === 'gas' ? HOLO_COLOR : PLANET_HUES[p.style] ?? '#ffb066';
+}
+
+/** The globe's lines: where its parallels cross the axis (sines of their latitudes) and how many meridians. A crystal is cut in few facets, a machine world plated fine. */
+function globeLines(p: Planet): { parallels: number[]; meridians: number } {
+  if (p.style === 'gas') return { parallels: [-0.78, -0.52, -0.26, 0, 0.26, 0.52, 0.78], meridians: 12 };
+  if (p.style === 'crystal') return { parallels: [-0.5, 0, 0.5], meridians: 6 };
+  if (p.style === 'machine') return { parallels: [-0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8], meridians: 24 };
+  return { parallels: [-0.7, -0.35, 0, 0.35, 0.7], meridians: p.style === 'ice' ? 8 : 12 };
 }
 
 /** How far above the planet's equator the projection looks, so the north pole tips towards us. */
@@ -136,10 +155,11 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
   const normalColor = planetColor(p);
   const phase = ((p.seed % 97) / 97) * TAU;
   // Turns per second, either way round, and the axis' lean (radians) from the vertical.
-  const spin = (0.035 + (((p.seed * 7) % 13) / 13) * 0.04) * (p.seed % 2 ? 1 : -1);
-  const tilt = (((p.seed * 3) % 11) / 11 - 0.5) * 0.9;
-  const parallels = p.style === 'gas' ? [-0.78, -0.52, -0.26, 0, 0.26, 0.52, 0.78] : [-0.7, -0.35, 0, 0.35, 0.7];
-  const meridians = p.style === 'ice' ? 8 : 12;
+  // A tidally locked world does not turn, and stands upright: its far side, away from the light, is projected as lava, the near as ice.
+  const locked = isLocked(p);
+  const spin = locked ? 0 : (0.035 + (((p.seed * 7) % 13) / 13) * 0.04) * (p.seed % 2 ? 1 : -1);
+  const tilt = locked ? 0 : (((p.seed * 3) % 11) / 11 - 0.5) * 0.9;
+  const { parallels, meridians } = globeLines(p);
   const cosE = Math.cos(GLOBE_ELEVATION);
   const sinE = Math.sin(GLOBE_ELEVATION);
   return {
@@ -159,11 +179,23 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = rgba(color, 0.07);
       ctx.fill();
+      if (locked && !signal) {
+        // The molten side glows through the plate where it shows, round the limb away from the light.
+        const lx = -LIGHT[0] * R;
+        const ly = -LIGHT[1] * R;
+        const melt = ctx.createRadialGradient(lx, ly, 0, lx, ly, R * 1.1);
+        melt.addColorStop(0, rgba(LAVA_HUE, 0.32));
+        melt.addColorStop(1, rgba(LAVA_HUE, 0));
+        ctx.fillStyle = melt;
+        ctx.fill();
+      }
       ctx.rotate(tilt);
 
       // A point of the sphere (X right, Y up, Z towards us) on the screen, and how far in front it is.
       const near = new Path2D();
       const far = new Path2D();
+      const nearHot = new Path2D();
+      const farHot = new Path2D();
       let px = 0;
       let py = 0;
       let pz = 0;
@@ -172,7 +204,9 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
         const sy = -(Y * cosE - Z * sinE) * R;
         const sz = Z * cosE + Y * sinE;
         if (!first) {
-          const path = sz + pz > 0 ? near : far;
+          // Which side of a locked world the segment lies on: away from the light (the screen's y runs down, as LIGHT's does).
+          const hot = locked && -(((sx + px) / 2 / R) * LIGHT[0] + ((sy + py) / 2 / R) * LIGHT[1] + ((sz + pz) / 2) * LIGHT[2]) > 0;
+          const path = sz + pz > 0 ? (hot ? nearHot : near) : hot ? farHot : far;
           path.moveTo(px, py);
           path.lineTo(sx, sy);
         }
@@ -194,13 +228,19 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
           line(Math.cos(lat) * Math.sin(a), Math.sin(lat), Math.cos(lat) * Math.cos(a), i === 0);
         }
       }
-      ctx.strokeStyle = rgba(color, 0.13);
+      const cold = locked && !signal ? ICE_HUE : color;
+      const molten = locked && !signal ? LAVA_HUE : color;
       ctx.lineWidth = 0.5;
+      ctx.strokeStyle = rgba(cold, 0.13);
       ctx.stroke(far);
-      ctx.strokeStyle = rgba(color, warning ? .48 + warning.pulse * .42 : .55);
+      ctx.strokeStyle = rgba(molten, 0.13);
+      ctx.stroke(farHot);
       ctx.lineWidth = (p.style === 'gas' ? 1 : .7) + (warning ? warning.pulse * .45 : 0);
-      ctx.shadowColor = color; ctx.shadowBlur = warning ? 2 + warning.pulse * 7 : 0;
-      ctx.stroke(near);
+      for (const [path, hue] of [[near, cold], [nearHot, molten]] as const) {
+        ctx.strokeStyle = rgba(hue, warning ? .48 + warning.pulse * .42 : .55);
+        ctx.shadowColor = hue; ctx.shadowBlur = warning ? 2 + warning.pulse * 7 : 0;
+        ctx.stroke(path);
+      }
 
       // The axis, sticking out past both poles, and the north pole marked.
       ctx.strokeStyle = rgba(color, 0.5);

@@ -8,15 +8,29 @@ export const PLANET_TINTS: Record<PlanetStyle, readonly string[]> = {
   gas: ['#d8b98a', '#9c8bb5', '#c9a0a0', '#b7c28f'],
   ice: ['#9fc3d6', '#bcd3dc', '#8fb3b0'],
   lava: ['#d9572b', '#c4432c', '#e2763a'],
+  ocean: ['#3f7fc0', '#2f6aa8', '#4a94b8'],
+  desert: ['#d9a560', '#c98a4a', '#e0b878'],
+  acid: ['#b8c23a', '#9fb03a', '#c8b040'],
+  carbon: ['#4a4650', '#3c3a42', '#55505a'],
+  crystal: ['#b48ad8', '#8ac0e0', '#d890c0'],
+  living: ['#5aa860', '#4a9a78', '#78b048'],
+  machine: ['#8a929c', '#9a8a78', '#7a8a98'],
   star: ['#f2c46d'],
 };
 
+/** The styles a big planet may have, and a small or middle one: a style listed twice is twice as likely. */
+const BIG_STYLES: readonly PlanetStyle[] = ['gas', 'gas', 'gas', 'gas', 'rocky', 'ice', 'ocean', 'acid'];
+const SMALL_STYLES: readonly PlanetStyle[] = [
+  'rocky', 'rocky', 'rocky', 'rocky', 'ice', 'ice', 'ice', 'lava', 'lava',
+  'ocean', 'ocean', 'desert', 'desert', 'acid', 'carbon', 'crystal', 'living', 'machine',
+];
+
 /**
- * A planet's style by its size: the big ones are mostly gas giants, the small ones rock and ice, now and then molten. One
- * draw of the rng either way, so a seed's layout does not move whatever the lists hold.
+ * A planet's style by its size: the big ones are mostly gas giants, the small ones rock and ice, now and then molten, wet,
+ * dry or stranger. One draw of the rng either way, so a seed's layout does not move whatever the lists hold.
  */
 function styleFor(rng: Rng, radius: number, big: number): PlanetStyle {
-  return radius > big ? pick(rng, ['gas', 'gas', 'rocky', 'ice']) : pick(rng, ['rocky', 'rocky', 'rocky', 'ice', 'ice', 'lava']);
+  return pick(rng, radius > big ? BIG_STYLES : SMALL_STYLES);
 }
 
 const SHIP_CLEARANCE = 110;

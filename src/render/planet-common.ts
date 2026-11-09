@@ -3,15 +3,30 @@ import { range } from '../sim/rng';
 
 export type Vec3 = [number, number, number];
 
+/** A mark a shot left on a planet: where it struck (the field's angle from the planet's middle) and how long ago (s). */
+export interface Scar {
+  angle: number;
+  age: number;
+}
+
 /** A planet ready to draw. `size` is its width in device pixels; `draw` puts it centred on a point, `ps` device pixels per field unit. */
 export interface PlanetSprite {
   size: number;
-  /** The live planet carries current damage even when this sprite was cached before the hit. */
-  draw(ctx: CanvasRenderingContext2D, x: number, y: number, ps: number, time: number, planet?: Planet): void;
+  /** The live planet carries current damage even when this sprite was cached before the hit; `scars` are where shots struck it, for a look that shows them. */
+  draw(ctx: CanvasRenderingContext2D, x: number, y: number, ps: number, time: number, planet?: Planet, scars?: readonly Scar[]): void;
 }
 
 /** Light comes from the upper left, slightly in front. */
 export const LIGHT: Vec3 = normalize([-0.62, -0.5, 0.6]);
+
+/**
+ * A lava or ice world turned for good with one face to its sun (tidally locked): ice on that face, molten rock on the one
+ * away from it, and it does not turn. One in four of them, by the seed, so every look and every screen agree.
+ */
+export function isLocked(p: Planet): boolean {
+  if (p.style !== 'lava' && p.style !== 'ice') return false;
+  return ((Math.imul(p.seed ^ 0x27d4eb2f, 0x165667b1) >>> 8) & 255) < 64;
+}
 
 export interface Crater {
   c: Vec3;

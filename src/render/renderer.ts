@@ -430,6 +430,7 @@ export class Renderer {
         this.sprites.set(p.seed, sprite);
       }
       const fall = falling.get(`planet${p.seed}`);
+      const scars = effects.scarsOn(p.seed);
       ctx.globalAlpha = alpha;
       if (fall) {
         this.painter.falling(ctx, fall, p.radius * 2.6, ps, (c) => {
@@ -444,17 +445,17 @@ export class Renderer {
         ctx.translate(p.x, p.y);
         ctx.rotate(Math.atan2(sun.y - p.y, sun.x - p.x) - SPRITE_LIGHT_ANGLE);
         if (this.keepCelestialArtworkUpright) uprightFrame(ctx);
-        sprite.draw(ctx, 0, 0, ps, this.time, p);
+        sprite.draw(ctx, 0, 0, ps, this.time, p, scars);
         ctx.restore();
       } else if (isTurned()) {
         // The light stays where it was painted: upright on the screen.
         ctx.save();
         ctx.translate(p.x, p.y);
         uprightFrame(ctx);
-        sprite.draw(ctx, 0, 0, ps, this.time, p);
+        sprite.draw(ctx, 0, 0, ps, this.time, p, scars);
         ctx.restore();
       } else {
-        sprite.draw(ctx, p.x, p.y, ps, this.time, p);
+        sprite.draw(ctx, p.x, p.y, ps, this.time, p, scars);
       }
       if (!fall) this.painter.planetInstability(ctx, p, this.time);
     }

@@ -27,4 +27,17 @@ export function aiming(mode: 'classic' | 'horizon' | 'solar', seed: number, extr
 }
 
 /** What the galleries call each style of planet. */
-export const STYLE_NAMES: Record<PlanetStyle, string> = { rocky: 'Fels', gas: 'Gas', ice: 'Eis', lava: 'Lava', star: 'Stern' };
+export const STYLE_NAMES: Record<PlanetStyle, string> = {
+  rocky: 'Fels',
+  gas: 'Gas',
+  ice: 'Eis',
+  lava: 'Lava',
+  ocean: 'Ozean',
+  desert: 'Wüste',
+  acid: 'Säure',
+  carbon: 'Kohlenstoff',
+  crystal: 'Kristall',
+  living: 'Lebend',
+  machine: 'Maschine',
+  star: 'Stern',
+};

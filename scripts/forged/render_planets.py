@@ -293,6 +293,175 @@ def ash(k):
     return k.mix(base, glow, heat)
 
 
+# The worlds after lava. Their colours are named as they should end up on the map (`hot`), since the game reads some of
+# them as light or water: what glows is red well above blue (lava, a machine's lamps) or blue well above red (a living
+# world's veins), and what shines like a sea is blue above red (ocean) or green above red (acid lakes).
+
+def grid(k, across, down):
+    """0 on the seams of a grid of `across` × `down` panels in the map's own longitude and latitude, 1 inside a panel; and a value per panel."""
+    u = k.m('FRACT', k.m('MULTIPLY', k.sep.outputs['X'], across))
+    v = k.m('FRACT', k.m('MULTIPLY', k.sep.outputs['Y'], down))
+    edge = lambda f: k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.m('MINIMUM', f, k.m('SUBTRACT', 1.0, f)), 0.04), 30.0))
+    cell = k.nt.nodes.new('ShaderNodeCombineXYZ')
+    k.nt.links.new(k.m('FLOOR', k.m('MULTIPLY', k.sep.outputs['X'], across)), cell.inputs[0])
+    k.nt.links.new(k.m('FLOOR', k.m('MULTIPLY', k.sep.outputs['Y'], down)), cell.inputs[1])
+    white = k.nt.nodes.new('ShaderNodeTexWhiteNoise')
+    white.noise_dimensions = '3D'
+    k.nt.links.new(cell.outputs[0], white.inputs['Vector'])
+    return k.m('MULTIPLY', edge(u), edge(v)), white.outputs['Value']
+
+
+def facets(k, scale):
+    """Flat cells of a crystal: a value per cell (Voronoi's colour) and 1 on the cells' edges."""
+    v = k.nt.nodes.new('ShaderNodeTexVoronoi')
+    v.inputs['Scale'].default_value = scale
+    k.nt.links.new(k.vec, v.inputs['Vector'])
+    sep = k.nt.nodes.new('ShaderNodeSeparateColor')
+    k.nt.links.new(v.outputs['Color'], sep.inputs['Color'])
+    edge = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(scale, 'DISTANCE_TO_EDGE'), 28.0)))
+    return sep.outputs[0], edge
+
+
+def deep(k):
+    height = k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.2, 9, 0.6), 0.5), 2.2, 0.5)
+    sea = k.ramp(k.clamp01(height), hot([(0.0, '#04162e'), (0.45, '#0a2f5e'), (0.62, '#1a5a96'), (0.7, '#3a90c0'), (0.72, '#d8cc90'), (0.76, '#3c7a38'), (1.0, '#2a5a28')]))
+    return k.mix(sea, shown('#eef6ff'), k.cap(1.12, 1.35))
+
+
+def reef(k):
+    shelf = k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(3.0, 8, 0.6), 0.5), 2.6, 0.5))
+    sea = k.ramp(shelf, hot([(0.0, '#06264a'), (0.4, '#0c4a80'), (0.6, '#1890b0'), (0.72, '#3cc8c8'), (0.8, '#8ae8d8'), (0.83, '#f0e2b0'), (0.88, '#5aa048'), (1.0, '#3a7a34')]))
+    atoll = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(9.0, 'DISTANCE_TO_EDGE'), 22.0)))
+    return k.mix(sea, shown('#7ae0d0'), k.m('MULTIPLY', atoll, k.m('MULTIPLY', k.clamp01(k.m('SUBTRACT', shelf, 0.45)), 1.4)))
+
+
+def dunes(k):
+    field = k.stretched(1.6, 1.0, 2.2, 6)
+    ridge = k.m('MULTIPLY_ADD', k.m('SINE', k.m('MULTIPLY_ADD', field, 22.0, k.m('MULTIPLY', k.sep.outputs['X'], 60.0))), 0.5, 0.5)
+    tone = k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.0, 8), 0.5), 1.2, k.m('MULTIPLY', ridge, 0.5))
+    sand = k.ramp(k.clamp01(k.m('ADD', tone, 0.2)), hot([(0.0, '#6a3e1c'), (0.35, '#b47234'), (0.65, '#dca05a'), (1.0, '#f4d290')]))
+    rock = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.3, 6), 0.62), 10.0))
+    return k.mix(sand, shown('#4a2e1e'), rock)
+
+
+def salt(k):
+    flats = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.6, 7), 0.52), 7.0))
+    cracks = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(14.0, 'DISTANCE_TO_EDGE'), 30.0)))
+    pan = k.mix(shown('#f2ece0'), shown('#c8b8a0'), k.m('MULTIPLY', cracks, 0.7))
+    field = k.stretched(2.0, 1.0, 2.6, 6)
+    ridge = k.m('MULTIPLY_ADD', k.m('SINE', k.m('MULTIPLY', field, 40.0)), 0.5, 0.5)
+    sand = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', ridge, 0.6, k.m('MULTIPLY', k.noise(3.0, 6), 0.4))), hot([(0.0, '#8a5228'), (0.5, '#c88a4c'), (1.0, '#ecc488')]))
+    canyon = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SUBTRACT', k.noise(1.2, 5), 0.5)), 40.0)))
+    return k.mix(k.mix(sand, pan, flats), shown('#3a2016'), k.m('MULTIPLY', canyon, 0.85))
+
+
+def lakes(k):
+    ground = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.6, 9), 0.5), 2.2, 0.5)), hot([(0.0, '#2e2a14'), (0.5, '#6a5a24'), (1.0, '#a08a3a')]))
+    depth = k.m('SUBTRACT', k.noise(1.8, 6, 0.55), 0.55)
+    lake = k.clamp01(k.m('MULTIPLY', depth, 14.0))
+    rim = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', depth), 40.0)))
+    acid = k.ramp(k.clamp01(k.m('MULTIPLY', depth, 6.0)), hot([(0.0, '#a8d830'), (0.6, '#7ac028'), (1.0, '#4a9a24')]))
+    return k.mix(k.mix(ground, shown('#1a1608'), k.m('MULTIPLY', rim, 0.8)), acid, lake)
+
+
+def sulfur(k):
+    base = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.4, 9), 0.5), 2.4, 0.5)), hot([(0.0, '#8a6a18'), (0.45, '#d8b830'), (0.75, '#f0e070'), (1.0, '#fff4b0')]))
+    streak = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.stretched(2.2, 1.0, 3.0, 7), 0.55), 6.0))
+    pools = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(6.0), 3.2)), 3.0))
+    return k.mix(k.mix(base, shown('#a04a18'), k.m('MULTIPLY', streak, 0.8)), shown('#5ab830'), k.m('MULTIPLY', pools, 0.9))
+
+
+def graphite(k):
+    layers = k.band(2.4, 2.0, 4.0, 8, 0.6)
+    base = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(3.4, 10), 0.5), 1.6, k.m('MULTIPLY', layers, 0.4))), hot([(0.0, '#08080a'), (0.5, '#1a1a1e'), (1.0, '#3a3a42')]))
+    seams = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(4.0, 'DISTANCE_TO_EDGE'), 20.0)))
+    return k.mix(base, shown('#56545e'), k.m('MULTIPLY', seams, 0.5))
+
+
+def tar(k):
+    base = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.0, 9), 0.5), 2.0, 0.5)), hot([(0.0, '#050404'), (0.55, '#140e0a'), (1.0, '#2e2218')]))
+    vein = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 3.0, 0.5), 24.0)))
+    return k.mix(base, shown('#6a6258'), k.m('MULTIPLY', vein, 0.6))
+
+
+def amethyst(k):
+    cell, edge = facets(k, 6.0)
+    tone = k.ramp(cell, hot([(0.0, '#2a1048'), (0.4, '#5a2a8a'), (0.75, '#9a60d0'), (1.0, '#d8b0f4')]))
+    return k.mix(tone, shown('#f4e8ff'), k.m('MULTIPLY', edge, 0.75))
+
+
+def quartz(k):
+    cell, edge = facets(k, 8.0)
+    tone = k.ramp(cell, hot([(0.0, '#4a7a90'), (0.4, '#8ac0d4'), (0.75, '#cae8f0'), (1.0, '#f4fcff')]))
+    return k.mix(tone, shown('#ffffff'), k.m('MULTIPLY', edge, 0.8))
+
+
+def moss(k):
+    height = k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(1.8, 9, 0.6), 0.5), 2.0, 0.5))
+    land = k.ramp(height, hot([(0.0, '#160c26'), (0.42, '#2a1a40'), (0.46, '#1e4a2a'), (0.7, '#3a8a3a'), (1.0, '#8ac050')]))
+    vein = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 4.0, 0.5), 16.0)))
+    onland = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', height, 0.45), 20.0))
+    return k.mix(land, shown('#28d8e8'), k.m('MULTIPLY', vein, onland))
+
+
+def coral(k):
+    height = k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.6, 9, 0.62), 0.5), 2.4, 0.5))
+    land = k.ramp(height, hot([(0.0, '#1a0c20'), (0.45, '#2e1430'), (0.5, '#a03a5a'), (0.7, '#e0705a'), (1.0, '#f8b890')]))
+    spots = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(16.0), 4.0)), 2.0))
+    onland = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', height, 0.5), 12.0))
+    return k.mix(land, shown('#30c8f0'), k.m('MULTIPLY', spots, onland))
+
+
+def panels(k):
+    inside, cell = grid(k, 48.0, 24.0)
+    plate = k.ramp(k.m('MULTIPLY_ADD', cell, 0.6, k.m('MULTIPLY', k.noise(4.0, 4), 0.4)), hot([(0.0, '#2a2e34'), (0.5, '#4a5058'), (1.0, '#7a808a')]))
+    face = k.mix(shown('#0c0e12'), plate, inside)
+    # Lamps along some seams, and whole districts of them: amber, read as light at night.
+    district = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(2.2, 4), 0.55), 8.0))
+    lamps = k.m('MULTIPLY', k.m('SUBTRACT', 1.0, inside), k.m('MAXIMUM', district, k.m('GREATER_THAN', cell, 0.93)))
+    trench = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SUBTRACT', k.sep.outputs['Y'], 0.5)), 60.0)))
+    return k.mix(k.mix(face, shown('#ffa83a'), k.clamp01(lamps)), shown('#ffc060'), k.m('MULTIPLY', trench, 0.9))
+
+
+def hive(k):
+    cell, edge = facets(k, 11.0)
+    plate = k.ramp(cell, hot([(0.0, '#3a3430'), (0.5, '#6a625a'), (1.0, '#9a9084')]))
+    lit = k.m('MULTIPLY', edge, k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.8, 4), 0.5), 8.0)))
+    return k.mix(k.mix(plate, shown('#141210'), k.m('MULTIPLY', edge, 0.8)), shown('#ff9a40'), lit)
+
+
+def cryo(k):
+    base = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(3.0, 9), 0.5), 1.8, 0.5)), hot([(0.0, '#b8d4e4'), (0.6, '#e4f0f8'), (1.0, '#ffffff')]))
+    # Tiger stripes: long fissures across the south pole, where the geysers stand.
+    south = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.m('MULTIPLY', k.lat, -1.0), 0.75), 3.0))
+    stripes = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SINE', k.m('MULTIPLY_ADD', k.noise(2.0, 4), 2.0, k.m('MULTIPLY', k.sep.outputs['X'], 25.0)))), 6.0)))
+    frost = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(5.0, 'DISTANCE_TO_EDGE'), 18.0)))
+    face = k.mix(base, shown('#7aa8c4'), k.m('MULTIPLY', frost, 0.4))
+    return k.mix(face, shown('#2a6070'), k.m('MULTIPLY', stripes, south))
+
+
+def locked(edge):
+    """A world turned for good one face to its sun: ice on that face, molten rock on the one away from it (map middle,
+    where the game turns it), cracked dark rock between. `edge` (−1 → 1) is how far the melt reaches round."""
+    def recipe(k):
+        sx = k.nt.nodes.new('ShaderNodeSeparateXYZ')
+        k.nt.links.new(k.vec, sx.inputs['Vector'])
+        reach = k.m('ADD', sx.outputs['X'], k.m('MULTIPLY', k.m('SUBTRACT', k.noise(2.2, 6), 0.5), 0.5))
+        melt = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', reach, edge), 6.0))
+        frozen = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', edge - 0.3, reach), 5.0))
+        sea = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(3.0, 8, 0.6), 0.5), 2.0, 0.5)), hot([(0.0, '#7a1205'), (0.4, '#d23a0c'), (0.75, '#ff8a20'), (1.0, '#ffd27a')]))
+        plates = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(4.0, 6), 0.52), 10.0))
+        lava = k.mix(sea, shown('#1e1612'), plates)
+        crust = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(3.4, 9), 0.5), 2.0, 0.5)), hot([(0.0, '#14100e'), (0.5, '#2e2622'), (1.0, '#504640')]))
+        seams = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 4.0, 0.3), 14.0)))
+        crust = k.mix(crust, shown('#d8400c'), k.m('MULTIPLY', seams, k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', reach, edge - 0.25), 4.0))))
+        ice = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.6, 9), 0.5), 2.0, 0.5)), hot([(0.0, '#7aa8cc'), (0.5, '#c4e0f4'), (1.0, '#f4fbff')]))
+        crevasse = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(3.0, 'DISTANCE_TO_EDGE'), 18.0)))
+        ice = k.mix(ice, shown('#3a70a0'), k.m('MULTIPLY', crevasse, 0.5))
+        return k.mix(k.mix(crust, lava, melt), ice, frozen)
+    return recipe
+
+
 RECIPES = {
     'rock-desert': desert,
     'rock-ocean': ocean,
@@ -310,6 +479,23 @@ RECIPES = {
     'lava-rivers': rivers,
     'lava-magma': magma,
     'lava-ash': ash,
+    'lava-locked': locked(-0.35),
+    'ice-locked': locked(0.15),
+    'ice-cryo': cryo,
+    'ocean-deep': deep,
+    'ocean-reef': reef,
+    'desert-dunes': dunes,
+    'desert-salt': salt,
+    'acid-lakes': lakes,
+    'acid-sulfur': sulfur,
+    'carbon-graphite': graphite,
+    'carbon-tar': tar,
+    'crystal-amethyst': amethyst,
+    'crystal-quartz': quartz,
+    'living-moss': moss,
+    'living-coral': coral,
+    'machine-panels': panels,
+    'machine-hive': hive,
 }
 
 
