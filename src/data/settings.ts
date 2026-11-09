@@ -19,6 +19,8 @@ export interface Settings extends RoomRules {
   look: Look;
   contours: boolean;
   particles: boolean;
+  /** Forged's shaded planets, sun, gas clouds and storm clouds are drawn smaller while frames run slow; off keeps them at full detail. */
+  stepDownDetail: boolean;
   /** The card with the angle and power steps aside when the aim line would run over it. */
   aimCardDodge: boolean;
   /** How far the sparks of explosions and wreckage coast before they come to rest. */
@@ -59,6 +61,7 @@ export const DEFAULT_SETTINGS: Settings = {
   look: 'classic',
   contours: true,
   particles: true,
+  stepDownDetail: true,
   aimCardDodge: true,
   debris: 'medium',
   menuBackground: true,
@@ -90,7 +93,7 @@ export function loadSettings(): Settings {
       if (Array.isArray(parsed.seats)) parsed.seats.slice(0, MAX_PLAYERS).forEach((seat, i) => (s.seats[i] = seat));
       if (Array.isArray(parsed.seatTeams)) parsed.seatTeams.slice(0, MAX_PLAYERS).forEach((team, i) => (s.seatTeams[i] = team));
       if (![0, 2, 3].includes(s.teamMode)) s.teamMode = 0;
-      for (const key of ['contours', 'particles', 'aimCardDodge', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'colorblind', 'gamepad', 'menuSounds', 'gameSounds'] as const) {
+      for (const key of ['contours', 'particles', 'stepDownDetail', 'aimCardDodge', 'menuBackground', 'statsTicker', 'lessMenuMotion', 'colorblind', 'gamepad', 'menuSounds', 'gameSounds'] as const) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULT_SETTINGS[key];
       }
       s.look = lookFrom(s.look) ?? DEFAULT_SETTINGS.look;

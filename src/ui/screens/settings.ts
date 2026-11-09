@@ -2,6 +2,7 @@ import { DEBRIS, type Debris } from '../../sim/config';
 import { LANGS, t, type Lang } from '../../platform/i18n';
 import { isLook, LOOKS, lookLabelKey } from '../../data/look';
 import type { Settings } from '../../data/settings';
+import { painterFor } from '../../render/looks';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
 import { mobileSheet, type SheetSelection } from '../menu/mobile-sheet';
@@ -28,10 +29,11 @@ export function languageItem(app: App): MenuItem {
 type BooleanSetting = { [P in keyof Settings]: Settings[P] extends boolean ? P : never }[keyof Settings];
 
 /** A switch for one on/off setting. */
-function settingToggle(app: App, label: string, key: BooleanSetting): MenuItem {
+function settingToggle(app: App, label: string, key: BooleanSetting, show: { hidden?: () => boolean; reserve?: () => boolean } = {}): MenuItem {
   return {
     kind: 'toggle',
     label,
+    ...show,
     get: () => app.settings[key],
     set: (v) => {
       app.settings[key] = v;
@@ -81,6 +83,8 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
         },
       }, 'display'),
       inGroup(settingToggle(app, t('settings.contours'), 'contours'), 'display'),
+      // Only for a look that steps down; its space stays, so the rows below don't jump as the look changes.
+      inGroup(settingToggle(app, t('settings.stepDownDetail'), 'stepDownDetail', { hidden: () => !painterFor(app.settings.look).stepsDownDetail, reserve: () => true }), 'display'),
       inGroup(settingToggle(app, t('settings.particles'), 'particles'), 'display'),
       inGroup(settingToggle(app, t('settings.aimCardDodge'), 'aimCardDodge'), 'display'),
       inGroup({

@@ -7,13 +7,14 @@ import { getLang, setLang, t } from '../../src/platform/i18n';
 import { painterFor } from '../../src/render/looks';
 import { classic } from '../../src/render/looks/classic';
 
-const render = fileURLToPath(new URL('../../src/render', import.meta.url));
+const src = fileURLToPath(new URL('../../src', import.meta.url));
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
-    if (statSync(path).isDirectory()) return name === 'looks' ? [] : sources(path);
-    return name.endsWith('.ts') ? [path] : [];
+    if (statSync(path).isDirectory()) return relative(src, path) === join('render', 'looks') ? [] : sources(path);
+    // The data layer's list of looks is the one other place that names them.
+    return name.endsWith('.ts') && relative(src, path) !== join('data', 'look.ts') ? [path] : [];
   });
 }
 
@@ -27,13 +28,13 @@ describe('looks', () => {
     for (const look of LOOKS) expect(Object.keys(painterFor(look)).sort()).toEqual(elements);
   });
 
-  it('keeps the look out of the renderer: only `render/looks/` knows which look is which', () => {
+  it('keeps the look out of the renderer and the screens: only `render/looks/` knows which look is which', () => {
     // A branch on the look's name outside the look's own file is how a feature spreads over dozens of classes.
     const names = LOOKS.filter((look) => look !== 'classic').map((look) => `'${look}'`);
     const bad: string[] = [];
-    for (const file of sources(render)) {
+    for (const file of sources(src)) {
       const text = readFileSync(file, 'utf8');
-      for (const name of names) if (text.includes(name)) bad.push(`${relative(render, file)} mentions ${name}`);
+      for (const name of names) if (text.includes(name)) bad.push(`${relative(src, file)} mentions ${name}`);
     }
     expect(bad).toEqual([]);
   });

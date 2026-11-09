@@ -206,11 +206,27 @@ interface Pace {
 export const newPace = (): Pace => ({ lean: 0, time: 0, slow: 0, fast: 0, saved: [], check: null, stuck: false });
 
 const spritePace = newPace();
-/** Pinned to full detail, whatever the machine: the gallery's pixel snapshots must not depend on how fast it drew. */
-let steady = false;
-export function holdShaderDetail(on: boolean): void {
-  steady = on;
+/**
+ * Let go after a stretch at full detail, it starts again from there, but keeps what it learned: which steps saved anything,
+ * and that stepping down did not help, so a browser that held its full detail keeps it.
+ */
+export function resumePace(pace: Pace): void {
+  Object.assign(pace, { lean: 0, slow: 0, fast: 0, check: null });
 }
+
+/**
+ * Why the sprites are pinned to full detail, whatever the machine: the gallery's pixel snapshots must not depend on how fast
+ * it drew, and the player may turn the step-down off.
+ */
+const pins = new Set<'gallery' | 'player'>();
+function pin(reason: 'gallery' | 'player', on: boolean): void {
+  const pinned = pins.size > 0;
+  if (on) pins.add(reason);
+  else pins.delete(reason);
+  if (pinned && !pins.size) resumePace(spritePace);
+}
+export const holdShaderDetail = (on: boolean): void => pin('gallery', on);
+export const allowShaderStepDown = (on: boolean): void => pin('player', !on);
 
 /**
  * Frames further apart than this (s), on average, for this many frames in a row, it steps down. A frame only just over a
@@ -262,8 +278,9 @@ export function forgedPost(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   drawVignette(ctx, f);
   ctx.restore();
   closeShaderFrame();
-  if (!steady && gap) keepPace(spritePace, gap);
-  setShaderDetail(steady ? 1 : DETAIL[spritePace.lean]);
+  const full = pins.size > 0;
+  if (!full && gap) keepPace(spritePace, gap);
+  setShaderDetail(full ? 1 : DETAIL[spritePace.lean]);
 }
 
 /** The vignette: the plate's corners fall into shadow. */
