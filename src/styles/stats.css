@@ -15,13 +15,89 @@
   margin-top: 10px;
 }
 
+/* The controls: bare bars, not boxed rows. The menu's row styling (padding, hover wash, pointer) is for a list of choices. */
+.st__tabs .item--segmented,
+.st__toolbar .item--segmented {
+  padding: 0;
+  min-height: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.st__tabs .item--segmented::before,
+.st__toolbar .item--segmented::before {
+  display: none;
+}
+
+/* The two views: one strip under the title, its label left for screen readers alone. */
+.st__tabs {
+  width: min(360px, 100%);
+  margin: 18px auto 0;
+}
+
+.st__tabs .item__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.st__tabs .segmented__option {
+  min-height: 36px;
+  font-size: 14px;
+}
+
+/* Where the games come from and what the squares count: side by side, each named to its left. */
+.st__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px 28px;
+  margin-top: 22px;
+  padding: 12px 0;
+  border-top: 1px solid rgb(91 125 179 / 0.22);
+  border-bottom: 1px solid rgb(91 125 179 / 0.22);
+}
+
+.st__toolbar[hidden] {
+  display: none;
+}
+
+.st__toolbar .item--segmented {
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.st__toolbar .item__label {
+  color: var(--bone-dim);
+  font: 700 11px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.st__toolbar .segmented__option {
+  min-height: 28px;
+  padding-inline: 14px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
 .panel--stats .lb__status {
   margin: 12px 0 0;
 }
 
+/* Empty, it takes no room, but stays in the page: a status region added back later is often not read out. */
+.panel--stats .lb__status:empty {
+  margin: 0;
+}
+
 .panel--stats [data-items] {
   position: sticky;
-  bottom: -1px;
+  /* The screen pads 24px below the panel; stuck at its content edge the bar would leave that strip showing the cards behind it. */
+  bottom: -24px;
   padding: 12px 0;
   background: var(--plate);
 }
@@ -31,31 +107,44 @@
   display: none;
 }
 
+/* Cards: the betting figures and every fact share them, a large number over the words that say what it is. */
 .st__betting {
-  margin-top: 20px;
+  margin-top: 26px;
+  text-align: left;
 }
 
-.st__figures {
+.st__figures,
+.st__facts {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 12px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.st__figure {
+.st__figure,
+.st__fact {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
+  padding: 14px 16px 15px;
+  border: 1px solid rgb(91 125 179 / 0.22);
+  border-top: 2px solid rgb(255 210 122 / 0.55);
+  border-radius: 3px;
+  background: rgb(19 39 70 / 0.35);
 }
 
-.st__figure strong {
-  font-family: var(--font-display);
-  font-size: 26px;
-  color: var(--bone);
+.st__figure strong,
+.st__factLead {
+  font: 400 30px/1 var(--font-display);
+  color: var(--sodium);
+  font-variant-numeric: tabular-nums;
 }
 
 .st__figure span {
-  font-size: 12px;
-  line-height: 1.3;
+  font-size: 12.5px;
+  line-height: 1.4;
   color: var(--bone-dim);
 }
 
@@ -66,7 +155,7 @@
 .hm {
   display: grid;
   gap: 8px;
-  margin: 16px 0 0;
+  margin: 14px 0 0;
   text-align: left;
 }
 
@@ -202,7 +291,7 @@
 }
 
 .st__title {
-  margin: 0 0 4px;
+  margin: 0 0 10px;
   font: 800 16px/1 var(--font-display);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -274,6 +363,16 @@
     display: none;
   }
 
+  .st__toolbar .item--segmented {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    gap: 6px;
+  }
+
+  .st__figures {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
   .st__row {
     grid-template-columns: 1fr 1fr;
   }
@@ -284,10 +383,9 @@
   }
 }
 
-/* Every fact, one to a line: a list to read through, so it reads left to right and no wider than a comfortable line. */
+/* Every fact as a card, in the order the relay groups them. */
 .st__factsView {
-  max-width: 760px;
-  margin: 18px auto 0;
+  margin: 22px 0 0;
   text-align: left;
 }
 
@@ -296,18 +394,16 @@
 }
 
 .st__facts {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
 }
 
-.st__fact {
-  padding: 8px 12px;
-  border: 1px solid rgb(91 125 179 / 0.22);
-  border-radius: 3px;
-  background: rgb(19 39 70 / 0.35);
-  font-size: 14px;
+.st__factText {
+  margin: 0;
+  color: var(--bone-dim);
+  font-size: 13.5px;
   line-height: 1.45;
+}
+
+.st__factText .stats-ticker__number {
+  color: var(--bone);
 }

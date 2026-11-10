@@ -121,19 +121,26 @@ function gameRow(game: StatsGame, watch: (game: StatsGame, button: HTMLButtonEle
 const TABS = ['overview', 'facts'] as const;
 type Tab = (typeof TABS)[number];
 
-/** A fact as a line of the list, its numbers set apart as in the ticker. */
-const factItem = (parts: FactPart[]): HTMLElement => h('li.st__fact', null, ...parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text)));
+/**
+ * A fact as a card: its first figure large on top (a name, such as the power-up most placed, is no headline: its count is),
+ * and the sentence below with its numbers set apart as in the ticker.
+ */
+function factItem(parts: FactPart[]): HTMLElement {
+  const lead = parts.find((part) => part.number && !part.name);
+  const text = h('p.st__factText', null, ...parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text)));
+  return lead ? h('li.st__fact', null, h('strong.st__factLead', { 'aria-hidden': 'true' }, lead.text), text) : h('li.st__fact', null, text);
+}
 
 const rate = (part: number, of: number): string => (of > 0 ? `${fmt((100 * part) / of, 0)}%` : '–');
 
 /** The tips and bets as a title and a row of figures. */
 function bettingView(b: StatsBetting): HTMLElement[] {
-  const figure = (value: string, label: string): HTMLElement => h('div.st__figure', null, h('strong', null, value), h('span', null, label));
+  const figure = (value: string, label: string): HTMLElement => h('li.st__figure', null, h('strong', null, value), h('span', null, label));
   const net = b.paid - b.staked;
   return [
     h('h3.st__title', null, t('stats.betting')),
     h(
-      'div.st__figures',
+      'ol.st__figures',
       null,
       figure(rate(b.roundRight, b.roundTips), t('stats.betting.round', { n: fmtInt(b.roundTips) })),
       figure(rate(b.shotRight, b.shotTips), t('stats.betting.shot', { n: fmtInt(b.shotTips) })),
@@ -172,6 +179,8 @@ function statsContent(app: App): Screen {
   const factsTitle = h('h3.st__title', null, t('stats.tab.facts'));
   const factList = h('ol.st__facts', null);
   const factsView = h('div.st__factsView', null, factsTitle, factList);
+  /** Where the overview's games come from and what its squares count, side by side above the heatmap. Hiding it is all that hides them: off the overview it keeps them out of sight and of the keyboard alike. */
+  const toolbar = h('div.st__toolbar', null, h('div.items', { 'data-section': 'source' }), h('div.items', { 'data-section': 'metric' }));
 
   /** Fetches a game and flies it: the button says so while it waits, and the page says if it could not. */
   const watch = (game: StatsGame, button: HTMLButtonElement): void => {
@@ -188,7 +197,7 @@ function statsContent(app: App): Screen {
   };
 
   const paintFacts = (): void => {
-    heat.hidden = table.hidden = betting.hidden = true;
+    heat.hidden = table.hidden = betting.hidden = toolbar.hidden = true;
     if (!factsAsked) {
       factsAsked = true;
       void loadFacts(board).then((seen) => {
@@ -210,6 +219,7 @@ function statsContent(app: App): Screen {
     const shown = !!overview?.enabled;
     heat.hidden = !shown;
     table.hidden = !shown;
+    toolbar.hidden = !shown;
     betting.hidden = !shown || !overview?.betting;
     if (!overview || !shown) return;
     hideTip();
@@ -248,9 +258,8 @@ function statsContent(app: App): Screen {
       null,
       h('p.eyebrow', null, t('stats.eyebrow')),
       h('h2.daily__title', null, t('stats.title')),
-      h('div.items.items--row', { 'data-section': 'tab' }),
-      h('div.items.items--row', { 'data-section': 'source' }),
-      h('div.items.items--row', { 'data-section': 'metric' }),
+      h('div.items.st__tabs', { 'data-section': 'tab' }),
+      toolbar,
       status,
       heat,
       table,
@@ -278,7 +287,6 @@ function statsContent(app: App): Screen {
       {
         kind: 'segmented',
         section: 'source',
-        hidden: () => tab !== 'overview',
         label: t('stats.source'),
         options: SOURCES.map((s) => ({ value: s, label: t(`stats.source.${s}`) })),
         get: () => source,
@@ -290,7 +298,6 @@ function statsContent(app: App): Screen {
       {
         kind: 'segmented',
         section: 'metric',
-        hidden: () => tab !== 'overview',
         label: t('stats.metric'),
         options: METRICS.map((m) => ({ value: m, label: metricLabel(m) })),
         get: () => metric,
@@ -304,65 +311,5 @@ function statsContent(app: App): Screen {
   };
 }
 
-/** The password the statistics page asks for, set at build time (`VITE_STATS_PASSWORD`); none set means the page is open. */
-const statsPassword = (): string => String(import.meta.env.VITE_STATS_PASSWORD || '');
-
-const UNLOCK_KEY = 'slingshot.stats.unlocked';
-
-/**
- * The password that unlocked the page is kept for this tab's session, or in local storage across sessions when
- * "remember me" was ticked. Keeping the password itself, not a flag, locks the page again once the build changes it.
- */
-function unlocked(password: string): boolean {
-  try {
-    return localStorage.getItem(UNLOCK_KEY) === password || sessionStorage.getItem(UNLOCK_KEY) === password;
-  } catch {
-    return false;
-  }
-}
-
-function remember(password: string, always: boolean): void {
-  try {
-    (always ? localStorage : sessionStorage).setItem(UNLOCK_KEY, password);
-  } catch {
-    // Private mode: the password is asked for again next time.
-  }
-}
-
-/**
- * The statistics page, behind a password for now. This only keeps casual visitors out: the password is part of the build,
- * and so readable in the page's script by anyone who looks.
- */
-export function statsScreen(app: App): Screen {
-  const password = statsPassword();
-  if (!password || unlocked(password)) return statsContent(app);
-  const input = h('input',{ type: 'password', autocomplete: 'off', 'aria-label': t('stats.password') }) as HTMLInputElement;
-  const error = h('p.lb__status.is-refused', { role: 'alert' }, t('stats.password.wrong'));
-  error.hidden = true;
-  let always = false;
-  const submit = (): void => {
-    if (input.value !== password) {
-      error.hidden = false;
-      input.select();
-      return;
-    }
-    remember(password, always);
-    app.menu.rebuild();
-  };
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') submit();
-  });
-  const root = h(
-    'section.screen.screen--panel',
-    { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('stats.title') },
-    h('div.panel', null, h('p.eyebrow', null, t('stats.eyebrow')), h('h2.daily__title', null, t('stats.title')), h('label.lobby__field', null, h('span', null, t('stats.password')), input), error, h('div.items', { 'data-section': 'remember' }), h('div.items.items--row', { 'data-items': '' })),
-  );
-  return {
-    build: () => root,
-    items: [
-      { kind: 'toggle', section: 'remember', label: t('stats.password.remember'), get: () => always, set: (v) => (always = v) },
-      { kind: 'action', label: t('stats.password.open'), primary: true, run: submit },
-      { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
-    ] satisfies MenuItem[],
-  };
-}
+/** The statistics page, open to everyone: what it shows is anonymous, and the relay hands it to any client that asks. */
+export const statsScreen = (app: App): Screen => statsContent(app);
