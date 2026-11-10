@@ -1,5 +1,5 @@
 import { DEFAULT_SERVER } from './multiplayer';
-import { NetworkClient, type ServerMessage, type StatsBetting, type StatsDay, type StatsFact, type StatsGame, type StatsReplay } from './net';
+import { NetworkClient, type ServerMessage, type StatsBetting, type StatsDay, type StatsFact, type StatsFavorite, type StatsGame, type StatsReplay } from './net';
 
 /** What the relay keeps about the games played on it. */
 export interface StatsOverview {
@@ -11,6 +11,12 @@ export interface StatsOverview {
   localDays: StatsDay[];
   games: StatsGame[];
   betting: StatsBetting | null;
+}
+
+/** What the menu shows of the statistics: the findings, and the rule sets played most (most first) that a quick game is dealt from. */
+export interface StatsMenu {
+  facts: StatsFact[];
+  favorites: StatsFavorite[];
 }
 
 /** What the stats page needs from a connection — the WebSocket client, or a stand-in in tests. */
@@ -27,10 +33,10 @@ export class StatsBoard {
     return { enabled: reply.enabled, days: reply.days, localDays: reply.localDays ?? [], games: reply.games, betting: reply.betting ?? null };
   }
 
-  /** The findings for the menu; none when the relay keeps no statistics. */
-  async facts(): Promise<StatsFact[]> {
+  /** The findings and favourites for the menu; none when the relay keeps no statistics. */
+  async menu(): Promise<StatsMenu> {
     const reply = await this.ask({ type: 'stats_facts' }, (message) => (message.type === 'stats_facts' ? message : null));
-    return reply.enabled ? reply.facts : [];
+    return reply.enabled ? { facts: reply.facts, favorites: reply.favorites ?? [] } : { facts: [], favorites: [] };
   }
 
   /** A game to fly again, or null when the relay does not have the whole of it. */

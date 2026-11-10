@@ -18,7 +18,8 @@ export interface App {
   readonly mayhem: boolean;
   /** Today's date key — the real one, unless the URL asks for another day. */
   today(): string;
-  start(mode: GameMode): void;
+  /** Play a mode by the settings, or as a quick game by settings of its own, which leave the player's setup as it is. */
+  start(mode: GameMode, quick?: Settings): void;
   startDaily(): void;
   /** True while an online match is on screen. */
   readonly online: boolean;

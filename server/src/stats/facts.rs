@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use tracing::warn;
 
-use super::{Stats, Store};
+use super::{MenuStats, Stats, Store};
 
 /// How long a set of facts is handed out before one request starts making them anew (they move slowly: a day's worth of play barely shifts a share).
 const FRESH: Duration = Duration::from_secs(10 * 60);
@@ -478,29 +478,41 @@ const QUERIES: &[Query] = &[
 ];
 
 impl Stats {
-    /// The facts, always from the cache once there is one: a request never waits for the queries. Facts older than `FRESH` are
-    /// still handed out while one task in the background makes them anew, so the menus of any number of visitors cost one set of
-    /// queries per `FRESH`, and only the very first request after a start waits for them.
-    pub async fn facts_shared(&self) -> Arc<Vec<Fact>> {
+    /// The facts and favourites, always from the cache once there is one: a request never waits for the queries. Ones older than
+    /// `FRESH` are still handed out while one task in the background makes them anew, so the menus of any number of visitors cost
+    /// one set of queries per `FRESH`, and only the very first request after a start waits for them.
+    pub async fn menu_shared(&self) -> Arc<MenuStats> {
         let mut held = self.facts.lock().await;
-        if let Some((made, facts)) = held.as_ref() {
+        if let Some((made, menu)) = held.as_ref() {
             if made.elapsed() >= FRESH && !self.refreshing_facts.swap(true, Ordering::AcqRel) {
                 let store = self.store.clone();
                 tokio::spawn(async move {
-                    let facts = Arc::new(store.facts().await);
-                    *store.facts.lock().await = Some((Instant::now(), facts));
+                    let menu = Arc::new(store.menu().await);
+                    *store.facts.lock().await = Some((Instant::now(), menu));
                     store.refreshing_facts.store(false, Ordering::Release);
                 });
             }
-            return facts.clone();
+            return menu.clone();
         }
-        let facts = Arc::new(self.facts().await);
-        *held = Some((Instant::now(), facts.clone()));
-        facts
+        let menu = Arc::new(self.menu().await);
+        *held = Some((Instant::now(), menu.clone()));
+        menu
     }
 }
 
 impl Store {
+    /// What the menu shows. Favourites that cannot be read are none: a quick game then plays the standard rules.
+    pub async fn menu(&self) -> MenuStats {
+        let favorites = self.favorites().await.unwrap_or_else(|err| {
+            warn!(%err, "the favourites could not be read");
+            Vec::new()
+        });
+        MenuStats {
+            facts: self.facts().await,
+            favorites,
+        }
+    }
+
     /// Every fact the data can back. A query that fails is left out, not fatal: the menu shows the rest.
     pub async fn facts(&self) -> Vec<Fact> {
         let mut out = Vec::new();
@@ -577,7 +589,7 @@ mod tests {
     async fn played() -> Stats {
         let stats = Stats::in_memory().await;
         let rows = [
-            "INSERT INTO stat_matches VALUES ('m', 0, 1, 'classic', 'ffa', '{}', '[]', 1, 'online')",
+            "INSERT INTO stat_matches VALUES ('m', 0, 1, 'classic', 'ffa', '{}', '[]', 1, 'online', NULL)",
             "INSERT INTO stat_rounds (match_id, room_id, round, at, day, game_mode, mode, rules, humans, cpus, spectators, title, survivor, team, seconds, planets, turns)
              VALUES ('m', 'r', 1, 0, date('now'), 'classic', 'ffa', '{}', 1, 1, 0, 'hit', 0, NULL, 40.0, 3, 2)",
             "INSERT INTO stat_seats (match_id, round, seat, at, player, cpu, team, won, alive, score, shots, kills, swingbys, grazes, own_goals, pickups, saves, missiles, intercepts, stray_kills)
@@ -745,8 +757,8 @@ mod tests {
         let walls = r#"{"rounds":1,"edges":"wall","anomalies":[]}"#;
         let rows = [
             format!(
-                "INSERT INTO stat_matches VALUES ('a', 0, 2, 'classic', 'ffa', '{both}', '[]', 1, 'online'), ('b', 0, 3, 'classic', 'ffa', '{pinball}', '[]', 1, 'local'),
-                                                 ('c', 0, 4, 'classic', 'ffa', '{tricks}', '[]', 1, 'online'), ('d', 0, 5, 'classic', 'ffa', '{walls}', '[]', 1, 'online')"
+                "INSERT INTO stat_matches VALUES ('a', 0, 2, 'classic', 'ffa', '{both}', '[]', 1, 'online', NULL), ('b', 0, 3, 'classic', 'ffa', '{pinball}', '[]', 1, 'local', NULL),
+                                                 ('c', 0, 4, 'classic', 'ffa', '{tricks}', '[]', 1, 'online', NULL), ('d', 0, 5, 'classic', 'ffa', '{walls}', '[]', 1, 'online', NULL)"
             ),
             format!(
                 "INSERT INTO stat_rounds (match_id, room_id, round, at, day, game_mode, mode, rules, humans, cpus, spectators, title, survivor, team, seconds, planets, turns)
@@ -913,7 +925,7 @@ mod tests {
     #[tokio::test]
     async fn facts_are_made_once_and_handed_out_from_the_cache() {
         let stats = Stats::in_memory().await;
-        let first = stats.facts_shared().await;
-        assert!(Arc::ptr_eq(&first, &stats.facts_shared().await));
+        let first = stats.menu_shared().await;
+        assert!(Arc::ptr_eq(&first, &stats.menu_shared().await));
     }
 }

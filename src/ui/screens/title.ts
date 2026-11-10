@@ -10,12 +10,15 @@ import type { App } from './app';
 import { coffeeButton, creditsBadge } from './credits';
 import { languageItem, openSettings } from './settings';
 import { prepareModeScreen } from './setup';
+import { pickQuickGame, prepareQuickGame, quickHint } from '../presets/quick-game';
 import { tutorialScreen } from './tutorial';
 import { hintText } from '../../platform/input-device';
 
 type LauncherSection = 'local' | 'online';
 
 let launcherSection: LauncherSection = 'local';
+/** While a quick game waits for the favourites: across a rebuild of the page, so that a second press is not a second game. */
+let quickWaiting = false;
 
 /** The modes live on the title screen: choose here, prepare the match next. */
 export function titleScreen(app: App): Screen {
@@ -81,6 +84,22 @@ export function titleScreen(app: App): Screen {
     });
   };
   window.addEventListener('resize', onResize);
+  prepareQuickGame();
+  const quickGame = (): void => {
+    if (quickWaiting) return;
+    quickWaiting = true;
+    app.menu.refresh();
+    const page = app.menu.page;
+    void pickQuickGame(app.settings)
+      .then(({ mode, settings }) => {
+        // Not when the player has gone on to another page meanwhile; this one built anew (a language switch) is still this one.
+        if (app.menu.page === page) app.start(mode, settings);
+      })
+      .finally(() => {
+        quickWaiting = false;
+        app.menu.refresh();
+      });
+  };
   // The statistics page has two doors: a line in the menu, and on a phone an icon up by the wordmark.
   const stats = { kind: 'action', hidden: () => !statsAvailable(), label: t('stats.title'), run: () => app.menu.push(() => statsScreen(app)) } as const;
   const items: MenuItem[] = [
@@ -96,6 +115,7 @@ export function titleScreen(app: App): Screen {
     modeCard('classic'),
     modeCard('horizon'),
     modeCard('solar'),
+    { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.quick'), hint: quickHint(), status: () => (quickWaiting ? t('mode.quick.waiting') : ''), icon: () => modeArt('quick'), run: quickGame },
     { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.daily'), hint: dailyMenuHint(app.today()), icon: () => modeArt('daily'), run: () => app.menu.push(() => dailyScreen(app)) },
     { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
     { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') },

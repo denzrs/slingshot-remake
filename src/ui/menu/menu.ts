@@ -170,6 +170,11 @@ export class Menu {
     return this.stack.length;
   }
 
+  /** The page on top, to tell whether it is still there later: the same while it is only built anew, another once a page opens over it or in its place. */
+  get page(): object | undefined {
+    return this.stack[this.stack.length - 1];
+  }
+
   /** Replace the whole stack with one screen. */
   open(screen: ScreenFactory): void {
     this.stack = [{ screen, focus: 0 }];
@@ -184,10 +189,8 @@ export class Menu {
 
   /** Swap the current page while keeping its parent in the navigation stack. */
   replace(screen: ScreenFactory, focusIndex = 0): void {
-    const level = this.stack[this.stack.length - 1];
-    if (!level) return;
-    level.screen = screen;
-    level.focus = focusIndex;
+    if (!this.stack.length) return;
+    this.stack[this.stack.length - 1] = { screen, focus: focusIndex };
     this.render(focusIndex);
   }
 

@@ -62,10 +62,13 @@ describe('stats board', () => {
     expect(overview).toEqual({ enabled: true, days: [day('2026-10-23', 2)], localDays: [day('2026-10-22', 1)], games: [], betting: null });
   });
 
-  it('asks for the facts, and has none when the relay keeps no statistics', async () => {
+  it('asks for the facts and favourites, and has none when the relay keeps no statistics', async () => {
     const facts = [{ id: 'holeShots', values: [17.4] }];
-    expect(await new StatsBoard(() => connection({ type: 'stats_facts', enabled: true, facts })).facts()).toEqual(facts);
-    expect(await new StatsBoard(() => connection({ type: 'stats_facts', enabled: false, facts: [] })).facts()).toEqual([]);
+    const favorites = [{ gameMode: 'solar' as const, rules: { maxPlanets: 3 }, games: 12 }];
+    expect(await new StatsBoard(() => connection({ type: 'stats_facts', enabled: true, facts, favorites })).menu()).toEqual({ facts, favorites });
+    // A relay from before the favourites says nothing of them.
+    expect(await new StatsBoard(() => connection({ type: 'stats_facts', enabled: true, facts })).menu()).toEqual({ facts, favorites: [] });
+    expect(await new StatsBoard(() => connection({ type: 'stats_facts', enabled: false, facts: [] })).menu()).toEqual({ facts: [], favorites: [] });
   });
 
   it('turns a refusal into an error', async () => {

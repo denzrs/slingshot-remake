@@ -217,16 +217,14 @@ async fn stats_overview(manager: &Mutex<RoomManager>, conn_id: u64) {
     }
 }
 
-/// The menu's facts; with statistics off there are none, and the menu is told so.
+/// The menu's facts and favourites; with statistics off there are none, and the menu is told so.
 async fn stats_facts(manager: &Mutex<RoomManager>, conn_id: u64) {
     let stats = manager.lock().stats();
-    let facts = match stats {
-        Some(stats) => Some(stats.facts_shared().await),
+    let menu = match stats {
+        Some(stats) => Some(stats.menu_shared().await),
         None => None,
     };
-    manager
-        .lock()
-        .stats_facts(conn_id, facts.as_deref().map(Vec::as_slice));
+    manager.lock().stats_facts(conn_id, menu.as_deref());
 }
 
 /// A game played on one device: handed to the statistics, if the relay keeps any, and not answered.

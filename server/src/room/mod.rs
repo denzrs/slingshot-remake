@@ -343,14 +343,19 @@ impl RoomManager {
         self.send_value(conn, &value);
     }
 
-    /// The menu's facts as they go on the wire; `None` when the relay keeps no statistics.
-    pub fn stats_facts(&mut self, conn: u64, facts: Option<&[crate::stats::Fact]>) {
-        let value = match facts {
-            None => json!({ "type": "stats_facts", "enabled": false, "facts": [] }),
-            Some(facts) => json!({
+    /// The menu's facts and favourites as they go on the wire; `None` when the relay keeps no statistics.
+    pub fn stats_facts(&mut self, conn: u64, menu: Option<&crate::stats::MenuStats>) {
+        let value = match menu {
+            None => {
+                json!({ "type": "stats_facts", "enabled": false, "facts": [], "favorites": [] })
+            }
+            Some(menu) => json!({
                 "type": "stats_facts",
                 "enabled": true,
-                "facts": facts.iter().map(crate::stats::Fact::json).collect::<Vec<_>>(),
+                "facts": menu.facts.iter().map(crate::stats::Fact::json).collect::<Vec<_>>(),
+                "favorites": menu.favorites.iter().map(|f| json!({
+                    "gameMode": f.game_mode, "rules": f.rules, "games": f.games,
+                })).collect::<Vec<_>>(),
             }),
         };
         self.send_value(conn, &value);

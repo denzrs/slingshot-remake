@@ -1,5 +1,5 @@
 import type { StatsFact } from '../../net/net';
-import { StatsBoard } from '../../net/statsBoard';
+import { StatsBoard, type StatsMenu } from '../../net/statsBoard';
 import { factLines, type FactPart } from '../../net/statsFacts';
 import { t } from '../../platform/i18n';
 import { h } from '../dom';
@@ -12,13 +12,13 @@ const STORE_KEY = 'slingshot.facts';
 /** A short selection keeps one round of the banner brief. */
 const TICKER_FACTS = 10;
 
-let kept: { at: number; facts: StatsFact[] } | null = recall();
-let loading: Promise<StatsFact[]> | null = null;
+let kept: ({ at: number } & StatsMenu) | null = recall();
+let loading: Promise<StatsMenu> | null = null;
 
-function recall(): { at: number; facts: StatsFact[] } | null {
+function recall(): ({ at: number } & StatsMenu) | null {
   try {
     const saved = JSON.parse(sessionStorage.getItem(STORE_KEY) ?? 'null');
-    return saved && typeof saved.at === 'number' && Array.isArray(saved.facts) ? saved : null;
+    return saved && typeof saved.at === 'number' && Array.isArray(saved.facts) && Array.isArray(saved.favorites) ? saved : null;
   } catch {
     return null;
   }
@@ -26,28 +26,31 @@ function recall(): { at: number; facts: StatsFact[] } | null {
 
 function remember(): void {
   try {
-    if (kept?.facts.length) sessionStorage.setItem(STORE_KEY, JSON.stringify(kept));
+    if (kept?.facts.length || kept?.favorites.length) sessionStorage.setItem(STORE_KEY, JSON.stringify(kept));
   } catch {
     // Storage may be blocked; the numbers are then asked for again on the next load.
   }
 }
 
 /**
- * The findings of the relay, shared by menus that open one after the other, and the statistics page.
+ * The findings and favourites of the relay, shared by menus that open one after the other, the statistics page and the quick game.
  * Rejects when the relay cannot be reached, and keeps nothing then: the next one to ask tries again.
  */
-export async function loadFacts(board: StatsBoard): Promise<StatsFact[]> {
-  if (kept && Date.now() - kept.at < KEEP_MS) return kept.facts;
+export async function loadMenuStats(board: StatsBoard): Promise<StatsMenu> {
+  if (kept && Date.now() - kept.at < KEEP_MS) return kept;
   loading ??= board
-    .facts()
-    .then((facts) => {
-      kept = { at: Date.now(), facts };
+    .menu()
+    .then((menu) => {
+      kept = { at: Date.now(), ...menu };
       remember();
-      return facts;
+      return menu;
     })
     .finally(() => (loading = null));
   return loading;
 }
+
+/** The findings alone (see `loadMenuStats`). */
+export const loadFacts = (board: StatsBoard): Promise<StatsFact[]> => loadMenuStats(board).then((menu) => menu.facts);
 
 /** How long one fact stays before the next one fades in. */
 const FACT_MS = 8_000;

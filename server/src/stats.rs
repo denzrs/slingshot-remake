@@ -36,6 +36,18 @@ const OVERVIEW_FRESH: Duration = Duration::from_secs(2);
 const REPLAYS_KEPT: usize = 16;
 /// Games the overview lists.
 const OVERVIEW_GAMES: i64 = 50;
+/// The rule sets the stats count as the favourites: how many it names, out of how many of the latest games.
+const FAVORITES: usize = 5;
+const FAVORITES_FROM: i64 = 2000;
+/// Rules a favourite is counted without: the length of the game, and what only a room online plays by.
+const FAVORITES_IGNORE: [&str; 3] = ["rounds", "betting", "chatPlayersOnly"];
+/// Rules only Classic and the Solar System play by: in Event Horizon they change nothing.
+const CLASSIC_FAMILY_ONLY: [&str; 4] = [
+    "invisiblePlanets",
+    "styleBonuses",
+    "simultaneousShots",
+    "suddenDeath",
+];
 /// The sweeper runs at most this often, however busy the relay is.
 const PRUNE_INTERVAL_SECS: i64 = 6 * 60 * 60;
 const DAY_SECS: i64 = 24 * 60 * 60;
@@ -176,7 +188,8 @@ const SCHEMA: [&str; 16] = [
          rules      TEXT    NOT NULL,
          seats      TEXT    NOT NULL,
          replayable INTEGER NOT NULL,
-         source     TEXT    NOT NULL DEFAULT 'online'
+         source     TEXT    NOT NULL DEFAULT 'online',
+         quick      INTEGER
      )",
     "CREATE INDEX IF NOT EXISTS stat_matches_at ON stat_matches (at)",
     // One row per power-up laid on the field, in the order it was made: the part of a turn that is not a shot.
@@ -263,8 +276,8 @@ const INSERT_SHOT: &str = "INSERT INTO stat_shots (
          fan, split_at, rider, resolution, hits, hit_seat, hit_kind, points)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)";
 
-const INSERT_MATCH: &str = "INSERT OR IGNORE INTO stat_matches (match_id, at, seed, game_mode, mode, rules, seats, replayable, source)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
+const INSERT_MATCH: &str = "INSERT OR IGNORE INTO stat_matches (match_id, at, seed, game_mode, mode, rules, seats, replayable, source, quick)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)";
 
 const NOT_REPLAYABLE: &str = "UPDATE stat_matches SET replayable = 0 WHERE match_id = ?1";
 
@@ -368,6 +381,49 @@ pub struct Overview {
     pub games: Vec<Game>,
 }
 
+/// What the menu shows of the statistics: the facts, and the rule sets a quick game is dealt from.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MenuStats {
+    pub facts: Vec<Fact>,
+    pub favorites: Vec<Favorite>,
+}
+
+/// A rule set many games were played by: the mode, the rules (see `favorite_rules`), and how many games.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Favorite {
+    pub game_mode: String,
+    pub rules: Value,
+    pub games: i64,
+}
+
+/// A game's rules as a favourite counts them: without those in `FAVORITES_IGNORE`, nor any that change nothing in its mode
+/// or beside its other rules, so that two games played alike count as one set.
+fn favorite_rules(game_mode: &str, mut rules: serde_json::Map<String, Value>) -> Value {
+    let on = |rules: &serde_json::Map<String, Value>, key: &str| {
+        rules.get(key) == Some(&Value::Bool(true))
+    };
+    for key in FAVORITES_IGNORE {
+        rules.remove(key);
+    }
+    if game_mode == "horizon" {
+        for key in CLASSIC_FAMILY_ONLY {
+            rules.remove(key);
+        }
+    }
+    // The kinds and amount of power-ups while there are none (Mayhem's twists bring their own).
+    if !on(&rules, "powerUps") {
+        rules.remove("powerUpKinds");
+        rules.remove("powerUpAmount");
+    }
+    // A fixed power is never capped; a free or capped one has no fixed level.
+    if on(&rules, "fixedPower") {
+        rules.remove("maxPower");
+    } else {
+        rules.remove("fixedPowerLevel");
+    }
+    Value::Object(rules)
+}
+
 /// Who sat in a ship: a person at an address under a name, or a CPU of some level.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Occupant {
@@ -406,6 +462,8 @@ pub struct RoundFacts {
     pub seats: Vec<SeatFacts>,
     /// Played on one device and reported when it was over: it has no turns, and cannot be flown again.
     pub local: bool,
+    /// A quick game: its rules were dealt from the favourites, so it is not counted among them.
+    pub quick: bool,
 }
 
 /// The database half: what a writer task needs, and what the tests read back.
@@ -425,8 +483,8 @@ pub struct Store {
     /// One reader at a time: several tasks asking one connection at once wait on one another's statements, which a page with
     /// a few readers felt as seconds. Holds the overview last made, to hand to whoever asks within `OVERVIEW_FRESH`.
     reading: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<Overview>)>>,
-    /// The menu's facts last made (see `facts_shared`): handed out until a refresh in the background replaces them.
-    facts: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<Vec<Fact>>)>>,
+    /// The menu's facts and favourites last made (see `menu_shared`): handed out until a refresh in the background replaces them.
+    facts: tokio::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<MenuStats>)>>,
     /// Set while a refresh of the facts runs, so that only one does.
     refreshing_facts: AtomicBool,
     /// Its own key, kept in `stat_meta`: see `pseudonym`.
@@ -462,6 +520,7 @@ impl Store {
             ("stat_seats", "loops", "INTEGER"),
             ("stat_seats", "returns", "INTEGER"),
             ("stat_rounds", "bonuses", "INTEGER"),
+            ("stat_matches", "quick", "INTEGER"),
         ] {
             Self::ensure_column(&conn, table, column, declared).await?;
         }
@@ -768,6 +827,7 @@ impl Store {
             Sql::Text(Value::from(seats).to_string()),
             Sql::Integer((!facts.local).into()),
             Sql::Text(if facts.local { "local" } else { "online" }.into()),
+            Sql::Integer(facts.quick.into()),
         ];
         self.conn.execute(INSERT_MATCH, row).await?;
         Ok(())
@@ -1040,6 +1100,52 @@ impl Store {
                 .await?,
             games: self.latest_games().await?,
         })
+    }
+
+    /// The rule sets the latest games were played by most, online and on one device alike; quick games, dealt from these, are
+    /// left out, or the favourites would feed themselves. A tie goes to the set played last.
+    pub(crate) async fn favorites(&self) -> turso::Result<Vec<Favorite>> {
+        let mut rows = self
+            .facts_reader
+            .query(
+                "SELECT game_mode, rules FROM stat_matches WHERE quick IS NOT 1 ORDER BY at DESC LIMIT ?1",
+                (FAVORITES_FROM,),
+            )
+            .await?;
+        // Keyed by the mode and the rules as text: serde_json keeps an object's keys sorted, so the same rules read the same.
+        let mut counted: Vec<(String, Favorite)> = Vec::new();
+        let mut index: HashMap<String, usize> = HashMap::new();
+        while let Some(row) = rows.next().await? {
+            let game_mode: String = row.get(0)?;
+            let rules: String = row.get(1)?;
+            let Ok(Value::Object(rules)) = serde_json::from_str::<Value>(&rules) else {
+                continue;
+            };
+            let rules = favorite_rules(&game_mode, rules);
+            let key = format!("{game_mode} {rules}");
+            match index.get(&key) {
+                Some(&i) => counted[i].1.games += 1,
+                None => {
+                    index.insert(key.clone(), counted.len());
+                    counted.push((
+                        key,
+                        Favorite {
+                            game_mode,
+                            rules,
+                            games: 1,
+                        },
+                    ));
+                }
+            }
+        }
+        drop(rows);
+        // A stable sort: among equals, the set met first (played last) stays first.
+        counted.sort_by_key(|(_, favorite)| std::cmp::Reverse(favorite.games));
+        Ok(counted
+            .into_iter()
+            .take(FAVORITES)
+            .map(|(_, favorite)| favorite)
+            .collect())
     }
 
     async fn betting(&self) -> turso::Result<Option<Betting>> {
@@ -1729,6 +1835,7 @@ impl Stats {
                 })
                 .collect(),
             local: true,
+            quick: game.quick,
         };
         self.submit(Job::Local(facts, game.rounds));
     }
@@ -1874,6 +1981,7 @@ mod tests {
                 },
             ],
             local: false,
+            quick: false,
         }
     }
 
@@ -2161,6 +2269,115 @@ mod tests {
         assert_eq!(
             (game.game_mode.as_str(), game.mode.as_str()),
             ("classic", "ffa")
+        );
+    }
+
+    #[tokio::test]
+    async fn the_favorites_are_the_rule_sets_played_most_whatever_their_length() {
+        let stats = Stats::in_memory().await;
+        let games = [
+            ("a", 1, "classic", r#"{"rounds": 5, "maxPlanets": 4}"#, None),
+            (
+                "b",
+                2,
+                "classic",
+                r#"{"maxPlanets": 4, "rounds": 10, "betting": true}"#,
+                Some(0),
+            ),
+            ("c", 3, "solar", r#"{"rounds": 5, "maxPlanets": 4}"#, None),
+            ("d", 4, "classic", r#"{"rounds": 5, "maxPlanets": 6}"#, None),
+            ("e", 5, "horizon", "not rules", None),
+            // Quick games are dealt from the favourites: counting them would keep the same ones on top for good.
+            (
+                "f",
+                6,
+                "solar",
+                r#"{"rounds": 3, "maxPlanets": 4}"#,
+                Some(1),
+            ),
+            (
+                "g",
+                7,
+                "solar",
+                r#"{"rounds": 3, "maxPlanets": 4}"#,
+                Some(1),
+            ),
+        ];
+        for (id, at, game_mode, rules, quick) in games {
+            stats
+                .conn
+                .execute(
+                    INSERT_MATCH,
+                    vec![
+                        Sql::Text(id.into()),
+                        Sql::Integer(at),
+                        Sql::Integer(1),
+                        Sql::Text(game_mode.into()),
+                        Sql::Text("ffa".into()),
+                        Sql::Text(rules.into()),
+                        Sql::Text("[]".into()),
+                        Sql::Integer(1),
+                        Sql::Text("online".into()),
+                        optional(quick),
+                    ],
+                )
+                .await
+                .unwrap();
+        }
+        let favorites = stats.favorites().await.unwrap();
+        // Classic with four planets twice; then the solar one and the six planets once each, the one played last first.
+        assert_eq!(
+            favorites,
+            vec![
+                Favorite {
+                    game_mode: "classic".into(),
+                    rules: json!({"maxPlanets": 4}),
+                    games: 2
+                },
+                Favorite {
+                    game_mode: "classic".into(),
+                    rules: json!({"maxPlanets": 6}),
+                    games: 1
+                },
+                Favorite {
+                    game_mode: "solar".into(),
+                    rules: json!({"maxPlanets": 4}),
+                    games: 1
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_favorite_leaves_out_the_rules_that_change_nothing() {
+        let rules = |value: Value| match value {
+            Value::Object(rules) => rules,
+            _ => unreachable!(),
+        };
+        let played = json!({
+            "maxPlanets": 4, "styleBonuses": true, "simultaneousShots": false, "invisiblePlanets": false, "suddenDeath": true,
+            "powerUps": false, "powerUpKinds": ["preview"], "powerUpAmount": 3,
+            "fixedPower": false, "fixedPowerLevel": 70, "maxPower": 100,
+        });
+        assert_eq!(
+            favorite_rules("horizon", rules(played.clone())),
+            json!({"maxPlanets": 4, "powerUps": false, "fixedPower": false, "maxPower": 100})
+        );
+        assert_eq!(
+            favorite_rules("classic", rules(played)),
+            json!({
+                "maxPlanets": 4, "styleBonuses": true, "simultaneousShots": false, "invisiblePlanets": false, "suddenDeath": true,
+                "powerUps": false, "fixedPower": false, "maxPower": 100,
+            })
+        );
+        assert_eq!(
+            favorite_rules(
+                "solar",
+                rules(
+                    json!({"powerUps": true, "powerUpAmount": 3, "fixedPower": true, "fixedPowerLevel": 70, "maxPower": 100})
+                )
+            ),
+            json!({"powerUps": true, "powerUpAmount": 3, "fixedPower": true, "fixedPowerLevel": 70})
         );
     }
 
