@@ -81,6 +81,27 @@ export function titleScreen(app: App): Screen {
     });
   };
   window.addEventListener('resize', onResize);
+  // The statistics page has two doors: a line in the menu, and on a phone an icon up by the wordmark.
+  const stats = { kind: 'action', hidden: () => !statsAvailable(), label: t('stats.title'), run: () => app.menu.push(() => statsScreen(app)) } as const;
+  const items: MenuItem[] = [
+    { kind: 'action', section: 'navigation', label: t('launcher.local'), selected: () => launcherSection === 'local', run: () => chooseSection('local') },
+    { kind: 'action', section: 'navigation', label: t('launcher.online'), selected: () => launcherSection === 'online', run: () => chooseSection('online') },
+    { ...stats, section: 'navigation', className: 'launcher__stats-nav' },
+    { kind: 'action', section: 'navigation', className: 'launcher__tutorial-nav', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
+    { kind: 'action', section: 'navigation', className: 'launcher__settings-nav', label: t('common.settings'), run: () => openSettings(app) },
+    // The phone's icons, in the order they stand beside the wordmark.
+    { ...stats, section: 'stats-mobile', className: 'launcher__stats-button' },
+    { kind: 'action', section: 'tutorial-mobile', className: 'launcher__tutorial-button', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
+    { kind: 'action', section: 'settings-mobile', className: 'launcher__settings-button', label: t('common.settings'), run: () => openSettings(app) },
+    modeCard('classic'),
+    modeCard('horizon'),
+    modeCard('solar'),
+    { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.daily'), hint: dailyMenuHint(app.today()), icon: () => modeArt('daily'), run: () => app.menu.push(() => dailyScreen(app)) },
+    { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
+    { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') },
+    { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.code'), hint: t('flow.codeHint'), icon: () => modeArt('code'), run: () => app.openLobby('code') },
+    { ...languageItem(app), section: 'language' },
+  ];
   return {
     build: () => h('section.screen.screen--title', { 'aria-labelledby': 'wordmark' },
       h('div.launcher', null,
@@ -113,25 +134,9 @@ export function titleScreen(app: App): Screen {
         ),
       ),
     ),
-    items: [
-      { kind: 'action', section: 'navigation', label: t('launcher.local'), selected: () => launcherSection === 'local', run: () => chooseSection('local') },
-      { kind: 'action', section: 'navigation', label: t('launcher.online'), selected: () => launcherSection === 'online', run: () => chooseSection('online') },
-      { kind: 'action', section: 'navigation', className: 'launcher__stats-nav', hidden: () => !statsAvailable(), label: t('stats.title'), run: () => app.menu.push(() => statsScreen(app)) },
-      { kind: 'action', section: 'navigation', className: 'launcher__tutorial-nav', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
-      { kind: 'action', section: 'navigation', className: 'launcher__settings-nav', label: t('common.settings'), run: () => openSettings(app) },
-      { kind: 'action', section: 'tutorial-mobile', className: 'launcher__tutorial-button', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
-      { kind: 'action', section: 'settings-mobile', className: 'launcher__settings-button', label: t('common.settings'), run: () => openSettings(app) },
-      { kind: 'action', section: 'stats-mobile', className: 'launcher__stats-button', hidden: () => !statsAvailable(), label: t('stats.title'), run: () => app.menu.push(() => statsScreen(app)) },
-      modeCard('classic'),
-      modeCard('horizon'),
-      modeCard('solar'),
-      { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.daily'), hint: dailyMenuHint(app.today()), icon: () => modeArt('daily'), run: () => app.menu.push(() => dailyScreen(app)) },
-      { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
-      { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') },
-      { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.code'), hint: t('flow.codeHint'), icon: () => modeArt('code'), run: () => app.openLobby('code') },
-      { ...languageItem(app), section: 'language' },
-    ],
-    focus: launcherSection === 'local' ? 8 : 12,
+    items,
+    // The first card of the open section.
+    focusItem: items.findIndex((item) => item.section === (launcherSection === 'local' ? 'modes' : 'online')),
     update,
     dispose: () => {
       window.removeEventListener('resize', onResize);

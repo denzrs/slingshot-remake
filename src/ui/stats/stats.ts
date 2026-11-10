@@ -121,9 +121,12 @@ function gameRow(game: StatsGame, watch: (game: StatsGame, button: HTMLButtonEle
 const TABS = ['overview', 'facts'] as const;
 type Tab = (typeof TABS)[number];
 
-/** A fact as a card: its first number large on top, and the sentence below with its numbers set apart as in the ticker. */
+/**
+ * A fact as a card: its first figure large on top (a name, such as the power-up most placed, is no headline: its count is),
+ * and the sentence below with its numbers set apart as in the ticker.
+ */
 function factItem(parts: FactPart[]): HTMLElement {
-  const lead = parts.find((part) => part.number);
+  const lead = parts.find((part) => part.number && !part.name);
   const text = h('p.st__factText', null, ...parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text)));
   return lead ? h('li.st__fact', null, h('strong.st__factLead', { 'aria-hidden': 'true' }, lead.text), text) : h('li.st__fact', null, text);
 }
@@ -176,7 +179,7 @@ function statsContent(app: App): Screen {
   const factsTitle = h('h3.st__title', null, t('stats.tab.facts'));
   const factList = h('ol.st__facts', null);
   const factsView = h('div.st__factsView', null, factsTitle, factList);
-  /** Where the overview's games come from and what its squares count, side by side above the heatmap. */
+  /** Where the overview's games come from and what its squares count, side by side above the heatmap. Hiding it is all that hides them: off the overview it keeps them out of sight and of the keyboard alike. */
   const toolbar = h('div.st__toolbar', null, h('div.items', { 'data-section': 'source' }), h('div.items', { 'data-section': 'metric' }));
 
   /** Fetches a game and flies it: the button says so while it waits, and the page says if it could not. */
@@ -284,7 +287,6 @@ function statsContent(app: App): Screen {
       {
         kind: 'segmented',
         section: 'source',
-        hidden: () => tab !== 'overview',
         label: t('stats.source'),
         options: SOURCES.map((s) => ({ value: s, label: t(`stats.source.${s}`) })),
         get: () => source,
@@ -296,7 +298,6 @@ function statsContent(app: App): Screen {
       {
         kind: 'segmented',
         section: 'metric',
-        hidden: () => tab !== 'overview',
         label: t('stats.metric'),
         options: METRICS.map((m) => ({ value: m, label: metricLabel(m) })),
         get: () => metric,

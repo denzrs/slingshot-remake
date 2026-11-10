@@ -11,14 +11,19 @@ const percent = (n: number): string => (n >= 10 ? fmt(n, 0) : fmtNum(Math.round(
 /** A power-up the relay names by its index in this list (the relay keeps the same one: `server/src/stats/facts.rs`). */
 const PLACED_KINDS = ['blackhole', 'wormhole', 'nebula', 'planetkiller', 'teleport', 'defense', 'antigravity'] as const;
 
+/** The formats that turn a value into a name, not a figure. */
+const NAMES = new WeakSet<(n: number) => string>();
+
 /** The name at an index: one this client does not know (a newer relay) has no sentence. */
-const named =
-  (prefix: string, names: readonly string[]) =>
-  (n: number): string => {
+function named(prefix: string, names: readonly string[]): (n: number) => string {
+  const format = (n: number): string => {
     const name = names[n];
     if (name === undefined) throw new RangeError(`no ${prefix} ${n}`);
     return t(`${prefix}.${name}` as Key);
   };
+  NAMES.add(format);
+  return format;
+}
 
 /** How each fact shows its numbers, in the order the relay sends them. */
 const FORMATS: Record<string, ((n: number) => string)[]> = {
@@ -115,10 +120,14 @@ const FORMATS: Record<string, ((n: number) => string)[]> = {
 export interface FactPart {
   text: string;
   number: boolean;
+  /** A value of the data that is a name (a power-up, an anomaly), not a figure: set apart like a number, but no headline. */
+  name?: boolean;
 }
 
-// Fences around a number while the sentence is made, so that its place in the translated words survives.
+// Fences around a number while the sentence is made, so that its place in the translated words survives; the opening one
+// carries the value's index, so the part knows which format made it.
 const OPEN = '\u0001';
+const INDEX = '\u0003';
 const CLOSE = '\u0002';
 
 /** The sentence for a fact in parts, numbers apart from words; null for one this client does not know (a newer relay), or one with nothing to say. */
@@ -130,7 +139,7 @@ export function factParts(fact: StatsFact): FactPart[] | null {
   if (fact.id.startsWith('selfHigh') && !(fact.values[0] > 0)) return null;
   let sentence: string;
   try {
-    const [a, b] = formats.map((format, i) => OPEN + format(fact.values[i]) + CLOSE);
+    const [a, b] = formats.map((format, i) => OPEN + i + INDEX + format(fact.values[i]) + CLOSE);
     sentence = t(key, { a, b: b ?? '', rounds: SCORING.DOMINATION_ROUNDS });
   } catch {
     return null;
@@ -138,9 +147,11 @@ export function factParts(fact: StatsFact): FactPart[] | null {
   // A percent sign belongs to its number, with or without the space some languages put before it.
   const parts: FactPart[] = [];
   let from = 0;
-  for (const match of sentence.matchAll(new RegExp(`${OPEN}(.*?)${CLOSE}( ?%)?`, 'g'))) {
+  for (const match of sentence.matchAll(new RegExp(`${OPEN}(\\d+)${INDEX}(.*?)${CLOSE}( ?%)?`, 'g'))) {
     if (match.index > from) parts.push({ text: sentence.slice(from, match.index), number: false });
-    parts.push({ text: match[1] + (match[2] ?? ''), number: true });
+    const part: FactPart = { text: match[2] + (match[3] ?? ''), number: true };
+    if (NAMES.has(formats[Number(match[1])])) part.name = true;
+    parts.push(part);
     from = match.index + match[0].length;
   }
   if (from < sentence.length) parts.push({ text: sentence.slice(from), number: false });

@@ -89,8 +89,9 @@
   margin: 12px 0 0;
 }
 
+/* Empty, it takes no room, but stays in the page: a status region added back later is often not read out. */
 .panel--stats .lb__status:empty {
-  display: none;
+  margin: 0;
 }
 
 .panel--stats [data-items] {
