@@ -318,7 +318,7 @@ impl RoomManager {
     pub fn stats_overview(&mut self, conn: u64, overview: Option<&Overview>) {
         let value = match overview {
             None => {
-                json!({ "type": "stats_overview", "enabled": false, "days": [], "localDays": [], "games": [], "betting": null })
+                json!({ "type": "stats_overview", "enabled": false, "days": [], "localDays": [], "games": [], "betting": null, "favorites": [] })
             }
             Some(overview) => json!({
                 "type": "stats_overview",
@@ -337,6 +337,9 @@ impl RoomManager {
                     "humans": g.humans, "cpus": g.cpus, "rounds": g.rounds, "points": g.points,
                     "replay": g.replay,
                     "local": g.local,
+                })).collect::<Vec<_>>(),
+                "favorites": overview.favorites.iter().map(|f| json!({
+                    "gameMode": f.game_mode, "rules": f.rules, "games": f.games,
                 })).collect::<Vec<_>>(),
             }),
         };

@@ -10,6 +10,7 @@ import type { App } from './app';
 import { coffeeButton, creditsBadge } from './credits';
 import { languageItem, openSettings } from './settings';
 import { prepareModeScreen } from './setup';
+import { pickQuickGame, prepareQuickGame } from '../presets/quick-game';
 import { tutorialScreen } from './tutorial';
 import { hintText } from '../../platform/input-device';
 
@@ -81,6 +82,19 @@ export function titleScreen(app: App): Screen {
     });
   };
   window.addEventListener('resize', onResize);
+  prepareQuickGame();
+  // One press plays: a press while the favourites are still on their way is not a second game.
+  let quickPending = false;
+  let disposed = false;
+  const quickGame = (): void => {
+    if (quickPending) return;
+    quickPending = true;
+    void pickQuickGame(app.settings).then(({ mode, settings }) => {
+      quickPending = false;
+      // Not when the player has gone on to another page meanwhile.
+      if (!disposed) app.start(mode, settings);
+    });
+  };
   // The statistics page has two doors: a line in the menu, and on a phone an icon up by the wordmark.
   const stats = { kind: 'action', hidden: () => !statsAvailable(), label: t('stats.title'), run: () => app.menu.push(() => statsScreen(app)) } as const;
   const items: MenuItem[] = [
@@ -96,6 +110,7 @@ export function titleScreen(app: App): Screen {
     modeCard('classic'),
     modeCard('horizon'),
     modeCard('solar'),
+    { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.quick'), hint: t('mode.quick.hint'), icon: () => modeArt('quick'), run: quickGame },
     { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.daily'), hint: dailyMenuHint(app.today()), icon: () => modeArt('daily'), run: () => app.menu.push(() => dailyScreen(app)) },
     { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
     { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') },
@@ -139,6 +154,7 @@ export function titleScreen(app: App): Screen {
     focusItem: items.findIndex((item) => item.section === (launcherSection === 'local' ? 'modes' : 'online')),
     update,
     dispose: () => {
+      disposed = true;
       window.removeEventListener('resize', onResize);
       cancelAnimationFrame(resizeFrame);
     },

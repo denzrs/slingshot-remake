@@ -36,6 +36,11 @@ const OVERVIEW_FRESH: Duration = Duration::from_secs(2);
 const REPLAYS_KEPT: usize = 16;
 /// Games the overview lists.
 const OVERVIEW_GAMES: i64 = 50;
+/// The rule sets the stats count as the favourites: how many it names, out of how many of the latest games.
+const FAVORITES: usize = 5;
+const FAVORITES_FROM: i64 = 2000;
+/// Rules a favourite is counted without: the length of the game, and what only a room online plays by.
+const FAVORITES_IGNORE: [&str; 3] = ["rounds", "betting", "chatPlayersOnly"];
 /// The sweeper runs at most this often, however busy the relay is.
 const PRUNE_INTERVAL_SECS: i64 = 6 * 60 * 60;
 const DAY_SECS: i64 = 24 * 60 * 60;
@@ -366,6 +371,16 @@ pub struct Overview {
     /// Games played on one device, by day.
     pub local_days: Vec<DayTotals>,
     pub games: Vec<Game>,
+    /// The rule sets played most, most first.
+    pub favorites: Vec<Favorite>,
+}
+
+/// A rule set many games were played by: the mode, the rules (without those in `FAVORITES_IGNORE`), and how many games.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Favorite {
+    pub game_mode: String,
+    pub rules: Value,
+    pub games: i64,
 }
 
 /// Who sat in a ship: a person at an address under a name, or a CPU of some level.
@@ -1039,7 +1054,56 @@ impl Store {
                 .days("stat_local_days", "stat_local_day_players")
                 .await?,
             games: self.latest_games().await?,
+            favorites: self.favorites().await?,
         })
+    }
+
+    /// The rule sets the latest games were played by most, online and on one device alike. A tie goes to the set played last.
+    async fn favorites(&self) -> turso::Result<Vec<Favorite>> {
+        let mut rows = self
+            .reader
+            .query(
+                "SELECT game_mode, rules FROM stat_matches ORDER BY at DESC LIMIT ?1",
+                (FAVORITES_FROM,),
+            )
+            .await?;
+        // Keyed by the mode and the rules as text: serde_json keeps an object's keys sorted, so the same rules read the same.
+        let mut counted: Vec<(String, Favorite)> = Vec::new();
+        let mut index: HashMap<String, usize> = HashMap::new();
+        while let Some(row) = rows.next().await? {
+            let game_mode: String = row.get(0)?;
+            let rules: String = row.get(1)?;
+            let Ok(Value::Object(mut rules)) = serde_json::from_str::<Value>(&rules) else {
+                continue;
+            };
+            for key in FAVORITES_IGNORE {
+                rules.remove(key);
+            }
+            let rules = Value::Object(rules);
+            let key = format!("{game_mode} {rules}");
+            match index.get(&key) {
+                Some(&i) => counted[i].1.games += 1,
+                None => {
+                    index.insert(key.clone(), counted.len());
+                    counted.push((
+                        key,
+                        Favorite {
+                            game_mode,
+                            rules,
+                            games: 1,
+                        },
+                    ));
+                }
+            }
+        }
+        drop(rows);
+        // A stable sort: among equals, the set met first (played last) stays first.
+        counted.sort_by(|a, b| b.1.games.cmp(&a.1.games));
+        Ok(counted
+            .into_iter()
+            .take(FAVORITES)
+            .map(|(_, favorite)| favorite)
+            .collect())
     }
 
     async fn betting(&self) -> turso::Result<Option<Betting>> {
@@ -2161,6 +2225,55 @@ mod tests {
         assert_eq!(
             (game.game_mode.as_str(), game.mode.as_str()),
             ("classic", "ffa")
+        );
+    }
+
+    #[tokio::test]
+    async fn the_favorites_are_the_rule_sets_played_most_whatever_their_length() {
+        let stats = Stats::in_memory().await;
+        let games = [
+            ("a", 1, "classic", r#"{"rounds": 5, "maxPlanets": 4}"#),
+            (
+                "b",
+                2,
+                "classic",
+                r#"{"maxPlanets": 4, "rounds": 10, "betting": true}"#,
+            ),
+            ("c", 3, "solar", r#"{"rounds": 5, "maxPlanets": 4}"#),
+            ("d", 4, "classic", r#"{"rounds": 5, "maxPlanets": 6}"#),
+            ("e", 5, "horizon", "not rules"),
+        ];
+        for (id, at, game_mode, rules) in games {
+            stats
+                .conn
+                .execute(
+                    INSERT_MATCH,
+                    (id, at, 1, game_mode, "ffa", rules, "[]", 1, "online"),
+                )
+                .await
+                .unwrap();
+        }
+        let favorites = stats.favorites().await.unwrap();
+        // Classic with four planets twice; then the solar one and the six planets once each, the one played last first.
+        assert_eq!(
+            favorites,
+            vec![
+                Favorite {
+                    game_mode: "classic".into(),
+                    rules: json!({"maxPlanets": 4}),
+                    games: 2
+                },
+                Favorite {
+                    game_mode: "classic".into(),
+                    rules: json!({"maxPlanets": 6}),
+                    games: 1
+                },
+                Favorite {
+                    game_mode: "solar".into(),
+                    rules: json!({"maxPlanets": 4}),
+                    games: 1
+                },
+            ]
         );
     }
 

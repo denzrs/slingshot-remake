@@ -95,6 +95,13 @@ export interface StatsFact {
   values: number[];
 }
 
+/** A rule set many games on the relay were played by: their length and a room's own rules left out. */
+export interface StatsFavorite {
+  gameMode: GameMode;
+  rules: Partial<RoomRules>;
+  games: number;
+}
+
 /** What the oracle's tips and bets came to on the relay. */
 export interface StatsBetting {
   shotTips: number;
@@ -284,6 +291,8 @@ export type ServerMessage =
       games: StatsGame[];
       /** Tips and bets; null while nobody has tipped (and from a relay that does not say). */
       betting?: StatsBetting | null;
+      /** The rule sets played most, most first (a relay from before them leaves them out). */
+      favorites?: StatsFavorite[];
     }
   /** One-line findings of the statistics for the menu: an id, and the numbers its wording is made of. */
   | { type: 'stats_facts'; enabled: boolean; facts: StatsFact[] }

@@ -2,7 +2,7 @@ import type { GameMode } from '../../sim/modes';
 import type { MatchPreset } from '../presets/match-presets';
 import { nextSpaceArtId, spaceArt } from './space-art';
 
-export type ModeArt = 'daily' | 'classic' | 'solar' | 'horizon' | 'trickshot' | 'simultaneous' | 'rooms' | 'create' | 'code' | 'customAdd';
+export type ModeArt = 'daily' | 'quick' | 'classic' | 'solar' | 'horizon' | 'trickshot' | 'simultaneous' | 'rooms' | 'create' | 'code' | 'customAdd';
 export type MatchPresetArt = 'standard' | 'trickshot';
 export type MayhemPresetArt = 'wildClassic' | 'insaneHorizon';
 export type SolarPresetArt = 'powerups' | 'mayhem';
@@ -89,6 +89,12 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
       scene = `<ellipse cx="160" cy="100" rx="96" ry="62" fill="none" stroke="#ffad65" stroke-opacity=".5" stroke-width="2" stroke-dasharray="6 9"/>
         <circle cx="160" cy="100" r="34" fill="#ffad65" opacity=".08"/><circle cx="160" cy="100" r="30" fill="none" stroke="#ffad65" stroke-width="2"/>
         <path d="M160 82v36M142 100h36" stroke="#ffad65" stroke-width="4" stroke-linecap="round"/>`;
+      break;
+    case 'quick':
+      // Two crossing arrows, as on a shuffle button, and a ship already on its way.
+      scene = `${orbit(126, 50, -18)}${planet(230, 112, 30)}
+        <g fill="none" stroke="#ffad65" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M52 50h22c22 0 30 50 52 50h20"/><path d="M52 100h22c22 0 30-50 52-50h20"/><path d="m138 42 8 8-8 8m0 34 8 8-8 8"/></g>
+        <path d="M40 168 Q110 172 160 140" fill="none" stroke="#6fe3c8" stroke-width="1.5"/>${ship(166, 136, 35, '#e8e4d8', 1.5)}`;
       break;
     case 'daily':
       scene = `${orbit(122, 48, -25)}${planet(204, 101, 38)}

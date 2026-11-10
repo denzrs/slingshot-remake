@@ -1092,6 +1092,8 @@ const en = {
 
   // — daily challenge —
   'mode.daily': 'Daily Challenge',
+  'mode.quick': 'Quick Game',
+  'mode.quick.hint': 'One of the 5 favourite setups, shuffled · 3 rounds vs 2 CPUs',
   'daily.menuHint': 'No. {n} · {theme}',
   'daily.menuHintBest': 'No. {n} · {theme} · best {score}',
   'daily.eyebrow': 'Daily Challenge',
@@ -2463,6 +2465,8 @@ const de: Dict = {
 
   // — daily challenge —
   'mode.daily': 'Tägliche Herausforderung',
+  'mode.quick': 'Schnelles Spiel',
+  'mode.quick.hint': 'Eine der 5 beliebtesten Einstellungen, zufällig · 3 Runden gegen 2 CPUs',
   'daily.menuHint': 'Nr. {n} · {theme}',
   'daily.menuHintBest': 'Nr. {n} · {theme} · Bestwert {score}',
   'daily.eyebrow': 'Tägliche Herausforderung',

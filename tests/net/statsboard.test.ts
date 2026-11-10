@@ -59,7 +59,7 @@ describe('stats board', () => {
   it('asks the relay once and hands back what it says', async () => {
     const reply: ServerMessage = { type: 'stats_overview', enabled: true, days: [day('2026-10-23', 2)], localDays: [day('2026-10-22', 1)], games: [] };
     const overview = await new StatsBoard(() => connection(reply)).overview();
-    expect(overview).toEqual({ enabled: true, days: [day('2026-10-23', 2)], localDays: [day('2026-10-22', 1)], games: [], betting: null });
+    expect(overview).toEqual({ enabled: true, days: [day('2026-10-23', 2)], localDays: [day('2026-10-22', 1)], games: [], betting: null, favorites: [] });
   });
 
   it('asks for the facts, and has none when the relay keeps no statistics', async () => {

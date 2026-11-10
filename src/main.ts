@@ -491,11 +491,11 @@ const app: App = {
     return screen === 'play' && !!match && match.settings.mayhem > 0;
   },
   today: () => forcedDay ?? dateKey(),
-  start(mode) {
+  start(mode, own) {
     lastMode = mode;
     match?.dispose();
     // Mayhem is a preset of the rules (the level of `mayhem`), not a mode of its own.
-    const played = cloneSettings(settings);
+    const played = cloneSettings(own ?? settings);
     match = createMatch(mode, played);
     // Where there is a relay, a game played here to its end is told to it, for its statistics.
     if (statsAvailable()) trackLocalGame(match, played, (report) => void reportLocalGame(report));
