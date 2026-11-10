@@ -3,12 +3,34 @@ import { createMatch, SolarMatch } from '../../src/game';
 import { SOLAR, SOLAR_STORM } from '../../src/sim/config';
 import { DEFAULT_SETTINGS, type Seat } from '../../src/data/settings';
 import { inNebula } from '../../src/sim/physics';
-import { generateWorld, onOrbit, orbitOf, orbitTurn, solarCenter } from '../../src/sim/world';
+import { generateWorld, isLocked, lockFace, onOrbit, orbitOf, orbitTurn, solarCenter } from '../../src/sim/world';
 
 const cpus = (n: number): Seat[] => [...Array(n).fill('medium'), ...Array(6 - n).fill('off')];
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }): number => Math.hypot(a.x - b.x, a.y - b.y);
 
 describe('solar system world', () => {
+  it('is the only place a tidally locked world turns up', () => {
+    const locked = (solar: boolean): number => {
+      let n = 0;
+      for (let seed = 1; seed <= 400; seed++) n += generateWorld(seed, { maxPlanets: 8, players: 4, blackHole: seed % 2 === 0, solar }).planets.filter(isLocked).length;
+      return n;
+    };
+    expect(locked(false)).toBe(0);
+    expect(locked(true)).toBeGreaterThan(0);
+  });
+
+  it('turns a locked lava world molten to its sun, an eyeball world its sea, and an ice world any of melt, sea or rock', () => {
+    const faces = (style: 'lava' | 'ice' | 'eyeball'): Set<string | null> => {
+      const seen = new Set<string | null>();
+      for (let seed = 1; seed <= 2000; seed++) if (isLocked({ seed, style })) seen.add(lockFace({ seed, style }));
+      return seen;
+    };
+    expect([...faces('lava')]).toEqual(['molten']);
+    expect([...faces('eyeball')]).toEqual(['sea']);
+    expect([...faces('ice')].sort()).toEqual(['molten', 'rock', 'sea']);
+    expect(lockFace({ seed: 1, style: 'rocky' })).toBeNull();
+  });
+
   it.each([2, 3, 4, 6])('puts the sun in the middle and every body on a clear orbit with %i ships', (players) => {
     for (let seed = 1; seed <= 60; seed++) {
       const world = generateWorld(seed, { maxPlanets: 6, players, blackHole: false, solar: true });

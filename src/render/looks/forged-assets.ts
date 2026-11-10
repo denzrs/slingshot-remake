@@ -25,6 +25,8 @@ import texLavaMagmaUrl from './forged/tex-lava-magma.webp';
 import texLavaAshUrl from './forged/tex-lava-ash.webp';
 import texLavaLockedUrl from './forged/tex-lava-locked.webp';
 import texIceLockedUrl from './forged/tex-ice-locked.webp';
+import texIceLockedRockUrl from './forged/tex-ice-locked-rock.webp';
+import texIceLockedLifeUrl from './forged/tex-ice-locked-life.webp';
 import texIceCryoUrl from './forged/tex-ice-cryo.webp';
 import texOceanDeepUrl from './forged/tex-ocean-deep.webp';
 import texOceanReefUrl from './forged/tex-ocean-reef.webp';
@@ -96,6 +98,8 @@ const URLS = {
   lavaAsh: texLavaAshUrl,
   lavaLocked: texLavaLockedUrl,
   iceLocked: texIceLockedUrl,
+  iceLockedRock: texIceLockedRockUrl,
+  iceLockedLife: texIceLockedLifeUrl,
   iceCryo: texIceCryoUrl,
   oceanDeep: texOceanDeepUrl,
   oceanReef: texOceanReefUrl,

@@ -4,7 +4,7 @@ import type { PowerUpKind } from '../../sim/powerups';
 import { createRng } from '../../sim/rng';
 import { rgba } from '../color';
 import { instabilityPulse } from './instability';
-import { isLocked, LIGHT, type PlanetSprite } from '../planet-common';
+import { hasLifeBand, LIGHT, lockFace, type LockFace, type PlanetSprite } from '../planet-common';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../powerup-art';
 import { SHIP_HULL } from '../ship';
 import type { DefenseFrame } from '../defense';
@@ -132,8 +132,10 @@ const PLANET_HUES: Partial<Record<Planet['style'], string>> = {
 };
 const LAVA_HUE = '#ff6a4d';
 const ICE_HUE = '#b8e4ff';
-/** An eyeball world's open sea, in place of a locked world's melt. */
-const SEA_HUE = '#3a8cff';
+/** What a locked world's side towards the light is projected as: its melt, its open sea (an eyeball world's), its bare rock. */
+const FACE_HUES: Record<LockFace, string> = { molten: LAVA_HUE, sea: '#3a8cff', rock: '#e09a5c' };
+/** The green band of life some locked rock worlds have round their terminator. */
+const LIFE_HUE = '#a4c69a';
 
 function planetColor(p: Planet): string {
   return p.style === 'gas' ? HOLO_COLOR : PLANET_HUES[p.style] ?? '#ffb066';
@@ -164,9 +166,11 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
   const normalColor = planetColor(p);
   const phase = ((p.seed % 97) / 97) * TAU;
   // Turns per second, either way round, and the axis' lean (radians) from the vertical.
-  // A tidally locked world does not turn, and stands upright: its side towards the light is projected as lava (an eyeball world's as sea), the far side as ice.
-  const locked = isLocked(p);
-  const hotHue = p.style === 'eyeball' ? SEA_HUE : LAVA_HUE;
+  // A tidally locked world does not turn, and stands upright: its side towards the light is projected as its face (lava, sea or rock), the far side as ice.
+  const face = lockFace(p);
+  const locked = face !== null;
+  const hotHue = face ? FACE_HUES[face] : LAVA_HUE;
+  const band = hasLifeBand(p);
   const spin = locked ? 0 : (0.035 + (((p.seed * 7) % 13) / 13) * 0.04) * (p.seed % 2 ? 1 : -1);
   const tilt = locked ? 0 : (((p.seed * 3) % 11) / 11 - 0.5) * 0.9;
   const { parallels, meridians } = globeLines(p);
@@ -190,11 +194,11 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
       ctx.fillStyle = rgba(color, 0.07);
       ctx.fill();
       if (locked && !signal) {
-        // The molten side glows through the plate where it shows, round the limb towards the light.
+        // The side towards the light shows through the plate, round the limb: a melt or sea brightly, bare rock, which only reflects, dimmer.
         const lx = LIGHT[0] * R;
         const ly = LIGHT[1] * R;
         const melt = ctx.createRadialGradient(lx, ly, 0, lx, ly, R * 1.1);
-        melt.addColorStop(0, rgba(hotHue, 0.32));
+        melt.addColorStop(0, rgba(hotHue, face === 'rock' ? 0.2 : 0.32));
         melt.addColorStop(1, rgba(hotHue, 0));
         ctx.fillStyle = melt;
         ctx.fill();
@@ -206,6 +210,7 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
       const far = new Path2D();
       const nearHot = new Path2D();
       const farHot = new Path2D();
+      const nearLife = new Path2D();
       let px = 0;
       let py = 0;
       let pz = 0;
@@ -214,9 +219,12 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
         const sy = -(Y * cosE - Z * sinE) * R;
         const sz = Z * cosE + Y * sinE;
         if (!first) {
-          // Which side of a locked world the segment lies on: towards the light (the screen's y runs down, as LIGHT's does).
-          const hot = locked && ((sx + px) / 2 / R) * LIGHT[0] + ((sy + py) / 2 / R) * LIGHT[1] + ((sz + pz) / 2) * LIGHT[2] > 0;
-          const path = sz + pz > 0 ? (hot ? nearHot : near) : hot ? farHot : far;
+          // Which side of a locked world the segment lies on: towards the light (the screen's y runs down, as LIGHT's does). A wireframe has no shade, so unlike the shaded looks' `LOCK_SUN` its face can stand straight at the light.
+          const towards = ((sx + px) / 2 / R) * LIGHT[0] + ((sy + py) / 2 / R) * LIGHT[1] + ((sz + pz) / 2) * LIGHT[2];
+          const hot = locked && towards > 0;
+          // A band of life runs along the terminator, on the near side only (the far side's lines are too faint to tell green).
+          const life = band && sz + pz > 0 && Math.abs(towards) < 0.18;
+          const path = life ? nearLife : sz + pz > 0 ? (hot ? nearHot : near) : hot ? farHot : far;
           path.moveTo(px, py);
           path.lineTo(sx, sy);
         }
@@ -246,7 +254,8 @@ export function renderHoloPlanet(p: Planet, ps: number): PlanetSprite {
       ctx.strokeStyle = rgba(molten, 0.13);
       ctx.stroke(farHot);
       ctx.lineWidth = (p.style === 'gas' ? 1 : .7) + (warning ? warning.pulse * .45 : 0);
-      for (const [path, hue] of [[near, cold], [nearHot, molten]] as const) {
+      const green = band && !signal ? LIFE_HUE : molten;
+      for (const [path, hue] of [[near, cold], [nearHot, molten], [nearLife, green]] as const) {
         ctx.strokeStyle = rgba(hue, warning ? .48 + warning.pulse * .42 : .55);
         ctx.shadowColor = hue; ctx.shadowBlur = warning ? 2 + warning.pulse * 7 : 0;
         ctx.stroke(path);

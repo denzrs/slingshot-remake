@@ -151,20 +151,20 @@ function planetField(rows: Pick[][]): { planets: Planet[]; rows: string[] } {
   return { planets, rows: names };
 }
 
-/** The first four styles; their tidally locked maps are in `NEW_PLANETS`. */
+/** The first four styles; their tidally locked maps (lava's last, ice's last four) are in `NEW_PLANETS`. */
 const PLANETS = planetField([
   [...all('rocky'), ['rocky', 0, { moon: true }], ['rocky', 2, { moon: true }], ['rocky', 4, { moon: true }]],
   [...all('gas', (i) => ({ aurora: true, ring: i % 2 === 0 })), ['gas', 5, { ring: true }], ['gas', 3, { aurora: true, moon: true }]],
-  [...all('ice', () => ({}), maps('ice') - 1), ['ice', 2, { ring: true }], ['ice', 0, { moon: true }]],
+  [...all('ice', () => ({}), maps('ice') - 4), ['ice', 2, { ring: true }], ['ice', 0, { moon: true }]],
   [...all('lava', () => ({}), maps('lava') - 1), ['lava', 0, { moon: true }], ['lava', 1, { ring: true }], ['rocky', 0, { ring: true }]],
 ]);
 
-/** The styles after them, two to a row, and the tidally locked lava and ice worlds. */
+/** The styles after them, two to a row, and the tidally locked lava and ice worlds (an ice world's melt, sea, and rock with and without life). */
 const NEW_PLANETS = planetField([
   [...all('ocean'), ['ocean', 0, { moon: true }], ...all('desert'), ['desert', 1, { ring: true }]],
   [...all('acid'), ['acid', 0, { moon: true }], ...all('carbon'), ['carbon', 0, { ring: true }]],
   [...all('crystal'), ['crystal', 1, { ring: true }], ...all('living'), ['living', 0, { moon: true }]],
-  [...all('machine'), ['machine', 0, { ring: true }], ['lava', maps('lava') - 1, {}], ['lava', maps('lava') - 1, { moon: true }], ['ice', maps('ice') - 1, {}], ['ice', maps('ice') - 1, { ring: true }]],
+  [...all('machine'), ['machine', 0, { ring: true }], ['lava', maps('lava') - 1, { moon: true }], ['ice', maps('ice') - 4, {}], ['ice', maps('ice') - 3, {}], ['ice', maps('ice') - 2, {}], ['ice', maps('ice') - 1, { ring: true }]],
 ]);
 
 /** The worlds after those, and the rocky maps past the first five. */

@@ -1,5 +1,6 @@
 import type { Planet } from '../sim/physics';
 import { range } from '../sim/rng';
+import { lockFace } from '../sim/world';
 import { fbm } from './noise';
 
 export type Vec3 = [number, number, number];
@@ -22,17 +23,22 @@ export interface PlanetSprite {
 
 /** Light comes from the upper left, slightly in front. */
 export const LIGHT: Vec3 = normalize([-0.62, -0.5, 0.6]);
-
 /**
- * A lava or ice world turned for good with one face to its sun (tidally locked): molten rock on that face, ice on the one
- * away from it in the dark, and it does not turn. One in four of them, by the seed, so every look and every screen agree;
- * and every eyeball world (an open sea under its sun, ice all round).
+ * Where a tidally locked world's sun stands, for the face it turns to it: the light's way across the screen, but a little
+ * behind the disc rather than in front of it as `LIGHT` is. Turned straight at the light, its ice (and what lives round its
+ * terminator) would hide on the far side but for a crescent in the dark; this way the face shows round the upper left and
+ * the ice, much of it in the light, takes the rest.
  */
-export function isLocked(p: Planet): boolean {
-  // An eyeball world always is: its open sea is the face to its sun.
-  if (p.style === 'eyeball') return true;
-  if (p.style !== 'lava' && p.style !== 'ice') return false;
-  return ((Math.imul(p.seed ^ 0x27d4eb2f, 0x165667b1) >>> 8) & 255) < 64;
+export const LOCK_SUN: Vec3 = normalize([LIGHT[0], LIGHT[1], -0.25]);
+/** Where an open sea's sun stands (an eyeball world's, or a locked ice world's with a sea): further in front, so the sea, not its ice, fills most of the disc. */
+export const SEA_SUN: Vec3 = normalize([LIGHT[0], LIGHT[1], 0.3]);
+
+/** A tidally locked world (lava, ice or eyeball), which only a Solar System has, and the face it turns to its sun: the rules live with the world they are made in. */
+export { isLocked, lockFace, type LockFace } from '../sim/world';
+
+/** A tidally locked world of bare rock may have life: a narrow green band in the twilight between its rock and its ice. Half of them, by the seed; only the picture knows. */
+export function hasLifeBand(p: Pick<Planet, 'seed' | 'style'>): boolean {
+  return lockFace(p) === 'rock' && ((Math.imul(p.seed ^ 0x6c8e9cf5, 0x7feb352d) >>> 8) & 1) === 1;
 }
 
 export interface Crater {

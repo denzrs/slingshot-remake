@@ -14,14 +14,14 @@ import { FIELD } from '../sim/config';
 import type { Planet, PlanetStyle } from '../sim/physics';
 import { createRng, pick } from '../sim/rng';
 import { PLANET_TINTS } from '../sim/world';
-import { isLocked } from '../render/planet-common';
+import { hasLifeBand, isLocked, lockFace } from '../render/planet-common';
 import { forgedPlanetTraits } from '../render/looks/forged-planet';
 import { aiming, GALLERY_OPTIONS, STYLE_NAMES } from './gallery-match';
 
 /**
  * Dev-only page (`/dev/planets.html`): every style of planet at every size the game draws, from a solar system's smallest
  * moon to the biggest giant of an open field, in the real field renderer, four styles to a page and a page for the variants
- * a seed picks (a tidally locked world, an icy moon's geysers). A tab per look, or all of them side by side; "Neue Samen"
+ * a seed picks (a tidally locked world, molten, sea or rock towards its sun, the rock with a band of life or not; an icy moon's geysers). A tab per look, or all of them side by side; "Neue Samen"
  * rolls other faces (maps, rings, moons) for the same grid, and the seed and page stay in the address to share.
  */
 
@@ -40,9 +40,15 @@ const PAGES: { name: string; rows: Row[] }[] = [
   { name: 'Kristall · Lebend · Maschine · Eisen', rows: [row('crystal'), row('living'), row('machine'), row('iron')] },
   { name: 'Augapfel · Hycean · Pilz · Vulkanmond', rows: [row('eyeball', STYLE_NAMES.eyeball, () => true), row('hycean'), row('fungal'), row('volcanic')] },
   {
-    name: 'Varianten',
-    rows: [row('lava', 'Lava, gebunden', isLocked), row('ice', 'Eis, gebunden', isLocked), row('ice', 'Eis, Geysire', (p) => forgedPlanetTraits(p).map === 'iceCryo')],
+    name: 'Gebunden',
+    rows: [
+      row('ice', 'Eis: Glut', (p) => lockFace(p) === 'molten'),
+      row('ice', 'Eis: Meer', (p) => lockFace(p) === 'sea'),
+      row('ice', 'Eis: Fels', (p) => lockFace(p) === 'rock' && !hasLifeBand(p)),
+      row('ice', 'Eis: Leben', hasLifeBand),
+    ],
   },
+  { name: 'Varianten', rows: [row('lava', 'Lava, gebunden', isLocked), row('ice', 'Eis, Geysire', (p) => forgedPlanetTraits(p).map === 'iceCryo')] },
 ];
 /** The most rows a page has: every page is laid out for as many, so a size looks the same on each. */
 const ROWS = Math.max(...PAGES.map((page) => page.rows.length));
