@@ -169,6 +169,7 @@ function statsContent(app: App): Screen {
   /** The facts, asked for when the tab is first opened: null until they come. */
   let facts: StatsFact[] | null = null;
   let factsAsked = false;
+  let factsFailed = false;
 
   const status = h('p.lb__status', { role: 'status' }, t('stats.loading'));
   const heat = h('div.st__heat', null);
@@ -200,13 +201,22 @@ function statsContent(app: App): Screen {
     heat.hidden = table.hidden = betting.hidden = toolbar.hidden = true;
     if (!factsAsked) {
       factsAsked = true;
-      void loadFacts(board).then((seen) => {
-        facts = seen;
-        if (tab === 'facts') paint();
-      });
+      factsFailed = false;
+      loadFacts(board).then(
+        (seen) => {
+          facts = seen;
+          if (tab === 'facts') paint();
+        },
+        () => {
+          // Opening the tab again asks again.
+          factsAsked = false;
+          factsFailed = true;
+          if (tab === 'facts') paint();
+        },
+      );
     }
     const lines = facts ? factLinesInOrder(facts) : [];
-    status.textContent = !facts ? t('stats.loading') : lines.length ? '' : t('stats.facts.none');
+    status.textContent = facts ? (lines.length ? '' : t('stats.facts.none')) : factsFailed ? t('stats.failed') : t('stats.loading');
     factsView.hidden = !lines.length;
     factsTitle.textContent = `${t('stats.tab.facts')} · ${fmtInt(lines.length)}`;
     factList.replaceChildren(...lines.map(factItem));
