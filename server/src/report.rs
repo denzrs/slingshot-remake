@@ -67,6 +67,10 @@ const PLACEMENT_KINDS: [&str; 7] = [
     "antigravity",
 ];
 const HIT_KINDS: [&str; 3] = ["enemy", "self", "friendly"];
+/// What can happen to a seat's person: dropped out, came back, left the game.
+const SEAT_CHANGES: [&str; 3] = ["away", "back", "left"];
+/// Where in its turn it came (see `game/replay.ts` on the client): while the shots were in the air, while it was being aimed, or between turns.
+const SEAT_CHANGE_WHENS: [&str; 3] = ["flight", "aiming", "between"];
 /// Shots in one round beyond which a report is not believed (six ships, a long round, splitters).
 const MAX_SHOTS: usize = 500;
 /// Far more than a round can hold; a number beyond it is not a count.
@@ -437,6 +441,41 @@ fn parse_placement(value: &Value, seats: usize) -> Option<PlacementReport> {
         x2: coordinate("x2")?,
         y2: coordinate("y2")?,
         planet: optional_int(value.get("planet"), -1..=MAX_PLANETS)?,
+    })
+}
+
+/// A seat's person dropped out, came back or left, and the turn it came at: without it a replay deals the turns out to seats
+/// that were not at the table. It names its turn itself, as that turn may never go off (a drop can settle the round first).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SeatReport {
+    pub round: i64,
+    pub turn: i64,
+    pub seat: usize,
+    pub change: &'static str,
+    pub when: &'static str,
+    /// For a change in flight: the physics step of the flight it came at.
+    pub at: Option<i64>,
+}
+
+impl SeatReport {
+    /// The rows writing it down takes.
+    pub fn rows(&self) -> u64 {
+        1
+    }
+}
+
+/// A `seat_stats`, or None when anything in it will not do. Whether the seat is one of the room's is for the room to say.
+pub fn parse_seat_report(value: &Value) -> Option<SeatReport> {
+    if !is_record(value) {
+        return None;
+    }
+    Some(SeatReport {
+        round: int(value.get("round"), 1..=MAX_ROUND)?,
+        turn: int(value.get("turn"), 1..=MAX_TURN)?,
+        seat: seat(value.get("player"), MAX_SEATS)??,
+        change: choice(value.get("change"), &SEAT_CHANGES)??,
+        when: choice(value.get("when"), &SEAT_CHANGE_WHENS)??,
+        at: optional_int(value.get("at"), 0..=MAX_STEP)?,
     })
 }
 

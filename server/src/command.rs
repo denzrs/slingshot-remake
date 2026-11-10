@@ -13,7 +13,8 @@ use crate::protocol::{
     DailyScore, RoomLook, RoomName, RoomRules, NAME_REQUIRED,
 };
 use crate::report::{
-    parse_local_game, parse_round_report, parse_turn_report, LocalGame, RoundReport, TurnReport,
+    parse_local_game, parse_round_report, parse_seat_report, parse_turn_report, LocalGame,
+    RoundReport, SeatReport, TurnReport,
 };
 use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
 
@@ -88,6 +89,7 @@ pub enum RoomCommand<'a> {
     RoundStats(Box<Parsed<RoundReport>>),
     /// The host's account of a turn that was just flown.
     TurnStats(Parsed<TurnReport>),
+    SeatStats(Parsed<SeatReport>),
     LeaveRoom,
     /// A new connection asks for the seat its `token` was given for.
     Resume(Parsed<String>),
@@ -275,6 +277,9 @@ impl<'a> RoomCommand<'a> {
             )),
             "turn_stats" => {
                 RoomCommand::TurnStats(parse_turn_report(message).ok_or("Malformed turn stats"))
+            }
+            "seat_stats" => {
+                RoomCommand::SeatStats(parse_seat_report(message).ok_or("Malformed seat stats"))
             }
             "leave_room" => RoomCommand::LeaveRoom,
             "resume" => RoomCommand::Resume(

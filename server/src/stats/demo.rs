@@ -11,10 +11,11 @@ use crate::report::{
 
 use super::{now_unix, Job, Occupant, RoundFacts, SeatFacts, Stats, DAY_SECS};
 
-const DEMO_TABLES: [&str; 12] = [
+const DEMO_TABLES: [&str; 13] = [
     "stat_bonuses",
     "stat_tips",
     "stat_placements",
+    "stat_seat_changes",
     "stat_shots",
     "stat_turns",
     "stat_seats",

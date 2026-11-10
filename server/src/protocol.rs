@@ -11,7 +11,7 @@ use crate::wire::{Avatar, CpuLevel, RoomColor, RoomSymbol, Visibility, Wire};
 /// The version of the wire protocol the relay speaks. A client says which one it was built for (`?v=` on its address); one built
 /// for an older protocol is told to reload and let go. Not raised by hand: a TypeScript test notices when the wire changed and
 /// `npm run protocol` raises it here, in `src/net/net.ts` and in `server/protocol-contract.json`.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 pub const MAX_TIP: i64 = 6;
 /// A teleport offers a few spots to choose from; a pick names one by its place in the list.

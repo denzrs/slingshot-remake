@@ -20,6 +20,7 @@ export const WIRE_FILES = [
   'src/data/roomLook.ts',
   'src/platform/avatars.ts',
   'src/game/roundReport.ts',
+  'src/game/replay.ts',
 ] as const;
 
 /** Declarations picked out of files that are mostly something else: the file, and what the declaration starts with. */

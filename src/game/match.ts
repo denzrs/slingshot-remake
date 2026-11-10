@@ -16,7 +16,7 @@ import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type
 import { generateWorld } from '../sim/world';
 import { ShotLog } from './shotLog';
 import { NEAR_MISS_GAP, type BanterCue } from './banter';
-import { replayKey, RIDERS, type ReplayScript, type ReplayTurn } from './replay';
+import { replayKey, RIDERS, type ReplayScript, type ReplayTurn, type SeatChange, type SeatChangeKind, type SeatChangeWhen } from './replay';
 import { Crowd } from './crowd';
 import { Killcam } from './killcam';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
@@ -409,6 +409,7 @@ export abstract class Match {
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
   private turnListeners: (() => void)[] = [];
+  private seatListeners: ((change: SeatChange) => void)[] = [];
   private banterListeners: ((cue: BanterCue) => void)[] = [];
 
   // ————————————————————————————— Replay —————————————————————————————
@@ -419,6 +420,8 @@ export abstract class Match {
   private scriptSkipped = new Set<number>();
   /** Splits still to make in the flight on screen: whose, and the step of the flight they went off at. */
   private pendingSplits: { player: number; at: number }[] = [];
+  /** The changes at the table of a recorded match that the replay has still to make, by the turn they belong to (see `makeSeatChanges`). */
+  private scriptSeats = new Map<string, SeatChange[]>();
   /**
    * How the replay stands: `finished` when the recording has run out, `drifted` when the game stopped doing
    * what the recording says it did (a version that plays differently from the one that was recorded).
@@ -468,6 +471,10 @@ export abstract class Match {
     if (options.script) {
       this.scriptSkipped = new Set(options.script.skipped ?? []);
       this.scriptTurns = new Map(options.script.turns.map((turn) => [replayKey(turn.round, turn.turn), turn]));
+      for (const change of options.script.seatChanges ?? []) {
+        const key = replayKey(change.round, change.turn);
+        this.scriptSeats.set(key, [...(this.scriptSeats.get(key) ?? []), change]);
+      }
       this.power.scripted = true;
     }
   }
@@ -522,6 +529,11 @@ export abstract class Match {
     for (const l of this.banterListeners) l({ kind, player, other });
   }
 
+  /** Told of every change at the table as it happens (host): a recording keeps them, as a replay has no room to hear them from. */
+  onSeatChange(listener: (change: SeatChange) => void): void {
+    this.seatListeners.push(listener);
+  }
+
   /** Called when a turn's shots have all landed and the scores are settled, before the next phase begins. */
   onTurnEnd(listener: () => void): void {
     this.turnListeners.push(listener);
@@ -534,6 +546,7 @@ export abstract class Match {
     this.resetFlight();
     this.listeners.length = 0;
     this.turnListeners.length = 0;
+    this.seatListeners.length = 0;
   }
 
   private resetFlight(): void {
@@ -1238,7 +1251,16 @@ export abstract class Match {
     this.killcam.active = null;
     this.emit({ type: 'killcam', active: false, recording: k.recording });
     if (k.returnTo) this.setPhase(k.returnTo);
-    else this.afterVolley();
+    else this.nextVolley();
+  }
+
+  /**
+   * The volley is over: the next turn is given out. In a replay, what came at the table between the two turns comes first, as on
+   * the host, where it came before the turn was handed out (in a killcam the replay may not show, or that showed it already).
+   */
+  private nextVolley(): void {
+    if (this.scriptTurns) this.applySeatChanges(this.nextTurnKey(), 'between');
+    this.afterVolley();
   }
 
   // ————————————————————————————— Leaving —————————————————————————————
@@ -1250,6 +1272,7 @@ export abstract class Match {
   removePlayer(id: number): void {
     const p = this.players[id];
     if (!p || p.left) return;
+    this.noteSeatChange(id, 'left');
     const open = !this.decided;
     p.left = true;
     p.alive = false;
@@ -1267,6 +1290,61 @@ export abstract class Match {
   /** The round was settled by somebody leaving it, not by a shot: it ends as a walkover. */
   private forfeited = false;
 
+  /** The room's news about a seat goes into the recording, with the moment it came at: a replay has no room to hear it from. */
+  private noteSeatChange(player: number, change: SeatChangeKind): void {
+    // Once the game is over there is no turn left for it to change.
+    if (this.replaying || this.phase === 'gameOver' || (this.phase === 'killcam' && this.killcam.active?.returnTo === 'gameOver')) return;
+    // The turn it belongs to: the one in the air, the one being aimed, or the next one to go off. It need not ever go off.
+    const when: SeatChangeWhen = this.phase === 'flying' ? 'flight' : this.phase === 'aiming' ? 'aiming' : 'between';
+    const at = when === 'flight' ? { round: this.round, turn: this.shotLog.turn } : when === 'aiming' ? { round: this.round, turn: this.shotLog.turn + 1 } : this.nextTurnKey();
+    const step = when === 'flight' ? { at: this.volley?.steps ?? 0 } : {};
+    for (const listener of this.seatListeners) listener({ ...at, player, change, when, ...step });
+  }
+
+  /**
+   * Replay: makes the changes at the table the recording has for this turn that came at this moment (between turns, or while it was
+   * aimed), in the order they came.
+   */
+  private applySeatChanges(turn: { round: number; turn: number }, when: Exclude<SeatChangeWhen, 'flight'>): void {
+    if (this.scriptSeats.size) this.makeSeatChanges(replayKey(turn.round, turn.turn), (c) => c.when === when);
+  }
+
+  /**
+   * Replay: the changes at the table that came while this turn's shots were in the air, each at the step of the flight it came at:
+   * a ship that goes off the field mid-flight is not there for what follows. `last`: the flight is over, so whatever is left is due.
+   */
+  private makeFlightSeatChanges(volley: Volley, last: boolean): void {
+    if (this.scriptSeats.size) this.makeSeatChanges(replayKey(this.round, this.shotLog.turn), (c) => c.when === 'flight' && (last || (c.at ?? 0) <= volley.steps));
+  }
+
+  /**
+   * Makes the recorded changes of the turn `key` that are `due`, each once, in the order they came. They go through the same
+   * calls the room's news did on the host, so the game answers them the same way.
+   */
+  private makeSeatChanges(key: string, due: (c: SeatChange) => boolean): void {
+    const changes = this.scriptSeats.get(key);
+    if (!changes) return;
+    const now: SeatChange[] = [];
+    const later: SeatChange[] = [];
+    for (const c of changes) (due(c) ? now : later).push(c);
+    if (!now.length) return;
+    if (later.length) this.scriptSeats.set(key, later);
+    else this.scriptSeats.delete(key);
+    for (const c of now) {
+      if (c.change === 'left') this.removePlayer(c.player);
+      else this.setAway(c.player, c.change === 'away');
+    }
+  }
+
+  /**
+   * The turn the next volley will be, as the recording numbers it: the first of the next round once this one is over. A killcam
+   * counts as the phase it goes back to, so one shown at a round's end is already past that round.
+   */
+  private nextTurnKey(): { round: number; turn: number } {
+    const phase = this.phase === 'killcam' ? this.killcam.active?.returnTo : this.phase;
+    return phase === 'roundOver' || phase === 'gameOver' ? { round: this.round + 1, turn: 1 } : { round: this.round, turn: this.shotLog.turn + 1 };
+  }
+
   /**
    * Online (host): the person in this seat dropped out (`away`), or is back. Meanwhile their ship is off the field,
    * where nothing can hit it, and the round goes on as if they were not there: their turns are passed over, a volley
@@ -1276,6 +1354,7 @@ export abstract class Match {
   setAway(id: number, away: boolean): void {
     const p = this.players[id];
     if (!p || p.left || p.away === away) return;
+    this.noteSeatChange(id, away ? 'away' : 'back');
     p.away = away;
     this.tableChanged();
     if (!p.alive) return;
@@ -1501,6 +1580,8 @@ export abstract class Match {
     // The round's announcement holds everything still: no aiming, no CPU thinking, no shot clock.
     if (this.revealing) return;
     if (this.phase === 'killcam') {
+      // A replay's killcam is a phase between two turns like any other: what came at the table during it comes now.
+      if (this.scriptTurns) this.applySeatChanges(this.nextTurnKey(), 'between');
       if (this.killcam.update(dt, (volley, event) => this.onVolleyEvent(volley, event, false))) this.endKillcam();
     } else if (this.phase === 'flying') this.updateFlight(dt);
     else if (this.scriptTurns) this.updateScripted(dt);
@@ -1537,6 +1618,8 @@ export abstract class Match {
 
   /** Between flights a replay does what the recording says, where a game waits for its players. */
   private updateScripted(dt: number): void {
+    // What came at the table while the game was between two turns (a round's end, an orbit) comes now, in the same phase.
+    if (this.phase !== 'aiming') this.applySeatChanges(this.nextTurnKey(), 'between');
     if (this.phase === 'roundOver') {
       if (this.phaseTime > 3) this.advance();
       return;
@@ -1551,6 +1634,9 @@ export abstract class Match {
     // A beat to see the field before the shots go off.
     if (this.phaseTime < 1) return;
     const turn = this.shotLog.turn + 1;
+    // A person who dropped out while this turn was being aimed does so now: the turn may pass to somebody else, or the round be settled.
+    this.applySeatChanges({ round: this.round, turn }, 'aiming');
+    if (this.phase !== 'aiming' || this.phaseTime < 1) return;
     const recorded = this.scriptTurns!.get(replayKey(this.round, turn));
     if (!recorded && !this.recordedBeyond(turn)) {
       // The room skipped this round by vote: it ends where the recording does.
@@ -1608,11 +1694,14 @@ export abstract class Match {
     this.simClock += dt * this.flightSpeed;
     while (this.simClock >= PHYSICS.DT && !volley.done) {
       if (this.pendingSplits.length) this.makeSplits(volley);
+      if (this.scriptTurns) this.makeFlightSeatChanges(volley, false);
       this.simClock -= PHYSICS.DT;
       for (const e of volley.step()) this.onVolleyEvent(volley, e, true);
       this.power.onStep(volley);
     }
     if (!volley.done) return;
+    // Those that came after the last step (while the finished flight was on screen): before anything the flight's end does.
+    if (this.scriptTurns) this.makeFlightSeatChanges(volley, true);
     this.flightDoneAt ??= this.phaseTime;
     if (this.phaseTime - this.flightDoneAt < this.afterVolleyDelay) return;
     this.recordFlights(volley);
@@ -1625,7 +1714,7 @@ export abstract class Match {
     for (const listener of this.turnListeners) listener();
     const clip = this.killcam.finish(volley.script, this.killcamMode === 'round');
     if (clip && this.killcamMode === 'every') this.startKillcam(clip, null, false);
-    else this.afterVolley();
+    else this.nextVolley();
   }
 
   /**
