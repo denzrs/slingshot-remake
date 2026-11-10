@@ -1,7 +1,7 @@
 import { COLORS } from '../sim/config';
 import type { Planet } from '../sim/physics';
 import { createRng, range } from '../sim/rng';
-import { clamp01, crater, isLocked, lavaVeins, LIGHT, makeCraters, mix, normalize, smoothstep, type Crater, type PlanetSprite, type Vec3 } from './planet-common';
+import { clamp01, crater, hasLifeBand, lavaVeins, LIGHT, LOCK_SUN, lockFace, SEA_SUN, makeCraters, mix, normalize, smoothstep, type Crater, type LockFace, type PlanetSprite, type Vec3 } from './planet-common';
 import { hexToRgb } from './color';
 import { fbm } from './noise';
 
@@ -16,6 +16,11 @@ const BLOOM: [number, number, number] = [110, 240, 225];
 const LAMPS: [number, number, number] = [255, 190, 100];
 /** An eyeball world's open sea, laid over its ice. */
 const SEA: [number, number, number] = [40, 110, 190];
+/** A locked world's bare rock under its sun, laid over its ice, and the green band of life some have round their terminator. */
+const ROCK: [number, number, number] = [150, 118, 88];
+const LIFE: [number, number, number] = [98, 118, 80];
+/** Its meltwater, running off the ice into the rock. */
+const MELTWATER: [number, number, number] = [58, 104, 150];
 /** A locked world's face away from the light is ice whatever its style; how far round its melt reaches (in light, −1 → 1) is its style's. */
 const LOCKED_ICE = '#bcd3dc';
 const MELT_REACH: Partial<Record<Planet['style'], number>> = { lava: 0.2, ice: 0 };
@@ -44,7 +49,8 @@ function renderClassicPlanet(p: Planet, ps: number): HTMLCanvasElement {
   const data = img.data;
 
   const rng = createRng(p.seed);
-  const locked = isLocked(p);
+  const face = lockFace(p);
+  const locked = face !== null;
   const tint = hexToRgb(locked ? LOCKED_ICE : p.tint);
   const ink = hexToRgb(COLORS.plate);
   const seed = p.seed;
@@ -53,9 +59,8 @@ function renderClassicPlanet(p: Planet, ps: number): HTMLCanvasElement {
   const bandFreq = range(rng, 9, 16);
   const craters = makeCraters(p, rng);
   const reach = MELT_REACH[p.style] ?? 0;
-  const eyeball = p.style === 'eyeball';
-  const albedo = eyeball ? eyeballAlbedo(seed) : locked ? lockedAlbedo(seed, reach) : albedoFn(p, seed, tilt, bandFreq, craters);
-  const glowing = glowFn(p, seed, locked && !eyeball, reach);
+  const albedo = face === 'sea' ? eyeballAlbedo(seed) : face === 'rock' ? lockedRockAlbedo(seed, rng) : face ? lockedAlbedo(seed, reach) : albedoFn(p, seed, tilt, bandFreq, craters);
+  const glowing = glowFn(p, seed, face, reach);
 
   const cs = Math.cos(spin);
   const sn = Math.sin(spin);
@@ -98,7 +103,7 @@ function renderClassicPlanet(p: Planet, ps: number): HTMLCanvasElement {
       const lift = 0.72 + 0.4 * v;
       const i = (y * size + x) * 4;
       const glow = glowing ? glowing.at(tx, dy, tz, dx, nz, dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2]) : 0;
-      const hue = glowing?.colour ?? MOLTEN;
+      const hue = glowing?.hueAt?.(dx, dy, nz) ?? glowing?.colour ?? MOLTEN;
       data[i] = mix(mix(Math.min(255, tint[0] * lift), ink[0], inkAmt), hue[0], glow);
       data[i + 1] = mix(mix(Math.min(255, tint[1] * lift), ink[1], inkAmt), hue[1], glow);
       data[i + 2] = mix(mix(Math.min(255, tint[2] * lift), ink[2], inkAmt), hue[2], glow);
@@ -251,30 +256,78 @@ function calderaFn(x: number, y: number, z: number, seed: number): number {
 /** An eyeball world, as seen (it does not turn): a round open sea towards the light, a dark shore round it, ice beyond. */
 function eyeballAlbedo(seed: number) {
   return (dx: number, dy: number, nz: number) => {
-    const towards = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2] + 0.2 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
+    const towards = dx * SEA_SUN[0] + dy * SEA_SUN[1] + nz * SEA_SUN[2] + 0.2 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
     const ice = 0.95 + 0.1 * (fbm(dx * 3, dy * 3, nz * 3, seed + 9, 3) - 0.5);
-    const shore = smoothstep(0.08, 0, Math.abs(towards - 0.45));
-    return mix(mix(ice, 0.5, smoothstep(0.42, 0.5, towards)), 0.35, shore * 0.7);
+    const shore = smoothstep(0.08, 0, Math.abs(towards - 0.12));
+    return mix(mix(ice, 0.5, smoothstep(0.09, 0.17, towards)), 0.35, shore * 0.7);
   };
 }
 
 /** A tidally locked world, as seen (it does not turn): the melt towards the light (`glowFn`), a dark crust round the terminator, and ice on the far, dark side. */
 function lockedAlbedo(seed: number, reach: number) {
   return (dx: number, dy: number, nz: number) => {
-    const away = -(dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2]) + 0.25 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
+    const away = -(dx * LOCK_SUN[0] + dy * LOCK_SUN[1] + nz * LOCK_SUN[2]) + 0.25 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
     const ice = 0.92 + 0.12 * (fbm(dx * 3, dy * 3, nz * 3, seed + 9, 3) - 0.5);
     return mix(0.4, ice, smoothstep(reach - 0.05, reach + 0.15, away));
   };
 }
 
+/** A tidally locked world with no melt, as seen (it does not turn): bare cracked rock towards the light, cratered thick (its colour laid on by `glowFn`), ice on the far, dark side. */
+function lockedRockAlbedo(seed: number, rng: () => number) {
+  // More and deeper craters than a rocky world's, all on the side towards the light: nothing there wears them down.
+  const craters: Crater[] = [];
+  for (let i = 0, count = 9 + Math.floor(rng() * 7); i < count; i++) {
+    const c = normalize([LOCK_SUN[0] + range(rng, -0.9, 0.9), LOCK_SUN[1] + range(rng, -0.9, 0.9), LOCK_SUN[2] + range(rng, -0.9, 0.9)]);
+    const r = range(rng, 0.1, 0.34) * (i === 0 ? 1.4 : 1);
+    craters.push({ c, cosR: Math.cos(r), depth: range(rng, 0.35, 0.6) });
+  }
+  return (dx: number, dy: number, nz: number) => {
+    const towards = dx * LOCK_SUN[0] + dy * LOCK_SUN[1] + nz * LOCK_SUN[2] + 0.25 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
+    const ice = 0.92 + 0.12 * (fbm(dx * 3, dy * 3, nz * 3, seed + 9, 3) - 0.5);
+    const crack = smoothstep(0.035, 0.012, Math.abs(fbm(dx * 3.5, dy * 3.5, nz * 3.5, seed + 4, 3) - 0.5));
+    const rock = (0.68 + 0.45 * (fbm(dx * 4, dy * 4, nz * 4, seed + 6, 4) - 0.5) - 0.35 * crack) * crater(dx, dy, nz, craters);
+    return mix(ice, rock, smoothstep(-0.15, 0.05, towards));
+  };
+}
+
 /** What of a planet glows of itself in the engraving, and in what colour: a lava world's veins, a locked world's sunny side, a living world's veins and a machine world's lamps at night. */
-function glowFn(p: Planet, seed: number, locked: boolean, reach: number) {
-  if (locked) {
+function glowFn(p: Planet, seed: number, face: LockFace | null, reach: number): { colour: readonly number[]; hueAt?: (dx: number, dy: number, nz: number) => readonly number[]; at: (tx: number, dy: number, tz: number, dx: number, nz: number, lambert: number) => number } | null {
+  if (face === 'rock') {
+    // Not a glow: the rock's colour, laid over the engraving's one tint (ice's) as seen, and fading with the light into the hatching.
+    const towardsAt = (dx: number, dy: number, nz: number): number => dx * LOCK_SUN[0] + dy * LOCK_SUN[1] + nz * LOCK_SUN[2] + 0.25 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
+    // Some have life: a ragged green band in the twilight between rock and ice.
+    const ringAt = hasLifeBand(p)
+      ? (dx: number, dy: number, nz: number): number => smoothstep(0.11, 0.04, Math.abs(towardsAt(dx, dy, nz) + 0.04)) * smoothstep(0.32, 0.5, fbm(dx * 6, dy * 6, nz * 6, seed + 31, 3))
+      : null;
+    // And rivers off the ice's edge, winding out across the band into the rock until they dry up.
+    const riverAt = (dx: number, dy: number, nz: number): number => {
+      const towards = towardsAt(dx, dy, nz);
+      const reach = smoothstep(-0.14, -0.06, towards) * smoothstep(0.65, 0.3, towards);
+      return reach * smoothstep(0.045, 0.02, Math.abs(fbm(dx * 3, dy * 3, nz * 3, seed + 37, 3) - 0.5));
+    };
+    const hue: number[] = [...ROCK];
+    return {
+      colour: ROCK,
+      hueAt: ringAt
+        ? (dx, dy, nz) => {
+            const g = ringAt(dx, dy, nz);
+            const w = riverAt(dx, dy, nz);
+            for (let k = 0; k < 3; k++) hue[k] = mix(mix(ROCK[k], LIFE[k], g), MELTWATER[k], w);
+            return hue;
+          }
+        : undefined,
+      at: (_tx, dy, _tz, dx, nz, lambert) => {
+        const rock = 0.6 * smoothstep(-0.15, 0.05, towardsAt(dx, dy, nz)) * clamp01(0.3 + lambert);
+        return ringAt ? Math.max(rock, 0.7 * Math.max(ringAt(dx, dy, nz), 1.2 * riverAt(dx, dy, nz)) * clamp01(0.45 + lambert)) : rock;
+      },
+    };
+  }
+  if (face === 'molten') {
     return {
       colour: MOLTEN,
       // Looked up on the sphere as seen (`dy` is the same either way): the melt lies towards the light, not on the turned map.
       at: (_tx: number, dy: number, _tz: number, dx: number, nz: number) => {
-        const towards = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2] + 0.25 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
+        const towards = dx * LOCK_SUN[0] + dy * LOCK_SUN[1] + nz * LOCK_SUN[2] + 0.25 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
         const sea = smoothstep(0.05 - reach, 0.25 - reach, towards);
         const crack = smoothstep(0.04, 0.012, Math.abs(fbm(dx * 3.5, dy * 3.5, nz * 3.5, seed + 4, 3) - 0.5)) * smoothstep(-0.15 - reach, 0.05 - reach, towards);
         return 0.9 * Math.max(sea * (0.75 + 0.25 * fbm(dx * 5, dy * 5, nz * 5, seed + 2, 2)), crack);
@@ -294,13 +347,13 @@ function glowFn(p: Planet, seed: number, locked: boolean, reach: number) {
       },
     };
   }
-  if (p.style === 'eyeball') {
+  if (face === 'sea') {
     // The engraving has one tint, ice's: its sea is laid over it in blue, as seen (it lies under the sun, so always lit).
     return {
       colour: SEA,
       at: (_tx: number, dy: number, _tz: number, dx: number, nz: number) => {
-        const towards = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2] + 0.2 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
-        return 0.7 * smoothstep(0.44, 0.52, towards);
+        const towards = dx * SEA_SUN[0] + dy * SEA_SUN[1] + nz * SEA_SUN[2] + 0.2 * (fbm(dx * 2.4, dy * 2.4, nz * 2.4, seed, 3) - 0.5);
+        return 0.7 * smoothstep(0.11, 0.19, towards);
       },
     };
   }

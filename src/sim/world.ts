@@ -36,12 +36,41 @@ const SMALL_ROCK: readonly [PlanetStyle, number][] = [
 const BIG_ROCK: readonly [PlanetStyle, number][] = [['ocean', 0.22], ['acid', 0.12], ['hycean', 0.18], ['eyeball', 0.06]];
 
 /**
+ * A lava or ice world turned for good with one face to its sun (tidally locked): melt, sea or bare rock on that face
+ * (`lockFace`), ice on the one away from it in the dark, and it does not turn. One in four of them, by the seed, so every look and every screen agree;
+ * and every eyeball world (an open sea under its sun, ice all round). Only a Solar System has a sun to be locked to, so
+ * `dress` makes none of them anywhere else.
+ */
+export function isLocked(p: Pick<Planet, 'seed' | 'style'>): boolean {
+  // An eyeball world always is: its open sea is the face to its sun.
+  if (p.style === 'eyeball') return true;
+  if (p.style !== 'lava' && p.style !== 'ice') return false;
+  return ((Math.imul(p.seed ^ 0x27d4eb2f, 0x165667b1) >>> 8) & 255) < 64;
+}
+
+/** What a tidally locked world shows its sun, with ice on the face away from it: melt, an open sea, or bare rock. */
+export type LockFace = 'molten' | 'sea' | 'rock';
+const ICE_FACES: readonly LockFace[] = ['molten', 'sea', 'rock'];
+
+/**
+ * The face a tidally locked world turns to its sun (null if it is not locked): a lava world's is molten, an eyeball
+ * world's its sea, and an ice world's any of the three, by the seed.
+ */
+export function lockFace(p: Pick<Planet, 'seed' | 'style'>): LockFace | null {
+  if (!isLocked(p)) return null;
+  if (p.style === 'eyeball') return 'sea';
+  if (p.style === 'lava') return 'molten';
+  return ICE_FACES[(Math.imul(p.seed ^ 0x51ed270b, 0x2545f491) >>> 8) % ICE_FACES.length];
+}
+
+/**
  * A planet's seed, style and tint, drawn after its mass. A rocky world may turn out molten (one small one in four), wet,
  * dry or stranger, decided from its own seed rather than the world's rng, so every planet a seed gave before keeps its place,
- * and every one that stays rock its look.
+ * and every one that stays rock its look. Away from a sun (`solar` false) no world is tidally locked: an eyeball world stays
+ * rock, and a lava or ice world whose seed would lock it takes the next seed that does not.
  */
-function dress(rng: Rng, style: PlanetStyle, small: boolean): Pick<Planet, 'seed' | 'style' | 'tint'> {
-  const seed = Math.floor(rng() * 2 ** 31);
+function dress(rng: Rng, style: PlanetStyle, small: boolean, solar: boolean): Pick<Planet, 'seed' | 'style' | 'tint'> {
+  let seed = Math.floor(rng() * 2 ** 31);
   let look: PlanetStyle = style;
   if (style === 'rocky') {
     let roll = createRng(seed ^ 0x2c1b3c6d)();
@@ -52,7 +81,10 @@ function dress(rng: Rng, style: PlanetStyle, small: boolean): Pick<Planet, 'seed
       }
       roll -= share;
     }
+    if (look === 'eyeball' && !solar) look = 'rocky';
   }
+  // Drawn from the seed, not the world's rng, so the planets after this one are the same either way.
+  while (!solar && isLocked({ seed, style: look })) seed = (Math.imul(seed, 0x2c1b3c6d) + 0x297a2d39) >>> 1;
   return { seed, style: look, tint: pick(rng, PLANET_TINTS[look]) };
 }
 
@@ -117,7 +149,7 @@ export function generateWorld(seed: number, opts: WorldOptions): World {
       y,
       radius,
       mass: density * radius ** 3,
-      ...dress(rng, style, radius <= 40),
+      ...dress(rng, style, radius <= 40, false),
     });
   }
 
@@ -258,7 +290,7 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
         ...onOrbit(r, a),
         radius,
         mass: range(rng, 0.75, 1.3) * radius ** 3 * SOLAR.PLANET_HEAVY,
-        ...dress(rng, style, radius <= 24),
+        ...dress(rng, style, radius <= 24, true),
       });
     });
   }
@@ -292,7 +324,7 @@ function generateSolarWorld(rng: Rng, opts: WorldOptions): World {
       const spot = onOrbit(bandRadii[lane], at);
       if (ships.some((sh) => Math.hypot(sh.x - spot.x, sh.y - spot.y) < radius + SOLAR.SHIP_CLEARANCE)) continue;
       const style = styleFor(rng, radius, 24);
-      planets.push({ ...spot, radius, mass: range(rng, 0.75, 1.3) * radius ** 3 * SOLAR.PLANET_HEAVY, ...dress(rng, style, radius <= 24) });
+      planets.push({ ...spot, radius, mass: range(rng, 0.75, 1.3) * radius ** 3 * SOLAR.PLANET_HEAVY, ...dress(rng, style, radius <= 24, true) });
       angles[lane].push(at);
     }
   });

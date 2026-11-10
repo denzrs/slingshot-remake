@@ -469,6 +469,55 @@ def locked(edge):
     return recipe
 
 
+def locked_rock(band):
+    """A world turned for good one face to its sun, with no melt: bare sun-baked rock on that face (map middle), frost
+    creeping in round the terminator, ice on the dark face. `band`: a green ring of life in the twilight between them, and rivers off the ice running into the rock."""
+    return lambda k: locked_rock_recipe(k, band)
+
+
+def locked_rock_recipe(k, band):
+    sx = k.nt.nodes.new('ShaderNodeSeparateXYZ')
+    k.nt.links.new(k.vec, sx.inputs['Vector'])
+    reach = k.m('ADD', sx.outputs['X'], k.m('MULTIPLY', k.m('SUBTRACT', k.noise(2.2, 6), 0.5), 0.5))
+    rock = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(3.2, 9), 0.5), 2.2, 0.5)), hot([(0.0, '#3a2c22'), (0.45, '#6a5442'), (0.8, '#94785a'), (1.0, '#b89c78')]))
+    # Scorched in the middle, where the sun stands overhead for good.
+    rock = k.mix(rock, shown('#2a1e16'), k.m('MULTIPLY', k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', reach, 0.55), 3.0)), 0.45))
+    # Relief: rough ground, craters at two sizes with lit rims and dark bowls (no air or water ever wore them down), deep cracks.
+    rough = k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(7.0, 10, 0.7), 0.5), 3.0, 0.5))
+    rock = k.mix(rock, shown('#1e1610'), k.m('MULTIPLY', k.m('SUBTRACT', 1.0, rough), 0.35))
+    rock = k.mix(rock, shown('#d0b48c'), k.m('MULTIPLY', rough, 0.25))
+    for scale, cut, keep in ((4.0, 0.42, 0.9), (11.0, 0.5, 0.7)):
+        d = k.voronoi(scale)
+        some = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.9 * scale / 4.0, 4), cut), 5.0))
+        bowl = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 0.34, d), 4.0))
+        rim = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SUBTRACT', d, 0.37)), 9.0)))
+        rock = k.mix(rock, shown('#dcc4a0'), k.m('MULTIPLY', rim, k.m('MULTIPLY', some, 0.55 * keep)))
+        rock = k.mix(rock, shown('#1a120c'), k.m('MULTIPLY', bowl, k.m('MULTIPLY', some, 0.75 * keep)))
+    cracks = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 3.0, 0.5), 22.0)))
+    rock = k.mix(rock, shown('#120c08'), k.m('MULTIPLY', cracks, 0.85))
+    if band:
+        # Neither baked nor frozen: a narrow ring of moss and scrub round the terminator, ragged at its edges.
+        ring = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 0.16, k.m('ABSOLUTE', k.m('SUBTRACT', reach, 0.0))), 8.0))
+        patch = k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(6.0, 8, 0.65), 0.5), 3.0, 0.85))
+        green = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(8.0, 8), 0.5), 2.4, 0.5)), hot([(0.0, '#26321e'), (0.45, '#3e5032'), (0.8, '#5e7048'), (1.0, '#86906a')]))
+        rock = k.mix(rock, green, k.clamp01(k.m('MULTIPLY', ring, patch)))
+        # Meltwater: rivers off the ice's edge, winding across the band and out into the rock, where they dry up.
+        # A branching net of channels (the edges of warped cells), only some of it running.
+        stream = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 4.0, 0.7), 5.0)))
+        stream = k.m('MULTIPLY', stream, k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(2.6, 3), 0.4), 6.0)))
+        runs = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 0.7, reach), 2.0))
+        source = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', reach, -0.2), 8.0))
+        rock = k.mix(rock, shown('#5a9ac8'), k.m('MULTIPLY', stream, k.m('MULTIPLY', runs, source)))
+    frost = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', -0.1 if band else 0.05, reach), 4.0))
+    speckle = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(9.0, 6), 0.45), 6.0))
+    rock = k.mix(rock, shown('#c8d8e4'), k.m('MULTIPLY', frost, speckle))
+    frozen = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', -0.15, reach), 5.0))
+    ice = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.6, 9), 0.5), 2.0, 0.5)), hot([(0.0, '#7aa8cc'), (0.5, '#c4e0f4'), (1.0, '#f4fbff')]))
+    crevasse = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(3.0, 'DISTANCE_TO_EDGE'), 18.0)))
+    ice = k.mix(ice, shown('#3a70a0'), k.m('MULTIPLY', crevasse, 0.5))
+    return k.mix(rock, ice, frozen)
+
+
 
 # More earth-like rock: continents and seas, each world its own climate. Settlements may light their night sides.
 
@@ -538,15 +587,15 @@ def eyeball(k):
     sx = k.nt.nodes.new('ShaderNodeSeparateXYZ')
     k.nt.links.new(k.vec, sx.inputs['Vector'])
     reach = k.m('ADD', sx.outputs['X'], k.m('MULTIPLY', k.m('SUBTRACT', k.noise(2.4, 6), 0.5), 0.35))
-    sea = k.ramp(k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', reach, 0.35), 1.6)), hot([(0.0, '#2a8ab8'), (0.25, '#14609a'), (1.0, '#062a5a')]))
-    open_ = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', reach, 0.35), 14.0))
-    shore = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SUBTRACT', reach, 0.3)), 14.0)))
+    sea = k.ramp(k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', reach, 0.05), 1.1)), hot([(0.0, '#2a8ab8'), (0.25, '#14609a'), (1.0, '#062a5a')]))
+    open_ = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', reach, 0.05), 14.0))
+    shore = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.m('ABSOLUTE', k.m('SUBTRACT', reach, 0.0)), 14.0)))
     floes = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(9.0, 6), 0.5), 8.0))
     ice = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.6, 9), 0.5), 2.0, 0.5)), hot([(0.0, '#9ab0c0'), (0.5, '#d8e4ec'), (1.0, '#ffffff')]))
     crevasse = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', k.voronoi(3.0, 'DISTANCE_TO_EDGE'), 18.0)))
     ice = k.mix(ice, shown('#7a96aa'), k.m('MULTIPLY', crevasse, 0.4))
     ice = k.mix(ice, shown('#6a6050'), k.m('MULTIPLY', shore, 0.6))
-    return k.mix(ice, k.mix(sea, shown('#e8f2f8'), k.m('MULTIPLY', floes, k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 0.55, reach), 6.0)))), open_)
+    return k.mix(ice, k.mix(sea, shown('#e8f2f8'), k.m('MULTIPLY', floes, k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 0.25, reach), 6.0)))), open_)
 
 
 # Hycean: a deep hydrogen sky over an ocean that covers everything: soft wide bands, the sea showing through between them.
@@ -635,6 +684,8 @@ RECIPES = {
     'lava-ash': ash,
     'lava-locked': locked(-0.35),
     'ice-locked': locked(0.15),
+    'ice-locked-rock': locked_rock(False),
+    'ice-locked-life': locked_rock(True),
     'ice-cryo': cryo,
     'rock-jungle': jungle,
     'rock-tundra': tundra,

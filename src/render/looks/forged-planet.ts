@@ -2,7 +2,7 @@ import type { Planet, PlanetStyle } from '../../sim/physics';
 import { createRng, range } from '../../sim/rng';
 import { hexToRgb, rgba } from '../color';
 import { fbm } from '../noise';
-import { clamp01, isLocked, LIGHT, mix, smoothstep, type PlanetSprite, type Scar } from '../planet-common';
+import { clamp01, hasLifeBand, LIGHT, LOCK_SUN, lockFace, SEA_SUN, mix, smoothstep, type LockFace, type PlanetSprite, type Scar } from '../planet-common';
 import { image, type Name } from './forged-assets';
 import { place as placeShaded } from './forged-gl';
 import { GLOW, renderLitPlanet, spriteSize } from './forged-lit-planet';
@@ -73,6 +73,8 @@ const DRESS: Record<Exclude<PlanetStyle, 'star'>, Dress> = {
 };
 /** A locked world's ice and molten rock: the melt faces the sun and glows, the ice lies in the dark, steam drifts over both. */
 const LOCKED: Partial<Dress> = { relief: 1, specular: 0, cloud: 'haze', cloudColour: [228, 226, 230], emit: { key: HOT }, wet: { key: BLUE, strength: 0.6 } };
+/** A locked world's ice and bare rock: the rock faces the sun, baked dry, cratered and cracked, in deep relief (more than a rocky world's: nothing wears it down); nothing glows, a thin haze drifts. */
+const LOCKED_ROCK: Partial<Dress> = { rim: [255, 214, 170], dusk: [255, 140, 80], relief: 4, specular: 0.2, cloud: 'haze', cloudColour: [228, 226, 230] };
 
 /** How often the sphere and its cloud are painted again (s), and how fast the cloud turns (turns per second). */
 const CLOUD_EVERY = 1 / 10;
@@ -226,7 +228,7 @@ function proceduralMap(kind: MapKind): Uint8Array {
 /**
  * The maps a planet of each style may wear (painted by `scripts/forged/render_planets.py`; the first of each is the original).
  * `cities`: settlements may light its night side (`lit`: always do). `clouds: false`: it has no air. `geysers`: an icy moon's cryovolcanoes.
- * The last of lava and of ice, `locked`, is worn only by a tidally locked world (`isLocked`), and by every one of them; an eyeball world is never anything else.
+ * The last of lava and the last four of ice, `locked`, are worn only by a tidally locked world, the one for the face it turns to its sun (`lockFace`), and by every one of them; an eyeball world is never anything else.
  */
 interface Variant {
   name: Name;
@@ -234,7 +236,9 @@ interface Variant {
   lit?: boolean;
   clouds?: boolean;
   geysers?: boolean;
-  locked?: boolean;
+  locked?: LockFace;
+  /** A locked rock world's green band of life (`hasLifeBand`). */
+  band?: boolean;
 }
 const VARIANTS: Record<Exclude<PlanetStyle, 'star'>, readonly Variant[]> = {
   rocky: [
@@ -242,8 +246,8 @@ const VARIANTS: Record<Exclude<PlanetStyle, 'star'>, readonly Variant[]> = {
     { name: 'rockJungle', cities: true }, { name: 'rockTundra', cities: true }, { name: 'rockSavanna', cities: true }, { name: 'rockAutumn', cities: true },
   ],
   gas: [{ name: 'gas' }, { name: 'gasNeptune' }, { name: 'gasViolet' }, { name: 'gasToxic' }, { name: 'gasCrimson' }, { name: 'gasStormy' }],
-  ice: [{ name: 'ice' }, { name: 'iceGlacier' }, { name: 'iceMethane' }, { name: 'iceDusty' }, { name: 'iceRose' }, { name: 'iceCryo', clouds: false, geysers: true }, { name: 'iceLocked', locked: true }],
-  lava: [{ name: 'lavaRivers' }, { name: 'lavaMagma', clouds: false }, { name: 'lavaAsh' }, { name: 'lavaLocked', locked: true }],
+  ice: [{ name: 'ice' }, { name: 'iceGlacier' }, { name: 'iceMethane' }, { name: 'iceDusty' }, { name: 'iceRose' }, { name: 'iceCryo', clouds: false, geysers: true }, { name: 'iceLocked', locked: 'molten' }, { name: 'eyeball', locked: 'sea' }, { name: 'iceLockedRock', locked: 'rock' }, { name: 'iceLockedLife', locked: 'rock', band: true }],
+  lava: [{ name: 'lavaRivers' }, { name: 'lavaMagma', clouds: false }, { name: 'lavaAsh' }, { name: 'lavaLocked', locked: 'molten' }],
   ocean: [{ name: 'oceanDeep' }, { name: 'oceanReef', cities: true }],
   desert: [{ name: 'desertDunes' }, { name: 'desertSalt', cities: true }],
   acid: [{ name: 'acidLakes' }, { name: 'acidSulfur' }],
@@ -252,7 +256,7 @@ const VARIANTS: Record<Exclude<PlanetStyle, 'star'>, readonly Variant[]> = {
   living: [{ name: 'livingMoss' }, { name: 'livingCoral' }],
   machine: [{ name: 'machinePanels', clouds: false, lit: true }, { name: 'machineHive', lit: true }],
   iron: [{ name: 'ironCore', clouds: false }, { name: 'ironRust', clouds: false }],
-  eyeball: [{ name: 'eyeball', locked: true }],
+  eyeball: [{ name: 'eyeball', locked: 'sea' }],
   hycean: [{ name: 'hyceanTeal' }, { name: 'hyceanDeep' }],
   fungal: [{ name: 'fungalCaps' }, { name: 'fungalMycelium' }],
   volcanic: [{ name: 'volcanicIo', clouds: false }, { name: 'volcanicRed', clouds: false }],
@@ -263,9 +267,10 @@ const dressOf = (p: Planet): Dress => DRESS[p.style as keyof typeof DRESS] ?? DR
 /** The map this planet wears, by its seed (the same on every screen), and its place in the style's list. */
 function variantOf(p: Planet): Variant & { index: number } {
   const list = VARIANTS[p.style as keyof typeof VARIANTS] ?? VARIANTS.rocky;
-  const locked = isLocked(p);
-  if (locked) {
-    const index = list.findIndex((v) => v.locked);
+  const face = lockFace(p);
+  if (face) {
+    const band = hasLifeBand(p);
+    const index = list.findIndex((v) => v.locked === face && !!v.band === band);
     return { ...list[index], index };
   }
   const free = list.filter((v) => !v.locked).length;
@@ -274,15 +279,16 @@ function variantOf(p: Planet): Variant & { index: number } {
 }
 
 /**
- * How a locked world is turned: the middle of its map (where its melt is) straight at the light. Its tilt tips the
- * point under the sun onto the equator, its spin then turns it to longitude ½ (the shader's `mapAt` undone).
+ * How a locked world is turned: the middle of its map (where its melt, sea or bare rock is) at its sun (`LOCK_SUN`, a sea's
+ * `SEA_SUN`). Its tilt tips the point under the sun onto the equator, its spin then turns it to longitude ½ (the shader's `mapAt` undone).
  */
-const LOCKED_TURN = (() => {
-  const [ax, ay, az] = [LIGHT[0], LIGHT[1], LIGHT[2]];
+function turnTowards([ax, ay, az]: readonly number[]): { tilt: number; spin: number } {
   const tilt = Math.atan2(-ay, az);
   const tz = -ay * Math.sin(tilt) + az * Math.cos(tilt);
   return { tilt, spin: Math.atan2(-ax, tz) };
-})();
+}
+const LOCKED_TURN = turnTowards(LOCK_SUN);
+const SEA_TURN = turnTowards(SEA_SUN);
 
 // ---------------------------------------------------------------- a planet ----
 
@@ -404,7 +410,7 @@ function rollPlanet(p: Planet, variant: Variant) {
       ? { latitude: range(rng, 1.18, 1.32), colour: AURORA_COLOURS[Math.floor(rng() * AURORA_COLOURS.length)], height: range(rng, 0.09, 0.15), phase: rng() * 100 }
       : null;
   // A locked world's face is set by the light, not the seed; it rolled the same draws all the same, so the rest are as they were.
-  const turn = variant.locked ? LOCKED_TURN : { spin, tilt };
+  const turn = variant.locked === 'sea' ? SEA_TURN : variant.locked ? LOCKED_TURN : { spin, tilt };
   return { ...turn, direction, phase, rings, settled, moon, aurora };
 }
 
@@ -429,8 +435,8 @@ function bake(p: Planet, ps: number): Baked | null {
   // The map's own colours, nudged towards the planet's tint so two planets of a style are not twins; a map with a palette of its own (toxic green, crimson) barely.
   const nudge = variant.index === 0 ? 0.45 : 0.12;
   const gain = [mix(1, tr / mean, nudge), mix(1, tg / mean, nudge), mix(1, tb / mean, nudge)];
-  // An eyeball world's sea and ice are dressed as its own; a locked lava or ice world's melt and ice as `LOCKED`.
-  const dress: Dress = variant.locked && p.style !== 'eyeball' ? { ...dressOf(p), ...LOCKED } : dressOf(p);
+  // A locked world's open sea and ice are dressed as an eyeball world's; its melt and ice as `LOCKED`, its bare rock and ice as `LOCKED_ROCK`.
+  const dress: Dress = variant.locked === 'sea' ? DRESS.eyeball : variant.locked === 'molten' ? { ...dressOf(p), ...LOCKED } : variant.locked === 'rock' ? { ...dressOf(p), ...LOCKED_ROCK } : dressOf(p);
   const { rim, dusk, specular, emit, wet } = dress;
   // A locked world does not turn under its sun; its steam still drifts.
   const surfaceRate = variant.locked ? 0 : SURFACE_RATE * direction;
