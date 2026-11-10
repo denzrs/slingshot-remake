@@ -266,6 +266,7 @@ impl RoomManager {
                     spectators: room.spectators.len(),
                     seats: seats?,
                     local: false,
+                    quick: false,
                 },
             })
         });

@@ -544,6 +544,8 @@ pub struct LocalGame {
     /// Who sat where: a CPU's level, or None for a person; the team in team games.
     pub seats: Vec<(Option<CpuLevel>, Option<u8>)>,
     pub rounds: Vec<RoundReport>,
+    /// A quick game, whose rules were dealt from the favourites.
+    pub quick: bool,
 }
 
 /// Rounds of one local game beyond which a report is not believed.
@@ -595,12 +597,17 @@ pub fn parse_local_game(value: &Value) -> Option<LocalGame> {
         .iter()
         .enumerate()
         .all(|(i, round)| round.round == i as i64 + 1 && round.seats.len() == seats.len());
+    let quick = match value.get("quick") {
+        None | Some(Value::Null) => false,
+        some => some?.as_bool()?,
+    };
     in_order.then_some(LocalGame {
         game_mode,
         mode,
         rules,
         seats,
         rounds,
+        quick,
     })
 }
 
@@ -650,6 +657,13 @@ mod tests {
             parse_local_game(&game(vec![first.clone(), round_two.clone()])).expect("a whole game");
         assert_eq!(parsed.rounds.len(), 2);
         assert_eq!(parsed.seats[1].0.map(|level| level.as_str()), Some("hard"));
+        assert!(!parsed.quick);
+        // A quick game says so; a client from before quick games says nothing.
+        let mut quick = game(vec![first.clone()]);
+        quick["quick"] = json!(true);
+        assert!(parse_local_game(&quick).expect("a quick game").quick);
+        quick["quick"] = json!("yes");
+        assert!(parse_local_game(&quick).is_none());
         // Out of order, a seat short, nothing played, or rules that will not do.
         assert!(parse_local_game(&game(vec![round_two.clone(), first.clone()])).is_none());
         assert!(parse_local_game(&game(vec![])).is_none());

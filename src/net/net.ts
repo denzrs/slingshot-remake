@@ -157,6 +157,8 @@ export interface LocalGameReport {
   seats: { cpu: NetworkCpuLevel | null; team: 0 | 1 | null }[];
   /** Every round, as the host of an online game would report it. */
   rounds: RoundReport[];
+  /** A quick game: its rules were dealt from the favourites, so the relay does not count it among them. */
+  quick?: boolean;
 }
 
 /** A recorded game as the relay hands it over: what it takes to fly it again (see `game/replay.ts`). */
@@ -291,11 +293,12 @@ export type ServerMessage =
       games: StatsGame[];
       /** Tips and bets; null while nobody has tipped (and from a relay that does not say). */
       betting?: StatsBetting | null;
-      /** The rule sets played most, most first (a relay from before them leaves them out). */
-      favorites?: StatsFavorite[];
     }
-  /** One-line findings of the statistics for the menu: an id, and the numbers its wording is made of. */
-  | { type: 'stats_facts'; enabled: boolean; facts: StatsFact[] }
+  /**
+   * One-line findings of the statistics for the menu: an id, and the numbers its wording is made of; and the rule sets played
+   * most, most first, that a quick game is dealt from (a relay from before them leaves them out).
+   */
+  | { type: 'stats_facts'; enabled: boolean; facts: StatsFact[]; favorites?: StatsFavorite[] }
   /** `replay` is null when the relay has no such game, or not the whole of it. */
   | { type: 'stats_replay'; id: string; replay: StatsReplay | null }
   | { type: 'room_closed'; message: string }

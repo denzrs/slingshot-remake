@@ -5,12 +5,14 @@ import { StatsBoard } from '../../net/statsBoard';
 import { GAME_MODES, isGameMode, type GameMode } from '../../sim/modes';
 import type { CpuLevel } from '../../sim/ai';
 import { MAX_PLAYERS } from '../../sim/config';
+import { t } from '../../platform/i18n';
+import { loadMenuStats } from '../stats/facts';
 import { statsAvailable } from '../stats/stats';
 import { presetRules } from './match-presets';
 
 /** A quick game is short and the same every time: three rounds, you against two CPUs. */
 export const QUICK_ROUNDS = 3;
-const QUICK_CPUS = 2;
+export const QUICK_CPUS = 2;
 /** How long the button waits for the relay's favourites before it plays without them. */
 const FAVORITES_WAIT_MS = 2500;
 
@@ -18,6 +20,9 @@ export interface QuickGame {
   mode: GameMode;
   settings: Settings;
 }
+
+/** The card's hint: what a quick game is dealt from (with no relay, the standard rules), and how it is played. */
+export const quickHint = (): string => t(statsAvailable() ? 'mode.quick.hint' : 'mode.quick.hintStandard', { rounds: QUICK_ROUNDS, cpus: QUICK_CPUS });
 
 /** The favourites a quick game picks from: the relay's, or with none, the standard rules of every mode. */
 export function quickChoices(favorites: readonly StatsFavorite[]): StatsFavorite[] {
@@ -44,16 +49,12 @@ export function shuffleFavorite<T>(choices: readonly T[], last: T | undefined, r
   return pool[Math.floor(random() * pool.length)];
 }
 
-let asked: Promise<StatsFavorite[]> | null = null;
 let lastPick: string | undefined;
 
-/** The relay's favourites, asked for once a session; a build without a relay, or one that does not answer in time, has none. */
+/** The relay's favourites, which come with the menu's facts; a build without a relay, or one that does not answer in time, has none. */
 async function favorites(): Promise<StatsFavorite[]> {
   if (!statsAvailable()) return [];
-  asked ??= new StatsBoard().overview().then((overview) => overview.favorites, () => {
-    asked = null;
-    return [];
-  });
+  const asked = loadMenuStats(new StatsBoard()).then((menu) => menu.favorites, () => []);
   const late = new Promise<StatsFavorite[]>((resolve) => setTimeout(() => resolve([]), FAVORITES_WAIT_MS));
   return Promise.race([asked, late]);
 }

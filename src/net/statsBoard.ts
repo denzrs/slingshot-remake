@@ -11,7 +11,11 @@ export interface StatsOverview {
   localDays: StatsDay[];
   games: StatsGame[];
   betting: StatsBetting | null;
-  /** The rule sets played most, most first. */
+}
+
+/** What the menu shows of the statistics: the findings, and the rule sets played most (most first) that a quick game is dealt from. */
+export interface StatsMenu {
+  facts: StatsFact[];
   favorites: StatsFavorite[];
 }
 
@@ -26,13 +30,13 @@ export class StatsBoard {
 
   async overview(): Promise<StatsOverview> {
     const reply = await this.ask({ type: 'stats_overview' }, (message) => (message.type === 'stats_overview' ? message : null));
-    return { enabled: reply.enabled, days: reply.days, localDays: reply.localDays ?? [], games: reply.games, betting: reply.betting ?? null, favorites: reply.favorites ?? [] };
+    return { enabled: reply.enabled, days: reply.days, localDays: reply.localDays ?? [], games: reply.games, betting: reply.betting ?? null };
   }
 
-  /** The findings for the menu; none when the relay keeps no statistics. */
-  async facts(): Promise<StatsFact[]> {
+  /** The findings and favourites for the menu; none when the relay keeps no statistics. */
+  async menu(): Promise<StatsMenu> {
     const reply = await this.ask({ type: 'stats_facts' }, (message) => (message.type === 'stats_facts' ? message : null));
-    return reply.enabled ? reply.facts : [];
+    return reply.enabled ? { facts: reply.facts, favorites: reply.favorites ?? [] } : { facts: [], favorites: [] };
   }
 
   /** A game to fly again, or null when the relay does not have the whole of it. */

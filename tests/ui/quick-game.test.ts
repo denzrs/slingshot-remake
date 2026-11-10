@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, activeSeats, cloneSettings } from '../../src/data/settings';
 import type { StatsFavorite } from '../../src/net/net';
-import { QUICK_ROUNDS, quickChoices, quickGame, shuffleFavorite } from '../../src/ui/presets/quick-game';
+import { getLang, setLang } from '../../src/platform/i18n';
+import { QUICK_CPUS, QUICK_ROUNDS, quickChoices, quickGame, quickHint, shuffleFavorite } from '../../src/ui/presets/quick-game';
 
 const favorite = (gameMode: StatsFavorite['gameMode'], rules: StatsFavorite['rules']): StatsFavorite => ({ gameMode, rules, games: 4 });
 
@@ -38,5 +39,14 @@ describe('quick game', () => {
     expect(shuffleFavorite(['a', 'b'], 'a', () => 0)).toBe('b');
     expect(shuffleFavorite(['a', 'b', 'c'], 'b', () => 0.99)).toBe('c');
     expect(shuffleFavorite(['a'], 'a', () => 0.5)).toBe('a');
+  });
+
+  it('says in its hint how long a quick game is and against how many', () => {
+    const before = getLang();
+    setLang('en');
+    expect(quickHint()).toContain(`${QUICK_ROUNDS} rounds vs ${QUICK_CPUS} CPUs`);
+    setLang('de');
+    expect(quickHint()).toContain(`${QUICK_ROUNDS} Runden gegen ${QUICK_CPUS} CPUs`);
+    setLang(before);
   });
 });

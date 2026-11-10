@@ -169,6 +169,7 @@ fn demo_facts(
         spectators: index % 6,
         seats,
         local,
+        quick: false,
     }
 }
 

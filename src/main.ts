@@ -491,14 +491,15 @@ const app: App = {
     return screen === 'play' && !!match && match.settings.mayhem > 0;
   },
   today: () => forcedDay ?? dateKey(),
-  start(mode, own) {
+  start(mode, quick) {
     lastMode = mode;
     match?.dispose();
     // Mayhem is a preset of the rules (the level of `mayhem`), not a mode of its own.
-    const played = cloneSettings(own ?? settings);
+    const played = cloneSettings(quick ?? settings);
     match = createMatch(mode, played);
-    // Where there is a relay, a game played here to its end is told to it, for its statistics.
-    if (statsAvailable()) trackLocalGame(match, played, (report) => void reportLocalGame(report));
+    // Where there is a relay, a game played here to its end is told to it, for its statistics; a quick game as one, so that
+    // the favourites it was dealt from do not count it.
+    if (statsAvailable()) trackLocalGame(match, played, (report) => void reportLocalGame(quick ? { ...report, quick: true } : report));
     wire(match);
     screen = 'play';
     effects.clear();
