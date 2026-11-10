@@ -117,6 +117,7 @@ impl RoomManager {
         room.match_id = format!("{:016x}", rand::thread_rng().gen::<u64>());
         room.reported_round = 0;
         room.reported_turn = (0, 0);
+        room.seat_change_lost = false;
         room.players
             .iter_mut()
             .enumerate()
@@ -333,18 +334,29 @@ impl RoomManager {
             return;
         };
         let room = self.rooms.get(&room_id).unwrap();
-        if report.seat >= room.players.len() {
-            self.error(conn, "Stats do not match the seats");
+        let refused = if report.seat >= room.players.len() {
+            Some("Stats do not match the seats")
+        } else if report.round <= room.reported_round {
+            Some("That round is already over")
+        } else {
+            None
+        };
+        if let Some(refused) = refused {
+            self.error(conn, refused);
+        }
+        let Some(Reporting { stats, facts, host }) = reporting else {
+            return;
+        };
+        if refused.is_none() && stats.admit(host, report.rows(), std::time::Instant::now()) {
+            stats.submit(Job::Seat(facts, report));
             return;
         }
-        if report.round <= room.reported_round {
-            self.error(conn, "That round is already over");
-            return;
-        }
-        if let Some(Reporting { stats, facts, host }) = reporting {
-            if stats.admit(host, report.rows(), std::time::Instant::now()) {
-                stats.submit(Job::Seat(facts, report));
-            }
+        // Without it a replay would deal turns to a seat that was not at the table, or none to one that was: the game is
+        // not offered as a replay. Once a game is enough.
+        let room = self.rooms.get_mut(&room_id).unwrap();
+        if !room.seat_change_lost {
+            room.seat_change_lost = true;
+            stats.submit(Job::Unreplayable(facts));
         }
     }
 

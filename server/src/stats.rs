@@ -596,6 +596,7 @@ impl Store {
             Job::Round(facts, report) => self.write_round(facts, report, at).await,
             Job::Turn(facts, report) => self.write_turn(facts, report, at).await,
             Job::Seat(facts, report) => self.write_seat(facts, report, at).await,
+            Job::Unreplayable(facts) => self.write_unreplayable(facts, at).await,
             Job::Local(facts, rounds) => self.write_local(facts, rounds, at).await,
         };
         match written {
@@ -636,11 +637,12 @@ impl Store {
         at: i64,
     ) -> turso::Result<()> {
         self.write_match(facts, at).await?;
-        // One writer, one transaction at a time: counting what is there is safe.
+        // One writer, one transaction at a time: numbering on from the last is safe. Not a count: pruning may have
+        // taken the match's first rows already, and the next number would be one that is still there.
         let mut rows = self
             .conn
             .query(
-                "SELECT COUNT(*) FROM stat_seat_changes WHERE match_id = ?1",
+                "SELECT COALESCE(MAX(n), 0) FROM stat_seat_changes WHERE match_id = ?1",
                 (facts.match_id.clone(),),
             )
             .await?;
@@ -661,6 +663,16 @@ impl Store {
             optional(report.at),
         ];
         self.conn.execute(INSERT_SEAT_CHANGE, row).await?;
+        Ok(())
+    }
+
+    /// The recording of the game is missing something it needs (a change at the table the relay could not keep): it is
+    /// not offered as a replay, which would deal turns to seats that were not at the table.
+    async fn write_unreplayable(&self, facts: &RoundFacts, at: i64) -> turso::Result<()> {
+        self.write_match(facts, at).await?;
+        self.conn
+            .execute(NOT_REPLAYABLE, (facts.match_id.clone(),))
+            .await?;
         Ok(())
     }
 
@@ -1504,6 +1516,8 @@ pub enum Job {
     Turn(RoundFacts, TurnReport),
     /// A person at the table dropped out, came back or left.
     Seat(RoundFacts, SeatReport),
+    /// A change at the table was turned away or not let in: the game cannot be flown again as it was played.
+    Unreplayable(RoundFacts),
     /// A whole game played on one device.
     Local(RoundFacts, Vec<RoundReport>),
 }
@@ -2250,6 +2264,31 @@ mod tests {
             )
             .await,
             vec![Some("0".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_change_at_the_table_after_some_of_the_game_was_pruned_is_still_written() {
+        let stats = Stats::in_memory().await;
+        let ann = [10, 0, 0, 1];
+        let change = |turn: i64| {
+            seat_job(
+                ann,
+                json!({"round": 1, "turn": turn, "player": 1, "change": "away", "when": "aiming"}),
+            )
+        };
+        stats.record_at(&change(1), 100).await.unwrap();
+        stats.record_at(&change(2), 200).await.unwrap();
+        // A game played across the cutoff loses its first row; the next one is numbered on from the last that is left.
+        stats.prune_before(150).await.unwrap();
+        stats.record_at(&change(3), 300).await.unwrap();
+        assert_eq!(
+            text(
+                &stats,
+                "SELECT group_concat(turn || ':' || n, ',') FROM stat_seat_changes"
+            )
+            .await,
+            vec![Some("2:2,3:3".to_string())]
         );
     }
 

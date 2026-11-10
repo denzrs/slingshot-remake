@@ -2283,6 +2283,22 @@ async fn a_change_at_the_table_is_kept_for_the_host_of_a_running_game_in_the_ord
     assert!(drain_json(&mut host_rx).is_empty());
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(stats.count("stat_seat_changes").await, 3);
+    // The ones turned away are missing from the recording: the game is not offered as a replay.
+    assert_eq!(stats.count("stat_matches WHERE replayable = 0").await, 1);
+}
+
+#[tokio::test]
+async fn a_game_whose_every_change_at_the_table_was_kept_stays_replayable() {
+    let (mut rooms, stats, [mut host_rx, _guest_rx]) = running_game_with_stats();
+    rooms.handle(1, &seat_report_message(1, 3, 1, "away", "aiming"));
+    rooms.handle(1, &round_report_message(1, 2));
+    // What came during the killcam at the round's end belongs to the next round.
+    rooms.handle(1, &seat_report_message(2, 1, 1, "back", "between"));
+    assert!(drain_json(&mut host_rx).is_empty());
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(stats.count("stat_seat_changes").await, 2);
+    assert_eq!(stats.count("stat_matches WHERE replayable = 0").await, 0);
+    assert_eq!(stats.count("stat_matches").await, 1);
 }
 
 #[test]

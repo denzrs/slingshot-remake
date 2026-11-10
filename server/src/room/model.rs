@@ -131,6 +131,8 @@ pub(super) struct Room {
     pub(super) reported_round: i64,
     /// The last turn the host reported, as (round, turn): a turn is written down once, in order.
     pub(super) reported_turn: (i64, i64),
+    /// A change at the table of the running game was not kept, and the game is already marked as one that cannot be replayed.
+    pub(super) seat_change_lost: bool,
 }
 
 pub(super) struct Membership {

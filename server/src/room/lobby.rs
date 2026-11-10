@@ -186,6 +186,7 @@ impl RoomManager {
                 match_id: String::new(),
                 reported_round: 0,
                 reported_turn: (0, 0),
+                seat_change_lost: false,
             },
         );
         self.add_player(&id, conn, name, avatar);

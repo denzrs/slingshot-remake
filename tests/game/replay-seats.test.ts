@@ -25,7 +25,9 @@ function play(match: ClassicMatch, act: Step = () => {}): void {
 /** Flies a recorded game again from what its turn reports say, as the relay hands it back. */
 type Mode = 'classic' | 'horizon';
 
-function replayOf(reports: ReturnType<typeof turnReport>[], seatChanges: SeatChange[], mode: Mode): ClassicMatch {
+type Rules = typeof settings;
+
+function replayOf(reports: ReturnType<typeof turnReport>[], seatChanges: SeatChange[], mode: Mode, rules: Rules): ClassicMatch {
   const script: ReplayScript = {
     ...(seatChanges.length ? { seatChanges } : {}),
     turns: reports.map((t) => ({
@@ -35,21 +37,21 @@ function replayOf(reports: ReturnType<typeof turnReport>[], seatChanges: SeatCha
       shots: t.shots.filter((s) => !s.fork).map((s) => ({ player: s.player, angle: s.angle, power: s.power, rider: s.rider, splitAt: s.splitAt })),
     })),
   };
-  const again = createMatch(mode, settings, { seats, seed: 5, deterministicCpu: true, script }) as unknown as ClassicMatch;
+  const again = createMatch(mode, rules, { seats, seed: 5, deterministicCpu: true, script }) as unknown as ClassicMatch;
   play(again);
   return again;
 }
 
 /** A game in which seat `GONE` leaves the table and comes back as `act` says; the replay must end where the game did. */
-function flownAgain(act: Step, mode: Mode = 'classic'): { original: ClassicMatch; again: ClassicMatch; changes: SeatChange[] } {
-  const original = createMatch(mode, settings, { seats, seed: 5, deterministicCpu: true }) as unknown as ClassicMatch;
+function flownAgain(act: Step, mode: Mode = 'classic', rules: Rules = settings, replayRules: Rules = rules): { original: ClassicMatch; again: ClassicMatch; changes: SeatChange[] } {
+  const original = createMatch(mode, rules, { seats, seed: 5, deterministicCpu: true }) as unknown as ClassicMatch;
   const reports: ReturnType<typeof turnReport>[] = [];
   const changes: SeatChange[] = [];
   original.onTurnEnd(() => reports.push(turnReport(original)));
   original.onSeatChange((change) => changes.push(change));
   play(original, act);
   expect(original.phase).toBe('gameOver');
-  return { original, again: replayOf(reports, changes, mode), changes };
+  return { original, again: replayOf(reports, changes, mode, replayRules), changes };
 }
 
 function expectSameGame(original: ClassicMatch, again: ClassicMatch): void {
@@ -126,6 +128,30 @@ describe('a seat that drops out and comes back is flown again the way it was pla
     ), 'horizon');
     expect(changes.map((c) => [c.player, c.change, c.when])).toEqual([[GONE, 'away', 'flight'], [GONE, 'back', 'between']]);
     expectSameGame(original, again);
+  });
+
+  it('in Event Horizon, when the person comes back during a killcam the replay does not show', () => {
+    // Without the killcam the change comes when the volley is over, before the next one is handed out, not once it is being aimed.
+    const { original, again } = flownAgain(both(
+      once((m) => m.phase === 'flying' && m.round === 1 && m.shotLog.turn === 1, (m) => m.setAway(GONE, true)),
+      once((m) => m.phase === 'killcam' && m.round === 1 && m.shotLog.turn >= 2, (m) => m.setAway(GONE, false)),
+    ), 'horizon', settings, { ...settings, killcam: 'off' });
+    expectSameGame(original, again);
+  });
+
+  it('when the person drops out during the killcam at the end of a round: it belongs to the next round', () => {
+    const killcams = { ...settings, killcam: 'round' as const };
+    // With killcams at the round's end only, one in a decided round is that one. Each game needs its own `act`: `once` remembers that it fired.
+    const act = () => both(
+      once((m) => m.phase === 'killcam' && m.decided, (m) => m.setAway(GONE, true)),
+      once((m) => m.phase === 'aiming' && m.shotLog.turn >= 2 && m.players[GONE].away, (m) => m.setAway(GONE, false)),
+    );
+    const { original, again, changes } = flownAgain(act(), 'classic', killcams);
+    // The round it came at was already reported: filed under it, the relay would turn it away.
+    expect(changes[0]).toMatchObject({ round: 2, turn: 1, player: GONE, change: 'away', when: 'between' });
+    expectSameGame(original, again);
+    // A replay watched without the killcam makes it at the same point of the game.
+    expectSameGame(original, flownAgain(act(), 'classic', killcams, { ...killcams, killcam: 'off' }).again);
   });
 
   it('when the person leaves for good', () => {
