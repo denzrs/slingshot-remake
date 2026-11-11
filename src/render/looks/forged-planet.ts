@@ -945,6 +945,27 @@ function drawLightning(ctx: CanvasRenderingContext2D, x: number, y: number, p: P
 /** How many steps each pole's curtain is drawn in, round its oval. */
 const AURORA_STEPS = 128;
 
+/** Each aurora's curtain gradient, made once per canvas it is drawn on: from its foot (y 0) to its crown (y 1), at full strength. */
+const curtainFades = new WeakMap<CanvasRenderingContext2D, WeakMap<Aurora, CanvasGradient>>();
+
+function curtainFade(ctx: CanvasRenderingContext2D, a: Aurora): CanvasGradient {
+  let fades = curtainFades.get(ctx);
+  if (!fades) curtainFades.set(ctx, (fades = new WeakMap()));
+  let fade = fades.get(a);
+  if (!fade) {
+    const [r, g, b] = a.colour;
+    const [r2, g2, b2] = a.crown;
+    fade = ctx.createLinearGradient(0, 0, 0, 1);
+    fade.addColorStop(0, `rgba(${r},${g},${b},0)`);
+    fade.addColorStop(0.08, `rgba(${r},${g},${b},1)`);
+    fade.addColorStop(0.3, `rgba(${r},${g},${b},0.7)`);
+    fade.addColorStop(0.6, `rgba(${(r + r2) >> 1},${(g + g2) >> 1},${(b + b2) >> 1},0.35)`);
+    fade.addColorStop(1, `rgba(${r2},${g2},${b2},0)`);
+    fades.set(a, fade);
+  }
+  return fade;
+}
+
 /**
  * Curtains of light over a gas giant's poles: one unbroken sheet per pole, standing straight up off the sphere along an oval
  * that wanders in latitude and folds along itself. Seen from above it is foreshortened to a glowing band, at the limb it
@@ -956,8 +977,6 @@ function drawAurora(ctx: CanvasRenderingContext2D, x: number, y: number, R: numb
   const ct = Math.cos(tilt);
   const st = Math.sin(tilt);
   const [r, g, b] = a.colour;
-  const [r2, g2, b2] = a.crown;
-  const mid = `${(r + r2) >> 1},${(g + g2) >> 1},${(b + b2) >> 1}`;
   const sway = 0.8 + 0.2 * Math.sin(time * 0.9 + a.phase);
   /** A point of the oval at `lon` on the unit sphere, seen on screen: across, down, and towards the viewer. */
   const at = (sign: number, lon: number): [number, number, number] => {
@@ -992,6 +1011,9 @@ function drawAurora(ctx: CanvasRenderingContext2D, x: number, y: number, R: numb
   ctx.strokeStyle = `rgba(${r},${g},${b},${0.06 * sway})`;
   ctx.lineWidth = R * 0.06;
   ctx.stroke(oval);
+  // The curtains' fill: one gradient, foot to crown, in a frame where the foot is at y 0 and the crown at y 1.
+  ctx.fillStyle = curtainFade(ctx, a);
+  const base = ctx.getTransform();
   // The curtain's foot and top round each oval, and how bright it is there.
   const foot = new Float32Array((AURORA_STEPS + 1) * 2);
   const top = new Float32Array((AURORA_STEPS + 1) * 2);
@@ -1020,34 +1042,50 @@ function drawAurora(ctx: CanvasRenderingContext2D, x: number, y: number, R: numb
     }
     // The far side first, kept off the planet's disc; then the near side over everything.
     for (const far of [true, false]) {
-      if (far) {
-        ctx.save();
-        const outside = new Path2D();
-        outside.rect(x - 3 * R, y - 3 * R, 6 * R, 6 * R);
-        outside.arc(x, y, R, 0, Math.PI * 2);
-        ctx.clip(outside, 'evenodd');
-      }
       for (let k = 0; k < AURORA_STEPS; k++) {
         if (near[k] + near[k + 1] < 0 !== far) continue;
+        const alpha = (bright[k] + bright[k + 1]) / 2;
+        if (alpha < 0.004) continue;
         const i = k * 2;
         const j = i + 2;
-        const alpha = (bright[k] + bright[k + 1]) / 2;
-        const fade = ctx.createLinearGradient((foot[i] + foot[j]) / 2, (foot[i + 1] + foot[j + 1]) / 2, (top[i] + top[j]) / 2, (top[i + 1] + top[j + 1]) / 2);
-        fade.addColorStop(0, `rgba(${r},${g},${b},0)`);
-        fade.addColorStop(0.08, `rgba(${r},${g},${b},${alpha})`);
-        fade.addColorStop(0.3, `rgba(${r},${g},${b},${alpha * 0.7})`);
-        fade.addColorStop(0.6, `rgba(${mid},${alpha * 0.35})`);
-        fade.addColorStop(1, `rgba(${r2},${g2},${b2},0)`);
-        ctx.fillStyle = fade;
+        // Behind the planet with its crown still under the limb: nothing of it shows.
+        if (far && Math.hypot(top[i] - x, top[i + 1] - y) < R && Math.hypot(top[j] - x, top[j + 1] - y) < R) continue;
+        // The quad is laid down where it stands; the fill is then drawn through a frame whose (0,0)–(0,1) runs from the
+        // middle of its foot to the middle of its top, so the one gradient made per aurora fades every quad from foot to crown.
+        const fx = (foot[i] + foot[j]) / 2;
+        const fy = (foot[i + 1] + foot[j + 1]) / 2;
+        const ux = foot[j] - foot[i];
+        const uy = foot[j + 1] - foot[i + 1];
+        const vx = (top[i] + top[j]) / 2 - fx;
+        const vy = (top[i + 1] + top[j + 1]) / 2 - fy;
+        if (Math.abs(ux * vy - uy * vx) < 1e-6) continue;
         ctx.beginPath();
-        ctx.moveTo(foot[i], foot[i + 1]);
-        ctx.lineTo(foot[j], foot[j + 1]);
+        if (far) {
+          // Cut off at the limb: the curtain stands straight out from the centre, so its sides cross the limb where they are R
+          // from it (or end below it, where only the other side's crown clears it).
+          const li = Math.min(R, Math.hypot(top[i] - x, top[i + 1] - y)) / (Math.hypot(foot[i] - x, foot[i + 1] - y) || 1);
+          const lj = Math.min(R, Math.hypot(top[j] - x, top[j + 1] - y)) / (Math.hypot(foot[j] - x, foot[j + 1] - y) || 1);
+          ctx.moveTo(x + (foot[i] - x) * li, y + (foot[i + 1] - y) * li);
+          ctx.lineTo(x + (foot[j] - x) * lj, y + (foot[j + 1] - y) * lj);
+        } else {
+          ctx.moveTo(foot[i], foot[i + 1]);
+          ctx.lineTo(foot[j], foot[j + 1]);
+        }
         ctx.lineTo(top[j], top[j + 1]);
         ctx.lineTo(top[i], top[i + 1]);
         ctx.closePath();
+        ctx.globalAlpha = alpha;
+        ctx.setTransform(
+          base.a * ux + base.c * uy,
+          base.b * ux + base.d * uy,
+          base.a * vx + base.c * vy,
+          base.b * vx + base.d * vy,
+          base.a * fx + base.c * fy + base.e,
+          base.b * fx + base.d * fy + base.f,
+        );
         ctx.fill();
+        ctx.setTransform(base);
       }
-      if (far) ctx.restore();
     }
   }
   ctx.restore();
