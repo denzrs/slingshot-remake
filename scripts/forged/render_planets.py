@@ -391,16 +391,31 @@ def tar(k):
     return k.mix(base, shown('#6a6258'), k.m('MULTIPLY', vein, 0.6))
 
 
-def amethyst(k):
-    cell, edge = facets(k, 6.0)
-    tone = k.ramp(cell, hot([(0.0, '#2a1048'), (0.4, '#5a2a8a'), (0.75, '#9a60d0'), (1.0, '#d8b0f4')]))
-    return k.mix(tone, shown('#f4e8ff'), k.m('MULTIPLY', edge, 0.75))
+def refractory(rock, flats, dark, at):
+    """A crystal world as research expects one: a hot inner world of what condenses first round a young star, or is left
+    once its heat has boiled the rest away (calcium and aluminium oxides: corundum, spinel, perovskite; Dorn et al. 2019,
+    Kite et al. 2016). Bare, bright, sintered crust; pale flats where corundum lies at the surface, dark perovskite-rich
+    lows, cooling cracks in some regions. `rock`, `flats`: their ramps; `dark`: the lows and the cracks; `at`: how much
+    finer its features are (so two variants do not share one map)."""
+    def recipe(k):
+        height = k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(2.2 * at, 10, 0.6), 0.5), 2.2, 0.5))
+        ground = k.ramp(height, hot(rock))
+        grain = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(18.0 * at, 4, 0.7), 0.6), 6.0))
+        ground = k.mix(ground, shown(flats[-1][1]), k.m('MULTIPLY', grain, 0.35))
+        plains = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.4 * at, 6), 0.55), 9.0))
+        flat = k.ramp(k.clamp01(k.m('MULTIPLY_ADD', k.m('SUBTRACT', k.noise(6.0 * at, 6), 0.5), 2.0, 0.5)), hot(flats))
+        face = k.mix(ground, flat, plains)
+        lows = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', 0.4, k.noise(1.8 * at, 7)), 8.0))
+        face = k.mix(face, shown(dark), k.m('MULTIPLY', lows, 0.8))
+        cracks = k.clamp01(k.m('SUBTRACT', 1.0, k.m('MULTIPLY', warped_voronoi(k, 4.0 * at, 0.6), 45.0)))
+        where = k.clamp01(k.m('MULTIPLY', k.m('SUBTRACT', k.noise(1.1 * at, 4), 0.5), 6.0))
+        return k.mix(face, shown(dark), k.m('MULTIPLY', cracks, k.m('MULTIPLY', where, 0.6)))
+    return recipe
 
 
-def quartz(k):
-    cell, edge = facets(k, 8.0)
-    tone = k.ramp(cell, hot([(0.0, '#4a7a90'), (0.4, '#8ac0d4'), (0.75, '#cae8f0'), (1.0, '#f4fcff')]))
-    return k.mix(tone, shown('#ffffff'), k.m('MULTIPLY', edge, 0.8))
+# Rubies: chromium in the corundum blushes the crust pink. Sapphires: iron and titanium in it, blue-grey.
+ruby = refractory([(0.0, '#5a3a36'), (0.4, '#a07a70'), (0.75, '#d8b8ac'), (1.0, '#f0e0d8')], [(0.0, '#d89a9c'), (0.5, '#f0d0cc'), (1.0, '#fff2ee')], '#3a2624', 1.0)
+sapphire = refractory([(0.0, '#3a3e48'), (0.4, '#7a808c'), (0.75, '#b8bcc4'), (1.0, '#e4e6ea')], [(0.0, '#8aa4c8'), (0.5, '#c4d4e8'), (1.0, '#f2f6fc')], '#20242e', 1.37)
 
 
 def moss(k):
@@ -708,8 +723,8 @@ RECIPES = {
     'acid-sulfur': sulfur,
     'carbon-graphite': graphite,
     'carbon-tar': tar,
-    'crystal-amethyst': amethyst,
-    'crystal-quartz': quartz,
+    'crystal-ruby': ruby,
+    'crystal-sapphire': sapphire,
     'living-moss': moss,
     'living-coral': coral,
     'machine-panels': panels,

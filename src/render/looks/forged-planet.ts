@@ -6,7 +6,7 @@ import { clamp01, hasLifeBand, LIGHT, LOCK_SUN, lockFace, SEA_SUN, mix, smoothst
 import { image, type Name } from './forged-assets';
 import { place as placeShaded } from './forged-gl';
 import { GLOW, renderLitPlanet, spriteSize } from './forged-lit-planet';
-import { EMIT_FROM, EMIT_FULL, emitBreath, GLINT_POWER, MAX_IMPACTS, shadePlanet, WET_FROM, WET_FULL, type PlanetCracks, type PlanetShade } from './forged-planet-gl';
+import { EMIT_FROM, EMIT_FULL, emitBreath, filmAt, filmColour, FILM_POWER, FILM_VEIL, GLINT_POWER, MAX_IMPACTS, shadePlanet, WET_FROM, WET_FULL, type PlanetCracks, type PlanetShade } from './forged-planet-gl';
 import {
   drawDust, drawGlints, drawLanes, drawMeteors, drawPlumes, drawScar, drawShimmer, drawStormLightning,
   rollDust, rollGlints, rollLanes, rollMeteors, rollStorms, rollVents,
@@ -40,7 +40,7 @@ const RED: Rgb = [1, -1.3, 0];
  * How a style is dressed in the forged look. `rim` is its air's colour, `dusk` the light along its terminator; `relief` how
  * strongly the map's light and dark are read as height (gas none, lava's turned over: its bright parts are the low channels); the cloud
  * over it (its colour null: from the tint, as a gas giant's); the sheen of ice; what of the map glows (`emit`: by its key,
- * at night only or always, breathing or steady) and what is water (`wet`); and how often it has rings.
+ * at night only or always, breathing or steady) and what is water (`wet`); how strongly a thin film over it shows the sun in rainbow colours (`film`); and how often it has rings.
  */
 interface Dress {
   rim: Rgb;
@@ -51,6 +51,7 @@ interface Dress {
   specular: number;
   emit?: { key: Rgb; night?: boolean; pulse?: number; strength?: number };
   wet?: { key: Rgb; strength: number };
+  film?: number;
   rings: number;
 }
 const DRESS: Record<Exclude<PlanetStyle, 'star'>, Dress> = {
@@ -62,7 +63,7 @@ const DRESS: Record<Exclude<PlanetStyle, 'star'>, Dress> = {
   desert: { rim: [255, 200, 140], dusk: [255, 120, 60], relief: 2.5, cloud: 'haze', cloudColour: [230, 200, 160], specular: 0, rings: 0.08 },
   acid: { rim: [210, 230, 110], dusk: [230, 180, 60], relief: 1.2, cloud: 'haze', cloudColour: [222, 222, 150], specular: 0, wet: { key: ACID, strength: 1.1 }, rings: 0.05 },
   carbon: { rim: [150, 150, 170], dusk: [200, 140, 100], relief: 2, cloud: 'haze', cloudColour: [62, 54, 48], specular: 0.12, rings: 0.15 },
-  crystal: { rim: [210, 170, 255], dusk: [255, 150, 200], relief: 1.2, cloud: 'wisp', cloudColour: [240, 230, 255], specular: 0.45, rings: 0.25 },
+  crystal: { rim: [240, 225, 220], dusk: [255, 170, 130], relief: 2, cloud: 'haze', cloudColour: [235, 228, 222], specular: 0.2, film: 0.5, rings: 0.1 },
   living: { rim: [140, 255, 200], dusk: [255, 150, 90], relief: 1.5, cloud: 'wisp', cloudColour: [245, 255, 248], specular: 0, emit: { key: BLUE, night: true, pulse: 0.7 }, rings: 0.05 },
   machine: { rim: [180, 200, 220], dusk: [255, 170, 90], relief: 1.5, cloud: 'haze', cloudColour: [190, 195, 205], specular: 0.15, emit: { key: HOT, night: true, strength: 1.8 }, rings: 0.12 },
   iron: { rim: [200, 210, 225], dusk: [255, 170, 110], relief: 2, cloud: 'haze', cloudColour: [200, 200, 205], specular: 0.55, rings: 0.1 },
@@ -110,6 +111,36 @@ function texture(name: Name): Texture | null {
   const made = { data: c.getImageData(0, 0, canvas.width, canvas.height).data, width: canvas.width, height: canvas.height };
   textures.set(name, made);
   return made;
+}
+
+/** How high a map stands at each texel (its brightness, 0 → 1), blurred a few texels as the shader reads it: a thin film's thickness and plates follow it. */
+const heights = new WeakMap<Texture, Float32Array>();
+const HEIGHT_BLUR = 3;
+
+function heightsOf(map: Texture): Float32Array {
+  const known = heights.get(map);
+  if (known) return known;
+  const { data, width, height } = map;
+  const luma = new Float32Array(width * height);
+  for (let i = 0; i < luma.length; i++) luma[i] = (data[i * 4] * 0.3 + data[i * 4 + 1] * 0.55 + data[i * 4 + 2] * 0.15) / 255;
+  // A box blur, along each row (round the longitude) and then down each column.
+  const across = new Float32Array(luma.length);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      for (let k = -HEIGHT_BLUR; k <= HEIGHT_BLUR; k++) sum += luma[y * width + ((x + k + width) % width)];
+      across[y * width + x] = sum / (HEIGHT_BLUR * 2 + 1);
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      for (let k = -HEIGHT_BLUR; k <= HEIGHT_BLUR; k++) sum += across[Math.min(height - 1, Math.max(0, y + k)) * width + x];
+      luma[y * width + x] = sum / (HEIGHT_BLUR * 2 + 1);
+    }
+  }
+  heights.set(map, luma);
+  return luma;
 }
 
 /** The procedural maps are this big (a power of two in width, so a wrap is a mask). */
@@ -252,7 +283,7 @@ const VARIANTS: Record<Exclude<PlanetStyle, 'star'>, readonly Variant[]> = {
   desert: [{ name: 'desertDunes' }, { name: 'desertSalt', cities: true }],
   acid: [{ name: 'acidLakes' }, { name: 'acidSulfur' }],
   carbon: [{ name: 'carbonGraphite', clouds: false }, { name: 'carbonTar' }],
-  crystal: [{ name: 'crystalAmethyst', clouds: false }, { name: 'crystalQuartz', clouds: false }],
+  crystal: [{ name: 'crystalRuby', clouds: false }, { name: 'crystalSapphire', clouds: false }],
   living: [{ name: 'livingMoss' }, { name: 'livingCoral' }],
   machine: [{ name: 'machinePanels', clouds: false, lit: true }, { name: 'machineHive', lit: true }],
   iron: [{ name: 'ironCore', clouds: false }, { name: 'ironRust', clouds: false }],
@@ -313,6 +344,11 @@ interface Surface {
   dark: Float32Array;
   /** The sun's glint on water here, were it water. */
   glint: Float32Array;
+  /** A thin film's share of the sun's broad mirror here, the cosine of the angle it is seen at, and the sine and cosine of the pixel's latitude on the planet (empty without a film). */
+  film: Float32Array;
+  filmCos: Float32Array;
+  filmSin: Float32Array;
+  filmLat: Float32Array;
 }
 
 /** What is painted on the CPU when there are no shaders, made the first time it is needed. */
@@ -342,7 +378,7 @@ interface Baked {
   meteors: Meteors | null;
   /** Its volcanoes, or an icy moon's geysers. */
   vents: Vents | null;
-  /** A desert's dust storms, the glints of carbon and crystal, a machine world's trains of light (an ocean's hurricanes are in its cloud map). */
+  /** A desert's dust storms, the glints of carbon and iron, a machine world's trains of light (an ocean's hurricanes are in its cloud map). */
   dust: Dust | null;
   glints: Glints | null;
   lanes: Lanes | null;
@@ -438,6 +474,7 @@ function bake(p: Planet, ps: number): Baked | null {
   // A locked world's open sea and ice are dressed as an eyeball world's; its melt and ice as `LOCKED`, its bare rock and ice as `LOCKED_ROCK`.
   const dress: Dress = variant.locked === 'sea' ? DRESS.eyeball : variant.locked === 'molten' ? { ...dressOf(p), ...LOCKED } : variant.locked === 'rock' ? { ...dressOf(p), ...LOCKED_ROCK } : dressOf(p);
   const { rim, dusk, specular, emit, wet } = dress;
+  const film = dress.film ?? 0;
   // A locked world does not turn under its sun; its steam still drifts.
   const surfaceRate = variant.locked ? 0 : SURFACE_RATE * direction;
 
@@ -475,6 +512,10 @@ function bake(p: Planet, ps: number): Baked | null {
       night: new Float32Array(size * size),
       dark: new Float32Array(size * size),
       glint: new Float32Array(size * size),
+      film: new Float32Array(film ? size * size : 0),
+      filmCos: new Float32Array(film ? size * size : 0),
+      filmSin: new Float32Array(film ? size * size : 0),
+      filmLat: new Float32Array(film ? size * size : 0),
     };
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
@@ -514,6 +555,12 @@ function bake(p: Planet, ps: number): Baked | null {
         surface.night[n] = settled ? smoothstep(0.05, -0.3, lam) * 0.95 : 0;
         surface.dark[n] = smoothstep(0.05, -0.3, lam);
         surface.glint[n] = wet ? wet.strength * 255 * Math.max(0, (dx * half3[0] + dy * half3[1] + nz * half3[2]) / hl) ** GLINT_POWER : 0;
+        if (film) {
+          surface.film[n] = film * 255 * Math.max(0, (dx * half3[0] + dy * half3[1] + nz * half3[2]) / hl) ** FILM_POWER;
+          surface.filmCos[n] = nz;
+          surface.filmSin[n] = Math.sin((v - 0.5) * Math.PI);
+          surface.filmLat[n] = Math.cos((v - 0.5) * Math.PI);
+        }
       }
     }
     const sphere = document.createElement('canvas');
@@ -575,6 +622,7 @@ function bake(p: Planet, ps: number): Baked | null {
       night: NIGHT.map((v) => v / 255),
       cityLight: CITY.map((v) => v / 255),
       specular,
+      film,
       emitKey: emit?.key ?? HOT,
       emit: emit ? (emit.strength ?? 1) : 0,
       emitNight: !!emit?.night,
@@ -600,7 +648,7 @@ function bake(p: Planet, ps: number): Baked | null {
     meteors: p.style === 'lava' ? rollMeteors(p) : null,
     vents: p.style === 'lava' && !variant.locked ? rollVents(p, 'ash') : p.style === 'volcanic' ? rollVents(p, 'sulfur') : variant.geysers ? rollVents(p, 'ice') : null,
     dust: p.style === 'desert' ? rollDust(p) : null,
-    glints: p.style === 'carbon' || p.style === 'iron' ? rollGlints(p, false, [255, 255, 255]) : p.style === 'crystal' ? rollGlints(p, true, [mix(tr, 255, 0.5), mix(tg, 255, 0.5), mix(tb, 255, 0.5)]) : null,
+    glints: p.style === 'carbon' || p.style === 'iron' ? rollGlints(p, [255, 255, 255]) : null,
     lanes: p.style === 'machine' ? rollLanes(p) : null,
     hurricanes,
     hot: p.style === 'lava',
@@ -626,6 +674,9 @@ function paintSurface(b: Soft, time: number): void {
   const data = sphere.image.data;
   const { data: texels, width } = sphere.map;
   const albedo = [0, 0, 0];
+  const sheen = [0, 0, 0];
+  const plate = [0, 0, 1];
+  const heights = surface.film.length > 0 ? heightsOf(sphere.map) : null;
   for (let k = 0; k < surface.count; k++) {
     const row = surface.row[k];
     const u = surface.lon[k] + shift[row];
@@ -657,8 +708,20 @@ function paintSurface(b: Soft, time: number): void {
     const keyed = (key: Rgb): number => (albedo[0] * key[0] + albedo[1] * key[1] + albedo[2] * key[2]) / 255;
     const glow = emit ? smoothstep(EMIT_FROM, EMIT_FULL, keyed(emit.key)) * 1.1 * (emit.strength ?? 1) * breath * (emit.night ? surface.dark[k] : 1) : 0;
     const glint = wet ? surface.glint[k] * smoothstep(WET_FROM, WET_FULL, keyed(wet.key)) : 0;
+    // A thin film's rainbow in its plates, as in the shader, and the plates' relief; it takes some of the ground's own light where it shows.
+    let film = 0;
+    let relief = 1;
+    if (heights) {
+      const lon = u * Math.PI * 2;
+      filmAt(surface.filmLat[k] * Math.cos(lon), surface.filmSin[k], surface.filmLat[k] * Math.sin(lon), heights[(surface.above[k] + x0) / 4], plate);
+      filmColour(plate[0], surface.filmCos[k], sheen);
+      film = surface.film[k] * plate[1];
+      relief = mix(1, plate[2], smoothstep(0.06, 0.35, lit));
+    }
+    const veil = (1 - (FILM_VEIL * film) / 255) * relief;
     for (let c = 0; c < 3; c++) {
-      data[i + c] = Math.min(255, Math.max(mix(NIGHT[c], albedo[c] * shadow, lit) + CITY[c] * lights, albedo[c] * glow) + surface.add[k * 3 + c] + glint);
+      const base = Math.max(mix(NIGHT[c], albedo[c] * shadow, lit) + CITY[c] * lights, albedo[c] * glow) + surface.add[k * 3 + c] + glint;
+      data[i + c] = Math.min(255, base * veil + sheen[c] * film);
     }
     data[i + 3] = 255 * surface.cover[k];
   }

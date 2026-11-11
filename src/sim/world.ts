@@ -12,7 +12,7 @@ export const PLANET_TINTS: Record<PlanetStyle, readonly string[]> = {
   desert: ['#d9a560', '#c98a4a', '#e0b878'],
   acid: ['#b8c23a', '#9fb03a', '#c8b040'],
   carbon: ['#4a4650', '#3c3a42', '#55505a'],
-  crystal: ['#b48ad8', '#8ac0e0', '#d890c0'],
+  crystal: ['#d4aaa6', '#a8b6cc', '#d8cfc2'],
   living: ['#5aa860', '#4a9a78', '#78b048'],
   machine: ['#8a929c', '#9a8a78', '#7a8a98'],
   iron: ['#9aa0a8', '#a8826a', '#8c9098'],
