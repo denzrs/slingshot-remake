@@ -390,18 +390,23 @@ interface Baked {
   tilt: number;
 }
 
-/** An aurora: a ring round each pole at `latitude` (radians from the equator), in `colour`, how tall its curtains stand and where in its beat it starts. */
+/**
+ * An aurora: an oval round each pole at `latitude` (radians from the equator), its curtains `colour` at their foot and
+ * `crown` where they fade out at the top, how tall they stand (of the radius) and where in its beat it starts.
+ */
 interface Aurora {
   latitude: number;
   colour: Rgb;
+  crown: Rgb;
   height: number;
   phase: number;
 }
 
-const AURORA_COLOURS: Rgb[] = [
-  [90, 255, 160],
-  [170, 120, 255],
-  [255, 110, 160],
+/** Foot and crown: oxygen's green under its red, a violet under pink, a pink under violet. */
+const AURORA_COLOURS: { colour: Rgb; crown: Rgb }[] = [
+  { colour: [90, 255, 150], crown: [255, 70, 120] },
+  { colour: [160, 120, 255], crown: [255, 110, 200] },
+  { colour: [255, 110, 170], crown: [150, 90, 255] },
 ];
 
 /** A moon on a slanted orbit round a planet, in field units: how far out and how flat the orbit, its tilt, size, period (s), where it starts and which way it goes, and its colour. */
@@ -443,7 +448,7 @@ function rollPlanet(p: Planet, variant: Variant) {
   // Rolled after the moon's draws so the planets that already exist keep their looks.
   const aurora: Aurora | null =
     p.style === 'gas' && rng() < 0.5
-      ? { latitude: range(rng, 1.18, 1.32), colour: AURORA_COLOURS[Math.floor(rng() * AURORA_COLOURS.length)], height: range(rng, 0.09, 0.15), phase: rng() * 100 }
+      ? { latitude: range(rng, 1.1, 1.24), ...AURORA_COLOURS[Math.floor(rng() * AURORA_COLOURS.length)], height: range(rng, 0.16, 0.26), phase: rng() * 100 }
       : null;
   // A locked world's face is set by the light, not the seed; it rolled the same draws all the same, so the rest are as they were.
   const turn = variant.locked === 'sea' ? SEA_TURN : variant.locked ? LOCKED_TURN : { spin, tilt };
@@ -937,62 +942,100 @@ function drawLightning(ctx: CanvasRenderingContext2D, x: number, y: number, p: P
   ctx.restore();
 }
 
-const AURORA_RAYS = 56;
+/** How many rays make up each pole's curtain, and how wide each is (of the radius): wide enough that they run together into a sheet, streaked where they differ. */
+const AURORA_RAYS = 96;
+const AURORA_RAY_WIDTH = 0.04;
 
-/** Curtains of light over a gas giant's poles: a glowing ring at the magnetic latitude and rays standing off it, rippling along the ring. Stronger on the night side. */
+/**
+ * Curtains of light over a gas giant's poles. Each stands straight up off the sphere along an oval that wanders in latitude
+ * and folds along itself; seen from above it is foreshortened to a glowing band, at the limb it stands at its full height.
+ * Its rays brighten in pulses running along it and fade from the foot's colour into the crown's. The far pole's curtain
+ * shows only where it rises over the limb. Brighter on the night side.
+ */
 function drawAurora(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, a: Aurora, tilt: number, time: number): void {
   const ct = Math.cos(tilt);
   const st = Math.sin(tilt);
   const [r, g, b] = a.colour;
-  const ring = new Path2D();
-  const dim = new Path2D();
-  const bright = new Path2D();
-  for (const sign of [-1, 1]) {
-    const ty = Math.sin(a.latitude) * sign;
-    const cl = Math.cos(a.latitude);
-    let pen = false;
-    for (let k = 0; k <= AURORA_RAYS; k++) {
-      const lon = (k / AURORA_RAYS) * Math.PI * 2;
-      const tz = Math.cos(lon) * cl;
-      // The point on the sphere in screen terms: undo the tilt.
-      const dy = ty * ct - tz * st;
-      const nz = ty * st + tz * ct;
-      if (nz <= 0.03) {
-        pen = false;
-        continue;
-      }
-      const dx = Math.sin(lon) * cl;
-      const px = x + dx * R;
-      const py = y + dy * R;
-      if (pen) ring.lineTo(px, py);
-      else ring.moveTo(px, py);
-      pen = true;
-      if (k === AURORA_RAYS) continue;
-      // The curtain's height ripples along the ring and over time.
-      const wave = 0.5 + 0.5 * Math.sin(time * 1.1 + lon * 4 + a.phase + Math.sin(time * 0.6 + lon * 2.5) * 1.8);
-      const reach = a.height * R * (0.25 + 0.75 * wave) * (0.6 + 0.4 * nz);
-      // Outwards from the surface: the normal, seen from the side.
-      const path = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2] > 0.35 ? dim : bright;
-      path.moveTo(px, py);
-      path.lineTo(px + dx * reach, py + dy * reach);
-    }
-  }
+  const [r2, g2, b2] = a.crown;
+  const sway = 0.8 + 0.2 * Math.sin(time * 0.9 + a.phase);
+  /** A point of the oval at `lon` on the unit sphere, seen on screen: across, down, and towards the viewer. */
+  const at = (sign: number, lon: number): [number, number, number] => {
+    const lat = a.latitude + 0.04 * Math.sin(lon * 3 + a.phase + time * 0.25) + 0.015 * Math.sin(lon * 7 - time * 0.4);
+    const ty = Math.sin(lat) * sign;
+    const cl = Math.cos(lat);
+    const tz = Math.cos(lon) * cl;
+    return [Math.sin(lon) * cl, ty * ct - tz * st, ty * st + tz * ct];
+  };
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  const sway = 0.8 + 0.2 * Math.sin(time * 0.9 + a.phase);
+  // The oval's glow on the near side, where the curtains meet the cloud tops.
+  const oval = new Path2D();
+  for (const sign of [-1, 1]) {
+    let pen = false;
+    for (let k = 0; k <= AURORA_RAYS; k++) {
+      const [dx, dy, nz] = at(sign, (k / AURORA_RAYS) * Math.PI * 2);
+      if (nz <= 0.02) {
+        pen = false;
+        continue;
+      }
+      if (pen) oval.lineTo(x + dx * R, y + dy * R);
+      else oval.moveTo(x + dx * R, y + dy * R);
+      pen = true;
+    }
+  }
   ctx.strokeStyle = `rgba(${r},${g},${b},${0.06 * sway})`;
-  ctx.lineWidth = R * 0.13;
-  ctx.stroke(ring);
-  ctx.strokeStyle = `rgba(${r},${g},${b},${0.16 * sway})`;
-  ctx.lineWidth = R * 0.05;
-  ctx.stroke(ring);
-  ctx.lineWidth = R * 0.02;
-  ctx.strokeStyle = `rgba(${r},${g},${b},${0.14 * sway})`;
-  ctx.stroke(dim);
-  ctx.strokeStyle = `rgba(${r},${g},${b},${0.4 * sway})`;
-  ctx.stroke(bright);
+  ctx.lineWidth = R * 0.14;
+  ctx.stroke(oval);
+  ctx.strokeStyle = `rgba(${r},${g},${b},${0.06 * sway})`;
+  ctx.lineWidth = R * 0.06;
+  ctx.stroke(oval);
+  ctx.lineWidth = R * AURORA_RAY_WIDTH;
+  // The far side first, kept off the planet's disc; then the near side over everything.
+  for (const far of [true, false]) {
+    if (far) {
+      ctx.save();
+      const outside = new Path2D();
+      outside.rect(x - 3 * R, y - 3 * R, 6 * R, 6 * R);
+      outside.arc(x, y, R, 0, Math.PI * 2);
+      ctx.clip(outside, 'evenodd');
+    }
+    for (const sign of [-1, 1]) {
+      for (let k = 0; k < AURORA_RAYS; k++) {
+        const along = ((k + 0.5) / AURORA_RAYS) * Math.PI * 2;
+        // The curtain folds: its rays slide along the oval and bunch up.
+        const lon = along + 0.07 * Math.sin(along * 5 + time * 0.7 + a.phase) + 0.03 * Math.sin(along * 11 - time * 1.3);
+        const [dx, dy, nz] = at(sign, lon);
+        if (nz < 0 !== far) continue;
+        const wave = 0.5 + 0.5 * Math.sin(time * 1.1 + lon * 4 + a.phase + Math.sin(time * 0.6 + lon * 2.5) * 1.8);
+        const h = a.height * (0.4 + 0.6 * wave);
+        // Behind the planet, a ray shows only if its top clears the limb.
+        if (far && Math.hypot(dx, dy) * (1 + h) <= 1) continue;
+        const pulse = 0.5 + 0.5 * Math.sin(lon * 9 - time * 2.3 + a.phase * 2);
+        const night = 0.3 + 0.7 * smoothstep(0.45, -0.05, dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2]);
+        // Where the curtain runs towards the viewer its rays crowd onto one line; dim them by how much of the oval's way shows on screen, so its ends are not spikes.
+        const [ax, ay, az] = at(sign, lon + 0.01);
+        const broadside = Math.hypot(ax - dx, ay - dy) / (Math.hypot(ax - dx, ay - dy, az - nz) || 1);
+        const alpha = 0.55 * sway * night * (0.3 + 0.7 * pulse * pulse) * (0.2 + 0.8 * broadside);
+        const fx = x + dx * R;
+        const fy = y + dy * R;
+        const tx = x + dx * R * (1 + h);
+        const ty = y + dy * R * (1 + h);
+        const fade = ctx.createLinearGradient(fx, fy, tx, ty);
+        fade.addColorStop(0, `rgba(${r},${g},${b},0)`);
+        fade.addColorStop(0.12, `rgba(${r},${g},${b},${alpha})`);
+        fade.addColorStop(0.5, `rgba(${(r + r2) >> 1},${(g + g2) >> 1},${(b + b2) >> 1},${alpha * 0.45})`);
+        fade.addColorStop(1, `rgba(${r2},${g2},${b2},0)`);
+        ctx.strokeStyle = fade;
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.stroke();
+      }
+    }
+    if (far) ctx.restore();
+  }
   ctx.restore();
 }
 
