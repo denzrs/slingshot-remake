@@ -1,4 +1,4 @@
-import { LIGHT } from '../planet-common';
+import { LIGHT, smoothstep } from '../planet-common';
 import { GLSL_HEAD, shade, type Shaded, type Stage } from './forged-gl';
 
 /** The most hits an unstable planet shows cracks for: the biggest planet breaks at its ninth. */
@@ -11,6 +11,143 @@ export const WET_FROM = 0.08;
 export const WET_FULL = 0.25;
 /** How tight the sun's glint on water is. */
 export const GLINT_POWER = 90;
+/**
+ * A thin film on a surface (a crystal world's), as oil on water: the light it mirrors comes back in the colours its thickness
+ * and the angle favour. It lies in crystal plates, each a little wedged its own way, so its colours run in bands turned and
+ * shifted from plate to plate, and it thickens and thins with the ground under it, so the bands swirl with it; it parts
+ * along the plates' seams. Each plate also tilts a little its own way, so it catches the light brighter or darker than its
+ * neighbours, and its seams are grooves.
+ *
+ * Its refractive index; its thickness (nm) at its thinnest, how much more the plates' bands and the ground add (a couple of
+ * orders of colour: thicker films wash out to white); how many bands run across the planet's radius; how far a
+ * plate's bands may be shifted against its neighbours' (in bands); how many plates across the planet's radius, and how far
+ * the ground pushes them out of true (in plates); how far a plate tilts and how dark a seam's groove is; how much more vivid
+ * than the plain interference it is shown; and how broad the sun's mirror it shows in is (space is black: a film shows only
+ * where it mirrors the sun, as the sea does in a sunglint). How much of the ground's own light it takes there is `FILM_VEIL`.
+ */
+export const FILM_N = 1.45;
+export const FILM_BASE = 200;
+export const FILM_SPAN = 180;
+export const FILM_SWIRL = 700;
+export const FILM_BANDS = 3;
+export const FILM_JUMP = 0.5;
+export const FILM_CELLS = 3;
+export const FILM_WARP = 1.2;
+export const FILM_TILT = 0.22;
+export const FILM_GROOVE = 0.2;
+export const FILM_VIVID = 1.4;
+export const FILM_POWER = 8;
+export const FILM_VEIL = 0.3;
+
+/** Red, green and blue light's wavelengths (nm). */
+const FILM_WAVES = [650, 530, 450];
+
+/**
+ * The film at a point of the planet's sphere, in its own frame (turning with it), where the ground stands `height` (0 → 1,
+ * the blurred map): its thickness (nm) in `out[0]`; in `out[1]` 1 on a plate, 0 on the seam between two; in `out[2]` how
+ * much brighter (or darker, below 1) the plate's tilt and its seam make the ground. The plates are the cells round points
+ * scattered through space, one to each cube of a grid, cut by the sphere (so they close up all round it, with no seam of
+ * their own), pushed about by the ground; each plate's point, bands and tilt are hashed from its cube, in whole numbers so
+ * the shader (`FILM_GLSL`) finds the same.
+ */
+export function filmAt(x: number, y: number, z: number, height: number, out: number[]): void {
+  const warp = (height - 0.5) * FILM_WARP;
+  const px = x * FILM_CELLS + warp;
+  const py = y * FILM_CELLS - warp;
+  const pz = z * FILM_CELLS + warp;
+  const cx = Math.floor(px);
+  const cy = Math.floor(py);
+  const cz = Math.floor(pz);
+  let near = 1e9;
+  let next = 1e9;
+  let id = 0;
+  for (let i = -1; i <= 1; i++) {
+    for (let j = -1; j <= 1; j++) {
+      for (let k = -1; k <= 1; k++) {
+        const h = cellHash(cx + i, cy + j, cz + k);
+        const dx = cx + i + hashPart(h, 1) - px;
+        const dy = cy + j + hashPart(h, 2) - py;
+        const dz = cz + k + hashPart(h, 3) - pz;
+        const d = dx * dx + dy * dy + dz * dz;
+        if (d < near) [next, near, id] = [near, d, h];
+        else if (d < next) next = d;
+      }
+    }
+  }
+  // Each plate's bands run along a direction of its own, shifted against its neighbours'; it leans to the light or from it.
+  const ux = hashPart(id, 4) * 2 - 1;
+  const uy = hashPart(id, 5) * 2 - 1;
+  const uz = hashPart(id, 6) * 2 - 1;
+  const t = ((x * ux + y * uy + z * uz) / (Math.hypot(ux, uy, uz) || 1)) * FILM_BANDS + hashPart(id, 7) * FILM_JUMP;
+  out[0] = FILM_BASE + FILM_SPAN * Math.abs((t - Math.floor(t)) * 2 - 1) + FILM_SWIRL * height;
+  out[1] = smoothstep(0, 0.05, (Math.sqrt(next) - Math.sqrt(near)) / 2);
+  out[2] = (1 + FILM_TILT * (hashPart(id, 8) * 2 - 1)) * (1 - FILM_GROOVE * (1 - out[1]));
+}
+
+/** A cube of the plates' grid, hashed (32 bits). */
+function cellHash(x: number, y: number, z: number): number {
+  let h = (Math.imul(x + 1000, 73856093) ^ Math.imul(y + 1000, 19349663) ^ Math.imul(z + 1000, 83492791)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/** The `k`th value (0 → 1) drawn from a hash. */
+function hashPart(h: number, k: number): number {
+  let v = (h ^ Math.imul(k, 668265263)) >>> 0;
+  v = Math.imul(v ^ (v >>> 15), 2246822519) >>> 0;
+  v = Math.imul(v ^ (v >>> 13), 3266489917) >>> 0;
+  return ((v ^ (v >>> 16)) & 0xffff) / 65535;
+}
+
+/** `filmAt` in the shader. */
+const FILM_GLSL = `
+uint cellHash(ivec3 c) {
+  uint h = (uint(c.x + 1000) * 73856093u) ^ (uint(c.y + 1000) * 19349663u) ^ (uint(c.z + 1000) * 83492791u);
+  h = (h ^ (h >> 13u)) * 1274126177u;
+  return h ^ (h >> 16u);
+}
+
+float hashPart(uint h, uint k) {
+  uint v = h ^ (k * 668265263u);
+  v = (v ^ (v >> 15u)) * 2246822519u;
+  v = (v ^ (v >> 13u)) * 3266489917u;
+  return float((v ^ (v >> 16u)) & 0xffffu) / 65535.0;
+}
+
+vec3 filmAt(vec3 q, float height) {
+  float warp = (height - 0.5) * ${FILM_WARP};
+  vec3 p = q * ${FILM_CELLS}.0 + vec3(warp, -warp, warp);
+  ivec3 c = ivec3(floor(p));
+  float near = 1e9;
+  float next = 1e9;
+  uint id = 0u;
+  for (int i = -1; i <= 1; i++) {
+    for (int j = -1; j <= 1; j++) {
+      for (int k = -1; k <= 1; k++) {
+        ivec3 at = c + ivec3(i, j, k);
+        uint h = cellHash(at);
+        vec3 d = vec3(at) + vec3(hashPart(h, 1u), hashPart(h, 2u), hashPart(h, 3u)) - p;
+        float dd = dot(d, d);
+        if (dd < near) { next = near; near = dd; id = h; }
+        else if (dd < next) next = dd;
+      }
+    }
+  }
+  vec3 dir = vec3(hashPart(id, 4u), hashPart(id, 5u), hashPart(id, 6u)) * 2.0 - 1.0;
+  float t = dot(q, dir) / max(length(dir), 1e-4) * ${FILM_BANDS}.0 + hashPart(id, 7u) * ${FILM_JUMP};
+  float onPlate = smoothstep(0.0, 0.05, (sqrt(next) - sqrt(near)) * 0.5);
+  return vec3(${FILM_BASE}.0 + ${FILM_SPAN}.0 * abs(fract(t) * 2.0 - 1.0) + ${FILM_SWIRL}.0 * height, onPlate,
+    (1.0 + ${FILM_TILT} * (hashPart(id, 8u) * 2.0 - 1.0)) * (1.0 - ${FILM_GROOVE} * (1.0 - onPlate)));
+}
+`;
+
+/** The film's colour (0 → 1 each) at a thickness (nm), seen at `cos` of the angle from straight down. Written into `out`. */
+export function filmColour(thick: number, cos: number, out: number[]): void {
+  const path = 2 * FILM_N * thick * Math.sqrt(1 - (1 - cos * cos) / (FILM_N * FILM_N));
+  for (let c = 0; c < 3; c++) out[c] = 0.5 + 0.5 * Math.cos((Math.PI * 2 * path) / FILM_WAVES[c]);
+  const grey = (out[0] + out[1] + out[2]) / 3;
+  for (let c = 0; c < 3; c++) out[c] = Math.min(1, Math.max(0, grey + (out[c] - grey) * FILM_VIVID));
+}
 
 /**
  * The sphere and cloud of a forged planet as a shader, the same picture as `paintSurface` and `paintClouds` in
@@ -35,6 +172,7 @@ uniform vec3 uNight;
 uniform vec3 uCityLight;
 uniform vec3 uCloudColour;
 uniform float uSpecular;
+uniform float uFilm;
 uniform float uRelief;
 uniform float uAir;
 uniform float uHasCloud;
@@ -65,7 +203,7 @@ const float SHELL = 0.1;
 float luma(vec3 c) {
   return dot(c, vec3(0.3, 0.55, 0.15));
 }
-
+${FILM_GLSL}
 /** A point of the disc (p, its depth nz) as longitude and latitude of the map, before the planet's turn. */
 vec2 mapAt(vec2 p, float nz) {
   float ty = p.y * uTilt.x + nz * uTilt.y;
@@ -170,6 +308,20 @@ void main() {
   // Water mirrors the sun: a tight glint, on the flat sphere (a sea has no relief), under the cloud.
   float wet = uWet * smoothstep(${WET_FROM.toFixed(2)}, ${WET_FULL.toFixed(2)}, dot(albedo, uWetKey));
   col += vec3(1.0, 0.96, 0.88) * wet * pow(max(0.0, dot(n, halfway)), ${GLINT_POWER}.0) * (1.0 - cloudA);
+  // A thin film (a crystal world's): the sun's broad mirror in it comes back in rainbow bands, as on oil over water, in
+  // plates that turn with the ground, swirled by it; the colours shift with the angle.
+  if (uFilm > 0.0) {
+    vec3 plate = filmAt(onSphere(surfaceU, v), heightAt(p));
+    float thick = plate.x;
+    // The plates' relief: each tilted its own way to the light (on the lit side), its seams grooves.
+    col *= mix(1.0, plate.z, smoothstep(-0.05, 0.3, lam));
+    float cosT = sqrt(1.0 - (1.0 - nz * nz) / (${FILM_N} * ${FILM_N}));
+    vec3 film = 0.5 + 0.5 * cos(6.2831853 * 2.0 * ${FILM_N} * thick * cosT / vec3(650.0, 530.0, 450.0));
+    float grey = (film.r + film.g + film.b) / 3.0;
+    film = clamp(vec3(grey) + (film - grey) * ${FILM_VIVID}, 0.0, 1.0);
+    float sheen = uFilm * plate.y * pow(max(0.0, dot(n, halfway)), ${FILM_POWER}.0) * (1.0 - cloudA);
+    col = col * (1.0 - ${FILM_VEIL} * sheen) + film * sheen;
+  }
 
   if (uHits > 0) {
     // How far the crust has given way here: round each hit, out to a reach that grows as the planet nears breaking, with a
@@ -231,6 +383,8 @@ export interface PlanetShade {
   night: readonly number[];
   cityLight: readonly number[];
   specular: number;
+  /** How strongly a thin film over it shows the sun in rainbow colours (0 none). */
+  film: number;
   /** What of the map glows by itself: its colour weighed by `emitKey` (lava: red above blue), how strongly (0 none), and whether only on the night side. */
   emitKey: readonly number[];
   emit: number;
@@ -340,6 +494,7 @@ export function shadePlanet(s: PlanetShade, time: number, cracks: PlanetCracks |
     u.v3('uCityLight', s.cityLight);
     u.v3('uCloudColour', s.cloudColour);
     u.f('uSpecular', s.specular);
+    u.f('uFilm', s.film);
     u.v3('uEmitKey', s.emitKey);
     u.f('uEmit', s.emit * emitBreath(s.emitPulse, time, s.phase));
     u.f('uEmitNight', s.emitNight ? 1 : 0);

@@ -1,7 +1,7 @@
 import { COLORS } from '../sim/config';
 import type { Planet } from '../sim/physics';
 import { createRng, range } from '../sim/rng';
-import { clamp01, crater, hasLifeBand, lavaVeins, LIGHT, LOCK_SUN, lockFace, SEA_SUN, makeCraters, mix, normalize, smoothstep, type Crater, type LockFace, type PlanetSprite, type Vec3 } from './planet-common';
+import { clamp01, crater, hasLifeBand, lavaVeins, LIGHT, LOCK_SUN, lockFace, SEA_SUN, makeCraters, mix, normalize, smoothstep, type Crater, type LockFace, type PlanetSprite } from './planet-common';
 import { hexToRgb } from './color';
 import { fbm } from './noise';
 
@@ -167,7 +167,14 @@ function albedoFn(p: Planet, seed: number, tilt: number, bandFreq: number, crate
         return 0.62 + 0.2 * (fbm(x * 2.6, y * 2.6, z * 2.6, seed, 4) - 0.5) + 1.2 * sparkle;
       };
     case 'crystal':
-      return facetFn(seed);
+      // Bare bright crust of what condenses first round a star (corundum, spinel): pale flats, dark lows, cracks in places, grains glinting.
+      return (x: number, y: number, z: number) => {
+        const flats = smoothstep(0.55, 0.62, fbm(x * 1.4, y * 1.4, z * 1.4, seed + 7, 3));
+        const lows = smoothstep(0.42, 0.34, fbm(x * 1.8, y * 1.8, z * 1.8, seed + 9, 3));
+        const crack = smoothstep(0.02, 0, Math.abs(fbm(x * 4, y * 4, z * 4, seed + 13, 3) - 0.5)) * smoothstep(0.5, 0.6, fbm(x * 1.1, y * 1.1, z * 1.1, seed + 15, 2));
+        const sparkle = smoothstep(0.76, 0.8, fbm(x * 22, y * 22, z * 22, seed + 11, 2));
+        return 0.8 + 0.2 * (fbm(x * 2.2, y * 2.2, z * 2.2, seed, 4) - 0.5) + 0.14 * flats - 0.22 * lows - 0.25 * crack + 0.6 * sparkle;
+      };
     case 'living':
       // Living land and dark seas, as on a rocky world but with no craters.
       return (x: number, y: number, z: number) => {
@@ -210,27 +217,6 @@ function albedoFn(p: Planet, seed: number, tilt: number, bandFreq: number, crate
   }
 }
 
-
-/** A crystal: flat facets round some points of the sphere, each its own shade, their edges catching the light. */
-function facetFn(seed: number) {
-  const rng = createRng(seed ^ 0x51ed27);
-  const points: Vec3[] = Array.from({ length: 34 }, () => normalize([rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1]));
-  const shades = points.map(() => range(rng, 0.62, 1.05));
-  return (x: number, y: number, z: number) => {
-    let best = -2;
-    let second = -2;
-    let shade = 1;
-    points.forEach((q, k) => {
-      const d = x * q[0] + y * q[1] + z * q[2];
-      if (d > best) {
-        second = best;
-        best = d;
-        shade = shades[k];
-      } else if (d > second) second = d;
-    });
-    return shade + 0.35 * smoothstep(0.015, 0, best - second);
-  };
-}
 
 /** A machine world: plating in panels along its latitude and longitude, dark seams between, each panel its own shade. */
 function panelFn(seed: number) {

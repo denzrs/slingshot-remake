@@ -5,7 +5,7 @@ import { clamp01, LIGHT, smoothstep } from '../planet-common';
 /**
  * What happens on a planet's surface in the forged look, drawn over its sphere like the lightning of a gas giant: meteors
  * striking a lava world (a streak, a flash, a ring of dust, melt cooling, a crater that fades), its volcanoes and an icy
- * moon's geysers, a desert's dust storms, where an ocean's hurricanes stand, the glints of carbon and crystal, a machine world's trains
+ * moon's geysers, a desert's dust storms, where an ocean's hurricanes stand, the glints of carbon and iron, a machine world's trains
  * of light, heat haze over molten rock, and the scars shots leave. It all follows from the seed
  * and the time, so every screen shows the same at the same moment, and what lies on the surface turns away with it.
  */
@@ -448,7 +448,7 @@ export function drawStormLightning(ctx: CanvasRenderingContext2D, x: number, y: 
 
 // -------------------------------------------------------------------- glints ----
 
-/** Points of a surface that flash as they turn to mirror the sun: diamonds in carbon, a crystal's facets. */
+/** Points of a surface that flash as they turn to mirror the sun: diamonds in carbon, polished iron. */
 export interface Glints {
   spots: { u: number; v: number; tilt: [number, number, number]; phase: number }[];
   /** How sharp a flash is (higher: shorter), how big (radii) and its colour. */
@@ -457,15 +457,15 @@ export interface Glints {
   colour: [number, number, number];
 }
 
-export function rollGlints(p: Planet, crystal: boolean, colour: [number, number, number]): Glints {
+export function rollGlints(p: Planet, colour: [number, number, number]): Glints {
   const rng = createRng(p.seed ^ 0x7f4a7c15);
-  const spots = Array.from({ length: crystal ? 26 : 44 }, () => ({
+  const spots = Array.from({ length: 44 }, () => ({
     u: rng(),
     v: range(rng, 0.08, 0.92),
     tilt: [range(rng, -0.5, 0.5), range(rng, -0.5, 0.5), range(rng, -0.5, 0.5)] as [number, number, number],
     phase: rng() * Math.PI * 2,
   }));
-  return crystal ? { spots, power: 60, size: 0.16, colour } : { spots, power: 140, size: 0.08, colour };
+  return { spots, power: 140, size: 0.08, colour };
 }
 
 /** Each glint whose facet mirrors the light towards the eye just now: a four-pointed star and a small halo. */

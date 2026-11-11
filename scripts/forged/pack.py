@@ -30,7 +30,7 @@ FILES = {
 # The planet variants `render_planets.py` paints.
 for variant in ('rock-desert', 'rock-ocean', 'rock-moon', 'rock-alien', 'gas-neptune', 'gas-violet', 'gas-toxic', 'gas-crimson', 'gas-stormy', 'ice-glacier', 'ice-methane', 'ice-dusty', 'ice-rose', 'lava-rivers', 'lava-magma', 'lava-ash',
                 'lava-locked', 'ice-locked', 'ice-locked-rock', 'ice-locked-life', 'ice-cryo', 'ocean-deep', 'ocean-reef', 'desert-dunes', 'desert-salt', 'acid-lakes', 'acid-sulfur',
-                'carbon-graphite', 'carbon-tar', 'crystal-amethyst', 'crystal-quartz', 'living-moss', 'living-coral', 'machine-panels', 'machine-hive',
+                'carbon-graphite', 'carbon-tar', 'crystal-ruby', 'crystal-sapphire', 'living-moss', 'living-coral', 'machine-panels', 'machine-hive',
                 'rock-jungle', 'rock-tundra', 'rock-savanna', 'rock-autumn', 'iron-core', 'iron-rust', 'eyeball', 'hycean-teal', 'hycean-deep',
                 'fungal-caps', 'fungal-mycelium', 'volcanic-io', 'volcanic-red'):
     FILES['tex-' + variant] = ((512, 256), 85)
