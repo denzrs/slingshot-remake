@@ -15,7 +15,19 @@ import { hintText } from '../../platform/input-device';
 
 type ResultPage = 'result' | 'stats';
 
+/**
+ * The footer's buttons ignore presses this long after the result first shows: on a phone held upright Rematch sits
+ * where the last round's Next was, and a second tap on Next would skip the result unseen.
+ */
+const SETTLE_MS = 900;
+/** When each match's result first showed; switching pages or languages builds the screen again but does not restart the wait. */
+const shownAt = new WeakMap<Match, number>();
+
 export function gameOverScreen(app: App, match: Match, view: ResultPage = 'result', transition?: ModeTransition): Screen {
+  if (!shownAt.has(match)) shownAt.set(match, performance.now());
+  const settled = (run: () => void) => () => {
+    if (performance.now() - shownAt.get(match)! >= SETTLE_MS) run();
+  };
   const winner = match.winner();
   const headline = !winner ? t('over.draw') : match.teamMode ? t('over.teamWins', { team: winner.name }) : t('over.wins', { name: winner.name });
   const records = awards(match.matchStats);
@@ -127,16 +139,16 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
       })),
       ...(match.replaying
       ? [
-          { kind: 'action', section: 'actions', label: t('replay.back'), run: () => app.leaveReplay() },
-          { kind: 'action', section: 'actions', label: t('replay.again'), primary: true, run: () => app.watchAgain() },
+          { kind: 'action', section: 'actions', label: t('replay.back'), run: settled(() => app.leaveReplay()) },
+          { kind: 'action', section: 'actions', label: t('replay.again'), primary: true, run: settled(() => app.watchAgain()) },
         ] satisfies MenuItem[]
       : [
-          ...(app.online && match.canAdvance ? [{ kind: 'action', section: 'actions', label: t('over.backToLobby'), run: () => app.backToLobby() } satisfies MenuItem] : []),
+          ...(app.online && match.canAdvance ? [{ kind: 'action', section: 'actions', label: t('over.backToLobby'), run: settled(() => app.backToLobby()) } satisfies MenuItem] : []),
           app.online
-            ? { kind: 'action', section: 'actions', className: 'result-leave', label: t('multiplayer.leave'), run: () => app.leaveOnlineRoom() }
-            : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: () => app.toTitle() },
+            ? { kind: 'action', section: 'actions', className: 'result-leave', label: t('multiplayer.leave'), run: settled(() => app.leaveOnlineRoom()) }
+            : { kind: 'action', section: 'actions', label: t('common.mainMenu'), run: settled(() => app.toTitle()) },
           match.canAdvance
-            ? { kind: 'action', section: 'actions', label: t('over.rematch'), primary: true, run: () => app.rematch() }
+            ? { kind: 'action', section: 'actions', label: t('over.rematch'), primary: true, run: settled(() => app.rematch()) }
             : { kind: 'action', section: 'actions', label: t('over.rematch'), hint: t('over.hostRematch'), disabled: true, run: () => {} },
         ] satisfies MenuItem[]),
     ],
