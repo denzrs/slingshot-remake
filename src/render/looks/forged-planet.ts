@@ -55,7 +55,7 @@ interface Dress {
   rings: number;
 }
 const DRESS: Record<Exclude<PlanetStyle, 'star'>, Dress> = {
-  rocky: { rim: [255, 176, 122], dusk: [255, 110, 50], relief: 3, cloud: 'wisp', cloudColour: [255, 236, 215], specular: 0, rings: 0.08 },
+  rocky: { rim: [255, 176, 122], dusk: [255, 110, 50], relief: 3, cloud: 'wisp', cloudColour: [255, 236, 215], specular: 0, wet: { key: BLUE, strength: 1.4 }, rings: 0.08 },
   gas: { rim: [255, 214, 160], dusk: [255, 150, 90], relief: 0, cloud: 'band', cloudColour: null, specular: 0, rings: 0.7 },
   ice: { rim: [191, 230, 255], dusk: [140, 190, 255], relief: 1.4, cloud: 'haze', cloudColour: [235, 245, 255], specular: 0.35, rings: 0.2 },
   lava: { rim: [255, 112, 52], dusk: [255, 80, 30], relief: -1, cloud: 'wisp', cloudColour: [96, 84, 78], specular: 0, emit: { key: HOT }, rings: 0.08 },
