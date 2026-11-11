@@ -1,6 +1,7 @@
 import { AIM, NEBULA, PHYSICS } from './config';
 import { aimDirection, portalFits, Shot, type ShotRules, type World } from './physics';
 import type { Rng } from './rng';
+import { orbitOf, orbitSector } from './world';
 
 /**
  * Power-ups: pickups float on the field, a shot that flies past one
@@ -65,10 +66,12 @@ export const POWER_UP = {
   /** A CPU splits its shot once it is this close to an enemy ship, and not before it has flown this long. */
   CPU_SPLIT_RANGE: 150,
   CPU_SPLIT_MIN_TIME: 0.3,
-  /** How far a random teleport lands from planets, other ships and pickups. An aimed teleport keeps the planet gap only. */
+  /** How far a random teleport lands from planets, other ships and pickups. An aimed teleport keeps the planet gap and the aimed ship gap. */
   TELEPORT_PLANET_GAP: 50,
   TELEPORT_SHIP_GAP: 110,
   TELEPORT_PICKUP_GAP: 50,
+  /** How far an aimed teleport lands from every other living ship, centre to centre: never inside one. */
+  TELEPORT_AIMED_SHIP_GAP: 50,
   /** Spots keep this far from a black hole's edge (the Event Horizon one grows every volley): it would swallow them. */
   HOLE_GAP: 90,
   /** Random spots tried before giving up. */
@@ -121,12 +124,12 @@ function isClear(world: World, x: number, y: number, planetGap: number, shipGap:
   return !pickups.some((q) => distance(x, y, q.x, q.y) < pickupGap);
 }
 
-/** A random spot on the field that is clear of planets, ships and the other pickups. */
-function clearSpot(world: World, rng: Rng, planetGap: number, shipGap: number, pickups: readonly Pickup[], pickupGap: number, edge: number): { x: number; y: number } | null {
+/** A random spot on the field that is clear of planets, ships and the other pickups, and that `fits` when given. */
+function clearSpot(world: World, rng: Rng, planetGap: number, shipGap: number, pickups: readonly Pickup[], pickupGap: number, edge: number, fits?: (spot: { x: number; y: number }) => boolean): { x: number; y: number } | null {
   for (let attempt = 0; attempt < POWER_UP.ATTEMPTS; attempt++) {
     const x = edge + rng() * (world.width - 2 * edge);
     const y = edge + rng() * (world.height - 2 * edge);
-    if (isClear(world, x, y, planetGap, shipGap, pickups, pickupGap, edge)) return { x, y };
+    if (isClear(world, x, y, planetGap, shipGap, pickups, pickupGap, edge) && (!fits || fits({ x, y }))) return { x, y };
   }
   return null;
 }
@@ -180,9 +183,9 @@ export function spawnPickup(
   return spot ? { id, kind, x: spot.x, y: spot.y, born: pass } : null;
 }
 
-/** A random place for a ship to land: well clear of planets, the other ships and the pickups. */
-export function teleportSpot(world: World, rng: Rng, pickups: readonly Pickup[] = []): { x: number; y: number } | null {
-  return clearSpot(world, rng, POWER_UP.TELEPORT_PLANET_GAP, POWER_UP.TELEPORT_SHIP_GAP, pickups, POWER_UP.TELEPORT_PICKUP_GAP, POWER_UP.EDGE);
+/** A random place for ship `owner` to land: well clear of planets, the other ships (on their orbits too, see `teleportFits`) and the pickups. */
+export function teleportSpot(world: World, rng: Rng, pickups: readonly Pickup[] = [], owner = -1): { x: number; y: number } | null {
+  return clearSpot(world, rng, POWER_UP.TELEPORT_PLANET_GAP, POWER_UP.TELEPORT_SHIP_GAP, pickups, POWER_UP.TELEPORT_PICKUP_GAP, POWER_UP.EDGE, (spot) => teleportFits(world, spot, owner));
 }
 
 /**
@@ -196,18 +199,37 @@ function isLanded(world: World, x: number, y: number): boolean {
 }
 
 /**
+ * Whether ship `owner` may land at a spot: far enough from every other living ship. In a Solar System the
+ * ships turn on with their orbits, and one that turns at another speed laps the other ship, passing it at
+ * the gap between their orbits: that gap has to be wide enough too, or it would drift into it a few turns on.
+ */
+export function teleportFits(world: World, spot: { x: number; y: number }, owner: number): boolean {
+  const gap = POWER_UP.TELEPORT_AIMED_SHIP_GAP;
+  const solar = world.planets.some((p) => p.sun);
+  const orbit = solar ? orbitOf(spot.x, spot.y) : null;
+  return world.ships.every((s, i) => {
+    if (i === owner || !s.alive) return true;
+    if (distance(s.x, s.y, spot.x, spot.y) < gap) return false;
+    if (!orbit) return true;
+    const other = orbitOf(s.x, s.y);
+    return orbitSector(other.r) === orbitSector(orbit.r) || Math.abs(other.r - orbit.r) >= gap;
+  });
+}
+
+/**
  * The point `power` puts along `angle` from the ship, walked back along the ray until it is somewhere
  * a ship may rest and a black hole may be planted. So it never lands inside a planet or an existing hole,
- * or off the field. Null when the ray offers no such spot. Used by both the teleport and the black hole.
+ * or off the field. Null when the ray offers no such spot. Used by both the teleport and the black hole;
+ * a teleport names its ship (`ship`), and the spot is walked back past the other ships too.
  */
-export function aimedSpot(world: World, from: { x: number; y: number }, angle: number, power: number): { x: number; y: number } | null {
+export function aimedSpot(world: World, from: { x: number; y: number }, angle: number, power: number, ship?: number): { x: number; y: number } | null {
   const dir = aimDirection(angle);
   // A power from 0 to TELEPORT_MAX_POWER reaches nothing to half the field across; more power changes nothing.
   const full = (Math.min(POWER_UP.TELEPORT_MAX_POWER, Math.max(0, power)) / AIM.MAX_POWER) * POWER_UP.TELEPORT_RANGE;
   for (let reach = full; reach > 0; reach -= POWER_UP.TELEPORT_AIM_STEP) {
     const x = from.x + dir.x * reach;
     const y = from.y + dir.y * reach;
-    if (isLanded(world, x, y)) return { x, y };
+    if (isLanded(world, x, y) && (ship === undefined || teleportFits(world, { x, y }, ship))) return { x, y };
   }
   return null;
 }

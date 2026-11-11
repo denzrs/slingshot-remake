@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch, type Match } from '../../src/game';
 import { PHYSICS } from '../../src/sim/config';
-import { laneSpot, pickKind, POWER_UP, POWER_UP_KINDS, POWER_UP_WEIGHTS, PREVIEW_POINTS, previewPath, SPLIT_TURNS, spawnPickup, aimedSpot, teleportSpot, touchedPickups, type Pickup } from '../../src/sim/powerups';
+import { laneSpot, pickKind, POWER_UP, POWER_UP_KINDS, POWER_UP_WEIGHTS, PREVIEW_POINTS, previewPath, SPLIT_TURNS, spawnPickup, aimedSpot, teleportFits, teleportSpot, touchedPickups, type Pickup } from '../../src/sim/powerups';
 import { awards, newStatBook } from '../../src/data/stats';
 import { createRng } from '../../src/sim/rng';
+import { onOrbit, orbitSector, solarCenter } from '../../src/sim/world';
 import { Shot, type World } from '../../src/sim/physics';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 import { Volley } from '../../src/sim/volley';
@@ -64,6 +65,33 @@ describe('power-up placement', () => {
     // Full power from a corner would leave the field, so it stops at the edge margin.
     const out = aimedSpot(bare, { x: 1200, y: 400 }, 0, 100)!;
     expect(out!.x).toBeLessThanOrEqual(bare.width - POWER_UP.EDGE);
+  });
+
+  it('pulls an aimed teleport back so it never lands inside another ship', () => {
+    const world = emptyWorld();
+    // Ship 1 sits right where full aim puts ship 0.
+    expect(aimedSpot(world, world.ships[0], 0, 50)).toEqual({ x: 900, y: 400 });
+    const aimed = aimedSpot(world, world.ships[0], 0, 50, 0)!;
+    expect(aimed).not.toBeNull();
+    expect(Math.hypot(aimed.x - 900, aimed.y - 400)).toBeGreaterThanOrEqual(POWER_UP.TELEPORT_AIMED_SHIP_GAP);
+    // A dead ship is no obstacle.
+    world.ships[1].alive = false;
+    expect(aimedSpot(world, world.ships[0], 0, 50, 0)).toEqual({ x: 900, y: 400 });
+  });
+
+  it('keeps a teleport in a Solar System off an orbit that would drift into another ship', () => {
+    const sun = { ...solarCenter(), radius: 40, mass: 1, seed: 1, style: 'rocky' as const, tint: '#fff', sun: true };
+    const world = { ...emptyWorld(), planets: [sun] };
+    world.ships[1] = { ...onOrbit(260, 0), alive: true };
+    expect(orbitSector(240)).not.toBe(orbitSector(260));
+    expect(orbitSector(300)).toBe(orbitSector(260));
+    // Across the sun, but at another speed, 20 apart: the faster one laps the other and runs into it.
+    expect(teleportFits(world, onOrbit(240, Math.PI), 0)).toBe(false);
+    expect(teleportFits(world, onOrbit(200, Math.PI), 0)).toBe(true);
+    // At the same speed the two keep their distance for good.
+    expect(teleportFits(world, onOrbit(280, Math.PI), 0)).toBe(true);
+    // Without a sun nothing turns: only the distance counts.
+    expect(teleportFits(emptyWorld(), { x: 300, y: 300 }, 0)).toBe(true);
   });
 
   it('pulls the aimed spot back so it never lands inside a planet', () => {
