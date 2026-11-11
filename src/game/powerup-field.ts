@@ -1,5 +1,5 @@
 import { nextWormholeId, portalFits, type ShotRules, type World } from '../sim/physics';
-import { aimedPlanet, blackHoleFits, aimedSpot, aimedSurface, cpuWormholeSpots, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportFits, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../sim/powerups';
+import { aimedPlanet, blackHoleFits, aimedSpot, aimedSurface, cpuWormholeSpots, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportLanding, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../sim/powerups';
 import { NEBULA, WORMHOLE } from '../sim/config';
 import type { Rng } from '../sim/rng';
 import { bump, type StatBook } from '../data/stats';
@@ -334,8 +334,8 @@ export class PowerUpField {
       }
       case 'antigravity': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.turnAntigravity(owner, i));
       case 'planetkiller': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.killPlanet(owner, i), () => this.spendGone(owner));
-      // In a salvo another ship may have jumped there first: the ship keeps its teleport then.
-      default: return () => teleportFits(this.host.world(), target, owner) && this.teleport(owner, target);
+      // In a salvo another ship may have jumped there, or a hole opened, first: the ship keeps its teleport then.
+      default: return () => teleportLanding(this.host.world(), owner)(target) && this.teleport(owner, target);
     }
   }
 

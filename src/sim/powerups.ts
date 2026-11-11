@@ -1,7 +1,7 @@
 import { AIM, NEBULA, PHYSICS } from './config';
 import { aimDirection, portalFits, Shot, type ShotRules, type World } from './physics';
 import type { Rng } from './rng';
-import { orbitOf, orbitSector } from './world';
+import { freeOrbitLimit, orbitOf, orbitSector } from './world';
 
 /**
  * Power-ups: pickups float on the field, a shot that flies past one
@@ -183,9 +183,9 @@ export function spawnPickup(
   return spot ? { id, kind, x: spot.x, y: spot.y, born: pass } : null;
 }
 
-/** A random place for ship `owner` to land: well clear of planets, the other ships (on their orbits too, see `teleportFits`) and the pickups. */
+/** A random place for ship `owner` to land: well clear of planets, the other ships (on their orbits too, see `teleportLanding`) and the pickups. */
 export function teleportSpot(world: World, rng: Rng, pickups: readonly Pickup[] = [], owner = -1): { x: number; y: number } | null {
-  return clearSpot(world, rng, POWER_UP.TELEPORT_PLANET_GAP, POWER_UP.TELEPORT_SHIP_GAP, pickups, POWER_UP.TELEPORT_PICKUP_GAP, POWER_UP.EDGE, (spot) => teleportFits(world, spot, owner));
+  return clearSpot(world, rng, POWER_UP.TELEPORT_PLANET_GAP, POWER_UP.TELEPORT_SHIP_GAP, pickups, POWER_UP.TELEPORT_PICKUP_GAP, POWER_UP.EDGE, teleportLanding(world, owner));
 }
 
 /**
@@ -199,21 +199,36 @@ function isLanded(world: World, x: number, y: number): boolean {
 }
 
 /**
- * Whether ship `owner` may land at a spot: far enough from every other living ship. In a Solar System the
- * ships turn on with their orbits, and one that turns at another speed laps the other ship, passing it at
- * the gap between their orbits: that gap has to be wide enough too, or it would drift into it a few turns on.
+ * Where ship `owner` may land, as a test made once and asked of many spots: somewhere a ship may rest (see
+ * `isLanded`), and far enough from every other living ship. In a Solar System everything turns on with its
+ * orbit, the ship too, so the spot has to stay clear of it all every turn after: a ship or planet that turns
+ * at the ship's own speed keeps its distance on the orbits for good, and on the field comes as close as that
+ * (where the two lie one above the other: the orbits are wider than tall); one that turns at another speed
+ * laps the ship and passes it at the gap between their orbits. And the ship's orbit has to stay inside the
+ * field, or it is pushed along the edge and off its orbit, into whatever rides there.
  */
-export function teleportFits(world: World, spot: { x: number; y: number }, owner: number): boolean {
+export function teleportLanding(world: World, owner: number): (spot: { x: number; y: number }) => boolean {
   const gap = POWER_UP.TELEPORT_AIMED_SHIP_GAP;
-  const solar = world.planets.some((p) => p.sun);
-  const orbit = solar ? orbitOf(spot.x, spot.y) : null;
-  return world.ships.every((s, i) => {
-    if (i === owner || !s.alive) return true;
-    if (distance(s.x, s.y, spot.x, spot.y) < gap) return false;
-    if (!orbit) return true;
-    const other = orbitOf(s.x, s.y);
-    return orbitSector(other.r) === orbitSector(orbit.r) || Math.abs(other.r - orbit.r) >= gap;
-  });
+  const ships = world.ships.filter((s, i) => i !== owner && s.alive);
+  if (!world.planets.some((p) => p.sun)) {
+    return (spot) => isLanded(world, spot.x, spot.y) && ships.every((s) => distance(s.x, s.y, spot.x, spot.y) >= gap);
+  }
+  // Each as a point on the orbits (where turning keeps distances), with how close it may stay and how close it may pass. A planet only must not run into the ship.
+  const onOrbits = (x: number, y: number) => {
+    const { r, a } = orbitOf(x, y);
+    return { r, sector: orbitSector(r), u: Math.cos(a) * r, v: Math.sin(a) * r };
+  };
+  const bodies = [
+    ...ships.map((s) => ({ ...onOrbits(s.x, s.y), stay: gap, pass: gap })),
+    ...world.planets.filter((p) => !p.sun).map((p) => ({ ...onOrbits(p.x, p.y), stay: p.radius + POWER_UP.TELEPORT_PLANET_GAP, pass: p.radius + PHYSICS.SHIP_RADIUS })),
+  ];
+  const widest = freeOrbitLimit();
+  return (spot) => {
+    if (!isLanded(world, spot.x, spot.y)) return false;
+    const o = onOrbits(spot.x, spot.y);
+    if (o.r > widest) return false;
+    return bodies.every((b) => (b.sector === o.sector ? Math.hypot(b.u - o.u, b.v - o.v) >= b.stay : Math.abs(b.r - o.r) >= b.pass));
+  };
 }
 
 /**
@@ -225,11 +240,12 @@ export function teleportFits(world: World, spot: { x: number; y: number }, owner
 export function aimedSpot(world: World, from: { x: number; y: number }, angle: number, power: number, ship?: number): { x: number; y: number } | null {
   const dir = aimDirection(angle);
   // A power from 0 to TELEPORT_MAX_POWER reaches nothing to half the field across; more power changes nothing.
+  const lands = ship === undefined ? (spot: { x: number; y: number }) => isLanded(world, spot.x, spot.y) : teleportLanding(world, ship);
   const full = (Math.min(POWER_UP.TELEPORT_MAX_POWER, Math.max(0, power)) / AIM.MAX_POWER) * POWER_UP.TELEPORT_RANGE;
   for (let reach = full; reach > 0; reach -= POWER_UP.TELEPORT_AIM_STEP) {
     const x = from.x + dir.x * reach;
     const y = from.y + dir.y * reach;
-    if (isLanded(world, x, y) && (ship === undefined || teleportFits(world, { x, y }, ship))) return { x, y };
+    if (lands({ x, y })) return { x, y };
   }
   return null;
 }
