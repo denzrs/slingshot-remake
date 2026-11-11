@@ -942,21 +942,22 @@ function drawLightning(ctx: CanvasRenderingContext2D, x: number, y: number, p: P
   ctx.restore();
 }
 
-/** How many rays make up each pole's curtain, and how wide each is (of the radius): wide enough that they run together into a sheet, streaked where they differ. */
-const AURORA_RAYS = 96;
-const AURORA_RAY_WIDTH = 0.04;
+/** How many steps each pole's curtain is drawn in, round its oval. */
+const AURORA_STEPS = 128;
 
 /**
- * Curtains of light over a gas giant's poles. Each stands straight up off the sphere along an oval that wanders in latitude
- * and folds along itself; seen from above it is foreshortened to a glowing band, at the limb it stands at its full height.
- * Its rays brighten in pulses running along it and fade from the foot's colour into the crown's. The far pole's curtain
- * shows only where it rises over the limb. Brighter on the night side.
+ * Curtains of light over a gas giant's poles: one unbroken sheet per pole, standing straight up off the sphere along an oval
+ * that wanders in latitude and folds along itself. Seen from above it is foreshortened to a glowing band, at the limb it
+ * stands at its full height. It is drawn as a strip of quads, each fading from the foot's colour into the crown's; added
+ * together they meet without a seam. Its brightness swells and ebbs slowly along it, with a faint fine streak, and is
+ * strongest on the night side. The far pole's curtain shows only where it rises over the limb.
  */
 function drawAurora(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, a: Aurora, tilt: number, time: number): void {
   const ct = Math.cos(tilt);
   const st = Math.sin(tilt);
   const [r, g, b] = a.colour;
   const [r2, g2, b2] = a.crown;
+  const mid = `${(r + r2) >> 1},${(g + g2) >> 1},${(b + b2) >> 1}`;
   const sway = 0.8 + 0.2 * Math.sin(time * 0.9 + a.phase);
   /** A point of the oval at `lon` on the unit sphere, seen on screen: across, down, and towards the viewer. */
   const at = (sign: number, lon: number): [number, number, number] => {
@@ -974,8 +975,8 @@ function drawAurora(ctx: CanvasRenderingContext2D, x: number, y: number, R: numb
   const oval = new Path2D();
   for (const sign of [-1, 1]) {
     let pen = false;
-    for (let k = 0; k <= AURORA_RAYS; k++) {
-      const [dx, dy, nz] = at(sign, (k / AURORA_RAYS) * Math.PI * 2);
+    for (let k = 0; k <= AURORA_STEPS; k++) {
+      const [dx, dy, nz] = at(sign, (k / AURORA_STEPS) * Math.PI * 2);
       if (nz <= 0.02) {
         pen = false;
         continue;
@@ -991,50 +992,63 @@ function drawAurora(ctx: CanvasRenderingContext2D, x: number, y: number, R: numb
   ctx.strokeStyle = `rgba(${r},${g},${b},${0.06 * sway})`;
   ctx.lineWidth = R * 0.06;
   ctx.stroke(oval);
-  ctx.lineWidth = R * AURORA_RAY_WIDTH;
-  // The far side first, kept off the planet's disc; then the near side over everything.
-  for (const far of [true, false]) {
-    if (far) {
-      ctx.save();
-      const outside = new Path2D();
-      outside.rect(x - 3 * R, y - 3 * R, 6 * R, 6 * R);
-      outside.arc(x, y, R, 0, Math.PI * 2);
-      ctx.clip(outside, 'evenodd');
+  // The curtain's foot and top round each oval, and how bright it is there.
+  const foot = new Float32Array((AURORA_STEPS + 1) * 2);
+  const top = new Float32Array((AURORA_STEPS + 1) * 2);
+  const near = new Float32Array(AURORA_STEPS + 1);
+  const bright = new Float32Array(AURORA_STEPS + 1);
+  for (const sign of [-1, 1]) {
+    for (let k = 0; k <= AURORA_STEPS; k++) {
+      const along = (k / AURORA_STEPS) * Math.PI * 2;
+      // The curtain folds: it slides along the oval, bunching up and thinning out (never doubling back).
+      const lon = along + 0.07 * Math.sin(along * 5 + time * 0.7 + a.phase) + 0.03 * Math.sin(along * 11 - time * 1.3);
+      const [dx, dy, nz] = at(sign, lon);
+      const wave = 0.5 + 0.5 * Math.sin(time * 1.1 + lon * 4 + a.phase + Math.sin(time * 0.6 + lon * 2.5) * 1.8);
+      const h = 1 + a.height * (0.4 + 0.6 * wave);
+      foot[k * 2] = x + dx * R;
+      foot[k * 2 + 1] = y + dy * R;
+      top[k * 2] = x + dx * R * h;
+      top[k * 2 + 1] = y + dy * R * h;
+      near[k] = nz;
+      const swell = 0.5 + 0.5 * Math.sin(lon * 3 - time * 0.9 + a.phase * 2);
+      const streak = 0.85 + 0.15 * Math.sin(lon * 23 + time * 0.5 + a.phase);
+      const night = 0.3 + 0.7 * smoothstep(0.45, -0.05, dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2]);
+      // Where the curtain runs towards the viewer it is seen edge on and piles up on itself; dim it there by how much of the oval's way shows on screen.
+      const [ax, ay, az] = at(sign, lon + 0.01);
+      const broadside = Math.hypot(ax - dx, ay - dy) / (Math.hypot(ax - dx, ay - dy, az - nz) || 1);
+      bright[k] = 0.8 * sway * night * (0.45 + 0.55 * swell) * streak * (0.25 + 0.75 * broadside);
     }
-    for (const sign of [-1, 1]) {
-      for (let k = 0; k < AURORA_RAYS; k++) {
-        const along = ((k + 0.5) / AURORA_RAYS) * Math.PI * 2;
-        // The curtain folds: its rays slide along the oval and bunch up.
-        const lon = along + 0.07 * Math.sin(along * 5 + time * 0.7 + a.phase) + 0.03 * Math.sin(along * 11 - time * 1.3);
-        const [dx, dy, nz] = at(sign, lon);
-        if (nz < 0 !== far) continue;
-        const wave = 0.5 + 0.5 * Math.sin(time * 1.1 + lon * 4 + a.phase + Math.sin(time * 0.6 + lon * 2.5) * 1.8);
-        const h = a.height * (0.4 + 0.6 * wave);
-        // Behind the planet, a ray shows only if its top clears the limb.
-        if (far && Math.hypot(dx, dy) * (1 + h) <= 1) continue;
-        const pulse = 0.5 + 0.5 * Math.sin(lon * 9 - time * 2.3 + a.phase * 2);
-        const night = 0.3 + 0.7 * smoothstep(0.45, -0.05, dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2]);
-        // Where the curtain runs towards the viewer its rays crowd onto one line; dim them by how much of the oval's way shows on screen, so its ends are not spikes.
-        const [ax, ay, az] = at(sign, lon + 0.01);
-        const broadside = Math.hypot(ax - dx, ay - dy) / (Math.hypot(ax - dx, ay - dy, az - nz) || 1);
-        const alpha = 0.55 * sway * night * (0.3 + 0.7 * pulse * pulse) * (0.2 + 0.8 * broadside);
-        const fx = x + dx * R;
-        const fy = y + dy * R;
-        const tx = x + dx * R * (1 + h);
-        const ty = y + dy * R * (1 + h);
-        const fade = ctx.createLinearGradient(fx, fy, tx, ty);
-        fade.addColorStop(0, `rgba(${r},${g},${b},0)`);
-        fade.addColorStop(0.12, `rgba(${r},${g},${b},${alpha})`);
-        fade.addColorStop(0.5, `rgba(${(r + r2) >> 1},${(g + g2) >> 1},${(b + b2) >> 1},${alpha * 0.45})`);
-        fade.addColorStop(1, `rgba(${r2},${g2},${b2},0)`);
-        ctx.strokeStyle = fade;
-        ctx.beginPath();
-        ctx.moveTo(fx, fy);
-        ctx.lineTo(tx, ty);
-        ctx.stroke();
+    // The far side first, kept off the planet's disc; then the near side over everything.
+    for (const far of [true, false]) {
+      if (far) {
+        ctx.save();
+        const outside = new Path2D();
+        outside.rect(x - 3 * R, y - 3 * R, 6 * R, 6 * R);
+        outside.arc(x, y, R, 0, Math.PI * 2);
+        ctx.clip(outside, 'evenodd');
       }
+      for (let k = 0; k < AURORA_STEPS; k++) {
+        if (near[k] + near[k + 1] < 0 !== far) continue;
+        const i = k * 2;
+        const j = i + 2;
+        const alpha = (bright[k] + bright[k + 1]) / 2;
+        const fade = ctx.createLinearGradient((foot[i] + foot[j]) / 2, (foot[i + 1] + foot[j + 1]) / 2, (top[i] + top[j]) / 2, (top[i + 1] + top[j + 1]) / 2);
+        fade.addColorStop(0, `rgba(${r},${g},${b},0)`);
+        fade.addColorStop(0.08, `rgba(${r},${g},${b},${alpha})`);
+        fade.addColorStop(0.3, `rgba(${r},${g},${b},${alpha * 0.7})`);
+        fade.addColorStop(0.6, `rgba(${mid},${alpha * 0.35})`);
+        fade.addColorStop(1, `rgba(${r2},${g2},${b2},0)`);
+        ctx.fillStyle = fade;
+        ctx.beginPath();
+        ctx.moveTo(foot[i], foot[i + 1]);
+        ctx.lineTo(foot[j], foot[j + 1]);
+        ctx.lineTo(top[j], top[j + 1]);
+        ctx.lineTo(top[i], top[i + 1]);
+        ctx.closePath();
+        ctx.fill();
+      }
+      if (far) ctx.restore();
     }
-    if (far) ctx.restore();
   }
   ctx.restore();
 }
