@@ -209,6 +209,13 @@ export function onOrbit(r: number, a: number): { x: number; y: number } {
   return { x: c.x + Math.cos(a) * r * SOLAR.STRETCH, y: c.y + Math.sin(a) * r };
 }
 
+/** The widest orbit that stays `SOLAR.FREE_EDGE` inside the field all the way round: on one wider, a body dropped off its orbit is pushed along the edge and leaves it. */
+export function freeOrbitLimit(): number {
+  const c = solarCenter();
+  const edge = SOLAR.FREE_EDGE;
+  return Math.min((c.x - edge) / SOLAR.STRETCH, (FIELD.width - edge - c.x) / SOLAR.STRETCH, c.y - edge, FIELD.height - edge - c.y);
+}
+
 /** Which of the three sectors an orbit of radius `r` lies in: 0 near the sun, 2 far out. */
 export const orbitSector = (r: number): number =>
   Math.min(SOLAR.SECTOR_STEPS.length - 1, Math.max(0, Math.floor(((r - SOLAR.INNER_ORBIT) / (SOLAR.OUTER_ORBIT - SOLAR.INNER_ORBIT)) * SOLAR.SECTOR_STEPS.length)));

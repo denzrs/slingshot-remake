@@ -1,5 +1,5 @@
 import { nextWormholeId, portalFits, type ShotRules, type World } from '../sim/physics';
-import { aimedPlanet, blackHoleFits, aimedSpot, aimedSurface, cpuWormholeSpots, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../sim/powerups';
+import { aimedPlanet, blackHoleFits, aimedSpot, aimedSurface, cpuWormholeSpots, CPU_IGNORES, nebulaSpot, pickKind, POWER_UP, previewPath, SPLIT_TURNS, spawnPickup, teleportLanding, teleportSpot, touchedPickups, type Pickup, type PowerUpKind } from '../sim/powerups';
 import { NEBULA, WORMHOLE } from '../sim/config';
 import type { Rng } from '../sim/rng';
 import { bump, type StatBook } from '../data/stats';
@@ -266,7 +266,7 @@ export class PowerUpField {
     } else if (kind === 'nebula') {
       target = nebulaSpot(world, from, p.angle, p.power);
     } else {
-      target = aimedSpot(world, from, p.angle, p.power);
+      target = aimedSpot(world, from, p.angle, p.power, kind === 'teleport' ? owner : undefined);
     }
     if (kind === 'blackhole') return { owner, kind, target, blocked: !!target && !blackHoleFits(world, target, owner) };
     if (kind !== 'wormhole') return { owner, kind, target };
@@ -334,7 +334,8 @@ export class PowerUpField {
       }
       case 'antigravity': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.turnAntigravity(owner, i));
       case 'planetkiller': return this.onPlanet(aimed ? world.planets[aimed.index] : undefined, (i) => this.killPlanet(owner, i), () => this.spendGone(owner));
-      default: return () => this.teleport(owner, target);
+      // In a salvo another ship may have jumped there, or a hole opened, first: the ship keeps its teleport then.
+      default: return () => teleportLanding(this.host.world(), owner)(target) && this.teleport(owner, target);
     }
   }
 
@@ -559,7 +560,7 @@ export class PowerUpField {
   teleport(id: number, aimed?: { x: number; y: number } | null): boolean {
     // A spot the game draws itself comes from the match's stream, so the log only notes that it did.
     const drawn = aimed === undefined;
-    const spot = drawn ? teleportSpot(this.host.world(), this.host.rng(), this.pickups) : aimed;
+    const spot = drawn ? teleportSpot(this.host.world(), this.host.rng(), this.pickups, id) : aimed;
     // A draw that found nowhere to land still used the stream: a replay has to draw it too.
     if (!spot) {
       if (drawn) this.host.placed({ player: id, kind: 'teleport' });

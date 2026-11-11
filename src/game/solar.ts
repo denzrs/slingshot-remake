@@ -248,8 +248,8 @@ export class SolarMatch extends ClassicMatch {
       const { r, a } = orbitOf(o.x, o.y);
       const to = onOrbit(r, a + orbitTurn(r) * share);
       // What was dropped off its orbit (a teleported ship, a pickup) is kept on the field.
-      o.x = free ? Math.min(FIELD.width - 24, Math.max(24, to.x)) : to.x;
-      o.y = free ? Math.min(FIELD.height - 24, Math.max(24, to.y)) : to.y;
+      o.x = free ? Math.min(FIELD.width - SOLAR.FREE_EDGE, Math.max(SOLAR.FREE_EDGE, to.x)) : to.x;
+      o.y = free ? Math.min(FIELD.height - SOLAR.FREE_EDGE, Math.max(SOLAR.FREE_EDGE, to.y)) : to.y;
     };
     for (const p of world.planets) {
       if (p.sun) continue;
