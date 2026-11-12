@@ -1,5 +1,5 @@
 import { DEBRIS, type Debris } from '../../sim/config';
-import { LANGS, t, type Lang } from '../../platform/i18n';
+import { LANGS, LANG_NAMES, t, type Lang } from '../../platform/i18n';
 import { isLook, LOOKS, lookLabelKey } from '../../data/look';
 import type { Settings } from '../../data/settings';
 import { painterFor } from '../../render/looks';
@@ -9,7 +9,7 @@ import { mobileSheet, type SheetSelection } from '../menu/mobile-sheet';
 import type { App } from './app';
 import { hintText } from '../../platform/input-device';
 
-const LANG_NAMES: Record<Lang, string> = { de: 'Deutsch', en: 'English' };
+interface SettingsSelection extends SheetSelection { confirmClearData?: boolean }
 
 /** Language picker; the names stay in their own language so it is findable from any UI language. */
 export function languageItem(app: App): MenuItem {
@@ -44,12 +44,12 @@ function settingToggle(app: App, label: string, key: BooleanSetting, show: { hid
 
 /** Keep the selected subject through language rebuilds within one settings visit. */
 export function openSettings(app: App): void {
-  const selection: SheetSelection = {};
+  const selection: SettingsSelection = {};
   app.menu.push(() => settingsScreen(app, selection));
 }
 
 /** Only what concerns this device; the rules of a game live on the setup screen. */
-function settingsScreen(app: App, selection: SheetSelection): Screen {
+function settingsScreen(app: App, selection: SettingsSelection): Screen {
   const touch = matchMedia('(pointer: coarse)').matches;
   const sheet = mobileSheet([
     [
@@ -143,6 +143,19 @@ function settingsScreen(app: App, selection: SheetSelection): Screen {
             },
           }, 'touch')]
         : []),
+      { kind: 'action', section: 'actions', label: t(selection.confirmClearData ? 'preset.creator.deleteConfirm' : 'settings.clearData'), className: selection.confirmClearData ? 'item--delete is-confirming' : 'item--delete', run: () => {
+        if (!selection.confirmClearData) {
+          selection.confirmClearData = true;
+          app.menu.rebuild();
+          return;
+        }
+        try {
+          localStorage.clear();
+        } catch {
+          // Blocked storage holds nothing of the game's to delete.
+        }
+        window.location.reload();
+      } },
       { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },
     ] satisfies MenuItem[]).map(sheet.bind),
     dispose: sheet.dispose,

@@ -44,6 +44,7 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 | `npm run typecheck` | Typecheck the client, tests, benchmarks and scripts |
 | `npm run screens` | Build the game and walk every menu page at 13 window sizes in headless Chrome (about 4 minutes with the relay running); fails if anything is cut off (see `scripts/screens.ts`) |
 | `npm run screens:quick` | The same at three sizes, under a minute |
+| `npm run screens:onboarding` | Check the first-run picker at 12 desktop, phone and landscape sizes: no page scrolling, clipped actions or missing previews |
 | `npm run screens -- --compare [ref]` | What the working tree changed on each page since `HEAD` (or another commit): DOM, element positions and styles; the earlier run is kept in `.screens-baseline/` |
 | `npm run shot -- --out <file>` | Screenshot of the running game (headless Chrome; see `scripts/shot.ts`) |
 | `npm test` | Run all tests |
@@ -53,6 +54,8 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 | `npm run bench:relay -- ws://localhost:8080` | Measure Rust relay latency, fan-out, real 30 Hz snapshots and synthetic large payloads |
 
 **Dev hub.** `npm run dev` serves `/dev/`: all development pages share a fixed navigation header. HTML entry points live together in `dev/`: Looks, Presets, Daily challenges, Card symbols, Aim predictor and the Results screen (use `/dev/results.html?check` for its browser regression checks). In development, a "Debug" button in the footer links straight to this hub. These pages are excluded from the production build and return 404 on the preview server. Old gallery and debug URLs redirect to their new locations during development.
+
+**Onboarding.** The first app visit offers a graphics picker with live match previews of gravity, a solar system and a black hole, followed by an in-game tutorial (aim, power, first hit, a shot around a planet) on the normal field with keyboard, gamepad or touch controls. The flight preview is a switch there, off in the planet lesson as in a real game. The tutorial ends in a first duel against one easy CPU; leaving it any other way also counts as done, and the help page can play it again. `/dev/onboarding.html` previews the complete flow and the tutorial at desktop and mobile sizes; `/?preview=onboarding` and `/?preview=onboarding-training` (or `npm run dev:onboarding`) force either entry in development without changing the saved graphics or onboarding progress.
 
 **Look gallery.** `npm run dev` also serves `/dev/looks.html`: the real field renderer once per look on the same scenes (field, Solar System, event horizon, power-ups, effects), to compare the looks side by side. It is not part of the build. It can also remember the pixels of every scene and list what changed after an edit, to check a refactor of the drawing code.
 

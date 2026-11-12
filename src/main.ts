@@ -29,19 +29,23 @@ import { POWER_UP } from './sim/powerups';
 import { Effects } from './render/effects';
 import { Pwa } from './platform/pwa';
 import { PwaBanner } from './ui/menu/pwa-banner';
-import { applyStaticTexts, fmt, getLang, setLang, t, type Key } from './platform/i18n';
-import { getLook, setLook } from './data/look';
+import { applyStaticTexts, fmt, getLang, isLang, setLang, t, type Key } from './platform/i18n';
+import { getLook, RECOMMENDED_LOOK, setLook, type Look } from './data/look';
 import { setPalette } from './data/palette';
 import { allowDetailStepDown, painterFor } from './render/looks';
 import { Renderer } from './render/renderer';
 import { POWER_UP_COLORS } from './render/powerup-art';
 import { STYLE_MULTIPLIER, styleLabel } from './sim/scoring';
-import { cloneSettings, DEFAULT_SETTINGS, loadSettings, saveSettings } from './data/settings';
+import { cloneSettings, DEFAULT_SETTINGS, hasSavedSettings, loadSettings, saveSettings } from './data/settings';
 import { dailyResultScreen, dailyScreen } from './ui/daily/daily';
 import { shotReplayScreen } from './ui/daily/shot';
 import { eyeIcon } from './ui/dom';
 import { ChatPanel } from './ui/room/chat';
 import { Menu, h } from './ui/menu/menu';
+import { openOnboarding } from './ui/onboarding/onboarding';
+import { mountTrainingGuide } from './ui/onboarding/training-guide';
+import { firstDuelSettings, Training } from './game/training';
+import { finishOnboarding, needsOnboarding } from './data/onboarding';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
 import { fromNavigator, Gamepads, pressMenuKey } from './ui/gamepad/gamepad';
 import { FAKE_PAD, fakePadOn, mountDevToggles } from './debug/dev-toggles';
@@ -70,7 +74,15 @@ const clipButton = document.querySelector<HTMLButtonElement>('#clip-save')!;
 const clipShareButton = document.querySelector<HTMLButtonElement>('#clip-share')!;
 const pwaBanner = document.querySelector<HTMLElement>('#pwa-banner')!;
 
+/** Read before anything is saved this session: a device that kept settings belongs to a returning player. */
+const returningPlayer = hasSavedSettings();
 const settings = loadSettings();
+// Dev frames follow the hub's language without writing that preference to storage.
+if (import.meta.env.DEV && new URLSearchParams(location.search).get('preview')?.startsWith('onboarding')) {
+  const lang = new URLSearchParams(location.search).get('lang');
+  if (isLang(lang)) settings.language = lang;
+}
+let onboarding: ReturnType<typeof openOnboarding> | null = null;
 setLook(settings.look);
 allowDetailStepDown(settings.stepDownDetail);
 setPalette(settings.colorblind ? 'colorblind' : 'standard');
@@ -110,6 +122,11 @@ const attract = createMatch(
   { attract: true, seats: ['medium', 'medium', 'medium', 'medium', 'off', 'off'] },
 );
 let match: Match | null = null;
+let training: Training | null = null;
+let trainingGuide: ReturnType<typeof mountTrainingGuide> | null = null;
+let restartTraining: (() => void) | null = null;
+/** What ending the tutorial means, run once however it is left: the end, the skip button, or the pause menu. */
+let trainingEnded: (() => void) | null = null;
 /** The dev build's switches (see `debug/dev-toggles.ts`). */
 let devToggles: ReturnType<typeof mountDevToggles> | undefined;
 /** The game on screen when it is a replay, to watch it again. */
@@ -396,6 +413,13 @@ function dispatchInput(input: ClientInput): void {
   const net = online();
   if (net) return net.input(input);
   if (!match) return;
+  if (training) {
+    const player = match.players[0];
+    if (input.kind === 'adjust') training.setAim(player.angle + input.dAngle, player.power + input.dPower);
+    else if (input.kind === 'aim') training.setAim(input.angle, input.power);
+    else if (input.kind === 'fire') training.fire();
+    return;
+  }
   if (input.kind === 'adjust') match.adjust(input.dAngle, input.dPower);
   else if (input.kind === 'aim') match.setAim(input.angle, input.power);
   else if (input.kind === 'fire') match.commit();
@@ -407,13 +431,14 @@ function dispatchInput(input: ClientInput): void {
 const splitterInAir = (m: Match): boolean => m.powerUps && m.phase === 'flying' && m.players.some((p) => (m.viewer === null ? !p.cpu : p.id === m.viewer) && p.armed && p.powerUp === 'splitter');
 
 function advanceMatch(): void {
+  if (training) return;
   const net = online();
   if (net) net.advance();
   else match?.advance();
 }
 
 /** Whether the local player may aim right now. */
-const canAim = (): boolean => !!match?.localCanAim;
+const canAim = (): boolean => training ? training.aiming : !!match?.localCanAim;
 
 /** Offline, skipping a round takes the key twice within this many seconds, so a stray press costs nothing. */
 const SKIP_CONFIRM = 3;
@@ -421,6 +446,7 @@ let skipAskedAt = -Infinity;
 
 /** The skip key: skip the round (online the host calls a vote, everybody else votes no). */
 function skipKey(): void {
+  if (training) return;
   if (!match || match.replaying || !match.canSkipRound && !match.skipVote) return;
   const net = online();
   if (net) {
@@ -444,7 +470,7 @@ const app: App = {
   pwa,
   settings,
   get skipOffer() {
-    if (uiPreview) return null;
+    if (uiPreview || training) return null;
     const m = match;
     if (!m || m.replaying || screen !== 'play') return null;
     const net = online();
@@ -492,6 +518,7 @@ const app: App = {
   },
   today: () => forcedDay ?? dateKey(),
   start(mode, quick) {
+    stopTraining();
     lastMode = mode;
     match?.dispose();
     // Mayhem is a preset of the rules (the level of `mayhem`), not a mode of its own.
@@ -506,6 +533,7 @@ const app: App = {
     menu.close();
   },
   startDaily() {
+    stopTraining();
     match?.dispose();
     match = createChallenge(cloneSettings(settings), dailyChallenge(app.today()));
     wire(match);
@@ -538,6 +566,7 @@ const app: App = {
     menu.close();
   },
   rematch() {
+    if (restartTraining) return restartTraining();
     if (!match) return app.start(lastMode);
     if (online()) {
       if (!match.canAdvance) return;
@@ -592,7 +621,14 @@ const app: App = {
     menu.open(() => titleScreen(app));
     menu.push(() => statsScreen(app));
   },
+  get training() {
+    return !!training;
+  },
+  playTutorial() {
+    beginTraining();
+  },
   toTitle() {
+    stopTraining();
     session?.disconnect();
     match?.dispose();
     screen = 'title';
@@ -641,6 +677,7 @@ function saveClip(): void {
 /** Enter / Space / the touch button: fire or lock in, continue, or skip the killcam. */
 function primaryAction(): void {
   if (!match) return;
+  if (training?.step === 'done') return app.start('classic', firstDuelSettings(settings));
   // A replay only goes on past the round's end, the killcams and a held shot.
   if (match.replaying) {
     if (match.skipReveal() || match.skipHold()) return;
@@ -737,6 +774,8 @@ function placeTip(tip: OracleTap): void {
 }
 
 window.addEventListener('keydown', (e) => {
+  if (onboarding) return;
+  if (training && e.target instanceof HTMLButtonElement && e.target.closest('.training-guide')) return;
   sound.unlock();
   // The keys the pad presses for the menus are not the keyboard's: the hints keep speaking of the pad.
   if (e.isTrusted) markInput('keyboard');
@@ -834,7 +873,7 @@ let devPadHints = false;
  */
 const gamepads = new Gamepads({
   // The chat has the keyboard while it is being typed in; the pad leaves it alone.
-  context: () => (chat?.owns(document.activeElement) ? null : screen === 'play' && match && !menu.isOpen ? 'game' : 'menu'),
+  context: () => (onboarding || chat?.owns(document.activeElement) ? null : screen === 'play' && match && !menu.isOpen ? 'game' : 'menu'),
   adjust(dAngle, dPower) {
     if (canAim()) dispatchInput({ kind: 'adjust', dAngle, dPower });
   },
@@ -974,6 +1013,8 @@ function syncButtons(): void {
     else if (m.phase === 'roundOver') touchLabel = t('common.next');
     else if (m.phase === 'killcam' && !recorder.recording) touchLabel = t('common.skip');
   }
+  if (training?.step === 'done') touchLabel = null;
+  touchFire.disabled = !!training && (training.step === 'angle' || training.step === 'power');
   if (touchFire.hidden !== !touchLabel) touchFire.hidden = !touchLabel;
   if (touchLabel && touchFire.textContent !== touchLabel) touchFire.textContent = touchLabel;
 
@@ -1072,6 +1113,11 @@ let last = performance.now();
 /** The attract match behind the menu runs at 30 fps: nobody plays it, and every frame repaints the whole canvas. */
 const ATTRACT_FRAME_MS = 1000 / 30;
 function frame(now: number): void {
+  if (onboarding) {
+    last = now;
+    requestAnimationFrame(frame);
+    return;
+  }
   gamepads.poll(now);
   // A few ms of slack, so a 60 Hz display draws every second frame rather than every third.
   if (screen !== 'play' && now - last < ATTRACT_FRAME_MS - 4) {
@@ -1080,6 +1126,15 @@ function frame(now: number): void {
   }
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  if (training && !menu.isOpen) {
+    const previous = training.match;
+    training.update(dt);
+    if (previous !== training.match) {
+      match = training.match;
+      wire(match);
+      effects.clear();
+    }
+  }
   const m = active();
   // Nobody should watch the screen dim in the middle of a match; the title screen and the results let it.
   screenWake.set(screen === 'play' && m.phase !== 'gameOver');
@@ -1118,7 +1173,7 @@ function frame(now: number): void {
   const paused = screen === 'play' && !net && (menu.isOpen || (!!uiPreview && uiPreview.endsWith('card')));
   const empty = screen !== 'play' && !settings.menuBackground;
   if (!paused && !empty) {
-    if (!net || net.isHost) m.update(dt);
+    if (!training && (!net || net.isHost)) m.update(dt);
     if (supernovaDemo && m === supernovaDemo.match) supernovaDemo.tick(dt);
     effects.update(dt, m.world);
     effects.infall(m.falling(), m.world.holes[0], dt, painterFor(getLook()).fallDust);
@@ -1166,6 +1221,7 @@ function frame(now: number): void {
   if (screen === 'play' && m === match) announceOracle(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();
+  if (training) trainingGuide?.update(training, renderer, menu.isOpen);
   // The overlay is watched; what else decides where the chat goes is cheap to compare each frame.
   if (chat && (screen !== chatSeen.screen || menu.isOpen !== chatSeen.menuOpen || match !== chatSeen.match)) {
     chatSeen = { screen, menuOpen: menu.isOpen, match };
@@ -1197,6 +1253,50 @@ if (import.meta.env.DEV) {
         devPadHints = on;
       },
     },
+  });
+}
+
+function stopTraining(): void {
+  trainingGuide?.dispose();
+  trainingGuide = null;
+  training?.dispose();
+  training = null;
+  restartTraining = null;
+  const ended = trainingEnded;
+  trainingEnded = null;
+  ended?.();
+  setLook(settings.look);
+}
+
+/**
+ * A tutorial is a local match on #stage, with the very same HUD, controls and event effects. However it is left
+ * (to the first game, to the menu, or from the pause menu) it goes through `stopTraining`, which runs `ended`.
+ */
+function beginTraining(options: { look?: Look; progress?: string; ended?: () => void } = {}): void {
+  stopTraining();
+  session?.disconnect();
+  setLook(options.look ?? settings.look);
+  trainingEnded = options.ended ?? null;
+  restartTraining = () => {
+    match?.dispose();
+    training = new Training(settings);
+    match = training.match;
+    wire(match);
+    screen = 'play';
+    effects.clear();
+    menu.close();
+    canvas.focus();
+  };
+  restartTraining();
+  trainingGuide = mountTrainingGuide({
+    settings,
+    progress: options.progress,
+    skip: () => app.toTitle(),
+    toMenu: () => app.toTitle(),
+    firstGame: () => app.start('classic', firstDuelSettings(settings)),
+    restart: () => restartTraining?.(),
+    assist: () => training?.assist(),
+    togglePreview: () => training?.togglePreview(),
   });
 }
 
@@ -1234,6 +1334,38 @@ async function boot(): Promise<void> {
         menu.push(() => dailyScreen(app));
       }
     }
+  }
+  const onboardingPreview = import.meta.env.DEV && (requestedPreview === 'onboarding' || requestedPreview === 'onboarding-training');
+  const ordinaryStart = !requestedPreview && !forcedDay && !readInvite(location.search, location.hash) && !/\/stats\/?$/.test(location.pathname);
+  if (onboardingPreview || (ordinaryStart && needsOnboarding())) {
+    // The look is the player's from the moment it is chosen, so the settings (even opened from the tutorial's pause menu)
+    // show and keep it. The preview in the dev build changes nothing that is saved.
+    const choose = (look: Look): void => {
+      if (onboardingPreview) return;
+      settings.look = look;
+      app.settingsChanged();
+    };
+    const finish = (): void => {
+      if (!onboardingPreview) finishOnboarding();
+    };
+    const progress = t('onboarding.progress', { n: 2 });
+    if (requestedPreview === 'onboarding-training') beginTraining({ progress, ended: finish });
+    else onboarding = openOnboarding({
+      settings,
+      sound,
+      initialLook: returningPlayer ? settings.look : RECOMMENDED_LOOK,
+      skip: (look) => {
+        onboarding = null;
+        choose(look);
+        finish();
+        app.toTitle();
+      },
+      startTraining: (look) => {
+        onboarding = null;
+        choose(look);
+        beginTraining({ look, progress, ended: finish });
+      },
+    });
   }
   requestAnimationFrame(frame);
 }

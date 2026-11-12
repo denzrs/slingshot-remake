@@ -81,6 +81,15 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export const SETTINGS_KEY = 'slingshot.settings.v1';
 
+/** Whether this device has kept settings before, which tells a returning player from a new one. */
+export function hasSavedSettings(): boolean {
+  try {
+    return localStorage.getItem(SETTINGS_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);

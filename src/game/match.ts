@@ -563,6 +563,11 @@ export abstract class Match {
     return !!this.options.attract;
   }
 
+  /** The tutorial's field: its coach says what matters, so the HUD leaves out the round and the score block. */
+  get practice(): boolean {
+    return false;
+  }
+
   get isHumanTurn(): boolean {
     if (this.replaying || this.phase !== 'aiming' || this.current < 0 || this.revealing) return false;
     const p = this.players[this.current];

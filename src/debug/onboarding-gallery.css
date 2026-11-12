@@ -1,0 +1,6 @@
+.onboarding-gallery nav { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0; }
+.onboarding-gallery nav a { color: #ffcb83; border: 1px solid #34495c; padding: 12px; font: 12px 'B612 Mono', monospace; }
+.onboarding-gallery__desktop { overflow: auto; max-width: 100%; }
+.onboarding-gallery iframe { display: block; border: 1px solid #34495c; background: #0d1a27; }
+.onboarding-gallery__mobile { display: flex; flex-wrap: wrap; gap: 24px; overflow: auto; }
+.onboarding-gallery section { margin-bottom: 40px; }

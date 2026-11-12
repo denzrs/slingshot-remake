@@ -414,6 +414,7 @@ export function tutorialScreen(app: App): () => Screen {
           run: () => { selectedAnomaly = kind; app.menu.rebuild(); },
         })),
         ...(hasPreview ? [{ kind: 'action' as const, section: 'preview-action', label: t('tutorial.preview.replay'), run: () => { if (timeline) timeline.value = '0'; preview?.replay(); } }] : []),
+        { kind: 'action', section: 'actions', label: t('onboarding.continue'), run: () => app.playTutorial() },
         { kind: 'action', section: 'actions', label: t('briefing.done'), primary: true, run: () => app.menu.back() },
       ],
       // Keep focus on this chapter so ↑/↓ navigates the lesson list.

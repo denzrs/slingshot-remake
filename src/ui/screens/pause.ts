@@ -44,6 +44,24 @@ export function pauseScreen(app: App, match: Match | null): Screen {
       onEscape: () => app.resume(),
     };
   }
+  // The tutorial is no game of a mode: no standings, no new game, only its own ways on.
+  if (app.training) {
+    const items: MenuItem[] = [
+      { kind: 'action', section: 'actions', className: 'pause-tool pause-tool--settings', label: t('common.settings'), run: () => openSettings(app) },
+      { kind: 'action', section: 'actions', label: t('onboarding.restart'), run: () => app.rematch() },
+      { kind: 'action', section: 'actions', label: t('onboarding.leave'), run: () => app.toTitle() },
+      { kind: 'action', section: 'actions', label: t('pause.resume'), primary: true, run: () => app.resume() },
+    ];
+    return {
+      build: () => menuPage({
+        title: t('pause.title'), eyebrow: t('onboarding.training'), className: 'menu-page--pause', body: [],
+        footer: h('nav.items.items--row.pause-actions.menu-page__actions', { 'data-section': 'actions', 'aria-label': t('pause.title') }),
+      }),
+      items,
+      focus: items.length - 1,
+      onEscape: () => app.resume(),
+    };
+  }
   // Online the host can stop the game for everybody; offline, opening the menu already does.
   const hostPause = app.online && !!match?.canAdvance;
   const daily = app.mode === 'challenge';

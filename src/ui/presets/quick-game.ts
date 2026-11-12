@@ -22,7 +22,7 @@ export interface QuickGame {
 }
 
 /** The card's hint: what a quick game is dealt from (with no relay, the standard rules), and how it is played. */
-export const quickHint = (): string => t(statsAvailable() ? 'mode.quick.hint' : 'mode.quick.hintStandard', { rounds: QUICK_ROUNDS, cpus: QUICK_CPUS });
+export const quickHint = (): string => t('mode.quick.hint', { rounds: QUICK_ROUNDS, cpus: QUICK_CPUS });
 
 /** The favourites a quick game picks from: the relay's, or with none, the standard rules of every mode. */
 export function quickChoices(favorites: readonly StatsFavorite[]): StatsFavorite[] {

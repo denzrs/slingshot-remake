@@ -1,0 +1,92 @@
+/* The tutorial's coach: the one thing to read on the field, so it is lit like an instruction, not a footnote. */
+.training-guide { position: fixed; z-index: 8; bottom: 90px; left: 38px; width: min(420px, calc(100vw - 76px)); padding: 18px 22px 16px; border: 1px solid rgb(255 173 101 / .45); border-left: 4px solid var(--launch-accent); border-radius: 4px; background: rgb(7 17 34 / .97); color: var(--bone); box-shadow: 0 0 0 1px rgb(7 17 34 / .6), 0 0 32px rgb(255 173 101 / .18), 0 18px 48px rgb(0 0 0 / .55); }
+.training-guide[hidden], .training-guide [hidden], .training-guide__marker[hidden] { display: none; }
+.training-guide__head { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid var(--menu-line); padding-bottom: 8px; }
+.training-guide__head > span { font: 700 11px var(--font-mono); text-transform: uppercase; letter-spacing: .12em; color: var(--launch-accent); }
+.training-guide__head > span:first-child { margin-right: auto; }
+.training-guide button { background: none; color: var(--bone-dim); font: 11px var(--font-mono); border: 0; padding: 8px 0; cursor: pointer; min-height: 32px; }
+.training-guide button:hover { color: var(--bone); }
+.training-guide button:focus-visible { outline: 2px solid var(--launch-accent); outline-offset: 3px; }
+.training-guide h2 { font: 800 32px/1.1 var(--font-display); text-transform: uppercase; margin: 14px 0 8px; color: #fff; letter-spacing: .01em; }
+.training-guide p { font: 15px/1.55 var(--font-body); margin: 0; color: var(--bone); }
+.training-guide .training-guide__keys { font: 11px/1.7 var(--font-mono); margin-top: 12px; padding: 6px 10px; border-radius: 3px; background: rgb(255 210 120 / .08); color: var(--sodium); }
+.training-guide .training-guide__status { margin-top: 10px; font-weight: 700; color: var(--p1); }
+.training-guide .training-guide__route { margin-top: 10px; font: 700 12px/1.6 var(--font-mono); }
+.training-guide__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; justify-content: flex-end; margin-top: 14px; }
+.training-guide__actions:not(:has(button:not([hidden]))) { display: none; }
+/* The tools while aiming and the ways on at the end are buttons one sees, not links in the margin. */
+.training-guide__actions button { padding: 8px 14px; min-height: 38px; border: 1px solid var(--menu-line); border-radius: 3px; color: var(--bone); font: 700 12px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; }
+.training-guide__actions button:hover { border-color: var(--bone-dim); background: rgb(255 255 255 / .04); }
+.training-guide__actions .training-guide__preview { margin-right: auto; border-color: currentColor; opacity: .7; }
+.training-guide__actions .training-guide__preview[aria-pressed='true'] { opacity: 1; background: rgb(255 255 255 / .05); }
+.training-guide__actions .training-guide__primary { border-color: var(--launch-accent); background: var(--launch-accent); color: #071122; padding-inline: 20px; }
+.training-guide__actions .training-guide__primary:hover { background: #ffc08a; color: #071122; }
+.training-guide__marker { position: fixed; z-index: 7; pointer-events: none; transform: translate(-50%, calc(-100% - 28px)); color: var(--p1); font: 700 12px var(--font-mono); white-space: nowrap; text-shadow: 0 1px 6px #071122; }
+.training-guide__marker::after { position: absolute; content: ''; height: 14px; border-left: 1px solid currentColor; left: 50%; top: calc(100% + 6px); }
+.training-guide__marker--target { color: var(--p2); }
+.training-guide--compact .training-guide__head > span,
+.training-guide--compact .training-guide__keys { display: none; }
+body[data-training-step='angle'] .twheel, body[data-training-step='power'] .pbar, body[data-training-step='angle'] #touch-stick, body[data-training-step='power'] #touch-stick { filter: drop-shadow(0 0 7px var(--p1)); }
+
+/* A new lesson announces itself: the text slides in and the frame lights up once. */
+.training-guide--fresh .training-guide__lesson { animation: training-guide-lesson .45s cubic-bezier(.2, .8, .2, 1); }
+.training-guide--fresh { animation: training-guide-glow 1.4s ease-out; }
+@keyframes training-guide-lesson { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes training-guide-glow { 0%, 25% { box-shadow: 0 0 0 1px rgb(7 17 34 / .6), 0 0 56px rgb(255 173 101 / .55), 0 18px 48px rgb(0 0 0 / .55); border-color: var(--launch-accent); } }
+@media (prefers-reduced-motion: reduce) { .training-guide--fresh, .training-guide--fresh .training-guide__lesson { animation: none; } }
+.menu-motion-less .training-guide--fresh, .menu-motion-less .training-guide--fresh .training-guide__lesson { animation: none; }
+
+/* A window up to 860 px high: the ship sits close above the coach, so the coach gets shorter, not quieter. */
+@media (min-width: 761px) and (max-height: 860px) {
+  .training-guide { bottom: 60px; width: min(460px, calc(100vw - 76px)); padding: 12px 18px 12px; }
+  .training-guide h2 { font-size: 24px; margin: 10px 0 6px; }
+  .training-guide p { font-size: 13px; line-height: 1.5; }
+  .training-guide .training-guide__keys { margin-top: 8px; padding: 4px 8px; font-size: 10px; }
+  .training-guide__actions { margin-top: 10px; }
+  .training-guide__actions button { min-height: 32px; padding: 6px 12px; }
+}
+@media (max-width: 760px) {
+  .training-guide { top: auto; bottom: max(110px, calc(95px * var(--ui))); left: 50%; transform: translateX(-50%); width: min(360px, calc(100vw - 32px)); padding: 10px 14px; border-left-width: 3px; }
+  .training-guide__head { padding-bottom: 2px; gap: 12px; }
+  .training-guide__head button { min-height: 24px; font-size: 10px; }
+  .training-guide h2 { font-size: 24px; margin-top: 8px; }
+  .training-guide p { font-size: 13px; }
+  .training-guide .training-guide__keys { margin-top: 6px; font-size: 10px; }
+  .training-guide__actions { margin-top: 8px; gap: 8px; }
+  .training-guide__actions button { min-height: 34px; padding: 6px 10px; font-size: 11px; }
+  .training-guide__marker { font-size: 10px; }
+}
+
+/*
+ * A touch screen: a banner along the top, over the score block and the round title, clear of the pause button. The
+ * shots fly through the middle of the field, and the thumbs work the bottom; the controls glow for the step at hand,
+ * so the banner leaves out the line about them.
+ */
+.training-guide--banner { top: max(8px, env(safe-area-inset-top)); bottom: auto; left: 58px; right: 8px; width: auto; transform: none; padding: 9px 14px 10px; border-left-width: 3px; }
+.training-guide--banner .training-guide__head { padding-bottom: 3px; gap: 12px; }
+.training-guide--banner .training-guide__head > span { font-size: 10px; }
+.training-guide--banner .training-guide__head button { min-height: 26px; padding: 4px 0; font-size: 10px; }
+.training-guide--banner h2 { font-size: 20px; margin: 6px 0 3px; }
+.training-guide--banner p { font-size: 13px; line-height: 1.45; }
+.training-guide--banner .training-guide__keys { display: none; }
+.training-guide--banner .training-guide__route { margin-top: 4px; font-size: 11px; }
+.training-guide--banner .training-guide__status { margin-top: 4px; }
+.training-guide--banner .training-guide__actions { margin-top: 8px; gap: 8px; }
+.training-guide--banner .training-guide__actions button { min-height: 32px; padding: 5px 10px; font-size: 11px; }
+.training-guide--banner.training-guide--compact { padding-block: 6px 8px; }
+.training-guide--banner.training-guide--compact h2 { font-size: 16px; margin-top: 2px; }
+.training-guide--banner.training-guide--compact p { font-size: 12px; line-height: 1.4; }
+.training-guide--banner.training-guide--compact .training-guide__actions { margin-top: 6px; }
+/* Sideways the field is low and the ships sit high: the banner keeps to one strip, its buttons beside the text. */
+@media (orientation: landscape) {
+  .training-guide--banner { left: 66px; right: 8px; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 18px; align-items: center; padding: 5px 14px 7px; }
+  .training-guide--banner .training-guide__head { grid-column: 1 / -1; padding-bottom: 2px; }
+  .training-guide--banner .training-guide__head button { min-height: 22px; padding: 2px 0; }
+  .training-guide--banner .training-guide__lesson, .training-guide--banner .training-guide__status { grid-column: 1; }
+  .training-guide--banner .training-guide__actions { grid-column: 2; grid-row: 2 / span 2; flex-direction: column; align-items: stretch; margin-top: 4px; gap: 6px; }
+  .training-guide--banner .training-guide__actions .training-guide__preview { margin-right: 0; }
+  .training-guide--banner h2, .training-guide--banner.training-guide--compact h2 { font-size: 16px; margin: 3px 0 1px; }
+  .training-guide--banner p, .training-guide--banner.training-guide--compact p { font-size: 12px; line-height: 1.4; }
+  .training-guide--banner .training-guide__route { margin-top: 2px; }
+  .training-guide--banner .training-guide__actions button { min-height: 30px; }
+}
