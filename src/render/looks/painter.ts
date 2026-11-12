@@ -163,6 +163,8 @@ export interface FrameInfo {
   /** The light the effects throw over the whole screen: a flash and the supernova's white-out, each 0 → 1. */
   flash: number;
   whiteout: number;
+  /** Seconds since a supernova left the youngest remnant on the field, null while there is none. */
+  remnant: number | null;
 }
 
 /** The plate's place in CSS pixels, for a look's border: its top-left, the CSS pixels per field unit and its size in field units. */

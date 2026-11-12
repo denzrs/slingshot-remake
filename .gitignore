@@ -12,3 +12,6 @@ slingshot-stats-demo.db*
 .screens-current/
 # Scratch captures (preset previews and their scripts).
 /output/
+
+# Python caches of the asset scripts.
+__pycache__/

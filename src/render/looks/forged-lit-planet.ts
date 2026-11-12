@@ -79,8 +79,8 @@ export function renderLitPlanet(p: Planet, ps: number): PlanetSprite {
 
   // The surface strip: seamless sideways, drawn as light and dark veils over the sphere.
   const gas = p.style === 'gas';
-  const W = Math.round(R * STRIP);
-  const H = Math.ceil(R * 2);
+  const W = Math.max(1, Math.round(R * STRIP));
+  const H = Math.max(1, Math.ceil(R * 2));
   const strip = document.createElement('canvas');
   strip.width = W;
   strip.height = H;
@@ -134,10 +134,10 @@ export function renderLitPlanet(p: Planet, ps: number): PlanetSprite {
     const y0 = Math.max(0, Math.round(mid - rowH));
     const y1 = Math.min(H, Math.round(mid + rowH));
     const canvas = document.createElement('canvas');
-    canvas.width = W;
-    canvas.height = y1 - y0;
+    canvas.width = Math.max(1, W);
+    canvas.height = Math.max(1, y1 - y0);
     const lctx = canvas.getContext('2d')!;
-    lctx.drawImage(strip, 0, y0, W, y1 - y0, 0, 0, W, y1 - y0);
+    lctx.drawImage(strip, 0, y0, W, Math.max(1, y1 - y0), 0, 0, W, Math.max(1, y1 - y0));
     const window = (yy: number): number => {
       if ((i === 0 && yy < mid) || (i === rows - 1 && yy > mid)) return 1;
       return Math.cos(clamp01(Math.abs(yy - mid) / rowH) * Math.PI * 0.5) ** 2;

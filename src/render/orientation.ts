@@ -6,7 +6,7 @@
 
 let turned = false;
 
-/** Whether the field is turned in the view being drawn. Set once per frame by the renderer. */
+/** Whether the field is turned in the view being drawn. Set by the renderer at every frame it draws. */
 export const setTurned = (value: boolean): void => {
   turned = value;
 };

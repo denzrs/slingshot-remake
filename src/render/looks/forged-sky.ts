@@ -164,14 +164,30 @@ function layer(ctx: CanvasRenderingContext2D, specks: readonly Speck[], f: Frame
 export function forgedSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   if (!tiles || tiles.dpr !== f.dpr) tiles = buildTiles(f.dpr);
   ctx.save();
+  // After a supernova the sky goes out, over the whole screen and the border round the field too: the painted nebulae
+  // sink into black and only a few faint stars are left on the field, so the remnant burns alone.
+  const dark = nightAfterSupernova(f.remnant);
+  if (dark > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${0.97 * dark})`;
+    ctx.fillRect(0, 0, f.width, f.height);
+  }
   ctx.beginPath();
   ctx.rect(f.plate.x, f.plate.y, f.plate.w, f.plate.h);
   ctx.clip();
   ctx.globalCompositeOperation = 'lighter';
   const pulse = Math.sin(f.time * 1.3);
-  layer(ctx, tiles.farA, f, 0.55 + 0.4 * pulse);
-  layer(ctx, tiles.farB, f, 0.55 - 0.4 * pulse);
+  const stars = 1 - 0.75 * dark;
+  layer(ctx, tiles.farA, f, (0.55 + 0.4 * pulse) * stars);
+  layer(ctx, tiles.farB, f, (0.55 - 0.4 * pulse) * stars);
   ctx.restore();
+}
+
+/** How long (s) the sky takes to go out once a supernova has left its remnant: it is dark by the time the white-out has faded. */
+export const NIGHT_FALLS = 2.5;
+
+/** How dark the sky is (0 → 1) `remnant` seconds after a supernova, none without one. */
+export function nightAfterSupernova(remnant: number | null): number {
+  return remnant === null ? 0 : smoothstep(0, NIGHT_FALLS, remnant);
 }
 
 // ------------------------------------------------------------------- post ----

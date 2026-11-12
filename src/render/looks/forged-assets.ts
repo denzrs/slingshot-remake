@@ -1,4 +1,5 @@
 import coinUrl from './forged/coin.webp';
+import sunFrontUrl from './forged/sun-front.webp';
 import cracksUrl from './forged/tex-cracks.webp';
 import holeUrl from './forged/hole.webp';
 import whiteUrl from './forged/white.webp';
@@ -65,6 +66,7 @@ import turretMaskUrl from './forged/turret-mask.webp';
 /** The Blender renders of the forged look (`scripts/forged/` makes them), loaded on first use. */
 
 const URLS = {
+  sunFront: sunFrontUrl,
   coin: coinUrl,
   cracks: cracksUrl,
   hole: holeUrl,
@@ -142,6 +144,29 @@ export function image(name: Name): HTMLImageElement | null {
     images.set(name, img);
   }
   return img.complete && img.naturalWidth > 0 ? img : null;
+}
+
+/** Preload and decode images ahead of time so they render immediately without falling back to vector placeholders. */
+export function preloadAssets(names?: readonly Name[]): Promise<void> {
+  if (typeof Image === 'undefined') return Promise.resolve();
+  const target = names ?? (Object.keys(URLS) as Name[]);
+  const promises = target.map((name) => {
+    let img = images.get(name);
+    if (!img) {
+      img = new Image();
+      img.src = URLS[name];
+      images.set(name, img);
+    }
+    if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+    if (typeof img.decode === 'function') {
+      return img.decode().catch(() => {});
+    }
+    return new Promise<void>((resolve) => {
+      img!.onload = () => resolve();
+      img!.onerror = () => resolve();
+    });
+  });
+  return Promise.all(promises).then(() => {});
 }
 
 const tinted = new Map<string, HTMLCanvasElement>();

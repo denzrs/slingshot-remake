@@ -43,10 +43,27 @@ function drawMixed(ctx: CanvasRenderingContext2D, image: HTMLImageElement, layou
   ctx.drawImage(scratch, -span / 2 + left * k, -span / 2 + top * k, w * k, h * k);
 }
 
-/** Draws the hole of `radius` (field units) centred, in the frame the caller has set (the disk's tilt applied). False until the sheet has loaded. */
+/** Draws the hole of `radius` (field units) centred, in the frame the caller has set (the disk's tilt applied). */
 export function drawLensedHole(ctx: CanvasRenderingContext2D, radius: number, time: number): boolean {
   const sheet = image('hole');
-  if (!sheet) return false;
+  if (!sheet) {
+    // While the high-res texture sheet is decoding, draw a soft lensed shadow instead of flashing the engraved vector lines.
+    ctx.save();
+    const grad = ctx.createRadialGradient(0, 0, radius * 0.8, 0, 0, radius * 2.5);
+    grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+    grad.addColorStop(0.5, 'rgba(255, 173, 101, 0.15)');
+    grad.addColorStop(1, 'rgba(255, 173, 101, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return true;
+  }
   const span = radius * HOLE_SPAN;
   ctx.save();
   drawMixed(ctx, sheet, HOLE, time, span);
