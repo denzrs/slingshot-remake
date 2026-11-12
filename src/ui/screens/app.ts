@@ -46,6 +46,10 @@ export interface App {
   /** Answers the open vote to skip the round. */
   answerSkip(yes: boolean): void;
   toTitle(): void;
+  /** True while the interactive tutorial is on screen. */
+  readonly training: boolean;
+  /** Play the interactive tutorial again, from the help. */
+  playTutorial(): void;
   /** Whether a game controller is connected (the browser shows one only after its first button press). */
   readonly gamepadConnected: boolean;
   toggleFullscreen(): void;

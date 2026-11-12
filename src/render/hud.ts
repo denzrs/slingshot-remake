@@ -172,6 +172,7 @@ export class Hud {
   // ————————————————————————————— Top row —————————————————————————————
 
   private drawRoundLabel(match: Match): void {
+    if (match.practice) return;
     const { ctx, k, field } = this;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
@@ -1056,6 +1057,7 @@ export class Hud {
 
   /** Classic two-player layout: big blocks in the top corners, as in the original. */
   private drawDuelBlock(match: Match, p: PlayerState, align: 'left' | 'right', cardMarks: Mark[][]): void {
+    if (p.target || match.practice) return;
     const { ctx, k, field } = this;
     const x = align === 'left' ? field.x + 24 * k : field.x + field.w - 24 * k;
     const y = field.y + 22 * k + this.drop;

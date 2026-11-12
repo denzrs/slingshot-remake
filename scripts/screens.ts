@@ -92,7 +92,7 @@ async function visit(browser: Browser, opts: Options, base: string, size: string
   // The settings are in the browser's storage before the game's own code runs.
   const lobby = JSON.stringify({ server: opts.relay, ...page.lobby });
   const { identifier } = await cdp.send<{ identifier: string }>('Page.addScriptToEvaluateOnNewDocument', {
-    source: `localStorage.clear(); localStorage.setItem('slingshot.settings.v1', ${JSON.stringify(JSON.stringify(SETTINGS))}); localStorage.setItem('slingshot.lobby.v1', ${JSON.stringify(lobby)});`,
+    source: `localStorage.clear(); localStorage.setItem('slingshot.onboarding.v1', 'done'); localStorage.setItem('slingshot.settings.v1', ${JSON.stringify(JSON.stringify(SETTINGS))}); localStorage.setItem('slingshot.lobby.v1', ${JSON.stringify(lobby)});`,
   });
   try {
     await cdp.send('Page.navigate', { url: `${base}?daily=${DAY}` });

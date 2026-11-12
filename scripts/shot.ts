@@ -68,7 +68,7 @@ async function main(): Promise<void> {
     await cdp.send('Page.navigate', { url: `${origin}/favicon.svg` });
     await sleep(500);
     const settings = JSON.stringify({ language: 'de', ...opts.settings });
-    await cdp.evaluate(`localStorage.setItem('slingshot.settings.v1', ${JSON.stringify(settings)}); true`);
+    await cdp.evaluate(`localStorage.setItem('slingshot.onboarding.v1', 'done'); localStorage.setItem('slingshot.settings.v1', ${JSON.stringify(settings)}); true`);
     const target = new URL(opts.url);
     await cdp.send('Page.navigate', { url: target.href });
     await sleep(opts.wait);

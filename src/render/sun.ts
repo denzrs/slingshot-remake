@@ -129,6 +129,10 @@ export interface SunStyle {
   corona(ctx: CanvasRenderingContext2D, seed: number, reach: number, time: number, flare: number, giant: number): boolean;
   /** The ball, of radius `R`. */
   surface(ctx: CanvasRenderingContext2D, seed: number, R: number, time: number, giant: number): boolean;
+  /** Magnetic arches behind the ball, added up as light; false keeps the drawn arches. */
+  prominences?(ctx: CanvasRenderingContext2D, seed: number, R: number, time: number, flare: number, giant: number): boolean;
+  /** Near-side magnetic plasma over the finished sphere, in the same local frame. */
+  prominencesFront?(ctx: CanvasRenderingContext2D, seed: number, R: number, time: number, flare: number, giant: number): void;
 }
 
 /**
@@ -200,45 +204,47 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   ctx.globalAlpha = alpha;
 
   // Magnetic loops: arches that rise off the surface, hang there a while, and sink back, each on its own beat.
-  ctx.lineCap = 'round';
-  const [loopBody, loopMid, loopThread] = kind.loops;
-  for (let i = 0; i < LOOPS; i++) {
-    const period = 11 + slot(seed, i + 80) * 9;
-    const cycle = (time / period + slot(seed, i + 90)) % 1;
-    const life = Math.sin(Math.PI * cycle) ** 1.6;
-    const lift = Math.min(1, life + flare * 0.9);
-    if (lift < 0.04) continue;
-    const a0 = slot(seed, i + 100) * Math.PI * 2 + time * 0.01 + Math.floor(time / period + slot(seed, i + 90)) * 2.3;
-    const span = 0.3 + slot(seed, i + 110) * 0.45;
-    const a1 = a0 + span;
-    const rise = R * (0.55 + slot(seed, i + 120) * 0.55) * lift * (1 + flare);
-    const mid = a0 + span / 2;
-    const base = (a: number, r: number): [number, number] => [Math.cos(a) * r, Math.sin(a) * r];
-    const [x0, y0] = base(a0, R * 0.96);
-    const [x1, y1] = base(a1, R * 0.96);
-    const [cx0, cy0] = base(a0 + span * 0.12, R + rise * 1.35);
-    const [cx1, cy1] = base(a1 - span * 0.12, R + rise * 1.35);
-    ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.bezierCurveTo(cx0, cy0, cx1, cy1, x1, y1);
-    ctx.strokeStyle = rgba(loopBody, 0.14 * lift);
-    ctx.lineWidth = R * 0.34;
-    ctx.stroke();
-    ctx.strokeStyle = rgba(loopMid, 0.5 * lift);
-    ctx.lineWidth = R * 0.12;
-    ctx.stroke();
-    ctx.strokeStyle = rgba(loopThread, 0.45 * lift);
-    ctx.lineWidth = R * 0.04;
-    ctx.stroke();
-    // A glint where the arch peaks.
-    const [px, py] = base(mid, R + rise);
-    const spark = ctx.createRadialGradient(px, py, 0, px, py, R * 0.3);
-    spark.addColorStop(0, rgba(loopThread, 0.55 * lift));
-    spark.addColorStop(1, rgba(loopMid, 0));
-    ctx.fillStyle = spark;
-    ctx.beginPath();
-    ctx.arc(px, py, R * 0.3, 0, Math.PI * 2);
-    ctx.fill();
+  if (!style?.prominences?.(ctx, seed, R, time, flare, giant)) {
+    ctx.lineCap = 'round';
+    const [loopBody, loopMid, loopThread] = kind.loops;
+    for (let i = 0; i < LOOPS; i++) {
+      const period = 11 + slot(seed, i + 80) * 9;
+      const cycle = (time / period + slot(seed, i + 90)) % 1;
+      const life = Math.sin(Math.PI * cycle) ** 1.6;
+      const lift = Math.min(1, life + flare * 0.9);
+      if (lift < 0.04) continue;
+      const a0 = slot(seed, i + 100) * Math.PI * 2 + time * 0.01 + Math.floor(time / period + slot(seed, i + 90)) * 2.3;
+      const span = 0.3 + slot(seed, i + 110) * 0.45;
+      const a1 = a0 + span;
+      const rise = R * (0.55 + slot(seed, i + 120) * 0.55) * lift * (1 + flare);
+      const mid = a0 + span / 2;
+      const base = (a: number, r: number): [number, number] => [Math.cos(a) * r, Math.sin(a) * r];
+      const [x0, y0] = base(a0, R * 0.96);
+      const [x1, y1] = base(a1, R * 0.96);
+      const [cx0, cy0] = base(a0 + span * 0.12, R + rise * 1.35);
+      const [cx1, cy1] = base(a1 - span * 0.12, R + rise * 1.35);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.bezierCurveTo(cx0, cy0, cx1, cy1, x1, y1);
+      ctx.strokeStyle = rgba(loopBody, 0.14 * lift);
+      ctx.lineWidth = R * 0.34;
+      ctx.stroke();
+      ctx.strokeStyle = rgba(loopMid, 0.5 * lift);
+      ctx.lineWidth = R * 0.12;
+      ctx.stroke();
+      ctx.strokeStyle = rgba(loopThread, 0.45 * lift);
+      ctx.lineWidth = R * 0.04;
+      ctx.stroke();
+      // A glint where the arch peaks.
+      const [px, py] = base(mid, R + rise);
+      const spark = ctx.createRadialGradient(px, py, 0, px, py, R * 0.3);
+      spark.addColorStop(0, rgba(loopThread, 0.55 * lift));
+      spark.addColorStop(1, rgba(loopMid, 0));
+      ctx.fillStyle = spark;
+      ctx.beginPath();
+      ctx.arc(px, py, R * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.globalCompositeOperation = 'source-over';
 
@@ -285,6 +291,7 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   ctx.fillStyle = rim;
   ctx.fillRect(-R, -R, R * 2, R * 2);
   ctx.restore();
+  style?.prominencesFront?.(ctx, seed, R, time, flare, giant);
   ctx.restore();
 }
 

@@ -82,31 +82,49 @@ void main() {
   outColor = vec4(c * a, a);
 }`;
 
-/** The storm's plasma: deep red at the thin edge through orange to gold, with veins of heat along the ridges of another warped field. */
+/**
+ * The storm's plasma: wound up in its own field, so it curls round its middle, tighter further in. A veil of deep red
+ * haze, thinning out to the cloud's edge so its reach shows, holds ropes and fine threads of hot gas that run with the
+ * flow, orange to gold where they are hottest, and a hot middle; the side towards the sun is heated a little more. The
+ * haze is a veil like a nebula's, so ships and shots read through it; the ropes and the middle are light added over it.
+ */
 const STORM_SHADER = `${GLSL_HEAD}${GAS}
-vec3 ramp(float h) {
-  vec3 c = mix(vec3(150, 40, 18), vec3(214, 92, 34), smoothstep(0.0, 0.4, h));
-  c = mix(c, vec3(244, 134, 58), smoothstep(0.4, 0.75, h));
-  return mix(c, vec3(255, 188, 120), smoothstep(0.75, 1.0, h)) / 255.0;
+vec3 heat(float h) {
+  vec3 c = mix(vec3(0.36, 0.04, 0.03), vec3(0.84, 0.18, 0.06), smoothstep(0.0, 0.35, h));
+  c = mix(c, vec3(1.0, 0.5, 0.13), smoothstep(0.35, 0.65, h));
+  c = mix(c, vec3(1.0, 0.8, 0.44), smoothstep(0.65, 0.88, h));
+  return mix(c, vec3(1.0, 0.96, 0.86), smoothstep(0.88, 1.0, h));
 }
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * uReach;
-  float t = uTime * 0.14;
-  vec2 warp = flow(p, t);
-  vec2 g = gas(p, warp, t);
+  float r = length(p);
+  float curl = 1.5 * exp(-r * 1.2) + 0.3 * sin(uTime * 0.25 + uSeed);
+  float cs = cos(curl), sn = sin(curl);
+  vec2 s = vec2(cs * p.x - sn * p.y, sn * p.x + cs * p.y);
+  float t = uTime * 0.18;
+  vec2 warp = flow(s, t);
+  vec2 g = gas(s, warp, t);
   float f = g.x;
-  float ridge = 1.0 - abs(2.0 * fbm(vec3(p * 4.0 + warp * 2.4, t * 1.6 + uSeed), 3) - 1.0);
-  float vein = smoothstep(0.8, 0.96, ridge);
-  float lit = light(p, warp, t, g.y);
-  vec3 c = ramp(f * 0.74 + vein * f * 0.3) * (0.78 + 0.44 * lit);
-  float a = 0.62 * smoothstep(0.0, 0.9, f);
-  outColor = vec4(c * a, a);
+  float rope = 1.0 - abs(2.0 * fbm(vec3(s * 3.2 + warp * 2.6, t * 1.4 + uSeed), 3) - 1.0);
+  float thread = 1.0 - abs(2.0 * fbm(vec3(s * 7.5 + warp * 3.4, t * 2.0 - uSeed), 3) - 1.0);
+  float strands = (0.9 * pow(rope, 6.0) + 0.6 * pow(thread, 10.0)) * smoothstep(0.15, 0.6, f);
+  float lit = light(s, warp, t, g.y);
+  float core = exp(-r * r * 3.0);
+  float h = clamp(f * 0.42 + strands * 0.3 + core * 0.15 + (lit - 0.5) * 0.2, 0.0, 1.0);
+  // A thin veil of cooler gas out to the cloud's edge, so its reach can be seen.
+  float veil = 0.16 * (1.0 - smoothstep(0.55, 1.05, r)) * (0.55 + 0.45 * fbm(vec3(s * 2.0, t) + uSeed, 2));
+  float haze = max(0.5 * smoothstep(0.0, 0.7, f), veil);
+  vec3 glow = heat(min(0.86, 0.45 + strands * 0.5 + core * 0.15)) * (strands * 0.55 + core * f * 0.12);
+  float a = clamp(haze + 0.8 * max(glow.r, max(glow.g, glow.b)), 0.0, 1.0);
+  outColor = vec4(min(heat(h) * haze + glow, vec3(a)), a);
 }`;
 
 /** The largest a cloud is worked out at, in pixels: it is all soft flow, so it can be drawn up. */
 const GAS_LIMIT = 192;
 /** How often a cloud is worked out again: it drifts slowly, and what is between is the picture kept. */
 const GAS_HZ = 15;
+/** The storm's plasma has fine threads in it, so it is worked out larger. */
+const STORM_LIMIT = 320;
 
 /** The way to the field's light from (x, y) in the field: the first sun, otherwise upper left as the planets are lit. */
 function toLight(x: number, y: number): [number, number] {
@@ -176,7 +194,7 @@ export function drawForgedStormCloud(ctx: CanvasRenderingContext2D, cloud: { x: 
   drawStormCloud(ctx, cloud, sun, age, time, dissolve, (c, x, y, half, fade) => {
     if (!onScreen(c, x, y, half)) return true;
     const pixels = pixelsOf(c, half * 2);
-    const gas = shadeKept(`storm:${cloud.seed}`, time, GAS_HZ, STORM_SHADER, pixels, pixels, GAS_LIMIT, (u) => {
+    const gas = shadeKept(`storm:${cloud.seed}`, time, GAS_HZ, STORM_SHADER, pixels, pixels, STORM_LIMIT, (u) => {
       const dx = sun.x - x;
       const dy = sun.y - y;
       const l = Math.hypot(dx, dy) || 1;

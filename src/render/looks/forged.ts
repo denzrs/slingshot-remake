@@ -16,6 +16,8 @@ import { forgedBegin, forgedFrame, forgedPost, forgedSky, paintNebula } from './
 import { lightParts, lightStyles } from './forged-parts';
 import { drawLightPickup, drawLightShip } from './forged-light';
 import { drawLensedHole } from './forged-hole';
+import { drawForgedStormBurst, warmSunEruptions } from './forged-sun';
+import { drawForgedNeutronStar } from './forged-remnant';
 import type { Styles } from './painter';
 
 /**
@@ -379,7 +381,7 @@ export const forgedStyles: Styles = {
 
 export const forged = engraved('forged', forgedStyles, {
   ...lightParts,
-  note: 'Blender renders with light over them: turning clouds and rings, fireballs and tumbling shrapnel, comet shots, a sun with rays, a deep sky.',
+  note: 'Blender renders with light over them: turning clouds and rings, fireballs and tumbling shrapnel, comet shots, solar plasma rising from a turning sphere, a deep sky.',
   // The halo and the disk's light already say where the hole is; a red dashed circle over them only muddies it.
   dangerRing: () => {},
   stepsDownDetail: true,
@@ -407,6 +409,8 @@ export const forged = engraved('forged', forgedStyles, {
   // Painted light can be cut into slices and bent round the hole.
   falling: drawFalling,
   sun: drawForgedSun,
+  neutronStar: drawForgedNeutronStar,
+  stormBurst: drawForgedStormBurst,
   nebula: drawForgedNebula,
   stormCloud: drawForgedStormCloud,
   shot: drawForgedShot,
@@ -423,6 +427,7 @@ export const forged = engraved('forged', forgedStyles, {
     forgedBegin(frame);
     warmBlasts();
     warmEruptions();
+    warmSunEruptions();
   },
   backdropArt: paintNebula,
   sky: forgedSky,

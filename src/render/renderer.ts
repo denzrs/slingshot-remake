@@ -64,6 +64,9 @@ function drawUprightFieldArtwork(ctx: CanvasRenderingContext2D, x: number, y: nu
   ctx.restore();
 }
 
+/** The least of some ages, null when there are none. */
+const youngest = (ages: readonly number[]): number | null => (ages.length ? Math.min(...ages) : null);
+
 export class Renderer {
   view!: View;
   private readonly ctx: CanvasRenderingContext2D;
@@ -259,6 +262,9 @@ export class Renderer {
 
   draw(match: Match, effects: Effects, opts: DrawOptions, dt: number): void {
     this.resizeIfNeeded();
+    // Each frame, not only on a resize: another renderer (the look previews of the first start) may have drawn a
+    // straight field in between, and the upright text and the touch stick read this.
+    setTurned(!!this.view.rotated);
     this.refreshLayer(opts.fullScreen);
     this.emptyDrawn = false;
     this.time += dt;
@@ -294,6 +300,7 @@ export class Renderer {
       planets: match.planetsVisible ? scene.world.planets.filter((p) => !p.sun) : [],
       flash: effects.flash,
       whiteout: effects.whiteout,
+      remnant: youngest(scene.world.planets.filter((p) => p.neutron).map((p) => this.remnantAge(p.seed))),
     };
     this.painter.begin(frame);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -457,7 +464,7 @@ export class Renderer {
       this.spritePs = ps;
       this.spriteLook = this.painter.id;
     }
-    const falling = new Map(scene.camera ? [] : match.falling().map((f) => [f.key, f]));
+    const falling = new Map(scene.camera && match.replaying ? [] : match.falling().map((f) => [f.key, f]));
     const sun = match.mode === 'solar' ? world.planets.find((q) => q.sun) : undefined;
     for (const p of showPlanets ? world.planets : []) {
       if (p.sun) continue;

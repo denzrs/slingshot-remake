@@ -21,8 +21,8 @@ export interface QuickGame {
   settings: Settings;
 }
 
-/** The card's hint: what a quick game is dealt from (with no relay, the built-in presets), and how it is played. */
-export const quickHint = (): string => t(statsAvailable() ? 'mode.quick.hint' : 'mode.quick.hintStandard', { rounds: QUICK_ROUNDS, cpus: QUICK_CPUS });
+/** The card's hint: a random match, and how it is played. */
+export const quickHint = (): string => t('mode.quick.hint', { rounds: QUICK_ROUNDS, cpus: QUICK_CPUS });
 
 /** The built-in presets of every mode, as favourites nobody has counted yet. */
 const builtInChoices = (): StatsFavorite[] =>

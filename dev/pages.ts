@@ -1,6 +1,7 @@
 /** HTML entry points shared by the Vite gate, the overview and every dev header. */
 export const DEV_PAGES = [
   { id: 'home', path: '/dev/', legacy: '/dev.html', title: 'dev.home', description: 'dev.intro' },
+  { id: 'onboarding', path: '/dev/onboarding.html', title: 'dev.onboarding', description: 'dev.onboarding.text' },
   { id: 'looks', path: '/dev/looks.html', legacy: '/looks.html', title: 'dev.looks', description: 'dev.looks.text' },
   { id: 'planets', path: '/dev/planets.html', title: 'dev.planets', description: 'dev.planets.text' },
   { id: 'suns', path: '/dev/suns.html', title: 'dev.suns', description: 'dev.suns.text' },

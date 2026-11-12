@@ -20,7 +20,7 @@ export function noteInput(device: InputDevice): boolean {
 /** Texts that have a twin written for the pad, under the same key with `.pad` after it. */
 type PadTwin =
   | 'shell.keys' | 'launcher.keys' | 'flow.tabKeys' | 'briefing.keys' | 'title.keys' | 'setup.keys' | 'over.keys'
-  | 'players.moveTarget' | 'tutorial.welcome.3' | 'tutorial.powerups.1' | 'skip.confirm';
+  | 'onboarding.keys' | 'players.moveTarget' | 'tutorial.welcome.3' | 'tutorial.powerups.1' | 'skip.confirm';
 
 /** A hint in the words of the device that was used last. */
 export function hintText(key: PadTwin, params?: Record<string, string | number>): string {

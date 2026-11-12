@@ -11,6 +11,9 @@ import type { Key } from '../platform/i18n';
 export const LOOKS = ['classic', 'forged', 'holo'] as const;
 export type Look = (typeof LOOKS)[number];
 
+/** The first-run picker starts with the rendered field. Existing device settings keep their look. */
+export const RECOMMENDED_LOOK: Look = 'forged';
+
 let current: Look = 'classic';
 
 export const getLook = (): Look => current;

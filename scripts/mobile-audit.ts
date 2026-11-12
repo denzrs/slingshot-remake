@@ -220,7 +220,7 @@ async function open(ctx: Context, settings: Record<string, unknown>, lobby: Reco
   const { cdp } = ctx.browser;
   await hold(ctx.browser, ctx.config, ctx.opts.dpr);
   const { identifier } = await cdp.send<{ identifier: string }>('Page.addScriptToEvaluateOnNewDocument', {
-    source: `localStorage.clear(); localStorage.setItem('slingshot.settings.v1', ${JSON.stringify(JSON.stringify({ ...SETTINGS, language: ctx.opts.lang, ...settings }))}); localStorage.setItem('slingshot.lobby.v1', ${JSON.stringify(JSON.stringify(lobby))});`,
+    source: `localStorage.clear(); localStorage.setItem('slingshot.onboarding.v1', 'done'); localStorage.setItem('slingshot.settings.v1', ${JSON.stringify(JSON.stringify({ ...SETTINGS, language: ctx.opts.lang, ...settings }))}); localStorage.setItem('slingshot.lobby.v1', ${JSON.stringify(JSON.stringify(lobby))});`,
   });
   try {
     // A game that names a day opens that day's daily challenge over the title: "today's pick" is then the same on every run, and Back reaches the title.
@@ -283,7 +283,7 @@ async function startHosts(base: string, relay: string, lang: string): Promise<()
     const { cdp } = browser;
     const lobby = { server: relay, name: host.name, gameMode: host.gameMode, capacity: host.capacity, look: { visibility: 'public', symbol: host.symbol, color: host.color } };
     await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `localStorage.clear(); localStorage.setItem('slingshot.settings.v1', ${JSON.stringify(JSON.stringify({ ...SETTINGS, language: lang }))}); localStorage.setItem('slingshot.lobby.v1', ${JSON.stringify(JSON.stringify(lobby))});`,
+      source: `localStorage.clear(); localStorage.setItem('slingshot.onboarding.v1', 'done'); localStorage.setItem('slingshot.settings.v1', ${JSON.stringify(JSON.stringify({ ...SETTINGS, language: lang }))}); localStorage.setItem('slingshot.lobby.v1', ${JSON.stringify(JSON.stringify(lobby))});`,
     });
     await cdp.send('Page.navigate', { url: base });
     await cdp.evaluate(until(`!!document.querySelector('#overlay .item')`));

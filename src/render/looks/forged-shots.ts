@@ -6,6 +6,7 @@ import { drawSun, type SunStyle } from '../sun';
 import { RAMP_STEPS, sunBeat, sunKind, towardsGiant, type SunKind } from '../sun-kinds';
 import { GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept, unit, type Uniforms } from './forged-gl';
 import { lightParts } from './forged-parts';
+import { drawForgedProminences, drawForgedProminencesFront } from './forged-sun';
 
 /**
  * What flies in the forged look, and the sun it flies past. A shot is a white-hot core in a halo, with a glint across it
@@ -248,9 +249,9 @@ void main() {
   float fine = fbm(vec3(cos(a2) * 5.2, sin(a2) * 5.2 + uSeed, outward * 0.5), 4);
   float ray = pow(smoothstep(0.3, 0.76, broad * 0.62 + fine * 0.38), 1.5);
   float falloff = exp(-(rho - 1.0) * 1.1);
-  float glow = 0.16 * exp(-(rho - 1.0) * 1.9);
+  float glow = 0.12 * exp(-(rho - 1.0) * 1.9);
   float fade = (1.0 - smoothstep(uReach * 0.7, uReach, rho)) * smoothstep(0.85, 1.05, rho);
-  float k = min(1.0, (ray * falloff * 1.15 + glow) * (1.0 + uFlare * 0.7) * fade);
+  float k = min(1.0, (ray * falloff * 0.8 + glow) * (1.0 + uFlare * 0.7) * fade);
   float h = min(1.0, (rho - 1.0) / 1.9);
   vec3 near = mix(uNear, vec3(255, 150, 110) / 255.0, uGiant);
   vec3 far = mix(uFar, vec3(170, 30, 16) / 255.0, uGiant);
@@ -280,6 +281,8 @@ function setKind(u: Uniforms, kind: SunKind): void {
 }
 
 const sunStyle: SunStyle = {
+  prominences: drawForgedProminences,
+  prominencesFront: drawForgedProminencesFront,
   corona(ctx, seed, reach, time, flare, giant) {
     streamers = true;
     if (!onScreen(ctx, 0, 0, reach)) return true;
