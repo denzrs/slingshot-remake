@@ -146,6 +146,22 @@ describe('black hole placement in a match', () => {
     expect(shooter.powerUp).toBe('blackhole');
   });
 
+  it('does not jump a held teleport into a hole another ship opened there first', () => {
+    const match = duel();
+    const shooter = match.players[match.current];
+    shooter.powerUp = 'teleport';
+    match.usePowerUp();
+    const power = (match as unknown as { power: { confirmPlacement(by: number, hold: boolean): boolean; makeHeld(): void } }).power;
+    const spot = match.scene().placement!.target!;
+    const before = { ...match.world.ships[shooter.id] };
+    expect(power.confirmPlacement(match.current, true)).toBe(true);
+    // Another ship's hole, made earlier in the same salvo, opens beside the spot.
+    match.world.holes.push({ x: spot.x + 20, y: spot.y, radius: POWER_UP.BLACKHOLE_RADIUS, mass: POWER_UP.BLACKHOLE_MASS });
+    power.makeHeld();
+    expect(match.world.ships[shooter.id]).toMatchObject(before);
+    expect(shooter.powerUp).toBe('teleport');
+  });
+
   it('has a CPU keep its hole, without swinging at it, when the enemy is too close for a legal spot', () => {
     const seats = ['easy', 'human', 'off', 'off', 'off', 'off'] as const;
     const match = createMatch('classic', { ...DEFAULT_SETTINGS, powerUps: true, rounds: 1, maxPlanets: 0, seats: [...seats] }, { seats: [...seats], seed: 7 });

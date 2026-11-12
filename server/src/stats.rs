@@ -36,8 +36,9 @@ const OVERVIEW_FRESH: Duration = Duration::from_secs(2);
 const REPLAYS_KEPT: usize = 16;
 /// Games the overview lists.
 const OVERVIEW_GAMES: i64 = 50;
-/// The rule sets the stats count as the favourites: how many it names, out of how many of the latest games.
-const FAVORITES: usize = 5;
+/// The rule sets the stats count as the favourites: how many it names, out of how many of the latest games. Enough that a
+/// quick game, dealt from them, is not the same few every time.
+const FAVORITES: usize = 12;
 const FAVORITES_FROM: i64 = 2000;
 /// Rules a favourite is counted without: the length of the game, and what only a room online plays by.
 const FAVORITES_IGNORE: [&str; 3] = ["rounds", "betting", "chatPlayersOnly"];

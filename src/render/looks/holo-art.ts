@@ -121,7 +121,7 @@ const PLANET_HUES: Partial<Record<Planet['style'], string>> = {
   desert: '#ffc878',
   acid: '#c8f050',
   carbon: '#b4b4cc',
-  crystal: '#d8a0ff',
+  crystal: '#ffc0c8',
   living: '#60ffb0',
   machine: '#a8c4dc',
   iron: '#d4dae4',
@@ -141,10 +141,9 @@ function planetColor(p: Planet): string {
   return p.style === 'gas' ? HOLO_COLOR : PLANET_HUES[p.style] ?? '#ffb066';
 }
 
-/** The globe's lines: where its parallels cross the axis (sines of their latitudes) and how many meridians. A crystal is cut in few facets, a machine world plated fine. */
+/** The globe's lines: where its parallels cross the axis (sines of their latitudes) and how many meridians. A machine world is plated fine. */
 function globeLines(p: Planet): { parallels: number[]; meridians: number } {
   if (p.style === 'gas') return { parallels: [-0.78, -0.52, -0.26, 0, 0.26, 0.52, 0.78], meridians: 12 };
-  if (p.style === 'crystal') return { parallels: [-0.5, 0, 0.5], meridians: 6 };
   if (p.style === 'hycean') return { parallels: [-0.6, -0.2, 0.2, 0.6], meridians: 10 };
   if (p.style === 'machine') return { parallels: [-0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8], meridians: 24 };
   return { parallels: [-0.7, -0.35, 0, 0.35, 0.7], meridians: p.style === 'ice' ? 8 : 12 };

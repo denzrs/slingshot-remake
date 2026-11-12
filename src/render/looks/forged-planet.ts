@@ -6,7 +6,7 @@ import { clamp01, hasLifeBand, LIGHT, LOCK_SUN, lockFace, SEA_SUN, mix, smoothst
 import { image, type Name } from './forged-assets';
 import { place as placeShaded } from './forged-gl';
 import { GLOW, renderLitPlanet, spriteSize } from './forged-lit-planet';
-import { EMIT_FROM, EMIT_FULL, emitBreath, GLINT_POWER, MAX_IMPACTS, shadePlanet, WET_FROM, WET_FULL, type PlanetCracks, type PlanetShade } from './forged-planet-gl';
+import { EMIT_FROM, EMIT_FULL, emitBreath, filmAt, filmColour, FILM_POWER, FILM_VEIL, GLINT_POWER, MAX_IMPACTS, shadePlanet, WET_FROM, WET_FULL, type PlanetCracks, type PlanetShade } from './forged-planet-gl';
 import {
   drawDust, drawGlints, drawLanes, drawMeteors, drawPlumes, drawScar, drawShimmer, drawStormLightning,
   rollDust, rollGlints, rollLanes, rollMeteors, rollStorms, rollVents,
@@ -40,7 +40,7 @@ const RED: Rgb = [1, -1.3, 0];
  * How a style is dressed in the forged look. `rim` is its air's colour, `dusk` the light along its terminator; `relief` how
  * strongly the map's light and dark are read as height (gas none, lava's turned over: its bright parts are the low channels); the cloud
  * over it (its colour null: from the tint, as a gas giant's); the sheen of ice; what of the map glows (`emit`: by its key,
- * at night only or always, breathing or steady) and what is water (`wet`); and how often it has rings.
+ * at night only or always, breathing or steady) and what is water (`wet`); how strongly a thin film over it shows the sun in rainbow colours (`film`); and how often it has rings.
  */
 interface Dress {
   rim: Rgb;
@@ -51,10 +51,11 @@ interface Dress {
   specular: number;
   emit?: { key: Rgb; night?: boolean; pulse?: number; strength?: number };
   wet?: { key: Rgb; strength: number };
+  film?: number;
   rings: number;
 }
 const DRESS: Record<Exclude<PlanetStyle, 'star'>, Dress> = {
-  rocky: { rim: [255, 176, 122], dusk: [255, 110, 50], relief: 3, cloud: 'wisp', cloudColour: [255, 236, 215], specular: 0, rings: 0.08 },
+  rocky: { rim: [255, 176, 122], dusk: [255, 110, 50], relief: 3, cloud: 'wisp', cloudColour: [255, 236, 215], specular: 0, wet: { key: BLUE, strength: 1.4 }, rings: 0.08 },
   gas: { rim: [255, 214, 160], dusk: [255, 150, 90], relief: 0, cloud: 'band', cloudColour: null, specular: 0, rings: 0.7 },
   ice: { rim: [191, 230, 255], dusk: [140, 190, 255], relief: 1.4, cloud: 'haze', cloudColour: [235, 245, 255], specular: 0.35, rings: 0.2 },
   lava: { rim: [255, 112, 52], dusk: [255, 80, 30], relief: -1, cloud: 'wisp', cloudColour: [96, 84, 78], specular: 0, emit: { key: HOT }, rings: 0.08 },
@@ -62,7 +63,7 @@ const DRESS: Record<Exclude<PlanetStyle, 'star'>, Dress> = {
   desert: { rim: [255, 200, 140], dusk: [255, 120, 60], relief: 2.5, cloud: 'haze', cloudColour: [230, 200, 160], specular: 0, rings: 0.08 },
   acid: { rim: [210, 230, 110], dusk: [230, 180, 60], relief: 1.2, cloud: 'haze', cloudColour: [222, 222, 150], specular: 0, wet: { key: ACID, strength: 1.1 }, rings: 0.05 },
   carbon: { rim: [150, 150, 170], dusk: [200, 140, 100], relief: 2, cloud: 'haze', cloudColour: [62, 54, 48], specular: 0.12, rings: 0.15 },
-  crystal: { rim: [210, 170, 255], dusk: [255, 150, 200], relief: 1.2, cloud: 'wisp', cloudColour: [240, 230, 255], specular: 0.45, rings: 0.25 },
+  crystal: { rim: [240, 225, 220], dusk: [255, 170, 130], relief: 2, cloud: 'haze', cloudColour: [235, 228, 222], specular: 0.2, film: 0.5, rings: 0.1 },
   living: { rim: [140, 255, 200], dusk: [255, 150, 90], relief: 1.5, cloud: 'wisp', cloudColour: [245, 255, 248], specular: 0, emit: { key: BLUE, night: true, pulse: 0.7 }, rings: 0.05 },
   machine: { rim: [180, 200, 220], dusk: [255, 170, 90], relief: 1.5, cloud: 'haze', cloudColour: [190, 195, 205], specular: 0.15, emit: { key: HOT, night: true, strength: 1.8 }, rings: 0.12 },
   iron: { rim: [200, 210, 225], dusk: [255, 170, 110], relief: 2, cloud: 'haze', cloudColour: [200, 200, 205], specular: 0.55, rings: 0.1 },
@@ -110,6 +111,36 @@ function texture(name: Name): Texture | null {
   const made = { data: c.getImageData(0, 0, canvas.width, canvas.height).data, width: canvas.width, height: canvas.height };
   textures.set(name, made);
   return made;
+}
+
+/** How high a map stands at each texel (its brightness, 0 → 1), blurred a few texels as the shader reads it: a thin film's thickness and plates follow it. */
+const heights = new WeakMap<Texture, Float32Array>();
+const HEIGHT_BLUR = 3;
+
+function heightsOf(map: Texture): Float32Array {
+  const known = heights.get(map);
+  if (known) return known;
+  const { data, width, height } = map;
+  const luma = new Float32Array(width * height);
+  for (let i = 0; i < luma.length; i++) luma[i] = (data[i * 4] * 0.3 + data[i * 4 + 1] * 0.55 + data[i * 4 + 2] * 0.15) / 255;
+  // A box blur, along each row (round the longitude) and then down each column.
+  const across = new Float32Array(luma.length);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      for (let k = -HEIGHT_BLUR; k <= HEIGHT_BLUR; k++) sum += luma[y * width + ((x + k + width) % width)];
+      across[y * width + x] = sum / (HEIGHT_BLUR * 2 + 1);
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      for (let k = -HEIGHT_BLUR; k <= HEIGHT_BLUR; k++) sum += across[Math.min(height - 1, Math.max(0, y + k)) * width + x];
+      luma[y * width + x] = sum / (HEIGHT_BLUR * 2 + 1);
+    }
+  }
+  heights.set(map, luma);
+  return luma;
 }
 
 /** The procedural maps are this big (a power of two in width, so a wrap is a mask). */
@@ -252,7 +283,7 @@ const VARIANTS: Record<Exclude<PlanetStyle, 'star'>, readonly Variant[]> = {
   desert: [{ name: 'desertDunes' }, { name: 'desertSalt', cities: true }],
   acid: [{ name: 'acidLakes' }, { name: 'acidSulfur' }],
   carbon: [{ name: 'carbonGraphite', clouds: false }, { name: 'carbonTar' }],
-  crystal: [{ name: 'crystalAmethyst', clouds: false }, { name: 'crystalQuartz', clouds: false }],
+  crystal: [{ name: 'crystalRuby', clouds: false }, { name: 'crystalSapphire', clouds: false }],
   living: [{ name: 'livingMoss' }, { name: 'livingCoral' }],
   machine: [{ name: 'machinePanels', clouds: false, lit: true }, { name: 'machineHive', lit: true }],
   iron: [{ name: 'ironCore', clouds: false }, { name: 'ironRust', clouds: false }],
@@ -313,6 +344,11 @@ interface Surface {
   dark: Float32Array;
   /** The sun's glint on water here, were it water. */
   glint: Float32Array;
+  /** A thin film's share of the sun's broad mirror here, the cosine of the angle it is seen at, and the sine and cosine of the pixel's latitude on the planet (empty without a film). */
+  film: Float32Array;
+  filmCos: Float32Array;
+  filmSin: Float32Array;
+  filmLat: Float32Array;
 }
 
 /** What is painted on the CPU when there are no shaders, made the first time it is needed. */
@@ -342,7 +378,7 @@ interface Baked {
   meteors: Meteors | null;
   /** Its volcanoes, or an icy moon's geysers. */
   vents: Vents | null;
-  /** A desert's dust storms, the glints of carbon and crystal, a machine world's trains of light (an ocean's hurricanes are in its cloud map). */
+  /** A desert's dust storms, the glints of carbon and iron, a machine world's trains of light (an ocean's hurricanes are in its cloud map). */
   dust: Dust | null;
   glints: Glints | null;
   lanes: Lanes | null;
@@ -354,18 +390,23 @@ interface Baked {
   tilt: number;
 }
 
-/** An aurora: a ring round each pole at `latitude` (radians from the equator), in `colour`, how tall its curtains stand and where in its beat it starts. */
+/**
+ * An aurora: an oval round each pole at `latitude` (radians from the equator), its curtains `colour` at their foot and
+ * `crown` where they fade out at the top, how tall they stand (of the radius) and where in its beat it starts.
+ */
 interface Aurora {
   latitude: number;
   colour: Rgb;
+  crown: Rgb;
   height: number;
   phase: number;
 }
 
-const AURORA_COLOURS: Rgb[] = [
-  [90, 255, 160],
-  [170, 120, 255],
-  [255, 110, 160],
+/** Foot and crown: oxygen's green under its red, a violet under pink, a pink under violet. */
+const AURORA_COLOURS: { colour: Rgb; crown: Rgb }[] = [
+  { colour: [90, 255, 150], crown: [255, 70, 120] },
+  { colour: [160, 120, 255], crown: [255, 110, 200] },
+  { colour: [255, 110, 170], crown: [150, 90, 255] },
 ];
 
 /** A moon on a slanted orbit round a planet, in field units: how far out and how flat the orbit, its tilt, size, period (s), where it starts and which way it goes, and its colour. */
@@ -407,7 +448,7 @@ function rollPlanet(p: Planet, variant: Variant) {
   // Rolled after the moon's draws so the planets that already exist keep their looks.
   const aurora: Aurora | null =
     p.style === 'gas' && rng() < 0.5
-      ? { latitude: range(rng, 1.18, 1.32), colour: AURORA_COLOURS[Math.floor(rng() * AURORA_COLOURS.length)], height: range(rng, 0.09, 0.15), phase: rng() * 100 }
+      ? { latitude: range(rng, 1.1, 1.24), ...AURORA_COLOURS[Math.floor(rng() * AURORA_COLOURS.length)], height: range(rng, 0.16, 0.26), phase: rng() * 100 }
       : null;
   // A locked world's face is set by the light, not the seed; it rolled the same draws all the same, so the rest are as they were.
   const turn = variant.locked === 'sea' ? SEA_TURN : variant.locked ? LOCKED_TURN : { spin, tilt };
@@ -438,6 +479,7 @@ function bake(p: Planet, ps: number): Baked | null {
   // A locked world's open sea and ice are dressed as an eyeball world's; its melt and ice as `LOCKED`, its bare rock and ice as `LOCKED_ROCK`.
   const dress: Dress = variant.locked === 'sea' ? DRESS.eyeball : variant.locked === 'molten' ? { ...dressOf(p), ...LOCKED } : variant.locked === 'rock' ? { ...dressOf(p), ...LOCKED_ROCK } : dressOf(p);
   const { rim, dusk, specular, emit, wet } = dress;
+  const film = dress.film ?? 0;
   // A locked world does not turn under its sun; its steam still drifts.
   const surfaceRate = variant.locked ? 0 : SURFACE_RATE * direction;
 
@@ -475,6 +517,10 @@ function bake(p: Planet, ps: number): Baked | null {
       night: new Float32Array(size * size),
       dark: new Float32Array(size * size),
       glint: new Float32Array(size * size),
+      film: new Float32Array(film ? size * size : 0),
+      filmCos: new Float32Array(film ? size * size : 0),
+      filmSin: new Float32Array(film ? size * size : 0),
+      filmLat: new Float32Array(film ? size * size : 0),
     };
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
@@ -514,6 +560,12 @@ function bake(p: Planet, ps: number): Baked | null {
         surface.night[n] = settled ? smoothstep(0.05, -0.3, lam) * 0.95 : 0;
         surface.dark[n] = smoothstep(0.05, -0.3, lam);
         surface.glint[n] = wet ? wet.strength * 255 * Math.max(0, (dx * half3[0] + dy * half3[1] + nz * half3[2]) / hl) ** GLINT_POWER : 0;
+        if (film) {
+          surface.film[n] = film * 255 * Math.max(0, (dx * half3[0] + dy * half3[1] + nz * half3[2]) / hl) ** FILM_POWER;
+          surface.filmCos[n] = nz;
+          surface.filmSin[n] = Math.sin((v - 0.5) * Math.PI);
+          surface.filmLat[n] = Math.cos((v - 0.5) * Math.PI);
+        }
       }
     }
     const sphere = document.createElement('canvas');
@@ -575,6 +627,7 @@ function bake(p: Planet, ps: number): Baked | null {
       night: NIGHT.map((v) => v / 255),
       cityLight: CITY.map((v) => v / 255),
       specular,
+      film,
       emitKey: emit?.key ?? HOT,
       emit: emit ? (emit.strength ?? 1) : 0,
       emitNight: !!emit?.night,
@@ -600,7 +653,7 @@ function bake(p: Planet, ps: number): Baked | null {
     meteors: p.style === 'lava' ? rollMeteors(p) : null,
     vents: p.style === 'lava' && !variant.locked ? rollVents(p, 'ash') : p.style === 'volcanic' ? rollVents(p, 'sulfur') : variant.geysers ? rollVents(p, 'ice') : null,
     dust: p.style === 'desert' ? rollDust(p) : null,
-    glints: p.style === 'carbon' || p.style === 'iron' ? rollGlints(p, false, [255, 255, 255]) : p.style === 'crystal' ? rollGlints(p, true, [mix(tr, 255, 0.5), mix(tg, 255, 0.5), mix(tb, 255, 0.5)]) : null,
+    glints: p.style === 'carbon' || p.style === 'iron' ? rollGlints(p, [255, 255, 255]) : null,
     lanes: p.style === 'machine' ? rollLanes(p) : null,
     hurricanes,
     hot: p.style === 'lava',
@@ -626,6 +679,9 @@ function paintSurface(b: Soft, time: number): void {
   const data = sphere.image.data;
   const { data: texels, width } = sphere.map;
   const albedo = [0, 0, 0];
+  const sheen = [0, 0, 0];
+  const plate = [0, 0, 1];
+  const heights = surface.film.length > 0 ? heightsOf(sphere.map) : null;
   for (let k = 0; k < surface.count; k++) {
     const row = surface.row[k];
     const u = surface.lon[k] + shift[row];
@@ -657,8 +713,20 @@ function paintSurface(b: Soft, time: number): void {
     const keyed = (key: Rgb): number => (albedo[0] * key[0] + albedo[1] * key[1] + albedo[2] * key[2]) / 255;
     const glow = emit ? smoothstep(EMIT_FROM, EMIT_FULL, keyed(emit.key)) * 1.1 * (emit.strength ?? 1) * breath * (emit.night ? surface.dark[k] : 1) : 0;
     const glint = wet ? surface.glint[k] * smoothstep(WET_FROM, WET_FULL, keyed(wet.key)) : 0;
+    // A thin film's rainbow in its plates, as in the shader, and the plates' relief; it takes some of the ground's own light where it shows.
+    let film = 0;
+    let relief = 1;
+    if (heights) {
+      const lon = u * Math.PI * 2;
+      filmAt(surface.filmLat[k] * Math.cos(lon), surface.filmSin[k], surface.filmLat[k] * Math.sin(lon), heights[(surface.above[k] + x0) / 4], plate);
+      filmColour(plate[0], surface.filmCos[k], sheen);
+      film = surface.film[k] * plate[1];
+      relief = mix(1, plate[2], smoothstep(0.06, 0.35, lit));
+    }
+    const veil = (1 - (FILM_VEIL * film) / 255) * relief;
     for (let c = 0; c < 3; c++) {
-      data[i + c] = Math.min(255, Math.max(mix(NIGHT[c], albedo[c] * shadow, lit) + CITY[c] * lights, albedo[c] * glow) + surface.add[k * 3 + c] + glint);
+      const base = Math.max(mix(NIGHT[c], albedo[c] * shadow, lit) + CITY[c] * lights, albedo[c] * glow) + surface.add[k * 3 + c] + glint;
+      data[i + c] = Math.min(255, base * veil + sheen[c] * film);
     }
     data[i + 3] = 255 * surface.cover[k];
   }
@@ -874,62 +942,152 @@ function drawLightning(ctx: CanvasRenderingContext2D, x: number, y: number, p: P
   ctx.restore();
 }
 
-const AURORA_RAYS = 56;
+/** How many steps each pole's curtain is drawn in, round its oval. */
+const AURORA_STEPS = 128;
 
-/** Curtains of light over a gas giant's poles: a glowing ring at the magnetic latitude and rays standing off it, rippling along the ring. Stronger on the night side. */
+/** Each aurora's curtain gradient, made once per canvas it is drawn on: from its foot (y 0) to its crown (y 1), at full strength. */
+const curtainFades = new WeakMap<CanvasRenderingContext2D, WeakMap<Aurora, CanvasGradient>>();
+
+function curtainFade(ctx: CanvasRenderingContext2D, a: Aurora): CanvasGradient {
+  let fades = curtainFades.get(ctx);
+  if (!fades) curtainFades.set(ctx, (fades = new WeakMap()));
+  let fade = fades.get(a);
+  if (!fade) {
+    const [r, g, b] = a.colour;
+    const [r2, g2, b2] = a.crown;
+    fade = ctx.createLinearGradient(0, 0, 0, 1);
+    fade.addColorStop(0, `rgba(${r},${g},${b},0)`);
+    fade.addColorStop(0.08, `rgba(${r},${g},${b},1)`);
+    fade.addColorStop(0.3, `rgba(${r},${g},${b},0.7)`);
+    fade.addColorStop(0.6, `rgba(${(r + r2) >> 1},${(g + g2) >> 1},${(b + b2) >> 1},0.35)`);
+    fade.addColorStop(1, `rgba(${r2},${g2},${b2},0)`);
+    fades.set(a, fade);
+  }
+  return fade;
+}
+
+/**
+ * Curtains of light over a gas giant's poles: one unbroken sheet per pole, standing straight up off the sphere along an oval
+ * that wanders in latitude and folds along itself. Seen from above it is foreshortened to a glowing band, at the limb it
+ * stands at its full height. It is drawn as a strip of quads, each fading from the foot's colour into the crown's; added
+ * together they meet without a seam. Its brightness swells and ebbs slowly along it, with a faint fine streak, and is
+ * strongest on the night side. The far pole's curtain shows only where it rises over the limb.
+ */
 function drawAurora(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, a: Aurora, tilt: number, time: number): void {
   const ct = Math.cos(tilt);
   const st = Math.sin(tilt);
   const [r, g, b] = a.colour;
-  const ring = new Path2D();
-  const dim = new Path2D();
-  const bright = new Path2D();
-  for (const sign of [-1, 1]) {
-    const ty = Math.sin(a.latitude) * sign;
-    const cl = Math.cos(a.latitude);
-    let pen = false;
-    for (let k = 0; k <= AURORA_RAYS; k++) {
-      const lon = (k / AURORA_RAYS) * Math.PI * 2;
-      const tz = Math.cos(lon) * cl;
-      // The point on the sphere in screen terms: undo the tilt.
-      const dy = ty * ct - tz * st;
-      const nz = ty * st + tz * ct;
-      if (nz <= 0.03) {
-        pen = false;
-        continue;
-      }
-      const dx = Math.sin(lon) * cl;
-      const px = x + dx * R;
-      const py = y + dy * R;
-      if (pen) ring.lineTo(px, py);
-      else ring.moveTo(px, py);
-      pen = true;
-      if (k === AURORA_RAYS) continue;
-      // The curtain's height ripples along the ring and over time.
-      const wave = 0.5 + 0.5 * Math.sin(time * 1.1 + lon * 4 + a.phase + Math.sin(time * 0.6 + lon * 2.5) * 1.8);
-      const reach = a.height * R * (0.25 + 0.75 * wave) * (0.6 + 0.4 * nz);
-      // Outwards from the surface: the normal, seen from the side.
-      const path = dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2] > 0.35 ? dim : bright;
-      path.moveTo(px, py);
-      path.lineTo(px + dx * reach, py + dy * reach);
-    }
-  }
+  const sway = 0.8 + 0.2 * Math.sin(time * 0.9 + a.phase);
+  /** A point of the oval at `lon` on the unit sphere, seen on screen: across, down, and towards the viewer. */
+  const at = (sign: number, lon: number): [number, number, number] => {
+    const lat = a.latitude + 0.04 * Math.sin(lon * 3 + a.phase + time * 0.25) + 0.015 * Math.sin(lon * 7 - time * 0.4);
+    const ty = Math.sin(lat) * sign;
+    const cl = Math.cos(lat);
+    const tz = Math.cos(lon) * cl;
+    return [Math.sin(lon) * cl, ty * ct - tz * st, ty * st + tz * ct];
+  };
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  const sway = 0.8 + 0.2 * Math.sin(time * 0.9 + a.phase);
+  // The oval's glow on the near side, where the curtains meet the cloud tops.
+  const oval = new Path2D();
+  for (const sign of [-1, 1]) {
+    let pen = false;
+    for (let k = 0; k <= AURORA_STEPS; k++) {
+      const [dx, dy, nz] = at(sign, (k / AURORA_STEPS) * Math.PI * 2);
+      if (nz <= 0.02) {
+        pen = false;
+        continue;
+      }
+      if (pen) oval.lineTo(x + dx * R, y + dy * R);
+      else oval.moveTo(x + dx * R, y + dy * R);
+      pen = true;
+    }
+  }
   ctx.strokeStyle = `rgba(${r},${g},${b},${0.06 * sway})`;
-  ctx.lineWidth = R * 0.13;
-  ctx.stroke(ring);
-  ctx.strokeStyle = `rgba(${r},${g},${b},${0.16 * sway})`;
-  ctx.lineWidth = R * 0.05;
-  ctx.stroke(ring);
-  ctx.lineWidth = R * 0.02;
-  ctx.strokeStyle = `rgba(${r},${g},${b},${0.14 * sway})`;
-  ctx.stroke(dim);
-  ctx.strokeStyle = `rgba(${r},${g},${b},${0.4 * sway})`;
-  ctx.stroke(bright);
+  ctx.lineWidth = R * 0.14;
+  ctx.stroke(oval);
+  ctx.strokeStyle = `rgba(${r},${g},${b},${0.06 * sway})`;
+  ctx.lineWidth = R * 0.06;
+  ctx.stroke(oval);
+  // The curtains' fill: one gradient, foot to crown, in a frame where the foot is at y 0 and the crown at y 1.
+  ctx.fillStyle = curtainFade(ctx, a);
+  const base = ctx.getTransform();
+  // The curtain's foot and top round each oval, and how bright it is there.
+  const foot = new Float32Array((AURORA_STEPS + 1) * 2);
+  const top = new Float32Array((AURORA_STEPS + 1) * 2);
+  const near = new Float32Array(AURORA_STEPS + 1);
+  const bright = new Float32Array(AURORA_STEPS + 1);
+  for (const sign of [-1, 1]) {
+    for (let k = 0; k <= AURORA_STEPS; k++) {
+      const along = (k / AURORA_STEPS) * Math.PI * 2;
+      // The curtain folds: it slides along the oval, bunching up and thinning out (never doubling back).
+      const lon = along + 0.07 * Math.sin(along * 5 + time * 0.7 + a.phase) + 0.03 * Math.sin(along * 11 - time * 1.3);
+      const [dx, dy, nz] = at(sign, lon);
+      const wave = 0.5 + 0.5 * Math.sin(time * 1.1 + lon * 4 + a.phase + Math.sin(time * 0.6 + lon * 2.5) * 1.8);
+      const h = 1 + a.height * (0.4 + 0.6 * wave);
+      foot[k * 2] = x + dx * R;
+      foot[k * 2 + 1] = y + dy * R;
+      top[k * 2] = x + dx * R * h;
+      top[k * 2 + 1] = y + dy * R * h;
+      near[k] = nz;
+      const swell = 0.5 + 0.5 * Math.sin(lon * 3 - time * 0.9 + a.phase * 2);
+      const streak = 0.85 + 0.15 * Math.sin(lon * 23 + time * 0.5 + a.phase);
+      const night = 0.3 + 0.7 * smoothstep(0.45, -0.05, dx * LIGHT[0] + dy * LIGHT[1] + nz * LIGHT[2]);
+      // Where the curtain runs towards the viewer it is seen edge on and piles up on itself; dim it there by how much of the oval's way shows on screen.
+      const [ax, ay, az] = at(sign, lon + 0.01);
+      const broadside = Math.hypot(ax - dx, ay - dy) / (Math.hypot(ax - dx, ay - dy, az - nz) || 1);
+      bright[k] = 0.8 * sway * night * (0.45 + 0.55 * swell) * streak * (0.25 + 0.75 * broadside);
+    }
+    // The far side first, kept off the planet's disc; then the near side over everything.
+    for (const far of [true, false]) {
+      for (let k = 0; k < AURORA_STEPS; k++) {
+        if (near[k] + near[k + 1] < 0 !== far) continue;
+        const alpha = (bright[k] + bright[k + 1]) / 2;
+        if (alpha < 0.004) continue;
+        const i = k * 2;
+        const j = i + 2;
+        // Behind the planet with its crown still under the limb: nothing of it shows.
+        if (far && Math.hypot(top[i] - x, top[i + 1] - y) < R && Math.hypot(top[j] - x, top[j + 1] - y) < R) continue;
+        // The quad is laid down where it stands; the fill is then drawn through a frame whose (0,0)–(0,1) runs from the
+        // middle of its foot to the middle of its top, so the one gradient made per aurora fades every quad from foot to crown.
+        const fx = (foot[i] + foot[j]) / 2;
+        const fy = (foot[i + 1] + foot[j + 1]) / 2;
+        const ux = foot[j] - foot[i];
+        const uy = foot[j + 1] - foot[i + 1];
+        const vx = (top[i] + top[j]) / 2 - fx;
+        const vy = (top[i + 1] + top[j + 1]) / 2 - fy;
+        if (Math.abs(ux * vy - uy * vx) < 1e-6) continue;
+        ctx.beginPath();
+        if (far) {
+          // Cut off at the limb: the curtain stands straight out from the centre, so its sides cross the limb where they are R
+          // from it (or end below it, where only the other side's crown clears it).
+          const li = Math.min(R, Math.hypot(top[i] - x, top[i + 1] - y)) / (Math.hypot(foot[i] - x, foot[i + 1] - y) || 1);
+          const lj = Math.min(R, Math.hypot(top[j] - x, top[j + 1] - y)) / (Math.hypot(foot[j] - x, foot[j + 1] - y) || 1);
+          ctx.moveTo(x + (foot[i] - x) * li, y + (foot[i + 1] - y) * li);
+          ctx.lineTo(x + (foot[j] - x) * lj, y + (foot[j + 1] - y) * lj);
+        } else {
+          ctx.moveTo(foot[i], foot[i + 1]);
+          ctx.lineTo(foot[j], foot[j + 1]);
+        }
+        ctx.lineTo(top[j], top[j + 1]);
+        ctx.lineTo(top[i], top[i + 1]);
+        ctx.closePath();
+        ctx.globalAlpha = alpha;
+        ctx.setTransform(
+          base.a * ux + base.c * uy,
+          base.b * ux + base.d * uy,
+          base.a * vx + base.c * vy,
+          base.b * vx + base.d * vy,
+          base.a * fx + base.c * fy + base.e,
+          base.b * fx + base.d * fy + base.f,
+        );
+        ctx.fill();
+        ctx.setTransform(base);
+      }
+    }
+  }
   ctx.restore();
 }
 

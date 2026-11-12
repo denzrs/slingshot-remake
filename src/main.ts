@@ -973,7 +973,8 @@ onPress(pauseButton, () => {
 });
 onPress(touchFire, () => {
   sound.unlock();
-  primaryAction();
+  // The button hides a frame after a menu opens over the field (the result after the last round): a tap meant for it then must not act.
+  if (!menu.isOpen) primaryAction();
 });
 onPress(touchPower, () => {
   sound.unlock();

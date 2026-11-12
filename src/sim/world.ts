@@ -12,7 +12,7 @@ export const PLANET_TINTS: Record<PlanetStyle, readonly string[]> = {
   desert: ['#d9a560', '#c98a4a', '#e0b878'],
   acid: ['#b8c23a', '#9fb03a', '#c8b040'],
   carbon: ['#4a4650', '#3c3a42', '#55505a'],
-  crystal: ['#b48ad8', '#8ac0e0', '#d890c0'],
+  crystal: ['#d4aaa6', '#a8b6cc', '#d8cfc2'],
   living: ['#5aa860', '#4a9a78', '#78b048'],
   machine: ['#8a929c', '#9a8a78', '#7a8a98'],
   iron: ['#9aa0a8', '#a8826a', '#8c9098'],
@@ -207,6 +207,13 @@ export function orbitOf(x: number, y: number): { r: number; a: number } {
 export function onOrbit(r: number, a: number): { x: number; y: number } {
   const c = solarCenter();
   return { x: c.x + Math.cos(a) * r * SOLAR.STRETCH, y: c.y + Math.sin(a) * r };
+}
+
+/** The widest orbit that stays `SOLAR.FREE_EDGE` inside the field all the way round: on one wider, a body dropped off its orbit is pushed along the edge and leaves it. */
+export function freeOrbitLimit(): number {
+  const c = solarCenter();
+  const edge = SOLAR.FREE_EDGE;
+  return Math.min((c.x - edge) / SOLAR.STRETCH, (FIELD.width - edge - c.x) / SOLAR.STRETCH, c.y - edge, FIELD.height - edge - c.y);
 }
 
 /** Which of the three sectors an orbit of radius `r` lies in: 0 near the sun, 2 far out. */

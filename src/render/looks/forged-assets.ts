@@ -50,8 +50,8 @@ import texAcidLakesUrl from './forged/tex-acid-lakes.webp';
 import texAcidSulfurUrl from './forged/tex-acid-sulfur.webp';
 import texCarbonGraphiteUrl from './forged/tex-carbon-graphite.webp';
 import texCarbonTarUrl from './forged/tex-carbon-tar.webp';
-import texCrystalAmethystUrl from './forged/tex-crystal-amethyst.webp';
-import texCrystalQuartzUrl from './forged/tex-crystal-quartz.webp';
+import texCrystalRubyUrl from './forged/tex-crystal-ruby.webp';
+import texCrystalSapphireUrl from './forged/tex-crystal-sapphire.webp';
 import texLivingMossUrl from './forged/tex-living-moss.webp';
 import texLivingCoralUrl from './forged/tex-living-coral.webp';
 import texMachinePanelsUrl from './forged/tex-machine-panels.webp';
@@ -111,8 +111,8 @@ const URLS = {
   acidSulfur: texAcidSulfurUrl,
   carbonGraphite: texCarbonGraphiteUrl,
   carbonTar: texCarbonTarUrl,
-  crystalAmethyst: texCrystalAmethystUrl,
-  crystalQuartz: texCrystalQuartzUrl,
+  crystalRuby: texCrystalRubyUrl,
+  crystalSapphire: texCrystalSapphireUrl,
   livingMoss: texLivingMossUrl,
   livingCoral: texLivingCoralUrl,
   machinePanels: texMachinePanelsUrl,

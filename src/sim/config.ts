@@ -226,6 +226,8 @@ export const SOLAR = {
   OUTER_ORBIT: 335,
   /** The orbits are ellipses, this much wider than tall (the field is): an orbit's "radius" is its half-height. */
   STRETCH: 1.6,
+  /** What was dropped off its orbit (a teleported ship, a pickup) is kept this far inside the field's edge, pushed along it where its orbit runs further out. */
+  FREE_EDGE: 24,
   /** Free space between two neighbouring orbits' bodies. */
   ORBIT_GAP: 12,
   /** How far a ship's orbit band reaches either side of its centre line. */
