@@ -10,9 +10,9 @@ import { lookPreview, PREVIEW_SCENES, type PreviewScene } from './look-preview';
 import { preloadAssets } from '../../render/looks/forged-assets';
 
 const PROFILES = [
-  { summary: 'onboarding.look.simple', facts: ['onboarding.look.simple.1', 'onboarding.look.simple.2', 'onboarding.look.simple.3'] },
-  { summary: 'onboarding.look.rendered', facts: ['onboarding.look.rendered.1', 'onboarding.look.rendered.2', 'onboarding.look.rendered.3'] },
-  { summary: 'onboarding.look.projection', facts: ['onboarding.look.projection.1', 'onboarding.look.projection.2', 'onboarding.look.projection.3'] },
+  { facts: ['onboarding.look.simple.1', 'onboarding.look.simple.2', 'onboarding.look.simple.3'] },
+  { facts: ['onboarding.look.rendered.1', 'onboarding.look.rendered.2', 'onboarding.look.rendered.3'] },
+  { facts: ['onboarding.look.projection.1', 'onboarding.look.projection.2', 'onboarding.look.projection.3'] },
 ] as const;
 
 interface Options {
@@ -48,7 +48,6 @@ export function openOnboarding(options: Options): { dispose(): void } {
   const scenes = h('nav.onboarding__scene-tabs', { 'aria-label': t('onboarding.scenes') });
   const title = h('h3', null);
   const recommendation = h('span.onboarding__recommended', null, t('onboarding.recommended'));
-  const summary = h('p.onboarding__summary', null);
   const facts = h('ul.onboarding__facts', null);
   const eyebrow = h('p.eyebrow', null, t('onboarding.welcome'));
   const overline = h('p.onboarding__overline', null, t('onboarding.details'));
@@ -82,7 +81,7 @@ export function openOnboarding(options: Options): { dispose(): void } {
 
   const details = h('aside.onboarding__details', { 'aria-live': 'polite' },
     overline,
-    h('div.onboarding__profile-title', null, title, recommendation), summary, facts,
+    h('div.onboarding__profile-title', null, title, recommendation), facts,
     settingsNote);
   const thumbnails: { look: Look; canvas: HTMLCanvasElement; preview?: ReturnType<typeof lookPreview> }[] = [];
   let preview: ReturnType<typeof lookPreview>;
@@ -104,7 +103,6 @@ export function openOnboarding(options: Options): { dispose(): void } {
     title.textContent = t(lookLabelKey(look));
     recommendation.textContent = t('onboarding.recommended');
     recommendation.hidden = look !== RECOMMENDED_LOOK;
-    summary.textContent = t(profile.summary);
     facts.replaceChildren(...profile.facts.map((key) => h('li', null, t(key))));
     [...choices.children].forEach((button, i) => {
       const isSelected = LOOKS[i] === look;
