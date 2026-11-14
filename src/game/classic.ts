@@ -1,50 +1,15 @@
-import type { StyleKind, World } from '../sim/physics';
+import type { StyleKind } from '../sim/physics';
 import { scoreChallengeHit } from '../sim/scoring';
 import { AIM, COLORS, HORIZON, SCORING, SUDDEN_DEATH, type KillSource, type SuddenDeathKind } from '../sim/config';
 import { t } from '../platform/i18n';
-import { Volley, type VolleyShot } from '../sim/volley';
+import { type VolleyShot } from '../sim/volley';
 import { createRng, pick } from '../sim/rng';
-import { Match, type MarkState, type RoundTitle, type SkipVote } from './match';
-import type { Pickup } from '../sim/powerups';
-import type { PowerUpState } from './powerup-field';
+import { Match, type MatchSnapshot, type RoundTitle } from './match';
 import type { ReplayTurn } from './replay';
-import type { CrowdSeat } from './crowd';
-import type { OracleSnapshot } from './oracle';
-import type { KillcamSnapshot } from './killcam';
 
-export interface ClassicSnapshot extends Partial<KillcamSnapshot> {
-  phase: Match['phase'];
-  phaseTime: number;
-  clock: number;
-  round: number;
-  worldSeed?: number;
-  totalRounds: number;
-  hiddenPlanets: boolean;
-  teamMode: number;
+export interface ClassicSnapshot extends MatchSnapshot {
   teamCursor: number;
   memberCursor: number[];
-  players: Match['players'];
-  current: number;
-  world: World;
-  trails: Match['trails'];
-  volley: ReturnType<Volley['snapshot']> | null;
-  pickups?: Pickup[];
-  power?: PowerUpState;
-  killFeed: Match['killFeed'];
-  lastKill: Match['lastKill'];
-  summary: Match['summary'];
-  notice: Match['notice'];
-  settings: Match['settings'];
-  mayhem?: Match['mayhem'];
-  revealEnd?: number;
-  revealHeld?: boolean;
-  anomalyAlert?: boolean;
-  mayhemHistory?: Match['mayhemHistory'];
-  roundStats: Match['roundStats'];
-  matchStats: Match['matchStats'];
-  scoreHistory: number[][];
-  skipVote?: SkipVote | null;
-  pause?: Match['pause'];
   /** Simultaneous shots: seconds left to aim. */
   planClock: number;
   /** The passes the round has had, and the ships that have fired in the one under way. */
@@ -54,13 +19,6 @@ export interface ClassicSnapshot extends Partial<KillcamSnapshot> {
   suddenDeathKind?: SuddenDeathKind;
   environmentDecided?: boolean;
   freeFireAnnounced?: boolean;
-  /** Phase time when a finished volley began waiting for its post-flight delay. */
-  flightDoneAt?: number | null;
-  oracle: OracleSnapshot;
-  stands?: OracleSnapshot;
-  crowd?: CrowdSeat[];
-  /** What the marks on the cards are read from. */
-  marks?: MarkState;
 }
 
 /**
@@ -72,106 +30,28 @@ export class ClassicMatch extends Match {
 
   snapshot(): ClassicSnapshot {
     return {
-      phase: this.phase,
-      phaseTime: this.phaseTime,
-      clock: this.clock,
-      round: this.round,
-      worldSeed: this.worldSeed,
-      totalRounds: this.totalRounds,
-      hiddenPlanets: this.hiddenPlanets,
-      teamMode: this.teamMode,
+      ...this.baseSnapshot(),
       teamCursor: this.teamCursor,
       memberCursor: this.memberCursor,
-      players: this.players.map((player) => ({ ...player })),
-      current: this.current,
-      world: this.world,
-      trails: this.trails,
-      volley: this.volley?.snapshot() ?? null,
-      pickups: this.pickups,
-      power: this.powerState,
-      killFeed: this.killFeed,
-      lastKill: this.lastKill,
-      summary: this.summary,
-      notice: this.notice,
-      settings: this.settings,
-      mayhem: this.mayhem,
-      revealEnd: this.revealEnd,
-      revealHeld: this.revealHeld,
-      anomalyAlert: this.anomalyAlert,
-      mayhemHistory: this.mayhemHistory,
-      roundStats: this.roundStats,
-      matchStats: this.matchStats,
-      scoreHistory: this.scoreHistory,
-      skipVote: this.skipVote,
-      pause: this.pause,
       planClock: this.planClock,
       passes: this.passes,
       fired: [...this.fired],
       suddenDeathKind: this.suddenDeathKind,
       environmentDecided: this.environmentDecided,
       freeFireAnnounced: this.freeFireAnnounced,
-      flightDoneAt: this.flightDoneAt,
-      ...this.killcam.snapshot(),
-      oracle: this.oracle.snapshot(),
-      stands: this.stands.snapshot(),
-      crowd: this.crowd.snapshot(),
-      marks: this.markState(),
     };
   }
 
   restoreSnapshot(snapshot: ClassicSnapshot): void {
-    if (snapshot.world.ships.length !== snapshot.players.length) return;
-    this.settings = snapshot.settings;
-    this.mayhem = snapshot.mayhem ?? null;
-    this.revealEnd = snapshot.revealEnd ?? 0;
-    this.revealHeld = snapshot.revealHeld ?? false;
-    this.anomalyAlert = snapshot.anomalyAlert ?? false;
-    this.mayhemHistory = snapshot.mayhemHistory ?? [];
-    this.phase = snapshot.phase;
-    this.phaseTime = snapshot.phaseTime;
-    this.clock = snapshot.clock;
-    this.round = snapshot.round;
-    this.worldSeed = snapshot.worldSeed ?? 0;
-    this.totalRounds = snapshot.totalRounds;
-    this.hiddenPlanets = snapshot.hiddenPlanets;
-    this.teamMode = snapshot.teamMode;
+    if (!this.restoreBase(snapshot)) return;
     this.teamCursor = snapshot.teamCursor;
     this.memberCursor = [...snapshot.memberCursor];
-    this.players = snapshot.players.map((player) => ({ ...player }));
-    this.current = snapshot.current;
-    this.world = snapshot.world;
-    this.trails = snapshot.trails;
-    this.pickups = snapshot.pickups ?? [];
-    this.power.restoreState(snapshot.power);
-    this.killFeed = snapshot.killFeed;
-    this.lastKill = snapshot.lastKill;
-    this.summary = snapshot.summary;
-    this.notice = snapshot.notice;
-    this.roundStats = snapshot.roundStats;
-    this.matchStats = snapshot.matchStats;
-    this.scoreHistory = snapshot.scoreHistory;
-    this.skipVote = snapshot.skipVote ?? null;
-    this.pause = snapshot.pause ?? null;
     this.planClock = snapshot.planClock;
     this.passes = snapshot.passes ?? 0;
     this.fired = new Set(snapshot.fired ?? []);
     this.suddenDeathKind = snapshot.suddenDeathKind ?? this.suddenDeathKinds[0];
     this.environmentDecided = snapshot.environmentDecided ?? false;
     this.freeFireAnnounced = snapshot.freeFireAnnounced ?? false;
-    // Hosts from before the oracle send none.
-    if (snapshot.oracle) this.oracle.restore(snapshot.oracle);
-    if (snapshot.stands) this.stands.restore(snapshot.stands);
-    this.crowd.restore(snapshot.crowd);
-    this.restoreMarkState(snapshot.marks);
-    this.volley = null;
-    if (snapshot.volley) {
-      const volley = new Volley(snapshot.world, snapshot.volley.aims, this.rules, true);
-      volley.restore(snapshot.volley);
-      this.volley = volley;
-    }
-    this.killcam.restore(snapshot, this.rules);
-    this.restarted();
-    this.flightDoneAt = snapshot.flightDoneAt ?? null;
   }
 
   /** Team mode: which team shoots next, and per team the member who shot last. */

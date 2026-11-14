@@ -1,58 +1,17 @@
 import { AIM, HORIZON, PHYSICS, SCORING, COLORS, WORMHOLE } from '../sim/config';
 import { t } from '../platform/i18n';
-import type { StyleKind, World } from '../sim/physics';
-import { POWER_UP, type Pickup } from '../sim/powerups';
-import type { PowerUpState } from './powerup-field';
+import type { StyleKind } from '../sim/physics';
+import { POWER_UP } from '../sim/powerups';
 import type { ReplayTurn } from './replay';
 import { scoreHorizonKill } from '../sim/scoring';
-import { Volley, type VolleyShot, type VolleySnapshot } from '../sim/volley';
-import { infallAt, Match, type Falling, type MarkState, type Phase, type RoundTitle, type SkipVote } from './match';
-import type { CrowdSeat } from './crowd';
-import type { OracleSnapshot } from './oracle';
-import type { KillcamSnapshot } from './killcam';
+import { type VolleyShot } from '../sim/volley';
+import { infallAt, Match, type Falling, type MatchSnapshot, type RoundTitle } from './match';
 
-export interface HorizonSnapshot extends KillcamSnapshot {
-  phase: Phase;
-  phaseTime: number;
-  clock: number;
-  round: number;
-  worldSeed?: number;
-  totalRounds: number;
-  hiddenPlanets: boolean;
-  teamMode: number;
-  players: Match['players'];
-  current: number;
-  world: World;
-  trails: Match['trails'];
-  volley: VolleySnapshot | null;
-  /** Phase time when a finished volley began waiting for its post-flight delay. */
-  flightDoneAt?: number | null;
-  killFeed: Match['killFeed'];
-  lastKill: Match['lastKill'];
-  summary: Match['summary'];
-  notice: Match['notice'];
-  settings: Match['settings'];
-  mayhem?: Match['mayhem'];
-  revealEnd?: number;
-  revealHeld?: boolean;
-  anomalyAlert?: boolean;
-  mayhemHistory?: Match['mayhemHistory'];
-  roundStats: Match['roundStats'];
-  matchStats: Match['matchStats'];
-  scoreHistory: number[][];
-  skipVote?: SkipVote | null;
-  pause?: Match['pause'];
+export interface HorizonSnapshot extends MatchSnapshot {
   volleyNo: number;
   clock_: HorizonMatch['clock_'];
   queue: number[];
   collapse: null | Omit<CollapseState, 'planets' | 'ships' | 'pickups'> & { planets: [number, Drift][]; ships: [number, Drift][]; pickups?: [number, Drift][] };
-  oracle: OracleSnapshot;
-  stands?: OracleSnapshot;
-  crowd?: CrowdSeat[];
-  /** What the marks on the cards are read from. */
-  marks?: MarkState;
-  pickups?: Pickup[];
-  power?: PowerUpState;
 }
 
 interface Drift {
@@ -103,56 +62,20 @@ export class HorizonMatch extends Match {
 
   snapshot(): HorizonSnapshot {
     return {
-      phase: this.phase, phaseTime: this.phaseTime, clock: this.clock, round: this.round, worldSeed: this.worldSeed,
-      totalRounds: this.totalRounds, hiddenPlanets: this.hiddenPlanets, teamMode: this.teamMode,
-      players: this.players.map((player) => ({ ...player })), current: this.current, world: this.world,
-      trails: this.trails, volley: this.volley?.snapshot() ?? null, flightDoneAt: this.flightDoneAt, killFeed: this.killFeed,
-      lastKill: this.lastKill, summary: this.summary, notice: this.notice, settings: this.settings,
-      mayhem: this.mayhem, revealEnd: this.revealEnd, revealHeld: this.revealHeld, anomalyAlert: this.anomalyAlert, mayhemHistory: this.mayhemHistory,
-      roundStats: this.roundStats, matchStats: this.matchStats, scoreHistory: this.scoreHistory, skipVote: this.skipVote, pause: this.pause,
-      volleyNo: this.volleyNo, clock_: this.clock_, queue: this.queue,
-      ...this.killcam.snapshot(),
+      ...this.baseSnapshot(),
+      volleyNo: this.volleyNo,
+      clock_: this.clock_,
+      queue: this.queue,
       collapse: this.collapse ? { ...this.collapse, planets: [...this.collapse.planets], ships: [...this.collapse.ships], pickups: [...this.collapse.pickups], wormholes: this.collapse.wormholes.map((w) => ({ ...w })) } : null,
-      oracle: this.oracle.snapshot(),
-      stands: this.stands.snapshot(),
-      crowd: this.crowd.snapshot(),
-      marks: this.markState(),
-      pickups: this.pickups,
-      power: this.powerState,
     };
   }
 
   restoreSnapshot(s: HorizonSnapshot): void {
-    if (s.world.ships.length !== s.players.length) return;
-    this.settings = s.settings;
-    this.mayhem = s.mayhem ?? null;
-    this.revealEnd = s.revealEnd ?? 0;
-    this.revealHeld = s.revealHeld ?? false;
-    this.anomalyAlert = s.anomalyAlert ?? false;
-    this.mayhemHistory = s.mayhemHistory ?? [];
-    this.phase = s.phase; this.phaseTime = s.phaseTime; this.clock = s.clock; this.round = s.round;
-    this.worldSeed = s.worldSeed ?? 0;
-    this.totalRounds = s.totalRounds; this.hiddenPlanets = s.hiddenPlanets; this.teamMode = s.teamMode;
-    this.players = s.players.map((player) => ({ ...player })); this.current = s.current;
-    this.world = s.world; this.trails = s.trails; this.killFeed = s.killFeed; this.lastKill = s.lastKill;
-    this.summary = s.summary; this.notice = s.notice; this.roundStats = s.roundStats; this.matchStats = s.matchStats; this.scoreHistory = s.scoreHistory; this.skipVote = s.skipVote ?? null; this.pause = s.pause ?? null; this.volleyNo = s.volleyNo; this.clock_ = s.clock_;
+    if (!this.restoreBase(s)) return;
+    this.volleyNo = s.volleyNo;
+    this.clock_ = s.clock_;
     this.queue = [...s.queue];
     this.collapse = s.collapse ? { ...s.collapse, planets: new Map(s.collapse.planets), ships: new Map(s.collapse.ships), pickups: new Map(s.collapse.pickups ?? []), wormholes: s.collapse.wormholes ?? [] } : null;
-    this.volley = null;
-    if (s.volley) {
-      this.volley = new Volley(this.world, s.volley.aims, this.rules, true);
-      this.volley.restore(s.volley);
-    }
-    // Hosts from before the oracle send none.
-    if (s.oracle) this.oracle.restore(s.oracle);
-    if (s.stands) this.stands.restore(s.stands);
-    this.crowd.restore(s.crowd);
-    this.restoreMarkState(s.marks);
-    this.pickups = s.pickups ?? [];
-    this.power.restoreState(s.power);
-    this.killcam.restore(s, this.rules);
-    this.restarted();
-    this.flightDoneAt = s.flightDoneAt ?? null;
   }
 
   /** Everyone who hasn't locked in may aim when all aim at once; otherwise only the player on turn. */

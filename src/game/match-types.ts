@@ -1,12 +1,17 @@
+import type { MayhemRound } from './mayhem';
+import type { KillcamSnapshot } from './killcam';
+import type { OracleSnapshot } from './oracle';
+import type { CrowdSeat } from './crowd';
+import type { PowerUpState } from './powerup-field';
 import { type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
 import type { Avatar } from '../platform/avatars';
 import { AIM, HORIZON, type BonusKind, type KillSource, type SuddenDeathKind } from '../sim/config';
 import { dangerColor, seatColor, teamColor } from '../data/palette';
 import { t } from '../platform/i18n';
 import { type StyleKind, type World } from '../sim/physics';
-import { type BonusRecord } from '../data/stats';
-import { type Seat } from '../data/settings';
-import { Volley } from '../sim/volley';
+import { type BonusRecord, type StatBook } from '../data/stats';
+import { type Seat, type Settings } from '../data/settings';
+import { Volley, type VolleySnapshot } from '../sim/volley';
 import { type Pickup, type PowerUpKind } from '../sim/powerups';
 import { type ReplayScript } from './replay';
 import { type PlacementAim } from './powerup-field';
@@ -347,4 +352,48 @@ export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, 
     left: false,
     away: false,
   };
+}
+
+/**
+ * What a guest rebuilds a match from: everything the modes share (see `Match.baseSnapshot`). Each mode adds the fields of its own
+ * turns on top, and is sent whole: the same keys the guests have always read.
+ */
+export interface MatchSnapshot extends Partial<KillcamSnapshot> {
+  phase: Phase;
+  phaseTime: number;
+  clock: number;
+  round: number;
+  worldSeed?: number;
+  totalRounds: number;
+  hiddenPlanets: boolean;
+  teamMode: number;
+  players: PlayerState[];
+  current: number;
+  world: World;
+  trails: Trail[];
+  volley: VolleySnapshot | null;
+  pickups?: Pickup[];
+  power?: PowerUpState;
+  killFeed: KillRecord[];
+  lastKill: KillRecord | null;
+  summary: RoundSummary | null;
+  notice: { text: string; color: string; at: number } | null;
+  settings: Settings;
+  mayhem?: MayhemRound | null;
+  revealEnd?: number;
+  revealHeld?: boolean;
+  anomalyAlert?: boolean;
+  mayhemHistory?: MayhemRound[];
+  roundStats: StatBook;
+  matchStats: StatBook;
+  scoreHistory: number[][];
+  skipVote?: SkipVote | null;
+  pause?: { resumeIn: number | null } | null;
+  /** Phase time when a finished volley began waiting for its post-flight delay. */
+  flightDoneAt?: number | null;
+  oracle: OracleSnapshot;
+  stands?: OracleSnapshot;
+  crowd?: CrowdSeat[];
+  /** What the marks on the cards are read from. */
+  marks?: MarkState;
 }

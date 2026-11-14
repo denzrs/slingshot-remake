@@ -21,6 +21,7 @@ import { Killcam } from './killcam';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField } from './powerup-field';
 import type { Experiment } from './experiments';
+import type { MatchSnapshot } from './match-types';
 
 export * from './match-types';
 import { newPlayer, atTable, shotDown, sidesOf, SKIP_VOTE_TIME, PAUSE_COUNTDOWN, teamName, type CpuJob, type Mode, type Phase, type PlayerState, type Trail, type KillRecord, type Falling, type RoundTitle, type SkipVote, type RoundSummary, type Scene, type GameEvent, type CpuDecisionReport, type Bonus, type MarkKind, type Mark, type MarkState, type MatchOptions } from './match-types';
@@ -718,6 +719,100 @@ export abstract class Match {
   }
   get shotClock(): number | null {
     return null;
+  }
+
+  /** What the modes share of a snapshot: every mode puts its own turn state on top of this (see `MatchSnapshot`). */
+  protected baseSnapshot(): MatchSnapshot {
+    return {
+      phase: this.phase,
+      phaseTime: this.phaseTime,
+      clock: this.clock,
+      round: this.round,
+      worldSeed: this.worldSeed,
+      totalRounds: this.totalRounds,
+      hiddenPlanets: this.hiddenPlanets,
+      teamMode: this.teamMode,
+      players: this.players.map((player) => ({ ...player })),
+      current: this.current,
+      world: this.world,
+      trails: this.trails,
+      volley: this.volley?.snapshot() ?? null,
+      pickups: this.pickups,
+      power: this.powerState,
+      killFeed: this.killFeed,
+      lastKill: this.lastKill,
+      summary: this.summary,
+      notice: this.notice,
+      settings: this.settings,
+      mayhem: this.mayhem,
+      revealEnd: this.revealEnd,
+      revealHeld: this.revealHeld,
+      anomalyAlert: this.anomalyAlert,
+      mayhemHistory: this.mayhemHistory,
+      roundStats: this.roundStats,
+      matchStats: this.matchStats,
+      scoreHistory: this.scoreHistory,
+      skipVote: this.skipVote,
+      pause: this.pause,
+      flightDoneAt: this.flightDoneAt,
+      ...this.killcam.snapshot(),
+      oracle: this.oracle.snapshot(),
+      stands: this.stands.snapshot(),
+      crowd: this.crowd.snapshot(),
+      marks: this.markState(),
+    };
+  }
+
+  /**
+   * Puts a host's snapshot back (guests): the part the modes share. False when it does not fit this match (a different number of
+   * ships than players), which a mode answers by leaving its own fields as they are. Fields an older host does not send keep their defaults.
+   */
+  protected restoreBase(s: MatchSnapshot): boolean {
+    if (s.world.ships.length !== s.players.length) return false;
+    this.settings = s.settings;
+    this.mayhem = s.mayhem ?? null;
+    this.revealEnd = s.revealEnd ?? 0;
+    this.revealHeld = s.revealHeld ?? false;
+    this.anomalyAlert = s.anomalyAlert ?? false;
+    this.mayhemHistory = s.mayhemHistory ?? [];
+    this.phase = s.phase;
+    this.phaseTime = s.phaseTime;
+    this.clock = s.clock;
+    this.round = s.round;
+    this.worldSeed = s.worldSeed ?? 0;
+    this.totalRounds = s.totalRounds;
+    this.hiddenPlanets = s.hiddenPlanets;
+    this.teamMode = s.teamMode;
+    this.players = s.players.map((player) => ({ ...player }));
+    this.current = s.current;
+    this.world = s.world;
+    this.trails = s.trails;
+    this.pickups = s.pickups ?? [];
+    this.power.restoreState(s.power);
+    this.killFeed = s.killFeed;
+    this.lastKill = s.lastKill;
+    this.summary = s.summary;
+    this.notice = s.notice;
+    this.roundStats = s.roundStats;
+    this.matchStats = s.matchStats;
+    this.scoreHistory = s.scoreHistory;
+    this.skipVote = s.skipVote ?? null;
+    this.pause = s.pause ?? null;
+    // Hosts from before the oracle send none.
+    if (s.oracle) this.oracle.restore(s.oracle);
+    if (s.stands) this.stands.restore(s.stands);
+    this.crowd.restore(s.crowd);
+    this.restoreMarkState(s.marks);
+    this.volley = null;
+    if (s.volley) {
+      const volley = new Volley(s.world, s.volley.aims, this.rules, true);
+      volley.restore(s.volley);
+      this.volley = volley;
+    }
+    this.killcam.restore(s, this.rules);
+    this.restarted();
+    this.flightDoneAt = s.flightDoneAt ?? null;
+    return true;
   }
 
   newMatch(): void {
