@@ -203,11 +203,34 @@
 }
 
 /* Watching the shot belongs to the card, not to the page's footer. */
-.daily-shot__actions { display: grid; }
-.daily-shot__actions .item { width: 100%; min-height: 44px; padding: 10px 16px; color: var(--bone-dim); border: 1px solid var(--menu-line); border-radius: 2px; font-size: 13px; }
+.daily-shot__actions { display: flex; justify-content: flex-end; }
+/* A small button in the card's own gold, at the right under the caption, not a bar across it. */
+.daily-shot__actions .item {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  min-height: 36px;
+  padding: 6px 14px;
+  color: #ffd27a;
+  border: 1px solid rgb(255 210 122 / 0.45);
+  border-radius: 2px;
+  background: rgb(255 210 122 / 0.06);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.daily-shot__actions .item:hover,
+.daily-shot__actions .item:focus-visible { background: rgb(255 210 122 / 0.16); border-color: rgb(255 210 122 / 0.8); }
 
 .daily-shot[hidden] {
   display: none;
+}
+
+/* A short desktop window: the card takes less height, so the day's page scrolls later. */
+@media (max-height: 740px) and (min-width: 761px) {
+  /* The Watch button stays under the path. */
+  .daily-shot { gap: 4px; padding: 8px 12px; }
+  .daily-shot .match-highlight__trail { height: 44px; }
+  .daily-shot__actions .item { min-height: 30px; padding-block: 3px; }
 }
 
 .daily-shot .ranking-label {

@@ -812,7 +812,7 @@
   .launcher__head { column-gap: 28px; }
   .launcher__nav .item { font-size: 25px; }
   .launcher__daily .item--card { grid-template-columns: 52px minmax(0, 1fr); }
-  .briefing__cards { --preset-card-height: 116px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .briefing__cards { --preset-card-height: 116px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   .briefing__cards .item--card { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 4px 10px; }
   .briefing__cards .item__icon { grid-column: 1; grid-row: 1 / 3; height: 62px; }
   .briefing__cards .item__title { align-self: end; font-size: 22px; }

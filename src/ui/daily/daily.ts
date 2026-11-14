@@ -32,6 +32,14 @@ function untilMidnight(): string {
 
 // ————————————————————————————— Briefing —————————————————————————————
 
+/** Dev builds only: `?fakeshot` gives the page a sample shot of the day, so its card can be looked at without a relay or a posted run. */
+function sampleShot(): ShotOfDay | null {
+  if (!import.meta.env.DEV || !new URLSearchParams(location.search).has('fakeshot')) return null;
+  const trail: number[] = [];
+  for (let i = 0; i <= 24; i++) trail.push(160 + i * 40, 620 - Math.sin((i / 24) * Math.PI) * 360);
+  return { name: 'Matti', points: 1000, sector: 0, down: [], attempt: 1, left: 4, angle: 41, power: 50, trail };
+}
+
 /** The shot of the day last fetched. The page is built anew on the way back from its replay, and the focus returns to a Watch row that has to be there by then. */
 let fetchedShot: { day: string; shot: ShotOfDay } | null = null;
 
@@ -57,7 +65,7 @@ export function dailyScreen(app: App): Screen {
   const stat = (label: string, value: string) => h('div', null, h('dt', null, label), h('dd', null, value));
   const hasBoard = leaderboardAvailable();
   /** Today's shot of the day. It gives away a way through the sectors, so only a player who has flown them and posted the run gets it. */
-  let shot: ShotOfDay | null = fetchedShot?.day === key ? fetchedShot.shot : null;
+  let shot: ShotOfDay | null = sampleShot() ?? (fetchedShot?.day === key ? fetchedShot.shot : null);
   let open = true;
   // The card keeps its action row (the menu puts the Watch button there when it builds the page); only the preview inside it is swapped.
   const shotBody = h('div.daily-shot__body', null);
