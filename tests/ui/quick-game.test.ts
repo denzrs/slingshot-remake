@@ -34,11 +34,21 @@ describe('quick game', () => {
     const odd = favorite('horizon', { maxPlanets: 8, edges: 'wall', shotTime: 30 });
     const relay = [odd, favorite('classic', {}), { ...favorite('classic', {}), gameMode: 'pong' as never }];
     const choices = quickChoices(relay);
-    // Three presets in each of the three modes; the relay's plain Classic is Classic's Standard, so only the odd one is new.
-    expect(choices).toHaveLength(10);
+    // Three presets in each of the three modes, less Classic's Standard, which takes turns; so does the relay's plain Classic.
+    expect(choices).toHaveLength(9);
     expect(choices.at(-1)).toBe(odd);
-    expect(choices.filter((choice) => quickWeight(choice) === 1).map((f) => f.gameMode)).toEqual(['classic', 'horizon', 'solar']);
+    expect(choices.filter((choice) => quickWeight(choice) === 1).map((f) => f.gameMode)).toEqual(['horizon', 'solar']);
     expect(quickChoices([]).map((f) => f.gameMode)).toEqual(expect.arrayContaining(['classic', 'horizon', 'solar']));
+  });
+
+  it('never deals a game where the ships take turns', () => {
+    const turns = [favorite('classic', {}), favorite('solar', { simultaneousShots: false }), favorite('classic', { maxPlanets: 8 })];
+    const salvos = [favorite('classic', { simultaneousShots: true, maxPlanets: 8 }), favorite('classic', { anomalies: ['fusion'] })];
+    const choices = quickChoices([...turns, ...salvos]);
+    for (const choice of turns) expect(choices).not.toContain(choice);
+    for (const choice of salvos) expect(choices).toContain(choice);
+    // Event Horizon always fires together, whatever the flag says.
+    expect(choices.some((choice) => choice.gameMode === 'horizon' && !choice.rules.simultaneousShots)).toBe(true);
   });
 
   it('deals a setup half as often for every rule it changes', () => {

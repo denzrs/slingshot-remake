@@ -2,7 +2,7 @@ import { cloneSettings, type Seat, type Settings } from '../../data/settings';
 import { roomRulesFrom } from '../../data/roomRules';
 import type { StatsFavorite } from '../../net/net';
 import { StatsBoard } from '../../net/statsBoard';
-import { GAME_MODES, isGameMode, type GameMode } from '../../sim/modes';
+import { CLASSIC_FAMILY, GAME_MODES, isGameMode, type GameMode } from '../../sim/modes';
 import type { CpuLevel } from '../../sim/ai';
 import { MAX_PLAYERS } from '../../sim/config';
 import { t } from '../../platform/i18n';
@@ -32,13 +32,21 @@ const builtInChoices = (): StatsFavorite[] =>
 const changesOf = (favorite: StatsFavorite): number =>
   presetChangeCount(roomRulesFrom(favorite.rules), presetRules('standard', favorite.gameMode), favorite.gameMode);
 
+/** Whether a choice has the ships fire one after another: Classic or Solar without salvos (Fusion always flies as one). */
+function takesTurns(favorite: StatsFavorite): boolean {
+  const rules = roomRulesFrom(favorite.rules);
+  return CLASSIC_FAMILY.includes(favorite.gameMode) && !rules.simultaneousShots && !rules.anomalies.includes('fusion');
+}
+
 /**
  * What a quick game picks from: the relay's favourites and every mode's built-in presets, each set once (a favourite that
- * plays as a preset is that preset), the fewest changes from the standard first.
+ * plays as a preset is that preset), the fewest changes from the standard first. Never one where the ships take turns:
+ * waiting for two CPUs to shoot is not quick.
  */
 export function quickChoices(favorites: readonly StatsFavorite[]): StatsFavorite[] {
   const choices: StatsFavorite[] = [];
   for (const favorite of [...builtInChoices(), ...favorites.filter((favorite) => isGameMode(favorite.gameMode))]) {
+    if (takesTurns(favorite)) continue;
     const same = (other: StatsFavorite) => other.gameMode === favorite.gameMode
       && presetChangeCount(roomRulesFrom(favorite.rules), roomRulesFrom(other.rules), favorite.gameMode) === 0;
     if (!choices.some(same)) choices.push(favorite);
