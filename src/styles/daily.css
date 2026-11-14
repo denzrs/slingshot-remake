@@ -210,6 +210,13 @@
   display: none;
 }
 
+/* A short desktop window: the card takes less height, so the day's page scrolls later. */
+@media (max-height: 740px) and (min-width: 761px) {
+  .daily-shot { gap: 6px; padding: 8px 12px; }
+  .daily-shot .match-highlight__trail { height: 52px; }
+  .daily-shot__actions .item { min-height: 32px; padding-block: 4px; }
+}
+
 .daily-shot .ranking-label {
   grid-column: 1 / -1;
   margin: 0;

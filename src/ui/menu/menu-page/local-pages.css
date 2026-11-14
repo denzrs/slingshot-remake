@@ -58,6 +58,15 @@
 .mission-stats dt { color: var(--bone-dim); font: 400 10px/1.6 var(--font-body); }
 .mission-stats dd { margin: 6px 0 0; color: var(--bone); font: 400 22px/1.5 var(--font-mono); }
 .menu-page--mission .daily-reset { font: 400 10px/1.7 var(--font-mono); color: var(--bone-dim); margin: 20px 0 0; }
+/* A short window (a laptop browser with its bars) gets the day's page tighter, so less of it sits behind the scroll. */
+@media (max-height: 740px) and (min-width: 761px) {
+  .mission-route { gap: 12px; margin: 12px 0 8px; }
+  .mission-route .item { gap: 5px; padding: 10px 12px; }
+  .mission-route .item > span:not([class]) { font-size: 20px; }
+  .mission-detail { padding: 8px 0; gap: 8px; }
+  .mission-bottom { margin-top: 10px; }
+  .menu-page--mission .daily-reset { margin-top: 8px; }
+}
 .mission-scorecards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; list-style: none; padding: 0; margin: 24px 0; }
 .mission-scorecards li { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 18px 16px; border: 1px solid var(--menu-line); border-top: 2px solid var(--p2); border-radius: 4px; background: rgb(14 32 55 / .6); }
 .mission-scorecards li.is-failed { border-top-color: var(--p1); }
@@ -81,6 +90,11 @@
 .sheet .setup__rows > .item { min-height: 40px; padding: 8px 8px; border-bottom: 1px solid rgb(91 125 179 / .18); border-radius: 0; }
 .sheet .setup__rows > .item--tiles { border-bottom: 0; }
 .sheet .setup__rows > .item--segmented { padding-block: 8px; gap: 6px; }
+/* A short desktop window gets closer rows, so Settings and the rules pages scroll later. */
+@media (max-height: 740px) and (min-width: 761px) {
+  .sheet .setup__rows > .item { min-height: 32px; padding-block: 4px; }
+  .sheet .setup__rows > .item--segmented { padding-block: 4px; gap: 4px; }
+}
 .sheet .setup__rows > .item--slider { padding-block: 8px 3px; }
 .sheet .segmented__option { min-height: 32px; }
 .sheet-nav { display: none; }
