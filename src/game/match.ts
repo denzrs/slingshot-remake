@@ -1,312 +1,34 @@
-import { planShot, type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
-import type { Avatar } from '../platform/avatars';
-import { bountyPoints, interceptPoints, underdogPoints } from '../sim/scoring';
-import { AIM, ANOMALY, COLORS, FIELD, GRACE, HORIZON, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TRAIL_FADE, type BonusKind, type KillSource, type SuddenDeathKind } from '../sim/config';
-import { dangerColor, seatColor, teamColor } from '../data/palette';
+import { interceptPoints } from '../sim/scoring';
+import { AIM, ANOMALY, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TRAIL_FADE } from '../sim/config';
+import { seatColor, teamColor } from '../data/palette';
 import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
-import { normalizeAngle, hasTrickShotSources, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
+import { normalizeAngle, hasTrickShotSources, type ShotRules, type StyleKind, type World } from '../sim/physics';
 import { createRng, randomSeed, type Rng } from '../sim/rng';
 import { anomalyRules } from '../sim/anomalies';
-import { bump, closestApproach, improve, newStatBook, pathLength, type BonusRecord, type StatBook } from '../data/stats';
+import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../data/stats';
 import type { KillcamPlayback } from '../data/roomRules';
-import { seatTeamsFor, startPower, type Seat, type Settings } from '../data/settings';
+import { seatTeamsFor, startPower, type Settings } from '../data/settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../sim/volley';
-import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup, type PowerUpKind } from '../sim/powerups';
+import { type Pickup } from '../sim/powerups';
 import { generateWorld } from '../sim/world';
 import { ShotLog } from './shotLog';
 import { NEAR_MISS_GAP, type BanterCue } from './banter';
-import { replayKey, RIDERS, type ReplayScript, type ReplayTurn, type SeatChange, type SeatChangeKind, type SeatChangeWhen } from './replay';
+import { type ReplayTurn, type SeatChange, type SeatChangeKind, type SeatChangeWhen } from './replay';
 import { Crowd } from './crowd';
 import { Killcam } from './killcam';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
-import { PowerUpField, type PlacementAim } from './powerup-field';
-import type { GameMode } from '../sim/modes';
+import { PowerUpField } from './powerup-field';
+import type { Experiment } from './experiments';
+import { KillLedger } from './kill-ledger';
+import { CpuDesk } from './cpu-desk';
+import { ReplayDriver } from './replay-driver';
+import { HostPause, type PauseState } from './host-pause';
+import { SkipVoting } from './skip-vote';
+import type { MatchSnapshot } from './match-types';
 
-/** A game mode, or the daily challenge. */
-export type Mode = GameMode | 'challenge';
-export type Phase = 'aiming' | 'flying' | 'killcam' | 'collapse' | 'orbit' | 'roundOver' | 'gameOver';
-
-export interface PlayerState {
-  /** Index into `players` and `world.ships`. */
-  id: number;
-  /** Seat (0-based) — fixes name and colour for the whole match. */
-  seat: number;
-  name: string;
-  /** The symbol the player picked for an online game; null offline. */
-  avatar: Avatar | null;
-  cpu: CpuLevel | null;
-  /** Follows from the seat, the team and its shade, so a different palette shows at once. */
-  readonly color: string;
-  /** Which shade of the team colour this member has (team mode only). */
-  shade: number;
-  /** Team index in team mode, null in free for all. */
-  team: number | null;
-  /** Daily challenge: a stationary target drone rather than a ship that shoots. */
-  target: boolean;
-  score: number;
-  angle: number;
-  power: number;
-  /** Shots fired this round. */
-  shots: number;
-  alive: boolean;
-  /** Event Horizon: aim is locked in for the coming volley. */
-  locked: boolean;
-  /** The ship spent its shot on a teleport: it fires nothing this turn or volley. */
-  passed: boolean;
-  /** Power-up held (one at a time), null for none. */
-  powerUp: PowerUpKind | null;
-  /** The held preview or splitter is set to go off with the next shot. */
-  armed: boolean;
-  /** Online: the person left the game. The ship is gone for the rest of the match; the score stays. */
-  left: boolean;
-  /**
-   * Online: the person's connection dropped and the seat is held for them. Until they are back the ship is off the
-   * field (nothing can hit it) and the round goes on as if they were not there; `alive` says whether it is still in the round.
-   */
-  away: boolean;
-}
-
-export interface Trail {
-  owner: number;
-  /** The splitter fan the shot belonged to: its shots share one look. */
-  fan?: number;
-  /** Flat [x0, y0, x1, y1, …] polyline in field units. */
-  points: number[];
-  /** Volley the shot belonged to (Event Horizon), so old ones can be dropped. */
-  volley: number;
-  /** Match clock when the shot ended, for fading trails. */
-  at: number;
-}
-
-export interface KillRecord {
-  /** null = swallowed by the black hole. */
-  killer: number | null;
-  victim: number;
-  /** Points the killer got (negative for a self-hit or friendly fire). */
-  points: number;
-  self: boolean;
-  /** Shot down a teammate. */
-  friendly: boolean;
-  /** A planetary defense's stray missile did it, not a shot. */
-  collateral?: boolean;
-  /** No player did it (`killer` is null): what took the ship instead. */
-  source?: KillSource;
-  combo: StyleKind[];
-  multiplier: number;
-  shots: number;
-  power: number;
-  /** Match clock when it happened — the kill feed fades entries by age. */
-  at: number;
-}
-
-/** Something on its way into a black hole, as the picture needs it. */
-export interface Falling {
-  /** Stays the same for as long as it falls. */
-  key: string;
-  x: number;
-  y: number;
-  fromX: number;
-  fromY: number;
-  toX: number;
-  toY: number;
-  radius: number;
-  color: string;
-  /** How far through its fall (0 → 1). */
-  t: number;
-  /** The ship it is, when it is one. */
-  ship?: number;
-}
-
-/** Where a fall from one point to the middle of a hole has got to at `t` (0 → 1): it swings round first, the way the disk turns, then sinks. */
-export function infallAt(fromX: number, fromY: number, toX: number, toY: number, t: number): { x: number; y: number } {
-  const left = 1 - t ** 2.5;
-  const turn = HORIZON.INFALL_TURN * t * t;
-  const dx = (fromX - toX) * left;
-  const dy = (fromY - toY) * left;
-  return { x: toX + dx * Math.cos(turn) - dy * Math.sin(turn), y: toY + dx * Math.sin(turn) + dy * Math.cos(turn) };
-}
-
-export type RoundTitle = 'hit' | 'selfHit' | 'swallowed' | 'lastInOrbit' | 'noneLeft' | 'teamWin' | 'cleared' | 'outOfShots' | 'skipped' | 'forfeit' | 'supernova';
-
-/** How long the people at the table have to answer a vote to skip the round, in seconds of match clock. */
-export const SKIP_VOTE_TIME = 20;
-/** Seconds of 3-2-1 between the host resuming a paused game and play going on. */
-export const PAUSE_COUNTDOWN = 3;
-
-/** An open vote to skip the round: who called it, who has answered how, and when it lapses. */
-export interface SkipVote {
-  by: number;
-  yes: number[];
-  no: number[];
-  until: number;
-}
-
-interface RoundSummary {
-  title: RoundTitle;
-  survivor: number | null;
-  /** Winning team in team mode. */
-  team: number | null;
-  /** Bonus for the survivor — or for every member of the winning team. */
-  bonus: number;
-  lastKill: KillRecord | null;
-}
-
-/** Display name of a team, e.g. "Glut". */
-export function teamName(team: number): string {
-  return t(`team.${team as 0 | 1 | 2}`);
-}
-
-export interface Camera {
-  x: number;
-  y: number;
-  zoom: number;
-}
-
-/** What the renderer should show: normally the live match, during a killcam the replay. */
-export interface Scene {
-  world: World;
-  trails: Trail[];
-  volley: Volley | null;
-  camera: Camera | null;
-  /** Power-ups on the field, and the armed preview's path while aiming. */
-  pickups?: readonly Pickup[];
-  /** The pass the round is in, so the renderer can tell which pickups are about to fade. */
-  pass?: number;
-  preview?: number[] | null;
-  /** Where the aiming ship's teleport or black hole would go. */
-  placement?: PlacementAim | null;
-}
-
-export type GameEvent =
-  | { type: 'round' }
-  | { type: 'turn'; player: number }
-  | { type: 'lock'; player: number }
-  | { type: 'volley' }
-  | { type: 'fire'; player: number; x: number; y: number; angle: number; power: number }
-  | { type: 'impact'; player: number; x: number; y: number; vx: number; vy: number }
-  | { type: 'fizzle'; player: number; x: number; y: number; vx: number; vy: number; lost: boolean }
-  | { type: 'clash'; x: number; y: number; players: [number, number]; velocities: [{ x: number; y: number }, { x: number; y: number }]; points: number }
-  /** A planet or a ship starts to fall into the hole. */
-  | { type: 'fall' }
-  | { type: 'devour'; x: number; y: number; toX: number; toY: number; color: string; vx: number; vy: number }
-  | { type: 'style'; player: number; kind: StyleKind; x: number; y: number }
-  | { type: 'explode'; x: number; y: number; ship: number; vx: number; vy: number }
-  | { type: 'pickup'; player: number; kind: PowerUpKind; x: number; y: number; dropped: PowerUpKind | null }
-  | { type: 'pickupSpawn'; kind: PowerUpKind; x: number; y: number }
-  | { type: 'pickupFade'; kind: PowerUpKind; x: number; y: number }
-  | { type: 'teleport'; player: number; fromX: number; fromY: number; toX: number; toY: number }
-  | { type: 'blackhole'; player: number; x: number; y: number }
-  | { type: 'planetShatter'; x: number; y: number; radius: number; color: string }
-  | { type: 'planetKiller'; player: number; x: number; y: number; radius: number }
-  | { type: 'nebula'; player: number; x: number; y: number }
-  | { type: 'wormhole'; player: number; x: number; y: number; toX: number; toY: number }
-  | { type: 'defense'; player: number; x: number; y: number }
-  /** A planet's gravity was turned round (`reversed`) or back. */
-  | { type: 'antigravity'; player: number; x: number; y: number; radius: number; reversed: boolean }
-  /** A planetary defense fired a missile at a shot: from its turret to where the shot is. */
-  | { type: 'defenseFire'; player: number; x: number; y: number; toX: number; toY: number }
-  /** A defense's missile lost its shot at (x, y). */
-  | { type: 'defenseMiss'; player: number; x: number; y: number }
-  /** An armor-piercing shot wrecked a planetary defense (`player` set it, `by` fired the shot). */
-  | { type: 'defenseWrecked'; player: number; by: number; x: number; y: number }
-  /** A planetary defense shot a flying shot down, and what that paid its owner. */
-  | { type: 'shotdown'; player: number; x: number; y: number; vx: number; vy: number; points: number }
-  | { type: 'split'; player: number; x: number; y: number }
-  | { type: 'shield'; ship: number; x: number; y: number }
-  /** Trick Shots Only: a shot was armed at (x, y) and can kill from now on. */
-  | { type: 'armed'; player: number; x: number; y: number }
-  /** Trick Shots Only: an unarmed shot flew through a ship and only warned it. */
-  | { type: 'warning'; player: number; ship: number; x: number; y: number }
-  /** Zeitzünder: a shot's fuse burnt down at (x, y). */
-  | { type: 'blast'; player: number; x: number; y: number }
-  /** Fusion: the shots of two players melted into one at (x, y). */
-  | { type: 'fusion'; players: [number, number]; x: number; y: number }
-  | { type: 'kill'; record: KillRecord }
-  /** One shot took more than one ship in this volley: the chain number and what it paid. */
-  | { type: 'multiKill'; player: number; kills: number; points: number; x: number; y: number }
-  /** Extras paid to a player — for a kill (first blood, a bounty on the leader, revenge …) or at the end of the round (a comeback) — each with what it paid, shown at (x, y). */
-  | { type: 'bonus'; player: number; bonuses: Bonus[]; x: number; y: number }
-  | { type: 'collapse'; x: number; y: number }
-  /** Sudden death has set in, as this round's kind of it. */
-  | { type: 'suddenDeath'; kind: SuddenDeathKind }
-  /** Sudden death: the red giant went supernova and took every ship with it. */
-  | { type: 'supernova'; x: number; y: number; ships: { ship: number; x: number; y: number; angle: number }[]; planets: { x: number; y: number; radius: number; color: string }[] }
-  | { type: 'killcam'; active: boolean; recording: boolean }
-  | { type: 'freeFire' }
-  | { type: 'roundEnd' }
-  | { type: 'gameOver' };
-
-/** Selected launch and simulated outcome for one normal CPU decision. */
-export interface CpuDecisionReport extends CpuDecision {
-  mode: Mode;
-  round: number;
-  player: number;
-  shot: number;
-}
-
-
-/** An extra paid on top of the points, and what it paid. */
-export type Bonus = Omit<BonusRecord, 'player'>;
-
-/**
- * What a ship's card says before the shot: an extra a kill would pay, or the next step of the kill chain (which is not a logged kind).
- * A posthumous kill has no mark: the ship that would make it is gone, and its card is dimmed.
- */
-export type MarkKind = Exclude<BonusKind, 'posthumous'> | 'chain';
-export interface Mark {
-  kind: MarkKind;
-  points: number;
-}
-
-/**
- * What the marks are read from, for a guest to read them as the host does: the round's kills so far, who shot whom in it and the rounds
- * before, and the scores it began with. All of it is on the screen already (kill feed, scoreboard), so it is sent to everybody; what
- * stays private is only which marks each person is shown.
- */
-export interface MarkState {
-  chain: [number, number][];
-  firstBlood: boolean;
-  killedBy: [number, number][];
-  before: [number, number][][];
-  roundScores: number[];
-}
-
-export interface MatchOptions {
-  /** Attract mode (title screen): rounds continue on their own, forever. */
-  attract?: boolean;
-  /** Override the seats from the settings (used by attract mode). */
-  seats?: Seat[];
-  /** Fixed player names by player index (online matches) — they survive a rematch. */
-  names?: string[];
-  /** The symbol each player picked, by player index (online matches). */
-  avatars?: Avatar[];
-  /** Fixed team per player index (online matches); `settings.teamMode` is the team count. */
-  teams?: number[];
-  /** Event Horizon online: every human aims at once instead of one after another at a shared keyboard. */
-  simultaneous?: boolean;
-  /** Online: eliminated players may tip on what the others' shots do. */
-  oracle?: boolean;
-  /** Reproducible multi-round worlds, independent of planner random consumption. */
-  seed?: number;
-  /** Fly a recorded match again: the seats do what the script says and nothing else (see `replay`). */
-  script?: ReplayScript;
-  /** Finish CPU generators without a wall-clock budget, for deterministic simulation. */
-  deterministicCpu?: boolean;
-  /** Receives normal CPU planner decisions; console logging can also enable this path. */
-  onCpuDecision?: (report: CpuDecisionReport) => void;
-}
-
-export interface CpuJob {
-  planner: Generator<void, Aim> | null;
-  target: Aim | null;
-  settle: number;
-  /** Power-ups: the planner found no hitting shot. Only known while the CPU holds a teleport or a plasma shot. */
-  blind?: boolean;
-  rescueTried?: boolean;
-  /** A placement could not be laid at its spot: the CPU shoots instead, rather than swinging back to the spot every frame. */
-  placeFailed?: boolean;
-}
+export * from './match-types';
+import { newPlayer, atTable, shotDown, sidesOf, teamName, type Mode, type Phase, type PlayerState, type Trail, type KillRecord, type Falling, type RoundTitle, type SkipVote, type RoundSummary, type Scene, type GameEvent, type Bonus, type Mark, type MatchOptions } from './match-types';
 
 /**
  * Everything the modes share: players, rounds, scoring, CPU thinking and flying volleys.
@@ -388,25 +110,47 @@ export abstract class Match {
   protected rng: Rng;
   private readonly matchSeed: number;
   private worldRng: Rng;
-  private plannerRngs = new Map<number, Rng>();
-  /** Who hit each player last — CPUs with a grudge aim back at them. */
-  private lastHitBy = new Map<number, number>();
   /** Phase time when the current volley finished, replicated so online guests keep the same post-flight delay. */
   protected flightDoneAt: number | null = null;
   /** What the volley in the air has destroyed so far — the oracle's verdict is read from it. */
   private oracleKills: { killer: number; victim: number; self: boolean; friendly: boolean }[] = [];
-  /** The enemies each player has taken in the round being played, for the multi-kill chain. */
-  private killChain = new Map<number, number>();
-  /** Whether an enemy ship has been taken this round yet: the first one is first blood. */
-  private firstBloodDrawn = false;
-  /** Who shot each ship down this round, and in the rounds before, latest first (revenge and domination read them). */
-  private killedBy = new Map<number, number>();
-  private killedBefore: Map<number, number>[] = [];
-  /** Everybody's score as the volley in the air went up (the bounty and the underdog read it), and as the round began (the comeback). */
-  private launchScores: number[] = [];
-  private roundScores: number[] = [];
+  /** Who shot whom, for the extras a kill pays and the marks on the cards. */
+  private readonly ledger = new KillLedger({
+    players: () => this.players,
+    payFactor: () => this.payFactor,
+    friendsOf: (id) => this.friendsOf(id),
+    marksOpen: () => this.phase === 'aiming' && this.paysKillBonuses && !this.forfeited,
+  });
   private disposed = false;
-  protected cpuJobs = new Map<number, CpuJob>();
+  /** The host's pause, and the vote to skip a round. */
+  private readonly hostPause = new HostPause();
+  private readonly skipVoting = new SkipVoting({
+    clock: () => this.clock,
+    voters: () => this.voters,
+    canSkipRound: () => this.canSkipRound,
+    skipRound: () => this.skipRound(),
+    online: () => this.online,
+    isCpu: (player) => !!this.players[player]?.cpu,
+    said: (text) => {
+      this.notice = { text: t(text), color: COLORS.boneDim, at: this.clock };
+    },
+  });
+  /** The thinking of the CPUs. */
+  protected readonly cpu = new CpuDesk({
+    world: () => this.world,
+    players: () => this.players,
+    rules: () => this.rules,
+    settings: () => this.settings,
+    friendsOf: (id) => this.friendsOf(id),
+    sparedFor: (id) => this.sparedFor(id),
+    pickups: () => this.power.pickups,
+    powerUps: () => this.powerUps,
+    teleport: (id) => this.power.teleport(id),
+    options: () => this.options,
+    matchSeed: () => this.matchSeed,
+    mode: () => this.mode,
+    round: () => this.round,
+  });
   private listeners: ((e: GameEvent) => void)[] = [];
   private turnListeners: (() => void)[] = [];
   private seatListeners: ((change: SeatChange) => void)[] = [];
@@ -414,23 +158,24 @@ export abstract class Match {
 
   // ————————————————————————————— Replay —————————————————————————————
 
-  /** The turns of a recorded match by round and turn, when this match flies one again. */
-  private scriptTurns: Map<string, ReplayTurn> | null = null;
-  /** The rounds of a recorded match that were skipped by vote. */
-  private scriptSkipped = new Set<number>();
-  /** Splits still to make in the flight on screen: whose, and the step of the flight they went off at. */
-  private pendingSplits: { player: number; at: number }[] = [];
-  /** The changes at the table of a recorded match that the replay has still to make, by the turn they belong to (see `makeSeatChanges`). */
-  private scriptSeats = new Map<string, SeatChange[]>();
+  /** Flies the recording when this match is a replay (`options.script`); idle in a game that is played. */
+  protected readonly replay: ReplayDriver;
+
   /**
    * How the replay stands: `finished` when the recording has run out, `drifted` when the game stopped doing
    * what the recording says it did (a version that plays differently from the one that was recorded).
    */
-  replayState: 'playing' | 'finished' | 'drifted' = 'playing';
+  get replayState(): ReplayDriver['state'] {
+    return this.replay.state;
+  }
+
+  set replayState(state: ReplayDriver['state']) {
+    this.replay.state = state;
+  }
 
   /** Whether this match flies a recording instead of being played. */
   get replaying(): boolean {
-    return this.scriptTurns !== null;
+    return this.replay.active;
   }
   protected simClock = 0;
   /** Power-ups: the pickups on the field, who holds what, and what each one does. */
@@ -456,7 +201,7 @@ export abstract class Match {
       this.shotLog.placed(placement);
       if (placement.kind === 'planetkiller') this.checkFreeFire();
     },
-    clearCpuJobs: () => this.cpuJobs.clear(),
+    clearCpuJobs: () => this.cpu.clear(),
     record: (update) => this.record(update),
   });
 
@@ -468,15 +213,22 @@ export abstract class Match {
     this.matchSeed = options.seed ?? randomSeed();
     this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
     this.worldRng = createRng(this.matchSeed);
-    if (options.script) {
-      this.scriptSkipped = new Set(options.script.skipped ?? []);
-      this.scriptTurns = new Map(options.script.turns.map((turn) => [replayKey(turn.round, turn.turn), turn]));
-      for (const change of options.script.seatChanges ?? []) {
-        const key = replayKey(change.round, change.turn);
-        this.scriptSeats.set(key, [...(this.scriptSeats.get(key) ?? []), change]);
-      }
-      this.power.scripted = true;
-    }
+    this.replay = new ReplayDriver(options.script, {
+      round: () => this.round,
+      turn: () => this.shotLog.turn,
+      phase: () => this.phase,
+      phaseTime: () => this.phaseTime,
+      nextTurnKey: () => this.nextTurnKey(),
+      removePlayer: (id) => this.removePlayer(id),
+      setAway: (id, away) => this.setAway(id, away),
+      placeLogged: (placement) => this.power.placeLogged(placement),
+      splitInFlight: (player) => this.power.splitInFlight(player),
+      skipRound: () => this.skipRound(),
+      advance: () => this.advance(),
+      updatePhase: (dt) => this.updatePhase(dt),
+      playTurn: (turn) => this.playTurn(turn),
+    });
+    if (options.script) this.power.scripted = true;
   }
 
   /** Rebuilt only when what it is made from changes: the renderer asks for it every frame. */
@@ -551,7 +303,7 @@ export abstract class Match {
 
   private resetFlight(): void {
     this.flightDoneAt = null;
-    this.cpuJobs.clear();
+    this.cpu.clear();
   }
 
   /** Dispatch authoritative events on clients that do not run the simulation. */
@@ -561,6 +313,16 @@ export abstract class Match {
 
   get attract(): boolean {
     return !!this.options.attract;
+  }
+
+  /** Whether this match plays by the experiment: asked for, and in a game that nobody else shares or watches back. */
+  protected trying(name: Experiment): boolean {
+    return !!this.options.experiments?.includes(name) && !this.online && !this.attract && !this.replaying;
+  }
+
+  /** The experiments this match plays by, for the dev panel's chip. */
+  get experiments(): readonly Experiment[] {
+    return (this.options.experiments ?? []).filter((name) => this.trying(name));
   }
 
   /** The tutorial's field: its coach says what matters, so the HUD leaves out the round and the score block. */
@@ -901,23 +663,6 @@ export abstract class Match {
     return this.salvo ? 1 : Math.max(1, this.alive.length);
   }
 
-  /**
-   * A CPU that planned and found no hitting shot tries its way out once and plans again: a teleport jumps to a
-   * new spot, a plasma shot is armed. Returns true when it did, so the caller leaves this tick to the new plan.
-   */
-  protected cpuRescueIfBlind(p: PlayerState, job: CpuJob | undefined): boolean {
-    if ((p.powerUp !== 'teleport' && p.powerUp !== 'plasma') || !job?.target || !job.blind || job.rescueTried) return false;
-    job.rescueTried = true;
-    if (p.powerUp === 'plasma') {
-      // Armed already: the plan that came up blind was made with it, so there is nothing left to try.
-      if (p.armed) return false;
-      p.armed = true;
-      this.cpuJobs.clear();
-      return true;
-    }
-    return this.power.teleport(p.id);
-  }
-
   get pickups(): Pickup[] {
     return this.power.pickups;
   }
@@ -993,13 +738,105 @@ export abstract class Match {
     return null;
   }
 
+  /** What the modes share of a snapshot: every mode puts its own turn state on top of this (see `MatchSnapshot`). */
+  protected baseSnapshot(): MatchSnapshot {
+    return {
+      phase: this.phase,
+      phaseTime: this.phaseTime,
+      clock: this.clock,
+      round: this.round,
+      worldSeed: this.worldSeed,
+      totalRounds: this.totalRounds,
+      hiddenPlanets: this.hiddenPlanets,
+      teamMode: this.teamMode,
+      players: this.players.map((player) => ({ ...player })),
+      current: this.current,
+      world: this.world,
+      trails: this.trails,
+      volley: this.volley?.snapshot() ?? null,
+      pickups: this.pickups,
+      power: this.powerState,
+      killFeed: this.killFeed,
+      lastKill: this.lastKill,
+      summary: this.summary,
+      notice: this.notice,
+      settings: this.settings,
+      mayhem: this.mayhem,
+      revealEnd: this.revealEnd,
+      revealHeld: this.revealHeld,
+      anomalyAlert: this.anomalyAlert,
+      mayhemHistory: this.mayhemHistory,
+      roundStats: this.roundStats,
+      matchStats: this.matchStats,
+      scoreHistory: this.scoreHistory,
+      skipVote: this.skipVote,
+      pause: this.pause,
+      flightDoneAt: this.flightDoneAt,
+      ...this.killcam.snapshot(),
+      oracle: this.oracle.snapshot(),
+      stands: this.stands.snapshot(),
+      crowd: this.crowd.snapshot(),
+      marks: this.ledger.state(),
+    };
+  }
+
+  /**
+   * Puts a host's snapshot back (guests): the part the modes share. False when it does not fit this match (a different number of
+   * ships than players), which a mode answers by leaving its own fields as they are. Fields an older host does not send keep their defaults.
+   */
+  protected restoreBase(s: MatchSnapshot): boolean {
+    if (s.world.ships.length !== s.players.length) return false;
+    this.settings = s.settings;
+    this.mayhem = s.mayhem ?? null;
+    this.revealEnd = s.revealEnd ?? 0;
+    this.revealHeld = s.revealHeld ?? false;
+    this.anomalyAlert = s.anomalyAlert ?? false;
+    this.mayhemHistory = s.mayhemHistory ?? [];
+    this.phase = s.phase;
+    this.phaseTime = s.phaseTime;
+    this.clock = s.clock;
+    this.round = s.round;
+    this.worldSeed = s.worldSeed ?? 0;
+    this.totalRounds = s.totalRounds;
+    this.hiddenPlanets = s.hiddenPlanets;
+    this.teamMode = s.teamMode;
+    this.players = s.players.map((player) => ({ ...player }));
+    this.current = s.current;
+    this.world = s.world;
+    this.trails = s.trails;
+    this.pickups = s.pickups ?? [];
+    this.power.restoreState(s.power);
+    this.killFeed = s.killFeed;
+    this.lastKill = s.lastKill;
+    this.summary = s.summary;
+    this.notice = s.notice;
+    this.roundStats = s.roundStats;
+    this.matchStats = s.matchStats;
+    this.scoreHistory = s.scoreHistory;
+    this.skipVote = s.skipVote ?? null;
+    this.pause = s.pause ?? null;
+    // Hosts from before the oracle send none.
+    if (s.oracle) this.oracle.restore(s.oracle);
+    if (s.stands) this.stands.restore(s.stands);
+    this.crowd.restore(s.crowd);
+    this.ledger.restore(s.marks);
+    this.volley = null;
+    if (s.volley) {
+      const volley = new Volley(s.world, s.volley.aims, this.rules, true);
+      volley.restore(s.volley);
+      this.volley = volley;
+    }
+    this.killcam.restore(s, this.rules);
+    this.restarted();
+    this.flightDoneAt = s.flightDoneAt ?? null;
+    return true;
+  }
+
   newMatch(): void {
     this.worldRng = createRng(this.options.seed ?? randomSeed());
     this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
-    this.plannerRngs.clear();
-    this.lastHitBy.clear();
-    this.killedBy.clear();
-    this.killedBefore = [];
+    this.cpu.newMatch();
+    this.ledger.newMatch();
     const seats = this.options.seats ?? this.settings.seats;
     const taken = seats.flatMap((seat, i) => (seat === 'off' ? [] : [{ seat: i, kind: seat }]));
     const teams = this.attract ? null : (this.options.teams ?? seatTeamsFor(this.settings, taken.map((s) => s.seat)));
@@ -1039,14 +876,8 @@ export abstract class Match {
   startRound(): void {
     this.killcam.reset();
     this.resetFlight();
-    // The chain counts a round's kills: several in one turn (a splitter's forks, an armor-piercing round) or
-    // one per turn adding up. A new round starts everyone over, so no round opens with a chain carried in.
-    this.killChain.clear();
-    this.firstBloodDrawn = false;
-    // Who shot you down last round is the one revenge is taken on in this one; domination looks two rounds further back.
-    this.killedBefore = [this.killedBy, ...this.killedBefore].slice(0, SCORING.DOMINATION_ROUNDS);
-    this.killedBy = new Map();
-    this.skipVote = null;
+    this.ledger.startRound();
+    this.skipVoting.clear();
     this.forfeited = false;
     this.round++;
     // Stakes that were never paid out (a round cut short) go back to their owners.
@@ -1076,8 +907,7 @@ export abstract class Match {
     this.summary = null;
     this.lastKill = null;
     // A grudge lasts one round — whoever survived it starts the next one clean.
-    this.lastHitBy.clear();
-    this.cpuJobs.clear();
+    this.cpu.startRound();
     const duel = this.mode === 'classic' && this.players.length === 2;
     for (const p of this.players) {
       const ship = this.world.ships[p.id];
@@ -1092,7 +922,7 @@ export abstract class Match {
       p.angle = duel ? (p.id === 0 ? 0 : 180) : normalizeAngle(Math.round((Math.atan2(ship.y - FIELD.height / 2, FIELD.width / 2 - ship.x) * 180) / Math.PI));
       p.power = startPower(this.settings);
     }
-    this.roundScores = this.players.map((p) => p.score);
+    this.ledger.scoresAtStart(this.players.map((p) => p.score));
     this.freeFireAnnounced = false;
     this.checkFreeFire();
     this.power.startRound();
@@ -1264,7 +1094,7 @@ export abstract class Match {
    * the host, where it came before the turn was handed out (in a killcam the replay may not show, or that showed it already).
    */
   private nextVolley(): void {
-    if (this.scriptTurns) this.applySeatChanges(this.nextTurnKey(), 'between');
+    this.replay.seatChanges(this.nextTurnKey(), 'between');
     this.afterVolley();
   }
 
@@ -1304,41 +1134,6 @@ export abstract class Match {
     const at = when === 'flight' ? { round: this.round, turn: this.shotLog.turn } : when === 'aiming' ? { round: this.round, turn: this.shotLog.turn + 1 } : this.nextTurnKey();
     const step = when === 'flight' ? { at: this.volley?.steps ?? 0 } : {};
     for (const listener of this.seatListeners) listener({ ...at, player, change, when, ...step });
-  }
-
-  /**
-   * Replay: makes the changes at the table the recording has for this turn that came at this moment (between turns, or while it was
-   * aimed), in the order they came.
-   */
-  private applySeatChanges(turn: { round: number; turn: number }, when: Exclude<SeatChangeWhen, 'flight'>): void {
-    if (this.scriptSeats.size) this.makeSeatChanges(replayKey(turn.round, turn.turn), (c) => c.when === when);
-  }
-
-  /**
-   * Replay: the changes at the table that came while this turn's shots were in the air, each at the step of the flight it came at:
-   * a ship that goes off the field mid-flight is not there for what follows. `last`: the flight is over, so whatever is left is due.
-   */
-  private makeFlightSeatChanges(volley: Volley, last: boolean): void {
-    if (this.scriptSeats.size) this.makeSeatChanges(replayKey(this.round, this.shotLog.turn), (c) => c.when === 'flight' && (last || (c.at ?? 0) <= volley.steps));
-  }
-
-  /**
-   * Makes the recorded changes of the turn `key` that are `due`, each once, in the order they came. They go through the same
-   * calls the room's news did on the host, so the game answers them the same way.
-   */
-  private makeSeatChanges(key: string, due: (c: SeatChange) => boolean): void {
-    const changes = this.scriptSeats.get(key);
-    if (!changes) return;
-    const now: SeatChange[] = [];
-    const later: SeatChange[] = [];
-    for (const c of changes) (due(c) ? now : later).push(c);
-    if (!now.length) return;
-    if (later.length) this.scriptSeats.set(key, later);
-    else this.scriptSeats.delete(key);
-    for (const c of now) {
-      if (c.change === 'left') this.removePlayer(c.player);
-      else this.setAway(c.player, c.change === 'away');
-    }
   }
 
   /**
@@ -1389,13 +1184,7 @@ export abstract class Match {
       k.skipVotes = k.skipVotes.filter((id) => atTable(this.players[id]));
       if (!k.recording && k.skipVotes.length && k.skipVotes.length >= this.skipsNeeded) this.endKillcam();
     }
-    const vote = this.skipVote;
-    if (!vote) return;
-    vote.yes = vote.yes.filter((id) => this.voters.includes(id));
-    vote.no = vote.no.filter((id) => this.voters.includes(id));
-    if (!this.canSkipRound) return;
-    if (vote.yes.length && vote.yes.length >= this.skipVotesNeeded) this.skipRound();
-    else if (vote.no.length > this.voters.length - this.skipVotesNeeded) this.endSkipVote('skip.declined');
+    this.skipVoting.tableChanged();
   }
 
   /**
@@ -1431,33 +1220,33 @@ export abstract class Match {
 
   // ————————————————————————————— Skipping a round —————————————————————————————
 
-  /**
-   * The host's pause, online only: while it is set nothing moves anywhere (no clocks, no shots, no CPUs) and no input is taken.
-   * `resumeIn` is null while the game waits for the host, then the seconds of the 3-2-1 left before play goes on.
-   * It rides along in the snapshot, so the guests and the stands see it too.
-   */
-  pause: { resumeIn: number | null } | null = null;
+  /** The host's pause (see `HostPause`): null while the game runs. */
+  get pause(): PauseState {
+    return this.hostPause.state;
+  }
+
+  set pause(state: PauseState) {
+    this.hostPause.state = state;
+  }
 
   /** Host only: stop the game for everybody until it is resumed. */
   pauseGame(): void {
-    if (this.canAdvance && this.online && !this.replaying && !this.pause) this.pause = { resumeIn: null };
+    this.hostPause.stop(this.canAdvance && this.online && !this.replaying);
   }
 
   /** Host only: start the countdown that ends the pause. */
   resumeGame(): void {
-    if (this.pause && this.pause.resumeIn === null) this.pause = { resumeIn: PAUSE_COUNTDOWN };
-  }
-
-  private tickPause(dt: number): void {
-    const pause = this.pause;
-    if (!pause || pause.resumeIn === null) return;
-    // A new object each time: the sync sends a field that changed, and compares it by value.
-    const left = pause.resumeIn - dt;
-    this.pause = left > 0 ? { resumeIn: left } : null;
+    this.hostPause.resume();
   }
 
   /** The vote to skip the round that is open, if any. Online only: offline the player simply skips. */
-  skipVote: SkipVote | null = null;
+  get skipVote(): SkipVote | null {
+    return this.skipVoting.vote;
+  }
+
+  set skipVote(vote: SkipVote | null) {
+    this.skipVoting.vote = vote;
+  }
 
   /** Whether this match is played online, against the people of a room. */
   protected get online(): boolean {
@@ -1479,44 +1268,27 @@ export abstract class Match {
 
   /** Yes votes it takes to skip: more than half of the people at the table. */
   get skipVotesNeeded(): number {
-    return Math.floor(this.voters.length / 2) + 1;
+    return this.skipVoting.needed;
   }
 
-  /**
-   * Offline the player skips on their own. Online only the host (seat 0) may ask, which opens a vote its own
-   * yes starts off. Nobody scores in a skipped round.
-   */
+  /** Offline the player skips on their own; online only the host may ask, which opens a vote (see `SkipVoting`). */
   requestSkipRound(player: number): void {
-    if (!this.canSkipRound) return;
-    if (!this.online) return this.skipRound();
-    if (player !== 0 || this.skipVote || this.players[player]?.cpu) return;
-    this.skipVote = { by: player, yes: [], no: [], until: this.clock + SKIP_VOTE_TIME };
-    this.voteSkipRound(player, true);
+    this.skipVoting.request(player);
   }
 
-  /** One person's answer to the open vote; it counts once. The round is skipped when enough have said yes, and the vote lapses when too many have said no. */
+  /** One person's answer to the open vote; it counts once. */
   voteSkipRound(player: number, yes: boolean): void {
-    const vote = this.skipVote;
-    if (!vote || !this.canSkipRound || this.clock >= vote.until || !this.voters.includes(player) || vote.yes.includes(player) || vote.no.includes(player)) return;
-    (yes ? vote.yes : vote.no).push(player);
-    if (vote.yes.length >= this.skipVotesNeeded) this.skipRound();
-    else if (vote.no.length > this.voters.length - this.skipVotesNeeded) this.endSkipVote('skip.declined');
+    this.skipVoting.answer(player, yes);
   }
 
   /** How this person has answered the open vote, null while they have not (or when they have no say). */
   skipAnswer(player: number): 'yes' | 'no' | null {
-    const vote = this.skipVote;
-    return vote?.yes.includes(player) ? 'yes' : vote?.no.includes(player) ? 'no' : null;
+    return this.skipVoting.answerOf(player);
   }
 
   /** Whether this person may still answer the open vote. */
   canAnswerSkip(player: number | null): boolean {
-    return player !== null && !!this.skipVote && this.voters.includes(player) && !this.skipAnswer(player);
-  }
-
-  private endSkipVote(text: 'skip.declined' | 'skip.lapsed'): void {
-    this.skipVote = null;
-    this.notice = { text: t(text), color: COLORS.boneDim, at: this.clock };
+    return this.skipVoting.canAnswer(player);
   }
 
   /** Mode-specific loose ends of a round cut short: a killcam in the making, a collapse under way. */
@@ -1524,12 +1296,12 @@ export abstract class Match {
 
   /** Ends the round where it stands: whatever was scored in it is taken back, and the match goes on as after any round. */
   protected skipRound(): void {
-    this.skipVote = null;
+    this.skipVoting.clear();
     // A volley still in the air is no turn of the round: its report would never come, and the round's own would not add up.
     if (this.volley) this.shotLog.abandonTurn();
     this.volley = null;
     this.flightDoneAt = null;
-    this.cpuJobs.clear();
+    this.cpu.clear();
     this.killcam.reset();
     this.abandonRound();
     // Back to what everybody had when the round began (this also gives back what was staked on the oracle's questions).
@@ -1544,7 +1316,7 @@ export abstract class Match {
     // The extras went back with the points, and the round's kills are no grudge: revenge and domination read the rounds as if this one was never played.
     this.matchStats.bonuses.splice(this.matchStats.bonuses.length - this.roundStats.bonuses.length);
     this.roundStats.bonuses = [];
-    this.killedBy = this.killedBefore.shift() ?? new Map();
+    this.ledger.rollbackRound();
     this.summary = { title: 'skipped', survivor: null, team: null, bonus: 0, lastKill: null };
     this.scoreHistory.push(before.slice());
     if (this.mayhem) this.mayhemHistory.push(this.mayhem);
@@ -1575,21 +1347,21 @@ export abstract class Match {
 
   update(dt: number): void {
     if (this.disposed) return;
-    if (this.pause) return this.tickPause(dt);
+    if (this.pause) return this.hostPause.tick(dt);
     this.clock += dt;
     this.phaseTime += dt;
     if (this.notice && this.clock - this.notice.at > 1.4) this.notice = null;
-    if (this.skipVote && this.clock >= this.skipVote.until) this.endSkipVote('skip.lapsed');
+    this.skipVoting.tick();
     // A replay has no one to press a key: it lets the announcement be read, then goes on.
-    if (this.scriptTurns && this.revealing && this.revealAge > 2.5) this.skipReveal();
+    if (this.replaying && this.revealing && this.revealAge > 2.5) this.skipReveal();
     // The round's announcement holds everything still: no aiming, no CPU thinking, no shot clock.
     if (this.revealing) return;
     if (this.phase === 'killcam') {
       // A replay's killcam is a phase between two turns like any other: what came at the table during it comes now.
-      if (this.scriptTurns) this.applySeatChanges(this.nextTurnKey(), 'between');
+      this.replay.seatChanges(this.nextTurnKey(), 'between');
       if (this.killcam.update(dt, (volley, event) => this.onVolleyEvent(volley, event, false))) this.endKillcam();
     } else if (this.phase === 'flying') this.updateFlight(dt);
-    else if (this.scriptTurns) this.updateScripted(dt);
+    else if (this.replaying) this.replay.update(dt);
     else this.updatePhase(dt);
     if (this.phase === 'roundOver' && this.attract && this.phaseTime > 3) this.advance();
   }
@@ -1603,10 +1375,10 @@ export abstract class Match {
     this.killcam.capture(this.world, aims);
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
     this.shotLog.launched(this.volley.shots, aims);
-    this.launchScores = this.players.map((p) => p.score);
+    this.ledger.launched(this.players.map((p) => p.score));
     this.simClock = 0;
     this.flightDoneAt = null;
-    this.cpuJobs.clear();
+    this.cpu.clear();
     this.setPhase('flying');
     this.volley.shots.forEach((vs, i) => {
       const aim = aims[i];
@@ -1614,77 +1386,9 @@ export abstract class Match {
     });
   }
 
-  /** A replay presses the fire key of every shot that was split, at the step it was pressed at. */
-  private makeSplits(volley: Volley): void {
-    const due = this.pendingSplits.filter((split) => split.at <= volley.steps);
-    this.pendingSplits = this.pendingSplits.filter((split) => split.at > volley.steps);
-    for (const split of due) if (split.at < volley.steps || !this.power.splitInFlight(split.player)) this.replayState = 'drifted';
-  }
-
-  /** Between flights a replay does what the recording says, where a game waits for its players. */
-  private updateScripted(dt: number): void {
-    // What came at the table while the game was between two turns (a round's end, an orbit) comes now, in the same phase.
-    if (this.phase !== 'aiming') this.applySeatChanges(this.nextTurnKey(), 'between');
-    if (this.phase === 'roundOver') {
-      if (this.phaseTime > 3) this.advance();
-      return;
-    }
-    if (this.phase === 'gameOver') {
-      this.replayState = 'finished';
-      return;
-    }
-    // Mode transitions play as they do in a game.
-    if (this.phase !== 'aiming') return this.updatePhase(dt);
-    if (this.replayState !== 'playing') return;
-    // A beat to see the field before the shots go off.
-    if (this.phaseTime < 1) return;
-    const turn = this.shotLog.turn + 1;
-    // A person who dropped out while this turn was being aimed does so now: the turn may pass to somebody else, or the round be settled.
-    this.applySeatChanges({ round: this.round, turn }, 'aiming');
-    if (this.phase !== 'aiming' || this.phaseTime < 1) return;
-    const recorded = this.scriptTurns!.get(replayKey(this.round, turn));
-    if (!recorded && !this.recordedBeyond(turn)) {
-      // The room skipped this round by vote: it ends where the recording does.
-      if (this.scriptSkipped.has(this.round)) this.skipRound();
-      else this.replayState = 'finished';
-      return;
-    }
-    this.playTurn(recorded ?? { round: this.round, turn, placements: [], shots: [] });
-  }
-
-  /** Whether the recording has a turn of this round after `turn`: a gap before it is a turn nobody shot in. */
-  private recordedBeyond(turn: number): boolean {
-    for (let later = turn + 1; later <= turn + 50; later++) if (this.scriptTurns!.has(replayKey(this.round, later))) return true;
-    return false;
-  }
-
   /** Flies a turn of the recording, the way the mode flies its own. */
   protected playTurn(_turn: ReplayTurn): void {
     this.replayState = 'drifted';
-  }
-
-  /**
-   * Lays the turn's placements down and puts the shooters' aims in, as the recording has them, so the mode's own launch
-   * can take off from there. `who` are the ships that may shoot this turn. False when the match does not hold what the
-   * recording says it did (a rider armed that was never picked up).
-   */
-  protected stageTurn(turn: ReplayTurn, who: PlayerState[]): boolean {
-    let faithful = true;
-    for (const placement of turn.placements) faithful = this.power.placeLogged(placement) && faithful;
-    const shots = new Map(turn.shots.map((shot) => [shot.player, shot]));
-    for (const p of who) {
-      const shot = shots.get(p.id);
-      p.passed = !shot;
-      if (!shot) continue;
-      p.angle = shot.angle;
-      p.power = shot.power;
-      const rides = RIDERS.some((rider) => rider === p.powerUp);
-      if (rides) p.armed = shot.rider === p.powerUp;
-      else if (shot.rider) faithful = false;
-    }
-    this.pendingSplits = turn.shots.flatMap((shot) => (shot.splitAt === null ? [] : [{ player: shot.player, at: shot.splitAt }]));
-    if (!faithful) this.replayState = 'drifted';
-    return faithful;
   }
 
   /** Long flights speed up so nobody waits for an orbit to decay. */
@@ -1698,15 +1402,15 @@ export abstract class Match {
     const volley = this.volley;
     this.simClock += dt * this.flightSpeed;
     while (this.simClock >= PHYSICS.DT && !volley.done) {
-      if (this.pendingSplits.length) this.makeSplits(volley);
-      if (this.scriptTurns) this.makeFlightSeatChanges(volley, false);
+      this.replay.makeSplits(volley);
+      this.replay.flightSeatChanges(volley, false);
       this.simClock -= PHYSICS.DT;
       for (const e of volley.step()) this.onVolleyEvent(volley, e, true);
       this.power.onStep(volley);
     }
     if (!volley.done) return;
     // Those that came after the last step (while the finished flight was on screen): before anything the flight's end does.
-    if (this.scriptTurns) this.makeFlightSeatChanges(volley, true);
+    this.replay.flightSeatChanges(volley, true);
     this.flightDoneAt ??= this.phaseTime;
     if (this.phaseTime - this.flightDoneAt < this.afterVolleyDelay) return;
     this.recordFlights(volley);
@@ -1938,12 +1642,11 @@ export abstract class Match {
     }
     const enemyKill = !self && !friendly;
     const paysExtras = enemyKill && this.paysKillBonuses;
-    const bonuses = paysExtras ? this.killBonuses(vs, victim, killer).map((b) => ({ ...b, points: Math.round(b.points * share) })) : [];
+    const bonuses = paysExtras ? this.ledger.killBonuses(killer, victim, !!vs.stray).map((b) => ({ ...b, points: Math.round(b.points * share) })) : [];
     if (enemyKill) {
       // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
-      this.lastHitBy.set(victim, killer);
-      this.firstBloodDrawn = true;
-      this.killedBy.set(victim, killer);
+      this.cpu.noteHit(victim, killer);
+      this.ledger.noteKill(killer, victim);
     }
     const record: KillRecord = {
       killer,
@@ -1975,9 +1678,7 @@ export abstract class Match {
     this.recordKill(record);
     // The kill chain: a second enemy in the round pays extra, whether it came in this turn or an earlier one.
     if (paysExtras) {
-      const kills = (this.killChain.get(killer) ?? 0) + 1;
-      this.killChain.set(killer, kills);
-      const bonus = Math.round(SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)] * this.payFactor * share);
+      const { kills, points: bonus } = this.ledger.extendChain(killer, share);
       if (bonus > 0) {
         this.players[killer].score += bonus;
         this.shotLog.bonus(vs, bonus);
@@ -1997,68 +1698,10 @@ export abstract class Match {
     return points;
   }
 
-  /** The extras a kill of an enemy pays, taken before the kill is noted (it is no longer the round's first after that). */
-  private killBonuses(vs: VolleyShot, victim: number, killer = vs.owner): Bonus[] {
-    const pay = this.payFactor;
-    const bonuses: Bonus[] = [];
-    const add = (kind: BonusKind, points: number) => {
-      if (points > 0) bonuses.push({ kind, points });
-    };
-    if (!this.firstBloodDrawn) add('firstBlood', SCORING.FIRST_BLOOD * pay);
-    bonuses.push(...this.targetExtras(killer, victim, this.standingsAtLaunch()));
-    // Posthumous is for a ship that was shot down, not one whose player left the game with the shot in the air.
-    if (!this.players[killer].alive && !this.players[killer].left) add('posthumous', SCORING.POSTHUMOUS * pay);
-    // Once for the first shot, however many ships it takes: the chain is still empty for the first of them.
-    if (!vs.stray && this.players[killer].shots === 1 && !this.killChain.has(killer)) add('opener', SCORING.OPENER * pay);
-    return bonuses;
-  }
-
-  /**
-   * The extras a kill pays for who the victim is, read from the `standings` it is taken at (the cards read the ones of the moment, the payout those of the launch).
-   * Without a `killer` only what is true of the victim for everybody is left: the bounty and a shutdown.
-   */
-  private targetExtras(killer: number | null, victim: number, standings: { id: number; score: number }[]): { kind: Exclude<MarkKind, 'chain'>; points: number }[] {
-    const pay = this.payFactor;
-    const bonuses: { kind: Exclude<MarkKind, 'chain'>; points: number }[] = [];
-    const add = (kind: Exclude<MarkKind, 'chain'>, points: number) => {
-      if (points > 0) bonuses.push({ kind, points });
-    };
-    /** Whether `by` shot `ship` down in each of the last `rounds` rounds before this one. */
-    const shotDownBy = (ship: number, by: number, rounds: number) => this.killedBefore.length >= rounds && this.killedBefore.slice(0, rounds).every((round) => round.get(ship) === by);
-    // Not times the jackpot, these two: the points of the lead and the gap they are a share of were paid at the round's rate already.
-    if (standings[0]?.id === victim && standings[1]) add('bounty', bountyPoints(standings[0].score - standings[1].score));
-    const last = standings.at(-1)!;
-    const victimScore = standings.find((s) => s.id === victim)?.score;
-    if (killer !== null && standings.length >= 3 && last.id === killer && last.score < standings.at(-2)!.score && victimScore !== undefined) add('underdog', underdogPoints(victimScore - last.score));
-    // Revenge on the one who shot you down last round — double on one who did it the last few rounds running.
-    if (killer !== null && shotDownBy(killer, victim, 1)) add('revenge', SCORING.REVENGE * pay * (shotDownBy(killer, victim, SCORING.DOMINATION_ROUNDS) ? 2 : 1));
-    if (killer !== null && shotDownBy(victim, killer, SCORING.DOMINATION_ROUNDS - 1)) add('domination', SCORING.DOMINATION * pay);
-    const spree = this.killChain.get(victim) ?? 0;
-    if (spree >= 2) add('shutdown', SCORING.SHUTDOWN_PER_KILL * spree * pay);
-    const team = killer === null ? null : this.players[killer].team;
-    if (killer !== null && team !== null && [...this.killedBy].some(([ship, by]) => by === victim && ship !== killer && this.players[ship].team === team)) add('avenger', SCORING.AVENGER * pay);
-    return bonuses;
-  }
-
-  /** Everybody still in the game by their score as the volley went up, best first. Whoever left the game is not in the race. */
-  private standingsAtLaunch(): { id: number; score: number }[] {
-    return this.standings((p) => this.launchScores[p.id] ?? p.score);
-  }
-
-  private standings(score: (p: PlayerState) => number): { id: number; score: number }[] {
-    return this.players.flatMap((p) => (p.left ? [] : [{ id: p.id, score: score(p) }])).sort((a, b) => b.score - a.score);
-  }
-
-  /** The ship that was alone in last place as the round began: winning the round from there pays a comeback. */
-  private comebackCandidate(): number | null {
-    const field = this.players.filter((p) => !p.left).sort((a, b) => (this.roundScores[a.id] ?? 0) - (this.roundScores[b.id] ?? 0));
-    return field.length >= 2 && (this.roundScores[field[0].id] ?? 0) < (this.roundScores[field[1].id] ?? 0) ? field[0].id : null;
-  }
-
   /** The extra the end of a round pays: the survivor won it from alone in last place at its start. */
   private roundBonuses(survivor: number | null): void {
     if (!this.paysKillBonuses || this.forfeited || survivor === null) return;
-    if (this.comebackCandidate() === survivor) {
+    if (this.ledger.comebackCandidate() === survivor) {
       this.payBonuses(survivor, [{ kind: 'comeback', points: SCORING.COMEBACK * this.payFactor }], this.world.ships[survivor]);
     }
   }
@@ -2084,54 +1727,7 @@ export abstract class Match {
    * read it once a frame.
    */
   get cardMarks(): Mark[][] {
-    return this.marksFor(this.markViewer);
-  }
-
-  /** What the guests read their marks from (see `MarkState`). */
-  protected markState(): MarkState {
-    return {
-      chain: [...this.killChain],
-      firstBlood: this.firstBloodDrawn,
-      killedBy: [...this.killedBy],
-      before: this.killedBefore.map((round) => [...round]),
-      roundScores: this.roundScores,
-    };
-  }
-
-  protected restoreMarkState(state: MarkState | undefined): void {
-    if (!state) return;
-    this.killChain = new Map(state.chain);
-    this.firstBloodDrawn = state.firstBlood;
-    this.killedBy = new Map(state.killedBy);
-    this.killedBefore = state.before.map((round) => new Map(round));
-    this.roundScores = [...state.roundScores];
-  }
-
-  /** The marks on each ship's card, by ship, as `shooter` (or the stands, for null) sees them. The payout reads the same rules (`targetExtras`). */
-  private marksFor(shooter: number | null): Mark[][] {
-    const marks: Mark[][] = this.players.map(() => []);
-    if (this.phase !== 'aiming' || !this.paysKillBonuses || this.forfeited) return marks;
-    const pay = this.payFactor;
-    const me = shooter === null ? null : this.players[shooter];
-    // A shooter who is out of the round, or away, has no kills to plan: they see what is true for everybody.
-    const aiming = me !== null && me.alive && !me.away && !me.left ? me : null;
-    const standings = this.standings((p) => p.score);
-    const comeback = this.comebackCandidate();
-    for (const p of this.players) {
-      if (!p.alive || p.away || p.left) continue;
-      const here = marks[p.id];
-      if (aiming && p.id === aiming.id) {
-        if (!this.firstBloodDrawn) here.push({ kind: 'firstBlood', points: SCORING.FIRST_BLOOD * pay });
-        if (aiming.shots === 0 && !this.killChain.has(aiming.id)) here.push({ kind: 'opener', points: SCORING.OPENER * pay });
-        const next = (this.killChain.get(aiming.id) ?? 0) + 1;
-        const chain = SCORING.MULTI_KILL[Math.min(next, SCORING.MULTI_KILL.length - 1)] * pay;
-        if (chain > 0) here.push({ kind: 'chain', points: chain });
-      } else if (!aiming || !this.friendsOf(aiming.id).includes(p.id)) {
-        here.push(...this.targetExtras(aiming ? aiming.id : null, p.id, standings));
-      }
-      if (p.id === comeback) here.push({ kind: 'comeback', points: SCORING.COMEBACK * pay });
-    }
-    return marks;
+    return this.ledger.marksFor(this.markViewer);
   }
 
   /** What the finished shots tell the scorecard: how far they flew and whom they narrowly missed. */
@@ -2175,7 +1771,7 @@ export abstract class Match {
 
   protected endRound(): void {
     // A pending vote cannot change a round after its normal result has been recorded.
-    this.skipVote = null;
+    this.skipVoting.clear();
     // Away ships keep a round open, but do not win it if everybody present is eliminated.
     const alive = this.noWinner ? [] : this.players.filter((p) => p.alive && !p.away && !p.left);
     const survivor = alive.length === 1 ? alive[0].id : null;
@@ -2207,181 +1803,9 @@ export abstract class Match {
 
   // ————————————————————————————— CPU —————————————————————————————
 
-  private plannerRngFor(id: number): Rng {
-    let rng = this.plannerRngs.get(id);
-    if (!rng) {
-      rng = createRng(this.matchSeed ^ Math.imul(this.players[id].seat + 1, 0x9e3779b9));
-      this.plannerRngs.set(id, rng);
-    }
-    return rng;
-  }
-
-  /**
-   * Where a CPU lays the placement it holds, as an aim: a rough spot, never a searched one. A black hole or
-   * a nebula goes part way along the line to the nearest enemy, so that enemy's next shot runs into it; a defense
-   * stands on the planet nearest the CPU, on the side that faces it; the
-   * planet killer shoots the planet lying most in the way of that line; a antigravity turns the planet nearest the CPU
-   * that still pulls (so the shots coming at it are pushed away); a wormhole aims at its first portal, the second
-   * lying near the enemy. Null when the CPU holds no placement, or there is nothing to lay it on.
-   */
-  protected cpuPlacementAim(p: PlayerState): Aim | null {
-    const kind = p.powerUp;
-    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'antigravity') return null;
-    const world = this.world;
-    const from = world.ships[p.id];
-    const friends = this.friendsOf(p.id);
-    const enemies = this.players
-      .filter((q) => q.alive && q.id !== p.id && !friends.includes(q.id))
-      .map((q) => world.ships[q.id])
-      .sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y));
-    const reach = (POWER_UP.TELEPORT_MAX_POWER / AIM.MAX_POWER) * POWER_UP.TELEPORT_RANGE;
-    const to = enemies[0] ?? from;
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const span = dx * dx + dy * dy;
-    /** How far a planet sits off the line the CPU shoots along — small means it is in the way. */
-    const laneGap = (planet: { x: number; y: number }): number => {
-      const t = span ? Math.max(0, Math.min(1, ((planet.x - from.x) * dx + (planet.y - from.y) * dy) / span)) : 0;
-      return Math.hypot(from.x + t * dx - planet.x, from.y + t * dy - planet.y);
-    };
-    let spot: { x: number; y: number };
-    if (kind === 'defense') {
-      // On the planet nearest its own ship, on the side that faces it: the shots coming at the CPU pass there.
-      const near = world.planets.filter((planet) => !planet.sun).sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))[0];
-      if (!near) return null;
-      return { angle: normalizeAngle((Math.atan2(-(near.y - from.y), near.x - from.x) * 180) / Math.PI), power: 0 };
-    }
-    if (kind === 'antigravity') {
-      // The nearest planet that pulls and that the aim would really meet first, so the placement lands on it.
-      const angleTo = (planet: { x: number; y: number }): number => normalizeAngle((Math.atan2(-(planet.y - from.y), planet.x - from.x) * 180) / Math.PI);
-      const near = world.planets
-        .map((planet, index) => ({ planet, index }))
-        .filter(({ planet, index }) => !planet.reversed && aimedPlanet(world, from, angleTo(planet))?.index === index)
-        .sort((a, b) => Math.hypot(a.planet.x - from.x, a.planet.y - from.y) - Math.hypot(b.planet.x - from.x, b.planet.y - from.y))[0];
-      if (!near) return null;
-      return { angle: angleTo(near.planet), power: 0 };
-    }
-    if (kind === 'wormhole') {
-      const spots = enemies[0] && cpuWormholeSpots(world, from, enemies[0], p.id);
-      if (!spots) return null;
-      spot = spots[0];
-    } else if (kind === 'planetkiller') {
-      // Never the sun: the aim passes over it, so a placement there meets nothing.
-      const byGap = world.planets.filter((planet) => !planet.sun).sort((a, b) => laneGap(a) - laneGap(b));
-      if (!byGap.length) return null;
-      spot = { x: byGap[0].x, y: byGap[0].y };
-    } else {
-      // A little ahead of its own ship, on the way in: near enough for the enemy's shot to meet it.
-      const d = Math.hypot(dx, dy) || 1;
-      let along = Math.min(0.45 * d, reach);
-      if (kind === 'blackhole') {
-        // Short of the zone around the enemy, which a hole may not be laid in; too close for that, it keeps the hole.
-        along = Math.min(along, d - POWER_UP.BLACKHOLE_PLAYER_GAP - 5);
-        if (along < 60) return null;
-      }
-      spot = { x: from.x + (dx / d) * along, y: from.y + (dy / d) * along };
-    }
-    const distance = Math.hypot(spot.x - from.x, spot.y - from.y);
-    return {
-      angle: normalizeAngle((Math.atan2(-(spot.y - from.y), spot.x - from.x) * 180) / Math.PI),
-      power: Math.min(POWER_UP.TELEPORT_MAX_POWER, (distance / POWER_UP.TELEPORT_RANGE) * AIM.MAX_POWER),
-    };
-  }
-
   /** A CPU lays the placement it holds, at the spot its aim points at. False when it cannot lay it now. */
   protected placeForCpu(id: number): boolean {
     return this.power.placeForCpu(id, this.salvo);
-  }
-
-  /** Think for the given CPU players, sharing a per-frame time budget round-robin. */
-  protected runCpu(ids: number[], budgetMs: number, effort: number, lookahead?: number): void {
-    const logDecisions = (typeof process !== 'undefined' && process.env.AI_DECISION_LOGS === '1')
-      || import.meta.env?.VITE_AI_DECISION_LOGS === '1';
-    for (const id of ids) {
-      if (this.cpuJobs.has(id)) continue;
-      const p = this.players[id];
-      const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
-      // Einstein and Hawking hold armor piercing for a cannon: it may wreck one an ordinary shot only meets a missile from.
-      if (p.powerUp === 'piercing' && !p.armed && (p.cpu === 'hard' || p.cpu === 'hawking') && this.world.defenses.some((d) => !d.wrecked && !d.protects.includes(id))) p.armed = true;
-      const pierce = !!p.armed && p.powerUp === 'piercing';
-      const plasma = !!p.armed && p.powerUp === 'plasma';
-      // The pickups a CPU would actually keep (a preview is of no use to it): the planner steers its
-      // search through them, so a power-up-hungry level like Einstein collects more.
-      const pickups: ShotGate[] = this.powerUps
-        ? this.power.pickups
-            .filter((pickup) => !CPU_IGNORES[pickup.kind])
-            .map((pickup) => ({ x: pickup.x, y: pickup.y, r: POWER_UP.PICKUP_RADIUS }))
-        : [];
-      const planner = planShot(this.world, id, {
-        rules: this.rules,
-        level: p.cpu ?? 'medium',
-        attempt: p.shots,
-        fixedPower: this.settings.fixedPower ? startPower(this.settings) : null,
-        maxPower: this.settings.maxPower,
-        rng: this.plannerRngFor(id),
-        effort,
-        lookahead,
-        friends,
-        pierce,
-        plasma,
-        pickups,
-        grudgeTarget: this.lastHitBy.get(id) ?? null,
-        // A CPU holding a teleport or a plasma shot also wants to know whether it found a hitting shot at all.
-        ...(logDecisions || this.options.onCpuDecision || (this.powerUps && (p.powerUp === 'teleport' || p.powerUp === 'plasma'))
-          ? {
-              onDecision: (decision) => {
-                const job = this.cpuJobs.get(id);
-                if (job) job.blind = decision.hitCandidates === 0;
-                if (logDecisions || this.options.onCpuDecision) this.logCpuDecision(id, decision, logDecisions);
-              },
-            }
-          : {}),
-      });
-      this.cpuJobs.set(id, { planner, target: null, settle: 0 });
-    }
-    const deadline = this.options.deterministicCpu ? 0 : performance.now() + budgetMs;
-    let busy = true;
-    while (busy && (this.options.deterministicCpu || performance.now() < deadline)) {
-      busy = false;
-      for (const id of ids) {
-        const job = this.cpuJobs.get(id);
-        if (!job?.planner) continue;
-        busy = true;
-        const r = job.planner.next();
-        if (r.done) {
-          job.target = r.value;
-          job.planner = null;
-        }
-      }
-    }
-  }
-  private logCpuDecision(player: number, decision: CpuDecision, logsEnabled: boolean): void {
-    const report: CpuDecisionReport = {
-      mode: this.mode,
-      round: this.round,
-      player,
-      shot: this.players[player].shots + 1,
-      ...decision,
-    };
-    this.options.onCpuDecision?.(report);
-    if (logsEnabled) console.info('[AI] decision', report);
-  }
-
-
-  protected cpuJob(id: number): CpuJob | undefined {
-    return this.cpuJobs.get(id);
-  }
-  /** Swing a CPU's ship towards its chosen aim like a player would. True once it's there. */
-  protected swingTowards(p: PlayerState, target: Aim, dt: number, speed = 1): boolean {
-    const dA = ((target.angle - p.angle + 540) % 360) - 180;
-    const dP = target.power - p.power;
-    const stepA = 140 * speed * dt;
-    const stepP = 70 * speed * dt;
-    const doneA = Math.abs(dA) <= stepA;
-    const doneP = Math.abs(dP) <= stepP;
-    p.angle = normalizeAngle(doneA ? target.angle : p.angle + Math.sign(dA) * stepA);
-    p.power = doneP ? target.power : p.power + Math.sign(dP) * stepP;
-    return doneA && doneP;
   }
 
   protected setPhase(phase: Phase): void {
@@ -2396,53 +1820,4 @@ export abstract class Match {
   protected emit(e: GameEvent): void {
     for (const l of this.listeners) l(e);
   }
-}
-
-/** How many sides these ships are on: lone players in a free for all, whole teams in a team match. */
-function sidesOf(ships: PlayerState[]): number {
-  return new Set(ships.map((p) => (p.team === null ? `p${p.id}` : `t${p.team}`))).size;
-}
-
-/** Whether the person of this seat is there to take part: not gone, and not dropped out for now. */
-function atTable(p: PlayerState): boolean {
-  return !p.left && !p.away;
-}
-
-/** Shot down this round with a person behind the ship: who tips in the oracle. */
-function shotDown(p: PlayerState): boolean {
-  return !p.alive && !p.cpu && atTable(p);
-}
-
-export function newPlayer(id: number, seat: number, kind: Exclude<Seat, 'off'>, team: number | null, target = false, fixedName?: string, avatar: Avatar | null = null): PlayerState {
-  const cpu = kind === 'human' ? null : kind;
-  return {
-    id,
-    seat,
-    avatar,
-    // A getter, so the name follows the UI language when it is switched mid-match.
-    get name() {
-      if (fixedName) return fixedName;
-      if (target) return t('daily.target', { n: id });
-      return cpu ? `CPU ${seat + 1}` : t('players.player', { n: seat + 1 });
-    },
-    cpu,
-    shade: 0,
-    get color() {
-      if (target) return dangerColor();
-      return this.team === null ? seatColor(seat) : teamColor(this.team, this.shade);
-    },
-    team,
-    target,
-    score: 0,
-    angle: 0,
-    power: AIM.DEFAULT_POWER,
-    shots: 0,
-    alive: true,
-    locked: false,
-    passed: false,
-    powerUp: null,
-    armed: false,
-    left: false,
-    away: false,
-  };
 }

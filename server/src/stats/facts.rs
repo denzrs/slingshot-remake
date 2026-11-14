@@ -110,8 +110,8 @@ macro_rules! with_rules {
 }
 
 /// A fact that names an anomaly sends it as its index in this list (`c0`, `c1` …): the client keeps the same one, in the same
-/// order (`ANOMALIES` in `src/sim/config.ts`, and `protocol::ANOMALIES` here), so a new one goes at the end of all three
-/// (a test below holds this one to `protocol::ANOMALIES`). One pass over the rounds counts them all, and the rounds with any.
+/// order (`ANOMALIES` in `src/sim/config.ts`, and so the contract's `anomalies`), so a new one goes at the end of both
+/// (a test below holds this one to the contract). One pass over the rounds counts them all, and the rounds with any.
 macro_rules! anomaly_counts {
     () => {
         concat!(
@@ -697,11 +697,11 @@ mod tests {
     #[test]
     fn the_anomalies_are_numbered_as_the_protocol_lists_them() {
         let sql = anomaly_counts!();
-        assert_eq!(
-            sql.matches(") AS c").count(),
-            crate::protocol::ANOMALIES.len()
-        );
-        for (i, anomaly) in crate::protocol::ANOMALIES.iter().enumerate() {
+        let anomalies = crate::protocol::contract()["rules"]["anomalies"]["options"]
+            .as_array()
+            .unwrap();
+        assert_eq!(sql.matches(") AS c").count(), anomalies.len());
+        for (i, anomaly) in anomalies.iter().map(|a| a.as_str().unwrap()).enumerate() {
             assert!(
                 sql.contains(&format!("'\"{anomaly}\"'), 0) > 0)) AS c{i}"))
                     && sql.contains(&format!("SELECT rounds, {i}")),

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { visibleMarks } from '../../src/game/markLegend';
 import { createMatch, type Bonus, type ClassicMatch, type Mark, type Match } from '../../src/game';
 import { DEFAULT_SETTINGS, type Seat, type Settings } from '../../src/data/settings';
+import type { KillLedger } from '../../src/game/kill-ledger';
+import type { MarkState } from '../../src/game/match-types';
 import { SCORING } from '../../src/sim/config';
 import { bountyPoints, underdogPoints } from '../../src/sim/scoring';
 
@@ -15,12 +17,19 @@ function field(ships: number, teams = 0, rules: Partial<Settings> = {}): { m: Ma
   return { m, paid };
 }
 
+/** Changes what the match's ledger has on record: the private grudges a played round would have left, the chain, the round's first blood and its starting scores. */
+function record(m: Match, set: Partial<MarkState>): void {
+  const ledger = (m as unknown as { ledger: KillLedger }).ledger;
+  ledger.restore({ ...ledger.state(), ...set });
+}
+
 /** The private grudges a played round would have left: who shot whom in the rounds before, and who is on a spree. */
 function grudges(m: Match, set: { before?: [number, number][][]; chain?: [number, number][] }): void {
-  const state = m as unknown as { killedBefore: Map<number, number>[]; killChain: Map<number, number> };
-  if (set.before) state.killedBefore = set.before.map((round) => new Map(round));
-  if (set.chain) state.killChain = new Map(set.chain);
+  record(m, { ...(set.before ? { before: set.before } : {}), ...(set.chain ? { chain: set.chain } : {}) });
 }
+
+/** The scores the round began with are the ones on the table now. */
+const roundBegan = (m: Match): void => record(m, { roundScores: m.players.map((p) => p.score) });
 
 const kinds = (marks: Mark[] | undefined) => (marks ?? []).map((mark) => mark.kind);
 const pointsOf = (marks: Mark[] | undefined, kind: Mark['kind']) => marks?.find((mark) => mark.kind === kind)?.points;
@@ -71,14 +80,14 @@ describe('marks on the cards', () => {
   it('mark a ship on a spree, and put a comeback on the one alone in last place', () => {
     const { m } = field(4);
     m.players.forEach((p, i) => (p.score = [500, 3000, 1800, 1200][i]));
-    (m as unknown as { roundScores: number[] }).roundScores = m.players.map((p) => p.score);
+    roundBegan(m);
     grudges(m, { chain: [[2, 3]] });
     m.viewer = 1;
     expect(pointsOf(m.cardMarks[2], 'shutdown')).toBe(SCORING.SHUTDOWN_PER_KILL * 3);
     expect(pointsOf(m.cardMarks[0], 'comeback')).toBe(SCORING.COMEBACK);
     // A tie in last place is nobody's comeback.
     m.players[3].score = 500;
-    (m as unknown as { roundScores: number[] }).roundScores = m.players.map((p) => p.score);
+    roundBegan(m);
     expect(kinds(m.cardMarks[0])).not.toContain('comeback');
   });
 
@@ -93,7 +102,7 @@ describe('marks on the cards', () => {
     // A ship that has fired is no opener any more, and once the round has had its first blood that goes too: what is left is the chain.
     m.players[0].shots = 1;
     grudges(m, { chain: [[0, 1]] });
-    (m as unknown as { firstBloodDrawn: boolean }).firstBloodDrawn = true;
+    record(m, { firstBlood: true });
     expect(m.cardMarks[0]).toEqual([{ kind: 'chain', points: SCORING.MULTI_KILL[2] }]);
   });
 
@@ -130,7 +139,7 @@ describe('marks on the cards', () => {
     const host = field(4).m as ClassicMatch;
     host.players.forEach((p, i) => (p.score = [500, 3000, 1800, 1200][i]));
     grudges(host, { before: [[[0, 3]]], chain: [[2, 2]] });
-    Object.assign(host, { firstBloodDrawn: true, roundScores: host.players.map((p) => p.score) });
+    record(host, { firstBlood: true, roundScores: host.players.map((p) => p.score) });
     const guest = field(4).m as ClassicMatch;
     guest.restoreSnapshot(host.snapshot());
     for (const viewer of [0, 1, 2, 3]) {
@@ -147,7 +156,7 @@ describe('marks on the cards', () => {
     const { m } = field(4);
     m.players.forEach((p, i) => (p.score = [500, 3000, 1800, 1200][i]));
     grudges(m, { before: [[[0, 3]]], chain: [[2, 2]] });
-    (m as unknown as { roundScores: number[] }).roundScores = m.players.map((p) => p.score);
+    roundBegan(m);
     m.viewer = 0;
     const legend = visibleMarks(m);
     expect(legend.map((entry) => entry.kind)).toEqual(['bounty', 'shutdown', 'comeback', 'revenge', 'underdog', 'firstBlood', 'opener']);
@@ -163,7 +172,7 @@ describe('marks on the cards', () => {
     const { m } = field(2);
     m.players.forEach((p, i) => (p.score = [900, 2100][i]));
     grudges(m, { before: [[[0, 1]]] });
-    (m as unknown as { roundScores: number[] }).roundScores = m.players.map((p) => p.score);
+    roundBegan(m);
     m.viewer = 0;
     expect(kinds(m.cardMarks[1])).toEqual(['bounty', 'revenge']);
     expect(kinds(m.cardMarks[0])).toEqual(['firstBlood', 'opener', 'comeback']);

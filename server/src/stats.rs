@@ -42,13 +42,6 @@ const FAVORITES: usize = 12;
 const FAVORITES_FROM: i64 = 2000;
 /// Rules a favourite is counted without: the length of the game, and what only a room online plays by.
 const FAVORITES_IGNORE: [&str; 3] = ["rounds", "betting", "chatPlayersOnly"];
-/// Rules only Classic and the Solar System play by: in Event Horizon they change nothing.
-const CLASSIC_FAMILY_ONLY: [&str; 4] = [
-    "invisiblePlanets",
-    "styleBonuses",
-    "simultaneousShots",
-    "suddenDeath",
-];
 /// The sweeper runs at most this often, however busy the relay is.
 const PRUNE_INTERVAL_SECS: i64 = 6 * 60 * 60;
 const DAY_SECS: i64 = 24 * 60 * 60;
@@ -406,8 +399,16 @@ fn favorite_rules(game_mode: &str, mut rules: serde_json::Map<String, Value>) ->
     for key in FAVORITES_IGNORE {
         rules.remove(key);
     }
-    if game_mode == "horizon" {
-        for key in CLASSIC_FAMILY_ONLY {
+    // The rules that exist only in some modes (the contract's `modes`): in another mode they change nothing.
+    for (key, spec) in crate::protocol::contract()["rules"]
+        .as_object()
+        .into_iter()
+        .flatten()
+    {
+        if spec["modes"]
+            .as_array()
+            .is_some_and(|modes| !modes.iter().any(|mode| mode.as_str() == Some(game_mode)))
+        {
             rules.remove(key);
         }
     }

@@ -31,7 +31,7 @@ describe('quick game', () => {
   });
 
   it('picks from the relay favourites and every built-in preset, each set once, the fewest changes first', () => {
-    const odd = favorite('horizon', { maxPlanets: 9, edges: 'wall', shotTime: 7 });
+    const odd = favorite('horizon', { maxPlanets: 8, edges: 'wall', shotTime: 30 });
     const relay = [odd, favorite('classic', {}), { ...favorite('classic', {}), gameMode: 'pong' as never }];
     const choices = quickChoices(relay);
     // Three presets in each of the three modes; the relay's plain Classic is Classic's Standard, so only the odd one is new.
@@ -44,7 +44,7 @@ describe('quick game', () => {
   it('deals a setup half as often for every rule it changes', () => {
     expect(quickWeight(favorite('classic', presetRules('standard', 'classic')))).toBe(1);
     expect(quickWeight(favorite('classic', presetRules('simultaneous', 'classic')))).toBe(1 / 2);
-    expect(quickWeight(favorite('horizon', { maxPlanets: 9, edges: 'wall', shotTime: 7 }))).toBe(1 / 8);
+    expect(quickWeight(favorite('horizon', { maxPlanets: 8, edges: 'wall', shotTime: 30 }))).toBe(1 / 8);
   });
 
   it('never deals the same one twice in a row when there is another, and goes by the weights', () => {

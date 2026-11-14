@@ -323,7 +323,7 @@ export class ShotReplay extends ChallengeMatch {
   }
 
   protected playTurn(turn: ReplayTurn): void {
-    if (this.stageTurn(turn, [this.pilot])) this.fire();
+    if (this.replay.stage(turn, [this.pilot])) this.fire();
   }
 
   protected recordKill(record: KillRecord): void {

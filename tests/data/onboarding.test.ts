@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { finishOnboarding, needsOnboarding, ONBOARDING_KEY } from '../../src/data/onboarding';
+import { finishOnboarding, introSkipped, needsOnboarding, ONBOARDING_KEY } from '../../src/data/onboarding';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -15,6 +15,13 @@ describe('first-run introduction', () => {
     expect(values.get(ONBOARDING_KEY)).toBe('done');
     expect(needsOnboarding()).toBe(false);
     expect(values.get('slingshot.settings.v1')).toBe('{"look":"classic"}');
+  });
+
+  it('is left out for a visit whose address says so, whatever else the address carries', () => {
+    expect(introSkipped('?nointro')).toBe(true);
+    expect(introSkipped('?debug&nointro=1&try=lane-check')).toBe(true);
+    expect(introSkipped('')).toBe(false);
+    expect(introSkipped('?intro=no')).toBe(false);
   });
 
   it('allows playing when browser storage is blocked', () => {

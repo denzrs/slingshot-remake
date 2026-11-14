@@ -9,6 +9,17 @@ export function needsOnboarding(): boolean {
   }
 }
 
+/** The address parameter that leaves the introduction out for this visit: `?nointro`. */
+export const NO_INTRO_PARAM = 'nointro';
+
+/**
+ * Whether the page address asks to start without the introduction. For automated runs and agents, which open a fresh
+ * browser every time: nothing is saved, so the next visit without it is offered the introduction as ever.
+ */
+export function introSkipped(search: string): boolean {
+  return new URLSearchParams(search).has(NO_INTRO_PARAM);
+}
+
 /** Skipping is also a deliberate end to the introduction. */
 export function finishOnboarding(): void {
   try {

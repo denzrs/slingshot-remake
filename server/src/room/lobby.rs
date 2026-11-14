@@ -90,7 +90,7 @@ impl RoomManager {
                     "color": room.look.color.as_str(),
                     "mode": room.mode.as_str(),
                     "gameMode": room.game_mode.as_str(),
-                    "mayhem": room.rules.mayhem,
+                    "mayhem": room.rules.mayhem(),
                     "status": room.status.as_str(),
                     "spectators": room.spectators.len(),
                     // A seat left empty in a running game is still taken: nobody can join it before the game ends.
