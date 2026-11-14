@@ -6,6 +6,12 @@ The README covers setup and releases.
 
 Where a file belongs, and which folder may import which: [`docs/architecture.md`](docs/architecture.md). `tests/layering.test.ts` fails on an import that points up.
 
+## Testing in a browser
+
+A fresh browser is offered the first-run introduction (look picker, then the tutorial), which covers the menu. Open the game with `?nointro` to start at the title menu: `http://localhost:5173/?nointro`. It saves nothing and combines with the other parameters (`?nointro&debug`, `?nointro&try=name`). Leave it out only when the introduction itself is under test.
+
+An online game needs the relay (`npm run dev:server`, port 8080) and two tabs: one creates a room under Online spielen, the other joins it.
+
 ## Language
 
 UI labels live in `src/platform/i18n.ts` (every key in both languages).

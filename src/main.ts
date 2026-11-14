@@ -45,7 +45,7 @@ import { Menu, h } from './ui/menu/menu';
 import { openOnboarding } from './ui/onboarding/onboarding';
 import { mountTrainingGuide } from './ui/onboarding/training-guide';
 import { firstDuelSettings, Training } from './game/training';
-import { finishOnboarding, needsOnboarding } from './data/onboarding';
+import { finishOnboarding, introSkipped, needsOnboarding } from './data/onboarding';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
 import { fromNavigator, Gamepads, pressMenuKey } from './ui/gamepad/gamepad';
 import { FAKE_PAD, fakePadOn, mountDevToggles } from './debug/dev-toggles';
@@ -1256,6 +1256,7 @@ if (import.meta.env.DEV) {
         devPadHints = on;
       },
     },
+    experiments: () => (screen === 'play' && match ? match.experiments : []),
   });
 }
 
@@ -1340,7 +1341,7 @@ async function boot(): Promise<void> {
   }
   const onboardingPreview = import.meta.env.DEV && (requestedPreview === 'onboarding' || requestedPreview === 'onboarding-training');
   const ordinaryStart = !requestedPreview && !forcedDay && !readInvite(location.search, location.hash) && !/\/stats\/?$/.test(location.pathname);
-  if (onboardingPreview || (ordinaryStart && needsOnboarding())) {
+  if (onboardingPreview || (ordinaryStart && needsOnboarding() && !introSkipped(location.search))) {
     // The look is the player's from the moment it is chosen, so the settings (even opened from the tutorial's pause menu)
     // show and keep it. The preview in the dev build changes nothing that is saved.
     const choose = (look: Look): void => {

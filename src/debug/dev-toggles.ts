@@ -14,7 +14,12 @@ export interface DevTogglesHost {
   colorblind: { get(): boolean; set(on: boolean): void };
   /** The pretend pad was switched on (hints speak of its buttons, settings and tutorial know a pad) or off. */
   pad: { set(on: boolean): void };
+  /** The experiments the match on screen plays by: none in the menus, online, or in a replay, whatever the address asks for. */
+  experiments(): readonly string[];
 }
+
+/** How often the chip looks at the match on screen, in ms: matches start and end in many places, and none has to tell it. */
+const CHIP_INTERVAL = 250;
 
 /**
  * The dev build's switches for the two accessibility modes, on the game's own page, so any screen can be looked at
@@ -41,13 +46,23 @@ export function mountDevToggles(host: DevTogglesHost): { sync(): void } {
   panel.append(summary, colorblind.row, pad.row);
   document.body.append(panel);
 
-  // Rule ideas on trial: a switch each (they are the dev build's own words, not translated), and a chip while any is on.
+  // Rule ideas on trial: a switch each (they are the dev build's own words, not translated), and a chip while the match
+  // on screen plays by any. The switches show what the address asks for; the chip only what is really being played.
   const trying = experimentsFrom(location.search);
   const chip = document.createElement('div');
   chip.className = 'dev-experiment-chip';
-  chip.hidden = !trying.length;
-  chip.textContent = `EXPERIMENT: ${trying.join(', ')}`;
+  chip.hidden = true;
   document.body.append(chip);
+  let shown = '';
+  const showPlayed = (): void => {
+    const played = host.experiments().join(', ');
+    if (played === shown) return;
+    shown = played;
+    chip.hidden = !played;
+    chip.textContent = `EXPERIMENT: ${played}`;
+  };
+  showPlayed();
+  setInterval(showPlayed, CHIP_INTERVAL);
   for (const name of EXPERIMENT_NAMES) {
     const { row, input } = box(`${name} (${EXPERIMENTS[name]})`);
     input.checked = trying.includes(name);
