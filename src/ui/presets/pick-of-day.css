@@ -31,6 +31,11 @@
   text-overflow: ellipsis;
   pointer-events: none;
 }
+/* Three-across cards are too short for a two-line title under a badge inside the card: the badge hangs over the card's top edge, in the gap above. */
+@media (min-width: 761px) and (max-width: 1100px) {
+  .briefing__cards { padding-top: 12px; }
+  .briefing__cards .item--pick .item__tag { top: -9px; }
+}
 /* Wide five-card rows stack the day and change badges to match the reset/save pair. */
 @media (min-width: 1101px) {
   .briefing__preset-shell:has(> .item--pick):has(> .item__status-reset:not([hidden])) > .item__status-reset {
