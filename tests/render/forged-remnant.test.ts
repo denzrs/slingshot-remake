@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { shadeKept, place } from '../../src/render/looks/forged-gl';
 import { drawNeutronStar } from '../../src/render/sun';
-import { drawForgedNeutronStar, pulsarBeams } from '../../src/render/looks/forged-remnant';
+import { drawForgedNeutronStar, pulsarBeams, pulsarDazzle } from '../../src/render/looks/forged-remnant';
 import type { Planet } from '../../src/sim/physics';
 
 vi.mock('../../src/render/looks/forged-gl', async (actual) => ({
@@ -41,31 +41,38 @@ describe('Forged supernova remnant', () => {
     // Grown out: the shared remnant's reach.
     expect(vi.mocked(place).mock.calls[0][4]).toBeGreaterThan(270 * 2 * .97);
     expect(vi.mocked(place).mock.calls[0][4]).toBeLessThan(270 * 2 * 1.03);
-    // The pulsar's two beams sweep round it (a soft cone and a core each), besides the two lines of the star's cross.
+    // The pulsar's two beams (a soft cone and a core each) besides the two lines of the star's cross.
     expect(ctx.createLinearGradient).toHaveBeenCalledTimes(2 * 2 + 2);
-    expect(ctx.rotate).toHaveBeenCalledTimes(4);
   });
 
-  it('sweeps its beams in depth: opposite each other, foreshortened as they swing towards or away from us', () => {
-    const lengths: number[] = [];
-    for (let time = 0; time < 3; time += .05) {
+  it('turns its beams like a lighthouse seen from the side: shortening as one swings to us, then out the other side', () => {
+    const across: number[] = [];
+    for (let time = 40; time < 44; time += .05) {
       const [a, b] = pulsarBeams(9, time);
-      expect(Math.hypot(...a)).toBeCloseTo(1);
-      a.forEach((x, k) => expect(b[k]).toBeCloseTo(-x));
-      lengths.push(Math.hypot(a[0], a[1]));
+      // Opposite each other, one turned to us as the other turns away.
+      expect(b.across).toBeCloseTo(-a.across);
+      expect(b.z).toBeCloseTo(-a.z);
+      across.push(a.across);
     }
-    // Not a flat spinning bar: how long a beam looks on the screen changes as it turns.
-    expect(Math.max(...lengths) - Math.min(...lengths)).toBeGreaterThan(.3);
+    // A beam reaches out to one side, shortens to nothing as it points at us or away, and reaches out to the other.
+    expect(Math.max(...across)).toBeGreaterThan(.95);
+    expect(Math.min(...across)).toBeLessThan(-.95);
+    expect(Math.min(...across.map(Math.abs))).toBeLessThan(.1);
   });
 
-  it('turns the pulsar beams with time', () => {
-    vi.mocked(shadeKept).mockReturnValue({ canvas: {} as HTMLCanvasElement, w: 512, h: 512 });
-    const beams = (time: number) => {
-      const ctx = context();
-      drawForgedNeutronStar(ctx, star, time, 40, 1);
-      return vi.mocked(ctx.rotate).mock.calls[0][0];
-    };
-    expect(beams(40.2)).not.toBeCloseTo(beams(40));
+  it('dazzles as a beam points at us, swelling and ebbing softly rather than flashing', () => {
+    // Half a turn: one beam or the other points at us once.
+    const half = Math.PI / 1.6;
+    const step = 1 / 60;
+    const dazzle = Array.from({ length: Math.round(half / step) }, (_, n) => pulsarDazzle(9, 40 + n * step));
+    expect(Math.max(...dazzle)).toBeGreaterThan(.99);
+    const rises = dazzle.filter((d, n) => d > .5 && (n === 0 || dazzle[n - 1] <= .5)).length;
+    expect(rises).toBeGreaterThanOrEqual(1);
+    expect(rises).toBeLessThanOrEqual(2);
+    expect(dazzle.filter(d => d < .05).length).toBeGreaterThan(dazzle.length * .4);
+    // It lasts a moment, not a frame, and never jumps much from frame to frame.
+    expect(dazzle.filter(d => d > .5).length * step).toBeGreaterThan(.25);
+    for (let n = 1; n < dazzle.length; n++) expect(Math.abs(dazzle[n] - dazzle[n - 1])).toBeLessThan(.1);
   });
 
   it('leaves it to the shared remnant when there are no shaders', () => {
