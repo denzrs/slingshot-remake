@@ -212,8 +212,9 @@
 
 /* A short desktop window: the card takes less height, so the day's page scrolls later. */
 @media (max-height: 740px) and (min-width: 761px) {
-  .daily-shot { gap: 6px; padding: 8px 12px; }
-  .daily-shot .match-highlight__trail { height: 52px; }
+  /* The Watch button moves beside the path instead of under it. */
+  .daily-shot { grid-template-columns: minmax(0, 1fr) minmax(0, 150px); align-items: center; gap: 4px 12px; padding: 8px 12px; }
+  .daily-shot .match-highlight__trail { height: 48px; }
   .daily-shot__actions .item { min-height: 32px; padding-block: 4px; }
 }
 

@@ -10,6 +10,8 @@ Where a file belongs, and which folder may import which: [`docs/architecture.md`
 
 A fresh browser is offered the first-run introduction (look picker, then the tutorial), which covers the menu. Open the game with `?nointro` to start at the title menu: `http://localhost:5173/?nointro`. It saves nothing and combines with the other parameters (`?nointro&debug`, `?nointro&try=name`). Leave it out only when the introduction itself is under test.
 
+The daily challenge's page shows a shot of the day only to a player who has posted a run, and only with a relay. In a dev build `?nointro&fakeshot` gives it a sample shot, to look at the card in a short window.
+
 An online game needs the relay (`npm run dev:server`, port 8080) and two tabs: one creates a room under Online spielen, the other joins it.
 
 ## Language
