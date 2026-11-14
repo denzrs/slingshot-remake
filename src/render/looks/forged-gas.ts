@@ -85,8 +85,8 @@ void main() {
 /**
  * The storm's plasma: wound up in its own field, so it curls round its middle, tighter further in. A veil of deep red
  * haze, thinning out to the cloud's edge so its reach shows, holds ropes and fine threads of hot gas that run with the
- * flow, orange to gold where they are hottest, and a hot middle; the side towards the sun is heated a little more. The
- * haze is a veil like a nebula's, so ships and shots read through it; the ropes and the middle are light added over it.
+ * flow, red-orange where they are hottest and only faintly glowing; the side towards the sun is heated a little more. The
+ * haze is a veil like a nebula's, so ships and shots read through it; the ropes are light added over it.
  */
 const STORM_SHADER = `${GLSL_HEAD}${GAS}
 vec3 heat(float h) {
@@ -110,12 +110,13 @@ void main() {
   float strands = (0.9 * pow(rope, 6.0) + 0.6 * pow(thread, 10.0)) * smoothstep(0.15, 0.6, f);
   float lit = light(s, warp, t, g.y);
   float core = exp(-r * r * 3.0);
-  float h = clamp(f * 0.42 + strands * 0.3 + core * 0.15 + (lit - 0.5) * 0.2, 0.0, 1.0);
+  float h = clamp(f * 0.34 + strands * 0.16 + core * 0.06 + (lit - 0.5) * 0.16, 0.0, 1.0);
   // A thin veil of cooler gas out to the cloud's edge, so its reach can be seen.
   float veil = 0.16 * (1.0 - smoothstep(0.55, 1.05, r)) * (0.55 + 0.45 * fbm(vec3(s * 2.0, t) + uSeed, 2));
-  float haze = max(0.5 * smoothstep(0.0, 0.7, f), veil);
-  vec3 glow = heat(min(0.86, 0.45 + strands * 0.5 + core * 0.15)) * (strands * 0.55 + core * f * 0.12);
-  float a = clamp(haze + 0.8 * max(glow.r, max(glow.g, glow.b)), 0.0, 1.0);
+  float haze = max(0.34 * smoothstep(0.05, 0.8, f), veil);
+  // The ropes glow a little, red-orange at their hottest: plasma held in a field, not flames.
+  vec3 glow = heat(min(0.6, 0.35 + strands * 0.3)) * strands * 0.26;
+  float a = clamp(haze + 0.5 * max(glow.r, max(glow.g, glow.b)), 0.0, 1.0);
   outColor = vec4(min(heat(h) * haze + glow, vec3(a)), a);
 }`;
 
@@ -189,7 +190,7 @@ export function drawForgedNebula(ctx: CanvasRenderingContext2D, n: { x: number; 
   ctx.restore();
 }
 
-/** One cloud of the sun's storm: the plasma already drawn, with a burning heart. */
+/** One cloud of the sun's storm: the plasma already drawn, with a faint warm heart. */
 export function drawForgedStormCloud(ctx: CanvasRenderingContext2D, cloud: { x: number; y: number; radius: number; seed: number }, sun: { x: number; y: number }, age: number, time: number, dissolve: number): void {
   drawStormCloud(ctx, cloud, sun, age, time, dissolve, (c, x, y, half, fade) => {
     if (!onScreen(c, x, y, half)) return true;
@@ -219,8 +220,8 @@ export function drawForgedStormCloud(ctx: CanvasRenderingContext2D, cloud: { x: 
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const heart = ctx.createRadialGradient(x, y, 0, x, y, r * 0.8);
-  heart.addColorStop(0, `rgba(255,170,70,${0.3 * fade * (0.8 + 0.2 * Math.sin(time * 3 + cloud.seed))})`);
-  heart.addColorStop(1, 'rgba(255,90,20,0)');
+  heart.addColorStop(0, `rgba(255,120,50,${0.1 * fade * (0.8 + 0.2 * Math.sin(time * 3 + cloud.seed))})`);
+  heart.addColorStop(1, 'rgba(200,50,20,0)');
   ctx.fillStyle = heart;
   ctx.fillRect(x - r, y - r, r * 2, r * 2);
   ctx.restore();

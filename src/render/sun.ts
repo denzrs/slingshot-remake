@@ -1,7 +1,7 @@
 import type { Planet } from '../sim/physics';
 import { rgba } from './color';
 import { fbm } from './noise';
-import { sunBeat, sunHeat, sunKind, towardsGiant } from './sun-kinds';
+import { sunBeat, sunHeat, sunKind, towardsGiant, type SunKind } from './sun-kinds';
 
 const smooth = (e0: number, e1: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
@@ -123,12 +123,21 @@ const slot = (seed: number, k: number): number => {
 
 const LOOPS = 4;
 
+/** One ring of the glow round a sun: a radial gradient from `inner` to `outer` (the colour at 0 fills what is inside), each stop at, colour, alpha. */
+export interface GlowRing {
+  inner: number;
+  outer: number;
+  stops: readonly (readonly [number, string, number])[];
+}
+
 /** Parts of the sun a look draws itself, in the sun's frame; each says false when it could not, and the sprite is drawn instead. */
 export interface SunStyle {
   /** The corona, out to `reach` from the middle, added up as light. */
   corona(ctx: CanvasRenderingContext2D, seed: number, reach: number, time: number, flare: number, giant: number): boolean;
   /** The ball, of radius `R`. */
   surface(ctx: CanvasRenderingContext2D, seed: number, R: number, time: number, giant: number): boolean;
+  /** The glow round the ball, its rings added up as light (concentric, so they can be one gradient); false draws them one by one. */
+  glow?(ctx: CanvasRenderingContext2D, rings: readonly GlowRing[], sun: { R: number; giant: number; kind: SunKind; flare: number; beat: number }): boolean;
   /** Magnetic arches behind the ball, added up as light; false keeps the drawn arches. */
   prominences?(ctx: CanvasRenderingContext2D, seed: number, R: number, time: number, flare: number, giant: number): boolean;
   /** Near-side magnetic plasma over the finished sphere, in the same local frame. */
@@ -154,32 +163,27 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   ctx.translate(sun.x, sun.y);
   ctx.globalCompositeOperation = 'lighter';
 
-  if (giant > 0) {
-    const swollen = ctx.createRadialGradient(0, 0, R * 0.8, 0, 0, R * 2.4);
-    swollen.addColorStop(0, rgba('#c41e0c', 0.45 * giant));
-    swollen.addColorStop(1, rgba('#5a0804', 0));
-    ctx.fillStyle = swollen;
-    ctx.beginPath();
-    ctx.arc(0, 0, R * 2.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // The glow: a tight bright one under a wide, deeper one; a pulsing star's breathes with it.
+  // The glow: a tight bright one under a wide, deeper one; a pulsing star's breathes with it. A red giant has a deep red
+  // swollen glow under them, and its glows are deep red whatever the star was.
   const swell = 1 + flare * 0.9;
-  // A red giant's glow is deep red whatever the star was.
+  const rings: GlowRing[] = [];
+  if (giant > 0) rings.push({ inner: R * 0.8, outer: R * 2.4, stops: [[0, '#c41e0c', 0.45 * giant], [1, '#5a0804', 0]] });
   const glows = giant > 0.3
     ? ([[7, 0.2, '#ff3a1c', '#8a1008'], [3.2, 0.42, '#ff5a2a', '#c8200c'], [1.7, 0.5, '#ff8a5a', '#ff3a1c']] as const)
     : ([[7, 0.2, ...kind.glows[0]], [3.2, 0.42, ...kind.glows[1]], [1.7, 0.5, ...kind.glows[2]]] as const);
   for (const [reach, strength, inner, outer] of glows) {
     const s = strength * beat.glow;
-    const halo = ctx.createRadialGradient(0, 0, R * 0.7, 0, 0, R * reach * (reach > 3 ? 1 : swell));
-    halo.addColorStop(0, rgba(inner, Math.min(1, s * swell)));
-    halo.addColorStop(0.35, rgba(outer, s * 0.3 * swell));
-    halo.addColorStop(1, rgba(outer, 0));
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(0, 0, R * reach * swell, 0, Math.PI * 2);
-    ctx.fill();
+    rings.push({ inner: R * 0.7, outer: R * reach * (reach > 3 ? 1 : swell), stops: [[0, inner, Math.min(1, s * swell)], [0.35, outer, s * 0.3 * swell], [1, outer, 0]] });
+  }
+  if (!style?.glow?.(ctx, rings, { R, giant, kind, flare, beat: beat.glow })) {
+    for (const ring of rings) {
+      const halo = ctx.createRadialGradient(0, 0, ring.inner, 0, 0, ring.outer);
+      for (const [at, color, a] of ring.stops) halo.addColorStop(at, rgba(color, a));
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(0, 0, ring.outer, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // The corona: its rays turn slowly, two layers against each other, and swell and ebb.

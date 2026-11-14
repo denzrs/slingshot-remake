@@ -1,8 +1,8 @@
 import { COLORS } from '../../sim/config';
 import { isTrailBreak, type Planet, type Wormhole } from '../../sim/physics';
-import { rgba } from '../color';
+import { hexToRgb, rgba } from '../color';
 import { strokePolyline } from '../polyline';
-import { drawSun, type SunStyle } from '../sun';
+import { drawSun, type GlowRing, type SunStyle } from '../sun';
 import { RAMP_STEPS, sunBeat, sunKind, towardsGiant, type SunKind } from '../sun-kinds';
 import { GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept, unit, type Uniforms } from './forged-gl';
 import { lightParts } from './forged-parts';
@@ -227,6 +227,9 @@ void main() {
   outColor = vec4(ramp(temp) * a, a);
 }`;
 
+/** How bright the turning light is over the streamers. */
+const TURNING = 0.6;
+
 /** The corona: streamers that bend with the distance and run outwards, over a glow that thins out, from the kind's colour at the surface to its colour far out (a yellow sun's white-gold, orange, then deep red). */
 const CORONA_SHADER = `${GLSL_HEAD}
 uniform float uTime;
@@ -237,6 +240,12 @@ uniform float uGiant;
 uniform vec3 uNear;
 uniform vec3 uFar;
 uniform float uChurn;
+float turn(float a, float rho) {
+  float th = a + rho * 0.22;
+  float broad = fbm(vec3(cos(th) * 1.7 + 4.0 + uSeed, sin(th) * 1.7, rho * 0.18), 3);
+  float fine = fbm(vec3(cos(th) * 4.6, sin(th) * 4.6 + 9.0, rho * 0.35 + uSeed), 3);
+  return pow(smoothstep(0.3, 0.78, broad * 0.65 + fine * 0.35), 1.5);
+}
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * uReach;
   float rho = length(p);
@@ -251,7 +260,11 @@ void main() {
   float falloff = exp(-(rho - 1.0) * 1.1);
   float glow = 0.12 * exp(-(rho - 1.0) * 1.9);
   float fade = (1.0 - smoothstep(uReach * 0.7, uReach, rho)) * smoothstep(0.85, 1.05, rho);
-  float k = min(1.0, (ray * falloff * 0.8 + glow) * (1.0 + uFlare * 0.7) * fade);
+  // The turning light (as Einfach draws it): two layers of bent rays that keep their shape and turn slowly against each
+  // other, each swelling and ebbing on its own beat.
+  float turning = (turn(a0 - uTime * 0.02 * uChurn, rho) * 0.9 * (0.82 + 0.18 * sin(uTime * 0.5))
+    + turn(a0 + uTime * 0.034 * uChurn - 2.1, rho) * 0.55 * (0.82 + 0.18 * sin(uTime * 0.5 + 6.3))) * falloff * ${TURNING.toFixed(2)};
+  float k = min(1.0, ((ray * falloff * 0.8 + glow) * (1.0 + uFlare * 0.7) + turning) * fade);
   float h = min(1.0, (rho - 1.0) / 1.9);
   vec3 near = mix(uNear, vec3(255, 150, 110) / 255.0, uGiant);
   vec3 far = mix(uFar, vec3(170, 30, 16) / 255.0, uGiant);
@@ -261,13 +274,13 @@ void main() {
 
 /** The largest the ball and the corona are worked out at, in pixels. */
 const SURFACE_LIMIT = 512;
-const CORONA_LIMIT = 512;
+const CORONA_LIMIT = 400;
 /** How often they are worked out again: both churn slowly, and what is between is the picture kept. */
 const SUN_HZ = 20;
 /** The corona's reach in radii when calm, as in `sun.ts`: the shader's own coordinates. */
 const CORONA_REACH = 3.6;
 
-/** Whether the corona just drawn is the shader's: that one has streamers of its own, so no rays go over it. */
+/** Whether the corona just drawn is the shader's: that one has streamers and turning light of its own, so no rays go over it. */
 let streamers = false;
 
 /** A kind's colours and pace, set for both shaders. */
@@ -280,7 +293,76 @@ function setKind(u: Uniforms, kind: SunKind): void {
   u.f('uChurn', kind.churn);
 }
 
+/** How far the wash of light round a sun reaches (radii), and how many stops the one gradient of all its glow has. */
+const WASH_REACH = 15;
+const GLOW_STOPS = 26;
+/** The most pixels across the glow's picture is painted at. */
+const GLOW_LIMIT = 512;
+
+/** A ring's light at `r`, premultiplied, added to `sum`. */
+function addRing(sum: number[], ring: GlowRing, r: number): void {
+  if (r >= ring.outer) return;
+  const t = Math.max(0, (r - ring.inner) / (ring.outer - ring.inner));
+  const stops = ring.stops;
+  let i = 1;
+  while (i < stops.length - 1 && stops[i][0] < t) i++;
+  const [t0, c0, a0] = stops[i - 1];
+  const [t1, c1, a1] = stops[i];
+  const f = Math.min(1, Math.max(0, (t - t0) / (t1 - t0 || 1)));
+  const p = hexToRgb(c0), q = hexToRgb(c1);
+  const pa = a0 * (1 - f), qa = a1 * f;
+  for (let c = 0; c < 3; c++) sum[c] += p[c] * pa + q[c] * qa;
+}
+
+/** The glow's pictures, by their stops: a pulsing or flaring sun paints a new one as it changes, a steady one keeps its own. */
+const glowPictures = new Map<string, HTMLCanvasElement>();
+
+/**
+ * The glow round the sun and the wash of light it throws over the field, as one picture: the rings are all round the
+ * same middle, so their sum is one gradient of many stops. Such a gradient is dear per pixel and these cover most of the
+ * screen, so it is painted small and drawn up to size, where each pixel costs one look into the picture; one by one,
+ * the rings would each be laid over most of the screen.
+ */
+function drawGlow(ctx: CanvasRenderingContext2D, rings: readonly GlowRing[], { R, giant, kind, flare, beat }: { R: number; giant: number; kind: SunKind; flare: number; beat: number }): boolean {
+  const wash = giant > 0.3 ? '#ff5a3c' : `#${kind.wash.split(',').map((c) => Number(c).toString(16).padStart(2, '0')).join('')}`;
+  const all: GlowRing[] = [...rings, { inner: R, outer: R * WASH_REACH, stops: [[0, wash, 0.045 * (1 + flare * 0.9) * beat], [1, wash, 0]] }];
+  const outer = Math.max(...all.map((ring) => ring.outer));
+  if (!onScreen(ctx, 0, 0, outer)) return true;
+  const stops: string[] = [];
+  const sum = [0, 0, 0];
+  for (let k = 0; k <= GLOW_STOPS; k++) {
+    // Close together near the ball, where the glow changes fast.
+    const at = (k / GLOW_STOPS) ** 2;
+    sum[0] = sum[1] = sum[2] = 0;
+    for (const ring of all) addRing(sum, ring, at * outer);
+    const a = Math.min(1, Math.max(sum[0], sum[1], sum[2]) / 255);
+    const scale = a > 0 ? 1 / a : 0;
+    stops.push(`rgba(${Math.round(sum[0] * scale)},${Math.round(sum[1] * scale)},${Math.round(sum[2] * scale)},${a.toFixed(3)})`);
+  }
+  // A quarter of the pixels it covers, at most: it is all soft light.
+  const size = Math.max(128, Math.min(GLOW_LIMIT, Math.ceil(pixelsOf(ctx, outer * 2) / 4 / 64) * 64));
+  const key = `${size}|${stops.join('|')}`;
+  let picture = glowPictures.get(key);
+  if (!picture) {
+    // The oldest picture's canvas is painted over, so a sun that changes every frame makes no new ones.
+    const oldest = glowPictures.size >= 6 ? glowPictures.keys().next().value! : null;
+    picture = (oldest && glowPictures.get(oldest)) || document.createElement('canvas');
+    if (oldest) glowPictures.delete(oldest);
+    picture.width = picture.height = size;
+    const g = picture.getContext('2d')!;
+    const half = size / 2;
+    const gradient = g.createRadialGradient(half, half, 0, half, half, half);
+    stops.forEach((color, k) => gradient.addColorStop((k / GLOW_STOPS) ** 2, color));
+    g.fillStyle = gradient;
+    g.fillRect(0, 0, size, size);
+    glowPictures.set(key, picture);
+  }
+  ctx.drawImage(picture, -outer, -outer, outer * 2, outer * 2);
+  return true;
+}
+
 const sunStyle: SunStyle = {
+  glow: drawGlow,
   prominences: drawForgedProminences,
   prominencesFront: drawForgedProminencesFront,
   corona(ctx, seed, reach, time, flare, giant) {
@@ -315,10 +397,12 @@ const sunStyle: SunStyle = {
 };
 
 /**
- * The sun with light thrown off it, in its kind's colour: a wide wash over the field round it and, without shaders, rays that turn slowly against each other. `flare` (the storm) makes it all stronger.
+ * The sun with light thrown off it, in its kind's colour: a wide wash over the field round it (in its glow) and, without
+ * shaders, rays that turn slowly against each other (the shaded corona turns its own). `flare` (the storm) makes it all stronger.
  */
 export function drawForgedSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number, alpha: number, stormFlare: number): void {
   drawSun(ctx, sun, time, alpha, stormFlare, sunStyle);
+  if (streamers) return;
   const R = sun.radius;
   const giant = sun.giant ?? 0;
   const kind = sunKind(sun);
@@ -329,14 +413,8 @@ export function drawForgedSun(ctx: CanvasRenderingContext2D, sun: Planet, time: 
   ctx.translate(sun.x, sun.y);
   ctx.globalCompositeOperation = 'lighter';
   const strength = alpha * (1 + flare * 0.9) * beat.glow;
-  // The wash: light the sun throws over the whole neighbourhood.
-  const wash = ctx.createRadialGradient(0, 0, R, 0, 0, R * 15);
-  wash.addColorStop(0, `rgba(${warm},${0.045 * strength})`);
-  wash.addColorStop(1, `rgba(${warm},0)`);
-  ctx.fillStyle = wash;
-  ctx.fillRect(-R * 15, -R * 15, R * 30, R * 30);
   // The rays: tapering wedges of light out of the middle, in two layers that turn against each other.
-  for (const [count, spin, reach, base] of streamers ? [] : ([[11, 0.018, 9, 0.028], [7, -0.027, 6.5, 0.02]] as const)) {
+  for (const [count, spin, reach, base] of [[11, 0.018, 9, 0.028], [7, -0.027, 6.5, 0.02]] as const) {
     ctx.save();
     ctx.rotate(time * spin + count);
     for (let k = 0; k < count; k++) {
