@@ -313,7 +313,7 @@ export class HorizonMatch extends Match {
   }
 
   protected playTurn(turn: ReplayTurn): void {
-    if (this.stageTurn(turn, this.alive)) this.launchVolley();
+    if (this.replay.stage(turn, this.alive)) this.launchVolley();
   }
 
   private launchVolley(): void {

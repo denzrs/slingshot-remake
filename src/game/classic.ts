@@ -272,7 +272,7 @@ export class ClassicMatch extends Match {
 
   protected playTurn(turn: ReplayTurn): void {
     if (this.salvo) {
-      if (this.stageTurn(turn, this.alive)) this.launchVolley();
+      if (this.replay.stage(turn, this.alive)) this.launchVolley();
       return;
     }
     // One ship's turn: the recording has a shot of theirs or none.
@@ -281,7 +281,7 @@ export class ClassicMatch extends Match {
       this.replayState = 'drifted';
       return;
     }
-    if (this.stageTurn(turn, [p])) this.fire();
+    if (this.replay.stage(turn, [p])) this.fire();
   }
 
   private launchVolley(): void {
