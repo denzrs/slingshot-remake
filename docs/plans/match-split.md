@@ -1,6 +1,6 @@
 # Plan: split `src/game/match.ts`
 
-Status: proposed, nothing built. Written 2026-11-14 from a read of `match.ts` (2448 lines) and its subclasses.
+Status: steps 1–6 built on `improve/code-quality` (see the end). Written 2026-11-14 from a read of `match.ts` (2448 lines) and its subclasses.
 
 ## Goal
 
@@ -109,3 +109,16 @@ What this does **not** shorten: a new rule still needs its setting in `data/room
 - No file outside `src/game` and `tests/` changed, except import paths.
 - `git diff --stat` for each step shows moves, not rewrites: the moved method bodies are the same text with `this.x` turned into `this.deps.x()` or a field of the collaborator.
 - A hot-seat game and an online game (host and guest, `npm run dev:server`) each played through a round in Classic and Event Horizon with Mayhem on: guest sees the marks on the cards, the kill chain and the round's announcement as the host does.
+
+## What was built, and where it differs from the plan
+
+`match.ts` went from 2448 to 1823 lines; each step is one commit, and each was run against the whole test suite.
+
+1. **`match-types.ts`** (as planned). `match.ts` re-exports it. `GameEvent` moved with it, so `WIRE_DECLARATIONS` in `scripts/protocol/wire.ts` points at the new file; the wire was re-recorded as compatible (nothing on the wire changed).
+2. **`Match.baseSnapshot` / `restoreBase`** and the `MatchSnapshot` type; `ClassicSnapshot` and `HorizonSnapshot` extend it and add only their own fields. A test (`tests/game/snapshot-roundtrip.test.ts`) restores snapshots taken through whole matches in every mode and compares them. It passed before the change and after.
+3. **`KillLedger`** (`kill-ledger.ts`), with unit tests. `killBonuses` takes the killer, the victim and whether the shot was a stray, not the shot. The ledger has two calls for a round's start (`startRound` and `scoresAtStart`), because the scores the comeback is read from include what the oracle's stakes gave back, which happens in between. The card-marks tests now change the ledger's state through `restore`.
+4. **`CpuDesk`** (`cpu-desk.ts`) and **`cpuPlacementAim`** (`cpu-placement.ts`, a pure function). The modes call `this.cpu.run`, `this.cpu.job`, `this.cpu.rescueIfBlind`, `this.cpu.placementAim` and the function `swingTowards`; `placeForCpu` stays in `Match` (it needs `salvo`). The power-up tests reach the CPU through `cpuSide()` in `tests/helpers.ts`.
+5. **`ReplayDriver`** (`replay-driver.ts`). `Match.replayState` is a getter and setter on the driver's state; `stageTurn` is `this.replay.stage`. Every call into the driver stayed at the same line of the same method.
+6. **`HostPause` and `SkipVoting`** (`host-pause.ts`, `skip-vote.ts`), with unit tests. `Match.pause` and `Match.skipVote` stay as accessors, so the snapshot and the UI read them as before.
+
+Not done, as planned: the oracle and betting, leaving and away, `onVolleyEvent`. What is left in `match.ts` is the round and flight loop, the scoring and the books of a round, the oracle's facade and the table (leaving, away). Further cuts would be those last two, and the plan's reasons for leaving them still hold.
