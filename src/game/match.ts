@@ -23,10 +23,12 @@ import type { Experiment } from './experiments';
 import { KillLedger } from './kill-ledger';
 import { CpuDesk } from './cpu-desk';
 import { ReplayDriver } from './replay-driver';
+import { HostPause, type PauseState } from './host-pause';
+import { SkipVoting } from './skip-vote';
 import type { MatchSnapshot } from './match-types';
 
 export * from './match-types';
-import { newPlayer, atTable, shotDown, sidesOf, SKIP_VOTE_TIME, PAUSE_COUNTDOWN, teamName, type Mode, type Phase, type PlayerState, type Trail, type KillRecord, type Falling, type RoundTitle, type SkipVote, type RoundSummary, type Scene, type GameEvent, type Bonus, type Mark, type MatchOptions } from './match-types';
+import { newPlayer, atTable, shotDown, sidesOf, teamName, type Mode, type Phase, type PlayerState, type Trail, type KillRecord, type Falling, type RoundTitle, type SkipVote, type RoundSummary, type Scene, type GameEvent, type Bonus, type Mark, type MatchOptions } from './match-types';
 
 /**
  * Everything the modes share: players, rounds, scoring, CPU thinking and flying volleys.
@@ -120,6 +122,19 @@ export abstract class Match {
     marksOpen: () => this.phase === 'aiming' && this.paysKillBonuses && !this.forfeited,
   });
   private disposed = false;
+  /** The host's pause, and the vote to skip a round. */
+  private readonly hostPause = new HostPause();
+  private readonly skipVoting = new SkipVoting({
+    clock: () => this.clock,
+    voters: () => this.voters,
+    canSkipRound: () => this.canSkipRound,
+    skipRound: () => this.skipRound(),
+    online: () => this.online,
+    isCpu: (player) => !!this.players[player]?.cpu,
+    said: (text) => {
+      this.notice = { text: t(text), color: COLORS.boneDim, at: this.clock };
+    },
+  });
   /** The thinking of the CPUs. */
   protected readonly cpu = new CpuDesk({
     world: () => this.world,
@@ -862,7 +877,7 @@ export abstract class Match {
     this.killcam.reset();
     this.resetFlight();
     this.ledger.startRound();
-    this.skipVote = null;
+    this.skipVoting.clear();
     this.forfeited = false;
     this.round++;
     // Stakes that were never paid out (a round cut short) go back to their owners.
@@ -1169,13 +1184,7 @@ export abstract class Match {
       k.skipVotes = k.skipVotes.filter((id) => atTable(this.players[id]));
       if (!k.recording && k.skipVotes.length && k.skipVotes.length >= this.skipsNeeded) this.endKillcam();
     }
-    const vote = this.skipVote;
-    if (!vote) return;
-    vote.yes = vote.yes.filter((id) => this.voters.includes(id));
-    vote.no = vote.no.filter((id) => this.voters.includes(id));
-    if (!this.canSkipRound) return;
-    if (vote.yes.length && vote.yes.length >= this.skipVotesNeeded) this.skipRound();
-    else if (vote.no.length > this.voters.length - this.skipVotesNeeded) this.endSkipVote('skip.declined');
+    this.skipVoting.tableChanged();
   }
 
   /**
@@ -1211,33 +1220,33 @@ export abstract class Match {
 
   // ————————————————————————————— Skipping a round —————————————————————————————
 
-  /**
-   * The host's pause, online only: while it is set nothing moves anywhere (no clocks, no shots, no CPUs) and no input is taken.
-   * `resumeIn` is null while the game waits for the host, then the seconds of the 3-2-1 left before play goes on.
-   * It rides along in the snapshot, so the guests and the stands see it too.
-   */
-  pause: { resumeIn: number | null } | null = null;
+  /** The host's pause (see `HostPause`): null while the game runs. */
+  get pause(): PauseState {
+    return this.hostPause.state;
+  }
+
+  set pause(state: PauseState) {
+    this.hostPause.state = state;
+  }
 
   /** Host only: stop the game for everybody until it is resumed. */
   pauseGame(): void {
-    if (this.canAdvance && this.online && !this.replaying && !this.pause) this.pause = { resumeIn: null };
+    this.hostPause.stop(this.canAdvance && this.online && !this.replaying);
   }
 
   /** Host only: start the countdown that ends the pause. */
   resumeGame(): void {
-    if (this.pause && this.pause.resumeIn === null) this.pause = { resumeIn: PAUSE_COUNTDOWN };
-  }
-
-  private tickPause(dt: number): void {
-    const pause = this.pause;
-    if (!pause || pause.resumeIn === null) return;
-    // A new object each time: the sync sends a field that changed, and compares it by value.
-    const left = pause.resumeIn - dt;
-    this.pause = left > 0 ? { resumeIn: left } : null;
+    this.hostPause.resume();
   }
 
   /** The vote to skip the round that is open, if any. Online only: offline the player simply skips. */
-  skipVote: SkipVote | null = null;
+  get skipVote(): SkipVote | null {
+    return this.skipVoting.vote;
+  }
+
+  set skipVote(vote: SkipVote | null) {
+    this.skipVoting.vote = vote;
+  }
 
   /** Whether this match is played online, against the people of a room. */
   protected get online(): boolean {
@@ -1259,44 +1268,27 @@ export abstract class Match {
 
   /** Yes votes it takes to skip: more than half of the people at the table. */
   get skipVotesNeeded(): number {
-    return Math.floor(this.voters.length / 2) + 1;
+    return this.skipVoting.needed;
   }
 
-  /**
-   * Offline the player skips on their own. Online only the host (seat 0) may ask, which opens a vote its own
-   * yes starts off. Nobody scores in a skipped round.
-   */
+  /** Offline the player skips on their own; online only the host may ask, which opens a vote (see `SkipVoting`). */
   requestSkipRound(player: number): void {
-    if (!this.canSkipRound) return;
-    if (!this.online) return this.skipRound();
-    if (player !== 0 || this.skipVote || this.players[player]?.cpu) return;
-    this.skipVote = { by: player, yes: [], no: [], until: this.clock + SKIP_VOTE_TIME };
-    this.voteSkipRound(player, true);
+    this.skipVoting.request(player);
   }
 
-  /** One person's answer to the open vote; it counts once. The round is skipped when enough have said yes, and the vote lapses when too many have said no. */
+  /** One person's answer to the open vote; it counts once. */
   voteSkipRound(player: number, yes: boolean): void {
-    const vote = this.skipVote;
-    if (!vote || !this.canSkipRound || this.clock >= vote.until || !this.voters.includes(player) || vote.yes.includes(player) || vote.no.includes(player)) return;
-    (yes ? vote.yes : vote.no).push(player);
-    if (vote.yes.length >= this.skipVotesNeeded) this.skipRound();
-    else if (vote.no.length > this.voters.length - this.skipVotesNeeded) this.endSkipVote('skip.declined');
+    this.skipVoting.answer(player, yes);
   }
 
   /** How this person has answered the open vote, null while they have not (or when they have no say). */
   skipAnswer(player: number): 'yes' | 'no' | null {
-    const vote = this.skipVote;
-    return vote?.yes.includes(player) ? 'yes' : vote?.no.includes(player) ? 'no' : null;
+    return this.skipVoting.answerOf(player);
   }
 
   /** Whether this person may still answer the open vote. */
   canAnswerSkip(player: number | null): boolean {
-    return player !== null && !!this.skipVote && this.voters.includes(player) && !this.skipAnswer(player);
-  }
-
-  private endSkipVote(text: 'skip.declined' | 'skip.lapsed'): void {
-    this.skipVote = null;
-    this.notice = { text: t(text), color: COLORS.boneDim, at: this.clock };
+    return this.skipVoting.canAnswer(player);
   }
 
   /** Mode-specific loose ends of a round cut short: a killcam in the making, a collapse under way. */
@@ -1304,7 +1296,7 @@ export abstract class Match {
 
   /** Ends the round where it stands: whatever was scored in it is taken back, and the match goes on as after any round. */
   protected skipRound(): void {
-    this.skipVote = null;
+    this.skipVoting.clear();
     // A volley still in the air is no turn of the round: its report would never come, and the round's own would not add up.
     if (this.volley) this.shotLog.abandonTurn();
     this.volley = null;
@@ -1355,11 +1347,11 @@ export abstract class Match {
 
   update(dt: number): void {
     if (this.disposed) return;
-    if (this.pause) return this.tickPause(dt);
+    if (this.pause) return this.hostPause.tick(dt);
     this.clock += dt;
     this.phaseTime += dt;
     if (this.notice && this.clock - this.notice.at > 1.4) this.notice = null;
-    if (this.skipVote && this.clock >= this.skipVote.until) this.endSkipVote('skip.lapsed');
+    this.skipVoting.tick();
     // A replay has no one to press a key: it lets the announcement be read, then goes on.
     if (this.replaying && this.revealing && this.revealAge > 2.5) this.skipReveal();
     // The round's announcement holds everything still: no aiming, no CPU thinking, no shot clock.
@@ -1779,7 +1771,7 @@ export abstract class Match {
 
   protected endRound(): void {
     // A pending vote cannot change a round after its normal result has been recorded.
-    this.skipVote = null;
+    this.skipVoting.clear();
     // Away ships keep a round open, but do not win it if everybody present is eliminated.
     const alive = this.noWinner ? [] : this.players.filter((p) => p.alive && !p.away && !p.left);
     const survivor = alive.length === 1 ? alive[0].id : null;
