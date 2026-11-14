@@ -1,12 +1,12 @@
 import type { Planet } from '../../sim/physics';
 import { rgba } from '../color';
-import { drawNeutronStar, drawPulsarBeams, NEBULA_REACH } from '../sun';
+import { drawNeutronStar, NEBULA_REACH, PULSAR_BEAM } from '../sun';
 import { GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept } from './forged-gl';
 
 /**
  * Forged's supernova remnant, after the Crab: a torn cage of glowing filaments, red where the gas is cool and orange-white
  * where it is hot, round a faint teal fill; in the middle the pulsar's own nebula, a blue-white haze with a ring round
- * the star, jets along its axis and wisps rippling out, and the pulsar's two beams sweeping round over it. Young, the
+ * the star, jets along its axis and wisps rippling out, and the pulsar's two beams sweeping round over it in depth. Young, the
  * whole remnant burns hotter and whiter.
  */
 const REMNANT_SHADER = `${GLSL_HEAD}
@@ -78,6 +78,74 @@ const slot = (seed: number, k: number): number => {
   return h - Math.floor(h);
 };
 
+/** How far the pulsar's magnetic axis, along which it beams, stands off the axis it spins round (rad). */
+const BEAM_TILT = .55;
+
+/**
+ * Where the pulsar's two beams point at `time`, as unit vectors in the field's frame with `z` towards the viewer. The star
+ * spins round an axis tipped away from us (by its seed), and its beams, off that axis by `BEAM_TILT`, sweep a cone round
+ * it, as a lighthouse's would on a tilted tower.
+ */
+export function pulsarBeams(seed: number, time: number): [number, number, number][] {
+  const incline = .85 + .5 * slot(seed, 11);
+  const heading = slot(seed, 12) * Math.PI * 2;
+  const axis = [Math.sin(incline) * Math.cos(heading), Math.sin(incline) * Math.sin(heading), Math.cos(incline)];
+  // Two directions square to the axis and to each other.
+  const u = [Math.cos(incline) * Math.cos(heading), Math.cos(incline) * Math.sin(heading), -Math.sin(incline)];
+  const v = [-Math.sin(heading), Math.cos(heading), 0];
+  const phase = time * 2.6 + slot(seed, 3) * Math.PI;
+  const c = Math.cos(phase), sn = Math.sin(phase);
+  const beam = [0, 1, 2].map((k) => Math.cos(BEAM_TILT) * axis[k] + Math.sin(BEAM_TILT) * (c * u[k] + sn * v[k]));
+  return [beam as [number, number, number], beam.map((x) => -x) as [number, number, number]];
+}
+
+/**
+ * The pulsar's beams in depth: each a cone of light, shorter as it swings towards or away from us and wider then, brighter
+ * on the side turned to us and dim behind; one turned nearly at us lights the star up as it passes.
+ */
+function drawPulsarBeams3d(ctx: CanvasRenderingContext2D, seed: number, time: number): void {
+  const base = ctx.globalAlpha;
+  for (const [x, y, z] of pulsarBeams(seed, time)) {
+    const seen = Math.hypot(x, y);
+    const length = PULSAR_BEAM * Math.max(.12, seen);
+    // The cone's width does not shorten with it, so a beam seen end-on is a short, wide fan.
+    const half = PULSAR_BEAM * .075;
+    const facing = .5 + .5 * z;
+    const strength = Math.min(1, .3 + .9 * facing * facing);
+    ctx.save();
+    ctx.rotate(Math.atan2(y, x));
+    for (const [wide, glow] of [[2.4, .3], [1, 1]] as const) {
+      const cone = ctx.createLinearGradient(0, 0, length, 0);
+      cone.addColorStop(0, rgba('#e8f4ff', .55 * glow));
+      cone.addColorStop(.4, rgba('#8ec8ff', .18 * glow));
+      cone.addColorStop(1, rgba('#62b6ff', 0));
+      ctx.globalAlpha = base * strength;
+      ctx.fillStyle = cone;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(length, -half * wide);
+      ctx.lineTo(length, half * wide);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+    // Turned almost at us, it floods the star with light as it sweeps past.
+    const flash = Math.max(0, (z - .75) / .25);
+    if (flash > 0) {
+      const r = PULSAR_BEAM * .35;
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+      glow.addColorStop(0, rgba('#e8f4ff', .45 * flash));
+      glow.addColorStop(1, rgba('#62b6ff', 0));
+      ctx.globalAlpha = base;
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = base;
+}
+
 /** The supernova's remnant, `age` seconds after it: it blows out fast and slows, as the shared one, so it reaches as far. */
 export function drawForgedNeutronStar(ctx: CanvasRenderingContext2D, star: Planet, time: number, age: number, alpha = 1): void {
   const seed = star.seed;
@@ -105,8 +173,8 @@ export function drawForgedNeutronStar(ctx: CanvasRenderingContext2D, star: Plane
   ctx.globalCompositeOperation = 'lighter';
   ctx.globalAlpha = alpha * Math.min(1, age / 1.2);
 
-  // The pulsar's beams sweeping round, as in every look: the remnant's turning light.
-  drawPulsarBeams(ctx, seed, time);
+  // The pulsar's beams sweeping round, as in every look, but seen in depth.
+  drawPulsarBeams3d(ctx, seed, time);
 
   // The star: a white-hot point in a throbbing blue halo, with a faint cross of light on it as a lens sees one.
   const R = star.radius;

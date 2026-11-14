@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { shadeKept, place } from '../../src/render/looks/forged-gl';
 import { drawNeutronStar } from '../../src/render/sun';
-import { drawForgedNeutronStar } from '../../src/render/looks/forged-remnant';
+import { drawForgedNeutronStar, pulsarBeams } from '../../src/render/looks/forged-remnant';
 import type { Planet } from '../../src/sim/physics';
 
 vi.mock('../../src/render/looks/forged-gl', async (actual) => ({
@@ -41,9 +41,21 @@ describe('Forged supernova remnant', () => {
     // Grown out: the shared remnant's reach.
     expect(vi.mocked(place).mock.calls[0][4]).toBeGreaterThan(270 * 2 * .97);
     expect(vi.mocked(place).mock.calls[0][4]).toBeLessThan(270 * 2 * 1.03);
-    // The pulsar's two beams sweep round it, as in every look, besides the two lines of the star's cross.
-    expect(ctx.createLinearGradient).toHaveBeenCalledTimes(4);
+    // The pulsar's two beams sweep round it (a soft cone and a core each), besides the two lines of the star's cross.
+    expect(ctx.createLinearGradient).toHaveBeenCalledTimes(2 * 2 + 2);
     expect(ctx.rotate).toHaveBeenCalledTimes(4);
+  });
+
+  it('sweeps its beams in depth: opposite each other, foreshortened as they swing towards or away from us', () => {
+    const lengths: number[] = [];
+    for (let time = 0; time < 3; time += .05) {
+      const [a, b] = pulsarBeams(9, time);
+      expect(Math.hypot(...a)).toBeCloseTo(1);
+      a.forEach((x, k) => expect(b[k]).toBeCloseTo(-x));
+      lengths.push(Math.hypot(a[0], a[1]));
+    }
+    // Not a flat spinning bar: how long a beam looks on the screen changes as it turns.
+    expect(Math.max(...lengths) - Math.min(...lengths)).toBeGreaterThan(.3);
   });
 
   it('turns the pulsar beams with time', () => {
