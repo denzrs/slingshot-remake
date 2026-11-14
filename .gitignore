@@ -15,3 +15,6 @@ slingshot-stats-demo.db*
 
 # Python caches of the asset scripts.
 __pycache__/
+
+# Working plans (kept locally, not in the repository).
+/docs/plans/

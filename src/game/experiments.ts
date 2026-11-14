@@ -5,7 +5,7 @@
  *
  * A match asks `this.trying('name')` where the idea lives. When the idea is kept it becomes a rule, and its `trying`
  * checks become reads of that rule; when it is dropped, delete its entry here and the compiler names every check to
- * remove. See `docs/plans/cheaper-rules.md`.
+ * remove.
  *
  * What an experiment may not do: touch `src/net`, `server/`, the rules or their page, the presets or `i18n`; add to a
  * snapshot; or draw from a random stream while it is off (the replay tests would notice).
