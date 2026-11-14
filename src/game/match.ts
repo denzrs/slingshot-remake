@@ -1,17 +1,16 @@
-import { planShot, type Aim, type CpuDecision } from '../sim/ai';
 import { interceptPoints } from '../sim/scoring';
 import { AIM, ANOMALY, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TRAIL_FADE } from '../sim/config';
 import { seatColor, teamColor } from '../data/palette';
 import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
-import { normalizeAngle, hasTrickShotSources, type ShotGate, type ShotRules, type StyleKind, type World } from '../sim/physics';
+import { normalizeAngle, hasTrickShotSources, type ShotRules, type StyleKind, type World } from '../sim/physics';
 import { createRng, randomSeed, type Rng } from '../sim/rng';
 import { anomalyRules } from '../sim/anomalies';
 import { bump, closestApproach, improve, newStatBook, pathLength, type StatBook } from '../data/stats';
 import type { KillcamPlayback } from '../data/roomRules';
 import { seatTeamsFor, startPower, type Settings } from '../data/settings';
 import { Volley, type VolleyAim, type VolleyEvent, type VolleyShot } from '../sim/volley';
-import { aimedPlanet, CPU_IGNORES, cpuWormholeSpots, POWER_UP, type Pickup } from '../sim/powerups';
+import { type Pickup } from '../sim/powerups';
 import { generateWorld } from '../sim/world';
 import { ShotLog } from './shotLog';
 import { NEAR_MISS_GAP, type BanterCue } from './banter';
@@ -22,10 +21,11 @@ import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField } from './powerup-field';
 import type { Experiment } from './experiments';
 import { KillLedger } from './kill-ledger';
+import { CpuDesk } from './cpu-desk';
 import type { MatchSnapshot } from './match-types';
 
 export * from './match-types';
-import { newPlayer, atTable, shotDown, sidesOf, SKIP_VOTE_TIME, PAUSE_COUNTDOWN, teamName, type CpuJob, type Mode, type Phase, type PlayerState, type Trail, type KillRecord, type Falling, type RoundTitle, type SkipVote, type RoundSummary, type Scene, type GameEvent, type CpuDecisionReport, type Bonus, type Mark, type MatchOptions } from './match-types';
+import { newPlayer, atTable, shotDown, sidesOf, SKIP_VOTE_TIME, PAUSE_COUNTDOWN, teamName, type Mode, type Phase, type PlayerState, type Trail, type KillRecord, type Falling, type RoundTitle, type SkipVote, type RoundSummary, type Scene, type GameEvent, type Bonus, type Mark, type MatchOptions } from './match-types';
 
 /**
  * Everything the modes share: players, rounds, scoring, CPU thinking and flying volleys.
@@ -107,9 +107,6 @@ export abstract class Match {
   protected rng: Rng;
   private readonly matchSeed: number;
   private worldRng: Rng;
-  private plannerRngs = new Map<number, Rng>();
-  /** Who hit each player last — CPUs with a grudge aim back at them. */
-  private lastHitBy = new Map<number, number>();
   /** Phase time when the current volley finished, replicated so online guests keep the same post-flight delay. */
   protected flightDoneAt: number | null = null;
   /** What the volley in the air has destroyed so far — the oracle's verdict is read from it. */
@@ -122,7 +119,22 @@ export abstract class Match {
     marksOpen: () => this.phase === 'aiming' && this.paysKillBonuses && !this.forfeited,
   });
   private disposed = false;
-  protected cpuJobs = new Map<number, CpuJob>();
+  /** The thinking of the CPUs. */
+  protected readonly cpu = new CpuDesk({
+    world: () => this.world,
+    players: () => this.players,
+    rules: () => this.rules,
+    settings: () => this.settings,
+    friendsOf: (id) => this.friendsOf(id),
+    sparedFor: (id) => this.sparedFor(id),
+    pickups: () => this.power.pickups,
+    powerUps: () => this.powerUps,
+    teleport: (id) => this.power.teleport(id),
+    options: () => this.options,
+    matchSeed: () => this.matchSeed,
+    mode: () => this.mode,
+    round: () => this.round,
+  });
   private listeners: ((e: GameEvent) => void)[] = [];
   private turnListeners: (() => void)[] = [];
   private seatListeners: ((change: SeatChange) => void)[] = [];
@@ -172,7 +184,7 @@ export abstract class Match {
       this.shotLog.placed(placement);
       if (placement.kind === 'planetkiller') this.checkFreeFire();
     },
-    clearCpuJobs: () => this.cpuJobs.clear(),
+    clearCpuJobs: () => this.cpu.clear(),
     record: (update) => this.record(update),
   });
 
@@ -267,7 +279,7 @@ export abstract class Match {
 
   private resetFlight(): void {
     this.flightDoneAt = null;
-    this.cpuJobs.clear();
+    this.cpu.clear();
   }
 
   /** Dispatch authoritative events on clients that do not run the simulation. */
@@ -627,23 +639,6 @@ export abstract class Match {
     return this.salvo ? 1 : Math.max(1, this.alive.length);
   }
 
-  /**
-   * A CPU that planned and found no hitting shot tries its way out once and plans again: a teleport jumps to a
-   * new spot, a plasma shot is armed. Returns true when it did, so the caller leaves this tick to the new plan.
-   */
-  protected cpuRescueIfBlind(p: PlayerState, job: CpuJob | undefined): boolean {
-    if ((p.powerUp !== 'teleport' && p.powerUp !== 'plasma') || !job?.target || !job.blind || job.rescueTried) return false;
-    job.rescueTried = true;
-    if (p.powerUp === 'plasma') {
-      // Armed already: the plan that came up blind was made with it, so there is nothing left to try.
-      if (p.armed) return false;
-      p.armed = true;
-      this.cpuJobs.clear();
-      return true;
-    }
-    return this.power.teleport(p.id);
-  }
-
   get pickups(): Pickup[] {
     return this.power.pickups;
   }
@@ -816,8 +811,7 @@ export abstract class Match {
   newMatch(): void {
     this.worldRng = createRng(this.options.seed ?? randomSeed());
     this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
-    this.plannerRngs.clear();
-    this.lastHitBy.clear();
+    this.cpu.newMatch();
     this.ledger.newMatch();
     const seats = this.options.seats ?? this.settings.seats;
     const taken = seats.flatMap((seat, i) => (seat === 'off' ? [] : [{ seat: i, kind: seat }]));
@@ -889,8 +883,7 @@ export abstract class Match {
     this.summary = null;
     this.lastKill = null;
     // A grudge lasts one round — whoever survived it starts the next one clean.
-    this.lastHitBy.clear();
-    this.cpuJobs.clear();
+    this.cpu.startRound();
     const duel = this.mode === 'classic' && this.players.length === 2;
     for (const p of this.players) {
       const ship = this.world.ships[p.id];
@@ -1342,7 +1335,7 @@ export abstract class Match {
     if (this.volley) this.shotLog.abandonTurn();
     this.volley = null;
     this.flightDoneAt = null;
-    this.cpuJobs.clear();
+    this.cpu.clear();
     this.killcam.reset();
     this.abandonRound();
     // Back to what everybody had when the round began (this also gives back what was staked on the oracle's questions).
@@ -1419,7 +1412,7 @@ export abstract class Match {
     this.ledger.launched(this.players.map((p) => p.score));
     this.simClock = 0;
     this.flightDoneAt = null;
-    this.cpuJobs.clear();
+    this.cpu.clear();
     this.setPhase('flying');
     this.volley.shots.forEach((vs, i) => {
       const aim = aims[i];
@@ -1754,7 +1747,7 @@ export abstract class Match {
     const bonuses = paysExtras ? this.ledger.killBonuses(killer, victim, !!vs.stray).map((b) => ({ ...b, points: Math.round(b.points * share) })) : [];
     if (enemyKill) {
       // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
-      this.lastHitBy.set(victim, killer);
+      this.cpu.noteHit(victim, killer);
       this.ledger.noteKill(killer, victim);
     }
     const record: KillRecord = {
@@ -1912,181 +1905,9 @@ export abstract class Match {
 
   // ————————————————————————————— CPU —————————————————————————————
 
-  private plannerRngFor(id: number): Rng {
-    let rng = this.plannerRngs.get(id);
-    if (!rng) {
-      rng = createRng(this.matchSeed ^ Math.imul(this.players[id].seat + 1, 0x9e3779b9));
-      this.plannerRngs.set(id, rng);
-    }
-    return rng;
-  }
-
-  /**
-   * Where a CPU lays the placement it holds, as an aim: a rough spot, never a searched one. A black hole or
-   * a nebula goes part way along the line to the nearest enemy, so that enemy's next shot runs into it; a defense
-   * stands on the planet nearest the CPU, on the side that faces it; the
-   * planet killer shoots the planet lying most in the way of that line; a antigravity turns the planet nearest the CPU
-   * that still pulls (so the shots coming at it are pushed away); a wormhole aims at its first portal, the second
-   * lying near the enemy. Null when the CPU holds no placement, or there is nothing to lay it on.
-   */
-  protected cpuPlacementAim(p: PlayerState): Aim | null {
-    const kind = p.powerUp;
-    if (kind !== 'blackhole' && kind !== 'nebula' && kind !== 'planetkiller' && kind !== 'defense' && kind !== 'wormhole' && kind !== 'antigravity') return null;
-    const world = this.world;
-    const from = world.ships[p.id];
-    const friends = this.friendsOf(p.id);
-    const enemies = this.players
-      .filter((q) => q.alive && q.id !== p.id && !friends.includes(q.id))
-      .map((q) => world.ships[q.id])
-      .sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y));
-    const reach = (POWER_UP.TELEPORT_MAX_POWER / AIM.MAX_POWER) * POWER_UP.TELEPORT_RANGE;
-    const to = enemies[0] ?? from;
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const span = dx * dx + dy * dy;
-    /** How far a planet sits off the line the CPU shoots along — small means it is in the way. */
-    const laneGap = (planet: { x: number; y: number }): number => {
-      const t = span ? Math.max(0, Math.min(1, ((planet.x - from.x) * dx + (planet.y - from.y) * dy) / span)) : 0;
-      return Math.hypot(from.x + t * dx - planet.x, from.y + t * dy - planet.y);
-    };
-    let spot: { x: number; y: number };
-    if (kind === 'defense') {
-      // On the planet nearest its own ship, on the side that faces it: the shots coming at the CPU pass there.
-      const near = world.planets.filter((planet) => !planet.sun).sort((a, b) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(b.x - from.x, b.y - from.y))[0];
-      if (!near) return null;
-      return { angle: normalizeAngle((Math.atan2(-(near.y - from.y), near.x - from.x) * 180) / Math.PI), power: 0 };
-    }
-    if (kind === 'antigravity') {
-      // The nearest planet that pulls and that the aim would really meet first, so the placement lands on it.
-      const angleTo = (planet: { x: number; y: number }): number => normalizeAngle((Math.atan2(-(planet.y - from.y), planet.x - from.x) * 180) / Math.PI);
-      const near = world.planets
-        .map((planet, index) => ({ planet, index }))
-        .filter(({ planet, index }) => !planet.reversed && aimedPlanet(world, from, angleTo(planet))?.index === index)
-        .sort((a, b) => Math.hypot(a.planet.x - from.x, a.planet.y - from.y) - Math.hypot(b.planet.x - from.x, b.planet.y - from.y))[0];
-      if (!near) return null;
-      return { angle: angleTo(near.planet), power: 0 };
-    }
-    if (kind === 'wormhole') {
-      const spots = enemies[0] && cpuWormholeSpots(world, from, enemies[0], p.id);
-      if (!spots) return null;
-      spot = spots[0];
-    } else if (kind === 'planetkiller') {
-      // Never the sun: the aim passes over it, so a placement there meets nothing.
-      const byGap = world.planets.filter((planet) => !planet.sun).sort((a, b) => laneGap(a) - laneGap(b));
-      if (!byGap.length) return null;
-      spot = { x: byGap[0].x, y: byGap[0].y };
-    } else {
-      // A little ahead of its own ship, on the way in: near enough for the enemy's shot to meet it.
-      const d = Math.hypot(dx, dy) || 1;
-      let along = Math.min(0.45 * d, reach);
-      if (kind === 'blackhole') {
-        // Short of the zone around the enemy, which a hole may not be laid in; too close for that, it keeps the hole.
-        along = Math.min(along, d - POWER_UP.BLACKHOLE_PLAYER_GAP - 5);
-        if (along < 60) return null;
-      }
-      spot = { x: from.x + (dx / d) * along, y: from.y + (dy / d) * along };
-    }
-    const distance = Math.hypot(spot.x - from.x, spot.y - from.y);
-    return {
-      angle: normalizeAngle((Math.atan2(-(spot.y - from.y), spot.x - from.x) * 180) / Math.PI),
-      power: Math.min(POWER_UP.TELEPORT_MAX_POWER, (distance / POWER_UP.TELEPORT_RANGE) * AIM.MAX_POWER),
-    };
-  }
-
   /** A CPU lays the placement it holds, at the spot its aim points at. False when it cannot lay it now. */
   protected placeForCpu(id: number): boolean {
     return this.power.placeForCpu(id, this.salvo);
-  }
-
-  /** Think for the given CPU players, sharing a per-frame time budget round-robin. */
-  protected runCpu(ids: number[], budgetMs: number, effort: number, lookahead?: number): void {
-    const logDecisions = (typeof process !== 'undefined' && process.env.AI_DECISION_LOGS === '1')
-      || import.meta.env?.VITE_AI_DECISION_LOGS === '1';
-    for (const id of ids) {
-      if (this.cpuJobs.has(id)) continue;
-      const p = this.players[id];
-      const friends = [...this.friendsOf(id), ...this.sparedFor(id)];
-      // Einstein and Hawking hold armor piercing for a cannon: it may wreck one an ordinary shot only meets a missile from.
-      if (p.powerUp === 'piercing' && !p.armed && (p.cpu === 'hard' || p.cpu === 'hawking') && this.world.defenses.some((d) => !d.wrecked && !d.protects.includes(id))) p.armed = true;
-      const pierce = !!p.armed && p.powerUp === 'piercing';
-      const plasma = !!p.armed && p.powerUp === 'plasma';
-      // The pickups a CPU would actually keep (a preview is of no use to it): the planner steers its
-      // search through them, so a power-up-hungry level like Einstein collects more.
-      const pickups: ShotGate[] = this.powerUps
-        ? this.power.pickups
-            .filter((pickup) => !CPU_IGNORES[pickup.kind])
-            .map((pickup) => ({ x: pickup.x, y: pickup.y, r: POWER_UP.PICKUP_RADIUS }))
-        : [];
-      const planner = planShot(this.world, id, {
-        rules: this.rules,
-        level: p.cpu ?? 'medium',
-        attempt: p.shots,
-        fixedPower: this.settings.fixedPower ? startPower(this.settings) : null,
-        maxPower: this.settings.maxPower,
-        rng: this.plannerRngFor(id),
-        effort,
-        lookahead,
-        friends,
-        pierce,
-        plasma,
-        pickups,
-        grudgeTarget: this.lastHitBy.get(id) ?? null,
-        // A CPU holding a teleport or a plasma shot also wants to know whether it found a hitting shot at all.
-        ...(logDecisions || this.options.onCpuDecision || (this.powerUps && (p.powerUp === 'teleport' || p.powerUp === 'plasma'))
-          ? {
-              onDecision: (decision) => {
-                const job = this.cpuJobs.get(id);
-                if (job) job.blind = decision.hitCandidates === 0;
-                if (logDecisions || this.options.onCpuDecision) this.logCpuDecision(id, decision, logDecisions);
-              },
-            }
-          : {}),
-      });
-      this.cpuJobs.set(id, { planner, target: null, settle: 0 });
-    }
-    const deadline = this.options.deterministicCpu ? 0 : performance.now() + budgetMs;
-    let busy = true;
-    while (busy && (this.options.deterministicCpu || performance.now() < deadline)) {
-      busy = false;
-      for (const id of ids) {
-        const job = this.cpuJobs.get(id);
-        if (!job?.planner) continue;
-        busy = true;
-        const r = job.planner.next();
-        if (r.done) {
-          job.target = r.value;
-          job.planner = null;
-        }
-      }
-    }
-  }
-  private logCpuDecision(player: number, decision: CpuDecision, logsEnabled: boolean): void {
-    const report: CpuDecisionReport = {
-      mode: this.mode,
-      round: this.round,
-      player,
-      shot: this.players[player].shots + 1,
-      ...decision,
-    };
-    this.options.onCpuDecision?.(report);
-    if (logsEnabled) console.info('[AI] decision', report);
-  }
-
-
-  protected cpuJob(id: number): CpuJob | undefined {
-    return this.cpuJobs.get(id);
-  }
-  /** Swing a CPU's ship towards its chosen aim like a player would. True once it's there. */
-  protected swingTowards(p: PlayerState, target: Aim, dt: number, speed = 1): boolean {
-    const dA = ((target.angle - p.angle + 540) % 360) - 180;
-    const dP = target.power - p.power;
-    const stepA = 140 * speed * dt;
-    const stepP = 70 * speed * dt;
-    const doneA = Math.abs(dA) <= stepA;
-    const doneP = Math.abs(dP) <= stepP;
-    p.angle = normalizeAngle(doneA ? target.angle : p.angle + Math.sign(dA) * stepA);
-    p.power = doneP ? target.power : p.power + Math.sign(dP) * stepP;
-    return doneA && doneP;
   }
 
   protected setPhase(phase: Phase): void {

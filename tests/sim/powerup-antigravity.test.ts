@@ -4,6 +4,7 @@ import { CPU_IGNORES, POWER_UP_KINDS } from '../../src/sim/powerups';
 import { cloneWorld, Shot, type Planet, type World } from '../../src/sim/physics';
 import { Volley } from '../../src/sim/volley';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
+import { cpuSide } from '../helpers';
 
 const rules = { edges: 'void' as const, timeLimit: 20 };
 
@@ -114,7 +115,6 @@ describe('antigravity power-up', () => {
   });
 
   describe('for a CPU', () => {
-    type Placer = { cpuPlacementAim(p: unknown): { angle: number; power: number } | null; placeForCpu(id: number): boolean };
 
     function cpuMatch(seed = 11): Match {
       const seats = ['easy', 'human', 'off', 'off', 'off', 'off'] as const;
@@ -124,7 +124,7 @@ describe('antigravity power-up', () => {
     it('turns the nearest planet that still pulls, and spends the power-up', () => {
       const match = cpuMatch();
       const cpu = match.players[0];
-      const placer = match as unknown as Placer;
+      const placer = cpuSide(match);
       const own = match.world.ships[0];
       // Two planets on the same side: the nearer one is turned already, so the CPU goes for the other.
       match.world.planets = [
@@ -144,7 +144,7 @@ describe('antigravity power-up', () => {
     it('never turns a planet back, and keeps the power-up when every planet is turned', () => {
       const match = cpuMatch();
       const cpu = match.players[0];
-      const placer = match as unknown as Placer;
+      const placer = cpuSide(match);
       const own = match.world.ships[0];
       match.world.planets = [planet(own.x + 200, own.y, { reversed: true })];
       cpu.powerUp = 'antigravity';

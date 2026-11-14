@@ -5,6 +5,7 @@ import { POWER_UP_KINDS, POWER_UP_WEIGHTS } from '../../src/sim/powerups';
 import { Shot, simulateShot, type World } from '../../src/sim/physics';
 import { Volley } from '../../src/sim/volley';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
+import { cpuSide } from '../helpers';
 
 const rules = { edges: 'void' as const, timeLimit: 20 };
 
@@ -186,7 +187,7 @@ describe('plasma shot power-up', () => {
       const cpu = match.players[0];
       cpu.powerUp = 'plasma';
       cpu.armed = false;
-      const rescue = match as unknown as { cpuRescueIfBlind(p: unknown, job: unknown): boolean };
+      const rescue = cpuSide(match);
       const blind = { planner: null, target: { angle: 0, power: 50 }, settle: 0, blind: true };
       expect(rescue.cpuRescueIfBlind(cpu, blind)).toBe(true);
       expect(cpu.armed).toBe(true);
@@ -200,7 +201,7 @@ describe('plasma shot power-up', () => {
       const cpu = match.players[0];
       cpu.powerUp = 'plasma';
       cpu.armed = false;
-      const rescue = match as unknown as { cpuRescueIfBlind(p: unknown, job: unknown): boolean };
+      const rescue = cpuSide(match);
       expect(rescue.cpuRescueIfBlind(cpu, { planner: null, target: { angle: 0, power: 50 }, settle: 0, blind: false })).toBe(false);
       expect(cpu.armed).toBe(false);
     });

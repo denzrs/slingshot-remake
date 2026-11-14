@@ -5,6 +5,7 @@ import { t } from '../platform/i18n';
 import { type VolleyShot } from '../sim/volley';
 import { createRng, pick } from '../sim/rng';
 import { Match, type MatchSnapshot, type RoundTitle } from './match';
+import { swingTowards } from './cpu-desk';
 import type { ReplayTurn } from './replay';
 
 export interface ClassicSnapshot extends MatchSnapshot {
@@ -201,7 +202,7 @@ export class ClassicMatch extends Match {
     const start = (this.round + this.salvoNo) % alive.length;
     const order = [...alive.slice(start), ...alive.slice(0, start)];
     this.queue = this.simultaneous ? [] : order.filter((p) => !p.cpu).map((p) => p.id);
-    this.cpuJobs.clear();
+    this.cpu.clear();
     this.setPhase('aiming');
     this.openOracle('salvo');
     if (this.simultaneous) {
@@ -228,14 +229,14 @@ export class ClassicMatch extends Match {
     const cpus = this.alive.filter((p) => p.cpu && !p.locked);
     if (cpus.length) {
       // All CPUs think in parallel while the humans aim.
-      this.runCpu(cpus.map((p) => p.id), 8, 0.8);
+      this.cpu.run(cpus.map((p) => p.id), 8, 0.8);
       for (const p of cpus) {
-        const job = this.cpuJob(p.id);
-        if (this.cpuRescueIfBlind(p, job)) continue;
-        const place = this.cpuPlacementAim(p);
+        const job = this.cpu.job(p.id);
+        if (this.cpu.rescueIfBlind(p, job)) continue;
+        const place = this.cpu.placementAim(p);
         if (place && !job?.placeFailed && this.phaseTime >= 0.5) {
           // It lays the placement once its aim is on the spot; the placement spends its shot, so it fires nothing.
-          if (!this.swingTowards(p, place, dt, 2)) continue;
+          if (!swingTowards(p, place, dt, 2)) continue;
           if (this.placeForCpu(p.id)) {
             p.passed = true;
             p.locked = true;
@@ -246,7 +247,7 @@ export class ClassicMatch extends Match {
           if (job) job.placeFailed = true;
         }
         if (!job?.target || this.phaseTime < 0.5) continue;
-        if (this.swingTowards(p, job.target, dt, 2)) {
+        if (swingTowards(p, job.target, dt, 2)) {
           job.settle += dt;
           if (job.settle > 0.2) {
             p.locked = true;
@@ -313,13 +314,13 @@ export class ClassicMatch extends Match {
       return;
     }
     if (!p.cpu) return;
-    this.runCpu([p.id], 6, 1);
-    const job = this.cpuJob(p.id);
-    if (this.cpuRescueIfBlind(p, job)) return;
-    const place = this.cpuPlacementAim(p);
+    this.cpu.run([p.id], 6, 1);
+    const job = this.cpu.job(p.id);
+    if (this.cpu.rescueIfBlind(p, job)) return;
+    const place = this.cpu.placementAim(p);
     if (place && !job?.placeFailed && this.phaseTime >= 0.7) {
       // It lays the placement once its aim is on the spot; the placement spends its shot, so the turn moves on.
-      if (!this.swingTowards(p, place, dt)) return;
+      if (!swingTowards(p, place, dt)) return;
       if (this.placeForCpu(p.id)) {
         this.spend(p.id);
         return;
@@ -328,7 +329,7 @@ export class ClassicMatch extends Match {
       if (job) job.placeFailed = true;
     }
     if (!job?.target || this.phaseTime < 0.7) return;
-    if (this.swingTowards(p, job.target, dt)) {
+    if (swingTowards(p, job.target, dt)) {
       job.settle += dt;
       if (job.settle > 0.35) this.fire();
     }

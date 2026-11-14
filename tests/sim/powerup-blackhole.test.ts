@@ -3,6 +3,7 @@ import { createMatch, type Match } from '../../src/game';
 import { aimedSpot, blackHoleFits, POWER_UP } from '../../src/sim/powerups';
 import { Shot, type World } from '../../src/sim/physics';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
+import { cpuSide } from '../helpers';
 
 const rules = { edges: 'void' as const, timeLimit: 20 };
 
@@ -170,7 +171,7 @@ describe('black hole placement in a match', () => {
     const [own, enemy] = [match.world.ships[0], match.world.ships[1]];
     enemy.x = own.x + 200;
     enemy.y = own.y;
-    const placer = match as unknown as { cpuPlacementAim(p: unknown): { angle: number; power: number } | null };
+    const placer = cpuSide(match);
     expect(placer.cpuPlacementAim(cpu)).toBeNull();
 
     // Far enough away, the spot it picks fits.

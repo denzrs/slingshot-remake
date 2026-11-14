@@ -5,6 +5,7 @@ import { NEBULA } from '../../src/sim/config';
 import { cloneWorld, Shot, type World } from '../../src/sim/physics';
 import { Volley } from '../../src/sim/volley';
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
+import { cpuSide } from '../helpers';
 
 const rules = { edges: 'void' as const, timeLimit: 20 };
 
@@ -162,7 +163,6 @@ describe('a CPU and the placements', () => {
   }
 
   /** The CPU-side placement steps, reached without going through a turn. */
-  type Placer = { cpuPlacementAim(p: unknown): { angle: number; power: number } | null; placeForCpu(id: number): boolean };
   type Launcher = { launch(aims: unknown[], track: boolean): void };
 
   it('takes a placement its own shot flies past, where it used to leave it lying', () => {
@@ -182,7 +182,7 @@ describe('a CPU and the placements', () => {
   it('lays each placement it holds at a rough spot of its own, and spends it', () => {
     const match = cpuMatch();
     const cpu = match.players[0];
-    const placer = match as unknown as Placer;
+    const placer = cpuSide(match);
     const own = match.world.ships[0];
     const enemy = match.world.ships[1];
     // One rock between the two ships, inside the aim's reach: the planet killer has something to shoot.
@@ -205,7 +205,7 @@ describe('a CPU and the placements', () => {
   it('sets a planetary defense on the planet nearest it, and the defense guards its side', () => {
     const match = cpuMatch();
     const cpu = match.players[0];
-    const placer = match as unknown as Placer;
+    const placer = cpuSide(match);
     const own = match.world.ships[0];
     const enemy = match.world.ships[1];
     match.world.planets = [{ x: (own.x + enemy.x) / 2, y: (own.y + enemy.y) / 2, radius: 30, mass: 20_000, seed: 3, style: 'rocky', tint: '#fff' }];

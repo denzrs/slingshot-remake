@@ -5,6 +5,7 @@ import { isWormholeJump, portalFits, Shot, type World } from '../../src/sim/phys
 import { DEFAULT_SETTINGS } from '../../src/data/settings';
 import { portalColor } from '../../src/render/powerup-art';
 import { CPU_IGNORES, cpuWormholeSpots } from '../../src/sim/powerups';
+import { cpuSide } from '../helpers';
 
 const rules = { edges: 'void' as const, timeLimit: 20 };
 
@@ -172,7 +173,6 @@ describe('wormhole placement', () => {
 });
 
 describe('wormhole for a CPU', () => {
-  type Placer = { cpuPlacementAim(p: unknown): { angle: number; power: number } | null; placeForCpu(id: number): boolean };
 
   function cpuMatch(seed = 11): Match {
     const seats = ['easy', 'human', 'off', 'off', 'off', 'off'] as const;
@@ -208,7 +208,7 @@ describe('wormhole for a CPU', () => {
   it('sets the pair, spends the power-up, and the match has a new wormhole', () => {
     const match = cpuMatch();
     const cpu = match.players[0];
-    const placer = match as unknown as Placer;
+    const placer = cpuSide(match);
     cpu.powerUp = 'wormhole';
     const aim = placer.cpuPlacementAim(cpu);
     expect(aim).not.toBeNull();
