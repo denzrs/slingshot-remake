@@ -1,41 +1,16 @@
-/* ——— Statistics ——— */
+/* ——— Statistics: the menu-page frame with a dashboard of cards in it ——— */
 
-.panel--stats {
-  width: min(1080px, 100%);
-  text-align: center;
+.menu-page--stats {
+  --st-card: rgb(14 30 51 / 0.55);
+  --st-track: rgb(91 125 179 / 0.16);
+  --st-heat-1: rgb(255 173 101 / 0.24);
+  --st-heat-2: rgb(255 173 101 / 0.45);
+  --st-heat-3: rgb(255 173 101 / 0.7);
+  --st-heat-4: var(--launch-accent);
 }
 
-.panel--stats .eyebrow {
-  color: var(--bone-dim);
-}
-
-.panel--stats .items--row {
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-top: 10px;
-}
-
-/* The controls: bare bars, not boxed rows. The menu's row styling (padding, hover wash, pointer) is for a list of choices. */
-.st__tabs .item--segmented,
-.st__toolbar .item--segmented {
-  padding: 0;
-  min-height: 0;
-  background: none;
-  box-shadow: none;
-}
-
-.st__tabs .item--segmented::before,
-.st__toolbar .item--segmented::before {
-  display: none;
-}
-
-/* The two views: one strip under the title, its label left for screen readers alone. */
-.st__tabs {
-  width: min(360px, 100%);
-  margin: 18px auto 0;
-}
-
-.st__tabs .item__label {
+.menu-page--stats .st-metric .item--segmented { padding: 0; min-height: 0; background: none; box-shadow: none; }
+.menu-page--stats .st-metric .item__label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -43,153 +18,140 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+.menu-page--stats .st-metric .segmented__option { min-height: 26px; padding-inline: 10px; font-size: 11px; white-space: nowrap; }
 
-.st__tabs .segmented__option {
-  min-height: 36px;
-  font-size: 14px;
+.menu-page--stats .st-status { margin: 0 0 14px; }
+/* Empty, it takes no room, but stays in the page: a status region added back later is often not read out. */
+.menu-page--stats .st-status:empty { margin: 0; }
+
+/* The overview: a twelve-column grid of cards. */
+.st {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+  padding-bottom: 18px;
 }
 
-/* Where the games come from and what the squares count: side by side, each named to its left. */
-.st__toolbar {
+.st[hidden] { display: none; }
+
+.st-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--menu-line);
+  border-radius: 3px;
+  background: var(--st-card);
+}
+
+.st-card[hidden] { display: none; }
+.st-card--heat { grid-column: span 8; }
+.st-card--trend { grid-column: span 4; }
+.st-card--games { grid-column: span 6; }
+.st-card--modes, .st-card--records { grid-column: span 3; }
+.st-card--betting { grid-column: 1 / -1; }
+/* Without the cards beside it, the list of games takes the whole row. */
+.st:not(.st--sidecards) .st-card--games { grid-column: 1 / -1; }
+
+.st-card__head {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 10px 28px;
-  margin-top: 22px;
-  padding: 12px 0;
-  border-top: 1px solid rgb(91 125 179 / 0.22);
-  border-bottom: 1px solid rgb(91 125 179 / 0.22);
-}
-
-.st__toolbar[hidden] {
-  display: none;
-}
-
-.st__toolbar .item--segmented {
-  grid-template-columns: auto auto;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 6px 14px;
+  margin-bottom: 14px;
 }
 
-.st__toolbar .item__label {
-  color: var(--bone-dim);
-  font: 700 11px/1 var(--font-mono);
-  letter-spacing: 0.06em;
+.st-card__title {
+  margin: 0;
+  color: var(--launch-accent);
+  font: 700 10px/1.5 var(--font-mono);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
-.st__toolbar .segmented__option {
-  min-height: 28px;
-  padding-inline: 14px;
-  font-size: 12.5px;
-  white-space: nowrap;
+.st-card__heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
+.st-card__meta { color: var(--bone-dim); font-size: 11px; }
+.st-card .st-metric { width: min(300px, 100%); }
+.st-card__body { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+/* Beside the taller trend card, the heatmap sits in the middle of its own. */
+.st-card--heat .st-card__body { justify-content: center; }
+
+.st-card__sub {
+  margin: 0 0 8px;
+  color: var(--bone-dim);
+  font: 700 9px/1.5 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
-.panel--stats .lb__status {
-  margin: 12px 0 0;
-}
+.st-card__sub:not(:first-child) { margin-top: 16px; }
 
-/* Empty, it takes no room, but stays in the page: a status region added back later is often not read out. */
-.panel--stats .lb__status:empty {
-  margin: 0;
-}
-
-.panel--stats [data-items] {
-  position: sticky;
-  /* The screen pads 24px below the panel; stuck at its content edge the bar would leave that strip showing the cards behind it. */
-  bottom: -24px;
-  padding: 12px 0;
-  background: var(--plate);
-}
-
-.st__heat[hidden],
-.st__betting[hidden] {
-  display: none;
-}
-
-/* Cards: the betting figures and every fact share them, a large number over the words that say what it is. */
-.st__betting {
-  margin-top: 26px;
-  text-align: left;
-}
-
-.st__figures,
-.st__facts {
+/* The figures on top. */
+.st-kpis {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   margin: 0;
   padding: 0;
   list-style: none;
+  border: 1px solid var(--menu-line);
+  border-radius: 3px;
+  background: var(--st-card);
 }
 
-.st__figure,
-.st__fact {
+.st-kpi {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 14px 16px 15px;
-  border: 1px solid rgb(91 125 179 / 0.22);
-  border-top: 2px solid rgb(255 210 122 / 0.55);
-  border-radius: 3px;
-  background: rgb(19 39 70 / 0.35);
+  min-width: 0;
+  padding: 16px 18px 15px;
 }
 
-.st__figure strong,
-.st__factLead {
-  font: 400 30px/1 var(--font-display);
-  color: var(--sodium);
+.st-kpi + .st-kpi { border-left: 1px solid var(--menu-line); }
+.st-kpi:first-child { border-top: 2px solid var(--launch-accent); margin-top: -1px; }
+
+.st-kpi__label {
+  color: var(--bone-dim);
+  font: 700 9px/1.5 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.st-kpi__value {
+  color: var(--bone);
+  font: 800 clamp(28px, 2.8vw, 40px)/1 var(--font-display);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
 }
 
-.st__figure span {
-  font-size: 12.5px;
-  line-height: 1.4;
-  color: var(--bone-dim);
-}
+.st-kpi:first-child .st-kpi__value { color: var(--launch-accent); }
+.st-kpi__note { overflow: hidden; color: var(--bone-dim); font-size: 11px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.st-kpi[data-trend='up'] .st-kpi__note { color: var(--p2); }
+.st-kpi[data-trend='down'] .st-kpi__note { color: #ff9aa5; }
 
-.st__table[hidden] {
-  display: none;
-}
-
-.hm {
-  display: grid;
-  gap: 8px;
-  margin: 14px 0 0;
-  text-align: left;
-}
-
-.hm__total {
-  margin: 0;
-  color: var(--bone-dim);
-  font-size: 12.5px;
-}
+/* The heatmap. */
+.hm { display: grid; gap: 8px; text-align: left; }
 
 .hm__frame {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 6px;
+  gap: 8px;
   overflow-x: auto;
   padding-bottom: 4px;
 }
 
-.hm__body {
+.hm__body { display: grid; gap: 5px; min-width: 0; }
+
+.hm__months,
+.hm__grid {
   display: grid;
-  gap: 4px;
-  min-width: 0;
+  grid-template-columns: repeat(53, minmax(9px, 1fr));
+  gap: 3px;
 }
 
-.hm__months {
-  display: grid;
-  grid-template-columns: repeat(53, minmax(10px, 1fr));
-  color: var(--bone-dim);
-  font: 700 10px/1 var(--font-mono);
-  text-transform: uppercase;
-}
-
-.hm__months span {
-  white-space: nowrap;
-}
+.hm__months { color: var(--bone-dim); font: 700 9px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; }
+.hm__months span { white-space: nowrap; }
 
 .hm__days {
   display: grid;
@@ -197,76 +159,28 @@
   gap: 3px;
   margin-top: 14px;
   color: var(--bone-dim);
-  font: 700 10px/1 var(--font-mono);
+  font: 700 9px/1 var(--font-mono);
   text-transform: uppercase;
 }
 
-.hm__days span {
-  display: flex;
-  align-items: center;
-}
-
-.hm__grid {
-  display: grid;
-  grid-template-columns: repeat(53, minmax(10px, 1fr));
-  gap: 3px;
-}
-
-.hm__week {
-  display: grid;
-  grid-template-rows: repeat(7, 1fr);
-  gap: 3px;
-}
+.hm__days span { display: flex; align-items: center; }
+.hm__week { display: grid; grid-template-rows: repeat(7, 1fr); gap: 3px; }
 
 .hm__cell {
   display: block;
-  /* A fixed height: square cells would grow taller as the panel gets wider. */
-  height: 14px;
-  min-width: 10px;
-  border: 1px solid rgb(91 125 179 / 0.22);
+  /* A fixed height: square cells would grow taller as the card gets wider. */
+  height: 15px;
+  min-width: 9px;
   border-radius: 2px;
-  background: rgb(19 39 70 / 0.35);
+  background: var(--st-track);
 }
 
-.hm__cell[data-empty] {
-  border-color: transparent;
-  background: none;
-}
-
-.hm__cell[data-level='1'] {
-  border-color: transparent;
-  background: rgb(255 210 122 / 0.28);
-}
-
-.hm__cell[data-level='2'] {
-  border-color: transparent;
-  background: rgb(255 210 122 / 0.5);
-}
-
-.hm__cell[data-level='3'] {
-  border-color: transparent;
-  background: rgb(255 210 122 / 0.75);
-}
-
-.hm__cell[data-level='4'] {
-  border-color: transparent;
-  background: var(--sodium);
-}
-
-.hm__tip {
-  position: fixed;
-  z-index: 100;
-  padding: 5px 9px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: var(--plate);
-  color: var(--bone);
-  font: 700 12px/1.2 var(--font-body);
-  white-space: nowrap;
-  pointer-events: none;
-  /* Above the square it describes, centred on it. */
-  transform: translate(-50%, calc(-100% - 6px));
-}
+.hm__cell[data-empty] { background: none; }
+.hm__cell[data-level='1'] { background: var(--st-heat-1); }
+.hm__cell[data-level='2'] { background: var(--st-heat-2); }
+.hm__cell[data-level='3'] { background: var(--st-heat-3); }
+.hm__cell[data-level='4'] { background: var(--st-heat-4); }
+.hm__grid .hm__cell[data-tip]:hover { outline: 1px solid var(--bone); outline-offset: 1px; }
 
 .hm__legend {
   display: flex;
@@ -274,136 +188,256 @@
   justify-content: flex-end;
   gap: 4px;
   color: var(--bone-dim);
-  font-size: 11px;
+  font-size: 10px;
 }
 
-.hm__legend .hm__cell {
-  width: 12px;
-  min-width: 12px;
-  height: 12px;
+.hm__legend .hm__cell { width: 11px; min-width: 11px; height: 11px; }
+.hm__legend span:first-child { margin-right: 4px; }
+.hm__legend span:last-child { margin-left: 4px; }
+
+.hm__tip {
+  position: fixed;
+  z-index: 100;
+  padding: 5px 9px;
+  border: 1px solid var(--menu-line);
+  border-radius: 3px;
+  background: var(--menu-surface);
+  color: var(--bone);
+  font: 700 11px/1.2 var(--font-body);
+  white-space: nowrap;
+  pointer-events: none;
+  /* Above what it describes, centred on it. */
+  transform: translate(-50%, calc(-100% - 6px));
 }
 
-.st__table {
+/* The months as columns. */
+.st-months {
   display: grid;
-  gap: 4px;
-  margin: 18px 0 0;
-  text-align: left;
-}
-
-.st__title {
-  margin: 0 0 10px;
-  font: 800 16px/1 var(--font-display);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.st__head,
-.st__row {
-  display: grid;
-  /* The head and the rows share their columns: the button's is as wide as the button, never as wide as its content. */
-  grid-template-columns: minmax(110px, 1.1fr) minmax(90px, 1fr) minmax(120px, 1.2fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) 104px;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-}
-
-.st__head {
-  /* The rows' border, unseen, so the columns start where theirs do. */
-  border: 1px solid transparent;
-  color: var(--bone-dim);
-  font: 700 10px/1 var(--font-mono);
-  text-transform: uppercase;
-}
-
-.st__head[hidden] {
-  display: none;
-}
-
-.st__rows {
-  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.st__row {
-  border: 1px solid rgb(91 125 179 / 0.22);
-  border-radius: 3px;
-  background: rgb(19 39 70 / 0.35);
-  font-size: 13px;
+.st-months__item { display: grid; gap: 5px; min-width: 0; cursor: default; }
+.st-months__track { position: relative; display: block; height: 64px; border-radius: 2px; background: var(--st-track); }
+
+.st-months__bar {
+  position: absolute;
+  inset: auto 0 0;
+  height: calc(var(--share, 0) * 100%);
+  min-height: 1px;
+  border-radius: 2px;
+  background: var(--st-heat-3);
 }
 
-.st__num {
-  font-weight: 700;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+.st-months__item.is-current .st-months__bar { background: var(--launch-accent); }
+.st-months__item:hover .st-months__bar { background: var(--bone); }
+.st-months__label { overflow: hidden; color: var(--bone-dim); font: 700 8.5px/1 var(--font-mono); text-align: center; text-transform: uppercase; }
+
+/* The weekdays as bars. */
+.st-weekdays {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.st__none {
-  padding: 8px 10px;
-  color: var(--bone-dim);
-  font-size: 13px;
+.st-weekdays__item {
+  display: grid;
+  grid-template-columns: 2.6em minmax(0, 1fr) 3.2em;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
 }
 
-/* Last in the row; the button is a small one, and dimmed while the game cannot be watched again. */
-.st__rewatch {
-  justify-self: end;
+.st-weekdays__day { color: var(--bone-dim); font: 700 9px/1 var(--font-mono); text-transform: uppercase; }
+.st-weekdays__track { position: relative; height: 8px; border-radius: 2px; background: var(--st-track); }
+.st-weekdays__bar { position: absolute; inset: 0 auto 0 0; width: calc(var(--share, 0) * 100%); border-radius: 2px; background: var(--st-heat-3); }
+.st-weekdays__item.is-best .st-weekdays__bar { background: var(--launch-accent); }
+.st-weekdays__value { color: var(--bone); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* The latest games: one line each, no table. */
+.st-games {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.st-game {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 8px 7px 6px;
+  border-left: 2px solid transparent;
+  border-radius: 2px;
+}
+
+.st-game:nth-child(odd) { background: rgb(91 125 179 / 0.05); }
+.st-game:hover { border-left-color: var(--launch-accent); background: rgb(255 173 101 / 0.06); }
+.st-game__art { display: block; width: 56px; height: 35px; overflow: hidden; border: 1px solid var(--menu-line); border-radius: 2px; background: #071326; }
+.st-game__art svg { display: block; width: 100%; height: 100%; }
+.st-game__main { display: grid; gap: 3px; min-width: 0; }
+.st-game__mode { display: flex; align-items: center; gap: 8px; min-width: 0; font: 700 13px/1.3 var(--font-body); }
+
+.st-game__tag {
+  padding: 1px 6px;
+  border: 1px solid rgb(111 227 200 / 0.35);
+  border-radius: 2px;
+  color: var(--p2);
+  font: 700 8.5px/1.5 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.st-game__meta { overflow: hidden; color: var(--bone-dim); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.st-game__score { display: grid; justify-items: end; gap: 2px; }
+.st-game__score strong { font: 800 18px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.st-game__score span { color: var(--bone-dim); font-size: 10.5px; white-space: nowrap; }
+
+.st-game__watch {
+  min-width: 74px;
+  min-height: 30px;
   padding: 5px 12px;
+  border: 1px solid var(--launch-accent);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--launch-accent);
+  font: 700 10px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.st-game__watch:hover:not(:disabled) { background: var(--launch-accent); color: var(--menu-surface); }
+.menu-page--stats .st-game__watch:disabled { border-color: var(--menu-line); color: var(--bone-dim); opacity: 0.45; cursor: not-allowed; }
+.st-none { padding: 10px 4px; color: var(--bone-dim); font-size: 12px; }
+
+/* Shares of the rounds. */
+.st-shares {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.st-shares + .st-shares { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--menu-line); }
+
+.st-share {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 5px 10px;
   font-size: 12px;
 }
 
-.st__rewatch[disabled] {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+.st-shares--modes .st-share { grid-template-columns: 40px minmax(0, 1fr) auto; }
+.st-share__icon { grid-row: span 2; align-self: center; display: block; width: 40px; height: 25px; overflow: hidden; border-radius: 2px; background: #071326; }
+.st-share__icon svg { display: block; width: 100%; height: 100%; }
+.st-share__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-share__value { font: 700 12px/1 var(--font-mono); font-variant-numeric: tabular-nums; }
+.st-share__track { grid-column: -3 / -1; position: relative; height: 4px; border-radius: 2px; background: var(--st-track); }
+.st-share__bar { position: absolute; inset: 0 auto 0 0; width: calc(var(--share, 0) * 100%); border-radius: 2px; background: var(--p2); }
+.st-shares--modes .st-share__bar { background: var(--launch-accent); }
 
-@media (max-width: 640px) {
-  .st__head {
-    display: none;
-  }
-
-  .st__toolbar .item--segmented {
-    grid-template-columns: minmax(0, 1fr);
-    width: 100%;
-    gap: 6px;
-  }
-
-  .st__figures {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .st__row {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .st__rewatch {
-    grid-column: 1 / -1;
-    justify-self: stretch;
-  }
-}
-
-/* Every fact as a card, in the order the relay groups them. */
-.st__factsView {
-  margin: 22px 0 0;
-  text-align: left;
-}
-
-.st__factsView[hidden] {
-  display: none;
-}
-
-.st__facts {
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-}
-
-.st__factText {
+/* Records: a label and the figure. */
+.st-records {
+  display: grid;
   margin: 0;
-  color: var(--bone-dim);
-  font-size: 13.5px;
-  line-height: 1.45;
+  padding: 0;
+  list-style: none;
 }
 
-.st__factText .stats-ticker__number {
-  color: var(--bone);
+.st-record {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgb(91 125 179 / 0.14);
+  font-size: 12px;
+}
+
+.st-record:first-child { padding-top: 0; }
+.st-record:last-child { border-bottom: 0; }
+.st-record__label { color: var(--bone-dim); }
+.st-record__value { color: var(--sodium); font: 800 19px/1 var(--font-display); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Tips and bets: a row of figures. */
+.st-figures {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.st-figure { display: flex; flex-direction: column; gap: 5px; min-width: 0; padding: 2px 14px; }
+.st-figure:first-child { padding-left: 0; }
+.st-figure + .st-figure { border-left: 1px solid var(--menu-line); }
+.st-figure__value { color: var(--sodium); font: 800 26px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.st-figure__label { font-size: 11.5px; line-height: 1.35; }
+.st-figure__note { color: var(--bone-dim); font-size: 10.5px; }
+
+/* The facts page: a heading for each kind of fact, the facts as cards under it. */
+.st-factsPage { display: grid; gap: 26px; padding-bottom: 18px; }
+.st-group__title { display: flex; align-items: baseline; gap: 10px; }
+.st-group__count { color: var(--bone-dim); font-weight: 400; }
+
+.st-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.st-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 15px;
+  border: 1px solid var(--menu-line);
+  border-left: 2px solid var(--launch-accent);
+  border-radius: 3px;
+  background: var(--st-card);
+}
+
+.st-fact__lead { color: var(--sodium); font: 800 30px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.st-fact__text { margin: 0; color: var(--bone-dim); font-size: 12.5px; line-height: 1.5; }
+.st-fact__text .stats-ticker__number { color: var(--bone); }
+
+@media (max-width: 1100px) {
+  .st-card--heat, .st-card--trend, .st-card--games { grid-column: 1 / -1; }
+  .st-card--modes, .st-card--records { grid-column: span 6; }
+  .st-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .st-kpi:nth-child(4) { border-left: 0; }
+  .st-kpi:nth-child(n + 4) { border-top: 1px solid var(--menu-line); }
+  .st-figures { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 16px; }
+  .st-figure:nth-child(5) { padding-left: 0; border-left: 0; }
+}
+
+@media (max-width: 760px) {
+  .st { gap: 10px; }
+  .st-card { padding: 14px; }
+  .st-card--modes, .st-card--records { grid-column: 1 / -1; }
+  .st-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .st-kpi { padding: 12px 14px; }
+  .st-kpi:nth-child(odd) { border-left: 0; }
+  .st-kpi:nth-child(4) { border-left: 1px solid var(--menu-line); }
+  .st-kpi:nth-child(n + 3) { border-top: 1px solid var(--menu-line); }
+  .st-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .st-figure:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .st-game { grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; }
+  .st-game__art { width: 44px; height: 28px; }
+  .st-game__watch { grid-column: 2 / -1; justify-self: start; min-height: 28px; }
+  /* A replay that cannot be watched is not worth a line of its own here: the row says nothing less without it. */
+  .menu-page--stats .st-game__watch:disabled { display: none; }
 }

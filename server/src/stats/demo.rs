@@ -56,56 +56,73 @@ impl Stats {
         let today_offset = (now - today) * 2 / 3;
         let mut games = 0;
 
-        // A game every three days gives the heatmap a full-year shape and enough rounds for every
-        // menu fact's minimum sample size. Every third game uses teams; modes and CPU levels vary.
-        for age in (0..365).step_by(3) {
-            let index = games;
-            let id = index as u64 + 1;
-            let at = today - age as i64 * DAY_SECS + today_offset;
-            let game_mode = GAME_MODES[index % GAME_MODES.len()];
-            let team_mode = index % 3 == 0;
-            let facts = demo_facts(id, index, game_mode, team_mode, false, 2);
+        // A year that looks played: busier towards today, more on weekends, a quiet week now and
+        // then, and games of different lengths, so the page's charts have a shape to show. Every
+        // third game uses teams; modes and CPU levels vary.
+        for age in 0..365_i64 {
+            let day_start = today - age * DAY_SECS;
+            let span = if age == 0 {
+                today_offset
+            } else {
+                DAY_SECS * 3 / 4
+            };
+            let count = demo_games_on(age, day_start);
+            for k in 0..count {
+                let index = games;
+                let id = index as u64 + 1;
+                let at = day_start + span * (k + 1) / (count + 1);
+                let game_mode = GAME_MODES[index % GAME_MODES.len()];
+                let team_mode = index % 3 == 0;
+                let rounds = 2 + (index % 4) as i64;
+                let facts = demo_facts(id, index, game_mode, team_mode, false, rounds);
 
-            for round in 1_i64..=2 {
-                for turn in 1_i64..=2 {
-                    let report = demo_turn(index, round, turn);
-                    self.record_at(
-                        &Job::Turn(facts.clone(), report),
-                        at + (round * 3 + turn) * 60,
+                for round in 1_i64..=rounds {
+                    for turn in 1_i64..=2 {
+                        let report = demo_turn(index, round, turn);
+                        self.record_at(
+                            &Job::Turn(facts.clone(), report),
+                            at + (round * 3 + turn) * 60,
+                        )
+                        .await?;
+                    }
+                    let report = demo_round(index, round, team_mode, false);
+                    self.record_at(&Job::Round(facts.clone(), report), at + round * 5 * 60)
+                        .await?;
+                }
+
+                // The sample shots and rounds are useful for the charts and facts, but they do not
+                // describe a real deterministic match. Keep their replay buttons disabled.
+                self.store
+                    .conn
+                    .execute(
+                        "UPDATE stat_matches SET replayable = 0 WHERE match_id = ?1",
+                        (facts.match_id.clone(),),
                     )
                     .await?;
-                }
-                let report = demo_round(index, round, team_mode, false);
-                self.record_at(&Job::Round(facts.clone(), report), at + round * 5 * 60)
-                    .await?;
+                games += 1;
             }
-
-            // The sample shots and rounds are useful for the charts and facts, but they do not
-            // describe a real deterministic match. Keep their replay buttons disabled.
-            self.store
-                .conn
-                .execute(
-                    "UPDATE stat_matches SET replayable = 0 WHERE match_id = ?1",
-                    (facts.match_id.clone(),),
-                )
-                .await?;
-            games += 1;
         }
 
-        // Local games populate the second heatmap and the source switch. Their fixture rounds are
-        // intentionally summary-only, as actual local-game reports are.
-        for (local_index, age) in (6..365).step_by(15).enumerate() {
-            let index = local_index + 200;
-            let id = index as u64 + 1;
-            let game_mode = GAME_MODES[index % GAME_MODES.len()];
-            let team_mode = index % 4 == 0;
-            let facts = demo_facts(id, index, game_mode, team_mode, true, 2);
-            let rounds = (1_i64..=2)
-                .map(|round| demo_round(index, round, team_mode, true))
-                .collect();
-            let at = today - age as i64 * DAY_SECS + today_offset - 3600;
-            self.record_at(&Job::Local(facts, rounds), at).await?;
-            games += 1;
+        // Local games populate the second heatmap and the source switch: fewer of them, mostly
+        // on weekends. Their fixture rounds are intentionally summary-only, as actual local-game
+        // reports are.
+        for age in 1..365_i64 {
+            let day_start = today - age * DAY_SECS;
+            let count = demo_games_on(age, day_start) / 3;
+            for k in 0..count {
+                let index = games;
+                let id = index as u64 + 1;
+                let game_mode = GAME_MODES[index % GAME_MODES.len()];
+                let team_mode = index % 4 == 0;
+                let rounds = 2 + (index % 3) as i64;
+                let facts = demo_facts(id, index, game_mode, team_mode, true, rounds);
+                let reports = (1_i64..=rounds)
+                    .map(|round| demo_round(index, round, team_mode, true))
+                    .collect();
+                let at = day_start + DAY_SECS / 2 + k * 3600;
+                self.record_at(&Job::Local(facts, reports), at).await?;
+                games += 1;
+            }
         }
 
         Ok(games)
@@ -126,6 +143,24 @@ impl Stats {
         }
         Ok(())
     }
+}
+
+/// How many demo games a day `age` days back (starting at `day_start`) gets: more towards today
+/// and on weekends, none in an occasional quiet week, and a reproducible scatter in between.
+fn demo_games_on(age: i64, day_start: i64) -> i64 {
+    if (age / 7) % 9 == 4 {
+        return 0;
+    }
+    // 1970-01-01 was a Thursday: 2 and 3 are Saturday and Sunday.
+    let weekday = (day_start / DAY_SECS).rem_euclid(7);
+    let weekend = if weekday == 2 || weekday == 3 {
+        2.0
+    } else {
+        1.0
+    };
+    let trend = 0.5 + 2.5 * (1.0 - age as f64 / 365.0);
+    let scatter = 0.3 + ((age as u64 + 7).wrapping_mul(2_654_435_761) % 100) as f64 / 100.0 * 1.1;
+    (trend * weekend * scatter).round() as i64
 }
 
 fn demo_facts(

@@ -65,7 +65,7 @@ function settingsScreen(app: App, selection: SettingsSelection): Screen {
   const inGroup = (item: MenuItem, group: 'display' | 'device' | 'language' | 'access' | 'touch'): MenuItem => ({ ...item, section: `prefs-${group}` } as MenuItem);
   return {
     build: () => menuPage({
-      title: t('common.settings'), intro: t('settings.note'), className: 'menu-page--settings',
+      title: t('common.settings'), className: 'menu-page--settings',
       navigation: sheet.navigation,
       body: [sheet.el],
       keys: hintText('briefing.keys'),
