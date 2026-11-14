@@ -25,7 +25,7 @@ export const WIRE_FILES = [
 ] as const;
 
 /** Declarations picked out of files that are mostly something else: the file, and what the declaration starts with. */
-export const WIRE_DECLARATIONS = [{ file: 'src/game/match.ts', start: 'export type GameEvent =' }] as const;
+export const WIRE_DECLARATIONS = [{ file: 'src/game/match-types.ts', start: 'export type GameEvent =' }] as const;
 
 const CONTRACT = 'server/protocol-contract.json';
 const CLIENT_VERSION_FILE = 'src/net/net.ts';
