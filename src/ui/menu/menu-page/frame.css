@@ -410,7 +410,7 @@
   .menu-page__actions .item--primary { min-height: 48px; font-size: 23px; }
   .menu-page .setup { grid-template-columns: minmax(0, 1fr); }
   .menu-page--tutorial .menu-page__body { display: flex; flex-direction: column; gap: 18px; }
-  .menu-page--tutorial .menu-page__aside { order: -1; overflow: hidden; padding: 0; border: 0; border-bottom: 1px solid var(--menu-line); }
+  .menu-page--tutorial .menu-page__aside { order: -1; flex: none; overflow: hidden; padding: 0; border: 0; border-bottom: 1px solid var(--menu-line); }
   .tutorial__layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .tutorial__preview { position: static; grid-row: 1; width: min(100%, 480px); margin-inline: auto; }
   .tutorial__copy { grid-row: 2; }
