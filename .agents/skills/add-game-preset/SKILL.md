@@ -11,7 +11,7 @@ Turn the idea into a playable, easy-to-find preset. Keep the work focused on the
 
 - Keep three independent preset groups in `src/ui/presets/match-presets.ts`: `classic`, `solar`, and `horizon`. Do not make Solar System inherit Classic's list. Similar entries may begin with the same rules, but each group can evolve separately.
 - Add the preset ID and rule factory only to the intended group or groups. Apply and identify presets with the active mode (`presetsForMode`, `presetRules`, and `matchingPreset`) so the same ID can have different rules in different modes.
-- A preset combines existing `RoomRules`. For a genuinely new rule or mechanic, trace its implementation through `src/net/net.ts`, `src/ui/menu/rules.ts`, and the relevant game code before treating the preset as complete.
+- A preset combines existing `RoomRules`. A genuinely new rule or mechanic starts as an experiment (`src/game/experiments.ts`, see `AGENTS.md`); once it is kept, it becomes an entry in the `RULES` table (`src/data/roomRules.ts`), a row in `ruleRows()` (`src/ui/menu/rules.ts`), the game code that reads it and `npm run protocol` (see `change-wire-protocol`), before the preset is complete.
 - Add `preset.<id>` and `preset.<id>.hint` in both English and German in `src/platform/i18n.ts`. Add or adapt its card illustration in `src/ui/menu/mode-icons.ts`.
 - The regular preset list feeds both local match setup and online room creation. Confirm the intended modes show the card and applying it sets the authored rules in both flows.
 

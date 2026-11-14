@@ -16,7 +16,7 @@ pub const PROTOCOL_VERSION: u32 = 2;
 pub const MAX_TIP: i64 = 6;
 /// A teleport offers a few spots to choose from; a pick names one by its place in the list.
 const MAX_SPOT: usize = 8;
-/// The power-ups a room can lay, in the order the client lists them. A room's kinds are kept as a bitmask over this list.
+/// The power-ups a room can lay, in the order the client lists them (a test holds this to the contract's `powerUpKinds`).
 pub const POWER_UP_KINDS: [&str; 12] = [
     "preview",
     "teleport",
@@ -30,20 +30,6 @@ pub const POWER_UP_KINDS: [&str; 12] = [
     "wormhole",
     "defense",
     "plasma",
-];
-/// Every kind switched on: one bit per kind, so the mask fills from the top down and never shifts past the type.
-pub const ALL_POWER_UP_KINDS: u16 = u16::MAX >> (16 - POWER_UP_KINDS.len());
-/// How many pickups may lie on the field.
-const POWER_UP_AMOUNTS: [i64; 4] = [1, 2, 3, 4];
-/// The anomalies a room can play by, in the order the client lists them (`ANOMALIES` in `src/sim/config.ts`).
-/// A room's anomalies are kept as a bitmask over this list; none at all is the default.
-pub const ANOMALIES: [&str; 6] = [
-    "trickShots",
-    "pinball",
-    "fuse",
-    "fusion",
-    "whiteHole",
-    "unstable",
 ];
 
 /// The most points one stake may name on the wire; the host holds a player to what they actually have.
@@ -238,24 +224,12 @@ pub fn is_safe_integer(value: &Value) -> bool {
     false
 }
 
-fn is_bool_field(value: &Value, key: &str) -> bool {
-    value.get(key).and_then(Value::as_bool).is_some()
-}
-
 /// `Number.isInteger(v) && v >= min && v <= max`.
 fn is_int_between(value: &Value, min: i64, max: i64) -> bool {
     let Some(f) = value.as_f64() else {
         return false;
     };
     f.fract() == 0.0 && f >= min as f64 && f <= max as f64
-}
-
-/// `[..].includes(v)` with `===` equality, for small integer sets.
-fn is_number_in(value: &Value, allowed: &[i64]) -> bool {
-    let Some(f) = value.as_f64() else {
-        return false;
-    };
-    allowed.iter().any(|&a| f == a as f64)
 }
 
 /// A client's aim/fire request, as the host will apply it.
@@ -576,339 +550,132 @@ fn censor(text: &str) -> String {
         .collect()
 }
 
-/// When automatic killcams play; Auto enables them for simultaneous salvos only.
-#[derive(Clone, Copy, Debug)]
-pub enum KillcamMode {
-    Auto,
-    Off,
-    Every,
-    Round,
+/// `protocol-contract.json`, compiled in: the one place the rules' defaults, options and kinds are written. The client writes it
+/// from its rule table (`npm run protocol`); the relay reads the rules it accepts from it, so a rule is never described twice.
+pub fn contract() -> &'static Value {
+    static CONTRACT: LazyLock<Value> = LazyLock::new(|| {
+        serde_json::from_str(include_str!("../protocol-contract.json"))
+            .expect("protocol-contract.json is JSON")
+    });
+    &CONTRACT
 }
 
-impl KillcamMode {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Off => "off",
-            Self::Every => "every",
-            Self::Round => "round",
-        }
+/// The rules of an online game, chosen by whoever creates (and later edits) the room: a value for every rule of the contract, each
+/// one a legal one (see `parse_rules`). Held as the JSON they travel as, since the relay passes them on far more than it reads them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomRules(serde_json::Map<String, Value>);
+
+impl RoomRules {
+    /// The rules as they leave the relay, keyed like the client-side `RoomRules` object.
+    pub fn to_value(&self) -> Value {
+        Value::Object(self.0.clone())
+    }
+
+    /// A rule's value, which the contract has a default for.
+    pub fn get(&self, key: &str) -> &Value {
+        &self.0[key]
+    }
+
+    /// These rules with one rule set to a value the caller knows to be legal (for tools and tests; a client's rules go through `parse_rules`).
+    pub fn with(mut self, key: &str, value: Value) -> Self {
+        assert!(self.0.contains_key(key), "no rule {key} in the contract");
+        self.0.insert(key.to_string(), value);
+        self
+    }
+
+    pub fn mayhem(&self) -> i64 {
+        self.get("mayhem").as_i64().unwrap_or(0)
+    }
+
+    pub fn chat_players_only(&self) -> bool {
+        self.get("chatPlayersOnly").as_bool().unwrap_or(false)
     }
 }
 
-/// What the edge of the field does to a shot: it flies out and is lost, bounces back, or comes out on the opposite side.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EdgeMode {
-    Void,
-    Wall,
-    Loop,
-}
-
-impl EdgeMode {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Void => "void",
-            Self::Wall => "wall",
-            Self::Loop => "loop",
-        }
-    }
-}
-
-/// The rules of an online game, chosen by whoever creates (and later edits) the room.
-#[derive(Clone, Debug)]
-pub struct RoomRules {
-    /// 0 = endless.
-    pub rounds: i64,
-    pub max_planets: i64,
-    pub invisible_planets: bool,
-    pub edges: EdgeMode,
-    /// Every shot flies with `fixed_power_level`.
-    pub fixed_power: bool,
-    /// The power of a fixed shot, 10 to 100 in steps of 5.
-    pub fixed_power_level: i64,
-    /// Highest power a shot may be fired with (100 = no cap).
-    pub max_power: i64,
-    /// Seconds before a shot fizzles out.
-    pub shot_time: i64,
-    /// Classic only: trick shots multiply a hit's points.
-    pub style_bonuses: bool,
-    /// Four or more ships: the shooter's first this many shots of a round (0 = off) pass through
-    /// its nearest enemy.
-    pub neighbor_grace: i64,
-    /// Classic only: everybody aims at once and all shots fly together.
-    pub simultaneous_shots: bool,
-    pub killcam: KillcamMode,
-    /// Everybody sees only their own aim, not the opponents'.
-    pub hidden_aim: bool,
-    /// Seconds a finished shot's flight path stays on the board (0 = for good).
-    pub fading_trails: i64,
-    /// Classic and Solar System: a round that drags on ends in sudden death.
-    pub sudden_death: bool,
-    /// Mayhem: every round has twists of its own (0 = off, then 1 mild, 2 wild, 3 insane).
-    pub mayhem: i64,
-    /// Online: eliminated players may bet points of the match on who wins the round.
-    pub betting: bool,
-    /// Chat: only the people who play may write; spectators can read along.
-    pub chat_players_only: bool,
-    /// Power-ups: pickups on the field, one held at a time.
-    pub power_ups: bool,
-    /// Which kinds may turn up: a bitmask over `POWER_UP_KINDS`, never empty.
-    pub power_up_kinds: u16,
-    /// How many pickups lie on the field.
-    pub power_up_amount: i64,
-    /// The anomalies the match plays by: a bitmask over `ANOMALIES`, empty for none.
-    pub anomalies: u8,
-}
-
-pub const DEFAULT_RULES: RoomRules = RoomRules {
-    rounds: 5,
-    max_planets: 4,
-    invisible_planets: false,
-    edges: EdgeMode::Void,
-    fixed_power: false,
-    fixed_power_level: 55,
-    max_power: 100,
-    shot_time: 20,
-    style_bonuses: false,
-    neighbor_grace: 0,
-    simultaneous_shots: false,
-    killcam: KillcamMode::Auto,
-    hidden_aim: false,
-    fading_trails: 0,
-    sudden_death: true,
-    mayhem: 0,
-    betting: false,
-    chat_players_only: false,
-    power_ups: false,
-    power_up_kinds: ALL_POWER_UP_KINDS,
-    power_up_amount: 2,
-    anomalies: 0,
-};
+/// The standard rules: the contract's defaults.
+pub static DEFAULT_RULES: LazyLock<RoomRules> = LazyLock::new(|| {
+    RoomRules(
+        contract()["defaults"]
+            .as_object()
+            .expect("the contract has defaults")
+            .clone(),
+    )
+});
 
 /// The rules as they leave the relay, keyed like the client-side `RoomRules` object.
 pub fn rules_to_value(rules: &RoomRules) -> Value {
-    serde_json::json!({
-        "rounds": rules.rounds,
-        "maxPlanets": rules.max_planets,
-        "invisiblePlanets": rules.invisible_planets,
-        "edges": rules.edges.as_str(),
-        "fixedPower": rules.fixed_power,
-        "fixedPowerLevel": rules.fixed_power_level,
-        "maxPower": rules.max_power,
-        "shotTime": rules.shot_time,
-        "styleBonuses": rules.style_bonuses,
-        "neighborGrace": rules.neighbor_grace,
-        "simultaneousShots": rules.simultaneous_shots,
-        "killcam": rules.killcam.as_str(),
-        "hiddenAim": rules.hidden_aim,
-        "fadingTrails": rules.fading_trails,
-        "suddenDeath": rules.sudden_death,
-        "mayhem": rules.mayhem,
-        "betting": rules.betting,
-        "chatPlayersOnly": rules.chat_players_only,
-        "powerUps": rules.power_ups,
-        "powerUpKinds": POWER_UP_KINDS
-            .iter()
-            .enumerate()
-            .filter(|(bit, _)| rules.power_up_kinds & (1u16 << bit) != 0)
-            .map(|(_, kind)| *kind)
-            .collect::<Vec<_>>(),
-        "powerUpAmount": rules.power_up_amount,
-        "anomalies": ANOMALIES
-            .iter()
-            .enumerate()
-            .filter(|(bit, _)| rules.anomalies & (1u8 << bit) != 0)
-            .map(|(_, anomaly)| *anomaly)
-            .collect::<Vec<_>>(),
-    })
+    rules.to_value()
 }
 
-/// A client's `anomalies`: a list of distinct known anomalies (none is fine), as a bitmask.
-fn parse_anomalies(value: &Value) -> Option<u8> {
-    let list = value.as_array()?;
-    let mut mask = 0u8;
-    for anomaly in list {
-        let bit = ANOMALIES
-            .iter()
-            .position(|a| Some(*a) == anomaly.as_str())?;
-        if mask & (1u8 << bit) != 0 {
-            return None;
+/// A whole number out of a JSON number that is one (`5` and `5.0` are both 5).
+fn whole(value: &Value) -> Option<i64> {
+    let f = value.as_f64()?;
+    (f.fract() == 0.0 && f.abs() <= 9_007_199_254_740_991.0).then_some(f as i64)
+}
+
+/// A client's value for one rule, if it is a legal one, as the relay keeps it: a boolean for a switch, one of the contract's options
+/// (or, for a rule that says so, any whole number in its range) for a choice, and for a set a list of distinct options, in
+/// the contract's order, never empty where the contract says so.
+fn legal_value(key: &str, spec: &Value, value: &Value) -> Option<Value> {
+    match spec["kind"].as_str()? {
+        "flag" => value.as_bool().map(Value::Bool),
+        "choice" => {
+            let options = contract()["options"][key].as_array()?;
+            if let Some(word) = value.as_str() {
+                return options
+                    .iter()
+                    .any(|option| option.as_str() == Some(word))
+                    .then(|| value.clone());
+            }
+            let number = whole(value)?;
+            let listed = options.iter().any(|option| option.as_i64() == Some(number));
+            let in_range = spec["accepts"].as_array().is_some_and(|range| {
+                matches!((range[0].as_i64(), range[1].as_i64()), (Some(min), Some(max)) if (min..=max).contains(&number))
+            });
+            (listed || in_range).then(|| Value::from(number))
         }
-        mask |= 1u8 << bit;
-    }
-    Some(mask)
-}
-
-/// The kinds of a client's `powerUpKinds`: a non-empty list of distinct known kinds, as a bitmask.
-fn parse_power_up_kinds(value: &Value) -> Option<u16> {
-    let list = value.as_array()?;
-    let mut mask = 0u16;
-    for kind in list {
-        let bit = POWER_UP_KINDS
-            .iter()
-            .position(|k| Some(*k) == kind.as_str())?;
-        if mask & (1u16 << bit) != 0 {
-            return None;
+        "set" => {
+            let chosen = value.as_array()?;
+            let options = spec["options"].as_array()?;
+            let mut kept = Vec::new();
+            for option in options {
+                let times = chosen.iter().filter(|item| *item == option).count();
+                if times > 1 {
+                    return None;
+                }
+                if times == 1 {
+                    kept.push(option.clone());
+                }
+            }
+            // Every item has to have been one of the options.
+            if kept.len() != chosen.len()
+                || (spec["nonEmpty"].as_bool() == Some(true) && kept.is_empty())
+            {
+                return None;
+            }
+            Some(Value::Array(kept))
         }
-        mask |= 1u16 << bit;
+        _ => None,
     }
-    (mask != 0).then_some(mask)
 }
 
-/// Validates untrusted rules from a client; None when anything is off.
+/// Validates untrusted rules from a client; None when anything is off. A rule that is missing (or null) has its default; one that
+/// is there has to be legal. Anything the contract does not name is left out.
 pub fn parse_rules(value: &Value) -> Option<RoomRules> {
     if !is_record(value) {
         return None;
     }
-    // A present-but-null field behaves like a missing one, mirroring `?? 100` on the JS side.
-    let field = |key: &str| value.get(key).filter(|v| !v.is_null());
-
-    let rounds = field("rounds")?;
-    let max_planets = field("maxPlanets")?;
-    let shot_time = field("shotTime")?;
-    if !is_int_between(rounds, 0, 99)
-        || !is_int_between(max_planets, 1, 8)
-        || !is_int_between(shot_time, 5, 120)
-    {
-        return None;
+    let contract = contract();
+    let mut rules = serde_json::Map::new();
+    for (key, spec) in contract["rules"].as_object()? {
+        let given = value.get(key).filter(|v| !v.is_null());
+        let legal = match given {
+            None => contract["defaults"][key].clone(),
+            Some(v) => legal_value(key, spec, v)?,
+        };
+        rules.insert(key.clone(), legal);
     }
-    for key in [
-        "invisiblePlanets",
-        "fixedPower",
-        "styleBonuses",
-        "simultaneousShots",
-        "hiddenAim",
-    ] {
-        if !is_bool_field(value, key) {
-            return None;
-        }
-    }
-    // Clients from before the loop existed send a yes/no `bounce` instead: yes is a wall.
-    let edges = match field("edges") {
-        Some(v) => match v.as_str()? {
-            "void" => EdgeMode::Void,
-            "wall" => EdgeMode::Wall,
-            "loop" => EdgeMode::Loop,
-            _ => return None,
-        },
-        None => match field("bounce") {
-            Some(v) => {
-                if v.as_bool()? {
-                    EdgeMode::Wall
-                } else {
-                    EdgeMode::Void
-                }
-            }
-            None => EdgeMode::Void,
-        },
-    };
-    let killcam = match field("killcam") {
-        None => KillcamMode::Auto,
-        Some(v) => match v.as_str()? {
-            "auto" => KillcamMode::Auto,
-            "off" => KillcamMode::Off,
-            "every" => KillcamMode::Every,
-            "round" => KillcamMode::Round,
-            _ => return None,
-        },
-    };
-    let neighbor_grace = field("neighborGrace")?;
-    if !is_number_in(neighbor_grace, &[0, 1, 2]) {
-        return None;
-    }
-    // Clients from before the cap, or the fixed level, existed don't send them; a missing field
-    // (or a null one) falls back to the default, exactly like `?? 100` on the JS side.
-    let max_power_ok = match field("maxPower") {
-        Some(v) => is_number_in(v, &[10, 20, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100]),
-        None => true,
-    };
-    if !max_power_ok {
-        return None;
-    }
-    let fixed_power_level_ok = match field("fixedPowerLevel") {
-        Some(v) => is_int_between(v, 10, 100) && v.as_f64().unwrap() % 5.0 == 0.0,
-        None => true,
-    };
-    if !fixed_power_level_ok {
-        return None;
-    }
-    // Clients from before betting existed don't send it: no betting, the default. A present value has to be a boolean.
-    if field("betting").is_some_and(|v| !v.is_boolean()) {
-        return None;
-    }
-    // Likewise for the chat limit, which came later.
-    if field("chatPlayersOnly").is_some_and(|v| !v.is_boolean()) {
-        return None;
-    }
-    let fading_trails = field("fadingTrails")?;
-    if !is_number_in(fading_trails, &[0, 1, 2, 4]) {
-        return None;
-    }
-    // Sudden death came later: a client that doesn't send it gets the default. A present value has to be a boolean.
-    if field("suddenDeath").is_some_and(|v| !v.is_boolean()) {
-        return None;
-    }
-    if field("mayhem").is_some_and(|v| !is_number_in(v, &[0, 1, 2, 3])) {
-        return None;
-    }
-    // Power-ups came later: a client that doesn't send them plays without. A present value has to be valid.
-    if field("powerUps").is_some_and(|v| !v.is_boolean()) {
-        return None;
-    }
-    let power_up_kinds = match field("powerUpKinds") {
-        Some(v) => parse_power_up_kinds(v)?,
-        None => DEFAULT_RULES.power_up_kinds,
-    };
-    if field("powerUpAmount").is_some_and(|v| !is_number_in(v, &POWER_UP_AMOUNTS)) {
-        return None;
-    }
-    // Anomalies came later: a client that doesn't send them plays without.
-    let anomalies = match field("anomalies") {
-        Some(v) => parse_anomalies(v)?,
-        None => DEFAULT_RULES.anomalies,
-    };
-
-    fn i64_of(value: &Value) -> i64 {
-        value.as_f64().unwrap() as i64
-    }
-    Some(RoomRules {
-        rounds: i64_of(rounds),
-        max_planets: i64_of(max_planets),
-        invisible_planets: value.get("invisiblePlanets").unwrap().as_bool().unwrap(),
-        edges,
-        fixed_power: value.get("fixedPower").unwrap().as_bool().unwrap(),
-        fixed_power_level: field("fixedPowerLevel")
-            .map(i64_of)
-            .unwrap_or(DEFAULT_RULES.fixed_power_level),
-        max_power: field("maxPower")
-            .map(i64_of)
-            .unwrap_or(DEFAULT_RULES.max_power),
-        shot_time: i64_of(shot_time),
-        style_bonuses: value.get("styleBonuses").unwrap().as_bool().unwrap(),
-        neighbor_grace: i64_of(neighbor_grace),
-        simultaneous_shots: value.get("simultaneousShots").unwrap().as_bool().unwrap(),
-        killcam,
-        hidden_aim: value.get("hiddenAim").unwrap().as_bool().unwrap(),
-        fading_trails: i64_of(fading_trails),
-        sudden_death: field("suddenDeath")
-            .and_then(Value::as_bool)
-            .unwrap_or(DEFAULT_RULES.sudden_death),
-        mayhem: field("mayhem").map(i64_of).unwrap_or(DEFAULT_RULES.mayhem),
-        betting: field("betting")
-            .and_then(Value::as_bool)
-            .unwrap_or(DEFAULT_RULES.betting),
-        chat_players_only: field("chatPlayersOnly")
-            .and_then(Value::as_bool)
-            .unwrap_or(DEFAULT_RULES.chat_players_only),
-        power_ups: field("powerUps")
-            .and_then(Value::as_bool)
-            .unwrap_or(DEFAULT_RULES.power_ups),
-        power_up_kinds,
-        power_up_amount: field("powerUpAmount")
-            .map(i64_of)
-            .unwrap_or(DEFAULT_RULES.power_up_amount),
-        anomalies,
-    })
+    Some(RoomRules(rules))
 }
 
 #[cfg(test)]
@@ -991,10 +758,8 @@ mod tests {
 
     #[test]
     fn shared_menu_contract_matches_relay_defaults_and_slider_options() {
-        let contract: Value =
-            serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
-        assert_eq!(rules_to_value(&DEFAULT_RULES), contract["defaults"]);
-        for (key, options) in contract["options"].as_object().unwrap() {
+        assert_eq!(rules_to_value(&DEFAULT_RULES), contract()["defaults"]);
+        for (key, options) in contract()["options"].as_object().unwrap() {
             for option in options.as_array().unwrap() {
                 let mut rules = valid_rules();
                 rules[key] = option.clone();
@@ -1007,33 +772,101 @@ mod tests {
     }
 
     #[test]
-    fn rules_accept_complete_values_and_legacy_omissions() {
-        let parsed = parse_rules(&valid_rules()).expect("complete rules accepted");
-        assert_eq!(parsed.rounds, 5);
-        assert_eq!(parsed.fixed_power_level, 70);
-        assert_eq!(parsed.max_power, 80);
-        assert!(parsed.edges == EdgeMode::Wall && parsed.fixed_power && parsed.style_bonuses);
-        assert!(parsed.simultaneous_shots);
-        assert!(parsed.betting);
+    fn every_rule_of_the_contract_has_a_default_a_kind_and_the_values_that_kind_needs() {
+        let contract = contract();
+        let rules = contract["rules"].as_object().unwrap();
+        assert_eq!(
+            rules.keys().collect::<Vec<_>>().len(),
+            contract["defaults"].as_object().unwrap().len()
+        );
+        for (key, spec) in rules {
+            let default = &contract["defaults"][key];
+            assert!(!default.is_null(), "{key} has no default");
+            match spec["kind"].as_str().unwrap() {
+                "flag" => assert!(default.is_boolean(), "{key}"),
+                "choice" => assert!(
+                    contract["options"][key]
+                        .as_array()
+                        .is_some_and(|options| options.contains(default)),
+                    "{key}: the default is not one of the options"
+                ),
+                "set" => assert!(
+                    spec["options"].as_array().is_some_and(|options| default
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .all(|item| options.contains(item))),
+                    "{key}: the default holds something that is not an option"
+                ),
+                other => panic!("{key} has the unknown kind {other}"),
+            }
+        }
+    }
 
-        let mut legacy = valid_rules();
-        legacy.as_object_mut().unwrap().remove("maxPower");
-        legacy.as_object_mut().unwrap().remove("fixedPowerLevel");
-        legacy.as_object_mut().unwrap().remove("betting");
-        let parsed = parse_rules(&legacy).expect("legacy omissions accepted");
-        assert_eq!(parsed.max_power, 100);
-        assert_eq!(parsed.fixed_power_level, 55);
-        assert!(!parsed.betting);
+    #[test]
+    fn the_kinds_and_anomalies_the_relay_names_are_the_contracts() {
+        assert_eq!(
+            contract()["rules"]["powerUpKinds"]["options"],
+            json!(POWER_UP_KINDS)
+        );
+    }
+
+    #[test]
+    fn rules_keep_complete_values_and_give_a_missing_rule_its_default() {
+        let parsed = parse_rules(&valid_rules()).expect("complete rules accepted");
+        let rules = rules_to_value(&parsed);
+        assert_eq!(rules["rounds"], json!(5));
+        assert_eq!(rules["fixedPowerLevel"], json!(70));
+        assert_eq!(rules["maxPower"], json!(80));
+        assert_eq!(rules["edges"], json!("wall"));
+        assert_eq!(rules["betting"], json!(true));
+        assert!(parsed.chat_players_only());
+        assert_eq!(parsed.mayhem(), 2);
+
+        let mut partial = valid_rules();
+        for key in [
+            "maxPower",
+            "fixedPowerLevel",
+            "betting",
+            "suddenDeath",
+            "killcam",
+        ] {
+            partial.as_object_mut().unwrap().remove(key);
+        }
+        partial["hiddenAim"] = Value::Null;
+        let parsed = rules_to_value(&parse_rules(&partial).expect("omissions accepted"));
+        assert_eq!(parsed["maxPower"], json!(100));
+        assert_eq!(parsed["fixedPowerLevel"], json!(55));
+        assert_eq!(parsed["betting"], json!(false));
+        assert_eq!(parsed["suddenDeath"], json!(true));
+        assert_eq!(parsed["killcam"], json!("auto"));
+        assert_eq!(parsed["hiddenAim"], json!(false));
+        // Every rule of the contract is there, and nothing else: what a client adds on its own goes no further.
+        let mut extra = valid_rules();
+        extra["party"] = json!(true);
+        let parsed = rules_to_value(&parse_rules(&extra).unwrap());
+        assert_eq!(
+            parsed.as_object().unwrap().len(),
+            contract()["rules"].as_object().unwrap().len()
+        );
+        assert!(parsed.get("party").is_none());
+    }
+
+    #[test]
+    fn rules_that_are_not_a_record_are_refused() {
+        for invalid in [json!(null), json!([]), json!("rules"), json!(5)] {
+            assert!(parse_rules(&invalid).is_none(), "accepted {invalid}");
+        }
+        assert_eq!(parse_rules(&json!({})).unwrap(), *DEFAULT_RULES);
     }
 
     #[test]
     fn sudden_death_defaults_on_and_takes_only_a_boolean() {
         let parsed = parse_rules(&valid_rules()).expect("rules without suddenDeath accepted");
-        assert!(parsed.sudden_death);
+        assert_eq!(rules_to_value(&parsed)["suddenDeath"], json!(true));
         let mut rules = valid_rules();
         rules["suddenDeath"] = json!(false);
         let parsed = parse_rules(&rules).expect("suddenDeath false accepted");
-        assert!(!parsed.sudden_death);
         assert_eq!(rules_to_value(&parsed)["suddenDeath"], json!(false));
         for invalid in [json!("true"), json!(1), json!([])] {
             let mut rules = valid_rules();
@@ -1046,7 +879,7 @@ mod tests {
     }
 
     #[test]
-    fn killcam_rules_preserve_choices_and_default_legacy_clients_to_auto() {
+    fn killcam_rules_preserve_choices_and_default_to_auto() {
         for choice in ["auto", "off", "every", "round"] {
             let mut rules = valid_rules();
             rules["killcam"] = json!(choice);
@@ -1065,21 +898,21 @@ mod tests {
     }
 
     #[test]
-    fn edge_rules_preserve_choices_and_read_the_old_bounce_switch() {
+    fn edge_rules_preserve_choices() {
         for choice in ["void", "wall", "loop"] {
             let mut rules = valid_rules();
             rules["edges"] = json!(choice);
             let parsed = parse_rules(&rules).expect("edge choice accepted");
             assert_eq!(rules_to_value(&parsed)["edges"], json!(choice));
         }
-        // A client from before the loop sends a yes/no `bounce`: yes is a wall, no is the void.
-        for (bounce, expected) in [(true, "wall"), (false, "void")] {
-            let mut rules = valid_rules();
-            rules.as_object_mut().unwrap().remove("edges");
-            rules["bounce"] = json!(bounce);
-            let parsed = parse_rules(&rules).expect("legacy bounce accepted");
-            assert_eq!(rules_to_value(&parsed)["edges"], json!(expected));
-        }
+        // The yes/no `bounce` of before the loop is no longer read: a client that old is turned away by its protocol version.
+        let mut rules = valid_rules();
+        rules.as_object_mut().unwrap().remove("edges");
+        rules["bounce"] = json!(true);
+        assert_eq!(
+            rules_to_value(&parse_rules(&rules).unwrap())["edges"],
+            json!("void")
+        );
         for invalid in [json!(true), json!(1), json!("ring"), json!([])] {
             let mut rules = valid_rules();
             rules["edges"] = invalid;
@@ -1090,13 +923,11 @@ mod tests {
     #[test]
     fn anomalies_default_to_none_and_take_a_list_of_known_ones() {
         let parsed = parse_rules(&valid_rules()).expect("complete rules accepted");
-        assert_eq!(parsed.anomalies, 0);
         assert_eq!(rules_to_value(&parsed)["anomalies"], json!([]));
 
         let mut rules = valid_rules();
         rules["anomalies"] = json!(["fusion", "trickShots"]);
         let parsed = parse_rules(&rules).expect("known anomalies accepted");
-        assert_eq!(parsed.anomalies, 0b1001);
         // They leave the relay in the client's order, whatever order they came in.
         assert_eq!(
             rules_to_value(&parsed)["anomalies"],
@@ -1105,14 +936,16 @@ mod tests {
 
         rules["anomalies"] = json!(["whiteHole", "unstable"]);
         let parsed = parse_rules(&rules).expect("new anomalies accepted");
-        assert_eq!(parsed.anomalies, 0b110000);
         assert_eq!(
             rules_to_value(&parsed)["anomalies"],
             json!(["whiteHole", "unstable"])
         );
 
         rules["anomalies"] = json!([]);
-        assert_eq!(parse_rules(&rules).expect("none accepted").anomalies, 0);
+        assert_eq!(
+            rules_to_value(&parse_rules(&rules).expect("none accepted"))["anomalies"],
+            json!([])
+        );
 
         for invalid in [
             json!("pinball"),
@@ -1128,22 +961,19 @@ mod tests {
     #[test]
     fn power_up_rules_default_off_and_take_a_list_of_known_kinds() {
         let parsed = parse_rules(&valid_rules()).expect("complete rules accepted");
-        assert!(parsed.power_ups);
-        assert_eq!(parsed.power_up_kinds, 0b10010);
-        assert_eq!(parsed.power_up_amount, 3);
-        assert_eq!(
-            rules_to_value(&parsed)["powerUpKinds"],
-            json!(["teleport", "shield"])
-        );
+        let rules = rules_to_value(&parsed);
+        assert_eq!(rules["powerUps"], json!(true));
+        assert_eq!(rules["powerUpAmount"], json!(3));
+        assert_eq!(rules["powerUpKinds"], json!(["teleport", "shield"]));
 
         let mut legacy = valid_rules();
         for key in ["powerUps", "powerUpKinds", "powerUpAmount"] {
             legacy.as_object_mut().unwrap().remove(key);
         }
-        let parsed = parse_rules(&legacy).expect("legacy omissions accepted");
-        assert!(!parsed.power_ups);
-        assert_eq!(parsed.power_up_kinds, ALL_POWER_UP_KINDS);
-        assert_eq!(parsed.power_up_amount, 2);
+        let parsed = rules_to_value(&parse_rules(&legacy).expect("omissions accepted"));
+        assert_eq!(parsed["powerUps"], json!(false));
+        assert_eq!(parsed["powerUpKinds"], json!(POWER_UP_KINDS));
+        assert_eq!(parsed["powerUpAmount"], json!(2));
 
         for (key, value) in [
             ("powerUps", json!("yes")),
@@ -1163,6 +993,18 @@ mod tests {
                 "accepted invalid {key}: {rules}"
             );
         }
+    }
+
+    #[test]
+    fn whole_numbers_are_whole_however_they_were_written() {
+        let mut rules = valid_rules();
+        rules["rounds"] = json!(7.0);
+        rules["shotTime"] = json!(30.0);
+        let parsed = rules_to_value(&parse_rules(&rules).expect("7.0 is 7"));
+        assert_eq!(parsed["rounds"], json!(7));
+        assert_eq!(parsed["shotTime"], json!(30));
+        rules["rounds"] = json!(7.5);
+        assert!(parse_rules(&rules).is_none());
     }
 
     #[test]
@@ -1199,7 +1041,10 @@ mod tests {
     fn rules_reject_out_of_range_values_and_invalid_booleans() {
         for (key, value) in [
             ("rounds", json!(100)),
+            ("rounds", json!(-1)),
             ("maxPlanets", json!(0)),
+            ("maxPlanets", json!(9)),
+            ("shotTime", json!(4)),
             ("shotTime", json!(121)),
             ("maxPower", json!(95)),
             ("fixedPowerLevel", json!(56)),
@@ -1212,6 +1057,12 @@ mod tests {
                 parse_rules(&rules).is_none(),
                 "accepted invalid {key}: {rules}"
             );
+        }
+        // A range is for the rules that say so: the rest take what is listed.
+        for (key, value) in [("rounds", json!(2)), ("shotTime", json!(15))] {
+            let mut rules = valid_rules();
+            rules[key] = value;
+            assert!(parse_rules(&rules).is_some(), "refused {key}: {rules}");
         }
         for key in [
             "invisiblePlanets",

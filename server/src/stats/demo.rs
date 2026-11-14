@@ -136,10 +136,11 @@ fn demo_facts(
     local: bool,
     rounds: i64,
 ) -> RoundFacts {
-    let mut rules = DEFAULT_RULES.clone();
-    rules.rounds = rounds;
-    rules.betting = !local;
-    rules.power_ups = true;
+    let rules = DEFAULT_RULES
+        .clone()
+        .with("rounds", rounds.into())
+        .with("betting", (!local).into())
+        .with("powerUps", true.into());
 
     let solo = index.is_multiple_of(4);
     let second = if solo {

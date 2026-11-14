@@ -70,7 +70,7 @@ impl RoomManager {
         let Some(room) = self.rooms.get(&room_id) else {
             return;
         };
-        if spectator && room.rules.chat_players_only {
+        if spectator && room.rules.chat_players_only() {
             self.error(conn, "Only the players can write in this room");
             return;
         }

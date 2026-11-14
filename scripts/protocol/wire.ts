@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { contractRules, layout } from './rules';
 
 /**
  * What the wire protocol is made of, as a fingerprint. The version number of the protocol (`PROTOCOL_VERSION`, see
@@ -95,13 +96,14 @@ export function record(root: string, bump: boolean): { version: number; fingerpr
       writeFileSync(path, source.replace(pattern, `$1${version}`));
     }
   }
-  // Written as text, not re-serialised, so the contract's own layout stays as it is.
+  // The rule blocks are the rule table's (`src/data/roomRules.ts`), written out; the rest of the contract is kept as it is.
   const path = join(root, CONTRACT);
-  let text = readFileSync(path, 'utf8').replace(/("protocolVersion": )\d+/, `$1${version}`);
+  const { protocolVersion: _version, wireFingerprint: _fingerprint, defaults: _defaults, options: _options, rules: _rules, ...rest } = readContract(root);
+  const written = { protocolVersion: version, ...contractRules(), ...rest };
+  writeFileSync(path, `${layout(written)}\n`);
+  // The fingerprint reads the contract's tables, so it is worked out from what was just written, then put in.
   const fingerprint = wireFingerprint(root);
-  text = /"wireFingerprint"/.test(text)
-    ? text.replace(/("wireFingerprint": ")[0-9a-f]*(")/, `$1${fingerprint}$2`)
-    : text.replace(/("protocolVersion": \d+,)/, `$1\n  "wireFingerprint": "${fingerprint}",`);
-  writeFileSync(path, text);
+  const { protocolVersion, ...tables } = written;
+  writeFileSync(path, `${layout({ protocolVersion, wireFingerprint: fingerprint, ...tables })}\n`);
   return { version, fingerprint };
 }

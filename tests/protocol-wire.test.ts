@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { PROTOCOL_VERSION } from '../src/net/net';
+import { contractRules } from '../scripts/protocol/rules';
 import { declaration, normalize, readContract, record, WIRE_DECLARATIONS, WIRE_FILES, wireFingerprint } from '../scripts/protocol/wire';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -19,6 +20,12 @@ describe('the wire protocol', () => {
         'Run `npm run protocol -- --compatible` if older clients do survive it. When in doubt, the first: an old client is only asked to reload.',
       ].join('\n'),
     ).toBe(recorded);
+  });
+
+  it('has the rules the rule table has, in the contract: defaults, options and what the relay has to check', () => {
+    const { defaults, options, rules } = readContract(root) as unknown as ReturnType<typeof contractRules>;
+    const made = JSON.parse(JSON.stringify(contractRules())) as ReturnType<typeof contractRules>;
+    expect({ defaults, options, rules }, 'Run `npm run protocol`: the contract is written from `RULES` in src/data/roomRules.ts.').toEqual(made);
   });
 
   it('names the same version in the contract and in the client', () => {

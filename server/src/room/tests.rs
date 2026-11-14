@@ -755,8 +755,11 @@ fn host_cannot_change_rules_after_start_and_invalid_rule_types_are_rejected() {
     drain_json(&mut host_rx);
     drain_json(&mut guest_rx);
     let host_update = rooms.rooms.get(&room_id).unwrap();
-    assert_eq!(host_update.rules.rounds, DEFAULT_RULES.rounds);
-    assert_eq!(host_update.rules.max_planets, DEFAULT_RULES.max_planets);
+    assert_eq!(host_update.rules.get("rounds"), DEFAULT_RULES.get("rounds"));
+    assert_eq!(
+        host_update.rules.get("maxPlanets"),
+        DEFAULT_RULES.get("maxPlanets")
+    );
     rooms.handle(2, &json!({"type":"ready","ready":true}));
     rooms.handle(1, &json!({"type":"start_game"}));
     drain_json(&mut host_rx);

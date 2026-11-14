@@ -1,9 +1,9 @@
-import { AIM, ANOMALIES, EDGE_MODES, GRACE, MAYHEM, TRAIL_FADE, type Anomaly, type EdgeMode } from '../../sim/config';
-import { KILLCAM_MODES, type KillcamMode } from '../../data/roomRules';
-import { CLASSIC_FAMILY, type GameMode } from '../../sim/modes';
+import { AIM, ANOMALIES, EDGE_MODES, type Anomaly, type EdgeMode } from '../../sim/config';
+import { KILLCAM_MODES, RULES, type KillcamMode } from '../../data/roomRules';
+import type { GameMode } from '../../sim/modes';
 import { t, type Key } from '../../platform/i18n';
 import type { RoomRules } from '../../net/net';
-import { POWER_UP, POWER_UP_KINDS, type PowerUpKind } from '../../sim/powerups';
+import { POWER_UP_KINDS, type PowerUpKind } from '../../sim/powerups';
 import { twistedRules } from '../../game/mayhem';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../../render/powerup-art';
 import { ANOMALY_COLORS, drawAnomalySymbol } from '../../render/anomaly-art';
@@ -76,7 +76,7 @@ const POWER_MODES: readonly PowerMode[] = ['free', 'cap', 'fixed'];
 export const DEFAULT_CAP = 70;
 
 /** The stops of the cap's slider: every cap below "no cap", which is a mode of its own. */
-export const CAP_STOPS: readonly number[] = AIM.CAP_OPTIONS.filter((n) => n < AIM.MAX_POWER);
+export const CAP_STOPS: readonly number[] = RULES.maxPower.options.filter((n) => n < AIM.MAX_POWER);
 
 /** A cap and a fixed power never apply together: `fixedPower` wins, then any cap below the top. */
 export function powerModeOf(r: Pick<RoomRules, 'fixedPower' | 'maxPower'>): PowerMode {
@@ -125,13 +125,13 @@ const numbers = (values: readonly number[], label: (n: number) => string = Strin
 export function ruleRows(): RuleRow[] {
   const seconds = (n: number) => t('settings.seconds', { n });
   return [
-    { key: 'rounds', group: 'match', control: 'slider', label: t('settings.rounds'), options: numbers([1, 3, 5, 7, 10, 15, 20, 0], (n) => (n ? String(n) : t('settings.endless'))) },
+    { key: 'rounds', group: 'match', control: 'slider', label: t('settings.rounds'), options: numbers([...RULES.rounds.options.filter((n) => n > 0), 0], (n) => (n ? String(n) : t('settings.endless'))) },
     // Only while Mayhem is on: the Mayhem preset turns it on, every other preset off, so the strength is never "off" here.
-    { key: 'mayhem', group: 'match', control: 'segmented', label: t('settings.mayhem'), options: numbers(MAYHEM.LEVELS.filter((n) => n > 0), (n) => t(`settings.mayhem.${n}` as Key)), when: (r) => r.mayhem > 0 },
-    { key: 'shotTime', group: 'match', control: 'slider', label: t('settings.shotTime'), options: numbers([10, 20, 30, 60], seconds) },
+    { key: 'mayhem', group: 'match', control: 'segmented', label: t('settings.mayhem'), options: numbers(RULES.mayhem.options.filter((n) => n > 0), (n) => t(`settings.mayhem.${n}` as Key)), when: (r) => r.mayhem > 0 },
+    { key: 'shotTime', group: 'match', control: 'slider', label: t('settings.shotTime'), options: numbers(RULES.shotTime.options, seconds) },
     { key: 'killcam', group: 'match', control: 'segmented', label: t('settings.killcam'), options: KILLCAM_MODES.map((value) => ({ value, label: t(`settings.killcam.${value}`) })) },
-    { key: 'maxPlanets', group: 'field', control: 'slider', label: t('settings.maxPlanets'), options: numbers([1, 2, 3, 4, 5, 6, 7, 8]) },
-    { key: 'invisiblePlanets', group: 'field', control: 'toggle', label: t('settings.invisible'), options: [], modes: CLASSIC_FAMILY },
+    { key: 'maxPlanets', group: 'field', control: 'slider', label: t('settings.maxPlanets'), options: numbers(RULES.maxPlanets.options) },
+    { key: 'invisiblePlanets', group: 'field', control: 'toggle', label: t('settings.invisible'), options: [], modes: RULES.invisiblePlanets.modes },
     { key: 'edges', group: 'field', control: 'segmented', label: t('settings.edges'), options: EDGE_MODES.map((value) => ({ value, label: t(`settings.edges.${value}`) })) },
     {
       key: 'fixedPower',
@@ -142,18 +142,18 @@ export function ruleRows(): RuleRow[] {
     },
     // One slot for the limit: the cap, or (with fixed power) the fixed level's row. Free shows the cap dimmed, so nothing moves.
     { key: 'maxPower', group: 'shots', control: 'slider', label: t('settings.maxPower'), options: numbers(CAP_STOPS), when: (r) => powerModeOf(r) !== 'fixed', inactive: (r) => powerModeOf(r) === 'free' },
-    { key: 'fixedPowerLevel', group: 'shots', control: 'slider', label: t('settings.fixedPower'), options: numbers(AIM.FIXED_OPTIONS), when: (r) => powerModeOf(r) === 'fixed' },
-    { key: 'styleBonuses', group: 'shots', control: 'toggle', label: t('settings.styleBonuses'), options: [], modes: CLASSIC_FAMILY },
-    { key: 'simultaneousShots', group: 'shots', control: 'toggle', label: t('settings.simultaneousShots'), options: [], modes: CLASSIC_FAMILY },
-    { key: 'neighborGrace', group: 'twists', control: 'slider', label: t('settings.neighborGrace'), options: numbers(GRACE.OPTIONS, (n) => (n ? t(n === 1 ? 'settings.oneRound' : 'settings.nRounds', { n }) : t('common.off'))) },
+    { key: 'fixedPowerLevel', group: 'shots', control: 'slider', label: t('settings.fixedPower'), options: numbers(RULES.fixedPowerLevel.options), when: (r) => powerModeOf(r) === 'fixed' },
+    { key: 'styleBonuses', group: 'shots', control: 'toggle', label: t('settings.styleBonuses'), options: [], modes: RULES.styleBonuses.modes },
+    { key: 'simultaneousShots', group: 'shots', control: 'toggle', label: t('settings.simultaneousShots'), options: [], modes: RULES.simultaneousShots.modes },
+    { key: 'neighborGrace', group: 'twists', control: 'slider', label: t('settings.neighborGrace'), options: numbers(RULES.neighborGrace.options, (n) => (n ? t(n === 1 ? 'settings.oneRound' : 'settings.nRounds', { n }) : t('common.off'))) },
     { key: 'hiddenAim', group: 'twists', control: 'toggle', label: t('settings.hiddenAim'), options: [] },
-    { key: 'suddenDeath', group: 'twists', control: 'toggle', label: t('settings.suddenDeath'), options: [], modes: CLASSIC_FAMILY },
-    { key: 'fadingTrails', group: 'twists', control: 'slider', label: t('settings.fadingTrails'), options: numbers(TRAIL_FADE.OPTIONS, (n) => (n ? seconds(n) : t('common.off'))) },
+    { key: 'suddenDeath', group: 'twists', control: 'toggle', label: t('settings.suddenDeath'), options: [], modes: RULES.suddenDeath.modes },
+    { key: 'fadingTrails', group: 'twists', control: 'slider', label: t('settings.fadingTrails'), options: numbers(RULES.fadingTrails.options, (n) => (n ? seconds(n) : t('common.off'))) },
     { key: 'betting', group: 'online', control: 'toggle', label: t('settings.betting'), options: [], onlineOnly: true },
     { key: 'chatPlayersOnly', group: 'online', control: 'toggle', label: t('settings.chatPlayersOnly'), options: [], onlineOnly: true },
     { key: 'anomalies', group: 'anomalies', control: 'tiles', label: t('anomalies.kinds'), options: ANOMALIES.map((anomaly) => ({ value: anomaly, label: t(`anomaly.${anomaly}`) })) },
     { key: 'powerUpKinds', group: 'powerups', control: 'tiles', label: t('powerups.kinds'), options: POWER_UP_KINDS.map((kind) => ({ value: kind, label: capital(t(`powerup.${kind}`)) })) },
-    { key: 'powerUpAmount', group: 'powerups', control: 'segmented', label: t('powerups.amount'), options: numbers(POWER_UP.AMOUNTS), when: (r) => r.powerUps, reserve: (r) => r.mayhem > 0 },
+    { key: 'powerUpAmount', group: 'powerups', control: 'segmented', label: t('powerups.amount'), options: numbers(RULES.powerUpAmount.options), when: (r) => r.powerUps, reserve: (r) => r.mayhem > 0 },
   ];
 }
 
