@@ -1,7 +1,7 @@
 import type { Planet } from '../sim/physics';
 import { rgba } from './color';
 import { fbm } from './noise';
-import { sunBeat, sunHeat, sunKind, towardsGiant } from './sun-kinds';
+import { sunBeat, sunHeat, sunKind, towardsGiant, type SunKind } from './sun-kinds';
 
 const smooth = (e0: number, e1: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
@@ -123,12 +123,21 @@ const slot = (seed: number, k: number): number => {
 
 const LOOPS = 4;
 
+/** One ring of the glow round a sun: a radial gradient from `inner` to `outer` (the colour at 0 fills what is inside), each stop at, colour, alpha. */
+export interface GlowRing {
+  inner: number;
+  outer: number;
+  stops: readonly (readonly [number, string, number])[];
+}
+
 /** Parts of the sun a look draws itself, in the sun's frame; each says false when it could not, and the sprite is drawn instead. */
 export interface SunStyle {
   /** The corona, out to `reach` from the middle, added up as light. */
   corona(ctx: CanvasRenderingContext2D, seed: number, reach: number, time: number, flare: number, giant: number): boolean;
   /** The ball, of radius `R`. */
   surface(ctx: CanvasRenderingContext2D, seed: number, R: number, time: number, giant: number): boolean;
+  /** The glow round the ball, its rings added up as light (concentric, so they can be one gradient); false draws them one by one. */
+  glow?(ctx: CanvasRenderingContext2D, rings: readonly GlowRing[], sun: { R: number; giant: number; kind: SunKind; flare: number; beat: number }): boolean;
   /** Magnetic arches behind the ball, added up as light; false keeps the drawn arches. */
   prominences?(ctx: CanvasRenderingContext2D, seed: number, R: number, time: number, flare: number, giant: number): boolean;
   /** Near-side magnetic plasma over the finished sphere, in the same local frame. */
@@ -154,32 +163,27 @@ export function drawSun(ctx: CanvasRenderingContext2D, sun: Planet, time: number
   ctx.translate(sun.x, sun.y);
   ctx.globalCompositeOperation = 'lighter';
 
-  if (giant > 0) {
-    const swollen = ctx.createRadialGradient(0, 0, R * 0.8, 0, 0, R * 2.4);
-    swollen.addColorStop(0, rgba('#c41e0c', 0.45 * giant));
-    swollen.addColorStop(1, rgba('#5a0804', 0));
-    ctx.fillStyle = swollen;
-    ctx.beginPath();
-    ctx.arc(0, 0, R * 2.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // The glow: a tight bright one under a wide, deeper one; a pulsing star's breathes with it.
+  // The glow: a tight bright one under a wide, deeper one; a pulsing star's breathes with it. A red giant has a deep red
+  // swollen glow under them, and its glows are deep red whatever the star was.
   const swell = 1 + flare * 0.9;
-  // A red giant's glow is deep red whatever the star was.
+  const rings: GlowRing[] = [];
+  if (giant > 0) rings.push({ inner: R * 0.8, outer: R * 2.4, stops: [[0, '#c41e0c', 0.45 * giant], [1, '#5a0804', 0]] });
   const glows = giant > 0.3
     ? ([[7, 0.2, '#ff3a1c', '#8a1008'], [3.2, 0.42, '#ff5a2a', '#c8200c'], [1.7, 0.5, '#ff8a5a', '#ff3a1c']] as const)
     : ([[7, 0.2, ...kind.glows[0]], [3.2, 0.42, ...kind.glows[1]], [1.7, 0.5, ...kind.glows[2]]] as const);
   for (const [reach, strength, inner, outer] of glows) {
     const s = strength * beat.glow;
-    const halo = ctx.createRadialGradient(0, 0, R * 0.7, 0, 0, R * reach * (reach > 3 ? 1 : swell));
-    halo.addColorStop(0, rgba(inner, Math.min(1, s * swell)));
-    halo.addColorStop(0.35, rgba(outer, s * 0.3 * swell));
-    halo.addColorStop(1, rgba(outer, 0));
-    ctx.fillStyle = halo;
-    ctx.beginPath();
-    ctx.arc(0, 0, R * reach * swell, 0, Math.PI * 2);
-    ctx.fill();
+    rings.push({ inner: R * 0.7, outer: R * reach * (reach > 3 ? 1 : swell), stops: [[0, inner, Math.min(1, s * swell)], [0.35, outer, s * 0.3 * swell], [1, outer, 0]] });
+  }
+  if (!style?.glow?.(ctx, rings, { R, giant, kind, flare, beat: beat.glow })) {
+    for (const ring of rings) {
+      const halo = ctx.createRadialGradient(0, 0, ring.inner, 0, 0, ring.outer);
+      for (const [at, color, a] of ring.stops) halo.addColorStop(at, rgba(color, a));
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(0, 0, ring.outer, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // The corona: its rays turn slowly, two layers against each other, and swell and ebb.
@@ -339,6 +343,33 @@ function makePlanetaryNebula(seed: number): HTMLCanvasElement {
 
 const planetaryNebulae = new Map<number, HTMLCanvasElement>();
 
+/** How far the pulsar's beams reach. */
+export const PULSAR_BEAM = 200;
+
+/**
+ * The pulsar's beams, round the star at the origin of `ctx` and added up as light: two narrow cones, opposite each
+ * other, sweeping round like a lighthouse's. Every look's remnant has them.
+ */
+export function drawPulsarBeams(ctx: CanvasRenderingContext2D, seed: number, time: number): void {
+  const turn = time * 2.6 + slot(seed, 3) * Math.PI;
+  for (const side of [0, Math.PI]) {
+    ctx.save();
+    ctx.rotate(turn + side);
+    const cone = ctx.createLinearGradient(0, 0, PULSAR_BEAM, 0);
+    cone.addColorStop(0, rgba('#e8f4ff', 0.55));
+    cone.addColorStop(0.4, rgba('#8ec8ff', 0.18));
+    cone.addColorStop(1, rgba('#62b6ff', 0));
+    ctx.fillStyle = cone;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(PULSAR_BEAM, -PULSAR_BEAM * 0.07);
+    ctx.lineTo(PULSAR_BEAM, PULSAR_BEAM * 0.07);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 /**
  * What a supernova leaves: a neutron star in a planetary nebula. `age` is the seconds since it was left. The nebula
  * blows out fast from the blast and slows as it spreads, then drifts and breathes; the star is a tiny blue-white
@@ -364,26 +395,8 @@ export function drawNeutronStar(ctx: CanvasRenderingContext2D, star: Planet, tim
   ctx.drawImage(nebula, -reach, -reach, reach * 2, reach * 2);
   ctx.restore();
 
-  // The pulsar's beams: two narrow cones, opposite each other, sweeping round.
-  const turn = time * 2.6 + slot(seed, 3) * Math.PI;
-  const beam = 200;
   ctx.globalAlpha = alpha * Math.min(1, age / 1.2);
-  for (const side of [0, Math.PI]) {
-    ctx.save();
-    ctx.rotate(turn + side);
-    const cone = ctx.createLinearGradient(0, 0, beam, 0);
-    cone.addColorStop(0, rgba('#e8f4ff', 0.55));
-    cone.addColorStop(0.4, rgba('#8ec8ff', 0.18));
-    cone.addColorStop(1, rgba('#62b6ff', 0));
-    ctx.fillStyle = cone;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(beam, -beam * 0.07);
-    ctx.lineTo(beam, beam * 0.07);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
+  drawPulsarBeams(ctx, seed, time);
 
   // The star: a hard white point in a blue halo that throbs with every sweep.
   const R = star.radius;

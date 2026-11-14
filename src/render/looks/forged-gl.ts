@@ -279,6 +279,8 @@ let detail = 1;
 export function setShaderDetail(value: number): void {
   detail = value;
 }
+/** The share of full size the shaded sprites are drawn at just now; other cached layers follow it. */
+export const shaderDetail = (): number => detail;
 
 /** The picture a shader has just painted: the top left `w` × `h` of `canvas`. Only good until the next one. */
 export interface Shaded {
