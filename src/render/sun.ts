@@ -343,6 +343,33 @@ function makePlanetaryNebula(seed: number): HTMLCanvasElement {
 
 const planetaryNebulae = new Map<number, HTMLCanvasElement>();
 
+/** How far the pulsar's beams reach. */
+export const PULSAR_BEAM = 200;
+
+/**
+ * The pulsar's beams, round the star at the origin of `ctx` and added up as light: two narrow cones, opposite each
+ * other, sweeping round like a lighthouse's. Every look's remnant has them.
+ */
+export function drawPulsarBeams(ctx: CanvasRenderingContext2D, seed: number, time: number): void {
+  const turn = time * 2.6 + slot(seed, 3) * Math.PI;
+  for (const side of [0, Math.PI]) {
+    ctx.save();
+    ctx.rotate(turn + side);
+    const cone = ctx.createLinearGradient(0, 0, PULSAR_BEAM, 0);
+    cone.addColorStop(0, rgba('#e8f4ff', 0.55));
+    cone.addColorStop(0.4, rgba('#8ec8ff', 0.18));
+    cone.addColorStop(1, rgba('#62b6ff', 0));
+    ctx.fillStyle = cone;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(PULSAR_BEAM, -PULSAR_BEAM * 0.07);
+    ctx.lineTo(PULSAR_BEAM, PULSAR_BEAM * 0.07);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 /**
  * What a supernova leaves: a neutron star in a planetary nebula. `age` is the seconds since it was left. The nebula
  * blows out fast from the blast and slows as it spreads, then drifts and breathes; the star is a tiny blue-white
@@ -368,26 +395,8 @@ export function drawNeutronStar(ctx: CanvasRenderingContext2D, star: Planet, tim
   ctx.drawImage(nebula, -reach, -reach, reach * 2, reach * 2);
   ctx.restore();
 
-  // The pulsar's beams: two narrow cones, opposite each other, sweeping round.
-  const turn = time * 2.6 + slot(seed, 3) * Math.PI;
-  const beam = 200;
   ctx.globalAlpha = alpha * Math.min(1, age / 1.2);
-  for (const side of [0, Math.PI]) {
-    ctx.save();
-    ctx.rotate(turn + side);
-    const cone = ctx.createLinearGradient(0, 0, beam, 0);
-    cone.addColorStop(0, rgba('#e8f4ff', 0.55));
-    cone.addColorStop(0.4, rgba('#8ec8ff', 0.18));
-    cone.addColorStop(1, rgba('#62b6ff', 0));
-    ctx.fillStyle = cone;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(beam, -beam * 0.07);
-    ctx.lineTo(beam, beam * 0.07);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
+  drawPulsarBeams(ctx, seed, time);
 
   // The star: a hard white point in a blue halo that throbs with every sweep.
   const R = star.radius;

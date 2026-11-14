@@ -41,9 +41,19 @@ describe('Forged supernova remnant', () => {
     // Grown out: the shared remnant's reach.
     expect(vi.mocked(place).mock.calls[0][4]).toBeGreaterThan(270 * 2 * .97);
     expect(vi.mocked(place).mock.calls[0][4]).toBeLessThan(270 * 2 * 1.03);
-    // No beams sweep round it: the only lines of light are the star's cross.
-    expect(ctx.createLinearGradient).toHaveBeenCalledTimes(2);
-    expect(ctx.rotate).toHaveBeenCalledTimes(2);
+    // The pulsar's two beams sweep round it, as in every look, besides the two lines of the star's cross.
+    expect(ctx.createLinearGradient).toHaveBeenCalledTimes(4);
+    expect(ctx.rotate).toHaveBeenCalledTimes(4);
+  });
+
+  it('turns the pulsar beams with time', () => {
+    vi.mocked(shadeKept).mockReturnValue({ canvas: {} as HTMLCanvasElement, w: 512, h: 512 });
+    const beams = (time: number) => {
+      const ctx = context();
+      drawForgedNeutronStar(ctx, star, time, 40, 1);
+      return vi.mocked(ctx.rotate).mock.calls[0][0];
+    };
+    expect(beams(40.2)).not.toBeCloseTo(beams(40));
   });
 
   it('leaves it to the shared remnant when there are no shaders', () => {

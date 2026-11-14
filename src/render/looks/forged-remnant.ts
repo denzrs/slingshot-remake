@@ -1,12 +1,13 @@
 import type { Planet } from '../../sim/physics';
 import { rgba } from '../color';
-import { drawNeutronStar, NEBULA_REACH } from '../sun';
+import { drawNeutronStar, drawPulsarBeams, NEBULA_REACH } from '../sun';
 import { GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept } from './forged-gl';
 
 /**
  * Forged's supernova remnant, after the Crab: a torn cage of glowing filaments, red where the gas is cool and orange-white
  * where it is hot, round a faint teal fill; in the middle the pulsar's own nebula, a blue-white haze with a ring round
- * the star, jets along its axis and wisps rippling out. Young, the whole remnant burns hotter and whiter.
+ * the star, jets along its axis and wisps rippling out, and the pulsar's two beams sweeping round over it. Young, the
+ * whole remnant burns hotter and whiter.
  */
 const REMNANT_SHADER = `${GLSL_HEAD}
 uniform float uTime;
@@ -103,6 +104,9 @@ export function drawForgedNeutronStar(ctx: CanvasRenderingContext2D, star: Plane
   }
   ctx.globalCompositeOperation = 'lighter';
   ctx.globalAlpha = alpha * Math.min(1, age / 1.2);
+
+  // The pulsar's beams sweeping round, as in every look: the remnant's turning light.
+  drawPulsarBeams(ctx, seed, time);
 
   // The star: a white-hot point in a throbbing blue halo, with a faint cross of light on it as a lens sees one.
   const R = star.radius;
