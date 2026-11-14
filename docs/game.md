@@ -138,7 +138,7 @@ Before every round the twists are announced on a band across the field: each one
 
 ### Bonus points at a glance
 
-Every point a ship can earn or lose, and what it means. The numbers live in `SCORING` in `src/sim/config.ts`; the payout of the kill extras is `killBonuses` in `src/game/match.ts`.
+Every point a ship can earn or lose, and what it means. The numbers live in `SCORING` in `src/sim/config.ts`; the payout of the kill extras is `KillLedger.killBonuses` in `src/game/kill-ledger.ts`.
 
 **Points for a shot**
 
@@ -191,7 +191,7 @@ The **multi-kill chain** (250 / 500 / 750 / 1000 for the second to the fifth ene
 | The shooter | Opener, posthumous, the next step of the multi-kill chain |
 | The round | First blood (until the first kill) |
 
-**Marks on the cards.** While you aim, the scoreboard's cards tell who is worth shooting at (the numbers above, read the way the payout reads them: `targetExtras` in `src/game/match.ts`, drawn by `drawCardMarks` in `src/render/hud.ts`, symbols in `src/render/mark-art.ts`). Every extra has a symbol and a colour of its own, drawn as vector shapes:
+**Marks on the cards.** While you aim, the scoreboard's cards tell who is worth shooting at (the numbers above, read the way the payout reads them: `targetExtras` in `src/game/kill-ledger.ts`, drawn by `drawCardMarks` in `src/render/hud.ts`, symbols in `src/render/mark-art.ts`). Every extra has a symbol and a colour of its own, drawn as vector shapes:
 
 | Symbol | Extra | On the card of |
 | --- | --- | --- |

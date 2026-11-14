@@ -1,6 +1,6 @@
 import { planShot, type Aim, type CpuDecision } from '../sim/ai';
-import { bountyPoints, interceptPoints, underdogPoints } from '../sim/scoring';
-import { AIM, ANOMALY, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TRAIL_FADE, type BonusKind } from '../sim/config';
+import { interceptPoints } from '../sim/scoring';
+import { AIM, ANOMALY, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TRAIL_FADE } from '../sim/config';
 import { seatColor, teamColor } from '../data/palette';
 import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
@@ -21,10 +21,11 @@ import { Killcam } from './killcam';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField } from './powerup-field';
 import type { Experiment } from './experiments';
+import { KillLedger } from './kill-ledger';
 import type { MatchSnapshot } from './match-types';
 
 export * from './match-types';
-import { newPlayer, atTable, shotDown, sidesOf, SKIP_VOTE_TIME, PAUSE_COUNTDOWN, teamName, type CpuJob, type Mode, type Phase, type PlayerState, type Trail, type KillRecord, type Falling, type RoundTitle, type SkipVote, type RoundSummary, type Scene, type GameEvent, type CpuDecisionReport, type Bonus, type MarkKind, type Mark, type MarkState, type MatchOptions } from './match-types';
+import { newPlayer, atTable, shotDown, sidesOf, SKIP_VOTE_TIME, PAUSE_COUNTDOWN, teamName, type CpuJob, type Mode, type Phase, type PlayerState, type Trail, type KillRecord, type Falling, type RoundTitle, type SkipVote, type RoundSummary, type Scene, type GameEvent, type CpuDecisionReport, type Bonus, type Mark, type MatchOptions } from './match-types';
 
 /**
  * Everything the modes share: players, rounds, scoring, CPU thinking and flying volleys.
@@ -113,16 +114,13 @@ export abstract class Match {
   protected flightDoneAt: number | null = null;
   /** What the volley in the air has destroyed so far — the oracle's verdict is read from it. */
   private oracleKills: { killer: number; victim: number; self: boolean; friendly: boolean }[] = [];
-  /** The enemies each player has taken in the round being played, for the multi-kill chain. */
-  private killChain = new Map<number, number>();
-  /** Whether an enemy ship has been taken this round yet: the first one is first blood. */
-  private firstBloodDrawn = false;
-  /** Who shot each ship down this round, and in the rounds before, latest first (revenge and domination read them). */
-  private killedBy = new Map<number, number>();
-  private killedBefore: Map<number, number>[] = [];
-  /** Everybody's score as the volley in the air went up (the bounty and the underdog read it), and as the round began (the comeback). */
-  private launchScores: number[] = [];
-  private roundScores: number[] = [];
+  /** Who shot whom, for the extras a kill pays and the marks on the cards. */
+  private readonly ledger = new KillLedger({
+    players: () => this.players,
+    payFactor: () => this.payFactor,
+    friendsOf: (id) => this.friendsOf(id),
+    marksOpen: () => this.phase === 'aiming' && this.paysKillBonuses && !this.forfeited,
+  });
   private disposed = false;
   protected cpuJobs = new Map<number, CpuJob>();
   private listeners: ((e: GameEvent) => void)[] = [];
@@ -759,7 +757,7 @@ export abstract class Match {
       oracle: this.oracle.snapshot(),
       stands: this.stands.snapshot(),
       crowd: this.crowd.snapshot(),
-      marks: this.markState(),
+      marks: this.ledger.state(),
     };
   }
 
@@ -802,7 +800,7 @@ export abstract class Match {
     if (s.oracle) this.oracle.restore(s.oracle);
     if (s.stands) this.stands.restore(s.stands);
     this.crowd.restore(s.crowd);
-    this.restoreMarkState(s.marks);
+    this.ledger.restore(s.marks);
     this.volley = null;
     if (s.volley) {
       const volley = new Volley(s.world, s.volley.aims, this.rules, true);
@@ -820,8 +818,7 @@ export abstract class Match {
     this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
     this.plannerRngs.clear();
     this.lastHitBy.clear();
-    this.killedBy.clear();
-    this.killedBefore = [];
+    this.ledger.newMatch();
     const seats = this.options.seats ?? this.settings.seats;
     const taken = seats.flatMap((seat, i) => (seat === 'off' ? [] : [{ seat: i, kind: seat }]));
     const teams = this.attract ? null : (this.options.teams ?? seatTeamsFor(this.settings, taken.map((s) => s.seat)));
@@ -861,13 +858,7 @@ export abstract class Match {
   startRound(): void {
     this.killcam.reset();
     this.resetFlight();
-    // The chain counts a round's kills: several in one turn (a splitter's forks, an armor-piercing round) or
-    // one per turn adding up. A new round starts everyone over, so no round opens with a chain carried in.
-    this.killChain.clear();
-    this.firstBloodDrawn = false;
-    // Who shot you down last round is the one revenge is taken on in this one; domination looks two rounds further back.
-    this.killedBefore = [this.killedBy, ...this.killedBefore].slice(0, SCORING.DOMINATION_ROUNDS);
-    this.killedBy = new Map();
+    this.ledger.startRound();
     this.skipVote = null;
     this.forfeited = false;
     this.round++;
@@ -914,7 +905,7 @@ export abstract class Match {
       p.angle = duel ? (p.id === 0 ? 0 : 180) : normalizeAngle(Math.round((Math.atan2(ship.y - FIELD.height / 2, FIELD.width / 2 - ship.x) * 180) / Math.PI));
       p.power = startPower(this.settings);
     }
-    this.roundScores = this.players.map((p) => p.score);
+    this.ledger.scoresAtStart(this.players.map((p) => p.score));
     this.freeFireAnnounced = false;
     this.checkFreeFire();
     this.power.startRound();
@@ -1366,7 +1357,7 @@ export abstract class Match {
     // The extras went back with the points, and the round's kills are no grudge: revenge and domination read the rounds as if this one was never played.
     this.matchStats.bonuses.splice(this.matchStats.bonuses.length - this.roundStats.bonuses.length);
     this.roundStats.bonuses = [];
-    this.killedBy = this.killedBefore.shift() ?? new Map();
+    this.ledger.rollbackRound();
     this.summary = { title: 'skipped', survivor: null, team: null, bonus: 0, lastKill: null };
     this.scoreHistory.push(before.slice());
     if (this.mayhem) this.mayhemHistory.push(this.mayhem);
@@ -1425,7 +1416,7 @@ export abstract class Match {
     this.killcam.capture(this.world, aims);
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
     this.shotLog.launched(this.volley.shots, aims);
-    this.launchScores = this.players.map((p) => p.score);
+    this.ledger.launched(this.players.map((p) => p.score));
     this.simClock = 0;
     this.flightDoneAt = null;
     this.cpuJobs.clear();
@@ -1760,12 +1751,11 @@ export abstract class Match {
     }
     const enemyKill = !self && !friendly;
     const paysExtras = enemyKill && this.paysKillBonuses;
-    const bonuses = paysExtras ? this.killBonuses(vs, victim, killer).map((b) => ({ ...b, points: Math.round(b.points * share) })) : [];
+    const bonuses = paysExtras ? this.ledger.killBonuses(killer, victim, !!vs.stray).map((b) => ({ ...b, points: Math.round(b.points * share) })) : [];
     if (enemyKill) {
       // A CPU hit by an enemy remembers it — level profiles with a grudge aim back.
       this.lastHitBy.set(victim, killer);
-      this.firstBloodDrawn = true;
-      this.killedBy.set(victim, killer);
+      this.ledger.noteKill(killer, victim);
     }
     const record: KillRecord = {
       killer,
@@ -1797,9 +1787,7 @@ export abstract class Match {
     this.recordKill(record);
     // The kill chain: a second enemy in the round pays extra, whether it came in this turn or an earlier one.
     if (paysExtras) {
-      const kills = (this.killChain.get(killer) ?? 0) + 1;
-      this.killChain.set(killer, kills);
-      const bonus = Math.round(SCORING.MULTI_KILL[Math.min(kills, SCORING.MULTI_KILL.length - 1)] * this.payFactor * share);
+      const { kills, points: bonus } = this.ledger.extendChain(killer, share);
       if (bonus > 0) {
         this.players[killer].score += bonus;
         this.shotLog.bonus(vs, bonus);
@@ -1819,68 +1807,10 @@ export abstract class Match {
     return points;
   }
 
-  /** The extras a kill of an enemy pays, taken before the kill is noted (it is no longer the round's first after that). */
-  private killBonuses(vs: VolleyShot, victim: number, killer = vs.owner): Bonus[] {
-    const pay = this.payFactor;
-    const bonuses: Bonus[] = [];
-    const add = (kind: BonusKind, points: number) => {
-      if (points > 0) bonuses.push({ kind, points });
-    };
-    if (!this.firstBloodDrawn) add('firstBlood', SCORING.FIRST_BLOOD * pay);
-    bonuses.push(...this.targetExtras(killer, victim, this.standingsAtLaunch()));
-    // Posthumous is for a ship that was shot down, not one whose player left the game with the shot in the air.
-    if (!this.players[killer].alive && !this.players[killer].left) add('posthumous', SCORING.POSTHUMOUS * pay);
-    // Once for the first shot, however many ships it takes: the chain is still empty for the first of them.
-    if (!vs.stray && this.players[killer].shots === 1 && !this.killChain.has(killer)) add('opener', SCORING.OPENER * pay);
-    return bonuses;
-  }
-
-  /**
-   * The extras a kill pays for who the victim is, read from the `standings` it is taken at (the cards read the ones of the moment, the payout those of the launch).
-   * Without a `killer` only what is true of the victim for everybody is left: the bounty and a shutdown.
-   */
-  private targetExtras(killer: number | null, victim: number, standings: { id: number; score: number }[]): { kind: Exclude<MarkKind, 'chain'>; points: number }[] {
-    const pay = this.payFactor;
-    const bonuses: { kind: Exclude<MarkKind, 'chain'>; points: number }[] = [];
-    const add = (kind: Exclude<MarkKind, 'chain'>, points: number) => {
-      if (points > 0) bonuses.push({ kind, points });
-    };
-    /** Whether `by` shot `ship` down in each of the last `rounds` rounds before this one. */
-    const shotDownBy = (ship: number, by: number, rounds: number) => this.killedBefore.length >= rounds && this.killedBefore.slice(0, rounds).every((round) => round.get(ship) === by);
-    // Not times the jackpot, these two: the points of the lead and the gap they are a share of were paid at the round's rate already.
-    if (standings[0]?.id === victim && standings[1]) add('bounty', bountyPoints(standings[0].score - standings[1].score));
-    const last = standings.at(-1)!;
-    const victimScore = standings.find((s) => s.id === victim)?.score;
-    if (killer !== null && standings.length >= 3 && last.id === killer && last.score < standings.at(-2)!.score && victimScore !== undefined) add('underdog', underdogPoints(victimScore - last.score));
-    // Revenge on the one who shot you down last round — double on one who did it the last few rounds running.
-    if (killer !== null && shotDownBy(killer, victim, 1)) add('revenge', SCORING.REVENGE * pay * (shotDownBy(killer, victim, SCORING.DOMINATION_ROUNDS) ? 2 : 1));
-    if (killer !== null && shotDownBy(victim, killer, SCORING.DOMINATION_ROUNDS - 1)) add('domination', SCORING.DOMINATION * pay);
-    const spree = this.killChain.get(victim) ?? 0;
-    if (spree >= 2) add('shutdown', SCORING.SHUTDOWN_PER_KILL * spree * pay);
-    const team = killer === null ? null : this.players[killer].team;
-    if (killer !== null && team !== null && [...this.killedBy].some(([ship, by]) => by === victim && ship !== killer && this.players[ship].team === team)) add('avenger', SCORING.AVENGER * pay);
-    return bonuses;
-  }
-
-  /** Everybody still in the game by their score as the volley went up, best first. Whoever left the game is not in the race. */
-  private standingsAtLaunch(): { id: number; score: number }[] {
-    return this.standings((p) => this.launchScores[p.id] ?? p.score);
-  }
-
-  private standings(score: (p: PlayerState) => number): { id: number; score: number }[] {
-    return this.players.flatMap((p) => (p.left ? [] : [{ id: p.id, score: score(p) }])).sort((a, b) => b.score - a.score);
-  }
-
-  /** The ship that was alone in last place as the round began: winning the round from there pays a comeback. */
-  private comebackCandidate(): number | null {
-    const field = this.players.filter((p) => !p.left).sort((a, b) => (this.roundScores[a.id] ?? 0) - (this.roundScores[b.id] ?? 0));
-    return field.length >= 2 && (this.roundScores[field[0].id] ?? 0) < (this.roundScores[field[1].id] ?? 0) ? field[0].id : null;
-  }
-
   /** The extra the end of a round pays: the survivor won it from alone in last place at its start. */
   private roundBonuses(survivor: number | null): void {
     if (!this.paysKillBonuses || this.forfeited || survivor === null) return;
-    if (this.comebackCandidate() === survivor) {
+    if (this.ledger.comebackCandidate() === survivor) {
       this.payBonuses(survivor, [{ kind: 'comeback', points: SCORING.COMEBACK * this.payFactor }], this.world.ships[survivor]);
     }
   }
@@ -1906,54 +1836,7 @@ export abstract class Match {
    * read it once a frame.
    */
   get cardMarks(): Mark[][] {
-    return this.marksFor(this.markViewer);
-  }
-
-  /** What the guests read their marks from (see `MarkState`). */
-  protected markState(): MarkState {
-    return {
-      chain: [...this.killChain],
-      firstBlood: this.firstBloodDrawn,
-      killedBy: [...this.killedBy],
-      before: this.killedBefore.map((round) => [...round]),
-      roundScores: this.roundScores,
-    };
-  }
-
-  protected restoreMarkState(state: MarkState | undefined): void {
-    if (!state) return;
-    this.killChain = new Map(state.chain);
-    this.firstBloodDrawn = state.firstBlood;
-    this.killedBy = new Map(state.killedBy);
-    this.killedBefore = state.before.map((round) => new Map(round));
-    this.roundScores = [...state.roundScores];
-  }
-
-  /** The marks on each ship's card, by ship, as `shooter` (or the stands, for null) sees them. The payout reads the same rules (`targetExtras`). */
-  private marksFor(shooter: number | null): Mark[][] {
-    const marks: Mark[][] = this.players.map(() => []);
-    if (this.phase !== 'aiming' || !this.paysKillBonuses || this.forfeited) return marks;
-    const pay = this.payFactor;
-    const me = shooter === null ? null : this.players[shooter];
-    // A shooter who is out of the round, or away, has no kills to plan: they see what is true for everybody.
-    const aiming = me !== null && me.alive && !me.away && !me.left ? me : null;
-    const standings = this.standings((p) => p.score);
-    const comeback = this.comebackCandidate();
-    for (const p of this.players) {
-      if (!p.alive || p.away || p.left) continue;
-      const here = marks[p.id];
-      if (aiming && p.id === aiming.id) {
-        if (!this.firstBloodDrawn) here.push({ kind: 'firstBlood', points: SCORING.FIRST_BLOOD * pay });
-        if (aiming.shots === 0 && !this.killChain.has(aiming.id)) here.push({ kind: 'opener', points: SCORING.OPENER * pay });
-        const next = (this.killChain.get(aiming.id) ?? 0) + 1;
-        const chain = SCORING.MULTI_KILL[Math.min(next, SCORING.MULTI_KILL.length - 1)] * pay;
-        if (chain > 0) here.push({ kind: 'chain', points: chain });
-      } else if (!aiming || !this.friendsOf(aiming.id).includes(p.id)) {
-        here.push(...this.targetExtras(aiming ? aiming.id : null, p.id, standings));
-      }
-      if (p.id === comeback) here.push({ kind: 'comeback', points: SCORING.COMEBACK * pay });
-    }
-    return marks;
+    return this.ledger.marksFor(this.markViewer);
   }
 
   /** What the finished shots tell the scorecard: how far they flew and whom they narrowly missed. */
