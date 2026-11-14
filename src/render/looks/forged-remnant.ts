@@ -170,7 +170,7 @@ export function pulsarDazzle(seed: number, time: number): number {
 
 /** How far (field units) the dazzle spreads round the star, and how bright it is at its height. */
 const DAZZLE_REACH = 900;
-const DAZZLE = .2;
+const DAZZLE = .1;
 
 /** The beams of the lighthouse, and the soft wash of light when one points at us. */
 function drawLighthouse(ctx: CanvasRenderingContext2D, seed: number, time: number, R: number): void {
@@ -193,7 +193,7 @@ function drawLighthouse(ctx: CanvasRenderingContext2D, seed: number, time: numbe
   const dazzle = pulsarDazzle(seed, time);
   if (dazzle < .01) return;
   const wash = ctx.createRadialGradient(0, 0, 0, 0, 0, DAZZLE_REACH);
-  wash.addColorStop(0, rgba('#f2f8ff', DAZZLE * 2 * dazzle));
+  wash.addColorStop(0, rgba('#f2f8ff', DAZZLE * 1.6 * dazzle));
   wash.addColorStop(.08, rgba('#cfe4ff', DAZZLE * dazzle));
   wash.addColorStop(.35, rgba('#8ec0ff', DAZZLE * .35 * dazzle));
   wash.addColorStop(1, rgba('#62a0ff', 0));
@@ -203,7 +203,7 @@ function drawLighthouse(ctx: CanvasRenderingContext2D, seed: number, time: numbe
   ctx.fill();
   // The star itself flares as the beam looks at us.
   const flare = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 14);
-  flare.addColorStop(0, rgba('#ffffff', .6 * dazzle));
+  flare.addColorStop(0, rgba('#ffffff', .35 * dazzle));
   flare.addColorStop(1, rgba('#9cc8ff', 0));
   ctx.fillStyle = flare;
   ctx.beginPath();
