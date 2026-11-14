@@ -82,6 +82,21 @@ describe('Forged supernova remnant', () => {
     for (let n = 1; n < dazzle.length; n++) expect(Math.abs(dazzle[n] - dazzle[n - 1])).toBeLessThan(.1);
   });
 
+  it('paints the beam ahead of time without failing when the document is gone by then', async () => {
+    // A fresh module, with no beam painted yet.
+    vi.resetModules();
+    const { warmPulsarBeam: warm } = await import('../../src/render/looks/forged-remnant');
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal('requestIdleCallback', undefined);
+      warm();
+      vi.unstubAllGlobals();
+      expect(() => vi.runAllTimers()).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('leaves it to the shared remnant when there are no shaders', () => {
     vi.mocked(shadeKept).mockReturnValue(null);
     const ctx = context();

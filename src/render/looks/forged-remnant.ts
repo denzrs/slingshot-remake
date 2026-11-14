@@ -142,7 +142,11 @@ export function warmPulsarBeam(): void {
   if (beamPicture || beamWarming || typeof document === 'undefined') return;
   beamWarming = true;
   const later = typeof requestIdleCallback === 'function' ? (fn: () => void) => requestIdleCallback(fn) : (fn: () => void) => setTimeout(fn, 200);
-  later(() => beamOf());
+  later(() => {
+    beamWarming = false;
+    // The page may be gone by now (a test that lent the document out); then the first remnant paints it instead.
+    if (typeof document !== 'undefined') beamOf();
+  });
 }
 
 /** The lighthouse's tilt on the screen (rad, by the seed) and how far round it has turned at `time`. */
