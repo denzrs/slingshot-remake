@@ -1,23 +1,23 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { setLang } from '../../src/platform/i18n';
-import { factLinesInOrder, factParts, factText, factTexts } from '../../src/net/statsFacts';
+import { factLinesInOrder, factParts, factsByGroup, factText, factTexts } from '../../src/net/statsFacts';
 
 describe('facts for the menu', () => {
   beforeAll(() => setLang('en'));
 
   it('words a fact with its numbers', () => {
-    expect(factText({ id: 'firstTurn', values: [15.6, 18] })).toBe('A shot in the first turn hits 16% of the time, a later one 18%.');
+    expect(factText({ id: 'firstTurn', values: [15.6, 18] })).toBe('Shots in the first turn hit 16% of the time, later ones 18%.');
     expect(factText({ id: 'rounds', values: [70.75, 161.1] })).toBe('An average round takes 1:11, the longest 2:41.');
     expect(factText({ id: 'betWin', values: [250] })).toBe('Biggest bet win so far: +250 points.');
     expect(factText({ id: 'holeShots', values: [0.4] })).toContain('0.4%');
     expect(factText({ id: 'plasmaShots', values: [4.2, 50] })).toBe('4.2% of all shots are plasma – 50% of those hit.');
     expect(factText({ id: 'shotsPerKill', values: [10.26] })).toBe('It takes 10.3 shots on average to destroy a ship.');
-    expect(factText({ id: 'topPlacement', values: [4, 12] })).toBe('The most-placed power-up is the teleport: 12 times so far.');
-    expect(factText({ id: 'weekTrend', values: [140, 112.5] })).toBe('The last 7 days: 140 rounds – 113% of the week before.');
+    expect(factText({ id: 'topPlacement', values: [4, 12] })).toBe('The most-placed power-up is the teleport – 12 times so far.');
+    expect(factText({ id: 'weekTrend', values: [140, 112.5] })).toBe('Last 7 days: 140 rounds – 113% of the week before.');
     expect(factText({ id: 'intercepts', values: [37.5] })).toBe('Planetary defenses bring down 38% of the shots they fire at.');
     expect(factText({ id: 'strayKills', values: [3] })).toBe('Defense missiles that lost their target have destroyed 3 ships.');
     expect(factText({ id: 'firstBlood', values: [61.2] })).toBe('Whoever draws first blood goes on to win the round 61% of the time.');
-    expect(factText({ id: 'bounties', values: [42, 875] })).toBe('42 leaders have been shot down for the bounty on their head – the biggest paid 875 points.');
+    expect(factText({ id: 'bounties', values: [42, 875] })).toBe('42 leaders have been shot down for their bounty – the biggest paid 875 points.');
     expect(factText({ id: 'revenges', values: [8.4] })).toBe('8.4% of kills are revenge on the ship that shot the shooter down the round before.');
     expect(factText({ id: 'topBonus', values: [7, 12] })).toBe('Besides first blood, the extra paid most often is Domination: 12 times.');
     expect(factText({ id: 'topBonus', values: [99, 12] })).toBeNull();
@@ -39,7 +39,7 @@ describe('facts for the menu', () => {
     expect(factText({ id: 'selfHighHorizon', values: [0, 0] })).toBeNull();
     // A power-up this client does not know yet.
     expect(factText({ id: 'topPlacement', values: [99, 12] })).toBeNull();
-    expect(factText({ id: 'selfHighHorizon', values: [20, 4] })).toBe('In Event Horizon, 20% of shots at power 80 or more hit the shooter – below that, 4%.');
+    expect(factText({ id: 'selfHighHorizon', values: [20, 4] })).toBe('In Event Horizon, 20% of shots at power 80 or more hit their own shooter – below that, only 4%.');
   });
 
   it('shuffles all the sentences and drops the unusable ones', () => {
@@ -66,9 +66,9 @@ describe('facts for the menu', () => {
 describe('factParts', () => {
   it('sets the numbers apart from the words', () => {
     expect(factParts({ id: 'firstTurn', values: [15.6, 18] })).toEqual([
-      { text: 'A shot in the first turn hits ', number: false },
+      { text: 'Shots in the first turn hit ', number: false },
       { text: '16%', number: true },
-      { text: ' of the time, a later one ', number: false },
+      { text: ' of the time, later ones ', number: false },
       { text: '18%', number: true },
       { text: '.', number: false },
     ]);
@@ -76,7 +76,27 @@ describe('factParts', () => {
 
   it('keeps the space before a percent sign with the number', () => {
     setLang('de');
-    expect(factParts({ id: 'holeShots', values: [12] })?.map((p) => p.text)).toEqual(['12 %', ' aller Schüsse verschluckt ein Schwarzes Loch.']);
+    expect(factParts({ id: 'holeShots', values: [12] })?.map((p) => p.text)).toEqual(['12 %', ' aller Schüsse landen in einem Schwarzen Loch.']);
     setLang('en');
+  });
+});
+
+describe('facts by group', () => {
+  beforeAll(() => setLang('en'));
+
+  it('puts each fact under its heading, the headings in a fixed order and none empty', () => {
+    const groups = factsByGroup([
+      { id: 'betWin', values: [250] },
+      { id: 'noWinner', values: [3] },
+      { id: 'shotsPerKill', values: [4] },
+      { id: 'holeShots', values: [2] },
+      { id: 'notYetKnown', values: [1] },
+    ]);
+    expect(groups.map((g) => g.group)).toEqual(['aim', 'rounds', 'oracle']);
+    // Within a heading the page's own order, not the relay's.
+    expect(groups[0].lines.map((parts) => parts.map((p) => p.text).join(''))).toEqual([
+      'It takes 4.0 shots on average to destroy a ship.',
+      '2% of all shots end up in a black hole.',
+    ]);
   });
 });

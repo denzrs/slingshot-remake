@@ -1,11 +1,15 @@
 import { fmt, fmtInt, getLang, t, tn } from '../../platform/i18n';
-import type { StatsBetting, StatsDay, StatsGame } from '../../net/net';
-import { buildHeatmap, METRICS, SOURCES, StatsBoard, type Metric, type Source, type StatsOverview } from '../../net/statsBoard';
+import { hintText } from '../../platform/input-device';
+import type { StatsBetting, StatsDay, StatsFact, StatsGame } from '../../net/net';
+import { buildHeatmap, METRICS, StatsBoard, type Metric, type Source, type StatsOverview } from '../../net/statsBoard';
+import { factsByGroup, type FactPart } from '../../net/statsFacts';
+import { factValues, modeShares, monthTotals, summarize, weekdayAverages } from '../../net/statsSummary';
 import { h, type MenuItem, type Screen } from '../menu/menu';
+import { menuPage } from '../menu/menu-page';
+import { modeArt } from '../menu/mode-icons';
 import { leaderboardAvailable } from '../daily/leaderboard';
+import { enablePagerNavigation, pagePagerHeader, positionModeCarousel, type ModeTransition } from '../screens/mode-pager';
 import type { App } from '../screens';
-import { factLinesInOrder, type FactPart } from '../../net/statsFacts';
-import type { StatsFact } from '../../net/net';
 import { loadFacts } from './facts';
 
 /** The statistics live on the multiplayer relay, like the daily board: a build without one has none to show. */
@@ -20,10 +24,30 @@ function shortDay(day: string): string {
 
 const monthName = (month: number): string => new Intl.DateTimeFormat(getLang(), { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, month, 1)));
 
-/** The weekday names down the side, Sunday first: only every other row is named, as on GitHub. */
-const weekdayName = (index: number): string => new Intl.DateTimeFormat(getLang(), { weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 0, 4 + index)));
+/** A weekday's short name, Monday = 0. 2026-01-05 was a Monday. */
+const weekdayName = (index: number): string => new Intl.DateTimeFormat(getLang(), { weekday: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 0, 5 + index)));
 
 const metricLabel = (metric: Metric): string => t(`stats.metric.${metric}`);
+
+/** "12 Runden", "1 Punkt": a count of the metric, its figure formatted. */
+const metricCount = (metric: Metric, value: number): string => tn(`stats.${metric}`, value, { n: fmtInt(Math.round(value)) });
+
+/** A large figure kept short: 1.234.567 as "1,2 Mio.". */
+const compact = (n: number): string => (n < 100_000 ? fmtInt(n) : new Intl.NumberFormat(getLang(), { notation: 'compact', maximumFractionDigits: 1 }).format(n));
+
+/** "20 %" in German, "20%" in English, as the facts write them. */
+const percent = (n: number): string => (getLang() === 'de' ? `${fmt(n, 0)}\u00a0%` : `${fmt(n, 0)}%`);
+
+/** "2 hours ago" / "vor 2 Stunden" for a unix time. */
+function ago(seconds: number): string {
+  const diff = seconds - Date.now() / 1000;
+  const format = new Intl.RelativeTimeFormat(getLang(), { numeric: 'auto' });
+  const abs = Math.abs(diff);
+  if (abs < 3600) return format.format(Math.round(diff / 60), 'minute');
+  if (abs < 86_400) return format.format(Math.round(diff / 3600), 'hour');
+  if (abs < 7 * 86_400) return format.format(Math.round(diff / 86_400), 'day');
+  return new Intl.DateTimeFormat(getLang(), { day: 'numeric', month: 'short' }).format(new Date(seconds * 1000));
+}
 
 /** Takes the tooltip off the page, and hands it back to be reused. */
 function hideTip(): HTMLElement | null {
@@ -32,11 +56,30 @@ function hideTip(): HTMLElement | null {
   return tip;
 }
 
+/** Shows our own tooltip over whatever element under the pointer carries `data-tip`: at once, where the browser's title waits a second. */
+function withTips(root: HTMLElement): HTMLElement {
+  root.addEventListener('mouseover', (event) => {
+    const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-tip]') : null;
+    if (!target) return;
+    const tip = hideTip() ?? h('div.hm__tip', { role: 'tooltip' });
+    tip.textContent = target.dataset.tip ?? '';
+    const box = target.getBoundingClientRect();
+    tip.style.left = `${box.left + box.width / 2}px`;
+    tip.style.top = `${box.top}px`;
+    // It sits on the page itself, not in the scrolling body, which would clip it.
+    document.body.append(tip);
+  });
+  root.addEventListener('mouseout', (event) => {
+    if (!(event.relatedTarget instanceof Element) || !event.relatedTarget.closest('[data-tip]')) hideTip();
+  });
+  return root;
+}
+
 /**
  * The heatmap: built once, with a square for every day of the year, and then only told what to show. Switching what it
  * shows is a few hundred attribute changes, where building it again was a few hundred elements and a repaint of the page.
  */
-function heatmapView(): { el: HTMLElement; show(days: readonly StatsDay[], metric: Metric): void } {
+function heatmapView(): { el: HTMLElement; show(days: readonly StatsDay[], metric: Metric): number } {
   const today = utcToday();
   const first = buildHeatmap([], 'rounds', today);
   const grid = h('div.hm__grid', { role: 'img' });
@@ -58,68 +101,203 @@ function heatmapView(): { el: HTMLElement; show(days: readonly StatsDay[], metri
     label.style.gridColumn = String(week + 1);
     months.append(label);
   }
-  const days = h('div.hm__days', { 'aria-hidden': 'true' }, ...[0, 1, 2, 3, 4, 5, 6].map((i) => h('span', null, i % 2 === 1 ? weekdayName(i) : '')));
+  // Sunday first, as the columns run; only every other row is named.
+  const days = h('div.hm__days', { 'aria-hidden': 'true' }, ...[6, 0, 1, 2, 3, 4, 5].map((d, i) => h('span', null, i % 2 === 1 ? weekdayName(d) : '')));
   const legend = h(
     'div.hm__legend',
-    null,
+    { 'aria-hidden': 'true' },
     h('span', null, t('stats.less')),
     ...[0, 1, 2, 3, 4].map((level) => h('span.hm__cell', { 'data-level': String(level) })),
     h('span', null, t('stats.more')),
   );
-  // A tooltip of our own, at once: the browser's title text waits a second. It sits on the page itself, not in the panel, whose
-  // scrolling and animation would clip it or move it.
-  const cellAt = (event: Event): HTMLElement | null => (event.target instanceof Element ? event.target.closest<HTMLElement>('.hm__cell[data-tip]') : null);
-  grid.addEventListener('mouseover', (event) => {
-    const cell = cellAt(event);
-    if (!cell) return;
-    const tip = hideTip() ?? h('div.hm__tip', { role: 'tooltip' });
-    tip.textContent = cell.dataset.tip ?? '';
-    const box = cell.getBoundingClientRect();
-    tip.style.left = `${box.left + box.width / 2}px`;
-    tip.style.top = `${box.top}px`;
-    document.body.append(tip);
-  });
-  grid.addEventListener('mouseleave', hideTip);
-  const total = h('p.hm__total', null, '');
-  const show = (days: readonly StatsDay[], metric: Metric): void => {
-    const shown = buildHeatmap(days, metric, today);
+  const show = (shownDays: readonly StatsDay[], metric: Metric): number => {
+    const shown = buildHeatmap(shownDays, metric, today);
     shown.weeks.forEach((week, w) =>
       week.forEach((cell, d) => {
         const square = squares[w][d];
         if (!square || !cell) return;
         square.dataset.level = String(cell.level);
-        square.dataset.tip = `${shortDay(cell.day)} · ${metricLabel(metric)}: ${fmtInt(cell.value)}`;
+        square.dataset.tip = `${shortDay(cell.day)} · ${metricCount(metric, cell.value)}`;
       }),
     );
-    total.textContent = t('stats.total', { n: fmtInt(shown.total), what: metricLabel(metric) });
-    grid.setAttribute('aria-label', `${metricLabel(metric)}: ${fmtInt(shown.total)}`);
+    grid.setAttribute('aria-label', t('stats.heat.total', { n: metricCount(metric, shown.total) }));
+    return shown.total;
   };
-  return { el: h('div.hm', null, total, h('div.hm__frame', null, days, h('div.hm__body', null, months, grid)), legend), show };
+  return { el: h('div.hm', null, h('div.hm__frame', null, days, h('div.hm__body', null, months, grid)), legend), show };
+}
+
+/** A card of the overview: a heading, maybe a line beside it, and what it shows. */
+function card(kind: string, title: string, tool?: HTMLElement): { el: HTMLElement; meta: HTMLElement; body: HTMLElement } {
+  const meta = h('span.st-card__meta', null);
+  const body = h('div.st-card__body', null);
+  const heading = h('div.st-card__heading', null, h('h3.st-card__title', null, title), meta);
+  const el = h(`section.st-card.st-card--${kind}`, null, h('header.st-card__head', null, heading, ...(tool ? [tool] : [])), body);
+  return { el, meta, body };
+}
+
+/** One figure of the strip on top: what it is, the figure, and a line under it. */
+function kpi(label: string, value: string, note: string, trend?: 'up' | 'down'): HTMLElement {
+  return h(
+    'li.st-kpi',
+    trend ? { 'data-trend': trend } : null,
+    h('span.st-kpi__label', null, label),
+    h('strong.st-kpi__value', null, value),
+    h('span.st-kpi__note', null, note),
+  );
+}
+
+function kpis(days: readonly StatsDay[]): HTMLElement[] {
+  const s = summarize(days, utcToday());
+  const change = s.weekBefore > 0 ? Math.round((100 * (s.week - s.weekBefore)) / s.weekBefore) : null;
+  const trend = change === null || change === 0 ? undefined : change > 0 ? 'up' : 'down';
+  return [
+    kpi(t('stats.kpi.rounds'), compact(s.rounds), t('stats.kpi.rounds.note')),
+    kpi(
+      t('stats.kpi.week'),
+      fmtInt(s.week),
+      change === null ? t('stats.kpi.week.new') : t('stats.kpi.week.note', { n: `${change > 0 ? '+' : change < 0 ? '−' : '±'}${fmtInt(Math.abs(change))}` }),
+      trend,
+    ),
+    kpi(t('stats.kpi.today'), fmtInt(s.today.rounds), tn('stats.players', s.today.players, { n: fmtInt(s.today.players) })),
+    kpi(t('stats.kpi.best'), s.bestDay ? fmtInt(s.bestDay.rounds) : '–', s.bestDay ? t('stats.kpi.best.note', { day: shortDay(s.bestDay.day) }) : t('stats.kpi.none')),
+    kpi(t('stats.kpi.active'), fmtInt(s.activeDays), t('stats.kpi.active.note', { n: fmtInt(s.longestStreak) })),
+    kpi(t('stats.kpi.points'), compact(s.points), t('stats.kpi.points.note', { n: fmt(s.playersPerDay, 1) })),
+  ];
+}
+
+/** The last twelve months as columns, the current one picked out. */
+function monthChart(days: readonly StatsDay[], metric: Metric): HTMLElement {
+  const months = monthTotals(days, metric, utcToday());
+  const max = Math.max(1, ...months.map((m) => m.value));
+  return h(
+    'ol.st-months',
+    { 'aria-label': t('stats.trend.months') },
+    ...months.map((m, i) => {
+      const bar = h('span.st-months__bar', null);
+      bar.style.setProperty('--share', String(m.value / max));
+      return h(
+        `li.st-months__item${i === months.length - 1 ? '.is-current' : ''}`,
+        { 'data-tip': `${monthName(m.month)} ${m.year} · ${metricCount(metric, m.value)}`, 'aria-label': `${monthName(m.month)} ${m.year}: ${metricCount(metric, m.value)}` },
+        h('span.st-months__track', null, bar),
+        h('span.st-months__label', { 'aria-hidden': 'true' }, monthName(m.month).slice(0, 3).replace('.', '')),
+      );
+    }),
+  );
+}
+
+/** The average day of each weekday, as bars from Monday to Sunday. */
+function weekdayChart(days: readonly StatsDay[], metric: Metric): HTMLElement {
+  const averages = weekdayAverages(days, metric, utcToday());
+  const max = Math.max(1e-9, ...averages);
+  const best = averages.indexOf(Math.max(...averages));
+  return h(
+    'ol.st-weekdays',
+    { 'aria-label': t('stats.trend.weekdays') },
+    ...averages.map((avg, i) => {
+      const bar = h('span.st-weekdays__bar', null);
+      bar.style.setProperty('--share', String(avg / max));
+      return h(
+        `li.st-weekdays__item${i === best && avg > 0 ? '.is-best' : ''}`,
+        null,
+        h('span.st-weekdays__day', null, weekdayName(i).replace('.', '')),
+        h('span.st-weekdays__track', null, bar),
+        h('span.st-weekdays__value', null, avg >= 10 ? fmtInt(Math.round(avg)) : fmt(avg, 1)),
+      );
+    }),
+  );
+}
+
+/** A share as a labelled bar. */
+function shareRow(label: string, value: number, icon?: SVGElement): HTMLElement {
+  const bar = h('span.st-share__bar', null);
+  bar.style.setProperty('--share', String(Math.min(100, Math.max(0, value)) / 100));
+  return h(
+    'li.st-share',
+    null,
+    ...(icon ? [h('span.st-share__icon', { 'aria-hidden': 'true' }, icon)] : []),
+    h('span.st-share__label', null, label),
+    h('span.st-share__value', null, percent(value)),
+    h('span.st-share__track', null, bar),
+  );
+}
+
+/** How the rounds are played: the modes' shares, then teams, anomalies, the loop and the weekend. */
+function modesView(facts: readonly StatsFact[]): HTMLElement[] {
+  const modes = modeShares(facts);
+  const rows: HTMLElement[] = [];
+  if (modes) {
+    for (const mode of ['classic', 'horizon', 'solar'] as const) rows.push(shareRow(t(`mode.${mode}`).replace('­', ''), modes[mode], modeArt(mode)));
+  }
+  const extras: HTMLElement[] = [];
+  for (const [id, key] of [['teamShare', 'stats.share.team'], ['anomalyShare', 'stats.share.anomaly'], ['loopShare', 'stats.share.loop'], ['weekend', 'stats.share.weekend']] as const) {
+    const value = factValues(facts, id)?.[0];
+    if (value !== undefined) extras.push(shareRow(t(key), value));
+  }
+  return [
+    ...(rows.length ? [h('ul.st-shares.st-shares--modes', null, ...rows)] : []),
+    ...(extras.length ? [h('ul.st-shares', null, ...extras)] : []),
+  ];
+}
+
+/** The records the relay names among its facts, each as a line with its figure. */
+function recordsView(facts: readonly StatsFact[]): HTMLElement[] {
+  const record = (label: string, id: string, value: (v: number[]) => string): HTMLElement[] => {
+    const values = factValues(facts, id);
+    return values ? [h('li.st-record', null, h('span.st-record__label', null, label), h('strong.st-record__value', null, value(values)))] : [];
+  };
+  return [
+    ...record(t('award.bestHit'), 'bestHit', ([v]) => `+${fmtInt(v)}`),
+    ...record(t('award.longestShot'), 'longestShot', ([v]) => `${fmtInt(v)} px`),
+    ...record(t('stats.record.sniper'), 'sniper', ([v]) => `${fmtInt(v)} px`),
+    ...record(t('award.fastestKill'), 'fastestKill', ([v]) => `${fmt(v, 1)} s`),
+    ...record(t('award.closeCall'), 'closeCall', ([v]) => `${fmt(v, 1)} px`),
+    ...record(t('stats.record.megaKills'), 'bigKills', ([v]) => fmtInt(v)),
+    ...record(t('stats.record.betWin'), 'betWin', ([v]) => `+${fmtInt(v)}`),
+  ];
 }
 
 function gameRow(game: StatsGame, watch: (game: StatsGame, button: HTMLButtonElement) => void): HTMLElement {
   const players = [game.humans ? tn('stats.players', game.humans) : '', game.cpus ? `${game.cpus} ${tn('lineup.cpu', game.cpus)}` : ''].filter(Boolean).join(' · ');
-  const when = new Date(game.at * 1000);
-  const time = new Intl.DateTimeFormat(getLang(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(when);
   // A game can be flown again when the relay has the whole of it (its host logged what it takes); the button says why not.
-  const rewatch = h('button.lobby__button.st__rewatch', { type: 'button', title: game.replay ? t('stats.rewatch') : t('stats.rewatch.soon') }, t('stats.rewatch')) as HTMLButtonElement;
+  const why = game.replay ? t('stats.rewatch.hint') : game.local ? t('stats.rewatch.local') : t('stats.rewatch.none');
+  const rewatch = h('button.st-game__watch', { type: 'button', title: why, 'aria-label': `${t('stats.rewatch')}: ${t(`mode.${game.gameMode}`)}, ${ago(game.at)}` }, t('stats.rewatch')) as HTMLButtonElement;
   if (game.replay) rewatch.addEventListener('click', () => watch(game, rewatch));
-  else rewatch.setAttribute('disabled', '');
+  else rewatch.disabled = true;
+  const time = new Intl.DateTimeFormat(getLang(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(game.at * 1000));
   return h(
-    'li.st__row',
+    'li.st-game',
     null,
-    h('span.st__when', null, time),
-    h('span.st__mode', null, `${t(`mode.${game.gameMode}`)}${game.mode === 'team' ? ` · ${t('stats.team')}` : ''}${game.local ? ` · ${t('stats.local')}` : ''}`),
-    h('span.st__players', null, players),
-    h('span.st__num', null, tn('stats.rounds', game.rounds)),
-    h('span.st__num', null, fmtInt(game.points)),
+    h('span.st-game__art', { 'aria-hidden': 'true' }, modeArt(game.gameMode)),
+    h(
+      'span.st-game__main',
+      null,
+      h('span.st-game__mode', null, t(`mode.${game.gameMode}`), ...(game.mode === 'team' ? [h('span.st-game__tag', null, t('stats.team'))] : [])),
+      h('span.st-game__meta', null, h('time', { datetime: new Date(game.at * 1000).toISOString(), title: time }, ago(game.at)), ` · ${players}`),
+    ),
+    h('span.st-game__score', null, h('strong', null, fmtInt(game.points)), h('span', null, tn('stats.rounds', game.rounds))),
     rewatch,
   );
 }
 
-/** What the page shows: the overview of days and games, or every fact the statistics make. */
-const TABS = ['overview', 'facts'] as const;
-type Tab = (typeof TABS)[number];
+/** The tips and bets as a row of figures, each with what it counts under it. */
+function bettingView(b: StatsBetting): HTMLElement {
+  const rate = (part: number, of: number): string => (of > 0 ? percent((100 * part) / of) : '–');
+  const figure = (value: string, label: string, note = ''): HTMLElement =>
+    h('li.st-figure', null, h('strong.st-figure__value', null, value), h('span.st-figure__label', null, label), ...(note ? [h('span.st-figure__note', null, note)] : []));
+  const net = b.paid - b.staked;
+  return h(
+    'ol.st-figures',
+    null,
+    figure(rate(b.roundRight, b.roundTips), t('stats.betting.round'), t('stats.betting.tips', { n: fmtInt(b.roundTips) })),
+    figure(rate(b.shotRight, b.shotTips), t('stats.betting.shot'), t('stats.betting.tips', { n: fmtInt(b.shotTips) })),
+    figure(rate(b.underdogs, b.roundRight + b.shotRight), t('stats.betting.underdog')),
+    figure(rate(b.stands, b.roundTips + b.shotTips), t('stats.betting.stands')),
+    figure(rate(b.won, b.bets), t('stats.betting.paid'), t('stats.betting.bets', { n: fmtInt(b.bets) })),
+    figure(b.bets ? fmtInt(Math.round(b.staked / b.bets)) : '–', t('stats.betting.stake'), t('stats.betting.stakeMax', { n: fmtInt(b.biggestStake) })),
+    figure(b.biggestWin ? `+${fmtInt(b.biggestWin)}` : '–', t('stats.betting.win')),
+    figure(`${net > 0 ? '+' : net < 0 ? '−' : ''}${fmtInt(Math.abs(net))}`, t('stats.betting.net'), t('stats.betting.netNote')),
+  );
+}
 
 /**
  * A fact as a card: its first figure large on top (a name, such as the power-up most placed, is no headline: its count is),
@@ -127,61 +305,70 @@ type Tab = (typeof TABS)[number];
  */
 function factItem(parts: FactPart[]): HTMLElement {
   const lead = parts.find((part) => part.number && !part.name);
-  const text = h('p.st__factText', null, ...parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text)));
-  return lead ? h('li.st__fact', null, h('strong.st__factLead', { 'aria-hidden': 'true' }, lead.text), text) : h('li.st__fact', null, text);
+  const text = h('p.st-fact__text', null, ...parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text)));
+  return h('li.st-fact', null, ...(lead ? [h('strong.st-fact__lead', { 'aria-hidden': 'true' }, lead.text)] : []), text);
 }
 
-const rate = (part: number, of: number): string => (of > 0 ? `${fmt((100 * part) / of, 0)}%` : '–');
-
-/** The tips and bets as a title and a row of figures. */
-function bettingView(b: StatsBetting): HTMLElement[] {
-  const figure = (value: string, label: string): HTMLElement => h('li.st__figure', null, h('strong', null, value), h('span', null, label));
-  const net = b.paid - b.staked;
-  return [
-    h('h3.st__title', null, t('stats.betting')),
-    h(
-      'ol.st__figures',
-      null,
-      figure(rate(b.roundRight, b.roundTips), t('stats.betting.round', { n: fmtInt(b.roundTips) })),
-      figure(rate(b.shotRight, b.shotTips), t('stats.betting.shot', { n: fmtInt(b.shotTips) })),
-      figure(rate(b.won, b.bets), t('stats.betting.paid', { n: fmtInt(b.bets) })),
-      figure(b.bets ? fmtInt(Math.round(b.staked / b.bets)) : '–', t('stats.betting.stake', { n: fmtInt(b.biggestStake) })),
-      figure(b.biggestWin ? `+${fmtInt(b.biggestWin)}` : '–', t('stats.betting.win')),
-      figure(rate(b.underdogs, b.roundRight + b.shotRight), t('stats.betting.underdog')),
-      figure(rate(b.stands, b.roundTips + b.shotTips), t('stats.betting.stands')),
-      figure(`${net > 0 ? '+' : ''}${fmtInt(net)}`, t('stats.betting.net')),
-    ),
-  ];
+/** What the two pages share while the player switches between them: what the relay said, and what is picked. */
+interface StatsState {
+  board: StatsBoard;
+  overview: StatsOverview | null;
+  overviewFailed: boolean;
+  facts: StatsFact[] | null;
+  factsFailed: boolean;
+  source: Source;
+  metric: Metric;
+  /** The page on display repaints itself when an answer comes in. */
+  repaint: () => void;
 }
 
-/**
- * How the games on the relay go: a year of days as a heatmap that can be read as rounds, players or points
- * per day, and the latest games below it, each with a button to watch it again.
- */
-function statsContent(app: App): Screen {
-  const board = new StatsBoard();
-  let tab: Tab = 'overview';
-  let metric: Metric = 'rounds';
-  let source: Source = 'online';
-  let overview: StatsOverview | null = null;
-  let view: ReturnType<typeof heatmapView> | null = null;
-  let failed = false;
-  /** The facts, asked for when the tab is first opened: null until they come. */
-  let facts: StatsFact[] | null = null;
-  let factsAsked = false;
-  let factsFailed = false;
+function newState(): StatsState {
+  const state: StatsState = { board: new StatsBoard(), overview: null, overviewFailed: false, facts: null, factsFailed: false, source: 'online', metric: 'rounds', repaint: () => {} };
+  state.board.overview().then(
+    (seen) => {
+      state.overview = seen;
+      state.repaint();
+    },
+    () => {
+      state.overviewFailed = true;
+      state.repaint();
+    },
+  );
+  loadFacts(state.board).then(
+    (seen) => {
+      state.facts = seen;
+      state.repaint();
+    },
+    () => {
+      state.factsFailed = true;
+      state.facts = [];
+      state.repaint();
+    },
+  );
+  return state;
+}
 
-  const status = h('p.lb__status', { role: 'status' }, t('stats.loading'));
-  const heat = h('div.st__heat', null);
-  const games = h('ol.st__rows', null);
-  const head = h('div.st__head', null, h('span', null, t('stats.col.when')), h('span', null, t('stats.col.mode')), h('span', null, t('stats.col.players')), h('span.st__num', null, t('stats.col.rounds')), h('span.st__num', null, t('stats.col.points')), h('span', null));
-  const betting = h('div.st__betting', null);
-  const table = h('div.st__table', null, h('h3.st__title', null, t('stats.games')), head, games);
-  const factsTitle = h('h3.st__title', null, t('stats.tab.facts'));
-  const factList = h('ol.st__facts', null);
-  const factsView = h('div.st__factsView', null, factsTitle, factList);
-  /** Where the overview's games come from and what its squares count, side by side above the heatmap. Hiding it is all that hides them: off the overview it keeps them out of sight and of the keyboard alike. */
-  const toolbar = h('div.st__toolbar', null, h('div.items', { 'data-section': 'source' }), h('div.items', { 'data-section': 'metric' }));
+/** The pages in the header, left to right: the games on the relay, the games on one device, and the facts. */
+const PAGES = ['online', 'local', 'facts'] as const;
+type Page = (typeof PAGES)[number];
+
+/** The overview: figures, the year as a heatmap and as months and weekdays, the latest games, how the rounds are played, records and bets. */
+function overviewBody(app: App, state: StatsState, status: HTMLElement): { body: HTMLElement; paint: () => void } {
+  const strip = h('ol.st-kpis', null);
+  const heat = card('heat', t('stats.heat.title'), h('div.items.st-metric', { 'data-section': 'metric' }));
+  const trend = card('trend', t('stats.trend.title'));
+  const games = card('games', t('stats.games'));
+  const modes = card('modes', t('stats.modes.title'));
+  const records = card('records', t('stats.records.title'));
+  const betting = card('betting', t('stats.betting'));
+  modes.meta.textContent = t('stats.modes.note');
+  records.meta.textContent = t('stats.records.note');
+  betting.meta.textContent = t('stats.betting.note');
+  const map = heatmapView();
+  heat.body.append(map.el);
+  const gameList = h('ol.st-games', null);
+  games.body.append(gameList);
+  const grid = withTips(h('div.st', null, strip, heat.el, trend.el, games.el, modes.el, records.el, betting.el));
 
   /** Fetches a game and flies it: the button says so while it waits, and the page says if it could not. */
   const watch = (game: StatsGame, button: HTMLButtonElement): void => {
@@ -194,132 +381,144 @@ function statsContent(app: App): Screen {
       status.textContent = t('replay.failed');
     };
     // A reply that comes after the player has left this page must not pull them into a replay.
-    board.replay(game.id).then((replay) => (!root.isConnected ? undefined : replay ? app.watchReplay(replay) : failedToLoad()), () => root.isConnected && failedToLoad());
+    state.board.replay(game.id).then((replay) => (!grid.isConnected ? undefined : replay ? app.watchReplay(replay) : failedToLoad()), () => grid.isConnected && failedToLoad());
   };
 
-  const paintFacts = (): void => {
-    heat.hidden = table.hidden = betting.hidden = toolbar.hidden = true;
-    if (!factsAsked) {
-      factsAsked = true;
-      factsFailed = false;
-      loadFacts(board).then(
-        (seen) => {
-          facts = seen;
-          if (tab === 'facts') paint();
-        },
-        () => {
-          // Opening the tab again asks again.
-          factsAsked = false;
-          factsFailed = true;
-          if (tab === 'facts') paint();
-        },
-      );
-    }
-    const lines = facts ? factLinesInOrder(facts) : [];
-    status.textContent = facts ? (lines.length ? '' : t('stats.facts.none')) : factsFailed ? t('stats.failed') : t('stats.loading');
-    factsView.hidden = !lines.length;
-    factsTitle.textContent = `${t('stats.tab.facts')} · ${fmtInt(lines.length)}`;
-    factList.replaceChildren(...lines.map(factItem));
-  };
-
+  let opened = false;
   const paint = (): void => {
-    if (tab === 'facts') return paintFacts();
-    factsView.hidden = true;
-    status.textContent = failed ? t('stats.failed') : !overview ? t('stats.loading') : !overview.enabled ? t('stats.off') : '';
-    const shown = !!overview?.enabled;
-    heat.hidden = !shown;
-    table.hidden = !shown;
-    toolbar.hidden = !shown;
-    betting.hidden = !shown || !overview?.betting;
-    if (!overview || !shown) return;
+    const o = state.overview;
+    status.textContent = state.overviewFailed ? t('stats.failed') : !o ? t('stats.loading') : !o.enabled ? t('stats.off') : '';
+    grid.hidden = !o?.enabled;
+    if (!o?.enabled) return;
     hideTip();
-    // The heatmap is made once; a switch of what it shows only changes the squares.
-    if (!view) {
-      view = heatmapView();
-      heat.replaceChildren(view.el);
-      // On a narrow screen the heatmap scrolls: it opens on today, the right-hand end.
-      const frame = view.el.querySelector('.hm__frame');
-      if (frame) frame.scrollLeft = frame.scrollWidth;
+    const local = state.source === 'local';
+    const days = local ? o.localDays : o.days;
+    strip.replaceChildren(...kpis(days));
+    const total = map.show(days, state.metric);
+    heat.meta.textContent = t('stats.heat.total', { n: metricCount(state.metric, total) });
+    trend.meta.textContent = metricLabel(state.metric);
+    trend.body.replaceChildren(h('h4.st-card__sub', null, t('stats.trend.months')), monthChart(days, state.metric), h('h4.st-card__sub', null, t('stats.trend.weekdays')), weekdayChart(days, state.metric));
+    const shown = o.games.filter((game) => game.local === local).slice(0, 8);
+    games.meta.textContent = t(local ? 'stats.source.local' : 'stats.source.online');
+    gameList.replaceChildren(...(shown.length ? shown.map((game) => gameRow(game, watch)) : [h('li.st-none', null, t('stats.none'))]));
+    const facts = state.facts ?? [];
+    const modeRows = modesView(facts);
+    modes.body.replaceChildren(...modeRows);
+    modes.el.hidden = !modeRows.length;
+    const recordRows = recordsView(facts);
+    records.body.replaceChildren(h('ul.st-records', null, ...recordRows));
+    records.el.hidden = !recordRows.length;
+    betting.el.hidden = !o.betting;
+    if (o.betting) betting.body.replaceChildren(bettingView(o.betting));
+    grid.classList.toggle('st--sidecards', !modes.el.hidden || !records.el.hidden);
+    // On a narrow screen the heatmap scrolls: it opens on today, the right-hand end.
+    if (!opened) {
+      opened = true;
+      requestAnimationFrame(() => {
+        const frame = map.el.querySelector('.hm__frame');
+        if (frame) frame.scrollLeft = frame.scrollWidth;
+      });
     }
-    if (overview.betting) betting.replaceChildren(...bettingView(overview.betting));
-    const local = source === 'local';
-    view.show(local ? overview.localDays : overview.days, metric);
-    const shownGames = overview.games.filter((game) => game.local === local).slice(0, 5);
-    head.hidden = shownGames.length === 0;
-    games.replaceChildren(...(shownGames.length === 0 ? [h('li.st__none', null, t('stats.none'))] : shownGames.map((game) => gameRow(game, watch))));
   };
+  return { body: grid, paint };
+}
 
-  void board.overview().then(
-    (seen) => {
-      overview = seen;
-      paint();
-    },
-    () => {
-      failed = true;
-      paint();
-    },
-  );
+/** Every fact the statistics make, under a heading for what it is about. */
+function factsBody(state: StatsState, status: HTMLElement): { body: HTMLElement; paint: () => void } {
+  const body = h('div.st-factsPage', null);
+  const paint = (): void => {
+    const groups = state.facts ? factsByGroup(state.facts) : [];
+    status.textContent = state.facts ? (groups.length ? '' : state.factsFailed ? t('stats.failed') : t('stats.facts.none')) : t('stats.loading');
+    body.replaceChildren(
+      ...groups.map(({ group, lines }) =>
+        h(
+          'section.st-group',
+          null,
+          h('h3.setup__title.st-group__title', null, t(`stats.group.${group}`), h('span.st-group__count', null, fmtInt(lines.length))),
+          h('ol.st-facts', null, ...lines.map(factItem)),
+        ),
+      ),
+    );
+  };
+  return { body, paint };
+}
 
-  const root = h(
-    'section.screen.screen--panel',
-    { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('stats.title') },
-    h(
-      'div.panel.panel--stats',
-      null,
-      h('p.eyebrow', null, t('stats.eyebrow')),
-      h('h2.daily__title', null, t('stats.title')),
-      h('div.items.st__tabs', { 'data-section': 'tab' }),
-      toolbar,
-      status,
-      heat,
-      table,
-      betting,
-      factsView,
-      h('div.items.items--row', { 'data-items': '' }),
-    ),
-  );
-  paint();
+/** One page of the statistics; the header lists all of them, and the one shown is picked out. */
+function statsPage(app: App, state: StatsState, view: Page, transition?: ModeTransition): Screen {
+  const pageLabel = (which: Page): string => t(`stats.page.${which}`);
+  let dispose = (): void => {};
+  const changePage = (next: Page, direction: ModeTransition): void => {
+    if (next === view) return;
+    app.menu.replace(() => statsPage(app, state, next, direction));
+  };
+  // Q and E (or the arrows) step through the pages in the header, wrapping round at the ends.
+  const step = (direction: ModeTransition): void => {
+    const at = PAGES.indexOf(view);
+    changePage(PAGES[(at + (direction === 'next' ? 1 : PAGES.length - 1)) % PAGES.length], direction);
+  };
+  const overview = view !== 'facts';
 
   return {
-    build: () => root,
+    build: () => {
+      // The page itself says which games it shows: the online ones or those played on one device.
+      if (overview) state.source = view === 'local' ? 'local' : 'online';
+      const status = h('p.lb__status.st-status', { role: 'status' }, '');
+      const content = overview ? overviewBody(app, state, status) : factsBody(state, status);
+      const page = menuPage({
+        title: `${t('stats.title')} · ${pageLabel(view)}`,
+        eyebrow: t('stats.title'),
+        headerTitle: pagePagerHeader(pageLabel(view), t('stats.switchPage'), transition),
+        className: `menu-page--stats menu-page--mode-pager${transition ? ` menu-page--mode-enter-${transition}` : ''}`,
+        body: [status, content.body],
+        footer: h('div.items.items--row.menu-page__actions', { 'data-section': 'actions' }),
+        keys: hintText('over.keys'),
+      });
+      state.repaint = () => {
+        if (page.isConnected) content.paint();
+      };
+      content.paint();
+      const stopCarousel = positionModeCarousel(page);
+      const stopNavigation = enablePagerNavigation(page, step, '.hm__frame');
+      dispose = () => {
+        stopNavigation();
+        stopCarousel();
+        hideTip();
+      };
+      return page;
+    },
+    dispose: () => dispose(),
     items: [
-      {
-        kind: 'segmented',
-        section: 'tab',
-        label: t('stats.tab'),
-        options: TABS.map((value) => ({ value, label: t(`stats.tab.${value}`) })),
-        get: () => tab,
-        set: (v) => {
-          tab = v as Tab;
-          paint();
-        },
-      },
-      {
-        kind: 'segmented',
-        section: 'source',
-        label: t('stats.source'),
-        options: SOURCES.map((s) => ({ value: s, label: t(`stats.source.${s}`) })),
-        get: () => source,
-        set: (v) => {
-          source = v as Source;
-          paint();
-        },
-      },
-      {
-        kind: 'segmented',
-        section: 'metric',
-        label: t('stats.metric'),
-        options: METRICS.map((m) => ({ value: m, label: metricLabel(m) })),
-        get: () => metric,
-        set: (v) => {
-          metric = v as Metric;
-          paint();
-        },
-      },
-      { kind: 'action', label: t('common.back'), primary: true, run: () => app.menu.back() },
-    ] satisfies MenuItem[],
+      // As on the title's mode pager: the shown page comes first and the others follow it, the next one near and the last one far, so every page is in sight.
+      ...PAGES.map((_, distance): MenuItem => {
+        const which = PAGES[(PAGES.indexOf(view) + distance) % PAGES.length];
+        return {
+          kind: 'action',
+          section: 'mode-pager',
+          label: pageLabel(which),
+          className: `mode-pager__item mode-pager__item--${distance === 0 ? 'active' : distance === 1 ? 'near' : 'far'}`,
+          selected: () => which === view,
+          run: () => changePage(which, distance === PAGES.length - 1 ? 'previous' : 'next'),
+        };
+      }),
+      ...(overview
+        ? ([
+            {
+              kind: 'segmented',
+              section: 'metric',
+              label: t('stats.metric'),
+              options: METRICS.map((m) => ({ value: m, label: metricLabel(m) })),
+              get: () => state.metric,
+              set: (v) => {
+                state.metric = v as Metric;
+                state.repaint();
+              },
+            },
+          ] satisfies MenuItem[])
+        : []),
+      { kind: 'action', section: 'actions', label: t('common.back'), primary: true, run: () => app.menu.back() },
+    ],
   };
 }
 
 /** The statistics page, open to everyone: what it shows is anonymous, and the relay hands it to any client that asks. */
-export const statsScreen = (app: App): Screen => statsContent(app);
+export const statsScreen = (app: App): Screen => statsPage(app, newState(), 'online');

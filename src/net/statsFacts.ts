@@ -185,3 +185,35 @@ export function factLinesInOrder(facts: readonly StatsFact[]): FactPart[][] {
 export function factLines(facts: readonly StatsFact[], random: () => number = Math.random): FactPart[][] {
   return shuffled(factLinesInOrder(facts), random);
 }
+
+/** What a fact is about: the facts page shows them under these headings, in this order. */
+export const FACT_GROUPS = ['aim', 'shots', 'field', 'rounds', 'extras', 'oracle'] as const;
+export type FactGroup = (typeof FACT_GROUPS)[number];
+
+const GROUP_OF: Record<FactGroup, readonly string[]> = {
+  aim: ['shotsPerKill', 'leftField', 'planetCrash', 'holeShots', 'clash', 'firstTurn', 'maxPower', 'defaultPower', 'lowPower', 'selfHighClassic', 'selfHighHorizon', 'selfHighSolar', 'repeatMiss', 'swingbys', 'closeCall'],
+  shots: ['powerUpShots', 'plasmaShots', 'piercingShots', 'previewShots', 'splitterShots', 'avgKillTurn', 'longestShot', 'sniper', 'fastestKill', 'bestHit', 'multiKill', 'bigKills', 'firstShotKill', 'seatAdvantage', 'comeback'],
+  field: ['topPlacement', 'planetsDestroyed', 'pickups', 'saves', 'intercepts', 'strayKills', 'anomalyShare', 'topAnomaly', 'blastShots', 'fusedShots', 'trickShotHits', 'armedShots', 'anomalyShotsPerKill', 'pinballSelfHits', 'pinballBumps', 'anomalyRoundLength', 'loopShare', 'loopCrossings', 'wallHits', 'planetsShattered', 'whiteHoleReturns'],
+  rounds: ['todayPlayers', 'dailyChallenge', 'weekTrend', 'weekend', 'rounds', 'quickRound', 'selfHitRounds', 'noWinner', 'horizonShare', 'solarShare', 'teamShare', 'avgHumans', 'soloVsCpu', 'spectated', 'cpuWins', 'cpuLevels', 'planetsEffect', 'grazes'],
+  extras: ['firstBlood', 'bounties', 'revenges', 'topBonus', 'bonusPoints', 'dominations', 'posthumous', 'shutdowns', 'lastToFirst', 'ownGoals'],
+  oracle: ['tipRound', 'tipShot', 'tipUnderdog', 'tipStands', 'betPaid', 'betStake', 'betWin', 'betLoss'],
+};
+
+const GROUP_BY_ID = new Map(FACT_GROUPS.flatMap((group) => GROUP_OF[group].map((id) => [id, group] as const)));
+const ORDER_BY_ID = new Map(FACT_GROUPS.flatMap((group) => GROUP_OF[group].map((id, i) => [id, i] as const)));
+
+/** Every fact this client can word, under its heading: the headings in `FACT_GROUPS` order, none left empty. */
+export function factsByGroup(facts: readonly StatsFact[]): { group: FactGroup; lines: FactPart[][] }[] {
+  const worded = facts.flatMap((fact) => {
+    const parts = factParts(fact);
+    return parts ? [{ fact, parts }] : [];
+  });
+  return FACT_GROUPS.map((group) => ({
+    group,
+    lines: worded
+      // A fact the list does not know yet (a newer relay) goes with the rounds, after the known ones.
+      .filter(({ fact }) => (GROUP_BY_ID.get(fact.id) ?? 'rounds') === group)
+      .sort((a, b) => (ORDER_BY_ID.get(a.fact.id) ?? 99) - (ORDER_BY_ID.get(b.fact.id) ?? 99))
+      .map(({ parts }) => parts),
+  })).filter(({ lines }) => lines.length > 0);
+}
