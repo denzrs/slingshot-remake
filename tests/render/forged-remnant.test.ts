@@ -21,7 +21,7 @@ function context() {
     globalAlpha: .6,
     globalCompositeOperation: 'source-over',
     getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
-    save: vi.fn(), restore: vi.fn(), translate: vi.fn(), rotate: vi.fn(),
+    save: vi.fn(), restore: vi.fn(), translate: vi.fn(), rotate: vi.fn(), scale: vi.fn(), drawImage: vi.fn(),
     createLinearGradient: vi.fn(gradient), createRadialGradient: vi.fn(gradient),
     beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), closePath: vi.fn(), arc: vi.fn(), fill: vi.fn(), fillRect: vi.fn(),
   } as unknown as CanvasRenderingContext2D;
@@ -29,7 +29,13 @@ function context() {
 
 const star: Planet = { x: 500, y: 350, radius: 6, mass: 1, seed: 9, style: 'star', tint: '#fff', sun: true, neutron: true };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // The beam's picture is painted once on a canvas of its own.
+  vi.stubGlobal('document', {
+    createElement: () => ({ width: 0, height: 0, getContext: () => ({ createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }), putImageData: vi.fn() }) }),
+  });
+});
 
 describe('Forged supernova remnant', () => {
   it('paints its own shaded remnant, as big as the shared one, with the star over it', () => {
@@ -41,8 +47,9 @@ describe('Forged supernova remnant', () => {
     // Grown out: the shared remnant's reach.
     expect(vi.mocked(place).mock.calls[0][4]).toBeGreaterThan(270 * 2 * .97);
     expect(vi.mocked(place).mock.calls[0][4]).toBeLessThan(270 * 2 * 1.03);
-    // The pulsar's two beams (a soft cone and a core each) besides the two lines of the star's cross.
-    expect(ctx.createLinearGradient).toHaveBeenCalledTimes(2 * 2 + 2);
+    // The pulsar's two beams are one stamp each of the beam's picture; the only gradients drawn as lines are the star's cross.
+    expect(ctx.drawImage).toHaveBeenCalledTimes(2);
+    expect(ctx.createLinearGradient).toHaveBeenCalledTimes(2);
   });
 
   it('turns its beams like a lighthouse seen from the side: shortening as one swings to us, then out the other side', () => {

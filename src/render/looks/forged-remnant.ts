@@ -1,5 +1,6 @@
 import type { Planet } from '../../sim/physics';
 import { rgba } from '../color';
+import { fbm } from '../noise';
 import { drawNeutronStar, NEBULA_REACH } from '../sun';
 import { GLSL_HEAD, onScreen, pixelsOf, place, seedOffset, shadeKept } from './forged-gl';
 
@@ -84,9 +85,65 @@ const slot = (seed: number, k: number): number => {
  * swings towards us, points at us for a moment (and dazzles), lengthens out on the other side, and passes behind.
  */
 const SPIN = 1.6;
-/** How far a beam reaches, and how wide its cone is at the end (it is not foreshortened: seen end-on it is a short wide fan). */
+/** How far a beam reaches, and how far across its glow spreads at the end (not foreshortened: seen end-on it is a short wide fan). */
 const BEAM = 270;
-const BEAM_HALF = BEAM * .07;
+const BEAM_HALF = BEAM * .2;
+
+/** The beam's picture, along × across in pixels: painted once, then stretched to the beam's length each frame. */
+const BEAM_W = 256;
+const BEAM_H = 128;
+let beamPicture: HTMLCanvasElement | null = null;
+
+/**
+ * A beam of the pulsar's light, painted once: a thin white-hot filament down the middle in a cone of blue haze that
+ * widens and thins out to the end, with soft edges, and faint shafts in the haze (dust it lights, along the rays from
+ * the star). The beam's own shape is all in here, so a frame draws it with one stamp.
+ */
+function beamOf(): HTMLCanvasElement {
+  if (beamPicture) return beamPicture;
+  const canvas = document.createElement('canvas');
+  canvas.width = BEAM_W;
+  canvas.height = BEAM_H;
+  const g = canvas.getContext('2d')!;
+  const img = g.createImageData(BEAM_W, BEAM_H);
+  for (let py = 0; py < BEAM_H; py++) {
+    const y = ((py + .5) / BEAM_H) * 2 - 1;
+    for (let px = 0; px < BEAM_W; px++) {
+      const u = (px + .5) / BEAM_W;
+      // The cone widens from the star outwards; across it the haze falls off softly, with no hard edge.
+      const wide = .07 + .93 * u ** .85;
+      const t = Math.abs(y) / wide;
+      const haze = Math.exp(-t * t * 1.5);
+      // Light scattered out of the beam: a very faint, wide glow round it.
+      const scatter = Math.exp(-((Math.abs(y) / (.2 + .55 * u)) ** 2));
+      const core = Math.exp(-((Math.abs(y) / (.012 + .07 * u)) ** 2) * 3);
+      // Shafts: brighter and darker rays in the haze, running out from the star, drifting a little along the beam.
+      const shafts = .45 + 1.1 * fbm((y / wide) * 3.6 + 7, u * 1.3, .5, 17, 3) ** 1.5;
+      const near = Math.min(1, u / .04);
+      // Nothing reaches the picture's edges, so it never shows a border.
+      const edge = (1 - y * y) ** 2 * Math.min(1, (1 - u) / .08);
+      const light = near * edge * ((1 - u) ** .9 * (haze * 1.3 * shafts + scatter * .2) + (1 - u) ** 1.4 * core * .9);
+      const white = Math.min(1, core * 1.3 + haze * .1);
+      const a = Math.min(1, light);
+      const i = (py * BEAM_W + px) * 4;
+      img.data[i] = 120 + (255 - 120) * white;
+      img.data[i + 1] = 180 + (255 - 180) * white;
+      img.data[i + 2] = 255;
+      img.data[i + 3] = 255 * a;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return (beamPicture = canvas);
+}
+
+let beamWarming = false;
+/** Paints the beam's picture when the browser is idle, before any supernova, so the first remnant does not pay for it. */
+export function warmPulsarBeam(): void {
+  if (beamPicture || beamWarming || typeof document === 'undefined') return;
+  beamWarming = true;
+  const later = typeof requestIdleCallback === 'function' ? (fn: () => void) => requestIdleCallback(fn) : (fn: () => void) => setTimeout(fn, 200);
+  later(() => beamOf());
+}
 
 /** The lighthouse's tilt on the screen (rad, by the seed) and how far round it has turned at `time`. */
 const tiltOf = (seed: number): number => (slot(seed, 13) - .5) * .7;
@@ -125,21 +182,11 @@ function drawLighthouse(ctx: CanvasRenderingContext2D, seed: number, time: numbe
     if (length < 2) continue;
     // Bright as it comes towards us, dim as it turns away behind the star.
     const facing = (1 + z) / 2;
-    ctx.globalAlpha = base * (.3 + .7 * facing * facing);
-    const dir = Math.sign(across);
-    for (const [wide, glow] of [[2.6, .45], [1, 1]] as const) {
-      const cone = ctx.createLinearGradient(0, 0, dir * length, 0);
-      cone.addColorStop(0, rgba('#eef6ff', .85 * glow));
-      cone.addColorStop(.45, rgba('#8ec8ff', .32 * glow));
-      cone.addColorStop(1, rgba('#62b6ff', 0));
-      ctx.fillStyle = cone;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(dir * length, -BEAM_HALF * wide);
-      ctx.lineTo(dir * length, BEAM_HALF * wide);
-      ctx.closePath();
-      ctx.fill();
-    }
+    ctx.globalAlpha = base * (.45 + .55 * facing * facing);
+    ctx.save();
+    ctx.scale(Math.sign(across), 1);
+    ctx.drawImage(beamOf(), 0, -BEAM_HALF, length, BEAM_HALF * 2);
+    ctx.restore();
   }
   ctx.restore();
   ctx.globalAlpha = base;

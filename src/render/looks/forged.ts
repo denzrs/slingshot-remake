@@ -17,7 +17,7 @@ import { lightParts, lightStyles } from './forged-parts';
 import { drawLightPickup, drawLightShip } from './forged-light';
 import { drawLensedHole } from './forged-hole';
 import { drawForgedStormBurst, warmSunEruptions } from './forged-sun';
-import { drawForgedNeutronStar } from './forged-remnant';
+import { drawForgedNeutronStar, warmPulsarBeam } from './forged-remnant';
 import type { Styles } from './painter';
 
 /**
@@ -428,6 +428,7 @@ export const forged = engraved('forged', forgedStyles, {
     warmBlasts();
     warmEruptions();
     warmSunEruptions();
+    warmPulsarBeam();
   },
   backdropArt: paintNebula,
   sky: forgedSky,
