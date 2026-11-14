@@ -22,6 +22,7 @@ import { Killcam } from './killcam';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField, type PlacementAim } from './powerup-field';
 import type { GameMode } from '../sim/modes';
+import type { Experiment } from './experiments';
 
 /** A game mode, or the daily challenge. */
 export type Mode = GameMode | 'challenge';
@@ -295,6 +296,8 @@ export interface MatchOptions {
   deterministicCpu?: boolean;
   /** Receives normal CPU planner decisions; console logging can also enable this path. */
   onCpuDecision?: (report: CpuDecisionReport) => void;
+  /** Dev build, offline: rule ideas being tried before they are rules (see `experiments`). Online, in attract mode and in a replay they are ignored. */
+  experiments?: readonly Experiment[];
 }
 
 export interface CpuJob {
@@ -561,6 +564,16 @@ export abstract class Match {
 
   get attract(): boolean {
     return !!this.options.attract;
+  }
+
+  /** Whether this match plays by the experiment: asked for, and in a game that nobody else shares or watches back. */
+  protected trying(name: Experiment): boolean {
+    return !!this.options.experiments?.includes(name) && !this.online && !this.attract && !this.replaying;
+  }
+
+  /** The experiments this match plays by, for the dev panel's chip. */
+  get experiments(): readonly Experiment[] {
+    return (this.options.experiments ?? []).filter((name) => this.trying(name));
   }
 
   /** The tutorial's field: its coach says what matters, so the HUD leaves out the round and the score block. */

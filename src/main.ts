@@ -49,6 +49,7 @@ import { finishOnboarding, needsOnboarding } from './data/onboarding';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
 import { fromNavigator, Gamepads, pressMenuKey } from './ui/gamepad/gamepad';
 import { FAKE_PAD, fakePadOn, mountDevToggles } from './debug/dev-toggles';
+import { experimentsFrom } from './game/experiments';
 import { onPress } from './ui/touch/touch-controls';
 import { TouchPower } from './ui/touch/touch-power';
 import { TouchWheel } from './ui/touch/touch-wheel';
@@ -523,7 +524,8 @@ const app: App = {
     match?.dispose();
     // Mayhem is a preset of the rules (the level of `mayhem`), not a mode of its own.
     const played = cloneSettings(quick ?? settings);
-    match = createMatch(mode, played);
+    // Rule ideas on trial (`?try=`) are a dev build's: a production page never reads the parameter.
+    match = createMatch(mode, played, import.meta.env.DEV ? { experiments: experimentsFrom(location.search) } : {});
     // Where there is a relay, a game played here to its end is told to it, for its statistics; a quick game as one, so that
     // the favourites it was dealt from do not count it.
     if (statsAvailable()) trackLocalGame(match, played, (report) => void reportLocalGame(quick ? { ...report, quick: true } : report));

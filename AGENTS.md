@@ -18,6 +18,10 @@ How the playing field is drawn (Einfach, Forged, Holo) lives in `src/render/look
 
 For a new or changed match preset idea, follow [`add-game-preset`](.agents/skills/add-game-preset/SKILL.md). It covers the three independent mode groups, both match setup flows, translations, and card art.
 
+## Trying a rule idea
+
+A new rule idea starts as an experiment, not as a rule: [`src/game/experiments.ts`](src/game/experiments.ts), checked with `this.trying('name')` in a match, switched on with `?try=name` or the dev panel (`?debug`). It stays out of `RoomRules`, the wire, the relay, the presets and `i18n` until it has been played and kept. Rules and plan: [`docs/plans/cheaper-rules.md`](docs/plans/cheaper-rules.md).
+
 ## Wire
 
 For any change to what client and relay say to each other (messages, state patches and their events, room rules, `server/protocol-contract.json`, or relay code that builds or validates them), follow [`change-wire-protocol`](.agents/skills/change-wire-protocol/SKILL.md). `tests/protocol-wire.test.ts` is red until the change is recorded with `npm run protocol`.
