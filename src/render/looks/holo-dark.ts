@@ -27,6 +27,8 @@ interface HoloDarkState {
   mask: HTMLCanvasElement;
   maskData: ImageData | null;
   body: HTMLCanvasElement;
+  basePattern: CanvasPattern | null;
+  glowPattern: CanvasPattern | null;
   stamp: string | null;
   bucket: number;
   isoTick: number;
@@ -137,6 +139,12 @@ export function drawHoloDark(ctx: CanvasRenderingContext2D, masks: DarkMasks, ti
     for (let y = 0; y < 48; y += 4) c.fillRect(0, y, 28, 1);
   });
 
+  const base = tile('holo-dark-hex-base', 28, 48, (c) => {
+    c.fillStyle = '#010509';
+    c.fillRect(0, 0, 28, 48);
+    c.drawImage(hex, 0, 0);
+  });
+
   const { id, cover, cols, rows, version } = masks.field;
   let state = holoByCtx.get(ctx);
   if (!state) {
@@ -145,6 +153,8 @@ export function drawHoloDark(ctx: CanvasRenderingContext2D, masks: DarkMasks, ti
       mask: Object.assign(document.createElement('canvas'), { width: cols, height: rows }),
       maskData: null,
       body: Object.assign(document.createElement('canvas'), { width: BODY_W, height: BODY_H }),
+      basePattern: null,
+      glowPattern: null,
       stamp: null,
       bucket: -1,
       isoTick: -1,
@@ -173,16 +183,15 @@ export function drawHoloDark(ctx: CanvasRenderingContext2D, masks: DarkMasks, ti
     bc.save();
     bc.globalCompositeOperation = 'source-over';
     bc.globalAlpha = 1;
-    bc.clearRect(0, 0, BODY_W, BODY_H);
-    bc.fillStyle = '#010509';
-    bc.fillRect(0, 0, BODY_W, BODY_H);
-    bc.fillStyle = bc.createPattern(hex, 'repeat')!;
+    bc.fillStyle = state.basePattern ??= bc.createPattern(base, 'repeat')!;
     bc.fillRect(0, 0, BODY_W, BODY_H);
     // the lattice breathes: slowly a little brighter, slowly back, as the projector keeps searching
     const pulse = 0.5 - 0.5 * Math.cos((time / 6) * Math.PI * 2);
-    bc.globalAlpha = 0.35 * pulse;
-    bc.fillStyle = bc.createPattern(hex, 'repeat')!;
-    bc.fillRect(0, 0, BODY_W, BODY_H);
+    if (pulse > 0.01) {
+      bc.globalAlpha = 0.35 * pulse;
+      bc.fillStyle = state.glowPattern ??= bc.createPattern(hex, 'repeat')!;
+      bc.fillRect(0, 0, BODY_W, BODY_H);
+    }
     bc.globalAlpha = 1;
     bc.globalCompositeOperation = 'destination-in';
     bc.imageSmoothingEnabled = true;

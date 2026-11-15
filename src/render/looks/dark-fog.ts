@@ -56,7 +56,9 @@ function layerFor(scale: number): Layer {
 function due(k: Kept, stamp: string, fps: number, time: number): boolean {
   const bucket = fps ? Math.floor(time * fps) : 0;
   const changed = k.stamp !== stamp;
-  if (!(k.stamp === null || bucket !== k.bucket || (changed && time - k.at >= MIN_GAP) || time < k.at)) return false;
+  const fieldOf = (s: string) => s.split(':', 2).join(':');
+  const swapped = k.stamp !== null && fieldOf(k.stamp) !== fieldOf(stamp);
+  if (!(k.stamp === null || swapped || bucket !== k.bucket || (changed && time - k.at >= MIN_GAP) || time < k.at)) return false;
   k.stamp = stamp;
   k.bucket = bucket;
   k.at = time;

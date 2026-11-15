@@ -2,6 +2,7 @@ import { DARK_MARGIN } from '../../game/dark-matter';
 import { COLORS, FIELD } from '../../sim/config';
 import { hexToRgb, rgba } from '../color';
 import { fbm } from '../noise';
+import { smoothstep } from '../planet-common';
 import { createDarkDissolve, fog, stepDarkDissolve, tile, type DarkDissolve } from './dark-fog';
 import { GLSL_HEAD, shade, shaderDetail, unit } from './forged-gl';
 import type { DarkMasks } from './painter';
@@ -293,29 +294,58 @@ function tintedWisps(wisps: HTMLCanvasElement, color: string): HTMLCanvasElement
   });
 }
 
-/** Forged: found. Red rings closing in on the ship, their light trailing outside them, as the locating ping does. */
+/** Forged: found. Red rings closing smoothly on the ship, their light trailing outside them into a pulsing lock glow. */
 export function drawForgedDarkAlert(ctx: CanvasRenderingContext2D, x: number, y: number, age: number): void {
-  const fade = Math.min(1, (3 - age) / 0.6);
-  if (fade <= 0) return;
+  const envelope = smoothstep(0, 0.16, age) * smoothstep(3, 2.4, age);
+  if (envelope <= 0) return;
   ctx.save();
   ctx.translate(x, y);
   ctx.globalCompositeOperation = 'lighter';
-  for (let k = 0; k < 3; k++) {
-    const t = (age * 0.9 + k / 3) % 1;
-    const r = 16 + (1 - t) * 40;
-    const band = ctx.createRadialGradient(0, 0, r, 0, 0, r + 14);
-    band.addColorStop(0, rgba(COLORS.danger, 0.3 * t * fade));
+
+  let arrival = 0;
+  for (let w = 0; w < 6; w++) {
+    const t = age * 0.9 - w / 3;
+    if (t <= 0 || t >= 1) continue;
+    // Fade in from zero at the outer perimeter and dissolve seamlessly as the wave merges into the lock ring.
+    const alpha = smoothstep(0, 0.24, t) * (1 - smoothstep(0.68, 1, t)) * envelope;
+    if (alpha <= 0) continue;
+    arrival = Math.max(arrival, smoothstep(0.62, 0.9, t) * (1 - smoothstep(0.9, 1, t)));
+    const ease = 1 - (1 - t) ** 1.15;
+    const r = 16 + (1 - ease) * 42;
+    const band = ctx.createRadialGradient(0, 0, r, 0, 0, r + 16);
+    band.addColorStop(0, rgba(COLORS.danger, 0.34 * alpha));
+    band.addColorStop(0.45, rgba(COLORS.danger, 0.1 * alpha));
     band.addColorStop(1, rgba(COLORS.danger, 0));
     ctx.fillStyle = band;
     ctx.beginPath();
-    ctx.arc(0, 0, r + 14, 0, Math.PI * 2);
+    ctx.arc(0, 0, r + 16, 0, Math.PI * 2);
     ctx.arc(0, 0, r, 0, Math.PI * 2, true);
     ctx.fill();
-    ctx.strokeStyle = rgba(COLORS.danger, 0.85 * t * fade);
+    ctx.strokeStyle = rgba(COLORS.danger, 0.85 * alpha);
     ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.strokeStyle = rgba(COLORS.bone, 0.32 * alpha);
+    ctx.lineWidth = 0.7;
+    ctx.stroke();
   }
+
+  // Soft lock beacon round the hull: blooms in at start and flares gently as each closing wave arrives.
+  const corePulse = 0.45 + 0.55 * arrival;
+  const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 26);
+  glow.addColorStop(0, rgba(COLORS.danger, 0.22 * corePulse * envelope));
+  glow.addColorStop(0.6, rgba(COLORS.danger, 0.08 * corePulse * envelope));
+  glow.addColorStop(1, rgba(COLORS.danger, 0));
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, 26, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = rgba(COLORS.danger, (0.24 + 0.36 * arrival) * envelope);
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.arc(0, 0, 16, 0, Math.PI * 2);
+  ctx.stroke();
+
   ctx.restore();
 }

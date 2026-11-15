@@ -605,6 +605,31 @@ const SCENES: Scene[] = [
       match.volley = { id: cycle + 1, shots: [vs] } as unknown as Match['volley'];
     },
   },
+  {
+    title: 'Entdeckt-Ping',
+    sub: 'Dunkle Materie: Warn-Ping auf dem eigenen Schiff, wenn ein fremder Schuss nahe vorbeifliegt — drei Sekunden Aktivzeit, kurze Pause bis zum Neustart (Schleife)',
+    build: () => {
+      const match = aiming('classic', 11, { anomalies: ['darkMatter'] });
+      match.world.planets.length = 0;
+      match.world.ships.forEach((ship, i) => {
+        if (i === 0) {
+          ship.x = FIELD.width / 2;
+          ship.y = FIELD.height / 2;
+        } else {
+          ship.alive = false;
+        }
+      });
+      match.players[0].angle = -25;
+      match.dark?.clear(0, FIELD.width / 2, FIELD.height / 2, 85);
+      return match;
+    },
+    tick: (match, card) => {
+      const t = card.clock % 3.6;
+      match.clock = t;
+      const dark = match.dark;
+      if (dark) dark.found[0] = t < 3 ? 0 : null;
+    },
+  },
 ];
 
 const main = document.createElement('div');
