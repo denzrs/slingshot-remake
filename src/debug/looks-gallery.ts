@@ -36,6 +36,9 @@ const LOOKS: { look: Look; name: string; note: string }[] = LOOK_IDS.map((look) 
 /** The seconds a scene's card has run, handed to the scene override of that match. */
 const shotClock = new WeakMap<Match, { t: number }>();
 
+/** Synchronized loop timer for the animated Dark Matter flight so all three look cards share one advancing `DarkMatter`. */
+const darkLoop = new WeakMap<Match, { t: number; cycle: number; seen: Set<Card>; lastCardClock: number }>();
+
 /** The planets a match started with, for a scene where a wave takes them and the loop brings them back. */
 const allPlanets = new WeakMap<Match, Planet[]>();
 
@@ -558,17 +561,48 @@ const SCENES: Scene[] = [
   },
   {
     title: 'Dunkle Materie',
-    sub: 'Anomalie Dunkle Materie: Schiff-Lichtung, gebogene Schuss-Schneisen über Planeten hinweg und die aufgerissenen Ränder',
+    sub: 'Anomalie Dunkle Materie: Schiff-Lichtung, stehende Schneise und ein fliegender Schuss, der den Rauch im Flug auflöst (Schleife)',
     build: () => {
       const match = aiming('classic', 11, { anomalies: ['darkMatter'] });
       const s0 = match.world.ships[0];
       match.players[0].angle = -26;
       match.players[0].power = 64;
       match.trails = [
-        { owner: 0, points: arc(s0.x, s0.y, 1140, 220, 210, 1, 72), volley: 0, at: 0 },
-        { owner: 0, points: arc(s0.x, s0.y, 1080, 620, -140, 1, 72), volley: 1, at: 1 },
+        { owner: 0, points: arc(s0.x, s0.y, 1080, 620, -140, 1, 72), volley: 0, at: 0 },
       ];
+      darkLoop.set(match, { t: 0, cycle: -1, seen: new Set(), lastCardClock: 0 });
+      const firstTrail = arc(s0.x, s0.y, 1140, 220, 210, 0.04, 180);
+      match.volley = { id: 1, shots: [flying(0, firstTrail)] } as unknown as Match['volley'];
       return match;
+    },
+    tick: (match, card, dt) => {
+      const state = darkLoop.get(match);
+      if (!state) return;
+      if (dt > 0) {
+        if (state.seen.has(card)) {
+          state.seen.clear();
+          state.t += dt;
+        }
+        state.seen.add(card);
+      } else if (card.clock !== state.lastCardClock) {
+        // Snapshot hashing steps explicit fixed times with dt = 0.
+        state.t = card.clock;
+        state.lastCardClock = card.clock;
+      }
+      const PERIOD = 3.2;
+      const FLIGHT = 1.9;
+      const cycle = Math.floor(state.t / PERIOD);
+      const local = state.t - cycle * PERIOD;
+      const progress = Math.max(0.04, Math.min(1, local / FLIGHT));
+      const s0 = match.world.ships[0];
+      if (cycle !== state.cycle) {
+        state.cycle = cycle;
+        match.round = cycle + 1;
+      }
+      const trail = arc(s0.x, s0.y, 1140, 220, 210, progress, 180);
+      const vs = flying(0, trail);
+      if (local >= FLIGHT) vs.shot.end = { kind: 'lost' };
+      match.volley = { id: cycle + 1, shots: [vs] } as unknown as Match['volley'];
     },
   },
 ];
