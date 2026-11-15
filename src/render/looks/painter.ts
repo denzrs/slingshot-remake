@@ -160,6 +160,8 @@ export interface DarkMasks {
   readonly clearing: { x: number; y: number; r: number } | null;
   /** The box (field units) the torn edge lies in, null while nothing is torn. */
   readonly rimBounds: { x: number; y: number; w: number; h: number } | null;
+  /** Raw cover grid (0 clear → 1 dark, `cols × rows` covering `-DARK_MARGIN` .. `FIELD + DARK_MARGIN`), for shaders that read it directly. */
+  readonly field: { readonly id: string; readonly cover: Float32Array; readonly cols: number; readonly rows: number; readonly version: number };
   /** The line where the cover crosses `level` (0 clear → 1 dark), kept until a shot tears the matter again. */
   iso(level: number): DarkIso;
 }

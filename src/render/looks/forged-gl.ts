@@ -115,6 +115,7 @@ export class Stage {
   generation = 0;
   private programs = new Map<string, Program | null>();
   private textures = new Map<string, WebGLTexture>();
+  private dynamic = new Map<string, { tex: WebGLTexture; stamp: string; w: number; h: number; channels: number; buf: Uint8Array }>();
   private timer: { ext: { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number }; query: WebGLQuery | null; open: boolean; seconds: number } | null = null;
 
   constructor() {
@@ -127,6 +128,7 @@ export class Stage {
       this.generation++;
       this.programs.clear();
       this.textures.clear();
+      this.dynamic.clear();
       this.prepare();
     });
   }
@@ -221,6 +223,43 @@ export class Stage {
     source.upload(gl);
     this.textures.set(key, texture);
     return texture;
+  }
+
+  /** A 1- or 2-channel 0→255 texture (`gl.R8` / `gl.RG8`, bilinear-filtered), updated only when `stamp`, size, or channels change. */
+  fieldTexture(key: string, w: number, h: number, stamp: string, fill: (dst: Uint8Array) => void, channels: 1 | 2 = 1): WebGLTexture | null {
+    const gl = this.gl!;
+    gl.activeTexture(gl.TEXTURE0);
+    let entry = this.dynamic.get(key);
+    if (!entry) {
+      const tex = gl.createTexture();
+      if (!tex) return null;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      entry = { tex, stamp: '', w: 0, h: 0, channels: 0, buf: new Uint8Array(w * h * channels) };
+      this.dynamic.set(key, entry);
+    } else {
+      gl.bindTexture(gl.TEXTURE_2D, entry.tex);
+    }
+    const internal = channels === 2 ? gl.RG8 : gl.R8;
+    const format = channels === 2 ? gl.RG : gl.RED;
+    if (entry.w !== w || entry.h !== h || entry.channels !== channels) {
+      const len = w * h * channels;
+      if (entry.buf.length !== len) entry.buf = new Uint8Array(len);
+      fill(entry.buf);
+      gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, gl.UNSIGNED_BYTE, entry.buf);
+      entry.w = w;
+      entry.h = h;
+      entry.channels = channels;
+      entry.stamp = stamp;
+    } else if (entry.stamp !== stamp) {
+      fill(entry.buf);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, format, gl.UNSIGNED_BYTE, entry.buf);
+      entry.stamp = stamp;
+    }
+    return entry.tex;
   }
 
   private startTimer(): void {

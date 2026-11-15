@@ -56,7 +56,9 @@ function layerFor(scale: number): Layer {
 function due(k: Kept, stamp: string, fps: number, time: number): boolean {
   const bucket = fps ? Math.floor(time * fps) : 0;
   const changed = k.stamp !== stamp;
-  if (!(k.stamp === null || bucket !== k.bucket || (changed && time - k.at >= MIN_GAP) || time < k.at)) return false;
+  const fieldOf = (s: string) => s.split(':', 2).join(':');
+  const swapped = k.stamp !== null && fieldOf(k.stamp) !== fieldOf(stamp);
+  if (!(k.stamp === null || swapped || bucket !== k.bucket || (changed && time - k.at >= MIN_GAP) || time < k.at)) return false;
   k.stamp = stamp;
   k.bucket = bucket;
   k.at = time;
@@ -161,6 +163,124 @@ export function beyondClearing(ctx: CanvasRenderingContext2D, masks: DarkMasks, 
 export function hash2(i: number, j: number): number {
   const v = Math.sin(i * 127.1 + j * 311.7) * 43758.5453;
   return v - Math.floor(v);
+}
+
+/** Per-cell visual density (`vis`) + fresh-tear dissolve energy (`wake`) chasing the instantaneous `cover` grid. */
+export interface DarkDissolve {
+  fieldId: string | null;
+  version: number;
+  tick: number;
+  active: boolean;
+  vis: Float32Array;
+  wake: Float32Array;
+  stepAt: number;
+  /** Inclusive grid bounds currently dissolving (`c1 < 0` when none). */
+  c0: number;
+  c1: number;
+  r0: number;
+  r1: number;
+}
+
+export const createDarkDissolve = (): DarkDissolve => ({
+  fieldId: null,
+  version: -1,
+  tick: 0,
+  active: false,
+  vis: new Float32Array(0),
+  wake: new Float32Array(0),
+  stepAt: -1,
+  c0: 0,
+  c1: -1,
+  r0: 0,
+  r1: -1,
+});
+
+/**
+ * Advances `d.vis` smoothly toward `cover` while raising `d.wake` in freshly torn cells so looks can dissolve the edge
+ * smoothly at full frame rate instead of snapping on every grid update. Returns whether any cell is still dissolving.
+ */
+export function stepDarkDissolve(
+  d: DarkDissolve,
+  id: string,
+  cover: Float32Array,
+  cols: number,
+  rows: number,
+  version: number,
+  time: number,
+): boolean {
+  if (d.fieldId !== id || d.vis.length !== cover.length || time < d.stepAt) {
+    if (d.vis.length !== cover.length) {
+      d.vis = new Float32Array(cover.length);
+      d.wake = new Float32Array(cover.length);
+    }
+    d.vis.set(cover);
+    d.wake.fill(0);
+    d.fieldId = id;
+    d.version = version;
+    d.active = false;
+    d.c0 = 0;
+    d.c1 = -1;
+    d.r0 = 0;
+    d.r1 = -1;
+    d.tick++;
+    d.stepAt = time;
+    return false;
+  }
+  if (!d.active && d.version === version) {
+    d.stepAt = time;
+    return false;
+  }
+  const dt = Math.min(0.05, Math.max(0, time - d.stepAt));
+  d.stepAt = time;
+  d.version = version;
+  const wakeDecay = dt > 0 ? Math.exp(-dt / 0.24) : 1;
+  const wakeCool = dt * 0.65;
+  const { vis, wake } = d;
+  let active = false;
+  let c0 = cols;
+  let c1 = -1;
+  let r0 = rows;
+  let r1 = -1;
+  for (let r = 0; r < rows; r++) {
+    const base = r * cols;
+    for (let c = 0; c < cols; c++) {
+      const i = base + c;
+      const target = cover[i];
+      let v = vis[i];
+      let w = wake[i];
+      if (v === target && w === 0) continue;
+      if (v > target) {
+        const rem = v - target;
+        const drop = Math.min(rem, dt * (11.0 * rem + 1.8));
+        v -= drop;
+        w = Math.min(1, w * wakeDecay + drop * 1.55);
+        if (v > target || w > 0.002) active = true;
+        else w = 0;
+      } else {
+        if (target > v) v = target;
+        if (w > 0) {
+          w = w * wakeDecay - wakeCool;
+          if (w <= 0.002) w = 0;
+          else active = true;
+        }
+      }
+      vis[i] = v;
+      wake[i] = w;
+      if (w > 0 || v > target) {
+        if (c < c0) c0 = c;
+        if (c > c1) c1 = c;
+        if (r < r0) r0 = r;
+        if (r > r1) r1 = r;
+      }
+    }
+  }
+  d.c0 = c0;
+  d.c1 = c1;
+  d.r0 = r0;
+  d.r1 = r1;
+  d.active = active;
+  d.tick++;
+  return active;
 }
 
 /** A small canvas painted once and kept under `key`. */

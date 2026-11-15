@@ -36,6 +36,9 @@ const LOOKS: { look: Look; name: string; note: string }[] = LOOK_IDS.map((look) 
 /** The seconds a scene's card has run, handed to the scene override of that match. */
 const shotClock = new WeakMap<Match, { t: number }>();
 
+/** Synchronized loop timer for the animated Dark Matter flight so all three look cards share one advancing `DarkMatter`. */
+const darkLoop = new WeakMap<Match, { t: number; cycle: number; seen: Set<Card>; lastCardClock: number }>();
+
 /** The planets a match started with, for a scene where a wave takes them and the loop brings them back. */
 const allPlanets = new WeakMap<Match, Planet[]>();
 
@@ -554,6 +557,77 @@ const SCENES: Scene[] = [
     tick: (match, card) => {
       const clock = shotClock.get(match);
       if (clock) clock.t = card.clock;
+    },
+  },
+  {
+    title: 'Dunkle Materie',
+    sub: 'Anomalie Dunkle Materie: Schiff-Lichtung, stehende Schneise und ein fliegender Schuss, der den Rauch im Flug auflöst (Schleife)',
+    build: () => {
+      const match = aiming('classic', 11, { anomalies: ['darkMatter'] });
+      const s0 = match.world.ships[0];
+      match.players[0].angle = -26;
+      match.players[0].power = 64;
+      match.trails = [
+        { owner: 0, points: arc(s0.x, s0.y, 1080, 620, -140, 1, 72), volley: 0, at: 0 },
+      ];
+      darkLoop.set(match, { t: 0, cycle: -1, seen: new Set(), lastCardClock: 0 });
+      const firstTrail = arc(s0.x, s0.y, 1140, 220, 210, 0.04, 180);
+      match.volley = { id: 1, shots: [flying(0, firstTrail)] } as unknown as Match['volley'];
+      return match;
+    },
+    tick: (match, card, dt) => {
+      const state = darkLoop.get(match);
+      if (!state) return;
+      if (dt > 0) {
+        if (state.seen.has(card)) {
+          state.seen.clear();
+          state.t += dt;
+        }
+        state.seen.add(card);
+      } else if (card.clock !== state.lastCardClock) {
+        // Snapshot hashing steps explicit fixed times with dt = 0.
+        state.t = card.clock;
+        state.lastCardClock = card.clock;
+      }
+      const PERIOD = 3.2;
+      const FLIGHT = 1.9;
+      const cycle = Math.floor(state.t / PERIOD);
+      const local = state.t - cycle * PERIOD;
+      const progress = Math.max(0.04, Math.min(1, local / FLIGHT));
+      const s0 = match.world.ships[0];
+      if (cycle !== state.cycle) {
+        state.cycle = cycle;
+        match.round = cycle + 1;
+      }
+      const trail = arc(s0.x, s0.y, 1140, 220, 210, progress, 180);
+      const vs = flying(0, trail);
+      if (local >= FLIGHT) vs.shot.end = { kind: 'lost' };
+      match.volley = { id: cycle + 1, shots: [vs] } as unknown as Match['volley'];
+    },
+  },
+  {
+    title: 'Entdeckt-Ping',
+    sub: 'Dunkle Materie: Warn-Ping auf dem eigenen Schiff, wenn ein fremder Schuss nahe vorbeifliegt — drei Sekunden Aktivzeit, kurze Pause bis zum Neustart (Schleife)',
+    build: () => {
+      const match = aiming('classic', 11, { anomalies: ['darkMatter'] });
+      match.world.planets.length = 0;
+      match.world.ships.forEach((ship, i) => {
+        if (i === 0) {
+          ship.x = FIELD.width / 2;
+          ship.y = FIELD.height / 2;
+        } else {
+          ship.alive = false;
+        }
+      });
+      match.players[0].angle = -25;
+      match.dark?.clear(0, FIELD.width / 2, FIELD.height / 2, 85);
+      return match;
+    },
+    tick: (match, card) => {
+      const t = card.clock % 3.6;
+      match.clock = t;
+      const dark = match.dark;
+      if (dark) dark.found[0] = t < 3 ? 0 : null;
     },
   },
 ];

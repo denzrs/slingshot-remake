@@ -56,7 +56,7 @@ export abstract class Match {
   trails: Trail[] = [];
   volley: Volley | null = null;
   /** Anomaly Dark Matter: the matter over this round's field and how far each trail has been read into it. */
-  private darkState: { key: string; dark: DarkMatter; read: Map<string, number> } | null = null;
+  private darkState: { key: string; dark: DarkMatter; read: Map<string, number>; spotting: Set<string> } | null = null;
   killFeed: KillRecord[] = [];
   lastKill: KillRecord | null = null;
   protected readonly killcam = new Killcam();
@@ -965,8 +965,8 @@ export abstract class Match {
   get dark(): DarkMatter | null {
     if (!this.darkMatterOn) return (this.darkState = null);
     const key = `${this.round}:${this.worldSeed}`;
-    if (this.darkState?.key !== key) this.darkState = { key, dark: new DarkMatter(this.players.length), read: new Map() };
-    const { dark, read } = this.darkState;
+    if (this.darkState?.key !== key) this.darkState = { key, dark: new DarkMatter(this.players.length), read: new Map(), spotting: new Set() };
+    const { dark, read, spotting } = this.darkState;
     const feed = (id: string, owner: number, points: readonly number[], live: boolean): void => {
       let from = read.get(id) ?? 0;
       if (from > points.length) from = 0;
@@ -978,7 +978,18 @@ export abstract class Match {
         if (!live || from === 0) continue;
         this.world.ships.forEach((ship, s) => {
           const friend = s === owner || (ship.team != null && ship.team === this.world.ships[owner]?.team);
-          if (!friend && ship.alive && Math.hypot(ship.x - x, ship.y - y) <= DARK_FOUND_RADIUS) dark.found[s] = this.clock;
+          if (friend || !ship.alive) return;
+          const tag = `${id}:${s}`;
+          const d = Math.hypot(ship.x - x, ship.y - y);
+          // Edge-trigger per pass through `DARK_FOUND_RADIUS` so the warning doesn't keep resetting `age` to 0 mid-pass.
+          if (d <= DARK_FOUND_RADIUS) {
+            if (!spotting.has(tag)) {
+              spotting.add(tag);
+              dark.found[s] = this.clock;
+            }
+          } else if (d > DARK_FOUND_RADIUS + 8) {
+            spotting.delete(tag);
+          }
         });
       }
       read.set(id, points.length - (points.length % 2));
