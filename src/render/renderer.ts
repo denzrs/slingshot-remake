@@ -476,7 +476,8 @@ export class Renderer {
     const showPlanets = match.planetsVisible;
     const alpha = match.hiddenPlanets ? Math.min(1, match.phaseTime / 0.8) : 1;
 
-    if (showPlanets && match.settings.contours) {
+    // The killcam's camera pans and zooms the field, and the contours would slide across the still background: no map in a replay.
+    if (showPlanets && match.settings.contours && !scene.camera) {
       let layer = this.contours.get(world);
       if (!layer || layer.version !== world.version || layer.ps !== ps) {
         layer = { version: world.version, ps, canvas: renderContours(world, ps) };
