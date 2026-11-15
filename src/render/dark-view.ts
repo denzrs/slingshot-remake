@@ -85,6 +85,7 @@ export class DarkView {
       fade,
       color: f.color,
       clearing: clearing ? { ...clearing, r: CLEARING } : null,
+      field: { id: `${dark.id}:${who}`, cover: dark.covers[who], cols: dark.cols, rows: dark.rows, version: dark.versions[who] },
       iso: (level) => this.iso(dark, who, level, f.time),
       get body() {
         build();

@@ -1,13 +1,180 @@
-import { COLORS } from '../../sim/config';
-import { rgba } from '../color';
+import { DARK_MARGIN } from '../../game/dark-matter';
+import { COLORS, FIELD } from '../../sim/config';
+import { hexToRgb, rgba } from '../color';
 import { fbm } from '../noise';
 import { fog, tile } from './dark-fog';
+import { GLSL_HEAD, shade, shaderDetail, unit } from './forged-gl';
 import type { DarkMasks } from './painter';
+
+const FULL_W = FIELD.width + 2 * DARK_MARGIN;
+const FULL_H = FIELD.height + 2 * DARK_MARGIN;
+/** Shader canvas long side (keeps Forged's stage canvas within 1024² while giving >2× the old 2D pixel density). */
+const DARK_LIMIT = 1024;
+/** Idle drift rate (Hz) and cap while a shot tears through the matter (s). */
+const SHADED_FPS = 12;
+const MIN_GAP = 1 / 30;
+
+/**
+ * Forged Dark Matter shader: reads the coarse (`DARK_CELL = 10`) cover texture with hardware `LINEAR` filtering
+ * plus a 4-tap prefilter, blends the aiming ship's clearing directly into that scalar field, and warps the edge
+ * with multi-scale 3D FBM in world coordinates so the torn boundary reads as weightless, softly glowing cosmic smoke.
+ */
+const DARK_SHADER = `${GLSL_HEAD}
+uniform sampler2D uCover;
+uniform vec2 uSize;
+uniform vec2 uTexel;
+uniform vec3 uClearing;
+uniform vec3 uColor;
+uniform float uTime;
+
+float softCover(vec2 uv) {
+  vec2 h = uTexel * 0.5;
+  return 0.25 * (
+    texture(uCover, uv + vec2(-h.x, -h.y)).r +
+    texture(uCover, uv + vec2( h.x, -h.y)).r +
+    texture(uCover, uv + vec2(-h.x,  h.y)).r +
+    texture(uCover, uv + vec2( h.x,  h.y)).r
+  );
+}
+
+float clearMask(vec2 p) {
+  if (uClearing.z <= 0.0) return 1.0;
+  float d = length(p - uClearing.xy) / uClearing.z;
+  return smoothstep(0.42, 1.12, d);
+}
+
+vec3 deepSmoke(vec2 pos) {
+  vec2 bp = pos * 0.008;
+  float bt = uTime * 0.04;
+  float b1 = fbm(vec3(bp, bt), 2);
+  float b2 = fbm(vec3(bp * 2.1 + vec2(7.3, -4.1), bt * 1.3 + 5.0), 2);
+  vec3 base = vec3(0.007, 0.004, 0.020);
+  vec3 deep = vec3(0.052, 0.040, 0.115) * smoothstep(0.42, 0.85, b1) * 0.45;
+  vec3 vein = vec3(0.088, 0.068, 0.195) * smoothstep(0.48, 0.88, b2) * 0.25;
+  return base + deep + vein;
+}
+
+void main() {
+  vec2 pos = vUv * uSize;
+  vec2 s = uTexel * 3.2;
+  float c0 = texture(uCover, vUv).r;
+  float c1 = texture(uCover, vUv + vec2(-s.x, 0.0)).r;
+  float c2 = texture(uCover, vUv + vec2( s.x, 0.0)).r;
+  float c3 = texture(uCover, vUv + vec2(0.0, -s.y)).r;
+  float c4 = texture(uCover, vUv + vec2(0.0,  s.y)).r;
+  float cMin = min(c0, min(min(c1, c2), min(c3, c4)));
+  float cMax = max(c0, max(max(c1, c2), max(c3, c4)));
+  float clearMin = 1.0;
+  float clearMax = 1.0;
+  if (uClearing.z > 0.0) {
+    float dist = length(pos - uClearing.xy);
+    clearMin = smoothstep(0.42, 1.12, max(0.0, dist - 34.0) / uClearing.z);
+    clearMax = smoothstep(0.42, 1.12, (dist + 34.0) / uClearing.z);
+  }
+  if (cMax * clearMax <= 0.002) {
+    outColor = vec4(0.0);
+    return;
+  }
+  if (cMin * clearMin >= 0.998) {
+    outColor = vec4(deepSmoke(pos), 1.0);
+    return;
+  }
+
+  vec2 p = pos * 0.022;
+  float t = uTime * 0.12;
+  vec2 flow = vec2(
+    fbm(vec3(p * 1.05 + vec2(3.1, 7.4), t), 3),
+    fbm(vec3(p * 1.05 + vec2(14.7, 2.8), t + 6.3), 3)
+  ) - 0.5;
+  vec2 wPos = pos + flow * 28.0;
+  vec2 wUv = clamp(wPos / uSize, vec2(0.0), vec2(1.0));
+  float c = softCover(wUv) * clearMask(wPos);
+
+  vec2 wp = p + flow * 1.45;
+  float coarse = fbm(vec3(wp * 0.9, t * 0.8 + 11.0), 3);
+  float fine = fbm(vec3(wp * 2.7 + flow * 1.6, t * 1.35 + 29.0), 4);
+  float tear = (coarse - 0.48) * 0.62 + (fine - 0.5) * 0.42;
+  float dens = clamp(c + tear * smoothstep(0.02, 0.42, c) * (1.0 - 0.28 * c), 0.0, 1.0);
+
+  float smokeA = smoothstep(0.14, 0.92, dens);
+  float torn = 4.0 * smokeA * (1.0 - smokeA);
+  float wisp = smoothstep(0.28, 0.82, fine * 0.65 + coarse * 0.35);
+  float pulse = 0.88 + 0.12 * sin(uTime * 1.2 + coarse * 5.0);
+  // Glow caught in the tattered smoke crests, plus a soft scatter inside nearby billows.
+  float crest = pow(torn, 1.35) * (0.10 + 0.90 * wisp) * pulse * 0.56;
+  float scatter = smoothstep(0.16, 0.62, smokeA) * (1.0 - smokeA) * wisp * 0.24;
+  vec3 rimCol = mix(uColor * 0.70, mix(uColor, vec3(1.0, 0.97, 0.92), 0.30), pow(wisp, 1.8)) * crest + uColor * scatter;
+  vec3 bodyCol = deepSmoke(pos);
+  float a = clamp(smokeA + max(rimCol.r, max(rimCol.g, rimCol.b)) * 0.70, 0.0, 1.0);
+  outColor = vec4(min(bodyCol * smokeA + rimCol, vec3(a)), a);
+}`;
+
+interface DarkKept {
+  canvas: HTMLCanvasElement;
+  w: number;
+  h: number;
+  stamp: string | null;
+  staticStamp: string | null;
+  bucket: number;
+  at: number;
+}
+
+const keptByCtx = new WeakMap<CanvasRenderingContext2D, DarkKept>();
+
+function drawForgedDarkShader(ctx: CanvasRenderingContext2D, masks: DarkMasks, time: number): boolean {
+  const { id, cover, cols, rows, version } = masks.field;
+  const clearingKey = masks.clearing ? `${Math.round(masks.clearing.x)},${Math.round(masks.clearing.y)},${masks.clearing.r}` : '-';
+  const staticStamp = `${id}:${masks.color}:${clearingKey}:${shaderDetail()}`;
+  const cacheStamp = `${staticStamp}:${version}`;
+  let kept = keptByCtx.get(ctx);
+  if (!kept) {
+    kept = { canvas: document.createElement('canvas'), w: 0, h: 0, stamp: null, staticStamp: null, bucket: -1, at: -1 };
+    keptByCtx.set(ctx, kept);
+  }
+  const bucket = Math.floor(time * SHADED_FPS);
+  const changed = kept.stamp !== cacheStamp;
+  const urgent = kept.staticStamp !== staticStamp;
+  if (kept.stamp === null || bucket !== kept.bucket || urgent || (changed && time - kept.at >= MIN_GAP) || time < kept.at) {
+    const color = unit(hexToRgb(masks.color));
+    const texStamp = `${id}:${version}`;
+    const shaded = shade(DARK_SHADER, FULL_W, FULL_H, DARK_LIMIT, (u, stage) => {
+      const tex = stage.fieldTexture('forged-dark-cover', cols, rows, texStamp, (dst) => {
+        for (let i = 0; i < cover.length; i++) dst[i] = Math.round(cover[i] * 255);
+      });
+      if (tex) u.tex('uCover', 0, tex);
+      u.v2('uSize', FULL_W, FULL_H);
+      u.v2('uTexel', 1 / cols, 1 / rows);
+      if (masks.clearing) u.v3('uClearing', [masks.clearing.x + DARK_MARGIN, masks.clearing.y + DARK_MARGIN, masks.clearing.r]);
+      else u.v3('uClearing', [0, 0, -1]);
+      u.v3('uColor', color);
+      u.f('uTime', time);
+    });
+    if (!shaded) return false;
+    if (kept.canvas.width !== shaded.w || kept.canvas.height !== shaded.h) {
+      kept.canvas.width = shaded.w;
+      kept.canvas.height = shaded.h;
+    }
+    const c = kept.canvas.getContext('2d')!;
+    c.globalCompositeOperation = 'copy';
+    c.drawImage(shaded.canvas, 0, 0, shaded.w, shaded.h, 0, 0, shaded.w, shaded.h);
+    kept.w = shaded.w;
+    kept.h = shaded.h;
+    kept.stamp = cacheStamp;
+    kept.staticStamp = staticStamp;
+    kept.bucket = bucket;
+    kept.at = time;
+  }
+  ctx.save();
+  ctx.globalAlpha = masks.fade;
+  ctx.drawImage(kept.canvas, 0, 0, kept.w, kept.h, -DARK_MARGIN, -DARK_MARGIN, FULL_W, FULL_H);
+  ctx.restore();
+  return true;
+}
 
 const NW = 200;
 const NH = 125;
 
-/** A cloud map: `tint` where the noise is thick. */
+/** A cloud map: `tint` where the noise is thick (2D fallback when WebGL2 is unavailable). */
 function cloudMap(key: string, seed: number, tint: [number, number, number], scale: number): HTMLCanvasElement {
   return tile(key, NW, NH, (c) => {
     const img = c.createImageData(NW, NH);
@@ -26,7 +193,7 @@ function cloudMap(key: string, seed: number, tint: [number, number, number], sca
   });
 }
 
-/** A map of wisps, white, for light that flows along the edge. */
+/** A map of wisps, white, for light that flows along the edge (2D fallback). */
 function wispMap(): HTMLCanvasElement {
   return tile('forged-dark-wisps', 256, 160, (c, w, h) => {
     const img = c.createImageData(w, h);
@@ -47,15 +214,16 @@ function wispMap(): HTMLCanvasElement {
 }
 
 /**
- * Forged: the matter is a smoke that drinks the light, slow cold veins turning in it. No line marks its edge: where a
- * shot has torn it open, the edge glows softly in the colour of the player who sees it, and strands of brighter light
- * drift through that glow, two layers against each other, so the edge seems to boil gently.
+ * Forged: the matter is a smoke that drinks the light, slow cold veins turning in it. Where a shot has torn it open,
+ * the shader warps the coarse grid mask with multi-scale noise so the edge tears unevenly and glows softly in the
+ * player's colour; the 2D fog path stands in when WebGL2 is unavailable.
  */
 export function drawForgedDark(ctx: CanvasRenderingContext2D, masks: DarkMasks, time: number): void {
+  if (drawForgedDarkShader(ctx, masks, time)) return;
   const veins = cloudMap('forged-dark-veins', 7, [58, 52, 96], 22);
   const deep = cloudMap('forged-dark-deep', 31, [20, 14, 34], 40);
   const wisps = wispMap();
-  fog(ctx, masks, { scale: 0.34, fps: 4, rimFps: 15, blur: 0.5 }, time, (c, w, h) => {
+  fog(ctx, masks, { scale: 0.34, fps: 4, rimFps: 15, blur: 0.9 }, time, (c, w, h) => {
     c.fillStyle = '#020106';
     c.fillRect(0, 0, w, h);
     c.globalAlpha = 0.6;
@@ -65,13 +233,12 @@ export function drawForgedDark(ctx: CanvasRenderingContext2D, masks: DarkMasks, 
     c.globalAlpha = 1;
   }, (c, w, h) => {
     c.fillStyle = masks.color;
-    c.globalAlpha = 0.62 + 0.08 * Math.sin(time * 1.3);
+    c.globalAlpha = 0.24 + 0.04 * Math.sin(time * 1.3);
     c.fillRect(0, 0, w, h);
-    // strands of the player's light flowing through the glow, one layer each way, and a few hot white ones
     const tinted = tintedWisps(wisps, masks.color);
     c.globalCompositeOperation = 'lighter';
     const span = w * 0.6;
-    for (const [map, speed, alpha, flip] of [[tinted, 18, 0.8, 1], [tinted, -11, 0.55, -1], [wisps, 26, 0.18, 1]] as const) {
+    for (const [map, speed, alpha, flip] of [[tinted, 18, 0.72, 1], [tinted, -11, 0.48, -1], [wisps, 26, 0.14, 1]] as const) {
       const off = ((time * speed) % span + span) % span;
       c.globalAlpha = alpha;
       c.save();
@@ -84,7 +251,7 @@ export function drawForgedDark(ctx: CanvasRenderingContext2D, masks: DarkMasks, 
   });
 }
 
-/** The wisps in a player's colour, kept per colour. */
+/** The wisps in a player's colour, kept per colour (2D fallback). */
 function tintedWisps(wisps: HTMLCanvasElement, color: string): HTMLCanvasElement {
   return tile(`forged-dark-wisps-${color}`, wisps.width, wisps.height, (c, w, h) => {
     c.drawImage(wisps, 0, 0);

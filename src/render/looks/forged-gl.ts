@@ -115,6 +115,7 @@ export class Stage {
   generation = 0;
   private programs = new Map<string, Program | null>();
   private textures = new Map<string, WebGLTexture>();
+  private dynamic = new Map<string, { tex: WebGLTexture; stamp: string; w: number; h: number; buf: Uint8Array }>();
   private timer: { ext: { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number }; query: WebGLQuery | null; open: boolean; seconds: number } | null = null;
 
   constructor() {
@@ -127,6 +128,7 @@ export class Stage {
       this.generation++;
       this.programs.clear();
       this.textures.clear();
+      this.dynamic.clear();
       this.prepare();
     });
   }
@@ -221,6 +223,39 @@ export class Stage {
     source.upload(gl);
     this.textures.set(key, texture);
     return texture;
+  }
+
+  /** A single-channel 0→255 texture (`gl.R8`, bilinear-filtered), updated only when `stamp` or size changes. */
+  fieldTexture(key: string, w: number, h: number, stamp: string, fill: (dst: Uint8Array) => void): WebGLTexture | null {
+    const gl = this.gl!;
+    gl.activeTexture(gl.TEXTURE0);
+    let entry = this.dynamic.get(key);
+    if (!entry) {
+      const tex = gl.createTexture();
+      if (!tex) return null;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      entry = { tex, stamp: '', w: 0, h: 0, buf: new Uint8Array(w * h) };
+      this.dynamic.set(key, entry);
+    } else {
+      gl.bindTexture(gl.TEXTURE_2D, entry.tex);
+    }
+    if (entry.w !== w || entry.h !== h) {
+      if (entry.buf.length !== w * h) entry.buf = new Uint8Array(w * h);
+      fill(entry.buf);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, w, h, 0, gl.RED, gl.UNSIGNED_BYTE, entry.buf);
+      entry.w = w;
+      entry.h = h;
+      entry.stamp = stamp;
+    } else if (entry.stamp !== stamp) {
+      fill(entry.buf);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RED, gl.UNSIGNED_BYTE, entry.buf);
+      entry.stamp = stamp;
+    }
+    return entry.tex;
   }
 
   private startTimer(): void {

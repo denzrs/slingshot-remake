@@ -556,6 +556,21 @@ const SCENES: Scene[] = [
       if (clock) clock.t = card.clock;
     },
   },
+  {
+    title: 'Dunkle Materie',
+    sub: 'Anomalie Dunkle Materie: Schiff-Lichtung, gebogene Schuss-Schneisen über Planeten hinweg und die aufgerissenen Ränder',
+    build: () => {
+      const match = aiming('classic', 11, { anomalies: ['darkMatter'] });
+      const s0 = match.world.ships[0];
+      match.players[0].angle = -26;
+      match.players[0].power = 64;
+      match.trails = [
+        { owner: 0, points: arc(s0.x, s0.y, 1140, 220, 210, 1, 72), volley: 0, at: 0 },
+        { owner: 0, points: arc(s0.x, s0.y, 1080, 620, -140, 1, 72), volley: 1, at: 1 },
+      ];
+      return match;
+    },
+  },
 ];
 
 const main = document.createElement('div');
