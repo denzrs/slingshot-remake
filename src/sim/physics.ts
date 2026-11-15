@@ -224,6 +224,8 @@ export interface ShotRules {
   fusion?: boolean;
   whiteHole?: boolean;
   unstable?: boolean;
+  /** Dark Matter: the field is dark to each player but where their own shots flew. Only a picture: the flight never reads it. */
+  darkMatter?: boolean;
 }
 
 export type ShotEnd =

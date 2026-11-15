@@ -1,3 +1,4 @@
+import { drawForgedDark, drawForgedDarkAlert } from './forged-dark';
 import { drawForgedGate } from './forged-gate';
 import { drawForgedWhiteCore, drawForgedWhiteJump, warmEruptions } from './forged-white';
 import { COLORS, PHYSICS } from '../../sim/config';
@@ -415,6 +416,8 @@ export const forged = engraved('forged', forgedStyles, {
   stormCloud: drawForgedStormCloud,
   shot: drawForgedShot,
   loopGate: drawForgedGate,
+  darkMatter: drawForgedDark,
+  darkAlert: drawForgedDarkAlert,
   whiteCore: drawForgedWhiteCore,
   whiteJump: drawForgedWhiteJump,
   liveTrail: drawForgedLiveTrail,

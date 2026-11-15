@@ -228,7 +228,7 @@ export class Hud {
       labels.push(t('anomaly.fusion'));
       colors.push(ANOMALY_COLORS.fusion);
     }
-    for (const anomaly of ['whiteHole', 'unstable'] as const) {
+    for (const anomaly of ['whiteHole', 'unstable', 'darkMatter'] as const) {
       if (!rules[anomaly]) continue;
       labels.push(t(`anomaly.${anomaly}`));
       colors.push(ANOMALY_COLORS[anomaly]);

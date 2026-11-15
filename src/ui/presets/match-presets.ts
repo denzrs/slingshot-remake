@@ -130,6 +130,7 @@ export const HANDPICKED_IDS = [
   'bubbleWrap', 'hostileArchitecture', 'noForwardingAddress', 'theUnlearning',
   'ringRoad', 'lapRecord', 'eventLoop',
   'pinballKing', 'supernova', 'bigBang', 'theCollapse', 'chainReaction', 'secondChance',
+  'blackout', 'echolocation', 'blindFuse',
 ] as const;
 export type HandpickedId = (typeof HANDPICKED_IDS)[number];
 export interface HandpickedPreset {
@@ -142,16 +143,23 @@ export interface HandpickedPreset {
 type HandpickedSpec = { id: HandpickedId; patch: Partial<RoomRules> };
 
 /**
- * Focused anomaly pairings, an explosive Big Bang, and The Collapse with every anomaly.
+ * Focused anomaly pairings, an explosive Big Bang, and The Collapse with every anomaly but Dark Matter (all of them at
+ * once in the dark would be too much). Dark Matter has its own: alone, with Pinball, with the fuse.
  * Black-hole pickups let the White Hole combinations work in Classic and Solar as well as Event Horizon.
  */
+/** The Collapse: every anomaly at once, but Dark Matter. */
+export const COLLAPSE_ANOMALIES = ANOMALIES.filter((anomaly) => anomaly !== 'darkMatter');
+
 const ANOMALY_PICKS: readonly HandpickedSpec[] = [
   { id: 'pinballKing', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, edges: 'wall', styleBonuses: true, anomalies: ['trickShots', 'pinball'] } },
   { id: 'supernova', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, anomalies: ['fuse', 'fusion'] } },
   { id: 'bigBang', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, edges: 'wall', anomalies: ['fuse', 'fusion', 'unstable'], powerUps: true, powerUpKinds: ['splitter'], powerUpAmount: 3 } },
-  { id: 'theCollapse', patch: { rounds: 5, shotTime: 30, maxPlanets: 6, edges: 'wall', styleBonuses: true, anomalies: [...ANOMALIES], powerUps: true, powerUpKinds: ['blackhole', 'splitter', 'shield'], powerUpAmount: 4 } },
+  { id: 'theCollapse', patch: { rounds: 5, shotTime: 30, maxPlanets: 6, edges: 'wall', styleBonuses: true, anomalies: COLLAPSE_ANOMALIES, powerUps: true, powerUpKinds: ['blackhole', 'splitter', 'shield'], powerUpAmount: 4 } },
   { id: 'chainReaction', patch: { rounds: 5, shotTime: 30, maxPlanets: 6, edges: 'wall', styleBonuses: true, anomalies: ['pinball', 'unstable'], powerUps: true, powerUpKinds: ['splitter', 'shield'], powerUpAmount: 3 } },
   { id: 'secondChance', patch: { rounds: 5, shotTime: 30, maxPlanets: 3, edges: 'void', styleBonuses: true, anomalies: ['trickShots', 'whiteHole'], powerUps: true, powerUpKinds: ['blackhole'], powerUpAmount: 3 } },
+  { id: 'blackout', patch: { rounds: 5, shotTime: 30, maxPlanets: 5, anomalies: ['darkMatter'], powerUps: true, powerUpKinds: ['preview', 'splitter'], powerUpAmount: 3 } },
+  { id: 'echolocation', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, edges: 'wall', styleBonuses: true, anomalies: ['pinball', 'darkMatter'] } },
+  { id: 'blindFuse', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, anomalies: ['fuse', 'darkMatter'] } },
 ];
 const anomalyPick = (id: HandpickedId): HandpickedSpec => ANOMALY_PICKS.find((pick) => pick.id === id)!;
 const pickups = (powerUpKinds: PowerUpKind[], powerUpAmount: number): Partial<RoomRules> => ({ powerUps: true, powerUpKinds, powerUpAmount });
@@ -169,46 +177,54 @@ const HANDPICKED: Record<GameMode, readonly HandpickedSpec[]> = {
     { id: 'spacetimeRift', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, edges: 'wall', hiddenAim: true, fadingTrails: 2, ...pickups(['wormhole', 'blackhole', 'teleport', 'splitter'], 4) } },
     { id: 'nebulaLock', patch: { rounds: 5, shotTime: 30, maxPlanets: 5, maxPower: 70, mayhem: 1, ...pickups(['nebula', 'plasma', 'antigravity', 'blackhole'], 4) } },
     anomalyPick('supernova'),
+    anomalyPick('blackout'),
     { id: 'singlePlanetMayhem', patch: { rounds: 7, shotTime: 20, maxPlanets: 1, fixedPower: true, fixedPowerLevel: 60, hiddenAim: true, neighborGrace: 1, mayhem: 3 } },
     { id: 'bubbleWrap', patch: { rounds: 5, shotTime: 30, maxPlanets: 3, edges: 'wall', styleBonuses: true, ...pickups(['shield', 'splitter'], 4) } },
     { id: 'hostileArchitecture', patch: { rounds: 5, shotTime: 30, maxPlanets: 6, maxPower: 45, ...pickups(['defense', 'planetkiller'], 4) } },
     { id: 'ringRoad', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, edges: 'loop', styleBonuses: true, fadingTrails: 2 } },
+    anomalyPick('echolocation'),
     anomalyPick('bigBang'),
     anomalyPick('chainReaction'),
     anomalyPick('secondChance'),
     anomalyPick('theCollapse'),
+    anomalyPick('blindFuse'),
   ],
-  // Solar and Horizon have equal rotation lengths. Their anomaly slots are disjoint after the mode offsets.
+  // Solar and Horizon have equal rotation lengths and take turns: an anomaly pick at every even place, so their anomaly
+  // slots never meet after the mode offsets. Each has two of the three Dark Matter picks; Classic has all three.
   solar: [
     anomalyPick('supernova'),
     { id: 'orbitalSniper', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, fixedPower: true, fixedPowerLevel: 55, ...pickups(['defense', 'piercing', 'antigravity'], 3) } },
-    { id: 'solarSailer', patch: { rounds: 5, shotTime: 30, maxPlanets: 5, maxPower: 35, ...pickups(['nebula', 'plasma', 'preview'], 3) } },
     anomalyPick('chainReaction'),
-    { id: 'eclipseRicochet', patch: { rounds: 3, shotTime: 20, maxPlanets: 3, edges: 'wall', hiddenAim: true, fadingTrails: 1, ...pickups(['splitter', 'wormhole', 'shield'], 3) } },
+    { id: 'solarSailer', patch: { rounds: 5, shotTime: 30, maxPlanets: 5, maxPower: 35, ...pickups(['nebula', 'plasma', 'preview'], 3) } },
     anomalyPick('bigBang'),
-    { id: 'totalEclipse', patch: { rounds: 5, shotTime: 20, maxPlanets: 7, invisiblePlanets: true, fadingTrails: 4, ...pickups(['planetkiller', 'splitter'], 2) } },
+    { id: 'eclipseRicochet', patch: { rounds: 3, shotTime: 20, maxPlanets: 3, edges: 'wall', hiddenAim: true, fadingTrails: 1, ...pickups(['splitter', 'wormhole', 'shield'], 3) } },
     anomalyPick('pinballKing'),
-    { id: 'cosmicMaelstrom', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, mayhem: 2, fixedPower: true, fixedPowerLevel: 75, ...pickups(['blackhole', 'teleport', 'antigravity'], 3) } },
-    { id: 'hyperOrbit', patch: { rounds: 7, shotTime: 10, maxPlanets: 2, edges: 'wall', fixedPower: true, fixedPowerLevel: 90, mayhem: 3 } },
+    { id: 'totalEclipse', patch: { rounds: 5, shotTime: 20, maxPlanets: 7, invisiblePlanets: true, fadingTrails: 4, ...pickups(['planetkiller', 'splitter'], 2) } },
     anomalyPick('secondChance'),
-    { id: 'theUnlearning', patch: { rounds: 5, shotTime: 30, maxPlanets: 5, fixedPower: true, fixedPowerLevel: 60, fadingTrails: 2, ...pickups(['antigravity'], 4) } },
+    { id: 'cosmicMaelstrom', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, mayhem: 2, fixedPower: true, fixedPowerLevel: 75, ...pickups(['blackhole', 'teleport', 'antigravity'], 3) } },
     anomalyPick('theCollapse'),
+    { id: 'hyperOrbit', patch: { rounds: 7, shotTime: 10, maxPlanets: 2, edges: 'wall', fixedPower: true, fixedPowerLevel: 90, mayhem: 3 } },
+    anomalyPick('blackout'),
+    { id: 'theUnlearning', patch: { rounds: 5, shotTime: 30, maxPlanets: 5, fixedPower: true, fixedPowerLevel: 60, fadingTrails: 2, ...pickups(['antigravity'], 4) } },
+    anomalyPick('blindFuse'),
     { id: 'lapRecord', patch: { rounds: 5, shotTime: 30, maxPlanets: 4, edges: 'loop', ...pickups(['preview', 'splitter', 'plasma'], 3) } },
   ],
   horizon: [
-    { id: 'escapeVelocity', patch: { rounds: 3, shotTime: 30, maxPlanets: 2, maxPower: 40, ...pickups(['antigravity', 'teleport'], 2) } },
     anomalyPick('bigBang'),
-    { id: 'horizonShadow', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, hiddenAim: true, fadingTrails: 1, fixedPower: true, fixedPowerLevel: 60, ...pickups(['wormhole', 'shield', 'piercing'], 3) } },
+    { id: 'escapeVelocity', patch: { rounds: 3, shotTime: 30, maxPlanets: 2, maxPower: 40, ...pickups(['antigravity', 'teleport'], 2) } },
     anomalyPick('chainReaction'),
-    { id: 'gravityCentrifuge', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, edges: 'wall', fixedPower: true, fixedPowerLevel: 85, ...pickups(['antigravity', 'nebula', 'plasma', 'splitter'], 4) } },
+    { id: 'horizonShadow', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, hiddenAim: true, fadingTrails: 1, fixedPower: true, fixedPowerLevel: 60, ...pickups(['wormhole', 'shield', 'piercing'], 3) } },
     anomalyPick('pinballKing'),
-    { id: 'planetEater', patch: { rounds: 5, shotTime: 20, maxPlanets: 6, maxPower: 65, ...pickups(['defense', 'planetkiller', 'blackhole', 'teleport'], 4) } },
-    { id: 'singularityBlitz', patch: { rounds: 3, shotTime: 10, maxPlanets: 1, edges: 'wall', hiddenAim: true, mayhem: 2, ...pickups(['teleport', 'splitter', 'shield'], 3) } },
+    { id: 'gravityCentrifuge', patch: { rounds: 5, shotTime: 20, maxPlanets: 4, edges: 'wall', fixedPower: true, fixedPowerLevel: 85, ...pickups(['antigravity', 'nebula', 'plasma', 'splitter'], 4) } },
     anomalyPick('supernova'),
-    { id: 'deathSpiral', patch: { rounds: 7, shotTime: 20, maxPlanets: 3, maxPower: 50, fadingTrails: 2, mayhem: 3, ...pickups(['blackhole', 'wormhole', 'nebula', 'piercing'], 4) } },
+    { id: 'planetEater', patch: { rounds: 5, shotTime: 20, maxPlanets: 6, maxPower: 65, ...pickups(['defense', 'planetkiller', 'blackhole', 'teleport'], 4) } },
     anomalyPick('secondChance'),
-    { id: 'noForwardingAddress', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, hiddenAim: true, fadingTrails: 1, ...pickups(['teleport'], 4) } },
+    { id: 'singularityBlitz', patch: { rounds: 3, shotTime: 10, maxPlanets: 1, edges: 'wall', hiddenAim: true, mayhem: 2, ...pickups(['teleport', 'splitter', 'shield'], 3) } },
     anomalyPick('theCollapse'),
+    { id: 'deathSpiral', patch: { rounds: 7, shotTime: 20, maxPlanets: 3, maxPower: 50, fadingTrails: 2, mayhem: 3, ...pickups(['blackhole', 'wormhole', 'nebula', 'piercing'], 4) } },
+    anomalyPick('blackout'),
+    { id: 'noForwardingAddress', patch: { rounds: 5, shotTime: 20, maxPlanets: 3, hiddenAim: true, fadingTrails: 1, ...pickups(['teleport'], 4) } },
+    anomalyPick('echolocation'),
     { id: 'eventLoop', patch: { rounds: 5, shotTime: 30, maxPlanets: 3, edges: 'loop', maxPower: 60, fadingTrails: 1, ...pickups(['antigravity', 'splitter', 'shield'], 3) } },
   ],
 };

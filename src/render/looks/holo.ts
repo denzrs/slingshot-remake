@@ -1,3 +1,4 @@
+import { drawHoloDark, drawHoloDarkAlert } from './holo-dark';
 import { COLORS, PHYSICS } from '../../sim/config';
 import { rgba } from '../color';
 import { blend } from '../nebula';
@@ -126,6 +127,8 @@ const holoParts: Partial<LookPainter> = {
   backdropArt: paintHoloBackdrop,
   border: paintHoloBorder,
   loopGate: drawHoloGate,
+  darkMatter: drawHoloDark,
+  darkAlert: drawHoloDarkAlert,
   whiteCore: drawHoloWhiteCore,
   whiteJump: drawHoloWhiteJump,
   sky: holoSky,

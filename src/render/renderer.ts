@@ -1,3 +1,5 @@
+import { DarkView } from './dark-view';
+import { DARK_FOUND_SECONDS } from '../game/dark-matter';
 import { COLORS, FIELD, FONTS, NEBULA, PHYSICS, SOLAR, SUDDEN_DEATH, WORMHOLE, type EdgeMode } from '../sim/config';
 import type { Camera, Match, Scene, Trail } from '../game';
 import { t } from '../platform/i18n';
@@ -321,6 +323,7 @@ export class Renderer {
     this.drawShips(match, scene, opts.seatNumbers);
     this.drawPowerUps(match, scene);
     effects.draw(ctx, this.painter.effects, scale * (cam?.zoom ?? 1));
+    this.drawDarkMatter(match, scene);
     ctx.restore();
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -354,6 +357,46 @@ export class Renderer {
       offsetX: (view.cssWidth - plate.w * scale) / 2,
       offsetY: (view.cssHeight - plate.h * scale) / 2,
     };
+  }
+
+  /** Anomaly Dark Matter: the masks of the field on screen. */
+  private readonly darkView = new DarkView();
+
+  /** When the player whose field is shown was shot down (renderer time), for the matter to lift. */
+  private darkDeadSince: number | null = null;
+
+  private drawDarkMatter(match: Match, scene: Scene): void {
+    const dark = match.dark;
+    // A seat in the stands watches the whole field.
+    if (!dark || scene.camera || match.spectatorId !== null) return;
+    // Whose eyes: the one aiming (or the local seat), else the first person at the screen.
+    const who = match.viewer ?? (match.focus >= 0 ? match.focus : Math.max(0, match.players.findIndex((p) => !p.cpu)));
+    // The matter thins away when the round is over, so the whole field shows who stood where.
+    const over = match.phase === 'roundOver' || match.phase === 'gameOver';
+    let fade = over ? Math.max(0, 1 - match.phaseTime / 0.8) : 1;
+    // Whoever is shot down sees everything: the matter lifts from their screen.
+    if (scene.world.ships[who]?.alive) this.darkDeadSince = null;
+    else {
+      this.darkDeadSince ??= this.time;
+      fade = Math.min(fade, Math.max(0, 1 - (this.time - this.darkDeadSince) / 1.2));
+    }
+    if (fade <= 0) return;
+    // The ship that is aiming keeps a small clearing, or its aim would be lost in the dark.
+    const aiming = match.phase === 'aiming' && match.focus >= 0 ? scene.world.ships[match.focus] : null;
+    const clearing = aiming?.alive ? { x: aiming.x, y: aiming.y } : null;
+    this.darkView.draw(this.ctx, this.painter, dark, { who, fade, clearing, color: match.players[who]?.color ?? '#ffffff', time: this.time });
+    // Your own aim shows through the dark: it is drawn again over it.
+    if (clearing && match.aimVisible(match.focus)) {
+      const player = match.players[match.focus];
+      this.painter.aimVector(this.ctx, clearing.x, clearing.y, player.angle, player.power, player.color, 'full', this.time);
+    }
+    // Found: somebody's shot came close to your ship.
+    const at = dark.found[who];
+    const mineShip = scene.world.ships[who];
+    if (at !== null && mineShip?.alive && !over) {
+      const age = match.clock - at;
+      if (age >= 0 && age < DARK_FOUND_SECONDS) this.painter.darkAlert(this.ctx, mineShip.x, mineShip.y, age);
+    }
   }
 
   private drawOrbits(world: World): void {

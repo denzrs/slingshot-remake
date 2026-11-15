@@ -255,7 +255,7 @@ describe('Fusion', () => {
 describe('anomaly rules', () => {
   it('turn the room\'s list into flight rules, and nothing without any', () => {
     expect(anomalyRules([], 20, 1)).toEqual({});
-    expect(anomalyRules(['pinball', 'fusion'], 20, 1)).toEqual({ trickShots: false, pinball: true, fuse: 0, fusion: true, whiteHole: false, unstable: false });
+    expect(anomalyRules(['pinball', 'fusion'], 20, 1)).toEqual({ trickShots: false, pinball: true, fuse: 0, fusion: true, whiteHole: false, unstable: false, darkMatter: false });
     expect(anomalyRules(['fuse'], 20, 1).fuse).toBe(fuseSeconds(20, 1));
   });
 
