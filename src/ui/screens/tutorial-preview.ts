@@ -10,6 +10,9 @@ import { drawStormCloud } from '../../render/storm';
 import { drawSun } from '../../render/sun';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from '../../render/powerup-art';
 import { ANOMALY_COLORS } from '../../render/anomaly-art';
+import { DarkView } from '../../render/dark-view';
+import { classic } from '../../render/looks';
+import { DarkMatter } from '../../game/dark-matter';
 import type { PlanetSprite } from '../../render/planet-common';
 import { renderPlanet } from '../../render/planets';
 
@@ -399,6 +402,13 @@ function buildAnomalyDemo(anomaly: Anomaly): Demo {
       flights.push(shot1, shot2, shot3);
       break;
     }
+    case 'darkMatter': {
+      // Planets and a rival hidden in the dark; the shot curves past them and shows them where it flies.
+      duel(world, [ship(140, 560), ship(1090, 300)], [planet(470, 420, 46, 'rocky', '#8fa3c4', 811), planet(860, 230, 34, 'gas', '#b99cff', 812), planet(330, 190, 28, 'ice', '#c9e3ff', 813)]);
+      const shot = trace(world, 0, 14, 47, false, { color: seatColor(0) });
+      flights.push(shot);
+      break;
+    }
     case 'fusion': {
       duel(world, [ship(130, 300), ship(1150, 400), ship(130, 500)]);
       const angle0 = -15.12;
@@ -671,6 +681,27 @@ function drawEvent(ctx: CanvasRenderingContext2D, point: Point, color: string, t
   ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
+}
+
+/** The dark of each Dark Matter demo, read from its flights as far as they have flown. */
+const demoDarks = new WeakMap<Demo, { view: DarkView; dark: DarkMatter; until: number }>();
+
+function drawDemoDark(ctx: CanvasRenderingContext2D, demo: Demo, simTime: number, time: number): void {
+  let state = demoDarks.get(demo);
+  // The demo loops: when it starts again, so does the dark.
+  if (!state || simTime < state.until) {
+    state = { view: new DarkView(), dark: new DarkMatter(demo.world.ships.length), until: -1 };
+    demoDarks.set(demo, state);
+  }
+  for (const flight of demo.flights) {
+    flight.points.forEach((p, i) => {
+      const at = flight.startTime + flight.times[i];
+      if (at > state.until && at <= simTime) state.dark.clear(flight.shooter, p.x, p.y);
+    });
+  }
+  state.until = simTime;
+  const me = demo.world.ships[0];
+  state.view.draw(ctx, classic, state.dark, { who: 0, fade: 1, clearing: { x: me.x, y: me.y }, color: seatColor(0), time });
 }
 
 function drawTrack(ctx: CanvasRenderingContext2D, flight: Flight, localTime: number, faint = false): void {
@@ -1274,6 +1305,7 @@ function drawWorld(ctx: CanvasRenderingContext2D, demo: Demo, progress: number, 
     ctx.beginPath(); ctx.arc(hole.x, hole.y, 110 + Math.sin(time * 2) * 3, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
   }
+  if (demo.anomaly === 'darkMatter') drawDemoDark(ctx, demo, simTime, time);
   ctx.restore();
 
   // Keep a fine instrument-frame line outside the world plate, where it remains crisp at any size.

@@ -31,6 +31,10 @@ describe('flight training tutorial', () => {
     drawImage: vi.fn(),
     createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
     createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    clearRect: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
+    createPattern: vi.fn(() => ({})),
   } as unknown as CanvasRenderingContext2D;
 
   beforeEach(() => {
@@ -70,7 +74,9 @@ describe('flight training tutorial', () => {
     setLang(originalLang);
   });
 
-  it('builds miniature preview scenes for all 6 anomalies without errors', () => {
+  it('builds miniature preview scenes for every anomaly without errors', () => {
+    // Dark Matter traces the edge of its dark as paths.
+    globalThis.Path2D ??= class { moveTo(): void {} lineTo(): void {} rect(): void {} arc(): void {} } as unknown as typeof Path2D;
     // Mock minimal canvas and 2D context
     const canvas = {
       getContext: vi.fn(() => ctx),

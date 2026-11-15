@@ -19,6 +19,7 @@ import { Crowd } from './crowd';
 import { Killcam } from './killcam';
 import { Oracle, stakeOptions, type OracleKind } from './oracle';
 import { PowerUpField } from './powerup-field';
+import { DARK_FOUND_RADIUS, DarkMatter } from './dark-matter';
 import type { Experiment } from './experiments';
 import { KillLedger } from './kill-ledger';
 import { CpuDesk } from './cpu-desk';
@@ -54,6 +55,8 @@ export abstract class Match {
   current = -1;
   trails: Trail[] = [];
   volley: Volley | null = null;
+  /** Anomaly Dark Matter: the matter over this round's field and how far each trail has been read into it. */
+  private darkState: { key: string; dark: DarkMatter; read: Map<string, number> } | null = null;
   killFeed: KillRecord[] = [];
   lastKill: KillRecord | null = null;
   protected readonly killcam = new Killcam();
@@ -949,6 +952,42 @@ export abstract class Match {
     this.revealHeld = this.players.some((p) => !p.cpu);
   }
 
+  /** Whether this match plays in Dark Matter: on, in a game against other ships, not on the title screen and not watched back. */
+  get darkMatterOn(): boolean {
+    return this.baseSettings.anomalies.includes('darkMatter') && !this.attract && this.mode !== 'challenge' && !this.replaying;
+  }
+
+  /**
+   * Anomaly Dark Matter: the matter over this round's field, null when the match does not play in it. It is read from the
+   * trails every screen has (the live shots and the finished ones), not from the flight, so a guest online sees it the
+   * same way as the host: each shot clears its owner's field, and a ship a rival's shot passes close to is marked found.
+   */
+  get dark(): DarkMatter | null {
+    if (!this.darkMatterOn) return (this.darkState = null);
+    const key = `${this.round}:${this.worldSeed}`;
+    if (this.darkState?.key !== key) this.darkState = { key, dark: new DarkMatter(this.players.length), read: new Map() };
+    const { dark, read } = this.darkState;
+    const feed = (id: string, owner: number, points: readonly number[], live: boolean): void => {
+      let from = read.get(id) ?? 0;
+      if (from > points.length) from = 0;
+      for (let i = from; i + 1 < points.length; i += 2) {
+        const x = points[i];
+        const y = points[i + 1];
+        dark.clear(owner, x, y);
+        // Only what flies now finds anyone: a trail read for the first time is history.
+        if (!live || from === 0) continue;
+        this.world.ships.forEach((ship, s) => {
+          const friend = s === owner || (ship.team != null && ship.team === this.world.ships[owner]?.team);
+          if (!friend && ship.alive && Math.hypot(ship.x - x, ship.y - y) <= DARK_FOUND_RADIUS) dark.found[s] = this.clock;
+        });
+      }
+      read.set(id, points.length - (points.length % 2));
+    };
+    this.trails.forEach((trail, i) => feed(`t${trail.volley}:${i}`, trail.owner, trail.points, false));
+    this.volley?.shots.forEach((vs, i) => feed(`v${this.volley!.id}:${i}`, vs.owner, vs.trail, true));
+    return dark;
+  }
+
   /** Whether this match plays by anomalies: some are on, in a game against other ships and not on the title screen. */
   private get anomaliesOn(): boolean {
     return this.baseSettings.anomalies.length > 0 && !this.attract && this.mode !== 'challenge';
@@ -1029,7 +1068,9 @@ export abstract class Match {
   private get killcamMode(): KillcamPlayback {
     if (this.mode === 'challenge') return 'off';
     const choice = this.settings.killcam ?? 'auto';
-    return choice === 'auto' ? (this.salvo ? 'every' : 'off') : choice;
+    const mode = choice === 'auto' ? (this.salvo ? 'every' : 'off') : choice;
+    // Dark Matter: a replay in the middle of a round would show the whole field to the player who is still in it. Only the one that decides the round plays, when the matter has lifted anyway.
+    return this.darkMatterOn && mode === 'every' ? 'round' : mode;
   }
 
   /** Round-end playback returns to the completed summary, so scores and mode transitions run once. */

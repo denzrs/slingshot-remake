@@ -317,7 +317,7 @@ export type ServerMessage =
  * by hand: a test notices when the wire changed (the messages, the state patches, the rules) and `npm run protocol` raises it here, in
  * `server/src/protocol.rs` and in `server/protocol-contract.json`.
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** The address to open a socket on, with the protocol this client speaks added. */
 export function withProtocol(url: string): string {

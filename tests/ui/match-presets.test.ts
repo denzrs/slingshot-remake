@@ -141,7 +141,7 @@ describe('handpicked combinations', () => {
   });
 
   it('provides distinct, selectable, mode-specific daily combinations with valid settings', () => {
-    const counts = { classic: 15, solar: 14, horizon: 14 };
+    const counts = { classic: 18, solar: 16, horizon: 16 };
     for (const mode of ['classic', 'solar', 'horizon'] as const) {
       const picks = handpickedPresets(mode);
       expect(picks).toHaveLength(counts[mode]);
@@ -221,18 +221,22 @@ describe('anomaly combinations', () => {
   it('rotate through today\'s pick of every mode, all ships at once, and are found again from their rules', () => {
     const expected = {
       pinballKing: ['trickShots', 'pinball'], supernova: ['fuse', 'fusion'], bigBang: ['fuse', 'fusion', 'unstable'],
-      theCollapse: [...ANOMALIES], chainReaction: ['pinball', 'unstable'], secondChance: ['trickShots', 'whiteHole'],
+      theCollapse: ANOMALIES.filter((anomaly) => anomaly !== 'darkMatter'), chainReaction: ['pinball', 'unstable'], secondChance: ['trickShots', 'whiteHole'],
+      blackout: ['darkMatter'], echolocation: ['pinball', 'darkMatter'], blindFuse: ['fuse', 'darkMatter'],
     };
+    // Classic has all three Dark Matter picks; Solar and Horizon two each, or their anomaly days would meet.
+    const without = { classic: [], solar: ['echolocation'], horizon: ['blindFuse'] } as Record<string, string[]>;
     for (const mode of ['classic', 'solar', 'horizon'] as const) {
       const picks = handpickedPresets(mode);
-      for (const [id, anomalies] of Object.entries(expected)) {
+      const ids = Object.keys(expected).filter((id) => !without[mode].includes(id));
+      for (const [id, anomalies] of Object.entries(expected).filter(([id]) => ids.includes(id))) {
         const pick = picks.find((candidate) => candidate.id === id)!;
         expect(pick.rules.anomalies, `${mode}/${id}`).toEqual(anomalies);
         expect(pick.rules.simultaneousShots).toBe(true);
         expect(samePick(matchingHandpicked(pick.rules, mode), pick)).toBe(true);
       }
-      // Only those six play by anomalies; switching one off makes them no pick at all.
-      expect(picks.filter((pick) => pick.rules.anomalies.length).map((pick) => pick.id).sort()).toEqual(Object.keys(expected).sort());
+      // Only those play by anomalies; switching one off makes them no pick at all.
+      expect(picks.filter((pick) => pick.rules.anomalies.length).map((pick) => pick.id).sort()).toEqual(ids.sort());
       const bigBang = picks.find((pick) => pick.id === 'bigBang')!;
       expect(matchingHandpicked({ ...bigBang.rules, anomalies: ['fuse', 'fusion'] }, mode)).toBeUndefined();
     }
@@ -251,7 +255,9 @@ describe('anomaly combinations', () => {
       expect(bang.rules.anomalies).not.toContain('whiteHole');
       const collapse = picks.find((p) => p.id === 'theCollapse')!;
       collapse.rules.anomalies.pop();
-      expect(handpickedPresets(mode).find((p) => p.id === 'theCollapse')!.rules.anomalies).toEqual(ANOMALIES);
+      expect(handpickedPresets(mode).find((p) => p.id === 'theCollapse')!.rules.anomalies).toEqual(ANOMALIES.filter((anomaly) => anomaly !== 'darkMatter'));
+      // All of them at once, and in the dark too, would be too much.
+      expect(collapse.rules.anomalies).not.toContain('darkMatter');
     }
   });
 

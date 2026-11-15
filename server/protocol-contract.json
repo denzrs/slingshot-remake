@@ -1,6 +1,6 @@
 {
-  "protocolVersion": 2,
-  "wireFingerprint": "9ac8f49d9ab7daba",
+  "protocolVersion": 3,
+  "wireFingerprint": "9dbe749ce159bd61",
   "defaults": {
     "rounds": 5,
     "maxPlanets": 4,
@@ -60,7 +60,7 @@
     "powerUps": { "kind": "flag" },
     "powerUpKinds": { "kind": "set", "options": ["preview", "teleport", "splitter", "antigravity", "shield", "blackhole", "planetkiller", "nebula", "piercing", "wormhole", "defense", "plasma"], "nonEmpty": true },
     "powerUpAmount": { "kind": "choice" },
-    "anomalies": { "kind": "set", "options": ["trickShots", "pinball", "fuse", "fusion", "whiteHole", "unstable"], "nonEmpty": false }
+    "anomalies": { "kind": "set", "options": ["trickShots", "pinball", "fuse", "fusion", "whiteHole", "unstable", "darkMatter"], "nonEmpty": false }
   },
   "room": {
     "defaults": {

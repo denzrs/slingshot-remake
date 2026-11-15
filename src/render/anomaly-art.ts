@@ -9,6 +9,7 @@ export const ANOMALY_COLORS: Record<Anomaly, string> = {
   fusion: '#5b6fd6',
   whiteHole: '#d9e6ff',
   unstable: '#ee8469',
+  darkMatter: '#8b6cf0',
 };
 
 /**
@@ -60,6 +61,21 @@ export function drawAnomalySymbol(ctx: CanvasRenderingContext2D, anomaly: Anomal
     ctx.moveTo(x - r, y); ctx.lineTo(x + r, y);
     ctx.moveTo(x + r * .65, y - r * .3); ctx.lineTo(x + r, y); ctx.lineTo(x + r * .65, y + r * .3);
     ctx.stroke();
+  } else if (anomaly === 'darkMatter') {
+    // A dark cloud, and the clear track a shot tore through it.
+    const alpha = ctx.globalAlpha;
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.globalAlpha = alpha * 0.35;
+    ctx.fill();
+    ctx.globalAlpha = alpha;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - r * 1.1, y + r * 0.55);
+    ctx.quadraticCurveTo(x - r * 0.1, y - r * 0.15, x + r * 0.75, y - r * 0.7);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x + r * 0.75, y - r * 0.7, r * 0.18, 0, Math.PI * 2);
+    ctx.fill();
   } else if (anomaly === 'unstable') {
     ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath();

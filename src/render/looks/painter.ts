@@ -9,6 +9,7 @@ import type { DefenseStyle, DefenseView, InterceptionStyle } from '../defense';
 import type { Nova } from '../effects';
 import type { PlanetSprite } from '../planet-common';
 import type { PortalStyle } from '../wormhole';
+import type { DarkIso } from '../dark-iso';
 
 /**
  * A look is how every element of the playing field is drawn. The renderer asks the chosen painter for each element and
@@ -44,6 +45,10 @@ export interface LookPainter {
   holeFlare(ctx: CanvasRenderingContext2D, hole: BlackHole, strength: number, color: string, angle: number): void;
   /** A planet or ship on its way into the hole, at `f.t` (0 → 1). `paint` draws the body round (0, 0), `reach` (field units) being as far as it goes; the look decides how it is bent, drawn out or left behind. */
   falling(ctx: CanvasRenderingContext2D, f: Falling, reach: number, ps: number, paint: (c: CanvasRenderingContext2D) => void): void;
+  /** Experiment Dark Matter: the black matter laid over the field. `masks` are the size of the field: `body` is opaque where the matter lies, `rim` where its torn edge runs. */
+  darkMatter(ctx: CanvasRenderingContext2D, masks: DarkMasks, time: number): void;
+  /** Experiment Dark Matter: the warning on a ship a rival's shot has come close to, `age` seconds after it. Draws over the dark, in the field's frame. */
+  darkAlert(ctx: CanvasRenderingContext2D, x: number, y: number, age: number): void;
   /** Anomaly White Hole: the white core drawn over a black hole, which says that what falls in comes back out. */
   whiteCore(ctx: CanvasRenderingContext2D, hole: BlackHole, time: number): void;
   /** A shot the white hole has just given back: swallowed at the hole, a fountain where it comes out (see `WHITE_JUMP`). */
@@ -138,6 +143,25 @@ export interface LookPainter {
   sky(ctx: CanvasRenderingContext2D, frame: FrameInfo): void;
   /** Painted every frame over the finished field, under the HUD: whole-frame light (device pixels, no transform). */
   post(ctx: CanvasRenderingContext2D, frame: FrameInfo): void;
+}
+
+/** The two masks of Dark Matter, in alpha, each the size of the field and its margin (`DARK_MARGIN` on every side). */
+export interface DarkMasks {
+  /** Says whether the masks are the same as last frame's: a look that keeps its picture redraws it only when this changes. */
+  readonly stamp: string;
+  /** Both are made only when read, so a frame that reuses its picture does not pay for them. */
+  readonly body: CanvasImageSource;
+  readonly rim: CanvasImageSource;
+  /** 1 while the matter stands; it falls to 0 as it lifts (the round is over, or the one looking was shot down). */
+  readonly fade: number;
+  /** The colour of the player whose field this is. */
+  readonly color: string;
+  /** The small clearing round the ship that is aiming, where the matter's lines must not run either. */
+  readonly clearing: { x: number; y: number; r: number } | null;
+  /** The box (field units) the torn edge lies in, null while nothing is torn. */
+  readonly rimBounds: { x: number; y: number; w: number; h: number } | null;
+  /** The line where the cover crosses `level` (0 clear → 1 dark), kept until a shot tears the matter again. */
+  iso(level: number): DarkIso;
 }
 
 /** What a look is told about the frame it is about to draw. Pixels are device pixels of the canvas. */

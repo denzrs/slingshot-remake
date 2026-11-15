@@ -42,6 +42,10 @@ const COLORS: Record<HandpickedId, string> = {
   theCollapse: '#ff6f6f',
   chainReaction: '#e57474',
   secondChance: '#d0dfff',
+  // Dark Matter's violet.
+  blackout: '#8b6cf0',
+  echolocation: '#8b6cf0',
+  blindFuse: '#8b6cf0',
 };
 
 /** Original flight chart for each authored daily combination. */
@@ -69,12 +73,33 @@ export function pickArt(pick: HandpickedPreset): SVGElement {
   const whiteHole = (x: number, y: number, r: number) => `${art.singularity(x, y, r)}
     <ellipse cx="${x}" cy="${y}" rx="${r * .38}" ry="${r * .72}" transform="rotate(24 ${x} ${y})" fill="#edf7ff" fill-opacity=".16" stroke="#edf7ff" stroke-width="2"/>
     <ellipse cx="${x}" cy="${y}" rx="${r * .17}" ry="${r * .48}" transform="rotate(24 ${x} ${y})" fill="#fff" fill-opacity=".75"/>`;
+  /**
+   * Dark Matter over the chart: everything under it is hidden, but where the shots in `tracks` (path, width) tore
+   * it open, and those edges glow faintly in the anomaly's violet. Drawn last, over the scene it hides.
+   */
+  const darkness = (tracks: readonly (readonly [string, number])[]): string => {
+    const dm = ANOMALY_COLORS.darkMatter;
+    const cut = (color: string, grow: number) => tracks.map(([d, w]) => `<path d="${d}" fill="none" stroke="${color}" stroke-width="${w + grow}" stroke-linecap="round" stroke-linejoin="round"/>`).join('');
+    return `<defs>
+        <mask id="${artId}-dark"><rect width="320" height="196" fill="#fff"/>${cut('#000', 0)}</mask>
+        <mask id="${artId}-rim">${cut('#fff', 7)}${cut('#000', 0)}</mask>
+        <radialGradient id="${artId}-murk" cx=".6" cy=".4" r=".8"><stop offset="0" stop-color="#160f2c"/><stop offset="1" stop-color="#05040b"/></radialGradient>
+      </defs>
+      <rect x="4" y="6" width="312" height="184" rx="22" fill="url(#${artId}-murk)" fill-opacity=".94" mask="url(#${artId}-dark)"/>
+      <g mask="url(#${artId}-rim)">${cut(dm, 7)}</g>
+      <g fill="none" stroke="${dm}" stroke-opacity=".18" mask="url(#${artId}-dark)"><circle cx="58" cy="44" r="16"/><circle cx="262" cy="150" r="22"/><circle cx="200" cy="40" r="10"/></g>`;
+  };
+  /** The red warning on a ship a rival's shot came close to. */
+  const found = (x: number, y: number) => `<g fill="none" stroke="#ff5a6e"><circle cx="${x}" cy="${y}" r="12" stroke-width="1.6"/><circle cx="${x}" cy="${y}" r="19" stroke-opacity=".5"/><circle cx="${x}" cy="${y}" r="26" stroke-opacity=".22"/></g>`;
   const modeMark = pick.mode === 'solar' ? art.sun(267, 40, .48) : pick.mode === 'horizon' ? art.singularity(267, 40, 12) : '';
   /** A stroke for each anomaly in play, each in its own corner of the chart. */
   const anomalyMarks = (anomalies: readonly Anomaly[]): string => {
     const marks: Record<Anomaly, string> = {
       whiteHole: `<ellipse cx="160" cy="100" rx="12" ry="24" fill="none" stroke="#d9e6ff"/>`,
       unstable: unstablePlanet(88, 132, 17),
+      // Dark Matter: a dark cloud in a corner, a track torn through it.
+      darkMatter: `<ellipse cx="62" cy="150" rx="40" ry="26" fill="#07050f" fill-opacity=".85" stroke="${ANOMALY_COLORS.darkMatter}" stroke-opacity=".6"/>
+        ${trace('M26 168Q60 146 98 140', 6, '', '#0b1a33')}${trace('M26 168Q60 146 98 140', 1.4, '', ANOMALY_COLORS.darkMatter, .8)}`,
       // Trick Shots Only: up to the wall, off it with a flash, and only then on to the target.
       trickShots: `<path d="M300 22v124" stroke="${ANOMALY_COLORS.trickShots}" stroke-width="2" opacity=".6"/>
         ${trace('M34 150Q170 76 300 56L236 28', 1.8, '', ANOMALY_COLORS.trickShots)}${spark(300, 56)}${ship(34, 150, 70, '#e8e4d8')}`,
@@ -171,13 +196,26 @@ export function pickArt(pick: HandpickedPreset): SVGElement {
       <ellipse cx="295" cy="64" rx="7" ry="26" fill="#edf7ff" fill-opacity=".18" stroke="#edf7ff" stroke-width="2"/>
       ${trace('M291 64Q257 35 224 65T176 159', 2.4, '', '#edf7ff')}
       ${trace('M190 150L176 161L173 143', 2, '', '#edf7ff')}${spark(286, 64, '#edf7ff')}${ship(28, 158, 60)}`,
+    // Blackout: the field under the matter, one shot's track torn through it, a rival half seen in it, and the shooter found.
+    blackout: `${modeMark}${planet(118, 108, 16)}${planet(232, 66, 13)}${planet(70, 58, 11)}${ship(198, 132, -150, '#6fe3c8')}
+      ${trace('M34 160Q88 168 112 128T196 86Q244 70 296 30', 2, '', '#ffad65')}${ship(34, 160, -20, '#ffad65')}
+      ${darkness([['M34 160Q88 168 112 128T196 86Q244 70 296 30', 30]])}${found(34, 160)}`,
+    // Echolocation: a shot banks off the walls and a planet, and every leg of it lights the dark.
+    echolocation: `${line('M20 36H300V162H20Z', 1.4, '5 7')}${planet(150, 120, 14)}${planet(244, 70, 12)}${ship(268, 134, -140, '#6fe3c8')}
+      ${trace('M34 60L138 112L196 36L300 98L262 162', 2, '', ANOMALY_COLORS.pinball)}${ship(34, 60, 30, '#ffad65')}
+      ${darkness([['M34 60L138 112L196 36L300 98L262 162', 26]])}`,
+    // Blind Fuse: a shot goes off in the dark; the blast clears a round hole where it did.
+    blindFuse: `${modeMark}${planet(96, 70, 13)}${planet(230, 136, 15)}${ship(224, 70, -160, '#6fe3c8')}
+      ${trace('M36 150Q110 160 160 120T214 84', 1.8, '4 4', ANOMALY_COLORS.fuse)}${ship(36, 150, -15, '#ffad65')}
+      ${darkness([['M36 150Q110 160 160 120T214 84', 24], ['M214 84h.1', 64]])}
+      <circle cx="214" cy="84" r="12" fill="none" stroke="${ANOMALY_COLORS.fuse}" stroke-width="2"/><path d="M214 64v-7M214 104v7M194 84h-7M234 84h7" stroke="${ANOMALY_COLORS.fuse}" stroke-width="2"/>${found(224, 70)}`,
 
     eventLoop: `${line('M25 44 295 44 295 150 25 150 25 44', 1.5, '5 7')}${planet(86, 66, 11)}<path d="M25 100q-11 16 0 32M295 100q11 16 0 32" fill="none" stroke="${c}" stroke-width="2.2" stroke-linecap="round"/>${line('M70 140Q50 126 25 116')}${line('M295 116Q250 112 224 94T186 84', 2)}<path d="m196 80-11 5 8 8" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/><g fill="${c}" opacity=".5"><circle cx="205" cy="92" r="1.6"/><circle cx="214" cy="97" r="1.1"/></g>${ship(70, 140, 175)}`,
   };
 
   const background = '<g fill="#e8e4d8" opacity=".4"><circle cx="32" cy="25" r="1"/><circle cx="107" cy="33" r="1.5"/><circle cx="281" cy="99" r="1"/><circle cx="190" cy="169" r="1"/><circle cx="65" cy="176" r="1"/></g>';
   // Scenes with their own field already include any sun, singularity or open space they need.
-  const hasOwnField = ['bubbleWrap', 'hostileArchitecture', 'noForwardingAddress', 'theUnlearning', 'bigBang', 'theCollapse', 'chainReaction', 'secondChance'].includes(pick.id);
+  const hasOwnField = ['bubbleWrap', 'hostileArchitecture', 'noForwardingAddress', 'theUnlearning', 'bigBang', 'theCollapse', 'chainReaction', 'secondChance', 'blackout', 'blindFuse'].includes(pick.id);
   const modeField = hasOwnField ? '' : pick.mode === 'horizon'
     ? art.singularity(160, 98, 27)
     : pick.mode === 'solar'

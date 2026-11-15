@@ -1,3 +1,4 @@
+import { drawEngravedDark, drawEngravedDarkAlert } from './classic-dark';
 import { AIM, COLORS, HORIZON, PHYSICS, SUDDEN_DEATH, WORMHOLE } from '../../sim/config';
 import { aimDirection, isTrailBreak, type Wormhole } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
@@ -54,6 +55,8 @@ export function engraved(id: Look, styles: Styles = {}, parts: Partial<LookPaint
     blackHole: (ctx, hole, time) => drawBlackHole(ctx, hole, time, styles.hole),
     falling: drawInkFall,
     holeFlare: (ctx, hole, strength, color, angle) => strokeHoleFlare(ctx, hole, strength, color, angle, Math.max(1.5, hole.radius * 0.12), 0.9),
+    darkMatter: drawEngravedDark,
+    darkAlert: drawEngravedDarkAlert,
     whiteCore: drawEngravedWhiteCore,
     whiteJump: drawEngravedWhiteJump,
     dangerRing: drawDangerRing,

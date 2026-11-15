@@ -314,7 +314,7 @@
 }
 .anomaly-picker-layer.is-open { opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s; }
 .anomaly-picker {
-  width: min(900px, 100%);
+  width: min(1000px, 100%);
   max-height: 80dvh;
   display: flex;
   flex-direction: column;
@@ -338,12 +338,13 @@
 .anomaly-picker-layer.has-anomalies .anomaly-picker > .setup__title { color: #ff9aa5; }
 /* The focus outline and selected tiles' glitch extend beyond the tile's border. */
 .anomaly-picker > .setup__rows { min-height: 0; overflow-y: auto; padding: 8px; margin: -8px; }
-.anomaly-picker .item--tiles { padding: 0; gap: 14px; }
+.anomaly-picker .item--tiles { padding: 0; gap: 14px; justify-content: center; }
 .anomaly-picker .item--tiles:focus, .anomaly-picker .item--tiles:hover { background: transparent; }
 .anomaly-picker .item--tiles:focus-visible { outline: none; box-shadow: none; }
 .anomaly-picker .item::before { display: none; }
 .anomaly-picker .item__label { font-size: 13px; }
-.anomaly-picker .tile { flex-basis: calc(100% / 3 - 4px); padding: 16px 8px; }
+/* Four to a row, a short row centred under them: seven tiles read as 4 + 3, with nothing left hanging alone. */
+.anomaly-picker .tile { flex: 0 0 calc(25% - 11px); padding: 16px 8px; }
 .anomaly-picker__actions { justify-content: flex-end; margin: 0; }
 .anomaly-picker__actions .item { min-height: 44px; padding: 10px 24px; }
 .anomaly-picker__actions .item--primary { background: var(--launch-accent); border-color: var(--launch-accent); color: var(--menu-surface); font: 800 24px/1.1 var(--font-display); text-transform: uppercase; }

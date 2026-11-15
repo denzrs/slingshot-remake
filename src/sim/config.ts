@@ -22,8 +22,10 @@ export const LOOP_MARGIN = 28;
  * - `fusion`: two shots that meet melt into one, which both shooters own.
  * - `whiteHole`: black holes return shots through a random edge.
  * - `unstable`: impacts crack planets until they shatter; smaller bodies take fewer hits.
+ * - `darkMatter`: the field is dark for everyone, planets and ships included; each shot clears it only for the one who fired it.
+ *   Only a picture: the flight plays as ever, so it is the one anomaly that is not part of a flight's rules.
  */
-export const ANOMALIES = ['trickShots', 'pinball', 'fuse', 'fusion', 'whiteHole', 'unstable'] as const;
+export const ANOMALIES = ['trickShots', 'pinball', 'fuse', 'fusion', 'whiteHole', 'unstable', 'darkMatter'] as const;
 export type Anomaly = (typeof ANOMALIES)[number];
 export const isAnomaly = (value: unknown): value is Anomaly => ANOMALIES.some((anomaly) => anomaly === value);
 

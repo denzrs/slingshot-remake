@@ -39,7 +39,7 @@ export function anomalyRules(
   shotTime: number,
   worldSeed: number,
   maxPower?: number,
-): Pick<ShotRules, 'trickShots' | 'pinball' | 'fuse' | 'fusion' | 'whiteHole' | 'unstable'> {
+): Pick<ShotRules, 'trickShots' | 'pinball' | 'fuse' | 'fusion' | 'whiteHole' | 'unstable' | 'darkMatter'> {
   if (!anomalies.length) return {};
   return {
     trickShots: anomalies.includes('trickShots'),
@@ -48,5 +48,6 @@ export function anomalyRules(
     fusion: anomalies.includes('fusion'),
     whiteHole: anomalies.includes('whiteHole'),
     unstable: anomalies.includes('unstable'),
+    darkMatter: anomalies.includes('darkMatter'),
   };
 }

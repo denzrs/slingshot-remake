@@ -122,10 +122,12 @@ macro_rules! anomaly_counts {
             ", SUM(", plays!("fusion"), ") AS c3",
             ", SUM(", plays!("whiteHole"), ") AS c4",
             ", SUM(", plays!("unstable"), ") AS c5",
+            ", SUM(", plays!("darkMatter"), ") AS c6",
             " FROM stat_rounds)",
             " SELECT rounds, k, n FROM (SELECT rounds, 0 AS k, c0 AS n FROM c UNION ALL SELECT rounds, 1, c1 FROM c",
             " UNION ALL SELECT rounds, 2, c2 FROM c UNION ALL SELECT rounds, 3, c3 FROM c",
-            " UNION ALL SELECT rounds, 4, c4 FROM c UNION ALL SELECT rounds, 5, c5 FROM c)"
+            " UNION ALL SELECT rounds, 4, c4 FROM c UNION ALL SELECT rounds, 5, c5 FROM c",
+            " UNION ALL SELECT rounds, 6, c6 FROM c)"
         )
     };
 }
