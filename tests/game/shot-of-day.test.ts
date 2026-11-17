@@ -194,3 +194,25 @@ describe('the shot of the day', () => {
     expect(replay.bestShot).toBeNull();
   });
 });
+
+describe('a flak cannon in the daily', () => {
+  it('pays nobody for shooting the pilot down, and shows no points for it', () => {
+    let downs = 0;
+    for (let d = 1; d <= 28 && downs < 3; d++) {
+      const full = dailyChallenge(`2026-11-${String(d).padStart(2, '0')}`);
+      const sector = full.sectors.findIndex((s) => s.flak);
+      if (sector < 0) continue;
+      const challenge = { ...full, sectors: [full.sectors[sector]] };
+      for (let angle = 0; angle < 360 && downs < 3; angle += 9) {
+        const match = createChallenge(settings(), challenge);
+        const shotdowns: Extract<GameEvent, { type: 'shotdown' }>[] = [];
+        match.on((e) => e.type === 'shotdown' && shotdowns.push(e));
+        fire(match, angle, 70);
+        downs += shotdowns.length;
+        for (const e of shotdowns) expect(e.points).toBe(0);
+        if (shotdowns.length) expect(match.players.map((p) => p.score)).toEqual(match.players.map((_, i) => (i === 0 ? match.total : 0)));
+      }
+    }
+    expect(downs).toBeGreaterThan(0);
+  });
+});
