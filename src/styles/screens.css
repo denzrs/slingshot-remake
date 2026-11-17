@@ -54,8 +54,13 @@
   color: var(--bone-dim);
 }
 
-/* A quiet banner shows one game stat at a time without competing with the menu itself. */
+/* A quiet banner shows one line at a time without competing with the menu itself: a stat in the amber of the launcher, a tip in violet. */
 .stats-ticker {
+  --ticker-accent: var(--launch-accent, #ffad65);
+  --ticker-number: var(--p1);
+  --ticker-dot: rgb(91 125 179 / 0.4);
+  --ticker-edge: rgb(91 125 179 / 0.24);
+  --ticker-wash: linear-gradient(90deg, rgb(8 20 38 / 0.72), rgb(17 34 57 / 0.3) 72%, rgb(8 20 38 / 0.5));
   position: relative;
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
@@ -65,8 +70,14 @@
   min-width: 0;
   min-height: 50px;
   overflow: hidden;
-  border-block: 1px solid rgb(91 125 179 / 0.24);
-  background: linear-gradient(90deg, rgb(8 20 38 / 0.72), rgb(17 34 57 / 0.3) 72%, rgb(8 20 38 / 0.5));
+  border-block: 1px solid var(--ticker-edge);
+  background: var(--ticker-wash);
+}
+
+.stats-ticker[data-kind='tip'] {
+  --ticker-accent: #b9a2ff;
+  --ticker-number: #d9ccff;
+  --ticker-dot: rgb(185 162 255 / 0.35);
 }
 
 .stats-ticker[hidden] {
@@ -77,21 +88,35 @@
   position: absolute;
   inset: 9px auto 9px 0;
   width: 2px;
-  background: var(--launch-accent, #ffad65);
+  background: var(--ticker-accent);
+  transition: background-color 260ms ease;
   content: '';
 }
 
 .stats-ticker__label {
-  display: flex;
-  align-items: center;
+  display: grid;
+  align-content: center;
   align-self: stretch;
   padding: 0 14px 0 16px;
-  border-right: 1px solid rgb(91 125 179 / 0.28);
-  color: var(--launch-accent, #ffad65);
+  border-right: 1px solid var(--ticker-edge);
+  color: var(--ticker-accent);
+  transition: color 260ms ease;
   font: 700 9px/1.4 var(--font-mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+/* Both words sit in one cell, the shown one on top and the other unseen, so the cell has the width of the longer. */
+.stats-ticker__label-text,
+.stats-ticker__label-size {
+  grid-area: 1 / 1;
+}
+
+.stats-ticker__label-size {
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
 }
 
 .stats-ticker__viewport {
@@ -113,38 +138,74 @@
   font: 400 11px/1.5 var(--font-mono);
   opacity: 0;
   transform: translateY(3px);
-  transition: opacity 700ms ease, transform 700ms ease;
+  /* The old line fades out first, then the new one in (not both at once); the label and colours change in between. Keep in step with LINE_FADE_MS. */
+  transition: opacity 260ms ease, transform 260ms ease;
   pointer-events: none;
 }
 
 .stats-ticker__fact.is-active {
+  transition-delay: 260ms;
+  transition-duration: 340ms;
   opacity: 1;
   transform: none;
   pointer-events: auto;
 }
 
 .stats-ticker__number {
-  color: var(--p1);
+  color: var(--ticker-number);
   font-weight: 700;
 }
 
 .stats-ticker__dots {
   display: flex;
   align-items: center;
+  gap: 6px;
+  padding-right: 10px;
+}
+
+.stats-ticker__marks {
+  display: flex;
+  align-items: center;
   gap: 5px;
-  padding-right: 16px;
+}
+
+.stats-ticker__step {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ticker-accent);
+  font: 400 16px/1 var(--font-mono);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 140ms ease, background-color 140ms ease, color 260ms ease;
+}
+
+.stats-ticker__step:hover,
+.stats-ticker__step:focus-visible {
+  background: rgb(255 255 255 / 0.08);
+  opacity: 1;
+}
+
+.stats-ticker__step:focus-visible {
+  outline: 2px solid var(--sodium);
+  outline-offset: -2px;
 }
 
 .stats-ticker__dot {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: rgb(91 125 179 / 0.4);
-  transition: background-color 700ms ease;
+  background: var(--ticker-dot);
+  transition: background-color 260ms ease;
 }
 
 .stats-ticker__dot.is-active {
-  background: var(--launch-accent, #ffad65);
+  background: var(--ticker-accent);
 }
 
 .stats-ticker__a11y {

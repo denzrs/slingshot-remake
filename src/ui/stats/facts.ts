@@ -4,14 +4,12 @@ import { factLines, type FactPart } from '../../net/statsFacts';
 import { t } from '../../platform/i18n';
 import { h } from '../dom';
 import { leaderboardAvailable } from '../daily/leaderboard';
+import { tipLines } from './tips';
 
 /** How long the numbers fetched are kept before a menu asks again. */
 const KEEP_MS = 10 * 60_000;
 /** Where they are kept across page loads, so a reload does not go to the relay again. */
 const STORE_KEY = 'slingshot.facts';
-/** A short selection keeps one round of the banner brief. */
-const TICKER_FACTS = 10;
-
 let kept: ({ at: number } & StatsMenu) | null = recall();
 let loading: Promise<StatsMenu> | null = null;
 
@@ -52,18 +50,48 @@ export async function loadMenuStats(board: StatsBoard): Promise<StatsMenu> {
 /** The findings alone (see `loadMenuStats`). */
 export const loadFacts = (board: StatsBoard): Promise<StatsFact[]> => loadMenuStats(board).then((menu) => menu.facts);
 
-/** How long one fact stays before the next one fades in. */
-const FACT_MS = 8_000;
+/** How long the old line takes to fade out before the new one fades in (the same in the stylesheet). */
+const LINE_FADE_MS = 260;
+/** How long one line stays before the next one fades in. */
+const LINE_MS = 8_000;
+/** With the relay's numbers on, the banner alternates between this many of them and this many tips. */
+const MIXED_FACTS = 6;
+const MIXED_TIPS = 5;
+/** Without them it is tips alone. */
+const TIPS_ONLY = 8;
 
-function factLine(parts: FactPart[]): HTMLElement {
-  return h('span.stats-ticker__fact', { 'aria-hidden': 'true' }, ...parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text)));
+type LineKind = 'fact' | 'tip';
+interface Line {
+  kind: LineKind;
+  parts: FactPart[];
 }
 
-/** A quiet banner of relay statistics for a menu header: one fact at a time, fading into the next. */
-export function factTicker(enabled = true, board = new StatsBoard()): HTMLElement {
-  const ticker = h('div.stats-ticker', { role: 'region', 'aria-label': t('stats.ticker.label'), 'aria-busy': 'true' });
-  const label = h('span.stats-ticker__label', { 'aria-hidden': 'true' }, t('stats.ticker.label'));
-  const viewport = h('span.stats-ticker__viewport', null, h('span.stats-ticker__loading', null, t('stats.loading')));
+function lineElement(line: Line): HTMLElement {
+  return h('span.stats-ticker__fact', { 'aria-hidden': 'true', 'data-kind': line.kind }, ...line.parts.map((part) => (part.number ? h('span.stats-ticker__number', null, part.text) : part.text)));
+}
+
+/** One after the other: a number of the relay, a tip, a number, a tip; whichever runs out first leaves the rest of the other. */
+function interleave(facts: FactPart[][], tips: FactPart[][]): Line[] {
+  const lines: Line[] = [];
+  for (let i = 0; i < Math.max(facts.length, tips.length); i++) {
+    if (facts[i]) lines.push({ kind: 'fact', parts: facts[i] });
+    if (tips[i]) lines.push({ kind: 'tip', parts: tips[i] });
+  }
+  return lines;
+}
+
+/**
+ * The banner of a menu header, one line at a time, fading into the next.
+ * With the statistics on (and a relay to ask) it alternates between numbers of the game and tips for it, in two colours;
+ * with them off it is still there, as tips alone.
+ */
+export function menuTicker(showStats = true, board = new StatsBoard()): HTMLElement {
+  const wantsFacts = showStats && leaderboardAvailable();
+  const ticker = h('div.stats-ticker', { role: 'region', 'aria-label': t(wantsFacts ? 'stats.ticker.label' : 'tips.label'), 'aria-busy': 'true', 'data-kind': wantsFacts ? 'fact' : 'tip' });
+  // The label is as wide as the longer of its two words in every state, so the line next to it never shifts when the kind changes.
+  const labelText = h('span.stats-ticker__label-text', null, t(wantsFacts ? 'stats.ticker.label' : 'tips.label'));
+  const label = h('span.stats-ticker__label', { 'aria-hidden': 'true' }, labelText, h('span.stats-ticker__label-size', null, t('stats.ticker.label')), h('span.stats-ticker__label-size', null, t('tips.label')));
+  const viewport = h('span.stats-ticker__viewport', null, ...(wantsFacts ? [h('span.stats-ticker__loading', null, t('stats.loading'))] : []));
   const dots = h('span.stats-ticker__dots', { 'aria-hidden': 'true' });
   const accessibleFacts = h('span.stats-ticker__a11y', null);
   const toggle = h('button.stats-ticker__toggle', { type: 'button', 'aria-expanded': 'false', 'aria-label': t('stats.ticker.expand') });
@@ -74,34 +102,42 @@ export function factTicker(enabled = true, board = new StatsBoard()): HTMLElemen
   });
   ticker.append(label, viewport, dots, accessibleFacts, toggle);
 
-  if (!enabled || !leaderboardAvailable()) {
-    ticker.hidden = true;
-    ticker.removeAttribute('aria-busy');
-    return ticker;
-  }
-
-  const hide = (): void => {
-    ticker.hidden = true;
-    ticker.removeAttribute('aria-busy');
-  };
-  loadFacts(board).then((facts) => {
-    const lines = factLines(facts).slice(0, TICKER_FACTS);
-    if (!lines.length) return hide();
-
-    const items = lines.map(factLine);
+  const run = (lines: Line[]): void => {
+    const items = lines.map(lineElement);
     const marks = lines.map(() => h('span.stats-ticker__dot', null));
     let current = 0;
-    const show = (index: number): void => {
+    let swap = 0;
+    const show = (index: number, fade = true): void => {
       current = index;
+      const kind = lines[index].kind;
+      const relabel = (): void => {
+        ticker.dataset.kind = kind;
+        labelText.textContent = t(kind === 'fact' ? 'stats.ticker.label' : 'tips.label');
+      };
+      // The old line is gone when the label and colours change, and the new line fades in after them.
+      clearTimeout(swap);
+      const still = !fade || matchMedia('(prefers-reduced-motion: reduce)').matches || ticker.closest('.menu-motion-less');
+      if (still || ticker.dataset.kind === kind) relabel();
+      else swap = window.setTimeout(relabel, LINE_FADE_MS);
       items.forEach((item, i) => item.classList.toggle('is-active', i === index));
       marks.forEach((mark, i) => mark.classList.toggle('is-active', i === index));
     };
-    show(0);
+    show(0, false);
     viewport.replaceChildren(...items);
-    dots.replaceChildren(...marks);
-    accessibleFacts.textContent = lines.map((parts) => parts.map((part) => part.text).join('')).join(' ');
+    accessibleFacts.textContent = lines.map((line) => line.parts.map((part) => part.text).join('')).join(' ');
     ticker.removeAttribute('aria-busy');
-    if (lines.length < 2) return;
+    if (lines.length < 2) return dots.replaceChildren(...marks);
+
+    // Back and forth by hand; the rotation waits while the pointer or the focus is on the banner.
+    const step = (by: number): void => show((current + by + items.length) % items.length);
+    const arrow = (direction: 'previous' | 'next', glyph: string): HTMLElement => {
+      const button = h(`button.stats-ticker__step.stats-ticker__step--${direction}`, { type: 'button', 'aria-label': t(direction === 'next' ? 'stats.ticker.next' : 'stats.ticker.previous') }, glyph);
+      button.addEventListener('click', () => step(direction === 'next' ? 1 : -1));
+      return button;
+    };
+    dots.replaceChildren(arrow('previous', '‹'), h('span.stats-ticker__marks', { 'aria-hidden': 'true' }, ...marks), arrow('next', '›'));
+    // The dots were for show; with buttons among them the group is read as the controls it holds.
+    dots.removeAttribute('aria-hidden');
 
     let held = false;
     const hold = (value: boolean) => () => void (held = value);
@@ -113,8 +149,22 @@ export function factTicker(enabled = true, board = new StatsBoard()): HTMLElemen
       // The menu page this lives on is gone once it has left the document.
       if (!ticker.isConnected) return clearInterval(timer);
       if (held || ticker.classList.contains('is-expanded') || document.hidden) return;
-      show((current + 1) % items.length);
-    }, FACT_MS);
-  }, hide);
+      step(1);
+    }, LINE_MS);
+  };
+  const tipsOnly = (): void => {
+    ticker.setAttribute('aria-label', t('tips.label'));
+    run(tipLines(TIPS_ONLY).map((parts) => ({ kind: 'tip', parts })));
+  };
+
+  if (!wantsFacts) {
+    tipsOnly();
+    return ticker;
+  }
+  loadFacts(board).then((facts) => {
+    const numbers = factLines(facts).slice(0, MIXED_FACTS);
+    if (!numbers.length) return tipsOnly();
+    run(interleave(numbers, tipLines(MIXED_TIPS)));
+  }, tipsOnly);
   return ticker;
 }

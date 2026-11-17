@@ -64,7 +64,7 @@ const de: PrivacyText = {
     {
       title: '4. Online spielen: das Relay',
       body: [
-        'Für Online-Spiele, die Tagesrangliste und die Statistik verbindest du dich mit unserem Relay unter slingshot-relay.eu (verschlüsselt per TLS). Dabei sieht das Relay technisch deine IP-Adresse. Wenn die Statistik-Leiste im Menü eingeschaltet ist (Einstellungen → Statistik-Leiste), verbindet sich das Menü schon beim Anzeigen mit dem Relay, auch bevor du online spielst.',
+        'Für Online-Spiele, die Tagesrangliste und die Statistik verbindest du dich mit unserem Relay unter slingshot-relay.eu (verschlüsselt per TLS). Dabei sieht das Relay technisch deine IP-Adresse. Wenn „Statistik anzeigen“ eingeschaltet ist (Einstellungen → Statistik anzeigen), zeigt das Menü Zahlen aus dem Spiel und verbindet sich schon beim Anzeigen mit dem Relay, auch bevor du online spielst.',
         'Zum Schutz vor Missbrauch zählt das Relay Verbindungen pro Adresse. Das passiert nur im Arbeitsspeicher. Damit sich Leute hinter einer gemeinsamen Adresse (VPN, Mobilfunk) nicht gegenseitig aussperren, schickt dein Browser eine zufällige Kennung (128 Bit, ohne Bezug zu dir) mit; das Relay hält sie nur so lange im Arbeitsspeicher, wie die Begrenzung gilt, und schreibt sie nirgends auf.',
         'In einem Online-Raum gibt das Relay deinen Anzeigenamen, dein Symbol, Chat-Nachrichten und deine Spielzüge an die anderen im Raum weiter. Das ist für das Spiel nötig; die Nachrichten und Züge werden vom Relay nicht dauerhaft gespeichert. Wähle keinen Namen, der dich identifiziert, wenn du das nicht möchtest – andere im Raum sehen ihn.',
         'Das Relay läuft auf einem Server von IONOS SE in Deutschland. Wie IONOS Daten verarbeitet, steht in der [Datenschutzerklärung von IONOS](https://www.ionos.de/terms-gtc/datenschutzerklaerung/).',
@@ -157,7 +157,7 @@ const en: PrivacyText = {
     {
       title: '4. Playing online: the relay',
       body: [
-        'For online games, the daily leaderboard and the statistics you connect to our relay at slingshot-relay.eu (encrypted with TLS). The relay technically sees your IP address. If the stats banner in the menu is on (Settings → Stats banner), the menu connects to the relay as soon as it is shown, before you play online.',
+        'For online games, the daily leaderboard and the statistics you connect to our relay at slingshot-relay.eu (encrypted with TLS). The relay technically sees your IP address. If “Show statistics” is on (Settings → Show statistics), the menu shows numbers from the game and connects to the relay as soon as it is shown, before you play online.',
         'To protect against abuse, the relay counts connections per address, in memory only. So that people behind a shared address (VPN, mobile network) do not lock each other out, your browser sends a random identifier (128 bits, unrelated to you); the relay holds it in memory only for as long as a limit applies and writes it down nowhere.',
         'In an online room the relay passes your display name, symbol, chat messages and moves to the others in the room. That is needed for the game; the relay does not keep messages or moves permanently. Do not choose a name that identifies you if you would rather not: others in the room see it.',
         'The relay runs on a server of IONOS SE in Germany. How IONOS processes data is described in [IONOS\' privacy policy](https://www.ionos.de/terms-gtc/datenschutzerklaerung/).',
