@@ -5,7 +5,7 @@ import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../../ne
 import { GAME_MODES, type GameMode } from '../../sim/modes';
 import { h, type Screen } from '../menu/menu';
 import type { App } from '../screens';
-import { factTicker } from '../stats/facts';
+import { menuTicker } from '../stats/facts';
 import { menuPage } from '../menu/menu-page';
 import { modeName } from '../menu/mode-name';
 import { createBriefing } from './briefing';
@@ -134,7 +134,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const root = menuPage({
     title: t(({ rooms: 'flow.find', create: 'flow.create', code: 'flow.code' } as const)[view]), eyebrow: t('launcher.online'), className: 'menu-page--lobby menu-page--mode-enter-next',
     headerTitle: onlineHeader,
-    headerAside: factTicker(app.settings.statsTicker),
+    headerAside: menuTicker(app.settings.statsTicker),
     body: [lobbyEl], footer: footerActions, keys: hintText('flow.tabKeys'),
   });
   const page = root.querySelector<HTMLElement>('.menu-page')!;

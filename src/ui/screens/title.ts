@@ -1,7 +1,7 @@
 import { getLang, t } from '../../platform/i18n';
 import type { GameMode } from '../../sim/modes';
 import { dailyMenuHint, dailyScreen } from '../daily/daily';
-import { factTicker } from '../stats/facts';
+import { menuTicker } from '../stats/facts';
 import { statsAvailable, statsScreen } from '../stats/stats';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { modeArt } from '../menu/mode-icons';
@@ -132,7 +132,7 @@ export function titleScreen(app: App): Screen {
             h('div.launcher__tutorial-mobile', { 'data-section': 'tutorial-mobile' }),
             h('div.launcher__settings-mobile', { 'data-section': 'settings-mobile' }),
           ),
-          factTicker(app.settings.statsTicker),
+          menuTicker(app.settings.statsTicker),
         ),
         h('div.launcher__body', null,
           h('nav.launcher__nav.items', { 'data-section': 'navigation', 'aria-label': t('title.menuLabel') }),
