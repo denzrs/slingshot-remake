@@ -59,7 +59,7 @@ export class Killcam {
 
   capture(world: World, aims: VolleyAim[]): void {
     this.world = cloneWorld(world);
-    this.aims = aims.map((aim) => ({ ...aim, ...(aim.spare ? { spare: [...aim.spare] } : {}) }));
+    this.aims = aims.map((aim) => ({ ...aim, ...(aim.spare ? { spare: [...aim.spare] } : {}), ...(aim.through ? { through: [...aim.through] } : {}) }));
     this.kills = [];
   }
 

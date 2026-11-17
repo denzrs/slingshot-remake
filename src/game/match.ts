@@ -55,6 +55,10 @@ export abstract class Match {
   current = -1;
   trails: Trail[] = [];
   volley: Volley | null = null;
+  /** The high-fives in a row of each pair (\"low:high\" seat ids) in this round: one more for every flight the pair had one in. */
+  private fiveChains = new Map<string, number>();
+  /** The pairs that had a high-five in the flight that is going on. */
+  private fivesThisFlight = new Set<string>();
   /** Anomaly Dark Matter: the matter over this round's field and how far each trail has been read into it. */
   private darkState: { key: string; dark: DarkMatter; read: Map<string, number>; spotting: Set<string> } | null = null;
   killFeed: KillRecord[] = [];
@@ -883,6 +887,8 @@ export abstract class Match {
     this.skipVoting.clear();
     this.forfeited = false;
     this.round++;
+    this.fiveChains.clear();
+    this.fivesThisFlight.clear();
     // Stakes that were never paid out (a round cut short) go back to their owners.
     for (const [id, stake] of this.oracle.stakes) this.payInto(id, stake, false);
     for (const [id, stake] of this.stands.stakes) this.payInto(id, stake, true);
@@ -1420,7 +1426,8 @@ export abstract class Match {
 
   // ————————————————————————————— Flight —————————————————————————————
 
-  protected launch(aims: VolleyAim[], trackStyle: boolean): void {
+  protected launch(flown: VolleyAim[], trackStyle: boolean): void {
+    const aims = this.withThrough(flown);
     this.oracle.lock();
     this.stands.lock();
     this.oracleKills = [];
@@ -1470,6 +1477,7 @@ export abstract class Match {
     this.trails.push(...volley.shots.map((vs) => ({ owner: vs.owner, fan: vs.fan, points: vs.trail, volley: this.volleyNumber, at: this.clock })));
     this.pruneTrails();
     this.volley = null;
+    this.endFiveFlight();
     this.power.onVolleyEnd();
     this.judgeOracle();
     for (const listener of this.turnListeners) listener();
@@ -1643,6 +1651,7 @@ export abstract class Match {
         const friendly = team !== null && team === this.players[otherOwner].team;
         // A high-five pays both shooters whose shots cancelled each other — and only where trick shots pay.
         const points = this.stylePays ? (friendly ? SCORING.HIGH_FIVE_TEAMMATE : SCORING.HIGH_FIVE_ENEMY) * this.payFactor : 0;
+        if (live) this.countFive(player, otherOwner);
         if (live && points > 0) {
           this.players[player].score += points;
           this.players[otherOwner].score += points;
@@ -1662,6 +1671,32 @@ export abstract class Match {
       default:
         this.emit({ type: 'fizzle', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy, lost: end.kind === 'lost' });
     }
+  }
+
+  /** Notes that a pair had a high-five in this flight. */
+  private countFive(a: number, b: number): void {
+    this.fivesThisFlight.add(a < b ? `${a}:${b}` : `${b}:${a}`);
+  }
+
+  /** The flight is over: a pair's chain goes on by one if it had a high-five in it, and ends if it had none. Other pairs count for themselves. */
+  private endFiveFlight(): void {
+    const next = new Map<string, number>();
+    for (const key of this.fivesThisFlight) next.set(key, (this.fiveChains.get(key) ?? 0) + 1);
+    this.fiveChains = next;
+    this.fivesThisFlight.clear();
+  }
+
+  /**
+   * After two high-fives in a row a pair's shots fly through each other in the next flight, so two players cannot stand off
+   * against each other (in a duel above all) and the round has to be decided. They have no high-five in that flight, which ends the chain.
+   */
+  private withThrough(aims: VolleyAim[]): VolleyAim[] {
+    const pairs = [...this.fiveChains].filter(([, count]) => count >= 2).map(([key]) => key.split(':').map(Number));
+    if (pairs.length === 0) return aims;
+    return aims.map((aim) => {
+      const through = pairs.filter((pair) => pair.includes(aim.player)).map((pair) => pair.find((id) => id !== aim.player)!);
+      return through.length > 0 ? { ...aim, through } : aim;
+    });
   }
 
   /**

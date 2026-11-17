@@ -1,5 +1,5 @@
 {
-  "protocolVersion": 3,
+  "protocolVersion": 4,
   "wireFingerprint": "9dbe749ce159bd61",
   "defaults": {
     "rounds": 5,

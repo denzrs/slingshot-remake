@@ -155,6 +155,14 @@ describe('volleys', () => {
     expect(world.ships.every((s) => s.alive)).toBe(true);
   });
 
+  it('lets the shots of a pair fly through each other when the aims say so, and on to the ships', () => {
+    const world = emptyWorld();
+    const volley = new Volley(world, [{ player: 0, angle: 0, power: 50, through: [1] }, { player: 1, angle: 180, power: 50, through: [0] }], rules, false);
+    while (!volley.done) volley.step();
+    expect(volley.shots.map((s) => s.shot.end?.kind)).not.toContain('clash');
+    expect(world.ships.map((s) => s.alive)).toEqual([false, false]);
+  });
+
   it('keeps who is spared in its snapshot, so guests and killcams fly the same shots', () => {
     const world = emptyWorld([[100, 400], [600, 400], [1180, 400]]);
     const volley = new Volley(world, [{ player: 0, angle: 0, power: 50, spare: [1] }], rules, false);

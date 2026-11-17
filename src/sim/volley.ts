@@ -7,6 +7,8 @@ export interface VolleyAim {
   power: number;
   /** Ships this shot passes through unharmed. */
   spare?: number[];
+  /** Players whose shots this one flies through: after two high-fives in a row the pair no longer cancel each other out. */
+  through?: number[];
   /** Shots of one splitter share a fan id: they start from the same muzzle and never cancel each other. */
   fan?: number;
   /** Armor piercing: the shot goes through ships instead of stopping on them (the armor-piercing power-up). */
@@ -347,6 +349,7 @@ export class Volley {
         if (b.end) continue;
         const fan = this.aims[i].fan;
         if (fan !== undefined && fan === this.aims[j].fan) continue;
+        if (this.aims[i].through?.includes(this.aims[j].player) || this.aims[j].through?.includes(this.aims[i].player)) continue;
         // A missile that lost a shot starts next to it: they do not cancel each other out, nor its brothers.
         const { stray: strayI } = this.aims[i];
         const { stray: strayJ } = this.aims[j];
