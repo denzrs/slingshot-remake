@@ -22,9 +22,9 @@ function devPagesGate(): Plugin {
 }
 
 /**
- * `/stats` opens the statistics page (the game reads the path itself). A static host only answers for files that exist, so
- * the build also carries the page as `stats/index.html` – the same page, its relative links stepping up one level. The dev
- * and preview servers already answer any path with the page.
+ * `/stats` opens the statistics page and `/privacy` the privacy page (the game reads the path itself). A static host only
+ * answers for files that exist, so the build also carries the page as `stats/index.html` and `privacy/index.html` – the same
+ * page, its relative links stepping up one level. The dev and preview servers already answer any path with the page.
  */
 function statsRoute(): Plugin {
   return {
@@ -33,7 +33,7 @@ function statsRoute(): Plugin {
     generateBundle(_options, bundle) {
       const page = bundle['index.html'];
       if (page?.type !== 'asset' || typeof page.source !== 'string') return;
-      this.emitFile({ type: 'asset', fileName: 'stats/index.html', source: page.source.replaceAll('="./', '="../') });
+      for (const route of ['stats', 'privacy']) this.emitFile({ type: 'asset', fileName: `${route}/index.html`, source: page.source.replaceAll('="./', '="../') });
     },
   };
 }

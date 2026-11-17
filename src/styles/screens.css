@@ -199,50 +199,31 @@
   margin: 0;
 }
 
-.coffee-button {
-  display: flex;
-  align-items: center;
-}
-
+/* "Buy me a coffee": a quiet outlined link beside the version tag, the footer's own look. */
 .coffee-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgb(91 125 179 / 0.35);
   color: var(--bone-dim);
-  font-size: 11px;
+  font: 10px/1 var(--font-body);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   text-decoration: none;
-  opacity: 0.7;
-  transition: color 140ms ease, opacity 140ms ease;
+  white-space: nowrap;
+  transition: color 140ms ease, border-color 140ms ease;
 }
 
 .coffee-link:hover,
 .coffee-link:focus-visible {
-  color: var(--p1);
-  opacity: 1;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  color: var(--sodium);
+  border-color: var(--sodium);
 }
 
 .version {
   margin: 0;
-}
-
-.coffee-button {
-  display: flex;
-  align-items: center;
-}
-
-.coffee-link {
-  color: var(--bone-dim);
-  font-size: 11px;
-  text-decoration: none;
-  opacity: 0.7;
-  transition: color 140ms ease, opacity 140ms ease;
-}
-
-.coffee-link:hover,
-.coffee-link:focus-visible {
-  color: var(--p1);
-  opacity: 1;
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 @keyframes ghost-bob {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildWorker } from '../scripts/pwa/worker';
 
 const template = readFileSync(new URL('../scripts/pwa/sw.js', import.meta.url), 'utf8');
-const names = ['index.html', 'stats/index.html', 'assets/index-Ab12.js', 'manifest.webmanifest'];
+const names = ['index.html', 'stats/index.html', 'privacy/index.html', 'assets/index-Ab12.js', 'manifest.webmanifest'];
 const content = (suffix = ''): Record<string, string> => Object.fromEntries(names.map((name) => [name, `content of ${name}${suffix}`]));
 const files = content();
 
