@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
  * The window sizes the stylesheets change layout at. A narrow window is `max-width: N`, a wide one `min-width: N + 1`, so
  * every pixel belongs to exactly one side; the same goes for heights. A new size belongs in this list on purpose.
  */
-const WIDTHS = [380, 460, 520, 560, 640, 700, 720, 760, 900, 1000, 1100];
+const WIDTHS = [380, 460, 520, 560, 640, 720, 760, 900, 1000, 1100];
 const HEIGHTS = [620, 740, 780, 800, 820, 860, 960, 1000];
 
 const root = fileURLToPath(new URL('../src', import.meta.url));

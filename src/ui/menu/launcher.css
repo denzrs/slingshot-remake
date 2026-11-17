@@ -304,6 +304,7 @@
 }
 
 .launcher__foot {
+  position: relative;
   flex: 0 0 auto;
   min-height: var(--menu-footer-height);
   display: flex;
@@ -372,42 +373,51 @@
   font-size: 9px;
 }
 
-/* The version tag and the credits line each sit in a slot whose column animates between 0fr and 1fr,
- * so the footer grows by the credits' width and the language picker is eased aside instead of jumping. */
+/* The credits line over the version tag and the privacy link, centred in the footer. On a phone only the tag and the link
+ * are shown (see the rules below). */
 .credits {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
+  gap: 4px;
   cursor: default;
   outline: none;
 }
 
-.credits__slot {
-  display: grid;
-  transition: grid-template-columns 320ms cubic-bezier(0.4, 0, 0.2, 1);
+.credits__foot {
+  display: flex;
+  align-items: center;
 }
 
-.credits__slot--tag { grid-template-columns: 1fr; }
-.credits__slot--line { grid-template-columns: 0fr; }
+.credits__slot { display: grid; }
 
 .credits__tag,
-.credits__line {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  transition: opacity 260ms ease;
-}
+.credits__line { min-width: 0; white-space: nowrap; }
 
 .credits__line {
-  text-align: right;
+  text-align: center;
   line-height: 1.7;
-  opacity: 0;
 }
 
-.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__slot--tag { grid-template-columns: 0fr; }
-.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__slot--line { grid-template-columns: 1fr; }
-.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__tag { opacity: 0; }
-.credits:is(:hover, :focus-visible, :has(a:focus-visible)) .credits__line { opacity: 1; }
+.credits__sep { margin-inline: 0.7em; opacity: 0.6; }
+
+.launcher__privacy {
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 140ms ease;
+}
+
+.launcher__privacy:hover,
+.launcher__privacy:focus-visible {
+  color: var(--sodium);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 
 .credits__line a {
   color: var(--bone);
@@ -422,17 +432,21 @@
   text-underline-offset: 3px;
 }
 
-.credits__agents { display: block; color: var(--bone-dim); }
+@media (max-width: 760px) {
+  /* No room for the credits line: the version tag and the privacy link stand at the footer's right beside the language. The
+   * wrappers dissolve so that both are the footer's own items. */
+  .launcher__foot .title-foot,
+  .credits { display: contents; }
+  .credits__foot { margin-left: auto; }
+  .credits__slot--line { display: none; }
+  .credits__sep { margin-inline: 0.4em; }
+}
 
 .heart-icon {
   width: 1em;
   height: 1em;
   vertical-align: -0.15em;
   fill: var(--danger);
-}
-
-@media (max-width: 700px) {
-  .credits__agents { display: none; }
 }
 
 .briefing__cards {
@@ -899,7 +913,7 @@
   .launcher__online .item__hint { font-size: 11.5px; }
   .launcher__modes .item--card { padding: 12px; }
   .launcher__modes .item__title { font-size: 24px; }
-  .launcher__foot { margin-top: auto; padding-top: 16px; gap: 10px 16px; }
+  .launcher__foot { margin-top: auto; padding-top: 16px; gap: 10px; }
   .launcher__foot .keys { display: none; }
   .launcher__language { margin-left: 0; width: auto; }
   .launcher__language .item { width: auto; justify-content: flex-start; padding-left: 0; }
