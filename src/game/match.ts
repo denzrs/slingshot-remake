@@ -1626,7 +1626,8 @@ export abstract class Match {
       }
       case 'shotdown': {
         const d = volley.world.defenses[end.defense];
-        const points = d ? interceptPoints(end.chance) * this.payFactor : 0;
+        // The daily's flak belongs to a target: its shoot-downs are no points for anyone, and none to show the pilot.
+        const points = d && this.mode !== 'challenge' ? interceptPoints(end.chance) * this.payFactor : 0;
         this.emit({ type: 'shotdown', player, x: e.x, y: e.y, vx: e.vx, vy: e.vy, points });
         if (d && live) {
           this.record((book) => bump(book.intercepts, d.owner));
