@@ -63,6 +63,7 @@ import { clearFade, fadeOverShips } from './ui/touch/ship-cover';
 import { gameOverScreen, pauseScreen, skipVoteScreen, titleScreen, type App } from './ui/screens';
 import { statsAvailable, statsScreen } from './ui/stats/stats';
 import { isPrivacyPath, privacyScreen } from './ui/screens/privacy';
+import { isTermsPath, termsScreen } from './ui/screens/terms';
 import { reportLocalGame, trackLocalGame } from './net/localStats';
 import { netMatch } from './net/netMatch';
 import type { MenuPages } from './ui/menu/menu';
@@ -1394,6 +1395,7 @@ async function boot(): Promise<void> {
     app.toTitle();
     // The statistics page has no menu entry: it is at /stats.
     if (isPrivacyPath(location.pathname)) menu.push(() => privacyScreen(app));
+    else if (isTermsPath(location.pathname)) menu.push(() => termsScreen(app));
     else if (statsAvailable() && /\/stats\/?$/.test(location.pathname)) requireOnline(app, () => menu.push(() => statsScreen(app)));
     else if (forcedDay) {
       if (new URLSearchParams(location.search).has('start')) {
@@ -1404,7 +1406,7 @@ async function boot(): Promise<void> {
     }
   }
   const onboardingPreview = import.meta.env.DEV && (requestedPreview === 'onboarding' || requestedPreview === 'onboarding-training');
-  const ordinaryStart = !requestedPreview && !forcedDay && !readInvite(location.search, location.hash) && !/\/stats\/?$/.test(location.pathname) && !isPrivacyPath(location.pathname);
+  const ordinaryStart = !requestedPreview && !forcedDay && !readInvite(location.search, location.hash) && !/\/stats\/?$/.test(location.pathname) && !isPrivacyPath(location.pathname) && !isTermsPath(location.pathname);
   if (onboardingPreview || (ordinaryStart && needsOnboarding() && !introSkipped(location.search))) {
     // The look is the player's from the moment it is chosen, so the settings (even opened from the tutorial's pause menu)
     // show and keep it. The preview in the dev build changes nothing that is saved.

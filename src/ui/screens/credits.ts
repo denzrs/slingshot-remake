@@ -2,9 +2,10 @@ import { t } from '../../platform/i18n';
 import { heartIcon } from '../dom';
 import { h } from '../menu/menu';
 import { privacyHref } from './privacy';
+import { termsHref } from './terms';
 
 /**
- * Who built the game over the version tag and the privacy link. On a phone the footer has no room for the first line.
+ * Who built the game over the version tag and the privacy and terms links. On a phone the footer has no room for the first line.
  */
 export function creditsBadge(): HTMLElement {
   const link = (user: string) => h('a', { href: `https://github.com/${user}`, target: '_blank', rel: 'noopener noreferrer' }, user);
@@ -20,6 +21,8 @@ export function creditsBadge(): HTMLElement {
       ),
       h('span.credits__sep', { 'aria-hidden': 'true' }, '·'),
       h('a.launcher__privacy', { href: privacyHref() }, t('privacy.link')),
+      h('span.credits__sep', { 'aria-hidden': 'true' }, '·'),
+      h('a.launcher__privacy', { href: termsHref() }, t('terms.link')),
     ),
   );
 }
