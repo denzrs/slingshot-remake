@@ -815,7 +815,8 @@ impl RoomManager {
 
     /// Whether what the connection does can change a tournament: it is in one, or in the room of one of its matches.
     pub(super) fn concerns_tournament(&self, conn: u64, room: Option<&str>) -> bool {
-        self.tournaments.of_conn.contains_key(&conn) || room.is_some_and(|room| self.is_match_room(room))
+        self.tournaments.of_conn.contains_key(&conn)
+            || room.is_some_and(|room| self.is_match_room(room))
     }
 
     /// Whether the connection's room is a tournament match, whose setup nobody changes.
@@ -877,7 +878,9 @@ impl RoomManager {
                         message.insert("teams".into(), teams());
                     } else if let (Some(team), Some(entries)) = (
                         person.team,
-                        message.get_mut("teams").and_then(|t| t["at"].as_array_mut()),
+                        message
+                            .get_mut("teams")
+                            .and_then(|t| t["at"].as_array_mut()),
                     ) {
                         for entry in entries.iter_mut().filter(|e| e["i"] == json!(team)) {
                             entry["v"]["code"] = json!(tournament.teams[team].code);

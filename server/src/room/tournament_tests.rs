@@ -739,12 +739,15 @@ fn an_update_sends_what_changed_and_nothing_when_nothing_did() {
     );
     let patch = last(&sent, "tournament_patch").expect("what changed");
     let fields = patch.as_object().unwrap();
-    assert!(fields.contains_key("teams") && fields.contains_key("people") && fields.contains_key("you"));
+    assert!(
+        fields.contains_key("teams") && fields.contains_key("people") && fields.contains_key("you")
+    );
     assert!(!fields.contains_key("settings") && !fields.contains_key("bracket"));
     // A connection told anew is sent all of it.
     table.drain_all();
     table.rooms.forget_sync(0);
     table.rooms.broadcast_tournament(&table.code.clone());
-    let whole = last(&drain(&mut table.rx[0]), "tournament").expect("a connection told anew gets all of it");
+    let whole = last(&drain(&mut table.rx[0]), "tournament")
+        .expect("a connection told anew gets all of it");
     assert!(whole["settings"].is_object() && whole["you"].is_object());
 }
