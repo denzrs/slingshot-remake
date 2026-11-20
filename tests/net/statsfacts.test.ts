@@ -10,26 +10,26 @@ describe('facts for the menu', () => {
     expect(factText({ id: 'rounds', values: [70.75, 161.1] })).toBe('An average round takes 1:11, the longest 2:41.');
     expect(factText({ id: 'betWin', values: [250] })).toBe('Biggest bet win so far: +250 points.');
     expect(factText({ id: 'holeShots', values: [0.4] })).toContain('0.4%');
-    expect(factText({ id: 'plasmaShots', values: [4.2, 50] })).toBe('4.2% of all shots are plasma – 50% of those hit.');
+    expect(factText({ id: 'plasmaShots', values: [4.2, 50] })).toBe('4.2% of all shots are plasma, and 50% of those hit.');
     expect(factText({ id: 'shotsPerKill', values: [10.26] })).toBe('It takes 10.3 shots on average to destroy a ship.');
-    expect(factText({ id: 'topPlacement', values: [4, 12] })).toBe('The most-placed power-up is the teleport – 12 times so far.');
-    expect(factText({ id: 'weekTrend', values: [140, 112.5] })).toBe('Last 7 days: 140 rounds – 113% of the week before.');
+    expect(factText({ id: 'topPlacement', values: [4, 12] })).toBe('The most-placed power-up is the teleport, placed 12 times so far.');
+    expect(factText({ id: 'weekTrend', values: [140, 112.5] })).toBe('Last 7 days: 140 rounds, 113% of the week before.');
     expect(factText({ id: 'intercepts', values: [37.5] })).toBe('Planetary defenses bring down 38% of the shots they fire at.');
     expect(factText({ id: 'strayKills', values: [3] })).toBe('Defense missiles that lost their target have destroyed 3 ships.');
     expect(factText({ id: 'firstBlood', values: [61.2] })).toBe('Whoever draws first blood goes on to win the round 61% of the time.');
-    expect(factText({ id: 'bounties', values: [42, 875] })).toBe('42 leaders have been shot down for their bounty – the biggest paid 875 points.');
+    expect(factText({ id: 'bounties', values: [42, 875] })).toBe('42 leaders have been shot down for their bounty. The biggest paid 875 points.');
     expect(factText({ id: 'revenges', values: [8.4] })).toBe('8.4% of kills are revenge on the ship that shot the shooter down the round before.');
     expect(factText({ id: 'topBonus', values: [7, 12] })).toBe('Besides first blood, the extra paid most often is Domination: 12 times.');
     expect(factText({ id: 'topBonus', values: [99, 12] })).toBeNull();
-    expect(factText({ id: 'blastShots', values: [62.5, 18] })).toBe('With Time Fuse, 63% of shots burn down their fuse – 18% of those blasts take out a ship.');
+    expect(factText({ id: 'blastShots', values: [62.5, 18] })).toBe('With Time Fuse, 63% of shots burn down their fuse, and 18% of those blasts take out a ship.');
     expect(factText({ id: 'fusedShots', values: [7.25] })).toBe('With Fusion, 7.3% of shots melt into another one in flight.');
     expect(factText({ id: 'anomalyShare', values: [21] })).toBe('21% of all rounds are played with anomalies.');
     expect(factText({ id: 'topAnomaly', values: [1, 40] })).toBe('The most-played anomaly is Pinball: 40 rounds so far.');
     expect(factText({ id: 'topAnomaly', values: [99, 40] })).toBeNull();
-    expect(factText({ id: 'trickShotHits', values: [12, 30.4] })).toBe('With Trick Shots Only, 12% of shots hit – without anomalies, 30%.');
+    expect(factText({ id: 'trickShotHits', values: [12, 30.4] })).toBe('With Trick Shots Only, 12% of shots hit. Without anomalies, 30%.');
     expect(factText({ id: 'anomalyShotsPerKill', values: [6.25, 9] })).toBe('With anomalies it takes 6.3 shots to destroy a ship, without them 9.0.');
     expect(factText({ id: 'anomalyRoundLength', values: [95, 70] })).toBe('A round with anomalies takes 1:35 on average, one without 1:10.');
-    expect(factText({ id: 'planetsShattered', values: [42, 1.5] })).toBe('42 planets have broken apart under Unstable – 1.5 a round.');
+    expect(factText({ id: 'planetsShattered', values: [42, 1.5] })).toBe('42 planets have broken apart under Unstable, 1.5 a round.');
     expect(factText({ id: 'whiteHoleReturns', values: [17] })).toBe('White holes have sent shots back into the field 17 times.');
   });
 
@@ -39,7 +39,7 @@ describe('facts for the menu', () => {
     expect(factText({ id: 'selfHighHorizon', values: [0, 0] })).toBeNull();
     // A power-up this client does not know yet.
     expect(factText({ id: 'topPlacement', values: [99, 12] })).toBeNull();
-    expect(factText({ id: 'selfHighHorizon', values: [20, 4] })).toBe('In Event Horizon, 20% of shots at power 80 or more hit their own shooter – below that, only 4%.');
+    expect(factText({ id: 'selfHighHorizon', values: [20, 4] })).toBe('In Event Horizon, 20% of shots at power 80 or more hit their own shooter. Below that, only 4%.');
   });
 
   it('shuffles all the sentences and drops the unusable ones', () => {
