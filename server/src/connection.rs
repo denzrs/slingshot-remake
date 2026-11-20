@@ -26,6 +26,7 @@ use crate::leaderboard::Leaderboard;
 use crate::protocol::PROTOCOL_VERSION;
 use crate::room::RoomManager;
 use crate::router::deliver;
+use crate::wire::{CpuLevel, Wire};
 
 /// What every connection task shares with the relay: handed over once when it is spawned, rather
 /// than threaded through the accept loop as its own argument. Cloning it copies handles, not state.
@@ -136,7 +137,7 @@ where
         accept_with_negotiation(stream, Some(config), &allowed_origins),
     )
     .await;
-    let (ws, browser, protocol) = match handshake {
+    let (ws, browser, protocol, bot) = match handshake {
         Ok(Ok(accepted)) => accepted,
         Ok(Err(error)) => {
             warn!(%error, "websocket handshake rejected");
@@ -178,6 +179,9 @@ where
         manager.connect(conn_id, client, tx.clone(), slow_tx);
         if let Some(browser) = browser {
             manager.set_browser(conn_id, browser);
+        }
+        if let Some(level) = bot {
+            manager.mark_bot(conn_id, level);
         }
         manager.relay_slot(conn_id).unwrap_or_default()
     };
@@ -291,18 +295,28 @@ async fn accept_with_negotiation<S>(
     stream: S,
     config: Option<WebSocketConfig>,
     allowed_origins: &[String],
-) -> Result<(WebSocketStream<S>, Option<BrowserId>, Option<u32>), WsError>
+) -> Result<
+    (
+        WebSocketStream<S>,
+        Option<BrowserId>,
+        Option<u32>,
+        Option<CpuLevel>,
+    ),
+    WsError,
+>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let origins: Vec<String> = allowed_origins.to_vec();
     let mut browser = None;
     let mut protocol = None;
+    let mut bot = None;
     let ws = accept_hdr_async_with_config(
         stream,
         |request: &Request, response: Response| {
             browser = BrowserId::from_query(request.uri().query());
             protocol = client_protocol(request.uri().query());
+            bot = client_bot(request.uri().query());
             if !origins.is_empty() {
                 let origin = request
                     .headers()
@@ -324,7 +338,15 @@ where
         config,
     )
     .await?;
-    Ok((ws, browser, protocol))
+    Ok((ws, browser, protocol, bot))
+}
+
+/// The CPU level a dev build's pretend player asks to be played at (`?bot=` on its address); see `RoomManager::with_bots`.
+fn client_bot(query: Option<&str>) -> Option<CpuLevel> {
+    query?
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("bot="))
+        .and_then(CpuLevel::parse)
 }
 
 /// The close code of a client the relay turned away for being built for an older protocol (the 4000s are the application's own).

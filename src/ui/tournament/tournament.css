@@ -1,0 +1,828 @@
+/* The tournament page: a bracket that grows with its teams, a side panel, and the call to your match. */
+.menu-page--tournament,
+.t-editor-backdrop {
+  --t-gold: #ffad65;
+  --t-cyan: #6fe3c8;
+  --t-line: rgb(91 125 179 / 0.4);
+  --t-card: rgb(9 21 39 / 0.86);
+  --t-live: #ff5a6e;
+}
+
+.menu-page--tournament .menu-page__body {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.t-main { display: grid; gap: 18px; min-width: 0; }
+
+.t-label {
+  margin: 0;
+  font: 11px/1.4 var(--font-mono);
+  color: var(--bone-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.t-hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--bone-dim); }
+
+.t-status { margin: 0; font-size: 13px; color: var(--sodium); }
+
+/* ————— Head: title, the call to your match, the code ————— */
+
+.t-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+}
+
+.t-head__phase {
+  max-width: 34ch;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--bone-dim);
+  text-align: center;
+}
+
+/* The call to your match: a band across the page, the pairing in the middle, and only the way in glowing. */
+.t-callout {
+  grid-column: 1 / -1;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px 22px;
+  padding: 14px 16px 14px 20px;
+  border: 1px solid rgb(255 173 101 / 0.55);
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, rgb(255 173 101 / 0.16), rgb(255 173 101 / 0.04) 45%, transparent),
+    rgb(9 21 39 / 0.9);
+  overflow: hidden;
+  animation: t-pop 260ms ease-out;
+}
+
+.t-callout::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--t-gold);
+}
+
+.t-callout__pulse {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--t-gold);
+}
+
+.t-callout__pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--t-gold);
+  animation: t-ping 1.6s ease-out infinite;
+}
+
+.t-callout__text { display: grid; gap: 4px; min-width: 0; }
+
+.t-callout__eyebrow {
+  font: 11px/1.2 var(--font-mono);
+  color: var(--t-gold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.t-callout__title {
+  font: 26px/1 var(--font-display);
+  letter-spacing: 0.03em;
+  color: var(--bone);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.t-callout__versus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.t-callout__team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font: 18px/1 var(--font-display);
+  letter-spacing: 0.03em;
+  color: var(--bone-dim);
+  text-transform: uppercase;
+}
+
+.t-callout__team.is-mine { color: var(--bone); }
+.t-callout__team .t-badge-icon { flex: none; width: 26px; height: 26px; }
+.t-callout__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.t-callout__vs {
+  font: 11px/1 var(--font-mono);
+  color: var(--bone-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.t-callout__go { animation: t-glow 1.8s ease-in-out infinite; white-space: nowrap; }
+
+@keyframes t-ping { to { transform: scale(2.6); opacity: 0; } }
+
+@media (max-width: 760px) {
+  .t-callout { grid-template-columns: auto minmax(0, 1fr); padding-left: 16px; }
+  .t-callout__versus { grid-column: 1 / -1; justify-content: flex-start; }
+  .t-callout__go { grid-column: 1 / -1; }
+  .t-callout__title { font-size: 22px; white-space: normal; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-callout, .t-callout__go, .t-callout__pulse::after { animation: none; }
+}
+
+@keyframes t-glow {
+  50% { box-shadow: 0 0 0 1px rgb(255 173 101 / 0.4), 0 0 40px rgb(255 173 101 / 0.55); }
+}
+
+/* ————— Body: the bracket and the side panel ————— */
+
+.t-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
+  align-items: start;
+}
+
+.t-bracket {
+  overflow-x: auto;
+  /* Room for a glowing card's light, which the scroll box would cut off. */
+  margin: -14px -14px -6px;
+  padding: 18px 18px 16px;
+}
+
+.tb {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--levels), minmax(200px, 230px));
+  gap: 0 40px;
+  min-width: max-content;
+}
+
+.tb-lines {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tb-lines path {
+  fill: none;
+  stroke: var(--t-line);
+  stroke-width: 1.6;
+}
+
+.tb-lines path.is-won {
+  stroke: var(--t-gold);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 4px rgb(255 173 101 / 0.6));
+}
+
+.tb-level {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tb-head {
+  display: grid;
+  gap: 3px;
+  min-height: 42px;
+}
+
+.tb-head__stage {
+  margin: 0;
+  font: 13px/1.2 var(--font-mono);
+  color: var(--t-gold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.tb-head__game {
+  justify-self: stretch;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 10.5px/1.4 var(--font-mono);
+  color: var(--bone-dim);
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.tb-head__game.is-editable {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px 4px 5px;
+  border: 1px dashed rgb(255 173 101 / 0.45);
+  border-radius: 3px;
+  color: var(--bone);
+  cursor: pointer;
+}
+
+.tb-head__game.is-editable:hover { border-style: solid; color: var(--t-gold); }
+/* Everybody else opens the level's dialog to look: a quiet frame that lights up on hover. */
+.tb-head__game:not(.is-editable) {
+  padding: 4px 7px 4px 5px;
+  border: 1px solid rgb(91 125 179 / 0.28);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.tb-head__game:not(.is-editable):hover { border-color: var(--bone-dim); }
+.tb-head__edit { color: var(--t-gold); }
+
+.tb-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.tb-cell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 7px 0;
+}
+
+.tb-match {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  width: 100%;
+  border: 1px solid var(--t-line);
+  border-radius: 5px;
+  background: var(--t-card);
+  transition: border-color 200ms, box-shadow 200ms;
+}
+
+.tb-match__letter {
+  display: grid;
+  place-items: center;
+  border-right: 1px solid var(--t-line);
+  font: 10px/1 var(--font-mono);
+  color: var(--bone-dim);
+}
+
+.tb-match__rows { display: grid; min-width: 0; }
+.tb-match__rows > :first-child { border-bottom: 1px solid rgb(91 125 179 / 0.25); }
+
+.tb-match.is-mine { border-color: var(--t-gold); }
+.tb-match.is-playing { border-color: rgb(111 227 200 / 0.7); box-shadow: 0 0 14px rgb(111 227 200 / 0.18); }
+/* The band above the bracket calls you to the match; the card only shows which one it is, with a light the scroll box has room for. */
+.tb-match.is-mine.is-ready { box-shadow: 0 0 0 1px rgb(255 173 101 / 0.35), 0 0 12px rgb(255 173 101 / 0.3); }
+.tb-match.is-bye { opacity: 0.6; }
+
+.tb-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  background: none;
+  color: var(--bone);
+  font: 15px/1.1 var(--font-display);
+  letter-spacing: 0.03em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+button.tb-row { cursor: pointer; }
+button.tb-row:hover { background: rgb(255 255 255 / 0.04); }
+
+.tb-row__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tb-row__score {
+  font: 13px/1 var(--font-mono);
+  color: var(--bone-dim);
+}
+
+.tb-row__lock { display: inline-flex; color: var(--bone-dim); }
+.tb-row__lock .lock-icon, .tb-create__lock .lock-icon { width: 14px; height: 14px; margin: 0; vertical-align: middle; }
+
+.tb-row.is-winner { background: linear-gradient(90deg, rgb(255 173 101 / 0.16), transparent); color: var(--t-gold); }
+.tb-row.is-winner .tb-row__score { color: var(--t-gold); }
+.tb-row.is-loser { color: var(--bone-dim); }
+.tb-row.is-loser .t-badge-icon { opacity: 0.5; }
+.tb-row.is-mine .tb-row__name { text-decoration: underline 1px rgb(255 173 101 / 0.6); text-underline-offset: 3px; }
+.tb-row.is-selected { background: rgb(111 227 200 / 0.1); }
+.tb-row.is-withdrawn { opacity: 0.4; text-decoration: line-through; }
+.tb-row.is-new { animation: t-pop 420ms cubic-bezier(.2, 1.4, .4, 1); }
+
+.tb-row--empty { grid-template-columns: 22px minmax(0, 1fr); color: rgb(154 166 189 / 0.55); }
+
+.tb-row--free {
+  grid-template-columns: 22px minmax(0, 1fr);
+  color: var(--t-cyan);
+  font: 12px/1 var(--font-mono);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.tb-row__plus {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px dashed currentcolor;
+  border-radius: 50%;
+  font: 14px/1 var(--font-mono);
+}
+
+.tb-row--free:hover { background: rgb(111 227 200 / 0.08); }
+
+.tb-create {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 4px;
+  padding: 3px 4px;
+}
+
+.tb-create input {
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--t-cyan);
+  border-radius: 3px;
+  background: rgb(5 13 26 / 0.9);
+  color: var(--bone);
+  font: 13px/1.2 var(--font-body);
+}
+
+.tb-create button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--t-line);
+  border-radius: 3px;
+  background: rgb(17 35 59 / 0.9);
+  color: var(--bone);
+  cursor: pointer;
+}
+
+.tb-create .tb-create__ok { border-color: var(--t-cyan); color: var(--t-cyan); }
+.tb-create .tb-create__lock[aria-pressed='true'] { border-color: var(--t-gold); }
+
+.tb-match__actions {
+  position: absolute;
+  top: -10px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+}
+
+.tb-match__actions--below { top: auto; bottom: -10px; }
+
+.tb-flag,
+.tb-pill {
+  padding: 2px 7px;
+  border: 1px solid currentcolor;
+  border-radius: 3px;
+  background: rgb(9 21 39 / 0.95);
+  font: 9.5px/1.3 var(--font-mono);
+  color: var(--bone-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.tb-flag--live { color: var(--t-live); }
+.tb-flag--live::before { content: '● '; animation: t-blink 1.6s ease-in-out var(--blink-delay, 0ms) infinite; }
+
+button.tb-pill { cursor: pointer; }
+.tb-pill--watch { color: var(--t-cyan); background: rgb(14 40 44 / 0.95); }
+.tb-pill--ready { color: #1a1206; background: var(--t-gold); border-color: var(--t-gold); }
+.tb-pill--skip { color: var(--sodium); }
+
+@keyframes t-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+@keyframes t-pop { from { opacity: 0; transform: translateX(-10px) scale(0.96); } }
+
+/* A team's symbol in its colour. */
+.t-badge-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--team);
+  flex: 0 0 auto;
+}
+
+.t-badge-icon svg { width: 100%; height: 100%; }
+
+/* ————— Side panel ————— */
+.is-withdrawn { opacity: 0.45; }
+
+.t-setting {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--t-line);
+  border-radius: 4px;
+  background: rgb(17 35 59 / 0.5);
+  color: var(--bone);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.t-setting--stage { grid-template-columns: minmax(0, 1fr) auto; }
+.t-setting--stage strong { font: 11px/1.3 var(--font-mono); color: var(--t-gold); text-transform: uppercase; letter-spacing: 0.08em; }
+.t-setting--stage > .ts-sum { grid-column: 1; }
+button.t-setting { cursor: pointer; text-align: left; }
+button.t-setting:not(.is-editable):hover { border-color: var(--bone-dim); }
+button.t-setting.is-editable:hover { border-color: var(--t-gold); }
+
+/* ————— Entry: make one or come in ————— */
+
+.t-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.t-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--t-line);
+  border-radius: 6px;
+  background: rgb(9 21 39 / 0.8);
+}
+
+.t-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+
+.t-tile {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 12px 8px;
+  border: 1px solid var(--t-line);
+  border-radius: 5px;
+  background: rgb(17 35 59 / 0.55);
+  color: var(--bone);
+  cursor: pointer;
+  transition: border-color 160ms, transform 160ms;
+}
+
+.t-tile strong { font: 20px/1.1 var(--font-display); text-transform: uppercase; }
+.t-tile > span:last-child { font-size: 11px; color: var(--bone-dim); }
+.t-tile__art { font: 14px/1 var(--font-mono); letter-spacing: 0.1em; color: var(--t-cyan); }
+.t-tile:hover { transform: translateY(-2px); border-color: var(--bone-dim); }
+.t-tile.is-on { border-color: var(--t-gold); background: linear-gradient(160deg, rgb(255 173 101 / 0.12), rgb(9 21 39 / 0.9) 70%); }
+.t-tile.is-on strong { color: var(--t-gold); }
+
+/* ————— The editor for a level's game ————— */
+
+.t-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(2 8 18 / 0.72);
+}
+
+.t-editor-backdrop[hidden] { display: none; }
+/* The level's dialog sits in the middle of the screen; when it is taller than the screen it starts at the top and scrolls. */
+.t-editor-backdrop:has(> .t-editor--briefing) { place-items: safe center; overflow-y: auto; }
+
+.t-editor {
+  display: grid;
+  gap: 10px;
+  width: min(760px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 20px 22px;
+  border: 1px solid rgb(255 173 101 / 0.5);
+  border-radius: 8px;
+  background: #0b1a33;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.5), 0 0 30px rgb(255 173 101 / 0.12);
+}
+
+.t-editor__head { display: flex; align-items: center; justify-content: space-between; }
+
+.t-editor__title {
+  margin: 0;
+  font: 26px/1.1 var(--font-display);
+  text-transform: uppercase;
+  color: var(--bone);
+}
+
+.t-editor__close { width: 34px; padding: 4px; font-size: 18px; }
+
+/* The level's game, set up like a mode's own page: the modes as a row of names, the preset cards, then the quick settings. */
+.t-editor--briefing {
+  gap: 18px;
+  width: min(1180px, 100%);
+  padding: 26px 30px 22px;
+  border-color: rgb(91 125 179 / 0.45);
+  background: linear-gradient(180deg, #0c1c36, #081428);
+}
+.t-editor--briefing .t-editor__head { align-items: flex-start; gap: 16px; }
+.t-editor__heading { display: grid; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.t-editor__eyebrow {
+  margin: 0;
+  color: var(--t-gold);
+  font: 700 12px/1.4 var(--font-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+/* The mode pager of a mode's page, a size smaller for the dialog. */
+.t-editor__pager { --page-title-size: clamp(34px, 4vw, 52px); min-width: 0; }
+.t-editor__pager .mode-pager__keys { margin-top: 4px; }
+/* A switch slides the heading and the cards in from the side it came from, as on a mode's page. */
+.t-editor--briefing[data-enter='next'] .mode-pager__viewport { animation: mode-header-enter-next 200ms cubic-bezier(.16, 1, .3, 1) both; }
+.t-editor--briefing[data-enter='previous'] .mode-pager__viewport { animation: mode-header-enter-previous 200ms cubic-bezier(.16, 1, .3, 1) both; }
+.t-editor--briefing[data-enter] .mode-pager__item--active { animation: mode-title-flare 300ms ease-out both; }
+.t-editor--briefing[data-enter=''] .mode-pager__item--active { animation: none; }
+.t-editor--briefing[data-enter='next'] .briefing__cards > :is(.item, .briefing__preset-shell) { animation: preset-enter-next 220ms cubic-bezier(.2, .7, .2, 1) 25ms both; }
+.t-editor--briefing[data-enter='previous'] .briefing__cards > :is(.item, .briefing__preset-shell) { animation: preset-enter-previous 220ms cubic-bezier(.2, .7, .2, 1) 25ms both; }
+@media (prefers-reduced-motion: reduce) {
+  .t-editor--briefing .mode-pager__viewport,
+  .t-editor--briefing .mode-pager__item--active,
+  .t-editor--briefing .briefing__cards > * { animation: none !important; }
+}
+.t-editor__body { display: grid; gap: 14px; min-width: 0; }
+/*
+ * One row that keeps its height whatever the rules: the sliders, the power-ups, and in the last column Mayhem's strength at the
+ * top and the anomalies at the bottom, each there only while it plays. Nothing below moves when a card turns them on or off.
+ */
+.t-editor__body .briefing__quick { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: minmax(150px, auto) auto; gap: 12px; }
+.t-editor__body .briefing__mayhem { grid-column: 4; grid-row: 1; align-self: start; }
+.t-editor__body .briefing__anomalies { grid-column: 4; grid-row: 1; align-self: end; }
+.t-editor__body .briefing__quick:not(:has(.briefing__mayhem > .item:not([hidden]))) .briefing__anomalies { align-self: start; padding-top: 9px; }
+.t-editor__body .briefing__switches { grid-row: 2; }
+
+.t-editor__foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.t-editor--briefing .t-editor__foot { margin-top: 0; padding-top: 16px; border-top: 1px solid var(--t-line); }
+
+/*
+ * A level's game in a block as wide as the bracket's column, in its head and the side panel: the mode and the preset, and a line
+ * with the rounds, the shot clock and a dot per power-up and per anomaly.
+ */
+.ts-sum { display: grid; gap: 3px; width: 100%; min-width: 0; text-align: left; }
+.ts-sum__name { display: grid; gap: 1px; min-width: 0; font-family: var(--font-mono); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.ts-sum__name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ts-sum__mode { color: var(--bone-dim); font-size: 10px; letter-spacing: 0.06em; }
+.ts-sum__preset { color: var(--bone); font-size: 12.5px; }
+.ts-sum__icon { width: 12px; height: 12px; margin-right: 2px; align-self: center; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.ts-sum__facts { display: flex; flex-wrap: nowrap; overflow: hidden; align-items: center; gap: 10px; color: var(--bone-dim); font: 11px/1.3 var(--font-mono); }
+.ts-sum__fact { display: inline-flex; align-items: baseline; gap: 1px; white-space: nowrap; }
+.ts-sum__fact b { color: var(--t-cyan); font-weight: 700; font-size: 12.5px; }
+.ts-sum__fact--power { align-items: center; gap: 1px; }
+.ts-sum__fact--anomaly { align-items: center; gap: 1px; color: #ff8d99; }
+/* One row of dots, however many are in play, so every level's block is as tall as the others. */
+.ts-sum__dots { display: inline-flex; flex-wrap: nowrap; gap: 2px; }
+.ts-sum__dot { display: block; flex: none; width: 5px; height: 5px; border-radius: 50%; box-shadow: 0 0 4px currentColor; }
+
+.t-confirm { width: min(460px, 100%); }
+.t-confirm__text { margin: 0; font-size: 14px; line-height: 1.6; color: var(--bone-dim); }
+.lobby__button.t-confirm__danger { border-color: var(--danger); background: var(--danger); color: #1a0508; }
+
+/* The menu card: under the three online cards, as wide as all of them, in the daily challenge's style. */
+.launcher__tournament {
+  grid-column: 1;
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 14px;
+}
+
+.launcher__tournament[hidden] { display: none; }
+
+.launcher__tournament .item--card {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr);
+  grid-template-areas: 'art title' 'art hint';
+  gap: 3px 14px;
+  padding: 10px 16px;
+  border: 1px solid rgb(91 125 179 / 0.3);
+  border-radius: 4px;
+  background: rgb(17 35 59 / 0.65);
+  text-align: left;
+}
+
+.launcher__tournament .item__icon { grid-area: art; width: 60px; height: 42px; margin: 0; }
+.launcher__tournament .item__title { grid-area: title; font-size: 19px; letter-spacing: 0.025em; }
+.launcher__tournament .item__hint { grid-area: hint; font-size: 10.5px; line-height: 1.5; }
+
+/* A medium window keeps the panel beside the bracket: the cards narrow instead. */
+@media (max-width: 1100px) {
+  .t-body { grid-template-columns: minmax(0, 1fr) 240px; gap: 14px; }
+  .tb { grid-template-columns: repeat(var(--levels), minmax(160px, 180px)); gap: 0 30px; }
+  .tb-row { font-size: 14px; gap: 6px; padding: 0 8px 0 6px; }
+}
+
+@media (max-width: 1000px) {
+  .t-body { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 760px) {
+  .t-head { grid-template-columns: minmax(0, 1fr); }
+  .t-head__phase { text-align: left; }
+  .t-entry { grid-template-columns: minmax(0, 1fr); }
+  .t-editor--briefing { padding: 18px 16px; }
+  .t-editor__body .briefing__quick { grid-template-columns: minmax(0, 1fr); }
+  .t-editor__body .briefing__quick { grid-template-rows: none; }
+  .t-editor__body :is(.briefing__mayhem, .briefing__anomalies, .briefing__switches) { grid-column: 1; grid-row: auto; align-self: auto; }
+}
+.t-head__phase[hidden], .t-confirm__text[hidden] { display: none; }
+.t-entry { grid-template-columns: minmax(0, 1fr); }
+
+/* A place the bracket may grow into: faint until a team takes it. */
+.tb-match.is-ghost { opacity: 0.4; transition: opacity 160ms; }
+.tb-match.is-ghost:hover, .tb-match.is-ghost:focus-within { opacity: 1; }
+.tb-lines path.is-ghost { opacity: 0.35; }
+.t-body--bare { grid-template-columns: minmax(0, 1fr); }
+
+/* The pilot's card and the tournament's, side by side as in an online room. */
+.t-bar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 12px; }
+.t-bar > .online-identity { flex: 0 1 auto; margin: 0; box-sizing: border-box; min-height: 58px; padding: 8px 16px; align-items: center; }
+.t-bar .online-profile__avatar { width: 34px; height: 34px; }
+.t-bar .online-profile__avatar svg { width: 19px; height: 19px; }
+.t-bar .online-profile > summary { gap: 12px; min-height: 34px; }
+.t-bar .online-profile__label { display: none; }
+.t-bar .online-profile__name { font-size: 16px; }
+.t-bar .online-profile__edit { display: inline-flex; align-items: center; min-height: 34px; box-sizing: border-box; padding-block: 0; }
+.t-bar .online-connection { align-items: center; }
+.t-bar .online-connection__status { min-height: 0; }
+.t-bar > .room-info { flex: 1 1 420px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0; box-sizing: border-box; min-height: 58px; padding: 10px 16px; border: 1px solid var(--menu-line); border-radius: 3px; background: rgb(13 29 50 / .55); }
+.t-bar .room-info__symbol { display: grid; place-items: center; width: 34px; height: 34px; }
+.t-bar .room-info__symbol svg { width: 30px; height: 30px; }
+.t-bar .room-info__share { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.t-bar .room-info__code { display: inline-flex; align-items: baseline; gap: 12px; }
+.t-bar .room-info .lobby__code-value { font-size: 20px; }
+.t-bar .room-info .lobby__icon-button { width: 34px; height: 34px; min-height: 0; }
+.t-bar__facts { margin-left: auto; color: var(--bone-dim); font: 12px/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.t-bar .room-info__symbol svg { color: var(--t-gold); }
+
+.tb-row__crown { width: 20px; height: 20px; flex: none; color: var(--t-gold); filter: drop-shadow(0 0 6px rgb(255 173 101 / .5)); }
+.tb-match--add .tb-row { min-height: 40px; }
+
+.t-bar > .online-identity { flex-wrap: nowrap; gap: 8px 24px; }
+.t-bar .online-profile { flex: 0 1 auto; }
+.t-bar > .room-info { flex: 1 1 360px; }
+.tb-match--add { grid-template-columns: minmax(0, 1fr); }
+
+/* The place for one more team hangs below the first level, out of the column's flow, so the later levels stay centred between their matches. */
+.tb--growing { padding-bottom: 72px; }
+.tb--growing .tb-col { position: relative; }
+.tb--growing .tb-cell--add { position: absolute; top: 100%; left: 0; right: 0; flex: none; padding: 0; }
+
+/* Removing a team: red when pointed at, and after the first click red and pulsing: one more click removes it. */
+.lobby__button.t-remove:is(:hover, :focus-visible) { border-color: var(--danger); color: var(--danger); }
+.lobby__button.t-remove.is-confirming {
+  border-color: var(--danger);
+  background: rgb(255 90 110 / .16);
+  color: #ffb3bd;
+  animation: t-remove-pulse 1s ease-in-out 1;
+}
+@keyframes t-remove-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(255 90 110 / 0); transform: scale(1); }
+  50% { box-shadow: 0 0 0 4px rgb(255 90 110 / .3), 0 0 22px rgb(255 90 110 / .45); transform: scale(1.04); }
+}
+
+/* A message from the relay sits just above the buttons without taking room: nothing moves when it comes or goes. */
+.menu-page--tournament .menu-page__foot { position: relative; }
+.menu-page--tournament .menu-page__foot .t-status { position: absolute; right: 0; bottom: calc(100% + 10px); margin: 0; text-align: right; pointer-events: none; opacity: 0; transform: translateY(6px); transition: opacity 220ms ease, transform 220ms ease; }
+.menu-page--tournament .menu-page__foot .t-status.is-shown { opacity: 1; transform: none; }
+
+/* ————— Templates: a tournament's settings, kept to make the next one alike ————— */
+.t-entry--load { grid-template-columns: minmax(0, 1fr); }
+.t-templates { display: grid; gap: 10px; }
+.t-template {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--t-line);
+  border-radius: 5px;
+  background: rgb(17 35 59 / 0.45);
+}
+.t-template__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.t-template__name { font: 18px/1.15 var(--font-display); text-transform: uppercase; color: var(--bone); overflow-wrap: anywhere; min-width: 0; }
+.t-template__size { flex: none; font: 11px/1.3 var(--font-mono); color: var(--t-cyan); letter-spacing: 0.08em; }
+.t-template__levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 6px; }
+.t-template__actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.t-templates__foot { display: flex; justify-content: flex-start; }
+.t-confirm .lobby__field input { width: 100%; }
+
+/* A team's card: the room's look dialog with the room's seat cards, one column per seat of the team. */
+.t-teamcard {
+  width: min(max(460px, calc(var(--seats) * 200px + 32px)), 100%);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  gap: 16px;
+  padding: 18px 20px 20px;
+  border-color: color-mix(in srgb, var(--tone) 40%, rgb(91 125 179 / .28));
+  box-shadow: inset 0 3px var(--tone), 0 24px 60px rgb(0 0 0 / .45);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tone) 7%, #0d2036), #081426 70%);
+}
+.t-teamcard__head { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.t-teamcard__head > .t-badge-icon { flex: none; width: 44px; height: 44px; }
+.t-teamcard__title { display: grid; gap: 2px; flex: 1 1 auto; min-width: 0; }
+.t-teamcard__title .lock-icon { width: 12px; height: 12px; margin: 0 0 0 6px; vertical-align: -1px; }
+.t-teamcard__name { margin: 0; overflow: hidden; color: var(--bone); font: 800 30px/1 var(--font-display); text-transform: uppercase; text-overflow: ellipsis; white-space: nowrap; }
+.t-teamcard__head > .lobby__icon-button { align-self: flex-start; width: 36px; height: 36px; }
+.t-teamcard__code { margin: 0; font: 12px/1.4 var(--font-mono); color: var(--t-gold); }
+/* Symbol and colour as two labelled rows of small fixed buttons, so a wide card does not blow them up. */
+.t-teamcard__look { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 16px; padding-block: 12px; border-block: 1px solid var(--menu-line, rgb(91 125 179 / .2)); }
+.t-teamcard__look .room-pick { grid-template-columns: repeat(8, 36px); gap: 6px; }
+.menu-page .t-teamcard__seats { grid-template-columns: repeat(var(--seats), minmax(0, 1fr)); }
+.menu-page .t-teamcard__seats .slot-card { min-height: 190px; }
+.menu-page .t-teamcard__seats .slot-card.is-away { opacity: .55; }
+.menu-page .t-teamcard__seats .slot-card--empty .slot-card__waiting { margin-block: auto; }
+.t-teamcard__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.t-teamcard__actions input { flex: 1 1 10em; min-width: 0; }
+@media (max-width: 560px) {
+  .t-teamcard__look { grid-template-columns: minmax(0, 1fr); }
+  .t-teamcard__look .room-pick { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+  .menu-page .t-teamcard__seats { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+}
+
+/* ————— Phones: the pilot's card and the footer give their room back to the bracket ————— */
+
+@media (max-width: 760px) {
+  /* The pilot's name has a line of its own (as in an online room), the connection under it, the code card tight below. */
+  .t-main { gap: 10px; }
+  .t-head:not(:has(> :not([hidden]))) { display: none; }
+  .menu-page--tournament .menu-page__title { font-size: 30px; line-height: 1; }
+  .t-bar { gap: 8px; }
+  .t-bar > .online-identity { flex: 1 1 100%; flex-wrap: wrap; gap: 8px 12px; min-height: 0; padding: 4px 0; border: 0; border-bottom: 1px solid var(--menu-line); border-radius: 0; background: transparent; }
+  .t-bar .online-profile { flex: 1 1 100%; min-width: 0; }
+  .t-bar .online-profile > summary { width: 100%; }
+  .t-bar .online-profile__text { flex: 1; }
+  .t-bar .online-connection { flex: 1 1 100%; justify-content: space-between; }
+  .t-bar .online-connection .lobby__button { min-height: 36px; padding-block: 4px; }
+  .t-bar > .room-info { flex: 1 1 100%; min-height: 0; padding: 8px 12px; gap: 4px 12px; }
+  .t-bar__facts { margin-left: 0; font-size: 11px; }
+
+  /* A new team's name gets the whole width of its card; the three buttons sit under it, large enough to tap. */
+  .tb-create { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 6px; }
+  .tb-create input { grid-column: 1 / -1; min-height: 38px; box-sizing: border-box; font-size: 16px; }
+  .tb-create button { width: auto; height: 34px; }
+
+  /* The footer: Back, Leave and Save share one line, the main action fills the next. */
+  .menu-page--tournament .menu-page__actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .menu-page--tournament .menu-page__actions > :is(.lobby__button, .item):not(.lobby__button--primary):not(.item--primary) { min-width: 0; min-height: 44px; padding: 6px 8px; font-size: 13px; line-height: 1.2; white-space: normal; text-align: center; }
+  .menu-page--tournament .menu-page__actions > :is(.lobby__button--primary, .item--primary) { grid-column: 1 / -1; }
+  .menu-page--tournament .menu-page__actions > :is(.lobby__button, .item)[hidden] { display: none; }
+  .menu-page--tournament .menu-page__actions > .t-status, .menu-page--tournament .menu-page__actions > p { grid-column: 1 / -1; }
+}
+
+/* A phone on its side has the height of a letterbox: the title shrinks, the pilot and the code share a line, and the bracket gets what is left. */
+@media (max-height: 620px) and (orientation: landscape) {
+  .menu-page--tournament .menu-page__title { font-size: 22px; line-height: 1; margin-block: 0; }
+  .menu-page--tournament :is(.menu-page__eyebrow, .menu-page__kicker, .eyebrow) { display: none; }
+  .menu-page--tournament .t-main { gap: 8px; }
+  .menu-page--tournament .t-callout { padding-block: 8px; }
+  .menu-page--tournament .t-callout__title { font-size: 20px; }
+  .menu-page--tournament .t-bar > .online-identity { flex: 0 1 auto; padding-block: 2px; min-height: 40px; }
+  .menu-page--tournament .t-bar .online-profile__avatar { width: 28px; height: 28px; }
+  .menu-page--tournament .t-bar > .room-info { flex: 1 1 280px; min-height: 40px; padding-block: 2px; }
+}
+
+/* The three entry pages (create, load, join) have one card of the same height, so switching with Q/E does not make the page jump. */
+.t-entry > .t-card.t-entry__create, .menu-page--tournament .online-code { box-sizing: border-box; min-height: 206px; }
+.t-entry--load > .t-card.t-entry__create { align-content: start; }
+
+/* No templates yet: the page's usual empty box, with a bracket drawing above the line, and without the card around it. */
+.t-card:has(> .t-templates > .t-empty) { padding: 0; border: 0; background: none; box-shadow: none; }
+.t-card:has(> .t-templates > .t-empty) > .t-label { display: none; }
+.t-card:has(> .t-templates > .t-empty) > .t-templates { min-height: 206px; }
+.t-templates > .t-empty { align-content: center; gap: 14px; }
+.t-empty__art { width: clamp(150px, 16vw, 200px); color: var(--t-cyan); opacity: .75; }
+.t-empty__art svg { display: block; width: 100%; height: auto; }
+
+/* A template's actions: two square icon buttons as tall as the create button beside them; the bin turns red when pointed at. */
+.t-template__actions { align-items: stretch; gap: 10px; }
+.t-template__actions .lobby__icon-button { width: 48px; height: auto; min-height: 48px; padding: 0; display: grid; place-items: center; border-radius: 3px; }
+.t-template__actions .lobby__icon-button svg { width: 22px; height: 22px; }
+.t-template__actions .lobby__icon-button:nth-of-type(2):is(:hover, :focus-visible) { border-color: var(--danger); color: var(--danger); background: rgb(255 90 110 / .1); }
+.t-template__actions .lobby__icon-button:nth-of-type(1):is(:hover, :focus-visible) { border-color: var(--t-cyan); color: var(--t-cyan); }

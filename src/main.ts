@@ -47,8 +47,11 @@ import { mountTrainingGuide } from './ui/onboarding/training-guide';
 import { firstDuelSettings, Training } from './game/training';
 import { finishOnboarding, introSkipped, needsOnboarding } from './data/onboarding';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
+import { keepTournamentTicker, tournamentMenuHint, tournamentScreen, watchMatchCalls } from './ui/tournament';
 import { fromNavigator, Gamepads, pressMenuKey } from './ui/gamepad/gamepad';
 import { FAKE_PAD, fakePadOn, mountDevToggles } from './debug/dev-toggles';
+import { botAddress, readImpersonation, showImpersonationChip } from './debug/impersonate';
+import { keepTournamentTokenInTab, saveTournamentToken } from './data/tournamentToken';
 import { experimentsFrom } from './game/experiments';
 import { onPress } from './ui/touch/touch-controls';
 import { TouchPower } from './ui/touch/touch-power';
@@ -369,10 +372,18 @@ function multiplayer(): MultiplayerSession {
       match = null;
       screen = 'title';
       effects.clear();
+      // A tournament's match is over: back to its bracket, not to the room list.
+      if (session?.tournament) {
+        const page = tournamentScreen(app, multiplayer());
+        menu.open(() => page);
+        return;
+      }
       const lobby = lobbyScreen(app, multiplayer());
       menu.open(() => lobby);
     },
   });
+  watchMatchCalls(session, menu.sound);
+  keepTournamentTicker(session);
   const panel = new ChatPanel(document.querySelector<HTMLElement>('#chat')!, session, () => {
     if (overlay.querySelector('.menu-page--room')) return { kind: 'lobby' };
     if (screen === 'play' && session?.match && session.match === match && overlay.querySelector('.menu-page--results')) return { kind: 'results' };
@@ -547,6 +558,16 @@ const app: App = {
   get online() {
     return !!uiPreview || !!online();
   },
+  get tournamentMatch() {
+    return !!session?.room?.tournament;
+  },
+  openTournament() {
+    const page = tournamentScreen(app, multiplayer());
+    // From the title screen it is a page of the menu; from a room it takes the room's place.
+    if (menu.depth >= 1 && !multiplayer().room) menu.push(() => page);
+    else menu.open(() => page);
+  },
+  tournamentHint: () => tournamentMenuHint(session),
   openLobby(entry?: LobbyEntry) {
     const lobby = lobbyScreen(app, multiplayer(), entry);
     if (entry) menu.push(() => lobby);
@@ -561,6 +582,11 @@ const app: App = {
     match = null;
     screen = 'title';
     effects.clear();
+    if (session?.tournament) {
+      const page = tournamentScreen(app, multiplayer());
+      menu.open(() => page);
+      return;
+    }
     const lobby = lobbyScreen(app, multiplayer(), 'rooms');
     menu.open(() => lobby);
   },
@@ -1258,6 +1284,8 @@ if (import.meta.env.DEV) {
       },
     },
     experiments: () => (screen === 'play' && match ? match.experiments : []),
+    online: () => (session ? { relay: session.client.address, room: session.room, tournament: session.tournament } : null),
+    startTournament: () => session?.startTournament(),
   });
 }
 
@@ -1326,8 +1354,24 @@ async function boot(): Promise<void> {
     requestAnimationFrame(frame);
     return;
   }
+  // The dev build's view through a pretend player: this tab takes its seat and its tournament person over.
+  const impersonating = import.meta.env.DEV ? readImpersonation(location.search) : null;
+  if (impersonating) {
+    keepTournamentTokenInTab();
+    const address = botAddress(impersonating.relay, impersonating.level);
+    if (impersonating.tournament) saveTournamentToken({ token: impersonating.tournament, server: address, at: Date.now() });
+    showImpersonationChip(impersonating);
+    app.toTitle();
+    const online = multiplayer();
+    void online.connect(address).then(() => {
+      if (impersonating.seat) {
+        online.takeSeat(impersonating.seat);
+        app.openLobby();
+      } else app.openTournament();
+    });
+  }
   // An invite link opens the lobby by itself and joins the named room after connecting.
-  if (readInvite(location.search, location.hash)) app.openLobby();
+  else if (readInvite(location.search, location.hash)) app.openLobby();
   else {
     app.toTitle();
     // The statistics page has no menu entry: it is at /stats.

@@ -1,0 +1,248 @@
+/* The arena: the tournament as it is played, and a ticker of what happened. Heads and empty states are the room list's own. */
+.ta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  align-items: start;
+  gap: 22px;
+  min-width: 0;
+}
+.ta-main { display: grid; gap: 22px; min-width: 0; }
+.ta-section { display: grid; gap: 12px; min-width: 0; }
+.ta-head { min-width: 0; }
+.menu-page--lobby .ta .lobby__head { margin-bottom: 0; }
+
+/* A team named in a line: its symbol and its name in its colour. */
+.ta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: -0.3em;
+  color: color-mix(in srgb, var(--team) 55%, var(--bone));
+  font: 14px/1.1 var(--font-display);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.ta-chip .t-badge-icon { width: 16px; height: 16px; }
+.ta-chip__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ta-chip.is-mine .ta-chip__name { text-decoration: underline 1px rgb(255 173 101 / 0.6); text-underline-offset: 3px; }
+.ta-chip.is-winner { color: var(--t-gold); }
+.ta-chip.is-loser { color: var(--bone-dim); }
+.ta-chip.is-loser .t-badge-icon { opacity: 0.5; }
+.ta-chip.is-unknown { color: var(--bone-dim); }
+.ta-score { font: 600 13px/1 var(--font-mono); color: var(--bone); letter-spacing: 0.04em; white-space: nowrap; }
+
+/* Swiping between the bracket and the arena moves the page, not the cards above it: the pilot's and the tournament's bar and
+   the call to your match stay put, as the online pages keep their pilot card. */
+.menu-page--tournament.menu-page--lobby.menu-page--mode-enter-next .t-main > .lobby > .t-bar,
+.menu-page--tournament.menu-page--lobby.menu-page--mode-enter-previous .t-main > .lobby > .t-bar { animation: none; }
+.menu-page--tournament.menu-page--mode-enter-next .t-main > :is(.t-body, .ta) { animation: mode-body-enter-next 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
+.menu-page--tournament.menu-page--mode-enter-previous .t-main > :is(.t-body, .ta) { animation: mode-body-enter-previous 300ms cubic-bezier(.16, 1, .3, 1) 30ms both; }
+@media (prefers-reduced-motion: reduce) {
+  .menu-page--tournament.menu-page--mode-enter-next .t-main > :is(.t-body, .ta),
+  .menu-page--tournament.menu-page--mode-enter-previous .t-main > :is(.t-body, .ta) { animation: none; }
+}
+
+/* ————— A match being played ————— */
+.ta-live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 12px; }
+
+.ta-live {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px;
+  overflow: hidden;
+  border: 1px solid rgb(111 227 200 / 0.45);
+  border-radius: 6px;
+  background:
+    radial-gradient(120% 90% at 0% 50%, color-mix(in srgb, var(--a) 16%, transparent), transparent 60%),
+    radial-gradient(120% 90% at 100% 50%, color-mix(in srgb, var(--b) 16%, transparent), transparent 60%),
+    var(--t-card);
+  box-shadow: 0 0 18px rgb(111 227 200 / 0.12);
+}
+.ta-live.is-mine { border-color: var(--t-gold); box-shadow: 0 0 0 1px rgb(255 173 101 / 0.3), 0 0 20px rgb(255 173 101 / 0.2); }
+.ta-live.is-final { border-color: rgb(255 173 101 / 0.75); }
+
+.ta-live__head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ta-live__stage { font: 11px/1.3 var(--font-mono); color: var(--bone); text-transform: uppercase; letter-spacing: 0.1em; }
+.ta-live__mine { font: 11px/1.3 var(--font-mono); color: var(--t-gold); text-transform: uppercase; letter-spacing: 0.1em; }
+.ta-live__watching {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font: 12px/1 var(--font-mono);
+  color: var(--bone-dim);
+}
+.ta-eye { width: 15px; height: 15px; fill: none; stroke: currentcolor; stroke-width: 1.3; }
+
+/* The scoreboard: the two teams facing each other, their points between them. */
+.ta-live__board { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; }
+.ta-side {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ta-side--a { --team: var(--a); }
+.ta-side--b { --team: var(--b); grid-template-columns: auto minmax(0, 1fr) 34px; }
+.ta-side--b .t-badge-icon { order: 3; }
+.ta-side--b .ta-side__name { order: 2; text-align: right; }
+.ta-side--b .ta-side__score { order: 1; }
+.ta-side .t-badge-icon { width: 34px; height: 34px; }
+.ta-side__name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--bone);
+  font: 20px/1.05 var(--font-display);
+  letter-spacing: 0.03em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.ta-side.is-mine .ta-side__name { text-decoration: underline 1px rgb(255 173 101 / 0.6); text-underline-offset: 4px; }
+.ta-side__score {
+  min-width: 2ch;
+  font: 700 26px/1 var(--font-mono);
+  color: var(--bone-dim);
+  font-variant-numeric: tabular-nums;
+  transition: color 300ms, text-shadow 300ms;
+}
+.ta-side.is-ahead .ta-side__score { color: var(--bone); text-shadow: 0 0 14px color-mix(in srgb, var(--team) 60%, transparent); }
+.ta-live__vs { font: 11px/1 var(--font-mono); color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.1em; }
+
+/* Tug of war: the bar split where the points stand, each side in its team's colour. */
+.ta-tug {
+  display: flex;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.06);
+}
+.ta-tug__a, .ta-tug__b { height: 100%; transition: flex-basis 600ms cubic-bezier(.2, .8, .2, 1); }
+.ta-tug__a { flex: 0 0 var(--share); background: linear-gradient(90deg, color-mix(in srgb, var(--a) 40%, transparent), var(--a)); box-shadow: 0 0 10px var(--a); }
+.ta-tug__b { flex: 1 1 auto; margin-left: 2px; background: linear-gradient(270deg, color-mix(in srgb, var(--b) 40%, transparent), var(--b)); box-shadow: 0 0 10px var(--b); }
+
+.ta-live__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.ta-live__foot .tb-pill { padding: 5px 12px; font-size: 11px; }
+.ta-progress { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ta-progress__label { font: 11px/1.3 var(--font-mono); color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; }
+.ta-pips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ta-pip { width: 8px; height: 8px; border: 1px solid var(--t-line); border-radius: 2px; transform: rotate(45deg); }
+.ta-pip.is-played { border-color: var(--t-cyan); background: var(--t-cyan); }
+.ta-pip.is-now { border-color: var(--t-cyan); animation: t-blink 1.6s ease-in-out var(--blink-delay, 0ms) infinite; }
+
+/* ————— Lines: up next and results ————— */
+.ta-lines { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.ta-line {
+  display: grid;
+  grid-template-columns: 9ch minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 4px 12px;
+  border: 1px solid var(--t-line);
+  border-radius: 5px;
+  background: rgb(9 21 39 / 0.7);
+}
+.ta-line.is-mine { border-color: rgb(255 173 101 / 0.6); }
+.ta-line__stage { font: 11px/1.2 var(--font-mono); color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+.ta-line__pair { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ta-line__pair .ta-chip { flex: 0 1 auto; }
+.ta-line__vs { flex: none; font: 10px/1 var(--font-mono); color: var(--bone-dim); text-transform: uppercase; }
+.ta-line__end { display: inline-flex; align-items: center; gap: 10px; }
+.ta-line__note { font: 11px/1.2 var(--font-mono); color: var(--bone-dim); white-space: nowrap; }
+.ta-line__crown { display: inline-grid; width: 18px; height: 18px; color: var(--t-gold); }
+.ta-line__crown svg { width: 100%; height: 100%; }
+
+/* ————— The winner ————— */
+.ta-champion {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 22px;
+  border: 1px solid rgb(255 173 101 / 0.6);
+  border-radius: 6px;
+  background: linear-gradient(100deg, rgb(255 173 101 / 0.16), color-mix(in srgb, var(--team) 12%, rgb(9 21 39 / 0.9)) 70%);
+  box-shadow: 0 0 30px rgb(255 173 101 / 0.15);
+}
+.ta-champion__cup { display: inline-grid; width: 48px; height: 48px; color: var(--t-gold); }
+.ta-champion__cup svg { width: 100%; height: 100%; }
+.ta-champion__text { display: grid; gap: 4px; min-width: 0; }
+.ta-champion__name { overflow: hidden; color: var(--bone); font: 800 34px/1 var(--font-display); text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.ta-champion > .t-badge-icon { width: 48px; height: 48px; }
+
+/* ————— Ticker ————— */
+.ta-ticker {
+  position: sticky;
+  top: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  max-height: min(62vh, 560px);
+  min-width: 0;
+}
+.ta-ticker__lines {
+  display: grid;
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--menu-line, var(--t-line));
+  border-radius: 3px;
+  background: rgb(13 29 50 / .28);
+  list-style: none;
+  scrollbar-width: thin;
+}
+.ta-ticker__line {
+  display: grid;
+  grid-template-columns: 5ch minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 12px;
+  border-left: 2px solid transparent;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--bone-dim);
+}
+.ta-ticker__line + .ta-ticker__line { border-top: 1px solid rgb(91 125 179 / 0.16); }
+.ta-ticker__time { font: 11px/1.9 var(--font-mono); color: rgb(154 166 189 / 0.7); }
+.ta-ticker__text { min-width: 0; overflow-wrap: anywhere; }
+.ta-ticker__text strong { color: var(--bone); font-weight: 600; }
+.ta-ticker__lead { display: block; color: var(--t-cyan); font-size: 12px; }
+.ta-ticker__line--live { border-left-color: var(--t-live); }
+.ta-ticker__line--round { border-left-color: rgb(111 227 200 / 0.5); }
+.ta-ticker__line--result { border-left-color: var(--t-gold); color: var(--bone); }
+.ta-ticker__line--warn { border-left-color: var(--sodium); }
+.ta-ticker__line--big { border-left-color: var(--t-gold); background: linear-gradient(90deg, rgb(255 173 101 / 0.12), transparent 80%); color: var(--bone); }
+.ta-ticker__line.is-new { animation: ta-in 520ms cubic-bezier(.2, 1.2, .4, 1); }
+@keyframes ta-in {
+  from { opacity: 0; transform: translateY(-8px); background-color: rgb(111 227 200 / 0.18); }
+}
+/* The ticker's empty state: the room list's, a size smaller for the narrow column. */
+.menu-page--lobby .ta-ticker .lobby__empty { padding: 26px 16px; }
+.menu-page--lobby .ta-ticker .lobby__empty strong { font-size: 17px; }
+.menu-page--lobby .ta-ticker .lobby__empty > span:not(.lobby__empty-radar) { font-size: 12.5px; }
+
+@media (max-width: 1000px) {
+  .ta { grid-template-columns: minmax(0, 1fr); }
+  .ta-ticker { position: static; max-height: 420px; }
+}
+
+@media (max-width: 560px) {
+  .ta-line { grid-template-columns: minmax(0, 1fr) auto; }
+  .ta-line__stage { grid-column: 1 / -1; }
+  .ta-side { grid-template-columns: 26px minmax(0, 1fr) auto; gap: 6px; }
+  .ta-side--b { grid-template-columns: auto minmax(0, 1fr) 26px; }
+  .ta-side .t-badge-icon { width: 26px; height: 26px; }
+  .ta-side__name { font-size: 15px; }
+  .ta-side__score { font-size: 20px; }
+  .ta-champion__name { font-size: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ta-ticker__line.is-new, .ta-pip.is-now { animation: none; }
+  .ta-tug__a, .ta-tug__b { transition: none; }
+}

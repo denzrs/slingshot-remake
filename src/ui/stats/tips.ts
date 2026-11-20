@@ -18,6 +18,7 @@ const TIPS: readonly Tip[] = [
   { key: 'tip.mayhem', name: 'preset.mayhem' },
   { key: 'tip.daily' },
   { key: 'tip.online' },
+  { key: 'tip.tournament' },
   { key: 'tip.solar' },
   { key: 'tip.horizon' },
   { key: 'tip.preview' },

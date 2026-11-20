@@ -19,6 +19,7 @@ mod room;
 mod router;
 mod stats;
 mod tls;
+mod tournament;
 mod wire;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -227,6 +228,10 @@ async fn main() {
         ));
     if let Some(stats) = &stats {
         rooms = rooms.with_stats(stats.clone());
+    }
+    if env_flag("DEV_SERVER") {
+        rooms = rooms.with_bots();
+        info!("pretend players (?bot=) are let in");
     }
     let manager = Arc::new(Mutex::new(rooms));
     let guard = Arc::new(AdmissionGuard::new(

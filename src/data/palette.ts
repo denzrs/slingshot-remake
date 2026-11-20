@@ -37,10 +37,27 @@ export const PALETTES = { standard: STANDARD, colorblind: COLORBLIND } as const;
 export type PaletteName = keyof typeof PALETTES;
 
 let current: Palette = STANDARD;
+/** A tournament match's teams' own colours, as families like `Palette.teams`; null outside one. */
+let ownTeams: readonly (readonly string[])[] | null = null;
 
 /** Switches every colour of a player at once: ships read theirs from here each time they are drawn. */
 export function setPalette(name: PaletteName): void {
   current = PALETTES[name];
+}
+
+/** `hex` moved toward white (amount > 0) or black (amount < 0), by that share. */
+function shadeOf(hex: string, amount: number): string {
+  const target = amount > 0 ? 255 : 0;
+  const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `#${channels.map((c) => Math.round(c + (target - c) * Math.abs(amount)).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * A tournament match draws its teams in the colours they picked, each member in a shade of the team's: the colour, a lighter
+ * and a darker one. Null goes back to the game's. Teams that picked the same colour keep the game's, so they stay apart.
+ */
+export function setTeamColors(colors: readonly string[] | null): void {
+  ownTeams = colors && new Set(colors).size === colors.length ? colors.map((c) => [c, shadeOf(c, 0.3), shadeOf(c, -0.25)]) : null;
 }
 
 /** The colour of a seat (0-based); a seat past the last starts over. */
@@ -50,7 +67,9 @@ export function seatColor(seat: number): string {
 
 /** The colour of a team (0-based), or one of its other shades: each member of a team has a shade of its own. */
 export function teamColor(team: number, shade = 0): string {
-  const family = current.teams[team];
+  // The colour-blind palette is chosen to keep teams apart; a tournament's own colours do not replace it.
+  const own = current === STANDARD ? ownTeams?.[team] : undefined;
+  const family = own ?? current.teams[team];
   return family[shade % family.length];
 }
 

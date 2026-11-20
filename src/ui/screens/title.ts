@@ -26,21 +26,25 @@ export function titleScreen(app: App): Screen {
   const modesWrap = h('div.items.items--row.launcher__modes', { 'data-section': 'modes', role: 'group', 'aria-label': t('launcher.choose') });
   const dailyWrap = h('div.items.launcher__daily', { 'data-section': 'daily' });
   const onlineWrap = h('div.items.items--row.launcher__online', { 'data-section': 'online', role: 'group', 'aria-label': t('launcher.online') });
+  const tournamentWrap = h('div.items.launcher__tournament', { 'data-section': 'tournament' });
   const content = h('div.launcher__content', null,
     h('div.launcher__section-head', null, sectionTitle),
     modesWrap,
     dailyWrap,
     onlineWrap,
+    tournamentWrap,
   );
   const showSection = (section: LauncherSection): void => {
     sectionTitle.textContent = t(section === 'local' ? 'launcher.choose' : 'launcher.online');
     modesWrap.hidden = section !== 'local';
     dailyWrap.hidden = section !== 'local';
     onlineWrap.hidden = section !== 'online';
+    tournamentWrap.hidden = section !== 'online';
     for (const [wrap, visible] of [
       [modesWrap, section === 'local'],
       [dailyWrap, section === 'local'],
       [onlineWrap, section === 'online'],
+      [tournamentWrap, section === 'online'],
     ] as const) {
       for (const item of wrap.children) (item as HTMLElement).hidden = !visible;
     }
@@ -120,6 +124,7 @@ export function titleScreen(app: App): Screen {
     { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
     { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') },
     { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.code'), hint: t('flow.codeHint'), icon: () => modeArt('code'), run: () => app.openLobby('code') },
+    { kind: 'action', section: 'tournament', hidden: () => launcherSection !== 'online', label: t('tournament.title'), hint: app.tournamentHint(), icon: () => modeArt('tournament'), run: () => app.openTournament() },
     { ...languageItem(app), section: 'language' },
   ];
   return {

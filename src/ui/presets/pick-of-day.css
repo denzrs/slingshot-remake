@@ -258,11 +258,17 @@
  */
 @container (max-width: 184px) {
   .briefing__preset-shell.is-anomaly > .item--card .item__flag { letter-spacing: .08em; }
-  .briefing__preset-shell.is-anomaly > .item--pick .item__tag { top: 36px; }
-  .briefing__preset-shell.is-anomaly:has(> .item--pick) > .item__status-reset { top: 63px; }
-  .briefing__preset-shell.is-anomaly:has(> .item--pick) > .item__status-save { top: 90px; }
+  /* Both badges still share the top row: smaller and tighter, the day's badge in the right corner, shortened with an ellipsis if need be. */
+  .briefing__preset-shell.is-anomaly > .item--pick :is(.item__flag, .item__tag) { font-size: 7px; letter-spacing: .04em; }
+  .briefing__preset-shell.is-anomaly > .item--pick .item__tag { max-width: calc(100% - 78px); }
+  .briefing__preset-shell.is-anomaly:has(> .item--pick) > .item__status-reset { top: 36px; }
+  .briefing__preset-shell.is-anomaly:has(> .item--pick) > .item__status-save { top: 63px; }
 }
 @container (max-width: 164px) {
+  /* Too narrow for one row: the day's badge drops under the anomaly badge, left-aligned with it. */
+  .briefing__preset-shell.is-anomaly > .item--pick .item__tag { top: 36px; left: 8px; right: auto; }
+  .briefing__preset-shell.is-anomaly:has(> .item--pick) > .item__status-reset { top: 63px; }
+  .briefing__preset-shell.is-anomaly:has(> .item--pick) > .item__status-save { top: 90px; }
   .briefing__preset-shell.is-anomaly > .item--card .item__flag { max-width: calc(100% - 16px); }
   .briefing__preset-shell.is-anomaly:not(:has(> .item--pick)) > .item__status-reset { top: 36px; }
   .briefing__preset-shell.is-anomaly:not(:has(> .item--pick)) > .item__status-save { top: 63px; }

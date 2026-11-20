@@ -22,10 +22,17 @@ import { hintText } from '../../platform/input-device';
 /** What the briefing needs of the lobby around it. */
 export interface BriefingContext {
   app: App;
-  session: MultiplayerSession;
-  /** The lobby's remembered settings: the game and the rules the host sets up here are `gameMode` and `rules`. */
-  prefs: LobbyPrefs;
+  /** None when the game is set up outside any room, as a tournament level's is: then nothing is locked and nothing is sent. */
+  session?: MultiplayerSession;
+  /** The game and the rules set up here: the lobby's remembered settings, or the tournament level's. */
+  prefs: Pick<LobbyPrefs, 'gameMode' | 'rules'>;
   save(): void;
+  /** A match must end: the quick rounds slider leaves out "endless". */
+  finiteRounds?: boolean;
+  /** The card to start on, with the rules its edits count from, when the rules are not exactly a card's. */
+  selection?: PresetSelection;
+  /** Shows the game and its rules locked, outside any room: a tournament level for everybody but its organizers. */
+  readonly?: boolean;
 }
 
 export interface Briefing {
@@ -53,12 +60,12 @@ export interface Briefing {
  * The briefing of an online game: the preset cards, the quick controls and the page with all the rules. The host sets the
  * game up here, and everybody else sees the same page locked, following the host.
  */
-export function createBriefing({ app, session, prefs, save }: BriefingContext): Briefing {
+export function createBriefing({ app, session, prefs, save, finiteRounds = false, selection, readonly = false }: BriefingContext): Briefing {
   const sound = app.menu.sound;
   const createPresetCards = h('div.items.items--row.briefing__cards', { role: 'group', 'aria-label': t('preset.choose') });
   const carousel = presetCarousel(createPresetCards);
   /** The card chosen in the room's briefing, for as long as the lobby is open. */
-  const presetState: { current?: PresetSelection } = {};
+  const presetState: { current?: PresetSelection } = { current: selection };
   const createQuick = h('div.briefing__quick', null);
   const createRules = h('div', null);
   /** All the rules on one page over this one: a link below the presets opens them, as it does in the local briefing. */
@@ -141,18 +148,18 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
   let createQuickControls: Control[] = [];
   let paintCreatePresetState = () => {};
   /** Everybody but the host sees the game and its rules as the host set them, locked. */
-  const readOnly = (): boolean => !!session.room && !session.you.host;
+  const readOnly = (): boolean => readonly || (!!session?.room && (!session.you.host || !!session.room.tournament));
   /** What the host changes goes to the relay a moment later, as one message however many keys were pressed. */
   let rulesTimer: ReturnType<typeof setTimeout> | undefined;
   const pushRules = () => {
     clearTimeout(rulesTimer);
     rulesTimer = undefined;
-    if (session.room && session.you.host) session.setRules(prefs.rules, prefs.gameMode);
+    if (session?.room && session.you.host && !session.room.tournament) session.setRules(prefs.rules, prefs.gameMode);
   };
   /** The host's rules are remembered for the next room, and — inside a room — sent to everybody in it. */
   const commitRules = () => {
     save();
-    if (!session.room) return;
+    if (!session?.room) return;
     clearTimeout(rulesTimer);
     rulesTimer = setTimeout(pushRules, 250);
   };
@@ -317,7 +324,8 @@ export function createBriefing({ app, session, prefs, save }: BriefingContext): 
     createQuickControls = all
       .filter(({ key }) => quickKeys.includes(key))
       .sort((a, b) => quickKeys.indexOf(a.key) - quickKeys.indexOf(b.key))
-      .map(({ item }) => buildControl(item, env));
+      .map(({ key, item }) => (finiteRounds && key === 'rounds' && item.kind === 'slider' ? { ...item, steps: item.steps.filter((step) => step.value !== 0) } : item))
+      .map((item) => buildControl(item, env));
     const switches = all
       .filter(({ key }) => key in switchLabels)
       .map(({ key, item }) => buildControl({ ...item, label: t(switchLabels[key]!) }, env));

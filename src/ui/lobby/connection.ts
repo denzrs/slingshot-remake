@@ -84,19 +84,21 @@ export function createConnection({ app, session, prefs, save, configuredServer, 
 
   /** Once connected: who you are connected to, your name, a way out. */
   const barName = h('div.lobby__name', null);
-  /** The symbol the player shows in online games: picked here before a room, and inside one (below the players). */
+  /** The symbol the player shows in online games. The editor is a card over the page, so the whole set fits in it. */
   const avatarBar = picker<Avatar>(t('multiplayer.yourSymbol'), avatarOptions(), false, (avatar) => {
     sound.blip();
     prefs.avatar = avatar;
     save();
     avatarBar.show(avatar);
+    // Live: the pilot in the bar wears it at once.
+    profileAvatar.replaceChildren(avatarSvg(avatar));
     if (session.room && !session.you.spectator) session.setAvatar(avatar);
   });
-  const avatarRow = h('div.lobby__avatar', null, h('span.lobby__code-label', null, t('multiplayer.yourSymbol')), avatarBar.el);
+  const avatarRow = h('div.online-profile__symbol', null, h('span.online-profile__caption', null, t('multiplayer.yourSymbol')), avatarBar.el);
   const disconnectButton = button(t('multiplayer.disconnect'));
   // Nothing to disconnect from before a connection, and the hosted build is connected as of now (render keeps this up to date).
   disconnectButton.hidden = true;
-  const saveProfile = button(t('flow.profileSave'), true);
+  const saveProfile = button(t('flow.profileDone'), true);
   const profileLabel = h('span.online-profile__name', null);
   const profileAvatar = h('span.online-profile__avatar', null);
   const profile = h('details.online-profile', null,
@@ -105,7 +107,7 @@ export function createConnection({ app, session, prefs, save, configuredServer, 
       h('span.online-profile__text', null, h('span.online-profile__label', null, t('flow.profile')), profileLabel),
       h('span.online-profile__edit', null, t('flow.profileEdit')),
     ),
-    h('div.online-profile__fields', null, barName, avatarRow, h('div.online-profile__actions', null, saveProfile)),
+    h('div.online-profile__fields', { role: 'group', 'aria-label': t('flow.profile') }, barName, avatarRow, h('div.online-profile__actions', null, saveProfile)),
   ) as HTMLDetailsElement;
 
   const sendingName = (name: string) => {
@@ -113,7 +115,9 @@ export function createConnection({ app, session, prefs, save, configuredServer, 
     showNameError(null);
   };
 
-  /** The name and the symbol are the player's own: saving them closes the panel, whatever the relay will say to the name later. */
+  /** The name the editor opened with: what an emptied field goes back to when the editor is closed by clicking away. */
+  let openedWith = '';
+  /** The name and the symbol are the player's own: closing the editor keeps them, whatever the relay will say to the name later. */
   const commitProfile = () => {
     const name = playerName.value.trim();
     if (!name) {
@@ -122,7 +126,13 @@ export function createConnection({ app, session, prefs, save, configuredServer, 
       return;
     }
     showNameError(null);
+    closing = true;
     profile.open = false;
+    closing = false;
+    if (name === openedWith) {
+      render();
+      return;
+    }
     if (session.room) {
       // Inside a room the relay has the last word on the name; the field keeps what was typed until it answers.
       sendingName(name);
@@ -137,6 +147,40 @@ export function createConnection({ app, session, prefs, save, configuredServer, 
   saveProfile.addEventListener('click', commitProfile);
   playerName.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') commitProfile();
+  });
+  // Live: the bar shows the name as it is typed.
+  playerName.addEventListener('input', () => {
+    profileLabel.textContent = playerName.value.trim() || t('multiplayer.name');
+  });
+  /** Closing by clicking away or Escape keeps what was chosen; an emptied name goes back to the one it had. */
+  let closing = false;
+  const dismiss = () => {
+    if (!profile.open) return;
+    if (!playerName.value.trim()) {
+      playerName.value = openedWith;
+      showNameError(null);
+    }
+    commitProfile();
+  };
+  const outside = (event: Event) => { if (event.target instanceof Node && !profile.contains(event.target)) dismiss(); };
+  const escape = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dismiss();
+    profile.querySelector('summary')?.focus({ preventScroll: true });
+  };
+  profile.addEventListener('toggle', () => {
+    if (profile.open) {
+      openedWith = playerName.value.trim();
+      document.addEventListener('pointerdown', outside, true);
+      document.addEventListener('keydown', escape, true);
+      return;
+    }
+    document.removeEventListener('pointerdown', outside, true);
+    document.removeEventListener('keydown', escape, true);
+    // Closed with its own summary: keep what was chosen, as clicking away does.
+    if (!closing && playerName.value.trim() && playerName.value.trim() !== openedWith) commitProfile();
   });
   const connectionLabel = h('span.online-connection__state', null);
   const connectionServer = h('span.online-connection__server', null);

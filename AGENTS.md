@@ -12,7 +12,13 @@ A fresh browser is offered the first-run introduction (look picker, then the tut
 
 The daily challenge's page shows a shot of the day only to a player who has posted a run, and only with a relay. In a dev build `?nointro&fakeshot` gives it a sample shot, to look at the card in a short window.
 
+`npm run dev:local` starts both at once: the relay with demo statistics (its own `slingshot-stats-demo.db`), then the page already pointed at it, opened at `/?nointro&debug`.
+
 An online game needs the relay (`npm run dev:server`, port 8080) and two tabs: one creates a room under Online spielen, the other joins it.
+
+To test online alone, open the game with `?nointro&debug` and use Online-Bots in the DEV panel: a bot is a connection of its own that the relay takes for a person (it joins your room, gets ready, founds or joins a tournament team and comes to its matches), and that `npm run dev:server` hands to the game as a CPU, so your page plays it ([`online-bots.ts`](src/debug/online-bots.ts)). A bot never hosts: open the room or the match yourself. Its "View" button opens a tab that takes its seat and tournament person over ([`impersonate.ts`](src/debug/impersonate.ts)), to see the room, the bracket and the game as the bot sees them; the host still plays its turns, and closing that tab takes the bot out of its room.
+
+To watch a whole tournament run, create one and press "Turnier simulieren" under Online-Bots: it fills the bracket with bot teams and starts it, and a dev relay plays every match between bot teams out by itself, round by round, with drawn points and no game to watch ([`simulate.rs`](server/src/room/simulate.rs)). Found a team of your own first to play your matches for real. The bracket and the Arena (Q/E) show it as it goes.
 
 ## Language
 

@@ -39,7 +39,7 @@
   will-change: transform;
 }
 .mode-pager:not(.is-positioned) { transition: none; }
-.menu-page .mode-pager .item {
+.mode-carousel .mode-pager .item {
   position: relative;
   flex: 0 0 auto;
   width: auto;
@@ -59,25 +59,25 @@
   opacity: .2;
   transition: color 180ms ease, opacity 180ms ease, font-size 220ms ease;
 }
-.menu-page .mode-pager .item::before { display: none; }
-.menu-page .mode-pager .mode-pager__item--near {
+.mode-carousel .mode-pager .item::before { display: none; }
+.mode-carousel .mode-pager .mode-pager__item--near {
   font-size: clamp(22px, 2.6vw, 34px);
   opacity: .4;
 }
-.menu-page .mode-pager .mode-pager__item--far {
+.mode-carousel .mode-pager .mode-pager__item--far {
   font-size: clamp(18px, 2.1vw, 26px);
   opacity: .2;
 }
-.menu-page .mode-pager .mode-pager__item--active {
+.mode-carousel .mode-pager .mode-pager__item--active {
   color: var(--bone);
   font-size: var(--mode-active-size, var(--page-title-size));
   font-weight: 900;
   opacity: 1;
   text-shadow: 0 0 22px rgb(255 173 101 / .12);
 }
-.menu-page .mode-pager .item:focus { background: transparent; color: var(--bone); }
-@media (hover: hover) { .menu-page .mode-pager .item:hover { background: transparent; color: var(--bone); } }
-.menu-page .mode-pager .item:focus-visible {
+.mode-carousel .mode-pager .item:focus { background: transparent; color: var(--bone); }
+@media (hover: hover) { .mode-carousel .mode-pager .item:hover { background: transparent; color: var(--bone); } }
+.mode-carousel .mode-pager .item:focus-visible {
   outline: none;
   box-shadow: none;
   text-decoration: underline;
@@ -176,18 +176,18 @@
 
 @media (max-width: 1000px) {
   .mode-pager__viewport { --mode-anchor: 0%; }
-  .menu-page .mode-pager .item { font-size: clamp(22px, 3.2vw, 32px); }
-  .menu-page .mode-pager .mode-pager__item--near { font-size: clamp(20px, 2.8vw, 28px); }
-  .menu-page .mode-pager .mode-pager__item--far { font-size: clamp(17px, 2.3vw, 24px); }
-  .menu-page .mode-pager .mode-pager__item--active { font-size: var(--mode-active-size, var(--page-title-size)); }
+  .mode-carousel .mode-pager .item { font-size: clamp(22px, 3.2vw, 32px); }
+  .mode-carousel .mode-pager .mode-pager__item--near { font-size: clamp(20px, 2.8vw, 28px); }
+  .mode-carousel .mode-pager .mode-pager__item--far { font-size: clamp(17px, 2.3vw, 24px); }
+  .mode-carousel .mode-pager .mode-pager__item--active { font-size: var(--mode-active-size, var(--page-title-size)); }
 }
 @media (max-width: 760px) {
   .mode-pager__viewport { --mode-anchor: 0%; }
   .mode-pager { gap: clamp(12px, 3vw, 20px); }
-  .menu-page .mode-pager .item { font-size: clamp(22px, 6vw, 36px); }
-  .menu-page .mode-pager .mode-pager__item--near { font-size: clamp(19px, 5vw, 31px); }
-  .menu-page .mode-pager .mode-pager__item--far { font-size: clamp(17px, 4.5vw, 28px); }
-  .menu-page .mode-pager .mode-pager__item--active { font-size: var(--mode-active-size, var(--page-title-size)); }
+  .mode-carousel .mode-pager .item { font-size: clamp(22px, 6vw, 36px); }
+  .mode-carousel .mode-pager .mode-pager__item--near { font-size: clamp(19px, 5vw, 31px); }
+  .mode-carousel .mode-pager .mode-pager__item--far { font-size: clamp(17px, 4.5vw, 28px); }
+  .mode-carousel .mode-pager .mode-pager__item--active { font-size: var(--mode-active-size, var(--page-title-size)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .menu-page.menu-page--mode-enter-next,
@@ -207,7 +207,7 @@
   .menu-page--mode-enter-previous .menu-page__main,
   .menu-page--mode-enter-next .mode-pager__item--active,
   .menu-page--mode-enter-previous .mode-pager__item--active { animation: none; }
-  .mode-pager, .menu-page .mode-pager .item { transition: none; }
+  .mode-pager, .mode-carousel .mode-pager .item { transition: none; }
 }
 
 @media (max-width: 520px) {

@@ -1,6 +1,6 @@
 import { COLORS } from '../../sim/config';
 import { teamColor } from '../../data/palette';
-import { ChallengeMatch, ShotReplay, teamName, type Match } from '../../game';
+import { ChallengeMatch, ShotReplay, teamTitle, type Match } from '../../game';
 import { fmtInt, t, tn } from '../../platform/i18n';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
@@ -76,9 +76,10 @@ export function pauseScreen(app: App, match: Match | null): Screen {
       : []),
     ...(app.skipOffer === 'answer' ? skipAnswerItems(app, 'actions') : []),
     { kind: 'action', section: 'actions', className: 'pause-tool pause-tool--settings', label: t('common.settings'), run: () => openSettings(app) },
-    ...(app.online && match?.canAdvance ? [{ kind: 'action', section: 'actions', label: t('over.backToLobby'), run: () => app.backToLobby() } satisfies MenuItem] : []),
+    // A tournament's match has no room lobby to go back to, only its bracket.
+    ...(app.online && match?.canAdvance && !app.tournamentMatch ? [{ kind: 'action', section: 'actions', label: t('over.backToLobby'), run: () => app.backToLobby() } satisfies MenuItem] : []),
     app.online
-      ? { kind: 'action', section: 'actions', label: t('multiplayer.leave'), run: () => app.leaveOnlineRoom() }
+      ? { kind: 'action', section: 'actions', label: t(app.tournamentMatch ? 'over.backToTournament' : 'multiplayer.leave'), run: () => app.leaveOnlineRoom() }
       : { kind: 'action', section: 'actions', className: 'pause-tool pause-tool--home', label: t('common.mainMenu'), run: () => app.toTitle() },
     ...(hostPause && !match!.pause ? [{ kind: 'action', section: 'actions', label: t('pause.pause'), run: () => (match!.pauseGame(), app.resume()) } satisfies MenuItem] : []),
     hostPause && match!.pause?.resumeIn === null
@@ -122,7 +123,7 @@ function pauseStanding(match: Match, online: boolean): Node[] {
   const nodes: Node[] = [h('p.ranking-label', null, t('pause.standings'))];
   nodes.push(h('p.pause-standing__round', null, match.totalRounds ? `${t('hud.round')} ${match.round} / ${match.totalRounds}` : `${t('hud.round')} ${match.round}`));
   if (match.teamMode) {
-    nodes.push(h('ol.ranking', null, ...match.teamRanking().map((r, i) => row(i + 1, t('team.name', { team: teamName(r.team) }), teamColor(r.team), r.score))));
+    nodes.push(h('ol.ranking', null, ...match.teamRanking().map((r, i) => row(i + 1, teamTitle(r.team), teamColor(r.team), r.score))));
     nodes.push(h('p.ranking-label', null, t('over.players')));
     nodes.push(h('ol.ranking.ranking--small', null, ...match.ranking().map((p, i) => row(i + 1, p.name, p.color, p.score))));
   } else {

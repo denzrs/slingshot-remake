@@ -122,13 +122,13 @@ function flashSeat(button: HTMLElement, what: string): void {
 }
 
 /** A small padlock that takes the colour of its text. */
-export function lockIcon(): SVGElement {
+export function lockIcon(open = false): SVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('class', 'lock-icon');
   svg.setAttribute('aria-hidden', 'true');
   // Only our own constants go in here.
-  svg.innerHTML = '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>';
+  svg.innerHTML = '<rect x="5" y="11" width="14" height="9" rx="2"/>' + (open ? '<path d="M8 11V8a4 4 0 0 1 7.4-2"/>' : '<path d="M8 11V8a4 4 0 0 1 8 0v3"/>');
   return svg;
 }
 

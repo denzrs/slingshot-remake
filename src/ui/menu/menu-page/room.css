@@ -461,22 +461,6 @@
 /* A CPU seat needs no name in the room: the seat number and the CPU tag say it, and the name was cut off anyway. */
 .menu-page--room .room-deck__crew .player-slot.is-cpu .player-slot__identity .lobby__player-name { display: none; }
 
-/* In the room the profile editor opens over the page, not inside the identity card: the card (and the page below it) keep their size. */
-.menu-page--room .lobby > .online-identity { position: relative; z-index: 6; }
-.menu-page--room .online-profile[open] .online-profile__fields {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 30;
-  box-sizing: border-box;
-  width: min(560px, 100%);
-  margin: 0;
-  padding: 16px 18px;
-  border: 1px solid var(--menu-line);
-  border-radius: 3px;
-  background: #0b1a33;
-  box-shadow: 0 18px 40px rgb(0 0 0 / .55);
-}
 /* One column for each button on every seat: move at the left of the pair, remove at the right edge; a human seat with only a move handle keeps it in the move column. */
 .menu-page--room .room-deck__crew .player-slot.roster-entry.has-move > .roster-move { position: absolute; top: calc(50% - 13px); right: 40px; width: 26px; height: 26px; margin: 0; transform: none; }
 .menu-page--room .room-deck__crew .player-slot.roster-entry.has-move:not(.has-remove) { padding-right: 78px; }

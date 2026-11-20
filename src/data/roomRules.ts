@@ -104,7 +104,7 @@ export type RoomRules = { -readonly [K in keyof typeof RULES]: ValueOf<(typeof R
 /** Every rule, in the order they are kept in. */
 export const RULE_KEYS = Object.keys(RULES) as (keyof RoomRules)[];
 
-const specOf = (key: keyof RoomRules): RuleSpec => RULES[key];
+export const specOf = (key: keyof RoomRules): RuleSpec => RULES[key];
 
 /** The standard rules: what a game starts with until somebody changes them. */
 export const DEFAULT_ROOM_RULES: Readonly<RoomRules> = Object.fromEntries(RULE_KEYS.map((key) => {

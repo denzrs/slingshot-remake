@@ -409,11 +409,12 @@ fn state_envelopes_require_a_playing_room_host_and_monotonic_sequence() {
 
     let payload = rmp_serde::to_vec_named(&json!({"patch":{},"events":[]})).unwrap();
     let seq1 = crate::codec::state_frame(1, &payload);
+    // Before the game, or when a late frame arrives after it: dropped without a word, and not passed on.
     rooms.handle_state_envelope(1, 1, &seq1);
-    assert_eq!(
-        take_type(&drain_json(&mut host_rx), "error")["message"],
-        "You are not in a running game"
-    );
+    assert!(drain_json(&mut host_rx).is_empty());
+    assert!(drain_json(&mut guest_rx)
+        .iter()
+        .all(|message| message["type"] != "state"));
 
     rooms.handle(2, &json!({"type":"ready","ready":true}));
     drain_json(&mut host_rx);
@@ -2780,12 +2781,12 @@ fn a_new_game_in_the_room_starts_the_state_sequence_over() {
 
     rooms.reset_to_waiting(&room_id);
     rooms.handle(2, &json!({"type":"ready","ready":true}));
-    // Between games the host's frames are refused as before.
+    // Between games the host's late frames are dropped: nobody gets them, and the host is told nothing.
+    drain_json(&mut host_rx);
+    drain_json(&mut guest_rx);
     rooms.handle_state_envelope(1, 41, &state(41));
-    assert_eq!(
-        take_type(&drain_json(&mut host_rx), "error")["message"],
-        "You are not in a running game"
-    );
+    assert!(drain_json(&mut host_rx).is_empty());
+    assert!(states(&mut guest_rx).is_empty());
     rooms.handle(1, &json!({"type":"start_game"}));
     drain_json(&mut guest_rx);
     rooms.handle_state_envelope(1, 1, &state(1));
@@ -2861,4 +2862,41 @@ fn a_closed_connection_is_sent_nothing_by_a_relay_that_has_not_heard_yet() {
     drain_json(&mut guest_rx);
     assert_eq!(relay.forward(1, 1, &state(1)), Forward::Sent);
     assert!(states(&mut guest_rx).is_empty());
+}
+
+#[test]
+fn a_dev_relays_pretend_player_is_a_person_in_the_room_and_a_cpu_in_the_game() {
+    let (rooms, mut host_rx, room_id) = host_room("ffa", 4);
+    let mut rooms = rooms.with_bots();
+    let mut bot_rx = connect(&mut rooms, 2);
+    rooms.mark_bot(2, crate::wire::CpuLevel::Hard);
+    drain_json(&mut bot_rx);
+    rooms.handle(
+        2,
+        &json!({"type":"join_room","roomId":room_id,"name":"Bot 1"}),
+    );
+    rooms.handle(2, &json!({"type":"ready","ready":true}));
+    let update = take_type(&drain_json(&mut host_rx), "room_update");
+    assert!(
+        update["room"]["players"][1]["cpu"].is_null(),
+        "the room sees a person"
+    );
+
+    // The host and the pretend player are the two people a game needs; the host plays its seat.
+    rooms.handle(1, &json!({"type":"start_game"}));
+    let start = take_type(&drain_json(&mut host_rx), "game_start");
+    assert_eq!(start["players"][1]["cpu"], "hard");
+    assert!(start["players"][0]["cpu"].is_null());
+}
+
+#[test]
+fn a_public_relay_ignores_a_connection_that_says_it_is_a_pretend_player() {
+    let (mut rooms, mut host_rx, room_id) = host_room("ffa", 4);
+    let _bot_rx = join(&mut rooms, 2, &room_id, "Bot 1");
+    rooms.mark_bot(2, crate::wire::CpuLevel::Hard);
+    rooms.handle(2, &json!({"type":"ready","ready":true}));
+    drain_json(&mut host_rx);
+    rooms.handle(1, &json!({"type":"start_game"}));
+    let start = take_type(&drain_json(&mut host_rx), "game_start");
+    assert!(start["players"][1]["cpu"].is_null());
 }

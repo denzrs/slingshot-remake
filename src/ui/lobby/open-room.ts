@@ -65,7 +65,7 @@ export function createOpenRoom({ app, session, prefs, save, playerName, takeName
   const lookButton = iconButton(t('multiplayer.lookTitle'), '');
   lookButton.classList.add('online-create__look');
   const paintLookButton = () => lookButton.replaceChildren(roomIcon(prefs.look.symbol, prefs.look.color));
-  lookButton.addEventListener('click', () => dialog.open());
+  lookButton.addEventListener('click', () => dialog.open(lookButton));
   paintLookButton();
   const createButton = button(t('multiplayer.create'), true);
   roomName.setAttribute('aria-label', t('multiplayer.roomName'));

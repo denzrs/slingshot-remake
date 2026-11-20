@@ -5,13 +5,13 @@ use std::sync::LazyLock;
 use rustrict::{Censor, Trie, Type};
 use serde_json::Value;
 
-use crate::wire::{Avatar, CpuLevel, RoomColor, RoomSymbol, Visibility, Wire};
+use crate::wire::{Avatar, CpuLevel, Emblem, RoomColor, RoomSymbol, Visibility, Wire};
 
 /// Tips name a ship; there are at most six.
 /// The version of the wire protocol the relay speaks. A client says which one it was built for (`?v=` on its address); one built
 /// for an older protocol is told to reload and let go. Not raised by hand: a TypeScript test notices when the wire changed and
 /// `npm run protocol` raises it here, in `src/net/net.ts` and in `server/protocol-contract.json`.
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 9;
 
 pub const MAX_TIP: i64 = 6;
 /// A teleport offers a few spots to choose from; a pick names one by its place in the list.
@@ -184,6 +184,11 @@ pub fn parse_room_look(value: &Value) -> Option<RoomLook> {
 
 /// A player's symbol from a client; a missing one is the default, anything that is not a choice is None.
 pub fn parse_avatar(value: Option<&Value>) -> Option<Avatar> {
+    choice_of(value)
+}
+
+/// A tournament team's emblem from a client; a missing one is the default, anything that is not a choice is None.
+pub fn parse_emblem(value: Option<&Value>) -> Option<Emblem> {
     choice_of(value)
 }
 
@@ -1155,6 +1160,8 @@ mod tests {
             serde_json::from_str(include_str!("../protocol-contract.json")).unwrap();
         assert_eq!(contract["avatar"]["options"], json!(Avatar::NAMES));
         assert_eq!(contract["avatar"]["default"], Avatar::default().as_str());
+        assert_eq!(contract["emblem"]["options"], json!(Emblem::NAMES));
+        assert_eq!(contract["emblem"]["default"], Emblem::default().as_str());
     }
 
     #[test]

@@ -29,7 +29,7 @@ const SYMBOL_LABEL: Record<RoomSymbol, Key> = {
   asteroid: 'roomLook.symbol.asteroid',
 };
 
-const COLOR_LABEL: Record<RoomColor, Key> = {
+export const COLOR_LABEL: Record<RoomColor, Key> = {
   '#ff8660': 'roomLook.colour.coral',
   '#ffd27a': 'roomLook.colour.gold',
   '#c6e86a': 'roomLook.colour.lime',
@@ -38,6 +38,14 @@ const COLOR_LABEL: Record<RoomColor, Key> = {
   '#b99cff': 'roomLook.colour.violet',
   '#ff6f9f': 'roomLook.colour.pink',
   '#e8e4d8': 'roomLook.colour.silver',
+  '#ff5a5a': 'roomLook.colour.red',
+  '#ffa94d': 'roomLook.colour.amber',
+  '#4fd98a': 'roomLook.colour.green',
+  '#36c2d6': 'roomLook.colour.teal',
+  '#5b7cff': 'roomLook.colour.royal',
+  '#e46cff': 'roomLook.colour.magenta',
+  '#d4915c': 'roomLook.colour.copper',
+  '#9aa8bd': 'roomLook.colour.slate',
 };
 
 /** A symbol as an element; it takes the colour of its surroundings. */
@@ -64,22 +72,83 @@ interface PickOption<T> {
   face: Node;
 }
 
-/** A row of buttons to choose one of a few predefined things; read-only, the row only shows the choice. */
-export function picker<T extends string>(label: string, options: PickOption<T>[], readonly: boolean, pick: (value: T) => void) {
-  const buttons = options.map((option) => {
-    const button = h('button.room-pick__option', { type: 'button', role: 'radio', title: option.label, 'aria-label': option.label }, option.face);
+/**
+ * A row of buttons to choose one of a few predefined things; read-only, the row only shows the choice.
+ *
+ * With `row`, a long list stays one row: it shows that many choices (the current one always among them, in the last place
+ * when it is further on) and a button beside them that opens the whole set as a panel over the page, so nothing around it
+ * moves. Choosing in the panel, clicking elsewhere or Escape closes it.
+ */
+export function picker<T extends string>(
+  label: string, options: PickOption<T>[], readonly: boolean, pick: (value: T) => void,
+  { row }: { row?: number } = {},
+) {
+  const optionButton = (option: PickOption<T>, face: Node, after?: () => void) => {
+    const button = h('button.room-pick__option', { type: 'button', role: 'radio', title: option.label, 'aria-label': option.label }, face);
     button.toggleAttribute('disabled', readonly);
-    if (!readonly) button.addEventListener('click', () => pick(option.value));
+    if (!readonly) button.addEventListener('click', () => { pick(option.value); after?.(); });
     return { value: option.value, button };
-  });
-  const el = h('div.room-pick', { role: 'radiogroup', 'aria-label': label }, ...buttons.map((b) => b.button));
+  };
+  const buttons = options.map((option) => optionButton(option, option.face));
+  const grid = h('div.room-pick', { role: 'radiogroup', 'aria-label': label }, ...buttons.map((b) => b.button));
+  const folds = row !== undefined && options.length > row && !readonly;
+  let current: T | null = null;
+  const paintRow = () => {
+    if (!folds) return;
+    const at = buttons.findIndex((b) => b.value === current);
+    // The first row, with the current choice in its last place when it lies further on.
+    buttons.forEach(({ button }, i) => { button.hidden = at >= row ? i !== at && i >= row - 1 : i >= row; });
+  };
+  const paintOn = (list: { value: T; button: HTMLElement }[]) => {
+    for (const { value, button } of list) {
+      button.classList.toggle('is-on', value === current);
+      button.setAttribute('aria-checked', String(value === current));
+    }
+  };
+  if (!folds) {
+    return { el: grid, show(next: T): void { current = next; paintOn(buttons); } };
+  }
+
+  const more = h('button.room-pick__more', { type: 'button', 'aria-haspopup': 'true', 'aria-expanded': 'false' }, `+${options.length - row}`) as HTMLButtonElement;
+  more.title = t('picker.more', { n: options.length });
+  more.setAttribute('aria-label', more.title);
+  const panel = h('div.room-pick__panel', { role: 'radiogroup', 'aria-label': label, hidden: '' });
+  const group = h('div.room-pick-group', null, grid, more, panel);
+  const close = (focus = false) => {
+    if (panel.hidden) return;
+    panel.hidden = true;
+    more.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', outside, true);
+    document.removeEventListener('keydown', escape, true);
+    if (focus) more.focus({ preventScroll: true });
+  };
+  const outside = (event: Event) => { if (!(event.target instanceof Node) || !group.contains(event.target)) close(); };
+  const escape = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    close(true);
+  };
+  const open = () => {
+    // Its own buttons, built when opened, the size of the row's, so the panel is the row grown, not a new look.
+    const all = options.map((option) => optionButton(option, option.face.cloneNode(true), () => close(true)));
+    const size = buttons.find((b) => !b.button.hidden)?.button.offsetWidth ?? 36;
+    panel.style.setProperty('--pick-size', `${size}px`);
+    panel.replaceChildren(...all.map((b) => b.button));
+    paintOn(all);
+    panel.hidden = false;
+    more.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', escape, true);
+    (all.find((b) => b.value === current) ?? all[0]).button.focus({ preventScroll: true });
+  };
+  more.addEventListener('click', () => (panel.hidden ? open() : close()));
   return {
-    el,
-    show(current: T): void {
-      for (const { value, button } of buttons) {
-        button.classList.toggle('is-on', value === current);
-        button.setAttribute('aria-checked', String(value === current));
-      }
+    el: group,
+    show(next: T): void {
+      current = next;
+      paintOn(buttons);
+      paintRow();
     },
   };
 }
@@ -118,9 +187,13 @@ export function visibilityControl(look: RoomLook, change: (patch: Partial<RoomLo
   return { el, refresh };
 }
 
-/** The dialog that opens over the screen to choose the symbol and colour. Each choice applies at once. */
+/**
+ * The card that opens beside the room's symbol to choose the symbol and colour, in the pilot editor's style. Each choice applies at
+ * once, and the card takes the colour as its accent while it is chosen. "Done", clicking elsewhere or Escape closes it.
+ */
 export interface LookDialog extends LookControl {
-  open(): void;
+  /** Opens under `anchor` (the button that opened it), or under the middle of the screen without one. */
+  open(anchor?: HTMLElement): void;
   close(): void;
   isOpen(): boolean;
 }
@@ -128,8 +201,10 @@ export interface LookDialog extends LookControl {
 export function lookDialog(look: RoomLook, change: (patch: Partial<RoomLook>) => void, { sound }: { sound?: Sound } = {}): LookDialog {
   let current = look;
   let shown = false;
+  let anchor: HTMLElement | null = null;
   const redraw = (): void => {
-    dialog.style.setProperty('--tone', current.color);
+    card.style.setProperty('--tone', current.color);
+    preview.replaceChildren(symbolSvg(current.symbol));
     symbols.show(current.symbol);
     colours.show(current.color);
   };
@@ -147,6 +222,7 @@ export function lookDialog(look: RoomLook, change: (patch: Partial<RoomLook>) =>
       apply({ symbol });
     },
   );
+  // The card is over the page, so the whole set of colours fits in it.
   const colours = picker<RoomColor>(
     t('multiplayer.color'),
     ROOM_COLORS.map((color) => {
@@ -160,34 +236,67 @@ export function lookDialog(look: RoomLook, change: (patch: Partial<RoomLook>) =>
       apply({ color });
     },
   );
+  const preview = h('span.look-popover__preview', { 'aria-hidden': 'true' });
   const done = h('button.lobby__button.lobby__button--primary', { type: 'button' }, t('multiplayer.lookDone'));
-  /** Over the whole page while it is open: the screen it belongs to scrolls, and the dialog must not. */
+  const card = h(
+    'div.look-popover',
+    { role: 'dialog', 'aria-label': t('multiplayer.lookTitle') },
+    h('header.look-popover__head', null, preview, h('span.look-popover__caption', null, t('multiplayer.lookTitle'))),
+    h('span.look-popover__caption', null, t('multiplayer.symbol')), symbols.el,
+    h('span.look-popover__caption', null, t('multiplayer.color')), colours.el,
+    h('div.look-popover__actions', null, done),
+  );
+  card.hidden = true;
+  /** Under the anchor, kept inside the screen; the card is on the page's top layer, so no scrolling box cuts it off. */
+  const place = (): void => {
+    const width = card.offsetWidth;
+    const height = card.offsetHeight;
+    const box = anchor?.isConnected ? anchor.getBoundingClientRect() : null;
+    const left = box ? box.left - 8 : (innerWidth - width) / 2;
+    const below = box ? box.bottom + 10 : (innerHeight - height) / 2;
+    const top = box && below + height > innerHeight - 16 && box.top - height - 10 > 16 ? box.top - height - 10 : below;
+    card.style.left = `${Math.round(Math.max(16, Math.min(left, innerWidth - width - 16)))}px`;
+    card.style.top = `${Math.round(Math.max(16, top))}px`;
+  };
+  const outside = (event: Event): void => {
+    if (event.target instanceof Node && !card.contains(event.target) && !anchor?.contains(event.target)) close();
+  };
+  const escape = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+  };
   const close = (): void => {
+    if (!shown) return;
     shown = false;
-    dialog.hidden = true;
-    dialog.remove();
+    card.hidden = true;
+    card.remove();
+    document.removeEventListener('pointerdown', outside, true);
+    document.removeEventListener('keydown', escape, true);
+    removeEventListener('resize', place);
+    removeEventListener('scroll', place, true);
+    if (anchor?.isConnected) anchor.focus({ preventScroll: true });
   };
   done.addEventListener('click', close);
-  const dialog = h(
-    'div.look-dialog',
-    { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('multiplayer.lookTitle') },
-    h('div.lobby__card.look-dialog__card', null, h('h3.setup__title', null, t('multiplayer.lookTitle')), h('span.look-caption', null, t('multiplayer.symbol')), symbols.el, h('span.look-caption', null, t('multiplayer.color')), colours.el, h('div.lobby__actions', null, done)),
-  );
-  dialog.hidden = true;
-  dialog.addEventListener('click', (e) => {
-    if (e.target === dialog) close();
-  });
-  const open = (): void => {
+  const open = (from?: HTMLElement): void => {
+    if (shown) { close(); return; }
     shown = true;
-    dialog.hidden = false;
-    document.body.append(dialog);
+    anchor = from ?? null;
+    card.hidden = false;
+    document.body.append(card);
     redraw();
-    done.focus();
+    place();
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', escape, true);
+    addEventListener('resize', place);
+    addEventListener('scroll', place, true);
+    (card.querySelector<HTMLElement>('.room-pick__option.is-on') ?? done).focus({ preventScroll: true });
   };
   const refresh = (next: RoomLook): void => {
     current = next;
     redraw();
   };
   refresh(look);
-  return { el: dialog, open, close, isOpen: () => shown, refresh };
+  return { el: card, open, close, isOpen: () => shown, refresh };
 }

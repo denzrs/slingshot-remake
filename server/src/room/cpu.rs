@@ -6,6 +6,9 @@ use crate::wire::{CpuLevel, RoomMode};
 use super::model::*;
 use super::RoomManager;
 
+/// A CPU was asked onto a side of a tournament match whose seats are all taken.
+const TEAM_SEATS_TAKEN: &str = "That team's seats are taken";
+
 impl RoomManager {
     /// The room a connection hosts while it waits, or why it may not change the CPU seats.
     pub(super) fn host_of_cpu_seats(&self, conn: u64) -> Result<String, &'static str> {
@@ -28,22 +31,27 @@ impl RoomManager {
         let Some(requested_team) = self.accept(conn, team) else {
             return;
         };
-        let (full, team, name, avatar) = {
+        let (refusal, team, name, avatar) = {
             let room = self.rooms.get(&room_id).unwrap();
             let team = if room.mode == RoomMode::Team {
                 requested_team.unwrap_or_else(|| smallest_team(room))
             } else {
                 0
             };
-            (
-                room.players.len() >= room.max_players as usize,
-                team,
-                free_cpu_name(room, level),
-                free_avatar(room),
-            )
+            // A tournament match's sides hold a team each: a CPU fills a seat of its side only.
+            let side_full =
+                room.tournament.is_some() && seats_on(room, team) >= match_side_seats(room);
+            let refusal = if room.players.len() >= room.max_players as usize {
+                Some("Room is full")
+            } else if side_full {
+                Some(TEAM_SEATS_TAKEN)
+            } else {
+                None
+            };
+            (refusal, team, free_cpu_name(room, level), free_avatar(room))
         };
-        if full {
-            self.error(conn, "Room is full");
+        if let Some(refusal) = refusal {
+            self.error(conn, refusal);
             return;
         }
         let room = self.rooms.get_mut(&room_id).unwrap();
@@ -101,6 +109,13 @@ impl RoomManager {
         };
         if team.is_some() && room.mode != RoomMode::Team {
             self.error(conn, "Teams only exist in team rooms");
+            return;
+        }
+        let moves_to = team.filter(|&team| team != seat.team);
+        if room.tournament.is_some()
+            && moves_to.is_some_and(|team| seats_on(room, team) >= match_side_seats(room))
+        {
+            self.error(conn, TEAM_SEATS_TAKEN);
             return;
         }
         let renamed = level

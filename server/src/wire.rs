@@ -69,6 +69,8 @@ wire_enum! {
     RoomColor {
         Coral = "#ff8660", Sand = "#ffd27a", Lime = "#c6e86a", Mint = "#6fe3c8",
         Sky = "#62b6ff", Violet = "#b99cff", Pink = "#ff6f9f", Bone = "#e8e4d8",
+        Red = "#ff5a5a", Amber = "#ffa94d", Green = "#4fd98a", Teal = "#36c2d6",
+        Royal = "#5b7cff", Magenta = "#e46cff", Copper = "#d4915c", Slate = "#9aa8bd",
     }
 }
 
@@ -77,6 +79,20 @@ wire_enum! {
     Avatar {
         Rocket = "rocket", Satellite = "satellite", Alien = "alien", Robot = "robot",
         Astronaut = "astronaut", Crosshair = "crosshair", Bolt = "bolt", Gem = "gem",
+        Heart = "heart", Ghost = "ghost", Skull = "skull", Cat = "cat",
+        Paw = "paw", Leaf = "leaf", Drop = "drop", Clover = "clover",
+        Dice = "dice", Note = "note", Eye = "eye", Mushroom = "mushroom",
+        Fish = "fish", Gamepad = "gamepad", Pawn = "pawn", Smile = "smile",
+    }
+}
+
+wire_enum! {
+    /// The emblems a tournament team shows: a set of its own, so a team never looks like one of its players.
+    Emblem {
+        Shield = "shield", Crown = "crown", Flame = "flame", Chevron = "chevron",
+        Trident = "trident", Tower = "tower", Flag = "flag", Mountain = "mountain",
+        Wave = "wave", Anchor = "anchor", Sword = "sword", Wing = "wing",
+        Hexagon = "hexagon", Claw = "claw", Spade = "spade", Arrow = "arrow",
     }
 }
 
@@ -115,6 +131,13 @@ impl Default for RoomSymbol {
 impl Default for RoomColor {
     fn default() -> Self {
         RoomColor::Coral
+    }
+}
+
+#[allow(clippy::derivable_impls)]
+impl Default for Emblem {
+    fn default() -> Self {
+        Emblem::Shield
     }
 }
 
