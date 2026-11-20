@@ -9,6 +9,8 @@ import { formatDay } from './dayFormat';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { shotOfDayPreview } from './shot';
 import { leaderboardAvailable, leaderboardScreen } from './leaderboard';
+import { onlineAllowed } from '../../data/online';
+import { onlineItem } from '../screens/online';
 import type { App } from '../screens';
 import { menuPage } from '../menu/menu-page';
 
@@ -75,7 +77,7 @@ export function dailyScreen(app: App): Screen {
     shotCard.hidden = false;
   };
   if (shot) showShot(shot);
-  if (hasBoard && day?.posted) {
+  if (hasBoard && day?.posted && onlineAllowed()) {
     void new Leaderboard().top(key).then((board) => {
       if (!board.shot) return;
       shot = board.shot;
@@ -119,7 +121,7 @@ export function dailyScreen(app: App): Screen {
       })),
       { kind: 'action', section: 'shot', label: t('daily.shot.watch'), hidden: () => !shot, run: () => { if (shot) app.watchShot(key, shot); } },
       { kind: 'action', label: t('common.back'), run: () => app.menu.back() },
-      ...(hasBoard ? [{ kind: 'action', label: t('daily.board.view'), run: () => app.menu.push(() => leaderboardScreen(app, key, formatDay(key), null)) } satisfies MenuItem] : []),
+      ...(hasBoard ? [onlineItem(app, { kind: 'action', label: t('daily.board.view'), run: () => app.menu.push(() => leaderboardScreen(app, key, formatDay(key), null)) } satisfies MenuItem)] : []),
       { kind: 'action', label: t('daily.start'), primary: true, run: () => app.startDaily() },
     ],
     focus: challenge.sectors.length + (hasBoard ? 3 : 2),
@@ -221,11 +223,11 @@ export function dailyResultScreen(app: App, match: ChallengeMatch, outcome: RunO
       // The board is opt-in: the run goes up only if the player asks for it, and then under a name.
       ...(leaderboardAvailable()
         ? [
-            {
+            onlineItem(app, {
               kind: 'action',
               label: t('daily.board.add'),
               run: () => app.menu.push(() => leaderboardScreen(app, result.dateKey, t('daily.board.yourRun', { score: fmtInt(result.total) }), { score: result.total, shot: match.bestShot })),
-            } satisfies MenuItem,
+            } satisfies MenuItem),
           ]
         : []),
       { kind: 'action', className: 'pause-tool pause-tool--home', label: t('common.mainMenu'), run: () => app.toTitle() },

@@ -8,6 +8,7 @@ import { h } from '../dom';
 import { buildControl } from '../menu/controls';
 import { lookPreview, PREVIEW_SCENES, type PreviewScene } from './look-preview';
 import { preloadAssets } from '../../render/looks/forged-assets';
+import { onlineFeatureList, openPrivacyPage } from '../screens/online';
 
 const PROFILES = [
   { facts: ['onboarding.look.simple.1', 'onboarding.look.simple.2', 'onboarding.look.simple.3'] },
@@ -21,9 +22,15 @@ interface Options {
   /** The look selected at first: the recommended one on a new device, the saved one where the player chose before. */
   initialLook?: Look;
   startTraining(look: Look): void;
-  /** Skipping keeps the look on screen: the player saw it selected. */
+  /** Skipping keeps the look on screen: the player saw it selected. Online stays as it was, which is off if never chosen. */
   skip(look: Look): void;
+  /** What was answered before (a visit that left the introduction half-way), or null: nothing is chosen for the player. */
+  online?: boolean | null;
+  /** The answer of the second step, as soon as it is given (it can still be changed there before going on). */
+  chooseOnline(on: boolean): void;
 }
+
+type Step = 'look' | 'online';
 
 /** One live field, one graphics choice: the accepted split-preview layout. */
 export function openOnboarding(options: Options): { dispose(): void } {
@@ -37,6 +44,9 @@ export function openOnboarding(options: Options): { dispose(): void } {
   let closed = false;
   let frame = 0;
   let autoCyclePaused = false;
+  let step: Step = 'look';
+  /** Nothing is chosen for the player: online stays unanswered until one of the two is pressed. */
+  let online: boolean | null = options.online ?? null;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches || options.settings.lessMenuMotion;
   const action = (label: string, run: () => void, className: string): HTMLButtonElement => {
     const button = h(`button.${className}`, { type: 'button' }, label) as HTMLButtonElement;
@@ -127,10 +137,11 @@ export function openOnboarding(options: Options): { dispose(): void } {
   const refreshTexts = (): void => {
     eyebrow.textContent = t('onboarding.welcome');
     skipButton.textContent = t('onboarding.skip');
-    stepHeader.replaceChildren(h('span', null, t('onboarding.step')), ' ', t('onboarding.choose'));
+    stepHeader.replaceChildren(...stepTitle());
+    refreshOnline();
     overline.textContent = t('onboarding.details');
     settingsNote.textContent = t('onboarding.chooseHint');
-    nextButton.textContent = `${t('onboarding.continue')} →`;
+    nextButton.textContent = `${t('onboarding.next')} →`;
     footerText.textContent = hintText('flow.tabKeys');
     scenes.setAttribute('aria-label', t('onboarding.scenes'));
     choices.setAttribute('aria-label', t('onboarding.choose'));
@@ -174,6 +185,54 @@ export function openOnboarding(options: Options): { dispose(): void } {
     scenes.append(action(t(`onboarding.scene.${next}`), () => selectScene(next), 'onboarding__scene-button'));
   }
 
+  // — Step 2: online features —
+  const onlineLead = h('p.onboarding__online-lead', null);
+  const onlineFeatures = h('div.onboarding__online-features', null);
+  const privacyButton = action('', openPrivacyPage, 'onboarding__online-privacy');
+  const onlineChoices = h('div.onboarding__online-choices', { role: 'group', 'aria-label': t('online.title') });
+  const changeNote = h('p.onboarding__online-change', null);
+  const onlineContinue = action('', () => { dispose(); options.startTraining(selected); }, 'onboarding__continue');
+  const chooseOnline = (on: boolean): void => {
+    online = on;
+    options.chooseOnline(on);
+    refreshOnline();
+  };
+  const onlineOn = action('', () => chooseOnline(true), 'onboarding__online-choice');
+  const onlineOff = action('', () => chooseOnline(false), 'onboarding__online-choice');
+  onlineOn.dataset.online = 'on';
+  onlineOff.dataset.online = 'off';
+  onlineChoices.append(onlineOn, onlineOff);
+  const onlineWorkspace = h('main.onboarding__online', { hidden: 'hidden' },
+    h('section.onboarding__online-panel', null, onlineLead, onlineFeatures, changeNote, privacyButton),
+    h('div.onboarding__online-side', null, onlineChoices),
+    onlineContinue);
+  function stepTitle(): (Node | string)[] {
+    return step === 'look'
+      ? [h('span', null, t('onboarding.step')), ' ', t('onboarding.choose')]
+      : [h('span', null, t('onboarding.online.step')), ' ', t('online.title')];
+  }
+  function refreshOnline(): void {
+    onlineLead.textContent = t('online.lead');
+    onlineFeatures.replaceChildren(onlineFeatureList('onboarding__facts'));
+    privacyButton.textContent = `${t('online.privacy')} ↗`;
+    onlineChoices.setAttribute('aria-label', t('online.title'));
+    onlineOn.textContent = t('online.enable');
+    onlineOff.textContent = t('online.offline');
+    onlineOn.setAttribute('aria-pressed', String(online === true));
+    onlineOff.setAttribute('aria-pressed', String(online === false));
+    changeNote.textContent = t('online.changeNote');
+    onlineContinue.textContent = `${t('onboarding.continue')} →`;
+    onlineContinue.disabled = online === null;
+  }
+  const toOnlineStep = (): void => {
+    step = 'online';
+    lookWorkspace.hidden = true;
+    onlineWorkspace.hidden = false;
+    stepHeader.replaceChildren(...stepTitle());
+    refreshOnline();
+    onlineOn.focus({ preventScroll: true });
+  };
+
   const dispose = (): void => {
     if (closed) return;
     closed = true;
@@ -189,14 +248,16 @@ export function openOnboarding(options: Options): { dispose(): void } {
   const stage = h('div.onboarding__preview', null, h('div.onboarding__field', null, canvas), scenes);
   stage.addEventListener('pointerenter', () => { autoCyclePaused = true; });
   stage.addEventListener('pointerleave', () => { autoCyclePaused = false; });
-  const nextButton = action(`${t('onboarding.continue')} →`, () => { dispose(); options.startTraining(selected); }, 'onboarding__continue');
+  const nextButton = action(`${t('onboarding.next')} →`, toOnlineStep, 'onboarding__continue');
+  const lookWorkspace = h('main.onboarding__workspace', null, stage, details, choices, nextButton);
   dialog.append(h('div.onboarding__frame', null,
     h('header.onboarding__header', null,
       eyebrow,
       h('h1.wordmark', null, 'Slingshot'),
       skipButton),
     stepHeader,
-    h('main.onboarding__workspace', null, stage, details, choices, nextButton),
+    lookWorkspace,
+    onlineWorkspace,
     h('footer.onboarding__footer', null, footerText, langContainer)));
   dialog.addEventListener('cancel', (event) => { event.preventDefault(); skip(); });
   dialog.addEventListener('keydown', (event) => {
@@ -204,6 +265,11 @@ export function openOnboarding(options: Options): { dispose(): void } {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
     const direction = event.key === 'ArrowRight' ? 1 : -1;
+    if (step === 'online') {
+      // Between the two answers; choosing is still a press.
+      if ((event.target as HTMLElement)?.closest('.onboarding__online-choices')) (direction > 0 ? onlineOff : onlineOn).focus();
+      return;
+    }
     if ((event.target as HTMLElement)?.closest('.onboarding__scene-tabs')) {
       selectScene(PREVIEW_SCENES[(PREVIEW_SCENES.indexOf(scene) + direction + PREVIEW_SCENES.length) % PREVIEW_SCENES.length]);
     } else select(LOOKS[(LOOKS.indexOf(selected) + direction + LOOKS.length) % LOOKS.length]);
@@ -239,7 +305,7 @@ export function openOnboarding(options: Options): { dispose(): void } {
     if (now - last < 30) { frame = requestAnimationFrame(tick); return; }
     const dt = Math.min(0.05, (now - (last || now)) / 1000);
     last = now;
-    if (!document.hidden) {
+    if (!document.hidden && step === 'look') {
       preview.draw(dt, selected, reduced);
     }
     frame = requestAnimationFrame(tick);

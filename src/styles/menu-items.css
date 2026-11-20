@@ -222,6 +222,18 @@
   cursor: default;
 }
 
+/* A row that opens a page elsewhere, written like the settings around it, with the way out at its end. */
+.item.item--link { font-size: 13px; font-weight: 400; }
+.item.item--link::after { content: '↗'; color: var(--bone-dim); }
+
+/* Needs online, which is off: still chosen (it asks to turn online on), but plainly not available as it stands. The parts
+   are dimmed rather than the row, whose own opacity the menu's entrance animates. */
+.item.item--offline { position: relative; filter: grayscale(1); }
+.item.item--offline > :not(.item__tag) { opacity: 0.45; transition: opacity .2s ease; }
+.item.item--offline:not(:has(> *)) { opacity: 0.45; }
+.item.item--offline:hover > :not(.item__tag), .item.item--offline:focus-visible > :not(.item__tag) { opacity: 0.75; }
+.item.item--offline > .item__tag { position: absolute; top: 8px; right: 8px; z-index: 1; padding: 2px 7px; border: 1px solid var(--menu-line); border-radius: 3px; background: rgb(6 17 32 / .85); color: var(--bone-dim); font: 9px/1.5 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+
 /* Choice rows: ‹ value › — the arrows are real targets, one for each way. */
 
 .item__name {

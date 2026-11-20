@@ -8,6 +8,7 @@ import { MAX_PLAYERS } from '../../sim/config';
 import { t } from '../../platform/i18n';
 import { loadMenuStats } from '../stats/facts';
 import { statsAvailable } from '../stats/stats';
+import { onlineAllowed } from '../../data/online';
 import { presetChangeCount, presetRules, presetsForMode } from './match-presets';
 
 /** A quick game is short and the same every time: three rounds, you against two CPUs. */
@@ -86,7 +87,7 @@ let lastPick: string | undefined;
 
 /** The relay's favourites, which come with the menu's facts; a build without a relay, or one that does not answer in time, has none. */
 async function favorites(): Promise<StatsFavorite[]> {
-  if (!statsAvailable()) return [];
+  if (!statsAvailable() || !onlineAllowed()) return [];
   const asked = loadMenuStats(new StatsBoard()).then((menu) => menu.favorites, () => []);
   const late = new Promise<StatsFavorite[]>((resolve) => setTimeout(() => resolve([]), FAVORITES_WAIT_MS));
   return Promise.race([asked, late]);
