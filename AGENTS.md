@@ -10,6 +10,8 @@ Where a file belongs, and which folder may import which: [`docs/architecture.md`
 
 A fresh browser is offered the first-run introduction (look picker, then the tutorial), which covers the menu. Open the game with `?nointro` to start at the title menu: `http://localhost:5173/?nointro`. It saves nothing and combines with the other parameters (`?nointro&debug`, `?nointro&try=name`). Leave it out only when the introduction itself is under test.
 
+The introduction also asks whether to use the online features (`src/data/online.ts`); until the player says yes, nothing connects to the relay and the menu shows online rows greyed. A `?nointro` visit counts as online without saving it, unless the browser chose offline before; switch it under Einstellungen → Online-Funktionen to test the offline menu.
+
 The daily challenge's page shows a shot of the day only to a player who has posted a run, and only with a relay. In a dev build `?nointro&fakeshot` gives it a sample shot, to look at the card in a short window.
 
 `npm run dev:local` starts both at once: the relay with demo statistics (its own `slingshot-stats-demo.db`), then the page already pointed at it, opened at `/?nointro&debug`.

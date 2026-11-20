@@ -4,6 +4,7 @@ import { factLines, type FactPart } from '../../net/statsFacts';
 import { t } from '../../platform/i18n';
 import { h } from '../dom';
 import { leaderboardAvailable } from '../daily/leaderboard';
+import { onlineAllowed } from '../../data/online';
 import { tipLines } from './tips';
 
 /** How long the numbers fetched are kept before a menu asks again. */
@@ -86,7 +87,7 @@ function interleave(facts: FactPart[][], tips: FactPart[][]): Line[] {
  * with them off it is still there, as tips alone.
  */
 export function menuTicker(showStats = true, board = new StatsBoard()): HTMLElement {
-  const wantsFacts = showStats && leaderboardAvailable();
+  const wantsFacts = showStats && leaderboardAvailable() && onlineAllowed();
   const ticker = h('div.stats-ticker', { role: 'region', 'aria-label': t(wantsFacts ? 'stats.ticker.label' : 'tips.label'), 'aria-busy': 'true', 'data-kind': wantsFacts ? 'fact' : 'tip' });
   // The label is as wide as the longer of its two words in every state, so the line next to it never shifts when the kind changes.
   const labelText = h('span.stats-ticker__label-text', null, t(wantsFacts ? 'stats.ticker.label' : 'tips.label'));

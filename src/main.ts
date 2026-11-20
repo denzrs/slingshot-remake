@@ -46,6 +46,8 @@ import { openOnboarding } from './ui/onboarding/onboarding';
 import { mountTrainingGuide } from './ui/onboarding/training-guide';
 import { firstDuelSettings, Training } from './game/training';
 import { finishOnboarding, introSkipped, needsOnboarding } from './data/onboarding';
+import { allowOnlineForVisit, keepOnlineForReturningPlayer, onlineAllowed, onlineDecided, onOnlineChange, setOnline } from './data/online';
+import { requireOnline } from './ui/screens/online';
 import { lobbyScreen, type LobbyEntry } from './ui/lobby';
 import { keepTournamentTicker, tournamentMenuHint, tournamentScreen, watchMatchCalls } from './ui/tournament';
 import { fromNavigator, Gamepads, pressMenuKey } from './ui/gamepad/gamepad';
@@ -82,6 +84,10 @@ const pwaBanner = document.querySelector<HTMLElement>('#pwa-banner')!;
 /** Read before anything is saved this session: a device that kept settings belongs to a returning player. */
 const returningPlayer = hasSavedSettings();
 const settings = loadSettings();
+// Who finished the introduction before it asked about online played with the relay all along: they keep it. A visit that
+// leaves the introduction out by its address (automated runs, agents) is online too, unless offline was chosen; it saves nothing.
+keepOnlineForReturningPlayer(!needsOnboarding());
+if (introSkipped(location.search)) allowOnlineForVisit();
 // Dev frames follow the hub's language without writing that preference to storage.
 if (import.meta.env.DEV && new URLSearchParams(location.search).get('preview')?.startsWith('onboarding')) {
   const lang = new URLSearchParams(location.search).get('lang');
@@ -397,6 +403,11 @@ function multiplayer(): MultiplayerSession {
   new MutationObserver(() => panel.update()).observe(overlay, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden'] });
   return session;
 }
+// Online switched off: the connection goes, and every page that offers something online shows it greyed.
+onOnlineChange((on) => {
+  if (!on) session?.disconnect();
+  menu.rebuild();
+});
 /** The chat of the room, once there is a session for it. */
 let chat: ChatPanel | null = null;
 /** What the chat last saw of the screen, the menu and the match, so the frame loop updates it only on a change. */
@@ -540,7 +551,7 @@ const app: App = {
     match = createMatch(mode, played, import.meta.env.DEV ? { experiments: experimentsFrom(location.search) } : {});
     // Where there is a relay, a game played here to its end is told to it, for its statistics; a quick game as one, so that
     // the favourites it was dealt from do not count it.
-    if (statsAvailable()) trackLocalGame(match, played, (report) => void reportLocalGame(quick ? { ...report, quick: true } : report));
+    if (statsAvailable() && onlineAllowed()) trackLocalGame(match, played, (report) => void reportLocalGame(quick ? { ...report, quick: true } : report));
     wire(match);
     screen = 'play';
     effects.clear();
@@ -1357,6 +1368,7 @@ async function boot(): Promise<void> {
   // The dev build's view through a pretend player: this tab takes its seat and its tournament person over.
   const impersonating = import.meta.env.DEV ? readImpersonation(location.search) : null;
   if (impersonating) {
+    allowOnlineForVisit();
     keepTournamentTokenInTab();
     const address = botAddress(impersonating.relay, impersonating.level);
     if (impersonating.tournament) saveTournamentToken({ token: impersonating.tournament, server: address, at: Date.now() });
@@ -1370,13 +1382,19 @@ async function boot(): Promise<void> {
       } else app.openTournament();
     });
   }
-  // An invite link opens the lobby by itself and joins the named room after connecting.
-  else if (readInvite(location.search, location.hash)) app.openLobby();
+  // An invite link opens the lobby by itself and joins the named room after connecting; offline, it asks first.
+  else if (readInvite(location.search, location.hash)) {
+    if (onlineAllowed()) app.openLobby();
+    else {
+      app.toTitle();
+      requireOnline(app, () => app.openLobby());
+    }
+  }
   else {
     app.toTitle();
     // The statistics page has no menu entry: it is at /stats.
     if (isPrivacyPath(location.pathname)) menu.push(() => privacyScreen(app));
-    else if (statsAvailable() && /\/stats\/?$/.test(location.pathname)) menu.push(() => statsScreen(app));
+    else if (statsAvailable() && /\/stats\/?$/.test(location.pathname)) requireOnline(app, () => menu.push(() => statsScreen(app)));
     else if (forcedDay) {
       if (new URLSearchParams(location.search).has('start')) {
         app.startDaily();
@@ -1398,17 +1416,23 @@ async function boot(): Promise<void> {
     const finish = (): void => {
       if (!onboardingPreview) finishOnboarding();
     };
-    const progress = t('onboarding.progress', { n: 2 });
+    const progress = t('onboarding.progress', { n: 3 });
     if (requestedPreview === 'onboarding-training') beginTraining({ progress, ended: finish });
     else onboarding = openOnboarding({
       settings,
       sound,
       initialLook: returningPlayer ? settings.look : RECOMMENDED_LOOK,
+      online: !onboardingPreview && onlineDecided() ? onlineAllowed() : null,
       skip: (look) => {
         onboarding = null;
         choose(look);
+        // Skipped before answering: offline, and said so, so a later visit does not take it for a player from before the question.
+        if (!onboardingPreview && !onlineDecided()) setOnline(false);
         finish();
         app.toTitle();
+      },
+      chooseOnline: (on) => {
+        if (!onboardingPreview) setOnline(on);
       },
       startTraining: (look) => {
         onboarding = null;

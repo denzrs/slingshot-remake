@@ -400,3 +400,10 @@
 .privacy__list { padding-left: 1.2em; }
 .privacy__list li { margin-bottom: 4px; }
 .privacy a { color: var(--sodium); text-underline-offset: 3px; }
+
+/* Turning online on, asked from a row that needs it. */
+.online-prompt { max-width: 64ch; font-size: 13px; line-height: 1.65; }
+.online-prompt p { margin: 0 0 10px; }
+.online-features { margin: 0 0 14px; padding-left: 1.2em; color: var(--bone-dim); }
+.online-features li { margin-bottom: 4px; }
+.online-prompt__note { color: var(--bone-dim); font-size: 11px; }

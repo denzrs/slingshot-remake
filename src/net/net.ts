@@ -11,6 +11,7 @@ import type { RoundReport, TurnReport } from '../game/roundReport';
 import type { RoomRules } from '../data/roomRules';
 import { packWireMessage, unpackWireMessage } from './messagepack';
 import { withBrowserId } from '../data/browserId';
+import { onlineAllowed } from '../data/online';
 
 export type RoomMode = 'ffa' | 'team';
 /** The level of a CPU seat in an online room: the same CPUs as offline. */
@@ -435,7 +436,7 @@ const CONNECT_TIMEOUT_MS = 10_000;
 
 /** Why the socket never opened; the lobby says it in the player's language. */
 export class ConnectError extends Error {
-  constructor(readonly reason: 'unreachable' | 'timeout' | 'closed', readonly url: string, message: string) {
+  constructor(readonly reason: 'unreachable' | 'timeout' | 'closed' | 'offline', readonly url: string, message: string) {
     super(message);
     this.name = 'ConnectError';
   }
@@ -464,6 +465,8 @@ export class NetworkClient {
 
   connect(): Promise<void> {
     if (this.closed) return Promise.reject(new Error('This network client has been closed'));
+    // The player chose to play offline: no connection to the relay, whoever asks for one.
+    if (!onlineAllowed()) return Promise.reject(new ConnectError('offline', this.url, 'Online features are switched off'));
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
     if (this.connectPromise) return this.connectPromise;
 

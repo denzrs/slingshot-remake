@@ -8,6 +8,8 @@ import { menuPage } from '../menu/menu-page';
 import { mobileSheet, type SheetSelection } from '../menu/mobile-sheet';
 import type { App } from './app';
 import { hintText } from '../../platform/input-device';
+import { onlineAllowed, setOnline } from '../../data/online';
+import { openPrivacyPage } from './online';
 
 interface SettingsSelection extends SheetSelection { confirmClearData?: boolean }
 
@@ -58,11 +60,12 @@ function settingsScreen(app: App, selection: SettingsSelection): Screen {
     ],
     [
       { id: 'prefs-device', title: t('shell.soundDevice') },
+      { id: 'prefs-online', title: t('online.title') },
       { id: 'prefs-access', title: t('shell.accessibility') },
       ...(touch ? [{ id: 'prefs-touch', title: t('shell.touch') }] : []),
     ],
   ], t('common.settings'), () => app.menu.refresh(), selection);
-  const inGroup = (item: MenuItem, group: 'display' | 'device' | 'language' | 'access' | 'touch'): MenuItem => ({ ...item, section: `prefs-${group}` } as MenuItem);
+  const inGroup = (item: MenuItem, group: 'display' | 'device' | 'online' | 'language' | 'access' | 'touch'): MenuItem => ({ ...item, section: `prefs-${group}` } as MenuItem);
   return {
     build: () => menuPage({
       title: t('common.settings'), className: 'menu-page--settings',
@@ -111,6 +114,15 @@ function settingsScreen(app: App, selection: SettingsSelection): Screen {
             get: () => app.isFullscreen(),
             set: () => app.toggleFullscreen(),
           }, 'device')]),
+      // Not while an online game is on: switching off would end it from under the player.
+      inGroup({
+        kind: 'toggle',
+        label: t('settings.online'),
+        hidden: () => app.online,
+        get: () => onlineAllowed(),
+        set: (v) => setOnline(v),
+      }, 'online'),
+      inGroup({ kind: 'action', className: 'item--link', label: t('online.privacy'), run: openPrivacyPage }, 'online'),
       inGroup(settingToggle(app, t('settings.colorblind'), 'colorblind'), 'access'),
       inGroup(settingToggle(app, t('settings.lessMenuMotion'), 'lessMenuMotion'), 'access'),
       inGroup(settingToggle(app, t('settings.menuBackground'), 'menuBackground'), 'access'),

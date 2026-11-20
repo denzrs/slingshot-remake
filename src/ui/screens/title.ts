@@ -13,6 +13,7 @@ import { prepareModeScreen } from './setup';
 import { pickQuickGame, prepareQuickGame, quickHint } from '../presets/quick-game';
 import { tutorialScreen } from './tutorial';
 import { hintText } from '../../platform/input-device';
+import { onlineItem } from './online';
 
 type LauncherSection = 'local' | 'online';
 
@@ -105,15 +106,16 @@ export function titleScreen(app: App): Screen {
       });
   };
   // The statistics page has two doors: a line in the menu, and on a phone an icon up by the wordmark.
-  const stats = { kind: 'action', hidden: () => !statsAvailable(), label: t('stats.title'), run: () => app.menu.push(() => statsScreen(app)) } as const;
+  // Offline it stays, greyed: the player sees what online would add. A build without a relay has no statistics at all.
+  const stats = (section: string, className: string): MenuItem => onlineItem(app, { kind: 'action', section, className, hidden: () => !statsAvailable(), label: t('stats.title'), run: () => app.menu.push(() => statsScreen(app)) });
   const items: MenuItem[] = [
     { kind: 'action', section: 'navigation', label: t('launcher.local'), selected: () => launcherSection === 'local', run: () => chooseSection('local') },
     { kind: 'action', section: 'navigation', label: t('launcher.online'), selected: () => launcherSection === 'online', run: () => chooseSection('online') },
-    { ...stats, section: 'navigation', className: 'launcher__stats-nav' },
+    stats('navigation', 'launcher__stats-nav'),
     { kind: 'action', section: 'navigation', className: 'launcher__tutorial-nav', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
     { kind: 'action', section: 'navigation', className: 'launcher__settings-nav', label: t('common.settings'), run: () => openSettings(app) },
     // The phone's icons, in the order they stand beside the wordmark.
-    { ...stats, section: 'stats-mobile', className: 'launcher__stats-button' },
+    stats('stats-mobile', 'launcher__stats-button'),
     { kind: 'action', section: 'tutorial-mobile', className: 'launcher__tutorial-button', label: t('common.help'), run: () => app.menu.push(tutorialScreen(app)) },
     { kind: 'action', section: 'settings-mobile', className: 'launcher__settings-button', label: t('common.settings'), run: () => openSettings(app) },
     modeCard('classic'),
@@ -121,10 +123,10 @@ export function titleScreen(app: App): Screen {
     modeCard('solar'),
     { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.quick'), hint: quickHint(), status: () => (quickWaiting ? t('mode.quick.waiting') : ''), icon: () => modeArt('quick'), run: quickGame },
     { kind: 'action', section: 'daily', hidden: () => launcherSection !== 'local', label: t('mode.daily'), hint: dailyMenuHint(app.today()), icon: () => modeArt('daily'), run: () => app.menu.push(() => dailyScreen(app)) },
-    { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') },
-    { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') },
-    { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.code'), hint: t('flow.codeHint'), icon: () => modeArt('code'), run: () => app.openLobby('code') },
-    { kind: 'action', section: 'tournament', hidden: () => launcherSection !== 'online', label: t('tournament.title'), hint: app.tournamentHint(), icon: () => modeArt('tournament'), run: () => app.openTournament() },
+    onlineItem(app, { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.find'), hint: t('flow.findHint'), icon: () => modeArt('rooms'), run: () => app.openLobby('rooms') }),
+    onlineItem(app, { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.create'), hint: t('flow.createHint'), icon: () => modeArt('create'), run: () => app.openLobby('create') }),
+    onlineItem(app, { kind: 'action', section: 'online', hidden: () => launcherSection !== 'online', label: t('flow.code'), hint: t('flow.codeHint'), icon: () => modeArt('code'), run: () => app.openLobby('code') }),
+    onlineItem(app, { kind: 'action', section: 'tournament', hidden: () => launcherSection !== 'online', label: t('tournament.title'), hint: app.tournamentHint(), icon: () => modeArt('tournament'), run: () => app.openTournament() }),
     { ...languageItem(app), section: 'language' },
   ];
   return {

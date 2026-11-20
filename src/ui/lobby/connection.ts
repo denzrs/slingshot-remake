@@ -212,6 +212,7 @@ export function createConnection({ app, session, prefs, save, configuredServer, 
     const params = { server: error.url };
     if (error.reason === 'timeout') return t('multiplayer.connectTimeout', params);
     if (error.reason === 'closed') return t('multiplayer.connectClosed', params);
+    if (error.reason === 'offline') return t('multiplayer.connectOffline');
     return t('multiplayer.connectUnreachable', params);
   };
 
