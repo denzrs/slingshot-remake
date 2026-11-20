@@ -26,9 +26,50 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  scope:
+    # Tells the other jobs what this run has to cover. Only a pull request can leave something out; pushes, tags
+    # and dispatches report everything as changed.
+    #   relay:  a file under server/ changed. Without it the Rust checks and the release build are skipped.
+    #   client: any changed file outside deploy/, .github/ and Markdown files. The JavaScript checks also cover the relay, because
+    #           tests/net runs the client against the relay binary and protocol-wire.test.ts reads
+    #           server/protocol-contract.json, so a relay change counts here too.
+    # Workflow, deploy-script and Markdown changes run neither: no test exercises them.
+    runs-on: ubuntu-latest
+    outputs:
+      relay: ${{ steps.detect.outputs.relay }}
+      client: ${{ steps.detect.outputs.client }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+      - id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$EVENT_NAME" != pull_request ]]; then
+            echo 'relay=true' >> "$GITHUB_OUTPUT"
+            echo 'client=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+          if awk 'BEGIN { found = 0 } /^server\// { found = 1 } END { exit !found }' <<< "$files"; then
+            echo 'relay=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'relay=false' >> "$GITHUB_OUTPUT"
+          fi
+          if awk 'BEGIN { found = 0 } !/^deploy\// && !/^\.github\// && !/\.md$/ && NF { found = 1 } END { exit !found }' <<< "$files"; then
+            echo 'client=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'client=false' >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     # A bootstrap-only dispatch provisions the server without running the whole suite.
     if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.bootstrap == 'true') }}
+    needs: scope
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -37,17 +78,32 @@ jobs:
           cache-workspaces: server
           components: rustfmt, clippy
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: needs.scope.outputs.client == 'true'
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+        if: needs.scope.outputs.client == 'true'
       - run: npm run typecheck
-      - run: cargo fmt --manifest-path server/Cargo.toml -- --check
-      - run: cargo clippy --locked --manifest-path server/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --locked --manifest-path server/Cargo.toml
+        if: needs.scope.outputs.client == 'true'
+      - name: Rust checks (relay)
+        if: needs.scope.outputs.relay == 'true'
+        run: |
+          cargo fmt --manifest-path server/Cargo.toml -- --check
+          cargo clippy --locked --manifest-path server/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path server/Cargo.toml
+      # The online tests in tests/net start the debug relay binary. `cargo test` builds it above; without
+      # relay changes only the build runs, from the cached dependencies.
+      - name: Build the relay for the online tests
+        if: needs.scope.outputs.relay != 'true' && needs.scope.outputs.client == 'true'
+        run: cargo build --locked --manifest-path server/Cargo.toml
       - run: npm test
+        if: needs.scope.outputs.client == 'true'
 
   server-x86_64:
+    # Skipped on a pull request that leaves the relay alone: the release build ships nothing from a PR.
+    needs: scope
+    if: needs.scope.outputs.relay == 'true'
     # Builds beside the tests, not after them: nothing ships on this job alone (the relay deploy, the Pages deploy and the
     # release all also wait for `test`, directly or through `build`), so a red `test` still stops everything.
     runs-on: ubuntu-latest
@@ -332,7 +388,7 @@ jobs:
       - name: Determine version
         id: version
         # A pushed tag is released as it is. Otherwise: the tag on HEAD if there is one (already released,
-        # nothing to do), else the next minor (or major, see [major] below; or patch, when only UI copy, Markdown files, GitHub Actions files or tests changed) after the latest tag, which the release job will create.
+        # nothing to do), else the next minor (or major, see [major] below; or patch, when only UI copy, Markdown files, GitHub Actions files, deploy files or tests changed) after the latest tag, which the release job will create.
         run: |
           semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
           release=false
@@ -351,8 +407,8 @@ jobs:
               # A commit since the latest tag with [major] in its message makes it the next major instead.
               if git log --format=%B "$latest..HEAD" 2>/dev/null | grep -qiF '[major]'; then
                 tag="v$((major + 1)).0.0"
-              # Only the UI copy, Markdown files, GitHub Actions files (.github/) or tests (any tests/ folder) changed: a patch release.
-              elif [ -n "$changed" ] && [ -z "$(printf '%s\n' "$changed" | grep -vE '^src/platform/i18n\.ts$|\.md$|^\.github/|(^|/)tests?/')" ]; then
+              # Only the UI copy, Markdown files, GitHub Actions files (.github/), deploy files (deploy/) or tests (any tests/ folder) changed: a patch release.
+              elif [ -n "$changed" ] && [ -z "$(printf '%s\n' "$changed" | grep -vE '^src/platform/i18n\.ts$|\.md$|^\.github/|^deploy/|(^|/)tests?/')" ]; then
                 tag="v$major.$minor.$((patch + 1))"
               else
                 tag="v$major.$((minor + 1)).0"
