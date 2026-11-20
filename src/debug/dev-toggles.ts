@@ -1,6 +1,7 @@
 import './dev-toggles.css';
 import { t } from '../platform/i18n';
 import { EXPERIMENT_NAMES, EXPERIMENT_PARAM, EXPERIMENTS, experimentsFrom } from '../game/experiments';
+import { mountOnlineBots, type OnlineBotsHost } from './online-bots';
 
 /** A pad with the standard layout that is plugged in and untouched: the game takes it for a real one. */
 export const FAKE_PAD = { connected: true, mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false })) };
@@ -16,6 +17,10 @@ export interface DevTogglesHost {
   pad: { set(on: boolean): void };
   /** The experiments the match on screen plays by: none in the menus, online, or in a replay, whatever the address asks for. */
   experiments(): readonly string[];
+  /** Where this page is online, for the pretend players (see `online-bots.ts`). */
+  online: OnlineBotsHost['online'];
+  /** Starts the tournament this page organizes, for a simulated one. */
+  startTournament: OnlineBotsHost['startTournament'];
 }
 
 /** How often the chip looks at the match on screen, in ms: matches start and end in many places, and none has to tell it. */
@@ -88,6 +93,7 @@ export function mountDevToggles(host: DevTogglesHost): { sync(): void } {
     host.pad.set(fakePad);
     pad.input.blur();
   });
+  mountOnlineBots(panel, host);
   if (params.get('colorblind') === '1') host.colorblind.set(true);
   if (params.get('pad') === '1') {
     pad.input.checked = fakePad = true;

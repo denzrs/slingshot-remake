@@ -1,11 +1,16 @@
 import type { GameEvent } from '../game';
 import type { ClassicSnapshot } from '../game/classic';
 import type { HorizonSnapshot } from '../game/horizon';
-import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkCpuLevel, type RoomInfo, type RoomMode, type RoomRules, type ServerMessage } from './net';
+import { NetworkClient, type ClientInput, type LobbyRoom, type NetworkCpuLevel, type RoomInfo, type RoomMode, type RoomRules, type ServerMessage, type TournamentStage, type TournamentView } from './net';
+import { applyTournamentPatch } from './tournament-patch';
+import { clearTournamentToken, loadTournamentToken, saveTournamentToken } from '../data/tournamentToken';
 import type { GameMode } from '../sim/modes';
-import type { RoomLook } from '../data/roomLook';
+import type { RoomColor, RoomLook } from '../data/roomLook';
 import type { Avatar } from '../platform/avatars';
+import type { Emblem } from '../platform/emblems';
 import { Banter } from '../game/banter';
+import { setTeamNames } from '../game/match-types';
+import { setTeamColors } from '../data/palette';
 import { roundReport, turnReport } from '../game/roundReport';
 import { SnapshotDecoder, SnapshotEncoder } from './netsync';
 import { netMatch, type NetMatch } from './netMatch';
@@ -97,7 +102,14 @@ export class MultiplayerSession {
   rooms: LobbyRoom[] = [];
   /** The first lobby update after connecting has arrived. An empty list before this is still loading. */
   roomListLoaded = false;
-  room: RoomInfo | null = null;
+  private current: RoomInfo | null = null;
+  /** The room you are in. A tournament match's room names its teams, and the game takes those names while you are in it. */
+  get room(): RoomInfo | null { return this.current; }
+  set room(room: RoomInfo | null) {
+    this.current = room;
+    setTeamNames(room?.teamNames ?? null);
+    setTeamColors(room?.teamColors ?? null);
+  }
   you: { playerId: number; host: boolean; spectator?: boolean; spectatorId?: number } = { playerId: 0, host: false };
   /** The last thing worth telling the player (server errors, "host left", …). */
   notice: string | null = null;
@@ -106,6 +118,10 @@ export class MultiplayerSession {
   /** The notice, when it is the relay refusing the room password: it belongs at the password field. */
   private passwordError: string | null = null;
   match: NetMatch | null = null;
+  /** The tournament you are in, as the relay last told it. It lives beside the room: a tournament's match is a room. */
+  tournament: TournamentView | null = null;
+  /** The last thing the relay said about the tournament (a refusal, or that it is over). */
+  tournamentNotice: string | null = null;
   /** What has been said in the room you are in. */
   chat: ChatLine[] = [];
   /** Lines ever added to the chat: unlike `chat.length` it keeps counting once the cap is reached. */
@@ -177,6 +193,7 @@ export class MultiplayerSession {
 
   async connect(address: string): Promise<void> {
     this.connecting = true;
+    this.keptTournamentToken = null;
     this.roomListLoaded = false;
     this.rooms = [];
     this.emit();
@@ -189,7 +206,113 @@ export class MultiplayerSession {
     this.connected = true;
     this.notice = null;
     this.send({ type: 'lobby' });
+    this.resumeTournament();
     this.emit();
+  }
+
+  // ————————————————————————————— Tournament —————————————————————————————
+
+  /** The token last written down, so that a tournament's updates do not read the browser's storage each time. */
+  private keptTournamentToken: string | null = null;
+
+  private keepTournamentToken(token: string): void {
+    if (this.keptTournamentToken === token) return;
+    const saved = loadTournamentToken();
+    if (saved?.token !== token || saved.server !== this.client.address) {
+      saveTournamentToken({ token, server: this.client.address, at: Date.now() });
+    }
+    this.keptTournamentToken = token;
+  }
+
+  /** Ask for the person this browser was in its tournament, if it kept a token for this relay. */
+  private resumeTournament(): void {
+    const saved = loadTournamentToken();
+    if (!saved || saved.server !== this.client.address || this.tournament) return;
+    this.send({ type: 'tournament_resume', token: saved.token });
+  }
+
+  /** Take a seat over with its token, as a dropped connection does: the dev build's view through a pretend player. */
+  takeSeat(token: string): void {
+    this.token = token;
+    this.send({ type: 'resume', token });
+  }
+
+  /** Whether this browser kept a tournament to come back to on the relay at `address`. */
+  hasTournamentToken(address: string): boolean {
+    return loadTournamentToken()?.server === address;
+  }
+
+  createTournament(options: { name: string; avatar: Avatar; teamSize: number; maxTeams: number; stages: TournamentStage[] }): void {
+    this.tournamentNotice = null;
+    this.send({ type: 'tournament_create', ...options });
+  }
+
+  joinTournament(code: string, name: string, avatar: Avatar): void {
+    this.tournamentNotice = null;
+    this.send({ type: 'tournament_join', code: code.trim(), name, avatar });
+  }
+
+  /** Leave the tournament for good. */
+  leaveTournament(): void {
+    if (this.tournament) this.send({ type: 'tournament_leave' });
+    clearTournamentToken();
+    this.keptTournamentToken = null;
+    this.tournament = null;
+    this.tournamentNotice = null;
+    this.emit();
+  }
+
+  createTeam(name: string, closed: boolean, slot?: number): void {
+    this.tournamentNotice = null;
+    this.send({ type: 'tournament_create_team', name, closed, slot });
+  }
+
+  joinTeam(team: number, code?: string): void {
+    this.tournamentNotice = null;
+    this.send({ type: 'tournament_join_team', team, ...(code ? { code: code.trim() } : {}) });
+  }
+
+  /** What a team shows: its symbol and colour. */
+  setTeamLook(team: number, emblem: Emblem, color: RoomColor): void {
+    this.send({ type: 'tournament_team_look', team, emblem, color });
+  }
+
+  leaveTeam(): void {
+    this.send({ type: 'tournament_leave_team' });
+  }
+
+  promote(person: number): void {
+    this.send({ type: 'tournament_promote', person });
+  }
+
+  removeTeam(team: number): void {
+    this.send({ type: 'tournament_remove_team', team });
+  }
+
+  /** Organizers only: what a level of the bracket plays (0 is the final). */
+  setStage(stage: number, game: TournamentStage): void {
+    this.tournamentNotice = null;
+    this.send({ type: 'tournament_set_stage', stage, ...game });
+  }
+
+  startTournament(): void {
+    this.tournamentNotice = null;
+    this.send({ type: 'tournament_start' });
+  }
+
+  skipMatch(level: number, index: number, team?: number): void {
+    this.send({ type: 'tournament_skip', level, index, ...(team === undefined ? {} : { team }) });
+  }
+
+  /** Take a seat in your team's match; its room comes as a room update. */
+  enterMatch(avatar: Avatar): void {
+    this.tournamentNotice = null;
+    this.send({ type: 'tournament_enter', avatar });
+  }
+
+  watchMatch(level: number, index: number): void {
+    this.tournamentNotice = null;
+    this.send({ type: 'tournament_watch', level, index });
   }
 
   createRoom(options: CreateRoomOptions): void {
@@ -292,6 +415,8 @@ export class MultiplayerSession {
     this.forgetSeat();
     this.client.close();
     this.connected = false;
+    // The token stays: the tournament goes on without this browser, which can come back to it.
+    this.tournament = null;
     this.room = null;
     this.clearChat();
     this.rooms = [];
@@ -468,6 +593,36 @@ export class MultiplayerSession {
         this.notice = message.message;
         if (this.match) this.endMatch();
         break;
+      case 'tournament': {
+        const { type: _type, ...view } = message;
+        this.tournament = view;
+        this.tournamentNotice = null;
+        this.keepTournamentToken(view.you.token);
+        break;
+      }
+      case 'tournament_patch': {
+        const { type: _type, ...patch } = message;
+        const view = applyTournamentPatch(this.tournament, patch);
+        if (!view) break;
+        this.tournament = view;
+        this.tournamentNotice = null;
+        if (patch.you) this.keepTournamentToken(view.you.token);
+        break;
+      }
+      case 'tournament_resume_failed':
+        clearTournamentToken();
+    this.keptTournamentToken = null;
+        this.tournament = null;
+        break;
+      case 'tournament_left':
+        this.tournament = null;
+        break;
+      case 'tournament_closed':
+        clearTournamentToken();
+    this.keptTournamentToken = null;
+        this.tournament = null;
+        this.tournamentNotice = message.message;
+        break;
       case 'resume_failed':
         // The seat was given up while we were away: the game is over for us, as it would have been.
         this.forgetSeat();
@@ -483,12 +638,14 @@ export class MultiplayerSession {
         const aboutChat = message.message === CHAT_TOO_FAST;
         if (aboutChat || this.match) this.say(message.message);
         if (!(aboutChat && this.room)) this.notice = message.message;
+        if (this.tournament && !this.room) this.tournamentNotice = message.message;
         this.nameError = message.field === 'name' ? message.message : null;
         this.passwordError = message.field === 'password' ? message.message : null;
         break;
       }
       case 'closed':
         this.connected = false;
+        this.tournament = null;
         // A seated player in a room keeps the room and the match and tries to come back to the seat.
         if (this.token && this.room && !this.isSpectator && this.client.address) {
           if (!this.reconnecting) this.lostAt = Date.now();
@@ -525,6 +682,11 @@ export class MultiplayerSession {
       match.on((event) => {
         this.pendingEvents.push(event);
         if (event.type === 'roundEnd') this.send({ type: 'round_stats', ...roundReport(match) });
+        // A tournament's match is decided by its game: the team ahead wins (on a tie, the ranking's first).
+        if (event.type === 'gameOver' && this.room?.tournament) {
+          const team = match.teamRanking()[0]?.team;
+          if (team === 0 || team === 1) this.send({ type: 'match_result', team });
+        }
       });
       match.onTurnEnd(() => this.send({ type: 'turn_stats', ...turnReport(match) }));
       match.onSeatChange((change) => this.send({ type: 'seat_stats', ...change }));
@@ -628,6 +790,7 @@ export class MultiplayerSession {
         this.connected = true;
         // The answer is a room update (the seat is back) or `resume_failed`; `reconnecting` stays on until then.
         this.send({ type: 'resume', token: this.token });
+        this.resumeTournament();
         return;
       }
       if (this.reconnecting) this.giveUp();

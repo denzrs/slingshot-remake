@@ -4,6 +4,7 @@
   "description": "Slingshot – Gravitations-Artillerieduell im Weltraum (Web-Remake)",
   "scripts": {
     "dev": "vite",
+    "dev:local": "tsx scripts/dev-local.ts",
     "dev:onboarding": "vite --open '/?preview=onboarding'",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",

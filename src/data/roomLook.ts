@@ -10,7 +10,10 @@ export type RoomVisibility = (typeof ROOM_VISIBILITIES)[number];
 export const ROOM_SYMBOLS = ['planet', 'moon', 'star', 'sun', 'comet', 'blackhole', 'ufo', 'asteroid'] as const;
 export type RoomSymbol = (typeof ROOM_SYMBOLS)[number];
 
-export const ROOM_COLORS = ['#ff8660', '#ffd27a', '#c6e86a', '#6fe3c8', '#62b6ff', '#b99cff', '#ff6f9f', '#e8e4d8'] as const;
+export const ROOM_COLORS = [
+  '#ff8660', '#ffd27a', '#c6e86a', '#6fe3c8', '#62b6ff', '#b99cff', '#ff6f9f', '#e8e4d8',
+  '#ff5a5a', '#ffa94d', '#4fd98a', '#36c2d6', '#5b7cff', '#e46cff', '#d4915c', '#9aa8bd',
+] as const;
 export type RoomColor = (typeof ROOM_COLORS)[number];
 
 export interface RoomLook {

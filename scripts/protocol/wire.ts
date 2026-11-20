@@ -16,10 +16,12 @@ import { contractRules, layout } from './rules';
 export const WIRE_FILES = [
   'src/net/net.ts',
   'src/net/netsync.ts',
+  'src/net/tournament-patch.ts',
   'src/net/messagepack.ts',
   'src/data/roomRules.ts',
   'src/data/roomLook.ts',
   'src/platform/avatars.ts',
+  'src/platform/emblems.ts',
   'src/game/roundReport.ts',
   'src/game/replay.ts',
 ] as const;

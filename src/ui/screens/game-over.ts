@@ -1,6 +1,6 @@
 import { COLORS } from '../../sim/config';
 import { teamColor } from '../../data/palette';
-import { teamName, type Match } from '../../game';
+import { teamTitle, type Match } from '../../game';
 import { oracleAwards } from '../../game/oracle';
 import { fmtInt, t, tn } from '../../platform/i18n';
 import { roundTitle } from '../../game/mayhem';
@@ -43,7 +43,7 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
     return row;
   };
   const playerRanking = () => h('ol.ranking', null, ...match.ranking().map((p, i) => entry(i + 1, p.name, p.color, p.score, p.id)));
-  const teamRanking = () => h('ol.ranking', null, ...match.teamRanking().map((r, i) => entry(i + 1, t('team.name', { team: teamName(r.team) }), teamColor(r.team), r.score)));
+  const teamRanking = () => h('ol.ranking', null, ...match.teamRanking().map((r, i) => entry(i + 1, teamTitle(r.team), teamColor(r.team), r.score)));
   const section = (title: string, ...content: Node[]) => h('section.report-section', null, h('h3.ranking-label', null, title), ...content);
   let page: HTMLElement;
   let disposeCarousel = (): void => {};
@@ -142,6 +142,9 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
           { kind: 'action', section: 'actions', label: t('replay.back'), run: settled(() => app.leaveReplay()) },
           { kind: 'action', section: 'actions', label: t('replay.again'), primary: true, run: settled(() => app.watchAgain()) },
         ] satisfies MenuItem[]
+      : app.tournamentMatch
+      // A tournament's match is decided: no rematch and no room to go back to, only the bracket.
+      ? [{ kind: 'action', section: 'actions', label: t('over.backToTournament'), primary: true, run: settled(() => app.leaveOnlineRoom()) }] satisfies MenuItem[]
       : [
           ...(app.online && match.canAdvance ? [{ kind: 'action', section: 'actions', label: t('over.backToLobby'), run: settled(() => app.backToLobby()) } satisfies MenuItem] : []),
           app.online
@@ -153,7 +156,7 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
         ] satisfies MenuItem[]),
     ],
     // The way on is the last button: one more sits before it when the host can send the room back to the lobby.
-    focus: !match.replaying && app.online && match.canAdvance ? 4 : 3,
+    focus: !match.replaying && app.tournamentMatch ? 2 : !match.replaying && app.online && match.canAdvance ? 4 : 3,
     onEscape: () => (match.replaying ? app.leaveReplay() : app.online ? app.leaveOnlineRoom() : app.toTitle()),
   };
 }

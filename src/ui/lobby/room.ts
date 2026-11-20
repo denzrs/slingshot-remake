@@ -53,7 +53,7 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
   let hostPassword = '';
   /** The room's symbol in its colour; for the host it opens the dialog that changes it. */
   const roomSymbol = h('button.room-info__symbol', { type: 'button' }) as HTMLButtonElement;
-  roomSymbol.addEventListener('click', () => roomDialog?.open());
+  roomSymbol.addEventListener('click', () => roomDialog?.open(roomSymbol));
   /** Who may find the room and whether it is teams: the host's selectors, read-only for everybody else. */
   const roomSwitches = h('span.room-info__switches', null);
   /** Free for all or teams: it belongs to the players, so it sits above them. */
@@ -153,15 +153,20 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
     const { you } = session;
     const self = you.spectator ? undefined : room.players.find((p) => p.id === you.playerId);
     const watching = !!you.spectator;
+    // A tournament's match plays the setup its tournament gave it: the host starts it and changes nothing.
+    const edits = you.host && !room.tournament;
+    // Its host may still fill free seats with CPUs: a team's person who comes takes the seat back.
+    const cpuEdits = you.host && room.status === 'waiting';
     selfReady = !!self?.ready;
     roomSymbol.replaceChildren(roomIcon(room.symbol, room.color));
     roomCode.textContent = room.id;
-    paintRoomSwitches(room, you.host);
+    paintRoomSwitches(room, edits);
     lockTag.hidden = !room.locked;
-    copyInvite.hidden = !canCopyInvite(room.locked, you.host);
-    copyPassword.hidden = !(you.host && room.locked && hostPassword);
+    copyInvite.hidden = !canCopyInvite(room.locked, edits);
+    copyPassword.hidden = !(edits && room.locked && hostPassword);
     const teamGame = room.mode === 'team';
-    const inTeam = (k: number) => room.players.filter((p) => p.team === k).length;
+    // A tournament match needs a person in each team; elsewhere a CPU fills a team too.
+    const inTeam = (k: number) => room.players.filter((p) => p.team === k && (!room.tournament || p.cpu === null)).length;
     const teamsReady = !teamGame || (inTeam(0) > 0 && inTeam(1) > 0);
     const crowd = room.spectators ?? [];
     stands.hidden = !crowd.length;
@@ -169,7 +174,7 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
     watchNote.hidden = !watching;
     ready.hidden = watching || you.host;
     roomCount.textContent = `${room.players.length}/${room.maxPlayers} ${t('multiplayer.players')}`;
-    resetTeams.hidden = !(teamGame && you.host);
+    resetTeams.hidden = !(teamGame && edits);
     const people = room.players.filter((p) => p.cpu === null).length;
     const cpus = room.players.length - people;
 
@@ -182,10 +187,10 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
         const cpu = player.cpu;
         // A CPU seat is the host's to change; the others only see what it is.
         const cpuTag = cpu === null ? [] : [h('span.lobby__tag', null, t('multiplayer.cpuTag'))];
-        const levelPick = cpu === null ? [] : you.host && room.status === 'waiting'
+        const levelPick = cpu === null ? [] : cpuEdits
           ? [optionSelector(`${player.name} · ${t('multiplayer.cpuLevel')}`, CPU_LEVELS.map((level) => ({ value: level, label: t(`cpu.${level}`) })), () => cpu, (level) => session.setCpu(player.id, { level })).el]
           : [h('span.lobby__tag', null, t(`cpu.${cpu}`))];
-        const removeButton = cpu === null || !you.host ? null : iconButton(t('multiplayer.removeCpu'), ICON_CLOSE);
+        const removeButton = cpu === null || !cpuEdits ? null : iconButton(t('multiplayer.removeCpu'), ICON_CLOSE);
         removeButton?.addEventListener('click', () => session.removeCpu(player.id));
         const card = h('li.slot-card.player-slot', { 'aria-label': t('players.player', { n: player.id + 1 }) },
           h('div.slot-card__head', null,
@@ -214,7 +219,7 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
         });
         return {
           key: String(player.id), el: card, label: player.name, team: player.team,
-          ...(teamGame && room.status === 'waiting' && (mine || (cpu !== null && you.host)) ? { move: (team: number) => {
+          ...(teamGame && room.status === 'waiting' && ((mine && !room.tournament) || (cpu !== null && cpuEdits)) ? { move: (team: number) => {
             sound.blip();
             if (cpu !== null) session.setCpu(player.id, { team: team as 0 | 1 });
             else session.setTeam(team as 0 | 1);
@@ -226,7 +231,7 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
         const invite = button(t('slots.invite'));
         invite.className = 'slot-card__join';
         invite.append(h('span.slot-card__plus', { 'aria-hidden': 'true' }, '+'));
-        invite.disabled = !canCopyInvite(room.locked, you.host);
+        invite.disabled = !canCopyInvite(room.locked, edits);
         invite.dataset.slotFocus = `invite-${slot}`;
         invite.addEventListener('click', () => copyInviteLink(invite));
         const addCpu = button(t('multiplayer.addCpu'));
@@ -236,7 +241,7 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
           const team = roster.teamOf(`free-${slot}`);
           session.addCpu('medium', teamGame && team !== null ? team as 0 | 1 : undefined);
         });
-        addCpu.hidden = !(you.host && room.status === 'waiting');
+        addCpu.hidden = !cpuEdits;
         const card = h('article.slot-card.slot-card--empty', null,
           h('div.slot-card__head', null, h('span.slot-card__number', null, `P${slot + 1}`), h('span.slot-card__kind', null, t('slots.free'))),
           invite, h('span.slot-card__waiting', null, t('slots.waiting')), addCpu,
@@ -247,19 +252,19 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
     roster.show(cards, teamGame ? 2 : 0, room.maxPlayers);
     if (focusKey) players.querySelector<HTMLElement>(`[data-slot-focus="${focusKey}"]`)?.focus({ preventScroll: true });
     // The look is rebuilt only when the room or the host changes, so an open dialog keeps its state between updates.
-    const lookId = `${room.id}|${you.host}`;
+    const lookId = `${room.id}|${edits}`;
     if (lookId !== roomLookKey) {
       roomLookKey = lookId;
       roomDialog?.close();
-      roomDialog = you.host ? lookDialog(lookOf(room), changeRoomLook, { sound }) : null;
+      roomDialog = edits ? lookDialog(lookOf(room), changeRoomLook, { sound }) : null;
     }
-    roomSymbol.disabled = !you.host;
-    roomSymbol.title = you.host ? t('multiplayer.lookTitle') : '';
+    roomSymbol.disabled = !edits;
+    roomSymbol.title = edits ? t('multiplayer.lookTitle') : '';
     roomDialog?.refresh(lookOf(room));
 
     // The host edits the game and its rules in the briefing; everybody else sees the same page, locked, and it follows the host.
-    if (!you.host) briefing.follow(room);
-    briefing.setRulesLabel(t(you.host ? 'briefing.editRules' : 'shell.roomRules'));
+    if (!edits) briefing.follow(room);
+    briefing.setRulesLabel(t(edits ? 'briefing.editRules' : 'shell.roomRules'));
     ready.textContent = self?.ready ? t('multiplayer.unready') : t('multiplayer.ready');
     ready.classList.toggle('lobby__button--primary', !you.host && !watching && !self?.ready);
     start.hidden = !you.host;
@@ -267,9 +272,10 @@ export function createRoomView({ app, session, briefing, configuredServer, copyT
     const guestsReady = room.players.every((p) => p.id === 0 || p.ready);
     start.disabled = people < 2 || !guestsReady || !teamsReady;
     // Why the game cannot start, beside the start button: CPUs alone play offline, and a team game needs somebody in each team.
+    // A tournament match says only that a team lacks its person: that covers the second person too.
     const hints = [
-      ...(cpus > 0 && people < 2 ? [t('multiplayer.cpuOnlyNote')] : you.host && people < 2 ? [t('multiplayer.startNeedHuman')] : []),
-      ...(!teamsReady ? [t('multiplayer.teamsNeedPlayers')] : []),
+      ...(room.tournament ? [] : cpus > 0 && people < 2 ? [t('multiplayer.cpuOnlyNote')] : you.host && people < 2 ? [t('multiplayer.startNeedHuman')] : []),
+      ...(!teamsReady ? [t(room.tournament ? 'multiplayer.teamsNeedPeople' : 'multiplayer.teamsNeedPlayers')] : []),
     ];
     if (!hints.length && you.host && !guestsReady) hints.push(t('multiplayer.startNeedReady'));
     startHint.textContent = hints.join('\n');

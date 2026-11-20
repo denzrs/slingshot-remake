@@ -78,7 +78,7 @@
 .menu-page__actions { flex: 1; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin: 0; }
 .menu-page__actions .item { min-height: 52px; padding: 14px 22px; color: var(--bone-dim); border-color: var(--menu-line); font-size: 13px; }
 .menu-page__actions .item--primary { margin-left: 0; }
-.menu-page__actions .item--primary, .pause-actions .item--primary, .menu-page .lobby__button--primary, .look-dialog .lobby__button--primary {
+.menu-page__actions .item--primary, .pause-actions .item--primary, .menu-page .lobby__button--primary, .look-dialog .lobby__button--primary, .look-popover .lobby__button--primary {
   background: var(--launch-accent);
   border: 1px solid var(--launch-accent);
   color: var(--menu-surface);
@@ -89,9 +89,9 @@
 
 .menu-page__actions .item--primary:hover, .menu-page__actions .item--primary:focus,
 .pause-actions .item--primary:hover, .pause-actions .item--primary:focus,
-.menu-page .lobby__button--primary:hover:not(:disabled), .look-dialog .lobby__button--primary:hover:not(:disabled) { background: #ffc28d; color: var(--menu-surface); }
+.menu-page .lobby__button--primary:hover:not(:disabled), .look-dialog .lobby__button--primary:hover:not(:disabled), .look-popover .lobby__button--primary:hover:not(:disabled) { background: #ffc28d; color: var(--menu-surface); }
 .menu-page .item:focus-visible, .menu-page button:focus-visible, .menu-page input:focus-visible, .menu-page select:focus-visible,
-.menu-page summary:focus-visible, .look-dialog button:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--bone); }
+.menu-page summary:focus-visible, .look-dialog button:focus-visible, .look-popover button:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--bone); }
 .menu-page .item.is-disabled, .menu-page [aria-disabled='true'], .menu-page button:disabled { opacity: 0.4; }
 .screen[data-rebuild] .menu-page__head > *,
 .screen[data-rebuild] .menu-page__head .mode-pager__viewport,
@@ -340,7 +340,6 @@
 .menu-page .lobby__field { font-size: 12px; gap: 8px; }
 .menu-page .lobby__field input, .menu-page .lobby-room input { min-height: 44px; padding: 10px 12px; border-color: var(--menu-line); background: var(--menu-surface); font-size: 14px; }
 .menu-page .lobby__name { margin: 0; }
-.menu-page .lobby__avatar { margin-left: auto; }
 .menu-page .lobby__empty { padding: 42px 20px; gap: 12px; border: 0; background: none; }
 .menu-page .lobby__empty strong { font: 800 34px/1.2 var(--font-display); text-transform: uppercase; color: var(--bone); }
 .menu-page .lobby__empty > span { max-width: 44ch; font-size: 13px; line-height: 1.7; }
@@ -480,7 +479,6 @@
   .lobby__connect > .setup__title, .lobby__connect > .lobby__fields, .lobby__connect > .lobby__button { grid-column: 1; }
   .lobby__connect-art { grid-column: 1; grid-row: auto; }
   .lobby__connect-art .mode-art { height: 130px; }
-  .menu-page .lobby__avatar { width: 100%; margin-left: 0; }
   .menu-page .lobby__actions .lobby__button { flex: 1 1 auto; }
 }
 

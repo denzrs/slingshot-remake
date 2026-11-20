@@ -5,7 +5,6 @@ import { DEFAULT_SERVER, isSecureRelay, type MultiplayerSession } from '../../ne
 import { GAME_MODES, type GameMode } from '../../sim/modes';
 import { h, type Screen } from '../menu/menu';
 import type { App } from '../screens';
-import { menuTicker } from '../stats/facts';
 import { menuPage } from '../menu/menu-page';
 import { modeName } from '../menu/mode-name';
 import { createBriefing } from './briefing';
@@ -134,7 +133,6 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   const root = menuPage({
     title: t(({ rooms: 'flow.find', create: 'flow.create', code: 'flow.code' } as const)[view]), eyebrow: t('launcher.online'), className: 'menu-page--lobby menu-page--mode-enter-next',
     headerTitle: onlineHeader,
-    headerAside: menuTicker(app.settings.statsTicker),
     body: [lobbyEl], footer: footerActions, keys: hintText('flow.tabKeys'),
   });
   const page = root.querySelector<HTMLElement>('.menu-page')!;
@@ -153,7 +151,7 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
   let pendingContentDirection: OnlineSectionDirection | null = null;
   let enterTimer: ReturnType<typeof setTimeout> | undefined;
   /** The host of a waiting room picks the game in the pager, where everybody else has the online pages. */
-  const hostPicking = (): boolean => !!session.room && session.you.host && !session.you.spectator && session.room.status === 'waiting';
+  const hostPicking = (): boolean => !!session.room && session.you.host && !session.you.spectator && session.room.status === 'waiting' && !session.room.tournament;
   const paintOnlineSectionNav = (inRoom: boolean): void => {
     const picking = hostPicking();
     const entries: { id: string; label: string }[] = picking
@@ -385,6 +383,8 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
     goBack();
   });
 
+  /** The room on screen is a tournament's match: once it is gone, the way back is to the bracket. */
+  let tournamentRoom = !!session.room?.tournament;
   let unsubscribe: (() => void) | null = null;
   return {
     build: () => {
@@ -394,6 +394,13 @@ export function lobbyScreen(app: App, session: MultiplayerSession, entry?: Lobby
         if (!root.isConnected) {
           unsubscribe?.();
           unsubscribe = null;
+          return;
+        }
+        if (session.room) tournamentRoom = !!session.room.tournament;
+        else if (tournamentRoom && session.tournament) {
+          unsubscribe?.();
+          unsubscribe = null;
+          app.openTournament();
           return;
         }
         connection.message = null;

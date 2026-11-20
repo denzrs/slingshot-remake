@@ -133,6 +133,21 @@ pub(super) struct Room {
     pub(super) reported_turn: (i64, i64),
     /// A change at the table of the running game was not kept, and the game is already marked as one that cannot be replayed.
     pub(super) seat_change_lost: bool,
+    /// The tournament match the room is for; such a room keeps the setup the tournament gave it.
+    pub(super) tournament: Option<MatchRef>,
+    /// Every seat's score as the host last reported it, so a match result can be held to it.
+    pub(super) scores: Vec<i64>,
+}
+
+/// A match of a tournament, by the tournament's code.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct MatchRef {
+    pub(super) code: String,
+    pub(super) game: crate::tournament::MatchId,
+    /// The two teams' own names, side 0 first: the game shows them in place of its team names.
+    pub(super) team_names: [String; 2],
+    /// The two teams' own colours, side 0 first: the game draws the teams in them.
+    pub(super) team_colors: [crate::wire::RoomColor; 2],
 }
 
 pub(super) struct Membership {
@@ -171,15 +186,33 @@ pub(super) fn smallest_team(room: &Room) -> u8 {
     }
 }
 
-/// A team game needs somebody in each team (a seat whose person left the game counts for none).
+/// A team game needs somebody in each team (a seat whose person left the game counts for none). A
+/// tournament match needs a person in each: its CPUs only fill the seats beside them.
 pub(super) fn teams_playable(room: &Room) -> bool {
     room.mode != RoomMode::Team || {
         let mut present = [false; 2];
-        for p in room.players.iter().filter(|p| !p.left) {
+        for p in room
+            .players
+            .iter()
+            .filter(|p| !p.left && (room.tournament.is_none() || !p.is_cpu()))
+        {
             present[p.team as usize] = true;
         }
         present[0] && present[1]
     }
+}
+
+/// How many seats one side of a tournament match has: half the room.
+pub(super) fn match_side_seats(room: &Room) -> usize {
+    room.max_players as usize / 2
+}
+
+/// The seats taken on one side of the room (a seat whose person left the game counts for none).
+pub(super) fn seats_on(room: &Room, team: u8) -> usize {
+    room.players
+        .iter()
+        .filter(|p| p.team == team && !p.left)
+        .count()
 }
 
 /// The seats with a person in them. A game needs two of them; CPUs alone are played offline.

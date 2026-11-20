@@ -8,15 +8,17 @@ use serde_json::Value;
 
 use crate::auth::{password_length, MAX_PASSWORD_LENGTH};
 use crate::protocol::{
-    clean_chat, is_input_message, is_safe_integer, parse_avatar, parse_cpu_level, parse_daily_day,
-    parse_daily_submit, parse_player_name, parse_room_look, parse_room_name, parse_rules,
-    DailyScore, RoomLook, RoomName, RoomRules, NAME_REQUIRED,
+    clean_chat, clean_name_checked, is_acceptable_name, is_input_message, is_safe_integer,
+    parse_avatar, parse_cpu_level, parse_daily_day, parse_daily_submit, parse_emblem,
+    parse_player_name, parse_room_look, parse_room_name, parse_rules, DailyScore, RoomLook,
+    RoomName, RoomRules, NAME_REFUSED, NAME_REQUIRED,
 };
 use crate::report::{
     parse_local_game, parse_round_report, parse_seat_report, parse_turn_report, LocalGame,
     RoundReport, SeatReport, TurnReport,
 };
-use crate::wire::{Avatar, CpuLevel, GameMode, RoomMode, Wire};
+use crate::tournament::{MatchId, Settings, StageRules, MAX_TEAMS, MAX_TEAM_SIZE, STAGES};
+use crate::wire::{Avatar, CpuLevel, Emblem, GameMode, RoomColor, RoomMode, Wire};
 
 /// The most players a room takes.
 pub const MAX_ROOM_PLAYERS: i64 = 6;
@@ -93,6 +95,8 @@ pub enum RoomCommand<'a> {
     LeaveRoom,
     /// A new connection asks for the seat its `token` was given for.
     Resume(Parsed<String>),
+    /// Something to do with a tournament.
+    Tournament(TournamentCommand),
     /// A message with no `type`.
     Malformed,
     /// A message whose `type` is not one the relay knows.
@@ -164,6 +168,205 @@ impl JoinRoom {
         self.target
             .as_ref()
             .map_or("", |target| target.room_id.as_str())
+    }
+}
+
+/// A tournament message. The plan is `docs/plans/tournament.md`; the model is `crate::tournament`.
+pub enum TournamentCommand {
+    Create {
+        name: Parsed<String>,
+        avatar: Parsed<Avatar>,
+        settings: Parsed<Settings>,
+    },
+    /// Come in with the tournament's code.
+    Join {
+        code: Parsed<String>,
+        name: Parsed<String>,
+        avatar: Parsed<Avatar>,
+    },
+    /// A new connection asks for the person its `token` was given to.
+    Resume(Parsed<String>),
+    Leave,
+    CreateTeam {
+        name: Parsed<String>,
+        /// A closed team gets a code; an open one may be joined by anyone in the tournament.
+        closed: bool,
+        /// The place in the bracket it was founded in; none lets the tournament pick the first free one.
+        slot: Option<usize>,
+    },
+    JoinTeam {
+        team: Parsed<usize>,
+        code: Option<String>,
+    },
+    LeaveTeam,
+    /// What a team shows: its symbol and colour.
+    TeamLook {
+        team: Parsed<usize>,
+        emblem: Parsed<Emblem>,
+        color: Parsed<RoomColor>,
+    },
+    Promote(Parsed<usize>),
+    RemoveTeam(Parsed<usize>),
+    Start,
+    /// What a level of the bracket plays: 0 is the final.
+    SetStage {
+        stage: Parsed<usize>,
+        rules: Parsed<StageRules>,
+    },
+    Skip {
+        game: Parsed<MatchId>,
+        /// The team an organizer lets through when neither came; none draws lots.
+        team: Parsed<Option<usize>>,
+    },
+    /// Take a seat in the team's ready match, or a place in its stands when the team's seats are taken.
+    Enter(Parsed<Avatar>),
+    /// Watch a match of the tournament from its stands.
+    Watch(Parsed<MatchId>),
+    /// The host of a match room says which side won: 0 or 1, the room's team.
+    Result(Parsed<u8>),
+}
+
+/// The most characters of a tournament or team code.
+const MAX_CODE_LENGTH: usize = 16;
+
+fn whole(value: Option<&Value>) -> Option<usize> {
+    value
+        .filter(|value| is_safe_integer(value))
+        .and_then(Value::as_i64)
+        .and_then(|n| usize::try_from(n).ok())
+}
+
+fn code(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|code| !code.is_empty() && code.len() <= MAX_CODE_LENGTH)
+        .map(str::to_owned)
+}
+
+fn parse_match_ref(message: &Value) -> Parsed<MatchId> {
+    match (whole(message.get("level")), whole(message.get("index"))) {
+        (Some(level), Some(index)) => Ok(MatchId { level, index }),
+        _ => Err("Malformed match"),
+    }
+}
+
+/// A team's name: cleaned like a player's and held to the same check.
+fn parse_team_name(value: Option<&Value>) -> Parsed<String> {
+    let name = clean_name_checked(value).ok_or("A team needs a name")?;
+    if is_acceptable_name(&name) {
+        Ok(name)
+    } else {
+        Err(NAME_REFUSED)
+    }
+}
+
+/// What one level plays: `{gameMode, rules}`. A tournament match has to end, so an endless one
+/// (`rounds: 0`, legal in a room of its own) is refused.
+fn parse_stage(stage: &Value) -> Option<StageRules> {
+    let rules = parse_rules(stage.get("rules")?)?;
+    if rules.get("rounds").as_u64().is_none_or(|rounds| rounds < 1) {
+        return None;
+    }
+    Some(StageRules {
+        game_mode: stage
+            .get("gameMode")
+            .and_then(Value::as_str)
+            .and_then(GameMode::parse)?,
+        rules,
+    })
+}
+
+/// A tournament's settings: the team size, the most teams, and a mode and rules for each of the four
+/// levels, the final first.
+fn parse_settings(message: &Value) -> Option<Settings> {
+    let team_size = whole(message.get("teamSize")).filter(|n| (1..=MAX_TEAM_SIZE).contains(n))?;
+    let max_teams = whole(message.get("maxTeams")).filter(|n| (2..=MAX_TEAMS).contains(n))?;
+    let stages = message.get("stages")?.as_array()?;
+    if stages.len() != STAGES {
+        return None;
+    }
+    let stages: Vec<StageRules> = stages.iter().map(parse_stage).collect::<Option<_>>()?;
+    Some(Settings {
+        team_size,
+        max_teams,
+        stages: stages.try_into().ok()?,
+    })
+}
+
+impl TournamentCommand {
+    fn parse(kind: &str, message: &Value) -> Option<Self> {
+        Some(match kind {
+            "tournament_create" => TournamentCommand::Create {
+                name: parse_player_name(message.get("name")),
+                avatar: parse_avatar(message.get("avatar")).ok_or("Malformed player symbol"),
+                settings: parse_settings(message).ok_or("Malformed tournament settings"),
+            },
+            "tournament_join" => TournamentCommand::Join {
+                code: code(message.get("code")).ok_or("A tournament code is needed"),
+                name: parse_player_name(message.get("name")),
+                avatar: parse_avatar(message.get("avatar")).ok_or("Malformed player symbol"),
+            },
+            "tournament_resume" => TournamentCommand::Resume(
+                message
+                    .get("token")
+                    .and_then(Value::as_str)
+                    .filter(|token| !token.is_empty() && token.len() <= 64)
+                    .map(str::to_owned)
+                    .ok_or("Malformed resume token"),
+            ),
+            "tournament_leave" => TournamentCommand::Leave,
+            "tournament_create_team" => TournamentCommand::CreateTeam {
+                name: parse_team_name(message.get("name")),
+                closed: message.get("closed").and_then(Value::as_bool) == Some(true),
+                slot: message
+                    .get("slot")
+                    .and_then(Value::as_u64)
+                    .map(|s| s as usize),
+            },
+            "tournament_join_team" => TournamentCommand::JoinTeam {
+                team: whole(message.get("team")).ok_or("Malformed team"),
+                code: code(message.get("code")),
+            },
+            "tournament_leave_team" => TournamentCommand::LeaveTeam,
+            "tournament_team_look" => TournamentCommand::TeamLook {
+                team: whole(message.get("team")).ok_or("Malformed team"),
+                emblem: parse_emblem(message.get("emblem")).ok_or("Malformed team emblem"),
+                color: message
+                    .get("color")
+                    .and_then(Value::as_str)
+                    .and_then(RoomColor::parse)
+                    .ok_or("Malformed team colour"),
+            },
+            "tournament_promote" => {
+                TournamentCommand::Promote(whole(message.get("person")).ok_or("Malformed person"))
+            }
+            "tournament_remove_team" => {
+                TournamentCommand::RemoveTeam(whole(message.get("team")).ok_or("Malformed team"))
+            }
+            "tournament_start" => TournamentCommand::Start,
+            "tournament_set_stage" => TournamentCommand::SetStage {
+                stage: whole(message.get("stage"))
+                    .filter(|stage| *stage < STAGES)
+                    .ok_or("Malformed level"),
+                rules: parse_stage(message).ok_or("Malformed game rules"),
+            },
+            "tournament_skip" => TournamentCommand::Skip {
+                game: parse_match_ref(message),
+                team: match message.get("team") {
+                    None | Some(Value::Null) => Ok(None),
+                    some => whole(some).map(Some).ok_or("Malformed team"),
+                },
+            },
+            "tournament_enter" => TournamentCommand::Enter(
+                parse_avatar(message.get("avatar")).ok_or("Malformed player symbol"),
+            ),
+            "tournament_watch" => TournamentCommand::Watch(parse_match_ref(message)),
+            "match_result" => TournamentCommand::Result(
+                named_team(message).and_then(|team| team.ok_or("team must be 0 or 1")),
+            ),
+            _ => return None,
+        })
     }
 }
 
@@ -282,6 +485,12 @@ impl<'a> RoomCommand<'a> {
                 RoomCommand::SeatStats(parse_seat_report(message).ok_or("Malformed seat stats"))
             }
             "leave_room" => RoomCommand::LeaveRoom,
+            kind if kind.starts_with("tournament_") || kind == "match_result" => {
+                match TournamentCommand::parse(kind, message) {
+                    Some(command) => RoomCommand::Tournament(command),
+                    None => RoomCommand::Unknown(kind),
+                }
+            }
             "resume" => RoomCommand::Resume(
                 message
                     .get("token")

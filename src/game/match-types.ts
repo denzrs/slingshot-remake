@@ -147,9 +147,22 @@ export interface RoundSummary {
   lastKill: KillRecord | null;
 }
 
-/** Display name of a team, e.g. "Glut". */
+/** A tournament match's teams' own names, side 0 first; null outside one. */
+let ownTeamNames: readonly string[] | null = null;
+
+/** A tournament match plays under its teams' own names; null goes back to the game's. */
+export function setTeamNames(names: readonly string[] | null): void {
+  ownTeamNames = names;
+}
+
+/** Display name of a team, e.g. "Glut", or in a tournament match the team's own name. */
 export function teamName(team: number): string {
-  return t(`team.${team as 0 | 1 | 2}`);
+  return ownTeamNames?.[team] ?? t(`team.${team as 0 | 1 | 2}`);
+}
+
+/** A team as a heading: "Team Glut", or in a tournament match the team's own name as it is. */
+export function teamTitle(team: number): string {
+  return ownTeamNames?.[team] ?? t('team.name', { team: teamName(team) });
 }
 
 export interface Camera {

@@ -2,7 +2,7 @@ import type { GameMode } from '../../sim/modes';
 import type { MatchPreset } from '../presets/match-presets';
 import { nextSpaceArtId, spaceArt } from './space-art';
 
-export type ModeArt = 'daily' | 'quick' | 'classic' | 'solar' | 'horizon' | 'trickshot' | 'simultaneous' | 'rooms' | 'create' | 'code' | 'customAdd';
+export type ModeArt = 'daily' | 'quick' | 'classic' | 'solar' | 'horizon' | 'trickshot' | 'simultaneous' | 'rooms' | 'create' | 'code' | 'tournament' | 'customAdd';
 export type MatchPresetArt = 'standard' | 'trickshot';
 export type MayhemPresetArt = 'wildClassic' | 'insaneHorizon';
 export type SolarPresetArt = 'powerups' | 'mayhem';
@@ -95,6 +95,13 @@ export function modeArt(kind: ModeArt, treatment?: PresetArtTreatment): SVGEleme
       scene = `${orbit(126, 50, -18)}${planet(230, 112, 30)}
         <g fill="none" stroke="#ffad65" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M52 50h22c22 0 30 50 52 50h20"/><path d="M52 100h22c22 0 30-50 52-50h20"/><path d="m138 42 8 8-8 8m0 34 8 8-8 8"/></g>
         <path d="M40 168 Q110 172 160 140" fill="none" stroke="#6fe3c8" stroke-width="1.5"/>${ship(166, 136, 35, '#e8e4d8', 1.5)}`;
+      break;
+    case 'tournament':
+      // A bracket: two ships meet on each side, and the two winners meet at the cup in the middle.
+      scene = `${orbit(128, 46, -16)}
+        <g fill="none" stroke="#6fe3c8" stroke-width="1.6" stroke-opacity=".8"><path d="M66 52H102V148H66M102 100H138"/><path d="M254 52H218V148H254M218 100H182"/></g>
+        <g fill="none" stroke="#ffad65" stroke-width="2"><path d="M146 82h28v10a14 14 0 0 1-28 0z"/><path d="M160 106v10m-9 0h18"/></g>
+        ${ship(48, 52, 0, '#e8e4d8', .8)}${ship(48, 148, 0, '#e8e4d8', .8)}${ship(272, 52, 180, '#6fe3c8', .8)}${ship(272, 148, 180, '#6fe3c8', .8)}`;
       break;
     case 'daily':
       scene = `${orbit(122, 48, -25)}${planet(204, 101, 38)}

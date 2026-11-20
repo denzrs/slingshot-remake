@@ -6,7 +6,7 @@ use rand::Rng;
 use serde_json::json;
 
 use crate::protocol::rules_to_value;
-use crate::wire::{Avatar, CpuLevel, RoomMode};
+use crate::wire::{Avatar, CpuLevel, RoomColor, RoomMode};
 
 use super::model::*;
 use super::RoomManager;
@@ -109,6 +109,9 @@ impl RoomManager {
             "maxPlayers": room.max_players,
             "status": room.status.as_str(),
             "locked": room.password.is_some(),
+            "tournament": room.tournament.is_some(),
+            "teamNames": room.tournament.as_ref().map(|m| &m.team_names),
+            "teamColors": room.tournament.as_ref().map(|m| m.team_colors.map(RoomColor::as_str)),
             "players": room
                 .players
                 .iter()

@@ -23,6 +23,8 @@ export interface App {
   startDaily(): void;
   /** True while an online match is on screen. */
   readonly online: boolean;
+  /** True while the online match on screen is a tournament's: it ends back at the bracket, with no rematch. */
+  readonly tournamentMatch: boolean;
   /** True while a recorded game is being flown again. */
   readonly replaying: boolean;
   watchReplay(data: StatsReplay): void;
@@ -33,6 +35,10 @@ export interface App {
   /** Back to where the replay was started from: the statistics, or the daily challenge for a shot of the day. */
   leaveReplay(): void;
   openLobby(entry?: LobbyEntry): void;
+  /** The online tournament: make one, join one with its code, or come back to yours. */
+  openTournament(): void;
+  /** The tournament card's line on the title screen. */
+  tournamentHint(): string;
   /** Host only: end the online game and bring the whole room back to its lobby. */
   backToLobby(): void;
   /** Leave the online game and its room for the room list, still connected. */

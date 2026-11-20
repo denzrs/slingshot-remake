@@ -272,6 +272,8 @@
   margin-top: 14px;
 }
 
+.launcher__daily[hidden] { display: none; }
+
 .launcher__daily .item--card {
   display: grid;
   grid-template-columns: 60px minmax(0, 1fr);

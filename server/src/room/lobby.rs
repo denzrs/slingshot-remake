@@ -187,6 +187,8 @@ impl RoomManager {
                 reported_round: 0,
                 reported_turn: (0, 0),
                 seat_change_lost: false,
+                tournament: None,
+                scores: Vec::new(),
             },
         );
         self.add_player(&id, conn, name, avatar);
@@ -197,6 +199,10 @@ impl RoomManager {
     pub(super) fn enter_room(&mut self, conn: u64, join: JoinRoom, preverified: Option<bool>) {
         if self.is_placed(conn) {
             self.error(conn, "Leave your current room before joining another");
+            return;
+        }
+        if self.is_match_room(join.room_id()) {
+            self.error(conn, "Tournament matches are entered from the tournament");
             return;
         }
         // A game under way has no seat to take: whoever follows a link or code to it watches instead.
@@ -460,6 +466,11 @@ impl RoomManager {
     }
 
     pub(super) fn expire_seats_at(&mut self, now: std::time::Instant) {
+        self.expire_held_seats(now);
+        self.tick_tournaments(now);
+    }
+
+    fn expire_held_seats(&mut self, now: std::time::Instant) {
         let expired: Vec<(String, String)> = self
             .rooms
             .values()

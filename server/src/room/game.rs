@@ -44,17 +44,18 @@ impl RoomManager {
             self.error(conn, "Game has already started");
             return;
         }
-        let (seats, people) = self
+        let (seats, people, is_match) = self
             .rooms
             .get(&room_id)
-            .map(|room| (room.players.len(), humans(room)))
+            .map(|room| (room.players.len(), humans(room), room.tournament.is_some()))
             .unwrap_or_default();
         if seats < 2 {
             self.error(conn, "At least 2 players are required to start");
             return;
         }
-        // A game against CPUs alone is played offline, not on the relay.
-        if people < 2 {
+        // A game against CPUs alone is played offline, not on the relay. A tournament match says
+        // instead which team lacks its person, below.
+        if people < 2 && !is_match {
             self.error(conn, "Play against CPUs alone in the singleplayer lobby");
             return;
         }
@@ -72,7 +73,14 @@ impl RoomManager {
             return;
         }
         if !teams_ok {
-            self.error(conn, "Both teams need at least one player");
+            self.error(
+                conn,
+                if is_match {
+                    "Both teams need at least one person"
+                } else {
+                    "Both teams need at least one player"
+                },
+            );
             return;
         }
         self.begin_game(&room_id);
@@ -118,6 +126,7 @@ impl RoomManager {
         room.reported_round = 0;
         room.reported_turn = (0, 0);
         room.seat_change_lost = false;
+        room.scores.clear();
         room.players
             .iter_mut()
             .enumerate()
@@ -145,7 +154,7 @@ impl RoomManager {
             "players": room
                 .players
                 .iter()
-                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "team": p.team, "cpu": p.cpu.map(CpuLevel::as_str) }))
+                .map(|p| json!({ "id": p.id, "name": p.name, "avatar": p.avatar.as_str(), "team": p.team, "cpu": self.played_level(p).map(CpuLevel::as_str) }))
                 .collect::<Vec<_>>(),
         })
     }
@@ -289,11 +298,17 @@ impl RoomManager {
             return;
         }
         room.reported_round = report.round;
+        room.scores = report.seats.iter().map(|seat| seat.score).collect();
+        let tournament = room.tournament.as_ref().map(|m| m.code.clone());
         // Queued for the writer: the dispatch is synchronous, the database is not.
         if let Some(Reporting { stats, facts, host }) = reporting {
             if stats.admit(host, report.rows(), std::time::Instant::now()) {
                 stats.submit(Job::Round(facts, report));
             }
+        }
+        // A match's round is news for its whole tournament: the arena shows how it stands.
+        if let Some(code) = tournament {
+            self.broadcast_tournament(&code);
         }
     }
 
@@ -371,12 +386,13 @@ impl RoomManager {
             self.error(conn, "You are not in a running game");
             return;
         };
+        // A frame for a room that waits was still on its way when the game ended (the host ended it, or
+        // somebody left): there is no game left to give it to, and nothing for the host to be told.
         if !self
             .rooms
             .get(&room_id)
             .is_some_and(|room| room.status == RoomStatus::Playing)
         {
-            self.error(conn, "You are not in a running game");
             return;
         }
         if my_id != 0 {

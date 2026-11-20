@@ -1,9 +1,11 @@
 import type { ReplayTurn, SeatChange } from '../game/replay';
 import type { Avatar } from '../platform/avatars';
+import type { Emblem } from '../platform/emblems';
 import type { DailyShot } from '../sim/challenge';
 import type { GameMode } from '../sim/modes';
 import type { GameEvent } from '../game';
 import type { StatePatch } from './netsync';
+import type { TournamentPatch } from './tournament-patch';
 import type { RoomColor, RoomLook, RoomSymbol } from '../data/roomLook';
 import type { RoundReport, TurnReport } from '../game/roundReport';
 import type { RoomRules } from '../data/roomRules';
@@ -87,7 +89,82 @@ type ClientMessage =
   | { type: 'end_game' }
   | { type: 'leave_room' }
   /** A new connection asks for the seat that `token` was given for, after the old connection dropped. */
-  | { type: 'resume'; token: string };
+  | { type: 'resume'; token: string }
+  /** Make a tournament: the team size, the most teams, and a game for each level of the bracket, the final first. */
+  | { type: 'tournament_create'; name: string; avatar: Avatar; teamSize: number; maxTeams: number; stages: TournamentStage[] }
+  /** Come into a tournament with its code. */
+  | { type: 'tournament_join'; code: string; name: string; avatar: Avatar }
+  /** A new connection asks for the person that `token` was given to. */
+  | { type: 'tournament_resume'; token: string }
+  /** Leave the tournament for good: the name is free again, and the token brings nobody back. */
+  | { type: 'tournament_leave' }
+  /** While the tournament registers: a team of your own, which you are put in. A closed one gets a code to hand on. */
+  | { type: 'tournament_create_team'; name: string; closed: boolean; slot?: number }
+  /** Join a team, leaving the one you were in; a closed team wants its code. */
+  | { type: 'tournament_join_team'; team: number; code?: string }
+  | { type: 'tournament_leave_team' }
+  /** A member of the team (or an organizer): what the team shows in the bracket. */
+  | { type: 'tournament_team_look'; team: number; emblem: Emblem; color: RoomColor }
+  /** Organizers only: make somebody an organizer too. */
+  | { type: 'tournament_promote'; person: number }
+  /** Organizers only: take a team out. Once the bracket is drawn, it loses its match. */
+  | { type: 'tournament_remove_team'; team: number }
+  /** Organizers only: close registration and draw the bracket. */
+  | { type: 'tournament_start' }
+  /** Organizers only: what a level of the bracket plays (0 is the final), until one of its matches has begun. */
+  | ({ type: 'tournament_set_stage'; stage: number } & TournamentStage)
+  /** Organizers only, after a team kept a ready match waiting: the team that is there goes through. When neither came, `team` goes through, or lots are drawn. */
+  | { type: 'tournament_skip'; level: number; index: number; team?: number }
+  /** A seat in your team's ready match (whoever comes first opens its room), or its stands when your team's seats are taken. */
+  | { type: 'tournament_enter'; avatar: Avatar }
+  /** Watch a match of your tournament from its stands. */
+  | { type: 'tournament_watch'; level: number; index: number }
+  /** The host of a tournament match, once its game is over: which of the room's two teams won. */
+  | { type: 'match_result'; team: 0 | 1 };
+
+/** What one level of a tournament's bracket plays. */
+export interface TournamentStage {
+  gameMode: GameMode;
+  rules: RoomRules;
+}
+
+export interface TournamentMatch {
+  /** The two teams, by their place in `teams`; null while an earlier match has still to say who. */
+  teams: [number | null, number | null];
+  state: 'waiting' | 'ready' | 'playing' | 'done';
+  winner: number | null;
+  /** One team had nobody to meet in the first level and went through without playing. */
+  bye: boolean;
+  /** The points each side ended the game on, in the order of `teams`; null for a match not played out. */
+  score: [number, number] | null;
+  /** Its room is open. */
+  room: boolean;
+  /** How many watch it. */
+  watching: number;
+  /** How it stands while it is played: the rounds its host reported so far and each side's points, in the order of `teams` (null until they add up). */
+  live: { round: number; score: [number, number] | null } | null;
+  /** A dev relay plays it out itself, as both its teams are pretend players only: there is no game to watch. */
+  simulated: boolean;
+  /** Seconds a ready match has waited for its teams. */
+  waited: number | null;
+  /** An organizer may skip it now. */
+  skippable: boolean;
+}
+
+/** A tournament as the relay tells everybody in it. */
+export interface TournamentView {
+  code: string;
+  phase: 'registration' | 'running' | 'finished';
+  settings: { teamSize: number; maxTeams: number; stages: TournamentStage[] };
+  /** Seconds until it runs out. */
+  expiresIn: number;
+  people: { name: string; avatar: Avatar; connected: boolean; team: number | null; organizer: boolean; gone: boolean }[];
+  /** `code` only on your own team, when it is closed. */
+  teams: { name: string; slot: number; closed: boolean; code?: string | null; members: number[]; withdrawn: boolean; present: boolean; emblem: Emblem; color: RoomColor }[];
+  /** `levels[0]` is the first level played, the last one holds the final alone. */
+  bracket: { levels: TournamentMatch[][]; champion: number | null } | null;
+  you: { id: number; token: string; organizer: boolean; team: number | null };
+}
 
 /** One finding of the statistics, for the menu: what it is about and the numbers its sentence is made of. */
 export interface StatsFact {
@@ -241,6 +318,12 @@ export interface RoomInfo extends RoomLook {
   players: RoomPlayer[];
   /** The people in the stands. */
   spectators: { id: number; name: string }[];
+  /** A tournament's match: its setup is the tournament's, and it is entered from the tournament. */
+  tournament?: boolean;
+  /** In a tournament's match: the two teams' own names, side 0 first, which the game shows in place of its team names. */
+  teamNames?: [string, string] | null;
+  /** In a tournament's match: the two teams' own colours, side 0 first, which the game draws the teams in. */
+  teamColors?: [RoomColor, RoomColor] | null;
 }
 
 export type ServerMessage =
@@ -304,6 +387,15 @@ export type ServerMessage =
   | { type: 'room_closed'; message: string }
   /** The seat asked for with `resume` was given up (or never held). */
   | { type: 'resume_failed'; message: string }
+  /** Your tournament as it stands now. */
+  | ({ type: 'tournament' } & TournamentView)
+  /** Your tournament has changed: what did, for a connection that holds it already. */
+  | ({ type: 'tournament_patch' } & TournamentPatch)
+  /** The person asked for with `tournament_resume` is not in a tournament any more. */
+  | { type: 'tournament_resume_failed'; message: string }
+  | { type: 'tournament_left' }
+  /** The tournament ran out. */
+  | { type: 'tournament_closed'; message: string }
   /** `field` names what the error is about, when it is about one thing the player typed. */
   | { type: 'error'; message: string; field?: 'name' | 'password' }
   /** The relay speaks a newer protocol than this client was built for, and lets go of it: reload to get the new build. */
@@ -317,7 +409,7 @@ export type ServerMessage =
  * by hand: a test notices when the wire changed (the messages, the state patches, the rules) and `npm run protocol` raises it here, in
  * `server/src/protocol.rs` and in `server/protocol-contract.json`.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 9;
 
 /** The address to open a socket on, with the protocol this client speaks added. */
 export function withProtocol(url: string): string {

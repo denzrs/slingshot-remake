@@ -1,6 +1,6 @@
 {
-  "protocolVersion": 4,
-  "wireFingerprint": "9dbe749ce159bd61",
+  "protocolVersion": 9,
+  "wireFingerprint": "ea3621fe1ef08dca",
   "defaults": {
     "rounds": 5,
     "maxPlanets": 4,
@@ -71,12 +71,16 @@
     "options": {
       "visibility": ["public", "private"],
       "symbol": ["planet", "moon", "star", "sun", "comet", "blackhole", "ufo", "asteroid"],
-      "color": ["#ff8660", "#ffd27a", "#c6e86a", "#6fe3c8", "#62b6ff", "#b99cff", "#ff6f9f", "#e8e4d8"]
+      "color": ["#ff8660", "#ffd27a", "#c6e86a", "#6fe3c8", "#62b6ff", "#b99cff", "#ff6f9f", "#e8e4d8", "#ff5a5a", "#ffa94d", "#4fd98a", "#36c2d6", "#5b7cff", "#e46cff", "#d4915c", "#9aa8bd"]
     }
   },
   "avatar": {
     "default": "rocket",
-    "options": ["rocket", "satellite", "alien", "robot", "astronaut", "crosshair", "bolt", "gem"]
+    "options": ["rocket", "satellite", "alien", "robot", "astronaut", "crosshair", "bolt", "gem", "heart", "ghost", "skull", "cat", "paw", "leaf", "drop", "clover", "dice", "note", "eye", "mushroom", "fish", "gamepad", "pawn", "smile"]
+  },
+  "emblem": {
+    "default": "shield",
+    "options": ["shield", "crown", "flame", "chevron", "trident", "tower", "flag", "mountain", "wave", "anchor", "sword", "wing", "hexagon", "claw", "spade", "arrow"]
   },
   "daily": {
     "boardSize": 50,

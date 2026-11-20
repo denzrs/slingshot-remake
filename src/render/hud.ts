@@ -1,7 +1,7 @@
 import { modifiersOf } from '../sim/challenge';
 import { AIM, COLORS, FONTS, MAYHEM, SUDDEN_DEATH, type Anomaly } from '../sim/config';
 import { dangerColor, teamColor } from '../data/palette';
-import { ChallengeMatch, ClassicMatch, HorizonMatch, SolarMatch, teamName, type KillRecord, type Mark, type Match, type PlayerState } from '../game';
+import { ChallengeMatch, ClassicMatch, HorizonMatch, SolarMatch, teamName, teamTitle, type KillRecord, type Mark, type Match, type PlayerState } from '../game';
 import { fmt, fmtInt, t } from '../platform/i18n';
 import { TWIST_IDS, twistName } from '../game/mayhem';
 import { awardLabel, awardValue, awardWho, spotlight } from '../game/scorecard';
@@ -1908,7 +1908,7 @@ export class Hud {
     if (fade <= 0) return;
     const survivor = s.survivor !== null ? match.players[s.survivor] : null;
     const color = s.team !== null ? teamColor(s.team) : survivor?.color ?? dangerColor();
-    const title = s.title === 'teamWin' ? t('title.teamWin', { team: teamName(s.team!).toUpperCase() }) : t(`title.${s.title}`);
+    const title = s.title === 'teamWin' ? t('title.teamWin', { team: teamTitle(s.team!).toUpperCase() }) : t(`title.${s.title}`);
     const cx = field.x + field.w / 2;
     const { cy, h, scale } = this.roundOverBox();
 
@@ -1929,7 +1929,7 @@ export class Hud {
       line1 = `${match.players[kill.killer].name}  +${kill.points}`;
       line2 = kill.collateral ? t('hud.collateral') : t('hud.shotPower', { n: kill.shots, power: fmt(kill.power, 2) });
     } else if (s.team !== null) {
-      line1 = `${t('hud.teamWinsRound', { team: teamName(s.team) })}${s.bonus ? `  ·  ${t('hud.perMember', { n: s.bonus })}` : ''}`;
+      line1 = `${t('hud.teamWinsRound', { team: teamTitle(s.team) })}${s.bonus ? `  ·  ${t('hud.perMember', { n: s.bonus })}` : ''}`;
       if (kill) line2 = killSegments(match, kill).map(([text]) => text).join('');
     } else {
       line1 = survivor ? `${t('hud.winsRound', { name: survivor.name })}${s.bonus ? `  +${s.bonus}` : ''}` : match instanceof ClassicMatch && match.decidedBySuddenDeath && match.alive.length ? t('hud.noWinner') : t('hud.noSurvivor');

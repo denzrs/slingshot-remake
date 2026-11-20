@@ -18,9 +18,13 @@ mod relay;
 pub use relay::{Forward, RelaySlot};
 mod roster;
 mod settings;
+mod simulate;
 mod spectate;
 #[cfg(test)]
 mod tests;
+mod tournament;
+#[cfg(test)]
+mod tournament_tests;
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -55,6 +59,11 @@ pub struct RoomManager {
     wires: HashMap<String, relay::Wire>,
     /// Which room each seat token belongs to, so `resume` need not look through every room.
     tokens: HashMap<String, String>,
+    tournaments: tournament::Tournaments,
+    /// A dev relay lets pretend players in; see `with_bots`.
+    bots_allowed: bool,
+    /// The pretend players connected now, with the level their seat is played at.
+    bots: HashMap<u64, crate::wire::CpuLevel>,
 }
 
 /// The shortest time between two room-list broadcasts on the relay (`LOBBY_INTERVAL` in the tests'
@@ -87,6 +96,9 @@ impl RoomManager {
             lobby: LobbyThrottle::default(),
             wires: HashMap::new(),
             tokens: HashMap::new(),
+            tournaments: tournament::Tournaments::default(),
+            bots_allowed: false,
+            bots: HashMap::new(),
         }
     }
 
@@ -123,11 +135,14 @@ impl RoomManager {
         let from = self.net.peer_ip(conn);
         self.net.close(conn);
         self.last_rename.remove(&conn);
+        self.bots.remove(&conn);
+        self.tournament_disconnect(conn);
         // A dropped connection in a running game keeps its seat for a while: it may come back.
         if !self.hold_seat(conn, from) {
             self.remove_from_room(conn, "A player disconnected");
         }
         self.resync(before, conn);
+        self.sync_tournament_rooms(std::time::Instant::now());
     }
 
     /// Where a connection's state frames go; the connection's task holds on to it.
@@ -193,6 +208,28 @@ impl RoomManager {
         self.net.allow_room_password_check(room_id)
     }
 
+    /// A dev relay's pretend players: a connection that asks with `?bot=<level>` counts as a person everywhere a
+    /// person is wanted (joining, ready, a team's person in a tournament match), but its seat goes into the game as a
+    /// CPU of that level, so the host plays it. Only for testing online play alone; a public relay never lets them in.
+    pub fn with_bots(mut self) -> Self {
+        self.bots_allowed = true;
+        self
+    }
+
+    /// A connection says it is a pretend player; ignored unless the relay lets them in.
+    pub fn mark_bot(&mut self, conn: u64, level: crate::wire::CpuLevel) {
+        if self.bots_allowed && self.net.is_connected(conn) {
+            self.bots.insert(conn, level);
+        }
+    }
+
+    /// The level a seat is played at in the game: its CPU's, or its pretend player's.
+    fn played_level(&self, player: &Player) -> Option<crate::wire::CpuLevel> {
+        player
+            .cpu
+            .or_else(|| player.conn.and_then(|conn| self.bots.get(&conn).copied()))
+    }
+
     /// How many database requests one client may make per minute.
     pub fn with_db_requests_per_minute(mut self, requests: usize) -> Self {
         self.net.set_db_requests_per_minute(requests);
@@ -227,11 +264,29 @@ impl RoomManager {
             return;
         }
         let before = self.room_of(conn);
+        let concerns_tournament = self.concerns_tournament(conn, before.as_deref());
         self.carry_out(conn, command);
         self.resync(before, conn);
+        // A match's room changes only by what its members do, or by what is said to the tournament.
+        if concerns_tournament || self.concerns_tournament(conn, self.room_of(conn).as_deref()) {
+            self.sync_tournament_rooms(std::time::Instant::now());
+        }
     }
 
     fn carry_out(&mut self, conn: u64, command: RoomCommand<'_>) {
+        // A tournament match plays the setup its tournament gave it; its host may still fill free seats with CPUs.
+        let changes_setup = matches!(
+            command,
+            RoomCommand::SetRules { .. }
+                | RoomCommand::SetRoom(_)
+                | RoomCommand::SetMode(_)
+                | RoomCommand::SetTeam(_)
+                | RoomCommand::ResetTeams
+        );
+        if changes_setup && self.in_match_room(conn) {
+            self.error(conn, tournament::KEEPS_ITS_SETUP);
+            return;
+        }
         match command {
             RoomCommand::Malformed => self.error(conn, "Malformed message"),
             RoomCommand::Unknown(other) => {
@@ -266,6 +321,7 @@ impl RoomManager {
             RoomCommand::SeatStats(report) => self.report_seat(conn, report),
             RoomCommand::LeaveRoom => self.leave_room(conn),
             RoomCommand::Resume(token) => self.resume(conn, token),
+            RoomCommand::Tournament(command) => self.tournament_command(conn, command),
         }
     }
 

@@ -61,7 +61,7 @@ impl RoomManager {
 
     /// Brings somebody who came in mid-game up to date: the game's start, and — because the host
     /// sends only what changed — a request for one complete frame to start from.
-    fn catch_up(&mut self, conn: u64, room_id: &str) {
+    pub(super) fn catch_up(&mut self, conn: u64, room_id: &str) {
         let Some(room) = self.rooms.get(room_id) else {
             return;
         };

@@ -202,10 +202,9 @@
   .menu-page--crew .slot-card__choice { min-height: 44px; }
   .menu-page--crew .crew-slot:has(> .slot-card--empty) ~ .crew-slot:has(> .slot-card--empty) { display: none; }
   .menu-page--crew .team-column__place { min-height: 44px; }
-  .menu-page--lobby .online-profile__fields { flex-direction: column; align-items: stretch; }
-  .menu-page--lobby .online-profile__fields .lobby__name { flex: 0 0 auto; width: 100%; }
-  .menu-page--lobby .online-profile__fields .lobby__avatar .room-pick { grid-template-columns: repeat(4, 44px); }
-  .menu-page--lobby .online-profile__fields .lobby__avatar .room-pick__option { width: 44px; height: 44px; }
+  .menu-page--lobby .online-profile[open] .online-profile__fields { right: 0; left: 0; width: auto; max-width: none; }
+  .menu-page--lobby .online-profile__symbol .room-pick { grid-template-columns: repeat(6, minmax(0, 44px)); }
+  .menu-page--lobby .online-profile__symbol .room-pick__option { width: auto; height: auto; aspect-ratio: 1; }
   .menu-page--lobby .menu-page__title { font-size: clamp(40px, 8vw, 58px); }
   .menu-page--lobby .online-identity { gap: 12px; padding: 14px 16px; }
   .menu-page--lobby .online-profile { flex-basis: 100%; }
