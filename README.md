@@ -83,3 +83,4 @@ Fonts are bundled via [Fontsource](https://fontsource.org/) and licensed under t
 
 - [B612 and B612 Mono](https://github.com/polarsys/b612) – © The B612 Project Authors
 - [Big Shoulders Stencil Display](https://github.com/xotypeco/big_shoulders) – © Google Inc. / The Big Shoulders Project Authors
+
