@@ -150,7 +150,7 @@ export function tournamentScreen(app: App, session: MultiplayerSession): Screen 
   const phaseLine = (view: TournamentView): string => {
     if (view.phase === 'registration') return '';
     if (view.phase === 'finished') return '';
-    if (view.you.team === null) return t('tournament.noTeam');
+    if (view.you.team === null) return '';
     const own = ownMatch(view);
     if (!own) return t('tournament.out');
     const stage = stageName(view.bracket!.levels.length - 1 - own.level, view.bracket!.levels.length);
