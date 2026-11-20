@@ -33,7 +33,7 @@ function statsRoute(): Plugin {
     generateBundle(_options, bundle) {
       const page = bundle['index.html'];
       if (page?.type !== 'asset' || typeof page.source !== 'string') return;
-      for (const route of ['stats', 'privacy']) this.emitFile({ type: 'asset', fileName: `${route}/index.html`, source: page.source.replaceAll('="./', '="../') });
+      for (const route of ['stats', 'privacy', 'terms']) this.emitFile({ type: 'asset', fileName: `${route}/index.html`, source: page.source.replaceAll('="./', '="../') });
     },
   };
 }

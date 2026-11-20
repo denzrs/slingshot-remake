@@ -14,7 +14,7 @@ export function isPrivacyPath(pathname: string): boolean {
 
 /** The game's own root, whatever sub-path it is hosted under and whichever of its pages is open. */
 export function siteRoot(pathname: string = location.pathname): string {
-  return pathname.replace(/(?:stats|privacy)\/?$/, '').replace(/\/?$/, '/');
+  return pathname.replace(/(?:stats|privacy|terms)\/?$/, '').replace(/\/?$/, '/');
 }
 
 /** Where the menu's footer link goes. */
@@ -35,8 +35,8 @@ function inline(text: string): (Node | string)[] {
   return out;
 }
 
-/** Lines starting with "- " in a section's body become one list; everything else is a paragraph. */
-function sectionNodes({ title, body }: PrivacySection): HTMLElement {
+/** Lines starting with "- " in a section's body become one list; everything else is a paragraph. Shared with the terms page. */
+export function sectionNodes({ title, body }: PrivacySection): HTMLElement {
   const section = h('section.privacy__section', null, h('h3.privacy__heading', null, title));
   let list: HTMLElement | null = null;
   for (const line of body) {

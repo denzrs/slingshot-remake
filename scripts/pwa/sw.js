@@ -42,6 +42,7 @@ function pageFor(url) {
   if (path === '' || path === 'index.html') return 'index.html';
   if (path === 'stats/' || path === 'stats/index.html') return 'stats/index.html';
   if (path === 'privacy/' || path === 'privacy/index.html') return 'privacy/index.html';
+  if (path === 'terms/' || path === 'terms/index.html') return 'terms/index.html';
   return null;
 }
 
@@ -52,9 +53,9 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin || !url.href.startsWith(self.registration.scope)) return;
 
   if (request.mode === 'navigate') {
-    // `stats` or `privacy` without its slash would resolve the page's `../` links wrongly; the host redirects it, so do the same offline.
+    // `stats`, `privacy` or `terms` without its slash would resolve the page's `../` links wrongly; the host redirects it, so do the same offline.
     const bare = url.href.slice(self.registration.scope.length);
-    if (bare === 'stats' || bare === 'privacy') {
+    if (bare === 'stats' || bare === 'privacy' || bare === 'terms') {
       event.respondWith(Response.redirect(here(bare + '/') + url.search, 302));
       return;
     }
