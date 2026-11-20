@@ -29,11 +29,11 @@ jobs:
   scope:
     # Tells the other jobs what this run has to cover. Only a pull request can leave something out; pushes, tags
     # and dispatches report everything as changed.
-    #   relay:  a file under server/ or deploy/ionos/, or this workflow, changed. Without it the Rust checks and
-    #           the release build are skipped.
-    #   client: any changed file outside deploy/ionos/ (the relay's own server setup). The JavaScript checks also
-    #           cover the relay, because tests/net runs the client against the relay binary and
-    #           protocol-wire.test.ts reads server/protocol-contract.json, so a relay change counts here too.
+    #   relay:  a file under server/ changed. Without it the Rust checks and the release build are skipped.
+    #   client: any changed file outside deploy/ and .github/. The JavaScript checks also cover the relay, because
+    #           tests/net runs the client against the relay binary and protocol-wire.test.ts reads
+    #           server/protocol-contract.json, so a relay change counts here too.
+    # Workflow and deploy-script changes (this file, deploy/ionos/) run neither: no test exercises them.
     runs-on: ubuntu-latest
     outputs:
       relay: ${{ steps.detect.outputs.relay }}
@@ -55,12 +55,12 @@ jobs:
             exit 0
           fi
           files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
-          if awk 'BEGIN { found = 0 } /^server\// || /^deploy\/ionos\// || /^\.github\/workflows\/deploy\.yml$/ { found = 1 } END { exit !found }' <<< "$files"; then
+          if awk 'BEGIN { found = 0 } /^server\// { found = 1 } END { exit !found }' <<< "$files"; then
             echo 'relay=true' >> "$GITHUB_OUTPUT"
           else
             echo 'relay=false' >> "$GITHUB_OUTPUT"
           fi
-          if awk 'BEGIN { found = 0 } !/^deploy\/ionos\// && NF { found = 1 } END { exit !found }' <<< "$files"; then
+          if awk 'BEGIN { found = 0 } !/^deploy\// && !/^\.github\// && NF { found = 1 } END { exit !found }' <<< "$files"; then
             echo 'client=true' >> "$GITHUB_OUTPUT"
           else
             echo 'client=false' >> "$GITHUB_OUTPUT"
