@@ -27,12 +27,17 @@ concurrency:
 
 jobs:
   scope:
-    # Tells the other jobs whether the relay is part of this run. Only a pull request can leave it out: it
-    # skips the Rust checks and the release build when no file under server/ or deploy/ionos/ changed (or this
-    # workflow). Pushes, tags and dispatches always count the relay as changed.
+    # Tells the other jobs what this run has to cover. Only a pull request can leave something out; pushes, tags
+    # and dispatches report everything as changed.
+    #   relay:  a file under server/ or deploy/ionos/, or this workflow, changed. Without it the Rust checks and
+    #           the release build are skipped.
+    #   client: any changed file outside deploy/ionos/ (the relay's own server setup). The JavaScript checks also
+    #           cover the relay, because tests/net runs the client against the relay binary and
+    #           protocol-wire.test.ts reads server/protocol-contract.json, so a relay change counts here too.
     runs-on: ubuntu-latest
     outputs:
       relay: ${{ steps.detect.outputs.relay }}
+      client: ${{ steps.detect.outputs.client }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         if: github.event_name == 'pull_request'
@@ -46,10 +51,19 @@ jobs:
         run: |
           if [[ "$EVENT_NAME" != pull_request ]]; then
             echo 'relay=true' >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$BASE_SHA...$HEAD_SHA" | awk 'BEGIN { found = 0 } /^server\// || /^deploy\/ionos\// || /^\.github\/workflows\/deploy\.yml$/ { found = 1 } END { exit !found }'; then
+            echo 'client=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+          if awk 'BEGIN { found = 0 } /^server\// || /^deploy\/ionos\// || /^\.github\/workflows\/deploy\.yml$/ { found = 1 } END { exit !found }' <<< "$files"; then
             echo 'relay=true' >> "$GITHUB_OUTPUT"
           else
             echo 'relay=false' >> "$GITHUB_OUTPUT"
+          fi
+          if awk 'BEGIN { found = 0 } !/^deploy\/ionos\// && NF { found = 1 } END { exit !found }' <<< "$files"; then
+            echo 'client=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'client=false' >> "$GITHUB_OUTPUT"
           fi
 
   test:
@@ -64,11 +78,14 @@ jobs:
           cache-workspaces: server
           components: rustfmt, clippy
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: needs.scope.outputs.client == 'true'
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+        if: needs.scope.outputs.client == 'true'
       - run: npm run typecheck
+        if: needs.scope.outputs.client == 'true'
       - name: Rust checks (relay)
         if: needs.scope.outputs.relay == 'true'
         run: |
@@ -78,9 +95,10 @@ jobs:
       # The online tests in tests/net start the debug relay binary. `cargo test` builds it above; without
       # relay changes only the build runs, from the cached dependencies.
       - name: Build the relay for the online tests
-        if: needs.scope.outputs.relay != 'true'
+        if: needs.scope.outputs.relay != 'true' && needs.scope.outputs.client == 'true'
         run: cargo build --locked --manifest-path server/Cargo.toml
       - run: npm test
+        if: needs.scope.outputs.client == 'true'
 
   server-x86_64:
     # Skipped on a pull request that leaves the relay alone: the release build ships nothing from a PR.
