@@ -9,7 +9,7 @@ import { h, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
 import { button, ICON_CLOSE, ICON_COPY, iconButton, lockIcon, textInput } from '../lobby/widgets';
 import { createConnection } from '../lobby/connection';
-import { bracketDepth, bracketView, cupSvg, ownMatch, stageEditable, teamBadge, type BracketContext } from './bracket';
+import { bracketDepth, bracketSize, bracketView, cupSvg, ownMatch, stageEditable, teamBadge, type BracketContext } from './bracket';
 import { stageName } from './setup';
 import { stageEditor } from './stage-editor';
 import { confirmDialog } from './confirm';
@@ -163,7 +163,7 @@ export function tournamentScreen(app: App, session: MultiplayerSession): Screen 
     copyCode.addEventListener('click', () => void copy(view.code, copyCode));
     const hours = Math.floor(view.expiresIn / 3600);
     const minutes = Math.floor((view.expiresIn % 3600) / 60);
-    const size = 2 ** bracketDepth(view);
+    const size = bracketSize(view);
     return h('div.lobby__code.room-info', null,
       h('span.room-info__symbol', { 'aria-hidden': 'true' }, cupSvg()),
       h('div.room-info__share', null,

@@ -174,10 +174,15 @@
 .tb {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(var(--levels), minmax(200px, 230px));
-  gap: 0 40px;
-  min-width: max-content;
+  /* Split: the levels of the left half, the final, the levels of the right half mirrored. */
+  grid-template-columns: repeat(var(--columns), minmax(156px, 210px));
+  justify-content: center;
+  gap: 0 32px;
 }
+
+/* The bracket's place on the page: as high as the bracket drawn at the size that fits (see `fitToBox`), which it is laid in from the top. */
+.tb-fit { position: relative; }
+.tb-fit > .tb { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 
 .tb-lines {
   position: absolute;
@@ -253,6 +258,31 @@
 }
 .tb-head__game:not(.is-editable):hover { border-color: var(--bone-dim); }
 .tb-head__edit { color: var(--t-gold); }
+
+/* The right half reads towards the middle: its heads stand at the right, the final's in the centre. */
+.tb-level--right .tb-head { text-align: right; }
+.tb-level--right .tb-head__game { text-align: right; }
+.tb-level--right .tb-head__game.is-editable { grid-template-columns: auto minmax(0, 1fr); }
+.tb-level--right .tb-head__edit { order: -1; }
+.tb-level--final .tb-head { text-align: center; }
+.tb-level--final .tb-head__game { text-align: center; }
+
+/* A level's game is one for both its halves: pointing at either head lights the level on both sides. */
+.tb-level { position: relative; }
+.tb-level::before {
+  content: '';
+  position: absolute;
+  inset: -8px -10px;
+  border-radius: 8px;
+  background: rgb(255 173 101 / 0.05);
+  box-shadow: inset 0 0 0 1px rgb(255 173 101 / 0.28);
+  opacity: 0;
+  transition: opacity 160ms;
+  pointer-events: none;
+}
+.tb-level.is-linked::before { opacity: 1; }
+.tb-level.is-linked .tb-head__game { border-color: var(--t-gold); border-style: solid; color: var(--t-gold); }
+.tb-level.is-linked .tb-match:not(.is-mine, .is-playing) { border-color: rgb(255 173 101 / 0.55); }
 
 .tb-col {
   display: flex;
@@ -358,6 +388,36 @@ button.tb-row:hover { background: rgb(255 255 255 / 0.04); }
 }
 
 .tb-row--free:hover { background: rgb(111 227 200 / 0.08); }
+/* Under a full bracket, across all its columns: one team more makes it grow. */
+/* The button and the form that takes its place share one box, so founding a team does not move the bracket. */
+.tb-grow { grid-column: 1 / -1; justify-self: center; width: min(300px, 100%); height: 44px; margin-top: 22px; }
+.tb-grow > * { box-sizing: border-box; width: 100%; height: 100%; }
+.tb-grow__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 18px 6px 12px;
+  white-space: nowrap;
+  text-align: left;
+  border: 1px dashed rgb(111 227 200 / 0.55);
+  border-radius: 5px;
+  background: rgb(9 21 39 / 0.7);
+  color: var(--t-cyan);
+  font: 12px/1 var(--font-mono);
+  cursor: pointer;
+  transition: border-color 160ms, background 160ms;
+}
+.tb-grow__text { display: grid; gap: 3px; }
+.tb-grow__title { font-size: 12.5px; }
+.tb-grow__hint { font-size: 10px; color: var(--bone-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.tb-grow__button:is(:hover, :focus-visible) { border-style: solid; background: rgb(111 227 200 / 0.08); }
+.tb-grow__button { justify-content: center; }
+.tb-grow__form { grid-template-columns: minmax(0, 1fr); align-content: center; }
+
+/* The place the next team takes anyway stands out; the other free places are quiet until pointed at, then take a team as well. */
+.tb-row--free:not(.is-next) { opacity: 0.45; transition: opacity 160ms; }
+.tb-row--free:not(.is-next):is(:hover, :focus-visible) { opacity: 1; }
 
 .tb-create {
   grid-template-columns: minmax(0, 1fr) auto auto auto;
@@ -636,7 +696,7 @@ button.t-setting.is-editable:hover { border-color: var(--t-gold); }
 /* A medium window keeps the panel beside the bracket: the cards narrow instead. */
 @media (max-width: 1100px) {
   .t-body { grid-template-columns: minmax(0, 1fr) 240px; gap: 14px; }
-  .tb { grid-template-columns: repeat(var(--levels), minmax(160px, 180px)); gap: 0 30px; }
+  .tb { grid-template-columns: repeat(var(--columns), minmax(140px, 170px)); gap: 0 22px; }
   .tb-row { font-size: 14px; gap: 6px; padding: 0 8px 0 6px; }
 }
 
@@ -684,17 +744,10 @@ button.t-setting.is-editable:hover { border-color: var(--t-gold); }
 .t-bar .room-info__symbol svg { color: var(--t-gold); }
 
 .tb-row__crown { width: 20px; height: 20px; flex: none; color: var(--t-gold); filter: drop-shadow(0 0 6px rgb(255 173 101 / .5)); }
-.tb-match--add .tb-row { min-height: 40px; }
 
 .t-bar > .online-identity { flex-wrap: nowrap; gap: 8px 24px; }
 .t-bar .online-profile { flex: 0 1 auto; }
 .t-bar > .room-info { flex: 1 1 360px; }
-.tb-match--add { grid-template-columns: minmax(0, 1fr); }
-
-/* The place for one more team hangs below the first level, out of the column's flow, so the later levels stay centred between their matches. */
-.tb--growing { padding-bottom: 72px; }
-.tb--growing .tb-col { position: relative; }
-.tb--growing .tb-cell--add { position: absolute; top: 100%; left: 0; right: 0; flex: none; padding: 0; }
 
 /* Removing a team: red when pointed at, and after the first click red and pulsing: one more click removes it. */
 .lobby__button.t-remove:is(:hover, :focus-visible) { border-color: var(--danger); color: var(--danger); }

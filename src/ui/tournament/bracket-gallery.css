@@ -1,0 +1,23 @@
+/* The dev page that simulates a tournament (`/dev/tournament.html`): controls on top, the bracket as wide as the window below. */
+body { margin: 0; background: radial-gradient(ellipse at 50% 30%, #10264a, #071224 70%); color: var(--bone); font: 400 14px/1.6 var(--font-body); min-height: 100vh; }
+.tg { padding: 28px 24px 60px; display: grid; gap: 18px; }
+.tg-head { max-width: 90ch; }
+.tg-head h1 { margin: 0; font: 800 clamp(34px, 5vw, 56px)/1 var(--font-display); text-transform: uppercase; letter-spacing: .02em; }
+.tg-eyebrow { margin: 0 0 8px; color: #ffad65; font: 11px/1.5 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; }
+.tg-intro { margin: 12px 0 0; color: var(--bone-dim); }
+.tg-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; padding: 14px 16px; border: 1px solid rgb(91 125 179 / .3); border-radius: 4px; background: rgb(13 29 50 / .6); }
+.tg-field > span { display: block; margin-bottom: 4px; color: var(--bone-dim); font: 10.5px/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.tg-field select, .tg-button { min-height: 38px; padding: 6px 12px; border: 1px solid rgb(91 125 179 / .45); border-radius: 3px; background: #0c1c32; color: var(--bone); font: inherit; cursor: pointer; }
+.tg-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.tg-button:hover:not(:disabled) { border-color: #ffad65; color: #ffad65; }
+.tg-button:disabled { opacity: .45; cursor: default; }
+.tg-button--primary { border-color: #ffad65; background: #ffad65; color: #1a1206; }
+.tg-button--primary:hover:not(:disabled) { color: #1a1206; filter: brightness(1.08); }
+.tg-status { margin: 0; min-height: 1.6em; color: var(--bone-dim); font: 12px/1.6 var(--font-mono); }
+.tg-bracket { margin: 0 -24px; padding: 18px 24px 24px; }
+
+@media (max-width: 760px) {
+  .tg { padding: 20px 16px 48px; }
+  .tg-actions { margin-left: 0; }
+  .tg-bracket { margin: 0 -16px; padding-inline: 16px; }
+}

@@ -22,6 +22,8 @@ To test online alone, open the game with `?nointro&debug` and use Online-Bots in
 
 To watch a whole tournament run, create one and press "Turnier simulieren" under Online-Bots: it fills the bracket with bot teams and starts it, and a dev relay plays every match between bot teams out by itself, round by round, with drawn points and no game to watch ([`simulate.rs`](server/src/room/simulate.rs)). Found a team of your own first to play your matches for real. The bracket and the Arena (Q/E) show it as it goes.
 
+To look at the bracket alone, without a relay, open `/dev/tournament.html` (`npm run dev`): it simulates a whole tournament in the page with 2 to 16 teams, from registration through the draw to the champion, step by step, level by level or on its own ([`bracket-gallery.ts`](src/ui/tournament/bracket-gallery.ts)). `?teams=n&phase=running|live|finished` opens it there.
+
 ## Language
 
 UI labels live in `src/platform/i18n.ts` (every key in both languages).
