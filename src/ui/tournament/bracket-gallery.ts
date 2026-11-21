@@ -206,7 +206,7 @@ const ctx = (): BracketContext => ({
     const rules = sim.view.settings.stages[stage].rules;
     rules.rounds = ROUNDS[(ROUNDS.indexOf(rules.rounds) + 1) % ROUNDS.length];
     const depth = sim.view.bracket?.levels.length ?? levelsFor(sim.view.teams.length);
-    sim.note = `${stageName(stage, depth)}: ${stageSummary(sim.view.settings.stages[stage]).textContent} — gilt für beide Hälften.`;
+    sim.note = `${stageName(stage, depth)}: ${stageSummary(sim.view.settings.stages[stage]).textContent}. Gilt für beide Hälften.`;
     render();
   },
   enter: () => {
@@ -248,7 +248,7 @@ document.body.append(h('main.tg', null,
     h('p.tg-eyebrow', null, 'Dev · Turnier'),
     h('h1', null, 'Turnierbaum-Simulation'),
     h('p.tg-intro', null, 'Ein ganzes Turnier im Browser, ohne Relay: Teams melden sich an, der Baum wird ausgelost und Match für Match gespielt. '
-      + 'Ein Klick auf das Spiel einer Runde schaltet ihre Runden weiter — für beide Hälften zugleich, das Zeigen darauf hebt beide hervor.'),
+      + 'Ein Klick auf das Spiel einer Runde schaltet ihre Runden weiter, auf beiden Hälften. Wer darauf zeigt, sieht beide Hälften hervorgehoben.'),
   ),
   controls, status, h('div.t-bracket.tg-bracket', null, stage)));
 
@@ -295,7 +295,7 @@ function paintControls(): void {
 function phaseNote(view: TournamentView): string {
   if (view.phase === 'registration') return `Anmeldung: ${view.teams.length} von ${view.settings.maxTeams} Teams.`;
   const levels = view.bracket!.levels;
-  if (view.phase === 'finished') return `Beendet — Champion: ${view.teams[view.bracket!.champion!].name}.`;
+  if (view.phase === 'finished') return `Beendet. Champion: ${view.teams[view.bracket!.champion!].name}.`;
   const live = levels.flat().filter((m) => m.state === 'playing').length;
   const done = levels.flat().filter((m) => m.state === 'done' && !m.bye).length;
   const total = levels.flat().filter((m) => !m.bye).length;
