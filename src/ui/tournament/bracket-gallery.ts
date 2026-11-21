@@ -13,7 +13,6 @@ import type { TournamentMatch, TournamentView } from '../../net/net';
 import { h } from '../menu/menu';
 import { bracketView, type BracketContext } from './bracket';
 import { defaultStages, levelsFor, stageName } from './setup';
-import { stageSummary } from './stage-summary';
 
 /**
  * Dev-only page (`/dev/tournament.html`, never part of a build): a whole tournament simulated in the page, without a relay. Pick how
@@ -191,7 +190,7 @@ function reset(): void {
 
 const ctx = (): BracketContext => ({
   view: sim.view, selectedTeam: sim.selected, creatingAt: sim.creatingAt, seenTeams: sim.seen,
-  selectTeam: (team) => { sim.selected = sim.selected === team ? null : team; sim.note = `Team „${sim.view.teams[team].name}“ ausgewählt.`; render(); },
+  selectTeam: (team) => { sim.selected = sim.selected === team ? null : team; sim.note = `Du hast „${sim.view.teams[team].name}“ gewählt.`; render(); },
   startCreating: (slot) => { sim.creatingAt = slot; render(); },
   cancelCreating: () => { sim.creatingAt = null; render(); },
   createTeam: (name, closed, slot) => {
@@ -206,7 +205,7 @@ const ctx = (): BracketContext => ({
     const rules = sim.view.settings.stages[stage].rules;
     rules.rounds = ROUNDS[(ROUNDS.indexOf(rules.rounds) + 1) % ROUNDS.length];
     const depth = sim.view.bracket?.levels.length ?? levelsFor(sim.view.teams.length);
-    sim.note = `${stageName(stage, depth)}: ${stageSummary(sim.view.settings.stages[stage]).textContent}. Gilt für beide Hälften.`;
+    sim.note = `${stageName(stage, depth)} spielt jetzt ${rules.rounds === 1 ? '1 Runde' : `${rules.rounds} Runden`}${stage === 0 ? '' : ', links wie rechts'}.`;
     render();
   },
   enter: () => {
@@ -247,8 +246,8 @@ document.body.append(h('main.tg', null,
   h('header.tg-head', null,
     h('p.tg-eyebrow', null, 'Dev · Turnier'),
     h('h1', null, 'Turnierbaum-Simulation'),
-    h('p.tg-intro', null, 'Ein ganzes Turnier im Browser, ohne Relay: Teams melden sich an, der Baum wird ausgelost und Match für Match gespielt. '
-      + 'Ein Klick auf das Spiel einer Runde schaltet ihre Runden weiter, auf beiden Hälften. Wer darauf zeigt, sieht beide Hälften hervorgehoben.'),
+    h('p.tg-intro', null, 'Du spielst hier ein Turnier ohne Relay durch, von der Anmeldung bis zum Champion. '
+      + 'Klickst du auf das Spiel einer Runde, änderst du ihre Rundenzahl für beide Hälften. Zeigst du darauf, leuchten beide Hälften auf.'),
   ),
   controls, status, h('div.t-bracket.tg-bracket', null, stage)));
 
@@ -295,11 +294,11 @@ function paintControls(): void {
 function phaseNote(view: TournamentView): string {
   if (view.phase === 'registration') return `Anmeldung: ${view.teams.length} von ${view.settings.maxTeams} Teams.`;
   const levels = view.bracket!.levels;
-  if (view.phase === 'finished') return `Beendet. Champion: ${view.teams[view.bracket!.champion!].name}.`;
+  if (view.phase === 'finished') return `${view.teams[view.bracket!.champion!].name} ist Champion.`;
   const live = levels.flat().filter((m) => m.state === 'playing').length;
   const done = levels.flat().filter((m) => m.state === 'done' && !m.bye).length;
   const total = levels.flat().filter((m) => !m.bye).length;
-  return `Läuft: ${done} von ${total} Matches gespielt, ${live} live.`;
+  return `Läuft: ${done} von ${total} Matches fertig, ${live} live.`;
 }
 
 function render(): void {
