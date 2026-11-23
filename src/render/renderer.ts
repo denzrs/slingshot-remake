@@ -365,6 +365,17 @@ export class Renderer {
   /** When the player whose field is shown was shot down (renderer time), for the matter to lift. */
   private darkDeadSince: number | null = null;
 
+  /**
+   * The ship whose aim Dark Matter leaves a clearing for and draws over the matter, or -1. Online that is only ever
+   * your own ship: while you aim, and in a salvo once your aim is locked in, never whoever the turn has passed to.
+   */
+  private darkAimer(match: Match, scene: Scene): number {
+    if (!match.dark || scene.camera || match.spectatorId !== null || match.phase !== 'aiming') return -1;
+    const own = match.viewer;
+    const aimer = own === null ? match.focus : match.focus === own || (match.salvo && match.players[own]?.locked) ? own : -1;
+    return aimer >= 0 && scene.world.ships[aimer]?.alive ? aimer : -1;
+  }
+
   private drawDarkMatter(match: Match, scene: Scene): void {
     const dark = match.dark;
     // A seat in the stands watches the whole field.
@@ -382,14 +393,12 @@ export class Renderer {
     }
     if (fade <= 0) return;
     // The ship that is aiming keeps a small clearing, or its aim would be lost in the dark.
-    const aiming = match.phase === 'aiming' && match.focus >= 0 ? scene.world.ships[match.focus] : null;
-    const clearing = aiming?.alive ? { x: aiming.x, y: aiming.y } : null;
+    const aimer = this.darkAimer(match, scene);
+    const aiming = aimer >= 0 ? scene.world.ships[aimer] : null;
+    const clearing = aiming ? { x: aiming.x, y: aiming.y } : null;
     this.darkView.draw(this.ctx, this.painter, dark, { who, fade, clearing, color: match.players[who]?.color ?? '#ffffff', time: this.time });
-    // Your own aim shows through the dark: it is drawn again over it.
-    if (clearing && match.aimVisible(match.focus)) {
-      const player = match.players[match.focus];
-      this.painter.aimVector(this.ctx, clearing.x, clearing.y, player.angle, player.power, player.color, 'full', this.time);
-    }
+    // Your own aim shows through the dark: it is drawn over it (and not under it by drawShips, or it would show twice in the clearing).
+    if (clearing) this.drawAimMarks(match, aimer, clearing.x, clearing.y, match.focus === aimer);
     // Found: somebody's shot came close to your ship.
     const at = dark.found[who];
     const mineShip = scene.world.ships[who];
@@ -1091,10 +1100,29 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** A ship's aim while aiming: the arrow (as far as it may be shown) and, in a salvo, the ring of an aim locked in. */
+  private drawAimMarks(match: Match, i: number, x: number, y: number, current: boolean): void {
+    const { ctx } = this;
+    const player = match.players[i];
+    if (match.aimVisible(i)) {
+      const aim = current ? 'full' : match.salvo && player.locked ? 'ghost' : match.salvo && player.cpu ? 'thin' : null;
+      if (aim) this.painter.aimVector(ctx, x, y, player.angle, player.power, player.color, aim, this.time);
+    }
+    if (match.salvo && player.locked) {
+      ctx.save();
+      ctx.strokeStyle = rgba(player.color, 0.55);
+      ctx.lineWidth = 1.2;
+      this.painter.lockedRing(ctx, x, y);
+      ctx.restore();
+    }
+  }
+
   private drawShips(match: Match, scene: Scene, seatNumbers: boolean): void {
     const { ctx } = this;
     const live = !scene.camera;
     const planning = live && match.phase === 'aiming';
+    // Dark Matter draws this ship's aim over itself.
+    const darkAimer = this.darkAimer(match, scene);
 
     scene.world.ships.forEach((ship, i) => {
       if (!ship.alive) return;
@@ -1119,15 +1147,7 @@ export class Renderer {
       if (planning && this.isPinged(match, i)) this.painter.locatePing(ctx, ship.x, ship.y, color, match.phaseTime);
 
       const aimShown = match.aimVisible(i);
-      if (planning && aimShown) {
-        const aim = current ? 'full' : match.salvo && player.locked ? 'ghost' : match.salvo && player.cpu ? 'thin' : null;
-        if (aim) this.painter.aimVector(ctx, ship.x, ship.y, player.angle, player.power, color, aim, this.time);
-      }
-      if (planning && match.salvo && player.locked) {
-        ctx.strokeStyle = rgba(color, 0.55);
-        ctx.lineWidth = 1.2;
-        this.painter.lockedRing(ctx, ship.x, ship.y);
-      }
+      if (planning && i !== darkAimer) this.drawAimMarks(match, i, ship.x, ship.y, current);
 
       // Neighbour grace period: the ship that the aiming player's shot flies through gets a shield.
       if (planning && match.focus >= 0 && match.sparedFor(match.focus).includes(i)) this.painter.sparedRing(ctx, ship.x, ship.y, this.time);
