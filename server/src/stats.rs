@@ -26,7 +26,7 @@ use crate::report::{LocalGame, RoundReport, SeatReport, ShotRound, TurnReport, R
 
 mod demo;
 mod facts;
-pub use facts::Fact;
+pub use facts::{Fact, SharedFacts};
 
 /// Days a round is kept before the sweeper drops it.
 pub const DEFAULT_KEEP_DAYS: i64 = 365;
@@ -373,10 +373,6 @@ pub struct Overview {
     /// Games played on one device, by day.
     pub local_days: Vec<DayTotals>,
     pub games: Vec<Game>,
-    /// How the online games are played, and their records.
-    pub facts: Vec<Fact>,
-    /// The same for the games played on one device.
-    pub local_facts: Vec<Fact>,
 }
 
 /// What the menu shows of the statistics: the facts, and the rule sets a quick game is dealt from.
@@ -384,6 +380,8 @@ pub struct Overview {
 pub struct MenuStats {
     pub facts: Vec<Fact>,
     pub favorites: Vec<Favorite>,
+    /// How the games are played, and their records, over each source apart: the stats page shows them beside its games.
+    pub by_source: SharedFacts,
 }
 
 /// A rule set many games were played by: the mode, the rules (see `favorite_rules`), and how many games.
@@ -1105,8 +1103,6 @@ impl Store {
                 .days("stat_local_days", "stat_local_day_players")
                 .await?,
             games: self.latest_games().await?,
-            facts: self.source_facts("online").await,
-            local_facts: self.source_facts("local").await,
         })
     }
 
