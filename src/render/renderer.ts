@@ -669,7 +669,9 @@ export class Renderer {
     for (const vs of scene.volley?.shots ?? []) {
       const color = match.players[vs.owner].color;
       const shot = vs.shot;
-      this.painter.liveTrail(ctx, vs.trail, match.world.wormholes, color, !!vs.plasma, this.time);
+      // A shot that has ended is drawn as the trail it leaves, or its hot head would stay behind while the rest still fly.
+      if (shot.end) this.painter.trail(ctx, vs.trail, match.world.wormholes, color, 0, 1);
+      else this.painter.liveTrail(ctx, vs.trail, match.world.wormholes, color, !!vs.plasma, this.time);
       if (!shot.end && shot.whiteExit && shot.time - shot.whiteExit.at < WHITE_JUMP.LIFE) {
         const exit = shot.whiteExit;
         const hole = match.world.holes[exit.hole] ?? null;
