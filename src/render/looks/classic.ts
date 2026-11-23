@@ -81,7 +81,7 @@ export function engraved(id: Look, styles: Styles = {}, parts: Partial<LookPaint
     shield: drawEngravedShield,
     offscreenArrow: drawEngravedArrow,
     trail: drawEngravedTrail,
-    liveTrail: (ctx, points, wormholes, color, plasma, time) => drawEngravedLiveTrail(ctx, points, wormholes, color, plasma, time),
+    liveTrail: (ctx, points, wormholes, color, plasma, time, ended) => drawEngravedLiveTrail(ctx, points, wormholes, color, plasma, time, ended),
     shot: drawEngravedShot,
     plasmaShot: (ctx, x, y, time) => drawEngravedPlasmaShot(ctx, x, y, time),
     piercer: (ctx, x, y, heading, color) => drawEngravedPiercer(ctx, x, y, heading, color, 6),
@@ -333,14 +333,14 @@ export function drawEngravedGate(ctx: CanvasRenderingContext2D, { x, y, out, col
   ctx.restore();
 }
 
-/** The track of a shot in flight; a plasma shot's is faint with a ribbon over it (`additive` adds the ribbon up as light). */
-export function drawEngravedLiveTrail(ctx: CanvasRenderingContext2D, points: number[], wormholes: readonly Wormhole[], color: string, plasma: boolean, time: number, additive = false): void {
+/** The track of a shot in flight; a plasma shot's is faint with a ribbon over it until it has `ended` (`additive` adds the ribbon up as light). */
+export function drawEngravedLiveTrail(ctx: CanvasRenderingContext2D, points: number[], wormholes: readonly Wormhole[], color: string, plasma: boolean, time: number, ended: boolean, additive = false): void {
   ctx.strokeStyle = color;
   ctx.lineWidth = plasma ? 1 : 2;
   if (plasma) ctx.globalAlpha = 0.45;
   strokePolyline(ctx, points, wormholes);
   ctx.globalAlpha = 1;
-  if (plasma) drawEngravedPlasmaTrail(ctx, points, wormholes, time, additive);
+  if (plasma && !ended) drawEngravedPlasmaTrail(ctx, points, wormholes, time, additive);
 }
 
 /** Plasma shot: a tapering cyan ribbon that swells toward the blob, with sparks that drift off the trail and die. */
@@ -380,8 +380,8 @@ function drawEngravedPlasmaTrail(ctx: CanvasRenderingContext2D, pts: number[], w
 }
 
 /** The plasma ribbon in light, for a look that adds up what it draws. */
-export const drawGlowingLiveTrail = (ctx: CanvasRenderingContext2D, points: number[], wormholes: readonly Wormhole[], color: string, plasma: boolean, time: number): void =>
-  drawEngravedLiveTrail(ctx, points, wormholes, color, plasma, time, true);
+export const drawGlowingLiveTrail = (ctx: CanvasRenderingContext2D, points: number[], wormholes: readonly Wormhole[], color: string, plasma: boolean, time: number, ended: boolean): void =>
+  drawEngravedLiveTrail(ctx, points, wormholes, color, plasma, time, ended, true);
 
 /** A shot in flight: a soft glow with a white core. */
 function drawEngravedShot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {

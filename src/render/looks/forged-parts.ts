@@ -116,14 +116,14 @@ export const lightParts: Partial<LookPainter> = {
     }
     drawEngravedTrail(ctx, points, wormholes, color, rank, fade);
   },
-  liveTrail: (ctx, points, wormholes, color, plasma, time) => {
+  liveTrail: (ctx, points, wormholes, color, plasma, time, ended) => {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = rgba(color, plasma ? 0.05 : 0.12);
     ctx.lineWidth = 7;
     strokePolyline(ctx, points, wormholes);
     ctx.restore();
-    drawGlowingLiveTrail(ctx, points, wormholes, color, plasma, time);
+    drawGlowingLiveTrail(ctx, points, wormholes, color, plasma, time, ended);
   },
   holeFlare: (ctx, hole, strength, color, angle) => {
     ctx.save();
