@@ -88,7 +88,7 @@ type ClientMessage =
   | { type: 'cpu_chat'; playerId: number; text: string }
   /** Host only, in a running game or on its results: the room goes back to waiting, with everybody still in it. */
   | { type: 'end_game' }
-  /** Host only, from a game's results: the same table plays again, a game of its own for the statistics, its worlds from `seed`. */
+  /** Host only, from a game's results: the same table plays again, a game of its own for the statistics, its worlds from `seed`. The relay answers with `rematch`. */
   | { type: 'rematch'; seed: number }
   | { type: 'leave_room' }
   /** A new connection asks for the seat that `token` was given for, after the old connection dropped. */
@@ -349,6 +349,8 @@ export type ServerMessage =
       seed: number;
       players: Array<{ id: number; name: string; avatar: Avatar; team: 0 | 1; cpu: NetworkCpuLevel | null }>;
     }
+  /** To the host: the relay agrees to the rematch it asked for, a game of its own from `seed`. */
+  | { type: 'rematch'; seed: number }
   /** To the host: `from` is a player's seat, or — with `spectator` — a place in the stands. */
   | { type: 'input'; from: number; input: ClientInput; spectator?: true }
   /** Somebody said something in the room — `id` is their seat, or their place in the stands (`spectator`). */

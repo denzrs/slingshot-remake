@@ -108,6 +108,11 @@ export class ChallengeMatch extends Match {
     return 0;
   }
 
+  /** A challenge is played again on its own sectors, never on new worlds. */
+  rematch(): void {
+    this.newMatch();
+  }
+
   newMatch(): void {
     this.round = this.roundsBefore;
     this.clock = 0;

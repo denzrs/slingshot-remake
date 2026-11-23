@@ -154,6 +154,8 @@ export class MultiplayerSession {
   private lastSeq = -1;
   private syncElapsed = 0;
   private aimDirty = false;
+  /** The seed of the rematch the host has asked the relay for, until it agrees or refuses. */
+  private rematchAsked: number | null = null;
 
   constructor(
     private readonly hooks: SessionHooks,
@@ -568,6 +570,11 @@ export class MultiplayerSession {
       case 'game_start':
         this.startMatch(message);
         break;
+      case 'rematch':
+        if (this.rematchAsked !== message.seed) break;
+        this.rematchAsked = null;
+        this.match?.rematch(message.seed);
+        break;
       case 'input':
         if (!this.match || !this.isHost) break;
         if (message.spectator) {
@@ -634,6 +641,8 @@ export class MultiplayerSession {
         this.send({ type: 'lobby' });
         break;
       case 'error': {
+        // A refused rematch can be asked for again.
+        this.rematchAsked = null;
         // Said in the chat, not in the lobby's status line: "you are writing too fast" is about the chat, and nobody reads the notice in a game.
         const aboutChat = message.message === CHAT_TOO_FAST;
         if (aboutChat || this.match) this.say(message.message);
@@ -676,6 +685,7 @@ export class MultiplayerSession {
     if (this.isHost) match.crowd.sync(this.room?.spectators ?? []);
 
     this.resetSync();
+    this.rematchAsked = null;
     this.match?.dispose();
     this.match = match;
     if (this.isHost) {
@@ -689,8 +699,12 @@ export class MultiplayerSession {
         }
       });
       match.onTurnEnd(() => this.send({ type: 'turn_stats', ...turnReport(match) }));
-      // Before the rematch's first report, so the relay writes it down as a new game.
-      match.onRematch((seed) => this.send({ type: 'rematch', seed }));
+      // The relay writes a rematch down as a game of its own: it has to agree before the first report (a tournament's match has none).
+      match.askRematch = (seed) => {
+        if (this.rematchAsked !== null || this.room?.tournament) return;
+        this.rematchAsked = seed;
+        this.send({ type: 'rematch', seed });
+      };
       match.onSeatChange((change) => this.send({ type: 'seat_stats', ...change }));
       this.speakForCpus(match);
       this.startHeartbeat(match);

@@ -14,6 +14,17 @@ use crate::wire::{CpuLevel, RoomMode};
 use super::model::*;
 use super::RoomManager;
 
+/// A game begins in `room`, its worlds grown from `seed`: the statistics count it as one of its own.
+fn new_game(room: &mut Room, seed: u32) {
+    room.game += 1;
+    room.seed = seed;
+    room.match_id = format!("{:016x}", rand::thread_rng().gen::<u64>());
+    room.reported_round = 0;
+    room.reported_turn = (0, 0);
+    room.seat_change_lost = false;
+    room.scores.clear();
+}
+
 /// What the statistics need once a report has passed: where to put it and what the room knows.
 struct Reporting {
     stats: Arc<Stats>,
@@ -112,7 +123,8 @@ impl RoomManager {
     }
 
     /// The host plays the game again from its results, with everybody still at the table: the statistics write it down as a
-    /// game of its own, its worlds grown from `seed`. Nothing goes out: the others follow the host's state as before.
+    /// game of its own, its worlds grown from `seed`. Only the host hears back (`rematch`), and starts it then; the others
+    /// follow the host's state as before.
     pub(super) fn rematch(&mut self, conn: u64, seed: Parsed<u32>) {
         let seed = match seed {
             Ok(seed) => seed,
@@ -142,16 +154,21 @@ impl RoomManager {
             self.error(conn, "A tournament match has no rematch");
             return;
         }
-        room.seed = seed;
-        room.match_id = format!("{:016x}", rand::thread_rng().gen::<u64>());
-        room.reported_round = 0;
-        room.reported_turn = (0, 0);
-        room.seat_change_lost = false;
-        room.scores.clear();
-        // Whoever left the last game sits out this one from its first round.
-        for player in room.players.iter_mut().filter(|p| p.left) {
+        // From the results only: every round of the game has been reported (a skipped one too).
+        if room.reported_round < room.rules.get("rounds").as_i64().unwrap_or(0) {
+            self.error(conn, "The game is not over yet");
+            return;
+        }
+        new_game(room, seed);
+        // Whoever left the last game, or dropped out of it and has not come back, sits out this one from its first round.
+        for player in room
+            .players
+            .iter_mut()
+            .filter(|p| p.left || p.lost_at.is_some())
+        {
             player.left_after_round = -1;
         }
+        self.send_value(conn, &json!({ "type": "rematch", "seed": seed }));
     }
 
     pub(super) fn begin_game(&mut self, room_id: &str) {
@@ -162,14 +179,7 @@ impl RoomManager {
             return;
         }
         room.status = RoomStatus::Playing;
-        room.game += 1;
-        let seed: u32 = rand::thread_rng().gen();
-        room.seed = seed;
-        room.match_id = format!("{:016x}", rand::thread_rng().gen::<u64>());
-        room.reported_round = 0;
-        room.reported_turn = (0, 0);
-        room.seat_change_lost = false;
-        room.scores.clear();
+        new_game(room, rand::thread_rng().gen());
         room.players
             .iter_mut()
             .enumerate()
@@ -278,8 +288,11 @@ impl RoomManager {
                 .map(|player| {
                     let occupant = match (player.cpu, player.conn) {
                         (Some(level), _) => Occupant::Cpu(level.as_str()),
-                        // Left in an earlier round: nobody played this one in the seat.
-                        (None, None) if player.left && round > player.left_after_round + 1 => {
+                        // Left or dropped out in an earlier round: nobody played this one in the seat.
+                        (None, None)
+                            if (player.left || player.lost_at.is_some())
+                                && round > player.left_after_round + 1 =>
+                        {
                             Occupant::Empty
                         }
                         (None, Some(conn)) => Occupant::Person {

@@ -38,8 +38,9 @@ pub(super) struct Player {
     /// Set when the person chose to leave the running game: the seat stays (the game's player
     /// indexes are the seats) with nobody in it, and goes when the room waits again.
     pub(super) left: bool,
-    /// The last round the host had reported when the person left: the round after it they still
-    /// played some of, the ones after that nobody played in this seat.
+    /// The last round the host had reported when the person left or dropped out: the round after it
+    /// they still played some of, the ones after that nobody played in this seat (until they come back).
+    /// -1 when they were already gone as a rematch began.
     pub(super) left_after_round: i64,
     /// Where the seat's person last came from, so the game's statistics can still name the seat
     /// while no connection is on it (held for a drop, or left).

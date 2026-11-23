@@ -2175,23 +2175,42 @@ async fn the_hosts_round_report_is_written_down_once() {
     assert!(drain_json(&mut host_rx).is_empty());
 }
 
+/// The host reports every round of a game in the standard rules (five), so its results are on screen.
+fn play_out(rooms: &mut RoomManager) {
+    for round in 1..=5 {
+        rooms.handle(1, &round_report_message(round, 2));
+    }
+}
+
 #[tokio::test]
 async fn a_rematch_is_written_down_as_a_game_of_its_own() {
     let (mut rooms, stats, [mut host_rx, mut guest_rx]) = running_game_with_stats();
     rooms.handle(1, &turn_report_message(1, 1, 2));
     rooms.handle(1, &round_report_message(1, 2));
+    // Not before the game is over.
+    rooms.handle(1, &json!({"type":"rematch","seed":42}));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "The game is not over yet"
+    );
+    for round in 2..=5 {
+        rooms.handle(1, &round_report_message(round, 2));
+    }
     // Only the host calls it.
     rooms.handle(2, &json!({"type":"rematch","seed":42}));
     assert_eq!(
         take_type(&drain_json(&mut guest_rx), "error")["message"],
         "Only the room host can start a rematch"
     );
+    // The host hears it is on, with the seed it asked for; the others only follow the host's game.
     rooms.handle(1, &json!({"type":"rematch","seed":42}));
+    assert_eq!(take_type(&drain_json(&mut host_rx), "rematch")["seed"], 42);
+    assert!(drain_json(&mut guest_rx).is_empty());
     // The new game's first round and turn are taken again, under a game of their own with the new seed.
     rooms.handle(1, &turn_report_message(1, 1, 2));
     rooms.handle(1, &round_report_message(1, 2));
     assert!(drain_json(&mut host_rx).is_empty());
-    written(&stats, "stat_rounds", 2).await;
+    written(&stats, "stat_rounds", 6).await;
     assert_eq!(stats.count("stat_matches").await, 2);
     assert_eq!(stats.count("stat_matches WHERE seed = 42").await, 1);
     // A seed is a whole number that fits.
@@ -2199,6 +2218,40 @@ async fn a_rematch_is_written_down_as_a_game_of_its_own() {
     assert_eq!(
         take_type(&drain_json(&mut host_rx), "error")["message"],
         "Malformed seed"
+    );
+}
+
+#[tokio::test]
+async fn whoever_dropped_out_and_did_not_come_back_sits_out_the_rematch() {
+    let (mut rooms, stats, [mut host_rx, _guest_rx]) = running_game_with_stats();
+    play_out(&mut rooms);
+    rooms.disconnect(2);
+    rooms.handle(1, &json!({"type":"rematch","seed":42}));
+    take_type(&drain_json(&mut host_rx), "rematch");
+    rooms.handle(1, &round_report_message(1, 2));
+    written(&stats, "stat_rounds", 6).await;
+    let rematch = "match_id IN (SELECT match_id FROM stat_matches WHERE seed = 42)";
+    // Nobody played the guest's seat in it: it has no row.
+    assert_eq!(
+        stats
+            .count(&format!("stat_seats WHERE {rematch} AND seat = 1"))
+            .await,
+        0
+    );
+    assert_eq!(
+        stats
+            .count(&format!("stat_seats WHERE {rematch} AND seat = 0"))
+            .await,
+        1
+    );
+    // The last game's rounds still name the guest who played them.
+    assert_eq!(
+        stats
+            .count(&format!(
+                "stat_seats WHERE NOT {rematch} AND seat = 1 AND player IS NOT NULL"
+            ))
+            .await,
+        5
     );
 }
 

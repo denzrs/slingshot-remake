@@ -111,6 +111,8 @@ export abstract class Match {
   viewer: number | null = null;
   /** Whether this screen may move the match on (next round, skip the killcam, rematch). Online only the host may. */
   canAdvance = true;
+  /** Online host: a rematch from the results waits for the relay, which is asked with its seed here; `rematch` starts it once agreed. */
+  askRematch: ((seed: number) => void) | null = null;
   /** Online: this screen's place in the stands, if it sits there. It follows the match but takes no part in it. */
   spectatorId: number | null = null;
 
@@ -162,7 +164,6 @@ export abstract class Match {
   private turnListeners: (() => void)[] = [];
   private seatListeners: ((change: SeatChange) => void)[] = [];
   private banterListeners: ((cue: BanterCue) => void)[] = [];
-  private rematchListeners: ((seed: number) => void)[] = [];
 
   // ————————————————————————————— Replay —————————————————————————————
 
@@ -292,11 +293,6 @@ export abstract class Match {
   /** Told of every change at the table as it happens (host): a recording keeps them, as a replay has no room to hear them from. */
   onSeatChange(listener: (change: SeatChange) => void): void {
     this.seatListeners.push(listener);
-  }
-
-  /** Told of a rematch's seed before its first round begins (host): the relay keeps the new game apart from the last. */
-  onRematch(listener: (seed: number) => void): void {
-    this.rematchListeners.push(listener);
   }
 
   /** Called when a turn's shots have all landed and the scores are settled, before the next phase begins. */
@@ -845,7 +841,7 @@ export abstract class Match {
     return true;
   }
 
-  /** A match from `seed`: the first one grows from the seed it was made with, a rematch from a fresh one (see `advance`). */
+  /** A match from `seed`: the first one grows from the seed it was made with, a rematch from a fresh one (see `rematch`). */
   newMatch(seed = this.options.seed ?? randomSeed()): void {
     this.matchSeed = seed;
     this.worldRng = createRng(seed);
@@ -1407,11 +1403,15 @@ export abstract class Match {
         this.startRound();
       }
     } else if (this.phase === 'gameOver') {
-      // Another game, not the last one again: new worlds.
       const seed = randomSeed();
-      for (const l of this.rematchListeners) l(seed);
-      this.newMatch(seed);
+      if (this.askRematch) this.askRematch(seed);
+      else this.rematch(seed);
     }
+  }
+
+  /** Another game at the same table, not the last one again: new worlds, grown from `seed`. */
+  rematch(seed = randomSeed()): void {
+    this.newMatch(seed);
   }
 
   update(dt: number): void {

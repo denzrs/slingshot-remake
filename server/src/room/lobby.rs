@@ -442,6 +442,7 @@ impl RoomManager {
         player.conn = None;
         player.came_from = from;
         player.lost_at = Some(std::time::Instant::now());
+        player.left_after_round = room.reported_round;
         let name = player.name.clone();
         player.seat_grace = Some(grace_duration);
         let grace = grace_duration.as_secs();
