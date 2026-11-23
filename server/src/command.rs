@@ -79,6 +79,8 @@ pub enum RoomCommand<'a> {
     StartGame,
     /// The host ends the running game and brings the room back to its waiting state.
     EndGame,
+    /// The host plays the game again in the same room: a new game for the statistics, its worlds from this seed.
+    Rematch(Parsed<u32>),
     Input(Parsed<&'a Value>),
     /// Something to say to the room.
     Chat(Parsed<String>),
@@ -462,6 +464,14 @@ impl<'a> RoomCommand<'a> {
             },
             "start_game" => RoomCommand::StartGame,
             "end_game" => RoomCommand::EndGame,
+            "rematch" => RoomCommand::Rematch(
+                message
+                    .get("seed")
+                    .filter(|value| is_safe_integer(value))
+                    .and_then(Value::as_u64)
+                    .and_then(|seed| u32::try_from(seed).ok())
+                    .ok_or("Malformed seed"),
+            ),
             "input" => RoomCommand::Input(
                 message
                     .get("input")

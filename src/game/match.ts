@@ -115,7 +115,7 @@ export abstract class Match {
   spectatorId: number | null = null;
 
   protected rng: Rng;
-  private readonly matchSeed: number;
+  private matchSeed: number;
   private worldRng: Rng;
   /** Phase time when the current volley finished, replicated so online guests keep the same post-flight delay. */
   protected flightDoneAt: number | null = null;
@@ -162,6 +162,7 @@ export abstract class Match {
   private turnListeners: (() => void)[] = [];
   private seatListeners: ((change: SeatChange) => void)[] = [];
   private banterListeners: ((cue: BanterCue) => void)[] = [];
+  private rematchListeners: ((seed: number) => void)[] = [];
 
   // ————————————————————————————— Replay —————————————————————————————
 
@@ -291,6 +292,11 @@ export abstract class Match {
   /** Told of every change at the table as it happens (host): a recording keeps them, as a replay has no room to hear them from. */
   onSeatChange(listener: (change: SeatChange) => void): void {
     this.seatListeners.push(listener);
+  }
+
+  /** Told of a rematch's seed before its first round begins (host): the relay keeps the new game apart from the last. */
+  onRematch(listener: (seed: number) => void): void {
+    this.rematchListeners.push(listener);
   }
 
   /** Called when a turn's shots have all landed and the scores are settled, before the next phase begins. */
@@ -839,9 +845,11 @@ export abstract class Match {
     return true;
   }
 
-  newMatch(): void {
-    this.worldRng = createRng(this.options.seed ?? randomSeed());
-    this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
+  /** A match from `seed`: the first one grows from the seed it was made with, a rematch from a fresh one (see `advance`). */
+  newMatch(seed = this.options.seed ?? randomSeed()): void {
+    this.matchSeed = seed;
+    this.worldRng = createRng(seed);
+    this.rng = createRng(seed ^ 0x4f1bbcdc);
     this.cpu.newMatch();
     this.ledger.newMatch();
     const seats = this.options.seats ?? this.settings.seats;
@@ -1399,7 +1407,10 @@ export abstract class Match {
         this.startRound();
       }
     } else if (this.phase === 'gameOver') {
-      this.newMatch();
+      // Another game, not the last one again: new worlds.
+      const seed = randomSeed();
+      for (const l of this.rematchListeners) l(seed);
+      this.newMatch(seed);
     }
   }
 

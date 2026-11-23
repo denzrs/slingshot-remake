@@ -111,6 +111,49 @@ impl RoomManager {
         self.broadcast_lobby();
     }
 
+    /// The host plays the game again from its results, with everybody still at the table: the statistics write it down as a
+    /// game of its own, its worlds grown from `seed`. Nothing goes out: the others follow the host's state as before.
+    pub(super) fn rematch(&mut self, conn: u64, seed: Parsed<u32>) {
+        let seed = match seed {
+            Ok(seed) => seed,
+            Err(message) => {
+                self.error(conn, message);
+                return;
+            }
+        };
+        let Some(room_id) = self
+            .memberships
+            .get(&conn)
+            .filter(|mb| mb.player_id == 0)
+            .map(|mb| mb.room_id.clone())
+        else {
+            self.error(conn, "Only the room host can start a rematch");
+            return;
+        };
+        let Some(room) = self.rooms.get_mut(&room_id) else {
+            return;
+        };
+        if room.status != RoomStatus::Playing {
+            self.error(conn, "No game is running");
+            return;
+        }
+        // A tournament's match is decided by its one game.
+        if room.tournament.is_some() {
+            self.error(conn, "A tournament match has no rematch");
+            return;
+        }
+        room.seed = seed;
+        room.match_id = format!("{:016x}", rand::thread_rng().gen::<u64>());
+        room.reported_round = 0;
+        room.reported_turn = (0, 0);
+        room.seat_change_lost = false;
+        room.scores.clear();
+        // Whoever left the last game sits out this one from its first round.
+        for player in room.players.iter_mut().filter(|p| p.left) {
+            player.left_after_round = -1;
+        }
+    }
+
     pub(super) fn begin_game(&mut self, room_id: &str) {
         let Some(room) = self.rooms.get_mut(room_id) else {
             return;

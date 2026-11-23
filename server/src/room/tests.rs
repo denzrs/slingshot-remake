@@ -2176,6 +2176,33 @@ async fn the_hosts_round_report_is_written_down_once() {
 }
 
 #[tokio::test]
+async fn a_rematch_is_written_down_as_a_game_of_its_own() {
+    let (mut rooms, stats, [mut host_rx, mut guest_rx]) = running_game_with_stats();
+    rooms.handle(1, &turn_report_message(1, 1, 2));
+    rooms.handle(1, &round_report_message(1, 2));
+    // Only the host calls it.
+    rooms.handle(2, &json!({"type":"rematch","seed":42}));
+    assert_eq!(
+        take_type(&drain_json(&mut guest_rx), "error")["message"],
+        "Only the room host can start a rematch"
+    );
+    rooms.handle(1, &json!({"type":"rematch","seed":42}));
+    // The new game's first round and turn are taken again, under a game of their own with the new seed.
+    rooms.handle(1, &turn_report_message(1, 1, 2));
+    rooms.handle(1, &round_report_message(1, 2));
+    assert!(drain_json(&mut host_rx).is_empty());
+    written(&stats, "stat_rounds", 2).await;
+    assert_eq!(stats.count("stat_matches").await, 2);
+    assert_eq!(stats.count("stat_matches WHERE seed = 42").await, 1);
+    // A seed is a whole number that fits.
+    rooms.handle(1, &json!({"type":"rematch","seed":-1}));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "error")["message"],
+        "Malformed seed"
+    );
+}
+
+#[tokio::test]
 async fn the_hosts_turn_reports_are_written_down_in_order_and_only_while_the_round_is_on() {
     let (mut rooms, stats, [mut host_rx, _guest_rx]) = running_game_with_stats();
     rooms.handle(1, &turn_report_message(1, 1, 2));

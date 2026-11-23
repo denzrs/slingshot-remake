@@ -395,6 +395,33 @@ describe('online matches', () => {
     }
   });
 
+  it('play a rematch on new worlds, from a seed the host can tell the relay', () => {
+    const seats = cpus(2, 'hawking');
+    for (const mode of ['classic', 'horizon', 'solar'] as const) {
+      const settings = { ...DEFAULT_SETTINGS, rounds: 1, seats };
+      const m = createMatch(mode, settings, { seats, seed: 29, deterministicCpu: true });
+      const told: number[] = [];
+      m.onRematch((seed) => told.push(seed));
+      const first = JSON.stringify(m.world.planets);
+      const dt = 1 / 30;
+      for (let elapsed = 0; elapsed < 300 && m.phase !== 'gameOver'; elapsed += dt) {
+        m.update(dt);
+        if (m.phase === 'killcam' || m.phase === 'roundOver') m.advance();
+      }
+      expect(m.phase).toBe('gameOver');
+      m.update(1);
+      m.advance();
+      expect(told).toHaveLength(1);
+      expect(told[0]).not.toBe(29);
+      expect(JSON.stringify(m.world.planets)).not.toBe(first);
+      // A replay of the rematch, made from the seed the relay kept, grows the same world.
+      const again = createMatch(mode, settings, { seats, seed: told[0], deterministicCpu: true });
+      expect(JSON.stringify(m.world.planets)).toBe(JSON.stringify(again.world.planets));
+      m.dispose();
+      again.dispose();
+    }
+  });
+
   it('put two players on opposing teams even in a duel', () => {
     const seats: Seat[] = ['human', 'human', 'off', 'off', 'off', 'off'];
     const m = createMatch('classic', { ...DEFAULT_SETTINGS, seats, teamMode: 2 }, { seats, teams: [0, 1] });

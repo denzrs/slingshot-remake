@@ -689,6 +689,8 @@ export class MultiplayerSession {
         }
       });
       match.onTurnEnd(() => this.send({ type: 'turn_stats', ...turnReport(match) }));
+      // Before the rematch's first report, so the relay writes it down as a new game.
+      match.onRematch((seed) => this.send({ type: 'rematch', seed }));
       match.onSeatChange((change) => this.send({ type: 'seat_stats', ...change }));
       this.speakForCpus(match);
       this.startHeartbeat(match);
