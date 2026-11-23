@@ -381,14 +381,22 @@ export class Renderer {
       fade = Math.min(fade, Math.max(0, 1 - (this.time - this.darkDeadSince) / 1.2));
     }
     if (fade <= 0) return;
-    // The ship that is aiming keeps a small clearing, or its aim would be lost in the dark.
-    const aiming = match.phase === 'aiming' && match.focus >= 0 ? scene.world.ships[match.focus] : null;
+    // The ship that is aiming keeps a small clearing, or its aim would be lost in the dark. Once your own aim is locked
+    // in, the clearing stays on your ship while the others still aim, not on whoever the turn has passed to.
+    const locked = match.phase === 'aiming' && match.viewer !== null && match.salvo && !!match.players[match.viewer]?.locked;
+    const aimer = locked ? match.viewer! : match.phase === 'aiming' ? match.focus : -1;
+    const aiming = aimer >= 0 ? scene.world.ships[aimer] : null;
     const clearing = aiming?.alive ? { x: aiming.x, y: aiming.y } : null;
     this.darkView.draw(this.ctx, this.painter, dark, { who, fade, clearing, color: match.players[who]?.color ?? '#ffffff', time: this.time });
     // Your own aim shows through the dark: it is drawn again over it.
-    if (clearing && match.aimVisible(match.focus)) {
-      const player = match.players[match.focus];
-      this.painter.aimVector(this.ctx, clearing.x, clearing.y, player.angle, player.power, player.color, 'full', this.time);
+    if (clearing && match.aimVisible(aimer)) {
+      const player = match.players[aimer];
+      this.painter.aimVector(this.ctx, clearing.x, clearing.y, player.angle, player.power, player.color, locked ? 'ghost' : 'full', this.time);
+      if (locked) {
+        this.ctx.strokeStyle = rgba(player.color, 0.55);
+        this.ctx.lineWidth = 1.2;
+        this.painter.lockedRing(this.ctx, clearing.x, clearing.y);
+      }
     }
     // Found: somebody's shot came close to your ship.
     const at = dark.found[who];
