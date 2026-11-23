@@ -95,15 +95,16 @@ const RECENT = 70;
 /**
  * The track of a shot in flight: the old part a single faint line, the last stretch brightening towards the shot and
  * thickening, and pulses of light running along it towards the shot. A plasma shot keeps the ribbon it already has.
+ * Once the shot has ended, all of the track is the faint old part.
  */
-export function drawForgedLiveTrail(ctx: CanvasRenderingContext2D, pts: number[], wormholes: readonly Wormhole[], color: string, plasma: boolean, time: number): void {
+export function drawForgedLiveTrail(ctx: CanvasRenderingContext2D, pts: number[], wormholes: readonly Wormhole[], color: string, plasma: boolean, time: number, ended: boolean): void {
   if (plasma) {
-    lightParts.liveTrail!(ctx, pts, wormholes, color, plasma, time);
+    lightParts.liveTrail!(ctx, pts, wormholes, color, plasma, time, ended);
     return;
   }
   const n = pts.length / 2;
   if (n < 2) return;
-  const split = Math.max(1, n - RECENT);
+  const split = ended ? n - 1 : Math.max(1, n - RECENT);
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -117,6 +118,10 @@ export function drawForgedLiveTrail(ctx: CanvasRenderingContext2D, pts: number[]
   ctx.strokeStyle = rgba(color, 0.4);
   ctx.lineWidth = 1;
   strokePolyline(ctx, old, wormholes);
+  if (ended) {
+    ctx.restore();
+    return;
+  }
   // The recent track: hotter and thicker the nearer the shot.
   ctx.globalCompositeOperation = 'lighter';
   for (let k = split; k < n; k++) {
