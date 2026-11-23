@@ -373,6 +373,10 @@ pub struct Overview {
     /// Games played on one device, by day.
     pub local_days: Vec<DayTotals>,
     pub games: Vec<Game>,
+    /// How the online games are played, and their records.
+    pub facts: Vec<Fact>,
+    /// The same for the games played on one device.
+    pub local_facts: Vec<Fact>,
 }
 
 /// What the menu shows of the statistics: the facts, and the rule sets a quick game is dealt from.
@@ -1101,6 +1105,8 @@ impl Store {
                 .days("stat_local_days", "stat_local_day_players")
                 .await?,
             games: self.latest_games().await?,
+            facts: self.source_facts("online").await,
+            local_facts: self.source_facts("local").await,
         })
     }
 

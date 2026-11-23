@@ -374,7 +374,7 @@ impl RoomManager {
     pub fn stats_overview(&mut self, conn: u64, overview: Option<&Overview>) {
         let value = match overview {
             None => {
-                json!({ "type": "stats_overview", "enabled": false, "days": [], "localDays": [], "games": [], "betting": null })
+                json!({ "type": "stats_overview", "enabled": false, "days": [], "localDays": [], "games": [], "betting": null, "facts": [], "localFacts": [] })
             }
             Some(overview) => json!({
                 "type": "stats_overview",
@@ -394,6 +394,8 @@ impl RoomManager {
                     "replay": g.replay,
                     "local": g.local,
                 })).collect::<Vec<_>>(),
+                "facts": overview.facts.iter().map(crate::stats::Fact::json).collect::<Vec<_>>(),
+                "localFacts": overview.local_facts.iter().map(crate::stats::Fact::json).collect::<Vec<_>>(),
             }),
         };
         self.send_value(conn, &value);

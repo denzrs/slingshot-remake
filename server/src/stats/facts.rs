@@ -479,6 +479,36 @@ const QUERIES: &[Query] = &[
     ("betLoss", 25, "SELECT COUNT(*), MAX(stake) FROM stat_tips WHERE stake > 0 AND payout = 0"),
 ];
 
+/// Whether a row with a `match_id` (under `$alias`) comes from games of the source in `?1`, `online` or `local`. A round
+/// whose game row is gone was played online: the local games came after the game rows.
+macro_rules! from_source {
+    ($alias:literal) => {
+        concat!(
+            "COALESCE((SELECT m.source FROM stat_matches m WHERE m.match_id = ",
+            $alias,
+            ".match_id), 'online') = ?1"
+        )
+    };
+}
+
+/// The facts the stats page's overview shows beside a source's games (how the rounds are played, and the records), each over
+/// that source's games alone: the same ids and numbers as their namesakes in `QUERIES`, which count every game.
+const SOURCE_QUERIES: &[Query] = &[
+    ("horizonShare", 10, concat!("SELECT COUNT(*), ", pct!("game_mode = 'horizon'", "1"), " FROM stat_rounds r WHERE ", from_source!("r"))),
+    ("solarShare", 10, concat!("SELECT COUNT(*), ", pct!("game_mode = 'solar'", "1"), " FROM stat_rounds r WHERE ", from_source!("r"))),
+    ("teamShare", 10, concat!("SELECT COUNT(*), ", pct!("mode = 'team'", "1"), " FROM stat_rounds r WHERE ", from_source!("r"))),
+    ("anomalyShare", 10, concat!("SELECT COUNT(*), ", pct!(anomalous!(), "1"), " FROM stat_rounds r WHERE ", from_source!("r"))),
+    ("loopShare", 10, concat!("SELECT COUNT(*), ", pct!(looped!(), "1"), " FROM stat_rounds r WHERE ", from_source!("r"))),
+    ("weekend", 14, concat!("SELECT COUNT(DISTINCT day), ", pct!("strftime('%w', day) IN ('0', '6')", "1"), " FROM stat_rounds r WHERE ", from_source!("r"))),
+    ("bestHit", 25, concat!("SELECT COUNT(*), MAX(best_hit) FROM stat_rounds r WHERE best_hit IS NOT NULL AND ", from_source!("r"))),
+    ("longestShot", 25, concat!("SELECT COUNT(*), MAX(longest_shot) FROM stat_rounds r WHERE longest_shot IS NOT NULL AND ", from_source!("r"))),
+    ("sniper", 25, concat!("SELECT COUNT(*), MAX(sniper) FROM stat_rounds r WHERE sniper IS NOT NULL AND ", from_source!("r"))),
+    ("fastestKill", 25, concat!("SELECT COUNT(*), MIN(fastest_kill) FROM stat_rounds r WHERE fastest_kill IS NOT NULL AND ", from_source!("r"))),
+    ("closeCall", 25, concat!("SELECT COUNT(*), MIN(close_call) FROM stat_rounds r WHERE close_call > 0 AND ", from_source!("r"))),
+    ("bigKills", 2, concat!("SELECT SUM(kills >= 4), SUM(kills >= 4), SUM(kills >= 5) FROM stat_seats s WHERE ", from_source!("s"))),
+    ("betWin", 25, concat!("SELECT COUNT(*), MAX(payout - stake) FROM stat_tips t WHERE stake > 0 AND payout > stake AND ", from_source!("t"))),
+];
+
 impl Stats {
     /// The facts and favourites, always from the cache once there is one: a request never waits for the queries. Ones older than
     /// `FRESH` are still handed out while one task in the background makes them anew, so the menus of any number of visitors cost
@@ -528,8 +558,31 @@ impl Store {
         out
     }
 
+    /// The overview's facts over the games of one source, `online` or `local`. A query that fails is left out, as above.
+    pub(crate) async fn source_facts(&self, source: &str) -> Vec<Fact> {
+        let mut out = Vec::new();
+        for (id, at_least, sql) in SOURCE_QUERIES {
+            match self.fact_on(&self.reader, sql, (source,), *at_least).await {
+                Ok(Some(values)) => out.push(Fact { id, values }),
+                Ok(None) => {}
+                Err(err) => warn!(%err, fact = id, source, "a fact could not be read"),
+            }
+        }
+        out
+    }
+
     async fn fact(&self, sql: &str, at_least: i64) -> turso::Result<Option<Vec<f64>>> {
-        let mut rows = self.facts_reader.query(sql, ()).await?;
+        self.fact_on(&self.facts_reader, sql, (), at_least).await
+    }
+
+    async fn fact_on(
+        &self,
+        reader: &turso::Connection,
+        sql: &str,
+        params: impl turso::IntoParams,
+        at_least: i64,
+    ) -> turso::Result<Option<Vec<f64>>> {
+        let mut rows = reader.query(sql, params).await?;
         let Some(row) = rows.next().await? else {
             return Ok(None);
         };
@@ -629,6 +682,69 @@ mod tests {
                 .await
                 .unwrap_or_else(|e| panic!("{id}: {e}"));
         }
+    }
+
+    #[tokio::test]
+    async fn every_source_query_reads_a_played_database_without_an_error() {
+        let stats = played().await;
+        for source in ["online", "local"] {
+            for (id, _, sql) in SOURCE_QUERIES {
+                stats
+                    .reader
+                    .query(*sql, (source,))
+                    .await
+                    .unwrap_or_else(|e| panic!("{id} ({source}): {e}"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn the_overview_keeps_the_records_of_online_and_local_games_apart() {
+        let stats = Stats::in_memory().await;
+        // 25 online rounds that shot no farther than 100, and 25 local rounds of Event Horizon that shot 900.
+        for (game, source, mode, longest) in [
+            ("on", "online", "classic", 100.0),
+            ("off", "local", "horizon", 900.0),
+        ] {
+            stats
+                .conn
+                .execute(
+                    &format!("INSERT INTO stat_matches VALUES ('{game}', 0, 1, '{mode}', 'ffa', '{{}}', '[]', 0, '{source}', NULL)"),
+                    (),
+                )
+                .await
+                .unwrap();
+            for round in 1..=25 {
+                stats
+                    .conn
+                    .execute(
+                        &format!(
+                            "INSERT INTO stat_rounds (match_id, room_id, round, at, day, game_mode, mode, rules, humans, cpus, spectators, title, seconds, planets, longest_shot)
+                             VALUES ('{game}', 'r', {round}, 0, date('now'), '{mode}', 'ffa', '{{}}', 1, 1, 0, 'hit', 40.0, 3, {longest})"
+                        ),
+                        (),
+                    )
+                    .await
+                    .unwrap();
+            }
+        }
+        let value =
+            |facts: &[Fact], id: &str| facts.iter().find(|f| f.id == id).map(|f| f.values.clone());
+        let online = stats.source_facts("online").await;
+        let local = stats.source_facts("local").await;
+        assert_eq!(value(&online, "longestShot"), Some(vec![100.0]));
+        assert_eq!(value(&local, "longestShot"), Some(vec![900.0]));
+        assert_eq!(
+            value(&online, "horizonShare"),
+            None,
+            "no online round was Event Horizon"
+        );
+        assert_eq!(value(&local, "horizonShare"), Some(vec![100.0]));
+        // The menu's facts still count every game.
+        assert_eq!(
+            value(&stats.facts().await, "longestShot"),
+            Some(vec![900.0])
+        );
     }
 
     #[tokio::test]
