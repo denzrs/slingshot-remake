@@ -1187,7 +1187,6 @@ mod tests {
     #[tokio::test]
     async fn a_fact_whose_numbers_are_all_zero_is_left_out() {
         let stats = played().await;
-        let query = |id: &str| QUERIES.iter().find(|(q, _, _)| *q == id).unwrap().2;
         assert_eq!(shared(&stats, "teamShare").await, None);
     }
 
