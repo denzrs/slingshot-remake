@@ -111,11 +111,13 @@ export abstract class Match {
   viewer: number | null = null;
   /** Whether this screen may move the match on (next round, skip the killcam, rematch). Online only the host may. */
   canAdvance = true;
+  /** Online host: a rematch from the results waits for the relay, which is asked with its seed here; `rematch` starts it once agreed. */
+  askRematch: ((seed: number) => void) | null = null;
   /** Online: this screen's place in the stands, if it sits there. It follows the match but takes no part in it. */
   spectatorId: number | null = null;
 
   protected rng: Rng;
-  private readonly matchSeed: number;
+  private matchSeed: number;
   private worldRng: Rng;
   /** Phase time when the current volley finished, replicated so online guests keep the same post-flight delay. */
   protected flightDoneAt: number | null = null;
@@ -839,9 +841,11 @@ export abstract class Match {
     return true;
   }
 
-  newMatch(): void {
-    this.worldRng = createRng(this.options.seed ?? randomSeed());
-    this.rng = createRng(this.matchSeed ^ 0x4f1bbcdc);
+  /** A match from `seed`: the first one grows from the seed it was made with, a rematch from a fresh one (see `rematch`). */
+  newMatch(seed = this.options.seed ?? randomSeed()): void {
+    this.matchSeed = seed;
+    this.worldRng = createRng(seed);
+    this.rng = createRng(seed ^ 0x4f1bbcdc);
     this.cpu.newMatch();
     this.ledger.newMatch();
     const seats = this.options.seats ?? this.settings.seats;
@@ -1399,8 +1403,15 @@ export abstract class Match {
         this.startRound();
       }
     } else if (this.phase === 'gameOver') {
-      this.newMatch();
+      const seed = randomSeed();
+      if (this.askRematch) this.askRematch(seed);
+      else this.rematch(seed);
     }
+  }
+
+  /** Another game at the same table, not the last one again: new worlds, grown from `seed`. */
+  rematch(seed = randomSeed()): void {
+    this.newMatch(seed);
   }
 
   update(dt: number): void {

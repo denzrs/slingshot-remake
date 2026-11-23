@@ -1,6 +1,6 @@
 {
-  "protocolVersion": 9,
-  "wireFingerprint": "cafeaa2a761854e5",
+  "protocolVersion": 10,
+  "wireFingerprint": "2e8c82d755580ab8",
   "defaults": {
     "rounds": 5,
     "maxPlanets": 4,

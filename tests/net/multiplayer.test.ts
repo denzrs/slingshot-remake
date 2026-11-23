@@ -439,13 +439,20 @@ describe('online games', () => {
       const { host, guest } = await startRoom(mode, ['Anna', 'Ben']);
       const m = host.match();
       for (let i = 0; i < 5; i++) await frame(host, guest);
-      // Jump to the final standings, as if the last round had just been decided.
-      m.phase = 'gameOver';
+      // On to the final standings, every round skipped and reported, as the relay wants before a rematch.
+      while (m.phase !== 'gameOver') {
+        if (m.phase !== 'roundOver') (m as unknown as { skipRound(): void }).skipRound();
+        m.phaseTime = 1;
+        host.session.advance();
+      }
       m.phaseTime = 1;
       for (let i = 0; i < 5; i++) await frame(host, guest);
       expect(guest.match().phase).toBe('gameOver');
 
       host.session.advance();
+      // The results stay until the relay agrees.
+      expect(m.phase).toBe('gameOver');
+      await waitForSession(host.session, () => host.match().phase !== 'gameOver');
       for (let i = 0; i < 5; i++) await frame(host, guest);
       expect(host.match().phase).not.toBe('gameOver');
       expect(guest.match().phase).not.toBe('gameOver');

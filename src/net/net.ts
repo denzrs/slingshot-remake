@@ -88,6 +88,8 @@ type ClientMessage =
   | { type: 'cpu_chat'; playerId: number; text: string }
   /** Host only, in a running game or on its results: the room goes back to waiting, with everybody still in it. */
   | { type: 'end_game' }
+  /** Host only, from a game's results: the same table plays again, a game of its own for the statistics, its worlds from `seed`. The relay answers with `rematch`. */
+  | { type: 'rematch'; seed: number }
   | { type: 'leave_room' }
   /** A new connection asks for the seat that `token` was given for, after the old connection dropped. */
   | { type: 'resume'; token: string }
@@ -347,6 +349,8 @@ export type ServerMessage =
       seed: number;
       players: Array<{ id: number; name: string; avatar: Avatar; team: 0 | 1; cpu: NetworkCpuLevel | null }>;
     }
+  /** To the host: the relay agrees to the rematch it asked for, a game of its own from `seed`. */
+  | { type: 'rematch'; seed: number }
   /** To the host: `from` is a player's seat, or — with `spectator` — a place in the stands. */
   | { type: 'input'; from: number; input: ClientInput; spectator?: true }
   /** Somebody said something in the room — `id` is their seat, or their place in the stands (`spectator`). */
@@ -410,7 +414,7 @@ export type ServerMessage =
  * by hand: a test notices when the wire changed (the messages, the state patches, the rules) and `npm run protocol` raises it here, in
  * `server/src/protocol.rs` and in `server/protocol-contract.json`.
  */
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 
 /** The address to open a socket on, with the protocol this client speaks added. */
 export function withProtocol(url: string): string {

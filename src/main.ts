@@ -610,13 +610,14 @@ const app: App = {
     if (restartTraining) return restartTraining();
     if (!match) return app.start(lastMode);
     if (online()) {
-      if (!match.canAdvance) return;
+      // A tournament's match is decided by its one game.
+      if (!match.canAdvance || app.tournamentMatch) return;
       advanceMatch();
       menu.close();
       return;
     }
     effects.clear();
-    match.newMatch();
+    match.rematch();
     menu.close();
   },
   get replaying() {
