@@ -143,12 +143,13 @@ const holoParts: Partial<LookPainter> = {
     strokePolyline(ctx, points, wormholes);
     if (rank === 0) holoTrailNodes(ctx, points, color, 0.7 * fade);
   },
-  liveTrail: (ctx, points, wormholes, color, plasma) => {
+  liveTrail: (ctx, points, wormholes, color, plasma, _time, ended) => {
     ctx.strokeStyle = color;
     ctx.lineWidth = plasma ? 0.8 : 0.9;
     ctx.globalAlpha = plasma ? 0.45 : 0.3;
     strokePolyline(ctx, points, wormholes);
     ctx.globalAlpha = 1;
+    if (ended) return;
     if (!plasma) drawHoloPackets(ctx, points, color);
     if (plasma) drawHoloPlasmaTrail(ctx, points, wormholes);
   },

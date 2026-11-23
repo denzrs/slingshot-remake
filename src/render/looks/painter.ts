@@ -97,8 +97,8 @@ export interface LookPainter {
 
   /** A finished trail. `rank` 0 is the newest flight, later ranks step back; `fade` (0 → 1) is how much of it is left. */
   trail(ctx: CanvasRenderingContext2D, points: number[], wormholes: readonly Wormhole[], color: string, rank: number, fade: number): void;
-  /** The track of a shot in flight; a plasma shot's is a ribbon. */
-  liveTrail(ctx: CanvasRenderingContext2D, points: number[], wormholes: readonly Wormhole[], color: string, plasma: boolean, time: number): void;
+  /** The track of a shot in flight; a plasma shot's is a ribbon. Once the shot has `ended` (while the rest of its volley still flies) the track stays, without what swells towards the shot. */
+  liveTrail(ctx: CanvasRenderingContext2D, points: number[], wormholes: readonly Wormhole[], color: string, plasma: boolean, time: number, ended: boolean): void;
   /** A shot in flight, with the points it has just flown through. */
   shot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, trail: readonly number[], time: number): void;
   plasmaShot(ctx: CanvasRenderingContext2D, x: number, y: number, time: number): void;
