@@ -401,15 +401,20 @@ function overviewBody(app: App, state: StatsState, status: HTMLElement): { body:
     const shown = o.games.filter((game) => game.local === local).slice(0, 8);
     games.meta.textContent = t(local ? 'stats.source.local' : 'stats.source.online');
     gameList.replaceChildren(...(shown.length ? shown.map((game) => gameRow(game, watch)) : [h('li.st-none', null, t('stats.none'))]));
-    const facts = state.facts ?? [];
+    // Each page counts its own games. A relay that keeps the facts only for all games together has them shown on both, as
+    // before, from the menu's facts (which the menu has usually asked for already).
+    const split = local ? o.localFacts : o.facts;
+    const facts = split ?? state.facts ?? [];
+    records.meta.textContent = split ? `${t(local ? 'stats.source.local' : 'stats.source.online')} · ${t('stats.records.note')}` : t('stats.records.note');
     const modeRows = modesView(facts);
     modes.body.replaceChildren(...modeRows);
     modes.el.hidden = !modeRows.length;
     const recordRows = recordsView(facts);
     records.body.replaceChildren(h('ul.st-records', null, ...recordRows));
     records.el.hidden = !recordRows.length;
-    betting.el.hidden = !o.betting;
-    if (o.betting) betting.body.replaceChildren(bettingView(o.betting));
+    // Tips and bets come only from online games: the stands are on the relay.
+    betting.el.hidden = local || !o.betting;
+    if (!local && o.betting) betting.body.replaceChildren(bettingView(o.betting));
     grid.classList.toggle('st--sidecards', !modes.el.hidden || !records.el.hidden);
     // On a narrow screen the heatmap scrolls: it opens on today, the right-hand end.
     if (!opened) {

@@ -224,15 +224,12 @@ const QUERIES: &[Query] = &[
         concat!("SELECT SUM(power < 20), ", pct!("power < 20", "1"), ", ", pct!(concat!(hit!(), " AND power < 20"), "power < 20"), " FROM stat_shots WHERE fork = 0"),
     ),
     ("avgKillTurn", 20, "SELECT COUNT(*), AVG(turn) FROM stat_shots WHERE hit_kind = 'enemy'"),
-    ("longestShot", 25, "SELECT COUNT(*), MAX(longest_shot) FROM stat_rounds WHERE longest_shot IS NOT NULL"),
-    ("sniper", 25, "SELECT COUNT(*), MAX(sniper) FROM stat_rounds WHERE sniper IS NOT NULL"),
     // A kill is an enemy ship: the chain counts a ship's kills in a round (2 a double kill, 3 a multi kill, 4 a mega kill, 5 a monster kill).
     (
         "multiKill",
         10,
         "SELECT COUNT(DISTINCT match_id || ':' || round), 100.0 * COUNT(DISTINCT CASE WHEN kills >= 2 THEN match_id || ':' || round END) / COUNT(DISTINCT match_id || ':' || round) FROM stat_seats",
     ),
-    ("bigKills", 2, "SELECT SUM(kills >= 4), SUM(kills >= 4), SUM(kills >= 5) FROM stat_seats"),
     (
         "firstShotKill",
         20,
@@ -290,7 +287,6 @@ const QUERIES: &[Query] = &[
         ),
     ),
     ("fusedShots", 20, concat!("SELECT COUNT(*), ", pct!("resolution = 'fused'", "1"), " FROM stat_shots", with_rules!("stat_shots"), " WHERE fork = 0 AND ", plays!("fusion"))),
-    ("anomalyShare", 10, concat!("SELECT COUNT(*), ", pct!(anomalous!(), "1"), " FROM stat_rounds")),
     // A round with two anomalies counts for both.
     ("topAnomaly", 10, concat!(anomaly_counts!(), " WHERE n > 0 ORDER BY n DESC, k LIMIT 1")),
     (
@@ -329,7 +325,6 @@ const QUERIES: &[Query] = &[
                FROM stat_rounds WHERE seconds > 0"
         ),
     ),
-    ("loopShare", 10, concat!("SELECT COUNT(*), ", pct!(looped!(), "1"), " FROM stat_rounds")),
     // Walls against an open edge in rounds without anomalies: Trick Shots Only, say, arms a shot at a wall.
     (
         "wallHits",
@@ -365,9 +360,6 @@ const QUERIES: &[Query] = &[
     ("rounds", 5, "SELECT COUNT(*), AVG(seconds), MAX(seconds) FROM stat_rounds WHERE seconds > 0"),
     ("selfHitRounds", 10, concat!("SELECT COUNT(*), ", pct!("title = 'selfHit'", "1"), " FROM stat_rounds")),
     ("noWinner", 10, concat!("SELECT COUNT(*), ", pct!("survivor IS NULL AND team IS NULL", "1"), " FROM stat_rounds")),
-    ("horizonShare", 10, concat!("SELECT COUNT(*), ", pct!("game_mode = 'horizon'", "1"), " FROM stat_rounds")),
-    ("solarShare", 10, concat!("SELECT COUNT(*), ", pct!("game_mode = 'solar'", "1"), " FROM stat_rounds")),
-    ("teamShare", 10, concat!("SELECT COUNT(*), ", pct!("mode = 'team'", "1"), " FROM stat_rounds")),
     (
         "cpuWins",
         20,
@@ -444,9 +436,6 @@ const QUERIES: &[Query] = &[
         concat!("SELECT COUNT(*), ", pct!("o > 0", "1"), " FROM (SELECT SUM(own_goals) AS o FROM stat_seats WHERE player IS NOT NULL GROUP BY match_id, player)"),
     ),
     ("swingbys", 10, "SELECT COUNT(*), 1.0 * SUM(swingbys) / COUNT(DISTINCT match_id || ':' || round) FROM stat_seats"),
-    ("bestHit", 25, "SELECT COUNT(*), MAX(best_hit) FROM stat_rounds WHERE best_hit IS NOT NULL"),
-    ("fastestKill", 25, "SELECT COUNT(*), MIN(fastest_kill) FROM stat_rounds WHERE fastest_kill IS NOT NULL"),
-    ("closeCall", 25, "SELECT COUNT(*), MIN(close_call) FROM stat_rounds WHERE close_call > 0"),
     // Today's people and rounds, online and on one device: a person is the same pseudonym in both.
     (
         "todayPlayers",
@@ -467,7 +456,6 @@ const QUERIES: &[Query] = &[
                     COALESCE(SUM(CASE WHEN day > date('now', '-7 days') THEN rounds END), 0) AS t
              FROM stat_days)",
     ),
-    ("weekend", 14, concat!("SELECT COUNT(DISTINCT day), ", pct!("strftime('%w', day) IN ('0', '6')", "1"), " FROM stat_rounds")),
     // — The oracle: tips and bets —
     ("tipRound", 5, concat!("SELECT COUNT(*), ", pct!("correct = 1", "1"), " FROM stat_tips WHERE kind = 'round'")),
     ("tipShot", 5, concat!("SELECT COUNT(*), ", pct!("correct = 1", "1"), " FROM stat_tips WHERE kind = 'shot'")),
@@ -475,9 +463,140 @@ const QUERIES: &[Query] = &[
     ("tipStands", 5, concat!("SELECT COUNT(*), ", pct!("stands = 1", "1"), " FROM stat_tips")),
     ("betPaid", 5, concat!("SELECT COUNT(*), ", pct!("payout > stake", "1"), " FROM stat_tips WHERE stake > 0")),
     ("betStake", 5, "SELECT COUNT(*), AVG(stake), MAX(stake) FROM stat_tips WHERE stake > 0"),
-    ("betWin", 25, "SELECT COUNT(*), MAX(payout - stake) FROM stat_tips WHERE stake > 0 AND payout > stake"),
     ("betLoss", 25, "SELECT COUNT(*), MAX(stake) FROM stat_tips WHERE stake > 0 AND payout = 0"),
 ];
+
+/// A fact the stats page shows too, beside each source's games (how the rounds are played, and the records): its count, then
+/// its numbers, as columns of one pass over a table. The menu takes it over every game, as it does the facts of `QUERIES`.
+struct Shared {
+    id: &'static str,
+    at_least: i64,
+    columns: &'static [&'static str],
+}
+
+/// One pass over `table` (its rows where `filter` holds) for the facts made of its columns.
+struct Pass {
+    table: &'static str,
+    filter: &'static str,
+    facts: &'static [Shared],
+}
+
+const SHARED: &[Pass] = &[
+    Pass {
+        table: "stat_rounds",
+        filter: "1",
+        facts: &[
+            Shared {
+                id: "horizonShare",
+                at_least: 10,
+                columns: &["COUNT(*)", pct!("game_mode = 'horizon'", "1")],
+            },
+            Shared {
+                id: "solarShare",
+                at_least: 10,
+                columns: &["COUNT(*)", pct!("game_mode = 'solar'", "1")],
+            },
+            Shared {
+                id: "teamShare",
+                at_least: 10,
+                columns: &["COUNT(*)", pct!("mode = 'team'", "1")],
+            },
+            Shared {
+                id: "anomalyShare",
+                at_least: 10,
+                columns: &["COUNT(*)", pct!(anomalous!(), "1")],
+            },
+            Shared {
+                id: "loopShare",
+                at_least: 10,
+                columns: &["COUNT(*)", pct!(looped!(), "1")],
+            },
+            Shared {
+                id: "weekend",
+                at_least: 14,
+                columns: &[
+                    "COUNT(DISTINCT day)",
+                    pct!("strftime('%w', day) IN ('0', '6')", "1"),
+                ],
+            },
+            Shared {
+                id: "bestHit",
+                at_least: 25,
+                columns: &["COUNT(best_hit)", "MAX(best_hit)"],
+            },
+            Shared {
+                id: "longestShot",
+                at_least: 25,
+                columns: &["COUNT(longest_shot)", "MAX(longest_shot)"],
+            },
+            Shared {
+                id: "sniper",
+                at_least: 25,
+                columns: &["COUNT(sniper)", "MAX(sniper)"],
+            },
+            Shared {
+                id: "fastestKill",
+                at_least: 25,
+                columns: &["COUNT(fastest_kill)", "MIN(fastest_kill)"],
+            },
+            Shared {
+                id: "closeCall",
+                at_least: 25,
+                columns: &[
+                    "COUNT(CASE WHEN close_call > 0 THEN 1 END)",
+                    "MIN(CASE WHEN close_call > 0 THEN close_call END)",
+                ],
+            },
+        ],
+    },
+    Pass {
+        table: "stat_seats",
+        filter: "1",
+        facts: &[Shared {
+            id: "bigKills",
+            at_least: 2,
+            columns: &["SUM(kills >= 4)", "SUM(kills >= 4)", "SUM(kills >= 5)"],
+        }],
+    },
+    Pass {
+        table: "stat_tips",
+        filter: "stake > 0 AND payout > stake",
+        facts: &[Shared {
+            id: "betWin",
+            at_least: 25,
+            columns: &["COUNT(*)", "MAX(payout - stake)"],
+        }],
+    },
+];
+
+impl Pass {
+    /// The pass as one query: a row over every game (`all`), then one per source (`online`, `local`) that has any. A row whose
+    /// game row is gone was played online: a local game writes its game and its rounds at once, under one `at`, so they are
+    /// pruned together, while an online game's first round can outlive it.
+    fn sql(&self) -> String {
+        let columns = self
+            .facts
+            .iter()
+            .flat_map(|f| f.columns.iter().copied())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "SELECT 'all', {columns} FROM {table} WHERE {filter} \
+             UNION ALL SELECT src, {columns} FROM (SELECT t.*, COALESCE(m.source, 'online') AS src FROM {table} t \
+             LEFT JOIN stat_matches m ON m.match_id = t.match_id) WHERE {filter} GROUP BY src",
+            table = self.table,
+            filter = self.filter,
+        )
+    }
+}
+
+/// The facts of `SHARED`: over every game for the menu, and over each source's games for the stats page.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SharedFacts {
+    pub all: Vec<Fact>,
+    pub online: Vec<Fact>,
+    pub local: Vec<Fact>,
+}
 
 impl Stats {
     /// The facts and favourites, always from the cache once there is one: a request never waits for the queries. Ones older than
@@ -503,19 +622,24 @@ impl Stats {
 }
 
 impl Store {
-    /// What the menu shows. Favourites that cannot be read are none: a quick game then plays the standard rules.
+    /// What the menu shows, and the stats page beside each source's games. Favourites that cannot be read are none: a quick
+    /// game then plays the standard rules.
     pub async fn menu(&self) -> MenuStats {
         let favorites = self.favorites().await.unwrap_or_else(|err| {
             warn!(%err, "the favourites could not be read");
             Vec::new()
         });
+        let shared = self.shared_facts(|fact| fact.at_least).await;
+        let mut facts = self.facts().await;
+        facts.extend(shared.all.iter().cloned());
         MenuStats {
-            facts: self.facts().await,
+            facts,
             favorites,
+            by_source: shared,
         }
     }
 
-    /// Every fact the data can back. A query that fails is left out, not fatal: the menu shows the rest.
+    /// Every fact of `QUERIES` the data can back. A query that fails is left out, not fatal: the menu shows the rest.
     pub async fn facts(&self) -> Vec<Fact> {
         let mut out = Vec::new();
         for (id, at_least, sql) in QUERIES {
@@ -528,38 +652,89 @@ impl Store {
         out
     }
 
+    /// The facts of `SHARED`, each asking for `at_least(fact)` things looked at. A pass that fails is left out, as above.
+    async fn shared_facts(&self, at_least: impl Fn(&Shared) -> i64) -> SharedFacts {
+        let mut out = SharedFacts::default();
+        for pass in SHARED {
+            if let Err(err) = self.shared_pass(pass, &at_least, &mut out).await {
+                warn!(%err, table = pass.table, "facts could not be read");
+            }
+        }
+        out
+    }
+
+    async fn shared_pass(
+        &self,
+        pass: &Pass,
+        at_least: &impl Fn(&Shared) -> i64,
+        out: &mut SharedFacts,
+    ) -> turso::Result<()> {
+        let width = 1 + pass.facts.iter().map(|f| f.columns.len()).sum::<usize>();
+        let mut rows = self.facts_reader.query(&pass.sql(), ()).await?;
+        while let Some(row) = rows.next().await? {
+            let into = match row.get_value(0)? {
+                turso::Value::Text(source) if source == "all" => &mut out.all,
+                turso::Value::Text(source) if source == "local" => &mut out.local,
+                turso::Value::Text(source) if source == "online" => &mut out.online,
+                _ => continue,
+            };
+            let cells = (1..width)
+                .map(|column| row.get_value(column))
+                .collect::<turso::Result<Vec<_>>>()?;
+            let mut at = 0;
+            for fact in pass.facts {
+                let columns = &cells[at..at + fact.columns.len()];
+                at += fact.columns.len();
+                if let Some(values) = judge(&columns[0], &columns[1..], at_least(fact)) {
+                    into.push(Fact {
+                        id: fact.id,
+                        values,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn fact(&self, sql: &str, at_least: i64) -> turso::Result<Option<Vec<f64>>> {
         let mut rows = self.facts_reader.query(sql, ()).await?;
         let Some(row) = rows.next().await? else {
             return Ok(None);
         };
-        let n = row.get_value(0)?;
-        let enough = match n {
-            turso::Value::Integer(n) => n >= at_least,
-            turso::Value::Real(n) => n >= at_least as f64,
-            _ => false,
-        };
-        if !enough {
-            return Ok(None);
-        }
-        let mut values = Vec::new();
-        for column in 1.. {
+        let mut cells = Vec::new();
+        for column in 0.. {
             let Ok(value) = row.get_value(column) else {
                 break;
             };
-            match value {
-                turso::Value::Integer(v) => values.push(v as f64),
-                turso::Value::Real(v) if v.is_finite() => values.push(v),
-                // A number the data cannot give (nothing to divide by) spoils the whole fact.
-                _ => return Ok(None),
-            }
+            cells.push(value);
         }
-        // "0 % of rounds are played in teams" is no finding.
-        if values.iter().all(|v| *v == 0.0) {
-            return Ok(None);
-        }
-        Ok(Some(values))
+        Ok(cells
+            .split_first()
+            .and_then(|(n, values)| judge(n, values, at_least)))
     }
+}
+
+/// A fact's numbers, from how many things it looked at (`n`) and its other columns: none when it looked at too few, when a
+/// number is one the data cannot give (nothing to divide by), or when they are all zero ("0 % of rounds are played in teams"
+/// is no finding).
+fn judge(n: &turso::Value, columns: &[turso::Value], at_least: i64) -> Option<Vec<f64>> {
+    let enough = match n {
+        turso::Value::Integer(n) => *n >= at_least,
+        turso::Value::Real(n) => *n >= at_least as f64,
+        _ => false,
+    };
+    if !enough {
+        return None;
+    }
+    let values = columns
+        .iter()
+        .map(|value| match value {
+            turso::Value::Integer(v) => Some(*v as f64),
+            turso::Value::Real(v) if v.is_finite() => Some(*v),
+            _ => None,
+        })
+        .collect::<Option<Vec<f64>>>()?;
+    (!values.iter().all(|v| *v == 0.0)).then_some(values)
 }
 
 #[cfg(test)]
@@ -629,6 +804,97 @@ mod tests {
                 .await
                 .unwrap_or_else(|e| panic!("{id}: {e}"));
         }
+    }
+
+    /// A fact of `SHARED` over every game, however few things it looked at.
+    async fn shared(stats: &Stats, id: &str) -> Option<Vec<f64>> {
+        let facts = stats.shared_facts(|_| 0).await.all;
+        facts.into_iter().find(|f| f.id == id).map(|f| f.values)
+    }
+
+    #[tokio::test]
+    async fn every_shared_pass_reads_a_played_database_without_an_error() {
+        let stats = played().await;
+        for pass in SHARED {
+            let mut rows = stats
+                .facts_reader
+                .query(&pass.sql(), ())
+                .await
+                .unwrap_or_else(|e| panic!("{}: {e}", pass.table));
+            while rows
+                .next()
+                .await
+                .unwrap_or_else(|e| panic!("{}: {e}", pass.table))
+                .is_some()
+            {}
+        }
+    }
+
+    #[tokio::test]
+    async fn the_menu_still_has_every_shared_fact_and_ids_are_not_given_twice() {
+        let mut ids: Vec<&str> = QUERIES.iter().map(|(id, _, _)| *id).collect();
+        ids.extend(
+            SHARED
+                .iter()
+                .flat_map(|pass| pass.facts.iter().map(|f| f.id)),
+        );
+        let count = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), count);
+        for pass in SHARED {
+            for fact in pass.facts {
+                assert!(fact.columns.len() >= 2, "{}: a count and a number", fact.id);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn the_overview_keeps_the_records_of_online_and_local_games_apart() {
+        let stats = Stats::in_memory().await;
+        // 25 online rounds that shot no farther than 100, and 25 local rounds of Event Horizon that shot 900.
+        for (game, source, mode, longest) in [
+            ("on", "online", "classic", 100.0),
+            ("off", "local", "horizon", 900.0),
+        ] {
+            stats
+                .conn
+                .execute(
+                    &format!("INSERT INTO stat_matches VALUES ('{game}', 0, 1, '{mode}', 'ffa', '{{}}', '[]', 0, '{source}', NULL)"),
+                    (),
+                )
+                .await
+                .unwrap();
+            for round in 1..=25 {
+                stats
+                    .conn
+                    .execute(
+                        &format!(
+                            "INSERT INTO stat_rounds (match_id, room_id, round, at, day, game_mode, mode, rules, humans, cpus, spectators, title, seconds, planets, longest_shot)
+                             VALUES ('{game}', 'r', {round}, 0, date('now'), '{mode}', 'ffa', '{{}}', 1, 1, 0, 'hit', 40.0, 3, {longest})"
+                        ),
+                        (),
+                    )
+                    .await
+                    .unwrap();
+            }
+        }
+        let value =
+            |facts: &[Fact], id: &str| facts.iter().find(|f| f.id == id).map(|f| f.values.clone());
+        let SharedFacts { online, local, .. } = stats.menu().await.by_source;
+        assert_eq!(value(&online, "longestShot"), Some(vec![100.0]));
+        assert_eq!(value(&local, "longestShot"), Some(vec![900.0]));
+        assert_eq!(
+            value(&online, "horizonShare"),
+            None,
+            "no online round was Event Horizon"
+        );
+        assert_eq!(value(&local, "horizonShare"), Some(vec![100.0]));
+        // The menu's facts still count every game.
+        assert_eq!(
+            value(&stats.menu().await.facts, "longestShot"),
+            Some(vec![900.0])
+        );
     }
 
     #[tokio::test]
@@ -809,7 +1075,7 @@ mod tests {
         assert_eq!(fact("blastShots").await, Some(vec![50.0, 50.0]));
         assert_eq!(fact("fusedShots").await, Some(vec![25.0]));
         // Three of the five rounds play by anomalies, each anomaly one round: the first in the list wins the tie.
-        assert_eq!(fact("anomalyShare").await, Some(vec![60.0]));
+        assert_eq!(shared(&stats, "anomalyShare").await, Some(vec![60.0]));
         assert_eq!(fact("topAnomaly").await, Some(vec![0.0, 1.0]));
         // Both Trick Shots Only shots killed; of the five in games without anomalies two did (the splitter's fork and one of `d`).
         // The blast of `a` is in neither: its game plays by other anomalies.
@@ -821,7 +1087,7 @@ mod tests {
             fact("anomalyRoundLength").await,
             Some(vec![100.0 / 3.0, 40.0])
         );
-        assert_eq!(fact("loopShare").await, Some(vec![20.0]));
+        assert_eq!(shared(&stats, "loopShare").await, Some(vec![20.0]));
         // In games without anomalies, walled: one kill in the two shots of `d`; open: one in the plain game's three.
         assert_eq!(fact("wallHits").await, Some(vec![50.0, 100.0 / 3.0]));
         // Only an open edge loses shots: two in the plain game and one in `a`, of seven.
@@ -899,13 +1165,11 @@ mod tests {
         for id in [
             "blastShots",
             "fusedShots",
-            "anomalyShare",
             "topAnomaly",
             "trickShotHits",
             "anomalyShotsPerKill",
             "pinballSelfHits",
             "anomalyRoundLength",
-            "loopShare",
             "wallHits",
             "planetsShattered",
             "pinballBumps",
@@ -915,13 +1179,15 @@ mod tests {
         ] {
             assert_eq!(stats.fact(query(id), 0).await.unwrap(), None, "{id}");
         }
+        for id in ["anomalyShare", "loopShare"] {
+            assert_eq!(shared(&stats, id).await, None, "{id}");
+        }
     }
 
     #[tokio::test]
     async fn a_fact_whose_numbers_are_all_zero_is_left_out() {
         let stats = played().await;
-        let query = |id: &str| QUERIES.iter().find(|(q, _, _)| *q == id).unwrap().2;
-        assert_eq!(stats.fact(query("teamShare"), 0).await.unwrap(), None);
+        assert_eq!(shared(&stats, "teamShare").await, None);
     }
 
     #[tokio::test]

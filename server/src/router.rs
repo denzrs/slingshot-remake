@@ -206,8 +206,12 @@ async fn stats_overview(manager: &Mutex<RoomManager>, conn_id: u64) {
         manager.lock().stats_overview(conn_id, None);
         return;
     };
+    // The facts beside each source's games are the menu's, made in the background and cached as long: not on every overview.
+    let menu = stats.menu_shared().await;
     match stats.overview_shared().await {
-        Ok(overview) => manager.lock().stats_overview(conn_id, Some(&overview)),
+        Ok(overview) => manager
+            .lock()
+            .stats_overview(conn_id, Some((&overview, &menu.by_source))),
         Err(err) => {
             warn!(%err, "stats read failed");
             manager

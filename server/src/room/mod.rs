@@ -372,12 +372,16 @@ impl RoomManager {
     }
 
     /// The stats page's numbers as they go on the wire; `None` when the relay keeps no statistics.
-    pub fn stats_overview(&mut self, conn: u64, overview: Option<&Overview>) {
+    pub fn stats_overview(
+        &mut self,
+        conn: u64,
+        overview: Option<(&Overview, &crate::stats::SharedFacts)>,
+    ) {
         let value = match overview {
             None => {
-                json!({ "type": "stats_overview", "enabled": false, "days": [], "localDays": [], "games": [], "betting": null })
+                json!({ "type": "stats_overview", "enabled": false, "days": [], "localDays": [], "games": [], "betting": null, "facts": [], "localFacts": [] })
             }
-            Some(overview) => json!({
+            Some((overview, facts)) => json!({
                 "type": "stats_overview",
                 "enabled": true,
                 "betting": overview.betting.as_ref().map(|b| json!({
@@ -395,6 +399,8 @@ impl RoomManager {
                     "replay": g.replay,
                     "local": g.local,
                 })).collect::<Vec<_>>(),
+                "facts": facts.online.iter().map(crate::stats::Fact::json).collect::<Vec<_>>(),
+                "localFacts": facts.local.iter().map(crate::stats::Fact::json).collect::<Vec<_>>(),
             }),
         };
         self.send_value(conn, &value);

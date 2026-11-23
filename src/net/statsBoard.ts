@@ -11,6 +11,10 @@ export interface StatsOverview {
   localDays: StatsDay[];
   games: StatsGame[];
   betting: StatsBetting | null;
+  /** How the online games are played and their records; null from a relay that keeps them only for all games together. */
+  facts: StatsFact[] | null;
+  /** The same for the games played on one device. */
+  localFacts: StatsFact[] | null;
 }
 
 /** What the menu shows of the statistics: the findings, and the rule sets played most (most first) that a quick game is dealt from. */
@@ -30,7 +34,7 @@ export class StatsBoard {
 
   async overview(): Promise<StatsOverview> {
     const reply = await this.ask({ type: 'stats_overview' }, (message) => (message.type === 'stats_overview' ? message : null));
-    return { enabled: reply.enabled, days: reply.days, localDays: reply.localDays ?? [], games: reply.games, betting: reply.betting ?? null };
+    return { enabled: reply.enabled, days: reply.days, localDays: reply.localDays ?? [], games: reply.games, betting: reply.betting ?? null, facts: reply.facts ?? null, localFacts: reply.localFacts ?? null };
   }
 
   /** The findings and favourites for the menu; none when the relay keeps no statistics. */

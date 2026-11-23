@@ -59,7 +59,16 @@ describe('stats board', () => {
   it('asks the relay once and hands back what it says', async () => {
     const reply: ServerMessage = { type: 'stats_overview', enabled: true, days: [day('2026-10-23', 2)], localDays: [day('2026-10-22', 1)], games: [] };
     const overview = await new StatsBoard(() => connection(reply)).overview();
-    expect(overview).toEqual({ enabled: true, days: [day('2026-10-23', 2)], localDays: [day('2026-10-22', 1)], games: [], betting: null });
+    expect(overview).toEqual({ enabled: true, days: [day('2026-10-23', 2)], localDays: [day('2026-10-22', 1)], games: [], betting: null, facts: null, localFacts: null });
+  });
+
+  it('hands back the facts of each source apart', async () => {
+    const facts = [{ id: 'longestShot', values: [100] }];
+    const localFacts = [{ id: 'longestShot', values: [900] }];
+    const reply: ServerMessage = { type: 'stats_overview', enabled: true, days: [], localDays: [], games: [], facts, localFacts };
+    const overview = await new StatsBoard(() => connection(reply)).overview();
+    expect(overview.facts).toEqual(facts);
+    expect(overview.localFacts).toEqual(localFacts);
   });
 
   it('asks for the facts and favourites, and has none when the relay keeps no statistics', async () => {

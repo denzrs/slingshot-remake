@@ -381,6 +381,10 @@ export type ServerMessage =
       games: StatsGame[];
       /** Tips and bets; null while nobody has tipped (and from a relay that does not say). */
       betting?: StatsBetting | null;
+      /** How the online games are played and their records, as facts (a relay from before them leaves them out). */
+      facts?: StatsFact[];
+      /** The same for the games played on one device. */
+      localFacts?: StatsFact[];
     }
   /**
    * One-line findings of the statistics for the menu: an id, and the numbers its wording is made of; and the rule sets played
