@@ -4,7 +4,7 @@
  *   contour   drawing the gravity map at once (`renderContours`, what a round's first map costs), and the game's
  *             `ContourLayers` when a planet cracks (nothing to redraw) and breaks (drawn in its worker): the frame's cost,
  *             how late the new map is, and the longest frame while waiting
- *   sparks    the debris' physics: `Effects.update` against a tighter loop with the same physics (positions compared)
+ *   sparks    the debris' physics (`Effects.update`) over two seconds of two shatters
  *   draw      drawing the debris (and the first half second of the blast) in every look
  *
  *   npm run bench:explosion [-- --json out.json]

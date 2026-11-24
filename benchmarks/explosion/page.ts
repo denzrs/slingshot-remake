@@ -1,15 +1,13 @@
 // The page half of `explosion.ts`, loaded into a dev page by the runner: what a planet breaking costs, measured with the
-// game's own code (the contour map as the game keeps it, the debris' physics and drawing in every look), and a tighter debris loop.
+// game's own code: the contour map as the game keeps it, and the debris' physics and drawing in every look.
 import { generateWorld } from '../../src/sim/world';
-import { FIELD, PHYSICS } from '../../src/sim/config';
+import { FIELD } from '../../src/sim/config';
 import type { World } from '../../src/sim/physics';
 import { contourKey, renderContours } from '../../src/render/contours';
 import { ContourLayers } from '../../src/render/contour-layers';
 import { Effects } from '../../src/render/effects';
 import { painterFor } from '../../src/render/looks';
 
-type Spark = { x: number; y: number; vx: number; vy: number; drag: number; life?: number; falling?: boolean; size: number; tier: string; color: string; seed: number };
-type Fx = { sparks: Spark[]; fragment(s: Spark, into: Spark[], body: { x: number; y: number; radius: number }): void };
 
 const out: Record<string, unknown> = {};
 const median = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
@@ -90,56 +88,7 @@ async function contourLayers(ws: World[], ps: number) {
   return { crack, brk, latency, maxFrame };
 }
 
-// ———————————— 4. Debris: the real update and draw, and a tighter update ————————————
-let rng = 1;
-const seeded = () => ((rng = (Math.imul(rng, 1664525) + 1013904223) >>> 0) / 4294967296);
-
-/** The same physics as Effects.update's spark loop, without closures, Math.hypot or a drag per step. */
-function fastSparks(fx: Fx, dt: number, world: World): void {
-  const steps = Math.max(1, Math.ceil(dt / PHYSICS.DT));
-  const step = dt / steps;
-  const { planets, holes } = world;
-  const np = planets.length;
-  const nb = np + holes.length;
-  const bx = new Float64Array(nb), by = new Float64Array(nb), gm = new Float64Array(nb), r2 = new Float64Array(nb);
-  for (let b = 0; b < np; b++) { const p = planets[b]; bx[b] = p.x; by[b] = p.y; gm[b] = (p.reversed ? -PHYSICS.G : PHYSICS.G) * p.mass; r2[b] = p.radius * p.radius; }
-  for (let b = np; b < nb; b++) { const h = holes[b - np]; bx[b] = h.x; by[b] = h.y; gm[b] = PHYSICS.G * h.mass; r2[b] = h.radius * h.radius; }
-  const fragments: Spark[] = [];
-  const remaining: Spark[] = [];
-  const cx = FIELD.width / 2, cy = FIELD.height / 2;
-  for (const s of fx.sparks) {
-    if (s.life !== undefined && (s.life -= dt) <= 0) continue;
-    let x = s.x, y = s.y, vx = s.vx, vy = s.vy;
-    const drag = Math.exp(-s.drag * step);
-    let collided = false;
-    for (let i = 0; i < steps; i++) {
-      let ax = 0, ay = 0;
-      for (let b = 0; b < nb; b++) {
-        const dx = bx[b] - x, dy = by[b] - y;
-        const d = dx * dx + dy * dy;
-        const d2 = d < 64 ? 64 : d;
-        const a = gm[b] / (d2 * Math.sqrt(d2));
-        ax += a * dx; ay += a * dy;
-      }
-      vx = (vx + ax * step) * drag; vy = (vy + ay * step) * drag;
-      x += vx * step; y += vy * step;
-      let hole = false;
-      for (let b = np; b < nb; b++) { const dx = bx[b] - x, dy = by[b] - y; if (dx * dx + dy * dy <= r2[b]) { hole = true; break; } }
-      if (hole) { collided = true; break; }
-      if (!s.falling) {
-        let hit = -1;
-        for (let b = 0; b < np; b++) { const dx = bx[b] - x, dy = by[b] - y; if (dx * dx + dy * dy <= r2[b]) { hit = b; break; } }
-        if (hit >= 0) { s.x = x; s.y = y; s.vx = vx; s.vy = vy; fx.fragment(s, fragments, planets[hit]); collided = true; break; }
-      }
-    }
-    s.x = x; s.y = y; s.vx = vx; s.vy = vy;
-    const ox = x - cx, oy = y - cy;
-    if (!collided && ox * ox + oy * oy < 1000 * 1000) remaining.push(s);
-  }
-  fx.sparks = remaining;
-  fx.sparks.push(...fragments.slice(0, 1800 - remaining.length));
-}
-
+// ———————————— 4. Debris: the real update and draw ————————————
 /** A field of debris as two shatters leave it, a second into the blast (so sparks have spread and started to orbit). */
 function explode(world: World): Effects {
   const fx = new Effects(true, true, 'medium');
@@ -150,33 +99,19 @@ function explode(world: World): Effects {
 }
 
 function sparkUpdate(ws: World[], dt: number) {
-  const orig: number[] = [];
-  const fast: number[] = [];
+  const times: number[] = [];
   const counts: number[] = [];
-  let maxErr = 0;
   for (const w of ws) {
     const world = { ...w, planets: w.planets.slice(2) } as World;
-    // Same sparks, same random numbers, in both.
-    rng = 42; const real = Math.random; Math.random = seeded;
-    const A = explode(w) as unknown as Fx;
-    rng = 42;
-    const B = explode(w) as unknown as Fx;
+    const fx = explode(w);
     for (let f = 0; f < 120; f++) {
-      counts.push(A.sparks.length);
-      rng = 1000 + f;
-      let t = performance.now();
-      (A as unknown as Effects).update(dt, world);
-      orig.push(performance.now() - t);
-      rng = 1000 + f;
-      t = performance.now();
-      fastSparks(B, dt, world);
-      fast.push(performance.now() - t);
+      counts.push((fx as unknown as { sparks: unknown[] }).sparks.length);
+      const t = performance.now();
+      fx.update(dt, world);
+      times.push(performance.now() - t);
     }
-    Math.random = real;
-    if (A.sparks.length !== B.sparks.length) maxErr = Infinity;
-    else for (let i = 0; i < A.sparks.length; i++) maxErr = Math.max(maxErr, Math.abs(A.sparks[i].x - B.sparks[i].x), Math.abs(A.sparks[i].y - B.sparks[i].y));
   }
-  return { orig, fast, counts, maxErr };
+  return { times, counts };
 }
 
 function sparkDraw(ws: World[], ps: number, from = 30, to = 90) {
@@ -221,7 +156,7 @@ export async function run(): Promise<Record<string, unknown>> {
   sparkUpdate(ws, 1 / 60); // warm up
   for (const dt of [1 / 60, 1 / 30]) {
     const r = sparkUpdate(ws, dt);
-    out[`sparks.update.dt${Math.round(1 / dt)}`] = { sparks: summary(r.counts), original: summary(r.orig), fast: summary(r.fast), maxPositionDiff: r.maxErr };
+    out[`sparks.update.dt${Math.round(1 / dt)}`] = { sparks: summary(r.counts), update: summary(r.times) };
   }
   sparkDraw(ws, 1);
   for (const ps of [1, 2]) {

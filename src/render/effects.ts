@@ -156,6 +156,9 @@ const NO_SCARS: readonly Scar[] = [];
 /** Cosmetic particles, shockwaves, floating callouts and screen shake. Lives in field coordinates. */
 export class Effects {
   private sparks: Spark[] = [];
+  /** Scratch for `updateSparks`: the pieces sparks broke into this frame, and the bodies read flat. */
+  private readonly fragments: Spark[] = [];
+  private bodies = { x: new Float64Array(8), y: new Float64Array(8), gm: new Float64Array(8), r2: new Float64Array(8) };
   private rings: Ring[] = [];
   private blasts: Blast[] = [];
   private callouts: Callout[] = [];
@@ -598,53 +601,7 @@ export class Effects {
     }
     this.updateNovas(dt);
     this.holeFeed = Math.max(0, this.holeFeed - dt / 0.9);
-    const fragments: Spark[] = [];
-    const remaining: Spark[] = [];
-    const steps = Math.max(1, Math.ceil(dt / PHYSICS.DT));
-    const step = dt / steps;
-    for (const s of this.sparks) {
-      if (s.life !== undefined && (s.life -= dt) <= 0) continue;
-      let collided = false;
-      for (let i = 0; i < steps; i++) {
-        let ax = 0;
-        let ay = 0;
-        for (const body of world.planets) {
-          const dx = body.x - s.x;
-          const dy = body.y - s.y;
-          const d2 = Math.max(64, dx * dx + dy * dy);
-          const a = ((body.reversed ? -PHYSICS.G : PHYSICS.G) * body.mass) / (d2 * Math.sqrt(d2));
-          ax += a * dx;
-          ay += a * dy;
-        }
-        for (const hole of world.holes) {
-          const dx = hole.x - s.x;
-          const dy = hole.y - s.y;
-          const d2 = Math.max(64, dx * dx + dy * dy);
-          const a = (PHYSICS.G * hole.mass) / (d2 * Math.sqrt(d2));
-          ax += a * dx;
-          ay += a * dy;
-        }
-        const drag = Math.exp(-s.drag * step);
-        s.vx = (s.vx + ax * step) * drag;
-        s.vy = (s.vy + ay * step) * drag;
-        s.x += s.vx * step;
-        s.y += s.vy * step;
-        // A horizon takes a spark whole; only a rock breaks it up.
-        if (world.holes.some((hole) => Math.hypot(hole.x - s.x, hole.y - s.y) <= hole.radius)) {
-          collided = true;
-          break;
-        }
-        const body = s.falling ? null : this.collidingBody(s, world);
-        if (body) {
-          this.fragment(s, fragments, body);
-          collided = true;
-          break;
-        }
-      }
-      if (!collided && Math.hypot(s.x - FIELD.width / 2, s.y - FIELD.height / 2) < DEBRIS_RANGE) remaining.push(s);
-    }
-    this.sparks = remaining;
-    this.sparks.push(...fragments.slice(0, MAX_SPARKS - remaining.length));
+    this.updateSparks(dt, world);
     for (const r of this.rings) r.life -= dt;
     this.rings = this.rings.filter((r) => r.life > 0);
     for (const b of this.blasts) b.life -= dt;
@@ -873,8 +830,88 @@ export class Effects {
     }
   }
 
-  private collidingBody(spark: Spark, world: World): GravityBody | null {
-    return world.planets.find((body) => Math.hypot(body.x - spark.x, body.y - spark.y) <= body.radius) ?? null;
+  /**
+   * Every spark falls through the pull of the planets and holes, step by step at the sim's rate. A horizon takes it whole,
+   * a rock breaks it up, and one that drifts out of range is gone. Up to two thousand sparks a frame: the bodies are read
+   * into flat arrays once and the list is compacted in place, so a frame of debris makes no garbage.
+   */
+  private updateSparks(dt: number, world: World): void {
+    const steps = Math.max(1, Math.ceil(dt / PHYSICS.DT));
+    const step = dt / steps;
+    const { planets, holes } = world;
+    const np = planets.length;
+    const nb = np + holes.length;
+    if (this.bodies.x.length < nb) this.bodies = { x: new Float64Array(nb), y: new Float64Array(nb), gm: new Float64Array(nb), r2: new Float64Array(nb) };
+    const { x: bx, y: by, gm, r2 } = this.bodies;
+    for (let b = 0; b < np; b++) {
+      const p = planets[b];
+      bx[b] = p.x;
+      by[b] = p.y;
+      gm[b] = (p.reversed ? -PHYSICS.G : PHYSICS.G) * p.mass;
+      r2[b] = p.radius * p.radius;
+    }
+    for (let b = np; b < nb; b++) {
+      const h = holes[b - np];
+      bx[b] = h.x;
+      by[b] = h.y;
+      gm[b] = PHYSICS.G * h.mass;
+      r2[b] = h.radius * h.radius;
+    }
+    const cx = FIELD.width / 2;
+    const cy = FIELD.height / 2;
+    const fragments = this.fragments;
+    const sparks = this.sparks;
+    let kept = 0;
+    for (let k = 0; k < sparks.length; k++) {
+      const s = sparks[k];
+      if (s.life !== undefined && (s.life -= dt) <= 0) continue;
+      let { x, y, vx, vy } = s;
+      const drag = Math.exp(-s.drag * step);
+      let collided = false;
+      for (let i = 0; i < steps; i++) {
+        let ax = 0;
+        let ay = 0;
+        for (let b = 0; b < nb; b++) {
+          const dx = bx[b] - x;
+          const dy = by[b] - y;
+          const d2 = Math.max(64, dx * dx + dy * dy);
+          const a = gm[b] / (d2 * Math.sqrt(d2));
+          ax += a * dx;
+          ay += a * dy;
+        }
+        vx = (vx + ax * step) * drag;
+        vy = (vy + ay * step) * drag;
+        x += vx * step;
+        y += vy * step;
+        // A horizon takes a spark whole; only a rock breaks it up.
+        let hole = false;
+        for (let b = np; b < nb && !hole; b++) hole = (bx[b] - x) ** 2 + (by[b] - y) ** 2 <= r2[b];
+        if (hole) {
+          collided = true;
+          break;
+        }
+        if (s.falling) continue;
+        let rock = -1;
+        for (let b = 0; b < np && rock < 0; b++) if ((bx[b] - x) ** 2 + (by[b] - y) ** 2 <= r2[b]) rock = b;
+        if (rock >= 0) {
+          s.x = x;
+          s.y = y;
+          s.vx = vx;
+          s.vy = vy;
+          this.fragment(s, fragments, planets[rock]);
+          collided = true;
+          break;
+        }
+      }
+      s.x = x;
+      s.y = y;
+      s.vx = vx;
+      s.vy = vy;
+      if (!collided && (x - cx) ** 2 + (y - cy) ** 2 < DEBRIS_RANGE * DEBRIS_RANGE) sparks[kept++] = s;
+    }
+    sparks.length = kept;
+    for (let k = 0; k < fragments.length && sparks.length < MAX_SPARKS; k++) sparks.push(fragments[k]);
+    fragments.length = 0;
   }
 
   private ring(x: number, y: number, radius: number, life: number, color: string): void {
