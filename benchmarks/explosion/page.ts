@@ -8,7 +8,6 @@ import { ContourLayers } from '../../src/render/contour-layers';
 import { Effects } from '../../src/render/effects';
 import { painterFor } from '../../src/render/looks';
 
-
 const out: Record<string, unknown> = {};
 const median = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
 const p95 = (a: number[]) => [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * 0.95))];

@@ -89,13 +89,13 @@ export const drawHoloBlast: NonNullable<EffectStyle['blast']> = (ctx, blast, t) 
   ctx.restore();
 };
 
+/** The faint glass inside a shard. */
+const shardFill = rgbaAt(0.14);
+
 /**
  * A spark: a thin streak while it flies fast, a tiny square at rest, and for a big one a shard of wire (three or four
  * corners at uneven distances) tumbling as it goes.
  */
-/** The faint glass inside a shard. */
-const shardFill = rgbaAt(0.14);
-
 export const drawHoloShard: NonNullable<EffectStyle['spark']> = (ctx, s, speed) => {
   if (s.large && s.size > 3.4) {
     const corners = 3 + Math.floor(slot(s.seed, 1) * 2);

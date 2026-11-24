@@ -78,8 +78,8 @@ export class Renderer {
   /** The look the empty plate on the canvas is in. */
   private emptyLook: Look | null = null;
   private backdrop: { canvas: HTMLCanvasElement; edges: EdgeMode; fullScreen: boolean; look: Look } | null = null;
-  /** The gravity map per world (live or killcam replay), redrawn when what pulls or the pixel scale changes. */
-  private readonly contours = new ContourLayers();
+  /** The gravity map, redrawn when what pulls or the pixel scale changes. */
+  readonly contours = new ContourLayers();
   /** Planet sprites by seed at `spritePs` device pixels per field unit. */
   private sprites = new Map<number, PlanetSprite>();
   /** The finished trails, drawn once: dashed strokes are costly to rasterise and the trails only change when a shot ends. */
@@ -487,9 +487,10 @@ export class Renderer {
 
     // The killcam's camera pans and zooms the field, and the contours would slide across the still background: no map in a replay.
     if (showPlanets && match.settings.contours && !scene.camera) {
-      const map = this.contours.get(world, ps);
+      const moving = match.phase === 'collapse' || match.phase === 'orbit';
+      const map = this.contours.get(world, ps, moving);
       // While the hole collapses everything moves, so the stale map fades back.
-      ctx.globalAlpha = alpha * (match.phase === 'collapse' || match.phase === 'orbit' ? 0.25 : 1);
+      ctx.globalAlpha = alpha * (moving ? 0.25 : 1);
       ctx.drawImage(map, 0, 0, FIELD.width, FIELD.height);
     }
 

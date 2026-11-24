@@ -768,8 +768,16 @@ function measured(cost: NonNullable<Card['cost']>, loop: number, ms: number, now
   if (now - costShown > 500 || fresh) cost.out.value = `${cost.smooth.toFixed(1)} ms · schlimmstes ${cost.lastWorst ? cost.lastWorst.toFixed(1) : '–'} ms`;
 }
 
+/** The pixel snapshot is drawing: the live frames stay out of the worlds its cards share. */
+let hashing = false;
+
 let last = performance.now();
 function frame(now: number): void {
+  if (hashing) {
+    last = now;
+    requestAnimationFrame(frame);
+    return;
+  }
   const dt = paused ? 0 : Math.min(0.05, (now - last) / 1000);
   smooth.gap = ease(smooth.gap, Math.min(250, now - last));
   last = now;
@@ -819,6 +827,7 @@ async function pixelHashes(): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
   // The first pass only starts the images that load on first use; the second one is hashed.
   for (const pass of ['warm', 'real']) {
+    hashing = true;
     for (const { scene, match, card } of cards) {
       card.clock = 0;
       card.step = -1;
@@ -833,6 +842,12 @@ async function pixelHashes(): Promise<Record<string, number>> {
         setLook(card.look);
         card.renderer.draw(match, card.effects, GALLERY_OPTIONS, time - at);
         at = time;
+        // A redrawn gravity map comes from its worker: the frame is drawn again with it.
+        if (card.renderer.contours.pending) {
+          await card.renderer.contours.settled();
+          Math.random = seeded(1234);
+          card.renderer.draw(match, card.effects, GALLERY_OPTIONS, 0);
+        }
         if (pass === 'real') {
           const data = card.canvas.getContext('2d')!.getImageData(0, 0, card.canvas.width, card.canvas.height).data;
           let hash = 2166136261;
@@ -841,6 +856,7 @@ async function pixelHashes(): Promise<Record<string, number>> {
         }
       }
     }
+    hashing = false;
     if (pass === 'warm') await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   Math.random = realRandom;
