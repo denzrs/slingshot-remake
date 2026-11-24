@@ -6,18 +6,40 @@ const GRID = 6;
 /** Spacing of contour levels in ln(potential). Every 5th line is an index contour, as on a topo map. */
 const LEVEL_STEP = 0.11;
 
+/** What the map is drawn from: the field's size and what pulls. A worker gets only this. */
+export type ContourBodies = Pick<World, 'width' | 'height' | 'planets' | 'holes'>;
+
+/**
+ * What the map depends on: where each planet and hole is, how big and heavy, and whether a planet is turned round.
+ * A crack in an Unstable planet or a wrecked cannon raise `world.version` but leave the map as it is.
+ */
+export function contourKey(world: ContourBodies): string {
+  let key = `${world.width}x${world.height}`;
+  for (const p of world.planets) key += `|${p.x},${p.y},${p.radius},${p.mass}${p.reversed ? 'r' : ''}`;
+  for (const h of world.holes) key += `|h${h.x},${h.y},${h.radius},${h.mass}`;
+  return key;
+}
+
 /**
  * Draw the battlefield's gravity as a topographic map: equipotential lines of the
  * summed potential of planets and black hole, traced with marching squares. `ps` = device pixels per field unit.
  */
-export function renderContours(world: World, ps: number): HTMLCanvasElement {
-  const { width, height, planets, holes } = world;
+export function renderContours(world: ContourBodies, ps: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
+  paintContours(canvas, world, ps);
+  return canvas;
+}
+
+/** `renderContours` onto a canvas of the caller's: an OffscreenCanvas in the worker (`contours.worker.ts`). It sizes the canvas itself. */
+export function paintContours(canvas: HTMLCanvasElement | OffscreenCanvas, world: ContourBodies, ps: number): void {
+  const { width, height, planets, holes } = world;
   canvas.width = Math.ceil(width * ps);
   canvas.height = Math.ceil(height * ps);
+  // Asked for before anything else: an OffscreenCanvas without a context cannot be handed back, not even an empty map.
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
   // A planet turned round pulls nothing in: it has no well on the map.
   const bodies = [...planets.filter((p) => !p.reversed), ...holes];
-  if (bodies.length === 0) return canvas;
+  if (bodies.length === 0) return;
 
   const cols = Math.ceil(width / GRID) + 1;
   const rows = Math.ceil(height / GRID) + 1;
@@ -62,7 +84,6 @@ export function renderContours(world: World, ps: number): HTMLCanvasElement {
     }
   }
 
-  const ctx = canvas.getContext('2d')!;
   ctx.lineCap = 'round';
   ctx.lineWidth = Math.max(1, ps * 0.6);
   ctx.strokeStyle = rgba(COLORS.line, 0.17);
@@ -70,7 +91,6 @@ export function renderContours(world: World, ps: number): HTMLCanvasElement {
   ctx.lineWidth = Math.max(1, ps * 0.8);
   ctx.strokeStyle = rgba(COLORS.line, 0.34);
   ctx.stroke(major);
-  return canvas;
 }
 
 function traceCell(

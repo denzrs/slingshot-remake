@@ -26,7 +26,8 @@
     "bench:multikill": "tsx benchmarks/multi-kill.ts",
     "bench:stats": "tsx benchmarks/stats-perf.ts",
     "bench:client": "tsx benchmarks/client-perf.ts",
-    "bench:browser": "tsx benchmarks/browser-perf.ts"
+    "bench:browser": "tsx benchmarks/browser-perf.ts",
+    "bench:explosion": "tsx benchmarks/explosion.ts"
   },
   "keywords": [],
   "author": "",

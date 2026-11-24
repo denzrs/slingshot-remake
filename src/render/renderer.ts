@@ -14,7 +14,7 @@ import { orbitOf, solarCenter } from '../sim/world';
 import { drawLens } from './blackhole';
 import { lighten, rgba } from './color';
 import { acrossOf, gatePoint, lensAt, type Lens } from './loop-gate';
-import { renderContours } from './contours';
+import { ContourLayers } from './contour-layers';
 import type { Effects } from './effects';
 import { Hud } from './hud';
 import type { OracleTap } from './oracle';
@@ -78,8 +78,8 @@ export class Renderer {
   /** The look the empty plate on the canvas is in. */
   private emptyLook: Look | null = null;
   private backdrop: { canvas: HTMLCanvasElement; edges: EdgeMode; fullScreen: boolean; look: Look } | null = null;
-  /** Per world (live or killcam replay), rebuilt when the world's version or the pixel scale changes. */
-  private contours = new WeakMap<World, { version: number; ps: number; canvas: HTMLCanvasElement }>();
+  /** The gravity map, redrawn when what pulls or the pixel scale changes. */
+  readonly contours = new ContourLayers();
   /** Planet sprites by seed at `spritePs` device pixels per field unit. */
   private sprites = new Map<number, PlanetSprite>();
   /** The finished trails, drawn once: dashed strokes are costly to rasterise and the trails only change when a shot ends. */
@@ -149,7 +149,7 @@ export class Renderer {
     this.canvas.style.height = `${cssHeight}px`;
     this.backdrop = null;
     this.emptyDrawn = false;
-    this.contours = new WeakMap();
+    this.contours.clear();
     this.trailLayer = null;
   }
 
@@ -487,14 +487,11 @@ export class Renderer {
 
     // The killcam's camera pans and zooms the field, and the contours would slide across the still background: no map in a replay.
     if (showPlanets && match.settings.contours && !scene.camera) {
-      let layer = this.contours.get(world);
-      if (!layer || layer.version !== world.version || layer.ps !== ps) {
-        layer = { version: world.version, ps, canvas: renderContours(world, ps) };
-        this.contours.set(world, layer);
-      }
+      const moving = match.phase === 'collapse' || match.phase === 'orbit';
+      const map = this.contours.get(world, ps, moving);
       // While the hole collapses everything moves, so the stale map fades back.
-      ctx.globalAlpha = alpha * (match.phase === 'collapse' || match.phase === 'orbit' ? 0.25 : 1);
-      ctx.drawImage(layer.canvas, 0, 0, FIELD.width, FIELD.height);
+      ctx.globalAlpha = alpha * (moving ? 0.25 : 1);
+      ctx.drawImage(map, 0, 0, FIELD.width, FIELD.height);
     }
 
     // Debug aid: the orbit every body of a Solar System rides, and the limits the orbits are laid out between.

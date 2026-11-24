@@ -18,7 +18,7 @@ Columns: **Proto** = shown in the prototype gallery (yes / partly / no). **Forge
 | # | Element | Where | Today | Forged route | Proto | Notes |
 |---|---|---|---|---|---|---|
 | 1.1 | Plate: ink gradient, stars, grain, plotter frame, registration marks, variant with walls | `backdrop.ts` | same in both | C (maybe R for texture) | no | Built once, rebuilt on size or wall changes. The cache key needs the look. |
-| 1.2 | Gravity contours (topo map, every 5th line stronger) | `contours.ts` | same | C | no | Cached per world version and pixel scale. Fades to 25 % during the collapse. |
+| 1.2 | Gravity contours (topo map, every 5th line stronger) | `contours.ts`, `contour-layers.ts` | same | C | no | Cached per what pulls and pixel scale, checked when the world's version changes; redrawn in a worker while the old map stays up. Stays as it is and fades to 25 % during the collapse. |
 | 1.3 | Gravitational lens around the hole: background redrawn enlarged in rings | `blackhole.ts` `drawLens` | same | C | no | Redraws the backdrop image. Depends on 1.1. |
 | 1.4 | Danger ring (where the horizon ends after the next collapse) | `blackhole.ts` `drawDangerRing` | same | C | no | Dashed red ring. |
 | 1.5 | Debug orbits (only with `DEBUG_AIM`) | `renderer.ts` `drawOrbits` | same | – | – | Developer aid, out of scope. |
