@@ -14,6 +14,7 @@ import type { Missile } from '../sim/physics';
 import type { VolleyShot } from '../sim/volley';
 import { POWER_UP_KINDS } from '../sim/powerups';
 import { Effects } from '../render/effects';
+import { POWER_UP_COLORS } from '../render/powerup-art';
 import { painterFor } from '../render/looks';
 import { forgedPlanetTraits } from '../render/looks/forged-planet';
 import type { Planet, PlanetStyle } from '../sim/physics';
@@ -54,6 +55,8 @@ interface Card {
   clock: number;
   /** What the scene last triggered on this card. */
   step: number;
+  /** A measured scene's frame times: smoothed, the worst of this loop and of the last one, and where they are shown. */
+  cost?: { smooth: number; worst: number; lastWorst: number; loop: number; out: HTMLOutputElement };
 }
 
 interface Scene {
@@ -64,6 +67,8 @@ interface Scene {
   speed?: number;
   /** Called every frame for every card of the scene, before it draws. */
   tick?(match: Match, card: Card, dt: number): void;
+  /** Seconds of one loop: each card then shows its frame time and the worst frame of the last loop, to catch a hitch. */
+  measure?: number;
 }
 
 /** The match's scene with some of it replaced, so a page can show a state the game would only reach mid-flight. */
@@ -185,6 +190,9 @@ function planetScene(planets: Planet[]): Match {
   for (const ship of match.world.ships) ship.alive = false;
   return match;
 }
+
+/** Where the shots crack the unstable planet of 'Planet zerbricht' (radians round it). */
+const CRACKS = [2.5, -2.7];
 
 const EFFECTS: ((e: Effects, m: Match) => void)[] = [
   (e, m) => e.explode(m.world.ships[1].x, m.world.ships[1].y, m.players[1].color),
@@ -475,6 +483,50 @@ const SCENES: Scene[] = [
     },
   },
   {
+    title: 'Planet zerbricht',
+    sub: 'Planetenkiller trifft einen Planeten, ein instabiler bekommt zwei Risse und zerbricht; die Trümmer bleiben bis zum Neustart, die Höhenlinien folgen. Je Karte: Zeit pro Bild (Effekte und Zeichnen) und das schlimmste Bild der letzten Schleife (Schleife, 8 s)',
+    measure: 8,
+    build: () => {
+      // Four planets: two are broken, and the map shows the gravity of the two left.
+      const match = aiming('classic', 4, { maxPlanets: 5 });
+      allPlanets.set(match, [...match.world.planets]);
+      return match;
+    },
+    tick: (match, card) => {
+      const planets = allPlanets.get(match)!;
+      const [killed, unstable] = planets;
+      const world = match.world;
+      const t = card.clock % 8;
+      // 0 whole, 1 killed by the laser, 2 and 3 cracked, 4 broken.
+      const phase = t < 1 ? 0 : t < 2.5 ? 1 : t < 3.5 ? 2 : t < 4.5 ? 3 : 4;
+      // The world is shared by the cards: it is set from the clock, the same whichever card comes first.
+      const want = planets.filter((p) => !(p === killed && phase >= 1) && !(p === unstable && phase >= 4));
+      const cracks = Math.min(2, Math.max(0, phase - 1));
+      if (want.length !== world.planets.length || (unstable.fractures?.length ?? 0) !== cracks) {
+        world.planets = want;
+        unstable.fractures = CRACKS.slice(0, cracks);
+        world.version++;
+      }
+      // A new loop starts clean, so every loop costs the same.
+      if (phase === 0 && card.step !== 0) {
+        card.step = 0;
+        card.effects.clear();
+      }
+      for (let next = Math.max(card.step, 0) + 1; next <= phase; next++) {
+        if (next === 1) {
+          const ship = world.ships[0];
+          card.effects.laser(ship.x, ship.y, killed.x, killed.y, POWER_UP_COLORS.planetkiller, killed.radius);
+        } else if (next < 4) {
+          const a = CRACKS[next - 2];
+          card.effects.impact(unstable.x + Math.cos(a) * unstable.radius, unstable.y + Math.sin(a) * unstable.radius, match.players[1].color, -Math.cos(a) * 60, -Math.sin(a) * 60);
+        } else {
+          card.effects.shatter(unstable.x, unstable.y, unstable.tint, unstable.radius);
+        }
+        card.step = next;
+      }
+    },
+  },
+  {
     title: 'Zielen',
     sub: 'Was beim Platzieren zu sehen ist: Teleport, Schwarzes Loch, Nebel, Wormhole, Planetenkiller, Antigravitation, Abwehr (Schleife)',
     build: () => {
@@ -669,7 +721,13 @@ for (const scene of SCENES) {
     const stage = figure.querySelector<HTMLElement>('.stage')!;
     const canvas = stage.querySelector('canvas')!;
     const renderer = new Renderer(canvas, () => ({ width: Math.max(1, stage.clientWidth), height: Math.max(1, stage.clientHeight) }));
-    cards.push({ scene, match, card: { look, canvas, stage, renderer, effects: new Effects(true, false, 'medium'), clock: 0, step: -1 } });
+    const card: Card = { look, canvas, stage, renderer, effects: new Effects(true, false, 'medium'), clock: 0, step: -1 };
+    if (scene.measure) {
+      const out = document.createElement('output');
+      figure.querySelector('figcaption')!.append(out);
+      card.cost = { smooth: 0, worst: 0, lastWorst: 0, loop: 0, out };
+    }
+    cards.push({ scene, match, card });
   }
   host.append(section);
 }
@@ -697,6 +755,19 @@ const smooth = { cpu: 0, gpu: 0, gap: 0 };
 let costShown = 0;
 const ease = (was: number, now: number): number => (was ? was + (now - was) * 0.05 : now);
 
+/** A measured card's frame: the worst one is kept per loop, so a hitch in the last loop stays readable. */
+function measured(cost: NonNullable<Card['cost']>, loop: number, ms: number, now: number): void {
+  const fresh = loop !== cost.loop;
+  if (fresh) {
+    cost.loop = loop;
+    cost.lastWorst = cost.worst;
+    cost.worst = 0;
+  }
+  cost.worst = Math.max(cost.worst, ms);
+  cost.smooth = ease(cost.smooth, ms);
+  if (now - costShown > 500 || fresh) cost.out.value = `${cost.smooth.toFixed(1)} ms · schlimmstes ${cost.lastWorst ? cost.lastWorst.toFixed(1) : '–'} ms`;
+}
+
 let last = performance.now();
 function frame(now: number): void {
   const dt = paused ? 0 : Math.min(0.05, (now - last) / 1000);
@@ -705,11 +776,13 @@ function frame(now: number): void {
   const began = performance.now();
   for (const { scene, match, card } of cards) {
     if (!visible.has(card.stage)) continue;
+    const cardBegan = performance.now();
     card.clock += dt;
     scene.tick?.(match, card, dt);
     card.effects.update(dt, match.world);
     setLook(card.look);
     card.renderer.draw(match, card.effects, GALLERY_OPTIONS, dt * (scene.speed ?? 1));
+    if (card.cost && scene.measure && dt > 0) measured(card.cost, Math.floor(card.clock / scene.measure), performance.now() - cardBegan, now);
   }
   smooth.cpu = ease(smooth.cpu, performance.now() - began);
   smooth.gpu = ease(smooth.gpu, shaderGpuSeconds() * 1000);
