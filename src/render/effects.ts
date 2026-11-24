@@ -741,14 +741,26 @@ export class Effects {
       line(Math.max(1, w * 0.34), rgba(COLORS.bone, 0.95 * a));
     }
     if (style.streak) ctx.lineCap = 'round';
+    // One view of a spark handed to the look, filled in for each: a fresh object per spark, a thousand times a frame, is garbage for nothing.
+    const view = { x: 0, y: 0, vx: 0, vy: 0, size: 0, color: '', large: false, seed: 0 };
     for (const s of this.sparks) {
       ctx.globalAlpha = s.life !== undefined ? Math.min(1, s.life / 0.35) : 1;
       const speed = style.streak || style.spark ? Math.hypot(s.vx, s.vy) : 0;
-      const streak = speed > 8 ? style.streak?.(speed, s.size) : null;
       if (style.spark) {
-        style.spark(ctx, { x: s.x, y: s.y, vx: s.vx, vy: s.vy, size: s.size, color: s.color, large: s.tier === 'large', seed: s.seed }, speed);
+        view.x = s.x;
+        view.y = s.y;
+        view.vx = s.vx;
+        view.vy = s.vy;
+        view.size = s.size;
+        view.color = s.color;
+        view.large = s.tier === 'large';
+        view.seed = s.seed;
+        style.spark(ctx, view, speed);
         ctx.globalCompositeOperation = 'lighter';
-      } else if (streak) {
+        continue;
+      }
+      const streak = speed > 8 ? style.streak?.(speed, s.size) : null;
+      if (streak) {
         // A streak along the spark's flight, longer the faster it goes.
         ctx.strokeStyle = s.color;
         ctx.lineWidth = streak.width;

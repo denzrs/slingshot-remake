@@ -15,3 +15,13 @@ export function rgba(hex: string, alpha: number): string {
   const [r, g, b] = hexToRgb(hex);
   return `rgba(${r},${g},${b},${alpha})`;
 }
+
+/** `rgba(hex, alpha)` for one fixed alpha, each colour's string made once: for what is drawn by the thousand every frame, like sparks. */
+export function rgbaAt(alpha: number): (hex: string) => string {
+  const made = new Map<string, string>();
+  return (hex) => {
+    let color = made.get(hex);
+    if (color === undefined) made.set(hex, (color = rgba(hex, alpha)));
+    return color;
+  };
+}

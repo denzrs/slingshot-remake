@@ -1,5 +1,5 @@
 import { COLORS } from '../../sim/config';
-import { rgba } from '../color';
+import { rgba, rgbaAt } from '../color';
 import { easeOut } from '../effects';
 import { hullPath } from '../ship';
 import type { EffectStyle } from './painter';
@@ -93,6 +93,9 @@ export const drawHoloBlast: NonNullable<EffectStyle['blast']> = (ctx, blast, t) 
  * A spark: a thin streak while it flies fast, a tiny square at rest, and for a big one a shard of wire (three or four
  * corners at uneven distances) tumbling as it goes.
  */
+/** The faint glass inside a shard. */
+const shardFill = rgbaAt(0.14);
+
 export const drawHoloShard: NonNullable<EffectStyle['spark']> = (ctx, s, speed) => {
   if (s.large && s.size > 3.4) {
     const corners = 3 + Math.floor(slot(s.seed, 1) * 2);
@@ -109,7 +112,7 @@ export const drawHoloShard: NonNullable<EffectStyle['spark']> = (ctx, s, speed) 
       else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
     }
     ctx.closePath();
-    ctx.fillStyle = rgba(s.color, 0.14);
+    ctx.fillStyle = shardFill(s.color);
     ctx.fill();
     ctx.strokeStyle = s.color;
     ctx.lineWidth = 0.8;

@@ -1,4 +1,4 @@
-import { rgba } from '../color';
+import { rgba, rgbaAt } from '../color';
 import { fbm } from '../noise';
 import { clamp01, smoothstep } from '../planet-common';
 import type { EffectStyle } from './painter';
@@ -118,9 +118,9 @@ export const drawBlast: NonNullable<EffectStyle['blast']> = (ctx, blast, t) => {
 };
 
 /** A tint of `color` towards black: the dark body of a piece of shrapnel. */
-function darkened(color: string): string {
-  return rgba(color, 0.55);
-}
+const darkened = rgbaAt(0.55);
+/** The faint halo round an ember. */
+const emberHalo = rgbaAt(0.18);
 
 /**
  * A spark: a streak of heat while it flies fast, with a white-hot head; a bigger one is a ragged piece of metal or rock
@@ -175,6 +175,6 @@ export const drawShrapnel: NonNullable<EffectStyle['spark']> = (ctx, s, speed) =
   // Nearly at rest: an ember with a halo.
   ctx.fillStyle = s.color;
   ctx.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size);
-  ctx.fillStyle = rgba(s.color, 0.18);
+  ctx.fillStyle = emberHalo(s.color);
   ctx.fillRect(s.x - s.size * 1.2, s.y - s.size * 1.2, s.size * 2.4, s.size * 2.4);
 };
