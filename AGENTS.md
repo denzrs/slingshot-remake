@@ -16,6 +16,10 @@ The daily challenge's page shows a shot of the day only to a player who has post
 
 `npm run dev:local` starts both at once: the relay with demo statistics (its own `slingshot-stats-demo.db`), then the page already pointed at it, opened at `/?nointro&debug`.
 
+`npm run dev:phone` is the same on a real phone in the same Wi-Fi: it serves the page and the relay to the local network and prints a QR code to scan. `/dev/looks.html` and the other dev pages open there too. `LAN_HOST=<address>` when it picks the wrong network.
+
+Frame times come back from the phone to the dev server, a JSON object a line in `perf-reports.jsonl`: `/dev/perf.html` breaks a planet in every look by itself (`?run=forged` for one), and a game opened with `?perf` (as `dev:phone` does) sends the seconds round every planet that breaks in it ([`perf-report.ts`](src/debug/perf-report.ts)).
+
 An online game needs the relay (`npm run dev:server`, port 8080) and two tabs: one creates a room under Online spielen, the other joins it.
 
 To test online alone, open the game with `?nointro&debug` and use Online-Bots in the DEV panel: a bot is a connection of its own that the relay takes for a person (it joins your room, gets ready, founds or joins a tournament team and comes to its matches), and that `npm run dev:server` hands to the game as a CPU, so your page plays it ([`online-bots.ts`](src/debug/online-bots.ts)). A bot never hosts: open the room or the match yourself. Its "View" button opens a tab that takes its seat and tournament person over ([`impersonate.ts`](src/debug/impersonate.ts)), to see the room, the bracket and the game as the bot sees them; the host still plays its turns, and closing that tab takes the bot out of its room.

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "dev:local": "tsx scripts/dev-local.ts",
+    "dev:phone": "tsx scripts/dev-local.ts --phone",
     "dev:onboarding": "vite --open '/?preview=onboarding'",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",

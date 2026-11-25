@@ -40,6 +40,7 @@ To inspect the statistics UI with sample history, start `npm run dev:server:stat
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Dev server at http://localhost:5173 |
+| `npm run dev:phone` | Dev server and relay for a phone in the same Wi-Fi, with a QR code to open the game |
 | `npm run build` | Typecheck and build the client into `dist/` |
 | `npm run typecheck` | Typecheck the client, tests, benchmarks and scripts |
 | `npm run screens` | Build the game and walk every menu page at 13 window sizes in headless Chrome (about 4 minutes with the relay running); fails if anything is cut off (see `scripts/screens.ts`) |
