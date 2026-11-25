@@ -152,42 +152,75 @@ export function startRipple(blast: { x: number; y: number; size: number }): void
   if (ripples.length > RIPPLES) ripples.shift();
 }
 
+/** The lit cell is kept at this many places between two pixels each way, so a stamped one stands where the lattice's line does. */
+const PLACES = 4;
+let litCells: { key: string; canvas: HTMLCanvasElement; side: number } | null = null;
+
+/** A cell of the lattice in full light, at every place between pixels: a wave lights hundreds a frame, too many paths for a phone's GPU. */
+function litCell(radius: number, line: number): NonNullable<typeof litCells> {
+  const key = `${radius}|${line}`;
+  if (litCells?.key === key) return litCells;
+  const side = Math.ceil(radius * 2 + line) + 4;
+  const canvas = Object.assign(document.createElement('canvas'), { width: side * PLACES, height: side * PLACES });
+  const c = canvas.getContext('2d')!;
+  c.globalCompositeOperation = 'lighter';
+  for (let j = 0; j < PLACES; j++) {
+    for (let i = 0; i < PLACES; i++) {
+      const cell = new Path2D();
+      hexAt(cell, side * i + side / 2 + i / PLACES, side * j + side / 2 + j / PLACES, radius);
+      c.fillStyle = rgba(GLOW, 0.08);
+      c.fill(cell);
+      c.strokeStyle = rgba(GLOW, 0.6);
+      c.lineWidth = line;
+      c.stroke(cell);
+    }
+  }
+  return (litCells = { key, canvas, side });
+}
+
 /** Over the backdrop, under the field: the cells of the margin's lattice that a wave is passing light up. */
 export function holoSky(ctx: CanvasRenderingContext2D, f: FrameInfo): void {
   if (!ripples.length) return;
   const { plate, dpr } = f;
   const scale = Math.hypot(f.field.a, f.field.b);
   ctx.save();
-  const margin = new Path2D();
-  margin.rect(0, 0, f.width, f.height);
-  margin.rect(plate.x, plate.y, plate.w, plate.h);
-  ctx.clip(margin, 'evenodd');
   ctx.globalCompositeOperation = 'lighter';
   const lat = latticeFor(f.width / dpr);
   const rows = Math.ceil(f.height / dpr / lat.row);
   const cols = Math.ceil(f.width / dpr / lat.col);
   const inner = lat.cell * dpr;
-  for (const ripple of ripples) {
-    const at = f.field.transformPoint(new DOMPoint(ripple.x, ripple.y));
-    const age = f.time - ripple.born;
-    const radius = age * RIPPLE_SPEED * scale;
-    const band = RIPPLE_BAND * scale;
-    const fade = (1 - age / RIPPLE_LIFE) ** 1.5 * ripple.strength;
-    for (let r = 0; r <= rows; r++) {
-      for (let c = 0; c <= cols; c++) {
-        const x = cellX(lat, c, r) * dpr;
-        const y = r * lat.row * dpr;
-        // Cells well inside the plate are under the field's clear glass: nothing to light.
-        if (x > plate.x + inner && x < plate.x + plate.w - inner && y > plate.y + inner && y < plate.y + plate.h - inner) continue;
-        const lit = Math.exp(-(((Math.hypot(x - at.x, y - at.y) - radius) / band) ** 2)) * fade;
-        if (lit < 0.03) continue;
-        const cell = new Path2D();
-        hexAt(cell, x, y, lat.cell * dpr);
-        ctx.fillStyle = rgba(GLOW, 0.08 * lit);
-        ctx.fill(cell);
-        ctx.strokeStyle = rgba(GLOW, 0.6 * lit);
-        ctx.lineWidth = dpr * 1.2;
-        ctx.stroke(cell);
+  const { canvas, side } = litCell(inner, dpr * 1.2);
+  // Only the cells on the plate's edge need the clip.
+  const margin = new Path2D();
+  margin.rect(0, 0, f.width, f.height);
+  margin.rect(plate.x, plate.y, plate.w, plate.h);
+  const reach = side / 2 + 1;
+  for (const onEdge of [false, true]) {
+    if (onEdge) ctx.clip(margin, 'evenodd');
+    for (const ripple of ripples) {
+      const at = f.field.transformPoint(new DOMPoint(ripple.x, ripple.y));
+      const age = f.time - ripple.born;
+      const radius = age * RIPPLE_SPEED * scale;
+      const band = RIPPLE_BAND * scale;
+      const fade = (1 - age / RIPPLE_LIFE) ** 1.5 * ripple.strength;
+      for (let r = 0; r <= rows; r++) {
+        for (let c = 0; c <= cols; c++) {
+          const x = cellX(lat, c, r) * dpr;
+          const y = r * lat.row * dpr;
+          // Cells well inside the plate are under the field's clear glass: nothing to light.
+          if (x > plate.x + inner && x < plate.x + plate.w - inner && y > plate.y + inner && y < plate.y + plate.h - inner) continue;
+          const edge = x + reach > plate.x && x - reach < plate.x + plate.w && y + reach > plate.y && y - reach < plate.y + plate.h;
+          if (edge !== onEdge) continue;
+          const lit = Math.exp(-(((Math.hypot(x - at.x, y - at.y) - radius) / band) ** 2)) * fade;
+          if (lit < 0.03) continue;
+          // The cell's middle to the nearest place between pixels.
+          const px = Math.round((x - side / 2) * PLACES);
+          const py = Math.round((y - side / 2) * PLACES);
+          const i = ((px % PLACES) + PLACES) % PLACES;
+          const j = ((py % PLACES) + PLACES) % PLACES;
+          ctx.globalAlpha = lit;
+          ctx.drawImage(canvas, i * side, j * side, side, side, (px - i) / PLACES, (py - j) / PLACES, side, side);
+        }
       }
     }
   }

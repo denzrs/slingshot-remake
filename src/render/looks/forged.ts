@@ -7,7 +7,8 @@ import { drawFalling } from '../infall';
 import { drawEngineFlame } from '../ship';
 import { LIGHT } from '../planet-common';
 import { drawEngravedTarget, engraved } from './classic';
-import { drawBlast, drawShrapnel, warmBlasts } from './forged-blast';
+import { drawBlast, warmBlasts } from './forged-blast';
+import { drawShrapnel } from './forged-shrapnel';
 import { image, painted } from './forged-assets';
 import { renderForgedPlanet } from './forged-planet';
 import { instabilityPulse } from './instability';
@@ -425,7 +426,7 @@ export const forged = engraved('forged', forgedStyles, {
   ship: drawForgedShip,
   target: drawForgedTarget,
   pickup: (ctx, kind, color, time, pulse) => drawLightPickup(ctx, kind, color, time, pulse, forgedCoin(), COIN_SPAN),
-  effects: { ...lightParts.effects!, blast: drawBlast, spark: drawShrapnel },
+  effects: { ...lightParts.effects!, blast: drawBlast, sparks: drawShrapnel },
   begin: (frame) => {
     forgedBegin(frame);
     warmBlasts();

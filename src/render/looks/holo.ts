@@ -30,7 +30,7 @@ import {
   drawHoloPlasmaTrail,
 } from './holo-art';
 import { drawHoloFall, drawHoloFlare } from './falls';
-import { drawHoloBlast, drawHoloPackets, drawHoloShard, drawHoloShipScanned } from './holo-events';
+import { drawHoloBlast, drawHoloPackets, drawHoloShards, drawHoloShipScanned } from './holo-events';
 import { drawHoloGate } from './holo-gate';
 import { drawHoloWhiteCore, drawHoloWhiteJump } from './holo-white';
 import { instabilityPulse } from './instability';
@@ -99,7 +99,7 @@ const holoEffects: EffectStyle = {
     drawHoloBlast(ctx, blast, t);
     startRipple(blast);
   },
-  spark: drawHoloShard,
+  sparks: drawHoloShards,
 };
 
 const holoParts: Partial<LookPainter> = {

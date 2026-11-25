@@ -1,10 +1,10 @@
-import { rgba, rgbaAt } from '../color';
+import { rgba } from '../color';
 import { fbm } from '../noise';
 import { clamp01, smoothstep } from '../planet-common';
 import type { EffectStyle } from './painter';
 
 /**
- * Fireballs and shrapnel for the forged look. A fireball is a sheet of frames of burning gas — noise pushed out into a
+ * Fireballs for the forged look. A fireball is a sheet of frames of burning gas — noise pushed out into a
  * ball that swells, whitens at its core, turns orange and red and thins to embers — drawn once, a couple of frames each
  * time the look draws anything, so the first blast finds the sheet finished and the game never stalls to make it. Until it
  * is finished the blasts are left to the rings and sparks that go with them.
@@ -115,66 +115,4 @@ export const drawBlast: NonNullable<EffectStyle['blast']> = (ctx, blast, t) => {
     ctx.drawImage(sheet, (index % COLS) * CELL, Math.floor(index / COLS) * CELL, CELL, CELL, -half, -half, size, size);
   }
   ctx.restore();
-};
-
-/** A tint of `color` towards black: the dark body of a piece of shrapnel. */
-const darkened = rgbaAt(0.55);
-/** The faint halo round an ember. */
-const emberHalo = rgbaAt(0.18);
-
-/**
- * A spark: a streak of heat while it flies fast, with a white-hot head; a bigger one is a ragged piece of metal or rock
- * tumbling as it goes, dark with a glowing edge, the way it is caught by the light of the blast.
- */
-export const drawShrapnel: NonNullable<EffectStyle['spark']> = (ctx, s, speed) => {
-  if (s.large && s.size > 3.4) {
-    // A tumbling shard: five points at uneven distances, turning at a rate and in a direction of its own.
-    const turn = s.seed * 6.283 + (performance.now() / 1000) * (s.seed < 0.5 ? -1 : 1) * (1.5 + s.seed * 5);
-    const radius = s.size * 0.95;
-    ctx.save();
-    ctx.translate(s.x, s.y);
-    ctx.rotate(turn);
-    ctx.beginPath();
-    for (let k = 0; k < 5; k++) {
-      const a = (k / 5) * Math.PI * 2;
-      const rr = radius * (0.55 + 0.6 * (((s.seed * 997 + k * 0.37) * 7.13) % 1));
-      if (k) ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-      else ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
-    }
-    ctx.closePath();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = darkened(s.color);
-    ctx.fill();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth = 0.7;
-    ctx.stroke();
-    ctx.restore();
-    return;
-  }
-  if (speed > 8) {
-    const length = Math.min(speed * 0.04, 11) + s.size * 0.5;
-    const nx = s.vx / speed;
-    const ny = s.vy / speed;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth = Math.max(0.9, s.size * 0.75);
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y);
-    ctx.lineTo(s.x - nx * length, s.y - ny * length);
-    ctx.stroke();
-    // The head is white-hot.
-    ctx.strokeStyle = 'rgba(255,250,235,0.85)';
-    ctx.lineWidth = Math.max(0.5, s.size * 0.32);
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y);
-    ctx.lineTo(s.x - nx * length * 0.35, s.y - ny * length * 0.35);
-    ctx.stroke();
-    return;
-  }
-  // Nearly at rest: an ember with a halo.
-  ctx.fillStyle = s.color;
-  ctx.fillRect(s.x - s.size / 2, s.y - s.size / 2, s.size, s.size);
-  ctx.fillStyle = emberHalo(s.color);
-  ctx.fillRect(s.x - s.size * 1.2, s.y - s.size * 1.2, s.size * 2.4, s.size * 2.4);
 };
