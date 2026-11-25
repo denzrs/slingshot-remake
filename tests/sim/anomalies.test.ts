@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANOMALY, FIELD, type Anomaly } from '../../src/sim/config';
+import { ANOMALY, FIELD, PHYSICS, SOLAR, type Anomaly } from '../../src/sim/config';
 import { anomalyRules, fuseSeconds } from '../../src/sim/anomalies';
 import { t } from '../../src/platform/i18n';
 import { Shot, simulateShot, cloneWorld, planetDurability, hasTrickShotSources, type Planet, type ShotRules, type World } from '../../src/sim/physics';
@@ -223,16 +223,25 @@ describe('Fusion', () => {
     expect(melted.shot.fused).toBe(true);
   });
 
-  it('flies on with both shots\' momentum: head on, the sideways parts cancel and the rest adds up', () => {
-    const volley = headOn({ ...open, fusion: true });
+  it('goes the way both were headed when they meet at an angle', () => {
+    const world = emptyWorld([[300, 400], [700, 400], [640, 100]]);
+    const volley = new Volley(world, [{ player: 0, angle: 45, power: 50 }, { player: 1, angle: 135, power: 50 }], { ...open, fusion: true }, false);
     let at: { vx: number; vy: number } | null = null;
     while (!volley.done && !at) {
       for (const e of volley.step()) if (e.type === 'fusion') at = { vx: volley.shots[e.index].shot.vx, vy: volley.shots[e.index].shot.vy };
     }
     expect(at).not.toBeNull();
-    expect(Math.abs(at!.vx)).toBeLessThan(1);
-    // Both were fired upward (angles 10° and 170°): the melted shot keeps going up.
-    expect(at!.vy).toBeLessThan(0);
+    expect(at!.vx).toBeCloseTo(0, 5);
+    expect(at!.vy).toBeCloseTo(-50 * PHYSICS.SPEED_PER_POWER, 0);
+  });
+
+  it('spares the inner player of a head-on pair in line with a sun', () => {
+    const world = emptyWorld([[500, 400], [1000, 400]]);
+    world.planets.push({ x: 200, y: 400, radius: SOLAR.SUN_RADIUS, mass: SOLAR.SUN_MASS, seed: 1, style: 'star', tint: '#f2c46d', sun: true });
+    const volley = new Volley(world, [{ player: 0, angle: 0, power: 100 }, { player: 1, angle: 180, power: 100 }], { ...open, fusion: true }, false);
+    while (!volley.done && volley.steps < 20_000) volley.step();
+    expect(volley.shots[0].shot.end).toEqual({ kind: 'fused', into: 2 });
+    expect(world.ships.map((s) => s.alive)).toEqual([true, true]);
   });
 
   it('lets the shots cancel each other out without the anomaly, as ever', () => {
@@ -240,6 +249,24 @@ describe('Fusion', () => {
     while (!volley.done) volley.step();
     expect(volley.shots).toHaveLength(2);
     expect(volley.shots[0].shot.end?.kind).toBe('clash');
+  });
+
+  it('bursts out of a head-on meeting sideways, with the speed of both', () => {
+    const volley = headOn({ ...open, fusion: true });
+    let at: { vx: number; vy: number; speed: number } | null = null;
+    while (!volley.done && !at) {
+      const before = volley.shots.slice(0, 2).map(({ shot }) => Math.hypot(shot.vx, shot.vy));
+      for (const e of volley.step()) {
+        if (e.type !== 'fusion') continue;
+        const { vx, vy } = volley.shots[e.index].shot;
+        at = { vx, vy, speed: Math.hypot(...before) / Math.SQRT2 };
+      }
+    }
+    expect(at).not.toBeNull();
+    expect(Math.hypot(at!.vx, at!.vy) / at!.speed).toBeCloseTo(1, 2);
+    expect(Math.abs(at!.vx)).toBeLessThan(1);
+    // Both were fired upward (angles 10° and 170°): the melted shot goes up.
+    expect(at!.vy).toBeLessThan(0);
   });
 
   it('flies the same melted shot again in a replay', () => {

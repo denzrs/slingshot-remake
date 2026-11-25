@@ -220,7 +220,7 @@ export class Volley {
 
   /**
    * Fusion: shots `i` and `j` have met and melt into one, from the point between them, with the speed of both
-   * (their momentum shared, as two equal masses that stick). It belongs to both shooters, carries on the longer
+   * (see `burst`). It belongs to both shooters, carries on the longer
    * flight's clock, and is armed if either was. Live flight and replay both make it at the same step.
    */
   private fuse(i: number, j: number, events: VolleyEvent[]): void {
@@ -245,6 +245,7 @@ export class Volley {
     shot.y = (a.y + b.y) / 2;
     shot.vx = (a.vx + b.vx) / 2;
     shot.vy = (a.vy + b.vy) / 2;
+    this.burst(shot, a, b);
     shot.time = Math.max(a.time, b.time);
     shot.armed = a.armed || b.armed;
     shot.fused = true;
@@ -252,6 +253,25 @@ export class Volley {
     this.aims.push(aim);
     this.shots.push({ shot, owner, partner, fused: true, trail: [shot.x, shot.y] });
     events.push({ type: 'fusion', index: into, from: [i, j], x: shot.x, y: shot.y });
+  }
+
+  /**
+   * Fusion: the speed a melting would cost (two equal masses that stick) turns across the line the two met on, to the
+   * side their shared momentum leans to. The melted shot flies at the mean speed of both (by energy): shots that met at an angle
+   * go on the way they would have, a head-on pair bursts out sideways instead of stopping dead and falling.
+   */
+  private burst(shot: Shot, a: Shot, b: Shot): void {
+    const px = (a.vy - b.vy) / 2;
+    const py = (b.vx - a.vx) / 2;
+    const lean = px * shot.vx + py * shot.vy;
+    const side = lean !== 0 ? Math.sign(lean) : 1;
+    const vx = shot.vx + px * side;
+    const vy = shot.vy + py * side;
+    const now = vx * vx + vy * vy;
+    if (now === 0) return;
+    const k = Math.sqrt((a.vx * a.vx + a.vy * a.vy + b.vx * b.vx + b.vy * b.vy) / 2 / now);
+    shot.vx = vx * k;
+    shot.vy = vy * k;
   }
 
   /** A replay does what was done to the original flight, right before the step it was done after. */
