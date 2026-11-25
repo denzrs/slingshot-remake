@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, type Dirent } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import type { Plugin } from 'vite';
 import { configDefaults, defineConfig } from 'vitest/config';
+import { perfReports } from './dev/perf-reports';
 import { devRoute } from './dev/routes';
 import { buildWorker } from './scripts/pwa/worker';
 
@@ -71,7 +72,7 @@ export default defineConfig({
   base: './',
   // `DEBUG_AIM` (which serves /dev/aim.html) also reaches the client, so the in-game seed badge can follow it.
   envPrefix: ['VITE_', 'DEBUG_'],
-  plugins: [devPagesGate(), statsRoute(), pwaWorker()],
+  plugins: [devPagesGate(), perfReports(), statsRoute(), pwaWorker()],
   optimizeDeps: {
     include: ['msgpackr'],
   },

@@ -7,6 +7,8 @@ slingshot.db*
 leaderboard.db*
 stats.db*
 slingshot-stats-demo.db*
+# What the dev pages measured (`?perf`, `/dev/perf.html`).
+perf-reports.jsonl
 # What `npm run screens -- --compare` keeps and writes.
 .screens-baseline/
 .screens-current/

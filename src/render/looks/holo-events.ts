@@ -4,6 +4,7 @@ import { easeOut } from '../effects';
 import { hullPath } from '../ship';
 import type { EffectStyle } from './painter';
 import { drawHoloShip, holoPolygon } from './holo-art';
+import { SHARD_FROM, stampedSparks } from './spark-stamps';
 
 /**
  * What the holo look draws for things that happen, and that are gone again a moment later: a burst of wire where something
@@ -92,48 +93,49 @@ export const drawHoloBlast: NonNullable<EffectStyle['blast']> = (ctx, blast, t) 
 /** The faint glass inside a shard. */
 const shardFill = rgbaAt(0.14);
 
-/**
- * A spark: a thin streak while it flies fast, a tiny square at rest, and for a big one a shard of wire (three or four
- * corners at uneven distances) tumbling as it goes.
- */
-export const drawHoloShard: NonNullable<EffectStyle['spark']> = (ctx, s, speed) => {
-  if (s.large && s.size > 3.4) {
-    const corners = 3 + Math.floor(slot(s.seed, 1) * 2);
-    const turn = s.seed * TAU + (performance.now() / 1000) * (s.seed < 0.5 ? -1 : 1) * (1.5 + s.seed * 4);
-    const radius = s.size * 0.95;
-    ctx.save();
-    ctx.translate(s.x, s.y);
-    ctx.rotate(turn);
-    ctx.beginPath();
+/** A spark: a thin streak while it flies fast, a tiny square at rest, and for a big one a shard of wire (three or four corners at uneven distances) tumbling as it goes. */
+export const drawHoloShards = stampedSparks({
+  length: (speed) => Math.min(speed * 0.03, 8) + 1.2,
+  width: () => 0.9,
+  lengths: { from: 1.4, to: 9.2, count: 14 },
+  sizes: { from: 1, to: 1, count: 1 },
+  streak(c, length, _size, color) {
+    c.lineCap = 'round';
+    c.strokeStyle = color;
+    c.lineWidth = 0.9;
+    c.beginPath();
+    c.moveTo(0, 0);
+    c.lineTo(-length, 0);
+    c.stroke();
+  },
+  shapes: 16,
+  shards: { from: SHARD_FROM, to: 4.4, count: 2 },
+  reach: (size) => size * 0.95 * 1.2 + 1.6,
+  outline(size, seed) {
+    const corners = 3 + Math.floor(slot(seed, 1) * 2);
+    const path = new Path2D();
     for (let k = 0; k < corners; k++) {
       const a = (k / corners) * TAU;
-      const r = radius * (0.6 + 0.6 * slot(s.seed, k + 5));
-      if (k) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-      else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      const r = size * 0.95 * (0.6 + 0.6 * slot(seed, k + 5));
+      if (k) path.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      else path.moveTo(Math.cos(a) * r, Math.sin(a) * r);
     }
-    ctx.closePath();
-    ctx.fillStyle = shardFill(s.color);
-    ctx.fill();
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-    ctx.restore();
-    return;
-  }
-  if (speed > 8) {
-    const length = Math.min(speed * 0.03, 8) + 1.2;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth = 0.9;
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y);
-    ctx.lineTo(s.x - (s.vx / speed) * length, s.y - (s.vy / speed) * length);
-    ctx.stroke();
-    return;
-  }
-  ctx.fillStyle = s.color;
-  ctx.fillRect(s.x - 0.8, s.y - 0.8, 1.6, 1.6);
-};
+    path.closePath();
+    return path;
+  },
+  edge(c, outline, color) {
+    c.fillStyle = shardFill(color);
+    c.fill(outline);
+    c.strokeStyle = color;
+    c.lineWidth = 0.8;
+    c.stroke(outline);
+  },
+  spin: (seed) => (seed < 0.5 ? -1 : 1) * (1.5 + seed * 4),
+  ember(ctx, _size, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(-0.8, -0.8, 1.6, 1.6);
+  },
+});
 
 // --------------------------------------------------------------------- ship ----
 

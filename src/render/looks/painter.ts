@@ -238,6 +238,21 @@ export interface BorderView {
   cssHeight: number;
 }
 
+/** A spark, as a look that draws them itself sees it. */
+export interface SparkView {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  color: string;
+  tier: 'large' | 'medium' | 'small';
+  /** A number of its own (0 → 1), for its shape and spin. */
+  seed: number;
+  /** Seconds left before it is gone, if it goes; it fades out in the last of them. */
+  life?: number;
+}
+
 /** How a look draws the `Effects`. */
 export interface EffectStyle {
   nova(ctx: CanvasRenderingContext2D, nova: Nova): void;
@@ -246,8 +261,8 @@ export interface EffectStyle {
   beam(ctx: CanvasRenderingContext2D, beam: { x1: number; y1: number; x2: number; y2: number; color: string }, t: number): void;
   /** A spark flying at `speed` is a streak this long and wide; without it every spark is a plain square, as in the engraved look. */
   streak?(speed: number, size: number): { length: number; width: number };
-  /** Draws a spark itself, in place of the square or the streak; the caller has set `lighter`. */
-  spark?(ctx: CanvasRenderingContext2D, spark: { x: number; y: number; vx: number; vy: number; size: number; color: string; large: boolean; seed: number }, speed: number): void;
+  /** Draws all the sparks itself, in place of the squares or streaks. */
+  sparks?(ctx: CanvasRenderingContext2D, sparks: readonly SparkView[]): void;
   /** A fireball `size` wide, `t` (0 → 1) of the way through its life; a look that draws none leaves it out. */
   blast?(ctx: CanvasRenderingContext2D, blast: { x: number; y: number; size: number; color: string; seed: number }, t: number): void;
 }

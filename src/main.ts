@@ -15,6 +15,7 @@ import { cap, hintText, lastInput, noteInput, padMode } from './platform/input-d
 import { AIM, ANOMALY, COLORS, MAYHEM, FIELD, FONTS, PHYSICS, SUDDEN_DEATH } from './sim/config';
 import { createUiPreview, UI_PREVIEWS, type UiPreview } from './debug/devPreview';
 import { InfallDemo } from './debug/infallDemo';
+import { PerfRecorder } from './debug/perf-report';
 import { SupernovaDemo } from './debug/supernovaDemo';
 import { recordRun } from './data/dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, createShotReplay, ShotReplay, type Match } from './game';
@@ -161,6 +162,9 @@ const supernovaDemo = import.meta.env.DEV && requestedPreview === 'supernova' ? 
 /** `?preview=infall` (dev only): planets and a ship falling into the black hole on a loop. */
 const infallDemo = import.meta.env.DEV && requestedPreview === 'infall' ? new InfallDemo() : null;
 
+/** `?perf` (dev only): the frame times round a planet that breaks go to the dev server. */
+const perf = import.meta.env.DEV && new URLSearchParams(location.search).has('perf') ? new PerfRecorder() : null;
+
 const active = (): Match => (screen === 'play' && match ? match : attract);
 
 /** The sound of a round's announcement: the anomalies' alarm, then Mayhem's reel if the round has twists too. */
@@ -212,11 +216,13 @@ function wire(m: Match): void {
         break;
       case 'planetShatter':
         effects.shatter(e.x, e.y, e.color, e.radius);
+        perf?.broke(`${getLook()} shatter`);
         if (audible) sound.explode();
         break;
       case 'planetKiller': {
         const ship = m.world.ships[e.player];
         effects.laser(ship.x, ship.y, e.x, e.y, POWER_UP_COLORS.planetkiller, e.radius);
+        perf?.broke(`${getLook()} planetkiller`);
         if (audible) sound.explode();
         break;
       }
@@ -1178,6 +1184,7 @@ function frame(now: number): void {
       effects.clear();
     }
   }
+  const began = perf ? performance.now() : 0;
   const m = active();
   // Nobody should watch the screen dim in the middle of a match; the title screen and the results let it.
   screenWake.set(screen === 'play' && m.phase !== 'gameOver');
@@ -1252,6 +1259,7 @@ function frame(now: number): void {
       standsBadge.replaceChildren(eyeIcon(), text);
     }
   }
+  const updated = perf ? performance.now() : 0;
   if (empty) renderer.drawEmpty();
   else {
     renderer.draw(
@@ -1261,6 +1269,7 @@ function frame(now: number): void {
       paused ? 0 : dt,
     );
   }
+  perf?.frame(now, updated - began, performance.now() - updated);
   if (screen === 'play' && m === match) announceOracle(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();
