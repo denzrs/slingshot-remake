@@ -1,6 +1,7 @@
 import type { MayhemRound } from './mayhem';
 import type { KillcamSnapshot } from './killcam';
-import type { OracleSnapshot } from './oracle';
+import type { BetSnapshot } from './bets';
+import type { FanSnapshot } from './fans';
 import type { CrowdSeat } from './crowd';
 import type { PowerUpState } from './powerup-field';
 import { type Aim, type CpuDecision, type CpuLevel } from '../sim/ai';
@@ -293,8 +294,8 @@ export interface MatchOptions {
   teams?: number[];
   /** Event Horizon online: every human aims at once instead of one after another at a shared keyboard. */
   simultaneous?: boolean;
-  /** Online: eliminated players may tip on what the others' shots do. */
-  oracle?: boolean;
+  /** Played online, against the people of a room: the shot-down may bet on the round (with the room's rule on). */
+  online?: boolean;
   /** Reproducible multi-round worlds, independent of planner random consumption. */
   seed?: number;
   /** Fly a recorded match again: the seats do what the script says and nothing else (see `replay`). */
@@ -328,7 +329,7 @@ export function atTable(p: PlayerState): boolean {
   return !p.left && !p.away;
 }
 
-/** Shot down this round with a person behind the ship: who tips in the oracle. */
+/** Shot down this round with a person behind the ship: who may bet on the round. */
 export function shotDown(p: PlayerState): boolean {
   return !p.alive && !p.cpu && atTable(p);
 }
@@ -404,8 +405,12 @@ export interface MatchSnapshot extends Partial<KillcamSnapshot> {
   pause?: { resumeIn: number | null } | null;
   /** Phase time when a finished volley began waiting for its post-flight delay. */
   flightDoneAt?: number | null;
-  oracle: OracleSnapshot;
-  stands?: OracleSnapshot;
+  bets: BetSnapshot;
+  stands?: BetSnapshot;
+  fans?: FanSnapshot;
+  standsFans?: FanSnapshot;
+  /** How many calls on the next shot each player got right this match (their cheers grow with it). */
+  callsRight?: number[];
   crowd?: CrowdSeat[];
   /** What the marks on the cards are read from. */
   marks?: MarkState;

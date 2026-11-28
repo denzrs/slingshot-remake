@@ -224,6 +224,21 @@ export class Effects {
     this.flash = 1;
   }
 
+  /** An escape pod going up with the ship it circled: a small blast of its own, no shake (the ship's gave that). */
+  podBurst(x: number, y: number, color: string): void {
+    this.ring(x, y, 30, 0.45, COLORS.sodium);
+    this.blast(x, y, 46, 0.55, color);
+    this.burst(x, y, 30, 30, 160, color, 'medium');
+    this.burst(x, y, 12, 10, 70, COLORS.bone, 'small');
+  }
+
+  /** A spectator's UFO going up with the ship it circled: a pop, smaller than a pod's, since six of them may go at once. */
+  ufoBurst(x: number, y: number, color: string): void {
+    this.ring(x, y, 22, 0.4, color);
+    this.burst(x, y, 12, 20, 120, color, 'small');
+    this.burst(x, y, 5, 10, 60, COLORS.bone, 'small');
+  }
+
   impact(x: number, y: number, color: string, vx = 0, vy = 0): void {
     this.struck.push({ x, y });
     this.ring(x, y, 26, 0.45, COLORS.bone);

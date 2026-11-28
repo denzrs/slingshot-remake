@@ -61,11 +61,11 @@ describe('round report', () => {
     expect(report.players[1]).toMatchObject({ shatters: 1, bumps: 0, arms: 1, loops: 0, returns: 1 });
   });
 
-  it('lists the judged tips of both tipping games, and leaves the field out when nobody tipped', () => {
+  it('lists the settled bets of both books, and leaves the field out when nobody bet', () => {
     const match = source();
     expect(roundReport(match)).not.toHaveProperty('tips');
     const tip = (stands: boolean) => ({ kind: 'round' as const, right: true, stake: 100, payout: 250, underdog: false, stands });
-    match.oracle = { judged: [tip(false)] };
+    match.bets = { judged: [tip(false)] };
     match.stands = { judged: [tip(true)] };
     expect(roundReport(match).tips).toEqual([tip(false), tip(true)]);
   });

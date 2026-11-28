@@ -1,4 +1,6 @@
 import { drawEngravedDark, drawEngravedDarkAlert } from './classic-dark';
+import { drawEngravedSaucer } from './spectator-probes';
+import { drawEngravedPodCheer, drawEngravedShuttlePod, drawPodCall, drawPodLaunch } from './escape-pod';
 import { AIM, COLORS, HORIZON, PHYSICS, SUDDEN_DEATH, WORMHOLE } from '../../sim/config';
 import { aimDirection, isTrailBreak, type Wormhole } from '../../sim/physics';
 import type { PowerUpKind } from '../../sim/powerups';
@@ -69,6 +71,11 @@ export function engraved(id: Look, styles: Styles = {}, parts: Partial<LookPaint
     defense: (ctx, d, planet, color, time, alpha, view, labels, hideRock) => drawDefense(ctx, d, planet, color, time, alpha, view, labels, hideRock, styles.defense),
     interception: (ctx, color, view, time, rocks) => drawInterception(ctx, color, view, time, rocks, styles.interception),
     ship: drawEngravedShip,
+    escapePod: drawEngravedShuttlePod,
+    spectatorPod: drawEngravedSaucer,
+    podCheer: drawEngravedPodCheer,
+    podLaunch: drawPodLaunch,
+    podCall: drawPodCall,
     selection: drawEngravedSelection,
     shotClock: drawEngravedShotClock,
     locatePing: drawEngravedPing,
@@ -159,14 +166,14 @@ export function drawEngravedShotClock(ctx: CanvasRenderingContext2D, x: number, 
 }
 
 /** Sonar rings sweeping in towards the ship so the eye finds it when a round begins; they fade out over the ping's last half second. */
-function drawEngravedPing(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, age: number): void {
+function drawEngravedPing(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, age: number, scale = 1): void {
   const fade = Math.min(1, (LOCATE_PING.DURATION - age) / 0.5);
   ctx.save();
   ctx.translate(x, y);
   ctx.lineWidth = 2;
   for (let k = 0; k < LOCATE_PING.RINGS; k++) {
     const t = (age / LOCATE_PING.PERIOD + k / LOCATE_PING.RINGS) % 1;
-    const radius = LOCATE_PING.RADIUS * (1 - t) + 14;
+    const radius = (LOCATE_PING.RADIUS * (1 - t) + 14) * scale;
     ctx.globalAlpha = fade * t * 0.85;
     ctx.strokeStyle = color;
     ctx.beginPath();

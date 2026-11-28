@@ -70,9 +70,9 @@ describe('the player\'s own presets', () => {
 
   it('leave the table switches with the table', () => {
     const values = storage();
-    saveCustomPreset('classic', { name: 'Tisch', rules: { ...defaultRoomRules(), betting: true, chatPlayersOnly: true } });
+    saveCustomPreset('classic', { name: 'Tisch', rules: { ...defaultRoomRules(), betting: false, chatPlayersOnly: true } });
     expect(JSON.parse(values[KEY]).classic.custom[0].rules).not.toHaveProperty('betting');
-    expect(loadCustomPresets('classic')[0].rules).toMatchObject({ betting: false, chatPlayersOnly: false });
+    expect(loadCustomPresets('classic')[0].rules).toMatchObject({ betting: true, chatPlayersOnly: false });
   });
 
   it('fall back to the standard rules for values nobody offers any more', () => {

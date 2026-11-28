@@ -1,6 +1,6 @@
 {
-  "protocolVersion": 10,
-  "wireFingerprint": "af7910026c65493d",
+  "protocolVersion": 14,
+  "wireFingerprint": "b6ea23f57f2ccf0b",
   "defaults": {
     "rounds": 5,
     "maxPlanets": 4,
@@ -18,7 +18,7 @@
     "fadingTrails": 0,
     "suddenDeath": true,
     "mayhem": 0,
-    "betting": false,
+    "betting": true,
     "chatPlayersOnly": false,
     "powerUps": false,
     "powerUpKinds": ["preview", "teleport", "splitter", "antigravity", "shield", "blackhole", "planetkiller", "nebula", "piercing", "wormhole", "defense", "plasma"],

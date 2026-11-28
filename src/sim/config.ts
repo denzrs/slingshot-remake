@@ -368,41 +368,48 @@ export const MAYHEM = {
   HELD_MAX: 60,
 } as const;
 
-/** The oracle: eliminated players tip on what the others' shots do. A side standing — it never counts towards winning. */
-export const ORACLE = {
-  /** Base points for a right tip: "will it hit?" (turn by turn), a named ship, and "nobody" (salvos). */
-  SHOT: 100,
-  SHIP: 150,
-  NOBODY: 75,
-  /** Every right tip in a row raises the multiplier by this much, up to the cap. */
-  STREAK_STEP: 0.5,
-  MAX_MULTIPLIER: 3,
-  /** Seconds the verdict stays on the card before the next question takes its place. */
+/**
+ * Bets: once somebody is out, a shot-down player (or somebody in the stands) may bet on who wins the round. A room
+ * switches them on or off (`betting`).
+ */
+export const BETS = {
+  /** Seconds a settled bet stays on the card. */
   RESULT_SECONDS: 3,
-  /** "Who wins the round?": base points per rival the winner had to beat when the tip was made (two ships left pay 1×, five pay 4×). */
-  WINNER: 100,
-  /** …and the base for tipping "nobody" when a round ends in a draw. */
-  DRAW: 200,
-  /** Flat bonus for a right tip against the crowd: with at least three tipsters, fewer than half named the same. */
-  UNDERDOG: 50,
-  UNDERDOG_MIN_TIPS: 3,
-  /** Seconds between two tips turning over when the shots are away. */
-  REVEAL_STEP: 0.28,
-  /**
-   * Betting on the round question with points of the match: a ghost may stake up to this share of their
-   * score (in steps of `STAKE_STEP`, at least `STAKE_MIN`). The stakes of a round make one pot; whoever tipped
-   * right shares it in proportion to their stakes, whoever tipped wrong loses theirs.
-   */
-  STAKE_SHARE: 0.5,
-  STAKE_MIN: 20,
+  /** A bet is a quarter, half or all of the bettor's points, in steps of `STAKE_STEP`, at least `STAKE_MIN`. */
+  STAKE_SHARES: [0.25, 0.5, 1],
   STAKE_STEP: 10,
-  /** Seconds a question stays open before a shot or salvo may fly, so ghosts have time to tip and bet. */
+  STAKE_MIN: 10,
+  /** A bet on a ship pays as many times the stake as there are sides in when it is placed; a bet on a draw pays this. */
+  DRAW_MULTIPLIER: 5,
+  /** Seconds the bets stay open before a shot or salvo may fly, so the shot-down have time to bet. */
   MIN_BET_TIME: 3,
 } as const;
 
+/** Fans: online, the shot-down root for a ship from their escape pods and cheer it on (`FanClub`). */
+export const FANS = {
+  /** Seconds between two cheers of one fan. */
+  CHEER_GAP: 0.8,
+  /**
+   * Calls on the next shot of the ship a fan roots for (`CallKind`). With a bet on it, a right "hits" adds `HIT` to
+   * the bet's multiplier and a right "misses" `MISS`; a wrong call takes `WRONG` off it, never below `MIN_ODDS`. A
+   * right "is hit" insures the bet instead: should it be lost, only `INSURED` of the stake goes. Without a bet a
+   * right call pays a few points of the match (`CALL_POINTS`, against a kill's 1000), and a wrong one costs nothing.
+   */
+  CALL_POINTS: { hit: 50, miss: 10, hitBy: 30 },
+  /** A fan's cheer grows more epic with every call they got right this match, up to this many (`Match.cheerLevel`). */
+  EPIC_MAX: 5,
+  CALL_HIT: 1,
+  CALL_MISS: 0.25,
+  CALL_WRONG: -0.25,
+  MIN_ODDS: 1.5,
+  INSURED: 0.5,
+  /** Seconds a settled call shows over its pod. */
+  CALL_SHOWN: 2.5,
+} as const;
+
 /**
- * The stands: people who watch an online room without a seat. They play the oracle's tipping game like the shot-down
- * players do — but with a bankroll of their own, which never touches a player's score. The most a room takes is shared
+ * The stands: people who watch an online room without a seat. They bet on the round like the shot-down players
+ * do — but with a bankroll of their own, which never touches a player's score. The most a room takes is shared
  * with the relay (`protocol-contract.json`).
  */
 export const GALLERY = {

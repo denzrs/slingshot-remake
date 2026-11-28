@@ -232,7 +232,7 @@ async function realSnapshotRun(url: string, mode: 'classic' | 'horizon', duratio
     names: ['Host', 'G0', 'G1', 'G2'],
     // As `netMatch` makes an online game: Event Horizon and Fusion fly as a salvo.
     simultaneous: mode === 'horizon' || ANOMALIES.includes('fusion'),
-    oracle: true,
+    online: true,
     seed: 7139,
   });
   if (!(created instanceof ClassicMatch) && !(created instanceof HorizonMatch)) throw new Error('expected ship match');

@@ -5,6 +5,10 @@ import holeUrl from './forged/hole.webp';
 import whiteUrl from './forged/white.webp';
 import shipUrl from './forged/ship.webp';
 import shipMaskUrl from './forged/ship-mask.webp';
+import podMiniUrl from './forged/pod-mini.webp';
+import podMiniMaskUrl from './forged/pod-mini-mask.webp';
+import podUfoUrl from './forged/pod-ufo.webp';
+import podUfoMaskUrl from './forged/pod-ufo-mask.webp';
 import texGasUrl from './forged/tex-gas.webp';
 import texIceUrl from './forged/tex-ice.webp';
 import texRockUrl from './forged/tex-rock.webp';
@@ -73,6 +77,10 @@ const URLS = {
   white: whiteUrl,
   ship: shipUrl,
   shipMask: shipMaskUrl,
+  podMini: podMiniUrl,
+  podMiniMask: podMiniMaskUrl,
+  podUfo: podUfoUrl,
+  podUfoMask: podUfoMaskUrl,
   drone: droneUrl,
   droneMask: droneMaskUrl,
   turretBase: turretBaseUrl,

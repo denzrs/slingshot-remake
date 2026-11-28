@@ -20,9 +20,8 @@ Everything about how the game plays: controls, modes, setup, the CPU opponents a
 | Space | Next round, skip the killcam |
 | N | Skip the round – nobody scores in it. Offline: press it twice (or use *Skip round* in the pause menu). Online: see [Skipping a round](multiplayer.md#skipping-a-round) – Y / N answer a vote |
 | C | Save the last killcam as a video (on a touch screen the clip button records it, then *Share clip* opens the device's share sheet; where files cannot be shared the video is downloaded instead) |
-| ← → / 1–5, 0 | Oracle, once you are shot down online: tip hit or miss (turn by turn) / name the ship that gets hit, or 0 for nobody. You can also tap the choices or the ships |
-| Shift + 1–5, 0 | Oracle, who wins the round: the ship still in (0 for a draw, where one is possible). You can also tap it |
-| B / Shift + B | Oracle, bet points of the match on your tip on the round: the smaller / the larger stake. You can also tap the stake |
+| 1–5, 0 | Once you are shot down online, the bet on the round: pick the side you bet on (0 for a draw, where one is possible). You can also tap the name or the ship |
+| Q / H / A | Put a quarter / half / all of your points on the side picked. You can also tap the stake |
 | Esc | Menu |
 | P | Use your power-up (Classic and Event Horizon): open or close the aim of a teleport, a black hole, a planet killer, a nebula or an anti-gravity, or arm a preview, armor piercing or a plasma shot for your next shot |
 | F | Fullscreen |
@@ -180,7 +179,7 @@ The **multi-kill chain** (250 / 500 / 750 / 1000 for the second to the fifth ene
 - **Jackpot (Mayhem):** in a jackpot round every point counts twice, the extras too. Bounty and underdog are the exceptions: they are shares of scores that were doubled already.
 - **Skipped round:** a round skipped by vote takes its extras back with its points; revenge and domination read the rounds as if it was never played.
 - **Bounty and underdog read the standings as the volley went up**, not as the shot lands, so two kills in one volley see the same scores. A player who left the game is not in the race.
-- **Oracle:** the tips and bets of eliminated players are a side standing and never count towards winning (see [multiplayer.md](multiplayer.md#playing-online)).
+- **Bets:** the shot-down players' bets on the round are points of the match: won, they add to the score, lost, they leave it (see [multiplayer.md](multiplayer.md#playing-online)).
 
 **What a player can know before shooting.** Some extras belong to the target, some to the shooter, some to the round. This is what a ship's card can show:
 

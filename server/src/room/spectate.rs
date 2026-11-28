@@ -87,7 +87,7 @@ impl RoomManager {
         true
     }
 
-    /// A spectator's input goes to the host like a guest's does, but only bets are taken.
+    /// A spectator's input goes to the host like a guest's does, but only bets, rooting for a ship and cheers are taken.
     pub(super) fn relay_spectator_input(&mut self, conn: u64, input: Parsed<&Value>) {
         let Some(watching) = self.watching.get(&conn) else {
             return;
@@ -105,8 +105,11 @@ impl RoomManager {
         let Some(input) = self.accept(conn, input) else {
             return;
         };
-        if input.get("kind").and_then(Value::as_str) != Some("bet") {
-            self.error(conn, "Spectators can only bet");
+        if !matches!(
+            input.get("kind").and_then(Value::as_str),
+            Some("bet" | "fan" | "cheer")
+        ) {
+            self.error(conn, "Spectators can only bet and cheer");
             return;
         }
         if !self.net.allow_spectator_input(conn) {

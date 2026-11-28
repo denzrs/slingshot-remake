@@ -285,7 +285,7 @@ Use the real `RULE_GROUPS` / `ruleItems` inventory: Match, Field, Shots, Extras.
 
 ### Tutorial, pause and match end
 
-Keep them consistent, but do not use them as a reason to delay the main navigation work. Tutorial retains direct chapter selection, Previous/Next and existing diagrams. Pause retains Resume and applicable game actions. Match results retain standings, history, awards and spectator/oracle records. Do not change score calculation or remove records for visual simplicity.
+Keep them consistent, but do not use them as a reason to delay the main navigation work. Tutorial retains direct chapter selection, Previous/Next and existing diagrams. Pause retains Resume and applicable game actions. Match results retain standings, history, awards and spectator/bet records. Do not change score calculation or remove records for visual simplicity.
 
 ## 10. Functional invariants / regression traps
 

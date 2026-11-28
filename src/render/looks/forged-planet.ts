@@ -855,19 +855,28 @@ function moonLight(m: MoonAt, planetRadius: number): number {
   return smoothstep(planetRadius * 0.85, planetRadius * 1.15, off);
 }
 
-/** The moon's shadow on the planet's disc, where the ray from the moon away from the light meets the sphere. Only the lit, near side is painted. */
+/** The moon's shadow on the planet's disc. */
 function drawMoonShadow(ctx: CanvasRenderingContext2D, x: number, y: number, planetRadius: number, m: Moon, at: MoonAt): void {
-  const dot = at.x * LIGHT[0] + at.y * LIGHT[1] + at.z * LIGHT[2];
+  drawCastShadow(ctx, x, y, planetRadius, at, m.radius, LIGHT);
+}
+
+/**
+ * The shadow something round (`casterRadius` wide) at `at` throws on the planet at (x, y): where the ray from it away
+ * from `light` meets the sphere. `at` is from the planet's middle, z towards the viewer; `light` points at the light,
+ * a unit vector in the same frame. Only the lit, near side is painted. A moon's shadow, and in Forged a pod's or a UFO's.
+ */
+export function drawCastShadow(ctx: CanvasRenderingContext2D, x: number, y: number, planetRadius: number, at: { x: number; y: number; z: number }, casterRadius: number, light: readonly [number, number, number]): void {
+  const dot = at.x * light[0] + at.y * light[1] + at.z * light[2];
   const disc = dot * dot - (at.x * at.x + at.y * at.y + at.z * at.z) + planetRadius * planetRadius;
   if (disc <= 0) return;
   const t = dot - Math.sqrt(disc);
   if (t <= 0) return;
-  const px = at.x - t * LIGHT[0];
-  const py = at.y - t * LIGHT[1];
-  const pz = at.z - t * LIGHT[2];
+  const px = at.x - t * light[0];
+  const py = at.y - t * light[1];
+  const pz = at.z - t * light[2];
   if (pz <= 0) return;
   // Where the surface turns from the light the shadow thins out; the skin of the limb stays clear.
-  const facing = (px * LIGHT[0] + py * LIGHT[1] + pz * LIGHT[2]) / planetRadius;
+  const facing = (px * light[0] + py * light[1] + pz * light[2]) / planetRadius;
   if (facing <= 0.05) return;
   const nz = pz / planetRadius;
   const stretch = Math.min(2.2, 1 / facing);
@@ -880,7 +889,7 @@ function drawMoonShadow(ctx: CanvasRenderingContext2D, x: number, y: number, pla
   ctx.rotate(radial);
   // Across the radial direction it is as wide as the moon; along it the sphere's curve squeezes it, the slant of the light stretches it.
   ctx.scale(Math.max(0.2, Math.min(1, nz * stretch)), 1);
-  const r = m.radius * 1.15;
+  const r = casterRadius * 1.15;
   const g = ctx.createRadialGradient(0, 0, r * 0.35, 0, 0, r);
   const a = 0.6 * smoothstep(0.05, 0.4, facing);
   g.addColorStop(0, `rgba(3,6,16,${a})`);

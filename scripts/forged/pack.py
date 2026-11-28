@@ -1,4 +1,4 @@
-"""Packs the PNGs `render_assets.py`, `render_planets.py`, `render_cracks.py` and `hole-frames.mjs` wrote (`hole`, `white`) into the WebP files the game loads: `python3 scripts/forged/pack.py <png dir>`."""
+"""Packs the PNGs `render_assets.py`, `render_pods.py`, `render_planets.py`, `render_cracks.py` and `hole-frames.mjs` wrote (`hole`, `white`) into the WebP files the game loads: `python3 scripts/forged/pack.py <png dir>`."""
 import sys
 from pathlib import Path
 
@@ -19,6 +19,11 @@ FILES = {
     'turret-barrel': (None, 90),
     'turret-barrel-mask': (None, 90),
     'coin': (None, 90),
+    # The escape pods `render_pods.py` makes: the shot-down players' mini ship (a sheet of its headings, set below), the spectators' UFO.
+    'pod-mini': (None, 90),
+    'pod-mini-mask': (None, 90),
+    'pod-ufo': (None, 90),
+    'pod-ufo-mask': (None, 90),
     'hole': (None, 70),
     'white': (None, 80),
     'tex-rock': ((512, 256), 85),
@@ -34,6 +39,19 @@ for variant in ('rock-desert', 'rock-ocean', 'rock-moon', 'rock-alien', 'gas-nep
                 'rock-jungle', 'rock-tundra', 'rock-savanna', 'rock-autumn', 'iron-core', 'iron-rust', 'eyeball', 'hycean-teal', 'hycean-deep',
                 'fungal-caps', 'fungal-mycelium', 'volcanic-io', 'volcanic-red'):
     FILES['tex-' + variant] = ((512, 256), 85)
+
+# The mini ship's headings, one PNG each, set into a sheet in rows of `MINI_COLUMNS` (as `render_pods.py` numbers them).
+MINI_COLUMNS = 8
+for name in ('pod-mini', 'pod-mini-mask'):
+    frames = sorted(SRC.glob(f'{name}-[0-9][0-9].png'))
+    if frames:
+        first = Image.open(frames[0])
+        w, h = first.size
+        rows = (len(frames) + MINI_COLUMNS - 1) // MINI_COLUMNS
+        sheet = Image.new('RGBA', (w * MINI_COLUMNS, h * rows))
+        for k, frame in enumerate(frames):
+            sheet.paste(Image.open(frame).convert('RGBA'), ((k % MINI_COLUMNS) * w, (k // MINI_COLUMNS) * h))
+        sheet.save(SRC / f'{name}.png')
 
 for name, (size, quality) in FILES.items():
     if not (SRC / f'{name}.png').exists():

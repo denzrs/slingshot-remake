@@ -187,7 +187,7 @@ export function factLines(facts: readonly StatsFact[], random: () => number = Ma
 }
 
 /** What a fact is about: the facts page shows them under these headings, in this order. */
-export const FACT_GROUPS = ['aim', 'shots', 'field', 'rounds', 'extras', 'oracle'] as const;
+export const FACT_GROUPS = ['aim', 'shots', 'field', 'rounds', 'extras', 'bets'] as const;
 export type FactGroup = (typeof FACT_GROUPS)[number];
 
 const GROUP_OF: Record<FactGroup, readonly string[]> = {
@@ -196,7 +196,7 @@ const GROUP_OF: Record<FactGroup, readonly string[]> = {
   field: ['topPlacement', 'planetsDestroyed', 'pickups', 'saves', 'intercepts', 'strayKills', 'anomalyShare', 'topAnomaly', 'blastShots', 'fusedShots', 'trickShotHits', 'armedShots', 'anomalyShotsPerKill', 'pinballSelfHits', 'pinballBumps', 'anomalyRoundLength', 'loopShare', 'loopCrossings', 'wallHits', 'planetsShattered', 'whiteHoleReturns'],
   rounds: ['todayPlayers', 'dailyChallenge', 'weekTrend', 'weekend', 'rounds', 'quickRound', 'selfHitRounds', 'noWinner', 'horizonShare', 'solarShare', 'teamShare', 'avgHumans', 'soloVsCpu', 'spectated', 'cpuWins', 'cpuLevels', 'planetsEffect', 'grazes'],
   extras: ['firstBlood', 'bounties', 'revenges', 'topBonus', 'bonusPoints', 'dominations', 'posthumous', 'shutdowns', 'lastToFirst', 'ownGoals'],
-  oracle: ['tipRound', 'tipShot', 'tipUnderdog', 'tipStands', 'betPaid', 'betStake', 'betWin', 'betLoss'],
+  bets: ['tipRound', 'tipShot', 'tipUnderdog', 'tipStands', 'betPaid', 'betStake', 'betWin', 'betLoss'],
 };
 
 const GROUP_BY_ID = new Map(FACT_GROUPS.flatMap((group) => GROUP_OF[group].map((id) => [id, group] as const)));

@@ -24,7 +24,7 @@ export interface NetGame {
  * for offline games: from this device only the display settings (lines, particles, menu and game sounds, language) carry over.
  * A `script` makes it a replay.
  */
-export function netMatch(game: NetGame, base: Settings, extra: Pick<MatchOptions, 'oracle' | 'script'> = {}): NetMatch | null {
+export function netMatch(game: NetGame, base: Settings, extra: Pick<MatchOptions, 'online' | 'script'> = {}): NetMatch | null {
   // A CPU seat plays the level the host gave it; the host's simulation runs it for everybody.
   const seats: Seat[] = Array.from({ length: MAX_PLAYERS }, (_, i) => (i < game.players.length ? (game.players[i].cpu ?? 'human') : 'off'));
   const settings: Settings = {

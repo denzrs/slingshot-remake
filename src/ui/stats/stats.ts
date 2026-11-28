@@ -290,7 +290,6 @@ function bettingView(b: StatsBetting): HTMLElement {
     null,
     figure(rate(b.roundRight, b.roundTips), t('stats.betting.round'), t('stats.betting.tips', { n: fmtInt(b.roundTips) })),
     figure(rate(b.shotRight, b.shotTips), t('stats.betting.shot'), t('stats.betting.tips', { n: fmtInt(b.shotTips) })),
-    figure(rate(b.underdogs, b.roundRight + b.shotRight), t('stats.betting.underdog')),
     figure(rate(b.stands, b.roundTips + b.shotTips), t('stats.betting.stands')),
     figure(rate(b.won, b.bets), t('stats.betting.paid'), t('stats.betting.bets', { n: fmtInt(b.bets) })),
     figure(b.bets ? fmtInt(Math.round(b.staked / b.bets)) : '–', t('stats.betting.stake'), t('stats.betting.stakeMax', { n: fmtInt(b.biggestStake) })),

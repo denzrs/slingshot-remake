@@ -53,14 +53,14 @@ describe('the lobby has its own state', () => {
     expect(loadLobbyPrefs('ws://x').rules).toMatchObject({ powerUps: false, powerUpKinds: defaultRoomRules().powerUpKinds, powerUpAmount: defaultRoomRules().powerUpAmount });
   });
 
-  it('plays without bets until the host switches them on, and remembers it', () => {
+  it('plays with bets until the host switches them off, and remembers it', () => {
     stored({});
-    expect(loadLobbyPrefs('ws://x').rules.betting).toBe(false);
-    stored({ 'slingshot.lobby.v1': { rules: { betting: true } } });
     expect(loadLobbyPrefs('ws://x').rules.betting).toBe(true);
-    // Anything but a plain "true" is no.
-    stored({ 'slingshot.lobby.v1': { rules: { betting: 'yes' } } });
+    stored({ 'slingshot.lobby.v1': { rules: { betting: false } } });
     expect(loadLobbyPrefs('ws://x').rules.betting).toBe(false);
+    // Anything but a plain yes or no is the standard.
+    stored({ 'slingshot.lobby.v1': { rules: { betting: 'no' } } });
+    expect(loadLobbyPrefs('ws://x').rules.betting).toBe(true);
   });
 
   it('puts a value no slider has back to the standard one', () => {

@@ -1792,7 +1792,7 @@ fn spectators_get_the_hosts_state_but_cannot_send_anything_but_bets() {
     rooms.handle(3, &json!({"type":"input","input":{"kind":"fire"}}));
     assert_eq!(
         take_type(&drain_json(&mut fan_rx), "error")["message"],
-        "Spectators can only bet"
+        "Spectators can only bet and cheer"
     );
     assert!(drain_json(&mut host_rx).is_empty());
 
@@ -1804,6 +1804,19 @@ fn spectators_get_the_hosts_state_but_cannot_send_anything_but_bets() {
     assert_eq!(input["from"], 0);
     assert_eq!(input["spectator"], true);
     assert_eq!(input["input"]["stake"], 50);
+
+    // Rooting for a ship and cheering it on go through too, from the UFOs of the stands.
+    rooms.handle(3, &json!({"type":"input","input":{"kind":"fan","pick":1}}));
+    let input = take_type(&drain_json(&mut host_rx), "input");
+    assert_eq!(
+        (input["spectator"].clone(), input["input"]["kind"].clone()),
+        (json!(true), json!("fan"))
+    );
+    rooms.handle(3, &json!({"type":"input","input":{"kind":"cheer"}}));
+    assert_eq!(
+        take_type(&drain_json(&mut host_rx), "input")["input"]["kind"],
+        "cheer"
+    );
 
     // Seat-bound actions are refused: a spectator is no host and no player.
     for message in [

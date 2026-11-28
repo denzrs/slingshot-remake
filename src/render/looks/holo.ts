@@ -32,6 +32,8 @@ import {
 import { drawHoloFall, drawHoloFlare } from './falls';
 import { drawHoloBlast, drawHoloPackets, drawHoloShards, drawHoloShipScanned } from './holo-events';
 import { drawHoloGate } from './holo-gate';
+import { drawHoloArrowPod, drawHoloPodCheer } from './escape-pod';
+import { drawHoloSaucer } from './spectator-probes';
 import { drawHoloWhiteCore, drawHoloWhiteJump } from './holo-white';
 import { instabilityPulse } from './instability';
 import { holoBegin, holoPost, holoSky, paintHoloBackdrop, paintHoloBorder, startRipple } from './holo-field';
@@ -294,6 +296,9 @@ const holoParts: Partial<LookPainter> = {
     ctx.restore();
   },
   ship: drawHoloShipScanned,
+  escapePod: drawHoloArrowPod,
+  spectatorPod: drawHoloSaucer,
+  podCheer: drawHoloPodCheer,
   selection: drawHoloSelection,
   shotClock: (ctx, x, y, color, clock) => {
     const end = shotClockEnd(clock);
@@ -306,19 +311,19 @@ const holoParts: Partial<LookPainter> = {
     ctx.fillStyle = ctx.strokeStyle;
     ctx.fillRect(x + Math.cos(end) * 30 - 2, y + Math.sin(end) * 30 - 2, 4, 4);
   },
-  locatePing: (ctx, x, y, color, age) => {
+  locatePing: (ctx, x, y, color, age, scale = 1) => {
     const fade = Math.min(1, (LOCATE_PING.DURATION - age) / 0.5);
     ctx.save();
     ctx.translate(x, y);
     ctx.globalCompositeOperation = 'lighter';
     for (let k = 0; k < LOCATE_PING.RINGS; k++) {
       const t = (age / LOCATE_PING.PERIOD + k / LOCATE_PING.RINGS) % 1;
-      const radius = LOCATE_PING.RADIUS * (1 - t) + 14;
+      const radius = (LOCATE_PING.RADIUS * (1 - t) + 14) * scale;
       ctx.globalAlpha = fade * t * 0.85;
       ctx.strokeStyle = color;
       // Hexagons instead of circles, dashed as they close in, turning a little.
       holoPolygon(ctx, radius, 6, age * 0.6 + k);
-      ctx.setLineDash(t > 0.3 ? [5, 4] : []);
+      ctx.setLineDash(t > 0.3 ? [5 * scale, 4 * scale] : []);
       ctx.lineWidth = 1.2;
       ctx.stroke();
       ctx.setLineDash([]);

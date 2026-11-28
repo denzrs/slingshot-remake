@@ -83,8 +83,11 @@ export const RULES = {
   suddenDeath: flag(true, CLASSIC_FAMILY),
   /** Mayhem: every round has twists of its own, laid over these rules. 0 = off, otherwise the chaos strength (1 mild, 2 wild, 3 insane). */
   mayhem: numbers(0, MAYHEM.LEVELS),
-  /** Online: eliminated players may bet points of the match on who wins the round (a rule of the room). */
-  betting: flag(false),
+  /**
+   * Online: bets („Wetten“, a rule of the room). Shot-down players may bet points of the match on who wins the round;
+   * the stands bet with a bankroll of their own. Escape pods, rooting, cheers and calls on the next shot stay on without it.
+   */
+  betting: flag(true),
   /** Online: only the people who play may write in the room's chat; spectators read along (a rule of the room). */
   chatPlayersOnly: flag(false),
   /** Pickups float on the field, and a shot that flies past one takes it (preview, teleport or splitter). */

@@ -11,9 +11,9 @@ export interface CrowdSeat {
 }
 
 /**
- * The people watching an online room, and what each has to bet with. The bets themselves are the stands'
- * oracle's (`Match.stands`), which plays the same tipping game the shot-down players play; this only keeps
- * who is there and their bankrolls. The host keeps it, and every screen mirrors it.
+ * The people watching an online room, and what each has to bet with. The bets themselves are in the stands'
+ * book (`Match.stands`), which works like the shot-down players'; this only keeps who is there and their
+ * bankrolls. The host keeps it, and every screen mirrors it.
  */
 export class Crowd {
   seats: CrowdSeat[] = [];

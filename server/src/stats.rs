@@ -118,7 +118,7 @@ const SCHEMA: [&str; 16] = [
          points   INTEGER NOT NULL,
          PRIMARY KEY (match_id, round, n)
      )",
-    // One row per judged tip of the oracle game (the shot-down players' and the stands'), no names: how it came out.
+    // One row per settled bet or call on a shot (the shot-down players' and the stands'), no names: how it came out.
     "CREATE TABLE IF NOT EXISTS stat_tips (
          match_id TEXT    NOT NULL,
          round    INTEGER NOT NULL,
@@ -344,7 +344,7 @@ pub struct Game {
     pub local: bool,
 }
 
-/// What the oracle's tips and bets came to, all kept games together.
+/// What the tips and bets came to, all kept games together.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Betting {
     pub shot_tips: i64,

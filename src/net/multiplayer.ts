@@ -443,10 +443,11 @@ export class MultiplayerSession {
   input(input: ClientInput): void {
     const match = this.match;
     if (!match) return;
-    // The stands may bet and nothing else — the same tipping game the shot-down play. Remember the tip on this
-    // screen at once; the host judges it from its own copy.
+    // The stands may bet, root for a ship and cheer it on, and nothing else, as the shot-down do. Remember a bet on
+    // this screen at once (the host settles it from its own copy); the host's state brings the UFO and the cheer.
     if (this.isSpectator) {
-      if (input.kind === 'bet' && match.placeBet(this.you.spectatorId ?? -1, input.pick, !!input.round, input.stake ?? 0, true)) this.send({ type: 'input', input });
+      if (input.kind === 'bet' && match.placeBet(this.you.spectatorId ?? -1, input.pick, input.stake ?? 0, true)) this.send({ type: 'input', input });
+      else if (input.kind === 'fan' || input.kind === 'cheer') this.send({ type: 'input', input });
       return;
     }
     if (match.pause) return;
@@ -463,8 +464,10 @@ export class MultiplayerSession {
       return;
     }
     if (input.kind === 'bet') {
-      // Remember the tip on this screen at once; the host judges it from its own copy.
-      if (!match.placeBet(id, input.pick, !!input.round, input.stake ?? 0)) return;
+      // Remember the bet on this screen at once; the host settles it from its own copy.
+      if (!match.placeBet(id, input.pick, input.stake ?? 0)) return;
+    } else if (input.kind === 'fan' || input.kind === 'cheer' || input.kind === 'call') {
+      // The fans are the host's: its state brings the pod over and the cheer back, a moment later.
     } else {
       this.flushAim();
     }
@@ -578,7 +581,9 @@ export class MultiplayerSession {
       case 'input':
         if (!this.match || !this.isHost) break;
         if (message.spectator) {
-          if (message.input.kind === 'bet') this.match.placeBet(message.from, message.input.pick, !!message.input.round, message.input.stake ?? 0, true);
+          if (message.input.kind === 'bet') this.match.placeBet(message.from, message.input.pick, message.input.stake ?? 0, true);
+          else if (message.input.kind === 'fan') this.match.follow(message.from, message.input.pick, true);
+          else if (message.input.kind === 'cheer') this.match.cheerOn(message.from, true);
         } else this.applyInput(this.match, message.from, message.input);
         break;
       case 'keyframe':
@@ -676,7 +681,7 @@ export class MultiplayerSession {
   }
 
   private startMatch(message: GameStart): void {
-    const match = netMatch({ ...message, players: message.players.map((p) => ({ cpu: p.cpu, team: p.team, name: p.name, avatar: p.avatar })) }, this.hooks.settings(), { oracle: true });
+    const match = netMatch({ ...message, players: message.players.map((p) => ({ cpu: p.cpu, team: p.team, name: p.name, avatar: p.avatar })) }, this.hooks.settings(), { online: true });
     if (!match) return;
     // In the stands there is no ship to be: the match is seen from nowhere in particular.
     match.viewer = this.isSpectator ? null : this.you.playerId;
@@ -739,7 +744,10 @@ export class MultiplayerSession {
     }
     else if (input.kind === 'power') match.usePowerUp(id);
     else if (input.kind === 'cancel') match.cancelPlacement(id);
-    else if (input.kind === 'bet') match.placeBet(id, input.pick, !!input.round, input.stake ?? 0);
+    else if (input.kind === 'bet') match.placeBet(id, input.pick, input.stake ?? 0);
+    else if (input.kind === 'fan') match.follow(id, input.pick);
+    else if (input.kind === 'cheer') match.cheerOn(id);
+    else if (input.kind === 'call') match.callShot(id, input.call);
     else if (input.kind === 'skipRound') match.requestSkipRound(id);
     else if (input.kind === 'skipVote') match.voteSkipRound(id, input.yes);
     else match.voteSkip(id);

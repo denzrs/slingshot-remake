@@ -33,8 +33,14 @@ export type ClientInput =
   | { kind: 'skipRound' }
   /** An answer to the open vote to skip the round. */
   | { kind: 'skipVote'; yes: boolean }
-  /** An eliminated player's oracle tip: a ship's index, -1 for nobody, or 1/0 for hit/miss. With `round` it names the winner of the round instead, and `stake` bets that many of the player's points on it. A spectator's only input: a bet on the round, with a stake. */
-  | { kind: 'bet'; pick: number; round?: boolean; stake?: number };
+  /** A shot-down player's bet on who wins the round: a ship's index, or -1 for a draw, and `stake` points on it. A spectator's only input. */
+  | { kind: 'bet'; pick: number; stake: number }
+  /** A shot-down player roots for a ship still in the round: their escape pod flies over to it. For fun, no points. */
+  | { kind: 'fan'; pick: number }
+  /** A shot-down player cheers on the ship they root for. */
+  | { kind: 'cheer' }
+  /** A shot-down player calls the next shot of the ship they root for: it hits an enemy, hits nobody, or is hit itself. */
+  | { kind: 'call'; call: 'hit' | 'miss' | 'hitBy' };
 
 type ClientMessage =
   | { type: 'lobby' }
@@ -182,7 +188,7 @@ export interface StatsFavorite {
   games: number;
 }
 
-/** What the oracle's tips and bets came to on the relay. */
+/** What the bets (and, in older games, the tips on shots) came to on the relay. */
 export interface StatsBetting {
   shotTips: number;
   shotRight: number;
@@ -418,7 +424,7 @@ export type ServerMessage =
  * by hand: a test notices when the wire changed (the messages, the state patches, the rules) and `npm run protocol` raises it here, in
  * `server/src/protocol.rs` and in `server/protocol-contract.json`.
  */
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 14;
 
 /** The address to open a socket on, with the protocol this client speaks added. */
 export function withProtocol(url: string): string {

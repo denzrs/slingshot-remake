@@ -72,12 +72,34 @@ export interface LookPainter {
 
   /** A ship in its own frame: centred, nose along +x. `thrust` is 0 (idle) to 1 (aiming); `phase` keeps ships from flickering in step. */
   ship(ctx: CanvasRenderingContext2D, color: string, time: number, thrust: number, phase: number): void;
+  /**
+   * The escape pod a shot-down player flies in, centred on it but not turned: the painter turns it as its design
+   * flies (nose ahead, or keeping its own spin and firing boosters), from how it is flying (`flight`).
+   */
+  escapePod(ctx: CanvasRenderingContext2D, color: string, time: number, flight: PodFlight): void;
+  /**
+   * A spectator's probe: like a pod, but a model of its own, so the stands are told apart from the shot-down at a
+   * glance, smaller and quieter (there can be many of them). Centred on it, not turned.
+   */
+  spectatorPod(ctx: CanvasRenderingContext2D, color: string, time: number, flight: PodFlight): void;
+  /** The streak a pod leaves while it is flung off its wreck: where it was, newest last, each with how much is left of it (`fade`, 1 → 0). Field units. */
+  podLaunch(ctx: CanvasRenderingContext2D, path: readonly { x: number; y: number; fade: number }[], color: string): void;
+  /**
+   * A fan's call on the next shot of their ship, as a badge over their pod at (x, y): `label` while it is `open`, then
+   * marked right or wrong, fading out as `fade` runs 0 → 1. Upright on the screen; field units.
+   */
+  podCall(ctx: CanvasRenderingContext2D, x: number, y: number, label: string, state: 'open' | 'right' | 'wrong', fade: number, color: string): void;
+  /**
+   * A pod's cheer (the ship it circles hits, or its fan cheers): `t` runs 0 → 1, `fans` is how many pods circle that
+   * ship (more, bigger), `epic` how many calls its fan got right this match (0 → `FANS.EPIC_MAX`: more epic).
+   */
+  podCheer(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, t: number, fans: number, epic?: number): void;
   /** The mark on the ship whose turn it is; the frame is the ship's middle. */
   selection(ctx: CanvasRenderingContext2D, color: string, time: number): void;
   /** The shot clock: an arc round the ship at (x, y) that runs down; `clock` is the seconds left. */
   shotClock(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, clock: number): void;
-  /** Rings that close in on a ship so the eye finds it when a round begins, `age` seconds into the ping. */
-  locatePing(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, age: number): void;
+  /** Rings that close in on a ship so the eye finds it when a round begins, `age` seconds into the ping; `scale` makes them smaller (your own escape pod's). */
+  locatePing(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, age: number, scale?: number): void;
   /** Sudden death: rings that keep closing in on a ship, wider the harder it pulls its enemies' shots (`strength` 0 → 1, out to `reach`). */
   pull(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, time: number, strength: number, reach: number): void;
   /** The aim: a line out from the ship with an arrowhead. `style` is how it is shown: the aiming ship's own, another's locked in, or a CPU's. */
@@ -143,6 +165,20 @@ export interface LookPainter {
   sky(ctx: CanvasRenderingContext2D, frame: FrameInfo): void;
   /** Painted every frame over the finished field, under the HUD: whole-frame light (device pixels, no transform). */
   post(ctx: CanvasRenderingContext2D, frame: FrameInfo): void;
+}
+
+/** How an escape pod is flying, for its look to draw it (`LookPainter.escapePod`). */
+export interface PodFlight {
+  /** The way its nose points, an angle on the field (radians, 0 along +x): the way it flies, once it has turned there. */
+  heading: number;
+  /** How hard its engines push, 0 (coasting) → 1 (full); 0 too once its bet is lost and it has gone dark. */
+  thrust: number;
+  /** Which way the engines push it, an angle on the field: boosters fire the other way. */
+  push: number;
+  /** Keeps the pods' beacons and flames from flickering in step. */
+  phase: number;
+  /** False once the pod's bet is lost: its light is out. */
+  beacon: boolean;
 }
 
 /** The two masks of Dark Matter, in alpha, each the size of the field and its margin (`DARK_MARGIN` on every side). */

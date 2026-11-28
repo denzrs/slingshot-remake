@@ -1,7 +1,6 @@
 import { COLORS } from '../../sim/config';
 import { teamColor } from '../../data/palette';
 import { teamTitle, type Match } from '../../game';
-import { oracleAwards } from '../../game/oracle';
 import { fmtInt, t, tn } from '../../platform/i18n';
 import { roundTitle } from '../../game/mayhem';
 import { awardLabel, awardValue, awardWho, matchMoments } from '../../game/scorecard';
@@ -75,26 +74,17 @@ export function gameOverScreen(app: App, match: Match, view: ResultPage = 'resul
         if (award.trail && award.trail.length >= 4) row.append(matchShotTrail(award, who.color, `${awardLabel(award.kind)} · ${who.name}`));
         return row;
       });
-      // The stands play the same game: whoever read the rounds best.
+      // What the bets came to: the stands' bankrolls, and the shot-down players' points of the match.
+      const net = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : '±'}${fmtInt(Math.abs(n))}`;
       const seers = match.stands.ranking();
       if (seers.length) {
-        const rows = seers.slice(0, 10).map(({ player, score }, i) => entry(i + 1, match.crowd.seat(player)?.name ?? '?', COLORS.bone, `${fmtInt(score.points)}  ·  ${score.right}/${score.total}`));
+        const rows = seers.slice(0, 10).map(({ player, score }, i) => entry(i + 1, match.crowd.seat(player)?.name ?? '?', COLORS.bone, `${net(score.net)}  ·  ${score.won}/${score.bets}`));
         lists.push(section(t('stands.standings'), h('ol.ranking.ranking--small', null, ...rows)));
       }
-      // The eliminated players' side standings.
-      const tipsters = match.oracle.ranking();
-      if (tipsters.length) {
-        const rows = tipsters.map(({ player, score }, i) => entry(i + 1, match.players[player].name, match.players[player].color, `${fmtInt(score.points)}  ·  ${score.right}/${score.total}`));
-        lists.push(section(t('oracle.match'), h('ol.ranking.ranking--small', null, ...rows)));
-        // Their honours: the prophet, the seer, the lone wolf …
-        const honours = oracleAwards(match.oracle.scores, 'match').flatMap((award) => {
-          const who = match.players[award.player];
-          if (!who) return [];
-          const name = h('span.highlights__who', null, who.name);
-          name.style.color = who.color;
-          return [h('li', null, h('span.highlights__label', null, t(`oracle.award.${award.kind}`)), name, h('span.highlights__value', null, t(`oracle.awardValue.${award.kind}`, { n: award.value })))];
-        });
-        if (honours.length) lists.push(section(t('oracle.awards'), h('ul.highlights', null, ...honours)));
+      const bettors = match.bets.ranking();
+      if (bettors.length) {
+        const rows = bettors.map(({ player, score }, i) => entry(i + 1, match.players[player].name, match.players[player].color, `${net(score.net)}  ·  ${score.won}/${score.bets}`));
+        lists.push(section(t('bets.match'), h('ol.ranking.ranking--small', null, ...rows)));
       }
       const standings = h(`section.result-standing${winner ? '.result-standing--decided' : ''}`, null,
         h('h3.result-standing__winner', null, headline),

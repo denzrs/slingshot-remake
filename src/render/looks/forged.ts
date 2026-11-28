@@ -1,5 +1,6 @@
 import { drawForgedDark, drawForgedDarkAlert } from './forged-dark';
 import { drawForgedGate } from './forged-gate';
+import { drawForgedPod, drawForgedPodCheer, drawForgedUfo } from './forged-pods';
 import { drawForgedWhiteCore, drawForgedWhiteJump, warmEruptions } from './forged-white';
 import { COLORS, PHYSICS } from '../../sim/config';
 import { rgba } from '../color';
@@ -424,6 +425,9 @@ export const forged = engraved('forged', forgedStyles, {
   liveTrail: drawForgedLiveTrail,
   plasmaShot: drawForgedPlasmaShot,
   ship: drawForgedShip,
+  escapePod: drawForgedPod,
+  spectatorPod: drawForgedUfo,
+  podCheer: drawForgedPodCheer,
   target: drawForgedTarget,
   pickup: (ctx, kind, color, time, pulse) => drawLightPickup(ctx, kind, color, time, pulse, forgedCoin(), COIN_SPAN),
   effects: { ...lightParts.effects!, blast: drawBlast, sparks: drawShrapnel },

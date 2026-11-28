@@ -1,6 +1,8 @@
 import { COLORS } from '../../sim/config';
 import { teamColor } from '../../data/palette';
 import { ChallengeMatch, ShotReplay, teamTitle, type Match } from '../../game';
+import { oddsOf, PICK_DRAW } from '../../game/bets';
+import { oddsLabel } from '../../render/bets';
 import { fmtInt, t, tn } from '../../platform/i18n';
 import { h, type MenuItem, type Screen } from '../menu/menu';
 import { menuPage } from '../menu/menu-page';
@@ -11,6 +13,9 @@ import { marksLegend } from './mark-help';
 import { rulesBadges } from './rules-badges';
 import { openSettings } from './settings';
 import { prepareModeScreen } from './setup';
+
+/** Points won or lost, with their sign: +1.800, −900, ±0. */
+const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : '±'}${fmtInt(Math.abs(n))}`;
 
 const skipAnswerItems = (app: App, section?: string): MenuItem[] => [
   { kind: 'action', ...(section ? { section } : {}), label: t('skip.yes'), primary: true, run: () => (app.answerSkip(true), app.resume()) },
@@ -129,29 +134,23 @@ function pauseStanding(match: Match, online: boolean): Node[] {
   } else {
     nodes.push(h('ol.ranking', null, ...match.ranking().map((p, i) => row(i + 1, p.name, p.color, p.score))));
   }
-  if (online && match.oracleEnabled && match.canSeeOracle) {
-    const oracle = match.betOracle;
-    const ranking = oracle.ranking().slice(0, 3);
-    nodes.push(h('p.ranking-label', null, t('pause.oracleTitle')));
+  if (online && match.bettingOn && match.canSeeBets) {
+    const book = match.betBook;
+    const ranking = book.ranking().slice(0, 3);
+    nodes.push(h('p.ranking-label', null, t('pause.betsTitle')));
     if (ranking.length) {
-      nodes.push(h('ol.ranking.ranking--small.pause-oracle-ranking', null, ...ranking.map(({ player, score }, i) => {
+      nodes.push(h('ol.ranking.ranking--small.pause-bets-ranking', null, ...ranking.map(({ player, score }, i) => {
         const person = match.tipster(player);
-        return row(i + 1, person?.name ?? '?', person?.color ?? COLORS.bone, `${fmtInt(score.points)} · ${score.right}/${score.total}`);
+        return row(i + 1, person?.name ?? '?', person?.color ?? COLORS.bone, `${signed(score.net)} · ${score.won}/${score.bets}`);
       })));
     } else {
-      nodes.push(h('p.pause-standing__meta', null, t('pause.oracleEmpty')));
+      nodes.push(h('p.pause-standing__meta', null, t('pause.betsEmpty')));
     }
-    if (match.bettingOn) {
-      const settled = oracle.roundResult?.round === match.round ? oracle.roundResult.tips : null;
-      const staked = settled
-        ? settled.reduce((sum, tip) => sum + (tip.stake ?? 0), 0)
-        : oracle.pot;
-      const returned = settled?.reduce((sum, tip) => sum + (tip.payout ?? 0), 0) ?? 0;
-      const bets = settled ? settled.filter((tip) => !!tip.stake).length : oracle.stakes.size;
-      const betSummary = settled
-        ? t('pause.oracleBetsSettled', { stake: fmtInt(staked), returned: fmtInt(returned) })
-        : tn('pause.oracleBets', bets, { pot: fmtInt(staked) });
-      nodes.push(h('p.pause-standing__meta.pause-oracle-bets', null, betSummary));
+    // Your own bet on this round, while it is open.
+    const mine = match.bettor === null ? undefined : book.placed.get(match.bettor);
+    if (mine) {
+      const name = mine.pick === PICK_DRAW ? t('bets.draw') : match.players[mine.pick]?.name ?? '?';
+      nodes.push(h('p.pause-standing__meta.pause-bets-open', null, t('pause.betsOpen', { stake: fmtInt(mine.stake), name, times: oddsLabel(oddsOf(mine)) })));
     }
   }
   const chart = scoreChart(match);
