@@ -30,6 +30,7 @@ Hosting, TLS, the relay's environment variables and how online play works are co
 
 - [docs/game.md](docs/game.md) – controls, game modes, setup, CPU opponents, rules and scoring
 - [docs/multiplayer.md](docs/multiplayer.md) – playing online (rooms, bets and fans) and running the relay
+- [docs/bets.md](docs/bets.md) – the round bet, escape pods, fans and calls in detail, with their constants
 - [docs/architecture.md](docs/architecture.md) – how `src/` is laid out and which folder may import which
 - [benchmarks/README.md](benchmarks/README.md) – the benchmarks
 
