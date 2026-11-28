@@ -105,7 +105,10 @@ impl RoomManager {
         let Some(input) = self.accept(conn, input) else {
             return;
         };
-        if !matches!(input.get("kind").and_then(Value::as_str), Some("bet" | "fan" | "cheer")) {
+        if !matches!(
+            input.get("kind").and_then(Value::as_str),
+            Some("bet" | "fan" | "cheer")
+        ) {
             self.error(conn, "Spectators can only bet and cheer");
             return;
         }
