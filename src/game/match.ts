@@ -1,5 +1,5 @@
 import { interceptPoints } from '../sim/scoring';
-import { AIM, ANOMALY, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, ORACLE, PHYSICS, SCORING, TRAIL_FADE } from '../sim/config';
+import { AIM, ANOMALY, COLORS, FIELD, GRACE, KILLCAM, MAX_TRAILS_PER_PLAYER, MAYHEM, BETS, FANS, PHYSICS, SCORING, TRAIL_FADE } from '../sim/config';
 import { seatColor, teamColor } from '../data/palette';
 import { t } from '../platform/i18n';
 import { applyTwists, MayhemDeck, setsPlanets, type MayhemRound } from './mayhem';
@@ -17,7 +17,8 @@ import { NEAR_MISS_GAP, type BanterCue } from './banter';
 import { type ReplayTurn, type SeatChange, type SeatChangeKind, type SeatChangeWhen } from './replay';
 import { Crowd } from './crowd';
 import { Killcam } from './killcam';
-import { Oracle, stakeOptions, type OracleKind } from './oracle';
+import { BetBook, stakeOptions, type SettledBet, type StakeOption } from './bets';
+import { FanClub, type CallKind } from './fans';
 import { PowerUpField } from './powerup-field';
 import { DARK_FOUND_RADIUS, DarkMatter } from './dark-matter';
 import type { Experiment } from './experiments';
@@ -74,14 +75,24 @@ export abstract class Match {
   matchStats: StatBook = newStatBook();
   /** Everybody's score at the start of the match and after every round — for the chart on the final screen. */
   scoreHistory: number[][] = [];
-  /** The tipping game for eliminated players (online only). */
-  readonly oracle = new Oracle();
+  /** The shot-down players' bets on who wins the round, with points of the match (online only). */
+  readonly bets = new BetBook();
   /**
-   * The stands: people watching an online room play the same tipping game with an oracle of their own (so the pots never mix),
-   * and — since they have no score in the match — a bankroll each, kept in `crowd`.
+   * The stands: people watching an online room bet on the round too, in a book of their own, and — since they have
+   * no score in the match — with a bankroll each, kept in `crowd`.
    */
-  readonly stands = new Oracle(true);
+  readonly stands = new BetBook(true);
   readonly crowd = new Crowd();
+  /** Online, the shot-down root for a ship from their escape pods and cheer it on: for fun, it counts for nothing. */
+  readonly fans = new FanClub();
+  /** The stands root for ships too, from UFOs of their own, in a club of their own (by their place in the stands). */
+  readonly standsFans = new FanClub();
+  /** How many calls on the next shot each player got right this match: their cheers grow more epic with it. */
+  callsRight: number[] = [];
+  /** `callsRight` as the round began, so a skipped round takes its calls back with its points. */
+  private callsRightAtStart: number[] = [];
+  /** Match clock when the flight in the air was launched: the kills since then are its own (for the fans' calls). */
+  private flightLaunchedAt = 0;
   /** Match clock when the current round began, so kills can be timed from the start of the round. */
   protected roundStartedAt = 0;
   /** How long the current round has run, in seconds of match clock. */
@@ -121,8 +132,6 @@ export abstract class Match {
   private worldRng: Rng;
   /** Phase time when the current volley finished, replicated so online guests keep the same post-flight delay. */
   protected flightDoneAt: number | null = null;
-  /** What the volley in the air has destroyed so far — the oracle's verdict is read from it. */
-  private oracleKills: { killer: number; victim: number; self: boolean; friendly: boolean }[] = [];
   /** Who shot whom, for the extras a kill pays and the marks on the cards. */
   private readonly ledger = new KillLedger({
     players: () => this.players,
@@ -367,19 +376,14 @@ export abstract class Match {
     return this.spectatorId !== null;
   }
 
-  /** The oracle this screen plays in: the stands' for a spectator, else the shot-down players'. */
-  get betOracle(): Oracle {
-    return this.spectating ? this.stands : this.oracle;
+  /** The bets this screen plays in: the stands' for a spectator, else the shot-down players'. */
+  get betBook(): BetBook {
+    return this.spectating ? this.stands : this.bets;
   }
 
-  /** Who this screen tips as: its place in the stands, or its ship; null in hot-seat. */
+  /** Who this screen bets as: its place in the stands, or its ship; null in hot-seat. */
   get bettor(): number | null {
     return this.spectating ? this.spectatorId : this.viewer;
-  }
-
-  /** Whether stakes are on: the shot-down need the room's rule for it, the stands bet with their own points anyway. */
-  get bettingOn(): boolean {
-    return this.spectating || this.settings.betting;
   }
 
   /** What a bettor has to stake: a player's score in the match, or a spectator's bankroll. */
@@ -393,7 +397,19 @@ export abstract class Match {
     else if (!crowd && this.players[id]) this.players[id].score += amount;
   }
 
-  /** Who a tip came from, as a name and a colour: a ship, or somebody in the stands. */
+  /** A seat's place in the match: its team's in a team match, its own otherwise (1 is the lead; ties share a place). */
+  placeOf(id: number): number {
+    const p = this.players[id];
+    if (!p) return 0;
+    if (this.teamMode && p.team !== null) {
+      const teams = this.teamRanking();
+      const own = teams.find((entry) => entry.team === p.team)?.score ?? 0;
+      return 1 + teams.filter((entry) => entry.score > own).length;
+    }
+    return 1 + this.players.filter((other) => !other.left && other.id !== id && other.score > p.score).length;
+  }
+
+  /** Who a bet came from, as a name and a colour: a ship, or somebody in the stands. */
   tipster(id: number): { name: string; color: string } | undefined {
     if (!this.spectating) return this.players[id];
     const seat = this.crowd.seat(id);
@@ -405,120 +421,230 @@ export abstract class Match {
     return this.players[id]?.team ?? id;
   }
 
-  /** Whether the person at this screen may tip in the oracle: shot down, or in the stands. */
+  /** Whether the shot-down (and the stands) may bet on who wins the round: online, with the room's rule „Wetten“ on. */
+  get bettingOn(): boolean {
+    return !!this.options.online && this.settings.betting;
+  }
+
+  /** Whether the shot-down fly escape pods and may root for a ship: online, always (a bet only adds points to it). */
+  get fansOn(): boolean {
+    return !!this.options.online && !this.attract;
+  }
+
+  /** Whether the person at this screen is shot down and in a pod, rooting for a ship of their choice. */
+  get inPod(): boolean {
+    if (!this.fansOn || this.spectating || this.viewer === null) return false;
+    const me = this.players[this.viewer];
+    return !!me && shotDown(me);
+  }
+
+  /** Whether the person at this screen may root for a ship: shot down (a pod), or watching from the stands (a UFO). */
+  get rooting(): boolean {
+    if (this.inPod) return true;
+    return this.fansOn && this.spectating && !!this.crowd.seat(this.spectatorId)?.present;
+  }
+
+  /** The fans this screen belongs with: the stands' when it watches, the shot-down players' otherwise. */
+  get fanBook(): FanClub {
+    return this.spectating ? this.standsFans : this.fans;
+  }
+
+  /** The ships a fan may root for right now: the ones still in the round. */
+  get fanChoices(): number[] {
+    return this.phase === 'aiming' || this.phase === 'flying' ? this.alive.map((p) => p.id) : [];
+  }
+
+  /**
+   * `id`, shot down, roots for `pick` from now on: their pod flies over to it. Not once they have bet on the round:
+   * a bet keeps its bettor with the ship bet on (and a lost one has taken the pod with it).
+   */
+  follow(id: number, pick: number, crowd = this.spectating): boolean {
+    if (!this.fansOn || !this.fanChoices.includes(pick)) return false;
+    if (crowd) {
+      if (!this.crowd.seat(id)?.present || this.stands.betOf(id) || this.podLost(id, true)) return false;
+      this.standsFans.follow(id, pick);
+      return true;
+    }
+    const p = this.players[id];
+    if (!p || !shotDown(p)) return false;
+    if (this.bets.betOf(id) || this.podLost(id, false)) return false;
+    this.fans.follow(id, pick);
+    return true;
+  }
+
+  /** `id` cheers on the side they root for, while it is in the round. Whether it counted (a fan cheers once in a while). */
+  cheerOn(id: number, crowd = this.spectating): boolean {
+    const club = crowd ? this.standsFans : this.fans;
+    const fan = club.of(id);
+    if (!this.fansOn || !fan || this.podLost(id, crowd)) return false;
+    return club.cheer(id, this.clock);
+  }
+
+  /** Whether the side `id` rooted for is out of the round: their pod went up with its last ship, and they are done rooting for this round. */
+  podLost(id: number, crowd = this.spectating): boolean {
+    const fan = (crowd ? this.standsFans : this.fans).of(id);
+    return !!fan && !this.players.some((p) => p.alive && this.sideOf(p.id) === this.sideOf(fan.pick));
+  }
+
+  /**
+   * Whether `id` may call the next shot of the ship they root for: it is aiming that shot right now (its turn, or a
+   * salvo being aimed), and their pod is still about. A call may be changed until the shot flies.
+   */
+  canCall(id: number): boolean {
+    const fan = this.fans.of(id);
+    // The stands root and cheer, but do not call: their places are not seats (and a screen in the stands asks for none).
+    if (!this.fansOn || this.spectating || !fan || this.phase !== 'aiming' || this.podLost(id, false)) return false;
+    const p = this.players[id];
+    // The ship's next shot is the one being aimed: in a salvo every ship's, otherwise the ship whose turn it is —
+    // a person's or a CPU's alike (not `canAim`, which is only for the person at the controls).
+    const aimingIt = this.salvo || this.current === fan.pick;
+    return !!p && shotDown(p) && !!this.players[fan.pick]?.alive && !this.revealing && !this.replaying && aimingIt;
+  }
+
+  /** `id` calls the next shot of their ship: it hits an enemy, hits nobody, or is hit itself. Whether it was taken. */
+  callShot(id: number, kind: CallKind): boolean {
+    if (!this.canCall(id) || !['hit', 'miss', 'hitBy'].includes(kind)) return false;
+    this.fans.call(id, kind);
+    return true;
+  }
+
+  /**
+   * The flight is over: the calls on its shots come out. A ship that fired and destroyed an enemy hit; one whose
+   * shots destroyed nothing missed; one that was destroyed was hit. A right call on a ship bet on changes the bet's
+   * odds (or insures it), a wrong one takes a little off them; without a bet a right call pays a few points. Before
+   * the bets on fallen sides are settled, so an insured one is lost only in part. Each call that came out goes to the
+   * statistics as a tip on a shot (`TipReport`, kind `shot`), with or without bets in the room.
+   */
+  private settleCalls(owners: readonly number[]): void {
+    const fired = new Set(owners);
+    const kills = this.killFeed.filter((k) => k.at >= this.flightLaunchedAt);
+    for (const [player, fan] of this.fans.all) {
+      const call = fan.call;
+      if (!call || call.state !== 'open') continue;
+      if (!fired.has(fan.pick)) {
+        fan.call = undefined;
+        continue;
+      }
+      const right =
+        call.kind === 'hit' ? kills.some((k) => k.killer === fan.pick && !k.self && !k.friendly)
+        : call.kind === 'miss' ? !kills.some((k) => k.killer === fan.pick)
+        : kills.some((k) => k.victim === fan.pick);
+      call.state = right ? 'right' : 'wrong';
+      call.at = this.clock;
+      if (right) this.callsRight[player] = (this.callsRight[player] ?? 0) + 1;
+      // For the statistics, a call is a tip on a shot: only whether it was right (its points are no bet's winnings).
+      this.bets.judged.push({ kind: 'shot', right, stake: 0, payout: 0, underdog: false, stands: false });
+      if (this.bets.placed.has(player)) {
+        const bonus = !right ? FANS.CALL_WRONG : call.kind === 'hit' ? FANS.CALL_HIT : call.kind === 'miss' ? FANS.CALL_MISS : 0;
+        this.bets.adjust(player, bonus, right && call.kind === 'hitBy');
+      } else if (right) this.payInto(player, FANS.CALL_POINTS[call.kind], false);
+    }
+  }
+
+  /** How epic `player`'s cheer is: one step for every call they got right this match, up to `FANS.EPIC_MAX` (the stands make no calls). */
+  cheerLevel(player: number): number {
+    return Math.min(FANS.EPIC_MAX, this.callsRight[player] ?? 0);
+  }
+
+  /** How many fans root for a side (a ship, or its team) right now: the shot-down and the stands. */
+  fansOf(side: number): number {
+    let n = 0;
+    for (const club of [this.fans, this.standsFans]) for (const fan of club.all.values()) if (fan.pick >= 0 && this.sideOf(fan.pick) === side) n++;
+    return n;
+  }
+
+  /** Whether the person at this screen plays the bets: shot down, or in the stands. */
   get ghost(): boolean {
-    if (this.spectating) return !!this.options.oracle && !!this.crowd.seat(this.spectatorId)?.present;
+    if (!this.bettingOn) return false;
+    if (this.spectating) return !!this.crowd.seat(this.spectatorId)?.present;
     const me = this.viewer === null ? undefined : this.players[this.viewer];
-    return !!this.options.oracle && !!me && shotDown(me);
+    return !!me && shotDown(me);
   }
 
-  get oracleEnabled(): boolean {
-    return !!this.options.oracle;
-  }
-
-  /** Whether this screen is allowed to see the oracle's live information. The living only see its round summary. */
-  get canSeeOracle(): boolean {
+  /** Whether this screen may see the bets while the round goes on. The living only see them when it is over. */
+  get canSeeBets(): boolean {
     return this.ghost || this.phase === 'roundOver';
   }
 
-  /** Whether this bettor may tip right now: shot down (or in the stands), and a question is open. */
-  canBet(id: number, crowd = this.spectating): boolean {
-    if (!this.options.oracle) return false;
-    const o = crowd ? this.stands : this.oracle;
-    if (!o.question || o.question.locked) return false;
+  /** Whether `id` is somebody who may bet: present in the stands, or shot down with a person behind the ship. */
+  private isBettor(id: number, crowd: boolean): boolean {
     if (crowd) return !!this.crowd.seat(id)?.present;
     const p = this.players[id];
     return !!p && shotDown(p);
   }
 
-  /** Whether the oracle's minimum window for tipping and betting on this aiming phase has passed. */
+  /**
+   * Whether the minimum window of this aiming phase has passed: open `BETS.MIN_BET_TIME` while a bet can be placed,
+   * or a shot-down fan can call the shot about to be aimed (with bets off too, and when only CPUs are left to aim).
+   */
   protected get betWindowDone(): boolean {
-    const asked = this.oracle.question || this.oracle.roundQuestion || this.stands.question || this.stands.roundQuestion;
-    return !asked || this.phaseTime >= ORACLE.MIN_BET_TIME;
-  }
-
-  /**
-   * Puts a stake on the bettor's tip on the round question, once. The points leave their purse at once —
-   * they come back with a share of the pot if the tip was right, or when there is nobody to share with.
-   */
-  private placeStake(id: number, stake: number, crowd: boolean): boolean {
-    if (stake > this.maxStake(id, crowd) || !(crowd ? this.stands : this.oracle).setStake(id, stake)) return false;
-    this.payInto(id, -stake, crowd);
+    if (this.phaseTime >= BETS.MIN_BET_TIME) return true;
+    if (this.bets.question || this.stands.question) return false;
+    for (const id of this.fans.all.keys()) if (this.canCall(id)) return false;
     return true;
   }
 
-  /** The ships a tip on who wins the round may name right now: the ones still in. */
+  /** The ships a bet on who wins the round may name right now: the ones still in. */
   get roundChoices(): number[] {
-    return (this.betOracle.roundQuestion?.choices ?? []).filter((id) => this.alive.some((p) => p.id === id));
+    return (this.betBook.question?.choices ?? []).filter((id) => this.alive.some((p) => p.id === id));
   }
 
-  /** Whether this bettor may tip on who wins the round right now: the question is open, and the next shots have not flown yet. */
-  canBetRound(id: number, crowd = this.spectating): boolean {
-    if (!this.options.oracle || this.phase !== 'aiming' || !(crowd ? this.stands : this.oracle).roundQuestion) return false;
-    if (crowd) return !!this.crowd.seat(id)?.present;
-    const p = this.players[id];
-    return !!p && shotDown(p);
+  /** Whether this bettor may bet right now: the question is open, they have not bet yet, and the next shots have not flown. */
+  canBet(id: number, crowd = this.spectating): boolean {
+    if (!this.bettingOn || this.phase !== 'aiming') return false;
+    return (crowd ? this.stands : this.bets).canBet(id) && this.isBettor(id, crowd);
   }
 
-  /** The most this bettor could still stake on the round question: a share of their purse, once. 0 when there is no bet to make — or the room plays without betting. */
-  maxStake(id: number, crowd = this.spectating): number {
-    if (!(crowd || this.settings.betting) || !this.canBetRound(id, crowd) || !(crowd ? this.stands : this.oracle).canStake(id)) return 0;
-    return stakeOptions(this.purse(id, crowd)).at(-1) ?? 0;
+  /** The stakes this bettor may put on the round right now: a quarter, half or all of their points. Empty when there is no bet to make. */
+  stakeChoices(id: number, crowd = this.spectating): StakeOption[] {
+    return this.canBet(id, crowd) ? stakeOptions(this.purse(id, crowd)) : [];
   }
 
   /**
-   * A tip — on the open shot or salvo, or (`round`) on who wins the round, with an optional `stake` of the
-   * bettor's own points on it. `crowd` says it comes from the stands, not from a shot-down player; a screen
-   * in the stands means that by itself. The host keeps it until the verdict; a screen also remembers its own to show it.
+   * A bet of `stake` of the bettor's own points on `pick` winning the round. `crowd` says it comes from the stands,
+   * not from a shot-down player; a screen in the stands means that by itself.
    */
-  placeBet(id: number, pick: number, round = false, stake = 0, crowd = this.spectating): boolean {
-    const o = crowd ? this.stands : this.oracle;
-    const mine = id === this.bettor && crowd === this.spectating;
-    if (round) {
-      if (!this.canBetRound(id, crowd) || !o.betRound(id, pick, this.alive.map((p) => p.id), this.sidesIn)) return false;
-      if (mine) o.roundMine = { id: o.roundQuestion!.id, pick };
-      if (stake > 0) this.placeStake(id, stake, crowd);
-      return true;
-    }
-    if (!this.canBet(id, crowd) || !o.bet(id, pick)) return false;
-    if (mine) o.mine = { id: o.question!.id, pick };
+  placeBet(id: number, pick: number, stake: number, crowd = this.spectating): boolean {
+    const book = crowd ? this.stands : this.bets;
+    if (!this.canBet(id, crowd) || stake > this.purse(id, crowd)) return false;
+    if (!book.place(id, pick, stake, this.alive.map((p) => p.id), this.sidesIn)) return false;
+    if (id === this.bettor && crowd === this.spectating) book.pending = null;
+    // The bettor's pod (or a spectator's UFO) goes to the ship bet on, and stays.
+    if (pick >= 0) (crowd ? this.standsFans : this.fans).follow(id, pick);
     return true;
   }
 
+  /** Pays out what settled bets came to: into the score (and the place) of a seat, or the bankroll of somebody in the stands. */
+  private payBets(bets: readonly SettledBet[], crowd: boolean): void {
+    for (const bet of bets) {
+      const before = crowd ? 0 : this.placeOf(bet.player);
+      this.payInto(bet.player, bet.delta, crowd);
+      if (!crowd && this.players[bet.player]) bet.places = [before, this.placeOf(bet.player)];
+    }
+  }
+
+  /** A bet on a side that is out of the round is lost at once: the shots that took the last of its ships settle it. */
+  private settleFallenBets(): void {
+    const out = (pick: number) => !this.players.some((p) => p.alive && this.sideOf(p.id) === this.sideOf(pick));
+    this.payBets(this.bets.fallen(out, this.clock), false);
+    this.payBets(this.stands.fallen(out, this.clock), true);
+  }
+
   /**
-   * Once somebody is out and two or more ships are still in a contested round, the oracle asks who wins it.
-   * Called whenever the aiming begins; a round has one such question. The stands' oracle asks it from the
-   * start of the round, once somebody is watching, since they have no ship to lose.
+   * Once somebody is out and two or more ships are still in a contested round, the shot-down may bet on who wins it.
+   * Called whenever the aiming begins; a round has one such question. The stands may bet from the start of the
+   * round, once somebody is watching, since they have no ship to lose.
    */
-  private openRoundQuestion(): void {
-    if (!this.options.oracle || this.attract || this.decided) return;
-    if (!this.oracle.roundQuestion && this.players.some(shotDown)) this.oracle.openRound(this.alive.map((p) => p.id), this.simultaneous);
-    if (!this.stands.roundQuestion && this.crowd.watching) this.stands.openRound(this.alive.map((p) => p.id), this.simultaneous);
+  private openBets(): void {
+    if (!this.bettingOn || this.attract || this.decided) return;
+    if (!this.bets.question && this.players.some(shotDown)) this.bets.openRound(this.alive.map((p) => p.id), this.simultaneous);
+    if (!this.stands.question && this.crowd.watching) this.stands.openRound(this.alive.map((p) => p.id), this.simultaneous);
   }
 
   /** The people in the stands changed (host): keep the list, and let a newcomer bet on the round already under way. */
   crowdChanged(people: readonly { id: number; name: string }[]): void {
     this.crowd.sync(people);
-    if (this.phase === 'aiming') this.openRoundQuestion();
-  }
-
-  /** Subclasses call this when a shot (`shot`, by `shooter`) or a salvo is about to be aimed. */
-  protected openOracle(kind: OracleKind, shooter = -1): void {
-    const live = !!this.options.oracle && !this.attract;
-    const choices = kind === 'salvo' ? this.alive.map((p) => p.id) : [];
-    if (live && this.players.some(shotDown)) this.oracle.open(kind, shooter, choices);
-    else this.oracle.close();
-    if (live && this.crowd.watching) this.stands.open(kind, shooter, choices);
-    else this.stands.close();
-  }
-
-  private judgeOracle(): void {
-    const victims = [...new Set(this.oracleKills.map((k) => k.victim))];
-    for (const o of [this.oracle, this.stands]) {
-      const q = o.question;
-      if (q) o.resolve(victims, this.oracleKills.some((k) => k.killer === q.shooter && !k.self && !k.friendly), this.clock);
-    }
-    this.oracleKills = [];
+    if (this.phase === 'aiming') this.openBets();
   }
 
   /** Whether the person at this screen may aim right now. */
@@ -782,8 +908,11 @@ export abstract class Match {
       pause: this.pause,
       flightDoneAt: this.flightDoneAt,
       ...this.killcam.snapshot(),
-      oracle: this.oracle.snapshot(),
+      bets: this.bets.snapshot(),
       stands: this.stands.snapshot(),
+      fans: this.fans.snapshot(),
+      standsFans: this.standsFans.snapshot(),
+      callsRight: [...this.callsRight],
       crowd: this.crowd.snapshot(),
       marks: this.ledger.state(),
     };
@@ -824,9 +953,11 @@ export abstract class Match {
     this.scoreHistory = s.scoreHistory;
     this.skipVote = s.skipVote ?? null;
     this.pause = s.pause ?? null;
-    // Hosts from before the oracle send none.
-    if (s.oracle) this.oracle.restore(s.oracle);
+    if (s.bets) this.bets.restore(s.bets);
     if (s.stands) this.stands.restore(s.stands);
+    this.fans.restore(s.fans ?? []);
+    this.standsFans.restore(s.standsFans ?? []);
+    this.callsRight = s.callsRight ?? [];
     this.crowd.restore(s.crowd);
     this.ledger.restore(s.marks);
     this.volley = null;
@@ -874,8 +1005,9 @@ export abstract class Match {
     this.matchStats = newStatBook();
     this.scoreHistory = [this.players.map(() => 0)];
     this.mayhemHistory = [];
-    this.oracle.reset(this.players.length);
+    this.bets.reset(this.players.length);
     this.stands.reset(0);
+    this.callsRight = this.players.map(() => 0);
     this.crowd.reset();
     this.totalRounds = this.attract ? 0 : this.settings.rounds;
     this.settings = this.baseSettings;
@@ -893,13 +1025,13 @@ export abstract class Match {
     this.round++;
     this.fiveChains.clear();
     this.fivesThisFlight.clear();
-    // Stakes that were never paid out (a round cut short) go back to their owners.
-    for (const [id, stake] of this.oracle.stakes) this.payInto(id, stake, false);
-    for (const [id, stake] of this.stands.stakes) this.payInto(id, stake, true);
-    this.oracle.startRound();
+    // Bets that were never settled (a round cut short) are simply void: nothing was taken for them yet.
+    this.bets.startRound();
     this.stands.startRound();
+    this.fans.reset();
+    this.standsFans.reset();
+    this.callsRightAtStart = [...this.callsRight];
     this.crowd.relief();
-    this.oracleKills = [];
     this.roundStats = newStatBook();
     this.shotLog.reset();
     this.roundStartedAt = this.clock;
@@ -1312,7 +1444,7 @@ export abstract class Match {
 
   /** Whether this match is played online, against the people of a room. */
   protected get online(): boolean {
-    return !!this.options.oracle;
+    return !!this.options.online;
   }
 
   /** Whether a round is on that could be skipped right now. */
@@ -1366,15 +1498,18 @@ export abstract class Match {
     this.cpu.clear();
     this.killcam.reset();
     this.abandonRound();
-    // Back to what everybody had when the round began (this also gives back what was staked on the oracle's questions).
+    // Back to what everybody had when the round began (the seats' bets went into their scores; the stands' are taken back by hand).
     const before = this.scoreHistory[this.scoreHistory.length - 1];
     for (const p of this.players) p.score = before[p.id] ?? 0;
-    for (const [id, stake] of this.oracle.stakes) this.payInto(id, stake, false);
-    for (const [id, stake] of this.stands.stakes) this.payInto(id, stake, true);
-    this.oracle.rollbackRound();
+    for (const seat of this.crowd.seats) seat.balance -= this.stands.roundDelta(seat.id);
+    this.bets.rollbackRound();
     this.stands.rollbackRound();
-    this.oracle.startRound();
+    // The calls got right in it count no more than its points did.
+    this.callsRight = [...this.callsRightAtStart];
+    this.bets.startRound();
     this.stands.startRound();
+    this.fans.reset();
+    this.standsFans.reset();
     // The extras went back with the points, and the round's kills are no grudge: revenge and domination read the rounds as if this one was never played.
     this.matchStats.bonuses.splice(this.matchStats.bonuses.length - this.roundStats.bonuses.length);
     this.roundStats.bonuses = [];
@@ -1439,11 +1574,9 @@ export abstract class Match {
 
   protected launch(flown: VolleyAim[], trackStyle: boolean): void {
     const aims = this.withThrough(flown);
-    this.oracle.lock();
-    this.stands.lock();
-    this.oracleKills = [];
     this.killcam.capture(this.world, aims);
     this.volley = new Volley(this.world, aims, this.rules, trackStyle);
+    this.flightLaunchedAt = this.clock;
     this.shotLog.launched(this.volley.shots, aims);
     this.ledger.launched(this.players.map((p) => p.score));
     this.simClock = 0;
@@ -1490,7 +1623,8 @@ export abstract class Match {
     this.volley = null;
     this.endFiveFlight();
     this.power.onVolleyEnd();
-    this.judgeOracle();
+    this.settleCalls(volley.shots.map((vs) => vs.owner));
+    this.settleFallenBets();
     for (const listener of this.turnListeners) listener();
     const clip = this.killcam.finish(volley.script, this.killcamMode === 'round');
     if (clip && this.killcamMode === 'every') this.startKillcam(clip, null, false);
@@ -1723,7 +1857,7 @@ export abstract class Match {
 
   /**
    * Notes a kill and pays for it. `killer` is the shot's owner, unless a melted shot is shared out (`share` of every
-   * point to each owner); the second of those is an `echo`, which the killcam and the oracle have already seen.
+   * point to each owner); the second of those is an `echo`, which the killcam has already seen.
    */
   private registerKill(vs: VolleyShot, victim: number, volley: Volley, killer = vs.owner, share = 1, echo = false): void {
     const self = killer === victim;
@@ -1731,7 +1865,6 @@ export abstract class Match {
     const hit = self || friendly ? { points: -SCORING.SELF_HIT, combo: [], multiplier: 1 } : vs.stray ? { points: SCORING.COLLATERAL, combo: [], multiplier: 1 } : this.killPoints(vs);
     const score = { ...hit, points: Math.round(hit.points * this.payFactor * share) };
     this.players[victim].alive = false;
-    if (!echo) this.oracleKills.push({ killer, victim, self, friendly });
     this.players[killer].score += score.points;
     this.shotLog.hit(vs, victim, self ? 'self' : friendly ? 'friendly' : 'enemy', score.points);
     if (self) this.cue('ownGoal', killer, null);
@@ -1885,13 +2018,11 @@ export abstract class Match {
     this.roundBonuses(survivor);
     const title = team !== null ? 'teamWin' : this.forfeited ? 'forfeit' : this.roundTitle(survivor);
     this.summary = { title, survivor, team, bonus, lastKill: this.lastKill };
-    // The oracle's question for the whole round: a lone survivor or a whole team won it, or nobody did.
+    // The bets on the round: a lone survivor or a whole team won it, or nobody did.
     const winners = team !== null ? this.players.filter((p) => p.team === team).map((p) => p.id) : survivor !== null ? [survivor] : [];
-    this.oracle.resolveRound(winners, this.round, this.clock);
-    this.stands.resolveRound(winners, this.round, this.clock);
-    // What the bets on the round come to: their share of the pot goes into the winners' purses.
-    for (const tip of this.oracle.roundResult?.tips ?? []) if (tip.payout) this.payInto(tip.player, tip.payout, false);
-    for (const tip of this.stands.roundResult?.tips ?? []) if (tip.payout) this.payInto(tip.player, tip.payout, true);
+    // The bets still open are settled now: a right one pays its stake times its multiplier, a wrong one costs the stake.
+    this.payBets(this.bets.resolve(winners, this.round, this.clock), false);
+    this.payBets(this.stands.resolve(winners, this.round, this.clock), true);
     this.scoreHistory.push(this.players.map((p) => p.score));
     if (this.mayhem) this.mayhemHistory.push(this.mayhem);
     this.current = -1;
@@ -1912,7 +2043,7 @@ export abstract class Match {
     this.phaseTime = 0;
     if (phase === 'aiming') {
       this.parkAway();
-      this.openRoundQuestion();
+      this.openBets();
     }
   }
 

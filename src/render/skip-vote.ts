@@ -3,7 +3,7 @@ import type { Match } from '../game';
 import { SKIP_VOTE_TIME } from '../game/match';
 import { t } from '../platform/i18n';
 import { rgba } from './color';
-import type { OracleFrame } from './oracle';
+import type { CardFrame } from './bets';
 import { fitText, setSpacing } from './text';
 
 /** An answer to the vote, as a pointer can give it. */
@@ -29,12 +29,12 @@ function sizes(touch: boolean) {
   return { width: 600, pad: 6, head: 38, row: touch ? 54 : 42, chip: touch ? 44 : 30, top: 70 };
 }
 
-/** Like the oracle's card, the vote is read at a glance and never gets smaller than this. */
+/** Like the bet's card, the vote is read at a glance and never gets smaller than this. */
 const MIN_SCALE = 0.9;
 
 /**
- * The vote to skip the round, as a card of the oracle's kind under the round label: who asks, how many
- * have said yes, the answer (keys or tap) and — dots like the oracle's tips — how each seat has voted.
+ * The vote to skip the round, as a card of the bet's kind under the round label: who asks, how many
+ * have said yes, the answer (keys or tap) and, as coloured dots, how each seat has voted.
  */
 export class SkipVoteHud {
   /** Where the answers were drawn last frame, for taps. */
@@ -50,7 +50,7 @@ export class SkipVoteHud {
     this.hits = [];
   }
 
-  draw(f: OracleFrame, match: Match, touch: boolean): void {
+  draw(f: CardFrame, match: Match, touch: boolean): void {
     const vote = match.skipVote;
     if (!vote) return;
     const { ctx, field } = f;
@@ -131,7 +131,7 @@ export class SkipVoteHud {
   }
 
   /** Yes and no to press while the viewer still has a say; else what they answered, or that the others are being waited for. Returns where it ends. */
-  private drawAnswer(f: OracleFrame, match: Match, x: number, mid: number, room: number, h: number, k: number): number {
+  private drawAnswer(f: CardFrame, match: Match, x: number, mid: number, room: number, h: number, k: number): number {
     const { ctx } = f;
     const me = match.viewer;
     const answer = me === null ? null : match.skipAnswer(me);

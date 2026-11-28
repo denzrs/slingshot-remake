@@ -4,7 +4,7 @@
  * the daily board does, and keeps it for a week.
  */
 import type { RoundTitle } from './match';
-import type { TipReport } from './oracle';
+import type { TipReport } from './bets';
 import type { ReplayPlacement } from './replay';
 import type { ShotRecord } from './shotLog';
 import type { Best, BonusRecord, StatBook } from '../data/stats';
@@ -109,7 +109,7 @@ export interface ReportSource {
   world: { planets: readonly unknown[] };
   shotLog: { turn: number };
   /** The shot-down players' tipping game and the stands'. */
-  oracle?: { judged: readonly TipReport[] };
+  bets?: { judged: readonly TipReport[] };
   stands?: { judged: readonly TipReport[] };
 }
 
@@ -126,7 +126,7 @@ export function roundReport(match: ReportSource): RoundReport {
     const found = record(book[kind]);
     if (found) records[kind] = found;
   }
-  const tips = [...(match.oracle?.judged ?? []), ...(match.stands?.judged ?? [])];
+  const tips = [...(match.bets?.judged ?? []), ...(match.stands?.judged ?? [])];
   return {
     round: match.round,
     title: match.summary?.title ?? 'noneLeft',

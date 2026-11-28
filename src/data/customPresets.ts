@@ -1,6 +1,6 @@
 import type { RoomRules } from './roomRules';
 import type { GameMode } from '../sim/modes';
-import { roomRulesFrom } from './roomRules';
+import { defaultRoomRules, roomRulesFrom } from './roomRules';
 
 /**
  * What the player keeps of the presets, in this browser only; local games and online rooms share it. Per mode there are
@@ -61,7 +61,10 @@ const stored = (rules: RoomRules): Partial<RoomRules> => {
   return { ...kept, powerUpKinds: [...kept.powerUpKinds], anomalies: [...kept.anomalies] };
 };
 
-const restored = (saved: Partial<RoomRules>): RoomRules => ({ ...roomRulesFrom(saved), betting: false, chatPlayersOnly: false });
+const restored = (saved: Partial<RoomRules>): RoomRules => {
+  const standard = defaultRoomRules();
+  return { ...roomRulesFrom(saved), betting: standard.betting, chatPlayersOnly: standard.chatPlayersOnly };
+};
 
 /** A name that fits on a card: trimmed, with no runs of spaces, cut to length. */
 export const cleanPresetName = (name: string): string => name.replace(/\s+/g, ' ').trim().slice(0, MAX_PRESET_NAME);

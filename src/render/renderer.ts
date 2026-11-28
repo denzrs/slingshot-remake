@@ -1,7 +1,8 @@
 import { DarkView } from './dark-view';
 import { DARK_FOUND_SECONDS } from '../game/dark-matter';
-import { COLORS, FIELD, FONTS, NEBULA, PHYSICS, SOLAR, SUDDEN_DEATH, WORMHOLE, type EdgeMode } from '../sim/config';
+import { COLORS, FANS, FIELD, FONTS, NEBULA, PHYSICS, SOLAR, SUDDEN_DEATH, WORMHOLE, type EdgeMode } from '../sim/config';
 import type { Camera, Match, Scene, Trail } from '../game';
+import { shotDown } from '../game/match-types';
 import { t } from '../platform/i18n';
 import { spotlight, SPOTLIGHT_EVERY } from '../game/scorecard';
 import { aimDirection, inPowerUpNebula, nextWormholeId, stormCloudAt, type World } from '../sim/physics';
@@ -17,9 +18,13 @@ import { acrossOf, gatePoint, lensAt, type Lens } from './loop-gate';
 import { ContourLayers } from './contour-layers';
 import type { Effects } from './effects';
 import { Hud } from './hud';
-import type { OracleTap } from './oracle';
+import { flyPodFrame, launchPod, POD, standsSlot, type Pod, type PodGoal } from './pod-flight';
+import { oddsLabel, type BetTap } from './bets';
+import type { CallKind } from '../game/fans';
+import { oddsOf } from '../game/bets';
 import type { SkipAnswer } from './skip-vote';
 import { getLook, type Look } from '../data/look';
+import { seatColor } from '../data/palette';
 import { LIGHT, type PlanetSprite } from './planet-common';
 import { stormFlare } from './storm';
 import { defensePlanet, defenseView } from './defense';
@@ -36,7 +41,7 @@ export interface DrawOptions {
   touch: boolean;
   /** A clip is being recorded right now. */
   recording: boolean;
-  /** Show the key caps in the oracle's choices. */
+  /** Show the key caps in the bet's choices. */
   keyHints: boolean;
   /** The aim card steps aside when the aim line would run over it. */
   aimCardDodge: boolean;
@@ -92,6 +97,13 @@ export class Renderer {
   /** How the chosen look draws each element, read once a frame so a frame is never drawn in two looks. */
   private painter: LookPainter = classic;
   private time = 0;
+  /** Where each shot-down player's escape pod set out from, which way, and when: per match, per seat. */
+  private pods = new WeakMap<Match, Map<number, Pod>>();
+  /** The stands' UFOs, by their place in the stands. */
+  private ufos = new WeakMap<Match, Map<number, Pod>>();
+  /** The renderer's clock when each match's pods last moved, and when each ship last made its fans cheer. */
+  private podClock = new WeakMap<Match, number>();
+  private cheers = new WeakMap<Match, Map<number, number>>();
   /** When each power-up pickup was first drawn, for its pop-in. */
   private readonly pickupSeen = new Map<number, number>();
   /** Whether the last frame filled the viewport behind a menu (see `refreshLayer`). */
@@ -153,10 +165,10 @@ export class Renderer {
     this.trailLayer = null;
   }
 
-  /** The oracle choice under a pointer position (client px), if it is over one. */
-  oracleHit(clientX: number, clientY: number): OracleTap | null {
+  /** The bet choice under a pointer position (client px), if it is over one. */
+  betHit(clientX: number, clientY: number): BetTap | null {
     const rect = this.canvas.getBoundingClientRect();
-    return this.hud.oracleHit(clientX - rect.left, clientY - rect.top);
+    return this.hud.betHit(clientX - rect.left, clientY - rect.top);
   }
 
   /** The answer to the vote to skip the round under a pointer position (client px), if it is over one. */
@@ -323,6 +335,8 @@ export class Renderer {
     this.drawShips(match, scene, opts.seatNumbers);
     this.drawPowerUps(match, scene);
     effects.draw(ctx, this.painter.effects, scale * (cam?.zoom ?? 1));
+    // The shot-down's escape pods, online: over the blasts, so one is seen flung out of its wreck's fireball; under the dark.
+    if (!scene.camera && match.fansOn) this.drawPods(match, scene, effects);
     this.drawDarkMatter(match, scene);
     ctx.restore();
 
@@ -1163,6 +1177,281 @@ export class Renderer {
       if (seatNumbers) this.seatNumber(player.seat + 1, ship.x, ship.y, color);
     });
   }
+
+  /**
+   * A ship with pods round it has hit an enemy: its fans cheer — a hop out of their orbit and a burst of light each,
+   * the bigger the more of them there are.
+   */
+  cheer(match: Match, ship: number): void {
+    let cheers = this.cheers.get(match);
+    if (!cheers) this.cheers.set(match, (cheers = new Map()));
+    cheers.set(ship, this.time);
+  }
+
+  /** What a call came to, as the callout over its pod says it: right or wrong, and with a bet on the ship the odds it has now (or that it is insured). */
+  private callResult(match: Match, player: number, call: { kind: CallKind; state: 'open' | 'right' | 'wrong' }): string {
+    // A bet settled in the same flight (its side fell) took the call with it: then only right or wrong.
+    const bet = match.bets.betOf(player);
+    const open = bet && !('won' in bet) ? bet : null;
+    const right = call.state === 'right';
+    if (right && call.kind === 'hitBy' && bet) return t('fans.insured');
+    const head = t(right ? 'fans.callRight' : 'fans.callWrong');
+    if (open) return `${head} · ×${oddsLabel(oddsOf(open))}`;
+    return right && !bet ? `${head} +${FANS.CALL_POINTS[call.kind]}` : head;
+  }
+
+  /**
+   * The escape pods, online: every person shot down this round drifts in one, ejected from where their ship blew up.
+   * Once they root for a ship (or bet on it), their pod flies over and circles it with the other fans, and hops with
+   * a flash whenever they cheer it on. When that ship goes down with nobody of its side left, its fans' pods go up
+   * too, one after another; a bet lost any other way puts the pod's light out, and it drifts off on its own.
+   */
+  private drawPods(match: Match, scene: Scene, effects: Effects): void {
+    // Nobody shot down and nobody in the stands rooting (most of the time): nothing to fly, nothing to work out.
+    if (!match.players.some(shotDown) && !match.standsFans.all.size) {
+      this.pods.get(match)?.clear();
+      this.ufos.get(match)?.clear();
+      return;
+    }
+    const { ctx } = this;
+    let pods = this.pods.get(match);
+    if (!pods) this.pods.set(match, (pods = new Map()));
+    const { width, height } = scene.world;
+    const dt = Math.min(0.1, Math.max(0, this.time - (this.podClock.get(match) ?? this.time)));
+    this.podClock.set(match, this.time);
+    const cheers = this.cheers.get(match);
+
+    // Who circles which ship: the fans of a side gather round its ship (a living teammate, once the one named is gone).
+    const fans = new Map<number, number[]>();
+    for (const [player, fan] of match.fans.all) {
+      const side = match.sideOf(fan.pick);
+      const host = scene.world.ships[fan.pick]?.alive ? fan.pick : match.players.find((p) => p.alive && match.sideOf(p.id) === side)?.id;
+      if (host === undefined) continue;
+      const list = fans.get(host);
+      if (list) list.push(player);
+      else fans.set(host, [player]);
+    }
+    const orbitOf = new Map<number, { host: number; slot: number; of: number }>();
+    for (const [host, list] of fans) list.forEach((player, slot) => orbitOf.set(player, { host, slot, of: list.length }));
+
+    for (const player of match.players) {
+      const ship = scene.world.ships[player.id];
+      if (!ship || !shotDown(player)) {
+        pods.delete(player.id);
+        continue;
+      }
+      let pod = pods.get(player.id);
+      if (!pod || pod.round !== match.round) {
+        // Off away from the middle of the field, turned a little by the seat so two pods never fly the same way.
+        const away = Math.atan2(ship.y - height / 2, ship.x - width / 2) + Math.sin(player.id * 2.3) * 0.7;
+        // Flung nose first out of the blast, fast at first.
+        pod = launchPod(ship.x, ship.y, away, this.time, match.round);
+        pod.cheers = match.fans.of(player.id)?.cheers ?? 0;
+        pods.set(player.id, pod);
+      }
+      if (pod.gone) continue;
+      const fan = match.fans.of(player.id);
+      if (fan && fan.cheers > pod.cheers) {
+        pod.cheers = fan.cheers;
+        pod.cheeredAt = this.time;
+      }
+      const age = this.time - pod.since;
+      const orbit = orbitOf.get(player.id);
+      // The more calls its fan got right this match, the more epic its cheers: bigger, longer, a higher hop.
+      const epic = match.cheerLevel(player.id);
+      const own = ownCheer(epic);
+      if (orbit) {
+        pod.host = orbit.host;
+        pod.slot = orbit.slot;
+      } else if (pod.host !== undefined && pod.boomAt === undefined && !scene.world.ships[pod.host]?.alive) {
+        // The ship it circled went down with nobody of its side left to fly on to: the pod goes up after it.
+        pod.boomAt = this.time + POD.BOOM_DELAY + pod.slot * POD.BOOM_STAGGER;
+      }
+      // Where it is headed: coasting out of its wreck at first, engines off; then round the ship it roots for, matching
+      // the orbit's own speed, or cruising slowly on. Caught in a blast, it stops.
+      const launching = age < POD.LAUNCH_SECONDS && pod.boomAt === undefined;
+      let goal: PodGoal | null = null;
+      if (launching) goal = null;
+      else if (pod.boomAt !== undefined) goal = { x: pod.x, y: pod.y, vx: 0, vy: 0 };
+      else if (orbit) {
+        // Round the backed ship, the fans spread evenly; a cheer throws them out a little and back, the ship's hit all of them, a fan's own just theirs.
+        const host = scene.world.ships[orbit.host];
+        const cheerAge = this.time - (cheers?.get(orbit.host) ?? -99);
+        const ownAge = this.time - pod.cheeredAt;
+        const hop =
+          (cheerAge < POD.CHEER_SECONDS ? Math.sin((Math.PI * cheerAge) / POD.CHEER_SECONDS) * (10 + 3 * orbit.of) : 0) +
+          (ownAge < own.seconds ? Math.sin((Math.PI * ownAge) / own.seconds) * own.hop : 0);
+        const angle = this.time * POD.ORBIT_SPEED + (orbit.slot / orbit.of) * Math.PI * 2;
+        const r = POD.ORBIT + hop;
+        goal = { x: host.x + Math.cos(angle) * r, y: host.y + Math.sin(angle) * r, vx: -Math.sin(angle) * r * POD.ORBIT_SPEED, vy: Math.cos(angle) * r * POD.ORBIT_SPEED };
+      } else {
+        // Adrift: on the way it was flung, wandering a little, and kept off the field's edge (and the bars over it).
+        const way = Math.atan2(pod.dy, pod.dx) + Math.sin(this.time * 0.3 + player.id * 1.7) * 0.5;
+        const inward = (near: number) => Math.max(0, POD.EDGE - near) * POD.EDGE_PUSH;
+        goal = {
+          vx: Math.cos(way) * POD.DRIFT + inward(pod.x) - inward(width - pod.x),
+          vy: Math.sin(way) * POD.DRIFT + inward(pod.y) - inward(height - pod.y),
+        };
+      }
+      const speed = flyPodFrame(pod, dt, goal, launching, width, height);
+      // Shaking in the blast that is about to take it.
+      const shake = pod.boomAt !== undefined ? 1.5 * Math.min(1, (this.time - pod.boomAt + POD.BOOM_DELAY) / POD.BOOM_DELAY) : 0;
+      const x = pod.x + Math.sin(this.time * 70 + player.id) * shake;
+      const y = pod.y + Math.cos(this.time * 63 + player.id) * shake;
+      if (pod.boomAt !== undefined && this.time >= pod.boomAt) {
+        effects.podBurst(x, y, player.color);
+        pod.gone = true;
+        continue;
+      }
+
+      const bet = match.bets.betOf(player.id);
+      const lost = !!bet && 'won' in bet && !bet.won;
+      const cheerAge = orbit ? this.time - (cheers?.get(orbit.host) ?? -99) : 99;
+      if (cheerAge < POD.CHEER_SECONDS) this.painter.podCheer(ctx, x, y, player.color, cheerAge / POD.CHEER_SECONDS, orbit!.of, epic);
+      // The fan's own cheer: a smaller burst, from this pod alone.
+      const ownAge = this.time - pod.cheeredAt;
+      if (ownAge < own.seconds) this.painter.podCheer(ctx, x, y, player.color, ownAge / own.seconds, 0, epic);
+      // The streak it leaves while it is flung, fading behind it.
+      if (launching || pod.path.length) {
+        if (launching && speed > POD.STREAK_SPEED) pod.path.push({ x, y, at: this.time, fade: 1 });
+        while (pod.path.length && this.time - pod.path[0].at > POD.STREAK_SECONDS) pod.path.shift();
+        for (const p of pod.path) p.fade = 1 - (this.time - p.at) / POD.STREAK_SECONDS;
+        if (pod.path.length > 1) this.painter.podLaunch(ctx, pod.path, player.color);
+      }
+      if (player.id === match.viewer && !match.spectating) this.pingOwn(pod, orbit?.host, x, y, player.color);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(POD.SCALE, POD.SCALE);
+      this.painter.escapePod(ctx, player.color, this.time, { heading: pod.heading, thrust: lost ? 0 : pod.thrust, push: pod.push, phase: player.id * 0.37, beacon: !lost });
+      ctx.restore();
+      // The fan's call on the next shot: a badge over the pod while it is aimed, then right or wrong for a moment.
+      const call = fan?.call;
+      if (call) {
+        const shown = call.state === 'open' ? 0 : (match.clock - call.at) / FANS.CALL_SHOWN;
+        if (shown < 1) this.painter.podCall(ctx, x, y, t(`fans.call.${call.kind}`), call.state, shown, player.color);
+        // Once, as it comes out: what it did to the bet, called out over the pod.
+        const seen = `${call.kind}:${call.state}:${call.at}`;
+        if (call.state !== 'open' && pod.callSeen !== seen) {
+          pod.callSeen = seen;
+          if (shown < 1) effects.callout(this.callResult(match, player.id, call), x, y, call.state === 'right' ? COLORS.sodium : COLORS.boneDim, false, -POD.CALLOUT_RISE);
+        }
+      }
+    }
+    this.drawUfos(match, scene, effects, dt, cheers);
+  }
+
+  /**
+   * The stands' UFOs, online: a spectator who roots for a ship (or bets on it) sends one in from the field's edge to
+   * circle it on a ring of their own, outside the shot-down players' pods, the other way round. Only a few to a ship
+   * are shown, the rest are counted beside the ring. A spectator's cheer makes theirs hop; when the ship goes down with
+   * nobody of its side left, they go up with it, as the pods do.
+   */
+  /**
+   * Your own pod or UFO, and only on your screen: it pings as a ship does at the start of a round, so you find it among
+   * the others — as it comes out, whenever it flies to another ship, and every `POD.OWN_PING_EVERY` seconds.
+   */
+  private pingOwn(pod: Pod, host: number | undefined, x: number, y: number, color: string): void {
+    if (pod.boomAt !== undefined) return;
+    if (pod.pingAt === undefined || host !== pod.pingHost || this.time - pod.pingAt >= POD.OWN_PING_EVERY) {
+      pod.pingAt = this.time;
+      pod.pingHost = host;
+    }
+    const age = this.time - pod.pingAt;
+    if (age < LOCATE_PING.DURATION) this.painter.locatePing(this.ctx, x, y, color, age, POD.OWN_PING_SCALE);
+  }
+
+  private drawUfos(match: Match, scene: Scene, effects: Effects, dt: number, cheers: Map<number, number> | undefined): void {
+    const { ctx } = this;
+    let ufos = this.ufos.get(match);
+    if (!ufos) this.ufos.set(match, (ufos = new Map()));
+    const { width, height } = scene.world;
+    // Who circles which ship, in the order they came; a UFO whose spectator stopped rooting (or left) is gone.
+    const byHost = new Map<number, number[]>();
+    for (const [seat, fan] of match.standsFans.all) {
+      if (!match.crowd.seat(seat)?.present) continue;
+      const side = match.sideOf(fan.pick);
+      const host = scene.world.ships[fan.pick]?.alive ? fan.pick : match.players.find((p) => p.alive && match.sideOf(p.id) === side)?.id;
+      if (host === undefined) continue;
+      const list = byHost.get(host);
+      if (list) list.push(seat);
+      else byHost.set(host, [seat]);
+    }
+    for (const [seat, ufo] of ufos) if (!match.standsFans.of(seat) || ufo.round !== match.round) ufos.delete(seat);
+    // Every one of them is shown: the inner ring first, then rings further out, each a little roomier.
+    const orbits = new Map<number, { host: number; index: number; ring: number; slot: number; of: number }>();
+    for (const [host, seats] of byHost) seats.forEach((seat, index) => orbits.set(seat, { host, index, ...standsSlot(index, seats.length) }));
+    for (const [seat, orbit] of orbits) {
+      if (ufos.has(seat)) continue;
+      // In from the edge of the field, a different place for every seat, headed for the ship.
+      const a = seat * 2.4 + 0.7;
+      const reach = Math.min((width / 2 - POD.MARGIN * 2) / Math.max(1e-6, Math.abs(Math.cos(a))), (height / 2 - POD.MARGIN * 2) / Math.max(1e-6, Math.abs(Math.sin(a))));
+      const x = width / 2 + Math.cos(a) * reach;
+      const y = height / 2 + Math.sin(a) * reach;
+      const host = scene.world.ships[orbit.host];
+      const ufo = launchPod(x, y, Math.atan2(host.y - y, host.x - x), this.time - POD.LAUNCH_SECONDS, match.round);
+      ufo.vx = 0;
+      ufo.vy = 0;
+      ufo.cheers = match.standsFans.of(seat)?.cheers ?? 0;
+      ufos.set(seat, ufo);
+    }
+    // The stands make no calls, so their cheers stay plain.
+    const own = ownCheer(0);
+    for (const [seat, ufo] of ufos) {
+      if (ufo.gone) continue;
+      const orbit = orbits.get(seat);
+      const fan = match.standsFans.of(seat);
+      if (fan && fan.cheers > ufo.cheers) {
+        ufo.cheers = fan.cheers;
+        ufo.cheeredAt = this.time;
+      }
+      if (orbit) {
+        ufo.host = orbit.host;
+        ufo.slot = orbit.index;
+      } else if (ufo.host !== undefined && ufo.boomAt === undefined && !scene.world.ships[ufo.host]?.alive) {
+        ufo.boomAt = this.time + POD.BOOM_DELAY + ufo.slot * POD.STANDS_STAGGER;
+      }
+      let goal: PodGoal | null;
+      if (ufo.boomAt !== undefined) goal = { x: ufo.x, y: ufo.y, vx: 0, vy: 0 };
+      else if (orbit) {
+        const host = scene.world.ships[orbit.host];
+        const cheerAge = this.time - (cheers?.get(orbit.host) ?? -99);
+        const ownAge = this.time - ufo.cheeredAt;
+        const hop =
+          (cheerAge < POD.CHEER_SECONDS ? Math.sin((Math.PI * cheerAge) / POD.CHEER_SECONDS) * 8 : 0) +
+          (ownAge < own.seconds ? Math.sin((Math.PI * ownAge) / own.seconds) * own.hop : 0);
+        // The rings turn against each other, the outer ones a little slower, so a crowd does not wheel round as one.
+        const speed = (orbit.ring % 2 ? 1 : -1) * POD.STANDS_ORBIT_SPEED / (1 + orbit.ring * 0.3);
+        const angle = this.time * speed + ((orbit.slot + orbit.ring * 0.5) / orbit.of) * Math.PI * 2;
+        const r = POD.STANDS_ORBIT + orbit.ring * POD.STANDS_RING_GAP + hop;
+        goal = { x: host.x + Math.cos(angle) * r, y: host.y + Math.sin(angle) * r, vx: -Math.sin(angle) * r * speed, vy: Math.cos(angle) * r * speed };
+      } else continue;
+      flyPodFrame(ufo, dt, goal, false, width, height);
+      const shake = ufo.boomAt !== undefined ? 1.5 * Math.min(1, (this.time - ufo.boomAt + POD.BOOM_DELAY) / POD.BOOM_DELAY) : 0;
+      const x = ufo.x + Math.sin(this.time * 70 + seat) * shake;
+      const y = ufo.y + Math.cos(this.time * 63 + seat) * shake;
+      const color = seatColor(seat);
+      if (ufo.boomAt !== undefined && this.time >= ufo.boomAt) {
+        effects.ufoBurst(x, y, color);
+        ufo.gone = true;
+        continue;
+      }
+      const bet = match.stands.betOf(seat);
+      const lost = !!bet && 'won' in bet && !bet.won;
+      const ownAge = this.time - ufo.cheeredAt;
+      if (ownAge < own.seconds) this.painter.podCheer(ctx, x, y, color, ownAge / own.seconds, 0);
+      if (match.spectating && seat === match.spectatorId) this.pingOwn(ufo, orbit?.host, x, y, color);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(POD.SCALE, POD.SCALE);
+      this.painter.spectatorPod(ctx, color, this.time, { heading: ufo.heading, thrust: lost ? 0 : ufo.thrust, push: ufo.push, phase: seat * 0.53 + 0.2, beacon: !lost });
+      ctx.restore();
+    }
+  }
+}
+
+/** A fan's own cheer at `epic` (their right calls this match): how long it lasts and how high their pod hops. */
+function ownCheer(epic: number): { seconds: number; hop: number } {
+  return { seconds: POD.OWN_CHEER_SECONDS * (1 + 0.15 * epic), hop: POD.OWN_HOP * (1 + 0.3 * epic) };
 }
 
 /** Ease that overshoots a little before settling, 0 → 1. */

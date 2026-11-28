@@ -209,7 +209,6 @@ export class HorizonMatch extends Match {
     this.queue = this.simultaneous ? [] : order.filter((p) => !p.cpu).map((p) => p.id);
     this.cpu.clear();
     this.setPhase('aiming');
-    this.openOracle('salvo');
     if (this.simultaneous) {
       // No turns: everybody aims against one shared clock.
       this.current = -1;

@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS, type Seat } from '../../src/data/settings';
 const seats: Seat[] = ['human', 'easy', 'off', 'off'];
 
 function online(): ClassicMatch {
-  return createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 3, seats }, { seats, oracle: true, seed: 7 }) as ClassicMatch;
+  return createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 3, seats }, { seats, online: true, seed: 7 }) as ClassicMatch;
 }
 
 /** Plays on until a CPU has thought for a while: a running game keeps changing, a paused one does not. */

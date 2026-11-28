@@ -12,7 +12,7 @@ import type { View } from './backdrop';
 import { drawAvatar } from './avatar';
 import { rgba } from './color';
 import { plateUnits, rayHitsRect } from './layout';
-import { OracleHud, type OracleFrame, type OracleTap } from './oracle';
+import { BetHud, type BetTap, type CardFrame } from './bets';
 import { SkipVoteHud, type SkipAnswer } from './skip-vote';
 import { drawMarkSymbol, MARK_COLORS } from './mark-art';
 import { drawPowerUpSymbol, POWER_UP_COLORS } from './powerup-art';
@@ -68,7 +68,7 @@ export class Hud {
   private portrait = false;
   /** Whether the field is turned a quarter on screen (a phone held upright): aim directions then need turning with it. */
   private rotated = false;
-  private readonly oracle = new OracleHud();
+  private readonly bets = new BetHud();
   private readonly skipVote = new SkipVoteHud();
 
   /** How far the duel's blocks sit lower on a phone held upright, where the round label's row is shared with the pause button. */
@@ -80,9 +80,9 @@ export class Hud {
 
   constructor(private readonly ctx: CanvasRenderingContext2D) {}
 
-  /** The oracle choice under a pointer (CSS pixels on the canvas), if there is one. */
-  oracleHit(x: number, y: number): OracleTap | null {
-    return this.oracle.hit(x, y);
+  /** The bet choice under a pointer (CSS pixels on the canvas), if there is one. */
+  betHit(x: number, y: number): BetTap | null {
+    return this.bets.hit(x, y);
   }
 
   /** The answer to the vote to skip the round under a pointer (CSS pixels on the canvas), if there is one. */
@@ -108,16 +108,16 @@ export class Hud {
       if (focus >= 0 && !match.players[focus].cpu && match.humanCount > 1 && !match.simultaneous) this.turnAt = time;
     }
 
-    this.oracle.begin();
+    this.bets.begin();
     this.skipVote.begin();
-    const frame: OracleFrame = { ctx: this.ctx, k: this.k, field: this.field, time, shipPos, keyHints: opts.keyHints && !opts.touch };
+    const frame: CardFrame = { ctx: this.ctx, k: this.k, field: this.field, time, shipPos, keyHints: opts.keyHints && !opts.touch };
     const ghost = match.ghost;
 
     const killcam = match.killcamInfo;
     if (killcam) {
       this.drawKillcam(match, killcam, opts);
       this.skipVote.draw(frame, match, opts.touch);
-      if (ghost) this.oracle.drawKillcamVerdict(frame, match, opts.touch);
+      if (ghost) this.bets.drawKillcamVerdict(frame, match, opts.touch);
       return;
     }
 
@@ -142,18 +142,16 @@ export class Hud {
     if (match.phase === 'aiming' && focus >= 0 && match.aimVisible(focus)) this.drawReadout(match, match.players[focus], shipPos(focus), opts.aimCardDodge);
     this.drawNotice(match);
     this.skipVote.draw(frame, match, opts.touch);
-    // The oracle's card holds the question — or the round's summary — at the bottom edge; it already names whose shot it is.
-    this.oracle.plan(frame, match, opts.touch, ghost);
-    const asking = this.oracle.asking;
-    // The living feel the ghosts' mood over the shooter's ship.
-    if (!ghost) this.oracle.drawMood(frame, match);
-    if (ghost) this.oracle.drawMarks(frame, match);
+    // The bet's card holds the bet — or the round's summary — at the bottom edge.
+    // In a pod, the card is there to root for a ship, too.
+    this.bets.plan(frame, match, opts.touch, ghost || match.rooting);
+    const asking = this.bets.asking;
     if (time - this.turnAt < 1.6 && focus >= 0 && !asking) this.drawTurnToast(match.players[focus]);
     if (match.phase === 'roundOver' && match.summary) {
       this.drawBanner(match, duel);
       this.drawScorecard(match);
     }
-    this.oracle.drawCard(frame, match, opts.touch);
+    this.bets.drawCard(frame, match, opts.touch);
     if (!asking && !match.revealing) this.drawHint(match, opts.touch);
     if (match.revealing) {
       const hasMayhem = match.mayhem !== null;
@@ -1830,9 +1828,9 @@ export class Hud {
     const s = box.scale;
     const gap = (box.short ? 8 : 10) * k;
     // On a tall phone, use two rows before the cards become too narrow to read.
-    // Keep the space below clear when the oracle also has a round summary there.
-    const oracleSummary = (match.betOracle.roundResult?.round === match.round || match.betOracle.roundRanking().length > 0);
-    const narrow = !box.short && field.w < 650 * k && field.h >= 650 * k && !oracleSummary;
+    // Keep the space below clear when the bets also have a round summary there.
+    const betSummary = match.betBook.result?.round === match.round && match.betBook.result.bets.length > 0;
+    const narrow = !box.short && field.w < 650 * k && field.h >= 650 * k && !betSummary;
     const perRow = !box.short && (list.length > 5 || (narrow && list.length > 3)) ? Math.ceil(list.length / 2) : list.length;
     const cardW = Math.min(196 * k, (field.w - 48 * k - gap * (perRow - 1)) / perRow);
     const inner = cardW - 18 * k;

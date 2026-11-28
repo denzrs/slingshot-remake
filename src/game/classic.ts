@@ -204,7 +204,6 @@ export class ClassicMatch extends Match {
     this.queue = this.simultaneous ? [] : order.filter((p) => !p.cpu).map((p) => p.id);
     this.cpu.clear();
     this.setPhase('aiming');
-    this.openOracle('salvo');
     if (this.simultaneous) {
       this.current = -1;
       this.planClock = HORIZON.SIMULTANEOUS_CLOCK;
@@ -488,12 +487,6 @@ export class ClassicMatch extends Match {
     this.players[id].locked = false;
     this.current = id;
     this.setPhase('aiming');
-    // A CPU shoots within a second or two — too quick to tip on.
-    if (this.players[id].cpu) {
-      this.oracle.close();
-      this.stands.close();
-    }
-    else this.openOracle('shot', id);
     this.emit({ type: 'turn', player: id });
   }
 

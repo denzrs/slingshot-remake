@@ -134,7 +134,7 @@ fn parse_bonus(value: &Value, seats: usize) -> Option<BonusRound> {
     })
 }
 
-/// One judged tip of the oracle game: a hit/miss or salvo tip, or a bet on who wins the round.
+/// One judged tip: a call on a shot (hits, misses, gets hit) or a bet on who wins the round.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TipRound {
     /// `shot` (a question about a shot or a salvo) or `round` (who wins the round).

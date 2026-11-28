@@ -7,7 +7,7 @@ import { SCORING } from '../../src/sim/config';
 /** An online Classic match of `humans` people, on the first turn of its first round. */
 function table(humans: number, extra: Partial<typeof DEFAULT_SETTINGS> = {}): ClassicMatch {
   const seats: Seat[] = Array.from({ length: 6 }, (_, i) => (i < humans ? 'human' : 'off'));
-  return createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 3, seats, ...extra }, { seats, oracle: true }) as ClassicMatch;
+  return createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 3, seats, ...extra }, { seats, online: true }) as ClassicMatch;
 }
 
 describe('a player leaving an online game', () => {
@@ -69,11 +69,11 @@ describe('a player leaving an online game', () => {
     m.voteSkipRound(1, true);
     expect(m.summary?.title).toBe('skipped');
 
-    // Nobody shot down, nobody to ask: the oracle stays shut for a seat that is empty.
+    // Nobody shot down, nobody to bet: the bets stay shut for a seat that is empty.
     const n = table(3);
     n.removePlayer(2);
     expect(n.canBet(2)).toBe(false);
-    expect(n.oracle.question).toBeNull();
+    expect(n.bets.question).toBeNull();
   });
 
   it('ends the round as a walkover whenever their going settled it, mid-flight too', () => {
@@ -121,7 +121,7 @@ describe('a player leaving an online game', () => {
 
   it('does not hold up a volley that waits for everybody', () => {
     const seats: Seat[] = ['human', 'human', 'human', 'off', 'off', 'off'];
-    const m = createMatch('classic', { ...DEFAULT_SETTINGS, simultaneousShots: true, seats }, { seats, oracle: true, simultaneous: true }) as ClassicMatch;
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, simultaneousShots: true, seats }, { seats, online: true, simultaneous: true }) as ClassicMatch;
     m.update(1);
     m.commitPlayer(0);
     m.commitPlayer(1);
@@ -227,7 +227,7 @@ describe('a player whose connection dropped', () => {
 
   it('is nobody\'s neighbour while the ship is off the field', () => {
     const seats: Seat[] = ['human', 'human', 'human', 'human', 'off', 'off'];
-    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, neighborGrace: 2 }, { seats, oracle: true }) as ClassicMatch;
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 1, seats, neighborGrace: 2 }, { seats, online: true }) as ClassicMatch;
     m.world.planets = [];
     [[100, 400], [300, 400], [700, 400], [1100, 400]].forEach(([x, y], i) => Object.assign(m.world.ships[i], { x, y }));
     expect(m.sparedFor(0)).toEqual([1]);
@@ -257,7 +257,7 @@ describe('a player whose connection dropped', () => {
 
   it('is not waited for in a volley, and may still aim it once back', () => {
     const seats: Seat[] = ['human', 'human', 'human', 'off', 'off', 'off'];
-    const m = createMatch('classic', { ...DEFAULT_SETTINGS, simultaneousShots: true, seats }, { seats, oracle: true, simultaneous: true }) as ClassicMatch;
+    const m = createMatch('classic', { ...DEFAULT_SETTINGS, simultaneousShots: true, seats }, { seats, online: true, simultaneous: true }) as ClassicMatch;
     m.setAway(2, true);
     expect(m.canAim(2)).toBe(false);
     m.setAway(2, false);
@@ -273,7 +273,7 @@ describe('a player whose connection dropped', () => {
 
   it.each(['classic', 'horizon'] as const)('gets a turn back in a %s volley aimed in turns, once back before it flies', (mode) => {
     const seats: Seat[] = ['human', 'human', 'human', 'off', 'off', 'off'];
-    const m = createMatch(mode, { ...DEFAULT_SETTINGS, simultaneousShots: true, seats }, { seats, oracle: true }) as ClassicMatch;
+    const m = createMatch(mode, { ...DEFAULT_SETTINGS, simultaneousShots: true, seats }, { seats, online: true }) as ClassicMatch;
     // Whoever is on turn drops out: the turn moves on at once.
     const first = m.current;
     m.setAway(first, true);

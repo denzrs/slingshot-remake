@@ -149,7 +149,7 @@ Columns: **Proto** = shown in the prototype gallery (yes / partly / no). **Forge
 | `src/ui/presets/powerup-summary.ts` | power-up symbols (preset cards) | **Simple** |
 | `src/render/hud.ts:357` | power-up symbol in the HUD strip | **Simple** |
 | `src/render/hud.ts:307, 449`, `avatar.ts` | avatars | Out of scope. |
-| `src/render/oracle.ts`, `skip-vote.ts` | cards with a ring round a tapped ship | HUD cards, out of scope. The ring on the field belongs to 3.x. |
+| `src/render/bets.ts`, `skip-vote.ts` | cards with a ring round a tapped ship | HUD cards, out of scope. The ring on the field belongs to 3.x. |
 | The players' menu arrows (ship icons in menus) | own drawing | Out of scope. |
 
 ## 9. Numbers

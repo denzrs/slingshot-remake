@@ -208,6 +208,69 @@ const EFFECTS: ((e: Effects, m: Match) => void)[] = [
   (e, m) => e.muzzle(m.world.ships[0].x, m.world.ships[0].y, 0, m.players[0].color),
 ];
 
+/** Six people at the table, three of them shot down: two have bet on Ash and circle him, one has lost a bet on Bo. */
+function podScene(): Match {
+  const match = podTable();
+  placePodBets(match);
+  return match;
+}
+
+/** The table of the pod scene: six seats, Dora, Eli and Fay shot down. */
+function podTable(): Match {
+  const seats: Seat[] = ['human', 'human', 'human', 'human', 'human', 'human'];
+  const match = createMatch('classic', gallerySettings(seats, { maxPlanets: 2 }), { seats, names: ['Ash', 'Bo', 'Cy', 'Dora', 'Eli', 'Fay'], seed: 23, online: true });
+  match.phase = 'aiming';
+  const spots: [number, number][] = [[300, 260], [980, 230], [640, 640], [420, 560], [900, 560], [160, 620]];
+  spots.forEach(([x, y], i) => Object.assign(match.world.ships[i], { x, y }));
+  for (const id of [3, 4, 5]) {
+    match.players[id].alive = false;
+    match.world.ships[id].alive = false;
+  }
+  match.crowdChanged(POD_STANDS.map((name, id) => ({ id, name })));
+  return match;
+}
+
+/** A full stand watching the pod scene, each in a UFO: fourteen for Ash (on two rings), four for Bo, two for Cy. */
+const POD_STANDS = ['Zoe', 'Ari', 'Lev', 'Kim', 'Ida', 'Mo', 'Pia', 'Ugo', 'Eda', 'Tom', 'Uma', 'Rex', 'Lia', 'Jon', 'Ada', 'Max', 'Nel', 'Kai', 'Oda', 'Sam'];
+const POD_STANDS_PICKS = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2];
+
+/** A new round of the pod scene: Ash up again, Dora and Fay back him; Eli backed Bo, and that bet is already lost. */
+function placePodBets(match: Match): void {
+  const alive = [0, 1, 2];
+  match.players[0].alive = true;
+  match.world.ships[0].alive = true;
+  match.bets.startRound();
+  match.bets.openRound(alive, false);
+  match.bets.place(3, 0, 600, alive, alive.length);
+  match.bets.place(5, 0, 200, alive, alive.length);
+  match.bets.place(4, 1, 300, alive, alive.length);
+  match.bets.fallen((pick) => pick === 1, 0);
+  // Their pods circle the ship bet on, as `placeBet` would have them do.
+  match.fans.reset();
+  match.fans.follow(3, 0);
+  match.fans.follow(5, 0);
+  // And the stands' UFOs fly in from the edge to the ships they root for.
+  match.standsFans.reset();
+  POD_STANDS_PICKS.forEach((pick, seat) => match.standsFans.follow(seat, pick));
+}
+
+/** Five shot-down fans round Ash, with one to five right calls this match: how epic each one's cheer is. */
+function cheerScene(): Match {
+  const seats: Seat[] = ['human', 'human', 'human', 'human', 'human', 'human'];
+  const match = createMatch('classic', gallerySettings(seats, { maxPlanets: 1 }), { seats, names: ['Ash', 'Eins', 'Zwei', 'Drei', 'Vier', 'Fünf'], seed: 31, online: true });
+  match.phase = 'aiming';
+  Object.assign(match.world.ships[0], { x: 640, y: 400 });
+  const spots: [number, number][] = [[200, 160], [1080, 160], [200, 640], [1080, 640], [640, 120]];
+  for (let id = 1; id <= 5; id++) {
+    Object.assign(match.world.ships[id], { x: spots[id - 1][0], y: spots[id - 1][1] });
+    match.players[id].alive = false;
+    match.world.ships[id].alive = false;
+    match.fans.follow(id, 0);
+  }
+  match.callsRight = [0, 1, 2, 3, 4, 5];
+  return match;
+}
+
 const SCENES: Scene[] = [
   {
     title: 'Spielfeld',
@@ -215,6 +278,47 @@ const SCENES: Scene[] = [
     build: () => aiming('classic', 11),
     tick: (match, card) => {
       match.phaseTime = card.clock % 4;
+    },
+  },
+  {
+    title: 'Rettungskapseln',
+    sub: 'Drei Abgeschossene in ihren Kapseln. Dora und Fay haben auf Ash gesetzt und umkreisen ihn, Eli hat seine Wette auf Bo verloren, sein Licht ist aus. Zwanzig Zuschauer fliegen in UFOs vom Rand herein und kreisen außen: vierzehn um Ash auf zwei gegenläufigen Ringen, vier um Bo, zwei um Cy. Ash trifft alle drei Sekunden, seine Fans jubeln, und ein Zuschauer jubelt mit. Danach fällt Ash, und die Kapseln und UFOs seiner Fans explodieren mit. Alle zwölf Sekunden schießen die Kapseln neu aus dem Wrack (Schleife)',
+    build: () => podScene(),
+    tick: (match, card) => {
+      // A new round every few seconds: the pods are ejected from their wrecks again, and fly over once more.
+      const round = 1 + Math.floor(card.clock / 12);
+      if (round !== match.round) {
+        match.round = round;
+        placePodBets(match);
+      }
+      const into = card.clock % 12;
+      const cheer = Math.floor(card.clock / 3);
+      if (cheer !== card.step && into > 5 && into < 10) {
+        card.step = cheer;
+        card.renderer.cheer(match, 0);
+        // One of Ash's UFOs after the other cheers along.
+        match.standsFans.cheer(cheer % 14, card.clock);
+      }
+      // Then Ash is shot down, and his fans' pods go up with him.
+      const ash = match.world.ships[0];
+      if (into > 10 && ash.alive) {
+        ash.alive = false;
+        match.players[0].alive = false;
+        card.effects.explode(ash.x, ash.y, match.players[0].color);
+        match.bets.fallen((pick) => pick === 0, 0);
+      }
+    },
+  },
+  {
+    title: 'Jubel-Stufen',
+    sub: 'Mit jeder richtigen Ansage im Match wächst der Jubel eines Abgeschossenen, bis Stufe fünf. Eins bis Fünf umkreisen Ash und jubeln reihum, einer pro Sekunde, Eins mit einer richtigen Ansage, Fünf mit fünf. Ab Stufe eins kommen Funken in der eigenen Farbe dazu, ab zwei Strahlen, ab drei ein dritter Ring. Stufe vier bringt eine Krone, Stufe fünf eine zweite Funkenwelle. Ash trifft alle sechs Sekunden, dann jubeln die fünf zugleich (Schleife)',
+    build: () => cheerScene(),
+    tick: (match, card) => {
+      const turn = Math.floor(card.clock);
+      if (turn === card.step) return;
+      card.step = turn;
+      if (turn % 6 === 5) card.renderer.cheer(match, 0);
+      else match.fans.cheer(1 + (turn % 6), card.clock);
     },
   },
   {

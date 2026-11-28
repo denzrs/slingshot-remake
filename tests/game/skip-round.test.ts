@@ -4,12 +4,11 @@ import type { ClassicMatch } from '../../src/game/classic';
 import type { ReplayScript } from '../../src/game/replay';
 import { roundReport, turnReport } from '../../src/game/roundReport';
 import { DEFAULT_SETTINGS, type Seat } from '../../src/data/settings';
-import { TIP_HIT } from '../../src/game/oracle';
 
 /** A Classic match on its first round with `humans` people, a CPU after them, and 40 points already on the first ship. */
 function scored(online: boolean, humans = 2): ClassicMatch {
   const seats: Seat[] = Array.from({ length: 6 }, (_, i) => (i < humans ? 'human' : i < 3 ? 'easy' : 'off'));
-  const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 2, seats }, { seats, oracle: online }) as ClassicMatch;
+  const m = createMatch('classic', { ...DEFAULT_SETTINGS, rounds: 2, seats }, { seats, online }) as ClassicMatch;
   m.players[0].score = 40;
   return m;
 }
@@ -93,23 +92,21 @@ describe('skipping a round', () => {
     expect(rounds).toHaveLength(1);
   });
 
-  it('rolls back oracle points and honours earned in a skipped round', () => {
+  it('rolls back the bets\' standings, and what a lost bet took, in a skipped round', () => {
     const m = scored(true, 3);
-    const score = m.oracle.scores[1];
-    score.points = 75;
-    score.right = 1;
-    score.total = 2;
-    score.streak = 1;
-    score.stats.bestStreak = 1;
-    m.oracle.startRound();
-    m.oracle.open('shot', 0, []);
-    m.oracle.bet(1, TIP_HIT);
-    m.oracle.resolve([1], true, m.clock);
-    expect(m.oracle.scores[1].points).toBeGreaterThan(75);
+    m.scoreHistory = [[0, 0, 0], [0, 600, 0]];
+    m.players[1].score = 600;
+    m.players[1].alive = false;
+    Object.assign(m.bets.scores[1], { bets: 1, won: 1, net: 200 });
+    m.bets.startRound();
+    m.bets.openRound([0, 2], false);
+    m.bets.place(1, 2, 300, [0, 2], 2);
+    for (const bet of m.bets.fallen((pick) => pick === 2, m.clock)) m.players[1].score += bet.delta;
+    expect(m.players[1].score).toBe(300);
     m.requestSkipRound(0);
     m.voteSkipRound(2, true);
-    expect(m.oracle.scores[1]).toMatchObject({ points: 75, right: 1, total: 2, streak: 1, roundPoints: 0, roundTotal: 0 });
-    expect(m.oracle.scores[1].stats.bestStreak).toBe(1);
+    expect(m.players[1].score).toBe(600);
+    expect(m.bets.scores[1]).toEqual({ bets: 1, won: 1, net: 200 });
   });
 
   it('ends the last round into the final screen', () => {

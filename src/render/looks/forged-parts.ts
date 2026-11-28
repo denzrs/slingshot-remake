@@ -206,7 +206,7 @@ export const lightParts: Partial<LookPainter> = {
     ctx.stroke();
     ctx.restore();
   },
-  locatePing: (ctx, x, y, color, age) => {
+  locatePing: (ctx, x, y, color, age, scale = 1) => {
     const fade = Math.min(1, (LOCATE_PING.DURATION - age) / 0.5);
     ctx.save();
     ctx.translate(x, y);
@@ -214,15 +214,16 @@ export const lightParts: Partial<LookPainter> = {
     ctx.globalCompositeOperation = 'lighter';
     for (let k = 0; k < LOCATE_PING.RINGS; k++) {
       const t = (age / LOCATE_PING.PERIOD + k / LOCATE_PING.RINGS) % 1;
-      const radius = LOCATE_PING.RADIUS * (1 - t) + 14;
+      const radius = (LOCATE_PING.RADIUS * (1 - t) + 14) * scale;
+      const glow = 22 * scale;
       ctx.globalAlpha = fade * t * 0.85;
       // The ring closes in, so its light trails outside it: a soft band that fades with the distance.
-      const band = ctx.createRadialGradient(0, 0, radius, 0, 0, radius + 22);
+      const band = ctx.createRadialGradient(0, 0, radius, 0, 0, radius + glow);
       band.addColorStop(0, rgba(color, 0.4));
       band.addColorStop(1, rgba(color, 0));
       ctx.fillStyle = band;
       ctx.beginPath();
-      ctx.arc(0, 0, radius + 22, 0, Math.PI * 2);
+      ctx.arc(0, 0, radius + glow, 0, Math.PI * 2);
       ctx.arc(0, 0, radius, 0, Math.PI * 2, true);
       ctx.fill('evenodd');
       ctx.strokeStyle = color;

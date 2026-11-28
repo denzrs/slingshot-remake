@@ -14,7 +14,7 @@ function settings(extra: Partial<Settings>): Settings {
 }
 
 function make(mode: GameMode, extra: Partial<Settings>): Snapshotting {
-  return createMatch(mode, settings(extra), { seats, oracle: true, seed: 11, deterministicCpu: true }) as Snapshotting;
+  return createMatch(mode, settings(extra), { seats, online: true, seed: 11, deterministicCpu: true }) as Snapshotting;
 }
 
 const cases: [string, GameMode, Partial<Settings>][] = [

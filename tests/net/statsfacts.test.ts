@@ -92,7 +92,7 @@ describe('facts by group', () => {
       { id: 'holeShots', values: [2] },
       { id: 'notYetKnown', values: [1] },
     ]);
-    expect(groups.map((g) => g.group)).toEqual(['aim', 'rounds', 'oracle']);
+    expect(groups.map((g) => g.group)).toEqual(['aim', 'rounds', 'bets']);
     // Within a heading the page's own order, not the relay's.
     expect(groups[0].lines.map((parts) => parts.map((p) => p.text).join(''))).toEqual([
       'It takes 4.0 shots on average to destroy a ship.',

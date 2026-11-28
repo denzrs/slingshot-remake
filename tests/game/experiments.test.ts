@@ -27,7 +27,7 @@ describe('experiments', () => {
 
   it('ignores them online and in attract mode', () => {
     const name = EXPERIMENT_NAMES[0];
-    const online = createMatch('classic', settings(), { experiments: [name], oracle: true, seed: 1 });
+    const online = createMatch('classic', settings(), { experiments: [name], online: true, seed: 1 });
     expect((online as unknown as Trier).trying(name)).toBe(false);
     const attract = createMatch('classic', settings(), { experiments: [name], attract: true, seed: 1 });
     expect((attract as unknown as Trier).trying(name)).toBe(false);

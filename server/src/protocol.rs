@@ -11,7 +11,7 @@ use crate::wire::{Avatar, CpuLevel, Emblem, RoomColor, RoomSymbol, Visibility, W
 /// The version of the wire protocol the relay speaks. A client says which one it was built for (`?v=` on its address); one built
 /// for an older protocol is told to reload and let go. Not raised by hand: a TypeScript test notices when the wire changed and
 /// `npm run protocol` raises it here, in `src/net/net.ts` and in `server/protocol-contract.json`.
-pub const PROTOCOL_VERSION: u32 = 10;
+pub const PROTOCOL_VERSION: u32 = 14;
 
 pub const MAX_TIP: i64 = 6;
 /// A teleport offers a few spots to choose from; a pick names one by its place in the list.
@@ -247,7 +247,17 @@ pub fn is_input_message(value: &Value) -> bool {
             is_finite_number(value.get("dAngle")) && is_finite_number(value.get("dPower"))
         }
         Some("aim") => is_finite_number(value.get("angle")) && is_finite_number(value.get("power")),
-        Some("fire") | Some("skip") | Some("skipRound") | Some("power") | Some("cancel") => true,
+        Some("fire") | Some("skip") | Some("skipRound") | Some("power") | Some("cancel")
+        | Some("cheer") => true,
+        // A shot-down player calls the next shot of the ship they root for.
+        Some("call") => matches!(
+            value.get("call").and_then(Value::as_str),
+            Some("hit" | "miss" | "hitBy")
+        ),
+        // A shot-down player roots for a ship (escape pods, no points).
+        Some("fan") => value
+            .get("pick")
+            .is_some_and(|pick| is_int_between(pick, 0, MAX_TIP - 1)),
         // An answer to the vote to skip the round.
         Some("skipVote") => matches!(value.get("yes"), Some(Value::Bool(_))),
         // A teleport spot picked by number: there are only a few.
@@ -722,6 +732,28 @@ mod tests {
         assert!(!is_input_message(
             &json!({"kind":"aim","angle":"0","power":55})
         ));
+        // Rooting for a ship names a ship (no draw), and a cheer is just that.
+        assert!(is_input_message(&json!({"kind":"fan","pick":0})));
+        assert!(is_input_message(&json!({"kind":"fan","pick":5})));
+        assert!(is_input_message(&json!({"kind":"cheer"})));
+        for call in ["hit", "miss", "hitBy"] {
+            assert!(is_input_message(&json!({"kind":"call","call":call})));
+        }
+        for invalid in [
+            json!({"kind":"call"}),
+            json!({"kind":"call","call":"maybe"}),
+            json!({"kind":"call","call":1}),
+        ] {
+            assert!(!is_input_message(&invalid), "rejected input: {invalid}");
+        }
+        for invalid in [
+            json!({"kind":"fan"}),
+            json!({"kind":"fan","pick":-1}),
+            json!({"kind":"fan","pick":6}),
+            json!({"kind":"fan","pick":"2"}),
+        ] {
+            assert!(!is_input_message(&invalid), "rejected input: {invalid}");
+        }
     }
 
     #[test]
@@ -842,7 +874,7 @@ mod tests {
         let parsed = rules_to_value(&parse_rules(&partial).expect("omissions accepted"));
         assert_eq!(parsed["maxPower"], json!(100));
         assert_eq!(parsed["fixedPowerLevel"], json!(55));
-        assert_eq!(parsed["betting"], json!(false));
+        assert_eq!(parsed["betting"], json!(true));
         assert_eq!(parsed["suddenDeath"], json!(true));
         assert_eq!(parsed["killcam"], json!("auto"));
         assert_eq!(parsed["hiddenAim"], json!(false));

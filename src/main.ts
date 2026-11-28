@@ -20,8 +20,9 @@ import { SupernovaDemo } from './debug/supernovaDemo';
 import { recordRun } from './data/dailyStore';
 import { ChallengeMatch, createChallenge, createMatch, createShotReplay, ShotReplay, type Match } from './game';
 import type { GameMode } from './sim/modes';
-import { stakeOptions, TIP_HIT, TIP_MISS, TIP_NOBODY } from './game/oracle';
-import type { OracleTap } from './render/oracle';
+import { PICK_DRAW } from './game/bets';
+import type { CallKind } from './game/fans';
+import { tryCheer, type BetTap } from './render/bets';
 import { readInvite } from './net/invite';
 import { MultiplayerSession } from './net/multiplayer';
 import { onOutdated, type ClientInput } from './net/net';
@@ -30,7 +31,7 @@ import { POWER_UP } from './sim/powerups';
 import { Effects } from './render/effects';
 import { Pwa } from './platform/pwa';
 import { PwaBanner } from './ui/menu/pwa-banner';
-import { applyStaticTexts, fmt, getLang, isLang, setLang, t, type Key } from './platform/i18n';
+import { applyStaticTexts, fmt, fmtInt, getLang, isLang, setLang, t, type Key } from './platform/i18n';
 import { getLook, RECOMMENDED_LOOK, setLook, type Look } from './data/look';
 import { setPalette } from './data/palette';
 import { allowDetailStepDown, painterFor } from './render/looks';
@@ -312,7 +313,10 @@ function wire(m: Match): void {
         const r = e.record;
         const ship = m.world.ships[r.victim];
         if (r.friendly) effects.callout(`${t('title.friendlyFire')} ${r.points}`, ship.x, ship.y, COLORS.danger, true, 10);
-        else if (r.killer !== null && !r.self) effects.callout(`+${r.points}`, ship.x, ship.y, color(r.killer), true, 10);
+        else if (r.killer !== null && !r.self) {
+          effects.callout(`+${r.points}`, ship.x, ship.y, color(r.killer), true, 10);
+          cheer(m, r.killer);
+        }
         break;
       }
       case 'multiKill': {
@@ -456,6 +460,11 @@ function dispatchInput(input: ClientInput): void {
   else if (input.kind === 'fire') match.commit();
   else if (input.kind === 'power') match.usePowerUp();
   else if (input.kind === 'cancel') match.cancelPlacement();
+  // Offline only a dev preview bets and roots for a ship: they are this screen's own.
+  else if (input.kind === 'bet' && match.viewer !== null) match.placeBet(match.viewer, input.pick, input.stake);
+  else if (input.kind === 'fan' && match.viewer !== null) match.follow(match.viewer, input.pick);
+  else if (input.kind === 'cheer' && match.viewer !== null) match.cheerOn(match.viewer);
+  else if (input.kind === 'call' && match.viewer !== null) match.callShot(match.viewer, input.call);
 }
 
 /** Whether a splitter is armed in a shot the person at this screen has in the air. */
@@ -771,54 +780,93 @@ function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'));
 }
 
+/** The keys that call the next shot of the ship you root for. */
+const CALL_FROM_KEY: Record<string, CallKind> = { KeyT: 'hit', KeyD: 'miss', KeyX: 'hitBy' };
+
+/** The keys that put a quarter, half (H) or all (A) of the points on the side picked for the round's bet. */
+const STAKE_KEYS: Record<string, number> = { KeyQ: 0.25, KeyH: 0.5, KeyA: 1 };
+
 /**
- * The oracle tip a key stands for while an eliminated player has a question open: ← → for a shot, 1–5 and
- * 0 for a salvo — and Shift with 1–5 (0 for a draw) for who wins the round.
+ * What a key does while a shot-down player (or somebody in the stands) may bet or root for a ship: 1–5 (0 for a
+ * draw) pick a side, Q / H / A put a quarter, half or all of the points on it, G cheers on the ship you root for,
+ * and T / D / X call its next shot: it hits, misses (daneben), or is hit (N, Y and J stay the skip vote's, C the clip's).
  */
-function oracleKey(e: KeyboardEvent): OracleTap | null {
-  const q = match?.betOracle.question;
-  if (!match || !match.ghost || e.ctrlKey || e.metaKey || e.altKey) return null;
+function betKey(e: KeyboardEvent): BetTap | null {
+  if (!match || !(match.ghost || match.rooting) || match.bettor === null || e.ctrlKey || e.metaKey || e.altKey) return null;
+  if (e.code === 'KeyG') return match.rooting && match.fanBook.of(match.bettor) ? { pick: -1, cheer: true } : null;
+  const call = CALL_FROM_KEY[e.code];
+  if (call) return match.canCall(match.bettor) ? { pick: -1, call } : null;
+  const book = match.betBook;
+  const q = book.question;
+  const betting = !!q && match.ghost && match.canBet(match.bettor);
   const digit = /^(?:Digit|Numpad)(\d)$/.exec(e.code);
-  const rq = match.betOracle.roundQuestion;
-  // B puts the smaller stake on the tip on the round, Shift + B the larger one: points of the match, once.
-  if (e.code === 'KeyB' && rq && match.bettor !== null) {
-    const mine = match.betOracle.roundMine;
-    const options = stakeOptions(match.purse(match.bettor));
-    if (!mine || mine.id !== rq.id || !match.maxStake(match.bettor) || !options.length) return null;
-    return { pick: mine.pick, round: true, stake: e.shiftKey ? options[options.length - 1] : options[0] };
-  }
-  if (e.shiftKey && digit && rq) {
-    if (match.phase !== 'aiming') return null;
+  if (digit) {
     const n = Number(digit[1]);
-    const pick = n === 0 ? (rq.draw ? TIP_NOBODY : null) : match.roundChoices[n - 1] ?? null;
-    return pick === null ? null : { pick, round: true };
+    if (!betting) {
+      // No bet to make: the digits root for a ship.
+      const pick = n > 0 ? match.fanChoices[n - 1] : undefined;
+      return pick === undefined || !match.rooting ? null : { pick, select: true };
+    }
+    const pick = n === 0 ? (q.draw ? PICK_DRAW : null) : match.roundChoices[n - 1] ?? null;
+    return pick === null ? null : { pick, select: true };
   }
-  if (!q || q.locked) return null;
-  if (q.kind === 'shot') return e.code === 'ArrowLeft' ? { pick: TIP_HIT, round: false } : e.code === 'ArrowRight' ? { pick: TIP_MISS, round: false } : null;
-  if (!digit) return null;
-  const n = Number(digit[1]);
-  const pick = n === 0 ? TIP_NOBODY : q.choices[n - 1] ?? null;
-  return pick === null ? null : { pick, round: false };
+  if (!betting) return null;
+  const share = STAKE_KEYS[e.code];
+  const pending = book.pending && book.pending.id === q.id ? book.pending.pick : null;
+  if (share === undefined || pending === null) return null;
+  const option = match.stakeChoices(match.bettor).find((s) => s.share === share);
+  return option ? { pick: pending, stake: option.amount } : null;
 }
 
-/** The oracle tip under a pointer: one of the bar's or the round row's choices, or — for a salvo — the ship itself. */
-function oracleTap(clientX: number, clientY: number): OracleTap | null {
-  const q = match?.betOracle.question;
-  if (!match || !match.ghost) return null;
-  const chip = renderer.oracleHit(clientX, clientY);
-  if (chip) return chip.round ? (match.canBetRound(match.bettor ?? -1) ? chip : null) : q && !q.locked ? chip : null;
-  if (!q || q.locked || q.kind !== 'salvo') return null;
+/**
+ * The bet choice under a pointer: a chip on the card, or a ship still in the round — picked as the side to bet on,
+ * or rooted for; the ship you already root for is cheered on instead.
+ */
+function betTap(clientX: number, clientY: number): BetTap | null {
+  if (!match || !(match.ghost || match.rooting) || match.bettor === null) return null;
+  const chip = renderer.betHit(clientX, clientY);
+  if (chip) return chip;
+  const betting = !!match.betBook.question && match.ghost && match.canBet(match.bettor);
+  const choices = betting ? match.roundChoices : match.rooting ? match.fanChoices : [];
   const at = renderer.toField(clientX, clientY);
-  const ship = q.choices.find((id) => Math.hypot(match!.world.ships[id].x - at.x, match!.world.ships[id].y - at.y) < 30);
-  return ship === undefined ? null : { pick: ship, round: false };
+  const ship = choices.find((id) => Math.hypot(match!.world.ships[id].x - at.x, match!.world.ships[id].y - at.y) < 30);
+  if (ship === undefined) return null;
+  if (match.rooting && match.fanBook.of(match.bettor)?.pick === ship && !betting) return { pick: ship, cheer: true };
+  return { pick: ship, select: true };
 }
 
-/** Whether the oracle was last answered with the pointer: then the choices lose their key caps, which only add noise. */
-let oraclePointer = false;
+/** Whether a bet was last chosen with the pointer: then the choices lose their key caps, which only add noise. */
+let betPointer = false;
 
-/** Sends an oracle tip to wherever the match is judged. */
-function placeTip(tip: OracleTap): void {
-  dispatchInput({ kind: 'bet', pick: tip.pick, ...(tip.round ? { round: true } : {}), ...(tip.stake ? { stake: tip.stake } : {}) });
+/**
+ * Acts on a bet choice: a side picked roots for it (the pod flies over) and waits on this screen for a stake; a
+ * stake and a cheer go to wherever the match is judged.
+ */
+function placeTip(tip: BetTap): void {
+  if (!match) return;
+  const book = match.betBook;
+  if (tip.cancel) {
+    book.pending = null;
+    return;
+  }
+  if (tip.cheer) {
+    // Not more often than the host takes one; the card's cheer chip shows when it can go again.
+    if (!tryCheer()) return;
+    // A cheer is seen, not heard: the pod hops and the chip flashes.
+    dispatchInput({ kind: 'cheer' });
+    return;
+  }
+  if (tip.call) {
+    dispatchInput({ kind: 'call', call: tip.call });
+    sound.blip();
+    return;
+  }
+  if (tip.select) {
+    if (book.question && match.ghost) book.pending = { id: book.question.id, pick: tip.pick };
+    if (tip.pick >= 0 && match.rooting) dispatchInput({ kind: 'fan', pick: tip.pick });
+    return;
+  }
+  if (tip.stake) dispatchInput({ kind: 'bet', pick: tip.pick, stake: tip.stake });
 }
 
 window.addEventListener('keydown', (e) => {
@@ -842,10 +890,10 @@ window.addEventListener('keydown', (e) => {
   }
   if (screen !== 'play' || !match) return;
 
-  const tip = oracleKey(e);
+  const tip = betKey(e);
   if (tip) {
     if (!e.repeat) {
-      oraclePointer = false;
+      betPointer = false;
       placeTip(tip);
     }
     e.preventDefault();
@@ -969,9 +1017,9 @@ canvas.addEventListener('pointerdown', (e) => {
   if (screen !== 'play' || !match || menu.isOpen) return;
   const answer = renderer.skipVoteHit(e.clientX, e.clientY);
   if (answer && match.canAnswerSkip(match.viewer) && online()) return dispatchInput({ kind: 'skipVote', yes: answer === 'yes' });
-  const tip = oracleTap(e.clientX, e.clientY);
+  const tip = betTap(e.clientX, e.clientY);
   if (tip) {
-    oraclePointer = true;
+    betPointer = true;
     return placeTip(tip);
   }
   // A tap dismisses the announcement only once its twists have landed, so a double tap at the round change can't skip it unread.
@@ -1112,50 +1160,36 @@ let askedVote = -1;
 let askedVoteMatch: Match | null = null;
 let voteMenuOpen = false;
 
-/** The oracle's last verdicts per match (shot or salvo, and the round's), so each one is announced on the field once. */
-const judged = new WeakMap<Match, { shot: number; round: number }>();
-
 /**
- * Right or wrong, floating over the ship that was tipped — once the killcam is out of the way — and, for
- * everybody at the table, the moment the ghosts' majority turned out wrong ("Oracle fooled!") or knew it all.
+ * A ship that has pods circling it hits an enemy: its fans cheer — the pods hop and flash, and the cheer is called out
+ * over the ship, bigger the more pods there are. It makes no sound of its own: the hit has one.
  */
-function announceOracle(m: Match): void {
-  if (!judged.has(m)) judged.set(m, { shot: m.betOracle.result?.id ?? 0, round: m.betOracle.roundResult?.id ?? 0 });
-  const seen = judged.get(m)!;
-  const crowd = (verdict: 'wrong' | 'right' | undefined, at: { x: number; y: number }, lift: number) => {
-    if (!verdict || m.bettor === null) return;
-    effects.callout(t(verdict === 'wrong' ? 'oracle.crowd.wrong' : 'oracle.crowd.right'), at.x, at.y, COLORS.sodium, true, lift);
-  };
+function cheer(m: Match, killer: number): void {
+  const fans = m.fansOf(m.sideOf(killer));
+  if (!fans) return;
+  renderer.cheer(m, killer);
+  const ship = m.world.ships[killer];
+  effects.callout(t('bets.cheer', { n: fans }), ship.x, ship.y, COLORS.sodium, fans >= 3, -46);
+}
 
-  const r = m.betOracle.result;
-  if (r && m.phase !== 'killcam' && r.id > seen.shot) {
-    seen.shot = r.id;
-    const tip = m.ghost ? r.tips.find((x) => x.player === m.bettor) : undefined;
-    const at = r.kind === 'shot' ? m.world.ships[r.shooter] : tip && tip.pick >= 0 ? m.world.ships[tip.pick] : { x: FIELD.width / 2, y: FIELD.height / 2 };
-    if (tip) {
-      effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), at.x, at.y, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right, 34);
-      if (tip.right) sound.combo();
-    }
-    crowd(r.crowd, at, tip ? 72 : 40);
-  }
+/** The newest settled bet per match, so each one is announced on the field once. */
+const announced = new WeakMap<Match, number>();
 
-  const round = m.betOracle.roundResult;
-  if (round && m.phase === 'roundOver' && round.id > seen.round) {
-    seen.round = round.id;
-    const tip = m.ghost ? round.tips.find((x) => x.player === m.bettor) : undefined;
-    const winner = round.winners.length ? m.world.ships[round.winners[0]] : { x: FIELD.width / 2, y: FIELD.height / 2 };
-    if (tip) {
-      // Below the ship: the shot's own verdict may be floating above it.
-      effects.callout(tip.right ? `${t('oracle.right')} +${tip.points}` : t('oracle.wrong'), winner.x, winner.y, tip.right ? COLORS.sodium : COLORS.boneDim, tip.right, -48);
-      if (tip.right) sound.combo();
-    }
-    // What the bet on it came to, below that.
-    if (tip?.stake) {
-      const net = (tip.payout ?? 0) - tip.stake;
-      effects.callout(`${t('oracle.stake')} ${net > 0 ? '+' : net < 0 ? '−' : '±'}${Math.abs(net)}`, winner.x, winner.y, net > 0 ? COLORS.sodium : COLORS.boneDim, net > 0, -84);
-    }
-    crowd(round.crowd, winner, tip ? -86 : -54);
+/** What your bet came to, floating over the side you bet on, once the killcam is out of the way. */
+function announceBets(m: Match): void {
+  const book = m.betBook;
+  if (!announced.has(m)) announced.set(m, book.settled.reduce((id, bet) => Math.max(id, bet.id), 0));
+  if (m.phase === 'killcam') return;
+  let seen = announced.get(m)!;
+  for (const bet of book.settled) {
+    if (bet.id <= seen) continue;
+    seen = bet.id;
+    if (bet.player !== m.bettor || m.bettor === null) continue;
+    const at = bet.pick === PICK_DRAW ? { x: FIELD.width / 2, y: FIELD.height / 2 } : m.world.ships[bet.pick];
+    effects.callout(`${bet.delta > 0 ? '+' : '−'}${fmtInt(Math.abs(bet.delta))}`, at.x, at.y, bet.won ? COLORS.sodium : COLORS.boneDim, bet.won, -48);
+    if (bet.won) sound.combo();
   }
+  announced.set(m, seen);
 }
 
 let last = performance.now();
@@ -1265,12 +1299,12 @@ function frame(now: number): void {
     renderer.draw(
       m,
       effects,
-      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !oraclePointer && lastInput() !== 'pad', aimCardDodge: settings.aimCardDodge, seatNumbers: settings.colorblind },
+      { hud: screen === 'play', fullScreen: screen !== 'play' || menu.isOpen, touch: coarsePointer.matches, recording: recorder.recording, keyHints: !betPointer && lastInput() !== 'pad', aimCardDodge: settings.aimCardDodge, seatNumbers: settings.colorblind },
       paused ? 0 : dt,
     );
   }
   perf?.frame(now, updated - began, performance.now() - updated);
-  if (screen === 'play' && m === match) announceOracle(m);
+  if (screen === 'play' && m === match) announceBets(m);
   document.body.classList.toggle('is-playing', screen === 'play');
   syncButtons();
   if (training) trainingGuide?.update(training, renderer, menu.isOpen);

@@ -105,7 +105,7 @@ function makeMatch(count: number, mode: 'classic' | 'horizon') {
   const settings = { ...DEFAULT_SETTINGS, seats, rounds: 5, maxPlanets: 4, simultaneousShots: mode === 'horizon' };
   const match = createMatch(mode, settings, {
     seats, names: Array.from({ length: count }, (_, i) => `P${i}`), simultaneous: mode === 'horizon',
-    oracle: true, seed: 98173,
+    online: true, seed: 98173,
   });
   if (!(match instanceof ClassicMatch || match instanceof HorizonMatch)) throw new Error(`unexpected ${mode} match`);
   return match;

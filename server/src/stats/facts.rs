@@ -456,7 +456,7 @@ const QUERIES: &[Query] = &[
                     COALESCE(SUM(CASE WHEN day > date('now', '-7 days') THEN rounds END), 0) AS t
              FROM stat_days)",
     ),
-    // — The oracle: tips and bets —
+    // — Tips and bets —
     ("tipRound", 5, concat!("SELECT COUNT(*), ", pct!("correct = 1", "1"), " FROM stat_tips WHERE kind = 'round'")),
     ("tipShot", 5, concat!("SELECT COUNT(*), ", pct!("correct = 1", "1"), " FROM stat_tips WHERE kind = 'shot'")),
     ("tipUnderdog", 5, concat!("SELECT COUNT(*), ", pct!("underdog = 1", "1"), " FROM stat_tips WHERE correct = 1")),

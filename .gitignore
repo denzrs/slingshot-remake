@@ -20,3 +20,6 @@ __pycache__/
 
 # Working plans (kept locally, not in the repository).
 /docs/plans/
+
+# Local preview servers of the Claude desktop app: each machine its own.
+.claude/launch.json
